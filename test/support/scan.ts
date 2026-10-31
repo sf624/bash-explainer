@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
@@ -24,21 +25,20 @@ export interface Match<K extends string = string> {
 /** Files (or directories, ending in `/`) that a guard leaves out, as paths from the repo root. */
 export const isAllowed = (allowed: readonly string[], rel: string): boolean => allowed.some((a) => (a.endsWith('/') ? rel.startsWith(a) : rel === a));
 
-/** Every `.ts` file under `dir`, recursively. */
-export function sourceFiles(dir: string, out: string[] = []): string[] {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) sourceFiles(p, out);
-    else if (e.name.endsWith('.ts')) out.push(p);
-  }
-  return out;
+/**
+ * Every file with the extension `ext` under `dir` (from the repo root) that the repository tracks or would track (not ignored): never a
+ * built bundle (`cli/dist/`) or `node_modules/`, which a maintainer's checkout has and CI's may not. Absolute paths, in path order.
+ */
+export function sourceFiles(dir: string, ext = '.ts'): string[] {
+  const out = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', dir], { cwd: base, encoding: 'utf8', maxBuffer: 1 << 26 });
+  return [...new Set(out.split('\0'))].filter((f) => f.endsWith(ext)).sort().map((f) => path.join(base, f)).filter((f) => fs.existsSync(f));
 }
 
 /** The matches of every `.ts` file under the directories `dirs` (from the repo root), outside `allowed`, in path order. */
 export function scanDirs<K extends string>(dirs: readonly string[], allowed: readonly string[], scan: (rel: string, text: string) => Match<K>[]): Match<K>[] {
   const out: Match<K>[] = [];
   for (const dir of dirs) {
-    for (const f of sourceFiles(path.join(base, dir)).sort()) {
+    for (const f of sourceFiles(dir)) {
       const rel = path.relative(base, f).split(path.sep).join('/');
       if (!isAllowed(allowed, rel)) out.push(...scan(rel, fs.readFileSync(f, 'utf8')));
     }
