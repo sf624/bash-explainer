@@ -2046,8 +2046,10 @@ html.view-panel .split {
 /* ---- The settings sheet ----------------------------------------------------------------------- */
 
 /* Side by side, the settings lie over the editor, from the left as the menu comes, and never wider than the editor's
-   pane (--pane-w, from web/settings-dialog.ts): the explanation they change stays in view and live. The sheet is not a
-   modal dialog there (no backdrop, nothing inert): the panel scrolls and takes clicks, and the sheet stays open. It is
+   pane (--pane-w, from web/settings-dialog.ts): the explanation they change stays in view and live. They start below the
+   top bar (--pane-top: the pane's own top, under the banner of a preview too), so that the whole bar stays in use, and
+   the editor they cover is inert. The sheet is not a modal dialog there (no backdrop): the panel scrolls and takes
+   clicks, and the sheet stays open. It is
    not in the top layer, so it needs a z-index above the page (and under the toasts, 20). In the narrow layout (a phone, a narrow window) they are a
    modal dialog and take the whole screen, from the right. */
 #settings-dialog {
@@ -2056,7 +2058,8 @@ html.view-panel .split {
 }
 
 :where(html:not(.narrow)) #settings-dialog {
-  inset: 0 auto 0 0;
+  inset: var(--pane-top, 0px) auto 0 0;
+  height: auto;
   width: min(36rem, var(--pane-w, 36rem));
   border-left: 0;
   border-right: 1px solid var(--vscode-panel-border);
