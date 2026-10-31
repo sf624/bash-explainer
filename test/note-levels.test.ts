@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { LEVELS } from '../src/levels';
 import { base, compareKnown, keyOf } from './support/scan';
 import { ALLOWED, counted, scanAll, scanSource, scanStyle, type Kind } from './support/note-levels';
 
@@ -51,6 +52,12 @@ describe('note levels guard (docs/design/sources.md, SA4)', () => {
     // A level's style.
     assert.deepStrictEqual(found("const a = 'note level-warning'; const b = `squiggle-${l}`; const c = '--vscode-editorInfo-foreground'; const d = 'codicon-warning'; const e = '$(info)';"),
       ['level-style note level-warning', 'level-style squiggle-', 'level-style --vscode-editorInfo-foreground', 'level-style codicon-warning', 'level-style $(info)']);
+    // Every mark, class and colour name of the level table, written by hand (the guard reads them from the table).
+    for (const l of Object.values(LEVELS)) {
+      assert.deepStrictEqual(found(`const a = '${l.mark} x';`), [`glyph ${l.mark}`]);
+      for (const name of [l.className, l.colour?.name, `squiggle-${l.className.replace(/^level-/, '')}`, `codicon-${l.codicon}`].filter((x) => x)) assert.deepStrictEqual(found(`const a = '${name}';`), [`level-style ${name}`]);
+    }
+    for (const w of Object.keys(LEVELS)) assert.deepStrictEqual(found(`const a = '--c-${w}-level'; const b = 'squiggle-${w}';`), [`level-style --c-${w}-level`, `level-style squiggle-${w}`]);
     // A style file: one match per line, comments left out.
     assert.deepStrictEqual(scanStyle('x.css', '/* .level-warning in a comment */\n.level-warning { color: var(--c-warning); }\n.a { color: red; }\n:root { --vscode-editorInfo-foreground: #000; }').map((m) => `${m.line} ${m.kind}`), ['2 level-style', '4 level-style']);
     // The code of a script file is read as well.
