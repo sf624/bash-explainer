@@ -37,6 +37,11 @@ export interface LevelColour {
   variable: string;
   /** The name the panel and the web page give it (media/panel.css, web/page.css). */
   name: string;
+  /**
+   * Another name the panel gives the same colour, for what is no note (media/panel.css): `--c-error`, the colour of a
+   * part of the line that cannot be read (`ERROR_COLOURS`, src/ui/palette.ts).
+   */
+  alias?: string;
   /** Where the editor gives none (the panel outside VS Code): the chart colour, then VS Code's dark default. */
   fallback: string;
   /**
@@ -96,7 +101,7 @@ export const LEVELS: Readonly<Record<NoteLevel, Level>> = {
     rank: 0, mark: 'ⓧ', word: { ja: 'エラー: ', en: 'Error: ' }, wordOnEvery: true, name: { ja: 'エラー', en: 'Error' },
     codicon: 'error', ansi: '31', bold: true, className: 'level-error', severity: 'error', forcedBorder: '4px double CanvasText',
     colour: {
-      variable: '--vscode-editorError-foreground', name: '--c-error-level', fallback: 'var(--vscode-charts-red, #f14c4c)', dark: '#f14c4c',
+      variable: '--vscode-editorError-foreground', name: '--c-error-level', alias: '--c-error', fallback: 'var(--vscode-charts-red, #f14c4c)', dark: '#f14c4c',
       ours: { light: '#d0020f', dark: '#fd6358', highContrast: '#f6937e', highContrastLight: '#9b1c0b' },
     },
     count: { ja: (n) => `エラー ${n} 件`, en: (n) => `${n} error${n === 1 ? '' : 's'}` },

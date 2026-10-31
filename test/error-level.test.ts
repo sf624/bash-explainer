@@ -363,6 +363,24 @@ describe('the checks headed for Error, run in bash (three-levels.md, step 0)', f
     });
   }
 
+  // A `}` that ends a parameter expansion (or a quote, or the `)` of an array) before a CR is a word's, no reserved word:
+  // bash runs the line, with a CR at the end of the word, in every way. A warning, not the error of a keyword before a CR.
+  for (const text of ['a=it-works\r\necho ${a}\r\n', 'b=it-works\r\nx=${b}\r\necho "$x"\r\n', 'a=it-works\r\necho "${a}"\r\n', '#!/bin/bash\na=it-works\r\narr=(${a})\r\necho "${arr[0]}"\r\n']) {
+    // (An array needs bash: the file with no shebang run as a program is run by /bin/sh here.)
+    it(`crlf: ${JSON.stringify(text.replace(/^#!.*\n/, '').split('\r\n')[1])} at a CRLF line end runs: a warning`, async function () {
+      const r: Row = { id: 'crlf', text, line: 1, works: 'it-works' };
+      const doc = openDocument(r.text, 'shell', (t) => parser.parse(t));
+      const issue = documentIssues(doc, 'en', shellsOf(doc.lines, 'script.sh', undefined)).find((x) => x.code === 'crlf');
+      assert.strictEqual(issue?.severity, 'warning');
+      if (unrunnable(r)) return this.skip();
+      const at = path.join(dir, `crlf-word-${text.length}-${text.charCodeAt(text.length - 4)}`);
+      fs.mkdirSync(at);
+      const runs = await runRow(r, at);
+      assert.ok(runs.length > 0);
+      assert.deepStrictEqual(runs.filter((run) => failed(r, run)).map((run) => `${run.way}: ${JSON.stringify(run.stderr.slice(-200))}`), []);
+    });
+  }
+
   ROWS.forEach((r, i) => {
     it(`${r.id}${r.code ? ` (${r.code})` : ''}: ${JSON.stringify(r.text.split('\n')[r.line - 1].replace(/^﻿/, '').replace(/\r$/, ''))}`, async function () {
       // Our side: the explanation says it there, at its level.

@@ -1228,3 +1228,16 @@ describe('the variables a statement sets as locals (StateModel.local)', () => {
     assert.ok(!local('f() { local RANDOM; echo $RANDOM; }; f', 'echo $RANDOM', 'RANDOM'));
   });
 });
+
+describe('shell state: `local -` outside a function', () => {
+  // (A latent crash the analyzer fuzz found when the snippets changed: no frame to keep the options in.)
+  it('reads it in every shell without a function around it', () => {
+    const parser = createUnbashParser();
+    const text = 'local -; set -e; echo x';
+    for (const shell of ['bash', 'sh', 'zsh'] as Shell[]) {
+      const tree = parser.parse(text);
+      const state = shellState(tree, shell);
+      for (const n of descendants(tree.root, ['command'])) assert.ok(state.at(n), shell);
+    }
+  });
+});

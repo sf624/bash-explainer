@@ -12,9 +12,9 @@ body {
   --c-variable: var(--vscode-charts-red, #ff5c65);
   --c-comment: var(--vscode-descriptionForeground, #888);
   --c-muted: var(--vscode-descriptionForeground, #888);
-  --c-error: var(--vscode-errorForeground, #f14c4c);
   /* level table (src/levels.ts, scripts/level-css.ts): root */
   --c-error-level: var(--vscode-editorError-foreground, var(--vscode-charts-red, #f14c4c));
+  --c-error: var(--c-error-level);
   --c-warning: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow, #cca700));
   --c-info: var(--vscode-editorInfo-foreground, var(--vscode-charts-blue, #3794ff));
   /* end of the level table */
@@ -23,9 +23,9 @@ body {
 /* Where the theme's chart colours are too light or too dark for text (below 4.5:1), our own: the values of
    src/ui/palette.ts, which the hover uses too (test/contrast.test.ts compares them and measures them).
    Light themes: all six, darkened, as on the web page. Dark themes: red, which is 3.96:1 on a code block.
-   All four: the error colour (Light Modern's is 4.23:1 on a code block, Dark Modern's 4.22:1, the high contrast
-   themes' below 7:1 on a code block). The levels of the notes take the editor's error, warning and info colours, ours
-   where they fall below it (src/levels.ts, the regions "level table"); the error level's are the error colour's. */
+   The levels of the notes take the editor's error, warning and info colours, ours where they fall below it
+   (src/levels.ts, the regions "level table"): the error's in all four (Light Modern's is 4.23:1 on a code block, Dark
+   Modern's 3.96:1, the high contrast themes' below 7:1 on a code block), which a part that cannot be read takes too. */
 body.vscode-light {
   /* level table (src/levels.ts, scripts/level-css.ts): light */
   --c-error-level: #d0020f;
@@ -38,7 +38,6 @@ body.vscode-light {
   --c-keyword: #5f2489;
   --c-redirect: #645000;
   --c-variable: #d0020f;
-  --c-error: #d0020f;
 }
 
 body.vscode-dark {
@@ -46,7 +45,6 @@ body.vscode-dark {
   --c-error-level: #fd6358;
   /* end of the level table */
   --c-variable: #ff5c65;
-  --c-error: #fd6358;
 }
 
 /* High contrast: VS Code gives a webview the theme's workbench colours, not its token colours, and its chart
@@ -64,7 +62,6 @@ body.vscode-high-contrast {
   --c-keyword: #c796ee;
   --c-redirect: #efd62f;
   --c-variable: #ff888e;
-  --c-error: #f6937e;
 }
 
 body.vscode-high-contrast-light {
@@ -79,7 +76,6 @@ body.vscode-high-contrast-light {
   --c-keyword: #5f2489;
   --c-redirect: #453e01;
   --c-variable: #a20222;
-  --c-error: #9b1c0b;
 }
 
 body {

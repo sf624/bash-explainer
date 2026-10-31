@@ -166,9 +166,10 @@ describe('the contrast of the colours of the roles', () => {
       const own = THEME_COLOURS[kind];
       const block = declared(panel, `body.${t.cls}`);
       const error = ERROR_COLOURS[kind];
+      // (A part that cannot be read takes the error level's colour: `--c-error` is `--c-error-level`, one source.)
+      assert.strictEqual(declared(panel, 'body')['--c-error'], 'var(--c-error-level)');
       assert.deepEqual(block, {
         ...Object.fromEntries(ROLES.filter((r) => own[r]).map((r) => [PANEL_VAR[r], own[r]])),
-        '--c-error': error,
         ...Object.fromEntries(COLOURS.filter((c) => c.ours[kind]).map((c) => [c.name, c.ours[kind]])),
       });
       // The levels of the notes: ours, or the theme's editorWarning and editorInfo colours.

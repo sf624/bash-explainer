@@ -424,7 +424,8 @@ export class WalkBuiltins {
     }
     // `local -` (`localOptions`): the set options come back when the function returns.
     const frame = this.w.frames[this.w.frames.length - 1];
-    if (spec.localOptions && decl.words.some((d) => words.includes(d.node) && (d.field ?? staticWordValue(d.node)) === '-')) frame.options ??= st.set;
+    // (No frame: `local -` outside a function, where the walk keeps none, as in zsh's top level.)
+    if (frame && spec.localOptions && decl.words.some((d) => words.includes(d.node) && (d.field ?? staticWordValue(d.node)) === '-')) frame.options ??= st.set;
     const local = this.w.frames.length > 0 && spec.locals === 'unless-g' && !on.includes('g');
     const gives = builtin === 'export' ? (on.includes('n') ? '' : 'x') : builtin === 'readonly' ? 'r' : [...on].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
     const removes = builtin === 'export' && on.includes('n') ? 'x' : [...off].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
