@@ -164,6 +164,8 @@ export interface LineInit {
   readonly shell: Shell | undefined;
   readonly opts: ExplainOptions;
   readonly root: SyntaxNode;
+  /** The tree's whole text, which node offsets index (the root's own text starts at its first statement). */
+  readonly source: string;
   readonly line: number;
   readonly nested: NestedScript['kind'] | undefined;
 }
@@ -204,7 +206,7 @@ export class LineExplainer implements Explainer, LineOutput {
     this.shell = init.shell;
     this.opts = init.opts;
     this.root = init.root;
-    this.source = init.root.text;
+    this.source = init.source;
     this.current = init.line;
     this.nested = init.nested;
   }

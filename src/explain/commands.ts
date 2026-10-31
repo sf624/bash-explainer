@@ -658,7 +658,12 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
       explanation: cx.s(`${what} \`${name}\`: ${cx.t(distro.meaning)}（${defs}）`, `${distro.kind === 'alias' ? 'Alias' : 'Function'} \`${name}\`: ${cx.t(distro.meaning)} (${defs})`),
     };
   }
-  if (name.includes('/')) return { name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'], explanation: cx.s(`パス \`${name}\` にあるプログラム・スクリプトを実行する`, `Run the program or script at \`${name}\``) };
+  if (name.includes('/')) {
+    // (With no shell, Docker's exec form, the path is run as it is: no section of bash's command search.)
+    return cx.state.noShell
+      ? { name, res: ran, kind: 'command', nameTokens: [], explanation: cx.s(`パス \`${name}\` にあるプログラム・スクリプトを、シェルを通さずにそのまま実行する`, `Run the program or script at \`${name}\` as it is, with no shell`) }
+      : { name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'], explanation: cx.s(`パス \`${name}\` にあるプログラム・スクリプトを実行する`, `Run the program or script at \`${name}\``) };
+  }
   return { name, res: ran, kind: 'command', nameTokens: [], explanation: cx.s(`外部コマンド \`${name}\` を実行する（辞書に未登録。\`man ${name}\` や \`${name} --help\` を参照）`, `Run the external command \`${name}\` (not in the dictionary; see \`man ${name}\`)`) };
 }
 

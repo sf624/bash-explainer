@@ -82,6 +82,7 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - `shopt -s extglob; echo !(x)` on one top-level line is Info `extglob-not-found`; bash rejects it (a syntax error). `extglob-in-same-block` misses a top-level `;` list (already on main).
 - `export "$1"` does not make the state `opaque`, so `foo=1; export "$1"; bash -c 'echo $foo'` still says `foo` is not exported (found in the review of #536).
 - A trap's action of text not known makes the state `opaque` from the `trap` command on, though an `EXIT` trap cannot fire before the lines that follow it, so checks after it become caveats too early (found in the review of #536).
+- The Reading view of no-shell lines (found while fixing the exec form's wording, 2026-11-01): the panel's Reading view shows a no-shell line (Docker's exec form, Python lists) as bash's reading, with bash sections (§3.7.1, §3.7.2 on the name, the quoting of the words). A host layer is needed: the reading of words a program gets with no shell.
 
 ## Waiting on the maintainer
 

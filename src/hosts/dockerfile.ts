@@ -1,5 +1,6 @@
 import { type Shell, shellFromName } from '../dialect';
 import { LineOut, Builder } from './builder';
+import type { RegionNote } from './index';
 import { DECLARATIONS } from '../semantics/effects';
 import { RESERVED } from '../semantics/names';
 
@@ -95,6 +96,44 @@ export function execWords(b: Builder, words: JsonWord[]): void {
 }
 
 
+const ONBUILD_NOTE: RegionNote = [
+  'ONBUILD の命令は、このイメージをもとにする別のイメージのビルドで（その FROM の直後に）実行されます。',
+  'An ONBUILD instruction runs later, in the build of another image FROM this one (just after its FROM).',
+];
+
+const HEALTHCHECK_NOTE: RegionNote = [
+  'HEALTHCHECK は、動いているコンテナの中でこのコマンドを実行して状態を調べます。終了ステータス 0 は正常（healthy）、1 は異常（unhealthy）です（2 は使いません）。',
+  'HEALTHCHECK runs this command in the running container to check its health: exit status 0 is healthy, 1 unhealthy (2 is reserved).',
+];
+
+/**
+ * The instructions whose text is a command, each also after `ONBUILD` (a trigger, run in a build FROM this image):
+ * RUN, CMD, ENTRYPOINT and SHELL, after their flags (`RUN --mount=…`), and HEALTHCHECK after its options and `CMD`
+ * (`HEALTHCHECK NONE` has no command).
+ */
+const INSTRUCTION = /^\s*(ONBUILD\s+)?(RUN|CMD|ENTRYPOINT|SHELL|HEALTHCHECK)(\s+(?:--[\w-]+(?:=\S*)?\s+)*)/i;
+
+/**
+ * Where the command of the instruction on line `i` starts (`line`, `at`), if the line starts one. HEALTHCHECK's options
+ * may go on over lines continued with `\` before its `CMD`.
+ */
+function commandHead(b: Builder, i: number): { instr: string; onbuild: boolean; line: number; at: number } | undefined {
+  const m = INSTRUCTION.exec(b.lines[i]);
+  if (!m) return undefined;
+  const instr = m[2].toUpperCase();
+  const head = { instr, onbuild: !!m[1], line: i, at: m[0].length };
+  if (instr !== 'HEALTHCHECK') return head;
+  for (;;) {
+    const rest = b.lines[head.line].slice(head.at);
+    const cmd = /^CMD\s+/i.exec(rest);
+    if (cmd) return { ...head, at: head.at + cmd[0].length };
+    if (!/^\\\s*$/.test(rest) || head.line + 1 >= b.lines.length) return undefined;
+    // (Docker drops the comment lines in a continuation.)
+    do head.line++; while (/^\s*#/.test(b.lines[head.line]) && head.line + 1 < b.lines.length);
+    head.at = /^\s*(?:--[\w-]+(?:=\S*)?\s+)*/.exec(b.lines[head.line])![0].length;
+  }
+}
+
 export function dockerfile(b: Builder): void {
   // `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` changes the shell of later shell-form instructions.
   // Each stage (`FROM`) starts again with the default: `/bin/sh -c`, or `cmd /S /C` on Windows images.
@@ -118,11 +157,16 @@ export function dockerfile(b: Builder): void {
       b.provided.push(...(declared[1].toUpperCase() === 'ARG' || words[0].includes('=') ? words.map((w) => /^([A-Za-z_]\w*)/.exec(w)?.[1]).filter((n): n is string => !!n) : [words[0]]));
       continue;
     }
-    const m = /^(\s*)(RUN|CMD|ENTRYPOINT|SHELL)(\s+(?:--[\w-]+(?:=\S*)?\s+)*)/i.exec(line);
-    if (!m) continue;
-    const at = m[0].length;
-    const instr = m[2].toUpperCase();
-    if (/^\[\s*"/.test(line.slice(at))) {
+    const head = commandHead(b, i);
+    if (!head) continue;
+    const { at, instr, onbuild } = head;
+    // (A trigger's SHELL sets the shell of the build that runs it, not of this one: it is left out.)
+    if (onbuild && instr === 'SHELL') continue;
+    i = head.line;
+    const label = (ja: string, en: string): [string, string] => [`Dockerfile の ${onbuild ? 'ONBUILD ' : ''}${instr}${ja}`, `Dockerfile ${onbuild ? 'ONBUILD ' : ''}${instr}${en}`];
+    const notes = [...(onbuild ? [ONBUILD_NOTE] : []), ...(instr === 'HEALTHCHECK' ? [HEALTHCHECK_NOTE] : [])];
+    const regionNotes = notes.length ? notes : undefined;
+    if (/^\[\s*"/.test(b.lines[i].slice(at))) {
       // Starting with `[ "`, a list that parses has a word.
       const parsed = jsonWords(b.lines, i, at);
       if (!parsed) continue;
@@ -135,8 +179,8 @@ export function dockerfile(b: Builder): void {
         pipefail = words.some((w, n) => w.value === 'pipefail' && /^-\w*o$/.test(words[n - 1]?.value ?? ''));
         execWords(b, words);
         b.region(i, last, ['Dockerfile の SHELL', 'Dockerfile SHELL'], 'bash', [[
-          '以降の RUN・CMD・ENTRYPOINT のシェル形式は、このコマンドの最後に命令の内容を付けて実行されます（例: `/bin/bash -o pipefail -c "<RUN の内容>"`）。',
-          'Later shell-form RUN, CMD and ENTRYPOINT instructions run with this command, followed by their text (e.g. `/bin/bash -o pipefail -c "<RUN text>"`).',
+          '以降の RUN・CMD・ENTRYPOINT・HEALTHCHECK のシェル形式は、このコマンドの最後に命令の内容を付けて実行されます（例: `/bin/bash -o pipefail -c "<RUN の内容>"`）。',
+          'Later shell-form RUN, CMD, ENTRYPOINT and HEALTHCHECK instructions run with this command, followed by their text (e.g. `/bin/bash -o pipefail -c "<RUN text>"`).',
         ]]);
         i = last;
         continue;
@@ -149,12 +193,12 @@ export function dockerfile(b: Builder): void {
         const script = words[c + 1];
         const o = (b.outs[script.line] ??= new LineOut());
         for (let k = 0; k < script.value.length; k++) o.insert(script.value[k], script.cols[k], script.cols[k] + 1);
-        b.region(script.line, script.line, [`Dockerfile の ${instr}（exec 形式で \`${words[0].value} ${words[c].value}\` に渡すスクリプト）`, `Dockerfile ${instr} (a script passed to \`${words[0].value} ${words[c].value}\` in exec form)`], target);
+        b.region(script.line, script.line, label(`（exec 形式で \`${words[0].value} ${words[c].value}\` に渡すスクリプト）`, ` (a script passed to \`${words[0].value} ${words[c].value}\` in exec form)`), target, regionNotes);
         i = last;
         continue;
       }
       execWords(b, words);
-      b.execRegion(i, last, [`Dockerfile の ${instr}（exec 形式）`, `Dockerfile ${instr} (exec form)`], [[
+      b.execRegion(i, last, label('（exec 形式）', ' (exec form)'), [...notes, [
         'exec 形式（`[...]`）はシェルを通さずにコマンドを直接実行します。`$VAR` の展開・パイプ・リダイレクト・`&&` などは働かず、各要素がそのまま引数になります。',
         'The exec form (`[...]`) runs the command directly, without a shell: `$VAR`, pipes, redirections and `&&` do not work, and each element is passed as it is.',
       ]], ['JSON の文字列', 'JSON string']);
@@ -167,13 +211,13 @@ export function dockerfile(b: Builder): void {
       while (/[\\`]\s*$/.test(b.lines[i]) && i + 1 < b.lines.length) i++;
       continue;
     }
-    const heredoc = /^<<-?\s*["']?(\w+)["']?/.exec(line.slice(at));
+    const heredoc = /^<<-?\s*["']?(\w+)["']?/.exec(b.lines[i].slice(at));
     if (heredoc) {
       // `RUN <<EOF` … `EOF`: the body is the script.
       const start = i + 1;
       let j = start;
       while (j < b.lines.length && b.lines[j].trim() !== heredoc[1]) b.plain(j++);
-      b.region(start, j - 1, [`Dockerfile の ${instr}（ヒアドキュメント）`, `Dockerfile ${instr} (here-document)`], shell, undefined, instr === 'RUN' && !pipefail);
+      b.region(start, j - 1, label('（ヒアドキュメント）', ' (here-document)'), shell, regionNotes, instr === 'RUN' && !pipefail);
       i = j;
       continue;
     }
@@ -186,7 +230,7 @@ export function dockerfile(b: Builder): void {
       while (/^\s*#/.test(b.lines[i]) && i + 1 < b.lines.length) (b.outs[i] ??= new LineOut()).insert('\\', 0, 0), i++;
       b.plain(i);
     }
-    b.region(start, i, [`Dockerfile の ${instr}`, `Dockerfile ${instr}`], shell, undefined, instr === 'RUN' && !pipefail);
+    b.region(start, i, label('', ''), shell, regionNotes, instr === 'RUN' && !pipefail);
   }
 }
 

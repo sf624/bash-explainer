@@ -7,6 +7,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### New
 
 - `--check --counts <file>` appends the numbers of problems of each level to a file, as `$GITHUB_OUTPUT` reads them.
+- Dockerfile `HEALTHCHECK CMD …` is explained, in the shell and the exec form, and so is an instruction after `ONBUILD`.
 - Quick fixes for the problems whose fix is mechanical, in VS Code, the Language Server and the web page's editor: a failure reported as success, `source` that searches `$PATH`, a `grep` pattern from a variable, a loop over a glob that matches nothing, `read` without `-r`, `[-f x]` and more. Each applies the code the note shows.
 
 ### Changed
@@ -36,6 +37,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Fewer false warnings where bash may run the line fine: an interactive shebang (`#!/bin/bash -i`), the variables sudo sets itself, code read with `source`, a trap's action, and a file with no shebang that `.bashrc` may read; some are now caveats.
 - In a script with Windows line ends (CRLF), the lines after a heredoc are explained as code again, and the CRLF error sees their keywords. Before, everything after the heredoc was taken for its text.
 - Docker's exec form (`CMD ["echo", "$HOME"]`) and a Python list of arguments are explained as a program run with no shell: `echo` is the program, `cd` and `if` are not found, and `"$HOME"` is a JSON string passed as it is. Before, they were explained as bash's builtins and single-quoted strings.
+- The commands of a `bash -c '…'` string in a Dockerfile, a Makefile, a workflow or another host file, or after blank lines at the top of a script, are placed on their own text. Before, they pointed at line 1 and took their names from there.
 
 ## 0.9.0
 

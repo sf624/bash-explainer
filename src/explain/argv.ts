@@ -162,7 +162,8 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
         case 'terminator':
           out.push(cx.tok(a, 'operator', role.text === '+'
             ? cx.s(`\`${role.of}\` の終わり: 見つかったファイルをまとめて1回のコマンドに渡す`, `End of \`${role.of}\`: pass all matches to one command invocation`)
-            : cx.s(`\`${role.of}\` の終わり: 見つかったファイル1件ごとにコマンドを実行（\`;\` はシェルに解釈されないようエスケープが必要）`, `End of \`${role.of}\`: run once per match (\`;\` must be escaped from the shell)`)));
+            // (No shell to escape it from where no shell reads the words, Docker's exec form.)
+            : cx.s(`\`${role.of}\` の終わり: 見つかったファイル1件ごとにコマンドを実行${cx.state.noShell ? '' : '（\`;\` はシェルに解釈されないようエスケープが必要）'}`, `End of \`${role.of}\`: run once per match${cx.state.noShell ? '' : ' (\`;\` must be escaped from the shell)'}`)));
           break;
         case 'operand': {
           // (A word that expands to another number of words, `$x` or `{a,b}`, shifts the numbers: from it on, they are not
@@ -175,7 +176,10 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
           break;
         }
         case 'subcommand': {
-          const note = cx.s(`（シェルから見れば \`${parse.command}\` への引数で、\`${parse.command}\` 自身が解釈する）`, ` (to the shell it is an argument to \`${parse.command}\`, which interprets it itself)`);
+          // (Where no shell reads the words, Docker's exec form, the program gets them as they are.)
+          const note = cx.state.noShell
+            ? cx.s(`（シェルを通さずに \`${parse.command}\` が受け取る引数で、\`${parse.command}\` 自身が解釈する）`, ` (an argument \`${parse.command}\` gets with no shell in between, and interprets itself)`)
+            : cx.s(`（シェルから見れば \`${parse.command}\` への引数で、\`${parse.command}\` 自身が解釈する）`, ` (to the shell it is an argument to \`${parse.command}\`, which interprets it itself)`);
           out.push(withReadings(cx, cx.tok(a, 'subcommand', cx.s(`サブコマンド \`${role.parse.command}\`: `, `Subcommand \`${role.parse.command}\`: `) + cx.t(role.spec.summary) + note), role.readings, word, nodes));
           out.push(...render(cx, role.parse, role.spec, nodes, nodes.slice(word + 1, role.parse.end)));
           break;
