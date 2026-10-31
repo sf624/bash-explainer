@@ -1,5 +1,6 @@
 // The contexts of a word (manual 3.5, with the exceptions of 3.2.5.2, 3.4, 3.6, 4.2, 6.5 and 6.7): which expansions a word
 // undergoes where it is. The word model (src/semantics/words.ts) reads them, and gives them again.
+import { field, nameText, type SyntaxNode } from '../syntax/tree';
 
 /** Where a word is: its context decides which expansions it undergoes. */
 export type WordContext =
@@ -66,3 +67,21 @@ export const CONTEXTS: Readonly<Record<WordContext, ContextRule>> = {
   'param-word': { brace: false, tilde: 'start', split: 'inherit', glob: 'inherit', fields: 'many', manual: '3.5.3' },
   'param-pattern': { ...ONE, tilde: 'start', match: 'pattern', manual: '3.5.3' },
 };
+
+/**
+ * The word `word` (`wordOf`), where it is an assignment given to a declaration builtin (`local x=$1`, `export y="$HOME"`,
+ * `declare`, `readonly`, `typeset`; not behind `command`): bash expands it as an assignment (manual 4.2, `declare`):
+ * its name and `=` (or `+=`) as written (`head`), then its value (`value`; none for `x=`), expanded as an
+ * assignment's value is (`assignment-value`: tildes after `=` and `:`, not split nor globbed), but brace-expanded:
+ * `x={a,b}` gives the words `x=a` and `x=b`. `unread` for a subscript in the name, which bash expands too
+ * (`a[$i]=1`), and for an array (`b=(1 2)`), which the builtin reads itself. Undefined for any other word.
+ */
+export function declaredWord(word: { nodes: readonly SyntaxNode[]; context: WordContext } | undefined): { head: string; value?: SyntaxNode } | 'unread' | undefined {
+  const a = word?.nodes[0];
+  if (word?.context !== 'declaration-argument' || a!.type !== 'variable_assignment') return undefined;
+  const name = field(a!, 'name')!;
+  const v = field(a!, 'value');
+  if (name.type !== 'variable_name' || v?.type === 'array') return 'unread';
+  const head = nameText(name) + a!.text.slice(name.endIndex - a!.startIndex, (v?.startIndex ?? a!.endIndex) - a!.startIndex);
+  return { head, ...(v ? { value: v } : {}) };
+}

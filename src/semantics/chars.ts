@@ -223,3 +223,34 @@ export function caseConverted(op: '^^' | ',,' | '^' | ',', value: string): strin
   const conv = (s: string): string => (op[0] === '^' ? s.toUpperCase() : s.toLowerCase());
   return op.length === 2 ? conv(value) : conv(value.slice(0, 1)) + value.slice(1);
 }
+
+/**
+ * Word splitting (manual 3.5.7) of characters: `sep` says which are separators (an IFS white space or another IFS
+ * character, of an unquoted expansion), `has` whether one surely gives its field text; one that does not (a part that
+ * may be empty, fieldshape.ts) makes a field that is there only when it is not empty (`sure: false`).
+ */
+export function splitOn<T>(chars: readonly T[], sep: (c: T) => 'white' | 'hard' | undefined, has: (c: T) => boolean): { field: T[]; sure: boolean }[] {
+  const fields: { field: T[]; sure: boolean }[] = [];
+  let cur: T[] = [];
+  let sure = false;
+  let may = false;
+  const white = (k: number): boolean => k < chars.length && sep(chars[k]) === 'white';
+  for (let i = 0; i < chars.length; i++) {
+    if (!sep(chars[i])) {
+      cur.push(chars[i]);
+      if (has(chars[i])) sure = true;
+      else may = true;
+      continue;
+    }
+    let j = i;
+    while (white(j)) j++;
+    const hard = j < chars.length && sep(chars[j]) === 'hard';
+    if (hard) for (j++; white(j);) j++;
+    if (hard || sure || may) fields.push({ field: cur, sure: hard || sure });
+    cur = [];
+    sure = may = false;
+    i = j - 1;
+  }
+  if (sure || may) fields.push({ field: cur, sure });
+  return fields;
+}
