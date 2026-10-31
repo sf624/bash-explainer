@@ -36,7 +36,7 @@ import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
 import { Picker } from './picker';
 import { showProblems } from './problem-list';
-import { CopyState, Theme, THEMES } from './protocol';
+import { CopyState, DEFAULT_THEME, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
 import { setUpFocusRings } from './popover';
@@ -52,7 +52,7 @@ drawIcons();
 /** The saved choice, read by theme-init.js before the first paint too; Auto when storage is unavailable. */
 function savedTheme(): Theme {
   const v = readStored(STORAGE_KEYS.theme);
-  return v === 'light' || v === 'dark' ? v : 'auto';
+  return v === 'light' || v === 'dark' ? v : DEFAULT_THEME;
 }
 let theme: Theme = savedTheme();
 
@@ -373,10 +373,10 @@ function applyLanguage(): void {
 function setTheme(next: Theme): void {
   theme = next;
   $<HTMLSelectElement>('theme').value = theme;
-  if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
+  if (theme === DEFAULT_THEME) document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', theme);
   // When storage refuses, the choice lasts until the page is closed.
-  if (theme === 'auto') removeStored(STORAGE_KEYS.theme);
+  if (theme === DEFAULT_THEME) removeStored(STORAGE_KEYS.theme);
   else writeStored(STORAGE_KEYS.theme, theme);
   pushTheme();
 }
@@ -442,10 +442,7 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
 function clearEverything(): void {
   clearStoredData();
   changeSettings(mergeSettings());
-  theme = 'auto';
-  document.documentElement.removeAttribute('data-theme');
-  $<HTMLSelectElement>('theme').value = 'auto';
-  pushTheme();
+  setTheme(DEFAULT_THEME);
   readMode = false;
   editor.setReadMode(false);
   showReadMode();
@@ -505,7 +502,7 @@ function openSettings(): void {
   if (settingsDialog?.open || drawer?.open) return;
   settingsDialog?.show();
 }
-on('settings-open', 'click', () => settingsDialog?.show());
+on('settings-open', 'click', () => settingsDialog?.toggle());
 if (dialogElement) setUpSheet(dialogElement);
 
 // ---- The menu: a sheet from the right, with what the top bar has no room for ----------------------

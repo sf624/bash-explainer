@@ -433,16 +433,15 @@ describe('the web page: theme and settings', function () {
       // 36rem where the pane is wider; the pane's width where it is not.
       if (width === 1280) assert.strictEqual(Math.round(b.sheet.width), 576, seen);
       else assert.ok(b.sheet.width < 576 && b.pane.width - b.sheet.width < 1, seen);
-      // The backdrop dims what is left of the editor, not the panel.
-      const backdrop = await page.evaluate("getComputedStyle(document.getElementById('settings-dialog'), '::backdrop').backgroundImage") as string;
-      assert.ok(backdrop.startsWith('linear-gradient') && backdrop.endsWith(`rgba(0, 0, 0, 0) ${Math.floor(b.pane.width)}px)`), `${backdrop}; ${seen}`);
+      // Not a modal dialog: there is no backdrop, and the page behind it is not shut.
+      assert.strictEqual(await page.locator('#settings-dialog').evaluate((d) => d.matches(':modal')), false, seen);
       // A change shows in the explanation at once, with the sheet still open.
       await page.locator('#setting-notes-pitfalls').uncheck();
       await until('no pitfall', panelText, (t) => !/Caveat/.test(t) && /for/.test(t));
       assert.strictEqual(await isOpen(page), true);
-      // A click on the panel closes the sheet.
+      // A click on the panel leaves the sheet open (decision 7: the panel stays in view and live).
       await page.mouse.click(b.panel.left + 40, 400);
-      await until('the sheet closed', () => isOpen(page), (v) => !v);
+      assert.strictEqual(await isOpen(page), true);
       assert.deepStrictEqual(errors, []);
       await ctx.close();
     }
@@ -454,6 +453,66 @@ describe('the web page: theme and settings', function () {
     await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
     const { sheet } = await boxes(page);
     assert.deepStrictEqual([sheet.left, sheet.width, sheet.top, sheet.bottom], [0, 640, 0, 800]);
+    // There the sheet is modal, and Esc shuts it.
+    assert.strictEqual(await page.locator('#settings-dialog').evaluate((d) => d.matches(':modal')), true);
+    await page.keyboard.press('Escape');
+    await until('the sheet closed', () => isOpen(page), (v) => !v);
+    await ctx.close();
+  });
+
+  it('keeps the panel in use while the sheet is open side by side: it scrolls and takes a click, Esc and the gear shut the sheet, and the focus goes back', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 600 } });
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    // (The panel explains the line of the cursor: one long line, so that the panel is longer than the window.)
+    await page.keyboard.insertText(`echo ${Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ')}`);
+    const scrolled = () => panel().evaluate('(document.scrollingElement || document.documentElement).scrollTop') as Promise<number>;
+    const rows = () => panel().locator('#tree > li > .row > button.twisty');
+    await until('the rows', async () => panel().locator('#tree .row').count(), (n) => n > 40);
+    await page.locator('#settings-open').click();
+    await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    assert.strictEqual(await isOpen(page), true);
+    // The focus went into the sheet.
+    assert.strictEqual(await page.evaluate("document.getElementById('settings-dialog').contains(document.activeElement)"), true);
+    const { panel: box } = await boxes(page);
+    // The panel scrolls under the wheel ...
+    assert.strictEqual(await scrolled(), 0);
+    await page.mouse.move(box.left + box.width / 2, box.top + 200);
+    await page.mouse.wheel(0, 300);
+    await until('the panel scrolled', scrolled, (y) => y > 100);
+    assert.strictEqual(await isOpen(page), true);
+    // ... and a part in it takes a click (it folds), with the sheet still open.
+    const row = rows().first();
+    await row.scrollIntoViewIfNeeded();
+    const was = await row.getAttribute('aria-expanded');
+    await row.click();
+    await until('the row folded or unfolded', async () => row.getAttribute('aria-expanded'), (v) => v !== was);
+    assert.strictEqual(await isOpen(page), true);
+    // Esc shuts the sheet (from the sheet), and the focus goes back to the gear.
+    await page.locator('#settings-search').focus();
+    await page.keyboard.press('Escape');
+    await until('the sheet closed by Esc', () => isOpen(page), (v) => !v);
+    assert.strictEqual(await page.evaluate('document.activeElement.id'), 'settings-open');
+    // The gear opens it again, and shuts it.
+    await page.locator('#settings-open').click();
+    await until('the sheet open', () => isOpen(page), (v) => v);
+    await page.locator('#settings-open').click();
+    await until('the sheet closed by the gear', () => isOpen(page), (v) => !v);
+    // Esc in a field of the editor is the editor's: it does not shut the sheet.
+    await page.locator('#settings-open').click();
+    await until('the sheet open again', () => isOpen(page), (v) => v);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Escape');
+    assert.strictEqual(await isOpen(page), true);
+    await page.locator('#settings-done').click();
+    await until('the sheet closed by Close', () => isOpen(page), (v) => !v);
+    assert.deepStrictEqual(errors, []);
     await ctx.close();
   });
 
@@ -577,6 +636,118 @@ describe('the web page: theme and settings', function () {
     await openSettingsSection(page, 'checks');
     assert.strictEqual(await page.locator('#settings-show-keys').isChecked(), true);
     assert.strictEqual(await page.locator('[data-key="shell"] .setting-key').innerText(), 'bashExplainer.shell');
+    await ctx.close();
+  });
+
+  it('keeps the links in the cut-off part of a description out of the Tab order, and brings them back when it is expanded', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await openSettingsSection(page, 'checks');
+    await openSettingsSection(page, 'examples');
+    await openSettingsSection(page, 'editor');
+    const hidden = page.locator('.setting-desc .sr-only a');
+    assert.ok(await hidden.count() > 0, 'a link is cut off');
+    assert.deepStrictEqual(await hidden.evaluateAll((as) => as.map((a) => (a as unknown as { tabIndex: number }).tabIndex)), (await hidden.all()).map(() => -1));
+    // Tab through the sheet: no stop is in a cut-off part.
+    await page.locator('#settings-search').focus();
+    const stops: string[] = [];
+    for (let i = 0; i < 80; i++) {
+      await page.keyboard.press('Tab');
+      const at = await page.evaluate("(() => { const a = document.activeElement; return a.closest('#settings-dialog') ? (a.closest('.sr-only') ? 'CUT ' : '') + (a.id || a.tagName) : 'outside'; })()") as string;
+      stops.push(at);
+      if (at === 'outside') break;
+    }
+    assert.ok(stops.length > 30, stops.join());
+    assert.deepStrictEqual(stops.filter((x) => x.startsWith('CUT')), []);
+    // Expanded, the link is a stop again.
+    await page.locator('#setting-diagnostics-pitfalls-desc-more').click();
+    const link = page.locator('#setting-diagnostics-pitfalls-desc a.setting-link');
+    assert.strictEqual(await link.evaluate((a) => (a as unknown as { tabIndex: number }).tabIndex), 0);
+    await link.focus();
+    assert.strictEqual(await page.evaluate('document.activeElement.className'), 'setting-link');
+    // Folded again, it is out once more.
+    await page.locator('#setting-diagnostics-pitfalls-desc-more').click();
+    assert.strictEqual(await page.locator('#setting-diagnostics-pitfalls-desc .sr-only a.setting-link').evaluate((a) => (a as unknown as { tabIndex: number }).tabIndex), -1);
+    await ctx.close();
+  });
+
+  it('keeps an expanded description expanded when a setting changes', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 768, height: 800 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await openSettingsSection(page, 'checks');
+    const desc = page.locator('#setting-bashVersion-desc');
+    const more = page.locator('#setting-bashVersion-desc-more');
+    await more.click();
+    assert.strictEqual(await more.innerText(), 'Less');
+    await page.locator('#setting-diagnostics-pitfalls').uncheck();
+    assert.strictEqual(await desc.evaluate((d) => d.classList.contains('open')), true);
+    assert.strictEqual(await more.innerText(), 'Less');
+    assert.strictEqual(await more.getAttribute('aria-expanded'), 'true');
+    assert.strictEqual(await more.getAttribute('aria-label'), 'Less: bash version');
+    await more.click();
+    await page.locator('#setting-diagnostics-pitfalls').check();
+    assert.strictEqual(await desc.evaluate((d) => d.classList.contains('open')), false);
+    assert.strictEqual(await more.innerText(), 'More');
+    await ctx.close();
+  });
+
+  it('says Auto first in a select where it is chosen, and has its own word for Less', async () => {
+    for (const [locale, lang, auto, less] of [['en-US', 'en', 'Auto: ', 'Less'], ['ja-JP', 'ja', '自動: ', 'たたむ']]) {
+      const ctx = await browser.newContext({ locale, viewport: { width: 1280, height: 800 } });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await choose(page, '#lang', lang);
+      await openSettingsSection(page, 'checks');
+      for (const id of ['setting-shell', 'setting-yq-flavor']) {
+        const options = await page.locator(`#${id} option`).allInnerTexts();
+        assert.ok(options[0].startsWith(auto), `${lang} ${id}: ${options[0]}`);
+        assert.ok(options.slice(1).every((o) => !o.startsWith(auto)), String(options));
+      }
+      // The language keeps its own words.
+      assert.ok(!(await page.locator('#setting-language option').first().innerText()).startsWith(auto));
+      const more = page.locator('.desc-more:visible').first();
+      await more.click();
+      assert.strictEqual(await more.innerText(), less);
+      assert.notStrictEqual(await page.locator('#settings-done').innerText(), less);
+      await ctx.close();
+    }
+  });
+
+  it('finds a setting typed in full-width letters, waits for an input method to finish, and leaves its Esc alone', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('#settings-open').click();
+    const search = page.locator('#settings-search');
+    await search.fill('ｂａｓｈ');
+    assert.strictEqual(await page.locator('[data-key="bashVersion"]').isVisible(), true);
+    assert.strictEqual(await page.locator('#settings-nomatch').isHidden(), true);
+    // An Esc that belongs to the input method (mid-composition) changes nothing: the text stays, the sheet stays.
+    const press = (init: string) => page.evaluate(`document.getElementById('settings-search').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, ...${init} }))`);
+    await press('{"isComposing":true}');
+    await press('{"keyCode":229}');
+    assert.strictEqual(await search.inputValue(), 'ｂａｓｈ');
+    assert.strictEqual(await isOpen(page), true);
+    // While composing, the list waits.
+    await search.fill('');
+    await page.evaluate(`(() => {
+      const i = document.getElementById('settings-search');
+      i.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      i.value = 'ほ';
+      i.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }));
+    })()`);
+    assert.strictEqual(await page.locator('#settings-nomatch').isHidden(), true);
+    await page.evaluate(`(() => {
+      const i = document.getElementById('settings-search');
+      i.value = 'ほげ';
+      i.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+    })()`);
+    assert.strictEqual(await page.locator('#settings-nomatch').isVisible(), true);
+    // A plain Esc clears the search.
+    await search.press('Escape');
+    assert.strictEqual(await search.inputValue(), '');
     await ctx.close();
   });
 

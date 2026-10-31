@@ -15,13 +15,23 @@ export function pageSections(specs: readonly SettingSpec[], hover: boolean): { s
   return SETTINGS_SECTIONS.map((section) => ({ section, specs: shown.filter((s) => s.section === section) }));
 }
 
+/** Whether a section can be folded: Common is always shown. The one place that decides it. */
+export const foldable = (section: SettingsSection): boolean => section !== 'common';
+
+/** Whether a section shows its settings: Common always, the others when unfolded, and all while a search is typed. */
+export function sectionOpen(section: SettingsSection, unfolded: ReadonlySet<SettingsSection>, searching: boolean): boolean {
+  return !foldable(section) || searching || unfolded.has(section);
+}
+
 /**
  * Whether the search finds a setting: every word of the query is in its title or its key (with or without
- * `bashExplainer.`), whatever the case. An empty query finds everything.
+ * `bashExplainer.`), whatever the case and the width of the letters (NFKC: a full-width "ｂａｓｈ" is "bash"). An empty
+ * query finds everything.
  */
 export function settingMatches(query: string, title: string, key = ''): boolean {
-  const hay = `${title}\n${key ? PREFIX + key : ''}`.toLowerCase();
-  return query.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+  const fold = (s: string) => s.normalize('NFKC').toLowerCase();
+  const hay = fold(`${title}\n${key ? PREFIX + key : ''}`);
+  return fold(query).split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
 }
 
 /**

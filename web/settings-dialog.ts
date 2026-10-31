@@ -3,12 +3,14 @@
 // Common first, then Examples, Checks, Editor and Data, folded, each opened by its heading or its "Jump to" link; a
 // search finds a setting by its title or its key. A description shows two lines, with "More" after the last word shown;
 // on a touch screen it shows whole. Side by side the sheet lies over the editor, never wider than the editor's pane, so
-// that the explanation the settings change stays in view (page.css); in the narrow layout it takes the whole screen.
+// that the explanation the settings change stays in view and live: it is not a modal dialog there (the panel can be
+// scrolled and clicked, and a click on it leaves the sheet open; Esc, × and Close shut it). In the narrow layout it is
+// a modal dialog and takes the whole screen (page.css).
 // It comes back as it was left: the sections open, the search and the scroll (docs/design/chrome-redesign.md, C6).
-import { closeSheet, reopenSheet } from './layout';
+import { closeSheet, narrow, reopenSheet } from './layout';
 import { Lang } from '../src/i18n';
 import { checkValue, exportSettings, Ignored, importSettings, parseJsonc, Settings, SettingSpec, SettingText, SETTINGS, settingsFor } from '../src/settings';
-import { cutPoints, lastFit, pageSections, SETTINGS_SECTIONS, SettingsSection, settingMatches } from '../src/ui/settingsPage';
+import { cutPoints, foldable, lastFit, pageSections, sectionOpen, SETTINGS_SECTIONS, SettingsSection, settingMatches } from '../src/ui/settingsPage';
 import { Theme, THEMES } from './protocol';
 import { readStored, STORAGE_KEYS, writeStored } from './storage';
 import { SETTINGS_FILE, SETTINGS_TEXT as TEXT, TEXT as PAGE_TEXT } from './text';
@@ -63,6 +65,15 @@ export class SettingsDialog {
   /** The text of the search, the sections unfolded and the scroll: kept from one opening to the next. */
   private query = '';
   private unfolded = new Set<SettingsSection>();
+  /** The descriptions shown whole ("Less" after them), by id: kept across a redraw. */
+  private expanded = new Set<string>();
+  /** Whether the sheet was opened as a modal dialog (the narrow layout), and who had the focus before it opened. */
+  private modal = false;
+  private opener: HTMLElement | null = null;
+  /** A search being composed (an input method): not applied until it is done. */
+  private composing = false;
+  private fitFrame = 0;
+  private reopening = 0;
   private scroll = 0;
   /** Each description's own nodes, kept whole while `fitDescs` cuts what it shows. */
   private whole = new WeakMap<HTMLElement, Node[]>();
@@ -70,9 +81,32 @@ export class SettingsDialog {
   constructor(dialog: HTMLDialogElement, private host: SettingsHost) {
     this.dialog = dialog;
     dialog.addEventListener('close', () => {
+      // (Closed only to open again in the other kind: nothing is over.)
+      if (this.reopening) {
+        this.reopening--;
+        return;
+      }
       this.draft = undefined;
       this.status = undefined;
       this.paste = { open: false, text: '' };
+      this.returnFocus();
+    });
+    // Side by side the sheet is not modal, so the browser does not close it on Esc: it does, when the focus is in the
+    // sheet or on the page itself (not in a field of the editor, which keeps its own Esc, nor mid-composition).
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
+      if (!this.dialog.open || this.modal || document.querySelector('dialog:modal')) return;
+      const at = e.target as Node | null;
+      if (at !== document.body && !(at && this.dialog.contains(at))) return;
+      e.preventDefault();
+      closeSheet(this.dialog);
+    });
+    // The window crossing between the layouts while the sheet is open: it opens again in the other kind.
+    narrow.addEventListener('change', () => {
+      if (!this.dialog.open || this.modal === narrow.matches) return;
+      this.reopening++;
+      this.dialog.close();
+      this.show();
     });
     // A settings file dropped on the dialog is imported.
     dialog.addEventListener('dragover', (e) => {
@@ -88,7 +122,7 @@ export class SettingsDialog {
     const fit = () => {
       if (!this.dialog.open) return;
       this.fitWidth();
-      this.fitDescs();
+      this.fitDescsSoon();
     };
     window.addEventListener('resize', fit);
     const pane = host.pane();
@@ -100,13 +134,34 @@ export class SettingsDialog {
   }
 
   show(): void {
-    if (reopenSheet(this.dialog)) return;
+    if (reopenSheet(this.dialog) || this.dialog.open) return;
     this.clearing = undefined;
+    this.modal = narrow.matches;
+    const active = document.activeElement;
+    this.opener ??= active instanceof HTMLElement && active !== document.body ? active : document.getElementById('settings-open');
     this.render();
     this.fitWidth();
-    this.dialog.showModal();
+    // The narrow layout shuts the page behind the sheet (the browser keeps the focus in it); side by side the panel
+    // stays in use, and the focus goes into the sheet and back by hand.
+    if (this.modal) this.dialog.showModal();
+    else this.dialog.show();
     this.fitDescs();
     this.body().scrollTop = this.scroll;
+  }
+
+  /** The gear again shuts the sheet (or, while it slides out, brings it back). */
+  toggle(): void {
+    if (reopenSheet(this.dialog)) return;
+    if (this.dialog.open) closeSheet(this.dialog);
+    else this.show();
+  }
+
+  /** After the sheet closes, the focus goes back to what opened it, unless the user has moved it elsewhere. */
+  private returnFocus(): void {
+    const opener = this.opener;
+    this.opener = null;
+    const at = document.activeElement;
+    if (opener?.isConnected && (!at || at === document.body || this.dialog.contains(at))) opener.focus({ preventScroll: true });
   }
 
   /** Draws the dialog again, after a change made in it or elsewhere (keeping the focus and the scroll). */
@@ -334,11 +389,21 @@ export class SettingsDialog {
     search.setAttribute('aria-label', t.search);
     search.addEventListener('input', () => {
       this.query = search.value;
+      if (!this.composing) this.filter();
+    });
+    // (While an input method composes, the text is not final: the list waits for it.)
+    search.addEventListener('compositionstart', () => {
+      this.composing = true;
+    });
+    search.addEventListener('compositionend', () => {
+      this.composing = false;
+      this.query = search.value;
       this.filter();
     });
-    // Esc in a search with text clears it; in an empty one, it closes the sheet.
+    // Esc in a search with text clears it; in an empty one, it closes the sheet. (Esc that cancels a composition is the
+    // input method's.)
     search.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || !search.value) return;
+      if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229 || !search.value) return;
       e.preventDefault();
       e.stopPropagation();
       this.clearSearch();
@@ -388,9 +453,9 @@ export class SettingsDialog {
     const name = TEXT[lang].sections[id];
     const items = el('div', { className: 'settings-items', id: `settings-items-${id}` }, ...rows);
     let heading: HTMLElement;
-    if (id === 'common') {
+    if (!foldable(id)) {
       // (Focusable from "Jump to" only.)
-      heading = el('h3', { className: 'settings-major', id: 'settings-head-common', tabIndex: -1, textContent: name });
+      heading = el('h3', { className: 'settings-major', id: `settings-head-${id}`, tabIndex: -1, textContent: name });
     } else {
       const fold = el('button', { type: 'button', id: `settings-fold-${id}`, className: 'settings-fold' }, el('span', { className: 'fold-chev', textContent: '›' }), name);
       fold.firstElementChild!.setAttribute('aria-hidden', 'true');
@@ -412,7 +477,7 @@ export class SettingsDialog {
     const searching = !!this.query.trim();
     for (const section of this.dialog.querySelectorAll<HTMLElement>('.settings-group')) {
       const id = section.dataset.section as SettingsSection;
-      const open = id === 'common' || searching || this.unfolded.has(id);
+      const open = sectionOpen(id, this.unfolded, searching);
       section.querySelector<HTMLElement>('.settings-items')!.hidden = !open;
       section.querySelector('.settings-fold')?.setAttribute('aria-expanded', String(open));
       section.classList.toggle('open', open);
@@ -456,8 +521,17 @@ export class SettingsDialog {
     const more = el('button', { type: 'button', id: `${desc.id}-more`, className: 'link-btn desc-more', textContent: t.more });
     more.setAttribute('aria-expanded', 'false');
     more.setAttribute('aria-label', t.moreAbout(title));
+    const shown = () => this.expanded.has(desc.id);
+    if (shown()) {
+      desc.classList.add('open');
+      more.textContent = t.less;
+      more.setAttribute('aria-label', t.lessAbout(title));
+      more.setAttribute('aria-expanded', 'true');
+    }
     more.addEventListener('click', () => {
-      const open = !desc.classList.contains('open');
+      const open = !shown();
+      if (open) this.expanded.add(desc.id);
+      else this.expanded.delete(desc.id);
       desc.classList.toggle('open', open);
       more.textContent = open ? t.less : t.more;
       more.setAttribute('aria-label', open ? t.lessAbout(title) : t.moreAbout(title));
@@ -476,6 +550,15 @@ export class SettingsDialog {
    * a screen reader (visually hidden). An open one shows whole, with "Less" after it. On a touch screen every description
    * shows whole, with no "More".
    */
+  /** For a resize, which comes many times a frame: once per frame. */
+  private fitDescsSoon(): void {
+    if (this.fitFrame) return;
+    this.fitFrame = requestAnimationFrame(() => {
+      this.fitFrame = 0;
+      this.fitDescs();
+    });
+  }
+
   fitDescs(): void {
     if (!this.dialog.open) return;
     const touch = coarse();
@@ -485,6 +568,8 @@ export class SettingsDialog {
       const whole = this.whole.get(desc)!;
       desc.replaceChildren(...whole);
       desc.after(more);
+      // (A link in the part cut off was taken out of the Tab order; shown whole, it is back.)
+      for (const a of desc.querySelectorAll<HTMLElement>('a[tabindex]')) a.removeAttribute('tabindex');
       // (A description in a folded section or a row the search hides is measured when it shows.)
       if (!desc.clientWidth) continue;
       const lh = parseFloat(getComputedStyle(desc).lineHeight);
@@ -506,6 +591,8 @@ export class SettingsDialog {
         const text = n?.nodeType === Node.TEXT_NODE ? (n as Text).data : undefined;
         const head = text === undefined ? [] : [document.createTextNode(text.slice(0, k).trimEnd())];
         rest.replaceChildren(...(text === undefined ? whole.slice(i) : [document.createTextNode(text.slice(k)), ...whole.slice(i + 1)]));
+        // Cut off, the rest is only for a screen reader: its links must not take the keyboard focus.
+        for (const a of rest.querySelectorAll<HTMLElement>('a')) a.tabIndex = -1;
         desc.replaceChildren(...whole.slice(0, i), ...head, ell, more, rest);
         return fits();
       };
@@ -557,9 +644,12 @@ export class SettingsDialog {
       // Each value in words; its own name before them only with "Show VS Code setting names".
       const labels: Record<string, string> = { ...text.values, ...(spec.key === 'language' ? { auto: t.browser } : {}) };
       const words = (v: string) => (labels[v] && labels[v] !== v ? labels[v].replace(/`/g, '') : v);
+      // "Auto" is said first (the words after it only tell what it does), until the Shell setting says what it found
+      // (docs/design/chrome-redesign.md, decision 12).
+      const label = (v: string) => (keys && words(v) !== v ? `${v} — ${words(v)}` : v === 'auto' && spec.key !== 'language' ? `${t.auto}: ${words(v)}` : words(v));
       const select = el('select', { id });
       describe(select);
-      select.append(...spec.enum!.map((v) => new Option(keys && words(v) !== v ? `${v} — ${words(v)}` : words(v), v, false, v === value)));
+      select.append(...spec.enum!.map((v) => new Option(label(v), v, false, v === value)));
       select.addEventListener('change', () => this.change(spec.key, select.value));
       row.append(select);
     } else if (spec.type === 'number') {
