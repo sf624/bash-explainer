@@ -122,8 +122,8 @@ const TEXTS = {
   /** The text of the analyzer for a word it says nothing more of (`Analyzer.word`). */
   word: { ja: (w: string) => `文字列 \`${w}\``, en: (w: string) => `Word \`${w}\`` },
   /** The delimiters of `[[ ]]` (3.2.5.2), which no token explains. */
-  testOpen: { ja: '条件式の始まり', en: 'Starts the conditional expression' },
-  testClose: { ja: '条件式の終わり', en: 'Ends the conditional expression' },
+  testOpen: { ja: '条件式の始まり', en: 'Start of the conditional expression' },
+  testClose: { ja: '条件式の終わり', en: 'End of the conditional expression' },
 };
 
 /** The words of an alias's text, when it is plain words a command name can start (no quotes, no operators, no assignment). */

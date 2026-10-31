@@ -82,8 +82,8 @@ export function listOperatorToken(cx: Explainer, op: SyntaxNode): Token | undefi
   // (`if a then`), but after a compound command it may follow at once (`if [[ a ]] then`).
   // (What `;` says before a reserved word is that the commands before it end there, so that `closer` can be read; not
   // that bash waits, which it does after every command of a list. A coprocess is the exception: bash does not wait.)
-  const ja = co ? `\`${closer}\` の前でリストを終え、${waitJa}` : `\`${closer}\` の前でコマンドの並びを終える`;
-  const en = co ? `End the list before \`${closer}\` and ${waitEn}` : `Ends the commands before \`${closer}\``;
+  const ja = co ? `\`${closer}\` の前でリストを終え、${waitJa}` : `\`${closer}\` の前でリストを終える`;
+  const en = co ? `End of the list before \`${closer}\`: ${waitEn}` : `End of the list before \`${closer}\``;
   const ends = endOf(at.part);
   return { ...cx.tok(op, 'operator', ends === 'words'
     ? cx.s(`${ja}（ここに \`;\` か改行がないと、\`${closer}\` は予約語として読まれない）`, `${en} (without a \`;\` or a newline here, \`${closer}\` would not be read as a reserved word)`)

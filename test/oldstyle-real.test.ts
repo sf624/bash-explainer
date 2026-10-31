@@ -114,13 +114,15 @@ describe('tar agrees with the real tar', () => {
 
   // What the operands are, by mode (the spec's `operands`): files tar reads from the disk into the archive, names of
   // members it looks for in the archive, or archives whose members it appends. [line, the kind the spec gives the
-  // operands, the names `tar tf a.tar` lists after it, or the error tar gives].
+  // operands ('' for none), the names `tar tf a.tar` lists after it, or the error tar gives].
   const MODES: [string, string, string[] | RegExp][] = [
     ['tar cf a.tar c.txt', 'FILE', ['c.txt']],
     ['tar rf a.tar c.txt', 'FILE', ['src/', 'src/a.txt', 'src/sub/', 'src/sub/b.txt', 'c.txt']],
     ['tar --update -f a.tar c.txt', 'FILE', ['src/', 'src/a.txt', 'src/sub/', 'src/sub/b.txt', 'c.txt']],
     ['tar Af a.tar b.tar', 'ARCHIVE', ['src/', 'src/a.txt', 'src/sub/', 'src/sub/b.txt', 'c.txt']],
     ['tar --delete -f a.tar src/a.txt', 'MEMBER', ['src/', 'src/sub/', 'src/sub/b.txt']],
+    // (No name: `--delete` deletes nothing and succeeds, where `-x` and `-t` take all: the operands have no kind here.)
+    ['tar --delete -f a.tar', '', ['src/', 'src/a.txt', 'src/sub/', 'src/sub/b.txt']],
     // (A name that is not in the archive: no file of that name on the disk would help.)
     ['tar xf a.tar c.txt', 'MEMBER', /c\.txt: Not found in archive/],
     ['tar tf a.tar c.txt', 'MEMBER', /c\.txt: Not found in archive/],
@@ -133,7 +135,7 @@ describe('tar agrees with the real tar', () => {
     for (const [line, kind, expected] of MODES) {
       const { parse } = parseOf(line);
       const kinds = parse.roles.flatMap(({ role }) => (role.role === 'operand' ? [role.spec?.name] : []));
-      assert.deepStrictEqual([...new Set(kinds)], [kind], line);
+      assert.deepStrictEqual([...new Set(kinds)], kind ? [kind] : [], line);
       const dir = tempDir();
       try {
         assert.strictEqual(run('tar cf a.tar src && tar cf b.tar c.txt', dir).status, 0);
@@ -157,7 +159,8 @@ describe('tar agrees with the real tar', () => {
     const text = (line: string): string[] => parseOf(line).parse.roles.flatMap(({ role }) => (role.role === 'operand' ? [role.spec!.text.en] : []));
     assert.deepStrictEqual(text('tar -czf out.tgz ~/docs'), ['files and directories to put into the archive']);
     assert.deepStrictEqual(text('tar -xf a.tar m'), ['names in the archive to act on (all when none)']);
-    assert.deepStrictEqual(text('tar -Af a.tar b.tar'), ['archives whose members to append']);
+    assert.deepStrictEqual(text('tar -Af a.tar b.tar'), ['archives whose members are appended']);
+    assert.deepStrictEqual(text('tar --delete -f a.tar m'), ['names in the archive to delete']);
     // (No mode: tar refuses the line, and its operands have no kind.)
     assert.deepStrictEqual(parseOf('tar -f a.tar m').parse.roles.flatMap(({ role }) => (role.role === 'operand' ? [role.spec] : [])), [undefined]);
   });

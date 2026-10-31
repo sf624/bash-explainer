@@ -785,14 +785,14 @@ describe('the reading tree of a line', () => {
       return all.filter((n) => n.layer === 'bash' && ['keyword', 'operator', 'word'].includes(n.kind)).map((n) => `${n.label} — ${n.text ?? ''}`);
     };
     assert.deepStrictEqual(rows('[[ -f a && $x == 1 ]]'), [
-      '[[ — Starts the conditional expression',
+      '[[ — Start of the conditional expression',
       '-f — is an existing regular file',
       'a — The file `-f` tests',
       '&& — both conditions are true',
       '$x — The string on the left of `==`',
       '== — strings are equal (nothing in the pattern on the right acts as a wildcard: a plain comparison)',
       '1 — The pattern on the right of `==`',
-      ']] — Ends the conditional expression',
+      ']] — End of the conditional expression',
     ]);
     assert.deepStrictEqual(rows('[[ -f a && $x == 1 ]]', 'ja'), [
       '[[ — 条件式の始まり',
@@ -819,7 +819,7 @@ describe('the reading tree of a line', () => {
       '* — Glob pattern (shell wildcards): matched against a string',
       '"$y" — ',
       'x — ',
-      ']] — Ends the conditional expression',
+      ']] — End of the conditional expression',
     ]);
     assert.deepStrictEqual(rows('[[ $x != "1*" ]]').slice(2, 4), [
       '!= — strings differ (nothing in the pattern on the right acts as a wildcard: a plain comparison)',
