@@ -124,7 +124,8 @@ export function startsBand(n: ReadingNode, parent: ReadingNode | undefined): boo
 /** The name at the right of a band: where a new reader takes over ('' for a language's own tokens). */
 export function bandOf(n: ReadingNode, lang: Lang): string {
   const t = texts(lang);
-  if (n.layer === 'command') return t.reads.replace('{name}', n.reader ?? '');
+  // (A node of the layer `command` always has its reader: the command's name, src/reading.ts.)
+  if (n.layer === 'command') return t.reads.replace('{name}', n.reader!);
   if (n.layer === 'language') return n.kind === 'language' ? chipOf(n, lang) : '';
   if (n.layer === 'child') return t.bands.child[processOf(n)];
   return t.bands.bash;
