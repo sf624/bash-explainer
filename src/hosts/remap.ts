@@ -16,6 +16,7 @@ import { basisGate, conventionOf, type Fact, type FactSpec, factOf, type Note, p
 import type { ShellRegion, Extracted } from './index';
 import { batsTestLine } from './bats';
 import { batsCommentFacts } from './batstags';
+import { problemSections } from '../linesentence';
 
 /**
  * Move every position in an explanation of the extracted shell text back to the original
@@ -150,11 +151,6 @@ export function explainHostedLine(
   if (!region) return undefined;
   tree = scriptTree(tree, extracted, region);
   const provided = hostProvided(extracted, region);
-  const ex = analyzer.explainLine(tree, line, regionShell(region, shell), {
-    ...opts, host: region.host, ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}), ...(provided.length ? { hostProvided: provided } : {}),
-    ...(region.noShell ? { noShell: region.noShell } : {}),
-  });
-  ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   // (The catalog facts of the host go through `said`, like the analyzer's, so `notes.pitfalls` off leaves out their pitfalls.)
   const hostFacts: Fact[] = [];
@@ -167,19 +163,23 @@ export function explainHostedLine(
   }
   // (The lines bats rewrites where bash then reads a function: not one inside a here-document or a string.)
   const tests = region.tests && batsTests(tree, { ...region, tests: region.tests });
-  if (tests) {
-    // (On their nodes, as the analyzer's: the hover and the problems read them there. The facts of a comment on the
-    // line: on the comment, else on the function the line defines.)
-    const onRow = (types: string[]) => descendants(tree.root, types).find((d) => d.startPosition.row === line);
-    const commentNode = onRow(['comment']) ?? onRow(['function_definition']);
-    const found = [
-      ...batsFacts(tree, region, tests, line, lang),
-      ...batsCommentFacts(tree, original[line], line, tests.includes(line), lang).map((fact) => ({ fact, node: commentNode })),
-    ].filter((f) => said([f.fact], opts.pitfalls).length);
-    notes.push(...found.map((f) => noteData(f.fact)));
-    hostFacts.push(...found.map((f) => f.fact));
-    ex.anchors = [...(ex.anchors ?? []), ...found.filter((f) => f.node).map((f) => ({ text: f.fact.text, span: spanOf(f.node!), code: f.fact.code }))];
-  }
+  // (On their nodes, as the analyzer's: the hover and the problems read them there. The facts of a comment on the
+  // line: on the comment, else on the function the line defines.)
+  const onRow = (types: string[]) => descendants(tree.root, types).find((d) => d.startPosition.row === line);
+  const found = tests ? [
+    ...batsFacts(tree, region, tests, line, lang),
+    ...batsCommentFacts(tree, original[line], line, tests.includes(line), lang).map((fact) => ({ fact, node: onRow(['comment']) ?? onRow(['function_definition']) })),
+  ].filter((f) => said([f.fact], opts.pitfalls).length) : [];
+  notes.push(...found.map((f) => noteData(f.fact)));
+  hostFacts.push(...found.map((f) => f.fact));
+  const ex = analyzer.explainLine(tree, line, regionShell(region, shell), {
+    ...opts, host: region.host, ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}), ...(provided.length ? { hostProvided: provided } : {}),
+    ...(region.noShell ? { noShell: region.noShell } : {}),
+    // (The sentence of the line says nothing a problem of the host says: src/linesentence.ts.)
+    ...(opts.sentence ? { hostProblems: [...problemSections({ noteInfo: notes, facts: hostFacts })] } : {}),
+  });
+  ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
+  if (tests) ex.anchors = [...(ex.anchors ?? []), ...found.filter((f) => f.node).map((f) => ({ text: f.fact.text, span: spanOf(f.node!), code: f.fact.code }))];
   // (Through the gate of `notes.basis`, as the analyzer's.)
   if (hostFacts.length) ex.facts = [...(ex.facts ?? []), ...hostFacts.map((f) => basisGate(f, opts.basis))];
   ex.notes.unshift(...notes.map((n) => n.text));

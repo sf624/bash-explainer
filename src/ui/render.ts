@@ -44,6 +44,8 @@ export const ui = {
       // (The fold button of a row with parts, named by the row's label; the links' note on where they open: `linkNote`, src/ui/panelView.ts.)
       partsOf: '{name} の内訳', opensTab: '（新しいタブで開く）', opensBrowser: '（ブラウザで開く）',
       views: '表示', listView: '意味', treeView: '読まれ方',
+      // (The sentence of the line at the top of the Meaning view, `LineExplanation.sentence`.)
+      inShort: 'ひとことで',
       // (The line box of a line over more than three rows: its tooltip, folded and opened.)
       lineOpen: 'クリックで行全体を表示', lineFold: 'クリックで 3 行までに折りたたむ',
       tree: {
@@ -143,6 +145,7 @@ export const ui = {
       tryIt: 'Try it in your terminal', tryItHint: 'A command to paste into your terminal; it is not run here', prints: 'Output', copyCode: 'Copy', copiedCode: 'Copied',
       partsOf: 'Parts of {name}', opensTab: '(opens in a new tab)', opensBrowser: '(opens in the browser)',
       views: 'View', listView: 'Meaning', treeView: 'Reading',
+      inShort: 'In short',
       lineOpen: 'Click to show the whole line', lineFold: 'Click to fold the line to three rows',
       tree: {
         label: 'Who reads each part of the line', show: 'Show',

@@ -223,6 +223,13 @@ pre#line[role="button"]:focus-visible {
   background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
 }
 
+/* The sentence of the line, "In short", at the top of the Meaning view: plain text, its label in bold. */
+#short {
+  margin: 0 0 0.6rem;
+  overflow-wrap: anywhere;
+}
+.short-label { font-weight: 600; }
+
 .note {
   margin: 0 0 0.5rem;
   padding: 0.3rem 0.6rem;

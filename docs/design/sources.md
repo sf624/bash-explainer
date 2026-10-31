@@ -67,6 +67,7 @@ One row per fact. "Offenders" are the readings outside the source today. "Stage"
 | 24 | The hover's Markdown, the problems of a document | src/ui/hoverView.ts; `diagnosticsFor`, `explainDocumentLine` (src/document.ts, src/service.ts), shared by every host | test/hover-view.test.ts, test/document.test.ts | 0 | Healthy | No |
 | 25 | The settings | src/settings.ts | test/settings-schema.test.ts (against package.json) | 0 | Healthy | No |
 | 26 | The web page's stored state | web/storage.ts | test/web-storage.test.ts | 0 | Healthy | No |
+| 27 | The sentence of a line, "In short" (panel-redesign.md, P5) | src/linesentence.ts: a composition, no fact of its own; what each command is from `CommandSaid` (src/explain/commands.ts, the same record as `Token.summary`), the words from `argvWords` (P4), the statuses from the status model, the shapes from `idiomSaid` (src/idioms.ts) | test/linesentence.test.ts (its rules over the corpus: nothing a problem of the line says, no stretch of the line, no row's text) | 0 | Healthy (#PRNUM) | No |
 
 ## 4. Stages
 

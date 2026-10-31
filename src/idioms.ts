@@ -13,6 +13,8 @@ import type { SyntaxNode } from './syntax/tree';
 import { option } from './semantics/state';
 import type { StatusModel } from './semantics/status';
 import { bracketWords, writtenAsBracket } from './testexpr';
+import { codeSpan } from './label';
+import { S } from './messages-sentence';
 
 export interface Redirect {
   op: string;
@@ -512,6 +514,61 @@ const IDIOMS: Idiom[] = [
     en: 'a yes/no question. The capital letter in `[y/N]` is only a convention for the default on a bare Enter: the code after it must treat an empty answer that way. The `-p` prompt is shown only when stdin is a terminal',
   },
 ];
+
+/**
+ * How the sentence of a line (src/linesentence.ts) says the parts an idiom's sentence names: commands by their names,
+ * a word by its value or its placeholder, the body of a block by its lines (or its commands, on one line).
+ */
+export interface IdiomSpeaker {
+  names(commands: readonly SyntaxNode[]): string;
+  word(w: SyntaxNode): string;
+  body(block: SyntaxNode): string;
+}
+
+/** `cmd >&2` with `echo` or `printf`: a message for stderr (no other redirection, no assignment before it). */
+const errorMessage = (c: SyntaxNode): boolean => {
+  if (!commandIs(c, 'echo', 'printf') || c.namedChildren.some((x) => x.type === 'variable_assignment')) return false;
+  const [r, ...more] = redirectionsOf(c);
+  const fd = r?.type === 'file_redirect' ? field(r, 'descriptor')?.text ?? '' : undefined;
+  return !more.length && (fd === '' || fd === '1') && tokensOf(r)[0] === '>&' && field(r, 'destination')?.text === '2';
+};
+
+/**
+ * `sort | uniq -c | sort -rn [| head -n N]`, the most frequent lines first, with their counts: the stages before it
+ * (whose output it counts), and how many lines it keeps (`undefined`: all; `null`: some, a number not known here).
+ */
+const countLines = (n: SyntaxNode, shell: Shell | undefined): { before: SyntaxNode[]; top: number | null | undefined } | undefined => {
+  if (n.type !== 'pipeline') return undefined;
+  const st = n.namedChildren;
+  const i = st.findIndex((c, k) => commandIs(c, 'sort') && commandIs(st[k + 1], 'uniq') && commandIs(st[k + 2], 'sort'));
+  if (i < 0) return undefined;
+  const [first, uniq, last, head] = st.slice(i);
+  const counted = has(parseOf(uniq, shell)!, '-c') && !has(parseOf(first, shell)!, '-u') && has(parseOf(last, shell)!, '-n') && has(parseOf(last, shell)!, '-r');
+  if (!counted || st.length > i + 4 || (head && !commandIs(head, 'head'))) return undefined;
+  if (!head) return { before: st.slice(0, i), top: undefined };
+  const n1 = optionValues(head, '-n', shell);
+  const top = !argsOf(head).length ? 10 : n1.length === 1 && /^\d+$/.test(n1[0] ?? '') ? Number(n1[0]) : null;
+  return { before: st.slice(0, i), top };
+};
+
+/** The idioms with a sentence of their own: the line's sentence says them so (src/linesentence.ts). Texts: src/messages-sentence.ts. */
+const SAID: { test: Shape; say: (n: SyntaxNode, lang: Lang, say: IdiomSpeaker, status: StatusModel) => string }[] = [
+  { test: command(strictMode), say: (_n, lang) => S.strictMode(lang) },
+  { test: command(exitTrap), say: (_n, lang) => S.exitTrap(lang) },
+  { test: quietCheck, say: (_n, lang) => S.quietCheck(lang) },
+  { test: readLoop(false), say: (n, lang, say) => S.readLines(lang, say.word(field(redirectionsOf(n).find((r) => r.type === 'file_redirect')!, 'destination')!), say.body(field(n, 'body')!)) },
+  { test: endless, say: (n, lang, say) => S.endless(lang, say.body(n)) },
+  { test: (n, status) => !!countLines(n, status.state.shell), say: (n, lang, say, status) => {
+    const { before, top } = countLines(n, status.state.shell)!;
+    return S.countLines(lang, before.length ? say.names(before) : undefined, top);
+  } },
+  { test: command(errorMessage), say: (n, lang) => S.errorMessage(lang, codeSpan(nameOf(n)!)) },
+];
+
+/** The sentence of an idiom that statement `n` is, as a clause of the line's sentence; undefined when it is none. */
+export function idiomSaid(n: SyntaxNode, status: StatusModel, lang: Lang, say: IdiomSpeaker): string | undefined {
+  return SAID.find((i) => i.test(n, status))?.say(n, lang, say, status);
+}
 
 /** Notes for the idioms found in the given statements, without duplicates. */
 export function findIdioms(statements: readonly SyntaxNode[], lang: Lang, status: StatusModel): string[] {

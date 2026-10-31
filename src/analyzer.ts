@@ -25,6 +25,8 @@ export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import { readingTree } from './reading';
 import { argvLines } from './argvline';
+import { lineSentence, problemSections } from './linesentence';
+import { COMMAND_SAID } from './explain/commands';
 import { claim, dropLabelEcho } from './tokenmarks';
 import { LineExplainer, type Walk } from './explain/context';
 import { intersects, isBlockLike, onLine, summaryOf } from './explain/nodes';
@@ -102,6 +104,11 @@ export class Analyzer {
     for (const item of items) dropLabelEcho(claim(item, 'shell'));
     const resolveAt = (name: string, w: SyntaxNode) => resolve(cx, name, w, { quoted: w.type !== 'word' || w.text !== name });
     if (opts.argv) result.argv = argvLines(root, line, cx.state, this.lang);
+    // (A string read as a script has none: the line's sentence says the command that reads it.)
+    if (opts.sentence && !this.nested) {
+      const said = lineSentence({ root, line, lang: this.lang, status: cx.status, commands: cx.memo(COMMAND_SAID), problems: new Set([...problemSections(result), ...opts.hostProblems ?? []]) });
+      if (said) result.sentence = said.text;
+    }
     if (opts.reading) result.reading = readingTree(tree, items, { lang: this.lang, resolve: resolveAt, meaning: (w) => wordMeaning(w, cx.state), plainPattern: (w) => plainPatternText(w, cx.state), arrayKind: (name, at) => arrayKind(cx, name, at), ...(cx.shell ? { shell: cx.shell } : {}) });
     return result;
   }

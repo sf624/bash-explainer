@@ -6,8 +6,11 @@ import { keptPrefixes } from '../names';
 import type { ShellState, VariableState } from '../shellstate';
 import type { Walker } from './walker';
 
-/** The attributes that change what bash keeps of a prefix assignment (`declare -i n; n=2+3 export n` keeps 5). */
-const CHANGING = ['i', 'l', 'u', 'n', 'a', 'A'];
+/**
+ * The attributes that change what bash keeps of an assignment (`declare -i n; n=2+3 export n` keeps 5); the sentence of a
+ * line (src/linesentence.ts) does not give such a value as written.
+ */
+export const CHANGING = ['i', 'l', 'u', 'n', 'a', 'A'];
 
 /**
  * Records at each prefix assignment of a command the state its value is expanded in: the one after the words (`st`),

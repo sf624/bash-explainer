@@ -199,6 +199,8 @@
     $('context').textContent = '';
     $('line').replaceChildren();
     $('notes').replaceChildren();
+    $('short').replaceChildren();
+    $('short').hidden = true;
     $('tree').replaceChildren();
     $('examples').replaceChildren();
     $('reading-tree').replaceChildren();
@@ -289,6 +291,15 @@
       p.append(svg, text);
       return p;
     }));
+    // The sentence of the line, "In short" (src/linesentence.ts), at the top of the Meaning view: marked text, its
+    // label in bold before it.
+    const short = $('short');
+    if (ex.sentence) {
+      const label = document.createElement('strong');
+      label.className = 'short-label';
+      label.textContent = labels.inShort;
+      short.replaceChildren(label, ' ', ...inline(ex.sentence));
+    } else short.replaceChildren();
     $('examples').replaceChildren(...(ex.examples ?? []).map((e) => example(e, false)));
     $('empty').textContent = msg.emptyMessage;
     $('empty').hidden = ex.items.length > 0;
@@ -1150,6 +1161,7 @@
     const tree = view === 'tree';
     drawViews();
     $('tree').hidden = tree;
+    $('short').hidden = tree || !$('short').hasChildNodes();
     $('examples').hidden = tree;
     $('reading').hidden = !tree || !reading;
     if (tools) updateToggle();

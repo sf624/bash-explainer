@@ -35,7 +35,7 @@ import { field, fields, redirectionsOf, type SyntaxNode, token, wordsText } from
 import { commandTest } from '../testexpr';
 import { readByCommand } from '../tokenmarks';
 import { bashTest, readArgs, testArgs } from './argv';
-import type { Explainer } from './context';
+import { type Explainer, memoKey } from './context';
 import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectInfo, redirectParts } from './redirections';
@@ -328,8 +328,25 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
     path.push(argWord(args[r.word]).value!);
     summary = r.role.spec.summary;
   }
-  if (summary) t.summary = `${[head.name, ...path].join(' ')}: ${cx.t(summary)}`;
+  // (The sentence of the line says the command with the same summary as its token, src/linesentence.ts.)
+  const said: CommandSaid = { names: [head.name, ...path], kind: head.kind, options: optionsSaid(argToks), ...(bracket ? { test: true as const } : {}) };
+  if (summary) said.what = cx.t(summary);
+  else if (head.spec) said.what = head.explanation;
+  cx.memo(COMMAND_SAID).set(n, said);
+  if (summary) t.summary = `${said.names.join(' ')}: ${said.what}`;
   return t;
+}
+
+/**
+ * What the sentence of the line (src/linesentence.ts) says of a simple command: its name and the subcommands it runs,
+ * what it is (`Kind`), what it does (its spec's summary, as its token's), whether it is `test` or `[`, and the options
+ * given, each with what it does (the tokens' texts: a group of letters, `-rn`, gives its letters).
+ */
+export interface CommandSaid { names: string[]; kind: Kind; what?: string; test?: true; options: { name: string; what: string }[] }
+export const COMMAND_SAID = memoKey<CommandSaid>('commandSaid');
+
+function optionsSaid(toks: readonly Token[]): CommandSaid['options'] {
+  return toks.flatMap((t) => (t.kind !== 'option' ? [] : t.children.some((c) => c.kind === 'option') ? optionsSaid(t.children) : [{ name: t.label, what: t.explanation }]));
 }
 
 function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedChildren[0]!): CommandHead {

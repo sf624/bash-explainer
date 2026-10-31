@@ -102,7 +102,7 @@ const ONBUILD_NOTE: RegionNote = [
 ];
 
 const HEALTHCHECK_NOTE: RegionNote = [
-  'HEALTHCHECK は、動いているコンテナの中でこのコマンドを実行して状態を調べます。終了ステータス 0 は正常（healthy）、1 は異常（unhealthy）です（2 は使いません）。',
+  'HEALTHCHECK は、動いているコンテナの中でこのコマンドを実行して状態を調べます。終了ステータス 0 は正常（healthy）、1 は異常（unhealthy）です（2 は予約されていて使いません）。',
   'HEALTHCHECK runs this command in the running container to check its health: exit status 0 is healthy, 1 unhealthy (2 is reserved).',
 ];
 
