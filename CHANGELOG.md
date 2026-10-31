@@ -17,7 +17,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The web page wraps long lines between shell words, with ↪ on the rows after the first. Wrapping is on by default; before, it was off, and when on, a line broke anywhere.
 - The explanation's line box wraps a long line between shell words, up to three rows (click to see it whole). It follows Wrap long lines on the web page and `editor.wordWrap` in VS Code. Before, a long line scrolled sideways.
 - The editor on the web page has its own header: Open, Save, the file name (click it to rename; ● marks unsaved changes) and ⋯. Copy a link says "Copied" on its own button.
-- Messages on the web page (Opened, Saved, Downloaded) show in one place above the Problems list, with an icon, and stay while the pointer is on them; a reason or more detail is behind **Why?** or **More**. Loading the sample over your script offers Undo instead of asking first.
+- Messages on the web page (Opened, Saved, Downloaded) show in one place above the Problems list, with an icon, and stay while the pointer is on them; a reason or more detail is behind **Why?** or **More**. Loading the sample over your script offers Undo instead of asking first (over an opened file with unsaved changes it asks, as Open does).
 
 ### Fixed
 

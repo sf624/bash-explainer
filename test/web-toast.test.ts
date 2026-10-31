@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import type { Browser, Page } from 'playwright-core';
 import type { Lang } from '../src/i18n';
-import { openSite, toastText, until } from './support/site';
+import { openSite, pickKind, toastText, until } from './support/site';
 
 interface Box { x: number; y: number; width: number; height: number }
 
@@ -309,6 +309,60 @@ describe('the web page: toasts', function () {
       await page.locator('#status-action').click();
       await until('the text back', text, (t) => t.trim() === 'echo mine');
       assert.strictEqual(await shownName(page), 'mine.sh');
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  it('takes the Undo away when another sample replaces the text (the kind changes while it shows)', async () => {
+    const page = await open(1280);
+    try {
+      await loadSampleOverOwn(page);
+      assert.strictEqual(await shown(page), true);
+      await pickKind(page, 'makefile');
+      await until('the Makefile sample', () => page.locator('.cm-content').innerText(), (t) => /^\.PHONY|^[A-Za-z_]+\s*[:?]?=/m.test(t) && !t.startsWith('#!/usr/bin/env bash'));
+      // (A button that does nothing is worse than none.)
+      await until('the toast gone, at once (its time is 8 s)', () => shown(page), (v) => !v, 1500);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  it('asks before the sample replaces a file with unsaved changes, as Open does, and keeps the file when asked to cancel', async () => {
+    const page = await open(1280);
+    try {
+      const text = () => page.locator('.cm-content').innerText();
+      await page.evaluate('delete window.showOpenFilePicker');
+      await page.locator('.cm-content').click();
+      await page.waitForTimeout(300);
+      const chooser = page.waitForEvent('filechooser');
+      await page.keyboard.press('Control+O');
+      await (await chooser).setFiles({ name: 'a.sh', mimeType: 'text/x-sh', buffer: Buffer.from('echo a\n') });
+      await until('opened', () => shownName(page), (t) => t === 'a.sh');
+      // Clean: no question, and the Undo toast.
+      await clickSample(page);
+      await until('the toast', () => toastText(page), (t) => t.startsWith('Sample loaded'));
+      assert.strictEqual(await page.locator('#discard-dialog').isVisible(), false);
+      await page.locator('#status-action').click();
+      await until('the text back', text, (t) => t.trim() === 'echo a');
+      assert.strictEqual(await shownName(page), 'a.sh');
+      // Changed: the question; Cancel leaves the text and the file as they are.
+      await page.locator('.cm-content').click();
+      await page.keyboard.press('Control+End');
+      await page.keyboard.insertText('echo edited\n');
+      await clickSample(page);
+      await page.locator('#discard-dialog').waitFor({ state: 'visible' });
+      assert.strictEqual(await page.locator('#discard-dialog-title').innerText(), 'Discard unsaved changes?');
+      assert.strictEqual(await page.locator('#discard-open').innerText(), 'Discard and load');
+      await page.locator('#discard-cancel').click();
+      await page.locator('#discard-dialog').waitFor({ state: 'hidden' });
+      assert.ok((await text()).includes('echo edited'));
+      assert.strictEqual(await shownName(page), 'a.sh');
+      assert.strictEqual(await shown(page), false);
+      // Discard: the sample comes in.
+      await clickSample(page);
+      await page.locator('#discard-open').click();
+      await until('the sample', text, (t) => t.startsWith('#!/usr/bin/env bash'));
     } finally {
       await page.context().close();
     }

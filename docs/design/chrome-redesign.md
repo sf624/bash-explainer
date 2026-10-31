@@ -270,7 +270,7 @@ What:
 - While a toast shows, CodeMirror's bottom scroll margin (`EditorView.scrollMargins`) grows by the toast's height, and the cursor is scrolled into view. So a toast never hides the cursor's line.
 - Timers: 4 s, 8 s with an action, paused while the pointer or the focus is on it. The timer is a pure state in src/ui.
 - A longer text goes behind "More" or "Why?".
-- "Load the sample" over the user's script loads it and offers Undo, instead of asking first.
+- "Load the sample" over the user's script loads it and offers Undo, instead of asking first. Over an opened file with unsaved changes it asks as Open does (the same dialog, with its own message and "Discard and load"): the toast's Undo goes with the first keystroke, and Ctrl+Z brings back the text but not the file. Another sample loaded or the editor cleared while the Undo shows takes that toast away (follow-up of #545).
 
 CHANGELOG (Changed): "Messages on the web page (Opened, Saved) show in one place above the Problems strip, with an icon, and stay while the pointer is on them. Loading the sample over your script offers Undo instead of asking first."
 
