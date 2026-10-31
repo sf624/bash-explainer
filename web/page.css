@@ -2065,7 +2065,10 @@ html.view-panel .split {
 :where(html:not(.narrow)) #settings-dialog {
   inset: var(--pane-top, 0px) auto 0 0;
   height: auto;
-  width: min(36rem, var(--pane-w, 36rem));
+  /* As wide as the pane, so that no strip of the (inert) editor shows beside it; the text keeps a column of 40rem
+     (--side: the room each side of it), as the pane is 40rem at 1280 px and wider after. */
+  width: var(--pane-w, 36rem);
+  --side: max(0px, calc((100% - 40rem) / 2));
   border-left: 0;
   border-right: 1px solid var(--vscode-panel-border);
   border-radius: 0 12px 12px 0;
@@ -2076,6 +2079,18 @@ html.view-panel .split {
   :where(html:not(.narrow)) #settings-dialog[open] {
     transform: translateX(-100%);
   }
+}
+
+:where(html:not(.narrow)) #settings-dialog :is(.settings-head, .settings-nav, .settings-body, .settings-foot) {
+  padding-inline: calc(var(--side, 0px) + 12px);
+}
+
+:where(html:not(.narrow)) #settings-dialog .settings-head {
+  padding-inline: calc(var(--side, 0px) + 16px) calc(var(--side, 0px) + 8px);
+}
+
+:where(html:not(.narrow)) #settings-dialog .settings-body {
+  padding-inline: calc(var(--side, 0px) + 16px);
 }
 
 /* "Jump to": links in a row, which wrap. */

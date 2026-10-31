@@ -48,7 +48,6 @@ function dialogFor(id: string): HTMLDialogElement {
   return dialog;
 }
 
-/** Asks the question; resolves true for `confirm`, false for `cancel` (and Esc). The choice that changes nothing has the focus first. */
 /**
  * Where the focus goes back when a dialog closes, for the control that was used to start it: that control, or, when it
  * has gone with its menu (an item of the ⋯ popover or of the phone's sheet, closed as the item was chosen), the control
@@ -65,7 +64,8 @@ export function focusTarget(from: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
-export function ask(q: Question, returnFocus: HTMLElement | null): Promise<boolean> {
+/** Asks the question; resolves true for `confirm`, false for `cancel` (and Esc). The choice that changes nothing has the focus first. `home`: where the focus goes when nothing of `returnFocus` is left. */
+export function ask(q: Question, returnFocus: HTMLElement | null, home?: () => void): Promise<boolean> {
   const d = dialogFor(q.id);
   const title = document.createElement('h2');
   title.id = `${q.id}-dialog-title`;
@@ -93,7 +93,10 @@ export function ask(q: Question, returnFocus: HTMLElement | null): Promise<boole
     // Esc closes the dialog with no value: the text is kept.
     d.addEventListener('close', () => {
       resolve(d.returnValue === 'confirm');
-      focusTarget(returnFocus)?.focus();
+      // (The control used, or the opener of its menu: `focusTarget`; else where the page keeps its focus: `home`.)
+      const back = focusTarget(returnFocus);
+      if (back) back.focus();
+      else home?.();
     }, { once: true });
     d.showModal();
     cancel.focus();
@@ -101,6 +104,6 @@ export function ask(q: Question, returnFocus: HTMLElement | null): Promise<boole
 }
 
 /** Asks whether to replace the text with the sample; resolves true for "replace", false for "keep" (and Esc). The sample can be undone anyway. */
-export function askReplaceWithSample(q: KindQuestion, returnFocus: HTMLElement | null): Promise<boolean> {
-  return ask({ id: 'kind', title: q.title, message: q.message, confirm: { id: 'kind-replace', text: q.replace }, cancel: { id: 'kind-keep', text: q.keep } }, returnFocus);
+export function askReplaceWithSample(q: KindQuestion, returnFocus: HTMLElement | null, home?: () => void): Promise<boolean> {
+  return ask({ id: 'kind', title: q.title, message: q.message, confirm: { id: 'kind-replace', text: q.replace }, cancel: { id: 'kind-keep', text: q.keep } }, returnFocus, home);
 }

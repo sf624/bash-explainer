@@ -290,7 +290,7 @@ const toast = new Toast($('status'), {
     return { left: box.left, width: box.width, bottom };
   },
   covers: (px) => editor.setBottomMargin(px),
-  focusBack: () => editor.focusUnlessTouch(),
+  focusBack: () => focusHome(),
 });
 
 // The Problems list shows, hides or changes its height, and the panes move: the toast keeps its place above it.
@@ -419,6 +419,16 @@ function setChoice(key: 'shell' | 'yq', value: string): void {
   if (readSettings(changedSettings(next), 'panel').warnings.length) return;
   changeSettings(next);
   settingsDialog?.refresh();
+}
+
+/**
+ * Where the focus goes when what held it goes away (a toast and its button, an Undo, a question, an opened file): the
+ * settings sheet while it lies over the editor (which is inert then), else the editor, except on a touch screen, where
+ * that would open the keyboard. One place, so that no such return lands on the page's body.
+ */
+function focusHome(): void {
+  if (settingsDialog?.sideBySide) settingsDialog.focus();
+  else editor.focusUnlessTouch();
 }
 
 const dialogElement = document.getElementById('settings-dialog') as HTMLDialogElement | null;
@@ -612,7 +622,7 @@ function askAboutSample(k: Kind): void {
   // the choice is not under it.
   const back = document.activeElement as HTMLElement | null;
   drawer?.close();
-  void askReplaceWithSample({ title: t.askTitle(name), message: t.askMessage(name), replace: t.askReplace, keep: t.askKeep }, back)
+  void askReplaceWithSample({ title: t.askTitle(name), message: t.askMessage(name), replace: t.askReplace, keep: t.askKeep }, back, focusHome)
     .then((replace) => {
       if (replace) loadSample(true);
     });
@@ -638,7 +648,7 @@ function loadSample(own: boolean): void {
     undo(editor.view);
     fileState.restore(before);
     showFile();
-    editor.focusUnlessTouch();
+    focusHome();
   };
   if (own) status('undo', TEXT[lang].sampleLoaded, { label: TEXT[lang].undo, run: back, untilEdit: true });
 }
@@ -664,7 +674,7 @@ async function sampleAsked(from: HTMLElement | null = document.activeElement as 
     if (!discard) return;
     // (The file is not the editor's any more: the focus goes to the text, as after Open.)
     loadSample(ownText());
-    return editor.focusUnlessTouch();
+    return focusHome();
   }
   loadSample(ownText());
 }
@@ -676,7 +686,7 @@ on('sample', 'click', () => void sampleAsked());
  */
 function clearEditor(): void {
   const t = TEXT[lang];
-  if (!editor.text) return editor.view.focus();
+  if (!editor.text) return focusHome();
   const wasSample = untouched(editor.text);
   dropUndo();
   loadingSample = true;
@@ -685,10 +695,10 @@ function clearEditor(): void {
   const back = () => {
     undo(editor.view);
     showFile();
-    editor.focusUnlessTouch();
+    focusHome();
   };
   status('undo', wasSample ? t.sampleCleared : t.editorCleared, { label: t.undo, run: back, untilEdit: true });
-  editor.focusUnlessTouch();
+  focusHome();
 }
 
 function copyScript(): void {
@@ -811,7 +821,7 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
     const discard = await ask({
       id: 'discard', title: t.discardTitle, message: t.discardMessage(chosen.name, window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu),
       confirm: { id: 'discard-open', text: t.discard }, cancel: { id: 'discard-cancel', text: t.cancel },
-    }, back);
+    }, back, focusHome);
     if (!discard) return;
   }
   fileState.opened({ name: chosen.name, handle }, { eol: read.eol, bom: read.bom }, read.text);
@@ -819,7 +829,7 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
   setKind(kindForFile(chosen.name, read.text));
   if (read.mixed) status('note', t.mixedEol(chosen.name, read.eol === '\n' ? 'LF' : 'CRLF'));
   else status('done', t.opened(chosen.name));
-  editor.focusUnlessTouch();
+  focusHome();
 }
 
 async function openFile(back: HTMLElement | null = document.activeElement as HTMLElement | null): Promise<void> {
