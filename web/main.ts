@@ -219,7 +219,7 @@ function updatePanel(): void {
   announcer?.shown(explanation, line, lang);
   panel.show(panelUpdate({
     lang, explanation, file: scriptName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
-    choice: choice(), detected: s.detected, placement: settings['examples.placement'],
+    choice: choice(), detected: s.detected, detectedFrom: s.detectedFrom, placement: settings['examples.placement'],
     animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true, state: panel.panelState(),
   }));
 }

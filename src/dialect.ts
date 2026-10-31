@@ -23,11 +23,23 @@ export const SHELL_NAMES: Record<Shell, string> = {
   bash: 'bash', sh: 'POSIX sh', dash: 'dash', ash: 'busybox ash', yash: 'yash', ksh: 'ksh93', mksh: 'mksh', zsh: 'zsh',
 };
 
-/** The shell a script is written for, from its shebang, a ShellCheck directive or its file name. */
-export function detectShell(text: string, fileName = ''): Shell | undefined {
+/** Where the shell a script is read as comes from: a ShellCheck directive, the `#!` line, the file name, or none of them (the default, bash). */
+export type ShellSource = 'directive' | 'shebang' | 'filename' | 'default';
+
+/** The shell a script is read as when it is not forced, and where that comes from (`default`: it says none, so bash). */
+export interface ShellReading { shell: Shell; source: ShellSource }
+
+/**
+ * The shell a script is written for, from a ShellCheck directive, its shebang or its file name, with where that comes
+ * from. The first of the three that is there decides, even when it names no shell we know (`#!/usr/bin/python`):
+ * the reading is then the default. The one reader the panel's and the page's "auto" wording stands on
+ * (src/messages-shell.ts).
+ */
+export function readShell(text: string, fileName = ''): ShellReading {
   const head = text.slice(0, 2000);
+  const found = (shell: Shell | undefined, source: ShellSource): ShellReading => (shell ? { shell, source } : { shell: 'bash', source: 'default' });
   const directive = /^#\s*shellcheck\s+shell=(\w+)/m.exec(head)?.[1];
-  if (directive) return shellFromName(directive);
+  if (directive) return found(shellFromName(directive), 'directive');
   const shebang = /^#!\s*(.*)/.exec(head);
   if (shebang) {
     const words = shebang[1].trim().split(/\s+/);
@@ -35,15 +47,21 @@ export function detectShell(text: string, fileName = ''): Shell | undefined {
     // `#!/bin/busybox sh`, `#!/usr/bin/env bash`, `#!/usr/bin/env -S ksh93 -e`.
     if (prog === 'env') {
       const arg = words.slice(1).find((w) => !w.startsWith('-') && !w.includes('='));
-      return arg ? shellFromName(arg.split('/').pop()!) : undefined;
+      return found(arg ? shellFromName(arg.split('/').pop()!) : undefined, 'shebang');
     }
-    return shellFromName(prog);
+    return found(shellFromName(prog), 'shebang');
   }
   const base = fileName.split(/[\\/]/).pop()!;
-  if (/\.zsh$|^\.?z(shrc|profile|login|logout|shenv)$/.test(base)) return 'zsh';
-  if (/\.ksh$|^\.?mkshrc$/.test(base)) return base.includes('mksh') ? 'mksh' : 'ksh';
-  if (/\.bash$|^\.?bash(rc|_profile|_login|_logout|_aliases)$/.test(base)) return 'bash';
-  return undefined;
+  if (/\.zsh$|^\.?z(shrc|profile|login|logout|shenv)$/.test(base)) return { shell: 'zsh', source: 'filename' };
+  if (/\.ksh$|^\.?mkshrc$/.test(base)) return { shell: base.includes('mksh') ? 'mksh' : 'ksh', source: 'filename' };
+  if (/\.bash$|^\.?bash(rc|_profile|_login|_logout|_aliases)$/.test(base)) return { shell: 'bash', source: 'filename' };
+  return { shell: 'bash', source: 'default' };
+}
+
+/** The shell a script says it is written for (`readShell`'s, undefined when it says none): the callers that only need the shell. */
+export function detectShell(text: string, fileName = ''): Shell | undefined {
+  const reading = readShell(text, fileName);
+  return reading.source === 'default' ? undefined : reading.shell;
 }
 
 /** The shell a program name stands for (`dash`, `ksh93`, `lksh`, `busybox`, `posh`…); the one mapping every reader uses. */
