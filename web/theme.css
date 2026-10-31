@@ -55,6 +55,9 @@
   --gutter: 7px;
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --hover-border: #a8a8a8;
+  /* The edge of a popup over the editor (the chip's popover, the ⋯ menu): WCAG's 3:1 for what is not text, on the
+     editor and on the page (test/contrast.test.ts). */
+  --popup-border: #8f8f8f;
   /* GitHub's mark is black on a light page and white on a dark one, never another colour. */
   --github-mark: #000;
   /* The logo: its brackets and tail, and its prompt (images/logo/mark-light.svg, mark-dark.svg). */
@@ -104,6 +107,7 @@
     --page-accent-foreground: #ffffff;
 
     --hover-border: #5a5a5a;
+    --popup-border: #757575;
     --github-mark: #fff;
     --logo-accent: #4daafc;
     --logo-ink: #e6e6e6;
@@ -155,6 +159,7 @@
   --page-accent-foreground: #ffffff;
 
   --hover-border: #5a5a5a;
+  --popup-border: #757575;
   --github-mark: #fff;
   --logo-accent: #4daafc;
   --logo-ink: #e6e6e6;

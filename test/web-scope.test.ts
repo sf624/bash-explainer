@@ -7,7 +7,7 @@ import * as assert from 'assert';
 import type { Browser, Frame, Page } from 'playwright-core';
 import { readShell } from '../src/dialect';
 import { scopeChip } from '../src/ui/scope';
-import { openSite, choose, currentShell, frames, setShell, setYq, until } from './support/site';
+import { openSite, choose, currentShell, cursorToLine, frames, openSettingsSection, pickKind, setShell, setYq, until } from './support/site';
 
 const KIND = { en: { name: 'Shell script', short: 'Script' }, ja: { name: 'シェルスクリプト', short: 'スクリプト' } };
 const LONG = 'deployment-staging-overnight-run.sh';
@@ -130,6 +130,42 @@ describe('the web page: the file type and shell chip', function () {
     await until('kislyuk chosen', () => page.locator('#scope-yqs [aria-checked="true"]').getAttribute('data-value'), (v) => v === 'kislyuk');
     await page.locator('#settings-open').click();
     assert.strictEqual(await page.locator('#setting-yq-flavor').inputValue(), 'kislyuk');
+    await ctx.close();
+  });
+
+  // A host file's shell is its host's, part by part (src/document.ts, `autoShellAt`): the chip, its popover and the
+  // Shell setting follow the cursor's part, as the explanation does. Every kind is checked against the explanation in
+  // test/auto-shell.test.ts; here the page draws it.
+  it('says the shell of the cursor\'s part of a host file, in the chip, its popover and the Shell setting', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').nth(5).waitFor();
+    const chip = page.locator('#scope-chip');
+    const said = async () => {
+      await page.locator('#scope-chip').click();
+      const auto = await page.locator('#scope-shell-auto').innerText();
+      await page.keyboard.press('Escape');
+      return [(await chip.getAttribute('aria-label'))!.replace('File type and shell: ', ''), auto];
+    };
+    await pickKind(page, 'yaml');
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n      - shell: sh\n        run: echo there\n');
+    const name = 'GitHub Actions / GitLab CI';
+    await cursorToLine(page, 6);
+    await until('the bash step', () => chip.getAttribute('aria-label'), (t) => t === `File type and shell: ${name} · bash (auto)`);
+    assert.deepStrictEqual(await said(), [`${name} · bash (auto)`, 'Auto: bash (from the file type)']);
+    await cursorToLine(page, 8);
+    await until('the sh step', () => chip.getAttribute('aria-label'), (t) => t === `File type and shell: ${name} · POSIX sh (auto)`);
+    assert.deepStrictEqual(await said(), [`${name} · POSIX sh (auto)`, 'Auto: POSIX sh (from the file type)']);
+    await openSettingsSection(page, 'checks');
+    assert.strictEqual(await page.locator('#setting-shell option[value="auto"]').innerText(), 'Auto (now: POSIX sh, from the file type)');
+    await page.keyboard.press('Escape');
+    // (A line in no step, where the steps differ: no shell is named.)
+    await cursorToLine(page, 1);
+    await until('no step', () => chip.getAttribute('aria-label'), (t) => t === `File type and shell: ${name} · auto`);
+    assert.deepStrictEqual(await said(), [`${name} · auto`, 'Auto: set by each part (from the file type)']);
     await ctx.close();
   });
 });

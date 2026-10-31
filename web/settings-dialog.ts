@@ -9,7 +9,7 @@
 // a modal dialog and takes the whole screen (page.css).
 // It comes back as it was left: the sections open, the search and the scroll (docs/design/chrome-redesign.md, C6).
 import { closeSheet, narrow, reopenSheet } from './layout';
-import type { ShellReading } from '../src/dialect';
+import type { AutoShell } from '../src/dialect';
 import { Lang } from '../src/i18n';
 import { autoShellText } from '../src/messages-shell';
 import { checkValue, exportSettings, Ignored, importSettings, parseJsonc, Settings, SettingSpec, SettingText, SETTINGS, settingsFor } from '../src/settings';
@@ -39,7 +39,7 @@ export interface SettingsHost {
   /** The editor's pane, which the sheet covers side by side and is never wider than. */
   pane(): HTMLElement | null;
   /** The shell the script reads as, and where from: the Shell setting's "Auto (now: bash, from #!)". */
-  shellReading(): ShellReading | undefined;
+  shellReading(): AutoShell | undefined;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {

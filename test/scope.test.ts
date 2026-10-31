@@ -52,8 +52,8 @@ describe('the file type and shell chip as data', () => {
     for (const lang of ['en', 'ja'] as const) {
       for (const kind of kinds) {
         for (const forced of [undefined, 'dash'] as const) {
-          for (const text of ['', '#!/bin/sh\n', '# shellcheck shell=ksh\n']) {
-            const chip = scopeChip(lang, 'T', kind, forced, readShell(text, 'a.zsh'));
+          for (const reading of [...['', '#!/bin/sh\n', '# shellcheck shell=ksh\n'].map((text) => readShell(text, 'a.zsh')), { shell: 'sh', source: 'host' } as const, 'parts' as const]) {
+            const chip = scopeChip(lang, 'T', kind, forced, reading);
             for (const f of chip.forms) assert.ok(chip.name.toLowerCase().includes(f.chip.toLowerCase()), `${chip.name} / ${f.chip}`);
           }
         }

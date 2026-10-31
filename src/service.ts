@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
-import { readShell, saidShell, Shell, type ShellReading } from './dialect';
-import { DeadRange, DocumentIssue, diagnosticsFor, explainDocumentLine, ShellDocument, Shells } from './document';
+import { type AutoShell, readShell, saidShell, Shell, type ShellReading } from './dialect';
+import { autoShellAt, DeadRange, DocumentIssue, diagnosticsFor, explainDocumentLine, ShellDocument, Shells } from './document';
 import { HOST_LANGUAGES, HOST_PATTERNS, kindOfDocument, openDocument, semanticSelector } from './document-setup';
 import { Extracted, extractShell, HostKind } from './hosts';
 import { Lang, resolveLang } from './i18n';
@@ -129,6 +129,11 @@ export class ExplainService implements vscode.Disposable {
   /** The shell the file itself says and where that comes from (`default`: it says none). */
   shellReading(doc: vscode.TextDocument): ShellReading {
     return readShell(doc.getText(new vscode.Range(0, 0, 50, 0)), doc.fileName);
+  }
+
+  /** The shell `line` is explained as when none is chosen, and where that comes from (`autoShellAt`: a host file's part decides). */
+  autoShell(doc: vscode.TextDocument, line: number): AutoShell {
+    return autoShellAt(this.document(doc), this.shells(doc), line);
   }
 
   /** The shell chosen in the panel for this document, else the `shell` setting (undefined: auto). */

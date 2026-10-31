@@ -6,15 +6,16 @@
 // This file holds the page's state (language, file kind, settings, theme) and wires the parts together:
 // web/editor.ts (the script), web/panel-bridge.ts (the panel's frame), web/compare.ts (the compare page),
 // web/share.ts (links), web/storage.ts (what the browser keeps), web/layout.ts (dividers and sheets),
-// web/file-io.ts (opening a file, saving to one), web/editor-head.ts (the editor's header, its hint and empty block).
+// web/file-io.ts (opening a file, saving to one), web/editor-head.ts (the editor's header, its hint and empty block),
+// web/kinds.ts (the file kind and its samples), web/scope-chip.ts (the chip of the file type and the shell).
 import { undo } from '@codemirror/commands';
 import { ViewUpdate } from '@codemirror/view';
 import { Analyzer, LineExplanation } from '../src/analyzer';
-import { DocumentIssue, explainDocumentLine, ShellDocument, Shells } from '../src/document';
+import type { AutoShell } from '../src/dialect';
+import { autoShellAt, DocumentIssue, explainDocumentLine, ShellDocument, Shells } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
-import { detectKind } from '../src/hosts/detect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { lineMarks, needsReading, panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
@@ -30,11 +31,11 @@ import { FileState } from './file-state';
 import { FileNameControl } from './file-name';
 import { linkWords, showMenuTexts } from './menu';
 import { showChannel } from './banner';
-import { ask, askReplaceWithSample } from './kind-dialog';
+import { ask } from './kind-dialog';
+import { KindControl, untouched } from './kinds';
 import { closeSheet, narrow, reopenSheet, setUpEdgeSwipe, setUpProblems, setUpSheet, setUpSplitter } from './layout';
 import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
-import { Picker } from './picker';
 import { ProblemStrip, roomAboveStrip, watchStrip } from './problem-list';
 import { CopyState, DEFAULT_THEME, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
@@ -78,19 +79,26 @@ function savedSettings(): Settings {
 /** In panel mode the page around sends the settings; a copy keeps none of its own. */
 let settings: Settings = savedSettings();
 
-const kindInfo = (k: Kind) => KINDS.find((x) => x.kind === k) ?? KINDS[0];
 
 // ---- State ----------------------------------------------------------------------------------
 
 const shared = readHash();
 let lang: Lang = shared.lang ?? resolveLang(settings.language, navigator.language);
-let kind: Kind = shared.kind ?? 'shell';
-/** What the file kind's button shows on a narrow screen, where the whole name has no room. */
-const SHORT_KIND: Record<Kind, string> = { shell: 'sh', dockerfile: 'Docker', makefile: 'make', yaml: 'YAML', npm: 'npm', markdown: 'md', python: 'py', jenkinsfile: 'Jenkins', bats: 'bats' };
-const kindButton = document.getElementById('kind');
-const kindList = document.getElementById('kind-list');
-/** The file kind: a button with a list (the compare page has it too). */
-const kindPicker = kindButton instanceof HTMLButtonElement && kindList ? new Picker(kindButton, kindList, (v) => chooseKind(v as Kind)) : undefined;
+/** The file kind, its samples, and the compare page's picker of it (web/kinds.ts). */
+const kinds: KindControl = new KindControl({
+  lang: () => lang,
+  editor: (): Editor => editor,
+  files: () => fileState,
+  showFile: () => showFile(),
+  explain: () => updatePanel(),
+  status,
+  dropUndo: () => dropUndo(),
+  closeSheets() {
+    drawer?.close();
+    closePopovers();
+  },
+  focusHome: () => focusHome(),
+}, shared.kind ?? 'shell');
 /** The shell and yq of the settings, as the panel's header shows them (undefined: auto). */
 const choice = () => ({ shell: forcedShell(settings), yq: settings['yq.flavor'] === 'auto' ? undefined : settings['yq.flavor'] });
 const parser = createUnbashParser();
@@ -103,7 +111,7 @@ const fileState = new FileState<FileSystemFileHandle>();
  * Markdown's `file:line`): the file's, else the name given, else "untitled" with the kind's extension. The analyzer needs
  * no more of the kind's path: only a name ending in `.zsh` or the like says another shell (`detectShell`).
  */
-const scriptName = () => fileState.name(kindInfo(kind).fileName);
+const scriptName = () => fileState.name(kinds.info().fileName);
 let shown: { explanation: LineExplanation; line: number } | undefined;
 /** The chip of the file type and the shell in the editor's header (web/scope-chip.ts); the yq choices of the line, as the panel offers them; the shell reading the settings were drawn with. */
 let scope: ScopeControl | undefined;
@@ -115,6 +123,7 @@ const analyzer = () => analyzers.get(lang) ?? analyzers.set(lang, new Analyzer(l
 /** The script as the explainers see it, parsed once per change. */
 function shellDocument(): ShellDocument | undefined {
   const text = withEol(editor.text, fileState.format.eol);
+  const { kind } = kinds;
   if (parsed && parsed.text === text && parsed.kind === kind) return parsed.doc;
   const doc = openDocument(text, kind, (shellText) => parser.parse(shellText));
   parsed = { text, kind, doc };
@@ -127,6 +136,12 @@ function shells(): Shells {
   return shellsOf(lines, scriptName(), forcedShell(settings));
 }
 
+/** The shell the cursor's line is explained as when none is chosen, and where from: what the chip, its popover and the Shell setting say. */
+function autoShell(): AutoShell | undefined {
+  const doc = shellDocument();
+  return doc && autoShellAt(doc, shells(), editor.cursorLine());
+}
+
 // ---- Editor ---------------------------------------------------------------------------------
 
 let readMode = readStored(STORAGE_KEYS.readMode) === '1';
@@ -135,7 +150,6 @@ let codesSeen: string[] = [];
 /** The problems the editor shows, for the panel's squiggles. */
 let problemsShown: DocumentIssue[] = [];
 /** Whether the sample button is replacing the text, so that the offer to undo it stays. */
-let loadingSample = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 /** The live region that says what the line the cursor moved to is about (the editor page only). */
 let announcer: LineAnnouncer | undefined;
@@ -143,7 +157,7 @@ let announcer: LineAnnouncer | undefined;
 /** The Problems strip and list under the editor; a click on a problem, ‹ › and F8 (on the page) select it in the editor. */
 const strip = mode.hasChrome ? new ProblemStrip({ lang: () => lang, cursor: () => editor.cursor(), spans: () => editor.problemSpans(), pick: (i) => editor.select(i.startLine, i.startCol, i.endLine, i.endCol) }) : undefined;
 const editor = new Editor({
-  kind: () => kind,
+  kind: () => kinds.kind,
   lang: () => lang,
   settings: () => settings,
   document: shellDocument,
@@ -163,8 +177,8 @@ const editor = new Editor({
   },
   changed(u: ViewUpdate) {
     // Undo would no longer undo the sample once the text changed again.
-    if (u.docChanged && toast.current?.action?.untilEdit && !loadingSample) toast.hide();
-    if (u.docChanged && !mode.panel) detectPasted(u);
+    if (u.docChanged && toast.current?.action?.untilEdit && !kinds.puttingText) toast.hide();
+    if (u.docChanged && !mode.panel) kinds.detectPasted(u);
     if (u.docChanged) showFileSoon();
     if (Editor.problemsMoved(u)) strip?.place();
     // In panel mode the page around sends every change as a message, which is handled at once.
@@ -174,9 +188,9 @@ const editor = new Editor({
   },
   openSettings: () => settingsDialog?.show(),
   announce: (text) => announcer?.say(text),
-}, { parent: $('editor'), text: shared.text ?? kindInfo(kind).sample, readMode, problems: mode.hasChrome });
+}, { parent: $('editor'), text: shared.text ?? kinds.info().sample, readMode, problems: mode.hasChrome });
 editor.shade();
-editor.placeCursor(shared.text ? 1 : kindInfo(kind).cursorLine);
+editor.placeCursor(shared.text ? 1 : kinds.info().cursorLine);
 {
   const region = document.getElementById('announce');
   if (region) announcer = new LineAnnouncer(region, editor.view);
@@ -219,19 +233,20 @@ function updatePanel(): void {
   const line = editor.cursorLine();
   const s = shells();
   const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: needsReading(panel.panelState()) });
+  const auto = autoShellAt(doc, s, line);
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);
   const update = panelUpdate({
     lang, explanation, file: scriptName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
-    choice: choice(), detected: s.detected, placement: settings['examples.placement'],
+    choice: choice(), detected: auto, placement: settings['examples.placement'],
     animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true, state: panel.panelState(),
   });
   panel.show(update);
   yqLine = { options: update.dialect.yqs, value: update.dialect.yq };
   scope?.draw();
   // (The Shell setting says the shell the script reads as now: decision 12.)
-  if (JSON.stringify(s.detected) !== readingShown) {
-    readingShown = JSON.stringify(s.detected);
+  if (JSON.stringify(auto) !== readingShown) {
+    readingShown = JSON.stringify(auto);
     settingsDialog?.refresh();
   }
 }
@@ -259,7 +274,7 @@ function applyCopyState(m: CopyState): void {
   const newLang: Lang = m.lang === 'ja' ? 'ja' : 'en';
   const langChanged = newLang !== lang;
   lang = newLang;
-  kind = KINDS.some((k) => k.kind === m.kind) ? m.kind : 'shell';
+  kinds.kind = KINDS.some((k) => k.kind === m.kind) ? m.kind : 'shell';
   // The page around sends its settings; from one built before they existed, the shell and yq only.
   settings = mergeSettings(m.settings ? readSettings(m.settings, 'page').settings : { shell: m.choice?.shell ?? 'auto', 'yq.flavor': (m.choice?.yq ?? 'auto') as Settings['yq.flavor'] });
   editor.replaceText(m.text);
@@ -282,7 +297,7 @@ if (mode.compare) {
     lang: () => lang,
     state() {
       const { line, col } = editor.cursor();
-      return { text: editor.text, kind, line, col, lang, theme, choice: choice(), settings: changedSettings(settings, 'web') };
+      return { text: editor.text, kind: kinds.kind, line, col, lang, theme, choice: choice(), settings: changedSettings(settings, 'web') };
     },
     reveal: (span, preserveFocus) => editor.selectSpan(span, preserveFocus),
     highlight: (span) => editor.highlight(span),
@@ -309,7 +324,7 @@ function status(icon: ToastIcon | '', words: ToastText | string = '', action?: T
 
 /** Goes to another page of the site with the script in the hash, in the same language and file kind. */
 async function goWithScript(href: string): Promise<void> {
-  const params = await scriptParams(lang, kind, editor.text);
+  const params = await scriptParams(lang, kinds.kind, editor.text);
   location.href = `${href}#${params}`;
 }
 
@@ -357,7 +372,7 @@ function applyLanguage(): void {
   showChannel(lang);
   $<HTMLSelectElement>('lang').value = lang;
   // (The compare page's picker of the file kind; the editor page's chip.)
-  kindPicker?.set(KINDS.map((k) => ({ value: k.kind, name: t.kinds[k.kind] ?? k.name, short: SHORT_KIND[k.kind] })), kind, t.kind);
+  kinds.showLanguage();
   scope?.draw();
 }
 
@@ -432,7 +447,7 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   theme: () => theme,
   setTheme,
   pane: () => document.querySelector<HTMLElement>('main > .source'),
-  shellReading: () => shells().detected,
+  shellReading: autoShell,
 });
 
 /**
@@ -544,99 +559,6 @@ const resetProblems = splitElement && mode.hasChrome
 // The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved).
 narrow.addEventListener('change', () => editor.keepCursorInView());
 
-/**
- * Whether the editor holds no text of the user's: nothing, or a sample exactly as the page loads it. Read from
- * the text itself rather than from a record of edits, so that it also holds after an undo back to a sample.
- */
-const untouched = (text: string) => !text.trim() || KINDS.some((k) => k.sample === text);
-/** Whether the editor holds the user's own text: a file's (even an empty one), or text that is no sample. */
-const ownText = () => fileState.own(editor.text, untouched);
-
-function chooseKind(k: Kind): void {
-  // A sample, or nothing, gives way to the new kind's sample; whether the user's own text does is theirs to say.
-  const own = ownText();
-  setKind(k, () => {
-    if (!own) loadSample(false);
-  });
-  if (own) askAboutSample(k);
-}
-
-/** Makes `k` the file kind, with the text as it is (`then` may change it before the script is explained again). */
-function setKind(k: Kind, then?: () => void): void {
-  kind = k;
-  kindPicker?.show(k);
-  editor.setKind(kind);
-  showFile();
-  then?.();
-  editor.shade();
-  updatePanel();
-  editor.recheck();
-}
-
-/**
- * A paste (or a drop) that brings a whole script decides the file kind from its content (src/hosts/detect.ts): when it
- * makes most of the text (80% or more), or the editor held only a sample or nothing. A few lines pasted into the user's
- * own script never change it. The text stays as pasted; the toast says what was detected and can undo the change of kind.
- */
-function detectPasted(u: ViewUpdate): void {
-  const pasted = u.transactions.filter((tr) => tr.isUserEvent('input.paste') || tr.isUserEvent('input.drop'));
-  if (!pasted.length) return;
-  let text = '';
-  for (const tr of pasted) tr.changes.iterChanges((_fa, _ta, _fb, _tb, inserted) => { text += inserted.toString(); });
-  const whole = text.trim().length >= 0.8 * u.state.doc.toString().trim().length;
-  if (!whole && !untouched(u.startState.doc.toString())) return;
-  const found = detectKind(text);
-  if (!found || found.kind === kind) return;
-  const before = kind;
-  // The editor is still in its update: change its mode after it.
-  queueMicrotask(() => {
-    setKind(found.kind);
-    const t = TEXT[lang];
-    status('undo', t.detected(t.kinds[found.kind] ?? kindInfo(found.kind).name), { label: t.undo, run: () => setKind(before) });
-  });
-}
-
-/** Asks whether the user's text gives way to the sample of the kind just chosen (the kind has changed either way). */
-function askAboutSample(k: Kind): void {
-  const t = TEXT[lang];
-  const name = t.kinds[k] ?? kindInfo(k).name;
-  // The control that was used (the kind picker, in the phone's sheet or not): the focus goes back to it, or to the
-  // button of the sheet it was in (web/kind-dialog.ts, `focusTarget`). The sheet closes first, so that the toast after
-  // the choice is not under it.
-  const back = document.activeElement as HTMLElement | null;
-  drawer?.close();
-  closePopovers();
-  void askReplaceWithSample({ title: t.askTitle(name), message: t.askMessage(name), replace: t.askReplace, keep: t.askKeep }, back, focusHome)
-    .then((replace) => {
-      if (replace) loadSample(true);
-    });
-}
-
-/** Puts in the current kind's sample; when it replaced the user's own text, the toast offers to undo it. */
-function loadSample(own: boolean): void {
-  const info = kindInfo(kind);
-  // Already there (a second click on the button): nothing to replace, so nothing to undo, and the file stays as it is.
-  if (editor.text === info.sample) return;
-  // An Undo offered before (a sample loaded over the user's text) would undo nothing now: the text is another's.
-  dropUndo();
-  const before = fileState.snapshot();
-  loadingSample = true;
-  try { editor.setText(info.sample, info.cursorLine); } finally { loadingSample = false; }
-  const set = editor.text;
-  fileState.sampleLoaded(editor.text);
-  showFile();
-  // Undo brings back the text, and the file it was (its name, its handle, its line ends); only while the text is still
-  // the sample as it was put in, so that it never puts a file's name over a text that is not the file's.
-  const back = () => {
-    if (editor.text !== set) return;
-    undo(editor.view);
-    fileState.restore(before);
-    showFile();
-    focusHome();
-  };
-  if (own) status('undo', TEXT[lang].sampleLoaded, { label: TEXT[lang].undo, run: back, untilEdit: true });
-}
-
 /** Hides the toast whose Undo goes back over an edit, when another edit of the editor's text comes first. */
 function dropUndo(): void {
   if (toast.current?.action?.untilEdit) toast.hide();
@@ -657,10 +579,10 @@ async function sampleAsked(from: HTMLElement | null = document.activeElement as 
     }, from);
     if (!discard) return;
     // (The file is not the editor's any more: the focus goes to the text, as after Open.)
-    loadSample(ownText());
+    kinds.loadSample(kinds.own());
     return focusHome();
   }
-  loadSample(ownText());
+  kinds.loadSample(kinds.own());
 }
 on('sample', 'click', () => void sampleAsked());
 
@@ -673,8 +595,7 @@ function clearEditor(): void {
   if (!editor.text) return focusHome();
   const wasSample = untouched(editor.text);
   dropUndo();
-  loadingSample = true;
-  try { editor.setText('', 1); } finally { loadingSample = false; }
+  kinds.putText('', 1);
   showFile();
   const back = () => {
     undo(editor.view);
@@ -708,7 +629,7 @@ for (const [id, href] of [['banner-compare', 'compare.html'], ['back', './']]) {
 
 /** Copies the link to the script, and says "Copied" on the button pressed (the app bar's, or the menu's on a phone). */
 async function copyLink(id: 'share' | 'menu-share'): Promise<void> {
-  const params = await scriptParams(lang, kind, editor.text);
+  const params = await scriptParams(lang, kinds.kind, editor.text);
   const url = `${location.origin}${location.pathname}#${params}`;
   // Safari refuses a write that comes after the compression above (it is no longer the click's own turn): say so.
   if (!await writeClipboard(url)) {
@@ -737,7 +658,7 @@ const head = withFiles ? new EditorHead({
   tipShown: () => document.getElementById('readtip')?.hidden === false,
   status: (text) => status('note', text),
 }) : undefined;
-scope = withFiles ? new ScopeControl({ lang: () => lang, kind: () => kind, shells, yq: () => yqLine, chooseKind, choose: setChoice }) : undefined;
+scope = withFiles ? new ScopeControl({ lang: () => lang, kind: () => kinds.kind, shells: () => ({ forced: forcedShell(settings), auto: autoShell() }), yq: () => yqLine, chooseKind: (k) => kinds.choose(k), choose: setChoice }) : undefined;
 // The menu's row opens the same popover.
 on('menu-scope', 'click', () => {
   drawer?.close();
@@ -751,7 +672,7 @@ const unsaved = () => fileState.unsaved(editor.text, untouched);
 
 let fileTimer: ReturnType<typeof setTimeout> | undefined;
 /** The script's name as the page shows it (src/ui/fileName.ts): muted until saved or opened, ● for changes not saved. */
-const nameView = () => fileState.view(editor.text, untouched, kindInfo(kind).fileName);
+const nameView = () => fileState.view(editor.text, untouched, kinds.info().fileName);
 /** Shows the script's name, and whether it has changes not saved: in the editor's header, the menu (its first row and its Save) and the page's title. */
 function showFile(): void {
   if (!withFiles) return;
@@ -775,7 +696,7 @@ function rename(next: string): void {
   const before = scriptName();
   fileState.rename(next);
   const named = kindFromName(next);
-  if (named && named !== kind) return setKind(named);
+  if (named && named !== kinds.kind) return kinds.set(named);
   showFile();
   // A new name can say another shell (`.zsh`).
   if (scriptName() !== before) {
@@ -818,7 +739,7 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
   }
   fileState.opened({ name: chosen.name, handle }, { eol: read.eol, bom: read.bom }, read.text);
   editor.openText(read.text);
-  setKind(kindForFile(chosen.name, read.text));
+  kinds.set(kindForFile(chosen.name, read.text));
   if (read.mixed) status('note', t.mixedEol(chosen.name, read.eol === '\n' ? 'LF' : 'CRLF'));
   else status('done', t.opened(chosen.name));
   focusHome();

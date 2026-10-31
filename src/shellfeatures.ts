@@ -6,11 +6,21 @@ import { braceKind, type SyntaxNode, wordBraces } from './syntax/tree';
 export type Shell = 'bash' | 'sh' | 'dash' | 'ash' | 'yash' | 'ksh' | 'mksh' | 'zsh';
 export type RealShell = Exclude<Shell, 'sh'>;
 
-/** Where the shell a script is read as comes from: a ShellCheck directive, the `#!` line, the file name, or none of them (the default, bash). */
-export type ShellSource = 'directive' | 'shebang' | 'filename' | 'default';
+/**
+ * Where the shell a script is read as comes from: a ShellCheck directive, the `#!` line, the file name, or none of them
+ * (the default, bash); `host`: the file type, for the shell code in a host file (a Dockerfile's RUN runs in sh, a
+ * workflow step in its `shell:`), which its host decides part by part.
+ */
+export type ShellSource = 'directive' | 'shebang' | 'filename' | 'default' | 'host';
 
 /** The shell a script is read as when it is not forced, and where that comes from (`default`: it says none, so bash). */
 export interface ShellReading { shell: Shell; source: ShellSource }
+
+/**
+ * The automatic shell at a place of a document, as the page and the panel say it: a reading, or `parts` in a host
+ * file whose parts run in shells of their own, at a line in none of them (`autoShellAt`, src/document.ts).
+ */
+export type AutoShell = ShellReading | 'parts';
 
 /** The shell a reading says: undefined for the default (and for no reading), the shell the explainers take when the file names none. */
 export function saidShell(reading: ShellReading | undefined): Shell | undefined {
