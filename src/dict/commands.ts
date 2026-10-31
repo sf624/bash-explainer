@@ -878,6 +878,13 @@ export const core: Record<string, CommandSpec> = {
     ...GNU_INFO,
   ], { oldStyle: {},
     modes: [{ name: 'create' }, { name: 'extract' }, { name: 'list' }, { name: 'append' }, { name: 'update' }, { name: 'catenate' }, { name: 'diff' }, { name: 'delete' }, { name: 'test-label' }],
+    // What the operands are, by mode: files to put into the archive, archives whose members `-A` appends, or names of
+    // members to act on (checked with GNU tar, test/oldstyle-real.test.ts).
+    operands: [
+      ...['create', 'append', 'update'].map((mode) => ({ when: { mode }, pattern: [{ name: 'FILE', text: pos('アーカイブに入れるファイルやディレクトリ', 'files and directories to put into the archive'), repeat: '*' as const }] })),
+      { when: { mode: 'catenate' }, pattern: [{ name: 'ARCHIVE', text: pos('メンバーを後ろに追加するアーカイブ', 'archives whose members to append'), repeat: '*' as const }] },
+      ...['extract', 'list', 'diff', 'delete'].map((mode) => ({ when: { mode }, pattern: [{ name: 'MEMBER', text: pos('対象にするアーカイブ内の名前（ないときはすべて）', 'names in the archive to act on (all when none)'), repeat: '*' as const }] })),
+    ],
     conflictingModes: tx('`-A`・`-c`・`-d`・`-r`・`-t`・`-u`・`-x`・`--delete`・`--test-label` のうち別のものと一緒に指定すると、tar は「You may not specify more than one」と言って何もしない（終了ステータス 2）', 'With another of `-A`, `-c`, `-d`, `-r`, `-t`, `-u`, `-x`, `--delete`, `--test-label`, tar refuses the line: "You may not specify more than one" (exit status 2)'), parser: 'getopt_long' }),
   gzip: cmd('ファイルを gzip 圧縮する（元ファイルは .gz に置き換わる）', 'Compress files with gzip', [
     ['-f|--force', '強制的に圧縮・展開する', 'force'],

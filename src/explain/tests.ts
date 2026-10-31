@@ -5,7 +5,7 @@
 import type { Kind, Token } from '../analyzer-types';
 import { arithLiteral, evalArith, invalidLiteral } from '../arith';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
-import { binaryTestOps, collationTexts, extendedEqualOps, unaryTestOps } from '../dict/syntax';
+import { binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, unaryTestOps } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { explainRegex } from '../embedded/regex';
 import { toJsRegex } from '../examples/regex';
@@ -16,6 +16,7 @@ import { expressionHost } from '../refs';
 import { replaceNode, type Rewrite, statementBefore, unusedName } from '../rewrite';
 import { STATEMENTS } from '../semantics/env';
 import { option, type ShellState } from '../semantics/state';
+import { plainPatternText } from '../semantics/globwords';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, nameText, type SyntaxNode } from '../syntax/tree';
 import { type BracketTest, collation, type TestExpr, testRange } from '../testexpr';
@@ -142,7 +143,7 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
  * `[[ ]]` evaluates them as arithmetic (`010` is octal 8, `0x10` is 16, `08` is an error).
  */
 function numericTestNote(cx: Explainer, op: string, operands: string[], double: boolean): string {
-  if (!/^-(?:eq|ne|lt|le|gt|ge)$/.test(op)) return '';
+  if (binaryTestOperands[op] !== 'number') return '';
   const notes: string[] = [];
   for (const raw of operands) {
     const m = /^([-+]?)(\d[0-9A-Za-z@_#]*)$/.exec(raw);
@@ -342,7 +343,10 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
     if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
       return cx.tok(n, 'test', cx.t(binaryTestOps[op]), cx.subs([left, ...rights]));
     }
-    const text = quotedPatternNote(cx, n, op, rights) ?? (extendedEqualOps[op] ? cx.t(extendedEqualOps[op]) : binaryText(cx, n, op, true, true));
+    // (A pattern with no wildcard matches only itself: `[[ $x == 1 ]]` is a plain comparison, which the row of `==`
+    // says in Reading; from the word model, as nocasematch and a quoted `*` decide it.)
+    const plain = extendedEqualOps[op] && plainPatternText(rights[0], cx.state) !== undefined ? cx.t(plainPatternOps.condition[op]) : undefined;
+    const text = quotedPatternNote(cx, n, op, rights) ?? plain ?? (extendedEqualOps[op] ? cx.t(extendedEqualOps[op]) : binaryText(cx, n, op, true, true));
     return cx.tok(n, 'test', cx.s(
       `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${text}${num}`,
       `Condition: \`${left?.text}\` vs \`${rightText}\` — ${text}${num}`,

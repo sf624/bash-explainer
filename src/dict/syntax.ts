@@ -253,7 +253,7 @@ export const specialVariables: Record<string, Text> = wordTable({
  * quick reference lists them in this order.
  */
 export const wellKnownVariables: Record<string, Text> = wordTable({
-  HOME: tx('ホームディレクトリのパス。引数なしの `cd` の移動先で、`~` の値にもなる', 'Home directory: where `cd` with no argument goes, and the value of `~`'),
+  HOME: tx('ホームディレクトリ。引数なしの `cd` の移動先で、`~` の値にもなる','Home directory: where `cd` with no argument goes, and the value of `~`'),
   PATH: tx('コマンドを探すディレクトリの一覧（`:` 区切り。空の項目はカレントディレクトリ）', 'Colon-separated list of directories searched for commands (an empty entry is the current directory)'),
   PWD: tx('`cd` が設定するカレントディレクトリ', 'Current working directory, as set by `cd`'),
   OLDPWD: tx('`cd` が設定する直前のカレントディレクトリ（`cd -` の移動先）', 'Previous working directory, as set by `cd` (where `cd -` goes)'),
@@ -489,6 +489,62 @@ export const extendedEqualOps: Record<string, Text> = {
 };
 
 /**
+ * `=`, `==` and `!=` inside `[[ ]]` where the pattern on the right has no wildcard and nocasematch is off (the word
+ * model's `plainPattern`): it matches only itself, a plain comparison. `condition`: the text of the condition;
+ * `operator`: the row of the operator, which says why, once.
+ */
+export const plainPatternOps: Record<'condition' | 'operator', Record<string, Text>> = {
+  condition: {
+    '=': tx('文字列が等しい', 'strings are equal'),
+    '==': tx('文字列が等しい', 'strings are equal'),
+    '!=': tx('文字列が等しくない', 'strings differ'),
+  },
+  operator: {
+    '=': tx('文字列が等しい（右辺のパターンにワイルドカードとして働く文字がないので、普通の比較）', 'strings are equal (nothing in the pattern on the right acts as a wildcard: a plain comparison)'),
+    '==': tx('文字列が等しい（右辺のパターンにワイルドカードとして働く文字がないので、普通の比較）', 'strings are equal (nothing in the pattern on the right acts as a wildcard: a plain comparison)'),
+    '!=': tx('文字列が等しくない（右辺のパターンにワイルドカードとして働く文字がないので、普通の比較）', 'strings differ (nothing in the pattern on the right acts as a wildcard: a plain comparison)'),
+  },
+};
+
+/** What the operands of a test operator are (6.4): the file it tests, a string, a variable's name, a number… */
+export type TestOperandKind = 'file' | 'string' | 'variable' | 'option' | 'fd' | 'text' | 'number' | 'files';
+
+/** The kind of the operand of each unary operator of a conditional expression (6.4). */
+export const unaryTestOperands: Record<string, TestOperandKind> = {
+  ...Object.fromEntries(['-a', '-b', '-c', '-d', '-e', '-f', '-g', '-h', '-k', '-p', '-r', '-s', '-u', '-w', '-x', '-G', '-L', '-N', '-O', '-S'].map((o) => [o, 'file' as const])),
+  '-z': 'string', '-n': 'string', '-v': 'variable', '-R': 'variable', '-o': 'option', '-t': 'fd',
+};
+
+/**
+ * The kind of the operands of each binary operator of a conditional expression (6.4), but `=`, `==`, `!=` and `=~`,
+ * whose sides differ: `-eq` and the others compare integers (in `[[ ]]`, arithmetic expressions), `-nt` files.
+ */
+export const binaryTestOperands: Record<string, TestOperandKind> = {
+  '<': 'text', '>': 'text',
+  '-eq': 'number', '-ne': 'number', '-lt': 'number', '-le': 'number', '-gt': 'number', '-ge': 'number',
+  '-nt': 'files', '-ot': 'files', '-ef': 'files',
+};
+
+/**
+ * What a word of a conditional expression in `[[ ]]` is to its operator `{op}` (6.4, 3.2.5.2), by the kind of the
+ * operand, or by its side of `=`, `==`, `!=` and `=~`: the string on the left, the pattern on the right (`plain`: one
+ * with no wildcard, whose operator says that it is a plain comparison).
+ */
+export const testOperandTexts: Record<TestOperandKind | 'compared' | 'pattern' | 'plain', Text> = {
+  file: tx('`{op}` で調べるファイル', 'The file `{op}` tests'),
+  string: tx('`{op}` で調べる文字列', 'The string `{op}` tests'),
+  variable: tx('`{op}` で調べる変数名', 'The variable name `{op}` tests'),
+  option: tx('`{op}` で調べるシェルオプション名', 'The shell option name `{op}` tests'),
+  fd: tx('`{op}` で調べるファイルディスクリプタ', 'The file descriptor `{op}` tests'),
+  text: tx('`{op}` で比べる文字列', 'A string `{op}` compares'),
+  number: tx('`{op}` で比べる値: 算術式として評価する', 'A value `{op}` compares: evaluated as an arithmetic expression'),
+  files: tx('`{op}` で比べるファイル', 'A file `{op}` compares'),
+  compared: tx('`{op}` で比べる左辺の文字列', 'The string on the left of `{op}`'),
+  pattern: tx('`{op}` の右辺のパターン: 左辺がこれにパターンとして一致するかを調べる（クォートした部分は書いたとおりに一致）', 'The pattern on the right of `{op}`: the left side is matched against it as a glob pattern (a quoted part matches as written)'),
+  plain: tx('`{op}` の右辺のパターン', 'The pattern on the right of `{op}`'),
+};
+
+/**
  * How bash's `<` and `>` compare (`collation` in src/testexpr.ts, by its `order` and `why`), after the operator's text.
  * Checked with bash 5.2.21 and 5.3 in en_US.UTF-8 (test/testexpr.test.ts).
  */
@@ -537,7 +593,7 @@ export const listOps: Record<string, Text> = {
 };
 
 export const keywords: Record<string, Text> = {
-  if: tx('条件分岐の開始。続くコマンドの終了ステータスが 0 なら then 節を実行', 'Start a conditional; run the `then` branch if the condition exits 0'),
+  if: tx('条件の始まり: `then` までのコマンドの終了ステータスが 0 なら `then` 節を実行する', 'Starts the condition: the commands up to `then`; if they exit 0, the `then` branch runs'),
   then: tx('条件が真のときに実行する部分の開始', 'Start of the branch run when the condition is true'),
   elif: tx('前の条件が偽のとき、次の条件を判定', 'Test another condition if the previous ones were false'),
   else: tx('どの条件も偽のときに実行する部分', 'Branch run when no condition was true'),

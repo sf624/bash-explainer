@@ -70,6 +70,15 @@ export function globbedByBash(pattern: string, extglob: 'on' | 'off' | 'unknown'
   return maybe ? undefined : false;
 }
 
+/**
+ * The text a pattern (a field of `patternOfChars`) matches, when nothing in it acts as a wildcard in the matching of a
+ * string (`[[ == ]]`, `case`, where `[a/b]` is a bracket expression and `[[ ]]` reads extglobs): no unescaped `*`, `?`,
+ * `[`, `]`, `(`, `)` or `|` (a lone `[`, which matches itself, is left as a pattern). Undefined when it may be one.
+ */
+export function plainPattern(pattern: string): string | undefined {
+  return /^(?:[^\\*?[\]()|]|\\[^])*$/.test(pattern) ? pattern.replace(/\\([^])/g, '$1') : undefined;
+}
+
 /** A piece of the text of a word: quoted (no split or glob), or unquoted from the source or from an expansion (split). */
 export interface Piece { text: string; quoted: boolean; expanded: boolean }
 

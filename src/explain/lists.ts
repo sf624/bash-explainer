@@ -80,14 +80,16 @@ export function listOperatorToken(cx: Explainer, op: SyntaxNode): Token | undefi
   if (!closer) return { ...cx.tok(op, 'operator', cx.s(`リストの終わり: ${waitJa}`, `End of the list: ${waitEn}`)), refs: ['3.2.4'] };
   // A reserved word is one only where a command can start: after a simple command's words it would be one more word
   // (`if a then`), but after a compound command it may follow at once (`if [[ a ]] then`).
-  const ja = `\`${closer}\` の前でリストを終え、${waitJa}`;
-  const en = `End the list before \`${closer}\` and ${waitEn}`;
+  // (What `;` says before a reserved word is that the commands before it end there, so that `closer` can be read; not
+  // that bash waits, which it does after every command of a list. A coprocess is the exception: bash does not wait.)
+  const ja = co ? `\`${closer}\` の前でリストを終え、${waitJa}` : `\`${closer}\` の前でコマンドの並びを終える`;
+  const en = co ? `End the list before \`${closer}\` and ${waitEn}` : `Ends the commands before \`${closer}\``;
   const ends = endOf(at.part);
   return { ...cx.tok(op, 'operator', ends === 'words'
     ? cx.s(`${ja}（ここに \`;\` か改行がないと、\`${closer}\` は予約語として読まれない）`, `${en} (without a \`;\` or a newline here, \`${closer}\` would not be read as a reserved word)`)
     : ends === 'coproc'
       ? cx.s(`${ja}（\`coproc\` と単語1つの後では bash が予約語を読むので、ここでは省いてもよい）`, `${en} (bash reads a reserved word after \`coproc\` and one word, so it may be left out here)`)
-      : cx.s(`${ja}（複合コマンドの後なので省いてもよい）`, `${en} (it may be left out after a compound command)`)), refs: ['3.2.4'] };
+      : cx.s(`${ja}（複合コマンドの後では bash が \`${closer}\` を予約語として読むので、省いてもよい）`, `${en} (it may be left out: after a compound command, bash reads \`${closer}\` as a reserved word)`)), refs: ['3.2.4'] };
 }
 
 /**
@@ -173,9 +175,9 @@ export function andOrList(cx: Explainer, n: SyntaxNode, other: (c: SyntaxNode) =
   const kind = andOrKind(n);
   const grouped = kind === 'both' ? grouping(n) : undefined;
   const text = kind === 'and'
-    ? cx.s('AND リスト: 前のコマンドが成功（終了ステータス 0）したときだけ次を実行する。終了ステータスは最後に実行したもののもの', 'AND list: runs each command only if the one before it succeeds (exit 0); the status is that of the last one run')
+    ? cx.s('AND リスト: 前のコマンドが成功（終了ステータス 0）したときだけ次を実行する。終了ステータスは最後に実行したコマンドのもの', 'AND list: runs each command only if the one before it succeeds (exit 0); the status is that of the last one run')
     : kind === 'or'
-      ? cx.s('OR リスト: 前のコマンドが失敗（終了ステータス 0 以外）したときだけ次を実行する。終了ステータスは最後に実行したもののもの', 'OR list: runs each command only if the one before it fails (non-zero exit); the status is that of the last one run')
+      ? cx.s('OR リスト: 前のコマンドが失敗（終了ステータス 0 以外）したときだけ次を実行する。終了ステータスは最後に実行したコマンドのもの', 'OR list: runs each command only if the one before it fails (non-zero exit); the status is that of the last one run')
       : cx.s(
         `AND・OR リスト${grouped ? `。左から \`${grouped}\` と読む` : '。左から順に読む'}: \`&&\` の次はそこまでの終了ステータスが 0 のときだけ、\`||\` の次は 0 以外のときだけ実行する`,
         `AND and OR lists, read from the left${grouped ? ` as \`${grouped}\`` : ''}: after \`&&\` the next command runs only if the status so far is 0, after \`||\` only if it is not`);

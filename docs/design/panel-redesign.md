@@ -2,7 +2,7 @@
 
 The plan that turns prototype B into real PRs, then the usability test. Agreed with the maintainer on 2026-10-27; revised after an independent review of the plan (PR #418).
 
-Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 started early (decided by the maintainer 2026-10-31), beside the three note levels; P3 on wait for the levels. SB3 comes before P7a.
+Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#PRNUM), started early (decided by the maintainer 2026-10-31), beside the three note levels; P3 on wait for the levels. SB3 comes before P7a.
 
 ## 1. Goal
 
@@ -148,6 +148,15 @@ CHANGELOG (Fixed): "The explanations of `if`, of `;` before a reserved word, of 
 Tests: test/reading.test.ts and test/lists.test.ts against bash (`[[ $x == 1* ]]`, `[[ $x == "1*" ]]`, `-eq` with arithmetic); tar's operands with GNU tar (`tar -tf` lists what `-c` was given).
 
 Risks: small. The snapshot shows every changed text.
+
+Done (#PRNUM):
+
+- Pattern or plain comes from the word model: `plainPatternText(n, model)` (src/semantics/globwords.ts, from `braceWords` of the word model: src/semantics/words.ts is at its length ceiling) gives the text a pattern of `[[ == ]]` or of `case` matches where nothing in it acts as a wildcard once expanded with the values of the model (`plainPattern` of src/semantics/chars.ts) (a quoted `*` does not; `p=1; [[ $x == $p ]]` is plain), and nocasematch is off. src/explain/tests.ts and src/reading.ts (through `ReadingContext.plainPattern`) read it; test/words.test.ts checks it with bash, nocasematch and `[a/b]` included.
+- The operand kinds are `unaryTestOperands` and `binaryTestOperands` in src/dict/syntax.ts, with their texts `testOperandTexts`; src/reading.ts reads them for the operands' rows, and src/explain/tests.ts for `-eq` and its kin (`numericTestNote`, whose regex left the command-reading guard's list).
+- On main, `[[`, `]]` and the operands already were rows of Reading, with no text of their own (a general text of their kind showed once). P2 gives each its text.
+- The text of `HOME` had changed on main since round 11 ("where `cd` with no argument goes, and the value of `~`"); only the Japanese 「のパス」 went, so that both languages name the home directory alike.
+- tar's operands: `-A` (archives whose members are appended) has a kind too, which round 11 left out. test/oldstyle-real.test.ts checks each mode with GNU tar.
+- Left for later: `quotedPatternNote` (src/explain/tests.ts) still reads quoting from node types (word-source.md, W-P3: `[[ $x == ${q:-"*"} ]]`); the operands of `[ ]` and `test` are a command's arguments, read by their spec, and get no operand text.
 
 ### P3. Fixes to copy, as data
 

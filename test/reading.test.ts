@@ -779,6 +779,67 @@ describe('the reading tree of a line', () => {
     assert.strictEqual(find(a, '==').text, undefined);
   });
 
+  it('gives `[[`, `]]` and each operand of `[[ ]]` a row of its own, and says a pattern with no wildcard is a plain comparison, as bash does', () => {
+    const rows = (src: string, lang: 'en' | 'ja' = 'en'): string[] => {
+      const all = readingNodes(new Analyzer(lang).explainLine(parser.parse(src), 0, 'bash', { reading: true }).reading!);
+      return all.filter((n) => n.layer === 'bash' && ['keyword', 'operator', 'word'].includes(n.kind)).map((n) => `${n.label} — ${n.text ?? ''}`);
+    };
+    assert.deepStrictEqual(rows('[[ -f a && $x == 1 ]]'), [
+      '[[ — Starts the conditional expression',
+      '-f — is an existing regular file',
+      'a — The file `-f` tests',
+      '&& — both conditions are true',
+      '$x — The string on the left of `==`',
+      '== — strings are equal (nothing in the pattern on the right acts as a wildcard: a plain comparison)',
+      '1 — The pattern on the right of `==`',
+      ']] — Ends the conditional expression',
+    ]);
+    assert.deepStrictEqual(rows('[[ -f a && $x == 1 ]]', 'ja'), [
+      '[[ — 条件式の始まり',
+      '-f — 通常ファイルとして存在する',
+      'a — `-f` で調べるファイル',
+      '&& — 両方の条件が真',
+      '$x — `==` で比べる左辺の文字列',
+      '== — 文字列が等しい（右辺のパターンにワイルドカードとして働く文字がないので、普通の比較）',
+      '1 — `==` の右辺のパターン',
+      ']] — 条件式の終わり',
+    ]);
+    // A pattern with a wildcard; a quoted one, which matches as written; `-eq`, whose sides are arithmetic.
+    assert.deepStrictEqual(rows('[[ $x == 1* ]]').slice(2, 4), [
+      '== — strings are equal (the right side is a glob pattern)',
+      '1* — Glob pattern (shell wildcards): matched against a string',
+    ]);
+    assert.deepStrictEqual(rows('[[ $x == 1$y ]]').slice(2, 4), [
+      '== — strings are equal (the right side is a glob pattern)',
+      '1$y — The pattern on the right of `==`: the left side is matched against it as a glob pattern (a quoted part matches as written)',
+    ]);
+    // (A right side in parts, `*` a glob of its own: the parts after it say nothing more.)
+    assert.deepStrictEqual(rows('[[ $x == *"$y"x ]]').slice(2), [
+      '== — strings are equal (the right side is a glob pattern)',
+      '* — Glob pattern (shell wildcards): matched against a string',
+      '"$y" — ',
+      'x — ',
+      ']] — Ends the conditional expression',
+    ]);
+    assert.deepStrictEqual(rows('[[ $x != "1*" ]]').slice(2, 4), [
+      '!= — strings differ (nothing in the pattern on the right acts as a wildcard: a plain comparison)',
+      '"1*" — The pattern on the right of `!=`',
+    ]);
+    assert.deepStrictEqual(rows('[[ $x -eq 1+1 ]]').slice(1, 4), [
+      '$x — A value `-eq` compares: evaluated as an arithmetic expression',
+      '-eq — numbers are equal',
+      '1+1 — A value `-eq` compares: evaluated as an arithmetic expression',
+    ]);
+    // (Each kind of operand; `=~`'s regex is a language of its own, and a word alone in parentheses has no operator.)
+    assert.deepStrictEqual(rows('[[ -z a || -v b || -o c || -t 1 || a < b || a -nt b || ( c ) || $s =~ ^a ]]').filter((r) => !/^(\|\||\[\[|\]\]|[(<)]|-[zvot]|-nt|=~) /.test(r)), [
+      'a — The string `-z` tests', 'b — The variable name `-v` tests', 'c — The shell option name `-o` tests', '1 — The file descriptor `-t` tests',
+      'a — A string `<` compares', 'b — A string `<` compares', 'a — A file `-nt` compares', 'b — A file `-nt` compares', 'c — ',
+      '$s — The string on the left of `=~`', '^a — Regular expression (extended, ERE)',
+    ]);
+    // What bash does: `1` matches only itself, `1*` more, and the quoted `"1*"` only itself; `-eq` evaluates `1+1`.
+    assert.strictEqual(bash('for x in 1 1x 11; do [[ $x == 1 ]] && echo "$x"; [[ $x == 1* ]] && echo "* $x"; [[ $x == "1*" ]] && echo "q $x"; done; [[ "1*" == "1*" ]] && echo q; [[ 2 -eq 1+1 ]] && echo 2'), '1\n* 1\n* 1x\n* 11\nq\n2\n');
+  });
+
   it('names pipelines with a reserved word, clauses and coprocesses as the manual does', () => {
     assert.deepStrictEqual(explain('! a | b; time ls; coproc cat').reading!.children[0].children.map((c) => `${c.kind} ${c.label}`), [
       'pipeline ! a | b', 'operator ;', 'pipeline time ls', 'operator ;', 'coprocess coproc cat',
@@ -848,7 +909,7 @@ describe('the reading tree of a line', () => {
   it('is not made unless asked for, nor for a line with nothing to explain', () => {
     assert.strictEqual(analyzer.explainLine(parser.parse('echo a'), 0, 'bash').reading, undefined);
     assert.strictEqual(explain('echo a\n\n', 1).reading, undefined);
-    assert.strictEqual(readingTree(parser.parse(''), [], { lang: 'en', resolve: (name) => ({ kind: 'file', name, path: 'search', known: false }), meaning: () => undefined, arrayKind: () => 'unknown' }), undefined);
+    assert.strictEqual(readingTree(parser.parse(''), [], { lang: 'en', resolve: (name) => ({ kind: 'file', name, path: 'search', known: false }), meaning: () => undefined, plainPattern: () => undefined, arrayKind: () => 'unknown' }), undefined);
   });
 });
 
@@ -1036,7 +1097,7 @@ describe('the reading tree in the panel and in host files', () => {
       assert.deepStrictEqual(reads('tar -czf out.tgz ~/docs'), ['out.tgz -f', '~/docs -']);
       assert.deepStrictEqual(reads('tar -czf out.tgz ~'), ['out.tgz -f', '~ -']);
       const r = explain('tar -czf out.tgz ~/docs').reading!;
-      assert.match(find(r, '~/docs', 'command').text!, /^Word `~\/docs`$/);
+      assert.match(find(r, '~/docs', 'command').text!, /^files and directories to put into the archive$/);
       assert.match(find(r, '~/docs', 'bash').text!, /^Tilde expansion/);
     });
   });

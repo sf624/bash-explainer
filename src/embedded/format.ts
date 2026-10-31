@@ -313,7 +313,7 @@ const DATE: Record<string, [string, string]> = {
   U: ['年内の週番号（日曜始まり）', 'week of year (Sunday first)'], W: ['年内の週番号（月曜始まり）', 'week of year (Monday first)'], V: ['ISO 週番号（01〜53）', 'ISO week number'],
   s: ['UNIX 時刻（1970-01-01 からの秒数）', 'seconds since 1970-01-01 (UNIX time)'],
   Z: ['タイムゾーン名（例: JST）', 'time zone abbreviation (JST)'], z: ['UTC からの時差（例: +0900）', 'UTC offset (+0900)'],
-  F: ['日付（%Y-%m-%d と同じ。例: 2026-10-16）', 'date as %Y-%m-%d (2026-10-16)'], T: ['時刻（%H:%M:%S と同じ）', 'time as %H:%M:%S'],
+  F: ['日付（%Y-%m-%d と同じ。例: 2026-01-31）', 'date as %Y-%m-%d (e.g. 2026-01-31)'], T: ['時刻（%H:%M:%S と同じ）', 'time as %H:%M:%S'],
   D: ['日付（%m/%d/%y と同じ）', 'date as %m/%d/%y'], R: ['時刻（%H:%M と同じ）', 'time as %H:%M'], r: ['12時間制の時刻（例: 01:30:00 PM）', '12-hour time (01:30:00 PM)'],
   c: ['ロケールに応じた日時', 'locale date and time'], x: ['ロケールに応じた日付', 'locale date'], X: ['ロケールに応じた時刻', 'locale time'],
   n: ['改行', 'a newline'], t: ['タブ', 'a tab'], '%': ['文字「%」そのもの', 'a literal "%"'],

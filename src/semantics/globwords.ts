@@ -1,11 +1,12 @@
 // The patterns of a word of a `for` or `select` list, from the word model (src/semantics/words.ts): what the loop runs
 // over when no file matches (manual 3.5.1, brace expansion first; 3.5.8, a field with a glob character that is not
-// quoted is a pattern, and stays as it is when nothing matches it).
+// quoted is a pattern, and stays as it is when nothing matches it). And whether a pattern of `[[ == ]]` or `case` is
+// one at all, or plain text (3.2.5.2).
 import { parseExpansion, type ParsedExpansion } from '../expansion';
 import { decodedText } from '../staticword';
 import { nameText, type SyntaxNode } from '../syntax/tree';
-import { globbedByBash } from './chars';
-import { attribute, type ShellState, type StateModel } from './state';
+import { globbedByBash, plainPattern } from './chars';
+import { attribute, option, type ShellState, type StateModel } from './state';
 import { braceWords, type Char, patternOfChars, wordMeaning } from './words';
 
 /** A field of a word that pathname expansion reads as a pattern: its text after quote removal, and as a pattern (quoted characters escaped); neither where not known. */
@@ -103,4 +104,20 @@ export function wordPatterns(n: SyntaxNode, model: StateModel): BracePatterns[] 
     const open = chars.some((c) => c.c === HOLE && !c.quoted);
     return sure(chars) ? { written, patterns: [{}], others: 0 } : { written, patterns: [], others: open ? 'unknown' : 1 };
   });
+}
+
+/**
+ * The text a pattern matches where it is plain: the word that holds `n` is a pattern of `[[ x == p ]]` or of `case`,
+ * nothing in it acts as a wildcard once expanded with the values of the model (a quoted `*` does not), and nocasematch
+ * is off where it runs, so it is compared as plain text (3.2.5.2: `[[ $x == 1 ]]`). Undefined when it is a pattern,
+ * may be one, or is not known here (a value not known, or one bash fails on).
+ */
+export function plainPatternText(n: SyntaxNode, model: StateModel): string | undefined {
+  const w = wordMeaning(n, model);
+  if (w?.context !== 'cond-pattern' && w?.context !== 'case-pattern') return undefined;
+  const nocase = option(w.state, 'shopt', 'nocasematch');
+  if (nocase !== 'off' && nocase !== 'default') return undefined;
+  // (One word and one field: neither `[[ ]]` nor `case` brace-expands or splits a pattern.)
+  const field = braceWords(n, model, () => '')!.words[0].fields?.[0];
+  return field && plainPattern(patternOfChars(field));
 }

@@ -97,7 +97,7 @@ describe('old-style options: tar', () => {
     const dashExpl = new Map(dash.filter((t) => t.kind === 'option').map((t) => [t.label, t.explanation]));
     for (const l of letters) assert.strictEqual(l.explanation, dashExpl.get('-' + l.label), l.label);
     assert.deepStrictEqual(old.slice(1).map((t) => [t.label, t.explanation]), [
-      ['a.tar', 'Value for `f`'], ['dir', 'Value for `C`'], ['sub', 'Word `sub`'],
+      ['a.tar', 'Value for `f`'], ['dir', 'Value for `C`'], ['sub', 'files and directories to put into the archive'],
     ]);
     assert.deepStrictEqual(letters.map((t) => t.span.start.character), [4, 5, 6, 7]);
     assert.strictEqual(old[0].explanation, 'Old-style options (no dash): `c` `f` `v` `C`');

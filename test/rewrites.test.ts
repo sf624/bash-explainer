@@ -50,6 +50,15 @@ describe('the rewrites of `failure-reported-as-success`', () => {
     const ja = new Analyzer('ja').explainLine(parser.parse('cp a b || echo failed'), 0).facts![0];
     assert.match(ja.text, /失敗を伝えるには `… \|\| \{ echo failed >&2; return 1 2>\/dev\/null \|\| exit 1; \}` と書きます。ファイルが `source` で読み込まれたときは `return` で戻り、実行されたときは `exit` で終わります$/);
   });
+  it('names a long command by its name, rather than cutting it in a word', () => {
+    const said = (src: string): string => factsOf(`#!/bin/bash\n${src}`, 'failure-reported-as-success')[0].text.replace(/^.*? so when (.*?) fails.*?the status of (`.*?`):.*$/s, '$1 / $2');
+    assert.strictEqual(said('tar -czf "$backup" ~/docs 2>/dev/null || echo "failed" >&2'), '`tar` / `echo "failed" >&2`');
+    assert.strictEqual(said('cp a b || echo "Backup failed: could not write the archive to the disk"'), '`cp a b` / `echo`');
+    // (A short one whole; a long one with no plain name, shortened.)
+    assert.strictEqual(said('cp -a src/ dst/ 2>/dev/null || echo failed'), '`cp -a src/ dst/ 2>/dev/null` / `echo failed`');
+    assert.strictEqual(said('"$tool" --archive --verbose src/ dst/ || echo failed'), '`"$tool" --archive --verbose s…` / `echo failed`');
+    assert.strictEqual(said('grep -q pattern file.txt | sort | head -n 1 || echo failed'), '`grep -q pattern file.txt | so…` / `echo failed`');
+  });
   it('says the case of a file with no shebang as a condition, and not for a code block typed into a terminal', () => {
     assert.match(factsOf('cp a b || echo failed', 'failure-reported-as-success')[0].text, /^ⓘ Caveat: if this file is run as a script, this is its last command, so when `cp a b` fails/);
     const md = new Analyzer('en').explainLine(parser.parse('cp a b || echo failed'), 0, undefined, { host: { kind: 'markdown' } }).facts ?? [];

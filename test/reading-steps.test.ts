@@ -57,7 +57,7 @@ describe('the steps of Reading (src/ui/readingSteps.ts)', () => {
   it('says what a kind is in general on its first node only, by step and then in order', () => {
     const view = readingView(reading('x=$(date +%F); [[ $x =~ ^a+ ]]'), 'en');
     const about = drawn(view.root).filter((n) => n.about).map((n) => `${n.layer}/${n.kind} ${n.label}`);
-    assert.deepStrictEqual(about, ['bash/line ', 'bash/command x=$(date +%F)', 'child/script date +%F', 'child/argument +%F', 'language/language date', 'bash/keyword [[', 'bash/word $x', 'language/language regex']);
+    assert.deepStrictEqual(about, ['bash/line ', 'bash/command x=$(date +%F)', 'child/script date +%F', 'child/argument +%F', 'language/language date', 'language/language regex']);
     // (The regex of `=~` is bash's own language; date's format is date's.)
     assert.match(find(view.root, 'language', 'regex').about!, /POSIX extended regular expression|ERE/);
     // A kind seen first deep under a later step goes to the node that appears earlier.
