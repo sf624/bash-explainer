@@ -138,7 +138,8 @@ describe('lines no other test reaches', () => {
     const jk = extractShell('jenkinsfile', "node {\n  sh '''#!/usr/bin/env bash\n    echo hi\n  '''\n}\n");
     assert.strictEqual(jk.regions[0].shell, 'bash');
     assert.strictEqual(extractShell('jenkinsfile', "node {\n  sh '''\n    #!/bin/zsh\n    echo hi\n  '''\n}\n").regions[0].shell, 'zsh');
-    assert.match(extractShell('python', 'import subprocess\nsubprocess.run(["ls", "-l\\x41"])\n').text, /ls -lA/);
+    // (Written with an escape, the word is quoted, so that its token says its value: test/hosts.test.ts.)
+    assert.match(extractShell('python', 'import subprocess\nsubprocess.run(["ls", "-l\\x41"])\n').text, /ls '-lA'/);
   });
 
   it('printf formats: \\x and \\u escapes, a bad conversion, a precision on integers', () => {

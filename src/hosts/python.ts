@@ -143,7 +143,7 @@ export function python(b: Builder): void {
       b.execRegion(ws[0].line, ws[ws.length - 1].line, label(['シェルを通さずに実行する引数のリスト', 'arguments run without a shell']), [[
         'リストで渡した引数はシェルを通さずにそのまま実行されます。`$VAR` の展開・パイプ・リダイレクト・`&&` などは働きません（値を安全に渡せる書き方です）。',
         'A list of arguments is run directly, without a shell: `$VAR`, pipes, redirections and `&&` do not work (the safe way to pass values).',
-      ]]);
+      ]], ['Python の文字列', 'Python string']);
       continue;
     }
     const script = pyScript(b, src, a0, z0, pos);

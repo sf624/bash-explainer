@@ -151,6 +151,7 @@ export function explainHostedLine(
   const provided = hostProvided(extracted, region);
   const ex = analyzer.explainLine(tree, line, regionShell(region, shell), {
     ...opts, host: region.host, ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}), ...(provided.length ? { hostProvided: provided } : {}),
+    ...(region.noShell ? { noShell: region.noShell } : {}),
   });
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);

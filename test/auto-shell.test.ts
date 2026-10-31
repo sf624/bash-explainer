@@ -140,7 +140,7 @@ describe('the automatic shell of a host file: what the chip, its popover and the
         }
         explained++;
         if (auto === 'none') {
-          // (Docker's exec form and a Python list run with no shell; their words are still explained, as bash's.)
+          // (Docker's exec form and a Python list run with no shell: their words are explained as a program's, test/hosts.test.ts.)
           assert.ok(/\[/.test(text.split('\n')[line]), `line ${line}`);
           assert.deepStrictEqual(say('en'), { chip: `${name} · no shell`, popover: 'Auto: no shell (runs directly)', setting: 'Auto (now: no shell, runs directly)' }, `line ${line}`);
           assert.deepStrictEqual(say('ja'), { chip: `${name} · シェルなし`, popover: '自動: シェルなし（直接実行）', setting: '自動（今: シェルなし、直接実行）' }, `line ${line}`);

@@ -31,6 +31,7 @@ import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
 import { arrayKind, globOff, globState, inArithmetic, isAssoc, shoptAt, unquotedWord, wordAt } from './reads';
 import { refusedNote, sequenceParts } from './sequences';
+import { hostString } from './hoststrings';
 import { pidNote, stageCountNote } from './where';
 
 /**
@@ -942,6 +943,8 @@ export function arithmeticExpansion(cx: Explainer, n: SyntaxNode): Token {
 
 /** A single-quoted string. */
 export function rawString(cx: Explainer, n: SyntaxNode): Token {
+  const host = hostString(cx, n);
+  if (host) return host;
   return cx.tok(n, 'string', cx.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
 }
 
@@ -962,6 +965,8 @@ function unbracedElement(cx: Explainer, n: SyntaxNode): void {
 
 /** A word of several parts (`a"b"$c`): an element of an array assignment that bash splits, a brace expansion, or the parts joined. */
 export function concatenation(cx: Explainer, n: SyntaxNode): Token {
+  const host = hostString(cx, n);
+  if (host) return host;
   unbracedElement(cx, n);
   // (A word of plain text with braces that do not expand here, `x{a,b}` in dash, is one word.)
   if (plainText(n)) return braceWord(cx, n) ?? word(cx, n);

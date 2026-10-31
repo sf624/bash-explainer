@@ -167,7 +167,16 @@ Fixes found by the panel's prototype (step P2 of [docs/design/panel-redesign.md]
 - Japanese: the status of an AND or OR list is 「最後に実行したコマンドのもの」 (before, 「最後に実行したもののもの」); `$HOME` is 「ホームディレクトリ」, as in English.
 - `date +%F`: "date as %Y-%m-%d (e.g. 2026-01-31)".
 
-### Warnings that fired where bash runs the line fine
+### Words run with no shell: Docker's exec form and Python lists
+
+`CMD ["echo", "$HOME"]`, `ENTRYPOINT ["./run.sh"]`, `RUN ["apt-get", "install", "-y", "curl"]` and `subprocess.run(["ls", "-l"])` run with no shell: the program is found in `$PATH` and gets each string as one word. The explanation now says so:
+
+- The name is a program in `$PATH`. `echo`, `printf`, `kill`, `[` and `time` run the program of their name: "No shell reads these words, so this is the program, not the shell's builtin". Before, `echo` was bash's builtin.
+- A builtin with no program (`cd`, `export`, `source`, `exit`, `read`) and a reserved word (`if`) are not found: "The shell's builtin `cd` (Change the current directory). No shell reads these words, so it is looked up in PATH as a program, and there is usually none of this name: the command is not found". Their words are words of no command (`Word /app`). Before, `cd` was bash's builtin, `["if", "x"]` an `if` statement, and `["export", "A=1"]` an assignment.
+- Each string says what it is in the file, with its value, and cites no section of bash's manual: "JSON string: `$HOME` goes to the command as one word, as it is. No shell reads its `$`, `*`, quotes or spaces first" (a Python list: "Python string"). A string written with escapes shows its value: `"a\"b"` is `a"b`, `"\u0041"` is `A`. Before, a string with a `$`, a space or a quote was a "Single-quoted string" (§3.1.2.2), the quoting of the text bash was given; `"it's"` was a concatenation of three parts.
+- The exec form reads JSON's escapes (`\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, `\uXXXX`). An array with another escape is no JSON, and Docker runs the line in its shell form; it is left out, as any array that does not parse. Before, `\u0041` was read as `u0041`.
+- A script passed to a shell (`CMD ["sh", "-c", "echo $HOME"]`) is read by that shell, as before.
+
 
 Each case was run in bash 5.2; each warning is still given where bash fails.
 

@@ -8,7 +8,7 @@ import { Analyzer, Token } from '../src/analyzer';
 import { batsTestName, explainHostedLine, extractShell, hostIssues, hostKind } from '../src/hosts';
 import { githubContext } from '../src/dict/ciVariables';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { allTokens } from './support/explain';
+import { allTokens, tokensOf } from './support/explain';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -53,7 +53,7 @@ describe('Dockerfile', () => {
   it('explains the exec form as a command run without a shell', () => {
     const ex = explain('Dockerfile', 7)!;
     assert.match(ex.notes[0], /runs the command directly, without a shell/);
-    assert.deepStrictEqual(allTokens(ex.items).map((t) => [t.kind, t.label]), [['builtin', '"echo"'], ['argument', '"exec form is not a shell"'], ['string', '"exec form is not a shell"']]);
+    assert.deepStrictEqual(allTokens(ex.items).map((t) => [t.kind, t.label]), [['command', '"echo"'], ['argument', '"exec form is not a shell"'], ['string', '"exec form is not a shell"']]);
     const multi = labels('Dockerfile', 17);
     assert.ok(multi.includes('"--config"@24') && multi.includes('"--name"@12') && multi.includes('"$HOME/app.conf"@36'), multi.join());
   });
@@ -363,6 +363,95 @@ describe('GitHub Actions expression contexts', () => {
       assert.match(explainSrc(wf(expr), 'ja').notes[0], /^⚠ スクリプトインジェクションの危険/, expr);
     }
     for (const expr of safe) assert.ok(!explainSrc(wf(expr)).notes.some((n) => /injection/.test(n)), expr);
+  });
+});
+
+describe('words run with no shell (Docker\'s exec form, a Python list)', () => {
+  /** The explanation of line `line` (1-based) of `src`, a file of `kind`. */
+  const explainText = (kind: 'dockerfile' | 'python', src: string, line: number, lang: 'ja' | 'en' = 'en') => {
+    const extracted = extractShell(kind, src);
+    return explainHostedLine(new Analyzer(lang), parser.parse(extracted.text), extracted, src.split('\n'), line - 1, lang);
+  };
+  const docker = (instr: string, lang: 'ja' | 'en' = 'en') => explainText('dockerfile', `FROM alpine\n${instr}\n`, 2, lang)!;
+  const tokens = (instr: string, lang: 'ja' | 'en' = 'en') => allTokens(docker(instr, lang).items);
+  /** The command's token: its kind, its name's kind and what the name's line says. */
+  const head = (ex: { items: Token[] }) => {
+    const t = ex.items[0];
+    return { kind: t.kind, runs: t.name?.runs, also: t.name?.said.also, by: t.name?.said.by, refs: t.refs };
+  };
+
+  it('runs a program from PATH, also of a name the shell has a builtin of', () => {
+    assert.deepStrictEqual(head(docker('CMD ["npm","start"]')), { kind: 'command', runs: 'program', also: undefined, by: undefined, refs: undefined });
+    assert.deepStrictEqual(tokens('CMD ["npm","start"]').map((t) => [t.kind, t.label]), [['command', '"npm"'], ['argument', '"start"']]);
+    // (`/bin/echo` runs, not bash's builtin: its spec is the program's.)
+    const echo = docker('CMD ["echo","$HOME"]');
+    assert.deepStrictEqual(head(echo), { kind: 'command', runs: 'program', also: 'No shell reads these words, so this is the program, not the shell\'s builtin', by: undefined, refs: undefined });
+    assert.match(echo.items[0].explanation, /from coreutils/);
+    assert.deepStrictEqual(head(docker('CMD ["echo","x"]', 'ja')).also, 'この単語を読むシェルはないので、これはプログラムで、シェルのビルトインではない');
+    assert.deepStrictEqual(head(docker('ENTRYPOINT ["./run.sh"]')), { kind: 'command', runs: 'program', also: undefined, by: undefined, refs: ['3.7.2'] });
+    assert.deepStrictEqual(tokens('RUN ["apt-get","install","-y","curl"]').map((t) => [t.kind, t.label]),
+      [['command', '"apt-get"'], ['subcommand', '"install"'], ['option', '"-y"'], ['argument', '"curl"']]);
+    // (`time` is a reserved word of the shell, and a program.)
+    assert.strictEqual(head(docker('CMD ["time","ls"]')).also, 'No shell reads these words, so this is the program, not the shell\'s reserved word');
+    assert.strictEqual(head(docker('CMD ["time","ls"]', 'ja')).also, 'この単語を読むシェルはないので、これはプログラムで、シェルの予約語ではない');
+    // (`[` is the program, which reads its words as an expression.)
+    assert.ok(tokens('CMD ["[", "-f", "x", "]"]').some((t) => t.kind === 'test' && /`x` is an existing regular file/.test(t.explanation)));
+  });
+
+  it('finds no command for a builtin with no program, nor for a reserved word', () => {
+    const cd = docker('CMD ["cd","/app"]');
+    assert.deepStrictEqual(head(cd), { kind: 'command', runs: 'program', also: 'No shell reads these words, so the shell\'s builtin does not run, and there is usually no program of this name', by: undefined, refs: undefined });
+    assert.strictEqual(cd.items[0].explanation, 'The shell\'s builtin `cd` (Change the current directory). No shell reads these words, so it is looked up in PATH as a program, and there is usually none of this name: the command is not found');
+    // (The words of a command not found are words of no command.)
+    assert.deepStrictEqual(cd.items[0].children.map((t) => [t.kind, t.explanation]), [['argument', 'Word `/app`']]);
+    assert.strictEqual(head(docker('CMD ["cd","/app"]', 'ja')).also, 'この単語を読むシェルはないので、シェルのビルトインは動かない。この名前のプログラムはふつうない');
+    const kw = docker('CMD ["if", "x"]');
+    assert.deepStrictEqual(head(kw), { kind: 'command', runs: 'none', also: undefined, by: 'no program is named `if` (`if` is a reserved word of the shell, and no shell reads these words)', refs: undefined });
+    assert.match(kw.items[0].explanation, /^`if` is a reserved word of the shell, not a command\. No shell reads these words/);
+    assert.match(head(docker('CMD ["if", "x"]', 'ja')).by!, /^`if` という名前のプログラムはない/);
+    // (An assignment is a word too: as the name, and after `export`.)
+    assert.deepStrictEqual(tokens('CMD ["A=1", "x"]').map((t) => [t.kind, t.label]), [['command', '"A=1"'], ['argument', '"x"']]);
+    assert.deepStrictEqual(tokens('CMD ["export", "A=1"]').map((t) => [t.kind, t.label]), [['command', '"export"'], ['string', '"A=1"']]);
+    // (Not after a command that declares no names: `env` reads its own assignments.)
+    assert.match(tokens('CMD ["env", "A=1", "ls"]').find((t) => t.label === '"A=1"')!.explanation, /Sets the variable `A`/);
+  });
+
+  it('says what each word is in the file: a JSON string, with its value', () => {
+    const word = (instr: string, label: string, lang: 'ja' | 'en' = 'en') => tokens(instr, lang).find((t) => t.kind === 'string' && t.label === label)!;
+    const home = word('CMD ["echo","$HOME"]', '"$HOME"');
+    assert.strictEqual(home.explanation, 'JSON string: `$HOME` goes to the command as one word, as it is. No shell reads its `$`, `*`, quotes or spaces first');
+    assert.strictEqual(home.refs, undefined);
+    assert.ok(!tokens('CMD ["echo","$HOME"]').some((t) => t.kind === 'variable' || /single-quoted|3\.1\.2/i.test(`${t.explanation} ${t.refs}`)));
+    assert.strictEqual(word('CMD ["echo","$HOME"]', '"$HOME"', 'ja').explanation, 'JSON の文字列: `$HOME` がそのまま1つの単語としてコマンドに渡る。先にシェルが `$`・`*`・クォート・空白を読むことはない');
+    // (JSON's escapes: `\"`, `\uXXXX`, `\t`; a `'` and a control character are no quoting of bash's either.)
+    assert.match(word('CMD ["echo", "a\\"b"]', '"a\\"b"').explanation, /^JSON string: `a"b` goes/);
+    assert.match(word('CMD ["echo", "\\u0041"]', '"\\u0041"').explanation, /^JSON string: `A` goes/);
+    assert.match(word('CMD ["echo", "it\'s"]', '"it\'s"').explanation, /^JSON string: `it's` goes/);
+    assert.match(word('CMD ["echo", "a\\tb"]', '"a\\tb"').explanation, /^JSON string: `a⇥b` goes to the command as one word, as it is \(control characters are shown as symbols: `⇥` is HT \(tab\)\)/);
+    assert.strictEqual(extractShell('dockerfile', 'CMD ["a\\/\\b\\f\\r\\u00e9"]').text, "$'a/\b\f\\ré'");
+    // (A string JSON cannot read makes no exec form: Docker runs the line in its shell form; we leave it out, as any array that does not parse.)
+    assert.strictEqual(explainText('dockerfile', 'FROM alpine\nCMD ["echo", "\\x"]\n', 2), undefined);
+    assert.strictEqual(explainText('dockerfile', 'FROM alpine\nCMD ["echo", "\\u00g1"]\n', 2), undefined);
+    // (A script passed to `sh -c` is read by sh, as before.)
+    const sh = docker('CMD ["sh","-c","echo $HOME"]');
+    assert.deepStrictEqual(allTokens(sh.items).map((t) => [t.kind, t.label]), [['builtin', 'echo'], ['argument', '$HOME'], ['variable', '$HOME']]);
+  });
+
+  it('a Python list: a program, and Python strings', () => {
+    const py = (call: string) => explainText('python', `import subprocess\n${call}\n`, 2)!;
+    assert.deepStrictEqual(allTokens(py('subprocess.run(["ls","-l"])').items).map((t) => [t.kind, t.label]), [['command', '"ls"'], ['option', '"-l"']]);
+    const echo = allTokens(py('subprocess.run(["echo", r"$HOME", \'a b\'])').items);
+    assert.deepStrictEqual(echo.map((t) => [t.kind, t.label]), [['command', '"echo"'], ['argument', 'r"$HOME"'], ['string', 'r"$HOME"'], ['argument', "'a b'"], ['string', "'a b'"]]);
+    assert.strictEqual(echo[2].explanation, 'Python string: `$HOME` goes to the command as one word, as it is. No shell reads its `$`, `*`, quotes or spaces first');
+    assert.strictEqual(echo[0].name?.said.also, 'No shell reads these words, so this is the program, not the shell\'s builtin');
+  });
+
+  it('a string a shell runs is read by that shell: the model has no shell only for the words', () => {
+    const opts = { noShell: { word: ['JSON の文字列', 'JSON string'] as [string, string] } };
+    const ts = tokensOf("env bash -c 'echo hi'", 0, 'en', opts);
+    assert.strictEqual(ts[0].name?.runs, 'program');
+    assert.deepStrictEqual(ts.filter((t) => t.label === 'echo').map((t) => [t.kind, t.name?.runs]), [['builtin', 'builtin']]);
+    assert.match(ts.find((t) => t.kind === 'string')!.explanation, /^JSON string: `echo hi` goes/);
   });
 });
 

@@ -45,7 +45,7 @@ export class Analyzer {
     // (`#!/bin/bash --posix` starts bash in POSIX mode: the state reads it.)
     // (How the file is read: a host's code is run as a script, or typed into a terminal. A string read as a script has
     // the model of its file, which this does not change.)
-    const state = shellState(tree, shell, { host: opts.hostCommands, run: opts.hostRun, version: opts.bashVersion, ...(opts.host ? { read: fileRead(root, opts.host) } : {}), ...(opts.hostProvided?.length ? { provided: opts.hostProvided } : {}) });
+    const state = shellState(tree, shell, { host: opts.hostCommands, run: opts.hostRun, version: opts.bashVersion, ...(opts.host ? { read: fileRead(root, opts.host) } : {}), ...(opts.hostProvided?.length ? { provided: opts.hostProvided } : {}), ...(opts.noShell ? { noShell: true } : {}) });
     // The walk the context calls back: the dispatch, with this line's context, and a line of a string read as a script.
     const walk: Walk = {
       explain: (n) => explain(cx, n),

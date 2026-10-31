@@ -1,5 +1,6 @@
 import { type AutoShell, SHELL_NAMES, type ShellSource } from './dialect';
 import type { Lang } from './i18n';
+import type { NameFacts } from './semantics/names';
 
 // The wording of the automatic shell ("Shell: auto"), in every place the product says it (docs/design/sources.md, SB4;
 // docs/design/chrome-redesign.md, decision 12). The shell and where it comes from are `autoShellAt`'s (src/document.ts:
@@ -63,4 +64,17 @@ export function autoShellText(lang: Lang, form: AutoShellForm, reading?: AutoShe
       if (source === 'default') return ja ? `${auto}（今: ${FROM.default.ja}の ${name}）` : `${auto} (now: ${name}, the default)`;
       return ja ? `${auto}（今: ${name}、${from}）` : `${auto} (now: ${name}, ${from})`;
   }
+}
+
+/**
+ * The line on a name no shell reads (`NameFacts.noShell`: Docker's exec form): what a shell would have run of it
+ * instead does not run. A reserved word that no program is named says so in `by`.
+ */
+export function noShellLines(lang: Lang, f: NameFacts): string[] {
+  const ja = lang === 'ja';
+  const skips = f.noShell!.skips;
+  if (f.noProgram) return [ja ? 'この単語を読むシェルはないので、シェルのビルトインは動かない。この名前のプログラムはふつうない' : 'No shell reads these words, so the shell\'s builtin does not run, and there is usually no program of this name'];
+  if (f.runs !== 'program' || !skips) return [];
+  const what = skips === 'builtin' ? (ja ? 'シェルのビルトイン' : 'the shell\'s builtin') : (ja ? 'シェルの予約語' : 'the shell\'s reserved word');
+  return [ja ? `この単語を読むシェルはないので、これはプログラムで、${what}ではない` : `No shell reads these words, so this is the program, not ${what}`];
 }

@@ -345,7 +345,8 @@ function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedC
   }
   const head = commandHeadFor(cx, nameNode, word);
   const spelled = staticWordValue(word, false, cx.shell);
-  if (spelled && spelled !== word.text) {
+  // (With no shell, the quotes are the host's string, which the name's token says: `hostString`.)
+  if (spelled && spelled !== word.text && !cx.state.noShell) {
     head.explanation = cx.s(
       `コマンド名 \`${word.text}\` は、クォートやバックスラッシュ、空の \`$(…)\` を取り除くと \`${shown(spelled)}\` になる。${head.explanation}`,
       `The command name \`${word.text}\` becomes \`${shown(spelled)}\` once the quotes, backslashes and empty \`$(…)\` are removed. ${head.explanation}`,
@@ -621,6 +622,8 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
   if (custom) {
     return { name, res: ran, spec: custom, kind: 'command', nameTokens: [], explanation: cx.t(custom.summary) + cx.s('（設定 customCommands で定義）', ' (from the customCommands setting)') };
   }
+  // (No shell reads the words, Docker's exec form: a builtin's name runs the program of its name.)
+  if (res.kind === 'file' && res.noShell?.skips) return noShellHead(cx, name, ran, res.noShell.skips);
   const spec = hostCommand(cx, name) ?? lookupCommand(name);
   if (spec) {
     const builtin = !!spec.builtin;
@@ -657,6 +660,26 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
   }
   if (name.includes('/')) return { name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'], explanation: cx.s(`パス \`${name}\` にあるプログラム・スクリプトを実行する`, `Run the program or script at \`${name}\``) };
   return { name, res: ran, kind: 'command', nameTokens: [], explanation: cx.s(`外部コマンド \`${name}\` を実行する（辞書に未登録。\`man ${name}\` や \`${name} --help\` を参照）`, `Run the external command \`${name}\` (not in the dictionary; see \`man ${name}\`)`) };
+}
+
+/**
+ * The name of a builtin or a reserved word that no shell reads (`NameResolution` `noShell`, Docker's exec form): it is
+ * looked up in PATH, and runs the program of its name (`echo`, `time`), or is not found (`cd`, `if`). The words after
+ * a name not found are words of no command.
+ */
+function noShellHead(cx: Explainer, name: string, res: NameResolution, skips: 'builtin' | 'keyword'): CommandHead {
+  const spec = lookupCommand(name);
+  const program = !spec ? undefined : spec.builtin ? spec.program : spec;
+  // (A program of the dictionary, which the manual does not describe: its token rests on its spec.)
+  if (program) return { name, res, spec: program, ...testOf(res), kind: 'command', nameTokens: [], basis: programBasis(cx, name, program)!, explanation: cx.t(program.summary) };
+  return {
+    name, res, kind: 'command', nameTokens: [],
+    explanation: skips === 'builtin'
+      ? cx.s(`シェルのビルトイン \`${name}\`（${cx.t(spec!.summary)}）。この単語を読むシェルはないので、PATH からプログラムとして探すが、この名前のプログラムはふつうなく、コマンドが見つからずに失敗する`,
+        `The shell's builtin \`${name}\` (${cx.t(spec!.summary)}). No shell reads these words, so it is looked up in PATH as a program, and there is usually none of this name: the command is not found`)
+      : cx.s(`\`${name}\` はシェルの予約語で、コマンドではない。この単語を読むシェルはないので、PATH からプログラムとして探すが、この名前のプログラムはなく、コマンドが見つからずに失敗する`,
+        `\`${name}\` is a reserved word of the shell, not a command. No shell reads these words, so it is looked up in PATH as a program, and there is none of this name: the command is not found`),
+  };
 }
 
 /** `test` or `[`, when `res` runs one of them (src/semantics/names.ts): its spec, for `CommandHead.test`. */

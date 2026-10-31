@@ -39,9 +39,10 @@ export interface ShellRegion {
   warnPipefail?: boolean;
   /**
    * Words the host runs with no shell (Docker's exec form `CMD ["npm", "start"]`, a Python list of arguments): written
-   * as shell words so that the command is explained, but no shell reads them (`autoShellAt` says "no shell").
+   * as shell words so that the command is explained, but no shell reads them (`autoShellAt` says "no shell"; the model's
+   * `StateModel.noShell`: the name is a program in PATH).
    */
-  noShell?: true;
+  noShell?: NoShell;
   /** Commands the host defines for its scripts (bats: `run`, `load`…), read with these specs before the dictionary. */
   commands?: Record<string, CommandSpec>;
   /**
@@ -57,6 +58,12 @@ export interface ShellRegion {
    * model takes them as set by the environment (src/semantics/shellstate.ts, `fromEnvironment`).
    */
   provided?: readonly string[];
+}
+
+/** How the host writes the words it runs with no shell (`ShellRegion.noShell`). */
+export interface NoShell {
+  /** What a word is in the file: a JSON string (Docker), a Python string (ja, en). */
+  word: [ja: string, en: string];
 }
 
 /** Something the host replaces before the shell sees it (`$(CC)` in make, `${{ … }}` in GitHub Actions). */

@@ -14,6 +14,7 @@ import {
   variableNotExportedText, variableNotInRemoteText, variableNotPassedText,
 } from './messages-wrappers';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
+import { noShellLines } from './messages-shell';
 import type { Rewrite } from './rewrite';
 import type { NameFacts, NameKind } from './semantics/names';
 import type { ShebangRefusal } from './semantics/state';
@@ -847,7 +848,8 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
   };
   // (A program that looks the name up runs the program even where bash has a builtin of that name: `sudo echo`.)
   const program = f.by !== undefined && f.runs === 'program' && f.also.some((o) => o.kind === 'builtin' && !o.off);
-  const lines: string[] = f.noProgram
+  const lines: string[] = f.noShell ? noShellLines(lang, f)
+    : f.noProgram
     ? [f.by !== undefined
       ? (ja ? `\`${f.by}\` が名前を探すので、bash のビルトインは動かない。この名前のプログラムはふつうない` : `\`${f.by}\` looks the name up, so bash's builtin does not run, and there is usually no program of this name`)
       : (ja ? 'この名前のプログラムはふつうない' : 'There is usually no program of this name')]
@@ -863,7 +865,10 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
     return `${name}${detail ? `, ${detail}` : ''}${reach ? ` (${reach})` : ''}`;
   });
   if (others.length) lines.push(ja ? `同じ名前で、ほかに: ${others.join('・')}` : `Same name, also: ${others.join('; ')}`);
-  const by = f.runs === 'none' ? (f.why === 'not-found'
+  const by = f.runs === 'none' ? (f.why === 'not-found' && f.noShell
+    ? (ja ? `\`${f.name}\` という名前のプログラムはない（\`${f.name}\` はシェルの予約語で、この単語を読むシェルはない）`
+      : `no program is named \`${f.name}\` (\`${f.name}\` is a reserved word of the shell, and no shell reads these words)`)
+    : f.why === 'not-found'
     ? (ja ? `${f.by ? `\`${f.by}\`` : 'bash'} が探しても \`${f.name}\` という名前のコマンドはない（bash は \`${f.name}: command not found\` と表示する）`
       : `${f.by ? `\`${f.by}\`` : 'bash'} finds no command named \`${f.name}\` (bash says \`${f.name}: command not found\`)`)
     : (ja ? `\`${f.by ?? 'builtin'}\` が探しても \`${f.name}\` という名前のビルトインはない` : `\`${f.by ?? 'builtin'}\` finds no builtin named \`${f.name}\``))

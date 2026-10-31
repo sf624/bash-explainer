@@ -82,6 +82,12 @@ export interface StateModel {
    */
   readonly interactiveStart: boolean;
   /**
+   * Whether no shell reads the script: the host runs its words as one program (`ShellRegion.noShell`: Docker's exec
+   * form, a Python list of arguments). Its command name is then a program in PATH, not an alias, a reserved word, a
+   * function or a builtin (src/semantics/names.ts). Never for a string a shell runs (`StateModel.script`).
+   */
+  readonly noShell: boolean;
+  /**
    * Whether the host gives the script the variable `name` (`ShellRegion.provided`, and its placeholders): read by
    * `fromEnvironment` as one the environment has. None outside a host file.
    */
@@ -367,7 +373,9 @@ function childModel(script: NestedScript): StateModel {
     const why = w.blind ? undefined : openingBlinds(childOpening(pass.invocation, vars, st.set.get('posix') === 'on'));
     return why ? w.walkAgain(why) : st;
   };
-  return buildModel(script.tree, script.shell, false, script.depth, script.env, start, script.outer, modelTrusts.get(script.outer), undefined, undefined, undefined, modelVersions.get(script.outer));
+  // (A shell runs the string: not the host's words run with no shell, `noShell`.)
+  const file = { read: script.outer.read, provides: script.outer.provides, interactiveStart: script.outer.interactiveStart, noShell: false };
+  return buildModel(script.tree, script.shell, false, script.depth, script.env, start, file, modelTrusts.get(script.outer), undefined, undefined, undefined, modelVersions.get(script.outer));
 }
 
 const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
@@ -503,10 +511,11 @@ export function shebangPosix(root: SyntaxNode): boolean {
  * absent (`shebangPosix`); `host`: the functions the file's host defines, bats' `run`…, which the walk reads by their
  * specs, as builtins: src/semantics/effects.ts; `run`: what the host runs of the script, bats' tests, src/semantics/walk/
  * host.ts, whose options replace the shebang's; `read`: how the file is read, `fileRead`, from its shebang when absent:
- * bash expands aliases when it is typed into a terminal, and may when a file with no shebang may be `.bashrc`). Cached per tree. The tree of a string read as a script
+ * bash expands aliases when it is typed into a terminal, and may when a file with no shebang may be `.bashrc`; `noShell`:
+ * the host runs the words with no shell, `StateModel.noShell`). Cached per tree. The tree of a string read as a script
  * (`StateModel.script`) has the model of that script: the outer one for `eval`.
  */
-export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: HostCommands; run?: HostRun; version?: BashVersion; read?: FileRead; provided?: readonly string[] } = {}): StateModel {
+export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: HostCommands; run?: HostRun; version?: BashVersion; read?: FileRead; provided?: readonly string[]; noShell?: boolean } = {}): StateModel {
   const owner = owners.get(tree);
   if (owner) return owner.model;
   const host = opts.host ?? NO_HOST;
@@ -514,7 +523,7 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
   const run = opts.run;
   const read = opts.read ?? fileRead(tree.root);
   const posix = opts.posix ?? ((!shell || shell === 'bash') && !run && shebangPosix(tree.root));
-  const key = `${shell ?? 'bash'}${posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}${run ? hostRunKey(run) : ''}${opts.version === '5.3' ? ' 5.3' : ''} ${read}${opts.provided?.length ? ` given:${[...opts.provided].sort().join(' ')}` : ''}`;
+  const key = `${shell ?? 'bash'}${posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}${run ? hostRunKey(run) : ''}${opts.version === '5.3' ? ' 5.3' : ''} ${read}${opts.provided?.length ? ` given:${[...opts.provided].sort().join(' ')}` : ''}${opts.noShell ? ' no-shell' : ''}`;
   let byKey = models.get(tree);
   if (!byKey) models.set(tree, (byKey = new Map()));
   const hit = byKey.get(key);
@@ -534,7 +543,7 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
     // (`#!/bin/bash -r`, `#!/bin/rbash`: a restricted shell, 6.10.)
     return shebang?.restricted ? restrictedStart(st, tree.root) : st;
   };
-  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, { read, provides: provider(opts.provided ?? []), interactiveStart: !!shebang?.interactive && !shebang.noBashrc }, undefined, host, run, { set, shopt, variables: shebang?.variables, others: shebang?.others }, opts.version);
+  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, { read, provides: provider(opts.provided ?? []), interactiveStart: !!shebang?.interactive && !shebang.noBashrc, noShell: !!opts.noShell }, undefined, host, run, { set, shopt, variables: shebang?.variables, others: shebang?.others }, opts.version);
   byKey.set(key, model);
   return model;
 }
@@ -559,7 +568,7 @@ export const modelVersion = (model: StateModel): BashVersion => modelVersions.ge
  * `outer`: what the model of the script that starts this shell trusts; `host`: as for `shellState`; `opening`: what the
  * shebang starts it with.
  */
-function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, file: Pick<StateModel, 'read' | 'provides' | 'interactiveStart'>, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening, version?: BashVersion): StateModel {
+function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, file: Pick<StateModel, 'read' | 'provides' | 'interactiveStart' | 'noShell'>, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening, version?: BashVersion): StateModel {
   const scripts = new Scripts(depth, shell);
   const own = scriptTrust(tree.root, scripts, host, opening, shell, version, posix);
   const trust = outer ? withinTrust(own, outer) : own;
@@ -622,6 +631,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     shell,
     read: file.read,
     interactiveStart: file.interactiveStart,
+    noShell: file.noShell,
     provides: file.provides,
     trusts: (name) => !found && trust.variable(name),
     blind: found ?? trust.blind,

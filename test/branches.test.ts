@@ -632,7 +632,8 @@ describe('host files: branches no other test takes', () => {
       '19:a string the shell (zsh) runs', '20:a string the shell (/bin/sh) runs', '21:a string the shell (/bin/sh) runs', '23:a string the shell (/bin/sh) runs',
       '26:a string the shell (/bin/sh) runs', '28:a command string run without a shell', '30:a string the shell (/bin/sh) runs',
     ]);
-    assert.strictEqual(lines(e)[11], 'a "${py_name}" AA');
+    // (A word written with escapes is quoted, so that its token says its value.)
+    assert.strictEqual(lines(e)[11], 'a "${py_name}" \'AA\'');
     assert.strictEqual(lines(e)[20], 'echo ${py_x} {} ${py_expr}');
     assert.strictEqual(lines(e)[30], 'raw\\ntwo');
     const notes = e.regions.flatMap((r) => (r.notes ?? []).map((n) => (Array.isArray(n) ? n[1] : factOf('en', n.spec).text)));
