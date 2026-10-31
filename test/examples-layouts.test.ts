@@ -502,11 +502,14 @@ describe('the variables of the environment that change a layout', function () {
     fs.rmSync(locales, { recursive: true, force: true });
   });
 
-  /** What the command of a layout prints with `env` added to the base environment: ls in the made-up directory, the header of ps, df's sizes as their shape. */
+  /** What the command of a layout prints with `env` added to the base environment: ls in the made-up directory, the header of ps, the shapes of df's sizes. */
   const output = (layout: Layout, argv: string[], env: Record<string, string>): string => {
     if (layout.startsWith('ps')) return psLayout(withLong(argv.join(' '), { ...base(), ...env }));
-    const out = lines(run(argv[0], [...argv.slice(1), ...(layout === 'who' ? [utmp] : [])], { env: { ...base(), ...env }, cwd: dir }).stdout);
-    return (layout === 'df-human' ? out.map((l) => l.replace(/\d/g, '9')) : out).join('\n');
+    // (df: only the Size column, as the set of shapes of its values. The used and free space of a file system, and the
+    // list of mounts (a tmpfs of /run/user comes and goes), change from one run to the next, and so would the rows.)
+    const args = layout === 'df-human' ? [...argv.slice(1), '--output=size'] : [...argv.slice(1), ...(layout === 'who' ? [utmp] : [])];
+    const out = lines(run(argv[0], args, { env: { ...base(), ...env }, cwd: dir }).stdout);
+    return (layout === 'df-human' ? [...new Set(out.map((l) => l.trim().replace(/\d+/g, '9')))].sort() : out).join('\n');
   };
   // (The variables that choose the language of messages: this machine, as CI, has no translations of coreutils, so only
   // the values that keep the layout are checked. Where they are installed, `LANGUAGE=de ls -l` prints `insgesamt`.)
