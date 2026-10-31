@@ -43,7 +43,7 @@ Bash Explainer is a VS Code extension, and more: the same explanations and warni
 | `cmd 2>&1 > out.log` | where stdout and stderr end up — and that errors do *not* go to the file here |
 | `echo "${file%.*}"` | `file=report.tar.gz` → `report.tar` |
 | `sed -E 's/^([a-z]+)=(.*)$/\2=\1/'` | the regex piece by piece, and a sample: `a=x` → `x=a` |
-| `#!/bin/sh` … `[[ -f $f ]]` | ⚠ `[[ ]]` fails in dash — with a quick fix to `[ -f "$f" ]` |
+| `#!/bin/sh` … `[[ -f $f ]]` | ⓧ `[[ ]]` fails in dash — with a quick fix to `[ -f "$f" ]` |
 | `RUN apt-get update && …` in a Dockerfile | the same explanations inside Dockerfiles, Makefiles, CI YAML, Jenkinsfiles, `package.json`, Python and bats tests |
 
 ## What is explained
@@ -81,8 +81,9 @@ Explanations follow bash. When a script is written for another shell, Bash Expla
 ```sh
 #!/bin/sh
 [[ -n $name ]] && echo -e "hi\t$name"
-# ⚠ `[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.
-# ⚠ `echo -e` is not POSIX sh (it fails in dash). Instead, use `printf` …
+# ⓧ Error: `[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.
+# ⓧ Error: `echo -e` is not POSIX sh (it fails in dash). Instead, use `printf` …
+# ⓘ Portability: dash's `echo` interprets `\t`, `\n` and the like in its arguments …
 ```
 
 - **Shells:** POSIX `sh` (naming what fails in dash and busybox ash), `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh`. What works where was measured with each shell.
@@ -127,7 +128,7 @@ Warnings appear in VS Code's Problems panel, so you see them without hovering, a
 
 Fixes are offered only when the script's shell lacks the construct, and only when the meaning is kept: `[[ $f == *.txt ]]` is a pattern match, so it gets no fix. Each rewrite is checked to behave in dash as the original does in bash. To silence a warning, add `# bash-explainer disable=<code>` on the line before it (or after the code on the same line), `# bash-explainer disable-file=<code>` anywhere for the whole file, or list the code in `bashExplainer.diagnostics.ignore`; `all` matches every warning. Turn the Problems panel entries off with `bashExplainer.diagnostics.enabled`.
 
-Every warning and caveat the explanations point out is a problem too, each with its code: a warning for what breaks the script as written or does damage that cannot be undone (`x = 1` is no assignment, `rm -rf $DIR/*` with an empty `DIR`, `rm $f`, `[-f x]`, `[` without `]`), information for what goes wrong only with some values or goes unnoticed (`for f in $(ls)`, `cat $f`, `read` without `-r`, `local x=$(cmd)`). A plain fact is not a problem. Leave them out with `bashExplainer.diagnostics.pitfalls`. `--check` prints them, but fails on them only with `--strict`.
+Problems have three levels, as VS Code's own: **ⓧ Error** (red) for a line that fails every time as written (`[` without `]`, a construct the script's shell lacks, `then` with no `;` before it), **⚠ Warning** (yellow) for damage that cannot be undone under some values or conditions (`rm -rf $DIR/*` with an empty `DIR`, `rm $f`, `x = 1`), and **ⓘ Information** (blue) for what goes wrong only with some values or on some systems, or goes unnoticed (`for f in $(ls)`, `cat $f`, `read` without `-r`, `local x=$(cmd)`). The explanations, the hover, the panel and the web page show each level with its own icon, colour and word ("Error:", "Pitfall:", "Caveat:"), errors first. Every error, warning and caveat the explanations point out is a problem too, each with its code; a plain fact is not. `bashExplainer.diagnostics.pitfalls` leaves the warnings and caveats out, not the errors. `--check` and the GitHub Action fail on an error, on a warning only with `--strict`, and never on information.
 
 ## In VS Code
 
@@ -229,11 +230,11 @@ The panel works like regex101:
 | `bashExplainer.notes.basis` | `true` | Mark a note, or the explanation of a part, that rests on bash's behaviour rather than the manual ("Not in the manual · checked with bash 5.2"), with a command to try it in your terminal |
 | **Checks** | | |
 | `bashExplainer.shell` | `auto` | The shell scripts are written for: `auto`, `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` |
-| `bashExplainer.bashVersion` | `5.2` | The bash release to explain for: `5.2` or `5.3`. A construct of bash 5.3 (`${ cmd; }`) is explained as 5.3 runs it, and is a warning with `5.2` |
-| `bashExplainer.diagnostics.enabled` | `true` | Warnings in the Problems panel, with quick fixes |
+| `bashExplainer.bashVersion` | `5.2` | The bash release to explain for: `5.2` or `5.3`. A construct of bash 5.3 (`${ cmd; }`) is explained as 5.3 runs it, and is an error with `5.2` |
+| `bashExplainer.diagnostics.enabled` | `true` | Errors and warnings in the Problems panel, with quick fixes |
 | `bashExplainer.diagnostics.ignore` | `[]` | Warning codes to leave out (the code shown in the Problems panel, e.g. `dbracket`, `echoE`, `dockerPipefail`) |
 | `bashExplainer.diagnostics.embedded` | `true` | Also warn about shell code inside other files |
-| `bashExplainer.diagnostics.pitfalls` | `true` | Also list the warnings and caveats of the explanations in the Problems panel (`x = 1`, `rm -rf $DIR/*`, `rm $f`: warnings; `cat $f`, `read line`: information) |
+| `bashExplainer.diagnostics.pitfalls` | `true` | Also list the warnings and caveats of the explanations in the Problems panel (`x = 1`, `rm -rf $DIR/*`, `rm $f`: warnings; `cat $f`, `read line`: information); their errors (`[` without `]`) are listed either way |
 | `bashExplainer.yq.flavor` | `auto` | `auto`, `mikefarah4`, `kislyuk` or `mikefarah3` |
 | **Files** | | |
 | `bashExplainer.embedded.files` | all | Files whose shell code is explained: `dockerfile`, `makefile`, `yaml`, `packageJson`, `markdown`, `python`, `jenkinsfile`, `bats` |
@@ -318,7 +319,7 @@ The command-line tool, the Language Server and the GitHub Action are one npm pac
 
 - Explanations are rule-based. Commands that are not in the dictionary are shown as an *external command* without option details.
 - A few constructs are not read as bash reads them: zsh-only syntax such as `*(.)` and `${(f)var}` (with the shell set to zsh, such a line is marked as not parsed), `echo (` (bash: syntax error; it is accepted without an error), an alias that stands for a declaration builtin (after `alias d=declare`, bash reads `d a=(1 2)` as `declare` would, and `d a=$v` does not split `$v`; here the first is a syntax error and the second an argument that is split), a declaration after `command` in POSIX mode (`set -o posix`, sh: bash and dash do not split `$v` in `command declare a=$v` or `command export a=$v`, and dash not in `\export a=$v` either; here it is split, as in bash's default mode), the base-64 digit `@` in arithmetic next to other terms (`$((64#@))` alone is read as 62, but in `$((64#@ + 1))` the whole expression becomes one word), and a process substitution that runs a subshell (`<((…))`) attached to other text of its word, before or after it (bash reads `a<((ls))`, `<((ls))b` and `x=<((ls))` as one word each; here the substitution is a word of its own). In a `[ ]`, the arguments are grouped by bash's own rules for `test` (`-o` below `-a` below `!`; `-a` and `-o` as unary operators where an operand is expected), whatever the parser says.
-- A script with Windows line endings (CRLF) is explained as if it had LF, and a warning (`crlf`, on the last word of the first such line) says that bash reads the CR as part of the last word of each line. To keep the file as it is, write `# bash-explainer disable-file=crlf` on a line of its own (the first line is the shebang, so `disable=` before it is not possible). A here-document in such a script has no closing line, as in bash.
+- A script with Windows line endings (CRLF) is explained as if it had LF, and a problem (`crlf`, on the last word of the first such line) says that bash reads the CR as part of the last word of each line: an error where the script fails every time (a CR on the `#!` line, after a keyword such as `then` or `fi`, or where a command starts: a blank line, or after `;`, `&&`, `|`), a warning otherwise (`echo hi` then prints a CR). To keep the file as it is, write `# bash-explainer disable-file=crlf` on a line of its own (the first line is the shebang, so `disable=` before it is not possible). A here-document in such a script has no closing line, as in bash.
 - A string that a command runs as a script (`bash -c '…'`, `eval`, a trap's action, `ssh host '…'`) is explained as a script only when its text is written out: one with an expansion in it (`eval "$cmd"`, `bash -c "cd $dir"`) is known only when it runs. A file run with `bash file` or `source file` is not read.
 - An alias named like a reserved word (`alias {=echo`, `alias [[=echo`) is not followed: where aliases are expanded, bash replaces `{` or `[[` with its text (`{ x; }` becomes a syntax error, `[[ x ]]` runs `echo`), but the line is still explained as a group or a `[[ ]]`.
 - In POSIX mode, an assignment to an array element before a special builtin (`set -o posix; n[0]=5 :`) ends the script in bash, with "not a valid identifier"; the explanation goes on as if the line had run.

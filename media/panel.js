@@ -250,15 +250,18 @@
 
     // Each note with the icon of its level in place of its mark, and the word that names the level in bold: the icon's
     // shape and the word say it without the colour. The class, the icon and its name come from the level table
-    // (src/levels.ts, through `panelUpdate`).
+    // (src/levels.ts, through `panelUpdate`); an icon with no name (where the word names the level, "Error:") is hidden
+    // from a screen reader, which says the word.
     $('notes').replaceChildren(...(msg.notes ?? []).map((/** @type {{ className: string, icon: string, iconName: string, label: string, body: string, refs: string[], basis?: any }} */ n) => {
       const p = document.createElement('p');
       p.className = `note ${n.className}`;
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('viewBox', '0 0 16 16');
       svg.setAttribute('class', 'note-icon');
-      svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', n.iconName);
+      if (n.iconName) {
+        svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', n.iconName);
+      } else svg.setAttribute('aria-hidden', 'true');
       drawIcon(svg, n.icon);
       const text = document.createElement('span');
       text.className = 'note-text';

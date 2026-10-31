@@ -76,11 +76,21 @@ describe('documents without VS Code', () => {
     }
     // With a CR on the `#!` line, an error too (run as a program, the interpreter is not found); with a `#!` line that
     // ends in LF and no keyword before a CR, or with no shebang, a warning: every way runs it (test/error-level.test.ts).
-    const said = (text: string, lang: 'en' | 'ja' = 'en') => documentIssues(script(text), lang, {}).map((i) => `${i.severity} ${/`fi\\r`|`#!`|`echo hi`/.exec(i.message)?.[0]}`);
+    const said = (text: string, lang: 'en' | 'ja' = 'en') => documentIssues(script(text), lang, {}).map((i) => `${i.severity} ${/`fi\\r`|`#!`|`echo hi`|`;`/.exec(i.message)?.[0]}`);
     assert.deepStrictEqual(
       [said('#!/bin/sh\r\necho hi\r\n'), said('#!/bin/sh\necho hi\r\n'), said('echo hi\r\necho fi\r\n'), said('{ echo hi; }\r\n'), said('#!/bin/sh\r\nif true; then :; fi\r\n')],
       [['error `#!`'], ['warning `echo hi`'], ['warning `echo hi`'], ['error `fi\\r`'], ['error `fi\\r`']]);
     assert.deepStrictEqual([said('#!/bin/sh\r\n', 'ja'), said('#!/bin/sh\necho hi\r\n', 'ja')], [['error `#!`'], ['warning `echo hi`']]);
+    // A CR where a command starts (a blank line; after `;`, `&&`, `||`, `|` or `&`; in a body or a substitution) is a
+    // command, `$'\r'`, which is not found however the file runs: an error. Not in a word, a string, a heredoc's body, a
+    // comment or an array, nor after another operator (`2>&`) or a word.
+    assert.deepStrictEqual(
+      ['echo a;\r\n', 'a &&\r\nb\r\n', 'a ||\r\n', 'a |\r\nb\r\n', 'a &\r\n', 'echo a\r\n\r\necho b\r\n', '  \r\n', '#!/bin/sh\necho a;\r\n', 'x=$(echo a;\r\n)\r\n', 'f() {\n  a;\r\n}\n'].map((t) => said(t)),
+      Array(10).fill(['error `;`']));
+    assert.deepStrictEqual(said('echo a;\r\n', 'ja'), ['error `;`']);
+    assert.deepStrictEqual(
+      ['echo a # b;\r\n', 'echo "a;\r\n\r\nb"\r\n', "echo 'a;\r\nb'\r\n", 'cat <<E\na;\r\n\r\nE\n', 'a=(\r\n\r\n1\r\n)\r\n', 'echo a 2>&\r\n', 'echo \\\r\n'].map((t) => said(t)[0]?.split(' ')[0]),
+      Array(7).fill('warning'));
     assert.deepStrictEqual(documentIssues(doc, 'en', { forced: 'dash' }).map((i) => i.code), ['crlf']);
     assert.deepStrictEqual(documentIssues(doc, 'en', {}, ['crlf']), []);
     // A file-level directive silences it, on any line (the warning itself is usually on line 1); and so does a comment after the code.

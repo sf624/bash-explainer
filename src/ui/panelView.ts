@@ -5,7 +5,7 @@ import { YQ_NAMES } from '../embedded/yq';
 import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
 import type { DocumentIssue, ShellDocument } from '../document';
-import { LEVELS, problemLevel } from '../levels';
+import { LEVELS, namesLevel, problemLevel } from '../levels';
 import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, ui, withBasisShown } from './render';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
@@ -205,13 +205,15 @@ export function panelUpdate(p: PanelLine) {
     examplesFirst: p.placement === 'first',
     animations: p.animations,
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
-    // The notes as drawn: warnings first, each with its level's look (its class, its icon and the icon's name, from the
+    // The notes as drawn: errors first, each with its level's look (its class, its icon and the icon's name, from the
     // level table, src/levels.ts) and the word after its mark (src/messages.ts), and, where it rests on bash's
-    // behaviour rather than the manual, its chip and try-it (`noteBasis`, docs/design/basis.md).
+    // behaviour rather than the manual, its chip and try-it (`noteBasis`, docs/design/basis.md). Where the word names
+    // the level ("Error:"), the icon has no name, so that a screen reader says the level once.
     notes: notesByLevel(ex).map(({ text, level, label, body }) => {
       const basis = noteBasis(ex, text, lang);
       const { className, codicon, name } = LEVELS[level];
-      return { level, className, icon: codicon, iconName: name[lang], label, body, refs: noteRefs(ex, text) ?? [], ...(basis ? { basis } : {}) };
+      const iconName = namesLevel(level, label, lang) ? '' : name[lang];
+      return { level, className, icon: codicon, iconName, label, body, refs: noteRefs(ex, text) ?? [], ...(basis ? { basis } : {}) };
     }),
     marks: p.marks ?? [],
     emptyMessage: t.empty,

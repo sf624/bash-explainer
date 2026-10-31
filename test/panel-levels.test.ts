@@ -1,6 +1,6 @@
 // The levels of the notes in the VS Code panel (media/panel.js, media/panel.css; docs/design/note-levels.md), in
 // headless Chromium with the theme variables of VS Code's own themes (test/support/panel-page.ts): each note has the
-// icon of its level and its word, in the level's colour, warnings first; the copy of the line underlines its
+// icon of its level and its word, in the level's colour, errors first; the copy of the line underlines its
 // problems; with forced colours, the shapes and the words still tell the levels apart. Skipped when no browser can
 // start, unless $BASH_EXPLAINER_BROWSER is set.
 import * as assert from 'assert';
@@ -8,8 +8,8 @@ import type { Browser, Page } from 'playwright-core';
 import { PanelServer, PanelTheme, servePanel } from './support/panel-page';
 import { until } from './support/site';
 
-// A plain fact, a caveat and a pitfall, in the order found.
-const LINE = 'exit 300; read line; x = 1';
+// A plain fact, a caveat, a pitfall and an error, in the order found.
+const LINE = 'exit 300; read line; x = 1; [ -f a';
 
 /** A colour as the browser computes it. */
 const rgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
@@ -45,7 +45,7 @@ describe('the VS Code panel: the levels of the notes', function () {
       if (m.type() === 'error') errors.push(m.text());
     });
     await page.goto(panel.url(theme, lang));
-    await until('the notes', () => page.locator('#notes .note').count(), (n) => n === 3);
+    await until('the notes', () => page.locator('#notes .note').count(), (n) => n === 4);
     return Object.assign(page, { errors });
   }
 
@@ -61,36 +61,41 @@ describe('the VS Code panel: the levels of the notes', function () {
     };
   })`) as Promise<{ level: string; icon: string; name: string; label: string; fill: string; colour: string; border: string; style: string; text: string }[]>;
 
-  it('draws each note with the icon and the word of its level, warnings first', async () => {
+  it('draws each note with the icon and the word of its level, errors first', async () => {
     const page = await open();
     const n = await notes(page);
+    // (An error's icon has no name, and is hidden from a screen reader: its word says "Error".)
     assert.deepStrictEqual(n.map((x) => [x.level, x.icon, x.name, x.label]), [
+      ['note level-error', 'error', null, 'Error:'],
       ['note level-warning', 'warning', 'Warning', 'Pitfall:'],
       ['note level-info', 'info', 'Information', 'Caveat:'],
       ['note level-note', 'info', 'Note', ''],
     ]);
-    assert.ok(n[0].text.startsWith('Pitfall: x =…'), n[0].text);
-    assert.ok(n[2].text.startsWith('An exit status'), n[2].text);
+    assert.strictEqual(await page.locator('#notes .level-error svg.note-icon').getAttribute('aria-hidden'), 'true');
+    assert.ok(n[0].text.startsWith('Error: [ has no'), n[0].text);
+    assert.ok(n[1].text.startsWith('Pitfall: x =…'), n[1].text);
+    assert.ok(n[3].text.startsWith('An exit status'), n[3].text);
     // The word is bold.
     assert.strictEqual(await page.locator('#notes .note-label').first().evaluate((e) => e.tagName), 'STRONG');
     const ja = await open('dark', 'ja');
-    assert.deepStrictEqual((await notes(ja)).map((x) => [x.name, x.label]), [['警告', '落とし穴:'], ['情報', '注意:'], ['補足', '']]);
+    assert.deepStrictEqual((await notes(ja)).map((x) => [x.name, x.label]), [[null, 'エラー:'], ['警告', '落とし穴:'], ['情報', '注意:'], ['補足', '']]);
     assert.deepStrictEqual([...page.errors, ...ja.errors], []);
     await page.close();
     await ja.close();
   });
 
-  // The theme's editorWarning and editorInfo colours, or ours where they are not readable as text (src/levels.ts, `ours`).
-  const COLOURS: Record<PanelTheme, { warning: string; info: string; muted: string }> = {
-    dark: { warning: '#cca700', info: '#3794ff', muted: rgb('#9d9d9d') },
-    light: { warning: '#855f00', info: '#005fb8', muted: rgb('#3b3b3b') },
-    hc: { warning: '#ffd370', info: '#6badff', muted: 'rgba(255, 255, 255, 0.7)' },
+  // The theme's editorError, editorWarning and editorInfo colours, or ours where they are not readable as text (src/levels.ts, `ours`).
+  const COLOURS: Record<PanelTheme, { error: string; warning: string; info: string; muted: string }> = {
+    dark: { error: '#fd6358', warning: '#cca700', info: '#3794ff', muted: rgb('#9d9d9d') },
+    light: { error: '#d0020f', warning: '#855f00', info: '#005fb8', muted: rgb('#3b3b3b') },
+    hc: { error: '#f6937e', warning: '#ffd370', info: '#6badff', muted: 'rgba(255, 255, 255, 0.7)' },
   };
   for (const theme of ['dark', 'light', 'hc'] as const) {
     it(`colours the icon, the word and the border with the level's colour, ${theme}`, async () => {
       const page = await open(theme);
-      const [w, i, note] = await notes(page);
+      const [e, w, i, note] = await notes(page);
       const c = COLOURS[theme];
+      assert.deepStrictEqual([e.fill, e.colour, e.border], [rgb(c.error), rgb(c.error), rgb(c.error)]);
       assert.deepStrictEqual([w.fill, w.colour, w.border], [rgb(c.warning), rgb(c.warning), rgb(c.warning)]);
       assert.deepStrictEqual([i.fill, i.colour, i.border], [rgb(c.info), rgb(c.info), rgb(c.info)]);
       // A plain fact: the muted icon, and the quote's own border.
@@ -101,29 +106,28 @@ describe('the VS Code panel: the levels of the notes', function () {
     });
   }
 
-  it('keeps the levels apart with forced colours: the icons, the words, and a double border for a warning', async () => {
+  it('keeps the levels apart with forced colours: the icons, the words, a double border for an error, a dashed one for a warning', async () => {
     const page = await open('dark', 'en', true);
-    const [w, i, note] = await notes(page);
-    assert.deepStrictEqual([w.icon, i.icon, note.icon], ['warning', 'info', 'info']);
-    assert.deepStrictEqual([w.label, i.label], ['Pitfall:', 'Caveat:']);
-    assert.strictEqual(w.style, 'double');
-    assert.strictEqual(i.style, 'solid');
+    const [e, w, i, note] = await notes(page);
+    assert.deepStrictEqual([e.icon, w.icon, i.icon, note.icon], ['error', 'warning', 'info', 'info']);
+    assert.deepStrictEqual([e.label, w.label, i.label], ['Error:', 'Pitfall:', 'Caveat:']);
+    assert.deepStrictEqual([e.style, w.style, i.style], ['double', 'dashed', 'solid']);
     // (The icons and the words in the system's text colour, as the rest of the text.)
     const text = await page.evaluate(`getComputedStyle(document.querySelector('.note-text')).color`);
-    for (const x of [w, i, note]) assert.strictEqual(x.fill, text);
-    assert.strictEqual(w.colour, text);
+    for (const x of [e, w, i, note]) assert.strictEqual(x.fill, text);
+    assert.deepStrictEqual([e.colour, w.colour], [text, text]);
     await page.close();
   });
 
   it('underlines the problems of the line in its copy, in the level\'s colour', async () => {
     const page = await open();
-    const marked = await page.evaluate(`[...document.querySelectorAll('#line .squiggle')].map((s) => [s.textContent, s.classList.contains('level-warning') ? 'warning' : 'info', getComputedStyle(s).textDecorationStyle, getComputedStyle(s).textDecorationColor])`) as [string, string, string, string][];
-    // `read line` (read-without-r) and `x = 1` (assignment-with-spaces), and nothing else.
-    assert.deepStrictEqual(marked.filter((m) => m[1] === 'info').map((m) => m[0]).join('').replace(/\s/g, ''), 'readline');
-    assert.deepStrictEqual(marked.filter((m) => m[1] === 'warning').map((m) => m[0]).join('').replace(/\s/g, ''), 'x=1');
+    const marked = await page.evaluate(`[...document.querySelectorAll('#line .squiggle')].map((s) => [s.textContent, /level-(\\w+)/.exec(s.className)[1], getComputedStyle(s).textDecorationStyle, getComputedStyle(s).textDecorationColor])`) as [string, string, string, string][];
+    // `read line` (read-without-r), `x = 1` (assignment-with-spaces) and `[ -f a` (bracket-missing-close), and nothing else.
+    const parts = (level: string) => marked.filter((m) => m[1] === level).map((m) => m[0]).join('').replace(/\s/g, '');
+    assert.deepStrictEqual(['info', 'warning', 'error'].map(parts), ['readline', 'x=1', '[-fa']);
     for (const [, level, style, colour] of marked) {
       assert.strictEqual(style, 'wavy');
-      assert.strictEqual(colour, rgb(level === 'warning' ? '#cca700' : '#3794ff'));
+      assert.strictEqual(colour, rgb(COLOURS.dark[level as 'error' | 'warning' | 'info']));
     }
     await page.close();
   });

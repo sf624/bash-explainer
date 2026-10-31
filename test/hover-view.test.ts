@@ -25,7 +25,7 @@ function chain(doc: ShellDocument, line: number, character: number): string[] {
 }
 const last = (labels: string[]) => labels[labels.length - 1];
 /** A line of the hover that is a note: the level's codicon in its colour (a paragraph, not a quote). */
-const isNote = (l: string) => /^<span style="color:[^"]+;">\$\((warning|info)\)<\/span> /.test(l);
+const isNote = (l: string) => /^<span style="color:[^"]+;">\$\((error|warning|info)\)<\/span> /.test(l);
 
 function input(doc: ShellDocument, line: number, opts: { lang?: Lang; theme?: ThemeKind; placement?: ExamplePlacement; ex?: LineExplanation } = {}): HoverInput {
   return {
@@ -324,42 +324,47 @@ describe('the hover Markdown', () => {
     const x = { ...input(doc, 1), ex: new Analyzer('en').explainLine(doc.tree, 1, 'sh') };
     const md = wholeLine(x);
     assert.match(md, /^\*\*Bash Explainer\*\* · Line 2 · checked for POSIX sh/);
-    // (The mark is the level's codicon, in the level's colour, then the level's word: an error, drawn as a warning until
-    // step 1b of docs/design/three-levels.md.)
-    assert.match(md, /\n<span style="color:var\(--vscode-editorWarning-foreground\);">\$\(warning\)<\/span> <span style="color:var\(--vscode-editorWarning-foreground\);"><strong>Error:<\/strong><\/span> `\[\[ \]\]` is not POSIX sh/);
+    // (The mark is the level's codicon, in the level's colour, then the level's word: an error, with the error icon in
+    // our error colour, as the dark theme's is not readable on a code block.)
+    assert.match(md, /\n<span style="color:#fd6358;">\$\(error\)<\/span> <span style="color:#fd6358;"><strong>Error:<\/strong><\/span> `\[\[ \]\]` is not POSIX sh/);
     assert.match(wholeLine(input(doc, 2)), /Nothing to explain/);
     assert.match(wholeLine({ ...input(doc, 2), lineText: '  x' }), /Nothing to explain/);
   });
 
-  it('shows each note with its level: its codicon and word in its colour, warnings first', () => {
-    // A plain fact, a caveat and a pitfall, in the order found.
-    const doc = open('exit 300; read line; x = 1');
+  it('shows each note with its level: its codicon and word in its colour, errors first', () => {
+    // A plain fact, a caveat, a pitfall and an error, in the order found.
+    const doc = open('exit 300; read line; x = 1; [ -f a');
     const notes = (md: string) => md.split('\n').filter((l) => isNote(l));
     const whole = (theme: ThemeKind) => notes(wholeLine(input(doc, 0, { theme })));
     const w = 'var(--vscode-editorWarning-foreground)';
     const i = 'var(--vscode-editorInfo-foreground)';
-    const [warning, info, note] = whole('dark');
+    const [error, warning, info, note] = whole('dark');
+    assert.ok(error.startsWith('<span style="color:#fd6358;">$(error)</span> <span style="color:#fd6358;"><strong>Error:</strong></span> `[` has no'), error);
     assert.ok(warning.startsWith(`<span style="color:${w};">$(warning)</span> <span style="color:${w};"><strong>Pitfall:</strong></span> \`x =…\` runs`), warning);
     assert.ok(info.startsWith(`<span style="color:${i};">$(info)</span> <span style="color:${i};"><strong>Caveat:</strong></span> without`), info);
     // (A plain fact: the info icon, muted, and no word.)
     assert.ok(note.startsWith('<span style="color:var(--vscode-descriptionForeground);">$(info)</span> An exit status'), note);
     // Our own colours where the theme's are not readable as text (src/levels.ts, `ours`).
-    assert.match(whole('light')[0], /^<span style="color:#855f00;">\$\(warning\)<\/span>/);
-    assert.match(whole('light')[1], /^<span style="color:#005fb8;">\$\(info\)<\/span>/);
-    assert.match(whole('highContrast')[0], /^<span style="color:var\(--vscode-editorWarning-foreground\);">/);
-    assert.match(whole('highContrast')[1], /^<span style="color:#6badff;">/);
-    assert.match(whole('highContrastLight')[0], /^<span style="color:#704500;">/);
+    assert.match(whole('light')[0], /^<span style="color:#d0020f;">\$\(error\)<\/span>/);
+    assert.match(whole('light')[1], /^<span style="color:#855f00;">\$\(warning\)<\/span>/);
+    assert.match(whole('light')[2], /^<span style="color:#005fb8;">\$\(info\)<\/span>/);
+    assert.match(whole('highContrast')[0], /^<span style="color:#f6937e;">/);
+    assert.match(whole('highContrast')[1], /^<span style="color:var\(--vscode-editorWarning-foreground\);">/);
+    assert.match(whole('highContrast')[2], /^<span style="color:#6badff;">/);
+    assert.match(whole('highContrastLight')[0], /^<span style="color:#9b1c0b;">/);
+    assert.match(whole('highContrastLight')[1], /^<span style="color:#704500;">/);
     // The part's hover shows its own the same way, and the sanitizer keeps every colour.
     const at = (text: string) => doc.lines[0].indexOf(text);
-    assert.deepStrictEqual([at('x ='), at('read'), at('exit')].flatMap((c) => notes(partMd(doc, 0, c))), whole('dark'));
+    assert.deepStrictEqual([at('[ -f'), at('x ='), at('read'), at('exit')].flatMap((c) => notes(partMd(doc, 0, c))), whole('dark'));
     for (const theme of ['light', 'dark', 'highContrast', 'highContrastLight'] as const) {
       checkHtml(wholeLine(input(doc, 0, { theme })), `levels ${theme}`);
-      for (const c of [at('x ='), at('read'), at('exit')]) checkHtml(partMd(doc, 0, c, { theme }), `levels, part ${theme}`);
+      for (const c of [at('[ -f'), at('x ='), at('read'), at('exit')]) checkHtml(partMd(doc, 0, c, { theme }), `levels, part ${theme}`);
     }
     // In Japanese, the word of the language.
     const ja = notes(wholeLine(input(doc, 0, { lang: 'ja' })));
-    assert.match(ja[0], /<strong>落とし穴:<\/strong>/);
-    assert.match(ja[1], /<strong>注意:<\/strong>/);
+    assert.match(ja[0], /<strong>エラー:<\/strong>/);
+    assert.match(ja[1], /<strong>落とし穴:<\/strong>/);
+    assert.match(ja[2], /<strong>注意:<\/strong>/);
   });
 
   it('shows only the notes about the part, and counts the others in a link to the whole line', () => {
@@ -515,7 +520,7 @@ describe('the hover Markdown', () => {
     const bad = open('printf "%y" # c');
     const md2 = (theme: ThemeKind) => wholeLine(input(bad, 0, { theme }));
     assert.match(md2('light'), /<span style="color:#d0020f;">%y<\/span>/);
-    assert.match(md2('highContrast'), /<span style="color:var\(--vscode-errorForeground\);">%y<\/span>/);
+    assert.match(md2('highContrast'), /<span style="color:#f6937e;">%y<\/span>/);
     assert.match(md2('light'), /<span style="color:var\(--vscode-descriptionForeground\);">&#35;&nbsp;c<\/span>/);
   });
 

@@ -6,9 +6,13 @@ describe('the level table', () => {
   it('orders the levels, and gives each its own mark, class and rank', () => {
     assert.deepStrictEqual(LEVEL_ORDER, ['error', 'warning', 'info', 'note']);
     assert.deepStrictEqual(COLOURED, ['error', 'warning', 'info']);
-    for (const key of ['mark', 'rank'] as const) assert.strictEqual(new Set(LEVEL_ORDER.map((l) => LEVELS[l][key])).size, LEVEL_ORDER.length, key);
-    // (Until step 1b of three-levels.md, an error looks like a warning in the views: its icon, class and colour.)
-    for (const key of ['codicon', 'className', 'colour'] as const) assert.strictEqual(LEVELS.error[key], LEVELS.warning[key], key);
+    for (const key of ['mark', 'rank', 'className'] as const) assert.strictEqual(new Set(LEVEL_ORDER.map((l) => LEVELS[l][key])).size, LEVEL_ORDER.length, key);
+    // (Each level of a problem has its own icon, colour and colour name, in every theme kind; a plain note has the info icon, muted.)
+    assert.deepStrictEqual(LEVEL_ORDER.map((l) => LEVELS[l].codicon), ['error', 'warning', 'info', 'info']);
+    for (const key of ['variable', 'name', 'fallback', 'dark'] as const) assert.strictEqual(new Set(COLOURED.map((l) => LEVELS[l].colour![key])).size, COLOURED.length, key);
+    assert.deepStrictEqual(Object.keys(LEVELS.error.colour!.ours).sort(), ['dark', 'highContrast', 'highContrastLight', 'light']);
+    // (With forced colours, an error's border is double, a warning's dashed, an info's solid as a plain note's.)
+    assert.deepStrictEqual(LEVEL_ORDER.map((l) => LEVELS[l].forcedBorder?.split(' ')[1]), ['double', 'dashed', undefined, undefined]);
   });
 
   it('maps each severity in every protocol, and a problem to the look of its level', () => {

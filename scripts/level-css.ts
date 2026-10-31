@@ -18,9 +18,9 @@ import type { ThemeKind } from '../src/ui/palette';
 
 const root = path.join(__dirname, '..');
 
-/** The classes of the coloured levels, each once (two levels may share a look), with their colour. */
+/** The classes of the coloured levels, with their colour. */
 const coloured = (): { cls: string; c: LevelColour; forcedBorder?: string }[] =>
-  [...new Map(COLOURED.map((l) => [LEVELS[l].className, { cls: LEVELS[l].className, c: LEVELS[l].colour!, forcedBorder: LEVELS[l].forcedBorder }])).values()];
+  COLOURED.map((l) => ({ cls: LEVELS[l].className, c: LEVELS[l].colour!, forcedBorder: LEVELS[l].forcedBorder }));
 
 /** Our colour of each level in a theme kind, where the theme's is not readable, as the panel names it. */
 const ours = (kind: ThemeKind): string[] => coloured().flatMap(({ c }) => (c.ours[kind] ? [`${c.name}: ${c.ours[kind]};`] : []));
@@ -52,9 +52,10 @@ export const REGIONS: Readonly<Record<string, Readonly<Record<string, () => stri
     problems: () => coloured().flatMap(({ cls, c }, i) => [...(i ? [''] : []), `#problem-list .icon.${cls} {`, `  color: var(${c.name});`, '}']),
   },
   'web/theme.css': {
-    // The editor's colours of the levels, which the page defines for itself: ours in the light theme, Dark Modern's in the dark.
+    // The editor's colours of the levels, which the page defines for itself: ours in the light theme, Dark Modern's in
+    // the dark, or ours where Dark Modern's is not readable (the error's).
     light: () => coloured().flatMap(({ c }) => (c.ours.light ? [`${c.variable}: ${c.ours.light};`] : [])),
-    dark: () => coloured().map(({ c }) => `${c.variable}: ${c.dark};`),
+    dark: () => coloured().map(({ c }) => `${c.variable}: ${c.ours.dark ?? c.dark};`),
   },
 };
 

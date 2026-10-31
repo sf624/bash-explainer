@@ -1,7 +1,7 @@
 // The levels of the notes on the web page (docs/design/note-levels.md), run for real in headless Chromium (the
 // build, the server and the browser are shared by all test/web-*.test.ts files: test/support/site.ts): the panel
-// draws each note with the icon and the word of its level, warnings first, in web/theme.css's colours, and underlines
-// the problems in its copy of the line; the Problems list marks each problem with ⚠ or ⓘ in the same colours.
+// draws each note with the icon and the word of its level, errors first, in web/theme.css's colours, and underlines
+// the problems in its copy of the line; the Problems list marks each problem with ⓧ, ⚠ or ⓘ in the same colours.
 import * as assert from 'assert';
 import type { Browser } from 'playwright-core';
 import { openSite, openProblems, problemRows, until } from './support/site';
@@ -17,7 +17,7 @@ describe('the web page: the levels of the notes', function () {
     ({ browser, base } = await openSite(this));
   });
 
-  for (const [scheme, warning, info] of [['light', '#855f00', '#005fb8'], ['dark', '#cca700', '#3794ff']] as const) {
+  for (const [scheme, error, warning, info] of [['light', '#d0020f', '#855f00', '#005fb8'], ['dark', '#fd6358', '#cca700', '#3794ff']] as const) {
     it(`shows the levels in the panel and in the Problems list, ${scheme}`, async () => {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme, locale: 'en-US' });
       const page = await ctx.newPage();
@@ -26,27 +26,44 @@ describe('the web page: the levels of the notes', function () {
       await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
       await page.locator('.cm-content').click();
       await page.keyboard.press('Control+A');
-      await page.keyboard.insertText('exit 300; read line; x = 1');
-      await until('the line explained', () => panel().locator('#notes .note').count(), (n) => n === 3);
+      await page.keyboard.insertText('exit 300; read line; x = 1; [ -f a');
+      await until('the line explained', () => panel().locator('#notes .note').count(), (n) => n === 4);
       const notes = await panel().evaluate(`[...document.querySelectorAll('#notes .note')].map((p) => {
         const label = p.querySelector('.note-label');
-        return [p.className, p.querySelector('svg.note-icon').dataset.icon, label ? label.textContent : '', getComputedStyle(p.querySelector('svg.note-icon')).fill];
+        const icon = p.querySelector('svg.note-icon');
+        return [p.className, icon.dataset.icon, label ? label.textContent : '', [icon.getAttribute('role'), icon.getAttribute('aria-label'), icon.getAttribute('aria-hidden')].join(), getComputedStyle(icon).fill, label ? getComputedStyle(label).color : ''];
       })`) as string[][];
-      assert.deepStrictEqual(notes.map((n) => n.slice(0, 3)), [['note level-warning', 'warning', 'Pitfall:'], ['note level-info', 'info', 'Caveat:'], ['note level-note', 'info', '']]);
-      assert.deepStrictEqual(notes.slice(0, 2).map((n) => n[3]), [rgb(warning), rgb(info)]);
-      // The panel's copy of the line underlines the problems the editor shows.
-      const marked = await until('the squiggles', () => panel().locator('#line .squiggle').allTextContents(), (t) => t.length > 0);
-      assert.strictEqual(marked.join('').replace(/\s/g, ''), 'readlinex=1');
-      // The Problems list: ⚠ and ⓘ, in the levels' colours.
+      // (The error's icon has no name: its word says "Error". A warning's says "Warning", which "Pitfall" does not.)
+      assert.deepStrictEqual(notes.map((n) => n.slice(0, 4)), [
+        ['note level-error', 'error', 'Error:', ',,true'], ['note level-warning', 'warning', 'Pitfall:', 'img,Warning,'],
+        ['note level-info', 'info', 'Caveat:', 'img,Information,'], ['note level-note', 'info', '', 'img,Note,'],
+      ]);
+      assert.deepStrictEqual(notes.slice(0, 3).map((n) => n.slice(4)), [[rgb(error), rgb(error)], [rgb(warning), rgb(warning)], [rgb(info), rgb(info)]]);
+      // The panel's copy of the line underlines the problems the editor shows, each in its level's colour.
+      const marked = await until('the squiggles', () => panel().locator('#line .squiggle').evaluateAll((els) => els.map((e) => [e.textContent, e.className, e.ownerDocument.defaultView!.getComputedStyle(e).textDecorationColor])), (t) => t.length > 2);
+      // (Each part of the line is a span of its own: the parts of a level's squiggle, joined.)
+      const levels = new Map<string, string[]>();
+      for (const [t, c, colour] of marked) {
+        const key = `${/level-\w+/.exec(c!)![0]} ${colour}`;
+        levels.set(key, [...(levels.get(key) ?? []), t!]);
+      }
+      assert.deepStrictEqual([...levels].map(([key, parts]) => [parts.join('').replace(/\s/g, ''), ...key.split(/ (?=rgb)/)]), [
+        ['readline', 'level-info', rgb(info)], ['x=1', 'level-warning', rgb(warning)], ['[-fa', 'level-error', rgb(error)],
+      ]);
+      // The Problems list: ⓧ, ⚠ and ⓘ, in the levels' colours, an error's message without the word "Error:".
       await openProblems(page);
-      const rows = await until('the problems', () => page.locator('#problem-list .icon').evaluateAll((els) => els.map((e) => [e.textContent, e.ownerDocument.defaultView!.getComputedStyle(e).color])), (r) => r.length === 2);
-      assert.deepStrictEqual(rows, [['ⓘ', rgb(info)], ['⚠', rgb(warning)]]);
+      const rows = await until('the problems', () => page.locator('#problem-list .problem').evaluateAll((els) => els.map((e) => {
+        const icon = e.querySelector('.icon')!;
+        return [icon.textContent, e.ownerDocument.defaultView!.getComputedStyle(icon).color, e.querySelector('.message')?.textContent?.slice(0, 8)];
+      })), (r) => r.length === 3);
+      assert.deepStrictEqual(rows, [['ⓧ', rgb(error), '[ has no'], ['ⓘ', rgb(info), 'Caveat: '], ['⚠', rgb(warning), 'Pitfall:']]);
       // The editor: a wavy squiggle in the level's colour, and in the gutter the panel's icon (the Codicon of
-      // media/icons.js, as a mask) in that colour. (A line's marker is of its worst problem: a line of information.)
+      // media/icons.js, as a mask) in that colour. (A line's marker is of its worst problem: a line of errors, one of
+      // information, one of a warning.)
       await page.keyboard.press('Control+End');
-      await page.keyboard.insertText('\nread other');
-      await until('the information marker', () => page.locator('.cm-lint-marker-info').count(), (n) => n === 1);
-      const marks = await page.evaluate(`(['warning', 'info']).map((level) => {
+      await page.keyboard.insertText('\nread other\nx = 2');
+      await until('the markers', () => page.locator('.cm-lint-marker-info, .cm-lint-marker-warning').count(), (n) => n === 2);
+      const marks = await page.evaluate(`(['error', 'warning', 'info']).map((level) => {
         const range = getComputedStyle(document.querySelector('.cm-lintRange-' + level));
         const marker = getComputedStyle(document.querySelector('.cm-lint-marker-' + level));
         const mask = marker.maskImage || marker.webkitMaskImage;
@@ -55,6 +72,7 @@ describe('the web page: the levels of the notes', function () {
           marker.backgroundColor, mask.includes(encodeURIComponent(icon.slice(0, 40)))];
       })`) as unknown[][];
       assert.deepStrictEqual(marks, [
+        ['error', 'underline', 'wavy', rgb(error), 'none', rgb(error), true],
         ['warning', 'underline', 'wavy', rgb(warning), 'none', rgb(warning), true],
         ['info', 'underline', 'wavy', rgb(info), 'none', rgb(info), true],
       ]);

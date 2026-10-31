@@ -21,8 +21,8 @@ describe('the level table in the style sheets (scripts/level-css.ts)', () => {
   it('writes a region at the indentation of its comment, and refuses an unknown or unclosed one', () => {
     const open = (name: string) => `    /* level table (src/levels.ts, scripts/level-css.ts): ${name} */`;
     const out = withRegions('web/theme.css', `a {\n${open('dark')}\n    --old: 1;\n    /* end of the level table */\n}`);
-    assert.strictEqual(out, `a {\n${open('dark')}\n    --vscode-editorWarning-foreground: #cca700;\n    --vscode-editorInfo-foreground: #3794ff;\n    /* end of the level table */\n}`);
-    assert.deepStrictEqual([...regionLines(out)], [3, 4]);
+    assert.strictEqual(out, `a {\n${open('dark')}\n    --vscode-editorError-foreground: #fd6358;\n    --vscode-editorWarning-foreground: #cca700;\n    --vscode-editorInfo-foreground: #3794ff;\n    /* end of the level table */\n}`);
+    assert.deepStrictEqual([...regionLines(out)], [3, 4, 5]);
     assert.throws(() => withRegions('web/theme.css', `${open('nothing')}\n/* end of the level table */`), /no region "nothing"/);
     assert.throws(() => withRegions('web/theme.css', open('dark')), /not closed/);
   });

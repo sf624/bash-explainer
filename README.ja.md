@@ -43,7 +43,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | `cmd 2>&1 > out.log` | 標準出力と標準エラー出力の行き先。この書き方ではエラーがファイルに入らないこと |
 | `echo "${file%.*}"` | `file=report.tar.gz` → `report.tar` |
 | `sed -E 's/^([a-z]+)=(.*)$/\2=\1/'` | 正規表現の部品ごとの意味と、入力例 `a=x` → 出力 `x=a` |
-| `#!/bin/sh` の中の `[[ -f $f ]]` | ⚠ dash では `[[ ]]` が動かないこと。`[ -f "$f" ]` へのクイックフィックス付き |
+| `#!/bin/sh` の中の `[[ -f $f ]]` | ⓧ dash では `[[ ]]` が動かないこと。`[ -f "$f" ]` へのクイックフィックス付き |
 | Dockerfile の `RUN apt-get update && …` | Dockerfile・Makefile・CI の YAML・Jenkinsfile・`package.json`・Python・bats のテストの中のシェルも同じように解説 |
 
 ## 解説できるもの
@@ -81,8 +81,9 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 ```sh
 #!/bin/sh
 [[ -n $name ]] && echo -e "hi\t$name"
-# ⚠ `[[ ]]`は POSIX sh にない書き方です（dash では動きません）。代わりに `[ ]` を使う。
-# ⚠ `echo -e`は POSIX sh にない書き方です（dash では動きません）。代わりに `printf` を使う…
+# ⓧ エラー: `[[ ]]` は POSIX sh にない書き方です（dash では動きません）。代わりに `[ ]` を使う。
+# ⓧ エラー: `echo -e` は POSIX sh にない書き方です（dash では動きません）。代わりに `printf` を使う…
+# ⓘ 移植性: dash の `echo` は引数の `\t` や `\n` などを解釈します…
 ```
 
 - **対応シェル:** POSIX `sh`（dash と busybox ash で動かないものを明記）、`dash`、`ash`、`yash`、`ksh`、`mksh`、`zsh`。どのシェルで何が動くかは、各シェルで実測しています。
@@ -127,7 +128,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 
 クイックフィックスは、スクリプトのシェルがその書き方に対応していない場合で、かつ意味が変わらない場合だけ出します。例えば `[[ $f == *.txt ]]` はパターン一致なので出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。警告を消すには、その前の行（または同じ行のコードの後ろ）に `# bash-explainer disable=<コード>`、ファイル全体なら `# bash-explainer disable-file=<コード>` を書くか、`bashExplainer.diagnostics.ignore` にコードを指定します（`all` ですべて）。「問題」パネルへの表示自体は `bashExplainer.diagnostics.enabled` でオフにできます。
 
-解説で指摘する警告と注意は、すべてコード付きで「問題」パネルにも出します。書いたとおりでは動かないものと、取り返しのつかない被害が出るもの（代入にならない `x = 1`、`DIR` が空のときの `rm -rf $DIR/*`、`rm $f`、`[-f x]`、`]` のない `[`）は警告、値によってだけ問題になるものや失敗に気づけないもの（`for f in $(ls)`、`cat $f`、`-r` のない `read`、`local x=$(cmd)`）は情報です。ただの補足は問題にしません。`bashExplainer.diagnostics.pitfalls` で出さないようにできます。`--check` はこれも表示しますが、失敗にするのは `--strict` を付けたときだけです。
+問題には、VS Code と同じく3つのレベルがあります。書いたとおりでは毎回失敗する行（`]` のない `[`、スクリプトのシェルにない書き方、前に `;` のない `then`）は **ⓧ エラー**（赤）、値や条件によっては取り返しのつかない被害が出るもの（`DIR` が空のときの `rm -rf $DIR/*`、`rm $f`、代入にならない `x = 1`）は **⚠ 警告**（黄）、値やシステムによってだけ問題になるものや失敗に気づけないもの（`for f in $(ls)`、`cat $f`、`-r` のない `read`、`local x=$(cmd)`）は **ⓘ 情報**（青）です。解説・ホバー・パネル・Web 版では、レベルごとのアイコン・色・言葉（「エラー:」「落とし穴:」「注意:」）で示し、エラーを先に並べます。解説で指摘するエラー・警告・注意は、すべてコード付きで「問題」パネルにも出します。ただの補足は問題にしません。`bashExplainer.diagnostics.pitfalls` をオフにすると警告と注意は出しませんが、エラーは出します。`--check` と GitHub Action はエラーで失敗し、警告では `--strict` を付けたときだけ失敗し、情報では失敗しません。
 
 ## VS Code で使う
 
@@ -229,11 +230,11 @@ Web 版のエディタでも同じカードを表示します（タッチ画面�
 | `bashExplainer.notes.basis` | `true` | マニュアルではなく bash の実際の動きに基づく注記や部分の説明に印（「マニュアルに記述なし・bash 5.2 で確認」）を付け、端末で試すコマンドを添える |
 | **確認** | | |
 | `bashExplainer.shell` | `auto` | スクリプトの対象シェル: `auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh` |
-| `bashExplainer.bashVersion` | `5.2` | 解説の対象にする bash のバージョン: `5.2`・`5.3`。bash 5.3 の書き方（`${ cmd; }` など）は 5.3 での動きを解説し、`5.2` では警告にする |
-| `bashExplainer.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |
+| `bashExplainer.bashVersion` | `5.2` | 解説の対象にする bash のバージョン: `5.2`・`5.3`。bash 5.3 の書き方（`${ cmd; }` など）は 5.3 での動きを解説し、`5.2` ではエラーにする |
+| `bashExplainer.diagnostics.enabled` | `true` | エラーと警告を「問題」パネルにも表示（クイックフィックス付き） |
 | `bashExplainer.diagnostics.ignore` | `[]` | 出さない警告のコード（「問題」パネルに表示されるコード。`dbracket`・`echoE`・`dockerPipefail` など） |
 | `bashExplainer.diagnostics.embedded` | `true` | 他のファイルの中のシェルの警告も出す |
-| `bashExplainer.diagnostics.pitfalls` | `true` | 解説の警告と注意も「問題」パネルに出す（`x = 1`・`rm -rf $DIR/*`・`rm $f` は警告、`cat $f`・`read line` は情報） |
+| `bashExplainer.diagnostics.pitfalls` | `true` | 解説の警告と注意も「問題」パネルに出す（`x = 1`・`rm -rf $DIR/*`・`rm $f` は警告、`cat $f`・`read line` は情報）。解説のエラー（`]` のない `[`）は、この設定にかかわらず出す |
 | `bashExplainer.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
 | **ファイル** | | |
 | `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python`・`jenkinsfile`・`bats` |
@@ -318,7 +319,7 @@ Web 版のエディタでも同じカードを表示します（タッチ画面�
 
 - 解説はルールベースです。辞書に無いコマンドは「外部コマンド」として表示され、オプションの詳細は出ません。
 - bash と同じには読めない書き方があります。zsh 独自の書き方（`*(.)` や `${(f)var}`。シェルを zsh にすると、その行は「解析できない」と表示されます）、`echo (`（bash では構文エラーですが、エラーなしで受け付けます）、宣言ビルトインを表すエイリアス（`alias d=declare` の後、bash は `d a=(1 2)` を `declare` と同じに読み、`d a=$v` の `$v` を分割しません。ここでは前者を構文エラー、後者を分割される引数として解説します）、POSIX モード（`set -o posix` や sh）での `command` の後の宣言（bash と dash は `command declare a=$v` や `command export a=$v` の `$v` を分割せず、dash は `\export a=$v` も分割しません。ここでは bash の通常モードと同じく分割するものとして解説します）、算術式の中で他の項と並んだ 64 進数の桁 `@`（`$((64#@))` だけなら 62 と読めますが、`$((64#@ + 1))` では式全体が1つの語になります）、他の文字列の前か後ろに付いた、サブシェルを実行するプロセス置換(`<((…))`)です（bash は `a<((ls))`・`<((ls))b`・`x=<((ls))` をそれぞれ1つの語と読みますが、ここでは置換が独立した語になります）。`[ ]` では、構文解析の結果によらず、bash の `test` と同じ規則で引数をまとめます（`-o` は `-a` より、`-a` は `!` より弱く結びつく。オペランドを取る位置の `-a` と `-o` は単項演算子）。
-- 改行が Windows 形式（CRLF）のスクリプトは、LF のものとして解説します。また、bash は各行の最後の語に CR を含めて読むので、そのことを警告（`crlf`。最初の該当行の最後の語に付きます）で伝えます。このままにしたいときは、独立した行に `# bash-explainer disable-file=crlf` と書きます（1行目はシェバンなので、その前に `disable=` は置けません）。そのようなスクリプトのヒアドキュメントには、bash と同じく終わりの行がありません。
+- 改行が Windows 形式（CRLF）のスクリプトは、LF のものとして解説します。また、bash は各行の最後の語に CR を含めて読むので、そのことを問題（`crlf`。最初の該当行の最後の語に付きます）として伝えます。毎回失敗するとき（`#!` の行や、`then`・`fi` などのキーワードの後、コマンドが始まる位置にある CR。空の行や、`;`・`&&`・`|` の後など）はエラー、それ以外（`echo hi` が CR も出力する）は警告です。このままにしたいときは、独立した行に `# bash-explainer disable-file=crlf` と書きます（1行目はシェバンなので、その前に `disable=` は置けません）。そのようなスクリプトのヒアドキュメントには、bash と同じく終わりの行がありません。
 - コマンドがスクリプトとして実行する文字列（`bash -c '…'`・`eval`・trap の動作・`ssh host '…'`）をスクリプトとして解説するのは、中身がそのまま書かれているときだけです。展開を含む文字列（`eval "$cmd"`・`bash -c "cd $dir"`）の中身は実行するときに決まります。`bash file` や `source file` で実行するファイルは読みません。
 - 予約語と同じ名前のエイリアス（`alias {=echo`・`alias [[=echo`）は反映しません。エイリアスを展開する設定では、bash は `{` や `[[` をその中身に置き換えます（`{ x; }` は構文エラーになり、`[[ x ]]` は `echo` を実行します）。しかし解説では、その行をグループや `[[ ]]` として扱います。
 - POSIX モードでは、特殊ビルトインコマンドの前に置いた配列要素への代入（`set -o posix; n[0]=5 :`）で、bash は「not a valid identifier」と表示してスクリプトを終了します。解説ではその行が実行されたものとして続きます。

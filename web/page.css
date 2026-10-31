@@ -13,6 +13,7 @@
    and tooltips, and the Problems list. theme.css has their light and dark values. */
 :root {
   /* level table (src/levels.ts, scripts/level-css.ts): root */
+  --c-error-level: var(--vscode-editorError-foreground);
   --c-warning: var(--vscode-editorWarning-foreground);
   --c-info: var(--vscode-editorInfo-foreground);
   /* end of the level table */
@@ -1087,6 +1088,10 @@ body.resizing .problems-resize {
 }
 
 /* level table (src/levels.ts, scripts/level-css.ts): problems */
+#problem-list .icon.level-error {
+  color: var(--c-error-level);
+}
+
 #problem-list .icon.level-warning {
   color: var(--c-warning);
 }
