@@ -2,7 +2,7 @@
 
 How much a note matters, and how every output shows it. Built in #320; the prototype was commit 8371ef7 (branch `proto/note-levels`).
 
-The third level, Error, above the warnings, is being built in the steps of [three-levels.md](three-levels.md): step 1a gave the level, the problems and the facts that say a line fails (below); step 1b gave it its own look in every view (#PRNUM); the pitfalls that fail every time move to it in step 2. This page describes what is built.
+The third level, Error, above the warnings, is being built in the steps of [three-levels.md](three-levels.md): step 1a gave the level, the problems and the facts that say a line fails (below); step 1b gave it its own look in every view (#552); the pitfalls that fail every time move to it in step 2. This page describes what is built.
 
 ## The levels
 
