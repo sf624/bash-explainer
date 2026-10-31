@@ -371,6 +371,55 @@ describe('the web page: toasts', function () {
     }
   });
 
+  for (const how of ['mouse', 'keys', 'phone', 'phone-more'] as const) {
+    it(`gives the focus back after the question about the sample: to the control that opened the menu on Cancel, to the text on Discard (${how})`, async () => {
+      const page = await open(how.startsWith('phone') ? 390 : 1280);
+      try {
+        await openFileThroughChooser(page, 'a.sh', 'echo a\n');
+        await until('opened', () => shownName(page), (t) => t === 'a.sh');
+        await page.locator('.cm-content').click();
+        await page.keyboard.press('Control+End');
+        await page.keyboard.insertText('x');
+        const active = () => page.evaluate("document.activeElement?.id || document.activeElement?.className || document.activeElement?.tagName") as Promise<string>;
+        const asked = async () => {
+          if (how === 'phone') {
+            await page.locator('#menu-open').tap();
+            await page.locator('#menu-sample').tap();
+          } else if (how === 'phone-more') {
+            // (The header's ⋯ is on a phone too.)
+            await page.locator('#ed-more').tap();
+            await page.locator('#more-sample').tap();
+          } else if (how === 'mouse') {
+            await page.locator('#ed-more').click();
+            await page.locator('#more-sample').click();
+          } else {
+            await page.locator('#ed-more').focus();
+            await page.keyboard.press('Enter');
+            for (let i = 0; i < 6 && (await page.evaluate('document.activeElement?.id')) !== 'more-sample'; i++) await page.keyboard.press('ArrowDown');
+            await page.keyboard.press('Enter');
+          }
+          await page.locator('#discard-dialog').waitFor({ state: 'visible' });
+        };
+        const opener = how === 'phone' ? 'menu-open' : 'ed-more';
+        const touch = how.startsWith('phone');
+        // Cancel (Escape from the keyboard): back to the button that opened the menu.
+        await asked();
+        if (how === 'keys') await page.keyboard.press('Escape');
+        else await (touch ? page.locator('#discard-cancel').tap() : page.locator('#discard-cancel').click());
+        await page.locator('#discard-dialog').waitFor({ state: 'hidden' });
+        // (The focus is given back in the dialog's close event, a moment after the dialog is hidden.)
+        await until('the focus after Cancel', active, (id) => id === opener, 1500);
+        // Discard: the sample comes in; the focus is in the text (a phone has no keyboard to bring up: the button).
+        await asked();
+        await (touch ? page.locator('#discard-open').tap() : page.locator('#discard-open').click());
+        await until('the sample', () => page.locator('.cm-content').innerText(), (t) => t.startsWith('#!/usr/bin/env bash'));
+        await until('the focus after Discard', active, (id) => (touch ? id === opener : id.includes('cm-content')), 1500);
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
   it('does not undo the sample over a text that is no longer the sample', async () => {
     const page = await open(1280);
     try {

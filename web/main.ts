@@ -521,9 +521,10 @@ if (edgeRight) setUpEdgeSwipe(edgeRight, openSettings, 'right');
 // The menu's items do what the editor's header does, and close the menu first. Copy a link says "Copied" on the item
 // itself, and the menu stays.
 for (const [item, run] of [['menu-sample', sampleAsked], ['menu-clear', clearEditor], ['menu-copy-script', copyScript]] as const) {
-  on(item, 'click', () => {
+  on(item, 'click', (e) => {
     drawer?.close();
-    run();
+    // (The item is told, so that a question the command asks gives the focus back to the sheet's button.)
+    void run(e.currentTarget as HTMLElement);
   });
 }
 on('menu-share', 'click', () => void copyLink('menu-share'));
@@ -600,10 +601,11 @@ function detectPasted(u: ViewUpdate): void {
 function askAboutSample(k: Kind): void {
   const t = TEXT[lang];
   const name = t.kinds[k] ?? kindInfo(k).name;
-  // From the menu (a phone), the menu closes first, so that the toast after the choice is not under it.
-  const fromMenu = drawer?.open === true;
-  if (fromMenu) drawer!.close();
-  const back = fromMenu ? document.getElementById('menu-open') : document.activeElement as HTMLElement | null;
+  // The control that was used (the kind picker, in the phone's sheet or not): the focus goes back to it, or to the
+  // button of the sheet it was in (web/kind-dialog.ts, `focusTarget`). The sheet closes first, so that the toast after
+  // the choice is not under it.
+  const back = document.activeElement as HTMLElement | null;
+  drawer?.close();
   void askReplaceWithSample({ title: t.askTitle(name), message: t.askMessage(name), replace: t.askReplace, keep: t.askKeep }, back)
     .then((replace) => {
       if (replace) loadSample(true);
@@ -646,18 +648,17 @@ function dropUndo(): void {
  * Open asks (the same question, in the same dialog): the Undo toast goes with the first keystroke, and Ctrl+Z would
  * bring the text back but not the file.
  */
-async function sampleAsked(): Promise<void> {
+async function sampleAsked(from: HTMLElement | null = document.activeElement as HTMLElement | null): Promise<void> {
   const t = TEXT[lang];
   if (fileState.file && unsaved()) {
-    // From the menu (a phone), the menu closes first, so that the dialog is not under it.
-    const fromMenu = drawer?.open === true;
-    if (fromMenu) drawer!.close();
-    const back = fromMenu ? document.getElementById('menu-open') : document.activeElement as HTMLElement | null;
     const discard = await ask({
       id: 'discard', title: t.discardTitle, message: t.discardSampleMessage(window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu),
       confirm: { id: 'discard-open', text: t.discardLoad }, cancel: { id: 'discard-cancel', text: t.cancel },
-    }, back);
+    }, from);
     if (!discard) return;
+    // (The file is not the editor's any more: the focus goes to the text, as after Open.)
+    loadSample(ownText());
+    return editor.focusUnlessTouch();
   }
   loadSample(ownText());
 }
@@ -729,7 +730,7 @@ const head = withFiles ? new EditorHead({
   names: new FileNameControl({ lang: () => lang, view: () => nameView(), rename }),
   openFile: () => void openFile(),
   saveFile: () => void saveFile(),
-  loadSample: () => void sampleAsked(),
+  loadSample: (from) => void sampleAsked(from),
   clear: clearEditor,
   copyScript,
   holdsSample: () => KINDS.some((k) => k.sample === editor.text),
@@ -815,8 +816,7 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
   editor.focusUnlessTouch();
 }
 
-async function openFile(): Promise<void> {
-  const back = document.activeElement as HTMLElement | null;
+async function openFile(back: HTMLElement | null = document.activeElement as HTMLElement | null): Promise<void> {
   let chosen: ChosenFile | undefined;
   try {
     chosen = await chooseFile($<HTMLInputElement>('open-input'));
@@ -924,9 +924,9 @@ if (withFiles) {
     if (fileState.file && unsaved()) e.preventDefault();
   });
 
-  on('menu-open-file', 'click', () => {
+  on('menu-open-file', 'click', (e) => {
     drawer?.close();
-    void openFile();
+    void openFile(e.currentTarget as HTMLElement);
   });
   on('menu-save', 'click', () => {
     drawer?.close();
