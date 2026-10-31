@@ -6,7 +6,7 @@ import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
-import { FADED, type Faded, LEADING_MARK, LEVELS } from './levels';
+import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
 import { conventionOf, fact, isProblem, severityOf } from './messages';
 import { PROBLEM_LEVELS } from './messages-levels';
 import { type NestedScript, nestedScripts } from './semantics/nested';
@@ -119,7 +119,7 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
       for (const { span } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
         const at = span.start.line;
         const issue: DocumentIssue = {
-          code: n.code!, severity: severityOf(n.level), message: n.text, ...(LEVELS[n.level].fails ? {} : { pitfall: true as const }), ...conventionOf(n),
+          code: n.code!, severity: severityOf(n.level), message: n.text, ...(alwaysFails(n.level) ? {} : { pitfall: true as const }), ...conventionOf(n),
           startLine: at, startCol: span.start.character, endLine: at, endCol: span.end.line === at ? span.end.character : doc.lines[at].length,
         };
         const id = `${issue.code} ${at}:${issue.startCol}-${issue.endCol}`;
@@ -233,8 +233,8 @@ export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: 
 }
 
 /**
- * A problem's message as the Problems panel and the editors show it: without the mark (⚠, ⓘ or ℹ) it starts with in the
- * explanations (and, with `backticks: false`, without the backticks that mark code, for plain text).
+ * A problem's message as the Problems panel and the editors show it: without the mark of its level (`LEADING_MARK`:
+ * ⓧ, ⚠, ⓘ or ℹ) it starts with in the explanations (and, with `backticks: false`, without the backticks that mark code, for plain text).
  */
 export function plain(message: string, opts: { backticks?: boolean } = {}): string {
   const text = message.replace(LEADING_MARK, '');
@@ -307,10 +307,26 @@ function lineOf(starts: readonly number[], i: number): number {
   return lo;
 }
 
-const CRLF: [string, string] = [
-  'この行の改行は CRLF（Windows 形式）で、bash は行末の CR を最後の単語の一部として読む。`fi` が `fi\\r` になって「command not found」や構文エラーになるので、LF に変換する。そのままにしてこの指摘を出さないなら、独立した行に `# bash-explainer disable-file=crlf` と書く。',
-  'This file has Windows line endings (CRLF). bash reads the CR at the end of a line as part of its last word, so `fi` becomes `fi\\r` and the script fails with "command not found" or a syntax error. Convert it to LF. To keep the file as it is and silence this problem, write `# bash-explainer disable-file=crlf` on a line of its own.',
-];
+const CRLF_KEEP = [
+  'そのままにしてこの指摘を出さないなら、独立した行に `# bash-explainer disable-file=crlf` と書く。',
+  'To keep the file as it is and silence this problem, write `# bash-explainer disable-file=crlf` on a line of its own.',
+] as const;
+
+/** What a CR at the end of a line does: where a keyword stands before one, on the `#!` line, or elsewhere only. */
+const CRLF: Readonly<Record<'keyword' | 'shebang' | 'maybe', readonly [string, string]>> = {
+  keyword: [
+    'この行の改行は CRLF（Windows 形式）で、bash は行末の CR を最後の単語の一部として読む。`fi` が `fi\\r` になって「command not found」や構文エラーになるので、LF に変換する。',
+    'This file has Windows line endings (CRLF). bash reads the CR at the end of a line as part of its last word, so `fi` becomes `fi\\r` and the script fails with "command not found" or a syntax error. Convert it to LF.',
+  ],
+  shebang: [
+    'この行の改行は CRLF（Windows 形式）で、`#!` の行末の CR はインタープリタの名前の一部として読まれる。プログラムとして実行すると「required file not found」や「bad interpreter」で失敗するので、LF に変換する。',
+    'This file has Windows line endings (CRLF). The CR at the end of the `#!` line is read as part of the interpreter\'s name, so the script run as a program fails with "required file not found" or "bad interpreter". Convert it to LF.',
+  ],
+  maybe: [
+    'この行の改行は CRLF（Windows 形式）で、bash は行末の CR を最後の単語の一部として読む。`echo hi` は `hi` の後に CR を出力し、行末のファイル名や値にも CR が付くので、LF に変換する。',
+    'This file has Windows line endings (CRLF). bash reads the CR at the end of a line as part of its last word, so `echo hi` prints `hi` and a CR, and a file name or a value at the end of a line ends with a CR. Convert it to LF.',
+  ],
+};
 
 /** Whether a keyword token of the tree (`fi`, `then`, `{`…: a token whose text is a word) ends where a CR stands. */
 function keywordBefore(n: SyntaxNode, carriageReturns: ReadonlySet<number>): boolean {
@@ -319,20 +335,21 @@ function keywordBefore(n: SyntaxNode, carriageReturns: ReadonlySet<number>): boo
 }
 
 /**
- * A script with CRLF line ends fails in bash; the issue is shown once, on the last word of the first line that has one
- * (the CR itself lies past the end of the line). An error where it fails every time (`PROBLEM_LEVELS.crlf`): a file
- * with a shebang runs as a program, whose interpreter's name then ends with a CR (docs/design/three-levels.md, section
- * 2); a keyword just before a CR (`fi\r`, `then\r`) is a word, not a keyword, however the file runs. Otherwise a
- * warning (`crlfMaybe`): `bash file` and `source file` run `echo hi\r`, with a CR at the end of the output.
+ * A script with CRLF line ends; the issue is shown once, on the last word of the first line that has one (the CR itself
+ * lies past the end of the line). An error where it fails every time (`PROBLEM_LEVELS.crlf`, docs/design/three-levels.md,
+ * section 2): a keyword just before a CR (`fi\r`, `then\r`) is a word, not a keyword, however the file runs; a CR on the
+ * `#!` line ends the interpreter's name, and the file runs as a program. Otherwise a warning (`crlfMaybe`): `bash file`,
+ * `source file`, and a program whose `#!` line ends in LF, run `echo hi\r`, with a CR at the end of the output.
  */
 function crlfIssue(tree: SyntaxTree, lang: Lang): DocumentIssue[] {
   const at = tree.carriageReturns?.[0];
   if (at === undefined) return [];
-  const level = tree.text.startsWith('#!') || keywordBefore(tree.root, new Set(tree.carriageReturns)) ? PROBLEM_LEVELS.crlf : PROBLEM_LEVELS.crlfMaybe;
   const before = tree.text.slice(0, at);
+  const why = keywordBefore(tree.root, new Set(tree.carriageReturns)) ? 'keyword' : tree.text.startsWith('#!') && !before.includes('\n') ? 'shebang' : 'maybe';
+  const level = why === 'maybe' ? PROBLEM_LEVELS.crlfMaybe : PROBLEM_LEVELS.crlf;
   const line = before.split('\n').length - 1;
   // (In the tree the CR is a blank, so the last word is the one before it; a line of nothing else has no word.)
   const text = before.slice(before.lastIndexOf('\n') + 1).trimEnd();
   const word = /\S+$/.exec(text);
-  return [{ code: 'crlf', severity: severityOf(level), message: CRLF[lang === 'ja' ? 0 : 1], startLine: line, startCol: word?.index ?? 0, endLine: line, endCol: word ? text.length : 0 }];
+  return [{ code: 'crlf', severity: severityOf(level), message: lang === 'ja' ? CRLF[why][0] + CRLF_KEEP[0] : `${CRLF[why][1]} ${CRLF_KEEP[1]}`, startLine: line, startCol: word?.index ?? 0, endLine: line, endCol: word ? text.length : 0 }];
 }

@@ -134,6 +134,13 @@ const ROWS: readonly Row[] = [
   { id: 'unsupported', code: 'dbracket', shell: 'sh', text: '#!/bin/sh\n[[ -d / ]] && echo it-works\n', line: 2, works: 'it-works', assumes: '/bin/sh is dash', level: 'error' },
   { id: 'unsupported', code: 'funsub', text: '#!/bin/bash\necho "${ echo it-works; }"\n', line: 2, works: 'it-works', assumes: 'bash 5.2', level: 'error' },
   { id: 'crlf', text: '#!/bin/bash\r\nif true; then echo it-works; fi\r\n', line: 1, works: 'it-works', ways: ['direct'], level: 'error' },
+  // (A CR on the `#!` line alone: run as a program, the interpreter's name ends with a CR.)
+  { id: 'crlf', text: '#!/bin/bash\r\necho it-works\r\n', line: 1, works: 'it-works', ways: ['direct'], level: 'error' },
+  // (A `#!` line that ends in LF, and CRLF after it: the program runs, with a CR at the end of its output.)
+  {
+    id: 'crlf', text: '#!/bin/bash\necho it-works\r\n', line: 2, works: 'it-works',
+    finding: 'a file whose `#!` line ends in LF, with no keyword before a CR, runs in every way (`echo it-works\\r` prints `it-works` and a CR): a warning (review of #549)',
+  },
   // (With no shebang, a keyword before a CR fails however the file runs: `fi\r` is no keyword.)
   { id: 'crlf', text: 'if true; then echo it-works\r\nfi\r\n', line: 1, works: 'it-works', level: 'error' },
   // (With no shebang and no keyword before a CR, bash runs each line with a CR at the end of its last word.)

@@ -4,9 +4,14 @@
 
 Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
 
+### New
+
+- `--check --counts <file>` appends the numbers of problems of each level to a file, as `$GITHUB_OUTPUT` reads them.
+
 ### Changed
 
-- Problems have a third level, Error, for a line that fails every time as written (`[` without `]`, `[[ ]]` in a `#!/bin/sh` script). `--check` and the GitHub Action fail on every error, and on a warning only with `--strict`; before, they failed on a warning that was no pitfall, such as a script injection in a workflow.
+- Problems have a third level, Error, for a line that fails every time as written (`[ -f a` without `]`, `unset` of a read-only variable, a construct the script's shell lacks). `--check` and the GitHub Action fail on every error, and on a warning only with `--strict`. **Compatibility:** `[ -f a` and the other errors that were pitfalls now fail without `--strict`. Script injection in a workflow (`injection`, `pythonInjection`) and `pythonNoShell` no longer fail without it; the Action's `strict: 'true'` keeps failing on them.
+- In a `#!/bin/sh` script, `local`, `echo -n`, `read -p` and `set -E`, which dash runs, are now information ("Portability") and fail no check. Before, they failed `--check`.
 - `bashExplainer.notes.pitfalls` and `bashExplainer.diagnostics.pitfalls` off no longer hide errors. The Action's `fail-on-warning: 'false'` lets errors pass too, and its new output `errors` counts them; `pitfalls` no longer does.
 - The web page wraps long lines between shell words, with ↪ on the rows after the first. Wrapping is on by default; before, it was off, and when on, a line broke anywhere.
 - The explanation's line box wraps a long line between shell words, up to three rows (click to see it whole). It follows Wrap long lines on the web page and `editor.wordWrap` in VS Code. Before, a long line scrolled sideways.

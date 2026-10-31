@@ -3,7 +3,7 @@ import type { ConventionId } from './conventions';
 import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
-import { LEVELS, type NoteLevel, severityOf } from './levels';
+import { alwaysFails, LEVELS, type NoteLevel, severityOf } from './levels';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
 import { aliasDefinedText, aliasMaybeText, aliasNotExpandedText } from './messages-alias';
 import { DEFINES_IT, leavesSet, inTrap, LOCAL_SOURCED, noShebang, readByBashrc, SETS_IT, unlessAny, unreadClause, unreadCode } from './messages-common';
@@ -734,7 +734,7 @@ export type { Words };
  * advice. The analyzer, the bats facts and the host notes all say their facts through it.
  */
 export function said(facts: readonly Fact[], pitfalls: boolean | undefined): Fact[] {
-  return facts.filter((f) => f.kind !== 'pitfall' || pitfalls !== false || LEVELS[f.level].fails);
+  return facts.filter((f) => f.kind !== 'pitfall' || pitfalls !== false || alwaysFails(f.level));
 }
 
 /**

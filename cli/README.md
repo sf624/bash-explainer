@@ -46,7 +46,7 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `-l`, `--line <n>[-<m>]` | only these lines |
 | `--check` | report errors (lines that fail every time, such as `[` without `]`, and constructs the script's shell lacks), other risks (script injection in GitHub Actions, Docker `RUN` pipes without `pipefail`…) and the pitfalls of a script (`x = 1`, `rm -rf $DIR/*`…); exit 1 if there is an error |
 | `--strict` | with `--check`, also exit 1 if there is a warning |
-| `--counts <file>` | with `--check`, also append the numbers of problems to the file as `name=value` lines (`errors`, `warnings`, `infos`, `pitfalls`, and `failing`: those that make the exit status 1), as `$GITHUB_OUTPUT` reads them |
+| `--counts <file>` | with `--check`, also append the numbers of problems to the file as `name=value` lines (`errors`, `warnings`, `infos`, `pitfalls`, and `failing`: those that make the exit status 1), as `$GITHUB_OUTPUT` reads them. Here `warnings` counts the problems at warning level; the GitHub Action's `warnings` output keeps its old meaning, the problems that fail the step, which is `failing` here |
 | `--shell <name>` | the script's shell: `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` (default: from the shebang or the file name) |
 | `--bash-version <v>` | the bash release to explain for: `5.2` (default) or `5.3`; constructs of a later release are explained as it runs them, and `--check` warns about them |
 | `--kind <kind>` | what the file is: `shell`, `dockerfile`, `makefile`, `yaml`, `npm`, `markdown`, `python`, `jenkinsfile` (default: from the file name) |

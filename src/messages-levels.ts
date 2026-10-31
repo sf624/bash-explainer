@@ -7,9 +7,9 @@ import type { NoteLevel } from './levels';
 /**
  * The level of the problems that are no fact of the catalog: a dialect issue on a construct the target shell lacks
  * (`unsupported`) or that works differently there (`behaviour`, "Portability"), src/dialect.ts; a script with CRLF line
- * ends (`crlf`, src/document.ts), an error when the file has a shebang or a keyword just before a CR (run directly, the
- * interpreter is not found; `fi` is read as `fi\r`, every time), a warning otherwise (`crlfMaybe`: `bash file` runs
- * `echo hi`, with a CR at the end of its output).
+ * ends (`crlf`, src/document.ts), an error when a CR ends the `#!` line or a keyword stands just before a CR (run as
+ * a program, the interpreter is not found; `fi` is read as `fi\r`, every time), a warning otherwise (`crlfMaybe`:
+ * `bash file` runs `echo hi`, with a CR at the end of its output).
  */
 export const PROBLEM_LEVELS = { unsupported: 'error', behaviour: 'info', crlf: 'error', crlfMaybe: 'warning' } as const satisfies Record<string, NoteLevel>;
 

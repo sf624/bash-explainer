@@ -28,7 +28,7 @@ The level of each note comes from one source per kind of note:
 
 - The message catalog (src/messages.ts): `pitfall()` is a warning, `caveat()` a pitfall at the level `info`, `failure()` a fact that says the line fails every time it runs (a note at the level `error`, with a row in test/error-level.test.ts that runs it in bash), `note()` a plain fact. `fact()` gives the level with the text (`Fact.level`).
 - The style checks (src/pitfalls.ts): `STYLE_LEVELS`, beside the catalog (src/messages-levels.ts).
-- The dialect issues (src/dialect.ts): `unsupported` is an error, `behaviour` information (`PROBLEM_LEVELS`, src/messages-levels.ts), `parse` (zsh syntax bash cannot read) a plain fact (`Issue.note`). `crlf` (src/document.ts) is an error in a file with a shebang or with a keyword before a CR (`then\r` is no keyword), a warning otherwise (`bash file` runs `echo hi\r`).
+- The dialect issues (src/dialect.ts): `unsupported` is an error, `behaviour` information (`PROBLEM_LEVELS`, src/messages-levels.ts); in `sh`, a construct that is not POSIX but that dash and busybox ash run (`local`, `echo -n`) is `behaviour`, "Portability", `parse` (zsh syntax bash cannot read) a plain fact (`Issue.note`). `crlf` (src/document.ts) is an error where a CR ends the `#!` line or a keyword stands before a CR (`then\r` is no keyword), a warning otherwise (`bash file`, and a program whose `#!` line ends in LF, run `echo hi\r`).
 - A note with no mark (an idiom, where a line is in a here-document or a statement) is a plain fact (`plainNote`).
 - A diagnostic's severity is `severityOf(level)` (the level table): `error` an error, `warning` a warning, the others information (src/document.ts, src/hosts/remap.ts). The old list of pitfalls shown as warnings (`PITFALL_WARNINGS`) and `WordFinding.mild` are gone.
 
@@ -42,7 +42,7 @@ This replaced a bridge: the views read the level back from the mark (`noteLevel(
 
 Every error, warning and caveat a line's explanation says is a problem (`noteIssues` in src/document.ts), on every surface that lists problems: VS Code's Problems panel and squiggles, the Language Server, the web page's lint and Problems list, `--check` (text, JSON, SARIF) and the GitHub Action's annotations. A plain fact is not (the dialect issue `zshSyntax`, a plain fact that the line cannot be read, stays the problem it was). The rule:
 
-- **What.** The notes of each line at the level `error`, `warning` or `info` (`LineExplanation.noteInfo`), explained with the settings' options (so with `notes.pitfalls` off, the pitfalls are left out as the explanations leave them out; the errors stay: `said` keeps a fact at a level that `fails`), without examples or idioms, which add none.
+- **What.** The notes of each line at the level `error`, `warning` or `info` (`LineExplanation.noteInfo`), explained with the settings' options (so with `notes.pitfalls` off, the pitfalls are left out as the explanations leave them out; the errors stay: `said` keeps a fact at a level that `alwaysFails`, which is read from `SEVERITIES[…].fails`), without examples or idioms, which add none.
 - **Where.** On the range of each node the note was found on (`LineExplanation.anchors`), cut to the line it starts on, as the other problems are. The notes of a string run as a script (`bash -c '…'`, `eval`, a trap) and of `$( )` are on their words in the document; a host file's are at its own columns (src/hosts/remap.ts).
 - **Code and severity.** The note's code (a fact's id, a style check, a dialect issue; a host's own code where it has one: `dockerPipefail`, `injection`) and `severityOf(level)`. Those but the errors are marked `pitfall: true`: advice, which `diagnostics.pitfalls` turns off, and whose GitHub annotation is titled "(pitfall)". What fails `--check` is the severity's (`SEVERITIES[…].fails`): an error always, a warning only with `--strict`, an info never.
 - **Once.** The same note on the same node is one problem, however many lines say it (a statement over several lines says its notes on each line). A note found on several nodes is a problem on each (`cp $a b; cp $a c`: two), since each is a place to fix. A note on a node where another problem (a dialect issue, `crlf`) has the same code or the same text is left out, and so is `pipefail-missing` where a Dockerfile's `dockerPipefail` is (`SAME_PROBLEM`); none is made on a line that zsh syntax leaves unread.
@@ -95,7 +95,7 @@ Since step 1a of [three-levels.md](three-levels.md); each has a row in test/erro
 | `find-action-refused` | find refuses all its arguments (status 1) and runs nothing. |
 | `bats-tags-invalid` | bats runs none of the file's tests, and fails. |
 | Dialect: `unsupported` | The construct fails in the target shell. |
-| Problem: `crlf`, in a file with a shebang or with a keyword before a CR | Run directly, the interpreter's name ends with a CR; `fi\r` is no keyword, however the file runs. (A warning otherwise: `bash file` runs `echo hi\r`.) |
+| Problem: `crlf`, where a CR ends the `#!` line or a keyword stands before a CR | Run as a program, the interpreter's name ends with a CR; `fi\r` is no keyword, however the file runs. (A warning otherwise: `bash file`, and a program whose `#!` line ends in LF, run `echo hi\r`.) |
 
 ### Warnings
 

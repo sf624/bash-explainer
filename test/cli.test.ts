@@ -197,6 +197,12 @@ describe('the command-line tool', function () {
     // (In colour, the level's word in the level's colour: the level table.)
     assert.match(run(['--check', '--color', '-e', '#!/bin/sh\n[[ -f x ]] && echo y']).out, /^\(command\):2:1: \x1b\[31merror\x1b\[0m: /m);
     assert.strictEqual(run(['--check', '-e', '#!/bin/bash\n[[ -f x ]] && echo y']).code, 0);
+    // In sh, what dash and busybox ash run (`local`, `echo -n`) is information, "Portability": it fails no check, even strict.
+    const portable = ['--check', '--no-color', '-e', '#!/bin/sh\nf() { local v; echo -n x; }'];
+    const p = run(portable);
+    assert.strictEqual(p.code, 0);
+    assert.match(p.out, /^\(command\):2:7: info: Portability: local is not POSIX sh \(dash and busybox ash accept it.*\[local\]$/m);
+    assert.strictEqual(run([...portable, '--strict']).code, 0);
     const json = JSON.parse(run(['--check', '--format', 'json', '--shell', 'dash', '-e', '[[ -f x ]]']).out);
     assert.deepStrictEqual(json.map((i: { code: string }) => i.code), ['dbracket']);
   });

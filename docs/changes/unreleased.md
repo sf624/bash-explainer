@@ -11,8 +11,10 @@ A problem is now an error, a warning or information, as VS Code and SARIF have t
 At error now:
 
 - The notes that say a line fails when it runs: `[` without `]` (`[ -f a`), `]` glued to a word (`[ -d /]`), a `test` it cannot read (`[ 1 -eq ]`), `then` or `do` with no `;` or newline before it (`if true then`), `unset` of a read-only variable, `unset -f -v`, an assignment to a read-only variable, what a restricted shell refuses (`bash -r -c 'cd /'`), `exit` with a word that is no number or with two (`exit x`, `exit 1 2`), a `find` whose actions it refuses (`find . -exec rm {}` with no `;`), and an invalid `# bats test_tags=` line. Each is run in bash in test/error-level.test.ts, directly, with `bash file`, sourced in a function and by an interactive shell, and fails every time.
-- A construct the script's shell lacks: `[[ ]]` in a `#!/bin/sh` script, `${ cmd; }` for bash 5.2.
-- CRLF line ends, in a file with a shebang (run as a program, the interpreter's name ends with a CR) or with a keyword before a CR (`then\r`, `fi\r` are no keywords). Otherwise a warning: with no shebang and no keyword there, `bash file` runs `echo hi\r` and prints `hi` with a CR.
+- A construct the script's shell lacks: `[[ ]]` in a `#!/bin/sh` script (dash lacks it), `${ cmd; }` for bash 5.2.
+- CRLF line ends, where a CR ends the `#!` line (run as a program, the interpreter's name ends with a CR) or a keyword stands before a CR (`then\r`, `fi\r` are no keywords). Otherwise a warning, with a text of its own: `bash file`, and a program whose `#!` line ends in LF, run `echo hi\r` and print `hi` with a CR.
+
+In a `#!/bin/sh` script, a construct that is not POSIX but that dash and busybox ash run (`local`, `echo -n`, `read -p`, `set -E`) is now information: "ⓘ Portability: `local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it)". It fails no check, even with `--strict`. Before, it was a warning and failed `--check`. One that dash or busybox ash lacks (`[[ ]]`, arrays, `${x^^}`) is an error.
 
 The two notes that started with their own "Syntax error:" lose it, since the word now says "Error:": `if true then` says "ⓧ Error: A `;` or a newline is needed before `then`…", and a `}` that does not end `${ …; }` says "ⓧ Error: This `}` is one more argument…". The token of that `}` still says "Syntax error (bash 5.3):".
 
@@ -24,11 +26,11 @@ What fails `--check` and the GitHub Action:
 | A warning | failed, unless it was a pitfall (then only with `--strict`) | fails only with `--strict` |
 | Information | never failed | never fails |
 
-So `[ -f a`, `unset` of a read-only variable and the others above now fail without `--strict`. And a few warnings that are no pitfall no longer fail without it: a GitHub Actions expression in `run:` (`injection`), a Python string run by a shell (`pythonInjection`), a Python call that runs a string with no shell (`pythonNoShell`), and CRLF line ends in a file with no shebang and no keyword before a CR.
+So `[ -f a`, `unset` of a read-only variable and the others above now fail without `--strict`. And a few warnings that are no pitfall no longer fail without it: a GitHub Actions expression in `run:` (`injection`), a Python string run by a shell (`pythonInjection`), a Python call that runs a string with no shell (`pythonNoShell`), and CRLF line ends with no CR on the `#!` line and no keyword before a CR. The Action's `strict: 'true'` (`--strict`) keeps failing on them.
 
 - `bashExplainer.notes.pitfalls` off no longer hides an error, and `bashExplainer.diagnostics.pitfalls` off leaves the errors of the explanations in the Problems panel: an error is a bug, not advice. Before, `diagnostics.pitfalls` off left out the notes that said a line fails.
-- The GitHub Action's `fail-on-warning: 'false'` lets errors pass too. Its new output `errors` counts them; `warnings` counts what fails the step (the errors, and with `strict` the warnings), and `pitfalls` no longer counts errors. The counts come from the command-line tool's new `--counts <file>`, which appends `errors=`, `warnings=`, `infos=`, `pitfalls=` and `failing=` lines; with an older tool (a `package:` pin), the Action counts its annotations as before, and `errors` is 0.
-- SARIF has `error` results. GitHub's code scanning fails its check on alerts at `error` by default, so these can now block a pull request.
+- The GitHub Action's `fail-on-warning: 'false'` lets errors pass too. Its new output `errors` counts them; `warnings` counts what fails the step (the errors, and with `strict` the warnings), and `pitfalls` no longer counts errors. The counts come from the command-line tool's new `--counts <file>`, which appends `errors=`, `warnings=`, `infos=`, `pitfalls=` and `failing=` lines (there `warnings` counts the problems at warning level, and `failing` what the Action's `warnings` counts); with an older tool (a `package:` pin), the Action counts its annotations as before, and `errors` is 0.
+- SARIF has `error` results. GitHub's code scanning fails its "Code scanning results" check on a new `error` alert by default; it blocks merging where a ruleset or branch protection requires that check.
 
 ### Long lines on the web page wrap between shell words
 
