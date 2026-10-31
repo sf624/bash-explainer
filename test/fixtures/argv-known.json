@@ -9,6 +9,16 @@
       "values": { "commands": 404, "ran": 365, "words": 921, "unknown": 37, "failing": 0 }
     }
   },
+  "lines": {
+    "fixtures": {
+      "probe": { "ran": 135, "words": 443, "placeholders": 46 },
+      "values": { "ran": 245, "words": 781, "placeholders": 93 }
+    },
+    "snippets": {
+      "probe": { "ran": 358, "words": 831, "placeholders": 110 },
+      "values": { "ran": 363, "words": 843, "placeholders": 110 }
+    }
+  },
   "known": [
     {
       "input": "#!/bin/bash\nshopt -s expand_aliases\nalias c='command ' d='declare x=1'\nc d\necho \"[$x]\"",

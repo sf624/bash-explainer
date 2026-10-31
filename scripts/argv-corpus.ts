@@ -11,9 +11,12 @@
 // (step 9, test/support/renderings.ts) and test/fixtures/renderings-known.json. It fails on a difference, a stale entry,
 // or a command that reached a PATH search; but a difference of the renderings in a fuzz input is only reported (`SHOWN
 // (fuzz, not failing)`): the fuzz inputs change with every snippet, too often for entries, and a bug they show is given
-// a stable input (a snippet or test/fixtures/renderings.sh) with its entry. It takes about 15 s on 4 jobs.
+// a stable input (a snippet or test/fixtures/renderings.sh) with its entry. Then what src/argvline.ts says each program
+// receives (P4 of docs/design/panel-redesign.md, test/support/argvline.ts), with the differences argv-known.json does not
+// accept. It takes about 15 s on 4 jobs.
 import * as fs from 'fs';
 import { ARGV_KNOWN, type ArgvKnownFile, checkArgv, fixtureInputs, fuzzArgvInputs, matchKnown, runArgv, snippetInputs } from '../test/support/argv';
+import { checkArgvLines } from '../test/support/argvline';
 import { probeSkipReason } from '../test/support/probe';
 import { checkRenderings, matchRenderKnown, RENDER_KNOWN, type RenderKnownFile, staleClasses } from '../test/support/renderings';
 
@@ -49,7 +52,12 @@ const jobs = at > 0 ? Number(process.argv[at + 1]) : 4;
     const fuzz = set === 'fuzz';
     for (const u of r.unexplained) console.log(`    SHOWN${fuzz ? ' (fuzz, not failing)' : ''} ${u}`);
     for (const s of r.stale) console.log(`    STALE ${s}`);
-    failed ||= escaped.length + unexplained.length + stale.length + (fuzz ? 0 : r.unexplained.length) + r.stale.length > 0;
+    const lines = checkArgvLines(plans);
+    const linesUnexplained = matchKnown(lines.found, known.known, inputs).unexplained;
+    console.log('  what each program receives (src/argvline.ts):');
+    for (const [env, c] of Object.entries(lines.counts)) console.log(`    ${env}: ${JSON.stringify(c)}`);
+    for (const u of linesUnexplained) console.log(`    DIFFERS ${u}`);
+    failed ||= escaped.length + unexplained.length + stale.length + (fuzz ? 0 : r.unexplained.length) + r.stale.length + linesUnexplained.length > 0;
   }
   const gone = [
     ...known.known.filter((e) => !names.has(e.input)).map((e) => `${JSON.stringify(e.input)}: ${e.command}`),

@@ -1,5 +1,5 @@
 import { githubFileNotes } from './yaml';
-import type { ExplainOptions, LineExplanation, Pos, Token } from '../analyzer-types';
+import type { ArgvLine, ArgvWord, ExplainOptions, LineExplanation, Pos, Span, Token } from '../analyzer-types';
 import type { BashVersion } from '../bashversion';
 import { dialectIssues, type Shell } from '../dialect';
 import type { ReadingNode } from '../reading';
@@ -95,6 +95,7 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     ...(ex.facts ? { facts: ex.facts.map(factInFile) } : {}),
     ...(ex.anchors ? { anchors: ex.anchors.map(({ rewrite: _r, ...a }) => ({ ...a, text: inFile(a.text), span: span(a.span) })) } : {}),
     ...(ex.reading ? { reading: reading(ex.reading) } : {}),
+    ...(ex.argv ? { argv: ex.argv.map((l) => argvLine(l, span)) } : {}),
   };
 }
 
@@ -238,3 +239,12 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
   return out;
 }
 
+/** What a program receives (`LineExplanation.argv`), with its places in the file (`span`); the texts stay as the extracted script has them. */
+function argvLine(l: ArgvLine, span: (sp: Span) => Span): ArgvLine {
+  const word = (w: ArgvWord): ArgvWord => ({ ...w, from: span(w.from) });
+  return {
+    ...l, span: span(l.span), words: l.words.map(word),
+    removed: l.removed.map((r) => ({ ...r, span: span(r.span), ...(r.word ? { word: r.word.map(word) } : {}) })),
+    ...(l.fails ? { fails: { ...l.fails, span: span(l.fails.span) } } : {}),
+  };
+}

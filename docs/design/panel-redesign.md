@@ -2,7 +2,7 @@
 
 The plan that turns prototype B into real PRs, then the usability test. Agreed with the maintainer on 2026-10-27; revised after an independent review of the plan (PR #418).
 
-Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#543), started early (decided by the maintainer 2026-10-31), beside the three note levels; P3 on wait for the levels. SB3 comes before P7a.
+Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#543), started early (decided by the maintainer 2026-10-31), beside the three note levels. P3 done (#560), after the levels. P4 done (#P4PR): what each program receives, as data. SB3 comes before P7a.
 
 ## 1. Goal
 
@@ -73,8 +73,8 @@ The prototype was built fast. It has hacks and loosened tests. Two web tests wer
 | Pipeline example values (`SAMPLE_VALUES` in src/explain/examples.ts) | Move | A table of names in src/explain/ breaks CLAUDE.md. The values go to the example layer, from `wellKnownVariables` in src/dict/syntax.ts (P6). |
 | "Options only" in src/explain/examples.ts (the regex `/^-[hFEns]+$/`) | Rewrite | Whether grep reads a word as a regex comes from the spec (`lang: 'regex'`, `OptionSpec.whole`), not from the letters (P6). |
 | src/examples/pipeline.ts, src/examples/rerun.ts, src/explain/context.ts (glob examples kept beside the whole-pipeline example) | Review | This changes an example rule of CLAUDE.md ("Explanations"). Kept only as a stated rule with a test (P6). |
-| `trustedFields` (src/semantics/words.ts) | Review | A new reader of the word model. Kept only if P4 needs it, with the word probes (P4). |
-| src/argvline.ts | Rewrite | The idea is right. Its texts move to the catalog. It reads the argument interpreter and `wordFields` only. Argv capture in bash checks it (P4). |
+| `trustedFields` (src/semantics/words.ts) | Dropped (P4) | P4 did not need it: what a program receives reads the values of `wordFields`, which the argv capture checks, not only those the trust allows. It never reached main. |
+| src/argvline.ts | Rewrite, done (P4, #P4PR) | The idea is right. Its texts are in the catalog (src/messages-argv.ts). It reads the word model only: `wordFields`, and `receivedWords` (src/semantics/fieldshape.ts) for the words with a value known only at run time; it needs no argument interpreter, since roles are not what the program receives. Argv capture in bash checks it (test/argv.test.ts). |
 | src/linesummary.ts | Rewrite | It compares names (grep, sort, uniq, tar, echo, wc) and has seven shapes. It keeps its own copy of the test operators (`S.tests`) and calls `pitfallFindings`. Every line needs a sentence: a composition from the specs and the models, and the known shapes as idioms (P5). |
 | src/reading.ts additions (`from`, `steps`, `argv`, `cond`, `summary`, `code`) | Keep the fields, move the texts | Its inline tables `TEXTS` and `OPERANDS` repeat `unaryTestOps` and `binaryTestOps` of src/dict/syntax.ts. One table, used by both (P2, P8). The sentence of the line is not kept here (P5). |
 | src/analyzer.ts helpers `variableFrom` | Move | analyzer.ts stays the orchestration (docs/design/analyzer.md). To src/explain/words.ts (P5). |
@@ -193,6 +193,15 @@ Users: nothing yet. No CHANGELOG line of its own.
 Tests: P4b's data against the capture of P4a, over the same corpus.
 
 Risks: the capture finds old bugs in the word model. They land before P4b.
+
+Done (#P4PR). Where the plan did not fit the code, the plan was changed, as below.
+
+- **The data.** `LineExplanation.argv`, when `ExplainOptions.argv` asks for it (P9's `explainNeeds` will): an `ArgvLine` for each simple command with a name on the line, those in a substitution too, in source order (src/argvline.ts; the types in src/analyzer-types.ts). Its `words`, the name's first, are `ArgvWord`s: the word of the script they come from (`from`), their parts (text, or a placeholder: what it stands for, its code, its label, and `splits` where word splitting may cut it), a `count` where it is not exactly one word (`{ min: 0, max: 0 }` for a word that gives none; no `max`: any number), and `asWritten` where the program receives the word as it is written (P9 tints it). `removed` lists what bash takes out, in source order: each prefix assignment (what it does, from `assignmentsOf`: for the command only, or it stays; its value's word) and each redirection (what it does, from the dictionary's `redirects`, with the target expanded where it is known; its target's words, or a here-string's). `fails` says where bash fails on a word (`${x:?}`, failglob, an ambiguous redirection), so that the program does not run. Hosts map the places to the file (src/hosts/remap.ts). Nothing is drawn yet.
+- **Where it comes from.** A word's fields are `wordFields`'s where it knows them (no environment: the script's own values). Otherwise `receivedWords` (src/semantics/fieldshape.ts, in the word layer) evaluates the word with the same values, a hole for each part it does not know (`holedWords`), splits it at the separators it knows (`atomsOf`, `splitOn`), and says for each field its parts, its count, and its pattern where its own characters make it one. It has the bail-outs of `wordShapes` (`misread`, a word that may assign IFS, an unquoted `$!`, braces not known), and is for bash only: in another shell, and wherever it gives up, the word is one placeholder, "the words of `…`", any number. The plan named the argument interpreter as a source: what the program receives needs none (the roles are depth 2's).
+- **Placeholders** (src/messages-argv.ts, ja and en): a parameter by what it is where that has a short name (`$USER`, "current user name"; `$?`; `$1`, "argument 1"; `"$@"`, "each argument"; `"${a[@]}"`, "each element of `a`"), else "value of `$x`" or, with an operator, "what `${x:-d}` gives"; "output of `$(…)`", "result of `$((…))`", "file name of `<(…)`", "home directory" (of `bob`), "translation of `$"…"`"; and for a pattern, "each name matching `*.log`", the whole word as written where it is the only field (`"$d"/*.log`).
+- **An assignment given to a declaration builtin** (`local x=$1`): `wordFields` gives no fields for it. src/argvline.ts gives it as one word, the name and `=` as written, then the value's own word (`assignment-value`: not split nor globbed). Moving that into the word model is left to word-source.md (steps 3a and 5).
+- **Tests.** test/argvline.test.ts: the shape, each placeholder in both languages, what bash takes out, a host file. test/argv.test.ts: on the capture's runs (the fixtures and the sample of the snippets, both environments), every word given as text is bash's and every placeholder covers what bash put there (test/support/argvline.ts; the known differences of argv-known.json apply, and the counts are pinned there under `lines`). scripts/argv-corpus.ts runs it over all the snippets and 200 fuzz inputs: no difference.
+- **`trustedFields`** was not needed (section 4).
 
 ### P5. "In short" on every line
 

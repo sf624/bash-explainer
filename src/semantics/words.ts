@@ -867,6 +867,8 @@ export function trustedPart(part: SyntaxNode, w: WordMeaning, model: StateModel,
 
 /** The variable `name` where the word `w` is expanded, as `trustedPart` reads it: a string, null when unset, undefined when not known. */
 export const trustedVariable = (name: string, w: WordMeaning, model: StateModel): string | null | undefined => new Evaluator(w, new ModelValues(w, model, undefined, new Set(), true)).variable(name, w.nodes[0]);
+/** The values `wordFields` reads where `w` runs, with no environment: those of the holes of `receivedWords` (fieldshape.ts). */
+export const modelValues = (w: WordMeaning, model: StateModel): ValueSource => new ModelValues(w, model, undefined, new Set());
 function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, expanding: ReadonlySet<SyntaxNode>, trusted = false): Fields {
   const w = wordMeaning(n, model);
   if (!w) return {};
