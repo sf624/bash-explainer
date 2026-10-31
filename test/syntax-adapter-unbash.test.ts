@@ -1169,6 +1169,25 @@ describe('unbash adapter: more shapes', () => {
     assert.deepEqual(nested.root.children.map((n) => n.text), ['cat <<E\r\n$(cat <<F\r\nf\r\nF\r\n)\r\nE', 'echo after']);
     // With no heredoc, a line continuation (a backslash before a LF alone) is still removed: `echo a\<newline>fter`.
     assert.deepEqual(types(tree('echo a\\\nfter\r\n').root, 'word').map((n) => nameText(n)), ['echo', 'after']);
+    // A heredoc with no delimiter yet, as while `cat <<` is typed (`<<#x`: `#` starts a comment), and `<<` that is no
+    // heredoc (`<<<`, `$((1<<2))`), keep their CRs masked.
+    for (const text of ['cat <<\r\n', 'cat <<-\r\nx\r\n', 'cat << \r\nE\r\n', 'cat <<;\r\n', 'cat << |\r\n', 'cat <<\r\necho a\r\n', 'cat <<#x\r\nx\r\n', 'cat <<<x\r\n', 'echo $((1<<2))\r\n']) {
+      assert.equal(tree(text).text, text);
+    }
+    assert.deepEqual(types(tree('echo $((1<<2))\r\n').root, 'command').map((n) => n.text), ['echo $((1<<2))']);
+  });
+
+  it('reads the CRs of the heredocs of a CRLF script in one pass: one parse of the script, and one of each delimiter word', () => {
+    const text = ('cat <<EOF\r\nx\r\nEOF\r\n'.repeat(500) + "cat <<-'END'\r\n\ty\r\n\tEND\r\n").repeat(2) + 'echo a\\\nb\r\n';
+    const read: string[] = [];
+    const counted = (t: string) => {
+      read.push(t);
+      return parse(t);
+    };
+    // (The script is read once more after the delimiters, for its line continuation.)
+    assert.ok(prepared(text, counted, forEachChild as unknown as Children).joins);
+    assert.deepEqual(read.map((t) => (t.length === text.length ? 'the script' : t)), [':<<EOF\n', ":<<'END'\n", 'the script']);
+    assert.equal(types(tree(text).root, 'heredoc_end').length, 1002);
   });
 
   it('reads the heredocs of a CRLF script as bash does', function () {
@@ -1199,6 +1218,10 @@ describe('unbash adapter: more shapes', () => {
       'cat <<E\r\nx\r\nE\necho a\r\n', 'cat <<E\r\nx\r\nE\r\r\nE \r\nE\r\n', 'cat <<E\nx\r\nE\r\n', 'cat <<E ;\r\nx\r\nE\r\n',
       // Several heredocs: `cat` reads the last one of its line.
       'cat <<A <<B\r\na\nA\nb\r\nB\r\n', 'cat <<A\r\na\r\nA\r\ncat <<-B\r\n\tb\r\n\tB\r\n',
+      // `$'E'` is `E`, and `''` the empty line; a line `E` before the heredoc, or after `<<E` in a comment, ends nothing;
+      // the same delimiter twice.
+      "cat <<$'E'\r\nx\r\nE\r\n", "cat <<''\r\nx\r\n\r\n", 'E\r\ncat <<E\r\nx\r\nE\n', 'cat <<A # <<E\r\na\nA\nE\r\n',
+      'cat <<E\r\nx\r\nE\r\ncat <<E\r\ny\r\nE\r\n',
     ]) {
       // (And with a line continuation after them, which a LF alone ends: `echo a\<newline>fter`.)
       for (const text of [head + 'echo after\r\n', head + 'echo a\\\nfter\r\n']) {
