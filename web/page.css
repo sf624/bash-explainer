@@ -994,39 +994,80 @@ body.resizing .problems-resize {
   outline-offset: -2px;
 }
 
-#problems h2 {
+/* With no problem the strip says so, alone: no list, no handle (a stored height waits for the next problem). */
+#problems.empty:not(.collapsed) {
+  height: auto;
+}
+
+#problems.empty #problem-list,
+#problems.empty .problems-resize {
+  display: none;
+}
+
+/*
+ * The strip (web/problem-list.ts): "› Problems ⓧ 1 ⚠ 5 ⓘ 6", which folds and opens the list, and at the right where the
+ * cursor is ("Ln 20 · 1/11") with ‹ › (F8, Shift+F8). 32 px high; 44 on a phone.
+ */
+.problems-strip {
   flex: none;
-  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  padding-inline-end: 4px;
   background: var(--page-background);
-  color: var(--vscode-descriptionForeground);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+}
+
+#problems h2 {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* (The compare page's strip has no fold: the heading is the strip's words.) */
+#problems h2:not(:has(button)) {
+  padding-inline: 12px;
 }
 
 #problems-toggle {
   display: flex;
   align-items: center;
-  gap: 4px;
-  width: 100%;
-  min-height: 28px;
-  padding: 4px 12px 2px 8px;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 10px 0 8px;
   border: 0;
   background: none;
   color: inherit;
   font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
   text-align: start;
   cursor: pointer;
 }
 
-#problems-toggle:hover {
-  color: var(--vscode-foreground);
+@media (hover: hover) {
+  #problems-toggle:not(:disabled):hover {
+    background: var(--vscode-list-hoverBackground);
+  }
 }
 
-#problems-toggle .chev {
+#problems-toggle:focus-visible {
+  outline-offset: -2px;
+}
+
+#problems-toggle:disabled {
+  color: var(--vscode-descriptionForeground);
+  cursor: default;
+}
+
+.problems-strip .chev {
+  flex: none;
   width: 14px;
   height: 14px;
   fill: none;
@@ -1034,22 +1075,70 @@ body.resizing .problems-resize {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* The fold's mark: › folded, ⌄ open, none while there is nothing to open. */
+#problems-toggle .chev {
   transition: transform 0.15s;
 }
 
-#problems.collapsed .chev {
+#problems.collapsed #problems-toggle .chev {
   transform: rotate(-90deg);
 }
 
-#problems .count {
-  padding: 0 6px;
-  border-radius: 8px;
-  background: var(--accent-soft);
-  color: var(--vscode-foreground);
+#problems-toggle:disabled .chev {
+  visibility: hidden;
 }
 
+/* The count of each level: its mark in its colour (the level table, below), then the number. */
+#problems .counts {
+  display: inline-flex;
+  gap: 10px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+#problems .counts .count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+#problem-pos {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 0 0 auto;
+  padding-inline: 6px;
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#problem-prev,
+#problem-next {
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+
+#problem-prev[hidden],
+#problem-next[hidden] {
+  display: none;
+}
+
+/*
+ * The list: the line in a column of its own (as wide as the longest "Ln 95"), the message on up to two lines (the
+ * tooltip has it whole), and the rule from a pane of 520 px. Each row takes the list's columns (subgrid).
+ */
 #problem-list {
+  display: grid;
   flex: 1;
+  grid-template-columns: auto max-content minmax(0, 1fr) auto;
+  align-content: start;
+  column-gap: 8px;
   min-height: 0;
   overflow: auto;
   list-style: none;
@@ -1057,10 +1146,18 @@ body.resizing .problems-resize {
   padding: 0 6px 6px;
 }
 
+#problem-list li {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
 /* Each problem is a button (web/problem-list.ts), drawn as a row of the list. */
 #problem-list .problem {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: baseline;
   width: 100%;
   padding: 3px 6px;
   border: 0;
@@ -1081,22 +1178,41 @@ body.resizing .problems-resize {
   outline-offset: -2px;
 }
 
+#problem-list .message {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
 #problem-list .where,
 #problem-list .code {
   color: var(--vscode-descriptionForeground);
   white-space: nowrap;
 }
 
+@container source (max-width: 519.98px) {
+  #problem-list .code {
+    display: none;
+  }
+
+  /* The position without its line, "1/11": the strip keeps one row on a phone (the line is the cursor's, in the gutter). */
+  #problem-pos .pos-ln {
+    display: none;
+  }
+}
+
 /* level table (src/levels.ts, scripts/level-css.ts): problems */
-#problem-list .icon.level-error {
+#problems .icon.level-error {
   color: var(--c-error-level);
 }
 
-#problem-list .icon.level-warning {
+#problems .icon.level-warning {
   color: var(--c-warning);
 }
 
-#problem-list .icon.level-info {
+#problems .icon.level-info {
   color: var(--c-info);
 }
 /* end of the level table */
@@ -1846,6 +1962,11 @@ body.resizing .problems-resize {
   :where(html.narrow) .first-hint {
     padding-inline: 12px;
   }
+
+  /* The Problems strip also keeps clear of the divider's grab area under it. */
+  :where(html.narrow) .problems-strip {
+    padding: 0 12px 8px;
+  }
 }
 
 /* Stacked, the hint's × is 44 px; on a phone (a touch screen) its text and × share the first row, its buttons the second. */
@@ -1889,8 +2010,13 @@ body.resizing .problems-resize {
   height: 20px;
 }
 
-:where(html.narrow) #problems-toggle {
-  min-height: 40px;
+:where(html.narrow) :is(.problems-strip, #problems-toggle) {
+  min-height: 44px;
+}
+
+:where(html.narrow) :is(#problem-prev, #problem-next) {
+  width: 44px;
+  height: 44px;
 }
 
 /* The copy and the link are in the menu on every phone. Below 480px the logo is 24px and the name 14px;

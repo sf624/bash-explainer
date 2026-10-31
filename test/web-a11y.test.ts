@@ -210,6 +210,36 @@ describe('the web page: keyboard and screen reader access', function () {
     await ctx.close();
   });
 
+  it('reaches the Problems strip with Tab (its fold, then ‹ and ›), and goes to a problem with Enter there or F8 in the explanation', async () => {
+    const ctx = await context();
+    const page = await ctx.newPage();
+    await open(page);
+    await until('the problems', () => page.locator('#problem-list button.problem .where').allTextContents(), (w) => w[0] === 'Ln 3', 15000);
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Tab');
+    const stops: string[] = [];
+    await tabTo(page, (f) => (stops.push(f), f.startsWith('button.problem')));
+    assert.deepStrictEqual(stops.filter((f) => /#problem/.test(f)).map((f) => f.split('.')[0]), ['button#problems-toggle', 'button#problem-prev', 'button#problem-next']);
+    // Enter on ›: the next problem after the cursor (line 1), the focus in the editor, with no line break typed.
+    await page.locator('#problem-next').focus();
+    await page.keyboard.press('Enter');
+    await until('the editor', () => focused(page), (f) => f.includes('cm-content'));
+    assert.strictEqual(await page.locator('.cm-activeLine').textContent(), '(( count++ ))');
+    assert.strictEqual(await page.locator('.cm-line').count(), SCRIPT.split('\n').length);
+    // F8 in the explanation's frame: the first problem after the cursor (line 3 again), the focus back in the editor.
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('F6');
+    // (The panel puts the focus on its explanation once it has the message: wait for it, so it does not come after F8.)
+    await until('the explanation', () => focused(page), (f) => f.startsWith('frame:main'));
+    await page.keyboard.press('F8');
+    await until('the editor', () => focused(page), (f) => f.includes('cm-content'));
+    assert.strictEqual(await page.locator('.cm-activeLine').textContent(), '(( count++ ))');
+    assert.match((await page.locator('#problem-pos-text').textContent())!, /^Ln 3 · 1\/\d+$/);
+    // Help names the keys.
+    assert.ok((await page.locator('#menu-keys').textContent())!.includes('F8, Shift+F8'));
+    await ctx.close();
+  });
+
   it('opens the hover card with Ctrl+K Ctrl+I and says so; again puts the focus in it, and Escape closes it', async () => {
     for (const lang of ['en', 'ja'] as const) {
       const ctx = await context(lang);

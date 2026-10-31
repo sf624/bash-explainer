@@ -87,7 +87,11 @@
     <input id="open-input" type="file" hidden>
     <section id="problems" hidden>
       <div id="problems-resize" class="problems-resize" role="separator" tabindex="0" aria-orientation="horizontal" aria-controls="problems" aria-valuemin="72" aria-valuemax="300" aria-valuenow="100"></div>
-      <h2><button id="problems-toggle" type="button" aria-expanded="true" aria-controls="problem-list"><svg class="chev" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg><span id="problems-title">Problems</span> <span id="problems-count" class="count"></span></button></h2>
+      <div class="problems-strip">
+        <h2><button id="problems-toggle" type="button" aria-expanded="true" aria-controls="problem-list"><svg class="chev" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg><span id="problems-title" aria-hidden="true">Problems</span><span id="problems-said" class="sr-only">Problems</span><span id="problems-counts" class="counts" aria-hidden="true"></span></button></h2>
+        <p id="problem-pos" class="pos"><span id="problem-pos-text" aria-hidden="true"></span><span id="problem-pos-said" class="sr-only"></span></p>
+        <button id="problem-prev" class="icon-btn" type="button" hidden><svg class="chev" aria-hidden="true" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><button id="problem-next" class="icon-btn" type="button" hidden><svg class="chev" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+      </div>
       <ul id="problem-list"></ul>
     </section>
   </section>

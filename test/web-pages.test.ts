@@ -259,7 +259,10 @@ describe('the web page: release, development and preview pages, the panel view a
     const items = await until('the problems', () => problemRows(page).count(), (n) => n > 0, 15000);
     assert.ok(items > 0);
     assert.strictEqual(await problemsShown(page), true);
-    assert.strictEqual(await page.locator('#problems-count').textContent(), String(items));
+    // The strip counts them, as on the editor page (its list has no fold there).
+    const counts = (await page.locator('#problems-counts .count').allTextContents()).map((c) => Number(c.replace(/\D/g, '')));
+    assert.strictEqual(counts.reduce((a, b) => a + b, 0), items);
+    assert.match((await page.locator('#problems-said').textContent())!, /^Problems: \d/);
     assert.deepStrictEqual(errors, []);
     await ctx.close();
   });

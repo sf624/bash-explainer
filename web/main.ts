@@ -35,7 +35,7 @@ import { closeSheet, narrow, reopenSheet, setUpEdgeSwipe, setUpProblems, setUpSh
 import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
 import { Picker } from './picker';
-import { showProblems } from './problem-list';
+import { ProblemStrip, roomAboveStrip, watchStrip } from './problem-list';
 import { CopyState, DEFAULT_THEME, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
@@ -135,6 +135,8 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 /** The live region that says what the line the cursor moved to is about (the editor page only). */
 let announcer: LineAnnouncer | undefined;
 
+/** The Problems strip and list under the editor; a click on a problem, ‹ › and F8 (on the page) select it in the editor. */
+const strip = mode.hasChrome ? new ProblemStrip({ lang: () => lang, cursor: () => editor.cursor(), pick: (i) => editor.select(i.startLine, i.startCol, i.endLine, i.endCol) }) : undefined;
 const editor = new Editor({
   kind: () => kind,
   lang: () => lang,
@@ -152,13 +154,14 @@ const editor = new Editor({
     codesSeen = codes;
     problemsShown = list;
     updatePanel();
-    showProblems(list, lang, (i) => editor.select(i.startLine, i.startCol, i.endLine, i.endCol));
+    strip?.show(list);
   },
   changed(u: ViewUpdate) {
     // Undo would no longer undo the sample once the text changed again.
     if (u.docChanged && toast.current?.action?.untilEdit && !loadingSample) toast.hide();
     if (u.docChanged && !mode.panel) detectPasted(u);
     if (u.docChanged) showFileSoon();
+    if (u.docChanged || u.selectionSet) strip?.place();
     // In panel mode the page around sends every change as a message, which is handled at once.
     if (mode.panel || (!u.docChanged && !u.selectionSet)) return;
     clearTimeout(timer);
@@ -277,30 +280,14 @@ if (mode.compare) {
 
 // ---- Toolbar --------------------------------------------------------------------------------
 
-/** The page's toast (web/toast.ts): above the Problems list, inside the editor's pane. */
+/** The page's toast (web/toast.ts): above the Problems strip, inside the editor's pane (none on the compare page or in panel mode). */
 const toast = new Toast($('status'), {
   labels: () => ({ more: TEXT[lang].toastMore, why: TEXT[lang].toastWhy }),
-  room() {
-    // (The compare page and panel mode have no editor's pane: the toast keeps its place at the window's bottom.)
-    const pane = document.getElementById('source');
-    if (!pane || mode.compare || mode.panel) return undefined;
-    const box = pane.getBoundingClientRect();
-    const problems = document.getElementById('problems');
-    const bottom = problems && !problems.hidden ? problems.getBoundingClientRect().top : box.bottom;
-    return { left: box.left, width: box.width, bottom };
-  },
+  room: () => (mode.compare || mode.panel ? undefined : roomAboveStrip()),
   covers: (px) => editor.setBottomMargin(px),
   focusBack: () => focusHome(),
 });
-
-// The Problems list shows, hides or changes its height, and the panes move: the toast keeps its place above it.
-if (typeof ResizeObserver === 'function') {
-  const watch = new ResizeObserver(() => toast.place());
-  for (const id of ['source', 'problems']) {
-    const el = document.getElementById(id);
-    if (el) watch.observe(el);
-  }
-}
+watchStrip(() => toast.place());
 
 /** Shows a toast, or hides the one shown (`''`). */
 function status(icon: ToastIcon | '', words: ToastText | string = '', action?: ToastSpec['action']): void {
@@ -914,6 +901,7 @@ if (withFiles) {
     w.addEventListener('keydown', fileKeys, true);
     w.addEventListener('keydown', (e) => paneKeys(e, true), true);
     w.addEventListener('keydown', (e) => settingsDialog?.escape(e));
+    if (strip) w.addEventListener('keydown', strip.keys, true);
     refuseDrops(w);
   };
   frame?.addEventListener('load', watchFrame);

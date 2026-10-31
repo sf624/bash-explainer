@@ -92,7 +92,10 @@ export interface Level {
    * a warning's dashed, the others' solid.
    */
   forcedBorder?: string;
-  /** How many notes of the level a line has, where the screen reader's summary of a line says it (web/a11y.ts). */
+  /**
+   * How many notes or problems of the level, in words: what the screen reader's summary of a line says (web/a11y.ts),
+   * and the name of the web page's Problems strip (web/problem-list.ts). A plain note, which is never a problem, has none.
+   */
   count?: { ja: (n: number) => string; en: (n: number) => string };
 }
 
@@ -122,6 +125,7 @@ export const LEVELS: Readonly<Record<NoteLevel, Level>> = {
       variable: '--vscode-editorInfo-foreground', name: '--c-info', fallback: 'var(--vscode-charts-blue, #3794ff)', dark: '#3794ff',
       ours: { light: '#005fb8', highContrast: '#6badff', highContrastLight: '#0f4a85' },
     },
+    count: { ja: (n) => `注意 ${n} 件`, en: (n) => `${n} caveat${n === 1 ? '' : 's'}` },
   },
   note: { rank: 3, mark: 'ℹ', word: { ja: '', en: '' }, name: { ja: '補足', en: 'Note' }, codicon: 'info', ansi: '90', bold: false, className: 'level-note', severity: 'info' },
 };
@@ -206,11 +210,23 @@ export const COLOURED: readonly NoteLevel[] = LEVEL_ORDER.filter((l) => LEVELS[l
 /** A message without the mark of its level it starts with in the explanations (and an emoji selector after it). */
 export const LEADING_MARK = new RegExp(`^[${LEVEL_ORDER.map((l) => LEVELS[l].mark).join('')}]\\uFE0F?\\s*`, 'u');
 
-/** What the screen reader's summary of a line says of its notes: how many of each level that it counts ("2 warnings"). */
-export function levelCounts(levels: readonly NoteLevel[], lang: Lang): string[] {
-  return LEVEL_ORDER.flatMap((l) => {
-    const n = levels.filter((x) => x === l).length;
-    const count = LEVELS[l].count;
-    return count && n ? [count[lang](n)] : [];
+/** How many of `levels` are of each level that has a count, in the levels' order; a level with none is left out. */
+export function levelTally(levels: readonly NoteLevel[]): { level: NoteLevel; n: number }[] {
+  return LEVEL_ORDER.flatMap((level) => {
+    const n = levels.filter((x) => x === level).length;
+    return LEVELS[level].count && n ? [{ level, n }] : [];
   });
+}
+
+/**
+ * How many of `levels` are of each level, in words ("1 error", "2 warnings"): what the screen reader's summary of a
+ * line says of its notes, and the Problems strip of its problems.
+ */
+export function levelCounts(levels: readonly NoteLevel[], lang: Lang): string[] {
+  return levelTally(levels).map(({ level, n }) => LEVELS[level].count![lang](n));
+}
+
+/** The level of each problem, as a list shows it (`problemLevel`), for `levelTally` and `levelCounts`. */
+export function problemLevels(severities: readonly Severity[]): NoteLevel[] {
+  return severities.map((s) => SEVERITIES[s].level);
 }

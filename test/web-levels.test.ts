@@ -50,13 +50,21 @@ describe('the web page: the levels of the notes', function () {
       assert.deepStrictEqual([...levels].map(([key, parts]) => [parts.join('').replace(/\s/g, ''), ...key.split(/ (?=rgb)/)]), [
         ['readline', 'level-info', rgb(info)], ['x=1', 'level-warning', rgb(warning)], ['[-fa', 'level-error', rgb(error)],
       ]);
-      // The Problems list: ⓧ, ⚠ and ⓘ, in the levels' colours, an error's message without the word "Error:".
+      // The Problems list: ⓧ, ⚠ and ⓘ, in the levels' colours, an error's message without the word "Error:"; in the
+      // order of the script.
       await openProblems(page);
       const rows = await until('the problems', () => page.locator('#problem-list .problem').evaluateAll((els) => els.map((e) => {
         const icon = e.querySelector('.icon')!;
         return [icon.textContent, e.ownerDocument.defaultView!.getComputedStyle(icon).color, e.querySelector('.message')?.textContent?.slice(0, 8)];
       })), (r) => r.length === 3);
-      assert.deepStrictEqual(rows, [['ⓧ', rgb(error), '[ has no'], ['ⓘ', rgb(info), 'Caveat: '], ['⚠', rgb(warning), 'Pitfall:']]);
+      assert.deepStrictEqual(rows, [['ⓘ', rgb(info), 'Caveat: '], ['⚠', rgb(warning), 'Pitfall:'], ['ⓧ', rgb(error), '[ has no']]);
+      // The strip: the count of each level, its mark in its colour, the worst first; in words for a screen reader.
+      const counts = await page.locator('#problems-counts .count').evaluateAll((els) => els.map((e) => {
+        const icon = e.querySelector('.icon')!;
+        return [e.textContent, e.ownerDocument.defaultView!.getComputedStyle(icon).color];
+      }));
+      assert.deepStrictEqual(counts, [['ⓧ1', rgb(error)], ['⚠1', rgb(warning)], ['ⓘ1', rgb(info)]]);
+      assert.strictEqual(await page.locator('#problems-said').textContent(), 'Problems: 1 error, 1 warning, 1 caveat');
       // The editor: a wavy squiggle in the level's colour, and in the gutter the panel's icon (the Codicon of
       // media/icons.js, as a mask) in that colour. (A line's marker is of its worst problem: a line of errors, one of
       // information, one of a warning.)

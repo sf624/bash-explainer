@@ -90,7 +90,7 @@ describe('the web page: resizing the panes and the Problems list', function () {
     const list = async () => Math.round((await page.locator('#problems').boundingBox())!.height);
     const value = () => page.locator('#problems-resize').getAttribute('aria-valuenow');
     const rows = () => page.locator('#problem-list li').first().isVisible();
-    assert.match(await page.locator('#problems-toggle').innerText(), /problems\s+\d+/i);
+    assert.match((await page.locator('#problems-said').textContent())!, /^Problems: \d+ \w+/);
     // The backtick spans of a message are code, not raw backticks.
     assert.ok(!(await page.locator('#problem-list').innerText()).includes('`'));
     assert.strictEqual(await page.locator('#problem-list li').first().locator('.message code').first().innerText(), '[[ ]]');
@@ -161,7 +161,7 @@ describe('the web page: resizing the panes and the Problems list', function () {
     assert.strictEqual(await rows(), false);
     assert.strictEqual(await page.locator('#problems-resize').isHidden(), true);
     assert.ok(await list() < 50, String(await list()));
-    assert.match(await page.locator('#problems-toggle').innerText(), /problems\s+\d+/i);
+    assert.match((await page.locator('#problems-said').textContent())!, /^Problems: \d+ \w+/);
     await open();
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
@@ -256,10 +256,11 @@ describe('the web page: resizing the panes and the Problems list', function () {
     const expanded = () => toggle.getAttribute('aria-expanded');
     assert.strictEqual(await expanded(), 'false');
     assert.strictEqual(await p.locator('#problem-list li').first().isVisible(), false);
-    // The header shows the count and is a touch target.
-    assert.match(await toggle.innerText(), /problems\s+[1-9]\d*/i);
-    assert.ok((await toggle.boundingBox())!.height >= 40);
-    assert.ok((await p.locator('#problems').boundingBox())!.height <= 48);
+    // The strip says the counts and is a touch target.
+    assert.match((await p.locator('#problems-said').textContent())!, /^Problems: [1-9]\d* \w+/);
+    assert.ok((await toggle.boundingBox())!.height >= 44);
+    // (The strip, 44 px, and its room clear of the divider's grab area under it.)
+    assert.ok((await p.locator('#problems').boundingBox())!.height <= 54);
     // The editor keeps the height the list leaves it: folded, it has the most room.
     const editorHeight = async () => Math.round((await p.locator('.cm-editor').boundingBox())!.height);
     const folded = await editorHeight();

@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539), C1b (#548), C3 (#545), C4 (#544) and C6 (#546). C2 and C5 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#C2PR), C3 (#545), C4 (#544) and C6 (#546). C5 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -243,6 +243,18 @@ Tests: unit tests of the runs in the update; web tests of the line box at the th
 Risks: the line box is the panel's, which P7c restyles. Whichever lands second keeps the word spans.
 
 ### C2. The Problems strip
+
+Done in #C2PR (2026-10-31). What it did, and what the design did not say:
+
+- The order, the position and the next problem are src/ui/problemNav.ts: `byPlace` (the order of the script; the list shows it too, so "1/11" is the row's place; before, the list was grouped by kind), `problemAt` (the problem the cursor is in, else the first of its line, else none: the strip then shows no position), `stepProblem` (from inside a problem, the one after it in that order; from elsewhere, the first that starts after the cursor, or the last that starts before it; round from the last to the first) and `sameProblem`. The problem last gone to tells apart two problems on one range. The words ("Ln 20 · 1/11", "Problem 1 of 11, line 20") are in web/text.ts, the page's table of texts.
+- The counts are `levelTally` and `levelCounts` of the level table (src/levels.ts). Info got its `count` ("2 caveats" / 「注意 2 件」, decision 9). The screen reader's summary of a line reads the same function, so it counts caveats too: one rule for both.
+- The strip stays when there is no problem: "No problems", the fold disabled, no ‹ ›, no list, no handle. So the toast always sits above the strip (C3), and the editor does not move when the first problem appears.
+- The counts are said in one sentence inside the fold's button ("Problems: 1 error, 5 warnings, 6 caveats"); the visible word and marks are hidden from a screen reader. The marks are the level's (text, as in the list's rows), in the level's colour from the rules scripts/level-css.ts writes (`#problems .icon.level-*`).
+- ‹ › name their keys (`aria-keyshortcuts`, and the tooltip "Next problem (F8)"). F8 works from the page and from the panel's frame, not while a dialog is open; like a click on a row, it puts the focus in the editor. Enter on ‹ › is taken on keydown, as on a row, so the editor gets no line break.
+- The tooltip of a row is the native `title`: main has no tooltip of its own (web/chrome.ts is the prototype's), so decision 6 has nothing to fix here, and no `data-key` exists.
+- The line's column is a CSS subgrid (as wide as the longest "Ln 95", no width from a font); the rule hides below 520 px by a container query on the editor's pane.
+- On a phone the list keeps its default (folded without a stored choice) until C8a makes Problems a tab; the strip is 44 px high there, ‹ › 44×44. The stored key is the one before (`problems`), so a choice made before stays: the risk below does not happen.
+- The compare page has the same strip, without the fold.
 
 What:
 

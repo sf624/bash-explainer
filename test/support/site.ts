@@ -191,14 +191,17 @@ export function currentShell(page: Page): Promise<string> {
   return page.locator('#shell').inputValue();
 }
 
-/** Whether the Problems strip is on the page (it is hidden while the script has no problem). */
+/** Whether the Problems strip shows problems (with none it says "No problems", and the list is hidden). */
 export function problemsShown(page: Page): Promise<boolean> {
-  return page.locator('#problems').isVisible();
+  return page.locator('#problems:not(.empty)').isVisible();
 }
 
-/** The text of the Problems list as it is now (its rows, or nothing); to poll with `until`. */
-export function problemList(page: Page): Promise<string> {
-  return page.locator('#problem-list').innerText();
+/**
+ * The text of the Problems list as it is now (its rows with their rules, or nothing), folded or open, and with the
+ * rule shown or not (a narrow pane leaves it to the tooltip); to poll with `until`.
+ */
+export async function problemList(page: Page): Promise<string> {
+  return (await page.locator('#problem-list').textContent()) ?? '';
 }
 
 /** The rows of the Problems list, as a locator. */
@@ -207,11 +210,11 @@ export function problemRows(page: Page): Locator {
 }
 
 /**
- * Makes sure the Problems list is open and returns its rows: waits for the strip, and unfolds it when it is folded
- * (it is open today and folds in C2 of docs/design/chrome-redesign.md, so the tests that read the rows go through here).
+ * Makes sure the Problems list is open and returns its rows: waits for the strip with problems, and unfolds the list
+ * when it is folded (its state is the user's, stored: docs/design/chrome-redesign.md, C2).
  */
 export async function openProblems(page: Page): Promise<Locator> {
-  await page.locator('#problems').waitFor({ state: 'visible' });
+  await page.locator('#problems:not(.empty)').waitFor({ state: 'visible' });
   const toggle = page.locator('#problems-toggle');
   if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
   return problemRows(page);
