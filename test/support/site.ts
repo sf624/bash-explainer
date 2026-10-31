@@ -217,6 +217,24 @@ export async function openProblems(page: Page): Promise<Locator> {
   return problemRows(page);
 }
 
+/**
+ * Opens the settings sheet (when it is not open) and one of its sections, which are folded after Common
+ * (docs/design/chrome-redesign.md, C6): through its "Jump to" link, as a user would. `data` holds the export, the
+ * import and the stored data.
+ */
+export async function openSettingsSection(page: Page, section: string): Promise<void> {
+  if (!(await page.locator('#settings-dialog').isVisible())) await page.locator('#settings-open').click();
+  if (!(await page.locator(`#settings-items-${section}`).isVisible())) await page.locator(`#settings-jump-${section}`).click();
+}
+
+/** The control of a setting (`#setting-hints-names` for `hints.names`), with the settings open at its section. */
+export async function settingControl(page: Page, key: string): Promise<Locator> {
+  if (!(await page.locator('#settings-dialog').isVisible())) await page.locator('#settings-open').click();
+  const section = await page.evaluate(`document.querySelector('.setting[data-key="${key}"]').closest('[data-section]').dataset.section`) as string;
+  await openSettingsSection(page, section);
+  return page.locator(`#setting-${key.replace(/\./g, '-')}`);
+}
+
 /** Waits until the page has drawn `n` more animation frames (styles and layout have settled after a change). */
 export async function frames(page: Page | import('playwright-core').Frame, n = 2): Promise<void> {
   await page.evaluate(`new Promise((resolve) => { let n = ${n}; const tick = () => (--n > 0 ? requestAnimationFrame(tick) : resolve()); requestAnimationFrame(tick); })`);

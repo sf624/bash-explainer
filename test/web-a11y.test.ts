@@ -374,4 +374,58 @@ describe('the web page: keyboard and screen reader access', function () {
     assert.strictEqual(await page.locator('#menu-panes-label').textContent(), '解説とエディタを行き来する');
     await ctx.close();
   });
+
+  it('goes through the settings with the keyboard: their order, Jump to, the search, Escape, and the focus back on the gear', async () => {
+    for (const lang of ['en', 'ja'] as const) {
+      const ctx = await context(lang);
+      const page = await ctx.newPage();
+      await open(page);
+      const id = () => page.evaluate('document.activeElement ? document.activeElement.id : ""') as Promise<string>;
+      const isOpen = () => page.locator('#settings-dialog').evaluate((d) => (d as unknown as { open: boolean }).open);
+      await page.locator('#settings-open').focus();
+      await page.keyboard.press('Enter');
+      await until('the settings', isOpen, (v) => v);
+      // From the close button: the "Jump to" links, the search, then the first setting (the folded sections' rows are out of the way).
+      await page.locator('#settings-close').focus();
+      const order: string[] = [];
+      for (let i = 0; i < 8; i++) {
+        await page.keyboard.press('Tab');
+        order.push(await id());
+      }
+      assert.deepStrictEqual(order, ['settings-jump-common', 'settings-jump-examples', 'settings-jump-checks', 'settings-jump-editor', 'settings-jump-data', 'settings-search', 'setting-language', 'setting-theme'], lang);
+      // Jump to with Enter: Checks unfolds and its heading takes the focus; Tab goes on to its first setting.
+      await page.locator('#settings-jump-checks').focus();
+      await page.keyboard.press('Enter');
+      assert.strictEqual(await id(), 'settings-fold-checks');
+      assert.strictEqual(await page.locator('#settings-fold-checks').getAttribute('aria-expanded'), 'true');
+      // (Its description's link to "bash version", and its "More" when the text takes more than two lines, come before the select.)
+      const passed: string[] = [];
+      for (let i = 0; i < 3 && (await id()) !== 'setting-shell'; i++) {
+        await page.keyboard.press('Tab');
+        passed.push(await page.evaluate('document.activeElement.id || document.activeElement.className') as string);
+      }
+      assert.strictEqual(passed[passed.length - 1], 'setting-shell', passed.join(' '));
+      assert.ok(passed.slice(0, -1).every((p) => ['setting-link', 'setting-shell-desc-more'].includes(p)), passed.join(' '));
+      // The heading folds it with Space.
+      await page.locator('#settings-fold-checks').focus();
+      await page.keyboard.press('Space');
+      assert.strictEqual(await page.locator('#settings-fold-checks').getAttribute('aria-expanded'), 'false');
+      // The search: what it finds comes next in the order, its section's heading first.
+      await page.locator('#settings-search').focus();
+      await page.keyboard.insertText('hints');
+      await page.keyboard.press('Tab');
+      assert.strictEqual(await id(), 'settings-fold-editor');
+      await page.keyboard.press('Tab');
+      assert.strictEqual(await id(), 'setting-hints-names');
+      // Escape in the search clears it; again, it closes the sheet, and the focus is back on the gear.
+      await page.locator('#settings-search').focus();
+      await page.keyboard.press('Escape');
+      assert.strictEqual(await page.locator('#settings-search').inputValue(), '');
+      assert.strictEqual(await isOpen(), true);
+      await page.keyboard.press('Escape');
+      await until('the settings closed', isOpen, (v) => !v);
+      assert.strictEqual(await id(), 'settings-open');
+      await ctx.close();
+    }
+  });
 });

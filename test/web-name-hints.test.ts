@@ -5,7 +5,7 @@
 // geometry is read from positions, not from how wide a font draws the words.
 import * as assert from 'assert';
 import type { Browser, Page } from 'playwright-core';
-import { openSite, until } from './support/site';
+import { openSettingsSection, openSite, until } from './support/site';
 
 const SHADOWED = 'cd() { builtin cd "$@"; }; cd /tmp';
 
@@ -70,7 +70,7 @@ describe('the web page: name hints in the editor', function () {
     // The cursor is on the name the hint is about.
     assert.deepStrictEqual(await page.evaluate(`(() => { const s = getSelection(); return [s.anchorNode.textContent, s.anchorOffset]; })()`), ['cd', 0]);
     // Off in the settings: no hints; on again: back.
-    await page.locator('#settings-open').click();
+    await openSettingsSection(page, 'editor');
     assert.strictEqual(await page.locator('#setting-hints-names').isChecked(), true);
     assert.match(await page.locator('[data-key="hints.names"]').innerText(), /Name hints/);
     await page.locator('#setting-hints-names').uncheck();

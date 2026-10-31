@@ -36,7 +36,7 @@ import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
 import { Picker } from './picker';
 import { showProblems } from './problem-list';
-import { CopyState, Theme, THEMES } from './protocol';
+import { CopyState, DEFAULT_THEME, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
 import { setUpFocusRings } from './popover';
@@ -52,7 +52,7 @@ drawIcons();
 /** The saved choice, read by theme-init.js before the first paint too; Auto when storage is unavailable. */
 function savedTheme(): Theme {
   const v = readStored(STORAGE_KEYS.theme);
-  return v === 'light' || v === 'dark' ? v : 'auto';
+  return v === 'light' || v === 'dark' ? v : DEFAULT_THEME;
 }
 let theme: Theme = savedTheme();
 
@@ -290,7 +290,7 @@ const toast = new Toast($('status'), {
     return { left: box.left, width: box.width, bottom };
   },
   covers: (px) => editor.setBottomMargin(px),
-  focusBack: () => editor.focusUnlessTouch(),
+  focusBack: () => focusHome(),
 });
 
 // The Problems list shows, hides or changes its height, and the panes move: the toast keeps its place above it.
@@ -368,16 +368,19 @@ function applyLanguage(): void {
   }
 }
 
-// The colours are CSS variables (theme.css): the attribute switches them, the editor and the panel follow.
-$<HTMLSelectElement>('theme').addEventListener('change', (e) => {
-  theme = (e.target as HTMLSelectElement).value as Theme;
-  if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
+// The colours are CSS variables (theme.css): the attribute switches them, the editor and the panel follow. The menu's
+// select and the settings' Theme are the same choice.
+function setTheme(next: Theme): void {
+  theme = next;
+  $<HTMLSelectElement>('theme').value = theme;
+  if (theme === DEFAULT_THEME) document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', theme);
   // When storage refuses, the choice lasts until the page is closed.
-  if (theme === 'auto') removeStored(STORAGE_KEYS.theme);
+  if (theme === DEFAULT_THEME) removeStored(STORAGE_KEYS.theme);
   else writeStored(STORAGE_KEYS.theme, theme);
   pushTheme();
-});
+}
+$<HTMLSelectElement>('theme').addEventListener('change', (e) => setTheme((e.target as HTMLSelectElement).value as Theme));
 
 // The language menu is the `language` setting.
 $<HTMLSelectElement>('lang').addEventListener('change', (e) => {
@@ -418,6 +421,16 @@ function setChoice(key: 'shell' | 'yq', value: string): void {
   settingsDialog?.refresh();
 }
 
+/**
+ * Where the focus goes when what held it goes away (a toast and its button, an Undo, a question, an opened file): the
+ * settings sheet while it lies over the editor (which is inert then), else the editor, except on a touch screen, where
+ * that would open the keyboard. One place, so that no such return lands on the page's body.
+ */
+function focusHome(): void {
+  if (settingsDialog?.sideBySide) settingsDialog.focus();
+  else editor.focusUnlessTouch();
+}
+
 const dialogElement = document.getElementById('settings-dialog') as HTMLDialogElement | null;
 const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   get: () => settings,
@@ -427,6 +440,9 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   canSave: () => canSave,
   codes: () => codesSeen,
   clearAll: clearEverything,
+  theme: () => theme,
+  setTheme,
+  pane: () => document.querySelector<HTMLElement>('main > .source'),
 });
 
 /**
@@ -436,10 +452,7 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
 function clearEverything(): void {
   clearStoredData();
   changeSettings(mergeSettings());
-  theme = 'auto';
-  document.documentElement.removeAttribute('data-theme');
-  $<HTMLSelectElement>('theme').value = 'auto';
-  pushTheme();
+  setTheme(DEFAULT_THEME);
   readMode = false;
   editor.setReadMode(false);
   showReadMode();
@@ -499,20 +512,23 @@ function openSettings(): void {
   if (settingsDialog?.open || drawer?.open) return;
   settingsDialog?.show();
 }
-on('settings-open', 'click', () => settingsDialog?.show());
+on('settings-open', 'click', () => settingsDialog?.toggle());
 if (dialogElement) setUpSheet(dialogElement);
 
 // ---- The menu: a sheet from the right, with what the top bar has no room for ----------------------
 
 const drawer = document.getElementById('drawer') as HTMLDialogElement | null;
 function openMenu(): void {
-  if (!drawer || settingsDialog?.open) return;
+  if (!drawer) return;
+  // The settings lie over the editor next to the bar: the menu takes their place (the sheet slides out, and the focus
+  // goes to the menu, which hands it back to ☰ when it closes).
+  if (settingsDialog?.open && dialogElement) closeSheet(dialogElement);
   if (reopenSheet(drawer) || drawer.open) return;
   drawer.showModal();
 }
 on('menu-open', 'click', openMenu);
 on('menu-close', 'click', () => drawer && closeSheet(drawer));
-if (drawer) setUpSheet(drawer, 'left');
+if (drawer) setUpSheet(drawer);
 const edge = document.getElementById('edge');
 if (edge) setUpEdgeSwipe(edge, openMenu, 'left');
 const edgeRight = document.getElementById('edge-right');
@@ -604,7 +620,7 @@ function askAboutSample(k: Kind): void {
   const fromMenu = drawer?.open === true;
   if (fromMenu) drawer!.close();
   const back = fromMenu ? document.getElementById('menu-open') : document.activeElement as HTMLElement | null;
-  void askReplaceWithSample({ title: t.askTitle(name), message: t.askMessage(name), replace: t.askReplace, keep: t.askKeep }, back)
+  void askReplaceWithSample({ title: t.askTitle(name), message: t.askMessage(name), replace: t.askReplace, keep: t.askKeep }, back, focusHome)
     .then((replace) => {
       if (replace) loadSample(true);
     });
@@ -628,7 +644,7 @@ function loadSample(own: boolean): void {
     undo(editor.view);
     fileState.restore(before);
     showFile();
-    editor.focusUnlessTouch();
+    focusHome();
   };
   if (own) status('undo', TEXT[lang].sampleLoaded, { label: TEXT[lang].undo, run: back, untilEdit: true });
 }
@@ -646,7 +662,7 @@ on('sample', 'click', sampleAsked);
  */
 function clearEditor(): void {
   const t = TEXT[lang];
-  if (!editor.text) return editor.view.focus();
+  if (!editor.text) return focusHome();
   const wasSample = untouched(editor.text);
   loadingSample = true;
   try { editor.setText('', 1); } finally { loadingSample = false; }
@@ -654,10 +670,10 @@ function clearEditor(): void {
   const back = () => {
     undo(editor.view);
     showFile();
-    editor.focusUnlessTouch();
+    focusHome();
   };
   status('undo', wasSample ? t.sampleCleared : t.editorCleared, { label: t.undo, run: back, untilEdit: true });
-  editor.focusUnlessTouch();
+  focusHome();
 }
 
 function copyScript(): void {
@@ -780,7 +796,7 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
     const discard = await ask({
       id: 'discard', title: t.discardTitle, message: t.discardMessage(chosen.name, window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu),
       confirm: { id: 'discard-open', text: t.discard }, cancel: { id: 'discard-cancel', text: t.cancel },
-    }, back);
+    }, back, focusHome);
     if (!discard) return;
   }
   fileState.opened({ name: chosen.name, handle }, { eol: read.eol, bom: read.bom }, read.text);
@@ -788,7 +804,7 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
   setKind(kindForFile(chosen.name, read.text));
   if (read.mixed) status('note', t.mixedEol(chosen.name, read.eol === '\n' ? 'LF' : 'CRLF'));
   else status('done', t.opened(chosen.name));
-  editor.focusUnlessTouch();
+  focusHome();
 }
 
 async function openFile(): Promise<void> {
@@ -836,8 +852,8 @@ function fileKeys(e: KeyboardEvent): void {
   const key = /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : ({ KeyS: 's', KeyO: 'o' } as Record<string, string>)[e.code];
   if (key !== 's' && key !== 'o') return;
   e.preventDefault();
-  // A question or the settings are open: they come first.
-  if (e.repeat || document.querySelector('dialog.ask[open], #settings-dialog[open]')) return;
+  // A question, or the settings on a phone, are open: they come first (side by side the settings leave the page in use).
+  if (e.repeat || document.querySelector('dialog.ask[open], #settings-dialog:modal')) return;
   if (drawer?.open) drawer.close();
   void (key === 's' ? saveFile() : openFile());
 }
@@ -845,16 +861,20 @@ function fileKeys(e: KeyboardEvent): void {
 /**
  * F6 (or Shift+F6) moves between the editor, the explanation in the panel's frame and the toast when one with a button
  * shows, as F6 moves between the parts of VS Code: editor, explanation, toast, editor. Shift+F6 goes the other way.
+ * Side by side the settings lie over the editor, which is out of reach then: the sheet takes its place in the round.
  * `inFrame`: the key was pressed in the frame.
  */
 function paneKeys(e: KeyboardEvent, inFrame: boolean): void {
-  if (!isPaneKey(e) || document.querySelector('dialog[open]')) return;
+  if (!isPaneKey(e) || document.querySelector('dialog:modal')) return;
   e.preventDefault();
-  const stops = ['editor', 'panel', ...(toast.hasButton ? ['toast'] : [])];
-  const at = inFrame ? 'panel' : toast.focused ? 'toast' : 'editor';
+  // The editor lies under the settings side by side (inert): F6 goes among the parts in reach, with the sheet in its place.
+  const first = settingsDialog?.sideBySide ? 'sheet' : 'editor';
+  const stops = [first, 'panel', ...(toast.hasButton ? ['toast'] : [])];
+  const at = inFrame ? 'panel' : toast.focused ? 'toast' : first;
   const next = stops[(stops.indexOf(at) + (e.shiftKey ? stops.length - 1 : 1)) % stops.length];
   if (next === 'panel') toPanel();
   else if (next === 'toast') toast.focus();
+  else if (next === 'sheet') settingsDialog?.focus();
   else editor.view.focus();
 }
 
@@ -890,6 +910,8 @@ if (withFiles) {
     if (!w || w.location.href === 'about:blank') return;
     w.addEventListener('keydown', fileKeys, true);
     w.addEventListener('keydown', (e) => paneKeys(e, true), true);
+    // Esc shuts the settings that lie over the editor, when the panel does not take it.
+    w.addEventListener('keydown', (e) => settingsDialog?.escape(e));
     refuseDrops(w);
   };
   frame?.addEventListener('load', watchFrame);

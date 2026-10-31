@@ -129,7 +129,9 @@ describe('the web page: the menu and the settings sheet', function () {
     const { devices } = await import('playwright-core');
     const phone = { ...devices['iPhone 13'], viewport: { width: 390, height: 844 }, locale: 'en-US' };
     const wide = { viewport: { width: 1280, height: 800 }, locale: 'en-US' };
-    for (const [name, dialog, opener, closer, sign] of [['menu', '#drawer', '#menu-open', '#menu-close', -1], ['settings', '#settings-dialog', '#settings-open', '#settings-dialog .settings-x', 1]] as const) {
+    // The menu comes from the left; the settings from the right on a phone, where they fill the screen, and from the
+    // left side by side, over the editor.
+    for (const [name, dialog, opener, closer, signs] of [['menu', '#drawer', '#menu-open', '#menu-close', { phone: -1, wide: -1 }], ['settings', '#settings-dialog', '#settings-open', '#settings-dialog .settings-x', { phone: 1, wide: -1 }]] as const) {
       const start = async (options: Parameters<Browser['newContext']>[0]) => {
         const ctx = await browser.newContext(options);
         const page = await ctx.newPage();
@@ -143,9 +145,12 @@ describe('the web page: the menu and the settings sheet', function () {
         return { ctx, page, isOpen };
       };
       for (const [screen, env, how] of ['x', 'escape', 'backdrop'].flatMap((h) => [['phone', phone, h], ['wide', wide, h]]) as ['phone' | 'wide', Parameters<Browser['newContext']>[0], 'x' | 'escape' | 'backdrop'][]) {
-        // The settings fill the screen of a phone: no backdrop to tap.
-        if (how === 'backdrop' && name === 'settings' && screen === 'phone') continue;
+        // The settings fill the screen of a phone: no backdrop to tap. Side by side they are not modal: no backdrop, and a
+        // click beside them is a click on the page.
+        if (how === 'backdrop' && name === 'settings') continue;
+        const backdrop = !(name === 'settings' && screen === 'wide');
         const { ctx, page, isOpen } = await start(env);
+        const sign = signs[screen];
         const home = await page.locator(dialog).evaluate((d) => d.getBoundingClientRect().x);
         // Watch the sheet from inside the page: its position frame by frame, and the transitions it runs (with the
         // keyframes they go through), as they happen. The frames a loaded machine draws can be few and
@@ -187,7 +192,7 @@ describe('the web page: the menu and the settings sheet', function () {
           assert.ok(events[i].ms! > 0, `${name} ${how}: ${property} takes time; ${seen}`);
         };
         ran('transform', ['none', `translateX(${sign * 100}%)`]);
-        ran('::backdropopacity', ['1', '0']);
+        if (backdrop) ran('::backdropopacity', ['1', '0']);
         // The frames drawn meanwhile go towards that edge, never back, and never past where it leaves the screen.
         const xs = frames.filter((f) => f.open).map((f) => f.x);
         for (let i = 1; i < xs.length; i++) assert.ok(sign * (xs[i] - xs[i - 1]) >= -0.5, `${name} ${how}: monotonic; ${seen}`);
