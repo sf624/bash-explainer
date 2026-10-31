@@ -243,14 +243,16 @@ export function reopenSheet(sheet: HTMLDialogElement): boolean {
 }
 
 /**
- * A side sheet, a modal dialog along an edge of the screen (`sheetSide`): Esc and a click beside it close it (the
- * browser keeps the focus inside while it is open), and so does a swipe towards its edge on a touch screen.
+ * A side sheet, a dialog along an edge of the screen (`sheetSide`), modal where the page behind it is shut: Esc and a
+ * click beside it close it (the browser keeps the focus inside while it is open), and so does a swipe towards its edge
+ * on a touch screen. (The settings side by side are not modal: web/settings-dialog.ts closes them on Esc itself.)
  */
 export function setUpSheet(sheet: HTMLDialogElement): void {
   // Towards the sheet's own edge is positive.
   let sign = 1;
   sheet.addEventListener('click', (e) => {
-    if (e.target === sheet) closeSheet(sheet);
+    // (A sheet that is not modal has no backdrop: a click on the sheet itself is not one beside it.)
+    if (e.target === sheet && sheet.matches(':modal')) closeSheet(sheet);
   });
   // Esc slides it out too.
   sheet.addEventListener('cancel', (e) => {

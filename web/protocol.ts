@@ -6,6 +6,8 @@ import type { Kind } from './samples';
 
 export const THEMES = ['auto', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
+/** The theme before a choice (the system's), and after the stored data is cleared. */
+export const DEFAULT_THEME: Theme = 'auto';
 
 /** What a copy of the page in panel mode says about itself when it is ready. */
 export interface CopyInfo { channel: 'release' | 'next' | 'pr'; version: string; pr: string; commit: string }

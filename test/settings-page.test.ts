@@ -2,7 +2,7 @@
 // may be cut before its "More". The page itself is tested in test/web-settings.test.ts.
 import * as assert from 'assert';
 import { PAGE_SECTIONS, settingsFor, SETTINGS } from '../src/settings';
-import { cutPoints, lastFit, pageSections, SETTINGS_SECTIONS, settingMatches } from '../src/ui/settingsPage';
+import { cutPoints, foldable, lastFit, pageSections, SETTINGS_SECTIONS, sectionOpen, settingMatches } from '../src/ui/settingsPage';
 
 describe('the settings of the web page, as data', () => {
   it('puts every setting of the web page in one section, and no other setting', () => {
@@ -37,6 +37,23 @@ describe('the settings of the web page, as data', () => {
     // A part of the page with no key (Export and import) is found by its title alone.
     assert.ok(settingMatches('export', 'Export and import'));
     assert.ok(!settingMatches('bashexplainer', 'Export and import'));
+  });
+
+  it('finds a setting whatever the width of the letters typed (full-width, half-width kana)', () => {
+    assert.ok(settingMatches('ｂａｓｈ', 'bash version', 'bashVersion'));
+    assert.ok(settingMatches('ＶＥＲＳＩＯＮ　ｂａｓｈ', 'bash version', 'bashVersion'));
+    assert.ok(settingMatches('ｂａｓｈＶｅｒｓｉｏｎ', 'bash version', 'bashVersion'));
+    assert.ok(settingMatches('ﾎﾊﾞｰ', 'ホバー', 'hover.enabled'));
+    assert.ok(settingMatches('ホバー', 'ﾎﾊﾞｰ', 'hover.enabled'));
+    assert.ok(!settingMatches('ｚｓｈ', 'bash version', 'bashVersion'));
+  });
+
+  it('folds every section but Common, which is shown whatever is unfolded or searched', () => {
+    assert.deepStrictEqual(SETTINGS_SECTIONS.filter(foldable), ['examples', 'checks', 'editor', 'data']);
+    const none = new Set<(typeof SETTINGS_SECTIONS)[number]>();
+    assert.deepStrictEqual(SETTINGS_SECTIONS.map((x) => sectionOpen(x, none, false)), [true, false, false, false, false]);
+    assert.deepStrictEqual(SETTINGS_SECTIONS.map((x) => sectionOpen(x, new Set(['checks']), false)), [true, false, true, false, false]);
+    assert.deepStrictEqual(SETTINGS_SECTIONS.map((x) => sectionOpen(x, none, true)), [true, true, true, true, true]);
   });
 
   it('cuts a description before a blank, after a Japanese character, or before an element, never inside one', () => {
