@@ -14,7 +14,7 @@ import type { LineExplanation } from '../src/analyzer';
 import { heredocAt, ShellDocument } from '../src/document';
 import { Lang } from '../src/i18n';
 import { Settings } from '../src/settings';
-import { CARD_GRACE, cardPlace, PointerAt, towardCard } from '../src/ui/cardPlace';
+import { Box, CARD_GRACE, cardPlace, PointerAt, towardCard } from '../src/ui/cardPlace';
 import { blankRange, partAt, ProblemAt, rangeOnLine } from '../src/ui/hoverParts';
 import { HoverInput, lineCard, partHover } from '../src/ui/hoverView';
 import type { ThemeKind } from '../src/ui/palette';
@@ -83,7 +83,7 @@ function cardAt(host: HoverHost, view: EditorView, pos: number, problems: Proble
 }
 
 // A card opened by the keyboard stays until Escape, a click elsewhere, an edit or a move of the cursor.
-const openCard = StateEffect.define<{ pos: number; above: boolean } | null>();
+const openCard = StateEffect.define<{ pos: number; placed: Placed } | null>();
 
 /** The whole line, on the web: the cursor goes to the line (where it is, if on it; else to its first word), and the panel explains it. */
 function wholeLineInPanel(view: EditorView, line: number): void {
@@ -104,18 +104,36 @@ function lineRows(view: EditorView, pos: number): { left: number; right: number;
   return { left: at.left, right: at.left, top: view.documentTop + block.top, bottom: view.documentTop + block.bottom };
 }
 
+/** The row of the position `at` (where the pointer or the cursor is), at `pos`'s left. */
+function rowAt(view: EditorView, pos: number, at: number, side: -1 | 1): { left: number; right: number; top: number; bottom: number } {
+  const line = lineRows(view, pos);
+  const row = view.coordsAtPos(at, side) ?? view.coordsAtPos(at, side === 1 ? -1 : 1);
+  return row ? { left: line.left, right: line.left, top: row.top, bottom: row.bottom } : line;
+}
+
+/** Where a card goes: its side, and whether it goes by the hovered row (`at`, on `side`) because the line has no room. */
+interface Placed { readonly above: boolean; readonly overLine: boolean; readonly at: number; readonly side: -1 | 1 }
+
 /**
- * Where a card for `pos` goes, inside the editor's pane (src/ui/cardPlace.ts): above or below the line, and its height
- * at most, set as a CSS variable on the editor (read by the theme below), with the pane's width. It reads the layout,
- * so it runs where a card is asked for (the pointer, a key), never while CodeMirror updates.
+ * Where a card for `pos`, hovered at `at`, goes inside the editor's pane (src/ui/cardPlace.ts): above or below the
+ * line, or by the hovered row when the line leaves no room on either side; and its height at most, set as a CSS
+ * variable on the editor (read by the theme below), with the pane's width. It reads the layout, so it runs where a card
+ * is asked for (the pointer, a key), never while CodeMirror updates.
  */
-function placeCard(view: EditorView, pos: number): boolean {
+function placeCard(view: EditorView, pos: number, at: number, side: -1 | 1): Placed {
   const pane = view.dom.getBoundingClientRect();
-  const place = cardPlace(lineRows(view, pos), { top: Math.max(pane.top, 0), bottom: Math.min(pane.bottom, window.innerHeight) }, window.innerHeight);
+  const space = { top: Math.max(pane.top, 0), bottom: Math.min(pane.bottom, window.innerHeight) };
+  const place = cardPlace(lineRows(view, pos), rowAt(view, pos, at, side), space, window.innerHeight);
   view.dom.style.setProperty('--bx-hover-room', `${place.maxHeight}px`);
   view.dom.style.setProperty('--bx-hover-width', `${Math.max(200, Math.round(Math.min(pane.width, window.innerWidth) - 16))}px`);
-  return place.above;
+  return { above: place.above, overLine: place.overLine, at, side };
 }
+
+/**
+ * A placed card's anchor: the whole line, on the side chosen; or, over the line, the hovered row, on whichever side
+ * CodeMirror finds room (as before the line wrapped).
+ */
+const anchorOf = (view: EditorView, p: Placed) => (pos: number) => (p.overLine ? rowAt(view, pos, p.at, p.side) : lineRows(view, pos));
 
 function cardDom(host: HoverHost, view: EditorView, card: Card, pinned: boolean): HTMLElement {
   const dom = renderCard(card.md);
@@ -166,13 +184,13 @@ function pinnedField(host: HoverHost) {
       for (const e of tr.effects) {
         if (!e.is(openCard)) continue;
         if (!e.value) return null;
-        const { pos, above } = e.value;
+        const { pos, placed } = e.value;
         return {
-          pos, above, strictSide: true, arrow: false,
+          pos, above: placed.above, strictSide: !placed.overLine, arrow: false,
           create: (view) => {
             // (From the keyboard no lint tooltip shows: the card keeps every note.)
             const c = cardAt(host, view, pos, []);
-            return { dom: c ? cardDom(host, view, c, true) : document.createElement('div'), getCoords: (at: number) => lineRows(view, at) };
+            return { dom: c ? cardDom(host, view, c, true) : document.createElement('div'), getCoords: anchorOf(view, placed) };
           },
         };
       }
@@ -194,31 +212,47 @@ export function webHover(host: HoverHost): WebHover {
   /** The card the pointer opened, while it shows. */
   let hovered: Card | undefined;
   // The pointer on its way from a part to its card crosses the line's other rows, whose words would take the hover
-  // over: while it moves towards the card (src/ui/cardPlace.ts, `towardCard`), the editor does not see those moves.
+  // over. Only while it has left the part's row and comes closer to the card (src/ui/cardPlace.ts, `towardCard`), with
+  // no button pressed, the editor does not see its moves; every other move is the editor's (another word's card, a
+  // selection). If the card is not reached in time, it closes, and the word the pointer rests on gets its card.
   const grace = ViewPlugin.define((view) => {
-    /** The pointer's last place on the part, and its last place. */
-    let onPart: PointerAt | undefined;
+    /** The pointer's last place on the part, and that place's row. */
+    let onPart: { at: PointerAt; row: Box } | undefined;
     let last: PointerAt | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const inside = (p: PointerAt, b: DOMRect) => p.x >= b.left && p.x <= b.right && p.y >= b.top && p.y <= b.bottom;
+    /** The row of the editor under the pointer, from the characters at its position. */
+    const rowUnder = (p: PointerAt, at: number): Box => {
+      const h = view.defaultLineHeight / 2;
+      return [view.coordsAtPos(at, 1), view.coordsAtPos(at, -1)].find((r) => r && p.y >= r.top - 1 && p.y <= r.bottom + 1) ?? { top: p.y - h, bottom: p.y + h };
+    };
+    const graceOver = (card: Card) => {
+      timer = undefined;
+      const tip = view.dom.querySelector<HTMLElement>('.cm-tooltip-hover');
+      if (!last || hovered !== card || (tip && inside(last, tip.getBoundingClientRect()))) return;
+      onPart = undefined;
+      view.dispatch({ effects: closeHoverTooltips });
+      // The editor did not see the moves on the way: it is shown where the pointer rests, so that its word gets a card.
+      const under = document.elementFromPoint(last.x, last.y);
+      if (under && view.contentDOM.contains(under)) under.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: last.x, clientY: last.y }));
+    };
     const move = (e: MouseEvent) => {
       const tip = view.dom.querySelector<HTMLElement>('.cm-tooltip-hover');
       last = { x: e.clientX, y: e.clientY, time: e.timeStamp };
       const card = hovered;
-      if (!card || !tip?.querySelector('.cm-bx-hover')) return void (onPart = undefined);
+      if (e.buttons !== 0 || !card || !tip?.querySelector('.cm-bx-hover')) return void (onPart = undefined);
       const box = tip.getBoundingClientRect();
-      if (last.x >= box.left && last.x <= box.right && last.y >= box.top && last.y <= box.bottom) return void (onPart = undefined);
+      if (inside(last, box)) return void (onPart = undefined);
       const at = view.posAtCoords(last, false);
-      if (at >= card.from && at <= card.to && view.state.doc.lineAt(at).number === card.line + 1) return void (onPart = last);
-      if (onPart && towardCard(onPart, last, lineRows(view, card.from), box)) {
-        e.stopPropagation();
+      if (at >= card.from && at <= card.to && view.state.doc.lineAt(at).number === card.line + 1) {
         clearTimeout(timer);
-        const since = onPart.time;
-        // Still not on the card when the time is up: it closes, as the editor would have closed it.
-        timer = setTimeout(() => {
-          const now = view.dom.querySelector<HTMLElement>('.cm-tooltip-hover')?.getBoundingClientRect();
-          const inCard = now && last && last.x >= now.left && last.x <= now.right && last.y >= now.top && last.y <= now.bottom;
-          if (!inCard && hovered === card) view.dispatch({ effects: closeHoverTooltips });
-        }, Math.max(0, since + CARD_GRACE - performance.now()) + 20);
+        timer = undefined;
+        onPart = { at: last, row: rowUnder(last, at) };
+        return;
+      }
+      if (onPart && towardCard(onPart.at, last, onPart.row, lineRows(view, card.from), box)) {
+        e.stopPropagation();
+        timer ??= setTimeout(() => graceOver(card), Math.max(0, onPart.at.time + CARD_GRACE - performance.now()) + 20);
         return;
       }
       onPart = undefined;
@@ -241,8 +275,8 @@ export function webHover(host: HoverHost): WebHover {
       return true;
     }
     const pos = view.state.selection.main.head;
-    const above = placeCard(view, pos);
-    view.dispatch({ effects: [closeHoverTooltips, openCard.of({ pos, above })] });
+    const placed = placeCard(view, pos, pos, 1);
+    view.dispatch({ effects: [closeHoverTooltips, openCard.of({ pos, placed })] });
     // The focus stays in the editor: a screen reader is told that the card is there, and how to reach it.
     if (view.dom.querySelector('.cm-bx-hover-pinned')) host.announce?.(TEXT[host.lang()].cardOpened(isMac() ? '⌘K ⌘I' : 'Ctrl+K Ctrl+I'));
     return true;
@@ -290,12 +324,12 @@ export function webHover(host: HoverHost): WebHover {
       if (view.contentDOM.querySelector('.cm-bx-hint:hover')) return null;
       const c = cardAt(host, view, pos, problemsAt(view, pos, side));
       if (!c) return null;
-      const above = placeCard(view, c.from);
+      const placed = placeCard(view, c.from, pos, side < 0 ? -1 : 1);
       return {
-        pos: c.from, end: c.to, above, strictSide: true,
+        pos: c.from, end: c.to, above: placed.above, strictSide: !placed.overLine,
         create: () => {
           hovered = c;
-          return { dom: cardDom(host, view, c, false), getCoords: (at: number) => lineRows(view, at), destroy: () => void (hovered === c && (hovered = undefined)) };
+          return { dom: cardDom(host, view, c, false), getCoords: anchorOf(view, placed), destroy: () => void (hovered === c && (hovered = undefined)) };
         },
       };
     }, { hoverTime: 350 }),
