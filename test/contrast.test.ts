@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { COLOURED, LEVELS, type NoteLevel } from '../src/levels';
+import { COLOURED, LEVELS } from '../src/levels';
 import { ERROR_COLOURS, Role, THEME_COLOURS, ThemeKind } from '../src/ui/palette';
 
 // The contrast of the colours of the roles (the parts of a line) with every background they are drawn on,
@@ -70,16 +70,20 @@ const CHARTS: Record<Role, string> = {
 };
 const ROLES = Object.keys(CHARTS) as Role[];
 
-/** Our colours of the levels in a theme kind, where the theme's are not readable (src/levels.ts). */
-const ours = (kind: ThemeKind): Partial<Record<NoteLevel, string>> =>
-  Object.fromEntries(COLOURED.flatMap((l) => (LEVELS[l].colour!.ours[kind] ? [[l, LEVELS[l].colour!.ours[kind]!]] : [])));
+/** The colours of the levels (src/levels.ts), each once (two levels may share one). */
+const COLOURS = [...new Map(COLOURED.map((l) => [LEVELS[l].colour!.variable, LEVELS[l].colour!])).values()];
 
-/** VS Code's `editorWarning.foreground` and `editorInfo.foreground` in its default themes of each kind. */
-const VSCODE_LEVELS: Record<ThemeKind, Partial<Record<NoteLevel, string>>> = {
-  light: { warning: '#bf8803', info: '#1a85ff' },
-  dark: { warning: '#cca700', info: '#3794ff' },
-  highContrast: { warning: '#ffd370', info: '#3794ff' },
-  highContrastLight: { warning: '#895503', info: '#1a85ff' },
+/** Our colours of the levels in a theme kind, where the theme's are not readable, by the editor's variable. */
+const ours = (kind: ThemeKind): Record<string, string> => Object.fromEntries(COLOURS.flatMap((c) => (c.ours[kind] ? [[c.variable, c.ours[kind]!]] : [])));
+
+/** VS Code's `editorWarning.foreground` and `editorInfo.foreground` in its default themes of each kind, by variable. */
+const W = '--vscode-editorWarning-foreground';
+const I = '--vscode-editorInfo-foreground';
+const VSCODE_LEVELS: Record<ThemeKind, Record<string, string>> = {
+  light: { [W]: '#bf8803', [I]: '#1a85ff' },
+  dark: { [W]: '#cca700', [I]: '#3794ff' },
+  highContrast: { [W]: '#ffd370', [I]: '#3794ff' },
+  highContrastLight: { [W]: '#895503', [I]: '#1a85ff' },
 };
 
 /** The backgrounds text is drawn on, in a set of the web page's variables (Light Modern or Dark Modern). */
@@ -130,10 +134,10 @@ describe('the contrast of the colours of the roles', () => {
       for (const v of ['editorWarning-foreground', 'editorInfo-foreground']) colours[v] = vars[`--vscode-${v}`];
       check(`web ${kind}`, colours, backgrounds(vars), 4.5);
       // The levels of the notes: the panel's own colours in the light theme, VS Code's Dark Modern ones in the dark.
-      const levels = { warning: vars['--vscode-editorWarning-foreground'], info: vars['--vscode-editorInfo-foreground'] };
+      const levels = Object.fromEntries(COLOURS.map((c) => [c.variable, vars[c.variable]]));
       assert.deepEqual(levels, kind === 'light' ? ours('light') : VSCODE_LEVELS.dark);
       // (The web page's dark theme stands in for Dark Modern: the table's `dark`.)
-      assert.deepEqual(VSCODE_LEVELS.dark, Object.fromEntries(COLOURED.map((l) => [l, LEVELS[l].colour!.dark])));
+      assert.deepEqual(VSCODE_LEVELS.dark, Object.fromEntries(COLOURS.map((c) => [c.variable, c.dark])));
       // The web page's colours are the panel's own where it has them.
       for (const r of ROLES) if (THEME_COLOURS[kind][r]) assert.equal(vars[CHARTS[r]], THEME_COLOURS[kind][r], `${kind} ${r}`);
       assert.equal(vars['--vscode-errorForeground'], ERROR_COLOURS[kind]);
@@ -162,14 +166,14 @@ describe('the contrast of the colours of the roles', () => {
       assert.deepEqual(block, {
         ...Object.fromEntries(ROLES.filter((r) => own[r]).map((r) => [PANEL_VAR[r], own[r]])),
         ...(error ? { '--c-error': error } : {}),
-        ...Object.fromEntries(Object.entries(ours(kind)).map(([l, c]) => [LEVELS[l as NoteLevel].colour!.name, c])),
+        ...Object.fromEntries(COLOURS.filter((c) => c.ours[kind]).map((c) => [c.name, c.ours[kind]])),
       });
       // The levels of the notes: ours, or the theme's editorWarning and editorInfo colours.
-      const levels = Object.fromEntries(COLOURED.map((l) => [l, ours(kind)[l] ?? VSCODE_LEVELS[kind][l]!]));
+      const levels = Object.fromEntries(COLOURS.map((c) => [c.variable, c.ours[kind] ?? VSCODE_LEVELS[kind][c.variable]]));
       check(`VS Code ${kind} levels`, levels, t.bgs, t.min);
       // (Ours only where the theme's fall short.)
-      for (const l of Object.keys(ours(kind)) as NoteLevel[]) {
-        assert.throws(() => check('', { [l]: VSCODE_LEVELS[kind][l]! }, t.bgs, t.min), /below/, `${kind} ${l}: the theme's is readable`);
+      for (const l of Object.keys(ours(kind))) {
+        assert.throws(() => check('', { [l]: VSCODE_LEVELS[kind][l] }, t.bgs, t.min), /below/, `${kind} ${l}: the theme's is readable`);
       }
       // Where it has none, the theme's chart colour (the light and dark themes: Light Modern's and Dark Modern's).
       const colours = Object.fromEntries(ROLES.map((r) => [r, own[r] ?? t.base[CHARTS[r]]])) as Record<Role, string>;

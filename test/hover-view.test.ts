@@ -324,8 +324,9 @@ describe('the hover Markdown', () => {
     const x = { ...input(doc, 1), ex: new Analyzer('en').explainLine(doc.tree, 1, 'sh') };
     const md = wholeLine(x);
     assert.match(md, /^\*\*Bash Explainer\*\* · Line 2 · checked for POSIX sh/);
-    // (The mark is the level's codicon, in the level's colour.)
-    assert.match(md, /\n<span style="color:var\(--vscode-editorWarning-foreground\);">\$\(warning\)<\/span> `\[\[ \]\]` is not POSIX sh/);
+    // (The mark is the level's codicon, in the level's colour, then the level's word: an error, drawn as a warning until
+    // step 1b of docs/design/three-levels.md.)
+    assert.match(md, /\n<span style="color:var\(--vscode-editorWarning-foreground\);">\$\(warning\)<\/span> <span style="color:var\(--vscode-editorWarning-foreground\);"><strong>Error:<\/strong><\/span> `\[\[ \]\]` is not POSIX sh/);
     assert.match(wholeLine(input(doc, 2)), /Nothing to explain/);
     assert.match(wholeLine({ ...input(doc, 2), lineText: '  x' }), /Nothing to explain/);
   });

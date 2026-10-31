@@ -171,8 +171,8 @@ describe('the Language Server', function () {
     client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'shellscript', version: 1, text: '#!/bin/bash\nf() {\n  local x=$(false)\n}\n[ -f a\nexit 300\n' } });
     const d = await client.diagnostics(uri, (list) => list.length > 0);
     const at = (x: any) => [x.code, x.severity, x.range.start.line, x.range.start.character, x.range.end.character, x.message.slice(0, 14)];
-    // (Without the mark: a caveat starts with its word, a failure with its text.)
-    assert.deepStrictEqual(d.map(at), [['declaration-masks-status', 3, 2, 2, 18, 'Caveat: the st'], ['bracket-missing-close', 2, 4, 0, 6, '`[` has no `]`']]);
+    // (Without the mark: a caveat starts with its word, an error with its own, at severity 1.)
+    assert.deepStrictEqual(d.map(at), [['declaration-masks-status', 3, 2, 2, 18, 'Caveat: the st'], ['bracket-missing-close', 1, 4, 0, 6, 'Error: `[` has']]);
     client.notify('textDocument/didClose', { textDocument: { uri } });
   });
 

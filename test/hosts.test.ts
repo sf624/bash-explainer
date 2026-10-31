@@ -569,10 +569,10 @@ describe('bats', () => {
     assert.match(text(2), /gives the next test no tags \(an empty list\) \(it cancels an earlier `test_tags` before the same test\)$/);
     assert.match(text(3), /gives the next test only the tags `x`, `y` \(a later `# bats test_tags=` line before the same test replaces them; the tests after it do not get them\); `bats --filter-tags/);
     assert.match(text(7), /gives every later test of the file no tags \(an empty list\) \(it cancels an earlier `file_tags`\)$/);
-    assert.match(text(8), /^⚠ The `file_tags` list is not valid, so bats runs none of the tests of this file and fails\..*A leading comma, or a list of only spaces, makes an empty tag \(for no tags, nothing follows the `=`\)$/);
+    assert.match(text(8), /^ⓧ Error: The `file_tags` list is not valid, so bats runs none of the tests of this file and fails\..*A leading comma, or a list of only spaces, makes an empty tag \(for no tags, nothing follows the `=`\)$/);
     assert.match(text(1, 'ja'), /^ℹ bash にとってはコメントで、無視される。bats がこの行を読み、このファイルのこれ以降のすべてのテストにタグ `a`, `bats:focus` を付ける/);
     assert.match(text(3, 'ja'), /次のテストだけにタグ `x`, `y` を付ける（同じテストの前にあとの `# bats test_tags=` の行があると、そちらが置き換える。そのあとのテストには付かない）/);
-    assert.match(text(8, 'ja'), /^⚠ `file_tags` の書き方が正しくない/);
+    assert.match(text(8, 'ja'), /^ⓧ エラー: `file_tags` の書き方が正しくない/);
     // The comment token says it too (and the line's summary, when the comment is all of it); other comments are plain.
     assert.strictEqual(bats(doc, 1).summary, 'bats directive: bash ignores the comment, bats reads it and tags every later test');
     assert.strictEqual(bats(doc, 3, 'ja').summary, 'bats への指示コメント: bash は無視するが、bats が読んで次のテストだけにタグを付ける');
@@ -804,7 +804,7 @@ describe('one mapping from a program name to a shell (hosts)', () => {
       return ex.notes;
     };
     assert.deepStrictEqual(notes('SHELL=/bin/ksh\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), []);
-    assert.deepStrictEqual(notes('SHELL=/bin/dash\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), ['⚠ `[[ ]]` is not available in dash. Instead, use `[ ]`.']);
+    assert.deepStrictEqual(notes('SHELL=/bin/dash\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), ['ⓧ Error: `[[ ]]` is not available in dash. Instead, use `[ ]`.']);
     // posh is a POSIX sh: the note is the POSIX one.
     assert.match(notes('SHELL=/bin/posh\nall:\n\t[[ -n x ]]\n', 'Makefile', 2).join('\n'), /not POSIX sh/);
     const dash = spawnSync('dash', ['-c', '[[ -n x ]]']);

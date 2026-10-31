@@ -1,6 +1,7 @@
 // Step 0 of the three note levels (docs/design/three-levels.md, sections 7 and 8): the bash inventory of the checks
 // headed for Error, before any level moves. Every id that section 3 puts at Error has a row here: a short script that
-// our explanation says the note on (today at `warning`), run in bash, and in the program a row needs (dash, bats,
+// our explanation says the note on (at `warning`, or at `error` for those step 1a moved: the `failure()` facts,
+// dialect `unsupported` and `crlf`), run in bash, and in the program a row needs (dash, bats,
 // python3), under what question 1 of the rule varies (section 2):
 //
 // - the values of the variables the row reads from outside (`reads`): unset, empty, `a b`, `*`, and `x`, each
@@ -12,9 +13,8 @@
 //   the shebang runs only the ways a program runs (section 2); one that rests on an assumed system says so (`assumes`).
 //
 // Every run must fail: its output misses what the line is written to do (`works`), or the program says an error
-// (`error`). A row whose runs do not all fail is a finding, which must be fixed in the check, or planned at a lower
-// level, before step 1a; a finding kept for that is listed with its plan (`finding`), and the test checks that it
-// still holds. `ssh`, `docker`, `sudo` and `su` are stand-ins (`STUBS`) that run the command in `env -i`, which lacks
+// (`error`). A row whose runs do not all fail is a finding, which must be fixed in the check, or kept at a lower
+// level; a row kept so says why (`finding`), and the test checks that it still holds. `ssh`, `docker`, `sudo` and `su` are stand-ins (`STUBS`) that run the command in `env -i`, which lacks
 // what the remote shell, the container or the new shell lacks; sudo's stand-in passes the names sudo keeps.
 //
 // Each row's runs are one bash script, run in a cgroup with FUNCNEST set and killed as a process group on a timeout
@@ -62,9 +62,9 @@ interface Row {
    * script is explained for bash 5.2 (the default `bashExplainer.bashVersion`), which runs then only in bash 5.2.
    */
   assumes?: '/bin/sh is dash' | 'the user is not root' | 'bash 5.2';
-  /** The level the note has today, where it is not `warning` (an Info case that moves up). */
-  today?: 'info';
-  /** Some run does not fail, as the test checks: why, and what is planned before step 1a. */
+  /** The level the note has now, where it is not `warning`: an Error since step 1a, an Info case that moves up. */
+  level?: 'error' | 'info';
+  /** Some run does not fail, as the test checks: why, and the level the note keeps for it. */
   finding?: string;
 }
 
@@ -73,15 +73,18 @@ const AS_PROGRAM: readonly Way[] = ['direct', 'file'];
 
 const ROWS: readonly Row[] = [
   // ---- the `failure()` facts
-  { id: 'keyword-needs-separator', text: '#!/bin/bash\nif true then echo it-works; fi\n', line: 2, works: 'it-works' },
-  { id: 'bracket-missing-close', text: '#!/bin/bash\nif [ -d / ; then echo it-works; fi\n', line: 2, works: 'it-works' },
-  { id: 'bracket-close-glued', text: '#!/bin/bash\nif [ -d /]; then echo it-works; fi\n', line: 2, works: 'it-works' },
-  { id: 'test-malformed', text: '#!/bin/bash\nif [ 1 -eq ]; then echo it-works; else echo NO; fi\n', line: 2, error: /expected/ },
-  { id: 'unset-readonly', text: '#!/bin/bash\nreadonly r=1\nunset r && echo it-works\n', line: 3, works: 'it-works' },
-  { id: 'unset-function-and-variable', text: '#!/bin/bash\nx=1\nunset -f -v x && echo it-works\n', line: 3, works: 'it-works' },
-  { id: 'bats-tags-invalid', file: 't.bats', text: '# bats test_tags=a,,b\n@test "t" {\n  true\n}\n', line: 1, works: 'ok 1 t', ways: ['bats'] },
+  { id: 'keyword-needs-separator', text: '#!/bin/bash\nif true then echo it-works; fi\n', line: 2, works: 'it-works', level: 'error' },
+  { id: 'bracket-missing-close', text: '#!/bin/bash\nif [ -d / ; then echo it-works; fi\n', line: 2, works: 'it-works', level: 'error' },
+  { id: 'bracket-close-glued', text: '#!/bin/bash\nif [ -d /]; then echo it-works; fi\n', line: 2, works: 'it-works', level: 'error' },
+  { id: 'test-malformed', text: '#!/bin/bash\nif [ 1 -eq ]; then echo it-works; else echo NO; fi\n', line: 2, error: /expected/, level: 'error' },
+  { id: 'unset-readonly', text: '#!/bin/bash\nreadonly r=1\nunset r && echo it-works\n', line: 3, works: 'it-works', level: 'error' },
+  { id: 'unset-function-and-variable', text: '#!/bin/bash\nx=1\nunset -f -v x && echo it-works\n', line: 3, works: 'it-works', level: 'error' },
+  { id: 'bats-tags-invalid', file: 't.bats', text: '# bats test_tags=a,,b\n@test "t" {\n  true\n}\n', line: 1, works: 'ok 1 t', ways: ['bats'], level: 'error' },
   // ---- the pitfalls of the catalog
-  { id: 'find-action-refused', text: '#!/bin/bash\nfind . -name script.sh -exec echo it-works {}\n', line: 2, works: 'it-works' },
+  { id: 'find-action-refused', text: '#!/bin/bash\nfind . -name script.sh -exec echo it-works {}\n', line: 2, works: 'it-works', level: 'error' },
+  { id: 'assign-readonly', text: '#!/bin/bash\nreadonly r=1\nr=2 && echo it-works\n', line: 3, works: 'it-works', level: 'error' },
+  { id: 'restricted-refused', text: "#!/bin/bash\nbash -r -c 'cd / && echo it-works'\n", line: 2, works: 'it-works', level: 'error' },
+  { id: 'exit-refused', text: '#!/bin/bash\nexit x\n', line: 2, error: /numeric argument required/, level: 'error' },
   { id: 'local-outside-function', text: '#!/bin/bash\nlocal x=1 && echo it-works\n', line: 2, works: 'it-works', ways: AS_PROGRAM },
   { id: 'posix-special-function-name', text: '#!/bin/bash\nset -o posix\nexport() { echo it-works; }\nexport\n', line: 3, works: 'it-works' },
   { id: 'alias-not-expanded-in-script', text: "#!/bin/bash\nalias ok='echo it-works'\nok\n", line: 3, works: 'it-works', ways: AS_PROGRAM },
@@ -115,7 +118,7 @@ const ROWS: readonly Row[] = [
   { id: 'python-string-without-shell', code: 'pythonNoShell', file: 'run.py', text: 'import subprocess\nsubprocess.run("echo it-works")\n', line: 2, works: 'it-works', error: /FileNotFoundError/, ways: ['python'] },
   { id: 'nounset-unbound', text: '#!/bin/bash\nset -u\nunset x\necho "[$x]" it-works\n', line: 4, works: 'it-works', reads: ['x'] },
   // (Only the command fails, and the script goes on: an Info case that moves up.)
-  { id: 'nounset-unbound', text: '#!/bin/bash\nset -u\nunset f\ncat < "$f" && echo it-works\n', line: 4, works: 'it-works', reads: ['f'], today: 'info' },
+  { id: 'nounset-unbound', text: '#!/bin/bash\nset -u\nunset f\ncat < "$f" && echo it-works\n', line: 4, works: 'it-works', reads: ['f'], level: 'info' },
   { id: 'postfix-increment-status', text: '#!/bin/bash\nset -e\ni=0\n((i++))\necho it-works\n', line: 4, works: 'it-works', reads: ['i'] },
   { id: 'postfix-decrement-status', text: '#!/bin/bash\nset -e\ni=0\n((i--))\necho it-works\n', line: 4, works: 'it-works', reads: ['i'] },
   // ---- the style checks
@@ -128,17 +131,19 @@ const ROWS: readonly Row[] = [
   { id: 'and-or-in-bracket', text: '#!/bin/bash\n[ -d / && -d / ] && echo it-works\n', line: 2, works: 'it-works' },
   { id: 'bracket-close-in-word', text: '#!/bin/bash\nx=a\n[ -n "$x"] && echo it-works\n', line: 3, works: 'it-works' },
   // ---- dialect issues and other problems
-  { id: 'unsupported', code: 'dbracket', shell: 'sh', text: '#!/bin/sh\n[[ -d / ]] && echo it-works\n', line: 2, works: 'it-works', assumes: '/bin/sh is dash' },
-  { id: 'unsupported', code: 'funsub', text: '#!/bin/bash\necho "${ echo it-works; }"\n', line: 2, works: 'it-works', assumes: 'bash 5.2' },
-  { id: 'crlf', text: '#!/bin/bash\r\nif true; then echo it-works; fi\r\n', line: 1, works: 'it-works', ways: ['direct'] },
-  // (With no shebang and no keyword, bash runs each line with a CR at the end of its last word.)
+  { id: 'unsupported', code: 'dbracket', shell: 'sh', text: '#!/bin/sh\n[[ -d / ]] && echo it-works\n', line: 2, works: 'it-works', assumes: '/bin/sh is dash', level: 'error' },
+  { id: 'unsupported', code: 'funsub', text: '#!/bin/bash\necho "${ echo it-works; }"\n', line: 2, works: 'it-works', assumes: 'bash 5.2', level: 'error' },
+  { id: 'crlf', text: '#!/bin/bash\r\nif true; then echo it-works; fi\r\n', line: 1, works: 'it-works', ways: ['direct'], level: 'error' },
+  // (With no shebang, a keyword before a CR fails however the file runs: `fi\r` is no keyword.)
+  { id: 'crlf', text: 'if true; then echo it-works\r\nfi\r\n', line: 1, works: 'it-works', level: 'error' },
+  // (With no shebang and no keyword before a CR, bash runs each line with a CR at the end of its last word.)
   {
     id: 'crlf', text: 'echo it-works\r\n', line: 1, works: 'it-works',
-    finding: 'a file with no shebang runs (`bash file` prints `it-works` and a CR): section 2 rests the Error on the shebang; plan: Error only with a shebang or a keyword before a CR, Warning otherwise, decided before step 1a',
+    finding: 'a file with no shebang and no keyword before a CR runs (`bash file` prints `it-works` and a CR): a warning there, an error only with a shebang or a keyword before a CR (step 1a)',
   },
 ];
 
-/** The ids section 3 of docs/design/three-levels.md puts at Error (or at Error in some cases). */
+/** The ids section 3 of docs/design/three-levels.md puts at Error (or at Error in some cases), and the `failure()` facts it left out. */
 const HEADED_FOR_ERROR: readonly string[] = [
   'keyword-needs-separator', 'bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'find-action-refused', 'unset-readonly',
   'unset-function-and-variable', 'local-outside-function', 'posix-special-function-name', 'alias-not-expanded-in-script',
@@ -149,6 +154,7 @@ const HEADED_FOR_ERROR: readonly string[] = [
   'pipeline-subshell-variable', 'redirect-by-your-shell', 'shebang-refused', 'shebang-bom', 'bats-tags-invalid', 'bats-test-line-dropped',
   'bats-negation-ignored', 'bats-run-in-pipeline-stage', 'bats-run-in-pipeline', 'bats-setup-suite-in-test-file', 'regex-backslash-dropped',
   'python-string-without-shell', 'nounset-unbound', 'postfix-increment-status', 'postfix-decrement-status',
+  'assign-readonly', 'restricted-refused', 'exit-refused',
   'bracket-no-space', 'assignment-with-spaces', 'brace-no-space', 'brace-close-no-separator', 'redirect-in-bracket', 'and-or-in-bracket',
   'bracket-close-in-word', 'unsupported', 'crlf',
 ];
@@ -340,12 +346,12 @@ describe('the checks headed for Error, run in bash (three-levels.md, step 0)', f
 
   ROWS.forEach((r, i) => {
     it(`${r.id}${r.code ? ` (${r.code})` : ''}: ${JSON.stringify(r.text.split('\n')[r.line - 1].replace(/^﻿/, '').replace(/\r$/, ''))}`, async function () {
-      // Our side: the explanation says it there, today a warning.
+      // Our side: the explanation says it there, at its level.
       const file = fileOf(r);
       const doc = openDocument(r.text, hostKind('', file, r.text) ?? 'shell', (t) => parser.parse(t));
       const issue = documentIssues(doc, 'en', shellsOf(doc.lines, file, undefined)).find((x) => x.code === (r.code ?? r.id) && x.startLine === r.line - 1);
       assert.ok(issue, `${r.code ?? r.id} is not said on line ${r.line}`);
-      assert.strictEqual(issue.severity, r.today ?? 'warning');
+      assert.strictEqual(issue.severity, r.level ?? 'warning');
       // bash's side: every run fails.
       const why = unrunnable(r);
       if (why) return this.skip();

@@ -17,7 +17,7 @@ import * as path from 'path';
 function readBack(text: string, lang: Lang): { level: NoteLevel; label: string; body: string } {
   const level: NoteLevel = LEVEL_ORDER.find((l) => text.startsWith(LEVELS[l].mark)) ?? 'note';
   const rest = level === 'note' && !text.startsWith(LEVELS.note.mark) ? text : text.slice(LEVELS[level].mark.length).trimStart();
-  const words = [{ ja: '落とし穴: ', en: 'Pitfall: ' }, { ja: '注意: ', en: 'Caveat: ' }, PORTABILITY, ...Object.values(MESSAGES).map((e) => (e as { heading?: { ja: string; en: string } }).heading)];
+  const words = [{ ja: 'エラー: ', en: 'Error: ' }, { ja: '落とし穴: ', en: 'Pitfall: ' }, { ja: '注意: ', en: 'Caveat: ' }, PORTABILITY, ...Object.values(MESSAGES).map((e) => (e as { heading?: { ja: string; en: string } }).heading)];
   const label = [...new Set(words.map((h) => h?.[lang] ?? '').filter(Boolean))].find((h) => rest.startsWith(h)) ?? '';
   return { level, label: label.trimEnd(), body: rest.slice(label.length) };
 }

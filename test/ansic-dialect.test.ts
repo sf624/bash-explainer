@@ -122,7 +122,7 @@ describe('`$\'…\'` in the shell the script is for', () => {
         if (have('dash')) assert.match(spawnSync('dash', ['-c', `echo ${word}`], { encoding: 'utf8' }).stderr, /Unterminated quoted string/, word);
       }
       // (Without a `\'`, the plain note.)
-      assert.match(dialectNotes(parser.parse("echo $'a'"), 0, 'dash', 'en').join('\n'), /^⚠ `\$'…'` strings is not available in dash/);
+      assert.match(dialectNotes(parser.parse("echo $'a'"), 0, 'dash', 'en').join('\n'), /^ⓧ Error: `\$'…'` strings is not available in dash/);
       assert.match(token("echo $'it\\'s'", 'dash', "$'it\\'s'", 'ja').explanation, /その引用は `\\'` で終わり/);
     });
 

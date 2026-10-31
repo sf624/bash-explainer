@@ -6,7 +6,7 @@ import { Analyzer } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
 import { documentIssues, explainDocumentLine, noteIssues, ShellDocument } from '../src/document';
 import { extractShell } from '../src/hosts';
-import { isProblem } from '../src/messages';
+import { isProblem, MESSAGES } from '../src/messages';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
@@ -68,12 +68,15 @@ describe('documents without VS Code', () => {
     // The blank that stands for a CR is no part of a comment (the shebang), a word or a string.
     const cr = parser.parse('#!/bin/sh\r\n# a\r\necho "PV " x\r\n');
     assert.deepStrictEqual(descendants(cr.root, ['comment']).map((n) => [n.text, n.endPosition.column]), [['#!/bin/sh', 9], ['# a', 3]]);
-    // The warning is at the first CR, for every shell, in both languages.
+    // The problem is at the first CR, for every shell, in both languages: an error, as `then\r` and `fi\r` are no keywords.
     for (const lang of ['en', 'ja'] as const) {
       const issues = documentIssues(doc, lang, {});
-      assert.deepStrictEqual(issues.map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]), [['crlf', 'warning', 0, 13, 17]]);
+      assert.deepStrictEqual(issues.map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]), [['crlf', 'error', 0, 13, 17]]);
       assert.match(issues[0].message, lang === 'en' ? /Windows line endings/ : /CRLF/);
     }
+    // With a shebang, an error too; with neither a shebang nor a keyword before a CR, a warning (`bash file` runs it).
+    const level = (text: string) => documentIssues(script(text), 'en', {}).map((i) => i.severity);
+    assert.deepStrictEqual([level('#!/bin/sh\r\necho hi\r\n'), level('echo hi\r\necho fi\r\n'), level('{ echo hi; }\r\n')], [['error'], ['warning'], ['error']]);
     assert.deepStrictEqual(documentIssues(doc, 'en', { forced: 'dash' }).map((i) => i.code), ['crlf']);
     assert.deepStrictEqual(documentIssues(doc, 'en', {}, ['crlf']), []);
     // A file-level directive silences it, on any line (the warning itself is usually on line 1); and so does a comment after the code.
@@ -102,8 +105,9 @@ describe('documents without VS Code', () => {
 });
 
 describe('the pitfalls of a script, as problems', () => {
+  // (The problems of the explanations: their warnings and caveats are pitfalls, their errors are not.)
   const found = (text: string, shells: { forced?: 'bash' | 'sh' | 'zsh' } = {}) => documentIssues(script(text), 'en', shells)
-    .filter((i) => i.pitfall).map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endLine, i.endCol]);
+    .filter((i) => i.pitfall || (i.severity === 'error' && i.code in MESSAGES)).map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endLine, i.endCol]);
   // The script, and its pitfalls: code, severity, and range (line, column, line, column).
   const cases: [string, (string | number)[][]][] = [
     // src/pitfalls.ts
@@ -116,7 +120,7 @@ describe('the pitfalls of a script, as problems', () => {
     ['[ $a < $b ]', [['redirect-in-bracket', 'warning', 0, 5, 0, 9], ['unquoted-variable-in-test', 'info', 0, 2, 0, 4]]],
     ['[ -f $x]', [['bracket-close-in-word', 'warning', 0, 5, 0, 8]]],
     // (`&&` ends the command `[ a`, which then has no `]`: a failure note, said too.)
-    ['[ a && b ]', [['bracket-missing-close', 'warning', 0, 0, 0, 3], ['and-or-in-bracket', 'warning', 0, 4, 0, 6]]],
+    ['[ a && b ]', [['bracket-missing-close', 'error', 0, 0, 0, 3], ['and-or-in-bracket', 'warning', 0, 4, 0, 6]]],
     ['source lib.sh', [['source-searches-path', 'info', 0, 7, 0, 13]]],
     ['grep "$x" f', [['pattern-from-variable', 'info', 0, 5, 0, 9]]],
     // src/statusfacts.ts
@@ -150,14 +154,14 @@ describe('the pitfalls of a script, as problems', () => {
     ['echo "$x"\nx=1', []],
     // The other warnings and caveats of the explanations: a fact of the catalog, a failure, a status fact, a level that depends on `set -e`.
     ['f() {\n  local x=$(false)\n}', [['declaration-masks-status', 'info', 1, 2, 1, 18]]],
-    ['[ -f a', [['bracket-missing-close', 'warning', 0, 0, 0, 6]]],
+    ['[ -f a', [['bracket-missing-close', 'error', 0, 0, 0, 6]]],
     ['set -e\ni=0\n(( i++ ))', [['postfix-increment-status', 'warning', 2, 0, 2, 9]]],
     ['i=0\n(( i++ ))', [['postfix-increment-status', 'info', 1, 0, 1, 9]]],
     ['set -e\ncat a \\\n  | grep b', [['pipefail-missing', 'info', 1, 0, 1, 7]]],
     // (Said on each line of a statement over several lines: one problem.)
     ['f() {\n  local x=$(false) \\\n    y=1\n}', [['declaration-masks-status', 'info', 1, 2, 1, 20]]],
     // (In `$( )` and in a string a shell runs, at their places in the document.)
-    ['echo a\nx=$( [ -f a )', [['bracket-missing-close', 'warning', 1, 5, 1, 11]]],
+    ['echo a\nx=$( [ -f a )', [['bracket-missing-close', 'error', 1, 5, 1, 11]]],
     ["sh -c 'f() {\n  local x=$(false)\n}'", [['declaration-masks-status', 'info', 1, 2, 1, 18]]],
     // A plain fact is never a problem.
     ['exit 300', []],

@@ -17,17 +17,17 @@ const note = (src: string, lang: 'en' | 'ja' = 'en'): Fact | undefined => new An
 describe('the note on an action that find refuses', () => {
   // The line, what find prints (after "find: "), the reason the note gives.
   const cases: [string, string, RegExp][] = [
-    ['find . -maxdepth 0 -exec echo ran {} ;', "missing argument to `-exec'", /^⚠ `-exec` has no `\\;` \(or `\+` right after a `\{\}`\) to end its command: the `;` at the end is the shell's list separator, so find never gets it\./],
-    ['find . -maxdepth 0 -execdir echo ran {} \\; -execdir echo ran {} ;', "missing argument to `-execdir'", /^⚠ `-execdir` has no/],
-    ['find . -maxdepth 0 -ok echo ran {} ;', "missing argument to `-ok'", /^⚠ `-ok` has no `\\;` to end its command: the `;` at the end is the shell's list separator/],
-    ['find . -maxdepth 0 -okdir echo ran {} +', "missing argument to `-okdir'", /^⚠ `-okdir` has no `\\;` to end its command; only `-exec` and `-execdir` can be ended by a `\+`\./],
-    ['find . -maxdepth 0 -exec echo ran {} a +', "missing argument to `-exec'", /^⚠ `-exec` has no `\\;` \(or `\+` right after a `\{\}`\) to end its command\. /],
+    ['find . -maxdepth 0 -exec echo ran {} ;', "missing argument to `-exec'", /^ⓧ Error: `-exec` has no `\\;` \(or `\+` right after a `\{\}`\) to end its command: the `;` at the end is the shell's list separator, so find never gets it\./],
+    ['find . -maxdepth 0 -execdir echo ran {} \\; -execdir echo ran {} ;', "missing argument to `-execdir'", /^ⓧ Error: `-execdir` has no/],
+    ['find . -maxdepth 0 -ok echo ran {} ;', "missing argument to `-ok'", /^ⓧ Error: `-ok` has no `\\;` to end its command: the `;` at the end is the shell's list separator/],
+    ['find . -maxdepth 0 -okdir echo ran {} +', "missing argument to `-okdir'", /^ⓧ Error: `-okdir` has no `\\;` to end its command; only `-exec` and `-execdir` can be ended by a `\+`\./],
+    ['find . -maxdepth 0 -exec echo ran {} a +', "missing argument to `-exec'", /^ⓧ Error: `-exec` has no `\\;` \(or `\+` right after a `\{\}`\) to end its command\. /],
     ['find . -maxdepth 0 -exec \\;', "invalid argument `;' to `-exec'", /is followed at once by `\\;`, so it has no command to run\./],
-    ['find . -maxdepth 0 -ok \\;', "invalid argument `;' to `-ok'", /^⚠ `-ok` is followed at once by/],
-    ['find . -maxdepth 0 -ok', "missing argument to `-ok'", /^⚠ `-ok` has no command to run, and no `\\;` to end one\. find refuses all its arguments .* Write the command to run, and end it with `\\;`$/],
-    ['find . -maxdepth 0 -exec echo ran {}.bak +', "In '-exec ... {} +' the '{}' must appear by itself, but you specified '{}.bak'", /^⚠ A `\+` ends the command of `-exec` only after a `\{\}` that stands alone, and here the word before it is `\{\}\.bak`\./],
+    ['find . -maxdepth 0 -ok \\;', "invalid argument `;' to `-ok'", /^ⓧ Error: `-ok` is followed at once by/],
+    ['find . -maxdepth 0 -ok', "missing argument to `-ok'", /^ⓧ Error: `-ok` has no command to run, and no `\\;` to end one\. find refuses all its arguments .* Write the command to run, and end it with `\\;`$/],
+    ['find . -maxdepth 0 -exec echo ran {}.bak +', "In '-exec ... {} +' the '{}' must appear by itself, but you specified '{}.bak'", /^ⓧ Error: A `\+` ends the command of `-exec` only after a `\{\}` that stands alone, and here the word before it is `\{\}\.bak`\./],
     ['find . -maxdepth 0 -execdir echo ran {}.bak +', "In '-execdir ... {} +' the '{}' must appear by itself, but you specified '{}.bak'", /command of `-execdir` only after/],
-    ['find . -maxdepth 0 -exec echo ran {} {} +', 'Only one instance of {} is supported with -exec ... +', /^⚠ The command of `-exec` that a `\+` ends takes only one `\{\}`\./],
+    ['find . -maxdepth 0 -exec echo ran {} {} +', 'Only one instance of {} is supported with -exec ... +', /^ⓧ Error: The command of `-exec` that a `\+` ends takes only one `\{\}`\./],
     ['find . -maxdepth 0 -execdir echo ran {} {}.bak +', 'Only one instance of {} is supported with -execdir ... +', /command of `-execdir` that a `\+` ends/],
   ];
   for (const [src, said, reason] of cases) {
@@ -57,9 +57,9 @@ describe('the note on an action that find refuses', () => {
     assert.match(note('find . -exec rm {} ;', 'ja')!.text, /`-exec` のコマンドを終わらせる `\\;`（または `\{\}` の直後の `\+`）がない。末尾の `;` はシェルのコマンドリストの区切りなので、find には渡らない。find は与えられた引数をすべて受け付けず（``find: missing argument to `-exec'``）、何も実行しない。`\\;` と書く/);
     assert.match(note('find . -exec rm {}.bak +', 'ja')!.text, /`\+` が `-exec` のコマンドを終わらせるのは、直前の語が `\{\}` だけのときに限る。ここでは `\{\}\.bak` なので/);
     assert.match(note('find . -exec rm {} {} +', 'ja')!.text, /`\{\}` は1つだけ。2つ以上必要なら `\\;` で1件ずつ実行する。/);
-    assert.match(note('find . -exec \\;', 'ja')!.text, /^⚠ `-exec` の直後が `\\;` で、実行するコマンドがない。/);
-    assert.match(note('find . -ok rm {} +', 'ja')!.text, /^⚠ `-ok` のコマンドを終わらせる `\\;` がない。`\+` で終わらせられるのは `-exec` と `-execdir` だけ。/);
-    assert.match(note('find . -exec ;', 'ja')!.text, /^⚠ `-exec` の後に、実行するコマンドも、それを終わらせる `\\;` もない。末尾の `;` は.*。実行するコマンドを書き、`\\;` で終わらせる$/);
+    assert.match(note('find . -exec \\;', 'ja')!.text, /^ⓧ エラー: `-exec` の直後が `\\;` で、実行するコマンドがない。/);
+    assert.match(note('find . -ok rm {} +', 'ja')!.text, /^ⓧ エラー: `-ok` のコマンドを終わらせる `\\;` がない。`\+` で終わらせられるのは `-exec` と `-execdir` だけ。/);
+    assert.match(note('find . -exec ;', 'ja')!.text, /^ⓧ エラー: `-exec` の後に、実行するコマンドも、それを終わらせる `\\;` もない。末尾の `;` は.*。実行するコマンドを書き、`\\;` で終わらせる$/);
   });
 
   it('cites the sections of each case: the list operator only for a bare `;`', () => {

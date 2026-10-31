@@ -186,7 +186,7 @@ describe('the reading tree as the Bash manual reads bash itself (chapter 6: 6.1,
       'history -s /tmp/h', 'history -r', 'enable -n echo', 'echo hi | cat', 'cat <<< hi'];
     for (const [line, says] of refused) {
       assert.match(notes(script(line), 1), says, line);
-      assert.match(notes(script(line), 1), /^⚠ This is a restricted shell \(`bash -r`, `rbash`\), so bash refuses/m, line);
+      assert.match(notes(script(line), 1), /^ⓧ Error: This is a restricted shell \(`bash -r`, `rbash`\), so bash refuses/m, line);
     }
     for (const line of fine) assert.doesNotMatch(notes(script(line), 1), /restricted/, line);
     // (A file whose name is known only at run time: nothing is said.)

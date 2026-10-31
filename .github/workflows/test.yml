@@ -286,21 +286,24 @@ jobs:
       - name: Check that it failed, annotated, and wrote SARIF
         env:
           OUTCOME: ${{ steps.failing.outcome }}
+          ERRORS: ${{ steps.failing.outputs.errors }}
           WARNINGS: ${{ steps.failing.outputs.warnings }}
           LENIENT: ${{ steps.lenient.outputs.warnings }}
           SARIF: ${{ runner.temp }}/results.sarif
         run: |
           test "$OUTCOME" = failure
-          # The annotations are printed after the SARIF, so they must be there too.
-          test "$WARNINGS" -gt 0
+          # The annotations are printed after the SARIF, so they must be there too. Each bashism
+          # is an error, which fails the step.
+          test "$ERRORS" -gt 0
+          test "$WARNINGS" = "$ERRORS"
           test "$LENIENT" = "$WARNINGS"
           node -e 'const s = JSON.parse(require("fs").readFileSync(process.env.SARIF, "utf8")); if (!s.runs[0].results.some((r) => r.ruleId === "dbracket")) process.exit(1)'
 
-      # A pitfall's warning fails the step only with strict; `warnings` counts what fails it, `pitfalls` every pitfall.
+      # A warning fails the step only with strict; `warnings` counts what fails it, `pitfalls` every pitfall.
       - name: Write a bash script with a pitfall
         run: printf '#!/bin/bash\nx = 1\nread line\n' > "$RUNNER_TEMP/pitfall.sh"
 
-      - name: A pitfall's warning fails the step with strict
+      - name: A warning fails the step with strict
         id: strict
         continue-on-error: true
         uses: ./
@@ -319,18 +322,44 @@ jobs:
       - name: Check that only strict failed, and the counts
         env:
           OUTCOME: ${{ steps.strict.outcome }}
+          ERRORS: ${{ steps.strict.outputs.errors }}
           WARNINGS: ${{ steps.strict.outputs.warnings }}
           PITFALLS: ${{ steps.strict.outputs.pitfalls }}
           LENIENT_WARNINGS: ${{ steps.not-strict.outputs.warnings }}
           LENIENT_PITFALLS: ${{ steps.not-strict.outputs.pitfalls }}
         run: |
           test "$OUTCOME" = failure
+          test "$ERRORS" = 0
           test "$WARNINGS" = 1
           test "$PITFALLS" = 2
           test "$LENIENT_WARNINGS" = 0
           test "$LENIENT_PITFALLS" = 2
 
-      # bash 5.3's `${ cmd; }` is a warning for bash 5.2 (the default), and none with bash-version 5.3.
+      # An error (a line that fails every time) fails the step without strict, and is no pitfall.
+      - name: Write a bash script with an error and a pitfall
+        run: printf '#!/bin/bash\nreadonly r=1\nunset r\nx = 1\n' > "$RUNNER_TEMP/error.sh"
+
+      - name: An error fails the step without strict
+        id: error
+        continue-on-error: true
+        uses: ./
+        with:
+          files: ${{ runner.temp }}/error.sh
+          package: ${{ steps.pack.outputs.tgz }}
+
+      - name: Check that it failed, and the counts
+        env:
+          OUTCOME: ${{ steps.error.outcome }}
+          ERRORS: ${{ steps.error.outputs.errors }}
+          WARNINGS: ${{ steps.error.outputs.warnings }}
+          PITFALLS: ${{ steps.error.outputs.pitfalls }}
+        run: |
+          test "$OUTCOME" = failure
+          test "$ERRORS" = 1
+          test "$WARNINGS" = 1
+          test "$PITFALLS" = 1
+
+      # bash 5.3's `${ cmd; }` is an error for bash 5.2 (the default), and none with bash-version 5.3.
       - name: Write a bash script with `${ cmd; }`
         run: printf '#!/bin/bash\nx=${ echo a; }\necho "$x"\n' > "$RUNNER_TEMP/funsub.sh"
 

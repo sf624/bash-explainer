@@ -1,5 +1,5 @@
 import { interpret } from './argv/interpret';
-import { BASH_VERSIONS, type BashVersion, DEFAULT_BASH_VERSION, earlier, lacks, laterOption, laterShellOption, SHELL_OPTIONS_SINCE, SINCE, unclosedBrace } from './bashversion';
+import { BASH_VERSIONS, type BashVersion, DEFAULT_BASH_VERSION, earlier, lacks, laterOption, laterShellOption, SHELL_OPTIONS_SINCE, SINCE, unclosedBraceBody } from './bashversion';
 import { givenOptions, has, operands, values } from './argv/query';
 import { argWord } from './argv/words';
 import { builtins } from './dict/builtins';
@@ -284,7 +284,7 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
   }
 }
 
-/** The note of a construct the target shell lacks: a warning with no word, since its first words say that it fails, and where. */
+/** The note of a construct the target shell lacks: an error ("Error:", the word of its level), since the line fails there every time. */
 function unsupported(lang: Lang, id: string, body: string): Note {
   return marked(lang, PROBLEM_LEVELS.unsupported, body, { code: id });
 }
@@ -293,7 +293,7 @@ function unsupported(lang: Lang, id: string, body: string): Note {
 export interface Issue {
   id: string;
   /**
-   * `unsupported`: fails in the shell (a warning); `behaviour`: works differently (information, "Portability");
+   * `unsupported`: fails in the shell (an error); `behaviour`: works differently (information, "Portability");
    * `parse`: zsh-only syntax (a plain fact, which is still a problem: the line is not explained).
    */
   kind: 'unsupported' | 'behaviour' | 'parse';
@@ -433,7 +433,7 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
     // (Where bash lacks `${ …; }`, the issue above says what it does.)
     const unclosed = lacks('funsub', version) ? [] : descendants(tree.root, ['command_substitution'], { from, to }).flatMap((n): Issue[] => {
       const how = braceTakenAsWord(n);
-      const text = how && unclosedBrace(how, substitutionForm(n) === '${' ? '${ …; }' : '${| …; }', true)[lang === 'ja' ? 0 : 1];
+      const text = how && unclosedBraceBody(how, substitutionForm(n) === '${' ? '${ …; }' : '${| …; }', true)[lang === 'ja' ? 0 : 1];
       return text ? [{ id: 'funsubBrace', kind: 'unsupported', note: unsupported(lang, 'funsubBrace', `${text}${lang === 'ja' ? '。' : '.'}`), node: n, place: n.children[n.children.length - 1] }] : [];
     });
     return [...lacking, ...unclosed, ...laterOptions(tree, from, to, version, lang)];

@@ -163,12 +163,19 @@ describe('the command-line tool', function () {
     assert.match(r.out, /not POSIX sh/);
   });
 
-  it('warns about CRLF line ends in a script, and explains it as an LF one', () => {
+  it('reports CRLF line ends in a script, and explains it as an LF one', () => {
     const file = path.join(dir, 'crlf.sh');
     fs.writeFileSync(file, 'if true; then\r\n  echo hi\r\nfi\r\n');
     const r = run(['--check', '--no-color', file]);
     assert.strictEqual(r.code, 1);
-    assert.match(r.out, /crlf\.sh:1:10: warning: This file has Windows line endings.*\[crlf\]$/m);
+    // (An error: `then\r` is no keyword, however the file runs.)
+    assert.match(r.out, /crlf\.sh:1:10: error: This file has Windows line endings.*\[crlf\]$/m);
+    // With no shebang and no keyword before a CR, `bash file` runs it (a warning, which fails the check only with --strict).
+    fs.writeFileSync(file, 'echo hi\r\n');
+    const w = run(['--check', '--no-color', file]);
+    assert.strictEqual(w.code, 0);
+    assert.match(w.out, /crlf\.sh:1:6: warning: This file has Windows line endings.*\[crlf\]$/m);
+    assert.strictEqual(run(['--check', '--strict', file]).code, 1);
     // A directive anywhere in the file turns the warning off.
     fs.writeFileSync(file, 'if true; then\r\n  echo hi\r\nfi\r\n# bash-explainer disable-file=crlf\r\n');
     assert.strictEqual(run(['--check', '--no-color', file]).code, 0);
@@ -183,10 +190,12 @@ describe('the command-line tool', function () {
     assert.match(r.out, /apk add --no-cache/);
   });
 
-  it('checks a script for its shell, and exits 1 on a warning', () => {
+  it('checks a script for its shell, and exits 1 on an error', () => {
     const r = run(['--check', '--no-color', '-e', '#!/bin/sh\n[[ -f x ]] && echo y']);
     assert.strictEqual(r.code, 1);
-    assert.match(r.out, /^\(command\):2:1: warning: \[\[ \]\] is not POSIX sh.*\[dbracket\]$/m);
+    assert.match(r.out, /^\(command\):2:1: error: Error: \[\[ \]\] is not POSIX sh.*\[dbracket\]$/m);
+    // (In colour, the level's word in the level's colour: the level table.)
+    assert.match(run(['--check', '--color', '-e', '#!/bin/sh\n[[ -f x ]] && echo y']).out, /^\(command\):2:1: \x1b\[31merror\x1b\[0m: /m);
     assert.strictEqual(run(['--check', '-e', '#!/bin/bash\n[[ -f x ]] && echo y']).code, 0);
     const json = JSON.parse(run(['--check', '--format', 'json', '--shell', 'dash', '-e', '[[ -f x ]]']).out);
     assert.deepStrictEqual(json.map((i: { code: string }) => i.code), ['dbracket']);
@@ -210,7 +219,7 @@ describe('the command-line tool', function () {
     const both = run(['--check', '--format', 'github', '--sarif', file, fixture('posix.sh')]);
     const alone = run(['--check', '--format', 'sarif', fixture('posix.sh')]);
     assert.strictEqual(both.code, 1);
-    assert.match(both.out, /^::warning file=/m);
+    assert.match(both.out, /^::error file=/m);
     assert.strictEqual(fs.readFileSync(file, 'utf8'), alone.out);
     assert.strictEqual(run(['--sarif', file, '-e', 'ls']).code, 2);
     const dash = run(['--check', '--sarif', '-', '-e', 'ls']);
@@ -225,8 +234,8 @@ describe('the command-line tool', function () {
     const gh = run(['--check', '--format', 'github', fixture('posix.sh')]);
     assert.strictEqual(gh.code, 1);
     const lines = gh.out.trim().split('\n');
-    assert.match(lines[0], /^::warning file=.*posix\.sh,line=3,col=1,endLine=3,endColumn=\d+,title=Bash Explainer%3A pipefail::set -o pipefail is not POSIX sh/);
-    const fails = (l: string) => l.startsWith('::warning ') && !l.includes('title=Bash Explainer (pitfall)');
+    assert.match(lines[0], /^::error file=.*posix\.sh,line=3,col=1,endLine=3,endColumn=\d+,title=Bash Explainer%3A pipefail::Error: set -o pipefail is not POSIX sh/);
+    const fails = (l: string) => l.startsWith('::error ');
     const first = lines.filter(fails);
     assert.deepStrictEqual(lines.slice(0, first.length), first);
     for (const group of [first, lines.filter((l) => !fails(l))]) {
@@ -236,7 +245,7 @@ describe('the command-line tool', function () {
     const sarif = JSON.parse(run(['--check', '--format', 'sarif', '--shell', 'dash', '-e', '[[ -f x ]]']).out);
     assert.strictEqual(sarif.version, '2.1.0');
     const [result] = sarif.runs[0].results;
-    assert.deepStrictEqual([result.ruleId, result.level, result.locations[0].physicalLocation.region], ['dbracket', 'warning', { startLine: 1, startColumn: 1, endLine: 1, endColumn: 11 }]);
+    assert.deepStrictEqual([result.ruleId, result.level, result.locations[0].physicalLocation.region], ['dbracket', 'error', { startLine: 1, startColumn: 1, endLine: 1, endColumn: 11 }]);
     assert.strictEqual(run(['--format', 'sarif', '-e', 'ls']).code, 2);
   });
 
@@ -248,6 +257,9 @@ describe('the command-line tool', function () {
     assert.ok(info.startsWith('  \x1b[34m\x1b[1mⓘ Caveat:\x1b[0m\x1b[0m without `-r`'), info);
     // (A plain fact's mark is dim, with no word.)
     assert.ok(note.startsWith('  \x1b[90mℹ\x1b[0m An exit status'), note);
+    // An error in red, first.
+    const error = run(['--no-config', '--color', '-e', 'read line; [ -f a']).out.split('\n')[1];
+    assert.ok(error.startsWith('  \x1b[31m\x1b[1mⓧ Error:\x1b[0m\x1b[0m `[` has no'), error);
   });
 
   it('reports the pitfalls, and fails on their warnings only with --strict', () => {
@@ -287,22 +299,40 @@ describe('the command-line tool', function () {
     assert.deepStrictEqual(order(['--check', '--strict']), ['Bash Explainer (pitfall)%3A assignment-with-spaces', 'Bash Explainer%3A dbracket']);
   });
 
-  it('reports the other warnings and caveats of the explanations, with their codes and ranges, and no plain fact', () => {
+  it('reports the errors, warnings and caveats of the explanations, with their codes and ranges, and no plain fact', () => {
     const file = path.join(dir, 'notes.sh');
     fs.writeFileSync(file, '#!/bin/bash\nf() {\n  local x=$(false)\n}\n[ -f a\nexit 300\n');
     const r = run(['--check', '--no-color', file]);
-    // (Warnings of the explanations fail the check only with --strict, as the pitfalls do.)
-    assert.strictEqual(r.code, 0, r.out);
-    assert.deepStrictEqual(r.out.trim().split('\n').map((l) => /:(\d+:\d+): (\w+): .* \[([\w-]+)\]$/.exec(l)!.slice(1).join(' ')), ['3:3 info declaration-masks-status', '5:1 warning bracket-missing-close']);
-    assert.strictEqual(run(['--check', '--strict', file]).code, 1);
+    // (An error of the explanations fails the check without --strict.)
+    assert.strictEqual(r.code, 1, r.out);
+    assert.deepStrictEqual(r.out.trim().split('\n').map((l) => /:(\d+:\d+): (\w+): .* \[([\w-]+)\]$/.exec(l)!.slice(1).join(' ')), ['3:3 info declaration-masks-status', '5:1 error bracket-missing-close']);
     const json = JSON.parse(run(['--check', '--format', 'json', file]).out);
     assert.deepStrictEqual(json.map((x: { code: string; line: number; column: number; endColumn: number; severity: string }) => [x.code, x.severity, x.line, x.column, x.endColumn]),
-      [['declaration-masks-status', 'info', 3, 3, 19], ['bracket-missing-close', 'warning', 5, 1, 7]]);
+      [['declaration-masks-status', 'info', 3, 3, 19], ['bracket-missing-close', 'error', 5, 1, 7]]);
     const sarif = JSON.parse(run(['--check', '--format', 'sarif', file]).out);
-    assert.deepStrictEqual(sarif.runs[0].results.map((x: { ruleId: string; level: string }) => [x.ruleId, x.level]), [['declaration-masks-status', 'note'], ['bracket-missing-close', 'warning']]);
-    const gh = run(['--check', '--format', 'github', '--strict', file]).out.trim().split('\n');
-    assert.deepStrictEqual(gh.map((l) => /^::(\w+) .*line=(\d+),.*title=([^:]*)::/.exec(l)!.slice(1).join(' ')), ['warning 5 Bash Explainer (pitfall)%3A bracket-missing-close', 'notice 3 Bash Explainer (pitfall)%3A declaration-masks-status']);
+    assert.deepStrictEqual(sarif.runs[0].results.map((x: { ruleId: string; level: string }) => [x.ruleId, x.level]), [['declaration-masks-status', 'note'], ['bracket-missing-close', 'error']]);
+    // (An error is no pitfall: its annotation has no "(pitfall)" title, and it comes first.)
+    const gh = run(['--check', '--format', 'github', file]).out.trim().split('\n');
+    assert.deepStrictEqual(gh.map((l) => /^::(\w+) .*line=(\d+),.*title=([^:]*)::/.exec(l)!.slice(1).join(' ')), ['error 5 Bash Explainer%3A bracket-missing-close', 'notice 3 Bash Explainer (pitfall)%3A declaration-masks-status']);
+    // Said with the pitfalls off, in the explanations and in the problems.
+    for (const off of ['notes.pitfalls=false', 'diagnostics.pitfalls=false']) {
+      assert.deepStrictEqual(JSON.parse(run(['--check', '--format', 'json', '--set', off, file]).out).map((x: { code: string }) => x.code), ['bracket-missing-close'], off);
+    }
     assert.strictEqual(run(['--check', '--set', 'diagnostics.ignore=["declaration-masks-status","bracket-missing-close"]', file]).out, '');
+  });
+
+  it('--counts appends the numbers of problems, as $GITHUB_OUTPUT reads them', () => {
+    const file = path.join(dir, 'counts.sh');
+    const out = path.join(dir, 'counts.txt');
+    fs.writeFileSync(file, '#!/bin/bash\n[ -f a\nx = 1\nread line\n');
+    fs.writeFileSync(out, 'before=1\n');
+    assert.strictEqual(run(['--check', '--counts', out, file]).code, 1);
+    assert.strictEqual(run(['--check', '--strict', '--counts', out, '-e', 'x = 1']).code, 1);
+    assert.strictEqual(fs.readFileSync(out, 'utf8'), 'before=1\nerrors=1\nwarnings=1\ninfos=1\npitfalls=2\nfailing=1\nerrors=0\nwarnings=1\ninfos=0\npitfalls=1\nfailing=1\n');
+    assert.match(run(['--counts', out, file]).err, /--counts goes with --check/);
+    const bad = run(['--check', '--counts', path.join(dir, 'no-such-dir', 'c.txt'), '-e', 'ls']);
+    assert.strictEqual(bad.code, 2);
+    assert.match(bad.err, /cannot write/);
   });
 
   it('takes the files after -- as files', () => {
@@ -313,7 +343,12 @@ describe('the command-line tool', function () {
     assert.strictEqual(run(['--bogus']).code, 2);
     assert.strictEqual(run([path.join(dir, 'missing.sh')]).code, 2);
     assert.strictEqual(run([]).code, 2);
-    assert.match(run(['--help']).out, /^Usage: bash-explainer/);
+    const help = run(['--help']).out;
+    assert.match(help, /^Usage: bash-explainer/);
+    // (The GitHub Action reads what the tool can do from its help: --counts, and the exit status on an error.)
+    assert.match(help, /--counts <file>/);
+    assert.match(help, /exit 1 if there is an error\n/);
+    assert.match(help, /is an error \(with --strict, also a warning\)/);
   });
 
   describe('settings', () => {

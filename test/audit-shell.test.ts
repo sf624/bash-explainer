@@ -223,7 +223,7 @@ describe('shell audit fixes', () => {
       const r = runBash(src);
       assert.strictEqual(r.status, 2, src);
       assert.match(r.stderr, /syntax error near unexpected token|unexpected end of file/, src);
-      assert.match(notes(src), /Syntax error: a `;` or a newline is needed before `(then|do)`/, src);
+      assert.match(notes(src), /Error: A `;` or a newline is needed before `(then|do)`/, src);
       assert.doesNotMatch(notes(src), /when it runs|at run time/, src);
     }
     // With the `;`, the same command runs: bash reports the error of `[` / `test`, and we say so.
@@ -239,13 +239,13 @@ describe('shell audit fixes', () => {
 
   it('a missing ; or newline before then / do is a syntax error', () => {
     const note = (src: string, lang: 'ja' | 'en' = 'en') => explain(src, 0, lang).notes.join('\n');
-    assert.match(note('if [ -f a ] then echo x; fi'), /a `;` or a newline is needed before `then`/);
+    assert.match(note('if [ -f a ] then echo x; fi'), /^ⓧ Error: A `;` or a newline is needed before `then`/);
     assert.match(note('for x in a b do echo $x; done'), /before `do`/);
     assert.match(note('while true do echo; done'), /before `do`/);
     assert.match(note('until false do echo; done'), /before `do`/);
     assert.match(note('if a; then b; elif c then d; fi'), /before `then`/);
     assert.match(note('select x in a b do echo; done'), /before `do`/);
-    assert.match(note('if [ -f a ] then echo x; fi', 'ja'), /構文エラー/);
+    assert.match(note('if [ -f a ] then echo x; fi', 'ja'), /^ⓧ エラー: `then` の前に `;` か改行が要る/);
     assert.strictEqual(find('for x in a b do echo $x; done', 'for x in a b do echo $x;').kind, 'error');
     // Valid code, and code still being typed, is not flagged.
     for (const ok of ['echo then', 'for x in a b; do echo then; done', 'if echo then; then b; fi', 'if a', 'for x in a b', 'while true', 'if a; then b; elif c']) {
