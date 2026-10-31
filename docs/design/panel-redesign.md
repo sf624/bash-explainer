@@ -2,7 +2,7 @@
 
 The plan that turns prototype B into real PRs, then the usability test. Agreed with the maintainer on 2026-10-27; revised after an independent review of the plan (PR #418).
 
-Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#PRNUM), started early (decided by the maintainer 2026-10-31), beside the three note levels; P3 on wait for the levels. SB3 comes before P7a.
+Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#543), started early (decided by the maintainer 2026-10-31), beside the three note levels; P3 on wait for the levels. SB3 comes before P7a.
 
 ## 1. Goal
 
@@ -149,7 +149,7 @@ Tests: test/reading.test.ts and test/lists.test.ts against bash (`[[ $x == 1* ]]
 
 Risks: small. The snapshot shows every changed text.
 
-Done (#PRNUM):
+Done (#543):
 
 - Pattern or plain comes from the word model: `plainPatternText(n, model)` (src/semantics/globwords.ts, from `braceWords` of the word model: src/semantics/words.ts is at its length ceiling) gives the text a pattern of `[[ == ]]` or of `case` matches where nothing in it acts as a wildcard once expanded with the values of the model (`plainPattern` of src/semantics/chars.ts) (a quoted `*` does not; `p=1; [[ $x == $p ]]` is plain), and nocasematch is off. src/explain/tests.ts and src/reading.ts (through `ReadingContext.plainPattern`) read it; test/words.test.ts checks it with bash, nocasematch and `[a/b]` included.
 - The operand kinds are `unaryTestOperands` and `binaryTestOperands` in src/dict/syntax.ts, with their texts `testOperandTexts`; src/reading.ts reads them for the operands' rows, and src/explain/tests.ts for `-eq` and its kin (`numericTestNote`, whose regex left the command-reading guard's list).
