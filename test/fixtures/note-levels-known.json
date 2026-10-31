@@ -51,8 +51,7 @@
     {"file":"media/panel.js","fn":"renderLine","kind":"level-style","count":1,"to":"level table","reason":"the squiggle class and the order of overlapping marks, by the level word"}
   ],
   "other": [
-    {"file":"src/explain/line-notes.ts","uses":[{"fn":"statusNotes","kind":"level-literal","count":1,"reason":"the fact kind `pitfall` (FactKind) tells a style check from a plain note; it is not a level"}]},
-    {"file":"src/pitfalls.ts","uses":[{"fn":"pitfallFindings","kind":"level-literal","count":1,"reason":"the fact kind `pitfall` (FactKind) tells a style check from a plain note; it is not a level"}]},
+    {"file":"media/icons.js","uses":[{"fn":"ICONS","kind":"level-map","count":1,"reason":"the table of icon drawings by name (`warning`, `info`, `gear`…): icons, not a map from a level"}]},
     {"file":"media/panel.js","uses":[{"fn":"editable","kind":"level-literal","count":1,"reason":"the class of the input hint under the editor (`hint`), not a level"}]}
   ]
 }

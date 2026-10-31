@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
-import { base, counted as countedAny, enclosing, lineOf, parseSource, type Match as MatchOf } from './scan';
+import { base, counted as countedAny, enclosing, isAllowed, lineOf, parseSource, sourceFiles, type Match as MatchOf } from './scan';
 
 // The scan behind test/note-levels.test.ts (docs/design/sources.md, row 13, stage SA, step SA4): where code names the level of a note
 // (a severity, an icon, a colour, a rank, a mark) without going through the one table that holds them. Today that table is src/messages.ts
@@ -24,9 +24,6 @@ export const ALLOWED: readonly string[] = [
   // The words `error` and `info` there belong to the languages of the embedded programs (jq's `error`, awk's and sed's messages).
   'src/embedded/',
   ...['jq', 'awk', 'sed', 'perlrun', 'yaml', 'regex'].map((n) => `src/examples/${n}.ts`),
-  // The icons by name (`warning`, `info`, `gear`…): a table of drawings, not a map from a level.
-  'media/icons.js',
-  'web/icons.ts',
 ];
 
 /**
@@ -64,7 +61,7 @@ export function scanSource(rel: string, text: string): Match[] {
       const parent = n.parent;
       const isKey = ts.isPropertyAssignment(parent) && parent.name === n;
       const isModule = ts.isImportDeclaration(parent) || ts.isExportDeclaration(parent) || ts.isExternalModuleReference(parent);
-      if ((LEVEL_WORDS.has(n.text) || (n.text === ERROR_WORD && errorIsLevel(n))) && !isKey && !isModule) add(n, ts.isLiteralTypeNode(parent) ? 'level-type' : 'level-literal', n.text);
+      if ((LEVEL_WORDS.has(n.text) || (n.text === ERROR_WORD && errorIsLevel(n))) && !isKey && !isModule && !(n.text === 'pitfall' && isFactKind(n))) add(n, ts.isLiteralTypeNode(parent) ? 'level-type' : 'level-literal', n.text);
       piece(n, n.text);
     } else if (ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n)) {
       piece(n, n.text);
@@ -87,6 +84,16 @@ export function scanSource(rel: string, text: string): Match[] {
   };
   visit(sf);
   return found;
+}
+
+/** Whether a literal is compared with or assigned to a `kind` (`f.kind === 'pitfall'`, `{ kind: 'pitfall' }`): `FactKind` is not a level. */
+export function isFactKind(n: ts.Node): boolean {
+  const p = n.parent;
+  const named = (e: ts.Node): boolean => (ts.isPropertyAccessExpression(e) && e.name.text === 'kind') || (ts.isIdentifier(e) && e.text === 'kind');
+  if (ts.isBinaryExpression(p)) return named(p.left === n ? p.right : p.left);
+  if (ts.isPropertyAssignment(p)) return (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && p.name.text === 'kind';
+  if (ts.isCaseClause(p)) return named((p.parent.parent as ts.SwitchStatement).expression);
+  return false;
 }
 
 /** Whether a literal `'error'` is a level: compared with or assigned to a `severity` or `level`, or one of several level words in a type. */
@@ -119,26 +126,14 @@ export function scanStyle(rel: string, text: string): Match[] {
   return found;
 }
 
-const isAllowed = (rel: string): boolean => ALLOWED.some((a) => (a.endsWith('/') ? rel.startsWith(a) : rel === a));
-
-function filesUnder(dir: string, exts: readonly string[], out: string[] = []): string[] {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) filesUnder(p, exts, out);
-    else if (exts.some((x) => e.name.endsWith(x)) && !e.name.endsWith('.d.ts')) out.push(p);
-  }
-  return out;
-}
-
 /** The matches of every code and style file of the scanned directories outside the allow-list. */
 export function scanAll(): Match[] {
   const out: Match[] = [];
   for (const dir of DIRS) {
-    const root = path.join(base, dir);
-    if (!fs.existsSync(root)) continue;
-    for (const f of filesUnder(root, [...CODE_EXTENSIONS, ...STYLE_EXTENSIONS]).sort()) {
+    // Tracked files only (scan.ts): never a built bundle such as cli/dist/cli.js.
+    for (const f of [...CODE_EXTENSIONS, ...STYLE_EXTENSIONS].flatMap((x) => sourceFiles(dir, x)).filter((x) => !x.endsWith('.d.ts')).sort()) {
       const rel = path.relative(base, f).split(path.sep).join('/');
-      if (isAllowed(rel)) continue;
+      if (isAllowed(ALLOWED, rel)) continue;
       const text = fs.readFileSync(f, 'utf8');
       out.push(...(f.endsWith('.css') ? scanStyle(rel, text) : scanSource(rel, text)));
     }

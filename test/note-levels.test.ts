@@ -14,7 +14,9 @@ import { ALLOWED, counted, scanAll, scanSource, scanStyle, type Kind } from './s
 //   - use `DiagnosticSeverity`, or write a severity as a number (`severity: i.x ? 2 : 3`);
 //   - write a mark by hand (⚠, ⓘ, ℹ) in a string, a template or a regex;
 //   - name a level's style (`level-warning`, `squiggle-info`, `--c-warning`, `editorWarning`, `codicon-info`), in code or in a .css file.
-// Scanned: src/, cli/, web/ and media/ (.ts, .js, .css). test/fixtures/note-levels-known.json lists what they do today, in two parts:
+// Scanned: the tracked files of src/, cli/, web/ and media/ (.ts, .js, .css), never a built bundle such as cli/dist/cli.js. `'pitfall'`
+// compared with or assigned to a `kind` is the fact kind, not a level. Not caught: a level word built in a template or by
+// concatenation, a level in a `Map`, and a map from a level whose keys are computed. test/fixtures/note-levels-known.json lists what they do today, in two parts:
 //   levels  places that decide a level's look or severity again, each `to` the level table, with what they decide.
 //           The list may only shrink: a new entry fails the test, and so does an entry that no longer matches.
 //   other   places that only look like one (a fact kind, a CSS class of something else), a reason for each use.
@@ -56,6 +58,9 @@ describe('note levels guard (docs/design/sources.md, SA4)', () => {
   });
 
   it('leaves out what is not a level', () => {
+    // `FactKind` is not a level: `pitfall` compared with or assigned to a `kind`.
+    assert.deepStrictEqual(found("function f(f, kind) { return f.kind === 'pitfall' || 'pitfall' !== kind || { kind: 'pitfall' } || kind === 'info'; }"), ['level-literal info']);
+    assert.deepStrictEqual(found("function f(x, kind) { switch (kind) { case 'pitfall': return 1; } return x.type === 'pitfall' || { name: 'pitfall' }; }"), ['level-literal pitfall', 'level-literal pitfall']);
     // The syntax tree's and the tokens' `error`, key names alone, near misses of the words, imports, one level key.
     assert.deepStrictEqual(found("function f(n, x) { return n.type === 'error' || tok(n, 'error') || x === 'error' || [1].includes('error') || { kind: 'error' }; }"), []);
     assert.deepStrictEqual(found("import x from 'info'; const a = { info: 1 }; const b = { warning: 1, kind: 2 }; const c = ['warnings', 'information', 'note', 'Warning'];"), []);
@@ -72,6 +77,8 @@ describe('note levels guard (docs/design/sources.md, SA4)', () => {
   });
 
   it('keeps the allow-list to files that exist', () => {
+    // The table of icon drawings is scanned: its one match is listed, not left out by file.
+    assert.ok(!ALLOWED.some((a) => a.includes('icons')));
     for (const a of ALLOWED) {
       if (a.endsWith('/')) assert.ok(fs.statSync(path.join(base, a)).isDirectory(), a);
       else assert.ok(fs.existsSync(path.join(base, a)), `${a} is gone: remove it from ALLOWED`);
