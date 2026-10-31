@@ -138,11 +138,20 @@ export function failsCheck(severity: Severity, pitfall: boolean | undefined, str
   return SEVERITIES[severity].fails && (strict || !pitfall);
 }
 
+/**
+ * The mark that a text which is no note of the catalog yet puts before a failure it states, inside an explanation's
+ * sentence ("…. ⚠ env cannot split this string"). Such texts become catalog facts (docs/design/sources.md, SB3).
+ */
+export const PROSE_MARK = LEVELS.warning.mark;
+
 /** The levels in their order (`rank`), with their keys. */
 export const LEVEL_ORDER: readonly NoteLevel[] = (Object.keys(LEVELS) as NoteLevel[]).sort((a, b) => LEVELS[a].rank - LEVELS[b].rank);
 
 /** The levels that have a colour, in their order. */
 export const COLOURED: readonly NoteLevel[] = LEVEL_ORDER.filter((l) => LEVELS[l].colour);
+
+/** A message without the mark it starts with in the explanations (⚠, ⓘ or ℹ, and an emoji selector after it). */
+export const LEADING_MARK = new RegExp(`^[${LEVEL_ORDER.map((l) => LEVELS[l].mark).join('')}]\\uFE0F?\\s*`, 'u');
 
 /** What the screen reader's summary of a line says of its notes: how many of each level that it counts ("2 warnings"). */
 export function levelCounts(levels: readonly NoteLevel[], lang: Lang): string[] {
@@ -152,12 +161,3 @@ export function levelCounts(levels: readonly NoteLevel[], lang: Lang): string[] 
     return count && n ? [count[lang](n)] : [];
   });
 }
-
-/** A message without the mark it starts with in the explanations (⚠, ⓘ or ℹ, and an emoji selector after it). */
-export const LEADING_MARK = new RegExp(`^[${LEVEL_ORDER.map((l) => LEVELS[l].mark).join('')}]\\uFE0F?\\s*`, 'u');
-
-/**
- * The mark that a text which is no note of the catalog yet puts before a failure it states, inside an explanation's
- * sentence ("…. ⚠ env cannot split this string"). Such texts become catalog facts (docs/design/sources.md, SB3).
- */
-export const PROSE_MARK = LEVELS.warning.mark;
