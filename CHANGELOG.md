@@ -5,6 +5,7 @@
 ### Fixed
 
 - The `~` in the operands of `[`, `test` and `[[ ]]` (`[ -f ~/.bashrc ] && . ~/.bashrc`) and in a command name (`~/bin/foo`) is explained as a tilde expansion, as it is in other arguments. Before, it showed no expansion there.
+- A worked example now follows a first stage whose words hold a backslash, such as `printf "%s\n" b a | sort`, as bash reads them. Before, it showed made-up lines.
 
 ## 0.9.0
 

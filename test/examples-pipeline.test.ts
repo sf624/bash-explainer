@@ -232,6 +232,17 @@ describe('the pipeline example of a line agrees with the tools', () => {
       assert.strictEqual(whole("sort() { cat; }; printf 'b\\na\\n' | \\sort"), undefined, lang);
     }
   });
+  it('knows the words of a first stage with a backslash in double quotes or before a character, as bash reads them', () => {
+    for (const lang of ['en', 'ja'] as const) {
+      const whole = (line: string) => new Analyzer(lang).explainLine(parser.parse(line), 0).examples.find((x) => x.kind === 'pipeline');
+      for (const line of ['printf "%s\\n" b a | sort | uniq -c', 'printf "%d\\n" 3 1 2 | sort -n', 'echo "a\\tb" | cat', 'printf a\\ b | cat', 'printf "%s\\n" "a\\"b" "c\\$d" | sort',
+        'printf "%s\\n" "a\\\\b" "a\\\\\\\\c" | sort']) {
+        const real = lines(run('bash', ['-c', line], { env: { ...process.env, LC_ALL: 'C' } }).stdout.toString());
+        assert.ok(whole(line), `${line} (${lang})`);
+        assert.deepStrictEqual(whole(line)?.sections.at(-1)?.lines, real, `${line} (${lang})`);
+      }
+    }
+  });
   it('runs a name `hash -p` gave a path as bash does: not while hashing is off, and no example where it is relative or may differ', function () {
     this.timeout(30000);
     const C = { ...process.env, LC_ALL: 'C' };

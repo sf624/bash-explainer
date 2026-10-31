@@ -432,7 +432,7 @@ export function commandExampleFor(cx: Explainer, n: SyntaxNode, spec: CommandSpe
 export function inputSource(cx: Explainer, cmd?: SyntaxNode, parse?: ArgvParse, nodes?: SyntaxNode[], spec?: CommandSpec): InputSource {
   const ctx = cx.command!;
   const words = (nodes ?? ctx.nodes).map((a): SourceWord => {
-    const value = literalContent(a)?.text;
+    const value = literalContent(a)?.text ?? staticWordValue(a, false, cx.shell);
     const glob = wordAt(cx, a)?.steps.find((st) => st.kind === 'glob');
     return pipeOf(a) ? { text: a.text, pipe: pipeOf(a), lines: substitutionLines(a, (p, i) => pipedLines(cx, p, i)) } : { value, text: a.text, ...(value === undefined ? { many: 'unknown' as const } : glob && glob.applies !== false ? { many: 'glob' as const } : {}) };
   });
@@ -750,7 +750,8 @@ export function exampleWords(cx: Explainer, args: SyntaxNode[], printed = false)
     if (braced) return braced.map((w) => ({ value: unknown(w) ? undefined : w, text: w }));
     // (A word whose braces expand to words not listed here has no value: `'%s,'{a..c}`.)
     // (Braces the shell does not expand are text, `{a,b}` in dash: the word model's value.)
-    const text = wordBraces(a).length ? staticWordValue(a, false, cx.shell) : literalContent(a)?.text;
+    // (A backslash, in double quotes or before a character, is no literal: `"%s\n"`, `a\ b`; the word model gives its value.)
+    const text = wordBraces(a).length ? staticWordValue(a, false, cx.shell) : literalContent(a)?.text ?? staticWordValue(a, false, cx.shell);
     return [{ value: unknown(a.text) || bracesApply(cx, a) ? undefined : text, text: a.text }];
   });
 }
