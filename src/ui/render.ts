@@ -36,7 +36,7 @@ export const ui = {
     },
     settings: '設定',
     panel: {
-      copy: 'Markdown でコピー', copied: '解説を Markdown としてコピーしました。', expandAll: 'すべて展開', collapseAll: 'すべて折りたたむ',
+      copy: 'Markdown でコピー', copied: '解説を Markdown としてコピーしました。', expandAll: 'すべて展開する', collapseAll: 'すべて折りたたむ',
       reference: '早見表', search: '検索（例: ${、2>&1、-f、grep）', back: '← 解説に戻る', shell: 'シェル', yq: 'yq', auto: '自動',
       editHint: '書き換えられます（結果はその場で更新）', noMatch: '該当なし',
       // (A note's try-it, docs/design/basis.md: the command is for the reader's terminal; the panel never runs it.)

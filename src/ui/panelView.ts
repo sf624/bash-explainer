@@ -36,8 +36,8 @@ export type FromPanel =
   /** The state of the header's fold and quick reference buttons (something folded; the quick reference open): the web page's own tools show the same. */
   | { type: 'header'; folded: boolean; reference: boolean };
 
-/** An icon button of the panel's header: its name (tooltip and accessible name), its icon, and whether it is pressed. */
-export interface HeaderButton { name: string; icon: string; pressed?: boolean }
+/** An icon button of the panel's header: its name (tooltip and accessible name) and its icon. */
+export interface HeaderButton { name: string; icon: string }
 
 /**
  * What the panel remembers per viewer: the list or the tree view, and the step of the tree it shows (1–8: the line

@@ -113,15 +113,10 @@ export const TEXT = {
     paste: 'Paste',
     orDrop: 'or drop a file here',
     pasteRefused: (key: string) => `The browser did not let the page read the clipboard. Press ${key} in the editor to paste.`,
-    // The panel's header (web/panel-head.ts): its tabs, and the words of its tools (their full names, the tooltip and
-    // the accessible name, are the panel's: src/ui/panelHead.ts `panelTools`).
+    // The panel's header (web/panel-head.ts): the tabs' group and the first tab (the quick reference's tab and the tools'
+    // words and names are the panel's: src/ui/panelHead.ts `panelTools`).
     panelTabs: 'Panel',
     tabExplanation: 'Explanation',
-    tabReference: 'Reference',
-    tabReferenceShort: 'Ref',
-    toolCollapse: 'Collapse',
-    toolExpand: 'Expand',
-    toolCopy: 'Copy',
     // The menu's groups.
     menuScript: 'Script',
     menuShare: 'Share',
@@ -254,11 +249,6 @@ export const TEXT = {
     pasteRefused: (key: string) => `ブラウザがクリップボードの読み取りを許可しませんでした。エディタで ${key} を押して貼り付けてください。`,
     panelTabs: 'パネル',
     tabExplanation: '解説',
-    tabReference: '早見表',
-    tabReferenceShort: '早見表',
-    toolCollapse: '折りたたむ',
-    toolExpand: '展開する',
-    toolCopy: 'コピー',
     menuScript: 'スクリプト',
     menuShare: '共有',
     menuPrefs: '表示と言語',
