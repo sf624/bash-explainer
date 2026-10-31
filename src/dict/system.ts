@@ -1,6 +1,6 @@
 import type { CommandSpec, SubcommandSpec } from '../argv/spec';
 import { tx } from '../i18n';
-import { args, byCount, cmd, DIFF_EXTRA_OPERAND, extraOperand, GNU_INFO, operand, OptSpec, persistent, pos } from './types';
+import { args, byCount, cmd, DIFF_EXTRA_OPERAND, extraOperand, GNU_INFO, operand, OptSpec, persistent, pos, SU_LOGIN_SETS } from './types';
 
 // Commands chosen from a survey of shell scripts, Dockerfiles and CI workflows in popular
 // repositories (installers, official Docker images, CI images): the ones most often met that the
@@ -552,7 +552,7 @@ export const system: Record<string, CommandSpec> = {
   su: cmd('別のユーザー（既定は root）になってシェルやコマンドを実行する', 'Run a shell or command as another user (root by default)', [
     // The string runs in the user's shell. util-linux su keeps the environment but HOME, SHELL, USER, LOGNAME and
     // PATH (exported functions too); `-`, `-l` and `--login` start it afresh, but for TERM (su(1)).
-    { names: ['-c', '--command'], text: tx('シェルで指定したコマンドを実行する', 'run the given command with the shell'), value: { name: 'COMMAND', command: { run: 'shell-string', env: 'exported', envWith: { options: ['-', '-l', '--login'], env: 'reset', keeps: ['TERM'] } } } },
+    { names: ['-c', '--command'], text: tx('シェルで指定したコマンドを実行する', 'run the given command with the shell'), value: { name: 'COMMAND', command: { run: 'shell-string', env: 'exported', envWith: { options: ['-', '-l', '--login'], env: 'reset', keeps: ['TERM'], sets: SU_LOGIN_SETS } } } },
     ['-|-l|--login', 'ログインシェルとして（環境を初期化して）', 'as a login shell (fresh environment)'],
     ['-s|--shell', '使うシェル', 'shell to use', 'arg'], ['-m|-p|--preserve-environment', '今の環境変数を引き継ぐ', 'keep the environment'],
     ['-g|--group', '主グループを指定する', 'specify the primary group', 'arg'],

@@ -567,13 +567,19 @@ export interface CommandSlot {
    * (sudo's defaults: `SUDO_KEEPS`, src/dict/types.ts); a name that ends in `*` stands for every name it starts (`LC_*`).
    */
   keeps?: readonly string[];
+  /**
+   * With `reset`: the variables the program sets itself in the command's environment, with values of its own, not the
+   * caller's (sudo's `HOME`, `USER`, `SUDO_USER`: `SUDO_SETS`, src/dict/types.ts). The command has them, whatever the
+   * caller exported.
+   */
+  sets?: readonly string[];
   /** `command`, `builtin`. */
   lookup?: 'no-functions' | 'builtins-only';
   /**
    * With an option among `options`, `env` is this instead (`su -c`: the environment is kept; with `su -l -c`, it
    * starts afresh). (`su -c` only: a value's slot has no alternatives of operands to put this `when` in.)
    */
-  envWith?: { options: string[]; env: 'exported' | 'variables' | 'reset' | 'none'; keeps?: readonly string[] };
+  envWith?: { options: string[]; env: 'exported' | 'variables' | 'reset' | 'none'; keeps?: readonly string[]; sets?: readonly string[] };
   /**
    * The program adds words of its own after the command's arguments when it runs it (`xargs cmd`: the words it reads),
    * so no word of the command is its one argument (`xargs echo --version` prints `--version` and the input). Not so

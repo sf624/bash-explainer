@@ -170,13 +170,13 @@ describe('shell audit fixes', () => {
     assert.strictEqual(spawnSync('bash', ['-c', "f() { eval 'local y'; ( local y ); x=$(local y); x=$(eval 'local y'); }; f; g() { eval 'local y'; }; eval g"]).stderr.toString(), '');
     assert.match(spawnSync('bash', ['-c', "f() { bash -c 'local y'; }; f"]).stderr.toString(), /can only be used in a function/);
     // A trap's action runs later: EXIT and INT after `f` has returned, outside it. RETURN, and ERR while `f` runs,
-    // run it in `f`, but the model does not tell the signals apart, so they get the pitfall too.
+    // run it in `f` (`SlotLink.during`): no pitfall there.
     const traps: [string, string, boolean][] = [
       ["f() { trap 'local y' EXIT; }", 'f', true], ["f() { trap 'local y' INT; }", 'f; kill -INT $$', true],
       ["f() { trap 'local y' RETURN; }", 'f', false], ["f() { trap 'local y' ERR; false; }", 'f', false],
     ];
     for (const [src, run, outside] of traps) {
-      assert.match(explain(src).notes.join(), /can be used only inside a function/, src);
+      assert.strictEqual(/can be used only inside a function/.test(explain(src).notes.join()), outside, src);
       assert.strictEqual(/can only be used in a function/.test(spawnSync('bash', ['-c', `${src}; ${run}`]).stderr.toString()), outside, src);
     }
   });

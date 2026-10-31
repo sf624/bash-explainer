@@ -14,7 +14,7 @@ import { admin } from './admin';
 import { netadmin, SSH_OPTION_VALUES } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
-import { args, ASSIGNMENTS, byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, SUDO_KEEPS, wordTable, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
+import { args, ASSIGNMENTS, byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, DOAS_SETS, SUDO_KEEPS, SUDO_SETS, wordTable, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -1356,9 +1356,9 @@ export const core: Record<string, CommandSpec> = {
   ], {
     parser: 'getopt_long', optionsFirst: true, unknownOption: SUDO_UNKNOWN_OPTION,
     operands: [
-      { when: { option: ['-s', '-i'] }, pattern: [ASSIGNMENTS, runs({ run: 'shell-string', joinsWords: true, escapesWords: true, env: 'reset', keeps: SUDO_KEEPS })] },
+      { when: { option: ['-s', '-i'] }, pattern: [ASSIGNMENTS, runs({ run: 'shell-string', joinsWords: true, escapesWords: true, env: 'reset', keeps: SUDO_KEEPS, sets: SUDO_SETS })] },
       { when: { option: ['-E', '--preserve-env'] }, pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'variables' })] },
-      { pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset', keeps: SUDO_KEEPS })] },
+      { pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset', keeps: SUDO_KEEPS, sets: SUDO_SETS })] },
     ],
   }),
   // env's `-S` splits its value into the command and its first arguments; the operands after it are more arguments.
@@ -1391,7 +1391,7 @@ export const core: Record<string, CommandSpec> = {
     ['-u', '実行するユーザー', 'run as the given user', 'arg'],
     ['-n', 'パスワードを尋ねない（必要なら失敗）', 'never prompt for a password'],
     ['-s', 'ログインシェルでなく、ユーザーのシェルを起動する', 'run the user\'s shell'],
-  ], { optionsFirst: true, operands: [{ pattern: [runs({ run: 'exec', env: 'reset', keeps: DOAS_KEEPS })] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [runs({ run: 'exec', env: 'reset', keeps: DOAS_KEEPS, sets: DOAS_SETS })] }] }),
   nohup: cmd('ログアウト(ハングアップ)してもコマンドが止まらないように実行する', 'Run a command immune to hangups (survives logout)', [
     ...GNU_INFO,
   ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [runs()] }] }),

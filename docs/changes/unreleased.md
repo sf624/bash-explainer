@@ -34,3 +34,12 @@ Fixes found by the panel's prototype (step P2 of [docs/design/panel-redesign.md]
 - `failure-reported-as-success` names a long command by its name (`tar`) rather than cutting it in a word (`tar -czf "$backup" ~/docs 2>/…`).
 - Japanese: the status of an AND or OR list is 「最後に実行したコマンドのもの」 (before, 「最後に実行したもののもの」); `$HOME` is 「ホームディレクトリ」, as in English.
 - `date +%F`: "date as %Y-%m-%d (e.g. 2026-01-31)".
+
+### Warnings that fired where bash runs the line fine
+
+Each case was run in bash 5.2; each warning is still given where bash fails.
+
+- `alias-not-expanded-in-script`: a script run by `#!/bin/bash -i` or `#!/usr/bin/env -S bash -i` is an interactive shell, which expands aliases, so the alias is now explained as expanded. A function of the alias's name (`al() { …; }; alias al=…; al`) runs instead: no warning. After code the explainer does not read (`. ./lib.sh`, `eval "$x"`), which may turn `expand_aliases` on, there is no warning, and the command name says the alias works if that code turns it on.
+- `local-outside-function`: `f() { trap 'local y' RETURN; }` runs `local` in the function when `f` returns; a `DEBUG` or `ERR` trap set in a function fires while it runs too, and so may a trap of a signal not known. No warning there. An `EXIT` or `INT` trap still gets it.
+- `variable-not-passed-by-wrapper`: sudo sets `HOME`, `MAIL`, `SHELL`, `LOGNAME`, `USER`, `PATH` and the `SUDO_*` variables itself (sudoers(5)), doas sets `HOME`, `LOGNAME`, `PATH`, `SHELL`, `USER` and `DOAS_USER`, and `su -l` sets `HOME`, `SHELL`, `USER`, `LOGNAME` and `PATH`. `USER=x; sudo bash -c 'echo $USER'` no longer says that `USER` is not there.
+- `variable-not-exported`: `foo=1; . ./lib.sh; bash -c 'echo $foo'` prints `1` when `lib.sh` exports `foo`. No warning where the script runs code that may declare a variable the explainer does not see (`source`, `eval "$x"`, `export "$1"`), nor where the string itself reads a file (`bash -c '. ./env.sh; echo $foo'`).

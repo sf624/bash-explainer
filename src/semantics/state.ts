@@ -375,7 +375,7 @@ interface ShebangStart { posix: boolean; set: Map<string, 'on' | 'off'>; shopt: 
 
 /**
  * What the shebang starts bash with: the kernel passes the rest of the line as one argument, so `#!/bin/bash -eu`
- * turns on `errexit` and `nounset`, `#!/bin/bash --posix` is POSIX mode, and `#!/bin/bash --posix -e` is an error,
+ * turns on `errexit` and `nounset`, `#!/bin/bash -i` is interactive (it expands aliases), `#!/bin/bash --posix` is POSIX mode, and `#!/bin/bash --posix -e` is an error,
  * not POSIX mode. Through `env -S` (env splits it, as one word `-S`): `bash --posix` (bash reads its long options
  * before the others), `bash -o posix`, `POSIXLY_CORRECT=… bash`, the letters and `-o` names of `set` (`-e -u`,
  * `-o nounset`), the `-O` names of `shopt`, and the other variables assigned (`BASH_COMPAT=42 bash`). Undefined when
@@ -399,6 +399,8 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
       if (SET_LETTERS[letter]) start.set.set(SET_LETTERS[letter], cluster[0] === '-' ? 'on' : 'off');
       else if (letter !== 'o' && letter !== 'O') start.others.push(`${cluster[0]}${letter}`);
       if (`${cluster[0]}${letter}` === '-r') start.restricted = true;
+      // (An interactive shell, `#!/bin/bash -i`, expands aliases, as `bash -i -c` does: still one the allow-list does not have.)
+      if (`${cluster[0]}${letter}` === '-i') start.shopt.set('expand_aliases', 'on');
     }
   };
   // (A long option: POSIX mode, one that changes nothing here, or one the table does not have: `--debugger`.)

@@ -45,7 +45,14 @@ export interface SlotLink {
   readonly kind: 'slot'; readonly slot: CommandSlot; readonly via: string; readonly at: SyntaxNode; readonly assigns: readonly string[];
   /** With `env` `reset`: the variables of the environment it keeps (`CommandSlot.keeps`, or those of `envWith`). */
   readonly keeps?: readonly string[];
+  /** With `env` `reset`: the variables the program sets itself, with values of its own (`CommandSlot.sets`). */
+  readonly sets?: readonly string[];
   readonly unsets?: readonly string[];
+  /**
+   * For a string run later (`CommandSlot.later`, a trap's action): it may also run while the code around the command
+   * that sets it runs, in the same function: a DEBUG, RETURN or ERR trap, or a signal not known here.
+   */
+  readonly during?: true;
   readonly env: NonNullable<CommandSlot['env']>; readonly shell?: ShellKind;
   readonly invocation?: readonly { readonly flag: string; readonly value?: string }[];
 }
@@ -457,17 +464,17 @@ export function ownSubshells(env: ExecEnv, n: SyntaxNode): SubshellLink[] {
 }
 
 /**
- * Whether code in `env` runs in the body of a function: a call link, with no link after it that starts another shell
- * or a program (`f() { bash -c 'local x'; }` runs `local` outside any function; `eval`, `( )` and `$( )` stay in it),
- * or that runs it later (a trap's action: `f() { trap 'local x' EXIT; }` runs it after `f` has returned). A RETURN
- * trap, or an ERR or DEBUG trap that fires while the function runs, does run in it; the link does not say the signal,
- * so such a trap counts as outside too.
+ * Whether code in `env` may run in the body of a function: a call link, with no link after it that starts another
+ * shell or a program (`f() { bash -c 'local x'; }` runs `local` outside any function; `eval`, `( )` and `$( )` stay in
+ * it), or that runs it later (a trap's action: `f() { trap 'local x' EXIT; }` runs it after `f` has returned). A
+ * RETURN trap, or an ERR or DEBUG trap, fires while the function that sets it runs (`SlotLink.during`), so its action
+ * may run in it.
  */
 export function inFunction(env: ExecEnv): boolean {
   for (let i = env.links.length - 1; i >= 0; i--) {
     const l = env.links[i];
     if (l.kind === 'call' || l.kind === 'host') return true;
-    if (l.kind === 'slot' && (l.slot.later || (l.slot.run !== 'current-shell' && l.slot.run !== 'subshell'))) return false;
+    if (l.kind === 'slot' && ((l.slot.later && !l.during) || (l.slot.run !== 'current-shell' && l.slot.run !== 'subshell'))) return false;
   }
   return false;
 }
@@ -581,11 +588,15 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
         const withOption = role.slot.envWith && flags.some((f) => role.slot.envWith!.options.includes(f)) ? role.slot.envWith : undefined;
         const env = withOption ? withOption.env : role.slot.env ?? 'exported';
         const keeps = withOption ? withOption.keeps : role.slot.keeps;
+        const sets = withOption ? withOption.sets : role.slot.sets;
+        // (A trap's action runs when its signals come: DEBUG, RETURN and ERR come while the function that sets it runs.)
+        const signals = role.slot.later ? list.filter((i) => i.role.role === 'operand' && i.role.spec?.type === 'signal').map((i) => i.w.args[i.word].value) : [];
+        const during = signals.some((s) => s === undefined || /^(?:SIG)?(?:DEBUG|RETURN|ERR)$/i.test(s));
         const program = (role.slot.run === 'shell-string' ? p.command.split(' ')[0].split('/').pop()! : '');
         const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : role.slot.shell ?? (!role.slot.joinsWords ? shellFromName(program) : undefined) ?? 'unknown';
         // (The options of a shell started by its name: not those of `su -l -c` or of `watch`. `rbash` is `bash -r`.)
         const invocation = shell && shell !== 'unknown' && !role.slot.shell ? [...(restrictedByName(program) ? [{ flag: '-r' }] : []), ...shellInvocation(all)] : [];
-        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(keeps ? { keeps } : {}), ...(unsets.length ? { unsets } : {}),
+        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(keeps ? { keeps } : {}), ...(sets ? { sets } : {}), ...(unsets.length ? { unsets } : {}), ...(during ? { during: true as const } : {}),
           ...(shell ? { shell } : {}), ...(invocation.length ? { invocation } : {}) });
         if (!split) out.set(w.node(word), inner);
         // (The words a slot joins are those after it that it marks `joined`.)
