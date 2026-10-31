@@ -62,11 +62,6 @@ export interface Level {
   word: Text;
   /** The word follows the level, whatever the kind of the note ("Error:" on a fact, a pitfall or a dialect issue). */
   wordOnEvery?: true;
-  /**
-   * The line fails every time: the note is said whatever `notes.pitfalls` and `diagnostics.pitfalls` say (`said`), and
-   * as a problem it is no pitfall (`DocumentIssue.pitfall`).
-   */
-  fails?: true;
   /** Its name, for a screen reader and the Problems pane: 警告・情報・補足 / Warning, Information, Note. */
   name: Text;
   /** The Codicon that stands for the mark in the panel, the hover and the web page (media/icons.js draws it). */
@@ -98,7 +93,7 @@ const WARNING_LOOK = {
 
 export const LEVELS: Readonly<Record<NoteLevel, Level>> = {
   error: {
-    rank: 0, mark: 'ⓧ', word: { ja: 'エラー: ', en: 'Error: ' }, wordOnEvery: true, fails: true, name: { ja: 'エラー', en: 'Error' },
+    rank: 0, mark: 'ⓧ', word: { ja: 'エラー: ', en: 'Error: ' }, wordOnEvery: true, name: { ja: 'エラー', en: 'Error' },
     ansi: '31', bold: true, severity: 'error', ...WARNING_LOOK,
     count: { ja: (n) => `エラー ${n} 件`, en: (n) => `${n} error${n === 1 ? '' : 's'}` },
   },
@@ -165,6 +160,15 @@ export function failsCheck(severity: Severity, strict: boolean): boolean {
 }
 
 /**
+ * Whether a note of `level` says that the line fails every time (an error): its problem fails `--check` without
+ * `--strict`, the note is said whatever `notes.pitfalls` and `diagnostics.pitfalls` say (`said`), and as a problem it
+ * is no pitfall (`DocumentIssue.pitfall`).
+ */
+export function alwaysFails(level: NoteLevel): boolean {
+  return SEVERITIES[LEVELS[level].severity].fails === 'always';
+}
+
+/**
  * The mark that a text which is no note of the catalog yet puts before a failure it states, inside an explanation's
  * sentence ("…. ⚠ env cannot split this string"). Such texts become catalog facts (docs/design/sources.md, SB3).
  */
@@ -176,7 +180,7 @@ export const LEVEL_ORDER: readonly NoteLevel[] = (Object.keys(LEVELS) as NoteLev
 /** The levels that have a colour, in their order. */
 export const COLOURED: readonly NoteLevel[] = LEVEL_ORDER.filter((l) => LEVELS[l].colour);
 
-/** A message without the mark it starts with in the explanations (⚠, ⓘ or ℹ, and an emoji selector after it). */
+/** A message without the mark of its level it starts with in the explanations (and an emoji selector after it). */
 export const LEADING_MARK = new RegExp(`^[${LEVEL_ORDER.map((l) => LEVELS[l].mark).join('')}]\\uFE0F?\\s*`, 'u');
 
 /** What the screen reader's summary of a line says of its notes: how many of each level that it counts ("2 warnings"). */

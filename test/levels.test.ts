@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { COLOURED, failsCheck, FADED, LEADING_MARK, LEVEL_ORDER, levelCounts, LEVELS, problemLevel, SEVERITIES, severityOf } from '../src/levels';
+import { alwaysFails, COLOURED, failsCheck, FADED, LEADING_MARK, LEVEL_ORDER, levelCounts, LEVELS, problemLevel, SEVERITIES, severityOf } from '../src/levels';
 
 // The level table (src/levels.ts): what each output shows of a level comes from it (docs/design/note-levels.md).
 describe('the level table', () => {
@@ -26,6 +26,8 @@ describe('the level table', () => {
 
   it('fails --check on an error, on a warning only with --strict, never on an info', () => {
     assert.deepStrictEqual([failsCheck('error', false), failsCheck('warning', false), failsCheck('warning', true), failsCheck('info', true), failsCheck(FADED, true)], [true, false, true, false, false]);
+    // (A note fails every time where its problem fails without --strict: one fact, in `SEVERITIES`.)
+    assert.deepStrictEqual(LEVEL_ORDER.filter(alwaysFails), ['error']);
   });
 
   it('counts the levels the screen reader\'s summary says', () => {

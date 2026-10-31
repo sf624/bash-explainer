@@ -74,9 +74,13 @@ describe('documents without VS Code', () => {
       assert.deepStrictEqual(issues.map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]), [['crlf', 'error', 0, 13, 17]]);
       assert.match(issues[0].message, lang === 'en' ? /Windows line endings/ : /CRLF/);
     }
-    // With a shebang, an error too; with neither a shebang nor a keyword before a CR, a warning (`bash file` runs it).
-    const level = (text: string) => documentIssues(script(text), 'en', {}).map((i) => i.severity);
-    assert.deepStrictEqual([level('#!/bin/sh\r\necho hi\r\n'), level('echo hi\r\necho fi\r\n'), level('{ echo hi; }\r\n')], [['error'], ['warning'], ['error']]);
+    // With a CR on the `#!` line, an error too (run as a program, the interpreter is not found); with a `#!` line that
+    // ends in LF and no keyword before a CR, or with no shebang, a warning: every way runs it (test/error-level.test.ts).
+    const said = (text: string, lang: 'en' | 'ja' = 'en') => documentIssues(script(text), lang, {}).map((i) => `${i.severity} ${/`fi\\r`|`#!`|`echo hi`/.exec(i.message)?.[0]}`);
+    assert.deepStrictEqual(
+      [said('#!/bin/sh\r\necho hi\r\n'), said('#!/bin/sh\necho hi\r\n'), said('echo hi\r\necho fi\r\n'), said('{ echo hi; }\r\n'), said('#!/bin/sh\r\nif true; then :; fi\r\n')],
+      [['error `#!`'], ['warning `echo hi`'], ['warning `echo hi`'], ['error `fi\\r`'], ['error `fi\\r`']]);
+    assert.deepStrictEqual([said('#!/bin/sh\r\n', 'ja'), said('#!/bin/sh\necho hi\r\n', 'ja')], [['error `#!`'], ['warning `echo hi`']]);
     assert.deepStrictEqual(documentIssues(doc, 'en', { forced: 'dash' }).map((i) => i.code), ['crlf']);
     assert.deepStrictEqual(documentIssues(doc, 'en', {}, ['crlf']), []);
     // A file-level directive silences it, on any line (the warning itself is usually on line 1); and so does a comment after the code.

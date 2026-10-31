@@ -12,7 +12,7 @@ import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, fie
 import { networkPath, networkTarget } from './dict/syntax';
 import { bracesInContext } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { FEATURES, featureWorks, LETTER, type RealShell, type Shell, works } from './shellfeatures';
+import { type Feature, FEATURES, featureWorks, LETTER, type RealShell, type Shell, works } from './shellfeatures';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
@@ -293,7 +293,8 @@ function unsupported(lang: Lang, id: string, body: string): Note {
 export interface Issue {
   id: string;
   /**
-   * `unsupported`: fails in the shell (an error); `behaviour`: works differently (information, "Portability");
+   * `unsupported`: fails in the shell (an error); `behaviour`: works differently, or, in sh, is not POSIX but dash and
+   * busybox ash run it (information, "Portability");
    * `parse`: zsh-only syntax (a plain fact, which is still a problem: the line is not explained).
    */
   kind: 'unsupported' | 'behaviour' | 'parse';
@@ -318,6 +319,19 @@ function jaJoin(a: string, b: string): string {
   return a + (gap ? ' ' : '') + b;
 }
 
+/** The common `/bin/sh` implementations that lack a feature: dash (Debian's and Ubuntu's) and busybox ash. */
+function shFails(f: Feature): RealShell[] {
+  return (['dash', 'ash'] as RealShell[]).filter((sh) => !works(f, sh));
+}
+
+/**
+ * A feature that is not POSIX sh, but that dash and busybox ash run (`local`, `echo -n`, `read -p`, `set -E`): in a sh
+ * script, information with the word "Portability", not an error (docs/design/three-levels.md, section 10, item 2).
+ */
+function portableInSh(id: string, shell: Shell): boolean {
+  return shell === 'sh' && shFails(FEATURES[id]).length === 0;
+}
+
 function featureMessage(id: string, shell: Shell, lang: Lang): string | undefined {
   const s = pick(lang);
   const f = FEATURES[id];
@@ -325,7 +339,7 @@ function featureMessage(id: string, shell: Shell, lang: Lang): string | undefine
   const alt = f.altJa ? s(`${jaJoin('代わりに', f.altJa)}。`, ` Instead, ${f.altEn}.`) : '';
   if (shell === 'sh') {
     // Name the common /bin/sh implementations it breaks on.
-    const fails = (['dash', 'ash'] as RealShell[]).filter((sh) => !works(f, sh)).map((sh) => SHELL_NAMES[sh]);
+    const fails = shFails(f).map((sh) => SHELL_NAMES[sh]);
     return s(
       `${jaJoin(label, 'は POSIX sh にない書き方です')}${fails.length ? `（${fails.join('・')} では動きません）` : '（dash・busybox ash では動きますが、POSIX にはありません）'}。${alt}`,
       `${label} is not POSIX sh${fails.length ? ` (it fails in ${fails.join(' and ')})` : ' (dash and busybox ash accept it, but POSIX does not have it)'}.${alt}`,
@@ -446,13 +460,15 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
       });
     }
   }
-  for (const f of collectBehaviours(tree.root, from, to)) {
-    const body = behaviourMessage(f.id, shell, lang);
-    if (body) issues.push({ id: f.id, kind: 'behaviour', note: marked(lang, PROBLEM_LEVELS.behaviour, body, { heading: PORTABILITY, code: f.id }), node: f.node, place: f.node });
-  }
-  for (const f of collectFeatures(tree.root, from, to)) {
-    const body = featureMessage(f.id, shell, lang);
-    if (body) issues.push({ id: f.id, kind: 'unsupported', note: unsupported(lang, f.id, body), node: f.node, place: f.node });
+  // (A construct that works differently, and in sh one that dash and busybox ash run, is "Portability"; one the shell lacks, an error.)
+  const found = [
+    ...collectBehaviours(tree.root, from, to).map((f) => ({ f, kind: 'behaviour' as const, body: behaviourMessage(f.id, shell, lang) })),
+    ...collectFeatures(tree.root, from, to).map((f) => ({ f, kind: portableInSh(f.id, shell) ? 'behaviour' as const : 'unsupported' as const, body: featureMessage(f.id, shell, lang) })),
+  ];
+  for (const { f, kind, body } of found) {
+    if (!body) continue;
+    const note = kind === 'behaviour' ? marked(lang, PROBLEM_LEVELS.behaviour, body, { heading: PORTABILITY, code: f.id }) : unsupported(lang, f.id, body);
+    issues.push({ id: f.id, kind, note, node: f.node, place: f.node });
   }
   return issues;
 }

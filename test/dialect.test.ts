@@ -216,7 +216,12 @@ describe('dialect notes', () => {
   it('words the note for POSIX sh and for a specific shell', () => {
     const notes = (src: string, shell: Parameters<typeof dialectNotes>[2]) => dialectNotes(parser.parse(src), 0, shell, 'en');
     assert.deepStrictEqual(notes('[[ -f x ]]', 'sh'), ['ⓧ Error: `[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.']);
-    assert.deepStrictEqual(notes('f() { local v; }', 'sh'), ['ⓧ Error: `local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it).']);
+    // In sh, an error only where dash or busybox ash lacks it; what both run (`local`, `echo -n`, `read -p`, `set -E`) is
+    // information, "Portability" (three-levels.md, section 10, item 2; the table of `works` is checked in each shell above).
+    assert.deepStrictEqual(notes('f() { local v; }', 'sh'), ['ⓘ Portability: `local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it).']);
+    const kinds = (src: string) => dialectIssues(parser.parse(src), 'sh', 'en').map((i) => `${i.id} ${i.kind} ${i.note.level}`);
+    assert.deepStrictEqual(kinds('f() { local v; }\necho -n x\nread -p "? " a\nset -E'), ['local behaviour info', 'echoN behaviour info', 'readP behaviour info', 'errtrace behaviour info']);
+    assert.deepStrictEqual(kinds('[[ -f x ]]\nx=(1 2)'), ['dbracket unsupported error', 'array unsupported error']);
     assert.deepStrictEqual(notes('cmd &> log', 'dash')[0], 'ⓧ Error: `&>` (redirect stdout and stderr together) is not available in dash. Instead, write `>file 2>&1` (dash reads `cmd &> file` as "run in the background, then an empty redirection").');
     assert.deepStrictEqual(notes('[[ -f x ]]', 'ksh'), []);
     assert.deepStrictEqual(notes('[[ -f x ]]', 'bash'), []);
