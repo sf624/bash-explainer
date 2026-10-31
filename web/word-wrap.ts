@@ -85,7 +85,9 @@ const wordMarks = ViewPlugin.fromClass(class {
     if (fresh) this.runs = RangeSet.of(fresh.map(([from, to]) => runMark.range(from, to)));
     else if (u.docChanged) this.runs = this.runs.map(u.changes);
     if (u.geometryChanged) u.view.requestMeasure(this.measure);
-    if (fresh || resized || u.viewportChanged) this.decorations = this.build(u.view, u.view.visibleRanges);
+    // (`viewportMoved`, not `viewportChanged`: CodeMirror sets the latter on every insertion, which would mark every
+    // line in view on each key press.)
+    if (fresh || resized || u.viewportMoved) this.decorations = this.build(u.view, u.view.visibleRanges);
     else if (u.docChanged) {
       // A key press: the lines it changed only, the others' marks moved with the text.
       const changed: { from: number; to: number }[] = [];

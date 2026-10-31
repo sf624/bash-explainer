@@ -11,25 +11,38 @@ export const CARD_CAP = 420;
 export const CARD_GAP = 4;
 /** Below this room under the line, a card goes above it when there is more room there. */
 const ENOUGH = 200;
+/** A card needs this room at least: with less on both sides of the line, it goes over the line instead. */
+export const CARD_MIN = 120;
 
 export interface CardPlace {
-  /** The card goes above the line's first row. */
+  /** The card goes above the line's first row (or, over the line, above the hovered row). */
   readonly above: boolean;
+  /**
+   * The line has no room for a card on either side (a line taller than its room): the card goes by the hovered row,
+   * over the line's other rows, on the side with more room.
+   */
+  readonly overLine: boolean;
   /** Its height at most, in pixels. */
   readonly maxHeight: number;
 }
 
 /**
- * The card of a line whose rows span `line`, in a room `space` (the editor's pane, inside the window), with a window
- * `windowHeight` high: below the line when the room there holds a whole card or a good part of one, else on the side
- * with more room; at most `CARD_CAP` and half the window high, and never past its room.
+ * The card of a line whose rows span `line`, hovered on its row `row`, in a room `space` (the editor's pane, inside the
+ * window), with a window `windowHeight` high: below the line when the room there holds a whole card or a good part of
+ * one, else on the side with more room; at most `CARD_CAP` and half the window high, and never past its room. When
+ * neither side has `CARD_MIN` (a long line in a short pane), it goes by the hovered row instead, over the line's other
+ * rows, at least `CARD_MIN` high: a sliver of a card helps no one.
  */
-export function cardPlace(line: Box, space: Box, windowHeight: number): CardPlace {
+export function cardPlace(line: Box, row: Box, space: Box, windowHeight: number): CardPlace {
   const cap = Math.min(CARD_CAP, Math.round(windowHeight / 2));
-  const below = space.bottom - line.bottom - 2 * CARD_GAP;
-  const above = line.top - space.top - 2 * CARD_GAP;
+  const room = (of: Box) => ({ below: space.bottom - of.bottom - 2 * CARD_GAP, above: of.top - space.top - 2 * CARD_GAP });
+  const { below, above } = room(line);
+  if (Math.max(below, above) < Math.min(CARD_MIN, cap)) {
+    const by = room(row);
+    return { above: by.above > by.below, overLine: true, maxHeight: Math.round(Math.min(cap, Math.max(CARD_MIN, by.above, by.below))) };
+  }
   const under = below >= Math.min(cap, ENOUGH) || below >= above;
-  return { above: !under, maxHeight: Math.max(0, Math.round(Math.min(cap, under ? below : above))) };
+  return { above: !under, overLine: false, maxHeight: Math.round(Math.min(cap, under ? below : above)) };
 }
 
 /** Where the pointer was, and when (milliseconds). */
@@ -39,18 +52,14 @@ export interface PointerAt { readonly x: number; readonly y: number; readonly ti
 export const CARD_GRACE = 600;
 
 /**
- * Whether a card stays while the pointer is off its part (decision 10): the pointer left the part at `left`, and is now
- * at `now`, still between the part and the card (inside the line's rows, or in the gap to the card), not moving away
- * from the card, within `CARD_GRACE`. So the card is not lost to the words of the line's later rows on the way to it,
- * as a menu keeps its submenu.
+ * Whether a card stays while the pointer is off its part (decision 10): the pointer was last on the part at `left`, on
+ * the line's row `row`, and is now at `now`. It stays only once the pointer has left that row towards the card (into
+ * the line's later rows, or the gap to the card), has come closer to it, and within `CARD_GRACE`. So the card is not lost
+ * to the words of the line's later rows on the way to it, as a menu keeps its submenu; a move along the part's row, or
+ * away from the card, is the editor's as usual (another word's card, a selection).
  */
-export function towardCard(left: PointerAt, now: PointerAt, line: Box, card: Box): boolean {
+export function towardCard(left: PointerAt, now: PointerAt, row: Box, line: Box, card: Box): boolean {
   if (now.time - left.time > CARD_GRACE) return false;
   const below = card.top >= line.bottom - 1;
-  // The band between the part's row and the card: the line's rows, and the gap to the card.
-  const top = below ? line.top : card.bottom;
-  const bottom = below ? card.top : line.bottom;
-  if (now.y < top || now.y > bottom) return false;
-  // Moving towards the card, or resting (a few pixels of jitter).
-  return below ? now.y >= left.y - 2 : now.y <= left.y + 2;
+  return below ? now.y > row.bottom && now.y <= card.top && now.y > left.y + 2 : now.y < row.top && now.y >= card.bottom && now.y < left.y - 2;
 }

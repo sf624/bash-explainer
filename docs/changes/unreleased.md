@@ -16,7 +16,7 @@ The setting **Wrap long lines** (`editor.wrap`) is now on by default. Before, it
 
 ### Hover cards on the web page stay off the line
 
-A hover card on the web page now sits under the whole line it explains, or above it when there is no room under it, at the part's place; it never covers a row of the line, also when the line wraps. Moving the pointer from a word to its card, across the line's later rows, keeps the card. A card is at most half the window high (and at most 420 px); a longer card scrolls inside, with the pointer, and with the keyboard after `Ctrl+K Ctrl+I` twice. Before, a card sat above the word and could cover the line's earlier rows.
+A hover card on the web page now sits under the whole line it explains, or above it when there is no room under it, at the part's place; it never covers a row of the line, also when the line wraps. A line too tall for any room above or below it (a long one-liner in a low window) is the exception: its card goes by the row under the pointer, as before. Moving the pointer from a word to its card, across the line's later rows, keeps the card. A card is at most half the window high (and at most 420 px); a longer card scrolls inside, with the pointer, and with the keyboard after `Ctrl+K Ctrl+I` twice. Before, a card sat above the word and could cover the line's earlier rows.
 
 ### Japanese wording on the web page
 

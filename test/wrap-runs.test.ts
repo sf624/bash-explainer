@@ -8,7 +8,7 @@ import type { FileKind } from '../src/document-setup';
 import { hostKind } from '../src/hosts';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { fields, type SyntaxNode } from '../src/syntax/tree';
-import { CARD_CAP, CARD_GRACE, cardPlace, towardCard } from '../src/ui/cardPlace';
+import { CARD_CAP, CARD_GRACE, CARD_MIN, cardPlace, towardCard } from '../src/ui/cardPlace';
 import { blankRuns, type Run, wrapRuns } from '../src/ui/wrapRuns';
 import { corpus } from './support/corpus';
 
@@ -98,6 +98,16 @@ describe('where a long line may wrap (src/ui/wrapRuns.ts)', () => {
     assert.deepStrictEqual(blankRuns(''), []);
   });
 
+  it('keeps a substitution on one line as one run, which breaks at every blank when too wide (a follow-up of C1a)', () => {
+    // Today's fallback, pinned: the words inside `$( )` are not runs of their own yet, so a run too wide for a row
+    // breaks at its blanks, those inside quotes too (docs/design/chrome-redesign.md, C1a, "Follow-up").
+    const line = `result=$(curl -s "https://example.com/a b" | jq -r '.items[] | select(.name == "x y") | .id')`;
+    const runs = wrapRuns(docOf(line))[0];
+    assert.deepStrictEqual(runs, [[0, line.length]]);
+    const parts = blankRuns(line).map(([a, b]) => line.slice(a, b));
+    assert.ok(parts.includes(`'.items[]`) && parts.includes(`"x`), JSON.stringify(parts));
+  });
+
   it('never breaks inside a word bash reads, over the corpus', function () {
     this.timeout(120000);
     const { files, snippets } = corpus();
@@ -132,31 +142,51 @@ describe('where a long line may wrap (src/ui/wrapRuns.ts)', () => {
 
 describe('where a hover card goes (src/ui/cardPlace.ts)', () => {
   const space = { top: 100, bottom: 900 };
+  /** A row of the line, for the lines that have room: it does not count there. */
+  const row = { top: 200, bottom: 220 };
   it('goes under the whole line, at most CARD_CAP and half the window high, and no higher than the room', () => {
-    assert.deepStrictEqual(cardPlace({ top: 200, bottom: 260 }, space, 1000), { above: false, maxHeight: CARD_CAP });
-    assert.deepStrictEqual(cardPlace({ top: 200, bottom: 260 }, space, 600), { above: false, maxHeight: 300 });
-    assert.deepStrictEqual(cardPlace({ top: 500, bottom: 560 }, space, 2000), { above: false, maxHeight: 332 });
+    assert.deepStrictEqual(cardPlace({ top: 200, bottom: 260 }, row, space, 1000), { above: false, overLine: false, maxHeight: CARD_CAP });
+    assert.deepStrictEqual(cardPlace({ top: 200, bottom: 260 }, row, space, 600), { above: false, overLine: false, maxHeight: 300 });
+    assert.deepStrictEqual(cardPlace({ top: 500, bottom: 560 }, row, space, 2000), { above: false, overLine: false, maxHeight: 332 });
   });
   it('goes above the line when the room below is short and the room above larger', () => {
-    assert.deepStrictEqual(cardPlace({ top: 700, bottom: 780 }, space, 1000), { above: true, maxHeight: CARD_CAP });
-    assert.deepStrictEqual(cardPlace({ top: 300, bottom: 780 }, space, 1000), { above: true, maxHeight: 192 });
-    // Short on both sides: the larger.
-    assert.deepStrictEqual(cardPlace({ top: 150, bottom: 760 }, space, 1000), { above: false, maxHeight: 132 });
-    assert.deepStrictEqual(cardPlace({ top: 100, bottom: 900 }, space, 1000), { above: false, maxHeight: 0 });
+    assert.deepStrictEqual(cardPlace({ top: 700, bottom: 780 }, row, space, 1000), { above: true, overLine: false, maxHeight: CARD_CAP });
+    assert.deepStrictEqual(cardPlace({ top: 300, bottom: 780 }, row, space, 1000), { above: true, overLine: false, maxHeight: 192 });
+    // Short on both sides, but room for CARD_MIN on one: the larger.
+    assert.deepStrictEqual(cardPlace({ top: 150, bottom: 760 }, row, space, 1000), { above: false, overLine: false, maxHeight: 132 });
+    // A window so low that half of it is under CARD_MIN: that half is enough.
+    assert.deepStrictEqual(cardPlace({ top: 150, bottom: 760 }, row, space, 200), { above: false, overLine: false, maxHeight: 100 });
   });
-  it('stays while the pointer moves from the part towards the card, for a short time', () => {
+  it('goes by the hovered row, over the line, when the line leaves under CARD_MIN on both sides', () => {
+    // A line taller than its room (a long one-liner in a low pane): on the side of the row with more room.
+    const tall = { top: 100, bottom: 900 };
+    assert.deepStrictEqual(cardPlace(tall, { top: 400, bottom: 420 }, space, 1000), { above: false, overLine: true, maxHeight: CARD_CAP });
+    assert.deepStrictEqual(cardPlace(tall, { top: 800, bottom: 820 }, space, 1000), { above: true, overLine: true, maxHeight: CARD_CAP });
+    // Little room by the row too: still CARD_MIN high, never a sliver.
+    const low = { top: 100, bottom: 300 };
+    assert.deepStrictEqual(cardPlace({ top: 110, bottom: 290 }, { top: 200, bottom: 220 }, low, 420), { above: true, overLine: true, maxHeight: CARD_MIN });
+    assert.deepStrictEqual(cardPlace({ top: 110, bottom: 290 }, { top: 110, bottom: 130 }, low, 420), { above: false, overLine: true, maxHeight: 162 });
+  });
+  it('stays while the pointer leaves the part\'s row towards the card, for a short time', () => {
     const line = { top: 100, bottom: 160 };
+    const part = { top: 100, bottom: 120 };
     const left = { x: 50, y: 110, time: 0 };
     const below = { top: 164, bottom: 400 };
-    assert.ok(towardCard(left, { x: 80, y: 140, time: 100 }, line, below));
-    assert.ok(towardCard(left, { x: 80, y: 109, time: 100 }, line, below), 'resting');
-    assert.ok(!towardCard(left, { x: 80, y: 100, time: 100 }, line, below), 'up, away from the card');
-    assert.ok(!towardCard(left, { x: 80, y: 140, time: CARD_GRACE + 1 }, line, below), 'too late');
-    assert.ok(!towardCard(left, { x: 80, y: 90, time: 100 }, line, below), 'above the line');
+    assert.ok(towardCard(left, { x: 80, y: 140, time: 100 }, part, line, below), 'down across the later rows');
+    assert.ok(towardCard(left, { x: 80, y: 164, time: 100 }, part, line, below), 'at the card');
+    assert.ok(!towardCard(left, { x: 200, y: 115, time: 100 }, part, line, below), 'along the part\'s row: another word');
+    assert.ok(!towardCard(left, { x: 80, y: 109, time: 100 }, part, line, below), 'resting on the row');
+    assert.ok(!towardCard({ x: 50, y: 119, time: 0 }, { x: 50, y: 120.5, time: 100 }, part, line, below), 'not closer yet');
+    assert.ok(!towardCard(left, { x: 80, y: 100, time: 100 }, part, line, below), 'up, away from the card');
+    assert.ok(!towardCard(left, { x: 80, y: 140, time: CARD_GRACE + 1 }, part, line, below), 'too late');
+    assert.ok(!towardCard(left, { x: 80, y: 170, time: 100 }, part, line, below), 'past the card\'s top');
     const above = { top: 0, bottom: 96 };
+    const last = { top: 140, bottom: 160 };
     const up = { x: 50, y: 150, time: 0 };
-    assert.ok(towardCard(up, { x: 60, y: 98, time: 50 }, line, above));
-    assert.ok(!towardCard(up, { x: 60, y: 155, time: 50 }, line, above), 'down, away from the card');
-    assert.ok(!towardCard(up, { x: 60, y: 170, time: 50 }, line, above), 'under the line');
+    assert.ok(towardCard(up, { x: 60, y: 120, time: 50 }, last, line, above), 'up across the earlier rows');
+    assert.ok(!towardCard(up, { x: 60, y: 145, time: 50 }, last, line, above), 'along the part\'s row');
+    assert.ok(!towardCard({ x: 50, y: 141, time: 0 }, { x: 60, y: 139.5, time: 50 }, last, line, above), 'not closer yet');
+    assert.ok(!towardCard(up, { x: 60, y: 90, time: 50 }, last, line, above), 'past the card\'s bottom');
+    assert.ok(!towardCard(up, { x: 60, y: 170, time: 50 }, last, line, above), 'under the line');
   });
 });

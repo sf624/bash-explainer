@@ -10,9 +10,9 @@ import type { Browser, Page } from 'playwright-core';
 import type { Lang } from '../src/i18n';
 import { openDocument } from '../src/document-setup';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { CARD_CAP } from '../src/ui/cardPlace';
+import { CARD_CAP, CARD_MIN } from '../src/ui/cardPlace';
 import { wrapRuns } from '../src/ui/wrapRuns';
-import { openSite, until } from './support/site';
+import { cursorToLine, openSite, until } from './support/site';
 
 const sample = fs.readFileSync(path.join(__dirname, 'fixtures', 'sample.sh'), 'utf8');
 /** Line 8 of the sample, which the design's screenshots wrap (0-based 7). */
@@ -163,14 +163,15 @@ describe('the web page: long lines wrap between shell words, and hover cards go 
       const on = await typing(page);
       const drawn = await page.locator('.cm-content > .cm-line').count();
       assert.ok(drawn < 200, `${drawn} lines drawn`);
-      // Each key press marks the lines in view (and the tree that follows them once more), never the script.
-      assert.ok(on.perKey <= 2 * drawn, `${on.perKey} lines marked per key press, ${drawn} drawn`);
+      // Each key press marks the line it changed (and the tree that follows a few key presses, the lines in view once
+      // more), never the lines in view on each key, nor the script.
+      assert.ok(on.perKey <= 5, `${on.perKey} lines marked per key press, ${drawn} drawn`);
       // The time is reported beside the editor without the wrap (as on main), not checked: CI's machines vary.
       await page.evaluate("localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.editor.wrap': false }))");
       await page.reload();
       await until('the sample', () => page.locator('.cm-content > .cm-line').count(), (n) => n > 20);
       const off = await typing(page);
-      console.log(`      (wrap on: ${on.perKey.toFixed(0)} lines marked per key press, ${drawn} drawn; to the next frame ${on.p50.toFixed(1)} ms, p95 ${on.p95.toFixed(1)} ms; off: ${off.p50.toFixed(1)} ms, p95 ${off.p95.toFixed(1)} ms)`);
+      console.log(`      (wrap on: ${on.perKey.toFixed(1)} lines marked per key press, ${drawn} drawn; to the next frame ${on.p50.toFixed(1)} ms, p95 ${on.p95.toFixed(1)} ms; off: ${off.p50.toFixed(1)} ms, p95 ${off.p95.toFixed(1)} ms)`);
     } finally {
       await page.context().close();
     }
@@ -260,16 +261,122 @@ describe('the web page: long lines wrap between shell words, and hover cards go 
     }
   });
 
+  /** A page of 1280 px, the sample's line 8 wrapped, the pointer away from it and no card. */
+  async function desk(): Promise<Page> {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await until('the runs', () => page.locator('.cm-bx-run').count(), (n) => n > 0);
+    await page.mouse.move(5, 300);
+    return page;
+  }
+
+  /** Moves the pointer from `a` to `b` in `steps` moves, as a hand does. */
+  const glide = async (page: Page, a: { x: number; y: number }, b: { x: number; y: number }, steps = 8) => {
+    for (let i = 1; i <= steps; i++) await page.mouse.move(a.x + ((b.x - a.x) * i) / steps, a.y + ((b.y - a.y) * i) / steps);
+  };
+
+  it('shows the card of another part of the line the pointer moves to and rests on, on its row or a later one', async () => {
+    const page = await desk();
+    try {
+      const rows = await rowsOf(page, LINE);
+      assert.ok(rows.starts.length >= 2, JSON.stringify(rows));
+      for (const word of ['sort', 'exit']) {
+        await page.mouse.move(5, 300);
+        await until('no card', () => tip(page).count(), (n) => n === 0);
+        const from = await pointAt(page, LINE, 'grep');
+        await page.mouse.move(from.x, from.y);
+        await tipBox(page);
+        const first = await tip(page).innerText();
+        // Along the row to `sort`, or down across the rows to `exit` (on a later row): there it rests.
+        const to = await pointAt(page, LINE, word);
+        await glide(page, from, to);
+        const text = await until(`the card of ${word}`, () => tip(page).innerText().catch(() => ''), (t) => t !== '' && t !== first);
+        assert.ok(text.includes(word), `${word}: ${text.slice(0, 200)}`);
+      }
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  it('selects the span a drag crosses, across the line\'s rows, with a card open', async () => {
+    const page = await desk();
+    try {
+      const from = await pointAt(page, LINE, 'grep');
+      await page.mouse.move(from.x, from.y);
+      await tipBox(page);
+      const to = await pointAt(page, LINE, 'exit');
+      // From the left of `grep` straight down to `exit`'s row (towards the card, as a pointer going to it would), then
+      // along that row to the right of `exit`'s `x`, quickly (within the way to the card's time).
+      const start = { x: from.x - 4, y: from.y };
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      assert.strictEqual(await tip(page).count(), 1, 'the card is open as the drag starts');
+      await glide(page, start, { x: start.x, y: to.y }, 4);
+      await glide(page, { x: start.x, y: to.y }, { x: to.x + 20, y: to.y }, 8);
+      assert.strictEqual(await tip(page).count(), 0, 'the card closed');
+      await page.mouse.up();
+      const selected = await page.evaluate('getSelection().toString()') as string;
+      assert.ok(selected.startsWith('grep') && /\|\| exi/.test(selected.replace(/\s+/g, ' ')), JSON.stringify(selected));
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  it('gives a line taller than any room a card of CARD_MIN at least, by the hovered row', async () => {
+    const words = Array.from({ length: 150 }, (_, i) => `word${i}`).join(' ');
+    for (const [width, height] of [[1280, 420], [640, 700]] as const) {
+      const ctx = await browser.newContext({ viewport: { width, height }, locale: 'en-US' });
+      const page = await ctx.newPage();
+      try {
+        await page.goto(base);
+        await until('the runs', () => page.locator('.cm-bx-run').count(), (n) => n > 0);
+        await page.locator('.cm-content').focus();
+        await page.keyboard.press('Control+A');
+        await page.keyboard.insertText(`echo ${words}`);
+        await until('one line', () => page.locator('.cm-content > .cm-line').count(), (n) => n === 1);
+        await until('the runs', () => page.locator('.cm-bx-run').count(), (n) => n > 100);
+        const pane = (await page.locator('.cm-editor').boundingBox())!;
+        const line = await rowsOf(page, 0);
+        assert.ok(line.bottom - line.top > pane.height - 2 * CARD_MIN, `${width}×${height}: the line ${line.bottom - line.top} px, the pane ${pane.height} px`);
+        /** The card's height, the height it would have whole, and the room it was given. */
+        const size = (sel: string) => page.locator(sel).evaluate((e) => ({
+          height: e.getBoundingClientRect().height, whole: e.scrollHeight,
+          room: parseFloat((e.closest('.cm-editor') as unknown as { style: { getPropertyValue(n: string): string } }).style.getPropertyValue('--bx-hover-room')),
+        }));
+        // The pointer on a word in view, at the top of the line.
+        await page.keyboard.press('Control+Home');
+        await page.mouse.move(5, 5);
+        const p = await pointAt(page, 0, 'echo');
+        await page.mouse.move(p.x + 2, p.y);
+        await tipBox(page);
+        const hovered = await size('.cm-tooltip-hover');
+        assert.ok(hovered.room >= CARD_MIN && hovered.height >= Math.min(CARD_MIN, hovered.whole) - 1, `${width}×${height}, the pointer: ${JSON.stringify(hovered)}`);
+        // The keyboard: Ctrl+K Ctrl+I at the cursor.
+        await page.mouse.move(5, 5);
+        await page.keyboard.press('Control+Home');
+        await page.keyboard.press('Control+K');
+        await page.keyboard.press('Control+I');
+        await until('the card', () => page.locator('.cm-bx-hover-pinned').count(), (n) => n === 1);
+        const pinned = await size('.cm-bx-hover-pinned');
+        assert.ok(pinned.room >= CARD_MIN && pinned.height >= Math.min(CARD_MIN, pinned.whole) - 1, `${width}×${height}, the keyboard: ${JSON.stringify(pinned)}`);
+        console.log(`      (${width}×${height}: the line ${Math.round(line.bottom - line.top)} px in a pane of ${Math.round(pane.height)} px; the card ${Math.round(hovered.height)} px, from the keyboard ${Math.round(pinned.height)} px)`);
+      } finally {
+        await ctx.close();
+      }
+    }
+  });
+
   it('scrolls a long card inside, with the keyboard too', async () => {
-    const ctx = await browser.newContext({ viewport: { width: 700, height: 420 }, locale: 'en-US' });
+    // A low window: a card is at most half of it high. (Side by side, the editor's pane is the window's height, so line 8
+    // has room under it; a lower pane leaves the line no room, and the card goes by the row, as tested above.)
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 420 }, locale: 'en-US' });
     const page = await ctx.newPage();
     try {
       await page.goto(base);
       await until('the runs', () => page.locator('.cm-bx-run').count(), (n) => n > 0);
       // The cursor on `grep` of line 8, from the keyboard; Ctrl+K Ctrl+I shows its card, again puts the focus in it.
-      await page.locator('.cm-content').focus();
-      await page.keyboard.press('Control+Home');
-      for (let i = 0; i < LINE; i++) await page.keyboard.press('ArrowDown');
+      await cursorToLine(page, LINE + 1);
       await page.keyboard.press('Control+K');
       await page.keyboard.press('Control+I');
       const card = page.locator('.cm-bx-hover-pinned');
