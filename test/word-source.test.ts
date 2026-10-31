@@ -33,6 +33,14 @@ describe('word source guard (docs/design/word-source.md, section 4)', () => {
     assert.deepStrictEqual(found("function f(n) { return ['word', 'number'].includes(n.type); }"), ['node-type word', 'node-type number']);
     assert.deepStrictEqual(found("const R = /^(word|number|command)$/; function f(n) { return R.test(n.type); }"), ['node-type word', 'node-type number']);
     assert.deepStrictEqual(found("function f(n) { return /^(?:word|number)$/.test(n.type); }"), ['node-type word', 'node-type number']);
+    // A list of node types handed to a query of the tree: inline, through a variable, or to a function of the file that takes `types`.
+    assert.deepStrictEqual(found("function f(r) { return descendants(r, ['word', 'command']); }"), ['node-type word']);
+    assert.deepStrictEqual(found("function f(r) { const types = ['string', 'x']; return descendants(r, types); }"), ['node-type string']);
+    assert.deepStrictEqual(found("const on = (types: string[]) => g(types); function f(r) { return on(['number']); }"), ['node-type number']);
+    assert.deepStrictEqual(found("function f(r) { return onLine(r, ['concatenation'], 1); }"), ['node-type concatenation']);
+    // A part of a node type, and a variable that holds one.
+    assert.deepStrictEqual(found("function f(n) { return n.type.endsWith('_substitution') || n.type.startsWith('simple'); }"), ['node-type endsWith:_substitution', 'node-type startsWith:simple']);
+    assert.deepStrictEqual(found("function f(n) { const t = n.type; switch (t) { case 'word': return 1; } return t === 'string'; }"), ['node-type word', 'node-type string']);
     assert.deepStrictEqual(found("function f(a) { return staticWordValue(a) ?? m.hasGlob(a); }"), ['helper staticWordValue', 'helper hasGlob']);
     assert.deepStrictEqual(found('const G = /[*?[]/; const H = /[\\s*?[]/; const N = new RegExp("[*?]");'), ['glob-class /[*?[]/', 'glob-class /[\\s*?[]/', 'glob-class /[*?]/']);
     assert.deepStrictEqual(found("import { IFS_WHITESPACE } from './chars'; const w = IFS_WHITESPACE + ' \\t\\n';"), ['ifs IFS_WHITESPACE', "ifs ' \\t\\n'"]);
@@ -41,6 +49,7 @@ describe('word source guard (docs/design/word-source.md, section 4)', () => {
   it('leaves out what is not a word fact', () => {
     // A node type compared with something that is not a `.type`; a container that no `.type` is tested against.
     assert.deepStrictEqual(found("function f(n, s) { return s === 'word' || n.kind === 'word' || ['word', 'number'].includes(s); }"), []);
+    assert.deepStrictEqual(found("function f(n, r) { return n.type.endsWith('redirect') || descendants(r, ['command']) || helper(r, ['word']); }"), []);
     assert.deepStrictEqual(found("function f(n) { return n.type === 'command' || /[a-z*]/.test(n.text) || /[?]/.test(n.text); }"), []);
     assert.strictEqual(globClass('[\\]*?]'), true);
     assert.strictEqual(globClass('\\[*?\\]'), false);
