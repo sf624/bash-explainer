@@ -1004,6 +1004,7 @@
     const shown = pre.classList.contains('wrap') && rows && pre.getClientRects().length > 0;
     lineWidth = shown ? pre.clientWidth : -1;
     if (!shown) {
+      rows?.removeAttribute('data-marks');
       setLineFold(false);
       return;
     }
@@ -1012,7 +1013,10 @@
     const wide = runs.filter((r) => r.getBoundingClientRect().width > room + 0.5);
     wide.forEach((r) => r.classList.add('wide'));
     const row = parseFloat(getComputedStyle(rows).lineHeight);
-    setLineFold(rows.getBoundingClientRect().height > 3 * row + 1);
+    const height = rows.getBoundingClientRect().height;
+    // (A mark ↪ for each row after the first, drawn by the style from this attribute: see `.rows::before`.)
+    rows.dataset.marks = '\n\u21AA'.repeat(Math.max(0, Math.round(height / row) - 1));
+    setLineFold(height > 3 * row + 1);
   }
 
   /** Whether the line box has more than three rows: then it folds to three, and a click or a key opens it whole. */
