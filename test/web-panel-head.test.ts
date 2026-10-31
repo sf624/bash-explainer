@@ -90,7 +90,7 @@ describe('the web page: the panel\'s header', function () {
         await until('the tree', () => panel().locator('#reading').isVisible(), (v) => v);
         await same('Reading');
         await page.locator('#collapse').click();
-        await until('folded', async () => (await page.locator('#collapse').getAttribute('aria-label')) ?? '', (t) => t === (lang === 'en' ? 'Expand all' : 'すべて展開'));
+        await until('folded', async () => (await page.locator('#collapse').getAttribute('aria-label')) ?? '', (t) => t === (lang === 'en' ? 'Expand all' : 'すべて展開する'));
         await same('folded');
         await page.locator('#tab-ref').click();
         await until('the reference', () => panel().locator('#reference').isVisible(), (v) => v);

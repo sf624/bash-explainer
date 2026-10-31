@@ -85,7 +85,7 @@ export class PanelHead {
     const t = TEXT[lang];
     const tools = panelTools(lang);
     // (Each tab's word in full and short, the form showing one: its accessible name is the full word.)
-    const words: [HTMLElement | undefined, string, string][] = [[this.tabs[0], t.tabExplanation, t.tabExplanation], [this.tabs[1], t.tabReference, t.tabReferenceShort]];
+    const words: [HTMLElement | undefined, string, string][] = [[this.tabs[0], t.tabExplanation, t.tabExplanation], [this.tabs[1], tools.ref.open.word, tools.ref.open.short]];
     for (const [el, full, short] of words) {
       if (!el) continue;
       el.setAttribute('aria-label', full);
@@ -101,7 +101,8 @@ export class PanelHead {
     // The quick reference has no view: the view control keeps its room, unseen, and so does the fold.
     this.head.classList.toggle('reference', this.reference);
     const toggle = this.folded ? tools.toggle.unfold : tools.toggle.fold;
-    for (const [id, b, word, other] of [['collapse', toggle, this.folded ? t.toolExpand : t.toolCollapse, this.folded ? t.toolCollapse : t.toolExpand], ['copy-md', tools.copy, t.toolCopy, '']] as const) {
+    const otherToggle = this.folded ? tools.toggle.fold : tools.toggle.unfold;
+    for (const [id, b, other] of [['collapse', toggle, otherToggle.word], ['copy-md', tools.copy, '']] as const) {
       const el = document.getElementById(id);
       if (!el) continue;
       el.setAttribute('aria-label', b.name);
@@ -109,7 +110,7 @@ export class PanelHead {
       const svg = el.querySelector('svg');
       if (svg) drawIcon(svg, b.icon);
       // The word, drawn over the other word the button may say (unseen): its box keeps the width of the longer.
-      const shown = Object.assign(document.createElement('span'), { textContent: word });
+      const shown = Object.assign(document.createElement('span'), { textContent: b.word });
       const size = Object.assign(document.createElement('span'), { className: 'vc-size', textContent: other });
       document.getElementById(`${id}-word`)?.replaceChildren(shown, ...(other ? [size] : []));
     }

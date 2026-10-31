@@ -1152,7 +1152,7 @@
     $('tree').hidden = tree;
     $('examples').hidden = tree;
     $('reading').hidden = !tree || !reading;
-    if (labels.expandAll) updateToggle();
+    if (tools) updateToggle();
     markLine(null);
     requestAnimationFrame(syncLine);
   }

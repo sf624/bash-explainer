@@ -2,7 +2,7 @@
 // forms of the view control and of the web page's panel header, widest first, and the names and icons of the tools.
 // The hosts measure the forms and take the first that fits (test/web-panel-head.test.ts, test/panel-header.test.ts).
 import * as assert from 'assert';
-import { panelHeaderForms, panelTools, viewControlForms } from '../src/ui/panelHead';
+import { panelHeaderForms, panelTools, ToolButton, viewControlForms } from '../src/ui/panelHead';
 import { ViewControl, viewControl } from '../src/ui/panelView';
 
 describe('the panel header as data', () => {
@@ -52,13 +52,27 @@ describe('the panel header as data', () => {
     ]);
   });
 
-  it('names the tools for each state, in both languages, with their Codicons', () => {
+  it('names the tools for each state, in both languages, with their Codicons and the short word the web page shows', () => {
     assert.deepStrictEqual(panelTools('en'), {
-      toggle: { fold: { name: 'Collapse all', icon: 'collapse-all' }, unfold: { name: 'Expand all', icon: 'expand-all' } },
-      ref: { open: { name: 'Quick reference', icon: 'book', pressed: false }, close: { name: '← Back to the explanation', icon: 'arrow-left', pressed: true } },
-      copy: { name: 'Copy as Markdown', icon: 'copy' },
+      toggle: { fold: { name: 'Collapse all', icon: 'collapse-all', word: 'Collapse' }, unfold: { name: 'Expand all', icon: 'expand-all', word: 'Expand' } },
+      ref: { open: { name: 'Quick reference', icon: 'book', word: 'Reference', short: 'Ref' }, close: { name: '← Back to the explanation', icon: 'arrow-left' } },
+      copy: { name: 'Copy as Markdown', icon: 'copy', word: 'Copy' },
     });
     const ja = panelTools('ja');
-    assert.deepStrictEqual([ja.toggle.fold.name, ja.toggle.unfold.name, ja.ref.open.name, ja.ref.close.name, ja.copy.name], ['すべて折りたたむ', 'すべて展開', '早見表', '← 解説に戻る', 'Markdown でコピー']);
+    assert.deepStrictEqual([ja.toggle.fold.name, ja.toggle.unfold.name, ja.ref.open.name, ja.ref.close.name, ja.copy.name], ['すべて折りたたむ', 'すべて展開する', '早見表', '← 解説に戻る', 'Markdown でコピー']);
+    assert.deepStrictEqual([ja.toggle.fold.word, ja.toggle.unfold.word, ja.ref.open.word, ja.ref.open.short, ja.copy.word], ['折りたたむ', '展開する', '早見表', '早見表', 'コピー']);
+  });
+
+  it('keeps each tool\'s visible word in its accessible name, in both languages (WCAG 2.5.3, Label in Name: voice control says the word it sees)', () => {
+    for (const lang of ['en', 'ja'] as const) {
+      const tools = panelTools(lang);
+      const buttons: [string, ToolButton][] = [['fold', tools.toggle.fold], ['unfold', tools.toggle.unfold], ['reference', tools.ref.open], ['copy', tools.copy]];
+      for (const [id, b] of buttons) {
+        assert.ok(b.word.length > 0, `${lang} ${id}: has a word`);
+        assert.ok(b.name.toLowerCase().includes(b.word.toLowerCase()), `${lang} ${id}: the name "${b.name}" contains the word "${b.word}"`);
+      }
+      // (The tab's short word is a part of its word, so the name holds it too.)
+      assert.ok(tools.ref.open.word.toLowerCase().includes(tools.ref.open.short.toLowerCase()), `${lang}: "Ref" is a part of "Reference"`);
+    }
   });
 });
