@@ -1,6 +1,6 @@
 // The contexts of a word (manual 3.5, with the exceptions of 3.2.5.2, 3.4, 3.6, 4.2, 6.5 and 6.7): which expansions a word
 // undergoes where it is. The word model (src/semantics/words.ts) reads them, and gives them again.
-import { field, nameText, type SyntaxNode } from '../syntax/tree';
+import { field, fields, nameText, type SyntaxNode } from '../syntax/tree';
 
 /** Where a word is: its context decides which expansions it undergoes. */
 export type WordContext =
@@ -70,18 +70,50 @@ export const CONTEXTS: Readonly<Record<WordContext, ContextRule>> = {
 
 /**
  * The word `word` (`wordOf`), where it is an assignment given to a declaration builtin (`local x=$1`, `export y="$HOME"`,
- * `declare`, `readonly`, `typeset`; not behind `command`): bash expands it as an assignment (manual 4.2, `declare`):
- * its name and `=` (or `+=`) as written (`head`), then its value (`value`; none for `x=`), expanded as an
- * assignment's value is (`assignment-value`: tildes after `=` and `:`, not split nor globbed), but brace-expanded:
- * `x={a,b}` gives the words `x=a` and `x=b`. `unread` for a subscript in the name, which bash expands too
- * (`a[$i]=1`), and for an array (`b=(1 2)`), which the builtin reads itself. Undefined for any other word.
+ * `declare`, `readonly`, `typeset`; not behind `command`). This is the one place that says how bash reads such a word
+ * (manual 4.2, `declare`; 3.5.1). Bash brace-expands the whole word first (`braces`: whether that step applies; a brace
+ * of the value is one of this word, `declarationOf`). Where braces change the word, each word they give is an argument
+ * like any other (split, globbed, a tilde only at its start: `local x={a,b}$z` with `z='p  q'` declares `x` and `q`;
+ * `export X=~{a,b}` gives `X=~b`): undefined, as for any other word, and `assignmentHead` starts it. Else bash
+ * expands it as an assignment: its name and `=` (or `+=`) as written (`head`), then its value (`value`; none for
+ * `x=`), expanded as an assignment's value is (`assignment-value`: tildes after `=` and `:`, not split nor globbed).
+ * `unread` for a subscript in the name, which bash expands too (`a[$i]=1`), for an array (`b=(1 2)`), which the
+ * builtin reads itself, and where it is not known whether braces apply. Undefined for any other word.
  */
-export function declaredWord(word: { nodes: readonly SyntaxNode[]; context: WordContext } | undefined): { head: string; value?: SyntaxNode } | 'unread' | undefined {
+export function declaredWord(word: { nodes: readonly SyntaxNode[]; context: WordContext } | undefined, braces: boolean | 'unknown'): { head: string; value?: SyntaxNode } | 'unread' | undefined {
+  const head = assignmentHead(word);
+  if (head === undefined || head === 'unread') return head;
+  if (braces === true) return undefined;
+  if (braces === 'unknown') return 'unread';
+  const v = field(word!.nodes[0], 'value');
+  return { head, ...(v ? { value: v } : {}) };
+}
+
+/**
+ * The head of a declaration's assignment word (`declaredWord`): its name and `=` (or `+=`) as written; `unread` for a
+ * subscript in the name or an array value, undefined for any other word.
+ */
+export function assignmentHead(word: { nodes: readonly SyntaxNode[]; context: WordContext } | undefined): string | 'unread' | undefined {
   const a = word?.nodes[0];
   if (word?.context !== 'declaration-argument' || a!.type !== 'variable_assignment') return undefined;
   const name = field(a!, 'name')!;
   const v = field(a!, 'value');
   if (name.type !== 'variable_name' || v?.type === 'array') return 'unread';
-  const head = nameText(name) + a!.text.slice(name.endIndex - a!.startIndex, (v?.startIndex ?? a!.endIndex) - a!.startIndex);
-  return { head, ...(v ? { value: v } : {}) };
+  return nameText(name) + a!.text.slice(name.endIndex - a!.startIndex, (v?.startIndex ?? a!.endIndex) - a!.startIndex);
+}
+
+/**
+ * The parts of the word of `nodes` that bash reads: a declaration's assignment word (`x={a,b}$z`, `declaredWord`) has
+ * a head of plain text, and the parts of its value (none for `x=`); any other word, its nodes.
+ */
+export const ownParts = (nodes: readonly SyntaxNode[]): readonly SyntaxNode[] => (nodes[0].type === 'variable_assignment' ? fields(nodes[0], 'value') : nodes);
+
+/**
+ * The declaration's assignment word whose value is the word `word` (`{a,b}` of `local x={a,b}`), in the context
+ * bash reads it in (`declaredWord`): it brace-expands the whole word, so a brace of the value is one of that word.
+ * Undefined for any other word.
+ */
+export function declarationOf(word: { nodes: readonly SyntaxNode[]; context: WordContext }): { nodes: SyntaxNode[]; context: WordContext } | undefined {
+  const a = word.nodes[0].parent!;
+  return word.context === 'assignment-value' && a.field === 'argument' ? { nodes: [a], context: 'declaration-argument' } : undefined;
 }

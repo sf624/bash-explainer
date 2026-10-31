@@ -1,8 +1,8 @@
 // The texts of what a program receives (src/argvline.ts; docs/design/panel-redesign.md, P4): the placeholders for
 // values known only when the line runs, and what the parts bash takes out of a simple command do. Part of the message
 // catalog (src/messages.ts): each text in ja and en, Japanese after docs/japanese-style.md.
-import { fdName } from './dict/syntax';
-import { tx, type Lang, type Text } from './i18n';
+import { fdName, specialVariables, wellKnownVariables } from './dict/syntax';
+import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
 import type { HoleSource } from './semantics/fieldshape';
 
@@ -14,25 +14,11 @@ const CODE_SHOWN = 30;
 const code = (c: string): string => codeSpan(shorten(c, CODE_SHOWN));
 
 /**
- * What a parameter is, short, where its value is known only when the line runs: the special parameters (manual 3.4.2),
- * and the variables bash sets or the environment usually has whose value is a thing with a name. Another variable is
- * "value of `$x`".
+ * What a parameter is, short, where its value is known only when the line runs: the noun of a special parameter
+ * (manual 3.4.2) or of a variable bash sets or the environment usually has (`VariableText.noun`, src/dict/syntax.ts).
+ * Another variable is "value of `$x`".
  */
-const PARAMETERS: Readonly<Record<string, Text>> = {
-  '?': tx('直前のコマンドの終了ステータス', 'exit status of the last command'),
-  $: tx('シェルのプロセスID', 'process ID of the shell'),
-  '!': tx('最後のバックグラウンドジョブのプロセスID', 'process ID of the last background job'),
-  '#': tx('引数の個数', 'number of arguments'),
-  0: tx('シェルかスクリプトの名前', 'name of the shell or script'),
-  '-': tx('現在のシェルオプションの文字', 'letters of the current shell options'),
-  USER: tx('現在のユーザー名', 'current user name'),
-  LOGNAME: tx('現在のユーザー名', 'current user name'),
-  HOME: tx('ホームディレクトリ', 'home directory'),
-  PWD: tx('カレントディレクトリ', 'current directory'),
-  OLDPWD: tx('直前のカレントディレクトリ', 'previous directory'),
-  HOSTNAME: tx('ホスト名', 'host name'),
-  RANDOM: tx('乱数', 'random number'),
-};
+const nounOf = (name: string): Text | undefined => (specialVariables[name] ?? wellKnownVariables[name])?.noun;
 
 /** The tilde prefixes whose value is that of a variable (manual 3.5.2): `~`, `~+`, `~-`. */
 const TILDES: Readonly<Record<string, string>> = { '': 'HOME', '+': 'PWD', '-': 'OLDPWD' };
@@ -51,7 +37,7 @@ export function placeholderSaid(lang: Lang, h: HoleSource | { kind: 'names' | 'w
       if ((h.elements === 'joined' || plain) && args) return ja ? '引数をつなげた文字列' : 'the arguments joined';
       if (h.elements === 'joined' && /^[A-Za-z_]\w*$/.test(h.name)) return ja ? `${code(h.name)} の要素をつなげた文字列` : `the elements of ${code(h.name)} joined`;
       if (plain && /^[1-9]\d*$/.test(h.name)) return ja ? `${h.name}番目の引数` : `argument ${h.name}`;
-      const known = plain ? PARAMETERS[h.name] : undefined;
+      const known = plain ? nounOf(h.name) : undefined;
       if (known) return known[lang];
       return plain ? (ja ? `${c} の値` : `value of ${c}`) : ja ? `${c} の結果` : `what ${c} gives`;
     }
@@ -61,7 +47,7 @@ export function placeholderSaid(lang: Lang, h: HoleSource | { kind: 'names' | 'w
     case 'translation': return ja ? `${c} の翻訳` : `translation of ${c}`;
     case 'tilde': {
       const variable = TILDES[h.user];
-      if (variable) return PARAMETERS[variable][lang];
+      if (variable) return nounOf(variable)![lang];
       return /^[+-]?\d/.test(h.user) ? (ja ? `${c} の結果` : `what ${c} gives`) : ja ? `${code(h.user)} のホームディレクトリ` : `home directory of ${code(h.user)}`;
     }
     case 'names': return ja ? `${c} に一致する各ファイル名` : `each file name matching ${c}`;

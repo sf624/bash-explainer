@@ -234,15 +234,24 @@ for (const op of ['/', '//', '/#', '/%']) {
   };
 }
 
-export const specialVariables: Record<string, Text> = wordTable({
-  '?': tx('直前に実行したコマンドの終了ステータス（0 は成功）', 'Exit status of the last command (0 = success)'),
+/**
+ * A variable's text, and where its value is a thing with a name, that name as a short noun (`noun`): what a
+ * placeholder of what a program receives says for it (`‹current user name›`, src/messages-argv.ts).
+ */
+export type VariableText = Text & { noun?: Text };
+/** The text `text` of a variable whose value the noun `ja`, `en` names (`VariableText`). */
+const named = <T extends Text>(text: T, ja: string, en: string): T & { noun: Text } => ({ ...text, noun: tx(ja, en) });
+
+export const specialVariables: Record<string, VariableText> = wordTable({
+  '?': named(tx('直前に実行したコマンドの終了ステータス（0 は成功）', 'Exit status of the last command (0 = success)'), '直前のコマンドの終了ステータス', 'exit status of the last command'),
   '@': tx('全ての位置パラメータ。`"$@"` とすると各引数を別々の単語として展開', 'All positional parameters; `"$@"` expands each one as a separate word'),
   '*': tx('全ての位置パラメータ。`"$*"` は IFS の先頭文字で連結した1つの文字列になる', 'All positional parameters; `"$*"` joins them into one string with the first IFS char'),
-  '#': tx('位置パラメータ（引数）の個数', 'Number of positional parameters'),
-  '$': tx('現在のシェルのプロセスID', 'Process ID of the current shell'),
-  '!': tx('最後にバックグラウンド実行したプロセスのID', 'PID of the most recent background job'),
-  '0': tx('スクリプト名（またはシェル名）', 'Name of the script or shell'),
-  '-': tx('今有効なシェルオプションの文字（`set -e` の後なら `e`、対話シェルなら `i` など）', 'The letters of the shell options in effect (`e` after `set -e`, `i` in an interactive shell…)'),
+  '#': named(tx('位置パラメータ（引数）の個数', 'Number of positional parameters'), '引数の個数', 'number of arguments'),
+  // (Of the shell, not of a subshell it is in: manual 3.4.2. The explanation says so in a subshell.)
+  '$': named(tx('シェルのプロセス ID', 'Process ID of the shell'), 'シェルのプロセス ID', 'process ID of the shell'),
+  '!': named(tx('最後にバックグラウンドで実行したジョブのプロセス ID', 'Process ID of the most recent background job'), '最後にバックグラウンドで実行したジョブのプロセス ID', 'process ID of the most recent background job'),
+  '0': named(tx('スクリプト名（またはシェル名）', 'Name of the script or shell'), 'スクリプトかシェルの名前', 'name of the script or shell'),
+  '-': named(tx('今有効なシェルオプションの文字（`set -e` の後なら `e`、対話シェルなら `i` など）', 'The letters of the shell options in effect (`e` after `set -e`, `i` in an interactive shell…)'), '今有効なシェルオプションの文字', 'letters of the shell options in effect'),
   '_': tx('直前のコマンドの最後の引数', 'Last argument of the previous command'),
 });
 
@@ -252,15 +261,16 @@ export const specialVariables: Record<string, Text> = wordTable({
  * src/semantics/vars.ts), and a few the environment usually has (`USER`, `EDITOR`). The common ones come first: the
  * quick reference lists them in this order.
  */
-export const wellKnownVariables: Record<string, Text> = wordTable({
-  HOME: tx('ホームディレクトリ。引数なしの `cd` の移動先で、`~` の値にもなる', 'Home directory: where `cd` with no argument goes, and the value of `~`'),
+export const wellKnownVariables: Record<string, VariableText> = wordTable({
+  HOME: named(tx('ホームディレクトリ。引数なしの `cd` の移動先で、`~` の値にもなる', 'Home directory: where `cd` with no argument goes, and the value of `~`'), 'ホームディレクトリ', 'home directory'),
   PATH: tx('コマンドを探すディレクトリの一覧（`:` 区切り。空の項目はカレントディレクトリ）', 'Colon-separated list of directories searched for commands (an empty entry is the current directory)'),
-  PWD: tx('`cd` が設定するカレントディレクトリ', 'Current working directory, as set by `cd`'),
-  OLDPWD: tx('`cd` が設定する直前のカレントディレクトリ（`cd -` の移動先）', 'Previous working directory, as set by `cd` (where `cd -` goes)'),
+  PWD: named(tx('`cd` が設定するカレントディレクトリ', 'Current working directory, as set by `cd`'), 'カレントディレクトリ', 'current directory'),
+  OLDPWD: named(tx('`cd` が設定する直前のカレントディレクトリ（`cd -` の移動先）', 'Previous working directory, as set by `cd` (where `cd -` goes)'), '直前のカレントディレクトリ', 'previous directory'),
   IFS: tx('単語分割と `read` が区切りに使う文字の一覧（既定は空白・タブ・改行）', 'Characters word splitting and `read` split on (by default space, tab and newline)'),
-  USER: tx('ログインユーザー名', 'Current user name'),
+  USER: named(tx('現在のユーザー名', 'Current user name'), '現在のユーザー名', 'current user name'),
+  LOGNAME: named(tx('現在のユーザー名（ログインしたときに設定される）', 'Current user name, as set at login'), '現在のユーザー名', 'current user name'),
   SHELL: tx('ユーザーのログインシェルのフルパス（環境になければ bash が設定する）', "Full path of the user's login shell (bash sets it when the environment has none)"),
-  RANDOM: tx('参照するたびに 0〜32767 の乱数になる', 'A random integer 0–32767 on each reference'),
+  RANDOM: named(tx('参照するたびに 0〜32767 の乱数になる', 'A random integer 0–32767 on each reference'), '乱数', 'random number'),
   LINENO: tx('実行中の行の番号（スクリプトや関数の中の行）', 'Number of the line running now, in the script or function'),
   SECONDS: tx('シェルの起動からの経過秒数', 'Seconds since the shell started'),
   BASH_SOURCE: based(tx(
@@ -281,7 +291,7 @@ export const wellKnownVariables: Record<string, Text> = wordTable({
   REPLY: tx('変数名を渡さない `read` が読んだ行（前後の空白も残る）と、`select` で入力された行', 'The line `read` reads when given no name (with its leading and trailing spaces), and the line typed to `select`'),
   OPTARG: tx('`getopts` が処理中のオプションの引数', 'Argument of the option being processed by `getopts`'),
   OPTIND: tx('`getopts` が次に処理する引数の位置（最初は 1）', 'Index of the next argument for `getopts` (1 at the start)'),
-  HOSTNAME: tx('ホスト名', 'Host name'),
+  HOSTNAME: named(tx('ホスト名', 'Host name'), 'ホスト名', 'host name'),
   UID: tx('実ユーザー ID', 'Real user ID'),
   EUID: tx('実効ユーザー ID。0 なら root', 'Effective user ID, 0 for root'),
   TMPDIR: tx('bash（やほかのプログラム）が一時ファイルを作るディレクトリ', 'Directory where bash (and other programs) make temporary files'),

@@ -13,7 +13,7 @@ import { severalFields } from './globwords';
 import { attribute, option } from './shellstate';
 import type { StateModel } from './state';
 import { changedByBash } from './vars';
-import { type Fields, holedWords, integerParameter, modelValues, patternOfChars, type Piece, type ValueSource, wordFields, wordMeaning, type WordMeaning, wordOf } from './words';
+import { type Fields, holedWords, integerParameter, modelValues, patternOfChars, type Piece, type ValueSource, wordFields, wordMeaning, type WordMeaning } from './words';
 import { declaredWord } from './wordcontexts';
 
 /**
@@ -240,6 +240,15 @@ function patternText(atoms: readonly Atom[], fill: string, open = fill): string 
 
 /** Whether a hole may hold a glob character, or a `\\` that quotes the character after it. */
 const globby = (h: Hole): boolean => !h.quoted && (h.kind === 'text' || h.kind === 'elements');
+/**
+ * Whether the elements of `"$@"` in the word `w` are fields of their own: where its context splits (manual 3.5.7, 3.4.2),
+ * also with an empty IFS or no unquoted part; joined where the context does not split it (`x="$@"`), or POSIX mode
+ * does not (a redirection target).
+ */
+const elementsSplitIn = (w: WordMeaning): boolean => {
+  const step = w.steps.find((s) => s.kind === 'split')!;
+  return !(step.applies === false && (step.why === 'context' || step.why === 'posix-mode'));
+};
 
 /** Whether a field may be a pattern: a glob character of its own, or an unquoted hole that may hold one. */
 function mayBePattern(atoms: readonly Atom[]): boolean {
@@ -361,8 +370,7 @@ function shapeOfWord(w: WordMeaning, pieces: readonly Piece[], glob: boolean, sp
   // (Bash quotes a character of the word's text that IFS holds as it expands; text before the assignment that the new
   // IFS holds is then split too: `a1b$((IFS=1))` gives `a` and `b`, F95. Such a word is not known here.)
   if (ifsChanged && pieces.some((p) => !p.hole && !p.expanded && !p.quoted && /[-0-9]/.test(p.text))) return undefined;
-  // (`"$@"` makes fields where the context splits, also with an empty IFS or no unquoted part.)
-  const elementsSplit = !(step.applies === false && (step.why === 'context' || step.why === 'posix-mode'));
+  const elementsSplit = elementsSplitIn(w);
   // (Word splitting may apply or not by POSIX mode, a redirection: an IFS not known stands for both.)
   // (Not known here, until the word model splits them as bash does: an IFS with a control character but tab and newline,
   // `$'\v'`; one with a glob character, where a value has a backslash.)
@@ -672,15 +680,16 @@ export function receivedFields(n: SyntaxNode, model: StateModel): Fields & { hol
  * expansion is split, the cases `wordShapes` leaves out, and a word bash fails on (`${x:?}`; `wordFields` says it).
  */
 export function receivedWords(n: SyntaxNode, model: StateModel): ReceivedField[] | undefined {
-  // (A declaration's word: the head, then each field of its value, which is one field for each word of its braces.)
-  const declared = declaredWord(wordOf(n));
+  const w = model.shell && model.shell !== 'bash' ? undefined : wordMeaning(n, model);
+  if (!w) return undefined;
+  // (A declaration's word: the head, then the one field of its value.)
+  const declared = declaredWord(w, w.steps[0].applies);
   if (declared === 'unread') return undefined;
   if (declared) {
     if (!declared.value) return [{ parts: [{ text: declared.head }], min: 1, max: 1 }];
     return receivedWords(declared.value, model)?.map(({ parts: [first, ...rest], ...f }) => ({ ...f, parts: first && 'text' in first ? [{ text: declared.head + first.text }, ...rest] : [{ text: declared.head }, ...(first ? [first] : []), ...rest] }));
   }
-  const w = model.shell && model.shell !== 'bash' ? undefined : wordMeaning(n, model);
-  if (!w || misread(w) || emptyBang(w.nodes.flatMap((x) => descendants(x, ['simple_expansion'])))) return undefined;
+  if (misread(w) || emptyBang(w.nodes.flatMap((x) => descendants(x, ['simple_expansion'])))) return undefined;
   // (Arithmetic in the word may set IFS to digits: then it splits by an IFS not known, F87.)
   const self = selfAssigned(w).ifs;
   if (self === 'any') return undefined;
@@ -695,7 +704,7 @@ export function receivedWords(n: SyntaxNode, model: StateModel): ReceivedField[]
   if (!got || got.words.some((p) => !p)) return undefined;
   const step = w.steps.find((s) => s.kind === 'split')!;
   const ifs = step.applies === 'unknown' || self === 'integer' ? undefined : w.ifs.kind === 'default' ? WHITE : w.ifs.kind === 'value' && sameInEveryLocale(w.ifs.value) ? w.ifs.value : undefined;
-  const elementsSplit = !(step.applies === false && (step.why === 'context' || step.why === 'posix-mode'));
+  const elementsSplit = elementsSplitIn(w);
   const gs = w.steps.find((s) => s.kind === 'glob')!;
   const nullglob = w.glob.nullglob !== 'off';
   const out: ReceivedField[] = [];
