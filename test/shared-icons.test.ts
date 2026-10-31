@@ -23,9 +23,7 @@ describe('shared icons', () => {
   // Web page element → the panel's button of the same action.
   const SAME: [string, string, string][] = [
     [index, 'collapse', 'toggle'],
-    [index, 'ref', 'ref'],
     [index, 'copy-md', 'copy'],
-    [index, 'menu-copy', 'copy'],
     [index, 'settings-open', 'settings'],
     [compare, 'settings-open', 'settings'],
   ];

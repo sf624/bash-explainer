@@ -14,7 +14,7 @@ const TYPES: Record<string, string> = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
 };
 /** What the page may load: its own files, nothing else. */
-export const FILES = ['/', '/app.js', '/favicon.ico', '/favicon.svg', '/icons.js', '/page.css', '/panel-host.js', '/panel-page.css', '/panel.css', '/panel.html', '/panel.js', '/theme.css', '/theme-init.js'];
+export const FILES = ['/', '/app.js', '/favicon.ico', '/favicon.svg', '/icons.js', '/page.css', '/panel-host.js', '/panel-page.css', '/panel.css', '/panel.html', '/panel.js', '/theme.css', '/theme-init.js', '/view-control.js'];
 /** Typed into the editor: it must not appear in any request. */
 export const MARKER = 'secret-7f3a9c';
 
@@ -168,11 +168,14 @@ export async function menuItem(page: Page, id: string): Promise<void> {
   await page.locator(id).click();
 }
 
-/** Chooses the panel's view in the page's switch: in the top bar, or on a phone in the menu (closed again after). */
+/**
+ * Chooses the panel's view in the view control of the panel's header (media/view-control.js): its segment, or, where
+ * the control is a menu, the menu's item (the menu closes as it is chosen).
+ */
 export async function chooseView(page: Page, view: 'list' | 'tree'): Promise<void> {
-  if (await page.locator(`#view-${view}-top`).isVisible()) return page.locator(`#view-${view}-top`).click();
-  await menuItem(page, `#view-${view}-menu`);
-  await page.evaluate("document.getElementById('drawer').close()");
+  const option = page.locator(`#slot-${view}`);
+  if (!(await option.isVisible())) await page.locator('#slot-open').click();
+  await option.click();
 }
 
 /**

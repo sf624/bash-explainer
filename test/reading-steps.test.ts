@@ -6,6 +6,7 @@ import { Analyzer } from '../src/analyzer';
 import type { ReadingNode } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { isPressed, needsReading, PANEL_DEFAULTS, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
+import { panelTools, viewControlForms } from '../src/ui/panelHead';
 import {
   aboutKey, bandOf, chipOf, DrawnNode, layerOfStep, levelOf, measureSteps, ownStep, readerOf, readingView, roleOf, startsBand, stepFrom, stepNames, STEPS,
 } from '../src/ui/readingSteps';
@@ -182,6 +183,9 @@ describe('the view slot\'s contract (src/ui/panelView.ts)', () => {
     const ex = new Analyzer('en').explainLine(parser.parse('ls -l'), 0, 'bash', { reading: true });
     const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: 'ls -l', choice: {}, placement: 'first', animations: true, state: { view: 'tree' } });
     assert.deepStrictEqual(msg.control, viewControl({ view: 'tree' }, 'en'));
+    // (And the forms the panel's own header may draw it in, and its tools' names: src/ui/panelHead.ts.)
+    assert.deepStrictEqual(msg.viewForms, viewControlForms(msg.control));
+    assert.deepStrictEqual(msg.tools, panelTools('en'));
     assert.strictEqual(msg.reading?.root.chip, 'bash reads the line');
     assert.strictEqual(msg.reading?.steps.length, STEPS);
     assert.ok(!('reading' in msg.explanation));

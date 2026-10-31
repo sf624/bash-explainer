@@ -75,7 +75,7 @@ It follows the editor: on the web page, the setting **Wrap long lines** (`editor
 - Install for VS Code shows from 1100 px (before, from 901 px).
 - Clear the editor empties it, and the toast offers Undo. An empty editor shows Paste a script, Open a file… and Load the sample, and that a file can be dropped there.
 - On a first visit, a row over the sample says "This is a sample: put the cursor on any line.", with Use my own script and Open a file…. It stays closed once closed or used.
-- The menu is in groups: Script; Share and Explanation (on a narrow page, where the top bar has no room for them); Preferences; Help, with the keyboard shortcuts (not on a touch screen); About. Its title is "Bash Explainer".
+- The menu is in groups: Script; Share (on a narrow page, where the top bar has no room for it); Preferences; Help, with the keyboard shortcuts (not on a touch screen); About. Its title is "Bash Explainer".
 - A button that gets the focus back after a dialog or a menu closed with the mouse no longer shows a focus ring; after a key it does.
 
 ### Messages on the web page: one place, one look
@@ -95,6 +95,16 @@ Each description shows at most two lines, with "More" right after the last word 
 Side by side, the settings open from the left, over the editor, and are never wider than the editor's pane: the explanation stays in view, and a change shows in it at once, and you can scroll the explanation and click in it while the settings are open (a click there leaves them open; Esc, × and Close shut them). Before, they opened from the right, over the explanation they change. In the narrow layout (a phone, or a window up to 767 px wide) they take the whole screen, as before, and a change shows in the explanation when they close.
 
 The settings come back as they were left, for as long as the page is open: the sections unfolded, the search and the place they were scrolled to. Before, they opened at the top every time.
+
+### The explanation's header on the web page
+
+The explanation has a header of its own, above it, as wide as it: the tabs **Explanation** and **Reference** (the quick reference), the view (**Meaning** | **Reading**), **Collapse** and **Copy**. Before, the view switch and the icons of Collapse all, Copy as Markdown and the quick reference were in the top bar, and on a phone the view and Copy as Markdown were in the menu.
+
+- Collapse and Copy show a word beside their icon; where the explanation is narrow, the word goes under the icon, smaller. Their full names ("Collapse all", "Expand all", "Copy as Markdown") are the tooltip and what a screen reader says.
+- The view is two segments where they fit; where they do not, one button that opens them as a menu ("Meaning ⌄"; a screen reader hears "View: Meaning"). Escape closes the menu, and the focus goes back to its button. On a phone the button is a 44 px pill. Where nothing else fits, the Reference tab reads "Ref".
+- Nothing in the header moves when you press a view, fold everything or choose a tab: each word is as wide as the longest it can become. On the Reference tab, the view and Collapse keep their room, unseen.
+- The tabs are one stop of Tab; the arrow keys move between them. A click on Reference puts the cursor in its search field, as before; the arrow keys leave the focus on the tab.
+- In VS Code, the panel's view switch becomes the same menu when the panel is too narrow for it beside the buttons. Its fold button now says "Expand all" as soon as one row is folded. Before, it said so only after Collapse all.
 
 ### The Problems strip on the web page
 

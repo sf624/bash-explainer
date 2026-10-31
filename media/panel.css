@@ -771,8 +771,42 @@ header .actions {
   color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
 }
 
-/* The view switch: two words in a segmented control, the view shown pressed (VS Code's input toggles). */
-.segmented {
+/* The view control (media/view-control.js): its options as segments, the one shown pressed (VS Code's input
+   toggles); where they do not fit the header's row (panel.js, `drawViews`), a dropdown that opens them as a menu.
+   A text that changes with the option shown is drawn over the others it may become (.vc-stack), so that a press
+   moves nothing. */
+.vc {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.vc-stack {
+  display: inline-grid;
+}
+
+.vc-stack > * {
+  grid-area: 1 / 1;
+}
+
+.vc-size {
+  visibility: hidden;
+}
+
+/* An option with a digit shows its name only when it is the one shown. */
+.vc[data-form="segments"] button[aria-pressed="false"] .vc-digit + .vc-name,
+.vc[data-form="segments"] .vc-open,
+.vc[data-form="menu"]:not([data-open="true"]) .vc-options {
+  display: none;
+}
+
+.vc-digit + .vc-name {
+  margin-left: 0.3em;
+}
+
+.vc-options {
   display: inline-flex;
   flex: none;
   padding: 1px;
@@ -780,7 +814,54 @@ header .actions {
   border-radius: 4px;
 }
 
-.segmented button {
+/* The menu: under its button, an option per row. */
+.vc[data-form="menu"] .vc-options {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 5;
+  flex-direction: column;
+  min-width: 100%;
+  padding: 2px;
+  background: var(--vscode-menu-background, var(--vscode-dropdown-background));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+}
+
+.vc[data-form="menu"] .vc-options button {
+  justify-content: flex-start;
+  height: 24px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* The menu's button: VS Code's dropdown, its arrow drawn as an icon. */
+.vc-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 4px 0 6px;
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-dropdown-background));
+  border-radius: 2px;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.vc-chev {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.vc-options button {
+  display: inline-flex;
+  align-items: center;
   height: 20px;
   padding: 0 5px;
   border: 1px solid transparent;
@@ -793,7 +874,7 @@ header .actions {
   cursor: pointer;
 }
 
-.segmented button[aria-pressed="true"] {
+.vc-options button[aria-pressed="true"] {
   background: var(--vscode-inputOption-activeBackground, rgba(36, 137, 219, 0.3));
   border-color: var(--vscode-inputOption-activeBorder, transparent);
   color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
@@ -824,7 +905,7 @@ header .actions {
 
 /* Hover: the toolbar's colour; in high contrast, which has none, a dashed outline (toolbar.hoverOutline). */
 .tb:hover,
-.segmented button[aria-pressed="false"]:hover {
+.vc-options button[aria-pressed="false"]:hover {
   background: var(--vscode-toolbar-hoverBackground, transparent);
   outline: 1px dashed var(--vscode-toolbar-hoverOutline, transparent);
   outline-offset: -1px;
@@ -838,7 +919,8 @@ header .actions {
 
 /* The keyboard's focus: VS Code's 1px ring. */
 .tb:focus-visible,
-.segmented button:focus-visible,
+.vc-options button:focus-visible,
+.vc-open:focus-visible,
 .dropdown select:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
@@ -1609,7 +1691,7 @@ body.vscode-high-contrast-light #reading-tree li.band {
     outline-offset: -2px;
   }
 
-  .segmented button[aria-pressed="true"],
+  .vc-options button[aria-pressed="true"],
   .tb[aria-pressed="true"],
   #layers button[aria-pressed="true"] {
     outline: 2px solid Highlight;

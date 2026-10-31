@@ -73,7 +73,7 @@ describe('the web page: the top bar', function () {
     await ctx.close();
   });
 
-  it('has no panel header on the page: fold, quick reference and copy are in the top bar from 768px up (on a phone the copy and the link are in the menu), the shell in the menu or the top bar (1200px and up)', async () => {
+  it("draws the panel's header on the page, not in the frame: the tabs, the view, Collapse and Copy above the explanation (decision 11), the shell in the menu or the top bar (1200px and up)", async () => {
     for (const [width, height] of [[768, 800], [1280, 800]]) {
       const ctx = await browser.newContext({ viewport: { width, height }, locale: 'en-US' });
       await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
@@ -82,7 +82,7 @@ describe('the web page: the top bar', function () {
       await page.locator('.cm-line').nth(5).waitFor();
       const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
       await until('the explanation', async () => (await panel()?.locator('#line').textContent().catch(() => '')) ?? '', (t) => t.length > 0);
-      // The header (the title row and its buttons) is not there to see or to tab to, and the page does not scroll sideways.
+      // The frame's own header (the title row and its buttons) is not there to see or to tab to, and the page does not scroll sideways.
       assert.strictEqual(await panel().locator('header').isHidden(), true, `${width}px`);
       assert.strictEqual(await panel().locator('header button:visible, header select:visible, #where:visible').count(), 0);
       assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true);
@@ -96,28 +96,26 @@ describe('the web page: the top bar', function () {
       })()`)) as [number, number, number, string];
       assert.ok(start[0] === 0 && start[1] >= start[2] - 0.5 && start[3] === '#!', `${width}px: ${start}`);
       const wide = width >= 1200;
-      // The three buttons are in the top bar, inside it, and not in the menu (the copy is there on a phone only).
-      for (const id of ['#collapse', '#ref', '#copy-md']) {
+      // The explanation's controls are in the panel's header, above the frame: none in the top bar or the menu.
+      for (const id of ['#tab-explain', '#tab-ref', '#view-slot', '#collapse', '#copy-md']) {
         assert.strictEqual(await page.locator(id).isVisible(), true, `${id} at ${width}px`);
-        assert.strictEqual(await page.locator(`.top ${id}`).count(), 1);
+        assert.strictEqual(await page.locator(`#panel-head ${id}`).count(), 1);
       }
-      assert.strictEqual(await page.locator('#menu-collapse, #menu-ref').count(), 0);
-      // The three actions follow the order of the VS Code panel header (collapse, copy, quick reference).
-      const panelOrder = [...PANEL_BODY.matchAll(/<button id="(toggle|copy|ref)"/g)].map((m) => ({ toggle: 'collapse', copy: 'copy-md', ref: 'ref' })[m[1] as 'toggle' | 'copy' | 'ref']);
-      assert.deepStrictEqual(panelOrder, ['collapse', 'copy-md', 'ref']);
-      const barOrder = await page.evaluate(`['collapse', 'copy-md', 'ref'].map((id) => [id, document.getElementById(id)]).filter(([, e]) => e.getClientRects().length).sort((a, b) => a[1].getBoundingClientRect().left - b[1].getBoundingClientRect().left).map(([id]) => id)`);
-      assert.deepStrictEqual(barOrder, panelOrder, `the order at ${width}px`);
-      // The view switch too (on a phone it is in the menu).
-      assert.strictEqual(await page.locator('.top #views-top').isVisible(), true, `the view switch at ${width}px`);
-      await page.locator('#menu-open').click();
-      assert.strictEqual(await page.locator('#menu-copy').isVisible(), false);
-      await page.evaluate("document.getElementById('drawer').close()");
+      assert.strictEqual(await page.locator('.top :is(#collapse, #copy-md, #ref, #views-top), #drawer :is(#menu-copy, #views-menu)').count(), 0);
+      // The fold and the copy follow the order of the VS Code panel header (collapse, copy); the quick reference is a tab.
+      const panelOrder = [...PANEL_BODY.matchAll(/<button id="(toggle|copy)"/g)].map((m) => ({ toggle: 'collapse', copy: 'copy-md' })[m[1] as 'toggle' | 'copy']);
+      assert.deepStrictEqual(panelOrder, ['collapse', 'copy-md']);
+      const headOrder = await page.evaluate(`['collapse', 'copy-md'].map((id) => [id, document.getElementById(id)]).sort((a, b) => a[1].getBoundingClientRect().left - b[1].getBoundingClientRect().left).map(([id]) => id)`);
+      assert.deepStrictEqual(headOrder, panelOrder, `the order at ${width}px`);
+      // The header sits on the frame, as wide as it.
+      const [head, frame] = await page.evaluate(`['#panel-head', '#panel'].map((s) => { const r = document.querySelector(s).getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.bottom), Math.round(r.top)]; })`) as number[][];
+      assert.deepStrictEqual([head[0], head[1], head[2]], [frame[0], frame[1], frame[3]], `${width}px`);
       assert.strictEqual(await page.locator('#shell-top').isVisible(), wide);
       // Still one row of 48px, with nothing hanging out of the bar.
       const bar = (await page.evaluate('(() => { const t = document.querySelector(".top"); return [t.getBoundingClientRect().height, t.scrollWidth <= t.clientWidth]; })()')) as [number, boolean];
       assert.deepStrictEqual(bar, [48, true]);
-      const names = await page.evaluate('["collapse", "copy-md", "ref"].map((id) => [document.getElementById(id).getAttribute("aria-label"), document.getElementById(id).title])');
-      assert.deepStrictEqual(names, [['Collapse all', 'Collapse all'], ['Copy as Markdown', 'Copy as Markdown'], ['Quick reference', 'Quick reference']]);
+      const names = await page.evaluate('["collapse", "copy-md"].map((id) => [document.getElementById(id).getAttribute("aria-label"), document.getElementById(id).title])');
+      assert.deepStrictEqual(names, [['Collapse all', 'Collapse all'], ['Copy as Markdown', 'Copy as Markdown']]);
       if (wide) assert.strictEqual(await page.locator('#shell-top').getAttribute('aria-label'), 'Shell');
 
       // Shell: the setting, as the panel's select was.
@@ -129,7 +127,6 @@ describe('the web page: the top bar', function () {
       // Collapse all, then Expand all.
       const icon = (sel: string) => page.evaluate(`(() => { const s = document.querySelector('${sel} svg'); return [s.dataset.icon, s.querySelectorAll('path').length]; })()`) as Promise<[string, number]>;
       assert.deepStrictEqual(await icon('#collapse'), ['collapse-all', 3]);
-      assert.deepStrictEqual(await icon('#ref'), ['book', 1]);
       assert.deepStrictEqual(await icon('#copy-md'), ['copy', 1]);
       assert.deepStrictEqual(await icon('#settings-open'), ['gear', 1]);
       await page.locator('.cm-line').nth(7).click();
@@ -150,40 +147,38 @@ describe('the web page: the top bar', function () {
       const md = await until('the copy', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.length > 0);
       assert.match(md, /`/);
 
-      // Quick reference, and back.
-      await page.locator('#ref').click();
+      // Quick reference, and back: the tabs.
+      await page.locator('#tab-ref').click();
       await until('the reference', () => panel().locator('#reference').isVisible(), (v) => v);
-      // (The panel says how it draws its buttons, in a message: src/ui/panelView.ts `HeaderButton`.)
-      await until('pressed', () => page.locator('#ref').getAttribute('aria-pressed'), (v) => v === 'true');
-      await until('the name', async () => (await page.locator('#ref').getAttribute('aria-label')) ?? '', (t) => t === '← Back to the explanation');
-      assert.deepStrictEqual(await icon('#ref'), ['arrow-left', 1]);
-      await page.locator('#ref').click();
+      // (The panel says the state of its tools in a message: src/ui/panelView.ts `header`.)
+      await until('selected', () => page.locator('#tab-ref').getAttribute('aria-selected'), (v) => v === 'true');
+      assert.strictEqual(await page.locator('#tab-explain').getAttribute('aria-selected'), 'false');
+      await page.locator('#tab-explain').click();
       await until('the explanation again', () => panel().locator('#main').isVisible(), (v) => v);
-      await until('not pressed', () => page.locator('#ref').getAttribute('aria-pressed'), (v) => v === 'false');
-      await until('the icon', () => icon('#ref'), (i) => i[0] === 'book');
+      await until('not selected', () => page.locator('#tab-ref').getAttribute('aria-selected'), (v) => v === 'false');
 
-      // Keyboard access: the buttons are in the tab order and work with Enter and Space.
+      // Keyboard access: the tools are in the tab order and work with Enter and Space; the tabs are one stop, moved with the arrows.
       await page.locator('#collapse').focus();
       await page.keyboard.press('Enter');
       await until('collapsed by the keyboard', () => panel().locator('#tree .collapsed').count(), (n) => n > 0);
       await page.keyboard.press('Tab');
       assert.strictEqual(await page.evaluate('document.activeElement.id'), 'copy-md');
-      await page.keyboard.press('Tab');
-      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'ref');
-      await page.keyboard.press('Space');
+      await page.locator('#tab-explain').focus();
+      await page.keyboard.press('ArrowRight');
       await until('the reference by the keyboard', () => panel().locator('#reference').isVisible(), (v) => v);
-      // (The quick reference takes the focus to its search field.)
-      await page.locator('#ref').focus();
-      await page.keyboard.press('Enter');
+      // (The tab keeps the focus: the arrows go on from it.)
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'tab-ref');
+      await page.keyboard.press('ArrowLeft');
       await until('the explanation by the keyboard', () => panel().locator('#main').isVisible(), (v) => v);
-      await page.locator('#copy-md').focus();
-      await page.keyboard.press('Tab');
-      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'ref');
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'tab-explain');
+      await page.keyboard.press('Shift+Tab');
+      assert.notStrictEqual(await page.evaluate('document.activeElement.id'), 'tab-ref', 'one stop for the tabs');
 
       // Japanese names.
       await choose(page, '#lang', 'ja');
       await until('ja names', async () => (await page.locator('#copy-md').getAttribute('aria-label')) ?? '', (t) => t === 'Markdown でコピー');
       assert.strictEqual(await page.locator('#copy-md').getAttribute('title'), 'Markdown でコピー');
+      assert.deepStrictEqual(await page.evaluate(`['#collapse-word', '#copy-md-word', '#tab-ref'].map((s) => document.querySelector(s).firstChild.textContent)`), ['折りたたむ', 'コピー', '早見表']);
       assert.strictEqual(await page.locator('#shell-label').textContent(), 'シェル');
       await ctx.close();
     }

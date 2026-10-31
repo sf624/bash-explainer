@@ -19,6 +19,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The editor on the web page has its own header: Open, Save, the file name (click it to rename; ● marks unsaved changes) and ⋯. Copy a link says "Copied" on its own button.
 - Messages on the web page (Opened, Saved, Downloaded) show in one place above the Problems list, with an icon, and stay while the pointer is on them; a reason or more detail is behind **Why?** or **More**. Loading the sample over your script offers Undo instead of asking first (over an opened file with unsaved changes it asks, as Open does).
 - Settings on the web page come in sections, with a search and links to each section. On a wide window they open over the editor, so the explanation they change stays in view.
+- The explanation on the web page has its own header: the tabs Explanation and Reference, the view (Meaning | Reading), Collapse and Copy, each with a word. Before, the view switch, Collapse, Copy as Markdown and the quick reference were icons and words in the top bar (on a phone, the view and the copy were in the menu).
 - Problems on the web page fold into a strip with their count per level. ‹ › and F8 / Shift+F8 go to the next and previous problem, and the strip shows where you are (Ln 20 · 1/11). The list opens on your first visit, and then stays as you left it.
 
 ### Fixed

@@ -18,7 +18,7 @@ describe('the web page: the quick reference', function () {
     const page = await (await browser.newContext({ locale: 'en-US' })).newPage();
     await page.goto(base);
     const panel = (await until('the panel', async () => page.frames().find((f) => f.url().endsWith('/panel.html')), (f) => !!f))!;
-    await page.locator('#ref').click();
+    await page.locator('#tab-ref').click();
     const expected = quickReference('en');
     // The list once stopped after 300 entries, without saying so.
     await until('every entry', () => panel.locator('#ref-list .ref-row').count(), (n) => n === expected.length);

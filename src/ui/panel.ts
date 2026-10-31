@@ -218,6 +218,7 @@ export class PanelController implements vscode.Disposable {
     const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
     const css = webview.asWebviewUri(vscode.Uri.joinPath(media, 'panel.css'));
     const icons = webview.asWebviewUri(vscode.Uri.joinPath(media, 'icons.js'));
+    const viewControl = webview.asWebviewUri(vscode.Uri.joinPath(media, 'view-control.js'));
     const js = webview.asWebviewUri(vscode.Uri.joinPath(media, 'panel.js'));
     return `<!DOCTYPE html>
 <html lang="${this.service.lang}">
@@ -230,6 +231,7 @@ export class PanelController implements vscode.Disposable {
 <body>
 ${PANEL_BODY}
 <script nonce="${nonce}" src="${icons}"></script>
+<script nonce="${nonce}" src="${viewControl}"></script>
 <script nonce="${nonce}" src="${js}"></script>
 </body>
 </html>`;

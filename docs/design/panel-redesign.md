@@ -245,6 +245,8 @@ Tests: depth 2 adds to depth 1 and moves nothing (the second half of test/web-de
 
 Risks: users of Reading's eight steps lose them. The changelog says so.
 
+From C7 (chrome-redesign.md): the options of `viewControl` take a `digit` ('1', '2'); then the view control (media/view-control.js) draws the label before the segments, each option's digit, and its name only when it is shown, and its menu says "Depth 1" (`viewControlForms`, src/ui/panelHead.ts). No host changes.
+
 From P1 (review of #538): `PanelState` gains `depth` here. `panelState` must read it back: the round-trip test of test/reading-steps.test.ts fails until it does. The options of `viewControl` say what they `sets` (`{ depth: 2 }`), and `pressed` follows from the one rule of `isPressed` (src/ui/panelView.ts), which media/panel.js applies too; `PANEL_DEFAULTS` gets the default depth.
 
 ### P9. "What the program receives"

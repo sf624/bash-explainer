@@ -56,6 +56,7 @@ const PANEL_HTML = `<!DOCTYPE html>
 ${PANEL_BODY}
 <script src="panel-host.js"></script>
 <script src="icons.js"></script>
+<script src="view-control.js"></script>
 <script src="panel.js"></script>
 </body>
 </html>
@@ -108,6 +109,7 @@ async function main(): Promise<void> {
   copy('web/theme-init.js');
   copy('media/panel.css');
   copy('media/icons.js');
+  copy('media/view-control.js');
   copy('media/panel.js');
   // The tab icon: the mark drawn on the 16 px grid below 24 px, in the colours of the system's theme;
   // favicon.ico (16 and 32 px, mid-grey ink for light and dark tabs) for the browsers that take no SVG icon.

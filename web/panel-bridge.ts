@@ -1,16 +1,16 @@
 // The explanation panel in its frame (panel.html, the page of the VS Code panel), and the page's own controls for it.
 // The panel says what the user does in it (src/ui/panelView.ts `FromPanel`); the page answers and shows the result.
-// The panel's own header is not shown on the page (web/panel-page.css): its shell and yq choices are the setting,
-// "Collapse all" and "Quick reference" press the panel's buttons, which keep the state and say how they are drawn
-// (`header`), and the view switch is the page's, drawn from `viewControl`: it keeps the state and sends it to the
-// panel, as the panel's own switch tells it.
+// The panel's own header is not shown on the page (web/panel-page.css): its shell and yq choices are the setting, and
+// the page draws the rest above the frame (web/panel-head.ts). Its view control keeps the state and sends it to the
+// panel, as the panel's own control tells it; its tools send the state they want (`tools`: folded, the quick reference
+// open), and the panel says the state it has (`header`).
 import { Span } from '../src/analyzer';
 import { Lang } from '../src/i18n';
-import { FromPanel, HeaderButton, needsReading, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
+import { FromPanel, needsReading, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
 import { isPanelQuestion, panelReply } from '../src/ui/panelReply';
 import { ui } from '../src/ui/render';
 import { on, put } from './dom';
-import { drawIcon } from './icons';
+import { PanelHead } from './panel-head';
 import { Theme } from './protocol';
 import { readStoredObject, STORAGE_KEYS, writeStored } from './storage';
 
@@ -39,12 +39,12 @@ export class PanelBridge {
   private ready = false;
   /** The panel's view and step: from storage, then as the panel says. */
   private state: PanelState = panelState(readStoredObject(STORAGE_KEYS.panel));
-  /** The panel's fold and quick reference buttons, as it last said it draws them (none yet: their first names). */
-  private header: Record<'toggle' | 'ref', HeaderButton> | undefined;
+  /** The panel's header on the page (none in panel mode, or on the compare page). */
+  private readonly head: PanelHead | undefined;
 
   /**
    * `frame` is the page's own panel: none on the compare page, whose frames hold copies of this page.
-   * `controls` says whether the page has the top bar and menu that stand in for the panel's header (not in panel mode).
+   * `controls` says whether the page has the controls that stand in for the panel's header (not in panel mode).
    */
   constructor(private readonly host: PanelHost, private readonly frame: HTMLIFrameElement | null, private readonly controls: boolean) {
     // The panel says 'ready' when it starts; it may have done so before this script ran.
@@ -57,59 +57,30 @@ export class PanelBridge {
     for (const key of ['shell', 'yq'] as const) {
       for (const id of [key, `${key}-top`]) on(id, 'change', (e) => host.choose(key, (e.target as HTMLSelectElement).value));
     }
-    // Below 360px the copy is in the menu only (web/page.css), for the top bar's other buttons to keep their size.
-    for (const [id, act] of [['collapse', () => this.button('toggle')?.click()], ['copy-md', () => host.copy()], ['menu-copy', () => host.copy()], ['ref', () => this.button('ref')?.click()]] as const) {
-      on(id, 'click', () => {
-        // The menu's item closes the menu first, as the others do.
-        if (id.startsWith('menu-')) (document.getElementById('drawer') as HTMLDialogElement | null)?.close();
-        act();
-      });
-    }
-    // The view switch: in the top bar, on a phone in the menu (the bar has no room for it there).
-    for (const group of ['views-top', 'views-menu']) {
-      on(group, 'click', (e) => {
-        const option = e.target instanceof Element ? (e.target.closest('button[data-option]') as HTMLElement | null)?.dataset.option : undefined;
-        if (option) this.press(option);
-      });
-    }
-    this.showView();
+    const head = controls ? document.getElementById('panel-head') : null;
+    this.head = head ? new PanelHead(head, {
+      lang: host.lang,
+      control: () => viewControl(this.state, host.lang()),
+      press: (sets) => this.press(sets),
+      tools: (want) => this.send({ type: 'tools', ...want }),
+      copy: host.copy,
+    }) : undefined;
   }
 
-  /** An option pressed in the page's view switch: the state it sets is kept and sent to the panel, and the line explained again when it needs other data. */
-  private press(id: string): void {
-    const option = viewControl(this.state, this.host.lang()).options.find((o) => o.id === id);
-    if (!option || option.pressed) return;
-    const before = needsReading(this.state);
-    this.state = panelState({ ...this.state, ...option.sets });
-    writeStored(STORAGE_KEYS.panel, JSON.stringify(this.state));
-    this.showView();
+  /** An option pressed in the page's view control: the state it sets is kept and sent to the panel, and the line explained again when it needs other data. */
+  private press(sets: PanelState): void {
+    this.keep(panelState({ ...this.state, ...sets }));
     this.sendState();
-    if (needsReading(this.state) !== before) this.host.update();
   }
 
-  /** Draws the page's view switch, in the top bar and in the menu, from the view control of the state. */
-  private showView(): void {
-    const control = viewControl(this.state, this.host.lang());
-    for (const where of ['top', 'menu']) {
-      const group = document.getElementById(`views-${where}`);
-      if (!group) continue;
-      if (where === 'top') group.setAttribute('aria-label', control.label);
-      const buttons = control.options.map((o) => {
-        const id = `view-${o.id}-${where}`;
-        const b = document.getElementById(id) ?? Object.assign(document.createElement('button'), { id, type: 'button' });
-        b.dataset.option = o.id;
-        b.textContent = o.short;
-        b.setAttribute('aria-pressed', String(o.pressed));
-        // (The full name where it says more than the short one: the tooltip and the accessible name.)
-        for (const attr of ['title', 'aria-label']) {
-          if (o.full === o.short) b.removeAttribute(attr);
-          else b.setAttribute(attr, o.full);
-        }
-        return b;
-      });
-      if (buttons.length !== group.children.length || buttons.some((b, i) => group.children[i] !== b)) group.replaceChildren(...buttons);
-    }
-    put('views-menu-label', control.label);
+  /** Keeps the panel's state (storage), draws the view control from it, and explains the line again when it needs other data. */
+  private keep(state: PanelState): void {
+    const before = needsReading(this.state);
+    this.state = state;
+    writeStored(STORAGE_KEYS.panel, JSON.stringify(this.state));
+    this.head?.draw();
+    // The tree has to be built for the tree view: explain the line again.
+    if (needsReading(this.state) !== before) this.host.update();
   }
 
   private loaded(): void {
@@ -140,7 +111,8 @@ export class PanelBridge {
   /** Starts the panel again (it keeps its quick reference once loaded: needed when the language changes). */
   reload(): void {
     this.ready = false;
-    this.header = undefined;
+    // (A new panel starts with nothing folded and the explanation shown.)
+    this.head?.show(false, false);
     if (this.frame) this.frame.src = 'panel.html';
   }
 
@@ -168,19 +140,9 @@ export class PanelBridge {
       case 'copy':
         return this.host.copy();
       case 'header':
-        this.header = m.buttons;
-        if (this.controls) this.showActions();
-        return;
+        return this.head?.show(m.folded, m.reference);
       case 'panelState':
-        {
-          const before = needsReading(this.state);
-          this.state = panelState(m.state);
-          writeStored(STORAGE_KEYS.panel, JSON.stringify(this.state));
-          this.showView();
-          // The tree has to be built for the tree view: explain the line again.
-          if (needsReading(this.state) !== before) this.host.update();
-        }
-        return;
+        return this.keep(panelState(m.state));
     }
   }
 
@@ -205,33 +167,10 @@ export class PanelBridge {
     }
   }
 
-  /** A button of the panel's header (it is there, hidden). */
-  private button(id: 'toggle' | 'ref'): HTMLElement | null {
-    return this.frame?.contentDocument?.getElementById(id) ?? null;
-  }
-
-  /**
-   * Names the page's fold and quick reference buttons, and draws their icons, as the panel says it draws its own
-   * (they turn into "Expand all" and "Back"); and the page's other labels of the panel, in the page's language.
-   */
+  /** The page's labels of the panel, in the page's language: its header, and the shell and yq selects. */
   showActions(): void {
     const tp = ui[this.host.lang()].panel;
-    const buttons: [string, HeaderButton][] = [
-      ['collapse', this.header?.toggle ?? { name: tp.collapseAll, icon: 'collapse-all' }],
-      ['ref', this.header?.ref ?? { name: tp.reference, icon: 'book', pressed: false }],
-      ['copy-md', { name: tp.copy, icon: 'copy' }],
-    ];
-    for (const [id, b] of buttons) {
-      const el = document.getElementById(id);
-      el?.setAttribute('aria-label', b.name);
-      el?.setAttribute('title', b.name);
-      if (b.pressed !== undefined) el?.setAttribute('aria-pressed', String(b.pressed));
-      // (The page's own icons until the panel has said how it draws its buttons.)
-      const svg = el?.querySelector('svg');
-      if (this.header && id !== 'copy-md' && svg) drawIcon(svg, b.icon);
-    }
-    put('menu-copy-label', tp.copy);
-    this.showView();
+    this.head?.draw();
     for (const [key, label] of [['shell', tp.shell], ['yq', tp.yq]]) {
       for (const id of [key, `${key}-top`]) {
         put(`${id}-label`, label);

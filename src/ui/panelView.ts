@@ -12,6 +12,7 @@ import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
 import { levelOf, readingView, StepName, stepNames, STEPS } from './readingSteps';
 import { lineParts, lineRuns } from './lineBox';
+import { panelTools, viewControlForms } from './panelHead';
 import type { PanelBase } from './themePalette';
 
 // The explanation panel (media/panel.js) as both the extension and the web page drive it.
@@ -32,8 +33,8 @@ export type FromPanel =
   | { type: 'panelState'; state: PanelState }
   /** What the panel draws text on, and its own colours, in the theme in use (asked for by `themeWatch`). */
   | { type: 'themeBase'; base: PanelBase }
-  /** The header's fold and quick reference buttons as the panel draws them now: the web page's own buttons show the same. */
-  | { type: 'header'; buttons: Record<'toggle' | 'ref', HeaderButton> };
+  /** The state of the header's fold and quick reference buttons (something folded; the quick reference open): the web page's own tools show the same. */
+  | { type: 'header'; folded: boolean; reference: boolean };
 
 /** An icon button of the panel's header: its name (tooltip and accessible name), its icon, and whether it is pressed. */
 export interface HeaderButton { name: string; icon: string; pressed?: boolean }
@@ -66,6 +67,8 @@ export interface ViewOption {
   id: 'list' | 'tree';
   /** An icon drawn before the short name (none yet: the views are named in words). */
   icon?: string;
+  /** The option's digit, drawn before its name; the name only when the option is shown (none yet: the depths of P8 have them). */
+  digit?: string;
   /** The name on the control. */
   short: string;
   /** The tooltip and the accessible name, where it says more than `short`. */
@@ -200,6 +203,9 @@ export function panelUpdate(p: PanelLine) {
     // (Reading's tree, with what each node and each step shows: src/ui/readingSteps.ts.)
     reading: reading && readingView(reading, lang),
     control: viewControl(p.state ?? {}, lang),
+    // (The forms the panel's own header may draw the view control in, widest first, and the names and icons of its tools: src/ui/panelHead.ts.)
+    viewForms: viewControlForms(viewControl(p.state ?? {}, lang)),
+    tools: panelTools(lang),
     manual: manualLinks(lang, ex),
     // (Said after a link's name, for a screen reader: the links open outside the panel.)
     linkNote: p.web ? tp.opensTab : tp.opensBrowser,
@@ -224,8 +230,8 @@ export function panelUpdate(p: PanelLine) {
 
 /**
  * The panel's markup, inside <body> and before its script. The header is a view's title bar, as in VS Code: the
- * line shown, the shell (and yq) dropdown and the view switch (words, both views of the same line), then icon
- * buttons (media/panel.js draws their icons and names them; on the web page the top bar stands in for it). It
+ * line shown, the shell (and yq) dropdown and the view control (media/view-control.js), then icon buttons
+ * (media/panel.js draws their icons and names them; on the web page the page's panel header stands in for it). It
  * wraps only between its groups (.here: the line and the shell; the yq dropdown; .actions: the views and the
  * buttons), so a narrow panel's rows do not depend on how wide the words are in the font (media/panel.css).
  */
@@ -237,7 +243,7 @@ export const PANEL_BODY = `<div id="top">
   </div>
   <label id="yq-box" class="pick" hidden><span id="yq-label" class="sr-only"></span><span class="dropdown"><select id="yq"></select><svg class="ico" data-icon="chevron-down" viewBox="0 0 16 16" aria-hidden="true"></svg></span></label>
   <div class="actions">
-    <div id="views" class="segmented" role="group"></div>
+    <div id="views"></div>
     <div class="tools">
       <button id="toggle" class="tb" type="button"><svg class="ico" data-icon="collapse-all" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
       <button id="copy" class="tb" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg></button>

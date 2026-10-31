@@ -8,7 +8,7 @@ body {
   background: var(--vscode-editor-background);
 }
 
-/* The page around has the header's controls in its top bar and menu. */
+/* The page around draws the header's controls itself, above the frame (web/panel-head.ts). */
 html.bx-web header {
   display: none;
 }
@@ -31,7 +31,7 @@ header {
 }
 
 .tb:hover,
-.segmented button[aria-pressed="false"]:hover {
+.vc-options button[aria-pressed="false"]:hover {
   background: var(--vscode-list-hoverBackground);
   outline: none;
 }
@@ -39,23 +39,23 @@ header {
 /* Without a mouse no hover either: it would stay after a tap. */
 @media (hover: none) {
   .tb:hover,
-  .segmented button[aria-pressed="false"]:hover {
+  .vc-options button[aria-pressed="false"]:hover {
     background: transparent;
   }
 }
 
 .tb[aria-pressed="true"],
-.segmented button[aria-pressed="true"] {
+.vc-options button[aria-pressed="true"] {
   background: var(--accent-soft);
   border-color: transparent;
   color: var(--vscode-foreground);
 }
 
-.segmented {
+.vc-options {
   border-radius: var(--radius-sm);
 }
 
-.segmented button {
+.vc-options button {
   height: 24px;
   border-radius: 4px;
 }
@@ -66,7 +66,8 @@ header {
 }
 
 .tb:focus-visible,
-.segmented button:focus-visible,
+.vc-options button:focus-visible,
+.vc-open:focus-visible,
 .dropdown select:focus-visible {
   outline: 2px solid var(--vscode-focusBorder);
   outline-offset: 0;
@@ -94,7 +95,7 @@ pre#line {
     height: 36px;
   }
 
-  .segmented button {
+  .vc-options button {
     height: 32px;
   }
 

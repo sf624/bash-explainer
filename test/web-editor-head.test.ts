@@ -344,17 +344,17 @@ describe('the web page: the app bar and the editor\'s header', function () {
         const seen = `${width} ${locale}`;
         const heads = await page.locator('#drawer .menu-h').evaluateAll((hs) => hs.filter((h) => h.getClientRects().length).map((h) => h.textContent));
         const ja = locale === 'ja-JP';
-        const all = ja ? ['スクリプト', '共有', '解説', '表示と言語', 'ヘルプ', 'このアプリについて'] : ['Script', 'Share', 'Explanation', 'Preferences', 'Help', 'About'];
-        assert.deepStrictEqual(heads, all.filter((_h, i) => stacked || (i !== 1 && i !== 2)), seen);
+        const all = ja ? ['スクリプト', '共有', '表示と言語', 'ヘルプ', 'このアプリについて'] : ['Script', 'Share', 'Preferences', 'Help', 'About'];
+        assert.deepStrictEqual(heads, all.filter((_h, i) => stacked || i !== 1), seen);
         assert.strictEqual(await page.locator('#drawer-title').innerText(), 'Bash Explainer');
         // The first row of the menu is the file name.
         const first = await page.evaluate("[...document.querySelectorAll('#drawer .sheet-body button, #drawer .sheet-body select, #drawer .sheet-body a')].find((e) => e.getClientRects().length).id");
         assert.strictEqual(first, 'menu-file', seen);
         assert.strictEqual(await page.locator('#menu-file-name').innerText(), 'untitled.sh');
-        // Each group's controls in it: Copy a link and the script in Share, Copy as Markdown in Explanation.
+        // Each group's controls in it: Copy a link and the script in Share (Copy as Markdown is in the panel's header).
         const group = (id: string) => page.locator(`#${id}`).evaluate((e) => e.closest('section')!.getAttribute('aria-labelledby'));
-        assert.deepStrictEqual(await Promise.all(['menu-file', 'menu-open-file', 'menu-save', 'menu-sample', 'menu-clear', 'menu-share', 'menu-copy-script', 'menu-copy', 'lang', 'theme', 'menu-panes', 'menu-install'].map(group)),
-          ['menu-h-script', 'menu-h-script', 'menu-h-script', 'menu-h-script', 'menu-h-script', 'menu-h-share', 'menu-h-share', 'menu-h-explanation', 'menu-h-prefs', 'menu-h-prefs', 'menu-h-help', 'menu-h-about']);
+        assert.deepStrictEqual(await Promise.all(['menu-file', 'menu-open-file', 'menu-save', 'menu-sample', 'menu-clear', 'menu-share', 'menu-copy-script', 'lang', 'theme', 'menu-panes', 'menu-install'].map(group)),
+          ['menu-h-script', 'menu-h-script', 'menu-h-script', 'menu-h-script', 'menu-h-script', 'menu-h-share', 'menu-h-share', 'menu-h-prefs', 'menu-h-prefs', 'menu-h-help', 'menu-h-about']);
         if (help) {
           // Help's list of shortcuts: every key of the page.
           const keys = await page.locator('#menu-keys dt').allInnerTexts();
@@ -477,8 +477,7 @@ describe('the web page: the app bar and the editor\'s header', function () {
     await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
     await page.locator('.cm-line').nth(7).click();
     await page.evaluate('navigator.clipboard.writeText("")');
-    await page.locator('#menu-open').click();
-    await page.locator('#menu-copy').click();
+    await page.locator('#copy-md').click();
     const md = await until('the copy', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.length > 0);
     assert.match(md, /untitled\.sh:8/);
     assert.doesNotMatch(md, /script\.sh/);
