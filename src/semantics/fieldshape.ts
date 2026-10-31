@@ -633,6 +633,13 @@ function holeSource(part: SyntaxNode | string, h: Hole): HoleSource {
   return { kind: 'string', code };
 }
 
+/** A field as a pattern, as written: quoted glob characters behind a `\\` (`patternOfChars`), each hole as the code of its part (`of`). */
+function patternShown(f: readonly Atom[], of: ReadonlyMap<Hole, SyntaxNode | string>): string {
+  const holes = f.filter(isHole);
+  const text = patternOfChars(f.map((a) => (isHole(a) ? { c: '\0', quoted: false, split: false } : { c: a.c, quoted: a.quoted, split: false })));
+  return text.split('\0').reduce((t, rest, i) => t + holeSource(of.get(holes[i - 1].hole)!, holes[i - 1].hole).code + rest);
+}
+
 /**
  * The fields the word that holds `n` gives the command where it runs (manual 3.5): with the values the model knows
  * (those of `wordFields`, with no environment), and a hole for each part it does not know, in order, the words of its
@@ -676,16 +683,9 @@ export function receivedWords(n: SyntaxNode, model: StateModel): ReceivedField[]
         else parts.push({ text: a.c });
       }
       const several = parts.some((p) => 'hole' in p && (p.splits || p.globs));
-      const pattern = gs.applies !== false && (isGlob(patternText(f, '')) || isGlob(patternText(f, 'x'))) ? patternShown(f) : undefined;
+      const pattern = gs.applies !== false && (isGlob(patternText(f, '')) || isGlob(patternText(f, 'x'))) ? patternShown(f, of) : undefined;
       out.push({ parts, min: has && !(pattern !== undefined && nullglob) ? 1 : 0, ...(several || pattern !== undefined ? {} : { max: 1 }), ...(pattern !== undefined ? { pattern } : {}) });
     }
   }
   return out;
-
-  /** A field as a pattern, as written: quoted glob characters behind a `\\` (`patternOfChars`), each hole as its code. */
-  function patternShown(f: readonly Atom[]): string {
-    const holes = f.filter(isHole);
-    const text = patternOfChars(f.map((a) => (isHole(a) ? { c: '\0', quoted: false, split: false } : { c: a.c, quoted: a.quoted, split: false })));
-    return text.split('\0').reduce((t, rest, i) => t + holeSource(of.get(holes[i - 1].hole)!, holes[i - 1].hole).code + rest);
-  }
 }
