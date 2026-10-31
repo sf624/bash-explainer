@@ -12,7 +12,7 @@ import { argWord } from '../src/argv/words';
 import { Analyzer, lookupCommand } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
 import { slotEnvs } from '../src/semantics/env';
-import { assignmentsOf, definitionFails, type NameResolution, resolveName, testSpecAt } from '../src/semantics/names';
+import { assignmentsOf, definitionFails, type NameResolution, resolveName, runsOwnName, testSpecAt } from '../src/semantics/names';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
@@ -290,6 +290,27 @@ describe('NameResolution in bodies that run later, after `source`, and of declar
 
   it('an alias defined after its use on the same line is "later"', () => {
     assert.strictEqual(short(resolve('shopt -s expand_aliases\nhi; alias hi=x', 'hi')), 'file:search-unknown<alias:later');
+  });
+});
+
+// A function that runs the command of its own name wraps it (src/semantics/names.ts, `runsOwnName`): where the function
+// is not (`sudo ls`), that program runs much as the function would. bash's reading of each body: test/pitfall-contradictions.test.ts.
+describe('runsOwnName', () => {
+  const runs = (src: string): boolean => {
+    const tree = parser.parse(src);
+    return runsOwnName(shellState(tree), descendants(tree.root, ['function_definition'])[0]);
+  };
+  it('a command of the body, or one it runs, that resolves to the builtin or the file of the name', () => {
+    for (const src of ['ls() { command ls -F "$@"; }', 'ls() { /bin/ls -F "$@"; }', 'ls() { env LC_ALL=C ls "$@"; }', 'curl() { sudo -u web curl --retry 3 "$@"; }',
+      'echo() { builtin echo "[$*]"; }', 'ls() { x=1; date; "$@"; command ls; }']) {
+      assert.strictEqual(runs(src), true, src);
+    }
+  });
+  it('not the function itself, another function or an alias, or another program', () => {
+    for (const src of ['ls() { \\ls -F; }', 'ls() { ls -F; }', 'install() { cp app /usr/local/bin/; }', 'sync() { rsync -a src/ host:dst/; }', 'echo() { :; }',
+      'f() { :; }\nls() { f; }', 'shopt -s expand_aliases\nalias l=\'ls -l\'\nls() { l; }', 'ls() { x=1; date; "$@"; }']) {
+      assert.strictEqual(runs(src), false, src);
+    }
   });
 });
 

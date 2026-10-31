@@ -1,6 +1,7 @@
 // Pitfalls that contradicted bash (found in a review, October 2026), checked with bash itself: the case the note now
 // gets right, and the case it still flags. bash runs each script in a cgroup (test/support/contained.ts).
 import * as assert from 'assert';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -9,6 +10,7 @@ import { interpret } from '../src/argv/interpret';
 import { argWord } from '../src/argv/words';
 import { lookupCommand } from '../src/dict/aliases';
 import { SUDO_KEEPS, SUDO_SETS } from '../src/dict/types';
+import { sshSendEnv } from '../src/dict/netadmin';
 import { fileRead, readAs, slotEnvs, variableIn } from '../src/semantics/env';
 import { attribute, fromEnvironment } from '../src/semantics/shellstate';
 import { shellState } from '../src/semantics/state';
@@ -595,7 +597,7 @@ describe('pitfalls that bash contradicted', function () {
         assert.match(note.body, /the program `ls` runs/, String(line));
       }
       for (const [src, body] of [
-        ['sudo ls', /`sudo` starts `ls` as a separate program, so the program `ls` runs, not this script's function of that name\. That may be what is meant/],
+        ['sudo ls', /`sudo` starts `ls` as a separate program, so the program `ls` runs, not this script's function of that name\. The function runs that program too, so this may be what is meant/],
         ['ssh host ls', /^the remote shell does not have this script's function `ls`, so the program `ls` runs there/],
         ['docker run img ls', /^`docker run` runs `ls` inside the container, which does not have this script's function, so the image's program `ls` runs/],
         ["bash -c 'ls /'", /^`bash -c` runs the command in a new shell, which does not have this script's function `ls`, so the program `ls` runs there/],
@@ -607,10 +609,49 @@ describe('pitfalls that bash contradicted', function () {
       // (A function that is no program is still an error: "command not found".)
       assert.strictEqual(noteOf('myls() { :; }\nsudo myls', 'builtin-or-function-as-program', 1)!.level, 'error');
       assert.strictEqual(noteOf('myls() { :; }\nssh host myls', 'function-not-on-remote', 1)!.level, 'error');
-      // (A builtin that is also a program, `echo`: the program runs.)
-      assert.strictEqual(noteOf('echo() { :; }\nsudo echo hi', 'function-shadowed-by-program', 1)?.level, 'info');
+      // (A builtin that is also a program, `echo`: the program runs; the function wraps it with `builtin echo`.)
+      assert.strictEqual(noteOf('echo() { builtin echo "[$*]"; }\nsudo echo hi', 'function-shadowed-by-program', 1)?.level, 'info');
       // (A builtin with no program, `cd`, is not one either.)
       assert.strictEqual(noteOf('cd() { builtin cd "$@"; }\nsudo cd /root', 'builtin-or-function-as-program', 1)!.level, 'error');
+    });
+  });
+
+  // Found in the second review of #557: a function that only has the name of a program, and does not run it, is no
+  // wrapper. Where it is not, another program runs (coreutils' `install`, `sync`): a warning, not a caveat.
+  describe('a function that only has the name of a program: another program runs where it is not', () => {
+    it('runs the program in bash, not the function, and says so in a warning', async () => {
+      // (`rsync` is a function here, so that the function `sync` would print if it ran, and reach no host.)
+      const script = '#!/bin/bash\ninstall() { cp app /usr/local/bin/; }\nrsync() { echo "rsync $*"; }\nsync() { rsync -a src/ host:dst/; }\n'
+        + 'timeout 5 install\necho "install $?"\ntimeout 300 sync\necho "sync $?"\n';
+      write('only-name.sh', script);
+      const r = await bash(['only-name.sh']);
+      // (coreutils' install, with no operand: "missing file operand", status 1; not `cp`, which says "cannot stat".)
+      assert.match(r.stderr, /install: missing file operand/);
+      assert.doesNotMatch(r.stderr, /cannot stat/);
+      assert.strictEqual(r.stdout, 'install 1\nsync 0\n');
+      for (const [line, name] of [[4, 'install'], [6, 'sync']] as const) {
+        const note = noteOf(script, 'function-shadowed-by-program', line)!;
+        assert.strictEqual(note.level, 'warning', name);
+        assert.match(note.body, new RegExp(`so the program \`${name}\` runs, not this script's function of that name\\. The function does not run that program itself, so a different program runs`), name);
+      }
+      for (const src of ['install() { cp app /usr/local/bin/; }\nsudo install', 'sync() { rsync -a src/ host:dst/; }\ntimeout 300 sync',
+        'install() { local d=/usr/local/bin; x=1; "$@"; cp app "$d"; }\nssh host install', 'echo() { :; }\nsudo echo hi', 'sync() { rsync -a src/ host:dst/; }\ndocker run img sync',
+        'sync() { rsync -a src/ host:dst/; }\nbash -c sync']) {
+        assert.strictEqual(noteOf(src, 'function-shadowed-by-program', 1)?.level, 'warning', src);
+      }
+      assert.match(explain('install() { cp app /usr/local/bin/; }\nsudo install', 1, 'ja').notes.join('\n'), /関数自体はそのプログラムを実行しないので、関数とは別のプログラムが動き/);
+    });
+    it('a function that runs the program of its name wraps it: a caveat', async () => {
+      // (`\ls` is the function itself: a quoted name skips aliases only, and bash recurses.)
+      const recursive = '#!/bin/bash\nls() { \\ls -d /; }\nls\n';
+      write('recursive.sh', recursive);
+      assert.match((await bash(['recursive.sh'], { FUNCNEST: '20' })).stderr, /maximum function nesting level exceeded/);
+      assert.strictEqual(noteOf('ls() { \\ls -F "$@"; }\nsudo ls', 'function-shadowed-by-program', 1)?.level, 'warning');
+      for (const src of ['ls() { command ls -F "$@"; }\nsudo ls', 'ls() { /bin/ls -F "$@"; }\nsudo ls', 'curl() { sudo curl --retry 3 "$@"; }\nssh host curl x',
+        'ls() { env LC_ALL=C ls "$@"; }\ntimeout 5 ls']) {
+        assert.strictEqual(noteOf(src, 'function-shadowed-by-program', 1)?.level, 'info', src);
+      }
+      assert.match(noteOf('ls() { command ls -F "$@"; }\nsudo ls', 'function-shadowed-by-program', 1)!.body, /\. The function runs that program too, so this may be what is meant\./);
     });
   });
 
@@ -631,12 +672,31 @@ describe('pitfalls that bash contradicted', function () {
         assert.strictEqual(note?.level, 'info', src);
         assert.match(note.body, /unless ssh sends it with `SendEnv` and the server accepts it with `AcceptEnv`/, src);
       }
-      // (Another name, or `-o` of another option: an error.)
+      // (`?` stands for one character, a pattern of ssh_config(5); a capital may come from the environment, exported.)
+      for (const src of ["export FOO=1\nssh -o 'SendEnv=FO?' host 'echo $FOO'", "export FOO=1\nssh -o 'sendenv = BAR LC_* F*' host 'echo $FOO'", "LANG=C\nssh host 'echo $LANG'",
+        "FOO=1\nssh -o SendEnv=FOO host 'echo $FOO'"]) {
+        assert.strictEqual(noteOf(src, 'variable-not-in-remote-shell', 1)?.level, 'info', src);
+      }
+      // (Another name, `-o` of another option, a comma, which is no separator, or a variable not exported: ssh sends
+      // only its own environment. An error.)
       for (const src of ["export FOO=1\nssh host 'echo $FOO'", "export FOO=1\nssh -o SendEnv=BAR host 'echo $FOO'", "export FOO=1\nssh -o 'SendEnv -FOO' host 'echo $FOO'",
-        "export FOO=1\nssh -o ConnectTimeout=5 host 'echo $FOO'"]) {
+        "export FOO=1\nssh -o ConnectTimeout=5 host 'echo $FOO'", "export FOO=1\nssh -o SendEnv=BAR,FOO host 'echo $FOO'", "export FOO=1\nssh -o 'SendEnv=FO?O' host 'echo $FOO'", "export FOO=1\nssh -o 'SendEnv=F?' host 'echo $FOO'", "export FOO=1\nssh -o 'SendEnv=F*X' host 'echo $FOO'",
+        "x=1\nssh -o SendEnv=x host 'echo $x'", "export -n LANG=C\nssh host 'echo $LANG'", "declare +x LC_ALL=C\nssh host 'echo $LC_ALL'"]) {
         assert.strictEqual(noteOf(src, 'variable-not-in-remote-shell', 1)?.level, 'error', src);
       }
       assert.match(explain("export LANG=C.UTF-8\nssh host 'echo \"$LANG\"'", 1, 'ja').notes.join('\n'), /（ssh が `SendEnv` で送り、サーバーが `AcceptEnv` で受け付けるときを除く。/);
+    });
+    // (ssh's own reading of `-o`: `ssh -G` prints the settings it would use, with the `sendenv` names of ssh_config.)
+    it('reads the names of `-o SendEnv=` as ssh does', function () {
+      const ssh = spawnSync('ssh', ['-V']);
+      if (ssh.error) this.skip();
+      const values = ['SendEnv=FOO', 'SendEnv=BAR,FOO', 'sendenv BAR FOO', 'SendEnv = "A B" C', 'SendEnv=-LANG', 'SendEnv=FO? MY_*', 'SENDENV\tX\tY', 'ConnectTimeout=5', 'SendEnv=""'];
+      const script = `ssh -G localhost | grep -i '^sendenv '; for v in "$@"; do echo '--'; ssh -G -o "$v" localhost | grep -i '^sendenv '; done; true`;
+      const [base, ...each] = spawnSync('bash', ['-c', script, '_', ...values], { encoding: 'utf8' }).stdout.split('--\n');
+      const names = (out: string) => out.split('\n').filter((l) => l).map((l) => l.slice('sendenv '.length));
+      const config = new Set(names(base));
+      assert.deepStrictEqual(each.map((out) => names(out).filter((n) => !config.has(n))), values.map((v) => [...sshSendEnv(v)]));
+      assert.deepStrictEqual(sshSendEnv('SendEnv='), []);
     });
   });
 });

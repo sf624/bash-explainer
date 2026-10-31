@@ -26,7 +26,7 @@ export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSp
   const lang = /lang:(\w+)/.exec(flags)?.[1] as EmbeddedLang | undefined;
   const io = /io:(\w+)/.exec(flags)?.[1] as IoUse | undefined;
   const setsEnv = /\bsetenv\b/.test(flags) ? 'variable' : flags.includes('envfile') ? 'file' : undefined;
-  const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(io ? { io } : {}), ...(values ? { values } : {}), ...(setsEnv ? { setsEnv } : {}), ...(flags.includes('unsetenv') ? { unsetsEnv: true } : {}), ...(flags.includes('sendenv') ? { sendsEnv: true } : {}), ...(flags.includes('in-order') ? { inOrder: true } : {}) };
+  const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(io ? { io } : {}), ...(values ? { values } : {}), ...(setsEnv ? { setsEnv } : {}), ...(flags.includes('unsetenv') ? { unsetsEnv: true } : {}), ...(flags.includes('in-order') ? { inOrder: true } : {}) };
   const nextIf = /next:(\S+)/.exec(flags)?.[1];
   // (find's `-exec` and `-execdir` end at `;`, or at `+` after a `{}`; `-ok` and `-okdir` only at `;`.)
   if (flags.includes('until-each')) opt.until = { terminators: [';'], slot: { run: 'exec' } };

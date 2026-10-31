@@ -12,7 +12,7 @@ import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { type ExecEnv, linksAfter, reachOf, type SlotLink, variableIn, whereOf } from '../semantics/env';
 import { fromEnvironment, unlessUnread } from '../semantics/shellstate';
-import type { Missed } from '../semantics/names';
+import { type Missed, runsOwnName } from '../semantics/names';
 import { type NestedScript, plainReads, scriptSourceIndex } from '../semantics/nested';
 import { givenToEveryShell } from '../semantics/vars';
 import { type ExpansionStep, wordMeaning } from '../semantics/words';
@@ -143,20 +143,23 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
   const first = words[0];
   const name = first.text;
   // A function of the script that the slot does not run (src/semantics/names.ts): even one defined later.
-  const isFn = isPlainWord(first) && (resolve(cx, name, first, { env }) as { missed?: Missed }).missed?.kind === 'function';
-  // (A function that has the name of a program the dictionary knows, `ls() { command ls -F "$@"; }`: where the function
-  // is not, the program runs, which is often meant, `sudo ls`. A caveat, not the error of a function that is nowhere.)
-  const shadowed = (fn: string, where: 'program' | 'shell' | 'remote' | 'container') => {
+  const miss = isPlainWord(first) ? (resolve(cx, name, first, { env }) as { missed?: Missed }).missed : undefined;
+  const isFn = miss?.kind === 'function';
+  // (A function that has the name of a program the dictionary knows: where the function is not, the program runs. A
+  // caveat when the function itself runs that program, `ls() { command ls -F "$@"; }` (`runsOwnName`), and `sudo ls` is
+  // often meant; a warning when it only has its name, `install() { cp app /usr/local/bin/; }`, and `sudo install` runs
+  // another program. Not the error of a function that is nowhere.)
+  const shadowed = (fn: string, def: SyntaxNode, where: 'program' | 'shell' | 'remote' | 'container') => {
     const spec = specFor(cx, fn);
-    return spec && (!spec.builtin || spec.program) ? fact(cx.lang, 'function-shadowed-by-program', { via, name: fn, where }) : undefined;
+    return spec && (!spec.builtin || spec.program) ? fact(cx.lang, 'function-shadowed-by-program', { via, name: fn, where, wraps: runsOwnName(cx.state, def) }) : undefined;
   };
   if (slot.run === 'exec' && where === 'container') {
     if (isFn) {
-      cx.note(shadowed(name, 'container') ?? fact(cx.lang, 'function-not-in-container', { via, name }), first);
+      cx.note(shadowed(name, miss.def, 'container') ?? fact(cx.lang, 'function-not-in-container', { via, name }), first);
     }
   } else if (slot.run === 'exec') {
     // (A builtin with a program of its name runs the program: the slot gave its spec.)
-    const program = isFn ? shadowed(name, 'program') : undefined;
+    const program = isFn ? shadowed(name, miss.def, 'program') : undefined;
     if (program) cx.note(program, first);
     else if (isPlainWord(first) && (isFn || role.spec?.builtin)) {
       const fix = isFn && blocker
@@ -177,7 +180,7 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
     }
     unpassedVariables(cx, env, words);
     if (isFn) {
-      cx.note(shadowed(name, 'remote') ?? fact(cx.lang, 'function-not-on-remote', { name }), first);
+      cx.note(shadowed(name, miss.def, 'remote') ?? fact(cx.lang, 'function-not-on-remote', { name }), first);
     }
   } else if (slot.run === 'shell-string') {
     unpassedVariables(cx, env, words);
@@ -204,7 +207,8 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
     const shell = link.shell!;
     if (res && res.kind !== 'function') {
       const f = fn!;
-      cx.note(shadowed(f, 'shell') ?? (missed?.why === 'not-passed' && blocker !== link
+      // (Another shell does not have it: the function's definition is in `missed`, src/semantics/names.ts.)
+      cx.note(shadowed(f, missed!.def, 'shell') ?? (missed?.why === 'not-passed' && blocker !== link
         ? fact(cx.lang, 'function-not-in-new-shell-blocked', { via, fn: f, blocker: blocker!.via })
         : missed?.why === 'not-passed'
         ? fact(cx.lang, 'function-not-in-new-shell', { via, fn: f })

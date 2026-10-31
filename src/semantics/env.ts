@@ -377,15 +377,28 @@ export function droppedBy(env: ExecEnv, name: string): SlotLink | undefined {
     && (l.slot.where === 'remote' || l.slot.where === 'container' || ((l.env === 'reset' || l.env === 'none') && !kept(l))));
 }
 
-/** Whether `name` is among `names`, where a name that ends in `*` stands for every name it starts (`LC_*`). */
-const namedIn = (names: readonly string[] | undefined, name: string): boolean => !!names?.some((k) => (k.endsWith('*') ? name.startsWith(k.slice(0, -1)) : k === name));
+/**
+ * Whether `name` matches the pattern `p` of ssh_config(5) (PATTERNS), as sudo's and ssh's lists of names use: `*`
+ * stands for any text, `?` for one character.
+ */
+function matches(p: string, name: string): boolean {
+  if (p === '') return name === '';
+  if (p[0] === '*') return matches(p.slice(1), name) || (name !== '' && matches(p, name.slice(1)));
+  return name !== '' && (p[0] === '?' || p[0] === name[0]) && matches(p.slice(1), name.slice(1));
+}
+
+/** Whether `name` is among `names`, patterns of `matches` (`LC_*`). */
+const namedIn = (names: readonly string[] | undefined, name: string): boolean => !!names?.some((k) => matches(k, name));
 
 /** Whether a variable is in the environment of a program (`variableIn`), and what on the way decides it. */
 export interface VariableIn {
   readonly state: Tri;
   /** The first link that passes no variables (`droppedBy`), even when a later one sets it again. */
   readonly dropped?: SlotLink;
-  /** That link may still pass it, as configured (`SlotLink.maySend`: ssh's `SendEnv`). */
+  /**
+   * That link may still pass it, as configured (`SlotLink.maySend`: ssh's `SendEnv`), and it may be in the environment
+   * there: exported, or not known not to be (ssh sends only variables of its own environment).
+   */
   readonly sent?: true;
   /** A link removes it (`env -u NAME`). */
   readonly unset: boolean;
@@ -421,18 +434,24 @@ export function variableIn(model: StateModel, cmd: SyntaxNode, name: string, env
   const exported = v?.attrs.x?.state ?? 'off';
   let state: Tri = prefix || (v?.set === 'on' && exported === 'on') ? 'on' : !v ? 'unknown' : v.set === 'off' || exported === 'off' ? 'off' : 'unknown';
   let dropped: SlotLink | undefined;
+  let sent = false;
   let unset = false;
   for (const l of (prefix || open || v ? linksAfter(env, place) : env).links) {
     if (l.kind !== 'slot') continue;
     // (A name the program sets itself, sudo's `USER` or `HOME`, is there, with its value: `SlotLink.sets`.)
     if (l.sets?.includes(name)) state = 'on';
-    else if (droppedBy({ links: [l] }, name)) { state = l.slot.where === 'remote' || l.slot.where === 'container' ? 'unknown' : 'off'; dropped ??= l; }
+    else if (droppedBy({ links: [l] }, name)) {
+      // (ssh sends a name of `SendEnv` only from its own environment: not `x=1` before it, which is not exported.)
+      sent ||= !dropped && state !== 'off' && namedIn(l.maySend, name);
+      state = l.slot.where === 'remote' || l.slot.where === 'container' ? 'unknown' : 'off';
+      dropped ??= l;
+    }
     if (l.unsets?.includes(name)) { state = 'off'; unset = true; }
     // (A file of them, `docker run --env-file`, may set it, in a container, which passes nothing else.)
     if (l.assigns.includes(name)) state = 'on';
     else if (l.assigns.includes('*')) state = 'unknown';
   }
-  return { state, ...(dropped ? { dropped } : {}), ...(dropped && namedIn(dropped.maySend, name) ? { sent: true as const } : {}), unset };
+  return { state, ...(dropped ? { dropped } : {}), ...(sent ? { sent: true as const } : {}), unset };
 }
 
 /**
@@ -599,7 +618,7 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
     // (`env x=1 cmd`, `docker run -e x img cmd`: the assignments come before the command.)
     const assigns: string[] = [];
     const unsets: string[] = [];
-    // (`ssh -o SendEnv=NAME`: names ssh may send, with ssh_config's own; the server must accept them.)
+    // (`ssh -o SendEnv=NAME`: names the program may send, beside the slot's own `maySend`; the server must accept them.)
     const sends: string[] = [];
     const flags = list.flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).flatMap((r) => (r.role === 'option' ? [r.flag, ...r.spec.names] : []));
     for (const [idx, { word, role, w, split }] of list.entries()) {
@@ -614,10 +633,9 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
         if (text !== undefined) unsets.push(text);
       }
       if (value?.spec?.sendsEnv) {
-        // (A value not known here may send any name: `*`. `-NAME` removes a name ssh_config sends.)
+        // (The names the spec reads in the value, `ssh -o SendEnv=NAME`; a value not known here may send any: `*`.)
         const text = w.args[word].value?.slice(value.attached);
-        const m = /^\s*SendEnv\s*[=\s]\s*(.*)$/i.exec(text ?? 'SendEnv *');
-        if (m) sends.push(...m[1].split(/[\s,]+/).filter((x) => /^[^-]/.test(x)));
+        sends.push(...(text === undefined ? ['*'] : value.spec.sendsEnv(text)));
       }
       if (role.role === 'operand' && role.spec?.assignment) {
         // (By its value where it is static: `env 'BASH_COMPAT=31' bash -c …`.)
