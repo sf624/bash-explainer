@@ -116,15 +116,16 @@ interface Placed { readonly above: boolean; readonly overLine: boolean; readonly
 
 /**
  * Where a card for `pos`, hovered at `at`, goes inside the editor's pane (src/ui/cardPlace.ts): above or below the
- * line, or by the hovered row when the line leaves no room on either side; and its height at most, set as a CSS
- * variable on the editor (read by the theme below), with the pane's width. It reads the layout, so it runs where a card
+ * line, or by the hovered row when the line leaves no room on either side; and its height at most, set as the CSS
+ * variable `room` on the editor (read by the theme below: one for the pointer's card, one for the keyboard's, so that
+ * neither changes the other's), with the pane's width. It reads the layout, so it runs where a card
  * is asked for (the pointer, a key), never while CodeMirror updates.
  */
-function placeCard(view: EditorView, pos: number, at: number, side: -1 | 1): Placed {
+function placeCard(view: EditorView, pos: number, at: number, side: -1 | 1, room: '--bx-hover-room' | '--bx-pinned-room'): Placed {
   const pane = view.dom.getBoundingClientRect();
   const space = { top: Math.max(pane.top, 0), bottom: Math.min(pane.bottom, window.innerHeight) };
   const place = cardPlace(lineRows(view, pos), rowAt(view, pos, at, side), space, window.innerHeight);
-  view.dom.style.setProperty('--bx-hover-room', `${place.maxHeight}px`);
+  view.dom.style.setProperty(room, `${place.maxHeight}px`);
   view.dom.style.setProperty('--bx-hover-width', `${Math.max(200, Math.round(Math.min(pane.width, window.innerWidth) - 16))}px`);
   return { above: place.above, overLine: place.overLine, at, side };
 }
@@ -185,8 +186,10 @@ function pinnedField(host: HoverHost) {
         if (!e.is(openCard)) continue;
         if (!e.value) return null;
         const { pos, placed } = e.value;
+        // Not `strictSide`: it stays while the editor scrolls, and when its side has no more room for it, CodeMirror
+        // moves it to the other side of the same anchor (never over the line), rather than leaving a sliver.
         return {
-          pos, above: placed.above, strictSide: !placed.overLine, arrow: false,
+          pos, above: placed.above, arrow: false,
           create: (view) => {
             // (From the keyboard no lint tooltip shows: the card keeps every note.)
             const c = cardAt(host, view, pos, []);
@@ -220,16 +223,30 @@ export function webHover(host: HoverHost): WebHover {
     let onPart: { at: PointerAt; row: Box } | undefined;
     let last: PointerAt | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    /** Whether a button was down at the pointer's last event. */
+    let pressed = false;
+    /** A press ends the way to the card: from then on every move is the editor's (a drag selects). */
+    const release = () => {
+      clearTimeout(timer);
+      timer = undefined;
+      onPart = undefined;
+    };
     const inside = (p: PointerAt, b: DOMRect) => p.x >= b.left && p.x <= b.right && p.y >= b.top && p.y <= b.bottom;
-    /** The row of the editor under the pointer, from the characters at its position. */
-    const rowUnder = (p: PointerAt, at: number): Box => {
-      const h = view.defaultLineHeight / 2;
-      return [view.coordsAtPos(at, 1), view.coordsAtPos(at, -1)].find((r) => r && p.y >= r.top - 1 && p.y <= r.bottom + 1) ?? { top: p.y - h, bottom: p.y + h };
+    /**
+     * The row of the line at `pos` that the pointer is on, a line height high, as the line's rows are (the box of a
+     * character is lower than its row: between two rows the pointer would be on neither).
+     */
+    const rowUnder = (p: PointerAt, pos: number): Box => {
+      const line = lineRows(view, pos);
+      const h = view.defaultLineHeight;
+      const k = Math.max(0, Math.min(Math.floor((p.y - line.top) / h), Math.round((line.bottom - line.top) / h) - 1));
+      return { top: line.top + k * h, bottom: line.top + (k + 1) * h };
     };
     const graceOver = (card: Card) => {
       timer = undefined;
       const tip = view.dom.querySelector<HTMLElement>('.cm-tooltip-hover');
-      if (!last || hovered !== card || (tip && inside(last, tip.getBoundingClientRect()))) return;
+      // (A move with no button would end a drag that started meanwhile: CodeMirror ends it on `buttons == 0`.)
+      if (!last || pressed || hovered !== card || (tip && inside(last, tip.getBoundingClientRect()))) return;
       onPart = undefined;
       view.dispatch({ effects: closeHoverTooltips });
       // The editor did not see the moves on the way: it is shown where the pointer rests, so that its word gets a card.
@@ -239,15 +256,16 @@ export function webHover(host: HoverHost): WebHover {
     const move = (e: MouseEvent) => {
       const tip = view.dom.querySelector<HTMLElement>('.cm-tooltip-hover');
       last = { x: e.clientX, y: e.clientY, time: e.timeStamp };
+      pressed = e.buttons !== 0;
+      if (pressed) return release();
       const card = hovered;
-      if (e.buttons !== 0 || !card || !tip?.querySelector('.cm-bx-hover')) return void (onPart = undefined);
+      if (!card || !tip?.querySelector('.cm-bx-hover')) return void (onPart = undefined);
       const box = tip.getBoundingClientRect();
       if (inside(last, box)) return void (onPart = undefined);
       const at = view.posAtCoords(last, false);
       if (at >= card.from && at <= card.to && view.state.doc.lineAt(at).number === card.line + 1) {
-        clearTimeout(timer);
-        timer = undefined;
-        onPart = { at: last, row: rowUnder(last, at) };
+        release();
+        onPart = { at: last, row: rowUnder(last, card.from) };
         return;
       }
       if (onPart && towardCard(onPart.at, last, onPart.row, lineRows(view, card.from), box)) {
@@ -257,11 +275,20 @@ export function webHover(host: HoverHost): WebHover {
       }
       onPart = undefined;
     };
+    const down = () => {
+      pressed = true;
+      release();
+    };
+    const up = (e: MouseEvent) => void (pressed = e.buttons !== 0);
     view.dom.addEventListener('mousemove', move, true);
+    document.addEventListener('mousedown', down, true);
+    document.addEventListener('mouseup', up, true);
     return {
       destroy() {
         clearTimeout(timer);
         view.dom.removeEventListener('mousemove', move, true);
+        document.removeEventListener('mousedown', down, true);
+        document.removeEventListener('mouseup', up, true);
       },
     };
   });
@@ -275,7 +302,7 @@ export function webHover(host: HoverHost): WebHover {
       return true;
     }
     const pos = view.state.selection.main.head;
-    const placed = placeCard(view, pos, pos, 1);
+    const placed = placeCard(view, pos, pos, 1, '--bx-pinned-room');
     view.dispatch({ effects: [closeHoverTooltips, openCard.of({ pos, placed })] });
     // The focus stays in the editor: a screen reader is told that the card is there, and how to reach it.
     if (view.dom.querySelector('.cm-bx-hover-pinned')) host.announce?.(TEXT[host.lang()].cardOpened(isMac() ? '⌘K ⌘I' : 'Ctrl+K Ctrl+I'));
@@ -316,6 +343,10 @@ export function webHover(host: HoverHost): WebHover {
         return { top: r.top, left: Math.max(r.left, 8), right: Math.min(r.right, window.innerWidth - 8), bottom: r.bottom };
       },
     }),
+    // CodeMirror puts every hover tooltip in one box: the box takes its side from the first tooltip of the box when it
+    // opens, and keeps it while others join; its anchor from the one tooltip with `getCoords` (ours). So the card opens
+    // before the lint's problem (250 ms, the lint's hover waits 300 ms): the box goes where `cardPlace` says, and the
+    // problem joins it, above the card. The box has no `strictSide`; the room it gets is the room on its side.
     hoverTooltip((view, pos, side) => {
       if (!host.settings()['hover.enabled'] || window.matchMedia('(hover: none)').matches) return null;
       // Past the end of the line VS Code does not ask; on a name hint, the hint's own tooltip answers.
@@ -324,15 +355,15 @@ export function webHover(host: HoverHost): WebHover {
       if (view.contentDOM.querySelector('.cm-bx-hint:hover')) return null;
       const c = cardAt(host, view, pos, problemsAt(view, pos, side));
       if (!c) return null;
-      const placed = placeCard(view, c.from, pos, side < 0 ? -1 : 1);
+      const placed = placeCard(view, c.from, pos, side < 0 ? -1 : 1, '--bx-hover-room');
       return {
-        pos: c.from, end: c.to, above: placed.above, strictSide: !placed.overLine,
+        pos: c.from, end: c.to, above: placed.above,
         create: () => {
           hovered = c;
           return { dom: cardDom(host, view, c, false), getCoords: anchorOf(view, placed), destroy: () => void (hovered === c && (hovered = undefined)) };
         },
       };
-    }, { hoverTime: 350 }),
+    }, { hoverTime: 250 }),
     grace,
     Prec.highest(compartment.of(host.settings()['hover.enabled'] ? keys : [])),
     EditorView.theme({
@@ -343,7 +374,7 @@ export function webHover(host: HoverHost): WebHover {
       },
       '.cm-tooltip-hover > .cm-bx-hover': { overflow: 'visible' },
       // A card opened by the keyboard scrolls itself, so that the focus in it scrolls it.
-      '.cm-bx-hover-pinned': { maxHeight: 'min(420px, var(--bx-hover-room, 420px))' },
+      '.cm-bx-hover-pinned': { maxHeight: 'min(420px, var(--bx-pinned-room, 420px))' },
       // The card: the page's own fonts and colours, VS Code's hover sizes (500 px wide at most, scrolled when long).
       '.cm-bx-hover': {
         '--vscode-badge-background': '#616161', '--vscode-badge-foreground': '#f8f8f8',

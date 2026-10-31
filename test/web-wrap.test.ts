@@ -261,9 +261,9 @@ describe('the web page: long lines wrap between shell words, and hover cards go 
     }
   });
 
-  /** A page of 1280 px, the sample's line 8 wrapped, the pointer away from it and no card. */
-  async function desk(): Promise<Page> {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+  /** A page of 1280 px (800 high unless said), the sample's line 8 wrapped, the pointer away from it and no card. */
+  async function desk(height = 800): Promise<Page> {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height }, locale: 'en-US' });
     const page = await ctx.newPage();
     await page.goto(base);
     await until('the runs', () => page.locator('.cm-bx-run').count(), (n) => n > 0);
@@ -272,8 +272,11 @@ describe('the web page: long lines wrap between shell words, and hover cards go 
   }
 
   /** Moves the pointer from `a` to `b` in `steps` moves, as a hand does. */
-  const glide = async (page: Page, a: { x: number; y: number }, b: { x: number; y: number }, steps = 8) => {
-    for (let i = 1; i <= steps; i++) await page.mouse.move(a.x + ((b.x - a.x) * i) / steps, a.y + ((b.y - a.y) * i) / steps);
+  const glide = async (page: Page, a: { x: number; y: number }, b: { x: number; y: number }, steps = 8, pause = 0) => {
+    for (let i = 1; i <= steps; i++) {
+      await page.mouse.move(a.x + ((b.x - a.x) * i) / steps, a.y + ((b.y - a.y) * i) / steps);
+      if (pause) await page.waitForTimeout(pause);
+    }
   };
 
   it('shows the card of another part of the line the pointer moves to and rests on, on its row or a later one', async () => {
@@ -290,6 +293,8 @@ describe('the web page: long lines wrap between shell words, and hover cards go 
         const first = await tip(page).innerText();
         // Along the row to `sort`, or down across the rows to `exit` (on a later row): there it rests.
         const to = await pointAt(page, LINE, word);
+        if (word === 'sort') assert.ok(Math.abs(to.y - from.y) < 2, `sort on grep's row: ${to.y}, ${from.y}`);
+        else assert.ok(to.y > from.y + 10, `exit on a later row: ${to.y}, ${from.y}`);
         await glide(page, from, to);
         const text = await until(`the card of ${word}`, () => tip(page).innerText().catch(() => ''), (t) => t !== '' && t !== first);
         assert.ok(text.includes(word), `${word}: ${text.slice(0, 200)}`);
@@ -323,6 +328,103 @@ describe('the web page: long lines wrap between shell words, and hover cards go 
     }
   });
 
+  for (const [hold, pause] of [[900, 0], [300, 100]] as const) {
+    it(`keeps the drag a press starts while the way to the card runs (held ${hold} ms, then dragged ${pause ? 'slowly' : 'quickly'})`, async () => {
+      const page = await desk();
+      try {
+        const from = await pointAt(page, LINE, 'grep');
+        await page.mouse.move(from.x, from.y);
+        await tipBox(page);
+        const to = await pointAt(page, LINE, 'exit');
+        // Down from `grep` to the next row, towards the card: the way to the card runs. A press there, held past the
+        // way's time, or dragged while that time ends.
+        const next = { x: from.x, y: to.y };
+        // (A little lower on `grep` first, still on its row, then on the next row.)
+        await page.mouse.move(from.x, from.y + 5);
+        await page.mouse.move(next.x, next.y);
+        assert.strictEqual(await tip(page).count(), 1, 'the card stays on the way to it');
+        await page.mouse.down();
+        await page.waitForTimeout(hold);
+        await glide(page, next, { x: to.x + 20, y: to.y }, 8, pause);
+        await page.mouse.up();
+        const selected = (await page.evaluate('getSelection().toString()') as string).replace(/\s+/g, ' ');
+        assert.match(selected, /\|\| exi/, JSON.stringify(selected));
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
+  /** The index among the drawn lines of the line holding `text` (the editor draws only the lines near the view). */
+  const drawnLine = (page: Page, text: string) => page.evaluate(`Array.from(document.querySelectorAll('.cm-content > .cm-line')).findIndex((l) => l.textContent.includes(${JSON.stringify(text)}))`) as Promise<number>;
+  /** Scrolls the editor so that the drawn line `i` starts `gap` pixels under the pane's top. */
+  const scrollLineTo = async (page: Page, i: number, gap: number) => {
+    await page.evaluate(`(() => {
+      const s = document.querySelector('.cm-scroller');
+      const line = document.querySelectorAll('.cm-content > .cm-line')[${i}].getBoundingClientRect();
+      s.scrollTop += line.top - s.getBoundingClientRect().top - ${gap};
+    })()`);
+    await page.waitForTimeout(300);
+  };
+
+  it('puts the box of a word with a problem where the card goes, the problem above the card', async () => {
+    const page = await desk();
+    try {
+      // `cat $file` (an unquoted variable: a problem), placed so that the room under it is a little over 200 px (the
+      // card goes there) and the room above larger: a box of that height would fit above too, where the lint's problem
+      // asks for.
+      await cursorToLine(page, sample.split('\n').findIndex((l) => l === 'cat $file') + 1);
+      let i = await drawnLine(page, 'cat $file');
+      const pane = (await page.locator('.cm-editor').boundingBox())!;
+      const gap = Math.round(pane.height - 20 - 8 - 225);
+      assert.ok(gap - 8 > 225, `the pane is ${pane.height} px high`);
+      await scrollLineTo(page, i, gap);
+      i = await drawnLine(page, 'cat $file');
+      const p = await pointAt(page, i, '$file');
+      await page.mouse.move(5, 300);
+      await page.mouse.move(p.x + 4, p.y);
+      await until('the problem and the card', () => tip(page).locator('> *').count(), (n) => n === 2);
+      await page.waitForTimeout(300);
+      const rows = await rowsOf(page, i);
+      const b = (await tip(page).boundingBox())!;
+      assert.ok(b.y >= rows.bottom - 1, `the box ${JSON.stringify(b)} under the line ${JSON.stringify(rows)}`);
+      const room = await page.locator('.cm-editor').evaluate((e) => parseFloat((e as unknown as { style: { getPropertyValue(n: string): string } }).style.getPropertyValue('--bx-hover-room')));
+      assert.ok(b.height <= room + 1, `${b.height} px high, the room ${room} px`);
+      const [problem, card] = await Promise.all(['.cm-tooltip-lint', '.cm-bx-hover'].map(async (s) => (await tip(page).locator(s).boundingBox())!));
+      assert.ok(problem.y < card.y, 'the problem above the card');
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  it('moves the keyboard\'s card to the other side of the line when the editor scrolls its side away', async () => {
+    const page = await desk(420);
+    try {
+      // The card of `cat $file` from the keyboard, with the line low in the pane: the card goes above it.
+      await cursorToLine(page, sample.split('\n').findIndex((l) => l === 'cat $file') + 1);
+      let i = await drawnLine(page, 'cat $file');
+      await scrollLineTo(page, i, 280);
+      await page.keyboard.press('Control+K');
+      await page.keyboard.press('Control+I');
+      const card = page.locator('.cm-bx-hover-pinned');
+      await until('the card', () => card.count(), (n) => n === 1);
+      i = await drawnLine(page, 'cat $file');
+      let rows = await rowsOf(page, i);
+      let b = (await card.boundingBox())!;
+      assert.ok(b.y + b.height <= rows.top + 1, `above: the card ${JSON.stringify(b)}, the line ${JSON.stringify(rows)}`);
+      // The line scrolled near the pane's top: the card goes under it, whole, not a sliver above it.
+      await scrollLineTo(page, i, 20);
+      i = await drawnLine(page, 'cat $file');
+      rows = await rowsOf(page, i);
+      b = (await card.boundingBox())!;
+      const whole = await card.evaluate((e) => e.scrollHeight);
+      assert.ok(b.y >= rows.bottom - 1, `under: the card ${JSON.stringify(b)}, the line ${JSON.stringify(rows)}`);
+      assert.ok(b.height >= Math.min(CARD_MIN, whole) - 1, `${b.height} px high`);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   it('gives a line taller than any room a card of CARD_MIN at least, by the hovered row', async () => {
     const words = Array.from({ length: 150 }, (_, i) => `word${i}`).join(' ');
     for (const [width, height] of [[1280, 420], [640, 700]] as const) {
@@ -340,26 +442,30 @@ describe('the web page: long lines wrap between shell words, and hover cards go 
         const line = await rowsOf(page, 0);
         assert.ok(line.bottom - line.top > pane.height - 2 * CARD_MIN, `${width}×${height}: the line ${line.bottom - line.top} px, the pane ${pane.height} px`);
         /** The card's height, the height it would have whole, and the room it was given. */
-        const size = (sel: string) => page.locator(sel).evaluate((e) => ({
-          height: e.getBoundingClientRect().height, whole: e.scrollHeight,
-          room: parseFloat((e.closest('.cm-editor') as unknown as { style: { getPropertyValue(n: string): string } }).style.getPropertyValue('--bx-hover-room')),
-        }));
+        const size = (sel: string, room: string) => page.locator(sel).evaluate((e, room) => ({
+          height: e.getBoundingClientRect().height, whole: e.scrollHeight, top: e.getBoundingClientRect().top,
+          room: parseFloat((e.closest('.cm-editor') as unknown as { style: { getPropertyValue(n: string): string } }).style.getPropertyValue(room)),
+        }), room);
+        /** Whether a card leaves the text of the row at `y` uncovered (its glyphs reach about 8 px each side of the middle). */
+        const clear = (c: { top: number; height: number }, y: number) => c.top >= y + 6 || c.top + c.height <= y - 6;
         // The pointer on a word in view, at the top of the line.
         await page.keyboard.press('Control+Home');
         await page.mouse.move(5, 5);
         const p = await pointAt(page, 0, 'echo');
         await page.mouse.move(p.x + 2, p.y);
         await tipBox(page);
-        const hovered = await size('.cm-tooltip-hover');
+        const hovered = await size('.cm-tooltip-hover', '--bx-hover-room');
         assert.ok(hovered.room >= CARD_MIN && hovered.height >= Math.min(CARD_MIN, hovered.whole) - 1, `${width}×${height}, the pointer: ${JSON.stringify(hovered)}`);
+        assert.ok(clear(hovered, p.y), `${width}×${height}, the pointer: the card ${JSON.stringify(hovered)} covers the hovered row at ${p.y}`);
         // The keyboard: Ctrl+K Ctrl+I at the cursor.
         await page.mouse.move(5, 5);
         await page.keyboard.press('Control+Home');
         await page.keyboard.press('Control+K');
         await page.keyboard.press('Control+I');
         await until('the card', () => page.locator('.cm-bx-hover-pinned').count(), (n) => n === 1);
-        const pinned = await size('.cm-bx-hover-pinned');
+        const pinned = await size('.cm-bx-hover-pinned', '--bx-pinned-room');
         assert.ok(pinned.room >= CARD_MIN && pinned.height >= Math.min(CARD_MIN, pinned.whole) - 1, `${width}×${height}, the keyboard: ${JSON.stringify(pinned)}`);
+        assert.ok(clear(pinned, p.y), `${width}×${height}, the keyboard: the card ${JSON.stringify(pinned)} covers the cursor's row at ${p.y}`);
         console.log(`      (${width}×${height}: the line ${Math.round(line.bottom - line.top)} px in a pane of ${Math.round(pane.height)} px; the card ${Math.round(hovered.height)} px, from the keyboard ${Math.round(pinned.height)} px)`);
       } finally {
         await ctx.close();

@@ -53,10 +53,12 @@ export const CARD_GRACE = 600;
 
 /**
  * Whether a card stays while the pointer is off its part (decision 10): the pointer was last on the part at `left`, on
- * the line's row `row`, and is now at `now`. It stays only once the pointer has left that row towards the card (into
- * the line's later rows, or the gap to the card), has come closer to it, and within `CARD_GRACE`. So the card is not lost
- * to the words of the line's later rows on the way to it, as a menu keeps its submenu; a move along the part's row, or
- * away from the card, is the editor's as usual (another word's card, a selection).
+ * the line's row `row`, and is now at `now`. It stays while `now` is past that row on the card's side (in the line's
+ * later rows, or the gap to the card, not past the card's edge), more than 2 px nearer the card than `left`, and within
+ * `CARD_GRACE` of `left`. Only `now` is compared with `left`, not with the move before it: a pointer that turns back
+ * within those rows keeps the card until the time is up. So the card is not lost to the words of the line's later rows
+ * on the way to it, as a menu keeps its submenu; a move along the part's row, or back to it, is the editor's as usual
+ * (another word's card, a selection).
  */
 export function towardCard(left: PointerAt, now: PointerAt, row: Box, line: Box, card: Box): boolean {
   if (now.time - left.time > CARD_GRACE) return false;
