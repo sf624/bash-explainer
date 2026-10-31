@@ -69,9 +69,9 @@ describe('the example of a brace expansion', () => {
     ['echo {01..10..3} done', true],
     ['mkdir -p project/{src,test,docs}', false],
     ['cp config.yml{,.bak}', false],
-    // Options and backslashes of echo, and a glob after the expansion, are not run: no output.
+    // Options of echo, and a glob after the expansion, are not run: no output. (Bash's echo prints a backslash as it is.)
     ['echo -n {a,b}', false],
-    ['echo {a,b}\\\\n', false],
+    ['echo {a,b}\\\\n', true],
     ['echo {a,b} *.txt', false],
     ['echo {a,b}*.c', false],
     ['echo ~/{a,b}', false],
