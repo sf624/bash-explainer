@@ -228,6 +228,8 @@
       collapsedKeys = new Set();
       foldedKeys = new Set();
       currentKey = '';
+      // (And the line box opened whole: a new line shows three rows at most.)
+      lineOpen = false;
     }
     // The same line drawn again (its problems came, the settings changed): a fold button or a link of the list that had the
     // focus gets it back in the new rows.
@@ -244,7 +246,7 @@
       if (target instanceof HTMLElement) target.focus({ preventScroll: true });
     }
 
-    renderLine(msg.lineText, ex.line, ex.items, msg.marks ?? []);
+    renderLine(msg.lineText, ex.line, ex.items, msg.marks ?? [], msg.lineParts, msg.wrap === true);
 
     // Each note with the icon of its level (src/messages.ts, `NoteLevel`) in place of its mark, and the word that
     // names the level in bold: the icon's shape and the word say it without the colour.
@@ -906,7 +908,12 @@
   window.addEventListener('scroll', syncLine, { passive: true });
   window.addEventListener('resize', syncLine);
 
-  function renderLine(text, line, items, marks = []) {
+  /**
+   * Draws the line at the top, each character coloured by the deepest token covering it. Its parts (src/ui/lineBox.ts)
+   * are runs that stay on one row (`.run`) and the blanks between them, where a row may end when the box wraps
+   * (`wrap`: the web page's `editor.wrap`, VS Code's `editor.wordWrap`); otherwise it is one row that scrolls sideways.
+   */
+  function renderLine(text, line, items, marks = [], parts = null, wrap = false) {
     const owner = new Array(text.length).fill(-1);
     const depthAt = new Array(text.length).fill(-1);
     const visit = (token, depth) => {
@@ -927,13 +934,34 @@
     items.forEach((t) => visit(t, 0));
 
     const pre = $('line');
-    pre.replaceChildren();
-    requestAnimationFrame(syncLine);
+    const rows = document.createElement('span');
+    rows.className = 'rows';
+    pre.replaceChildren(rows);
+    pre.classList.toggle('wrap', wrap);
     segments = [];
-    let i = 0;
-    while (i < text.length) {
-      let j = i;
-      while (j < text.length && owner[j] === owner[i]) j++;
+    /** @type {{ from: number, to: number, run: boolean }[]} */
+    const cut = parts ?? [{ from: 0, to: text.length, run: false }];
+    for (const part of cut) {
+      const box = part.run ? Object.assign(document.createElement('span'), { className: 'run' }) : rows;
+      if (box !== rows) rows.append(box);
+      drawPart(box, part.from, part.to);
+    }
+    if (!text.length) rows.textContent = ' ';
+    fitLine();
+    requestAnimationFrame(syncLine);
+
+    /** The characters [from, to) of the line in `box`, a span per token. */
+    function drawPart(/** @type {HTMLElement} */ box, /** @type {number} */ from, /** @type {number} */ to) {
+      let i = from;
+      while (i < to) {
+        let j = i;
+        while (j < to && owner[j] === owner[i]) j++;
+        box.append(segment(i, j));
+        i = j;
+      }
+    }
+
+    function segment(/** @type {number} */ i, /** @type {number} */ j) {
       const span = document.createElement('span');
       span.textContent = text.slice(i, j);
       span.dataset.from = String(i);
@@ -953,12 +981,82 @@
       // (Under the problems of the line, the editor's squiggle: a warning wins over an information.)
       const mark = marks.filter((/** @type {any} */ m) => m.from < j && i < m.to).sort((/** @type {any} */ a, /** @type {any} */ b) => (a.level === 'warning' ? -1 : 0) - (b.level === 'warning' ? -1 : 0))[0];
       if (mark && text.slice(i, j).trim()) span.classList.add('squiggle', `squiggle-${mark.level}`);
-      pre.append(span);
       segments.push(span);
-      i = j;
+      return span;
     }
-    if (!text.length) pre.textContent = ' ';
   }
+
+  /** The line box was opened whole (a click, Enter or Space): it stays open while the same line is drawn again. */
+  let lineOpen = false;
+  /** The line box's width when its runs were last measured. */
+  let lineWidth = -1;
+
+  /**
+   * Fits a wrapping line box to its width. A run wider than a row may break at its own blanks, and as a last resort
+   * anywhere (`.wide`); the others stay whole. A box of more than three rows shows three and a fade (`.clamped`)
+   * until it is opened. The widths are measured, not estimated from the font.
+   */
+  function fitLine() {
+    const pre = $('line');
+    const rows = /** @type {HTMLElement | null} */ (pre.querySelector(':scope > .rows'));
+    const runs = /** @type {HTMLElement[]} */ (Array.from(pre.querySelectorAll('.run')));
+    runs.forEach((r) => r.classList.remove('wide'));
+    const shown = pre.classList.contains('wrap') && rows && pre.getClientRects().length > 0;
+    lineWidth = shown ? pre.clientWidth : -1;
+    if (!shown) {
+      setLineFold(false);
+      return;
+    }
+    // (A row after the first is the narrowest: it hangs in by the room of the mark ↪.)
+    const room = rows.clientWidth - parseFloat(getComputedStyle(rows).paddingLeft);
+    const wide = runs.filter((r) => r.getBoundingClientRect().width > room + 0.5);
+    wide.forEach((r) => r.classList.add('wide'));
+    const row = parseFloat(getComputedStyle(rows).lineHeight);
+    setLineFold(rows.getBoundingClientRect().height > 3 * row + 1);
+  }
+
+  /** Whether the line box has more than three rows: then it folds to three, and a click or a key opens it whole. */
+  function setLineFold(/** @type {boolean} */ foldable) {
+    const pre = $('line');
+    pre.classList.toggle('clamped', foldable && !lineOpen);
+    pre.classList.toggle('open', foldable && lineOpen);
+    if (foldable) {
+      pre.tabIndex = 0;
+      pre.setAttribute('role', 'button');
+      pre.setAttribute('aria-expanded', String(lineOpen));
+      pre.title = lineOpen ? labels.lineFold ?? '' : labels.lineOpen ?? '';
+    } else {
+      pre.removeAttribute('tabindex');
+      pre.removeAttribute('role');
+      pre.removeAttribute('aria-expanded');
+      pre.removeAttribute('title');
+    }
+  }
+
+  /** Opens the line box whole, or folds it to three rows again. */
+  function toggleLine() {
+    lineOpen = !lineOpen;
+    setLineFold(true);
+    requestAnimationFrame(syncLine);
+  }
+
+  // A folded box opens at a click anywhere in it (a click on a part also does the part's own: it shows its row); an
+  // open one folds at a click beside its parts (a blank, the margin, the marks ↪), so that the parts stay clickable.
+  $('line').addEventListener('click', (e) => {
+    const pre = $('line');
+    if (selecting() || !pre.hasAttribute('aria-expanded')) return;
+    const onPart = e.target instanceof Element && e.target.closest('.seg');
+    if (pre.classList.contains('clamped') || !onPart) toggleLine();
+  });
+  $('line').addEventListener('keydown', (e) => {
+    if (e.target !== $('line') || !$('line').hasAttribute('aria-expanded') || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    toggleLine();
+  });
+  // (Measured again when the box's width changes: the panel's, the window's, the fonts'.)
+  new ResizeObserver(() => {
+    if ($('line').clientWidth !== lineWidth) fitLine();
+  }).observe($('line'));
 
 
   // ---------------------------------------------------------------- tree view (src/reading.ts)

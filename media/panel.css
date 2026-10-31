@@ -133,6 +133,67 @@ pre#line {
   margin: 0;
 }
 
+/*
+ * The line box wraps a long line between shell words when the editor does (the web page's `editor.wrap`, VS Code's
+ * `editor.wordWrap`; src/ui/lineBox.ts). Each run of the line stays on one row (`.run`), so a row ends only at the
+ * blanks between runs; a run wider than a row (`.wide`, measured by panel.js `fitLine`) breaks at its own blanks,
+ * and as a last resort anywhere. The rows after the first hang in, with a faint ↪ as in the editor's gutter. A line
+ * over more than three rows shows three and a fade (`.clamped`) until a click opens it whole (`.open`).
+ */
+pre#line.wrap {
+  --row: 1.5em;
+  line-height: var(--row);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: hidden auto;
+}
+
+pre#line.wrap > .rows {
+  display: block;
+  position: relative;
+  padding-left: 2ch;
+  text-indent: -2ch;
+}
+
+/* (A ↪ on every row but the first, as many as the rows: the column is as tall as the text, and cut there.) */
+pre#line.wrap > .rows::before {
+  content: "\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2ch;
+  overflow: hidden;
+  text-indent: 0;
+  white-space: pre;
+  color: var(--c-muted);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+pre#line.wrap .run {
+  white-space: pre;
+}
+
+pre#line.wrap .run.wide {
+  white-space: pre-wrap;
+}
+
+/* (The third row fades out, and the fourth, under it in the bottom padding of 0.6rem, does not show.) */
+pre#line.wrap.clamped {
+  --fade: linear-gradient(to bottom, #000 calc(100% - 0.6rem - var(--row)), transparent calc(100% - 0.6rem));
+  max-height: calc(3 * var(--row));
+  overflow: hidden;
+  cursor: pointer;
+  -webkit-mask-image: var(--fade);
+  mask-image: var(--fade);
+}
+
+pre#line[role="button"]:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
 .seg {
   border-bottom: 2px solid currentColor;
   cursor: pointer;

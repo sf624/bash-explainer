@@ -21,15 +21,17 @@ export type PanelTheme = 'dark' | 'light' | 'hc';
 /**
  * The update message for `text` (from the second line of the script `file`), as the extension sends it. `text` may
  * have several lines: its first is explained (a loop over several lines is explained whole from its first line).
+ * `wrap`: the line box wraps, as with `editor.wordWrap` on (src/ui/lineBox.ts `wrapsLikeEditor`).
  */
-function message(lang: Lang, text: string, file: string): unknown {
+function message(lang: Lang, text: string, file: string, wrap = false): unknown {
   const src = `#!/bin/bash\n${text}\n`;
   const line = text.split('\n')[0];
   const tree = createUnbashParser().parse(src);
   const ex = new Analyzer(lang).explainLine(tree, 1, 'bash', { reading: true });
   // (The line's problems, as the editor underlines them.)
-  const marks = lineMarks(documentIssues({ lines: src.split('\n'), tree }, lang, { detected: 'bash' }), 1);
-  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, choice: {}, detected: 'bash', placement: 'first', animations: true, marks });
+  const doc = { lines: src.split('\n'), tree };
+  const marks = lineMarks(documentIssues(doc, lang, { detected: 'bash' }), 1);
+  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, doc, wrap, choice: {}, detected: 'bash', placement: 'first', animations: true, marks });
 }
 
 const HOST = `(function () {
@@ -79,10 +81,10 @@ export interface PanelServer {
   close(): Promise<void>;
 }
 
-/** Serves the panel's page on 127.0.0.1, explaining `line` of the script `file`. */
-export async function servePanel(line = SAMPLE, file = 'cleanup.sh'): Promise<PanelServer> {
+/** Serves the panel's page on 127.0.0.1, explaining `line` of the script `file` (its line box wrapped with `wrap`). */
+export async function servePanel(line = SAMPLE, file = 'cleanup.sh', wrap = false): Promise<PanelServer> {
   // (The state a host sends: kept from a version before the steps, the layers up to the scripts inside.)
-  const msg = `window.MSGS = ${JSON.stringify({ en: message('en', line, file), ja: message('ja', line, file) })};\nwindow.STATE = ${JSON.stringify(panelState({ level: 2 }))};\n`;
+  const msg = `window.MSGS = ${JSON.stringify({ en: message('en', line, file, wrap), ja: message('ja', line, file, wrap) })};\nwindow.STATE = ${JSON.stringify(panelState({ level: 2 }))};\n`;
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://x');
     const send = (type: string, body: string | Buffer) => res.writeHead(200, { 'Content-Type': type }).end(body);

@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539). C1b to C6 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), and C1b (#C1B). C2 to C6 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -218,6 +218,16 @@ Tests:
 Risks: the plugin's cost on long scripts (it works on the visible lines only).
 
 **C1b. The panel's line box (both hosts).**
+
+Done in #C1B (2026-10-31). What the design did not say:
+
+- The update message carries `lineParts`, the line cut into its runs and the blanks between them (every character in one part), and `wrap` (src/ui/lineBox.ts). The hosts pass the document; `lineRuns` takes the line's runs from `wrapRuns`, worked out once per syntax tree, and a document whose line is not the text shown (parsed before the last key press) breaks at the blanks. media/panel.js draws a `.run` span per run around the token spans, cut at the runs' bounds.
+- Which run is wider than a row is measured in the panel (`fitLine`: each run's width against the narrowest row), when it is drawn and when the box's width changes; such a run breaks at its own blanks, then anywhere (`overflow-wrap: anywhere`). The others are `white-space: pre`. No width is estimated.
+- The marks ↪ are a column of the box as tall as its text (up to 40 marks), so no row is counted. The fade is a mask over the third row; the fourth does not show in the box's bottom padding.
+- The clicks: a folded box opens at a click anywhere in it, and a click on a part also does its own (it selects the part in the editor); an open box folds at a click beside its parts (a blank, the margin of ↪), so that its parts stay clickable. With more than three rows the box is a button (`aria-expanded`, a tooltip), and Enter and Space open and fold it. A new line starts folded; the same line drawn again keeps it open. An open box keeps the cap of 40% of the panel and scrolls.
+- Selecting a row scrolls the box sideways to its characters only when it does not wrap. A part below the third row of a folded box is not scrolled to: opening the box shows it.
+- In VS Code, src/ui/panel.ts reads `editor.wordWrap` in the document's scope (a language's own value counts) and posts again when it changes; `wrapsLikeEditor` decides. VS Code's integration test cannot read the webview, so test/panel-line-box.test.ts drives the panel's page with the message for `on` and for `off`.
+- The web test (test/web-line-box.test.ts) runs at 390 px without touch emulation: the phone's read mode keeps the editor from typing. scripts/capture-web.ts got `--line N`, the line the panel explains.
 
 What:
 
