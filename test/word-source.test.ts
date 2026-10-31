@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { compareKnown, keyOf } from './support/scan';
 import { ALLOWED, base, counted, globClass, scanAll, scanSource, type Kind } from './support/word-source';
 
 // The guard of docs/design/word-source.md (section 4): what bash makes of a word comes from the word model
@@ -19,7 +20,6 @@ interface Known {
   syntax: { file: string; reason: string; uses: Use[] }[];
 }
 const known: Known = JSON.parse(fs.readFileSync(path.join(base, 'test', 'fixtures', 'word-source-known.json'), 'utf8'));
-const keyOf = (file: string, fn: string, kind: string): string => `${file} ${fn} ${kind}`;
 
 /** The matches of a snippet, as `kind what` texts. */
 const found = (code: string, rel = 'src/x.ts'): string[] => scanSource(rel, code).map((m) => `${m.kind} ${m.what}`);
@@ -87,15 +87,7 @@ describe('word source guard (docs/design/word-source.md, section 4)', () => {
         list(s.file, u.fn, u.kind, u.count, 'syntax');
       }
     }
-    for (const [k, n] of actual) {
-      const have = listed.get(k);
-      if (have === undefined) problems.push(`NEW: ${k} (${n}): read the word model (src/semantics/words.ts) instead; a use that only works on the syntax goes into the "syntax" list of test/fixtures/word-source-known.json, with a reason`);
-      else if (n > have) problems.push(`MORE: ${k} has ${n} matches, ${have} are listed`);
-    }
-    for (const [k, have] of listed) {
-      const n = actual.get(k) ?? 0;
-      if (n < have) problems.push(`STALE: ${k} lists ${have}, ${n} found: lower the count or remove the entry`);
-    }
+    problems.push(...compareKnown(actual, listed, 'read the word model (src/semantics/words.ts) instead; a use that only works on the syntax goes into the "syntax" list of test/fixtures/word-source-known.json, with a reason'));
     assert.deepStrictEqual(problems, []);
   });
 });

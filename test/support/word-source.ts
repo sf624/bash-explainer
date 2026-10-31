@@ -1,6 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import * as ts from 'typescript';
+import { bare, base, counted as countedAny, enclosing, literalText, parseSource, regexSource, scanDirs, type Match as MatchOf } from './scan';
 
 // The scan behind test/word-source.test.ts (docs/design/word-source.md, section 4): where src/ reads word-part node
 // types, calls a helper that decides a fact of a word, tests glob characters, or names the IFS whitespace. It is
@@ -8,16 +7,8 @@ import * as ts from 'typescript';
 // the matches as the known list's entries (counts per file, function and kind).
 
 export type Kind = 'node-type' | 'helper' | 'glob-class' | 'ifs';
-export interface Match {
-  file: string;
-  /** The outermost named function, method or top-level `const` around the match ('<module>' for a bare statement). */
-  fn: string;
-  kind: Kind;
-  /** The node type, helper, regex or identifier that was found. */
-  what: string;
-}
-
-export const base = path.join(__dirname, '..', '..');
+export type Match = MatchOf<Kind>;
+export { base };
 
 /** The node types of the parts of a word. */
 export const NODE_TYPES: ReadonlySet<string> = new Set([
@@ -46,22 +37,6 @@ export const ALLOWED: readonly string[] = [
   'src/arith.ts',
 ];
 
-const isAllowed = (rel: string): boolean => ALLOWED.some((a) => (a.endsWith('/') ? rel.startsWith(a) : rel === a));
-
-function sourceFiles(dir: string, out: string[] = []): string[] {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) sourceFiles(p, out);
-    else if (e.name.endsWith('.ts')) out.push(p);
-  }
-  return out;
-}
-
-const bare = (e: ts.Expression): ts.Expression => {
-  while (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isSatisfiesExpression(e) || ts.isNonNullExpression(e)) e = e.expression;
-  return e;
-};
-const literalText = (e: ts.Node): string | undefined => (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) ? e.text : undefined);
 /** Whether `e` is a `.type` access (`n.type`, `n?.type`, `parts[0].type`). */
 const isTypeAccess = (e: ts.Expression): boolean => {
   e = bare(e);
@@ -69,13 +44,6 @@ const isTypeAccess = (e: ts.Expression): boolean => {
 };
 /** The names of the functions that take a list of node types, whatever file defines them (src/syntax/tree.ts, src/explain/nodes.ts). */
 const QUERIES: ReadonlySet<string> = new Set(['descendants', 'onLine']);
-/** The source of a regex literal (without its flags), or of `new RegExp('…')` of a literal. */
-function regexSource(e: ts.Expression): string | undefined {
-  e = bare(e);
-  if (ts.isRegularExpressionLiteral(e)) return e.text.slice(1, e.text.lastIndexOf('/'));
-  if (ts.isNewExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === 'RegExp' && e.arguments?.length) return literalText(e.arguments[0]);
-  return undefined;
-}
 /** Whether a regex source has a character class holding both `*` and `?` (`[*?[]`, `[\s*?[]`). */
 export function globClass(source: string): boolean {
   for (let i = 0; i < source.length; i++) {
@@ -100,26 +68,9 @@ function regexNodeTypes(source: string): string[] {
 
 /** The matches of one source file, `rel` being its path from the repo root. */
 export function scanSource(rel: string, text: string): Match[] {
-  const sf = ts.createSourceFile(rel, text, ts.ScriptTarget.ES2022, true);
+  const sf = parseSource(rel, text);
   const found: Match[] = [];
 
-  /** The name of a function-like or declaration node, if it has one. */
-  const nameOf = (n: ts.Node): string | undefined => {
-    if ((ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n) || ts.isClassDeclaration(n)) && n.name) return n.name.getText(sf);
-    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name)) return n.name.text;
-    if (ts.isPropertyAssignment(n) && ts.isIdentifier(n.name)) return n.name.text;
-    return undefined;
-  };
-  const enclosing = (n: ts.Node): string => {
-    let name = '<module>';
-    for (let p: ts.Node | undefined = n.parent; p && !ts.isSourceFile(p); p = p.parent) {
-      // A class holds methods: the method is the name, not the class.
-      const own = nameOf(p);
-      if (own !== undefined && !ts.isClassDeclaration(p)) name = own;
-      else if (own !== undefined && name === '<module>') name = own;
-    }
-    return name;
-  };
   const add = (n: ts.Node, kind: Kind, what: string): void => {
     found.push({ file: rel, fn: enclosing(n), kind, what });
   };
@@ -222,25 +173,9 @@ export function scanSource(rel: string, text: string): Match[] {
 }
 
 /** The matches of every src/**\/*.ts outside the allow-list. */
-export function scanAll(): Match[] {
-  const out: Match[] = [];
-  for (const f of sourceFiles(path.join(base, 'src')).sort()) {
-    const rel = path.relative(base, f).split(path.sep).join('/');
-    if (!isAllowed(rel)) out.push(...scanSource(rel, fs.readFileSync(f, 'utf8')));
-  }
-  return out;
-}
+export const scanAll = (): Match[] => scanDirs(['src'], ALLOWED, scanSource);
 
 /** The matches counted per file, function and kind (the known list's grain). */
-export function counted(matches: readonly Match[]): { file: string; fn: string; kind: Kind; count: number }[] {
-  const by = new Map<string, { file: string; fn: string; kind: Kind; count: number }>();
-  for (const m of matches) {
-    const key = `${m.file}\0${m.fn}\0${m.kind}`;
-    const e = by.get(key) ?? { file: m.file, fn: m.fn, kind: m.kind, count: 0 };
-    e.count++;
-    by.set(key, e);
-  }
-  return [...by.values()];
-}
+export const counted = (matches: readonly Match[]): { file: string; fn: string; kind: Kind; count: number }[] => countedAny(matches);
 
 if (require.main === module) console.log(JSON.stringify(counted(scanAll()), null, 1));
