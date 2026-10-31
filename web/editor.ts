@@ -25,12 +25,15 @@ import { nameHintsExtension, PlacedHint, setHints } from './name-hints';
 import { withCode } from './problem-list';
 import { Kind } from './samples';
 import { TEXT } from './text';
+import { setWrapRuns, wordWrap } from './word-wrap';
+import { wrapRuns } from '../src/ui/wrapRuns';
 
 // The shell code is coloured from our own syntax tree (src/highlight.ts); these modes colour the rest of a host file.
 const MODES: Partial<Record<Kind, StreamParser<unknown>>> = {
   dockerfile: dockerFile, yaml, npm: json, python, jenkinsfile: groovy,
 };
-const wrapFor = (on: boolean) => (on ? EditorView.lineWrapping : []);
+// Long lines wrap between shell words, with a hanging indent and ↪ (web/word-wrap.ts).
+const wrapFor = (on: boolean) => (on ? wordWrap : []);
 const inputModeFor = (on: boolean) => EditorView.contentAttributes.of(on ? { inputmode: 'none' } : {});
 const modeFor = (k: Kind) => (MODES[k] ? StreamLanguage.define(MODES[k]!) : []);
 
@@ -251,6 +254,8 @@ export class Editor {
   /** The undo history: emptied when a file is opened (openText). */
   private readonly historyMode = new Compartment();
   private readonly shadings = new WeakMap<ShellDocument, { shell: string; spans: Shading[] }>();
+  /** The runs where long lines must not break (src/ui/wrapRuns.ts), worked out once per parse. */
+  private readonly runs = new WeakMap<ShellDocument, Array<readonly [number, number]>>();
   private shadingTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly hintCaches = new WeakMap<ShellDocument, HintCache>();
   private hintTimer: ReturnType<typeof setTimeout> | undefined;
@@ -336,10 +341,25 @@ export class Editor {
     return spans;
   }
 
-  /** Colours the script as it is now (the parse is shared with the panel and the problems). */
+  /** The runs of the whole script, in editor positions, worked out once per parse. */
+  private runsOf(): Array<readonly [number, number]> {
+    const doc = this.host.document()!;
+    const known = this.runs.get(doc);
+    if (known) return known;
+    const lines = this.view.state.doc;
+    const runs = wrapRuns(doc).slice(0, lines.lines).flatMap((line, i) => {
+      const start = lines.line(i + 1).from;
+      return line.map(([a, b]) => [start + a, start + b] as const);
+    });
+    this.runs.set(doc, runs);
+    return runs;
+  }
+
+  /** Colours the script as it is now (the parse is shared with the panel and the problems), and where its long lines may wrap. */
   shade(): void {
     clearTimeout(this.shadingTimer);
-    this.view.dispatch({ effects: setShadings.of(this.spansOf()) });
+    const wrap = this.host.settings()['editor.wrap'];
+    this.view.dispatch({ effects: [setShadings.of(this.spansOf()), ...(wrap ? [setWrapRuns.of(this.runsOf())] : [])] });
   }
 
   /** Checks the script again now (forceLinting alone only hurries a check the text already asked for), and its name hints. */
@@ -404,6 +424,7 @@ export class Editor {
 
   setWrap(on: boolean): void {
     this.view.dispatch({ effects: this.wrapMode.reconfigure(wrapFor(on)) });
+    if (on) this.view.dispatch({ effects: setWrapRuns.of(this.runsOf()) });
   }
 
   /** Names the text box for a screen reader (`aria-label`, `aria-describedby`: web/a11y.ts). */

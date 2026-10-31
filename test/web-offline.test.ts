@@ -5,7 +5,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { openSite, choose, problemList, setShell, FILES, MARKER, root, until } from './support/site';
+import { openSite, choose, problemList, setShell, FILES, MARKER, root, until, cursorToLine } from './support/site';
 
 describe('the web page: no request to another site, and offline', function () {
   this.timeout(120000);
@@ -53,8 +53,7 @@ describe('the web page: no request to another site, and offline', function () {
 
     // A worked example, edited: the sed line of the sample (test/fixtures/sample.sh).
     const sedLine = fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8').split('\n').findIndex((l) => l.startsWith('sed -E'));
-    await page.keyboard.press('Control+Home');
-    for (let i = 0; i < sedLine; i++) await page.keyboard.press('ArrowDown');
+    await cursorToLine(page, sedLine + 1);
     await until('the sed line', text('#line'), (t) => t.startsWith('sed -E'));
     await panel().locator('textarea').first().fill('user=alice');
     await until('the rerun example', text('#tree'), (t) => t.includes('alice=user'));
@@ -69,8 +68,7 @@ describe('the web page: no request to another site, and offline', function () {
     const whileLine = fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8').split('\n').findIndex((l) => l.startsWith('while read'));
     // The keys must reach the editor again: hovering the panel left the focus there.
     await page.locator('.cm-content').click();
-    await page.keyboard.press('Control+Home');
-    for (let i = 0; i < whileLine; i++) await page.keyboard.press('ArrowDown');
+    await cursorToLine(page, whileLine + 1);
     await until('the while line', text('#line'), (t) => t.startsWith('while read'));
     const label = panel().locator('#tree .label').first();
     assert.strictEqual(await label.innerText(), 'while condition do commands done < input.txt');

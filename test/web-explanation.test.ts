@@ -288,16 +288,23 @@ describe('the web page: the explanation panel and the editor', function () {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     await page.goto(base);
-    /** The colour and the highlight class of each piece of a line of the editor, as `text|class|colour`. */
+    /**
+     * The colour and the highlight class of each piece of a line of the editor, as `text|class|colour`. Neighbours of
+     * the same class and colour are one piece: the runs that long lines do not break (web/word-wrap.ts) cut a span.
+     */
     const pieces = (start: string) => page.locator('.cm-line').filter({ hasText: start }).first().evaluate((line) => {
       const out: string[] = [];
+      let last = '';
       // No named functions in here: tsx would wrap them in a helper the page does not have.
       const texts = (globalThis as any).document.createTreeWalker(line, 4);
       for (let n = texts.nextNode(); n; n = texts.nextNode()) {
         if (!n.textContent.trim()) continue;
-        const el = n.parentElement;
+        const el = n.parentElement.classList.contains('cm-bx-run') ? n.parentElement.parentElement : n.parentElement;
         const cls = [...el.classList].find((c) => (c as string).startsWith('cm-bx-')) ?? '';
-        out.push(`${n.textContent.trim()}|${cls}|${(globalThis as any).getComputedStyle(el).color}`);
+        const style = `${cls}|${(globalThis as any).getComputedStyle(el).color}`;
+        if (out.length && style === last) out[out.length - 1] = `${out[out.length - 1].split('|')[0]} ${n.textContent.trim()}|${style}`;
+        else out.push(`${n.textContent.trim()}|${style}`);
+        last = style;
       }
       return out;
     });

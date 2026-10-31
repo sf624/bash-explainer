@@ -113,6 +113,19 @@ export async function until<T>(what: string, get: () => Promise<T>, ok: (v: T) =
 }
 
 /**
+ * Puts the editor's cursor on line `line` (1-based) from the keyboard, as a user would: Ctrl+Home, then ArrowDown until
+ * the gutter's active line number says so. Long lines wrap, and ArrowDown moves by row, so the count of presses is not
+ * the line's number.
+ */
+export async function cursorToLine(page: Page, line: number): Promise<void> {
+  await page.locator('.cm-content').focus();
+  await page.keyboard.press('Control+Home');
+  const at = async () => Number(await page.locator('.cm-lineNumbers .cm-activeLineGutter').first().textContent());
+  for (let i = 0; i < 4 * line && (await at()) < line; i++) await page.keyboard.press('ArrowDown');
+  if ((await at()) !== line) throw new Error(`the cursor is on line ${await at()}, not ${line}`);
+}
+
+/**
  * Chooses a value in a select of the page's menu (the language, the theme, the version), opening the
  * menu first and closing it after; the compare page has these in its top bar.
  */
