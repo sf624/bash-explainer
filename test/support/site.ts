@@ -135,6 +135,14 @@ export async function cursorToLine(page: Page, line: number): Promise<void> {
 }
 
 /**
+ * The toast's words (web/toast.ts): its text, and the longer text behind "More" or "Why?" after a space; '' when no
+ * toast shows.
+ */
+export function toastText(page: Page): Promise<string> {
+  return page.locator('#status').evaluate((el) => [el.querySelector('.toast-text'), el.querySelector('.toast-more')].map((e) => e?.textContent ?? '').filter(Boolean).join(' '));
+}
+
+/**
  * Chooses a value in a select of the page's menu (the language, the theme, the version), opening the
  * menu first and closing it after; the compare page has these in its top bar.
  */

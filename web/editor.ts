@@ -257,6 +257,9 @@ export class Editor {
   private readonly labelMode = new Compartment();
   /** The undo history: emptied when a file is opened (openText). */
   private readonly historyMode = new Compartment();
+  /** The room a toast takes at the editor's bottom (web/toast.ts): the cursor's line is kept above it. */
+  private readonly marginMode = new Compartment();
+  private bottomMargin = 0;
   private readonly shadings = new WeakMap<ShellDocument, { shell: string; spans: Shading[] }>();
   /** The runs where long lines must not break (src/ui/wrapRuns.ts), worked out once per parse. */
   private readonly runs = new WeakMap<ShellDocument, Array<readonly [number, number]>>();
@@ -307,7 +310,7 @@ export class Editor {
         extensions: [
           lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), this.historyMode.of(history()),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-          this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
+          this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.marginMode.of([]), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
           highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== SEVERITIES[FADED].codemirror) }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []),
           EditorView.updateListener.of((u) => {
@@ -434,6 +437,26 @@ export class Editor {
   /** Names the text box for a screen reader (`aria-label`, `aria-describedby`: web/a11y.ts). */
   setLabels(attrs: Record<string, string>): void {
     this.view.dispatch({ effects: this.labelMode.reconfigure(EditorView.contentAttributes.of(attrs)) });
+  }
+
+  /**
+   * Keeps `px` at the editor's bottom free for the cursor (a toast lies there): CodeMirror's scroll margin, and as much
+   * padding under the text, since the scroll cannot go past the end of the text and the last line would stay under the
+   * toast. When the cursor's line shows, it is scrolled above the toast.
+   */
+  setBottomMargin(px: number): void {
+    if (px === this.bottomMargin) return;
+    this.bottomMargin = px;
+    const head = this.view.state.selection.main.head;
+    const at = this.view.coordsAtPos(head);
+    const box = this.view.scrollDOM.getBoundingClientRect();
+    const inView = !!at && at.bottom > box.top && at.top < box.bottom;
+    this.view.dispatch({
+      effects: [
+        this.marginMode.reconfigure(px ? [EditorView.scrollMargins.of(() => ({ bottom: px })), EditorView.theme({ '.cm-content': { paddingBottom: `${px}px` } })] : []),
+        ...(inView && px ? [EditorView.scrollIntoView(head, { y: 'nearest' })] : []),
+      ],
+    });
   }
 
   setReadMode(on: boolean): void {

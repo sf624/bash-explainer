@@ -2,7 +2,7 @@
 // (test/support/site.ts). Skipped when no browser can start, unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
-import { openSite, pickKind, until } from './support/site';
+import { openSite, pickKind, toastText, until } from './support/site';
 
 const DOCKERFILE = 'FROM alpine:3.20\nRUN apk add --no-cache curl\nCMD ["sh"]\n';
 const MAKEFILE = 'all: build\n\nbuild:\n\tgo build ./...\n';
@@ -53,13 +53,14 @@ describe('the web page: the file kind of a pasted script', function () {
   it('switches the kind when a Dockerfile replaces the sample, keeps the text, says so in a polite toast, and Undo goes back', async () => {
     const { ctx, page, errors } = await open();
     const toast = page.locator('#status');
-    assert.strictEqual(await toast.getAttribute('role'), 'status'); // announced politely
+    assert.strictEqual(await toast.getAttribute('role'), null);
+    assert.strictEqual(await toast.locator('.toast-text').getAttribute('role'), 'status'); // announced politely, the text only (not the buttons)
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await paste(page, DOCKERFILE);
     await until('the kind', () => kindOf(page), (k) => k === 'File: Dockerfile');
     assert.strictEqual((await text(page)).trim(), DOCKERFILE.trim());
-    assert.strictEqual(await toast.evaluate((el) => el.firstChild?.textContent), 'Detected: Dockerfile');
+    assert.strictEqual(await toastText(page), 'Detected: Dockerfile');
     assert.strictEqual(await toast.locator('.status-action').innerText(), 'Undo');
     assert.strictEqual(await page.locator('#kind-dialog[open]').count(), 0);
     // Undo: the kind goes back, the text stays.
@@ -67,6 +68,26 @@ describe('the web page: the file kind of a pasted script', function () {
     await until('the kind back', () => kindOf(page), (k) => k === 'File: Shell script');
     assert.strictEqual((await text(page)).trim(), DOCKERFILE.trim());
     assert.strictEqual(await toast.innerText(), '');
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('Enter on the Undo of the detected kind goes back, and the focus is in the editor', async () => {
+    const { ctx, page, errors } = await open();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await paste(page, DOCKERFILE);
+    await until('the kind', () => kindOf(page), (k) => k === 'File: Dockerfile');
+    await until('the toast', () => toastText(page), (t) => t === 'Detected: Dockerfile');
+    // F6 to the explanation, F6 to the toast: where a keyboard user goes.
+    await page.keyboard.press('F6');
+    await until('the explanation', () => page.evaluate('document.activeElement?.id'), (id) => id === 'panel');
+    await page.waitForTimeout(300);
+    await page.keyboard.press('F6');
+    await until('the Undo', () => page.evaluate('document.activeElement?.id'), (id) => id === 'status-action');
+    await page.keyboard.press('Enter');
+    await until('the kind back', () => kindOf(page), (k) => k === 'File: Shell script');
+    assert.strictEqual(await page.evaluate("document.activeElement?.classList.contains('cm-content')"), true, 'the focus in the editor');
     assert.deepStrictEqual(errors, []);
     await ctx.close();
   });
@@ -144,7 +165,7 @@ describe('the web page: the file kind of a pasted script', function () {
       await page.keyboard.press('Control+A');
       await paste(page, DOCKERFILE);
       const toast = page.locator('#status');
-      await until('the toast', () => toast.innerText(), (t) => t.startsWith('Detected: Dockerfile'));
+      await until('the toast', () => toastText(page), (t) => t.startsWith('Detected: Dockerfile'));
       const box = (await toast.boundingBox())!;
       assert.ok(box.x >= 0 && box.x + box.width <= width && box.y + box.height <= 800, JSON.stringify(box));
       const button = (await page.locator('.status-action').boundingBox())!;

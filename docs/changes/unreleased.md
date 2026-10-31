@@ -61,6 +61,14 @@ It follows the editor: on the web page, the setting **Wrap long lines** (`editor
 - The menu is in groups: Script; Share and Explanation (on a narrow page, where the top bar has no room for them); Preferences; Help, with the keyboard shortcuts (not on a touch screen); About. Its title is "Bash Explainer".
 - A button that gets the focus back after a dialog or a menu closed with the mouse no longer shows a focus ring; after a key it does.
 
+### Messages on the web page: one place, one look
+
+Every message of the web page (a toast) now shows in one place: above the Problems list, inside the editor's pane, so it never covers the explanation or the panel's header. While it shows, the editor keeps the line of the cursor above it. Each has an icon: ↶ when it can be undone (Sample loaded, Detected: Dockerfile), ✓ when something is done (Opened a.sh., Saved a.sh., Link copied.), a dot for a refusal or a note ("a.sh was not opened.", "Opened a.sh. It mixes line ends.").
+
+A message stays 4 seconds, or 8 with a button, and as long as the pointer is on it or the keyboard's focus in it (F6 goes there after the explanation); it goes 2 seconds or more after both leave. Escape closes it and puts the focus back in the editor. Its reason or detail is behind **Why?** or **More** ("a.sh was not opened. Why? It is not a text file in UTF-8."). Before, a message showed at the bottom middle of the window, over the explanation on a wide window, for 6 seconds, with its whole text.
+
+**Load the sample** over your own script replaces it at once and offers Undo, which brings back the text and its file. Before, the browser asked first.
+
 ## Fixed
 
 ### Hover cards on the web page stay off the line

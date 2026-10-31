@@ -44,6 +44,7 @@ import { SettingsDialog } from './settings-dialog';
 import { takeLinkFromAddress, inflate, readHash, scriptParams } from './share';
 import { clearStoredData, readStored, removeStored, STORAGE_KEYS, writeStored } from './storage';
 import { TEXT } from './text';
+import { Toast, type ToastIcon, type ToastSpec, type ToastText } from './toast';
 
 // The icons the page shares with the VS Code panel (web/icons.ts).
 drawIcons();
@@ -130,8 +131,6 @@ let codesSeen: string[] = [];
 let problemsShown: DocumentIssue[] = [];
 /** Whether the sample button is replacing the text, so that the offer to undo it stays. */
 let loadingSample = false;
-/** Whether the toast offers to undo the sample. */
-let undoOffered = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 /** The live region that says what the line the cursor moved to is about (the editor page only). */
 let announcer: LineAnnouncer | undefined;
@@ -157,7 +156,7 @@ const editor = new Editor({
   },
   changed(u: ViewUpdate) {
     // Undo would no longer undo the sample once the text changed again.
-    if (u.docChanged && undoOffered && !loadingSample) status('');
+    if (u.docChanged && toast.current?.action?.untilEdit && !loadingSample) toast.hide();
     if (u.docChanged && !mode.panel) detectPasted(u);
     if (u.docChanged) showFileSoon();
     // In panel mode the page around sends every change as a message, which is handled at once.
@@ -235,7 +234,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 function copyMarkdown(): void {
   if (!shown) return;
   const md = toPlainMarkdown(shown.explanation, editor.view.state.doc.line(shown.line + 1).text, `${scriptName()}:${shown.line + 1}`, lang);
-  void writeClipboard(md).then((ok) => status(TEXT[lang][ok ? 'copied' : 'copyRefused']));
+  void writeClipboard(md).then((ok) => status(ok ? 'done' : 'note', TEXT[lang][ok ? 'copied' : 'copyRefused']));
 }
 
 // ---- Panel mode: the page around sends the script ---------------------------------------------
@@ -278,28 +277,35 @@ if (mode.compare) {
 
 // ---- Toolbar --------------------------------------------------------------------------------
 
-let statusTimer: ReturnType<typeof setTimeout> | undefined;
-/** A toast's button; `untilEdit`: it undoes an edit, so the next edit hides it (the sample's Undo). */
-interface StatusAction { label: string; run: () => void; untilEdit?: boolean }
-function status(text: string, sticky = false, action?: StatusAction): void {
-  const el = $('status');
-  undoOffered = false;
-  el.replaceChildren(...(text ? [text] : []));
-  if (text && action) {
-    // A toast with one button (the sample's or the detected kind's "Undo"); it hides when the button runs.
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'status-action';
-    button.textContent = action.label;
-    button.addEventListener('click', () => {
-      action.run();
-      status('');
-    });
-    el.append(button);
-    undoOffered = action.untilEdit === true;
+/** The page's toast (web/toast.ts): above the Problems list, inside the editor's pane. */
+const toast = new Toast($('status'), {
+  labels: () => ({ more: TEXT[lang].toastMore, why: TEXT[lang].toastWhy }),
+  room() {
+    // (The compare page and panel mode have no editor's pane: the toast keeps its place at the window's bottom.)
+    const pane = document.getElementById('source');
+    if (!pane || mode.compare || mode.panel) return undefined;
+    const box = pane.getBoundingClientRect();
+    const problems = document.getElementById('problems');
+    const bottom = problems && !problems.hidden ? problems.getBoundingClientRect().top : box.bottom;
+    return { left: box.left, width: box.width, bottom };
+  },
+  covers: (px) => editor.setBottomMargin(px),
+  focusBack: () => editor.focusUnlessTouch(),
+});
+
+// The Problems list shows, hides or changes its height, and the panes move: the toast keeps its place above it.
+if (typeof ResizeObserver === 'function') {
+  const watch = new ResizeObserver(() => toast.place());
+  for (const id of ['source', 'problems']) {
+    const el = document.getElementById(id);
+    if (el) watch.observe(el);
   }
-  clearTimeout(statusTimer);
-  if (!sticky && text) statusTimer = setTimeout(() => status(''), 6000);
+}
+
+/** Shows a toast, or hides the one shown (`''`). */
+function status(icon: ToastIcon | '', words: ToastText | string = '', action?: ToastSpec['action']): void {
+  if (!icon) return toast.hide();
+  toast.show({ icon, ...(typeof words === 'string' ? { text: words } : words), action });
 }
 
 /** Goes to another page of the site with the script in the hash, in the same language and file kind. */
@@ -586,7 +592,7 @@ function detectPasted(u: ViewUpdate): void {
   queueMicrotask(() => {
     setKind(found.kind);
     const t = TEXT[lang];
-    status(t.detected(t.kinds[found.kind] ?? kindInfo(found.kind).name), false, { label: t.undo, run: () => setKind(before) });
+    status('undo', t.detected(t.kinds[found.kind] ?? kindInfo(found.kind).name), { label: t.undo, run: () => setKind(before) });
   });
 }
 
@@ -607,27 +613,30 @@ function askAboutSample(k: Kind): void {
 /** Puts in the current kind's sample; when it replaced the user's own text, the toast offers to undo it. */
 function loadSample(own: boolean): void {
   const info = kindInfo(kind);
+  // Already there (a second click on the button): nothing to replace, so nothing to undo, and the file stays as it is.
+  if (editor.text === info.sample) return;
   const before = fileState.snapshot();
   loadingSample = true;
   try { editor.setText(info.sample, info.cursorLine); } finally { loadingSample = false; }
+  const set = editor.text;
   fileState.sampleLoaded(editor.text);
   showFile();
-  // Undo brings back the text, and the file it was (its name, its handle, its line ends).
+  // Undo brings back the text, and the file it was (its name, its handle, its line ends); only while the text is still
+  // the sample as it was put in, so that it never puts a file's name over a text that is not the file's.
   const back = () => {
+    if (editor.text !== set) return;
     undo(editor.view);
     fileState.restore(before);
     showFile();
     editor.focusUnlessTouch();
   };
-  if (own) status(TEXT[lang].sampleLoaded, false, { label: TEXT[lang].undo, run: back, untilEdit: true });
+  if (own) status('undo', TEXT[lang].sampleLoaded, { label: TEXT[lang].undo, run: back, untilEdit: true });
 }
 
 /** "Load the sample" (⋯, the menu, the empty editor; the compare page's button). */
 function sampleAsked(): void {
-  // The user's own text asks for a confirmation and, once replaced, offers to undo; a sample or nothing does not.
-  const own = ownText();
-  if (own && !confirm(TEXT[lang].replace)) return;
-  loadSample(own);
+  // The user's own text is replaced at once, and the toast offers to undo it; a sample or nothing gets no toast.
+  loadSample(ownText());
 }
 on('sample', 'click', sampleAsked);
 
@@ -647,12 +656,12 @@ function clearEditor(): void {
     showFile();
     editor.focusUnlessTouch();
   };
-  status(wasSample ? t.sampleCleared : t.editorCleared, false, { label: t.undo, run: back, untilEdit: true });
+  status('undo', wasSample ? t.sampleCleared : t.editorCleared, { label: t.undo, run: back, untilEdit: true });
   editor.focusUnlessTouch();
 }
 
 function copyScript(): void {
-  void writeClipboard(editor.text).then((ok) => status(TEXT[lang][ok ? 'scriptCopied' : 'copyRefused']));
+  void writeClipboard(editor.text).then((ok) => status(ok ? 'done' : 'note', TEXT[lang][ok ? 'scriptCopied' : 'copyRefused']));
 }
 
 // The other version is another page: go there with the script in the hash, in the same language.
@@ -679,7 +688,7 @@ async function copyLink(id: 'share' | 'menu-share'): Promise<void> {
   // Safari refuses a write that comes after the compression above (it is no longer the click's own turn): say so.
   if (!await writeClipboard(url)) {
     drawer?.close(); // the toast would lie under the open menu
-    return status(TEXT[lang].copyRefused);
+    return status('note', TEXT[lang].copyRefused);
   }
   confirmCopied($(id), lang, document.getElementById(id === 'share' ? 'share-said' : 'menu-share-said'), () => linkWords(id, lang));
 }
@@ -701,7 +710,7 @@ const head = withFiles ? new EditorHead({
   copyScript,
   holdsSample: () => KINDS.some((k) => k.sample === editor.text),
   tipShown: () => document.getElementById('readtip')?.hidden === false,
-  status: (text) => status(text),
+  status: (text) => status('note', text),
 }) : undefined;
 // Focus rings follow the input: none on a control given the focus back after a pointer (web/popover.ts).
 setUpFocusRings();
@@ -756,17 +765,17 @@ function showFileSoon(): void {
  */
 async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElement | null): Promise<void> {
   const t = TEXT[lang];
-  if (chosen.size > MAX_BYTES) return status(t.tooLarge(chosen.name));
+  if (chosen.size > MAX_BYTES) return status('note', t.tooLarge(chosen.name));
   let bytes: ArrayBuffer;
   try {
     bytes = await chosen.arrayBuffer();
   } catch {
     // A folder dropped, or a file changed or gone since it was chosen.
-    return status(t.notRead(chosen.name));
+    return status('note', t.notRead(chosen.name));
   }
   const read = decodeText(new Uint8Array(bytes));
-  if (read === 'binary') return status(t.notText(chosen.name));
-  if (read === 'cr') return status(t.loneCr(chosen.name));
+  if (read === 'binary') return status('note', t.notText(chosen.name));
+  if (read === 'cr') return status('note', t.loneCr(chosen.name));
   if (unsaved()) {
     const discard = await ask({
       id: 'discard', title: t.discardTitle, message: t.discardMessage(chosen.name, window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu),
@@ -777,7 +786,8 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
   fileState.opened({ name: chosen.name, handle }, { eol: read.eol, bom: read.bom }, read.text);
   editor.openText(read.text);
   setKind(kindForFile(chosen.name, read.text));
-  status(read.mixed ? t.mixedEol(chosen.name, read.eol === '\n' ? 'LF' : 'CRLF') : t.opened(chosen.name));
+  if (read.mixed) status('note', t.mixedEol(chosen.name, read.eol === '\n' ? 'LF' : 'CRLF'));
+  else status('done', t.opened(chosen.name));
   editor.focusUnlessTouch();
 }
 
@@ -788,7 +798,7 @@ async function openFile(): Promise<void> {
     chosen = await chooseFile($<HTMLInputElement>('open-input'));
   } catch {
     // Picked, but changed or gone before it could be read.
-    return status(TEXT[lang].notRead());
+    return status('note', TEXT[lang].notRead());
   }
   if (chosen) await openChosen(chosen, back);
 }
@@ -802,14 +812,14 @@ async function saveFile(): Promise<void> {
   const r = await saveText(fileContent(text, fileState.format), scriptName(), fileState.handle());
   if (r.how === 'cancelled') return;
   // Another file was opened (or the name changed) while the browser asked (its permission bubble is not modal): that is not the file saved.
-  if (fileState.version() !== version) return status(r.how === 'refused' ? t.notSaved(r.name) : r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
+  if (fileState.version() !== version) return r.how === 'refused' ? status('note', t.notSaved(r.name)) : status('done', r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
   if (r.how === 'refused') {
     fileState.refused();
-    return status(t.notSaved(r.name));
+    return status('note', t.notSaved(r.name));
   }
   fileState.saved({ name: r.name, handle: r.how === 'written' ? r.handle : undefined }, text);
   showFile();
-  status(r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
+  status('done', r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
   // A new name can say another shell (`.zsh`).
   if (scriptName() !== before) {
     editor.shade();
@@ -833,14 +843,19 @@ function fileKeys(e: KeyboardEvent): void {
 }
 
 /**
- * F6 (or Shift+F6) goes from the editor, or anywhere on the page, to the explanation in the panel's frame, and from the
- * frame back to the editor: as F6 moves between the parts of VS Code. `inFrame`: the key was pressed in the frame.
+ * F6 (or Shift+F6) moves between the editor, the explanation in the panel's frame and the toast when one with a button
+ * shows, as F6 moves between the parts of VS Code: editor, explanation, toast, editor. Shift+F6 goes the other way.
+ * `inFrame`: the key was pressed in the frame.
  */
 function paneKeys(e: KeyboardEvent, inFrame: boolean): void {
   if (!isPaneKey(e) || document.querySelector('dialog[open]')) return;
   e.preventDefault();
-  if (inFrame) editor.view.focus();
-  else toPanel();
+  const stops = ['editor', 'panel', ...(toast.hasButton ? ['toast'] : [])];
+  const at = inFrame ? 'panel' : toast.focused ? 'toast' : 'editor';
+  const next = stops[(stops.indexOf(at) + (e.shiftKey ? stops.length - 1 : 1)) % stops.length];
+  if (next === 'panel') toPanel();
+  else if (next === 'toast') toast.focus();
+  else editor.view.focus();
 }
 
 /** Puts the focus in the explanation: into the frame, then on what the panel shows (media/panel.js, `focusExplanation`). */
