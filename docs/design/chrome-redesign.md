@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544) and C6 (#546). C5 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544) and C6 (#546). C5 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -330,7 +330,7 @@ What:
 
 - One chip right of the file name, "Shell script · bash (auto)", at every width, on a quiet fill.
 - It opens one popover with two radio lists, File type and Shell (and the yq flavour when the script uses yq). On a phone it is a bottom sheet.
-- The wording of the automatic shell comes from one function (decision 12). Prerequisite (2026-10-31, [sources.md](sources.md), SB4): `detectShell` (src/dialect.ts) gives its source (a ShellCheck directive, the shebang, the file name, the default), and the `auto (bash)` text of src/ui/panelView.ts comes from the same function.
+- The wording of the automatic shell comes from one function (decision 12). Prerequisite (2026-10-31, [sources.md](sources.md), SB4), met in #559: `readShell` (src/dialect.ts) gives the shell with its source (a ShellCheck directive, the shebang, the file name, the default), and `autoShellText` (src/messages-shell.ts) words it in the forms `option` (the `Auto (bash)` of the panel's list, which uses it), `short`, `long` and `setting` for C5. C5 only has to use them (a directive reads "from a shellcheck directive", which decision 12's list leaves out).
 - The shortening is a fit rule in src/ui. It gives the candidate forms in order: the whole chip, then without "(auto)", "Script · bash", Open and Save as icons, "bash" alone, and the name moved to the menu. The page takes the first that fits.
 - The kind and shell pickers leave the app bar and the menu. The hidden selects go. The panel bridge reads the scope from the page's state.
 
@@ -352,7 +352,7 @@ Done in #546 (2026-10-31). What it did, and what the design did not say:
 - Kept from main rather than round 8: the footer with Reset and Close (round 8 dropped it, and asked before Reset in Data), and Clear stored data's confirmation inside the sheet. The kinds of examples stay a grid; round 8's one column with a description for each kind is not taken (it needed page copy for sed, awk, jq and yq).
 - Taken from round 8 beyond the list above: Theme in Common (the same choice as the menu's), and a setting named in a description shown as its title, a link to it (plain text on a touch screen).
 - The settings' texts moved from web/settings-dialog.ts into web/text.ts (`SETTINGS_TEXT`).
-- Decision 12's wording of the Shell setting ("Auto (now: bash, from #!)") is not built: it waits for SB4 (`detectShell`'s source), with C5. The Shell setting keeps today's words.
+- Decision 12's wording of the Shell setting ("Auto (now: bash, from #!)") is not built: it is C5's: its wording is ready (`autoShellText(lang, 'setting', …)`, SB4, #559). The Shell setting keeps today's words until then.
 - The hit-area probe (test/support/hit-areas.ts) scrolls a control's wrapping label into view: a checkbox scrolled just into a scroll container's edge was measured with its label cut. The settings are measured with every section unfolded. Every control of the settings now meets the bar, and the list lost its settings entries, but for a setting named in a description side by side (`a.setting-link`, a link inside a sentence, 14 px high).
 
 What it was to be:
