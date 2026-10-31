@@ -34,11 +34,10 @@ const IFS_NAMES: ReadonlySet<string> = new Set(['IFS_WHITESPACE', 'IFS_ERRATIC']
 export const ALLOWED: readonly string[] = [
   // The word layer.
   ...['words', 'chars', 'wordview', 'brace', 'wordcontexts', 'wordsites', 'operands', 'fieldshape'].map((n) => `src/semantics/${n}.ts`),
-  // Where the helpers are defined.
-  'src/staticword.ts',
+  // Where a helper is defined (src/staticword.ts is matched, so that a new word predicate there is found).
   'src/examples/shellwords.ts',
-  // Syntax.
-  'src/syntax/',
+  // Syntax: the adapter that reads the parser's tree (src/syntax/tree.ts is matched: it holds word predicates too).
+  'src/syntax/adapters/',
   'src/highlight.ts',
   'src/semanticTokens.ts',
   // Other languages.
@@ -63,11 +62,13 @@ const bare = (e: ts.Expression): ts.Expression => {
   return e;
 };
 const literalText = (e: ts.Node): string | undefined => (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) ? e.text : undefined);
-/** Whether `e` reads a `.type` (`n.type`, `n?.type`, `parts[0].type`). */
-const readsType = (e: ts.Expression): boolean => {
+/** Whether `e` is a `.type` access (`n.type`, `n?.type`, `parts[0].type`). */
+const isTypeAccess = (e: ts.Expression): boolean => {
   e = bare(e);
   return ts.isPropertyAccessExpression(e) && e.name.text === 'type';
 };
+/** The names of the functions that take a list of node types, whatever file defines them (src/syntax/tree.ts, src/explain/nodes.ts). */
+const QUERIES: ReadonlySet<string> = new Set(['descendants', 'onLine']);
 /** The source of a regex literal (without its flags), or of `new RegExp('…')` of a literal. */
 function regexSource(e: ts.Expression): string | undefined {
   e = bare(e);
@@ -123,9 +124,28 @@ export function scanSource(rel: string, text: string): Match[] {
     found.push({ file: rel, fn: enclosing(n), kind, what });
   };
 
-  // The containers (array literals, sets, regexes) that a `.has(x.type)` / `.includes(x.type)` / `.test(x.type)` of this file reads.
+  // The variables that hold a node type (`const t = n.type`), by name, and the functions of this file that take a list of node types.
+  const typeVars = new Set<string>();
+  const queries = new Set<string>(QUERIES);
+  const prepass = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && isTypeAccess(n.initializer)) typeVars.add(n.name.text);
+    if ((ts.isFunctionDeclaration(n) || ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isMethodDeclaration(n)) && n.parameters.some((q) => ts.isIdentifier(q.name) && q.name.text === 'types')) {
+      const own = ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n) ? n.name?.getText(sf) : ts.isVariableDeclaration(n.parent) && ts.isIdentifier(n.parent.name) ? n.parent.name.text : undefined;
+      if (own !== undefined) queries.add(own);
+    }
+    ts.forEachChild(n, prepass);
+  };
+  prepass(sf);
+  /** Whether `e` reads a node type: a `.type`, or a variable that was set from one. */
+  const readsType = (e: ts.Expression): boolean => {
+    e = bare(e);
+    return isTypeAccess(e) || (ts.isIdentifier(e) && typeVars.has(e.text));
+  };
+
+  // The containers (array literals, sets, regexes) that this file tests a node type against (`.has(x.type)`, `.includes(x.type)`,
+  // `.test(x.type)`) or hands to a function that queries the tree (`descendants(root, ['word'])`).
   const typeTested = new Set<string>();
-  let inlineTested: ts.Node[] = [];
+  const inlineTested: ts.Node[] = [];
   const containerOf = (e: ts.Expression): ts.Node | string | undefined => {
     e = bare(e);
     return ts.isIdentifier(e) ? e.text : e;
@@ -134,12 +154,19 @@ export function scanSource(rel: string, text: string): Match[] {
     if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ['has', 'includes', 'test'].includes(n.expression.name.text)) {
       const arg = n.arguments[0];
       const recv = n.expression.expression;
-      if (n.expression.name.text === 'test' ? arg && readsType(arg) : arg && readsType(arg)) {
+      if (arg && readsType(arg)) {
         const c = containerOf(recv);
         if (typeof c === 'string') typeTested.add(c);
         else if (c) inlineTested.push(c);
       }
       // `list.some((t) => t === x.type)` and the like are comparisons, found below.
+    }
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && queries.has(n.expression.text)) {
+      for (const a of n.arguments) {
+        const c = containerOf(a);
+        if (typeof c === 'string') typeTested.add(c);
+        else if (c) inlineTested.push(c);
+      }
     }
     ts.forEachChild(n, collect);
   };
@@ -171,6 +198,12 @@ export function scanSource(rel: string, text: string): Match[] {
       const src = regexSource(n as ts.Expression);
       for (const t of src === undefined ? [] : regexNodeTypes(src)) add(n, 'node-type', t);
     }
+    // `n.type.endsWith('_substitution')`: a part of a node type, which names a group of the word-part types.
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ['endsWith', 'startsWith'].includes(n.expression.name.text) && readsType(n.expression.expression) && n.arguments.length) {
+      const l = literalText(n.arguments[0]);
+      const ends = n.expression.name.text === 'endsWith';
+      if (l !== undefined && l.length >= 3 && [...NODE_TYPES].some((t) => (ends ? t.endsWith(l) : t.startsWith(l)))) add(n, 'node-type', `${n.expression.name.text}:${l}`);
+    }
     // Calls of the decider helpers, by name (`f(x)`, `ns.f(x)`).
     if (ts.isCallExpression(n)) {
       const callee = ts.isIdentifier(n.expression) ? n.expression.text : ts.isPropertyAccessExpression(n.expression) ? n.expression.name.text : undefined;
@@ -185,7 +218,6 @@ export function scanSource(rel: string, text: string): Match[] {
     ts.forEachChild(n, visit);
   };
   visit(sf);
-  inlineTested = [];
   return found;
 }
 
