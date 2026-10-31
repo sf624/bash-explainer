@@ -2,7 +2,7 @@
 
 The plan that turns prototype B into real PRs, then the usability test. Agreed with the maintainer on 2026-10-27; revised after an independent review of the plan (PR #418).
 
-Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#543), started early (decided by the maintainer 2026-10-31), beside the three note levels. P3 done (#560), after the levels. P4 done (#563): what each program receives, as data. P5 done (#PRNUM): "In short" on every line. SB3 comes before P7a.
+Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#543), started early (decided by the maintainer 2026-10-31), beside the three note levels. P3 done (#560), after the levels. P4 done (#563): what each program receives, as data. P5 done (#566): "In short" on every line. SB3 comes before P7a.
 
 ## 1. Goal
 
@@ -75,7 +75,7 @@ The prototype was built fast. It has hacks and loosened tests. Two web tests wer
 | src/examples/pipeline.ts, src/examples/rerun.ts, src/explain/context.ts (glob examples kept beside the whole-pipeline example) | Review | This changes an example rule of CLAUDE.md ("Explanations"). Kept only as a stated rule with a test (P6). |
 | `trustedFields` (src/semantics/words.ts) | Dropped (P4) | P4 did not need it: what a program receives reads the values of `wordFields`, which the argv capture checks, not only those the trust allows. It never reached main. |
 | src/argvline.ts | Rewrite, done (P4, #563) | The idea is right. Its texts are in the catalog (src/messages-argv.ts). It reads the word model only: `wordFields`, and `receivedWords` (src/semantics/fieldshape.ts) for the words with a value known only at run time; it needs no argument interpreter, since roles are not what the program receives. Argv capture in bash checks it (test/argv.test.ts). |
-| src/linesummary.ts | Rewrite, done (P5, #PRNUM) | It compares names (grep, sort, uniq, tar, echo, wc) and has seven shapes. It keeps its own copy of the test operators (`S.tests`) and calls `pitfallFindings`. Every line needs a sentence: a composition from the specs and the models, and the known shapes as idioms (P5). Rebuilt as src/linesentence.ts; none of its code was kept. |
+| src/linesummary.ts | Rewrite, done (P5, #566) | It compares names (grep, sort, uniq, tar, echo, wc) and has seven shapes. It keeps its own copy of the test operators (`S.tests`) and calls `pitfallFindings`. Every line needs a sentence: a composition from the specs and the models, and the known shapes as idioms (P5). Rebuilt as src/linesentence.ts; none of its code was kept. |
 | src/reading.ts additions (`from`, `steps`, `argv`, `cond`, `summary`, `code`) | Keep the fields, move the texts | Its inline tables `TEXTS` and `OPERANDS` repeat `unaryTestOps` and `binaryTestOps` of src/dict/syntax.ts. One table, used by both (P2, P8). The sentence of the line is not kept here (P5). |
 | src/analyzer.ts helpers `variableFrom` | Dropped (P5) | P5 did not need it: the sentence says a variable's value as P4's data does (`argvWords`, src/argvline.ts). It never reached main. |
 | src/analyzer.ts helpers `wordExpands`, `wordTildes` | Move | They serve depth 2: to the module of words (P8). |
@@ -220,7 +220,7 @@ Tests: every line of sample.sh and the fixtures gets a sentence, in both languag
 
 Risks: a generic sentence can be flat ("Runs `a`, then `b`"). The usability test judges it; idioms add better ones later.
 
-Done (#PRNUM). Where the plan did not fit the code, the plan was changed, as below.
+Done (#566). Where the plan did not fit the code, the plan was changed, as below.
 
 - **The data.** `LineExplanation.sentence`, marked text, when `ExplainOptions.sentence` asks for it (the panel's hosts do: src/ui/panel.ts, web/main.ts). A string read as a script has none. The panel draws it at the top of the Meaning view, above the problems, with the label "In short" / 「ひとことで」 (`#short`, media/panel.js); the Reading view has none.
 - **Where it is made.** src/linesentence.ts, after the line's notes, so that it knows the line's problems. It walks the line's statements as the explanation does (`isBlockLike`, `intersects`): a statement on the line (or one over several lines that the line is part of), the head of a block that goes on below, the word that closes a block (with the redirections after it), or a word alone on its line that goes on with a block (`then`, `do`, `{`). A closing word says what it ends and repeats what its head says ("`done` ends the `while` loop of line 28: reads `input.txt` one line at a time…").
