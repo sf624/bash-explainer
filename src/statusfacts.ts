@@ -332,8 +332,8 @@ function failureReported(n: SyntaxNode, root: SyntaxNode, state: StateModel, sta
 function uncut(n: SyntaxNode, max: number): string {
   const one = n.text.replace(/\s*\n\s*/g, ' ');
   if (one.length <= max) return one;
-  const c = n.type === 'redirected_statement' ? field(n, 'body') : n;
-  return (c?.type === 'command' ? commandName(c) : undefined) ?? shorten(n.text);
+  // (A simple command holds its redirections: `tar … 2>/dev/null` is a command; `>f`, one with no name.)
+  return (n.type === 'command' ? commandName(n) : undefined) ?? shorten(n.text);
 }
 
 /**
