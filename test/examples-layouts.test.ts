@@ -187,7 +187,7 @@ describe('pipelines that start with a made-up output agree with the real tools s
     const tee = explain('ps aux | tee "$log" | wc -l').examples.find((e) => e.kind === 'pipeline')!;
     assert.ok(!tee.sections[0].lines.some((r) => / tee/.test(r)) && tee.sections[0].lines.some((r) => / wc -l$/.test(r)));
     // (Its words after quote removal, as the program gets them; one with a control character, which ps shows escaped, has no row.)
-    const row = (line: string) => explain(line).examples.find((e) => e.kind === 'textFilters')!.sections[0].lines.slice(-2).map((r) => r.replace(/^.* 0:00 /, ''));
+    const row = (line: string) => explain(line).examples.find((e) => e.kind === 'textFilters' || e.kind === 'pipeline')!.sections[0].lines.slice(-2).map((r) => r.replace(/^.* 0:00 /, ''));
     assert.deepStrictEqual(row('ps aux | head -n 20 | cut -d \\: -f1'), ['head -n 20', 'cut -d : -f1']);
     assert.deepStrictEqual(row("ps aux | head -n 20 | cut -d $'\\t' -f1"), ['ps aux', 'head -n 20']);
   });
