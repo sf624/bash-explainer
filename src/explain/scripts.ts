@@ -22,7 +22,7 @@ import { replaceRange, stringShell, textBetween } from '../rewrite';
 import { readAsScript, scriptProcess } from '../tokenmarks';
 import type { Explainer } from './context';
 import { lineStarts, posOf, sameSpan, sortTokens } from './nodes';
-import { resolve, unseenDeclarations } from './reads';
+import { resolve } from './reads';
 
 /** The expansions that give a word a value of the shell that expands it (`$x`, `$(…)`, `*`, `~`): not braces or quotes. */
 const LOCAL_EXPANSIONS: ReadonlySet<ExpansionStep['kind']> = new Set(['tilde', 'parameter', 'command', 'arithmetic', 'process', 'glob']);
@@ -232,15 +232,14 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
  * its export may come from the environment is `fromEnvironment`'s: not said of one the environment almost always has
  * (`TERM`), a caveat for one in capitals, a clause for one in lower case. Not one the string sets itself, nor one the
  * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`, sudo's `USER`), nor one set by that shell (`$_`);
- * nothing where the string reads a file (`. ./env.sh`), nor "not exported" where the script may declare variables
- * the model does not see (`source`, `eval "$x"`: `unseenDeclarations`).
+ * nothing of a read after code the string runs and its model does not read (`. ./env.sh; echo "$x"`), nor "not
+ * exported" after such code in this shell (`source`, `eval "$x"`: `ShellState.opaque`), which may export it.
  */
 function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): void {
   // The string, read as the script it is (src/semantics/state.ts): the variables it reads, and whether each
   // reached it there (passed by the slots, or set by the string itself before the read).
   const script = cx.state.script(words, env);
-  // (A string that reads a file, `bash -c '. ./env.sh; echo "$x"'`, may set any variable there.)
-  if ('why' in script || script.model.sources.length) return;
+  if ('why' in script) return;
   const cmd = ancestor(words[0], (x) => x.type === 'command')!;
   const st = cx.state.at(cmd).run;
   const remote = whereOf(env) === 'remote';
@@ -254,9 +253,9 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
     // (Set by the string itself before the read, or given to it exported, by the slot or this shell: not one passed
     // with an export not known, from the environment.)
     const own = script.model.at(e).run.variables.get(v);
+    // (After code the string runs that its model does not read, `bash -c '. ./env.sh; echo "$x"'`, it may be set.)
+    if (script.model.at(e).run.opaque) continue;
     if (!x || x.set !== 'on' || given || specialVariables[v] || (own && (own.attrs.x?.state === 'on' || script.tree.root === ancestor(own.at, (a) => !a.parent)))) continue;
-    // (A name the wrapper sets itself, sudo's `USER` or `HOME`: there, with the wrapper's value.)
-    if ((linksAfter(env, cx.state.env(cmd)).links as SlotLink[]).some((l) => l.sets?.includes(v))) continue;
     const exported = x.attrs.x?.state ?? 'off';
     // (sudo still passes a few variables of the environment, `TERM`, `TZ`: then it is as with no wrapper.)
     const { dropped, unset } = variableIn(cx.state, cmd, v, env);
@@ -266,9 +265,9 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
         : fact(cx.lang, 'variable-not-passed-by-wrapper', { v, via: dropped.via, ...(dropped.keeps ? { keeps: dropped.keeps.slice(0, 2) } : {}) }), words[0]);
       return;
     }
-    // (Whether it is exported, only where the model sees every declaration (`unseenDeclarations`): code it does not read,
-    // `source`, `eval "$x"`, `export "$1"`, may export it.)
-    if (unseenDeclarations(cx)) return;
+    // (Whether it is exported, only where no path before ran code the model does not read (`source`, `eval "$x"`:
+    // `ShellState.opaque`), which may export it.)
+    if (st.opaque) return;
     // (`env -u FOO` removes it on the way, whatever the environment had.)
     const environment = unset ? 'no' : fromEnvironment(v, st, 'export', cx.state.provides);
     if (environment === 'usually') continue;

@@ -37,7 +37,7 @@ import type { Explainer } from './context';
 import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectInfo, redirectParts } from './redirections';
-import { hostCommand, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, specFor, unquotedWord, unseenDeclarations } from './reads';
+import { hostCommand, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, specFor, unquotedWord } from './reads';
 import { exitRefusedNote, posixExitNote, statusRangeNote } from './status';
 import { shellEffectNote } from './where';
 import { bracesHere, braceWord, braceWords, bracesMaybeOff, plainText, shown, tilde } from './words';
@@ -254,10 +254,12 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
     // A command over several lines is explained whole, so it always starts on the line explained.
     for (const text of yqNotes(verdict, cx.lang)) cx.note(text, n);
   }
-  if (head.kind === 'builtin' && onlyInFunction(head.spec!, cx.shell) && !inFunction(cx.state.env(n)) && scopeOf(n) !== 'substitution') {
-    // (A file with no shebang may be read with `source` by a function, where `local` works: a caveat.)
+  const where = head.kind === 'builtin' && onlyInFunction(head.spec!, cx.shell) && scopeOf(n) !== 'substitution' ? inFunction(cx.state.env(n)) : undefined;
+  if (where === 'no' || where === 'trap') {
+    // (A trap's action runs where the trap fires, which may be in a function; a file with no shebang may be read with
+    // `source` by a function, where `local` works: a caveat.)
     const sourced = readAs(cx.state.env(n), cx.state.read) === 'unknown';
-    cx.note(fact(cx.lang, 'local-outside-function', { stops: localStops(cx, n), ...(sourced ? { sourced } : {}) }), n);
+    cx.note(fact(cx.lang, 'local-outside-function', { stops: localStops(cx, n), ...(where === 'trap' ? { trap: true } : sourced ? { sourced } : {}) }), n);
   }
   if (head.kind === 'builtin' && head.spec!.ends === 'function') head.explanation = returnInSubstitution(cx, n) ?? head.explanation;
   // (A builtin that reads its words otherwise in the shell options on here: `kill` in POSIX mode, 6.11.)
@@ -558,11 +560,11 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
       const value = cx.state.at(nameNode).expand.aliases.get(name)!.value;
       // (Turned off by the script, `shopt -u expand_aliases`: also in an interactive shell.)
       const off = option(cx.state.at(nameNode).expand, 'shopt', 'expand_aliases') === 'off';
-      // (Where the script runs code the model does not read, `source`, `eval "$x"` (`unseenDeclarations`), that code may
-      // turn it on: the note is not sure.)
-      const unseen = unseenDeclarations(cx);
-      if (!unseen) cx.note(fact(cx.lang, 'alias-not-expanded-in-script', { name, value, ...(off ? { off } : {}) }), nameNode);
-      const unless = unseen ? cx.s('（ここで読まないコード、たとえば `source` で読み込むファイルや `eval` が有効にしていなければ）', ' (unless code not read here, such as a file read with `source` or an `eval`, turns it on)') : '';
+      // (After code the model does not read on a path before here, `source`, `eval "$x"` (`ShellState.opaque`), which may
+      // turn it on: a caveat.)
+      const unread = !!cx.state.at(nameNode).expand.opaque;
+      cx.note(fact(cx.lang, 'alias-not-expanded-in-script', { name, value, ...(off ? { off } : {}), ...(unread ? { unread } : {}) }), nameNode);
+      const unless = unread ? cx.s('（ここで読まないコード、たとえば `source` で読み込むファイルや `eval` が有効にしていなければ）', ' (unless code not read here, such as a file read with `source` or an `eval`, turns it on)') : '';
       if (off) {
         return {
           name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],

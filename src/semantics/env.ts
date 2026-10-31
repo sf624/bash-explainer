@@ -48,11 +48,6 @@ export interface SlotLink {
   /** With `env` `reset`: the variables the program sets itself, with values of its own (`CommandSlot.sets`). */
   readonly sets?: readonly string[];
   readonly unsets?: readonly string[];
-  /**
-   * For a string run later (`CommandSlot.later`, a trap's action): it may also run while the code around the command
-   * that sets it runs, in the same function: a DEBUG, RETURN or ERR trap, or a signal not known here.
-   */
-  readonly during?: true;
   readonly env: NonNullable<CommandSlot['env']>; readonly shell?: ShellKind;
   readonly invocation?: readonly { readonly flag: string; readonly value?: string }[];
 }
@@ -404,7 +399,7 @@ export const linksAfter = (env: ExecEnv, place: ExecEnv): ExecEnv => ({ links: e
  * from the environment the shell started with, so every link on the way applies to it, from not known. In a function
  * that may run where the model does not see (`CallLink.unsure`), the state is not known: only the links after `cmd`'s
  * place and its prefix assignment are. Each slot
- * link, in order: one that passes no variables (`droppedBy`; on another machine or in a container, what sets the
+ * link, in order: one that sets it itself (`SlotLink.sets`: sudo's `USER`), else one that passes no variables (`droppedBy`; on another machine or in a container, what sets the
  * environment there, an image's `ENV`, the remote shell's startup files, is not seen: not known) or removes it
  * (`env -u NAME`), then one that sets it (`env NAME=1`, `docker run -e NAME`; `*`, a file of them, may). (env applies
  * `-i` and `-u` before its assignments.)
@@ -422,7 +417,9 @@ export function variableIn(model: StateModel, cmd: SyntaxNode, name: string, env
   let unset = false;
   for (const l of (prefix || open || v ? linksAfter(env, place) : env).links) {
     if (l.kind !== 'slot') continue;
-    if (droppedBy({ links: [l] }, name)) { state = l.slot.where === 'remote' || l.slot.where === 'container' ? 'unknown' : 'off'; dropped ??= l; }
+    // (A name the program sets itself, sudo's `USER` or `HOME`, is there, with its value: `SlotLink.sets`.)
+    if (l.sets?.includes(name)) state = 'on';
+    else if (droppedBy({ links: [l] }, name)) { state = l.slot.where === 'remote' || l.slot.where === 'container' ? 'unknown' : 'off'; dropped ??= l; }
     if (l.unsets?.includes(name)) { state = 'off'; unset = true; }
     // (A file of them, `docker run --env-file`, may set it, in a container, which passes nothing else.)
     if (l.assigns.includes(name)) state = 'on';
@@ -464,19 +461,20 @@ export function ownSubshells(env: ExecEnv, n: SyntaxNode): SubshellLink[] {
 }
 
 /**
- * Whether code in `env` may run in the body of a function: a call link, with no link after it that starts another
+ * Whether code in `env` runs in the body of a function: `yes`, a call link with no link after it that starts another
  * shell or a program (`f() { bash -c 'local x'; }` runs `local` outside any function; `eval`, `( )` and `$( )` stay in
- * it), or that runs it later (a trap's action: `f() { trap 'local x' EXIT; }` runs it after `f` has returned). A
- * RETURN trap, or an ERR or DEBUG trap, fires while the function that sets it runs (`SlotLink.during`), so its action
- * may run in it.
+ * it); `trap`, a string run later first (`CommandSlot.later`, a trap's action), which runs where the trap fires: in a
+ * function or not, whatever its signal (`f() { trap 'local x' RETURN; }` runs it in `f`, an EXIT trap after `f` has
+ * returned, and a DEBUG or ERR trap set in `f` stays set once `f` has returned); `no` otherwise.
  */
-export function inFunction(env: ExecEnv): boolean {
+export function inFunction(env: ExecEnv): 'yes' | 'trap' | 'no' {
   for (let i = env.links.length - 1; i >= 0; i--) {
     const l = env.links[i];
-    if (l.kind === 'call' || l.kind === 'host') return true;
-    if (l.kind === 'slot' && ((l.slot.later && !l.during) || (l.slot.run !== 'current-shell' && l.slot.run !== 'subshell'))) return false;
+    if (l.kind === 'call' || l.kind === 'host') return 'yes';
+    if (l.kind === 'slot' && l.slot.later) return 'trap';
+    if (l.kind === 'slot' && l.slot.run !== 'current-shell' && l.slot.run !== 'subshell') return 'no';
   }
-  return false;
+  return 'no';
 }
 
 /** The statements that hold a `{ }` group in the same process: a list, a redirection, `!`, a pipeline, a coproc. */
@@ -589,14 +587,11 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
         const env = withOption ? withOption.env : role.slot.env ?? 'exported';
         const keeps = withOption ? withOption.keeps : role.slot.keeps;
         const sets = withOption ? withOption.sets : role.slot.sets;
-        // (A trap's action runs when its signals come: DEBUG, RETURN and ERR come while the function that sets it runs.)
-        const signals = role.slot.later ? list.filter((i) => i.role.role === 'operand' && i.role.spec?.type === 'signal').map((i) => i.w.args[i.word].value) : [];
-        const during = signals.some((s) => s === undefined || /^(?:SIG)?(?:DEBUG|RETURN|ERR)$/i.test(s));
         const program = (role.slot.run === 'shell-string' ? p.command.split(' ')[0].split('/').pop()! : '');
         const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : role.slot.shell ?? (!role.slot.joinsWords ? shellFromName(program) : undefined) ?? 'unknown';
         // (The options of a shell started by its name: not those of `su -l -c` or of `watch`. `rbash` is `bash -r`.)
         const invocation = shell && shell !== 'unknown' && !role.slot.shell ? [...(restrictedByName(program) ? [{ flag: '-r' }] : []), ...shellInvocation(all)] : [];
-        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(keeps ? { keeps } : {}), ...(sets ? { sets } : {}), ...(unsets.length ? { unsets } : {}), ...(during ? { during: true as const } : {}),
+        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(keeps ? { keeps } : {}), ...(sets ? { sets } : {}), ...(unsets.length ? { unsets } : {}),
           ...(shell ? { shell } : {}), ...(invocation.length ? { invocation } : {}) });
         if (!split) out.set(w.node(word), inner);
         // (The words a slot joins are those after it that it marks `joined`.)

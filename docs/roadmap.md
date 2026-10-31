@@ -60,6 +60,9 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - The command after `sudo` or `command` gets no tilde token (`sudo ~/bin/x`; found in the review of #527).
 - Values of a whole word (`"$dir/$f"`), arrays, and per-call values in functions (deferred earlier): after "Trust per position" below; the corpus shows little gain ([design/expansion-values.md](design/expansion-values.md), section 6).
 - Trust per position instead of per script (deferred earlier): a `source`, `eval` or `$cmd` makes variables untrusted only on the paths after it, not in the whole file. Shared with conditions and dead code. Design: [design/trust-per-position.md](design/trust-per-position.md) (deferred; step 0 done). Its step 0, done (#382), fixed wrong values and dead code of today's model found on the way (`-v` of a name not known, reads of a nameref whose target is not known, `${x@P}`, a bare `declare n` from the environment read as arithmetic, `compgen -W`, `fc -s`, recursive calls, `enable -n exit`). Steps 1–4 deferred: the measured gain is small (34 → 45 values on 358 real scripts). (Measured with a prototype: every function body is lost after a taint in the main flow; section 10 there.) Decided by the maintainer 2026-10-26.
+- `arrayKind` (src/explain/reads.ts) decides from the text of the trust's first reason (`unseenDeclarations`), not from the state's `opaque` at the node, so it ignores where unread code runs (found in the review of #536).
+- `#!/bin/bash -i` then `ll` still gives `distro-alias-in-script`: `readAs` does not know the interactive shebang, whose shell may have the distribution's alias (found in the review of #536).
+- `export "$1"` does not make the state `opaque`, so `foo=1; export "$1"; bash -c 'echo $foo'` still says `foo` is not exported (found in the review of #536).
 
 ## Waiting on the maintainer
 

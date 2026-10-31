@@ -184,7 +184,7 @@ export function arrayKind(cx: Explainer, name: string, n: SyntaxNode): 'assoc' |
  * is blind, src/semantics/trust.ts), not only read text it does not know as arithmetic, use a subscript the trust
  * cannot place, or run a trap that may break a loop: those declare nothing.
  */
-export function unseenDeclarations(cx: Explainer): boolean {
+function unseenDeclarations(cx: Explainer): boolean {
   const why = cx.state.blind;
   return why !== undefined && !/^(?:arithmetic |an integer variable |indirect expansion|`\w+` may not be associative|a trap's action may end)/.test(why);
 }

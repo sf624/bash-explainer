@@ -302,6 +302,9 @@ export class Scripts implements StringTrees {
   }
 }
 
+/** The options of bash's invocation that turn a `shopt` option on: `-i`, an interactive shell, expands aliases (`bash -i -c`, `#!/bin/bash -i`). */
+const INVOCATION_SHOPT: Readonly<Record<string, string>> = { '-i': 'expand_aliases' };
+
 /**
  * The model of a string another shell runs: a walk of its tree for that shell, from what reaches it of the script
  * where the slot runs (exported variables and functions, the names the slots set, the set options with an exported
@@ -313,7 +316,7 @@ function childModel(script: NestedScript): StateModel {
   // (The string is a word of the command whose slot runs it: `bash -c S`, `sudo sh -c S`.)
   const cmd = ancestor(first, (x) => x.type === 'command')!;
   const name = field(cmd, 'name')!;
-  // The names the command's assignments and its slots give, but those a slot after them does not pass on
+  // The names the command's assignments and its slots give (`env x=1`, sudo's own `USER`), but those a slot after them does not pass on
   // (`x=1 env -i bash -c …`: `x` is not there; `env -i x=1 bash -c …`: it is), and those a slot removes (`env -u x`).
   const given = new Set(cmd.namedChildren.filter((c) => c.type === 'variable_assignment' && c.startIndex < name.startIndex).map((c) => field(c, 'name')!.text));
   const removed = new Set<string>();
@@ -323,6 +326,8 @@ function childModel(script: NestedScript): StateModel {
   for (const l of links) {
     if (l.slot.run === 'current-shell') continue;
     if (l.env === 'reset' || l.env === 'none' || (l.slot.where ?? 'local') !== 'local') given.clear();
+    // (Then the names the program sets itself, sudo's `USER` and `SUDO_USER`: `SlotLink.sets`.)
+    for (const g of l.sets ?? []) given.add(g);
     for (const u of l.unsets ?? []) {
       given.delete(u);
       removed.add(u);
@@ -351,7 +356,7 @@ function childModel(script: NestedScript): StateModel {
     // (What the links before reached the outer shell with is in `outer`: `env -i bash -c 'export X; bash -c …'`.)
     let st = childStart(w, outer, own, pass, first);
     // (An interactive shell, `bash -i -c`, expands aliases.)
-    if (w.bash && pass.invocation.some((f) => f.flag === '-i')) st = { ...st, shopt: st.shopt.with('expand_aliases', 'on') };
+    for (const f of w.bash ? pass.invocation : []) if (INVOCATION_SHOPT[f.flag]) st = { ...st, shopt: st.shopt.with(INVOCATION_SHOPT[f.flag], 'on') };
     // (SHELLOPTS and BASHOPTS not given are bash's own: an exported one passes options the outer model has read.)
     const vars = [...st.variables].filter(([name]) => given.has(name) || !['SHELLOPTS', 'BASHOPTS'].includes(name))
       .map(([name, v]) => [name, given.has(name) ? { set: 'on', value: values.get(name) } : v] as const)
@@ -399,8 +404,9 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
       if (SET_LETTERS[letter]) start.set.set(SET_LETTERS[letter], cluster[0] === '-' ? 'on' : 'off');
       else if (letter !== 'o' && letter !== 'O') start.others.push(`${cluster[0]}${letter}`);
       if (`${cluster[0]}${letter}` === '-r') start.restricted = true;
-      // (An interactive shell, `#!/bin/bash -i`, expands aliases, as `bash -i -c` does: still one the allow-list does not have.)
-      if (`${cluster[0]}${letter}` === '-i') start.shopt.set('expand_aliases', 'on');
+      // (An interactive shell, `#!/bin/bash -i`, expands aliases: still one the allow-list does not have.)
+      const shopt = INVOCATION_SHOPT[`${cluster[0]}${letter}`];
+      if (shopt) start.shopt.set(shopt, 'on');
     }
   };
   // (A long option: POSIX mode, one that changes nothing here, or one the table does not have: `--debugger`.)

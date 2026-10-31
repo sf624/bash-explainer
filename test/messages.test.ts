@@ -60,10 +60,14 @@ describe('the message catalog', () => {
       assert.strictEqual(e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note'), want, id);
     }
     // The ones whose level depends on the case: an unquoted path given to `rm`, `mv` or `cp`; an unset read that stops a shell.
-    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['local-outside-function', 'postfix-increment-status', 'postfix-decrement-status', 'variable-not-exported', 'unquoted-variable-as-path', 'nounset-unbound']);
-    // `local` in a file with no shebang, which a function may source; a name that may come from the environment, exported.
+    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['local-outside-function', 'postfix-increment-status', 'postfix-decrement-status', 'alias-not-expanded-in-script', 'variable-not-exported', 'unquoted-variable-as-path', 'nounset-unbound']);
+    // `local` in a file with no shebang, which a function may source, or in a trap's action; an alias after code not
+    // read, which may turn expand_aliases on; a name that may come from the environment, exported.
     assert.strictEqual(fact('en', 'local-outside-function', { stops: false }).level, 'warning');
     assert.strictEqual(fact('en', 'local-outside-function', { stops: false, sourced: true }).level, 'info');
+    assert.strictEqual(fact('en', 'local-outside-function', { stops: 'script', trap: true }).level, 'info');
+    assert.strictEqual(fact('en', 'alias-not-expanded-in-script', { name: 'll', value: 'ls -l' }).level, 'warning');
+    assert.strictEqual(fact('en', 'alias-not-expanded-in-script', { name: 'll', value: 'ls -l', off: true, unread: true }).level, 'info');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x' }).level, 'warning');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'X', environment: 'maybe' }).level, 'info');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x', environment: 'unlikely' }).level, 'warning');
