@@ -781,9 +781,6 @@ body.resizing .problems-resize {
   box-shadow: var(--shadow);
   transform: translateX(-50%);
   transition: opacity 0.2s, transform 0.2s var(--ease);
-}
-
-#status {
   display: flex;
   align-items: center;
   gap: 8px;

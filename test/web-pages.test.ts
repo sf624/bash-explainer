@@ -3,7 +3,7 @@
 // unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser } from 'playwright-core';
-import { openSite, choose, until } from './support/site';
+import { openSite, choose, problemRows, problemsShown, until } from './support/site';
 
 describe('the web page: release, development and preview pages, the panel view and the comparison', function () {
   this.timeout(120000);
@@ -256,9 +256,9 @@ describe('the web page: release, development and preview pages, the panel view a
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('#!/bin/sh\n[[ -f a ]] && echo ok');
-    const items = await until('the problems', () => page.locator('#problem-list li').count(), (n) => n > 0, 15000);
+    const items = await until('the problems', () => problemRows(page).count(), (n) => n > 0, 15000);
     assert.ok(items > 0);
-    assert.strictEqual(await page.locator('#problems').isVisible(), true);
+    assert.strictEqual(await problemsShown(page), true);
     assert.strictEqual(await page.locator('#problems-count').textContent(), String(items));
     assert.deepStrictEqual(errors, []);
     await ctx.close();

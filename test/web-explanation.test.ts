@@ -3,7 +3,7 @@
 // unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser } from 'playwright-core';
-import { openSite, choose, pickKind, stable, until } from './support/site';
+import { openSite, pickKind, setShell, stable, until } from './support/site';
 
 describe('the web page: the explanation panel and the editor', function () {
   this.timeout(120000);
@@ -250,7 +250,7 @@ describe('the web page: the explanation panel and the editor', function () {
     await parent().locator('> .row > .text').click();
     assert.strictEqual(await folded(), true);
     await parent().evaluate((li) => ((li as any).mark = 1));
-    await choose(page, '#shell', 'dash');
+    await setShell(page, 'dash');
     await until('the panel drawn again', () => parent().evaluate((li) => !(li as any).mark), (redrawn) => redrawn);
     assert.strictEqual(await folded(), true);
     assert.strictEqual(await twisty(), '▸');

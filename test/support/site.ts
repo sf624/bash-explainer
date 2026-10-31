@@ -7,7 +7,7 @@ import * as http from 'http';
 import type { AddressInfo } from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import type { Browser, Page } from 'playwright-core';
+import type { Browser, Locator, Page } from 'playwright-core';
 
 export const root = path.join(__dirname, '..', '..');
 const TYPES: Record<string, string> = {
@@ -143,6 +143,48 @@ export async function chooseView(page: Page, view: 'list' | 'tree'): Promise<voi
   if (await page.locator(`#view-${view}-top`).isVisible()) return page.locator(`#view-${view}-top`).click();
   await menuItem(page, `#view-${view}-menu`);
   await page.evaluate("document.getElementById('drawer').close()");
+}
+
+/**
+ * Chooses the shell as the page offers it: with the top bar's select where the bar has one, else in the menu. Both
+ * hold the same value; the tests go through this helper, so that moving the control changes the helper, not the tests
+ * (docs/design/chrome-redesign.md, C0 and C5).
+ */
+export async function setShell(page: Page, shell: string): Promise<void> {
+  const top = page.locator('#shell-top');
+  if (await top.isVisible()) await top.selectOption(shell);
+  else await choose(page, '#shell', shell);
+}
+
+/** The shell the page has chosen ('auto' or a shell's name), read from the menu's select, which holds it at every width. */
+export function currentShell(page: Page): Promise<string> {
+  return page.locator('#shell').inputValue();
+}
+
+/** Whether the Problems strip is on the page (it is hidden while the script has no problem). */
+export function problemsShown(page: Page): Promise<boolean> {
+  return page.locator('#problems').isVisible();
+}
+
+/** The text of the Problems list as it is now (its rows, or nothing); to poll with `until`. */
+export function problemList(page: Page): Promise<string> {
+  return page.locator('#problem-list').innerText();
+}
+
+/** The rows of the Problems list, as a locator. */
+export function problemRows(page: Page): Locator {
+  return page.locator('#problem-list li');
+}
+
+/**
+ * Makes sure the Problems list is open and returns its rows: waits for the strip, and unfolds it when it is folded
+ * (it is open today and folds in C2 of docs/design/chrome-redesign.md, so the tests that read the rows go through here).
+ */
+export async function openProblems(page: Page): Promise<Locator> {
+  await page.locator('#problems').waitFor({ state: 'visible' });
+  const toggle = page.locator('#problems-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+  return problemRows(page);
 }
 
 /** Waits until the page has drawn `n` more animation frames (styles and layout have settled after a change). */

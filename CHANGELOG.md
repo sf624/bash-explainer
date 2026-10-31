@@ -2,10 +2,13 @@
 
 ## Unreleased
 
+Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+
 ### Fixed
 
 - The `~` in the operands of `[`, `test` and `[[ ]]` (`[ -f ~/.bashrc ] && . ~/.bashrc`) and in a command name (`~/bin/foo`) is explained as a tilde expansion, as it is in other arguments. Before, it showed no expansion there.
 - A worked example now follows a first stage whose words hold a backslash, such as `printf "%s\n" b a | sort`, as bash reads them. Before, it showed made-up lines.
+- Japanese wording on the web page follows the project's style (the settings dialog said 消します where the rest says 削除します).
 
 ## 0.9.0
 

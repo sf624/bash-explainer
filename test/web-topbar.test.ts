@@ -3,7 +3,7 @@
 // unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser } from 'playwright-core';
-import { openSite, choose, until } from './support/site';
+import { openSite, choose, currentShell, problemList, setShell, until } from './support/site';
 import { PANEL_BODY } from '../src/ui/panelView';
 
 describe('the web page: the top bar', function () {
@@ -121,10 +121,9 @@ describe('the web page: the top bar', function () {
       if (wide) assert.strictEqual(await page.locator('#shell-top').getAttribute('aria-label'), 'Shell');
 
       // Shell: the setting, as the panel's select was.
-      if (wide) await page.locator('#shell-top').selectOption('dash');
-      else await choose(page, '#shell', 'dash');
-      await until('the problems for dash', () => page.locator('#problem-list').innerText(), (t) => t.includes('dbracket'));
-      assert.strictEqual(await page.locator('#shell').inputValue(), 'dash');
+      await setShell(page, 'dash');
+      await until('the problems for dash', () => problemList(page), (t) => t.includes('dbracket'));
+      assert.strictEqual(await currentShell(page), 'dash');
       assert.strictEqual(await page.locator('#shell-top').inputValue(), 'dash');
 
       // Collapse all, then Expand all.

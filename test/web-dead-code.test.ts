@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Browser, Page } from 'playwright-core';
-import { openSite, until } from './support/site';
+import { openSite, openProblems, problemsShown, until } from './support/site';
 
 const SCRIPT = '#!/bin/bash\nx=1\nif [ "$x" = 2 ]; then\n  echo "never"\n  rm -rf /tmp/build\nelse\n  echo "always"\nfi\nexit 0\necho "after exit"';
 
@@ -38,7 +38,7 @@ describe('the web page: code that never runs, faded in the editor', function () 
       assert.deepStrictEqual(got.map((t) => t.trim()).filter(Boolean), ['echo "never"', 'rm -rf /tmp/build', 'echo "after exit"']);
       assert.strictEqual(await page.evaluate("getComputedStyle(document.querySelector('.cm-bx-dead')).opacity"), '0.5');
       // Not a problem: none in the Problems list, no mark in the gutter.
-      assert.strictEqual(await page.locator('#problems').isHidden(), true);
+      assert.strictEqual(await problemsShown(page), false);
       assert.strictEqual(await page.locator('.cm-lint-marker').count(), 0);
       await page.locator('.cm-bx-dead').first().hover();
       const tip = await until('the tooltip', () => page.locator('.cm-tooltip-lint').allInnerTexts(), (t) => t.length === 1);
@@ -58,7 +58,7 @@ describe('the web page: code that never runs, faded in the editor', function () 
     // (A warning in live code: `x = 1`, with dead code after it.)
     await open(page, 'x = 1\nexit\necho dead');
     await until('the faded text', () => faded(page), (t) => t.length > 0);
-    assert.strictEqual(await page.locator('#problem-list li').count(), 1, 'only the warning is listed');
+    assert.strictEqual(await (await openProblems(page)).count(), 1, 'only the warning is listed');
     await page.locator('#settings-open').click();
     const box = page.locator('[data-key="hints.deadCode"] input[type=checkbox]');
     assert.strictEqual(await box.isChecked(), true);
