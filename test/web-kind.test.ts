@@ -160,14 +160,18 @@ describe('the web page: the file kind', function () {
     await toast.locator('button').click();
     await until('the text back', text, (t) => t.trim() === 'echo mine');
     assert.strictEqual(await page.locator('#kind').getAttribute('aria-label'), 'File: Dockerfile');
-    // The sample button still asks (the browser's confirmation) and offers to undo; typing takes the offer away.
+    // ⋯ › Load the sample still asks (the browser's confirmation) and offers to undo; typing takes the offer away.
+    const loadSample = async () => {
+      await page.locator('#ed-more').click();
+      await page.locator('#more-sample').click();
+    };
     page.once('dialog', (d) => void d.accept());
-    await page.locator('#sample').click();
+    await loadSample();
     await toast.locator('button').waitFor();
     await toast.locator('button').click();
     await until('the text back', text, (t) => t.trim() === 'echo mine');
     page.once('dialog', (d) => void d.accept());
-    await page.locator('#sample').click();
+    await loadSample();
     await toast.locator('button').waitFor();
     await page.locator('.cm-content').click();
     await page.keyboard.insertText('x');

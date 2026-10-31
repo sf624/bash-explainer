@@ -6,7 +6,7 @@
 // in Japanese where the page says something.
 import * as assert from 'assert';
 import type { Browser, BrowserContext, Frame, Page } from 'playwright-core';
-import { chooseView, frames, menuItem, openSite, until } from './support/site';
+import { chooseView, frames, menuItem, openSite, until, type Site } from './support/site';
 
 // A pitfall on line 3 (`set -e` and `(( count++ ))`), a pipeline with parts, and a command whose example has input boxes.
 const SCRIPT = 'set -e\ncount=0\n(( count++ ))\ngrep -c foo f | sort\nsort a.txt b.txt';
@@ -14,10 +14,11 @@ const SCRIPT = 'set -e\ncount=0\n(( count++ ))\ngrep -c foo f | sort\nsort a.txt
 describe('the web page: keyboard and screen reader access', function () {
   this.timeout(120000);
   let browser: Browser;
+  let firstVisit: Site['firstVisit'];
   let base = '';
 
   before(async function () {
-    ({ browser, base } = await openSite(this));
+    ({ browser, firstVisit, base } = await openSite(this));
   });
 
   async function context(lang: 'en' | 'ja' = 'en', options: Parameters<Browser['newContext']>[0] = {}): Promise<BrowserContext> {
@@ -132,9 +133,10 @@ describe('the web page: keyboard and screen reader access', function () {
     assert.strictEqual(await panel.evaluate('document.activeElement.getAttribute("tabindex")'), '0');
     await page.keyboard.press('Shift+F6');
     await until('the editor', () => focused(page), (f) => f.includes('cm-content'));
-    // The menu has it, with its key, next to Open and Save.
+    // The menu has it, with its key, in Help (Open and Save have theirs in Script).
     await page.locator('#menu-open').click();
-    assert.deepStrictEqual(await page.locator('#drawer .menu-item:has(kbd)').evaluateAll((els) => els.map((e) => e.textContent)), ['Open file…Ctrl+O', 'Savescript.shCtrl+S', 'Go to the explanation and backF6']);
+    assert.deepStrictEqual(await page.locator('#drawer .menu-item:has(kbd)').evaluateAll((els) => els.map((e) => e.textContent)), ['Open file…Ctrl+O', 'Saveuntitled.shCtrl+S', 'Go to the explanation and backF6']);
+    assert.strictEqual(await page.locator('#menu-panes').evaluate((e) => e.closest('section')!.id), 'menu-g-help');
     await page.locator('#menu-panes').click();
     await until('the tree item', () => focused(page), (f) => f.startsWith('frame:li'));
     await ctx.close();
@@ -300,6 +302,59 @@ describe('the web page: keyboard and screen reader access', function () {
     const line = await page.locator('.cm-activeLine').evaluate((e) => [e.ownerDocument.defaultView!.getComputedStyle(e).outlineStyle, e.ownerDocument.defaultView!.getComputedStyle(e).outlineColor]);
     assert.deepStrictEqual(line, ['solid', await system(page, 'Highlight')]);
     await ctx.close();
+  });
+
+  it('walks the app bar and the editor\'s header with the keyboard: Copy a link, Open, Save, the name and ⋯, with Escape giving the focus back', async () => {
+    for (const lang of ['en', 'ja'] as const) {
+      // A first visit: its hint is in the order too, after the header and before the editor.
+      const ctx = await firstVisit({ locale: lang === 'ja' ? 'ja-JP' : 'en-US', viewport: { width: 1400, height: 800 } });
+      await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('.cm-line').nth(3).waitFor();
+      assert.strictEqual(await page.locator('#first-hint').isVisible(), true);
+      await page.locator('#settings-open').focus();
+      const order: string[] = [];
+      for (let i = 0; i < 9; i++) {
+        await page.keyboard.press('Tab');
+        order.push(await focused(page));
+      }
+      assert.deepStrictEqual(order.map((f) => f.split('.')[0]), ['a#github', 'a#install', 'button#open-btn', 'button#save-btn', 'button#file-name', 'button#ed-more', 'button#hint-own', 'button#hint-open', 'button#first-hint-close']);
+      // Copy a link with Enter: "Copied" on the button, which keeps the focus.
+      await page.locator('#share').focus();
+      await page.keyboard.press('Enter');
+      await until('Copied', () => page.locator('#share').innerText(), (t) => t === (lang === 'ja' ? 'コピーしました' : 'Copied'));
+      assert.strictEqual(await focused(page), 'button#share.text-btn.desk-bar.copied');
+      // ⋯: Enter opens it on its first item, Escape closes it and the focus is back on ⋯.
+      await page.locator('#ed-more').focus();
+      await page.keyboard.press('Enter');
+      assert.strictEqual(await focused(page), 'button#more-rename.popitem');
+      await page.keyboard.press('Escape');
+      assert.strictEqual(await focused(page), 'button#ed-more.icon-btn');
+      assert.strictEqual(await page.locator('#ed-more-menu').isVisible(), false);
+      // ArrowDown opens it too; Tab leaves it closed.
+      await page.keyboard.press('ArrowDown');
+      assert.strictEqual(await focused(page), 'button#more-rename.popitem');
+      await page.keyboard.press('Tab');
+      assert.strictEqual(await page.locator('#ed-more-menu').isVisible(), false);
+      // Rename…: the field, then Escape gives the focus back to the name, unchanged.
+      await page.locator('#ed-more').focus();
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Enter');
+      assert.strictEqual(await focused(page), 'input#file-name-input.file-name-input');
+      assert.strictEqual(await page.locator('#file-name-input').getAttribute('aria-label'), lang === 'ja' ? 'ファイル名' : 'File name');
+      await page.keyboard.insertText('other');
+      await page.keyboard.press('Escape');
+      assert.strictEqual((await focused(page)).split('.')[0], 'button#file-name');
+      assert.strictEqual(await page.evaluate("document.getElementById('file-name-stem').textContent + document.getElementById('file-name-ext').textContent"), 'untitled.sh');
+      // The name says its state to a screen reader.
+      assert.strictEqual(await page.locator('#file-name').getAttribute('aria-label'), lang === 'ja' ? '名前を変更: untitled.sh（未保存）' : 'Rename: untitled.sh (not saved yet)');
+      // The hint's ×: closed, the focus goes on to the editor's text with the next Tab.
+      await page.locator('#first-hint-close').focus();
+      await page.keyboard.press('Enter');
+      assert.strictEqual(await page.locator('#first-hint').isVisible(), false);
+      await ctx.close();
+    }
   });
 
   it('keeps the menu\'s items reachable (the shortcut item is a button)', async () => {

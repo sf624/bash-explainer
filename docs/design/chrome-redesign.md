@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539), and C1b (#548). C2 to C6 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), C1b (#548) and C4 (#544). C2, C3, C5 and C6 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -279,6 +279,18 @@ Tests: each toast of the page above the strip, at three widths; never over the p
 Risks: an action toast covers the last rows of the editor for 8 s (the kit's known limit). Accepted: the scroll margin keeps the cursor's line in view.
 
 ### C4. The app bar and the editor's header
+
+Done in #544 (2026-10-31). What it did, and what the design did not say:
+
+- The file name's state is `fileNameView` in src/ui/fileName.ts, with `untitledName`, `typedName` (the rename as typed: trimmed, without `/`, `\` and control characters; nothing, or the same name, changes nothing), `stemEnd` (the field selects the stem) and `nameParts` (the header cuts the stem with "…" and keeps the extension). A script never saved is muted and has no dot, even with changes: muted already says it is not saved. A file renamed since it was saved has the dot until the next save (the new name is not on disk). The untitled name keeps the names a tool fixes (Dockerfile, Makefile, Jenkinsfile, package.json, README.md); a first save suggests the name shown (`untitled.sh`; before, `script.sh`).
+- web/file-name.ts draws the name in both places (the header and the menu's first row) and wires the field; web/editor-head.ts the header, ⋯, the first visit's hint (stored key `firstHint`), the empty editor's block and the "Copied" confirmation; web/popover.ts the ⋯ menu (arrows, Home, End, Escape with the focus back, Tab and a press outside close) and `.no-ring`; web/menu.ts the menu's words; web/banner.ts the version switch and banner, moved out of web/main.ts to keep it under 1,000 lines.
+- The view switch's group in the menu (`#views-menu`, filled by web/panel-bridge.ts) stays where it was, in the first group, now Script, until C7 removes it; moving it into Explanation would have touched the panel series' markup. The Explanation group holds Copy as Markdown only, until then.
+- The bar still holds the type and shell pickers and the view switch, so it has no room for the words of Copy a link under 900 px: there it is an icon (✓ after a copy), its words for a screen reader. ≡ keeps its size; the kind's picker gives way first. C5 and C7 free the room.
+- On a phone the header is one 44 px row: Open and Save as icons, the name, ⋯; every control 44×44. Help is hidden on a touch screen without a mouse.
+- On a phone, Copy a link is the menu's item: it says "Copied" there, and the menu stays open (no toast).
+- Help lists Ctrl+O, Ctrl+S, F6, Ctrl+K Ctrl+I and "Escape, then Tab" (⌘ on a Mac), and keeps F6's item. The "?" key of round 8 was not added; C2 adds F8 to the list.
+- Load the sample over the user's script still asks with `confirm()` (C3 replaces it with Undo). Clear the editor and Use my own script offer Undo in today's toast.
+- The empty panel is not aligned with the empty editor's block (round 8 did it through the panel bridge).
 
 What:
 

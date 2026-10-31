@@ -18,6 +18,8 @@ export const STORAGE_KEYS = {
   readMode: 'bash-explainer-read-mode',
   /** The first-run tip of the read-mode button was seen. */
   readTipSeen: 'bash-explainer-read-tip-seen',
+  /** The first visit's hint over the editor ("This is a sample…") was closed or acted on. */
+  firstHint: 'bash-explainer-first-hint',
   /** The share of the editor in the page, side by side and one above the other. */
   split: 'bash-explainer-split',
   /** The height of the Problems list under the editor, and whether it is folded away. */

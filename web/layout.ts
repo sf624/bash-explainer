@@ -138,7 +138,9 @@ export function setUpProblems(
   const store = () => writeStored(STORAGE_KEYS.problems, JSON.stringify(saved));
   // Without a stored choice the list starts folded on a phone (it would take much of the editor) and open elsewhere.
   const isCollapsed = () => saved.collapsed ?? narrow.matches;
-  const max = () => Math.max(LIST_MIN, pane.clientHeight - EDITOR_MIN);
+  // The editor keeps its few lines under what lies above it in the pane (its header, the first visit's hint).
+  const editor = pane.querySelector<HTMLElement>('#editor');
+  const max = () => Math.max(LIST_MIN, pane.clientHeight - EDITOR_MIN - (editor?.offsetTop ?? 0));
   const clamp = (v: number) => Math.round(Math.min(max(), Math.max(LIST_MIN, v)));
   const height = () => (saved.height === undefined ? box.getBoundingClientRect().height : clamp(saved.height));
   const apply = () => {

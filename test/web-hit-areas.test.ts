@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Browser, BrowserContextOptions, Frame, Page } from 'playwright-core';
-import { openSite, menuItem, stable, until } from './support/site';
+import { openSite, menuItem, stable, until, type Site } from './support/site';
 import { compare, hitAreas, listed, DESKTOP_BAR, PHONE_BAR, type Allowed, type HitArea } from './support/hit-areas';
 
 const listPath = path.join(__dirname, 'fixtures/hit-areas.json');
@@ -29,10 +29,11 @@ const byKey = (where: string, areas: HitArea[]): Record<string, HitArea> => Obje
 describe('the web page: hit areas', function () {
   this.timeout(180000);
   let browser: Browser;
+  let firstVisit: Site['firstVisit'];
   let base = '';
 
   before(async function () {
-    ({ browser, base } = await openSite(this));
+    ({ browser, firstVisit, base } = await openSite(this));
   });
 
   // UPDATE_HIT_AREAS=1 writes the list from what the page has now (to see the diff; a list may only shrink, so look at it).
@@ -53,7 +54,8 @@ describe('the web page: hit areas', function () {
   for (const lang of ['en', 'ja']) {
     for (const profile of profiles) {
       it(`has no control under ${profile.bar}x${profile.bar} that is not on the allow-list: ${profile.name} px, ${lang}`, async function () {
-        const ctx = await browser.newContext(await profile.options(lang === 'ja' ? 'ja-JP' : 'en-US'));
+        // A first visit, so that the hint over the editor is measured too.
+        const ctx = await firstVisit(await profile.options(lang === 'ja' ? 'ja-JP' : 'en-US'));
         const page = await ctx.newPage();
         await page.goto(base);
         await page.locator('.cm-line').first().waitFor();
@@ -62,11 +64,16 @@ describe('the web page: hit areas', function () {
         await until('the sample\'s problems', () => page.locator('#problems').isVisible(), (v) => v, 20000);
         const panel = page.frames().find((f) => f.url().endsWith('/panel.html')) as Frame;
         await until('the tree', () => panel.locator('.row').count(), (n) => n > 1);
+        // The phone's first-run tip of the read-mode switch lies over the editor's header until it is closed: its own
+        // controls are measured with it, the page's others without it.
+        const withTip = byKey('page', await hitAreas(page));
+        if (await page.locator('#readtip-close').isVisible()) await page.locator('#readtip-close').click();
         const measured: Record<string, HitArea> = {
-          ...byKey('page', await hitAreas(page)),
+          ...Object.fromEntries(Object.entries(withTip).filter(([k]) => k.includes('readtip'))),
+          ...Object.fromEntries(Object.entries(byKey('page', await hitAreas(page))).filter(([k]) => !k.includes('readtip'))),
           ...byKey('panel', await hitAreas(panel)),
         };
-        // The menu, the settings and the file kinds' list: each open on its own.
+        // The menu, the settings, the editor header's ⋯ and the file kinds' list: each open on its own.
         await page.locator('#menu-open').click();
         await settled(page, '#drawer');
         Object.assign(measured, byKey('menu', await hitAreas(page, '#drawer')));
@@ -78,6 +85,12 @@ describe('the web page: hit areas', function () {
         Object.assign(measured, byKey('settings', await hitAreas(page, '#settings-dialog')));
         await page.keyboard.press('Escape');
         await page.locator('#settings-dialog').waitFor({ state: 'hidden' });
+        // The editor header's ⋯ menu.
+        await page.locator('#ed-more').click();
+        await page.locator('#ed-more-menu').waitFor({ state: 'visible' });
+        Object.assign(measured, byKey('more', await hitAreas(page, '#ed-more-menu')));
+        await page.keyboard.press('Escape');
+        await page.locator('#ed-more-menu').waitFor({ state: 'hidden' });
         // (On a narrow page the file kind is chosen in the menu, which was measured above.)
         if (await page.locator('#kind').isVisible()) {
           await page.locator('#kind').click();
