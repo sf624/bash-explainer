@@ -64,6 +64,7 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - `#!/bin/bash -i` then `ll` still gives `distro-alias-in-script`: `readAs` does not know the interactive shebang, whose shell may have the distribution's alias (found in the review of #536).
 - `export "$1"` does not make the state `opaque`, so `foo=1; export "$1"; bash -c 'echo $foo'` still says `foo` is not exported (found in the review of #536).
 - A trap's action of text not known makes the state `opaque` from the `trap` command on, though an `EXIT` trap cannot fire before the lines that follow it, so checks after it become caveats too early (found in the review of #536).
+- The ssh stand-in of test/error-level.test.ts passes nothing, but Debian's and Ubuntu's ssh send `LANG` and `LC_*` (`SendEnv` in /etc/ssh/ssh_config) where the server accepts them: `variable-not-in-remote-shell` of `LANG` or `LC_*` is then a rare false warning (found in the review of #540).
 
 ## Waiting on the maintainer
 

@@ -6,7 +6,9 @@
 // - the values of the variables the row reads from outside (`reads`): unset, empty, `a b`, `*`, and `x`, each
 //   exported from the parent (so a name the script sets is also one the environment had);
 // - how the file runs (`ways`): directly, as its shebang says; with `bash file`; sourced inside a function; sourced
-//   by an interactive shell, whose `.bashrc` has the aliases a distribution gives (`ll`). A row whose Error rests on
+//   by an interactive shell, after a stand-in `.bashrc` of what a distribution's gives (`ll`, and `extglob` on), and
+//   no system file (`--norc`: `/etc/bash.bashrc` would print a banner and install a `command_not_found_handle` that
+//   runs Python, and `--rcfile` still reads it on Debian and Ubuntu). A row whose Error rests on
 //   the shebang runs only the ways a program runs (section 2); one that rests on an assumed system says so (`assumes`).
 //
 // Every run must fail: its output misses what the line is written to do (`works`), or the program says an error
@@ -84,7 +86,7 @@ const ROWS: readonly Row[] = [
   { id: 'posix-special-function-name', text: '#!/bin/bash\nset -o posix\nexport() { echo it-works; }\nexport\n', line: 3, works: 'it-works' },
   { id: 'alias-not-expanded-in-script', text: "#!/bin/bash\nalias ok='echo it-works'\nok\n", line: 3, works: 'it-works', ways: AS_PROGRAM },
   { id: 'distro-alias-in-script', text: '#!/bin/bash\nll\n', line: 2, works: 'script.sh', ways: AS_PROGRAM },
-  { id: 'extglob-in-same-block', text: '#!/bin/bash\nf() {\n  shopt -s extglob\n  echo !(x)\n}\nf\n', line: 4, works: 'yes-match', files: { 'yes-match': '', x: '' } },
+  { id: 'extglob-in-same-block', text: '#!/bin/bash\nf() {\n  shopt -s extglob\n  echo !(x)\n}\nf\n', line: 4, works: 'yes-match', files: { 'yes-match': '', x: '' }, ways: AS_PROGRAM },
   { id: 'extglob-turned-off', text: '#!/bin/bash\nshopt -u extglob\necho !(x)\n', line: 3, works: 'yes-match', files: { 'yes-match': '', x: '' } },
   { id: 'extglob-not-in-new-shell', text: "#!/bin/bash\nshopt -s extglob\nbash -c 'echo !(x)'\n", line: 3, works: 'yes-match', files: { 'yes-match': '', x: '' } },
   { id: 'globstar-unsupported', shell: 'sh', text: '#!/bin/sh\nfor f in **/x; do echo "$f"; done\n', line: 2, works: 'd/e/x', files: { 'd/e/x': '' }, assumes: '/bin/sh is dash' },
@@ -166,8 +168,11 @@ const STUBS: Readonly<Record<string, string>> = {
   su: '#!/bin/bash\nwhile [[ $1 != -c ]]; do shift; done\nexec env -i ${TERM+TERM="$TERM"} PATH=/usr/bin:/bin bash -c "$2"\n',
 };
 
-/** A `.bashrc` with the aliases Debian's and Ubuntu's give a new user (/etc/skel/.bashrc). */
-const BASHRC = "alias ll='ls -alF'\nalias la='ls -A'\nalias l='ls -CF'\n";
+/**
+ * A `.bashrc` with what Debian's and Ubuntu's give a new user (/etc/skel/.bashrc): its aliases, and what the
+ * bash-completion it loads turns on (`shopt -s extglob progcomp`, /usr/share/bash-completion/bash_completion).
+ */
+const BASHRC = "alias ll='ls -alF'\nalias la='ls -A'\nalias l='ls -CF'\nshopt -s extglob progcomp\n";
 
 /** The values each name of `reads` takes, all at once: unset, then exported from the parent. */
 const VALUES: readonly (string | undefined)[] = [undefined, '', 'a b', '*', 'x'];
@@ -192,7 +197,8 @@ function command(r: Row, way: Way, bash: string): string[] {
     case 'direct': return [`./${file}`];
     case 'file': return [r.shell === 'sh' ? 'sh' : bash, file];
     case 'function': return [shell, '-c', `f() { . ./${file}; }; f`];
-    case 'interactive': return [shell, '-i', '-c', `. ./${file}`];
+    // (bash reads the stand-in `.bashrc` itself, and no system file: `--norc`. dash reads none without `ENV`.)
+    case 'interactive': return shell === 'dash' ? [shell, '-i', '-c', `. ./${file}`] : [shell, '--norc', '-i', '-c', `. ~/.bashrc; . ./${file}`];
     case 'bats': return [BATS, '--tap', file];
     case 'python': return ['python3', file];
   }
@@ -272,6 +278,20 @@ describe('the checks headed for Error, run in bash (three-levels.md, step 0)', f
     if (unrunnable(r)) return this.skip();
     fs.mkdirSync(path.join(dir, 'distro'));
     const runs = await runRow(r, path.join(dir, 'distro'));
+    assert.deepStrictEqual(runs.filter((run) => !failed(r, run)).map((run) => run.way), ['interactive', ...(BASH53 ? ['interactive (bash 5.3)'] : [])]);
+  });
+
+  // The same for `shopt -s extglob` in the block of its glob: an interactive shell that reads the file often has
+  // extglob on already (bash-completion turns it on).
+  it('extglob-in-same-block in a file with no shebang: a caveat, as an interactive shell that reads it often has extglob on', async function () {
+    const r: Row = { id: 'extglob-in-same-block', text: 'f() {\n  shopt -s extglob\n  echo !(x)\n}\nf\n', line: 3, works: 'yes-match', files: { 'yes-match': '', x: '' } };
+    const doc = openDocument(r.text, 'shell', (t) => parser.parse(t));
+    const issue = documentIssues(doc, 'en', shellsOf(doc.lines, 'script.sh', undefined)).find((x) => x.code === r.id);
+    assert.strictEqual(issue?.severity, 'info');
+    assert.match(issue.message, /But this file has no shebang: read by an interactive shell, as `\.bashrc` is, `extglob` is often on already/);
+    if (unrunnable(r)) return this.skip();
+    fs.mkdirSync(path.join(dir, 'extglob'));
+    const runs = await runRow(r, path.join(dir, 'extglob'));
     assert.deepStrictEqual(runs.filter((run) => !failed(r, run)).map((run) => run.way), ['interactive', ...(BASH53 ? ['interactive (bash 5.3)'] : [])]);
   });
 

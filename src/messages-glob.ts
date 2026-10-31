@@ -26,8 +26,17 @@ const EXTGLOB: Record<ExtglobWhy, (use: string) => readonly [string, string]> = 
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). The new shell starts with \`extglob\` off: this script's \`shopt\` does not reach it. Turn it on in the string, on a line before the glob, or start the shell with \`bash -O extglob -c\``],
 };
 
-/** The text of `extglob-<why>`, [ja, en], for the glob `use`. */
-export const extglobText = (why: ExtglobWhy) => ({ use }: { use: string }): readonly [string, string] => EXTGLOB[why](use);
+/**
+ * The text of `extglob-<why>`, [ja, en], for the glob `use`; `sourced`, in a file with no shebang, which an interactive
+ * shell may read (`.bashrc`), with extglob often on there: Ubuntu's `.bashrc` loads bash-completion, which runs `shopt -s
+ * extglob progcomp`.
+ */
+export const extglobText = (why: ExtglobWhy) => ({ use, sourced }: { use: string; sourced?: boolean }): readonly [string, string] => {
+  const [ja, en] = EXTGLOB[why](use);
+  return sourced ? [
+    `${ja}。ただし、このファイルにはシバンがないので、\`.bashrc\` のように対話シェルが読むなら、\`extglob\` はすでに有効なことがよくあります（Ubuntu の \`.bashrc\` が読み込む bash-completion が有効にします）`,
+    `${en}. But this file has no shebang: read by an interactive shell, as \`.bashrc\` is, \`extglob\` is often on already (Ubuntu's \`.bashrc\` loads bash-completion, which turns it on)`] : [ja, en];
+};
 
 /** Where `**` may not reach into subdirectories: a `globstar-*` id without its prefix (but `unsupported`). */
 export type GlobstarWhy = 'maybe-on' | 'not-found';
