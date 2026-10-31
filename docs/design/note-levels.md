@@ -2,7 +2,7 @@
 
 How much a note matters, and how every output shows it. Built in #320; the prototype was commit 8371ef7 (branch `proto/note-levels`).
 
-The third level, Error, above the warnings, was built in the steps of [three-levels.md](three-levels.md), which stays as the record of the change: step 1a gave the level, the problems and the facts that say a line fails (#547, #549); step 1b gave it its own look in every view (#552); step 2 moved the catalog's pitfalls that fail every time to it (#557); step 3 the style checks that fail every time, and moved two caveats up to warnings (#PRNUM). Left open: the postfix notes at Error where the value is 0 on every path (the param `zero`, roadmap "Deferred"). This page describes what is built.
+The third level, Error, above the warnings, was built in the steps of [three-levels.md](three-levels.md), which stays as the record of the change: step 1a gave the level, the problems and the facts that say a line fails (#547, #549); step 1b gave it its own look in every view (#552); step 2 moved the catalog's pitfalls that fail every time to it (#557); step 3 the style checks that fail every time, and moved two caveats up to warnings (#558). Left open: the postfix notes at Error where the value is 0 on every path (the param `zero`, roadmap "Deferred"). This page describes what is built.
 
 ## The levels
 
