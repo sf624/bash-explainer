@@ -11,6 +11,7 @@
 import { hostKind } from '../src/hosts';
 import { detectKind } from '../src/hosts/detect';
 import { detectShell } from '../src/dialect';
+import type { FileFormat } from './file-state';
 import { Kind, KINDS } from './samples';
 
 /**
@@ -20,21 +21,12 @@ import { Kind, KINDS } from './samples';
  */
 export const MAX_BYTES = 1024 * 1024;
 
-/** How a file holds its text, besides the text itself: its line end, and whether it starts with a BOM. */
-export interface FileFormat {
-  eol: '\n' | '\r\n';
-  bom: boolean;
-}
-
 /** A file's text (without its BOM) and its format. */
 export interface FileText extends FileFormat {
   text: string;
   /** The file had both CRLF and LF line ends: a save writes `eol` throughout. */
   mixed: boolean;
 }
-
-/** The format of a script that came from no file. */
-export const PLAIN: FileFormat = { eol: '\n', bom: false };
 
 /**
  * The text of a file's bytes, or why the page does not open it: `binary` for one that is not UTF-8 text (a NUL byte, as
@@ -74,10 +66,17 @@ export function fileContent(text: string, format: FileFormat): string {
  * else from its content (a shebang, `FROM`, `jobs:`: src/hosts/detect.ts), else a shell script.
  */
 export function kindForFile(name: string, text: string): Kind {
+  return kindFromName(name, text) ?? detectKind(text)?.kind ?? 'shell';
+}
+
+/**
+ * The kind a file name says by itself (the first two steps of `kindForFile`), or undefined when it says none
+ * (`notes.txt`). A rename uses it, without the text: the name changed, and the text did not.
+ */
+export function kindFromName(name: string, text?: string): Kind | undefined {
   const host = hostKind('', name, text);
   if (host) return host;
-  if (/\.(sh|bash|zsh|ksh|mksh|dash|ash)$/i.test(name) || detectShell('', name)) return 'shell';
-  return detectKind(text)?.kind ?? 'shell';
+  return /\.(sh|bash|zsh|ksh|mksh|dash|ash)$/i.test(name) || detectShell('', name) ? 'shell' : undefined;
 }
 
 /** The name a save suggests for a script that came from no file: the kind's sample's (`script.sh`, `Dockerfile`, `ci.yml`, `test.bats`…). */

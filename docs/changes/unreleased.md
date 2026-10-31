@@ -21,7 +21,10 @@ It follows the editor: on the web page, the setting **Wrap long lines** (`editor
 
 - The editor has a header of its own: **Open** and **Save** (with their words when the editor's pane is 481 px wide or more, as icons below), the script's name, and **⋯** with Rename…, Copy the script, Load the sample and Clear the editor. Before, the name of a file opened or saved was in the top bar, and only there once it had one; the sample button was an icon in the top bar.
 - The name shows from the start: `untitled.sh` (or the kind's own name, such as `Dockerfile`), muted until the script is saved or opened. A first save suggests it. Before, a first save suggested `script.sh`.
-- ● after the name marks a file with changes not saved, in its text or in its name. Save has no dot.
+- ● after the name marks a file with changes not saved, in its text or in its name. Save has no dot, in the header or in the menu. An undo back to the saved text, or a rename back to the file's own name, clears it.
+- Every place that names the script says the same name: Copy as Markdown and the explanation's file name said `script.sh` while the header said `untitled.sh`.
+- A name is at most 255 characters; `.` and `..` are refused. Enter that confirms a conversion of an input method (Japanese, for one) no longer ends the rename. A rename to `test.bats`, `Makefile` or `x.py` changes the file type, as opening a file of that name does.
+- When the browser refuses to copy (Safari can, for a link), the toast says so.
 - A click on the name, or ⋯ › Rename…, turns it into a field: Enter or a click elsewhere renames, Escape keeps the old name. A name ending in `.zsh` explains the script as zsh, as a file of that name does. The menu's first row is the name too, and renames the same way.
 - Copy a link is a button with words in the top bar. After a copy it reads "✓ Copied" for about 2 s, and a screen reader hears "Link copied"; its tooltip says that the script is in the part after `#`, which browsers do not send to the server. Before, a toast said all of it. Under 900 px it shows its icon only, until the file type and the view leave the top bar.
 - Install for VS Code shows from 1100 px (before, from 901 px).

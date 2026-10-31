@@ -40,6 +40,13 @@ describe('the file name of the web page', () => {
     assert.strictEqual(typedName('   ', 'untitled.sh'), undefined);
     assert.strictEqual(typedName('//', 'untitled.sh'), undefined);
     assert.strictEqual(typedName(' untitled.sh', 'untitled.sh'), undefined);
+    // The directory itself and its parent are no names.
+    for (const dots of ['.', '..', ' . ', ' .. ']) assert.strictEqual(typedName(dots, 'untitled.sh'), undefined, dots);
+    assert.strictEqual(typedName('...', 'untitled.sh'), '...');
+    // At most 255 characters (not code units: a name of astral characters is cut between them).
+    assert.strictEqual(typedName('a'.repeat(300), 'untitled.sh'), 'a'.repeat(255));
+    assert.strictEqual([...typedName('😀'.repeat(300), 'untitled.sh')!].length, 255);
+    assert.strictEqual(typedName('a'.repeat(254) + ' ' + 'b', 'untitled.sh'), 'a'.repeat(254));
   });
 
   it('selects the stem in the rename field and cuts a long name in its stem, keeping the extension', () => {

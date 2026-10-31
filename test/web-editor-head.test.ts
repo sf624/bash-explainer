@@ -329,7 +329,7 @@ describe('the web page: the app bar and the editor\'s header', function () {
     }
   });
 
-  it('groups the menu: Script (first row: the name); Share and Explanation when stacked; Preferences; Help with the keys (not on a touch screen); About', async () => {
+  it('groups the menu: Script (first row: the name); Share and Explanation when stacked; Preferences; Help (its keys not on a touch screen, its way to the explanation on every screen); About', async () => {
     const { devices } = await import('playwright-core');
     for (const [width, options, stacked, help] of [
       [390, { ...devices['iPhone 13'] }, true, false],
@@ -345,7 +345,7 @@ describe('the web page: the app bar and the editor\'s header', function () {
         const heads = await page.locator('#drawer .menu-h').evaluateAll((hs) => hs.filter((h) => h.getClientRects().length).map((h) => h.textContent));
         const ja = locale === 'ja-JP';
         const all = ja ? ['スクリプト', '共有', '解説', '表示と言語', 'ヘルプ', 'このアプリについて'] : ['Script', 'Share', 'Explanation', 'Preferences', 'Help', 'About'];
-        assert.deepStrictEqual(heads, all.filter((_h, i) => (stacked || (i !== 1 && i !== 2)) && (help || i !== 4)), seen);
+        assert.deepStrictEqual(heads, all.filter((_h, i) => stacked || (i !== 1 && i !== 2)), seen);
         assert.strictEqual(await page.locator('#drawer-title').innerText(), 'Bash Explainer');
         // The first row of the menu is the file name.
         const first = await page.evaluate("[...document.querySelectorAll('#drawer .sheet-body button, #drawer .sheet-body select, #drawer .sheet-body a')].find((e) => e.getClientRects().length).id");
@@ -363,7 +363,10 @@ describe('the web page: the app bar and the editor\'s header', function () {
             ? ['ファイルを開く', '保存', '解説とエディタを行き来する', 'カーソル位置の部分のカードを表示', 'エディタから出る']
             : ['Open a file', 'Save', 'Go to the explanation and back', 'Show the card of the part at the cursor', 'Leave the editor'], seen);
           assert.strictEqual(await page.locator('#menu-keys').getAttribute('aria-labelledby'), 'menu-keys-title');
+        } else {
+          assert.strictEqual(await page.locator('#menu-keys').isVisible(), false, seen);
         }
+        assert.strictEqual(await page.locator('#menu-panes').isVisible(), true, seen);
         // Nothing in it is cut or sticks out.
         const bad = await page.evaluate(`[...document.querySelectorAll('#drawer .menu-item, #drawer .menu-h')].filter((b) => b.getClientRects().length && (b.scrollWidth > b.clientWidth + 1 || b.getBoundingClientRect().right > document.getElementById('drawer').getBoundingClientRect().right + 0.5)).map((b) => b.id || b.textContent)`);
         assert.deepStrictEqual(bad, [], seen);
@@ -413,5 +416,138 @@ describe('the web page: the app bar and the editor\'s header', function () {
     await page.locator('#more-copy').click();
     assert.deepStrictEqual(await ring(), ['ed-more', false]);
     await ctx.close();
+  });
+  it('does not end the rename when Enter confirms an IME conversion', async () => {
+    const { ctx, page } = await open();
+    await page.locator('#file-name').click();
+    const input = page.locator('#file-name-input');
+    await page.keyboard.insertText('かな');
+    // The Enter that confirms a conversion: composing (Chromium) or keyCode 229 (Safari, after the composition ended).
+    for (const init of [{ isComposing: true }, { keyCode: 229 }]) {
+      const prevented = await input.evaluate((el, i) => {
+        const e = new (globalThis as unknown as { KeyboardEvent: new (type: string, init: object) => Event }).KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...i });
+        el.dispatchEvent(e);
+        return e.defaultPrevented;
+      }, init);
+      assert.strictEqual(prevented, false);
+      assert.strictEqual(await input.isVisible(), true);
+      assert.strictEqual((await name(page)).text, 'untitled.sh');
+    }
+    // The next Enter, not composing, renames.
+    await page.keyboard.press('Enter');
+    await until('renamed', () => name(page), (n) => n.text === 'かな.sh');
+    await ctx.close();
+  });
+
+  it('keeps the name within 255 characters and refuses "." and ".."', async () => {
+    const { ctx, page } = await open();
+    await page.locator('#file-name').click();
+    assert.strictEqual(await page.locator('#file-name-input').getAttribute('maxlength'), '255');
+    for (const bad of ['.', '..', ' .. ']) {
+      await page.keyboard.press('Control+A');
+      await page.keyboard.insertText(bad);
+      await page.keyboard.press('Enter');
+      assert.strictEqual((await name(page)).text, 'untitled.sh', bad);
+      await page.locator('#file-name').click();
+    }
+    await page.keyboard.press('Escape');
+    await ctx.close();
+  });
+
+  it('gives the file kind the name says, as opening a file of that name does; a name that says nothing keeps it', async () => {
+    const { ctx, page } = await open();
+    const kind = () => page.locator('#kind-menu').evaluate((el) => (el as unknown as { value: string }).value);
+    const rename = async (to: string) => {
+      await page.locator('#file-name').click();
+      await page.keyboard.press('Control+A');
+      await page.keyboard.insertText(to);
+      await page.keyboard.press('Enter');
+      await until(`renamed to ${to}`, () => name(page), (n) => n.text === to);
+    };
+    assert.strictEqual(await kind(), 'shell');
+    for (const [to, want] of [['test.bats', 'bats'], ['Makefile', 'makefile'], ['x.py', 'python'], ['notes.txt', 'python'], ['run.sh', 'shell'], ['Dockerfile.dev', 'dockerfile']]) {
+      await rename(to);
+      await until(`kind of ${to}`, kind, (k) => k === want);
+    }
+    await ctx.close();
+  });
+
+  it('shows the same name wherever it shows one: Copy as Markdown and the panel say untitled.sh, as the header does', async () => {
+    const { ctx, page } = await open({ viewport: { width: 390, height: 800 } });
+    await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
+    await page.locator('.cm-line').nth(7).click();
+    await page.evaluate('navigator.clipboard.writeText("")');
+    await page.locator('#menu-open').click();
+    await page.locator('#menu-copy').click();
+    const md = await until('the copy', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.length > 0);
+    assert.match(md, /untitled\.sh:8/);
+    assert.doesNotMatch(md, /script\.sh/);
+    await ctx.close();
+  });
+
+  it('says so in the toast when the browser refuses to copy, and leaves no unhandled rejection', async () => {
+    const { ctx, page } = await open();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.evaluate("navigator.clipboard.writeText = () => Promise.reject(new DOMException('refused', 'NotAllowedError'))");
+    const refused = 'The browser did not let the page copy. Select the text and copy it yourself.';
+    await page.locator('#share').click();
+    await until('the toast', () => toast(page), (t) => t === refused);
+    assert.strictEqual(await page.locator('#share').innerText(), 'Copy a link');
+    await page.locator('#status').evaluate((el) => el.replaceChildren());
+    await page.locator('#ed-more').click();
+    await page.locator('#more-copy').click();
+    await until('the toast', () => toast(page), (t) => t === refused);
+    await page.waitForTimeout(200);
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('clears the dot when an undo brings the text back to the saved one, and when a renamed file gets its own name back', async () => {
+    const { ctx, page } = await open();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('echo one\n');
+    await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+S')]);
+    await until('saved', () => name(page), (n) => !n.draft);
+    // (An edit within half a second of the one before joins its undo step.)
+    await page.waitForTimeout(700);
+    await page.keyboard.insertText('echo two\n');
+    await until('the dot', () => name(page), (n) => n.dot);
+    await page.keyboard.press('Control+Z');
+    await until('no dot', () => name(page), (n) => !n.dot);
+    // A rename marks the file, and the name it had clears the mark again.
+    await page.locator('#file-name').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('other.sh');
+    await page.keyboard.press('Enter');
+    assert.strictEqual((await name(page)).dot, true);
+    await page.locator('#file-name').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('untitled.sh');
+    await page.keyboard.press('Enter');
+    assert.deepStrictEqual(await name(page), { text: 'untitled.sh', draft: false, dot: false, label: 'Rename: untitled.sh' });
+    await ctx.close();
+  });
+
+  it('keeps the menu\'s Save row free of the dot, and the keyboard-shortcut help reachable on a touch screen', async () => {
+    const { ctx, page } = await open();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+End');
+    await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+S')]);
+    await page.keyboard.insertText('x');
+    await until('the dot', () => name(page), (n) => n.dot);
+    await page.locator('#menu-open').click();
+    assert.strictEqual(await page.locator('#menu-save-name').textContent(), 'untitled.sh');
+    assert.strictEqual(await page.locator('#menu-file').textContent(), 'untitled.sh●');
+    // The sentence that describes Copy a link is a description only, not text a screen reader reads on its own.
+    assert.strictEqual(await page.locator('#share-note').evaluate((el) => (el as unknown as { hidden: boolean }).hidden), true);
+    await ctx.close();
+    const touch = await open({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true });
+    await touch.page.locator('#menu-open').tap();
+    // "Go to the explanation and back" stays (F6 has no key on a touch screen, but a screen reader can reach it); the list of keys goes.
+    assert.strictEqual(await touch.page.locator('#menu-panes').isVisible(), true);
+    assert.strictEqual(await touch.page.locator('#menu-keys').isVisible(), false);
+    await touch.ctx.close();
   });
 });
