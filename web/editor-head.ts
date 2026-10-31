@@ -18,7 +18,7 @@ export interface HeadHost {
   openFile(): void;
   saveFile(): void;
   /** Loads the sample of the current kind (over the user's own text, as the page's "Load the sample" does). */
-  loadSample(): void;
+  loadSample(from?: HTMLElement): void;
   clear(): void;
   copyScript(): void;
   /** Whether the editor holds a sample as the page loads it. */
@@ -42,7 +42,7 @@ export class EditorHead {
   private hintClosed = false;
 
   constructor(private readonly host: HeadHost) {
-    const on = (id: string, fn: () => void) => document.getElementById(id)?.addEventListener('click', fn);
+    const on = (id: string, fn: (from: HTMLElement) => void) => document.getElementById(id)?.addEventListener('click', (e) => fn(e.currentTarget as HTMLElement));
     on('open-btn', () => host.openFile());
     on('save-btn', () => host.saveFile());
     const more = document.getElementById('ed-more');
@@ -50,7 +50,7 @@ export class EditorHead {
     if (more && menu) popover(more, menu);
     on('more-rename', () => host.names.start());
     on('more-copy', () => host.copyScript());
-    on('more-sample', () => host.loadSample());
+    on('more-sample', (from) => host.loadSample(from));
     on('more-clear', () => host.clear());
     on('first-hint-close', () => this.closeHint());
     on('hint-own', () => {
@@ -66,7 +66,7 @@ export class EditorHead {
     for (const over of [this.empty, document.getElementById('editor-hint')]) if (over) document.getElementById('editor')?.append(over);
     on('empty-paste', () => void this.paste());
     on('empty-open', () => host.openFile());
-    on('empty-sample', () => host.loadSample());
+    on('empty-sample', (from) => host.loadSample(from));
   }
 
   /** Puts the header's, the hint's and the block's words in the page's language. */

@@ -49,6 +49,22 @@ function dialogFor(id: string): HTMLDialogElement {
 }
 
 /** Asks the question; resolves true for `confirm`, false for `cancel` (and Esc). The choice that changes nothing has the focus first. */
+/**
+ * Where the focus goes back when a dialog closes, for the control that was used to start it: that control, or, when it
+ * has gone with its menu (an item of the ⋯ popover or of the phone's sheet, closed as the item was chosen), the control
+ * that opened the menu (`aria-controls`). One rule for every command run from a menu; nothing else names an opener.
+ */
+export function focusTarget(from: HTMLElement | null): HTMLElement | null {
+  if (!from) return null;
+  if (from.isConnected && from.getClientRects().length) return from;
+  for (let a = from.parentElement; a; a = a.parentElement) {
+    if (!a.id) continue;
+    const opener = document.querySelector<HTMLElement>(`[aria-controls~="${a.id}"]`);
+    if (opener?.getClientRects().length) return opener;
+  }
+  return null;
+}
+
 export function ask(q: Question, returnFocus: HTMLElement | null): Promise<boolean> {
   const d = dialogFor(q.id);
   const title = document.createElement('h2');
@@ -77,7 +93,7 @@ export function ask(q: Question, returnFocus: HTMLElement | null): Promise<boole
     // Esc closes the dialog with no value: the text is kept.
     d.addEventListener('close', () => {
       resolve(d.returnValue === 'confirm');
-      if (returnFocus?.isConnected && returnFocus.getClientRects().length) returnFocus.focus();
+      focusTarget(returnFocus)?.focus();
     }, { once: true });
     d.showModal();
     cancel.focus();
