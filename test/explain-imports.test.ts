@@ -9,17 +9,26 @@ import { commandAliases } from '../src/dict/aliases';
 
 // Guards for src/explain/ (docs/design/analyzer.md, 3.2 and 3.3): no import cycles, no import of
 // src/analyzer.ts, and no comparison with the name of a dictionary command, nor a lookup of one by name. The directory exists since step 2
-// (src/explain/context.ts and nodes.ts); before, the checks passed with nothing to read.
+// (src/explain/context.ts and nodes.ts); before, the checks passed with nothing to read. The names guard also reads src/examples/, except
+// the language interpreters (docs/design/sources.md, SA3).
 const base = path.join(__dirname, '..');
 const dir = path.join(base, 'src', 'explain');
 
-const COLON = 'the operator `:` of `${x:offset:length}` (the text of an expansion operator, an open string), not the `:` builtin; it matches only because the name list holds `:`';
-/** Known comparisons with a command name (and lookups of one), each with a reason; it may only shrink (empty in src/explain/ after step 1; the three left read src/expansion-tokens.ts, which the guard reads since step 9's review). */
-const KNOWN_NAMES: { file: string; text: string; reason: string }[] = [
-  { file: 'src/expansion-tokens.ts', text: "parsed.op === ':'", reason: COLON },
-  { file: 'src/expansion-tokens.ts', text: "p.op === ':'", reason: COLON },
-  { file: 'src/expansion-tokens.ts', text: "t === ':'", reason: `${COLON} (two places)` },
-];
+/**
+ * Known comparisons with a command name (and lookups of one) in src/explain/ and src/examples/, in test/fixtures/names-known.json: the text found,
+ * how often, its kind and a reason. The list may only shrink: a new text fails, so does a larger count, and so does a stale entry. The kinds:
+ *   not-a-name  a name that collides with another meaning (`:` of `${x:1:2}`, `[` of a glob, `local` of git's date style, a letter pair of a
+ *               git placeholder, a word in a regular expression of words).
+ *   registry    a `case 'sort':` or `cmd === 'seq'` that picks the simulator which runs a command by its name (src/examples/). The rule: such a
+ *               dispatch counts, since a table keyed by command name is a copy of the dictionary (sources.md, M6: "the name switches can go,
+ *               the runners stay"; a runner per spec replaces the registry in stage SC2). The guard therefore stops it from growing: a new
+ *               simulator adds a `case`, which fails here until the entry is added with its reason, in a diff the reviewer reads.
+ *   decision    what to show or whether to run, decided from a command's name (`xargs`, the inert `cat` and `tee`, `echo` as a source).
+ * Left out of the scan of src/examples/: the language interpreters (jq, awk, sed, perlrun, yaml, regex), which simulate a language, where a
+ * name such as `sed` or `date` is a word of that language and not a command's fact.
+ */
+interface KnownName { file: string; text: string; count: number; kind: 'not-a-name' | 'registry' | 'decision'; reason: string }
+const KNOWN_NAMES: KnownName[] = JSON.parse(fs.readFileSync(path.join(base, 'test', 'fixtures', 'names-known.json'), 'utf8'));
 
 /** The relative modules a source imports, re-exports, requires or imports dynamically. */
 function relativeImports(code: string): string[] {
@@ -58,6 +67,11 @@ const OUTSIDE = ['expansion-tokens', 'substitution-tokens'].map((n) => path.join
 const explainFiles = (): string[] => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /\.ts$/.test(f)).map((f) => path.join(dir, f)) : []);
 const files = (): string[] => [...explainFiles(), ...OUTSIDE];
 
+/** The language interpreters of src/examples/, which the names guard leaves out (see KNOWN_NAMES). */
+const LANGUAGES = ['jq', 'awk', 'sed', 'perlrun', 'yaml', 'regex'].map((n) => `${n}.ts`);
+const examplesDir = path.join(base, 'src', 'examples');
+const examplesFiles = (): string[] => fs.readdirSync(examplesDir).filter((f) => /\.ts$/.test(f) && !LANGUAGES.includes(f)).map((f) => path.join(examplesDir, f));
+
 /** The import graph of some sources (file to code): an edge only to a target that `inGraph` accepts (a path without its extension). */
 function importGraph(sources: ReadonlyMap<string, string>, inGraph: (target: string) => boolean): Map<string, string[]> {
   const graph = new Map<string, string[]>();
@@ -88,7 +102,7 @@ function program(): ts.Program {
     const text = virtualFiles.get(path.resolve(f));
     return text === undefined ? getSourceFile.call(host, f, ...rest) : ts.createSourceFile(f, text, options.target ?? ts.ScriptTarget.ES2022, true);
   };
-  cachedProgram = ts.createProgram({ rootNames: [...files(), ...virtualFiles.keys()], options, host });
+  cachedProgram = ts.createProgram({ rootNames: [...files(), ...examplesFiles(), ...virtualFiles.keys()], options, host });
   return cachedProgram;
 }
 
@@ -198,6 +212,10 @@ function nameComparisons(checker: ts.TypeChecker, sf: ts.SourceFile, names: Read
       if (text !== undefined && names.has(text) && !(param && closedWith(checker, checker.getTypeOfSymbolAtLocation(param, n), text))) found.push(n.getText(sf));
       // A value (not a literal) tested against the names a container is written with.
       else if (text === undefined && containerLiterals(checker, n.expression.expression)?.some((t) => open(n.arguments[0], t))) found.push(n.getText(sf));
+    } else if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ['startsWith', 'endsWith'].includes(n.expression.name.text) && n.arguments.length > 0) {
+      // A prefix or suffix that is a command's name (`cmd.endsWith('grep')` takes egrep and zgrep too), as a word: not `startsWith('.')`, where `.` is a builtin by chance.
+      const text = literalText(n.arguments[0]);
+      if (text !== undefined && /^[A-Za-z][\w-]*$/.test(text) && names.has(text)) found.push(n.getText(sf));
     } else if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ['test', 'exec'].includes(n.expression.name.text) && n.arguments.length > 0) {
       if (literalText(n.arguments[0]) === undefined && regexWords(checker, n.expression.expression)?.some((t) => open(n.arguments[0], t))) found.push(n.getText(sf));
     }
@@ -297,6 +315,9 @@ const fixtures: { name: string; code: string; found: string[] }[] = [
   { name: 'open-union', code: `export function f(x: 'alias' | string | undefined, y: string | null) { return x === 'alias' || y === 'sed'; }`, found: [`x === 'alias'`, `y === 'sed'`] },
   { name: 'open-case', code: `export function f(x: string) { switch (x) { case 'grep': return 1; case 'other': return 2; } return 0; }`, found: [`case 'grep'`] },
   { name: 'open-members', code: "export function f(x: string) { return ['a'].includes('declare') || new Set<string>().has('sed') || x.includes('awk'); }", found: [`['a'].includes('declare')`, `new Set<string>().has('sed')`, `x.includes('awk')`] },
+  { name: 'open-affix', code: `export function f(x: string) { return x.endsWith('grep') || x.startsWith(\`sed\`) || x.startsWith('.') || x.endsWith('zzz') || x.startsWith('-'); }`, found: [`x.endsWith('grep')`, 'x.startsWith(`sed`)'] },
+  // A dispatch to a simulator by the name of the command (the registry of src/examples/): found, though the switch is on a function's result.
+  { name: 'open-registry', code: `declare function canonicalName(n: string): string;\nexport function f(cmd: string) { switch (canonicalName(cmd)) { case 'grep': return 1; case 'sed': return 2; case 'zzz': return 3; } return 0; }`, found: [`case 'grep'`, `case 'sed'`] },
   { name: 'open-type-field', code: `export function f(x: { type: string }) { return x.type === 'command'; }`, found: [`x.type === 'command'`] },
   { name: 'outside-union', code: `export function f(x: 'alias' | 'file') { return x === 'sed'; }`, found: [`x === 'sed'`] },
   { name: 'template', code: 'export function f(x: string) { return x === `sed`; }', found: ['x === `sed`'] },
@@ -388,15 +409,36 @@ describe('src/explain guards', function () {
     assert.ok(names.has('sed') && names.has('declare') && names.has('run') && names.has('egrep'));
     const p = program();
     const checker = p.getTypeChecker();
-    const all = files().flatMap((f) => {
+    const all = [...files(), ...examplesFiles()].flatMap((f) => {
       const sf = p.getSourceFile(f);
       assert.ok(sf, f);
       return [...nameComparisons(checker, sf, names), ...recordLookups(checker, sf, names)].map((text) => ({ file: path.relative(base, f), text }));
     });
-    const unknown = all.filter((x) => !KNOWN_NAMES.some((k) => k.file === x.file && k.text === x.text));
-    assert.deepStrictEqual(unknown, []);
-    const stale = KNOWN_NAMES.filter((k) => !all.some((x) => x.file === k.file && x.text === k.text));
-    assert.deepStrictEqual(stale, []);
+    // Counted per file and text, like the other guards: a new text, a larger count and a stale entry all fail.
+    const actual = new Map<string, number>();
+    for (const x of all) actual.set(`${x.file} ${x.text}`, (actual.get(`${x.file} ${x.text}`) ?? 0) + 1);
+    // `PRINT_NAMES=1 npx mocha … test/explain-imports.test.ts` prints what is found, as the known list's entries (without kind and reason).
+    if (process.env.PRINT_NAMES) console.log(JSON.stringify([...actual].map(([k, count]) => ({ file: k.split(' ', 1)[0], text: k.slice(k.indexOf(' ') + 1), count })), null, 1));
+    const listed = new Map(KNOWN_NAMES.map((k) => [`${k.file} ${k.text}`, k.count]));
+    const problems: string[] = [];
+    if (listed.size !== KNOWN_NAMES.length) problems.push('an entry is listed twice');
+    for (const k of KNOWN_NAMES) if (!k.reason.trim() || !['not-a-name', 'registry', 'decision'].includes(k.kind)) problems.push(`${k.file} ${k.text} has no reason or no kind`);
+    for (const [k, n] of actual) {
+      const have = listed.get(k);
+      if (have === undefined) problems.push(`NEW: ${k} (${n}): read the spec (src/dict/) or the model instead of the name; a name that collides with another meaning goes into test/fixtures/names-known.json with its reason`);
+      else if (n > have) problems.push(`MORE: ${k} has ${n} matches, ${have} are listed`);
+    }
+    for (const [k, have] of listed) if ((actual.get(k) ?? 0) < have) problems.push(`STALE: ${k} lists ${have}, ${actual.get(k) ?? 0} found: lower the count or remove the entry`);
+    assert.deepStrictEqual(problems, []);
+  });
+
+  it('reads the files of src/examples/ except the language interpreters', () => {
+    const names = examplesFiles().map((f) => path.basename(f));
+    assert.ok(names.includes('pipeline.ts') && names.includes('textfilters.ts') && names.includes('getopt.ts'), names.join(' '));
+    for (const l of LANGUAGES) {
+      assert.ok(fs.existsSync(path.join(examplesDir, l)), `${l} is gone: remove it from LANGUAGES`);
+      assert.ok(!names.includes(l), l);
+    }
   });
 
   it('knows every record of specs of the dictionary', async () => {
