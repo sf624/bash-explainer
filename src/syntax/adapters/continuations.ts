@@ -8,7 +8,7 @@
 // written, so a name may hold one (`variable_name` `y\<newline>a`). It works on the shape of unbash's AST only, since
 // only ./unbash.ts may import unbash.
 
-import type { AstNode, Children } from './rereads';
+import { walk, type AstNode, type Children } from './rereads';
 
 /** What becomes of a line continuation at a place, by the innermost node around it that decides. */
 const enum Kind { Gap, Removed, Kept }
@@ -192,15 +192,55 @@ export interface Prepared<S extends AstNode> {
 /**
  * The text that unbash reads for `text`, and where its characters are written. bash would read the CR of a CRLF as
  * part of the last word of the line (`fi\r` is no `fi`). That is not what the author meant, and the document issues
- * say so: the tree is built as if each CR were a blank (`masked`, of the same length; the CRs at `carriageReturns`).
- * And bash removes the line continuations that ./continuations.ts finds (`joins`, when there are some), which unbash
- * reads as they are. When there are none, unbash's reading of `masked` is given back (`script`), to be used as is.
+ * say so: the tree is built as if each CR were a blank (`masked`, of the same length; the CRs at `carriageReturns`),
+ * but for those that end a heredoc where bash does (`heredocCarriageReturns`). And bash removes the line continuations
+ * that ./continuations.ts finds (`joins`, when there are some), which unbash reads as they are. When there are none,
+ * unbash's reading of `masked` is given back (`script`), to be used as is.
  */
 export function prepared<S extends AstNode>(text: string, parse: (text: string) => S, children: Children): Prepared<S> {
   const carriageReturns = [...text.matchAll(/\r(?=\n)/g)].map((m) => m.index!);
-  const masked = carriageReturns.length ? text.replace(/\r(?=\n)/g, ' ') : text;
-  if (!masked.includes('\\\n')) return { masked, carriageReturns };
-  const script = parse(masked);
+  let masked = carriageReturns.length ? text.replace(/\r(?=\n)/g, ' ') : text;
+  let script: S | undefined;
+  if (carriageReturns.length && masked.includes('<<')) ({ masked, script } = heredocCarriageReturns(text, masked, parse, children));
+  if (!masked.includes('\\\n')) return script ? { masked, carriageReturns, script } : { masked, carriageReturns };
+  script ??= parse(masked);
   const places = continuations(script, children, masked);
   return places.length ? { masked, carriageReturns, joins: joined(masked, places) } : { masked, carriageReturns, script };
+}
+
+/** A heredoc redirection of unbash's AST, as far as this module reads it. */
+interface HereDoc extends AstNode {
+  readonly operator: string;
+  readonly delimiter: { readonly end: number; readonly value: string };
+  readonly body: { readonly pos: number };
+}
+
+/**
+ * `masked` with the CRs of `text` kept where bash reads them in a heredoc's delimiter (3.6.6). The CR right after the
+ * delimiter is part of the word (`<<E\r`, `<<'E'\r`: the delimiter is `E\r`), and bash ends the body at the first
+ * line that is `E\r` (after its leading tabs with `<<-`); a line `E` does not end it. Masked, the delimiter would be
+ * `E` and that line `E `, which unbash does not take for the end either: so both CRs stay, and unbash reads them as
+ * bash does. (The tree leaves them out of the words: the adapter's `seal`.) Each heredoc that is fixed so may hold or
+ * move the ones after it, so they are found one at a time, the first one in the text first, in unbash's new reading.
+ */
+function heredocCarriageReturns<S extends AstNode>(text: string, masked: string, parse: (text: string) => S, children: Children): { masked: string; script: S } {
+  for (;;) {
+    const script = parse(masked);
+    // (A CR that unbash reads is in the delimiter, so one right after it is masked. The walk goes in the order of
+    // the text, and a heredoc in a body that runs on comes after the one whose body it is.)
+    let first: HereDoc | undefined;
+    walk(script, children, (n) => {
+      if (!first && n.type === 'HereDoc' && text[(n as HereDoc).delimiter.end] === '\r') first = n as HereDoc;
+    });
+    if (!first) return { masked, script };
+    const kept = [first.delimiter.end];
+    const want = first.delimiter.value + '\r';
+    for (let p = first.body.pos, nl = text.indexOf('\n', p); nl >= 0; p = nl + 1, nl = text.indexOf('\n', p)) {
+      const line = text.slice(p, nl);
+      if ((first.operator === '<<-' ? line.replace(/^\t+/, '') : line) !== want) continue;
+      kept.push(nl - 1);
+      break;
+    }
+    for (const i of kept) masked = masked.slice(0, i) + '\r' + masked.slice(i + 1);
+  }
 }

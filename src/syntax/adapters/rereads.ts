@@ -21,7 +21,7 @@ export type Children = (n: AstNode, visit: (c: AstNode) => void) => void;
  * Calls `visit` on each node of `script`, but not inside the script of a backquote with escapes, which is parsed
  * apart (by the adapter's `decoded`), so that its positions are in the text without the escapes.
  */
-function walk(script: AstNode, children: Children, visit: (n: AstNode) => void): void {
+export function walk(script: AstNode, children: Children, visit: (n: AstNode) => void): void {
   const go = (n: AstNode): void => {
     if (n.type === 'Script' && n !== script && n.source !== undefined) return;
     visit(n);
