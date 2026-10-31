@@ -2,7 +2,7 @@
 
 The plan that turns prototype B into real PRs, then the usability test. Agreed with the maintainer on 2026-10-27; revised after an independent review of the plan (PR #418).
 
-Status: P1 and P2 started early (decided by the maintainer 2026-10-31), beside the three note levels; P3 on wait for the levels. [sources.md](sources.md), stage SB: P1 does SB2 in its own PR, and SB3 comes before P7a.
+Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 started early (decided by the maintainer 2026-10-31), beside the three note levels; P3 on wait for the levels. SB3 comes before P7a.
 
 ## 1. Goal
 
@@ -118,6 +118,15 @@ Tests: unit tests of `viewControl`. A web test: a press in the page's view switc
 Prerequisite (2026-10-31, [sources.md](sources.md), SB2, done in P1's own PR): the Reading step model (`BASH_STEP`, `ownStep`, `measureSteps`, `chipOf`, `readerOf`, `bandOf`, `ROLES`) moves from media/panel.js into a typed, pure module of src/ui, with its unit tests. One `needsReading(state)` replaces the two decisions of `view === 'tree'` (src/ui/panel.ts, web/main.ts; section 6.1). The page's mirror of the panel's header is driven by data, not by a MutationObserver (web/panel-bridge.ts).
 
 Risks: the chrome series edits web/panel-bridge.ts too. P1 starts after the three note levels, like the other steps (decision 5; changed 2026-10-31: P1 and P2 start early, beside the levels). It lands before C7 of [chrome-redesign.md](chrome-redesign.md), which draws the slot from `viewControl`. Keep the PR small.
+
+Done (#538):
+
+- src/ui/panelView.ts: `viewControl(state, lang)` (label; per option its id, an optional icon, short and full name, pressed, the state a press `sets`, and Reading's step names), `needsReading(state)`, and `panelState(kept)`, which reads a kept state (the view; the step, or the layers kept before the steps; `level` written back for an older version). Both hosts read and keep the state through it, and ask `needsReading` what to build.
+- src/ui/readingSteps.ts: the step model of media/panel.js (`BASH_STEP`, `ownStep`, `measureSteps`, `aboutKey`, `chipOf`, `readerOf`, `bandOf`, `ROLES`, and the band rule and the arrows' targets), typed and pure, with its unit tests (test/reading-steps.test.ts). `readingView` gives each node of the reading tree its step, chip, reader, band, general text and role, and each step its words and where the arrows go. Over the fixtures and the snippets (5,374 lines, 60,550 nodes, both languages, all eight steps) it gives what main's panel.js computed.
+- The update message carries `control` and `reading` (the explanation goes without its tree); media/panel.js draws them, and its view switch from `control`.
+- The panel applies a press of its own at once, with no answer from the host: an option is pressed when the state has what it `sets`. `pressed` in the data is for the hosts, which draw from the state they keep (the page's switch, in the top bar and the menu).
+- The page's fold and quick reference buttons are drawn from a `header` message, in which the panel says how it draws its own (`HeaderButton`), instead of a MutationObserver on the panel's DOM.
+- The full names equal the short ones until P8 (no new tooltip). test/web-tree.test.ts already checks a press in the page's switch and the choice kept after a reload; test/panel-header.test.ts checks the `header` messages.
 
 ### P2. Explanation fixes found by the prototype
 
