@@ -1,5 +1,5 @@
 import type { Shell } from '../dialect';
-import type { HostKind, RegionNote, ShellRegion, HostSubstitution, Extracted } from './index';
+import type { HostKind, NoShell, RegionNote, ShellRegion, HostSubstitution, Extracted } from './index';
 
 /** Japanese text followed by more: a space after a closing backtick, so the code span ends. */
 export const spaced = (ja: string) => (ja.endsWith('`') ? `${ja} ` : ja);
@@ -57,9 +57,12 @@ export class Builder {
   region(start: number, end: number, label: [string, string], shell?: Shell, notes?: RegionNote[], warnPipefail?: boolean): void {
     if (end >= start) this.regions.push({ start, end, label, host: { kind: this.kind }, shell, notes, warnPipefail });
   }
-  /** A region of words run with no shell (`ShellRegion.noShell`), written by `execWords`; its code is read as bash's words. */
-  execRegion(start: number, end: number, label: [string, string], notes: RegionNote[]): void {
-    if (end >= start) this.regions.push({ start, end, label, host: { kind: this.kind }, shell: 'bash', notes, noShell: true });
+  /**
+   * A region of words run with no shell (`ShellRegion.noShell`), written by `execWords`; its code is read as bash's
+   * words. `word`: what each word is in the file (a JSON string).
+   */
+  execRegion(start: number, end: number, label: [string, string], notes: RegionNote[], word: NoShell['word']): void {
+    if (end >= start) this.regions.push({ start, end, label, host: { kind: this.kind }, shell: 'bash', notes, noShell: { word } });
   }
   build(): Extracted {
     const provided = [...new Set(this.provided)];

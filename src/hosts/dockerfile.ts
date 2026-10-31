@@ -1,5 +1,7 @@
 import { type Shell, shellFromName } from '../dialect';
 import { LineOut, Builder } from './builder';
+import { DECLARATIONS } from '../semantics/effects';
+import { RESERVED } from '../semantics/names';
 
 /** One string of a JSON array (the exec form), with the original column of each character. */
 export interface JsonWord {
@@ -7,6 +9,9 @@ export interface JsonWord {
   /** Not a literal: shell text standing for the value of a host expression, and what it means. */
   placeholder?: [string, [string, string]];
 }
+
+/** The escapes of a JSON string, but `\uXXXX`: what each stands for. */
+const JSON_ESCAPES: Readonly<Record<string, string>> = { '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' };
 
 /** Parse a JSON array of strings starting at `[` on `line`, possibly continued with `\`. */
 function jsonWords(lines: string[], line: number, at: number): { words: JsonWord[]; last: number } | undefined {
@@ -26,9 +31,14 @@ function jsonWords(lines: string[], line: number, at: number): { words: JsonWord
     const w: JsonWord = { line: i, start: k, end: k, value: '', cols: [] };
     for (k++; k < l.length && l[k] !== '"'; k++) {
       if (l[k] === '\\') {
-        const e = l[++k];
-        w.value += e === 'n' ? '\n' : e === 't' ? '\t' : e;
-        w.cols.push(k - 1);
+        // JSON's escapes (RFC 8259, 7): Docker reads the array as JSON, and one it cannot read is no exec form.
+        const e = l[k + 1];
+        const hex = e === 'u' ? /^[0-9a-fA-F]{4}/.exec(l.slice(k + 2))?.[0] : undefined;
+        const c = hex ? String.fromCharCode(parseInt(hex, 16)) : JSON_ESCAPES[e];
+        if (c === undefined) return undefined;
+        w.value += c;
+        w.cols.push(k);
+        k += hex ? 5 : 1;
       } else {
         w.value += l[k];
         w.cols.push(k);
@@ -40,6 +50,16 @@ function jsonWords(lines: string[], line: number, at: number): { words: JsonWord
   }
 }
 
+/**
+ * Whether bash reads the plain word `value`, the `n`th of `words`, as more than a word of text: a reserved word or an
+ * assignment as the command name (`if`, `A=1`), or an assignment after a builtin that declares names (`export A=1`).
+ * Each word of the exec form is text, so such a word is quoted.
+ */
+function readAsSyntax(value: string, n: number, words: JsonWord[]): boolean {
+  const assignment = /^[A-Za-z_]\w*\+?=/.test(value);
+  return n === 0 ? RESERVED.has(value) || assignment : assignment && DECLARATIONS.has(words[0].value);
+}
+
 /** Write exec-form words as shell words, each at its own columns. */
 export function execWords(b: Builder, words: JsonWord[]): void {
   words.forEach((w, n) => {
@@ -48,8 +68,9 @@ export function execWords(b: Builder, words: JsonWord[]): void {
     const char = (c: number) => o.insert(w.value[c], w.cols[c], w.cols[c] + 1);
     if (w.placeholder) {
       o.insert(w.placeholder[0], w.start, w.end, w.placeholder[1]);
-    } else if (/^[\w@%+=:,./-]+$/.test(w.value)) {
-      // A plain word reads the same to the shell, so commands and options are recognised.
+    } else if (/^[\w@%+=:,./-]+$/.test(w.value) && w.value.length === w.end - w.start - 2 && !readAsSyntax(w.value, n, words)) {
+      // A plain word reads the same to the shell, so commands and options are recognised. (Not one written with
+      // escapes, `"\u0041"`, nor with a prefix, Python's `r"x"`: quoted, its token says what it is, `A`.)
       // The first and last characters stand for the quotes too, so the word covers `"echo"`.
       const last = w.value.length - 1;
       for (let c = 0; c <= last; c++) o.insert(w.value[c], c === 0 ? w.start : w.cols[c], c === last ? w.end : w.cols[c] + 1);
@@ -136,7 +157,7 @@ export function dockerfile(b: Builder): void {
       b.execRegion(i, last, [`Dockerfile の ${instr}（exec 形式）`, `Dockerfile ${instr} (exec form)`], [[
         'exec 形式（`[...]`）はシェルを通さずにコマンドを直接実行します。`$VAR` の展開・パイプ・リダイレクト・`&&` などは働かず、各要素がそのまま引数になります。',
         'The exec form (`[...]`) runs the command directly, without a shell: `$VAR`, pipes, redirections and `&&` do not work, and each element is passed as it is.',
-      ]]);
+      ]], ['JSON の文字列', 'JSON string']);
       i = last;
       continue;
     }

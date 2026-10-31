@@ -138,6 +138,11 @@ export type NameResolution =
     maybeHashed?: MaybeHashed;
     /** A name the dictionary does not know, after a `source` or `.` (this command): it may be a function of the file read. */
     sourced?: SyntaxNode;
+    /**
+     * No shell reads the name (`StateModel.noShell`: Docker's exec form), so it is a program found in PATH. `skips`:
+     * what a shell would have run of that name, which does not run here (a reserved word, a builtin).
+     */
+    noShell?: { skips?: 'keyword' | 'builtin' };
   }
   /** Nothing runs: `builtin x` where `x` is not a builtin; `disabled`: the builtin `x` turned off by `enable -n`. */
   | { kind: 'none'; name: string; why: 'not-a-builtin'; missed?: Missed; disabled?: CommandEntry };
@@ -255,9 +260,11 @@ export function aliasesAfter(c: SyntaxNode, first: AliasResolution, resolve: (na
 export function resolveName(model: StateModel, name: string, at: SyntaxNode, opts: ResolveOptions = {}): NameResolution {
   const slot = opts.env?.links.filter((l): l is SlotLink => l.kind === 'slot').pop();
   const shellString = slot?.slot.run === 'shell-string';
+  // (Words the host runs with no shell, Docker's exec form: their name is looked up as a program's, as `env`'s.)
+  const noShell = !slot && model.noShell;
   const place: Place = {
     ...(slot ? { slot } : {}),
-    exec: slot?.slot.run === 'exec',
+    exec: slot?.slot.run === 'exec' || noShell,
     shellString,
     lookup: opts.lookup ?? (slot?.slot.run === 'current-shell' ? slot.slot.lookup : undefined),
     bash: shellString ? slot!.shell === 'bash' || slot!.shell === 'unknown' : !opts.shell || opts.shell === 'bash',
@@ -265,7 +272,11 @@ export function resolveName(model: StateModel, name: string, at: SyntaxNode, opt
     ...sourcedBefore(model, at),
     pathPrefix: pathPrefix(at.type === 'command_name' ? at.parent! : at),
   };
-  return resolve(model, name, at, opts, place, new Set());
+  const res = resolve(model, name, at, opts, place, new Set());
+  if (!noShell) return res;
+  // (Looked up as a program, the name is a file: `builtinOrFile`. What a shell would have run of it instead does not run here.)
+  const skips = name.includes('/') ? undefined : RESERVED.has(name) ? 'keyword' as const : Object.hasOwn(builtins, name) ? 'builtin' as const : undefined;
+  return { ...(res as Extract<NameResolution, { kind: 'file' }>), noShell: skips ? { skips } : {} };
 }
 
 function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveOptions, place: Place, expanding: Set<string>): NameResolution {
@@ -602,6 +613,11 @@ export interface NameFacts {
   why?: 'not-a-builtin' | 'not-found';
   /** A program runs where bash has a builtin of the name, and the dictionary knows no program of it (`sudo cd`). */
   noProgram?: boolean;
+  /**
+   * No shell reads the name (Docker's exec form): it is looked up in PATH, and `skips` is what a shell would have run
+   * of it instead (a builtin, a reserved word). The shell's meanings are not reached from there: `also` is empty.
+   */
+  noShell?: { skips?: 'keyword' | 'builtin' };
   /** The other meanings of the name, in bash's order (3.7.2): empty when it has none. */
   also: NameOther[];
   /** It runs a POSIX special builtin (4.4): in POSIX mode, it differs from the other builtins. */
@@ -636,6 +652,8 @@ export function nameFacts(res: NameResolution, opts: {
   const why = notFound ? { why: 'not-found' as const } : res.kind === 'none' ? { why: res.why } : {};
   const noProgram = runs === 'program' && builtin && !program && !name.includes('/') ? { noProgram: true } : {};
   if (name.includes('/')) return { name, runs, ...by, also: [] };
+  // (With no shell, nothing reaches the shell's other meanings of the name: only what a shell would have run.)
+  if (res.kind === 'file' && res.noShell) return { name, runs, ...why, ...noProgram, noShell: res.noShell, also: [] };
   // (`builtins-only` is asked only of a name that has a builtin.)
   const look: NameLookup = opts.lookup ?? ((o) => (!o.quoted && !o.command && RESERVED.has(name) ? { kind: 'keyword', name }
     : builtin ? { kind: 'builtin', name, special: builtin.builtin === 'special' } : { kind: 'file', name, path: 'search', known: program }));

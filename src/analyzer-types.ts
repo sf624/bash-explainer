@@ -5,7 +5,7 @@ import type { BashVersion } from './bashversion';
 import type { Shell } from './dialect';
 import type { SectionMarks } from './examples/marks';
 import type { Interactive } from './examples/rerun';
-import type { HostId } from './hosts';
+import type { HostId, NoShell } from './hosts';
 import type { LabelPart } from './label';
 import type { Fact, Note, SpaceEnds, ValueSaid } from './messages';
 import type { NameInfo } from './namefacts';
@@ -146,6 +146,11 @@ export interface ExplainOptions {
   hostRun?: HostRun;
   /** Variables the host gives the script, and the names of its placeholders (src/hosts/remap.ts, `hostProvided`). */
   hostProvided?: readonly string[];
+  /**
+   * The host runs the line's words with no shell (`ShellRegion.noShell`: Docker's exec form, a Python list of
+   * arguments): the model looks the name up as a program (`StateModel.noShell`), and each word is the host's string.
+   */
+  noShell?: NoShell;
   /** Also build the reading tree of the line (`LineExplanation.reading`), for the panel's tree view. */
   reading?: boolean;
   /**

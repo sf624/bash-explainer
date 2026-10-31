@@ -25,6 +25,7 @@ import { awkOptions, dateRun, globExample, inputSource, ioExample, pushExample, 
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
 import { fromEmbedded, same } from './nodes';
 import { given, regexFlavor, trContext } from './reads';
+import { hostString } from './hoststrings';
 import { valueNote } from './words';
 
 /**
@@ -174,6 +175,8 @@ export function ansiCChildren(cx: Explainer, n: SyntaxNode): Token[] {
  * a single-quoted string, with its value there (`ansiCWordValue`; none in POSIX sh, which may be dash or not).
  */
 export function ansiCString(cx: Explainer, n: SyntaxNode): Token {
+  const host = hostString(cx, n);
+  if (host) return host;
   if (!featureWorks('ansiC', cx.shell)) {
     const escapes = /\\/.test(n.text);
     // (A `\'`: dash's quote ends there, and the `'` after it opens another; the word is not what the tree shows.)
