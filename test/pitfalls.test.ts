@@ -599,13 +599,23 @@ describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', ()
     ['[ $a < $b ]', 'redirect-in-bracket', ['[ $a \\< $b ]']],
     ['[ $a>$b ]', 'redirect-in-bracket', ['[ $a \\> $b ]']],
     ['[ 5>3 ]', 'redirect-in-bracket', ['[ 5 \\> 3 ]']],
-    // (No comparison of three words; not `>>`; another redirection; no `]`.)
+    ['[ 10>$max ]', 'redirect-in-bracket', ['[ 10 \\> $max ]']],
+    // (In a part of the test, the same: after `!`, between `-a` and `-o`, in `( )`.)
+    ['[ ! $a < $b ]', 'redirect-in-bracket', ['[ ! $a \\< $b ]']],
+    ['[ -n "$x" -a $a > $b ]', 'redirect-in-bracket', ['[ -n "$x" -a $a \\> $b ]']],
+    ['[ $a > $b -o -z "$c" ]', 'redirect-in-bracket', ['[ $a \\> $b -o -z "$c" ]']],
+    ['[ \\( $a > $b \\) ]', 'redirect-in-bracket', ['[ \\( $a \\> $b \\) ]']],
+    ['[ ! a < b ]', 'redirect-in-bracket', ['[ ! a \\< b ]']],
+    ['[ -n "$x" -o a > b ]', 'redirect-in-bracket', ['[ -n "$x" -o a \\> b ]']],
+    // (No operator of a comparison: a target that is a number, with no operand or another after it; not `>>`; another
+    // redirection; no `]`.)
     ['[ $a 2>5 ]', 'redirect-in-bracket', []],
-    ['[ a b < c ]', 'redirect-in-bracket', []],
-    ['[ a < b c ]', 'redirect-in-bracket', []],
+    ['[ a > 5 c ]', 'redirect-in-bracket', []],
     ['[ a >> b ]', 'redirect-in-bracket', []],
     ['[ a < b > c ]', 'redirect-in-bracket', []],
     ['[ a < b ] x', 'redirect-in-bracket', []],
+    // (A redirection with no word after it, which bash refuses: a case the fuzz test found.)
+    ['[ a <  > c ]', 'redirect-in-bracket', []],
     ['[ -f $x]', 'bracket-close-in-word', ['[ -f $x ]']],
     ['[ -n "$x"]', 'bracket-close-in-word', ['[ -n "$x" ]']],
     ['[ $x$y]', 'bracket-close-in-word', ['[ $x$y ]']],
@@ -630,6 +640,14 @@ describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', ()
       if (j.rewrite) assert.ok(j.text.includes(`\`${j.rewrite[0].code}\``) || j.rewrite[0].code.includes('\n'), j.text);
     });
   }
+  // A redirection where no comparison would stand is meant as one (`comparisonAt`): bash makes it, and the test is the
+  // one written (test/error-level.test.ts runs them).
+  it('redirect-in-bracket: none where no comparison would stand', () => {
+    for (const src of ['[ "$n" -gt 0 2>"$errlog" ]', '[ "$x" -lt 5 2>>"$LOG" ]', '[ -t 0 < "$tty" ]', '[ "$a" 2>"$b" ]', '[ a b < c ]',
+      '[ a < b c ]', '[ a < b c', '[ -a f > out ]', '[ ! -a f > out ]', '[ {fd}>x a ]', '[ a 2>&1 ]', '[ a 2>/dev/null ]']) {
+      assert.deepStrictEqual(found(src, 'redirect-in-bracket').map((f) => f.text), [], src);
+    }
+  });
   it('shows the form of the rewrite where it has none', () => {
     assert.match(found('[-f x\\]', 'bracket-no-space')[0].text, /Write `\[ -f …`$/);
     assert.match(found('[[-f x]', 'bracket-no-space')[0].text, /`\[\[` is a reserved word only as a word of its own.*Write `\[\[ -f …`$/);

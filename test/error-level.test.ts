@@ -131,6 +131,12 @@ const ROWS: readonly Row[] = [
   { id: 'brace-close-no-separator', text: '#!/bin/bash\n{ echo it-works }\n', line: 2, works: 'it-works' },
   // (The comparison is never made: `> b` writes a file, and `[ a ]` is true.)
   { id: 'redirect-in-bracket', text: '#!/bin/bash\nif [ a > b ]; then echo true; else echo false-as-meant; fi\n', line: 2, works: 'false-as-meant' },
+  { id: 'redirect-in-bracket', text: '#!/bin/bash\na=a\nb=b\nif [ "$a" > "$b" ]; then echo true; else echo false-as-meant; fi\n', line: 4, works: 'false-as-meant' },
+  // (`10>` is a descriptor: `[ ]` is false.)
+  { id: 'redirect-in-bracket', text: '#!/bin/bash\nmax=1\nif [ 10>$max ]; then echo it-works; fi\n', line: 3, works: 'it-works' },
+  // (In a part of the test, after `!` or between `-a` and `-o`, the same: `[ ! b ]` is false, `[ -n 1 -a a ]` true.)
+  { id: 'redirect-in-bracket', text: '#!/bin/bash\nif [ ! b < a ]; then echo it-works; fi\n', line: 2, works: 'it-works', files: { a: '' } },
+  { id: 'redirect-in-bracket', text: '#!/bin/bash\nx=1\nif [ -n "$x" -a a > b ]; then echo true; else echo false-as-meant; fi\n', line: 3, works: 'false-as-meant' },
   { id: 'and-or-in-bracket', text: '#!/bin/bash\n[ -d / && -d / ] && echo it-works\n', line: 2, works: 'it-works' },
   { id: 'and-or-in-bracket', text: '#!/bin/bash\nif [ -d /nowhere || -d / ]; then echo it-works; fi\n', line: 2, works: 'it-works' },
   // (What is before the `]` is never empty: the word is never `]` alone, and `[` has no `]`. Where it may be empty,
@@ -407,6 +413,27 @@ describe('the checks headed for Error, run in bash (three-levels.md, step 0)', f
     // (Unset or empty: `[ -z ]` is true; with a value, `missing ']'`.)
     assert.deepStrictEqual([...new Set(runs.filter((run) => !failed(r, run)).map((run) => run.env))], ['unset', '""']);
   });
+
+  // A redirection in `[ ]` where no comparison would stand is meant as one: bash makes it, and the test is the one
+  // written, in every way. No note, where `[ a > b ]` is an error.
+  for (const text of [
+    '#!/bin/bash\nn=1\nerrlog=err.log\n[ "$n" -gt 0 2>"$errlog" ] && echo it-works\n',
+    '#!/bin/bash\nx=1\nLOG=a.log\n[ "$x" -lt 5 2>>"$LOG" ] && echo it-works\n',
+    '#!/bin/bash\ntty=a\n[ -t 0 < "$tty" ] || echo it-works\n',
+    '#!/bin/bash\na=x\nb=err.log\n[ "$a" 2>"$b" ] && echo it-works\n',
+  ]) {
+    it(`redirect-in-bracket: ${JSON.stringify(text.split('\n').at(-2))} is no comparison, and runs as written`, async function () {
+      const r: Row = { id: 'redirect-in-bracket', text, line: text.split('\n').length - 1, works: 'it-works', files: { a: '' } };
+      const doc = openDocument(r.text, 'shell', (t) => parser.parse(t));
+      assert.deepStrictEqual(documentIssues(doc, 'en', shellsOf(doc.lines, 'script.sh', undefined)).filter((x) => x.code === r.id), []);
+      if (unrunnable(r)) return this.skip();
+      const at = path.join(dir, `bracket-meant-${text.length}`);
+      fs.mkdirSync(at);
+      const runs = await runRow(r, at);
+      assert.ok(runs.length > 0);
+      assert.deepStrictEqual(runs.filter((run) => failed(r, run)).map((run) => `${run.way}: ${JSON.stringify(run.stderr.slice(-200))}`), []);
+    });
+  }
 
   ROWS.forEach((r, i) => {
     it(`${r.id}${r.code ? ` (${r.code})` : ''}: ${JSON.stringify(r.text.split('\n')[r.line - 1].replace(/^﻿/, '').replace(/\r$/, ''))}`, async function () {

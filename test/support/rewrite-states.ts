@@ -990,15 +990,19 @@ Object.assign(STATES, {
     },
   },
   'redirect-in-bracket': {
-    states: 'the strings compared in either order and equal; no file in the directory (what `[[ … < … ]]` gives, and no file made or read)',
+    states: 'the strings compared in either order and equal; no file in the directory (what the test in `[[ ]]` gives, with `<` or `>` as the operator, and no file made or read)',
     checks: (s, x) => {
       const cmd = commandAt(x);
       const name = field(cmd, 'name')!;
       const redirect = cmd.namedChildren.find((c) => c.type === 'file_redirect' && c.startIndex > name.startIndex)!;
       const [, fd, op] = /^(\d*)([<>])/.exec(redirect.text)!;
       const words = fields(cmd, 'argument');
-      const left = fd || words.find((w) => w.endIndex <= redirect.startIndex)!.text;
-      const ref = reference(s, [{ start: name.startIndex, end: words.at(-1)!.endIndex, text: `[[ ${left} ${op} ${field(redirect, 'destination')!.text} ]]` }]);
+      // (The test in `[[ ]]`, the redirection as the operator where it stands: `[ ! $a < $b ]`, `[ -n "$x" -a $a > $b ]`
+      // too, with `&&`, `||` and `( )` for `-a`, `-o` and `\( \)`.)
+      const inner = words.slice(0, -1).map((w) => ({ '-a': '&&', '-o': '||', '\\(': '(', '\\)': ')' } as Record<string, string>)[w.text] ?? w.text);
+      const at = words.findIndex((w) => w.startIndex > redirect.startIndex);
+      inner.splice(at, 0, ...(fd ? [fd] : []), op, field(redirect, 'destination')!.text);
+      const ref = reference(s, [{ start: name.startIndex, end: words.at(-1)!.endIndex, text: `[[ ${inner.join(' ')} ]]` }]);
       const vars = varsIn(cmd).filter((v) => !x.assigned.has(v));
       const pairs = vars.length > 1 ? [['a', 'b'], ['b', 'a'], ['a', 'a']] : vars.length ? [['a'], ['z']] : [[]];
       // (The files the run leaves: none, where nothing was redirected.)

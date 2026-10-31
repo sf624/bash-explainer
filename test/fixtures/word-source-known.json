@@ -379,6 +379,8 @@
         {"fn":"wholeVariable","kind":"node-type","count":3},
         {"fn":"REGEX_SPECIAL","kind":"glob-class","count":1,"reason":"regex special characters in the text of a pitfall"},
         {"fn":"braceSpaced","kind":"node-type","count":2},
+        {"fn":"comparisonAt","kind":"helper","count":1},
+        {"fn":"operatorAt","kind":"helper","count":1},
         {"fn":"pitfallFindings","kind":"node-type","count":3}
       ]
     },

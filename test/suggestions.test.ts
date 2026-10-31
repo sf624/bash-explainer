@@ -240,8 +240,9 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     { id: 'nounset-unbound', input: "bash -c 'set -u; f() { echo \"$z\"; }; f'", why: 'string' },
     { id: 'regex-backslash-dropped', input: '[[ $x =~ ^[\\s]+$ ]]', why: 'none' },
     // (The style checks: several words after `=`, which have no one meaning as a value, or a redirection among them;
-    // a `{` with no `}` after it; an escaped `]` or `}`, or a `]` that is not the opener's; a redirection that as an
-    // operator would make no comparison of three words. The check before `rm`, which carries no edits, is apart.)
+    // a `{` with no `}` after it; an escaped `]` or `}`, or a `]` that is not the opener's; a redirection that stands
+    // for a comparison only by its target, a number (`[ $a 2>5 ]`), or with `>>`, another redirection, no word after it
+    // or no `]`. The check before `rm`, which carries no edits, is apart.)
     { id: 'assignment-with-spaces', input: '! a = b -a -f c', why: 'none' },
     { id: 'assignment-with-spaces', input: 'a = b -a ( c -o d )', why: 'none' },
     { id: 'assignment-with-spaces', input: 'a = b -a c = d', why: 'none' },
@@ -257,9 +258,9 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     { id: 'redirect-in-bracket', input: '[ $a 2>5 ]', why: 'none' },
     { id: 'redirect-in-bracket', input: '[ a < b > c ]', why: 'none' },
     { id: 'redirect-in-bracket', input: '[ a < b ] x', why: 'none' },
-    { id: 'redirect-in-bracket', input: '[ a < b c ]', why: 'none' },
+    { id: 'redirect-in-bracket', input: '[ a <  > c ]', why: 'none' },
+    { id: 'redirect-in-bracket', input: '[ a > 5 c ]', why: 'none' },
     { id: 'redirect-in-bracket', input: '[ a >> b ]', why: 'none' },
-    { id: 'redirect-in-bracket', input: '[ a b < c ]', why: 'none' },
   ];
   it('finds a rewrite on every fact of a mechanical id in the corpus, but where none is given', function () {
     // (Explaining every line of the 1,800 snippets and the fixtures takes 4.5 s, spread over the analyzer with no one hot
