@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544), C5 (#PRNUM), C6 (#546) and C7 (#561); C5's phone checks wait on the maintainer (section 8). [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544), C5 (#562), C6 (#546) and C7 (#561); C5's phone checks wait on the maintainer (section 8). [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -148,7 +148,7 @@ The old web tests, by the step that changes what they test. Built from a grep of
 | C4 | test/web-topbar, web-menu | The bar and the menu: `#share`, `#github`, `#install`, `#sample`, `#settings-open`, `#menu-*`, `#drawer`. |
 | C4 | test/web-files.test.ts | `#file-label`, `#menu-open-file`, `#menu-save*`, `#drop-target`, `#sample`. |
 | C4 | test/web-share, web-opening, web-pages, web-offline, web-kind, web-a11y | `#share`, `#menu-share`, `#menu-copy`, `#menu-install`, `#menu-panes`, `#editor-hint`, the menu. |
-| C5 | test/web-explanation, web-files, web-kind, web-offline, web-paste, web-phone, web-settings, web-share, web-topbar | The kind and shell selects: `#kind`, `#kind-menu`, `#shell`, `#shell-top` (`selectOption`, `pickKind`, `choose`). C5 removes the hidden selects. Done (#PRNUM): the helpers `pickKind`, `setShell`, `setYq`, `currentShell` and `kindChosen` (test/support/site.ts) go through the chip; web-menu, web-editor-head, web-hit-areas and web-toast changed too; new: test/scope.test.ts, test/web-scope.test.ts. |
+| C5 | test/web-explanation, web-files, web-kind, web-offline, web-paste, web-phone, web-settings, web-share, web-topbar | The kind and shell selects: `#kind`, `#kind-menu`, `#shell`, `#shell-top` (`selectOption`, `pickKind`, `choose`). C5 removes the hidden selects. Done (#562): the helpers `pickKind`, `setShell`, `setYq`, `currentShell` and `kindChosen` (test/support/site.ts) go through the chip; web-menu, web-editor-head, web-hit-areas and web-toast changed too; new: test/scope.test.ts, test/web-scope.test.ts. |
 | C6 | test/web-settings, web-menu, web-hover, web-phone | `#settings-dialog`, `#settings-open`. |
 | C7 | test/web-reference, web-tree, web-topbar, web-menu, web-explanation, web-kind | `#ref`, `#views-top`, `#view-*-top`, `#views-menu`, `#collapse`, `#copy-md`. |
 | C7 | test/web-a11y, web-anchor, web-label-width, web-name-kinds, web-tree-steps | `chooseView` (the helper changes). web-tree-steps is kept by C7 (the steps stay in the panel's own row) and removed by P8. |
@@ -326,7 +326,7 @@ Risks: the first PR that moves many controls; the screenshots of the three width
 
 ### C5. The file type and shell chip
 
-Done in #PRNUM (2026-11-01). What it did, and what the design did not say:
+Done in #562 (2026-11-01). What it did, and what the design did not say:
 
 - The chip's data is `scopeChip(lang, title, kind, forced, reading)` in src/ui/scope.ts: its forms, widest first (the whole chip "Shell script · bash (auto)", without "(auto)", the type's shorter word "Script · bash", Open and Save as icons, "bash" alone, the name only in the menu; a form that says what the one before says is left out, so a chosen shell has no "(auto)" step and a short type name no shorter one), its accessible name (which contains the text of every form: WCAG 2.5.3, tested) and its tooltip ("… · Auto: bash (from #!)"). `shellChoices` gives the Shell list, Auto first in the `long` form. The words of the automatic shell are `autoShellText`'s, from `readShell`'s reading (SB4); the type's shorter word is `kindsShort` in web/text.ts ("Script", "CI" for GitHub Actions / GitLab CI; the others are short already).
 - web/scope-chip.ts draws the chip and its popover from the page's state (the kind, the `shell` and `yq.flavor` settings, the reading) and takes the first form that fits: a form fits when ⋯, the header's last control, ends inside it, while the name keeps at least min(its width, 18ch), about a dozen characters of its stem with its extension and pencil; when none fits, the chip's text is cut with "…" (`.squeezed`). The forms replace C4's container query: Open and Save are icons by the fit rule (`data-tools`), not under a 481 px pane. The name leaves the header (`data-name="menu"`; it is the menu's first row) only while it is not being renamed. The chip's text changes only with a choice or the room; the popover is anchored at the chip's right edge, which ⋯ holds, so a choice moves nothing under the pointer.
