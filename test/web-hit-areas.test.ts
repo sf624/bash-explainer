@@ -73,7 +73,7 @@ describe('the web page: hit areas', function () {
           ...Object.fromEntries(Object.entries(byKey('page', await hitAreas(page))).filter(([k]) => !k.includes('readtip'))),
           ...byKey('panel', await hitAreas(panel)),
         };
-        // The menu, the settings, the editor header's ⋯ and the file kinds' list: each open on its own.
+        // The menu, the settings, the editor header's ⋯ and the chip's popover: each open on its own.
         await page.locator('#menu-open').click();
         await settled(page, '#drawer');
         Object.assign(measured, byKey('menu', await hitAreas(page, '#drawer')));
@@ -93,14 +93,12 @@ describe('the web page: hit areas', function () {
         Object.assign(measured, byKey('more', await hitAreas(page, '#ed-more-menu')));
         await page.keyboard.press('Escape');
         await page.locator('#ed-more-menu').waitFor({ state: 'hidden' });
-        // (On a narrow page the file kind is chosen in the menu, which was measured above.)
-        if (await page.locator('#kind').isVisible()) {
-          await page.locator('#kind').click();
-          await page.locator('#kind-list').waitFor({ state: 'visible' });
-          await settled(page, '#kind-list');
-          Object.assign(measured, byKey('kind', await hitAreas(page, '#kind-list')));
-          await page.keyboard.press('Escape');
-        }
+        // The chip's popover of the file type and the shell (a sheet on a narrow page).
+        await page.locator('#scope-chip').click();
+        await page.locator('#scope-pop').waitFor({ state: 'visible' });
+        await settled(page, '#scope-pop');
+        Object.assign(measured, byKey('scope', await hitAreas(page, '#scope-pop')));
+        await page.keyboard.press('Escape');
         await ctx.close();
 
         const name = `${profile.name} ${lang}`;

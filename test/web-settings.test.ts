@@ -4,7 +4,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { openSite, choose, currentShell, pickKind, openSettingsSection, problemList, problemsShown, settingControl, stable, until } from './support/site';
+import { openSite, choose, currentShell, openSettingsSection, setShell, problemList, problemsShown, settingControl, stable, until } from './support/site';
 
 describe('the web page: theme and settings', function () {
   this.timeout(120000);
@@ -228,10 +228,9 @@ describe('the web page: theme and settings', function () {
     await page.locator('#settings-done').click();
     await until('the dialog closed', () => page.locator('#settings-dialog').isVisible(), (v) => !v);
     await choose(page, '#lang', 'en');
-    // The panel's header is not shown on the page; the shell is a setting. This one is chosen in the menu's select on
-    // purpose (`setShell` takes the top bar's at this width, which test/web-topbar.test.ts covers): both are the setting.
+    // The panel's header is not shown on the page; the shell is a setting, chosen in the editor header's chip.
     await until('the header hidden', () => panel().locator('header').isHidden(), (h) => h);
-    await choose(page, '#shell', 'dash');
+    await setShell(page, 'dash');
     await page.locator('#settings-open').click();
     await until('the dialog', () => page.locator('#settings-dialog').isVisible(), (v) => v);
     assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'dash');
@@ -664,7 +663,7 @@ describe('the web page: theme and settings', function () {
     })()`) as Record<'sheet' | 'pane' | 'bar', number[]>;
     assert.strictEqual(geometry.sheet[1], geometry.pane[1], JSON.stringify(geometry));
     assert.ok(geometry.sheet[1] >= geometry.bar[3] - 1 && geometry.sheet[3] >= geometry.pane[3] - 1, JSON.stringify(geometry));
-    for (const id of ['menu-open', 'kind', 'settings-open']) {
+    for (const id of ['menu-open', 'share', 'settings-open']) {
       const on = await page.evaluate(`(() => { const e = document.getElementById('${id}'); const b = e.getBoundingClientRect(); return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2) === e || e.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)); })()`);
       assert.strictEqual(on, true, `${id} is under the sheet`);
     }
@@ -737,7 +736,7 @@ describe('the web page: theme and settings', function () {
     await ctx.close();
   });
 
-  it('keeps the top bar working while the sheet is open side by side: the menu takes its place, a shell chosen in the bar shows in the sheet, the gear shuts it', async () => {
+  it('keeps the top bar working while the sheet is open side by side: the menu takes its place, the gear shuts it', async () => {
     const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 700 } });
     const page = await ctx.newPage();
     const errors: string[] = [];
@@ -747,14 +746,8 @@ describe('the web page: theme and settings', function () {
     await page.locator('#settings-open').click();
     await until('the sheet open', () => isOpen(page), (v) => v);
     await openSettingsSection(page, 'checks');
-    // The shell chosen in the bar is the Shell setting: the sheet shows it at once.
-    await page.locator('#shell-top').selectOption('dash');
-    assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'dash');
-    assert.strictEqual(await isOpen(page), true);
-    // The file kind chosen in the bar: the page takes it, the sheet stays.
-    await pickKind(page, 'makefile');
-    assert.strictEqual(await isOpen(page), true);
-    assert.match(await page.locator('#kind').innerText(), /Makefile/);
+    // The editor's header (its chip of the file type and the shell) is under the sheet, out of reach.
+    assert.strictEqual(await page.locator('#source').evaluate((el) => (el as unknown as { inert: boolean }).inert), true);
     // ☰ shuts the sheet and opens the menu; the editor is not left inert.
     await page.locator('#menu-open').click();
     await until('the menu open', drawerOpen, (v) => v);
@@ -765,11 +758,9 @@ describe('the web page: theme and settings', function () {
     await page.keyboard.press('Escape');
     await until('the menu closed', drawerOpen, (v) => !v);
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'menu-open');
-    // The settings open again with what the bar chose, and the gear shuts them.
+    // The settings open again, and the gear shuts them.
     await page.locator('#settings-open').click();
     await until('the sheet open again', () => isOpen(page), (v) => v);
-    await openSettingsSection(page, 'checks');
-    assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'dash');
     await page.locator('#settings-open').click();
     await until('the sheet closed by the gear', () => isOpen(page), (v) => !v);
     assert.deepStrictEqual(errors, []);
@@ -872,8 +863,10 @@ describe('the web page: theme and settings', function () {
       await openSettingsSection(page, 'checks');
       for (const id of ['setting-shell', 'setting-yq-flavor']) {
         const options = await page.locator(`#${id} option`).allInnerTexts();
-        assert.ok(options[0].startsWith(auto), `${lang} ${id}: ${options[0]}`);
-        assert.ok(options.slice(1).every((o) => !o.startsWith(auto)), String(options));
+        // (The Shell setting's Auto says the shell the script reads as now: decision 12.)
+        const first = id === 'setting-shell' ? auto.replace(': ', lang === 'ja' ? '（' : ' (') : auto;
+        assert.ok(options[0].startsWith(first), `${lang} ${id}: ${options[0]}`);
+        assert.ok(options.slice(1).every((o) => !o.startsWith(auto.slice(0, -2))), String(options));
       }
       // The language keeps its own words.
       assert.ok(!(await page.locator('#setting-language option').first().innerText()).startsWith(auto));
@@ -881,6 +874,30 @@ describe('the web page: theme and settings', function () {
       await more.click();
       assert.strictEqual(await more.innerText(), less);
       assert.notStrictEqual(await page.locator('#settings-done').innerText(), less);
+      await ctx.close();
+    }
+  });
+
+  it('says in the Shell setting\'s Auto the shell the script reads as now, and where from (decision 12), also for a file opened while the sheet is open', async () => {
+    for (const [locale, lang, now, opened] of [
+      ['en-US', 'en', 'Auto (now: bash, from #!)', 'Auto (now: zsh, from the file name)'],
+      ['ja-JP', 'ja', '自動（今: bash、#! 行から）', '自動（今: zsh、ファイル名から）'],
+    ]) {
+      const ctx = await browser.newContext({ locale, viewport: { width: 1280, height: 800 } });
+      // (Open goes through a file input, which Playwright can fill.)
+      await ctx.addInitScript('delete window.showOpenFilePicker; delete window.showSaveFilePicker;');
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('.cm-line').nth(5).waitFor();
+      await choose(page, '#lang', lang);
+      await openSettingsSection(page, 'checks');
+      const auto = page.locator('#setting-shell option[value="auto"]');
+      assert.strictEqual(await auto.innerText(), now);
+      // The sheet lies over the editor, and Ctrl+O still opens a file: a name that says zsh.
+      const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.keyboard.press('Control+O')]);
+      await chooser.setFiles({ name: 'setup.zsh', mimeType: 'text/plain', buffer: Buffer.from('echo one\n') });
+      await until('the reading of the file', () => auto.innerText(), (t) => t === opened);
+      assert.strictEqual(await isOpen(page), true);
       await ctx.close();
     }
   });

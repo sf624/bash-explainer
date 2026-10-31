@@ -107,8 +107,8 @@ export function under(areas: HitArea[], bar: number): string[] {
  *
  * What the measurement does: it starts from the first box of the control (a link that wraps has more than one) and
  * probes up to CAP px each way, so 121 (2 x CAP + 1) means "at least"; what is in a closed `<details>`, but its
- * summary, is not on the page; a control that is not visible is not measured (the file kind's picker is hidden on a
- * narrow page, where the menu has the kind: the menu is measured there).
+ * summary, is not on the page; a control that is not visible is not measured (a popover is measured
+ * open, on its own).
  */
 export type Allowed = Record<string, Record<string, [number, number]>>;
 

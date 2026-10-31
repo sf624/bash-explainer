@@ -341,7 +341,7 @@ describe('the web page: keyboard and screen reader access', function () {
     await ctx.close();
   });
 
-  it('walks the app bar and the editor\'s header with the keyboard: Copy a link, Open, Save, the name and ⋯, with Escape giving the focus back', async () => {
+  it('walks the app bar and the editor\'s header with the keyboard: Copy a link, Open, Save, the name, the chip and ⋯, with Escape giving the focus back', async () => {
     for (const lang of ['en', 'ja'] as const) {
       // A first visit: its hint is in the order too, after the header and before the editor.
       const ctx = await firstVisit({ locale: lang === 'ja' ? 'ja-JP' : 'en-US', viewport: { width: 1400, height: 800 } });
@@ -352,11 +352,11 @@ describe('the web page: keyboard and screen reader access', function () {
       assert.strictEqual(await page.locator('#first-hint').isVisible(), true);
       await page.locator('#settings-open').focus();
       const order: string[] = [];
-      for (let i = 0; i < 9; i++) {
+      for (let i = 0; i < 10; i++) {
         await page.keyboard.press('Tab');
         order.push(await focused(page));
       }
-      assert.deepStrictEqual(order.map((f) => f.split('.')[0]), ['a#github', 'a#install', 'button#open-btn', 'button#save-btn', 'button#file-name', 'button#ed-more', 'button#hint-own', 'button#hint-open', 'button#first-hint-close']);
+      assert.deepStrictEqual(order.map((f) => f.split('.')[0]), ['a#github', 'a#install', 'button#open-btn', 'button#save-btn', 'button#file-name', 'button#scope-chip', 'button#ed-more', 'button#hint-own', 'button#hint-open', 'button#first-hint-close']);
       // Copy a link with Enter: "Copied" on the button, which keeps the focus.
       await page.locator('#share').focus();
       await page.keyboard.press('Enter');

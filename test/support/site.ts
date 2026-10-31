@@ -156,10 +156,22 @@ export async function choose(page: Page, id: string, value: string): Promise<voi
   await page.evaluate("document.getElementById('drawer')?.close()").catch(() => undefined);
 }
 
-/** Chooses the file kind with the top bar's picker, by mouse. */
-export async function pickKind(page: Page, kind: string): Promise<void> {
-  await page.locator('#kind').click();
-  await page.locator(`#kind-list [data-value="${kind}"]`).click();
+/** Chooses an item of the popover of the editor header's chip (the file type, the shell or yq), by mouse, and closes the popover when it is still open. */
+async function pickScope(page: Page, group: 'kind' | 'shell' | 'yq', value: string): Promise<void> {
+  if (!(await page.locator('#scope-pop[open]').count())) await page.locator('#scope-chip').click();
+  await page.locator(`#scope-${group}-${value}`).click();
+  // (Beside the editor the chip closes it; the phone's sheet lies over the chip and has Done.)
+  if (await page.locator('#scope-pop[open]').count()) await page.locator(await page.locator('#scope-done').isVisible() ? '#scope-done' : '#scope-chip').click();
+}
+
+/** The file kind the page has ('shell', 'makefile'…), read from the chip's list, which holds it while closed too. */
+export async function kindChosen(page: Page): Promise<string> {
+  return (await page.locator('#scope-kinds [aria-checked="true"]').getAttribute('data-value')) ?? '';
+}
+
+/** Chooses the file kind with the editor header's chip, by mouse. */
+export function pickKind(page: Page, kind: string): Promise<void> {
+  return pickScope(page, 'kind', kind);
 }
 
 /** Presses an item of the page's menu (the panel's own header is not shown on the page). */
@@ -179,19 +191,21 @@ export async function chooseView(page: Page, view: 'list' | 'tree'): Promise<voi
 }
 
 /**
- * Chooses the shell as the page offers it: with the top bar's select where the bar has one, else in the menu. Both
- * hold the same value; the tests go through this helper, so that moving the control changes the helper, not the tests
- * (docs/design/chrome-redesign.md, C0 and C5).
+ * Chooses the shell as the page offers it: in the popover of the editor header's chip. The tests go through this
+ * helper, so that moving the control changes the helper, not the tests (docs/design/chrome-redesign.md, C0 and C5).
  */
-export async function setShell(page: Page, shell: string): Promise<void> {
-  const top = page.locator('#shell-top');
-  if (await top.isVisible()) await top.selectOption(shell);
-  else await choose(page, '#shell', shell);
+export function setShell(page: Page, shell: string): Promise<void> {
+  return pickScope(page, 'shell', shell);
 }
 
-/** The shell the page has chosen ('auto' or a shell's name), read from the menu's select, which holds it at every width. */
-export function currentShell(page: Page): Promise<string> {
-  return page.locator('#shell').inputValue();
+/** Chooses the yq flavour in the chip's popover (it lists yq while the cursor's line runs yq). */
+export function setYq(page: Page, flavor: string): Promise<void> {
+  return pickScope(page, 'yq', flavor);
+}
+
+/** The shell the page has chosen ('auto' or a shell's name), read from the chip's list, which holds it while closed too. */
+export async function currentShell(page: Page): Promise<string> {
+  return (await page.locator('#scope-shells [aria-checked="true"]').getAttribute('data-value')) ?? '';
 }
 
 /** Whether the Problems strip shows problems (with none it says "No problems", and the list is hidden). */

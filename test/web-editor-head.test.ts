@@ -3,7 +3,7 @@
 // (test/support/site.ts). Skipped when no browser can start, unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser, BrowserContextOptions, Page } from 'playwright-core';
-import { frames, openSite, stable, until, type Site } from './support/site';
+import { frames, kindChosen, openSite, stable, until, type Site } from './support/site';
 
 /** No File System Access API: a save is a download (as in Firefox and Safari). */
 const NO_PICKERS = 'delete window.showOpenFilePicker; delete window.showSaveFilePicker;';
@@ -155,7 +155,7 @@ describe('the web page: the app bar and the editor\'s header', function () {
     assert.strictEqual(await focused(page), 'file-name');
     assert.strictEqual((await name(page)).text, 'setup.zsh');
     // A name that says zsh: the script is explained as zsh, as a file of that name is.
-    await until('zsh from the name', () => page.locator('#shell-top option:checked').innerText(), (v) => v === 'Auto (zsh)');
+    await until('zsh from the name', () => page.locator('#scope-shell-auto').textContent(), (v) => v === 'Auto: zsh (from the file name)');
     // Escape keeps the old name, and the focus goes back to it.
     await page.keyboard.press('Enter');
     await page.keyboard.insertText('other');
@@ -267,7 +267,7 @@ describe('the web page: the app bar and the editor\'s header', function () {
     await page.evaluate('navigator.clipboard.writeText("FROM alpine\\nRUN echo hi\\n")');
     await page.locator('#empty-paste').click();
     await until('pasted', () => text(page), (t) => t.startsWith('FROM alpine'));
-    await until('the kind', () => page.locator('#kind').getAttribute('aria-label'), (k) => k === 'File: Dockerfile');
+    await until('the kind', () => kindChosen(page), (k) => k === 'dockerfile');
     assert.strictEqual(await page.locator('#empty-editor').isVisible(), false);
     // Closed for good: a reload of the sample shows no hint.
     await page.reload();
@@ -288,17 +288,17 @@ describe('the web page: the app bar and the editor\'s header', function () {
     await second.ctx.close();
   });
 
-  it('shows Open and Save in words from a 481 px pane and as icons below, and cuts a long name in its stem, in English and Japanese', async () => {
+  it('shows Open and Save in words while the header has the room (the chip\'s fit rule), and cuts a long name in its stem, in English and Japanese', async () => {
     const long = 'a-very-long-file-name-for-the-deployment-of-the-whole-service.sh';
     for (const locale of ['en-US', 'ja-JP']) {
-      for (const [width, words] of [[1280, true], [900, false], [640, true], [390, false]] as const) {
+      for (const [width, words] of [[1280, true], [900, true], [640, true], [390, false]] as const) {
         const { devices } = await import('playwright-core');
         const { ctx, page } = await open(width === 390 ? { ...devices['iPhone 13'], locale } : { viewport: { width, height: 800 }, locale });
         const seen = `${locale} ${width}`;
         // (The phone's first-run tip of the read-mode switch lies over the header until it is closed.)
         if (await page.locator('#readtip-close').isVisible()) await page.locator('#readtip-close').click();
-        const pane = (await page.locator('#source').boundingBox())!;
-        assert.strictEqual(pane.width >= 481, words, `${seen}: pane ${pane.width}`);
+        // (Which form the header takes is test/web-scope.test.ts's; here, that Open and Save follow it.)
+        assert.strictEqual(await page.locator('#ed-head').getAttribute('data-tools'), words ? 'words' : 'icons', seen);
         for (const id of ['#open-btn', '#save-btn']) {
           const lbl = await page.locator(`${id} .lbl`).boundingBox();
           assert.strictEqual((lbl?.width ?? 0) > 2, words, `${seen} ${id}`);
@@ -456,7 +456,7 @@ describe('the web page: the app bar and the editor\'s header', function () {
 
   it('gives the file kind the name says, as opening a file of that name does; a name that says nothing keeps it', async () => {
     const { ctx, page } = await open();
-    const kind = () => page.locator('#kind-menu').evaluate((el) => (el as unknown as { value: string }).value);
+    const kind = () => kindChosen(page);
     const rename = async (to: string) => {
       await page.locator('#file-name').click();
       await page.keyboard.press('Control+A');

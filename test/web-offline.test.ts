@@ -99,7 +99,7 @@ describe('the web page: no request to another site, and offline', function () {
 
     // Japanese, which reloads the panel from the page's own files.
     await choose(page2, '#lang', 'ja');
-    await until('the Japanese menu', async () => (await page2.locator('#shell-label').textContent()) ?? '', (t) => t === 'シェル');
+    await until('the Japanese menu', async () => (await page2.locator('#menu-scope-label').textContent()) ?? '', (t) => t === 'ファイルの種類とシェル…');
 
     await ctx.close();
     assert.deepStrictEqual(elsewhere, [], 'requests to other sites');

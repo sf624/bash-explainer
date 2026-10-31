@@ -41,11 +41,7 @@
 <header class="top">
   <button id="menu-open" class="icon-btn" type="button" aria-haspopup="dialog" aria-controls="drawer"><svg aria-hidden="true"><use href="#i-menu"/></svg></button>
   <a class="brand" href="./" aria-label="Bash Explainer"><svg class="logo" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><g class="logo-accent"><path d="M10.6 3.7H3.7V21.6H14.2M21.4 3.7H28.3V21.6H19.2" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linejoin="round"/><path d="M6.2 22.7H13.6L5.6 29.2Z" fill="currentColor" stroke="currentColor" stroke-linejoin="round"/></g><path class="logo-ink" d="M10 8.65L14 12.65L10 16.65M17.4 16.65H22.6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="brand-name">Bash Explainer</span></a>
-  <div class="kind"><button id="kind" class="picker" type="button"><span class="picker-name"></span><span class="picker-short" aria-hidden="true"></span><svg class="chev" aria-hidden="true" viewBox="0 0 12 12"><path d="M3 4.5l3 3 3-3"/></svg></button><ul id="kind-list" class="picker-list"></ul></div>
   <div class="actions">
-    <label class="pick desk-only"><span id="shell-top-label" class="sr-only">Shell</span><select id="shell-top"></select></label>
-    <label id="yq-top-box" class="pick desk-only" hidden><span id="yq-top-label" class="sr-only">yq</span><select id="yq-top"></select></label>
-    <span class="sep desk-only" aria-hidden="true"></span>
     <button id="share" class="text-btn desk-bar" type="button" aria-describedby="share-note"><svg aria-hidden="true"><use href="#i-link"/></svg><span id="share-label" class="lbl">Copy a link</span></button>
     <span id="share-note" hidden>The script is in the part after #, which browsers do not send to the server.</span>
     <span id="share-said" class="sr-only" role="status"></span>
@@ -63,6 +59,18 @@
       <button id="open-btn" class="tool-btn" type="button"><svg aria-hidden="true"><use href="#i-open"/></svg><span id="open-btn-label" class="lbl">Open</span></button>
       <button id="save-btn" class="tool-btn" type="button"><svg aria-hidden="true"><use href="#i-save"/></svg><span id="save-btn-label" class="lbl">Save</span></button>
       <span class="file-box"><button id="file-name" class="file-name" type="button"><span id="file-name-stem" class="fn-stem"></span><span id="file-name-ext" class="fn-ext"></span><span id="file-dot" class="file-dot" aria-hidden="true" hidden>●</span><svg class="file-pencil" aria-hidden="true"><use href="#i-pencil"/></svg></button><input id="file-name-input" class="file-name-input" type="text" spellcheck="false" autocomplete="off" hidden></span>
+      <!-- The file type and the shell (web/scope-chip.ts): the chip, and its popover (on a phone, a sheet from the bottom). -->
+      <div class="popbox scope-box"><button id="scope-chip" class="scope-chip" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="scope-pop"><span id="scope-chip-text" class="scope-chip-text"></span><svg class="chev" aria-hidden="true" viewBox="0 0 12 12"><path d="M3 4.5l3 3 3-3"/></svg></button>
+        <dialog id="scope-pop" class="scope-pop" aria-labelledby="scope-title">
+          <div class="scope-head"><h2 id="scope-title" class="scope-title">File type and shell</h2><button id="scope-done" class="scope-done" type="button">Done</button></div>
+          <div class="scope-lists">
+            <div class="scope-list"><h3 id="scope-kind-label" class="scope-h">File type</h3><div id="scope-kinds" class="scope-items" role="radiogroup" aria-labelledby="scope-kind-label"></div></div>
+            <div class="scope-list"><h3 id="scope-shell-label" class="scope-h">Shell</h3><div id="scope-shells" class="scope-items" role="radiogroup" aria-labelledby="scope-shell-label"></div>
+              <div id="scope-yq-list" class="scope-sub" hidden><h3 id="scope-yq-label" class="scope-h">yq</h3><div id="scope-yqs" class="scope-items" role="radiogroup" aria-labelledby="scope-yq-label"></div></div>
+            </div>
+          </div>
+        </dialog>
+      </div>
       <div class="popbox"><button id="ed-more" class="icon-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="ed-more-menu"><svg aria-hidden="true"><use href="#i-more"/></svg></button>
         <div id="ed-more-menu" class="popmenu" role="menu" hidden>
           <button id="more-rename" class="popitem" type="button" role="menuitem"><svg aria-hidden="true"><use href="#i-pencil"/></svg><span id="more-rename-label">Rename…</span></button>
@@ -117,9 +125,7 @@
     <section class="menu-group" aria-labelledby="menu-h-script">
       <h3 id="menu-h-script" class="menu-h">Script</h3>
       <span class="menu-file-row"><button id="menu-file" class="menu-item menu-file" type="button"><svg aria-hidden="true"><use href="#i-file"/></svg><span id="menu-file-name" class="menu-file-name"></span><span id="menu-file-dot" class="file-dot" aria-hidden="true" hidden>●</span><svg class="file-pencil" aria-hidden="true"><use href="#i-pencil"/></svg></button><input id="menu-file-input" class="file-name-input" type="text" spellcheck="false" autocomplete="off" hidden></span>
-      <label class="field phone-only"><span id="kind-label">File</span><select id="kind-menu"></select></label>
-      <label class="field"><span id="shell-label">Shell</span><select id="shell"></select></label>
-      <label id="yq-box" class="field" hidden><span id="yq-label">yq</span><select id="yq"></select></label>
+      <button id="menu-scope" class="menu-item" type="button" aria-haspopup="dialog"><svg aria-hidden="true"><use href="#i-file"/></svg><span id="menu-scope-label">File type and shell…</span><span id="menu-scope-note" class="menu-note"></span></button>
       <button id="menu-open-file" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-open"/></svg><span id="menu-open-label">Open file…</span><kbd id="menu-open-key" class="menu-key"></kbd></button>
       <button id="menu-save" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-save"/></svg><span id="menu-save-label">Save</span><span id="menu-save-name" class="menu-note"></span><kbd id="menu-save-key" class="menu-key"></kbd></button>
       <button id="menu-sample" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-sample"/></svg><span id="menu-sample-label">Load the sample</span></button>
