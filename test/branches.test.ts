@@ -43,6 +43,7 @@ import { panelUpdate } from '../src/ui/panelView';
 import { quickReference } from '../src/ui/reference';
 import { examplesMarkdown, lineSegments, placeExamples, toPlainMarkdown } from '../src/ui/render';
 import { allTokens, explain } from './support/explain';
+import { said } from './support/shells';
 
 // Branches that the tests of each feature do not take: the other language, the rarer inputs, and
 // the ways a helper gives up. Every branch of src/ is to be taken in some test, removed, or marked
@@ -62,7 +63,7 @@ describe('branches no other test takes', () => {
   it('quick reference and panel: both languages', () => {
     assert.ok(quickReference('ja').some((r) => /[ぁ-ん]/.test(r.meaning)));
     const e = explain('yq .a f.yml');
-    const msg = panelUpdate({ lang: 'en', explanation: { ...e, notes: ['yq: mikefarah/yq v4'] }, file: 'a.sh', line: 0, lineText: 'yq .a f.yml', choice: {}, detected: 'zsh', placement: 'last', animations: true });
+    const msg = panelUpdate({ lang: 'en', explanation: { ...e, notes: ['yq: mikefarah/yq v4'] }, file: 'a.sh', line: 0, lineText: 'yq .a f.yml', choice: {}, detected: said('zsh'), placement: 'last', animations: true });
     assert.strictEqual(msg.dialect.shells[0][1], 'Auto (zsh)');
     assert.ok(msg.dialect.yqs!.every(([, name]) => !/[ぁ-ん]/.test(name)));
   });

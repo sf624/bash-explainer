@@ -1,5 +1,6 @@
 import * as assert from 'assert';
-import { detectShell, readShell, type ShellReading } from '../src/dialect';
+import { detectShell, readShell, saidShell, type ShellReading, type ShellSource } from '../src/dialect';
+import { shellOf } from '../src/document';
 import { shellsOf } from '../src/document-setup';
 import { Analyzer } from '../src/analyzer';
 import { autoShellText } from '../src/messages-shell';
@@ -35,48 +36,53 @@ describe('readShell: the shell a script says and where it says it', () => {
     });
   }
 
-  it('shellsOf keeps the source beside the shell, and none for the default', () => {
-    assert.deepStrictEqual(shellsOf(['#!/bin/dash'], 'a.sh', undefined), { forced: undefined, detected: 'dash', detectedFrom: 'shebang' });
-    assert.deepStrictEqual(shellsOf(['echo'], 'a.zsh', 'sh'), { forced: 'sh', detected: 'zsh', detectedFrom: 'filename' });
-    assert.deepStrictEqual(shellsOf(['echo'], 'a.sh', undefined), { forced: undefined, detected: undefined, detectedFrom: 'default' });
+  it('shellsOf keeps the reading, and saidShell says none for the default', () => {
+    assert.deepStrictEqual(shellsOf(['#!/bin/dash'], 'a.sh', undefined), { forced: undefined, detected: { shell: 'dash', source: 'shebang' } });
+    assert.deepStrictEqual(shellsOf(['echo'], 'a.zsh', 'sh'), { forced: 'sh', detected: { shell: 'zsh', source: 'filename' } });
+    const none = shellsOf(['echo'], 'a.sh', undefined);
+    assert.deepStrictEqual(none.detected, { shell: 'bash', source: 'default' });
+    assert.strictEqual(saidShell(none.detected), undefined);
+    assert.strictEqual(saidShell(undefined), undefined);
+    assert.strictEqual(saidShell({ shell: 'bash', source: 'filename' }), 'bash');
+    assert.strictEqual(shellOf({ forced: 'sh', detected: { shell: 'zsh', source: 'filename' } }), 'sh');
+    assert.strictEqual(shellOf({ detected: { shell: 'zsh', source: 'filename' } }), 'zsh');
+    assert.strictEqual(shellOf({ detected: none.detected }), undefined);
   });
 });
 
 describe('the wording of the automatic shell', () => {
-  const rows: [Parameters<typeof autoShellText>[2], Parameters<typeof autoShellText>[3], string, string][] = [
-    // shell, source, then the short form in ja, en
-    ['bash', 'shebang', 'bash（自動）', 'bash (auto)'],
-    ['zsh', 'filename', 'zsh（自動）', 'zsh (auto)'],
-    ['sh', 'directive', 'POSIX sh（自動）', 'POSIX sh (auto)'],
-    [undefined, 'default', 'bash（自動）', 'bash (auto)'],
-  ];
-  for (const [shell, source, ja, en] of rows) {
-    it(`short: ${en}`, () => {
-      assert.strictEqual(autoShellText('ja', 'short', shell, source), ja);
-      assert.strictEqual(autoShellText('en', 'short', shell, source), en);
-    });
-  }
+  const r = (shell: ShellReading['shell'], source: ShellSource): ShellReading => ({ shell, source });
+  it('short: the chip', () => {
+    for (const [reading, ja, en] of [
+      [r('bash', 'shebang'), 'bash（自動）', 'bash (auto)'], [r('zsh', 'filename'), 'zsh（自動）', 'zsh (auto)'],
+      [r('sh', 'directive'), 'POSIX sh（自動）', 'POSIX sh (auto)'], [undefined, 'bash（自動）', 'bash (auto)'], [r('bash', 'default'), 'bash（自動）', 'bash (auto)'],
+    ] as const) {
+      assert.strictEqual(autoShellText('ja', 'short', reading), ja);
+      assert.strictEqual(autoShellText('en', 'short', reading), en);
+    }
+  });
 
   it('long and setting forms say each source', () => {
-    const long = (source: Parameters<typeof autoShellText>[3]) => [autoShellText('en', 'long', 'dash', source), autoShellText('ja', 'long', 'dash', source)];
+    const long = (source: ShellSource) => [autoShellText('en', 'long', r('dash', source)), autoShellText('ja', 'long', r('dash', source))];
     assert.deepStrictEqual(long('shebang'), ['Auto: dash (from #!)', '自動: dash（#! 行から）']);
-    assert.deepStrictEqual(long('directive'), ['Auto: dash (from a shellcheck directive)', '自動: dash（shellcheck の指示行から）']);
+    assert.deepStrictEqual(long('directive'), ['Auto: dash (from a ShellCheck directive)', '自動: dash（ShellCheck の指示コメントから）']);
     assert.deepStrictEqual(long('filename'), ['Auto: dash (from the file name)', '自動: dash（ファイル名から）']);
-    assert.deepStrictEqual(autoShellText('en', 'long', undefined), 'Auto: bash (default)');
-    assert.deepStrictEqual(autoShellText('ja', 'long', undefined), '自動: bash（既定）');
-    assert.strictEqual(autoShellText('en', 'setting', 'bash', 'shebang'), 'Auto (now: bash, from #!)');
-    assert.strictEqual(autoShellText('ja', 'setting', 'bash', 'shebang'), '自動（今: bash、#! 行から）');
-    assert.strictEqual(autoShellText('en', 'setting', undefined), 'Auto (now: bash, default)');
-    assert.strictEqual(autoShellText('ja', 'setting', 'ksh', 'filename'), '自動（今: ksh93、ファイル名から）');
+    assert.strictEqual(autoShellText('en', 'long'), 'Auto: bash (default)');
+    assert.strictEqual(autoShellText('ja', 'long', r('bash', 'default')), '自動: bash（既定）');
+    assert.strictEqual(autoShellText('en', 'setting', r('bash', 'shebang')), 'Auto (now: bash, from #!)');
+    assert.strictEqual(autoShellText('ja', 'setting', r('bash', 'shebang')), '自動（今: bash、#! 行から）');
+    assert.strictEqual(autoShellText('en', 'setting'), 'Auto (now: bash, the default)');
+    assert.strictEqual(autoShellText('ja', 'setting', r('bash', 'default')), '自動（今: 既定の bash）');
+    assert.strictEqual(autoShellText('ja', 'setting', r('ksh', 'filename')), '自動（今: ksh93、ファイル名から）');
   });
 
   it("the panel's shell list says it, as it always did", () => {
     const ex = new Analyzer('en').explainLine(createUnbashParser().parse('echo hi'), 0);
-    const auto = (lang: 'ja' | 'en', detected?: 'zsh', detectedFrom?: 'filename') =>
-      panelUpdate({ lang, explanation: ex, file: 'a.sh', line: 0, lineText: 'echo hi', choice: {}, detected, detectedFrom, placement: 'first', animations: true }).dialect.shells[0];
-    assert.deepStrictEqual(auto('en', 'zsh', 'filename'), ['auto', 'Auto (zsh)']);
-    assert.deepStrictEqual(auto('ja', 'zsh', 'filename'), ['auto', '自動（zsh）']);
+    const auto = (lang: 'ja' | 'en', detected?: ShellReading) =>
+      panelUpdate({ lang, explanation: ex, file: 'a.sh', line: 0, lineText: 'echo hi', choice: {}, detected, placement: 'first', animations: true }).dialect.shells[0];
+    assert.deepStrictEqual(auto('en', r('zsh', 'filename')), ['auto', 'Auto (zsh)']);
+    assert.deepStrictEqual(auto('ja', r('zsh', 'filename')), ['auto', '自動（zsh）']);
     assert.deepStrictEqual(auto('en'), ['auto', 'Auto']);
-    assert.deepStrictEqual(auto('ja'), ['auto', '自動']);
+    assert.deepStrictEqual(auto('ja', r('bash', 'default')), ['auto', '自動']);
   });
 });

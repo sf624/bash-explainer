@@ -3,7 +3,7 @@ import * as path from 'path';
 import { descendants } from '../src/syntax/tree';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
-import { detectShell } from '../src/dialect';
+import { readShell } from '../src/dialect';
 import { documentIssues, explainDocumentLine, noteIssues, ShellDocument } from '../src/document';
 import { extractShell } from '../src/hosts';
 import { isProblem, MESSAGES } from '../src/messages';
@@ -43,7 +43,7 @@ describe('documents without VS Code', () => {
 
   it('checks for the forced shell first, then the detected one', () => {
     const text = '#!/bin/sh\n[[ -f x ]] && echo y';
-    const detected = detectShell(text, 'x.sh');
+    const detected = readShell(text, 'x.sh');
     // (It is also the last command of a script run as a program: `script-last-test-returns-status`.)
     assert.deepStrictEqual(documentIssues(script(text), 'en', { detected }).map((i) => i.code), ['dbracket', 'script-last-test-returns-status']);
     assert.deepStrictEqual(documentIssues(script(text), 'en', { forced: 'bash', detected }).map((i) => i.code), ['script-last-test-returns-status']);
@@ -52,7 +52,7 @@ describe('documents without VS Code', () => {
 
   it('leaves out ignored codes and codes disabled in the file', () => {
     const text = '#!/bin/sh\n[[ -f x ]] && echo -e y';
-    const detected = detectShell(text, 'x.sh');
+    const detected = readShell(text, 'x.sh');
     assert.deepStrictEqual(documentIssues(script(text), 'en', { detected }, ['echoE', 'script-last-test-returns-status']).map((i) => i.code), ['dbracket']);
     const disabled = '#!/bin/sh\n# bash-explainer disable=dbracket,script-last-test-returns-status\n[[ -f x ]] && echo -e y';
     assert.deepStrictEqual(documentIssues(script(disabled), 'en', { detected }).map((i) => i.code), ['echoE']);

@@ -6,6 +6,17 @@ import { braceKind, type SyntaxNode, wordBraces } from './syntax/tree';
 export type Shell = 'bash' | 'sh' | 'dash' | 'ash' | 'yash' | 'ksh' | 'mksh' | 'zsh';
 export type RealShell = Exclude<Shell, 'sh'>;
 
+/** Where the shell a script is read as comes from: a ShellCheck directive, the `#!` line, the file name, or none of them (the default, bash). */
+export type ShellSource = 'directive' | 'shebang' | 'filename' | 'default';
+
+/** The shell a script is read as when it is not forced, and where that comes from (`default`: it says none, so bash). */
+export interface ShellReading { shell: Shell; source: ShellSource }
+
+/** The shell a reading says: undefined for the default (and for no reading), the shell the explainers take when the file names none. */
+export function saidShell(reading: ShellReading | undefined): Shell | undefined {
+  return reading && reading.source !== 'default' ? reading.shell : undefined;
+}
+
 /**
  * Where each bash feature works, measured with bash 5.2, dash 0.5.12, busybox 1.36 ash, yash 2.55,
  * ksh93u+m 1.0.8, mksh R59 and zsh 5.9 (see test/dialect.test.ts, which re-checks the installed ones).

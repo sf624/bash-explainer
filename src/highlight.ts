@@ -4,6 +4,7 @@
 // are readonly or exported. Pure: no DOM, no editor; the web page turns the spans into marks, and the editors get
 // them as semantic tokens (src/semanticTokens.ts). docs/design/highlighting.md has the design.
 import type { Shell } from './dialect';
+import { saidShell } from './shellfeatures';
 import type { ShellDocument, Shells } from './document';
 import type { CommandSpec } from './argv/spec';
 import { actsOnNames } from './argv/query';
@@ -345,7 +346,7 @@ export function documentHighlight(doc: ShellDocument, opts: DocumentHighlightOpt
   if (!extracted) {
     const starts = lineStarts(tree.text);
     const range = opts.lines && offsetsOf(starts, tree.text.length, opts.lines);
-    return lineSpans(highlight(tree, { range, shell: forced ?? opts.shells?.detected }), tree.text, starts);
+    return lineSpans(highlight(tree, { range, shell: forced ?? saidShell(opts.shells?.detected) }), tree.text, starts);
   }
   const lines: LineSpan[] = [];
   const done = new Set<SyntaxTree>();

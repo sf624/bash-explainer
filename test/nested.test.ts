@@ -17,6 +17,7 @@ import { staticWordText, staticWordValue } from '../src/staticword';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, fields, type SyntaxNode, type SyntaxTree } from '../src/syntax/tree';
 import { allTokens } from './support/explain';
+import { said } from './support/shells';
 
 const parser = createUnbashParser();
 const hasBash = spawnSync('bash', ['--version']).status === 0;
@@ -496,7 +497,7 @@ describe('nested scripts: the explanation', () => {
 });
 
 describe('nested scripts: the issues of a string another shell reads', () => {
-  const issues = (src: string, shell?: Shell) => documentIssues({ lines: src.split('\n'), tree: parser.parse(src) }, 'en', { detected: shell })
+  const issues = (src: string, shell?: Shell) => documentIssues({ lines: src.split('\n'), tree: parser.parse(src) }, 'en', { detected: said(shell) })
     .map((i) => `${i.code} ${i.startLine}:${i.startCol}-${i.endLine}:${i.endCol} ${src.split('\n')[i.startLine].slice(i.startCol, i.endCol)}`);
 
   it('reports them at their places in the document', () => {

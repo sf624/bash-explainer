@@ -1,4 +1,4 @@
-import { SHELL_NAMES, type Shell, type ShellSource } from './dialect';
+import { SHELL_NAMES, type ShellReading, type ShellSource } from './dialect';
 import type { Lang } from './i18n';
 
 // The wording of the automatic shell ("Shell: auto"), in every place the product says it (docs/design/sources.md, SB4;
@@ -6,9 +6,9 @@ import type { Lang } from './i18n';
 // the texts are here, so that the page, the panel and the editor's header say it alike.
 
 /**
- * The forms of the wording, for the bash found `shell` from `source`:
+ * The forms of the wording of a `ShellReading`:
  * - `option`: the "auto" entry of the panel's shell list, "Auto (bash)"; bare "Auto" when the file says no shell
- *   (`shell` is undefined), as the list has always read.
+ *   (the reading is the default), as the list has always read.
  * - `short`: the editor header's chip, "bash (auto)".
  * - `long`: the chip's popover, which is about this file, "Auto: bash (from #!)".
  * - `setting`: the Shell setting, a preference for every script, "Auto (now: bash, from #!)".
@@ -19,22 +19,25 @@ const AUTO = { ja: '自動', en: 'Auto' };
 
 /** Where the shell comes from, as the long forms say it. */
 const FROM: Record<ShellSource, { ja: string; en: string }> = {
-  directive: { ja: 'shellcheck の指示行から', en: 'from a shellcheck directive' },
+  directive: { ja: 'ShellCheck の指示コメントから', en: 'from a ShellCheck directive' },
   shebang: { ja: '#! 行から', en: 'from #!' },
   filename: { ja: 'ファイル名から', en: 'from the file name' },
   default: { ja: '既定', en: 'default' },
 };
 
-/** The automatic shell in words. `shell` is the one the file says (undefined: it says none, so bash and `default`). */
-export function autoShellText(lang: Lang, form: AutoShellForm, shell: Shell | undefined, source: ShellSource = 'default'): string {
+/** The automatic shell in words. `reading` is what `readShell` gave (undefined: nothing was read, so bash by default). */
+export function autoShellText(lang: Lang, form: AutoShellForm, reading?: ShellReading): string {
   const ja = lang === 'ja';
-  const name = SHELL_NAMES[shell ?? 'bash'];
+  const { shell, source } = reading ?? { shell: 'bash', source: 'default' } as const;
+  const name = SHELL_NAMES[shell];
   const auto = AUTO[lang];
   const from = FROM[source][lang];
   switch (form) {
-    case 'option': return !shell ? auto : ja ? `${auto}（${name}）` : `${auto} (${name})`;
+    case 'option': return source === 'default' ? auto : ja ? `${auto}（${name}）` : `${auto} (${name})`;
     case 'short': return ja ? `${name}（${auto}）` : `${name} (${auto.toLowerCase()})`;
     case 'long': return ja ? `${auto}: ${name}（${from}）` : `${auto}: ${name} (${from})`;
-    case 'setting': return ja ? `${auto}（今: ${name}、${from}）` : `${auto} (now: ${name}, ${from})`;
+    case 'setting':
+      if (source === 'default') return ja ? `${auto}（今: ${FROM.default.ja}の ${name}）` : `${auto} (now: ${name}, the default)`;
+      return ja ? `${auto}（今: ${name}、${from}）` : `${auto} (now: ${name}, ${from})`;
   }
 }

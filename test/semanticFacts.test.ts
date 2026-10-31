@@ -1,11 +1,13 @@
 // The colours the models decide (src/semanticFacts.ts, painted by src/highlight.ts), against bash and the tools:
 // what a command name runs (`type -t` at that place), which words a command reads as options (what the tool does with
 // them), and which variables are readonly or exported where they are used (`declare -p`).
+import type { Shells } from '../src/document';
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import { documentHighlight, highlight, HighlightKind } from '../src/highlight';
 import { extractShell } from '../src/hosts';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { said } from './support/shells';
 
 const parser = createUnbashParser();
 
@@ -143,15 +145,15 @@ describe('the colours of host files, one shell per step', () => {
   });
 
   it("reads names with the shell the explanations use: the one forced, else the file's, or the step's", () => {
-    const kindOf = (text: string, shells: { forced?: 'sh'; detected?: 'sh' | 'bash' }, kind?: Parameters<typeof extractShell>[0]) => {
+    const kindOf = (text: string, shells: Shells, kind?: Parameters<typeof extractShell>[0]) => {
       const lines = text.split('\n');
       const extracted = kind && extractShell(kind, text);
       const doc = { lines, ...(extracted ? { extracted } : {}), tree: parser.parse(extracted ? extracted.text : text) };
       return documentHighlight(doc, { shells }).filter((s) => lines[s.line].slice(s.from, s.to) === 'mapfile').map((s) => s.kind);
     };
     assert.deepStrictEqual(kindOf('mapfile a', {}), ['builtin']);
-    assert.deepStrictEqual(kindOf('mapfile a', { detected: 'sh' }), ['command']);
-    assert.deepStrictEqual(kindOf('mapfile a', { forced: 'sh', detected: 'bash' }), ['command']);
+    assert.deepStrictEqual(kindOf('mapfile a', { detected: said('sh') }), ['command']);
+    assert.deepStrictEqual(kindOf('mapfile a', { forced: 'sh', detected: said('bash') }), ['command']);
     const workflow = 'jobs:\n  a:\n    runs-on: x\n    steps:\n      - run: mapfile a\n';
     assert.deepStrictEqual(kindOf(workflow, {}, 'yaml'), ['builtin']);
     assert.deepStrictEqual(kindOf(workflow, { forced: 'sh' }, 'yaml'), ['command']);

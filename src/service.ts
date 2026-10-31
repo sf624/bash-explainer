@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
-import { readShell, Shell, type ShellReading } from './dialect';
+import { readShell, saidShell, Shell, type ShellReading } from './dialect';
 import { DeadRange, DocumentIssue, diagnosticsFor, explainDocumentLine, ShellDocument, Shells } from './document';
 import { HOST_LANGUAGES, HOST_PATTERNS, kindOfDocument, openDocument, semanticSelector } from './document-setup';
 import { Extracted, extractShell, HostKind } from './hosts';
@@ -123,13 +123,7 @@ export class ExplainService implements vscode.Disposable {
 
   /** The shell the document is written for: the `shell` setting, else detected from the file. */
   shellOf(doc: vscode.TextDocument): Shell | undefined {
-    return this.forcedShell(doc) ?? this.detectedShell(doc);
-  }
-
-  /** The shell the file itself says (shebang, ShellCheck directive, file name). */
-  detectedShell(doc: vscode.TextDocument): Shell | undefined {
-    const reading = this.shellReading(doc);
-    return reading.source === 'default' ? undefined : reading.shell;
+    return this.forcedShell(doc) ?? saidShell(this.shellReading(doc));
   }
 
   /** The shell the file itself says and where that comes from (`default`: it says none). */
@@ -180,7 +174,7 @@ export class ExplainService implements vscode.Disposable {
 
   /** The shells a document is explained with: the one chosen (panel, setting) and the one the file says. */
   shells(doc: vscode.TextDocument): Shells {
-    return { forced: this.forcedShell(doc), detected: this.detectedShell(doc) };
+    return { forced: this.forcedShell(doc), detected: this.shellReading(doc) };
   }
 
   private explainOptions(doc: vscode.TextDocument): ExplainOptions {
