@@ -63,6 +63,7 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - `arrayKind` (src/explain/reads.ts) decides from the text of the trust's first reason (`unseenDeclarations`), not from the state's `opaque` at the node, so it ignores where unread code runs (found in the review of #536).
 - `#!/bin/bash -i` then `ll` still gives `distro-alias-in-script`: `readAs` does not know the interactive shebang, whose shell may have the distribution's alias (found in the review of #536).
 - `export "$1"` does not make the state `opaque`, so `foo=1; export "$1"; bash -c 'echo $foo'` still says `foo` is not exported (found in the review of #536).
+- A trap's action of text not known makes the state `opaque` from the `trap` command on, though an `EXIT` trap cannot fire before the lines that follow it, so checks after it become caveats too early (found in the review of #536).
 
 ## Waiting on the maintainer
 

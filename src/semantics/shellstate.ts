@@ -401,6 +401,17 @@ export function exportedValue(st: ShellState, name: string, inherited: (name: st
   return v.set === 'on' && v.value !== undefined ? v.value : null;
 }
 
+/**
+ * What the walk read of a fact, where code it does not read may have changed it: `unread` where it read `off` but a
+ * path before here ran such code (`opaque`: a file read with `source` or `.`, an `eval` or a trap's action of text not
+ * known, another shell's startup files), which may have turned it on. The one rule of the checks that say a thing is
+ * off there: an alias not expanded (`expand_aliases`, src/semantics/names.ts), a function not exported to another
+ * shell (names.ts), a variable that another shell does not have (that shell's state is `opaque` then: walk/child.ts).
+ */
+export function unlessUnread(st: ShellState, state: Tri): Tri | 'unread' {
+  return state === 'off' && st.opaque ? 'unread' : state;
+}
+
 /** The state of attribute `letter` of variable `name`. */
 export function attribute(st: ShellState, name: string, letter: string): Tri {
   return st.variables.get(name)?.attrs[letter]?.state ?? 'off';

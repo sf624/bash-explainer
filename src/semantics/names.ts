@@ -21,6 +21,7 @@ import { field, fields, nameText, prefixAssignments, type SyntaxNode } from '../
 import { aliasExpandsNext, builtinParse, quotedName, wordsAfterAlias, wrapped } from './effects';
 import { type ExecEnv, linksAfter, reachOf, type SlotLink, subshellReasons } from './env';
 import { type AliasState, type CommandEntry, type FunctionState, hashOutcomes, option, type ShellState, type StateModel, type Tri } from './state';
+import { unlessUnread } from './shellstate';
 import { docIndex } from './state';
 
 /** bash's reserved words: keywords where a command name may start (3.2, and `[[ ]]`). */
@@ -76,6 +77,12 @@ export interface Missed {
   by?: SyntaxNode;
   /** `not-passed`, `not-imported`, `program`: the slot that runs the command. */
   slot?: SlotLink;
+  /**
+   * The miss may not happen (`expand_aliases`, `not-exported`): `unread`, a path before here ran code the walk does not
+   * read, which may turn expand_aliases on or export the function (`unlessUnread`, src/semantics/shellstate.ts);
+   * `function`, the alias's name is a function defined on some paths before here, which runs on those.
+   */
+  maybe?: 'unread' | 'function';
 }
 
 /** What a command name runs, in bash's order (3.7.2). */
@@ -281,7 +288,8 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
       const target = first !== undefined ? resolve(model, first, at, opts, place, inner) : undefined;
       return { kind: 'alias', name, alias, sure, ...(target ? { target } : {}), ...(sure ? {} : { otherwise: resolve(model, name, at, opts, place, inner) }) };
     }
-    else missed = alias && alias.state !== 'off' ? { kind: 'alias', def: alias.at, why: 'expand_aliases' } : missedAlias(model, name, at, alias, docIndex(model.unit(at)));
+    else missed = alias && alias.state !== 'off' ? { kind: 'alias', def: alias.at, why: 'expand_aliases', ...(unlessUnread(parse, expands) === 'unread' ? { maybe: 'unread' as const } : {}) }
+      : missedAlias(model, name, at, alias, docIndex(model.unit(at)));
   }
 
   // Functions: not for `command` and `builtin`, nor in a program; in another shell, only those it gets.
@@ -293,7 +301,7 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
     if (why && !(why.why === 'later' && place.sourced)) missed ??= why;
     return builtinOrFile(name, opts, place, missed);
   }
-  const miss = (why: MissReason, by?: SlotLink): NameResolution => builtinOrFile(name, opts, place, { kind: 'function', def: defined.def, why, ...(by ? { slot: by } : {}) });
+  const miss = (why: MissReason, by?: SlotLink, maybe?: Missed['maybe']): NameResolution => builtinOrFile(name, opts, place, { kind: 'function', def: defined.def, why, ...(by ? { slot: by } : {}), ...(maybe ? { maybe } : {}) });
   if (exec) return miss('program', slot);
   if (lookup) return miss(lookup === 'builtins-only' ? 'builtin' : 'command');
   let sure = defined.state === 'on';
@@ -302,10 +310,12 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
     // (What reached this shell is in its state: only the command's own slots, `linksAfter`.)
     const reach = reachOf(linksAfter(opts.env!, model.env(at)));
     const imported = imports(slot!.shell);
+    const exported = unlessUnread(st, defined.exported);
     if (reach.functions === 'none') return miss('not-passed', reach.blocker);
-    if (defined.exported === 'off') return miss('not-exported', slot);
+    // (Not exported as far as the walk read, after code it does not read, which may export it: a miss that may not happen.)
+    if (exported === 'off' || exported === 'unread') return miss('not-exported', slot, exported === 'unread' ? 'unread' : undefined);
     if (imported === 'off') return miss('not-imported', slot);
-    sure &&= defined.exported === 'on' && imported === 'on';
+    sure &&= exported === 'on' && imported === 'on';
     // (`sh` may be dash.)
     if (imported === 'unknown') missed = { kind: 'function', def: defined.def, why: 'not-imported', slot: slot! };
   }
@@ -319,6 +329,8 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
   // (In another shell, a function of the script that `sh` may not read, or that only its startup files would define.)
   const maybe = sure ? {} : { maybe: defined.imported === 'sh' ? 'import' as const : defined.imported ? 'startup' as const
     : model.definitions.functions.get(name)!.some((d) => before(d, at)) ? 'branch' as const : 'later' as const };
+  // (An alias of that name that bash does not expand: the function runs, on the paths that define it.)
+  if (missed?.kind === 'alias' && missed.why === 'expand_aliases' && !sure) missed = { ...missed, maybe: missed.maybe ?? 'function' };
   const sourced = 'maybe' in maybe && maybe.maybe === 'startup' && place.sourced ? { sourced: place.sourced } : {};
   return { kind: 'function', name, fn: defined, sure, ...maybe, ...sourced, ...(shadows ? { shadows } : {}), ...(sure ? {} : { otherwise: builtin }), ...(missed ? { missed } : {}) };
 }
@@ -540,8 +552,11 @@ export interface NameOther {
   reach: string[];
   /** A builtin turned off by `enable -n` here: `enable NAME` turns it on again. */
   off?: boolean;
-  /** An alias that bash does not expand here: a bash script without `shopt -s expand_aliases`. */
-  unexpanded?: boolean;
+  /**
+   * An alias that bash does not expand here: a bash script without `shopt -s expand_aliases`; `maybe` where code the
+   * walk does not read ran before, which may turn it on (`Missed.maybe`).
+   */
+  unexpanded?: true | 'maybe';
   /** A program's usual path, from the dictionary (the model does not know the file system): absent, one in PATH. */
   path?: string;
 }
@@ -609,7 +624,7 @@ export function nameFacts(res: NameResolution, opts: {
   if (RESERVED.has(name)) add({ kind: 'keyword', reach: [] });
   const aliasMissed = (bare as { missed?: Missed }).missed;
   if (bare.kind === 'alias') add({ kind: 'alias', reach: [name] });
-  else if (aliasMissed?.kind === 'alias' && aliasMissed.why === 'expand_aliases') add({ kind: 'alias', reach: [], unexpanded: true });
+  else if (aliasMissed?.kind === 'alias' && aliasMissed.why === 'expand_aliases') add({ kind: 'alias', reach: [], unexpanded: aliasMissed.maybe === 'unread' ? 'maybe' : true });
   // (A keyword or an alias before it: quoted, the name skips both.)
   if (bare.kind === 'function') add({ kind: 'function', reach: [name] });
   else if (quoted.kind === 'function') add({ kind: 'function', reach: [`\\${name}`] });

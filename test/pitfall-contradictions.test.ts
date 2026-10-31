@@ -16,7 +16,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
-import { explain } from './support/explain';
+import { allTokens, explain } from './support/explain';
 import { runContained } from './support/contained';
 
 /** The note of problem `code` on line `line` of `src` (the last line when not given). */
@@ -101,7 +101,7 @@ describe('pitfalls that bash contradicted', function () {
       // (A caveat: run as a script, `bash aliases.sh`, it is "command not found".)
       const caveat = noteOf(lines, 'alias-maybe-not-expanded', 1)!;
       assert.strictEqual(caveat.level, 'info');
-      assert.match(caveat.body, /this file has no shebang\. Read by an interactive shell, as `\.bashrc` is, `hi` is expanded; but run as a script \(`bash file`\), bash does not expand aliases, so it is "command not found"/);
+      assert.match(caveat.body, /run as a script \(`bash file`\), `hi` is "command not found"\. But this file has no shebang: read by an interactive shell, as `\.bashrc` is, it is expanded\./);
       assert.match((await bash(['aliases.sh'])).stderr, /hi: command not found/);
       const token = explain(lines, 1).items[0];
       assert.match(token.explanation, /replaced by `echo hi`, but only when an interactive shell reads this file/);
@@ -447,6 +447,8 @@ describe('pitfalls that bash contradicted', function () {
       // (The shell it starts has them: `set -u` does not stop it there; it does at a name sudo neither sets nor keeps.)
       assert.strictEqual(noteOf("sudo bash -c 'set -u; echo \"$SUDO_USER $HOME\"'", 'nounset-unbound', 0), undefined);
       assert.ok(noteOf("sudo bash -c 'set -u; echo \"$USERNAME\"'", 'nounset-unbound', 0));
+      // (`sudo -E` keeps the environment, and sets the `SUDO_*` variables still: sudo(8), ENVIRONMENT.)
+      assert.strictEqual(noteOf("sudo -E bash -c 'set -u; echo \"$SUDO_USER\"'", 'nounset-unbound', 0), undefined);
       // (`variableIn`, for every reader: it is there, and no link drops it.)
       const tree = createUnbashParser().parse("export USER=x USERNAME=x; sudo bash -c 'echo $USER'");
       const model = shellState(tree, 'bash');
@@ -478,29 +480,45 @@ describe('pitfalls that bash contradicted', function () {
         assert.deepStrictEqual(codes(script, 2, /^alias-/), [], shebang);
         assert.match(explain(script, 2).items[0].explanation, /replaced by `echo ALIASED`/, shebang);
       }
-      // (A function of that name runs: no "command not found".)
+      // (A function of that name runs: no "command not found". Defined on some paths only, it runs on those: a caveat.)
       const fn = "#!/bin/bash\nal() { echo FUNC; }\nalias al='echo ALIASED'\nal\n";
       assert.deepStrictEqual(await run('function.sh', fn), { stdout: 'FUNC\n', stderr: '', status: 0 });
       assert.deepStrictEqual(codes(fn, 3, /^alias-/), []);
       assert.match(explain(fn, 3).items[0].explanation, /function/i);
-      // (After a file read with `source`, which may turn expand_aliases on: a caveat, and the explanation says so.)
+      const some = "#!/bin/bash\nalias al='echo ALIASED'\nif [ \"$1\" ]; then al() { echo FUNC; }; fi\nal\n";
+      assert.strictEqual((await run('some.sh', some, ['x'])).stdout, 'FUNC\n');
+      assert.match((await run('some.sh', some)).stderr, /al: command not found/);
+      const fnMaybe = noteOf(some, 'alias-not-expanded-in-script', 3)!;
+      assert.strictEqual(fnMaybe.level, 'info');
+      assert.match(fnMaybe.body, /"command not found", unless the function `al`, defined on some paths before here, runs instead\./);
+      // (After code the model does not read, a file read with `source` or an `eval` of text not known, alike: it may
+      // turn expand_aliases on, a caveat; the token and the name's hint take the same clause from the catalog.)
       write('aliases.sh', 'shopt -s expand_aliases\n');
-      const sourced = "#!/bin/bash\nalias al='echo ALIASED'\n. ./aliases.sh\nal\n";
-      assert.strictEqual((await run('sourced.sh', sourced)).stdout, 'ALIASED\n');
-      const maybe = noteOf(sourced, 'alias-not-expanded-in-script', 3)!;
-      assert.strictEqual(maybe.level, 'info');
-      assert.match(maybe.body, /"command not found", unless code that runs before it and is not read here, such as a file read with `source` or an `eval`, turns `expand_aliases` on\./);
-      assert.match(explain(sourced, 3).items[0].explanation, /"command not found" \(unless code not read here, such as a file read with `source` or an `eval`, turns it on\)/);
-      assert.match(explain(sourced, 3, 'ja').items[0].explanation, /（ここで読まないコード、たとえば `source` で読み込むファイルや `eval` が有効にしていなければ）/);
-      // (Still said where bash fails: before that code, or with no such code, whatever the trust of the script.)
+      for (const [name, sourced, args] of [
+        ['sourced.sh', "#!/bin/bash\nalias al='echo ALIASED'\n. ./aliases.sh\nal\n", []],
+        ['eval.sh', "#!/bin/bash\nalias al='echo ALIASED'\neval \"$1\"\nal\n", ['shopt -s expand_aliases']],
+      ] as const) {
+        assert.strictEqual((await run(name, sourced, [...args])).stdout, 'ALIASED\n', name);
+        const maybe = noteOf(sourced, 'alias-not-expanded-in-script', 3)!;
+        assert.strictEqual(maybe.level, 'info', name);
+        assert.match(maybe.body, /"command not found", unless code that runs before it and is not read here, such as a file read with `source` or an `eval`, turns `expand_aliases` on\./, name);
+        assert.match(explain(sourced, 3).items[0].explanation, /"command not found", unless code that runs before it and is not read here, such as a file read with `source` or an `eval`, turns `expand_aliases` on\./, name);
+        assert.match(explain(sourced, 3, 'ja').items[0].explanation, /（この前に実行される、`source` で読み込むファイルや `eval` のようにここでは読まないコードが `expand_aliases` を有効にしていなければ）/, name);
+        assert.strictEqual(explain(sourced, 3).items[0].name?.also.find((o) => o.kind === 'alias')?.unexpanded, 'maybe', name);
+      }
+      // (Still said where bash fails: before that code, on the line that runs it (bash reads the whole line first), or
+      // with no such code, whatever the trust of the script.)
       for (const [name, plain, line] of [
         ['plain.sh', "#!/bin/bash\nalias al='echo ALIASED'\nal\n", 2],
         ['before.sh', "#!/bin/bash\nalias al='echo ALIASED'\nal\n. ./aliases.sh\n", 2],
+        ['same-line.sh', "#!/bin/bash\nalias al='echo ALIASED'\n. ./aliases.sh; al\n", 2],
         ['locale.sh', "#!/bin/bash\nLC_ALL=en_US.UTF-8\nalias al='echo ALIASED'\nal\n", 3],
       ] as const) {
-        assert.strictEqual((await run(name, plain)).status, name === 'before.sh' ? 0 : 127, name);
-        assert.match((await run(name, plain)).stderr, /al: command not found/, name);
+        const r = await run(name, plain);
+        assert.strictEqual(r.status, name === 'before.sh' ? 0 : 127, name);
+        assert.match(r.stderr, /al: command not found/, name);
         assert.strictEqual(noteOf(plain, 'alias-not-expanded-in-script', line)?.level, 'warning', name);
+        assert.strictEqual(allTokens(explain(plain, line).items).find((t) => t.name && t.label === 'al')!.name!.also.find((o) => o.kind === 'alias')?.unexpanded, true, name);
       }
     });
 
@@ -518,19 +536,32 @@ describe('pitfalls that bash contradicted', function () {
       assert.strictEqual(noteOf('#!/bin/bash\nlocal y=2\n', 'local-outside-function', 1)!.level, 'warning');
     });
 
-    it('variable-not-exported: code the model does not read may export the variable', async () => {
-      write('exports.sh', 'export foo\n');
+    it('variable-not-exported and function-not-in-new-shell-export: code the model does not read may export it', async () => {
+      write('exports.sh', 'export foo\nexport -f f 2>/dev/null\n');
       write('sets.sh', 'foo=2\n');
+      // (A caveat after such code, in this shell (it may export the name) or in the string before the read (it may set
+      // it): `unread`.)
       for (const [name, script, args, out] of [
         ['sourced.sh', "#!/bin/bash\nfoo=1\n. ./exports.sh\nbash -c 'echo \"[$foo]\"'\n", [], '[1]\n'],
         ['eval.sh', "#!/bin/bash\nfoo=1\neval \"$1\"\nbash -c 'echo \"[$foo]\"'\n", ['export foo'], '[1]\n'],
-        // (The string reads a file before it reads the variable, which may set it.)
         ['string.sh', "#!/bin/bash\nfoo=1\nbash -c '. ./sets.sh; echo \"[$foo]\"'\n", [], '[2]\n'],
       ] as const) {
         assert.strictEqual((await run(name, script, [...args])).stdout, out, name);
         // (The line of `bash -c`, the last one.)
-        assert.deepStrictEqual(codes(script, script.trimEnd().split('\n').length - 1, /^variable-not/), [], name);
+        const note = noteOf(script, 'variable-not-exported', script.trimEnd().split('\n').length - 1)!;
+        assert.strictEqual(note.level, 'info', name);
+        assert.match(note.body, /unless code that runs before it and is not read here, such as a file read with `source` or an `eval`, sets it there\./, name);
       }
+      const fn = "#!/bin/bash\nf() { echo FUNC; }\n. ./exports.sh\nbash -c f\n";
+      assert.strictEqual((await run('function.sh', fn)).stdout, 'FUNC\n');
+      const fnNote = noteOf(fn, 'function-not-in-new-shell-export', 3)!;
+      assert.strictEqual(fnNote.level, 'info');
+      assert.match(fnNote.body, /does not have this script's function `f`, unless code that runs before it and is not read here, such as a file read with `source` or an `eval`, defines it there\./);
+      // (bash exports no array, whatever that code does: still a warning.)
+      write('exports-arr.sh', 'export arr\n');
+      const arr = "#!/bin/bash\narr=(a b)\n. ./exports-arr.sh\nbash -c 'echo \"[$arr]\"'\n";
+      assert.strictEqual((await run('array.sh', arr)).stdout, '[]\n');
+      assert.strictEqual(noteOf(arr, 'variable-not-exported', 3)!.level, 'warning');
       // (Still said where no code the model does not read runs before: after the command, in this shell or in the
       // string, or with a locale the trust does not know.)
       for (const [name, plain, line] of [
@@ -539,7 +570,7 @@ describe('pitfalls that bash contradicted', function () {
         ['locale.sh', "#!/bin/bash\nfoo=1\nbash -c 'echo \"[$foo]\"'\nexport LC_ALL=en_US.UTF-8\n", 2],
       ] as const) {
         assert.strictEqual((await run(name, plain)).stdout, '[]\n', name);
-        assert.deepStrictEqual(codes(plain, line, /^variable-not/), ['variable-not-exported'], name);
+        assert.strictEqual(noteOf(plain, 'variable-not-exported', line)!.level, 'warning', name);
       }
     });
   });

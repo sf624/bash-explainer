@@ -20,6 +20,8 @@ import { type Text, tx } from '../i18n';
 import { simulateRedirects } from '../idioms';
 import { bracket as bracketLabel, labelText, shorten } from '../label';
 import { fact } from '../messages';
+import { TURNS_ALIASES_ON } from '../messages-alias';
+import { unreadClause } from '../messages-common';
 import { nameInfo } from '../namefacts';
 import { builtinSections, programSections } from '../refs';
 import { inFunction, processOf, readAs, shellEffectOf } from '../semantics/env';
@@ -555,28 +557,29 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
   const missed = (res as { missed?: Missed }).missed;
   if (missed?.kind === 'alias' && !known) {
     const first = missed.def.startPosition.row;
-    // (A function of that name runs instead, `ll() { …; }`: no "command not found".)
-    if (missed.why === 'expand_aliases' && res.kind !== 'function') {
+    // (Not where a function of that name surely runs instead, `ll() { …; }`. Where one may, or code not read may turn
+    // expand_aliases on, the model says the miss may not happen: `Missed.maybe`, a caveat.)
+    if (missed.why === 'expand_aliases' && !(res.kind === 'function' && res.sure)) {
       const value = cx.state.at(nameNode).expand.aliases.get(name)!.value;
       // (Turned off by the script, `shopt -u expand_aliases`: also in an interactive shell.)
       const off = option(cx.state.at(nameNode).expand, 'shopt', 'expand_aliases') === 'off';
-      // (After code the model does not read on a path before here, `source`, `eval "$x"` (`ShellState.opaque`), which may
-      // turn it on: a caveat.)
-      const unread = !!cx.state.at(nameNode).expand.opaque;
-      cx.note(fact(cx.lang, 'alias-not-expanded-in-script', { name, value, ...(off ? { off } : {}), ...(unread ? { unread } : {}) }), nameNode);
-      const unless = unread ? cx.s('（ここで読まないコード、たとえば `source` で読み込むファイルや `eval` が有効にしていなければ）', ' (unless code not read here, such as a file read with `source` or an `eval`, turns it on)') : '';
-      if (off) {
+      cx.note(fact(cx.lang, 'alias-not-expanded-in-script', { name, value, ...(off ? { off } : {}), ...(missed.maybe === 'unread' ? { unread: true } : missed.maybe ? { fn: true } : {}) }), nameNode);
+      // (A function that may run instead: its own text, below, says where it is defined.)
+      if (res.kind !== 'function') {
+        const unless = cx.s(...unreadClause(missed.maybe === 'unread', TURNS_ALIASES_ON));
+        if (off) {
+          return {
+            name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
+            explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし、ここでは \`shopt -u expand_aliases\` でエイリアスの展開が無効なので、対話シェルでも「command not found」になる${unless}`,
+              `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But alias expansion is off here (\`shopt -u expand_aliases\`), so this is "command not found", also in an interactive shell${unless}`),
+          };
+        }
         return {
           name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
-          explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし、ここでは \`shopt -u expand_aliases\` でエイリアスの展開が無効なので、対話シェルでも「command not found」になる${unless}`,
-            `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But alias expansion is off here (\`shopt -u expand_aliases\`), so this is "command not found", also in an interactive shell${unless}`),
+          explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる${unless}。sh や dash なら \`${value}\` に置き換わる`,
+            `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found"${unless}. With sh or dash it would be replaced by \`${value}\``),
         };
       }
-      return {
-        name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
-        explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる${unless}。sh や dash なら \`${value}\` に置き換わる`,
-          `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found"${unless}. With sh or dash it would be replaced by \`${value}\``),
-      };
     }
     if (missed.why === 'later' || missed.why === 'same-unit') {
       cx.note(fact(cx.lang, missed.why === 'same-unit' ? 'alias-defined-same-unit' : 'alias-defined-later', { name, line: first + 1 }), nameNode);

@@ -122,7 +122,8 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `failure-reported-as-success` | A failure goes unnoticed: the status is 0 when the command on the left of `\|\| echo` fails. |
 | `local-outside-function`, in a file with no shebang | Fine when a function reads the file with `source`. |
 | `local-outside-function`, in a trap's action (`trap`) | Fine where the trap fires in a function (a `RETURN` trap set in it). |
-| `alias-not-expanded-in-script`, after code the model does not read (`unread`: `source`, `eval "$x"`) | Fine when that code turns `expand_aliases` on. |
+| `alias-not-expanded-in-script`, after code the model does not read (`unread`: `source`, `eval "$x"`), or with a function of that name defined on some paths (`fn`) | Fine when that code turns `expand_aliases` on, or where the function is defined. |
+| `variable-not-exported`, `variable-not-passed-by-wrapper`, `variable-not-in-remote-shell`, `function-not-in-new-shell-export`, after code the model does not read (`unread`), in this shell or in the string | Fine when that code exports or sets it (not an array, which is never exported: a warning). |
 | `variable-not-exported`, of a name in capitals the script set with no `unset` or `export -n` first (`fromEnvironment`: `maybe`) | Fine when the variable came from the environment, which exports it. |
 | `nounset-unbound`, of a name in capitals (`fromEnvironment`: `maybe`) | Fine when the environment has it. |
 | `alias-maybe-not-expanded` | A file with no shebang: fine when an interactive shell reads it (`.bashrc`); "command not found" when it runs as a script. |

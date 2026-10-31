@@ -60,7 +60,7 @@ describe('the message catalog', () => {
       assert.strictEqual(e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note'), want, id);
     }
     // The ones whose level depends on the case: an unquoted path given to `rm`, `mv` or `cp`; an unset read that stops a shell.
-    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['local-outside-function', 'postfix-increment-status', 'postfix-decrement-status', 'alias-not-expanded-in-script', 'variable-not-exported', 'unquoted-variable-as-path', 'nounset-unbound']);
+    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['local-outside-function', 'postfix-increment-status', 'postfix-decrement-status', 'alias-not-expanded-in-script', 'variable-not-in-remote-shell', 'variable-not-passed-by-wrapper', 'variable-not-exported', 'function-not-in-new-shell-export', 'unquoted-variable-as-path', 'nounset-unbound']);
     // `local` in a file with no shebang, which a function may source, or in a trap's action; an alias after code not
     // read, which may turn expand_aliases on; a name that may come from the environment, exported.
     assert.strictEqual(fact('en', 'local-outside-function', { stops: false }).level, 'warning');
@@ -68,6 +68,15 @@ describe('the message catalog', () => {
     assert.strictEqual(fact('en', 'local-outside-function', { stops: 'script', trap: true }).level, 'info');
     assert.strictEqual(fact('en', 'alias-not-expanded-in-script', { name: 'll', value: 'ls -l' }).level, 'warning');
     assert.strictEqual(fact('en', 'alias-not-expanded-in-script', { name: 'll', value: 'ls -l', off: true, unread: true }).level, 'info');
+    assert.strictEqual(fact('en', 'alias-not-expanded-in-script', { name: 'll', value: 'ls -l', fn: true }).level, 'info');
+    // (After code not read, which may set or export it there: `unread`, a caveat.)
+    for (const unread of [false, true]) {
+      const level = unread ? 'info' : 'warning';
+      assert.strictEqual(fact('en', 'variable-not-in-remote-shell', { v: 'x', unread }).level, level);
+      assert.strictEqual(fact('en', 'variable-not-passed-by-wrapper', { v: 'x', via: 'sudo', unread }).level, level);
+      assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x', unread }).level, level);
+      assert.strictEqual(fact('en', 'function-not-in-new-shell-export', { via: 'bash -c', fn: 'f', unread }).level, level);
+    }
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x' }).level, 'warning');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'X', environment: 'maybe' }).level, 'info');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x', environment: 'unlikely' }).level, 'warning');

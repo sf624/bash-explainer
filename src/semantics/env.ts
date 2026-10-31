@@ -45,7 +45,7 @@ export interface SlotLink {
   readonly kind: 'slot'; readonly slot: CommandSlot; readonly via: string; readonly at: SyntaxNode; readonly assigns: readonly string[];
   /** With `env` `reset`: the variables of the environment it keeps (`CommandSlot.keeps`, or those of `envWith`). */
   readonly keeps?: readonly string[];
-  /** With `env` `reset`: the variables the program sets itself, with values of its own (`CommandSlot.sets`). */
+  /** The variables the program sets itself, with values of its own (`CommandSlot.sets`). */
   readonly sets?: readonly string[];
   readonly unsets?: readonly string[];
   readonly env: NonNullable<CommandSlot['env']>; readonly shell?: ShellKind;
