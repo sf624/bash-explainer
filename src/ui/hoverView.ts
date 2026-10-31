@@ -9,7 +9,8 @@ import { codeSpan, joinParts, labelParts } from '../label';
 import { referencesWith } from '../references';
 import { pictureLabel, pictureText, splitPictures } from '../ctlchars';
 import { isCommand, partNotes, ProblemAt, sameSpan, shown, valueOf } from './hoverParts';
-import { type Note, type NoteLevel, SPACE_MARK, type SpaceEnds, type ValueSaid } from '../messages';
+import { type Note, SPACE_MARK, type SpaceEnds, type ValueSaid } from '../messages';
+import { LEVELS } from '../levels';
 import { levelColour, ThemeKind } from './palette';
 import { basisLine, basisMarkdown, colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteBasis, noteRefs, notesByLevel, partBasis, placeExamples, plainNotes, refsMarkdown, ui, valueMarkdown } from './render';
 
@@ -253,16 +254,13 @@ function where(ex: LineExplanation, lang: Lang, bold: boolean): string {
   return h;
 }
 
-/** The codicon of each level, as the Problems panel shows it; a plain note has the info icon in the muted colour. */
-const LEVEL_ICON: Record<NoteLevel, string> = { warning: 'warning', info: 'info', note: 'info' };
-
 /**
  * A note: the level's codicon in the level's colour, and its word in bold ("**Pitfall:**"), in place of the mark it
  * starts with (src/messages.ts). The word and the icon's shape say the level without the colour.
  */
 function noteMarkdown({ level, label, body }: Note, theme: ThemeKind): string {
-  const colour = level === 'note' ? 'var(--vscode-descriptionForeground)' : levelColour(level, theme);
-  const icon = `<span style="color:${colour};">$(${LEVEL_ICON[level]})</span>`;
+  const colour = levelColour(level, theme);
+  const icon = `<span style="color:${colour};">$(${LEVELS[level].codicon})</span>`;
   return `${icon} ${label ? `<span style="color:${colour};"><strong>${esc(label)}</strong></span> ` : ''}${md(body)}`;
 }
 

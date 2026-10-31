@@ -37,8 +37,10 @@
   --vscode-charts-purple: #5f2489;
   --vscode-charts-red: #d0020f;
   --vscode-charts-yellow: #645000;
+  /* level table (src/levels.ts, scripts/level-css.ts): light */
   --vscode-editorWarning-foreground: #855f00;
   --vscode-editorInfo-foreground: #005fb8;
+  /* end of the level table */
 
   --page-background: #f8f8f8;
   --page-accent: #005fb8;
@@ -90,8 +92,10 @@
     --vscode-charts-purple: #b180d7;
     --vscode-charts-red: #ff5c65;
     --vscode-charts-yellow: #cca700;
+    /* level table (src/levels.ts, scripts/level-css.ts): dark */
     --vscode-editorWarning-foreground: #cca700;
     --vscode-editorInfo-foreground: #3794ff;
+    /* end of the level table */
 
     --page-background: #181818;
     --page-accent: #0078d4;
@@ -138,8 +142,10 @@
   --vscode-charts-purple: #b180d7;
   --vscode-charts-red: #ff5c65;
   --vscode-charts-yellow: #cca700;
+  /* level table (src/levels.ts, scripts/level-css.ts): dark */
   --vscode-editorWarning-foreground: #cca700;
   --vscode-editorInfo-foreground: #3794ff;
+  /* end of the level table */
 
   --page-background: #181818;
   --page-accent: #0078d4;

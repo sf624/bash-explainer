@@ -122,7 +122,7 @@ describe('the VS Code panel: its header', function () {
       await page.keyboard.press('Enter');
       assert.strictEqual(await twisty.getAttribute('aria-expanded'), 'true');
       // The same line drawn again (its problems came): the button keeps the focus, in the new rows.
-      await page.evaluate(`window.postMessage({ ...window.MSGS['${lang}'], marks: [{ from: 0, to: 4, level: 'info' }] }, '*')`);
+      await page.evaluate(`window.postMessage({ ...window.MSGS['${lang}'], marks: [{ from: 0, to: 4, className: 'level-info', rank: 1 }] }, '*')`);
       await until('drawn again', () => page.locator('#line .squiggle').count(), (n) => n > 0);
       assert.strictEqual(await page.evaluate('document.activeElement.matches("#tree > li:first-child > .row > button.twisty")'), true);
       // VS Code opens a webview's links in the browser.

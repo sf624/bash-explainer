@@ -6,7 +6,7 @@ Planned: a third level, Error, above the warnings ([three-levels.md](three-level
 
 ## The levels
 
-A note has one of three levels (`NoteLevel` in [src/messages.ts](../../src/messages.ts)):
+A note has one of three levels (`NoteLevel` in [src/levels.ts](../../src/levels.ts), the level table):
 
 | Level | Mark | Word | Squiggle | When |
 | --- | --- | --- | --- | --- |
@@ -21,13 +21,15 @@ A note has one of three levels (`NoteLevel` in [src/messages.ts](../../src/messa
 
 ## Where the level comes from
 
-One source per kind of note:
+What a level looks like, and what it is in each protocol, comes from one table, the level table (src/levels.ts, `LEVELS` and `SEVERITIES`; [sources.md](sources.md), row 13, SB1): per level, its mark, its word, its name for a screen reader and the Problems pane (警告・情報・補足 / Warning, Information, Note), its Codicon, its ANSI colour, its class in the panel, its rank in the order of the notes, its colour (the editor's variable, the panel's name for it, ours per theme kind) and the count the web page's screen-reader summary says; per severity of a problem (`warning`, `info`, and `hint` for code that never runs), its value in VS Code, the Language Server, SARIF, GitHub's annotations and CodeMirror, its word in `--check`, and whether it fails `--check`. No other file has a list of its own: test/note-levels.test.ts finds a level's word, mark, severity, map or style outside it (SA4; its known list is empty). The style sheets' rules of the levels (media/panel.css, web/page.css, web/theme.css) are written from the table by scripts/level-css.ts, between `/* level table … */` comments; test/level-css.test.ts checks them. A few texts that are no catalog fact yet put the warning's mark inside a sentence (`PROSE_MARK`; they become facts with SB3).
+
+The level of each note comes from one source per kind of note:
 
 - The message catalog (src/messages.ts): `pitfall()` is a warning, `caveat()` a pitfall at the level `info`, `failure()` a fact that says the line fails when it runs (a note at the level `warning`), `note()` a plain fact. `fact()` gives the level with the text (`Fact.level`).
-- The style checks (src/pitfalls.ts): `STYLE_LEVELS`.
-- The dialect issues (src/dialect.ts): `unsupported` is a warning, `behaviour` information, `parse` (zsh syntax bash cannot read) a plain fact (`Issue.note`).
+- The style checks (src/pitfalls.ts): `STYLE_LEVELS`, beside the catalog (src/messages-levels.ts).
+- The dialect issues (src/dialect.ts): `unsupported` is a warning, `behaviour` information (`PROBLEM_LEVELS`, src/messages-levels.ts), `parse` (zsh syntax bash cannot read) a plain fact (`Issue.note`). `crlf` (src/document.ts) is a warning (`PROBLEM_LEVELS`).
 - A note with no mark (an idiom, where a line is in a here-document or a statement) is a plain fact (`plainNote`).
-- A diagnostic's severity is `severityOf(level)`: `warning` is a warning, the others information (src/document.ts, src/hosts/remap.ts). The old list of pitfalls shown as warnings (`PITFALL_WARNINGS`) and `WordFinding.mild` are gone.
+- A diagnostic's severity is `severityOf(level)` (the level table): `warning` is a warning, the others information (src/document.ts, src/hosts/remap.ts). The old list of pitfalls shown as warnings (`PITFALL_WARNINGS`) and `WordFinding.mild` are gone.
 
 ### Notes as data
 
@@ -52,9 +54,9 @@ Every warning and caveat a line's explanation says is a problem (`noteIssues` in
 
 ## The views
 
-Every view shows the notes in the same order: the warnings, then the information, then the plain facts, each in the order found (`notesByLevel` in src/ui/render.ts).
+Every view shows the notes in the same order: the warnings, then the information, then the plain facts, each in the order found (`notesByLevel` in src/ui/render.ts, by the level table's `rank`).
 
-- **Panel** (media/panel.js, media/panel.css): the level's codicon (`warning`, `info`) in place of the mark, then the word in bold, both in the level's colour, and the quote's left border in that colour. A plain fact keeps the quote's border and has the info icon in the muted colour, with no word. The icon has an `aria-label` (警告・情報・補足 / Warning, Information, Note). With forced colours, the icon and the word take `CanvasText`, and a warning's border is double, so that it differs from the others without colour. The copy of the line at the top underlines the line's problems as the editor does (`marks`, from `lineMarks`).
+- **Panel** (media/panel.js, media/panel.css): the level's codicon (`warning`, `info`), its class and the icon's name, sent by `panelUpdate` from the level table, in place of the mark, then the word in bold, both in the level's colour, and the quote's left border in that colour. A plain fact keeps the quote's border and has the info icon in the muted colour, with no word. The icon has an `aria-label` (警告・情報・補足 / Warning, Information, Note). With forced colours, the icon and the word take `CanvasText`, and a warning's border is double, so that it differs from the others without colour. The copy of the line at the top underlines the line's problems as the editor does (`marks`, from `lineMarks`).
 - **Hover** (src/ui/hoverView.ts, `noteMarkdown`: the part, the whole line): `$(warning)` or `$(info)`, and the word in bold, in a `<span style="color:…">` of the level's colour; a plain fact has `$(info)` in `descriptionForeground`.
 - **CLI** (cli/main.ts): the mark and the word in the level's ANSI colour (33 yellow, 34 blue), bold; a plain fact's mark dim.
 - **Plain Markdown** (Copy as Markdown, the Language Server's hover): the mark, and the word in bold: `> ⚠ **Pitfall:** …`.
@@ -63,7 +65,7 @@ Every view shows the notes in the same order: the warnings, then the information
 
 ### Colours
 
-The level's colour is the editor's own: `editorWarning.foreground` and `editorInfo.foreground`, the colours of its squiggles and of the Problems panel's icons. Where they fall below 4.5:1 as text (7:1 in high contrast), ours, keeping the hue (`LEVEL_COLOURS` in src/ui/palette.ts; `--c-warning`, `--c-info` in media/panel.css; web/theme.css has the light and dark values). test/contrast.test.ts measures them.
+The level's colour is the editor's own: `editorWarning.foreground` and `editorInfo.foreground`, the colours of its squiggles and of the Problems panel's icons. Where they fall below 4.5:1 as text (7:1 in high contrast), ours, keeping the hue (`colour.ours` in the level table, src/levels.ts; read by `levelColour` in src/ui/palette.ts for the hover, and written into media/panel.css's `--c-warning`, `--c-info` and web/theme.css's light and dark values by scripts/level-css.ts). test/contrast.test.ts measures them.
 
 | Theme kind | Warning | Info |
 | --- | --- | --- |

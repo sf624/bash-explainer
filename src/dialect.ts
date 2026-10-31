@@ -7,6 +7,7 @@ import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
 import { marked, type Note, plainNote, PORTABILITY } from './messages';
+import { PROBLEM_LEVELS } from './messages-levels';
 import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
 import { networkPath, networkTarget } from './dict/syntax';
 import { bracesInContext } from './semantics/words';
@@ -285,7 +286,7 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
 
 /** The note of a construct the target shell lacks: a warning with no word, since its first words say that it fails, and where. */
 function unsupported(lang: Lang, id: string, body: string): Note {
-  return marked(lang, 'warning', body, { code: id });
+  return marked(lang, PROBLEM_LEVELS.unsupported, body, { code: id });
 }
 
 /** A problem in a script for its target shell, with where it is. */
@@ -447,7 +448,7 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
   }
   for (const f of collectBehaviours(tree.root, from, to)) {
     const body = behaviourMessage(f.id, shell, lang);
-    if (body) issues.push({ id: f.id, kind: 'behaviour', note: marked(lang, 'info', body, { heading: PORTABILITY, code: f.id }), node: f.node, place: f.node });
+    if (body) issues.push({ id: f.id, kind: 'behaviour', note: marked(lang, PROBLEM_LEVELS.behaviour, body, { heading: PORTABILITY, code: f.id }), node: f.node, place: f.node });
   }
   for (const f of collectFeatures(tree.root, from, to)) {
     const body = featureMessage(f.id, shell, lang);

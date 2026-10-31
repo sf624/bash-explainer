@@ -1,6 +1,7 @@
 import type { CommandSpec } from '../argv/spec';
 import { cmd, COMMAND_TEXT, GNU_INFO, operand, OptSpec, persistent, pos, runs } from './types';
 import { tx } from '../i18n';
+import { PROSE_MARK } from '../levels';
 
 // Commands found in a second survey: operations and cloud scripts (Kubernetes, Terraform, AWS,
 // Google Cloud), node bootstrap and debugging scripts, dotfiles and container builds.
@@ -278,8 +279,8 @@ export const ops: Record<string, CommandSpec> = {
     parser: 'single-dash',
     patternOptions: [{
       pattern: /^-(?!chdir=)./,
-      text: () => tx('⚠ サブコマンドより前のオプション。terraform がここで受け付けるのは `-chdir=…`、`-version`、`-help` だけで、ほかは「Invalid flags before the subcommand」で止まる。サブコマンドの後に書く',
-        '⚠ an option before the subcommand: terraform takes only `-chdir=…`, `-version` and `-help` there, and stops with "Invalid flags before the subcommand" on any other; write it after the subcommand'),
+      text: () => tx(`${PROSE_MARK} サブコマンドより前のオプション。terraform がここで受け付けるのは \`-chdir=…\`、\`-version\`、\`-help\` だけで、ほかは「Invalid flags before the subcommand」で止まる。サブコマンドの後に書く`,
+        `${PROSE_MARK} an option before the subcommand: terraform takes only \`-chdir=…\`, \`-version\` and \`-help\` there, and stops with "Invalid flags before the subcommand" on any other; write it after the subcommand`),
     }],
     subcommands: {
       init: tf('作業ディレクトリを準備する（プロバイダやモジュールを取得）', 'Prepare the working directory (download providers and modules)'),

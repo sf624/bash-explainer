@@ -1,12 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
+import { regionLines } from '../../scripts/level-css';
 import { base, counted as countedAny, enclosing, isAllowed, lineOf, parseSource, sourceFiles, type Match as MatchOf } from './scan';
 
 // The scan behind test/note-levels.test.ts (docs/design/sources.md, row 13, stage SA, step SA4): where code names the level of a note
-// (a severity, an icon, a colour, a rank, a mark) without going through the one table that holds them. Today that table is src/messages.ts
-// (`NoteLevel`, `severityOf`, `MARKS`, `PITFALL_WORD`); the level table of three-levels.md, step 1, replaces it and empties the known
-// list. It is syntactic (no type checker), so the guard runs in a fraction of a second. `npx tsx test/support/note-levels.ts` prints the
+// (a severity, an icon, a colour, a rank, a mark) without going through the one table that holds them: the level table, src/levels.ts
+// (three-levels.md, step 1a), with the catalog's levels of each note in src/messages.ts. The style sheets' rules of the levels are
+// written from the table by scripts/level-css.ts, in regions the scan leaves out (test/level-css.test.ts checks them). It is syntactic (no type checker), so the guard runs in a fraction of a second. `npx tsx test/support/note-levels.ts` prints the
 // matches as the known list's entries (counts per file, function and kind), `--lines` the places.
 
 export type Kind = 'level-literal' | 'level-type' | 'level-map' | 'severity-enum' | 'severity-number' | 'glyph' | 'level-style';
@@ -19,8 +20,11 @@ export const STYLE_EXTENSIONS: readonly string[] = ['.css'];
 
 /** Files (or directories, ending in `/`) that are the table, or have no notes: their matches are not counted. */
 export const ALLOWED: readonly string[] = [
-  // The one table for now: the levels, their severity, marks and words, with every catalog entry's level.
+  // The level table: the levels, their severity in each protocol, marks, words, icons, colours and names.
+  'src/levels.ts',
+  // The catalog: every note's level (each entry's; beside it, the style checks' and the other problems').
   'src/messages.ts',
+  'src/messages-levels.ts',
   // The words `error` and `info` there belong to the languages of the embedded programs (jq's `error`, awk's and sed's messages).
   'src/embedded/',
   ...['jq', 'awk', 'sed', 'perlrun', 'yaml', 'regex'].map((n) => `src/examples/${n}.ts`),
@@ -118,10 +122,11 @@ function containsNumber(e: ts.Node): boolean {
 /** The matches of one style file: every line that names a level's colour or class. */
 export function scanStyle(rel: string, text: string): Match[] {
   const found: Match[] = [];
-  // (A comment may name a level; it is not a style.)
+  // (A comment may name a level; it is not a style. Nor are the regions written from the level table.)
   const code = text.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
+  const generated = regionLines(text);
   code.split('\n').forEach((line, i) => {
-    if (STYLE.test(line)) found.push({ file: rel, fn: '<css>', kind: 'level-style', what: line.trim().slice(0, 40), line: i + 1 });
+    if (STYLE.test(line) && !generated.has(i + 1)) found.push({ file: rel, fn: '<css>', kind: 'level-style', what: line.trim().slice(0, 40), line: i + 1 });
   });
   return found;
 }

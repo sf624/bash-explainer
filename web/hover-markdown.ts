@@ -7,6 +7,7 @@
 // entities, raw HTML tags, links with a title, emphasis and strong emphasis by the rules of delimiter runs, and
 // VS Code's `$(icon)`. Lists and indented code are not read: hoverView writes none in the cards.
 import { REFERENCE_URLS } from '../src/references';
+import { LEVELS } from '../src/levels';
 import { drawIcon } from './icons';
 
 /*
@@ -16,7 +17,7 @@ import { drawIcon } from './icons';
  */
 
 /** The Codicons the cards use (media/icons.js); another `$(name)` draws nothing, as an unknown icon in VS Code. */
-export const CARD_ICONS = new Set(['warning', 'info', 'gear', 'list-tree', 'comment-discussion']);
+export const CARD_ICONS = new Set([...Object.values(LEVELS).map((l) => l.codicon), 'gear', 'list-tree', 'comment-discussion']);
 
 const escText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const escAttr = (s: string) => escText(s).replace(/"/g, '&quot;');

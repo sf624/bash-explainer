@@ -49,8 +49,6 @@ export const TEXT = {
     github: 'GitHub repository',
     resize: 'Resize the script and the explanation',
     resizeProblems: 'Resize the Problems list',
-    /** The levels of the problems, for a screen reader (the panel's own words: src/ui/panelView.ts). */
-    levels: { warning: 'Warning', info: 'Information' },
     hintClick: 'Click to explain this line in the panel.',
     open: 'Open file…',
     save: 'Save',
@@ -123,7 +121,7 @@ export const TEXT = {
     /** How to leave the editor, which takes Tab (web/a11y.ts). */
     editorHint: 'To leave the editor, press Escape, then Tab.',
     /** What the live region says of the line the cursor moved to: its number, its first part, its warnings. */
-    lineSummary: (n: number, part: string, warnings: number) => `Line ${n}: ${part}${warnings ? `; ${warnings} warning${warnings === 1 ? '' : 's'}` : ''}`,
+    lineSummary: (n: number, part: string, counts: readonly string[]) => `Line ${n}: ${part}${counts.length ? `; ${counts.join(', ')}` : ''}`,
     partSaid: (label: string, what: string) => `${label}, ${what}`,
     /** The menu's item for the key that goes between the editor and the explanation. */
     toPanel: 'Go to the explanation and back',
@@ -177,7 +175,6 @@ export const TEXT = {
     github: 'GitHub リポジトリ',
     resize: 'スクリプトと解説の大きさを変える',
     resizeProblems: '問題の一覧の高さを変える',
-    levels: { warning: '警告', info: '情報' },
     hintClick: 'クリックすると、この行の解説をパネルに表示します。',
     open: 'ファイルを開く…',
     save: '保存',
@@ -241,7 +238,7 @@ export const TEXT = {
       ['Esc、Tab の順', 'エディタから出る'],
     ] as [string, string][],
     editorHint: 'エディタから出るには、Esc を押してから Tab を押します。',
-    lineSummary: (n: number, part: string, warnings: number) => `${n} 行目：${part}${warnings ? `。警告 ${warnings} 件` : ''}`,
+    lineSummary: (n: number, part: string, counts: readonly string[]) => `${n} 行目：${part}${counts.length ? `。${counts.join('、')}` : ''}`,
     partSaid: (label: string, what: string) => `${label}、${what}`,
     toPanel: '解説とエディタを行き来する',
     cardOpened: (keys: string) => `解説のカードを表示しました。もう一度 ${keys} を押すとカードに移り、Esc で閉じます。`,

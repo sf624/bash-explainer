@@ -6,7 +6,9 @@ import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
+import { FADED, type Faded, LEADING_MARK } from './levels';
 import { conventionOf, fact, isProblem, severityOf } from './messages';
+import { PROBLEM_LEVELS } from './messages-levels';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { shellState } from './semantics/state';
 import { explainOptions, settingSpec } from './settings';
@@ -133,7 +135,7 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
  * A range the editor fades: code that never runs (`DiagnosticTag.Unnecessary`). Not a problem: it is not in the
  * problem lists, the command-line tool's output or the panel's marks, only in the editor itself.
  */
-export interface DeadRange { code: 'dead-code'; severity: 'hint'; message: string; startLine: number; startCol: number; endLine: number; endCol: number }
+export interface DeadRange { code: 'dead-code'; severity: Faded; message: string; startLine: number; startCol: number; endLine: number; endCol: number }
 
 /**
  * The statements that never run (`shellState(...).dead(n)`, docs/design/highlighting.md), as ranges: the whole
@@ -152,7 +154,7 @@ export function deadCodeHints(doc: ShellDocument, lang: Lang, shells: Shells, ig
     const flush = (): void => {
       if (!run.length) return;
       const [a, b] = [run[0], run[run.length - 1]];
-      out.push({ code: 'dead-code', severity: 'hint', message, startLine: a.startPosition.row, startCol: a.startPosition.column, endLine: b.endPosition.row, endCol: b.endPosition.column });
+      out.push({ code: 'dead-code', severity: FADED, message, startLine: a.startPosition.row, startCol: a.startPosition.column, endLine: b.endPosition.row, endCol: b.endPosition.column });
       run = [];
     };
     for (const c of parent.namedChildren) {
@@ -228,7 +230,7 @@ export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: 
  * explanations (and, with `backticks: false`, without the backticks that mark code, for plain text).
  */
 export function plain(message: string, opts: { backticks?: boolean } = {}): string {
-  const text = message.replace(/^[⚠ⓘℹ]\uFE0F?\s*/u, '');
+  const text = message.replace(LEADING_MARK, '');
   return opts.backticks === false ? text.replace(/`/g, '') : text;
 }
 
@@ -312,5 +314,5 @@ function crlfIssue(tree: SyntaxTree, lang: Lang): DocumentIssue[] {
   // (In the tree the CR is a blank, so the last word is the one before it; a line of nothing else has no word.)
   const text = before.slice(before.lastIndexOf('\n') + 1).trimEnd();
   const word = /\S+$/.exec(text);
-  return [{ code: 'crlf', severity: 'warning', message: CRLF[lang === 'ja' ? 0 : 1], startLine: line, startCol: word?.index ?? 0, endLine: line, endCol: word ? text.length : 0 }];
+  return [{ code: 'crlf', severity: severityOf(PROBLEM_LEVELS.crlf), message: CRLF[lang === 'ja' ? 0 : 1], startLine: line, startCol: word?.index ?? 0, endLine: line, endCol: word ? text.length : 0 }];
 }

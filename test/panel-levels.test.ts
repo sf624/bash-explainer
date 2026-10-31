@@ -80,7 +80,7 @@ describe('the VS Code panel: the levels of the notes', function () {
     await ja.close();
   });
 
-  // The theme's editorWarning and editorInfo colours, or ours where they are not readable as text (LEVEL_COLOURS).
+  // The theme's editorWarning and editorInfo colours, or ours where they are not readable as text (src/levels.ts, `ours`).
   const COLOURS: Record<PanelTheme, { warning: string; info: string; muted: string }> = {
     dark: { warning: '#cca700', info: '#3794ff', muted: rgb('#9d9d9d') },
     light: { warning: '#855f00', info: '#005fb8', muted: rgb('#3b3b3b') },
@@ -117,7 +117,7 @@ describe('the VS Code panel: the levels of the notes', function () {
 
   it('underlines the problems of the line in its copy, in the level\'s colour', async () => {
     const page = await open();
-    const marked = await page.evaluate(`[...document.querySelectorAll('#line .squiggle')].map((s) => [s.textContent, s.classList.contains('squiggle-warning') ? 'warning' : 'info', getComputedStyle(s).textDecorationStyle, getComputedStyle(s).textDecorationColor])`) as [string, string, string, string][];
+    const marked = await page.evaluate(`[...document.querySelectorAll('#line .squiggle')].map((s) => [s.textContent, s.classList.contains('level-warning') ? 'warning' : 'info', getComputedStyle(s).textDecorationStyle, getComputedStyle(s).textDecorationColor])`) as [string, string, string, string][];
     // `read line` (read-without-r) and `x = 1` (assignment-with-spaces), and nothing else.
     assert.deepStrictEqual(marked.filter((m) => m[1] === 'info').map((m) => m[0]).join('').replace(/\s/g, ''), 'readline');
     assert.deepStrictEqual(marked.filter((m) => m[1] === 'warning').map((m) => m[0]).join('').replace(/\s/g, ''), 'x=1');

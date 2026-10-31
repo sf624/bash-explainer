@@ -6,7 +6,8 @@ import { Analyzer } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import type { Lang } from '../src/i18n';
-import { MARKS, MESSAGES, type NoteLevel, PORTABILITY } from '../src/messages';
+import { LEVEL_ORDER, LEVELS } from '../src/levels';
+import { MESSAGES, type NoteLevel, PORTABILITY } from '../src/messages';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { corpus } from './support/corpus';
 import * as fs from 'fs';
@@ -14,8 +15,8 @@ import * as path from 'path';
 
 /** The old reading of a note's text: the level from its mark, the word from the known headings. */
 function readBack(text: string, lang: Lang): { level: NoteLevel; label: string; body: string } {
-  const level: NoteLevel = text.startsWith(MARKS.warning) ? 'warning' : text.startsWith(MARKS.info) ? 'info' : 'note';
-  const rest = level === 'note' && !text.startsWith(MARKS.note) ? text : text.slice(MARKS[level].length).trimStart();
+  const level: NoteLevel = LEVEL_ORDER.find((l) => text.startsWith(LEVELS[l].mark)) ?? 'note';
+  const rest = level === 'note' && !text.startsWith(LEVELS.note.mark) ? text : text.slice(LEVELS[level].mark.length).trimStart();
   const words = [{ ja: '落とし穴: ', en: 'Pitfall: ' }, { ja: '注意: ', en: 'Caveat: ' }, PORTABILITY, ...Object.values(MESSAGES).map((e) => (e as { heading?: { ja: string; en: string } }).heading)];
   const label = [...new Set(words.map((h) => h?.[lang] ?? '').filter(Boolean))].find((h) => rest.startsWith(h)) ?? '';
   return { level, label: label.trimEnd(), body: rest.slice(label.length) };

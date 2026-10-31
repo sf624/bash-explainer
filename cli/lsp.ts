@@ -5,6 +5,7 @@ import { Analyzer } from '../src/analyzer';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, heredocAt, plain, ShellDocument } from '../src/document';
 import { FileKind, kindOfDocument, openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
+import { SEVERITIES } from '../src/levels';
 import { LEGEND, semanticTokens } from '../src/semanticTokens';
 import { explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -119,8 +120,8 @@ export function startLanguageServer(io: Io): void {
         diagnostics: (both ? [...both.shown, ...both.faded] : []).map((i) => ({
           range: { start: { line: i.startLine, character: i.startCol }, end: { line: i.endLine, character: i.endCol } },
           // (A hint, tagged Unnecessary, which an editor fades: code that never runs.)
-          severity: i.severity === 'warning' ? 2 : i.severity === 'hint' ? 4 : 3,
-          ...(i.severity === 'hint' ? { tags: [1] } : {}),
+          severity: SEVERITIES[i.severity].lsp,
+          ...(SEVERITIES[i.severity].faded ? { tags: [1] } : {}),
           code: i.code,
           source: 'Bash Explainer',
           message: plain(i.message),
