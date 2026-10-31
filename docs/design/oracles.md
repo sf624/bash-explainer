@@ -154,7 +154,7 @@ test/support/renderings.ts, on the runs of test/argv.test.ts: the same inputs an
 
 ### 2.9 What each program receives (panel P4)
 
-The data the panel's switch "What the program receives" will draw ([panel-redesign.md](panel-redesign.md), P4b; src/argvline.ts) is checked on the same runs (test/support/argvline.ts): for each command that ran, every word it gives as text is bash's, in order, and each placeholder covers what bash put there (any text; across several words where it may split or glob, as many as its count allows); the targets moved into the argv likewise, and a command it says bash fails on must not have run. argv-known.json's entries apply, and its counts are pinned under `lines`. On the fixtures, the sample of the snippets and, by hand, all the snippets and 200 fuzz inputs, it found no difference (#P4PR).
+The data the panel's switch "What the program receives" will draw ([panel-redesign.md](panel-redesign.md), P4b; src/argvline.ts) is checked on the same runs (test/support/argvline.ts): for each command that ran, every word it gives as text is bash's, in order, and each placeholder covers what bash put there (any text; across several words where it may split or glob, as many as its count allows); the targets moved into the argv likewise, and a command it says bash fails on must not have run. argv-known.json's entries apply, and its counts are pinned under `lines`. On the fixtures, the sample of the snippets and, by hand, all the snippets and 200 fuzz inputs, it found no difference (#563).
 
 ## 3. B: suggestion verification
 
