@@ -458,15 +458,27 @@ export function readAs(env: ExecEnv, file: FileRead): FileRead {
 /** bash's invocation options that start an interactive shell, which reads `~/.bashrc` first and expands aliases. */
 export const INTERACTIVE_FLAGS: ReadonlySet<string> = new Set(['-i']);
 
+/** bash's invocation options that make it read startup files: a login shell's, and an interactive shell's (`INTERACTIVE_FLAGS`). */
+export const STARTUP_FLAGS: ReadonlySet<string> = new Set(['-l', '--login', ...INTERACTIVE_FLAGS]);
+
+/** bash's invocation options that keep an interactive shell from reading `~/.bashrc`: `--norc`, or another file instead (`--rcfile F`, `--init-file F`, which the explainer cannot read). */
+export const NO_BASHRC_FLAGS: ReadonlySet<string> = new Set(['--norc', '--rcfile', '--init-file']);
+
 /**
  * Who may have read `~/.bashrc` before the code in `env` runs, in a file read as `file`: `interactive`, the shell a
  * slot starts interactive runs it (`bash -i -c '…'`); `sourced`, a file with no shebang (`readAs`: `unknown`), which an
  * interactive shell may read (`.bashrc` itself). `.bashrc` gives the distribution's aliases (`ll`), and on Ubuntu
- * `extglob` on (it loads bash-completion, which runs `shopt -s extglob progcomp`).
+ * `extglob` on (it loads bash-completion, which runs `shopt -s extglob progcomp`). `-i` in the file's own shebang
+ * (`shebangInteractive`, `StateModel.interactiveStart`) starts the file's own shell, and not another one it starts,
+ * interactive too. `--norc` and `--rcfile F` (`NO_BASHRC_FLAGS`) read no `~/.bashrc`: nothing.
  */
-export function bashrcReader(env: ExecEnv, file: FileRead): 'interactive' | 'sourced' | undefined {
+export function bashrcReader(env: ExecEnv, file: FileRead, shebangInteractive: boolean): 'interactive' | 'sourced' | undefined {
   const p = processOf(env);
-  if (p.kind === 'shell' && p.link?.kind === 'slot' && p.link.invocation?.some((f) => INTERACTIVE_FLAGS.has(f.flag))) return 'interactive';
+  if (p.kind === 'shell' && p.link?.kind === 'slot' && p.link.invocation?.some((f) => INTERACTIVE_FLAGS.has(f.flag))) {
+    return p.link.invocation.some((f) => NO_BASHRC_FLAGS.has(f.flag)) ? undefined : 'interactive';
+  }
+  const other = env.links.some((l) => l.kind === 'slot' && l.slot.run !== 'current-shell' && l.slot.run !== 'subshell');
+  if (shebangInteractive && file === 'script' && !other) return 'interactive';
   return readAs(env, file) === 'unknown' ? 'sourced' : undefined;
 }
 

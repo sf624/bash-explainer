@@ -314,6 +314,30 @@ describe('the checks headed for Error, run in bash (three-levels.md, step 0)', f
     });
   }
 
+  // Where `.bashrc` is not read, `ll` is "command not found" in every run (a warning), and where the file's own shebang says
+  // `-i`, it is read before the script (a caveat). `bash --norc` reads none, `--rcfile F` reads F instead (a file the
+  // explainer cannot read: still a warning), and a `bash -c` that `#!/bin/bash -i` starts is not interactive.
+  for (const [what, r, caveat] of [
+    ['`bash --norc -i -c`: no .bashrc', { id: 'distro-alias-in-script', text: '#!/bin/bash\nbash --norc -i -c ll\n', line: 2, works: 'script.sh', ways: ['direct', 'file', 'function'] }, false],
+    ['`bash --rcfile F -i -c`: F instead of .bashrc, which cannot be read', { id: 'distro-alias-in-script', text: '#!/bin/bash\nbash --rcfile rc -i -c ll\n', line: 2, works: 'script.sh', ways: ['direct', 'file', 'function'] }, false],
+    ["`#!/bin/bash -i`'s `bash -c`: not interactive", { id: 'distro-alias-in-script', text: '#!/bin/bash -i\nbash -c ll\n', line: 2, works: 'script.sh', ways: ['direct'] }, false],
+    ['`#!/bin/bash -i`: the file runs as an interactive shell, which reads .bashrc first', { id: 'distro-alias-in-script', text: '#!/bin/bash -i\nll\n', line: 2, works: 'script.sh', ways: ['direct'] }, true],
+    ['`#!/usr/bin/env -S bash --norc -i`: no .bashrc', { id: 'distro-alias-in-script', text: '#!/usr/bin/env -S bash --norc -i\nll\n', line: 2, works: 'script.sh', ways: ['direct'] }, false],
+  ] as [string, Row, boolean][]) {
+    it(`${r.id} in ${what}`, async function () {
+      const doc = openDocument(r.text, 'shell', (t) => parser.parse(t));
+      const issue = documentIssues(doc, 'en', shellsOf(doc.lines, 'script.sh', undefined)).find((x) => x.code === r.id && x.startLine === r.line - 1);
+      assert.strictEqual(issue?.severity, caveat ? 'info' : 'warning');
+      assert.strictEqual(/But this shell is interactive \(`-i`\) and reads `\.bashrc` first: /.test(issue.message), caveat);
+      if (unrunnable(r)) return this.skip();
+      const at = path.join(dir, `rc-${what.replace(/\W+/g, '-')}`);
+      fs.mkdirSync(at);
+      const runs = await runRow(r, at);
+      assert.ok(runs.length > 0);
+      assert.deepStrictEqual(runs.filter((run) => !failed(r, run)).map((run) => run.way), caveat ? runs.map((run) => run.way) : []);
+    });
+  }
+
   ROWS.forEach((r, i) => {
     it(`${r.id}${r.code ? ` (${r.code})` : ''}: ${JSON.stringify(r.text.split('\n')[r.line - 1].replace(/^﻿/, '').replace(/\r$/, ''))}`, async function () {
       // Our side: the explanation says it there, today a warning.

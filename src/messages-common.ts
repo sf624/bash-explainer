@@ -7,15 +7,39 @@
  * [ja, en]: ja is the verb phrase before いなければ (`\`expand_aliases\` を有効にして`), en a verb (`turns \`expand_aliases\` on`).
  * An empty clause when not `unread`. Also the token's text (src/explain/commands.ts) takes it from here.
  */
-export function unreadClause(unread: boolean | undefined, [ja, en]: readonly [string, string]): readonly [string, string] {
-  return unread ? [
-    `（この前に実行される、\`source\` で読み込むファイルや \`eval\` のようにここでは読まないコードが${ja.startsWith('`') ? ' ' : ''}${ja}いなければ）`,
-    `, unless code that runs before it and is not read here, such as a file read with \`source\` or an \`eval\`, ${en}`] : ['', ''];
+export function unreadClause(unread: boolean | undefined, does: readonly [string, string]): readonly [string, string] {
+  const code = unreadCode(does);
+  return unread ? [`（${code[0]}いなければ）`, `, unless ${code[1]}`] : ['', ''];
+}
+
+/**
+ * The code a path before ran and the model does not read, with what it would do, [ja, en]: ja before いなければ or
+ * いるときを除く, en the end of an "unless". For a fact that has another condition of its own (`variable-not-exported`:
+ * the environment), so that one "unless" holds both.
+ */
+export function unreadCode([ja, en]: readonly [string, string]): readonly [string, string] {
+  return [
+    `この前に実行される、\`source\` で読み込むファイルや \`eval\` のようにここでは読まないコードが${ja.startsWith('`') ? ' ' : ''}${ja}`,
+    `code that runs before it and is not read here, such as a file read with \`source\` or an \`eval\`, ${en}`];
+}
+
+/**
+ * One "unless" for the conditions a fact has, [ja, en] each (ja ends with とき): `（A と B を除く）`, `(unless A, or B)`;
+ * empty when none holds (a condition left out is `undefined`).
+ */
+export function unlessAny(...conditions: (readonly [string, string] | undefined)[]): readonly [string, string] {
+  const held = conditions.filter((c): c is readonly [string, string] => c !== undefined);
+  return held.length ? [`（${held.map((c) => c[0]).join('と、')}を除く）`, ` (unless ${held.map((c) => c[1]).join(', or ')})`] : ['', ''];
 }
 
 /** What code not read would do for a variable or a function another shell lacks: set or define it there. */
 export const SETS_IT: readonly [string, string] = ['そこで設定して', 'sets it there'];
 export const DEFINES_IT: readonly [string, string] = ['そこで定義して', 'defines it there'];
+/**
+ * ... or for a variable the new shell lacks because it is not exported: leave it set there, whether the code before
+ * exports it (`source`, `eval`) or the string's own code sets it (`. ./f.sh` in `bash -c`).
+ */
+export const leavesSet = (v: string): readonly [string, string] => [`\`${v}\` をそこで使えるようにして`, `leaves \`${v}\` set there`];
 
 /**
  * The sentence added to a fact said in a file with no shebang (`readAs`: `unknown`), which something else than a run
