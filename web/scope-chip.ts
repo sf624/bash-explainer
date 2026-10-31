@@ -2,13 +2,13 @@
 // "Shell script · bash (auto)", and its popover with the lists File type, Shell, and yq when the cursor's line runs yq.
 // Beside the editor the popover lies under the chip; on a phone (and in the narrow layout) it is a sheet from the
 // bottom, a modal dialog with Done. What it shows comes from the page's state (the kind, the `shell` and `yq.flavor`
-// settings, `readShell`'s reading), through src/ui/scope.ts: the chip's forms, widest first, of which the header takes
+// settings, `autoShellAt`'s reading of the cursor's line), through src/ui/scope.ts: the chip's forms, widest first, of which the header takes
 // the first that fits, and the words of the automatic shell. A choice goes to the page as the menu's selects did.
 //
 // The lists are radio groups whose arrows move without choosing: choosing a file type may ask whether to load its
 // sample, so it waits for Enter, Space or a click. The checked item of File type has the focus when the popover opens;
 // Escape closes it and gives the focus back to the chip.
-import type { Shells } from '../src/document';
+import type { AutoShell, Shell } from '../src/dialect';
 import type { Lang } from '../src/i18n';
 import { scopeChip, ScopeForm, shellChoices } from '../src/ui/scope';
 import { narrow } from './layout';
@@ -20,8 +20,8 @@ import { TEXT } from './text';
 export interface ScopeHost {
   lang(): Lang;
   kind(): Kind;
-  /** The shell chosen (the setting) and the one the file says. */
-  shells(): Shells;
+  /** The shell chosen (the setting), and the automatic one of the cursor's line (`autoShellAt`, src/document.ts). */
+  shells(): { forced?: Shell; auto?: AutoShell };
   /** The yq choices of the cursor's line, as the panel offers them (none: the line runs no yq), and the one chosen. */
   yq(): { options?: readonly (readonly string[])[]; value: string };
   chooseKind(kind: Kind): void;
@@ -97,8 +97,8 @@ export class ScopeControl {
     const t = TEXT[lang];
     const kind = this.host.kind();
     const name = t.kinds[kind] ?? KINDS.find((k) => k.kind === kind)!.name;
-    const { forced, detected } = this.host.shells();
-    const chip = scopeChip(lang, t.scopeTitle, { name, short: t.kindsShort[kind] ?? name }, forced, detected);
+    const { forced, auto } = this.host.shells();
+    const chip = scopeChip(lang, t.scopeTitle, { name, short: t.kindsShort[kind] ?? name }, forced, auto);
     this.chip.setAttribute('aria-label', chip.name);
     this.chip.title = chip.tip;
     this.forms = chip.forms;
@@ -152,10 +152,10 @@ export class ScopeControl {
   private lists(): void {
     const lang = this.host.lang();
     const t = TEXT[lang];
-    const { forced, detected } = this.host.shells();
+    const { forced, auto } = this.host.shells();
     const yq = this.host.yq();
     this.fill('kind', KINDS.map((k) => [k.kind, t.kinds[k.kind] ?? k.name]), this.host.kind());
-    this.fill('shell', shellChoices(lang, detected), forced ?? 'auto');
+    this.fill('shell', shellChoices(lang, auto), forced ?? 'auto');
     this.fill('yq', yq.options ?? [], yq.value);
     document.getElementById('scope-yq-list')!.hidden = !yq.options;
   }

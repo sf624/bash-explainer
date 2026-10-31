@@ -138,12 +138,22 @@ export function hostProvided(extracted: Extracted, region: ShellRegion): string[
   return [...new Set([...(region.provided ?? []), ...names])];
 }
 
+/** The region of a host document that `line` is in (none: the line is the host's own text, not shell code). */
+export function regionAt(extracted: Extracted, line: number): ShellRegion | undefined {
+  return extracted.regions.find((r) => r.start <= line && line <= r.end);
+}
+
+/** The shell a region's code is explained as when none is chosen: the host's for it, else bash (the analyzer's default). */
+export function regionShell(region: ShellRegion): Shell {
+  return region.shell ?? 'bash';
+}
+
 /** Explain `line` of a host document whose shell parts were extracted and parsed into `tree`. */
 export function explainHostedLine(
   analyzer: { explainLine(tree: SyntaxTree, line: number, shell?: Shell, opts?: ExplainOptions): LineExplanation },
   tree: SyntaxTree, extracted: Extracted, original: string[], line: number, lang: 'ja' | 'en', shell?: Shell, opts: ExplainOptions = {},
 ): LineExplanation | undefined {
-  const region = extracted.regions.find((r) => r.start <= line && line <= r.end);
+  const region = regionAt(extracted, line);
   if (!region) return undefined;
   tree = scriptTree(tree, extracted, region);
   const provided = hostProvided(extracted, region);

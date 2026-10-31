@@ -253,6 +253,19 @@ describe('the contrast of the colours of the roles', () => {
     }
   });
 
+  // The edge of a popup over the editor (web/page.css: the chip's popover, the ⋯ menu), one token in each theme:
+  // WCAG's 3:1 for what is not text, on the editor it lies over and on the page around (CLAUDE.md, "Themes").
+  it('reaches 3:1 for the edge of the popups over the editor', () => {
+    const css = read('web', 'page.css');
+    for (const sel of ['.scope-pop', '.popmenu']) {
+      assert.match(new RegExp(`\\n\\${sel} \\{([^}]*)\\}`).exec(css)?.[1] ?? '', /\n  border: 1px solid var\(--popup-border\);/, sel);
+    }
+    for (const [kind, vars] of [['web light', web.light], ['web dark', web.dark]] as const) {
+      const under = { editor: parse(vars['--vscode-editor-background']), page: parse(vars['--page-background']) };
+      check(`${kind}, the edge of a popup`, { edge: vars['--popup-border'] }, under, 3);
+    }
+  });
+
   it('keeps the roles of the web page apart', () => {
     for (const kind of ['light', 'dark'] as const) {
       distinct(`web ${kind}`, Object.fromEntries(ROLES.map((r) => [r, web[kind][CHARTS[r]]])) as Record<Role, string>, 8);

@@ -7,8 +7,6 @@ export interface PickerOption {
   value: string;
   /** The name in the list, and the button's name for screen readers. */
   name: string;
-  /** What the button shows on a narrow screen (the full name on a wide one). */
-  short: string;
 }
 
 export class Picker {
@@ -76,9 +74,7 @@ export class Picker {
     const o = this.options.find((x) => x.value === value) ?? this.options[0];
     if (!o) return;
     const name = this.button.querySelector('.picker-name');
-    const short = this.button.querySelector('.picker-short');
     if (name) name.textContent = o.name;
-    if (short) short.textContent = o.short;
     this.button.setAttribute('aria-label', `${this.label}: ${o.name}`);
     this.button.title = `${this.label}: ${o.name}`;
     for (const li of this.items()) li.setAttribute('aria-selected', String(li.dataset.value === o.value));

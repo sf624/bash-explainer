@@ -1,7 +1,9 @@
 import * as assert from 'assert';
-import { detectShell, readShell, saidShell, type ShellReading, type ShellSource } from '../src/dialect';
-import { shellOf } from '../src/document';
-import { shellsOf } from '../src/document-setup';
+import { type AutoShell, detectShell, readShell, saidShell, type Shell, SHELL_NAMES, type ShellReading, type ShellSource } from '../src/dialect';
+import { autoShellAt, explainDocumentLine, shellOf } from '../src/document';
+import { openDocument, shellsOf } from '../src/document-setup';
+import type { FileKind } from '../src/hosts/detect';
+import { scopeChip, shellChoices } from '../src/ui/scope';
 import { Analyzer } from '../src/analyzer';
 import { autoShellText } from '../src/messages-shell';
 import { panelUpdate } from '../src/ui/panelView';
@@ -78,11 +80,108 @@ describe('the wording of the automatic shell', () => {
 
   it("the panel's shell list says it, as it always did", () => {
     const ex = new Analyzer('en').explainLine(createUnbashParser().parse('echo hi'), 0);
-    const auto = (lang: 'ja' | 'en', detected?: ShellReading) =>
+    const auto = (lang: 'ja' | 'en', detected?: AutoShell) =>
       panelUpdate({ lang, explanation: ex, file: 'a.sh', line: 0, lineText: 'echo hi', choice: {}, detected, placement: 'first', animations: true }).dialect.shells[0];
     assert.deepStrictEqual(auto('en', r('zsh', 'filename')), ['auto', 'Auto (zsh)']);
     assert.deepStrictEqual(auto('ja', r('zsh', 'filename')), ['auto', '自動（zsh）']);
     assert.deepStrictEqual(auto('en'), ['auto', 'Auto']);
     assert.deepStrictEqual(auto('ja', r('bash', 'default')), ['auto', '自動']);
+    // (A host file's part: the shell its host runs it in; a line in no part, when the parts differ, names none.)
+    assert.deepStrictEqual(auto('en', r('sh', 'host')), ['auto', 'Auto (POSIX sh)']);
+    assert.deepStrictEqual(auto('ja', 'parts'), ['auto', '自動']);
+  });
+});
+
+describe('the automatic shell of a host file: what the chip, its popover and the Shell setting say is what the explanation uses', () => {
+  // The host decides the shell of each part (a Dockerfile's RUN runs in sh, a step in its `shell:`, a Markdown block in
+  // its fence's language), not the file's #! line nor its name: `autoShellAt` reads the part of the line.
+  const cases: [string, FileKind, string, string, string][] = [
+    ['a Dockerfile', 'dockerfile', 'Dockerfile', 'Dockerfile', 'FROM alpine\nRUN apk add curl | tee log\n'],
+    ['a Dockerfile with SHELL and an exec form', 'dockerfile', 'Dockerfile', 'Dockerfile', 'FROM alpine\nRUN echo hi | wc -c\nSHELL ["/bin/bash", "-c"]\nRUN echo $BASH_VERSION\nCMD ["npm", "start"]\n'],
+    ['a Makefile', 'makefile', 'Makefile', 'Makefile', 'build:\n\tmake -C src\n'],
+    ['a Makefile with SHELL', 'makefile', 'Makefile', 'Makefile', 'SHELL := /bin/bash\nbuild:\n\tmake -C src\n'],
+    ['a GitHub Actions workflow with a step in sh', 'yaml', 'ci.yml', 'GitHub Actions / GitLab CI', 'on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n      - shell: sh\n        run: echo there\n'],
+    ['a GitLab CI file', 'yaml', '.gitlab-ci.yml', 'GitHub Actions / GitLab CI', 'build:\n  script:\n    - make\n'],
+    ['a package.json', 'npm', 'package.json', 'package.json', '{\n  "scripts": {\n    "build": "tsc && echo ok"\n  }\n}\n'],
+    ['a Markdown file with bash, zsh and dash blocks', 'markdown', 'README.md', 'Markdown', '# T\n\n```bash\necho hi\n```\n\n```zsh\nprint -l a\n```\n\n```sh\n#!/bin/dash\necho\n```\n'],
+    ['a Python file', 'python', 'a.py', 'Python', 'import os\nos.system("ls | wc -l")\n'],
+    ['a Jenkinsfile with a #! in a step', 'jenkinsfile', 'Jenkinsfile', 'Jenkinsfile', "pipeline {\n  agent any\n  stages {\n    stage('b') {\n      steps {\n        sh 'make'\n        sh '''#!/bin/bash\n          echo hi\n        '''\n      }\n    }\n  }\n}\n"],
+    ['a bats file', 'bats', 'a.bats', 'bats', '#!/usr/bin/env bats\n@test "a" {\n  run echo hi\n}\n'],
+  ];
+  const parser = createUnbashParser();
+  const analyzer = new Analyzer('en');
+  /** The shell `explainDocumentLine` gives the analyzer for each line (none: the line is in no part, nothing is explained). */
+  const usedShells = (kind: FileKind, file: string, text: string, forced?: Shell) => {
+    const doc = openDocument(text, kind, (t) => parser.parse(t));
+    const shells = shellsOf(doc.lines, file, forced);
+    return doc.lines.map((_, line) => {
+      let used: { shell: Shell | undefined } | undefined;
+      const spy = { explainLine: (tree, at, shell, opts) => ((used = { shell }), analyzer.explainLine(tree, at, shell, opts)) } as Pick<Analyzer, 'explainLine'>;
+      explainDocumentLine(spy as Analyzer, doc, line, 'en', shells, {});
+      return { line, used, auto: autoShellAt(doc, shells, line) };
+    });
+  };
+
+  for (const [what, kind, file, name, text] of cases) {
+    it(what, () => {
+      let explained = 0;
+      for (const { line, used, auto } of usedShells(kind, file, text)) {
+        const say = (lang: 'ja' | 'en') => {
+          const chip = scopeChip(lang, 'T', { name, short: name }, undefined, auto);
+          return { chip: chip.forms[0].chip, popover: shellChoices(lang, auto)[0][1], setting: autoShellText(lang, 'setting', auto) };
+        };
+        if (!used) {
+          // (A line of the host's own text: the shell of every part when they agree, else none named.)
+          assert.ok(auto === 'parts' || auto.source === 'host', `line ${line}`);
+          continue;
+        }
+        explained++;
+        const shell = used.shell ?? 'bash';
+        assert.deepStrictEqual(auto, { shell, source: 'host' }, `line ${line}`);
+        assert.deepStrictEqual(say('en'), {
+          chip: `${name} · ${SHELL_NAMES[shell]} (auto)`, popover: `Auto: ${SHELL_NAMES[shell]} (from the file type)`, setting: `Auto (now: ${SHELL_NAMES[shell]}, from the file type)`,
+        }, `line ${line}`);
+        assert.deepStrictEqual(say('ja'), {
+          chip: `${name} · ${SHELL_NAMES[shell]}（自動）`, popover: `自動: ${SHELL_NAMES[shell]}（ファイルの種類から）`, setting: `自動（今: ${SHELL_NAMES[shell]}、ファイルの種類から）`,
+        }, `line ${line}`);
+        // (A shell chosen wins over the part's, in the explanation as in the chip.)
+        const chosen = usedShells(kind, file, text, 'zsh')[line];
+        assert.strictEqual(chosen.used!.shell, 'zsh');
+        assert.strictEqual(scopeChip('en', 'T', { name, short: name }, 'zsh', chosen.auto).forms[0].chip, `${name} · zsh`);
+      }
+      assert.ok(explained > 0);
+    });
+  }
+
+  it('names the shell the host runs, not the default bash nor the file\'s #! line', () => {
+    const at = (kind: FileKind, file: string, text: string, line: number) => usedShells(kind, file, text)[line].auto;
+    const sh: AutoShell = { shell: 'sh', source: 'host' };
+    assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM alpine\nRUN make\n', 1), sh);
+    // (Every part agrees: the host's own lines say it too.)
+    assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM alpine\nRUN make\n', 0), sh);
+    assert.deepStrictEqual(at('makefile', 'Makefile', 'a:\n\tmake\n', 1), sh);
+    assert.deepStrictEqual(at('npm', 'package.json', '{\n  "scripts": {\n    "a": "make"\n  }\n}\n', 0), sh);
+    assert.deepStrictEqual(at('python', 'a.py', '#!/usr/bin/env zsh\nimport os\nos.system("make")\n', 2), sh);
+    assert.deepStrictEqual(at('jenkinsfile', 'Jenkinsfile', "node {\n  sh 'make'\n}\n", 1), sh);
+    assert.deepStrictEqual(at('yaml', 'ci.yml', 'jobs:\n  a:\n    steps:\n      - run: make\n', 3), { shell: 'bash', source: 'host' });
+    assert.deepStrictEqual(at('bats', 'a.bats', '#!/usr/bin/env bats\n@test "a" {\n  run make\n}\n', 2), { shell: 'bash', source: 'host' });
+    // (The parts differ, and the line is in none: no shell is named.)
+    assert.strictEqual(at('markdown', 'README.md', '# T\n```bash\necho\n```\n```zsh\necho\n```\n', 0), 'parts');
+    // (A script is the file's own reading.)
+    assert.deepStrictEqual(at('shell', 'a.zsh', 'echo\n', 0), { shell: 'zsh', source: 'filename' });
+    assert.deepStrictEqual(autoShellAt(openDocument('echo\n', 'shell', (t) => parser.parse(t)), {}, 0), { shell: 'bash', source: 'default' });
+  });
+
+  it('words a line in no part, when the parts differ, without a shell', () => {
+    assert.deepStrictEqual(['option', 'short', 'long', 'setting'].map((f) => autoShellText('en', f as 'long', 'parts')), [
+      'Auto', 'auto', 'Auto: set by each part (from the file type)', 'Auto (now: set by each part, from the file type)',
+    ]);
+    assert.deepStrictEqual(['option', 'short', 'long', 'setting'].map((f) => autoShellText('ja', f as 'long', 'parts')), [
+      '自動', '自動', '自動: 部分ごとに決まる（ファイルの種類から）', '自動（今: 部分ごとに決まる、ファイルの種類から）',
+    ]);
+    const chip = scopeChip('en', 'File type and shell', { name: 'Markdown', short: 'md' }, undefined, 'parts');
+    assert.deepStrictEqual(chip.forms.map((f) => f.chip), ['Markdown · auto', 'md · auto', 'md · auto', 'auto', 'auto']);
+    assert.strictEqual(chip.tip, 'File type and shell: Markdown · Auto: set by each part (from the file type)');
+    assert.deepStrictEqual(shellChoices('ja', 'parts')[0], ['auto', '自動: 部分ごとに決まる（ファイルの種類から）']);
   });
 });

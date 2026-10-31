@@ -1,6 +1,6 @@
 import { controlMarks } from '../ctlchars';
 import { LineExplanation, Span, Token } from '../analyzer-types';
-import { Shell, SHELL_NAMES, type ShellReading } from '../dialect';
+import { type AutoShell, Shell, SHELL_NAMES } from '../dialect';
 import { autoShellText } from '../messages-shell';
 import { YQ_NAMES } from '../embedded/yq';
 import { RerunSpec } from '../examples/rerun';
@@ -125,8 +125,8 @@ export interface PanelLine {
   wrap?: boolean;
   /** The shell and yq chosen for the file ('auto' when not). */
   choice: { shell?: Shell; yq?: string };
-  /** The shell the file says, shown next to "auto", and where it comes from (`readShell`). */
-  detected?: ShellReading;
+  /** The shell the line is explained as when none is chosen, shown next to "auto", and where it comes from (`autoShellAt`). */
+  detected?: AutoShell;
   placement: ExamplePlacement;
   /** Whether rows grow and shrink when they are unfolded and folded (`panel.animations`). */
   animations: boolean;

@@ -227,7 +227,8 @@ button {
   min-width: 0;
 }
 
-/* The file kind: a button drawn as a select, with the whole name (a short one on a phone), and its list. */
+/* The file kind (the compare page): a button drawn as a select, with the whole name, and its list. A narrow window
+   hides it (below). */
 .picker {
   display: inline-flex;
   align-items: center;
@@ -243,10 +244,6 @@ button {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.picker-short {
-  display: none;
 }
 
 .picker .chev {
@@ -625,7 +622,7 @@ button {
   margin: 0;
   padding: 8px 4px 4px;
   overflow-y: auto;
-  border: 1px solid var(--vscode-panel-border);
+  border: 1px solid var(--popup-border);
   border-radius: var(--radius);
   background: var(--vscode-editor-background);
   color: var(--vscode-foreground);
@@ -798,7 +795,7 @@ button {
   flex-direction: column;
   min-width: 13rem;
   padding: 4px;
-  border: 1px solid var(--vscode-panel-border);
+  border: 1px solid var(--popup-border);
   border-radius: var(--radius);
   background: var(--vscode-editor-background);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
@@ -2036,20 +2033,7 @@ body.resizing .problems-resize {
   }
 }
 
-.phone-only {
-  display: none !important;
-}
-
-:where(html.narrow) .menu-item.phone-only {
-  display: flex !important;
-}
-
-:where(html.narrow) .field.phone-only {
-  display: grid !important;
-}
-
-.field[hidden],
-.pick[hidden] {
+.field[hidden] {
   display: none;
 }
 

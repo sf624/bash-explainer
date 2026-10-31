@@ -165,7 +165,7 @@ export class PanelController implements vscode.Disposable {
       doc: this.service.document(ed.document),
       wrap: wrapsLikeEditor(vscode.workspace.getConfiguration('editor', ed.document).get('wordWrap')),
       choice: this.service.overrideOf(ed.document),
-      detected: this.service.shellReading(ed.document),
+      detected: this.service.autoShell(ed.document, line),
       placement: this.service.examplePlacement,
       animations: this.service.panelAnimations,
       marks: lineMarks(this.service.issues(ed.document), line),

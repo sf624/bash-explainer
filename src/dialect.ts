@@ -17,7 +17,7 @@ import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
 // (The shells and the table of features are in src/shellfeatures.ts, a leaf module that src/staticword.ts reads too.)
-export { bracesWork, FEATURES, featureWorks, saidShell, type Shell, type ShellReading, type ShellSource } from './shellfeatures';
+export { type AutoShell, bracesWork, FEATURES, featureWorks, saidShell, type Shell, type ShellReading, type ShellSource } from './shellfeatures';
 
 export const SHELL_NAMES: Record<Shell, string> = {
   bash: 'bash', sh: 'POSIX sh', dash: 'dash', ash: 'busybox ash', yash: 'yash', ksh: 'ksh93', mksh: 'mksh', zsh: 'zsh',

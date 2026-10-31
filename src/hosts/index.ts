@@ -121,4 +121,4 @@ export function extractShell(kind: HostKind, text: string): Extracted {
 
 
 export { batsTestName } from './bats';
-export { remapExplanation, substitutionNotes, explainHostedLine, hostIssues, type DocIssue } from './remap';
+export { remapExplanation, substitutionNotes, explainHostedLine, hostIssues, regionAt, regionShell, type DocIssue } from './remap';
