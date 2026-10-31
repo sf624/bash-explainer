@@ -12,7 +12,7 @@ import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateFiel
 import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import type { LineExplanation, Span } from '../src/analyzer';
-import { DocumentIssue, diagnosticsFor, plain, ShellDocument, shellOf, Shells } from '../src/document';
+import { DocumentIssue, diagnosticsFor, fixTitle, plain, ShellDocument, shellOf, Shells } from '../src/document';
 import { documentHighlight, HighlightKind, HIGHLIGHT_KINDS } from '../src/highlight';
 import type { HighlightModifier } from '../src/semanticFacts';
 import { Lang } from '../src/i18n';
@@ -294,7 +294,8 @@ export class Editor {
         renderMessage: levelMessage(i.severity, plain(i.message), lang),
         source: i.code,
         actions: i.fixes?.map((fix) => ({
-          name: fix.title[lang === 'ja' ? 0 : 1],
+          // (CodeMirror draws an action's name as text.)
+          name: fixTitle(fix, lang, { backticks: false }),
           apply: (view: EditorView) => view.dispatch({ changes: fix.edits.map((e) => ({ from: pos(view.state, e.startLine, e.startCol), to: pos(view.state, e.endLine, e.endCol), insert: e.text })) }),
         })),
       }))];

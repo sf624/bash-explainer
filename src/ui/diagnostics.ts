@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { plain } from '../document';
+import { fixTitle, plain } from '../document';
 import type { Fix } from '../fixes';
 import { SEVERITIES } from '../levels';
 import { ExplainService } from '../service';
@@ -87,7 +87,7 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
     return context.diagnostics
       .filter((d) => d.source === DIAGNOSTIC_SOURCE)
       .flatMap((d) => known.filter((k) => k.code === d.code && k.range.isEqual(d.range)).map((k) => {
-        const action = new vscode.CodeAction(k.fix.title[lang === 'ja' ? 0 : 1], vscode.CodeActionKind.QuickFix);
+        const action = new vscode.CodeAction(fixTitle(k.fix, lang), vscode.CodeActionKind.QuickFix);
         action.diagnostics = [d];
         // (The first fix of a problem is the one it recommends.)
         action.isPreferred = k.preferred;

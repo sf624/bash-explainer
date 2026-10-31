@@ -4,7 +4,8 @@ import { descendants } from '../src/syntax/tree';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import { readShell } from '../src/dialect';
-import { documentIssues, explainDocumentLine, noteIssues, ShellDocument } from '../src/document';
+import { documentIssues, explainDocumentLine, fixTitle, noteIssues, ShellDocument } from '../src/document';
+import { rewriteFix } from '../src/fixes';
 import { extractShell } from '../src/hosts';
 import { isProblem, MESSAGES } from '../src/messages';
 import { STYLE_LEVELS } from '../src/pitfalls';
@@ -82,6 +83,21 @@ describe('documents without VS Code', () => {
     // (In Japanese, the titles say so.)
     const ja = documentIssues(script('for f in *.log; do\n  wc -l "$f"\ndone'), 'ja', {})[0];
     assert.deepStrictEqual(ja.fixes!.map((f) => f.title[0]), ['`[ -e "$f" ] || continue` を加える', '`shopt -s nullglob` を加える']);
+  });
+
+  // (VS Code and the Language Server show the titles as their messages, with the backticks; the web page's buttons as
+  // plain text, each code span its code alone, which keeps its own backticks.)
+  it('gives a quick fix\'s title for each editor', () => {
+    const [fix] = documentIssues(script('for f in *.log; do\n  wc -l "$f"\ndone'), 'ja', {})[0].fixes!;
+    assert.deepStrictEqual([fixTitle(fix, 'ja'), fixTitle(fix, 'en'), fixTitle(fix, 'ja', { backticks: false })],
+      ['`[ -e "$f" ] || continue` を加える', 'Add `[ -e "$f" ] || continue`', '[ -e "$f" ] || continue を加える']);
+    const place = (i: number) => ({ line: 0, col: i });
+    const ticks = [rewriteFix({ code: 'echo `date`', edits: [{ start: 0, end: 4, text: 'echo `date`' }] }, place), rewriteFix({ code: '`date`', edits: [{ start: 0, end: 0, text: '`date`' }] }, place)];
+    assert.deepStrictEqual(ticks.map((f) => fixTitle(f, 'en')), ['Rewrite as `` echo `date` ``', 'Add `` `date` ``']);
+    assert.deepStrictEqual(ticks.map((f) => fixTitle(f, 'en', { backticks: false })), ['Rewrite as echo `date`', 'Add `date`']);
+    // (The dialect fixes too: `[[ ]]` in sh.)
+    const [dialect] = documentIssues(script('#!/bin/sh\n[[ -f x ]] && echo y'), 'en', { detected: readShell('#!/bin/sh\n[[ -f x ]] && echo y', 'x.sh') })[0].fixes!;
+    assert.strictEqual(fixTitle(dialect, 'en', { backticks: false }), 'Rewrite [[ ]] as [ ]');
   });
 
   it('leaves out ignored codes and codes disabled in the file', () => {

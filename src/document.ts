@@ -253,6 +253,18 @@ export function plain(message: string, opts: { backticks?: boolean } = {}): stri
   return opts.backticks === false ? text.replace(/`/g, '') : text;
 }
 
+/**
+ * A quick fix's title as an editor shows it, from its marked text (`Fix.title`). VS Code and the Language Server keep
+ * the backticks, as in their problems' messages (`plain`); with `backticks: false`, for a medium of plain text (the
+ * web page's buttons: CodeMirror draws an action's name as text), each code span is its code alone. A span is found as
+ * CommonMark finds it, a run of backticks to the next run of as many, so the code keeps backticks of its own
+ * (`codeSpan`, `` `x` ``).
+ */
+export function fixTitle(fix: Fix, lang: Lang, opts: { backticks?: boolean } = {}): string {
+  const title = fix.title[lang === 'ja' ? 0 : 1];
+  return opts.backticks === false ? title.replace(/(?<!`)(`+)(?!`)([\s\S]*?[^`])\1(?!`)/g, (_m, _fence, code: string) => (/^ [\s\S]*[^ ][\s\S]* $/.test(code) ? code.slice(1, -1) : code)) : title;
+}
+
 /** The problems of a document; those of bash are the constructs bash `version` lacks (5.2 when absent). */
 function allIssues(doc: ShellDocument, lang: Lang, shells: Shells, version?: BashVersion): DocumentIssue[] {
   if (doc.extracted) {
