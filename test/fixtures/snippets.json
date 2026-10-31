@@ -1257,6 +1257,7 @@
  "if true; then :; fi >f",
  "info",
  "input",
+ "install() { cp app /usr/local/bin/; }\nsudo install",
  "ionice",
  "ip -s addr show",
  "ip addr show -s",

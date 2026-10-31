@@ -101,6 +101,20 @@ export function scriptSourceIndex(script: Pick<NestedScript, 'starts' | 'ends' |
 }
 
 /**
+ * The commands that the simple command `cmd` runs through its slots (`sudo ls`, `command ls`, `bash -c s`), by its name
+ * as written (the dictionary's spec of it): the first word of each, with where it runs (`slotEnvs`), and in `strings`
+ * the words of each string a slot runs as a script. Undefined when the dictionary does not know the name, or the
+ * command has no words after it.
+ */
+export function commandSlots(model: StateModel, cmd: SyntaxNode, strings?: Map<SyntaxNode, SyntaxNode[]>): Map<SyntaxNode, ExecEnv> | undefined {
+  const name = commandName(cmd);
+  const spec = name === undefined ? undefined : lookupCommand(name);
+  const args = fields(cmd, 'argument');
+  if (!spec || !args.length) return undefined;
+  return slotEnvs(model.env(cmd), interpret(spec, args.map(argWordFor(model.shell)), { name, lookup: lookupCommand }), spec, args, model.shell, lookupCommand, strings);
+}
+
+/**
  * Every string of `tree` that a command slot runs as a script (docs/design/semantics.md, 4.13), and those inside them,
  * outermost first, each with `source`: where offset `i` of its text is in `tree`'s text (`end`: as the end of a range).
  * For the dialect checks of the strings (src/document.ts).
@@ -109,12 +123,9 @@ export function nestedScripts(tree: SyntaxTree, shell?: Shell, descend: (script:
   const out: { script: NestedScript; source: (i: number, end: boolean) => number }[] = [];
   const visit = (t: SyntaxTree, model: StateModel, source: (i: number, end: boolean) => number): void => {
     for (const cmd of descendants(t.root, ['command'])) {
-      const name = commandName(cmd);
-      const spec = name === undefined ? undefined : lookupCommand(name);
-      const args = fields(cmd, 'argument');
-      if (!spec || !args.length) continue;
       const strings = new Map<SyntaxNode, SyntaxNode[]>();
-      const envs = slotEnvs(model.env(cmd), interpret(spec, args.map(argWordFor(model.shell)), { name, lookup: lookupCommand }), spec, args, model.shell, lookupCommand, strings);
+      const envs = commandSlots(model, cmd, strings);
+      if (!envs) continue;
       for (const [first, words] of strings) {
         const script = model.script(words, envs.get(first)!);
         if ('why' in script) continue;

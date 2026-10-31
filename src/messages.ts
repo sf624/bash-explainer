@@ -423,7 +423,9 @@ export const MESSAGES = {
   'function-not-in-new-shell-export': pitfall<{ via: string; fn: string; unread?: boolean }>(['3.3', '3.7.3'], functionNotInNewShellExportText, undefined, byCase),
   'function-not-imported-sh': caveat<{ via: string; fn: string }>(['3.3', '3.7.3'], functionNotImportedShText),
   // (The function is also the name of a program, which runs there instead: often meant, `sudo ls`.)
-  'function-shadowed-by-program': caveat<{ via: string; name: string; where: 'program' | 'shell' | 'remote' | 'container' }>(['3.3', '3.7.3'], functionShadowedText),
+  // (A caveat when the function runs that program itself, `wraps`; a warning when another program of its name runs.)
+  'function-shadowed-by-program': pitfall<{ via: string; name: string; where: 'program' | 'shell' | 'remote' | 'container'; wraps: boolean }>(['3.3', '3.7.3'], functionShadowedText, undefined,
+    ({ wraps }) => (wraps ? 'info' : 'warning')),
   'wrapper-assignment-expanded-first': suggests(broken<{ use: string; via: string; v: string; rewrite: readonly Rewrite[] }>(['3.7.1', '3.7.4'], ({ use, via, v, rewrite: [fix] }) => [
     `\`${use}\` は、\`${via}\` が \`${v}\` を設定する前に今のシェルが展開します（今の値で、なければ空）。設定した値を使うなら \`${via} ${v}=… ${fix.code}\` のようにシェル経由にします`,
     `the current shell expands \`${use}\` before \`${via}\` sets \`${v}\` (to its present value, or nothing). To use the value it sets, go through a shell: \`${via} ${v}=… ${fix.code}\``])),

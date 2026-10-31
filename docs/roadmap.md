@@ -34,6 +34,11 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - CRLF: while a heredoc with no delimiter yet is typed (`cat << \r\n`), the tree fails `invariants` (a `heredoc_body` outside its redirect: `seal` trims the redirect's end at the masked CR); no crash.
 - CRLF: a `<<word` inside a comment or string keeps the CR of the next line equal to `word`, which can misread a code line such as `fi\r` (`heredocCarriageReturns`, src/syntax/adapters/continuations.ts).
 - `x=it; sudo x="$x" bash -c "echo $x"` (found in the review of #557): `wrapper-assignment-expanded-first` is an error, but the line works, as `$x` is expanded here to the value the wrapper sets. Rare; to read the assigned value against the one expanded.
+- A value the script sets that the far side replaces (second review of #557): `HOME=/srv/app; docker run img sh -c 'ls $HOME'` now has no note; the accurate one is "the container has its own `HOME`" (`CommandSlot.sets`).
+- `ssh -o "$OPTS"` (same review): a value not known may send any name, so every remote variable is a caveat.
+- `ssh -o SetEnv=NAME=value` is not read (same review), nor `-o SendEnv=` with no name, which clears the names of ssh_config (`ssh -G` shows none).
+- `ssh -t` sends `TERM` (ssh_config(5), `SendEnv`), which is not modelled (same review).
+- The dialect check calls `$HOSTNAME` an Error in `docker run img sh -c 'echo $HOSTNAME'` (same review), though the runtime sets it: `CONTAINER_SETS` could feed it.
 - `((i++))` under `set -e` at Error where the value is 0 on every path (the param `zero` of three-levels.md, section 3; left open in step 2, #557): the state model would need to trust a variable that only arithmetic it follows assigns (`(( ))`, `let`, `$(( ))`, `for (( ))`), which decisions do not today (semantics.md, 4.14). Until then the note is a warning, as before. Also to sort by the rule: `posix-function-name`, `posix-special-builtin-error` and `unbraced-element`, warnings that came after the plan.
 - `[[ ]]` plain-vs-pattern: a known value is lost under `&&`, `||` or `!` inside `[[ ]]` (says pattern, safe); `[[ abc == a{b,c} ]]` is called a pattern though `[[ ]]` does no brace expansion.
 - One source per fact, stage SC of [design/sources.md](design/sources.md) (agreed by the maintainer 2026-10-31): the migrations behind the guards of "Now". Each lists the explanation changes it makes, none contradicting bash (sources.md, section 2), and takes with it the machinery kept only for a wording (sources.md, 2.1). In this order: SC1 and SC2, then SC3, SC4 and SC8, then the rest in any order.
@@ -74,7 +79,6 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - `shopt -s extglob; echo !(x)` on one top-level line is Info `extglob-not-found`; bash rejects it (a syntax error). `extglob-in-same-block` misses a top-level `;` list (already on main).
 - `export "$1"` does not make the state `opaque`, so `foo=1; export "$1"; bash -c 'echo $foo'` still says `foo` is not exported (found in the review of #536).
 - A trap's action of text not known makes the state `opaque` from the `trap` command on, though an `EXIT` trap cannot fire before the lines that follow it, so checks after it become caveats too early (found in the review of #536).
-- The ssh stand-in of test/error-level.test.ts passes nothing, but Debian's and Ubuntu's ssh send `LANG` and `LC_*` (`SendEnv` in /etc/ssh/ssh_config) where the server accepts them: `variable-not-in-remote-shell` of `LANG` or `LC_*` is then a rare false warning (found in the review of #540).
 
 ## Waiting on the maintainer
 

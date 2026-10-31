@@ -44,7 +44,7 @@
     {"file":"src/semantics/effects.ts","fn":"builtinRead","kind":"interpret-call","count":1,"to":"commandRead","reason":"the reading of `read`'s words for the variables it sets"},
     {"file":"src/semantics/env.ts","fn":"slotEnvs","kind":"interpret-call","count":1,"to":"commandRead","reason":"the reading of a command's expression words for where they run"},
     {"file":"src/semantics/names.ts","fn":"keptPrefixes","kind":"dash-prefix","count":1,"to":"commandRead","reason":"`--` that ends the options of `command` and `exec`"},
-    {"file":"src/semantics/nested.ts","fn":"nestedScripts","kind":"interpret-call","count":1,"to":"commandRead","reason":"the reading of a command's words for the scripts they hold"},
+    {"file":"src/semantics/nested.ts","fn":"commandSlots","kind":"interpret-call","count":1,"to":"commandRead","reason":"the reading of a command's words for the commands and scripts its slots run"},
     {"file":"src/semantics/posixexits.ts","fn":"exitRefusal","kind":"dash-prefix","count":1,"to":"commandRead","reason":"`--` before `exit`'s status"},
     {"file":"src/semantics/shvalues.ts","fn":"readOtherwise","kind":"option-regex","count":1,"to":"commandRead","reason":"whether `read` or `declare` has any option, by regex"},
     {"file":"src/semantics/shvalues.ts","fn":"readOtherwise","kind":"option-literal","count":1,"to":"commandRead","reason":"`-p` of `read` or `declare`, by text"},

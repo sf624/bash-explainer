@@ -91,12 +91,13 @@ export const functionNotImportedShText = ({ via, fn }: { via: string; fn: string
   `\`${via}\` runs the command in sh, which is dash on Debian and Ubuntu, and dash does not read the functions bash exports, so this script's function \`${fn}\` may not be there. Use \`bash -c\``];
 
 /**
- * `function-shadowed-by-program`: a function of the script that is also the name of a program (`ls() { command ls -F
- * "$@"; }`), where the function is not there (`where`: a program a wrapper starts, a new shell, a remote shell, a
- * container). The program of that name runs: often what is meant (`sudo ls`), and otherwise only the function's own
- * steps are lost (`curl() { command curl --retry 3 "$@"; }` with `timeout 30 curl …`).
+ * `function-shadowed-by-program`: a function of the script that is also the name of a program, where the function is
+ * not there (`where`: a program a wrapper starts, a new shell, a remote shell, a container). The program of that name
+ * runs. `wraps`: the function runs that program itself (`ls() { command ls -F "$@"; }`), so this is often what is
+ * meant (`sudo ls`), and otherwise only the function's own steps are lost; else the function only has its name
+ * (`install() { cp app /usr/local/bin/; }`), and `sudo install` runs another program.
  */
-export const functionShadowedText = ({ via, name, where }: { via: string; name: string; where: 'program' | 'shell' | 'remote' | 'container' }): Texts => {
+export const functionShadowedText = ({ via, name, where, wraps }: { via: string; name: string; where: 'program' | 'shell' | 'remote' | 'container'; wraps: boolean }): Texts => {
   const [ja, en]: Texts = where === 'program' ? [
     `\`${via}\` は \`${name}\` を別のプログラムとして起動するので、このスクリプトの関数 \`${name}\` ではなく、同じ名前のプログラムが実行されます`,
     `\`${via}\` starts \`${name}\` as a separate program, so the program \`${name}\` runs, not this script's function of that name`] : where === 'shell' ? [
@@ -106,5 +107,9 @@ export const functionShadowedText = ({ via, name, where }: { via: string; name: 
     `the remote shell does not have this script's function \`${name}\`, so the program \`${name}\` runs there`] : [
     `\`${via}\` は \`${name}\` をコンテナの中で実行し、そこにはこのスクリプトの関数がないので、イメージにある同じ名前のプログラムが実行されます`,
     `\`${via}\` runs \`${name}\` inside the container, which does not have this script's function, so the image's program \`${name}\` runs`];
-  return [`${ja}。それが意図どおりなら問題ありません。関数を実行したいところには、その中身を直接書きます`, `${en}. That may be what is meant. Write out its body where the function is meant`];
+  return wraps
+    ? [`${ja}。関数もそのプログラムを実行するので、それが意図どおりなら問題ありません。関数を実行したいところには、その中身を直接書きます`,
+      `${en}. The function runs that program too, so this may be what is meant. Write out its body where the function is meant`]
+    : [`${ja}。関数自体はそのプログラムを実行しないので、関数とは別のプログラムが動き、関数の処理は行われません。関数を実行したいところには、その中身を直接書きます`,
+      `${en}. The function does not run that program itself, so a different program runs, and none of the function's steps. Write out its body where the function is meant`];
 };

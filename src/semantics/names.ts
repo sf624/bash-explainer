@@ -17,9 +17,11 @@ import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import type { ArgvParse } from '../argv/interpret';
 import { actedNames, actsOnNames } from '../argv/query';
-import { field, fields, nameText, prefixAssignments, type SyntaxNode } from '../syntax/tree';
+import { descendants, field, fields, nameText, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { aliasExpandsNext, builtinParse, quotedName, wordsAfterAlias, wrapped } from './effects';
 import { type ExecEnv, linksAfter, reachOf, type SlotLink, subshellReasons } from './env';
+// (nested.ts imports state.ts, which imports this module: each uses the other's functions only when they run.)
+import { commandSlots } from './nested';
 import { type AliasState, type CommandEntry, type FunctionState, hashOutcomes, option, type ShellState, type StateModel, type Tri } from './state';
 import { unlessUnread } from './shellstate';
 import { docIndex } from './state';
@@ -537,6 +539,27 @@ export function resolveRun(model: StateModel, run: { readonly nameWord: SyntaxNo
   const value = staticWordValue(word);
   if (value === undefined) return undefined;
   return resolveName(model, value, run.nameWord, { shell, command: true, quoted: quotedName(word, value), ...(run.env ? { env: run.env } : {}) });
+}
+
+/**
+ * Whether the function `def` runs the command of its own name (`ls() { command ls -F "$@"; }`): a command of its body,
+ * or one a slot of it runs (`command ls`, `/bin/ls`, `sudo ls`), whose name resolves there to the builtin or the file
+ * of that name, not to the function itself (`\ls` is the function: a quoted name skips aliases only). Where the
+ * function is not (`sudo ls`), the program of that name runs much as the function would: the function wraps it.
+ * Otherwise the function only has its name (`install() { cp app /usr/local/bin/; }`), and another program runs there.
+ */
+export function runsOwnName(model: StateModel, def: SyntaxNode): boolean {
+  const name = nameText(field(def, 'name')!);
+  const own = (res: NameResolution | undefined): boolean => (res?.kind === 'file' || res?.kind === 'builtin') && res.name.split('/').pop() === name;
+  for (const c of descendants(def, ['command'])) {
+    const nameWord = field(c, 'name');
+    if (own(nameWord && resolveRun(model, { nameWord }, model.shell))) return true;
+    // (The commands it runs: `command ls`, `sudo ls`.)
+    for (const [w, env] of commandSlots(model, c) ?? []) {
+      if (own(resolveRun(model, { nameWord: w, env }, model.shell))) return true;
+    }
+  }
+  return false;
 }
 
 /** What a command name is, as the panel's badge says it (docs/design/name-kind.md): a `file` is a program. */

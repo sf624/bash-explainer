@@ -1,6 +1,6 @@
-import type { CommandSpec } from '../argv/spec';
+import type { CommandSpec, OptionSpec, ValueSpec } from '../argv/spec';
 import { tx } from '../i18n';
-import { cmd, OptSpec, pos } from './types';
+import { cmd, optionOf, OptSpec, pos } from './types';
 
 // Network tools and server administration from the LPIC-1/2 and LinuC-1/2 objectives: interface
 // and name configuration, diagnostics, packet capture, firewalls, DNS, web, Samba and VPN servers.
@@ -8,12 +8,27 @@ import { cmd, OptSpec, pos } from './types';
 /** `ssh -o Name=value`: the settings of ssh_config(5) that change how the host is checked. */
 const NO_HOST_CHECK = tx('ホスト鍵を確かめずに接続する。未知のホストの鍵は黙って登録し、鍵が変わったホストにも（一部の制限付きで）接続するので、なりすまし（中間者攻撃）に気づけない（注意）',
   'connect without checking host keys: the keys of unknown hosts are added silently, and hosts whose key has changed are connected to (with some restrictions), so a man-in-the-middle goes unnoticed (careful)');
-export const SSH_OPTION_VALUES = {
+const SSH_OPTION_VALUES = {
   'StrictHostKeyChecking=no': NO_HOST_CHECK,
   'StrictHostKeyChecking=off': NO_HOST_CHECK,
   'StrictHostKeyChecking=accept-new': tx('未知のホストの鍵は自動で登録するが、鍵が変わったホストには接続しない', 'add the keys of unknown hosts automatically, but refuse hosts whose key has changed'),
   'UserKnownHostsFile=/dev/null': tx('既知のホストの鍵を記録しない。どのホストも毎回未知のホストになる（`StrictHostKeyChecking=no` と一緒だと、鍵を一切確かめない。注意）', 'keep no known host keys, so every host is unknown each time (with `StrictHostKeyChecking=no`, no key is ever checked; careful)'),
 };
+
+/**
+ * The names of the caller's environment that `ssh -o VALUE` lets ssh send (ssh_config(5)): `SendEnv`, its keyword in
+ * any case, then `=` or blanks, then names separated by whitespace (patterns with `*` and `?`; double quotes hold an
+ * argument with blanks). A name after `-` clears names given before it; ssh reads `-o` before its configuration files,
+ * so it clears none of theirs, and is left out. Another option sends none.
+ */
+export function sshSendEnv(value: string): readonly string[] {
+  const m = /^\s*SendEnv(?:\s*=\s*|\s+)([\s\S]*)$/i.exec(value);
+  return (m?.[1].match(/"[^"]*"|[^\s"]+/g) ?? []).map((x) => x.replace(/"/g, '')).filter((x) => x !== '' && !x.startsWith('-'));
+}
+
+/** ssh's `-o`: a setting of ssh_config(5), whose `SendEnv` may send variables to the remote command (`sshSendEnv`). */
+const sshOption = optionOf(['-o', 'ssh の設定オプションを `名前=値` で指定する（例: `ConnectTimeout=5`）', 'a config option, as `Name=value` (e.g. `ConnectTimeout=5`)', 'arg', SSH_OPTION_VALUES]);
+export const SSH_CONFIG_OPTION: OptionSpec = { ...sshOption, value: { ...sshOption.value as ValueSpec, sendsEnv: sshSendEnv } };
 
 const host = pos('ホスト名または IP アドレス', 'host name or IP address');
 const user = pos('ユーザー名', 'user name');
