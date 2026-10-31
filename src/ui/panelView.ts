@@ -82,15 +82,27 @@ export interface ViewControl {
   options: ViewOption[];
 }
 
+/** What the panel shows when the state does not say: the list view, at the last step (media/panel.js starts so). */
+export const PANEL_DEFAULTS: Required<Pick<PanelState, 'view' | 'step'>> = { view: 'list', step: STEPS };
+
+/**
+ * Whether an option is the one shown: the state, with its defaults, has everything the option `sets`. media/panel.js
+ * `pressed` applies the same rule to its own state, so that a press shows at once.
+ */
+export function isPressed(state: PanelState, sets: PanelState): boolean {
+  const shown: PanelState = { ...PANEL_DEFAULTS, ...state };
+  return (Object.keys(sets) as (keyof PanelState)[]).every((k) => shown[k] === sets[k]);
+}
+
 /** The view control for a state: Meaning | Reading, the one shown pressed. */
 export function viewControl(state: PanelState, lang: Lang): ViewControl {
   const tp = ui[lang].panel;
-  const tree = needsReading(state);
+  const option = (o: Omit<ViewOption, 'pressed'>): ViewOption => ({ ...o, pressed: isPressed(state, o.sets) });
   return {
     label: tp.views,
     options: [
-      { id: 'list', short: tp.listView, full: tp.listView, pressed: !tree, sets: { view: 'list' } },
-      { id: 'tree', short: tp.treeView, full: tp.treeView, pressed: tree, sets: { view: 'tree' }, steps: stepNames(lang) },
+      option({ id: 'list', short: tp.listView, full: tp.listView, sets: { view: 'list' } }),
+      option({ id: 'tree', short: tp.treeView, full: tp.treeView, sets: { view: 'tree' }, steps: stepNames(lang) }),
     ],
   };
 }

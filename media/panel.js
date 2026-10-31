@@ -981,10 +981,11 @@
   function applyState(/** @type {any} */ state) {
     if (!state || typeof state !== 'object') return;
     if (state.view === 'tree' || state.view === 'list') view = state.view;
-    if (Number.isInteger(state.step) && state.step >= 1) step = state.step;
+    // (The eight steps of src/ui/readingSteps.ts `STEPS`.)
+    if (Number.isInteger(state.step) && state.step >= 1 && state.step <= 8) step = state.step;
   }
 
-  /** Whether an option of the view control is the one shown: the state has what it sets. */
+  /** Whether an option of the view control is the one shown: the state has what it sets (the rule of src/ui/panelView.ts `isPressed`). */
   const pressed = (/** @type {{ sets: Record<string, unknown> }} */ o) => Object.entries(o.sets).every(([k, v]) => /** @type {Record<string, unknown>} */ ({ view, step })[k] === v);
 
   /** Draws the header's view switch from the view control: a button per option, its short name, its full name where it says more. */
