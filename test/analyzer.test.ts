@@ -839,7 +839,9 @@ describe('aliases of distributions', () => {
     const e = explain('ll /tmp');
     assert.match(find(e, 'll').explanation, /^Alias `ll`: list files in long format .*Ubuntu: `ls -alF`/);
     assert.match(find(e, '/tmp').explanation, /file or directory/);
-    assert.ok(e.notes.some((n) => /^⚠ System-dependent: `ll` is an alias Ubuntu, Fedora \/ RHEL, openSUSE, Git for Windows define for interactive shells/.test(n)));
+    // (A file with no shebang may be read by an interactive shell, `.bashrc`, which has it: a caveat.)
+    assert.ok(e.notes.some((n) => /^ⓘ System-dependent: `ll` is an alias Ubuntu, Fedora \/ RHEL, openSUSE, Git for Windows define for interactive shells.*But this file has no shebang/.test(n)));
+    assert.ok(explain('#!/bin/bash\nll /tmp', 1).notes.some((n) => /^⚠ System-dependent: `ll` is an alias Ubuntu, Fedora \/ RHEL, openSUSE, Git for Windows define for interactive shells, not a command\. Other systems lack it, and scripts do not have it even there \("command not found"\)\. Write/.test(n)));
   });
   it('covers more than ls: names that are not commands at all', () => {
     const cases: [string, RegExp][] = [

@@ -61,6 +61,7 @@
  "#!/bin/bash\nalias ll='ls -l'\nll x",
  "#!/bin/bash\ncp a b || echo failed",
  "#!/bin/bash\nif a; then shopt -s expand_aliases; fi\nalias ll=\"ls -l\"\nll",
+ "#!/bin/bash\nll /tmp",
  "#!/bin/bash\nshopt -s expand_aliases\nalias c='command ' d='declare x=1'\nc d\necho \"[$x]\"",
  "#!/bin/bash --posix",
  "#!/bin/bash --posix\nx=1 :",

@@ -101,7 +101,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `bats-run-in-pipeline-stage`, `bats-run-in-pipeline` | `$status` and `$output` are gone, or the pipe reads nothing, every time. |
 | `regex-backslash-dropped` | The regex never means what is written. |
 | `unbraced-element` | `$a[1]` of an array never names the element: it is the first element, then the text `[1]` (6.7). |
-| `distro-alias-in-script` | "command not found" in a script, on every system. |
+| `distro-alias-in-script`, when the file runs as a script (a shebang, a host's step, a `bash -c` string) | "command not found" in a script, on every system. |
 | `python-string-without-shell` | Python runs the whole string as one program name: FileNotFoundError. |
 | `python-shell-injection`, `actions-script-injection` | A value can run any command: damage that cannot be undone. |
 | `unquoted-variable-as-path` given to `rm`, `mv` or `cp` | A split or globbed path deletes or overwrites other files: it cannot be undone. |
@@ -127,6 +127,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `variable-not-exported`, of a name in capitals the script set with no `unset` or `export -n` first (`fromEnvironment`: `maybe`) | Fine when the variable came from the environment, which exports it. |
 | `nounset-unbound`, of a name in capitals (`fromEnvironment`: `maybe`) | Fine when the environment has it. |
 | `alias-maybe-not-expanded` | A file with no shebang: fine when an interactive shell reads it (`.bashrc`); "command not found" when it runs as a script. |
+| `distro-alias-in-script`, in a file with no shebang | Fine when an interactive shell reads it (`.bashrc`), where the distribution defines the alias; "command not found" when it runs as a script. |
 | `posix-special-function-name-maybe` | Only on the paths that turn POSIX mode on. |
 | `postfix-increment-status`, `postfix-decrement-status`, when `set -e` is not surely on there | Only when the value is 0, and only the status. |
 | `extglob-maybe-on`, `extglob-maybe-on-trap` | A syntax error only on some paths, or if the signal comes early. |

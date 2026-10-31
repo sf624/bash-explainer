@@ -638,9 +638,9 @@ export const MESSAGES = {
     [`In \`[[ =~ ]]\`, an unquoted ${list} loses its backslash to quote removal and is an ordinary character, not a regex operator`,
       ...(digits ? [`POSIX regexes have no \`\\d\`: even from a variable it is the letter \`d\`. Write \`[0-9]\` for \`\\d\` and \`[^0-9]\` for \`\\D\`${!others && fix ? ` (\`${fix.code}\`)` : ''}`] : []),
       ...(others ? [fix ? `Keep the regex in a variable (\`${fix.code}\`) or use \`[[:space:]]\` or \`[[:alnum:]_]\` instead` : 'Use `[[:space:]]` or `[[:alnum:]_]` instead (inside `[ ]`, a backslash is no operator, even from a variable)'] : [])].join('. ')], NO_HEADING)),
-  'distro-alias-in-script': pitfall<{ name: string; where: string; what: Words; many: boolean; instead: Words }>(['6.6'], ({ name, where, what, many, instead }) => [
-    `\`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、コマンドではありません。ほかの環境にはなく、スクリプトの中では${many ? 'これらの' : 'その'}環境でも使えません（command not found）。${instead.ja}`,
-    `\`${name}\` is ${what.en} ${where} define${many ? '' : 's'} for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found"). ${instead.en}`], SYSTEM_DEPENDENT),
+  'distro-alias-in-script': pitfall<{ name: string; where: string; what: Words; many: boolean; instead: Words; sourced?: boolean }>(['6.6'], ({ name, where, what, many, instead, sourced }) => [
+    `\`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、コマンドではありません。ほかの環境にはなく、スクリプトの中では${many ? 'これらの' : 'その'}環境でも使えません（command not found）。${sourced ? 'ただし、このファイルにはシバンがないので、`.bashrc` のように対話シェルが読むなら使えます。' : ''}${instead.ja}`,
+    `\`${name}\` is ${what.en} ${where} define${many ? '' : 's'} for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found").${sourced ? ' But this file has no shebang: read by an interactive shell, as `.bashrc` is, it may have it.' : ''} ${instead.en}`], SYSTEM_DEPENDENT, ({ sourced }) => (sourced ? 'info' : 'warning')),
   'distro-alias-interactive': note<{ name: string; where: string; what: Words; many: boolean; portable?: string }>(['6.6'], ({ name, where, what, many, portable }) => [
     `環境依存: \`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、ほかの環境にはありません。どこでも動かすには${portable ? ` \`${portable}\` と書きます` : '、したいことに合ったコマンドをそのまま書きます'}`,
     `System-dependent: \`${name}\` is ${what.en} ${where} define${many ? '' : 's'} for interactive shells; other systems lack it. ${portable ? `Write \`${portable}\` to work everywhere` : 'To work everywhere, write the command you mean'}`]),
