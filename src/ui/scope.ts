@@ -34,10 +34,10 @@ export interface ScopeChip {
  * as `reading` says. `title` names the control ("File type and shell"). The forms, widest first: the whole chip
  * ("Shell script · bash (auto)"), without "(auto)", with the type's shorter word ("Script · bash"), Open and Save as
  * icons, the shell alone ("bash"), and the file name left to the menu. A form that says what the one before says is
- * left out. Where no one shell applies (`parts`), the shell's place says "auto".
+ * left out. Where no one shell applies, the shell's place says "auto" (`parts`) or "no shell" (`none`).
  */
 export function scopeChip(lang: Lang, title: string, kind: ScopeKind, forced: Shell | undefined, reading?: AutoShell): ScopeChip {
-  const shell = forced ? SHELL_NAMES[forced] : reading === 'parts' ? autoShellText(lang, 'short', reading) : SHELL_NAMES[reading?.shell ?? 'bash'];
+  const shell = forced ? SHELL_NAMES[forced] : typeof reading === 'string' ? autoShellText(lang, 'short', reading) : SHELL_NAMES[reading?.shell ?? 'bash'];
   const said = forced ? shell : autoShellText(lang, 'short', reading);
   const chips = [...new Set([`${kind.name} · ${said}`, `${kind.name} · ${shell}`, `${kind.short} · ${shell}`])];
   const forms: ScopeForm[] = [

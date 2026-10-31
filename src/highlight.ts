@@ -10,7 +10,7 @@ import type { CommandSpec } from './argv/spec';
 import { actsOnNames } from './argv/query';
 import { builtins } from './dict/builtins';
 import type { Extracted } from './hosts';
-import { scriptTree } from './hosts/scripts';
+import { regionShell, scriptTree } from './hosts/scripts';
 import { type HighlightModifier, semanticFacts } from './semanticFacts';
 import { fileRead, type FileRead } from './semantics/env';
 import { shellState } from './semantics/state';
@@ -357,7 +357,7 @@ export function documentHighlight(doc: ShellDocument, opts: DocumentHighlightOpt
     done.add(own);
     const starts = lineStarts(own.text);
     const range = opts.lines && offsetsOf(starts, own.text.length, opts.lines);
-    lines.push(...lineSpans(highlight(own, { range, shell: forced ?? region.shell, read: fileRead(own.root, region.host), ...(region.commands ? { host: region.commands } : {}), ...(region.run ? { run: region.run } : {}) }), own.text, starts));
+    lines.push(...lineSpans(highlight(own, { range, shell: regionShell(region, forced), read: fileRead(own.root, region.host), ...(region.commands ? { host: region.commands } : {}), ...(region.run ? { run: region.run } : {}) }), own.text, starts));
   }
   // (Each shell of a host file has lines of its own: put together, their spans are in order once sorted by line.)
   if (done.size > 1) lines.sort((a, b) => a.line - b.line || a.from - b.from);

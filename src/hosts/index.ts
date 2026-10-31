@@ -37,6 +37,11 @@ export interface ShellRegion {
   script?: number;
   /** A Docker RUN without `pipefail`: a failure inside a pipe does not fail the build. */
   warnPipefail?: boolean;
+  /**
+   * Words the host runs with no shell (Docker's exec form `CMD ["npm", "start"]`, a Python list of arguments): written
+   * as shell words so that the command is explained, but no shell reads them (`autoShellAt` says "no shell").
+   */
+  noShell?: true;
   /** Commands the host defines for its scripts (bats: `run`, `load`…), read with these specs before the dictionary. */
   commands?: Record<string, CommandSpec>;
   /**
@@ -121,4 +126,5 @@ export function extractShell(kind: HostKind, text: string): Extracted {
 
 
 export { batsTestName } from './bats';
-export { remapExplanation, substitutionNotes, explainHostedLine, hostIssues, regionAt, regionShell, type DocIssue } from './remap';
+export { remapExplanation, substitutionNotes, explainHostedLine, hostIssues, type DocIssue } from './remap';
+export { regionAt, regionShell } from './scripts';

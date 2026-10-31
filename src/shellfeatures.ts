@@ -17,10 +17,11 @@ export type ShellSource = 'directive' | 'shebang' | 'filename' | 'default' | 'ho
 export interface ShellReading { shell: Shell; source: ShellSource }
 
 /**
- * The automatic shell at a place of a document, as the page and the panel say it: a reading, or `parts` in a host
- * file whose parts run in shells of their own, at a line in none of them (`autoShellAt`, src/document.ts).
+ * The automatic shell at a place of a document, as the page and the panel say it: a reading; `parts` in a host file
+ * whose parts run in shells of their own, at a line in none of them; or `none` where the host runs the words with no
+ * shell (Docker's exec form, a Python list of arguments; `ShellRegion.noShell`). `autoShellAt`, src/document.ts.
  */
-export type AutoShell = ShellReading | 'parts';
+export type AutoShell = ShellReading | 'parts' | 'none';
 
 /** The shell a reading says: undefined for the default (and for no reading), the shell the explainers take when the file names none. */
 export function saidShell(reading: ShellReading | undefined): Shell | undefined {

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import type { BashParser as Parser } from '../src/syntax/tree';
+import type { Shell } from '../src/dialect';
 import { Analyzer, Token } from '../src/analyzer';
 import { batsTestName, explainHostedLine, extractShell, hostIssues, hostKind } from '../src/hosts';
 import { githubContext } from '../src/dict/ciVariables';
@@ -70,11 +71,11 @@ describe('Dockerfile', () => {
     assert.ok(!explain('Dockerfile', 3)!.notes.some((n) => /middle of the pipe/.test(n)), 'no pipe, no warning');
   });
   it('reads set -o pipefail where it runs in the RUN, not a word pipefail anywhere', () => {
-    const warns = (src: string, line: number) => {
+    const warns = (src: string, line: number, shell?: Shell) => {
       const extracted = extractShell('dockerfile', src);
       const tree = parser.parse(extracted.text);
-      const ex = explainHostedLine(new Analyzer('en'), tree, extracted, src.split('\n'), line, 'en')!;
-      const issues = hostIssues(tree, extracted, src.split('\n'), 'en').filter((i) => i.code === 'dockerPipefail' && i.startLine === line);
+      const ex = explainHostedLine(new Analyzer('en'), tree, extracted, src.split('\n'), line, 'en', shell)!;
+      const issues = hostIssues(tree, extracted, src.split('\n'), 'en', shell).filter((i) => i.code === 'dockerPipefail' && i.startLine === line);
       const said = ex.notes.some((n) => /middle of the pipe/.test(n));
       assert.strictEqual(said, issues.length > 0);
       return said;
@@ -84,6 +85,9 @@ describe('Dockerfile', () => {
     assert.ok(warns('FROM x\n# set -o pipefail\nRUN a | b', 2));
     assert.ok(warns('FROM x\nRUN set -o pipefail\nRUN a | b', 2));
     assert.ok(!warns('FROM x\nRUN [ -n "$x" ] && set -o pipefail; a | b', 1));
+    // (In the shell chosen, as the rest of the line: bash's `shopt -o` sets pipefail, sh has no `shopt`.)
+    assert.ok(warns('FROM x\nRUN shopt -so pipefail; a | b', 1));
+    assert.ok(!warns('FROM x\nRUN shopt -so pipefail; a | b', 1, 'bash'));
   });
   it('checks for /bin/sh until SHELL switches to bash', () => {
     assert.match(explain('Dockerfile', 6)!.notes.join(), /`\[\[ \]\]` is not POSIX sh/);

@@ -4,7 +4,7 @@ import type { BashVersion } from './bashversion';
 import { type AutoShell, dialectIssues, saidShell, Shell, type ShellReading } from './dialect';
 import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor, rewriteFix } from './fixes';
-import { DocIssue, explainHostedLine, Extracted, hostIssues, regionAt, regionShell } from './hosts';
+import { DocIssue, explainHostedLine, Extracted, hostIssues, regionAt, regionShell, type ShellRegion } from './hosts';
 import { Lang } from './i18n';
 import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
 import { conventionOf, fact, isProblem, problemText, severityOf } from './messages';
@@ -51,15 +51,16 @@ export function shellOf(shells: Shells): Shell | undefined {
  * The shell `line` of a document is explained as when none is chosen, and where that comes from: what the chip, its
  * popover, the Shell setting and the panel's list say (src/messages-shell.ts). A script's is the file's (`readShell`);
  * a host file's comes from its type, part by part (`explainDocumentLine` reads it so: a Dockerfile's RUN runs in sh, a
- * workflow step in its `shell:`, a Markdown block in its fence's language). At a line in no part, it is the shell of
- * every part when they agree, else `parts`.
+ * workflow step in its `shell:`, a Markdown block in its fence's language; words run with no shell, Docker's exec form,
+ * are `none`). At a line in no part, it is that of every part when they agree, else `parts`.
  */
 export function autoShellAt(doc: ShellDocument, shells: Shells, line: number): AutoShell {
   if (!doc.extracted) return shells.detected ?? { shell: 'bash', source: 'default' };
+  const auto = (r: ShellRegion) => (r.noShell ? 'none' : regionShell(r) ?? 'bash');
   const region = regionAt(doc.extracted, line);
-  const all = new Set(doc.extracted.regions.map(regionShell));
-  const shell = region ? regionShell(region) : all.size === 1 ? [...all][0] : undefined;
-  return shell ? { shell, source: 'host' } : 'parts';
+  const all = new Set(doc.extracted.regions.map(auto));
+  const shell = region ? auto(region) : all.size === 1 ? [...all][0] : 'parts';
+  return shell === 'parts' || shell === 'none' ? shell : { shell, source: 'host' };
 }
 
 export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line: number, lang: Lang, shells: Shells, opts: ExplainOptions): LineExplanation {
