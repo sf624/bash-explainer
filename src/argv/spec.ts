@@ -377,6 +377,11 @@ export interface ValueSpec {
   /** The value removes an environment variable from what the command a slot runs gets (`env -u NAME`). */
   unsetsEnv?: boolean;
   /**
+   * The value is a configuration option that may name variables sent to the command a slot runs (`ssh -o
+   * SendEnv=NAME`): `CommandSlot.maySend`.
+   */
+  sendsEnv?: boolean;
+  /**
    * The program reads the value as soon as it reads the option, with the options given so far: an option given after
    * it does not apply to it (sed compiles each `-e` script at once, so `sed -e 's/a+/x/' -E` reads a BRE).
    */
@@ -573,6 +578,12 @@ export interface CommandSlot {
    * has them, whatever the caller exported.
    */
   sets?: readonly string[];
+  /**
+   * The variables of the caller's environment that may reach the command, by a configuration the explainer does not
+   * read (ssh's `SendEnv`, which the server must accept: `SSH_MAY_SEND`, src/dict/types.ts); `*` as in `keeps`. Whether
+   * they do is not known.
+   */
+  maySend?: readonly string[];
   /** `command`, `builtin`. */
   lookup?: 'no-functions' | 'builtins-only';
   /**

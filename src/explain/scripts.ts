@@ -22,7 +22,7 @@ import { replaceRange, stringShell, textBetween } from '../rewrite';
 import { readAsScript, scriptProcess } from '../tokenmarks';
 import type { Explainer } from './context';
 import { lineStarts, posOf, sameSpan, sortTokens } from './nodes';
-import { resolve } from './reads';
+import { resolve, specFor } from './reads';
 
 /** The expansions that give a word a value of the shell that expands it (`$x`, `$(…)`, `*`, `~`): not braces or quotes. */
 const LOCAL_EXPANSIONS: ReadonlySet<ExpansionStep['kind']> = new Set(['tilde', 'parameter', 'command', 'arithmetic', 'process', 'glob']);
@@ -144,13 +144,21 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
   const name = first.text;
   // A function of the script that the slot does not run (src/semantics/names.ts): even one defined later.
   const isFn = isPlainWord(first) && (resolve(cx, name, first, { env }) as { missed?: Missed }).missed?.kind === 'function';
+  // (A function that has the name of a program the dictionary knows, `ls() { command ls -F "$@"; }`: where the function
+  // is not, the program runs, which is often meant, `sudo ls`. A caveat, not the error of a function that is nowhere.)
+  const shadowed = (fn: string, where: 'program' | 'shell' | 'remote' | 'container') => {
+    const spec = specFor(cx, fn);
+    return spec && (!spec.builtin || spec.program) ? fact(cx.lang, 'function-shadowed-by-program', { via, name: fn, where }) : undefined;
+  };
   if (slot.run === 'exec' && where === 'container') {
     if (isFn) {
-      cx.note(fact(cx.lang, 'function-not-in-container', { via, name }), first);
+      cx.note(shadowed(name, 'container') ?? fact(cx.lang, 'function-not-in-container', { via, name }), first);
     }
   } else if (slot.run === 'exec') {
     // (A builtin with a program of its name runs the program: the slot gave its spec.)
-    if (isPlainWord(first) && (isFn || role.spec?.builtin)) {
+    const program = isFn ? shadowed(name, 'program') : undefined;
+    if (program) cx.note(program, first);
+    else if (isPlainWord(first) && (isFn || role.spec?.builtin)) {
       const fix = isFn && blocker
         ? tx(`関数の中身を直接書くか、\`${via} bash -c "$(declare -f ${name}); ${name}"\` のように定義ごと渡します（\`${blocker.via}\` は環境の関数を渡さないので、\`export -f\` は効きません）`,
           `Write out its body, or pass the definition along: \`${via} bash -c "$(declare -f ${name}); ${name}"\` (\`${blocker.via}\` passes no exported functions, so \`export -f\` does not help)`)
@@ -169,7 +177,7 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
     }
     unpassedVariables(cx, env, words);
     if (isFn) {
-      cx.note(fact(cx.lang, 'function-not-on-remote', { name }), first);
+      cx.note(shadowed(name, 'remote') ?? fact(cx.lang, 'function-not-on-remote', { name }), first);
     }
   } else if (slot.run === 'shell-string') {
     unpassedVariables(cx, env, words);
@@ -196,13 +204,13 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
     const shell = link.shell!;
     if (res && res.kind !== 'function') {
       const f = fn!;
-      cx.note(missed?.why === 'not-passed' && blocker !== link
+      cx.note(shadowed(f, 'shell') ?? (missed?.why === 'not-passed' && blocker !== link
         ? fact(cx.lang, 'function-not-in-new-shell-blocked', { via, fn: f, blocker: blocker!.via })
         : missed?.why === 'not-passed'
         ? fact(cx.lang, 'function-not-in-new-shell', { via, fn: f })
         : missed?.why === 'not-imported'
         ? fact(cx.lang, 'function-not-imported', { via, shell, fn: f })
-        : fact(cx.lang, 'function-not-in-new-shell-export', { via, fn: f, ...(missed?.maybe === 'unread' ? { unread: true } : {}) }), first);
+        : fact(cx.lang, 'function-not-in-new-shell-export', { via, fn: f, ...(missed?.maybe === 'unread' ? { unread: true } : {}) })), first);
     } else if (missed?.why === 'not-imported') {
       // (`sh` is dash on Debian and Ubuntu, bash elsewhere.)
       cx.note(fact(cx.lang, 'function-not-imported-sh', { via, fn: fn! }), first);
@@ -259,10 +267,10 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
     // (Not set by the string, as its model read it; but code not read before the read may set it there: `unlessUnread`.)
     const unread = unlessUnread(script.model.at(e).run, 'off') === 'unread' ? { unread: true } : {};
     // (sudo still passes a few variables of the environment, `TERM`, `TZ`: then it is as with no wrapper.)
-    const { dropped, unset } = variableIn(cx.state, cmd, v, env);
+    const { dropped, unset, sent } = variableIn(cx.state, cmd, v, env);
     if (dropped) {
       cx.note(remote
-        ? fact(cx.lang, 'variable-not-in-remote-shell', { v, ...unread })
+        ? fact(cx.lang, 'variable-not-in-remote-shell', { v, ...unread, ...(sent ? { sent } : {}) })
         : fact(cx.lang, 'variable-not-passed-by-wrapper', { v, via: dropped.via, ...(dropped.keeps ? { keeps: dropped.keeps.slice(0, 2) } : {}), ...unread }), words[0]);
       return;
     }

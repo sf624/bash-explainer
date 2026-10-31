@@ -576,4 +576,67 @@ describe('pitfalls that bash contradicted', function () {
       }
     });
   });
+
+  // Found in the review of #557: a function that has the name of a program. Where the function is not (a program a
+  // wrapper starts, a new shell, a remote shell, a container), the program runs: bash says no "command not found".
+  describe('a function that shadows a program: the program runs where the function is not', () => {
+    const fn = 'ls() { command ls -F "$@"; }\n';
+    it('runs the program in bash, and says so in a caveat', async () => {
+      const script = `#!/bin/bash\n${fn}timeout 5 ls /\nprintf '/\\n' | xargs ls\nbash -c "ls /"\n`;
+      write('shadow.sh', script);
+      const r = await bash(['shadow.sh']);
+      assert.strictEqual(r.status, 0, r.stderr);
+      assert.doesNotMatch(r.stderr, /not found/);
+      // (The function's `-F` marks directories with `/`; the program, run three times, does not.)
+      assert.doesNotMatch(r.stdout, /^(etc|usr)\/$/m);
+      for (const line of [2, 3, 4]) {
+        const note = noteOf(script, 'function-shadowed-by-program', line)!;
+        assert.strictEqual(note.level, 'info', String(line));
+        assert.match(note.body, /the program `ls` runs/, String(line));
+      }
+      for (const [src, body] of [
+        ['sudo ls', /`sudo` starts `ls` as a separate program, so the program `ls` runs, not this script's function of that name\. That may be what is meant/],
+        ['ssh host ls', /^the remote shell does not have this script's function `ls`, so the program `ls` runs there/],
+        ['docker run img ls', /^`docker run` runs `ls` inside the container, which does not have this script's function, so the image's program `ls` runs/],
+        ["bash -c 'ls /'", /^`bash -c` runs the command in a new shell, which does not have this script's function `ls`, so the program `ls` runs there/],
+      ] as const) {
+        const note = noteOf(fn + src, 'function-shadowed-by-program', 1)!;
+        assert.strictEqual(note?.level, 'info', src);
+        assert.match(note.body, body, src);
+      }
+      // (A function that is no program is still an error: "command not found".)
+      assert.strictEqual(noteOf('myls() { :; }\nsudo myls', 'builtin-or-function-as-program', 1)!.level, 'error');
+      assert.strictEqual(noteOf('myls() { :; }\nssh host myls', 'function-not-on-remote', 1)!.level, 'error');
+      // (A builtin that is also a program, `echo`: the program runs.)
+      assert.strictEqual(noteOf('echo() { :; }\nsudo echo hi', 'function-shadowed-by-program', 1)?.level, 'info');
+      // (A builtin with no program, `cd`, is not one either.)
+      assert.strictEqual(noteOf('cd() { builtin cd "$@"; }\nsudo cd /root', 'builtin-or-function-as-program', 1)!.level, 'error');
+    });
+  });
+
+  // Also from the review of #557: what the far side sets itself, or may be sent (ssh(1), ENVIRONMENT; ssh_config(5),
+  // `SendEnv`; Docker's `docker run` environment).
+  describe('variables a remote shell or a container sets itself, or may be sent', () => {
+    it('says nothing of a name sshd or the container runtime sets', () => {
+      for (const src of ["HOME=/x\nssh host 'echo \"$HOME\"'", "export USER=me\nssh host 'echo $USER'", "export LOGNAME=me\nssh host 'echo $LOGNAME'", "MAIL=/x\nssh host 'echo $MAIL'",
+        "export HOME=/x\ndocker run img sh -c 'echo \"$HOME\"'", "export HOSTNAME=h\ndocker run img sh -c 'echo \"$HOSTNAME\"'"]) {
+        assert.deepStrictEqual(explain(src, 1).noteInfo.filter((n) => /^variable-not/.test(n.code ?? '')), [], src);
+      }
+    });
+    it('a caveat for a name ssh may send: `LANG` and `LC_*` on Debian and Ubuntu, a name given to `-o SendEnv=`', () => {
+      // (A value not known here may be `SendEnv=FOO`.)
+      for (const src of ["export LANG=C.UTF-8\nssh host 'echo \"$LANG\"'", "export LC_TIME=C\nssh host 'echo $LC_TIME'", "export FOO=1\nssh -o SendEnv=FOO host 'echo $FOO'", "export FOO=1\nssh -o 'SendEnv FOO BAR' host 'echo $FOO'",
+        "export FOO=1\nssh -o \"$opt\" host 'echo $FOO'"]) {
+        const note = noteOf(src, 'variable-not-in-remote-shell', 1)!;
+        assert.strictEqual(note?.level, 'info', src);
+        assert.match(note.body, /unless ssh sends it with `SendEnv` and the server accepts it with `AcceptEnv`/, src);
+      }
+      // (Another name, or `-o` of another option: an error.)
+      for (const src of ["export FOO=1\nssh host 'echo $FOO'", "export FOO=1\nssh -o SendEnv=BAR host 'echo $FOO'", "export FOO=1\nssh -o 'SendEnv -FOO' host 'echo $FOO'",
+        "export FOO=1\nssh -o ConnectTimeout=5 host 'echo $FOO'"]) {
+        assert.strictEqual(noteOf(src, 'variable-not-in-remote-shell', 1)?.level, 'error', src);
+      }
+      assert.match(explain("export LANG=C.UTF-8\nssh host 'echo \"$LANG\"'", 1, 'ja').notes.join('\n'), /（ssh が `SendEnv` で送り、サーバーが `AcceptEnv` で受け付けるときを除く。/);
+    });
+  });
 });
