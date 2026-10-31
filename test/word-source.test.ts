@@ -77,7 +77,7 @@ describe('word source guard (docs/design/word-source.md, section 4)', () => {
       listed.set(k, count);
     };
     for (const d of known.deciders) {
-      if (!/^[A-Z]\d$/.test(d.row)) problems.push(`deciders: ${keyOf(d.file, d.fn, d.kind)} has no row of the inventory (section 2.2) ("${d.row}")`);
+      if (!/^W-[A-Z]\d$/.test(d.row)) problems.push(`deciders: ${keyOf(d.file, d.fn, d.kind)} has no row of the inventory (section 2.2) ("${d.row}")`);
       list(d.file, d.fn, d.kind, d.count, 'deciders');
     }
     for (const s of known.syntax) {

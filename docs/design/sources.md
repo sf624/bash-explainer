@@ -41,7 +41,7 @@ One row per fact. "Offenders" are the readings outside the source today. "Stage"
 
 | # | Fact | Source | Guard test | Offenders today | Stage | Common bug |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | What bash makes of a word: its fields and their count, quoting, globbing, literal start and end, tildes, braces | `wordMeaning`, `wordFields` (src/semantics/words.ts), `ownChars` (chars.ts); `WordView` planned | test/word-source.test.ts (SA1, word-source step 1, being built) | 25 decider rows, about 45 functions in 35 files ([word-source.md](word-source.md), 2.4) | SA guard; SC1 migration (word-source steps 2–8) | No wrong text in representative usage (word-source.md 2.4 lists them in rare inputs). Missing, in common usage: no example or breakdown where a value has a backslash in double quotes (`awk -F "\t"`, `grep "\.txt$"`; W-L2, first in SC1). The tilde in `[ -f ~/.bashrc ]` is explained since #527 |
+| 1 | What bash makes of a word: its fields and their count, quoting, globbing, literal start and end, tildes, braces | `wordMeaning`, `wordFields` (src/semantics/words.ts), `ownChars` (chars.ts); `WordView` planned | test/word-source.test.ts (SA1, word-source step 1, done in #528) | 25 decider rows, about 45 functions in 35 files ([word-source.md](word-source.md), 2.4) | SA guard; SC1 migration (word-source steps 2–8) | No wrong text in representative usage (word-source.md 2.4 lists them in rare inputs). Missing, in common usage: no example or breakdown where a value has a backslash in double quotes (`awk -F "\t"`, `grep "\.txt$"`; W-L2, first in SC1). The tilde in `[ -f ~/.bashrc ]` is explained since #527 |
 | 2 | How a command reads its words: the spec found, options, values, operands | `interpret` (src/argv/interpret.ts) with the lookup of src/explain/reads.ts; `commandRead(n)` planned on the model | SA2: `interpret(` and option regexes outside src/argv/ and `commandRead` | 21 `interpret(` calls in 11 files (checked); 34 lines of `/^-…/` in 23 files outside src/argv, src/dict, src/embedded (a rough count; the guard's list is exact); three hand lists of commands that cannot fail (src/semantics/status.ts `cannotFail`, `closesEarly`, checked; src/semantics/writechecks.ts `SAFE_BUILTINS`, checked) | SA guard; SC2 migration | No: rare spellings (`read -pr x` passes the `read -r` check; `head -n -1` taken as closing early) |
 | 3 | `command` and `builtin` unwrapped | `wrapped`, `commandWords` (src/semantics/effects.ts) | Planned, with row 2 | The loop written again in 5 places; skipped in 3 | SC2 | No |
 | 4 | What a command name runs | `resolveName` (src/semantics/names.ts) | test/names-probes.test.ts (behaviour); no static guard | src/idioms.ts never asks it (an idiom of `read` matches a function `read`); walker.ts `functionCalled` repeats a rule | SC2 | No |
@@ -74,13 +74,13 @@ One row per fact. "Offenders" are the readings outside the source today. "Stage"
 
 One test per fact, each with a known list of today's offenders that may only shrink (an entry that matches less than its count is stale, and fails). Tests and fixtures only; no src/ change, no CHANGELOG. Each guard is a small PR; SA2 to SA5 may go together.
 
-1. **SA1. Words** (row 1): test/word-source.test.ts and test/fixtures/word-source-known.json, as [word-source.md](word-source.md), section 4, details: it is the detailed plan of row 1, and its step 1. Being built.
+1. **SA1. Words** (row 1): test/word-source.test.ts and test/fixtures/word-source-known.json, as [word-source.md](word-source.md), section 4, details: it is the detailed plan of row 1, and its step 1. Done in #528.
 2. **SA2. Command reading** (rows 2 and 3): `interpret(` calls, and option scans by regex (`/^-…/`, tests of an option's `.text`), outside src/argv/ and the future `commandRead`.
 3. **SA3. Command names in src/examples** (row 5): the names guard of test/explain-imports.test.ts also scans src/examples/, except the language interpreters (jq, awk, sed, perlrun, yaml, regex).
 4. **SA4. Note levels** (row 13): severity numbers, level words, the glyphs `⚠` and `ⓘ`, and codicon names of levels, outside the level table. Its list empties in three-levels step 1.
 5. **SA5. Catalog facts** (row 14): `cx.note` and `cx.say` with a plain string instead of a catalog fact. Its list empties before P7a.
 
-Order: SA1 first (in progress), then SA2 to SA5. Size: small each.
+Order: SA1 first (done, #528), then SA2 to SA5. Size: small each.
 
 ### Stage SB: prerequisites inside the UX steps
 

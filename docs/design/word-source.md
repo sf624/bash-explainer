@@ -202,8 +202,8 @@ Add test/word-source.test.ts, modelled on test/explain-imports.test.ts. It reads
 ### 4.2 The allow-list (whole files)
 
 - **The word layer.** src/semantics/{words, chars, wordview, brace, wordcontexts, wordsites, operands, fieldshape}.ts.
-- **Where the helpers are defined.** src/staticword.ts and src/examples/shellwords.ts. Each helper leaves the list when it is removed.
-- **Syntax.** src/syntax/**, src/highlight.ts, src/semanticTokens.ts.
+- **Where a helper is defined.** src/examples/shellwords.ts. (As built in #528, src/staticword.ts is not allowed: its uses are in the known list, so that a new word predicate there is found.)
+- **Syntax.** src/syntax/adapters/**, src/highlight.ts, src/semanticTokens.ts. (As built in #528, src/syntax/tree.ts is matched too: it holds word predicates, `readsVariable` and `wordBraces`.)
 - **Other languages.** src/embedded/**, src/examples/{jq, awk, sed, perlrun, yaml, regex}.ts, src/arith.ts.
 
 Everything else is matched.
@@ -223,7 +223,7 @@ The test fails:
 
 A new feature that reads node types must therefore either read the view, or add a `syntax` entry with a reason. The reviewer sees the reason in the diff.
 
-The first version lists about 150 functions: about 45 deciders and the rest syntax. A script prints the list from the matches, and the reasons are written by hand from section 2. What this costs is the review of that first list, not code.
+The first version lists about 150 functions: about 45 deciders and the rest syntax. (As built in #528, counted per file, function and kind: 193 decider entries, because every call of a helper counts as one, and 147 syntax uses in 50 files.) A script prints the list from the matches, and the reasons are written by hand from section 2. What this costs is the review of that first list, not code.
 
 The test is static. It cannot see a decider that works through new helper names. Section 2.2 is the list to keep, and the renderings oracle (test/support/renderings.ts: the counts we state, against bash's argv) stays the check on behaviour.
 
@@ -241,7 +241,7 @@ Each step is one PR (or a few, where it says so). Every test keeps passing. The 
 
 | Step | What | Files | Size | Fixes |
 | --- | --- | --- | --- | --- |
-| 1 | **The guard.** test/word-source.test.ts and the known list as it stands; the CLAUDE.md line (in the same PR, or the next, as the maintainer prefers). | test/, test/fixtures/, CLAUDE.md | small | none; it stops new deciders |
+| 1 | **The guard.** test/word-source.test.ts and the known list as it stands; the CLAUDE.md line (in the same PR, or the next, as the maintainer prefers). | test/, test/fixtures/, CLAUDE.md | small | none; it stops new deciders. Done in #528 |
 | 2 | **The view.** `WordView`, the three entry points, and `Char.pattern` and `Char.hole` (chars.ts). Nothing reads it yet. test/word-probes.test.ts also compares `count`, `start`, `end`, `plain` and `globs` with bash on words.json, with new rows for `set -f`, extglob, a custom IFS and `set +B`. | src/semantics/wordview.ts, chars.ts, test/word-probes.test.ts, test/fixtures/probes/words.json | medium | none |
 | 3a | **Literal values in the model.** W-L4 and W-T1 read `wordViewIn` and `WordMeaning.tildes`. The remaining callers of `staticWordValue` in semantics/ read the view. | src/semantics/** | medium | W-L1's `$(:)` in names and trust; W-T1; W-G5 (`declare a[1]`) |
 | 3b | **Literal values in the explanation.** `valueNote`, command heads, redirections, `declare` and `unset` names, and example inputs (W-L2) read `view.value`. | src/explain/{words, commands, redirections, argv, assignments, scripts, examples}.ts, src/reading.ts | medium | values under `set -f` and in here-strings (listed in the PR) |
