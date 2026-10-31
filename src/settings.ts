@@ -65,8 +65,10 @@ export interface SettingSpec {
   /** The values the items of an array may take (any string when absent). */
   items?: readonly string[];
   minimum?: number;
-  /** The group it is listed under (README, the web page). */
-  group: 'display' | 'checks' | 'files' | 'dictionary';
+  /** The section of the web page's settings it is listed in: every setting of the web page has one, the others none. */
+  section?: PageSection;
+  /** It does something only where a pointer hovers (a mouse): the web page leaves it out on a touch screen without one. */
+  needsHover?: true;
   /** A short name, [Japanese, English], for the web page. */
   title: [string, string];
   /** Where it has a meaning, and so can be set. */
@@ -75,93 +77,112 @@ export interface SettingSpec {
   elsewhere?: string;
   /**
    * The description, [Japanese, English], that the web page shows: of a setting that is not in package.json (those of
-   * the web page only), or of one whose description there is about VS Code alone (`hover.enabled`).
+   * the web page only), of one whose description there is about VS Code alone (`hover.enabled`), or a shorter copy of
+   * one whose description there takes more than two lines in the page's Common section (`notes.pitfalls`,
+   * `panel.animations`), which shows each description in two lines at most.
    */
   description?: [string, string];
 }
+
+/**
+ * The sections of the web page's settings that hold settings, in their order: what most people change first, then
+ * the examples, the checks and the editor. (The page adds a last one, Data, for its export, import and stored data.)
+ */
+export const PAGE_SECTIONS = ['common', 'examples', 'checks', 'editor'] as const;
+export type PageSection = (typeof PAGE_SECTIONS)[number];
 
 const ALL: readonly Surface[] = ['vscode', 'web', 'cli', 'lsp'];
 const SHELLS = ['auto', 'bash', 'sh', 'dash', 'ash', 'yash', 'ksh', 'mksh', 'zsh'] as const;
 
 export const SETTINGS: readonly SettingSpec[] = [
-  { key: 'language', type: 'string', default: 'auto', enum: ['auto', 'ja', 'en'], group: 'display', title: ['言語', 'Language'], surfaces: ALL },
-  { key: 'notes.idioms', type: 'boolean', default: true, group: 'display', title: ['定番の書き方の補足', 'Notes on idioms'], surfaces: ALL },
-  { key: 'notes.pitfalls', type: 'boolean', default: true, group: 'display', title: ['よくある間違いの指摘', 'Pitfalls'], surfaces: ALL },
-  { key: 'notes.basis', type: 'boolean', default: true, group: 'display', title: ['マニュアルにない動きの印と試し方', 'Behaviour not in the manual'], surfaces: ALL },
-  { key: 'shell', type: 'string', default: 'auto', enum: SHELLS, group: 'checks', title: ['対象シェル', 'Shell'], surfaces: ALL },
-  { key: 'bashVersion', type: 'string', default: DEFAULT_BASH_VERSION, enum: BASH_VERSIONS, group: 'checks', title: ['bash のバージョン', 'bash version'], surfaces: ALL },
-  { key: 'yq.flavor', type: 'string', default: 'auto', enum: ['auto', 'mikefarah4', 'kislyuk', 'mikefarah3'], group: 'checks', title: ['yq の種類', 'yq flavor'], surfaces: ALL },
+  { key: 'language', type: 'string', default: 'auto', enum: ['auto', 'ja', 'en'], section: 'common', title: ['言語', 'Language'], surfaces: ALL },
+  { key: 'notes.idioms', type: 'boolean', default: true, section: 'common', title: ['定番の書き方の補足', 'Notes on idioms'], surfaces: ALL },
   {
-    key: 'diagnostics.enabled', type: 'boolean', default: true, group: 'checks', title: ['警告', 'Warnings'], surfaces: ['vscode', 'web', 'lsp'],
+    key: 'notes.pitfalls', type: 'boolean', default: true, section: 'common', title: ['よくある間違いの指摘', 'Pitfalls'], surfaces: ALL,
+    description: [
+      'よくある間違いと避け方を注記する: `x = 1`（代入にならない）、空の `DIR` での `rm -rf $DIR/…`、クォートしていない変数、`for f in $(ls)` など。',
+      'Point out common mistakes and how to avoid them: `x = 1` (not an assignment), `rm -rf $DIR/…` with an empty `DIR`, unquoted variables, `for f in $(ls)`, and more.',
+    ],
+  },
+  { key: 'notes.basis', type: 'boolean', default: true, section: 'examples', title: ['マニュアルにない動きの印と試し方', 'Behaviour not in the manual'], surfaces: ALL },
+  { key: 'shell', type: 'string', default: 'auto', enum: SHELLS, section: 'checks', title: ['対象シェル', 'Shell'], surfaces: ALL },
+  { key: 'bashVersion', type: 'string', default: DEFAULT_BASH_VERSION, enum: BASH_VERSIONS, section: 'checks', title: ['bash のバージョン', 'bash version'], surfaces: ALL },
+  { key: 'yq.flavor', type: 'string', default: 'auto', enum: ['auto', 'mikefarah4', 'kislyuk', 'mikefarah3'], section: 'checks', title: ['yq の種類', 'yq flavor'], surfaces: ALL },
+  {
+    key: 'diagnostics.enabled', type: 'boolean', default: true, section: 'checks', title: ['警告', 'Warnings'], surfaces: ['vscode', 'web', 'lsp'],
     elsewhere: 'The command-line tool reports warnings when asked with --check.',
   },
-  { key: 'diagnostics.ignore', type: 'array', default: [], group: 'checks', title: ['出さない警告', 'Warnings to leave out'], surfaces: ALL },
-  { key: 'diagnostics.embedded', type: 'boolean', default: true, group: 'checks', title: ['他のファイル中のシェルの警告', 'Warnings in embedded shell code'], surfaces: ALL },
-  { key: 'diagnostics.pitfalls', type: 'boolean', default: true, group: 'checks', title: ['問題に出すよくある間違い', 'Pitfalls as problems'], surfaces: ALL },
-  { key: 'examples.enabled', type: 'boolean', default: true, group: 'display', title: ['具体例', 'Worked examples'], surfaces: ALL },
-  { key: 'examples.disabled', type: 'array', default: [], items: EXAMPLE_KINDS, group: 'display', title: ['表示しない具体例', 'Kinds of examples to hide'], surfaces: ALL },
+  { key: 'diagnostics.ignore', type: 'array', default: [], section: 'checks', title: ['出さない警告', 'Warnings to leave out'], surfaces: ALL },
+  { key: 'diagnostics.embedded', type: 'boolean', default: true, section: 'checks', title: ['他のファイル中のシェルの警告', 'Warnings in embedded shell code'], surfaces: ALL },
+  { key: 'diagnostics.pitfalls', type: 'boolean', default: true, section: 'checks', title: ['問題に出すよくある間違い', 'Pitfalls as problems'], surfaces: ALL },
+  { key: 'examples.enabled', type: 'boolean', default: true, section: 'common', title: ['具体例', 'Worked examples'], surfaces: ALL },
+  { key: 'examples.disabled', type: 'array', default: [], items: EXAMPLE_KINDS, section: 'examples', title: ['表示しない具体例', 'Kinds of examples to hide'], surfaces: ALL },
   {
-    key: 'examples.placement', type: 'string', default: 'first', enum: ['first', 'last', 'bottom'], group: 'display', title: ['具体例の位置', 'Where examples go'], surfaces: ['vscode', 'web'],
+    key: 'examples.placement', type: 'string', default: 'first', enum: ['first', 'last', 'bottom'], section: 'examples', title: ['具体例の位置', 'Where examples go'], surfaces: ['vscode', 'web'],
     elsewhere: 'The text, Markdown and hover output of the command-line tool and the Language Server list the examples after the explanation.',
   },
   {
-    key: 'examples.inHover', type: 'boolean', default: true, group: 'display', title: ['ホバーの具体例', 'Examples in the hover'], surfaces: ['vscode', 'lsp'],
+    key: 'examples.inHover', type: 'boolean', default: true, title: ['ホバーの具体例', 'Examples in the hover'], surfaces: ['vscode', 'lsp'],
     elsewhere: "The web page's hover cards always show the examples; the command-line tool has no hover.",
   },
   {
-    key: 'hover.enabled', type: 'boolean', default: true, group: 'display', title: ['ホバー', 'Hover'], surfaces: ['vscode', 'web', 'lsp'],
+    key: 'hover.enabled', type: 'boolean', default: true, section: 'common', needsHover: true, title: ['ホバー', 'Hover'], surfaces: ['vscode', 'web', 'lsp'],
     description: [
-      'マウスを乗せた部分（単語・オプション・演算子）の解説を、VS Code のホバーと同じカードで表示する。`Ctrl+K Ctrl+I`（Mac では `⌘K ⌘I`）で、カーソル位置の部分を表示する。オフのときは、`Ctrl+K` と `Ctrl+E` をブラウザに渡す。行全体の解説は、オンでもオフでもパネルに表示される。タッチ画面ではカードを表示しない。',
-      "Shows the explanation of the part under the mouse (a word, an option, an operator) in a card, as VS Code's hover does; `Ctrl+K Ctrl+I` (`⌘K ⌘I` on a Mac) shows the part at the cursor. When off, the browser keeps `Ctrl+K` and `Ctrl+E`. The panel explains the whole line either way. A touch screen shows no card.",
+      'マウスを乗せた部分の解説を、VS Code のホバーと同じカードで表示する。`Ctrl+K Ctrl+I` でカーソル位置の部分を表示する。オフのときは `Ctrl+K` と `Ctrl+E` をブラウザに渡す。',
+      "Shows the part under the mouse in a card, as VS Code's hover does; `Ctrl+K Ctrl+I` shows the part at the cursor. When off, the browser keeps `Ctrl+K` and `Ctrl+E`.",
     ],
     elsewhere: 'The command-line tool has no hover.',
   },
   {
-    key: 'hover.followCursor', type: 'boolean', default: false, group: 'display', title: ['カーソルに追従', 'Follow the cursor'], surfaces: ['vscode'],
+    key: 'hover.followCursor', type: 'boolean', default: false, title: ['カーソルに追従', 'Follow the cursor'], surfaces: ['vscode'],
     elsewhere: 'Only VS Code can show a hover by itself; the web page always follows the cursor.',
   },
   {
-    key: 'hover.followDelay', type: 'number', default: 400, minimum: 0, group: 'display', title: ['追従までの遅延', 'Delay before following'], surfaces: ['vscode'],
+    key: 'hover.followDelay', type: 'number', default: 400, minimum: 0, title: ['追従までの遅延', 'Delay before following'], surfaces: ['vscode'],
     elsewhere: 'Goes with hover.followCursor.',
   },
   {
-    key: 'hover.maxDepth', type: 'number', default: 0, minimum: 0, group: 'display', title: ['ホバーの階層の深さ', 'Hover depth'], surfaces: ['vscode', 'lsp'],
+    key: 'hover.maxDepth', type: 'number', default: 0, minimum: 0, title: ['ホバーの階層の深さ', 'Hover depth'], surfaces: ['vscode', 'lsp'],
     elsewhere: "The web page's hover cards show every level; the command-line tool has no hover.",
   },
   {
-    key: 'hints.names', type: 'boolean', default: true, group: 'display', title: ['コマンド名のヒント', 'Name hints'], surfaces: ['vscode', 'web', 'lsp'],
+    key: 'hints.names', type: 'boolean', default: true, section: 'editor', title: ['コマンド名のヒント', 'Name hints'], surfaces: ['vscode', 'web', 'lsp'],
     elsewhere: 'The command-line tool shows no inlay hints.',
   },
   {
-    key: 'hints.deadCode', type: 'boolean', default: true, group: 'display', title: ['実行されないコードを薄く表示', 'Fade code that never runs'], surfaces: ['vscode', 'web', 'lsp'],
+    key: 'hints.deadCode', type: 'boolean', default: true, section: 'editor', title: ['実行されないコードを薄く表示', 'Fade code that never runs'], surfaces: ['vscode', 'web', 'lsp'],
     elsewhere: 'The command-line tool draws nothing.',
   },
   {
-    key: 'inline.enabled', type: 'boolean', default: false, group: 'display', title: ['インライン要約（廃止）', 'Inline summary (removed)'], surfaces: ['vscode'],
+    key: 'inline.enabled', type: 'boolean', default: false, title: ['インライン要約（廃止）', 'Inline summary (removed)'], surfaces: ['vscode'],
     elsewhere: 'Deprecated: the inline summary was removed, and the setting has no effect (VS Code tells a user who had it on once).',
   },
   {
-    key: 'inline.maxLength', type: 'number', default: 120, minimum: 20, group: 'display', title: ['インライン要約の長さ（廃止）', 'Inline summary length (removed)'], surfaces: ['vscode'],
+    key: 'inline.maxLength', type: 'number', default: 120, minimum: 20, title: ['インライン要約の長さ（廃止）', 'Inline summary length (removed)'], surfaces: ['vscode'],
     elsewhere: 'Deprecated, with inline.enabled.',
   },
   {
-    key: 'panel.autoOpen', type: 'boolean', default: false, group: 'display', title: ['パネルを自動で開く', 'Open the panel by itself'], surfaces: ['vscode'],
+    key: 'panel.autoOpen', type: 'boolean', default: false, title: ['パネルを自動で開く', 'Open the panel by itself'], surfaces: ['vscode'],
     elsewhere: 'The web page always shows its panel; the others have none.',
   },
   {
-    key: 'panel.animations', type: 'boolean', default: true, group: 'display', title: ['パネルのアニメーション', 'Animations in the panel'], surfaces: ['vscode', 'web'],
+    key: 'panel.animations', type: 'boolean', default: true, section: 'common', title: ['パネルのアニメーション', 'Animations in the panel'], surfaces: ['vscode', 'web'],
+    description: [
+      '行を開くと親から伸び、閉じると親の中に縮む動きを付ける。',
+      'Rows grow from their parent when they are unfolded and shrink into it when they are folded.',
+    ],
     elsewhere: 'The command-line tool and the Language Server have no panel.',
   },
   {
-    key: 'panel.colors', type: 'string', default: 'classic', enum: PANEL_COLOURS, group: 'display', title: ['パネルの色', 'Colours of the panel'], surfaces: ['vscode'],
+    key: 'panel.colors', type: 'string', default: 'classic', enum: PANEL_COLOURS, title: ['パネルの色', 'Colours of the panel'], surfaces: ['vscode'],
     elsewhere: 'The web page keeps its own palettes (it has no editor theme to follow); the others have no panel.',
   },
   {
-    key: 'highlight.enabled', type: 'boolean', default: true, group: 'display', title: ['構文木による色分け', 'Colours from the syntax tree'], surfaces: ['vscode', 'lsp'],
+    key: 'highlight.enabled', type: 'boolean', default: true, title: ['構文木による色分け', 'Colours from the syntax tree'], surfaces: ['vscode', 'lsp'],
     elsewhere: 'The web page always colours the script this way; the command-line tool shows no script.',
   },
   {
-    key: 'editor.wrap', type: 'boolean', default: true, group: 'display', title: ['長い行の折り返し', 'Wrap long lines'], surfaces: ['web'],
+    key: 'editor.wrap', type: 'boolean', default: true, section: 'common', title: ['長い行の折り返し', 'Wrap long lines'], surfaces: ['web'],
     description: [
       'エディタで、長い行をシェルの単語の間で折り返します。2 行目からは字下げして、行番号の横に ↪ を付けます。オフのときは、長い行は横にスクロールします。',
       'Wraps long lines in the editor between shell words. The rows after the first are indented, with ↪ beside them. When off, a long line scrolls sideways.',
@@ -169,14 +190,14 @@ export const SETTINGS: readonly SettingSpec[] = [
     elsewhere: 'Only the web page has its own editor; VS Code has `editor.wordWrap`, and the command-line tool and the Language Server show no editor.',
   },
   {
-    key: 'languages', type: 'array', default: ['shellscript'], group: 'files', title: ['対象の言語 ID', 'Language IDs'], surfaces: ['vscode', 'lsp'],
+    key: 'languages', type: 'array', default: ['shellscript'], title: ['対象の言語 ID', 'Language IDs'], surfaces: ['vscode', 'lsp'],
     elsewhere: 'The web page and the command-line tool choose the kind of file with their own File menu and --kind.',
   },
   {
-    key: 'embedded.files', type: 'array', default: [...EMBEDDED_FILES], items: EMBEDDED_FILES, group: 'files', title: ['解説するファイルの種類', 'Files with shell code'], surfaces: ['vscode', 'lsp'],
+    key: 'embedded.files', type: 'array', default: [...EMBEDDED_FILES], items: EMBEDDED_FILES, title: ['解説するファイルの種類', 'Files with shell code'], surfaces: ['vscode', 'lsp'],
     elsewhere: 'The web page and the command-line tool explain the file they are given, as the kind chosen (File menu, --kind).',
   },
-  { key: 'customCommands', type: 'object', default: {}, group: 'dictionary', title: ['独自のコマンド', 'Your own commands'], surfaces: ALL },
+  { key: 'customCommands', type: 'object', default: {}, section: 'checks', title: ['独自のコマンド', 'Your own commands'], surfaces: ALL },
 ];
 
 const BY_KEY = new Map(SETTINGS.map((s) => [s.key, s]));

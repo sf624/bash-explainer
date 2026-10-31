@@ -76,6 +76,16 @@ A message stays 4 seconds, or 8 with a button, and as long as the pointer is on 
 
 **Load the sample** over your own script replaces it at once and offers Undo, which brings back the text and its file. Over a file you opened and changed since, it asks first, as Open does ("Discard unsaved changes?", Discard and load or Cancel): the Undo goes with the next keystroke, and Ctrl+Z would bring back the text but not the file. Before, the browser asked first.
 
+### Settings on the web page, in sections
+
+The settings come in sections: **Common** first (Language, Theme, Notes on idioms, Pitfalls, Worked examples, Hover, Animations in the panel and Wrap long lines), then **Examples**, **Checks**, **Editor** and **Data** (export and import, and Clear stored data). The sections after Common are folded; a click on a section's heading, or on its link in the row "Jump to: Common · Examples · Checks · Editor · Data" at the top, unfolds it and brings it to the top. A search finds a setting by its title ("version") or its key (`bashExplainer.hints`, `diagnostics.ignore`), and says when nothing matches; Esc clears it. Before, every setting was listed in one long page, under the groups Display, Checks, Files and Dictionary, with the export and import at the top.
+
+Each description shows at most two lines, with "More" right after the last word shown; on a touch screen it shows whole. A value of a list shows its words ("Right under the part they illustrate, …"), and the VS Code names (`bashExplainer.examples.placement`, `first — …`) show only with **Show VS Code setting names**, at the end of the settings; a setting named in a description is then its key, and otherwise its title. The theme is in Common too: the same choice as the menu's. On a touch screen, the Hover setting is left out (the cards show only with a mouse), and every row and control is at least 44 px high.
+
+Side by side, the settings open from the left, over the editor, and are never wider than the editor's pane: the explanation stays in view, and a change shows in it at once. A click on the explanation closes them. Before, they opened from the right, over the explanation they change. In the narrow layout (a phone, or a window up to 767 px wide) they take the whole screen, as before, and a change shows in the explanation when they close.
+
+The settings come back as they were left, for as long as the page is open: the sections unfolded, the search and the place they were scrolled to. Before, they opened at the top every time.
+
 ## Fixed
 
 ### Hover cards on the web page stay off the line

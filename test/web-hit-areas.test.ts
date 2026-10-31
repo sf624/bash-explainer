@@ -81,6 +81,8 @@ describe('the web page: hit areas', function () {
         await until('the menu closed', () => page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open), (v) => !v);
         await page.locator('#settings-open').click();
         await page.locator('#settings-dialog').waitFor({ state: 'visible' });
+        // Every section unfolded (after Common they start folded), so that every setting is measured.
+        for (const id of ['examples', 'checks', 'editor', 'data']) await page.locator(`#settings-fold-${id}`).click();
         await settled(page, '#settings-dialog');
         Object.assign(measured, byKey('settings', await hitAreas(page, '#settings-dialog')));
         await page.keyboard.press('Escape');

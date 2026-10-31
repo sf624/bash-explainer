@@ -188,6 +188,16 @@ export function setUpProblems(
 const closing = new WeakMap<HTMLDialogElement, () => void>();
 
 /**
+ * The edge a side sheet lies along, as a sign: -1 for the left one (the menu; the settings side by side, over the
+ * editor), 1 for the right one (a sheet as wide as the screen comes from the right). Read from where it is drawn, so
+ * that one rule of page.css decides it.
+ */
+function sheetSide(sheet: HTMLElement): -1 | 1 {
+  const r = sheet.getBoundingClientRect();
+  return r.left <= 0.5 && r.right < window.innerWidth - 0.5 ? -1 : 1;
+}
+
+/**
  * Closes a side sheet. At every width it slides out towards its edge, as it slid in, and the backdrop fades (as
  * after a swipe), then the dialog closes; with reduced motion it closes at once.
  */
@@ -197,7 +207,7 @@ export function closeSheet(sheet: HTMLDialogElement): void {
     sheet.close();
     return;
   }
-  const side = sheet.classList.contains('menu') ? -1 : 1;
+  const side = sheetSide(sheet);
   let timer = 0;
   const reset = () => {
     sheet.removeEventListener('transitionend', onEnd);
@@ -233,13 +243,12 @@ export function reopenSheet(sheet: HTMLDialogElement): boolean {
 }
 
 /**
- * A side sheet, a modal dialog along the right edge (the left one for the menu): Esc and a click beside it
- * close it (the browser keeps the focus inside while it is open), and so does a swipe towards its edge on a
- * touch screen.
+ * A side sheet, a modal dialog along an edge of the screen (`sheetSide`): Esc and a click beside it close it (the
+ * browser keeps the focus inside while it is open), and so does a swipe towards its edge on a touch screen.
  */
-export function setUpSheet(sheet: HTMLDialogElement, side: 'left' | 'right' = 'right'): void {
+export function setUpSheet(sheet: HTMLDialogElement): void {
   // Towards the sheet's own edge is positive.
-  const sign = side === 'right' ? 1 : -1;
+  let sign = 1;
   sheet.addEventListener('click', (e) => {
     if (e.target === sheet) closeSheet(sheet);
   });
@@ -251,6 +260,7 @@ export function setUpSheet(sheet: HTMLDialogElement, side: 'left' | 'right' = 'r
   let start: { x: number; y: number; id: number } | undefined;
   sheet.addEventListener('pointerdown', (e) => {
     start = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY, id: e.pointerId } : undefined;
+    sign = sheetSide(sheet);
   });
   sheet.addEventListener('pointermove', (e) => {
     if (!start || e.pointerId !== start.id) return;
