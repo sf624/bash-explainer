@@ -12,7 +12,7 @@ import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateFiel
 import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import type { LineExplanation, Span } from '../src/analyzer';
-import { DocumentIssue, diagnosticsFor, plain, ShellDocument, Shells } from '../src/document';
+import { DocumentIssue, diagnosticsFor, plain, ShellDocument, shellOf, Shells } from '../src/document';
 import { documentHighlight, HighlightKind, HIGHLIGHT_KINDS } from '../src/highlight';
 import type { HighlightModifier } from '../src/semanticFacts';
 import { Lang } from '../src/i18n';
@@ -337,7 +337,7 @@ export class Editor {
     const doc = this.host.document()!;
     // (What a command name runs depends on the shell too.)
     const shells = this.host.shells();
-    const shell = `${shells.forced ?? ''}/${shells.detected ?? ''}`;
+    const shell = `${shellOf(shells) ?? ''}`;
     const known = this.shadings.get(doc);
     if (known?.shell === shell) return known.spans;
     const lines = this.view.state.doc;
@@ -399,7 +399,7 @@ export class Editor {
       const doc = this.host.document()!;
       const lang = this.host.lang();
       const shells = this.host.shells();
-      const shell = `${shells.forced ?? ''}/${shells.detected ?? ''}`;
+      const shell = `${shellOf(shells) ?? ''}`;
       let cache = this.hintCaches.get(doc);
       if (!cache || cache.lang !== lang || cache.shell !== shell || cache.settings !== settings) {
         cache = { lang, shell, settings, lines: new Map() };

@@ -9,6 +9,7 @@ import { readingNodes } from '../src/reading';
 import { lineMarks, panelUpdate } from '../src/ui/panelView';
 import type { DocumentIssue } from '../src/document';
 import type { NoteLevel } from '../src/messages';
+import { said } from './support/shells';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -135,7 +136,7 @@ describe('links to the Bash manual', () => {
     const unset = toPlainMarkdown(new Analyzer('en').explainLine(parser.parse('unset -fv x'), 0), 'unset -fv x', 'a.sh:1');
     assert.ok(unset.includes('→ `bash: line 1: unset: cannot simultaneously unset a function and a variable ⏎ status 1, x=1 ⏎ function`_'), unset);
     const ex = new Analyzer('en').explainLine(tree, 0);
-    const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: 'exit 300', choice: {}, detected: 'bash', placement: 'first', animations: true });
+    const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: 'exit 300', choice: {}, detected: said('bash'), placement: 'first', animations: true });
     assert.deepStrictEqual(msg.notes[0].basis, {
       kind: 'checked', label: 'Not in the manual · checked with bash 5.2 and 5.3',
       title: "bash's actual behaviour, which the Bash manual does not state: checked by running bash 5.2 and 5.3 (messages as with `LC_ALL=C`)",
@@ -145,7 +146,7 @@ describe('links to the Bash manual', () => {
     const off = new Analyzer('en').explainLine(tree, 0, 'bash', { basis: false });
     assert.ok(!off.facts![0].basis && !off.facts![0].tryIt);
     assert.ok(!toPlainMarkdown(off, 'exit 300', 'a.sh:1').includes('Not in the manual'));
-    assert.ok(!('basis' in panelUpdate({ lang: 'en', explanation: off, file: 'a.sh', line: 0, lineText: 'exit 300', choice: {}, detected: 'bash', placement: 'first', animations: true }).notes[0]));
+    assert.ok(!('basis' in panelUpdate({ lang: 'en', explanation: off, file: 'a.sh', line: 0, lineText: 'exit 300', choice: {}, detected: said('bash'), placement: 'first', animations: true }).notes[0]));
   });
 
   // docs/design/basis.md, step 4: a part whose text rests on bash's behaviour, as a note does.
@@ -163,7 +164,7 @@ describe('links to the Bash manual', () => {
     const prefix = new Analyzer('en').explainLine(parser.parse('UID=0 echo hi'), 0);
     assert.match(plainPartHover(prefix, [prefix.items[0]], 'en', ''), /^- `UID=0` — .*\\\n {2}_Differs from the manual · checked with bash 5\.2 and 5\.3 · Try it in your terminal: /m);
     // The panel's rows and Reading's nodes, with the chip's words in the panel's language.
-    const msg = panelUpdate({ lang: 'ja', explanation: new Analyzer('ja').explainLine(parser.parse('BASH_XTRACEFD=7'), 0, 'bash', { reading: true }), file: 'a.sh', line: 0, lineText: 'BASH_XTRACEFD=7', choice: {}, detected: 'bash', placement: 'first', animations: true });
+    const msg = panelUpdate({ lang: 'ja', explanation: new Analyzer('ja').explainLine(parser.parse('BASH_XTRACEFD=7'), 0, 'bash', { reading: true }), file: 'a.sh', line: 0, lineText: 'BASH_XTRACEFD=7', choice: {}, detected: said('bash'), placement: 'first', animations: true });
     const shown = msg.explanation.items[0] as { basisShown?: { label: string; tryIt: { output: string } } };
     assert.deepStrictEqual([shown.basisShown?.label, shown.basisShown?.tryIt.output], ['マニュアルの記述と異なる・bash 5.2・5.3 で確認', 'fd 3 is still open']);
     assert.ok(readingNodes(msg.reading!.root).some((n) => (n as { basisShown?: unknown }).basisShown));

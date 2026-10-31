@@ -35,6 +35,7 @@ import { panelUpdate } from '../src/ui/panelView';
 import { partAt } from '../src/ui/hoverParts';
 import { wholeLine } from '../src/ui/hoverView';
 import { allTokens, explain } from './support/explain';
+import { said } from './support/shells';
 
 // Lines that the tests of each feature do not reach: the less common inputs, and the ways a
 // helper gives up. Every line of src/ is to run in some test (see scripts/coverage-check.mjs).
@@ -256,7 +257,7 @@ describe('lines no other test reaches', () => {
 
   it('panel: the message that shows a line', () => {
     const e = explain('yq .a f.yml');
-    const msg = panelUpdate({ lang: 'ja', explanation: { ...e, shell: 'dash', notes: ['yq: mikefarah/yq v4'] }, file: 'a.sh', line: 0, lineText: 'yq .a f.yml', choice: {}, detected: 'zsh', placement: 'bottom', animations: false });
+    const msg = panelUpdate({ lang: 'ja', explanation: { ...e, shell: 'dash', notes: ['yq: mikefarah/yq v4'] }, file: 'a.sh', line: 0, lineText: 'yq .a f.yml', choice: {}, detected: said('zsh'), placement: 'bottom', animations: false });
     assert.strictEqual(msg.dialect.shells[0][1], '自動（zsh）');
     assert.ok(msg.dialect.yqs!.length > 1);
     assert.match(msg.lineLabel, /dash/);

@@ -12,22 +12,16 @@ import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, fie
 import { networkPath, networkTarget } from './dict/syntax';
 import { bracesInContext } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { type Feature, FEATURES, featureWorks, LETTER, type RealShell, type Shell, works } from './shellfeatures';
+import { type Feature, FEATURES, featureWorks, LETTER, type RealShell, saidShell, type Shell, type ShellReading, type ShellSource, works } from './shellfeatures';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
 // (The shells and the table of features are in src/shellfeatures.ts, a leaf module that src/staticword.ts reads too.)
-export { bracesWork, FEATURES, featureWorks, type Shell } from './shellfeatures';
+export { bracesWork, FEATURES, featureWorks, saidShell, type Shell, type ShellReading, type ShellSource } from './shellfeatures';
 
 export const SHELL_NAMES: Record<Shell, string> = {
   bash: 'bash', sh: 'POSIX sh', dash: 'dash', ash: 'busybox ash', yash: 'yash', ksh: 'ksh93', mksh: 'mksh', zsh: 'zsh',
 };
-
-/** Where the shell a script is read as comes from: a ShellCheck directive, the `#!` line, the file name, or none of them (the default, bash). */
-export type ShellSource = 'directive' | 'shebang' | 'filename' | 'default';
-
-/** The shell a script is read as when it is not forced, and where that comes from (`default`: it says none, so bash). */
-export interface ShellReading { shell: Shell; source: ShellSource }
 
 /**
  * The shell a script is written for, from a ShellCheck directive, its shebang or its file name, with where that comes
@@ -60,8 +54,7 @@ export function readShell(text: string, fileName = ''): ShellReading {
 
 /** The shell a script says it is written for (`readShell`'s, undefined when it says none): the callers that only need the shell. */
 export function detectShell(text: string, fileName = ''): Shell | undefined {
-  const reading = readShell(text, fileName);
-  return reading.source === 'default' ? undefined : reading.shell;
+  return saidShell(readShell(text, fileName));
 }
 
 /** The shell a program name stands for (`dash`, `ksh93`, `lksh`, `busybox`, `posh`…); the one mapping every reader uses. */

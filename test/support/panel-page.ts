@@ -13,6 +13,7 @@ import { Lang } from '../../src/i18n';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
 import { documentIssues } from '../../src/document';
 import { lineMarks, PANEL_BODY, panelState, panelUpdate } from '../../src/ui/panelView';
+import { said } from './shells';
 
 const root = path.join(__dirname, '..', '..');
 export const SAMPLE = 'find . -name "*.log" -mtime +7 | xargs rm -f 2>/dev/null';
@@ -30,8 +31,8 @@ function message(lang: Lang, text: string, file: string, wrap = false): unknown 
   const ex = new Analyzer(lang).explainLine(tree, 1, 'bash', { reading: true });
   // (The line's problems, as the editor underlines them.)
   const doc = { lines: src.split('\n'), tree };
-  const marks = lineMarks(documentIssues(doc, lang, { detected: 'bash' }), 1);
-  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, doc, wrap, choice: {}, detected: 'bash', placement: 'first', animations: true, marks });
+  const marks = lineMarks(documentIssues(doc, lang, { detected: said('bash') }), 1);
+  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, doc, wrap, choice: {}, detected: said('bash'), placement: 'first', animations: true, marks });
 }
 
 const HOST = `(function () {

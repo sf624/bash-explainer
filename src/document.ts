@@ -1,7 +1,7 @@
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import type { BashVersion } from './bashversion';
-import { dialectIssues, Shell, type ShellSource } from './dialect';
+import { dialectIssues, saidShell, Shell, type ShellReading } from './dialect';
 import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
@@ -36,10 +36,13 @@ export type DocumentIssue = DocIssue & { fix?: Fix; pitfall?: true };
 export interface Shells {
   /** The shell chosen by the user (setting or panel), which wins over the file. */
   forced?: Shell;
-  /** The shell the file says (shebang, ShellCheck directive, file name). */
-  detected?: Shell;
-  /** Where `detected` comes from (`readShell`); absent when the caller does not need it. */
-  detectedFrom?: ShellSource;
+  /** The shell the file says (shebang, ShellCheck directive, file name) and where: `readShell`'s; its `default` says none. */
+  detected?: ShellReading;
+}
+
+/** The shell a document is explained as: the one chosen, else the one the file says; undefined for neither (bash). */
+export function shellOf(shells: Shells): Shell | undefined {
+  return shells.forced ?? saidShell(shells.detected);
 }
 
 export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line: number, lang: Lang, shells: Shells, opts: ExplainOptions): LineExplanation {
@@ -47,7 +50,7 @@ export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line
     return explainHostedLine(analyzer, doc.tree, doc.extracted, doc.lines, line, lang, shells.forced, opts)
       ?? { line, summary: '', items: [], context: [], notes: [], noteInfo: [], examples: [] };
   }
-  return analyzer.explainLine(doc.tree, line, shells.forced ?? shells.detected, opts);
+  return analyzer.explainLine(doc.tree, line, shellOf(shells), opts);
 }
 
 /** A here-document operator (`<<EOF`): its line, and its place among the here-documents that start on that line. */
@@ -104,7 +107,7 @@ const noteIssueCache = new WeakMap<SyntaxTree, Map<string, DocumentIssue[]>>();
 export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts: ExplainOptions, others: readonly DocumentIssue[] = []): DocumentIssue[] {
   // (Examples and idioms add no warning: the line is explained without them, and without its reading tree.)
   const lean: ExplainOptions = { ...opts, examples: { enabled: false, disabled: [] }, idioms: false, reading: false };
-  const key = JSON.stringify([lang, shells.forced, shells.detected, lean, others.map((i) => [i.code, i.startLine, i.startCol, i.endCol, i.message])]);
+  const key = JSON.stringify([lang, shells.forced, saidShell(shells.detected), lean, others.map((i) => [i.code, i.startLine, i.startCol, i.endCol, i.message])]);
   let byKey = noteIssueCache.get(doc.tree);
   if (!byKey) noteIssueCache.set(doc.tree, (byKey = new Map()));
   const known = byKey.get(key);
@@ -154,7 +157,7 @@ export interface DeadRange { code: 'dead-code'; severity: Faded; message: string
  */
 export function deadCodeHints(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[] = [], version?: BashVersion): DeadRange[] {
   if (doc.extracted || ignore.includes('dead-code')) return [];
-  const model = shellState(doc.tree, shells.forced ?? shells.detected, { version });
+  const model = shellState(doc.tree, shellOf(shells), { version });
   const message = plain(fact(lang, 'dead-code').text);
   const out: DeadRange[] = [];
   const visit = (parent: SyntaxNode): void => {
@@ -250,7 +253,7 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bas
     return doc.extracted.regions.length ? hostIssues(doc.tree, doc.extracted, doc.lines, lang, shells.forced, version) : [];
   }
   const crlf = crlfIssue(doc.tree, lang);
-  const shell = shells.forced ?? shells.detected;
+  const shell = shellOf(shells);
   const nested = nestedIssues(doc, lang, shell);
   return [...crlf, ...nested, ...dialectIssues(doc.tree, shell ?? 'bash', lang, undefined, undefined, version).map((i): DocumentIssue => {
     const n = i.place;

@@ -1,6 +1,6 @@
 import { controlMarks } from '../ctlchars';
 import { LineExplanation, Span, Token } from '../analyzer-types';
-import { Shell, SHELL_NAMES, type ShellSource } from '../dialect';
+import { Shell, SHELL_NAMES, type ShellReading } from '../dialect';
 import { autoShellText } from '../messages-shell';
 import { YQ_NAMES } from '../embedded/yq';
 import { RerunSpec } from '../examples/rerun';
@@ -123,8 +123,7 @@ export interface PanelLine {
   /** The shell and yq chosen for the file ('auto' when not). */
   choice: { shell?: Shell; yq?: string };
   /** The shell the file says, shown next to "auto", and where it comes from (`readShell`). */
-  detected?: Shell;
-  detectedFrom?: ShellSource;
+  detected?: ShellReading;
   placement: ExamplePlacement;
   /** Whether rows grow and shrink when they are unfolded and folded (`panel.animations`). */
   animations: boolean;
@@ -185,7 +184,7 @@ export function panelUpdate(p: PanelLine) {
     // (The control pictures with the name the panel draws for each, and what it stands for: the label of the mark, for a screen reader.)
     controlMarks: controlMarks((ja, en) => (lang === 'ja' ? ja : en)),
     dialect: {
-      shells: [['auto', autoShellText(lang, 'option', p.detected, p.detectedFrom)], ...Object.entries(SHELL_NAMES)],
+      shells: [['auto', autoShellText(lang, 'option', p.detected)], ...Object.entries(SHELL_NAMES)],
       shell: p.choice.shell ?? 'auto',
       // The yq choice only matters on lines that run yq.
       yqs: ex.notes.some((n) => n.startsWith('yq:')) ? [['auto', tp.auto], ...Object.entries(YQ_NAMES).map(([k, v]) => [k, v[lang === 'ja' ? 0 : 1]])] : undefined,

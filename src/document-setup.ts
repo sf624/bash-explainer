@@ -118,6 +118,5 @@ export function openDocument(text: string, kind: FileKind, parse: (shellText: st
 
 /** The shell chosen by the user (`forced`), and the one the file says (shebang, ShellCheck directive, file name). */
 export function shellsOf(lines: readonly string[], fileName: string, forced: Shell | undefined): Shells {
-  const reading = readShell(lines.slice(0, 50).join('\n'), fileName);
-  return { forced, detected: reading.source === 'default' ? undefined : reading.shell, detectedFrom: reading.source };
+  return { forced, detected: readShell(lines.slice(0, 50).join('\n'), fileName) };
 }

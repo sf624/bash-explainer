@@ -14,6 +14,7 @@ import { HoverInput, lineCard, md as mdText, partHover, plainPartHover, prose, s
 import type { ThemeKind } from '../src/ui/palette';
 import { ExamplePlacement, toPlainMarkdown } from '../src/ui/render';
 import { defaultSettings } from '../src/settings';
+import { said } from './support/shells';
 
 const parser = createUnbashParser();
 const open = (src: string): ShellDocument => openDocument(src, 'shell', (t) => parser.parse(t));
@@ -441,7 +442,7 @@ describe('the hover Markdown', () => {
     // A dialect issue too.
     const sh = open('#!/bin/sh\n[[ -f x ]]');
     const shx = { ...input(sh, 1), ex: new Analyzer('en').explainLine(sh.tree, 1, 'sh') };
-    const shProblems = problemsAt(sh, 1, 0, defaultSettings(), { detected: 'sh' });
+    const shProblems = problemsAt(sh, 1, 0, defaultSettings(), { detected: said('sh') });
     assert.ok(shProblems.length && shx.ex.anchors!.some((a) => a.code === shProblems[0].code));
     assert.strictEqual(partHover({ ...shx, problems: shProblems }, partAt(shx.ex.items, { line: 1, character: 0 })).split('\n').filter(isNote).length, 0);
     assert.strictEqual(partHover(shx, partAt(shx.ex.items, { line: 1, character: 0 })).split('\n').filter(isNote).length, 1);
