@@ -14,7 +14,7 @@ export const DIAGNOSTIC_SOURCE = 'Bash Explainer';
 export class DiagnosticsController implements vscode.CodeActionProvider, vscode.Disposable {
   private collection = vscode.languages.createDiagnosticCollection('bashExplainer');
   /** Quick fixes of each document, by diagnostic code and range. */
-  private fixes = new Map<string, { code: string; range: vscode.Range; fix: Fix }[]>();
+  private fixes = new Map<string, { code: string; range: vscode.Range; fix: Fix; preferred: boolean }[]>();
   private registration: vscode.Disposable | undefined;
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private disposables: vscode.Disposable[] = [];
@@ -59,14 +59,14 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
       this.clear(doc);
       return;
     }
-    const fixes: { code: string; range: vscode.Range; fix: Fix }[] = [];
+    const fixes: { code: string; range: vscode.Range; fix: Fix; preferred: boolean }[] = [];
     const diagnostics = this.service.issues(doc).map((i) => {
       const range = new vscode.Range(i.startLine, i.startCol, i.endLine, i.endCol);
       // The marks are for the hover; the Problems panel has its own icons.
       const d = new vscode.Diagnostic(range, plain(i.message), SEVERITIES[i.severity].vscode);
       d.source = DIAGNOSTIC_SOURCE;
       d.code = i.code;
-      if (i.fix) fixes.push({ code: i.code, range, fix: i.fix });
+      for (const [k, fix] of (i.fixes ?? []).entries()) fixes.push({ code: i.code, range, fix, preferred: k === 0 });
       return d;
     });
     // Code that never runs: a hint the editor fades (no problem: no squiggle, and not in the Problems panel by default).
@@ -89,7 +89,8 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
       .flatMap((d) => known.filter((k) => k.code === d.code && k.range.isEqual(d.range)).map((k) => {
         const action = new vscode.CodeAction(k.fix.title[lang === 'ja' ? 0 : 1], vscode.CodeActionKind.QuickFix);
         action.diagnostics = [d];
-        action.isPreferred = true;
+        // (The first fix of a problem is the one it recommends.)
+        action.isPreferred = k.preferred;
         action.edit = new vscode.WorkspaceEdit();
         for (const e of k.fix.edits) action.edit.replace(doc.uri, new vscode.Range(e.startLine, e.startCol, e.endLine, e.endCol), e.text);
         return action;

@@ -47,7 +47,41 @@ describe('documents without VS Code', () => {
     // (It is also the last command of a script run as a program: `script-last-test-returns-status`.)
     assert.deepStrictEqual(documentIssues(script(text), 'en', { detected }).map((i) => i.code), ['dbracket', 'script-last-test-returns-status']);
     assert.deepStrictEqual(documentIssues(script(text), 'en', { forced: 'bash', detected }).map((i) => i.code), ['script-last-test-returns-status']);
-    assert.ok(documentIssues(script(text), 'en', { detected })[0].fix);
+    assert.ok(documentIssues(script(text), 'en', { detected })[0].fixes);
+  });
+
+  // (docs/design/panel-redesign.md, P3: the rewrites a note suggests at its place, `NoteAnchor.rewrite`, are the quick
+  // fixes of its problem, the first the one it recommends; test/rewrites*.test.ts run them in bash.)
+  it('offers the rewrites of a note as the quick fixes of its problem, each at its own place', () => {
+    const fixed = (text: string, code: string, at = 0): [string[], string[]] => {
+      const doc = script(text);
+      const issue = documentIssues(doc, 'en', { detected: detectShell(text, 'x.sh') }).filter((i) => i.code === code)[at];
+      const offset = (line: number, col: number) => doc.lines.slice(0, line).reduce((n, l) => n + l.length + 1, 0) + col;
+      return [(issue.fixes ?? []).map((f) => f.title[1]), (issue.fixes ?? []).map((f) => [...f.edits].sort((a, b) => offset(b.startLine, b.startCol) - offset(a.startLine, a.startCol))
+        .reduce((t, e) => t.slice(0, offset(e.startLine, e.startCol)) + e.text + t.slice(offset(e.endLine, e.endCol)), text))];
+    };
+    assert.deepStrictEqual(fixed('#!/bin/bash\ncp a b || echo failed\n', 'failure-reported-as-success'),
+      [['Rewrite as `{ echo failed >&2; exit 1; }`'], ['#!/bin/bash\ncp a b || { echo failed >&2; exit 1; }\n']]);
+    assert.deepStrictEqual(fixed('for f in *.log; do\n  wc -l "$f"\ndone', 'unmatched-glob-runs-once'), [
+      ['Add `[ -e "$f" ] || continue`', 'Add `shopt -s nullglob`'],
+      ['for f in *.log; do\n  [ -e "$f" ] || continue\n  wc -l "$f"\ndone', 'shopt -s nullglob\nfor f in *.log; do\n  wc -l "$f"\ndone'],
+    ]);
+    assert.deepStrictEqual(fixed('#!/bin/bash\nsource lib.sh', 'source-searches-path'), [
+      ['Rewrite as `source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh`', 'Rewrite as `source ./lib.sh`'],
+      ['#!/bin/bash\nsource "$(dirname "${BASH_SOURCE[0]}")"/lib.sh', '#!/bin/bash\nsource ./lib.sh'],
+    ]);
+    assert.deepStrictEqual(fixed('x=1\ngrep -iE "$user" f', 'pattern-from-variable'), [['Rewrite as `grep -iF "$user"`'], ['x=1\ngrep -iF "$user" f']]);
+    // (A fact on two places is a problem at each, with the fix of its own place; a long code is cut in the title.)
+    assert.deepStrictEqual(fixed('cp $a b; cp $a c', 'unquoted-variable-as-path', 1), [['Rewrite as `"$a"`'], ['cp $a b; cp "$a" c']]);
+    assert.deepStrictEqual(fixed('cp a b || echo failed', 'failure-reported-as-success')[0], ['Rewrite as `{ echo failed >&2; return 1 2>/dev/null || exit 1; }`']);
+    assert.deepStrictEqual(fixed('cp a b || echo "the copy of a to b failed"', 'failure-reported-as-success')[0], ['Rewrite as `{ echo "the copy of a to b failed" >&2; return 1 2>/dev/nul…`']);
+    // (None in a string another shell reads, nor in a host file, whose edits would be in the extracted text.)
+    assert.deepStrictEqual(fixed("bash -c 'grep \"$x\" f'", 'pattern-from-variable')[0], []);
+    const docker = documentIssues(dockerfile('FROM alpine\nRUN grep "$x" f'), 'en', {}).filter((i) => i.code === 'pattern-from-variable');
+    assert.deepStrictEqual(docker.map((i) => i.fixes), [undefined]);
+    // (In Japanese, the titles say so.)
+    const ja = documentIssues(script('for f in *.log; do\n  wc -l "$f"\ndone'), 'ja', {})[0];
+    assert.deepStrictEqual(ja.fixes!.map((f) => f.title[0]), ['`[ -e "$f" ] || continue` を加える', '`shopt -s nullglob` を加える']);
   });
 
   it('leaves out ignored codes and codes disabled in the file', () => {

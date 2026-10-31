@@ -29,28 +29,31 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'failure-reported-as-success': { subjects: 2, ran: 2, checks: 16, skipped: {} },
   'for-over-unquoted-args': { subjects: 4, ran: 4, checks: 12, skipped: {} },
   'nounset-unbound': { subjects: 5, ran: 5, checks: 15, skipped: {} },
+  'pattern-from-variable': { subjects: 11, ran: 6, checks: 24, skipped: { '`eval`': 1, 'a file outside the run\'s directory': 2, 'its stdin is a pipe': 1, 'the script sets `x`': 1 } },
   'postfix-increment-status': { subjects: 14, ran: 14, checks: 28, skipped: {} },
   'prefix-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },
   'read-without-r': { subjects: 17, ran: 10, checks: 30, skipped: { 'its stdin is a pipe': 6, 'its stdin is a redirection': 1 } },
   'redirect-in-bracket': { subjects: 15, ran: 10, checks: 19, skipped: { 'a redirection to a word that is not plain text': 5 } },
   'regex-backslash-dropped': { subjects: 2, ran: 2, checks: 24, skipped: {} },
   'rm-empty-variable-root': { subjects: 48, ran: 31, checks: 93, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, '`sudo` with an option': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `DIR`': 4, 'the script sets `D`': 6 } },
+  'source-searches-path': { subjects: 8, ran: 0, checks: 0, skipped: { '`.`': 4, '`source`': 2, 'bash does not parse it': 2 } },
   'unbraced-element': { subjects: 1, ran: 1, checks: 1, skipped: {} },
   'unmatched-glob-runs-once': { subjects: 7, ran: 7, checks: 21, skipped: {} },
-  'unquoted-variable-as-path': { subjects: 60, ran: 39, checks: 202, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `DIR`': 5, 'the script sets `D`': 9 } },
+  'unquoted-variable-as-path': { subjects: 61, ran: 40, checks: 208, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `DIR`': 5, 'the script sets `D`': 9 } },
   'unquoted-variable-in-test': { subjects: 23, ran: 19, checks: 121, skipped: { 'a redirection to a word that is not plain text': 4 } },
   'wrapper-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },
 };
 
 /** The ids of the subjects whose original bash does not parse, one for each. */
-const UNPARSED: SuggestionId[] = ['assignment-with-spaces', ...Array(6).fill('brace-close-no-separator'), ...Array(3).fill('brace-no-space'), 'declaration-masks-status'];
+const UNPARSED: SuggestionId[] = ['assignment-with-spaces', ...Array(6).fill('brace-close-no-separator'), ...Array(3).fill('brace-no-space'), 'declaration-masks-status',
+  ...Array(2).fill('source-searches-path')];
 
 /**
  * Inputs for the ids the corpus raises nowhere (the three `*-last-test-*` ids and `find-action-refused`), and for a list of a glob and other
  * words, where the test of the name in the body would skip the words that are no files: the same oracles. Then forms
  * of the style checks the corpus lacks: `[[` glued to its first word, a `}` glued to the group's command as a word of
  * its own or at the end of one, `read` from the script's stdin in a loop, `>` in `[ ]` (the original makes a file in
- * the box), a value in quotes after `x =`, `rm` in a function.
+ * the box), a value in quotes after `x =`, `rm` in a function, and grep in the modes and with the options below.
  */
 const HAND = [
   '#!/bin/bash\nset -e\nf() {\n  [ -f x ] && echo "@y"\n}\nf\necho @next\n',
@@ -62,6 +65,10 @@ const HAND = [
   'find . -exec echo {};\n', 'find . -exec echo {} ;# c\n', 'find . -exec ;\n',
   '[[-f x]] && echo y\n', '{echo a }\n', '{echo a}; echo b\n', 'while read line; do echo "$line"; done\n', '[ "$a" > b ] && echo yes\n',
   'x = "a b"\necho "$x"\n', 'f() {\n  rm -rf $D/x\n}\nf\n',
+  // (grep with an option that selects another mode, which `-F` takes the place of; with options that change
+  // what it prints.)
+  'grep -iE "$x" f\n', 'grep "-iE" "$x" f\n', 'grep --extended-regexp -v "$x" f\n', 'grep -P -c "$x" f\n', 'grep -q "$x" f && echo yes\n',
+  'grep -o "$x"\n',
 ];
 
 describe('the walls of the runs of the corpus (test/support/rewrite-states.ts)', function () {
@@ -171,7 +178,7 @@ describe('the rewrites of the corpus (docs/design/oracles.md, step 5)', function
       const [before, after] = await Promise.all([parses(program, one.map((s) => s.original)), parses(program, one.map((s) => s.script))]);
       assert.deepStrictEqual(one.filter((s, i) => (before[i] || STATES[s.id]!.broken) && !after[i]).map((s) => `${s.id} in ${JSON.stringify(s.input)}: ${JSON.stringify(s.codes)}`), []);
       // (Originals bash does not parse: one snippet, `@(a|b)` in a `case` without extglob; groups the style checks find
-      // unclosed, `{echo a; }` and `{ echo a }`.)
+      // unclosed, `{echo a; }` and `{ echo a }`; a snippet of an `if` with no `fi`, `if . then 1`.)
       const unparsed = one.filter((_, i) => !before[i]).map((s) => s.id);
       assert.deepStrictEqual(unparsed.sort(), UNPARSED);
     });
@@ -184,8 +191,9 @@ describe('the rewrites of the corpus (docs/design/oracles.md, step 5)', function
       const { failures, counts } = await checkStates(program, subjects(HAND.flatMap((t) => factsIn(t, t))));
       assert.deepStrictEqual(failures, []);
       // (Every mechanical id has run over its states; the style checks, on the forms above too.)
-      assert.deepStrictEqual(MECHANICAL.filter((id) => !counts[id]?.ran && !PINNED[id]?.ran), []);
-      assert.deepStrictEqual(MECHANICAL.filter((id) => isStyle(id) && counts[id]?.ran !== counts[id]?.subjects), []);
+      // (Not an id whose states run apart, `IdStates.apart`.)
+      assert.deepStrictEqual(MECHANICAL.filter((id) => !STATES[id]!.apart && !counts[id]?.ran && !PINNED[id]?.ran), []);
+      assert.deepStrictEqual(MECHANICAL.filter((id) => isStyle(id) && !STATES[id]!.apart && counts[id]?.ran !== counts[id]?.subjects), []);
     });
   }
 });

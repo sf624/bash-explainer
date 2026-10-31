@@ -84,6 +84,18 @@ describe('Bash Explainer in VS Code', function () {
     assert.strictEqual(doc.lineAt(1).text, 'if [ -f "$1" ]; then echo yes; fi');
   });
 
+  it('offers the rewrites a note suggests as quick fixes, the first one preferred', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'shellscript', content: 'for f in *.log; do\n  wc -l "$f"\ndone\n' });
+    await open(doc);
+    const diagnostics = await until('the loop caveat', () => vscode.languages.getDiagnostics(doc.uri), (d) => d.some((x) => x.code === 'unmatched-glob-runs-once'));
+    const caveat = diagnostics.find((x) => x.code === 'unmatched-glob-runs-once')!;
+    const actions = (await vscode.commands.executeCommand<vscode.CodeAction[]>('vscode.executeCodeActionProvider', doc.uri, caveat.range)).filter((a) => a.diagnostics?.[0]?.code === 'unmatched-glob-runs-once');
+    assert.deepStrictEqual(actions.map((a) => [a.title, !!a.isPreferred]), [['Add `[ -e "$f" ] || continue`', true], ['Add `shopt -s nullglob`', false]]);
+    assert.ok(await vscode.workspace.applyEdit(actions[0].edit!));
+    assert.strictEqual(doc.getText(), 'for f in *.log; do\n  [ -e "$f" ] || continue\n  wc -l "$f"\ndone\n');
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  });
+
   it('lists every error, warning and caveat of the explanations as a problem, with its level, range and code, and no plain fact', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'shellscript', content: '#!/bin/bash\nf() {\n  local x=$(false)\n}\n[ -f a\nexit 300\n' });
     await open(doc);

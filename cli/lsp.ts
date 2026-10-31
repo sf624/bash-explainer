@@ -171,17 +171,19 @@ export function startLanguageServer(io: Io): void {
 
   function codeActions(doc: Doc, range: { start: { line: number }; end: { line: number } }) {
     return issues(doc)
-      .filter((i) => i.fix && i.startLine <= range.end.line && i.endLine >= range.start.line)
-      .map((i) => ({
-        title: i.fix!.title[lang === 'ja' ? 0 : 1],
+      .filter((i) => i.startLine <= range.end.line && i.endLine >= range.start.line)
+      .flatMap((i) => (i.fixes ?? []).map((fix, k) => ({
+        title: fix.title[lang === 'ja' ? 0 : 1],
         kind: 'quickfix',
+        // (The first fix of a problem is the one it recommends.)
+        isPreferred: k === 0,
         diagnostics: [{ range: { start: { line: i.startLine, character: i.startCol }, end: { line: i.endLine, character: i.endCol } }, code: i.code, source: 'Bash Explainer', message: plain(i.message) }],
         edit: {
           changes: {
-            [doc.uri]: i.fix!.edits.map((e) => ({ range: { start: { line: e.startLine, character: e.startCol }, end: { line: e.endLine, character: e.endCol } }, newText: e.text })),
+            [doc.uri]: fix.edits.map((e) => ({ range: { start: { line: e.startLine, character: e.startCol }, end: { line: e.endLine, character: e.endCol } }, newText: e.text })),
           },
         },
-      }));
+      })));
   }
 
   /** The semantic tokens of a document (none while highlight.enabled is off); with `lines`, of those lines only. */

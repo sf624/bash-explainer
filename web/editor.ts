@@ -293,10 +293,10 @@ export class Editor {
         message: plain(i.message),
         renderMessage: levelMessage(i.severity, plain(i.message), lang),
         source: i.code,
-        actions: i.fix ? [{
-          name: i.fix.title[lang === 'ja' ? 0 : 1],
-          apply: (view: EditorView) => view.dispatch({ changes: i.fix!.edits.map((e) => ({ from: pos(view.state, e.startLine, e.startCol), to: pos(view.state, e.endLine, e.endCol), insert: e.text })) }),
-        }] : undefined,
+        actions: i.fixes?.map((fix) => ({
+          name: fix.title[lang === 'ja' ? 0 : 1],
+          apply: (view: EditorView) => view.dispatch({ changes: fix.edits.map((e) => ({ from: pos(view.state, e.startLine, e.startCol), to: pos(view.state, e.endLine, e.endCol), insert: e.text })) }),
+        })),
       }))];
     }, {
       delay: 300,

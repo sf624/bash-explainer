@@ -187,8 +187,11 @@ const ENV_PROTECTED = new RegExp(`^(${ENV_GLOBS.map((g) => g.replace(/\*/g, '.*'
 const SETTERS: ReadonlySet<string> = new Set(['declare', 'typeset', 'local', 'export', 'readonly', 'read', 'mapfile', 'readarray', 'getopts', 'unset', 'let']);
 /** Shells: on PATH only as the wrapper of `bash -c STRING`. */
 const SHELLS: ReadonlySet<string> = new Set(['bash', 'sh', 'dash', 'ksh', 'mksh', 'zsh', 'rbash']);
-/** The programs a job may put on PATH: those that run no other program, and the wrappers of `setup`. */
-const PROGRAMS: ReadonlySet<string> = new Set(['bash', 'env', 'echo', 'printf']);
+/**
+ * The programs a job may put on PATH: those that run no other program, and the wrappers of `setup`. (grep reads files
+ * and writes none: the checks of `pattern-from-variable` run none that names a file outside the run's directory.)
+ */
+const PROGRAMS: ReadonlySet<string> = new Set(['bash', 'env', 'echo', 'printf', 'grep']);
 /** Files outside the run's directory a redirection may name. */
 const DEVICES = /^\/dev\/(null|stdin|stdout|stderr|fd\/\d+)$/;
 /** Text that is code where bash reads a value as code (an arithmetic subscript, `${x@P}`, PS4): `$( )`, backquotes, `<( )`. */
@@ -511,6 +514,11 @@ export interface IdStates {
    */
   broken?: string;
   checks: (s: Subject, x: Context) => Check[] | string;
+  /**
+   * Where the states of an id run instead, if the walls let none of its subjects through (`source`, which reads a file
+   * the tree does not show): its subjects here are counted as skipped, and the cheap checks still run on them.
+   */
+  apart?: string;
 }
 
 /** What the oracles read of a subject: the trees of the original and of the rewrite, and the variables they read. */
@@ -1094,6 +1102,36 @@ Object.assign(STATES, {
       const epilogue = [...uncalled(x.tree), ...names.map((n) => `printf '@v=<%s>\\n' "\${${n}[*]}"`)].join('\n');
       const inputs: [string, string][] = [['aBSLb cBSLBSLd\ne f\n', 'a\\b c\\\\d\ne f\n'], ['gBSL\nh i\n', 'g\\\nh i\n'], ['jBSL', 'j\\']];
       return inputs.map(([benign, hazard]) => keeps(JSON.stringify(hazard), s, { stdin: benign, epilogue, env: x.others }, { stdin: hazard, epilogue, env: x.others }, [['BSL', '\\']]));
+    },
+  },
+  'source-searches-path': {
+    states: 'the file beside the script, others of its name in `$PATH` and in the current directory; the script run from another directory, sourced, sourced in a function',
+    apart: 'test/rewrites-advice.test.ts: the walls refuse `source` and `.`, which read a file the tree does not show',
+    // (Never called: the walls skip every subject first.)
+    checks: () => 'its states run in test/rewrites-advice.test.ts',
+  },
+  'pattern-from-variable': {
+    states: 'a plain value; values with `.` and `*`, which the rewrite matches as the original matches them escaped (GNU grep), over lines in `f` and on stdin; the original matches otherwise',
+    checks: (s, x) => {
+      const set = setBy(x);
+      if (set) return set;
+      if (/(^|[\s=])\//.test(s.original)) return 'a file outside the run\'s directory';
+      const elsewhere = stdinElsewhere(commandAt(x));
+      if (elsewhere) return elsewhere;
+      const job = (value: string, lines = 'a.b\naxb\nx*\nxx\nfoo\nxfoo\nbar\n'): Omit<Job, 'script'> =>
+        ({ env: { ...x.others, ...Object.fromEntries(x.vars.map((v) => [v, value])) }, stdin: lines, contents: { f: lines }, programs: ['grep'] });
+      return [
+        keeps('a plain value', s, job('foo'), job('foo')),
+        keeps('`a.b`', s, job('a\\.b'), job('a.b')),
+        keeps('`x*`', s, job('x\\*'), job('x*')),
+        // (The hazard is there: with lines that only the regular expression matches, the original gives otherwise,
+        // unless grep refuses the words, as it does both.)
+        {
+          state: '`a.b` over lines it matches only as a regular expression',
+          runs: pair(s, job('a.b', 'axb\nfoo\n')),
+          verify: ([o, r]) => (o.status !== 2 && o.out === r.out && o.status === r.status ? `the original gives what the rewrite gives: ${JSON.stringify(o)}` : undefined),
+        },
+      ];
     },
   },
 } satisfies Partial<Record<StyleCode, IdStates>>);
