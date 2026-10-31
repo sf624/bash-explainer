@@ -1,5 +1,6 @@
 // The texts of the catalog's facts about extended globs, globstar and a loop over a glob (src/messages.ts: `extglob-*`,
 // `globstar-*`, `unmatched-glob-runs-once`), apart, to keep src/messages.ts short.
+import { readByBashrc } from './messages-common';
 import type { Rewrite } from './rewrite';
 
 /** Why an extended glob may be a syntax error where it is read: an `extglob-*` id without its prefix. */
@@ -27,16 +28,12 @@ const EXTGLOB: Record<ExtglobWhy, (use: string) => readonly [string, string]> = 
 };
 
 /**
- * The text of `extglob-<why>`, [ja, en], for the glob `use`; `sourced`, in a file with no shebang, which an interactive
- * shell may read (`.bashrc`), with extglob often on there: Ubuntu's `.bashrc` loads bash-completion, which runs `shopt -s
- * extglob progcomp`.
+ * The text of `extglob-<why>`, [ja, en], for the glob `use`; `reader`, where `~/.bashrc` may have run first
+ * (`readByBashrc`), with extglob often on: Ubuntu's `.bashrc` loads bash-completion, which runs `shopt -s extglob progcomp`.
  */
-export const extglobText = (why: ExtglobWhy) => ({ use, sourced }: { use: string; sourced?: boolean }): readonly [string, string] => {
-  const [ja, en] = EXTGLOB[why](use);
-  return sourced ? [
-    `${ja}。ただし、このファイルにはシバンがないので、\`.bashrc\` のように対話シェルが読むなら、\`extglob\` はすでに有効なことがよくあります（Ubuntu の \`.bashrc\` が読み込む bash-completion が有効にします）`,
-    `${en}. But this file has no shebang: read by an interactive shell, as \`.bashrc\` is, \`extglob\` is often on already (Ubuntu's \`.bashrc\` loads bash-completion, which turns it on)`] : [ja, en];
-};
+export const extglobText = (why: ExtglobWhy) => ({ use, reader }: { use: string; reader?: 'sourced' | 'interactive' }): readonly [string, string] =>
+  readByBashrc(reader, EXTGLOB[why](use), ['`extglob` はすでに有効なことがよくあります（Ubuntu の `.bashrc` が読み込む bash-completion が有効にします）',
+    '`extglob` is often on already (Ubuntu\'s `.bashrc` loads bash-completion, which turns it on)']);
 
 /** Where `**` may not reach into subdirectories: a `globstar-*` id without its prefix (but `unsupported`). */
 export type GlobstarWhy = 'maybe-on' | 'not-found';

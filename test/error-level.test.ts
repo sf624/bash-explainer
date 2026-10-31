@@ -295,6 +295,25 @@ describe('the checks headed for Error, run in bash (three-levels.md, step 0)', f
     assert.deepStrictEqual(runs.filter((run) => !failed(r, run)).map((run) => run.way), ['interactive', ...(BASH53 ? ['interactive (bash 5.3)'] : [])]);
   });
 
+  // A new shell started with `-i` reads `~/.bashrc` first (here the stand-in, and the system's own `/etc/bash.bashrc`,
+  // which this test cannot leave out): it has the distribution's aliases, and often `extglob` on. A caveat, and every
+  // way runs the line.
+  for (const r of [
+    { id: 'extglob-not-in-new-shell', text: "#!/bin/bash\nbash -i -c 'echo !(x)'\n", line: 2, works: 'yes-match', files: { 'yes-match': '', x: '' } },
+    { id: 'distro-alias-in-script', text: '#!/bin/bash\nbash -i -c ll\n', line: 2, works: 'script.sh' },
+  ] as Row[]) {
+    it(`${r.id} in \`bash -i -c\`: a caveat, as the interactive shell reads .bashrc first`, async function () {
+      const doc = openDocument(r.text, 'shell', (t) => parser.parse(t));
+      const issue = documentIssues(doc, 'en', shellsOf(doc.lines, 'script.sh', undefined)).find((x) => x.code === r.id && x.startLine === r.line - 1);
+      assert.strictEqual(issue?.severity, 'info');
+      assert.match(issue.message, /But this shell is interactive \(`-i`\) and reads `\.bashrc` first: /);
+      if (unrunnable(r)) return this.skip();
+      fs.mkdirSync(path.join(dir, `interactive-${r.id}`));
+      const runs = await runRow(r, path.join(dir, `interactive-${r.id}`));
+      assert.deepStrictEqual(runs.filter((run) => !failed(r, run)).map((run) => run.way), runs.map((run) => run.way));
+    });
+  }
+
   ROWS.forEach((r, i) => {
     it(`${r.id}${r.code ? ` (${r.code})` : ''}: ${JSON.stringify(r.text.split('\n')[r.line - 1].replace(/^﻿/, '').replace(/\r$/, ''))}`, async function () {
       // Our side: the explanation says it there, today a warning.

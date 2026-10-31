@@ -26,7 +26,7 @@ import { type BashVersion, DEFAULT_BASH_VERSION } from '../bashversion';
 import { restrictedByName, type Shell } from '../dialect';
 import { ancestor, field, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { SET_LETTERS } from './effects';
-import { EnvModel, type ExecEnv, fileRead, type FileRead, linksAfter, MAIN_SHELL, type SlotLink } from './env';
+import { EnvModel, type ExecEnv, fileRead, type FileRead, INTERACTIVE_FLAGS, linksAfter, MAIN_SHELL, type SlotLink } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
 import type { ShellState, Tri } from './shellstate';
 import { childOpening, HARMLESS_START, type Opening, openingBlinds } from './opening';
@@ -302,9 +302,6 @@ export class Scripts implements StringTrees {
   }
 }
 
-/** The options of bash's invocation that turn a `shopt` option on: `-i`, an interactive shell, expands aliases (`bash -i -c`, `#!/bin/bash -i`). */
-const INVOCATION_SHOPT: Readonly<Record<string, string>> = { '-i': 'expand_aliases' };
-
 /**
  * The model of a string another shell runs: a walk of its tree for that shell, from what reaches it of the script
  * where the slot runs (exported variables and functions, the names the slots set, the set options with an exported
@@ -356,7 +353,7 @@ function childModel(script: NestedScript): StateModel {
     // (What the links before reached the outer shell with is in `outer`: `env -i bash -c 'export X; bash -c …'`.)
     let st = childStart(w, outer, own, pass, first);
     // (An interactive shell, `bash -i -c`, expands aliases.)
-    for (const f of w.bash ? pass.invocation : []) if (INVOCATION_SHOPT[f.flag]) st = { ...st, shopt: st.shopt.with(INVOCATION_SHOPT[f.flag], 'on') };
+    if (w.bash && pass.invocation.some((f) => INTERACTIVE_FLAGS.has(f.flag))) st = { ...st, shopt: st.shopt.with('expand_aliases', 'on') };
     // (SHELLOPTS and BASHOPTS not given are bash's own: an exported one passes options the outer model has read.)
     const vars = [...st.variables].filter(([name]) => given.has(name) || !['SHELLOPTS', 'BASHOPTS'].includes(name))
       .map(([name, v]) => [name, given.has(name) ? { set: 'on', value: values.get(name) } : v] as const)
@@ -405,8 +402,7 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
       else if (letter !== 'o' && letter !== 'O') start.others.push(`${cluster[0]}${letter}`);
       if (`${cluster[0]}${letter}` === '-r') start.restricted = true;
       // (An interactive shell, `#!/bin/bash -i`, expands aliases: still one the allow-list does not have.)
-      const shopt = INVOCATION_SHOPT[`${cluster[0]}${letter}`];
-      if (shopt) start.shopt.set(shopt, 'on');
+      if (INTERACTIVE_FLAGS.has(`${cluster[0]}${letter}`)) start.shopt.set('expand_aliases', 'on');
     }
   };
   // (A long option: POSIX mode, one that changes nothing here, or one the table does not have: `--debugger`.)

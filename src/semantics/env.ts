@@ -455,6 +455,21 @@ export function readAs(env: ExecEnv, file: FileRead): FileRead {
   return p.kind === 'shell' || p.kind === 'program' ? 'script' : file;
 }
 
+/** bash's invocation options that start an interactive shell, which reads `~/.bashrc` first and expands aliases. */
+export const INTERACTIVE_FLAGS: ReadonlySet<string> = new Set(['-i']);
+
+/**
+ * Who may have read `~/.bashrc` before the code in `env` runs, in a file read as `file`: `interactive`, the shell a
+ * slot starts interactive runs it (`bash -i -c '…'`); `sourced`, a file with no shebang (`readAs`: `unknown`), which an
+ * interactive shell may read (`.bashrc` itself). `.bashrc` gives the distribution's aliases (`ll`), and on Ubuntu
+ * `extglob` on (it loads bash-completion, which runs `shopt -s extglob progcomp`).
+ */
+export function bashrcReader(env: ExecEnv, file: FileRead): 'interactive' | 'sourced' | undefined {
+  const p = processOf(env);
+  if (p.kind === 'shell' && p.link?.kind === 'slot' && p.link.invocation?.some((f) => INTERACTIVE_FLAGS.has(f.flag))) return 'interactive';
+  return readAs(env, file) === 'unknown' ? 'sourced' : undefined;
+}
+
 /** The subshell links `n` itself starts (a pipeline stage, `( )`, `&`…). */
 export function ownSubshells(env: ExecEnv, n: SyntaxNode): SubshellLink[] {
   return env.links.filter((l): l is SubshellLink => l.kind === 'subshell' && l.at === n);

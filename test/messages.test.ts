@@ -60,7 +60,7 @@ describe('the message catalog', () => {
       assert.strictEqual(e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note'), want, id);
     }
     // The ones whose level depends on the case: an unquoted path given to `rm`, `mv` or `cp`; an unset read that stops a shell.
-    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['local-outside-function', 'postfix-increment-status', 'postfix-decrement-status', 'alias-not-expanded-in-script', 'extglob-in-same-block', 'variable-not-in-remote-shell', 'variable-not-passed-by-wrapper', 'variable-not-exported', 'function-not-in-new-shell-export', 'unquoted-variable-as-path', 'nounset-unbound', 'distro-alias-in-script']);
+    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['local-outside-function', 'postfix-increment-status', 'postfix-decrement-status', 'alias-not-expanded-in-script', 'extglob-in-same-block', 'extglob-not-in-new-shell', 'variable-not-in-remote-shell', 'variable-not-passed-by-wrapper', 'variable-not-exported', 'function-not-in-new-shell-export', 'unquoted-variable-as-path', 'nounset-unbound', 'distro-alias-in-script']);
     // `local` in a file with no shebang, which a function may source, or in a trap's action; an alias after code not
     // read, which may turn expand_aliases on; a name that may come from the environment, exported.
     assert.strictEqual(fact('en', 'local-outside-function', { stops: false }).level, 'warning');
@@ -80,9 +80,11 @@ describe('the message catalog', () => {
     // (A distribution's alias, or `shopt -s extglob` in the block of its glob, in a file with no shebang, which an interactive shell may read.)
     const distro = { name: 'll', where: 'Ubuntu', what: { ja: 'エイリアス', en: 'an alias' }, many: false, instead: { ja: '', en: '' } };
     assert.strictEqual(fact('en', 'distro-alias-in-script', distro).level, 'warning');
-    assert.strictEqual(fact('en', 'distro-alias-in-script', { ...distro, sourced: true }).level, 'info');
+    assert.strictEqual(fact('en', 'distro-alias-in-script', { ...distro, reader: 'sourced' }).level, 'info');
     assert.strictEqual(fact('en', 'extglob-in-same-block', { use: '!(x)' }).level, 'warning');
-    assert.strictEqual(fact('en', 'extglob-in-same-block', { use: '!(x)', sourced: true }).level, 'info');
+    assert.strictEqual(fact('en', 'extglob-in-same-block', { use: '!(x)', reader: 'sourced' }).level, 'info');
+    assert.strictEqual(fact('en', 'extglob-not-in-new-shell', { use: '!(x)', reader: 'interactive' }).level, 'info');
+    assert.strictEqual(fact('en', 'distro-alias-in-script', { ...distro, reader: 'interactive' }).level, 'info');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x' }).level, 'warning');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'X', environment: 'maybe' }).level, 'info');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x', environment: 'unlikely' }).level, 'warning');

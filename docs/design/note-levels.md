@@ -127,8 +127,8 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `variable-not-exported`, of a name in capitals the script set with no `unset` or `export -n` first (`fromEnvironment`: `maybe`) | Fine when the variable came from the environment, which exports it. |
 | `nounset-unbound`, of a name in capitals (`fromEnvironment`: `maybe`) | Fine when the environment has it. |
 | `alias-maybe-not-expanded` | A file with no shebang: fine when an interactive shell reads it (`.bashrc`); "command not found" when it runs as a script. |
-| `distro-alias-in-script`, in a file with no shebang | Fine when an interactive shell reads it (`.bashrc`), where the distribution defines the alias; "command not found" when it runs as a script. |
-| `extglob-in-same-block`, in a file with no shebang | Fine when an interactive shell reads it with `extglob` on already (bash-completion turns it on); a syntax error when it runs as a script. |
+| `distro-alias-in-script`, in a file with no shebang or in `bash -i -c` (`reader`) | Fine when an interactive shell reads it (`.bashrc`), where the distribution defines the alias; "command not found" when it runs as a script. |
+| `extglob-in-same-block`, in a file with no shebang or in `bash -i -c`, and `extglob-not-in-new-shell` in `bash -i -c` (`reader`) | Fine when an interactive shell reads it with `extglob` on already (bash-completion turns it on); a syntax error when it runs as a script. |
 | `posix-special-function-name-maybe` | Only on the paths that turn POSIX mode on. |
 | `postfix-increment-status`, `postfix-decrement-status`, when `set -e` is not surely on there | Only when the value is 0, and only the status. |
 | `extglob-maybe-on`, `extglob-maybe-on-trap` | A syntax error only on some paths, or if the signal comes early. |
