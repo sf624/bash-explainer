@@ -18,7 +18,6 @@ import { detectKind } from '../src/hosts/detect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { lineMarks, needsReading, panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
-import { fileNameView } from '../src/ui/fileName';
 import { editorAttributes, editorHint, isPaneKey, LineAnnouncer } from './a11y';
 import { CHANNEL, COMMIT, PR, UP, VERSION } from './build-info';
 import { Compare, receiveState, toParent } from './compare';
@@ -26,7 +25,8 @@ import { $, on, put } from './dom';
 import { Editor } from './editor';
 import { drawIcons } from './icons';
 import { confirmCopied, EditorHead, shortcut } from './editor-head';
-import { ChosenFile, chooseFile, decodeText, fileContent, FileFormat, isMac, kindForFile, MAX_BYTES, PLAIN, saveText, withEol } from './file-io';
+import { ChosenFile, chooseFile, decodeText, fileContent, isMac, kindForFile, kindFromName, MAX_BYTES, saveText, withEol } from './file-io';
+import { FileState } from './file-state';
 import { FileNameControl } from './file-name';
 import { linkWords, showMenuTexts } from './menu';
 import { showChannel } from './banner';
@@ -94,25 +94,21 @@ const choice = () => ({ shell: forcedShell(settings), yq: settings['yq.flavor'] 
 const parser = createUnbashParser();
 const analyzers = new Map<Lang, Analyzer>();
 let parsed: { text: string; kind: Kind; doc: ShellDocument } | undefined;
-/** The file the script was opened from or last saved to: its name, and its handle where the browser gives one (a save writes to it). */
-let file: { name: string; handle?: FileSystemFileHandle } | undefined;
+/** The file the script is (web/file-state.ts): where it came from, how that file holds its text, its name, and what is not saved. */
+const fileState = new FileState<FileSystemFileHandle>();
 /**
- * How that file holds its text: the editor keeps "\n" and no BOM; the file has its own line end (the explainers read it
- * too, so a CRLF file gets the `crlf` warning) and its BOM back.
+ * The one name the page gives the script, wherever it shows it (the header, Save, the title, the panel's `file`, Copy as
+ * Markdown's `file:line`): the file's, else the name given, else "untitled" with the kind's extension. The analyzer needs
+ * no more of the kind's path: only a name ending in `.zsh` or the like says another shell (`detectShell`).
  */
-let format: FileFormat = PLAIN;
-/** The name given to the script by a rename before it was ever saved or opened; `renamed`: a file was renamed since it was saved. */
-let draftName: string | undefined;
-let renamed = false;
-/** The name the explanations give the script: the file's, else the name given, else the kind's (`script.sh`); a name ending in `.zsh` makes it zsh. */
-const fileName = () => file?.name ?? draftName ?? kindInfo(kind).fileName;
+const scriptName = () => fileState.name(kindInfo(kind).fileName);
 let shown: { explanation: LineExplanation; line: number } | undefined;
 
 const analyzer = () => analyzers.get(lang) ?? analyzers.set(lang, new Analyzer(lang)).get(lang)!;
 
 /** The script as the explainers see it, parsed once per change. */
 function shellDocument(): ShellDocument | undefined {
-  const text = withEol(editor.text, format.eol);
+  const text = withEol(editor.text, fileState.format.eol);
   if (parsed && parsed.text === text && parsed.kind === kind) return parsed.doc;
   const doc = openDocument(text, kind, (shellText) => parser.parse(shellText));
   parsed = { text, kind, doc };
@@ -122,7 +118,7 @@ function shellDocument(): ShellDocument | undefined {
 function shells(): Shells {
   const doc = editor.view.state.doc;
   const lines = Array.from({ length: Math.min(50, doc.lines) }, (_, i) => doc.line(i + 1).text);
-  return shellsOf(lines, fileName(), forcedShell(settings));
+  return shellsOf(lines, scriptName(), forcedShell(settings));
 }
 
 // ---- Editor ---------------------------------------------------------------------------------
@@ -220,16 +216,26 @@ function updatePanel(): void {
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);
   panel.show(panelUpdate({
-    lang, explanation, file: fileName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
+    lang, explanation, file: scriptName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
     animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true, state: panel.panelState(),
   }));
 }
 
+/** Writes to the clipboard; false when the browser refuses (a write outside a click's own turn, a policy). */
+async function writeClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function copyMarkdown(): void {
   if (!shown) return;
-  const md = toPlainMarkdown(shown.explanation, editor.view.state.doc.line(shown.line + 1).text, `${fileName()}:${shown.line + 1}`, lang);
-  void navigator.clipboard.writeText(md).then(() => status(TEXT[lang].copied));
+  const md = toPlainMarkdown(shown.explanation, editor.view.state.doc.line(shown.line + 1).text, `${scriptName()}:${shown.line + 1}`, lang);
+  void writeClipboard(md).then((ok) => status(TEXT[lang][ok ? 'copied' : 'copyRefused']));
 }
 
 // ---- Panel mode: the page around sends the script ---------------------------------------------
@@ -536,7 +542,7 @@ on('kind-menu', 'change', (e) => {
  */
 const untouched = (text: string) => !text.trim() || KINDS.some((k) => k.sample === text);
 /** Whether the editor holds the user's own text: a file's (even an empty one), or text that is no sample. */
-const ownText = () => file !== undefined || !untouched(editor.text);
+const ownText = () => fileState.own(editor.text, untouched);
 
 function chooseKind(k: Kind): void {
   // A sample, or nothing, gives way to the new kind's sample; whether the user's own text does is theirs to say.
@@ -601,20 +607,15 @@ function askAboutSample(k: Kind): void {
 /** Puts in the current kind's sample; when it replaced the user's own text, the toast offers to undo it. */
 function loadSample(own: boolean): void {
   const info = kindInfo(kind);
-  const before = { file, format, clean, draftName, renamed };
+  const before = fileState.snapshot();
   loadingSample = true;
   try { editor.setText(info.sample, info.cursorLine); } finally { loadingSample = false; }
-  // The sample is no file's text: a save asks where again (and never writes it into the file opened before).
-  file = undefined;
-  format = PLAIN;
-  clean = editor.text;
-  draftName = undefined;
-  renamed = false;
+  fileState.sampleLoaded(editor.text);
   showFile();
   // Undo brings back the text, and the file it was (its name, its handle, its line ends).
   const back = () => {
     undo(editor.view);
-    ({ file, format, clean, draftName, renamed } = before);
+    fileState.restore(before);
     showFile();
     editor.focusUnlessTouch();
   };
@@ -651,7 +652,7 @@ function clearEditor(): void {
 }
 
 function copyScript(): void {
-  void navigator.clipboard.writeText(editor.text).then(() => status(TEXT[lang].scriptCopied));
+  void writeClipboard(editor.text).then((ok) => status(TEXT[lang][ok ? 'scriptCopied' : 'copyRefused']));
 }
 
 // The other version is another page: go there with the script in the hash, in the same language.
@@ -675,7 +676,11 @@ for (const [id, href] of [['banner-compare', 'compare.html'], ['back', './']]) {
 async function copyLink(id: 'share' | 'menu-share'): Promise<void> {
   const params = await scriptParams(lang, kind, editor.text);
   const url = `${location.origin}${location.pathname}#${params}`;
-  await navigator.clipboard.writeText(url);
+  // Safari refuses a write that comes after the compression above (it is no longer the click's own turn): say so.
+  if (!await writeClipboard(url)) {
+    drawer?.close(); // the toast would lie under the open menu
+    return status(TEXT[lang].copyRefused);
+  }
   confirmCopied($(id), lang, document.getElementById(id === 'share' ? 'share-said' : 'menu-share-said'), () => linkWords(id, lang));
 }
 on('share', 'click', () => void copyLink('share'));
@@ -700,54 +705,38 @@ const head = withFiles ? new EditorHead({
 }) : undefined;
 // Focus rings follow the input: none on a control given the focus back after a pointer (web/popover.ts).
 setUpFocusRings();
-/** The text as it was last opened, saved or loaded: the editor has changes not saved while it differs (`unsaved`). */
-let clean = '';
 
-/**
- * Whether opening a file would lose text: the editor's text differs from the one last opened, saved or loaded, and is
- * the user's own (with no file open, a sample or nothing is not). Read from the text, so that an undo back to it counts.
- */
-function unsaved(): boolean {
-  const text = editor.text;
-  return text !== clean && (file !== undefined || !untouched(text));
-}
-
-/** The name of the file and a mark for changes not saved, as the screen shows them (the mark is said in words to a screen reader). */
-function nameWithMark(name: string, dirty: boolean): Node[] {
-  if (!dirty) return [document.createTextNode(name)];
-  const mark = Object.assign(document.createElement('span'), { textContent: ' ●' });
-  mark.setAttribute('aria-hidden', 'true');
-  const said = Object.assign(document.createElement('span'), { className: 'sr-only', textContent: TEXT[lang].unsaved });
-  return [document.createTextNode(name), mark, said];
-}
+/** Whether opening a file would lose text (web/file-state.ts): the editor's text differs from the one last opened, saved or loaded, and is the user's own. */
+const unsaved = () => fileState.unsaved(editor.text, untouched);
 
 let fileTimer: ReturnType<typeof setTimeout> | undefined;
 /** The script's name as the page shows it (src/ui/fileName.ts): muted until saved or opened, ● for changes not saved. */
-const nameView = () => fileNameView({ file: file?.name, draft: draftName, renamed, dirty: unsaved(), kindName: kindInfo(kind).fileName });
+const nameView = () => fileState.view(editor.text, untouched, kindInfo(kind).fileName);
 /** Shows the script's name, and whether it has changes not saved: in the editor's header, the menu (its first row and its Save) and the page's title. */
 function showFile(): void {
   if (!withFiles) return;
   clearTimeout(fileTimer);
   const v = nameView();
   const t = TEXT[lang];
-  // Save says where the script goes: into the file, or the name a save suggests.
-  $('menu-save-name').replaceChildren(...nameWithMark(v.name, v.dot));
-  head?.show(file?.handle ? t.saveTo(v.name) : t.saveAs(v.name));
-  document.title = file || draftName ? `${v.dot ? '● ' : ''}${v.name} — Bash Explainer` : 'Bash Explainer';
+  // Save says where the script goes: into the file, or the name a save suggests (never with the dot: Save has none).
+  $('menu-save-name').textContent = v.name;
+  head?.show(fileState.handle() ? t.saveTo(v.name) : t.saveAs(v.name));
+  document.title = fileState.named() ? `${v.dot ? '● ' : ''}${v.name} — Bash Explainer` : 'Bash Explainer';
 }
 
-/** Gives the script another name (the file name, renamed in place): the one a save writes (a file's next save then asks where). */
+/**
+ * Gives the script another name (the file name, renamed in place): the one a save writes (a file's next save then asks
+ * where). The file kind follows the name as it does when a file of that name is opened (`kindFromName`): `test.bats`
+ * makes a bats file, `Makefile` a makefile; a name that says nothing (`notes.txt`) leaves the kind as it is.
+ */
 function rename(next: string): void {
-  const before = fileName();
-  if (file) {
-    file = { name: next };
-    renamed = true;
-  } else {
-    draftName = next;
-  }
+  const before = scriptName();
+  fileState.rename(next);
+  const named = kindFromName(next);
+  if (named && named !== kind) return setKind(named);
   showFile();
   // A new name can say another shell (`.zsh`).
-  if (fileName() !== before) {
+  if (scriptName() !== before) {
     editor.shade();
     updatePanel();
     editor.recheck();
@@ -785,12 +774,8 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
     }, back);
     if (!discard) return;
   }
-  file = { name: chosen.name, handle };
-  format = { eol: read.eol, bom: read.bom };
-  draftName = undefined;
-  renamed = false;
+  fileState.opened({ name: chosen.name, handle }, { eol: read.eol, bom: read.bom }, read.text);
   editor.openText(read.text);
-  clean = editor.text;
   setKind(kindForFile(chosen.name, read.text));
   status(read.mixed ? t.mixedEol(chosen.name, read.eol === '\n' ? 'LF' : 'CRLF') : t.opened(chosen.name));
   editor.focusUnlessTouch();
@@ -812,25 +797,21 @@ async function openFile(): Promise<void> {
 async function saveFile(): Promise<void> {
   const t = TEXT[lang];
   const text = editor.text;
-  const before = fileName();
-  const saving = file;
-  const r = await saveText(fileContent(text, format), nameView().name, file?.handle);
+  const before = scriptName();
+  const version = fileState.version();
+  const r = await saveText(fileContent(text, fileState.format), scriptName(), fileState.handle());
   if (r.how === 'cancelled') return;
-  // Another file was opened while the browser asked (its permission bubble is not modal): that one is not the file saved.
-  if (file !== saving) return status(r.how === 'refused' ? t.notSaved(r.name) : r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
+  // Another file was opened (or the name changed) while the browser asked (its permission bubble is not modal): that is not the file saved.
+  if (fileState.version() !== version) return status(r.how === 'refused' ? t.notSaved(r.name) : r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
   if (r.how === 'refused') {
-    // The same write would fail again: the next save asks where.
-    if (file) file = { name: file.name };
+    fileState.refused();
     return status(t.notSaved(r.name));
   }
-  file = { name: r.name, handle: r.how === 'written' ? r.handle : undefined };
-  clean = text;
-  draftName = undefined;
-  renamed = false;
+  fileState.saved({ name: r.name, handle: r.how === 'written' ? r.handle : undefined }, text);
   showFile();
   status(r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
   // A new name can say another shell (`.zsh`).
-  if (fileName() !== before) {
+  if (scriptName() !== before) {
     editor.shade();
     updatePanel();
     editor.recheck();
@@ -901,7 +882,7 @@ if (withFiles) {
 
   // Leaving the page (closing it, reloading it, another version) would lose changes not saved to the file: the browser asks.
   window.addEventListener('beforeunload', (e) => {
-    if (file && unsaved()) e.preventDefault();
+    if (fileState.file && unsaved()) e.preventDefault();
   });
 
   on('menu-open-file', 'click', () => {
@@ -965,7 +946,7 @@ async function start(): Promise<void> {
     const text = await inflate(shared.deflated);
     if (text !== undefined) editor.setText(text, 1);
   }
-  clean = editor.text;
+  fileState.sampleLoaded(editor.text);
   showFile();
   updatePanel();
   editor.recheck();

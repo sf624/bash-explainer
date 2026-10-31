@@ -1391,9 +1391,11 @@ body.resizing .problems-resize {
   display: flex;
 }
 
-/* Help: the keys, for a page with a keyboard (not a touch screen without a mouse). */
+/* Help: the keys, for a page with a keyboard (not a touch screen without a mouse). "Go to the explanation and back"
+   stays there: a screen reader on a touch screen has no other way to it. */
 @media (hover: none) and (pointer: coarse) {
-  #menu-g-help {
+  #menu-keys-title,
+  #menu-keys {
     display: none;
   }
 }

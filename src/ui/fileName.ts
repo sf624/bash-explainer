@@ -49,14 +49,18 @@ export function fileNameView(f: FileFacts): FileNameView {
   return { name: f.file, muted: false, dot: f.dirty || f.renamed };
 }
 
+/** The longest name a rename takes, in characters (most file systems hold 255). */
+export const MAX_NAME = 255;
+
 /**
  * The name typed into the rename field, as the page takes it: trimmed, without the characters a file name cannot
- * hold (`/`, `\`, control characters). Undefined when nothing is left, or when it is the name already shown: the rename
- * then changes nothing.
+ * hold (`/`, `\`, control characters), cut to `MAX_NAME` characters. Undefined when nothing is left, when it is `.` or
+ * `..` (the directory itself and its parent), or when it is the name already shown: the rename then changes nothing.
  */
 export function typedName(typed: string, current: string): string | undefined {
-  const name = [...typed].filter((c) => c >= ' ' && c !== '\u007f' && c !== '/' && c !== '\\').join('').trim();
-  return name && name !== current ? name : undefined;
+  const clean = [...typed].filter((c) => c >= ' ' && c !== '\u007f' && c !== '/' && c !== '\\').join('').trim();
+  const name = [...clean].slice(0, MAX_NAME).join('').trim();
+  return name && name !== '.' && name !== '..' && name !== current ? name : undefined;
 }
 
 /** Where the rename field's selection ends: the stem, so that typing keeps the extension (`deploy|.sh`); a name without one, whole. */

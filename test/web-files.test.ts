@@ -491,8 +491,8 @@ describe('the web page: opening a file and saving the script', function () {
         await until('the menu', () => page.locator('#drawer').evaluate((d) => d.getBoundingClientRect().x), (x) => Math.abs(x) < 0.5);
         const overflow = await page.evaluate(`[...document.querySelectorAll('#drawer .menu-item')].filter((b) => b.getClientRects().length && (b.scrollWidth > b.clientWidth || b.getBoundingClientRect().right > document.getElementById('drawer').getBoundingClientRect().right)).map((b) => b.id)`);
         assert.deepStrictEqual(overflow, [], seen);
-        // The Save item says the file, cut with "…", and that it is not saved.
-        assert.ok((await page.locator('#menu-save-name').textContent())!.endsWith(locale === 'ja-JP' ? ' ●（未保存の変更あり）' : ' ● (unsaved changes)'), seen);
+        // The Save item says the file, cut with "…", and has no dot (the name's first row has it).
+        assert.ok(!(await page.locator('#menu-save-name').textContent())!.includes('●'), seen);
         assert.strictEqual(await page.locator('#menu-save-name').evaluate((el) => el.scrollWidth > el.clientWidth), true, seen);
         assert.strictEqual(await page.locator('#menu-open-label').innerText(), locale === 'ja-JP' ? 'ファイルを開く…' : 'Open file…');
         await ctx.close();

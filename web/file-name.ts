@@ -3,7 +3,7 @@
 // ⋯ › Rename…) turns it into a field, where Enter or leaving it renames and Escape keeps the old name. What it shows
 // comes from src/ui/fileName.ts; this module draws it and wires the field.
 import type { Lang } from '../src/i18n';
-import { FileNameView, nameParts, stemEnd, typedName } from '../src/ui/fileName';
+import { FileNameView, MAX_NAME, nameParts, stemEnd, typedName } from '../src/ui/fileName';
 import { TEXT } from './text';
 
 /** The two places of the name: the button, its parts, its dot and its field. */
@@ -54,6 +54,7 @@ export class FileNameControl {
     const name = this.host.view().name;
     input.value = name;
     input.setAttribute('aria-label', TEXT[this.host.lang()].fileNameField);
+    input.maxLength = MAX_NAME;
     input.style.width = `${Math.min(28, Math.max(8, name.length + 2))}ch`;
     button.hidden = true;
     input.hidden = false;
@@ -80,6 +81,9 @@ export class FileNameControl {
     });
     input.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' && e.key !== 'Escape') return;
+      // Enter that confirms an IME conversion (Japanese, Chinese, Korean) is not the end of the rename; keyCode 229 is
+      // what Safari reports for it after the composition has ended.
+      if (e.isComposing || e.keyCode === 229) return;
       e.preventDefault();
       // Escape here keeps the old name; it does not close the menu around the field.
       e.stopPropagation();
