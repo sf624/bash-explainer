@@ -115,6 +115,8 @@ Users: nothing changes. No CHANGELOG line.
 
 Tests: unit tests of `viewControl`. A web test: a press in the page's view switch changes the panel, and the choice is kept after a reload.
 
+Prerequisite (2026-10-31, [sources.md](sources.md), phase B2): the Reading step model (`BASH_STEP`, `ownStep`, `measureSteps`, `chipOf`, `readerOf`, `bandOf`, `ROLES`) moves from media/panel.js into a typed, pure module of src/ui, with its unit tests. One `needsReading(state)` replaces the two decisions of `view === 'tree'` (src/ui/panel.ts, web/main.ts; section 6.1). The page's mirror of the panel's header is driven by data, not by a MutationObserver (web/panel-bridge.ts).
+
 Risks: the chrome series edits web/panel-bridge.ts too. P1 starts after the three note levels, like the other steps (decision 5). It lands before C7 of [chrome-redesign.md](chrome-redesign.md), which draws the slot from `viewControl`. Keep the PR small.
 
 ### P2. Explanation fixes found by the prototype
@@ -198,6 +200,7 @@ Three PRs:
 
 - **P7a. The row model.** `src/ui/panelRows.ts`: a pure function of the explanation, the depth and the switch. It builds the rows, the text of each depth, the boxes, the role ids, the marks and the Key entries. Data only, drawn by nothing yet, with its tests. It stays under the 1,000 lines of test/file-length.test.ts (split by part if it grows). The basis chips of the roadmap's basis of an explanation ("Not in the manual · checked with bash 5.2", "Try it") are row data here, as they land before P7 (section 8, decision 3).
 - **P7b. The problems box, in today's Meaning.** Each warning and caveat gets a headline: one sentence in its catalog entry or style check, required by the type (as test/suggestions.test.ts requires a class), and per params where the text has cases. The box "Problems on this line": each item with its level's mark and word from the catalog, the headline, "more" with the whole text and the fix to copy (P3), and chips that link each row to its problem and back. A line inside a construct gets a pointer to the problem on the construct's line, with the level's word and the line number.
+- **Prerequisites of P7a and P7b** (2026-10-31, [sources.md](sources.md), phase B3): `Token.role` and `Token.facts` (fact ids); no string notes (`cx.note` with a plain string goes, and the `2>&1 >file` pitfall of `simulateRedirects` becomes a catalog fact with its rewrite), so P7b has every warning typed; one row record per token, which all four renderers read (media/panel.js `item()`, src/ui/hoverView.ts, src/ui/render.ts `toPlainMarkdown`, cli/main.ts `textOutput`); the `ui` texts out of render.ts into a module of their own. The guard of phase A5 then ends with an empty known list.
 - **P7c. The grid and the boxes.** The Meaning tab becomes depth 1 of the new view: "In short", the problems box, the folded whole-line example, the grid, a box per command. Reading stays as the second tab.
 
 The problems of the lines around need the explanations of other lines. `otherLines` moves to src/document.ts and reads the lean explanations cached per tree there (section 4). The speed benchmark comes in this step, with the budget of section 5.

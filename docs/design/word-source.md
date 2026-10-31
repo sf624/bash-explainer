@@ -1,6 +1,6 @@
 # One source for what bash makes of a word
 
-Status: proposed (2026-10-31). Nothing is built. The steps wait on the maintainer's decision (section 7).
+Status: agreed by the maintainer on 2026-10-31 (section 7): step 1 (the guard) now, beside the UX work; steps 2 to 8 after 0.10.0, in the roadmap's "Deferred". This page is the detailed plan of the words row of [sources.md](sources.md) (row 1, phase A1 and phase C1).
 
 What bash makes of a word is one set of facts: its fields and how many, which characters are quoted, whether it globs, its literal start and end, its tildes and braces. The model has a source for them: `wordMeaning`, `wordFields`, `braceWords` and `holedWords` in src/semantics/words.ts, with `ownChars`, `patternOfChars`, `ifsEscaped` and `globbedByBash` in src/semantics/chars.ts. test/word-probes.test.ts checks them against bash.
 
@@ -237,7 +237,7 @@ Until the view exists (step 2), the line names `wordMeaning` and `wordFields` on
 
 ## 5. Steps
 
-Each step is one PR (or a few, where it says so). Every test keeps passing. The snapshot (test/snapshot.ts) and the dumps of sample.sh and the fixtures stay byte-identical, except for the fixes the step lists. Each fix gets a test against bash and a CHANGELOG line.
+Each step is one PR (or a few, where it says so). Every test keeps passing. The explanations need not stay byte-identical ([sources.md](sources.md), section 2, decided 2026-10-31): each PR lists the changes it makes to the snapshot (test/snapshot.ts) and the dumps of sample.sh and the fixtures, and none may contradict bash. Each fix gets a test against bash and a CHANGELOG line.
 
 | Step | What | Files | Size | Fixes |
 | --- | --- | --- | --- | --- |
@@ -275,7 +275,7 @@ The real cost is ahead, not behind. Each bash fix in words.ts (#521 and #522 thi
 
 ### 6.2 What can run beside the UX work
 
-The panel redesign and the web chrome (roadmap items 8 and 9) touch:
+The panel redesign and the web page's chrome touch:
 
 - src/ui/**, src/settings.ts, src/analyzer.ts, src/linesummary.ts and src/argvline.ts;
 - in src/explain/: words.ts, tests.ts, examples.ts and scripts.ts;
@@ -293,7 +293,7 @@ panel-redesign.md P2 already plans to decide "pattern or plain in `[[ ]]`" from 
 
 After it:
 
-- Steps 2, 3a, 5 and 6 may go on in parallel with items 8 to 10. They are not needed for the release, and none of them fixes a common case.
+- Steps 2, 3a, 5 and 6 may go on in parallel with the panel redesign, the web page's chrome and the usability test. They are not needed for the release, and none of them fixes a common case.
 - Step 6 must land before trust-fields step 3.
 - Steps 3b, 4 and 7 wait until the panel steps that touch src/explain/ have landed. Or P2 takes the view for its own rewrite of the `[[ ]]` patterns.
 
@@ -302,4 +302,6 @@ After it:
 1. **The rule.** Agree that a word's run-time facts come only from the word model, checked by the guard, with legitimate uses listed with a reason.
 2. **The minimum.** Agree to step 1 alone before the UX work. Or add G2, which is one line.
 3. **Where the view lives.** The view as a module next to words.ts (src/semantics/wordview.ts). Or fold it into words.ts, which is already 1,100 lines.
-4. **The roadmap.** A roadmap item for steps 2 to 8, placed after items 8 to 10, with step 6 before trust-fields step 3 (item 13). This PR does not edit docs/roadmap.md.
+4. **The roadmap.** A roadmap item for steps 2 to 8, placed after the panel redesign, the web page's chrome and the usability test, with step 6 before step 3 of "Trust of a builtin's words from what their fields may be".
+
+Decided 2026-10-31: 1 and 2 as proposed (step 1 alone before the UX work); 3 is left to step 2; 4: steps 2 to 8 are in the roadmap's "Deferred", as phase C1 of [sources.md](sources.md). A step may change the explanations where a clean model gives a simpler text ([sources.md](sources.md), section 2); the hedge texts of [count-hedges.md](count-hedges.md) are such a case (sources.md, M1).

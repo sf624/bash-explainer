@@ -18,7 +18,7 @@ Every fact has one source. When the reviews ran, several did not (each is fixed 
 ## Principles
 
 1. **One source per fact.** Options come from the argv parse. Meanings come from the semantic model. A list (aliases of commands, shell names, variables bash sets) is one table, in one module, imported by every reader.
-2. **No change of behaviour, except to fix a contradiction.** A step that only moves code keeps every dump, probe and example table unchanged. A step that fixes an explanation contradicting bash or the tool says so in its PR, with a test against the real tool and a CHANGELOG line under `## Unreleased` (one bullet, or an extension of a bullet of the same kind).
+2. **No change of behaviour, except to fix a contradiction.** (For this plan only. Since 2026-10-31, new refactoring follows [sources.md](sources.md), section 2: it may change explanations, listed in the PR, none contradicting bash.) A step that only moves code keeps every dump, probe and example table unchanged. A step that fixes an explanation contradicting bash or the tool says so in its PR, with a test against the real tool and a CHANGELOG line under `## Unreleased` (one bullet, or an extension of a bullet of the same kind).
 3. **Small PRs, each green on its own.** Every step keeps 100% coverage of `src/` and passes CI by itself. `test/fixtures/snippets.json` is regenerated in every step that changes tests.
 4. **Follow the plan of semantics.md.** No one-off fields in `src/dict/types.ts`, no name checks in `src/analyzer.ts`. When a step needs a new spec field, it is general, or the step says why not.
 
