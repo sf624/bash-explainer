@@ -136,7 +136,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let announcer: LineAnnouncer | undefined;
 
 /** The Problems strip and list under the editor; a click on a problem, ‹ › and F8 (on the page) select it in the editor. */
-const strip = mode.hasChrome ? new ProblemStrip({ lang: () => lang, cursor: () => editor.cursor(), pick: (i) => editor.select(i.startLine, i.startCol, i.endLine, i.endCol) }) : undefined;
+const strip = mode.hasChrome ? new ProblemStrip({ lang: () => lang, cursor: () => editor.cursor(), spans: () => editor.problemSpans(), pick: (i) => editor.select(i.startLine, i.startCol, i.endLine, i.endCol) }) : undefined;
 const editor = new Editor({
   kind: () => kind,
   lang: () => lang,
@@ -161,7 +161,7 @@ const editor = new Editor({
     if (u.docChanged && toast.current?.action?.untilEdit && !loadingSample) toast.hide();
     if (u.docChanged && !mode.panel) detectPasted(u);
     if (u.docChanged) showFileSoon();
-    if (u.docChanged || u.selectionSet) strip?.place();
+    if (Editor.problemsMoved(u)) strip?.place();
     // In panel mode the page around sends every change as a message, which is handled at once.
     if (mode.panel || (!u.docChanged && !u.selectionSet)) return;
     clearTimeout(timer);

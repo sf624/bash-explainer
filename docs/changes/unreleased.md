@@ -90,7 +90,7 @@ The settings come back as they were left, for as long as the page is open: the s
 
 The Problems list under the editor folds into a strip: "› Problems ⓧ 1 ⚠ 5 ⓘ 6", the count of each level with its mark in its colour (a level with no problem is not shown), and "No problems" when there are none. A click opens or folds the list. A screen reader hears the counts in words: "Problems: 1 error, 5 warnings, 6 caveats". Before, the header said "PROBLEMS 12", one count for every level, and disappeared with the last problem.
 
-At the right, the strip says which problem the cursor is at, "Ln 20 · 1/11" (the problem it is in, or the first of its line), with ‹ and › to go to the previous and next one. F8 and Shift+F8 do the same, from the editor or the explanation, and go round from the last problem to the first. Help lists the keys.
+At the right, the strip says which problem the cursor is at, "Ln 20 · 1/11" (the problem it is in, or the first of its line), with ‹ and › to go to the previous and next one. F8 and Shift+F8 do the same, from the editor or the explanation, and go round from the last problem to the first; right after an edit they go where the problems are now. While an input method composes, F6 and F8 are left to it. Help lists the keys.
 
 The list is open on a first visit (folded on a phone, as before), and stays as you leave it: the page never opens it on its own. Its problems are in the order of the script (before, grouped by kind). Each row has the line in a column of its own, the message on up to two lines, and the rule from a 520 px pane; the tooltip has the line, the whole message and the rule ("Ln 95: Pitfall: if BUILD_DIR is empty … (rm-empty-variable-root)").
 

@@ -17,13 +17,11 @@ export const TEXT = {
     // The Problems strip under the editor (web/problem-list.ts): its name with the counts said, and where the cursor is.
     noProblems: 'No problems',
     problemsSaid: (counts: readonly string[]) => `Problems: ${counts.join(', ')}`,
-    /** The line part of the position "Ln 20 · 1/11", which a narrow pane leaves out. */
-    problemPosLine: (line: number) => `Ln ${line} · `,
     problemPosSaid: (line: number, i: number, n: number) => `Problem ${i} of ${n}, line ${line}`,
     prevProblem: 'Previous problem',
     nextProblem: 'Next problem',
-    /** A problem's tooltip: its line, its whole message and its rule. */
-    problemTip: (line: number, message: string, code: string) => `Ln ${line}: ${message} (${code})`,
+    /** A problem's tooltip: its line (`line`), its whole message and its rule. */
+    problemTip: (line: string, message: string, code: string) => `${line}: ${message} (${code})`,
     privacy: 'Your script stays in this browser: it is parsed and explained here, with no server and no AI.',
     notices: 'Third-party notices',
     banner: 'Development version, unreleased: built from main at',
@@ -156,11 +154,10 @@ export const TEXT = {
     problems: '問題',
     noProblems: '問題なし',
     problemsSaid: (counts: readonly string[]) => `問題：${counts.join('、')}`,
-    problemPosLine: (line: number) => `${line} 行目 · `,
     problemPosSaid: (line: number, i: number, n: number) => `${n} 件中 ${i} 件目の問題、${line} 行目`,
     prevProblem: '前の問題',
     nextProblem: '次の問題',
-    problemTip: (line: number, message: string, code: string) => `${line} 行目：${message}（${code}）`,
+    problemTip: (line: string, message: string, code: string) => `${line}：${message}（${code}）`,
     privacy: 'スクリプトはこのブラウザから出ません。構文解析も解説もこのページの中で行い、サーバーも AI も使いません。',
     notices: 'サードパーティのライセンス',
     banner: '開発版（未リリース）: main の',
