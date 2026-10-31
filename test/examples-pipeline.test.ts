@@ -371,3 +371,38 @@ describe('the output of echo -n, as bash prints it', () => {
     assert.strictEqual(run('bash', ['-c', "echo -n a b | cat; echo -n | cat; echo -n '' | cat"]).stdout.toString(), 'a b');
   });
 });
+
+describe('what echo prints in a pipeline is known only where it prints its words as they are', () => {
+  const parser = createUnbashParser();
+  const whole = (src: string, line: number, shell?: 'sh') => new Analyzer('en').explainLine(parser.parse(src), line, shell).examples.find((e) => e.kind === 'pipeline');
+  const real = (shell: string, script: string) => lines(run(shell, ['-c', script], { env: { ...process.env, LC_ALL: 'C' } }).stdout.toString());
+
+  it('follows bash, which prints a backslash as it is, and gives no value where an echo reads escapes (dash, bash with xpg_echo)', function () {
+    if (run('dash', ['-c', 'echo ok']).status !== 0) this.skip();
+    for (const word of ['"a\\tb"', '"%s\\n"', '"a\\cb"', '"a\\101b"', '"a\\\\b"', "'a\\tb'", 'a\\\\\\\\b']) {
+      const pipeline = `echo ${word} | tr n X`;
+      // bash: the example is what bash prints.
+      assert.deepStrictEqual(whole(pipeline, 0)?.sections.at(-1)?.lines, real('bash', pipeline), `bash: ${pipeline}`);
+      // dash (sh) and bash with xpg_echo read escapes: a word with a backslash has no known output.
+      assert.strictEqual(whole(`#!/bin/sh\n${pipeline}`, 1, 'sh'), undefined, `sh: ${pipeline}`);
+      assert.strictEqual(whole(`shopt -s xpg_echo\n${pipeline}`, 1), undefined, `xpg_echo: ${pipeline}`);
+    }
+    // Words with no backslash are the same in every shell (`a\ b` is `a b`).
+    assert.deepStrictEqual(whole('#!/bin/sh\necho a\\ b | tr a X', 1, 'sh')?.sections.at(-1)?.lines, real('dash', 'echo a\\ b | tr a X'));
+    assert.deepStrictEqual(whole('#!/bin/sh\necho "a b" | tr a X', 1, 'sh')?.sections.at(-1)?.lines, real('dash', 'echo "a b" | tr a X'));
+    assert.deepStrictEqual(whole('shopt -s xpg_echo\necho "a b" | tr a X', 1)?.sections.at(-1)?.lines, real('bash', 'shopt -s xpg_echo; echo "a b" | tr a X'));
+    // With xpg_echo off again, bash is plain again.
+    assert.deepStrictEqual(whole('shopt -s xpg_echo\nshopt -u xpg_echo\necho "a\\tb" | cat', 2)?.sections.at(-1)?.lines, real('bash', 'shopt -s xpg_echo; shopt -u xpg_echo; echo "a\\tb" | cat'));
+    // What the real shells print, for the record: dash reads the escapes, bash does not.
+    assert.deepStrictEqual(real('dash', 'echo "a\\tb" | cat'), ['a\tb']);
+    assert.deepStrictEqual(real('bash', 'echo "a\\tb" | cat'), ['a\\tb']);
+    assert.deepStrictEqual(real('bash', 'shopt -s xpg_echo; echo "a\\tb" | cat'), ['a\tb']);
+  });
+
+  it('says the same of the words of a brace expansion that echo prints', () => {
+    const printed = (src: string, line: number) => new Analyzer('en').explainLine(parser.parse(src), line).examples.flatMap((e) => e.sections.map((s) => s.label)).filter((l) => l === 'Output');
+    assert.deepStrictEqual(printed('echo a\\\\{1,2}', 0), ['Output']);
+    assert.deepStrictEqual(printed('shopt -s xpg_echo\necho a\\\\{1,2}', 1), []);
+    assert.deepStrictEqual(printed('shopt -s xpg_echo\necho a{1,2}', 1), ['Output']);
+  });
+});

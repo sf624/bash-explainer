@@ -1,6 +1,7 @@
 /** Run a whole pipeline of supported commands on sample input, keeping every stage's output. */
 import { awkExample, awkInvocation, runAwk } from './awk';
 import { utf8Length } from './bytes';
+import { echoWordsKnown } from './echo';
 import { perlExample, perlOptions, runPerl } from './perlrun';
 import { awkMarks, joinRanges, type LineMarks, type StageMarks } from './marks';
 import { grepWrap, JsRegex, literalRegex, posixMatches, regexExamples, toJsRegex } from './regex';
@@ -19,6 +20,8 @@ export interface Stage {
   text: string;
   /** It prints what it reads as it is (`CommandSpec.copies`: cat): no step of its own is shown, but for the last. */
   copies?: boolean;
+  /** For echo: it may read backslash escapes in its words (`echoWordsKnown`). */
+  escapes?: boolean;
 }
 
 type Runner = (input: string[]) => string[];
@@ -289,7 +292,7 @@ function sourceOutput(stage: Stage): string[] | undefined {
     case 'echo': {
       // (`echo -n` prints its words with no newline: nothing at all when there are none.)
       const printed = words[0] === '-n' ? words.slice(1) : words;
-      if (printed[0]?.startsWith('-')) return undefined;
+      if (printed[0]?.startsWith('-') || !echoWordsKnown(printed, !!stage.escapes)) return undefined;
       const line = printed.join(' ');
       return words[0] === '-n' && line === '' ? [] : [line];
     }

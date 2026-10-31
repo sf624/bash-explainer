@@ -14,6 +14,7 @@ import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { visible } from '../ctlchars';
 import { awkInvocation, type AwkRunOptions } from '../examples/awk';
 import * as commandExamples from '../examples/commands';
+import { echoWordsKnown } from '../examples/echo';
 import * as patterns from '../examples/patterns';
 import * as pipelines from '../examples/pipeline';
 import { sectionMarks, type StageMarks } from '../examples/marks';
@@ -38,7 +39,7 @@ import { assignmentsOnly, field, nameText, prefixAssignments, redirectionsOf, ty
 import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
-import { given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
+import { echoMayReadEscapes, given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
 import { has, operands, readsFields, values } from '../argv/query';
 import { wordValue } from './values';
 import { braceExpansion, bracesHere } from './words';
@@ -390,7 +391,7 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     // (The program of the path it runs: `hash -p /usr/bin/tac sort` makes `sort` run tac.)
     const program = named.path ?? named.value;
     const spec = specFor(cx, program);
-    const stage: Stage = { cmd: program.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}) };
+    const stage: Stage = { cmd: program.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}), ...(spec?.prints === 'words' && echoMayReadEscapes(cx, cmd) ? { escapes: true } : {}) };
     const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell, bracesIn(cx.state))), { name: program, lookup: (x) => specFor(cx, x) });
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
@@ -785,7 +786,7 @@ function wordsSection(cx: Explainer, words: string[], cmd: string): ExampleSecti
  * What a command that prints its words (`CommandSpec.prints`: echo, printf) prints with these words, when it is known (the
  * section of the brace example; `wordExample`).
  */
-function printedSection(cx: Explainer, prints: NonNullable<CommandSpec['prints']>, words: commandExamples.ExampleWord[]): ExampleSection | undefined {
+function printedSection(cx: Explainer, at: SyntaxNode, prints: NonNullable<CommandSpec['prints']>, words: commandExamples.ExampleWord[]): ExampleSection | undefined {
   const values = words.map((w) => w.value);
   if (values.some((v) => v === undefined)) return undefined;
   const list = values as string[];
@@ -793,8 +794,8 @@ function printedSection(cx: Explainer, prints: NonNullable<CommandSpec['prints']
     const sec = commandExamples.commandExampleOf('printf', words, cx.lang)?.sections[0];
     return sec && (sec.lines.length > MAX_SHOWN_LINES ? { ...sec, lines: [...sec.lines.slice(0, MAX_SHOWN_LINES - 1), '…'] } : sec);
   }
-  // echo with no option, and words with no backslash: every shell's echo prints them as they are, joined with spaces.
-  if (list[0].startsWith('-') || list.some((v) => v.includes('\\'))) return undefined;
+  // echo with no option, and words it prints as they are (`echoWordsKnown`), joined with spaces.
+  if (list[0].startsWith('-') || !echoWordsKnown(list, echoMayReadEscapes(cx, at))) return undefined;
   const line = [...visible(list.join(' '))];
   return { label: cx.s('出力', 'Output'), lines: [line.length > OUTPUT_SHOWN ? line.slice(0, OUTPUT_SHOWN - 1).join('') + '…' : line.join('')] };
 }
@@ -814,7 +815,7 @@ export function wordExample(cx: Explainer, a: SyntaxNode, cmd: { name: string; n
     const last = [...cmd.args].reverse().find((x) => braceWordsOf(cx, x)?.length);
     const pipe = cmd.node.parent?.type === 'pipeline' ? cmd.node.parent : undefined;
     const prints = cmd.spec?.prints;
-    const printed = prints && last && same(last, a) && !(pipe && !same(pipe.namedChildren[pipe.namedChildren.length - 1], cmd.node)) ? printedSection(cx, prints, exampleWords(cx, cmd.args, true)) : undefined;
+    const printed = prints && last && same(last, a) && !(pipe && !same(pipe.namedChildren[pipe.namedChildren.length - 1], cmd.node)) ? printedSection(cx, cmd.node, prints, exampleWords(cx, cmd.args, true)) : undefined;
     cx.example({ kind: 'glob',
       title: cx.s(`例（ブレース展開 \`${text}\`）`, `Example (brace expansion \`${text}\`)`),
       sections: [wordsSection(cx, words, name), ...(printed ? [printed] : [])],

@@ -61,6 +61,16 @@ export function shellVariant(cx: Explainer, n: SyntaxNode, spec: CommandSpec): S
   return spec.inShell.find((v) => (v.set ?? []).every((o) => option(st, 'set', o) === 'on') && (v.shopt ?? []).every((o) => option(st, 'shopt', o) === 'on'));
 }
 
+/**
+ * Whether the `echo` at `n` may read backslash escapes in its words (`echoWordsKnown`): the shell is not bash (dash
+ * and the others read `\t`), or `xpg_echo` is on or not known to be off there. (The `-e` and `-E` options are the
+ * example's own: it follows no echo with an option but `-n`.)
+ */
+export function echoMayReadEscapes(cx: Explainer, n: SyntaxNode): boolean {
+  const xpg = shoptIn(cx.state.at(n).run, 'xpg_echo', cx.shell);
+  return xpg !== 'default' && xpg !== 'off';
+}
+
 /** The spec of a command with none: no options, no operands. */
 export const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
 
