@@ -55,7 +55,7 @@ describe('documents without VS Code', () => {
   it('offers the rewrites of a note as the quick fixes of its problem, each at its own place', () => {
     const fixed = (text: string, code: string, at = 0): [string[], string[]] => {
       const doc = script(text);
-      const issue = documentIssues(doc, 'en', { detected: detectShell(text, 'x.sh') }).filter((i) => i.code === code)[at];
+      const issue = documentIssues(doc, 'en', { detected: readShell(text, 'x.sh') }).filter((i) => i.code === code)[at];
       const offset = (line: number, col: number) => doc.lines.slice(0, line).reduce((n, l) => n + l.length + 1, 0) + col;
       return [(issue.fixes ?? []).map((f) => f.title[1]), (issue.fixes ?? []).map((f) => [...f.edits].sort((a, b) => offset(b.startLine, b.startCol) - offset(a.startLine, a.startCol))
         .reduce((t, e) => t.slice(0, offset(e.startLine, e.startCol)) + e.text + t.slice(offset(e.endLine, e.endCol)), text))];
