@@ -195,6 +195,11 @@ describe('words: steps', () => {
 
   it('has the value of a word with nothing to expand', () => {
     assert.strictEqual(meaning("echo a'b'\"c\"\\d", "a'b'\"c\"\\d").value, 'abcd');
+    // (Inside double quotes a backslash goes only before `$`, a backtick, `"`, `\` and a newline; elsewhere it stays.)
+    for (const [word, value] of [['"%s\\n"', '%s\\n'], ['"a\\tb"', 'a\\tb'], ['"a\\.b"', 'a\\.b'], ['"a\\"b"', 'a"b'], ['"c\\$d"', 'c$d'], ['"a\\\\b"', 'a\\b'], ['"a\\`b"', 'a`b'], ['a\\ b', 'a b']]) {
+      assert.strictEqual(meaning(`echo ${word}`, word).value, value, word);
+      assert.strictEqual(staticWordValue(find(`echo ${word}`, word).node), value, word);
+    }
     assert.strictEqual(meaning('echo $x', '$x').value, undefined);
     assert.strictEqual(meaning('echo *', '*').value, undefined);
     assert.deepStrictEqual(meaning("echo 'a'", "'a'").steps.find((s) => s.kind === 'quote-removal')!.applies, true);
