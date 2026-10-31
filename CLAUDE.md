@@ -22,6 +22,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 - A branch no input can reach is removed (or becomes a non-null assertion when the grammar guarantees the node); a guard against a bug elsewhere gets `/* c8 ignore … */` with a comment. Put `/* c8 ignore start */` before `} catch`, so the catch's own branch is left out too.
 - A template literal with `\n` in the last statement of a file (`` `${a}\n${b}` ``) shifts tsx's source map: its `0 && (module.exports = …)` then maps inside that line, and CI reports a branch no test can take (seen October 2026 in src/rewrite.ts). Write `a + '\n' + b` there.
 - A branch that only the seeded fuzz test reaches loses its coverage when the snippets change (a new test adds a snippet, and the fuzz inputs move), and CI then fails a PR that never touched that code. Give such a branch a direct test of the input that reaches it (October 2026: `src/semantics/allow.ts` via `echo ${s@${`; `declare +g` in #416).
+- `npx mocha test/<file>` runs the whole suite, because `.mocharc`'s `spec` is added to the file given. To run one file, use `npx mocha --no-config --node-option import=tsx --timeout 10000 test/<file>`.
 
 ## Explanations
 
@@ -73,6 +74,25 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 - In the web tests, type with `keyboard.insertText` (keys typed one by one can arrive out of order in CI), and wait for CodeMirror's selection layer, which is drawn on the next frame.
 - A test that clicks in the panel's page with `element.click()` dispatches a `pointerdown` first, as a pointer does: a focus without one is taken for a key's, and the panel scrolls the row into view.
 - A layout (and its test) must not depend on how wide the words are in a font: CI's Chromium draws Japanese with CJK fonts (IPAGothic, WenQuanYi, from `playwright install --with-deps`), and a machine without them draws boxes of another width. Wrap between groups that do not depend on text width, and check layouts with those fonts (`apt-get download fonts-ipafont-gothic fonts-wqy-zenhei`, `dpkg -x`, `FONTCONFIG_FILE`) at several widths and with long names.
+
+## Web page and panel UI
+
+Check every change to the web page or the panel's UI against this list before its PR is opened. In October 2026 four chrome PRs (C1b, C3, C4, C6) each failed their first review on items of it.
+
+- **Japanese IME.** Enter and Escape during composition (`e.isComposing || e.keyCode === 229`) must not commit, cancel or close anything. A search matches after composition, and matches full-width text (NFKC).
+- **Keyboard and focus.**
+  - Every control is reachable by Tab or by the page's F6 cycle.
+  - When a focused element is removed (a toast closed, a list re-rendered), focus goes back to a sensible place, never to `<body>`.
+  - Focus from a pointer is not keyboard focus: a click must not pin open something that stays open for keyboard focus.
+  - Hidden or clipped content must not be focusable.
+- **The edges.**
+  - The cursor on the document's last line: CodeMirror cannot scroll past the end, so a scroll margin alone does not keep it visible.
+  - Very long names and lines.
+  - A held mouse button, or a drag through a hover.
+  - An action repeated twice, then Undo.
+- **What a screen reader hears.** Check the accessibility tree (`ariaSnapshot()`), not only the screen. CSS generated content (`::before` text) is read aloud unless it has empty alt text (`content: "…" / ""`). A live region holds the message only, not buttons.
+- **Themes.** The control's edges and text in light and dark, with measured contrast. A 1.1:1 border does not separate a popup from the editor.
+- **Test what failed.** A test of each item above must fail on the broken version: try it on the old code before pushing.
 
 ## Stacked PRs
 
