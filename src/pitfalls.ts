@@ -408,8 +408,9 @@ function fixedStrings(r: SpecRun, implied: boolean, w: SyntaxNode): Rewrite | un
     if (node.endIndex > last.endIndex) last = node;
     if (r.parse.roles.find((x) => x.word === word)!.role.role !== 'cluster') edits.push({ start: node.startIndex, end: node.endIndex, text: '-F' });
     else if (value === node.text) edits.push({ start: node.startIndex + role.part![0], end: node.startIndex + role.part![1], text: 'F' });
-    else if (value !== undefined) edits.push({ start: node.startIndex, end: node.endIndex, text: `'${`${value.slice(0, role.part![0])}F${value.slice(role.part![1])}`.replace(/'/g, "'\\''")}'` });
-    else return undefined;
+    // (A word whose value is not known returned above: it is before the pattern, or an unquoted expansion; a quoted one
+    // after it, `"$o"`, is no option to the interpreter.)
+    else edits.push({ start: node.startIndex, end: node.endIndex, text: `'${`${value!.slice(0, role.part![0])}F${value!.slice(role.part![1])}`.replace(/'/g, "'\\''")}'` });
   }
   if (!edits.length) edits.push({ start: name.endIndex, end: name.endIndex, text: ' -F' });
   return editSpan(name, last, edits);
