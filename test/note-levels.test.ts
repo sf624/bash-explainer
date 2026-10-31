@@ -6,8 +6,8 @@ import { ALLOWED, counted, scanAll, scanSource, scanStyle, type Kind } from './s
 
 // The guard of docs/design/sources.md (row 13, step SA4): the level of a note (Warning, Info, and, with the three levels, Error) and how
 // each output shows it (the severity of a protocol, an ANSI colour, a codicon, a glyph, a rank, a colour variable, a word, a class) come
-// from one table. Today that is src/messages.ts (`NoteLevel`, `severityOf`, `MARKS`, `PITFALL_WORD`), which the guard leaves out; the
-// level table of three-levels.md, step 1, replaces it, and this list empties then. So no other file may
+// from one table: the level table, src/levels.ts (three-levels.md, step 1a), with each note's level in the catalog, src/messages.ts. The
+// guard leaves both out, and the regions of the style sheets that scripts/level-css.ts writes from the table. So no other file may
 //   - write a level word as a literal or a type: 'warning', 'info', 'hint', 'pitfall', 'caveat', and 'error' where it is a level's
 //     (`i.severity === 'error'`, `{ level: 'error' }`), not the syntax tree's `error` node type or the tokens' `error` kind;
 //   - write a map from a level (an object with two level keys, `Record<NoteLevel, …>`);
@@ -17,8 +17,8 @@ import { ALLOWED, counted, scanAll, scanSource, scanStyle, type Kind } from './s
 // Scanned: the tracked files of src/, cli/, web/ and media/ (.ts, .js, .css), never a built bundle such as cli/dist/cli.js. `'pitfall'`
 // compared with or assigned to a `kind` is the fact kind, not a level. Not caught: a level word built in a template or by
 // concatenation, a level in a `Map`, and a map from a level whose keys are computed. test/fixtures/note-levels-known.json lists what they do today, in two parts:
-//   levels  places that decide a level's look or severity again, each `to` the level table, with what they decide.
-//           The list may only shrink: a new entry fails the test, and so does an entry that no longer matches.
+//   levels  places that decide a level's look or severity again, each `to` the level table, with what they decide. Empty since
+//           the level table (three-levels.md, step 1a); a new entry fails the test, and so does an entry that no longer matches.
 //   other   places that only look like one (a fact kind, a CSS class of something else), a reason for each use.
 
 interface Use { fn: string; kind: Kind; count: number; reason: string }
@@ -105,7 +105,7 @@ describe('note levels guard (docs/design/sources.md, SA4)', () => {
         list(o.file, u.fn, u.kind, u.count, 'other');
       }
     }
-    problems.push(...compareKnown(actual, listed, 'take the severity, mark, icon, colour, rank or word of a level from the level table (src/messages.ts today: severityOf, MARKS, PITFALL_WORD); something that only looks like one goes into the "other" list of test/fixtures/note-levels-known.json, with a reason'));
+    problems.push(...compareKnown(actual, listed, 'take the severity, mark, icon, colour, rank or word of a level from the level table (src/levels.ts: LEVELS, SEVERITIES); something that only looks like one goes into the "other" list of test/fixtures/note-levels-known.json, with a reason'));
     assert.deepStrictEqual(problems, []);
   });
 });

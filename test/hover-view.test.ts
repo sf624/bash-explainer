@@ -342,7 +342,7 @@ describe('the hover Markdown', () => {
     assert.ok(info.startsWith(`<span style="color:${i};">$(info)</span> <span style="color:${i};"><strong>Caveat:</strong></span> without`), info);
     // (A plain fact: the info icon, muted, and no word.)
     assert.ok(note.startsWith('<span style="color:var(--vscode-descriptionForeground);">$(info)</span> An exit status'), note);
-    // Our own colours where the theme's are not readable as text (src/ui/palette.ts, LEVEL_COLOURS).
+    // Our own colours where the theme's are not readable as text (src/levels.ts, `ours`).
     assert.match(whole('light')[0], /^<span style="color:#855f00;">\$\(warning\)<\/span>/);
     assert.match(whole('light')[1], /^<span style="color:#005fb8;">\$\(info\)<\/span>/);
     assert.match(whole('highContrast')[0], /^<span style="color:var\(--vscode-editorWarning-foreground\);">/);

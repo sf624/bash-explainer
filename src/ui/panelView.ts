@@ -5,7 +5,7 @@ import { YQ_NAMES } from '../embedded/yq';
 import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
 import type { DocumentIssue, ShellDocument } from '../document';
-import type { NoteLevel } from '../messages';
+import { LEVELS, problemLevel } from '../levels';
 import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, ui, withBasisShown } from './render';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
@@ -126,8 +126,8 @@ export interface PanelLine {
   placement: ExamplePlacement;
   /** Whether rows grow and shrink when they are unfolded and folded (`panel.animations`). */
   animations: boolean;
-  /** The problems on the line, as the editor underlines them: columns from 0, and the level of each. */
-  marks?: { from: number; to: number; level: NoteLevel }[];
+  /** The problems on the line, as the editor underlines them (`lineMarks`). */
+  marks?: LineMark[];
   /** The web page's panel, whose links open in a new tab (VS Code opens them in the browser). */
   web?: boolean;
   /** The view and step chosen, for the view control (`viewControl`). */
@@ -153,10 +153,18 @@ function manualLinks(lang: Lang, ex: LineExplanation): Record<string, { text: st
   }));
 }
 
+/**
+ * A problem on the line, as the panel underlines it: columns from 0, the class of its level's squiggle, and its level's
+ * rank (where two overlap, the lower wins), from the level table (src/levels.ts).
+ */
+export interface LineMark { from: number; to: number; className: string; rank: number }
+
 /** The problems on `line`, as the panel underlines them in its copy of the line (to its end when they go on). */
-export function lineMarks(issues: readonly DocumentIssue[], line: number): { from: number; to: number; level: NoteLevel }[] {
-  return issues.filter((i) => i.startLine === line && (i.endLine > line || i.endCol > i.startCol))
-    .map((i) => ({ from: i.startCol, to: i.endLine === line ? i.endCol : Number.MAX_SAFE_INTEGER, level: i.severity }));
+export function lineMarks(issues: readonly DocumentIssue[], line: number): LineMark[] {
+  return issues.filter((i) => i.startLine === line && (i.endLine > line || i.endCol > i.startCol)).map((i) => {
+    const { className, rank } = problemLevel(i.severity);
+    return { from: i.startCol, to: i.endLine === line ? i.endCol : Number.MAX_SAFE_INTEGER, className, rank };
+  });
 }
 
 /** The message that shows a line's explanation in the panel. */
@@ -197,13 +205,14 @@ export function panelUpdate(p: PanelLine) {
     examplesFirst: p.placement === 'first',
     animations: p.animations,
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
-    // The notes as drawn: warnings first, each with its level and the word after its mark (src/messages.ts), and, where
-    // it rests on bash's behaviour rather than the manual, its chip and try-it (`noteBasis`, docs/design/basis.md).
+    // The notes as drawn: warnings first, each with its level's look (its class, its icon and the icon's name, from the
+    // level table, src/levels.ts) and the word after its mark (src/messages.ts), and, where it rests on bash's
+    // behaviour rather than the manual, its chip and try-it (`noteBasis`, docs/design/basis.md).
     notes: notesByLevel(ex).map(({ text, level, label, body }) => {
       const basis = noteBasis(ex, text, lang);
-      return { level, label, body, refs: noteRefs(ex, text) ?? [], ...(basis ? { basis } : {}) };
+      const { className, codicon, name } = LEVELS[level];
+      return { level, className, icon: codicon, iconName: name[lang], label, body, refs: noteRefs(ex, text) ?? [], ...(basis ? { basis } : {}) };
     }),
-    levelLabels: lang === 'ja' ? { warning: '警告', info: '情報', note: '補足' } : { warning: 'Warning', info: 'Information', note: 'Note' },
     marks: p.marks ?? [],
     emptyMessage: t.empty,
     settingsLabel: t.settings,

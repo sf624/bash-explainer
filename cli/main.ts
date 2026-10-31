@@ -9,6 +9,7 @@ import { DocumentIssue, diagnosticsFor, explainDocumentLine, plain } from '../sr
 import { FILE_KINDS, FileKind, openDocument, shellsOf } from '../src/document-setup';
 import { hostKind } from '../src/hosts';
 import { Lang, resolveLang } from '../src/i18n';
+import { failsCheck, LEVELS, type ProblemSeverity, problemLevel, SEVERITIES } from '../src/levels';
 import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -256,8 +257,6 @@ const ANSI: Partial<Record<Token['kind'], string>> = {
   comment: '90', error: '91',
 };
 
-const NOTE_ANSI = { warning: '33', info: '34', note: '90' } as const;
-
 function textOutput(name: string, line: number, lineText: string, ex: LineExplanation, color: boolean, lang: Lang): string {
   const paint = (code: string | undefined, s: string) => (color && code ? `\x1b[${code}m${s}\x1b[0m` : s);
   // The references a row cites, dim: " (Bash manual 3.7.2)", " (Bash manual 3.8, 3.1.3; execve(2))".
@@ -271,10 +270,11 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
     }
   };
   for (const c of ex.context) out.push(`  ${paint('90', `› ${c.label} (${c.line + 1})`)}`);
-  // A note's mark and word in the colour of its level, as the problems print theirs (`warning`, `info`).
+  // A note's mark and word in the colour of its level (the level table), as the problems print theirs.
   for (const { text: n, level, body } of notesByLevel(ex)) {
     const head = n.slice(0, n.length - body.length).trimEnd();
-    const shown = head ? `${paint(NOTE_ANSI[level], level === 'note' ? head : paint('1', head))} ${pictureText(body)}` : pictureText(body);
+    const { ansi, bold } = LEVELS[level];
+    const shown = head ? `${paint(ansi, bold ? paint('1', head) : head)} ${pictureText(body)}` : pictureText(body);
     out.push(`  ${shown}${refs(noteRefs(ex, n))}`);
     based(noteBasis(ex, n, lang), '    ');
   }
@@ -308,7 +308,8 @@ function exampleText(e: Example, paint: (code: string | undefined, s: string) =>
 
 /** Problems, one per line, as compilers print them. */
 function issueText(name: string, i: DocumentIssue, color: boolean): string {
-  const sev = i.severity === 'warning' ? (color ? '\x1b[33mwarning\x1b[0m' : 'warning') : (color ? '\x1b[34minfo\x1b[0m' : 'info');
+  const { word } = SEVERITIES[i.severity];
+  const sev = color ? `\x1b[${problemLevel(i.severity).ansi}m${word}\x1b[0m` : word;
   return `${name}:${i.startLine + 1}:${i.startCol + 1}: ${sev}: ${plain(i.message, { backticks: false })} [${i.code}]`;
 }
 
@@ -318,10 +319,10 @@ function annotation(name: string, i: DocumentIssue): string {
   const prop = (s: string) => data(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
   const where = `file=${prop(name)},line=${i.startLine + 1},col=${i.startCol + 1},endLine=${i.endLine + 1},endColumn=${i.endCol + 1}`;
   // (A pitfall's title says so: the Action counts them apart.)
-  return `::${i.severity === 'warning' ? 'warning' : 'notice'} ${where},title=${prop(`Bash Explainer${i.pitfall ? ' (pitfall)' : ''}: ${i.code}`)}::${data(plain(i.message, { backticks: false }))}`;
+  return `::${SEVERITIES[i.severity].github} ${where},title=${prop(`Bash Explainer${i.pitfall ? ' (pitfall)' : ''}: ${i.code}`)}::${data(plain(i.message, { backticks: false }))}`;
 }
 
-interface Problem { file: string; line: number; column: number; endLine: number; endColumn: number; severity: string; code: string; message: string }
+interface Problem { file: string; line: number; column: number; endLine: number; endColumn: number; severity: ProblemSeverity; code: string; message: string }
 
 /** SARIF 2.1.0, as code scanning (github/codeql-action/upload-sarif) reads it. */
 function sarif(problems: Problem[]) {
@@ -340,7 +341,7 @@ function sarif(problems: Problem[]) {
       },
       results: problems.map((p) => ({
         ruleId: p.code,
-        level: p.severity === 'warning' ? 'warning' : 'note',
+        level: SEVERITIES[p.severity].sarif,
         message: { text: p.message },
         locations: [{
           physicalLocation: {
@@ -398,7 +399,7 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
         .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
         .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
       // (A pitfall fails the check only with --strict: its warnings came later, and must not fail a CI that passed.)
-      const fails = (i: DocumentIssue) => i.severity === 'warning' && (o.strict || !i.pitfall);
+      const fails = (i: DocumentIssue) => failsCheck(i.severity, i.pitfall, o.strict);
       warnings += issues.filter(fails).length;
       if (o.format === 'json' || o.format === 'sarif' || o.sarifFile !== undefined) json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }), ...(i.convention && o.settings['notes.basis'] !== false ? { convention: i.convention } : {}) })));
       if (o.format === 'github') for (const i of issues) (fails(i) ? failing : chunks).push(annotation(input.name, i));

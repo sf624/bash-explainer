@@ -4,6 +4,7 @@
 import type { EditorView } from '@codemirror/view';
 import type { LineExplanation } from '../src/analyzer';
 import { Lang } from '../src/i18n';
+import { levelCounts } from '../src/levels';
 import { notesByLevel, ui } from '../src/ui/render';
 import { TEXT } from './text';
 
@@ -24,16 +25,16 @@ function head(text: string): string {
 }
 
 /**
- * What the live region says of a line: its number, its first part (its label, and what it is), and how many warnings
- * the panel shows ("Line 20: (( count++ )), Arithmetic evaluation (( )); 1 warning").
+ * What the live region says of a line: its number, its first part (its label, and what it is), and how many notes of
+ * the levels it counts the panel shows (the level table: "Line 20: (( count++ )), Arithmetic evaluation (( )); 1 warning").
  */
 export function lineSummary(ex: LineExplanation, line: number, lang: Lang): string {
   const t = TEXT[lang];
   const first = ex.items[0];
-  if (!first) return t.lineSummary(line + 1, ui[lang].empty, 0);
+  if (!first) return t.lineSummary(line + 1, ui[lang].empty, []);
   const what = head(first.explanation);
   const part = what && what !== first.label ? t.partSaid(first.label, what) : first.label;
-  return t.lineSummary(line + 1, part, notesByLevel(ex).filter((n) => n.level === 'warning').length);
+  return t.lineSummary(line + 1, part, levelCounts(notesByLevel(ex).map((n) => n.level), lang));
 }
 
 /**

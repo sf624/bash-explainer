@@ -16,6 +16,7 @@ import { DocumentIssue, diagnosticsFor, plain, ShellDocument, Shells } from '../
 import { documentHighlight, HighlightKind, HIGHLIGHT_KINDS } from '../src/highlight';
 import type { HighlightModifier } from '../src/semanticFacts';
 import { Lang } from '../src/i18n';
+import { FADED, LEVELS, type ProblemSeverity, problemLevel, SEVERITIES } from '../src/levels';
 import { Settings } from '../src/settings';
 import { nameHints, type NameHint } from '../src/ui/nameHints';
 import { CLASSIC_COLOURS, kindColour } from './editor-colors';
@@ -127,22 +128,24 @@ const shellColours = {
 
 /**
  * The problems' levels (docs/design/note-levels.md), as the panel and the Problems list show them: the squiggle, the
- * gutter's icon (the panel's Codicon, media/icons.js) and the tooltip's border in the level's colour (`--c-warning`,
- * `--c-info`: page.css). CodeMirror draws its squiggle as an image of a fixed colour, so a wavy underline in the
- * colour takes its place; and the gutter's marker, an element it makes, shows the icon as a mask.
+ * gutter's icon (the panel's Codicon, media/icons.js) and the tooltip's border in the level's colour (the level table,
+ * src/levels.ts; the colour's name is page.css's). CodeMirror draws its squiggle as an image of a fixed colour, so a
+ * wavy underline in the colour takes its place; and the gutter's marker, an element it makes, shows the icon as a mask.
  */
-const levelStyles = Object.fromEntries((['warning', 'info'] as const).flatMap((level) => {
-  const colour = `var(--c-${level})`;
+const levelStyles = Object.fromEntries(Object.values(SEVERITIES).flatMap(({ level, codemirror }) => {
+  const { colour: c, codicon, className } = LEVELS[level];
+  if (!c) return [];
+  const colour = `var(${c.name})`;
   return [
-    [`.cm-lintRange-${level}`, { backgroundImage: 'none', textDecoration: `underline wavy ${colour}`, textDecorationThickness: '1px', textUnderlineOffset: '3px', textDecorationSkipInk: 'none' }],
-    [`.cm-lintPoint-${level}`, { '&:after': { borderBottomColor: colour } }],
-    [`.cm-lint-marker-${level}`, {
+    [`.cm-lintRange-${codemirror}`, { backgroundImage: 'none', textDecoration: `underline wavy ${colour}`, textDecorationThickness: '1px', textUnderlineOffset: '3px', textDecorationSkipInk: 'none' }],
+    [`.cm-lintPoint-${codemirror}`, { '&:after': { borderBottomColor: colour } }],
+    [`.cm-lint-marker-${codemirror}`, {
       content: 'normal', backgroundColor: colour,
-      maskImage: iconMask(level), maskSize: '100% 100%', maskRepeat: 'no-repeat',
-      WebkitMaskImage: iconMask(level), WebkitMaskSize: '100% 100%', WebkitMaskRepeat: 'no-repeat',
+      maskImage: iconMask(codicon), maskSize: '100% 100%', maskRepeat: 'no-repeat',
+      WebkitMaskImage: iconMask(codicon), WebkitMaskSize: '100% 100%', WebkitMaskRepeat: 'no-repeat',
     }],
-    [`.cm-diagnostic-${level}`, { borderLeftColor: colour }],
-    [`.cm-bx-level-${level}`, { fill: colour }],
+    [`.cm-diagnostic-${codemirror}`, { borderLeftColor: colour }],
+    [`.cm-bx-level.${className}`, { fill: colour }],
   ];
 }));
 
@@ -162,7 +165,7 @@ const editorTheme = EditorView.theme({
   '.cm-tooltip': { backgroundColor: 'var(--vscode-input-background)', color: 'var(--vscode-foreground)', border: '1px solid var(--vscode-panel-border)' },
   ...levelStyles,
   // Code that never runs (a hint tagged as unnecessary, as in VS Code): faded, with none of the hint's own underline.
-  '.cm-lintRange-hint.cm-bx-dead': { backgroundImage: 'none', opacity: '0.5' },
+  [`.cm-lintRange-${SEVERITIES[FADED].codemirror}.cm-bx-dead`]: { backgroundImage: 'none', opacity: '0.5' },
   '.cm-bx-level': { width: '14px', height: '14px', verticalAlign: '-2px', marginRight: '6px', flex: 'none' },
   '@media (forced-colors: active)': {
     '.cm-lint-marker': { backgroundColor: 'CanvasText', forcedColorAdjust: 'none' },
@@ -188,15 +191,16 @@ const editorTheme = EditorView.theme({
 });
 
 /** A problem's message in its tooltip: the level's icon, named for a screen reader, then the text with its code. */
-function levelMessage(severity: 'warning' | 'info', text: string, lang: Lang): () => Node {
+function levelMessage(severity: ProblemSeverity, text: string, lang: Lang): () => Node {
   return () => {
+    const level = problemLevel(severity);
     const span = document.createElement('span');
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 16 16');
-    svg.setAttribute('class', `cm-bx-level cm-bx-level-${severity}`);
+    svg.setAttribute('class', `cm-bx-level ${level.className}`);
     svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', TEXT[lang].levels[severity]);
-    drawIcon(svg, severity);
+    svg.setAttribute('aria-label', level.name[lang]);
+    drawIcon(svg, level.codicon);
     span.append(svg, ...withCode(text));
     return span;
   };
@@ -276,12 +280,12 @@ export class Editor {
       // Code that never runs: a hint, faded (as VS Code fades `DiagnosticTag.Unnecessary`); not in the Problems list.
       const faded: Diagnostic[] = found.faded.map((r) => ({
         from: pos(v.state, r.startLine, r.startCol), to: pos(v.state, r.endLine, r.endCol),
-        severity: 'hint', message: plain(r.message), markClass: 'cm-bx-dead', source: r.code,
+        severity: SEVERITIES[r.severity].codemirror, message: plain(r.message), markClass: 'cm-bx-dead', source: r.code,
       }));
       return [...faded, ...list.map((i): Diagnostic => ({
         from: pos(v.state, i.startLine, i.startCol),
         to: pos(v.state, i.endLine, i.endCol),
-        severity: i.severity,
+        severity: SEVERITIES[i.severity].codemirror,
         message: plain(i.message),
         renderMessage: levelMessage(i.severity, plain(i.message), lang),
         source: i.code,
@@ -305,7 +309,7 @@ export class Editor {
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
-          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== 'hint') }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []),
+          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== SEVERITIES[FADED].codemirror) }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []),
           EditorView.updateListener.of((u) => {
             host.changed(u);
             if (u.docChanged) {

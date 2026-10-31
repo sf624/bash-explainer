@@ -1,4 +1,5 @@
 import type { Lang } from './i18n';
+import { PROSE_MARK } from './levels';
 /**
  * Integer constants of bash arithmetic (`$(( ))`, `(( ))`, `let`, array subscripts, `${s:off:len}`):
  * decimal, octal (`010`), hexadecimal (`0x1F`) and `base#digits` (`2#1010`, `64#@`).
@@ -167,7 +168,7 @@ export function describeArithLiteral(text: string, lit: ArithLiteral, lang: Lang
   const s = (ja: string, en: string): string => (lang === 'ja' ? ja : en);
   if (lit.type === 'invalid') {
     const { why } = invalidLiteral(text, lit, lang);
-    return s(`⚠ 不正な数 \`${text}\`: ${why}。bash は算術エラーで止まる`, `⚠ Invalid number \`${text}\`: ${why}. bash stops with an arithmetic error`);
+    return s(`${PROSE_MARK} 不正な数 \`${text}\`: ${why}。bash は算術エラーで止まる`, `${PROSE_MARK} Invalid number \`${text}\`: ${why}. bash stops with an arithmetic error`);
   }
   const name: Record<number, [string, string]> = { 2: ['2進数', 'binary'], 8: ['8進数', 'octal'], 16: ['16進数', 'hexadecimal'] };
   const [ja, en] = name[lit.base] ?? [`${lit.base}進数`, `base ${lit.base}`];

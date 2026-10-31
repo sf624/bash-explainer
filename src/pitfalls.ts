@@ -17,7 +17,8 @@ import { staticWordValue, unquoteWord } from './staticword';
 import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
 import type { ConventionId } from './conventions';
-import { marked, type Note, type NoteLevel } from './messages';
+import { marked, type Note } from './messages';
+import { STYLE_LEVELS, type StyleCode } from './messages-levels';
 import { type Rewrite, replaceNode, replaceSpan, stopCommand, textBetween, type TextEdit } from './rewrite';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
@@ -156,21 +157,8 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
   return out;
 }
 
-/** The codes of the style checks, as diagnostics show them (`# bash-explainer disable=<code>`). */
-export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-no-space' | 'brace-close-no-separator'
-  | 'rm-empty-variable-root' | 'read-without-r' | 'redirect-in-bracket' | 'bracket-close-in-word' | 'and-or-in-bracket'
-  | 'download-run-by-shell' | 'trap-goes-on' | 'source-searches-path' | 'pattern-from-variable';
-
-/**
- * The level of each style check (src/messages.ts, `NoteLevel`): `warning` when the line breaks as written, `info` when
- * it breaks only with some input (`read` without `-r` and a backslash).
- */
-export const STYLE_LEVELS: Record<StyleCode, NoteLevel> = {
-  'bracket-no-space': 'warning', 'assignment-with-spaces': 'warning', 'brace-no-space': 'warning', 'brace-close-no-separator': 'warning',
-  'rm-empty-variable-root': 'warning', 'read-without-r': 'info', 'redirect-in-bracket': 'warning', 'bracket-close-in-word': 'warning',
-  'and-or-in-bracket': 'warning', 'download-run-by-shell': 'warning', 'trap-goes-on': 'info', 'source-searches-path': 'info',
-  'pattern-from-variable': 'info',
-};
+/** The codes of the style checks, and their levels (src/messages-levels.ts, beside the catalog's). */
+export { STYLE_LEVELS, type StyleCode };
 
 /**
  * The habit each style check's advice is, when it is one (docs/design/basis-spec-convention.md, 2.3: the checks sorted

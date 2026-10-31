@@ -53,8 +53,9 @@ describe('licenses', function () {
     // an icon the table lacks: the panel's markup and script, and the web page's markup and scripts.
     const read = (...p: string[]) => fs.readFileSync(path.join(root, ...p), 'utf8');
     const sources = [read('src', 'ui', 'panelView.ts'), read('media', 'panel.js'), read('web', 'index.html'), read('web', 'compare.html')];
-    // (The web page's hover cards draw the icons that src/ui/hoverView.ts names, from the list in web/hover-markdown.ts.)
-    const drawn = new Set([...sources, read('web', 'hover-markdown.ts')].flatMap((text) => [...text.matchAll(/data-icon="([a-z-]+)"|'([a-z-]+)'/g)].map((m) => m[1] ?? m[2])).filter((n) => names.includes(n)));
+    // (The web page's hover cards draw the icons that src/ui/hoverView.ts names, from the list in web/hover-markdown.ts;
+    // the levels' icons are the level table's, src/levels.ts.)
+    const drawn = new Set([...sources, read('web', 'hover-markdown.ts'), read('src', 'levels.ts')].flatMap((text) => [...text.matchAll(/data-icon="([a-z-]+)"|'([a-z-]+)'/g)].map((m) => m[1] ?? m[2])).filter((n) => names.includes(n)));
     for (const text of sources) for (const m of text.matchAll(/data-icon="([^"]+)"/g)) assert.ok(names.includes(m[1]), `${m[1]} is not in media/icons.js`);
     assert.deepStrictEqual([...drawn].sort(), [...names].sort());
     // Both products ship the file, and the notice says where.

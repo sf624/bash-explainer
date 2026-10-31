@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { plain } from '../document';
 import type { Fix } from '../fixes';
+import { SEVERITIES } from '../levels';
 import { ExplainService } from '../service';
 
 /** The source of our diagnostics, by which the hover finds them (src/ui/hover.ts). */
@@ -61,8 +62,8 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
     const fixes: { code: string; range: vscode.Range; fix: Fix }[] = [];
     const diagnostics = this.service.issues(doc).map((i) => {
       const range = new vscode.Range(i.startLine, i.startCol, i.endLine, i.endCol);
-      // The ⚠ / ℹ marks are for the hover; the Problems panel has its own icons.
-      const d = new vscode.Diagnostic(range, plain(i.message), i.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information);
+      // The marks are for the hover; the Problems panel has its own icons.
+      const d = new vscode.Diagnostic(range, plain(i.message), SEVERITIES[i.severity].vscode);
       d.source = DIAGNOSTIC_SOURCE;
       d.code = i.code;
       if (i.fix) fixes.push({ code: i.code, range, fix: i.fix });
@@ -70,7 +71,7 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
     });
     // Code that never runs: a hint the editor fades (no problem: no squiggle, and not in the Problems panel by default).
     for (const r of this.service.faded(doc)) {
-      const d = new vscode.Diagnostic(new vscode.Range(r.startLine, r.startCol, r.endLine, r.endCol), plain(r.message), vscode.DiagnosticSeverity.Hint);
+      const d = new vscode.Diagnostic(new vscode.Range(r.startLine, r.startCol, r.endLine, r.endCol), plain(r.message), SEVERITIES[r.severity].vscode);
       d.source = DIAGNOSTIC_SOURCE;
       d.code = r.code;
       d.tags = [vscode.DiagnosticTag.Unnecessary];

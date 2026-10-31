@@ -48,6 +48,7 @@ import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './s
 import { testTokens } from './tests';
 import { inSubshell } from './where';
 import { braceWord, elementWord, globChildren, globNotes, plainText, tilde, tildeNote, valueNote, word } from './words';
+import { PROSE_MARK } from '../levels';
 
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
 function jobSpec(text: string): { ja: string; en: string } | undefined {
@@ -419,8 +420,8 @@ function splicedNote(cx: Explainer, v: ValueRole): string {
       'c-in-quotes': cx.s('ダブルクォートの中に `\\c` がある', '`\\c` is inside double quotes'),
       dollar: cx.s('`$` は `${名前}` の形でしか使えない', '`$` is only allowed as `${NAME}`'),
     };
-    return cx.s(`。⚠ ${program} はこの文字列を受け付けず、何も実行せずに終了ステータス 125 で終わる（${why[v.refused.error]}）`,
-      `. ⚠ ${program} refuses this string and exits with status 125, running nothing (${why[v.refused.error]})`);
+    return cx.s(`。${PROSE_MARK} ${program} はこの文字列を受け付けず、何も実行せずに終了ステータス 125 で終わる（${why[v.refused.error]}）`,
+      `. ${PROSE_MARK} ${program} refuses this string and exits with status 125, running nothing (${why[v.refused.error]})`);
   }
   if (!v.split) return '';
   const items = wordItems(cx, v.split.words, v.split.roles, false);

@@ -11,6 +11,7 @@ import { shellState } from '../semantics/state';
 import { statusModel } from '../semantics/status';
 import { batsFacts, batsTests } from '../bats';
 import type { ConventionId } from '../conventions';
+import type { ProblemSeverity } from '../levels';
 import { basisGate, conventionOf, type Fact, type FactSpec, factOf, type Note, plainNote, said, severityOf } from '../messages';
 import type { ShellRegion, Extracted } from './index';
 import { batsTestLine } from './bats';
@@ -186,7 +187,7 @@ export function explainHostedLine(
 /** A problem to show in the Problems panel, at original document positions. */
 export interface DocIssue {
   code: string;
-  severity: 'warning' | 'info';
+  severity: ProblemSeverity;
   message: string;
   startLine: number; startCol: number; endLine: number; endCol: number;
   /** The habit the advice is, when it is one (`Note.convention`, src/conventions.ts). */

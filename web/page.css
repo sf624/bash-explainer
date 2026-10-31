@@ -12,8 +12,10 @@
 /* The colours of the notes' levels, under the panel's names (media/panel.css): the editor's squiggles, gutter icons
    and tooltips, and the Problems list. theme.css has their light and dark values. */
 :root {
+  /* level table (src/levels.ts, scripts/level-css.ts): root */
   --c-warning: var(--vscode-editorWarning-foreground);
   --c-info: var(--vscode-editorInfo-foreground);
+  /* end of the level table */
 }
 
 /* The app shell: the window's height, and no page scroll. */
@@ -1084,13 +1086,15 @@ body.resizing .problems-resize {
   white-space: nowrap;
 }
 
-#problem-list .icon.warning {
+/* level table (src/levels.ts, scripts/level-css.ts): problems */
+#problem-list .icon.level-warning {
   color: var(--c-warning);
 }
 
-#problem-list .icon.info {
+#problem-list .icon.level-info {
   color: var(--c-info);
 }
+/* end of the level table */
 
 /* What an action did ("Link copied"): a toast at the bottom, for a few seconds. */
 #status {

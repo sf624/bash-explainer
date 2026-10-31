@@ -248,17 +248,18 @@
 
     renderLine(msg.lineText, ex.line, ex.items, msg.marks ?? [], msg.lineParts, msg.wrap === true);
 
-    // Each note with the icon of its level (src/messages.ts, `NoteLevel`) in place of its mark, and the word that
-    // names the level in bold: the icon's shape and the word say it without the colour.
-    $('notes').replaceChildren(...(msg.notes ?? []).map((/** @type {{ level: string, label: string, body: string, refs: string[], basis?: any }} */ n) => {
+    // Each note with the icon of its level in place of its mark, and the word that names the level in bold: the icon's
+    // shape and the word say it without the colour. The class, the icon and its name come from the level table
+    // (src/levels.ts, through `panelUpdate`).
+    $('notes').replaceChildren(...(msg.notes ?? []).map((/** @type {{ className: string, icon: string, iconName: string, label: string, body: string, refs: string[], basis?: any }} */ n) => {
       const p = document.createElement('p');
-      p.className = `note level-${n.level}`;
+      p.className = `note ${n.className}`;
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('viewBox', '0 0 16 16');
       svg.setAttribute('class', 'note-icon');
       svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', msg.levelLabels?.[n.level] ?? n.level);
-      drawIcon(svg, n.level === 'warning' ? 'warning' : 'info');
+      svg.setAttribute('aria-label', n.iconName);
+      drawIcon(svg, n.icon);
       const text = document.createElement('span');
       text.className = 'note-text';
       if (n.label) {
@@ -978,9 +979,10 @@
           reveal(flat[idx].token);
         });
       }
-      // (Under the problems of the line, the editor's squiggle: a warning wins over an information.)
-      const mark = marks.filter((/** @type {any} */ m) => m.from < j && i < m.to).sort((/** @type {any} */ a, /** @type {any} */ b) => (a.level === 'warning' ? -1 : 0) - (b.level === 'warning' ? -1 : 0))[0];
-      if (mark && text.slice(i, j).trim()) span.classList.add('squiggle', `squiggle-${mark.level}`);
+      // (Under the problems of the line, the editor's squiggle in its level's class: where two overlap, the level of the
+      // lower rank wins, a warning over an information.)
+      const mark = marks.filter((/** @type {any} */ m) => m.from < j && i < m.to).sort((/** @type {any} */ a, /** @type {any} */ b) => a.rank - b.rank)[0];
+      if (mark && text.slice(i, j).trim()) span.classList.add('squiggle', mark.className);
       segments.push(span);
       return span;
     }

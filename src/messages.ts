@@ -3,6 +3,7 @@ import type { ConventionId } from './conventions';
 import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
+import { LEVELS, type NoteLevel, severityOf } from './levels';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
 import { aliasDefinedText, aliasMaybeText, aliasNotExpandedText } from './messages-alias';
 import { DEFINES_IT, leavesSet, inTrap, LOCAL_SOURCED, noShebang, readByBashrc, SETS_IT, unlessAny, unreadClause, unreadCode } from './messages-common';
@@ -25,17 +26,13 @@ import type { ExpansionValue } from './semantics/values';
 export type FactKind = 'note' | 'pitfall';
 
 /**
- * How much a note matters, the one source of its severity in every output (docs/design/note-levels.md):
- * - `warning` (⚠ "Pitfall" / 「落とし穴」, the editor's yellow squiggle): the line breaks as written, or if it goes
- *   wrong the damage cannot be undone (`x = 1`, `[-f x]`, `rm -rf $DIR/*` with an empty DIR, a stop under `set -u`).
- * - `info` (ⓘ "Caveat" / 「注意」, blue): it goes wrong only with some values or systems and the damage is limited, or
- *   a failure goes unnoticed (`echo $x`, `read line`, `local x=$(false)`). A dialect note on a construct that works
- *   differently in the target shell is `info` too, with the word "Portability" / 「移植性」.
- * - `note` (ℹ, no word, no squiggle): a fact of how the shell runs the line.
- * A level that depends on the case (the command a word is given to, how far a failure reaches) is a function of the
- * params (`unquoted-variable-as-path`, `nounset-unbound`).
+ * A note's level (how every output shows it: the level table, src/levels.ts) comes from here, each entry's `level`, and
+ * beside it from src/messages-levels.ts, the style checks' and the other problems'. A level that depends on the case
+ * (the command a word is given to, how far a failure reaches) is a function of the params (`unquoted-variable-as-path`,
+ * `nounset-unbound`).
  */
-export type NoteLevel = 'warning' | 'info' | 'note';
+export type { NoteLevel };
+export { severityOf };
 
 interface Entry<P> {
   kind: FactKind;
@@ -683,23 +680,14 @@ export interface Note { text: string; level: NoteLevel; label: string; body: str
  */
 export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly string[]; code: FactId; basis?: Basis; tryIt?: TryIt; rewrite?: readonly Rewrite[] }
 
-/** The mark a note starts with, one per level. */
-export const MARKS: Record<NoteLevel, string> = { warning: '⚠', info: 'ⓘ', note: 'ℹ' };
-
-/** What follows the mark of a pitfall when it has no heading of its own. */
-const PITFALL_WORD: Record<'warning' | 'info', Text> = {
-  warning: { ja: '落とし穴: ', en: 'Pitfall: ' },
-  info: { ja: '注意: ', en: 'Caveat: ' },
-};
-
 /**
  * A note of `level` whose text starts with its mark, then, for a pitfall, the word that names the level (or its
  * heading, `heading`), then `body`.
  */
 export function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?: FactKind; heading?: Text; code?: string } = {}): Note {
   const { kind = 'note', heading, code } = opts;
-  const word = heading ? heading[lang] : kind === 'pitfall' && level !== 'note' ? PITFALL_WORD[level][lang] : '';
-  return { text: `${MARKS[level]} ${word}${body}`, level, label: word.trimEnd(), body, ...(code ? { code } : {}) };
+  const word = heading ? heading[lang] : kind === 'pitfall' ? LEVELS[level].word[lang] : '';
+  return { text: `${LEVELS[level].mark} ${word}${body}`, level, label: word.trimEnd(), body, ...(code ? { code } : {}) };
 }
 
 /** A note with no mark (an idiom, where a line is): a plain fact, the whole text its body. */
@@ -709,11 +697,6 @@ export function plainNote(text: string): Note {
 
 /** The heading of a dialect note on a construct that works differently in the target shell (src/dialect.ts). */
 export const PORTABILITY: Text = { ja: '移植性: ', en: 'Portability: ' };
-
-/** The severity of a diagnostic for a note of `level`: a `note` is never one, so it is taken as information. */
-export function severityOf(level: NoteLevel): 'warning' | 'info' {
-  return level === 'warning' ? 'warning' : 'info';
-}
 
 /** The note of a fact, in `lang`. */
 export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> extends Record<string, never> ? [] : [Params<K>]): Fact {

@@ -5,7 +5,8 @@ import { Lang } from '../i18n';
 import { codeSpan, joinParts, LabelPart, labelParts } from '../label';
 import { referencesWith } from '../references';
 import type { Basis, TryIt } from '../basis';
-import { basisSaid, type BasisSaid, MARKS, type Note, type NoteLevel } from '../messages';
+import { LEVELS } from '../levels';
+import { basisSaid, type BasisSaid, type Note } from '../messages';
 import type { ReadingNode } from '../reading';
 import { errorColour, Role, roleColour, ThemeKind } from './palette';
 
@@ -270,8 +271,6 @@ export function basisLine(lang: Lang, b: NoteBasis, code: (text: string) => stri
   return `${b.label} · ${t.tryIt}: ${code(b.tryIt.code)} → ${code(b.tryIt.output.replace(/\n/g, ' ⏎ '))}`;
 }
 
-const RANK: Record<NoteLevel, number> = { warning: 0, info: 1, note: 2 };
-
 /** The data of a note of the line (`LineExplanation.noteInfo`): its level and its word come from there, never from its text. */
 export function noteOf(ex: LineExplanation, note: string): Note {
   return ex.noteInfo[ex.notes.indexOf(note)];
@@ -282,7 +281,7 @@ export function noteOf(ex: LineExplanation, note: string): Note {
  * information, then the other notes, each in the order found.
  */
 export function notesByLevel(ex: LineExplanation, notes: readonly string[] = ex.notes): Note[] {
-  return notes.map((n, i) => ({ n: noteOf(ex, n), i })).sort((a, b) => RANK[a.n.level] - RANK[b.n.level] || a.i - b.i).map((x) => x.n);
+  return notes.map((n, i) => ({ n: noteOf(ex, n), i })).sort((a, b) => LEVELS[a.n.level].rank - LEVELS[b.n.level].rank || a.i - b.i).map((x) => x.n);
 }
 
 /** "Bash manual [3.2.5.2](…), [6.4](…); [execve(2)](…)": the references as Markdown links (src/references.ts). */
@@ -477,7 +476,7 @@ export function plainNotes(ex: LineExplanation, notes: readonly string[], lang: 
   return notesByLevel(ex, notes).flatMap(({ text, level, label, body }) => {
     const refs = noteRefs(ex, text);
     const basis = noteBasis(ex, text, lang);
-    return [`> ${pictureText(label ? `${MARKS[level]} **${label}** ${body}` : text)}${refs?.length ? ` (${refsMarkdown(lang, refs)})` : ''}`,
+    return [`> ${pictureText(label ? `${LEVELS[level].mark} **${label}** ${body}` : text)}${refs?.length ? ` (${refsMarkdown(lang, refs)})` : ''}`,
       ...(basis ? ['>', `> _${basisLine(lang, basis, codeSpan)}_`] : []), ''];
   });
 }

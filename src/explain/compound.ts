@@ -20,6 +20,7 @@ import { has, intersects, same, skeletal, sortTokens, summaryOf } from './nodes'
 import { specFor } from './reads';
 import { groupSubshell } from './where';
 import { casePattern } from './words';
+import { PROSE_MARK } from '../levels';
 
 /** Children (keywords and named nodes, the lists of commands of a body as one) in source order, filtered to the current line. */
 function ordered(cx: Explainer, n: SyntaxNode, skip: (c: SyntaxNode) => boolean = () => false): Token[] {
@@ -119,13 +120,13 @@ function shebang(cx: Explainer, n: SyntaxNode): Token {
   const blanks = /\s/.test(arg);
   // (The rest as one word of the shell, quoted.)
   const shown = blanks ? `${interp} '${arg.replace(/'/g, "'\\''")}'` : `${interp}${arg ? ` ${arg}` : ''}`;
-  // (Said by the ⚠ of env without `-S`.)
-  const oneArg = blanks && !notes.includes('⚠');
+  // (Said by the mark of env without `-S`, `PROSE_MARK`.)
+  const oneArg = blanks && !notes.includes(PROSE_MARK);
   const env = /\/env$/.test(interp) && /^[^-\s=][^\s=]*$/.test(arg);
   // `#!bash`: the kernel opens the interpreter as a path, from the current directory.
   const relative = interp.includes('/') ? ['', ''] : [
-    `。⚠ カーネルはインタープリタを PATH から探さず、カレントディレクトリからの相対パスとして \`${interp}\` を探すので、実行はたいてい失敗する（required file not found）`,
-    `. ⚠ The kernel does not search PATH for the interpreter: it looks for \`${interp}\` from the current directory, so running the file mostly fails ("required file not found")`];
+    `。${PROSE_MARK} カーネルはインタープリタを PATH から探さず、カレントディレクトリからの相対パスとして \`${interp}\` を探すので、実行はたいてい失敗する（required file not found）`,
+    `. ${PROSE_MARK} The kernel does not search PATH for the interpreter: it looks for \`${interp}\` from the current directory, so running the file mostly fails ("required file not found")`];
   const said = detectShell(n.text);
   const used = cx.shell ?? 'bash';
   const dialect = !said ? ['', '']
@@ -174,7 +175,7 @@ function shebangEnv(cx: Explainer, interp: string): string {
   const letters = role.role === 'cluster' ? role.letters : [role];
   const value = letters.map((l) => (l.role === 'option' ? l.value : undefined)).find((v) => v?.split || v?.refused);
   if (value?.refused) {
-    return cx.s('。⚠ env はこの文字列を分けられず、何も実行せずに終了ステータス 125 で終わる', '. ⚠ env cannot split this string and exits with status 125, running nothing');
+    return cx.s(`。${PROSE_MARK} env はこの文字列を分けられず、何も実行せずに終了ステータス 125 で終わる`, `. ${PROSE_MARK} env cannot split this string and exits with status 125, running nothing`);
   }
   if (!value) {
     // `#!/usr/bin/env FOO=1 bash`: env takes the whole word as a variable to set (`FOO` is `1 bash`).
@@ -183,12 +184,12 @@ function shebangEnv(cx: Explainer, interp: string): string {
     // `#!/usr/bin/env -i bash`: env reads the whole word as options (`-i`, then ` `: an invalid option).
     if (rest.startsWith('-')) {
       return cx.s(
-        `。⚠ Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になり、env はそれを1つのオプションの並びとして読むので、\`${rest.split(/\s+/).pop()}\` をコマンドとして実行しない（多くは不正なオプションとして終了ステータス 125 で終わる）。分けるには \`env -S\` と書く`,
-        `. ⚠ On Linux the whole \`${rest}\` after the interpreter is one argument to env, which reads it as one run of options, so it does not run \`${rest.split(/\s+/).pop()}\` (it mostly fails with an invalid option and status 125); write \`env -S\` to split it`);
+        `。${PROSE_MARK} Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になり、env はそれを1つのオプションの並びとして読むので、\`${rest.split(/\s+/).pop()}\` をコマンドとして実行しない（多くは不正なオプションとして終了ステータス 125 で終わる）。分けるには \`env -S\` と書く`,
+        `. ${PROSE_MARK} On Linux the whole \`${rest}\` after the interpreter is one argument to env, which reads it as one run of options, so it does not run \`${rest.split(/\s+/).pop()}\` (it mostly fails with an invalid option and status 125); write \`env -S\` to split it`);
     }
     return cx.s(
-      `。⚠ Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になるので、env はその名前のプログラムを探して失敗する。分けるには \`env -S\` と書く`,
-      `. ⚠ On Linux the whole \`${rest}\` after the interpreter is one argument to env, which looks for a program of that name and fails; write \`env -S\` to split it`);
+      `。${PROSE_MARK} Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になるので、env はその名前のプログラムを探して失敗する。分けるには \`env -S\` と書く`,
+      `. ${PROSE_MARK} On Linux the whole \`${rest}\` after the interpreter is one argument to env, which looks for a program of that name and fails; write \`env -S\` to split it`);
   }
   const { words, roles } = value.split!;
   const cmd = roles.find((r) => r.role.role === 'command');
@@ -203,8 +204,8 @@ function shebangEnv(cx: Explainer, interp: string): string {
 /** env given no command (`#!/usr/bin/env`, or only an assignment): it runs the script's path, whose shebang runs env again. */
 function envLoop(cx: Explainer, assignment?: string): string {
   return cx.s(
-    `。⚠ env はスクリプトのパスをコマンドとして実行する${assignment ? `（\`${assignment}\` は設定する変数として読む）` : ''}ので、スクリプトが自分自身を終わりなく起動し直す`,
-    `. ⚠ env runs the script's path as the command${assignment ? ` (it takes \`${assignment}\` as a variable to set)` : ''}, so the script starts itself again, without end`);
+    `。${PROSE_MARK} env はスクリプトのパスをコマンドとして実行する${assignment ? `（\`${assignment}\` は設定する変数として読む）` : ''}ので、スクリプトが自分自身を終わりなく起動し直す`,
+    `. ${PROSE_MARK} env runs the script's path as the command${assignment ? ` (it takes \`${assignment}\` as a variable to set)` : ''}, so the script starts itself again, without end`);
 }
 
 export function functionDef(cx: Explainer, n: SyntaxNode): Token {
