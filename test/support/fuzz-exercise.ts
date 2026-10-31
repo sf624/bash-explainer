@@ -25,7 +25,7 @@ export function exerciseTree(ub: ReturnType<typeof createUnbashParser>, text: st
   const lines = text.split(/\r?\n/);
   try {
     for (const lang of ['en', 'ja'] as const) {
-      for (let i = 0; i < lines.length; i++) for (const shell of [undefined, 'zsh'] as const) analyzers[lang].explainLine(t, i, shell);
+      for (let i = 0; i < lines.length; i++) for (const shell of [undefined, 'zsh'] as const) analyzers[lang].explainLine(t, i, shell, shell ? {} : { argv: true });
       for (const forced of shells) documentIssues({ lines, tree: t }, lang, { forced });
     }
   } catch (e) {

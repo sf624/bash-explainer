@@ -1364,6 +1364,7 @@
  "local x=$(date)",
  "local x=1",
  "local y",
+ "ls",
  "ls !(a)",
  "ls \"+\"",
  "ls &> o",

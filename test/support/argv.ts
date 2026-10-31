@@ -558,7 +558,12 @@ export function fuzzArgvInputs(n: number, seed = 0): ArgvInput[] {
 export interface ArgvKnown { input: string; command: string; env?: ArgvEnvName; reason: string }
 
 /** The known differences and the pinned counts of each set of inputs the test runs (`fixtures`, `snippets`: the sample). */
-export interface ArgvKnownFile { counts: Record<string, Record<ArgvEnvName, ArgvCounts>>; known: ArgvKnown[] }
+export interface ArgvKnownFile {
+  counts: Record<string, Record<ArgvEnvName, ArgvCounts>>;
+  /** The counts of the check of src/argvline.ts on the same runs (test/support/argvline.ts). */
+  lines?: Record<string, Record<ArgvEnvName, { ran: number; words: number; placeholders: number }>>;
+  known: ArgvKnown[];
+}
 
 export const ARGV_KNOWN = path.join(FIXTURES, 'argv-known.json');
 

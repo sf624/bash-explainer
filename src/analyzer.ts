@@ -24,6 +24,7 @@ export { EXAMPLE_KINDS } from './analyzer-types';
 export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import { readingTree } from './reading';
+import { argvLines } from './argvline';
 import { claim, dropLabelEcho } from './tokenmarks';
 import { LineExplainer, type Walk } from './explain/context';
 import { intersects, isBlockLike, onLine, summaryOf } from './explain/nodes';
@@ -100,6 +101,7 @@ export class Analyzer {
     // The summary above was made with the full explanations; the tree drops what its labels already say.
     for (const item of items) dropLabelEcho(claim(item, 'shell'));
     const resolveAt = (name: string, w: SyntaxNode) => resolve(cx, name, w, { quoted: w.type !== 'word' || w.text !== name });
+    if (opts.argv) result.argv = argvLines(root, line, cx.state, this.lang);
     if (opts.reading) result.reading = readingTree(tree, items, { lang: this.lang, resolve: resolveAt, meaning: (w) => wordMeaning(w, cx.state), plainPattern: (w) => plainPatternText(w, cx.state), arrayKind: (name, at) => arrayKind(cx, name, at), ...(cx.shell ? { shell: cx.shell } : {}) });
     return result;
   }

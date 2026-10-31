@@ -10,6 +10,7 @@ import type { LabelPart } from './label';
 import type { Fact, Note, SpaceEnds, ValueSaid } from './messages';
 import type { NameInfo } from './namefacts';
 import type { ReadingNode } from './reading';
+import type { ArgvHoleKind } from './messages-argv';
 import type { Rewrite } from './rewrite';
 import type { ExpansionValue } from './semantics/values';
 import type { HostRun } from './semantics/walk/host';
@@ -153,6 +154,8 @@ export interface ExplainOptions {
   noShell?: NoShell;
   /** Also build the reading tree of the line (`LineExplanation.reading`), for the panel's tree view. */
   reading?: boolean;
+  /** Also give what the program of each simple command on the line receives (`LineExplanation.argv`, src/argvline.ts). */
+  argv?: boolean;
   /**
    * Set by the analyzer for a string a shell runs (`sh -c '…' sh "$msg"`): the shell (`sh -c`) and the words its
    * `$0`, `$1`… start as, in order; `more`: words after them whose number is known only when it runs (`"$@"`).
@@ -196,7 +199,40 @@ export interface LineExplanation {
   shell?: Shell;
   /** Who reads each part of the line, layer by layer (src/reading.ts); only when `ExplainOptions.reading` asks for it. */
   reading?: ReadingNode;
+  /** What the program of each simple command on the line receives, in source order (src/argvline.ts); only when `ExplainOptions.argv` asks for it. */
+  argv?: ArgvLine[];
 }
+
+/**
+ * A part of a word a program receives (src/argvline.ts): text, or a placeholder for a value known only when the line
+ * runs. `hole`: what it stands for, `code` its text in the script (for `names`, the pattern), `label` what the views
+ * show between `‹` and `›` (marked text: code in backticks); `splits`: word splitting may cut the value into several
+ * words, or none.
+ */
+export type ArgvPart = { text: string } | { hole: ArgvHoleKind; code: string; label: string; splits?: true };
+
+/**
+ * One word the program receives, or a placeholder for several: its parts (none: the word of the script gives no word),
+ * and the word of the script it comes from (`from`). `count`: how many words it stands for, when that is not exactly
+ * one (`min` to `max`; no `max`: no bound). `asWritten`: the word is received as it is written (no quote to remove,
+ * nothing expanded).
+ */
+export interface ArgvWord { from: Span; parts: ArgvPart[]; count?: { min: number; max?: number }; asWritten?: true }
+
+/**
+ * A part of a simple command that bash handles itself and the program never receives (manual 3.7.1): a prefix
+ * assignment or a redirection, as written (`text`), what it does (`says`, marked text), and the word bash expands for
+ * it where it has one: the value of the assignment, the target of the redirection, the text of a here-string.
+ */
+export interface ArgvRemoved { kind: 'assignment' | 'redirect'; span: Span; text: string; says: string; word?: ArgvWord[] }
+
+/**
+ * What the program of one simple command receives (docs/design/panel-redesign.md, P4): its words, the name's first,
+ * after bash's expansions, quote removal, word splitting and pathname expansion (manual 3.5, 3.7.1); what bash took
+ * out first (`removed`, in source order); `fails`: bash fails on a word of it (`${x:?}`, `set -u`, failglob, an
+ * ambiguous redirection), so the program does not run.
+ */
+export interface ArgvLine { span: Span; words: ArgvWord[]; removed: ArgvRemoved[]; fails?: { span: Span; error: string } }
 
 export interface ExampleSection {
   label: string;

@@ -21,6 +21,7 @@ import * as fs from 'fs';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { ARGV_KNOWN, type ArgvInput, type ArgvKnownFile, type ArgvPlanRun, checkArgv, fixtureInputs, instrumentArgv, matchKnown, runArgv, runArgvBatch, SNIPPET_SAMPLE, snippetInputs, toNull } from './support/argv';
+import { checkArgvLines } from './support/argvline';
 import { probeSkipReason } from './support/probe';
 import { checkRenderings, claimsOf, explainInput, globExampleOn, matchRenderKnown, RENDER_KNOWN, type RenderFinding, type RenderKnownFile, saysOperand, staleClasses, wordCauses, wordCounts } from './support/renderings';
 
@@ -189,7 +190,21 @@ describe('argv capture: the word model and the explanation against bash (oracles
     assert.deepStrictEqual({ unexplained, stale, counts }, { unexplained: [], stale: [], counts: known.counts[set] });
   };
 
+  // (P4b of docs/design/panel-redesign.md: what src/argvline.ts says each program receives, on the same runs. The
+  // known differences are those of the word model above.)
+  const lines = async (set: string): Promise<void> => {
+    const known = JSON.parse(fs.readFileSync(ARGV_KNOWN, 'utf8')) as ArgvKnownFile;
+    const { inputs, plans } = await runOf(set);
+    const { found, counts } = checkArgvLines(plans);
+    const { unexplained } = matchKnown(found, known.known, inputs);
+    assert.deepStrictEqual({ unexplained, counts }, { unexplained: [], counts: known.lines?.[set] });
+  };
+
   it('gives every command of the fixtures the fields bash gives it', () => check('fixtures'));
+
+  it('says what the program of each command of the fixtures receives as bash gives it, its placeholders covering what bash put there (P4)', () => lines('fixtures'));
+
+  it('says what the program of each command of a sample of the snippets receives as bash gives it (P4)', () => lines('snippets'));
 
   it('gives every command of a sample of the snippets the fields bash gives it', () => check('snippets'));
 
