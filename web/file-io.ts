@@ -178,3 +178,18 @@ export async function saveText(text: string, name: string, handle: FileSystemFil
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   return { how: 'downloaded', name };
 }
+
+/** Whether a drag carries files (not text dragged from the editor or another page). */
+export const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+
+/** Anywhere but on the editor, a file dropped would make the browser show it instead of the page: refuse it. */
+export function refuseDrops(w: Window): void {
+  w.addEventListener('dragover', (e) => {
+    if (!hasFiles(e) || e.defaultPrevented) return; // the settings take a dropped settings file
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = 'none';
+  });
+  w.addEventListener('drop', (e) => {
+    if (hasFiles(e)) e.preventDefault();
+  });
+}

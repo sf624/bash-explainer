@@ -25,7 +25,7 @@ import { $, on, put } from './dom';
 import { Editor } from './editor';
 import { drawIcons } from './icons';
 import { confirmCopied, EditorHead, shortcut } from './editor-head';
-import { ChosenFile, chooseFile, decodeText, fileContent, isMac, kindForFile, kindFromName, MAX_BYTES, saveText, withEol } from './file-io';
+import { ChosenFile, chooseFile, decodeText, fileContent, hasFiles, isMac, kindForFile, kindFromName, MAX_BYTES, refuseDrops, saveText, withEol } from './file-io';
 import { FileState } from './file-state';
 import { FileNameControl } from './file-name';
 import { linkWords, showMenuTexts } from './menu';
@@ -421,11 +421,7 @@ function setChoice(key: 'shell' | 'yq', value: string): void {
   settingsDialog?.refresh();
 }
 
-/**
- * Where the focus goes when what held it goes away (a toast and its button, an Undo, a question, an opened file): the
- * settings sheet while it lies over the editor (which is inert then), else the editor, except on a touch screen, where
- * that would open the keyboard. One place, so that no such return lands on the page's body.
- */
+/** Where the focus goes when its holder goes (a toast, an Undo, a question, an opened file): the sheet over the editor (inert), else the editor but on touch. */
 function focusHome(): void {
   if (settingsDialog?.sideBySide) settingsDialog.focus();
   else editor.focusUnlessTouch();
@@ -520,8 +516,7 @@ if (dialogElement) setUpSheet(dialogElement);
 const drawer = document.getElementById('drawer') as HTMLDialogElement | null;
 function openMenu(): void {
   if (!drawer) return;
-  // The settings lie over the editor next to the bar: the menu takes their place (the sheet slides out, and the focus
-  // goes to the menu, which hands it back to ☰ when it closes).
+  // The settings sheet next to the bar slides out: the menu takes its place.
   if (settingsDialog?.open && dialogElement) closeSheet(dialogElement);
   if (reopenSheet(drawer) || drawer.open) return;
   drawer.showModal();
@@ -885,13 +880,12 @@ function fileKeys(e: KeyboardEvent): void {
 /**
  * F6 (or Shift+F6) moves between the editor, the explanation in the panel's frame and the toast when one with a button
  * shows, as F6 moves between the parts of VS Code: editor, explanation, toast, editor. Shift+F6 goes the other way.
- * Side by side the settings lie over the editor, which is out of reach then: the sheet takes its place in the round.
  * `inFrame`: the key was pressed in the frame.
  */
 function paneKeys(e: KeyboardEvent, inFrame: boolean): void {
   if (!isPaneKey(e) || document.querySelector('dialog:modal')) return;
   e.preventDefault();
-  // The editor lies under the settings side by side (inert): F6 goes among the parts in reach, with the sheet in its place.
+  // Side by side the editor is inert under the settings sheet, which takes its place in the round.
   const first = settingsDialog?.sideBySide ? 'sheet' : 'editor';
   const stops = [first, 'panel', ...(toast.hasButton ? ['toast'] : [])];
   const at = inFrame ? 'panel' : toast.focused ? 'toast' : first;
@@ -908,21 +902,6 @@ function toPanel(): void {
   panel.send({ type: 'focus' });
 }
 
-/** Whether a drag carries files (not text dragged from the editor or another page). */
-const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
-
-/** Anywhere but on the editor, a file dropped would make the browser show it instead of the page: refuse it. */
-function refuseDrops(w: Window): void {
-  w.addEventListener('dragover', (e) => {
-    if (!hasFiles(e) || e.defaultPrevented) return; // the settings take a dropped settings file
-    e.preventDefault();
-    e.dataTransfer!.dropEffect = 'none';
-  });
-  w.addEventListener('drop', (e) => {
-    if (hasFiles(e)) e.preventDefault();
-  });
-}
-
 if (withFiles) {
   window.addEventListener('keydown', fileKeys, true);
   window.addEventListener('keydown', (e) => paneKeys(e, false), true);
@@ -934,7 +913,6 @@ if (withFiles) {
     if (!w || w.location.href === 'about:blank') return;
     w.addEventListener('keydown', fileKeys, true);
     w.addEventListener('keydown', (e) => paneKeys(e, true), true);
-    // Esc shuts the settings that lie over the editor, when the panel does not take it.
     w.addEventListener('keydown', (e) => settingsDialog?.escape(e));
     refuseDrops(w);
   };
