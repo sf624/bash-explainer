@@ -8,7 +8,7 @@
 // written, so a name may hold one (`variable_name` `y\<newline>a`). It works on the shape of unbash's AST only, since
 // only ./unbash.ts may import unbash.
 
-import type { AstNode, Children } from './rereads';
+import { walk, type AstNode, type Children } from './rereads';
 
 /** What becomes of a line continuation at a place, by the innermost node around it that decides. */
 const enum Kind { Gap, Removed, Kept }
@@ -192,15 +192,84 @@ export interface Prepared<S extends AstNode> {
 /**
  * The text that unbash reads for `text`, and where its characters are written. bash would read the CR of a CRLF as
  * part of the last word of the line (`fi\r` is no `fi`). That is not what the author meant, and the document issues
- * say so: the tree is built as if each CR were a blank (`masked`, of the same length; the CRs at `carriageReturns`).
- * And bash removes the line continuations that ./continuations.ts finds (`joins`, when there are some), which unbash
- * reads as they are. When there are none, unbash's reading of `masked` is given back (`script`), to be used as is.
+ * say so: the tree is built as if each CR were a blank (`masked`, of the same length; the CRs at `carriageReturns`),
+ * but for those that end a heredoc where bash does (`heredocCarriageReturns`). And bash removes the line continuations
+ * that ./continuations.ts finds (`joins`, when there are some), which unbash reads as they are. When there are none,
+ * unbash's reading of `masked` is given back (`script`), to be used as is.
  */
 export function prepared<S extends AstNode>(text: string, parse: (text: string) => S, children: Children): Prepared<S> {
   const carriageReturns = [...text.matchAll(/\r(?=\n)/g)].map((m) => m.index!);
-  const masked = carriageReturns.length ? text.replace(/\r(?=\n)/g, ' ') : text;
+  const kept = carriageReturns.length ? heredocCarriageReturns(text, carriageReturns, parse, children) : new Set<number>();
+  const masked = carriageReturns.length ? text.replace(/\r(?=\n)/g, (_, i: number) => (kept.has(i) ? '\r' : ' ')) : text;
   if (!masked.includes('\\\n')) return { masked, carriageReturns };
   const script = parse(masked);
   const places = continuations(script, children, masked);
   return places.length ? { masked, carriageReturns, joins: joined(masked, places) } : { masked, carriageReturns, script };
+}
+
+/** A heredoc redirection of unbash's AST, as far as this module reads it (with no delimiter after `<<#`, a comment). */
+interface HereDoc extends AstNode {
+  readonly delimiter?: { readonly value: string };
+}
+
+/**
+ * A heredoc's delimiter word right before a CRLF (`<<E\r`, `<<-'E'\r`, `<<$'E'\r`), but not in `<<<` or `$((1<<2))`.
+ * It may also be in a comment or a string, or in another heredoc's body: what is kept for it there does no harm (see
+ * `heredocCarriageReturns`).
+ */
+const DELIMITER = /(?<!<)<<(-?)[ \t]*((?:[^\s;&|<>()'"\\]|'[^'\n]*'|"(?:[^"\\\n]|\\.)*"|\\[^\r\n])+)(?=\r\n)/g;
+
+/**
+ * The CRs of `text` (at `carriageReturns`, each before a LF) that stay as they are, where bash reads them in a heredoc's
+ * delimiter (3.6.6). The CR right after the delimiter word is part of it (`<<E\r`, `<<'E'\r`: the delimiter is `E\r`),
+ * and bash ends the body at the first line that is `E\r` (after its leading tabs with `<<-`); a line `E` does not end
+ * it. Masked, the delimiter would be `E` and that line `E `, which unbash does not take for the end either: so both
+ * CRs stay, and unbash reads them as bash does. (The tree leaves them out of the words: the adapter's `seal`.)
+ *
+ * It is found in one pass over the text, before unbash reads it, and keeps a little too much where a delimiter word
+ * is not one (in a comment, a string or a body): the CR at its end, which `seal` leaves out of the comment or word,
+ * and the one of the next line that is that word, which a heredoc of that delimiter (if any) ends at anyway. The
+ * delimiter's value is unbash's own (quotes removed, `$'E'` is `E`), read from that word alone.
+ */
+function heredocCarriageReturns<S extends AstNode>(text: string, carriageReturns: readonly number[], parse: (text: string) => S, children: Children): Set<number> {
+  const kept = new Set<number>();
+  if (!text.includes('<<')) return kept;
+  const values = new Map<string, string | undefined>();
+  const valueOf = (word: string): string | undefined => {
+    if (!values.has(word)) {
+      let value: string | undefined;
+      walk(parse(':<<' + word + '\n'), children, (n) => {
+        if (n.type === 'HereDoc') value = (n as HereDoc).delimiter?.value;
+      });
+      values.set(word, value);
+    }
+    return values.get(word);
+  };
+  const delimiters: { at: number; value: string; dash: boolean }[] = [];
+  for (const m of text.matchAll(DELIMITER)) {
+    const value = valueOf(m[2]);
+    if (value !== undefined) delimiters.push({ at: m.index + m[0].length, value, dash: m[1] === '-' });
+  }
+  // The lines that end with a CR and are a delimiter, as they are and after their leading tabs.
+  const wanted = new Set(delimiters.map((d) => d.value));
+  const exact = new Map<string, number[]>();
+  const tabbed = new Map<string, number[]>();
+  const add = (lines: Map<string, number[]>, line: string, cr: number): void => {
+    if (!wanted.has(line)) return;
+    const at = lines.get(line);
+    if (at) at.push(cr);
+    else lines.set(line, [cr]);
+  };
+  for (const cr of carriageReturns) {
+    const line = text.slice(text.lastIndexOf('\n', cr - 1) + 1, cr);
+    add(exact, line, cr);
+    add(tabbed, line.replace(/^\t+/, ''), cr);
+  }
+  for (const d of delimiters) {
+    kept.add(d.at);
+    const lines = (d.dash ? tabbed : exact).get(d.value);
+    const next = lines ? lines[lowerBound(lines, d.at + 1)] : undefined;
+    if (next !== undefined) kept.add(next);
+  }
+  return kept;
 }
