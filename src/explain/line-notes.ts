@@ -159,13 +159,13 @@ export function extglobPitfalls(cx: Explainer, root: SyntaxNode, line: number): 
   if (top !== use && shoptAt(cx, top).extglob !== 'on' && shoptAt(cx, use).extglob === 'on') {
     // (Where `.bashrc` may have run first, a file with no shebang or `bash -i -c` (`bashrcReader`), extglob is often
     // on: a caveat.)
-    const reader = bashrcReader(cx.state.env(use), cx.state.read);
+    const reader = bashrcReader(cx.state.env(use), cx.state.read, cx.state.interactiveStart);
     return cx.say(fact(cx.lang, 'extglob-in-same-block', { use: use.text, ...(reader ? { reader } : {}) }), use);
   }
   // (A trap's action is read when its signal comes; another shell starts with its own options.)
   const id = state === 'unknown' ? (cx.nested === 'later' ? 'extglob-maybe-on-trap' : 'extglob-maybe-on')
     : state === 'off' ? 'extglob-turned-off' : cx.nested === 'child' ? 'extglob-not-in-new-shell' : 'extglob-not-found';
   // (A new shell started with `-i` reads `.bashrc` first, which often turns extglob on: a caveat.)
-  if (id === 'extglob-not-in-new-shell' && bashrcReader(cx.state.env(use), cx.state.read) === 'interactive') return cx.say(fact(cx.lang, id, { use: use.text, reader: 'interactive' }), use);
+  if (id === 'extglob-not-in-new-shell' && bashrcReader(cx.state.env(use), cx.state.read, cx.state.interactiveStart) === 'interactive') return cx.say(fact(cx.lang, id, { use: use.text, reader: 'interactive' }), use);
   return cx.say(fact(cx.lang, id, { use: use.text }), use);
 }

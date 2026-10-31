@@ -26,7 +26,7 @@ import { type BashVersion, DEFAULT_BASH_VERSION } from '../bashversion';
 import { restrictedByName, type Shell } from '../dialect';
 import { ancestor, field, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { SET_LETTERS } from './effects';
-import { EnvModel, type ExecEnv, fileRead, type FileRead, INTERACTIVE_FLAGS, linksAfter, MAIN_SHELL, type SlotLink } from './env';
+import { EnvModel, type ExecEnv, fileRead, type FileRead, INTERACTIVE_FLAGS, linksAfter, MAIN_SHELL, NO_BASHRC_FLAGS, type SlotLink } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
 import type { ShellState, Tri } from './shellstate';
 import { childOpening, HARMLESS_START, type Opening, openingBlinds } from './opening';
@@ -76,6 +76,11 @@ export interface StateModel {
    * terminal, or not known. The model of a string another shell runs has its file's.
    */
   readonly read: FileRead;
+  /**
+   * Whether the shebang starts the file's own shell interactive (`#!/bin/bash -i`), which reads `~/.bashrc` first
+   * (`bashrcReader`, src/semantics/env.ts).
+   */
+  readonly interactiveStart: boolean;
   /**
    * Whether the host gives the script the variable `name` (`ShellRegion.provided`, and its placeholders): read by
    * `fromEnvironment` as one the environment has. None outside a host file.
@@ -373,7 +378,7 @@ const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
  * assigns (`BASH_COMPAT=42 bash`); `others`, what else it gives that the allow-list does not have (`-r`, `--login`,
  * an `env -S` line not read in full).
  */
-interface ShebangStart { posix: boolean; set: Map<string, 'on' | 'off'>; shopt: Map<string, 'on' | 'off'>; variables: Map<string, string>; others: string[]; restricted: boolean }
+interface ShebangStart { posix: boolean; set: Map<string, 'on' | 'off'>; shopt: Map<string, 'on' | 'off'>; variables: Map<string, string>; others: string[]; restricted: boolean; interactive: boolean; noBashrc: boolean }
 
 /**
  * What the shebang starts bash with: the kernel passes the rest of the line as one argument, so `#!/bin/bash -eu`
@@ -387,7 +392,7 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
   const m = /^#![ \t]*(\S+)[ \t]*([^\n]*?)[ \t]*(?:\n|$)/.exec(root.text);
   if (!m) return undefined;
   const base = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
-  const start: ShebangStart = { posix: false, set: new Map(), shopt: new Map(), variables: new Map(), others: [], restricted: false };
+  const start: ShebangStart = { posix: false, set: new Map(), shopt: new Map(), variables: new Map(), others: [], restricted: false, interactive: false, noBashrc: false };
   // (bash, or bash as `rbash`, which is restricted: the allow-list does not have it.)
   const bash = (path: string): boolean => {
     if (restrictedByName(path)) {
@@ -402,7 +407,10 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
       else if (letter !== 'o' && letter !== 'O') start.others.push(`${cluster[0]}${letter}`);
       if (`${cluster[0]}${letter}` === '-r') start.restricted = true;
       // (An interactive shell, `#!/bin/bash -i`, expands aliases: still one the allow-list does not have.)
-      if (INTERACTIVE_FLAGS.has(`${cluster[0]}${letter}`)) start.shopt.set('expand_aliases', 'on');
+      if (INTERACTIVE_FLAGS.has(`${cluster[0]}${letter}`)) {
+        start.shopt.set('expand_aliases', 'on');
+        start.interactive = true;
+      }
     }
   };
   // (A long option: POSIX mode, one that changes nothing here, or one the table does not have: `--debugger`.)
@@ -410,6 +418,7 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
     if (option === '--posix') start.posix = true;
     else if (!HARMLESS_START.has(option)) start.others.push(option);
     if (option === '--restricted') start.restricted = true;
+    if (NO_BASHRC_FLAGS.has(option)) start.noBashrc = true;
   };
   if (bash(m[1])) {
     // (Not when bash refuses them: then no option is on, run directly or by `bash script`.)
@@ -525,7 +534,7 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
     // (`#!/bin/bash -r`, `#!/bin/rbash`: a restricted shell, 6.10.)
     return shebang?.restricted ? restrictedStart(st, tree.root) : st;
   };
-  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, { read, provides: provider(opts.provided ?? []) }, undefined, host, run, { set, shopt, variables: shebang?.variables, others: shebang?.others }, opts.version);
+  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, { read, provides: provider(opts.provided ?? []), interactiveStart: !!shebang?.interactive && !shebang.noBashrc }, undefined, host, run, { set, shopt, variables: shebang?.variables, others: shebang?.others }, opts.version);
   byKey.set(key, model);
   return model;
 }
@@ -550,7 +559,7 @@ export const modelVersion = (model: StateModel): BashVersion => modelVersions.ge
  * `outer`: what the model of the script that starts this shell trusts; `host`: as for `shellState`; `opening`: what the
  * shebang starts it with.
  */
-function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, file: Pick<StateModel, 'read' | 'provides'>, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening, version?: BashVersion): StateModel {
+function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, file: Pick<StateModel, 'read' | 'provides' | 'interactiveStart'>, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening, version?: BashVersion): StateModel {
   const scripts = new Scripts(depth, shell);
   const own = scriptTrust(tree.root, scripts, host, opening, shell, version, posix);
   const trust = outer ? withinTrust(own, outer) : own;
@@ -612,6 +621,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     end,
     shell,
     read: file.read,
+    interactiveStart: file.interactiveStart,
     provides: file.provides,
     trusts: (name) => !found && trust.variable(name),
     blind: found ?? trust.blind,

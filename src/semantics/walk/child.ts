@@ -2,7 +2,7 @@
 // (src/semantics/walk/walker.ts): what reaches it from the script's shell, and the options it is started with.
 import { SET_LETTERS } from '../effects';
 import { RESTRICTED_READONLY } from '../vars';
-import { type ExecEnv, reachOf } from '../env';
+import { type ExecEnv, reachOf, STARTUP_FLAGS } from '../env';
 import type { FunctionState, OptionState, ShellState, Tri, VariableState } from '../shellstate';
 import type { SyntaxNode } from '../../syntax/tree';
 import { type ChildPass, NAME, passed, passedMemo } from './shared';
@@ -80,7 +80,7 @@ export function childStart(w: Walker, outer: ShellState, env: ExecEnv, pass: Chi
     const on = flag[0] === '-';
     const letter = flag.slice(1);
     if (flag === '--posix') st = w.builtins.setPosix(st, true, at);
-    else if (['-l', '--login', '-i'].includes(flag)) startup = true;
+    else if (STARTUP_FLAGS.has(flag)) startup = true;
     else if (/^[-+]o$/.test(flag) && value) st = value === 'posix' ? w.builtins.setPosix(st, on, at) : { ...st, set: st.set.with(value, on ? 'on' : 'off') };
     else if (/^[-+]O$/.test(flag) && value) st = { ...st, shopt: st.shopt.with(value, on ? 'on' : 'off') };
     else if (SET_LETTERS[letter]) st = { ...st, set: st.set.with(SET_LETTERS[letter], on ? 'on' : 'off') };

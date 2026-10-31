@@ -5,7 +5,7 @@ import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
 import { aliasDefinedText, aliasMaybeText, aliasNotExpandedText } from './messages-alias';
-import { DEFINES_IT, inTrap, LOCAL_SOURCED, noShebang, readByBashrc, SETS_IT, unreadClause } from './messages-common';
+import { DEFINES_IT, leavesSet, inTrap, LOCAL_SOURCED, noShebang, readByBashrc, SETS_IT, unlessAny, unreadClause, unreadCode } from './messages-common';
 import { extglobText, globstarText, type LoopHow, type LoopPattern, unmatchedGlobText } from './messages-glob';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
 import type { Rewrite } from './rewrite';
@@ -415,8 +415,8 @@ export const MESSAGES = {
     `the new shell expands \`$${v}\` in the string, but \`${v}\` is an array, and bash cannot export an array (not even with \`export\`), so it is empty there. To pass its values, give \`"\${${v}[*]}"\` as an argument, or use a string variable`] : environment === 'maybe' ? [
     `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトで設定していますが、エクスポートしていないので、そこに値が届くのは \`${v}\` が初めから環境変数にあったとき（環境変数から来た変数はエクスポートされています）だけで、そうでなければ空です。先に \`export ${v}\` します`,
     `the new shell expands \`$${v}\` in the string, and \`${v}\` is set by this script but not exported: its value gets there only when \`${v}\` was in the environment already (a variable from the environment is exported), and it is empty otherwise. Run \`export ${v}\` first`] : [
-    `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です${environment ? `（環境変数に初めから \`${v}\` があるときを除く）` : ''}${unreadClause(unread, SETS_IT)[0]}。先に \`export ${v}\` します`,
-    `the new shell expands \`$${v}\` in the string, and \`${v}\` is a variable of this script that is not exported, so it is empty there${environment ? ` (unless the environment already has \`${v}\`)` : ''}${unreadClause(unread, SETS_IT)[1]}. Run \`export ${v}\` first`]), undefined,
+    `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です${unlessAny(environment ? [`環境変数に初めから \`${v}\` があるとき`, `the environment already has \`${v}\``] : undefined, unread ? [`${unreadCode(leavesSet(v))[0]}いるとき`, unreadCode(leavesSet(v))[1]] : undefined)[0]}。先に \`export ${v}\` します`,
+    `the new shell expands \`$${v}\` in the string, and \`${v}\` is a variable of this script that is not exported, so it is empty there${unlessAny(environment ? [`環境変数に初めから \`${v}\` があるとき`, `the environment already has \`${v}\``] : undefined, unread ? [`${unreadCode(leavesSet(v))[0]}いるとき`, unreadCode(leavesSet(v))[1]] : undefined)[1]}. Run \`export ${v}\` first`]), undefined,
   ({ environment, unread }) => (environment === 'maybe' || unread ? 'info' : 'warning')),
   ({ array }) => (array ? { kind: 'checked', probe: 'state#export-array' } : undefined)),
   'function-not-in-container': pitfall<{ via: string; name: string }>(['3.3', '3.7.3'], ({ via, name }) => [

@@ -645,7 +645,7 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
     // In a README the commands are typed into a terminal, where the alias may exist; where `.bashrc` may have run first
     // (a file with no shebang, `bash -i -c`: `bashrcReader`), it may too: a caveat.
     const interactive = readAs(cx.state.env(nameNode), cx.state.read) === 'terminal';
-    const reader = bashrcReader(cx.state.env(nameNode), cx.state.read);
+    const reader = bashrcReader(cx.state.env(nameNode), cx.state.read, cx.state.interactiveStart);
     const many = distro.definitions.length > 1;
     cx.note(interactive
       ? fact(cx.lang, 'distro-alias-interactive', { name, where, what: whatText, many, portable: distro.portable })

@@ -550,7 +550,9 @@ describe('pitfalls that bash contradicted', function () {
         // (The line of `bash -c`, the last one.)
         const note = noteOf(script, 'variable-not-exported', script.trimEnd().split('\n').length - 1)!;
         assert.strictEqual(note.level, 'info', name);
-        assert.match(note.body, /unless code that runs before it and is not read here, such as a file read with `source` or an `eval`, sets it there\./, name);
+        assert.match(note.body, /(unless|, or) code that runs before it and is not read here, such as a file read with `source` or an `eval`, leaves `foo` set there\)\./, name);
+        // (One "unless" for the conditions, not two.)
+        assert.ok(!/unless.*unless/.test(note.body), name);
       }
       const fn = "#!/bin/bash\nf() { echo FUNC; }\n. ./exports.sh\nbash -c f\n";
       assert.strictEqual((await run('function.sh', fn)).stdout, 'FUNC\n');
