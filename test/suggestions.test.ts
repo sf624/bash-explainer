@@ -257,7 +257,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     { id: 'bracket-no-space', input: '[[-f x]', why: 'none' },
     { id: 'redirect-in-bracket', input: '[ $a 2>5 ]', why: 'none' },
     { id: 'redirect-in-bracket', input: '[ a < b > c ]', why: 'none' },
-    { id: 'redirect-in-bracket', input: '[ a < b ] x', why: 'none' },
+    { id: 'redirect-in-bracket', input: '[ $a < $b -a x', why: 'none' },
     { id: 'redirect-in-bracket', input: '[ a <  > c ]', why: 'none' },
     { id: 'redirect-in-bracket', input: '[ a > 5 c ]', why: 'none' },
     { id: 'redirect-in-bracket', input: '[ a >> b ]', why: 'none' },

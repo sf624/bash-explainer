@@ -607,13 +607,15 @@ describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', ()
     ['[ \\( $a > $b \\) ]', 'redirect-in-bracket', ['[ \\( $a \\> $b \\) ]']],
     ['[ ! a < b ]', 'redirect-in-bracket', ['[ ! a \\< b ]']],
     ['[ -n "$x" -o a > b ]', 'redirect-in-bracket', ['[ -n "$x" -o a \\> b ]']],
+    ['[ x -o a > b ]', 'redirect-in-bracket', ['[ x -o a \\> b ]']],
+    ['[ "$a" < "$b" -a -n "$c" ]', 'redirect-in-bracket', ['[ "$a" \\< "$b" -a -n "$c" ]']],
     // (No operator of a comparison: a target that is a number, with no operand or another after it; not `>>`; another
     // redirection; no `]`.)
     ['[ $a 2>5 ]', 'redirect-in-bracket', []],
     ['[ a > 5 c ]', 'redirect-in-bracket', []],
     ['[ a >> b ]', 'redirect-in-bracket', []],
     ['[ a < b > c ]', 'redirect-in-bracket', []],
-    ['[ a < b ] x', 'redirect-in-bracket', []],
+    ['[ $a < $b -a x', 'redirect-in-bracket', []],
     // (A redirection with no word after it, which bash refuses: a case the fuzz test found.)
     ['[ a <  > c ]', 'redirect-in-bracket', []],
     ['[ -f $x]', 'bracket-close-in-word', ['[ -f $x ]']],
@@ -644,7 +646,8 @@ describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', ()
   // one written (test/error-level.test.ts runs them).
   it('redirect-in-bracket: none where no comparison would stand', () => {
     for (const src of ['[ "$n" -gt 0 2>"$errlog" ]', '[ "$x" -lt 5 2>>"$LOG" ]', '[ -t 0 < "$tty" ]', '[ "$a" 2>"$b" ]', '[ a b < c ]',
-      '[ a < b c ]', '[ a < b c', '[ -a f > out ]', '[ ! -a f > out ]', '[ {fd}>x a ]', '[ a 2>&1 ]', '[ a 2>/dev/null ]']) {
+      '[ a < b c ]', '[ a < b c', '[ -a f > out ]', '[ ! -a f > out ]', '[ {fd}>x a ]', '[ a 2>&1 ]', '[ a 2>/dev/null ]',
+      '[ "$a" -a > b ]', '[ -n "$x" > log ]', '[ a < b ] x']) {
       assert.deepStrictEqual(found(src, 'redirect-in-bracket').map((f) => f.text), [], src);
     }
   });
