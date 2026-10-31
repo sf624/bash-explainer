@@ -51,8 +51,9 @@ describe('the colours of the editor', () => {
       for (const k of m[1].split(', ')) kindVar.set(k.slice(6), m[3] ?? m[2]);
     }
     assert.deepEqual([...kindVar.keys()].sort(), Object.keys(PANEL_KIND_ROLE).sort());
-    // An error takes the theme's error colour, as in the editor (but in light themes, see test/contrast.test.ts).
-    assert.equal(resolve(`var(${kindVar.get('error')})`), 'var(--vscode-errorForeground, #f14c4c)');
+    // An error takes the error level's colour: the editor's, as its squiggles (ours in every theme kind, see
+    // test/contrast.test.ts).
+    assert.equal(resolve(`var(${kindVar.get('error')})`), 'var(--vscode-editorError-foreground, var(--vscode-charts-red, #f14c4c))');
     for (const [kind, v] of kindVar) {
       if (kind === 'error') continue;
       const role = PANEL_KIND_ROLE[kind as keyof typeof PANEL_KIND_ROLE];

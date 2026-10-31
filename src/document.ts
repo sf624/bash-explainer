@@ -9,6 +9,7 @@ import { Lang } from './i18n';
 import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
 import { conventionOf, fact, isProblem, problemText, severityOf } from './messages';
 import { PROBLEM_LEVELS } from './messages-levels';
+import { RESERVED } from './semantics/names';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { shellState } from './semantics/state';
 import { explainOptions, settingSpec } from './settings';
@@ -335,9 +336,20 @@ const CRLF: Readonly<Record<'keyword' | 'command' | 'shebang' | 'maybe', readonl
   ],
 };
 
-/** Whether a keyword token of the tree (`fi`, `then`, `{`…: a token whose text is a word) ends where a CR stands. */
+/**
+ * The nodes whose tokens are reserved words (`fi` of an `if`, `}` of a group, `]]` of a `[[ ]]`): the compound commands,
+ * a function's definition, `!`, `time` and `coproc`. The same characters in a word are no reserved word: the `}` of
+ * `${HOME}` or of `{a,b}`.
+ */
+const KEYWORD_HOLDERS = new Set([
+  'compound_statement', 'extended_test', 'negated_command', 'if_statement', 'elif_clause', 'else_clause', 'while_statement',
+  'for_statement', 'select_statement', 'c_style_for_statement', 'case_statement', 'do_group', 'function_definition',
+  'time_statement', 'coproc_statement',
+]);
+
+/** Whether a reserved word of the tree (`fi`, `then`, `}`…: a token of a compound command, `RESERVED`) ends where a CR stands. */
 function keywordBefore(n: SyntaxNode, carriageReturns: ReadonlySet<number>): boolean {
-  if (!n.named && /^(?:[a-z]+|[{}!]|\[\[|\]\])$/.test(n.type) && carriageReturns.has(n.endIndex)) return true;
+  if (!n.named && RESERVED.has(n.type) && KEYWORD_HOLDERS.has(n.parent!.type) && carriageReturns.has(n.endIndex)) return true;
   return n.children.some((c) => keywordBefore(c, carriageReturns));
 }
 

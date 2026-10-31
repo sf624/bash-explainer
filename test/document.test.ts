@@ -88,6 +88,14 @@ describe('documents without VS Code', () => {
       ['echo a;\r\n', 'a &&\r\nb\r\n', 'a ||\r\n', 'a |\r\nb\r\n', 'a &\r\n', 'echo a\r\n\r\necho b\r\n', '  \r\n', '#!/bin/sh\necho a;\r\n', 'x=$(echo a;\r\n)\r\n', 'f() {\n  a;\r\n}\n'].map((t) => said(t)),
       Array(10).fill(['error `;`']));
     assert.deepStrictEqual(said('echo a;\r\n', 'ja'), ['error `;`']);
+    // A `}` (or `]]`, `!`, `fi`) is a reserved word only as a token of a compound command: the `}` of `${HOME}` or of
+    // `{a,b}` is a word's, and bash runs the line (test/error-level.test.ts). Where a keyword stands before a CR and a CR
+    // starts a command, the keyword's text; a `}` of an expansion before `;\r` leaves the command's.
+    assert.deepStrictEqual(
+      ['echo ${HOME}\r\n', 'x=${y}\r\n', 'echo "${a}"\r\n', 'arr=(${a})\r\n', 'echo {a,b}\r\n', 'echo ${x:-fi}\r\n', 'echo $((1))\r\n'].map((t) => said(t)[0].split(' ')[0]),
+      Array(7).fill('warning'));
+    assert.deepStrictEqual(['{ :; }\r\n', '[[ a ]]\r\n', '! true; !\r\n', 'if true; then\r\n\r\nfi\r\n', 'echo ${HOME};\r\n'].map((t) => said(t).join()),
+      [...Array(4).fill('error `fi\\r`'), 'error `;`']);
     assert.deepStrictEqual(
       ['echo a # b;\r\n', 'echo "a;\r\n\r\nb"\r\n', "echo 'a;\r\nb'\r\n", 'cat <<E\na;\r\n\r\nE\n', 'a=(\r\n\r\n1\r\n)\r\n', 'echo a 2>&\r\n', 'echo \\\r\n'].map((t) => said(t)[0]?.split(' ')[0]),
       Array(7).fill('warning'));

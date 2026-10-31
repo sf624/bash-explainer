@@ -28,8 +28,9 @@ const ours = (kind: ThemeKind): string[] => coloured().flatMap(({ c }) => (c.our
 /** The lines of each region of each file, without the indentation of the region's opening comment. */
 export const REGIONS: Readonly<Record<string, Readonly<Record<string, () => string[]>>>> = {
   'media/panel.css': {
-    // The editor's colour of each level, under the panel's name; a chart colour where there is no editor.
-    root: () => coloured().map(({ c }) => `${c.name}: var(${c.variable}, ${c.fallback});`),
+    // The editor's colour of each level, under the panel's name; a chart colour where there is no editor. A colour the
+    // panel also gives another name (`alias`) takes it from the level's.
+    root: () => coloured().flatMap(({ c }) => [`${c.name}: var(${c.variable}, ${c.fallback});`, ...(c.alias ? [`${c.alias}: var(${c.name});`] : [])]),
     light: () => ours('light'),
     dark: () => ours('dark'),
     highContrast: () => ours('highContrast'),
