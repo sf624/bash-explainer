@@ -3,7 +3,7 @@
 // unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser } from 'playwright-core';
-import { openSite, stable, until } from './support/site';
+import { openSettingsSection, openSite, stable, until } from './support/site';
 
 describe('the web page: resizing the panes and the Problems list', function () {
   this.timeout(120000);
@@ -178,7 +178,7 @@ describe('the web page: resizing the panes and the Problems list', function () {
     // Cleared with the stored data.
     assert.ok((await page.evaluate('Object.keys(localStorage)') as string[]).includes('bash-explainer-problems'));
     await page.locator('#problems-toggle').click();
-    await page.locator('#settings-open').click();
+    await openSettingsSection(page, 'data');
     await page.locator('#settings-clear').click();
     await page.locator('#settings-clear-yes').click();
     assert.deepStrictEqual(await page.evaluate('Object.keys(localStorage)'), []);

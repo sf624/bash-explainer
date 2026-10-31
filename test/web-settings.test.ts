@@ -4,7 +4,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { openSite, choose, currentShell, problemList, problemsShown, until } from './support/site';
+import { openSite, choose, currentShell, openSettingsSection, problemList, problemsShown, settingControl, stable, until } from './support/site';
 
 describe('the web page: theme and settings', function () {
   this.timeout(120000);
@@ -105,8 +105,15 @@ describe('the web page: theme and settings', function () {
       const page = await ctx.newPage();
       await page.goto(base);
       await page.locator('#settings-open').click();
-      const body = await page.locator('.settings-body').innerText();
-      assert.ok(!/#bashExplainer|\]\(|\*\*|`/.test(body), `${locale}: raw Markdown left in the dialog`);
+      // Every section unfolded, every description whole, with the setting names and without.
+      for (const id of ['examples', 'checks', 'editor', 'data']) await page.locator(`#settings-fold-${id}`).click();
+      for (const names of [false, true]) {
+        if (names) await page.locator('#settings-show-keys').check();
+        for (const more of await page.locator('.desc-more:visible').all()) await more.click();
+        const body = await page.locator('.settings-body').innerText();
+        assert.ok(!/#bashExplainer|\]\(|\*\*|`/.test(body), `${locale}: raw Markdown left in the dialog`);
+        assert.strictEqual(/bashExplainer\.bashVersion/.test(body), names, `${locale}: the names only with "Show VS Code setting names"`);
+      }
       await ctx.close();
     }
   });
@@ -151,6 +158,7 @@ describe('the web page: theme and settings', function () {
     assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), false);
     const text = await page.evaluate('localStorage.getItem("bash-explainer-settings")') as string;
     assert.deepStrictEqual(JSON.parse(text), { 'bashExplainer.editor.wrap': false });
+    await openSettingsSection(page, 'data');
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#settings-export').click()]);
     const file = await download.path();
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { 'bashExplainer.editor.wrap': false });
@@ -202,7 +210,7 @@ describe('the web page: theme and settings', function () {
     await until('no pitfall', panelText, (t) => !/Caveat/.test(t));
     await until('no pitfall problem', () => problemsShown(page), (shown) => !shown);
     // The shell: the script is checked for sh, and the panel's own menu says so.
-    await page.locator('#setting-shell').selectOption('sh');
+    await (await settingControl(page, 'shell')).selectOption('sh');
     await until('the problem', () => problemList(page), (t) => /dbracket/.test(t));
     await until('the panel\'s shell', () => currentShell(page), (v) => v === 'sh');
     // A warning code left out.
@@ -211,6 +219,7 @@ describe('the web page: theme and settings', function () {
     await until('no problem', () => problemsShown(page), (shown) => !shown);
     assert.match(await page.locator('[data-key="diagnostics.ignore"] .setting-list').innerText(), /dbracket/);
     // Examples off by kind.
+    await openSettingsSection(page, 'examples');
     await page.locator('#setting-examples-disabled-regex').check();
     // The language follows the toolbar, and the other way round.
     await page.locator('#setting-language').selectOption('ja');
@@ -260,8 +269,7 @@ describe('the web page: theme and settings', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('deploy web');
     await until('the line explained', () => panel().locator('#main').innerText(), (t) => /deploy/.test(t));
-    await page.locator('#settings-open').click();
-    const area = page.locator('#setting-customCommands');
+    const area = await settingControl(page, 'customCommands');
     await area.fill('{ "deploy": ');
     assert.match(await page.locator('#setting-customCommands-error').innerText(), /^Not applied: /);
     assert.strictEqual(await area.getAttribute('aria-invalid'), 'true');
@@ -286,10 +294,9 @@ describe('the web page: theme and settings', function () {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(base);
-    await page.locator('#settings-open').click();
-    await page.locator('#setting-shell').selectOption('sh');
+    await (await settingControl(page, 'shell')).selectOption('sh');
     await page.locator('#setting-notes-pitfalls').uncheck();
-    await page.locator('#setting-examples-disabled-regex').check();
+    await (await settingControl(page, 'examples.disabled')).locator('#setting-examples-disabled-regex').check();
     await page.locator('#setting-customCommands').fill('{ "deploy": { "summary": "Deploy to production" } }');
     const saved = () => page.evaluate('localStorage.getItem("bash-explainer-settings")') as Promise<string | null>;
     const before = await saved();
@@ -298,6 +305,7 @@ describe('the web page: theme and settings', function () {
       'bashExplainer.customCommands': { deploy: { summary: 'Deploy to production' } },
     };
     // Export: the keys of settings.json, only those changed, pretty-printed.
+    await openSettingsSection(page, 'data');
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#settings-export').click()]);
     assert.strictEqual(download.suggestedFilename(), 'bash-explainer-settings.json');
     const file = await download.path();
@@ -386,10 +394,244 @@ describe('the web page: theme and settings', function () {
     // On a phone the settings take the whole screen, as a sheet.
     assert.deepStrictEqual(fit, { left: 0, right: 0, top: 0, bottom: 0, sideways: false, page: false, out: [] });
     // Without storage, a change still applies for as long as the page is open.
-    await page.locator('#setting-shell').selectOption('dash');
+    await (await settingControl(page, 'shell')).selectOption('dash');
     const panel = page.frames().find((f) => f.url().endsWith('/panel.html'))!;
     await until('the menu\'s shell', () => currentShell(page), (v) => v === 'dash');
     assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  /** The boxes of the sheet, the editor's pane and the panel. */
+  const boxes = (page: Page) => page.evaluate(`(() => {
+    const r = (e) => { const b = e.getBoundingClientRect(); return { left: b.left, right: b.right, width: b.width, top: b.top, bottom: b.bottom }; };
+    return { sheet: r(document.getElementById('settings-dialog')), pane: r(document.querySelector('main > .source')), panel: r(document.getElementById('panel')) };
+  })()`) as Promise<Record<'sheet' | 'pane' | 'panel', { left: number; right: number; width: number; top: number; bottom: number }>>;
+  const isOpen = (page: Page) => page.locator('#settings-dialog').evaluate((d) => (d as unknown as { open: boolean }).open);
+
+  it('opens over the editor side by side, never wider than its pane, so that a change shows in the explanation while the sheet is open', async () => {
+    // 768 px is the narrowest side by side (web/theme-init.js: up to 767 px, the narrow layout).
+    for (const width of [1280, 768]) {
+      const ctx = await browser.newContext({ locale: 'en-US', viewport: { width, height: 800 } });
+      const page = await ctx.newPage();
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      await page.goto(base);
+      const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+      await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+      await page.locator('.cm-content').click();
+      await page.keyboard.press('Control+A');
+      await page.keyboard.insertText('#!/bin/bash\nfor f in $(ls); do echo "$f"; done');
+      const panelText = () => panel().locator('#main').innerText();
+      await until('the pitfall', panelText, (t) => /Caveat: the output of/.test(t));
+      await page.locator('#settings-open').click();
+      await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+      const b = await boxes(page);
+      const seen = `${width}: ${JSON.stringify(b)}`;
+      // Along the left edge, over the editor's pane and no wider: the panel is beside it, uncovered.
+      assert.ok(Math.abs(b.sheet.left) < 0.5 && b.sheet.top === 0, seen);
+      assert.ok(b.sheet.width <= b.pane.width + 0.5 && b.sheet.right <= b.panel.left + 0.5, seen);
+      // 36rem where the pane is wider; the pane's width where it is not.
+      if (width === 1280) assert.strictEqual(Math.round(b.sheet.width), 576, seen);
+      else assert.ok(b.sheet.width < 576 && b.pane.width - b.sheet.width < 1, seen);
+      // The backdrop dims what is left of the editor, not the panel.
+      const backdrop = await page.evaluate("getComputedStyle(document.getElementById('settings-dialog'), '::backdrop').backgroundImage") as string;
+      assert.ok(backdrop.startsWith('linear-gradient') && backdrop.endsWith(`rgba(0, 0, 0, 0) ${Math.floor(b.pane.width)}px)`), `${backdrop}; ${seen}`);
+      // A change shows in the explanation at once, with the sheet still open.
+      await page.locator('#setting-notes-pitfalls').uncheck();
+      await until('no pitfall', panelText, (t) => !/Caveat/.test(t) && /for/.test(t));
+      assert.strictEqual(await isOpen(page), true);
+      // A click on the panel closes the sheet.
+      await page.mouse.click(b.panel.left + 40, 400);
+      await until('the sheet closed', () => isOpen(page), (v) => !v);
+      assert.deepStrictEqual(errors, []);
+      await ctx.close();
+    }
+    // In the narrow layout (a 640 px window, no touch), the settings take the whole screen, as on a phone.
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 640, height: 800 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('#settings-open').click();
+    await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    const { sheet } = await boxes(page);
+    assert.deepStrictEqual([sheet.left, sheet.width, sheet.top, sheet.bottom], [0, 640, 0, 800]);
+    await ctx.close();
+  });
+
+  it('finds settings by their title or their key, in their sections, and says when none matches', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('#settings-open').click();
+    const search = page.locator('#settings-search');
+    const find = async (text: string) => {
+      await search.fill('');
+      await search.click();
+      await page.keyboard.insertText(text);
+      return page.evaluate("[...document.querySelectorAll('#settings-dialog .setting, #settings-dialog .settings-part')].filter((r) => r.getClientRects().length).map((r) => r.dataset.key ?? r.id ?? r.dataset.title)") as Promise<string[]>;
+    };
+    // By title: the folded Checks unfolds to show it, and nothing else shows.
+    assert.strictEqual(await page.locator('#settings-items-checks').isVisible(), false);
+    assert.deepStrictEqual(await find('version'), ['bashVersion']);
+    assert.strictEqual(await page.locator('#setting-bashVersion').isVisible(), true);
+    assert.strictEqual(await page.locator('#settings-section-common').isVisible(), false);
+    // By key, with or without the prefix, whatever the case.
+    assert.deepStrictEqual(await find('bashExplainer.hints'), ['hints.names', 'hints.deadCode']);
+    assert.deepStrictEqual(await find('DIAGNOSTICS.IGNORE'), ['diagnostics.ignore']);
+    // The page's own parts by their title: the theme, the export.
+    assert.deepStrictEqual(await find('theme'), ['setting-theme-row']);
+    assert.ok((await find('export')).length === 1 && await page.locator('#settings-export').isVisible());
+    // Nothing: it says so.
+    assert.strictEqual(await page.locator('#settings-nomatch').isVisible(), false);
+    assert.deepStrictEqual(await find('zzz'), []);
+    assert.strictEqual(await page.locator('#settings-nomatch').isVisible(), true);
+    // Escape clears the search (the sheet stays open, Checks folds again); Escape again closes the sheet.
+    await page.keyboard.press('Escape');
+    assert.strictEqual(await search.inputValue(), '');
+    assert.strictEqual(await isOpen(page), true);
+    assert.strictEqual(await page.locator('#setting-language').isVisible(), true);
+    assert.strictEqual(await page.locator('#settings-items-checks').isVisible(), false);
+    await page.keyboard.press('Escape');
+    await until('the sheet closed', () => isOpen(page), (v) => !v);
+    await ctx.close();
+    // In Japanese, by the Japanese title.
+    const ja = await browser.newContext({ locale: 'ja-JP' });
+    const p2 = await ja.newPage();
+    await p2.goto(base);
+    await p2.locator('#settings-open').click();
+    await p2.locator('#settings-search').click();
+    await p2.keyboard.insertText('バージョン');
+    await until('bash のバージョン', () => p2.locator('#setting-bashVersion').isVisible(), (v) => v);
+    assert.strictEqual(await p2.locator('#setting-language').isVisible(), false);
+    await ja.close();
+  });
+
+  it('unfolds a section from its Jump to link and brings it to the top, and folds it from its heading', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('#settings-open').click();
+    const fold = page.locator('#settings-fold-checks');
+    assert.strictEqual(await fold.getAttribute('aria-expanded'), 'false');
+    assert.deepStrictEqual(await page.locator('#settings-nav a').allInnerTexts(), ['Common', 'Examples', 'Checks', 'Editor', 'Data']);
+    await page.locator('#settings-jump-checks').click();
+    assert.strictEqual(await page.locator('#setting-shell').isVisible(), true);
+    assert.strictEqual(await fold.getAttribute('aria-expanded'), 'true');
+    // Its heading is at the top of the sheet's body, and has the focus.
+    const top = () => page.evaluate("document.getElementById('settings-section-checks').getBoundingClientRect().top - document.querySelector('.settings-body').getBoundingClientRect().top") as Promise<number>;
+    assert.ok(Math.abs(await stable('the scroll', top)) <= 1, String(await top()));
+    // Only the body scrolled: the sheet's header and its links stay at the top, its footer at the bottom.
+    assert.deepStrictEqual(await page.evaluate("[document.getElementById('settings-dialog').scrollTop, document.querySelector('.settings-head').getBoundingClientRect().top, Math.round(document.querySelector('.settings-foot').getBoundingClientRect().bottom)]"), [0, 0, 800]);
+    assert.strictEqual(await page.evaluate('document.activeElement.id'), 'settings-fold-checks');
+    // Common is a link too: back to the top.
+    await page.locator('#settings-jump-common').click();
+    assert.ok(Math.abs(await stable('the scroll', () => page.evaluate("document.getElementById('settings-section-common').getBoundingClientRect().top - document.querySelector('.settings-body').getBoundingClientRect().top") as Promise<number>)) <= 1);
+    // The heading folds it, and unfolds it.
+    await fold.click();
+    assert.strictEqual(await page.locator('#setting-shell').isVisible(), false);
+    assert.strictEqual(await fold.getAttribute('aria-expanded'), 'false');
+    await fold.click();
+    assert.strictEqual(await page.locator('#setting-shell').isVisible(), true);
+    // Data: the export and the stored data.
+    await page.locator('#settings-jump-data').click();
+    assert.strictEqual(await page.locator('#settings-export').isVisible(), true);
+    assert.strictEqual(await page.locator('#settings-clear').isVisible(), true);
+    await ctx.close();
+  });
+
+  it('shows two lines of a description with More after the last word, option labels in words, and the VS Code names only when asked', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 768, height: 800 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await openSettingsSection(page, 'checks');
+    const desc = page.locator('#setting-bashVersion-desc');
+    const more = page.locator('#setting-bashVersion-desc-more');
+    const lines = () => desc.evaluate((d) => Math.round(d.getBoundingClientRect().height / parseFloat(d.ownerDocument.defaultView!.getComputedStyle(d).lineHeight)));
+    // Cut to two lines, "… More" inside the text, after its last word shown; the rest is there for a screen reader.
+    assert.strictEqual(await lines(), 2);
+    assert.strictEqual(await more.innerText(), 'More');
+    assert.strictEqual(await desc.evaluate((d) => !!d.querySelector('.desc-more')), true);
+    assert.match(await desc.innerText(), /… More/);
+    assert.strictEqual(await more.getAttribute('aria-label'), 'More: bash version');
+    await more.click();
+    assert.ok(await lines() > 2);
+    assert.strictEqual(await more.innerText(), 'Less');
+    assert.strictEqual(await more.getAttribute('aria-expanded'), 'true');
+    assert.strictEqual(await page.evaluate('document.activeElement.id'), 'setting-bashVersion-desc-more');
+    await more.click();
+    assert.strictEqual(await lines(), 2);
+    // The values in words, without their names; a setting named in a text is its title, a link to it.
+    await openSettingsSection(page, 'examples');
+    const placement = () => page.locator('#setting-examples-placement option').allInnerTexts();
+    assert.ok((await placement()).every((o) => !/^(first|last|bottom) — /.test(o)), String(await placement()));
+    assert.strictEqual(await page.locator('.setting-key').count(), 0);
+    await page.locator('#setting-shell-desc-more').click();
+    const link = page.locator('#setting-shell-desc a.setting-link');
+    assert.strictEqual(await link.innerText(), 'bash version');
+    await link.click();
+    assert.strictEqual(await page.evaluate('document.activeElement.id'), 'setting-bashVersion');
+    // "Show VS Code setting names": the keys, the values' names, and the names in the texts; kept.
+    await page.locator('#settings-show-keys').check();
+    assert.ok((await placement())[0].startsWith('first — '), String(await placement()));
+    assert.strictEqual(await page.locator('[data-key="bashVersion"] .setting-key').innerText(), 'bashExplainer.bashVersion');
+    await page.reload();
+    await openSettingsSection(page, 'checks');
+    assert.strictEqual(await page.locator('#settings-show-keys').isChecked(), true);
+    assert.strictEqual(await page.locator('[data-key="shell"] .setting-key').innerText(), 'bashExplainer.shell');
+    await ctx.close();
+  });
+
+  it('keeps the theme as the menu does', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', colorScheme: 'light' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('#settings-open').click();
+    assert.strictEqual(await page.locator('#setting-theme').inputValue(), 'auto');
+    await page.locator('#setting-theme').selectOption('dark');
+    assert.strictEqual(await page.evaluate('document.documentElement.dataset.theme'), 'dark');
+    assert.strictEqual(await page.locator('#theme').inputValue(), 'dark');
+    await page.reload();
+    assert.strictEqual(await page.evaluate('document.documentElement.dataset.theme'), 'dark');
+    await page.locator('#settings-open').click();
+    assert.strictEqual(await page.locator('#setting-theme').inputValue(), 'dark');
+    await ctx.close();
+  });
+
+  it('on a phone, takes the whole screen with 44 px rows and whole descriptions, and opens again where it was left', async () => {
+    const { devices } = await import('playwright-core');
+    const ctx = await browser.newContext({ ...devices['iPhone 13'], locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('#settings-open').tap();
+    for (const id of ['examples', 'checks', 'editor', 'data']) await page.locator(`#settings-fold-${id}`).tap();
+    // Every row and control is a 44 px target; no "More" (the texts show whole); a setting named in a text is no link.
+    const small = await page.evaluate(`[...document.querySelectorAll('#settings-dialog :is(.setting-head label, .setting-choices label, .settings-show-keys, select, input:not([type=checkbox]):not([type=file]), button, textarea, summary, .settings-nav a)')]
+      .filter((e) => e.getClientRects().length && e.getBoundingClientRect().height < 43.5).map((e) => (e.id || e.className || e.tagName) + ' ' + Math.round(e.getBoundingClientRect().height))`) as string[];
+    assert.deepStrictEqual(small, []);
+    assert.strictEqual(await page.locator('.desc-more:visible').count(), 0);
+    assert.strictEqual(await page.locator('#settings-dialog a.setting-link').count(), 0);
+    // The hover cards never show on a touch screen: no setting for them.
+    assert.strictEqual(await page.locator('#setting-hover-enabled').count(), 0);
+    // A change shows in the explanation once the settings close.
+    const panelText = () => panel().locator('#main').innerText();
+    await page.locator('#settings-done').tap();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('#!/bin/bash\nfor f in $(ls); do echo "$f"; done');
+    await until('the pitfall', panelText, (t) => /Caveat: the output of/.test(t));
+    await page.locator('#settings-open').tap();
+    await page.locator('#setting-notes-pitfalls').uncheck();
+    // Closed and opened again: the same place, the same sections open.
+    await page.locator('.settings-body').evaluate((b) => b.scrollTo(0, 900));
+    const at = await page.locator('.settings-body').evaluate((b) => b.scrollTop);
+    assert.ok(at > 800, String(at));
+    await page.locator('#settings-done').tap();
+    await until('the sheet closed', () => isOpen(page), (v) => !v);
+    await until('no pitfall', panelText, (t) => !/Caveat/.test(t));
+    await page.locator('#settings-open').tap();
+    assert.strictEqual(await page.locator('.settings-body').evaluate((b) => b.scrollTop), at);
+    assert.strictEqual(await page.locator('#setting-shell').isVisible(), true);
     await ctx.close();
   });
 });

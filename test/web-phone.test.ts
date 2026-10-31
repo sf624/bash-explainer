@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { isDeepStrictEqual } from 'util';
 import type { Browser } from 'playwright-core';
-import { openSite, choose, currentShell, problemsShown, setShell, root, stable, until } from './support/site';
+import { openSite, choose, currentShell, openSettingsSection, problemsShown, setShell, root, stable, until } from './support/site';
 
 describe('the web page: touch screens, stored data and the window', function () {
   this.timeout(120000);
@@ -61,6 +61,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     assert.strictEqual(await page.locator('#readtip').isVisible(), false);
 
     await page.locator('#settings-open').tap();
+    await page.locator('#settings-jump-data').tap();
     await page.locator('#settings-clear').tap();
     // Asked first: a cancel changes nothing.
     assert.match(await page.locator('#settings-dialog').innerText(), /This cannot be undone/);
@@ -90,7 +91,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     p2.on('pageerror', (e) => errors.push(e.message));
     await p2.goto(base);
     await p2.locator('.cm-line').first().waitFor();
-    await p2.locator('#settings-open').click();
+    await openSettingsSection(p2, 'data');
     assert.strictEqual(await p2.locator('#settings-clear').textContent(), '保存したデータを消去');
     await p2.locator('#settings-clear').click();
     await p2.locator('#settings-clear-yes').click();

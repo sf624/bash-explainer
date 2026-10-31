@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539), C1b (#548), C3 (#545) and C4 (#544). C2, C5 and C6 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), C1b (#548), C3 (#545), C4 (#544) and C6 (#546). C2 and C5 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -330,7 +330,20 @@ Risks: users who chose a shell in the menu look for it there. The menu's Script 
 
 ### C6. Settings
 
-What:
+Done in #546 (2026-10-31). What it did, and what the design did not say:
+
+- The narrowest side-by-side width is 768 px, not "about 640": up to 767 px the page has its narrow layout, the editor above the panel (web/theme-init.js), also without touch. So the cap to the pane is tested at 768 px (a 383 px sheet), and at 640 px the settings take the whole screen, as on a phone. The tests below that name 640 px mean the narrowest side by side.
+- The sheet stays a modal dialog. Side by side the panel is in view and changes at once, but it cannot be scrolled while the sheet is open; a click on it closes the sheet. The backdrop dims only the strip of the editor the sheet does not cover. On a phone it slides in from the right, as before; side by side from the left. Which edge a sheet uses is read from where page.css draws it (web/layout.ts), not from its name.
+- The sheet comes back as it was left at every width, not only on a phone: the sections unfolded, the search and the scroll, for as long as the page is open.
+- Each web setting's section is a field of src/settings.ts (`section`), which replaces `group` (only the dialog read it). Two settings came after round 8: `notes.basis` went to Examples (its note carries a command to try), `hints.deadCode` to Editor. `needsHover` leaves Hover out on a touch screen, as round 8 did. The order of the sections and what the search finds are pure functions in src/ui/settingsPage.ts, with the places a description may be cut before "More"; the page measures.
+- The shorter page copy is the setting's `description`, the one field for the web page's own text (it already held Hover's, since package.json's is about VS Code), not a second field: `notes.pitfalls` and `panel.animations` got one, and Hover's is the shorter one now.
+- Kept from main rather than round 8: the footer with Reset and Close (round 8 dropped it, and asked before Reset in Data), and Clear stored data's confirmation inside the sheet. The kinds of examples stay a grid; round 8's one column with a description for each kind is not taken (it needed page copy for sed, awk, jq and yq).
+- Taken from round 8 beyond the list above: Theme in Common (the same choice as the menu's), and a setting named in a description shown as its title, a link to it (plain text on a touch screen).
+- The settings' texts moved from web/settings-dialog.ts into web/text.ts (`SETTINGS_TEXT`).
+- Decision 12's wording of the Shell setting ("Auto (now: bash, from #!)") is not built: it waits for SB4 (`detectShell`'s source), with C5. The Shell setting keeps today's words.
+- The hit-area probe (test/support/hit-areas.ts) scrolls a control's wrapping label into view: a checkbox scrolled just into a scroll container's edge was measured with its label cut. The settings are measured with every section unfolded. Every control of the settings now meets the bar, and the list lost its settings entries, but for a setting named in a description side by side (`a.setting-link`, a link inside a sentence, 14 px high).
+
+What it was to be:
 
 - The settings in sections: Common first (with Wrap long lines and Animations in the panel), then Examples, Checks, Editor and Data, folded, each opened by "Jump to". A search.
 - Descriptions of two lines with "More" inline; whole on touch.

@@ -1893,11 +1893,6 @@ body.resizing .problems-resize {
   min-height: 40px;
 }
 
-:where(html.narrow) #settings-dialog {
-  width: 100vw;
-  border-radius: 0;
-}
-
 /* The copy and the link are in the menu on every phone. Below 480px the logo is 24px and the name 14px;
    below 390px the name goes on two lines (13px), to leave the four buttons 40px or more each. */
 @media (max-width: 479px) {
@@ -2055,8 +2050,169 @@ html.view-panel .split {
 
 /* ---- The settings sheet ----------------------------------------------------------------------- */
 
+/* Side by side, the settings lie over the editor, from the left as the menu comes, and never wider than the editor's
+   pane (--pane-w, from web/settings-dialog.ts): the explanation they change stays in view and live. The backdrop dims
+   only the rest of the editor; a click on it, or on the panel, closes the sheet. In the narrow layout (a phone, a narrow
+   window) they take the whole screen, from the right. */
 #settings-dialog {
-  width: min(36rem, 100vw);
+  width: 100vw;
+  border-radius: 0;
+}
+
+:where(html:not(.narrow)) #settings-dialog {
+  inset: 0 auto 0 0;
+  width: min(36rem, var(--pane-w, 36rem));
+  border-left: 0;
+  border-right: 1px solid var(--vscode-panel-border);
+  border-radius: 0 12px 12px 0;
+}
+
+@starting-style {
+  :where(html:not(.narrow)) #settings-dialog[open] {
+    transform: translateX(-100%);
+  }
+}
+
+:where(html:not(.narrow)) #settings-dialog::backdrop {
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.4) var(--pane-w, 100vw), transparent var(--pane-w, 100vw));
+}
+
+/* "Jump to": links in a row, which wrap. */
+.settings-nav {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 4px;
+  padding: 2px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-size: 0.92em;
+}
+
+.settings-jump {
+  color: var(--vscode-descriptionForeground);
+  margin-inline-end: 4px;
+}
+
+.settings-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding-inline: 4px;
+  color: var(--vscode-textLink-foreground);
+}
+
+#settings-search {
+  display: block;
+  width: 100%;
+  min-height: var(--control-h);
+  margin: 4px 0 8px;
+  padding: 4px 8px;
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-dropdown-border));
+  border-radius: var(--radius-sm);
+}
+
+.settings-nomatch {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* A section's heading; after Common, a button that folds it. */
+.settings-major {
+  margin: 16px 0 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.settings-fold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--vscode-foreground);
+  font-weight: inherit;
+  text-align: start;
+}
+
+.fold-chev {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+  transition: transform 0.15s;
+}
+
+.settings-group.open .fold-chev {
+  transform: rotate(90deg);
+}
+
+.settings-group + .settings-group {
+  border-top: 1px solid var(--vscode-panel-border);
+  margin-top: 12px;
+}
+
+/* Data's parts: export and import, stored data. */
+.settings-part {
+  padding: 10px 0;
+}
+
+.settings-part h4 {
+  margin: 0 0 2px;
+  font-weight: 600;
+}
+
+/* "More" right after the last word shown. Its box is 6 px taller than the line (a 24 px target), and its margins take
+   the 6 px back, so that the line keeps its height. */
+.desc-more {
+  min-height: 0;
+  margin-block: -3px;
+  padding: 3px 0;
+  line-height: inherit;
+  border: 0;
+  background: none;
+  color: var(--vscode-textLink-foreground);
+  font-size: inherit;
+}
+
+@media (hover: hover) {
+  .desc-more:hover {
+    background: none;
+    text-decoration: underline;
+  }
+}
+
+.desc-ell {
+  color: var(--vscode-descriptionForeground);
+}
+
+.settings-show-keys {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  margin-top: 16px;
+}
+
+/* On a touch screen, every row and control of the settings is a 44 px target. */
+@media (pointer: coarse) {
+  #settings-dialog :is(.settings-nav a, .settings-fold, .settings-show-keys, .setting-head label, .setting-choices label, select, button, input:not([type='checkbox']), summary) {
+    min-height: 44px;
+  }
+
+  #settings-dialog :is(.setting-choices label, summary) {
+    padding-block: 12px;
+  }
+
+  .settings-nav a {
+    justify-content: center;
+    min-width: 44px;
+  }
 }
 
 .settings-x {
@@ -2082,6 +2238,9 @@ html.view-panel .split {
 }
 
 .settings-body {
+  /* (Positioned: the visually hidden rest of a cut description is placed inside it, not in the sheet, which would
+     then scroll with it.) */
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -2102,15 +2261,6 @@ html.view-panel .split {
   padding-top: 12px;
 }
 
-.settings-group h3 {
-  margin: 20px 0 4px;
-  color: var(--vscode-descriptionForeground);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .setting {
   padding: 10px 0;
   border-bottom: 1px solid var(--vscode-panel-border);
@@ -2125,10 +2275,15 @@ html.view-panel .split {
 }
 
 .setting-head label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
   font-weight: 600;
 }
 
 .setting-key {
+  margin: 0;
   font-size: 0.8em;
   color: var(--vscode-descriptionForeground);
 }
@@ -2201,6 +2356,8 @@ html.view-panel .split {
 }
 
 .setting-choices label {
+  display: block;
+  padding-block: 4px;
   font-size: 0.92em;
 }
 
@@ -2262,6 +2419,7 @@ html.view-panel .split {
 }
 
 .settings-io summary {
+  padding-block: 3px;
   cursor: pointer;
   color: var(--vscode-textLink-foreground);
 }

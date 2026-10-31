@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Browser, Page } from 'playwright-core';
-import { openSite, openProblems, problemsShown, until } from './support/site';
+import { openSettingsSection, openSite, openProblems, problemsShown, until } from './support/site';
 
 const SCRIPT = '#!/bin/bash\nx=1\nif [ "$x" = 2 ]; then\n  echo "never"\n  rm -rf /tmp/build\nelse\n  echo "always"\nfi\nexit 0\necho "after exit"';
 
@@ -59,7 +59,7 @@ describe('the web page: code that never runs, faded in the editor', function () 
     await open(page, 'x = 1\nexit\necho dead');
     await until('the faded text', () => faded(page), (t) => t.length > 0);
     assert.strictEqual(await (await openProblems(page)).count(), 1, 'only the warning is listed');
-    await page.locator('#settings-open').click();
+    await openSettingsSection(page, 'editor');
     const box = page.locator('[data-key="hints.deadCode"] input[type=checkbox]');
     assert.strictEqual(await box.isChecked(), true);
     assert.match(await page.locator('[data-key="hints.deadCode"]').innerText(), /Fade code that never runs/);
