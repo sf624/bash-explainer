@@ -59,11 +59,47 @@ describe('Dockerfile', () => {
   });
   it('explains SHELL, and the script of an exec-form `sh -c`', () => {
     const shell = explain('Dockerfile', 12)!;
-    assert.match(shell.notes[0], /Later shell-form RUN, CMD and ENTRYPOINT instructions run with this command/);
+    assert.match(shell.notes[0], /Later shell-form RUN, CMD, ENTRYPOINT and HEALTHCHECK instructions run with this command/);
     assert.ok(labels('Dockerfile', 12).includes('"pipefail"@26'));
     const script = explain('Dockerfile', 15)!;
     assert.strictEqual(script.context[0].label, 'Dockerfile CMD (a script passed to `sh -c` in exec form)');
     assert.ok(labels('Dockerfile', 15).includes('tee@64'));
+  });
+  it('explains HEALTHCHECK CMD in the shell and the exec form, after its options', () => {
+    const at = (src: string, line: number, lang: 'ja' | 'en' = 'en') => {
+      const extracted = extractShell('dockerfile', src);
+      return explainHostedLine(new Analyzer(lang), parser.parse(extracted.text), extracted, src.split('\n'), line - 1, lang);
+    };
+    const shellForm = at('FROM node:20\nHEALTHCHECK --interval=5s --retries=3 CMD curl -f http://localhost/ || exit 1\n', 2)!;
+    assert.deepStrictEqual(shellForm.context.map((c) => c.label), ['Dockerfile HEALTHCHECK']);
+    assert.deepStrictEqual(allTokens(shellForm.items).filter((t) => t.kind !== 'operator').map((t) => `${t.label}@${t.span.start.character}`), ['curl@42', '-f@47', 'http://localhost/@50', 'exit@71', '1@76']);
+    assert.strictEqual(shellForm.notes[0], 'HEALTHCHECK runs this command in the running container to check its health: exit status 0 is healthy, 1 unhealthy (2 is reserved).');
+    assert.match(at('FROM node:20\nHEALTHCHECK CMD true\n', 2, 'ja')!.notes[0], /^HEALTHCHECK は、動いているコンテナの中で/);
+    // (The exec form runs with no shell, as CMD's.)
+    const exec = at('FROM node:20\nhealthcheck CMD ["curl","-f","http://localhost/"]\n', 2)!;
+    assert.deepStrictEqual(exec.context.map((c) => c.label), ['Dockerfile HEALTHCHECK (exec form)']);
+    assert.deepStrictEqual(exec.items.map((t) => [t.kind, t.label, t.name?.runs]), [['command', '"curl"', 'program']]);
+    // (Options over lines continued with `\`, and a comment line Docker drops.)
+    const src = 'FROM node:20\nHEALTHCHECK --interval=30s \\\n  # how often\n  --timeout=3s \\\n  CMD wget -q -O- http://localhost/\n';
+    assert.strictEqual(at(src, 2), undefined);
+    assert.deepStrictEqual(at(src, 5)!.items.map((t) => `${t.label}@${t.span.start.character}`), ['wget@6']);
+    // (`HEALTHCHECK NONE` has no command; neither has one that ends before its `CMD`.)
+    assert.strictEqual(at('FROM node:20\nHEALTHCHECK NONE\n', 2), undefined);
+    assert.strictEqual(at('FROM node:20\nHEALTHCHECK --retries=3 \\', 2), undefined);
+    assert.strictEqual(at('FROM node:20\nHEALTHCHECK --retries=3 \\\n#', 2), undefined);
+  });
+  it('explains the instruction of an ONBUILD, which runs in a build FROM this image', () => {
+    const src = 'FROM node:20\nONBUILD RUN npm ci | tee log\nONBUILD SHELL ["/bin/bash", "-o", "pipefail", "-c"]\nonbuild CMD ["npm", "start"]\nRUN a | b\n';
+    const extracted = extractShell('dockerfile', src);
+    const at = (line: number) => explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, src.split('\n'), line - 1, 'en');
+    const run = at(2)!;
+    assert.deepStrictEqual(run.context.map((c) => c.label), ['Dockerfile ONBUILD RUN']);
+    assert.strictEqual(run.notes[0], 'An ONBUILD instruction runs later, in the build of another image FROM this one (just after its FROM).');
+    assert.ok(run.notes.some((n) => /middle of the pipe/.test(n)));
+    // (A trigger's SHELL is not this build's: it is left out, and the RUN after it still has no pipefail.)
+    assert.strictEqual(at(3), undefined);
+    assert.ok(at(5)!.notes.some((n) => /middle of the pipe/.test(n)));
+    assert.deepStrictEqual(at(4)!.context.map((c) => c.label), ['Dockerfile ONBUILD CMD (exec form)']);
   });
   it('warns about pipes in RUN until SHELL sets pipefail', () => {
     assert.match(explain('Dockerfile', 10)!.notes.join(), /If a command in the middle of the pipe fails/);
@@ -388,9 +424,24 @@ describe('words run with no shell (Docker\'s exec form, a Python list)', () => {
     assert.deepStrictEqual(head(echo), { kind: 'command', runs: 'program', also: 'No shell reads these words, so this is the program, not the shell\'s builtin', by: undefined, refs: undefined });
     assert.match(echo.items[0].explanation, /from coreutils/);
     assert.deepStrictEqual(head(docker('CMD ["echo","x"]', 'ja')).also, 'この単語を読むシェルはないので、これはプログラムで、シェルのビルトインではない');
-    assert.deepStrictEqual(head(docker('ENTRYPOINT ["./run.sh"]')), { kind: 'command', runs: 'program', also: undefined, by: undefined, refs: ['3.7.2'] });
+    // (A path is run as it is: no section of bash's command search.)
+    const path = docker('ENTRYPOINT ["./run.sh"]');
+    assert.deepStrictEqual(head(path), { kind: 'command', runs: 'program', also: undefined, by: undefined, refs: undefined });
+    assert.strictEqual(path.items[0].explanation, 'Run the program or script at `./run.sh` as it is, with no shell');
+    assert.strictEqual(docker('ENTRYPOINT ["./run.sh"]', 'ja').items[0].explanation, 'パス `./run.sh` にあるプログラム・スクリプトを、シェルを通さずにそのまま実行する');
+    // (A shell runs it in the shell form: bash's command search.)
+    assert.deepStrictEqual(docker('ENTRYPOINT ./run.sh').items[0].refs, ['3.7.2']);
     assert.deepStrictEqual(tokens('RUN ["apt-get","install","-y","curl"]').map((t) => [t.kind, t.label]),
       [['command', '"apt-get"'], ['subcommand', '"install"'], ['option', '"-y"'], ['argument', '"curl"']]);
+    // (The program gets its subcommand with no shell in between; `;` ends find's `-exec` with no shell to escape it from.)
+    const sub = (instr: string, lang: 'ja' | 'en' = 'en') => tokens(instr, lang).find((t) => t.kind === 'subcommand')!.explanation;
+    assert.strictEqual(sub('RUN ["apt-get","install"]'), 'Subcommand `apt-get install`: Install packages (an argument `apt-get` gets with no shell in between, and interprets itself)');
+    assert.match(sub('RUN ["apt-get","install"]', 'ja'), /（シェルを通さずに `apt-get` が受け取る引数で、`apt-get` 自身が解釈する）$/);
+    assert.match(sub('RUN apt-get install'), /\(to the shell it is an argument to `apt-get`, which interprets it itself\)$/);
+    const end = (instr: string, lang: 'ja' | 'en' = 'en') => tokens(instr, lang).find((t) => t.kind === 'operator')!.explanation;
+    assert.strictEqual(end('CMD ["find",".","-exec","rm","{}",";"]'), 'End of `-exec`: run once per match');
+    assert.strictEqual(end('CMD ["find",".","-exec","rm","{}",";"]', 'ja'), '`-exec` の終わり: 見つかったファイル1件ごとにコマンドを実行');
+    assert.match(end('CMD find . -exec rm {} \\;'), /must be escaped from the shell/);
     // (`time` is a reserved word of the shell, and a program.)
     assert.strictEqual(head(docker('CMD ["time","ls"]')).also, 'No shell reads these words, so this is the program, not the shell\'s reserved word');
     assert.strictEqual(head(docker('CMD ["time","ls"]', 'ja')).also, 'この単語を読むシェルはないので、これはプログラムで、シェルの予約語ではない');
@@ -452,6 +503,41 @@ describe('words run with no shell (Docker\'s exec form, a Python list)', () => {
     assert.strictEqual(ts[0].name?.runs, 'program');
     assert.deepStrictEqual(ts.filter((t) => t.label === 'echo').map((t) => [t.kind, t.name?.runs]), [['builtin', 'builtin']]);
     assert.match(ts.find((t) => t.kind === 'string')!.explanation, /^JSON string: `echo hi` goes/);
+  });
+});
+
+describe('a string run by `bash -c` inside a host file', () => {
+  /** The text of the file each token of the string covers, on line `line` (1-based) of `src`, a file of `kind`. */
+  const covered = (kind: Parameters<typeof extractShell>[0], src: string, line: number) => {
+    const extracted = extractShell(kind, src);
+    const rows = src.split('\n');
+    const ex = explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, rows, line - 1, 'en')!;
+    return allTokens(ex.items).filter((t) => t.label === 'echo' || t.label === 'hi')
+      .map((t) => `${t.label}@${t.span.start.line + 1}:${rows[t.span.start.line].slice(t.span.start.character, t.span.end.character)}`);
+  };
+  // (The tokens of the string were placed by the text of the tree's root, which starts at its first statement: after
+  // the lines of the host file before the region, their spans fell on line 1, and their labels were taken from there.)
+  const cases: [string, Parameters<typeof extractShell>[0], string, number, string?][] = [
+    ['a Dockerfile RUN', 'dockerfile', "FROM node:20\nRUN bash -c 'echo hi'\n", 2],
+    ['the exec form, through env', 'dockerfile', 'FROM node:20\nCMD ["env","bash","-c","echo hi"]\n', 2],
+    ['the exec form of bash -c itself', 'dockerfile', 'FROM node:20\nRUN ["bash","-c","bash -c \'echo hi\'"]\n', 2],
+    ['a HEALTHCHECK', 'dockerfile', "FROM node:20\nHEALTHCHECK --retries=3 CMD bash -c 'echo hi'\n", 2],
+    ['a Makefile recipe', 'makefile', "all:\n\tbash -c 'echo hi'\n", 2],
+    ['a CI step', 'yaml', "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash -c 'echo hi'\n", 6],
+    ['a Markdown block', 'markdown', "# Title\n\n```bash\nbash -c 'echo hi'\n```\n", 4],
+    ['a Python list', 'python', 'import subprocess\nsubprocess.run(["bash", "-c", "echo hi"])\n', 2],
+    ['a Jenkinsfile sh step', 'jenkinsfile', "pipeline {\n  stages {\n    stage('a') {\n      steps {\n        sh 'bash -c \"echo hi\"'\n", 5],
+    ['a package.json script', 'npm', '{\n  "scripts": {\n    "a": "bash -c \'echo hi\'"\n  }\n}\n', 3],
+  ];
+  for (const [what, kind, src, line] of cases) {
+    it(`covers the string's text in ${what}`, () => {
+      assert.deepStrictEqual(covered(kind, src, line), [`echo@${line}:echo hi`, `hi@${line}:hi`]);
+    });
+  }
+  it('in a script that starts with blank lines', () => {
+    const ts = tokensOf("\n\nbash -c 'echo hi'", 2);
+    assert.deepStrictEqual(ts.filter((t) => t.label === 'echo' || t.label === 'hi').map((t) => [t.label, t.span.start.line, t.span.start.character, t.span.end.character]),
+      [['echo', 2, 9, 16], ['hi', 2, 14, 16]]);
   });
 });
 

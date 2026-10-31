@@ -15,6 +15,11 @@ Two notes carry their code as data for the first time:
 - `source lib.sh` (and `. lib.sh`): first a path from the script's directory, `source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh`, which bash sets to the file being read, also when it is sourced or in a function; then `source ./lib.sh`, which reads the file of the current directory, as the search would after `$PATH`. In a `#!/bin/sh` script, `$0` names the script's directory (`. "$(dirname "$0")"/lib.sh`); in an sh file with no shebang, which may be sourced, and in a code block typed into a terminal, only `./lib.sh`. Run in bash with a file of the name in `$PATH`, one in the current directory and one beside the script (in a directory whose name has a space), the script run, run by its path, sourced, and sourced in a function; and in dash.
 - `grep "$x" f`: `grep -F "$x" f`. `-F` takes the place of an option that selects another mode, which it would conflict with (`grep -iE "$x"` → `grep -iF "$x"`, `--extended-regexp` → `-F`; `egrep` → `grep -F`). None where a word before the pattern may be an option (`grep $opts "$x"`): the note then says what to do, as before. None where grep has other patterns (`grep -e 'a.b' -e "$x"`, `-f pats`), which `-F` would read as fixed strings too: the note says so, (see Fixed). Run in bash with GNU grep: the rewrite matches a value with `.` or `*` as the original matches it escaped.
 
+### Dockerfile HEALTHCHECK and ONBUILD
+
+- `HEALTHCHECK CMD …` is explained as CMD is, in the shell form (with the shell SHELL sets) and in the exec form, after its options (`--interval`, `--timeout`, `--start-period`, `--start-interval`, `--retries`), also over lines continued with `\`. A note says what its exit status means: 0 healthy, 1 unhealthy. `HEALTHCHECK NONE` has no command. Before, a HEALTHCHECK was not explained.
+- An instruction after `ONBUILD` (`ONBUILD RUN npm ci`) is explained as the instruction is, with a note that it runs in the build of another image FROM this one. `ONBUILD SHELL` is left out: it sets the shell of that build, not of this one. Before, ONBUILD lines were not explained.
+
 ## Changed
 
 ### Errors: a third level of problems
@@ -176,6 +181,7 @@ Fixes found by the panel's prototype (step P2 of [docs/design/panel-redesign.md]
 - Each string says what it is in the file, with its value, and cites no section of bash's manual: "JSON string: `$HOME` goes to the command as one word, as it is. No shell reads its `$`, `*`, quotes or spaces first" (a Python list: "Python string"). A string written with escapes shows its value: `"a\"b"` is `a"b`, `"\u0041"` is `A`. Before, a string with a `$`, a space or a quote was a "Single-quoted string" (§3.1.2.2), the quoting of the text bash was given; `"it's"` was a concatenation of three parts.
 - The exec form reads JSON's escapes (`\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, `\uXXXX`). An array with another escape is no JSON, and Docker runs the line in its shell form; it is left out, as any array that does not parse. Before, `\u0041` was read as `u0041`.
 - A script passed to a shell (`CMD ["sh", "-c", "echo $HOME"]`) is read by that shell, as before.
+- What the program gets is said without a shell: a subcommand is "an argument `apt-get` gets with no shell in between, and interprets itself" (before, "to the shell it is an argument to `apt-get`"); find's `";"` ends `-exec` with no note that it must be escaped from the shell; a path (`ENTRYPOINT ["./docker-entrypoint.sh"]`) is "Run the program or script at `./docker-entrypoint.sh` as it is, with no shell", citing no section (before, bash's command search, §3.7.2).
 
 
 Each case was run in bash 5.2; each warning is still given where bash fails.
@@ -191,6 +197,10 @@ Code the explainer does not read follows one rule. After a file read with `sourc
 - `variable-not-in-remote-shell` and `variable-not-passed-by-wrapper`: sshd sets `HOME`, `LOGNAME`, `MAIL`, `PATH`, `SHELL`, `USER`, `SSH_CLIENT` and `SSH_CONNECTION` (ssh(1)), and a container runtime `HOME`, `HOSTNAME` and `PATH` (`docker run`, `kubectl exec`): no note for those. A variable ssh may send is a caveat: `LANG` and `LC_*`, which Debian's and Ubuntu's ssh_config send (`SendEnv`) and their sshd accepts, and a name given to `-o SendEnv=` (names separated by blanks, patterns with `*` and `?`, as ssh_config(5) says). Only when the variable is exported, or may be: ssh sends its own environment, so `x=1; ssh -o SendEnv=x host 'echo $x'` stays an error.
 - `redirect-in-bracket`: a redirection in `[ ]` where no comparison would stand is no problem: `[ "$n" -gt 0 2>"$log" ]` and `[ -t 0 < "$tty" ]` test what they say, with that redirection. Only one where a comparison would be (`[ "$a" > "$b" ]`, `[ 10>$max ]`, `[ -n "$x" -a $a < $b ]`) or to a number (`[ $a 2>5 ]`) is an error.
 - `extglob-in-same-block`: in a file with no shebang, `shopt -s extglob` in the same block as its glob is now a caveat. An interactive shell that reads the file (`.bashrc`) often has `extglob` on already: Ubuntu's `.bashrc` loads bash-completion, which turns it on. A script still gets the warning. `extglob-not-in-new-shell` in `bash -i -c 'echo !(x)'` is a caveat too.
+
+### Strings run by `bash -c` in host files
+
+- The commands of a string run by `bash -c` (`RUN bash -c 'echo $HOME'`, `CMD ["env", "bash", "-c", "echo $HOME"]`, `subprocess.run(["bash", "-c", "…"])`, a Makefile recipe, a workflow's `run:`, a Markdown block, a Jenkinsfile `sh` step, a package.json script) are placed on their own text. Before, they were placed from the start of the region's first statement rather than of the file: their spans pointed at line 1 (`1:undefined`) and their labels were taken from there (`FROM node:20`). A script that starts with blank lines had the same fault.
 
 ### Heredocs in scripts with CRLF line ends
 

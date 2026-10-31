@@ -52,7 +52,7 @@ export class Analyzer {
       flatten: (n) => flatten(cx, n),
       nestedLine: (t, l, sh, kind, o) => this.nestedLine(t, l, sh, kind, o),
     };
-    const cx = new LineExplainer(this.lang, { opts, root, line, shell, state, status: statusModel(state, shell), nested: this.nested }, walk);
+    const cx = new LineExplainer(this.lang, { opts, root, source: tree.text, line, shell, state, status: statusModel(state, shell), nested: this.nested }, walk);
     const items = flatten(cx, root);
     // (A token that shows a text stating bash's behaviour gets its basis and try-it, over the spec a program's token
     // has; with `notes.basis` off, no token has a basis.)
