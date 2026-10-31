@@ -2285,8 +2285,8 @@ describe('words as bash reads them: line continuations', () => {
     assert.ok(tokensAt(src, 3).some((t) => t.explanation.startsWith('Call the function `fn` defined on line 2')), tokensAt(src, 3).map((t) => t.explanation).join('\n'));
     const cond = new Analyzer('en').explainLine(parser.parse(src), 4).notes;
     assert.ok(cond.some((s) => s.includes('`$x` is `1` here, so this condition is always false')), cond.join('\n'));
-    // bash: the arrays and the PID of the coprocess `ya`.
-    const co = 'coproc y\\\na { :; }\necho ${ya_PID:+pid}';
+    // bash: the arrays and the PID of the coprocess `ya` (its body waits for input, so it is still alive at the echo).
+    const co = 'coproc y\\\na { read; }\necho ${ya_PID:+pid}';
     assert.strictEqual(runBash(co).stdout, 'pid\n');
     assert.ok(tokensAt(co, 0).some((t) => t.explanation.includes('the array `ya`')), tokensAt(co, 0).map((t) => t.explanation).join('\n'));
   });
