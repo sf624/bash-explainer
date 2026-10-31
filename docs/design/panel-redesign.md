@@ -173,7 +173,7 @@ Tests: oracles.md B2 to B4 for these ids. Each rewrite runs in bash, both when t
 
 Risks: two of these notes change level with the three levels (decision 4); this step does not depend on it.
 
-Done (#P3PR):
+Done (#560):
 
 - Every rewrite with edits is a quick fix, not only those of the four ids: the 17 mechanical ids of the catalog and the 11 style checks that carry rewrites. One rule, with no list of ids: a note's place (`NoteAnchor`, src/noteanchors.ts) carries the rewrites the note suggests there (`Fact.rewrite`, `StyleFinding.rewrite`), and `noteIssues` (src/document.ts) turns them into the problem's `fixes` (`rewriteFix` in src/fixes.ts: the edits at their positions, titled with the code the note shows). So a fact on two places gives each problem the fix of its own place. `DocumentIssue.fix` became `fixes`, a list; the first is the one the note recommends (VS Code's and the Language Server's `isPreferred`). The hosts' files carry none (src/hosts/remap.ts), as their facts carry none.
 - `source-searches-path`: in bash `"$(dirname "${BASH_SOURCE[0]}")"/lib.sh`, then `./lib.sh`; in sh `"$(dirname "$0")"/lib.sh` only where the file is run (`readAs`: a shebang), else `./lib.sh` alone; typed into a terminal, `./lib.sh` alone. The walls of the corpus runs refuse `source`, so its states run in test/rewrites-advice.test.ts (`IdStates.apart`): a file of the name in `$PATH`, one in the current directory, one beside the script in a directory whose name has a space; run, run by its path, sourced, sourced in a function; bash in POSIX mode; dash.
