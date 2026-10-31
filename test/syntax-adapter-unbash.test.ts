@@ -1143,12 +1143,69 @@ describe('unbash adapter: more shapes', () => {
     const shape = (n: SyntaxNode): unknown[] => [n.type, n.startPosition.row, n.startPosition.column, ...n.children.map(shape)];
     assert.deepEqual(shape(b.root), shape(a.root));
     assert.deepEqual(invariants(b), []);
-    // As in bash, a heredoc of a CRLF script has no closing line: `EOF\r` is not `EOF`.
-    assert.deepEqual(tree('cat <<EOF\r\nx\r\nEOF\r\n').errors.map((e) => e.kind), ['missing']);
     // A CR that is not before a LF stays: it is a character of the word, as in bash.
     const lone = tree('echo a\rb\r');
     assert.equal(lone.text, 'echo a\rb\r');
     assert.equal(lone.carriageReturns, undefined);
+  });
+
+  it('ends a heredoc of a CRLF script where bash does: its delimiter holds the CR after it', () => {
+    // `<<E\r` waits for a line `E\r`, as bash does; with the CR as a blank, the delimiter was `E` and the line `E `,
+    // and the heredoc ran to the end of the file. The same nodes as with LF, at the same rows and columns.
+    const lf = 'cat <<E\nx\nE\nif true; then :; fi\nx=$(cat <<-A\n\ta\n\tA\n)\n';
+    const crlf = lf.replace(/\n/g, '\r\n');
+    const b = tree(crlf);
+    assert.deepEqual(b.errors, []);
+    const shape = (n: SyntaxNode): unknown[] => [n.type, n.startPosition.row, n.startPosition.column, ...n.children.map(shape)];
+    assert.deepEqual(shape(b.root), shape(tree(lf).root));
+    assert.deepEqual(types(b.root, 'heredoc_body').map((n) => n.text), ['x\r\n', 'a\r\n\t']);
+    // The words leave the CR out, as elsewhere.
+    assert.deepEqual(['heredoc_start', 'heredoc_end'].map((t) => types(b.root, t).map((n) => n.text)), [['E', 'A'], ['E', 'A']]);
+    assert.deepEqual(invariants(b), []);
+    assert.deepEqual(b.carriageReturns, [...crlf.matchAll(/\r/g)].map((m) => m.index));
+    // A heredoc in the body of another one ends at its own line, inside (bash prints `f\r\r` and `after\r`).
+    const nested = tree('cat <<E\r\n$(cat <<F\r\nf\r\nF\r\n)\r\nE\r\necho after\r\n');
+    assert.deepEqual(types(nested.root, 'heredoc_body').map((n) => n.text), ['$(cat <<F\r\nf\r\nF\r\n)\r\n', 'f\r\n']);
+    assert.deepEqual(nested.root.children.map((n) => n.text), ['cat <<E\r\n$(cat <<F\r\nf\r\nF\r\n)\r\nE', 'echo after']);
+    // With no heredoc, a line continuation (a backslash before a LF alone) is still removed: `echo a\<newline>fter`.
+    assert.deepEqual(types(tree('echo a\\\nfter\r\n').root, 'word').map((n) => nameText(n)), ['echo', 'after']);
+  });
+
+  it('reads the heredocs of a CRLF script as bash does', function () {
+    if (spawnSync('bash', ['-c', ':']).status !== 0) return this.skip();
+    // What `cat` prints, by our tree: the body of the last heredoc of each command (with `<<-`, without the tabs at
+    // the start of its lines), and `after` when the line `echo after` is a command (the heredocs end before it).
+    const printed = (text: string): string => {
+      const t = tree(text);
+      let out = '';
+      for (const c of t.root.children) {
+        const doc = types(c, 'heredoc_redirect').at(-1);
+        if (!doc) {
+          if (c.text.replace('\\\n', '') === 'echo after') out += 'after\r\n';
+          continue;
+        }
+        const body = types(doc, 'heredoc_body')[0];
+        const end = types(doc, 'heredoc_end')[0];
+        // (bash removes the line continuations of a body whose delimiter is not quoted.)
+        const written = text.slice(body.startIndex, end ? end.startIndex : text.length);
+        const lines = /['"]/.test(types(doc, 'heredoc_start')[0].text) ? written : written.replace(/\\\n/g, '');
+        out += doc.children[0].type === '<<-' ? lines.replace(/^\t+/gm, '') : lines;
+      }
+      return out;
+    };
+    for (const head of [
+      'cat <<E\r\nx\r\nE\r\n', 'cat <<-E\r\n\tx\r\n\tE\r\n', "cat <<'E'\r\nx$y\r\nE\r\n", 'cat <<"E"\r\nx\r\nE\r\n',
+      // A line `E` does not end `<<E\r`, nor do `E\r\r` and `E \r`; a line `E\r` does not end `<<E` (LF) or `<<E ;`.
+      'cat <<E\r\nx\r\nE\necho a\r\n', 'cat <<E\r\nx\r\nE\r\r\nE \r\nE\r\n', 'cat <<E\nx\r\nE\r\n', 'cat <<E ;\r\nx\r\nE\r\n',
+      // Several heredocs: `cat` reads the last one of its line.
+      'cat <<A <<B\r\na\nA\nb\r\nB\r\n', 'cat <<A\r\na\r\nA\r\ncat <<-B\r\n\tb\r\n\tB\r\n',
+    ]) {
+      // (And with a line continuation after them, which a LF alone ends: `echo a\<newline>fter`.)
+      for (const text of [head + 'echo after\r\n', head + 'echo a\\\nfter\r\n']) {
+        const bash = spawnSync('bash', ['-c', text], { encoding: 'utf8' });
+        assert.equal(printed(text), bash.stdout, JSON.stringify(text));
+      }
+    }
   });
 });
 

@@ -155,6 +155,8 @@ const ROWS: readonly Row[] = [
       { id: 'crlf', text: `${shebang}echo it\r\n\r\n`, line, error, level: 'error' },
     ];
   }),
+  // (Also after a heredoc: `<<E\r` ends at the line `E\r`, and the lines after it are code again.)
+  { id: 'crlf', text: 'cat <<E\r\nx\r\nE\r\nif true; then echo it-works\r\nfi\r\n', line: 1, works: 'it-works', level: 'error' },
   // (With no shebang and no keyword before a CR, bash runs each line with a CR at the end of its last word.)
   {
     id: 'crlf', text: 'echo it-works\r\n', line: 1, works: 'it-works',

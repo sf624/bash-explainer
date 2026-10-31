@@ -27,6 +27,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Japanese wording on the web page follows the project's style (the settings dialog said 消します where the rest says 削除します).
 - `[[ $x == 1 ]]` now says the strings are compared plainly (no wildcard in the pattern), `if` says that the last command before `then` decides, and a `;` before `then` says where the list ends. tar's operands are named by mode (`tar -tf a.tar docs/`: names in the archive). Reading names `[[`, `]]` and each operand of `[[ ]]`.
 - Fewer false warnings where bash may run the line fine: an interactive shebang (`#!/bin/bash -i`), the variables sudo sets itself, code read with `source`, a trap's action, and a file with no shebang that `.bashrc` may read; some are now caveats.
+- In a script with Windows line ends (CRLF), the lines after a heredoc are explained as code again, and the CRLF error sees their keywords. Before, everything after the heredoc was taken for its text.
 
 ## 0.9.0
 
