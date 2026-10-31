@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The `~` in the operands of `[`, `test` and `[[ ]]` (`[ -f ~/.bashrc ] && . ~/.bashrc`) and in a command name (`~/bin/foo`) is explained as a tilde expansion, as it is in other arguments. Before, it showed no expansion there.
+
 ## 0.9.0
 
 Every warning the explanations give is now a problem with a code, a command name that does not run what it suggests gets a hint, code that never runs is faded, and the panel shows how bash reads the line, as the Bash manual does. Scripts can be explained for bash 5.3.

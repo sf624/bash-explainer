@@ -24,7 +24,7 @@ import { matchExample, regexExample, testExample } from './examples';
 import { fromEmbedded, same, skeletal, sortTokens } from './nodes';
 import { inArithmetic } from './reads';
 import { postfixStatusNote } from './status';
-import { arithChildren, arithNumber, bracketPart, commaNote, globToken } from './words';
+import { arithChildren, arithNumber, bracketPart, commaNote, globToken, tilde } from './words';
 
 /**
  * The text of the binary operator `op` of a test at `n`: for `<` and `>` in bash, with how they compare there
@@ -83,6 +83,11 @@ export function test(cx: Explainer, n: SyntaxNode): Token {
   });
 }
 
+/** The tilde expansions in the plain words of a test (`[ -f ~/x ]`, `[[ ~/a -nt ~/b ]]`): bash expands them there, and a plain word has no other token. */
+function tildeTokens(cx: Explainer, words: readonly SyntaxNode[]): Token[] {
+  return words.flatMap((w) => [tilde(cx, w) ?? []].flat());
+}
+
 /**
  * The tokens of a `[ ]` test read as bash reads it (see testexpr.ts). `refs`: the sections of each expression, for
  * bash's builtin (4.1, and 6.4 for the primaries).
@@ -97,7 +102,7 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
   });
   // Operators and parentheses are not nodes to explain; they get no token of their own, but a word that is one does.
   const wordTokens = (i: number) => words[i].nodes.flatMap((x) => cx.sub(x));
-  const operandTokens = (i: number, plain: (x: SyntaxNode) => boolean) => cx.subs(words[i].nodes.filter((x) => !plain(x)));
+  const operandTokens = (i: number, plain: (x: SyntaxNode) => boolean) => [...cx.subs(words[i].nodes.filter((x) => !plain(x))), ...tildeTokens(cx, words[i].nodes.filter(plain))];
   switch (e.type) {
     case 'word': return wordTokens(e.at);
     case 'not': {
@@ -292,7 +297,7 @@ export function unary(cx: Explainer, n: SyntaxNode): Token {
   }
   const d = unaryTestOps[op];
   if (d && !inArithmetic(n)) {
-    return cx.tok(n, 'test', cx.s(`条件: \`${operand.text}\` が${cx.t(d)}`, `Condition: \`${operand.text}\` ${cx.t(d)}`), cx.subs([operand].filter((x) => !isPlainWord(x))));
+    return cx.tok(n, 'test', cx.s(`条件: \`${operand.text}\` が${cx.t(d)}`, `Condition: \`${operand.text}\` ${cx.t(d)}`), [...cx.subs([operand].filter((x) => !isPlainWord(x))), ...tildeTokens(cx, [operand].filter(isPlainWord))]);
   }
   return cx.tok(n, 'operator', cx.s(`算術の単項演算 \`${op}\``, `Arithmetic unary operator \`${op}\``), cx.subs(n.namedChildren));
 }
@@ -320,6 +325,7 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
   const operands = sortTokens([
     ...cx.subs([left, ...rights].filter((x) => x && !plain(x) && !pattern(x))),
     ...rights.filter(pattern).map((x) => globToken(cx, x, 'value')),
+    ...(inArithmetic(n) ? [] : tildeTokens(cx, [left!, ...rights].filter((x) => isPlainWord(x) && !pattern(x)))),
   ]);
   // `[[ $x = *.txt ]]`: the values that match, as for a `case` pattern (a pattern with a quoted part is not tried).
   if (['=', '==', '!='].includes(op) && rights.length === 1 && (pattern(rights[0]) || (rights[0].type === 'extglob_pattern' && !plain(rights[0])))) {

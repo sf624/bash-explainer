@@ -40,7 +40,7 @@ import { redirectInfo, redirectParts } from './redirections';
 import { hostCommand, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, specFor, unquotedWord } from './reads';
 import { exitRefusedNote, posixExitNote, statusRangeNote } from './status';
 import { shellEffectNote } from './where';
-import { bracesHere, braceWord, braceWords, bracesMaybeOff, plainText, shown } from './words';
+import { bracesHere, braceWord, braceWords, bracesMaybeOff, plainText, shown, tilde } from './words';
 
 interface CommandHead {
   /** `res`: what bash runs for the name (src/semantics/names.ts), whose facts the badge shows (src/namefacts.ts). */
@@ -348,6 +348,8 @@ function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedC
     );
     if (!isPlainWord(word) && !head.nameTokens.length) head.nameTokens = cx.sub(word);
   }
+  // `~/bin/foo`: bash expands the tilde of the name before it looks the command up.
+  if (isPlainWord(word) && !head.nameTokens.length) head.nameTokens = [tilde(cx, word) ?? []].flat();
   return head;
 }
 

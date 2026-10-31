@@ -208,6 +208,30 @@ describe('word notes: line continuations, sequences past intmax_t, here-strings 
     assert.ok(!examples('read a b <<< x:~').some((x) => x.includes('x:~')));
   });
 
+  it('says that the operands of `[`, `test` and `[[ ]]` and the name of a command have their tilde expanded', () => {
+    const rest = (x: string) => `Tilde expansion: ${TILDE}. The rest, \`${x}\`, stays as it is`;
+    for (const src of ['[ -f ~/x ]', 'test -f ~/x', '[[ -f ~/x ]]', '[ ! -f ~/x ]', '[[ ! -f ~/x ]]']) {
+      assert.deepStrictEqual(labels(src, '~/x'), [rest('/x')], src);
+    }
+    assert.deepStrictEqual(labels('[ -f ~/x ] && . ~/x', '~/x'), [rest('/x'), 'file to source', rest('/x')]);
+    assert.deepStrictEqual(labels('[ ~/a -nt ~/b ]', '~/b'), [rest('/b')]);
+    assert.deepStrictEqual(labels('[[ ~/a == ~/b ]]', '~/a'), [rest('/a')]);
+    assert.deepStrictEqual(labels('[[ $x = ~ ]]', '~'), [`Tilde expansion: ${TILDE}`]);
+    assert.deepStrictEqual(labels('[ "$x" = ~root/x ]', '~root/x'), [`Tilde expansion: \`~root\` becomes the home directory of the user \`root\` (unchanged if there is no such user). The rest, \`/x\`, stays as it is`]);
+    assert.deepStrictEqual(labels('~/bin/foo -x', '~/bin/foo').slice(1), [rest('/bin/foo')]);
+    // (Not a word that holds the tilde in the middle, nor a quoted one.)
+    assert.deepStrictEqual(labels('[ -n a~b ] && [ -n "~" ] && [ -n \\~ ]', '~'), []);
+    assert.strictEqual(bash('[ -f ~/x ] || echo no; [ ~/x = /home/w/x ] && echo a; [[ ~/x == /home/w/x ]] && echo b; test ~/x = /home/w/x && echo c; [ "~/x" = /home/w/x ] || echo d'), 'no\na\nb\nc\nd\n');
+    assert.strictEqual(bash('[ -n a~b ] && [ -n "~" ] && [ ~ = "~" ] || echo e'), 'e\n');
+    assert.strictEqual(bash('~/nope'), 'error: /home/w/nope: No such file or directory');
+  });
+
+  it('says it in Japanese too', () => {
+    assert.strictEqual(expl('[ -f ~/x ]', '~/x', 'ja'), 'チルダ展開: `~` はホームディレクトリ（`$HOME`）に置き換わる。残りの `/x` はそのまま続く');
+    assert.strictEqual(expl('[[ -d ~ ]]', '~', 'ja'), 'チルダ展開: `~` はホームディレクトリ（`$HOME`）に置き換わる');
+    assert.strictEqual(expl('~/bin/foo', '~/bin/foo', 'ja'), 'チルダ展開: `~` はホームディレクトリ（`$HOME`）に置き換わる。残りの `/bin/foo` はそのまま続く');
+  });
+
   it('says that an element with a subscript has its tilde expanded after `=` and `:`, but in POSIX mode', () => {
     assert.deepStrictEqual(labels('r=([0]=~ [1]=x:~ [2]=~a@b)', '~'), [`Tilde expansion (after \`=\`): ${TILDE}`, `Tilde expansion (after \`:\`): ${TILDE}`]);
     assert.deepStrictEqual(labels('set -o posix; r=([0]=~)', '~'), []);
