@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
 import { regionLines } from '../../scripts/level-css';
+import { LEVELS, SEVERITIES } from '../../src/levels';
 import { base, counted as countedAny, enclosing, isAllowed, lineOf, parseSource, sourceFiles, type Match as MatchOf } from './scan';
 
 // The scan behind test/note-levels.test.ts (docs/design/sources.md, row 13, stage SA, step SA4): where code names the level of a note
@@ -40,9 +41,26 @@ const ERROR_WORD = 'error';
 const LEVEL_NAMES = /^(?:severity|level|sev)$/;
 /** The words that, as the keys of an object, make it a map from a level. */
 const LEVEL_KEYS: ReadonlySet<string> = new Set([...LEVEL_WORDS, 'note']);
-const GLYPHS = /[⚠ⓘℹ]/u;
-/** A style that is a level's: `level-warning`, `squiggle-info`, `--c-warning`, `editorWarning-foreground`, `codicon-warning`, `$(info)`. */
-const STYLE = /\b(?:level|squiggle|severity)-(?:warning|info|hint)\b|--c-(?:warning|info)\b|editor(?:Warning|Info|Error)|codicon-(?:warning|info|error)\b|\$\((?:warning|info|error)\)/;
+/** The marks of the levels, from the level table: a mark written by hand anywhere else is a match. */
+const GLYPHS = new RegExp(`[${Object.values(LEVELS).map((l) => l.mark).join('')}]`, 'u');
+/** The names of the levels and of the severities (`error`, `warning`, `info`, `note`, `hint`), from the level table. */
+const STYLE_WORDS = [...new Set([...Object.keys(LEVELS), ...Object.keys(SEVERITIES)])];
+const capital = (w: string): string => w[0].toUpperCase() + w.slice(1);
+const alt = (ws: readonly string[]): string => [...new Set(ws)].join('|');
+const CODICONS = alt([...Object.values(LEVELS).map((l) => l.codicon), ...Object.keys(SEVERITIES)]);
+/**
+ * A style that is a level's, from the level table: a class (`level-warning`, `squiggle-info`, `severity-error`), a colour
+ * name the table gives (`--c-warning`) or the one a level takes where `--c-<level>` is another's (`--c-error-level`: the
+ * panel's `--c-error` is the error tokens'), the editor's colour (`editorWarning-foreground`), a codicon (`codicon-warning`,
+ * `$(info)`).
+ */
+const STYLE = new RegExp([
+  `\\b(?:level|squiggle|severity)-(?:${alt(STYLE_WORDS)})\\b`,
+  `(?:${alt([...Object.values(LEVELS).flatMap((l) => (l.colour ? [l.colour.name] : [])), ...STYLE_WORDS.map((w) => `--c-${w}-level`)])})\\b`,
+  `editor(?:${alt(Object.keys(SEVERITIES).map(capital))})`,
+  `codicon-(?:${CODICONS})\\b`,
+  `\\$\\((?:${CODICONS})\\)`,
+].join('|'));
 /** The first part of a class built from a level (`` `note level-${n.level}` ``). */
 const STYLE_PREFIX = /\b(?:level|squiggle|severity)-$/;
 
