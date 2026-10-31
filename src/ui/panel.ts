@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Span } from '../analyzer-types';
 import { ExplainService } from '../service';
 import { toPlainMarkdown, ui } from './render';
-import { FromPanel, lineMarks, PANEL_BODY, PanelState, panelUpdate } from './panelView';
+import { FromPanel, lineMarks, needsReading, PANEL_BODY, PanelState, panelState, panelUpdate } from './panelView';
 import { isPanelQuestion, panelReply } from './panelReply';
 import { unreadableThemeNotice } from './builtinThemes';
 import { THEME_SETTINGS, themeRoleColours } from './themeColours';
@@ -34,7 +34,7 @@ export class PanelController implements vscode.Disposable {
   private unreadableThemes = new Set<string>();
 
   constructor(private ctx: vscode.ExtensionContext, private service: ExplainService) {
-    this.state = ctx.globalState.get<PanelState>(STATE_KEY) ?? {};
+    this.state = panelState(ctx.globalState.get<unknown>(STATE_KEY));
     this.disposables.push(
       // `panel.colors`: the colours of the theme in use, again when it or the user's customizations change (and on `refresh`, after our settings).
       vscode.window.onDidChangeActiveColorTheme(() => this.postTheme()),
@@ -151,7 +151,7 @@ export class PanelController implements vscode.Disposable {
       return;
     }
     const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
-    const ex = this.service.explain(ed.document, line, this.state.view === 'tree');
+    const ex = this.service.explain(ed.document, line, needsReading(this.state));
     this.panel.title = `${t.title}: ${fileName(ed.document)}:${line + 1}`;
     void this.panel.webview.postMessage(panelUpdate({
       lang,
@@ -164,6 +164,7 @@ export class PanelController implements vscode.Disposable {
       placement: this.service.examplePlacement,
       animations: this.service.panelAnimations,
       marks: lineMarks(this.service.issues(ed.document), line),
+      state: this.state,
     }));
   }
 
@@ -175,11 +176,11 @@ export class PanelController implements vscode.Disposable {
       return this.post();
     }
     if (m.type === 'panelState') {
-      const treeBefore = this.state.view === 'tree';
-      this.state = m.state;
-      void this.ctx.globalState.update(STATE_KEY, m.state);
+      const before = needsReading(this.state);
+      this.state = panelState(m.state);
+      void this.ctx.globalState.update(STATE_KEY, this.state);
       // The tree is built only for the tree view: explain the line again for the view just chosen.
-      if ((m.state.view === 'tree') !== treeBefore) this.post();
+      if (needsReading(this.state) !== before) this.post();
       return;
     }
     if (m.type === 'themeBase') {

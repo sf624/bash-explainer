@@ -153,12 +153,13 @@ describe('the web page: the top bar', function () {
       // Quick reference, and back.
       await page.locator('#ref').click();
       await until('the reference', () => panel().locator('#reference').isVisible(), (v) => v);
-      assert.strictEqual(await page.locator('#ref').getAttribute('aria-pressed'), 'true');
+      // (The panel says how it draws its buttons, in a message: src/ui/panelView.ts `HeaderButton`.)
+      await until('pressed', () => page.locator('#ref').getAttribute('aria-pressed'), (v) => v === 'true');
       await until('the name', async () => (await page.locator('#ref').getAttribute('aria-label')) ?? '', (t) => t === '← Back to the explanation');
       assert.deepStrictEqual(await icon('#ref'), ['arrow-left', 1]);
       await page.locator('#ref').click();
       await until('the explanation again', () => panel().locator('#main').isVisible(), (v) => v);
-      assert.strictEqual(await page.locator('#ref').getAttribute('aria-pressed'), 'false');
+      await until('not pressed', () => page.locator('#ref').getAttribute('aria-pressed'), (v) => v === 'false');
       await until('the icon', () => icon('#ref'), (i) => i[0] === 'book');
 
       // Keyboard access: the buttons are in the tab order and work with Enter and Space.

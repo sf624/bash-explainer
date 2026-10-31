@@ -9,6 +9,7 @@ import type { NoteLevel } from '../messages';
 import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, ui, withBasisShown } from './render';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
+import { levelOf, readingView, StepName, stepNames, STEPS } from './readingSteps';
 import type { PanelBase } from './themePalette';
 
 // The explanation panel (media/panel.js) as both the extension and the web page drive it.
@@ -28,13 +29,71 @@ export type FromPanel =
   /** The view and step chosen: the host keeps them for the next visit (VS Code's global state, the web page's storage), builds the tree only in the tree view, and sends them back as `panelState` when the panel starts. */
   | { type: 'panelState'; state: PanelState }
   /** What the panel draws text on, and its own colours, in the theme in use (asked for by `themeWatch`). */
-  | { type: 'themeBase'; base: PanelBase };
+  | { type: 'themeBase'; base: PanelBase }
+  /** The header's fold and quick reference buttons as the panel draws them now: the web page's own buttons show the same. */
+  | { type: 'header'; buttons: Record<'toggle' | 'ref', HeaderButton> };
+
+/** An icon button of the panel's header: its name (tooltip and accessible name), its icon, and whether it is pressed. */
+export interface HeaderButton { name: string; icon: string; pressed?: boolean }
 
 /**
  * What the panel remembers per viewer: the list or the tree view, and the step of the tree it shows (1–8: the line
  * alone up to every layer). `level` (1–4: the layers) is what it kept before the steps, read when there is no step.
  */
 export interface PanelState { view?: 'list' | 'tree'; level?: number; step?: number }
+
+/**
+ * A state as kept (VS Code's global state, the web page's storage, a message): the view, the step (from `level`
+ * when there is none), and `level` for a version from before the steps. What is not one of them is left out.
+ */
+export function panelState(kept: unknown): PanelState {
+  const s = (kept && typeof kept === 'object' ? kept : {}) as Record<string, unknown>;
+  const view = s.view === 'tree' || s.view === 'list' ? s.view : undefined;
+  const valid = (n: unknown, max: number): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= max;
+  const step = valid(s.step, STEPS) ? s.step : valid(s.level, 4) ? s.level + 4 : undefined;
+  return { ...(view ? { view } : {}), ...(step ? { step, level: levelOf(step) } : {}) };
+}
+
+/** Whether the explanation needs the reading tree for the state: the hosts build it only then (the tree view). */
+export function needsReading(state: PanelState): boolean {
+  return state.view === 'tree';
+}
+
+/** An option of the view control (docs/design/panel-redesign.md, 6.1). */
+export interface ViewOption {
+  id: 'list' | 'tree';
+  /** An icon drawn before the short name (none yet: the views are named in words). */
+  icon?: string;
+  /** The name on the control. */
+  short: string;
+  /** The tooltip and the accessible name, where it says more than `short`. */
+  full: string;
+  pressed: boolean;
+  /** What a press changes in the state: a host applies it without knowing what the option means. */
+  sets: PanelState;
+  /** The steps the option has: Reading's eight, drawn in the panel's own row. */
+  steps?: StepName[];
+}
+
+/** The panel's view control as data: the web page draws its view switch from it, the panel its own header. */
+export interface ViewControl {
+  /** The control's accessible name. */
+  label: string;
+  options: ViewOption[];
+}
+
+/** The view control for a state: Meaning | Reading, the one shown pressed. */
+export function viewControl(state: PanelState, lang: Lang): ViewControl {
+  const tp = ui[lang].panel;
+  const tree = needsReading(state);
+  return {
+    label: tp.views,
+    options: [
+      { id: 'list', short: tp.listView, full: tp.listView, pressed: !tree, sets: { view: 'list' } },
+      { id: 'tree', short: tp.treeView, full: tp.treeView, pressed: tree, sets: { view: 'tree' }, steps: stepNames(lang) },
+    ],
+  };
+}
 
 export interface PanelLine {
   lang: Lang;
@@ -54,6 +113,8 @@ export interface PanelLine {
   marks?: { from: number; to: number; level: NoteLevel }[];
   /** The web page's panel, whose links open in a new tab (VS Code opens them in the browser). */
   web?: boolean;
+  /** The view and step chosen, for the view control (`viewControl`). */
+  state?: PanelState;
 }
 
 /**
@@ -86,6 +147,9 @@ export function panelUpdate(p: PanelLine) {
   const { lang, explanation: ex } = p;
   const t = ui[lang];
   const tp = t.panel;
+  // (Each row and node of Reading with the chip and try-it of what it rests on, in the panel's language.)
+  const shown = withBasisShown(p.placement === 'bottom' ? ex : placeExamples(ex), lang);
+  const { reading, ...explanation } = shown;
   return {
     type: 'update',
     // (The page's language: the web page's panel has none of its own, and the styles follow it, `:lang(ja)`.)
@@ -103,8 +167,10 @@ export function panelUpdate(p: PanelLine) {
     file: p.file,
     lineLabel: t.line(p.line + 1) + (ex.shell ? ` · ${t.forShell(SHELL_NAMES[ex.shell])}` : ''),
     lineText: p.lineText,
-    // (Each row and node of Reading with the chip and try-it of what it rests on, in the panel's language.)
-    explanation: withBasisShown(p.placement === 'bottom' ? ex : placeExamples(ex), lang),
+    explanation,
+    // (Reading's tree, with what each node and each step shows: src/ui/readingSteps.ts.)
+    reading: reading && readingView(reading, lang),
+    control: viewControl(p.state ?? {}, lang),
     manual: manualLinks(lang, ex),
     // (Said after a link's name, for a screen reader: the links open outside the panel.)
     linkNote: p.web ? tp.opensTab : tp.opensBrowser,
@@ -139,9 +205,7 @@ export const PANEL_BODY = `<div id="top">
   </div>
   <label id="yq-box" class="pick" hidden><span id="yq-label" class="sr-only"></span><span class="dropdown"><select id="yq"></select><svg class="ico" data-icon="chevron-down" viewBox="0 0 16 16" aria-hidden="true"></svg></span></label>
   <div class="actions">
-    <div id="views" class="segmented" role="group">
-      <button id="view-list" type="button" aria-pressed="true"></button><button id="view-tree" type="button" aria-pressed="false"></button>
-    </div>
+    <div id="views" class="segmented" role="group"></div>
     <div class="tools">
       <button id="toggle" class="tb" type="button"><svg class="ico" data-icon="collapse-all" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
       <button id="copy" class="tb" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg></button>

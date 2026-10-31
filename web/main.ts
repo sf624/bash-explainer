@@ -16,7 +16,7 @@ import { Lang, resolveLang } from '../src/i18n';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { detectKind } from '../src/hosts/detect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { lineMarks, panelUpdate } from '../src/ui/panelView';
+import { lineMarks, needsReading, panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
 import { editorAttributes, editorHint, isPaneKey, LineAnnouncer } from './a11y';
 import { CHANNEL, COMMIT, PR, UP, VERSION } from './build-info';
@@ -207,13 +207,13 @@ function updatePanel(): void {
   if (!doc) return;
   const line = editor.cursorLine();
   const s = shells();
-  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: panel.view() === 'tree' });
+  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: needsReading(panel.panelState()) });
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);
   panel.show(panelUpdate({
     lang, explanation, file: fileName(), line, lineText: doc.lines[line] ?? '',
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
-    animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true,
+    animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true, state: panel.panelState(),
   }));
 }
 

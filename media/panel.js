@@ -19,16 +19,33 @@
     if (icon && svg) drawIcon(svg, icon);
   }
 
+  /**
+   * The fold and quick reference buttons as drawn (src/ui/panelView.ts `HeaderButton`): the web page draws its own
+   * buttons for them the same, from the `header` message (they are in its top bar).
+   */
+  const header = /** @type {{ toggle?: { name: string, icon: string }, ref?: { name: string, icon: string, pressed: boolean } }} */ ({});
+  let headerSent = '';
+  function postHeader() {
+    const said = JSON.stringify(header);
+    if (!header.toggle || !header.ref || said === headerSent) return;
+    headerSent = said;
+    vscode.postMessage({ type: 'header', buttons: { toggle: header.toggle, ref: header.ref } });
+  }
+
   /** The fold button says what it will do: unfold when something is folded, else fold. */
   function nameToggle(/** @type {boolean} */ folded) {
-    nameButton('toggle', folded ? labels.expandAll : labels.collapseAll, folded ? 'expand-all' : 'collapse-all');
+    header.toggle = { name: folded ? labels.expandAll : labels.collapseAll, icon: folded ? 'expand-all' : 'collapse-all' };
+    nameButton('toggle', header.toggle.name, header.toggle.icon);
+    postHeader();
   }
 
   /** The quick reference's button: pressed while it is open, and then it says how to go back. */
   function nameRef() {
     const open = !$('reference').hidden;
-    nameButton('ref', open ? labels.back : labels.reference, open ? 'arrow-left' : 'book');
+    header.ref = { name: open ? labels.back : labels.reference, icon: open ? 'arrow-left' : 'book', pressed: open };
+    nameButton('ref', header.ref.name, header.ref.icon);
     $('ref').setAttribute('aria-pressed', String(open));
+    postHeader();
   }
 
   /** @type {Array<{ token: any, el: HTMLElement }>} */
@@ -58,12 +75,16 @@
   /** @type {Array<{ category: string, syntax: string, meaning: string }> | undefined} */
   let reference;
 
-  /** The view shown ('list' or 'tree') and the step of the tree shown (1–8, see STEPS): what the viewer chose last. */
+  /** The view shown ('list' or 'tree') and the step of the tree shown (1–8, see `stepNames`): what the viewer chose last. */
   let view = 'list';
   let step = 8;
   applyState(vscode.getState());
-  /** The reading tree of the line shown (LineExplanation.reading), if any. */
+  /** The reading tree of the line shown, as drawn (src/ui/readingSteps.ts `ReadingView`: each node with its step, chip, band…), if any. */
   let reading = /** @type {any} */ (null);
+  /** The steps of the line shown (`StepView`: whether each adds something, its words, where the arrows go from it). */
+  let lineSteps = /** @type {{ adds: boolean, said: string, full: string, back: number, forward: number }[]} */ ([]);
+  /** The view control (src/ui/panelView.ts `viewControl`), from the host with each line: the header's view switch. */
+  let control = /** @type {{ label: string, options: { id: string, short: string, full: string, sets: any, steps?: { short: string, name: string, layer: string }[] }[] }} */ ({ label: '', options: [] });
   /** The line shown (its number in the document). */
   let shownLineNo = 0;
   /** Paths of the folded items of the tree view, and of the one with the focus; kept while the same line is shown. */
@@ -171,7 +192,7 @@
     $('examples').replaceChildren();
     $('reading-tree').replaceChildren();
     reading = null;
-    measureSteps();
+    lineSteps = [];
     dropSpacer();
     $('reading').hidden = true;
     $('empty').textContent = message;
@@ -181,6 +202,7 @@
   function render(msg) {
     const ex = msg.explanation;
     labels = msg.labels ?? labels;
+    control = msg.control ?? control;
     controlMarks = msg.controlMarks ?? controlMarks;
     if (msg.lang) document.documentElement.lang = msg.lang;
     manual = msg.manual ?? {};
@@ -212,8 +234,8 @@
     const kept = where === shownLine ? focusInList() : null;
     shownLine = where;
     shownLineNo = ex.line;
-    reading = ex.reading ?? null;
-    measureSteps();
+    reading = msg.reading?.root ?? null;
+    lineSteps = msg.reading?.steps ?? [];
     const tree = $('tree');
     tree.replaceChildren(...ex.items.map((t, i) => item(t, `${i}`)));
     if (kept) {
@@ -941,54 +963,54 @@
 
   // ---------------------------------------------------------------- tree view (src/reading.ts)
 
-  /** The layers, in the order the steps add them. */
-  const LEVEL = /** @type {Record<string, number>} */ ({ bash: 1, child: 2, command: 3, language: 4 });
-
-  /**
-   * The steps of the tree view, from the line alone to every layer. Steps 1 to 5 unfold bash's own reading by the
-   * kind of its nodes: the line, its lists and pipelines, its commands, their words, and what is inside the words
-   * (quotes, expansions, the scripts of substitutions as bash reads them). Steps 6 to 8 add the other readers: the
-   * scripts inside (a child shell), each command's reading of its arguments, and the languages.
-   */
-  const STEPS = 8;
-  const BASH_STEP = /** @type {Record<string, number>} */ ({
-    line: 1, list: 2, andList: 2, orList: 2, pipeline: 2, command: 3, compound: 3, clause: 3, coprocess: 3, function: 3, part: 3,
-    commandName: 4, aliasWord: 4, expandedName: 4, option: 4, argument: 4, assignmentArgument: 4, word: 4, name: 4,
-    assignment: 4, redirect: 4, heredoc: 4, operator: 4, keyword: 4, comment: 4, shebang: 4, expression: 4, descriptor: 4, delimiter: 4,
-  });
-  /** The step a node appears at by itself: in bash's reading by its kind (5: a part of a word), else its layer's. */
-  const ownStep = (/** @type {any} */ n) => (n.layer === 'bash' ? BASH_STEP[n.kind] ?? 5 : LEVEL[n.layer] + 4);
-  /** The layer a step shows up to (1–4). */
-  const levelOf = (/** @type {number} */ s) => Math.max(1, s - 4);
+  /** The steps of the tree view (src/ui/readingSteps.ts `stepNames`): the option of the view control that has them, Reading's. */
+  const stepNames = () => control.options.find((o) => o.steps)?.steps ?? [];
 
   /** Tells the host the choice: it keeps it for the next time (VS Code's global state, the web page's storage) and, in the list view, builds no tree. */
   function save() {
-    // (`level` too: what the panel kept before the steps.)
-    const state = { view, step, level: levelOf(step) };
+    // (The host keeps it with `level` too, what the panel kept before the steps: src/ui/panelView.ts `panelState`.)
+    const state = { view, step };
     vscode.setState(state);
     vscode.postMessage({ type: 'panelState', state });
   }
 
-  /** The view and step the viewer chose (VS Code's webview state; on the web page, the page sends them). */
+  /**
+   * The view and step the viewer chose (VS Code's webview state; the host sends them as it keeps them, src/ui/panelView.ts
+   * `panelState`), or what an option of the view control sets.
+   */
   function applyState(/** @type {any} */ state) {
     if (!state || typeof state !== 'object') return;
     if (state.view === 'tree' || state.view === 'list') view = state.view;
-    // (Before the steps, the panel kept the layers shown, 1–4: each is the last step of its layer.)
-    if (Number.isInteger(state.step) && state.step >= 1 && state.step <= 8) step = state.step;
-    else if ([1, 2, 3, 4].includes(state.level)) step = state.level + 4;
+    if (Number.isInteger(state.step) && state.step >= 1) step = state.step;
+  }
+
+  /** Whether an option of the view control is the one shown: the state has what it sets. */
+  const pressed = (/** @type {{ sets: Record<string, unknown> }} */ o) => Object.entries(o.sets).every(([k, v]) => /** @type {Record<string, unknown>} */ ({ view, step })[k] === v);
+
+  /** Draws the header's view switch from the view control: a button per option, its short name, its full name where it says more. */
+  function drawViews() {
+    if (!control.options.length) return;
+    const box = $('views');
+    box.setAttribute('aria-label', control.label);
+    const buttons = control.options.map((o) => {
+      const id = `view-${o.id}`;
+      const b = document.getElementById(id) ?? Object.assign(document.createElement('button'), { id, type: 'button' });
+      b.dataset.option = o.id;
+      b.textContent = o.short;
+      b.setAttribute('aria-pressed', String(pressed(o)));
+      for (const attr of ['title', 'aria-label']) {
+        if (o.full === o.short) b.removeAttribute(attr);
+        else b.setAttribute(attr, o.full);
+      }
+      return b;
+    });
+    if (buttons.length !== box.children.length || buttons.some((b, i) => box.children[i] !== b)) box.replaceChildren(...buttons);
   }
 
   /** Shows the list or the tree view. */
   function applyView() {
     const tree = view === 'tree';
-    const t = labels.tree;
-    if (t) {
-      $('views').setAttribute('aria-label', labels.views);
-      $('view-list').textContent = labels.listView;
-      $('view-tree').textContent = labels.treeView;
-    }
-    $('view-list').setAttribute('aria-pressed', String(!tree));
-    $('view-tree').setAttribute('aria-pressed', String(tree));
+    drawViews();
     $('tree').hidden = tree;
     $('examples').hidden = tree;
     $('reading').hidden = !tree || !reading;
@@ -997,106 +1019,19 @@
     requestAnimationFrame(syncLine);
   }
 
-  for (const [id, v] of [['view-list', 'list'], ['view-tree', 'tree']]) {
-    $(id).addEventListener('click', () => {
-      if (view === v) return;
-      dropSpacer();
-      view = v;
-      save();
-      applyView();
-      renderReading();
-    });
-  }
-
-  /** The name a node is shown with: its kind (a command name with what it runs), or the language. */
-  function chipOf(n) {
-    const t = labels.tree;
-    if (n.kind === 'line') return t.kinds.line;
-    if (n.kind === 'language') return t.languages[n.label] ?? n.label;
-    const shell = n.layer === 'bash' || n.layer === 'child';
-    // (A word the command reads that is not an option is an operand: bash's arguments are called arguments.)
-    // (A command another runs is a command name too, as bash's own are: its badge says what it is, and who runs it.)
-    const named = n.name && ['command', 'builtin', 'function', 'alias'].includes(n.kind);
-    // (A word that bash expands first: the command reads each word that comes out, not the word as written. When it is the value of an option too, the first of those words is the value.)
-    if (n.layer === 'command' && n.expands && n.valueFor) return t.valueExpands.replace('{flag}', n.valueFor);
-    // (A word the command reads as the value of an option says so, not that it is an operand.)
-    if (n.layer === 'command' && n.valueFor) return t.valueFor.replace('{flag}', n.valueFor);
-    let kind = (named && t.kinds.commandName) || (shell && t.kinds[n.kind]) || (n.layer === 'command' && t.commandKinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
-    if (n.layer === 'command' && n.expands && t.expands[n.expands]) kind = t.expands[n.expands].replace('{kind}', kind);
-    // (A command name's badge says what it runs.)
-    return n.resolves && !n.name && t.resolves[n.resolves] ? `${kind} · ${t.resolves[n.resolves]}` : kind;
-  }
-
-  /** Who reads a node: bash, which shell parses it again, the command, or the language and who reads it. */
-  function readerOf(n) {
-    const r = labels.tree.readers;
-    if (n.layer === 'child') return r.child[n.process ?? 'subshell'];
-    // (bash reads two languages itself: the regex of `=~`, and a prompt string, the value of `PS1` or `PS4`.)
-    if (n.layer === 'language' && n.reader === 'bash') return n.label === 'prompt' ? r.promptLanguage : r.bashLanguage;
-    return r[n.layer].replace('{name}', n.reader ?? '');
-  }
-
-  /** The name at the right of a band: where a new reader takes over. */
-  function bandOf(n) {
-    const t = labels.tree;
-    if (n.layer === 'command') return t.reads.replace('{name}', n.reader ?? '');
-    if (n.layer === 'language') return n.kind === 'language' ? chipOf(n) : '';
-    if (n.layer === 'child') return t.bands.child[n.process ?? 'subshell'];
-    return t.bands.bash;
-  }
-
-  /** The role a node's code is coloured with, as the list colours its tokens (`.kind-*`): a node of the other layers has its token's kind. */
-  const ROLES = /** @type {Record<string, string>} */ ({
-    commandName: 'command', aliasWord: 'command', expandedName: 'variable', argument: 'argument', assignmentArgument: 'assignment',
-    word: 'argument', name: 'variable', heredoc: 'redirect', quote: 'string', arithmetic: 'expansion', brace: 'expansion',
-    list: 'operator', andList: 'operator', orList: 'operator', pipeline: 'operator', command: 'operator', compound: 'keyword', clause: 'keyword', coprocess: 'keyword',
-    function: 'keyword', script: 'substitution', part: 'operator', expression: 'operator', descriptor: 'redirect', delimiter: 'redirect',
+  $('views').addEventListener('click', (e) => {
+    const b = e.target instanceof Element ? /** @type {HTMLElement | null} */ (e.target.closest('button[data-option]')) : null;
+    const option = b && control.options.find((o) => o.id === b.dataset.option);
+    if (!option || pressed(option)) return;
+    dropSpacer();
+    applyState(option.sets);
+    save();
+    applyView();
+    renderReading();
   });
-  const roleOf = (/** @type {any} */ n) => ROLES[n.kind] ?? n.kind;
-
-
-  /** The step each node of the line shown appears at: its own, or its parent's when that is later (a node is drawn under its parent). */
-  let appear = /** @type {WeakMap<object, number>} */ (new WeakMap());
-  /** How many nodes each step adds to the line (index 0: step 1); a step that adds none is passed over by the arrows. */
-  let added = /** @type {number[]} */ (new Array(STEPS).fill(0));
-  /**
-   * The nodes that show what their kind is in general (where no token says more): for each kind, the first node to
-   * appear, by step and then in order. The text stays on that node from step to step, and is not on every argument.
-   */
-  let aboutAt = /** @type {Set<object>} */ (new Set());
-
-  // (A language's own tokens have no general text: its `keyword` is not bash's reserved word.)
-  const aboutKey = (/** @type {any} */ n) => (n.kind === 'language' ? (n.reader === 'bash' ? (n.label === 'prompt' ? 'promptLanguage' : 'bashLanguage') : 'language') : n.layer === 'language' ? '' : n.kind);
-
-  /** Reads the steps of the line shown: when each node appears, what each step adds, and where the general texts go. */
-  function measureSteps() {
-    appear = new WeakMap();
-    added = new Array(STEPS).fill(0);
-    aboutAt = new Set();
-    if (!reading) return;
-    /** @type {Map<string, { node: object, at: number }>} */
-    const first = new Map();
-    const walk = (/** @type {any} */ n, /** @type {number} */ from) => {
-      const at = Math.max(from, ownStep(n));
-      appear.set(n, at);
-      added[at - 1]++;
-      if (n.text === undefined) {
-        const o = first.get(aboutKey(n));
-        if (!o || at < o.at) first.set(aboutKey(n), { node: n, at });
-      }
-      n.children.forEach((/** @type {any} */ c) => walk(c, at));
-    };
-    walk(reading, 1);
-    for (const o of first.values()) aboutAt.add(o.node);
-  }
 
   /** Whether a node is drawn at the step shown. */
-  const shown = (/** @type {any} */ c) => (appear.get(c) ?? 1) <= step;
-
-  /** What a kind is in general, where no token says more about the node (see `aboutAt`). */
-  function aboutOf(/** @type {any} */ n) {
-    return aboutAt.has(n) ? labels.tree.about[aboutKey(n)] ?? '' : '';
-  }
+  const shown = (/** @type {any} */ c) => (c.appears ?? 1) <= step;
 
   function renderReading() {
     // (A step back whose rows are still shrinking: the tree is drawn at the step now.)
@@ -1111,7 +1046,7 @@
     // (The rows are replaced in one step, after the controls have measured themselves: that layout, with the tree
     // emptied, let the browser scroll the shorter page back to the top when the same line was drawn again.)
     if (!reading || view !== 'tree') return void ul.replaceChildren();
-    ul.replaceChildren(treeItem(reading, '0', 1, null, 1, 1));
+    ul.replaceChildren(treeItem(reading, '0', 1, 1, 1));
     const items = visibleItems();
     const current = items.find((li) => li.dataset.path === currentKey) ?? items[0];
     if (current) current.tabIndex = 0;
@@ -1129,15 +1064,8 @@
 
   // ---------------------------------------------------------------- the steps of the tree
 
-  /** The steps that add something to the line shown (the line itself always), in order. */
-  const useful = () => Array.from({ length: STEPS }, (_, i) => i + 1).filter((s) => s === 1 || added[s - 1] > 0);
-
   /** The step `d` steps from the one shown, among those that add something (the one shown at either end). */
-  function stepFrom(/** @type {number} */ d) {
-    const list = useful();
-    if (d > 0) return list.find((s) => s > step) ?? step;
-    return [...list].reverse().find((s) => s < step) ?? step;
-  }
+  const stepFrom = (/** @type {number} */ d) => lineSteps[step - 1]?.[d > 0 ? 'forward' : 'back'] ?? step;
 
   const el = (/** @type {string} */ tag, /** @type {Record<string, string>} */ attrs = {}, /** @type {(Node | string)[]} */ ...kids) => {
     const e = document.createElement(tag);
@@ -1149,8 +1077,6 @@
     return e;
   };
   const icon = (/** @type {string} */ text) => el('span', { class: 'tp-icon', 'aria-hidden': 'true' }, text);
-  const LAYERS = ['bash', 'child', 'command', 'language'];
-  const layerOfStep = (/** @type {number} */ s) => LAYERS[levelOf(s) - 1];
 
   /**
    * Makes the controls (once): step back, a button per step, and step forward; where the buttons do not fit, a
@@ -1159,10 +1085,10 @@
   function buildControls(/** @type {HTMLElement} */ box) {
     // (A plain box: #layers is the group of the controls, and the stepper's menu opens this box of its buttons.)
     const steps = el('div', { id: 'steps' });
-    for (let s = 1; s <= STEPS; s++) {
-      steps.append(el('button', { type: 'button', class: `step l-${layerOfStep(s)}`, 'data-step': String(s) },
-        el('span', { class: 'num', 'aria-hidden': 'true' }, String(s)), el('span', { class: 'short' })));
-    }
+    stepNames().forEach(({ layer }, i) => {
+      steps.append(el('button', { type: 'button', class: `step l-${layer}`, 'data-step': String(i + 1) },
+        el('span', { class: 'num', 'aria-hidden': 'true' }, String(i + 1)), el('span', { class: 'short' })));
+    });
     box.replaceChildren(el('span', { id: 'layers-label' }), el('button', { type: 'button', id: 'tp-back' }, icon('◁')),
       el('span', { class: 'step-pick' },
         el('button', { type: 'button', id: 'step-menu', 'aria-expanded': 'false', 'aria-controls': 'steps' },
@@ -1172,18 +1098,15 @@
       el('span', { id: 'tp-live', class: 'tp-live', 'aria-live': 'polite' }));
   }
 
-  /** The words of step `s`: its short name, its name, and "Step 4 of 8: words" (with what it adds, when nothing). */
+  /** The words of step `s` on the line shown: its short name, and "Step 4 of 8: words" (with what it adds, when nothing). */
   function stepWords(/** @type {number} */ s) {
-    const t = labels.tree;
-    const [short, name] = t.steps[s - 1];
-    const said = t.stepper.step.replace('{i}', String(s)).replace('{n}', String(STEPS)).replace('{name}', name);
-    return { short, name, said, full: added[s - 1] || s === 1 ? said : `${said} (${t.stepper.empty})` };
+    return { short: stepNames()[s - 1].short, ...lineSteps[s - 1] };
   }
 
-  /** Draws the controls as the step is now. */
+  /** Draws the controls as the step is now (the line's steps: there are none without a reading tree, and the controls are hidden then). */
   function renderControls() {
     const t = labels.tree;
-    if (!t) return;
+    if (!t || !lineSteps.length) return;
     const p = t.stepper;
     const box = $('layers');
     if (!document.getElementById('steps')) buildControls(box);
@@ -1199,16 +1122,16 @@
       if (s === step) b.setAttribute('aria-current', 'step');
       else b.removeAttribute('aria-current');
       b.classList.toggle('passed', s < step);
-      b.classList.toggle('empty', s > 1 && !added[s - 1]);
+      b.classList.toggle('empty', !w.adds);
       // (One stop for Tab: the step shown; the arrows go to the others.)
       /** @type {HTMLElement} */ (b).tabIndex = s === step ? 0 : -1;
     });
     const menu = $('step-menu');
-    /** @type {HTMLElement} */ (menu.querySelector('.sm-count')).textContent = `${step}/${STEPS}`;
+    /** @type {HTMLElement} */ (menu.querySelector('.sm-count')).textContent = `${step}/${stepNames().length}`;
     /** @type {HTMLElement} */ (menu.querySelector('.sm-name')).textContent = here.short;
     menu.setAttribute('aria-label', `${p.jump}: ${here.said}`);
     menu.title = p.jump;
-    menu.className = `l-${layerOfStep(step)}`;
+    menu.className = `l-${stepNames()[step - 1].layer}`;
     for (const [id, text] of [['tp-back', p.back], ['tp-forward', p.forward]]) {
       $(id).setAttribute('aria-label', text);
       $(id).title = text;
@@ -1277,12 +1200,12 @@
    * stay where they are, and so does the first row of the tree on the screen that the step keeps (`firstRowKept`).
    */
   function setStep(/** @type {number} */ s) {
-    s = Math.max(1, Math.min(STEPS, s));
+    s = Math.max(1, Math.min(stepNames().length, s));
     if (flushMotion()) renderReading();
     const was = step;
     if (s !== was && view === 'tree' && reading) hold(firstRowKept(s), stuckRange(), $('layers').getBoundingClientRect().bottom);
     step = s;
-    if (s !== was && reading) announce(stepWords(s).full);
+    if (s !== was && reading) announce(lineSteps[s - 1].full);
     if (s === was || view !== 'tree' || !reading || !motion()) {
       renderReading();
       return;
@@ -1340,7 +1263,7 @@
     }
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') choose(stepFrom(e.key === 'ArrowLeft' ? -1 : 1));
     else if (e.key === 'Home') choose(1);
-    else if (e.key === 'End') choose(STEPS);
+    else if (e.key === 'End') choose(stepNames().length);
     else return;
     e.preventDefault();
     if (onStep) /** @type {HTMLElement | null} */ (box.querySelector('button.step[aria-current]'))?.focus(STAY);
@@ -1615,11 +1538,11 @@
 
   /** The row of the reading tree a change to step `s` keeps in place: the first on the screen that the step still shows. */
   function firstRowKept(/** @type {number} */ s) {
-    return firstOnScreen(visibleItems(), 'reading', $('layers').getBoundingClientRect().bottom, (li) => (appear.get(readingNodes.get(li)) ?? 1) <= s);
+    return firstOnScreen(visibleItems(), 'reading', $('layers').getBoundingClientRect().bottom, (li) => (readingNodes.get(li)?.appears ?? 1) <= s);
   }
 
   /** A node of the reading tree as an item of the ARIA tree, with the visible layers of its children. */
-  function treeItem(n, path, depth, parent, pos, size) {
+  function treeItem(n, path, depth, pos, size) {
     const li = document.createElement('li');
     li.setAttribute('role', 'treeitem');
     li.setAttribute('aria-level', String(depth));
@@ -1629,8 +1552,7 @@
     li.dataset.path = path;
     li.className = `ti l-${n.layer}`;
     // (A band starts where the reader changes: another layer, another command, another shell.)
-    const band = !parent || parent.layer !== n.layer || (n.layer === 'command' && parent.reader !== n.reader)
-      || (n.layer === 'child' && parent.process !== n.process);
+    const band = n.band !== undefined;
     if (band) li.classList.add('band');
     const kids = n.children.filter((/** @type {any} */ c) => shown(c));
     const row = document.createElement('div');
@@ -1642,7 +1564,7 @@
     if (kids.length) twisty.textContent = folded ? '▸' : '▾';
     const chip = document.createElement('span');
     chip.className = 'chip';
-    chip.textContent = chipOf(n);
+    chip.textContent = n.chip;
     // The first line: the code in a pill (in the colour of its role, as in the list) and the kind; at its right,
     // where a reader takes over, the reader's name, and the links. The text has a line of its own under them.
     const head = document.createElement('span');
@@ -1650,14 +1572,14 @@
     const code = !['line', 'language'].includes(n.kind) ? n.label : '';
     if (code) {
       const c = document.createElement('code');
-      c.className = `tcode kind-${roleOf(n)}`;
+      c.className = `tcode kind-${n.role}`;
       c.textContent = code;
       head.append(c);
     }
     // (The badge after the code, then the kind of node; a reserved word's kind says what it is.)
     const badge = n.kind === 'keyword' ? [] : nameBadge(n.name);
     head.append(...badge, chip);
-    const about = n.text ?? aboutOf(n);
+    const about = n.text ?? n.about ?? '';
     const text = document.createElement('span');
     // (What the kind is in general, where no token says more: quieter than an explanation.)
     text.className = n.text === undefined ? 'text about' : 'text';
@@ -1666,7 +1588,7 @@
     links.forEach((l) => l.querySelectorAll('a').forEach((a) => { a.tabIndex = -1; }));
     const right = document.createElement('span');
     right.className = 'tright';
-    const bandName = band ? bandOf(n) : '';
+    const bandName = n.band ?? '';
     if (bandName) {
       const b = document.createElement('span');
       b.className = 'band-label';
@@ -1680,7 +1602,7 @@
     const also = nameAlso(n.name);
     if (also) row.append(also);
     const spoken = badge.length ? `, ${nameSpoken(n.name)}` : '';
-    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}${spoken}. ${readerOf(n)}. ${spokenMarks(about.replace(/`/g, ''))}${also ? `. ${also.textContent}` : ''}`);
+    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}${spoken}. ${n.readBy}. ${spokenMarks(about.replace(/`/g, ''))}${also ? `. ${also.textContent}` : ''}`);
     li.append(row);
     readingNodes.set(li, n);
     row.addEventListener('mouseenter', () => showNode(n));
@@ -1696,7 +1618,7 @@
       const group = document.createElement('ul');
       group.setAttribute('role', 'group');
       group.hidden = folded;
-      group.append(...kids.map((/** @type {any} */ c, /** @type {number} */ i) => treeItem(c, `${path}.${n.children.indexOf(c)}`, depth + 1, n, i + 1, kids.length)));
+      group.append(...kids.map((/** @type {any} */ c, /** @type {number} */ i) => treeItem(c, `${path}.${n.children.indexOf(c)}`, depth + 1, i + 1, kids.length)));
       li.append(group);
     }
     return li;

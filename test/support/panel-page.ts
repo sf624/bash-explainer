@@ -12,7 +12,7 @@ import { Analyzer } from '../../src/analyzer';
 import { Lang } from '../../src/i18n';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
 import { documentIssues } from '../../src/document';
-import { lineMarks, PANEL_BODY, panelUpdate } from '../../src/ui/panelView';
+import { lineMarks, PANEL_BODY, panelState, panelUpdate } from '../../src/ui/panelView';
 
 const root = path.join(__dirname, '..', '..');
 export const SAMPLE = 'find . -name "*.log" -mtime +7 | xargs rm -f 2>/dev/null';
@@ -44,7 +44,7 @@ const HOST = `(function () {
     postMessage: (m) => {
       window.POSTED.push(m);
       if (m.type === 'ready') setTimeout(() => {
-        window.postMessage({ type: 'panelState', state: { view: q.get('view') || 'list', level: 2 } }, '*');
+        window.postMessage({ type: 'panelState', state: { ...window.STATE, view: q.get('view') || 'list' } }, '*');
         window.postMessage(window.MSGS[document.documentElement.lang], '*');
       });
     },
@@ -81,7 +81,8 @@ export interface PanelServer {
 
 /** Serves the panel's page on 127.0.0.1, explaining `line` of the script `file`. */
 export async function servePanel(line = SAMPLE, file = 'cleanup.sh'): Promise<PanelServer> {
-  const msg = `window.MSGS = ${JSON.stringify({ en: message('en', line, file), ja: message('ja', line, file) })};\n`;
+  // (The state a host sends: kept from a version before the steps, the layers up to the scripts inside.)
+  const msg = `window.MSGS = ${JSON.stringify({ en: message('en', line, file), ja: message('ja', line, file) })};\nwindow.STATE = ${JSON.stringify(panelState({ level: 2 }))};\n`;
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://x');
     const send = (type: string, body: string | Buffer) => res.writeHead(200, { 'Content-Type': type }).end(body);
