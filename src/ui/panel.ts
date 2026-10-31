@@ -3,6 +3,7 @@ import { Span } from '../analyzer-types';
 import { ExplainService } from '../service';
 import { toPlainMarkdown, ui } from './render';
 import { FromPanel, lineMarks, needsReading, PANEL_BODY, PanelState, panelState, panelUpdate } from './panelView';
+import { wrapsLikeEditor } from './lineBox';
 import { isPanelQuestion, panelReply } from './panelReply';
 import { unreadableThemeNotice } from './builtinThemes';
 import { THEME_SETTINGS, themeRoleColours } from './themeColours';
@@ -41,6 +42,8 @@ export class PanelController implements vscode.Disposable {
       vscode.extensions.onDidChange(() => this.postTheme()),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (THEME_SETTINGS.some((k) => e.affectsConfiguration(k))) this.watchTheme();
+        // (The line box wraps as the editor does.)
+        if (e.affectsConfiguration('editor.wordWrap')) this.post();
       }),
       vscode.window.onDidChangeTextEditorSelection((e) => this.schedule(e.textEditor, 80)),
       vscode.window.onDidChangeActiveTextEditor((e) => {
@@ -159,6 +162,8 @@ export class PanelController implements vscode.Disposable {
       file: fileName(ed.document),
       line,
       lineText: ed.document.lineAt(line).text,
+      doc: this.service.document(ed.document),
+      wrap: wrapsLikeEditor(vscode.workspace.getConfiguration('editor', ed.document).get('wordWrap')),
       choice: this.service.overrideOf(ed.document),
       detected: this.service.detectedShell(ed.document),
       placement: this.service.examplePlacement,

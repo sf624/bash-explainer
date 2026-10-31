@@ -4,12 +4,13 @@ import { Shell, SHELL_NAMES } from '../dialect';
 import { YQ_NAMES } from '../embedded/yq';
 import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
-import type { DocumentIssue } from '../document';
+import type { DocumentIssue, ShellDocument } from '../document';
 import type { NoteLevel } from '../messages';
 import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, ui, withBasisShown } from './render';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
 import { levelOf, readingView, StepName, stepNames, STEPS } from './readingSteps';
+import { lineParts, lineRuns } from './lineBox';
 import type { PanelBase } from './themePalette';
 
 // The explanation panel (media/panel.js) as both the extension and the web page drive it.
@@ -114,6 +115,10 @@ export interface PanelLine {
   file: string;
   line: number;
   lineText: string;
+  /** The document the line is of: where the line box may wrap comes from its syntax tree (src/ui/lineBox.ts). */
+  doc?: ShellDocument;
+  /** Whether the line box wraps a long line (the web page's `editor.wrap`, VS Code's `editor.wordWrap`), or scrolls sideways. */
+  wrap?: boolean;
   /** The shell and yq chosen for the file ('auto' when not). */
   choice: { shell?: Shell; yq?: string };
   /** The shell the file says, shown next to "auto". */
@@ -179,6 +184,9 @@ export function panelUpdate(p: PanelLine) {
     file: p.file,
     lineLabel: t.line(p.line + 1) + (ex.shell ? ` · ${t.forShell(SHELL_NAMES[ex.shell])}` : ''),
     lineText: p.lineText,
+    // (The line box: its text as runs that stay on one row and the blanks between them, and whether it wraps there.)
+    lineParts: lineParts(p.lineText, lineRuns(p.doc, p.line, p.lineText)),
+    wrap: p.wrap === true,
     explanation,
     // (Reading's tree, with what each node and each step shows: src/ui/readingSteps.ts.)
     reading: reading && readingView(reading, lang),

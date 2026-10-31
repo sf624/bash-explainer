@@ -211,7 +211,7 @@ function updatePanel(): void {
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);
   panel.show(panelUpdate({
-    lang, explanation, file: fileName(), line, lineText: doc.lines[line] ?? '',
+    lang, explanation, file: fileName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
     animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true, state: panel.panelState(),
   }));

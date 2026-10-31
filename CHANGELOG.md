@@ -7,6 +7,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Changed
 
 - The web page wraps long lines between shell words, with ↪ on the rows after the first. Wrapping is on by default; before, it was off, and when on, a line broke anywhere.
+- The explanation's line box wraps a long line between shell words, up to three rows (click to see it whole). It follows Wrap long lines on the web page and `editor.wordWrap` in VS Code. Before, a long line scrolled sideways.
 
 ### Fixed
 

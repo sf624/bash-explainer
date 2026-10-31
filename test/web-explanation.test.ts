@@ -77,6 +77,8 @@ describe('the web page: the explanation panel and the editor', function () {
 
   it('keeps the source line of the panel at the top while the explanation scrolls, and is capped', async () => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 420 } });
+    // (With Wrap long lines off, the line box is one row that scrolls sideways; test/web-line-box.test.ts wraps it.)
+    await ctx.addInitScript("try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.editor.wrap': false })); } catch {}");
     const page = await ctx.newPage();
     await page.goto(base);
     const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;

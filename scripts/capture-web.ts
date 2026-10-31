@@ -7,12 +7,13 @@
 // looks at them and measures before pushing.
 //
 // Usage: npx tsx scripts/capture-web.ts --out DIR [--name before] [--widths 390,1280] [--langs en,ja] [--themes light,dark]
-//          [--states page,menu] [--script FILE] [--channel next] [--phone-scale 1.3]
+//          [--states page,menu] [--script FILE] [--line N] [--channel next] [--phone-scale 1.3]
 //   --out     where the PNGs go (required; created when missing). Each is DIR/NAME-WIDTH-LANG-THEME-STATE.png.
 //   --themes  light (the default), dark: the browser's colour scheme, which the page follows.
 //   --states  page, menu, settings, kind (the file kinds' list, where the page has one: not on a narrow page), tip (the phone's first-run tip; a phone only).
 //   --name    the file name prefix, default "shot" (use "before" and "after").
 //   --script  a file to put into the editor instead of the sample (the page's own sample otherwise).
+//   --line    the line (from 1) to put the cursor on, from the keyboard, so the panel explains it (line 8 of the sample is long).
 //   --phone-scale  also take the phone at this text size (130% = 1.3, as the kit did, in a 300 px CSS viewport): files NAME-300-...
 //
 // It reads no path of this machine. The browser is Playwright's own (PLAYWRIGHT_BROWSERS_PATH and the rest of its
@@ -46,10 +47,12 @@ const states = option('states', 'page,menu,settings,kind')!.split(',');
 const script = option('script');
 const channel = option('channel', 'release')!;
 const phoneScale = option('phone-scale');
+const cursorLine = option('line');
 for (const s of states) if (!['page', 'menu', 'settings', 'kind', 'tip'].includes(s)) throw new Error(`unknown state: ${s}`);
 for (const t of themes) if (t !== 'light' && t !== 'dark') throw new Error(`unknown theme: ${t}`);
 for (const l of langs) if (l !== 'en' && l !== 'ja') throw new Error(`unknown language: ${l}`);
 if (widths.some((w) => !(w > 0))) throw new Error('--widths: numbers separated by commas');
+if (cursorLine !== undefined && !(Number(cursorLine) >= 1)) throw new Error('--line: a line number, from 1');
 
 async function main(): Promise<void> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-shots-'));
@@ -101,6 +104,13 @@ async function main(): Promise<void> {
           } else {
             await page.locator('#menu-open').click();
             await page.locator('#menu-sample').click();
+          }
+          if (cursorLine !== undefined) {
+            // (As test/support/site.ts `cursorToLine`: ArrowDown moves by row, and long lines wrap.)
+            await page.locator('.cm-content').focus();
+            await page.keyboard.press('Control+Home');
+            const at = async () => Number(await page.locator('.cm-lineNumbers .cm-activeLineGutter').first().textContent());
+            for (let i = 0; i < 4 * Number(cursorLine) && (await at()) < Number(cursorLine); i++) await page.keyboard.press('ArrowDown');
           }
           await page.waitForTimeout(1500);
           if (states.includes('page')) await shot('page');
