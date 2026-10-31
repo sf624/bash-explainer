@@ -49,6 +49,20 @@ describe('the web page: toasts', function () {
     }
   }
 
+  /**
+   * Opens a file as the Open button does, with no picker of the browser: the file chooser is awaited before the click
+   * (a Promise.all), and the click is the page's own button, not the Ctrl+O shortcut. The shortcut once timed out in CI,
+   * waiting 30 s for a chooser that never came (a rerun passed): the key, pressed on a page that had only just been
+   * made, is the one step that does not wait for the page to be ready.
+   */
+  async function openFileThroughChooser(page: Page, name: string, text: string): Promise<void> {
+    await page.evaluate('delete window.showOpenFilePicker');
+    const open = page.locator('#open-btn');
+    await open.waitFor({ state: 'visible' });
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser', { timeout: 10000 }), open.click()]);
+    await chooser.setFiles({ name, mimeType: 'text/x-sh', buffer: Buffer.from(text) });
+  }
+
   const shownName = (page: Page) => page.evaluate("document.getElementById('file-name-stem').textContent + document.getElementById('file-name-ext').textContent") as Promise<string>;
 
   /** Types a script of the user's own, then loads the sample over it: the toast with Undo. */
@@ -294,13 +308,7 @@ describe('the web page: toasts', function () {
     try {
       const text = () => page.locator('.cm-content').innerText();
       const click = () => clickSample(page);
-      await page.evaluate('delete window.showOpenFilePicker');
-      // (The page's key handlers are in place, and the focus is on the page.)
-      await page.locator('.cm-content').click();
-      await page.waitForTimeout(300);
-      const chooser = page.waitForEvent('filechooser');
-      await page.keyboard.press('Control+O');
-      await (await chooser).setFiles({ name: 'mine.sh', mimeType: 'text/x-sh', buffer: Buffer.from('echo mine\n') });
+      await openFileThroughChooser(page, 'mine.sh', 'echo mine\n');
       await until('opened', () => shownName(page), (t) => t === 'mine.sh');
       await click();
       await until('the toast', () => toastText(page), (t) => t.startsWith('Sample loaded'));
@@ -332,12 +340,7 @@ describe('the web page: toasts', function () {
     const page = await open(1280);
     try {
       const text = () => page.locator('.cm-content').innerText();
-      await page.evaluate('delete window.showOpenFilePicker');
-      await page.locator('.cm-content').click();
-      await page.waitForTimeout(300);
-      const chooser = page.waitForEvent('filechooser');
-      await page.keyboard.press('Control+O');
-      await (await chooser).setFiles({ name: 'a.sh', mimeType: 'text/x-sh', buffer: Buffer.from('echo a\n') });
+      await openFileThroughChooser(page, 'a.sh', 'echo a\n');
       await until('opened', () => shownName(page), (t) => t === 'a.sh');
       // Clean: no question, and the Undo toast.
       await clickSample(page);
