@@ -6,6 +6,8 @@ The condition and dead-code model (`shellState(…).condition(n)`, `.dead(n)`; [
 
 Every claim about bash on this page was checked with bash 5.2 (`bash` of this machine), each snippet in its own shell, in a cgroup (`systemd-run --user --scope -p MemoryMax=3G -p MemorySwapMax=0 -p TasksMax=500`) with `FUNCNEST` set. Section 3.3 lists the checks.
 
+2026-10-31: before step 2, [sources.md](sources.md), M2, applies: a special case may be dropped only with its whole category (S5–S7, S8, S12–S14), which then trusts nothing, with test/decisions.test.ts green and the corpus loss measured; steps 2–6 are taken only if what is left needs one rule.
+
 ## 1. Today
 
 ### 1.1 The mechanism
