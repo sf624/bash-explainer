@@ -410,7 +410,7 @@ describe('the web page: theme and settings', function () {
 
   it('opens over the editor side by side, never wider than its pane, so that a change shows in the explanation while the sheet is open', async () => {
     // 768 px is the narrowest side by side (web/theme-init.js: up to 767 px, the narrow layout).
-    for (const width of [1280, 768]) {
+    for (const width of [1280, 768, 1920]) {
       const ctx = await browser.newContext({ locale: 'en-US', viewport: { width, height: 800 } });
       const page = await ctx.newPage();
       const errors: string[] = [];
@@ -430,9 +430,12 @@ describe('the web page: theme and settings', function () {
       // Along the left edge, over the editor's pane (below the top bar) and no wider: the panel is beside it, uncovered.
       assert.ok(Math.abs(b.sheet.left) < 0.5 && b.sheet.top === b.pane.top && b.sheet.bottom === b.pane.bottom, seen);
       assert.ok(b.sheet.width <= b.pane.width + 0.5 && b.sheet.right <= b.panel.left + 0.5, seen);
-      // 36rem where the pane is wider; the pane's width where it is not.
-      if (width === 1280) assert.strictEqual(Math.round(b.sheet.width), 576, seen);
-      else assert.ok(b.sheet.width < 576 && b.pane.width - b.sheet.width < 1, seen);
+      // The pane's width, so that no strip of the (inert) editor shows beside it; the text keeps a column of 40rem, centred.
+      assert.ok(Math.abs(b.sheet.width - b.pane.width) < 1, seen);
+      const pad = await page.locator('#settings-dialog .settings-body').evaluate((e) => parseFloat(e.ownerDocument.defaultView!.getComputedStyle(e).paddingLeft));
+      const column = await page.locator('#settings-dialog .settings-intro').evaluate((e) => e.getBoundingClientRect().width);
+      if (width === 1920) assert.ok(Math.abs(pad - ((b.pane.width - 640) / 2 + 16)) < 1 && column <= 640, `${pad} ${column}; ${seen}`);
+      else assert.ok(pad <= 16 && column <= 640, `${pad} ${column}; ${seen}`);
       // Not a modal dialog: there is no backdrop, and the page behind it is not shut.
       assert.strictEqual(await page.locator('#settings-dialog').evaluate((d) => d.matches(':modal')), false, seen);
       // A change shows in the explanation at once, with the sheet still open.
@@ -771,6 +774,39 @@ describe('the web page: theme and settings', function () {
     await until('the sheet closed by the gear', () => isOpen(page), (v) => !v);
     assert.deepStrictEqual(errors, []);
     await ctx.close();
+  });
+
+  it('puts the focus on the sheet, not the page, when a toast or an Undo that had it goes while the sheet is open side by side', async () => {
+    for (const width of [1280, 900]) {
+      const ctx = await browser.newContext({ locale: 'en-US', viewport: { width, height: 700 } });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      const where = () => page.evaluate(`(() => { const a = document.activeElement; return a.id === 'panel' ? 'panel' : a.closest('#status') ? 'toast' : a.closest('#settings-dialog') ? 'sheet' : a.closest('#source') ? 'EDITOR' : a === document.body ? 'BODY' : a.tagName + '#' + a.id; })()`) as Promise<string>;
+      for (const how of ['Enter', 'Escape']) {
+        // Clear the editor from the editor's ⋯ (a toast with Undo), open the settings, F6 to the toast's Undo.
+        await page.locator('.cm-content').click();
+        await page.keyboard.press('Control+A');
+        await page.keyboard.insertText('echo mine');
+        await page.locator('#ed-more').click();
+        await page.locator('#more-clear').click();
+        await until('the toast', () => page.evaluate("!!document.querySelector('#status button')") as Promise<boolean>, (v) => v);
+        await page.locator('#settings-open').click();
+        await until('the sheet', () => isOpen(page), (v) => v);
+        await page.keyboard.press('F6');
+        await until('the explanation', where, (w) => w === 'panel');
+        await page.waitForTimeout(300);
+        await page.keyboard.press('F6');
+        await until('the toast', where, (w) => w === 'toast');
+        await page.keyboard.press(how);
+        await until('the toast gone', () => page.evaluate("!document.querySelector('#status button')") as Promise<boolean>, (v) => v);
+        assert.strictEqual(await where(), 'sheet', `${width} ${how}`);
+        assert.strictEqual(await isOpen(page), true);
+        // (Shut the sheet for the next round.)
+        await page.locator('#settings-done').click();
+        await until('closed', () => isOpen(page), (v) => !v);
+      }
+      await ctx.close();
+    }
   });
 
   it('keeps the links in the cut-off part of a description out of the Tab order, and brings them back when it is expanded', async () => {
