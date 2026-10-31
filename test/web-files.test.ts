@@ -5,7 +5,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
-import { menuItem, openSite, choose, pickKind, problemList, until } from './support/site';
+import { menuItem, openSite, choose, pickKind, problemList, toastText, until } from './support/site';
 
 const DOCKERFILE = 'FROM alpine:3.20\nRUN apk add --no-cache curl\nCMD ["sh"]\n';
 
@@ -95,7 +95,7 @@ describe('the web page: opening a file and saving the script', function () {
   /** The script's name as the editor's header shows it. */
   const shownName = (page: Page) => page.evaluate("document.getElementById('file-name-stem').textContent + document.getElementById('file-name-ext').textContent") as Promise<string>;
   const text = (page: Page) => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
-  const toast = (page: Page) => page.locator('#status').evaluate((el) => el.firstChild?.textContent ?? '');
+  const toast = toastText;
   const bytesOf = (s: string) => [...Buffer.from(s, 'utf8')];
 
   it('saves with Ctrl+S as a download where the browser cannot write files: the exact text, named as the editor\'s header shows it, and the browser does not save the page', async () => {
@@ -350,10 +350,10 @@ describe('the web page: opening a file and saving the script', function () {
     const { ctx, page } = await open([NO_PICKERS]);
     await type(page, 'echo keep\n');
     for (const [name, bytes, message] of [
-      ['big.sh', Buffer.alloc(1024 * 1024 + 1, 0x61), 'big.sh was not opened: it is larger than 1 MiB, too large to explain again after every change.'],
-      ['a.out', Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x00, 0x00]), 'a.out was not opened: it is not a text file in UTF-8.'],
-      ['latin1.sh', Buffer.from([0x65, 0x63, 0x68, 0x6f, 0x20, 0xe9, 0x0a]), 'latin1.sh was not opened: it is not a text file in UTF-8.'],
-      ['progress.sh', Buffer.from("printf '50%\r'\necho\n"), 'progress.sh was not opened: it has a CR that ends no line, which the editor would turn into a line break.'],
+      ['big.sh', Buffer.alloc(1024 * 1024 + 1, 0x61), 'big.sh was not opened. It is larger than 1 MiB, too large to explain again after every change.'],
+      ['a.out', Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x00, 0x00]), 'a.out was not opened. It is not a text file in UTF-8.'],
+      ['latin1.sh', Buffer.from([0x65, 0x63, 0x68, 0x6f, 0x20, 0xe9, 0x0a]), 'latin1.sh was not opened. It is not a text file in UTF-8.'],
+      ['progress.sh', Buffer.from("printf '50%\r'\necho\n"), 'progress.sh was not opened. It has a CR that ends no line, which the editor would turn into a line break.'],
     ] as const) {
       const [c] = await Promise.all([page.waitForEvent('filechooser'), page.keyboard.press('Control+O')]);
       await c.setFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
@@ -372,7 +372,6 @@ describe('the web page: opening a file and saving the script', function () {
 
   it('saves a file opened with CRLF line ends and a BOM byte for byte, warns about the CRLF, and says when it mixed line ends', async () => {
     const { ctx, page } = await open([NO_PICKERS]);
-    page.on('dialog', (d) => void d.accept()); // the sample button's confirmation
     const crlf = '﻿#!/bin/bash\r\nif true; then\r\n  echo hi\r\nfi\r\n';
     assert.strictEqual(await drop(page, 'win.sh', bytesOf(crlf)), true);
     await until('opened', () => toast(page), (t) => t === 'Opened win.sh.');
@@ -402,7 +401,7 @@ describe('the web page: opening a file and saving the script', function () {
     assert.deepStrictEqual([...edited.bytes], bytesOf(`${crlf}exit 0\r\n`));
     // Mixed line ends: saved with the more common one, and the toast says so.
     assert.strictEqual(await drop(page, 'mixed.sh', bytesOf('a\r\nb\r\nc\n')), true);
-    await until('the note', () => toast(page), (t) => t === 'mixed.sh mixes line ends: saving writes CRLF throughout.');
+    await until('the note', () => toast(page), (t) => t === 'Opened mixed.sh. It mixes line ends. Saving writes CRLF throughout.');
     const mixed = await download(page);
     assert.deepStrictEqual([...mixed.bytes], bytesOf('a\r\nb\r\nc\r\n'));
     // A sample is no file's: its line ends are LF again, and Save asks for a name again.
@@ -439,7 +438,6 @@ describe('the web page: opening a file and saving the script', function () {
 
   it('with the File System Access API: Ctrl+S asks where once, then writes to that file; a file opened is written back to; a refused write says so, and the next save asks where', async () => {
     const { ctx, page, errors } = await open([PICKERS]);
-    page.on('dialog', (d) => void d.accept()); // the sample button's confirmation
     let downloads = 0;
     page.on('download', () => downloads++);
     await type(page, 'echo one\n');
@@ -476,7 +474,7 @@ describe('the web page: opening a file and saving the script', function () {
     await page.evaluate('window.__refuseWrite = true');
     await page.keyboard.insertText('\n');
     await page.keyboard.press('Control+S');
-    await until('the refusal', () => toast(page), (t) => t === 'Not saved: the browser could not write to Containerfile. Save again to choose where.');
+    await until('the refusal', () => toast(page), (t) => t === 'Containerfile was not saved. The browser could not write to it. Save again to choose where.');
     await until('the mark', () => page.title(), (t) => t.startsWith('● Containerfile'));
     await page.evaluate("window.__refuseWrite = false; window.__saveAs = 'Containerfile.copy'");
     await page.keyboard.press('Control+S');

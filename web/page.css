@@ -1096,29 +1096,76 @@ body.resizing .problems-resize {
 }
 /* end of the level table */
 
-/* What an action did ("Link copied"): a toast at the bottom, for a few seconds. */
+/*
+ * The toast (web/toast.ts): one look for every message. Its place is set by the script, above the Problems list in
+ * the editor's pane (`placed`); without a pane (the compare page) it sits at the middle of the window's bottom.
+ */
 #status {
   position: fixed;
   left: 50%;
   bottom: 16px;
   z-index: 20;
+  box-sizing: border-box;
   width: max-content;
   max-width: min(32rem, calc(100vw - 32px));
   margin: 0;
-  padding: 10px 14px;
-  border: 1px solid var(--vscode-panel-border);
+  padding: 6px 6px 6px 12px;
+  /* (The page's stronger border: the panel's line is 1.1:1 against the dark editor, and a toast would not stand out.) */
+  border: 1px solid var(--hover-border);
   border-radius: var(--radius);
   background: var(--vscode-editor-background);
   color: var(--vscode-foreground);
   box-shadow: var(--shadow);
   transform: translateX(-50%);
-  transition: opacity 0.2s, transform 0.2s var(--ease);
+  /* (Only the slide up is animated: `translate`, apart from the centring `transform`, which never moves.) */
+  transition: opacity 0.2s, translate 0.2s var(--ease);
+}
+
+#status.placed {
+  transform: none;
+}
+
+#status:not(.shown) {
+  opacity: 0;
+  translate: 0 8px;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.toast-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
-.status-action {
+.toast-icon {
+  flex: none;
+  width: 1.25em;
+  font-weight: 700;
+  text-align: center;
+  color: var(--vscode-textLink-foreground);
+}
+
+.toast-icon.note {
+  color: var(--vscode-descriptionForeground);
+}
+
+.toast-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+}
+
+.toast-more {
+  margin: 0;
+  padding: 2px 6px 4px calc(1.25em + 8px);
+  color: var(--vscode-descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
+.toast-button {
   flex: none;
   min-height: 32px;
   padding: 4px 10px;
@@ -1132,27 +1179,26 @@ body.resizing .problems-resize {
 }
 
 @media (pointer: coarse) {
-  .status-action {
-    min-height: 40px;
+  .toast-button {
+    min-height: 44px;
   }
 }
 
-.status-action:focus-visible {
+.toast-button:focus-visible {
   outline: 2px solid var(--vscode-focusBorder);
   outline-offset: 1px;
 }
 
 @media (hover: hover) {
-  .status-action:hover {
+  .toast-button:hover {
     background: var(--vscode-list-hoverBackground);
   }
 }
 
-#status:empty {
-  opacity: 0;
-  transform: translate(-50%, 8px);
-  pointer-events: none;
-  visibility: hidden;
+@media (prefers-reduced-motion: reduce) {
+  #status {
+    transition: none;
+  }
 }
 
 /* The questions before the text is replaced (web/kind-dialog.ts): a small modal box in the middle. */

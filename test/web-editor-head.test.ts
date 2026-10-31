@@ -28,7 +28,7 @@ describe('the web page: the app bar and the editor\'s header', function () {
     return { ctx, page };
   };
   const text = (page: Page) => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
-  const toast = (page: Page) => page.locator('#status').evaluate((el) => el.firstChild?.textContent ?? '');
+  const toast = (page: Page) => page.locator('#status').evaluate((el) => el.querySelector('.toast-text')?.textContent ?? '');
   const focused = (page: Page) => page.evaluate('document.activeElement && document.activeElement.id') as Promise<string>;
   const name = (page: Page) => page.evaluate(`(() => {
     const b = document.getElementById('file-name');
@@ -494,7 +494,8 @@ describe('the web page: the app bar and the editor\'s header', function () {
     await page.locator('#share').click();
     await until('the toast', () => toast(page), (t) => t === refused);
     assert.strictEqual(await page.locator('#share').innerText(), 'Copy a link');
-    await page.locator('#status').evaluate((el) => el.replaceChildren());
+    // (The first toast goes after 4 s; the second must be a new one.)
+    await until('the toast gone', () => page.locator('#status').evaluate((el) => el.classList.contains('shown')), (s) => !s);
     await page.locator('#ed-more').click();
     await page.locator('#more-copy').click();
     await until('the toast', () => toast(page), (t) => t === refused);

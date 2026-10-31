@@ -3,7 +3,7 @@
 // unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser } from 'playwright-core';
-import { openSite, choose, pickKind, until } from './support/site';
+import { openSite, choose, pickKind, toastText, until } from './support/site';
 
 describe('the web page: the file kind', function () {
   this.timeout(120000);
@@ -155,27 +155,31 @@ describe('the web page: the file kind', function () {
     await pickKind(page, 'dockerfile');
     await page.locator('#kind-replace').click();
     await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
-    assert.strictEqual(await toast.getAttribute('role'), 'status');
-    assert.match(await toast.innerText(), /^Sample loaded/);
+    assert.strictEqual(await toast.locator('.toast-text').getAttribute('role'), 'status');
+    assert.match(await toastText(page), /^Sample loaded/);
     await toast.locator('button').click();
     await until('the text back', text, (t) => t.trim() === 'echo mine');
     assert.strictEqual(await page.locator('#kind').getAttribute('aria-label'), 'File: Dockerfile');
-    // ⋯ › Load the sample still asks (the browser's confirmation) and offers to undo; typing takes the offer away.
+    // ⋯ › Load the sample replaces the text at once, asking nothing, and offers to undo; typing takes the offer away.
+    const asked: string[] = [];
+    page.on('dialog', (d) => {
+      asked.push(d.message());
+      void d.dismiss();
+    });
     const loadSample = async () => {
       await page.locator('#ed-more').click();
       await page.locator('#more-sample').click();
     };
-    page.once('dialog', (d) => void d.accept());
     await loadSample();
     await toast.locator('button').waitFor();
     await toast.locator('button').click();
     await until('the text back', text, (t) => t.trim() === 'echo mine');
-    page.once('dialog', (d) => void d.accept());
     await loadSample();
     await toast.locator('button').waitFor();
     await page.locator('.cm-content').click();
     await page.keyboard.insertText('x');
     await until('the toast gone', () => toast.innerText(), (t) => t === '');
+    assert.deepStrictEqual(asked, []);
     // An empty editor, or only spaces, counts as untouched: the sample of the kind chosen, with no question.
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Delete');
