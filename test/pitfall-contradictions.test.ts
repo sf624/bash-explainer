@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { Note } from '../src/messages';
-import { SUDO_KEEPS } from '../src/dict/types';
+import { SUDO_KEEPS, SUDO_SETS } from '../src/dict/types';
 import { fileRead, readAs } from '../src/semantics/env';
 import { attribute, fromEnvironment } from '../src/semantics/shellstate';
 import { shellState } from '../src/semantics/state';
@@ -405,7 +405,8 @@ describe('pitfalls that bash contradicted', function () {
       for (const v of ['TZ', 'LC_ALL']) {
         const exported = `export ${v}=x; sudo bash -c "echo \\$${v}"`;
         assert.strictEqual(explain(exported).noteInfo.filter((n) => /^variable-not/.test(n.code ?? '')).length, 0, exported);
-        const set = `${v}=x; sudo bash -c "echo \\$${v}"`;
+        // (`LC_ALL=C`: a locale not known makes the model blind, and then it says nothing of exports.)
+        const set = `${v}=${v === 'LC_ALL' ? 'C' : 'x'}; sudo bash -c "echo \\$${v}"`;
         assert.strictEqual(noteOf(set, 'variable-not-passed-by-wrapper', 0), undefined, set);
         assert.strictEqual(noteOf(set, 'variable-not-exported', 0)!.level, 'info', set);
       }
@@ -426,6 +427,94 @@ describe('pitfalls that bash contradicted', function () {
       // (bash sets `TERM` to `dumb` when the environment has none: no note of it.)
       assert.strictEqual(noteOf("export TERM=xterm; env -i bash -c 'echo $TERM'", 'variable-not-passed-by-wrapper', 0), undefined);
       assert.strictEqual((await bash(['-c', 'export TERM=xterm; env -i /bin/bash -c \'echo "[$TERM]"\''])).stdout, '[dumb]\n');
+    });
+
+    it('says nothing of a name the wrapper sets itself, for the target user', () => {
+      // (sudoers(5), "Command environment": env_reset sets HOME, MAIL, SHELL, LOGNAME and USER, and the SUDO_*
+      // variables; sudo is not run here, as it may ask for a password.)
+      for (const v of ['USER', 'HOME', 'LOGNAME', 'MAIL', 'SUDO_USER']) {
+        assert.ok(SUDO_SETS.includes(v), v);
+        const src = `${v}=x; sudo bash -c 'echo "[$${v}]"'`;
+        assert.deepStrictEqual(explain(src, 0).noteInfo.filter((n) => /^variable-not/.test(n.code ?? '')), [], src);
+      }
+      for (const src of ["USER=x; doas bash -c 'echo $USER'", "export USER=x; su - -c 'echo $USER'"]) {
+        assert.deepStrictEqual(explain(src, 0).noteInfo.filter((n) => /^variable-not/.test(n.code ?? '')), [], src);
+      }
+      // (A name it does not set is still not there.)
+      assert.ok(noteOf("export USERNAME=x; sudo bash -c 'echo $USERNAME'", 'variable-not-passed-by-wrapper', 0));
+    });
+  });
+
+  // Found when the checks headed for Error (docs/design/three-levels.md) were run under the ways of running, the
+  // environments and the code a model does not read: each case bash runs without the failure the note said.
+  describe('the cases left after #424', () => {
+    /** Runs the script `text` directly, as its shebang says, with `args`. */
+    const run = async (name: string, text: string, args: string[] = []) => {
+      write(name, text);
+      fs.chmodSync(path.join(dir, name), 0o755);
+      return runContained([`./${name}`, ...args], dir);
+    };
+    const codes = (src: string, line: number, re: RegExp) => explain(src, line).noteInfo.filter((n) => re.test(n.code ?? '')).map((n) => n.code);
+
+    it('alias-not-expanded-in-script: an interactive shebang, a function of that name, code the model does not read', async () => {
+      // (`#!/bin/bash -i` is an interactive shell, which expands aliases, as `bash -i -c` does.)
+      for (const shebang of ['#!/bin/bash -i', '#!/usr/bin/env -S bash -i']) {
+        const script = `${shebang}\nalias al='echo ALIASED'\nal\n`;
+        assert.match((await run('interactive.sh', script)).stdout, /ALIASED\n$/, shebang);
+        assert.deepStrictEqual(codes(script, 2, /^alias-/), [], shebang);
+        assert.match(explain(script, 2).items[0].explanation, /replaced by `echo ALIASED`/, shebang);
+      }
+      // (A function of that name runs: no "command not found".)
+      const fn = "#!/bin/bash\nal() { echo FUNC; }\nalias al='echo ALIASED'\nal\n";
+      assert.deepStrictEqual(await run('function.sh', fn), { stdout: 'FUNC\n', stderr: '', status: 0 });
+      assert.deepStrictEqual(codes(fn, 3, /^alias-/), []);
+      assert.match(explain(fn, 3).items[0].explanation, /function/i);
+      // (A file read with `source` may turn expand_aliases on: the explanation says so, and no note.)
+      write('aliases.sh', 'shopt -s expand_aliases\n');
+      const sourced = "#!/bin/bash\nalias al='echo ALIASED'\n. ./aliases.sh\nal\n";
+      assert.strictEqual((await run('sourced.sh', sourced)).stdout, 'ALIASED\n');
+      assert.deepStrictEqual(codes(sourced, 3, /^alias-/), []);
+      assert.match(explain(sourced, 3).items[0].explanation, /"command not found" \(unless code not read here, such as a file read with `source` or an `eval`, turns it on\)/);
+      assert.match(explain(sourced, 3, 'ja').items[0].explanation, /（ここで読まないコード、たとえば `source` で読み込むファイルや `eval` が有効にしていなければ）/);
+      // (Still said where bash fails.)
+      const plain = "#!/bin/bash\nalias al='echo ALIASED'\nal\n";
+      assert.strictEqual((await run('plain.sh', plain)).status, 127);
+      assert.deepStrictEqual(codes(plain, 2, /^alias-/), ['alias-not-expanded-in-script']);
+    });
+
+    it('local-outside-function: a RETURN, DEBUG or ERR trap set in a function runs its action there', async () => {
+      for (const [signal, body] of [['RETURN', ''], ['DEBUG', ' true;'], ['ERR', ' false;']]) {
+        const script = `#!/bin/bash\nf() { trap 'local y=2 && echo in; trap - ${signal}' ${signal};${body} }\nf\n`;
+        const r = await run(`trap-${signal}.sh`, script);
+        assert.match(r.stdout, /^in\n/, signal);
+        assert.strictEqual(r.stderr, '', signal);
+        assert.deepStrictEqual(codes(script, 1, /^local-/), [], signal);
+      }
+      // (A signal not known here may be one of them too.)
+      assert.deepStrictEqual(codes('#!/bin/bash\nf() { trap \'local y=2\' "$1"; }\n', 1, /^local-/), []);
+      // (An EXIT trap runs once the function has returned: `local` fails there.)
+      const exit = "#!/bin/bash\nf() { trap 'local y=2' EXIT; }\nf\n";
+      assert.match((await run('trap-exit.sh', exit)).stderr, /local: can only be used in a function/);
+      assert.deepStrictEqual(codes(exit, 1, /^local-/), ['local-outside-function']);
+    });
+
+    it('variable-not-exported: code the model does not read may export the variable', async () => {
+      write('exports.sh', 'export foo\n');
+      write('sets.sh', 'foo=2\n');
+      for (const [name, script, args, out] of [
+        ['sourced.sh', "#!/bin/bash\nfoo=1\n. ./exports.sh\nbash -c 'echo \"[$foo]\"'\n", [], '[1]\n'],
+        ['eval.sh', "#!/bin/bash\nfoo=1\neval \"$1\"\nbash -c 'echo \"[$foo]\"'\n", ['export foo'], '[1]\n'],
+        ['named.sh', "#!/bin/bash\nfoo=1\nexport \"$1\"\nbash -c 'echo \"[$foo]\"'\n", ['foo'], '[1]\n'],
+        // (The string reads a file, which may set it.)
+        ['string.sh', "#!/bin/bash\nfoo=1\nbash -c '. ./sets.sh; echo \"[$foo]\"'\n", [], '[2]\n'],
+      ] as const) {
+        assert.strictEqual((await run(name, script, [...args])).stdout, out, name);
+        assert.deepStrictEqual(codes(script, 3, /^variable-not/), [], name);
+      }
+      // (Still said where nothing the model does not read runs.)
+      const plain = "#!/bin/bash\nfoo=1\nbash -c 'echo \"[$foo]\"'\n";
+      assert.strictEqual((await run('plain.sh', plain)).stdout, '[]\n');
+      assert.deepStrictEqual(codes(plain, 2, /^variable-not/), ['variable-not-exported']);
     });
   });
 });

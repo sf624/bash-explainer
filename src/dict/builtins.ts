@@ -183,7 +183,7 @@ const TRAP_OPERANDS: OperandAlt[] = [
   { when: { operand: 0, matches: SIGNAL_NUMBER }, pattern: [operand('SIGNAL', '既定の動作に戻すシグナル（最初の語がシグナル番号なら、どの語もシグナル）', 'signal to reset to its default (when the first word is a signal number, every word is a signal)', { repeat: '+' })] },
   // `trap - INT`: `-` resets the signals to their defaults (no command runs).
   { when: { operand: 0, matches: /^-$/ }, pattern: [operand('RESET', '`-`: 続くシグナルの動作を既定に戻す', '`-`: reset the signals that follow to their default action'), operand('SIGNAL', '既定の動作に戻すシグナル', 'signal to reset to its default', { repeat: '+' })] },
-  ...args(operand('ACTION', '実行するコマンド（`-` でリセット、空文字で無視）', 'command to run (`-` resets, empty string ignores)', { command: { run: 'current-shell', later: true } }), operand('SIGNAL', '対象のシグナル（EXIT, ERR, INT, TERM など）', 'signal (EXIT, ERR, INT, TERM…)')).operands!,
+  ...args(operand('ACTION', '実行するコマンド（`-` でリセット、空文字で無視）', 'command to run (`-` resets, empty string ignores)', { command: { run: 'current-shell', later: true } }), operand('SIGNAL', '対象のシグナル（EXIT, ERR, INT, TERM など）', 'signal (EXIT, ERR, INT, TERM…)', { type: 'signal' })).operands!,
 ];
 
 /**

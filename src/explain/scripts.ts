@@ -22,7 +22,7 @@ import { replaceRange, stringShell, textBetween } from '../rewrite';
 import { readAsScript, scriptProcess } from '../tokenmarks';
 import type { Explainer } from './context';
 import { lineStarts, posOf, sameSpan, sortTokens } from './nodes';
-import { resolve } from './reads';
+import { resolve, unseenDeclarations } from './reads';
 
 /** The expansions that give a word a value of the shell that expands it (`$x`, `$(…)`, `*`, `~`): not braces or quotes. */
 const LOCAL_EXPANSIONS: ReadonlySet<ExpansionStep['kind']> = new Set(['tilde', 'parameter', 'command', 'arithmetic', 'process', 'glob']);
@@ -231,13 +231,16 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
  * passes no variables (`env -i`, sudo, ssh: `variableIn` of src/semantics/env.ts; but sudo keeps `TERM`, `TZ`…). Whether
  * its export may come from the environment is `fromEnvironment`'s: not said of one the environment almost always has
  * (`TERM`), a caveat for one in capitals, a clause for one in lower case. Not one the string sets itself, nor one the
- * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`), nor one set by that shell (`$_`).
+ * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`, sudo's `USER`), nor one set by that shell (`$_`);
+ * nothing where the string reads a file (`. ./env.sh`), nor "not exported" where the script may declare variables
+ * the model does not see (`source`, `eval "$x"`: `unseenDeclarations`).
  */
 function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): void {
   // The string, read as the script it is (src/semantics/state.ts): the variables it reads, and whether each
   // reached it there (passed by the slots, or set by the string itself before the read).
   const script = cx.state.script(words, env);
-  if ('why' in script) return;
+  // (A string that reads a file, `bash -c '. ./env.sh; echo "$x"'`, may set any variable there.)
+  if ('why' in script || script.model.sources.length) return;
   const cmd = ancestor(words[0], (x) => x.type === 'command')!;
   const st = cx.state.at(cmd).run;
   const remote = whereOf(env) === 'remote';
@@ -252,6 +255,8 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
     // with an export not known, from the environment.)
     const own = script.model.at(e).run.variables.get(v);
     if (!x || x.set !== 'on' || given || specialVariables[v] || (own && (own.attrs.x?.state === 'on' || script.tree.root === ancestor(own.at, (a) => !a.parent)))) continue;
+    // (A name the wrapper sets itself, sudo's `USER` or `HOME`: there, with the wrapper's value.)
+    if ((linksAfter(env, cx.state.env(cmd)).links as SlotLink[]).some((l) => l.sets?.includes(v))) continue;
     const exported = x.attrs.x?.state ?? 'off';
     // (sudo still passes a few variables of the environment, `TERM`, `TZ`: then it is as with no wrapper.)
     const { dropped, unset } = variableIn(cx.state, cmd, v, env);
@@ -261,6 +266,9 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
         : fact(cx.lang, 'variable-not-passed-by-wrapper', { v, via: dropped.via, ...(dropped.keeps ? { keeps: dropped.keeps.slice(0, 2) } : {}) }), words[0]);
       return;
     }
+    // (Whether it is exported, only where the model sees every declaration (`unseenDeclarations`): code it does not read,
+    // `source`, `eval "$x"`, `export "$1"`, may export it.)
+    if (unseenDeclarations(cx)) return;
     // (`env -u FOO` removes it on the way, whatever the environment had.)
     const environment = unset ? 'no' : fromEnvironment(v, st, 'export', cx.state.provides);
     if (environment === 'usually') continue;

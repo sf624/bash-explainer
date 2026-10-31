@@ -37,7 +37,7 @@ import type { Explainer } from './context';
 import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectInfo, redirectParts } from './redirections';
-import { hostCommand, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, specFor, unquotedWord } from './reads';
+import { hostCommand, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, specFor, unquotedWord, unseenDeclarations } from './reads';
 import { exitRefusedNote, posixExitNote, statusRangeNote } from './status';
 import { shellEffectNote } from './where';
 import { bracesHere, braceWord, braceWords, bracesMaybeOff, plainText, shown, tilde } from './words';
@@ -553,22 +553,27 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
   const missed = (res as { missed?: Missed }).missed;
   if (missed?.kind === 'alias' && !known) {
     const first = missed.def.startPosition.row;
-    if (missed.why === 'expand_aliases') {
+    // (A function of that name runs instead, `ll() { …; }`: no "command not found".)
+    if (missed.why === 'expand_aliases' && res.kind !== 'function') {
       const value = cx.state.at(nameNode).expand.aliases.get(name)!.value;
       // (Turned off by the script, `shopt -u expand_aliases`: also in an interactive shell.)
       const off = option(cx.state.at(nameNode).expand, 'shopt', 'expand_aliases') === 'off';
-      cx.note(fact(cx.lang, 'alias-not-expanded-in-script', { name, value, ...(off ? { off } : {}) }), nameNode);
+      // (Where the script runs code the model does not read, `source`, `eval "$x"` (`unseenDeclarations`), that code may
+      // turn it on: the note is not sure.)
+      const unseen = unseenDeclarations(cx);
+      if (!unseen) cx.note(fact(cx.lang, 'alias-not-expanded-in-script', { name, value, ...(off ? { off } : {}) }), nameNode);
+      const unless = unseen ? cx.s('（ここで読まないコード、たとえば `source` で読み込むファイルや `eval` が有効にしていなければ）', ' (unless code not read here, such as a file read with `source` or an `eval`, turns it on)') : '';
       if (off) {
         return {
           name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
-          explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし、ここでは \`shopt -u expand_aliases\` でエイリアスの展開が無効なので、対話シェルでも「command not found」になる`,
-            `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But alias expansion is off here (\`shopt -u expand_aliases\`), so this is "command not found", also in an interactive shell`),
+          explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし、ここでは \`shopt -u expand_aliases\` でエイリアスの展開が無効なので、対話シェルでも「command not found」になる${unless}`,
+            `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But alias expansion is off here (\`shopt -u expand_aliases\`), so this is "command not found", also in an interactive shell${unless}`),
         };
       }
       return {
         name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
-        explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${value}\` に置き換わる`,
-          `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found". With sh or dash it would be replaced by \`${value}\``),
+        explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる${unless}。sh や dash なら \`${value}\` に置き換わる`,
+          `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found"${unless}. With sh or dash it would be replaced by \`${value}\``),
       };
     }
     if (missed.why === 'later' || missed.why === 'same-unit') {

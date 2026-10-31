@@ -240,6 +240,19 @@ export const SUDO_KEEPS: readonly string[] = [
 export const DOAS_KEEPS: readonly string[] = ['DISPLAY', 'TERM'];
 
 /**
+ * The variables sudo sets itself in the fresh environment of `env_reset` (sudoers(5), "Command environment"): `HOME`,
+ * `MAIL`, `SHELL`, `LOGNAME` and `USER` for the target user, `PATH` (`secure_path`, or a default when not kept), and
+ * the `SUDO_*` variables of the invoking user that sudo(8) lists under ENVIRONMENT.
+ */
+export const SUDO_SETS: readonly string[] = ['HOME', 'MAIL', 'SHELL', 'LOGNAME', 'USER', 'PATH', 'SUDO_COMMAND', 'SUDO_GID', 'SUDO_UID', 'SUDO_USER'];
+
+/** The variables doas sets itself for the target user (doas(1), OpenDoas 6.8; see `DOAS_KEEPS`). */
+export const DOAS_SETS: readonly string[] = ['DOAS_USER', 'HOME', 'LOGNAME', 'PATH', 'SHELL', 'USER'];
+
+/** The variables `su -l` sets for the target user, in an environment it clears but for `TERM` (su(1), util-linux). */
+export const SU_LOGIN_SETS: readonly string[] = ['HOME', 'SHELL', 'USER', 'LOGNAME', 'PATH'];
+
+/**
  * The locales in which ls and df print dates, sizes, messages and the order of names as on the made-up system
  * (`LANG=en_US.UTF-8`, src/examples/layouts.ts): the C locale (an empty value reads as none), and en_US. Another
  * (`ja_JP.UTF-8`: `10月  1 18:02`; `de_DE.UTF-8`: `3,7K`; where coreutils' messages are installed, `合計` for
