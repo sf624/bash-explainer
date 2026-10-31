@@ -36,9 +36,11 @@ describe('command examples are chosen by the spec', () => {
     assert.deepStrictEqual(kinds('sudo sort -r f'), []);
     assert.deepStrictEqual(kinds('env seq 3'), []);
     assert.deepStrictEqual(kinds('IFS=, read -r a b <<< "x,,y"'), ['read']);
-    // In backquotes bash removes the backslash of `\$` first (`'a\$b'` prints `a$b`): no example prints the text as written.
-    assert.deepStrictEqual(kinds('x=`printf a \'b\\$c\'`'), []);
-    assert.deepStrictEqual(kinds('x=`printf a \'b$c\'`'), ['printf']);
+    // In backquotes bash removes the backslash of `\$` first (`'a\$b'` prints `a$b`): the example prints the word's value, not the text as written.
+    const printed = (src: string) => new Analyzer('en').explainLine(createUnbashParser().parse(src), 0).examples[0].sections[0].lines;
+    assert.deepStrictEqual(printed('x=`printf "%s\\n" \'b\\$c\'`'), ['b$c']);
+    assert.deepStrictEqual(printed('x=`printf "%s\\n" \'b$c\'`'), ['b$c']);
+    assert.deepStrictEqual(kinds('x=`printf a \'b\\$c\'`'), ['printf']);
   });
 });
 
