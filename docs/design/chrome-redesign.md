@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: planned. No step started.
+Status: C0 to C6 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -57,7 +57,7 @@ From the maintainer, 2026-10-27:
 
 1. The prototype rounds stop. Round 8 is the base design.
 2. It is rebuilt as a series of real PRs (section 6), with the fixes below. Nothing is merged from the prototype branches as they are.
-3. Implementation starts after the roadmap's three note levels (C2 reads the level table; changed 2026-10-31, from "items 1 to 7"). It fits with the panel redesign's order (section 7). Studies may run in parallel (a measure, a sketch, a prototype that lands nothing).
+3. Implementation starts after the roadmap's three note levels (C2 reads the level table; changed 2026-10-31, from "items 1 to 7"). Changed again 2026-10-31: C0 to C6 start early, beside the levels; C7 on wait for them. It fits with the panel redesign's order (section 7). Studies may run in parallel (a measure, a sketch, a prototype that lands nothing).
 
 The fixes of the last review (round 8), part of the design. Decisions 4 and 6 to 12 were revised after the plan's review:
 
@@ -233,7 +233,7 @@ What:
 - The list is open on the very first visit (nothing stored), so the sample's problems show. After that, the user's choice is remembered. The page never opens it on its own, for example when a warning appears (section 9, 4).
 - The editor gets the room of the folded list. Help's list of shortcuts names F8.
 
-Prerequisite (2026-10-31, [sources.md](sources.md), phase B1): C2 starts after step 1 of [three-levels.md](three-levels.md) has built the level table with every output mapping; the strip's counts, icons and accessible names read it.
+Prerequisite (2026-10-31, [sources.md](sources.md), SB1): C2 starts after step 1 of [three-levels.md](three-levels.md) has built the level table with every output mapping; the strip's counts, icons and accessible names read it.
 
 CHANGELOG (Changed): "Problems on the web page fold into a strip with their counts. ‹ › and F8 / Shift+F8 go to the next and previous problem, and the strip shows where you are (Ln 20 · 1/11). The list opens on your first visit, and then stays as you left it."
 
@@ -283,7 +283,7 @@ What:
 
 - One chip right of the file name, "Shell script · bash (auto)", at every width, on a quiet fill.
 - It opens one popover with two radio lists, File type and Shell (and the yq flavour when the script uses yq). On a phone it is a bottom sheet.
-- The wording of the automatic shell comes from one function (decision 12). Prerequisite (2026-10-31, [sources.md](sources.md), phase B4): `detectShell` (src/dialect.ts) gives its source (a ShellCheck directive, the shebang, the file name, the default), and the `auto (bash)` text of src/ui/panelView.ts comes from the same function.
+- The wording of the automatic shell comes from one function (decision 12). Prerequisite (2026-10-31, [sources.md](sources.md), SB4): `detectShell` (src/dialect.ts) gives its source (a ShellCheck directive, the shebang, the file name, the default), and the `auto (bash)` text of src/ui/panelView.ts comes from the same function.
 - The shortening is a fit rule in src/ui. It gives the candidate forms in order: the whole chip, then without "(auto)", "Script · bash", Open and Save as icons, "bash" alone, and the name moved to the menu. The page takes the first that fits.
 - The kind and shell pickers leave the app bar and the menu. The hidden selects go. The panel bridge reads the scope from the page's state.
 
@@ -388,7 +388,7 @@ Who owns what:
 | The summary row's text | src/ui (C8b) | P5 and P7b improve it. |
 | Toasts, the strip, the app bar, the editor's header, settings, the sheet | The chrome | |
 
-The order. Both series start after the roadmap's three note levels (C2 reads the level table; changed 2026-10-31, from "items 1 to 7"). They mostly touch different files: the chrome web/ and src/ui's page rules; the panel's steps P2 to P6 src/ and the dictionary. So they may run side by side. These must hold:
+The order. Both series start after the roadmap's three note levels (C2 reads the level table; changed 2026-10-31, from "items 1 to 7"), except C0 to C6 and P1 to P2, which started early (2026-10-31). They mostly touch different files: the chrome web/ and src/ui's page rules; the panel's steps P2 to P6 src/ and the dictionary. So they may run side by side. These must hold:
 
 - C0 comes first in the chrome series.
 - The usability test's baseline (panel-redesign.md, section 7) is pinned to a commit: the last release tag before C1a and P1 land. So it can run at any time, and needs no place in the order.
