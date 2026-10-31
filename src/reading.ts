@@ -25,7 +25,7 @@
 // the nodes are those of the tokens about the same text: bash's own (`shell`) for the nodes bash reads.
 import type { Pos, ScriptProcess, Span, Token } from './analyzer-types';
 import type { Basis, TryIt } from './basis';
-import { binaryTestOps, extendedEqualOps, unaryTestOps } from './dict/syntax';
+import { binaryTestOperands, binaryTestOps, extendedEqualOps, plainPatternOps, testOperandTexts, unaryTestOperands, unaryTestOps } from './dict/syntax';
 import type { Lang } from './i18n';
 import type { Shell } from './shellfeatures';
 import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } from './refs';
@@ -33,7 +33,7 @@ import { aliasesAfter, type AliasResolution, type NameResolution } from './seman
 import type { NameInfo } from './namefacts';
 import { type ExpansionStep, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
 import { setsElement, splitElement, stackTilde, staticWordValue } from './staticword';
-import { field, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
+import { field, fields, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
 
 /** Who reads a part: bash, bash again (a substitution, or a string a command gives a shell), the command, a language. */
 export type Layer = 'bash' | 'child' | 'command' | 'language';
@@ -105,6 +105,8 @@ export interface ReadingContext {
   resolve(name: string, word: SyntaxNode): NameResolution;
   /** What bash does to the word `w` in its context (src/semantics/words.ts `wordMeaning`). */
   meaning(w: SyntaxNode): WordMeaning | undefined;
+  /** The text the pattern `w` of `[[ == ]]` matches, where it has no wildcard (src/semantics/globwords.ts `plainPatternText`). */
+  plainPattern(w: SyntaxNode): string | undefined;
   /** Whether the array `name` is associative where `at` runs, surely indexed, or either (src/explain/reads.ts `arrayKind`). */
   arrayKind(name: string, at: SyntaxNode): 'assoc' | 'indexed' | 'unknown';
   /** The shell the script is for (bash when absent): what a word spells there (`$'echo'` is `$echo` in dash). */
@@ -119,6 +121,9 @@ const TEXTS = {
   again: { ja: 'もう一度読んで実行する文字列', en: 'Text to read and run again' },
   /** The text of the analyzer for a word it says nothing more of (`Analyzer.word`). */
   word: { ja: (w: string) => `文字列 \`${w}\``, en: (w: string) => `Word \`${w}\`` },
+  /** The delimiters of `[[ ]]` (3.2.5.2), which no token explains. */
+  testOpen: { ja: '条件式の始まり', en: 'Starts the conditional expression' },
+  testClose: { ja: '条件式の終わり', en: 'Ends the conditional expression' },
 };
 
 /** The words of an alias's text, when it is plain words a command name can start (no quotes, no operators, no assignment). */
@@ -254,6 +259,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       // for a newline.)
       const reserved = /^[a-z]|^[{}!]$|^\[\[$|^\]\]$/.test(c.type) && !isExpression(c.parent!) && !PARTS.has(c.parent!.type);
       const n = shellNode(c, layer, reserved ? 'keyword' : 'operator', [], new Set(['keyword', 'operator']));
+      if (!n.text && c.parent!.type === 'extended_test' && (c.type === '[[' || c.type === ']]')) n.text = TEXTS[c.type === '[[' ? 'testOpen' : 'testClose'][cx.lang];
       // An operator of a conditional expression in `[[ ]]` (6.4): what it tests. (Its sections are the expression's,
       // src/refs.ts: `&&` there is not a list's.)
       if (isExpression(c.parent!) && c.field === 'operator' && expressionHost(c) === 'extended_test' && !n.text) {
@@ -294,15 +300,42 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       }
     }
     if (REDIRECTS.has(c.type)) return [redirect(c, layer)];
-    if (WORDS.has(c.type)) return [word(c, layer, 'word')];
+    if (WORDS.has(c.type)) {
+      const w = word(c, layer, 'word');
+      // A word of a conditional expression in `[[ ]]` (6.4): what it is to its operator (the file `-f` tests).
+      const op = !w.text && isExpression(c.parent!) && expressionHost(c) === 'extended_test' ? operandText(c) : undefined;
+      return [op ? { ...w, text: op } : w];
+    }
     return [construct(c, layer, constructKind(c.type))];
+  };
+
+  /**
+   * What a word of a conditional expression in `[[ ]]` is to its operator, by the kind of its operands
+   * (`unaryTestOperands`, `binaryTestOperands`), or by its side of `=`, `==` and `!=`: the string compared, the pattern
+   * (said once, on the first part of a right side in parts: `*"$y"*`). The regex of `=~` is a language of its own.
+   */
+  const operandText = (c: SyntaxNode): string | undefined => {
+    const p = c.parent!;
+    const op = field(p, 'operator')?.text;
+    // (`[[ ( a ) ]]`: a word alone in parentheses, which `-n` tests.)
+    if (!op) return undefined;
+    const say = (kind: keyof typeof testOperandTexts): string => testOperandTexts[kind][cx.lang].replace('{op}', op);
+    if (p.type === 'unary_expression') return unaryTestOperands[op] && say(unaryTestOperands[op]);
+    if (extendedEqualOps[op] || op === '=~') {
+      if (c.field !== 'right') return say('compared');
+      const first = fields(p, 'right')[0];
+      return op === '=~' || c !== first ? undefined : say(cx.plainPattern(c) === undefined ? 'pattern' : 'plain');
+    }
+    return binaryTestOperands[op] && say(binaryTestOperands[op]);
   };
 
   /** What the operator of a conditional expression tests (`-f`: is an existing regular file; `==` in `[[ ]]`: a glob match). */
   const testOperator = (c: SyntaxNode): string | undefined => {
     const inDouble = c.parent!.type === 'binary_expression' && ['=', '==', '!='].includes(c.type);
     const op = c.type === 'test_operator' ? c.text : c.type;
-    const text = c.parent!.type === 'unary_expression' && op !== '!' ? unaryTestOps[op] : inDouble ? extendedEqualOps[op] : binaryTestOps[op];
+    // (A pattern with no wildcard: a plain comparison, said here once.)
+    const plain = inDouble && cx.plainPattern(fields(c.parent!, 'right')[0]) !== undefined;
+    const text = c.parent!.type === 'unary_expression' && op !== '!' ? unaryTestOps[op] : plain ? plainPatternOps.operator[op] : inDouble ? extendedEqualOps[op] : binaryTestOps[op];
     return text?.[cx.lang];
   };
 

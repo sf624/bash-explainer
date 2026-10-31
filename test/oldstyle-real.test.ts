@@ -111,6 +111,56 @@ describe('tar agrees with the real tar', () => {
       }
     }
   });
+
+  // What the operands are, by mode (the spec's `operands`): files tar reads from the disk into the archive, names of
+  // members it looks for in the archive, or archives whose members it appends. [line, the kind the spec gives the
+  // operands, the names `tar tf a.tar` lists after it, or the error tar gives].
+  const MODES: [string, string, string[] | RegExp][] = [
+    ['tar cf a.tar c.txt', 'FILE', ['c.txt']],
+    ['tar rf a.tar c.txt', 'FILE', ['src/', 'src/a.txt', 'src/sub/', 'src/sub/b.txt', 'c.txt']],
+    ['tar --update -f a.tar c.txt', 'FILE', ['src/', 'src/a.txt', 'src/sub/', 'src/sub/b.txt', 'c.txt']],
+    ['tar Af a.tar b.tar', 'ARCHIVE', ['src/', 'src/a.txt', 'src/sub/', 'src/sub/b.txt', 'c.txt']],
+    ['tar --delete -f a.tar src/a.txt', 'MEMBER', ['src/', 'src/sub/', 'src/sub/b.txt']],
+    // (A name that is not in the archive: no file of that name on the disk would help.)
+    ['tar xf a.tar c.txt', 'MEMBER', /c\.txt: Not found in archive/],
+    ['tar tf a.tar c.txt', 'MEMBER', /c\.txt: Not found in archive/],
+    ['tar df a.tar c.txt', 'MEMBER', /c\.txt: Not found in archive/],
+    // (And a file to archive that is not on the disk: no member of that name would help.)
+    ['tar cf b.tar src/a.txt', 'FILE', ['src/a.txt']],
+    ['tar cf b.tar nosuch', 'FILE', /nosuch: Cannot stat/],
+  ];
+  (usable('tar') ? it : it.skip)('names each mode\'s operands as tar acts on them: files to archive, members, or archives', () => {
+    for (const [line, kind, expected] of MODES) {
+      const { parse } = parseOf(line);
+      const kinds = parse.roles.flatMap(({ role }) => (role.role === 'operand' ? [role.spec?.name] : []));
+      assert.deepStrictEqual([...new Set(kinds)], [kind], line);
+      const dir = tempDir();
+      try {
+        assert.strictEqual(run('tar cf a.tar src && tar cf b.tar c.txt', dir).status, 0);
+        const r = run(line, dir);
+        if (expected instanceof RegExp) {
+          assert.notStrictEqual(r.status, 0, line);
+          assert.match(r.err, expected, line);
+        } else {
+          assert.strictEqual(r.status, 0, `${line}: ${r.err}`);
+          const archive = /b\.tar/.test(line) && /^tar c/.test(line) ? 'b.tar' : 'a.tar';
+          // (In the order tar stored them, which follows the directory's: sorted.)
+          assert.deepStrictEqual(run(`tar tf ${archive}`, dir).out.split('\n').filter(Boolean).sort(), [...expected].sort(), line);
+        }
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('says what the operands of each mode are', () => {
+    const text = (line: string): string[] => parseOf(line).parse.roles.flatMap(({ role }) => (role.role === 'operand' ? [role.spec!.text.en] : []));
+    assert.deepStrictEqual(text('tar -czf out.tgz ~/docs'), ['files and directories to put into the archive']);
+    assert.deepStrictEqual(text('tar -xf a.tar m'), ['names in the archive to act on (all when none)']);
+    assert.deepStrictEqual(text('tar -Af a.tar b.tar'), ['archives whose members to append']);
+    // (No mode: tar refuses the line, and its operands have no kind.)
+    assert.deepStrictEqual(parseOf('tar -f a.tar m').parse.roles.flatMap(({ role }) => (role.role === 'operand' ? [role.spec] : [])), [undefined]);
+  });
 });
 
 describe('ps reads BSD letters in any place, as procps does', () => {

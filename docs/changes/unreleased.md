@@ -21,3 +21,16 @@ A hover card on the web page now sits under the whole line it explains, or above
 ### Japanese wording on the web page
 
 A new check reads the Japanese in `web/` (the strings of `web/*.ts` and the text of `web/index.html`) against [docs/japanese-style.md](../japanese-style.md), as it already read `src/`. It found one string: the settings dialog's explanation of "Clear stored data" said 消します; it says 削除します now.
+
+### What bash and tar do, in a few explanations
+
+Fixes found by the panel's prototype (step P2 of [docs/design/panel-redesign.md](../design/panel-redesign.md)):
+
+- `if` starts the condition: "Starts the condition: the commands up to `then`; if they exit 0, the `then` branch runs". Before, "Start a conditional; run the `then` branch if the condition exits 0".
+- A `;` before a reserved word ends the commands before it: "Ends the commands before `then`", and whether the `;` may be left out. Before, it said that bash waits for the commands to end, which it does after every command of a list. Before `}` after a coprocess, it still says that bash does not wait.
+- `[[ $x == 1 ]]`: a pattern in which nothing acts as a wildcard matches only itself, so the condition says "strings are equal", and Reading's row of `==` says it is a plain comparison. Before, both said "the right side is a glob pattern". Whether a pattern has a wildcard comes from the word model: a quoted `*` is none, a value the script sets is read (`p=1; [[ $x == $p ]]`), and with `shopt -s nocasematch` it stays a pattern (`a` matches `A`).
+- Reading gives `[[` and `]]` a row ("Starts the conditional expression"), and each operand of `[[ ]]` says what it is to its operator: "The file `-f` tests", "The string on the left of `==`", "A value `-eq` compares: evaluated as an arithmetic expression".
+- tar's operands by mode: with `-c`, `-r` and `-u` they are "files and directories to put into the archive"; with `-x`, `-t`, `-d` and `--delete`, "names in the archive to act on"; with `-A`, archives whose members are appended. Before, "Word `~/docs`".
+- `failure-reported-as-success` names a long command by its name (`tar`) rather than cutting it in a word (`tar -czf "$backup" ~/docs 2>/…`).
+- Japanese: the status of an AND or OR list is 「最後に実行したコマンドのもの」 (before, 「最後に実行したもののもの」); `$HOME` is 「ホームディレクトリ」, as in English.
+- `date +%F`: "date as %Y-%m-%d (e.g. 2026-01-31)".

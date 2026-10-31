@@ -8,6 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { type Char, globbedByBash, ownChars, type Piece, quotedIfs } from '../src/semantics/chars';
 import { shellState, type StateModel } from '../src/semantics/state';
+import { plainPatternText } from '../src/semantics/globwords';
 import { braceWords, bracesInContext, CONTEXTS, partMeaning, underscoreValue, wordFields, wordMeaning, wordOf, type WordEnv } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, type SyntaxNode } from '../src/syntax/tree';
@@ -769,5 +770,53 @@ describe('words: line continuations, sequences past intmax_t and tildes read as 
     assert.deepStrictEqual(value('a=${x:+x:~root}'), undefined);
     assert.deepStrictEqual(value('a=${x:+`b`:~}'), undefined);
     assert.deepStrictEqual(value('a=${x:+x:"~"}'), ['x:~']);
+  });
+});
+
+describe('words: a pattern with no wildcard (plainPatternText)', () => {
+  // [the script before the test, the right side of `[[ $s == … ]]`]. The model gives the text the pattern matches when
+  // nothing in it acts as a wildcard; bash agrees when, of the candidates, it matches that text alone. Else bash
+  // matches more than one (a wildcard, an extglob, a bracket across `/`, nocasematch).
+  const ROWS: [string, string][] = [
+    ['', '1'], ['', '1*'], ['', '"1*"'], ['', '1\\*'], ['', "'a'b"], ['', '[a/b]'], ['', '@(a|b)'], ['', 'a?'], ['', '"a"?'],
+    ['p=1', '$p'], ['p="1*"', '$p'], ['p="1*"', '"$p"'], ['p="1*"', '"$p"x'],
+    ['shopt -s nocasematch', 'a'], ['shopt -s nocasematch; shopt -u nocasematch', 'a'],
+  ];
+  const CANDIDATES = ['1', '1x', '11', '1*', 'a', 'A', 'ab', 'b', '/', 'a/', 'ax', '1*x'];
+  it('says a pattern is plain text exactly where bash matches only its text', () => {
+    const script = ROWS.map(([setup, right], i) => `( ${setup || ':'}; for s in "\${C[@]}"; do [[ $s == ${right} ]] && printf '%s\\t%s\\n' ${i} "$s"; done )`).join('\n');
+    const C = `C=(${CANDIDATES.map((c) => `'${c}'`).join(' ')})`;
+    const out = execFileSync('bash', ['--norc', '--noprofile', '-c', `${C}\n${script}\n:`], { encoding: 'utf8' });
+    const matched = ROWS.map((_, i) => out.split('\n').filter((l) => l.startsWith(`${i}\t`)).map((l) => l.split('\t')[1]));
+    const said = ROWS.map(([setup, right]) => {
+      const tree = parser.parse(`${setup}\n[[ $s == ${right} ]]`);
+      const test = descendants(tree.root, ['binary_expression'])[0];
+      return plainPatternText(test.namedChildren.find((c) => c.field === 'right')!, shellState(tree, 'bash'));
+    });
+    assert.deepStrictEqual(said.map((t, i) => `${ROWS[i][1]}: ${t ?? 'pattern'}`), [
+      '1: 1', '1*: pattern', '"1*": 1*', '1\\*: 1*', "'a'b: ab", '[a/b]: pattern', '@(a|b): pattern', 'a?: pattern', '"a"?: pattern',
+      '$p: 1', '$p: pattern', '"$p": 1*', '"$p"x: 1*x', 'a: pattern', 'a: a',
+    ]);
+    for (const [i, t] of said.entries()) {
+      if (t === undefined) assert.ok(matched[i].length > 1, `${ROWS[i][1]}: ${matched[i].join(' ')}`);
+      else assert.deepStrictEqual(matched[i], [t], ROWS[i][1]);
+    }
+  });
+
+  it('reads the patterns of `case` too, and nothing else', () => {
+    const plain = (src: string, text: string) => {
+      const { node, model } = find(src, text);
+      return plainPatternText(node, model);
+    };
+    assert.strictEqual(plain('case $x in a) ;; esac', 'a'), 'a');
+    assert.strictEqual(plain('case $x in a*) ;; esac', 'a*'), undefined);
+    assert.strictEqual(plain('shopt -s nocasematch; case $x in a) ;; esac', 'a'), undefined);
+    // (A value not known here, and one bash fails on: `${x:?}` with `x` empty ends the shell.)
+    assert.strictEqual(plain('case $x in $1) ;; esac', '$1'), undefined);
+    assert.strictEqual(plain('x=; [[ $s == ${x:?oops} ]]', '${x:?oops}'), undefined);
+    // (Not a pattern: the word of `case`, an argument, a command.)
+    assert.strictEqual(plain('case a in b) ;; esac', 'a'), undefined);
+    assert.strictEqual(plain('echo a', 'a'), undefined);
+    assert.strictEqual(plain('echo a', 'echo a'), undefined);
   });
 });

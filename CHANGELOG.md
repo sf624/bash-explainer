@@ -14,6 +14,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The `~` in the operands of `[`, `test` and `[[ ]]` (`[ -f ~/.bashrc ] && . ~/.bashrc`) and in a command name (`~/bin/foo`) is explained as a tilde expansion, as it is in other arguments. Before, it showed no expansion there.
 - A worked example now follows a first stage whose words hold a backslash, such as `printf "%s\n" b a | sort`, as bash reads them. Before, it showed made-up lines.
 - Japanese wording on the web page follows the project's style (the settings dialog said 消します where the rest says 削除します).
+- The explanations of `if`, of `;` before a reserved word, of `==` with no wildcard in `[[ ]]`, and of tar's file operands say what bash and tar do. Reading names `[[`, `]]` and each operand of `[[ ]]`.
 
 ## 0.9.0
 

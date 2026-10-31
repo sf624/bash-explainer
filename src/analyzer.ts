@@ -17,6 +17,7 @@ import { fileRead } from './semantics/env';
 import { shellState } from './semantics/state';
 import type { NestedScript } from './semantics/nested';
 import { statusModel } from './semantics/status';
+import { plainPatternText } from './semantics/globwords';
 import { wordMeaning } from './semantics/words';
 
 export { EXAMPLE_KINDS } from './analyzer-types';
@@ -99,7 +100,7 @@ export class Analyzer {
     // The summary above was made with the full explanations; the tree drops what its labels already say.
     for (const item of items) dropLabelEcho(claim(item, 'shell'));
     const resolveAt = (name: string, w: SyntaxNode) => resolve(cx, name, w, { quoted: w.type !== 'word' || w.text !== name });
-    if (opts.reading) result.reading = readingTree(tree, items, { lang: this.lang, resolve: resolveAt, meaning: (w) => wordMeaning(w, cx.state), arrayKind: (name, at) => arrayKind(cx, name, at), ...(cx.shell ? { shell: cx.shell } : {}) });
+    if (opts.reading) result.reading = readingTree(tree, items, { lang: this.lang, resolve: resolveAt, meaning: (w) => wordMeaning(w, cx.state), plainPattern: (w) => plainPatternText(w, cx.state), arrayKind: (name, at) => arrayKind(cx, name, at), ...(cx.shell ? { shell: cx.shell } : {}) });
     return result;
   }
 

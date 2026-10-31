@@ -322,7 +322,18 @@ function failureReported(n: SyntaxNode, root: SyntaxNode, state: StateModel, sta
   const sourced = !def && read !== 'script';
   const end = stopCommand(n, state, where === 'function');
   const quiet = (left.type === 'command' || left.type === 'redirected_statement') && outputsOf(left).err === '/dev/null' ? redirectionsOf(left).map((r) => r.text).join(' ') : '';
-  return { id: 'failure-reported-as-success', params: { where, name: def ? nameText(field(def, 'name')!) : '', left: shorten(left.text), right: shorten(msg.text), quiet, sourced, rewrite: [replaceNode(right, `{ ${said}; ${end}; }`)] } };
+  return { id: 'failure-reported-as-success', params: { where, name: def ? nameText(field(def, 'name')!) : '', left: uncut(left, 30), right: uncut(msg, 60), quiet, sourced, rewrite: [replaceNode(right, `{ ${said}; ${end}; }`)] } };
+}
+
+/**
+ * A statement as a note names it, never cut inside a word: its text on one line when it has no more than `max`
+ * characters, else the name of its command (`tar -czf "$backup" ~/docs 2>/dev/null` is `tar`), else shortened.
+ */
+function uncut(n: SyntaxNode, max: number): string {
+  const one = n.text.replace(/\s*\n\s*/g, ' ');
+  if (one.length <= max) return one;
+  const c = n.type === 'redirected_statement' ? field(n, 'body') : n;
+  return (c?.type === 'command' ? commandName(c) : undefined) ?? shorten(n.text);
 }
 
 /**
