@@ -12,7 +12,7 @@ import { resolveName, resolveRun } from './semantics/names';
 import { option, type StateModel } from './semantics/state';
 import { ancestor, childrenOnRows, descendants, field, fields, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
-import { bracketWords, testFails, writtenAsBracket } from './testexpr';
+import { bracketWords, operatorFits, testFails, writtenAsBracket } from './testexpr';
 import { staticWordValue, unquoteWord } from './staticword';
 import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
@@ -449,29 +449,12 @@ function comparisonAt(n: SyntaxNode, redirect: SyntaxNode): boolean {
   return !dest || /^\d+$/.test(staticWordValue(dest) ?? '') || operatorAt(n, redirect);
 }
 
-/**
- * Whether `redirect`, a redirection of the command `[` (`n`) before its last word, stands where a binary operator
- * would: one operand before it (the digits glued before it count as one, `[ 10>$max ]`) and none after, in the test
- * or in its part between `-a` and `-o` (`[ "$a" > "$b" ]`, `[ ! $a < $b ]`, `[ -n "$x" -a $a > $b ]`). (A `-a` or
- * `-o` at the start of a part is the unary operator, `[ -a f ]`.)
- */
+/** `operatorFits` (src/testexpr.ts) of `redirect`, a redirection of the command `[` (`n`) before its last word. */
 function operatorAt(n: SyntaxNode, redirect: SyntaxNode): boolean {
-  const values = args(n).map((w) => ({ w, v: staticWordValue(w) }));
-  // (The words of the part it is in: from the connector before it to the one after, or to `]`.)
-  const at = values.findIndex(({ w }) => w.startIndex > redirect.startIndex);
-  let start = at;
-  while (start > 0 && !connector(values, start - 1)) start--;
-  let end = at;
-  while (end < values.length && values[end].v !== ']' && !connector(values, end)) end++;
-  const before = values.slice(start, at).filter(({ v }, i) => !(i === 0 && (v === '!' || v === '(')));
-  const after = values.slice(at, end).filter(({ v }) => v !== ')');
-  const glued = /^\d+$/.test(field(redirect, 'descriptor')?.text ?? '') ? 1 : 0;
-  return before.length + glued === 1 && !after.length;
-}
-
-/** Whether the word at `i` joins two parts of a test, `-a` or `-o` after an operand. */
-function connector(values: readonly { v: string | undefined }[], i: number): boolean {
-  return (values[i].v === '-a' || values[i].v === '-o') && i > 0 && !['!', '(', '-a', '-o'].includes(values[i - 1].v ?? '');
+  const { words } = bracketWords(n);
+  const at = words.findIndex((w) => w.startIndex > redirect.startIndex);
+  const fd = field(redirect, 'descriptor')?.text;
+  return operatorFits(words, at < 0 ? words.length : at, fd && /^\d+$/.test(fd) ? fd : undefined);
 }
 
 /**

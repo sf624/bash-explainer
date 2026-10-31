@@ -77,7 +77,6 @@
     {"file":"src/fixes.ts","uses":[{"fn":"SAME_IN_TEST","kind":"option-regex","count":1,"reason":"the operators of `[ ]` and `[[ ]]` (`-f`, `-ef`), which are test syntax, not options"},{"fn":"ARITH_IN_TEST","kind":"option-regex","count":1,"reason":"the operators of `[ ]` and `[[ ]]` (`-eq`), which are test syntax, not options"}]},
     {"file":"src/hosts/yaml.ts","uses":[{"fn":"yamlShell","kind":"option-regex","count":1,"reason":"the YAML document markers `---` and `...`"},{"fn":"runsOn","kind":"option-regex","count":1,"reason":"the YAML document markers `---` and `...`"}]},
     {"file":"src/idioms.ts","uses":[{"fn":"argsLoop","kind":"option-literal","count":1,"reason":"the operators of `[ ]` and `[[ ]]` (`-v`, `-gt`, `-t`), which are test syntax, not options"}]},
-    {"file":"src/pitfalls.ts","uses":[{"fn":"connector","kind":"option-literal","count":3,"reason":"the operators that join the parts of `[ ]` (`-a`, `-o`, after `!` or `(`), which are test syntax, not options"}]},
     {"file":"src/semantics/effects.ts","uses":[{"fn":"setOptionWrites","kind":"dash-prefix","count":1,"reason":"the sign of a flag (`-e` on, `+e` off) that the interpreter already read"}]},
     {"file":"src/semantics/opening.ts","uses":[{"fn":"childOpening","kind":"dash-prefix","count":1,"reason":"the sign of a flag (`-e` on, `+e` off) that the interpreter already read"}]},
     {"file":"src/semantics/testwords.ts","uses":[{"fn":"testSplits","kind":"option-literal","count":1,"reason":"the operators of `[ ]` and `[[ ]]` (`-v`, `-gt`, `-t`), which are test syntax, not options"}]},

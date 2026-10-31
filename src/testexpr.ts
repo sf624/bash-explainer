@@ -298,6 +298,31 @@ function wordText(x: SyntaxNode): string | null {
   return literalContent(x)?.text ?? null;
 }
 
+/**
+ * Whether a `<` or `>` written among the words of a `[ ]` (`words`, before its `]`), before the word at `at`, with
+ * the digits glued before it (`fd`: `[ 10>$max ]`), stands where the operator of a comparison would: whether, once it
+ * is escaped (`[ "$a" \> "$b" ]`), bash reads the test with it as the operator of a `binary` node, in either release
+ * (the style checks do not take one). Its target is a word not known, never an operator. A redirection that stands
+ * there is a comparison read as a redirection (`redirect-in-bracket`, src/pitfalls.ts); elsewhere it is plainly meant
+ * as one (`[ "$n" -gt 0 2>"$log" ]`, `[ -t 0 < "$tty" ]`).
+ */
+export function operatorFits(words: readonly SyntaxNode[], at: number, fd: string | undefined): boolean {
+  const w = words.map(wordText);
+  const op = at + (fd ? 1 : 0);
+  w.splice(at, 0, ...(fd ? [fd] : []), '<', null);
+  const fits = (e: TestExpr): boolean => {
+    switch (e.type) {
+      case 'binary': return e.op === op;
+      case 'not': return fits(e.operand);
+      case 'group': return fits(e.inner);
+      case 'and': case 'or': return fits(e.left) || fits(e.right);
+      default: return false;
+    }
+  };
+  const e = parseTest(w, 'both');
+  return !!e && fits(e);
+}
+
 /** The words of a `[ ]` or of the arguments of `test`, read as one expression. */
 export function testOfWords(leaves: SyntaxNode[], rules: TestRules = '5.2'): BracketTest | undefined {
   // (Each node is a whole word: an argument of the command.)
