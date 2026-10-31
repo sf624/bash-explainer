@@ -382,7 +382,8 @@ export const MESSAGES = {
   // the manual does not say: checked. A new shell starts with its own options (3.7.3 lists what a command run apart
   // gets, and `shopt` options are not among them); the try-it shows it.)
   // (3.5.8.1: with globstar, `**` matches "zero or more directories"; without it, two `*`, each of which matches no `/`.)
-  'extglob-in-same-block': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('in-same-block')), { kind: 'checked', probe: 'state#extglob-off' }),
+  // (`sourced`: a file with no shebang, which an interactive shell may read with extglob on: messages-glob.ts.)
+  'extglob-in-same-block': withBasis(pitfall<{ use: string; sourced?: boolean }>(['3.5.8.1', '4.3.2'], extglobText('in-same-block'), undefined, ({ sourced }) => (sourced ? 'info' : 'warning')), { kind: 'checked', probe: 'state#extglob-off' }),
   'extglob-maybe-on': withBasis(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('maybe-on')), { kind: 'checked', probe: 'state#extglob-off' }),
   'extglob-turned-off': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('turned-off')), { kind: 'checked', probe: 'state#extglob-off' }),
   'extglob-not-found': withBasis(notProblem(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('not-found'))), { kind: 'checked', probe: 'state#extglob-off' }),

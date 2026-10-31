@@ -89,7 +89,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `local-outside-function`, when the file runs as a script (a shebang, a host's step, a `bash -c` string), out of a trap's action | `local` fails every time outside a function. |
 | `posix-special-function-name` | bash stops the script at the definition. |
 | `alias-not-expanded-in-script`, with no code the model does not read on a path before it | The alias is "command not found" in a script. Said where bash surely expands no alias: a shebang, a host's step, a `bash -c` string, or after `shopt -u expand_aliases` (the state's `expand_aliases`, which starts `on` in a README's code blocks and with `bash -i`, and not known in a file with no shebang: src/semantics/state.ts, `StateModel.read`). |
-| `extglob-in-same-block`, `extglob-turned-off`, `extglob-not-in-new-shell` | A syntax error, every time. |
+| `extglob-in-same-block` when the file runs as a script, `extglob-turned-off`, `extglob-not-in-new-shell` | A syntax error, every time. |
 | `globstar-unsupported` | `**` never reaches into subdirectories in that shell. |
 | `variable-not-in-remote-shell`, `variable-not-passed-by-wrapper`, `variable-not-exported` | The variable is empty where the string runs, every time. (Not for a name sudo keeps, `TERM`, `TZ`: `SlotLink.keeps`. `variable-not-exported` follows `fromEnvironment`: no note for a name the environment almost always has, a caveat for one in capitals, a clause for one in lower case.) |
 | `function-not-in-container`, `builtin-or-function-as-program`, `function-not-on-remote`, `function-not-in-new-shell-blocked`, `function-not-in-new-shell`, `function-not-imported`, `function-not-in-new-shell-export` | The function or builtin is not there: "command not found", or no effect. |
@@ -128,6 +128,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `nounset-unbound`, of a name in capitals (`fromEnvironment`: `maybe`) | Fine when the environment has it. |
 | `alias-maybe-not-expanded` | A file with no shebang: fine when an interactive shell reads it (`.bashrc`); "command not found" when it runs as a script. |
 | `distro-alias-in-script`, in a file with no shebang | Fine when an interactive shell reads it (`.bashrc`), where the distribution defines the alias; "command not found" when it runs as a script. |
+| `extglob-in-same-block`, in a file with no shebang | Fine when an interactive shell reads it with `extglob` on already (bash-completion turns it on); a syntax error when it runs as a script. |
 | `posix-special-function-name-maybe` | Only on the paths that turn POSIX mode on. |
 | `postfix-increment-status`, `postfix-decrement-status`, when `set -e` is not surely on there | Only when the value is 0, and only the status. |
 | `extglob-maybe-on`, `extglob-maybe-on-trap` | A syntax error only on some paths, or if the signal comes early. |

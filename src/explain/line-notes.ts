@@ -8,7 +8,7 @@ import { hasExtglob } from '../examples/shellwords';
 import { tx } from '../i18n';
 import { fact, factOf, MESSAGES } from '../messages';
 import { statementBefore } from '../rewrite';
-import { STATEMENTS } from '../semantics/env';
+import { readAs, STATEMENTS } from '../semantics/env';
 import { wordPatterns } from '../semantics/globwords';
 import { lostVariable } from '../semantics/pipeline';
 import { docLine } from '../semantics/state';
@@ -157,7 +157,9 @@ export function extglobPitfalls(cx: Explainer, root: SyntaxNode, line: number): 
   const state = shoptAt(cx, use, 'parse').extglob;
   if (state === 'on') return [];
   if (top !== use && shoptAt(cx, top).extglob !== 'on' && shoptAt(cx, use).extglob === 'on') {
-    return cx.say(fact(cx.lang, 'extglob-in-same-block', { use: use.text }), use);
+    // (A file with no shebang may be read by an interactive shell, `.bashrc`, which often has extglob on: a caveat.)
+    const sourced = readAs(cx.state.env(use), cx.state.read) === 'unknown';
+    return cx.say(fact(cx.lang, 'extglob-in-same-block', { use: use.text, ...(sourced ? { sourced } : {}) }), use);
   }
   // (A trap's action is read when its signal comes; another shell starts with its own options.)
   const id = state === 'unknown' ? (cx.nested === 'later' ? 'extglob-maybe-on-trap' : 'extglob-maybe-on')
