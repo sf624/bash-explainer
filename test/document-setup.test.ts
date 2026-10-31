@@ -148,15 +148,16 @@ describe('diagnosticsFor', () => {
   });
 
   it('shows the pitfalls unless diagnostics.pitfalls or notes.pitfalls is off, and keeps them in `all`', () => {
-    const bash = openDocument('#!/bin/bash\nx = 1\n[[ -n $a ]]\n', 'shell', parse);
-    const sh = openDocument('#!/bin/sh\nx = 1\n[[ -n $a ]]\n', 'shell', parse);
+    // (`read line` is a pitfall, a caveat; `x = 1` an error, which the settings do not hide.)
+    const bash = openDocument('#!/bin/bash\nread line\nx = 1\n[[ -n $a ]]\n', 'shell', parse);
+    const sh = openDocument('#!/bin/sh\nread line\nx = 1\n[[ -n $a ]]\n', 'shell', parse);
     const shown = (d: ShellDocument, s: Settings) => codes(run(d, shellsOf(d.lines, 'a.sh', undefined), s, 'lsp').shown);
-    assert.deepStrictEqual(shown(bash, defaultSettings()), ['assignment-with-spaces']);
-    assert.deepStrictEqual(shown(sh, defaultSettings()), ['dbracket', 'assignment-with-spaces']);
+    assert.deepStrictEqual(shown(bash, defaultSettings()), ['read-without-r', 'assignment-with-spaces']);
+    assert.deepStrictEqual(shown(sh, defaultSettings()), ['dbracket', 'read-without-r', 'assignment-with-spaces']);
     for (const off of [{ 'diagnostics.pitfalls': false }, { 'notes.pitfalls': false }]) {
-      assert.deepStrictEqual(shown(bash, mergeSettings(off)), [], JSON.stringify(off));
-      assert.deepStrictEqual(shown(sh, mergeSettings(off)), ['dbracket'], JSON.stringify(off));
-      assert.deepStrictEqual(codes(run(sh, shellsOf(sh.lines, 'a.sh', undefined), mergeSettings(off), 'web').all), ['dbracket', 'assignment-with-spaces']);
+      assert.deepStrictEqual(shown(bash, mergeSettings(off)), ['assignment-with-spaces'], JSON.stringify(off));
+      assert.deepStrictEqual(shown(sh, mergeSettings(off)), ['dbracket', 'assignment-with-spaces'], JSON.stringify(off));
+      assert.deepStrictEqual(codes(run(sh, shellsOf(sh.lines, 'a.sh', undefined), mergeSettings(off), 'web').all), ['dbracket', 'read-without-r', 'assignment-with-spaces']);
     }
     // The file's directives apply to them too, in `all` as well.
     const quiet = openDocument('#!/bin/bash\n# bash-explainer disable=assignment-with-spaces\nx = 1\n', 'shell', parse);

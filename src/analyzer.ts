@@ -8,7 +8,7 @@ import { pitfallFindings } from './pitfalls';
 import { wordFindings } from './wordfacts';
 import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 import { lookupCommand } from './dict/aliases';
-import { basisGate, plainNote } from './messages';
+import { basisGate, pitfallSaid, plainNote } from './messages';
 import { withoutBases, withTokenBases } from './tokenbases';
 import { pictureNote } from './ctlchars';
 import { withRewritesOf } from './rewrite';
@@ -66,7 +66,7 @@ export class Analyzer {
       ...new Set(cx.notes),
       ...statusNotes(cx, line, false),
       ...(cx.opts.idioms === false ? [] : cx.anchored(idiomsFound(statements, this.lang, cx.status).map((f) => ({ ...plainNote(f.text), node: f.node })))),
-      ...(cx.opts.pitfalls === false ? [] : cx.anchored(pitfallFindings(root, this.lang, line, line, cx.state, cx.shell))),
+      ...cx.anchored(pitfallFindings(root, this.lang, line, line, cx.state, cx.shell).filter((f) => pitfallSaid(f.level, cx.opts.pitfalls))),
       ...new Set(wordFindings(root, this.lang, cx.state, cx.shell, line, line).flatMap((w) => cx.say(w.fact, w.node))),
       ...extglobPitfalls(cx, root, line),
       ...unmatchedGlobPitfalls(cx, root, line),

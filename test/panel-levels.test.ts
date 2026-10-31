@@ -9,7 +9,7 @@ import { PanelServer, PanelTheme, servePanel } from './support/panel-page';
 import { until } from './support/site';
 
 // A plain fact, a caveat, a pitfall and an error, in the order found.
-const LINE = 'exit 300; read line; x = 1; [ -f a';
+const LINE = 'exit 300; read line; source lib.sh; [ -f a';
 
 /** A colour as the browser computes it. */
 const rgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
@@ -73,7 +73,7 @@ describe('the VS Code panel: the levels of the notes', function () {
     ]);
     assert.strictEqual(await page.locator('#notes .level-error svg.note-icon').getAttribute('aria-hidden'), 'true');
     assert.ok(n[0].text.startsWith('Error: [ has no'), n[0].text);
-    assert.ok(n[1].text.startsWith('Pitfall: x =…'), n[1].text);
+    assert.ok(n[1].text.startsWith('Pitfall: source lib'), n[1].text);
     assert.ok(n[3].text.startsWith('An exit status'), n[3].text);
     // The word is bold.
     assert.strictEqual(await page.locator('#notes .note-label').first().evaluate((e) => e.tagName), 'STRONG');
@@ -122,9 +122,9 @@ describe('the VS Code panel: the levels of the notes', function () {
   it('underlines the problems of the line in its copy, in the level\'s colour', async () => {
     const page = await open();
     const marked = await page.evaluate(`[...document.querySelectorAll('#line .squiggle')].map((s) => [s.textContent, /level-(\\w+)/.exec(s.className)[1], getComputedStyle(s).textDecorationStyle, getComputedStyle(s).textDecorationColor])`) as [string, string, string, string][];
-    // `read line` (read-without-r), `x = 1` (assignment-with-spaces) and `[ -f a` (bracket-missing-close), and nothing else.
+    // `read line` (read-without-r), `lib.sh` (source-searches-path) and `[ -f a` (bracket-missing-close), and nothing else.
     const parts = (level: string) => marked.filter((m) => m[1] === level).map((m) => m[0]).join('').replace(/\s/g, '');
-    assert.deepStrictEqual(['info', 'warning', 'error'].map(parts), ['readline', 'x=1', '[-fa']);
+    assert.deepStrictEqual(['info', 'warning', 'error'].map(parts), ['readline', 'lib.sh', '[-fa']);
     for (const [, level, style, colour] of marked) {
       assert.strictEqual(style, 'wavy');
       assert.strictEqual(colour, rgb(COLOURS.dark[level as 'error' | 'warning' | 'info']));

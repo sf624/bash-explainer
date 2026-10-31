@@ -221,7 +221,7 @@ describe('pitfalls', () => {
   });
 
   it('speaks Japanese, and only on the line where the construct starts', () => {
-    assert.match(notes('x = 1', 0, 'ja')[0], /^⚠ 落とし穴: `x =…` は代入ではなく/);
+    assert.match(notes('x = 1', 0, 'ja')[0], /^ⓧ エラー: `x =…` は代入ではなく/);
     assert.deepStrictEqual(notes('for f in $(ls); do\n  echo "$f"\ndone', 1), []);
   });
 });
@@ -455,8 +455,8 @@ const BASHES = ['bash', ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BAS
 describe('pitfalls: a file sourced by a name with no `/`', () => {
   const found = (src: string, lang: 'en' | 'ja' = 'en', shell?: Shell) => notes(src, src.split('\n').length - 1, lang, shell).filter((n) => /`\$PATH`/.test(n));
   it('says that bash looks in PATH first, then in the current directory, in both languages', () => {
-    assert.deepStrictEqual(found('source lib.sh'), ['ⓘ Caveat: `source lib.sh` looks for `lib.sh` in the directories of `$PATH` first, and only then in the current directory: a file of that name in `$PATH` runs instead, and the current directory is where the script was started from, not where it lies (cron starts in `$HOME`). Write `source ./lib.sh`, or a path from the script\'s directory: `source "$(dirname "$0")/lib.sh"`']);
-    assert.deepStrictEqual(found('source lib.sh', 'ja'), ['ⓘ 注意: `source lib.sh` は `lib.sh` をまず `$PATH` のディレクトリから探し、見つからないときだけカレントディレクトリを探します。`$PATH` に同じ名前のファイルがあればそちらが実行され、カレントディレクトリはスクリプトの場所ではなく、起動したときの場所です（cron なら `$HOME`）。`source ./lib.sh` か、スクリプトのディレクトリからのパス（`source "$(dirname "$0")/lib.sh"`）を書きます']);
+    assert.deepStrictEqual(found('source lib.sh'), ['⚠ Pitfall: `source lib.sh` looks for `lib.sh` in the directories of `$PATH` first, and only then in the current directory: a file of that name in `$PATH` runs instead, and the current directory is where the script was started from, not where it lies (cron starts in `$HOME`). Write `source ./lib.sh`, or a path from the script\'s directory: `source "$(dirname "$0")/lib.sh"`']);
+    assert.deepStrictEqual(found('source lib.sh', 'ja'), ['⚠ 落とし穴: `source lib.sh` は `lib.sh` をまず `$PATH` のディレクトリから探し、見つからないときだけカレントディレクトリを探します。`$PATH` に同じ名前のファイルがあればそちらが実行され、カレントディレクトリはスクリプトの場所ではなく、起動したときの場所です（cron なら `$HOME`）。`source ./lib.sh` か、スクリプトのディレクトリからのパス（`source "$(dirname "$0")/lib.sh"`）を書きます']);
     assert.strictEqual(found('source lib.sh', 'en', 'bash').length, 1);
     assert.strictEqual(found('shopt -s sourcepath\nsource lib.sh').length, 1);
     // (`command` and `builtin` run the builtin in this shell.)
@@ -465,7 +465,7 @@ describe('pitfalls: a file sourced by a name with no `/`', () => {
     // (A name in quotes or with a backslash runs the builtin too.)
     assert.strictEqual(found('\\source lib.sh').length, 1);
     assert.strictEqual(found("'.' lib.sh").length, 1);
-    assert.match(found('[ -f lib.sh ] && . "lib.sh"')[0], /^ⓘ Caveat: `\. lib\.sh` looks for `lib\.sh` in the directories of `\$PATH` first.* Write `\. \.\/lib\.sh`/);
+    assert.match(found('[ -f lib.sh ] && . "lib.sh"')[0], /^⚠ Pitfall: `\. lib\.sh` looks for `lib\.sh` in the directories of `\$PATH` first.* Write `\. \.\/lib\.sh`/);
   });
   it('says that only PATH is searched in POSIX mode and in sh', () => {
     for (const [src, shell] of [['set -o posix\n. lib.sh', undefined], ['. lib.sh', 'sh'], ['. lib.sh', 'dash'], ['. lib.sh', 'ash']] as const) {

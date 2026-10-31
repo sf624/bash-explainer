@@ -8,7 +8,7 @@ import type { Browser, Page } from 'playwright-core';
 import { cursorToLine, openSite, until } from './support/site';
 
 // Line 1: a caveat; line 2: a warning, then a caveat; line 3: an error.
-const SCRIPT = 'read line\nx = 1; read other\n[ -f a';
+const SCRIPT = 'read line\nsource lib.sh; read other\n[ -f a';
 
 describe('the web page: the Problems strip', function () {
   this.timeout(120000);
@@ -58,7 +58,7 @@ describe('the web page: the Problems strip', function () {
       await until('the first of line 2', () => pos(page), (t) => t === ln(2, 2));
       await rows.nth(2).click();
       await until('the second of line 2', () => pos(page), (t) => t === ln(2, 3));
-      assert.strictEqual(await activeLine(page), 'x = 1; read other');
+      assert.strictEqual(await activeLine(page), 'source lib.sh; read other');
       assert.strictEqual(await page.locator('#problem-pos-said').textContent(), lang === 'en' ? 'Problem 3 of 4, line 2' : '4 件中 3 件目の問題、2 行目');
       // F8 from the last problem goes round to the first; Shift+F8 back to the last.
       await page.keyboard.press('Control+End');

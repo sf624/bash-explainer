@@ -333,14 +333,14 @@ describe('the hover Markdown', () => {
 
   it('shows each note with its level: its codicon and word in its colour, errors first', () => {
     // A plain fact, a caveat, a pitfall and an error, in the order found.
-    const doc = open('exit 300; read line; x = 1; [ -f a');
+    const doc = open('exit 300; read line; source lib.sh; [ -f a');
     const notes = (md: string) => md.split('\n').filter((l) => isNote(l));
     const whole = (theme: ThemeKind) => notes(wholeLine(input(doc, 0, { theme })));
     const w = 'var(--vscode-editorWarning-foreground)';
     const i = 'var(--vscode-editorInfo-foreground)';
     const [error, warning, info, note] = whole('dark');
     assert.ok(error.startsWith('<span style="color:#fd6358;">$(error)</span> <span style="color:#fd6358;"><strong>Error:</strong></span> `[` has no'), error);
-    assert.ok(warning.startsWith(`<span style="color:${w};">$(warning)</span> <span style="color:${w};"><strong>Pitfall:</strong></span> \`x =…\` runs`), warning);
+    assert.ok(warning.startsWith(`<span style="color:${w};">$(warning)</span> <span style="color:${w};"><strong>Pitfall:</strong></span> \`source lib.sh\` looks`), warning);
     assert.ok(info.startsWith(`<span style="color:${i};">$(info)</span> <span style="color:${i};"><strong>Caveat:</strong></span> without`), info);
     // (A plain fact: the info icon, muted, and no word.)
     assert.ok(note.startsWith('<span style="color:var(--vscode-descriptionForeground);">$(info)</span> An exit status'), note);
@@ -355,10 +355,10 @@ describe('the hover Markdown', () => {
     assert.match(whole('highContrastLight')[1], /^<span style="color:#704500;">/);
     // The part's hover shows its own the same way, and the sanitizer keeps every colour.
     const at = (text: string) => doc.lines[0].indexOf(text);
-    assert.deepStrictEqual([at('[ -f'), at('x ='), at('read'), at('exit')].flatMap((c) => notes(partMd(doc, 0, c))), whole('dark'));
+    assert.deepStrictEqual([at('[ -f'), at('lib.sh'), at('read'), at('exit')].flatMap((c) => notes(partMd(doc, 0, c))), whole('dark'));
     for (const theme of ['light', 'dark', 'highContrast', 'highContrastLight'] as const) {
       checkHtml(wholeLine(input(doc, 0, { theme })), `levels ${theme}`);
-      for (const c of [at('[ -f'), at('x ='), at('read'), at('exit')]) checkHtml(partMd(doc, 0, c, { theme }), `levels, part ${theme}`);
+      for (const c of [at('[ -f'), at('lib.sh'), at('read'), at('exit')]) checkHtml(partMd(doc, 0, c, { theme }), `levels, part ${theme}`);
     }
     // In Japanese, the word of the language.
     const ja = notes(wholeLine(input(doc, 0, { lang: 'ja' })));

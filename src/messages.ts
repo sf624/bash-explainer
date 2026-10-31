@@ -174,7 +174,7 @@ export const MESSAGES = {
   // that discard its own error message (`2>/dev/null`), or ''. `rewrite`: src/statusfacts.ts; `sourced`: it ends with
   // `return 1 2>/dev/null || exit 1`. (3.2.4: a list's status is that of its last command; 3.3: a function's, that of
   // its last command; 4.3.1: a failure left of `||` does not stop `set -e`. 6.1, 3.6, 4.1 not cited: at most three.)
-  'failure-reported-as-success': suggests(caveat<{ where: 'function' | 'script' | 'fragment' | 'errexit'; name: string; left: string; right: string; quiet: string; sourced: boolean; rewrite: readonly Rewrite[] }>(['3.2.4', '3.3', '4.3.1'], ({ where, name, left, right, quiet, sourced, rewrite }) => {
+  'failure-reported-as-success': suggests(pitfall<{ where: 'function' | 'script' | 'fragment' | 'errexit'; name: string; left: string; right: string; quiet: string; sourced: boolean; rewrite: readonly Rewrite[] }>(['3.2.4', '3.3', '4.3.1'], ({ where, name, left, right, quiet, sourced, rewrite }) => {
     const ja = {
       function: `これは関数 \`${name}\` の最後のコマンドなので、\`${left}\` が失敗しても \`${name}\` は \`${right}\` の終了ステータス 0 を返し、呼び出し元には成功に見えます。`,
       script: `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗してもスクリプトは \`${right}\` の終了ステータス 0 で終わり、呼び出し元（cron や CI、\`./script && next\`）には成功に見えます。`,
@@ -722,12 +722,21 @@ export function factOf(lang: Lang, spec: FactSpec): Fact {
 export type { Words };
 
 /**
- * The one gate of the `notes.pitfalls` setting: the facts that are said, which are all but the pitfalls when the
- * pitfalls are off; a fact at a level that fails every time (an error) is said either way, since it is a bug, not
- * advice. The analyzer, the bats facts and the host notes all say their facts through it.
+ * The one rule of the `notes.pitfalls` setting: whether a pitfall of `level` is said, which it is unless the pitfalls
+ * are off; one at a level that fails every time (an error) is said either way, since it is a bug, not advice. `said`
+ * reads it for the facts, the analyzer for the style checks (src/pitfalls.ts).
+ */
+export function pitfallSaid(level: NoteLevel, pitfalls: boolean | undefined): boolean {
+  return pitfalls !== false || alwaysFails(level);
+}
+
+/**
+ * The one gate of the `notes.pitfalls` setting for the facts: those that are said, which are all but the pitfalls when
+ * the pitfalls are off, but the errors (`pitfallSaid`). The analyzer, the bats facts and the host notes all say their
+ * facts through it.
  */
 export function said(facts: readonly Fact[], pitfalls: boolean | undefined): Fact[] {
-  return facts.filter((f) => f.kind !== 'pitfall' || pitfalls !== false || alwaysFails(f.level));
+  return facts.filter((f) => f.kind !== 'pitfall' || pitfallSaid(f.level, pitfalls));
 }
 
 /**

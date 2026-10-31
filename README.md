@@ -128,7 +128,7 @@ Warnings appear in VS Code's Problems panel, so you see them without hovering, a
 
 Fixes are offered only when the script's shell lacks the construct, and only when the meaning is kept: `[[ $f == *.txt ]]` is a pattern match, so it gets no fix. Each rewrite is checked to behave in dash as the original does in bash. To silence a warning, add `# bash-explainer disable=<code>` on the line before it (or after the code on the same line), `# bash-explainer disable-file=<code>` anywhere for the whole file, or list the code in `bashExplainer.diagnostics.ignore`; `all` matches every warning. Turn the Problems panel entries off with `bashExplainer.diagnostics.enabled`.
 
-Problems have three levels, as VS Code's own: **ⓧ Error** (red) for a line that fails every time as written (`[` without `]`, a construct the script's shell lacks, `then` with no `;` before it), **⚠ Warning** (yellow) for damage that cannot be undone under some values or conditions (`rm -rf $DIR/*` with an empty `DIR`, `rm $f`, `x = 1`), and **ⓘ Information** (blue) for what goes wrong only with some values or on some systems, or goes unnoticed (`for f in $(ls)`, `cat $f`, `read` without `-r`, `local x=$(cmd)`). The explanations (in the panel, the hover, the terminal and on the web page) show each level with its own icon, colour and word ("Error:", "Pitfall:", "Caveat:"), errors first; the Problems lists show its icon. Every error, warning and caveat the explanations point out is a problem too, each with its code; a plain fact is not. `bashExplainer.diagnostics.pitfalls` leaves the warnings and caveats out, not the errors. `--check` and the GitHub Action fail on an error, on a warning only with `--strict`, and never on information.
+Problems have three levels, as VS Code's own: **ⓧ Error** (red) for a line that fails every time as written (`[` without `]`, `x = 1`, a construct the script's shell lacks, `then` with no `;` before it), **⚠ Warning** (yellow) for damage that cannot be undone under some values or conditions (`rm -rf $DIR/*` with an empty `DIR`, `rm $f`, `curl … | sh`), and **ⓘ Information** (blue) for what goes wrong only with some values or on some systems, or goes unnoticed (`for f in $(ls)`, `cat $f`, `read` without `-r`, `local x=$(cmd)`). The explanations (in the panel, the hover, the terminal and on the web page) show each level with its own icon, colour and word ("Error:", "Pitfall:", "Caveat:"), errors first; the Problems lists show its icon. Every error, warning and caveat the explanations point out is a problem too, each with its code; a plain fact is not. `bashExplainer.diagnostics.pitfalls` leaves the warnings and caveats out, not the errors. `--check` and the GitHub Action fail on an error, on a warning only with `--strict`, and never on information.
 
 ## In VS Code
 
@@ -226,7 +226,7 @@ The panel works like regex101:
 | `bashExplainer.examples.placement` | `first` | Worked examples under the part they illustrate, before (`first`) or after (`last`) its pieces, or all at the end (`bottom`) |
 | `bashExplainer.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |
 | `bashExplainer.notes.idioms` | `true` | Notes about well-known idioms (strict mode, `IFS= read -r`…) |
-| `bashExplainer.notes.pitfalls` | `true` | Point out common mistakes and how to avoid them (`x = 1`, unquoted variables, `for f in $(ls)`…) |
+| `bashExplainer.notes.pitfalls` | `true` | Point out common mistakes and how to avoid them (unquoted variables, `for f in $(ls)`, `rm -rf $DIR/…`…); errors (`x = 1`) are pointed out either way |
 | `bashExplainer.notes.basis` | `true` | Mark a note, or the explanation of a part, that rests on bash's behaviour rather than the manual ("Not in the manual · checked with bash 5.2"), with a command to try it in your terminal |
 | **Checks** | | |
 | `bashExplainer.shell` | `auto` | The shell scripts are written for: `auto`, `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` |
@@ -234,7 +234,7 @@ The panel works like regex101:
 | `bashExplainer.diagnostics.enabled` | `true` | Errors and warnings in the Problems panel, with quick fixes |
 | `bashExplainer.diagnostics.ignore` | `[]` | Warning codes to leave out (the code shown in the Problems panel, e.g. `dbracket`, `echoE`, `dockerPipefail`) |
 | `bashExplainer.diagnostics.embedded` | `true` | Also warn about shell code inside other files |
-| `bashExplainer.diagnostics.pitfalls` | `true` | Also list the warnings and caveats of the explanations in the Problems panel (`x = 1`, `rm -rf $DIR/*`, `rm $f`: warnings; `cat $f`, `read line`: information); their errors (`[` without `]`) are listed either way |
+| `bashExplainer.diagnostics.pitfalls` | `true` | Also list the warnings and caveats of the explanations in the Problems panel (`rm -rf $DIR/*`, `rm $f`: warnings; `cat $f`, `read line`: information); their errors (`[` without `]`, `x = 1`) are listed either way |
 | `bashExplainer.yq.flavor` | `auto` | `auto`, `mikefarah4`, `kislyuk` or `mikefarah3` |
 | **Files** | | |
 | `bashExplainer.embedded.files` | all | Files whose shell code is explained: `dockerfile`, `makefile`, `yaml`, `packageJson`, `markdown`, `python`, `jenkinsfile`, `bats` |

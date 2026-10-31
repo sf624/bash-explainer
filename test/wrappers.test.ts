@@ -362,15 +362,15 @@ describe('a { } group that is not closed', () => {
     for (const src of ['{ echo a; echo b }', 'f() { echo a; echo b }', 'if true; then { echo a }']) {
       const n = notes(src);
       assert.strictEqual(n.length, 1, src);
-      assert.match(n[0], /^⚠ Pitfall: `\}` needs a `;` or a newline before it\. As written, `\}` is an argument of `echo`/);
+      assert.match(n[0], /^ⓧ Error: `\}` needs a `;` or a newline before it\. As written, `\}` is an argument of `echo`/);
     }
-    assert.match(notes('{ echo a; echo b }', 'ja')[0], /^⚠ 落とし穴: `\}` の前に `;` か改行が必要です。このままでは `\}` は `echo` の引数で/);
+    assert.match(notes('{ echo a; echo b }', 'ja')[0], /^ⓧ エラー: `\}` の前に `;` か改行が必要です。このままでは `\}` は `echo` の引数で/);
   });
   it('{ needs a space after it', () => {
     const n = notes('{echo a;}');
     assert.strictEqual(n.length, 1);
-    assert.match(n[0], /^⚠ Pitfall: there is no space after `\{`, so `\{echo` is a command name, not the start of a group/);
-    assert.match(notes('{echo a;}', 'ja')[0], /^⚠ 落とし穴: `\{echo` は `\{` の直後に空白がないので/);
+    assert.match(n[0], /^ⓧ Error: there is no space after `\{`, so `\{echo` is a command name, not the start of a group/);
+    assert.match(notes('{echo a;}', 'ja')[0], /^ⓧ エラー: `\{echo` は `\{` の直後に空白がないので/);
   });
   it('says nothing about a closed group, or a brace expansion', () => {
     for (const src of ['{ echo a; echo b; }', '{ echo a; echo b\n}', 'echo }', 'echo {a,b}', '{echo,hi}', 'echo a }']) assert.deepStrictEqual(notes(src), [], src);

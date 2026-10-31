@@ -26,7 +26,7 @@ describe('the web page: the levels of the notes', function () {
       await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
       await page.locator('.cm-content').click();
       await page.keyboard.press('Control+A');
-      await page.keyboard.insertText('exit 300; read line; x = 1; [ -f a');
+      await page.keyboard.insertText('exit 300; read line; source lib.sh; [ -f a');
       await until('the line explained', () => panel().locator('#notes .note').count(), (n) => n === 4);
       const notes = await panel().evaluate(`[...document.querySelectorAll('#notes .note')].map((p) => {
         const label = p.querySelector('.note-label');
@@ -48,7 +48,7 @@ describe('the web page: the levels of the notes', function () {
         levels.set(key, [...(levels.get(key) ?? []), t!]);
       }
       assert.deepStrictEqual([...levels].map(([key, parts]) => [parts.join('').replace(/\s/g, ''), ...key.split(/ (?=rgb)/)]), [
-        ['readline', 'level-info', rgb(info)], ['x=1', 'level-warning', rgb(warning)], ['[-fa', 'level-error', rgb(error)],
+        ['readline', 'level-info', rgb(info)], ['lib.sh', 'level-warning', rgb(warning)], ['[-fa', 'level-error', rgb(error)],
       ]);
       // The Problems list: ⓧ, ⚠ and ⓘ, in the levels' colours, an error's message without the word "Error:"; in the
       // order of the script.
@@ -69,7 +69,7 @@ describe('the web page: the levels of the notes', function () {
       // media/icons.js, as a mask) in that colour. (A line's marker is of its worst problem: a line of errors, one of
       // information, one of a warning.)
       await page.keyboard.press('Control+End');
-      await page.keyboard.insertText('\nread other\nx = 2');
+      await page.keyboard.insertText('\nread other\nsource lib2.sh');
       await until('the markers', () => page.locator('.cm-lint-marker-info, .cm-lint-marker-warning').count(), (n) => n === 2);
       const marks = await page.evaluate(`(['error', 'warning', 'info']).map((level) => {
         const range = getComputedStyle(document.querySelector('.cm-lintRange-' + level));

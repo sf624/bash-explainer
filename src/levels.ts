@@ -14,8 +14,8 @@ import type { ThemeKind } from './ui/palette';
  *   settings say, and it fails `--check`.
  * - `warning` (⚠ "Pitfall" / 「落とし穴」, yellow): damage that cannot be undone under some values or conditions, or a
  *   failure that turns the script's own exit status into success (`rm -rf $DIR/*` with an empty DIR, a stop under
- *   `set -u` of a name the environment may give); and, until they move to `error` (three-levels.md, step 3), the style
- *   checks that fail every time (`x = 1`).
+ *   `set -u` of a name the environment may give, `cmd || echo failed` at the end of a script, `source lib.sh` that
+ *   searches `$PATH`).
  * - `info` (ⓘ "Caveat" / 「注意」, blue): it goes wrong only with some values or systems and the damage is limited, or
  *   a failure goes unnoticed (`echo $x`, `read line`, `local x=$(false)`). A dialect note on a construct that works
  *   differently in the target shell is `info` too, with the word "Portability" / 「移植性」.

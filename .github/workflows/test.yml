@@ -299,9 +299,10 @@ jobs:
           test "$LENIENT" = "$WARNINGS"
           node -e 'const s = JSON.parse(require("fs").readFileSync(process.env.SARIF, "utf8")); if (!s.runs[0].results.some((r) => r.ruleId === "dbracket")) process.exit(1)'
 
-      # A warning fails the step only with strict; `warnings` counts what fails it, `pitfalls` every pitfall.
+      # A warning fails the step only with strict; `warnings` counts what fails it, `pitfalls` every pitfall
+      # (a warning, `curl … | sh`, and a caveat, `read line`).
       - name: Write a bash script with a pitfall
-        run: printf '#!/bin/bash\nx = 1\nread line\n' > "$RUNNER_TEMP/pitfall.sh"
+        run: printf '#!/bin/bash\ncurl -s "$u" | sh\nread line\n' > "$RUNNER_TEMP/pitfall.sh"
 
       - name: A warning fails the step with strict
         id: strict
@@ -335,9 +336,10 @@ jobs:
           test "$LENIENT_WARNINGS" = 0
           test "$LENIENT_PITFALLS" = 2
 
-      # An error (a line that fails every time) fails the step without strict, and is no pitfall.
-      - name: Write a bash script with an error and a pitfall
-        run: printf '#!/bin/bash\nreadonly r=1\nunset r\nx = 1\n' > "$RUNNER_TEMP/error.sh"
+      # An error (a line that fails every time) fails the step without strict, and is no pitfall: `unset` of a
+      # read-only variable, and the style check `x = 1`. `read line` is a caveat, a pitfall that fails nothing.
+      - name: Write a bash script with errors and a pitfall
+        run: printf '#!/bin/bash\nreadonly r=1\nunset r\nx = 1\nread line\n' > "$RUNNER_TEMP/error.sh"
 
       - name: An error fails the step without strict
         id: error
@@ -355,8 +357,8 @@ jobs:
           PITFALLS: ${{ steps.error.outputs.pitfalls }}
         run: |
           test "$OUTCOME" = failure
-          test "$ERRORS" = 1
-          test "$WARNINGS" = 1
+          test "$ERRORS" = 2
+          test "$WARNINGS" = 2
           test "$PITFALLS" = 1
 
       # bash 5.3's `${ cmd; }` is an error for bash 5.2 (the default), and none with bash-version 5.3.

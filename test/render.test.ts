@@ -62,7 +62,7 @@ describe('placeExamples', () => {
 
 describe('the levels of the notes', () => {
   // A plain fact, a caveat and a pitfall, in the order found.
-  const src = 'exit 300; read line; x = 1';
+  const src = 'exit 300; read line; source lib.sh';
   const ex = () => new Analyzer('en').explainLine(parser.parse(src), 0);
   const notes = (md: string) => md.split('\n').filter((l) => l.startsWith('> '));
 
@@ -77,7 +77,7 @@ describe('the levels of the notes', () => {
 
   it('keeps the mark in plain Markdown, with the word in bold', () => {
     const [warning, info, note] = notes(toPlainMarkdown(ex(), src, 'a.sh:1'));
-    assert.ok(warning.startsWith('> ⚠ **Pitfall:** `x =…` runs'), warning);
+    assert.ok(warning.startsWith('> ⚠ **Pitfall:** `source lib.sh` looks'), warning);
     assert.ok(info.startsWith('> ⓘ **Caveat:** without `-r`'), info);
     assert.ok(note.startsWith('> ℹ An exit status'), note);
     const ja = notes(toPlainMarkdown(new Analyzer('ja').explainLine(parser.parse(src), 0), src, 'a.sh:1', 'ja'));
@@ -86,7 +86,7 @@ describe('the levels of the notes', () => {
 
   it('gives the panel each note with its level, its word and the rest, warnings first', () => {
     const msg = panelUpdate({ lang: 'en', explanation: ex(), file: 'a.sh', line: 0, lineText: src, choice: {}, placement: 'first', animations: true });
-    assert.deepStrictEqual(msg.notes.map((n) => [n.level, n.label, n.body.slice(0, 8)]), [['warning', 'Pitfall:', '`x =…` r'], ['info', 'Caveat:', 'without '], ['note', '', 'An exit ']]);
+    assert.deepStrictEqual(msg.notes.map((n) => [n.level, n.label, n.body.slice(0, 8)]), [['warning', 'Pitfall:', '`source '], ['info', 'Caveat:', 'without '], ['note', '', 'An exit ']]);
     assert.deepStrictEqual(msg.notes[2].refs, ['3.7.5']);
     // (Each with its level's look from the level table: the class, the icon, and the icon's name for a screen reader.)
     assert.deepStrictEqual(msg.notes.map((n) => [n.className, n.icon, n.iconName]), [['level-warning', 'warning', 'Warning'], ['level-info', 'info', 'Information'], ['level-note', 'info', 'Note']]);

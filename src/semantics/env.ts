@@ -378,8 +378,8 @@ export function droppedBy(env: ExecEnv, name: string): SlotLink | undefined {
 }
 
 /**
- * Whether `name` matches the pattern `p` of ssh_config(5) (PATTERNS), as sudo's and ssh's lists of names use: `*`
- * stands for any text, `?` for one character.
+ * Whether `name` matches the pattern `p` of ssh_config(5) (PATTERNS), as ssh's lists of names use: `*` stands for
+ * any text, `?` for one character. (sudo's `env_keep` takes only a `*` at the end, `LC_*`; its names here have no other.)
  */
 function matches(p: string, name: string): boolean {
   if (p === '') return name === '';

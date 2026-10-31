@@ -207,14 +207,17 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
     const shell = link.shell!;
     if (res && res.kind !== 'function') {
       const f = fn!;
-      // (Another shell does not have it: the function's definition is in `missed`, src/semantics/names.ts.)
-      cx.note(shadowed(f, missed!.def, 'shell') ?? (missed?.why === 'not-passed' && blocker !== link
+      // (Another shell does not have it: the function's definition is in `missed`, src/semantics/names.ts. None is
+      // there where the function is defined only later, after a file read with `source`, which may define it and export
+      // it (`. ./lib.sh; bash -c f; f() { …; }`): then its first definition, and a caveat, as after code not read.)
+      const def = missed?.def ?? cx.state.definitions.functions.get(f)![0];
+      cx.note(shadowed(f, def, 'shell') ?? (missed?.why === 'not-passed' && blocker !== link
         ? fact(cx.lang, 'function-not-in-new-shell-blocked', { via, fn: f, blocker: blocker!.via })
         : missed?.why === 'not-passed'
         ? fact(cx.lang, 'function-not-in-new-shell', { via, fn: f })
         : missed?.why === 'not-imported'
         ? fact(cx.lang, 'function-not-imported', { via, shell, fn: f })
-        : fact(cx.lang, 'function-not-in-new-shell-export', { via, fn: f, ...(missed?.maybe === 'unread' ? { unread: true } : {}) })), first);
+        : fact(cx.lang, 'function-not-in-new-shell-export', { via, fn: f, ...(!missed || missed.maybe === 'unread' ? { unread: true } : {}) })), first);
     } else if (missed?.why === 'not-imported') {
       // (`sh` is dash on Debian and Ubuntu, bash elsewhere.)
       cx.note(fact(cx.lang, 'function-not-imported-sh', { via, fn: fn! }), first);

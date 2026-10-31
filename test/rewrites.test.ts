@@ -62,12 +62,12 @@ describe('the rewrites of `failure-reported-as-success`', () => {
     assert.strictEqual(said('>/a/very/long/path/to/some/file.log || echo failed'), '`>/a/very/long/path/to/some/fi…` / `echo failed`');
   });
   it('says the case of a file with no shebang as a condition, and not for a code block typed into a terminal', () => {
-    assert.match(factsOf('cp a b || echo failed', 'failure-reported-as-success')[0].text, /^ⓘ Caveat: if this file is run as a script, this is its last command, so when `cp a b` fails/);
+    assert.match(factsOf('cp a b || echo failed', 'failure-reported-as-success')[0].text, /^⚠ Pitfall: if this file is run as a script, this is its last command, so when `cp a b` fails/);
     const md = new Analyzer('en').explainLine(parser.parse('cp a b || echo failed'), 0, undefined, { host: { kind: 'markdown' } }).facts ?? [];
     assert.deepStrictEqual(md.filter((f) => f.id === 'failure-reported-as-success'), []);
     // (A script a host runs, a Dockerfile `RUN`, is run as a script.)
     const run = new Analyzer('en').explainLine(parser.parse('cp a b || echo failed'), 0, undefined, { host: { kind: 'dockerfile' } }).facts ?? [];
-    assert.match(run.find((f) => f.id === 'failure-reported-as-success')!.text, /^ⓘ Caveat: this is the last command of the script.*`… \|\| \{ echo failed >&2; exit 1; \}`$/);
+    assert.match(run.find((f) => f.id === 'failure-reported-as-success')!.text, /^⚠ Pitfall: this is the last command of the script.*`… \|\| \{ echo failed >&2; exit 1; \}`$/);
   });
 
   // Each input, and how its file is read: run (a shebang) or maybe sourced. `@next` marks what runs after the line.

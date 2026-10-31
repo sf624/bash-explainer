@@ -561,6 +561,13 @@ describe('pitfalls that bash contradicted', function () {
       const fnNote = noteOf(fn, 'function-not-in-new-shell-export', 3)!;
       assert.strictEqual(fnNote.level, 'info');
       assert.match(fnNote.body, /does not have this script's function `f`, unless code that runs before it and is not read here, such as a file read with `source` or an `eval`, defines it there\./);
+      // (A function the script defines only after the call, with a file read with `source` before it: that file may
+      // define it and export it, so a caveat, or the program of that name runs. This crashed (review of #557).)
+      write('defines.sh', 'f() { echo FUNC; }\nexport -f f\n');
+      const later = "#!/bin/bash\n. ./defines.sh\nbash -c f\nf() { echo LATER; }\n";
+      assert.strictEqual((await run('later-fn.sh', later)).stdout, 'FUNC\n');
+      assert.strictEqual(noteOf(later, 'function-not-in-new-shell-export', 2)!.level, 'info');
+      assert.strictEqual(noteOf("#!/bin/bash\n. ./defines.sh\nbash -c 'ls /'\nls() { command ls -F \"$@\"; }\n", 'function-shadowed-by-program', 2)!.level, 'info');
       // (bash exports no array, whatever that code does: still an error.)
       write('exports-arr.sh', 'export arr\n');
       const arr = "#!/bin/bash\narr=(a b)\n. ./exports-arr.sh\nbash -c 'echo \"[$arr]\"'\n";
