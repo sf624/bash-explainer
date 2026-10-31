@@ -18,7 +18,7 @@ import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
 import type { ConventionId } from './conventions';
 import { marked, type Note } from './messages';
-import { STYLE_LEVELS, STYLE_MAYBE_LEVELS, type StyleCode } from './messages-levels';
+import { STYLE_LEVELS, type StyleCase, type StyleCode } from './messages-levels';
 import { type Rewrite, replaceNode, replaceSpan, stopCommand, textBetween, type TextEdit } from './rewrite';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
@@ -158,7 +158,7 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
 }
 
 /** The codes of the style checks, and their levels (src/messages-levels.ts, beside the catalog's). */
-export { STYLE_LEVELS, STYLE_MAYBE_LEVELS, type StyleCode };
+export { STYLE_LEVELS, type StyleCode };
 
 /**
  * The habit each style check's advice is, when it is one (docs/design/basis-spec-convention.md, 2.3: the checks sorted
@@ -439,20 +439,52 @@ function braceSpaced(n: SyntaxNode, nameWord: SyntaxNode, a: readonly SyntaxNode
 }
 
 /**
+ * Whether `redirect`, a redirection of the command `[` (`n`) before its last word, stands for a comparison: its target
+ * is a number (`[ 5>3 ]`, `[ $a 2>5 ]`), or it stands where a binary operator would (`operatorAt`). Elsewhere it is
+ * plainly meant as a redirection, and the test is the one written: `[ "$n" -gt 0 2>"$log" ]`, `[ -t 0 < "$tty" ]`.
+ */
+function comparisonAt(n: SyntaxNode, redirect: SyntaxNode): boolean {
+  // (With no word after it, `[ a < > c ]`, which bash refuses, it is still said.)
+  const dest = field(redirect, 'destination');
+  return !dest || /^\d+$/.test(staticWordValue(dest) ?? '') || operatorAt(n, redirect);
+}
+
+/**
+ * Whether `redirect`, a redirection of the command `[` (`n`) before its last word, stands where a binary operator
+ * would: one operand before it (the digits glued before it count as one, `[ 10>$max ]`) and none after, in the test
+ * or in its part between `-a` and `-o` (`[ "$a" > "$b" ]`, `[ ! $a < $b ]`, `[ -n "$x" -a $a > $b ]`). (A `-a` or
+ * `-o` at the start of a part is the unary operator, `[ -a f ]`.)
+ */
+function operatorAt(n: SyntaxNode, redirect: SyntaxNode): boolean {
+  const values = args(n).map((w) => ({ w, v: staticWordValue(w) }));
+  // (The words of the part it is in: from the connector before it to the one after, or to `]`.)
+  const at = values.findIndex(({ w }) => w.startIndex > redirect.startIndex);
+  let start = at;
+  while (start > 0 && !connector(values, start - 1)) start--;
+  let end = at;
+  while (end < values.length && values[end].v !== ']' && !connector(values, end)) end++;
+  const before = values.slice(start, at).filter(({ v }, i) => !(i === 0 && (v === '!' || v === '(')));
+  const after = values.slice(at, end).filter(({ v }) => v !== ')');
+  const glued = /^\d+$/.test(field(redirect, 'descriptor')?.text ?? '') ? 1 : 0;
+  return before.length + glued === 1 && !after.length;
+}
+
+/** Whether the word at `i` joins two parts of a test, `-a` or `-o` after an operand. */
+function connector(values: readonly { v: string | undefined }[], i: number): boolean {
+  return (values[i].v === '-a' || values[i].v === '-o') && i > 0 && !['!', '(', '-a', '-o'].includes(values[i - 1].v ?? '');
+}
+
+/**
  * The rewrite of `[ $a < $b ]` (`redirect`, a redirection of the command `[`, `n`) as the comparison `[ $a \< $b ]`:
  * the operator escaped and a word of its own, and the digits before it a word too (`[ 5>3 ]`: `[ 5 \> 3 ]`). Only
- * where that makes a test of three words, `A \< B`, closed by `]` (`[ $a 2>5 ]` would have four, and is no
- * comparison), with no other redirection among them; not `>>`, `<>` or `>|`.
+ * where it stands as a binary operator (`operatorAt`: `[ $a 2>5 ]` would have four words, and is no comparison),
+ * closed by `]`, with no other redirection before it; not `>>`, `<>` or `>|`.
  */
 function escapedComparison(n: SyntaxNode, redirect: SyntaxNode): Rewrite | undefined {
   const m = /^(\d*)([<>])(?![<>|&])/.exec(redirect.text);
   const dest = field(redirect, 'destination');
-  const words = args(n);
-  const close = words.at(-1);
-  if (!m || !dest || close?.text !== ']') return undefined;
-  const before = words.filter((w) => w.endIndex <= redirect.startIndex);
-  const after = words.filter((w) => w.startIndex >= redirect.endIndex && w !== close);
-  if (before.length + (m[1] ? 1 : 0) !== 1 || after.length || redirectionsOf(n).some((r) => r !== redirect && r.startIndex < close.startIndex)) return undefined;
+  const close = args(n).at(-1)!;
+  if (!m || !dest || close.text !== ']' || !operatorAt(n, redirect) || redirectionsOf(n).some((r) => r !== redirect && r.startIndex < close.startIndex)) return undefined;
   // (`[ $a>$b ]`: a blank before it, or the operator would be part of the word before.)
   const pre = /\s/.test(n.text.charAt(redirect.startIndex - n.startIndex - 1)) ? '' : ' ';
   return editSpan(field(n, 'name')!, close, [{ start: redirect.startIndex, end: redirect.endIndex, text: `${pre}${m[1] ? `${m[1]} ` : ''}\\${m[2]} ${dest.text}` }]);
@@ -462,12 +494,13 @@ function escapedComparison(n: SyntaxNode, redirect: SyntaxNode): Rewrite | undef
 export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined): StyleFinding[] {
   const s = pick(lang);
   const found: StyleFinding[] = [];
-  // (`rewrite`: the rewrites the text shows the code of; the finding carries those with edits, as a fact does. `maybe`:
-  // the case that fails only with some values, at its own level, `STYLE_MAYBE_LEVELS`.)
-  const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string, rewrite: readonly Rewrite[] = [], maybe = false) => {
+  // (`rewrite`: the rewrites the text shows the code of; the finding carries those with edits, as a fact does. `c`:
+  // what the check found that its level depends on, `STYLE_LEVELS`.)
+  const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string, rewrite: readonly Rewrite[] = [], c: StyleCase = {}) => {
     const convention = STYLE_CONVENTIONS[code];
     const edits = rewrite.filter((r) => r.edits.length);
-    const level = (maybe ? STYLE_MAYBE_LEVELS[code] : undefined) ?? STYLE_LEVELS[code];
+    const entry = STYLE_LEVELS[code];
+    const level = typeof entry === 'function' ? entry(c) : entry;
     found.push({ ...marked(lang, level, s(ja, en), { kind: 'pitfall' }), code, node, ...(convention ? { convention } : {}), ...(edits.length ? { rewrite: edits } : {}) });
   };
   const visit = (n: SyntaxNode) => {
@@ -761,10 +794,11 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
   /** `[ … ]`, by its spelling: what goes wrong in how it is written. */
   const bracket = (n: SyntaxNode) => {
     // `[ $a < $b ]`, `[ 5>3 ]`: `<` and `>` are redirections of the command `[`. (Not those after its last word,
-    // `[ … ] >f`, nor those plainly meant as redirections: to a device, `2>/dev/null`, or a copy of a descriptor, `2>&1`.)
+    // `[ … ] >f`, nor those plainly meant as redirections: to a device, `2>/dev/null`, a copy of a descriptor, `2>&1`,
+    // or where no comparison would be, `comparisonAt`.)
     const end = args(n).at(-1)?.startIndex ?? -1;
-    const meant = (e: SyntaxNode) => /&/.test(e.children.find((c) => !c.named)!.type) || /^\/dev\//.test(field(e, 'destination')?.text ?? '');
-    const redirect = n.namedChildren.find((e) => e.type === 'file_redirect' && !meant(e) && e.startIndex > field(n, 'name')!.startIndex && e.startIndex < end);
+    const meant = (e: SyntaxNode) => /&/.test(e.children.find((c) => !c.named)!.type) || /^\/dev\//.test(field(e, 'destination')?.text ?? '') || !comparisonAt(n, e);
+    const redirect = n.namedChildren.find((e) => e.type === 'file_redirect' && e.startIndex > field(n, 'name')!.startIndex && e.startIndex < end && !meant(e));
     if (redirect) {
       const op = redirect.text.match(/^\d*[<>]+/)![0];
       const fix = escapedComparison(n, redirect);
@@ -799,7 +833,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
           : outcome === 'true' ? ['真になります（単語1つだけの条件は、空でなければ真）。意図した条件ではありません', 'true, as one word alone is when it is not empty: not the condition meant']
           : ['その引数のない条件になり、意図した条件ではありません', 'a test without that argument: not the condition meant'];
         add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部です。\`${v}\` が空のときは単語が \`]\` だけになって \`[\` を閉じ、\`${runs}\` は${ja}。値があるときは閉じの \`]\` がなく、エラーになります（\`missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります${fixed.ja}`,
-          `the \`]\` in \`${last.text}\` is part of the word. When \`${v}\` is empty, the word is \`]\` alone and closes \`[\`, and \`${runs}\` is ${en}. With a value, \`[\` has no closing \`]\` and fails ("missing ']'", status 2). \`]\` needs a space before it${fixed.en}`, fix, true);
+          `the \`]\` in \`${last.text}\` is part of the word. When \`${v}\` is empty, the word is \`]\` alone and closes \`[\`, and \`${runs}\` is ${en}. With a value, \`[\` has no closing \`]\` and fails ("missing ']'", status 2). \`]\` needs a space before it${fixed.en}`, fix, { maybeEmpty: true });
         return;
       }
       add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部として読まれ、閉じの \`]\` がありません（\`missing ']'\`）。\`]\` の前に空白が要ります${fixed.ja}`,

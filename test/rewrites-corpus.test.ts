@@ -32,13 +32,13 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'postfix-increment-status': { subjects: 14, ran: 14, checks: 28, skipped: {} },
   'prefix-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },
   'read-without-r': { subjects: 17, ran: 10, checks: 30, skipped: { 'its stdin is a pipe': 6, 'its stdin is a redirection': 1 } },
-  'redirect-in-bracket': { subjects: 6, ran: 5, checks: 9, skipped: { 'a redirection to a word that is not plain text': 1 } },
+  'redirect-in-bracket': { subjects: 13, ran: 8, checks: 15, skipped: { 'a redirection to a word that is not plain text': 5 } },
   'regex-backslash-dropped': { subjects: 2, ran: 2, checks: 24, skipped: {} },
   'rm-empty-variable-root': { subjects: 48, ran: 31, checks: 93, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, '`sudo` with an option': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `DIR`': 4, 'the script sets `D`': 6 } },
   'unbraced-element': { subjects: 1, ran: 1, checks: 1, skipped: {} },
   'unmatched-glob-runs-once': { subjects: 7, ran: 7, checks: 21, skipped: {} },
   'unquoted-variable-as-path': { subjects: 60, ran: 39, checks: 202, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `DIR`': 5, 'the script sets `D`': 9 } },
-  'unquoted-variable-in-test': { subjects: 13, ran: 12, checks: 72, skipped: { 'a redirection to a word that is not plain text': 1 } },
+  'unquoted-variable-in-test': { subjects: 22, ran: 18, checks: 114, skipped: { 'a redirection to a word that is not plain text': 4 } },
   'wrapper-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },
 };
 

@@ -18,26 +18,24 @@ export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-n
   | 'rm-empty-variable-root' | 'read-without-r' | 'redirect-in-bracket' | 'bracket-close-in-word' | 'and-or-in-bracket'
   | 'download-run-by-shell' | 'trap-goes-on' | 'source-searches-path' | 'pattern-from-variable';
 
+/** What a style check found that its level depends on (`STYLE_LEVELS`): `maybeEmpty`, the part before a `]` may be empty. */
+export interface StyleCase { maybeEmpty?: boolean }
+
 /**
  * The level of each style check (src/pitfalls.ts), by the rule of docs/design/three-levels.md (section 2): `error`
  * when the line fails every time as written (`[-f x]`, `x = 1`, `{echo`, `{ echo }`, `[ a > b ]`, `[ a && b ]`,
  * `[ -d "$d/"]`, whose word before `]` is never empty); `warning` when it can do damage that cannot be undone
  * (`rm -rf $DIR/`, a download run by a shell, a file of `$PATH` read by `source`); `info` when it goes wrong only with
  * some input (`read` without `-r` and a backslash). Each at `error` has a row in test/error-level.test.ts that runs it
- * in bash.
+ * in bash. As in the catalog, a level that depends on the case is a function of it: `"$x"]` when `$x` may be empty is
+ * `]` alone then, which closes `[` and makes another test (`[ -n "$x"]` is `[ -n ]`, true), and fails only with a
+ * value (`missing ']'`); not every time, but a test that is wrongly true can guard what cannot be undone
+ * (`[ -n "$d"] && rm -rf "$d"/*`): a `warning` (three-levels.md, section 2, question 2).
  */
-export const STYLE_LEVELS: Record<StyleCode, NoteLevel> = {
+export const STYLE_LEVELS: Record<StyleCode, NoteLevel | ((c: StyleCase) => NoteLevel)> = {
   'bracket-no-space': 'error', 'assignment-with-spaces': 'error', 'brace-no-space': 'error', 'brace-close-no-separator': 'error',
-  'rm-empty-variable-root': 'warning', 'read-without-r': 'info', 'redirect-in-bracket': 'error', 'bracket-close-in-word': 'error',
+  'rm-empty-variable-root': 'warning', 'read-without-r': 'info', 'redirect-in-bracket': 'error',
+  'bracket-close-in-word': ({ maybeEmpty }) => (maybeEmpty ? 'warning' : 'error'),
   'and-or-in-bracket': 'error', 'download-run-by-shell': 'warning', 'trap-goes-on': 'info', 'source-searches-path': 'warning',
   'pattern-from-variable': 'info',
 };
-
-/**
- * The level of a style check in the case where it fails only with some values, where that differs from its level
- * (`STYLE_LEVELS`): `"$x"]` when `$x` may be empty is `]` alone then, which closes `[` and makes another test
- * (`[ -n "$x"]` is `[ -n ]`, true), and fails only with a value (`missing ']'`). Not every time, but a test that is
- * wrongly true can guard what cannot be undone (`[ -n "$d"] && rm -rf "$d"/*`): a `warning` (three-levels.md,
- * section 2, question 2).
- */
-export const STYLE_MAYBE_LEVELS: Partial<Record<StyleCode, NoteLevel>> = { 'bracket-close-in-word': 'warning' };
