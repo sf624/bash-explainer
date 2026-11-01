@@ -418,7 +418,7 @@ export const ops: Record<string, CommandSpec> = {
     ['-r', 'ホストの DNS 用フィンガープリントレコードを出力する', 'print the DNS fingerprint record of a host', 'arg'],
     ['-t', '鍵の種類（`ed25519`、`rsa`…）', 'key type (`ed25519`, `rsa`…)', 'arg'], ['-b', '鍵の長さ（ビット）', 'key size in bits', 'arg'], ['-f', '鍵のファイル', 'key file', 'arg'],
     ['-N', '新しいパスフレーズ（`""` でなし）', 'new passphrase (`""`: none)', 'arg'], ['-C', 'コメント（メールアドレスなど）', 'comment (e-mail…)', 'arg'], ['-q', '表示しない', 'quiet'],
-    ['-A', 'ホスト鍵をすべての種類で作る', 'generate all missing host keys'], ['-l', '鍵の指紋を表示する', "show a key's fingerprint"], ['-R', 'known_hosts から指定したホストを消す', 'remove the given host from known_hosts', 'arg'], ['-y', '秘密鍵から公開鍵を出力する', 'print the public key of a private key'],
+    ['-A', 'ホスト鍵をすべての種類で作る', 'generate all missing host keys'], ['-l', '鍵の指紋を表示する', "show a key's fingerprint"], ['-R', 'known_hosts から指定したホストを削除する', 'remove the given host from known_hosts', 'arg'], ['-y', '秘密鍵から公開鍵を出力する', 'print the public key of a private key'],
   ]),
   'ssh-keyscan': cmd('ホストの公開鍵を取得する（known_hosts に足すため）', "Fetch hosts' public keys (to add to known_hosts)", [['-t', '鍵の種類', 'key type', 'arg'], ['-p', 'ポート', 'port', 'arg'], ['-H', 'ホスト名をハッシュにする', 'hash the host names']], { positional: [pos('ホスト', 'host')] }),
 

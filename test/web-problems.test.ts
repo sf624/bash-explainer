@@ -46,20 +46,20 @@ describe('the web page: the Problems strip', function () {
       // The rows in the order of the script; each tooltip has the line from 1, the whole message and the rule, and no
       // locator of 0-based numbers ("94:7:…").
       const tips = await rows.evaluateAll((els) => els.map((e) => e.getAttribute('title') ?? ''));
-      assert.deepStrictEqual(tips.map((t) => t.split(/[:：]/)[0]), lang === 'en' ? ['Ln 1', 'Ln 2', 'Ln 2', 'Ln 3'] : ['1 行目', '2 行目', '2 行目', '3 行目']);
+      assert.deepStrictEqual(tips.map((t) => t.split(/[:：]/)[0]), lang === 'en' ? ['Ln 1', 'Ln 2', 'Ln 2', 'Ln 3'] : ['行 1', '行 2', '行 2', '行 3']);
       for (const t of tips) {
         assert.ok(!/\d+:\d+:/.test(t), t);
         assert.match(t, /[(（][a-z-]+[)）]$/);
         assert.ok(!t.includes('`'), t);
       }
       // A line with two problems: the first of the line, until the cursor is in the second (here, from the list).
-      const ln = (line: number, i: number) => (lang === 'en' ? `Ln ${line} · ${i}/4` : `${line} 行目 · ${i}/4`);
+      const ln = (line: number, i: number) => (lang === 'en' ? `Ln ${line} · ${i}/4` : `行 ${line} · ${i}/4`);
       await cursorToLine(page, 2);
       await until('the first of line 2', () => pos(page), (t) => t === ln(2, 2));
       await rows.nth(2).click();
       await until('the second of line 2', () => pos(page), (t) => t === ln(2, 3));
       assert.strictEqual(await activeLine(page), 'source lib.sh; read other');
-      assert.strictEqual(await page.locator('#problem-pos-said').textContent(), lang === 'en' ? 'Problem 3 of 4, line 2' : '4 件中 3 件目の問題、2 行目');
+      assert.strictEqual(await page.locator('#problem-pos-said').textContent(), lang === 'en' ? 'Problem 3 of 4, line 2' : '4 件中 3 件目の問題、行 2');
       // F8 from the last problem goes round to the first; Shift+F8 back to the last.
       await page.keyboard.press('Control+End');
       await until('the last', () => pos(page), (t) => t === ln(3, 4));
@@ -149,7 +149,7 @@ describe('the web page: the Problems strip', function () {
       const said = lang === 'en' ? 'Problems: 1 caveat' : '問題：注意 1 件';
       // (The snapshot quotes a line with ": " in it, as YAML does: the quotes are left out here.)
       assert.strictEqual((await page.locator('.problems-strip').ariaSnapshot()).replace(/'/g, ''), [
-        `- heading "${said}" [level=2]:`, `  - button "${said}" [expanded]`, `- text: ${lang === 'en' ? 'Problem 1 of 1, line 2' : '1 件中 1 件目の問題、2 行目'}`,
+        `- heading "${said}" [level=2]:`, `  - button "${said}" [expanded]`, `- text: ${lang === 'en' ? 'Problem 1 of 1, line 2' : '1 件中 1 件目の問題、行 2'}`,
         `- button "${lang === 'en' ? 'Previous problem' : '前の問題'}"`, `- button "${lang === 'en' ? 'Next problem' : '次の問題'}"`,
       ].join('\n'));
       await ctx.close();

@@ -18,13 +18,13 @@ describe('the ui texts', () => {
   });
 
   it('list the features the same in both languages', () => {
-    assert.deepStrictEqual(featureNames('ja'), ['hover', 'panel']);
-    assert.deepStrictEqual(featureNames('en'), ['hover', 'panel']);
+    assert.deepStrictEqual(featureNames(), ['hover', 'panel']);
+    assert.deepStrictEqual(Object.keys(ui.en.features), featureNames());
   });
 
-  it('write a line number in the three forms', () => {
+  it('write a line number: 行 N in Japanese whatever the form, three forms in English', () => {
     assert.deepStrictEqual((['long', 'inline', 'compact'] as const).map((f) => lineLabel('en', 5, f)), ['Line 5', 'line 5', 'Ln 5']);
-    assert.deepStrictEqual((['long', 'inline', 'compact'] as const).map((f) => lineLabel('ja', 5, f)), ['5 行目', '行 5', '5 行目']);
+    assert.deepStrictEqual((['long', 'inline', 'compact'] as const).map((f) => lineLabel('ja', 5, f)), ['行 5', '行 5', '行 5']);
     assert.strictEqual(lineLabel('en', 7), 'Line 7');
   });
 

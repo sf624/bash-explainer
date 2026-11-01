@@ -20,17 +20,17 @@ export const ordinal = (n: number | bigint): string => {
 };
 
 /**
- * How a line number is written (the one source of the label; docs/design/sources.md, row 17). `long` heads a view
- * ("Line 5", "5 行目"); `inline` sits inside a sentence or in brackets ("line 5", "行 5": docs/japanese-style.md writes
- * a line number as 行 N); `compact` is the status line of the web page's editor ("Ln 5").
+ * How a line number is written (the one source of the label; docs/design/sources.md, row 17). Japanese writes it 行 N
+ * everywhere (docs/japanese-style.md). English has three forms: `long` heads a view ("Line 5"), `inline` sits inside a
+ * sentence or in brackets ("line 5"), `compact` is the status line of the web page's editor ("Ln 5").
  */
 export type LineForm = 'long' | 'inline' | 'compact';
 
-const LINE_FORMS: Record<LineForm, Record<Lang, (n: number) => string>> = {
-  long: { ja: (n) => `${n} 行目`, en: (n) => `Line ${n}` },
-  inline: { ja: (n) => `行 ${n}`, en: (n) => `line ${n}` },
-  compact: { ja: (n) => `${n} 行目`, en: (n) => `Ln ${n}` },
+const LINE_EN: Record<LineForm, (n: number) => string> = {
+  long: (n) => `Line ${n}`,
+  inline: (n) => `line ${n}`,
+  compact: (n) => `Ln ${n}`,
 };
 
 /** The label of line `n` (counted from 1) in the form asked for. */
-export const lineLabel = (lang: Lang, n: number, form: LineForm = 'long'): string => LINE_FORMS[form][lang](n);
+export const lineLabel = (lang: Lang, n: number, form: LineForm = 'long'): string => (lang === 'ja' ? `行 ${n}` : LINE_EN[form](n));
