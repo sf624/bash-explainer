@@ -295,7 +295,7 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
 }
 
 /** The note of a construct the target shell lacks: an error ("Error:", the word of its level), since the line fails there every time. */
-function unsupported(lang: Lang, id: string, body: string): Note {
+function unsupported(lang: Lang, id: string, body: string): Note & { code: string } {
   return problemNote(lang, 'unsupported', id, body);
 }
 
@@ -309,7 +309,7 @@ export interface Issue {
    */
   kind: 'unsupported' | 'behaviour' | 'parse';
   /** What the explanations say of it, and the problems: its text, level and word (src/messages.ts). */
-  note: Note;
+  note: Note & { code: string };
   /** Where it is: the lines and columns the construct, or the syntax error, covers. */
   place: Place;
   /** The construct, for the issues about one (not `parse`). */
@@ -413,7 +413,7 @@ function zshSyntaxPlaces(tree: SyntaxTree, from: number, to: number): Place[] {
 }
 
 /** The note on a line with zsh syntax that cannot be read (the issue `zshSyntax`). */
-const zshSyntax = (lang: Lang): Note => problemNote(lang, 'parse', 'zshSyntax', ZSH_SYNTAX[lang === 'ja' ? 0 : 1]);
+const zshSyntax = (lang: Lang): Note & { code: string } => problemNote(lang, 'parse', 'zshSyntax', ZSH_SYNTAX[lang === 'ja' ? 0 : 1]);
 const ZSH_SYNTAX: [string, string] = [
   'この行には解析できない部分があります。zsh 独自の書き方（グロブ修飾子 `*(.)`、パラメータフラグ `${(f)var}` など）は解説できません。',
   'Part of this line could not be parsed. zsh-only syntax (glob qualifiers like `*(.)`, parameter flags like `${(f)var}`…) is not explained.',
@@ -491,7 +491,7 @@ export function dialectNotes(tree: SyntaxTree, line: number, shell: Shell, lang:
 }
 
 /** The notes of `dialectNotes`, each with the place of its construct and its issue's id (the note on zsh syntax is about the line: none). */
-export function dialectFound(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion): (Note & { node?: Place })[] {
+export function dialectFound(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion): (Note & { code: string; node?: Place })[] {
   const issues = dialectIssues(tree, shell, lang, line, line, version).filter((i) => i.kind !== 'parse');
   // On every line a zsh parse error covers, not only where it starts.
   const parse = shell === 'zsh' && zshSyntaxPlaces(tree, 0, tree.root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)

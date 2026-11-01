@@ -70,22 +70,23 @@ export function dropLabelEcho(t: Token): void {
  * anchors when it runs again (a host adds its own facts: src/hosts/remap.ts).
  */
 export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'facts' | 'anchors'>): void {
-  const all: { t: Token; depth: number }[] = [];
-  const walk = (t: Token, depth: number) => {
+  const all: Token[] = [];
+  const walk = (t: Token) => {
     t.role = KIND_ROLES[t.kind];
     delete t.facts;
-    all.push({ t, depth });
-    t.children.forEach((c) => walk(c, depth + 1));
+    all.push(t);
+    t.children.forEach(walk);
   };
-  items.forEach((t) => walk(t, 0));
+  items.forEach(walk);
   const ids = new Map((ex.facts ?? []).map((f) => [f.text, f.id]));
   for (const a of ex.anchors ?? []) {
     const id = ids.get(a.text);
     if (!id) continue;
-    const around = all.filter(({ t }) => spanWithin(a.span, t.span));
-    const exact = around.find(({ t }) => sameSpan(a.span, t.span));
-    const at = exact ?? around.reduce<{ t: Token; depth: number } | undefined>((best, x) => (!best || x.depth > best.depth ? x : best), undefined);
+    const around = all.filter((t) => spanWithin(a.span, t.span));
+    const exact = around.find((t) => sameSpan(a.span, t.span));
+    // (The tokens around a range are a chain from the outermost in, in the order of the walk: the last is the innermost.)
+    const at = exact ?? around.at(-1);
     // (Said at several nodes of one token, it is listed once.)
-    if (at) at.t.facts = [...new Set([...at.t.facts ?? [], id])];
+    if (at) at.facts = [...new Set([...at.facts ?? [], id])];
   }
 }

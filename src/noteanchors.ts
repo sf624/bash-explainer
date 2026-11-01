@@ -22,8 +22,11 @@ export const spanWithin = (inner: Span, outer: Span): boolean => atOrBefore(oute
 /** Whether two ranges are the same. */
 export const sameSpan = (a: Span, b: Span): boolean => spanWithin(a, b) && spanWithin(b, a);
 
-/** A note found on a node (none: about the line), with the rewrites it suggests there (`Fact.rewrite`, `StyleFinding.rewrite`). */
-export type Found = Note & { node?: Placed; rewrite?: readonly Rewrite[] };
+/**
+ * A note found on a node (none: about the line), with the rewrites it suggests there (`Fact.rewrite`, `StyleFinding.rewrite`).
+ * Every note said on a line has a code: a fact's id, a style check's, a dialect issue's (docs/design/sources.md, SB3a).
+ */
+export type Found = Note & { code: string; node?: Placed; rewrite?: readonly Rewrite[] };
 
 /**
  * The texts of notes found on nodes, each once, in the order found; each is recorded in `anchors` with its node's
@@ -32,8 +35,8 @@ export type Found = Note & { node?: Placed; rewrite?: readonly Rewrite[] };
  */
 export function anchored(found: readonly Found[], anchors: NoteAnchor[], data: Map<string, Note>): string[] {
   for (const f of found) {
-    if (f.node) anchors.push({ text: f.text, span: spanOf(f.node), ...(f.code ? { code: f.code } : {}), ...(f.rewrite?.length ? { rewrite: f.rewrite } : {}) });
-    if (!data.has(f.text)) data.set(f.text, { text: f.text, level: f.level, label: f.label, body: f.body, ...(f.code ? { code: f.code } : {}), ...conventionOf(f) });
+    if (f.node) anchors.push({ text: f.text, span: spanOf(f.node), code: f.code, ...(f.rewrite?.length ? { rewrite: f.rewrite } : {}) });
+    if (!data.has(f.text)) data.set(f.text, { text: f.text, level: f.level, label: f.label, body: f.body, code: f.code, ...conventionOf(f) });
   }
   return [...new Set(found.map((f) => f.text))];
 }

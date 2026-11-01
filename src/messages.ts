@@ -707,11 +707,11 @@ export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly 
  * the catalog makes notes (docs/design/sources.md, row 14): a fact (`fact`), a style check's (`styleNote`), a dialect
  * issue's (`problemNote`).
  */
-function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?: FactKind; heading?: Text; code?: string } = {}): Note {
-  const { kind = 'note', heading, code } = opts;
+function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?: FactKind; heading?: Text } = {}): Note {
+  const { kind = 'note', heading } = opts;
   const { word: levelWord, wordOnEvery } = LEVELS[level];
   const word = heading ? heading[lang] : kind === 'pitfall' || wordOnEvery ? levelWord[lang] : '';
-  return { text: `${LEVELS[level].mark} ${word}${body}`, level, label: word.trimEnd(), body, ...(code ? { code } : {}) };
+  return { text: `${LEVELS[level].mark} ${word}${body}`, level, label: word.trimEnd(), body };
 }
 
 /**
@@ -728,8 +728,8 @@ export function styleNote(lang: Lang, code: StyleCode, body: string, c: StyleCas
  * its level from `PROBLEM_LEVELS`: a construct the target shell lacks (`unsupported`, "Error:"), one that works
  * differently there (`behaviour`, "Portability:"), zsh syntax the line cannot be read with (`parse`, a plain note).
  */
-export function problemNote(lang: Lang, kind: 'unsupported' | 'behaviour' | 'parse', code: string, body: string): Note {
-  return marked(lang, PROBLEM_LEVELS[kind], body, { code, ...(kind === 'behaviour' ? { heading: PORTABILITY } : {}) });
+export function problemNote(lang: Lang, kind: 'unsupported' | 'behaviour' | 'parse', code: string, body: string): Note & { code: string } {
+  return { ...marked(lang, PROBLEM_LEVELS[kind], body, kind === 'behaviour' ? { heading: PORTABILITY } : {}), code };
 }
 
 /**

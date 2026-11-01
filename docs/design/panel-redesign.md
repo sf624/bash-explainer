@@ -2,7 +2,7 @@
 
 The plan that turns prototype B into real PRs, then the usability test. Agreed with the maintainer on 2026-10-27; revised after an independent review of the plan (PR #418).
 
-Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#543), started early (decided by the maintainer 2026-10-31), beside the three note levels. P3 done (#560), after the levels. P4 done (#563): what each program receives, as data. P5 done (#566): "In short" on every line. P6 done (#568): examples of the whole line and of globs. SB3 comes before P7a: SB3a done (facts and roles on tokens, no string notes); SB3c (the row record) and SB3d (the `ui` texts) next.
+Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#543), started early (decided by the maintainer 2026-10-31), beside the three note levels. P3 done (#560), after the levels. P4 done (#563): what each program receives, as data. P5 done (#566): "In short" on every line. P6 done (#568): examples of the whole line and of globs. SB3 comes before P7a: SB3a done (#570: facts and roles on tokens, no string notes); SB3c (the row record) and SB3d (the `ui` texts) next.
 
 ## 1. Goal
 
