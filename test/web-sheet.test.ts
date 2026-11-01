@@ -241,7 +241,8 @@ describe('the web page: the phone\'s sheet', function () {
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'sheet-grab');
     assert.deepStrictEqual(await said(page, '#sheet-grab'), { role: 'slider', name: 'Explanation height', value: 1, words: 'Half', focused: true });
     assert.strictEqual(await page.locator('#sheet-hint').isVisible(), false);
-    // A new height is also said once by the live region; a key that leaves the height, or a window that changes size, says nothing.
+    // A key on the grabber changes its value, which a screen reader says: the live region says nothing then (it would be
+    // said twice). A tap or a drag from elsewhere is said there once; a window that changes size says nothing.
     await page.evaluate(`(() => {
       const region = document.getElementById('announce');
       window.said = [];
@@ -250,16 +251,26 @@ describe('the web page: the phone\'s sheet', function () {
     await page.keyboard.press('ArrowUp');
     assert.strictEqual((await settled(page)).snap, 'full');
     assert.deepStrictEqual(await said(page, '#sheet-grab'), { role: 'slider', name: 'Explanation height', value: 2, words: 'Full', focused: true });
+    // The first full sheet: the hint, once.
+    assert.strictEqual(await page.locator('#sheet-hint').isVisible(), true);
+    assert.match(await page.locator('#sheet-hint').innerText(), /Tap or drag this bar/);
     await page.keyboard.press('End');
+    assert.deepStrictEqual(await page.evaluate('window.said'), []);
+    const head = await box(page, '#panel-head');
+    await page.touchscreen.tap(5, head.y + 30);
+    assert.strictEqual((await settled(page)).snap, 'peek');
+    assert.notStrictEqual(await page.evaluate('document.activeElement.id'), 'sheet-grab');
+    assert.deepStrictEqual(await page.evaluate('window.said'), ['Explanation height: Folded']);
+    assert.deepStrictEqual(await said(page, '#sheet-grab'), { role: 'slider', name: 'Explanation height', value: 0, words: 'Folded', focused: false });
     await page.setViewportSize({ width: 390, height: 700 });
     await settled(page);
     await page.setViewportSize({ width: 390, height: 740 });
     await settled(page);
-    assert.deepStrictEqual(await page.evaluate('window.said'), ['Explanation height: Full']);
+    assert.deepStrictEqual(await page.evaluate('window.said'), ['Explanation height: Folded']);
+    await grab.focus();
+    await page.keyboard.press('End');
+    assert.strictEqual((await settled(page)).snap, 'full');
     assert.deepStrictEqual(await grab.evaluate((e) => ['aria-orientation', 'aria-valuemin', 'aria-valuenow', 'aria-valuemax'].map((a) => e.getAttribute(a))), ['vertical', '0', '2', '2']);
-    // The first full sheet: the hint, once.
-    assert.strictEqual(await page.locator('#sheet-hint').isVisible(), true);
-    assert.match(await page.locator('#sheet-hint').innerText(), /Tap or drag this bar/);
     // At full, the editor is out of the focus order; at the peek, the explanation is.
     assert.deepStrictEqual(await page.evaluate("[document.getElementById('editor').inert, document.getElementById('panel-body').inert]"), [true, false]);
     await page.keyboard.press('Home');
@@ -294,7 +305,7 @@ describe('the web page: the phone\'s sheet', function () {
     await snapTo(bare, 'full');
     assert.match(await bare.locator('#sheet-hint').innerText(), /このバーを/);
     assert.deepStrictEqual(await said(bare, '#sheet-grab'), { role: 'slider', name: '解説の高さ', value: 2, words: '全体', focused: true });
-    assert.strictEqual(await bare.locator('#announce').textContent(), '解説の高さ: 全体');
+    assert.strictEqual(await bare.locator('#announce').textContent(), '', 'the keys on the grabber: its value only');
     await snapTo(bare, 'half');
     await snapTo(bare, 'full');
     assert.strictEqual(await bare.locator('#sheet-hint').isVisible(), false);
