@@ -48,9 +48,11 @@ export const sameTarget = (a: FdTarget | undefined, b: FdTarget | undefined): bo
 
 /**
  * Apply redirections left to right, as bash does, and say where each file descriptor ends up. Only given when the
- * order matters (several redirections including a duplication).
+ * order matters (several redirections including a duplication). `stderrPiped`: the command is a stage joined by `|&`,
+ * whose implicit `2>&1` comes after its own redirections (3.2.3; `stderrPiped` of src/semantics/env.ts).
  */
-export function redirectOrder(redirs: Redirect[]): RedirectOrder | undefined {
+export function redirectOrder(written: Redirect[], opts: { stderrPiped?: boolean } = {}): RedirectOrder | undefined {
+  const redirs = opts.stderrPiped ? [...written, { op: '>&', fd: '2', dest: '1' }] : written;
   if (redirs.length < 2 || !redirs.some((r) => r.op === '>&' || r.op === '<&')) return undefined;
   const orig = (fd: number): FdTarget => ({ kind: 'original', fd });
   const table = new Map<number, FdTarget>([[0, orig(0)], [1, orig(1)], [2, orig(2)]]);

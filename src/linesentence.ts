@@ -8,7 +8,7 @@
 // src/messages-sentence.ts.
 //
 // Its rules: it never states a fact a problem of the line states (a clause is left out where a problem of the line is
-// one of the catalog's facts that say it, `CLAUSE_FACTS`: `SentenceInput.problems`); no code span in it holds more than one shell word of the line
+// one of the catalog's facts that say it, the entry's `says`: `SentenceInput.problems`); no code span in it holds more than one shell word of the line
 // (it names commands by their names and words by what they give, never a stretch of the line); and it is never what a
 // row of the line says alone. test/linesentence.test.ts checks them over the corpus.
 import type { ArgvWord, LineExplanation } from './analyzer-types';
@@ -20,9 +20,9 @@ import { redirectParts } from './explain/redirections';
 import type { Lang } from './i18n';
 import { idiomSaid, type IdiomSpeaker } from './idioms';
 import { codeSpan, shorten } from './label';
-import { isProblem } from './messages';
+import { clausesOf, isProblem, type SentenceClause } from './messages';
 import { placeholderAlone, placeholderSaid } from './messages-argv';
-import { type Clause, CLAUSE_FACTS, EMPTY, ioSaid, linesSaid, listSaid, S, sentenceEnd } from './messages-sentence';
+import { EMPTY, ioSaid, linesSaid, listSaid, S, sentenceEnd } from './messages-sentence';
 import { ownSubshells, STATEMENTS } from './semantics/env';
 import { attribute, docLine } from './semantics/state';
 import { CHANGING } from './semantics/walk/temporaries';
@@ -37,12 +37,12 @@ export interface SentenceInput {
   status: StatusModel;
   /** What each simple command explained on the line is (src/explain/commands.ts). */
   commands: ReadonlyMap<SyntaxNode, CommandSaid>;
-  /** The codes of the problems of the line (fact ids, style checks): a clause one of them says is left out (`CLAUSE_FACTS`). */
+  /** The codes of the problems of the line (fact ids, style checks): a clause one of them says is left out (`clausesOf`). */
   problems: ReadonlySet<string>;
 }
 
 /** The sentence, and the clauses on the models it says (for the tests of the rules). */
-export interface Sentence { text: string; clauses: Clause[] }
+export interface Sentence { text: string; clauses: SentenceClause[] }
 
 /**
  * The problems of a line, by what they are: a fact's id (also where a host gives it a code of its own, `dockerPipefail`),
@@ -179,7 +179,7 @@ function tokenOf(n: SyntaxNode, line?: number): SyntaxNode | undefined {
 type ConstructKind = Parameters<typeof S.construct>[1];
 
 class Composer implements IdiomSpeaker {
-  readonly said = new Set<Clause>();
+  readonly said = new Set<SentenceClause>();
   /** How long the facts said are, in characters. */
   factsLength = 0;
   private readonly lang: Lang;
@@ -218,8 +218,8 @@ class Composer implements IdiomSpeaker {
   }
 
   /** A clause on the models is said only when no problem of the line is a fact that says it. */
-  private allowed(clause: Clause): boolean {
-    if (CLAUSE_FACTS[clause].some((id) => this.input.problems.has(id))) return false;
+  private allowed(clause: SentenceClause): boolean {
+    if ([...this.input.problems].some((code) => clausesOf(code).includes(clause))) return false;
     this.said.add(clause);
     return true;
   }

@@ -61,17 +61,18 @@ const isFile = (t: FdTarget | undefined, name: string): boolean => t?.kind === '
 const isOriginal = (t: FdTarget | undefined, fd: number): boolean => t?.kind === 'original' && t.fd === fd;
 
 /**
- * `redirections-in-order`: where each descriptor points in the end. `piped`: the command writes into a pipe and stderr
- * goes to it while stdout goes elsewhere (`cmd 2>&1 >/dev/null | grep …`): only its error messages go into the pipe.
+ * `redirections-in-order`: where each descriptor points in the end. `alone`: stderr goes to the original stdout, a pipe
+ * or a command substitution, and stdout elsewhere (`cmd 2>&1 >/dev/null | grep …`, `$(cmd 2>&1 >/dev/null)`): only the
+ * error messages go there.
  */
-export function redirectOrderText({ table, piped }: RedirectOrder & { piped?: boolean }): Pair {
+export function redirectOrderText({ table, alone }: RedirectOrder & { alone?: 'pipe' | 'capture' }): Pair {
   const at = (fd: number) => table.find((e) => e.fd === fd)?.to;
   const result = (i: 0 | 1) => table.map((e) => `${fdName(e.fd)[i]} → ${targetText(e.to)[i]}`).join(i ? ', ' : '、');
   const discarded = isFile(at(1), '/dev/null') && isFile(at(2), '/dev/null');
   const swapped = isOriginal(at(1), 2) && isOriginal(at(2), 1);
   return [
-    `リダイレクトは左から順に適用される。最終的に: ${result(0)}${discarded ? '（通常の出力もエラー出力もすべて捨てる）' : ''}${swapped ? '（標準出力と標準エラー出力が入れ替わる）' : ''}${piped ? '（パイプに流れるのはエラー出力だけ）' : ''}`,
-    `Redirections apply left to right. In the end: ${result(1)}${discarded ? ' (all output, including errors, is discarded)' : ''}${swapped ? ' (stdout and stderr are swapped)' : ''}${piped ? ' (only the error messages go into the pipe)' : ''}`];
+    `リダイレクトは左から順に適用される。最終的に: ${result(0)}${discarded ? '（通常の出力もエラー出力もすべて捨てる）' : ''}${swapped ? '（標準出力と標準エラー出力が入れ替わる）' : ''}${alone ? (alone === 'pipe' ? '（パイプに流れるのはエラー出力だけ）' : '（置換の結果になるのはエラー出力だけ）') : ''}`,
+    `Redirections apply left to right. In the end: ${result(1)}${discarded ? ' (all output, including errors, is discarded)' : ''}${swapped ? ' (stdout and stderr are swapped)' : ''}${alone ? (alone === 'pipe' ? ' (only the error messages go into the pipe)' : ' (only the error messages make the substitution\'s value)') : ''}`];
 }
 
 /** `stderr-to-original-stdout`: `2>&1` before the redirection of stdout to a file (`dup`, `file`: as written), and the rewrite that swaps them. */

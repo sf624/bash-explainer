@@ -70,11 +70,14 @@ describe('the order of redirections (3.6)', () => {
     assert.strictEqual(issue('echo a 2>&1 >a >>b')!.fixes![0].edits[0].text, '>a >>b 2>&1');
   });
 
-  it('says no caveat where the command writes into a pipe, which then gets only the error messages, nor where stderr goes elsewhere in the end', () => {
-    for (const src of ['find / -name x 2>&1 >/dev/null | grep -v denied', 'make 2>&1 >build.log |& tee errors.log']) {
+  it('says no caveat where stdout is a pipe or a command substitution, which then gets only the errors, nor where stderr goes elsewhere in the end', () => {
+    // (Where the stdout comes from the environment model: a stage before `|`, `$( )`, `<( )`, a group or a loop piped on.)
+    const pipe = ['find / -name x 2>&1 >/dev/null | grep -v denied', 'diff <(make 2>&1 >/dev/null) expected', '{ make 2>&1 >/dev/null; } | grep x',
+      'while read -r h; do ssh "$h" true 2>&1 >/dev/null; done < hosts | sort'];
+    for (const src of [...pipe, 'err=$(make 2>&1 >/dev/null)']) {
       const ex = explain(src);
       assert.deepStrictEqual(ex.facts!.filter((f) => f.id.startsWith('stderr')), [], src);
-      assert.ok(ex.notes.some((n) => n.endsWith('(only the error messages go into the pipe)')), src);
+      assert.ok(ex.notes.some((n) => n.endsWith(pipe.includes(src) ? '(only the error messages go into the pipe)' : '(only the error messages make the substitution\'s value)')), src);
       assert.strictEqual(issue(src), undefined, src);
     }
     // (The last stage writes into no pipe of its own.)
@@ -84,11 +87,24 @@ describe('the order of redirections (3.6)', () => {
     assert.match(explain('make 2>&1 >o 2>e').notes[0], /stdout → o, stderr → e$/);
   });
 
+  it('applies the `2>&1` of `|&` after the command\'s redirections (3.2.3): stderr goes where stdout goes', () => {
+    for (const src of ['make 2>&1 >build.log |& tee errors.log', 'make >build.log |& tee errors.log']) {
+      const ex = explain(src);
+      assert.deepStrictEqual(ex.facts!.map((f) => f.id), ['redirections-in-order'], src);
+      assert.strictEqual(ex.notes[0], 'ℹ Redirections apply left to right. In the end: stdout → build.log, stderr → build.log', src);
+    }
+    // (The commands inside a stage joined by `|&` write into the pipe: the stage's stderr is the pipe too.)
+    assert.strictEqual(issue('{ make 2>&1 >/dev/null; } |& grep x'), undefined);
+  });
+
   it('says what bash does: stderr to the original stdout, to the pipe; both to the file once swapped', () => {
     const f = 'f() { echo out; echo err >&2; }\n';
     assert.deepStrictEqual(runBash(`${f}f 2>&1 >o.txt; echo "file: $(<o.txt)"`, { files: [] }).stdout, 'err\nfile: out\n');
     assert.deepStrictEqual(runBash(`${f}f 2>&1 >/dev/null | sed 's/^/pipe: /'`).stdout, 'pipe: err\n');
     assert.deepStrictEqual(runBash(`${f}f >o.txt 2>&1; echo "file: $(<o.txt)"`, { files: [] }).stdout, 'file: out\nerr\n');
     assert.deepStrictEqual(runBash(`${f}f 2>&1 >o.txt 2>e.txt; echo "o: $(<o.txt) e: $(<e.txt)"`, { files: [] }).stdout, 'o: out e: err\n');
+    // (A command substitution gets the errors alone; `|&` comes after the command's redirections.)
+    assert.deepStrictEqual(runBash(`${f}e=$(f 2>&1 >/dev/null); echo "[$e]"`).stdout, '[err]\n');
+    assert.deepStrictEqual(runBash(`${f}f 2>&1 >o.txt |& sed 's/^/pipe: /'; echo "file: $(<o.txt)"`, { files: [] }).stdout, 'file: out\nerr\n');
   });
 });

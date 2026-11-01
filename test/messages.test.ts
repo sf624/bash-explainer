@@ -154,8 +154,8 @@ describe('the message catalog', () => {
     assert.ok(fact('en', 'python-shell-injection').text.startsWith('⚠ Shell injection risk: '));
     assert.deepStrictEqual(problemNote('en', 'behaviour', 'echoE', 'dash\'s `echo`'), { text: 'ⓘ Portability: dash\'s `echo`', level: 'info', label: 'Portability:', body: 'dash\'s `echo`', code: 'echoE' });
     assert.strictEqual(problemNote('ja', 'behaviour', 'echoE', 'x').text, 'ⓘ 移植性: x');
-    // (A plain note, zsh syntax not read, and a style check at its level, with the word of a pitfall.)
-    assert.strictEqual(problemNote('en', 'parse', 'zshSyntax', 'x').text, 'ℹ x');
+    // (zsh syntax not read, information with no word; a style check at its level, with the word of a pitfall.)
+    assert.strictEqual(problemNote('en', 'parse', 'zshSyntax', 'x').text, 'ⓘ x');
     assert.deepStrictEqual(styleNote('en', 'read-without-r', 'x'), { text: 'ⓘ Caveat: x', level: 'info', label: 'Caveat:', body: 'x', code: 'read-without-r' });
     assert.strictEqual(styleNote('en', 'bracket-close-in-word', 'x', { maybeEmpty: true }).level, 'warning');
   });
@@ -169,8 +169,8 @@ describe('the message catalog', () => {
       // (The words of the other levels are no level's name: kept, as the plain fact's text.)
       problemText(styleNote(lang, 'rm-empty-variable-root', 'x'), lang), problemText(problemNote(lang, 'behaviour', 'echoE', 'x'), lang), problemText(problemNote(lang, 'parse', 'zshSyntax', 'x'), lang),
     ]), [
-      ['ⓧ The variable', 'ⓧ x', 'ⓧ x', 'ⓧ ', '⚠ Pitfall: x', 'ⓘ Portability: x', 'ℹ x'],
-      ['ⓧ 変数 `x` は読み取り', 'ⓧ x', 'ⓧ x', 'ⓧ ', '⚠ 落とし穴: x', 'ⓘ 移植性: x', 'ℹ x'],
+      ['ⓧ The variable', 'ⓧ x', 'ⓧ x', 'ⓧ ', '⚠ Pitfall: x', 'ⓘ Portability: x', 'ⓘ x'],
+      ['ⓧ 変数 `x` は読み取り', 'ⓧ x', 'ⓧ x', 'ⓧ ', '⚠ 落とし穴: x', 'ⓘ 移植性: x', 'ⓘ x'],
     ]);
   });
 

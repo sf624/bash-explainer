@@ -10,8 +10,8 @@ import { argvWords } from '../src/argvline';
 import { detectShell, type Shell } from '../src/dialect';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { lineSentence, problemCodes } from '../src/linesentence';
-import { MESSAGES, type FactId, isProblem } from '../src/messages';
-import { CLAUSE_FACTS, jaSpaced, listSaid } from '../src/messages-sentence';
+import { clausesOf, MESSAGES, type FactId, isProblem, type SentenceClause } from '../src/messages';
+import { jaSpaced, listSaid } from '../src/messages-sentence';
 import { codeSpan } from '../src/label';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { shellState } from '../src/semantics/state';
@@ -305,10 +305,12 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
 
   it('sorts every problem that cites a pipeline\'s status or `set -e` (3.2.3, 4.3.1): it says a clause, or another fact', () => {
     const other: FactId[] = ['pipeline-subshell-variable', 'nounset-unbound', 'bats-run-in-pipeline', 'bats-run-in-pipeline-stage', 'stdin-not-read', 'bash-subshell-not-counted'];
-    const said = new Set<string>(Object.values(CLAUSE_FACTS).flat());
     const cites = (Object.keys(MESSAGES) as FactId[]).filter((id) => MESSAGES[id].refs.some((r) => r === '3.2.3' || r === '4.3.1'))
       .filter((id) => (MESSAGES[id].kind === 'pitfall' || 'level' in MESSAGES[id]) && isProblem(id));
-    assert.deepStrictEqual(cites.filter((id) => !said.has(id) && !other.includes(id)), []);
+    assert.deepStrictEqual(cites.filter((id) => !clausesOf(id).length && !other.includes(id)), []);
+    // (The facts that say a clause, by the catalog's entries.)
+    assert.deepStrictEqual((Object.keys(MESSAGES) as FactId[]).filter((id) => clausesOf(id).includes('pipeStatus')), ['pipefail-missing', 'dockerfile-pipefail-missing']);
+    assert.deepStrictEqual(clausesOf('rm-empty-variable-root'), []);
   });
 
   it('spaces code from Japanese, and lists items in both languages', () => {
@@ -388,7 +390,7 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
             const ex = f.explain(i, lang);
             if (!ex?.sentence) continue;
             const codes = problemCodes(ex);
-            const says = (clause: keyof typeof CLAUSE_FACTS) => CLAUSE_FACTS[clause].some((id) => codes.has(id));
+            const says = (clause: SentenceClause) => [...codes].some((code) => clausesOf(code).includes(clause));
             if (says('errexit') && ex.sentence.includes('`set -e`')) found.push(`${f.name}:${i + 1} ${lang}: ${ex.sentence}`);
             if (says('pipeStatus') && /its status is|終了ステータスは.*のもの/.test(ex.sentence)) found.push(`${f.name}:${i + 1} ${lang}: ${ex.sentence}`);
             if (says('errexit') || says('pipeStatus')) checked++;

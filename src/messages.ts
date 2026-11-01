@@ -32,6 +32,12 @@ import type { ShebangRefusal } from './semantics/state';
 // The texts are the analyzer's: a fact is found where the model is read (src/explain/, src/statusfacts.ts,
 // src/wordfacts.ts), and said here. The style checks of src/pitfalls.ts are not facts and have no entry.
 
+/**
+ * A clause of the sentence of a line on the models (src/linesentence.ts, src/messages-sentence.ts): a pipeline's status
+ * (3.2.3, `pipeStatus`), and what `set -e` does when the statement fails (4.3.1, `errexit`).
+ */
+export type SentenceClause = 'pipeStatus' | 'errexit';
+
 /** `note`: a fact of the models, always said. `pitfall`: advice on how a script is written, said only when the pitfalls are on. */
 export type FactKind = 'note' | 'pitfall';
 
@@ -67,6 +73,8 @@ interface Entry<P> {
    * table of src/conventions.ts (`withConvention`). The basis stays the fact's.
    */
   convention?: ConventionId;
+  /** The clauses of a line's sentence that this fact says too (`saying`): where it is a problem of the line, the sentence leaves them out. */
+  says?: readonly SentenceClause[];
   /** The rewrites the fact carries (`Fact.rewrite`, docs/design/oracles.md 3.2), from the params, as `suggests` gives them. */
   rewrite?: (p: P) => readonly Rewrite[];
 }
@@ -92,6 +100,11 @@ const caveat = <P = Record<string, never>>(refs: readonly string[], text: (p: P)
  * "Notes as problems").
  */
 const notProblem = <P>(e: Entry<P>): Entry<P> => ({ ...e, problem: false });
+/**
+ * An entry that says what a clause of a line's sentence on the models says (`SentenceClause`): a problem of the line
+ * that is this fact leaves the clause out (src/linesentence.ts).
+ */
+const saying = <P>(e: Entry<P>, ...says: SentenceClause[]): Entry<P> => ({ ...e, says });
 /** An entry with its basis: the probe row that checks it and gives a try-it (src/basis.ts, docs/design/basis.md). */
 const withBasis = <P>(e: Entry<P>, basis: BasisSpec | ((p: P) => BasisSpec | undefined)): Entry<P> => ({ ...e, basis });
 /** A pitfall whose advice is a habit, beside the fact it states (src/conventions.ts). */
@@ -157,20 +170,20 @@ export const MESSAGES = {
     `\`set -e\` is ignored in this ${what}, since it runs ${where.en}: a command that fails in the middle does not stop it`]),
   // (4.2 says that `local` and `declare` (`typeset`) return 0 unless an option, a name or a readonly variable is wrong,
   // 4.1 the same of `export` and `readonly`: a failed command substitution is not among the reasons. `rewrite`: src/statusfacts.ts.)
-  'declaration-masks-status': withConvention(suggests(caveat<{ kw: string; v: string; rewrite: readonly Rewrite[] }>(['4.2', '4.1', '4.3.1'], ({ kw, v, rewrite }) => [
+  'declaration-masks-status': saying(withConvention(suggests(caveat<{ kw: string; v: string; rewrite: readonly Rewrite[] }>(['4.2', '4.1', '4.3.1'], ({ kw, v, rewrite }) => [
     `\`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。${codeSpan(shorten(rewrite[0].code, Infinity))} と分けて書きます`,
-    `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: ${codeSpan(shorten(rewrite[0].code, Infinity))}`])), 'declare-then-assign'),
-  'pipefail-missing': withConvention(caveat<{ last: string }>(['3.2.3', '4.3.1'], ({ last }) => [
+    `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: ${codeSpan(shorten(rewrite[0].code, Infinity))}`])), 'declare-then-assign'), 'errexit'),
+  'pipefail-missing': saying(withConvention(caveat<{ last: string }>(['3.2.3', '4.3.1'], ({ last }) => [
     `\`set -o pipefail\` が無いので、パイプラインの終了ステータスは最後のコマンド（\`${last}\`）のものだけになる。前のコマンドが失敗しても \`set -e\` では止まらない（このスクリプトのほかのパイプラインも同じ）`,
-    `without \`set -o pipefail\`, the status of a pipeline is that of its last command (\`${last}\`) alone, so \`set -e\` does not stop the script when a command before it fails (the same holds for the other pipelines of the script)`]), 'pipefail'),
+    `without \`set -o pipefail\`, the status of a pipeline is that of its last command (\`${last}\`) alone, so \`set -e\` does not stop the script when a command before it fails (the same holds for the other pipelines of the script)`]), 'pipefail'), 'pipeStatus', 'errexit'),
   // (3.2.4: the status of a list is that of its last command run; 3.3: a function's is that of the last command of its
   // body; 6.1: a script's is that of its last command. `rewrite`: an `if`, then `return 0` or `exit 0`; src/statusfacts.ts.)
   'function-last-test-returns-status': suggests(caveat<{ name: string; line: number; rewrite: readonly Rewrite[] }>(['3.3', '3.2.4', '6.1'], ({ name, line, rewrite: r }) => [
     `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、行 ${line} の呼び出しで終わるスクリプトもその終了ステータスになる。${codeSpan(shorten(r[0].code, Infinity))} と書くか、最後に \`${r[1].code}\` を置く`,
     `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status, and so does the script, which ends with the call on line ${line}. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the function with \`${r[1].code}\``])),
-  'function-last-test-stops-script': suggests(pitfall<{ name: string; line: number; rewrite: readonly Rewrite[] }>(['3.3', '3.2.4', '4.3.1'], ({ name, line, rewrite: r }) => [
+  'function-last-test-stops-script': saying(suggests(pitfall<{ name: string; line: number; rewrite: readonly Rewrite[] }>(['3.3', '3.2.4', '4.3.1'], ({ name, line, rewrite: r }) => [
     `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、\`set -e\` により行 ${line} の呼び出しでスクリプトが止まる。${codeSpan(shorten(r[0].code, Infinity))} と書くか、最後に \`${r[1].code}\` を置く`,
-    `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on line ${line}. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the function with \`${r[1].code}\``])),
+    `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on line ${line}. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the function with \`${r[1].code}\``])), 'errexit'),
   'script-last-test-returns-status': suggests(caveat<{ left: string; rewrite: readonly Rewrite[] }>(['3.2.4', '6.1', '3.7.5'], ({ left, rewrite: r }) => [
     `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗すると、スクリプトはその終了ステータス（0 以外）で終わり、呼び出し元（CI や \`make\`、\`./script && next\`）には失敗に見えます。${codeSpan(shorten(r[0].code, Infinity))} と書くか、最後に \`${r[1].code}\` を置きます`,
     `this is the last command of the script, so when \`${left}\` fails, the script ends with its non-zero status, which its caller (CI, \`make\`, \`./script && next\`) sees as a failure. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the script with \`${r[1].code}\``])),
@@ -179,7 +192,7 @@ export const MESSAGES = {
   // that discard its own error message (`2>/dev/null`), or ''. `rewrite`: src/statusfacts.ts; `sourced`: it ends with
   // `return 1 2>/dev/null || exit 1`. (3.2.4: a list's status is that of its last command; 3.3: a function's, that of
   // its last command; 4.3.1: a failure left of `||` does not stop `set -e`. 6.1, 3.6, 4.1 not cited: at most three.)
-  'failure-reported-as-success': suggests(pitfall<{ where: 'function' | 'script' | 'fragment' | 'errexit'; name: string; left: string; right: string; quiet: string; sourced: boolean; rewrite: readonly Rewrite[] }>(['3.2.4', '3.3', '4.3.1'], ({ where, name, left, right, quiet, sourced, rewrite }) => {
+  'failure-reported-as-success': saying(suggests(pitfall<{ where: 'function' | 'script' | 'fragment' | 'errexit'; name: string; left: string; right: string; quiet: string; sourced: boolean; rewrite: readonly Rewrite[] }>(['3.2.4', '3.3', '4.3.1'], ({ where, name, left, right, quiet, sourced, rewrite }) => {
     const ja = {
       function: `これは関数 \`${name}\` の最後のコマンドなので、\`${left}\` が失敗しても \`${name}\` は \`${right}\` の終了ステータス 0 を返し、呼び出し元には成功に見えます。`,
       script: `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗してもスクリプトは \`${right}\` の終了ステータス 0 で終わり、呼び出し元（cron や CI、\`./script && next\`）には成功に見えます。`,
@@ -196,7 +209,7 @@ export const MESSAGES = {
     return [
       `${ja}${quiet ? `また、\`${quiet}\` でコマンド自身のエラーメッセージも捨てられるので、理由を伝えるのはこのメッセージだけです。` : ''}${where === 'errexit' ? 'スクリプトを止めるには' : '失敗を伝えるには'} \`… || ${fix}\` と書きます${sourced ? '。ファイルが `source` で読み込まれたときは `return` で戻り、実行されたときは `exit` で終わります' : ''}`,
       `${en}${quiet ? ` And \`${quiet}\` discards the error message of the command itself, so only this message is left to say why.` : ''} ${where === 'errexit' ? 'To stop the script' : 'To pass the failure on'}, write \`… || ${fix}\`${sourced ? ': it returns when the file is sourced, and exits when it is run' : ''}`];
-  })),
+  })), 'errexit'),
 
   // ---------------------------------------------------------------- functions and what runs instead (3.3, 3.7.2)
   // (3.2.1: a reserved word is one only as the first word of a command. That bash then stops a script with a syntax
@@ -340,16 +353,16 @@ export const MESSAGES = {
   // it stops, from the status model; none means the script. `rewrite`: src/explain/status.ts.)
   // (6.5: the operators' values are those of C; 3.2.5.2: `(( ))` is 1 when the value is 0. That an assignment with no
   // command substitution is 0 is 3.7.1's, not cited: an entry cites at most three sections.)
-  'postfix-increment-status': suggests(pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown'; rewrite: readonly Rewrite[] }>(['6.5', '3.2.5.2', '4.3.1'], ({ v, errexit, stops, rewrite: r }) => errexit ? [
+  'postfix-increment-status': saying(suggests(pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown'; rewrite: readonly Rewrite[] }>(['6.5', '3.2.5.2', '4.3.1'], ({ v, errexit, stops, rewrite: r }) => errexit ? [
     `ここでは \`set -e\` が効いているので、\`${v}\` が 0 のときこの行で${stops === 'subshell' ? 'サブシェルが終わる' : stops === 'unknown' ? 'これを実行するシェルが止まる' : 'スクリプトが止まる'}。\`((${v}++))\` の値は増やす前の値で、0 は失敗の終了ステータスになるため。${r.map((x) => `\`${x.code}\``).join(' か ')} と書く`,
     `\`set -e\` is on here, so ${stops === 'subshell' ? 'the subshell ends' : stops === 'unknown' ? 'the shell running it stops' : 'the script stops'} at this line when \`${v}\` is 0: \`((${v}++))\` gives the value before the increment, and 0 is a failure status. Write ${r.slice(0, -1).map((x) => `\`${x.code}\``).join(', ')} or \`${r[r.length - 1].code}\``] : [
     `\`((${v}++))\` の値は増やす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）。${r.map((x) => `\`${x.code}\``).join(' や ')} なら 0 になる`,
-    `the value of \`((${v}++))\` is the value before the increment, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops). ${r[1] ? `\`${r[0].code}\` and \`${r[1].code}\` give` : `\`${r[0].code}\` gives`} status 0`], undefined, postfixLevel)),
-  'postfix-decrement-status': pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown' }>(['6.5', '3.2.5.2', '4.3.1'], ({ v, errexit, stops }) => errexit ? [
+    `the value of \`((${v}++))\` is the value before the increment, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops). ${r[1] ? `\`${r[0].code}\` and \`${r[1].code}\` give` : `\`${r[0].code}\` gives`} status 0`], undefined, postfixLevel)), 'errexit'),
+  'postfix-decrement-status': saying(pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown' }>(['6.5', '3.2.5.2', '4.3.1'], ({ v, errexit, stops }) => errexit ? [
     `ここでは \`set -e\` が効いているので、\`${v}\` が 0 のときこの行で${stops === 'subshell' ? 'サブシェルが終わる' : stops === 'unknown' ? 'これを実行するシェルが止まる' : 'スクリプトが止まる'}。\`((${v}--))\` の値は減らす前の値で、0 は失敗の終了ステータスになるため`,
     `\`set -e\` is on here, so ${stops === 'subshell' ? 'the subshell ends' : stops === 'unknown' ? 'the shell running it stops' : 'the script stops'} at this line when \`${v}\` is 0: \`((${v}--))\` gives the value before the decrement, and 0 is a failure status`] : [
     `\`((${v}--))\` の値は減らす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）`,
-    `the value of \`((${v}--))\` is the value before the decrement, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops)`], undefined, postfixLevel),
+    `the value of \`((${v}--))\` is the value before the decrement, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops)`], undefined, postfixLevel), 'errexit'),
 
   // ---------------------------------------------------------------- conditions decided by the values above (3.2.4, 3.2.5; src/statusfacts.ts)
   // (`which`: `if` or `elif` when both are on the line, else empty: "this condition".)
@@ -582,7 +595,7 @@ export const MESSAGES = {
   'bats-test-line-dropped': broken<{ dropped: string }>(['3.3'], ({ dropped }) => [
     `bats はこの行全体をテストの関数の定義に置き換えるので、関数名の前の \`${dropped}\` は実行されません。別の行に書きます`,
     `bats replaces this whole line with the definition of the test, so \`${dropped}\` before the function's name never runs. Put it on a line of its own`]),
-  'bats-negation-ignored': broken<{ cmd: string; form: 'command' | 'pipeline' | 'other' }>(['4.3.1', '3.2.3'], ({ cmd, form }) => [
+  'bats-negation-ignored': saying(broken<{ cmd: string; form: 'command' | 'pipeline' | 'other' }>(['4.3.1', '3.2.3'], ({ cmd, form }) => [
     `\`set -e\` は \`!\` のあとのコマンドの結果を無視するので、\`! ${cmd}\` はテストの最後のコマンドでない限り、\`${cmd}\` が成功してもテストを失敗させません。`
       + (form === 'command' ? `\`run ! ${cmd}\`（bats 1.5.0 から。\`bats_require_minimum_version 1.5.0\` と書く）か \`! ${cmd} || false\` と書きます`
         : form === 'pipeline' ? `\`! ${cmd} || false\` と書くか、パイプラインを \`run ! bats_pipe …\` で実行します（\`|\` は \`\\|\` と書く。bats 1.10.0 から）`
@@ -590,7 +603,7 @@ export const MESSAGES = {
     `\`set -e\` ignores the status of a command after \`!\`, so unless it is the last command of the test, \`! ${cmd}\` does not fail the test when \`${cmd}\` succeeds. `
       + (form === 'command' ? `Write \`run ! ${cmd}\` (since bats 1.5.0, with \`bats_require_minimum_version 1.5.0\`) or \`! ${cmd} || false\``
         : form === 'pipeline' ? `Write \`! ${cmd} || false\`, or run the pipeline with \`run ! bats_pipe …\`, each \`|\` written \`\\|\` (since bats 1.10.0)`
-        : `Write \`! ${cmd} || false\``)]),
+        : `Write \`! ${cmd} || false\``)]), 'errexit'),
   'bats-run-in-pipeline-stage': broken<{ cmd: string }>(['3.2.3', '3.7.3'], ({ cmd }) => [
     `パイプラインのコマンドはサブシェルで実行されるので、\`run ${cmd}\` が設定した \`$status\` と \`$output\` はパイプラインが終わると消えます。パイプライン全体を \`run\` で実行するには \`run bats_pipe … \\| ${cmd}\` か \`run bash -c '… | …'\` と書きます`,
     `the commands of a pipeline run in subshells, so the \`$status\` and \`$output\` that \`run ${cmd}\` sets are gone when the pipeline ends. To run the whole pipeline under \`run\`, write \`run bats_pipe … \\| ${cmd}\` or \`run bash -c '… | …'\``]),
@@ -635,9 +648,9 @@ export const MESSAGES = {
     `環境依存: \`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、ほかの環境にはありません。どこでも動かすには${portable ? ` \`${portable}\` と書きます` : '、したいことに合ったコマンドをそのまま書きます'}`,
     `System-dependent: \`${name}\` is ${what.en} ${where} define${many ? '' : 's'} for interactive shells; other systems lack it. ${portable ? `Write \`${portable}\` to work everywhere` : 'To work everywhere, write the command you mean'}`]),
   // ---------------------------------------------------------------- host files (src/hosts.ts)
-  'dockerfile-pipefail-missing': withConvention(caveat<Record<string, never>>(['3.2.3', '4.3.1'], () => [
+  'dockerfile-pipefail-missing': saying(withConvention(caveat<Record<string, never>>(['3.2.3', '4.3.1'], () => [
     'パイプの途中のコマンドが失敗しても、RUN は最後のコマンドの結果だけで成功扱いになり、ビルドは止まりません。先に `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` と書くと失敗を検出できます。',
-    'If a command in the middle of the pipe fails, RUN still succeeds with the status of the last command, and the build goes on. Put `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` first to catch such failures.'], NO_HEADING), 'pipefail'),
+    'If a command in the middle of the pipe fails, RUN still succeeds with the status of the last command, and the build goes on. Put `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` first to catch such failures.'], NO_HEADING), 'pipefail'), 'pipeStatus', 'errexit'),
   'python-string-without-shell': broken<Record<string, never>>(['3.7.2'], () => [
     'shell=True なしで文字列を渡すと、文字列全体が1つのプログラム名として扱われます（引数やパイプは使えず、多くの場合 FileNotFoundError）。`["cmd", "arg"]` のようなリストで渡すか、shell=True を付けます。',
     'Without shell=True the whole string is taken as one program name (no arguments or pipes; usually FileNotFoundError). Pass a list like `["cmd", "arg"]`, or add shell=True.'], NO_HEADING),
@@ -651,8 +664,8 @@ export const MESSAGES = {
   // (src/messages-lines.ts, src/messages-idioms.ts; plain notes before SB3a of docs/design/sources.md. 3.6: "Redirections
   // are processed in the order they appear, from left to right", and "the order of redirections is significant":
   // `ls 2>&1 > dirlist` sends only stdout to the file. A caveat, not a pitfall: the order is often meant; none where the
-  // command writes into a pipe, where it is the way to send stderr alone into it (`piped`).)
-  'redirections-in-order': note<RedirectOrder & { piped?: boolean }>(['3.6', '3.6.8'], redirectOrderText),
+  // command's stdout is a pipe or a command substitution, where it is the way to send stderr alone there (`alone`).)
+  'redirections-in-order': note<RedirectOrder & { alone?: 'pipe' | 'capture' }>(['3.6', '3.6.8'], redirectOrderText),
   'stderr-to-original-stdout': suggests(caveat<{ dup: string; file: string; rewrite: readonly Rewrite[] }>(['3.6', '3.6.8'], stderrFirstText)),
   'heredoc-end-line': note<{ end: string; operator: string; line: number }>(['3.6.6'], heredocEndText),
   'heredoc-body-line': note<{ operator: string; line: number }>(['3.6.6'], heredocBodyText),
@@ -726,7 +739,7 @@ export function styleNote(lang: Lang, code: StyleCode, body: string, c: StyleCas
 /**
  * The note of a dialect issue of src/dialect.ts, which is no fact of the catalog (its text is the dialect table's), at
  * its level from `PROBLEM_LEVELS`: a construct the target shell lacks (`unsupported`, "Error:"), one that works
- * differently there (`behaviour`, "Portability:"), zsh syntax the line cannot be read with (`parse`, a plain note).
+ * differently there (`behaviour`, "Portability:"), zsh syntax the line cannot be read with (`parse`, information).
  */
 export function problemNote(lang: Lang, kind: 'unsupported' | 'behaviour' | 'parse', code: string, body: string): Note & { code: string } {
   return { ...marked(lang, PROBLEM_LEVELS[kind], body, kind === 'behaviour' ? { heading: PORTABILITY } : {}), code };
@@ -754,6 +767,11 @@ export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> e
   const { basis, tryIt } = basisOf(typeof e.basis === 'function' ? e.basis(params[0]) : e.basis);
   const rewrite = e.rewrite?.(params[0]);
   return { id, kind: e.kind, level, text, refs: e.refsOf?.(params[0]) ?? e.refs, label, body, code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(e.convention ? { convention: e.convention } : {}), ...(rewrite?.length ? { rewrite } : {}) };
+}
+
+/** The clauses of a line's sentence that the fact `code` says (none for a code that is no fact: a style check, a dialect issue). */
+export function clausesOf(code: string): readonly SentenceClause[] {
+  return (MESSAGES as Record<string, Entry<never>>)[code]?.says ?? [];
 }
 
 /** Whether the note with `code` is a problem when it is a warning or a caveat: all are, but the facts that `notProblem` marks. */

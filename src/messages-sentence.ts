@@ -6,26 +6,6 @@
 // the words).
 import { fdName, type RedirectKind } from './dict/syntax';
 import type { Lang } from './i18n';
-import type { FactId } from './messages';
-
-/**
- * The facts of the catalog that say what a clause of the sentence on the models says: a problem of the line that is
- * one of them leaves the clause out (src/linesentence.ts, `problemCodes`). `pipeStatus`, a pipeline's status (3.2.3,
- * `S.pipeStatus`): the facts on a pipeline without pipefail. `errexit`, what `set -e` does when the statement fails
- * (4.3.1, `S.errexit`, `S.errexitList`): the facts that say whether `set -e` stops there. Not the other facts of those
- * sections: a stage's subshell (`pipeline-subshell-variable`), what `set -u` stops (`nounset-unbound`). Every problem
- * that cites 3.2.3 or 4.3.1 is sorted, here or as another fact, in test/linesentence.test.ts.
- */
-export const CLAUSE_FACTS = {
-  pipeStatus: ['pipefail-missing', 'dockerfile-pipefail-missing'],
-  errexit: [
-    'pipefail-missing', 'dockerfile-pipefail-missing', 'declaration-masks-status', 'function-last-test-stops-script', 'failure-reported-as-success',
-    'postfix-increment-status', 'postfix-decrement-status', 'bats-negation-ignored',
-  ],
-} as const satisfies Record<string, readonly FactId[]>;
-
-/** A clause of the sentence on the models (`CLAUSE_FACTS`). */
-export type Clause = keyof typeof CLAUSE_FACTS;
 
 const pick = (lang: Lang, ja: string, en: string): string => (lang === 'ja' ? ja : en);
 /** An English summary inside a sentence, after a name: `Sort lines` is `sort lines` (a first word in capitals, `SQL`, is kept). */

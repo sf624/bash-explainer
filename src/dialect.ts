@@ -305,7 +305,7 @@ export interface Issue {
   /**
    * `unsupported`: fails in the shell (an error); `behaviour`: works differently, or, in sh, is not POSIX but dash and
    * busybox ash run it (information, "Portability");
-   * `parse`: zsh-only syntax (a plain fact, which is still a problem: the line is not explained).
+   * `parse`: zsh-only syntax (information: the line is not explained).
    */
   kind: 'unsupported' | 'behaviour' | 'parse';
   /** What the explanations say of it, and the problems: its text, level and word (src/messages.ts). */

@@ -904,14 +904,15 @@ Object.assign(STATES, {
     },
   },
   'stderr-to-original-stdout': {
-    states: 'the command writes a line to stdout and one to stderr (a function in its place): the original sends only stdout to the file, and stderr to the run\'s stdout; the rewrite both to the file',
+    states: 'the command writes a line to stdout and one to stderr (a function in its place): the original sends only stdout to the file (or `/dev/null`), and stderr to the run\'s stdout; the rewrite both to the file',
     checks: (s, x) => {
       const dup = x.at.type === 'file_redirect' ? x.at : ancestor(x.at, (a) => a.type === 'file_redirect');
       const owner = dup?.parent;
       if (!dup || !owner) return 'no `2>&1` at the rewrite';
       const target = redirectionsOf(owner).filter((r) => r.startIndex > dup.startIndex && r.type === 'file_redirect' && !field(r, 'descriptor') && /^>(>|\|)?$/.test(r.children.find((c) => !c.named)!.type)).pop();
       const file = target && staticWordValue(field(target, 'destination')!);
-      if (!file || !/^[\w.-]+$/.test(file)) return 'no plain file stdout goes to';
+      if (!file || !(/^[\w.-]+$/.test(file) || file === '/dev/null')) return 'no plain file stdout goes to';
+      const discarded = file === '/dev/null';
       const names = [...new Set(descendants(owner, ['command']).map((c) => field(c, 'name')?.text).filter((n): n is string => !!n && /^[\w-]+$/.test(n)))];
       const prelude = names.map((n) => `${n}() { printf '@out\\n'; printf '@err\\n' >&2; }`).join('\n');
       const epilogue = `rw_f=$(<${file}); printf '@file=%s\\n' "\${rw_f//$'\\n'/,}"`;
@@ -920,8 +921,8 @@ Object.assign(STATES, {
         runs: pair(s, { prelude, epilogue, env: x.others }),
         verify: ([o, r]) => {
           // (The run's stdout is the original stdout: the original's stderr goes there.)
-          if (said(o, 'file') !== '@out' || !/^@err$/m.test(o.out)) return `the original: ${JSON.stringify(o)}`;
-          if (said(r, 'file') !== '@out,@err' || /^@err$/m.test(r.out) || /@err/.test(r.err)) return `the rewrite: ${JSON.stringify(r)}`;
+          if (said(o, 'file') !== (discarded ? '' : '@out') || !/^@err$/m.test(o.out)) return `the original: ${JSON.stringify(o)}`;
+          if (said(r, 'file') !== (discarded ? '' : '@out,@err') || /^@err$/m.test(r.out) || /@err/.test(r.err)) return `the rewrite: ${JSON.stringify(r)}`;
           return undefined;
         },
       }];

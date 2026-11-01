@@ -57,6 +57,8 @@ const UNPARSED: SuggestionId[] = ['assignment-with-spaces', ...Array(6).fill('br
  * the box), a value in quotes after `x =`, `rm` in a function, and grep in the modes and with the options below.
  */
 const HAND = [
+  // (`2>&1` before `>/dev/null`, where stdout is no pipe: the rewrite discards both.)
+  'make 2>&1 >/dev/null\n',
   '#!/bin/bash\nset -e\nf() {\n  [ -f x ] && echo "@y"\n}\nf\necho @next\n',
   '#!/bin/bash\nset -e\nf() { [[ -f x ]] && echo y; }\necho @start\nf\n',
   '#!/bin/bash\necho @start\n[ -f x ] && echo "@y"\n',
