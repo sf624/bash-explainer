@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544), C5 (#562), C6 (#546), C7 (#561), C8a (#567) and C8b (#PR); the phone checks of C5, C8a and C8b wait on the maintainer (section 8). C9 is left. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544), C5 (#562), C6 (#546), C7 (#561), C8a (#567) and C8b (#571); the phone checks of C5, C8a and C8b wait on the maintainer (section 8). C9 is left. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -462,7 +462,7 @@ Done (#567). Where the plan above did not fit the code, the plan changed:
 - A tap on the row opens the sheet at half (and closes the keyboard).
 - The row's text is `summaryRow(explanation, lang)` in src/ui: the line's first problem by level, else the first part's label and summary. Section 7 says how P5 and P7b change it.
 
-Done (#PR). Where the plan above did not fit the code, the plan changed:
+Done (#571). Where the plan above did not fit the code, the plan changed:
 
 - **The keyboard test.** src/ui/keyboard.ts, `keyboard(tallest, viewport, typing)`: the keyboard is open while the user types in the editor (the sheet's layout, Edit mode, the focus in the editor) and the visual viewport, times its scale (a pinch zoom is no keyboard), is at least 150 px (`KEYBOARD_MIN`) shorter than the tallest window seen at this width (the browser's bars change it by less; a phone turned starts again). `overlap`, the part of the window it covers, is the window's height less the visual viewport's top and height: iOS's (only the visual viewport shrinks) and 0 on Android (`interactive-widget=resizes-content` shrinks the window). web/keyboard.ts reads the numbers on the visual viewport's `resize` and `scroll`, the window's `resize`, and the editor's focus and blur. Main had no keyboard code; round 8's `setUpKeyboard` and `kb-open` (in its web/main.ts) were rebuilt this way, not copied.
 - **The heights.** `snapHeights(view, top, row, summary)`: the peek is the tabs row with the sheet's edge and the safe area, plus the summary row (49 + 48 = 97 px). `sheetHeight` gives the height shown and the editor's room (`--sheet-h`, `--sheet-rest`, the rule that was in web/sheet.ts): the height chosen, or, while the keyboard is open, the summary row with the sheet's edge plus `overlap`, so that the row sits on the keyboard's top and the part under the keyboard is the sheet's. The toast's room and the editor's end follow `--sheet-h` as before, so neither needed a change. The height chosen is kept: when the keyboard closes (the row's tap aside), the sheet is back as it was.
