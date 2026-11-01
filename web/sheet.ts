@@ -122,15 +122,15 @@ export class BottomSheet {
   }
 
   /**
-   * Shows a height. A new one is also said in the page's live region: Chromium's accessibility tree does not carry the
-   * grabber's value in words (`aria-valuetext`; checked through its DevTools protocol), only its number.
+   * Shows a height. While the grabber has the focus, a screen reader says its new value (the slider's `aria-valuetext`);
+   * a new height from elsewhere (a tap, a drag, a problem chosen) is said in the page's live region, once.
    */
   set(snap: Snap): void {
     const moved = snap !== this.snap;
     if (moved) this.hideHint();
     this.snap = snap;
     this.apply();
-    if (moved && this.on) {
+    if (moved && this.on && !this.focused) {
       const t = TEXT[this.host.lang()];
       this.host.announce(t.sheetMoved(t.sheetHeights[snap]));
     }
