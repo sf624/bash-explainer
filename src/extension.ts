@@ -9,7 +9,7 @@ import { InlayHintsController } from './ui/inlayHints';
 import { INLINE_NOTICE_KEY, inlineNotice, inlineNoticeDue } from './ui/inlineNotice';
 import { PanelController } from './ui/panel';
 import { SemanticTokensController } from './ui/semanticTokens';
-import { type Feature, ui } from './ui/texts';
+import { featureNames, ui } from './ui/texts';
 
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const parser = createUnbashParser();
@@ -25,7 +25,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   let statusTimer: ReturnType<typeof setTimeout> | undefined;
   const updateStatus = () => {
     const t = ui[service.lang];
-    const on = (Object.keys(t.features) as Feature[]).filter((f) => service.enabled(f));
+    const on = featureNames().filter((f) => service.enabled(f));
     status.text = `$(comment-discussion) ${on.map((f) => t.short[f]).join(' + ') || t.off}`;
     status.tooltip = t.statusTooltip;
     const doc = vscode.window.activeTextEditor?.document;
@@ -49,7 +49,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }),
     vscode.commands.registerCommand('bashExplainer.selectDisplayMode', async () => {
       const t = ui[service.lang];
-      const features = Object.keys(t.features) as Feature[];
+      const features = featureNames();
       const picked = await vscode.window.showQuickPick(
         features.map((f) => ({ label: t.features[f][0], detail: t.features[f][1], picked: service.enabled(f), feature: f })),
         { placeHolder: t.pickFeatures, canPickMany: true },
