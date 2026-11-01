@@ -482,7 +482,8 @@ describe('a tilde before a glob', () => {
     assert.deepStrictEqual(t.children.map((c) => c.label), ['/', '*', '.txt']);
     // The example's names that do not match: a hidden file is in the same directory.
     const ex = examples('ls ~/*.txt').find((e) => /glob/.test(e.title))!;
-    assert.ok(ex.sections[1].lines.includes('~/.app.txt'), ex.sections[1].lines.join(' '));
+    const hidden = ex.sections.find((s) => s.lines.includes('~/.app.txt'));
+    assert.match(hidden?.label ?? '', /a leading `\.`/, ex.sections.map((s) => s.label).join(' '));
     const r = runBash('touch a.txt b.txt .c.txt; HOME=$PWD; echo ~/*.txt', { files: [] });
     assert.match(r.stdout, /^\/\S+\/a\.txt \/\S+\/b\.txt\n$/);
   });

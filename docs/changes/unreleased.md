@@ -157,6 +157,24 @@ The list is open on a first visit (folded on a phone, as before), and stays as y
 
 The screen reader's summary of a line now counts its caveats too ("Line 3: …; 1 warning, 1 caveat"), from the same table as the strip. Before, it counted errors and warnings only.
 
+### Examples of a whole pipeline and of globs
+
+A pipeline whose words read a variable the script leaves to the environment now has its example of the whole pipeline. It runs with the value the examples' made-up system gives that variable, the same as `env`'s made-up output: `$USER` and `$LOGNAME` are `alice`, `$HOME` is `/home/alice`, `$SHELL` is `/bin/bash`. The example says so under its title: "Here `$USER` is `alice`: an example value (the real one is known only when the line runs)". Before, `grep -h "$USER" /var/log/*.log | sort | uniq -c | sort -rn | head -5` had no such example, only one for each command after grep. The value stays in the example: the rows still say "Current user name", and what the program receives still shows ‹current user name›.
+
+- There is no example value where the script sets the variable anywhere (`read -r USER`, a function), after a `source` or an `eval` the explanation does not read, in a string another shell runs (`bash -c '…'`), in an sh script, for a variable bash or `cd` may change (`$RANDOM`, `$PWD`), with an operator (`${USER:-x}`), or where word splitting may change it (`IFS=l; echo $USER | cat`). A value the script gives (`x=foo; grep "$x" | sort`) runs as it is, with no note.
+- Where grep reads the value as a regular expression, which matches inside longer text too (no `-F`, `-w` or `-x`: the caveat on a pattern from a variable), the sample input has a line with the value inside a longer word: `malice` for `alice`, which grep keeps.
+- The examples of a glob or a brace expansion in a stage now stay beside the example of the whole pipeline: `cat *.log | sort` shows the names `*.log` matches, and what the pipeline makes of the files' lines. Before, the pipeline's example took their place.
+
+A glob example says why each name it tries does not match, a section for each reason. The names typed in the panel's box get them too.
+
+- A leading `.` while `dotglob` is off: "Not matching: a leading `.` (`dotglob` is off)" (`.app.log` for `*.log`).
+- `**` without `globstar`: "`**` is `*` (`globstar` is off)" (`src/lib/a.ts` for `**/*.ts`).
+- A `/` that `*` and `?` do not match (`src/lib/a.ts` for `src/*.ts`).
+- Another ending or start: "it does not end in `.log`" (`app.txt`), "it does not start with `/var/log/`".
+- A name a pattern of `GLOBIGNORE` leaves out says so; a name with none of these reasons is just "Not matching".
+
+Each reason is checked in bash, with `dotglob` and `globstar` off and on: the name does not match, and matches once the reason is lifted (the option on, `[[ == ]]` for a `/`, the name's end or start replaced).
+
 ## Fixed
 
 ### `-F` and the other patterns of grep

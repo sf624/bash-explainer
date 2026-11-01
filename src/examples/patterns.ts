@@ -8,6 +8,7 @@ import { literalContent } from '../staticword';
 import { field, fields, type SyntaxNode } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
 import { interactive } from './commands';
+import { missSections } from './rerun';
 import { type Operand, testCases } from './runtime';
 import { globExamples, globMatches, type GlobMode, type GlobOpts, hasGlobstar } from './shellwords';
 
@@ -22,15 +23,13 @@ export function globExample(pattern: string, mode: GlobMode, opts: GlobOpts, ign
   const ex = globExamples(pattern, mode, opts);
   if (!ex) return undefined;
   // A name that matches a pattern of GLOBIGNORE is left out.
-  if (ignore !== undefined) {
-    const pats = ignore.split(':').filter(Boolean);
-    const ignored = (name: string) => pats.some((p) => globMatches(p, name, 'file', { dotglob: true }));
-    ex.nonMatching.push(...ex.matching.filter(ignored));
-    ex.matching = ex.matching.filter((m) => !ignored(m));
-  }
-  const [yes, no] = labels ?? [s('一致するファイル名', 'Matching file names'), s('一致しないファイル名', 'Non-matching file names')];
+  const pats = ignore?.split(':').filter(Boolean) ?? [];
+  const ignored = ex.matching.filter((name) => pats.some((p) => globMatches(p, name, 'file', { dotglob: true })));
+  const matching = ex.matching.filter((m) => !ignored.includes(m));
+  const [yes, no] = labels ?? [s('一致するファイル名', 'Matching file names'), s('一致しない', 'Not matching')];
+  // (The names it does not match, a section for each reason.)
   return { kind: 'glob',
-    title, sections: [{ label: yes, lines: ex.matching }, { label: no, lines: ex.nonMatching }].filter((sec) => sec.lines.length),
+    title, sections: [...(matching.length ? [{ label: yes, lines: matching }] : []), ...missSections(pattern, [...ex.nonMatching, ...ignored], mode, opts, lang, no, ignored)],
     // (The panel's matcher does not know GLOBIGNORE: no names to try then.)
     ...(ignore !== undefined ? {} : { interactive: interactive({ kind: 'glob', pattern, mode, ...(Object.keys(opts).length ? { opts } : {}) }, [{ label: s('試す名前（1行に1つ）', 'Names to try (one per line)'), lines: [...ex.matching, ...ex.nonMatching] }], lang) }),
   };

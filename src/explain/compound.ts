@@ -343,11 +343,13 @@ export function missingKeyword(cx: Explainer, n: SyntaxNode, t: Token): Token {
 }
 
 export function pipeline(cx: Explainer, n: SyntaxNode): Token {
-  // One example for the whole pipeline replaces the examples of its stages.
+  // One example for the whole pipeline replaces the examples of what its stages do. Those of what bash makes of a word
+  // of a stage stay beside it (`glob`: the names a glob matches, the words of a brace expansion), as bash's reading of
+  // the line, which the run of the commands does not show (CLAUDE.md, "Explanations").
   const children = cx.examplesReplaced(() => ordered(cx, n), () => {
     const whole = pipelineExample(cx, n);
     return whole && { ...whole, anchor: spanOf(n), kind: 'pipeline' };
-  });
+  }, (e) => e.kind === 'glob');
   const cmds = children.filter((c) => c.kind !== 'operator' && c.kind !== 'keyword');
   const t = cx.tok(n, 'operator', cx.s(
     `パイプライン: 各コマンドの標準出力を次のコマンドの標準入力につないで、同時に実行する`,

@@ -4,7 +4,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { PrintfReader } from '../src/embedded/format';
-import { bashPrintf, globExamples, globMatches, GlobOpts, ShellWordsUnsupported } from '../src/examples/shellwords';
+import { bashPrintf, globExamples, globMatches, globMiss, type GlobMiss, GlobOpts, liftMisses, literalEnds, ShellWordsUnsupported } from '../src/examples/shellwords';
+import { globExample } from '../src/examples/patterns';
+import { rerun } from '../src/examples/rerun';
 import { braceTexts } from '../src/semantics/brace';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
@@ -23,6 +25,108 @@ describe('brace expansion agrees with bash', () => {
       assert.strictEqual((braceExpand(w) ?? [w.replace(/\\(.)/g, '$1')]).join(' '), bash(`echo ${w}`).trim());
     });
   }
+});
+
+describe('the reasons a name does not match a glob agree with bash (panel P6)', () => {
+  // Every name of a small tree that a glob does not match, with dotglob and globstar off and on: bash does not match
+  // it, and matches it once its reasons are lifted (the option turned on, `[[ == ]]` for a `/`, the end or the start
+  // of the name replaced).
+  const TREE = ['app.ts', 'app.log', 'app.txt', '.app.log', '.env.ts', 'readme.md', 'src/a.ts', 'src/b.sh', 'src/lib/c.ts', 'src/lib/deep/d.ts', 'src/.hidden/e.ts', '.cache/f.ts',
+    'log-2020-aa.md', 'log-2021-ab.txt', 'xsrc/g.ts', 'data_01.csv', 'data_1.csv'];
+  const PATTERNS = ['*.log', '*.ts', '**/*.ts', 'src/*.ts', 'src/**', '*', '*/*.ts', 'log-202[0-4]-??.txt', 'data_??.csv', 'app*', 'src/**/*.ts', '?pp.*', '[a-c]*.ts', '*.[ch]'];
+  const OPTS: [string, GlobOpts][] = [['', {}], ['dotglob', { dotglob: true }], ['globstar', { globstar: true }], ['dotglob globstar', { dotglob: true, globstar: true }]];
+  const shoptOf = (o: GlobOpts) => [o.dotglob ? 'dotglob' : '', o.globstar ? 'globstar' : ''].filter(Boolean).join(' ');
+  it('lifts each reason in bash', function () {
+    this.timeout(60000);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glob-miss-'));
+    try {
+      type Check = { pattern: string; name: string; mode: 'file' | 'value'; opts: GlobOpts; matches: boolean };
+      const checks: Check[] = [];
+      const kinds = new Set<string>();
+      for (const [, opts] of OPTS) {
+        for (const pattern of PATTERNS) {
+          for (const name of TREE.filter((n) => !globMatches(pattern, n, 'file', opts))) {
+            const misses = globMiss(pattern, name, 'file', opts)!;
+            assert.ok(misses, `${pattern} ${name}`);
+            misses.forEach((m) => kinds.add(m.kind));
+            checks.push({ pattern, name, mode: 'file', opts, matches: false });
+            if (!misses.length) continue;
+            const lifted = liftMisses(name, 'file', opts, misses);
+            assert.ok(globMatches(pattern, lifted.name, lifted.mode, lifted.opts), `${pattern} ${name}`);
+            checks.push({ pattern, ...lifted, matches: true });
+            // (Each reason is needed: with one left out, it does not match. A dot comes with a slash, which `[[ == ]]`
+            // lifts with it: there `*` matches a leading dot too.)
+            for (const m of misses.filter((x) => x.kind !== 'dot' || !misses.some((y) => y.kind === 'slash'))) {
+              const fewer = liftMisses(name, 'file', opts, misses.filter((x) => x !== m));
+              assert.ok(!globMatches(pattern, fewer.name, fewer.mode, fewer.opts), `${pattern} ${name} without ${m.kind}`);
+            }
+          }
+        }
+      }
+      assert.deepStrictEqual([...kinds].sort(), ['dot', 'end', 'globstar', 'slash', 'start']);
+      for (const c of checks) {
+        if (c.mode !== 'file') continue;
+        const file = path.join(dir, c.name);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        if (!fs.existsSync(file)) fs.writeFileSync(file, '');
+      }
+      // (One bash for each set of options: for each check, `y` when bash matches the name.)
+      const groups = new Map<string, Check[]>();
+      for (const c of checks) groups.set(shoptOf(c.opts), [...groups.get(shoptOf(c.opts)) ?? [], c]);
+      for (const [shopt, group] of groups) {
+        const script = `cd "$1" && shift && shopt -s nullglob ${shopt}
+while (($#)); do p=$1 n=$2 m=$3; shift 3
+  r=n
+  if [[ $m == value ]]; then [[ $n == $p ]] && r=y
+  else for f in $p; do [[ $f == "$n" ]] && r=y; done; fi
+  echo "$r"
+done`;
+        const out = execFileSync('bash', ['-c', script, '_', dir, ...group.flatMap((c) => [c.pattern, c.name, c.mode])]).toString().trim().split('\n');
+        group.forEach((c, i) => assert.strictEqual(out[i] === 'y', c.matches, `${c.pattern} ${c.name} ${c.mode} ${shopt}`));
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it('names the reasons it finds', () => {
+    const miss = (p: string, n: string, o: GlobOpts = {}) => globMiss(p, n, 'file', o);
+    const cases: [string, string, GlobOpts, GlobMiss[] | undefined][] = [
+      ['*.log', 'app.log', {}, undefined], ['*.log', 'app.txt', {}, [{ kind: 'end', text: '.log', cut: 0 }]], ['*.log', '.app.log', {}, [{ kind: 'dot' }]],
+      ['*.log', '.app.log', { dotglob: true }, undefined], ['*.log', '.app.txt', {}, [{ kind: 'dot' }, { kind: 'end', text: '.log', cut: 0 }]],
+      ['src/*.ts', 'src/lib/a.ts', {}, [{ kind: 'slash' }]], ['**/*.ts', 'src/lib/a.ts', {}, [{ kind: 'globstar' }]], ['**/*.ts', '.cache/a.ts', { globstar: true }, [{ kind: 'dot' }]],
+      ['/var/log/*.log', 'app.log', {}, [{ kind: 'start', text: '/var/log/', cut: 0 }]], ['/var/log/*.log', 'x/var/log/app.log', {}, [{ kind: 'start', text: '/var/log/', cut: 10 }]],
+      ['log-202[0-4]-??.txt', 'log-2020-aa.md', {}, [{ kind: 'end', text: '.txt', cut: 3 }]], ['*', '.cache/f.ts', {}, [{ kind: 'dot' }, { kind: 'slash' }]],
+      ['a?c', 'abbc', {}, []], ['*.LOG', 'app.log', { nocase: true }, undefined], ['*.LOG', 'app.txt', { nocase: true }, [{ kind: 'end', text: '.LOG', cut: 0 }]],
+      // (A bracket expression bash reads by the locale has no regex: no reason found.)
+      ['[[.space.]]*.log', 'a.txt', {}, []], ['\\**.log', 'x.log', {}, [{ kind: 'start', text: '*', cut: 0 }]], ['\\*.log', 'x.log', {}, []],
+    ];
+    for (const [p, n, o, want] of cases) assert.deepStrictEqual(miss(p, n, o), want, `${p} ${n}`);
+    // (The text at the ends: escapes removed, up to a wildcard, a bracket expression or an extended glob.)
+    for (const [p, ends] of [['src/*.log', ['src/', '.log']], ['a\\*b?c', ['a*b', 'c']], ['x[ab]y@(p|q)z', ['x', 'z']], ['a[b*c', ['a[b', 'c']], ['*\\', ['', '\\']], ['abc', ['', '']], ['?(x', ['', '(x']]] as const) {
+      assert.deepStrictEqual(Object.values(literalEnds(p)), ends, p);
+    }
+    // (In the values of `find -name`, `case` and `[[ == ]]`, `*` matches a `/` and a leading dot.)
+    assert.deepStrictEqual(globMiss('*.log', 'a/.b.txt', 'value'), [{ kind: 'end', text: '.log', cut: 0 }]);
+  });
+  it('says the reasons in the sections of the example and of the names typed in the panel', () => {
+    const labels = (lang: 'en' | 'ja') => globExample('*.log', 'file', {}, undefined, 'Example', undefined, lang)!.sections.map((x) => `${x.label}: ${x.lines.join(' ')}`);
+    assert.deepStrictEqual(labels('en'), ['Matching file names: app.log data.log error.log', 'Not matching: it does not end in `.log`: app.txt', 'Not matching: a leading `.` (`dotglob` is off): .app.log']);
+    assert.deepStrictEqual(labels('ja'), ['一致するファイル名: app.log data.log error.log', '一致しない: `.log` で終わらない: app.txt', '一致しない: 先頭が `.`（`dotglob` がオフ）: .app.log']);
+    // (Without globstar, `**/*.ts` is `*/*.ts`.)
+    const typed = rerun({ kind: 'glob', pattern: '**/*.ts', mode: 'file' }, [['src/a.ts', 'src/lib/b.ts', '.c/a.ts', 'src/d.js', 'x/e.md', 'e.md', '']], 'en').sections.map((x) => `${x.label}: ${x.lines.join(' ')}`);
+    assert.deepStrictEqual(typed, ['Matching names: src/a.ts', 'Not matching: `**` is `*` (`globstar` is off): src/lib/b.ts', 'Not matching: a leading `.` (`dotglob` is off): .c/a.ts',
+      'Not matching: it does not end in `.ts`: src/d.js x/e.md', 'Not matching: `**` is `*` (`globstar` is off); it does not end in `.ts`: e.md']);
+    const ja = rerun({ kind: 'glob', pattern: 'src/*', mode: 'file' }, [['src/a/b', 'lib/a', 'x']], 'ja').sections.map((x) => `${x.label}: ${x.lines.join(' ')}`);
+    assert.deepStrictEqual(ja, ['一致する名前: ', '一致しない: `*` と `?` は `/` に一致しない: src/a/b', '一致しない: `src/` で始まらない: lib/a x']);
+    // (A name a pattern of GLOBIGNORE leaves out says so.)
+    const ignored = globExample('*.log', 'file', {}, '.*:data*', 'Example', undefined, 'en')!.sections.map((x) => `${x.label}: ${x.lines.join(' ')}`);
+    assert.ok(ignored.includes('Not matching: a pattern of `GLOBIGNORE` matches it: data.log'), ignored.join('\n'));
+    // (Every name it matches left out: no section of matching names.)
+    assert.deepStrictEqual(globExample('*.log', 'file', {}, '*', 'Example', undefined, 'en')!.sections.map((x) => x.label), ['Not matching: it does not end in `.log`',
+      'Not matching: a leading `.` (`dotglob` is off)', 'Not matching: a pattern of `GLOBIGNORE` matches it']);
+    // (A name with no reason found.)
+    assert.deepStrictEqual(rerun({ kind: 'glob', pattern: 'a?c', mode: 'value' }, [['abc', 'abbc']], 'en').sections.map((x) => `${x.label}: ${x.lines.join(' ')}`), ['Matching names: abc', 'Not matching: abbc']);
+  });
 });
 
 describe('printf agrees with bash', () => {

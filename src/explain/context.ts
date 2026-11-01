@@ -114,8 +114,11 @@ export interface Explainer {
   examplesOf<T>(n: SyntaxNode, f: () => T, words?: { span: Span; text: string }): T;
   /** The examples added inside `f` are attached to `n`, unless a more specific node already took them. */
   examplesAt<T>(n: SyntaxNode, f: () => T): T;
-  /** The examples added inside `f` and `whole` give way to the example `whole` gives, if it gives one (a pipeline's). */
-  examplesReplaced<T>(f: () => T, whole: () => Example | undefined): T;
+  /**
+   * The examples added inside `f` give way to the example `whole` gives, if it gives one (a pipeline's), but for those
+   * `keeps` keeps, which stay before it.
+   */
+  examplesReplaced<T>(f: () => T, whole: () => Example | undefined, keeps: (e: Example) => boolean): T;
   /**
    * The examples the words read inside `f` add themselves are dropped (read with a spec that may not be the program's:
    * `hash -p`), those `drops` says from what `f` gives; those of the commands inside them, which those commands have
@@ -334,13 +337,14 @@ export class LineExplainer implements Explainer, LineOutput {
     return value;
   }
 
-  examplesReplaced<T>(f: () => T, whole: () => Example | undefined): T {
+  examplesReplaced<T>(f: () => T, whole: () => Example | undefined, keeps: (e: Example) => boolean): T {
     const before = this.examples.length;
     const value = f();
     const one = whole();
     if (one) {
+      const kept = this.examples.slice(before).filter(keeps);
       this.examples.length = before;
-      this.examples.push(one);
+      this.examples.push(...kept, one);
     }
     return value;
   }

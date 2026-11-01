@@ -200,6 +200,105 @@ export function globMatches(pattern: string, name: string, mode: GlobMode, opts:
   return globToRegex(pattern, mode, opts)?.test(name) ?? false;
 }
 
+/**
+ * Why a name does not match a glob, as the matcher above decides it (`globMatches`): each reason is lifted on its own
+ * terms, and the name matches once its reasons are lifted (`liftMisses`).
+ * - `dot`: a name in the path starts with `.`, which `*`, `?` and `[…]` do not match while `dotglob` is off;
+ * - `globstar`: `**` is `*` while `globstar` is off, so it does not match several directories;
+ * - `slash`: `*`, `?` and `[…]` do not match a `/` in a file name (they do where `[[ == ]]` matches, `mode: 'value'`,
+ *   which also matches a leading `.`: so the reason comes with `dot` where that one applies too);
+ * - `end`, `start`: the name does not end or start with the text the pattern ends or starts with (`text`); it matches
+ *   with that text in place of its last or first `cut` characters.
+ */
+export type GlobMiss = { kind: 'dot' } | { kind: 'globstar' } | { kind: 'slash' } | { kind: 'end'; text: string; cut: number } | { kind: 'start'; text: string; cut: number };
+
+/**
+ * The text a glob starts with and ends with, before its first and after its last wildcard (`*`, `?`, a bracket
+ * expression, an extended glob), escapes removed: `src/` and `.log` for `src/*.log`.
+ */
+export function literalEnds(pattern: string): { head: string; tail: string } {
+  const lits: string[] = [''];
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\' && i + 1 < pattern.length) { lits[lits.length - 1] += pattern[++i]; continue; }
+    const close = '?*+@!'.includes(c) && pattern[i + 1] === '(' ? closingParen(pattern, i + 1) : c === '[' ? bracketEnd(pattern, i) : -1;
+    if (close > 0 || c === '*' || c === '?') {
+      lits.push('');
+      if (close > 0) i = close;
+      continue;
+    }
+    lits[lits.length - 1] += c;
+  }
+  return { head: lits.length > 1 ? lits[0] : '', tail: lits.length > 1 ? lits[lits.length - 1] : '' };
+}
+
+/** The name, mode and options in which a name matches once the reasons `misses` are lifted (`GlobMiss`). */
+export function liftMisses(name: string, mode: GlobMode, opts: GlobOpts, misses: readonly GlobMiss[]): { name: string; mode: GlobMode; opts: GlobOpts } {
+  const out = { name, mode, opts: { ...opts } };
+  for (const m of misses) {
+    switch (m.kind) {
+      case 'dot': out.opts.dotglob = true; break;
+      case 'globstar': out.opts.globstar = true; break;
+      case 'slash': out.mode = 'value'; break;
+      case 'end': out.name = out.name.slice(0, out.name.length - m.cut) + m.text; break;
+      case 'start': out.name = m.text + out.name.slice(m.cut); break;
+    }
+  }
+  return out;
+}
+
+/** How many characters of a name `globMiss` replaces at most, at its end and its start together (a line typed may be long). */
+const MAX_CUT = 64;
+
+/**
+ * Why `name` does not match `pattern` (`GlobMiss`): the fewest reasons whose lifting makes it match, a name's end or
+ * start replaced by as few characters as can be; none when no such reasons are found (another character in the
+ * middle); undefined when it matches.
+ */
+export function globMiss(pattern: string, name: string, mode: GlobMode, opts: GlobOpts = {}): GlobMiss[] | undefined {
+  if (globMatches(pattern, name, mode, opts)) return undefined;
+  const { head, tail } = literalEnds(pattern);
+  const fold = (s: string) => (opts.nocase ? s.toLowerCase() : s);
+  const file = mode === 'file';
+  const dot = file && !opts.dotglob && /(^|\/)\./.test(name);
+  const reasons: GlobMiss[] = [
+    ...(dot ? [{ kind: 'dot' as const }] : []),
+    ...(file && !opts.globstar && hasGlobstar(pattern) ? [{ kind: 'globstar' as const }] : []),
+    ...(file && name.includes('/') ? [{ kind: 'slash' as const }] : []),
+    ...(tail && !fold(name).endsWith(fold(tail)) ? [{ kind: 'end' as const, text: tail, cut: 0 }] : []),
+    ...(head && !fold(name).startsWith(fold(head)) ? [{ kind: 'start' as const, text: head, cut: 0 }] : []),
+  ];
+  // (One regex for each mode and options a set of reasons gives.)
+  const regexes = new Map<string, RegExp | undefined>();
+  const matches = (set: readonly GlobMiss[]) => {
+    const lifted = liftMisses(name, mode, opts, set);
+    const key = JSON.stringify([lifted.mode, lifted.opts]);
+    if (!regexes.has(key)) regexes.set(key, globToRegex(pattern, lifted.mode, lifted.opts));
+    return regexes.get(key)?.test(lifted.name) ?? false;
+  };
+  // (The cuts of the end and the start of the name, the fewest characters first.)
+  const cuts = (set: readonly GlobMiss[], i: number, left: number): GlobMiss[] | undefined => {
+    const m = set[i];
+    if (!m) return matches(set) ? [...set] : undefined;
+    if (m.kind !== 'end' && m.kind !== 'start') return cuts(set, i + 1, left);
+    for (let cut = 0; cut <= left; cut++) {
+      const found = cuts(set.map((x, k) => (k === i ? { ...m, cut } : x)), i + 1, left - cut);
+      if (found) return found;
+    }
+    return undefined;
+  };
+  // (Each set of reasons, the smaller first, in the order above.)
+  const sets = (k: number, from: number): GlobMiss[][] => (k === 0 ? [[]] : reasons.slice(from).flatMap((r, i) => sets(k - 1, from + i + 1).map((rest) => [r, ...rest])));
+  for (let k = 1; k <= reasons.length; k++) {
+    for (const set of sets(k, 0)) {
+      if (dot && set.some((m) => m.kind === 'slash') && !set.some((m) => m.kind === 'dot')) continue;
+      const found = cuts(set, 0, Math.min(name.length, MAX_CUT));
+      if (found) return found;
+    }
+  }
+  return [];
+}
+
 const STARS = ['app', 'data', 'error', 'x'];
 const DIRS = ['', 'src/', 'src/lib/'];
 

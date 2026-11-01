@@ -10,7 +10,8 @@ import { pipelineExample, Stage, stageMarks } from './pipeline';
 import { JsRegex } from './regex';
 import { runXargs, showCommand } from './runtime';
 import { runSed } from './sed';
-import { globMatches, GlobMode, GlobOpts } from './shellwords';
+import { codeSpan } from '../label';
+import { globMatches, globMiss, type GlobMiss, GlobMode, GlobOpts } from './shellwords';
 import { FILTERS, perFile } from './textfilters';
 
 /**
@@ -107,6 +108,36 @@ export function jqStepSections(steps: JqStep[], last: string[], lang: Lang, show
   });
 }
 
+/** What a reason a name does not match a glob says (`GlobMiss`). */
+function missSaid(m: GlobMiss, lang: Lang): string {
+  const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
+  switch (m.kind) {
+    case 'dot': return s('先頭が `.`（`dotglob` がオフ）', 'a leading `.` (`dotglob` is off)');
+    case 'globstar': return s('`**` は `*` と同じ（`globstar` がオフ）', '`**` is `*` (`globstar` is off)');
+    case 'slash': return s('`*` と `?` は `/` に一致しない', '`*` and `?` do not match `/`');
+    case 'end': return s(`${codeSpan(m.text)} で終わらない`, `it does not end in ${codeSpan(m.text)}`);
+    case 'start': return s(`${codeSpan(m.text)} で始まらない`, `it does not start with ${codeSpan(m.text)}`);
+  }
+}
+
+/**
+ * The names of `names` that a glob does not match, a section for each reason (`globMiss`), in the order of their first
+ * name: "Not matching: a leading `.` (`dotglob` is off)". `label`: what the sections call the names. `ignored`: names
+ * that match, but a pattern of `GLOBIGNORE` leaves out.
+ */
+export function missSections(pattern: string, names: readonly string[], mode: GlobMode, opts: GlobOpts, lang: Lang, label?: string, ignored: readonly string[] = []): RerunSection[] {
+  const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
+  const no = label ?? s('一致しない', 'Not matching');
+  const groups = new Map<string, string[]>();
+  for (const name of [...new Set(names)]) {
+    // (The names given do not match: `globMiss` gives their reasons.)
+    const why = ignored.includes(name) ? [s('`GLOBIGNORE` のパターンに一致する', 'a pattern of `GLOBIGNORE` matches it')] : globMiss(pattern, name, mode, opts)!.map((m) => missSaid(m, lang));
+    const key = why.length ? `${no}: ${why.join(s('、', '; '))}` : no;
+    groups.set(key, [...groups.get(key) ?? [], name]);
+  }
+  return [...groups].map(([key, lines]) => ({ label: key, lines }));
+}
+
 /**
  * A word that is not literal is undefined. A spec sent back by the VS Code panel went through
  * JSON, which turns it into null, so read null as undefined again.
@@ -141,7 +172,8 @@ export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResu
     case 'glob': {
       const hit = input.filter((l) => globMatches(spec.pattern, l, spec.mode, spec.opts));
       return {
-        sections: [{ label: s('一致する名前', 'Matching names'), lines: hit, empty: s('（なし）', '(none)') }],
+        sections: [{ label: s('一致する名前', 'Matching names'), lines: hit, empty: s('（なし）', '(none)') },
+          ...missSections(spec.pattern, input.filter((l) => l && !hit.includes(l)), spec.mode, spec.opts ?? {}, lang)],
         marks: input.map((l) => (globMatches(spec.pattern, l, spec.mode, spec.opts) ? [{ start: 0, end: l.length, group: 0 }] : [])),
       };
     }

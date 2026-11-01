@@ -106,7 +106,7 @@ describe('word notes: globs', () => {
     const ex = g.examples.find((e) => e.kind === 'glob')!;
     assert.ok(ex.sections[0].lines.includes('.app') && !ex.interactive);
     const log = explain("GLOBIGNORE='*.log'; ls *.log").examples.find((e) => e.kind === 'glob')!;
-    assert.ok(!log.sections.some((s) => /^Matching/.test(s.label)) && log.sections[0].lines.includes('app.log'));
+    assert.ok(!log.sections.some((s) => /^Matching/.test(s.label)) && log.sections.some((s) => /GLOBIGNORE/.test(s.label) && s.lines.includes('app.log')));
     assert.ok(explain('shopt -s dotglob; ls *').examples.find((e) => e.kind === 'glob')!.interactive);
     assert.match(allTokens(explain("GLOBIGNORE='*.log'; ls *", 'ja').items).find((t) => t.label === '*')!.explanation, /`GLOBIGNORE` を設定したので dotglob が有効になり/);
   });
