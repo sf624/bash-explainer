@@ -22,6 +22,11 @@ export interface Stage {
   copies?: boolean;
   /** For echo: it may read backslash escapes in its words (`echoWordsKnown`). */
   escapes?: boolean;
+  /**
+   * Its pattern is a value made up for a variable (`$USER` is `alice`), which it reads as a regular expression that
+   * matches inside longer text too (`regexWords`): its sample shows a line with the value inside a longer word.
+   */
+  inside?: boolean;
 }
 
 type Runner = (input: string[]) => string[];
@@ -114,7 +119,7 @@ function matchesAny(res: JsRegex[], line: string): boolean {
  * Sample lines for grep: matching and non-matching ones, a line that shows what -i, -w or -x
  * changes, and `more` extra matching lines (for the limits and counts further down a pipeline).
  */
-function grepSample(words: (string | undefined)[], more = 0): string[] | undefined {
+function grepSample(words: (string | undefined)[], more = 0, inside = false): string[] | undefined {
   const { res, p } = grepRegexes(words);
   const inverted = p.opts.some(([n]) => n === 'v');
   const ex = regexExamples(res[0], 3);
@@ -138,6 +143,9 @@ function grepSample(words: (string | undefined)[], more = 0): string[] | undefin
     for (const pre of PREFIXES) for (const suf of SUFFIXES) extras.push(pre + b + suf);
   }
   const out = [...new Set(lines)];
+  // (The pattern inside a longer word, which it matches too: `alice` in `malice`.)
+  const longer = `m${base}`;
+  if (inside && !inverted && matchesAny(res, longer) && !out.includes(longer)) out.splice(2, 0, longer);
   let added = 0;
   for (const e of extras) {
     if (added >= more) break;
@@ -313,7 +321,7 @@ function sampleFor(stage: Stage, more = 0): string[] | undefined {
   const w = stage.words;
   switch (canonicalName(stage.cmd)) {
     case 'grep':
-      return grepSample([...impliedWords(stage.cmd), ...w], more);
+      return grepSample([...impliedWords(stage.cmd), ...w], more, stage.inside);
     case 'sed': {
       const a = sedArgs(w);
       return sedExample(a.script, { quiet: a.quiet, extended: a.extended })?.input;

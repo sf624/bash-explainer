@@ -26,21 +26,24 @@ import * as sources from '../examples/source';
 import { ENVIRONMENT, exportOrder, layoutOf, layoutSample, madeUpPath, type Run, START_NAMES, type Started, startValue } from '../examples/layouts';
 import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines, withSystemFiles, writesElsewhere } from '../examples/source';
 import { type Text, tx } from '../i18n';
-import { shorten } from '../label';
+import { codeSpan, shorten } from '../label';
 import { EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
 import { braceValues } from '../semantics/brace';
 import { quotedName } from '../semantics/effects';
 import { slotEnvironment } from '../semantics/env';
 import type { NameResolution } from '../semantics/names';
 import { exportedValue } from '../semantics/state';
-import { changedByBash } from '../semantics/vars';
+import { changedByBash, changedUnseen } from '../semantics/vars';
 import { literalContent, staticWordValue, substitutionNames } from '../staticword';
 import { assignmentsOnly, field, nameText, prefixAssignments, redirectionsOf, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
 import { echoMayReadEscapes, given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
-import { has, operands, readsFields, values } from '../argv/query';
+import { has, operands, readsFields, regexWords, values } from '../argv/query';
+import { impliedOptions } from '../dict/aliases';
+import { globbedByBash } from '../semantics/chars';
+import { receivedFields, writtenPlain } from '../semantics/fieldshape';
 import { wordValue } from './values';
 import { braceExpansion, bracesHere } from './words';
 
@@ -142,7 +145,10 @@ export function testExample(cx: Explainer, n: SyntaxNode, bracket: TestShape | u
  * A stage of a pipeline example; `runs`: its operands are a command it runs (xargs), so its step shows the commands;
  * `prints`: the layout of what it prints, when made-up lines of it can stand for its output (`ps aux`).
  */
-type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: InputSource; runs: boolean; layout?: MadeUp };
+type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: InputSource; runs: boolean; layout?: MadeUp; values: MadeUpValue[] };
+
+/** A variable whose value an example made up (`madeUpValue`): its code in the script, and the value. */
+type MadeUpValue = { code: string; value: string };
 
 /** A layout the examples make up for what the first stage of a pipeline prints; env's, with the environment it prints. */
 type MadeUp = { kind: Layout; environment?: ReadonlyMap<string, string> };
@@ -280,7 +286,7 @@ export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefin
   // A later stage that reads a file does not read what the stages before it write (`printf … | grep -e -v foo`).
   if (files.slice(1).some(Boolean)) return undefined;
   // A first stage that prints a layout the examples make up (`ps aux`): its made-up lines go through the others.
-  if (p.layout) return sampledPipeline(cx, n, p.layout, stages, runs);
+  if (p.layout) return sampledPipeline(cx, n, p.layout, stages, runs, p.values);
   // Several files read as one stream; a first stage that works on each apart (`EachFile`: head, grep) is not
   // followed, nor one that reads a file twice.
   const streams = src.streams;
@@ -290,7 +296,20 @@ export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefin
   const ex = pipelines.pipelineExample(stages, readsFile || !!known, known);
   if (!ex) return undefined;
   const inputs: InputBox[] = ex.input ? shareOut(src, ex.input).map((lines, i) => ({ label: streamLabel(streams[i], cx.lang), lines })) : [];
-  return wholePipeline(cx, n, ex, inputs, stages, runs);
+  return withValues(cx, wholePipeline(cx, n, ex, inputs, stages, runs), p.values);
+}
+
+/**
+ * The example with a note on the values it made up for variables (`madeUpValue`): "Here `$USER` is `alice`, an example
+ * value: the real one is known only when the line runs". Each variable once.
+ */
+function withValues(cx: Explainer, ex: Example, values: readonly MadeUpValue[]): Example {
+  const said = [...new Map(values.map((v) => [v.code, v])).values()];
+  if (!said.length) return ex;
+  const list = said.map((v) => cx.s(`${codeSpan(v.code)} を ${codeSpan(v.value)}`, `${codeSpan(v.code)} is ${codeSpan(v.value)}`)).join(cx.s('、', ', '));
+  const note = cx.s(`ここでは ${list} とした（例の値。実際の値は実行するまで分からない）`, `Here ${list}: ${said.length > 1 ? 'example values' : 'an example value'} (the real ${said.length > 1 ? 'ones are' : 'one is'} known only when the line runs)`);
+  // (No example of a whole pipeline has a note of its own.)
+  return { ...ex, note };
 }
 
 /** The lines of a section of the whole-pipeline example: at most `MAX_SHOWN_LINES`, control characters made visible. */
@@ -301,13 +320,13 @@ const cap = (lines: string[]) => (lines.length > MAX_SHOWN_LINES ? [...lines.sli
  * made-up lines, and what each stage after it makes of them. They are shown as they are, not in a box to edit: the
  * columns of a table stay lined up (a box wraps its long lines).
  */
-function sampledPipeline(cx: Explainer, n: SyntaxNode, layout: MadeUp, stages: Stage[], runs: ReadonlySet<Stage>): Example | undefined {
+function sampledPipeline(cx: Explainer, n: SyntaxNode, layout: MadeUp, stages: Stage[], runs: ReadonlySet<Stage>, values: readonly MadeUpValue[]): Example | undefined {
   const sample = madeUp(cx, n, layout);
   const rest = stages.slice(1);
   const ex = pipelines.pipelineExample(rest, true, sample);
   if (!ex) return undefined;
   const label = cx.s(`\`${stages[0].text}\` の出力（例）`, `Output of \`${stages[0].text}\` (sample)`);
-  return wholePipeline(cx, n, ex, [{ label, lines: sample }], rest, runs, false);
+  return withValues(cx, wholePipeline(cx, n, ex, [{ label, lines: sample }], rest, runs, false), values);
 }
 
 /** The example of the whole pipeline `n`: the input boxes, then what each stage leaves. */
@@ -351,14 +370,14 @@ function wholePipeline(cx: Explainer, n: SyntaxNode, ex: pipelines.PipelineExamp
  * The stages of pipeline `n` (the first `count`), as the pipeline examples run them: whether each names a file to
  * read, whether the first reads one (`< f`), and what the first reads. Undefined for a stage they cannot follow.
  */
-function pipelineStages(cx: Explainer, n: SyntaxNode, count = n.namedChildren.length): { stages: Stage[]; files: boolean[]; readsFile: boolean; src: InputSource; runs: ReadonlySet<Stage>; layout?: MadeUp } | undefined {
+function pipelineStages(cx: Explainer, n: SyntaxNode, count = n.namedChildren.length): { stages: Stage[]; files: boolean[]; readsFile: boolean; src: InputSource; runs: ReadonlySet<Stage>; layout?: MadeUp; values: MadeUpValue[] } | undefined {
   const read: PipelineStage[] = [];
   for (const [i, cmd] of n.namedChildren.slice(0, count).entries()) {
     const st = pipelineStage(cx, n, cmd, i);
     if (!st) return undefined;
     read.push(st);
   }
-  return { stages: read.map((st) => st.stage), files: read.map((st) => st.file), readsFile: !!read[0]?.readsFile, src: read[0]?.source, runs: new Set(read.filter((st) => st.runs).map((st) => st.stage)), ...(read[0]?.layout ? { layout: read[0].layout } : {}) };
+  return { stages: read.map((st) => st.stage), files: read.map((st) => st.file), readsFile: !!read[0]?.readsFile, src: read[0]?.source, runs: new Set(read.filter((st) => st.runs).map((st) => st.stage)), ...(read[0]?.layout ? { layout: read[0].layout } : {}), values: read.flatMap((st) => st.values) };
 }
 
 /**
@@ -391,15 +410,28 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     // (The program of the path it runs: `hash -p /usr/bin/tac sort` makes `sort` run tac.)
     const program = named.path ?? named.value;
     const spec = specFor(cx, program);
-    const stage: Stage = { cmd: program.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}), ...(spec?.prints === 'words' && echoMayReadEscapes(cx, cmd) ? { escapes: true } : {}) };
     const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell, bracesIn(cx.state))), { name: program, lookup: (x) => specFor(cx, x) });
+    // (A word whose value the script leaves to the environment runs with a value made up for it: `$USER` is `alice`.
+    // grep reads such a pattern as a regular expression, which matches inside a longer word: a sample line shows it.)
+    const values: MadeUpValue[] = [];
+    const regex = regexWords(parse, spec ? impliedOptions(program, spec) : []);
+    let inside = false;
+    const words = args.flatMap((a, k) => {
+      const own = exampleWords(cx, [a], !!spec?.prints);
+      const made = own.some((w) => w.value === undefined) && !bracesApply(cx, a) ? madeUpWords(cx, cmd, a) : undefined;
+      if (!made) return own.map((w) => w.value);
+      values.push(...made.values);
+      if (made.values.length && regex.includes(k)) inside = true;
+      return made.words;
+    });
+    const stage: Stage = { cmd: program.split('/').pop()!, words, text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}), ...(spec?.prints === 'words' && echoMayReadEscapes(cx, cmd) ? { escapes: true } : {}), ...(inside ? { inside } : {}) };
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
     const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));
     // (The layout of a program: what it prints.)
     const alt = i === 0 && res.kind === 'file' ? layoutOf(spec, parse) : undefined;
     const layout = alt && madeUpLayout(cx, cmd, alt);
-    return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs, ...(layout ? { layout } : {}) };
+    return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs, ...(layout ? { layout } : {}), values };
   })();
   stages.set(cmd, read);
   return read;
@@ -547,6 +579,52 @@ function madeUpLayout(cx: Explainer, cmd: SyntaxNode, alt: LayoutAlt): MadeUp | 
     if (v !== undefined && v !== ENVIRONMENT.get(name) && !keeps.includes(v)) return undefined;
   }
   return { kind: alt.layout };
+}
+
+/**
+ * The value the made-up system gives the variable `name` where `cmd` runs, when the script leaves it to the environment
+ * (`$USER` is `alice`: `startValue`): no command of the script sets it (`StateModel.assigned`), nothing the walk did not
+ * read ran before (`ShellState.opaque`: `source`, `eval`), and the shell that runs `cmd` is the script's, started on
+ * the made-up system (`startedAs`, `inheritedAt`). None for a variable bash or a builtin may change unseen
+ * (`changedUnseen`: `RANDOM`, `PWD` after `cd`).
+ * The value stays in the example: the word model never reads it (`wordFields` has no environment).
+ */
+function madeUpValue(cx: Explainer, cmd: SyntaxNode, name: string): string | undefined {
+  const started = startedAs(cx);
+  const st = cx.state.at(cmd).run;
+  if (!started || st.opaque || st.variables.has(name) || cx.state.assigned.has(name) || changedUnseen(name)) return undefined;
+  return inheritedAt(cx, cmd, started)(name) ?? undefined;
+}
+
+/**
+ * The words a pipeline example runs with for the word `a` of `cmd`: the fields the program receives (`receivedFields`),
+ * with the value the made-up system gives each variable the script leaves to the environment (`madeUpValue`), and those
+ * values. Undefined where a field is not known so: another part known only when the line runs, a value that splitting
+ * by IFS or pathname expansion may change, a pattern.
+ */
+function madeUpWords(cx: Explainer, cmd: SyntaxNode, a: SyntaxNode): { words: string[]; values: MadeUpValue[] } | undefined {
+  const got = receivedFields(a, cx.state);
+  if (got.fields) return { words: got.fields, values: [] };
+  if (!got.holed) return undefined;
+  const ifs = ifsAt(cx, a);
+  const values: MadeUpValue[] = [];
+  const words: string[] = [];
+  for (const f of got.holed) {
+    if (f.pattern !== undefined) return undefined;
+    let text = '';
+    for (const part of f.parts) {
+      if ('text' in part) { text += part.text; continue; }
+      const h = part.hole;
+      const value = h.kind === 'parameter' && !h.elements && writtenPlain(h) ? madeUpValue(cx, cmd, h.name) : undefined;
+      if (value === undefined) return undefined;
+      if (part.splits && (value === '' || ifs === undefined || [...value].some((c) => ifs.includes(c)))) return undefined;
+      if (part.globs && globbedByBash(value, 'unknown') !== false) return undefined;
+      text += value;
+      values.push({ code: h.code, value });
+    }
+    words.push(text);
+  }
+  return { words, values };
 }
 
 /** The value an assignment before a command gives `name`; null when it is not known (`X=$y`, `X+=y`, an array). */

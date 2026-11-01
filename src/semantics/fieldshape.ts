@@ -616,6 +616,9 @@ export type HoleSource =
   | { kind: 'command' | 'arithmetic' | 'process' | 'translation' | 'string'; code: string }
   | { kind: 'tilde'; user: string; code: string };
 
+/** Whether a parameter is written plain, `$x` or `${x}`: its value as it is, with no operator, no subscript. */
+export const writtenPlain = (h: Extract<HoleSource, { kind: 'parameter' }>): boolean => h.code === `$${h.name}` || h.code === `\${${h.name}}`;
+
 /**
  * A part of a field: text, or a hole; `splits`: word splitting by IFS may cut the hole's value into several fields (or
  * none; not the elements of `"$@"`, which are fields without splitting); `globs`: unquoted where pathname expansion

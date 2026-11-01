@@ -6,8 +6,10 @@ import { assertGrowth } from './support/growth';
 import { run } from './support/run';
 import { argWords } from './support/argwords';
 import { Analyzer, lookupCommand } from '../src/analyzer';
+import { detectShell } from '../src/dialect';
 import { interpret } from '../src/argv/interpret';
 import { pipedOutput, pipelineExample, Stage } from '../src/examples/pipeline';
+import { ENVIRONMENT } from '../src/examples/layouts';
 import { readsFiles } from '../src/examples/source';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
@@ -404,5 +406,57 @@ describe('what echo prints in a pipeline is known only where it prints its words
     assert.deepStrictEqual(printed('echo a\\\\{1,2}', 0), ['Output']);
     assert.deepStrictEqual(printed('shopt -s xpg_echo\necho a\\\\{1,2}', 1), []);
     assert.deepStrictEqual(printed('shopt -s xpg_echo\necho a{1,2}', 1), ['Output']);
+  });
+});
+
+describe('a pipeline example runs with example values of variables the script leaves to the environment (panel P6)', () => {
+  const parser = createUnbashParser();
+  const whole = (src: string, lang: 'en' | 'ja' = 'en') => new Analyzer(lang).explainLine(parser.parse(src), src.split('\n').length - 1, detectShell(src)).examples.find((x) => x.kind === 'pipeline');
+  // (The made-up system's environment, which the examples use: `$USER` is `alice`.)
+  const env = { ...process.env, ...Object.fromEntries(ENVIRONMENT), LC_ALL: 'C' };
+  const input = (ex: NonNullable<ReturnType<typeof whole>>) => (ex.interactive?.inputs.flatMap((b) => b.lines) ?? []);
+  it('runs the line as bash and GNU grep do with those values, and shows the value inside a longer word where grep reads it as a regex', () => {
+    for (const [src, inside] of [['grep "$USER" | sort | uniq -c | sort -rn | head -5', true], ['grep -c "$USER" | cat', true], ['grep -i "${LOGNAME}" | sort', true],
+      ['grep -w "$USER" | sort', false], ['grep -F "$USER" | sort', false], ['grep -x "$USER" | sort', false], ['grep -v "$USER" | sort', false], ['grep -e "$USER" -n | cat', true],
+      ['echo "$HOME" | cut -d/ -f2', false], ['echo "user: $USER, home: $HOME" | tr a-z A-Z', false], ['echo $USER | rev', false], ['printf "%s\\n" "$HOME/a" "$LOGNAME" | sort -r', false],
+      ['USER=bob; grep "$USER" | sort', false]] as const) {
+      const ex = whole(src);
+      assert.ok(ex, src);
+      const lines = input(ex);
+      const real = run('bash', ['-c', src], { input: lines.length ? lines.join('\n') + '\n' : '', env }).stdout.toString();
+      assert.deepStrictEqual(ex.sections.at(-1)!.lines, real ? real.replace(/\n$/, '').split('\n') : [], src);
+      // (A line with the value inside a longer word, which grep finds there too; with -w, -x or -F, a line that shows
+      // what the option changes, `xalice`, is there already.)
+      assert.strictEqual(lines.includes('malice'), inside, src);
+    }
+  });
+  it('says in its note that the value is an example, once for each variable', () => {
+    assert.strictEqual(whole('grep "$USER" | sort | uniq -c')?.note, 'Here `$USER` is `alice`: an example value (the real one is known only when the line runs)');
+    assert.strictEqual(whole('grep "$USER" | sort | uniq -c', 'ja')?.note, 'ここでは `$USER` を `alice` とした（例の値。実際の値は実行するまで分からない）');
+    assert.strictEqual(whole('echo "$USER $HOME $USER" | tr a-z A-Z')?.note, 'Here `$USER` is `alice`, `$HOME` is `/home/alice`: example values (the real ones are known only when the line runs)');
+    assert.strictEqual(whole('echo "$USER $HOME" | tr a-z A-Z', 'ja')?.note, 'ここでは `$USER` を `alice`、`$HOME` を `/home/alice` とした（例の値。実際の値は実行するまで分からない）');
+    // (A value the script gives is no example.)
+    assert.strictEqual(whole('USER=bob; grep "$USER" | sort')?.note, undefined);
+    // (Also where the first stage prints a layout the examples make up.)
+    assert.match(whole('ps aux | grep "$USER" | wc -l')?.note ?? '', /^Here `\$USER` is `alice`/);
+  });
+  it('makes up no value where the script may set the variable, bash or a builtin may change it, splitting, globbing or an operator may change it, or the shell is not bash', () => {
+    for (const src of ['f() { USER=x; }\ngrep "$USER" | sort', 'source ./env.sh\ngrep "$USER" | sort', 'read -r USER\ngrep "$USER" | sort', 'echo "$RANDOM" | cat', 'IFS=l\necho $USER | cat',
+      'echo "${USER:-x}" | cat', 'echo "${USER}s" "$MYVAR" | cat', 'echo "$@" | cat', '#!/bin/sh\necho "$USER" | cat', 'bash -c \'echo "$USER" | cat\'', 'unset USER\necho "$USER" | cat',
+      'cd /tmp\necho "$PWD" | cat', 'echo "$(id -un)" | cat', 'echo "$USER"/*.log | cat', 'echo "$PWD" | cat']) {
+      assert.strictEqual(whole(src)?.note, undefined, src);
+    }
+  });
+  it('keeps the value in the example: the word model and what the program receives still say it is known only when the line runs', () => {
+    const src = 'grep "$USER" | sort';
+    const ex = new Analyzer('en').explainLine(parser.parse(src), 0, undefined, { argv: true });
+    assert.deepStrictEqual(ex.argv![0].words[1].parts.flatMap((p) => ('hole' in p ? [p.label] : [])), ['current user name']);
+    assert.ok(ex.examples.some((x) => x.kind === 'pipeline'));
+  });
+  it('keeps the examples of a glob and of a brace expansion of a stage beside it', () => {
+    for (const [src, kinds] of [['cat *.log | sort', ['glob', 'pipeline']], ['grep -h "$USER" /var/log/*.log | sort | uniq -c | sort -rn | head -5', ['glob', 'pipeline']],
+      ['echo {a,b} | tr a-z A-Z', ['glob', 'pipeline']], ["sed 's/a/b/' f | sort", ['pipeline']]] as const) {
+      assert.deepStrictEqual(new Analyzer('en').explainLine(parser.parse(src), 0).examples.map((x) => x.kind), kinds, src);
+    }
   });
 });

@@ -6,7 +6,7 @@ import { has as hasOption, operands, readBefore, restrictedRefusal, selectedMode
 import type { ArgRole, ArgvParse } from '../argv/interpret';
 import type { CommandSpec, ShellVariant } from '../argv/spec';
 import type { Basis } from '../basis';
-import { impliedWords, lookupCommand, specName } from '../dict/aliases';
+import { impliedOptions, lookupCommand, specName } from '../dict/aliases';
 import { customCommandSpec } from '../dict/custom';
 import type { Flavor } from '../embedded/regex';
 import { isProgram } from '../namefacts';
@@ -222,7 +222,7 @@ export function optionValues(cx: Explainer, ...names: string[]): { text?: string
  */
 export function regexFlavor(cx: Explainer, word?: number): Flavor | 'fixed' {
   const { cmd, parse, spec } = cx.command!;
-  const implied = impliedWords(cmd.split('/').pop()!).map((w) => spec.options?.find((o) => o.names.includes(w))?.selects);
+  const implied = impliedOptions(cmd, spec).map((o) => o.selects);
   const selected = new Set<string | undefined>([...selectedModes(parse, word), ...implied]);
   return selected.has('pcre') ? 'pcre' : selected.has('fixed') ? 'fixed' : selected.has('ere') ? 'ere' : 'bre';
 }

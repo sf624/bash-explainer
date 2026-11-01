@@ -3,7 +3,7 @@
 // so that a value is never taken for an option (`grep -e -v`), nor an option's letter for another (`sed -ie`).
 import type { ArgRole, ArgvParse, ValueRole } from './interpret';
 import type { Shell } from '../dialect';
-import type { CommandSpec, NameSpace, OperandSpec, VariableAct } from './spec';
+import type { CommandSpec, NameSpace, OperandSpec, OptionSpec, VariableAct } from './spec';
 
 type OptionRole = Extract<ArgRole, { role: 'option' }>;
 type UnknownOptionRole = Extract<ArgRole, { role: 'unknown-option' }>;
@@ -39,6 +39,18 @@ export function givenOptions(parse: ArgvParse): GivenOption[] {
     }
   }
   return out;
+}
+
+/**
+ * The words read as regular expressions that match inside longer text too (`grep "$USER"` finds `bobby` for `bob`):
+ * operands and values in `lang: 'regex'`, where the command reads them so. None where the parse is refused, or an
+ * option given or implied (`implied`: by the command's name, `fgrep`) reads them as fixed strings (the mode `fixed`,
+ * `OptionSpec.selects`) or matches only whole words or lines (`OptionSpec.whole`: `-w`, `-x`).
+ */
+export function regexWords(parse: ArgvParse, implied: readonly OptionSpec[]): number[] {
+  const specs = [...givenOptions(parse).map(({ role }) => (role.role === 'option' ? role.spec : undefined)), ...implied];
+  if (parse.refused || parse.mode === 'fixed' || specs.some((o) => o?.selects === 'fixed' || o?.whole)) return [];
+  return parse.roles.flatMap(({ word, role }) => ((role.role === 'operand' || role.role === 'value') && role.spec?.lang === 'regex' ? [word] : []));
 }
 
 /**

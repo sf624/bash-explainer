@@ -223,10 +223,12 @@ export const S = {
 /**
  * A Japanese text with a space between each code span and the kana or kanji it touches (docs/japanese-style.md): the
  * clauses put a name next to a particle (`grep`を). A span is fenced by a run of backticks, closed by a run as long
- * (`codeSpan`: ``a`b``); a run that is never closed is text.
+ * (`codeSpan`: ``a`b``); a run that is never closed is text. A line number (`linesSaid`: 行 2, 行 2〜4) is spaced
+ * from the kana after it too, as in 「行 1 から」.
  */
 export function jaSpaced(text: string): string {
   const letter = /[ぁ-ゖァ-ヺー一-鿿]/;
+  const lines = (t: string) => t.replace(/(行 \d+(?:〜\d+)?)(?=[ぁ-ゖァ-ヺー一-鿿])/g, '$1 ');
   let out = '';
   let i = 0;
   while (i < text.length) {
@@ -238,10 +240,10 @@ export function jaSpaced(text: string): string {
     const end = close + open[0].length;
     const before = text.slice(i, start);
     const after = text.charAt(end);
-    out += before + (letter.test(before.slice(-1)) ? ' ' : '') + text.slice(start, end) + (letter.test(after) ? ' ' : '');
+    out += lines(before) + (letter.test(before.slice(-1)) ? ' ' : '') + text.slice(start, end) + (letter.test(after) ? ' ' : '');
     i = end;
   }
-  return out + text.slice(i);
+  return out + lines(text.slice(i));
 }
 
 /** The end of a sentence. */

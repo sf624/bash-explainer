@@ -1,9 +1,9 @@
 import { interpret, type ArgRole, type ArgvParse } from './argv/interpret';
-import { downloadsTo, givenOptions, has, readsScriptFromStdin } from './argv/query';
+import { downloadsTo, givenOptions, has, readsScriptFromStdin, regexWords } from './argv/query';
 import type { CommandSpec, OptionSpec } from './argv/spec';
 import { argWordFor } from './argv/words';
 import type { Shell } from './dialect';
-import { canonicalName, impliedWords, lookupCommand } from './dict/aliases';
+import { canonicalName, impliedOptions, lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
 import { argWordIn, bracesIn } from './semantics/argwords';
 import { type ExecEnv, readAs, runsString, slotEnvs } from './semantics/env';
@@ -710,12 +710,9 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
   const patternFromVariable = (n: SyntaxNode) => {
     for (const r of specRuns(n, model, shell)) {
       // (The options an alias implies are in the spec of the command it is: `egrep`, `-E` of grep.)
-      const implied = impliedWords(r.name).map((w) => r.spec.options!.find((o) => o.names.includes(w))!);
+      const implied = impliedOptions(r.name, r.spec);
       const given = givenOptions(r.parse).map(({ role }) => role);
-      const specs = [...given.map((o) => (o.role === 'option' ? o.spec : undefined)), ...implied];
-      if (r.parse.refused || r.parse.mode === 'fixed' || specs.some((o) => o?.selects === 'fixed' || o?.whole)) continue;
-      for (const { word, role } of r.parse.roles) {
-        if ((role.role !== 'operand' && role.role !== 'value') || role.spec?.lang !== 'regex') continue;
+      for (const word of regexWords(r.parse, implied)) {
         const w = r.run.args[word];
         const v = wholeVariable(w);
         const known = v && model.trusts(v.name) ? model.at(w).run.variables.get(v.name)?.value : undefined;

@@ -4,7 +4,7 @@
 import { fdName, specialVariables, wellKnownVariables } from './dict/syntax';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
-import type { HoleSource } from './semantics/fieldshape';
+import { type HoleSource, writtenPlain } from './semantics/fieldshape';
 
 /** What a placeholder stands for: a part of a word (`HoleSource`), the names a pattern matches, or a whole word not known here. */
 export type ArgvHoleKind = HoleSource['kind'] | 'names' | 'word';
@@ -29,7 +29,7 @@ export function placeholderSaid(lang: Lang, h: HoleSource | { kind: 'names' | 'w
   const c = code(h.code);
   switch (h.kind) {
     case 'parameter': {
-      const plain = h.code === `$${h.name}` || h.code === `\${${h.name}}`;
+      const plain = writtenPlain(h);
       // (The arguments or the elements, each a word of its own, or joined into one: `x="$@"`, as `"$*"`.)
       const args = /^[@*]$/.test(h.name);
       if (h.elements === 'each' && args) return ja ? '各引数' : 'each argument';

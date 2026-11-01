@@ -3,7 +3,7 @@ import { tx, type Text } from '../i18n';
 import { builtins } from './builtins';
 import { commands } from './commands';
 import { shAttached } from './shells';
-import type { CommandSpec } from '../argv/spec';
+import type { CommandSpec, OptionSpec } from '../argv/spec';
 
 /**
  * The one table of command aliases: a program that uses another program's spec, with the words it implies
@@ -35,6 +35,12 @@ export function canonicalName(name: string): string {
 /** The words an alias adds in front of its arguments (`egrep` → `-E`). */
 export function impliedWords(name: string): string[] {
   return aliasOf(name)?.implies ?? [];
+}
+
+/** The options of `spec` that the name `name` (a path, or a name) implies (`impliedWords`: `-E` for `egrep`). */
+export function impliedOptions(name: string, spec: CommandSpec): OptionSpec[] {
+  // (The words an alias implies are options of the spec it is given.)
+  return impliedWords(name.split('/').pop()!).map((w) => spec.options!.find((o) => o.names.includes(w))!);
 }
 
 /**

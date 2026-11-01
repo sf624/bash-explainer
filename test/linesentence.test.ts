@@ -113,33 +113,33 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["if a; then\n  b\nelif c; then\n  d\nfi", 2, "Otherwise, if `c` succeeds, runs what follows `then`.", "そうでなければ、`c` が成功したら、`then` 以下を実行する。"],
     ["if a; then\n  b\nelif c; then d\nfi", 2, "Otherwise, if `c` succeeds, runs `d`.", "そうでなければ、`c` が成功したら、`d` を実行する。"],
     ["if a; then\n  b\nelse c\nfi", 2, "Otherwise, runs `c`.", "そうでなければ、`c` を実行する。"],
-    ["if a; then\n b\nelse\n c\nfi", 2, "Otherwise, runs line 4.", "そうでなければ、行 4を実行する。"],
+    ["if a; then\n b\nelse\n c\nfi", 2, "Otherwise, runs line 4.", "そうでなければ、行 4 を実行する。"],
     ["for x in a\ndo\n  b\ndone", 1, "`do` continues the `for` loop of line 1.", "`do` は行 1 からの `for` ループの続き。"],
-    ["for x in a; do\n  b\ndone", 0, "Runs line 2 with `$x` set to `a`, one at a time.", "`$x` を `a` に順に設定して、行 2を実行する。"],
-    ["while a\ndo b; done", 1, "Runs `b`; `done` ends the `while` loop of line 1: repeats line 2 while `a` succeeds.", "`b` を実行する。`done` は行 1 からの `while` ループの終わり。`a` が成功する間、行 2をくり返す。"],
-    ["while a; do\n  b\ndone > out", 2, "`done` ends the `while` loop of line 1: repeats line 2 while `a` succeeds; the whole of the `while` loop runs with stdout (fd 1) to `out`.", "`done` は行 1 からの `while` ループの終わり。`a` が成功する間、行 2をくり返す。`while` ループ全体の入出力: 標準出力(fd 1)は `out` へ。"],
-    ["while a; do\n  b\ndone", 2, "`done` ends the `while` loop of line 1: repeats line 2 while `a` succeeds.", "`done` は行 1 からの `while` ループの終わり。`a` が成功する間、行 2をくり返す。"],
-    ["until a; do\n b\ndone", 2, "`done` ends the `until` loop of line 1: repeats line 2 until `a` succeeds.", "`done` は行 1 からの `until` ループの終わり。`a` が成功するまで、行 2をくり返す。"],
+    ["for x in a; do\n  b\ndone", 0, "Runs line 2 with `$x` set to `a`, one at a time.", "`$x` を `a` に順に設定して、行 2 を実行する。"],
+    ["while a\ndo b; done", 1, "Runs `b`; `done` ends the `while` loop of line 1: repeats line 2 while `a` succeeds.", "`b` を実行する。`done` は行 1 からの `while` ループの終わり。`a` が成功する間、行 2 をくり返す。"],
+    ["while a; do\n  b\ndone > out", 2, "`done` ends the `while` loop of line 1: repeats line 2 while `a` succeeds; the whole of the `while` loop runs with stdout (fd 1) to `out`.", "`done` は行 1 からの `while` ループの終わり。`a` が成功する間、行 2 をくり返す。`while` ループ全体の入出力: 標準出力(fd 1)は `out` へ。"],
+    ["while a; do\n  b\ndone", 2, "`done` ends the `while` loop of line 1: repeats line 2 while `a` succeeds.", "`done` は行 1 からの `while` ループの終わり。`a` が成功する間、行 2 をくり返す。"],
+    ["until a; do\n b\ndone", 2, "`done` ends the `until` loop of line 1: repeats line 2 until `a` succeeds.", "`done` は行 1 からの `until` ループの終わり。`a` が成功するまで、行 2 をくり返す。"],
     ["case x in\n  a)\n    b\n    ;;\nesac", 4, "`esac` ends the `case` of line 1: runs the first branch (lines 2–4) whose pattern matches `x`.", "`esac` は行 1 からの `case` 文の終わり。`x` に最初に一致したパターンの分岐（行 2〜4）を実行する。"],
-    ["case x in\n  a)\n    b\n    ;;\nesac", 1, "If the value matches `a`, runs line 3.", "値が `a` に一致したら、行 3を実行する。"],
-    ["case x in\n  a)\n    b\n    ;;\nesac", 3, "`;;` ends the branch of line 2: if the value matches `a`, runs line 3.", "`;;` は行 2 からの分岐の終わり。値が `a` に一致したら、行 3を実行する。"],
+    ["case x in\n  a)\n    b\n    ;;\nesac", 1, "If the value matches `a`, runs line 3.", "値が `a` に一致したら、行 3 を実行する。"],
+    ["case x in\n  a)\n    b\n    ;;\nesac", 3, "`;;` ends the branch of line 2: if the value matches `a`, runs line 3.", "`;;` は行 2 からの分岐の終わり。値が `a` に一致したら、行 3 を実行する。"],
     ["case x in\n  a)\n    b ;;\nesac", 2, "Runs `b`.", "`b` を実行する。"],
     ["case x in\n  a)\n  ;;\nesac", 1, "If the value matches `a`, runs its body.", "値が `a` に一致したら、本体を実行する。"],
     ["case x in a) b ;;\nesac", 0, "Runs the first branch whose pattern matches `x`; if the value matches `a`, runs `b`.", "`x` に最初に一致したパターンの分岐を実行する。値が `a` に一致したら、`b` を実行する。"],
-    ["{\n  a\n} > out", 2, "`}` ends the group of line 1: runs line 2 as one group; the whole of the group runs with stdout (fd 1) to `out`.", "`}` は行 1 からのグループの終わり。行 2を1つのグループとして実行する。グループ全体の入出力: 標準出力(fd 1)は `out` へ。"],
-    ["(\n  a\n)", 0, "Runs line 2 in a subshell.", "行 2をサブシェルで実行する。"],
-    ["(\n  a\n)", 2, "`)` ends the subshell of line 1: runs line 2 in a subshell.", "`)` は行 1 からのサブシェルの終わり。行 2をサブシェルで実行する。"],
-    ["{\n  a\n}", 0, "Runs line 2 as one group.", "行 2を1つのグループとして実行する。"],
+    ["{\n  a\n} > out", 2, "`}` ends the group of line 1: runs line 2 as one group; the whole of the group runs with stdout (fd 1) to `out`.", "`}` は行 1 からのグループの終わり。行 2 を1つのグループとして実行する。グループ全体の入出力: 標準出力(fd 1)は `out` へ。"],
+    ["(\n  a\n)", 0, "Runs line 2 in a subshell.", "行 2 をサブシェルで実行する。"],
+    ["(\n  a\n)", 2, "`)` ends the subshell of line 1: runs line 2 in a subshell.", "`)` は行 1 からのサブシェルの終わり。行 2 をサブシェルで実行する。"],
+    ["{\n  a\n}", 0, "Runs line 2 as one group.", "行 2 を1つのグループとして実行する。"],
     ["{ a\n}", 1, "`}` ends the group of line 1: runs its body (`a`) as one group.", "`}` は行 1 からのグループの終わり。本体（`a`）を1つのグループとして実行する。"],
     ["f() {\n  a\n}", 0, "Defines the function `f` (lines 1–3), whose body runs each time it is called.", "関数 `f` を定義する（行 1〜3）。本体は呼び出されるたびに実行される。"],
     ["f() {\n  a\n}", 2, "`}` ends the function `f` of line 1.", "`}` は行 1 からの関数 `f` の終わり。"],
     ["f()\n{\n  a\n}", 1, "`{` continues the function `f` of line 1.", "`{` は行 1 からの関数 `f` の続き。"],
-    ["for ((i=0;i<3;i++)); do\n a\ndone", 0, "Runs line 2 while the test in `(( … ))` is true.", "`(( … ))` の条件が真の間、行 2を実行する。"],
-    ["for ((i=0;i<3;i++)); do\n a\ndone", 2, "`done` ends the `for` loop of line 1: runs line 2 while the test in `(( … ))` is true.", "`done` は行 1 からの `for` ループの終わり。`(( … ))` の条件が真の間、行 2を実行する。"],
-    ["select x in a b; do\n a\ndone", 0, "Shows a menu of `a` and `b` and runs line 2 with `$x` set to the choice.", "`a`・`b` のメニューを表示し、選ばれた値を `$x` に設定して行 2を実行する。"],
-    ["select x in a b; do\n a\ndone", 2, "`done` ends the `select` loop of line 1: shows a menu of `a` and `b` and runs line 2 with `$x` set to the choice.", "`done` は行 1 からの `select` ループの終わり。`a`・`b` のメニューを表示し、選ばれた値を `$x` に設定して行 2を実行する。"],
+    ["for ((i=0;i<3;i++)); do\n a\ndone", 0, "Runs line 2 while the test in `(( … ))` is true.", "`(( … ))` の条件が真の間、行 2 を実行する。"],
+    ["for ((i=0;i<3;i++)); do\n a\ndone", 2, "`done` ends the `for` loop of line 1: runs line 2 while the test in `(( … ))` is true.", "`done` は行 1 からの `for` ループの終わり。`(( … ))` の条件が真の間、行 2 を実行する。"],
+    ["select x in a b; do\n a\ndone", 0, "Shows a menu of `a` and `b` and runs line 2 with `$x` set to the choice.", "`a`・`b` のメニューを表示し、選ばれた値を `$x` に設定して行 2 を実行する。"],
+    ["select x in a b; do\n a\ndone", 2, "`done` ends the `select` loop of line 1: shows a menu of `a` and `b` and runs line 2 with `$x` set to the choice.", "`done` は行 1 からの `select` ループの終わり。`a`・`b` のメニューを表示し、選ばれた値を `$x` に設定して行 2 を実行する。"],
     ["(( x =\n 1 ))", 1, "Evaluates the arithmetic in `(( … ))`.", "`(( … ))` の算術式を評価する。"],
-    ["cat f | while read l; do\n  echo \"$l\"\ndone", 0, "Pipes `cat` into a `while` loop (lines 1–3); the `while` loop runs in a subshell: repeats line 2 while `read` succeeds; its status is that of the `while` loop.", "`cat` の出力を `while` ループ（行 1〜3）に渡す。`while` ループはサブシェルで実行される。`read` が成功する間、行 2をくり返す。終了ステータスは `while` ループのもの。"],
+    ["cat f | while read l; do\n  echo \"$l\"\ndone", 0, "Pipes `cat` into a `while` loop (lines 1–3); the `while` loop runs in a subshell: repeats line 2 while `read` succeeds; its status is that of the `while` loop.", "`cat` の出力を `while` ループ（行 1〜3）に渡す。`while` ループはサブシェルで実行される。`read` が成功する間、行 2 をくり返す。終了ステータスは `while` ループのもの。"],
     ["a &&\n  b", 1, "Runs `a`; if that succeeds, runs `b`.", "`a` を実行する。成功したら、`b` を実行する。"],
     ["# just a comment", 0, null, null],
     ["", 0, null, null],
@@ -173,21 +173,21 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["select", 0, "Shows a menu of each argument and runs its body with `$` set to the choice.", "各引数のメニューを表示し、選ばれた値を `$` に設定して本体を実行する。"],
     ["coproc", 0, "Does nothing.", "何もしない。"],
     ["cat f | while read l; do echo \"$l\"; done", 0, "Pipes `cat` into a `while` loop; the `while` loop runs in a subshell: repeats its body (`echo`) while `read` succeeds; its status is that of the `while` loop.", "`cat`（ファイルの内容を連結して標準出力に出す）の出力を `while` ループに渡す。`while` ループはサブシェルで実行される。`read`（標準入力から1行読み、変数に代入する）が成功する間、本体（`echo`）をくり返す。終了ステータスは `while` ループのもの。"],
-    ["cat f | while read l; do\n  echo \"$l\"\ndone | sort", 2, "`done` ends the `while` loop of line 1: repeats line 2 while `read` succeeds; pipes its output into `sort` (sort lines).", "`done` は行 1 からの `while` ループの終わり。`read` が成功する間、行 2をくり返す。その出力を `sort`（行を並べ替える）に渡す。"],
+    ["cat f | while read l; do\n  echo \"$l\"\ndone | sort", 2, "`done` ends the `while` loop of line 1: repeats line 2 while `read` succeeds; pipes its output into `sort` (sort lines).", "`done` は行 1 からの `while` ループの終わり。`read` が成功する間、行 2 をくり返す。その出力を `sort`（行を並べ替える）に渡す。"],
     ["cat f | while read l; do\n  echo \"$l\"\ndone", 1, "Runs `echo` (print arguments to stdout, separated by spaces).", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。"],
-    ["a |\n  while read l; do\n    b\n  done", 1, "Repeats line 3 while `read` (read a line from stdin into variables) succeeds.", "`read`（標準入力から1行読み、変数に代入する）が成功する間、行 3をくり返す。"],
+    ["a |\n  while read l; do\n    b\n  done", 1, "Repeats line 3 while `read` (read a line from stdin into variables) succeeds.", "`read`（標準入力から1行読み、変数に代入する）が成功する間、行 3 をくり返す。"],
     ["{ a; b; } | sort", 0, "Pipes a group into `sort` (sort lines); the group runs in a subshell: runs `a`; then runs `b`; its status is that of `sort`.", "グループの出力を `sort`（行を並べ替える）に渡す。グループはサブシェルで実行される。`a` を実行する。続けて、`b` を実行する。終了ステータスは `sort` のもの。"],
-    ["{\n  a\n} | sort", 0, "Pipes a group (lines 1–3) into `sort`; the group runs in a subshell: runs line 2; its status is that of `sort`.", "グループ（行 1〜3）の出力を `sort` に渡す。グループはサブシェルで実行される。行 2を実行する。終了ステータスは `sort` のもの。"],
-    ["{\n  a\n} | sort", 2, "`}` ends the group of line 1: runs line 2 as one group; pipes its output into `sort` (sort lines).", "`}` は行 1 からのグループの終わり。行 2を1つのグループとして実行する。その出力を `sort`（行を並べ替える）に渡す。"],
+    ["{\n  a\n} | sort", 0, "Pipes a group (lines 1–3) into `sort`; the group runs in a subshell: runs line 2; its status is that of `sort`.", "グループ（行 1〜3）の出力を `sort` に渡す。グループはサブシェルで実行される。行 2 を実行する。終了ステータスは `sort` のもの。"],
+    ["{\n  a\n} | sort", 2, "`}` ends the group of line 1: runs line 2 as one group; pipes its output into `sort` (sort lines).", "`}` は行 1 からのグループの終わり。行 2 を1つのグループとして実行する。その出力を `sort`（行を並べ替える）に渡す。"],
     ["{\n  a\n} |\n  sort", 3, "Runs `sort` (sort lines).", "`sort`（行を並べ替える）を実行する。"],
     ["( a; b ) | sort", 0, "Pipes a subshell into `sort` (sort lines); the subshell runs `a`; then runs `b`; its status is that of `sort`.", "サブシェルの出力を `sort`（行を並べ替える）に渡す。サブシェルは、`a` を実行する。続けて、`b` を実行する。終了ステータスは `sort` のもの。"],
     ["cat f | if a; then b; fi", 0, "Pipes `cat` (concatenate files and print to stdout) into an `if`; the `if` runs in a subshell: if `a` succeeds, runs `b`; its status is that of the `if`.", "`cat`（ファイルの内容を連結して標準出力に出す）の出力を `if` 文に渡す。`if` 文はサブシェルで実行される。`a` が成功したら、`b` を実行する。終了ステータスは `if` 文のもの。"],
     ["while read -r l; do echo; done < f | sort", 0, "Pipes a `while` loop into `sort` (sort lines); the `while` loop runs in a subshell: reads `f` one line at a time, running its body (`echo`) for each line; its status is that of `sort`.", "`while` ループの出力を `sort`（行を並べ替える）に渡す。`while` ループはサブシェルで実行される。`f` を1行ずつ読み、行ごとに本体（`echo`）を実行する。終了ステータスは `sort` のもの。"],
-    ["shopt -s lastpipe\ncat f | while read l; do\n  echo\ndone", 1, "Pipes `cat` into a `while` loop (lines 2–4); the `while` loop runs in the shell itself (`lastpipe`): repeats line 3 while `read` succeeds; its status is that of the `while` loop.", "`cat` の出力を `while` ループ（行 2〜4）に渡す。`while` ループは（`lastpipe` で）シェル自体で実行される。`read` が成功する間、行 3をくり返す。終了ステータスは `while` ループのもの。"],
+    ["shopt -s lastpipe\ncat f | while read l; do\n  echo\ndone", 1, "Pipes `cat` into a `while` loop (lines 2–4); the `while` loop runs in the shell itself (`lastpipe`): repeats line 3 while `read` succeeds; its status is that of the `while` loop.", "`cat` の出力を `while` ループ（行 2〜4）に渡す。`while` ループは（`lastpipe` で）シェル自体で実行される。`read` が成功する間、行 3 をくり返す。終了ステータスは `while` ループのもの。"],
     ["[ -n \"$x\" ] && shopt -s lastpipe\ncat f | { b; }", 1, "Pipes `cat` (concatenate files and print to stdout) into a group; the group runs in a subshell, or in the shell itself with `lastpipe`: runs `b`; its status is that of the group.", "`cat`（ファイルの内容を連結して標準出力に出す）の出力をグループに渡す。グループはサブシェルで実行される（`lastpipe` が有効ならシェル自体で）。`b` を実行する。終了ステータスはグループのもの。"],
     ["cat f | while read l; do echo; done &", 0, "In the background, pipes `cat` into a `while` loop; the `while` loop runs in a subshell: repeats its body (`echo`) while `read` succeeds.", "バックグラウンドで: `cat` の出力を `while` ループに渡す。`while` ループはサブシェルで実行される。`read` が成功する間、本体（`echo`）をくり返す。"],
-    ["while read -r l; do\n  echo\ndone < input.txt", 2, "`done` ends the `while` loop of line 1: reads `input.txt` one line at a time, running line 2 for each line.", "`done` は行 1 からの `while` ループの終わり。`input.txt` を1行ずつ読み、行ごとに行 2を実行する。"],
-    ["while :; do\n  a\ndone > log", 2, "`done` ends the `while` loop of line 1: repeats line 2 until `break` or `exit` leaves the loop; the whole of the `while` loop runs with stdout (fd 1) to `log`.", "`done` は行 1 からの `while` ループの終わり。`break` か `exit` で抜けるまで、行 2をくり返す。`while` ループ全体の入出力: 標準出力(fd 1)は `log` へ。"],
+    ["while read -r l; do\n  echo\ndone < input.txt", 2, "`done` ends the `while` loop of line 1: reads `input.txt` one line at a time, running line 2 for each line.", "`done` は行 1 からの `while` ループの終わり。`input.txt` を1行ずつ読み、行ごとに行 2 を実行する。"],
+    ["while :; do\n  a\ndone > log", 2, "`done` ends the `while` loop of line 1: repeats line 2 until `break` or `exit` leaves the loop; the whole of the `while` loop runs with stdout (fd 1) to `log`.", "`done` は行 1 からの `while` ループの終わり。`break` か `exit` で抜けるまで、行 2 をくり返す。`while` ループ全体の入出力: 標準出力(fd 1)は `log` へ。"],
     ["for x in; do :; done", 0, "Does not run its body (`:`): the words after `in` give none.", "`in` の後の単語からは何も得られないので、本体（`:`）は実行されない。"],
     ["e=; select x in $e; do :; done", 0, "Sets `e` to the empty string; then does not run its body (`:`): the words after `in` give none.", "`e` に空文字列を代入する。続けて、`in` の後の単語からは何も得られないので、本体（`:`）は実行されない。"],
     ["exec >&- <&- 3>&- 2>&1 4>&5-", 0, "Runs `exec`, with stdout (fd 1) closed, stdin (fd 0) closed, file descriptor 3 closed, stderr (fd 2) to where stdout (fd 1) goes, file descriptor 5 moved to file descriptor 4.", "`exec` を実行する（標準出力(fd 1)を閉じて、標準入力(fd 0)を閉じて、ファイルディスクリプタ 3 を閉じて、標準エラー出力(fd 2)は標準出力(fd 1)と同じ先へ、ファイルディスクリプタ 5 はファイルディスクリプタ 4 に移す）。"],
@@ -400,7 +400,7 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
       assert.deepStrictEqual(found, []);
     });
 
-    it('writes Japanese after docs/japanese-style.md: a space between code and Japanese, none before a particle', () => {
+    it('writes Japanese after docs/japanese-style.md: a space between code and Japanese and after a line number, none before a particle', () => {
       const found: string[] = [];
       for (const f of files) {
         f.text.split('\n').forEach((_, i) => {
@@ -408,7 +408,8 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
           if (!s) return;
           const parts = s.split(/(`+.+?`+)/);
           const glued = parts.some((p, k) => k % 2 === 1 && (letter.test(parts[k - 1].slice(-1)) || letter.test(parts[k + 1].charAt(0))));
-          if (glued || /[ぁ-ゖァ-ヺー一-鿿] [をにがはの]/.test(s)) found.push(`${f.name}:${i + 1}: ${s}`);
+          const number = parts.some((p, k) => k % 2 === 0 && /行 \d+(〜\d+)?[ぁ-ゖァ-ヺー一-鿿]/.test(p));
+          if (glued || number || /[ぁ-ゖァ-ヺー一-鿿] [をにがはの]/.test(s)) found.push(`${f.name}:${i + 1}: ${s}`);
         });
       }
       assert.deepStrictEqual(found, []);
