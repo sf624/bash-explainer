@@ -1602,15 +1602,15 @@ body.resizing .problems-resize {
 }
 
 /* level table (src/levels.ts, scripts/level-css.ts): problems */
-:is(#problems, #tab-problems) .icon.level-error {
+:is(#problems, #tab-problems, #sheet-summary) .icon.level-error {
   color: var(--c-error-level);
 }
 
-:is(#problems, #tab-problems) .icon.level-warning {
+:is(#problems, #tab-problems, #sheet-summary) .icon.level-warning {
   color: var(--c-warning);
 }
 
-:is(#problems, #tab-problems) .icon.level-info {
+:is(#problems, #tab-problems, #sheet-summary) .icon.level-info {
   color: var(--c-info);
 }
 /* end of the level table */
@@ -2469,7 +2469,8 @@ body.resizing .problems-resize {
 .sheet-grab,
 #tab-problems,
 .tab-line,
-.sheet-hint {
+.sheet-hint,
+.sheet-summary {
   display: none;
 }
 
@@ -2647,6 +2648,92 @@ body.resizing .problems-resize {
   font-size: 13px;
 }
 
+/* The summary row of the cursor's line (step C8b): under the tabs row while the sheet is folded (the peek is both rows),
+   and alone on the keyboard's top while the user types. Its padding keeps its content clear of the edges' swipe strips.
+   At half and full it is out of the flow and unseen, but keeps its box, which the peek's height is measured from. */
+:where(html.bottom-sheet) .sheet-summary {
+  display: flex;
+  position: absolute;
+  visibility: hidden;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 48px;
+  min-height: 48px;
+  margin: 0;
+  padding: 0 12px;
+  border: 0;
+  border-top: 1px solid var(--vscode-panel-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+:where(html.bottom-sheet:is([data-sheet="peek"], [data-keyboard])) .sheet-summary {
+  position: relative;
+  visibility: visible;
+}
+
+:where(html.bottom-sheet) .sheet-summary:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+.summary-line {
+  flex: none;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-summary .icon {
+  flex: none;
+}
+
+.sheet-summary .icon:empty {
+  display: none;
+}
+
+.summary-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-summary .chev {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The keyboard open over the editor: the sheet is the summary row alone, on the keyboard's top (what the keyboard
+   covers is under it, in --sheet-h), with no tabs row, no corner and no animation; the app bar goes, as at full. */
+:where(html.bottom-sheet[data-keyboard]) .panel-pane:not(.dragging) {
+  padding-bottom: 0;
+  border-radius: 0;
+  transition: none;
+}
+
+:where(html.bottom-sheet[data-keyboard]) .panel-head,
+:where(html.bottom-sheet[data-keyboard]) .sheet-hint:not([hidden]) {
+  display: none;
+}
+
+:where(html.bottom-sheet[data-keyboard]) .sheet-summary {
+  border-top: 0;
+}
+
 /* The Problems tab: the page's list (moved into the sheet), without the strip that folds and resizes it. */
 :where(html.bottom-sheet) .panel-pane[data-problems] .panel-body,
 :where(html.bottom-sheet) .panel-pane:not([data-problems]) #problems,
@@ -2675,8 +2762,8 @@ html.bottom-sheet #problems #problem-list {
   z-index: 13;
 }
 
-/* At full height the app bar slides away; it comes back below full. */
-:where(html.bottom-sheet[data-sheet="full"]) .top {
+/* At full height, and while the keyboard is open, the app bar slides away; it comes back below full. */
+:where(html.bottom-sheet:is([data-sheet="full"], [data-keyboard])) .top {
   margin-top: calc(-1 * var(--bar-h));
 }
 
