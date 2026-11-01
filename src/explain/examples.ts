@@ -42,7 +42,7 @@ import { intersects, onLine, same } from './nodes';
 import { echoMayReadEscapes, given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
 import { has, operands, readsFields, regexWords, values } from '../argv/query';
 import { impliedOptions } from '../dict/aliases';
-import { globbedByBash } from '../semantics/chars';
+import { wordFields } from '../semantics/words';
 import { receivedFields, writtenPlain } from '../semantics/fieldshape';
 import { wordValue } from './values';
 import { braceExpansion, bracesHere } from './words';
@@ -533,18 +533,19 @@ function stageName(cx: Explainer, cmd: SyntaxNode): { node: SyntaxNode; value: s
 const NOT_SHOWN = /[\p{C}\p{Zl}\p{Zp}]/u;
 
 /**
- * The words a stage of a pipeline runs as a program, as ps shows its command line (`awk {print $2}`), after quote
- * removal as the interpreter reads them (`env \--` runs `env --`, `\head` runs `head`); undefined when they are not all
- * known, or the stage is not a program (a builtin, a function, a compound command). A word with a character ps
- * does not show as it is (`NOT_SHOWN`) is not known either: ps shows it escaped (`$'a\tb'` as `a?b`), and a newline
- * would break the row. With the path bash runs it by, when it does not search PATH for it (`stageName`).
+ * The words a stage of a pipeline runs as a program, as ps shows its command line (`awk {print $2}`): what the program
+ * receives, with the values the stage's example runs with (`madeUpWords`: `grep alice`), after quote removal as the
+ * interpreter reads them (`env \--` runs `env --`, `\head` runs `head`); undefined when they are not all known, or
+ * the stage is not a program (a builtin, a function, a compound command). A word with a character ps does not show as
+ * it is (`NOT_SHOWN`) is not known either: ps shows it escaped (`$'a\tb'` as `a?b`), and a newline would break the
+ * row. With the path bash runs it by, when it does not search PATH for it (`stageName`).
  */
 function argvOf(cx: Explainer, cmd: SyntaxNode): Run | undefined {
   const named = stageName(cx, cmd);
   if (named?.res.kind !== 'file') return undefined;
   const { node: name, value, path } = named;
-  const words = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect').map((a) => staticWordValue(a, false, cx.state.shell));
-  const argv = [value, ...words];
+  const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect');
+  const argv = [value, ...args.flatMap((a) => madeUpWords(cx, cmd, a)?.words ?? [undefined])];
   if (!argv.every((w): w is string => w !== undefined && !NOT_SHOWN.test(w))) return undefined;
   return { argv, ...(path ? { path } : {}) };
 }
@@ -582,51 +583,58 @@ function madeUpLayout(cx: Explainer, cmd: SyntaxNode, alt: LayoutAlt): MadeUp | 
 }
 
 /**
- * The value the made-up system gives the variable `name` where `cmd` runs, when the script leaves it to the environment
- * (`$USER` is `alice`: `startValue`): no command of the script sets it (`StateModel.assigned`), nothing the walk did not
- * read ran before (`ShellState.opaque`: `source`, `eval`), and the shell that runs `cmd` is the script's, started on
- * the made-up system (`startedAs`, `inheritedAt`). None for a variable bash or a builtin may change unseen
+ * The value the variable `name` has where `cmd` runs on the made-up system (`$USER` is `alice`), for a pipeline example
+ * that runs with it: the value a program started there gets (`exportedAt`: `exportedValue` with the made-up start, which
+ * follows the script's own assignments, exports, namerefs and the shells a slot starts). An example asks more, since
+ * its value stands for one the script leaves to the environment: the file runs as bash runs a script or a terminal
+ * (`startedAs`; not a host's shell), no command of the script sets the name anywhere (`StateModel.assigned`: not in a
+ * function either, called or not), nothing the walk did not read ran before (`ShellState.opaque`: `source`, `eval`,
+ * which `exportedAt` follows past, for the layouts), and neither bash nor a builtin may change it unseen
  * (`changedUnseen`: `RANDOM`, `PWD` after `cd`).
- * The value stays in the example: the word model never reads it (`wordFields` has no environment).
  */
 function madeUpValue(cx: Explainer, cmd: SyntaxNode, name: string): string | undefined {
-  const started = startedAs(cx);
-  const st = cx.state.at(cmd).run;
-  if (!started || st.opaque || st.variables.has(name) || cx.state.assigned.has(name) || changedUnseen(name)) return undefined;
-  return inheritedAt(cx, cmd, started)(name) ?? undefined;
+  if (!startedAs(cx) || cx.state.at(cmd).run.opaque || cx.state.assigned.has(name) || changedUnseen(name)) return undefined;
+  return exportedAt(cx, cmd, name) ?? undefined;
 }
 
 /**
  * The words a pipeline example runs with for the word `a` of `cmd`: the fields the program receives (`receivedFields`),
- * with the value the made-up system gives each variable the script leaves to the environment (`madeUpValue`), and those
- * values. Undefined where a field is not known so: another part known only when the line runs, a value that splitting
- * by IFS or pathname expansion may change, a pattern.
+ * each hole of a plain parameter filled with the value the made-up system gives it (`madeUpValue`), and those values.
+ * The word model checks them: with those values as the environment, its fields (`wordFields`, with the IFS and the
+ * glob options in effect) are the value as it is. Undefined where they are not: a value that splitting or pathname
+ * expansion would change (`IFS=l`), a pattern, another part known only when the line runs.
  */
 function madeUpWords(cx: Explainer, cmd: SyntaxNode, a: SyntaxNode): { words: string[]; values: MadeUpValue[] } | undefined {
+  const memo = cx.memo(MADE_UP_WORDS);
+  if (!memo.has(a)) memo.set(a, madeUpWordsOf(cx, cmd, a));
+  return memo.get(a);
+}
+
+/** The words of `madeUpWords`, read once per line: a stage's example and the row ps shows of it read them. */
+const MADE_UP_WORDS = memoKey<{ words: string[]; values: MadeUpValue[] } | undefined>('made-up words');
+function madeUpWordsOf(cx: Explainer, cmd: SyntaxNode, a: SyntaxNode): { words: string[]; values: MadeUpValue[] } | undefined {
   const got = receivedFields(a, cx.state);
   if (got.fields) return { words: got.fields, values: [] };
   if (!got.holed) return undefined;
-  const ifs = ifsAt(cx, a);
   const values: MadeUpValue[] = [];
+  const variables: Record<string, string> = {};
   const words: string[] = [];
   for (const f of got.holed) {
-    if (f.pattern !== undefined) return undefined;
     let text = '';
     for (const part of f.parts) {
       if ('text' in part) { text += part.text; continue; }
       const h = part.hole;
-      const value = h.kind === 'parameter' && !h.elements && writtenPlain(h) ? madeUpValue(cx, cmd, h.name) : undefined;
+      const name = h.kind === 'parameter' && !h.elements && writtenPlain(h) ? h.name : undefined;
+      const value = name === undefined ? undefined : madeUpValue(cx, cmd, name);
       if (value === undefined) return undefined;
-      if (part.splits && (value === '' || ifs === undefined || [...value].some((c) => ifs.includes(c)))) return undefined;
-      // (No value of the made-up environment has a glob character; a guard should one get one.)
-      /* c8 ignore next */
-      if (part.globs && globbedByBash(value, 'unknown') !== false) return undefined;
+      variables[name!] = value;
       text += value;
       values.push({ code: h.code, value });
     }
     words.push(text);
   }
-  return { words, values };
+  const fields = wordFields(a, cx.state, { variables }).fields;
+  return fields && fields.join('\0') === words.join('\0') && fields.length === words.length ? { words, values } : undefined;
 }
 
 /** The value an assignment before a command gives `name`; null when it is not known (`X=$y`, `X+=y`, an array). */
