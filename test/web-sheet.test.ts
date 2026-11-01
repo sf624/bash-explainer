@@ -56,6 +56,22 @@ describe('the web page: the phone\'s sheet', function () {
     return s.pane;
   };
 
+  /**
+   * What a screen reader is told of an element (Chromium's accessibility tree): its role, name, value and focus, and
+   * the value in words its page gives (`aria-valuetext`: the tree, as the DevTools protocol shows it, has the number only).
+   */
+  const said = async (page: Page, selector: string) => {
+    const cdp = await page.context().newCDPSession(page);
+    const { root } = await cdp.send('DOM.getDocument');
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+    const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false });
+    await cdp.detach();
+    const n = nodes[0];
+    const property = (name: string) => n.properties?.find((p) => p.name === name)?.value.value;
+    const words = await page.locator(selector).getAttribute('aria-valuetext');
+    return { role: n.role?.value, name: n.name?.value, value: n.value?.value, words, focused: property('focused') ?? false };
+  };
+
   /** The width of the swipe strips along the screen's edges (.edge), which the rows' controls keep clear of. */
   const EDGE = 12;
 
@@ -218,14 +234,14 @@ describe('the web page: the phone\'s sheet', function () {
   it('moves with the keys on its grabber, says its height, keeps the focus off what it hides, and shows its hint once', async () => {
     const page = await open(await phone(390, 'en'));
     const grab = page.locator('#sheet-grab');
-    // In the Tab order before the tabs; named by its height.
+    // In the Tab order before the tabs. A slider over the heights (its keys are a slider's), named once, its value the
+    // height: the control asked for says the height shown, at once, even while it has the focus.
     await page.locator('#tab-explain').focus();
     await page.keyboard.press('Shift+Tab');
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'sheet-grab');
-    assert.strictEqual(await grab.getAttribute('aria-label'), 'Explanation height: Half');
+    assert.deepStrictEqual(await said(page, '#sheet-grab'), { role: 'slider', name: 'Explanation height', value: 1, words: 'Half', focused: true });
     assert.strictEqual(await page.locator('#sheet-hint').isVisible(), false);
-    // A new height is said once, by the live region; the name of the grabber that has the focus waits until the focus
-    // leaves (a screen reader that says a new name of its control would say it twice). Nothing else is said.
+    // A new height is also said once by the live region; a key that leaves the height, or a window that changes size, says nothing.
     await page.evaluate(`(() => {
       const region = document.getElementById('announce');
       window.said = [];
@@ -233,18 +249,14 @@ describe('the web page: the phone\'s sheet', function () {
     })()`);
     await page.keyboard.press('ArrowUp');
     assert.strictEqual((await settled(page)).snap, 'full');
-    assert.deepStrictEqual(await page.evaluate('window.said'), ['Explanation height: Full']);
-    assert.strictEqual(await grab.getAttribute('aria-label'), 'Explanation height: Half');
-    // (A key that leaves the height, and a window that changes size, say nothing.)
+    assert.deepStrictEqual(await said(page, '#sheet-grab'), { role: 'slider', name: 'Explanation height', value: 2, words: 'Full', focused: true });
     await page.keyboard.press('End');
     await page.setViewportSize({ width: 390, height: 700 });
     await settled(page);
     await page.setViewportSize({ width: 390, height: 740 });
     await settled(page);
     assert.deepStrictEqual(await page.evaluate('window.said'), ['Explanation height: Full']);
-    await page.locator('#tab-explain').focus();
-    assert.strictEqual(await grab.getAttribute('aria-label'), 'Explanation height: Full');
-    await grab.focus();
+    assert.deepStrictEqual(await grab.evaluate((e) => ['aria-orientation', 'aria-valuemin', 'aria-valuenow', 'aria-valuemax'].map((a) => e.getAttribute(a))), ['vertical', '0', '2', '2']);
     // The first full sheet: the hint, once.
     assert.strictEqual(await page.locator('#sheet-hint').isVisible(), true);
     assert.match(await page.locator('#sheet-hint').innerText(), /Tap or drag this bar/);
@@ -267,6 +279,7 @@ describe('the web page: the phone\'s sheet', function () {
     await page.evaluate("document.getElementById('sheet-grab').dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))");
     assert.strictEqual((await settled(page)).snap, 'full');
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'sheet-grab');
+    assert.deepStrictEqual(await said(page, '#sheet-grab'), { role: 'slider', name: 'Explanation height', value: 2, words: 'Full', focused: true });
     // Not again after a reload.
     await page.reload();
     await page.locator('.cm-line').first().waitFor();
@@ -280,6 +293,7 @@ describe('the web page: the phone\'s sheet', function () {
     bare.on('pageerror', (e) => errors.push(e.message));
     await snapTo(bare, 'full');
     assert.match(await bare.locator('#sheet-hint').innerText(), /このバーを/);
+    assert.deepStrictEqual(await said(bare, '#sheet-grab'), { role: 'slider', name: '解説の高さ', value: 2, words: '全体', focused: true });
     assert.strictEqual(await bare.locator('#announce').textContent(), '解説の高さ: 全体');
     await snapTo(bare, 'half');
     await snapTo(bare, 'full');
@@ -369,6 +383,29 @@ describe('the web page: the phone\'s sheet', function () {
     await until('the toast gone', () => undo.count(), (n) => n === 0);
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'sheet-grab');
     await ctx.close();
+  });
+
+  it('keeps F6 off what it hides: at full the grabber is the editor\'s stop, folded it is the explanation\'s', async () => {
+    const page = await open(await phone(390, 'en'));
+    const where = () => page.evaluate(`(() => {
+      const a = document.activeElement;
+      return a.id === 'panel' ? 'panel' : a.closest('.cm-editor') ? 'editor' : a.id || a.tagName;
+    })()`) as Promise<string>;
+    const press = async (key: string) => {
+      await page.keyboard.press(key);
+      await frames(page, 2);
+      return where();
+    };
+    // Full: the editor is inert; F6 goes between the grabber and the explanation, each way.
+    await snapTo(page, 'full');
+    assert.deepStrictEqual([await press('F6'), await press('F6'), await press('Shift+F6'), await press('Shift+F6')], ['panel', 'sheet-grab', 'panel', 'sheet-grab']);
+    // Folded: the explanation is inert; F6 goes between the editor and the grabber, never into the frame.
+    await snapTo(page, 'peek');
+    assert.deepStrictEqual([await press('F6'), await press('F6'), await press('Shift+F6'), await press('Shift+F6')], ['editor', 'sheet-grab', 'editor', 'sheet-grab']);
+    // Half: the explanation and the editor, as on a desktop (from the sheet's header, the next is the explanation).
+    await snapTo(page, 'half');
+    assert.deepStrictEqual([await press('F6'), await press('F6'), await press('F6')], ['panel', 'editor', 'panel']);
+    await page.context().close();
   });
 
   it('moves the sheet and the app bar without animation with reduced motion, and with one otherwise', async () => {

@@ -131,8 +131,10 @@ export const TEXT = {
     // words and names are the panel's: src/ui/panelHead.ts `panelTools`).
     panelTabs: 'Panel',
     tabExplanation: 'Explanation',
-    // The phone's sheet (web/sheet.ts): its grabber's name with the height shown, the heights' words, and the one-time hint.
-    sheetGrab: (height: string) => `Explanation height: ${height}`,
+    // The phone's sheet (web/sheet.ts): its grabber's name, the heights' words (its value), what the live region says
+    // of a new height, and the one-time hint.
+    sheetGrab: 'Explanation height',
+    sheetMoved: (height: string) => `Explanation height: ${height}`,
     sheetHeights: { peek: 'Folded', half: 'Half', full: 'Full' },
     sheetHint: 'Tap or drag this bar to change the height.',
     // The menu's groups.
@@ -278,7 +280,8 @@ export const TEXT = {
     pasteRefused: (key: string) => `ブラウザがクリップボードの読み取りを許可しませんでした。エディタで ${key} を押して貼り付けてください。`,
     panelTabs: 'パネル',
     tabExplanation: '解説',
-    sheetGrab: (height: string) => `解説の高さ: ${height}`,
+    sheetGrab: '解説の高さ',
+    sheetMoved: (height: string) => `解説の高さ: ${height}`,
     sheetHeights: { peek: '最小', half: '半分', full: '全体' },
     sheetHint: 'このバーをタップかドラッグすると高さが変わる。',
     menuScript: 'スクリプト',

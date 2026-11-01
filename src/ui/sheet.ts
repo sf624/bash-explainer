@@ -47,8 +47,12 @@ export function tapped(snap: Snap): Snap {
   return SNAPS[(SNAPS.indexOf(snap) + 1) % SNAPS.length];
 }
 
-/** A key on the grabber: ↑ one height higher, ↓ one lower, Home the peek, End full; undefined for any other key. */
+/**
+ * A key on the grabber: ↑ one height higher, ↓ one lower, Home the peek, End full, Enter the next as a tap does;
+ * undefined for any other key.
+ */
 export function keyed(snap: Snap, key: string): Snap | undefined {
+  if (key === 'Enter') return tapped(snap);
   const at = SNAPS.indexOf(snap);
   const to = ({ ArrowUp: Math.min(at + 1, SNAPS.length - 1), ArrowDown: Math.max(at - 1, 0), Home: 0, End: SNAPS.length - 1 } as Record<string, number>)[key];
   return to === undefined ? undefined : SNAPS[to];

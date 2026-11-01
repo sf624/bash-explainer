@@ -2513,8 +2513,8 @@ body.resizing .problems-resize {
   touch-action: none;
 }
 
-/* The grabber: a button as big as the header, under its tabs and its pill, for the keyboard (Enter and the arrows) and
-   a screen reader; a press lets it through to the header, which takes the taps and the drags. The bar drawn at its
+/* The grabber: a slider as big as the header, under its tabs and its pill, for the keyboard (the arrows, Home, End and
+   Enter) and a screen reader; a press lets it through to the header, which takes the taps and the drags. The bar drawn at its
    top says the sheet moves. */
 :where(html.bottom-sheet) .sheet-grab {
   display: block;

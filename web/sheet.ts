@@ -5,7 +5,7 @@
 // heights and where a drag, a tap or a key leaves the sheet are decided in src/ui/sheet.ts; here they are measured,
 // drawn and wired. The Problems list is the sheet's Problems tab: it moves into the sheet while the layout is on.
 import type { Lang } from '../src/i18n';
-import { keyed, settle, type Snap, type SnapHeights, snapHeights, tapped } from '../src/ui/sheet';
+import { keyed, settle, type Snap, type SnapHeights, snapHeights, SNAPS, tapped } from '../src/ui/sheet';
 import { narrow } from './layout';
 import { readStored, STORAGE_KEYS, writeStored } from './storage';
 import { TEXT } from './text';
@@ -50,16 +50,15 @@ export class BottomSheet {
     this.source = document.getElementById('source');
     // (First: the click that ends a drag goes nowhere.)
     this.drags();
-    // (The name a new height left waiting while the grabber had the focus: see `name`.)
-    this.grab.addEventListener('blur', () => this.name());
     this.grab.addEventListener('keydown', (e) => {
       const to = keyed(this.snap, e.key);
       if (to === undefined || e.altKey || e.ctrlKey || e.metaKey) return;
       e.preventDefault();
       this.set(to);
     });
-    // A tap on the header around its tabs and pill (the grabber lets it through to the header), or Enter on the
-    // grabber, cycles the heights; so does a tap on the tab already chosen. Another tab, on a folded sheet, opens it.
+    // A tap on the header around its tabs and pill (the grabber lets it through to the header), or a screen reader's
+    // press of the grabber, cycles the heights (Enter on it too: `keyed`); so does a tap on the tab already chosen.
+    // Another tab, on a folded sheet, opens it.
     // (Read before the tab's own listener, which chooses it and draws the tabs again: the target may be gone after.)
     let press: { tab: Element | null; chosen: boolean; control: boolean } | undefined;
     this.head.addEventListener('click', (e) => {
@@ -91,12 +90,22 @@ export class BottomSheet {
     return sheetLayout();
   }
 
-  /** The sheet is full: it covers the editor, which is inert. */
+  /** The sheet is full: it covers the editor, which is inert (`inert`). */
   get covers(): boolean {
     return this.on && this.snap === 'full';
   }
 
-  /** The focus on the grabber: where the page's focus goes home while the sheet covers the editor (`focusHome`). */
+  /** The sheet is folded: its content, the explanation and the Problems list, is inert (`inert`). */
+  get folded(): boolean {
+    return this.on && this.snap === 'peek';
+  }
+
+  /** The grabber has the focus. */
+  get focused(): boolean {
+    return document.activeElement === this.grab;
+  }
+
+  /** The focus on the grabber: the editor's stop while the sheet covers it, the explanation's while folded (`paneStops`). */
   focus(): void {
     this.grab.focus({ preventScroll: true });
   }
@@ -112,7 +121,10 @@ export class BottomSheet {
     return snapHeights(window.innerHeight, top, Math.round(peek));
   }
 
-  /** Shows a height; a new one is said (the live region: the grabber's name may not be, see `name`). */
+  /**
+   * Shows a height. A new one is also said in the page's live region: Chromium's accessibility tree does not carry the
+   * grabber's value in words (`aria-valuetext`; checked through its DevTools protocol), only its number.
+   */
   set(snap: Snap): void {
     const moved = snap !== this.snap;
     if (moved) this.hideHint();
@@ -120,7 +132,7 @@ export class BottomSheet {
     this.apply();
     if (moved && this.on) {
       const t = TEXT[this.host.lang()];
-      this.host.announce(t.sheetGrab(t.sheetHeights[snap]));
+      this.host.announce(t.sheetMoved(t.sheetHeights[snap]));
     }
     if (snap === 'full') this.showHint();
   }
@@ -165,19 +177,21 @@ export class BottomSheet {
     this.root.style.setProperty('--sheet-h', `${h[this.snap]}px`);
     // The editor ends where the sheet does at half or lower: at full, it stays as at half, under the sheet.
     this.root.style.setProperty('--sheet-rest', `${Math.min(h[this.snap], h.half)}px`);
-    this.inert(this.snap === 'peek', this.snap === 'full');
+    this.inert(this.folded, this.covers);
     this.name();
     this.host.moved();
   }
 
   /**
-   * The grabber's name says the height shown; its tooltip how to change it. A new height is said once, by the page's
-   * live region (`set`): while the grabber has the focus, its name waits until the focus leaves, as some screen readers
-   * also say a new name of the control they are on, and others do not.
+   * The grabber is a slider over the heights (its keys are a slider's: ↑ ↓, Home, End), named once; its value is the
+   * height shown, as a number and in words, set at once (never stale while it has the focus); its tooltip says how to
+   * change it. A new height is also said in the live region (`set`).
    */
   name(): void {
     const t = TEXT[this.host.lang()];
-    if (document.activeElement !== this.grab) this.grab.setAttribute('aria-label', t.sheetGrab(t.sheetHeights[this.snap]));
+    this.grab.setAttribute('aria-label', t.sheetGrab);
+    this.grab.setAttribute('aria-valuenow', String(SNAPS.indexOf(this.snap)));
+    this.grab.setAttribute('aria-valuetext', t.sheetHeights[this.snap]);
     this.grab.title = t.sheetHint;
     if (this.hint) this.hint.textContent = t.sheetHint;
   }

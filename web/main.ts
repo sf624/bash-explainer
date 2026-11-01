@@ -437,15 +437,35 @@ function setChoice(key: 'shell' | 'yq', value: string): void {
   settingsDialog?.refresh();
 }
 
+/** A place the focus can go to as a whole: the editor's, the explanation's (F6's stops), or the toast's. */
+type Stop = 'editor' | 'settings' | 'grabber' | 'panel' | 'toast';
+
 /**
- * Where the focus goes when its holder goes (a toast, an Undo, a question, an opened file): the settings sheet over the
- * editor (inert); the phone's sheet's grabber while the sheet is full (the editor under it is inert); else the editor
- * but on touch.
+ * Where the editor's and the explanation's stops are, while what covers them makes them inert: side by side, the
+ * settings sheet takes the editor's; on a phone, the sheet's grabber takes the editor's while the sheet is full, and
+ * the explanation's while it is folded. The one source for `focusHome` and F6 (`paneKeys`).
+ */
+function paneStops(): { home: Stop; panel: Stop } {
+  const home = settingsDialog?.sideBySide ? 'settings' : sheet?.covers ? 'grabber' : 'editor';
+  return { home, panel: sheet?.folded ? 'grabber' : 'panel' };
+}
+
+/** Puts the focus on a stop (`touch`: the editor only with a mouse or a pen, so that no on-screen keyboard opens). */
+function focusStop(stop: Stop, touch = false): void {
+  if (stop === 'settings') settingsDialog?.focus();
+  else if (stop === 'grabber') sheet?.focus();
+  else if (stop === 'panel') toPanel();
+  else if (stop === 'toast') toast.focus();
+  else if (touch) editor.focusUnlessTouch();
+  else editor.view.focus();
+}
+
+/**
+ * Where the focus goes when its holder goes (a toast, an Undo, a question, an opened file): the editor's stop
+ * (`paneStops`), the editor itself but on touch.
  */
 function focusHome(): void {
-  if (settingsDialog?.sideBySide) settingsDialog.focus();
-  else if (sheet?.covers) sheet.focus();
-  else editor.focusUnlessTouch();
+  focusStop(paneStops().home, true);
 }
 
 const dialogElement = document.getElementById('settings-dialog') as HTMLDialogElement | null;
@@ -780,15 +800,11 @@ function fileKeys(e: KeyboardEvent): void {
 function paneKeys(e: KeyboardEvent, inFrame: boolean): void {
   if (!isPaneKey(e) || document.querySelector('dialog:modal')) return;
   e.preventDefault();
-  // Side by side the editor is inert under the settings sheet, which takes its place in the round.
-  const first = settingsDialog?.sideBySide ? 'sheet' : 'editor';
-  const stops = [first, 'panel', ...(toast.hasButton ? ['toast'] : [])];
-  const at = inFrame ? 'panel' : toast.focused ? 'toast' : first;
-  const next = stops[(stops.indexOf(at) + (e.shiftKey ? stops.length - 1 : 1)) % stops.length];
-  if (next === 'panel') toPanel();
-  else if (next === 'toast') toast.focus();
-  else if (next === 'sheet') settingsDialog?.focus();
-  else editor.view.focus();
+  // (What covers the editor or the explanation takes its stop in the round: `paneStops`.)
+  const { home, panel: explanation } = paneStops();
+  const stops: Stop[] = [home, explanation, ...(toast.hasButton ? ['toast' as const] : [])];
+  const at = inFrame ? 'panel' : toast.focused ? 'toast' : explanation === 'grabber' && sheet?.focused ? explanation : home;
+  focusStop(stops[(stops.indexOf(at) + (e.shiftKey ? stops.length - 1 : 1)) % stops.length]);
 }
 
 /** Puts the focus in the explanation: into the frame, then on what the panel shows (media/panel.js, `focusExplanation`). */
