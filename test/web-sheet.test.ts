@@ -135,7 +135,19 @@ describe('the web page: the phone\'s sheet', function () {
         } else {
           assert.ok(bar.y >= 0 && !inert && pane.y > strip.y + strip.height, `${at}: ${JSON.stringify([bar, pane])}`);
         }
-        if (snap === 'peek') assert.ok(Math.abs(pane.height - 49) < 1 && Math.round(pane.y + pane.height) === 740, `${at}: ${JSON.stringify(pane)}`);
+        // The peek is the row and the summary row under it (step C8b, about 96 px), at the window's bottom; the summary
+        // row's parts keep clear of the edges' swipe strips, and its text is cut at its end, never wrapped.
+        const summary = await box(page, '#sheet-summary');
+        if (snap === 'peek') {
+          assert.ok(Math.abs(pane.height - 97) < 1 && Math.round(pane.y + pane.height) === 740, `${at}: ${JSON.stringify(pane)}`);
+          assert.ok(Math.abs(summary.y - (head.y + head.height)) < 0.5 && Math.abs(summary.height - 48) < 0.5 && summary.x === 0 && summary.width === width, `${at}: ${JSON.stringify([head, summary])}`);
+          const parts = await page.locator('#sheet-summary > :not(:empty)').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; }));
+          for (const r of parts) assert.ok(r.left >= EDGE - 0.5 && r.right <= width - EDGE + 0.5 && r.top >= summary.y && r.bottom <= summary.y + summary.height, `${at}: ${JSON.stringify([summary, parts])}`);
+          const text = await page.locator('#summary-text').evaluate((e) => ({ one: e.scrollHeight <= e.clientHeight + 1, words: e.textContent }));
+          assert.ok(text.one && text.words, `${at}: ${JSON.stringify(text)}`);
+        } else {
+          assert.strictEqual(await page.locator('#sheet-summary').isVisible(), false, at);
+        }
       }
       // The desktop strip under the editor is not shown: Problems is a tab.
       assert.strictEqual(await page.locator('.problems-strip').isVisible(), false, where);

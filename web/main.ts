@@ -39,7 +39,8 @@ import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
 import { ProblemStrip, roomAboveStrip, watchStrip } from './problem-list';
 import { ReadEdit } from './read-edit';
-import { BottomSheet } from './sheet';
+import { watchKeyboard } from './keyboard';
+import { BottomSheet, sheetLayout } from './sheet';
 import { CopyState, DEFAULT_THEME, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
@@ -246,6 +247,7 @@ function updatePanel(): void {
   const auto = autoShellAt(doc, s, line);
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);
+  sheet?.summarize(explanation, line);
   const update = panelUpdate({
     lang, explanation, file: scriptName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
     choice: choice(), detected: auto, placement: settings['examples.placement'],
@@ -554,7 +556,10 @@ const sheet = panePane && mode.hasChrome ? new BottomSheet(panePane, {
   reading: () => readEdit.read,
   explain: () => panel.explain(),
   announce: (text) => announcer?.say(text),
+  home: () => focusStop(paneStops().home),
 }) : undefined;
+// While the keyboard is open over the editor, the sheet is the summary row on its top (web/keyboard.ts).
+if (sheet) watchKeyboard(editor.view.contentDOM, { typing: () => sheetLayout() && !readEdit.read && editor.view.hasFocus, changed: (k) => sheet.typing(k) });
 
 /** Hides the toast whose Undo goes back over an edit, when another edit of the editor's text comes first. */
 function dropUndo(): void {
