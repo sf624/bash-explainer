@@ -618,6 +618,8 @@ function madeUpWords(cx: Explainer, cmd: SyntaxNode, a: SyntaxNode): { words: st
       const value = h.kind === 'parameter' && !h.elements && writtenPlain(h) ? madeUpValue(cx, cmd, h.name) : undefined;
       if (value === undefined) return undefined;
       if (part.splits && (value === '' || ifs === undefined || [...value].some((c) => ifs.includes(c)))) return undefined;
+      // (No value of the made-up environment has a glob character; a guard should one get one.)
+      /* c8 ignore next */
       if (part.globs && globbedByBash(value, 'unknown') !== false) return undefined;
       text += value;
       values.push({ code: h.code, value });
