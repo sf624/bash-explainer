@@ -240,3 +240,6 @@ export const ui = {
 
 /** Display features that can each be turned on or off. */
 export type Feature = keyof typeof ui.ja.features;
+
+/** The features, in the order the status bar's menu lists them. */
+export const featureNames = (): Feature[] => Object.keys(ui.ja.features) as Feature[];
