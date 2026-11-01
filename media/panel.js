@@ -2008,14 +2008,46 @@
 
   /** Render `code` spans in explanation text without using innerHTML. */
   function inline(text) {
-    return text.split(/(`[^`]+`)/).filter(Boolean).flatMap((part) => {
-      if (part.startsWith('`') && part.endsWith('`') && part.length > 1) {
+    return codeSpans(text).flatMap(({ code, part }) => {
+      if (code) {
         const c = document.createElement('code');
-        c.append(...withMarks(part.slice(1, -1)));
+        c.append(...withMarks(part));
         return [c];
       }
       return withMarks(part).map((n) => (typeof n === 'string' ? document.createTextNode(n) : n));
     });
+  }
+
+  /**
+   * A marked text cut into its code spans and the text between them, as CommonMark reads it (and the product writes it:
+   * `codeSpan`, src/label.ts): a span opens with a run of backticks and closes at the next run of as many, so its code
+   * may hold backticks (`` `date` ``); one space at each end is taken off when both are there and the code is not only
+   * spaces. A run that is never closed is text.
+   * @returns {{ code: boolean, part: string }[]}
+   */
+  function codeSpans(/** @type {string} */ text) {
+    /** @type {{ code: boolean, part: string }[]} */
+    const out = [];
+    const runs = /`+/g;
+    let plain = 0;
+    /** @type {RegExpExecArray | null} */
+    let open;
+    while ((open = runs.exec(text))) {
+      const fence = open[0];
+      let close;
+      while ((close = runs.exec(text)) && close[0].length !== fence.length);
+      if (!close) {
+        // (Not closed: the run is text, and the search goes on after it.)
+        runs.lastIndex = open.index + fence.length;
+        continue;
+      }
+      if (open.index > plain) out.push({ code: false, part: text.slice(plain, open.index) });
+      const code = text.slice(open.index + fence.length, close.index);
+      out.push({ code: true, part: /^ [\s\S]*[^ ][\s\S]* $/.test(code) ? code.slice(1, -1) : code });
+      plain = runs.lastIndex;
+    }
+    if (plain < text.length) out.push({ code: false, part: text.slice(plain) });
+    return out;
   }
 
   /**

@@ -16,11 +16,17 @@ const SCRIPT = [
   '  echo "$line"',
   'done < input.txt',
   'rm -rf $dir/ || echo "failed" >&2',
+  'now=`date`',
   'grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt && echo "done: $(date +%F)" || exit 1',
 ].join('\n');
 
-/** The sentence the analyzer gives a line of SCRIPT, as the panel draws it: the code spans' text alone. */
-const expected = (line: number, lang: 'en' | 'ja'): string => new Analyzer(lang).explainLine(createUnbashParser().parse(SCRIPT), line, undefined, { sentence: true }).sentence!.replace(/`/g, '');
+/** The sentence the analyzer gives a line of SCRIPT. */
+const sentence = (line: number, lang: 'en' | 'ja'): string => new Analyzer(lang).explainLine(createUnbashParser().parse(SCRIPT), line, undefined, { sentence: true }).sentence!;
+/** The code spans of a marked text, as CommonMark reads them: a run of backticks to the next run of as many (`` `date` ``). */
+const SPAN = /(?<!`)(`+)(?!`)([\s\S]*?[^`])\1(?!`)/g;
+const spanCode = (code: string): string => (/^ [\s\S]*[^ ][\s\S]* $/.test(code) ? code.slice(1, -1) : code);
+/** The sentence as the panel draws it: the code spans' code alone. */
+const expected = (line: number, lang: 'en' | 'ja'): string => sentence(line, lang).replace(SPAN, (_m, _fence, code: string) => spanCode(code));
 
 describe('the web page: the sentence of the line, "In short"', function () {
   this.timeout(120000);
@@ -58,7 +64,7 @@ describe('the web page: the sentence of the line, "In short"', function () {
         const page = await ctx.newPage();
         const panel = await open(page);
         const label = lang === 'ja' ? 'ひとことで' : 'In short';
-        for (const [line, name] of [[3, 'closing'], [4, 'problem'], [5, 'long']] as const) {
+        for (const [line, name] of [[3, 'closing'], [4, 'problem'], [5, 'backticks'], [6, 'long']] as const) {
           await goTo(page, panel, line);
           const short = panel.locator('#short');
           assert.strictEqual(await until('the sentence', async () => (await short.isVisible() ? await short.textContent() : '') ?? '', (t) => t.length > 0), `${label} ${expected(line, lang)}`);
@@ -70,6 +76,10 @@ describe('the web page: the sentence of the line, "In short"', function () {
             return { bottom: r.bottom, right: r.right, notes: notes.top, width: document.documentElement.clientWidth, scroll: e.scrollWidth - e.clientWidth, first: e.parentElement.firstElementChild === e };
           })()`) as { bottom: number; right: number; notes: number; width: number; scroll: number; first: boolean };
           assert.ok(box.first && box.bottom <= box.notes + 1 && box.right <= box.width && box.scroll <= 0, JSON.stringify(box));
+          // (Each code span is one `code` element, also one whose code holds backticks: `` `date` ``.)
+          const codes = [...sentence(line, lang).matchAll(SPAN)].map((m) => spanCode(m[2]));
+          assert.deepStrictEqual(await short.locator('code').allTextContents(), codes);
+          if (name === 'backticks') assert.ok(codes.includes('`date`'), codes.join(' '));
           const dir = process.env.SENTENCE_SHOTS;
           if (dir) {
             fs.mkdirSync(dir, { recursive: true });

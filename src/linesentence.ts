@@ -13,7 +13,7 @@
 // row of the line says alone. test/linesentence.test.ts checks them over the corpus.
 import type { ArgvWord, LineExplanation } from './analyzer-types';
 import { argvWords } from './argvline';
-import { redirects } from './dict/syntax';
+import { dupTarget, redirects } from './dict/syntax';
 import type { CommandSaid } from './explain/commands';
 import { effEndRow, intersects, isBlockLike } from './explain/nodes';
 import { redirectParts } from './explain/redirections';
@@ -21,10 +21,10 @@ import type { Lang } from './i18n';
 import { idiomSaid, type IdiomSpeaker } from './idioms';
 import { codeSpan, shorten } from './label';
 import { isProblem } from './messages';
-import { placeholderSaid } from './messages-argv';
+import { placeholderAlone, placeholderSaid } from './messages-argv';
 import { STYLE_REFS, type StyleCode } from './pitfalls';
-import { EMPTY, ioSaid, type IoKind, linesSaid, listSaid, NOTHING, S, sentenceEnd } from './messages-sentence';
-import { STATEMENTS } from './semantics/env';
+import { EMPTY, ioSaid, linesSaid, listSaid, S, sentenceEnd } from './messages-sentence';
+import { ownSubshells, STATEMENTS } from './semantics/env';
 import { attribute, docLine } from './semantics/state';
 import { CHANGING } from './semantics/walk/temporaries';
 import type { StatusModel } from './semantics/status';
@@ -87,12 +87,16 @@ type Brief = 0 | 1 | 2;
  * head of a block that goes on below (`open`), the word that ends a block (`close`, with the redirections written after
  * it), or a word that goes on with a block (`inside`: `then`, `do` on a line of their own).
  */
-type Piece = { kind: 'whole' | 'open' | 'inside'; node: SyntaxNode } | { kind: 'close'; node: SyntaxNode; redirects: SyntaxNode[] };
+type Piece = { kind: 'whole' | 'open' | 'inside'; node: SyntaxNode } | { kind: 'close'; node: SyntaxNode; redirects: SyntaxNode[]; into: SyntaxNode[] };
 
 /** The statements a body holds, as the sentence says them: those of bash, and the clauses of `if` and `case`. */
 const PARTS = new Set([...STATEMENTS, 'case_item', 'elif_clause', 'else_clause', 'do_group']);
-/** Nodes that only hold statements: the sentence says each. */
+/** Nodes that only hold statements: the sentence says each (a pipeline over several lines is said on its first: `piecesOn`). */
 const WRAPPERS = new Set(['program', 'list', 'pipeline', 'negated_command', 'time_statement']);
+/** The compound commands, as their kind is named (a closing word's construct, a stage of a pipeline). */
+const CONSTRUCTS: Readonly<Record<string, ConstructKind>> = { if_statement: 'if', for_statement: 'for', c_style_for_statement: 'for', select_statement: 'select', case_statement: 'case', case_item: 'branch', compound_statement: 'group', subshell: 'subshell', elif_clause: 'if', else_clause: 'if' };
+/** Clauses that are alternatives of the clause before, not a step after it: no "then" before them. */
+const ALTERNATIVES = new Set(['case_item', 'elif_clause', 'else_clause']);
 /** Blocks whose first line opens them, and whose last line closes them with a word of their own. */
 const OPENS = new Set(['if_statement', 'elif_clause', 'else_clause', 'while_statement', 'for_statement', 'c_style_for_statement', 'select_statement', 'case_statement', 'case_item', 'function_definition', 'compound_statement', 'subshell']);
 const CLOSES = new Set(['if_statement', 'while_statement', 'for_statement', 'c_style_for_statement', 'select_statement', 'case_statement', 'case_item', 'function_definition', 'compound_statement', 'subshell']);
@@ -113,27 +117,45 @@ function bodyOf(n: SyntaxNode): SyntaxNode[] {
   return kids.length === 1 && (kids[0].type === 'do_group' || ownBody(kids[0])) ? bodyOf(kids[0]) : kids;
 }
 
+/**
+ * Where a stage of a pipeline over several lines is said (`piecesOn`): the pipeline, said whole on its first line,
+ * names it (`said`), or the block before it, whose closing word pipes into it; `into`, the stages after it that its
+ * closing word pipes into (those that start on that word's line).
+ */
+type Stage = { said: boolean; into: SyntaxNode[] };
+
 function piecesOn(root: SyntaxNode, line: number): Piece[] {
   const out: Piece[] = [];
   let innermost: SyntaxNode | undefined;
-  const visit = (n: SyntaxNode, redirs: SyntaxNode[]): void => {
+  const visit = (n: SyntaxNode, redirs: SyntaxNode[], stage?: Stage): void => {
     if (!intersects(n, line) || !(PARTS.has(n.type) || WRAPPERS.has(n.type))) return;
     // (A test or an arithmetic command over several lines is one statement.)
     if (n.type !== 'program' && (!isBlockLike(n) || n.type === 'arithmetic_command')) {
-      out.push({ kind: 'whole', node: n });
+      if (!stage?.said) out.push({ kind: 'whole', node: n });
       return;
     }
-    if (n.type === 'redirected_statement') return visit(field(n, 'body')!, redirectionsOf(n));
+    if (n.type === 'redirected_statement') return visit(field(n, 'body')!, redirectionsOf(n), stage);
+    // (A pipeline over several lines, `a | while …; do`: its first line says it whole, each stage named, with the facts of
+    // the pipeline; the lines of its blocks say their parts, and a closing word the stages it pipes into.)
+    if (n.type === 'pipeline') {
+      if (n.startPosition.row === line) out.push({ kind: 'whole', node: n });
+      const stages = n.namedChildren;
+      return stages.forEach((c, i) => {
+        const before = stages[i - 1];
+        const said = c.startPosition.row === n.startPosition.row || (isBlockLike(before) && effEndRow(before) === c.startPosition.row);
+        visit(c, [], { said, into: stages.slice(i + 1).filter((x) => x.startPosition.row === effEndRow(c)) });
+      });
+    }
     if (WRAPPERS.has(n.type)) return n.namedChildren.forEach((c) => visit(c, []));
     innermost = n;
     const own = OPENS.has(n.type) && !ownBody(n);
-    if (own && n.startPosition.row === line) out.push({ kind: 'open', node: n });
+    if (own && n.startPosition.row === line && !stage?.said) out.push({ kind: 'open', node: n });
     const before = out.length;
     const head = headOf(n);
     n.namedChildren.filter((c) => !head.includes(c)).forEach((c) => visit(c, []));
     // (A branch of `case` ends with `;;` on a line of its own, or after its last command: that one says the command.)
     const alone = n.type !== 'case_item' || out.length === before;
-    if (own && CLOSES.has(n.type) && alone && effEndRow(n) === line && n.startPosition.row !== line) out.push({ kind: 'close', node: n, redirects: redirs });
+    if (own && CLOSES.has(n.type) && alone && effEndRow(n) === line && n.startPosition.row !== line) out.push({ kind: 'close', node: n, redirects: redirs, into: stage?.into ?? [] });
   };
   visit(root, []);
   // (A word that goes on with a block, alone on its line; a comment there is no code.)
@@ -175,14 +197,16 @@ class Composer implements IdiomSpeaker {
     switch (p.kind) {
       case 'whole': {
         const [first, ...facts] = this.statement(p.node);
-        return [index ? S.then(lang, ';', first) : first, ...facts];
+        return [index && !ALTERNATIVES.has(p.node.type) ? S.then(lang, ';', first) : first, ...facts];
       }
       case 'open': return [this.opens(p.node)];
       case 'close': {
         const what = this.constructName(p.node);
-        const io = this.io(p.redirects);
+        // (An idiom of the whole, `while read …; done < f`, says its redirections itself.)
+        const io = this.redirectedIdiom(p.node) ? '' : this.io(p.redirects);
         const does = p.node.type === 'function_definition' ? undefined : this.opens(p.node);
-        return [S.ends(lang, codeSpan(tokenOf(p.node)!.text), what, this.row(p.node), does), ...(io ? [S.wholeIo(lang, what, io)] : [])];
+        const into = p.into.length ? [S.pipesInto(lang, p.into.map((c) => this.stageNoun(c)))] : [];
+        return [S.ends(lang, codeSpan(tokenOf(p.node)!.text), what, this.row(p.node), does), ...(io ? [S.wholeIo(lang, what, io)] : []), ...into];
       }
       case 'inside': {
         const block = ownBody(p.node) || p.node.type === 'do_group' ? p.node.parent! : p.node;
@@ -216,17 +240,15 @@ class Composer implements IdiomSpeaker {
     // (Under `set -e`: a list, whose commands but the last it ignores; a statement where a failure stops a shell other
     // than the script. Where it stops the script, as everywhere under `set -e`, the sentence says nothing.)
     const e = status.errexit(n);
-    const fails = !(rule.kind === 'given' || (rule.kind === 'last-substitution' && !rule.at) || status.succeeds(n));
     if (n.type === 'list' && e.errexit === 'on' && !e.ignored && this.allowed('4.3.1')) out.push(S.errexitList(this.lang, e.stops));
-    else if (e.active === 'on' && e.checked === true && e.stops !== 'script' && fails && this.allowed('4.3.1')) out.push(S.errexit(this.lang, e.stops));
+    else if (e.active === 'on' && e.checked === true && e.stops !== 'script' && status.mayFail(n) && this.allowed('4.3.1')) out.push(S.errexit(this.lang, e.stops));
     this.factsLength += out.join('; ').length;
     return out;
   }
 
-  /** A statement followed by `&`. */
+  /** A statement started with `&` (the status model's `background`; a coproc's clause says it runs as one): all of it runs in the background. */
   private background(n: SyntaxNode, clause: string): string {
-    const kids = n.parent!.children;
-    return kids[kids.indexOf(n) + 1]?.type === '&' ? S.background(this.lang, clause) : clause;
+    return this.input.status.status(n).kind === 'background' && n.type !== 'coproc_statement' ? S.background(this.lang, clause) : clause;
   }
 
   /** What a statement does, as one clause. */
@@ -237,7 +259,7 @@ class Composer implements IdiomSpeaker {
     const body = (): string => this.clauses(n.namedChildren);
     switch (n.type) {
       case 'command': return this.command(n);
-      case 'pipeline': return S.pipe(lang, n.namedChildren.map((c) => this.noun(c)));
+      case 'pipeline': return this.pipeline(n);
       case 'list': return this.list(n);
       // (While it is typed, `!` and `a &&` have nothing after them yet.)
       case 'negated_command': return S.negated(lang, n.namedChildren.length ? this.describe(n.namedChildren[0]) : S.nothing(lang));
@@ -271,12 +293,15 @@ class Composer implements IdiomSpeaker {
       }
       case 'elif_clause': return S.otherwise(lang, S.ifThen(lang, this.subject(headOf(n)), S.thenPart(lang), undefined));
       case 'else_clause': return S.otherwise(lang, S.runsBody(lang, this.body(n)));
-      case 'while_statement': {
-        const idiom = idiomSaid(n.parent!.type === 'redirected_statement' ? n.parent! : n, this.input.status, lang, this);
-        return idiom ?? S.whileLoop(lang, n.children[0].type === 'until', this.subject(headOf(n)), this.body(n));
+      case 'while_statement': return this.redirectedIdiom(n) ?? idiomSaid(n, this.input.status, lang, this) ?? S.whileLoop(lang, n.children[0].type === 'until', this.subject(headOf(n)), this.body(n));
+      case 'for_statement': {
+        const values = this.values(n);
+        return values === undefined ? S.noWords(lang, this.body(n)) : S.forLoop(lang, this.loopVariable(n), values, this.body(n));
       }
-      case 'for_statement': return S.forLoop(lang, this.loopVariable(n), this.values(n), this.body(n));
-      case 'select_statement': return S.select(lang, this.loopVariable(n), this.values(n), this.body(n));
+      case 'select_statement': {
+        const values = this.values(n);
+        return values === undefined ? S.noWords(lang, this.body(n)) : S.select(lang, this.loopVariable(n), values, this.body(n));
+      }
       case 'c_style_for_statement': return S.cFor(lang, this.body(n));
       case 'case_statement': return S.caseOf(lang, this.word(field(n, 'value')!), this.bodyLines(n));
       case 'case_item': return S.caseItem(lang, this.patterns(n), S.runsBody(lang, this.body(n)));
@@ -297,11 +322,15 @@ class Composer implements IdiomSpeaker {
     return S.orPatterns(this.lang, fields(n, 'value').map((v) => codeSpan(v.text)));
   }
 
-  /** The words a `for` or `select` sets its variable to: those after `in`, or the arguments. */
-  private values(n: SyntaxNode): string {
+  /**
+   * The words a `for` or `select` sets its variable to: those after `in`, or the arguments; undefined when the words
+   * after `in` surely give none (`for x in $e` with `e` empty, `for x in;`), and bash runs the body no time.
+   */
+  private values(n: SyntaxNode): string | undefined {
     const words = fields(n, 'value');
-    if (!words.length) return placeholderSaid(this.lang, { kind: 'parameter', name: '@', code: '"$@"', elements: 'each' });
-    return this.items(words.flatMap((w) => argvWords(w, this.input.status.state, this.lang)).map((w) => this.argvWord(w)));
+    if (!words.length && !n.children.some((c) => c.type === 'in')) return placeholderSaid(this.lang, { kind: 'parameter', name: '@', code: '"$@"', elements: 'each' });
+    const given = words.flatMap((w) => this.fieldsOf(w));
+    return given.length ? this.items(given.map((w) => this.argvWord(w))) : undefined;
   }
 
   /** The body of a block: the lines of its statements, or on the line of its first word their commands. */
@@ -328,12 +357,55 @@ class Composer implements IdiomSpeaker {
     return docLine(n) + 1;
   }
 
-  /** What a block is, as its closing word names it. */
-  private constructName(n: SyntaxNode): string {
+  /** What a block is, as its closing word names it (`a`: as a stage of a pipeline is first named, `a \`while\` loop`). */
+  private constructName(n: SyntaxNode, a = false): string {
     if (n.type === 'function_definition') return S.functionNamed(this.lang, codeSpan(field(n, 'name')!.text));
-    const kinds: Record<string, ConstructKind> = { if_statement: 'if', for_statement: 'for', c_style_for_statement: 'for', select_statement: 'select', case_statement: 'case', case_item: 'branch', compound_statement: 'group', subshell: 'subshell', elif_clause: 'if', else_clause: 'if' };
-    const kind = n.type === 'while_statement' ? (n.children[0].type === 'until' ? 'until' : 'while') : kinds[n.type];
-    return S.construct(this.lang, kind);
+    return S.construct(this.lang, this.kindOf(n)!, a);
+  }
+
+  /** The kind of a compound command, as it is named; undefined for another statement. */
+  private kindOf(n: SyntaxNode): ConstructKind | undefined {
+    return n.type === 'while_statement' ? (n.children[0].type === 'until' ? 'until' : 'while') : CONSTRUCTS[n.type];
+  }
+
+  /** The idiom a block is with the redirections written after it (`while read …; done < f`), when it is one. */
+  private redirectedIdiom(n: SyntaxNode): string | undefined {
+    return n.parent!.type === 'redirected_statement' ? idiomSaid(n.parent!, this.input.status, this.lang, this) : undefined;
+  }
+
+  /** The compound command a stage of a pipeline is (with redirections after it, or not); undefined for another statement. */
+  private compoundOf(c: SyntaxNode): SyntaxNode | undefined {
+    const body = c.type === 'redirected_statement' ? field(c, 'body')! : c;
+    return this.kindOf(body) ? body : undefined;
+  }
+
+  /**
+   * A pipeline: the stages, each named (a compound one by its kind, with its lines when it goes on below), then what
+   * each compound stage does and where it runs (the environment model: a stage's subshell, or the shell itself with
+   * `lastpipe`).
+   */
+  private pipeline(n: SyntaxNode): string {
+    const { lang } = this;
+    const stages = n.namedChildren;
+    const compound = stages.flatMap((c) => {
+      const block = this.compoundOf(c);
+      if (!block) return [];
+      const link = ownSubshells(this.input.status.state.env(c), c).find((l) => l.why === 'pipeline-stage');
+      const where = block.type === 'subshell' ? undefined : !link ? 'off' : link.sure ? 'on' : 'unknown';
+      const does = block.type === 'compound_statement' || block.type === 'subshell'
+        ? (block.startPosition.row === effEndRow(block) ? this.clauses(block.namedChildren) : S.runsBody(lang, this.body(block)))
+        : block.startPosition.row === effEndRow(block) ? this.describe(c) : this.opens(block);
+      return [S.stage(lang, this.constructName(block), where, does)];
+    });
+    return [S.pipe(lang, stages.map((c) => this.stageNoun(c))), ...compound].join(lang === 'ja' ? '。' : '; ');
+  }
+
+  /** A stage of a pipeline as a noun: a command's name and what it does; a compound command's kind, and its lines when it goes on below. */
+  private stageNoun(c: SyntaxNode): string {
+    const block = this.compoundOf(c);
+    if (!block) return this.noun(c);
+    const what = this.constructName(block, true);
+    return block.startPosition.row === effEndRow(block) ? what : S.spanning(this.lang, what, this.lines(block, block));
   }
 
   /** Statements one after the other, as clauses joined in one: nothing when there are none. */
@@ -410,10 +482,12 @@ class Composer implements IdiomSpeaker {
     return S.noun(this.lang, this.nameOf(c), this.brief === 2 ? undefined : said?.what);
   }
 
-  /** The name of a command (each word of it, `git` `log`), or the keyword of another statement, or its first command's. */
+  /** The name of a command (each word of it, `git` `log`), the kind of a compound command, or the keyword of another statement, or its first command's. */
   private nameOf(c: SyntaxNode): string {
     const said = c.type === 'command' ? this.commands(c) : undefined;
     if (said) return said.names.map((n) => codeSpan(n)).join(' ');
+    const block = this.compoundOf(c);
+    if (block) return this.constructName(block);
     const name = c.type === 'command' ? field(c, 'name') : undefined;
     return codeSpan(name ? name.text : tokenOf(c, c.startPosition.row)!.text);
   }
@@ -448,7 +522,7 @@ class Composer implements IdiomSpeaker {
       const [one, ...more] = argvWords(v, this.input.status.state, lang);
       return !more.length && one.parts.length === 1 && 'hole' in one.parts[0] && one.parts[0].hole === 'word' ? placeholderSaid(lang, { kind: 'string', code: v.text }) : this.word(v);
     }
-    return S.array(lang, this.items(v.namedChildren.flatMap((w) => argvWords(w, this.input.status.state, lang)).map((w) => this.argvWord(w))));
+    return S.array(lang, this.items(v.namedChildren.flatMap((w) => this.fieldsOf(w)).map((w) => this.argvWord(w))));
   }
 
   /**
@@ -473,15 +547,20 @@ class Composer implements IdiomSpeaker {
 
   /** A word, as what it gives: its value, its placeholder, or the words it stands for. */
   word(w: SyntaxNode): string {
-    return this.items(argvWords(w, this.input.status.state, this.lang).map((x) => this.argvWord(x)));
+    return this.items(this.fieldsOf(w).map((x) => this.argvWord(x)));
+  }
+
+  /** The words a word gives (src/argvline.ts), less one that surely gives none (`$e` with `e` empty: no parts). */
+  private fieldsOf(w: SyntaxNode): ArgvWord[] {
+    return argvWords(w, this.input.status.state, this.lang).filter((x) => x.parts.length);
   }
 
   private argvWord(w: ArgvWord): string {
     const { lang } = this;
-    // (The empty text around a value, `"$1"`, is no part of what it says.)
-    const parts = w.parts.length > 1 ? w.parts.filter((p) => !('text' in p) || p.text !== '') : w.parts;
-    if (!parts.length) return NOTHING[lang];
-    const part = (p: ArgvWord['parts'][number], alone: boolean): string => ('text' in p ? (p.text === '' ? EMPTY[lang] : codeSpan(shorten(p.text, 40))) : alone ? p.label : `‹${p.label}›`);
+    // (The empty text around a value, `"$1"`, is no part of what it says; a word of empty text alone is the empty string.)
+    const parts = w.parts.filter((p) => !('text' in p) || p.text !== '');
+    if (!parts.length) return EMPTY[lang];
+    const part = (p: ArgvWord['parts'][number], alone: boolean): string => ('text' in p ? codeSpan(shorten(p.text, 40)) : alone ? placeholderAlone(lang, p.label) : `‹${p.label}›`);
     return parts.length === 1 ? part(parts[0], true) : parts.map((p) => part(p, false)).join('');
   }
 
@@ -494,11 +573,15 @@ class Composer implements IdiomSpeaker {
       const target = r.namedChildren.find((c) => c.field !== 'descriptor');
       if (r.type === 'herestring_redirect') return ioSaid(lang, 'herestring', fd, this.word(target!));
       const { op, dest } = redirectParts(r);
-      const kinds: Record<string, IoKind> = { '<': 'read', '>': 'write', '>|': 'write', '>>': 'append', '&>': 'both', '&>>': 'bothAppend' };
-      if (/^\d*$/.test(fd) && target && kinds[op]) return ioSaid(lang, kinds[op], fd, this.word(target));
-      if (/^\d*$/.test(fd) && (op === '>&' || op === '<&') && /^\d+$/.test(dest)) return ioSaid(lang, op === '>&' ? 'dup' : 'dupIn', fd, dest);
-      // (Any other: a descriptor closed or moved, a named one, `>&word`: the dictionary's text.)
-      const text = redirects[op](fd, dest)[lang];
+      const { kind, says } = redirects[op];
+      const numbered = /^\d*$/.test(fd);
+      if (numbered && (kind === 'dup' || kind === 'dupIn')) {
+        const to = dupTarget(dest);
+        if (to.kind === 'copy') return ioSaid(lang, kind, fd, to.fd);
+        if (to.kind !== 'word') return ioSaid(lang, to.kind, fd || (kind === 'dup' ? '1' : '0'), to.kind === 'move' ? to.fd : '');
+      } else if (numbered && target) return ioSaid(lang, kind, fd, this.word(target));
+      // (Any other: a named descriptor, `>&word`, a redirection being typed: the dictionary's text.)
+      const text = says(fd, dest)[lang];
       return lang === 'ja' ? text : text.charAt(0).toLowerCase() + text.slice(1);
     });
     return items.join(lang === 'ja' ? '、' : ', ');

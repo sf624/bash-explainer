@@ -4,7 +4,7 @@
 // a phrase in English (lower case, joined with `; ` and capitalised at the start of the sentence), and a sentence in
 // Japanese (joined with `。`). Code is in backticks, one shell word of the line at most in each span (the caller gives
 // the words).
-import { fdName } from './dict/syntax';
+import { fdName, type RedirectKind } from './dict/syntax';
 import type { Lang } from './i18n';
 
 const pick = (lang: Lang, ja: string, en: string): string => (lang === 'ja' ? ja : en);
@@ -22,30 +22,49 @@ export function linesSaid(lang: Lang, a: number, b: number): string {
   return pick(lang, `行 ${a}〜${b}`, `lines ${a}–${b}`);
 }
 
-/** How a stream of a command is redirected: the kinds of `ioSaid`. */
-export type IoKind = 'read' | 'write' | 'append' | 'both' | 'bothAppend' | 'dup' | 'dupIn' | 'heredoc' | 'herestring';
+/** How a stream of a command is redirected: the kinds of `ioSaid` (an operator's, from the dictionary; a descriptor closed or moved; here-documents and here-strings). */
+export type IoKind = RedirectKind | 'close' | 'move' | 'heredoc' | 'herestring';
 
-/** One redirection, said short: the stream (`fd`, the operator's default `dflt`) and where it goes or comes from (`to`). */
+/**
+ * A descriptor's name in a sentence (`fdName`; `dflt`, the operator's default), with a space after a number before the
+ * Japanese that follows (docs/japanese-style.md: `ファイルディスクリプタ 3 を`).
+ */
+function fdSaid(lang: Lang, fd: string, dflt: string): string {
+  const name = fdName(fd, dflt)[lang];
+  return lang === 'ja' && /\d$/.test(name) ? `${name} ` : name;
+}
+
+/**
+ * One redirection, said short: the stream (`fd`, the operator's default `dflt`) and where it goes or comes from (`to`;
+ * for `dup`, `dupIn` and `move`, the other descriptor).
+ */
 export function ioSaid(lang: Lang, kind: IoKind, fd: string, to: string): string {
   const ja = lang === 'ja';
   const both = pick(lang, '標準出力と標準エラー出力', 'stdout and stderr');
+  const out = fdSaid(lang, fd, '1');
+  const inp = fdSaid(lang, fd, '0');
+  const other = fdSaid(lang, to, to);
   switch (kind) {
-    case 'read': return ja ? `${fdName(fd, '0').ja}は${to}から` : `${fdName(fd, '0').en} from ${to}`;
-    case 'write': return ja ? `${fdName(fd, '1').ja}は${to}へ` : `${fdName(fd, '1').en} to ${to}`;
-    case 'append': return ja ? `${fdName(fd, '1').ja}は${to}に追記` : `${fdName(fd, '1').en} appended to ${to}`;
+    case 'read': return ja ? `${inp}は${to}から` : `${inp} from ${to}`;
+    case 'write': return ja ? `${out}は${to}へ` : `${out} to ${to}`;
+    case 'append': return ja ? `${out}は${to}に追記` : `${out} appended to ${to}`;
+    case 'readWrite': return ja ? `${inp}は${to}を読み書き両用で開く` : `${inp} open on ${to} for reading and writing`;
+    // (`fd` is the descriptor closed, its default already given: `>&-` closes stdout.)
+    case 'close': return ja ? `${fdSaid(lang, fd, fd)}を閉じて` : `${fdSaid(lang, fd, fd)} closed`;
+    // (`n>&m-`: `fd` is n, its default given, and `to` is m.)
+    case 'move': return ja ? `${other}は${fdSaid(lang, fd, fd)}に移す` : `${other} moved to ${fdSaid(lang, fd, fd)}`;
     case 'both': return ja ? `${both}は${to}へ` : `${both} to ${to}`;
     case 'bothAppend': return ja ? `${both}は${to}に追記` : `${both} appended to ${to}`;
     // (`to` is the descriptor copied: `2>&1`, `3<&0`.)
-    case 'dup': return ja ? `${fdName(fd, '1').ja}は${fdName(to, to).ja}と同じ先へ` : `${fdName(fd, '1').en} to where ${fdName(to, to).en} goes`;
-    case 'dupIn': return ja ? `${fdName(fd, '0').ja}は${fdName(to, to).ja}と同じところから` : `${fdName(fd, '0').en} from where ${fdName(to, to).en} reads`;
-    case 'heredoc': return ja ? `${fdName(fd, '0').ja}はヒアドキュメントから` : `${fdName(fd, '0').en} from the here-document`;
-    case 'herestring': return ja ? `${fdName(fd, '0').ja}は${to}から（ヒアストリング）` : `${fdName(fd, '0').en} from ${to} (a here-string)`;
+    case 'dup': return ja ? `${out}は${other}と同じ先へ` : `${out} to where ${other} goes`;
+    case 'dupIn': return ja ? `${inp}は${other}と同じところから` : `${inp} from where ${other} reads`;
+    case 'heredoc': return ja ? `${inp}はヒアドキュメントから` : `${inp} from the here-document`;
+    case 'herestring': return ja ? `${inp}は${to}から（ヒアストリング）` : `${inp} from ${to} (a here-string)`;
   }
 }
 
-/** A value: the empty string; nothing (a word that gives no word). */
+/** A value: the empty string. */
 export const EMPTY = { ja: '空文字列', en: 'the empty string' };
-export const NOTHING = { ja: '何もなし', en: 'nothing' };
 
 /** The clauses of a sentence (`S.x(lang, …)`). */
 export const S = {
@@ -69,7 +88,7 @@ export const S = {
   /** `x+=v`. */
   appendTo: (lang: Lang, name: string, value: string): string => pick(lang, `${name}に今の値のあとに${value}をつなげたものを`, `${name} to its value followed by ${value}`),
   /** The assignments of a declaration builtin (`local x=$1`), after its clause. */
-  declares: (lang: Lang, clause: string, assigned: string): string => pick(lang, `${clause}。${assigned}代入する`, `${clause}: ${assigned}`),
+  declares: (lang: Lang, clause: string, assigned: string): string => pick(lang, `${clause}。${assigned}代入する`, `${clause} and sets ${assigned}`),
   /** `a=(…)`: the words it is set to. */
   array: (lang: Lang, items: string): string => (items ? pick(lang, `配列（${items}）`, `an array of ${items}`) : pick(lang, '空の配列', 'an empty array')),
   /** A compound command with redirections after it, which apply to the whole of it. */
@@ -79,6 +98,23 @@ export const S = {
   pipe: (lang: Lang, stages: readonly string[]): string => (lang === 'ja'
     ? `${stages[0]}の出力を${stages.slice(1).join('に渡し、その出力を')}に渡す`
     : `pipes ${stages.join(' into ')}`),
+  /**
+   * A compound command that is a stage of a pipeline (`what`, named by its kind), where it runs (`where`: in a subshell
+   * `on`, in the shell itself with `lastpipe` `off`, either `unknown`; undefined for `( )`, which says it), and what it
+   * does.
+   */
+  stage: (lang: Lang, what: string, where: 'on' | 'off' | 'unknown' | undefined, does: string): string => {
+    if (lang === 'ja') {
+      const runs = where === undefined ? '' : { on: 'サブシェルで実行される', off: '（`lastpipe` で）シェル自体で実行される', unknown: 'サブシェルで実行される（`lastpipe` が有効ならシェル自体で）' }[where];
+      return `${what}${runs ? `は${runs}。` : 'は、'}${does}`;
+    }
+    if (where === undefined) return `${what} ${does}`;
+    return `${what} runs ${{ on: 'in a subshell', off: 'in the shell itself (`lastpipe`)', unknown: 'in a subshell, or in the shell itself with `lastpipe`' }[where]}: ${does}`;
+  },
+  /** A block that ends a stage of a pipeline: the stages it feeds. */
+  pipesInto: (lang: Lang, stages: readonly string[]): string => (lang === 'ja'
+    ? `その出力を${stages.join('に渡し、その出力を')}に渡す`
+    : `pipes its output into ${stages.join(' into ')}`),
   /** The status of a pipeline: its last stage's (`last`), or with pipefail the last that failed; `!` negates it. */
   pipeStatus: (lang: Lang, last: string | undefined, negated: boolean): string => {
     const of = last ? pick(lang, `${last}のもの`, `that of ${last}`) : pick(lang, '最後に失敗したコマンドのもの（なければ 0）', 'that of the last command that fails, or 0');
@@ -99,7 +135,8 @@ export const S = {
     const how = { '&&': pick(lang, '成功したら、', 'if that succeeds, '), '||': pick(lang, '失敗したら、', 'if that fails, '), ';': pick(lang, '続けて、', 'then ') }[op];
     return how + clause;
   },
-  background: (lang: Lang, clause: string): string => pick(lang, `${clause}（バックグラウンドで）`, `${clause} in the background`),
+  /** A statement started with `&`: the whole of it runs in the background. */
+  background: (lang: Lang, clause: string): string => pick(lang, `バックグラウンドで: ${clause}`, `in the background, ${clause}`),
   negated: (lang: Lang, clause: string): string => pick(lang, `${clause}（終了ステータスは反転）`, `${clause}, and negates its status`),
   timed: (lang: Lang, clause: string): string => pick(lang, `${clause}。かかった時間を表示する`, `${clause}, and reports the time it takes`),
   subshell: (lang: Lang, clause: string): string => pick(lang, `サブシェルで: ${clause}`, `in a subshell, ${clause}`),
@@ -134,6 +171,8 @@ export const S = {
     : `repeats ${body} ${until ? 'until' : 'while'} ${subject} succeeds`),
   forLoop: (lang: Lang, variable: string, values: string, body: string): string => pick(lang,
     `${variable}を${values}に順に設定して、${body}を実行する`, `runs ${body} with ${variable} set to ${values}, one at a time`),
+  /** A `for` or `select` whose words give no word: bash runs its body no time. */
+  noWords: (lang: Lang, body: string): string => pick(lang, `\`in\` の後の単語からは何も得られないので、${body}は実行されない`, `does not run ${body}: the words after \`in\` give none`),
   cFor: (lang: Lang, body: string): string => pick(lang, `\`(( … ))\` の条件が真の間、${body}を実行する`, `runs ${body} while the test in \`(( … ))\` is true`),
   select: (lang: Lang, variable: string, values: string, body: string): string => pick(lang,
     `${values}のメニューを表示し、選ばれた値を${variable}に設定して${body}を実行する`, `shows a menu of ${values} and runs ${body} with ${variable} set to the choice`),
@@ -148,11 +187,15 @@ export const S = {
 
   // The words that end a construct, or go on with it, on a line of their own.
   /** What a construct is, as a closing word names it. */
-  construct: (lang: Lang, kind: 'if' | 'while' | 'until' | 'for' | 'select' | 'case' | 'branch' | 'group' | 'subshell', name?: string): string => {
-    if (kind === 'group' || kind === 'subshell' || kind === 'branch') return { group: pick(lang, 'グループ', 'the group'), subshell: pick(lang, 'サブシェル', 'the subshell'), branch: pick(lang, '分岐', 'the branch') }[kind];
+  /** What a construct is, as a closing word names it (`a`: with the indefinite article, as a stage of a pipeline is first named). */
+  construct: (lang: Lang, kind: 'if' | 'while' | 'until' | 'for' | 'select' | 'case' | 'branch' | 'group' | 'subshell', a = false): string => {
+    const article = a ? 'a' : 'the';
+    if (kind === 'group' || kind === 'subshell' || kind === 'branch') return pick(lang, { group: 'グループ', subshell: 'サブシェル', branch: '分岐' }[kind], `${article} ${kind}`);
     const loop = kind === 'while' || kind === 'until' || kind === 'for' || kind === 'select';
-    return lang === 'ja' ? `\`${kind}\` ${loop ? 'ループ' : '文'}` : `the \`${kind}\`${loop ? ' loop' : ''}`;
+    return lang === 'ja' ? `\`${kind}\` ${loop ? 'ループ' : '文'}` : `${a && kind === 'if' ? 'an' : article} \`${kind}\`${loop ? ' loop' : ''}`;
   },
+  /** A construct and the lines it spans, as a stage of a pipeline names it. */
+  spanning: (lang: Lang, what: string, lines: string): string => pick(lang, `${what}（${lines}）`, `${what} (${lines})`),
   functionNamed: (lang: Lang, name: string): string => pick(lang, `関数${name}`, `the function ${name}`),
   ends: (lang: Lang, word: string, what: string, line: number, does: string | undefined): string => pick(lang,
     `${word}は行 ${line} からの${what}の終わり${does ? `。${does}` : ''}`, `${word} ends ${what} of line ${line}${does ? `: ${does}` : ''}`),

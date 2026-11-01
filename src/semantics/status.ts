@@ -168,6 +168,12 @@ export interface StatusModel {
    */
   succeeds(n: SyntaxNode | undefined): boolean;
   /**
+   * Whether statement `n` can fail: its status can be other than 0 when it ends. Not `exit N` or `return N` (they end
+   * the shell or the function themselves), an assignment with no command substitution (0), a command that surely
+   * succeeds (`succeeds`), a function definition, nor a job started with `&` or a coproc (0 for the shell that starts it).
+   */
+  mayFail(n: SyntaxNode): boolean;
+  /**
    * An error that ends the shell at statement `n` in POSIX mode, as the words written decide it (a function name bash
    * refuses, an error of a special builtin: src/semantics/posixexits.ts), and whether it ends the shell there: POSIX
    * mode on (`unknown` when on some paths only), and for a builtin's error, not where bash ignores `set -e`; the shell
@@ -218,6 +224,12 @@ class Statuses implements StatusModel {
     // (A builtin turned off on some paths may be missing there: `enable -n :`.)
     if (res.kind === 'builtin') return !res.disabled && (res.name === 'true' || res.name === ':');
     return res.kind === 'file' && /(^|\/)true$/.test(res.name);
+  }
+
+  mayFail(n: SyntaxNode): boolean {
+    const rule = this.status(n);
+    if (rule.kind === 'given' || rule.kind === 'definition' || rule.kind === 'background') return false;
+    return !(rule.kind === 'last-substitution' && !rule.at) && !this.succeeds(n);
   }
 
   status(n: SyntaxNode): StatusRule {

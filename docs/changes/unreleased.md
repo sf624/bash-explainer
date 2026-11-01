@@ -9,9 +9,9 @@ The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 The Meaning view of the panel, in VS Code and on the web page, starts with one sentence that says what the line does, under the label "In short" / 「ひとことで」. Every line with code has one; the Reading view has none.
 
 - A command: what it is and does, the options given, and its redirections: "Runs `sort` (sort lines) using `-u` (output only unique lines), with stdin (fd 0) from `in.txt`, stdout (fd 1) to `out.txt`."
-- An assignment: the value the variable gets, with a placeholder for what is known only when the line runs: "Sets `workdir` to output of `$(mktemp -d)`", "Sets `x` to ‹home directory›`/bin`".
-- A list and a pipeline: "Tests the condition in `[ … ]`; if that succeeds, runs `echo` …", "Pipes `foo` into `bar`; its status is that of `bar`" (with pipefail: "the last command that fails, or 0"), and under `set -e`, that a failure before the last command of a list does not stop the script.
-- A block: its first line says what it does ("Repeats lines 75–79 while `getopts` … succeeds", "Runs line 26 with `$f` set to each file name matching `*.sh`, one at a time"), and the word that ends it says what it ends ("`done` ends the `while` loop of line 28: …").
+- An assignment: the value the variable gets, with a placeholder for what is known only when the line runs: "Sets `workdir` to the output of `$(mktemp -d)`", "Sets `x` to ‹home directory›`/bin`".
+- A list and a pipeline: "Tests the condition in `[ … ]`; if that succeeds, runs `echo` …", "Pipes `foo` into `bar`; its status is that of `bar`" (with pipefail: "the last command that fails, or 0"), and under `set -e`, that a failure before the last command of a list does not stop the script. A pipeline into a loop or a group says where that stage runs: "Pipes `cat` into a `while` loop (lines 1–3); the `while` loop runs in a subshell: repeats line 2 while `read` succeeds" (with `shopt -s lastpipe`: "in the shell itself"). A statement started with `&` is said in the background as a whole.
+- A block: its first line says what it does ("Repeats lines 75–79 while `getopts` … succeeds", "Runs line 26 with `$f` set to each file name matching `*.sh`, one at a time"), and the word that ends it says what it ends ("`done` ends the `while` loop of line 28: …"), and what it pipes into (`done | sort`). A `for` loop whose words give none (`for x in $empty`) says its body does not run.
 - Shapes with a sentence of their own: strict mode, an EXIT trap, a quiet check that a command is installed, `while read … done < file` ("Reads `input.txt` one line at a time…"), an endless loop, `sort | uniq -c | sort -rn | head -n 3` ("Counts how often each line … occurs and lists the lines from the most frequent, with their counts (the first 3)"), and `echo … >&2` ("prints a message on stderr").
 
 The sentence never repeats a problem of the line: where a problem is about the line's status or `set -e`, the sentence says nothing of them.
@@ -162,6 +162,10 @@ The screen reader's summary of a line now counts its caveats too ("Line 3: …; 
 ### `-F` and the other patterns of grep
 
 The note on a grep pattern that is only a variable said to add `-F` also where grep had other patterns, which `-F` reads as fixed strings too: `grep -E -e "$x" -e 'foo|bar' f` with `-F` no longer matches `foo` lines, and `grep -f pats -e "$x"` reads the lines of `pats` as text. It now says that `-F` applies to every pattern, and offers no quick fix. It spoke of the variable only when it was the first pattern (`grep -e "$x" -e 'a.b'`, not `grep -e 'a.b' -e "$x"`); it does in either order now. Checked with GNU grep (test/rewrites-advice.test.ts).
+
+### Code that holds a backtick, in the panel
+
+The panel reads a code span as Markdown does: a run of backticks up to the next run of as many. Code that holds a backtick, written with two (`` `date` ``, ``x='a`b'``), is one piece of code. Before, the panel cut it at each backtick and showed the rest as text.
 
 ### Hover cards on the web page stay off the line
 

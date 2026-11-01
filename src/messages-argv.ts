@@ -56,6 +56,12 @@ export function placeholderSaid(lang: Lang, h: HoleSource | { kind: 'names' | 'w
   }
 }
 
+/** The English placeholders above that name a thing without an article (`output of …`, as a placeholder in `‹ ›` reads). */
+const BARE = /^(?:value|output|result|file name|translation|home directory) of /;
+
+/** A placeholder's text where it stands alone in a sentence: with its article in English (`the output of …`). */
+export const placeholderAlone = (lang: Lang, label: string): string => (lang === 'en' && BARE.test(label) ? `the ${label}` : label);
+
 /** What a prefix assignment does (`AssignmentMeaning.scope`): for the command only, or it stays after it (`maybe`: in POSIX mode only). */
 export type AssignmentSaid = 'command' | 'stays' | 'maybe-stays';
 
