@@ -10,6 +10,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `--check --counts <file>` appends the numbers of problems of each level to a file, as `$GITHUB_OUTPUT` reads them.
 - Dockerfile `HEALTHCHECK CMD …` is explained, in the shell and the exec form, and so is an instruction after `ONBUILD`.
 - Quick fixes for the problems whose fix is mechanical, in VS Code, the Language Server and the web page's editor: a failure reported as success, `source` that searches `$PATH`, a `grep` pattern from a variable, a loop over a glob that matches nothing, `read` without `-r`, `[-f x]` and more. Each applies the code the note shows.
+- On a phone, a one-line summary of the cursor's line stays above the keyboard and in the folded sheet; a tap shows the explanation.
 
 ### Changed
 

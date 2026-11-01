@@ -4,8 +4,15 @@
 // and the arrow keys step it. At full height the app bar slides away (page.css follows `data-sheet` on the page). The
 // heights and where a drag, a tap or a key leaves the sheet are decided in src/ui/sheet.ts; here they are measured,
 // drawn and wired. The Problems list is the sheet's Problems tab: it moves into the sheet while the layout is on.
+// Under the tabs row of the folded sheet, a summary row says what the cursor's line is (src/ui/summaryRow.ts); while the
+// keyboard is open over the editor (web/keyboard.ts), the sheet is that row alone, on the keyboard's top, and the app bar
+// hides (step C8b). A tap on the row shows the explanation, at half.
+import type { LineExplanation } from '../src/analyzer';
 import type { Lang } from '../src/i18n';
-import { keyed, settle, type Snap, type SnapHeights, snapHeights, SNAPS, tapped } from '../src/ui/sheet';
+import { LEVELS } from '../src/levels';
+import type { Keyboard } from '../src/ui/keyboard';
+import { keyed, settle, sheetHeight, type Snap, type SnapHeights, snapHeights, SNAPS, tapped } from '../src/ui/sheet';
+import { summaryRow } from '../src/ui/summaryRow';
 import { narrow } from './layout';
 import { readStored, STORAGE_KEYS, writeStored } from './storage';
 import { TEXT } from './text';
@@ -20,6 +27,8 @@ export interface SheetHost {
   explain(): void;
   /** Says a short message in the page's live region (a new height). */
   announce(text: string): void;
+  /** Gives the focus back to the editor (Escape on the summary row). */
+  home(): void;
 }
 
 /** The sheet's layout is on (a class of the page, from theme-init.js). */
@@ -37,6 +46,9 @@ export class BottomSheet {
   private readonly head: HTMLElement;
   private readonly grab: HTMLElement;
   private readonly hint: HTMLElement | null;
+  private readonly summary: HTMLElement;
+  /** The keyboard over the editor (web/keyboard.ts): while it is open the sheet is its summary row alone. */
+  private keyboard: Pick<Keyboard, 'open' | 'overlap'> = { open: false, overlap: 0 };
   private readonly problems: HTMLElement | null;
   private readonly source: HTMLElement | null;
   /** The hint showed in this page: it shows once. */
@@ -46,6 +58,7 @@ export class BottomSheet {
     this.head = pane.querySelector<HTMLElement>('.panel-head')!;
     this.grab = pane.querySelector<HTMLElement>('#sheet-grab')!;
     this.hint = pane.querySelector<HTMLElement>('#sheet-hint');
+    this.summary = pane.querySelector<HTMLElement>('#sheet-summary')!;
     this.problems = document.getElementById('problems');
     this.source = document.getElementById('source');
     // (First: the click that ends a drag goes nowhere.)
@@ -72,6 +85,21 @@ export class BottomSheet {
       if (!p.tab || p.chosen) this.set(tapped(this.snap));
       else if (this.snap === 'peek') this.set('half');
     });
+    // A tap on the summary row (Enter, Space) shows the explanation at half, and closes the keyboard: the focus leaves the
+    // editor for the grabber. (The press keeps the editor's focus until the click: the keyboard, and the row with it,
+    // must not go before the tap ends.) Escape gives the focus back to the editor.
+    this.summary.addEventListener('mousedown', (e) => e.preventDefault());
+    this.summary.addEventListener('click', () => {
+      (document.activeElement as HTMLElement | null)?.blur();
+      this.keyboard = { open: false, overlap: 0 };
+      this.set('half');
+      this.grab.focus({ preventScroll: true });
+    });
+    this.summary.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      host.home();
+    });
     // A tap on a line in Read mode, on a folded sheet: the sheet opens to show the line's explanation.
     document.getElementById('editor')?.addEventListener('click', () => {
       if (this.on && this.snap === 'peek' && host.reading()) this.set('half');
@@ -90,35 +118,63 @@ export class BottomSheet {
     return sheetLayout();
   }
 
-  /** The sheet is full: it covers the editor, which is inert (`inert`). */
+  /** The sheet is full: it covers the editor, which is inert (`inert`). The keyboard is never open then. */
   get covers(): boolean {
-    return this.on && this.snap === 'full';
+    return this.on && this.snap === 'full' && !this.keyboard.open;
   }
 
-  /** The sheet is folded: its content, the explanation and the Problems list, is inert (`inert`). */
+  /** The sheet is folded, or the keyboard is open: its content, the explanation and the Problems list, is inert (`inert`). */
   get folded(): boolean {
-    return this.on && this.snap === 'peek';
+    return this.on && (this.snap === 'peek' || this.keyboard.open);
   }
 
-  /** The grabber has the focus. */
+  /** The sheet's own stop has the focus: the grabber, or the summary row. */
   get focused(): boolean {
-    return document.activeElement === this.grab;
+    return document.activeElement === this.grab || document.activeElement === this.summary;
   }
 
-  /** The focus on the grabber: the editor's stop while the sheet covers it, the explanation's while folded (`paneStops`). */
+  /**
+   * The focus on the sheet's own stop: the editor's while the sheet covers it, the explanation's while folded
+   * (`paneStops`). That is the grabber, or the summary row while the keyboard is open (the tabs row is hidden then).
+   */
   focus(): void {
-    this.grab.focus({ preventScroll: true });
+    (this.keyboard.open ? this.summary : this.grab).focus({ preventScroll: true });
   }
 
-  /** The heights for this window: the full sheet reaches the strip above the editor, under the banner when there is one. */
+  /** The keyboard opened over the editor, closed, or covers another part of the window (web/keyboard.ts). */
+  typing(k: Pick<Keyboard, 'open' | 'overlap'>): void {
+    this.keyboard = { open: k.open, overlap: k.overlap };
+    if (k.open) this.hideHint();
+    if (k.open) this.root.dataset.keyboard = '';
+    else delete this.root.dataset.keyboard;
+    this.apply();
+  }
+
+  /** Draws the summary row of the cursor's line (`line`, from 0): "Ln 20", its first problem's mark, and its text. */
+  summarize(ex: LineExplanation, line: number): void {
+    const t = TEXT[this.host.lang()];
+    const row = summaryRow(ex, this.host.lang());
+    const part = (id: string) => this.summary.querySelector<HTMLElement>(`#${id}`)!;
+    part('summary-line').textContent = t.line(line + 1);
+    part('summary-mark').textContent = row.mark;
+    part('summary-mark').className = row.level ? `icon ${LEVELS[row.level].className}` : 'icon';
+    part('summary-text').textContent = row.text;
+    this.summary.setAttribute('aria-label', t.summaryName(line + 1, row.level && LEVELS[row.level].name[this.host.lang()], row.text));
+    this.summary.title = t.summaryTip;
+  }
+
+  /**
+   * The heights for this window: the full sheet reaches the strip above the editor, under the banner when there is one.
+   * The header row and the summary row are measured at every height (the summary row only shows folded, but keeps its box).
+   */
   heights(): SnapHeights {
     const banner = document.getElementById('channel-banner');
     const strip = document.getElementById('ed-head');
     const top = (banner && !banner.hidden ? banner.offsetHeight : 0) + (strip?.offsetHeight ?? 0);
     // (The header row with the sheet's top edge, and the room the window's bottom keeps: the safe area of a phone without a home button.)
     const cs = getComputedStyle(this.pane);
-    const peek = this.head.offsetHeight + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingBottom);
-    return snapHeights(window.innerHeight, top, Math.round(peek));
+    const row = this.head.offsetHeight + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingBottom);
+    return snapHeights(window.innerHeight, top, Math.round(row), this.summary.offsetHeight);
   }
 
   /**
@@ -160,6 +216,7 @@ export class BottomSheet {
     }
     if (!on) {
       delete this.root.dataset.sheet;
+      delete this.root.dataset.keyboard;
       this.root.style.removeProperty('--sheet-h');
       this.root.style.removeProperty('--sheet-rest');
       this.hideHint();
@@ -172,11 +229,11 @@ export class BottomSheet {
   /** Draws the height shown: the sheet's height, the editor's room above it, what is out of sight, and the grabber's name. */
   private apply(): void {
     if (!this.on) return;
-    const h = this.heights();
+    // (While the keyboard is open, the summary row with the sheet's edge; the keyboard covers the rest.)
+    const shown = sheetHeight(this.heights(), this.snap, this.keyboard, this.summary.offsetHeight + parseFloat(getComputedStyle(this.pane).borderTopWidth));
     this.root.dataset.sheet = this.snap;
-    this.root.style.setProperty('--sheet-h', `${h[this.snap]}px`);
-    // The editor ends where the sheet does at half or lower: at full, it stays as at half, under the sheet.
-    this.root.style.setProperty('--sheet-rest', `${Math.min(h[this.snap], h.half)}px`);
+    this.root.style.setProperty('--sheet-h', `${shown.height}px`);
+    this.root.style.setProperty('--sheet-rest', `${shown.rest}px`);
     this.inert(this.folded, this.covers);
     this.name();
     this.host.moved();
@@ -204,7 +261,7 @@ export class BottomSheet {
     const hidden: [Element | null, boolean][] = [
       [this.pane.querySelector('.panel-body'), folded], [this.problems, folded && this.on], [this.hint, folded],
       [document.getElementById('editor'), full], [document.getElementById('first-hint'), full], [document.getElementById('empty-editor'), full],
-      [document.querySelector('header.top'), full],
+      [document.querySelector('header.top'), full || (folded && this.keyboard.open)],
     ];
     const had = document.activeElement;
     for (const [el, on] of hidden) if (el instanceof HTMLElement) el.inert = on;

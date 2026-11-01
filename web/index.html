@@ -111,6 +111,8 @@
       </div>
     </div>
     <p id="sheet-hint" class="sheet-hint" role="note" hidden></p>
+    <!-- The summary row of the cursor's line (web/sheet.ts, step C8b): under the tabs while the sheet is folded, alone on the keyboard while typing; a tap shows the explanation. -->
+    <button id="sheet-summary" class="sheet-summary" type="button" aria-controls="panel-pane"><span id="summary-line" class="summary-line" aria-hidden="true"></span><span id="summary-mark" class="icon" aria-hidden="true"></span><span id="summary-text" class="summary-text" aria-hidden="true"></span><svg class="chev" aria-hidden="true" viewBox="0 0 12 12"><path d="M3 7.5l3-3 3 3"/></svg></button>
     <div id="panel-body" class="panel-body" role="tabpanel" aria-labelledby="tab-explain"><iframe id="panel" src="panel.html" title="Explanation"></iframe></div>
   </section>
 </main>

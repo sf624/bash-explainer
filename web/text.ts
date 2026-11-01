@@ -137,6 +137,10 @@ export const TEXT = {
     sheetMoved: (height: string) => `Explanation height: ${height}`,
     sheetHeights: { peek: 'Folded', half: 'Half', full: 'Full' },
     sheetHint: 'Tap or drag this bar to change the height.',
+    // The summary row of the cursor's line (step C8b), under the folded sheet's tabs and on the keyboard: its name (the
+    // line, the level's name when it shows a problem, and its text) and what a tap does.
+    summaryName: (n: number, level: string | undefined, text: string) => `Line ${n}: ${level ? `${level}. ` : ''}${text}`,
+    summaryTip: 'Show the explanation',
     // The menu's groups.
     menuScript: 'Script',
     menuShare: 'Share',
@@ -284,6 +288,8 @@ export const TEXT = {
     sheetMoved: (height: string) => `解説の高さ: ${height}`,
     sheetHeights: { peek: '最小', half: '半分', full: '全体' },
     sheetHint: 'このバーをタップかドラッグすると高さが変わる。',
+    summaryName: (n: number, level: string | undefined, text: string) => `${n} 行目：${level ? `${level}。` : ''}${text}`,
+    summaryTip: '解説を表示',
     menuScript: 'スクリプト',
     menuShare: '共有',
     menuPrefs: '表示と言語',

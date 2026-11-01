@@ -7,7 +7,7 @@ import { Fix, fixFor, rewriteFix } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues, regionAt, regionShell, type ShellRegion } from './hosts';
 import { Lang } from './i18n';
 import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
-import { conventionOf, fact, isProblem, problemText, severityOf } from './messages';
+import { conventionOf, fact, isProblemNote, problemText, severityOf } from './messages';
 import { PROBLEM_LEVELS } from './messages-levels';
 import { RESERVED } from './semantics/names';
 import { type NestedScript, nestedScripts } from './semantics/nested';
@@ -115,7 +115,7 @@ const noteIssueCache = new WeakMap<SyntaxTree, Map<string, DocumentIssue[]>>();
  * as problems"): every note of a line at the level `error`, `warning` or `info` (`LineExplanation.noteInfo`), with its
  * code, on the range of each node it was found on (`LineExplanation.anchors`, cut to the line it starts on); those
  * but the errors are `pitfall: true` (advice, which `diagnostics.pitfalls` turns off; an error is a bug).
- * A plain fact is never one, nor is a note the catalog keeps a note (`isProblem`). The same note on the same node is
+ * A plain fact is never one, nor is a note the catalog keeps a note (`isProblemNote`). The same note on the same node is
  * one problem, whichever lines say it (a statement over several lines says its notes on each); one on two nodes is a
  * problem on each. A note about no node is about its line: only a host file has such warnings (a CI step, a Dockerfile
  * `RUN`), which `hostIssues` already gives. The notes of a
@@ -142,7 +142,7 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
     const ex = explainDocumentLine(analyzer, doc, line, lang, shells, lean);
     for (const n of ex.noteInfo) {
       // (A plain fact is no problem; nor is a caveat the catalog keeps a note, `ssh-local-expansion`, the `…-not-found` of an option.)
-      if (n.level === 'note' || !isProblem(n.code!)) continue;
+      if (!isProblemNote(n)) continue;
       for (const { span, rewrite } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
         const at = span.start.line;
         const issue: DocumentIssue = {
