@@ -56,6 +56,22 @@ describe('the web page: the phone\'s sheet', function () {
     return s.pane;
   };
 
+  /** The width of the swipe strips along the screen's edges (.edge), which the rows' controls keep clear of. */
+  const EDGE = 12;
+
+  /**
+   * The row's last control (the rightmost one shown, but the sheet's grabber under the row): the gap from its right edge
+   * to the row's, and whether a tap 1 px inside that edge, at its middle, finds it (and not the edge's swipe strip over it).
+   */
+  const lastEnd = (page: Page, row: string) => page.evaluate(`(() => {
+    const head = document.querySelector(${JSON.stringify(row)});
+    const items = [...head.querySelectorAll('button, [role=tab]')].filter((c) => c.id !== 'sheet-grab' && c.checkVisibility({ visibilityProperty: true }));
+    const last = items.reduce((a, b) => (b.getBoundingClientRect().right > a.getBoundingClientRect().right ? b : a));
+    const r = last.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.right - 1, r.top + r.height / 2);
+    return { last: last.id || last.className, right: r.right, gap: head.getBoundingClientRect().right - r.right, inside: !!hit && last.contains(hit), hit: hit && (hit.id || hit.className) };
+  })()`) as Promise<{ last: string; right: number; gap: number; inside: boolean; hit: string | null }>;
+
   /** The header row's controls (the tabs, the view control's pill) and the strip's above the editor. */
   const ROW = ['#tab-explain', '#tab-problems', '#tab-ref', '#view-slot'];
   const STRIP = ['#mode-read', '#mode-edit', '#scope-chip', '#ed-more'];
@@ -84,12 +100,15 @@ describe('the web page: the phone\'s sheet', function () {
         const shape = boxes.map((b) => ({ x: b.x, width: b.width, height: b.height, dy: Math.round((b.y - head.y) * 10) / 10 }));
         first ??= shape as unknown as Box[];
         assert.deepStrictEqual(shape, first, at);
-        for (const [i, b] of boxes.entries()) assert.ok(b.height >= 44 && b.x >= 0 && b.x + b.width <= width + 0.5, `${at}: ${ROW[i]} ${JSON.stringify(b)}`);
-        const fit = await page.evaluate("[document.documentElement.scrollWidth <= document.documentElement.clientWidth, document.getElementById('panel-head').scrollWidth <= document.getElementById('panel-head').clientWidth]");
-        assert.deepStrictEqual(fit, [true, true], at);
+        // Clear of the edges' swipe strips (12 px each side, over the sheet too): inside the rows' padding.
+        for (const [i, b] of boxes.entries()) assert.ok(b.height >= 44 && b.x >= EDGE - 0.5 && b.x + b.width <= width - EDGE + 0.5, `${at}: ${ROW[i]} ${JSON.stringify(b)}`);
+        assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true, at);
+        // A tap at the inner edge of the row's last control finds that control, not the edge's strip.
+        const end = await lastEnd(page, '#panel-head');
+        assert.ok(end.inside && end.gap >= EDGE - 0.5, `${at}: ${JSON.stringify(end)}`);
         for (const s of STRIP) {
           const b = await box(page, s);
-          assert.ok(b.height >= 44 && b.width >= 44 && b.x >= 0 && b.x + b.width <= width + 0.5, `${at}: ${s} ${JSON.stringify(b)}`);
+          assert.ok(b.height >= 44 && b.width >= 44 && b.x >= EDGE - 0.5 && b.x + b.width <= width - EDGE + 0.5, `${at}: ${s} ${JSON.stringify(b)}`);
         }
         // The app bar slides away at full height (and leaves the focus order), and is back below it.
         const bar = await box(page, 'header.top');
@@ -161,8 +180,13 @@ describe('the web page: the phone\'s sheet', function () {
     const pill = await box(page, '#slot-open');
     assert.ok(options.y + options.height <= pill.y && options.y >= 0 && options.x + options.width <= 390.5, JSON.stringify([options, pill]));
     assert.strictEqual((await settled(page)).snap, 'peek');
-    // The sheet keeps its scroll inside: dragging it does not pull the page.
-    assert.strictEqual(await page.evaluate("getComputedStyle(document.getElementById('panel-pane')).overscrollBehaviorY"), 'contain');
+    // Dragging the sheet does not pull the page: the browser leaves the header's moves to the page (touch-action), the
+    // page itself never scrolls nor pulls to refresh (overscroll-behavior on the root), and the Problems tab's list,
+    // the scroller in the sheet, keeps its scroll inside. (The sheet's pane does not scroll: its own would do nothing.)
+    assert.deepStrictEqual(await page.evaluate(`(() => {
+      const s = (selector) => getComputedStyle(document.querySelector(selector));
+      return [s('#panel-head').touchAction, s('html').overscrollBehaviorY, s('body').overscrollBehaviorY, s('#problem-list').overflowY, s('#problem-list').overscrollBehaviorY];
+    })()`), ['none', 'none', 'none', 'auto', 'contain']);
     assert.strictEqual(await page.evaluate('scrollY'), 0);
     await page.context().close();
   });
@@ -200,9 +224,27 @@ describe('the web page: the phone\'s sheet', function () {
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'sheet-grab');
     assert.strictEqual(await grab.getAttribute('aria-label'), 'Explanation height: Half');
     assert.strictEqual(await page.locator('#sheet-hint').isVisible(), false);
+    // A new height is said once, by the live region; the name of the grabber that has the focus waits until the focus
+    // leaves (a screen reader that says a new name of its control would say it twice). Nothing else is said.
+    await page.evaluate(`(() => {
+      const region = document.getElementById('announce');
+      window.said = [];
+      new MutationObserver(() => window.said.push(region.textContent)).observe(region, { childList: true, characterData: true, subtree: true });
+    })()`);
     await page.keyboard.press('ArrowUp');
     assert.strictEqual((await settled(page)).snap, 'full');
+    assert.deepStrictEqual(await page.evaluate('window.said'), ['Explanation height: Full']);
+    assert.strictEqual(await grab.getAttribute('aria-label'), 'Explanation height: Half');
+    // (A key that leaves the height, and a window that changes size, say nothing.)
+    await page.keyboard.press('End');
+    await page.setViewportSize({ width: 390, height: 700 });
+    await settled(page);
+    await page.setViewportSize({ width: 390, height: 740 });
+    await settled(page);
+    assert.deepStrictEqual(await page.evaluate('window.said'), ['Explanation height: Full']);
+    await page.locator('#tab-explain').focus();
     assert.strictEqual(await grab.getAttribute('aria-label'), 'Explanation height: Full');
+    await grab.focus();
     // The first full sheet: the hint, once.
     assert.strictEqual(await page.locator('#sheet-hint').isVisible(), true);
     assert.match(await page.locator('#sheet-hint').innerText(), /Tap or drag this bar/);
@@ -238,7 +280,7 @@ describe('the web page: the phone\'s sheet', function () {
     bare.on('pageerror', (e) => errors.push(e.message));
     await snapTo(bare, 'full');
     assert.match(await bare.locator('#sheet-hint').innerText(), /このバーを/);
-    assert.strictEqual(await bare.locator('#sheet-grab').getAttribute('aria-label'), '解説の高さ: 全体');
+    assert.strictEqual(await bare.locator('#announce').textContent(), '解説の高さ: 全体');
     await snapTo(bare, 'half');
     await snapTo(bare, 'full');
     assert.strictEqual(await bare.locator('#sheet-hint').isVisible(), false);
@@ -247,7 +289,8 @@ describe('the web page: the phone\'s sheet', function () {
   });
 
   it('has Problems as a tab, with its counts by level: a problem chosen goes to its line, with its explanation at half height', async () => {
-    const page = await open(await phone(390, 'en'));
+    // (At 430 px the row has room for the line; at 390 px in English it has not, beside the counts.)
+    const page = await open(await phone(430, 'en'));
     const tab = page.locator('#tab-problems');
     assert.match((await tab.getAttribute('aria-label'))!, /^Problems: \d+ errors?, \d+ warnings?, \d+ /);
     assert.match(await tab.innerText(), /^ⓧ\s*\d+\s*⚠\s*\d+\s*ⓘ\s*\d+$/);
@@ -305,6 +348,27 @@ describe('the web page: the phone\'s sheet', function () {
       assert.match(await page.evaluate('navigator.clipboard.readText()') as string, /`/);
     }
     await page.context().close();
+  });
+
+  it('sends the focus home to its grabber while it is full: a toast closed with the focus in it, on a touch screen', async () => {
+    const ctx = await browser.newContext(await phone(390, 'en', { reducedMotion: 'reduce' }));
+    const page = await ctx.newPage();
+    await page.goto(`${base}#lang=en&t=${Buffer.from('echo mine\n').toString('base64url')}`);
+    const text = () => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
+    await until('the text', text, (t) => t.includes('echo mine'));
+    if (await page.locator('#readtip').isVisible()) await page.locator('#readtip-close').tap();
+    // The sample over the user's text: a toast with Undo.
+    await page.locator('#menu-open').tap();
+    await page.locator('#menu-sample').tap();
+    const undo = page.locator('#status button');
+    await undo.waitFor();
+    await snapTo(page, 'full');
+    // The editor is inert under the full sheet: the focus closing the toast goes to the grabber, not the page's body.
+    await undo.focus();
+    await page.keyboard.press('Escape');
+    await until('the toast gone', () => undo.count(), (n) => n === 0);
+    assert.strictEqual(await page.evaluate('document.activeElement.id'), 'sheet-grab');
+    await ctx.close();
   });
 
   it('moves the sheet and the app bar without animation with reduced motion, and with one otherwise', async () => {

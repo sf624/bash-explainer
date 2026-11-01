@@ -437,9 +437,14 @@ function setChoice(key: 'shell' | 'yq', value: string): void {
   settingsDialog?.refresh();
 }
 
-/** Where the focus goes when its holder goes (a toast, an Undo, a question, an opened file): the sheet over the editor (inert), else the editor but on touch. */
+/**
+ * Where the focus goes when its holder goes (a toast, an Undo, a question, an opened file): the settings sheet over the
+ * editor (inert); the phone's sheet's grabber while the sheet is full (the editor under it is inert); else the editor
+ * but on touch.
+ */
 function focusHome(): void {
   if (settingsDialog?.sideBySide) settingsDialog.focus();
+  else if (sheet?.covers) sheet.focus();
   else editor.focusUnlessTouch();
 }
 
@@ -528,6 +533,7 @@ const sheet = panePane && mode.hasChrome ? new BottomSheet(panePane, {
   },
   reading: () => readEdit.read,
   explain: () => panel.explain(),
+  announce: (text) => announcer?.say(text),
 }) : undefined;
 
 /** Hides the toast whose Undo goes back over an edit, when another edit of the editor's text comes first. */

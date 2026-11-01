@@ -2124,7 +2124,7 @@ body.resizing .problems-resize {
   display: none;
 }
 
-/* The read-mode switch is for touch screens (no soft keyboard elsewhere); the keyboard is crossed out while it is on. */
+/* The read-mode switch (Read | Edit) is for touch screens: elsewhere there is no soft keyboard to keep away. */
 .touch-only {
   display: none;
 }
@@ -2501,7 +2501,6 @@ body.resizing .problems-resize {
   border-radius: 12px 12px 0 0;
   background: var(--vscode-editor-background);
   box-shadow: 0 -2px 12px rgb(0 0 0 / 16%);
-  overscroll-behavior: contain;
 }
 
 :where(html.bottom-sheet) .panel-head {

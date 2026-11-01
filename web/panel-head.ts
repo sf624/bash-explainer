@@ -14,7 +14,7 @@ import { panelHeaderForms, panelTools, ViewForm } from '../src/ui/panelHead';
 import type { PanelState, ViewControl } from '../src/ui/panelView';
 import { NO_PROBLEMS, problemCounts, type SheetForm, sheetForms } from '../src/ui/sheet';
 import { drawIcon } from './icons';
-import { narrow } from './layout';
+import { fitsRow, narrow } from './layout';
 import { focusBack } from './popover';
 import { sheetLayout } from './sheet';
 import { TEXT } from './text';
@@ -217,7 +217,7 @@ export class PanelHead {
         explain?.setAttribute('aria-label', form.line ? `${t.tabExplanation} ${t.line(this.line + 1)}` : t.tabExplanation);
         this.drawCounts(form.counts);
         this.sheetForm = form;
-        if (this.head.scrollWidth <= this.head.clientWidth) return;
+        if (fitsRow(this.head)) return;
       }
       this.head.dataset.squeeze = '';
       return;
@@ -228,7 +228,7 @@ export class PanelHead {
       this.view.draw(control, form.view);
       this.head.dataset.tools = form.tools;
       this.head.dataset.tabs = form.tabs;
-      if (this.head.scrollWidth <= this.head.clientWidth) return;
+      if (fitsRow(this.head)) return;
     }
     this.head.classList.add('wrap');
   }

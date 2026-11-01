@@ -14,6 +14,20 @@ export const narrow = {
   },
 };
 
+/**
+ * Whether a row's items fit it: none runs past its end padding (or out of its box). A row of forms (the panel's header,
+ * the editor's header) takes the first form whose items fit. `scrollWidth` alone is not enough: Chromium does not count
+ * what runs into the end padding, so a form whose last item lay under the edge's swipe strip of a touch screen (12 px
+ * of padding) passed as fitting. Items laid out of the row (positioned absolutely, as the sheet's grabber) do not count.
+ * (The page is left to right only.)
+ */
+export function fitsRow(row: HTMLElement): boolean {
+  if (row.scrollWidth > row.clientWidth) return false;
+  const s = getComputedStyle(row);
+  const end = row.getBoundingClientRect().right - parseFloat(s.borderRightWidth) - parseFloat(s.paddingRight);
+  return [...row.children].every((item) => !item.getClientRects().length || getComputedStyle(item).position === 'absolute' || item.getBoundingClientRect().right <= end + 0.5);
+}
+
 import { readStoredObject, STORAGE_KEYS, writeStored } from './storage';
 
 const SPLIT_KEY = STORAGE_KEYS.split;

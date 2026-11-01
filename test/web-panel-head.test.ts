@@ -36,7 +36,7 @@ describe('the web page: the panel\'s header', function () {
     await frames(page, 3);
   }
 
-  /** The header as measured: its form, whether its row overflows, and the boxes of its parts. */
+  /** The header as measured: its form, whether its row overflows (or runs into its end padding: `end` < 0), and the boxes of its parts. */
   const measure = (page: Page) => page.evaluate(`(() => {
     const head = document.getElementById('panel-head');
     const box = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return [Math.round(r.left * 10) / 10, Math.round(r.width * 10) / 10, Math.round(r.top * 10) / 10, Math.round(r.height * 10) / 10]; };
@@ -45,8 +45,9 @@ describe('the web page: the panel\'s header', function () {
       view: document.getElementById('view-slot').dataset.form, tools: head.dataset.tools, tabs: head.dataset.tabs, wrap: head.classList.contains('wrap'),
       over: head.scrollWidth - head.clientWidth, head: box('#panel-head'), frame: box('#panel'), slot: box('#view-slot'), collapse: box('#collapse'), copy: box('#copy-md'),
       tabsBox: box('#panel-tabs'), words: [word('collapse-word'), word('copy-md-word')],
+      end: Math.round((head.getBoundingClientRect().right - parseFloat(getComputedStyle(head).paddingRight) - document.getElementById('copy-md').getBoundingClientRect().right) * 10) / 10,
     };
-  })()`) as Promise<{ view: string; tools: string; tabs: string; wrap: boolean; over: number; head: number[]; frame: number[]; slot: number[]; collapse: number[]; copy: number[]; tabsBox: number[]; words: boolean[] }>;
+  })()`) as Promise<{ view: string; tools: string; tabs: string; wrap: boolean; over: number; end: number; head: number[]; frame: number[]; slot: number[]; collapse: number[]; copy: number[]; tabsBox: number[]; words: boolean[] }>;
 
   it('takes the first form that fits: the segments with the tools\' words beside them at 1280px, one row from 640 to 1440px, words on Collapse and Copy at every width', async () => {
     for (const lang of ['en', 'ja'] as const) {
@@ -56,8 +57,8 @@ describe('the web page: the panel\'s header', function () {
         await resize(page, width);
         const m = await measure(page);
         const at = `${lang} ${width}px: ${JSON.stringify(m)}`;
-        // Never wider than the panel, and as wide as its frame.
-        assert.ok(m.over <= 0, at);
+        // Never wider than the panel, nor into its end padding, and as wide as its frame.
+        assert.ok(m.over <= 0 && m.end >= -0.5, at);
         assert.ok(Math.abs(m.head[0] - m.frame[0]) < 1 && Math.abs(m.head[1] - m.frame[1]) < 1, at);
         // Side by side (from 640px: the panel is beside the editor from 768px, under it below), one row: no form has to wrap.
         if (width >= 640) assert.strictEqual(m.wrap, false, at);

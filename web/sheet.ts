@@ -18,6 +18,8 @@ export interface SheetHost {
   reading(): boolean;
   /** Shows the Explanation tab (after a problem was chosen in the Problems tab). */
   explain(): void;
+  /** Says a short message in the page's live region (a new height). */
+  announce(text: string): void;
 }
 
 /** The sheet's layout is on (a class of the page, from theme-init.js). */
@@ -48,6 +50,8 @@ export class BottomSheet {
     this.source = document.getElementById('source');
     // (First: the click that ends a drag goes nowhere.)
     this.drags();
+    // (The name a new height left waiting while the grabber had the focus: see `name`.)
+    this.grab.addEventListener('blur', () => this.name());
     this.grab.addEventListener('keydown', (e) => {
       const to = keyed(this.snap, e.key);
       if (to === undefined || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -87,6 +91,16 @@ export class BottomSheet {
     return sheetLayout();
   }
 
+  /** The sheet is full: it covers the editor, which is inert. */
+  get covers(): boolean {
+    return this.on && this.snap === 'full';
+  }
+
+  /** The focus on the grabber: where the page's focus goes home while the sheet covers the editor (`focusHome`). */
+  focus(): void {
+    this.grab.focus({ preventScroll: true });
+  }
+
   /** The heights for this window: the full sheet reaches the strip above the editor, under the banner when there is one. */
   heights(): SnapHeights {
     const banner = document.getElementById('channel-banner');
@@ -98,11 +112,16 @@ export class BottomSheet {
     return snapHeights(window.innerHeight, top, Math.round(peek));
   }
 
-  /** Shows a height. */
+  /** Shows a height; a new one is said (the live region: the grabber's name may not be, see `name`). */
   set(snap: Snap): void {
-    if (snap !== this.snap) this.hideHint();
+    const moved = snap !== this.snap;
+    if (moved) this.hideHint();
     this.snap = snap;
     this.apply();
+    if (moved && this.on) {
+      const t = TEXT[this.host.lang()];
+      this.host.announce(t.sheetGrab(t.sheetHeights[snap]));
+    }
     if (snap === 'full') this.showHint();
   }
 
@@ -151,10 +170,14 @@ export class BottomSheet {
     this.host.moved();
   }
 
-  /** The grabber's name says the height shown; its tooltip how to change it. */
+  /**
+   * The grabber's name says the height shown; its tooltip how to change it. A new height is said once, by the page's
+   * live region (`set`): while the grabber has the focus, its name waits until the focus leaves, as some screen readers
+   * also say a new name of the control they are on, and others do not.
+   */
   name(): void {
     const t = TEXT[this.host.lang()];
-    this.grab.setAttribute('aria-label', t.sheetGrab(t.sheetHeights[this.snap]));
+    if (document.activeElement !== this.grab) this.grab.setAttribute('aria-label', t.sheetGrab(t.sheetHeights[this.snap]));
     this.grab.title = t.sheetHint;
     if (this.hint) this.hint.textContent = t.sheetHint;
   }
@@ -171,7 +194,7 @@ export class BottomSheet {
     ];
     const had = document.activeElement;
     for (const [el, on] of hidden) if (el instanceof HTMLElement) el.inert = on;
-    if (had instanceof HTMLElement && had !== document.body && hidden.some(([el, on]) => on && el?.contains(had))) this.grab.focus({ preventScroll: true });
+    if (had instanceof HTMLElement && had !== document.body && hidden.some(([el, on]) => on && el?.contains(had))) this.focus();
   }
 
   /** The first time the sheet is full (in this browser), a hint under its header says how to change the height. */

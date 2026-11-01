@@ -137,12 +137,14 @@ describe('the web page: hit areas', function () {
       #large::after { content: ''; position: absolute; inset: -17px }
       #under { position: absolute; left: 100px; top: 200px; width: 30px; height: 30px; padding: 0 }
       #cover { position: absolute; left: 90px; top: 190px; width: 60px; height: 60px; background: red }
-      #through { position: absolute; left: 300px; top: 100px; width: 10px; height: 10px; padding: 0; pointer-events: none }
+      #through, #sheet-grab { position: absolute; left: 300px; top: 100px; width: 10px; height: 10px; padding: 0; pointer-events: none }
+      #sheet-grab { top: 150px }
     </style>
-    <button id="small">a</button><button id="large">b</button><button id="under">c</button><div id="cover"></div><button id="through">d</button>`);
-    // (A control that lets a press through to what is under it has no hit area: it is left out.)
+    <button id="small">a</button><button id="large">b</button><button id="under">c</button><div id="cover"></div><button id="through">d</button><button id="sheet-grab">e</button>`);
+    // (A control that lets a press through to what is under it has no hit area: it measures as nothing. Only the sheet's
+    // grabber, which the header around it stands for, is left out.)
     const areas = Object.fromEntries((await hitAreas(page)).map((a) => [a.key, [a.width, a.height]]));
-    assert.deepStrictEqual(areas, { '#small': [10, 10], '#large': [44, 44], '#under': [0, 0] });
+    assert.deepStrictEqual(areas, { '#small': [10, 10], '#large': [44, 44], '#under': [0, 0], '#through': [0, 0] });
     await ctx.close();
   });
 

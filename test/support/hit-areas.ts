@@ -51,9 +51,10 @@ const SCRIPT = `(scope, cap) => {
     return true;
   };
   for (const el of root.querySelectorAll(selector)) {
-    // (A control that lets a press through, pointer-events: none, has no hit area: its container takes the press. The
-    // phone sheet's grabber is one: a button for the keyboard, under the header's tabs, whose taps the header takes.)
-    if (el.closest('.cm-editor') || !visible(el) || getComputedStyle(el).pointerEvents === 'none') continue;
+    // (The phone sheet's grabber lets a press through, pointer-events: none: it is for the keyboard and a screen reader,
+    // under the header's tabs, whose taps the header takes. It has no hit area of its own. Any other control that lets
+    // a press through measures as nothing, and fails.)
+    if (el.closest('.cm-editor') || !visible(el) || (el.id === 'sheet-grab' && getComputedStyle(el).pointerEvents === 'none')) continue;
     const name = (el.getAttribute('aria-label') || el.title || el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 40);
     const role = el.getAttribute('role') || el.getAttribute('type') || '';
     // (The settings' switches of a family, "…-disabled-sed", "…-disabled-awk", are one key: the smallest counts.)
@@ -110,7 +111,7 @@ export function under(areas: HitArea[], bar: number): string[] {
  * What the measurement does: it starts from the first box of the control (a link that wraps has more than one) and
  * probes up to CAP px each way, so 121 (2 x CAP + 1) means "at least"; what is in a closed `<details>`, but its
  * summary, is not on the page; a control that is not visible is not measured (a popover is measured
- * open, on its own), nor is one that lets a press through to what is under it (pointer-events: none).
+ * open, on its own), nor is the phone sheet's grabber, which lets a press through to the header (pointer-events: none).
  */
 export type Allowed = Record<string, Record<string, [number, number]>>;
 
