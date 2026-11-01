@@ -712,6 +712,11 @@ export function isProblem(code: string): boolean {
   return (MESSAGES as Record<string, Entry<never>>)[code]?.problem !== false;
 }
 
+/** Whether a note of a line is a problem in the editors: a warning, a caveat or an error, which the catalog does not keep a note (`isProblem`). */
+export function isProblemNote(n: Pick<Note, 'level' | 'code'>): boolean {
+  return n.level !== 'note' && isProblem(n.code!);
+}
+
 /** A fact before its language is chosen: its id and its params (language-free, or `Words`). */
 export type FactSpec = { [K in FactId]: { id: K; params: Params<K> } }[FactId];
 

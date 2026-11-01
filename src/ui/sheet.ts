@@ -2,11 +2,11 @@ import { levelTally, type NoteLevel } from '../levels';
 import { type ViewForm, viewControlForms } from './panelHead';
 import type { ViewControl } from './panelView';
 
-// The phone's bottom sheet on the web page (docs/design/chrome-redesign.md, step C8a): its heights, the height it
-// settles on after a drag, a tap or a key, and the forms of its header row. The page (web/sheet.ts, web/panel-head.ts)
-// measures, draws and wires the events; every decision is here.
+// The phone's bottom sheet on the web page (docs/design/chrome-redesign.md, steps C8a and C8b): its heights, the height
+// it settles on after a drag, a tap or a key, its height while the keyboard is open, and the forms of its header row.
+// The page (web/sheet.ts, web/panel-head.ts) measures, draws and wires the events; every decision is here.
 
-/** The sheet's heights, lowest first: its header row alone, about half the window, and up to the strip above the editor. */
+/** The sheet's heights, lowest first: its header row and the summary row under it, about half the window, and up to the strip above the editor. */
 export const SNAPS = ['peek', 'half', 'full'] as const;
 export type Snap = (typeof SNAPS)[number];
 export type SnapHeights = Record<Snap, number>;
@@ -20,12 +20,25 @@ export const CARRY_MS = 150;
 
 /**
  * The heights in px, from the window's height (`view`), the top a full sheet reaches (the strip's bottom, once the app
- * bar has slid away) and the height of the header row with the bottom's safe area (`peek`). A height is never under
- * the peek nor over the full one, so on a short window two of them may be the same.
+ * bar has slid away), the height of the header row with the sheet's edge and the bottom's safe area (`row`), and the
+ * summary row's (`summary`, step C8b): the peek is both rows (decision 5). A height is never under the peek nor over
+ * the full one, so on a short window two of them may be the same.
  */
-export function snapHeights(view: number, top: number, peek: number): SnapHeights {
+export function snapHeights(view: number, top: number, row: number, summary: number): SnapHeights {
+  const peek = row + summary;
   const full = Math.max(peek, Math.round(view - top));
   return { peek, half: Math.min(full, Math.max(peek, Math.round(view * HALF_SHARE))), full };
+}
+
+/**
+ * The sheet's height on the page, and the editor's room under it (where the editor ends: at the sheet's top at half or
+ * lower; at full, as at half, under the sheet). While the keyboard is open over the editor (src/ui/keyboard.ts), the
+ * sheet is its summary row alone (`summary`, with the sheet's edge), on the keyboard's top: the part of the window the
+ * keyboard covers (`overlap`) is under it, and the editor ends at the row.
+ */
+export function sheetHeight(heights: SnapHeights, snap: Snap, keyboard: { open: boolean; overlap: number }, summary: number): { height: number; rest: number } {
+  if (keyboard.open) return { height: summary + keyboard.overlap, rest: summary + keyboard.overlap };
+  return { height: heights[snap], rest: Math.min(heights[snap], heights.half) };
 }
 
 /**

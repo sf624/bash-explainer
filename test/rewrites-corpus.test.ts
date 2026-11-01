@@ -40,7 +40,7 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'unbraced-element': { subjects: 1, ran: 1, checks: 1, skipped: {} },
   'unmatched-glob-runs-once': { subjects: 7, ran: 7, checks: 21, skipped: {} },
   'unquoted-variable-as-path': { subjects: 61, ran: 40, checks: 208, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `DIR`': 5, 'the script sets `D`': 9 } },
-  'unquoted-variable-in-test': { subjects: 23, ran: 19, checks: 121, skipped: { 'a redirection to a word that is not plain text': 4 } },
+  'unquoted-variable-in-test': { subjects: 24, ran: 20, checks: 128, skipped: { 'a redirection to a word that is not plain text': 4 } },
   'wrapper-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },
 };
 
