@@ -243,7 +243,7 @@ describe('the Language Server', function () {
   it('switches to Japanese when configured', async () => {
     client.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { language: 'ja' } } });
     const r = await client.request('textDocument/hover', { textDocument: { uri: script }, position: { line: 1, character: 5 } });
-    assert.match(r.result.contents.value, /2 行目/);
+    assert.match(r.result.contents.value, /行 2/);
   });
 
   it('answers unknown requests with an error, and shuts down cleanly', async () => {
@@ -311,7 +311,7 @@ describe('the Language Server', function () {
     await c.request('initialize', { processId: null, rootUri: null, capabilities: {} });
     c.notify('initialized', {});
     c.notify('textDocument/didOpen', { textDocument: { uri: script, languageId: 'sh', version: 1, text: 'ls -l\n' } });
-    assert.match((await c.request('textDocument/hover', { textDocument: { uri: script }, position: { line: 0, character: 0 } })).result.contents.value, /1 行目/);
+    assert.match((await c.request('textDocument/hover', { textDocument: { uri: script }, position: { line: 0, character: 0 } })).result.contents.value, /行 1/);
     await c.request('shutdown', null);
     c.notify('exit', null);
     await c.exited;

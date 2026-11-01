@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as ts from 'typescript';
 import { Analyzer, type Token } from '../src/analyzer';
 import { dialectTexts, type Shell } from '../src/dialect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -12,63 +13,52 @@ function* sources(dir: string): Generator<string> {
   for (const e of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) yield* sources(p);
-    else if (/\.ts$/.test(e.name)) yield p;
+    else if (/\.(ts|js)$/.test(e.name) && !e.name.endsWith('.d.ts')) yield p;
   }
 }
 
 const kana = /[぀-ヿ一-鿿]/;
 
-/** The single-quoted strings of src/ and cli/ with Japanese in them, and those of web/ (single-quoted and backquoted), with where they are. */
-function japanese(): { where: string; text: string }[] {
-  const out: { where: string; text: string }[] = [];
-  for (const file of [...sources('src'), ...sources('cli')]) {
-    fs.readFileSync(path.join(root, file), 'utf8').split('\n').forEach((line, i) => {
-      for (const m of line.matchAll(/'((?:[^'\\]|\\.)*)'/g)) {
-        if (kana.test(m[1])) out.push({ where: `${file}:${i + 1}`, text: m[1] });
-      }
-    });
-  }
-  return [...out, ...templateJapanese(), ...webJapanese()];
-}
-
 /**
- * The backquoted strings of src/ui, cli and src/i18n.ts (`lineLabel`) with Japanese in them (a template literal: the panel's own texts are
- * written so, `${n} 行目`; the single-quoted scan above does not see them). They may span lines.
+ * The string literals of a script (.ts or .js) with Japanese in them, as written between the quotes: single-quoted,
+ * double-quoted and backquoted ones (a template literal may span lines; each substitution `${…}` is written as such), with the
+ * line each starts on. The TypeScript scanner reads them, so a comment is not text (a backtick or a quote in a comment
+ * neither fails the test nor hides a string), and a template nested in a `${…}` is found as well.
  */
-function templateJapanese(): { where: string; text: string }[] {
+function japaneseStrings(source: string, file: string): { where: string; text: string }[] {
   const out: { where: string; text: string }[] = [];
-  for (const file of [...sources('src/ui'), ...sources('cli'), 'src/i18n.ts']) {
-    const source = fs.readFileSync(path.join(root, file), 'utf8');
-    for (const m of source.matchAll(/`((?:[^`\\]|\\.)*)`/g)) {
-      if (kana.test(m[1])) out.push({ where: `${file}:${source.slice(0, m.index).split('\n').length}`, text: m[1] });
-    }
-  }
+  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith('.js') ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+  const visit = (n: ts.Node): void => {
+    // (A template with substitutions: its literal parts, with `${…}` for each substitution. The code inside is not text; a
+    // string or a template written there is visited as a node of its own.)
+    const text = ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) ? n.getText(tree).slice(1, -1)
+      : ts.isTemplateExpression(n) ? n.head.getText(tree).slice(1, -2) + n.templateSpans.map((x) => '${…}' + x.literal.getText(tree).slice(1, ts.isTemplateTail(x.literal) ? -1 : -2)).join('')
+        : undefined;
+    if (text !== undefined && kana.test(text)) out.push({ where: `${file}:${tree.getLineAndCharacterOfPosition(n.getStart(tree)).line + 1}`, text });
+    ts.forEachChild(n, visit);
+  };
+  visit(tree);
   return out;
 }
 
-/**
- * The page's Japanese (C0 of docs/design/chrome-redesign.md): the single-quoted and backquoted strings of web/*.ts
- * (a backquoted one may span lines; its `${…}` parts stay as written), and the text and the attribute values of
- * web/index.html. An escaped backtick (a code span) is a backtick in the text.
- */
-function webJapanese(): { where: string; text: string }[] {
+/** The strings of src/, cli/, web/ (.ts and .js) and media/ (.js) with Japanese in them, and the text of the pages (web/*.html), with where they are. */
+function japanese(): { where: string; text: string }[] {
+  const out: { where: string; text: string }[] = [];
+  const scripts = [...sources('src'), ...sources('cli'), ...sources('web'), ...sources('media')];
+  for (const file of scripts) out.push(...japaneseStrings(fs.readFileSync(path.join(root, file), 'utf8'), file));
+  return [...out, ...pageJapanese()];
+}
+
+/** The text and the attribute values of the web pages (web/*.html). */
+function pageJapanese(): { where: string; text: string }[] {
   const out: { where: string; text: string }[] = [];
   const at = (text: string, index: number) => text.slice(0, index).split('\n').length;
-  for (const file of fs.readdirSync(path.join(root, 'web')).filter((f) => /\.ts$/.test(f)).map((f) => `web/${f}`)) {
-    const source = fs.readFileSync(path.join(root, file), 'utf8');
-    source.split('\n').forEach((line, i) => {
-      for (const m of line.matchAll(/'((?:[^'\\]|\\.)*)'/g)) {
-        if (kana.test(m[1])) out.push({ where: `${file}:${i + 1}`, text: m[1] });
-      }
-    });
-    for (const m of source.matchAll(/`((?:[^`\\]|\\.)*)`/g)) {
-      if (kana.test(m[1])) out.push({ where: `${file}:${at(source, m.index!)}`, text: m[1] });
+  for (const file of fs.readdirSync(path.join(root, 'web')).filter((f) => /\.html$/.test(f)).map((f) => `web/${f}`)) {
+    const html = fs.readFileSync(path.join(root, file), 'utf8');
+    for (const m of html.matchAll(/>([^<>]+)<|"([^"<>]*)"/g)) {
+      const text = (m[1] ?? m[2]).trim();
+      if (kana.test(text)) out.push({ where: `${file}:${at(html, m.index!)}`, text });
     }
-  }
-  const html = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8');
-  for (const m of html.matchAll(/>([^<>]+)<|"([^"<>]*)"/g)) {
-    const text = (m[1] ?? m[2]).trim();
-    if (kana.test(text)) out.push({ where: `web/index.html:${at(html, m.index!)}`, text });
   }
   return out;
 }
@@ -78,11 +68,35 @@ describe('Japanese wording', () => {
 
   it('finds the Japanese strings', () => assert.ok(texts.length > 1000, String(texts.length)));
 
-  it('finds the Japanese of the web page (web/*.ts and web/index.html)', () => {
-    const web = webJapanese();
+  it('finds the Japanese of the web page (web/*.ts and web/*.html)', () => {
+    const web = texts.filter((t) => t.where.startsWith('web/'));
     assert.ok(web.length > 100, String(web.length));
     assert.ok(web.some((t) => t.where.startsWith('web/text.ts')));
     assert.ok(web.some((t) => t.where.startsWith('web/index.html') && t.text === '日本語'));
+  });
+
+  it('reads strings of all three quote kinds, in .ts and .js, and not the comments (the probe cases)', () => {
+    const found = (source: string, file = 'probe.ts') => japaneseStrings(source, file).map((t) => t.text);
+    // (Double-quoted and backquoted strings, which the scan once skipped or paired over the whole file.)
+    assert.deepStrictEqual(found('const a = "二重引用符 `x`は"; const b = `${n} 行目`; const c = \'単一\';'), ['二重引用符 `x`は', '${…} 行目', '単一']);
+    // (A backtick in a comment: no text of its own, and it must not pair with the next one.)
+    assert.deepStrictEqual(found('// Ja reads `行 3` here.\nconst a = 1;'), []);
+    assert.deepStrictEqual(found('// an odd backtick `\nconst a = `日本語 ${x}`;'), ['日本語 ${…}']);
+    assert.deepStrictEqual(found('/* `\n * 「行 3」 */\nconst a = "日本語";'), ['日本語']);
+    // (A template inside the `${…}` of another; where it starts.)
+    assert.deepStrictEqual(found('const a = `${ok ? `あ` : ""}`;'), ['あ']);
+    assert.deepStrictEqual(japaneseStrings('\n\nconst a = `日本語`;', 'probe.js'), [{ where: 'probe.js:3', text: '日本語' }]);
+    // (A .js file is read as a script: no type syntax to trip on.)
+    assert.deepStrictEqual(found("el.title = labels.x ?? '早見表';", 'probe.js'), ['早見表']);
+  });
+
+  it('scans the scripts and pages that hold text: media/*.js, web/*.js and web/compare.html among them', () => {
+    for (const file of ['media/panel.js', 'media/view-control.js', 'web/panel-host.js', 'web/theme-init.js', 'web/compare.html']) {
+      assert.ok(fs.existsSync(path.join(root, file)), file);
+    }
+    const files = new Set([...sources('media'), ...sources('web')]);
+    for (const file of ['media/panel.js', 'web/panel-host.js', 'web/theme-init.js']) assert.ok(files.has(file), file);
+    assert.ok(texts.some((t) => t.where.startsWith('web/compare.html:')));
   });
 
   // (docs/design/sources.md, row 17.) The panel's and the page's own texts live in their catalogs; a pair written
@@ -93,6 +107,7 @@ describe('Japanese wording', () => {
       ['src/ui/reference.ts', 'the quick reference, a table of content of its own'],
       ['web/text.ts', "the page's texts"],
       ['web/index.html', 'the page markup'],
+      ['web/compare.html', 'the compare page markup'],
     ]);
     const files = [...new Set(texts.map((t) => t.where.replace(/:\d+$/, '')))]
       .filter((f) => /^(src\/ui|cli|web)\//.test(f) && !catalogs.has(f));
@@ -102,7 +117,7 @@ describe('Japanese wording', () => {
 
   it('finds the Japanese of the panel texts, the templates among them', () => {
     assert.ok(texts.some((t) => t.where.startsWith('src/ui/texts.ts') && t.text.includes('項目はパネルで')));
-    assert.ok(texts.some((t) => t.where.startsWith('src/i18n.ts') && t.text.includes('行目')));;
+    assert.ok(texts.some((t) => t.where.startsWith('src/i18n.ts') && t.text.includes('行 ${…}')));
   });
 
   const rules: [RegExp, string][] = [
