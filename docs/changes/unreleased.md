@@ -187,7 +187,36 @@ On a phone, and on a touch screen without a mouse held upright up to 1024 px wid
 - With reduced motion, the sheet and the app bar move at once. A drag of the sheet never pulls the page to reload it.
 - **Read** | **Edit** in the strip above the editor, on a touch screen, replace the keyboard button of the top bar: in Read, a tap on a line places the cursor without the on-screen keyboard. The first-run tip points at Read. The strip has Read | Edit, the file name, the chip and ⋯, each 44 px; Open and Save are in the menu.
 
+### The order of redirections, and `2>&1` before `>file`
+
+The note on the order of a command's redirections ("Redirections apply left to right. In the end: stdout → build.log, stderr → the original stdout") is a fact of the catalog now, `redirections-in-order`. `2>&1` before a redirection of stdout to a file is a fact of its own, `stderr-to-original-stdout`: a caveat (Information, "Caveat:" / 「注意:」), a problem in the editors, with a quick fix that moves `2>&1` after the file: `make 2>&1 >build.log` → `make >build.log 2>&1`, `echo a 2>&1 b >f` → `echo a b >f 2>&1`, `2>&1 >a >>b` → `>a >>b 2>&1` (the last file stdout goes to). Before, it was a sentence inside the plain note ("Note: `2>&1` comes before the file redirection…"), no problem and no fix. The fix is run in bash: a command that writes a line on each stream sends only stdout to the file before it, both after.
+
+It is no caveat where the command's stdout is a pipe or a command substitution: `find / -name x 2>&1 >/dev/null | grep -v denied`, `err=$(make 2>&1 >/dev/null)`, `diff <(make 2>&1 >/dev/null) expected`, a group or a loop piped on (`{ make 2>&1 >/dev/null; } | grep x`). That order is the way to send the errors alone there, and the note says so: "(only the error messages go into the pipe)", "(only the error messages make the substitution's value)". The last stage of a pipeline writes into no pipe of its own, and gets the caveat.
+
+`|&` sends stderr into the pipe after the command's own redirections (3.2.3): in `make 2>&1 >build.log |& tee e.log`, stderr goes to `build.log` too, and nothing reaches the pipe. The note now says "stdout → build.log, stderr → build.log", also for `make >build.log |& tee e.log`, which had no note. Before, it said stderr goes to the original stdout.
+
+### A mark on every note
+
+The notes that were plain text now start with ℹ, as the notes on facts do, and are facts of the catalog with an id (in the JSON output, `facts`):
+
+- an idiom (`Idiom: …` / 「定番の書き方: …」), each its own fact (`idiom-strict-mode`, `idiom-read-file-loop`, …), with the sections of the manual it is about;
+- a line in a here-document or at its end, and a statement continued from an earlier line;
+- the order of redirections (above);
+- which yq a command is explained as, and which yq runs it;
+- `read` with an IFS of separators that are not whitespace;
+- a host file's notes: a Dockerfile's `SHELL`, `ONBUILD`, `HEALTHCHECK` and exec form, a Jenkinsfile's `"…"` that Groovy fills in, a Python call's list or string, a YAML folded block, what a substitution of the host means (`$(CC)`, `${{ github.ref }}`), and GitHub's files (`$GITHUB_OUTPUT`);
+
+The note on zsh syntax a line cannot be read with starts with ⓘ, as information: the level it always had in the Problems list.
+
 ## Fixed
+
+### "In short" and the status of a pipeline
+
+The sentence of a line leaves out what a problem of the line says. It compared the sections of the manual the problems cite, so a problem about one thing of a section left out a clause about another: `cat f | while read -r l; do n=$l; done` (its problem: `n` is set in a subshell, section 3.2.3) lost "its status is that of the `while` loop" (also 3.2.3). It now compares what the problems say: a clause on a pipeline's status is left out for a pipeline without pipefail, one on `set -e` for the problems that say whether `set -e` stops there.
+
+### `2>&1 >o 2>e`
+
+`make 2>&1 >o 2>e` sends stderr to `e`. The note on the order said so in its table, but added that stderr goes to the original stdout. It no longer does.
 
 ### `-F` and the other patterns of grep
 

@@ -7,8 +7,8 @@
 // statement fails). The shapes with a sentence of their own are idioms (src/idioms.ts, `idiomSaid`). The texts are in
 // src/messages-sentence.ts.
 //
-// Its rules: it never states a fact a problem of the line states (a clause about a section of the manual a problem of
-// the line cites is left out: `SentenceInput.problems`); no code span in it holds more than one shell word of the line
+// Its rules: it never states a fact a problem of the line states (a clause is left out where a problem of the line is
+// one of the catalog's facts that say it, the entry's `says`: `SentenceInput.problems`); no code span in it holds more than one shell word of the line
 // (it names commands by their names and words by what they give, never a stretch of the line); and it is never what a
 // row of the line says alone. test/linesentence.test.ts checks them over the corpus.
 import type { ArgvWord, LineExplanation } from './analyzer-types';
@@ -20,9 +20,8 @@ import { redirectParts } from './explain/redirections';
 import type { Lang } from './i18n';
 import { idiomSaid, type IdiomSpeaker } from './idioms';
 import { codeSpan, shorten } from './label';
-import { isProblem } from './messages';
+import { clausesOf, isProblem, type SentenceClause } from './messages';
 import { placeholderAlone, placeholderSaid } from './messages-argv';
-import { STYLE_REFS, type StyleCode } from './pitfalls';
 import { EMPTY, ioSaid, linesSaid, listSaid, S, sentenceEnd } from './messages-sentence';
 import { ownSubshells, STATEMENTS } from './semantics/env';
 import { attribute, docLine } from './semantics/state';
@@ -38,24 +37,22 @@ export interface SentenceInput {
   status: StatusModel;
   /** What each simple command explained on the line is (src/explain/commands.ts). */
   commands: ReadonlyMap<SyntaxNode, CommandSaid>;
-  /** The sections of the manual the problems of the line cite: a clause about one of them is left out. */
+  /** The codes of the problems of the line (fact ids, style checks): a clause one of them says is left out (`clausesOf`). */
   problems: ReadonlySet<string>;
 }
 
-/** The sentence, and the sections of the manual its clauses on the models are about (for the tests of the rules). */
-export interface Sentence { text: string; sections: string[] }
+/** The sentence, and the clauses on the models it says (for the tests of the rules). */
+export interface Sentence { text: string; clauses: SentenceClause[] }
 
 /**
- * The sections of the manual the problems of a line cite (a fact's `refs`, a style check's `STYLE_REFS`): the sentence
- * says nothing about them, since the problem says it, in the box (a plain note is no problem: `isProblem`).
+ * The problems of a line, by what they are: a fact's id (also where a host gives it a code of its own, `dockerPipefail`),
+ * else a style check's or a dialect issue's code. The sentence says nothing a problem says, since the problem says it,
+ * in the box (a plain note is no problem: `isProblem`). Compared by the fact, not by the sections of the manual it
+ * cites: a problem about one fact of 3.2.3 (the subshell of a pipeline's stage) leaves the clause about another (the
+ * pipeline's status).
  */
-export function problemSections(ex: Pick<LineExplanation, 'noteInfo' | 'facts'>): Set<string> {
-  const out = new Set<string>();
-  for (const n of ex.noteInfo) {
-    if (n.level === 'note' || !isProblem(n.code!)) continue;
-    for (const r of ex.facts?.find((f) => f.text === n.text)?.refs ?? STYLE_REFS[n.code as StyleCode] ?? []) out.add(r);
-  }
-  return out;
+export function problemCodes(ex: Pick<LineExplanation, 'noteInfo' | 'facts'>): Set<string> {
+  return new Set(ex.noteInfo.filter((n) => n.level !== 'note' && isProblem(n.code!)).map((n) => ex.facts?.find((f) => f.text === n.text)?.id ?? n.code!));
 }
 
 /** How long (without the backticks) a sentence may be with what each command does; a longer one names the commands only. */
@@ -72,7 +69,7 @@ export function lineSentence(input: SentenceInput): Sentence | undefined {
   let said!: Sentence;
   for (const brief of [0, 1, 2] as const) {
     const c = new Composer(input, brief);
-    said = { text: sentenceEnd(input.lang, pieces.flatMap((p, i) => c.piece(p, i))), sections: [...c.sections] };
+    said = { text: sentenceEnd(input.lang, pieces.flatMap((p, i) => c.piece(p, i))), clauses: [...c.said] };
     // (The facts of the models are said whatever the length: the budget is for what the commands do.)
     if (said.text.replace(/`/g, '').length - c.factsLength <= FULL[input.lang]) break;
   }
@@ -182,7 +179,7 @@ function tokenOf(n: SyntaxNode, line?: number): SyntaxNode | undefined {
 type ConstructKind = Parameters<typeof S.construct>[1];
 
 class Composer implements IdiomSpeaker {
-  readonly sections = new Set<string>();
+  readonly said = new Set<SentenceClause>();
   /** How long the facts said are, in characters. */
   factsLength = 0;
   private readonly lang: Lang;
@@ -220,10 +217,10 @@ class Composer implements IdiomSpeaker {
     return [this.background(n, this.describe(n)), ...this.facts(n)];
   }
 
-  /** A clause about sections of the manual is said only when no problem of the line cites one of them. */
-  private allowed(...sections: string[]): boolean {
-    if (sections.some((s) => this.input.problems.has(s))) return false;
-    sections.forEach((s) => this.sections.add(s));
+  /** A clause on the models is said only when no problem of the line is a fact that says it. */
+  private allowed(clause: SentenceClause): boolean {
+    if ([...this.input.problems].some((code) => clausesOf(code).includes(clause))) return false;
+    this.said.add(clause);
     return true;
   }
 
@@ -233,15 +230,15 @@ class Composer implements IdiomSpeaker {
     const out: string[] = [];
     const rule = status.status(n);
     // (Not `! cmd` alone, a pipeline of one command, whose status the clause says.)
-    if (rule.kind === 'pipeline' && rule.stages.length > 1 && rule.pipefail !== 'unknown' && this.allowed('3.2.3')) {
+    if (rule.kind === 'pipeline' && rule.stages.length > 1 && rule.pipefail !== 'unknown' && this.allowed('pipeStatus')) {
       const last = rule.stages[rule.stages.length - 1];
       out.push(S.pipeStatus(this.lang, rule.pipefail === 'off' ? this.nameOf(last) : undefined, rule.negated));
     }
     // (Under `set -e`: a list, whose commands but the last it ignores; a statement where a failure stops a shell other
     // than the script. Where it stops the script, as everywhere under `set -e`, the sentence says nothing.)
     const e = status.errexit(n);
-    if (n.type === 'list' && e.errexit === 'on' && !e.ignored && this.allowed('4.3.1')) out.push(S.errexitList(this.lang, e.stops));
-    else if (e.active === 'on' && e.checked === true && e.stops !== 'script' && status.mayFail(n) && this.allowed('4.3.1')) out.push(S.errexit(this.lang, e.stops));
+    if (n.type === 'list' && e.errexit === 'on' && !e.ignored && this.allowed('errexit')) out.push(S.errexitList(this.lang, e.stops));
+    else if (e.active === 'on' && e.checked === true && e.stops !== 'script' && status.mayFail(n) && this.allowed('errexit')) out.push(S.errexit(this.lang, e.stops));
     this.factsLength += out.join('; ').length;
     return out;
   }

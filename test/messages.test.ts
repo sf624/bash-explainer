@@ -1,7 +1,7 @@
 // The message catalog (src/messages.ts): every entry cites sections of the manual that exist, says its kind with the
 // right mark in both languages, and the analyzer lists a fact with the exact text of the note it shows.
 import * as assert from 'assert';
-import { fact, factOf, marked, MESSAGES, plainNote, PORTABILITY, problemText, severityOf, type FactId } from '../src/messages';
+import { fact, factOf, MESSAGES, problemNote, problemText, severityOf, styleNote, type FactId } from '../src/messages';
 import { SECTIONS } from '../src/manual';
 import { reference } from '../src/references';
 import { explain } from './support/explain';
@@ -54,7 +54,8 @@ describe('the message catalog', () => {
   const CAVEATS = ['declaration-masks-status', 'pipefail-missing', 'function-last-test-returns-status', 'posix-special-function-name-maybe', 'posix-function-name-maybe', 'posix-special-builtin-error-maybe',
     'extglob-maybe-on', 'extglob-not-found', 'extglob-maybe-on-trap', 'globstar-maybe-on',
     'globstar-not-found', 'ssh-local-expansion', 'function-not-imported-sh', 'unmatched-glob-runs-once', 'for-over-ls-output', 'for-over-unquoted-args',
-    'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment', 'alias-maybe-not-expanded'];
+    'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment', 'alias-maybe-not-expanded',
+    'stderr-to-original-stdout'];
   const PITFALL_ERRORS = ['posix-special-function-name', 'extglob-turned-off', 'globstar-unsupported', 'function-not-in-container', 'builtin-or-function-as-program',
     'function-not-on-remote', 'function-not-in-new-shell-blocked', 'function-not-in-new-shell', 'function-not-imported', 'wrapper-assignment-expanded-first',
     'prefix-assignment-expanded-first', 'shebang-refused', 'shebang-bom', 'bats-test-line-dropped', 'bats-negation-ignored', 'bats-run-in-pipeline-stage',
@@ -151,22 +152,25 @@ describe('the message catalog', () => {
     assert.ok(fact('en', 'unset-readonly', { name: 'x' }).text.startsWith('ⓧ Error: The variable `x` is read-only'));
     // (A heading of its own in place of the word.)
     assert.ok(fact('en', 'python-shell-injection').text.startsWith('⚠ Shell injection risk: '));
-    assert.deepStrictEqual(marked('en', 'info', 'dash\'s `echo`', { heading: PORTABILITY, code: 'echoE' }), { text: 'ⓘ Portability: dash\'s `echo`', level: 'info', label: 'Portability:', body: 'dash\'s `echo`', code: 'echoE' });
-    assert.strictEqual(marked('ja', 'info', 'x', { heading: PORTABILITY }).text, 'ⓘ 移植性: x');
-    assert.strictEqual(marked('en', 'note', 'x').text, 'ℹ x');
+    assert.deepStrictEqual(problemNote('en', 'behaviour', 'echoE', 'dash\'s `echo`'), { text: 'ⓘ Portability: dash\'s `echo`', level: 'info', label: 'Portability:', body: 'dash\'s `echo`', code: 'echoE' });
+    assert.strictEqual(problemNote('ja', 'behaviour', 'echoE', 'x').text, 'ⓘ 移植性: x');
+    // (zsh syntax not read, information with no word; a style check at its level, with the word of a pitfall.)
+    assert.strictEqual(problemNote('en', 'parse', 'zshSyntax', 'x').text, 'ⓘ x');
+    assert.deepStrictEqual(styleNote('en', 'read-without-r', 'x'), { text: 'ⓘ Caveat: x', level: 'info', label: 'Caveat:', body: 'x', code: 'read-without-r' });
+    assert.strictEqual(styleNote('en', 'bracket-close-in-word', 'x', { maybeEmpty: true }).level, 'warning');
   });
 
   it('leaves out of a problem the word of a level said on every note, which its severity says (three-levels.md, 1b)', () => {
-    const heading = { ja: '見出し: ', en: 'Heading: ' };
     assert.deepStrictEqual((['en', 'ja'] as const).map((lang) => [
       problemText(fact(lang, 'unset-readonly', { name: 'x' }), lang).slice(0, 14),
-      // (A pitfall at the error level has the error's word: left out; a heading names no level: kept.)
-      problemText(marked(lang, 'error', 'x', { kind: 'pitfall' }), lang), problemText(marked(lang, 'error', 'x', { heading }), lang),
+      // (A pitfall at the error level has the error's word: left out, as the dialect issue's; a heading names no level: kept.)
+      problemText(styleNote(lang, 'bracket-no-space', 'x'), lang), problemText(problemNote(lang, 'unsupported', 'arrays', 'x'), lang),
+      problemText(fact(lang, 'python-string-without-shell'), lang).slice(0, 2),
       // (The words of the other levels are no level's name: kept, as the plain fact's text.)
-      problemText(marked(lang, 'warning', 'x', { kind: 'pitfall' }), lang), problemText(marked(lang, 'info', 'x', { heading: PORTABILITY }), lang), problemText(plainNote('x'), lang),
+      problemText(styleNote(lang, 'rm-empty-variable-root', 'x'), lang), problemText(problemNote(lang, 'behaviour', 'echoE', 'x'), lang), problemText(problemNote(lang, 'parse', 'zshSyntax', 'x'), lang),
     ]), [
-      ['ⓧ The variable', 'ⓧ x', 'ⓧ Heading: x', '⚠ Pitfall: x', 'ⓘ Portability: x', 'x'],
-      ['ⓧ 変数 `x` は読み取り', 'ⓧ x', 'ⓧ 見出し: x', '⚠ 落とし穴: x', 'ⓘ 移植性: x', 'x'],
+      ['ⓧ The variable', 'ⓧ x', 'ⓧ x', 'ⓧ ', '⚠ Pitfall: x', 'ⓘ Portability: x', 'ⓘ x'],
+      ['ⓧ 変数 `x` は読み取り', 'ⓧ x', 'ⓧ x', 'ⓧ ', '⚠ 落とし穴: x', 'ⓘ 移植性: x', 'ⓘ x'],
     ]);
   });
 
@@ -178,10 +182,11 @@ describe('the message catalog', () => {
     assert.deepStrictEqual([caveat.level, caveat.label], ['info', '注意:']);
     const risk = fact('en', 'python-shell-injection');
     assert.deepStrictEqual([risk.level, risk.label], ['warning', 'Shell injection risk:']);
-    // (A warning that names its own problem has no word; a plain fact neither; a note without a mark, an idiom, is a plain fact.)
-    assert.deepStrictEqual(marked('en', 'warning', '`[[ ]]` is not POSIX sh'), { text: '⚠ `[[ ]]` is not POSIX sh', level: 'warning', label: '', body: '`[[ ]]` is not POSIX sh' });
+    // (A warning that names its own problem has no word; a plain fact neither, an idiom's too.)
+    assert.strictEqual(fact('en', 'python-string-without-shell').label, '');
     assert.strictEqual(fact('en', 'exit-modulo', { command: 'exit', value: '300', status: 44, ends: 'shell' }).label, '');
-    assert.deepStrictEqual(plainNote('Idiom: `cmd || true`'), { text: 'Idiom: `cmd || true`', level: 'note', label: '', body: 'Idiom: `cmd || true`' });
+    const idiom = fact('en', 'idiom-or-true');
+    assert.deepStrictEqual([idiom.level, idiom.label, idiom.text.slice(0, 9)], ['note', '', 'ℹ Idiom: ']);
     // (A diagnostic is a warning or information: a plain fact is never one, so it is taken as information.)
     assert.deepStrictEqual((['warning', 'info', 'note'] as const).map(severityOf), ['warning', 'info', 'info']);
   });

@@ -115,6 +115,15 @@ export function subshellReasons(n: SyntaxNode): SubshellReason[] {
 }
 
 /**
+ * Whether the statement `n` is a stage of a pipeline joined to the next by `|&`, whose stderr then goes into the pipe
+ * too: the implicit `2>&1` of `|&`, which bash performs after the stage's own redirections (3.2.3).
+ */
+export function stderrPiped(n: SyntaxNode): boolean {
+  const p = n.parent;
+  return p?.type === 'pipeline' && STATEMENTS.has(n.type) && p.children[p.children.indexOf(n) + 1]?.type === '|&';
+}
+
+/**
  * Whether the last stage of a pipeline runs in the shell itself: always in zsh and ksh; in bash with lastpipe on
  * and job control (`set -m`) off.
  */
@@ -320,6 +329,24 @@ function callSites(l: CallLink): CallSites {
     callProcesses.set(l, hit);
   }
   return hit;
+}
+
+/**
+ * Where the stdout that code in `env` starts with goes, when the chain says: into a pipe (a stage of a pipeline but
+ * the last, `<( )`, a coprocess) or into a command substitution (`$( )`), from the innermost link that sets it. None
+ * where no link does (the script's own stdout), or where a function's calls decide it (not followed). Redirections of
+ * the compound commands between are not followed (`$( { cmd; } >f )`).
+ */
+export function stdoutTo(env: ExecEnv): 'pipe' | 'capture' | undefined {
+  for (const l of [...env.links].reverse()) {
+    if (l.kind === 'call' || l.kind === 'host') return undefined;
+    if (l.kind !== 'subshell') continue;
+    if (l.why === 'command-substitution') return 'capture';
+    if (l.why === 'coproc' || (l.why === 'process-substitution' && l.at.text.startsWith('<'))) return 'pipe';
+    // (The last stage writes where the pipeline does: its own link is there only when it runs in a subshell.)
+    if (l.why === 'pipeline-stage' && subshellReasons(l.at).includes('pipeline-stage')) return 'pipe';
+  }
+  return undefined;
 }
 
 /** Where the code runs: on this machine, on a remote one (ssh), or in a container. */

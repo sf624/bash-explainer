@@ -6,6 +6,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
+- `--format json` gives each part of a line its colour role (`role`) and the ids of the facts said about it (`facts`).
 - The panel starts with one sentence that says what the line does.
 - `--check --counts <file>` appends the numbers of problems of each level to a file, as `$GITHUB_OUTPUT` reads them.
 - Dockerfile `HEALTHCHECK CMD …` is explained, in the shell and the exec form, and so is an instruction after `ONBUILD`.
@@ -27,9 +28,13 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Problems on the web page fold into a strip with their count per level. ‹ › and F8 / Shift+F8 go to the next and previous problem, and the strip shows where you are (Ln 20 · 1/11). The list opens on your first visit, and then stays as you left it.
 - The example of a pipeline runs with an example value of `$USER` and the like. The names a glob example tries say why each one does not match.
 - On a phone, the explanation is a sheet over the editor: tap or drag its bar for a folded, half or full sheet; Problems is one of its tabs. Read and Edit above the editor switch between reading and typing. Before, the screen was split into two halves, the editor and the explanation.
+- `cmd 2>&1 >file` is a problem at the Information level, with a quick fix that writes `>file 2>&1`. Where stdout is a pipe or `$( )`, which then get only the errors (`err=$(cmd 2>&1 >/dev/null)`), it is none. Before, it was a plain note.
+- The notes on idioms, here-documents, a continued statement, yq and host files start with ℹ, as the other notes do. Before, they had no mark.
 
 ### Fixed
 
+- "In short" keeps the status of a pipeline when the line's problem is about something else, such as a variable lost in a stage's subshell. Before, it left the status out.
+- `cmd 2>&1 >o 2>e` and `cmd 2>&1 >o |& tee x` no longer say that stderr goes to the original stdout: it goes to `e`, and to `o`.
 - The note on `source lib.sh` suggests a path from the script's directory that holds when the file is itself sourced (`"$(dirname "${BASH_SOURCE[0]}")"/lib.sh`). Before, it suggested `$0`, which then names the caller.
 - The note on a `grep` pattern from a variable no longer suggests `-F` when grep has other patterns (`grep -e 'a.b' -e "$x"`, `-f pats`): `-F` would read them as plain text too. It now says so, whichever pattern comes first.
 - The panel shows code that holds a backtick (`` `date` ``) as one piece of code. Before, it broke it apart at the backtick.

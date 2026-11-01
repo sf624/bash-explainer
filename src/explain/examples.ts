@@ -807,7 +807,7 @@ function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[], parse: Ar
   if (input === 'unknown') return;
   const r = commandExamples.readExample(words, ifs, input === 'sample' ? undefined : input.text, cx.lang, cx.opts.bashVersion ?? DEFAULT_BASH_VERSION, input !== 'sample' && input.first);
   if (!r) return;
-  if (r.note) cx.note(r.note, n);
+  if (r.note) cx.note(fact(cx.lang, 'read-ifs-separators', r.note), n);
   cx.example(r.example);
 }
 

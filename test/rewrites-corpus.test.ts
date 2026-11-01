@@ -36,6 +36,7 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'redirect-in-bracket': { subjects: 15, ran: 10, checks: 19, skipped: { 'a redirection to a word that is not plain text': 5 } },
   'regex-backslash-dropped': { subjects: 2, ran: 2, checks: 24, skipped: {} },
   'rm-empty-variable-root': { subjects: 48, ran: 31, checks: 93, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, '`sudo` with an option': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `DIR`': 4, 'the script sets `D`': 6 } },
+  'stderr-to-original-stdout': { subjects: 8, ran: 8, checks: 8, skipped: {} },
   'source-searches-path': { subjects: 8, ran: 0, checks: 0, skipped: { '`.`': 4, '`source`': 2, 'bash does not parse it': 2 } },
   'unbraced-element': { subjects: 1, ran: 1, checks: 1, skipped: {} },
   'unmatched-glob-runs-once': { subjects: 7, ran: 7, checks: 21, skipped: {} },
@@ -56,6 +57,8 @@ const UNPARSED: SuggestionId[] = ['assignment-with-spaces', ...Array(6).fill('br
  * the box), a value in quotes after `x =`, `rm` in a function, and grep in the modes and with the options below.
  */
 const HAND = [
+  // (`2>&1` before `>/dev/null`, where stdout is no pipe: the rewrite discards both.)
+  'make 2>&1 >/dev/null\n',
   '#!/bin/bash\nset -e\nf() {\n  [ -f x ] && echo "@y"\n}\nf\necho @next\n',
   '#!/bin/bash\nset -e\nf() { [[ -f x ]] && echo y; }\necho @start\nf\n',
   '#!/bin/bash\necho @start\n[ -f x ] && echo "@y"\n',

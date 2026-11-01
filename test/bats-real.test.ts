@@ -600,7 +600,7 @@ describe('bats tags and marked functions agree with the real bats', function () 
     assert.match(said(4), /^ℹ to bash this line is text of a string, not a command\. bats reads the line/);
     assert.match(explain(['# bats test_tags=a'], 0).facts![0].text, /^ℹ to bash this is a comment/);
     // (In a `$( )` of a string, the line is a comment again.)
-    assert.match(explain(['x="$(', '# bats test_tags=a', ')"'], 1).facts![0].text, /^ℹ to bash this is a comment/);
+    assert.match(explain(['x="$(', '# bats test_tags=a', ')"'], 1).facts!.find((f) => f.id === 'bats-tags')!.text, /^ℹ to bash this is a comment/);
   });
 
   it('runs a function marked `# @test` as a test under the name bats gives @test "name", renamed', async function () {

@@ -27,7 +27,8 @@ import { globToRegex } from '../src/examples/shellwords';
 import { yamlLines } from '../src/examples/yaml';
 import { extractShell } from '../src/hosts';
 import { resolveLang } from '../src/i18n';
-import { simulateRedirects } from '../src/idioms';
+import { type Redirect, redirectOrder } from '../src/idioms';
+import { fact } from '../src/messages';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { TreeCache } from '../src/syntax/cache';
 import type { BashParser } from '../src/syntax/tree';
@@ -85,11 +86,12 @@ describe('lines no other test reaches', () => {
   });
 
   it('redirections: the table of where each stream goes, with >&file, &> and here-strings', () => {
-    const table = simulateRedirects([{ op: '<<<', fd: '', dest: 'x' }, { op: '&>', fd: '', dest: 'all.log' }, { op: '>&', fd: '', dest: 'out.log' }, { op: '<&', fd: '3', dest: '0' }], 'en');
+    const simulateRedirects = (redirs: Redirect[]) => fact('en', 'redirections-in-order', redirectOrder(redirs)!).body;
+    const table = simulateRedirects([{ op: '<<<', fd: '', dest: 'x' }, { op: '&>', fd: '', dest: 'all.log' }, { op: '>&', fd: '', dest: 'out.log' }, { op: '<&', fd: '3', dest: '0' }]);
     assert.match(table!, /^Redirections apply left to right\. In the end: stdin → the here-string, .*fd 3 → the here-string$/);
     assert.match(table!, /out\.log/);
     // A here-document on a descriptor goes to that descriptor (`cat 3<<EOF <&3` reads it).
-    assert.match(simulateRedirects([{ op: '<<', fd: '3', dest: '' }, { op: '<&', fd: '', dest: '3' }], 'en')!, /stdin → the here-document, fd 3 → the here-document$/);
+    assert.match(simulateRedirects([{ op: '<<', fd: '3', dest: '' }, { op: '<&', fd: '', dest: '3' }]), /stdin → the here-document, fd 3 → the here-document$/);
   });
 
   it('getopt: a leading - in the short options, and the arguments it rejects', () => {

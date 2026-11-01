@@ -114,29 +114,29 @@ describe('a here-document or a here-string on another descriptor', () => {
   it('goes to that descriptor, and the order of the redirections says so', () => {
     const src = 'cat 3<<EOF <&3\nbody\nEOF';
     const ex = explain(src);
-    assert.ok(ex.notes.includes('Redirections apply left to right. In the end: stdin → the here-document `EOF`, fd 3 → the here-document `EOF`'), ex.notes.join('\n'));
-    assert.ok(explain(src, 0, 'ja').notes.includes('リダイレクトは左から順に適用される。最終的に: 標準入力 → ヒアドキュメント `EOF`、fd 3 → ヒアドキュメント `EOF`'));
+    assert.ok(ex.notes.includes('ℹ Redirections apply left to right. In the end: stdin → the here-document `EOF`, fd 3 → the here-document `EOF`'), ex.notes.join('\n'));
+    assert.ok(explain(src, 0, 'ja').notes.includes('ℹ リダイレクトは左から順に適用される。最終的に: 標準入力 → ヒアドキュメント `EOF`、fd 3 → ヒアドキュメント `EOF`'));
     const doc = token(src, '3<<EOF');
     assert.match(doc.explanation, /^Here-document: the following lines up to a line containing only `EOF` become file descriptor 3\./);
     assert.match(token(src, '3<<EOF', 'ja').explanation, /^ヒアドキュメント: 次の行から `EOF` だけの行までをファイルディスクリプタ 3として渡す/);
     assert.match(token('cat <<EOF\nx\nEOF', '<<EOF').explanation, /become stdin\./);
     assert.strictEqual(bash(`${src}\n`).stdout, 'body\n');
     // The lines of the body name the here-document with its descriptor.
-    assert.ok(explain(src, 1).notes.includes('This line is part of the here-document started by `3<<EOF` on line 1.'), explain(src, 1).notes.join('\n'));
-    assert.ok(explain(src, 2).notes.includes('`EOF` marks the end of the here-document started by `3<<EOF` on line 1.'));
-    assert.ok(explain(src, 1, 'ja').notes.includes('この行はヒアドキュメント（行 1 の `3<<EOF`）の本文です。'));
+    assert.ok(explain(src, 1).notes.includes('ℹ This line is part of the here-document started by `3<<EOF` on line 1.'), explain(src, 1).notes.join('\n'));
+    assert.ok(explain(src, 2).notes.includes('ℹ `EOF` marks the end of the here-document started by `3<<EOF` on line 1.'));
+    assert.ok(explain(src, 1, 'ja').notes.includes('ℹ この行はヒアドキュメント（行 1 の `3<<EOF`）の本文です。'));
   });
 
   it('names which of several here-documents stdin gets', () => {
     const src = "cat 3<<A 4<<'B' <&4\na\nA\nb\nB";
-    assert.ok(explain(src).notes.includes('Redirections apply left to right. In the end: stdin → the here-document `B`, fd 3 → the here-document `A`, fd 4 → the here-document `B`'), explain(src).notes.join('\n'));
-    assert.ok(explain(src, 0, 'ja').notes.includes('リダイレクトは左から順に適用される。最終的に: 標準入力 → ヒアドキュメント `B`、fd 3 → ヒアドキュメント `A`、fd 4 → ヒアドキュメント `B`'));
+    assert.ok(explain(src).notes.includes('ℹ Redirections apply left to right. In the end: stdin → the here-document `B`, fd 3 → the here-document `A`, fd 4 → the here-document `B`'), explain(src).notes.join('\n'));
+    assert.ok(explain(src, 0, 'ja').notes.includes('ℹ リダイレクトは左から順に適用される。最終的に: 標準入力 → ヒアドキュメント `B`、fd 3 → ヒアドキュメント `A`、fd 4 → ヒアドキュメント `B`'));
     assert.strictEqual(bash(`${src}\n`).stdout, 'b\n');
   });
 
   it('a here-string too', () => {
     const src = 'cat 3<<< x <&3';
-    assert.ok(explain(src).notes.includes('Redirections apply left to right. In the end: stdin → the here-string, fd 3 → the here-string'));
+    assert.ok(explain(src).notes.includes('ℹ Redirections apply left to right. In the end: stdin → the here-string, fd 3 → the here-string'));
     const t = token(src, '3<<< x');
     assert.strictEqual(t.explanation, 'Here-string `<<<`: the following word (plus a newline) becomes file descriptor 3');
     assert.match(token(src, '3<<< x', 'ja').explanation, /ファイルディスクリプタ 3として渡す$/);
@@ -333,8 +333,8 @@ describe('a duplication to a word that is no descriptor number', () => {
       assert.strictEqual(token(src, label).explanation, '`f` is no file descriptor number, so bash reports "ambiguous redirect"', src);
     }
     // The order of the redirections: `>&f` sends both, `2>&$fd` only stderr.
-    assert.ok(explain('echo x >&f 2>&1').notes.includes('Redirections apply left to right. In the end: stdout → f, stderr → f'), explain('echo x >&f 2>&1').notes.join('\n'));
-    assert.ok(explain('echo x 2>&$fd >o').notes.includes('Redirections apply left to right. In the end: stdout → o, stderr → $fd'), explain('echo x 2>&$fd >o').notes.join('\n'));
+    assert.ok(explain('echo x >&f 2>&1').notes.includes('ℹ Redirections apply left to right. In the end: stdout → f, stderr → f'), explain('echo x >&f 2>&1').notes.join('\n'));
+    assert.ok(explain('echo x 2>&$fd >o').notes.includes('ℹ Redirections apply left to right. In the end: stdout → o, stderr → $fd'), explain('echo x 2>&$fd >o').notes.join('\n'));
     // bash writes both to `f` for `>&f` and `1>&f`; the others are errors, and make no file.
     const r = runBash('{ echo out; echo err >&2; } >&f; { echo out; echo err >&2; } 1>&g; cat f g; echo x 2>&h; echo x 3>&h; cat <&h; exec {v}>&h; ls', { files: [] });
     assert.strictEqual(r.stdout, 'out\nerr\nout\nerr\nf\ng\n');

@@ -73,8 +73,8 @@ describe('Dockerfile', () => {
     const shellForm = at('FROM node:20\nHEALTHCHECK --interval=5s --retries=3 CMD curl -f http://localhost/ || exit 1\n', 2)!;
     assert.deepStrictEqual(shellForm.context.map((c) => c.label), ['Dockerfile HEALTHCHECK']);
     assert.deepStrictEqual(allTokens(shellForm.items).filter((t) => t.kind !== 'operator').map((t) => `${t.label}@${t.span.start.character}`), ['curl@42', '-f@47', 'http://localhost/@50', 'exit@71', '1@76']);
-    assert.strictEqual(shellForm.notes[0], 'HEALTHCHECK runs this command in the running container to check its health: exit status 0 is healthy, 1 unhealthy (2 is reserved).');
-    assert.match(at('FROM node:20\nHEALTHCHECK CMD true\n', 2, 'ja')!.notes[0], /^HEALTHCHECK は、動いているコンテナの中で/);
+    assert.strictEqual(shellForm.notes[0], 'ℹ HEALTHCHECK runs this command in the running container to check its health: exit status 0 is healthy, 1 unhealthy (2 is reserved).');
+    assert.match(at('FROM node:20\nHEALTHCHECK CMD true\n', 2, 'ja')!.notes[0], /^ℹ HEALTHCHECK は、動いているコンテナの中で/);
     // (The exec form runs with no shell, as CMD's.)
     const exec = at('FROM node:20\nhealthcheck CMD ["curl","-f","http://localhost/"]\n', 2)!;
     assert.deepStrictEqual(exec.context.map((c) => c.label), ['Dockerfile HEALTHCHECK (exec form)']);
@@ -94,7 +94,7 @@ describe('Dockerfile', () => {
     const at = (line: number) => explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, src.split('\n'), line - 1, 'en');
     const run = at(2)!;
     assert.deepStrictEqual(run.context.map((c) => c.label), ['Dockerfile ONBUILD RUN']);
-    assert.strictEqual(run.notes[0], 'An ONBUILD instruction runs later, in the build of another image FROM this one (just after its FROM).');
+    assert.strictEqual(run.notes[0], 'ℹ An ONBUILD instruction runs later, in the build of another image FROM this one (just after its FROM).');
     assert.ok(run.notes.some((n) => /middle of the pipe/.test(n)));
     // (A trigger's SHELL is not this build's: it is left out, and the RUN after it still has no pipefail.)
     assert.strictEqual(at(3), undefined);
@@ -135,9 +135,9 @@ describe('Makefile', () => {
   it('turns make syntax into shell and explains it', () => {
     const ex = explain('Makefile', 7)!;
     assert.deepStrictEqual(ex.notes.slice(0, 3), [
-      '`$(CC)` is the make variable `CC`, expanded by make before the shell runs.',
-      '`$@` is make\'s automatic variable (the target name), expanded by make before the shell runs.',
-      '`$^` is make\'s automatic variable (all prerequisites), expanded by make before the shell runs.',
+      'ℹ `$(CC)` is the make variable `CC`, expanded by make before the shell runs.',
+      'ℹ `$@` is make\'s automatic variable (the target name), expanded by make before the shell runs.',
+      'ℹ `$^` is make\'s automatic variable (all prerequisites), expanded by make before the shell runs.',
     ]);
     assert.ok(labels('Makefile', 7).includes('$(CC)@1'));
     assert.ok(labels('Makefile', 7).includes('$$(date +%F)@37'), labels('Makefile', 7).join());
@@ -379,7 +379,7 @@ describe('GitHub Actions expression contexts', () => {
 
   it('shows the description in the note and on the token', () => {
     const ex = explainSrc(wf('github.event.pull_request.number', 'github.event.x.y'));
-    assert.ok(ex.notes.some((n) => /^`\$\{\{ github\.event\.pull_request\.number \}\}` is the GitHub Actions expression .*: the pull request number; replaced/.test(n)), ex.notes.join('\n'));
+    assert.ok(ex.notes.some((n) => /^ℹ `\$\{\{ github\.event\.pull_request\.number \}\}` is the GitHub Actions expression .*: the pull request number; replaced/.test(n)), ex.notes.join('\n'));
     assert.ok(ex.notes.some((n) => /webhook payload of the event that triggered the workflow/.test(n)));
     assert.ok(allTokens(ex.items).some((t) => t.label === '${{ github.event.pull_request.number }}' && /the pull request number/.test(t.explanation)));
   });

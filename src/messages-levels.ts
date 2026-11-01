@@ -9,9 +9,10 @@ import type { NoteLevel } from './levels';
  * (`unsupported`) or that works differently there (`behaviour`, "Portability"), src/dialect.ts; a script with CRLF line
  * ends (`crlf`, src/document.ts), an error when a CR ends the `#!` line or a keyword stands just before a CR (run as
  * a program, the interpreter is not found; `fi` is read as `fi\r`, every time), a warning otherwise (`crlfMaybe`:
- * `bash file` runs `echo hi`, with a CR at the end of its output).
+ * `bash file` runs `echo hi`, with a CR at the end of its output); zsh syntax a line of a zsh script cannot be read with
+ * (`parse`, src/dialect.ts), information: the line is not explained (a problem of that severity, as it always was).
  */
-export const PROBLEM_LEVELS = { unsupported: 'error', behaviour: 'info', crlf: 'error', crlfMaybe: 'warning' } as const satisfies Record<string, NoteLevel>;
+export const PROBLEM_LEVELS = { unsupported: 'error', behaviour: 'info', parse: 'info', crlf: 'error', crlfMaybe: 'warning' } as const satisfies Record<string, NoteLevel>;
 
 /** The codes of the style checks of src/pitfalls.ts, as diagnostics show them (`# bash-explainer disable=<code>`). */
 export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-no-space' | 'brace-close-no-separator'

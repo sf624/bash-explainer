@@ -2,6 +2,7 @@
 // the cursor. Pure code, shared by VS Code's hover and the Language Server's.
 import type { LineExplanation, Pos, Span, Token, ValueInfo } from '../analyzer-types';
 import type { HeredocAt } from '../document';
+import { spanWithin } from '../noteanchors';
 
 const samePos = (a: Pos, b: Pos) => a.line === b.line && a.character === b.character;
 export const sameSpan = (a: Span, b: Span): boolean => samePos(a.start, b.start) && samePos(a.end, b.end);
@@ -82,8 +83,6 @@ export function rangeOnLine(span: Span, line: number, length: number): Span {
   };
 }
 
-const atOrBefore = (a: Pos, b: Pos) => a.line < b.line || (a.line === b.line && a.character <= b.character);
-const within = (inner: Span, outer: Span) => atOrBefore(outer.start, inner.start) && atOrBefore(inner.end, outer.end);
 
 /**
  * Whether a note found on the range `at` is about the part (docs/design/hover.md, "Notes"): the range lies within the
@@ -91,9 +90,9 @@ const within = (inner: Span, outer: Span) => atOrBefore(outer.start, inner.start
  * of a command, the first command of a pipeline). So a note on a whole command shows on its name, not on each argument.
  */
 export function isAbout(at: Span, part: Token): boolean {
-  if (samePos(at.start, part.span.start) && within(part.span, at)) return true;
+  if (samePos(at.start, part.span.start) && spanWithin(part.span, at)) return true;
   const all = (t: Token): Token[] => [t, ...t.children.flatMap(all)];
-  return all(part).some((t) => within(at, t.span));
+  return all(part).some((t) => spanWithin(at, t.span));
 }
 
 /** A problem the editor shows in the same hover, above the part (VS Code's diagnostics at the position): its code and range. */

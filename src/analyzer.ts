@@ -8,7 +8,7 @@ import { pitfallFindings } from './pitfalls';
 import { wordFindings } from './wordfacts';
 import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 import { lookupCommand } from './dict/aliases';
-import { basisGate, pitfallSaid, plainNote } from './messages';
+import { basisGate, pitfallSaid } from './messages';
 import { withoutBases, withTokenBases } from './tokenbases';
 import { pictureNote } from './ctlchars';
 import { withRewritesOf } from './rewrite';
@@ -25,9 +25,9 @@ export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import { readingTree } from './reading';
 import { argvLines } from './argvline';
-import { lineSentence, problemSections } from './linesentence';
+import { lineSentence, problemCodes } from './linesentence';
 import { COMMAND_SAID } from './explain/commands';
-import { claim, dropLabelEcho } from './tokenmarks';
+import { claim, dropLabelEcho, markTokens } from './tokenmarks';
 import { LineExplainer, type Walk } from './explain/context';
 import { intersects, isBlockLike, onLine, summaryOf } from './explain/nodes';
 import { arrayKind, resolve } from './explain/reads';
@@ -68,7 +68,7 @@ export class Analyzer {
       ...cx.anchored(dialectFound(tree, line, shell ?? 'bash', this.lang, opts.bashVersion)),
       ...new Set(cx.notes),
       ...statusNotes(cx, line, false),
-      ...(cx.opts.idioms === false ? [] : cx.anchored(idiomsFound(statements, this.lang, cx.status).map((f) => ({ ...plainNote(f.text), node: f.node })))),
+      ...(cx.opts.idioms === false ? [] : idiomsFound(statements, this.lang, cx.status).flatMap((f) => cx.say(f.fact, f.node))),
       ...cx.anchored(pitfallFindings(root, this.lang, line, line, cx.state, cx.shell).filter((f) => pitfallSaid(f.level, cx.opts.pitfalls))),
       ...new Set(wordFindings(root, this.lang, cx.state, cx.shell, line, line).flatMap((w) => cx.say(w.fact, w.node))),
       ...extglobPitfalls(cx, root, line),
@@ -102,11 +102,13 @@ export class Analyzer {
     cx.end();
     // The summary above was made with the full explanations; the tree drops what its labels already say.
     for (const item of items) dropLabelEcho(claim(item, 'shell'));
+    // (Each token's role and the facts about it, now that every kind is final.)
+    markTokens(items, result);
     const resolveAt = (name: string, w: SyntaxNode) => resolve(cx, name, w, { quoted: w.type !== 'word' || w.text !== name });
     if (opts.argv) result.argv = argvLines(root, line, cx.state, this.lang);
     // (A string read as a script has none: the line's sentence says the command that reads it.)
     if (opts.sentence && !this.nested) {
-      const said = lineSentence({ root, line, lang: this.lang, status: cx.status, commands: cx.memo(COMMAND_SAID), problems: new Set([...problemSections(result), ...opts.hostProblems ?? []]) });
+      const said = lineSentence({ root, line, lang: this.lang, status: cx.status, commands: cx.memo(COMMAND_SAID), problems: new Set([...problemCodes(result), ...opts.hostProblems ?? []]) });
       if (said) result.sentence = said.text;
     }
     if (opts.reading) result.reading = readingTree(tree, items, { lang: this.lang, resolve: resolveAt, meaning: (w) => wordMeaning(w, cx.state), plainPattern: (w) => plainPatternText(w, cx.state), arrayKind: (name, at) => arrayKind(cx, name, at), ...(cx.shell ? { shell: cx.shell } : {}) });

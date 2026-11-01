@@ -42,10 +42,7 @@ export function jenkinsfile(b: Builder): void {
     const shell = shebang ? (shellFromName(shebang[2] && shebang[1] === 'env' ? shebang[2] : shebang[1]) ?? 'sh') : 'sh';
     const notes: RegionNote[] = [];
     if (interpolate && /(^|[^\\])\$[A-Za-z_{]/.test(script)) {
-      notes.push([
-        '二重引用符の文字列では、`$名前` や `${…}` をシェルより先に Groovy が埋め込みます。シェルの変数として使うには `\\$HOME` のようにエスケープするか、単一引用符（`\'…\'`、`\'\'\'…\'\'\'`）にします。',
-        'In a double-quoted string, Groovy fills in `$name` and `${…}` before the shell runs. To use a shell variable, escape it (`\\$HOME`) or use single quotes (`\'…\'`, `\'\'\'…\'\'\'`).',
-      ]);
+      notes.push({ spec: { id: 'jenkinsfile-groovy-interpolation', params: {} } });
     }
     b.region(first, last, ['Jenkinsfile の `sh` ステップ', 'Jenkinsfile `sh` step'], shell, notes.length ? notes : undefined);
     i = endLine;

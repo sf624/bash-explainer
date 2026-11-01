@@ -6,8 +6,7 @@ import { builtins } from './dict/builtins';
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
-import { marked, type Note, plainNote, PORTABILITY } from './messages';
-import { PROBLEM_LEVELS } from './messages-levels';
+import { type Note, problemNote } from './messages';
 import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
 import { networkPath, networkTarget } from './dict/syntax';
 import { bracesInContext } from './semantics/words';
@@ -296,8 +295,8 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
 }
 
 /** The note of a construct the target shell lacks: an error ("Error:", the word of its level), since the line fails there every time. */
-function unsupported(lang: Lang, id: string, body: string): Note {
-  return marked(lang, PROBLEM_LEVELS.unsupported, body, { code: id });
+function unsupported(lang: Lang, id: string, body: string): Note & { code: string } {
+  return problemNote(lang, 'unsupported', id, body);
 }
 
 /** A problem in a script for its target shell, with where it is. */
@@ -306,11 +305,11 @@ export interface Issue {
   /**
    * `unsupported`: fails in the shell (an error); `behaviour`: works differently, or, in sh, is not POSIX but dash and
    * busybox ash run it (information, "Portability");
-   * `parse`: zsh-only syntax (a plain fact, which is still a problem: the line is not explained).
+   * `parse`: zsh-only syntax (information: the line is not explained).
    */
   kind: 'unsupported' | 'behaviour' | 'parse';
   /** What the explanations say of it, and the problems: its text, level and word (src/messages.ts). */
-  note: Note;
+  note: Note & { code: string };
   /** Where it is: the lines and columns the construct, or the syntax error, covers. */
   place: Place;
   /** The construct, for the issues about one (not `parse`). */
@@ -413,6 +412,8 @@ function zshSyntaxPlaces(tree: SyntaxTree, from: number, to: number): Place[] {
   return out;
 }
 
+/** The note on a line with zsh syntax that cannot be read (the issue `zshSyntax`). */
+const zshSyntax = (lang: Lang): Note & { code: string } => problemNote(lang, 'parse', 'zshSyntax', ZSH_SYNTAX[lang === 'ja' ? 0 : 1]);
 const ZSH_SYNTAX: [string, string] = [
   'この行には解析できない部分があります。zsh 独自の書き方（グロブ修飾子 `*(.)`、パラメータフラグ `${(f)var}` など）は解説できません。',
   'Part of this line could not be parsed. zsh-only syntax (glob qualifiers like `*(.)`, parameter flags like `${(f)var}`…) is not explained.',
@@ -467,7 +468,7 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
   if (shell === 'zsh') {
     for (const place of zshSyntaxPlaces(tree, from, to)) {
       issues.push({
-        id: 'zshSyntax', kind: 'parse', place, note: { ...plainNote(ZSH_SYNTAX[lang === 'ja' ? 0 : 1]), code: 'zshSyntax' },
+        id: 'zshSyntax', kind: 'parse', place, note: zshSyntax(lang),
       });
     }
   }
@@ -478,7 +479,7 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
   ];
   for (const { f, kind, body } of found) {
     if (!body) continue;
-    const note = kind === 'behaviour' ? marked(lang, PROBLEM_LEVELS.behaviour, body, { heading: PORTABILITY, code: f.id }) : unsupported(lang, f.id, body);
+    const note = kind === 'behaviour' ? problemNote(lang, 'behaviour', f.id, body) : unsupported(lang, f.id, body);
     issues.push({ id: f.id, kind, note, node: f.node, place: f.node });
   }
   return issues;
@@ -490,10 +491,10 @@ export function dialectNotes(tree: SyntaxTree, line: number, shell: Shell, lang:
 }
 
 /** The notes of `dialectNotes`, each with the place of its construct and its issue's id (the note on zsh syntax is about the line: none). */
-export function dialectFound(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion): (Note & { node?: Place })[] {
+export function dialectFound(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion): (Note & { code: string; node?: Place })[] {
   const issues = dialectIssues(tree, shell, lang, line, line, version).filter((i) => i.kind !== 'parse');
   // On every line a zsh parse error covers, not only where it starts.
   const parse = shell === 'zsh' && zshSyntaxPlaces(tree, 0, tree.root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
-    ? [plainNote(ZSH_SYNTAX[lang === 'ja' ? 0 : 1])] : [];
+    ? [zshSyntax(lang)] : [];
   return [...parse, ...issues.map((i) => ({ ...i.note, node: i.place }))];
 }

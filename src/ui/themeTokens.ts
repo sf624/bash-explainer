@@ -5,6 +5,7 @@
 // without semantic highlighting, from the scopes of VS Code's shell grammar.
 // Pure: src/ui/themeColours.ts finds the theme and reads its files; src/ui/themePalette.ts makes the panel's colours.
 import { parseJsonc } from '../settings';
+import { ROLES, type Role } from '../roles';
 import { SUPER_TYPES, type TokenType } from '../semanticTokens';
 
 /** A TextMate theme rule (an item of `tokenColors`, or of `editor.tokenColorCustomizations.textMateRules`). */
@@ -271,9 +272,8 @@ export function customize(theme: ThemeTokens, custom: Customizations, name: stri
   }
 }
 
-/** The panel's colour roles: the kinds of media/panel.css (`.kind-*`), as far as an editor colours them apart. */
-export const ROLES = ['command', 'builtin', 'option', 'argument', 'string', 'number', 'keyword', 'operator', 'redirect', 'pattern', 'variable', 'assignment', 'comment', 'shebang'] as const;
-export type Role = (typeof ROLES)[number];
+/** The panel's colour roles (src/roles.ts, where each kind of token gets one). */
+export { ROLES, type Role };
 
 /**
  * What the editor colours each role as: our semantic token (src/semanticTokens.ts, `TOKEN_OF`; none for a plain

@@ -11,10 +11,11 @@ import { ALLOWED, counted, program, scanAll, scanSyntax, scanTyped, virtualFiles
 //                src/explain/ and src/examples/);
 //   plain-note   a note is not made from inline text with `plainNote(…)` or `marked(…)` (found in all of src/);
 //   notes-push   a function of src/explain/ or src/examples/ does not hand back its notes as a `string[]` it pushes texts into.
-// test/fixtures/note-strings-known.json lists what src/ does today, each `to` the catalog fact that replaces it (stage SB3). The list may only
-// shrink: a new entry fails the test, and so does an entry that no longer matches. Not found: the inline texts of tokens (`cx.s(ja, en)`
-// in a token's explanation, about 130, which `Token.facts` of SB3 replaces), and a text that reaches the line's notes in a way that none of
-// the three kinds is.
+// test/fixtures/note-strings-known.json lists what src/ does that way, each `to` the catalog fact that replaces it: empty since SB3a (a
+// style check's and a dialect issue's notes are made by the catalog too, `styleNote` and `problemNote`, at the level of their tables). A
+// new entry fails the test, and so does an entry that no longer matches. Not found: the inline texts of tokens (`cx.s(ja, en)` in a
+// token's explanation, about 130, which carry no fact id yet: `Token.facts` lists the facts said at a token's node), and a text that
+// reaches the line's notes in a way that none of the three kinds is.
 
 interface Known { plain: { file: string; fn: string; kind: Kind; count: number; to: string; reason: string }[] }
 const known: Known = JSON.parse(fs.readFileSync(path.join(base, 'test', 'fixtures', 'note-strings-known.json'), 'utf8'));

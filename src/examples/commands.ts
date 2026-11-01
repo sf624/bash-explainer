@@ -211,10 +211,10 @@ function firstLine(text: string, raw: boolean): string {
 
 /**
  * How `read` splits a sample line into its variables, with the IFS given before it (`ifs`, undefined when it is not
- * known) and the line of a here-string (`here`), as bash `version` reads it; and a note on a separator that is not
- * whitespace.
+ * known) and the line of a here-string (`here`), as bash `version` reads it; and, where a separator is not
+ * whitespace, the params of the catalog's note on it (`read-ifs-separators`).
  */
-export function readExample(words: (string | undefined)[], ifs: string | undefined, here: string | undefined, lang: Lang, version?: BashVersion, first = false): { example: Example; note?: string } | undefined {
+export function readExample(words: (string | undefined)[], ifs: string | undefined, here: string | undefined, lang: Lang, version?: BashVersion, first = false): { example: Example; note?: { ifs: string; seps: string[] } } | undefined {
   const s = pick(lang);
   if (ifs === undefined || words.some((w) => w === undefined)) return undefined;
   let p;
@@ -235,17 +235,11 @@ export function readExample(words: (string | undefined)[], ifs: string | undefin
   const r = runRead(line, names, { ifs, raw, array, version });
   // (An IFS with a mark of bash's own: what it splits into is not known.)
   if (!r) return undefined;
-  let note: string | undefined;
-  // A separator that is not whitespace (`IFS=,`) keeps empty fields; a trailing one adds no field.
-  const seps = [...ifs].filter((c) => !IFS_WHITESPACE.includes(c));
-  if (seps.length) {
-    // (A control character is shown as bash reads it, `$'\x1b'`.)
-    const shown = (x: string): string => (/[\x00-\x1f\x7f]/.test(x) ? showCommand([x]) : x);
-    const shownSeps = seps.map((c) => `\`${shown(c)}\``).join(s('、', ', '));
-    note = s(
-      `\`IFS=${shown(ifs)}\` の \`read\`: 空白以外の区切り文字（${shownSeps}）が続くと、間の空のフィールドもそのまま残る（空白の区切りは続いても1つにまとまる）。末尾の区切り文字の後ろには空のフィールドはできない`,
-      `\`read\` with \`IFS=${shown(ifs)}\`: a separator that is not whitespace (${shownSeps}) keeps the empty field between two of them (whitespace separators merge into one); a separator at the end of the line adds no empty field after it`);
-  }
+  // A separator that is not whitespace (`IFS=,`) keeps empty fields; a trailing one adds no field (the catalog's
+  // `read-ifs-separators`). (A control character is shown as bash reads it, `$'\x1b'`.)
+  const shown = (x: string): string => (/[\x00-\x1f\x7f]/.test(x) ? showCommand([x]) : x);
+  const seps = [...ifs].filter((c) => !IFS_WHITESPACE.includes(c)).map(shown);
+  const note = seps.length ? { ifs: shown(ifs), seps } : undefined;
   const lines = r.array ? [`${r.array[0]}=(${r.array[1].map((x) => JSON.stringify(x)).join(' ')})`] : r.vars.map(([k, v]) => `${k}=${JSON.stringify(v)}`);
   const example: Example = { kind: 'read',
     title: s('例', 'Example'),

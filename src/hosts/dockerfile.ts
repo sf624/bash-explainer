@@ -96,15 +96,8 @@ export function execWords(b: Builder, words: JsonWord[]): void {
 }
 
 
-const ONBUILD_NOTE: RegionNote = [
-  'ONBUILD の命令は、このイメージをもとにする別のイメージのビルドで（その FROM の直後に）実行されます。',
-  'An ONBUILD instruction runs later, in the build of another image FROM this one (just after its FROM).',
-];
-
-const HEALTHCHECK_NOTE: RegionNote = [
-  'HEALTHCHECK は、動いているコンテナの中でこのコマンドを実行して状態を調べます。終了ステータス 0 は正常（healthy）、1 は異常（unhealthy）です（2 は予約されていて使いません）。',
-  'HEALTHCHECK runs this command in the running container to check its health: exit status 0 is healthy, 1 unhealthy (2 is reserved).',
-];
+const ONBUILD_NOTE: RegionNote = { spec: { id: 'dockerfile-onbuild', params: {} } };
+const HEALTHCHECK_NOTE: RegionNote = { spec: { id: 'dockerfile-healthcheck', params: {} } };
 
 /**
  * The instructions whose text is a command, each also after `ONBUILD` (a trigger, run in a build FROM this image):
@@ -178,10 +171,7 @@ export function dockerfile(b: Builder): void {
         shell = shellFromName(prog) ?? 'sh';
         pipefail = words.some((w, n) => w.value === 'pipefail' && /^-\w*o$/.test(words[n - 1]?.value ?? ''));
         execWords(b, words);
-        b.region(i, last, ['Dockerfile の SHELL', 'Dockerfile SHELL'], 'bash', [[
-          '以降の RUN・CMD・ENTRYPOINT・HEALTHCHECK のシェル形式は、このコマンドの最後に命令の内容を付けて実行されます（例: `/bin/bash -o pipefail -c "<RUN の内容>"`）。',
-          'Later shell-form RUN, CMD, ENTRYPOINT and HEALTHCHECK instructions run with this command, followed by their text (e.g. `/bin/bash -o pipefail -c "<RUN text>"`).',
-        ]]);
+        b.region(i, last, ['Dockerfile の SHELL', 'Dockerfile SHELL'], 'bash', [{ spec: { id: 'dockerfile-shell', params: {} } }]);
         i = last;
         continue;
       }
@@ -198,10 +188,7 @@ export function dockerfile(b: Builder): void {
         continue;
       }
       execWords(b, words);
-      b.execRegion(i, last, label('（exec 形式）', ' (exec form)'), [...notes, [
-        'exec 形式（`[...]`）はシェルを通さずにコマンドを直接実行します。`$VAR` の展開・パイプ・リダイレクト・`&&` などは働かず、各要素がそのまま引数になります。',
-        'The exec form (`[...]`) runs the command directly, without a shell: `$VAR`, pipes, redirections and `&&` do not work, and each element is passed as it is.',
-      ]], ['JSON の文字列', 'JSON string']);
+      b.execRegion(i, last, label('（exec 形式）', ' (exec form)'), [...notes, { spec: { id: 'dockerfile-exec-form', params: {} } }], ['JSON の文字列', 'JSON string']);
       i = last;
       continue;
     }

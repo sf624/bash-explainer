@@ -9,11 +9,13 @@ import { Analyzer, type LineExplanation, type Token } from '../src/analyzer';
 import { argvWords } from '../src/argvline';
 import { detectShell, type Shell } from '../src/dialect';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
-import { problemSections } from '../src/linesentence';
+import { lineSentence, problemCodes } from '../src/linesentence';
+import { clausesOf, MESSAGES, type FactId, isProblem, type SentenceClause } from '../src/messages';
 import { jaSpaced, listSaid } from '../src/messages-sentence';
 import { codeSpan } from '../src/label';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { shellState } from '../src/semantics/state';
+import { statusModel } from '../src/semantics/status';
 import { descendants, field, type SyntaxNode } from '../src/syntax/tree';
 import { panelUpdate, PANEL_BODY } from '../src/ui/panelView';
 import { ui } from '../src/ui/texts';
@@ -276,12 +278,39 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
     assert.strictEqual(new Analyzer('en').explainLine(tree, 2, undefined, { sentence: true }).sentence, 'Runs `bash` (run the bash shell (a script or a command string)).');
   });
 
-  it('reads the sections of the problems of a line: a fact\'s, a style check\'s, none for a dialect issue or a plain note', () => {
-    const sections = (src: string, shell?: Shell) => [...problemSections(new Analyzer('en').explainLine(parser.parse(src), 0, shell))].sort();
-    assert.deepStrictEqual(sections('set -e; cmd || echo failed >&2'), ['3.2.4', '3.3', '4.3.1']);
-    assert.deepStrictEqual(sections('rm -rf $d/'), ['3.5.3', '3.5.7', '3.5.8']);
-    assert.deepStrictEqual(sections('[[ a ]]', 'sh'), []);
-    assert.deepStrictEqual(sections('set -euo pipefail'), []);
+  it('reads the codes of the problems of a line: a fact\'s, a style check\'s, a dialect issue\'s; none for a plain note', () => {
+    const codes = (src: string, shell?: Shell) => [...problemCodes(new Analyzer('en').explainLine(parser.parse(src), 0, shell))].sort();
+    assert.deepStrictEqual(codes('set -e; cmd || echo failed >&2'), ['failure-reported-as-success']);
+    assert.deepStrictEqual(codes('rm -rf $d/'), ['rm-empty-variable-root', 'unquoted-variable-as-path']);
+    assert.deepStrictEqual(codes('[[ a ]]', 'sh'), ['dbracket']);
+    assert.deepStrictEqual(codes('set -euo pipefail'), []);
+  });
+
+  it('leaves a clause out only for a problem that says it: not for another fact of the same section of the manual', () => {
+    // (`pipeline-subshell-variable` cites 3.2.3, about a stage's subshell; the clause on the pipeline's status stays.
+    // Before, the sentence compared sections, and left it out.)
+    const src = 'cat f | while read -r l; do n=$l; done\necho "$n"';
+    const ex = new Analyzer('en').explainLine(parser.parse(src), 0, undefined, { sentence: true });
+    assert.deepStrictEqual([...problemCodes(ex)], ['pipeline-subshell-variable']);
+    assert.match(ex.sentence!, /; its status is that of the `while` loop\.$/);
+    // (A problem that says the status, `pipefail-missing`, leaves it out; so does a host's, by its code.)
+    const pipe = 'set -e\ncurl -s x | tar -x';
+    const tree = parser.parse(pipe);
+    const status = statusModel(shellState(tree, 'bash'));
+    const said = (problems: string[]) => lineSentence({ root: tree.root, line: 1, lang: 'en', status, commands: new Map(), problems: new Set(problems) })!;
+    assert.deepStrictEqual(said([]).clauses, ['pipeStatus']);
+    assert.deepStrictEqual(said(['pipefail-missing']).clauses, []);
+    assert.deepStrictEqual(said(['pipeline-subshell-variable', 'nounset-unbound']).clauses, ['pipeStatus']);
+  });
+
+  it('sorts every problem that cites a pipeline\'s status or `set -e` (3.2.3, 4.3.1): it says a clause, or another fact', () => {
+    const other: FactId[] = ['pipeline-subshell-variable', 'nounset-unbound', 'bats-run-in-pipeline', 'bats-run-in-pipeline-stage', 'stdin-not-read', 'bash-subshell-not-counted'];
+    const cites = (Object.keys(MESSAGES) as FactId[]).filter((id) => MESSAGES[id].refs.some((r) => r === '3.2.3' || r === '4.3.1'))
+      .filter((id) => (MESSAGES[id].kind === 'pitfall' || 'level' in MESSAGES[id]) && isProblem(id));
+    assert.deepStrictEqual(cites.filter((id) => !clausesOf(id).length && !other.includes(id)), []);
+    // (The facts that say a clause, by the catalog's entries.)
+    assert.deepStrictEqual((Object.keys(MESSAGES) as FactId[]).filter((id) => clausesOf(id).includes('pipeStatus')), ['pipefail-missing', 'dockerfile-pipefail-missing']);
+    assert.deepStrictEqual(clausesOf('rm-empty-variable-root'), []);
   });
 
   it('spaces code from Japanese, and lists items in both languages', () => {
@@ -360,15 +389,16 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
           for (const lang of ['en', 'ja'] as const) {
             const ex = f.explain(i, lang);
             if (!ex?.sentence) continue;
-            const sections = problemSections(ex);
-            if (sections.has('4.3.1') && ex.sentence.includes('`set -e`')) found.push(`${f.name}:${i + 1} ${lang}: ${ex.sentence}`);
-            if (sections.has('3.2.3') && /its status is|終了ステータスは.*のもの/.test(ex.sentence)) found.push(`${f.name}:${i + 1} ${lang}: ${ex.sentence}`);
-            if (sections.has('4.3.1') || sections.has('3.2.3')) checked++;
+            const codes = problemCodes(ex);
+            const says = (clause: SentenceClause) => [...codes].some((code) => clausesOf(code).includes(clause));
+            if (says('errexit') && ex.sentence.includes('`set -e`')) found.push(`${f.name}:${i + 1} ${lang}: ${ex.sentence}`);
+            if (says('pipeStatus') && /its status is|終了ステータスは.*のもの/.test(ex.sentence)) found.push(`${f.name}:${i + 1} ${lang}: ${ex.sentence}`);
+            if (says('errexit') || says('pipeStatus')) checked++;
           }
         });
       }
       assert.deepStrictEqual(found, []);
-      assert.ok(checked > 10, String(checked));
+      assert.ok(checked > 5, String(checked));
     });
 
     it('never retypes the line: no code span holds more than one shell word of it', () => {

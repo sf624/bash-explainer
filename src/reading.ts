@@ -31,6 +31,7 @@ import type { Shell } from './shellfeatures';
 import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } from './refs';
 import { aliasesAfter, type AliasResolution, type NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
+import { spanWithin } from './noteanchors';
 import { type ExpansionStep, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
 import { setsElement, splitElement, stackTilde, staticWordValue } from './staticword';
 import { field, fields, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
@@ -167,7 +168,6 @@ function posIn(n: SyntaxNode, i: number): Pos {
   return nl < 0 ? point(n.startPosition.row, n.startPosition.column + before.length) : point(n.startPosition.row + before.split('\n').length - 1, before.length - nl - 1);
 }
 const keyOf = (s: Span): string => `${s.start.line}:${s.start.character}-${s.end.line}:${s.end.character}`;
-const within = (inner: Span, outer: Span): boolean => le(outer.start, inner.start) && le(inner.end, outer.end);
 const same = (a: Span, b: Span): boolean => keyOf(a) === keyOf(b);
 const union = (...lists: (readonly string[] | undefined)[]): readonly string[] => [...new Set(lists.flatMap((l) => l ?? []))];
 
@@ -246,7 +246,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   const collect = (n: SyntaxNode, layer: Layer): ReadingNode[] => withLists(n).flatMap((c) => {
     const s = spanOf(c);
     if (c.endIndex === c.startIndex || le(s.end, range.start) || le(range.end, s.start)) return [];
-    if (within(s, range)) return node(c, layer);
+    if (spanWithin(s, range)) return node(c, layer);
     // A block around the line: its parts on the line. (A statement that is not a block is explained whole, so the
     // tokens cover a substitution in it whole.)
     return collect(c, layer);
@@ -407,7 +407,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     // under its own words. (Not when its name is known only when it runs: nor is what it reads.)
     const words = children.filter((w) => w.kind !== 'redirect');
     const place = (p: ReadingNode): void => {
-      const at = words.find((w) => within(p.span, w.span));
+      const at = words.find((w) => spanWithin(p.span, w.span));
       const head = !at && p.layer === 'command' && RUNS.has(p.kind) ? words.find((w) => le(w.span.start, p.span.start) && le(p.span.start, w.span.start)) : undefined;
       if (at) at.children.push(p);
       else if (head) {
@@ -443,7 +443,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       return SUBSTITUTIONS.has(x.type) ? [spanOf(x)] : x.namedChildren.flatMap(inner);
     });
     const span = spanOf(c);
-    const t = all.find((x) => x.origin === 'shell' && READERS.has(x.kind) && within(x.span, span) && !subs.some((s) => within(x.span, s)));
+    const t = all.find((x) => x.origin === 'shell' && READERS.has(x.kind) && spanWithin(x.span, span) && !subs.some((s) => spanWithin(x.span, s)));
     // (The name it spells: `"ls"` and `\if` are `ls` and `if`.)
     return t && { token: t, name: short(staticWordValue(name.namedChildren[0], false, cx.shell) ?? name.text) };
   };
@@ -550,8 +550,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const look = (ts: readonly Token[]): void => {
       for (const t of ts) {
         // (A token around the word, or the word's own: what is under it. One inside a part: the part's.)
-        if (within(span, t.span)) look(t.children);
-        else if (!within(t.span, span) || parts.some((p) => within(t.span, p.span))) continue;
+        if (spanWithin(span, t.span)) look(t.children);
+        else if (!spanWithin(t.span, span) || parts.some((p) => spanWithin(t.span, p.span))) continue;
         else if (t.origin === 'shell' && PART_TOKENS.has(t.kind)) found.push(partToken(t, layer));
         else look(t.children);
       }
@@ -639,7 +639,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       const n = word(ix, layer, 'word');
       return { ...n, ...(said ? saidBy(said) : {}), refs: union(['6.7'], n.refs) };
     }
-    return { layer, kind: 'word', label: short(text), span, refs: ['6.7'], children: inner(owner, layer).filter((p) => within(p.span, span)) };
+    return { layer, kind: 'word', label: short(text), span, refs: ['6.7'], children: inner(owner, layer).filter((p) => spanWithin(p.span, span)) };
   };
 
   /**
@@ -675,7 +675,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     if (m.value) {
       parts.push({
         layer, kind: 'word', label: short(m.value), span: valueSpan, refs: expansionSections(cx.meaning(e)),
-        children: inner(e, layer).filter((p) => within(p.span, valueSpan)),
+        children: inner(e, layer).filter((p) => spanWithin(p.span, valueSpan)),
       });
     }
     // (Its text is the explanation's of the element: `Element with index 3: set it to x`.)

@@ -12,11 +12,12 @@ import { statusModel } from '../semantics/status';
 import { batsFacts, batsTests } from '../bats';
 import type { ConventionId } from '../conventions';
 import type { ProblemSeverity } from '../levels';
-import { basisGate, conventionOf, type Fact, type FactSpec, factOf, type Note, plainNote, problemText, said, severityOf } from '../messages';
+import { basisGate, conventionOf, type Fact, fact, type FactSpec, factOf, type Note, problemText, said, severityOf } from '../messages';
 import type { ShellRegion, Extracted } from './index';
 import { batsTestLine } from './bats';
 import { batsCommentFacts } from './batstags';
-import { problemSections } from '../linesentence';
+import { problemCodes } from '../linesentence';
+import { markTokens } from '../tokenmarks';
 
 /**
  * Move every position in an explanation of the extracted shell text back to the original
@@ -105,10 +106,12 @@ export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja'
   const seen = new Set<string>();
   return extracted.substitutions
     .filter((s) => s.line === line && !seen.has(s.text) && seen.add(s.text))
-    .flatMap((s) => [
-      ...(s.warning ? said([factOf(lang, s.warning)], pitfalls).map((f): Note => (facts?.push(f), { ...noteData(f), code: 'injection' })) : []),
-      plainNote(lang === 'ja' ? `\`${s.text}\` は${/^[A-Za-z]/.test(s.meaning[0]) ? ' ' : ''}${s.meaning[0]}。` : `\`${s.text}\` is ${s.meaning[1]}.`),
-    ]);
+    .flatMap((s) => {
+      const warnings = s.warning ? said([factOf(lang, s.warning)], pitfalls).map((f): Note => (facts?.push(f), { ...noteData(f), code: 'injection' })) : [];
+      const meaning = fact(lang, 'host-substitution', { text: s.text, meaning: { ja: s.meaning[0], en: s.meaning[1] } });
+      facts?.push(meaning);
+      return [...warnings, noteData(meaning)];
+    });
 }
 
 /** A fact's note, without what only the fact has (its id, kind, sections, basis and try-it). */
@@ -151,13 +154,12 @@ export function explainHostedLine(
   if (!region) return undefined;
   tree = scriptTree(tree, extracted, region);
   const provided = hostProvided(extracted, region);
-  const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   // (The catalog facts of the host go through `said`, like the analyzer's, so `notes.pitfalls` off leaves out their pitfalls.)
   const hostFacts: Fact[] = [];
-  // (A fact the host says is the problem `code` of hostIssues.)
-  const spoken = (spec: FactSpec, code: string) => { const f = said([factOf(lang, spec)], opts.pitfalls); hostFacts.push(...f); return f.map((x) => ({ ...noteData(x), code })); };
-  const notes: Note[] = [...(region.notes ?? []).flatMap((n) => (Array.isArray(n) ? [plainNote(pick(n))] : spoken(n.spec, n.code))), ...substitutionNotes(extracted, line, lang, opts.pitfalls, hostFacts)];
-  if (region.host.ci === 'github') notes.push(...githubFileNotes(original[line], lang).map(plainNote));
+  // (A warning the host says is the problem `code` of hostIssues.)
+  const spoken = (spec: FactSpec, code?: string) => { const f = said([factOf(lang, spec)], opts.pitfalls); hostFacts.push(...f); return f.map((x) => ({ ...noteData(x), code: code ?? x.code })); };
+  const notes: Note[] = [...(region.notes ?? []).flatMap((n) => spoken(n.spec, n.code)), ...substitutionNotes(extracted, line, lang, opts.pitfalls, hostFacts)];
+  if (region.host.ci === 'github') notes.push(...githubFileNotes(original[line]).flatMap((spec) => spoken(spec)));
   if (region.warnPipefail && pipeWithoutPipefail(tree, region, line, shell)) {
     notes.push(...spoken(PIPEFAIL, 'dockerPipefail'));
   }
@@ -176,12 +178,14 @@ export function explainHostedLine(
     ...opts, host: region.host, ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}), ...(provided.length ? { hostProvided: provided } : {}),
     ...(region.noShell ? { noShell: region.noShell } : {}),
     // (The sentence of the line says nothing a problem of the host says: src/linesentence.ts.)
-    ...(opts.sentence ? { hostProblems: [...problemSections({ noteInfo: notes, facts: hostFacts })] } : {}),
+    ...(opts.sentence ? { hostProblems: [...problemCodes({ noteInfo: notes, facts: hostFacts })] } : {}),
   });
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   if (tests) ex.anchors = [...(ex.anchors ?? []), ...found.filter((f) => f.node).map((f) => ({ text: f.fact.text, span: spanOf(f.node!), code: f.fact.code }))];
   // (Through the gate of `notes.basis`, as the analyzer's.)
   if (hostFacts.length) ex.facts = [...(ex.facts ?? []), ...hostFacts.map((f) => basisGate(f, opts.basis))];
+  // (The facts bats adds on nodes of the line are about its tokens too.)
+  if (tests) markTokens(ex.items, ex);
   ex.notes.unshift(...notes.map((n) => n.text));
   ex.noteInfo.unshift(...notes.map((n) => basisGate(n, opts.basis)));
   const out = remapExplanation(ex, extracted, original, lang);
@@ -224,7 +228,8 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
       }
     }
     for (const n of region.notes ?? []) {
-      if (Array.isArray(n)) continue;
+      // (A note with no code is no problem: what a region is, said on its lines.)
+      if (n.code === undefined) continue;
       const first = extracted.maps[region.start];
       const f = factOf(lang, n.spec);
       out.push({ code: n.code, severity: severityOf(f.level), message: problemText(f, lang), startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1], ...conventionOf(f) });

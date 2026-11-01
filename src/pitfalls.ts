@@ -17,7 +17,7 @@ import { staticWordValue, unquoteWord } from './staticword';
 import { parseExpansion } from './expansion';
 import { hasUnquotedExpansion, quoteExpansions } from './fixes';
 import type { ConventionId } from './conventions';
-import { marked, type Note } from './messages';
+import { type Note, styleNote } from './messages';
 import { STYLE_LEVELS, type StyleCase, type StyleCode } from './messages-levels';
 import { type Rewrite, replaceNode, replaceSpan, stopCommand, textBetween, type TextEdit } from './rewrite';
 
@@ -530,9 +530,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
   const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string, rewrite: readonly Rewrite[] = [], c: StyleCase = {}) => {
     const convention = STYLE_CONVENTIONS[code];
     const edits = rewrite.filter((r) => r.edits.length);
-    const entry = STYLE_LEVELS[code];
-    const level = typeof entry === 'function' ? entry(c) : entry;
-    found.push({ ...marked(lang, level, s(ja, en), { kind: 'pitfall' }), code, node, ...(convention ? { convention } : {}), ...(edits.length ? { rewrite: edits } : {}) });
+    found.push({ ...styleNote(lang, code, s(ja, en), c), node, ...(convention ? { convention } : {}), ...(edits.length ? { rewrite: edits } : {}) });
   };
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check(n);
