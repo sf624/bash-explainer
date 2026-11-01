@@ -297,9 +297,11 @@ describe('the web page: the app bar and the editor\'s header', function () {
         const seen = `${locale} ${width}`;
         // (The phone's first-run tip of the read-mode switch lies over the header until it is closed.)
         if (await page.locator('#readtip-close').isVisible()) await page.locator('#readtip-close').click();
-        // (Which form the header takes is test/web-scope.test.ts's; here, that Open and Save follow it.)
-        assert.strictEqual(await page.locator('#ed-head').getAttribute('data-tools'), words ? 'words' : 'icons', seen);
-        for (const id of ['#open-btn', '#save-btn']) {
+        // (Which form the header takes is test/web-scope.test.ts's; here, that Open and Save follow it. On a phone they
+        // are in the menu: the strip has Read | Edit, the name, the chip and ⋯.)
+        for (const id of ['#open-btn', '#save-btn']) assert.strictEqual(await page.locator(id).isVisible(), width !== 390, `${seen} ${id}`);
+        if (width !== 390) assert.strictEqual(await page.locator('#ed-head').getAttribute('data-tools'), words ? 'words' : 'icons', seen);
+        for (const id of width === 390 ? [] : ['#open-btn', '#save-btn']) {
           const lbl = await page.locator(`${id} .lbl`).boundingBox();
           assert.strictEqual((lbl?.width ?? 0) > 2, words, `${seen} ${id}`);
           // Its name is its word either way.

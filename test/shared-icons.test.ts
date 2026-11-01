@@ -45,7 +45,7 @@ describe('shared icons', () => {
   });
 
   it('keeps the web page\'s own icons for the actions only it has', () => {
-    for (const [id, icon] of [['menu-open', '#i-menu'], ['share', '#i-link'], ['more-sample', '#i-sample'], ['readmode', '#i-keyboard'], ['github', '#i-github'], ['menu-close', '#i-close'], ['open-btn', '#i-open'], ['save-btn', '#i-save'], ['ed-more', '#i-more'], ['more-copy', '#i-duplicate'], ['more-clear', '#i-clear']]) {
+    for (const [id, icon] of [['menu-open', '#i-menu'], ['share', '#i-link'], ['more-sample', '#i-sample'], ['github', '#i-github'], ['menu-close', '#i-close'], ['open-btn', '#i-open'], ['save-btn', '#i-save'], ['ed-more', '#i-more'], ['more-copy', '#i-duplicate'], ['more-clear', '#i-clear']]) {
       assert.strictEqual(iconOf(index, id), icon, id);
     }
   });

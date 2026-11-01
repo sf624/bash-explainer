@@ -14,7 +14,7 @@ export function showMenuTexts(lang: Lang): void {
   for (const [id, text] of [
     ['menu-h-script', t.menuScript], ['menu-h-share', t.menuShare],
     ['menu-h-prefs', t.menuPrefs], ['menu-h-help', t.menuHelp], ['menu-h-about', t.menuAbout], ['menu-keys-title', t.keys],
-    ['menu-clear-label', t.clear], ['menu-copy-script-label', t.copyScript], ['share-note', t.shareNote],
+    ['menu-clear-label', t.clear], ['menu-copy-script-label', t.copyScript], ['menu-copy-md-label', t.copyExplanation], ['share-note', t.shareNote],
   ]) put(id, text);
   // Help: every key of the page, with ⌘ on a Mac.
   document.getElementById('menu-keys')?.replaceChildren(...t.keyRows(isMac() ? '⌘' : 'Ctrl+').flatMap(([keys, what]) => [

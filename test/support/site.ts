@@ -208,9 +208,12 @@ export async function currentShell(page: Page): Promise<string> {
   return (await page.locator('#scope-shells [aria-checked="true"]').getAttribute('data-value')) ?? '';
 }
 
-/** Whether the Problems strip shows problems (with none it says "No problems", and the list is hidden). */
+/**
+ * Whether the page has its problems (with none the strip says "No problems", and the list is hidden). On a phone the
+ * list is the sheet's Problems tab, out of sight while another tab is chosen.
+ */
 export function problemsShown(page: Page): Promise<boolean> {
-  return page.locator('#problems:not(.empty)').isVisible();
+  return page.evaluate("(() => { const p = document.getElementById('problems'); return !!p && !p.hidden && !p.classList.contains('empty'); })()") as Promise<boolean>;
 }
 
 /**
@@ -228,9 +231,16 @@ export function problemRows(page: Page): Locator {
 
 /**
  * Makes sure the Problems list is open and returns its rows: waits for the strip with problems, and unfolds the list
- * when it is folded (its state is the user's, stored: docs/design/chrome-redesign.md, C2).
+ * when it is folded (its state is the user's, stored: docs/design/chrome-redesign.md, C2); on a phone, chooses the
+ * sheet's Problems tab (C8a).
  */
 export async function openProblems(page: Page): Promise<Locator> {
+  // (On a phone: the sheet's Problems tab.)
+  if (await page.evaluate("document.documentElement.classList.contains('bottom-sheet')")) {
+    await page.locator('#tab-problems').click();
+    await page.locator('#problems:not(.empty)').waitFor({ state: 'visible' });
+    return problemRows(page);
+  }
   await page.locator('#problems:not(.empty)').waitFor({ state: 'visible' });
   const toggle = page.locator('#problems-toggle');
   if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();

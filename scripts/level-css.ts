@@ -50,7 +50,8 @@ export const REGIONS: Readonly<Record<string, Readonly<Record<string, () => stri
   },
   'web/page.css': {
     root: () => coloured().map(({ c }) => `${c.name}: var(${c.variable});`),
-    problems: () => coloured().flatMap(({ cls, c }, i) => [...(i ? [''] : []), `#problems .icon.${cls} {`, `  color: var(${c.name});`, '}']),
+    // (The Problems strip and list, and the Problems tab of the phone's sheet.)
+    problems: () => coloured().flatMap(({ cls, c }, i) => [...(i ? [''] : []), `:is(#problems, #tab-problems) .icon.${cls} {`, `  color: var(${c.name});`, '}']),
   },
   'web/theme.css': {
     // The editor's colours of the levels, which the page defines for itself: ours in the light theme, Dark Modern's in

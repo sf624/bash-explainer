@@ -143,11 +143,14 @@ export class ProblemStrip {
 
 /**
  * The room of the page's toast (web/toast.ts): the editor's pane above the Problems strip, which is there whenever the
- * page has its problems (above the pane's bottom before the first check). Undefined without the pane.
+ * page has its problems (above the pane's bottom before the first check). On a phone, the window above the sheet's
+ * tabs row, where the sheet is going (its height, --sheet-h: it may still be moving). Undefined without the pane.
  */
 export function roomAboveStrip(): { left: number; width: number; bottom: number } | undefined {
   const pane = document.getElementById('source');
   if (!pane) return undefined;
+  const sheet = document.documentElement.classList.contains('bottom-sheet') ? parseFloat(document.documentElement.style.getPropertyValue('--sheet-h')) : NaN;
+  if (sheet >= 0) return { left: 0, width: window.innerWidth, bottom: window.innerHeight - sheet };
   const box = pane.getBoundingClientRect();
   const problems = document.getElementById('problems');
   const bottom = problems && !problems.hidden ? problems.getBoundingClientRect().top : box.bottom;

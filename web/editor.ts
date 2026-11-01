@@ -560,7 +560,7 @@ export class Editor {
   }
 
   /** The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved). */
-  keepCursorInView(): void {
-    this.view.dispatch({ effects: EditorView.scrollIntoView(this.view.state.selection.main.head, { y: 'center' }) });
+  keepCursorInView(y: 'center' | 'nearest' = 'center'): void {
+    this.view.dispatch({ effects: EditorView.scrollIntoView(this.view.state.selection.main.head, { y }) });
   }
 }

@@ -84,6 +84,10 @@
   // its screen, which no zoom changes: a page loaded zoomed out keeps the phone layout. Tablets and desktops
   // follow the width, as before, also when a window is resized. layout.ts reads the class and listens to
   // `narrowchange`.
+  // The explanation is a bottom sheet over the editor (`bottom-sheet`; docs/design/chrome-redesign.md, C8a) on a phone, and on
+  // a touch screen without hover held upright up to 1024px wide (a tablet), but not on a phone whose browser asks for
+  // the desktop site. The sheet is a phone's layout, so it is `narrow` too. "Upright" is the screen's orientation, not
+  // the window's: the on-screen keyboard makes the window wide and short, and must not turn the sheet off.
   // But a phone whose browser asks for the desktop site (Chrome's "Desktop site", Safari's "Request Desktop
   // Website") is not treated as a phone: the user chose the desktop page, so the layout follows the width
   // as on a desktop (about 980px wide then), and the phone's screens are neither recorded nor used. The browser
@@ -98,6 +102,8 @@
   const shape = () => Math.round((Math.max(screen.width, screen.height) / Math.min(screen.width, screen.height)) * 100);
   let seenShape = 0;
   let phone = false;
+  /** The device is a phone (its screen, or a screen's shape seen as a phone's), whichever site its browser asks for. */
+  let phoneDevice = false;
   /** The browser presents itself as a desktop browser: the desktop-site mode of a phone, or a desktop. */
   const desktopSite = () => {
     const data = /** @type {{ mobile?: unknown } | undefined} */ (/** @type {any} */ (navigator).userAgentData);
@@ -106,10 +112,6 @@
   };
   const decide = () => {
     seenShape = shape();
-    if (desktopSite()) {
-      phone = false;
-      return;
-    }
     /** @type {unknown} */
     let seen = [];
     try {
@@ -118,7 +120,9 @@
       seen = [];
     }
     const shapes = Array.isArray(seen) ? seen : [];
-    phone = touch.matches && (Math.min(screen.width, screen.height) < 600 || shapes.includes(seenShape));
+    phoneDevice = touch.matches && (Math.min(screen.width, screen.height) < 600 || shapes.includes(seenShape));
+    // (In the desktop-site mode the phone's screens are neither recorded nor used for the layout.)
+    phone = phoneDevice && !desktopSite();
     if (phone && !shapes.includes(seenShape)) {
       try {
         localStorage.setItem(PHONE_KEY, JSON.stringify([...shapes, seenShape].slice(-4)));
@@ -127,14 +131,20 @@
       }
     }
   };
+  /** The screen held upright (its orientation, which the on-screen keyboard does not change). */
+  const upright = () => {
+    const type = screen.orientation && screen.orientation.type;
+    return type ? type.startsWith('portrait') : screen.height >= screen.width;
+  };
   const update = () => {
     // Another screen (a foldable opened, a mouse attached) is decided again; a zoom keeps the screen's shape.
     if (shape() !== seenShape) decide();
     root.classList.toggle('phone', phone);
-    const was = root.classList.contains('narrow');
-    const now = phone || narrowWidth.matches;
-    root.classList.toggle('narrow', now);
-    if (was !== now) root.dispatchEvent(new Event('narrowchange'));
+    const sheet = phone || (touch.matches && !phoneDevice && upright() && window.innerWidth <= 1024);
+    const was = [root.classList.contains('narrow'), root.classList.contains('bottom-sheet')].join();
+    root.classList.toggle('bottom-sheet', sheet);
+    root.classList.toggle('narrow', sheet || narrowWidth.matches);
+    if (was !== [root.classList.contains('narrow'), sheet].join()) root.dispatchEvent(new Event('narrowchange'));
   };
   decide();
   update();
@@ -144,6 +154,7 @@
     update();
   });
   window.addEventListener('resize', update);
+  if (screen.orientation) screen.orientation.addEventListener('change', update);
   window.addEventListener('pageshow', (event) => {
     if (event.persisted) {
       decide();

@@ -1602,15 +1602,15 @@ body.resizing .problems-resize {
 }
 
 /* level table (src/levels.ts, scripts/level-css.ts): problems */
-#problems .icon.level-error {
+:is(#problems, #tab-problems) .icon.level-error {
   color: var(--c-error-level);
 }
 
-#problems .icon.level-warning {
+:is(#problems, #tab-problems) .icon.level-warning {
   color: var(--c-warning);
 }
 
-#problems .icon.level-info {
+:is(#problems, #tab-problems) .icon.level-info {
   color: var(--c-info);
 }
 /* end of the level table */
@@ -2135,21 +2135,52 @@ body.resizing .problems-resize {
   }
 }
 
-#readmode {
+/* Read | Edit, in the strip above the editor: two 44 px boxes, drawn as one pill 30 px high, the mode on filled. */
+.read-edit {
+  flex: none;
+}
+
+.read-edit button {
   position: relative;
+  z-index: 0;
+  min-width: 44px;
+  height: 44px;
+  min-height: 0;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 13px;
 }
 
-#readmode .slash {
+.read-edit button::before {
+  content: "";
   position: absolute;
-  display: none;
+  inset: 7px 0;
+  z-index: -1;
+  border: 1px solid var(--vscode-dropdown-border);
+  background: var(--vscode-dropdown-background);
 }
 
-#readmode[aria-pressed="true"] {
+.read-edit button:first-child::before {
+  border-right: 0;
+  border-radius: 15px 0 0 15px;
+}
+
+.read-edit button:last-child::before {
+  border-radius: 0 15px 15px 0;
+}
+
+.read-edit button[aria-pressed="true"] {
+  color: var(--vscode-foreground);
+}
+
+.read-edit button[aria-pressed="true"]::before {
   background: var(--accent-soft);
 }
 
-#readmode[aria-pressed="true"] .slash {
-  display: block;
+.read-edit button:focus-visible {
+  outline-offset: -4px;
 }
 
 /* The first-run tip for the read-mode switch: a bubble under the switch (top, set by the script, which also sets --arrow-x for its arrow). */
@@ -2428,6 +2459,236 @@ body.resizing .problems-resize {
 :where(html.narrow) :is(#problem-prev, #problem-next) {
   width: 44px;
   height: 44px;
+}
+
+/* ---- The phone's bottom sheet (web/sheet.ts; docs/design/chrome-redesign.md, step C8a) ---------------------------
+   On a phone (and a touch screen held upright up to 1024 px: html.bottom-sheet, from theme-init.js) the explanation's
+   pane is a sheet over the editor, at the height in --sheet-h; the editor ends at the sheet's top at half or lower
+   (--sheet-rest). Its header is one 48 px row at every height, and all of it is the grabber. At full height the app
+   bar slides away (data-sheet="full"). */
+.sheet-grab,
+#tab-problems,
+.tab-line,
+.sheet-hint {
+  display: none;
+}
+
+:where(html.bottom-sheet) .split {
+  display: block;
+  position: relative;
+}
+
+:where(html.bottom-sheet) .source {
+  height: 100%;
+  padding-bottom: var(--sheet-rest, 55dvh);
+}
+
+:where(html.bottom-sheet) .splitter,
+:where(html.bottom-sheet) #open-btn,
+:where(html.bottom-sheet) #save-btn {
+  display: none;
+}
+
+:where(html.bottom-sheet) .panel-pane {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 12;
+  height: var(--sheet-h, 55dvh);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  border-top: 1px solid var(--hover-border);
+  border-radius: 12px 12px 0 0;
+  background: var(--vscode-editor-background);
+  box-shadow: 0 -2px 12px rgb(0 0 0 / 16%);
+  overscroll-behavior: contain;
+}
+
+:where(html.bottom-sheet) .panel-head {
+  position: relative;
+  gap: 4px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: 12px 12px 0 0;
+  touch-action: none;
+}
+
+/* The grabber: a button as big as the header, under its tabs and its pill, for the keyboard (Enter and the arrows) and
+   a screen reader; a press lets it through to the header, which takes the taps and the drags. The bar drawn at its
+   top says the sheet moves. */
+:where(html.bottom-sheet) .sheet-grab {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+}
+
+:where(html.bottom-sheet) .sheet-grab::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  width: 36px;
+  height: 4px;
+  margin-left: -18px;
+  border-radius: 2px;
+  background: var(--vscode-descriptionForeground);
+  opacity: 0.6;
+}
+
+:where(html.bottom-sheet) .sheet-grab:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+:where(html.bottom-sheet) :is(.panel-tabs, .view-slot, .panel-tools) {
+  position: relative;
+  z-index: 1;
+}
+
+:where(html.bottom-sheet) .view-slot {
+  margin-left: auto;
+}
+
+:where(html.bottom-sheet) .panel-tools {
+  margin-left: 0;
+}
+
+:where(html.bottom-sheet) .panel-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  font-size: 14px;
+}
+
+:where(html.bottom-sheet) #tab-problems {
+  display: inline-flex;
+}
+
+/* The Explanation tab's line, quiet ("Ln 8"); the Problems tab's counts, each level's mark in its colour. */
+:where(html.bottom-sheet) .tab-line {
+  display: inline;
+  margin-left: 5px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+#tab-problems .count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+#tab-problems .count + .count {
+  margin-left: 6px;
+}
+
+/* Where the sheet's row has no room for the panel's tools, the menu has Copy as Markdown (in its Share group). */
+#menu-copy-md {
+  display: none;
+}
+
+:where(html:has(.panel-head[data-tools="none"])) #menu-copy-md {
+  display: flex;
+}
+
+.panel-head[data-line="false"] .tab-line,
+.panel-head[data-tools="none"] .panel-tools {
+  display: none;
+}
+
+/* When no form fits (very large text), the Explanation tab's words are cut, never the row. */
+.panel-head[data-squeeze] {
+  overflow: hidden;
+}
+
+.panel-head[data-squeeze] .panel-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.panel-head[data-squeeze] #tab-explain {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 44px;
+  overflow: hidden;
+  line-height: 44px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* At the bottom of the window (folded), the view's menu opens upwards, and it never runs past the right edge. */
+:where(html.bottom-sheet) .vc[data-form="menu"] .vc-options {
+  right: 0;
+  left: auto;
+}
+
+:where(html[data-sheet="peek"]) .vc[data-form="menu"] .vc-options {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+:where(html.bottom-sheet) .sheet-hint:not([hidden]) {
+  display: block;
+  margin: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-textBlockQuote-background);
+  color: var(--vscode-foreground);
+  font-size: 13px;
+}
+
+/* The Problems tab: the page's list (moved into the sheet), without the strip that folds and resizes it. */
+:where(html.bottom-sheet) .panel-pane[data-problems] .panel-body,
+:where(html.bottom-sheet) .panel-pane:not([data-problems]) #problems,
+:where(html.bottom-sheet) #problems .problems-resize,
+:where(html.bottom-sheet) #problems:not(.empty) .problems-strip {
+  display: none;
+}
+
+html.bottom-sheet #problems {
+  flex: 1;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  border-top: 0;
+  background: transparent;
+}
+
+html.bottom-sheet #problems #problem-list {
+  display: grid;
+  padding-top: 4px;
+  overscroll-behavior: contain;
+}
+
+/* The edges' swipe strips lie over the sheet too, as along the editor. */
+:where(html.bottom-sheet) .edge {
+  z-index: 13;
+}
+
+/* At full height the app bar slides away; it comes back below full. */
+:where(html.bottom-sheet[data-sheet="full"]) .top {
+  margin-top: calc(-1 * var(--bar-h));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :where(html.bottom-sheet) .panel-pane:not(.dragging) {
+    transition: height 0.25s var(--ease);
+  }
+
+  :where(html.bottom-sheet) .top {
+    transition: margin-top 0.25s var(--ease);
+  }
 }
 
 /* The copy and the link are in the menu on every phone. Below 480px the logo is 24px and the name 14px;

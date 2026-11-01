@@ -207,8 +207,8 @@ describe('the web page: the Problems strip', function () {
   for (const width of [390, 640, 1280]) {
     it(`lays the strip out on one row inside the editor's pane: ${width} px, both languages`, async () => {
       for (const lang of ['en', 'ja'] as const) {
-        const { devices } = await import('playwright-core');
-        const ctx = await browser.newContext({ ...(width < 520 ? devices['iPhone 13'] : {}), viewport: { width, height: 800 }, locale: lang === 'ja' ? 'ja-JP' : 'en-US' });
+        // (390 px: a narrow window. A phone has no strip: its list is a tab of the explanation's sheet, test/web-sheet.test.ts.)
+        const ctx = await browser.newContext({ viewport: { width, height: 800 }, locale: lang === 'ja' ? 'ja-JP' : 'en-US' });
         const page = await ctx.newPage();
         // (Three levels, two-digit counts, a line of three digits: the widest strip.)
         await open(page, `${'read a\n'.repeat(12)}${'x = 1\n'.repeat(10)}${'\n'.repeat(80)}[ -f a`);

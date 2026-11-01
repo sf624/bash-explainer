@@ -91,7 +91,8 @@ describe('the panel keeps the row acted on in place', function () {
       await page.goto(base);
       const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
       await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
-      await page.locator('.cm-content').click();
+      // (Focused, not clicked: on a phone the middle of the editor's content lies under the explanation's sheet.)
+      await page.locator('.cm-content').focus();
       await page.keyboard.press('Control+A');
       await page.keyboard.insertText(text);
       if (text.includes('\n')) await page.keyboard.press('Control+Home');

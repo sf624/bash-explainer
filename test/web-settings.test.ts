@@ -974,7 +974,8 @@ describe('the web page: theme and settings', function () {
     // A change shows in the explanation once the settings close.
     const panelText = () => panel().locator('#main').innerText();
     await page.locator('#settings-done').tap();
-    await page.locator('.cm-content').click();
+    // (Focused, not clicked: on a phone the middle of the editor's content lies under the explanation's sheet.)
+    await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('#!/bin/bash\nfor f in $(ls); do echo "$f"; done');
     await until('the pitfall', panelText, (t) => /Caveat: the output of/.test(t));

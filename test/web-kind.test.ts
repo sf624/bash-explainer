@@ -322,8 +322,8 @@ describe('the web page: the file kind', function () {
         await page.locator('.cm-line').nth(2).waitFor();
         // Read mode on, as on a phone in use.
         await page.locator('#readtip-close').tap().catch(() => undefined);
-        await page.locator('#readmode').tap();
-        const ids = ['menu-open', 'readmode', 'settings-open'];
+        await page.locator('#mode-read').tap();
+        const ids = ['menu-open', 'settings-open'];
         const m = (await page.evaluate(`(() => {
           const t = document.querySelector('.top');
           const boxes = ${JSON.stringify(ids)}.map((id) => { const e = document.getElementById(id); const r = e.getBoundingClientRect(); return [id, e.getClientRects().length > 0, r.left, r.right, r.width, r.height]; });
@@ -355,10 +355,12 @@ describe('the web page: the file kind', function () {
           await page.locator('#menu-close').tap();
         }
         if (scheme === 'light' && (width === 320 || width === 390)) {
-          // The copy works from the panel's header, the link from the menu.
+          // The copy and the link work from the menu (the sheet's row has no room for the panel's tools).
           await page.evaluate('navigator.clipboard.writeText("")');
           await page.locator('.cm-line').nth(7).tap();
-          await page.locator('#copy-md').tap();
+          assert.strictEqual(await page.locator('#copy-md').isVisible(), false, where);
+          await page.locator('#menu-open').tap();
+          await page.locator('#menu-copy-md').tap();
           const md = await until('the copy', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.length > 0);
           assert.match(md, /`/);
           await page.evaluate('navigator.clipboard.writeText("")');

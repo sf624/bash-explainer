@@ -21,11 +21,12 @@ describe('the web page: the menu and the settings sheet', function () {
     await page.goto(base);
     await page.locator('.cm-line').first().waitFor();
     const open = () => page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open);
-    // On a phone the top bar has the menu, the logo and name, read mode and the settings; the link and the rest are in
-    // the menu, the file type and the shell in the editor's header. The explanation's controls are in the panel's header.
+    // On a phone the top bar has the menu, the logo and name and the settings; the link and the rest are in the menu,
+    // Read | Edit, the file type and the shell in the strip above the editor. The explanation's tabs and view are in the
+    // sheet's row, which has no room for Collapse and Copy: Copy as Markdown is in the menu.
     const shown = async (ids: string[]) => Promise.all(ids.map(async (id) => [id, await page.locator(id).isVisible()]));
-    assert.deepStrictEqual(await shown(['#scope-chip', '.brand', '#collapse', '#tab-ref', '#copy-md', '#share', '#settings-open', '#menu-open', '#ed-more', '#github', '#install']),
-      [['#scope-chip', true], ['.brand', true], ['#collapse', true], ['#tab-ref', true], ['#copy-md', true], ['#share', false], ['#settings-open', true], ['#menu-open', true], ['#ed-more', true], ['#github', false], ['#install', false]]);
+    assert.deepStrictEqual(await shown(['#scope-chip', '#read-edit', '.brand', '#collapse', '#tab-ref', '#copy-md', '#share', '#settings-open', '#menu-open', '#ed-more', '#github', '#install']),
+      [['#scope-chip', true], ['#read-edit', true], ['.brand', true], ['#collapse', false], ['#tab-ref', true], ['#copy-md', false], ['#share', false], ['#settings-open', true], ['#menu-open', true], ['#ed-more', true], ['#github', false], ['#install', false]]);
     assert.strictEqual(await page.locator('.top :is(#collapse, #tab-ref, #copy-md)').count(), 0);
     assert.strictEqual(await page.locator('#menu-open').getAttribute('aria-label'), 'Menu');
     assert.strictEqual(await page.locator('#menu-share').innerText(), 'Copy a link to this script');
