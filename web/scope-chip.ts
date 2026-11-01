@@ -11,7 +11,7 @@
 import type { AutoShell, Shell } from '../src/dialect';
 import type { Lang } from '../src/i18n';
 import { scopeChip, ScopeForm, shellChoices } from '../src/ui/scope';
-import { narrow } from './layout';
+import { fitsRow, narrow } from './layout';
 import { closed, focusBack, opening } from './popover';
 import { Kind, KINDS } from './samples';
 import { TEXT } from './text';
@@ -219,7 +219,7 @@ export class ScopeControl {
       this.text.textContent = form.chip;
       this.head.dataset.tools = form.tools;
       this.head.dataset.name = form.name ? 'shown' : 'menu';
-      if (this.fits()) return;
+      if (fitsRow(this.head)) return;
     }
     this.head.classList.add('squeezed');
   }
@@ -233,13 +233,6 @@ export class ScopeControl {
     const natural = Math.ceil(box.getBoundingClientRect().width);
     box.style.flex = '';
     box.style.minWidth = `min(${natural}px, 18ch)`;
-  }
-
-  /** Whether the header's last control (⋯) ends inside it. */
-  private fits(): boolean {
-    const r = this.head.getBoundingClientRect();
-    const end = r.right - parseFloat(getComputedStyle(this.head).paddingRight);
-    return this.head.lastElementChild!.getBoundingClientRect().right <= end + 0.5;
   }
 }
 
