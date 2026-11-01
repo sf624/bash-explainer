@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544), C5 (#562), C6 (#546), C7 (#561) and C8a (PR C8a); the phone checks of C5 and C8a wait on the maintainer (section 8). C8b and C9 are left. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544), C5 (#562), C6 (#546), C7 (#561) and C8a (#567); the phone checks of C5 and C8a wait on the maintainer (section 8). C8b and C9 are left. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -435,7 +435,7 @@ Two PRs, released together (no release between them).
 - Problems is a tab (the desktop strip is not shown). Toasts sit above the sheet's tabs row.
 - The tabs' fit is a rule in src/ui that gives the candidate forms in order, with decision 9's words.
 
-Done (PR C8a). Where the plan above did not fit the code, the plan changed:
+Done (#567). Where the plan above did not fit the code, the plan changed:
 
 - **When.** theme-init.js sets `bottom-sheet` on the page (not `sheet`: the menu and the settings are `.sheet` dialogs) on a phone, and on a touch screen without hover, held upright, up to 1024 px wide, unless the device is a phone whose browser asks for the desktop site (its screen, or a screen's shape seen as a phone's). "Upright" is the screen's orientation (`screen.orientation`), not the window's: the on-screen keyboard makes the window short, and must not turn the sheet off. The sheet implies `narrow` (the phone's bar, 44 px boxes). A narrow desktop window keeps the stacked panes and the divider.
 - **The rule.** src/ui/sheet.ts: `snapHeights` (peek: the row with the sheet's edge and the safe area; half: 55% of the window; full: up to the strip, the app bar gone), `settle` (a release at 0.5 px/ms or more goes to the next height its way; slower, the height nearest to where its speed carries it in 150 ms), `tapped`, `keyed`, `sheetForms` and `problemCounts`; test/sheet.test.ts has the table. The page's speed is measured from the moves of the last 100 ms, each coalesced move with its own time (a phone sends them once a frame).
