@@ -17,7 +17,6 @@ import { fdName, keywords } from '../dict/syntax';
 import { yqSpecsOf } from '../dict/yq';
 import { judgeYq, yqNotes } from '../embedded/yq';
 import { type Text, tx } from '../i18n';
-import { simulateRedirects } from '../idioms';
 import { bracket as bracketLabel, labelText, shorten } from '../label';
 import { fact } from '../messages';
 import { TURNS_ALIASES_ON } from '../messages-alias';
@@ -38,7 +37,7 @@ import { bashTest, readArgs, testArgs } from './argv';
 import { type Explainer, memoKey } from './context';
 import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
-import { redirectInfo, redirectParts } from './redirections';
+import { redirectionNotes, redirectParts } from './redirections';
 import { hostCommand, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, specFor, unquotedWord } from './reads';
 import { exitRefusedNote, posixExitNote, statusRangeNote } from './status';
 import { shellEffectNote } from './where';
@@ -81,8 +80,7 @@ export function command(cx: Explainer, n: SyntaxNode): Token {
   const split = redirectLayoutOf(cx, n);
   if (split) return split;
   // (`echo a > f b 2>&1`: a redirection among the words, and more of them.)
-  const effect = simulateRedirects(redirectionsOf(n).map((r) => redirectInfo(r)), cx.lang);
-  if (effect) cx.note(effect, redirectionsOf(n));
+  redirectionNotes(cx, n, redirectionsOf(n));
   return cx.examplesOf(n, () => {
     return commandToken(cx, n);
   });
@@ -118,8 +116,7 @@ function redirectLayoutOf(cx: Explainer, n: SyntaxNode): Token | undefined {
  * words only, with its description and examples) and each redirection.
  */
 function splitCommand(cx: Explainer, whole: SyntaxNode, body: SyntaxNode, layout: Layout): Token {
-  const effect = simulateRedirects(layout.redirs.map((r) => redirectInfo(r)), cx.lang);
-  if (effect) cx.note(effect, layout.redirs);
+  redirectionNotes(cx, whole, layout.redirs);
   const tail: Tail = {};
   const inner = cx.examplesOf(body, () => commandToken(cx, body, tail), layout);
   inner.span = layout.span;
@@ -254,7 +251,9 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
     head.spec = yq[verdict.flavor];
     head.explanation = cx.t(head.spec.summary);
     // A command over several lines is explained whole, so it always starts on the line explained.
-    for (const text of yqNotes(verdict, cx.lang)) cx.note(text, n);
+    const [ja, en] = [yqNotes(verdict, 'ja'), yqNotes(verdict, 'en')];
+    cx.note(fact(cx.lang, 'yq-flavour', { text: { ja: ja[0], en: en[0] } }), n);
+    cx.note(fact(cx.lang, 'yq-compat', { text: { ja: ja[1], en: en[1] } }), n);
   }
   const where = head.kind === 'builtin' && onlyInFunction(head.spec!, cx.shell) && scopeOf(n) !== 'substitution' ? inFunction(cx.state.env(n)) : undefined;
   if (where === 'no' || where === 'trap') {

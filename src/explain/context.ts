@@ -8,7 +8,7 @@ import type { CommandSpec } from '../argv/spec';
 import type { Shell } from '../dialect';
 import type { Lang, Text } from '../i18n';
 import { shorten } from '../label';
-import { type Fact, type Note, plainNote, said } from '../messages';
+import { type Fact, type Note, said } from '../messages';
 import { anchored, type Found, spanOf } from '../noteanchors';
 import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
@@ -94,15 +94,15 @@ export interface Explainer {
   nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional']): LineExplanation;
 
   /**
-   * A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`, and with the node it is
-   * about (`at`) for `LineExplanation.anchors`. The `notes.pitfalls` setting is applied by `said` (src/messages.ts),
-   * the one rule: a pitfall (by its catalog entry) is not said when the pitfalls are off.
+   * A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`, and with the node or nodes
+   * it is about (`at`; none: the line) for `LineExplanation.anchors`, which give each token the facts about it
+   * (`Token.facts`). The `notes.pitfalls` setting is applied by `said` (src/messages.ts), the one rule: a pitfall (by
+   * its catalog entry) is not said when the pitfalls are off. Every note of a line is a fact of the catalog, or a
+   * problem with a code of its own (a style check, a dialect issue: src/messages.ts, `styleNote`, `problemNote`).
    */
-  say(f: Fact, at: SyntaxNode): string[];
-  /** Adds a fact's note to the line's (as `say` says it), about the node `at`. */
-  note(f: Fact, at: SyntaxNode): void;
-  /** Adds a note to the line's, about the node or nodes `at`. */
-  note(text: string, at: SyntaxNode | readonly SyntaxNode[]): void;
+  say(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): string[];
+  /** Adds a fact's note to the line's (as `say` says it), about the node or nodes `at`. */
+  note(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): void;
   /** Records a construct around the line (`LineExplanation.context`), outermost first. */
   enclosing(entry: ContextEntry): void;
   /** Adds a worked example to the line's. */
@@ -154,7 +154,7 @@ export interface LineOutput {
   readonly context: ContextEntry[];
   /** The texts of notes found on nodes, each once; each is recorded in the anchors (see `anchored`), with its data. */
   anchored(found: readonly Found[]): string[];
-  /** The data of a note of this line, by its text (`LineExplanation.noteInfo`): a note with none is a plain fact. */
+  /** The data of a note of this line, by its text (`LineExplanation.noteInfo`). */
   noteOf(text: string): Note;
   /** Ends the line: what is explained after it is explained whole. */
   end(): void;
@@ -287,21 +287,15 @@ export class LineExplainer implements Explainer, LineOutput {
     this.current = null;
   }
 
-  say(f: Fact, at: SyntaxNode): string[] {
+  say(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): string[] {
     const out = said([f], this.opts.pitfalls);
     this.facts.push(...out);
-    return anchored(out.map((x) => ({ ...x, node: at })), this.anchors, this.data);
+    const nodes: readonly (SyntaxNode | undefined)[] = !at ? [undefined] : 'type' in at ? [at] : at;
+    return anchored(out.flatMap((x) => nodes.map((node) => ({ ...x, ...(node ? { node } : {}) }))), this.anchors, this.data);
   }
 
-  note(f: Fact, at: SyntaxNode): void;
-  note(text: string, at: SyntaxNode | readonly SyntaxNode[]): void;
-  note(what: Fact | string, at: SyntaxNode | readonly SyntaxNode[]): void {
-    if (typeof what !== 'string') {
-      this.notes.push(...this.say(what, at as SyntaxNode));
-      return;
-    }
-    const nodes = 'type' in at ? [at] : at;
-    this.notes.push(...anchored(nodes.map((node) => ({ ...plainNote(what), node })), this.anchors, this.data));
+  note(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): void {
+    this.notes.push(...this.say(f, at));
   }
 
   anchored(found: readonly Found[]): string[] {
@@ -309,7 +303,8 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   noteOf(text: string): Note {
-    return this.data.get(text) ?? plainNote(text);
+    // (Every note said on a line has its data: a fact's, or a problem's of its own kind.)
+    return this.data.get(text)!;
   }
 
   enclosing(entry: ContextEntry): void {

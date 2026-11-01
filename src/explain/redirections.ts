@@ -1,17 +1,18 @@
 // The explanation of redirections (docs/design/analyzer.md, step 5): each operator with its descriptor and target
 // (`>`, `>>`, `>|`, `<`, `<>`, `&>`, `>&`, `<&`, their `-` and `{fd}` forms), here-documents and here-strings, and
 // the redirections that apply to a compound command, `time` or assignments as a whole. What a list of
-// redirections does to the descriptors comes from `simulateRedirects` (src/idioms.ts); the words of a target are
+// redirections does to the descriptors comes from `redirectOrder` (src/idioms.ts); the words of a target are
 // words (src/explain/words.ts). A simple command with redirections before or after its words (`splitCommand`) is
 // the commands' (src/explain/commands.ts).
 import type { Token } from '../analyzer-types';
 import { SHELL_NAMES, featureWorks, type Shell } from '../dialect';
 import { fdName, networkPathAsFile, networkRedirect, networkTarget, redirects, specialDestinations } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
-import { type Redirect, simulateRedirects } from '../idioms';
+import { type FdTarget, type Redirect, redirectOrder, sameTarget } from '../idioms';
 import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
+import { replaceSpan, textBetween } from '../rewrite';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { field, fields, fileContentsOf, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
@@ -39,8 +40,7 @@ export function redirected(cx: Explainer, n: SyntaxNode): Token {
  * (`>f`). `bodyToks` explain it.
  */
 export function redirectedWhole(cx: Explainer, n: SyntaxNode, body: SyntaxNode | undefined, text: string | undefined, bodyToks: Token[], redirs: SyntaxNode[]): Token {
-  const effect = simulateRedirects(redirs.map((r) => redirectInfo(r)), cx.lang);
-  if (effect) cx.note(effect, redirs);
+  redirectionNotes(cx, n, redirs);
   const redirToks = cx.subs(redirs);
   // `time >o`: the keyword carries its redirections.
   if (bodyToks.length === 1 && n.type === 'redirected_statement' && field(n, 'body')!.type === 'time_statement') {
@@ -81,7 +81,35 @@ function nameless(cx: Explainer, n: SyntaxNode, text: string | undefined): strin
   );
 }
 
-/** Operator, descriptor and target of a redirection node, for `simulateRedirects`. */
+/**
+ * The notes on what the redirections of a command (or of the statement they apply to, `n`) do together, in their order
+ * (3.6): where each descriptor points in the end (`redirections-in-order`), and a `2>&1` before stdout goes to a file,
+ * so that stderr goes to the original stdout (`stderr-to-original-stdout`), with the rewrite that swaps them. Not where
+ * the command writes into a pipe: `cmd 2>&1 >/dev/null | grep …` sends its error messages alone into it, on purpose.
+ */
+export function redirectionNotes(cx: Explainer, n: SyntaxNode, redirs: readonly SyntaxNode[]): void {
+  const order = redirectOrder(redirs.map((r) => redirectInfo(r)));
+  if (!order) return;
+  const to = (fd: number): FdTarget | undefined => order.table.find((e) => e.fd === fd)?.to;
+  // (Where stderr still goes to the original stdout in the end: not `2>&1 >f 2>e`.)
+  const first = order.stderrFirst && sameTarget(to(2), { kind: 'original', fd: 1 }) ? order.stderrFirst : undefined;
+  const piped = !!first && intoPipe(n);
+  cx.note(fact(cx.lang, 'redirections-in-order', { ...order, ...(piped ? { piped } : {}) }), redirs);
+  if (!first || piped) return;
+  const dup = redirs[first.dup];
+  const file = redirs[first.stdoutTo];
+  // (`2>&1 x >f` becomes `x >f 2>&1`: what is between them stays, before.)
+  const code = `${textBetween(dup, file).slice(dup.text.length).replace(/^[ \t]+/, '')} ${dup.text}`;
+  cx.note(fact(cx.lang, 'stderr-to-original-stdout', { dup: dup.text, file: file.text, rewrite: [replaceSpan(dup, file, code)] }), dup);
+}
+
+/** Whether statement `n` writes into a pipe: a stage of a pipeline but the last (`a | b`, `a |& b`). */
+function intoPipe(n: SyntaxNode): boolean {
+  const p = n.parent;
+  return p?.type === 'pipeline' && p.children.some((c) => c.startIndex >= n.endIndex && (c.type === '|' || c.type === '|&'));
+}
+
+/** Operator, descriptor and target of a redirection node, for `redirectOrder`. */
 export function redirectInfo(r: SyntaxNode): Redirect {
   if (r.type === 'file_redirect') {
     const { op, dest } = redirectParts(r);

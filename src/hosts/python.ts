@@ -130,33 +130,26 @@ export function python(b: Builder): void {
         // shell=True with a list: the first item is the script, the rest become $0, $1…
         const script = pyScript(b, src, items[0][0], items[0][1], pos);
         if (!script) continue;
-        b.region(script.first, script.last, label(['shell=True のリストの最初の要素をシェルが実行', 'shell=True: the shell runs the first item of the list']), target, [[
-          'shell=True にリストを渡すと、最初の要素だけがシェルのコマンドになり、残りの要素はシェルへの引数（$0, $1…）になります。',
-          'With shell=True and a list, only the first item is the shell command; the other items become arguments of the shell ($0, $1…).',
-        ]]);
+        b.region(script.first, script.last, label(['shell=True のリストの最初の要素をシェルが実行', 'shell=True: the shell runs the first item of the list']), target, [{ spec: { id: 'python-shell-list', params: {} } }]);
         continue;
       }
       const words = items.map(([a, z]) => pyWord(src, a, z, pos));
       if (words.some((w) => !w)) continue;
       const ws = words as JsonWord[];
       execWords(b, ws);
-      b.execRegion(ws[0].line, ws[ws.length - 1].line, label(['シェルを通さずに実行する引数のリスト', 'arguments run without a shell']), [[
-        'リストで渡した引数はシェルを通さずにそのまま実行されます。`$VAR` の展開・パイプ・リダイレクト・`&&` などは働きません（値を安全に渡せる書き方です）。',
-        'A list of arguments is run directly, without a shell: `$VAR`, pipes, redirections and `&&` do not work (the safe way to pass values).',
-      ]], ['Python の文字列', 'Python string']);
+      b.execRegion(ws[0].line, ws[ws.length - 1].line, label(['シェルを通さずに実行する引数のリスト', 'arguments run without a shell']), [{ spec: { id: 'python-exec-list', params: {} } }], ['Python の文字列', 'Python string']);
       continue;
     }
     const script = pyScript(b, src, a0, z0, pos);
     if (!script) continue;
     const notes: RegionNote[] = [];
     if (!usesShell && /\s/.test(script.text.trim())) {
-      notes.push(shellArg === undefined || shellArg === 'False' ? { spec: { id: 'python-string-without-shell', params: {} }, code: 'pythonNoShell' } : [
-        'shell= の値が式なので、この文字列をシェルが実行するかは実行時に決まります。', 'shell= is an expression, so whether a shell runs this string is decided at run time.']);
+      notes.push(shellArg === undefined || shellArg === 'False' ? { spec: { id: 'python-string-without-shell', params: {} }, code: 'pythonNoShell' } : { spec: { id: 'python-shell-expression', params: {} } });
     }
     if (usesShell && script.interpolated) {
       notes.push({ spec: { id: 'python-shell-injection', params: {} }, code: 'pythonInjection' });
     }
-    if (script.partial) notes.push(['文字列の後ろは Python のコードで組み立てられるため、解説しているのは文字列リテラルの部分だけです。', 'The rest of the string is built by Python code; only the string literal is explained.']);
+    if (script.partial) notes.push({ spec: { id: 'python-string-partial', params: {} } });
     const sh = target === 'sh' ? '/bin/sh' : target;
     const what: [string, string] = usesShell ? [`シェル（${sh}）が実行する文字列`, `a string the shell (${sh}) runs`] : ['シェルを通さないコマンド文字列', 'a command string run without a shell'];
     b.region(script.first, script.last, label(what), usesShell ? target : 'bash', notes);

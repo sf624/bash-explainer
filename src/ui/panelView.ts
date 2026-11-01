@@ -191,7 +191,7 @@ export function panelUpdate(p: PanelLine) {
       shells: [['auto', autoShellText(lang, 'option', p.detected)], ...Object.entries(SHELL_NAMES)],
       shell: p.choice.shell ?? 'auto',
       // The yq choice only matters on lines that run yq.
-      yqs: ex.notes.some((n) => n.startsWith('yq:')) ? [['auto', tp.auto], ...Object.entries(YQ_NAMES).map(([k, v]) => [k, v[lang === 'ja' ? 0 : 1]])] : undefined,
+      yqs: ex.facts?.some((f) => f.id === 'yq-flavour') ? [['auto', tp.auto], ...Object.entries(YQ_NAMES).map(([k, v]) => [k, v[lang === 'ja' ? 0 : 1]])] : undefined,
       yq: p.choice.yq ?? 'auto',
     },
     file: p.file,

@@ -36,6 +36,7 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'redirect-in-bracket': { subjects: 15, ran: 10, checks: 19, skipped: { 'a redirection to a word that is not plain text': 5 } },
   'regex-backslash-dropped': { subjects: 2, ran: 2, checks: 24, skipped: {} },
   'rm-empty-variable-root': { subjects: 48, ran: 31, checks: 93, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, '`sudo` with an option': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `DIR`': 4, 'the script sets `D`': 6 } },
+  'stderr-to-original-stdout': { subjects: 8, ran: 8, checks: 8, skipped: {} },
   'source-searches-path': { subjects: 8, ran: 0, checks: 0, skipped: { '`.`': 4, '`source`': 2, 'bash does not parse it': 2 } },
   'unbraced-element': { subjects: 1, ran: 1, checks: 1, skipped: {} },
   'unmatched-glob-runs-once': { subjects: 7, ran: 7, checks: 21, skipped: {} },

@@ -1,19 +1,3 @@
 {
-  "plain": [
-    {"file":"src/analyzer.ts","fn":"explainLine","kind":"plain-note","count":1,"to":"catalog fact","reason":"the idioms: `findIdioms` makes each note's text inline, and the line wraps it with `plainNote`, so it has no id, sections or level"},
-    {"file":"src/dialect.ts","fn":"unsupported","kind":"plain-note","count":1,"to":"catalog fact","reason":"the dialect checks (laterOption, funsubBrace, versions) build their text inline and mark it Warning with `marked`, with an id of their own but not a catalog fact"},
-    {"file":"src/dialect.ts","fn":"dialectIssues","kind":"plain-note","count":2,"to":"catalog fact","reason":"the dialect checks build their text inline: the zsh note by `plainNote`, the portability notes by `marked` at Info"},
-    {"file":"src/dialect.ts","fn":"dialectFound","kind":"plain-note","count":1,"to":"catalog fact","reason":"the zsh note of a line the dialect check could not read, by `plainNote`"},
-    {"file":"src/explain/context.ts","fn":"note","kind":"plain-note","count":1,"to":"catalog fact","reason":"the machinery of the string overload `cx.note(text)`: it wraps the text in a note with no id; it goes with the overload"},
-    {"file":"src/explain/context.ts","fn":"noteOf","kind":"plain-note","count":1,"to":"catalog fact","reason":"the machinery of the string overload `cx.note(text)`: a text with no data is a plain note; it goes with the overload"},
-    {"file":"src/explain/line-notes.ts","fn":"continuationNotes","kind":"notes-push","count":3,"to":"catalog fact","reason":"the here-document and continuation notes are plain strings handed to the line's notes (src/analyzer.ts spreads them in)"},
-    {"file":"src/hosts/remap.ts","fn":"substitutionNotes","kind":"plain-note","count":1,"to":"catalog fact","reason":"what each `${{ }}` substitution of a CI file means is a plain note built inline"},
-    {"file":"src/hosts/remap.ts","fn":"explainHostedLine","kind":"plain-note","count":1,"to":"catalog fact","reason":"the notes that a host region carries as text, and the GitHub file notes, are plain notes"},
-    {"file":"src/pitfalls.ts","fn":"pitfallFindings","kind":"plain-note","count":1,"to":"catalog fact","reason":"the style checks build their text inline (`s(ja, en)`) and mark it with `marked`; their ids are not catalog facts"},
-    {"file":"src/explain/commands.ts","fn":"command","kind":"note-string","count":1,"to":"catalog fact","reason":"`cx.note(effect)`: the text of `simulateRedirects` (src/idioms.ts), which builds the descriptor table as prose, the `2>&1 >file` note inside it (sources.md, M3)"},
-    {"file":"src/explain/commands.ts","fn":"splitCommand","kind":"note-string","count":1,"to":"catalog fact","reason":"`cx.note(effect)`: the text of `simulateRedirects` (src/idioms.ts), which builds the descriptor table as prose, the `2>&1 >file` note inside it (sources.md, M3)"},
-    {"file":"src/explain/commands.ts","fn":"commandTail","kind":"note-string","count":1,"to":"catalog fact","reason":"`cx.note(text)` for each line of `yqNotes` (src/embedded/yq.ts), which builds the yq notes inline"},
-    {"file":"src/explain/examples.ts","fn":"readExample","kind":"note-string","count":1,"to":"catalog fact","reason":"`cx.note(r.note)`: the note of the `read` example (src/examples/commands.ts `readExample`), a text from the simulator"},
-    {"file":"src/explain/redirections.ts","fn":"redirectedWhole","kind":"note-string","count":1,"to":"catalog fact","reason":"`cx.note(effect)`: the text of `simulateRedirects` (src/idioms.ts), the descriptor table as prose (sources.md, M3)"}
-  ]
+  "plain": []
 }

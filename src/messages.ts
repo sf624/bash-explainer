@@ -1,9 +1,9 @@
 import { basisOf, type Basis, type BasisSpec, type TryIt } from './basis';
 import type { ConventionId } from './conventions';
-import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
 import { alwaysFails, LEVELS, namesLevel, type NoteLevel, severityOf } from './levels';
+import { PROBLEM_LEVELS, STYLE_LEVELS, type StyleCase, type StyleCode } from './messages-levels';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
 import { aliasDefinedText, aliasMaybeText, aliasNotExpandedText } from './messages-alias';
 import { inTrap, LOCAL_SOURCED, noShebang, readByBashrc, unreadClause } from './messages-common';
@@ -14,11 +14,15 @@ import {
   variableNotExportedText, variableNotInRemoteText, variableNotPassedText,
 } from './messages-wrappers';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
+import { IDIOM_MESSAGES } from './messages-idioms';
+import {
+  continuedText, githubFileText, heredocBodyText, heredocEndText, HOST_NOTES, hostSubstitutionText, readSeparatorsText, redirectOrderText, stderrFirstText,
+} from './messages-lines';
 import { noShellLines } from './messages-shell';
+import type { RedirectOrder } from './idioms';
 import type { Rewrite } from './rewrite';
 import type { NameFacts, NameKind } from './semantics/names';
 import type { ShebangRefusal } from './semantics/state';
-import type { ExpansionValue } from './semantics/values';
 
 // The message catalog: the notes and pitfalls that render a fact of the semantic models (src/semantics/: the shell
 // state, where code runs, words, names, status), each with a stable id, its texts in ja and en, and the sections of
@@ -643,6 +647,36 @@ export const MESSAGES = {
   'actions-script-injection': withConvention(pitfall<{ expr: string }>(['3.1.1', '3.1.2'], ({ expr }) => [
     `\`${expr}\` は外部の人が自由に書ける値で、そのままスクリプトに埋め込まれます（\`"; curl … | sh #\` のような値で任意のコマンドが実行される）。\`env:\` で環境変数に渡し、\`"$変数"\` として使ってください。`,
     `\`${expr}\` can be set by anyone and is pasted into the script as it is (a value like \`"; curl … | sh #\` runs arbitrary commands). Pass it through \`env:\` and use it as \`"$VAR"\`.`], { ja: 'スクリプトインジェクションの危険: ', en: 'Script injection risk: ' }), 'actions-expression-through-env'),
+  // ---------------------------------------------------------------- redirections, where a line is, idioms, hosts' notes
+  // (src/messages-lines.ts, src/messages-idioms.ts; plain notes before SB3a of docs/design/sources.md. 3.6: "Redirections
+  // are processed in the order they appear, from left to right", and "the order of redirections is significant":
+  // `ls 2>&1 > dirlist` sends only stdout to the file. A caveat, not a pitfall: the order is often meant; none where the
+  // command writes into a pipe, where it is the way to send stderr alone into it (`piped`).)
+  'redirections-in-order': note<RedirectOrder & { piped?: boolean }>(['3.6', '3.6.8'], redirectOrderText),
+  'stderr-to-original-stdout': suggests(caveat<{ dup: string; file: string; rewrite: readonly Rewrite[] }>(['3.6', '3.6.8'], stderrFirstText)),
+  'heredoc-end-line': note<{ end: string; operator: string; line: number }>(['3.6.6'], heredocEndText),
+  'heredoc-body-line': note<{ operator: string; line: number }>(['3.6.6'], heredocBodyText),
+  'statement-continued': note<{ line: number }>(['3.1.2.1'], continuedText),
+  'read-ifs-separators': note<{ ifs: string; seps: readonly string[] }>(['3.5.7', '4.2'], readSeparatorsText),
+  ...IDIOM_MESSAGES,
+  // (yq: which of the three tools of that name this is, and which run the line: the name is looked up in PATH, 3.7.2.
+  // The words are src/embedded/yq.ts's, `yqNoteTexts`.)
+  'yq-flavour': note<{ text: Words }>(['3.7.2'], ({ text }) => [text.ja, text.en]),
+  'yq-compat': note<{ text: Words }>(['3.7.2'], ({ text }) => [text.ja, text.en]),
+  // (A host replaces its substitutions before the shell reads the line, 3.1.1; a variable of the environment GitHub
+  // Actions gives, 3.7.4; the host's notes on how its code is run, 6.1, and on a status, 3.7.5.)
+  'host-substitution': note<{ text: string; meaning: Words }>(['3.1.1'], hostSubstitutionText),
+  'github-file': note<{ name: string; what: Words }>(['3.7.4'], githubFileText),
+  'dockerfile-onbuild': note<Record<string, never>>(['6.1'], () => HOST_NOTES['dockerfile-onbuild']),
+  'dockerfile-healthcheck': note<Record<string, never>>(['3.7.5'], () => HOST_NOTES['dockerfile-healthcheck']),
+  'dockerfile-exec-form': note<Record<string, never>>(['3.7.2'], () => HOST_NOTES['dockerfile-exec-form']),
+  'yaml-folded-block': note<Record<string, never>>(['3.1.2.1'], () => HOST_NOTES['yaml-folded-block']),
+  'dockerfile-shell': note<Record<string, never>>(['6.1'], () => HOST_NOTES['dockerfile-shell']),
+  'jenkinsfile-groovy-interpolation': note<Record<string, never>>(['3.5.3'], () => HOST_NOTES['jenkinsfile-groovy-interpolation']),
+  'python-shell-list': note<Record<string, never>>(['6.1'], () => HOST_NOTES['python-shell-list']),
+  'python-exec-list': note<Record<string, never>>(['3.7.2'], () => HOST_NOTES['python-exec-list']),
+  'python-shell-expression': note<Record<string, never>>(['6.1'], () => HOST_NOTES['python-shell-expression']),
+  'python-string-partial': note<Record<string, never>>(['3.1.1'], () => HOST_NOTES['python-string-partial']),
 } satisfies Record<string, Entry<never>>;
 
 export type FactId = keyof typeof MESSAGES;
@@ -669,13 +703,33 @@ export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly 
 
 /**
  * A note of `level` whose text starts with its mark, then the word that names the level (or its heading, `heading`)
- * for a pitfall, and for every note at a level whose word goes with every kind (an error: "Error:"), then `body`.
+ * for a pitfall, and for every note at a level whose word goes with every kind (an error: "Error:"), then `body`. Only
+ * the catalog makes notes (docs/design/sources.md, row 14): a fact (`fact`), a style check's (`styleNote`), a dialect
+ * issue's (`problemNote`).
  */
-export function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?: FactKind; heading?: Text; code?: string } = {}): Note {
+function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?: FactKind; heading?: Text; code?: string } = {}): Note {
   const { kind = 'note', heading, code } = opts;
   const { word: levelWord, wordOnEvery } = LEVELS[level];
   const word = heading ? heading[lang] : kind === 'pitfall' || wordOnEvery ? levelWord[lang] : '';
   return { text: `${LEVELS[level].mark} ${word}${body}`, level, label: word.trimEnd(), body, ...(code ? { code } : {}) };
+}
+
+/**
+ * The note of a style check of src/pitfalls.ts, which is no fact of the catalog (its text is the check's): a pitfall,
+ * at its level from `STYLE_LEVELS` (by what the check found, `c`), with its code.
+ */
+export function styleNote(lang: Lang, code: StyleCode, body: string, c: StyleCase = {}): Note & { code: StyleCode } {
+  const entry = STYLE_LEVELS[code];
+  return { ...marked(lang, typeof entry === 'function' ? entry(c) : entry, body, { kind: 'pitfall' }), code };
+}
+
+/**
+ * The note of a dialect issue of src/dialect.ts, which is no fact of the catalog (its text is the dialect table's), at
+ * its level from `PROBLEM_LEVELS`: a construct the target shell lacks (`unsupported`, "Error:"), one that works
+ * differently there (`behaviour`, "Portability:"), zsh syntax the line cannot be read with (`parse`, a plain note).
+ */
+export function problemNote(lang: Lang, kind: 'unsupported' | 'behaviour' | 'parse', code: string, body: string): Note {
+  return marked(lang, PROBLEM_LEVELS[kind], body, { code, ...(kind === 'behaviour' ? { heading: PORTABILITY } : {}) });
 }
 
 /**
@@ -686,11 +740,6 @@ export function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?
  */
 export function problemText(n: Note, lang: Lang): string {
   return namesLevel(n.level, n.label, lang) ? `${LEVELS[n.level].mark} ${n.body}` : n.text;
-}
-
-/** A note with no mark (an idiom, where a line is): a plain fact, the whole text its body. */
-export function plainNote(text: string): Note {
-  return { text, level: 'note', label: '', body: text };
 }
 
 /** The heading of a dialect note on a construct that works differently in the target shell (src/dialect.ts). */
@@ -883,111 +932,4 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
   };
 }
 
-/**
- * What the outputs say of the value of an expansion where it runs (`Token.value`; docs/design/expansion-values.md):
- * the model's value, from the script's own assignments, not bash's output. The panel draws `value` and the words of
- * `split` as chips between the texts; the other outputs show `text`.
- */
-export interface ValueSaid {
-  /** Before the value: "Value here, from the script:". */
-  lead: string;
-  /** The value as shown (control characters as pictures, cut when long); absent when it is empty (then `empty`). */
-  value?: string;
-  /** How many characters at each end of `value` are marks of a space (`␣`), for the outputs that draw them (see `spaceLabel`). */
-  valueEnds?: SpaceEnds;
-  /** "an empty string", in place of `value`. */
-  empty?: string;
-  /** What word splitting makes of it, when that is not the value itself: the text before the words, and the words as shown. */
-  split?: { said: string; words: string[]; wordEnds: SpaceEnds[] };
-  /** What a drawn mark of a space is called ("space"), when `value` or a word has one: the label of the panel's and the hover's mark. */
-  spaceLabel?: string;
-  /** After the rest: a glob in the value, what the control characters' pictures are (inline Markdown, with no value in it). */
-  tail?: string;
-  /** The whole line in inline Markdown, for the outputs with no chips (the hover, Markdown, the CLI). */
-  text: string;
-}
-
-/** The characters at the start and at the end of a shown text that are marks of a space. */
-export type SpaceEnds = readonly [lead: number, trail: number];
-
-/** How long a value, or a word of it, is shown; a longer one is cut. */
-const VALUE_SHOWN = 80;
-/**
- * How a space at either end of a value, and an empty word of a split value, are shown in the outputs that are text only.
- * U+2423 (OPEN BOX) is in far more fonts than U+2420 (SYMBOL FOR SPACE), which a machine with few fonts draws as a box;
- * the panel and the hover draw the mark themselves (`SpaceEnds`), and use this one only where a note names it.
- */
-export const SPACE_MARK = '␣';
-export const EMPTY_WORD = '∅';
-/** How many words of a split value are shown. */
-const WORDS_SHOWN = 12;
-
-/**
- * A value, or a word of it, as the outputs show it: control characters as pictures, a space at either end as `␣`, an
- * empty word as `∅`, cut when long; `ends`: how many characters at each end are marks of a space.
- */
-export function shownWord(t: string): { text: string; ends: SpaceEnds } {
-  // (A newline is shown as `␊`, as in the notes on quote removal, so that it is not read as the two characters `\n`.
-  // A space at either end is `␣`: Markdown takes one space at each end of a code span as padding, and a chip or a
-  // hover would hide it. An empty word of a split value is `∅`. The cut is on characters, not on UTF-16 units.)
-  if (t === '') return { text: EMPTY_WORD, ends: [0, 0] };
-  const chars = [...t].map((c) => (c === '\n' ? '␊' : visibleChar(c)));
-  const cut = chars.length > VALUE_SHOWN;
-  const units = cut ? [...chars.slice(0, VALUE_SHOWN - 1), '…'] : chars;
-  const first = units.findIndex((c) => c !== ' ');
-  const last = units.map((c) => c !== ' ').lastIndexOf(true);
-  const marked = units.map((c, i) => c === ' ' && (i < first || (!cut && i > last)));
-  const firstText = marked.indexOf(false);
-  const lead = firstText < 0 ? 0 : firstText;
-  const trail = firstText < 0 ? marked.length : marked.length - 1 - marked.lastIndexOf(false);
-  return { text: units.map((c, i) => (marked[i] ? SPACE_MARK : c)).join(''), ends: [lead, trail] };
-}
-
-/** The texts of the value of an expansion, in `lang`; `bash`: false in a script of sh or dash (the shell runs it, not bash). */
-export function valueSaid(lang: Lang, v: ExpansionValue, bash = true): ValueSaid {
-  const ja = lang === 'ja';
-  const show = shownWord;
-  const lead = ja ? 'スクリプトから分かるここでの値:' : 'Value here, from the script:';
-  const shownValue = v.text === '' ? undefined : show(v.text);
-  const value = shownValue?.text;
-  const words = v.words;
-  let split: ValueSaid['split'];
-  if (words && !(words.length === 1 && words[0] === v.text)) {
-    const n = words.length;
-    const shown = words.slice(0, WORDS_SHOWN).map(show);
-    const more = n > WORDS_SHOWN ? (ja ? `（最初の ${WORDS_SHOWN} 語）` : ` (the first ${WORDS_SHOWN})`) : '';
-    split = n === 0
-      ? { said: ja ? '。クォートしていないので単語分割され、単語は残らない' : '; unquoted, it is split and gives no word', words: [], wordEnds: [] }
-      : { said: ja ? `。クォートしていないので単語分割され、${n} 語になる${more}:` : `; unquoted, it is split into ${n === 1 ? '1 word' : `${n} words`}${more}:`, words: shown.map((w) => w.text), wordEnds: shown.map((w) => w.ends) };
-  }
-  const tails: string[] = [];
-  if (v.glob && v.joined) {
-    tails.push(ja ? '。クォートしていないので、ワイルドカードを含む単語が前後の文字列とつながったままパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
-      : '. Unquoted, the word its wildcards end up in, with the text around it, is a pattern: bash matches it against file names when the line runs (not done here)');
-  } else if (v.glob) {
-    tails.push(ja ? '。クォートしていないのでパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
-      : `. Unquoted, it is a pattern: ${bash ? 'bash' : 'the shell'} matches it against file names when the line runs (not done here)`);
-  }
-  const shownTexts = [value ?? '', ...(split?.words ?? [])];
-  const pictures = pictureList(shownTexts, (j, e) => (ja ? j : e));
-  if (pictures) tails.push(ja ? `（制御文字は記号で表している: ${pictures}）` : ` (control characters are shown as symbols: ${pictures})`);
-  const escapes = invisibleList(shownTexts, (j, e) => (ja ? j : e));
-  if (escapes) tails.push(ja ? `（見えない文字はコードで表している: ${escapes}）` : ` (invisible characters are shown as their code: ${escapes})`);
-  const spaced = [shownValue?.ends, ...(split?.wordEnds ?? [])].some((e) => e && e[0] + e[1] > 0);
-  const marks = [
-    ...(spaced ? [ja ? `\`${SPACE_MARK}\` は端の空白` : `\`${SPACE_MARK}\` is a space at an end`] : []),
-    ...(split?.words.includes(EMPTY_WORD) ? [ja ? `\`${EMPTY_WORD}\` は空の単語` : `\`${EMPTY_WORD}\` is an empty word`] : []),
-  ];
-  if (marks.length) tails.push(ja ? `（${marks.join('、')}）` : ` (${marks.join(', ')})`);
-  const tail = tails.length ? tails.join('') : undefined;
-  const empty = ja ? '空文字列' : 'an empty string';
-  const text = `${lead} ${value !== undefined ? codeSpan(value) : empty}${split ? split.said + split.words.map((w) => ` ${codeSpan(w)}`).join('') : ''}${tail ?? ''}`;
-  return {
-    lead,
-    ...(value !== undefined ? { value, valueEnds: shownValue!.ends } : { empty }),
-    ...(split ? { split } : {}),
-    ...(spaced ? { spaceLabel: ja ? '空白' : 'space' } : {}),
-    ...(tail ? { tail } : {}),
-    text,
-  };
-}
+export { EMPTY_WORD, shownWord, SPACE_MARK, type SpaceEnds, valueSaid, type ValueSaid } from './messages-values';

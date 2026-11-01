@@ -6,8 +6,8 @@ import type { HostRun } from '../semantics/walk/host';
 /** Kinds of files whose shell snippets are explained. */
 export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python' | 'jenkinsfile' | 'bats';
 
-/** A note on every line of a region: [ja, en], or a catalog fact (its `code` makes it a warning in the Problems panel). */
-export type RegionNote = [ja: string, en: string] | { spec: FactSpec; code: string };
+/** A note on every line of a region: a catalog fact; a warning's `code` is its problem in the Problems panel (none: the fact's id). */
+export type RegionNote = { spec: FactSpec; code?: string };
 
 /** Which CI system a YAML step belongs to, when the file says. */
 export type HostCi = 'github' | 'circleci' | 'azure';

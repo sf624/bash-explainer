@@ -1467,7 +1467,7 @@ describe('tricky lines (round 6)', () => {
     assert.strictEqual(expl('echo a 2>&1', '2>&1'), 'Send stderr (fd 2) to wherever stdout (fd 1) goes (the classic way to capture errors too)');
     // The note does not take `3-` for a file name: 3 is closed, and 4 is the original 3.
     const note = notesAt(src).join('\n');
-    assert.match(note, /^Redirections apply left to right\. In the end: fd 3 → closed, fd 4 → the original stdout$/m);
+    assert.match(note, /^ℹ Redirections apply left to right\. In the end: fd 3 → closed, fd 4 → the original stdout$/m);
     assert.match(notesAt('echo a 5>&6- 2>&1').join('\n'), /fd 5 → the original fd 6, fd 6 → closed/);
     assert.doesNotMatch(notesAt('echo a 5>&6-').join('\n'), /5>&6-|`6-`/);
     assert.strictEqual(bash('{ echo moved >&4; } 3>&1 4>&3-'), 'moved\n');
@@ -1486,7 +1486,7 @@ describe('tricky lines (round 6)', () => {
     assert.strictEqual(expl('echo a {v}<&-', '{v}<&-'), 'Close the file descriptor whose number is in variable `v`');
     assert.strictEqual(expl('echo a {v}<&0', '{v}<&0'), 'Copy stdin (fd 0) to a free file descriptor (10 or higher) and store its number in variable `v` (sharing the input)');
     assert.strictEqual(expl('echo a {v}>&3-', '{v}>&3-'), 'Move file descriptor 3 to a free file descriptor (10 or higher), closing 3, and store the new number in variable `v`');
-    assert.match(notesAt('echo a {v}>&3- 2>&1').join('\n'), /^Redirections apply left to right\. In the end: stderr → the original stdout$/m);
+    assert.match(notesAt('echo a {v}>&3- 2>&1').join('\n'), /^ℹ Redirections apply left to right\. In the end: stderr → the original stdout$/m);
     assert.strictEqual(notesAt('echo a {v}>f {w}>&1').length, 0);
     assert.strictEqual(bash('exec {fd}>&1; echo $fd; echo hi >&$fd; exec {fd}>&-; echo closed'), '10\nhi\nclosed\n');
     assert.strictEqual(bash('exec {g}</dev/null; echo $g; exec {h}>/dev/null; echo $h; exec {g}<&-; exec {i}<&0; echo $i'), '10\n11\n10\n');
@@ -2109,7 +2109,7 @@ describe('words as bash reads them (round 10)', () => {
     assert.strictEqual(run('shopt -s nullglob; for f in *.txt; do echo "[$f]"; done; echo end'), 'end\n');
     assert.match(run('shopt -s failglob; for f in *.txt; do echo "[$f]"; done'), /^no match: \*\.txt\n$/);
     const loop = 'for f in *.txt; do [ -e "$f" ] || continue; echo "$f"; done';
-    const idiom = (src: string) => notesAt(src).some((n) => /^Idiom: skips a name that does not exist/.test(n));
+    const idiom = (src: string) => notesAt(src).some((n) => /^ℹ Idiom: skips a name that does not exist/.test(n));
     assert.ok(idiom(loop));
     for (const opt of ['nullglob', 'failglob']) assert.ok(!idiom(`shopt -s ${opt}; ${loop}`), opt);
     assert.ok(idiom(`shopt -s nullglob; shopt -u nullglob; ${loop}`));
@@ -2230,7 +2230,7 @@ describe('words as bash reads them (round 10, review)', () => {
     assert.strictEqual(run('touch a1; y=~/a*; echo "$y"'), '/home/w/a*\n');
     assert.match(findAt('y=~/a*', 0, '~/a*').explanation, /^Tilde expansion: .*\. An assignment does no file-name expansion, so `\*` and `\?` are assigned as they are$/);
     assert.match(findAt('y=~/a*', 0, '~/a*', 'ja').explanation, /代入ではファイル名の展開はされないので/);
-    const idiom = (src: string) => notesAt(src).some((n) => /^Idiom: skips a name that does not exist/.test(n));
+    const idiom = (src: string) => notesAt(src).some((n) => /^ℹ Idiom: skips a name that does not exist/.test(n));
     assert.strictEqual(run('set -- nothing-here; for f in "$@"; do [ -e "$f" ] || continue; echo "$f"; done; echo end'), 'end\n');
     assert.ok(!idiom('for f in "$@"; do [ -e "$f" ] || continue; echo "$f"; done'));
     assert.ok(!idiom('for f in *.txt; do [ -e "$g" ] || continue; done'));

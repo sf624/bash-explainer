@@ -1,7 +1,7 @@
 // Where a note is about (docs/design/hover.md, "Notes"): the range of the node a note was found on. The line's notes
 // are texts (`LineExplanation.notes`) beside their data (`LineExplanation.noteInfo`), so an anchor ties a note's text
 // to a range; the part hover shows only the notes about the part, and the problems are made from them.
-import type { NoteAnchor, Span } from './analyzer-types';
+import type { NoteAnchor, Pos, Span } from './analyzer-types';
 import { conventionOf, type Note } from './messages';
 import type { Rewrite } from './rewrite';
 import type { Point } from './syntax/tree';
@@ -15,6 +15,12 @@ export function spanOf(n: Placed): Span {
     end: { line: n.endPosition.row, character: n.endPosition.column },
   };
 }
+
+const atOrBefore = (a: Pos, b: Pos): boolean => a.line < b.line || (a.line === b.line && a.character <= b.character);
+/** Whether the range `inner` lies within `outer` (the same range too). */
+export const spanWithin = (inner: Span, outer: Span): boolean => atOrBefore(outer.start, inner.start) && atOrBefore(inner.end, outer.end);
+/** Whether two ranges are the same. */
+export const sameSpan = (a: Span, b: Span): boolean => spanWithin(a, b) && spanWithin(b, a);
 
 /** A note found on a node (none: about the line), with the rewrites it suggests there (`Fact.rewrite`, `StyleFinding.rewrite`). */
 export type Found = Note & { node?: Placed; rewrite?: readonly Rewrite[] };

@@ -157,6 +157,55 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'python-string-without-shell': 'prose',
   'python-shell-injection': 'prose',
   'actions-script-injection': 'prose',
+  // (`2>&1 >file` → `>file 2>&1`: the text shows the code of the rewrite, which the test above cannot read through its placeholder.)
+  'stderr-to-original-stdout': { kind: 'mechanical', via: 'rewrite' },
+  'redirections-in-order': 'none',
+  'heredoc-end-line': 'none',
+  'heredoc-body-line': 'none',
+  'statement-continued': 'none',
+  'read-ifs-separators': 'none',
+  'yq-flavour': 'none',
+  'yq-compat': 'none',
+  'host-substitution': 'none',
+  'github-file': 'none',
+  'dockerfile-onbuild': 'none',
+  'dockerfile-healthcheck': 'none',
+  'dockerfile-exec-form': 'none',
+  'yaml-folded-block': 'none',
+  'dockerfile-shell': 'none',
+  'jenkinsfile-groovy-interpolation': 'prose',
+  'python-shell-list': 'none',
+  'python-exec-list': 'none',
+  'python-shell-expression': 'none',
+  'python-string-partial': 'none',
+  'idiom-ifs-read-raw': 'none',
+  'idiom-script-dir': 'none',
+  'idiom-cd-script-dir': 'none',
+  'idiom-quiet-check': 'none',
+  'idiom-run-directly': 'none',
+  'idiom-strict-mode': 'none',
+  'idiom-require-variable': 'none',
+  'idiom-default-variable': 'none',
+  'idiom-or-true': 'none',
+  'idiom-exit-trap': 'none',
+  'idiom-exec-tee': 'none',
+  'idiom-endless-loop': 'none',
+  'idiom-mktemp': 'none',
+  'idiom-read-file-loop': 'none',
+  'idiom-read-command-loop': 'none',
+  'idiom-getopts-loop': 'none',
+  'idiom-shift-optind': 'none',
+  'idiom-getopt-loop': 'none',
+  'idiom-getopt-args': 'none',
+  'idiom-eval-set': 'none',
+  'idiom-args-loop': 'none',
+  'idiom-read-nul': 'prose',
+  'idiom-find-print0': 'prose',
+  'idiom-xargs-nul': 'none',
+  'idiom-until': 'prose',
+  'idiom-mapfile': 'prose',
+  'idiom-glob-guard': 'none',
+  'idiom-yes-no': 'none',
 };
 
 /**
@@ -292,7 +341,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 18, scenario: 25, prose: 15, none: 48 });
+      { mechanical: 19, scenario: 25, prose: 20, none: 90 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });

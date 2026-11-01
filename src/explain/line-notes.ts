@@ -6,7 +6,7 @@
 import type { Token } from '../analyzer-types';
 import { hasExtglob } from '../examples/shellwords';
 import { tx } from '../i18n';
-import { fact, factOf, MESSAGES } from '../messages';
+import { type Fact, fact, factOf, MESSAGES } from '../messages';
 import { statementBefore } from '../rewrite';
 import { bashrcReader, STATEMENTS } from '../semantics/env';
 import { wordPatterns } from '../semantics/globwords';
@@ -27,7 +27,7 @@ const statusFactCache = new WeakMap<StatusModel, WeakMap<SyntaxNode, Map<number,
 
 /** The notes on where line `line` is: in a here-document or at its end, or in a statement that started on a line before. */
 export function continuationNotes(cx: Explainer, root: SyntaxNode, line: number, items: Token[]): string[] {
-  const notes: string[] = [];
+  const facts: Fact[] = [];
   for (const h of onLine(root, ['heredoc_redirect'], line)) {
     const body = h.namedChildren.find((c) => c.type === 'heredoc_body');
     const end = h.namedChildren.find((c) => c.type === 'heredoc_end');
@@ -36,24 +36,13 @@ export function continuationNotes(cx: Explainer, root: SyntaxNode, line: number,
     // `<<END`, `3<<-END` as written (its descriptor, and the operator may have a tab-stripping `-`).
     const operator = `${field(h, 'descriptor')?.text ?? ''}${/<<-?/.exec(h.text)![0]}${delim}`;
     // The end line itself can be inside the range of the body (with `<<-` it is indented with tabs).
-    if (end && end.startPosition.row === line) {
-      notes.push(cx.s(`\`${end.text.trim()}\` はヒアドキュメント（行 ${(docLine(h) + 1)} の \`${operator}\`）の終わりを示す行です。`, `\`${end.text.trim()}\` marks the end of the here-document started by \`${operator}\` on line ${(docLine(h) + 1)}.`));
-    } else if (body && intersects(body, line) && body.startPosition.row <= line && h.startPosition.row < line) {
-      notes.push(cx.s(
-        `この行はヒアドキュメント（行 ${(docLine(h) + 1)} の \`${operator}\`）の本文です。`,
-        `This line is part of the here-document started by \`${operator}\` on line ${(docLine(h) + 1)}.`,
-      ));
-    }
+    if (end && end.startPosition.row === line) facts.push(fact(cx.lang, 'heredoc-end-line', { end: end.text.trim(), operator, line: docLine(h) + 1 }));
+    else if (body && intersects(body, line) && body.startPosition.row <= line && h.startPosition.row < line) facts.push(fact(cx.lang, 'heredoc-body-line', { operator, line: docLine(h) + 1 }));
   }
-  for (const it of items) {
-    if (it.span.start.line < line && !notes.length && it.kind !== 'block') {
-      notes.push(cx.s(
-        `この文は行 ${it.span.start.line + 1} から続いています（行末の \`\\\` による行継続など）。`,
-        `This statement starts on line ${it.span.start.line + 1} (e.g. continued with a trailing \`\\\`).`,
-      ));
-    }
-  }
-  return notes;
+  const started = items.find((it) => it.span.start.line < line && it.kind !== 'block');
+  if (!facts.length && started) facts.push(fact(cx.lang, 'statement-continued', { line: started.span.start.line + 1 }));
+  // (About the line, not a part of it.)
+  return facts.flatMap((f) => cx.say(f));
 }
 
 /** The notes (`pitfall: false`) and pitfalls on status and errexit of line `line` (src/semantics/status.ts). */

@@ -7,7 +7,8 @@ import type { SectionMarks } from './examples/marks';
 import type { Interactive } from './examples/rerun';
 import type { HostId, NoShell } from './hosts';
 import type { LabelPart } from './label';
-import type { Fact, Note, SpaceEnds, ValueSaid } from './messages';
+import type { Fact, FactId, Note, SpaceEnds, ValueSaid } from './messages';
+import type { TokenRole } from './roles';
 import type { NameInfo } from './namefacts';
 import type { ReadingNode } from './reading';
 import type { ArgvHoleKind } from './messages-argv';
@@ -44,6 +45,18 @@ export interface Span { start: Pos; end: Pos }
 
 export interface Token {
   kind: Kind;
+  /**
+   * The colour role of its kind (src/roles.ts, `KIND_ROLES`), the same in both languages: set on every token of a
+   * `LineExplanation` once the line is explained (`markTokens`, src/tokenmarks.ts), since a kind may still change while
+   * it is (a word that is a keyword out of place becomes an error).
+   */
+  role?: TokenRole;
+  /**
+   * The facts of the message catalog the line says about this part (src/messages.ts ids, in the order said): those
+   * said at its node (`cx.say`, `cx.note`), or at a part inside it that has no token of its own (`markTokens`). None
+   * when there are none.
+   */
+  facts?: FactId[];
   /**
    * Short label shown in lists: usually the source text of the span, truncated. A command is labelled with its
    * name (`grep`), since its explanation describes the program; a construct, with its skeleton (see `labelParts`).
@@ -158,7 +171,7 @@ export interface ExplainOptions {
   argv?: boolean;
   /** Also give the sentence of the line, "In short" (`LineExplanation.sentence`, src/linesentence.ts). */
   sentence?: boolean;
-  /** The sections of the manual the problems a host file adds to the line cite (src/hosts/remap.ts): the sentence says nothing of them. */
+  /** The codes of the problems a host file adds to the line (src/hosts/remap.ts): the sentence says nothing they say (`problemCodes`). */
   hostProblems?: readonly string[];
   /**
    * Set by the analyzer for a string a shell runs (`sh -c '…' sh "$msg"`): the shell (`sh -c`) and the words its
