@@ -37,10 +37,13 @@ export function impliedWords(name: string): string[] {
   return aliasOf(name)?.implies ?? [];
 }
 
-/** The options of `spec` that the name `name` (a path, or a name) implies (`impliedWords`: `-E` for `egrep`). */
+/**
+ * The options of `spec` that the name `name` (a path, or a name) implies (`impliedWords`: `-E` for `egrep`). None
+ * where the spec lacks them: one of the customCommands setting under the alias's name (whose `options` is a list, as
+ * that of every spec of an alias that implies words).
+ */
 export function impliedOptions(name: string, spec: CommandSpec): OptionSpec[] {
-  // (The words an alias implies are options of the spec it is given.)
-  return impliedWords(name.split('/').pop()!).map((w) => spec.options!.find((o) => o.names.includes(w))!);
+  return impliedWords(name.split('/').pop()!).flatMap((w) => spec.options!.filter((o) => o.names.includes(w)));
 }
 
 /**

@@ -32,8 +32,10 @@ describe('the reasons a name does not match a glob agree with bash (panel P6)', 
   // it, and matches it once its reasons are lifted (the option turned on, `[[ == ]]` for a `/`, the end or the start
   // of the name replaced).
   const TREE = ['app.ts', 'app.log', 'app.txt', '.app.log', '.env.ts', 'readme.md', 'src/a.ts', 'src/b.sh', 'src/lib/c.ts', 'src/lib/deep/d.ts', 'src/.hidden/e.ts', '.cache/f.ts',
-    'log-2020-aa.md', 'log-2021-ab.txt', 'xsrc/g.ts', 'data_01.csv', 'data_1.csv'];
-  const PATTERNS = ['*.log', '*.ts', '**/*.ts', 'src/*.ts', 'src/**', '*', '*/*.ts', 'log-202[0-4]-??.txt', 'data_??.csv', 'app*', 'src/**/*.ts', '?pp.*', '[a-c]*.ts', '*.[ch]'];
+    'log-2020-aa.md', 'log-2021-ab.txt', 'xsrc/g.ts', 'data_01.csv', 'data_1.csv', '.config/a.conf', '.config/sub/a.conf', '.github/workflows/ci.yml', '.github/workflows/old/a.yml',
+    '.github/.hidden.yml'];
+  const PATTERNS = ['*.log', '*.ts', '**/*.ts', 'src/*.ts', 'src/**', '*', '*/*.ts', 'log-202[0-4]-??.txt', 'data_??.csv', 'app*', 'src/**/*.ts', '?pp.*', '[a-c]*.ts', '*.[ch]',
+    '.config/*.conf', '.github/workflows/*.yml', '.github/*.yml', '**/*.yml'];
   const OPTS: [string, GlobOpts][] = [['', {}], ['dotglob', { dotglob: true }], ['globstar', { globstar: true }], ['dotglob globstar', { dotglob: true, globstar: true }]];
   const shoptOf = (o: GlobOpts) => [o.dotglob ? 'dotglob' : '', o.globstar ? 'globstar' : ''].filter(Boolean).join(' ');
   it('lifts each reason in bash', function () {
@@ -54,9 +56,8 @@ describe('the reasons a name does not match a glob agree with bash (panel P6)', 
             const lifted = liftMisses(name, 'file', opts, misses);
             assert.ok(globMatches(pattern, lifted.name, lifted.mode, lifted.opts), `${pattern} ${name}`);
             checks.push({ pattern, ...lifted, matches: true });
-            // (Each reason is needed: with one left out, it does not match. A dot comes with a slash, which `[[ == ]]`
-            // lifts with it: there `*` matches a leading dot too.)
-            for (const m of misses.filter((x) => x.kind !== 'dot' || !misses.some((y) => y.kind === 'slash'))) {
+            // (Each reason is needed: with one left out, it does not match.)
+            for (const m of misses) {
               const fewer = liftMisses(name, 'file', opts, misses.filter((x) => x !== m));
               assert.ok(!globMatches(pattern, fewer.name, fewer.mode, fewer.opts), `${pattern} ${name} without ${m.kind}`);
             }
@@ -95,7 +96,10 @@ done`;
       ['*.log', '.app.log', { dotglob: true }, undefined], ['*.log', '.app.txt', {}, [{ kind: 'dot' }, { kind: 'end', text: '.log', cut: 0 }]],
       ['src/*.ts', 'src/lib/a.ts', {}, [{ kind: 'slash' }]], ['**/*.ts', 'src/lib/a.ts', {}, [{ kind: 'globstar' }]], ['**/*.ts', '.cache/a.ts', { globstar: true }, [{ kind: 'dot' }]],
       ['/var/log/*.log', 'app.log', {}, [{ kind: 'start', text: '/var/log/', cut: 0 }]], ['/var/log/*.log', 'x/var/log/app.log', {}, [{ kind: 'start', text: '/var/log/', cut: 10 }]],
-      ['log-202[0-4]-??.txt', 'log-2020-aa.md', {}, [{ kind: 'end', text: '.txt', cut: 3 }]], ['*', '.cache/f.ts', {}, [{ kind: 'dot' }, { kind: 'slash' }]],
+      ['log-202[0-4]-??.txt', 'log-2020-aa.md', {}, [{ kind: 'end', text: '.txt', cut: 3 }]], ['*', '.cache/f.ts', {}, [{ kind: 'slash' }]],
+      // (A dot the pattern spells is no reason: with dotglob on, bash still does not match.)
+      ['.config/*.conf', '.config/sub/a.conf', {}, [{ kind: 'slash' }]], ['.github/workflows/*.yml', '.github/workflows/old/a.yml', {}, [{ kind: 'slash' }]],
+      ['.github/*.yml', '.github/.hidden.yml', {}, [{ kind: 'dot' }]],
       ['a?c', 'abbc', {}, []], ['*.LOG', 'app.log', { nocase: true }, undefined], ['*.LOG', 'app.txt', { nocase: true }, [{ kind: 'end', text: '.LOG', cut: 0 }]],
       // (A bracket expression bash reads by the locale has no regex: no reason found.)
       ['[[.space.]]*.log', 'a.txt', {}, []], ['\\**.log', 'x.log', {}, [{ kind: 'start', text: '*', cut: 0 }]], ['\\*.log', 'x.log', {}, []],

@@ -27,6 +27,7 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 
 - Fail `--check` on chosen codes (found in the review of #549): since step 1a of the three note levels, `injection`, `pythonInjection` and `pythonNoShell` are warnings, so an Action user cannot fail on script injection alone without `strict`, which fails on every warning. An option (a list of codes that fail, like `diagnostics.ignore`) would give that back.
 - Flaky `ps rUroot` test (test/oldstyle-real.test.ts:276).
+- The reasons of a glob example (`globMiss`, src/examples/shellwords.ts, panel P6, #568) try every cut of the name's end and start, up to 64 characters together, for each set of reasons: a long name typed in the panel's box costs up to about 2,000 matcher calls per set. Bound it by the pattern's own length, or search the cut from the literal text, if a measure shows it matters (found in the review of #568).
 - `assign-readonly` with `then: 'runs'` (from the review of step 1a of the three note levels): not handled yet.
 - `restricted-refused` from an rbash shebang (same review): not handled yet.
 - The cost of `diagnostics.pitfalls` off (same review): not measured or reduced yet.

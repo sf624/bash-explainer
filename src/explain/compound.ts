@@ -2,7 +2,7 @@
 // and its branches, function definitions, `coproc`, groups and subshells, pipelines and lists, with the keywords and
 // operators between their parts; a keyword missing for want of a `;` before it (`if a then`); and comments, with the
 // shebang and the directives. Their parts are explained through the walk (`cx.sub`), on the line explained only.
-import type { Kind, Token } from '../analyzer-types';
+import type { ExampleKind, Kind, Token } from '../analyzer-types';
 import { interpret } from '../argv/interpret';
 import { keywords, listOps } from '../dict/syntax';
 import { DIRECTIVE } from '../directives';
@@ -342,14 +342,22 @@ export function missingKeyword(cx: Explainer, n: SyntaxNode, t: Token): Token {
   return t;
 }
 
+/**
+ * The kinds of examples of what bash makes of a word (manual 3.5), which a pipeline's example keeps beside it:
+ * `expansion`, the values a parameter expansion gives (`${x%%.*}`); `glob`, the words of a brace expansion and the
+ * names a pattern matches. The others are of what a command does with its words (grep's regex, sed, `printf`, `[ ]`,
+ * `read`), which the pipeline's example shows run.
+ */
+const BASH_WORD_EXAMPLES: ReadonlySet<ExampleKind> = new Set(['expansion', 'glob']);
+
 export function pipeline(cx: Explainer, n: SyntaxNode): Token {
   // One example for the whole pipeline replaces the examples of what its stages do. Those of what bash makes of a word
-  // of a stage stay beside it (`glob`: the names a glob matches, the words of a brace expansion), as bash's reading of
-  // the line, which the run of the commands does not show (CLAUDE.md, "Explanations").
+  // of a stage stay beside it, as bash's reading of the line, which the run of the commands does not show (CLAUDE.md,
+  // "Explanations"): `BASH_WORD_EXAMPLES`.
   const children = cx.examplesReplaced(() => ordered(cx, n), () => {
     const whole = pipelineExample(cx, n);
     return whole && { ...whole, anchor: spanOf(n), kind: 'pipeline' };
-  }, (e) => e.kind === 'glob');
+  }, (e) => !!e.kind && BASH_WORD_EXAMPLES.has(e.kind));
   const cmds = children.filter((c) => c.kind !== 'operator' && c.kind !== 'keyword');
   const t = cx.tok(n, 'operator', cx.s(
     `パイプライン: 各コマンドの標準出力を次のコマンドの標準入力につないで、同時に実行する`,

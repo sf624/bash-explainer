@@ -205,8 +205,8 @@ export function globMatches(pattern: string, name: string, mode: GlobMode, opts:
  * terms, and the name matches once its reasons are lifted (`liftMisses`).
  * - `dot`: a name in the path starts with `.`, which `*`, `?` and `[…]` do not match while `dotglob` is off;
  * - `globstar`: `**` is `*` while `globstar` is off, so it does not match several directories;
- * - `slash`: `*`, `?` and `[…]` do not match a `/` in a file name (they do where `[[ == ]]` matches, `mode: 'value'`,
- *   which also matches a leading `.`: so the reason comes with `dot` where that one applies too);
+ * - `slash`: `*`, `?` and `[…]` do not match a `/` in a file name (they do where `[[ == ]]` matches, `mode: 'value'`;
+ *   there a leading `.` needs no `dotglob` either, so `dot` is said only where the name matches with `dotglob` alone);
  * - `end`, `start`: the name does not end or start with the text the pattern ends or starts with (`text`); it matches
  *   with that text in place of its last or first `cut` characters.
  */
@@ -291,7 +291,6 @@ export function globMiss(pattern: string, name: string, mode: GlobMode, opts: Gl
   const sets = (k: number, from: number): GlobMiss[][] => (k === 0 ? [[]] : reasons.slice(from).flatMap((r, i) => sets(k - 1, from + i + 1).map((rest) => [r, ...rest])));
   for (let k = 1; k <= reasons.length; k++) {
     for (const set of sets(k, 0)) {
-      if (dot && set.some((m) => m.kind === 'slash') && !set.some((m) => m.kind === 'dot')) continue;
       const found = cuts(set, 0, Math.min(name.length, MAX_CUT));
       if (found) return found;
     }

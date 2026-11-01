@@ -443,7 +443,11 @@ describe('a pipeline example runs with example values of variables the script le
   it('makes up no value where the script may set the variable, bash or a builtin may change it, splitting, globbing or an operator may change it, or the shell is not bash', () => {
     for (const src of ['f() { USER=x; }\ngrep "$USER" | sort', 'source ./env.sh\ngrep "$USER" | sort', 'read -r USER\ngrep "$USER" | sort', 'echo "$RANDOM" | cat', 'IFS=l\necho $USER | cat',
       'echo "${USER:-x}" | cat', 'echo "${USER}s" "$MYVAR" | cat', 'echo "$@" | cat', '#!/bin/sh\necho "$USER" | cat', 'bash -c \'echo "$USER" | cat\'', 'unset USER\necho "$USER" | cat',
-      'cd /tmp\necho "$PWD" | cat', 'echo "$(id -un)" | cat', 'echo "$USER"/*.log | cat', 'echo "$PWD" | cat']) {
+      'cd /tmp\necho "$PWD" | cat', 'echo "$(id -un)" | cat', 'echo "$USER"/*.log | cat', 'echo "$PWD" | cat', 'printf -v USER x\necho "$USER" | cat',
+      'mapfile USER < f\necho "$USER" | cat', 'for USER in a; do :; done\necho "$USER" | cat', 'getopts u USER\necho "$USER" | cat', 'let USER=1\necho "$USER" | cat',
+      '(( USER = 1 ))\necho "$USER" | cat', ': "${USER:=x}"\necho "$USER" | cat', 'export -n USER\necho "$USER" | cat', 'declare -l USER\necho "$USER" | cat',
+      'declare -u USER\necho "$USER" | cat', 'declare -n USER=HOME\necho "$USER" | cat', 'declare -n r=USER\nr=x\necho "$USER" | cat', 'eval "$x"\necho "$USER" | cat',
+      'echo "$HOSTNAME" | cat', 'echo "$UID" | cat', 'IFS=a\necho $USER | cat', 'g() { USER=x; }\ng\necho "$USER" | cat', 'echo "$USER" | cat; USER=bob']) {
       assert.strictEqual(whole(src)?.note, undefined, src);
     }
   });
@@ -453,10 +457,28 @@ describe('a pipeline example runs with example values of variables the script le
     assert.deepStrictEqual(ex.argv![0].words[1].parts.flatMap((p) => ('hole' in p ? [p.label] : [])), ['current user name']);
     assert.ok(ex.examples.some((x) => x.kind === 'pipeline'));
   });
-  it('keeps the examples of a glob and of a brace expansion of a stage beside it', () => {
+  it('keeps the examples of what bash makes of a word of a stage beside it: a glob, a brace expansion, a parameter expansion', () => {
     for (const [src, kinds] of [['cat *.log | sort', ['glob', 'pipeline']], ['grep -h "$USER" /var/log/*.log | sort | uniq -c | sort -rn | head -5', ['glob', 'pipeline']],
-      ['echo {a,b} | tr a-z A-Z', ['glob', 'pipeline']], ["sed 's/a/b/' f | sort", ['pipeline']]] as const) {
-      assert.deepStrictEqual(new Analyzer('en').explainLine(parser.parse(src), 0).examples.map((x) => x.kind), kinds, src);
+      ['echo {a,b} | tr a-z A-Z', ['glob', 'pipeline']], ["sed 's/a/b/' f | sort", ['pipeline']], ['x=foo.tar.gz; echo "${x%%.*}" | cat', ['expansion', 'pipeline']]] as const) {
+      const line = src.split('\n').length - 1;
+      assert.deepStrictEqual(new Analyzer('en').explainLine(parser.parse(src), line).examples.map((x) => x.kind), kinds, src);
+    }
+  });
+  it('reads a command of the customCommands setting under an alias\'s name with its own spec, which implies no option', () => {
+    for (const src of ['egrep "$USER" f | sort', 'egrep -e "$x" f']) {
+      const ex = new Analyzer('en').explainLine(parser.parse(src), 0, undefined, { customCommands: { egrep: { summary: 'My egrep' } } });
+      assert.strictEqual(ex.items[0].kind === 'error', false, src);
+    }
+  });
+  it('shows the stage that runs with the value in the made-up output of ps, as ps shows it (`grep alice`)', () => {
+    for (const src of ['ps aux | grep "$USER"', 'ps aux | grep "$USER" | wc -l', 'ps aux | grep nginx']) {
+      const ex = whole(src)!;
+      const rows = ex.sections[0].lines;
+      const name = src.includes('nginx') ? 'nginx' : 'alice';
+      assert.ok(rows.some((r) => r.endsWith(`grep ${name}`)), `${src}: ${rows.join('\n')}`);
+      // (What the stages after ps make of its rows, as bash and GNU grep do.)
+      const real = run('bash', ['-c', src.replace(/^ps aux \| /, '')], { input: rows.join('\n') + '\n', env }).stdout.toString();
+      assert.deepStrictEqual(ex.sections.at(-1)!.lines, real.replace(/\n$/, '').split('\n'), src);
     }
   });
 });

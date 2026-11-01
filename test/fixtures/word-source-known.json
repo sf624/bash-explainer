@@ -44,7 +44,6 @@
     {"file":"src/explain/embedded.ts","fn":"embedded","kind":"helper","count":1,"row":"W-L2"},
     {"file":"src/explain/embedded.ts","fn":"embeddedExample","kind":"helper","count":1,"row":"W-L2"},
     {"file":"src/explain/examples-jq.ts","fn":"jqFormat","kind":"helper","count":1,"row":"W-L2"},
-    {"file":"src/explain/examples.ts","fn":"argvOf","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/explain/examples.ts","fn":"assignedText","kind":"helper","count":1,"row":"W-L2"},
     {"file":"src/explain/examples.ts","fn":"awkOptions","kind":"helper","count":1,"row":"W-L2"},
     {"file":"src/explain/examples.ts","fn":"dateRun","kind":"helper","count":2,"row":"W-L2"},
