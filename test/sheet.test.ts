@@ -64,7 +64,7 @@ describe('the phone\'s sheet as data', () => {
     ]);
   });
 
-  it('gives the header row\'s forms in order: the tools, then "Ref", then the line, then the highest level only', () => {
+  it('gives the header row\'s forms in order: the tools, then "Ref", then the highest level only, then the line', () => {
     for (const lang of ['en', 'ja'] as const) {
       const control = viewControl({}, lang);
       const [segments, menu] = [{ kind: 'segments' }, { kind: 'menu', button: control.options.map((o) => ({ text: o.short, name: `${control.label}: ${o.full}` })) }];
@@ -74,7 +74,7 @@ describe('the phone\'s sheet as data', () => {
         { view: segments, tools: 'none', line: true, ref: 'full', counts: 'all' },
         { view: menu, tools: 'none', line: true, ref: 'full', counts: 'all' },
         { view: menu, tools: 'none', line: true, ref: 'short', counts: 'all' },
-        { view: menu, tools: 'none', line: false, ref: 'short', counts: 'all' },
+        { view: menu, tools: 'none', line: true, ref: 'short', counts: 'top' },
         { view: menu, tools: 'none', line: false, ref: 'short', counts: 'top' },
       ], lang);
     }

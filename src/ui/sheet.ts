@@ -74,7 +74,8 @@ export interface SheetForm {
 /**
  * The forms of the sheet's header row, in order: the page takes the first that fits. The tools go first (on a tablet
  * the row has room for them; on a phone they leave it: the explanation's rows fold one by one), then "Reference" is
- * shortened, then the line goes, and last the Problems tab keeps only its highest level.
+ * shortened, then the Problems tab keeps only its highest level (its name still has every count), and last the line
+ * goes (decision 9, the maintainer's order of 2026-11-01).
  */
 export function sheetForms(control: ViewControl): SheetForm[] {
   const views = viewControlForms(control);
@@ -84,8 +85,8 @@ export function sheetForms(control: ViewControl): SheetForm[] {
     ...views.map((view) => ({ view, tools: 'under' as const, ...full })),
     ...views.map((view) => ({ view, tools: 'none' as const, ...full })),
     { view: menu, tools: 'none', ...full, ref: 'short' },
-    { view: menu, tools: 'none', ...full, ref: 'short', line: false },
-    { view: menu, tools: 'none', ...full, ref: 'short', line: false, counts: 'top' },
+    { view: menu, tools: 'none', ...full, ref: 'short', counts: 'top' },
+    { view: menu, tools: 'none', ...full, ref: 'short', counts: 'top', line: false },
   ];
 }
 

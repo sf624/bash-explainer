@@ -314,12 +314,18 @@ describe('the web page: the phone\'s sheet', function () {
   });
 
   it('has Problems as a tab, with its counts by level: a problem chosen goes to its line, with its explanation at half height', async () => {
-    // (At 430 px the row has room for the line; at 390 px in English it has not, beside the counts.)
-    const page = await open(await phone(430, 'en'));
+    const page = await open(await phone(390, 'en'));
     const tab = page.locator('#tab-problems');
+    // At 390 px in English the tab shows its highest level only, and keeps the line (decision 9: the counts go before
+    // the line); its name has every count. At 430 px it shows every level.
     assert.match((await tab.getAttribute('aria-label'))!, /^Problems: \d+ errors?, \d+ warnings?, \d+ /);
-    assert.match(await tab.innerText(), /^ⓧ\s*\d+\s*⚠\s*\d+\s*ⓘ\s*\d+$/);
+    assert.match(await tab.innerText(), /^ⓧ\s*\d+$/);
     assert.match(await page.locator('#tab-explain').innerText(), /^Explanation\s*Ln \d+$/);
+    await page.setViewportSize({ width: 430, height: 740 });
+    await until('every level', () => tab.innerText(), (t) => /^ⓧ\s*\d+\s*⚠\s*\d+\s*ⓘ\s*\d+$/.test(t));
+    await page.setViewportSize({ width: 390, height: 740 });
+    await until('the highest level', () => tab.innerText(), (t) => /^ⓧ\s*\d+$/.test(t));
+    await settled(page);
     // The tabs as one Tab stop: the arrows reach Problems, which shows the list in the sheet.
     await page.locator('#tab-explain').focus();
     await page.keyboard.press('ArrowRight');
