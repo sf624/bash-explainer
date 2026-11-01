@@ -102,7 +102,7 @@
     <!-- The panel's header (web/panel-head.ts): the tabs, the view control (media/view-control.js), and the tools with their words. -->
     <!-- On a phone (html.bottom-sheet) the pane is a bottom sheet (web/sheet.ts): the whole header is its grabber, and Problems is a tab. -->
     <div id="panel-head" class="panel-head" data-tools="beside">
-      <button id="sheet-grab" class="sheet-grab" type="button" aria-controls="panel-pane"></button>
+      <div id="sheet-grab" class="sheet-grab" role="slider" tabindex="0" aria-orientation="vertical" aria-controls="panel-pane" aria-valuemin="0" aria-valuemax="2" aria-valuenow="1"></div>
       <div id="panel-tabs" class="panel-tabs" role="tablist" aria-label="Panel"><button id="tab-explain" class="panel-tab" type="button" role="tab" aria-selected="true" aria-controls="panel-body">Explanation</button><button id="tab-problems" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="problems" tabindex="-1">Problems</button><button id="tab-ref" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-body" tabindex="-1">Reference</button></div>
       <div id="view-slot" class="view-slot"></div>
       <div class="panel-tools">

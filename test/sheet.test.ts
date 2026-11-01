@@ -54,13 +54,13 @@ describe('the phone\'s sheet as data', () => {
     assert.strictEqual(settle(short, 48, 1), 'full');
   });
 
-  it('cycles the heights on a tap, and steps them with the arrow keys, Home and End', () => {
+  it('cycles the heights on a tap and on Enter, and steps them with the arrow keys, Home and End', () => {
     assert.deepStrictEqual((['peek', 'half', 'full'] as Snap[]).map(tapped), ['half', 'full', 'peek']);
     const keys = ['ArrowUp', 'ArrowDown', 'Home', 'End', 'ArrowLeft', 'Enter'];
     assert.deepStrictEqual((['peek', 'half', 'full'] as Snap[]).map((s) => keys.map((k) => keyed(s, k))), [
-      ['half', 'peek', 'peek', 'full', undefined, undefined],
-      ['full', 'peek', 'peek', 'full', undefined, undefined],
-      ['full', 'half', 'peek', 'full', undefined, undefined],
+      ['half', 'peek', 'peek', 'full', undefined, 'half'],
+      ['full', 'peek', 'peek', 'full', undefined, 'full'],
+      ['full', 'half', 'peek', 'full', undefined, 'peek'],
     ]);
   });
 

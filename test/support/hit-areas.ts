@@ -51,7 +51,7 @@ const SCRIPT = `(scope, cap) => {
     return true;
   };
   for (const el of root.querySelectorAll(selector)) {
-    // (The phone sheet's grabber lets a press through, pointer-events: none: it is for the keyboard and a screen reader,
+    // (The phone sheet's grabber lets a press through, pointer-events: none: a slider for the keyboard and a screen reader,
     // under the header's tabs, whose taps the header takes. It has no hit area of its own. Any other control that lets
     // a press through measures as nothing, and fails.)
     if (el.closest('.cm-editor') || !visible(el) || (el.id === 'sheet-grab' && getComputedStyle(el).pointerEvents === 'none')) continue;
