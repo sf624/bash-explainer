@@ -1,6 +1,6 @@
 # Facts and their sources
 
-Status: agreed by the maintainer on 2026-10-31. Stage SA (the guards) is done; stage SB goes into the UX steps (SB1, SB2, SB4 and SB3a done); stage SC waits until after 0.10.0. The order is in [../roadmap.md](../roadmap.md).
+Status: agreed by the maintainer on 2026-10-31. Stage SA (the guards) is done; stage SB goes into the UX steps (SB1, SB2, SB4, SB3a and SB3d done); stage SC waits until after 0.10.0. The order is in [../roadmap.md](../roadmap.md).
 
 The stages are named SA, SB and SC ("S" for sources), and their steps SA1, SB1, SC1 and so on, so that they do not clash with the plan A, B, C of [semantics.md](semantics.md), the panel's steps P1–P10 or the chrome's C0–C9.
 
