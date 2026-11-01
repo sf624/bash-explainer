@@ -11,7 +11,7 @@ import { readingNodes, readingTree, type ReadingNode } from '../src/reading';
 import { type DrawnNode, readingView } from '../src/ui/readingSteps';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { panelUpdate } from '../src/ui/panelView';
-import { ui } from '../src/ui/render';
+import { ui } from '../src/ui/texts';
 
 const parser = createUnbashParser();
 const analyzer = new Analyzer('en');

@@ -13,7 +13,8 @@ import { failsCheck, LEVELS, type ProblemSeverity, problemLevel, SEVERITIES } fr
 import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { explained, type NoteBasis, noteBasis, noteRefs, notesByLevel, partBasis, refsText, toPlainMarkdown, ui, wordsMarkdown } from '../src/ui/render';
+import { explained, type NoteBasis, noteBasis, noteRefs, notesByLevel, partBasis, refsText, toPlainMarkdown, wordsMarkdown } from '../src/ui/render';
+import { ui } from '../src/ui/texts';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
 

@@ -12,7 +12,8 @@ import { isCommand, partNotes, ProblemAt, sameSpan, shown, valueOf } from './hov
 import { type Note, SPACE_MARK, type SpaceEnds, type ValueSaid } from '../messages';
 import { LEVELS } from '../levels';
 import { levelColour, ThemeKind } from './palette';
-import { basisLine, basisMarkdown, colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteBasis, noteRefs, notesByLevel, partBasis, placeExamples, plainNotes, refsMarkdown, ui, valueMarkdown } from './render';
+import { basisLine, basisMarkdown, colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteBasis, noteRefs, notesByLevel, partBasis, placeExamples, plainNotes, refsMarkdown, valueMarkdown } from './render';
+import { ui } from './texts';
 
 /** What every view of the hover needs. */
 export interface HoverInput {

@@ -5,7 +5,8 @@ import type { EditorView } from '@codemirror/view';
 import type { LineExplanation } from '../src/analyzer';
 import { Lang } from '../src/i18n';
 import { levelCounts } from '../src/levels';
-import { notesByLevel, ui } from '../src/ui/render';
+import { notesByLevel } from '../src/ui/render';
+import { ui } from '../src/ui/texts';
 import { TEXT } from './text';
 
 /** The start of an explanation, up to its first colon, semicolon or parenthesis outside code: what the part is. */

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ExplainService } from '../service';
 import { nameHints } from './nameHints';
-import { ui } from './render';
+import { ui } from './texts';
 
 /**
  * Inlay hints after the command names that do not run what they suggest (src/ui/nameHints.ts), on the lines in view.

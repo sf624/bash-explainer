@@ -1,5 +1,5 @@
 // Re-runs a worked example on input the user typed in the panel (regex101's test string).
-import type { Lang } from '../i18n';
+import { type Lang, lineLabel } from '../i18n';
 import { formatDate, parseSampleDate, UTC } from '../embedded/format';
 import { runAwk } from './awk';
 import { dateOutputLabel, parseDateValue, relativeFrom, relativeItems, zoneOf } from './dates';
@@ -89,7 +89,7 @@ function groupLines(regex: JsRegex, input: string[], lang: Lang): string[] {
     const m = re.exec(line);
     if (!m || m.length < 2 || out.length >= 4) return;
     const groups = m.slice(1).map((g, k) => `\\${k + 1}=${g === undefined ? (lang === 'ja' ? '（なし）' : '(none)') : JSON.stringify(g)}`);
-    out.push(`${lang === 'ja' ? `${i + 1}行目` : `line ${i + 1}`}: ${JSON.stringify(m[0])}  ${groups.join('  ')}`);
+    out.push(`${lineLabel(lang, i + 1, 'inline')}: ${JSON.stringify(m[0])}  ${groups.join('  ')}`);
   });
   return out;
 }

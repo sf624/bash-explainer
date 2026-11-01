@@ -8,7 +8,8 @@ import { Extracted, extractShell, HostKind } from './hosts';
 import { Lang, resolveLang } from './i18n';
 import { explainOptions, forcedShell, Settings, settingsFromEditor } from './settings';
 import type { TreeCache } from './syntax/cache';
-import type { ExamplePlacement, Feature } from './ui/render';
+import type { ExamplePlacement } from './ui/render';
+import type { Feature } from './ui/texts';
 
 /** Shared access to settings and per-document parse trees for all display modes. */
 export class ExplainService implements vscode.Disposable {

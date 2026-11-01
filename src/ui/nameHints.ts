@@ -5,6 +5,7 @@ import type { LineExplanation, Pos, Token } from '../analyzer-types';
 import type { Lang } from '../i18n';
 import { nameKindWord } from '../messages';
 import type { NameFacts } from '../semantics/names';
+import { ui } from './texts';
 
 /**
  * Why a name surprises: nothing runs (`builtin ls`); a program runs where bash has only a builtin of the name
@@ -25,24 +26,15 @@ export function surprise(f: NameFacts): Surprise | undefined {
 
 /** The hint's text: what runs, and why that is not what the name suggests ("function, not the builtin"). Plain text: a hint shows no Markdown. */
 export function hintLabel(f: NameFacts, why: Surprise, lang: Lang): string {
-  const ja = lang === 'ja';
+  const t = ui[lang].nameHint;
   const runs = nameKindWord(lang, f.runs);
   switch (why) {
     case 'none': return runs;
-    case 'noProgram': {
-      const by = f.by === undefined ? '' : ja ? `${f.by} が実行。` : `, run by ${f.by}`;
-      return ja ? `${runs}（${by}ふつうは存在しない）` : `${runs}${by}: usually there is none`;
-    }
-    case 'shadow': {
-      const other = nameKindWord(lang, f.also.find((a) => a.kind === 'builtin' || a.kind === 'program')!.kind);
-      return ja ? `${runs}（${other}ではない）` : `${runs}, not the ${other}`;
-    }
-    case 'off': return ja ? `${runs}（ビルトインは無効）` : `${runs}: the builtin is off`;
-    case 'unexpanded': {
-      // (Where code not read here may turn expand_aliases on: `NameOther.unexpanded` is `maybe`.)
-      const maybe = f.also.some((a) => a.unexpanded === 'maybe');
-      return ja ? `${runs}（エイリアスは展開されない${maybe ? 'かもしれない' : ''}）` : `${runs}: the alias ${maybe ? 'may not be' : 'is not'} expanded`;
-    }
+    case 'noProgram': return t.noProgram(runs, f.by);
+    case 'shadow': return t.shadow(runs, nameKindWord(lang, f.also.find((a) => a.kind === 'builtin' || a.kind === 'program')!.kind));
+    case 'off': return t.off(runs);
+    // (Where code not read here may turn expand_aliases on: `NameOther.unexpanded` is `maybe`.)
+    case 'unexpanded': return t.unexpanded(runs, f.also.some((a) => a.unexpanded === 'maybe'));
   }
 }
 

@@ -4,7 +4,7 @@
 import { Analyzer } from '../src/analyzer';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, fixTitle, heredocAt, plain, ShellDocument } from '../src/document';
 import { FileKind, kindOfDocument, openDocument, shellsOf } from '../src/document-setup';
-import { Lang, resolveLang } from '../src/i18n';
+import { Lang, lineLabel, resolveLang } from '../src/i18n';
 import { SEVERITIES } from '../src/levels';
 import { LEGEND, semanticTokens } from '../src/semanticTokens';
 import { explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
@@ -145,7 +145,7 @@ export function startLanguageServer(io: Io): void {
     if (!full.items.length && !full.notes.length) return null;
     // As in VS Code, the hover can be kept short: fewer levels of the tree, no examples.
     const ex = { ...full, items: pruneDepth(full.items, settings['hover.maxDepth']), examples: settings['examples.inHover'] ? full.examples : [] };
-    const where = `Bash Explainer · ${lang === 'ja' ? `${line + 1} 行目` : `line ${line + 1}`}`;
+    const where = `Bash Explainer · ${lineLabel(lang, line + 1)}`;
     const text = parsed.lines[line];
     const chain = partAt(ex.items, { line, character }, heredocAt(parsed, line));
     const range = chain.length ? rangeOnLine(chain[chain.length - 1].span, line, text.length) : { start: { line, character: 0 }, end: { line, character: text.length } };

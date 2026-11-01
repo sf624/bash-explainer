@@ -1,4 +1,5 @@
 // The page's own texts, in the two languages.
+import { lineLabel } from '../src/i18n';
 import { Kind } from './samples';
 
 export const TEXT = {
@@ -22,7 +23,7 @@ export const TEXT = {
     // The Problems strip under the editor (web/problem-list.ts): its name with the counts said, and where the cursor is.
     noProblems: 'No problems',
     problemsSaid: (counts: readonly string[]) => `Problems: ${counts.join(', ')}`,
-    problemPosSaid: (line: number, i: number, n: number) => `Problem ${i} of ${n}, line ${line}`,
+    problemPosSaid: (line: number, i: number, n: number) => `Problem ${i} of ${n}, ${lineLabel('en', line, 'inline')}`,
     prevProblem: 'Previous problem',
     nextProblem: 'Next problem',
     /** A problem's tooltip: its line (`line`), its whole message and its rule. */
@@ -32,6 +33,8 @@ export const TEXT = {
     banner: 'Development version, unreleased: built from main at',
     bannerTail: 'It may differ from the released extension.',
     prBanner: 'Preview of pull request',
+    // (The commit sits between them: "Preview of pull request #12 (commit abc1234). Not released.")
+    prBannerOpen: ' (commit ', prBannerClose: '). ',
     prBannerTail: 'Not released.',
     toRelease: 'Released version',
     toPr: 'Pull request',
@@ -48,7 +51,7 @@ export const TEXT = {
     askMessage: (kind: string) => `The file kind is now ${kind}. Replace your script with its sample? You can undo it.`,
     askReplace: 'Replace with the sample',
     askKeep: 'Keep my script',
-    line: (n: number) => `Ln ${n}`,
+    line: (n: number) => lineLabel('en', n, 'compact'),
     compareLink: { pr: 'Compare with main', next: 'Compare with release' },
     compareTagline: 'Compares this version with another, side by side. Type or move the cursor on the left: both panels follow.',
     editor: 'Script',
@@ -156,7 +159,7 @@ export const TEXT = {
     /** How to leave the editor, which takes Tab (web/a11y.ts). */
     editorHint: 'To leave the editor, press Escape, then Tab.',
     /** What the live region says of the line the cursor moved to: its number, its first part, its warnings. */
-    lineSummary: (n: number, part: string, counts: readonly string[]) => `Line ${n}: ${part}${counts.length ? `; ${counts.join(', ')}` : ''}`,
+    lineSummary: (n: number, part: string, counts: readonly string[]) => `${lineLabel('en', n)}: ${part}${counts.length ? `; ${counts.join(', ')}` : ''}`,
     partSaid: (label: string, what: string) => `${label}, ${what}`,
     /** The menu's item for the key that goes between the editor and the explanation. */
     toPanel: 'Go to the explanation and back',
@@ -181,7 +184,7 @@ export const TEXT = {
     problems: '問題',
     noProblems: '問題なし',
     problemsSaid: (counts: readonly string[]) => `問題：${counts.join('、')}`,
-    problemPosSaid: (line: number, i: number, n: number) => `${n} 件中 ${i} 件目の問題、${line} 行目`,
+    problemPosSaid: (line: number, i: number, n: number) => `${n} 件中 ${i} 件目の問題、${lineLabel('ja', line)}`,
     prevProblem: '前の問題',
     nextProblem: '次の問題',
     problemTip: (line: string, message: string, code: string) => `${line}：${message}（${code}）`,
@@ -190,6 +193,7 @@ export const TEXT = {
     banner: '開発版（未リリース）: main の',
     bannerTail: 'からビルドしています。リリース済みの拡張とは異なる場合があります。',
     prBanner: 'プルリクエスト',
+    prBannerOpen: '（コミット ', prBannerClose: '）',
     prBannerTail: 'のプレビュー。未リリース。',
     toRelease: 'リリース版',
     toPr: 'プルリクエスト',
@@ -206,7 +210,7 @@ export const TEXT = {
     askMessage: (kind: string) => `ファイルの種類を ${kind} に変えました。入力中のスクリプトをこの種類のサンプルに置き換えますか？ 置き換えても元に戻せます。`,
     askReplace: 'サンプルに置き換える',
     askKeep: 'スクリプトをそのままにする',
-    line: (n: number) => `${n} 行目`,
+    line: (n: number) => lineLabel('ja', n, 'compact'),
     compareLink: { pr: 'main と比較', next: 'リリース版と比較' },
     compareTagline: 'このバージョンを別のバージョンと並べて比べます。左で入力やカーソル移動をすると、2つのパネルが追従します。',
     editor: 'スクリプト',
@@ -299,7 +303,7 @@ export const TEXT = {
       ['Esc、Tab の順', 'エディタから出る'],
     ] as [string, string][],
     editorHint: 'エディタから出るには、Esc を押してから Tab を押します。',
-    lineSummary: (n: number, part: string, counts: readonly string[]) => `${n} 行目：${part}${counts.length ? `。${counts.join('、')}` : ''}`,
+    lineSummary: (n: number, part: string, counts: readonly string[]) => `${lineLabel('ja', n)}：${part}${counts.length ? `。${counts.join('、')}` : ''}`,
     partSaid: (label: string, what: string) => `${label}、${what}`,
     toPanel: '解説とエディタを行き来する',
     cardOpened: (keys: string) => `解説のカードを表示しました。もう一度 ${keys} を押すとカードに移り、Esc で閉じます。`,

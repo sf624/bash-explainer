@@ -539,7 +539,7 @@
         m.title = marks.said.replace(/`/g, '');
         const said = document.createElement('span');
         said.className = 'sr-only';
-        said.append(...inline(marks.said), document.documentElement.lang === 'ja' ? '：' : ': ');
+        said.append(...inline(marks.said), labels.saidSep ?? ': ');
         m.append(said, ...withMarks(line.slice(start, end)));
         row.append(m);
         at = end;
