@@ -18,8 +18,8 @@ describe('the ui texts', () => {
   });
 
   it('list the features the same in both languages', () => {
-    assert.deepStrictEqual(featureNames(), ['hover', 'panel']);
-    assert.deepStrictEqual(Object.keys(ui.en.features), featureNames());
+    assert.deepStrictEqual(featureNames('ja'), ['hover', 'panel']);
+    assert.deepStrictEqual(featureNames('en'), ['hover', 'panel']);
   });
 
   it('write a line number in the three forms', () => {
