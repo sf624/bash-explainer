@@ -200,7 +200,7 @@ describe('branches no other test takes', () => {
   });
 
   it('dictionary: >& to a file, :? and ? without a message, deletions by pattern', () => {
-    assert.match(redirects['>&']('', 'out.log').en, /both stdout and stderr/);
+    assert.match(redirects['>&'].says('', 'out.log').en, /both stdout and stderr/);
     assert.match(expansionOps[':?']('x', '').en, /parameter null or not set/);
     assert.match(expansionOps['?']('x', '').ja, /parameter not set/);
     assert.match(expansionOps['/']('x', 'a').en, /Delete the first match of `a`/);

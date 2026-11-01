@@ -34,9 +34,9 @@ export function quickReference(lang: Lang): ReferenceEntry[] {
   const red = s('リダイレクト', 'Redirections');
   for (const [op, f] of Object.entries(redirects)) {
     if (op === '>&' || op === '<&') continue;
-    add(red, `${op} file`, t(f('', 'file')));
+    add(red, `${op} file`, t(f.says('', 'file')));
   }
-  add(red, '2>&1', t(redirects['>&']('2', '1')));
+  add(red, '2>&1', t(redirects['>&'].says('2', '1')));
   add(red, '2>/dev/null', s('標準エラー出力を捨てる', 'discard stderr'));
   add(red, '<<EOF', s('ヒアドキュメント: 次の行から `EOF` までを標準入力にする', 'here-document: the following lines up to `EOF` become stdin'));
   add(red, '<<< word', s('ヒアストリング: 文字列を標準入力にする', 'here-string: the string becomes stdin'));

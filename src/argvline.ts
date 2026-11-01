@@ -103,7 +103,7 @@ function redirection(r: SyntaxNode, read: Reader, lang: Lang): ArgvRemoved {
   const { op, dest } = redirectParts(r);
   // (One with no target yet, `ls >` while typing, has none.)
   const [target] = fields(r, 'destination');
-  if (!target) return { ...base, says: redirects[op](fd, dest)[lang], word: [] };
+  if (!target) return { ...base, says: redirects[op].says(fd, dest)[lang], word: [] };
   const one = read(target).fields;
-  return { ...base, says: redirects[op](fd, one?.length === 1 ? one[0] : dest)[lang], word: wordArgv(target, read, lang) };
+  return { ...base, says: redirects[op].says(fd, one?.length === 1 ? one[0] : dest)[lang], word: wordArgv(target, read, lang) };
 }

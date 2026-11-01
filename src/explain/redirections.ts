@@ -102,7 +102,7 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
   // The word after quote removal, when known: `>&"2"` duplicates, `> "/dev/tcp/h/80"` connects.
   const target = braced ?? (dests.length === 1 ? staticWordValue(dests[0], false, cx.shell) : undefined) ?? dest;
   // Every operator the grammar has is in the dictionary.
-  let expl = cx.t(redirects[op](fd, braced ?? (op === '>&' || op === '<&' ? target : dest)));
+  let expl = cx.t(redirects[op].says(fd, braced ?? (op === '>&' || op === '<&' ? target : dest)));
   if (braced) expl += cx.s(`。ブレース展開で \`${dest}\` は1つの単語 \`${braced}\` になる`, `. Brace expansion makes \`${dest}\` the one word \`${braced}\``);
   // `/dev/tcp/host/port`: bash connects to the network, where other shells see a path.
   const net = networkTarget(op, fd, target);

@@ -576,3 +576,27 @@ describe('what surely succeeds (`succeeds`), as bash runs it', () => {
     assert.ok(notes(src, 2).some((n) => /an endless loop/.test(n)));
   });
 });
+
+describe('what can fail (`mayFail`), as bash runs it', () => {
+  /** Whether the last statement of `src` can fail. */
+  const mayFail = (src: string): boolean => {
+    const tree = parser.parse(src);
+    const last = tree.root.namedChildren[tree.root.namedChildren.length - 1];
+    return statusModel(shellState(tree)).mayFail(last);
+  };
+  // (After `false`, each of these leaves the status 0; `exit 1` and `return 1` end the shell or the function themselves.)
+  const never = ['true', 'x=1', 'x=', 'f() { false; }', 'false &', 'coproc false'];
+  const can = ['false', 'x=$(false)', 'nosuchcommand', '[ -z a ]', 'false | false', '{ false; }'];
+
+  it('is not `exit N`, `return N`, an assignment with no substitution, what surely succeeds, a definition or a job', () => {
+    for (const src of [...never, 'exit 1', 'return 1']) assert.strictEqual(mayFail(src), false, src);
+    for (const src of can) assert.strictEqual(mayFail(src), true, src);
+  });
+
+  it('agrees with bash', function () {
+    const run = runBash([...never, ...can].map((s) => `false\n${s}\necho $?`).join('\n'));
+    if (run.status === -1) return this.skip();
+    const statuses = run.stdout.trim().split('\n').map(Number);
+    assert.deepStrictEqual(statuses.map((x) => x !== 0), [...never.map(() => false), ...can.map(() => true)], run.stdout + run.stderr);
+  });
+});
