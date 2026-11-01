@@ -28,7 +28,22 @@ function japanese(): { where: string; text: string }[] {
       }
     });
   }
-  return [...out, ...webJapanese()];
+  return [...out, ...templateJapanese(), ...webJapanese()];
+}
+
+/**
+ * The backquoted strings of src/ui, cli and src/i18n.ts (`lineLabel`) with Japanese in them (a template literal: the panel's own texts are
+ * written so, `${n} 行目`; the single-quoted scan above does not see them). They may span lines.
+ */
+function templateJapanese(): { where: string; text: string }[] {
+  const out: { where: string; text: string }[] = [];
+  for (const file of [...sources('src/ui'), ...sources('cli'), 'src/i18n.ts']) {
+    const source = fs.readFileSync(path.join(root, file), 'utf8');
+    for (const m of source.matchAll(/`((?:[^`\\]|\\.)*)`/g)) {
+      if (kana.test(m[1])) out.push({ where: `${file}:${source.slice(0, m.index).split('\n').length}`, text: m[1] });
+    }
+  }
+  return out;
 }
 
 /**
@@ -68,6 +83,26 @@ describe('Japanese wording', () => {
     assert.ok(web.length > 100, String(web.length));
     assert.ok(web.some((t) => t.where.startsWith('web/text.ts')));
     assert.ok(web.some((t) => t.where.startsWith('web/index.html') && t.text === '日本語'));
+  });
+
+  // (docs/design/sources.md, row 17.) The panel's and the page's own texts live in their catalogs; a pair written
+  // beside the code that shows it (`lang === 'ja' ? '…' : '…'`) escapes the checks above and drifts from its neighbours.
+  it('keeps the Japanese text of src/ui, cli and web in the catalogs', () => {
+    const catalogs = new Map([
+      ['src/ui/texts.ts', 'the panel, hover and status texts (`ui`)'],
+      ['src/ui/reference.ts', 'the quick reference, a table of content of its own'],
+      ['web/text.ts', "the page's texts"],
+      ['web/index.html', 'the page markup'],
+    ]);
+    const files = [...new Set(texts.map((t) => t.where.replace(/:\d+$/, '')))]
+      .filter((f) => /^(src\/ui|cli|web)\//.test(f) && !catalogs.has(f));
+    assert.deepStrictEqual(files, []);
+    for (const file of catalogs.keys()) assert.ok(texts.some((t) => t.where.startsWith(`${file}:`)), file);
+  });
+
+  it('finds the Japanese of the panel texts, the templates among them', () => {
+    assert.ok(texts.some((t) => t.where.startsWith('src/ui/texts.ts') && t.text.includes('項目はパネルで')));
+    assert.ok(texts.some((t) => t.where.startsWith('src/i18n.ts') && t.text.includes('行目')));;
   });
 
   const rules: [RegExp, string][] = [

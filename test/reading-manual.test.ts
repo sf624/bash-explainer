@@ -11,7 +11,7 @@ import { readingNodes, type ReadingNode } from '../src/reading';
 import { shellState } from '../src/semantics/state';
 import { BASH_VARIABLES, readonlyAtStart } from '../src/semantics/vars';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { ui } from '../src/ui/render';
+import { ui } from '../src/ui/texts';
 import type { SyntaxNode } from '../src/syntax/tree';
 import { type BashOptions, runBash } from './support/bash';
 import { findBashAst, runBashAst, type AstNode } from './support/bashast';

@@ -5,6 +5,7 @@
 // API for a theme's token colours, so the panel takes the default themes from this copy there.
 import type { Lang } from '../i18n';
 import { emptyTheme, loadTheme, type SemanticStyle, type TextMateRule, type ThemeTokens } from './themeTokens';
+import { ui } from './texts';
 import copied from './vscodeThemes.json';
 
 /** The copy: the VS Code it comes from, each theme's file by its name, and the files trimmed to what the panel reads. */
@@ -38,10 +39,5 @@ export async function builtinTheme(name: string): Promise<ThemeTokens | undefine
  * window, where VS Code has none of the theme extensions; on the local side it reads them all (package.json `extensionKind`).
  */
 export function unreadableThemeNotice(lang: Lang, name: string, remote: boolean): string {
-  if (lang === 'ja') {
-    const why = remote ? 'このウィンドウでは Bash Explainer がリモート側（WSL、SSH、コンテナー）で動いていて、読めるのは VS Code の既定のカラーテーマ（Dark Modern、Light 2026 など）だけです。ローカル側に入れると（拡張機能ビューの「ローカルにインストール」）、どのカラーテーマも読めます。' : '';
-    return `パネルは独自の色のままです。カラーテーマ「${name}」を読めません。${why}`;
-  }
-  const why = remote ? ' Bash Explainer runs on the remote side of this window (WSL, SSH, a container), where only VS Code\'s default themes (Dark Modern, Light 2026…) can be read. Installed on the local side (Install Locally, in the Extensions view), it reads every theme.' : '';
-  return `The panel keeps its own colours: the theme "${name}" cannot be read.${why}`;
+  return ui[lang].unreadableTheme(name, remote);
 }

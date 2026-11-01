@@ -31,9 +31,7 @@ export function showChannel(lang: Lang): void {
       $('banner-text').replaceChildren(t.banner + ' ', code, ' ' + t.bannerTail);
     } else {
       // En reads "Preview of pull request #12 (commit abc1234). Not released."; ja "プルリクエスト #12（コミット abc1234）のプレビュー。未リリース。"
-      const open = lang === 'ja' ? '（コミット ' : ' (commit ';
-      const close = lang === 'ja' ? '）' : '). ';
-      $('banner-text').replaceChildren(`${t.prBanner} #${PR}${open}`, code, close + t.prBannerTail);
+      $('banner-text').replaceChildren(`${t.prBanner} #${PR}${t.prBannerOpen}`, code, t.prBannerClose + t.prBannerTail);
       $<HTMLAnchorElement>('banner-pr').href = `https://github.com/sf624/bash-explainer/pull/${PR}`;
       $('banner-pr').textContent = `${t.toPr} #${PR}`;
       $('banner-pr').hidden = false;

@@ -19,7 +19,7 @@ import { REFERENCE_URLS } from '../src/references';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { partAt } from '../src/ui/hoverParts';
 import { HoverInput, lineCard, partHover } from '../src/ui/hoverView';
-import { ui } from '../src/ui/render';
+import { ui } from '../src/ui/texts';
 import { frames, openSite, root, until } from './support/site';
 
 const SCRIPT = '#!/bin/bash\nfor f in $(ls); do\n    grep -n TODO "$f"\ndone\necho end';

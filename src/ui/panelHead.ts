@@ -1,6 +1,6 @@
 import { Lang } from '../i18n';
 import { HeaderButton, ViewControl } from './panelView';
-import { ui } from './render';
+import { ui } from './texts';
 
 // The panel's header as both hosts draw it (docs/design/chrome-redesign.md, decisions 4 and 11, step C7): the forms of
 // the view control, widest first, and the names and icons of its tools. The web page draws the header above the
@@ -73,15 +73,9 @@ export interface PanelTools {
   copy: ToolButton;
 }
 
-/** The short words of the tools, by language (each is contained in the tool's name in `ui`: panelTools). */
-const WORDS: Record<Lang, { collapse: string; expand: string; copy: string; reference: string; referenceShort: string }> = {
-  en: { collapse: 'Collapse', expand: 'Expand', copy: 'Copy', reference: 'Reference', referenceShort: 'Ref' },
-  ja: { collapse: '折りたたむ', expand: '展開する', copy: 'コピー', reference: '早見表', referenceShort: '早見表' },
-};
-
 export function panelTools(lang: Lang): PanelTools {
   const tp = ui[lang].panel;
-  const w = WORDS[lang];
+  const w = tp.words;
   return {
     toggle: { fold: { name: tp.collapseAll, icon: 'collapse-all', word: w.collapse }, unfold: { name: tp.expandAll, icon: 'expand-all', word: w.expand } },
     ref: { open: { name: tp.reference, icon: 'book', word: w.reference, short: w.referenceShort }, close: { name: tp.back, icon: 'arrow-left' } },

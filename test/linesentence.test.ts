@@ -16,7 +16,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { shellState } from '../src/semantics/state';
 import { descendants, field, type SyntaxNode } from '../src/syntax/tree';
 import { panelUpdate, PANEL_BODY } from '../src/ui/panelView';
-import { ui } from '../src/ui/render';
+import { ui } from '../src/ui/texts';
 import { type ArgvInput, fixtureInputs, runArgv } from './support/argv';
 import { argvHolds, argvShown } from './support/argvline';
 import { probeSkipReason } from './support/probe';

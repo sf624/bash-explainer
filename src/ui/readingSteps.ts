@@ -5,7 +5,7 @@
 import type { ScriptProcess } from '../analyzer-types';
 import type { Lang } from '../i18n';
 import type { Layer, ReadingNode } from '../reading';
-import { ui } from './render';
+import { ui } from './texts';
 
 /** The layers, in the order the steps add them. */
 const LAYERS: readonly Layer[] = ['bash', 'child', 'command', 'language'];

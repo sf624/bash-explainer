@@ -9,7 +9,7 @@ import { InlayHintsController } from './ui/inlayHints';
 import { INLINE_NOTICE_KEY, inlineNotice, inlineNoticeDue } from './ui/inlineNotice';
 import { PanelController } from './ui/panel';
 import { SemanticTokensController } from './ui/semanticTokens';
-import { Feature, ui } from './ui/render';
+import { type Feature, ui } from './ui/texts';
 
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const parser = createUnbashParser();

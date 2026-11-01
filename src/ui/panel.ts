@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { Span } from '../analyzer-types';
 import { ExplainService } from '../service';
-import { toPlainMarkdown, ui } from './render';
+import { toPlainMarkdown } from './render';
+import { ui } from './texts';
 import { FromPanel, lineMarks, needsReading, PANEL_BODY, PanelState, panelState, panelUpdate } from './panelView';
 import { wrapsLikeEditor } from './lineBox';
 import { isPanelQuestion, panelReply } from './panelReply';
