@@ -15,6 +15,7 @@ import type { AutoShell } from '../src/dialect';
 import { autoShellAt, DocumentIssue, explainDocumentLine, ShellDocument, Shells } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
+import { problemLevels } from '../src/levels';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { lineMarks, needsReading, panelUpdate } from '../src/ui/panelView';
@@ -37,6 +38,8 @@ import { closeSheet, narrow, reopenSheet, setUpEdgeSwipe, setUpProblems, setUpSh
 import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
 import { ProblemStrip, roomAboveStrip, watchStrip } from './problem-list';
+import { ReadEdit } from './read-edit';
+import { BottomSheet } from './sheet';
 import { CopyState, DEFAULT_THEME, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
@@ -144,7 +147,7 @@ function autoShell(): AutoShell | undefined {
 
 // ---- Editor ---------------------------------------------------------------------------------
 
-let readMode = readStored(STORAGE_KEYS.readMode) === '1';
+const readEdit = new ReadEdit({ set: (read) => editor.setReadMode(read), tipGone: () => showFile() });
 /** The warning codes in the script, offered in the settings dialog. */
 let codesSeen: string[] = [];
 /** The problems the editor shows, for the panel's squiggles. */
@@ -155,7 +158,13 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let announcer: LineAnnouncer | undefined;
 
 /** The Problems strip and list under the editor; a click on a problem, ‹ › and F8 (on the page) select it in the editor. */
-const strip = mode.hasChrome ? new ProblemStrip({ lang: () => lang, cursor: () => editor.cursor(), spans: () => editor.problemSpans(), pick: (i) => editor.select(i.startLine, i.startCol, i.endLine, i.endCol) }) : undefined;
+const strip = mode.hasChrome ? new ProblemStrip({
+  lang: () => lang, cursor: () => editor.cursor(), spans: () => editor.problemSpans(),
+  pick: (i) => {
+    editor.select(i.startLine, i.startCol, i.endLine, i.endCol);
+    sheet?.picked();
+  },
+}) : undefined;
 const editor = new Editor({
   kind: () => kinds.kind,
   lang: () => lang,
@@ -174,6 +183,7 @@ const editor = new Editor({
     problemsShown = list;
     updatePanel();
     strip?.show(list);
+    panel.problems(problemLevels(list.map((i) => i.severity)));
   },
   changed(u: ViewUpdate) {
     // Undo would no longer undo the sample once the text changed again.
@@ -188,7 +198,7 @@ const editor = new Editor({
   },
   openSettings: () => settingsDialog?.show(),
   announce: (text) => announcer?.say(text),
-}, { parent: $('editor'), text: shared.text ?? kinds.info().sample, readMode, problems: mode.hasChrome });
+}, { parent: $('editor'), text: shared.text ?? kinds.info().sample, readMode: readEdit.read, problems: mode.hasChrome });
 editor.shade();
 editor.placeCursor(shared.text ? 1 : kinds.info().cursorLine);
 {
@@ -241,7 +251,7 @@ function updatePanel(): void {
     choice: choice(), detected: auto, placement: settings['examples.placement'],
     animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true, state: panel.panelState(),
   });
-  panel.show(update);
+  panel.show(update, line);
   yqLine = { options: update.dialect.yqs, value: update.dialect.yq };
   scope?.draw();
   // (The Shell setting says the shell the script reads as now: decision 12.)
@@ -333,10 +343,7 @@ function applyLanguage(): void {
   document.documentElement.lang = lang;
   if (mode.compare) put('tagline', t.compareTagline);
   put('install', t.install);
-  put('readtip-text', t.readTip);
-  document.getElementById('readtip-close')?.setAttribute('aria-label', t.close);
-  document.getElementById('readtip-close')?.setAttribute('title', t.close);
-  placeReadTip();
+  readEdit.draw(lang);
   put('lang-label', t.lang);
   put('menu-sample-label', t.sample);
   put('menu-open-label', t.open);
@@ -354,8 +361,9 @@ function applyLanguage(): void {
   showMenuTexts(lang);
   head?.showTexts();
   panel.showActions();
+  sheet?.name();
   // The buttons drawn as icons say what they do to screen readers and in a tooltip.
-  for (const [id, name] of [['sample', t.sample], ['readmode', t.readMode], ['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize], ['problems-resize', t.resizeProblems]]) {
+  for (const [id, name] of [['sample', t.sample], ['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize], ['problems-resize', t.resizeProblems]]) {
     const el = document.getElementById(id);
     el?.setAttribute('aria-label', name);
     if (!id.endsWith('resize') && id !== 'splitter') el?.setAttribute('title', name);
@@ -458,60 +466,11 @@ function clearEverything(): void {
   clearStoredData();
   changeSettings(mergeSettings());
   setTheme(DEFAULT_THEME);
-  readMode = false;
-  editor.setReadMode(false);
-  showReadMode();
+  readEdit.reset();
   resetSplit?.();
   resetProblems?.();
-  showReadTip();
   showFile();
 }
-function showReadMode(): void {
-  // The compare page has no such button.
-  document.getElementById('readmode')?.setAttribute('aria-pressed', String(readMode));
-}
-showReadMode();
-on('readmode', 'click', () => {
-  hideReadTip(true);
-  readMode = !readMode;
-  editor.setReadMode(readMode);
-  showReadMode();
-  writeStored(STORAGE_KEYS.readMode, readMode ? '1' : '0');
-});
-
-// The first-run tip for the read-mode switch: shown while the switch is (a coarse pointer), until it has
-// been closed or the switch used. It is kept in storage; without storage it shows again on the next visit.
-function readTipSeen(): boolean {
-  return readStored(STORAGE_KEYS.readTipSeen) === '1';
-}
-/** Puts the bubble under the switch (below the banner too, on the development version and previews) and points its arrow at the middle of the switch. */
-function placeReadTip(): void {
-  const tip = document.getElementById('readtip');
-  const btn = document.getElementById('readmode');
-  if (!tip || !btn || tip.hidden) return;
-  const b = btn.getBoundingClientRect();
-  tip.style.top = `${b.bottom + 10}px`;
-  tip.style.setProperty('--arrow-x', `${b.left + b.width / 2 - tip.getBoundingClientRect().left}px`);
-}
-function hideReadTip(remember: boolean): void {
-  const tip = document.getElementById('readtip');
-  if (tip) tip.hidden = true;
-  if (remember) writeStored(STORAGE_KEYS.readTipSeen, '1');
-  // The first visit's hint over the editor waits for this tip: one at a time.
-  showFile();
-}
-/** Shows the tip, if there is a switch to point at and the tip was not seen. */
-function showReadTip(): void {
-  const tip = document.getElementById('readtip');
-  const btn = document.getElementById('readmode');
-  if (tip && btn && window.matchMedia('(pointer: coarse)').matches && !readTipSeen()) {
-    tip.hidden = false;
-    placeReadTip();
-  }
-}
-showReadTip();
-window.addEventListener('resize', placeReadTip);
-on('readtip-close', 'click', () => hideReadTip(true));
 function openSettings(): void {
   if (dialogElement && reopenSheet(dialogElement)) return;
   if (settingsDialog?.open || drawer?.open) return;
@@ -540,7 +499,7 @@ if (edgeRight) setUpEdgeSwipe(edgeRight, openSettings, 'right');
 // The menu's items do what the top bar's buttons do, and close the menu first.
 // The menu's items do what the editor's header does, and close the menu first. Copy a link says "Copied" on the item
 // itself, and the menu stays.
-for (const [item, run] of [['menu-sample', sampleAsked], ['menu-clear', clearEditor], ['menu-copy-script', copyScript]] as const) {
+for (const [item, run] of [['menu-sample', sampleAsked], ['menu-clear', clearEditor], ['menu-copy-script', copyScript], ['menu-copy-md', copyMarkdown]] as const) {
   on(item, 'click', (e) => {
     drawer?.close();
     // (The item is told, so that a question the command asks gives the focus back to the sheet's button.)
@@ -558,6 +517,18 @@ const resetProblems = splitElement && mode.hasChrome
   : undefined;
 // The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved).
 narrow.addEventListener('change', () => editor.keepCursorInView());
+// On a phone the explanation is a sheet over the editor (web/sheet.ts): the editor's room and the toast follow it.
+const panePane = document.getElementById('panel-pane');
+const sheet = panePane && mode.hasChrome ? new BottomSheet(panePane, {
+  lang: () => lang,
+  moved() {
+    editor.view.requestMeasure();
+    editor.keepCursorInView('nearest');
+    toast.place();
+  },
+  reading: () => readEdit.read,
+  explain: () => panel.explain(),
+}) : undefined;
 
 /** Hides the toast whose Undo goes back over an edit, when another edit of the editor's text comes first. */
 function dropUndo(): void {
@@ -655,7 +626,7 @@ const head = withFiles ? new EditorHead({
   clear: clearEditor,
   copyScript,
   holdsSample: () => KINDS.some((k) => k.sample === editor.text),
-  tipShown: () => document.getElementById('readtip')?.hidden === false,
+  tipShown: () => readEdit.tipShown(),
   status: (text) => status('note', text),
 }) : undefined;
 scope = withFiles ? new ScopeControl({ lang: () => lang, kind: () => kinds.kind, shells: () => ({ forced: forcedShell(settings), auto: autoShell() }), yq: () => yqLine, chooseKind: (k) => kinds.choose(k), choose: setChoice }) : undefined;

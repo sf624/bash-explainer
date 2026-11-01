@@ -9,6 +9,7 @@ import { Span } from '../src/analyzer';
 import { Lang } from '../src/i18n';
 import { FromPanel, needsReading, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
 import { isPanelQuestion, panelReply } from '../src/ui/panelReply';
+import type { NoteLevel } from '../src/levels';
 import { PanelHead } from './panel-head';
 import { Theme } from './protocol';
 import { readStoredObject, STORAGE_KEYS, writeStored } from './storage';
@@ -108,9 +109,20 @@ export class PanelBridge {
     if (this.frame) this.frame.src = 'panel.html';
   }
 
-  /** Shows what the panel was sent for a line. */
-  show(message: ReturnType<typeof panelUpdate>): void {
+  /** Shows what the panel was sent for a line (`line`, from 0: the header's Explanation tab says it on a phone). */
+  show(message: ReturnType<typeof panelUpdate>, line: number): void {
     this.send(message);
+    this.head?.cursor(line);
+  }
+
+  /** The problems the editor shows: the header's Problems tab counts them by level (on a phone). */
+  problems(levels: NoteLevel[]): void {
+    this.head?.counts(levels);
+  }
+
+  /** Shows the Explanation tab (on a phone, after a problem was chosen in the Problems tab). */
+  explain(): void {
+    this.head?.explain();
   }
 
   private onMessage(e: MessageEvent): void {

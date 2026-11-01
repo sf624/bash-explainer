@@ -3,7 +3,7 @@
 // unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser } from 'playwright-core';
-import { openSettingsSection, openSite, stable, until } from './support/site';
+import { openSettingsSection, openSite, until } from './support/site';
 
 describe('the web page: resizing the panes and the Problems list', function () {
   this.timeout(120000);
@@ -49,9 +49,9 @@ describe('the web page: resizing the panes and the Problems list', function () {
     assert.strictEqual(await value(), '50');
     await ctx.close();
 
-    // On a phone, one above the other: a drag with a finger.
-    const { devices } = await import('playwright-core');
-    const phone = await browser.newContext({ ...devices['iPhone 13'] });
+    // In a narrow window, one above the other: a drag with a finger (a touch screen that has a mouse too; a phone has the
+    // explanation as a sheet instead: test/web-sheet.test.ts).
+    const phone = await browser.newContext({ viewport: { width: 390, height: 664 }, hasTouch: true });
     const p2 = await phone.newPage();
     await p2.goto(base);
     await p2.locator('.cm-line').first().waitFor();
@@ -188,20 +188,19 @@ describe('the web page: resizing the panes and the Problems list', function () {
     assert.strictEqual(await list(), first);
     await ctx.close();
 
-    // A phone: nothing runs over the side, folded or not, and a finger drags the handle.
-    const { devices } = await import('playwright-core');
-    const phone = await browser.newContext({ ...devices['iPhone 13'], viewport: { width: 360, height: 740 } });
+    // A narrow window on a touch screen: nothing runs over the side, folded or not, and a finger drags the handle. (On a
+    // phone the list is a tab of the explanation's sheet: test/web-sheet.test.ts.)
+    const phone = await browser.newContext({ viewport: { width: 360, height: 740 }, hasTouch: true });
     const p2 = await phone.newPage();
     await p2.goto(base);
     await p2.locator('.cm-line').first().waitFor();
-    await p2.locator('#readtip-close').tap();
     await p2.locator('.cm-line').first().tap({ position: { x: 30, y: 5 } });
     await p2.keyboard.press('Control+A');
     await p2.keyboard.insertText(SCRIPT);
     await until('the problems', () => p2.locator('#problem-list li').count(), (n) => n >= 6);
     const flat = () => p2.evaluate('document.documentElement.scrollWidth <= innerWidth && document.scrollingElement.scrollHeight === innerHeight && document.querySelector("#problems").scrollWidth <= document.querySelector("#problems").clientWidth');
     assert.strictEqual(await flat(), true);
-    // A phone starts with the list folded; unfold it for the drag.
+    // A narrow window starts with the list folded; unfold it for the drag.
     assert.strictEqual(await p2.locator('#problems-toggle').getAttribute('aria-expanded'), 'false');
     await p2.locator('#problems-toggle').tap();
     await until('the list unfolds', () => p2.locator('#problems-toggle').getAttribute('aria-expanded'), (v) => v === 'true');
@@ -245,9 +244,9 @@ describe('the web page: resizing the panes and the Problems list', function () {
     await phone.close();
   });
 
-  it('starts with the Problems list folded on a phone and open on a wide screen; a stored choice wins', async () => {
-    const { devices } = await import('playwright-core');
-    const phone = await browser.newContext({ ...devices['iPhone 13'], viewport: { width: 390, height: 740 } });
+  it('starts with the Problems list folded in a narrow window and open on a wide screen; a stored choice wins', async () => {
+    // (On a phone the list is a tab of the explanation's sheet: test/web-sheet.test.ts.)
+    const phone = await browser.newContext({ viewport: { width: 390, height: 740 }, hasTouch: true });
     const p = await phone.newPage();
     await p.goto(base);
     await p.locator('.cm-line').first().waitFor();
@@ -278,11 +277,6 @@ describe('the web page: resizing the panes and the Problems list', function () {
     await p.reload();
     await p.locator('.cm-line').first().waitFor();
     await until('folded again', expanded, (v) => v === 'false');
-    // A phone zoomed out is wider in CSS pixels, but still a phone (test/web-phone.test.ts).
-    const cdp = await phone.newCDPSession(p);
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 1897, deviceScaleFactor: 1.17, mobile: true, screenWidth: 390, screenHeight: 844 });
-    await until('the zoom', () => p.evaluate('innerWidth') as Promise<number>, (w) => w === 1000);
-    assert.strictEqual(await stable('the list on a zoomed-out phone', expanded), 'false');
     await phone.close();
 
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });

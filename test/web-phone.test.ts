@@ -54,7 +54,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     // The tip shows the first time; closing it, the theme, the shell and read mode are kept.
     await until('the tip', () => page.locator('#readtip').isVisible(), (v) => v);
     await page.locator('#readtip-close').tap();
-    await page.locator('#readmode').tap();
+    await page.locator('#mode-read').tap();
     await choose(page, '#theme', 'dark');
     await setShell(page, 'dash');
     await until('the keys', stored, (k) => k.includes('bash-explainer-settings') && k.includes('bash-explainer-theme') && k.includes('bash-explainer-read-mode') && k.includes('bash-explainer-read-tip-seen'));
@@ -77,7 +77,8 @@ describe('the web page: touch screens, stored data and the window', function () 
     assert.strictEqual(await currentShell(page), 'auto');
     assert.strictEqual(await page.locator('#theme').inputValue(), 'auto');
     assert.strictEqual(await page.evaluate('document.documentElement.getAttribute("data-theme")'), null);
-    assert.strictEqual(await page.locator('#readmode').getAttribute('aria-pressed'), 'false');
+    assert.strictEqual(await page.locator('#mode-read').getAttribute('aria-pressed'), 'false');
+    assert.strictEqual(await page.locator('#mode-edit').getAttribute('aria-pressed'), 'true');
     assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), null);
     await page.locator('#settings-done').tap();
     await until('the tip again', () => page.locator('#readtip').isVisible(), (v) => v);
@@ -100,21 +101,28 @@ describe('the web page: touch screens, stored data and the window', function () 
     await bare.close();
   });
 
-  it('read mode: on a phone a tap places the cursor without the keyboard, the choice is kept, and the top bar stays one row at 360px', async () => {
+  it('Read | Edit: on a phone a tap in Read places the cursor without the keyboard, the choice is kept, and the top bar stays one row at 360px', async () => {
     const { devices } = await import('playwright-core');
     const ctx = await browser.newContext({ ...devices['iPhone 13'], viewport: { width: 360, height: 740 }, locale: 'en-US' });
     const page = await ctx.newPage();
     await page.goto(base);
     await page.locator('.cm-line').nth(5).waitFor();
-    const btn = page.locator('#readmode');
-    assert.strictEqual(await btn.isVisible(), true);
-    assert.strictEqual(await btn.getAttribute('aria-pressed'), 'false');
-    assert.match((await btn.getAttribute('aria-label'))!, /^Read mode/);
+    // In the strip above the editor: Read | Edit, Edit at first; the top bar has no switch.
+    const read = page.locator('#mode-read');
+    const edit = page.locator('#mode-edit');
+    assert.deepStrictEqual([await read.innerText(), await edit.innerText()], ['Read', 'Edit']);
+    assert.strictEqual(await page.locator('#ed-head #read-edit').isVisible(), true);
+    assert.strictEqual(await page.locator('#read-edit').getAttribute('aria-label'), 'Read or edit the script');
+    assert.deepStrictEqual([await read.getAttribute('aria-pressed'), await edit.getAttribute('aria-pressed')], ['false', 'true']);
+    assert.match((await read.getAttribute('title'))!, /^Read mode/);
     assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), null);
     const fits = async () => page.evaluate('(() => { const t = document.querySelector(".top"); const k = document.querySelector(".brand").getBoundingClientRect(); return [t.getBoundingClientRect().height, k.width, document.documentElement.scrollWidth <= document.documentElement.clientWidth]; })()') as Promise<[number, number, boolean]>;
-    await btn.tap();
-    assert.strictEqual(await btn.getAttribute('aria-pressed'), 'true');
+    await read.tap();
+    assert.deepStrictEqual([await read.getAttribute('aria-pressed'), await edit.getAttribute('aria-pressed')], ['true', 'false']);
     assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), 'none');
+    // (A second tap on the mode on changes nothing.)
+    await read.tap();
+    assert.strictEqual(await read.getAttribute('aria-pressed'), 'true');
     const [h, w, ok] = await fits();
     assert.ok(h <= 49 && w >= 40 && ok, String([h, w, ok]));
     // A tap in the editor moves the cursor, and the explanation follows.
@@ -126,12 +134,12 @@ describe('the web page: touch screens, stored data and the window', function () 
     await page.locator('.cm-line').nth(2).tap();
     await until('the cursor line', lineOf, (n) => n === 2);
     await until('the explanation', () => panel.locator('.row .label').first().innerText(), (t) => t !== first);
-    // The choice is kept; turning it off lets the editor take text again.
+    // The choice is kept; Edit lets the editor take text again.
     await page.reload();
     await page.locator('.cm-line').first().waitFor();
-    assert.strictEqual(await page.locator('#readmode').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(await page.locator('#mode-read').getAttribute('aria-pressed'), 'true');
     assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), 'none');
-    await page.locator('#readmode').tap();
+    await page.locator('#mode-edit').tap();
     assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), null);
     await ctx.close();
     // Not on a desktop (a fine pointer), and the mode works without storage.
@@ -140,8 +148,8 @@ describe('the web page: touch screens, stored data and the window', function () 
     const d = await desk.newPage();
     await d.goto(base);
     await d.locator('.cm-line').first().waitFor();
-    assert.strictEqual(await d.locator('#readmode').isVisible(), false);
-    await d.evaluate('document.getElementById("readmode").click()');
+    assert.strictEqual(await d.locator('#read-edit').isVisible(), false);
+    await d.evaluate('document.getElementById("mode-read").click()');
     assert.strictEqual(await d.locator('.cm-content').getAttribute('inputmode'), 'none');
     await desk.close();
   });
@@ -193,15 +201,15 @@ describe('the web page: touch screens, stored data and the window', function () 
     await page.locator('.cm-line').nth(5).waitFor();
     const tip = page.locator('#readtip');
     assert.strictEqual(await tip.isVisible(), true);
-    assert.match(await tip.innerText(), /Tap here to turn off editing/);
+    assert.match(await tip.innerText(), /Tap Read to keep the keyboard hidden/);
     const close = page.locator('#readtip-close');
     assert.strictEqual(await close.getAttribute('aria-label'), 'Close');
     // Inside the window, the arrow over the switch, and no horizontal scroll.
-    const geo = await page.evaluate('(() => { const t = document.querySelector("#readtip").getBoundingClientRect(); const b = document.querySelector("#readmode").getBoundingClientRect(); const x = parseFloat(getComputedStyle(document.querySelector("#readtip")).getPropertyValue("--arrow-x")); return { l: t.left, r: t.right, top: t.top, bottom: b.bottom, arrow: t.left + x, mid: b.left + b.width / 2, ok: document.documentElement.scrollWidth <= document.documentElement.clientWidth }; })()') as { l: number; r: number; top: number; bottom: number; arrow: number; mid: number; ok: boolean };
+    const geo = await page.evaluate('(() => { const t = document.querySelector("#readtip").getBoundingClientRect(); const b = document.querySelector("#mode-read").getBoundingClientRect(); const x = parseFloat(getComputedStyle(document.querySelector("#readtip")).getPropertyValue("--arrow-x")); return { l: t.left, r: t.right, top: t.top, bottom: b.bottom, arrow: t.left + x, mid: b.left + b.width / 2, ok: document.documentElement.scrollWidth <= document.documentElement.clientWidth }; })()') as { l: number; r: number; top: number; bottom: number; arrow: number; mid: number; ok: boolean };
     assert.ok(geo.l >= 0 && geo.r <= 360 && geo.ok && geo.top >= geo.bottom, JSON.stringify(geo));
     assert.ok(Math.abs(geo.arrow - geo.mid) < 1, JSON.stringify(geo));
     // With the banner of the development version above the bar, the bubble moves down with the switch.
-    const below = await page.evaluate('(() => { document.getElementById("channel-banner").hidden = false; document.getElementById("banner-text").textContent = "Built from main at abc1234. Not released yet, may change."; window.dispatchEvent(new Event("resize")); const t = document.querySelector("#readtip").getBoundingClientRect(); const b = document.querySelector("#readmode").getBoundingClientRect(); return { top: t.top, bottom: b.bottom }; })()') as { top: number; bottom: number };
+    const below = await page.evaluate('(() => { document.getElementById("channel-banner").hidden = false; document.getElementById("banner-text").textContent = "Built from main at abc1234. Not released yet, may change."; window.dispatchEvent(new Event("resize")); const t = document.querySelector("#readtip").getBoundingClientRect(); const b = document.querySelector("#mode-read").getBoundingClientRect(); return { top: t.top, bottom: b.bottom }; })()') as { top: number; bottom: number };
     assert.ok(below.bottom > 48 && below.top >= below.bottom, JSON.stringify(below));
     await close.tap();
     assert.strictEqual(await tip.isVisible(), false);
@@ -215,7 +223,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     await p2.goto(base);
     await p2.locator('.cm-line').first().waitFor();
     assert.strictEqual(await p2.locator('#readtip').isVisible(), true);
-    await p2.locator('#readmode').tap();
+    await p2.locator('#mode-read').tap();
     assert.strictEqual(await p2.locator('#readtip').isVisible(), false);
     await p2.reload();
     await p2.locator('.cm-line').first().waitFor();
@@ -228,7 +236,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     await p3.goto(base);
     await p3.locator('.cm-line').first().waitFor();
     assert.strictEqual(await p3.locator('#readtip').isVisible(), true);
-    assert.match(await p3.locator('#readtip').innerText(), /ここをタップ/);
+    assert.match(await p3.locator('#readtip').innerText(), /「閲覧」をタップ/);
     await p3.locator('#readtip-close').tap();
     assert.strictEqual(await p3.locator('#readtip').isVisible(), false);
     await ctx3.close();
@@ -277,14 +285,15 @@ describe('the web page: touch screens, stored data and the window', function () 
       assert.deepStrictEqual(m, { page: [0, 0, 0], footer: 0, editor: true }, `${width}×${height}`);
       const inner = await until('the explanation scrolled', () => panel().evaluate('[document.scrollingElement.scrollHeight > innerHeight, scrollY > 0]') as Promise<boolean[]>, (v) => v[1]);
       assert.deepStrictEqual(inner, [true, true], `${width}×${height}`);
-      // The editor and the explanation take the window below the top bar, side by side or one above the other.
+      // The editor and the explanation take the window below the top bar, side by side, or on a phone the explanation
+      // as a sheet over the editor, which ends at its top (its height is test/web-sheet.test.ts's).
       // (The explanation's pane: its header, then the panel's frame, down to the bottom.)
-      const ed = (await page.locator('.source').boundingBox())!;
+      const ed = (await page.locator(width < 768 ? '#editor' : '.source').boundingBox())!;
       const bar = (await page.locator('.top').boundingBox())!;
       const pane = (await page.locator('#panel-pane').boundingBox())!;
       assert.ok(bar.height <= 49, String(bar.height));
       assert.ok(Math.round(box.y + box.height) === height && box.y > pane.y, JSON.stringify([pane, box]));
-      if (width < 768) assert.ok(ed.width === width && pane.width === width && pane.y > ed.y + ed.height && Math.round(pane.y + pane.height) === height, JSON.stringify([ed, pane]));
+      if (width < 768) assert.ok(ed.width === width && pane.width === width && Math.abs(pane.y - (ed.y + ed.height)) < 1 && Math.round(pane.y + pane.height) === height, JSON.stringify([ed, pane]));
       else assert.ok(pane.x > ed.x + ed.width && Math.round(ed.height) === height - bar.height && Math.round(pane.height) === height - bar.height, JSON.stringify([ed, pane]));
       await ctx.close();
     }
@@ -292,7 +301,11 @@ describe('the web page: touch screens, stored data and the window', function () 
 
   it('keeps the phone layout on a phone at every zoom (a wider viewport in CSS pixels), and follows the width on a desktop and a tablet', async () => {
     const { devices } = await import('playwright-core');
-    /** What tells the phone layout: the bar's Copy a link hidden, the panes one above the other, and the Problems list folded. */
+    /**
+     * What tells the phone layout: the bar's Copy a link hidden, the explanation under the editor, as a sheet over it
+     * (the splitter hidden; the Problems list a tab of the sheet); a narrow desktop window has the panes one above the
+     * other, the splitter between, and the Problems list folded under the editor.
+     */
     const layout = async (page: import('playwright-core').Page) => {
       await page.locator('.cm-line').first().waitFor();
       await until('the sample\'s problems', () => problemsShown(page), (v) => v);
@@ -302,8 +315,9 @@ describe('the web page: touch screens, stored data and the window', function () 
         return {
           share: await page.locator('#share').isVisible(),
           stacked: box.y >= ed.y + ed.height,
-          splitter: await page.locator('#splitter').getAttribute('aria-orientation'),
-          problems: await page.locator('#problems-toggle').getAttribute('aria-expanded'),
+          splitter: await page.locator('#splitter').isVisible() ? await page.locator('#splitter').getAttribute('aria-orientation') : 'hidden',
+          problems: await page.locator('#problems-toggle').isVisible() ? await page.locator('#problems-toggle').getAttribute('aria-expanded') : 'tab',
+          sheet: await page.evaluate('document.documentElement.classList.contains("bottom-sheet")') as boolean,
         };
       };
     };
@@ -313,8 +327,9 @@ describe('the web page: touch screens, stored data and the window', function () 
       await until(label, read, (v) => isDeepStrictEqual(v, expected)).catch(() => undefined);
       assert.deepStrictEqual(await stable(label, read, 6), expected, label);
     };
-    const phoneLayout = { share: false, stacked: true, splitter: 'horizontal', problems: 'false' };
-    const wideLayout = { share: true, stacked: false, splitter: 'vertical', problems: 'true' };
+    const phoneLayout = { share: false, stacked: true, splitter: 'hidden', problems: 'tab', sheet: true };
+    const narrowLayout = { share: false, stacked: true, splitter: 'horizontal', problems: 'false', sheet: false };
+    const wideLayout = { share: true, stacked: false, splitter: 'vertical', problems: 'true', sheet: false };
 
     // A 390×844 phone, zoomed out to 50% and 33%: the CSS viewport grows and a device pixel is less of a CSS
     // pixel. At 780 the screen stays as at 100%, as Safari reports it; at 1170 it is in CSS pixels of the zoom, as in Chrome.
@@ -338,14 +353,26 @@ describe('the web page: touch screens, stored data and the window', function () 
       await expectLayout(page, phoneLayout, `loaded at ${width}`);
     }
     await ctx.close();
-    // A tablet as big as that zoomed-out phone, never seen as a phone, follows the width as before.
+    // A tablet as big as that zoomed-out phone, never seen as a phone: held upright (up to 1024 px), the sheet; turned,
+    // or wider than 1024 px, the width decides as on a desktop.
     const tablet = await browser.newContext({ ...phone, viewport: { width: 780, height: 1480 }, screen: { width: 780, height: 1688 }, deviceScaleFactor: 1.5 });
     const t = await tablet.newPage();
     await t.goto(base);
-    await expectLayout(t, wideLayout, 'tablet 780');
+    await expectLayout(t, phoneLayout, 'tablet 780 upright');
     await t.setViewportSize({ width: 700, height: 1480 });
     await expectLayout(t, phoneLayout, 'tablet window 700');
+    const tcdp = await tablet.newCDPSession(t);
+    await tcdp.send('Emulation.setDeviceMetricsOverride', { width: 1480, height: 780, deviceScaleFactor: 1.5, mobile: true, screenWidth: 1688, screenHeight: 780, screenOrientation: { type: 'landscapePrimary', angle: 90 } });
+    await expectLayout(t, wideLayout, 'tablet turned');
+    // (The window made short by the on-screen keyboard keeps the sheet: the screen is still upright.)
+    await tcdp.send('Emulation.setDeviceMetricsOverride', { width: 780, height: 600, deviceScaleFactor: 1.5, mobile: true, screenWidth: 780, screenHeight: 1688, screenOrientation: { type: 'portraitPrimary', angle: 0 } });
+    await expectLayout(t, phoneLayout, 'tablet with its keyboard');
     await tablet.close();
+    const big = await browser.newContext({ ...phone, viewport: { width: 1100, height: 1400 }, screen: { width: 1100, height: 1500 }, deviceScaleFactor: 2 });
+    const b = await big.newPage();
+    await b.goto(base);
+    await expectLayout(b, wideLayout, 'tablet 1100 upright');
+    await big.close();
 
     // A desktop: wide, the phone layout when the window is made narrow, and wide again.
     const desk = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
@@ -353,7 +380,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     await d.goto(base);
     await expectLayout(d, wideLayout, 'desktop 1280');
     await d.setViewportSize({ width: 390, height: 800 });
-    await expectLayout(d, phoneLayout, 'desktop 390');
+    await expectLayout(d, narrowLayout, 'desktop 390');
     await d.setViewportSize({ width: 1280, height: 800 });
     await expectLayout(d, wideLayout, 'desktop 1280 again');
     await desk.close();
@@ -361,8 +388,9 @@ describe('the web page: touch screens, stored data and the window', function () 
 
   it('shows the desktop layout on a phone whose browser asks for the desktop site, and the phone layout again in the normal mode, also after a reload', async () => {
     const { devices } = await import('playwright-core');
-    const phoneLayout = { share: false, stacked: true, splitter: 'horizontal', problems: 'false' };
-    const wideLayout = { share: true, stacked: false, splitter: 'vertical', problems: 'true' };
+    const phoneLayout = { share: false, stacked: true, splitter: 'hidden', problems: 'tab', sheet: true };
+    const narrowLayout = { share: false, stacked: true, splitter: 'horizontal', problems: 'false', sheet: false };
+    const wideLayout = { share: true, stacked: false, splitter: 'vertical', problems: 'true', sheet: false };
     const read = async (page: import('playwright-core').Page) => {
       await page.locator('.cm-line').first().waitFor();
       await until('the sample\'s problems', () => problemsShown(page), (v) => v);
@@ -372,8 +400,9 @@ describe('the web page: touch screens, stored data and the window', function () 
         return {
           share: await page.locator('#share').isVisible(),
           stacked: box.y >= ed.y + ed.height,
-          splitter: await page.locator('#splitter').getAttribute('aria-orientation'),
-          problems: await page.locator('#problems-toggle').getAttribute('aria-expanded'),
+          splitter: await page.locator('#splitter').isVisible() ? await page.locator('#splitter').getAttribute('aria-orientation') : 'hidden',
+          problems: await page.locator('#problems-toggle').isVisible() ? await page.locator('#problems-toggle').getAttribute('aria-expanded') : 'tab',
+          sheet: await page.evaluate('document.documentElement.classList.contains("bottom-sheet")') as boolean,
         };
       };
     };
@@ -418,10 +447,16 @@ describe('the web page: touch screens, stored data and the window', function () 
       assert.strictEqual(await page.evaluate('navigator.userAgentData.mobile'), true);
       await expectLayout(page, phoneLayout, `normal mode zoomed out (screen scales: ${screenScales})`);
     }
-    // Even in the desktop-site mode, the window's width still decides: zoomed in to 600px it is narrow.
+    // Even in the desktop-site mode, the window's width still decides: zoomed in to 600px it is narrow (and no sheet: a
+    // phone's screen in the desktop-site mode is no tablet).
     await mode(desktopUA, false, 600, false);
-    await expectLayout(page, phoneLayout, 'desktop site zoomed in');
+    await expectLayout(page, narrowLayout, 'desktop site zoomed in');
+    // (A User-Agent set without client hints: Chromium then says `mobile: false`, as the desktop-site mode does; the
+    // width alone makes the page narrow.)
     await mode(mobileUA, undefined, 390, false);
+    assert.strictEqual(await page.evaluate('navigator.userAgentData.mobile'), false);
+    await expectLayout(page, narrowLayout, 'a User-Agent without hints');
+    await mode(mobileUA, true, 390, false);
     await expectLayout(page, phoneLayout, 'normal mode');
     await ctx.close();
 

@@ -26,6 +26,8 @@ export const STORAGE_KEYS = {
   problems: 'bash-explainer-problems',
   /** The panel's view (the list or the tree) and the step its tree shows (src/ui/panelView.ts `PanelState`). */
   panel: 'bash-explainer-panel',
+  /** The phone's sheet showed its one-time hint (at its first full height): '1'. */
+  sheetHint: 'bash-explainer-sheet-hint',
   /** "Show VS Code setting names" in the settings: '1' when on. */
   settingNames: 'bash-explainer-setting-names',
 } as const;

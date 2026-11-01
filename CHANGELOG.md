@@ -26,6 +26,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - One button above the editor on the web page shows the file type and the shell ("Shell script · bash (auto)") and opens both lists. Before, they were two pickers: the type in the top bar, the shell there only from 1200 px wide, else in the menu.
 - Problems on the web page fold into a strip with their count per level. ‹ › and F8 / Shift+F8 go to the next and previous problem, and the strip shows where you are (Ln 20 · 1/11). The list opens on your first visit, and then stays as you left it.
 - The example of a pipeline runs with an example value of `$USER` and the like. The names a glob example tries say why each one does not match.
+- On a phone, the explanation is a sheet over the editor: tap or drag its bar for a folded, half or full sheet; Problems is one of its tabs. Read and Edit above the editor switch between reading and typing. Before, the screen was split into two halves, the editor and the explanation.
 
 ### Fixed
 

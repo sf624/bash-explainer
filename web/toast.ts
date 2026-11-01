@@ -167,7 +167,8 @@ export class Toast {
     const left = Math.min(Math.max(GAP, room.left + GAP), window.innerWidth - GAP);
     el.style.left = `${Math.round(left)}px`;
     el.style.maxWidth = `${Math.max(0, Math.round(Math.min(room.width - 2 * GAP, window.innerWidth - GAP - left)))}px`;
-    el.style.bottom = `${Math.round(window.innerHeight - room.bottom + GAP)}px`;
+    // (And never above the window's top: on a phone's full sheet the room above it is only the strip over the editor.)
+    el.style.bottom = `${Math.round(Math.min(window.innerHeight - room.bottom + GAP, window.innerHeight - GAP - el.getBoundingClientRect().height))}px`;
     // The editor keeps its cursor's line above the toast, with the same gap as the toast keeps from the list below.
     this.host.covers(Math.round(el.getBoundingClientRect().height + 2 * GAP));
   }

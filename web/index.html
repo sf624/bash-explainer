@@ -24,7 +24,6 @@
   <symbol id="i-install" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
   <!-- GitHub's mark, unmodified: mark-github-24 of Primer Octicons 19.41.0 (MIT License, (c) GitHub Inc.); a trademark of GitHub, used as a link to this project's repository. -->
   <symbol id="i-github" viewBox="0 0 24 24"><path d="M10.226 17.284c-2.965-.36-5.054-2.493-5.054-5.256 0-1.123.404-2.336 1.078-3.144-.292-.741-.247-2.314.09-2.965.898-.112 2.111.36 2.83 1.01.853-.269 1.752-.404 2.853-.404 1.1 0 1.999.135 2.807.382.696-.629 1.932-1.1 2.83-.988.315.606.36 2.179.067 2.942.72.854 1.101 2 1.101 3.167 0 2.763-2.089 4.852-5.098 5.234.763.494 1.28 1.572 1.28 2.807v2.336c0 .674.561 1.056 1.235.786 4.066-1.55 7.255-5.615 7.255-10.646C23.5 6.188 18.334 1 11.978 1 5.62 1 .5 6.188.5 12.545c0 4.986 3.167 9.12 7.435 10.669.606.225 1.19-.18 1.19-.786V20.63a2.9 2.9 0 0 1-1.078.224c-1.483 0-2.359-.808-2.987-2.313-.247-.607-.517-.966-1.034-1.033-.27-.023-.359-.135-.359-.27 0-.27.45-.471.898-.471.652 0 1.213.404 1.797 1.235.45.651.921.943 1.483.943.561 0 .92-.202 1.437-.719.382-.381.674-.718.944-.943"/></symbol>
-  <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-open" viewBox="0 0 24 24"><path d="M3.5 7V5.5a1 1 0 0 1 1-1h4.6l2 2h8.4a1 1 0 0 1 1 1V9"/><path d="M2.6 10.2a1 1 0 0 1 1-1.2h16.8a1 1 0 0 1 1 1.2l-1.4 8a1 1 0 0 1-1 .8H5a1 1 0 0 1-1-.8z"/></symbol>
   <symbol id="i-panes" viewBox="0 0 24 24"><path d="M4 12h16M8 8l-4 4 4 4M16 8l4 4-4 4"/></symbol>
@@ -45,7 +44,6 @@
     <button id="share" class="text-btn desk-bar" type="button" aria-describedby="share-note"><svg aria-hidden="true"><use href="#i-link"/></svg><span id="share-label" class="lbl">Copy a link</span></button>
     <span id="share-note" hidden>The script is in the part after #, which browsers do not send to the server.</span>
     <span id="share-said" class="sr-only" role="status"></span>
-    <button id="readmode" class="icon-btn touch-only" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#i-keyboard"/></svg><svg class="slash" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20L20 4"/></svg></button>
     <button id="settings-open" class="icon-btn" type="button" aria-haspopup="dialog"><svg class="ico" data-icon="gear" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="settings-label" class="sr-only">Settings</span></button>
     <span class="sep wide-only" aria-hidden="true"></span>
     <a id="github" class="icon-btn wide-only" href="https://github.com/sf624/bash-explainer"><svg class="gh-mark" aria-hidden="true"><use href="#i-github"/></svg></a>
@@ -56,6 +54,8 @@
 <main class="split" id="split">
   <section class="source" id="source">
     <div id="ed-head" class="ed-head">
+      <!-- Read | Edit on a touch screen: whether a tap on the script opens the on-screen keyboard. -->
+      <span id="read-edit" class="read-edit touch-only" role="group"><button id="mode-read" type="button" aria-pressed="false">Read</button><button id="mode-edit" type="button" aria-pressed="true">Edit</button></span>
       <button id="open-btn" class="tool-btn" type="button"><svg aria-hidden="true"><use href="#i-open"/></svg><span id="open-btn-label" class="lbl">Open</span></button>
       <button id="save-btn" class="tool-btn" type="button"><svg aria-hidden="true"><use href="#i-save"/></svg><span id="save-btn-label" class="lbl">Save</span></button>
       <span class="file-box"><button id="file-name" class="file-name" type="button"><span id="file-name-stem" class="fn-stem"></span><span id="file-name-ext" class="fn-ext"></span><span id="file-dot" class="file-dot" aria-hidden="true" hidden>●</span><svg class="file-pencil" aria-hidden="true"><use href="#i-pencil"/></svg></button><input id="file-name-input" class="file-name-input" type="text" spellcheck="false" autocomplete="off" hidden></span>
@@ -100,14 +100,17 @@
   <div id="splitter" class="splitter" role="separator" tabindex="0" aria-controls="source" aria-valuemin="15" aria-valuemax="85" aria-valuenow="50"></div>
   <section id="panel-pane" class="panel-pane">
     <!-- The panel's header (web/panel-head.ts): the tabs, the view control (media/view-control.js), and the tools with their words. -->
+    <!-- On a phone (html.bottom-sheet) the pane is a bottom sheet (web/sheet.ts): the whole header is its grabber, and Problems is a tab. -->
     <div id="panel-head" class="panel-head" data-tools="beside">
-      <div id="panel-tabs" class="panel-tabs" role="tablist" aria-label="Panel"><button id="tab-explain" class="panel-tab" type="button" role="tab" aria-selected="true" aria-controls="panel-body">Explanation</button><button id="tab-ref" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-body" tabindex="-1">Reference</button></div>
+      <button id="sheet-grab" class="sheet-grab" type="button" aria-controls="panel-pane"></button>
+      <div id="panel-tabs" class="panel-tabs" role="tablist" aria-label="Panel"><button id="tab-explain" class="panel-tab" type="button" role="tab" aria-selected="true" aria-controls="panel-body">Explanation</button><button id="tab-problems" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="problems" tabindex="-1">Problems</button><button id="tab-ref" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-body" tabindex="-1">Reference</button></div>
       <div id="view-slot" class="view-slot"></div>
       <div class="panel-tools">
         <button id="collapse" class="panel-tool" type="button"><svg class="ico" data-icon="collapse-all" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="collapse-word" class="tool-word" aria-hidden="true"></span></button>
         <button id="copy-md" class="panel-tool" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="copy-md-word" class="tool-word" aria-hidden="true"></span></button>
       </div>
     </div>
+    <p id="sheet-hint" class="sheet-hint" role="note" hidden></p>
     <div id="panel-body" class="panel-body" role="tabpanel" aria-labelledby="tab-explain"><iframe id="panel" src="panel.html" title="Explanation"></iframe></div>
   </section>
 </main>
@@ -136,6 +139,8 @@
       <button id="menu-share" class="menu-item" type="button" aria-describedby="share-note"><svg aria-hidden="true"><use href="#i-link"/></svg><span id="menu-share-label">Copy a link to this script</span></button>
       <span id="menu-share-said" class="sr-only" role="status"></span>
       <button id="menu-copy-script" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-duplicate"/></svg><span id="menu-copy-script-label">Copy the script</span></button>
+      <!-- Only while the phone's sheet has no room for the panel's tools (page.css). -->
+      <button id="menu-copy-md" class="menu-item" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="menu-copy-md-label">Copy the explanation as Markdown</span></button>
     </section>
     <section class="menu-group" aria-labelledby="menu-h-prefs">
       <h3 id="menu-h-prefs" class="menu-h">Preferences</h3>

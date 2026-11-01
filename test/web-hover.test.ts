@@ -40,7 +40,8 @@ describe('the web page: hover cards in the editor', function () {
   async function open(page: Page, text = SCRIPT): Promise<void> {
     await page.goto(base);
     await until('the panel', () => Promise.resolve(panel(page)), (f) => !!f);
-    await page.locator('.cm-content').click();
+    // (Focused, not clicked: on a touch screen the middle of the editor's content lies under the explanation's sheet.)
+    await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText(text);
     // The text is explained, and its problems are found (the lint marks).

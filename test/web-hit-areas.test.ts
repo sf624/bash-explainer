@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Browser, BrowserContextOptions, Frame, Page } from 'playwright-core';
-import { openSite, menuItem, stable, until, type Site } from './support/site';
+import { openSite, menuItem, problemsShown, stable, until, type Site } from './support/site';
 import { compare, hitAreas, listed, DESKTOP_BAR, PHONE_BAR, type Allowed, type HitArea } from './support/hit-areas';
 
 const listPath = path.join(__dirname, 'fixtures/hit-areas.json');
@@ -61,7 +61,7 @@ describe('the web page: hit areas', function () {
         await page.locator('.cm-line').first().waitFor();
         // The sample has problems, so the strip and its rows are on the page.
         await menuItem(page, '#menu-sample');
-        await until('the sample\'s problems', () => page.locator('#problems').isVisible(), (v) => v, 20000);
+        await until('the sample\'s problems', () => problemsShown(page), (v) => v, 20000);
         const panel = page.frames().find((f) => f.url().endsWith('/panel.html')) as Frame;
         await until('the tree', () => panel.locator('.row').count(), (n) => n > 1);
         // The phone's first-run tip of the read-mode switch lies over the editor's header until it is closed: its own
@@ -73,6 +73,21 @@ describe('the web page: hit areas', function () {
           ...Object.fromEntries(Object.entries(byKey('page', await hitAreas(page))).filter(([k]) => !k.includes('readtip'))),
           ...byKey('panel', await hitAreas(panel)),
         };
+        // On a phone the explanation is a sheet (docs/design/chrome-redesign.md, C8a): the page at its other heights too,
+        // full (the app bar gone) and folded, each control at its smallest; then back to half.
+        if (await page.evaluate("document.documentElement.classList.contains('bottom-sheet')")) {
+          for (const key of ['End', 'Home']) {
+            await page.locator('#sheet-grab').focus();
+            await page.keyboard.press(key);
+            await settled(page, '#panel-pane');
+            for (const [k, a] of Object.entries(byKey('page', await hitAreas(page)))) {
+              const was = measured[k];
+              if (!was || a.width * a.height < was.width * was.height) measured[k] = a;
+            }
+          }
+          await page.keyboard.press('ArrowUp');
+          await settled(page, '#panel-pane');
+        }
         // The menu, the settings, the editor header's ⋯ and the chip's popover: each open on its own.
         await page.locator('#menu-open').click();
         await settled(page, '#drawer');
@@ -122,8 +137,10 @@ describe('the web page: hit areas', function () {
       #large::after { content: ''; position: absolute; inset: -17px }
       #under { position: absolute; left: 100px; top: 200px; width: 30px; height: 30px; padding: 0 }
       #cover { position: absolute; left: 90px; top: 190px; width: 60px; height: 60px; background: red }
+      #through { position: absolute; left: 300px; top: 100px; width: 10px; height: 10px; padding: 0; pointer-events: none }
     </style>
-    <button id="small">a</button><button id="large">b</button><button id="under">c</button><div id="cover"></div>`);
+    <button id="small">a</button><button id="large">b</button><button id="under">c</button><div id="cover"></div><button id="through">d</button>`);
+    // (A control that lets a press through to what is under it has no hit area: it is left out.)
     const areas = Object.fromEntries((await hitAreas(page)).map((a) => [a.key, [a.width, a.height]]));
     assert.deepStrictEqual(areas, { '#small': [10, 10], '#large': [44, 44], '#under': [0, 0] });
     await ctx.close();

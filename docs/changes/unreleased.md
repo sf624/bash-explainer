@@ -176,6 +176,17 @@ A glob example says why each name it tries does not match, a section for each re
 
 Each reason is checked in bash, with `dotglob` and `globstar` off and on: the name does not match, and matches once the reason is lifted (the option on, `[[ == ]]` for a `/`, the name's end or start replaced).
 
+### The explanation as a sheet on a phone
+
+On a phone, and on a touch screen without a mouse held upright up to 1024 px wide (a tablet), the explanation is a sheet over the editor, at three heights: folded (its tabs row alone), half (at first) and full (up to the strip above the editor; the app bar slides away, and comes back below full). Before, the screen was split in two halves with a divider between, and a tablet showed the page as a desktop does. Turned to landscape, a tablet wider than 1024 px, or a phone whose browser asks for the desktop site, keep the page of their width.
+
+- The sheet's header is one row at every height: the tabs **Explanation** with the cursor's line ("Ln 8"), **Problems** with its count per level ("ⓧ2 ⚠4 ⓘ6"; a screen reader hears "Problems: 2 errors, 4 warnings, 6 caveats"; ✓ when there are none) and **Reference**, then the view as a pill. Where the row is short, Reference reads "Ref", then the line goes, then Problems shows its highest level only. On a tablet the row also has Collapse and Copy; on a phone, Copy as Markdown is in the menu's Share group.
+- The whole header moves the sheet: drag it, and it settles on the height nearest to where you let go, or on the next one when you flick it. A tap on the header, or on the tab already chosen, goes folded → half → full → folded; another tab on a folded sheet opens it. With the keyboard, the bar's button (before the tabs) takes ↑ ↓, Home, End and Enter. The first time the sheet is full, a line under its header says how to change the height.
+- Problems is a tab of the sheet, with the list that was under the editor; a problem chosen there shows its line above the sheet and its explanation at half height.
+- Messages show just above the sheet's tabs row. The editor ends at the sheet's top (at half or lower), and the line of the cursor stays in view as the sheet moves.
+- With reduced motion, the sheet and the app bar move at once. A drag of the sheet never pulls the page to reload it.
+- **Read** | **Edit** in the strip above the editor, on a touch screen, replace the keyboard button of the top bar: in Read, a tap on a line places the cursor without the on-screen keyboard. The first-run tip points at Read. The strip has Read | Edit, the file name, the chip and ⋯, each 44 px; Open and Save are in the menu.
+
 ## Fixed
 
 ### `-F` and the other patterns of grep

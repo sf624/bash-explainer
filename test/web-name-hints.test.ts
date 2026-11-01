@@ -27,7 +27,8 @@ describe('the web page: name hints in the editor', function () {
   }
 
   async function type(page: Page, text: string): Promise<void> {
-    await page.locator('.cm-content').click();
+    // (Focused, not clicked: on a touch screen the middle of the editor's content lies under the explanation's sheet.)
+    await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText(text);
   }
