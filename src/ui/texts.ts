@@ -242,6 +242,6 @@ export const ui = {
 export type Feature = keyof typeof ui.ja.features;
 
 /** The features, in the order the status bar's menu lists them. */
-export function featureNames(): Feature[] {
-  return Object.keys(ui.ja.features) as Feature[];
+export function featureNames(lang: Lang) {
+  return Object.keys(ui[lang].features) as Feature[];
 }
