@@ -419,7 +419,9 @@ describe('a pipeline example runs with example values of variables the script le
     for (const [src, inside] of [['grep "$USER" | sort | uniq -c | sort -rn | head -5', true], ['grep -c "$USER" | cat', true], ['grep -i "${LOGNAME}" | sort', true],
       ['grep -w "$USER" | sort', false], ['grep -F "$USER" | sort', false], ['grep -x "$USER" | sort', false], ['grep -v "$USER" | sort', false], ['grep -e "$USER" -n | cat', true],
       ['echo "$HOME" | cut -d/ -f2', false], ['echo "user: $USER, home: $HOME" | tr a-z A-Z', false], ['echo $USER | rev', false], ['printf "%s\\n" "$HOME/a" "$LOGNAME" | sort -r', false],
-      ['USER=bob; grep "$USER" | sort', false]] as const) {
+      ['USER=bob; grep "$USER" | sort', false],
+      // (A function not called, and an assignment after the line, leave the environment's value there.)
+      ['f() { USER=x; }\ngrep "$USER" | sort', true], ['f() { local USER=x; }\necho "$USER" | cat', false], ['echo "$USER" | cat; USER=bob', false]] as const) {
       const ex = whole(src);
       assert.ok(ex, src);
       const lines = input(ex);
@@ -441,15 +443,20 @@ describe('a pipeline example runs with example values of variables the script le
     assert.match(whole('ps aux | grep "$USER" | wc -l')?.note ?? '', /^Here `\$USER` is `alice`/);
   });
   it('makes up no value where the script may set the variable, bash or a builtin may change it, splitting, globbing or an operator may change it, or the shell is not bash', () => {
-    for (const src of ['f() { USER=x; }\ngrep "$USER" | sort', 'source ./env.sh\ngrep "$USER" | sort', 'read -r USER\ngrep "$USER" | sort', 'echo "$RANDOM" | cat', 'IFS=l\necho $USER | cat',
+    for (const src of ['source ./env.sh\ngrep "$USER" | sort', 'read -r USER\ngrep "$USER" | sort', 'echo "$RANDOM" | cat', 'IFS=l\necho $USER | cat',
       'echo "${USER:-x}" | cat', 'echo "${USER}s" "$MYVAR" | cat', 'echo "$@" | cat', '#!/bin/sh\necho "$USER" | cat', 'bash -c \'echo "$USER" | cat\'', 'unset USER\necho "$USER" | cat',
-      'cd /tmp\necho "$PWD" | cat', 'echo "$(id -un)" | cat', 'echo "$USER"/*.log | cat', 'echo "$PWD" | cat', 'printf -v USER x\necho "$USER" | cat',
+      'cd /tmp\necho "$PWD" | cat', 'echo "$(id -un)" | cat', 'echo "$USER"/*.log | cat', 'printf -v USER x\necho "$USER" | cat',
       'mapfile USER < f\necho "$USER" | cat', 'for USER in a; do :; done\necho "$USER" | cat', 'getopts u USER\necho "$USER" | cat', 'let USER=1\necho "$USER" | cat',
       '(( USER = 1 ))\necho "$USER" | cat', ': "${USER:=x}"\necho "$USER" | cat', 'export -n USER\necho "$USER" | cat', 'declare -l USER\necho "$USER" | cat',
       'declare -u USER\necho "$USER" | cat', 'declare -n USER=HOME\necho "$USER" | cat', 'declare -n r=USER\nr=x\necho "$USER" | cat', 'eval "$x"\necho "$USER" | cat',
-      'echo "$HOSTNAME" | cat', 'echo "$UID" | cat', 'IFS=a\necho $USER | cat', 'g() { USER=x; }\ng\necho "$USER" | cat', 'echo "$USER" | cat; USER=bob']) {
+      'echo "$HOSTNAME" | cat', 'echo "$UID" | cat', 'IFS=a\necho $USER | cat', 'g() { USER=x; }\ng\necho "$USER" | cat']) {
       assert.strictEqual(whole(src)?.note, undefined, src);
     }
+  });
+  it('gives `$PWD` the value the made-up environment that `env` prints has, and none after `cd`', () => {
+    assert.strictEqual(whole('echo "$PWD" | cat')?.sections.at(-1)!.lines.join(), '/home/alice');
+    assert.ok(whole('env | grep PWD')?.sections.at(-1)!.lines.includes('PWD=/home/alice'));
+    assert.strictEqual(whole('cd /tmp\necho "$PWD" | cat')?.note, undefined);
   });
   it('keeps the value in the example: the word model and what the program receives still say it is known only when the line runs', () => {
     const src = 'grep "$USER" | sort';
