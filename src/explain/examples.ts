@@ -33,7 +33,7 @@ import { quotedName } from '../semantics/effects';
 import { slotEnvironment } from '../semantics/env';
 import type { NameResolution } from '../semantics/names';
 import { exportedValue } from '../semantics/state';
-import { changedByBash, changedUnseen } from '../semantics/vars';
+import { changedByBash } from '../semantics/vars';
 import { literalContent, staticWordValue, substitutionNames } from '../staticword';
 import { assignmentsOnly, field, nameText, prefixAssignments, redirectionsOf, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
@@ -585,15 +585,13 @@ function madeUpLayout(cx: Explainer, cmd: SyntaxNode, alt: LayoutAlt): MadeUp | 
 /**
  * The value the variable `name` has where `cmd` runs on the made-up system (`$USER` is `alice`), for a pipeline example
  * that runs with it: the value a program started there gets (`exportedAt`: `exportedValue` with the made-up start, which
- * follows the script's own assignments, exports, namerefs and the shells a slot starts). An example asks more, since
- * its value stands for one the script leaves to the environment: the file runs as bash runs a script or a terminal
- * (`startedAs`; not a host's shell), no command of the script sets the name anywhere (`StateModel.assigned`: not in a
- * function either, called or not), nothing the walk did not read ran before (`ShellState.opaque`: `source`, `eval`,
- * which `exportedAt` follows past, for the layouts), and neither bash nor a builtin may change it unseen
- * (`changedUnseen`: `RANDOM`, `PWD` after `cd`).
+ * follows the script's own assignments, exports, namerefs, what bash and `cd` change, and the shells a slot starts).
+ * An example asks two things more: the file runs as bash runs a script or a terminal (`startedAs`; `exportedAt` takes
+ * a host's shell for one), and nothing the walk did not read ran before (`ShellState.opaque`: `source`, `eval`, which
+ * `exportedAt` follows past, for the layouts).
  */
 function madeUpValue(cx: Explainer, cmd: SyntaxNode, name: string): string | undefined {
-  if (!startedAs(cx) || cx.state.at(cmd).run.opaque || cx.state.assigned.has(name) || changedUnseen(name)) return undefined;
+  if (!startedAs(cx) || cx.state.at(cmd).run.opaque) return undefined;
   return exportedAt(cx, cmd, name) ?? undefined;
 }
 
