@@ -47,7 +47,7 @@ On a phone (and a tablet held upright), one row says what the cursor's line is: 
 A part of a line can say that the command fails every time it runs, with ⓧ on its row. Those errors stopped at the row: the Problems strip said "no problems", VS Code showed no squiggle, and `--check` exited 0. Now they are notes of the line, and go where every note goes: the panel, the hover, Markdown, the Problems lists of VS Code, the Language Server and the web page, `--check` in every format (`text`, `github`, `json`, `sarif`), and the GitHub Action.
 
 - `arith-invalid-number`: `echo $((09))`, `$((2#2))`, `let x=09`, `(( 08 ))`, `bash -c 'echo $((09))'`. Not `$((10#09))`, `[ 09 -eq 9 ]` (`[` reads a decimal) or `${a[09]}`.
-- `shebang-env-one-argument`: `#!/usr/bin/env bash -e`, which fails with status 127 on Linux when the file is run as a program. `#!/usr/bin/env -S bash -e` is fine, and a `#!` that is no first line of a script (a Markdown block, a workflow's `run:`) is a comment.
+- `shebang-env-one-argument`: `#!/usr/bin/env bash -e`, which fails with status 127 on Linux when the file is run as a program (`bash file` ignores the line and runs the script; macOS splits the line, and it works there). `#!/usr/bin/env -S bash -e` is fine, and a `#!` that is no first line of a script (a Markdown block, a workflow's `run:`) is a comment.
 - `shebang-env-string-refused`, `shebang-env-loop`, `splice-refused`.
 
 **Compatibility.** `--check` and the Action fail (exit 1, the output `errors`) on these lines, which passed before. To keep one, write `# bash-explainer disable=<code>` above it, or add the code to `bashExplainer.diagnostics.ignore`. In a sample of 103,267 lines (this repository's fixtures, and 700 shell scripts of a Linux system), no line changes; among the 2,607 lines of the tests' snippets, written to try odd cases, 2 change: `#!/usr/bin/env bash --posix` and `let x=09`, and each fails in env and bash.
@@ -58,7 +58,7 @@ A part's warning stays on its row, and is no problem (`#!bash`, `${x:-$((09))}`,
 
 In the Meaning and Reading views, the problems of the line come first, under "Problems on this line" / 「この行の問題」, errors first. Each says its level and one sentence with what happens, written for it and by case (`((i++))` says "the script stops" only under `set -e`). "More" holds the whole text, the same as the Problems lists, what it cites, and each fix with a copy button. A click on the sentence goes to the row it is about, and a chip on the row comes back. Other notes stay below it, as they were.
 
-On a line inside a construct, the box points to the problems on the construct's line: "↑ Warning on line 3: …" goes there.
+On a line inside a construct, the box points to the problems on the construct's line: "↑ Pitfall on line 3: …" goes there. A problem you silenced (`# bash-explainer disable=<code>`, `diagnostics.ignore`) leaves the box and shows below it as a plain note; its row keeps its mark.
 
 ### Errors: a third level of problems
 

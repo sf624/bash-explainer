@@ -99,7 +99,7 @@ describe('the web page: the box of the line\'s problems', function () {
     await cursorToLine(page, 3);
     const pointer = panel().locator('.problem-pointer').first();
     await pointer.waitFor();
-    assert.match(await pointer.textContent() ?? '', /↑Information on line 2 The output of/);
+    assert.match(await pointer.textContent() ?? '', /↑Caveat on line 2 The output of/);
     await pointer.click();
     await until('the cursor there', () => page.locator('.cm-lineNumbers .cm-activeLineGutter').first().textContent(), (t) => t === '2');
     await ctx.close();
@@ -111,8 +111,54 @@ describe('the web page: the box of the line\'s problems', function () {
     await chooseView(page, 'tree');
     await until('Reading', () => panel().locator('#tree').isHidden(), (v) => v);
     assert.strictEqual(await panel().locator('#problems').isVisible(), true);
-    await panel().locator('#problems .problem-head').first().click();
+    const head = panel().locator('#problems .problem-head').first();
+    // (The tooltip says what the click does: here no row is drawn to go to.)
+    await head.hover();
+    assert.strictEqual(await head.getAttribute('title'), 'Show or hide the details');
+    await head.click();
     assert.strictEqual(await panel().evaluate(MORE_OPEN), true);
+    await chooseView(page, 'list');
+    await until('the list', () => panel().locator('#tree').isVisible(), (v) => v);
+    await head.hover();
+    assert.strictEqual(await head.getAttribute('title'), 'Go to its row');
+    await ctx.close();
+  });
+
+  it('leaves a silenced problem out of the box and the strip, and keeps it as a plain note', async () => {
+    const { ctx, page, panel, errors } = await open('# bash-explainer disable=arith-invalid-number\necho $((09))', 2);
+    await until('the note', () => panel().locator('#notes .note').count(), (n) => n === 1);
+    assert.strictEqual(await panel().locator('#problems').isHidden(), true);
+    assert.match(await panel().locator('#notes .note').first().textContent() ?? '', /Invalid number/);
+    // (The row says what the token is, and keeps its mark: a silence is the reader's own choice.)
+    await until('the row\'s mark', () => panel().locator('#tree .row', { hasText: 'ⓧ' }).count(), (n) => n > 0);
+    await until('the strip empty', () => page.locator('#problems-counts .count').count(), (n) => n === 0);
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('keeps the focus on a pointer when the same line is sent again', async () => {
+    const { ctx, page, panel } = await open('for f in *.txt; do\n  echo hi\ndone', 1);
+    await panel().evaluate(`window.addEventListener('message', (e) => { if (e.data && e.data.type === 'update') window.LAST = e.data; })`);
+    await cursorToLine(page, 3);
+    const pointer = panel().locator('.problem-pointer').first();
+    await pointer.waitFor();
+    await until('the last update', () => panel().evaluate('Boolean(window.LAST)') as Promise<boolean>, (v) => v);
+    await pointer.focus();
+    assert.strictEqual(await panel().evaluate(`document.activeElement.className.startsWith('problem-pointer')`), true);
+    await panel().evaluate(`window.postMessage(window.LAST, '*')`);
+    // (A message is handled in a later task: the same line again draws nothing anew.)
+    await panel().evaluate(`new Promise((r) => setTimeout(r, 100))`);
+    assert.strictEqual(await panel().evaluate(`document.activeElement.className.startsWith('problem-pointer')`), true);
+    assert.strictEqual(await panel().locator('.problem-pointer').count(), 1);
+    await ctx.close();
+  });
+
+  it('gives a chip a target of 40 x 40 on a phone', async () => {
+    const { ctx, panel } = await open('echo $((09))', 1, 390);
+    const chip = panel().locator('#tree .problem-chip').first();
+    await chip.waitFor();
+    const box = await stable('the chip', () => chip.boundingBox(), 4);
+    assert.ok(box && box.width >= 40 && box.height >= 40, JSON.stringify(box));
     await ctx.close();
   });
 

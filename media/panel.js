@@ -59,6 +59,8 @@
   let segments = [];
   /** The last rendered update; an identical one is ignored so a text selection survives. */
   let lastUpdate = '';
+  /** The pointers last drawn (`drawAround`), as JSON. */
+  let lastAround = '[]';
   /** Paths of the collapsed tree items of the line shown; kept when the same line is drawn again. */
   let collapsedKeys = new Set();
   /** The file and line `collapsedKeys` belongs to. */
@@ -166,7 +168,8 @@
       // (Without the line's problems: they come a moment after the line is explained, and change only its squiggles.)
       const key = JSON.stringify({ ...msg, marks: undefined, around: undefined });
       if (key === lastUpdate) {
-        drawAround(msg.around ?? []);
+        // (The pointers are drawn again only when they changed: a focus on one stays, panel-redesign.md section 5.)
+        if (JSON.stringify(msg.around ?? []) !== lastAround) drawAround(msg.around ?? []);
         return squiggleLine(msg.marks ?? []);
       }
       lastUpdate = key;
@@ -209,6 +212,7 @@
     $('notes').replaceChildren();
     $('problems').replaceChildren();
     $('problems').hidden = true;
+    lastAround = '[]';
     $('short').replaceChildren();
     $('short').hidden = true;
     $('tree').replaceChildren();
@@ -386,7 +390,10 @@
     const head = el(p.rows.length ? 'button' : 'span', { class: 'problem-head' }, levelIcon(p.icon), el('strong', { class: 'note-label' }, p.word), ' ', el('span', { class: 'problem-head-text' }, ...inline(p.head)));
     if (p.rows.length) {
       head.setAttribute('type', 'button');
-      head.setAttribute('title', labels.problems.toRow);
+      // (In Reading the click opens or closes "More", not a row: the tooltip says what the click does now, as the view may change meanwhile.)
+      const aim = () => head.setAttribute('title', view === 'tree' ? labels.problems.toggleMore : labels.problems.toRow);
+      aim();
+      for (const type of ['pointerenter', 'focus']) head.addEventListener(type, aim);
       head.addEventListener('click', () => toRow(p.rows[0], index));
     }
     const more = /** @type {HTMLDetailsElement} */ (el('details', { class: 'problem-more' }, el('summary', {}, labels.problems.more)));
@@ -419,6 +426,7 @@
   /** The pointers of the box: a problem on the line of a construct around this one, a click on which goes there. */
   function drawAround(/** @type {any[]} */ around) {
     const box = $('problems');
+    lastAround = JSON.stringify(around);
     box.querySelector('.problem-around')?.remove();
     if (around.length) {
       box.append(el('ul', { class: 'problem-around' }, ...around.map((/** @type {any} */ a) => {

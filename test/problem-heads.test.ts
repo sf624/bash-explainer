@@ -155,7 +155,7 @@ describe('the headline of each problem', () => {
         for (let line = 0; line < d.lines.length; line++) {
           const ex = analyzer.explainLine(d.tree, line);
           for (const n of ex.noteInfo.filter(isProblemNote)) assert.ok(n.head, `${n.code} in ${JSON.stringify(text)}`);
-          const box = boxProblems(ex, ex.items, lang);
+          const box = boxProblems(ex, ex.items, lang, () => true);
           assert.deepStrictEqual(box.map((p) => p.text).sort(), ex.noteInfo.filter(isProblemNote).map((n) => problemText(n, lang)).sort());
           seen += box.length;
           // (A problem with a place is one of the document's problems, with the same text.)

@@ -170,6 +170,7 @@ export class PanelController implements vscode.Disposable {
       placement: this.service.examplePlacement,
       animations: this.service.panelAnimations,
       issues: this.service.issues(ed.document),
+      shown: this.service.issueFilter(ed.document),
       state: this.state,
     }));
   }

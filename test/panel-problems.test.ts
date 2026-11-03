@@ -4,7 +4,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
-import { documentIssues, type ShellDocument } from '../src/document';
+import { diagnosticsFor, documentIssues, issueFilter, type ShellDocument } from '../src/document';
+import { defaultSettings, type Settings } from '../src/settings';
 import { failsCheck } from '../src/levels';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { boxProblems, problemsAround } from '../src/ui/panelProblems';
@@ -94,6 +95,18 @@ describe('the errors of the tokens, as problems', () => {
         assert.doesNotMatch(r.stdout, /ran/, script);
         assert.ok(errors(script).includes(code), script);
       }
+      // (The messages say "run directly as a program": `bash file` ignores the line and runs the script.)
+      for (const script of ['#!/usr/bin/env bash -e\necho ran\n', '#!/usr/bin/env -S"a\necho ran\n', '#!/usr/bin/env\necho ran\n']) {
+        const file = path.join(dir, 's');
+        fs.writeFileSync(file, script, { mode: 0o755 });
+        const r = spawnSync('bash', [file], { encoding: 'utf8', timeout: 5000, cwd: dir, env: { PATH: process.env.PATH, FUNCNEST: '20' } });
+        assert.ok(r.status === 0 && r.stdout.includes('ran'), `${script}: ${r.status} ${r.stdout}`);
+        for (const lang of ['en', 'ja'] as const) {
+          const [i] = documentIssues(doc(script), lang, {}).filter((x) => x.severity === 'error');
+          assert.match(i.message, lang === 'en' ? /Run directly as a program, .*\(`bash file` ignores the line\)/ : /プログラムとして直接実行すると.*（`bash file` ではこの行はコメント）/, `${lang} ${script}`);
+          assert.match(i.head, lang === 'en' ? /^(Run directly as a program|Run directly as a program on Linux)/ : /プログラムとして直接実行すると|Linux でプログラムとして直接実行すると/, `${lang} ${script}`);
+        }
+      }
       for (const script of ['#!/usr/bin/env -S bash -e\necho ok\n', '#!/bin/bash\necho $((10#09)) ok\n', '#!/bin/bash\ndeclare -A a; a[09]=1; echo ${a[09]} ok\n', '#!/bin/bash\n[ 09 -eq 9 ] && echo ok\n']) {
         const r = run(script);
         assert.ok(r.status === 0 && r.stdout.includes('ok'), `${script}: ${r.status} ${r.stdout} ${r.stderr}`);
@@ -108,18 +121,18 @@ describe('the errors of the tokens, as problems', () => {
 describe('the box "Problems on this line"', () => {
   const box = (text: string, line = 0, lang: 'en' | 'ja' = 'en') => {
     const ex = placeExamples(explain(text, line, lang));
-    return boxProblems(ex, ex.items, lang);
+    return boxProblems(ex, ex.items, lang, () => true);
   };
 
   it('gives each problem its level\'s word and look, its headline, and the whole text under "more"', () => {
     const [p] = box('read line');
-    assert.deepStrictEqual([p.level, p.className, p.icon, p.word], ['info', 'level-info', 'info', 'Information']);
+    assert.deepStrictEqual([p.level, p.className, p.icon, p.word], ['info', 'level-info', 'info', 'Caveat']);
     assert.strictEqual(p.head, 'Without `-r`, backslashes in the input are lost.');
     assert.strictEqual(p.label, 'Caveat:');
     assert.match(p.body, /^without `-r`/);
     assert.match(p.text, /^ⓘ Caveat: without `-r`/);
     assert.deepStrictEqual(p.fixes, ['read -r']);
-    assert.strictEqual(box('read line', 0, 'ja')[0].word, '情報');
+    assert.strictEqual(box('read line', 0, 'ja')[0].word, '注意');
   });
 
   it('says in "more" what a problem cites and rests on', () => {
@@ -138,6 +151,35 @@ describe('the box "Problems on this line"', () => {
     assert.deepStrictEqual(message.marks.map((m) => [m.from, m.to, m.className]), [[10, 12, 'level-error']]);
   });
 
+  it('leaves a silenced problem out of the box, and shows it as a plain note below it', () => {
+    const update = (text: string, line: number, settings: Settings) => panelUpdate({
+      lang: 'en', explanation: explain(text, line), line, lineText: text.split('\n')[line], file: 'f', choice: {}, detected: { shell: 'bash', source: 'default' },
+      placement: 'first', animations: false, doc: doc(text), issues: diagnosticsFor(() => doc(text), () => ({ detected: { shell: 'bash', source: 'default' } }) as never, 'en', settings, 'vscode').shown,
+      shown: issueFilter(doc(text), settings, 'vscode'),
+    } as never);
+    const ignoring = { ...defaultSettings(), 'diagnostics.ignore': ['arith-invalid-number'] };
+    // (By a comment, and by `diagnostics.ignore`: the Problems lists and the box read the same rule, `issueFilter`.)
+    for (const [text, line, settings] of [['# bash-explainer disable=arith-invalid-number\necho $((09))', 1, defaultSettings()], ['echo $((09))', 0, ignoring]] as const) {
+      const message = update(text, line, settings);
+      assert.deepStrictEqual(message.problems, [], text);
+      assert.deepStrictEqual(message.marks, [], text);
+      assert.deepStrictEqual(message.notes.map((n) => n.level), ['error'], text);
+      assert.match(message.notes[0].body, /^Invalid number `09`/);
+    }
+    // (Not silenced: in the box, and not among the notes. The pitfalls of `diagnostics.pitfalls` off are notes too, the errors stay.)
+    const loud = update('echo $((09))', 0, defaultSettings());
+    assert.strictEqual(loud.problems.length, 1);
+    assert.deepStrictEqual(loud.notes, []);
+    const noPitfalls = update('read line; echo $((09))', 0, { ...defaultSettings(), 'diagnostics.pitfalls': false });
+    assert.deepStrictEqual(noPitfalls.problems.map((p) => p.level), ['error']);
+    assert.deepStrictEqual(noPitfalls.notes.map((n) => n.level), ['info']);
+    // (Silenced on a line, not on another line with the same text.)
+    const two = '# bash-explainer disable=arith-invalid-number\necho $((09))\necho $((09))';
+    assert.deepStrictEqual([1, 2].map((l) => update(two, l, defaultSettings()).problems.length), [0, 1]);
+    // (Where the settings turn the problems off, none is in the box.)
+    assert.deepStrictEqual(update('echo $((09))', 0, { ...defaultSettings(), 'diagnostics.enabled': false }).problems, []);
+  });
+
   it('puts errors first, and leaves plain notes and the caveats that are no problems as notes', () => {
     assert.deepStrictEqual(box('read line; x = 1').map((p) => p.level), ['error', 'info']);
     // (`ssh-local-expansion` stays a note: no problem in the editors.)
@@ -151,7 +193,7 @@ describe('the box "Problems on this line"', () => {
 
   it('links a problem to the rows it is about, by their paths in the list', () => {
     const ex = placeExamples(explain('echo $((09))'));
-    const [p] = boxProblems(ex, ex.items, 'en');
+    const [p] = boxProblems(ex, ex.items, 'en', () => true);
     assert.strictEqual(p.rows.length, 1);
     const at = p.rows[0].split('.').map(Number).reduce<{ children: typeof ex.items; label?: string }>((t, i) => t.children[i], { children: ex.items });
     assert.strictEqual(at.label, '09');
@@ -160,7 +202,7 @@ describe('the box "Problems on this line"', () => {
     assert.strictEqual(two.rows.length, 2);
     assert.strictEqual(two.fixes.length, 1);
     // (A note about no node has no row: no link.)
-    assert.deepStrictEqual(boxProblems({ ...explain('echo a'), notes: ['⚠ x'], noteInfo: [{ text: '⚠ x', level: 'warning', label: '', body: 'x', head: 'h', code: 'c' }] }, [], 'en').map((p) => p.rows), [[]]);
+    assert.deepStrictEqual(boxProblems({ ...explain('echo a'), notes: ['⚠ x'], noteInfo: [{ text: '⚠ x', level: 'warning', label: '', body: 'x', head: 'h', code: 'c' }] }, [], 'en', () => true).map((p) => p.rows), [[]]);
   });
 
   it('points to a problem on the line of a construct around, unless the line says it too', () => {
@@ -170,9 +212,9 @@ describe('the box "Problems on this line"', () => {
     assert.deepStrictEqual(ex.context.map((c) => c.line), [0]);
     const pointers = problemsAround(ex, all, [], 'en');
     assert.ok(pointers.length > 0);
-    assert.deepStrictEqual(pointers.map((p) => [p.level, p.where, p.title, p.line]).slice(0, 1), [['info', 'Information on line 1', 'Go to line 1', 0]]);
+    assert.deepStrictEqual(pointers.map((p) => [p.level, p.where, p.title, p.line]).slice(0, 1), [['info', 'Caveat on line 1', 'Go to line 1', 0]]);
     assert.match(pointers[0].head, /split on spaces/);
-    assert.strictEqual(problemsAround(explain(text, 1, 'ja'), documentIssues(doc(text), 'ja', {}), [], 'ja')[0].where, '行 1 の情報');
+    assert.strictEqual(problemsAround(explain(text, 1, 'ja'), documentIssues(doc(text), 'ja', {}), [], 'ja')[0].where, '行 1 の注意');
     // (Its own line, and a problem it says itself, are in the box.)
     assert.deepStrictEqual(problemsAround({ line: 0, context: [{ line: 0, label: 'x' } as never] }, all, [], 'en'), []);
     assert.deepStrictEqual(problemsAround(ex, all, all.map((i) => ({ text: i.message })) as never, 'en'), []);
