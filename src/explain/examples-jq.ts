@@ -47,6 +47,9 @@ export function jqVars(cx: Explainer): Record<string, Json> {
  * The formats mikefarah/yq v4 reads and prints by a file's extension, other than YAML (any other extension, or none):
  * JSON, or one not followed here (`?`).
  */
+/** The formats `yq -p` and `-o` name that are followed, by the word given. */
+const YQ_FORMATS = wordTable<string>({ json: 'json', j: 'json', yaml: 'yaml', y: 'yaml' });
+
 const YQ_FORMAT_OF_EXTENSION = wordTable<'json' | '?'>({
   json: 'json', xml: '?', csv: '?', tsv: '?', toml: '?', properties: '?', props: '?', ini: '?', lua: '?', hcl: '?', env: '?', kyaml: '?',
 });
@@ -64,7 +67,7 @@ export function yqExample(cx: Explainer, filter: string, style: YamlStyle): void
     const found = optionValues(cx, ...names);
     return found.length ? found[found.length - 1].text ?? '?' : undefined;
   };
-  const formatOf = (name: string) => ({ json: 'json', j: 'json', yaml: 'yaml', y: 'yaml' } as Record<string, string>)[name];
+  const formatOf = (name: string) => YQ_FORMATS[name];
   let jsonIn = false;
   let json: boolean;
   let format: JqFormat | undefined;

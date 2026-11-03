@@ -9,6 +9,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { interpret } from '../src/argv/interpret';
 import { argWord } from '../src/argv/words';
+import { rerun } from '../src/examples/rerun';
+import { commandExample } from '../src/examples/textfilters';
+import { placeholderSaid } from '../src/messages-argv';
 import { Analyzer, lookupCommand } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
 import { slotEnvs } from '../src/semantics/env';
@@ -529,6 +532,19 @@ describe('the analyzer says what a name runs', () => {
     }
     assert.match(text(`echo '{"a":1}' | jq '.toString'`), /"null"/);
     assert.match(text(`echo '{"constructor":1}' | jq '.constructor'`), /"1"/);
+    // A command after a pipe, or before one, is no text filter of the examples: each of these stopped the explanation, or
+    // showed the method's result as the output.
+    for (const name of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__', '__defineGetter__', '__lookupGetter__', 'isPrototypeOf', 'toLocaleString']) {
+      for (const src of [`printf 'a\\n' | ${name}`, `printf 'a\\n' | ${name} | sort`, `${name} "$x" | grep -c a`, `${name} $(echo a | tr a b) | cat`]) {
+        const examples = (word: string) => JSON.stringify(explain(src.replace(name, word), 0).examples.map((e) => [e.title, e.sections])).replaceAll(word, 'name');
+        assert.strictEqual(examples(name), examples('no-such-filter'), src);
+      }
+      assert.strictEqual(commandExample(name, []), undefined, name);
+      assert.deepStrictEqual(rerun({ kind: 'filter', cmd: name, words: [] }, [['a']], 'en'), rerun({ kind: 'filter', cmd: 'no-such-filter', words: [] }, [['a']], 'en'), name);
+      assert.strictEqual(placeholderSaid('en', { kind: 'tilde', user: name, code: `~${name}` }), `home directory of \`${name}\``, name);
+      assert.match(text(`yq -o ${name} . a.yml`), /"examples":\[\]/, name);
+      assert.match(text(`echo [[:${name}:]]`), new RegExp(`\\[:${name}:\\]`), name);
+    }
   });
 
   it('an assignment before a name that may expand to no word', () => {

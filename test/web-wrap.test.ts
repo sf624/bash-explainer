@@ -356,7 +356,7 @@ describe('the web page: long lines wrap between shell words, and hover cards go 
   }
 
   /** The index among the drawn lines of the line holding `text` (the editor draws only the lines near the view). */
-  const drawnLine = (page: Page, text: string) => page.evaluate(`Array.from(document.querySelectorAll('.cm-content > .cm-line')).findIndex((l) => l.textContent.includes(${JSON.stringify(text)}))`) as Promise<number>;
+  const drawnLine = async (page: Page, text: string) => (await page.locator('.cm-content > .cm-line').allTextContents()).findIndex((l) => l.includes(text));
   /** Scrolls the editor so that the drawn line `i` starts `gap` pixels under the pane's top. */
   const scrollLineTo = async (page: Page, i: number, gap: number) => {
     await page.evaluate(`(() => {

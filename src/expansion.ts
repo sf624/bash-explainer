@@ -3,6 +3,7 @@ import { charge, scriptRegex } from './examples/regexguard';
 import { Lang } from './i18n';
 import { bracketEnd, bracketItems, bracketRegex, patsubMiscounts, type BracketItem } from './bracket';
 import { messageText, unquoteWord } from './staticword';
+import { wordTable } from './wordtable';
 
 /** A part of a `${…}` expansion; offsets are relative to the start of the whole `${…}` text. */
 export interface ExpansionPart {
@@ -255,10 +256,10 @@ export function describeGlob(parts: GlobPart[], lang: Lang): string {
 
 function describeSet(items: BracketItem[], lang: Lang): string {
   const ja = lang === 'ja';
-  const named: Record<string, [string, string]> = {
+  const named: Record<string, [string, string]> = wordTable({
     digit: ['数字', 'digits'], alpha: ['英字', 'letters'], alnum: ['英数字', 'letters/digits'],
     space: ['空白', 'whitespace'], upper: ['大文字', 'uppercase letters'], lower: ['小文字', 'lowercase letters'],
-  };
+  });
   const words = items.map((item) => {
     if (item.type === 'range') return `${item.from}${ja ? '〜' : '-'}${item.to}`;
     if (item.type === 'char') return item.ch;

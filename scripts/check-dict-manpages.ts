@@ -81,7 +81,7 @@ async function page(name: string): Promise<string | null> {
     let url: string | undefined;
     const res = await fetch(`${BASE}/${SUITE}/${name}.${sec}`).catch(() => null);
     if (!res?.ok) continue;
-    const want = new RegExp(`/${SUITE}/[^/"]+/${name.replace(/[.+]/g, '\\$&')}\\.${sec}\\.en\\.html`);
+    const want = new RegExp(`/${SUITE}/[^/"]+/${name.replace(/\W/g, '\\$&')}\\.${sec}\\.en\\.html`);
     if (want.test(res.url)) url = res.url;
     else url = BASE + (want.exec(await res.text())?.[0] ?? '');
     if (url === BASE) continue; // only another language or another section of that name

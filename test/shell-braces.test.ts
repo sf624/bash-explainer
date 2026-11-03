@@ -199,8 +199,8 @@ describe('the token of a brace expansion, as braceexpand is', () => {
   });
   it('says brace expansion may be off where `set +B` is on some paths', () => {
     const src = 'if [ -n "$x" ]; then set +B; fi\necho {a,b}';
-    assert.strictEqual(runBash(src.replace('\n', '; ')).stdout, 'a b\n');
-    assert.strictEqual(runBash(`x=1; ${src.replace('\n', '; ')}`).stdout, '{a,b}\n');
+    assert.strictEqual(runBash(src.replaceAll('\n', '; ')).stdout, 'a b\n');
+    assert.strictEqual(runBash(`x=1; ${src.replaceAll('\n', '; ')}`).stdout, '{a,b}\n');
     assert.strictEqual(braceToken(src, '{a,b}'), 'Brace expansion: `{a,b}` expands to 2 words: `a` `b` (where brace expansion is on: `set +B` turns it off on some paths before, and there the word stays as it is)');
     const head = allTokens(new Analyzer('en').explainLine(parser.parse('if [ -n "$x" ]; then set +B; fi\n{echo,hi}'), 1).items).find((t) => t.kind === 'command' || t.label === '{echo,hi}');
     assert.match(head?.explanation ?? '', /it is not a `\{ \}` group\) \(where brace expansion is on: `set \+B`/);

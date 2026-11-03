@@ -101,6 +101,8 @@ describe('awk command lines (options and name=value operands) agree with gawk', 
     ['-f', 'prog.awk'].slice(0, 0).concat(['{print NF}']),
     // (As in a string, gawk drops the backslash before a character with no escape.)
     ['-v', 'x=a\\.b', 'BEGIN{print x}'], ['-v', 'x=\\q', 'BEGIN{print x}'], ['-v', 'x=\\x41', 'BEGIN{print x}'], ['-v', 'x=\\&', 'BEGIN{print x}'], ['-v', 'x=\\x', 'BEGIN{print x}'],
+    // (A variable like any other.)
+    ['-v', '__proto__=1', 'BEGIN{print __proto__}'], ['{print __proto__, $1}', '__proto__=1'], ['-v', 'constructor=2', 'BEGIN{print constructor}'], ['BEGIN{print toString "."}'],
     ['{print x, $1}', 'x=a\\.b'], ['{print x, $1}', 'x=\\q\\f'], ['-F', '\\d', '{print $2}'], ['-F', '\\q', '{print $2}'], ['-F', '\\.', '{print $2}'],
   ];
   for (const words of lines) {
@@ -120,7 +122,7 @@ describe('awk command lines (options and name=value operands) agree with gawk', 
       assert.ok(awkInvocation(words).unsupported !== undefined, JSON.stringify(words));
     }
     const f = awkInvocation(['-f', 'p.awk', 'x=1']);
-    assert.deepStrictEqual([f.program, f.assigns], [undefined, { x: '1' }]);
+    assert.deepStrictEqual([f.program, { ...f.assigns }], [undefined, { x: '1' }]);
     assert.strictEqual(awkInvocation(['--', '{print}']).program, '{print}');
   });
   it('makes up input that uses the separator', () => {

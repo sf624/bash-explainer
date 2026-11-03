@@ -649,7 +649,7 @@ describe('the guard of the regexes a script gives', () => {
         "new RegExp(`^\\\\s+(-\\\\s+)?(${k})\\\\s*:(\\\\s|$)`)": 'Keys of YAML, constants.',
       },
       'src/hosts/python.ts': {
-        "new RegExp(`(?<![\\\\w.])(${[...names.keys()].map((n) => n.replace(/\\./g, '\\\\.')).join('|')})\\\\s*\\\\(`, 'g')": 'Names of the table PY_CALLS, or `\\w+` after `as`, which is tested (test/support/regexguard-table.ts).',
+        "new RegExp(`(?<![\\\\w.])(${[...names.keys()].map((n) => n.replace(/\\W/g, '\\\\$&')).join('|')})\\\\s*\\\\(`, 'g')": 'Names of the table PY_CALLS, or `\\w+` after `as`, which is tested (test/support/regexguard-table.ts).',
         "new RegExp(`^${k}\\\\s*=\\\\s*([\\\\s\\\\S]*)$`)": 'Names of keywords, constants.',
       },
       'src/hosts/yaml.ts': {

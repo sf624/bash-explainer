@@ -5,6 +5,7 @@ import type { ArgRole, ArgvParse } from '../argv/interpret';
 import type { Shell } from '../dialect';
 import { builtins } from '../dict/builtins';
 import type { SyntaxNode } from '../syntax/tree';
+import { wordTable } from '../wordtable';
 import { blinds, followed, none, type Row } from './allow';
 import { builtinRead } from './effects';
 
@@ -76,7 +77,7 @@ const later = (why: string): Row => blinds(why);
  * `TERM` and `COPROC_PID`, which bash also sets (`TERM` at start; `COPROC` stands for the name of a coprocess), bash
  * 5.3's `GLOBSORT`, `BASH_MONOSECONDS` and `BASH_TRAPSIG`, and `TEXTDOMAIN` and `TEXTDOMAINDIR` (`$"…"`, 3.1.2.5).
  */
-export const BASH_VARIABLES: Readonly<Record<string, BashVariable>> = {
+export const BASH_VARIABLES: Readonly<Record<string, BashVariable>> = wordTable({
   // 5.1 Bourne Shell Variables.
   CDPATH: { effect: NONE }, HOME: { effect: HOME, environment: true }, IFS: { effect: IFS, start: '--' }, MAIL: { effect: NONE }, MAILPATH: { effect: NONE },
   OPTARG: { effect: BASH_SETS, setBy: ['getopts'] }, OPTIND: { effect: OPTIND, start: '-i', numeric: true, arithmetic: true, setBy: ['getopts'] },
@@ -150,7 +151,7 @@ export const BASH_VARIABLES: Readonly<Record<string, BashVariable>> = {
   GLOBSORT: { effect: NONE }, BASH_MONOSECONDS: { effect: BASH_SETS }, BASH_TRAPSIG: { effect: BASH_SETS },
   TEXTDOMAIN: { effect: NONE }, TEXTDOMAINDIR: { effect: NONE },
   UID: { effect: BASH_SETS, start: '-ir', numeric: true },
-};
+});
 
 const known = (name: string): BashVariable | undefined => (Object.hasOwn(BASH_VARIABLES, name) ? BASH_VARIABLES[name] : undefined);
 

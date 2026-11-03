@@ -166,7 +166,7 @@ describe('jq examples agree with jq', function () {
         const file = slurp ? (r.input as Json[]).map((v) => JSON.stringify(v)).join('\n') : JSON.stringify(r.input);
         const real = spawnSync('jq', ['-c', ...args, filter], { input: file }).stdout.toString();
         if (r.error) continue;
-        assert.strictEqual(join ? r.outputs.join('') : r.outputs.join('\n') + (r.outputs.length ? '\n' : ''), join ? real : real.replace(/\n(?=\n|$)/g, '\n'), `file ${file}`);
+        assert.strictEqual(join ? r.outputs.join('') : r.outputs.join('\n') + (r.outputs.length ? '\n' : ''), real, `file ${file}`);
       }
     });
   }

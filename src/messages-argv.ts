@@ -5,6 +5,7 @@ import { fdName, specialVariables, wellKnownVariables } from './dict/syntax';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
 import { type HoleSource, writtenPlain } from './semantics/fieldshape';
+import { wordTable } from './wordtable';
 
 /** What a placeholder stands for: a part of a word (`HoleSource`), the names a pattern matches, or a whole word not known here. */
 export type ArgvHoleKind = HoleSource['kind'] | 'names' | 'word';
@@ -21,7 +22,7 @@ const code = (c: string): string => codeSpan(shorten(c, CODE_SHOWN));
 const nounOf = (name: string): Text | undefined => (specialVariables[name] ?? wellKnownVariables[name])?.noun;
 
 /** The tilde prefixes whose value is that of a variable (manual 3.5.2): `~`, `~+`, `~-`. */
-const TILDES: Readonly<Record<string, string>> = { '': 'HOME', '+': 'PWD', '-': 'OLDPWD' };
+const TILDES: Readonly<Record<string, string>> = wordTable({ '': 'HOME', '+': 'PWD', '-': 'OLDPWD' });
 
 /** A placeholder's text, in `lang`, for what it stands for (`kind`) and its code. */
 export function placeholderSaid(lang: Lang, h: HoleSource | { kind: 'names' | 'word'; code: string }): string {

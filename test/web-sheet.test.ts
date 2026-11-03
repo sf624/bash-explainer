@@ -491,7 +491,8 @@ describe('the web page: the phone\'s sheet', function () {
           for (const control of ['#menu-open', '.brand', '#settings-open']) {
             const p = await painted(control);
             assert.ok(!p.inBar && (p.y < 0 || p.inBanner), `${at2}: ${control} ${JSON.stringify(p)}`);
-            const hit = await page.evaluate(`(() => { const r = document.querySelector(${JSON.stringify(control)}).getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!e && !!e.closest('header.top'); })()`);
+            const r = (await page.locator(control).boundingBox())!;
+            const hit = await page.evaluate(`(() => { const e = document.elementFromPoint(${r.x + r.width / 2}, ${r.y + r.height / 2}); return !!e && !!e.closest('header.top'); })()`);
             assert.strictEqual(hit, false, `${at2}: ${control}`);
           }
         } else {

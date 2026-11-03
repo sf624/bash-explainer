@@ -101,6 +101,8 @@ describe('reading a colour theme', () => {
     // Tags written with spaces, an empty key, a self-closed element of another type, numeric entities.
     assert.deepStrictEqual(parsePlist('<dict><key >a</key ><string />\n<key>b</key><true /><key/><false/><key>c</key><data/><key>d</key><string>&#39;&#x41;</string></dict>'),
       { a: '', b: true, '': false, c: '', d: "'A" });
+    // Comments and the prolog, also inside a key and a string, with a `>` in them, are left out in one pass.
+    assert.deepStrictEqual(parsePlist('<?xml version="1.0"?><!DOCTYPE plist><!-- <dict> --><plist version="1.0"><dict><key>a<!-- > -->b</key><string>c<!-- x -->d</string></dict></plist >'), { ab: 'cd' });
   });
 
   it('follows includes (the included first), a .tmTheme for the rules, and the colours and semantic rules', async () => {
