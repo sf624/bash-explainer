@@ -61,7 +61,7 @@ export class Analyzer {
     // has; with `notes.basis` off, no token has a basis.)
     if (opts.basis === false) withoutBases(items);
     else withTokenBases(items, cx.rested);
-    markSaid(items, cx.saidTexts);
+    markSaid(items);
     const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'], line)
       .filter((n) => intersects(n, line));
     const notes = [

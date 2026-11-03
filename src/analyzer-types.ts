@@ -60,9 +60,8 @@ export interface Token {
    */
   facts?: FactId[];
   /**
-   * The texts of the catalog of token texts its explanation holds (src/messages-tokens.ts), in the order said. None for a text from
-   * elsewhere: a spec's or an embedded language's, and the few texts of src/explain/ still written where they are said
-   * (docs/design/sources.md, row 14).
+   * The texts of the catalog of token texts its explanation holds (src/messages-tokens.ts), outermost first. None for a text from
+   * elsewhere: a spec's or an embedded language's, or one that src/explain/ still words in a helper (docs/design/sources.md, row 14).
    */
   texts?: TokenTextId[];
   /** The warnings among them: each with its level, and its text as `explanation` holds it. A row draws the level's mark (`markedText`). */

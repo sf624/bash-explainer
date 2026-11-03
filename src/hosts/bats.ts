@@ -5,6 +5,7 @@ import type { Extracted } from './index';
 import { Builder } from './builder';
 import { lineRangeLabel } from '../i18n';
 import { S, sentenceEnd } from '../messages-sentence';
+import { sayInstead } from '../tokenmarks';
 import { ALNUM, COMMENT_TEST, droppedBefore, tagComment } from './batstags';
 import type { HostRun } from '../semantics/walk/host';
 
@@ -55,7 +56,7 @@ function batsComments(ex: LineExplanation, original: string, marked: boolean, la
     if (t.kind === 'comment' && t.span.start.line === ex.line) {
       // (A line that is only this comment has its explanation as the summary.)
       ex.summary = ex.summary.replace(t.explanation, () => text);
-      t.explanation = text;
+      sayInstead(t, text);
     }
     walk(t.children);
   });
@@ -106,7 +107,7 @@ export function batsTestLine(ex: LineExplanation, extracted: Extracted, original
   if (!here) return;
   const def = ex.items.find((t) => t.kind === 'function' && t.span.start.line === ex.line)!;
   const lines = /\s*[（(](?:行|lines?) [^)）]*[)）]$/.exec(def.explanation)?.[0] ?? '';
-  def.explanation = (here.marked ? batsMarkedMeaning(here.marked, here.name) : batsTestMeaning(here.name))[lang === 'ja' ? 0 : 1] + lines;
+  sayInstead(def, (here.marked ? batsMarkedMeaning(here.marked, here.name) : batsTestMeaning(here.name))[lang === 'ja' ? 0 : 1] + lines);
   def.summary = def.explanation;
   def.label = def.label.replace(here.head, () => here.written);
   def.labelParts = def.labelParts!.map((p) => (p.text.startsWith(here.head) ? { ...p, text: p.text.replace(here.head, () => here.written) } : p));

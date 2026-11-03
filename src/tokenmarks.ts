@@ -3,7 +3,8 @@
 import type { LineExplanation, ScriptProcess, Token, TokenOrigin } from './analyzer-types';
 import { sameSpan, spanWithin } from './noteanchors';
 import { LEVELS } from './levels';
-import type { TokenSaid } from './messages-tokens';
+import { plainOf } from './messages-levels';
+import { readSaid } from './messages-tokens';
 import { KIND_ROLES } from './roles';
 import { type ExecEnv, processOf, whereOf } from './semantics/env';
 
@@ -60,7 +61,12 @@ export function dropLabelEcho(t: Token): void {
   if (e.startsWith('`' + label + '`')) {
     const rest = e.slice(label.length + 2);
     const m = /^(?::\s+|：\s*)(?=\S)/.exec(rest);
-    if (m) t.explanation = rest.slice(m[0].length);
+    if (m) {
+      t.explanation = rest.slice(m[0].length);
+      // (A warning that opens with the label loses it too, and keeps its mark: `markedText` finds it by its text.)
+      const opening = e.slice(0, e.length - t.explanation.length);
+      if (t.marks) t.marks = t.marks.map((w) => (w.text.startsWith(opening) ? { ...w, text: w.text.slice(opening.length) } : w));
+    }
   }
   for (const c of t.children) dropLabelEcho(c);
 }
@@ -94,19 +100,29 @@ export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'f
 }
 
 /**
- * Gives each token whose text holds a text of the catalog of token texts said on the line its id (`Token.texts`) and, for one
- * that warns, its level (`Token.marks`). Found on the text, as a text may be part of a longer one, and be handed on to another token.
+ * Takes the ids that the texts of the catalog of token texts carry (`carried`, src/messages-tokens.ts) out of a line's tokens, and gives each
+ * token the ids it held (`Token.texts`) and, for those that warn, their levels (`Token.marks`). A token of a string read as a script has its
+ * own from that line's explanation, and keeps them.
  */
-export function markSaid(items: readonly Token[], said: readonly TokenSaid[]): void {
-  if (!said.length) return;
+export function markSaid(items: readonly Token[]): void {
   const walk = (t: Token) => {
-    const here = said.filter((s) => t.explanation.includes(s.text));
-    if (here.length) t.texts = [...new Set([...t.texts ?? [], ...here.map((s) => s.id)])];
-    const marks = here.filter((s) => s.level).map((s) => ({ id: s.id, level: s.level!, text: s.text }));
+    const { text, said } = readSaid(t.explanation);
+    t.explanation = text;
+    if (t.summary) t.summary = plainOf(t.summary);
+    if (said.length) t.texts = [...new Set([...t.texts ?? [], ...said.map((s) => s.id)])];
+    const marks = said.filter((s) => s.level).map((s) => ({ id: s.id, level: s.level!, text: s.text }));
+    // (A text said twice in one token is marked once.)
     if (marks.length) t.marks = marks.filter((m, i) => marks.findIndex((o) => o.id === m.id && o.text === m.text) === i);
     t.children.forEach(walk);
   };
   items.forEach(walk);
+}
+
+/** Gives a token another text (a host's reading of a part: src/hosts/): the ids and the warnings of the text it had go with that text. */
+export function sayInstead(t: Token, text: string): void {
+  t.explanation = text;
+  delete t.texts;
+  delete t.marks;
 }
 
 /** A token's text as it is shown: the mark of each warning in it (`Token.marks`) before the warning, from the level table. */

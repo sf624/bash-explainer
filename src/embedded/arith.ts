@@ -1,6 +1,5 @@
 import type { Lang } from '../i18n';
 import { arithLiteral, describeArithLiteral, evalArith } from '../arith';
-import { tokenSaidBy } from './types';
 import { EmbeddedToken, pick } from './types';
 
 /**
@@ -160,7 +159,7 @@ export function explainArith(src: string, lang: Lang): { tokens: EmbeddedToken[]
         // (Every number token is a constant that arithLiteral reads.)
         const lit = arithLiteral(text(n))!;
         if (lit.type === 'number' && lit.style === 'decimal') return undefined;
-        return { ...base, kind: 'number', children: [], ...tokenSaidBy(describeArithLiteral(text(n), lit, lang)) };
+        return { ...base, kind: 'number', children: [], explanation: describeArithLiteral(text(n), lit, lang) };
       }
       case 'var': {
         const m = /^(\$?\w+)\[(.*)\]$/s.exec(text(n));

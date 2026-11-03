@@ -3,9 +3,7 @@
     { "file": "src/ui/hoverParts.ts", "fn": "isCommand", "kind": "row-field", "count": 1, "reason": "structure: which parts the hover makes blocks of; not what a row says" },
     { "file": "src/ui/hoverParts.ts", "fn": "isHeredoc", "kind": "row-field", "count": 1, "reason": "structure: finds the operator of a here-document from its label" },
     { "file": "src/ui/hoverView.ts", "fn": "examplesOn", "kind": "row-field", "count": 2, "reason": "identity: finds the same token in the copy `placeExamples` makes" },
-    { "file": "src/ui/nameHints.ts", "fn": "nameHints", "kind": "row-field", "count": 6, "reason": "no row: the editor's inlay hints of command names; their tooltip says the explanation again" },
     { "file": "src/ui/opening.ts", "fn": "openingParts", "kind": "row-field", "count": 4, "reason": "no row: the opening tour's parts of the sample line" },
-    { "file": "src/ui/panelView.ts", "fn": "manualLinks", "kind": "row-field", "count": 1, "reason": "no row: the panel's list of links gathered over the line" },
-    { "file": "web/a11y.ts", "fn": "lineSummary", "kind": "row-field", "count": 4, "reason": "no row: the spoken summary of a line takes the first words of its first part" }
+    { "file": "src/ui/panelView.ts", "fn": "manualLinks", "kind": "row-field", "count": 1, "reason": "no row: the panel's list of links gathered over the line" }
   ]
 }

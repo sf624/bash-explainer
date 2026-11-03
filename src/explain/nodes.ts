@@ -108,8 +108,6 @@ export function fromEmbedded(t: EmbeddedToken, node: SyntaxNode, lit: Literal, o
     children: t.children.map((c) => fromEmbedded(c, node, lit, origin)),
     origin,
     ...(t.group ? { group: t.group } : {}),
-    ...(t.texts ? { texts: t.texts } : {}),
-    ...(t.marks ? { marks: t.marks } : {}),
   };
 }
 

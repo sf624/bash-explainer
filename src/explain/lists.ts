@@ -4,6 +4,7 @@
 // list, of an AND/OR list, and of the `;` and `&` that separate or end the parts of a list.
 import type { Token } from '../analyzer-types';
 import { listOps } from '../dict/syntax';
+import { plainOf } from '../messages-levels';
 import { codeSpan, labelText, LABEL_LIMIT, skeleton } from '../label';
 import { field, listElements, listOperator, listOverLines, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
@@ -46,7 +47,7 @@ function partName(cx: Explainer, p: SyntaxNode, whole: boolean): string {
 }
 
 /** The space before a Japanese particle: after code, not after a word (`a` を, 全体を). */
-const gap = (what: string): string => (what.endsWith('`') ? ' ' : '');
+const gap = (what: string): string => (plainOf(what).endsWith('`') ? ' ' : '');
 
 /** The reserved words that a `;` or a newline must come before, since bash knows them only where a command can start. */
 const CLOSERS = new Set(['then', 'do', 'done', 'fi', 'elif', 'else', '}', 'esac']);

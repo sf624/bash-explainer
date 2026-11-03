@@ -1,6 +1,6 @@
 import type { Lang, Text } from './i18n';
 import type { NoteLevel } from './levels';
-import { type TokenEntry, tokenWarning } from './messages-tokens-entry';
+import { CARRIED, CLOSE_TEXT, OPEN_TEXT, type TokenEntry, tokenWarning } from './messages-levels';
 import { ARGV_TEXTS } from './messages-tokens-argv';
 import { COMMAND_TEXTS } from './messages-tokens-commands';
 import { COMPOUND_TEXTS } from './messages-tokens-compound';
@@ -11,9 +11,14 @@ import { WORD_TEXTS } from './messages-tokens-words';
 // id, its text in ja and en and, for one that warns, its level. The notes of a line have their own catalog (src/messages.ts). The
 // dictionary's specs and the embedded languages' grammars hold their own texts, as data of the command or the language.
 //
-// A text is said with `cx.text(id, params)` in src/explain/: it gives the text and records it for the line, so that each token that shows
-// it knows its id and level (`Token.texts`, `Token.marks`; `markSaid`, src/tokenmarks.ts). A row draws the level's mark from the level
-// table (src/ui/tokenRow.ts): no text writes a mark.
+// A text is said with `cx.text(id, params)` in src/explain/, or with `tokenSaid` where there is no context (src/arith.ts). What it gives
+// is the text with its id around it, in two invisible characters (`carried`), so the id goes wherever the text goes: into a longer text,
+// through a helper, a variable or another token. `markSaid` (src/tokenmarks.ts) reads them when the line's tokens are made, gives each token
+// the ids and the levels of what it holds (`Token.texts`, `Token.marks`), and takes them out: nothing outside the explanation of a line sees
+// them. A row draws the level's mark from the level table (src/ui/tokenRow.ts): no text writes a mark.
+//
+// So while a line is being explained, a text may hold them: code in src/explain/ that looks at the first or last character of a text it did
+// not write reads `plainOf` of it (src/messages-levels.ts).
 
 export const TOKEN_TEXTS = {
   ...ARGV_TEXTS,
@@ -39,26 +44,52 @@ export type TokenTextId = keyof typeof TOKEN_TEXTS;
 export type TokenTextParams<K extends TokenTextId> = Parameters<(typeof TOKEN_TEXTS)[K]['text']>[0];
 export type TokenTextArgs<K extends TokenTextId> = TokenTextParams<K> extends Record<string, never> ? [] : [TokenTextParams<K>];
 
-/** A text of the catalog, as said in one language. */
+/** Which text of the catalog a text opens: the character after the first of those around it (`CARRIED`, src/messages-levels.ts). */
+const FIRST_ID = 0xE000;
+const IDS = Object.keys(TOKEN_TEXTS) as TokenTextId[];
+const ID_CHARS = new Map(IDS.map((id, i) => [id, String.fromCharCode(FIRST_ID + i)]));
+
+const carried = (id: TokenTextId, text: string): string => `${OPEN_TEXT}${ID_CHARS.get(id)!}${text}${CLOSE_TEXT}`;
+
+/** A text of the catalog that a text holds. */
 export interface TokenSaid { id: TokenTextId; text: string; level?: NoteLevel }
-
-/** A text of the catalog in both languages, for the data that holds its text as a `Text` (a spec). */
-export type SaidText = Text & { said: { id: TokenTextId; level?: NoteLevel } };
-
-export const isSaid = (text: Text): text is SaidText => 'said' in text;
 
 const entryOf = (id: TokenTextId) => TOKEN_TEXTS[id] as TokenEntry<unknown>;
 
-/** The text `id` of the catalog with `params`, in `lang`. */
-export function tokenSaid<K extends TokenTextId>(lang: Lang, id: K, ...params: TokenTextArgs<K>): TokenSaid {
-  const { text, level } = entryOf(id);
-  const [ja, en] = text(params[0]);
-  return { id, text: lang === 'ja' ? ja : en, ...(level ? { level } : {}) };
+/**
+ * What a text holds of the catalog, outermost first, and the text without the ids. (The same characters in a script's own text, which
+ * Unicode says are not for interchange, are taken out too, and a pair of them that holds nothing or opens no known text says nothing.)
+ */
+export function readSaid(text: string): { text: string; said: TokenSaid[] } {
+  const said: TokenSaid[] = [];
+  const open: { at: number; said: TokenSaid }[] = [];
+  let plain = '';
+  let from = 0;
+  for (const m of text.matchAll(CARRIED)) {
+    plain += text.slice(from, m.index);
+    from = m.index + m[0].length;
+    const id = m[1] && IDS[m[1].charCodeAt(0) - FIRST_ID];
+    if (id) {
+      const { level } = entryOf(id);
+      const one: TokenSaid = { id, text: '', ...(level ? { level } : {}) };
+      said.push(one);
+      open.push({ at: plain.length, said: one });
+    } else if (!m[1]) {
+      const o = open.pop();
+      if (o) o.said.text = plain.slice(o.at);
+    }
+  }
+  return { text: plain + text.slice(from), said: said.filter((s) => s.text) };
 }
 
-/** The text `id` of the catalog with `params`, in both languages. */
-export function saidText<K extends TokenTextId>(id: K, ...params: TokenTextArgs<K>): SaidText {
-  const { text, level } = entryOf(id);
-  const [ja, en] = text(params[0]);
-  return { ja, en, said: { id, ...(level ? { level } : {}) } };
+/** The text `id` of the catalog with `params`, in `lang`, with its id. */
+export function tokenSaid<K extends TokenTextId>(lang: Lang, id: K, ...params: TokenTextArgs<K>): string {
+  const [ja, en] = entryOf(id).text(params[0]);
+  return carried(id, lang === 'ja' ? ja : en);
+}
+
+/** The text `id` of the catalog with `params`, in both languages, each with its id: for the data that holds its text as a `Text` (a spec). */
+export function saidText<K extends TokenTextId>(id: K, ...params: TokenTextArgs<K>): Text {
+  const [ja, en] = entryOf(id).text(params[0]);
+  return { ja: carried(id, ja), en: carried(id, en) };
 }

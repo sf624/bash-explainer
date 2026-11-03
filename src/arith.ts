@@ -1,5 +1,5 @@
 import type { Lang } from './i18n';
-import { type TokenSaid, tokenSaid } from './messages-tokens';
+import { tokenSaid } from './messages-tokens';
 /**
  * Integer constants of bash arithmetic (`$(( ))`, `(( ))`, `let`, array subscripts, `${s:off:len}`):
  * decimal, octal (`010`), hexadecimal (`0x1F`) and `base#digits` (`2#1010`, `64#@`).
@@ -164,7 +164,7 @@ export function invalidLiteral(text: string, lit: Extract<ArithLiteral, { type: 
 }
 
 /** A constant of an arithmetic expression in words: its base and value, or, from the catalog of token texts, why bash rejects it. */
-export function describeArithLiteral(text: string, lit: ArithLiteral, lang: Lang): string | TokenSaid {
+export function describeArithLiteral(text: string, lit: ArithLiteral, lang: Lang): string {
   const s = (ja: string, en: string): string => (lang === 'ja' ? ja : en);
   if (lit.type === 'invalid') {
     return tokenSaid(lang, 'arith-invalid-number', { text, why: invalidLiteral(text, lit, lang).why });

@@ -18,6 +18,7 @@ import { yqSpecsOf } from '../dict/yq';
 import { judgeYq } from '../embedded/yq';
 import { lineLabel, lineListLabel, type Text, tx } from '../i18n';
 import { bracket as bracketLabel, labelText, shorten } from '../label';
+import { plainOf } from '../messages-levels';
 import { fact } from '../messages';
 import { TURNS_ALIASES_ON } from '../messages-alias';
 import { unreadClause } from '../messages-common';
@@ -312,8 +313,8 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   }
   // (The sentence of the line says the command with the same summary as its token, src/linesentence.ts.)
   const said: CommandSaid = { names: [head.name, ...path], kind: head.kind, options: optionsSaid(argToks), ...(bracket ? { test: true as const } : {}) };
-  if (summary) said.what = cx.t(summary);
-  else if (head.spec) said.what = head.explanation;
+  if (summary) said.what = plainOf(cx.t(summary));
+  else if (head.spec) said.what = plainOf(head.explanation);
   cx.memo(COMMAND_SAID).set(n, said);
   if (summary) t.summary = `${said.names.join(' ')}: ${said.what}`;
   return t;
@@ -328,7 +329,7 @@ export interface CommandSaid { names: string[]; kind: Kind; what?: string; test?
 export const COMMAND_SAID = memoKey<CommandSaid>('commandSaid');
 
 function optionsSaid(toks: readonly Token[]): CommandSaid['options'] {
-  return toks.flatMap((t) => (t.kind !== 'option' ? [] : t.children.some((c) => c.kind === 'option') ? optionsSaid(t.children) : [{ name: t.label, what: t.explanation }]));
+  return toks.flatMap((t) => (t.kind !== 'option' ? [] : t.children.some((c) => c.kind === 'option') ? optionsSaid(t.children) : [{ name: t.label, what: plainOf(t.explanation) }]));
 }
 
 function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedChildren[0]!): CommandHead {

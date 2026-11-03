@@ -1,5 +1,5 @@
 import type { Text } from './i18n';
-import { tokenText, tokenWarning } from './messages-tokens-entry';
+import { tokenText, tokenWarning } from './messages-levels';
 
 // What the tokens of a shebang say.
 

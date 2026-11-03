@@ -1,5 +1,5 @@
 import { lineLabel, ordinal, type Text } from './i18n';
-import { tokenText } from './messages-tokens-entry';
+import { tokenText } from './messages-levels';
 
 // What the tokens of the compound commands, tests, lists, redirections and the rest of src/explain/ say.
 

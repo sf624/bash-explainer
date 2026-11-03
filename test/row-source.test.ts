@@ -3,13 +3,27 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
 import { Analyzer } from '../src/analyzer';
+import type { Token } from '../src/analyzer-types';
 import { LEVELS } from '../src/levels';
+import { MESSAGES } from '../src/messages';
+import { insideLastBracket, plainOf } from '../src/messages-levels';
+import { readSaid, saidText, TOKEN_TEXTS, tokenSaid } from '../src/messages-tokens';
+import { ARGV_TEXTS } from '../src/messages-tokens-argv';
+import { COMMAND_TEXTS } from '../src/messages-tokens-commands';
+import { COMPOUND_TEXTS } from '../src/messages-tokens-compound';
+import { SHEBANG_TEXTS } from '../src/messages-tokens-shebang';
+import { WORD_TEXTS } from '../src/messages-tokens-words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { dropLabelEcho, markedText, markSaid, sayInstead } from '../src/tokenmarks';
+import { explainDocumentLine } from '../src/document';
+import { type FileKind, openDocument, shellsOf } from '../src/document-setup';
 import { partHover, wholeLine } from '../src/ui/hoverView';
 import { panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
 import { type PanelRow, rowPlain, tokenRow } from '../src/ui/tokenRow';
 import { main } from '../cli/main';
+import { corpus } from './support/corpus';
+import { detectShell } from '../src/dialect';
 import { base, compareKnown, keyOf } from './support/scan';
 import { counted, scanAll, virtualFiles } from './support/row-source';
 
@@ -27,18 +41,49 @@ function members(sf: ts.SourceFile, name: string): string[] {
   return i.members.map((m) => m.name!.getText());
 }
 
-describe('one record for what a token\'s row holds', () => {
-  it('finds a token\'s row fields read outside the record, by the type of what is read', () => {
+/** A token with the text `explanation`, as a test makes one. */
+const tokenWith = (explanation: string): Token => ({ kind: 'option', label: '-x', explanation, span: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } }, children: [] });
+
+/** Every token under `items`. */
+const allTokens = (items: readonly Token[]): Token[] => items.flatMap((t) => [t, ...allTokens(t.children)]);
+
+describe('one record for what a token\'s row holds', function () {
+  // (A TypeScript program over src/ui/, cli/ and web/: seconds, and more with coverage on a loaded CI machine.)
+  this.timeout(120000);
+
+  // Left open: a key that is a plain string (`tok[k]`), a parameter of an unconstrained type (`<T>(x: T)`) that hides a token before a field is
+  // read, a value typed `any` from elsewhere (`JSON.parse`), what takes all of a token at once (`Object.values(tok)`, `JSON.stringify(tok)`),
+  // a token handed on in a return or an object literal rather than a call or a typed `const`, and JavaScript (media/panel.js has its own check below).
+  it('finds a token\'s row fields read outside the record, by the member that is read', () => {
     const file = path.join(base, 'src', 'ui', 'snippet-row.ts');
     virtualFiles.set(file, `import type { Token } from '../analyzer-types';
       import type { TokenRow } from './tokenRow';
+      import { labelParts } from '../label';
+      import { markedText } from '../tokenmarks';
       declare const tok: Token; declare const maybe: Token | undefined; declare const row: TokenRow; declare const other: { explanation: string };
       export const a = tok.explanation + maybe?.name;
       export const b = tok['refs'];
       export const { value, label: named } = tok;
+      declare const ro: Readonly<Token>; declare const some: Partial<Token>; declare const picked: Pick<Token, 'group'>; declare const both: Token & { more: 1 };
+      export const types = [ro.basis, some.tryIt, picked.group, both.summary];
+      interface Sub extends Token { more: 1 }
+      declare const sub: Sub;
+      export const sub1 = sub.role;
+      export function generic<T extends Token>(t: T) { return t.texts; }
+      export const untyped = (tok as any).whatever;
+      const copy = { ...tok };
+      export const copied = copy.marks;
+      const { kind: _kind, ...rest } = tok;
+      export const rested = rest.facts;
+      const key = 'labelParts' as const;
+      export const keyed = tok[key];
+      function structural(x: { explanation: string }) { return x; }
+      export const handed = structural(tok);
+      export const typed: { refs?: readonly string[] } = tok;
+      export const direct = [markedText(tok), labelParts(tok)];
       export const fine = [row.text, row.label, other.explanation, tok.span, tok.children, tok.kind];`);
     try {
-      assert.deepStrictEqual(scanAll([file]).map((m) => m.what).sort(), ['explanation', 'label', 'name', 'refs', 'value']);
+      assert.deepStrictEqual(scanAll([file]).map((m) => m.what).sort(), ['as any', 'basis', 'explanation', 'explanation', 'facts', 'group', 'label', 'label', 'labelParts', 'labelParts', 'labelParts', 'markedText', 'marks', 'name', 'refs', 'refs', 'role', 'summary', 'texts', 'tryIt', 'value']);
     } finally {
       virtualFiles.delete(file);
     }
@@ -113,6 +158,142 @@ describe('one record for what a token\'s row holds', () => {
     assert.ok(JSON.stringify(embedded.items).includes('"marks":[{"id":"arith-invalid-number"'));
     // (A row with no warning has no level.)
     assert.strictEqual(tokenRow(new Analyzer('en').explainLine(parser.parse('ls'), 0, 'bash').items[0], 'en').level, undefined);
+  });
+
+  it('keeps one catalog of token texts: each id in one part, none also a note\'s', () => {
+    const parts = [ARGV_TEXTS, COMMAND_TEXTS, COMPOUND_TEXTS, SHEBANG_TEXTS, WORD_TEXTS];
+    const ids = parts.flatMap((p) => Object.keys(p));
+    assert.deepStrictEqual(ids.filter((id, i) => ids.indexOf(id) !== i), []);
+    assert.deepStrictEqual(ids.filter((id) => id in TOKEN_TEXTS === false), []);
+    assert.deepStrictEqual(Object.keys(TOKEN_TEXTS).filter((id) => id in MESSAGES), []);
+    assert.ok(Object.keys(TOKEN_TEXTS).length >= ids.length);
+    // (A text of a spec carries its id, as `cx.text`'s does.)
+    assert.deepStrictEqual(readSaid(saidText('terraform-option-before-subcommand').en).said.map((x) => [x.id, x.level]), [['terraform-option-before-subcommand', 'warning']]);
+    assert.deepStrictEqual(readSaid(tokenSaid('en', 'shebang-env-string-refused')).said[0].level, 'warning');
+    assert.strictEqual(readSaid(saidText('comment-plain').ja).said[0].level, undefined);
+  });
+
+  it('has no two ids of one text in both languages', () => {
+    // (The params of an entry stand for themselves; an entry that reads more of one than a string has is left out.)
+    const param = new Proxy({}, { get: (_, k) => (typeof k === 'string' ? `<${k}>` : undefined) });
+    const seen = new Map<string, string[]>();
+    let read = 0;
+    for (const [id, entry] of Object.entries(TOKEN_TEXTS)) {
+      try {
+        const key = JSON.stringify((entry.text as (p: unknown) => readonly [string, string])(param));
+        seen.set(key, [...seen.get(key) ?? [], id]);
+        read++;
+      } catch { /* c8 ignore next */ }
+    }
+    assert.ok(read > Object.keys(TOKEN_TEXTS).length * 0.8, `${read}`);
+    assert.deepStrictEqual([...seen.values()].filter((ids) => ids.length > 1), []);
+  });
+
+  it('carries each id with its text, wherever the text goes', () => {
+    const parser = createUnbashParser();
+    const tokens = (src: string, lang: 'en' | 'ja' = 'en') => allTokens(new Analyzer(lang).explainLine(parser.parse(src), 0, 'bash').items);
+    assert.deepStrictEqual(tokens('# hi')[0].texts, ['comment-plain']);
+    assert.deepStrictEqual(tokens('ls -l').map((t) => t.texts), [undefined, undefined]);
+    // (Short, inside a longer text, and in both languages: Japanese texts are shorter.)
+    for (const lang of ['en', 'ja'] as const) {
+      assert.ok(tokens('sort -k2 x', lang).some((t) => t.texts?.includes('option-value-for')), lang);
+      assert.ok(tokens('sudo echo x', lang).some((t) => t.texts?.includes('wrapped-runs')), lang);
+    }
+    // (A text that another token only happens to contain is not said by it: `$a` quoted and not.)
+    assert.deepStrictEqual(tokens('cp $a b; cp "$a" c').filter((t) => t.label === '$a' && t.texts).map((t) => t.texts), [['variable-expands-with-note'], ['variable-expands']]);
+    // (An outer text and the one it holds, outermost first; a warning with its own level.)
+    const t = tokenWith(tokenSaid('en', 'array-element-set', { what: tokenSaid('en', 'array-element-key', { key: 'k' }), value: 'v', append: false }));
+    markSaid([t]);
+    assert.deepStrictEqual(t.texts, ['array-element-set', 'array-element-key']);
+    assert.strictEqual(t.explanation, plainOf(t.explanation));
+    const warned = tokenWith(`a ${tokenSaid('en', 'terraform-option-before-subcommand')} and ${tokenSaid('en', 'terraform-option-before-subcommand')}`);
+    markSaid([warned]);
+    assert.deepStrictEqual(warned.marks?.length, 1);
+    // (A summary loses them too.)
+    const summed = { ...tokenWith('x'), summary: tokenSaid('en', 'comment-plain') };
+    markSaid([summed]);
+    assert.strictEqual(summed.summary, tokenSaid('en', 'comment-plain').replace(/[^ -~]/g, ''));
+  });
+
+  it('reads the characters that carry an id, also where they are a script\'s own', () => {
+    const open = tokenSaid('en', 'comment-plain').slice(0, 2);
+    const close = '﷑';
+    assert.deepStrictEqual(readSaid('plain'), { text: 'plain', said: [] });
+    // (A close with nothing open, one that never closes, one that holds nothing, one that names no text.)
+    assert.deepStrictEqual(readSaid(`a${close}b`), { text: 'ab', said: [] });
+    assert.deepStrictEqual(readSaid(`${open}ab`), { text: 'ab', said: [] });
+    assert.deepStrictEqual(readSaid(`${open}${close}`), { text: '', said: [] });
+    assert.deepStrictEqual(readSaid(`﷐ab${close}`), { text: 'ab', said: [] });
+    // (No script's text shows them, and no explanation breaks on them.)
+    const src = `echo '${open}x${close}'`;
+    assert.ok(!/[﷐﷑]/.test(allTokens(new Analyzer('en').explainLine(createUnbashParser().parse(src), 0, 'bash').items).map((t) => t.explanation).join()));
+  });
+
+  it('looks through the ids at the end of a text', () => {
+    assert.strictEqual(insideLastBracket('a (b)', ')', '; c'), 'a (b; c)');
+    assert.strictEqual(insideLastBracket(tokenSaid('en', 'option-name-filter-hint'), ')', '; c')?.endsWith('; c)﷑'), true);
+    assert.strictEqual(insideLastBracket('a', ')', '; c'), undefined);
+  });
+
+  it('says the same ids in both languages, and leaves no id in an explanation, over the corpus', () => {
+    const parser = createUnbashParser();
+    const { files, snippets } = corpus();
+    const opts = { reading: true, sentence: true, argv: true };
+    const ids = (ex: { items: Token[] }): string[] => allTokens(ex.items).map((t) => (t.texts ?? []).join());
+    const differ: string[] = [];
+    const left: string[] = [];
+    for (const input of [...files, ...snippets]) {
+      const tree = parser.parse(input.text);
+      const shell = detectShell(input.text, input.name.startsWith('snippet') ? '' : input.name);
+      const en = new Analyzer('en');
+      const ja = new Analyzer('ja');
+      for (let line = 0; line < input.text.split('\n').length; line++) {
+        const [a, b] = [en, ja].map((x) => x.explainLine(tree, line, shell, opts));
+        if (ids(a).join('\n') !== ids(b).join('\n')) differ.push(`${input.name}:${line + 1}`);
+        if (/[﷐﷑]/.test(JSON.stringify([a, b]))) left.push(`${input.name}:${line + 1}`);
+      }
+    }
+    assert.deepStrictEqual(differ, []);
+    assert.deepStrictEqual(left, []);
+  });
+
+  it('takes a text\'s ids away with the text, in a host', () => {
+    const lines = '@test "x" {\n  true\n}\n# bats file_tags=a\n';
+    const parser = createUnbashParser();
+    const said = (kind: FileKind, name: string, text: string, lang: 'en' | 'ja') => {
+      const doc = openDocument(text, kind, (t) => parser.parse(t));
+      const analyzer = new Analyzer(lang);
+      return doc.lines.flatMap((_, i) => allTokens(explainDocumentLine(analyzer, doc, i, lang, shellsOf(doc.lines, name, undefined), {}).items));
+    };
+    for (const lang of ['en', 'ja'] as const) {
+      const bats = said('bats', 'a.bats', lines, lang);
+      const def = bats.find((t) => t.kind === 'function')!;
+      assert.ok(def.explanation.includes('bats'), def.explanation);
+      assert.strictEqual(def.texts, undefined);
+      assert.strictEqual(def.children[0].texts, undefined);
+      assert.strictEqual(bats.find((t) => t.kind === 'comment')!.texts, undefined);
+      // (A placeholder of make is the host's syntax, no text of bash's.)
+      const make = said('makefile', 'Makefile', 'all:\n\techo $(CC)\n', lang).find((t) => t.label === '$(CC)')!;
+      assert.strictEqual(make.texts, undefined);
+    }
+    const t = tokenWith(tokenSaid('en', 'terraform-option-before-subcommand'));
+    markSaid([t]);
+    assert.ok(t.texts && t.marks);
+    sayInstead(t, 'other');
+    assert.deepStrictEqual([t.explanation, t.texts, t.marks], ['other', undefined, undefined]);
+  });
+
+  it('keeps a warning\'s mark when the echo of the label goes', () => {
+    const t = tokenWith(`\`-x\`: ${'x'.repeat(3)}`);
+    t.marks = [{ id: 'terraform-option-before-subcommand', level: 'warning', text: t.explanation }, { id: 'splice-refused', level: 'warning', text: 'xxx' }];
+    dropLabelEcho(t);
+    assert.strictEqual(t.explanation, 'xxx');
+    assert.deepStrictEqual(t.marks.map((m) => m.text), ['xxx', 'xxx']);
+    assert.strictEqual(markedText({ explanation: t.explanation, marks: [t.marks[0]] }), `${LEVELS.warning.mark} xxx`);
+    // (No warning, nothing to move.)
+    const plain = tokenWith('`-x`: y');
+    dropLabelEcho(plain);
+    assert.deepStrictEqual([plain.explanation, plain.marks], ['y', undefined]);
   });
 
   it('says the same in every output: the record\'s label, text and references, each in its markup', async () => {

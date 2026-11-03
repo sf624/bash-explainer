@@ -1,5 +1,5 @@
 import type { Text } from './i18n';
-import { tokenText } from './messages-tokens-entry';
+import { tokenText } from './messages-levels';
 
 // What the tokens of the words of a command, as src/explain/argv.ts and its modules read them say.
 
@@ -48,8 +48,6 @@ export const ARGV_TEXTS = {
   'subcommand-label': tokenText<{ command: string }>(({ command }) => [
     `サブコマンド \`${command}\`: `,
     `Subcommand \`${command}\`: `]),
-  /** `declare -ix v`: the separator between the texts of the letters of one word. */
-  'option-list-separator': tokenText(() => ['、', ', ']),
   /** `declare -g v`: the option has no text of its own. */
   'option-plain': tokenText(() => ['オプション', 'Option']),
   /** `ls -- -x`: the `--`. */
@@ -124,10 +122,6 @@ export const ARGV_TEXTS = {
   'wrapped-runs': tokenText<{ name: string }>(({ name }) => [
     `\`${name}\` を実行: `,
     `runs \`${name}\`: `]),
-  /** `ls ~`: a word that is only a tilde expansion, as an operand. */
-  'operand-word': tokenText<{ text: string }>(({ text }) => [
-    `文字列 \`${text}\``,
-    `Word \`${text}\``]),
   /** `[ -f a ]`: the last `]`. */
   'test-last-bracket': tokenText(() => [
     '`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）',
