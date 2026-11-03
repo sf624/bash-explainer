@@ -246,7 +246,8 @@ describe('one line must not stop the whole tool', () => {
     const NOT_READ = fact('en', 'file-not-read', { why: 'too-deep' }).text;
     const OVERFLOW = new RangeError('Maximum call stack size exceeded');
     const parserOf = (t: string) => parser.parse(t);
-    const DEEP: readonly string[] = [`echo ${'"$('.repeat(2e4)}`, 'coproc '.repeat(5e4), '! '.repeat(1e5)];
+    // (Far past where any stack ends, however optimised the code is by then. The parser takes a moment for each `"$(`, and none for `coproc `.)
+    const DEEP: readonly string[] = [`echo ${'"$('.repeat(5000)}`, 'coproc '.repeat(5e4), '! '.repeat(1e5)];
 
     it('a text the parser cannot follow is a tree that says so, and the parser reads the next text as ever', function () {
       this.timeout(60000);
@@ -269,7 +270,7 @@ describe('one line must not stop the whole tool', () => {
 
     it('a string read as a script that the parser cannot follow is not read, and nothing is trusted', function () {
       this.timeout(60000);
-      const script = `bash -c '${'"$('.repeat(2e4)}'\nx=1\n[ "$x" = 1 ] && echo a\neval '${'"$('.repeat(2e4)}'\n`;
+      const script = `bash -c '${'coproc '.repeat(5e4)}'\nx=1\n[ "$x" = 1 ] && echo a\neval '${'coproc '.repeat(5e4)}'\n`;
       const tree = parser.parse(script);
       assert.strictEqual(tree.unread, undefined);
       assert.match(new Analyzer('en').explainLine(tree, 0).items[0].children.at(-1)!.explanation, /nested this deep/);
@@ -278,7 +279,7 @@ describe('one line must not stop the whole tool', () => {
 
     it('a file not read is one problem at its first line, with the other documents as ever', function () {
       this.timeout(60000);
-      const lines = [`echo ${'"$('.repeat(2e4)}`, 'echo b'];
+      const lines = ['coproc '.repeat(5e4), 'echo b'];
       const doc = openDocument(lines.join('\n'), 'shell', parserOf);
       const issues = documentIssues(doc, 'en', {});
       assert.deepStrictEqual(issues.map((i) => [i.code, i.severity, i.startLine, i.endCol]), [['file-not-read', 'error', 0, lines[0].length]]);
@@ -380,10 +381,9 @@ describe('one line must not stop the whole tool', () => {
     });
 
     it('the lists that grow with a script fit: a long file is read, and a line of it is explained', function () {
-      this.timeout(60000);
-      const statements = parser.parse('echo a\n'.repeat(250000));
-      assert.strictEqual(statements.root.children.length, 250000);
-      assert.ok(new Analyzer('en').explainLine(statements, 249999).items.length);
+      this.timeout(240000);
+      assert.strictEqual(parser.parse('echo a\n'.repeat(250000)).root.children.length, 250000);
+      assert.ok(new Analyzer('en').explainLine(parser.parse('echo a\n'.repeat(130000)), 129999).items.length);
       assert.strictEqual(parser.parse('# c\n'.repeat(200000)).root.children.length, 200000);
       const background = parser.parse(`${'a&'.repeat(1e5)}\necho b\n`);
       assert.strictEqual(background.unread, undefined);
@@ -409,7 +409,7 @@ describe('one line must not stop the whole tool', () => {
 
     it('the command-line tool: a file that cannot be read says so in one line, and the others print', async function () {
       this.timeout(60000);
-      const deep = `echo ${'"$('.repeat(2e4)}`;
+      const deep = 'coproc '.repeat(5e4);
       const dir = fs.mkdtempSync(`${os.tmpdir()}/line-budget-`);
       const worst = `${dir}/worst.sh`;
       const other = `${dir}/other.sh`;

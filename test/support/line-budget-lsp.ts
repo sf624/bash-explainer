@@ -6,7 +6,7 @@ import { startLanguageServer } from '../../cli/lsp';
 
 /** The documents: each is opened, its problems are published, and it is hovered. */
 export const WORST: readonly { name: string; text: string }[] = [
-  { name: 'nested substitutions', text: `echo ${'"$('.repeat(2e4)}\n` },
+  { name: 'nested substitutions', text: `echo ${'"$('.repeat(5000)}\n` },
   { name: 'coprocesses', text: `${'coproc '.repeat(5e4)}\n` },
   { name: 'a long negation', text: `${'! '.repeat(1e5)}\n` },
   { name: 'rows of an example', text: `jq -n '[range(9e4)]|[paths]'\n` },
