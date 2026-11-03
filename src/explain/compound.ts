@@ -20,7 +20,7 @@ import { has, intersects, same, skeletal, sortTokens, summaryOf } from './nodes'
 import { specFor } from './reads';
 import { groupSubshell } from './where';
 import { casePattern } from './words';
-import { PROSE_MARK } from '../levels';
+import type { TokenTextArgs, TokenTextId } from '../messages-tokens';
 
 /** Children (keywords and named nodes, the lists of commands of a body as one) in source order, filtered to the current line. */
 function ordered(cx: Explainer, n: SyntaxNode, skip: (c: SyntaxNode) => boolean = () => false): Token[] {
@@ -101,6 +101,15 @@ export function comment(cx: Explainer, n: SyntaxNode): Token {
   return cx.tok(n, 'comment', cx.s('コメント: `#` から行末までは実行されない', 'Comment: everything after `#` is ignored'));
 }
 
+/** What the shebang's text says of env, and whether that is a warning. */
+interface EnvSaid { text: string; warns?: true }
+
+/** A sentence of the catalog after the text before it. */
+const sentence = <K extends TokenTextId>(cx: Explainer, id: K, ...params: TokenTextArgs<K>): string => cx.sep() + cx.text(id, ...params);
+
+/** A warning of the catalog, as a sentence of the shebang's text. */
+const warning = <K extends TokenTextId>(cx: Explainer, id: K, ...params: TokenTextArgs<K>): EnvSaid => ({ text: sentence(cx, id, ...params), warns: true });
+
 /**
  * The shebang (3.8; execve(2), "Interpreter scripts"): the kernel reads it when the file is run as a program, and starts
  * the interpreter with the rest of the line (one argument on Linux, blanks and all) and the script's path; bash does
@@ -116,17 +125,16 @@ function shebang(cx: Explainer, n: SyntaxNode): Token {
       'Shebang with no interpreter: run as a program, the kernel cannot start the file, and the shell that runs it reads it as a shell script itself. To bash this line is a comment'));
   }
   // (`#!/usr/bin/env` alone: env runs the script's path, as with an assignment.)
-  const notes = arg ? shebangEnv(cx, `${interp} ${arg}`) : /\/env$/.test(interp) ? envLoop(cx) : '';
+  const env0 = arg ? shebangEnv(cx, `${interp} ${arg}`) : /\/env$/.test(interp) ? envLoop(cx) : { text: '' };
+  const notes = env0.text;
   const blanks = /\s/.test(arg);
   // (The rest as one word of the shell, quoted.)
   const shown = blanks ? `${interp} '${arg.replace(/'/g, "'\\''")}'` : `${interp}${arg ? ` ${arg}` : ''}`;
-  // (Said by the mark of env without `-S`, `PROSE_MARK`.)
-  const oneArg = blanks && !notes.includes(PROSE_MARK);
+  // (Said by the warning of env without `-S`.)
+  const oneArg = blanks && !env0.warns;
   const env = /\/env$/.test(interp) && /^[^-\s=][^\s=]*$/.test(arg);
   // `#!bash`: the kernel opens the interpreter as a path, from the current directory.
-  const relative = interp.includes('/') ? ['', ''] : [
-    `。${PROSE_MARK} カーネルはインタープリタを PATH から探さず、カレントディレクトリからの相対パスとして \`${interp}\` を探すので、実行はたいてい失敗する（required file not found）`,
-    `. ${PROSE_MARK} The kernel does not search PATH for the interpreter: it looks for \`${interp}\` from the current directory, so running the file mostly fails ("required file not found")`];
+  const relative = interp.includes('/') ? '' : sentence(cx, 'shebang-relative-interpreter', { interp });
   const said = detectShell(n.text);
   const used = cx.shell ?? 'bash';
   const dialect = !said ? ['', '']
@@ -135,10 +143,10 @@ function shebang(cx: Explainer, n: SyntaxNode): Token {
         `. Bash Explainer explains the script as ${SHELL_NAMES[used]} here, not as ${SHELL_NAMES[said]} (a ShellCheck directive or a setting chooses it)`];
   return cx.tok(n, 'shebang', cx.s(
     `シバン（shebang）: ファイルをプログラムとして実行すると（\`./script.sh\`、または PATH から見つかるコマンドとして）、カーネル（それをしないシステムでは bash）が \`${shown} ./script.sh 引数…\` を実行する`
-      + `${oneArg ? `（Linux では行の残りの \`${arg}\` 全体が1つの引数になる）` : ''}${relative[0]}${env ? `。\`env\` は PATH から \`${arg}\` を探して実行する` : ''}${notes}`
+      + `${oneArg ? `（Linux では行の残りの \`${arg}\` 全体が1つの引数になる）` : ''}${relative}${env ? `。\`env\` は PATH から \`${arg}\` を探して実行する` : ''}${notes}`
       + `。bash にとってこの行はコメントで、\`bash script.sh\`・\`sh script.sh\`・\`source script.sh\`・\`. script.sh\` では無視される${dialect[0]}`,
     `Shebang: when the file is run as a program (\`./script.sh\`, or a command found on PATH), the kernel (or bash, on a system whose kernel does not) runs \`${shown} ./script.sh args…\``
-      + `${oneArg ? ` (on Linux the whole rest of the line, \`${arg}\`, is one argument)` : ''}${relative[1]}${env ? `, and \`env\` finds \`${arg}\` on PATH and runs it` : ''}${notes}`
+      + `${oneArg ? ` (on Linux the whole rest of the line, \`${arg}\`, is one argument)` : ''}${relative}${env ? `, and \`env\` finds \`${arg}\` on PATH and runs it` : ''}${notes}`
       + `. To bash this line is a comment: \`bash script.sh\`, \`sh script.sh\`, \`source script.sh\` and \`. script.sh\` ignore it${dialect[1]}`,
   ), shebangParts(cx, n, interp, arg));
 }
@@ -166,46 +174,40 @@ function shebangParts(cx: Explainer, n: SyntaxNode, interp: string, arg: string)
  * `#!/usr/bin/env -S bash -e`: Linux gives the interpreter the rest of the line as one argument, which
  * `env -S` splits; without `-S`, env looks for a program named with the whole rest (`bash -e`).
  */
-function shebangEnv(cx: Explainer, interp: string): string {
+function shebangEnv(cx: Explainer, interp: string): EnvSaid {
   const rest = /^(?:\S*\/)?env[ \t]+(.*\S)$/.exec(interp)?.[1];
-  if (!rest) return '';
+  if (!rest) return { text: '' };
   const env = specFor(cx, 'env')!;
   // (One word: `rest` is not empty.)
   const role = interpret(env, [{ value: rest }], { name: 'env', lookup: (name) => specFor(cx, name) }).roles[0].role;
   const letters = role.role === 'cluster' ? role.letters : [role];
   const value = letters.map((l) => (l.role === 'option' ? l.value : undefined)).find((v) => v?.split || v?.refused);
   if (value?.refused) {
-    return cx.s(`。${PROSE_MARK} env はこの文字列を分けられず、何も実行せずに終了ステータス 125 で終わる`, `. ${PROSE_MARK} env cannot split this string and exits with status 125, running nothing`);
+    return warning(cx, 'shebang-env-string-refused');
   }
   if (!value) {
     // `#!/usr/bin/env FOO=1 bash`: env takes the whole word as a variable to set (`FOO` is `1 bash`).
     if (!rest.startsWith('-') && rest.includes('=')) return envLoop(cx, rest);
-    if (!/\s/.test(rest)) return '';
+    if (!/\s/.test(rest)) return { text: '' };
     // `#!/usr/bin/env -i bash`: env reads the whole word as options (`-i`, then ` `: an invalid option).
     if (rest.startsWith('-')) {
-      return cx.s(
-        `。${PROSE_MARK} Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になり、env はそれを1つのオプションの並びとして読むので、\`${rest.split(/\s+/).pop()}\` をコマンドとして実行しない（多くは不正なオプションとして終了ステータス 125 で終わる）。分けるには \`env -S\` と書く`,
-        `. ${PROSE_MARK} On Linux the whole \`${rest}\` after the interpreter is one argument to env, which reads it as one run of options, so it does not run \`${rest.split(/\s+/).pop()}\` (it mostly fails with an invalid option and status 125); write \`env -S\` to split it`);
+      return warning(cx, 'shebang-env-reads-options', { rest, last: rest.split(/\s+/).pop()! });
     }
-    return cx.s(
-      `。${PROSE_MARK} Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になるので、env はその名前のプログラムを探して失敗する。分けるには \`env -S\` と書く`,
-      `. ${PROSE_MARK} On Linux the whole \`${rest}\` after the interpreter is one argument to env, which looks for a program of that name and fails; write \`env -S\` to split it`);
+    return warning(cx, 'shebang-env-one-argument', { rest });
   }
   const { words, roles } = value.split!;
   const cmd = roles.find((r) => r.role.role === 'command');
   const shown = (k: number): string => `\`${words[k].value ?? `${words[k].prefix}…`}\``;
-  if (!cmd) return cx.s('。env -S の文字列にコマンドがないので、スクリプトのパスをコマンドとして実行する', '. The `env -S` string names no command, so env runs the script\'s path as the command');
+  if (!cmd) return { text: cx.s('。env -S の文字列にコマンドがないので、スクリプトのパスをコマンドとして実行する', '. The `env -S` string names no command, so env runs the script\'s path as the command') };
   const args = words.slice(cmd.word + 1).map((_, k) => shown(cmd.word + 1 + k));
-  return cx.s(
+  return { text: cx.s(
     `。\`env -S\` が残りを単語に分け、${shown(cmd.word)} を${args.length ? ` ${args.join(' ')} と` : ''}スクリプトのパスを引数にして実行する`,
-    `. \`env -S\` splits the rest into words and runs ${shown(cmd.word)} with ${args.length ? `${args.join(' ')} and ` : ''}the script's path as arguments`);
+    `. \`env -S\` splits the rest into words and runs ${shown(cmd.word)} with ${args.length ? `${args.join(' ')} and ` : ''}the script's path as arguments`) };
 }
 
 /** env given no command (`#!/usr/bin/env`, or only an assignment): it runs the script's path, whose shebang runs env again. */
-function envLoop(cx: Explainer, assignment?: string): string {
-  return cx.s(
-    `。${PROSE_MARK} env はスクリプトのパスをコマンドとして実行する${assignment ? `（\`${assignment}\` は設定する変数として読む）` : ''}ので、スクリプトが自分自身を終わりなく起動し直す`,
-    `. ${PROSE_MARK} env runs the script's path as the command${assignment ? ` (it takes \`${assignment}\` as a variable to set)` : ''}, so the script starts itself again, without end`);
+function envLoop(cx: Explainer, assignment?: string): EnvSaid {
+  return warning(cx, 'shebang-env-loop', { assignment });
 }
 
 export function functionDef(cx: Explainer, n: SyntaxNode): Token {

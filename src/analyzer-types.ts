@@ -7,7 +7,9 @@ import type { SectionMarks } from './examples/marks';
 import type { Interactive } from './examples/rerun';
 import type { HostId, NoShell } from './hosts';
 import type { LabelPart } from './label';
+import type { NoteLevel } from './levels';
 import type { Fact, FactId, Note, SpaceEnds, ValueSaid } from './messages';
+import type { TokenTextId } from './messages-tokens';
 import type { TokenRole } from './roles';
 import type { NameInfo } from './namefacts';
 import type { ReadingNode } from './reading';
@@ -57,6 +59,14 @@ export interface Token {
    * when there are none.
    */
   facts?: FactId[];
+  /**
+   * The texts of the catalog of token texts its explanation holds (src/messages-tokens.ts), in the order said. None for a text from
+   * elsewhere: a spec's or an embedded language's, and the few texts of src/explain/ still written where they are said
+   * (docs/design/sources.md, row 14).
+   */
+  texts?: TokenTextId[];
+  /** The warnings among them: each with its level, and its text as `explanation` holds it. A row draws the level's mark (`markedText`). */
+  marks?: TokenMark[];
   /**
    * Short label shown in lists: usually the source text of the span, truncated. A command is labelled with its
    * name (`grep`), since its explanation describes the program; a construct, with its skeleton (see `labelParts`).
@@ -128,6 +138,9 @@ export interface Token {
   /** A command that shows that behaviour, and what it printed (`Fact.tryIt`), with the basis. */
   tryIt?: TryIt;
 }
+
+/** A warning inside a token's text (`Token.marks`). */
+export interface TokenMark { id: TokenTextId; level: NoteLevel; text: string }
 
 /** The value of an expansion (`Token.value`): the model's (src/semantics/values.ts, `expansionValue`), and its texts. */
 export interface ValueInfo extends ExpansionValue {

@@ -12,7 +12,7 @@ export type Kind = 'row-field';
 export type Match = MatchOf<Kind>;
 
 /** The fields of a token whose reading makes up a row. */
-export const ROW_FIELDS: ReadonlySet<string> = new Set(['explanation', 'label', 'labelParts', 'name', 'value', 'refs', 'basis', 'tryIt', 'group', 'summary', 'role', 'said']);
+export const ROW_FIELDS: ReadonlySet<string> = new Set(['explanation', 'label', 'labelParts', 'name', 'value', 'refs', 'basis', 'tryIt', 'group', 'summary', 'role', 'texts', 'marks', 'facts']);
 /** Where a row is made. */
 export const ALLOWED = 'src/ui/tokenRow.ts';
 const DIRS = ['src/ui', 'cli', 'web'];

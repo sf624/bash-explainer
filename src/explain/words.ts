@@ -915,7 +915,8 @@ export function arithNumber(cx: Explainer, n: SyntaxNode): Token | undefined {
 }
 
 function arithLiteralText(cx: Explainer, text: string, lit: ArithLiteral): string {
-  return describeArithLiteral(text, lit, cx.lang);
+  const said = describeArithLiteral(text, lit, cx.lang);
+  return typeof said === 'string' ? said : cx.said(said);
 }
 
 /** The `,` of an arithmetic expression: a note that its parts run left to right and the last one is the value. */

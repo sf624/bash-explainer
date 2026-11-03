@@ -197,12 +197,6 @@ export function namesLevel(level: NoteLevel, label: string, lang: Lang): boolean
   return wordOnEvery === true && label === word[lang].trimEnd();
 }
 
-/**
- * The mark that a text which is no note of the catalog yet puts before a failure it states, inside an explanation's
- * sentence ("…. ⚠ env cannot split this string"). Such texts become catalog facts (docs/design/sources.md, SB3).
- */
-export const PROSE_MARK = LEVELS.warning.mark;
-
 /** The levels in their order (`rank`), with their keys. */
 export const LEVEL_ORDER: readonly NoteLevel[] = (Object.keys(LEVELS) as NoteLevel[]).sort((a, b) => LEVELS[a].rank - LEVELS[b].rank);
 

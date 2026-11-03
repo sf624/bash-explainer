@@ -9,6 +9,7 @@ import type { Shell } from '../dialect';
 import { type Lang, lineRangeLabel, type Text } from '../i18n';
 import { shorten } from '../label';
 import { type Fact, type Note, said } from '../messages';
+import { isSaid, type TokenSaid, tokenSaid, type TokenTextArgs, type TokenTextId } from '../messages-tokens';
 import { anchored, type Found, spanOf } from '../noteanchors';
 import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
@@ -54,6 +55,15 @@ export interface Explainer {
    * show it get its basis and try-it (`withTokenBases`, docs/design/basis.md, step 4).
    */
   rests(text: string, id: TokenBasisId): string;
+  /**
+   * A text of the catalog of token texts (src/messages-tokens.ts): recorded for the line, so that the tokens that show it have
+   * its id and, for one that warns, its level (`markSaid`, src/tokenmarks.ts).
+   */
+  text<K extends TokenTextId>(id: K, ...params: TokenTextArgs<K>): string;
+  /** What ends a sentence before another in the same text: `。`, or `. `. */
+  sep(): string;
+  /** A text of that catalog already made (`tokenSaid`), recorded as `text` records it. */
+  said(said: TokenSaid): string;
   tok(n: SyntaxNode, kind: Kind, explanation: string, children?: Token[], label?: string): Token;
   /**
    * The lines a construct over several lines covers (` (lines 3–5)`), from `n` to the end of `to`; for one line, empty,
@@ -150,6 +160,8 @@ export interface LineOutput {
   readonly examples: readonly Example[];
   /** The texts said on this line that state bash's behaviour, with what they rest on (`rests`). */
   readonly rested: readonly RestingText[];
+  /** The texts of the catalog of token texts said on this line (`text`). */
+  readonly saidTexts: readonly TokenSaid[];
   /** Enclosing constructs, outermost first. */
   readonly context: ContextEntry[];
   /** The texts of notes found on nodes, each once; each is recorded in the anchors (see `anchored`), with its data. */
@@ -192,6 +204,7 @@ export class LineExplainer implements Explainer, LineOutput {
   private readonly data = new Map<string, Note>();
   readonly examples: Example[] = [];
   readonly rested: RestingText[] = [];
+  readonly saidTexts: TokenSaid[] = [];
   readonly context: ContextEntry[] = [];
   readonly slotEnvs = new Map<SyntaxNode, ExecEnv>();
   command: CommandContext | undefined = undefined;
@@ -219,12 +232,23 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   t(text: Text): string {
+    if (isSaid(text)) this.saidTexts.push({ ...text.said, text: text[this.lang] });
     return isBased(text) ? this.rests(text[this.lang], text.basis) : text[this.lang];
   }
 
   rests(text: string, id: TokenBasisId): string {
     this.rested.push({ text, id });
     return text;
+  }
+  text<K extends TokenTextId>(id: K, ...params: TokenTextArgs<K>): string {
+    return this.said(tokenSaid(this.lang, id, ...params));
+  }
+  sep(): string {
+    return this.s('。', '. ');
+  }
+  said(said: TokenSaid): string {
+    this.saidTexts.push(said);
+    return said.text;
   }
 
   tok(n: SyntaxNode, kind: Kind, explanation: string, children: Token[] = [], label = shorten(n.text)): Token {

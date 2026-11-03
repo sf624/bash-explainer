@@ -27,7 +27,7 @@ import { readingTree } from './reading';
 import { argvLines } from './argvline';
 import { lineSentence, problemCodes } from './linesentence';
 import { COMMAND_SAID } from './explain/commands';
-import { claim, dropLabelEcho, markTokens } from './tokenmarks';
+import { claim, dropLabelEcho, markSaid, markTokens } from './tokenmarks';
 import { LineExplainer, type Walk } from './explain/context';
 import { intersects, isBlockLike, onLine, summaryOf } from './explain/nodes';
 import { arrayKind, resolve } from './explain/reads';
@@ -61,6 +61,7 @@ export class Analyzer {
     // has; with `notes.basis` off, no token has a basis.)
     if (opts.basis === false) withoutBases(items);
     else withTokenBases(items, cx.rested);
+    markSaid(items, cx.saidTexts);
     const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'], line)
       .filter((n) => intersects(n, line));
     const notes = [

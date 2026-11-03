@@ -1,4 +1,5 @@
-import type { Kind } from '../analyzer-types';
+import type { Kind, TokenMark } from '../analyzer-types';
+import type { TokenSaid, TokenTextId } from '../messages-tokens';
 import type { Lang } from '../i18n';
 
 /** A token inside an embedded language (regex, sed script, jq filter, awk program). */
@@ -13,6 +14,15 @@ export interface EmbeddedToken {
   label?: string;
   /** A regex capture group (or a reference to one): its number, so it can be coloured alike everywhere. */
   group?: number;
+  /** The text of the catalog of token texts it says (`Token.texts`, `Token.marks`). */
+  texts?: TokenTextId[];
+  marks?: TokenMark[];
+}
+
+/** What a token says: a text, or one of the catalog of token texts, with its id and level (src/messages-tokens.ts). */
+export function tokenSaidBy(said: string | TokenSaid): Pick<EmbeddedToken, 'explanation' | 'texts' | 'marks'> {
+  if (typeof said === 'string') return { explanation: said };
+  return { explanation: said.text, texts: [said.id], ...(said.level ? { marks: [{ id: said.id, level: said.level, text: said.text }] } : {}) };
 }
 
 export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'echo' | 'date' | 'glob' | 'mode' | 'umask' | 'sortkey' | 'cutfields' | 'cutchars' | 'trset' | 'getopts' | 'getoptshort' | 'getoptlong' | 'perl' | 'gitformat' | 'gitdate' | 'yq4' | 'yq3path' | 'arith' | 'prompt';

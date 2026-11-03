@@ -261,7 +261,7 @@ describe('the dictionary', () => {
     ]);
     // terraform takes `-chdir` with `=` only, and no other option before the subcommand.
     assert.deepStrictEqual(parts('terraform -chdir infra plan').slice(1), ['infra: Word `infra`', 'plan: Word `plan`']);
-    assert.match(parts('terraform -var-file=x plan')[0], /^-var-file=x: ⚠ an option before the subcommand: terraform takes only `-chdir=…`/);
+    assert.match(parts('terraform -var-file=x plan')[0], /^-var-file=x: an option before the subcommand: terraform takes only `-chdir=…`/);
     assert.deepStrictEqual(parts('terraform plan -var-file=x -help'), ['plan: Subcommand `terraform plan`: Show the planned changes (nothing changes yet)', '-var-file=x: variables file (`.tfvars`) (value: `x`)', '-help: show help']);
     // kubectl: the subcommands' own options, `--dry-run` with its value attached only, and boolean globals.
     assert.deepStrictEqual(parts('kubectl delete pod web -o name').slice(3), ['-o: output format (`yaml`, `json`, `wide`, `name`, `jsonpath=…`)', 'name: Value for `-o`']);

@@ -2,6 +2,8 @@
 // tree view of the panel (src/reading.ts), and the labels their explanations need not repeat.
 import type { LineExplanation, ScriptProcess, Token, TokenOrigin } from './analyzer-types';
 import { sameSpan, spanWithin } from './noteanchors';
+import { LEVELS } from './levels';
+import type { TokenSaid } from './messages-tokens';
 import { KIND_ROLES } from './roles';
 import { type ExecEnv, processOf, whereOf } from './semantics/env';
 
@@ -89,4 +91,25 @@ export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'f
     // (Said at several nodes of one token, it is listed once.)
     if (at) at.facts = [...new Set([...at.facts ?? [], id])];
   }
+}
+
+/**
+ * Gives each token whose text holds a text of the catalog of token texts said on the line its id (`Token.texts`) and, for one
+ * that warns, its level (`Token.marks`). Found on the text, as a text may be part of a longer one, and be handed on to another token.
+ */
+export function markSaid(items: readonly Token[], said: readonly TokenSaid[]): void {
+  if (!said.length) return;
+  const walk = (t: Token) => {
+    const here = said.filter((s) => t.explanation.includes(s.text));
+    if (here.length) t.texts = [...new Set([...t.texts ?? [], ...here.map((s) => s.id)])];
+    const marks = here.filter((s) => s.level).map((s) => ({ id: s.id, level: s.level!, text: s.text }));
+    if (marks.length) t.marks = marks.filter((m, i) => marks.findIndex((o) => o.id === m.id && o.text === m.text) === i);
+    t.children.forEach(walk);
+  };
+  items.forEach(walk);
+}
+
+/** A token's text as it is shown: the mark of each warning in it (`Token.marks`) before the warning, from the level table. */
+export function markedText(t: Pick<Token, 'explanation' | 'marks'>): string {
+  return (t.marks ?? []).reduce((text, m) => text.replace(m.text, () => `${LEVELS[m.level].mark} ${m.text}`), t.explanation);
 }
