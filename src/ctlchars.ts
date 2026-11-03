@@ -194,6 +194,25 @@ export function visibleChar(ch: string): string {
   return INVISIBLE_BY_CODE.has(code) ? escapeOf(code) : visible(ch);
 }
 
+/**
+ * `text` as a terminal may be sent it: each C0 or C1 control character and DEL written out, as `<ESC>` (see `pictureText`) or,
+ * for a C1 one, which has no such name here, as `<U+009B>`. A tab and a newline stay: they lay the text out.
+ */
+export function controlsShown(text: string): string {
+  return text.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, (c) => {
+    const code = c.charCodeAt(0);
+    return code <= 0x7f ? `<${controlAbbr(code)}>` : escapeOf(code);
+  });
+}
+
+/**
+ * `value` as JSON with no control character left in the text: the encoder writes the C0 ones as escapes, but not DEL and the
+ * C1 ones. The value read back is the same.
+ */
+export function jsonText(value: unknown, indent?: number): string {
+  return JSON.stringify(value, null, indent).replace(/[\x7f-\x9f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
 const ESCAPES = /<U\+[0-9A-F]{4}>/g;
 
 /** What each `<U+202E>` in `lines` stands for, once (`` `<U+202E>` is U+202E, right-to-left override ``); undefined when they hold none. */

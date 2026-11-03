@@ -127,7 +127,7 @@ With `language` set to `auto` (the default), the language follows `LC_ALL`, `LC_
 
 ## In CI (GitHub Actions)
 
-The repository is also a GitHub Action, which runs this tool at its own version:
+The repository is also a GitHub Action, which installs this tool at its own version in a directory of its own, outside the checked-out repository, and runs it there on your files. The registry is the one your workflow or machine configures (`setup-node`'s `registry-url`, `npm_config_registry`, your user's npm settings); npm settings kept in the repository do not apply to it:
 
 ```yaml
 - uses: actions/checkout@v5
@@ -140,7 +140,7 @@ The repository is also a GitHub Action, which runs this tool at its own version:
 
 ![Warnings from the action on a pull request's diff](../images/action-annotations.png)
 
-Problems appear on the pull request's diff. Errors fail the step (`fail-on-warning: 'false'` keeps it green, errors too); warnings fail it only with `strict: 'true'`. The inputs: `files` (bash globs; default `**/*.sh`), `shell` (default: from each script), `bash-version` (`5.2` or `5.3`, the bash release that bash scripts are checked for; default `5.2`, where `${ cmd; }` is an error), `fail-on-warning`, `strict` (also fail on a warning; default `'false'`), `sarif` (also write a SARIF file, for `github/codeql-action/upload-sarif`) and `package` (another npm package spec to run). The outputs: `errors`, the number of errors; `warnings`, the number of problems that fail the step (the errors, and with `strict` the warnings); and `pitfalls`, the number of pitfalls (warnings and notices; an error is none). The counts come from the tool's `--counts`; with an older tool, `errors` is 0. The annotations of pitfalls are titled `Bash Explainer (pitfall): <code>`, and those that fail the step come first, since GitHub shows only the first annotations of a step. `strict` needs a tool with `--strict`, and `bash-version` one with `--bash-version`: with a `package` pin to an older one, the step fails and says so. In other CI systems, run `npx bash-explainer --check <files>` and use the exit status.
+Problems appear on the pull request's diff. Errors fail the step (`fail-on-warning: 'false'` keeps it green, errors too); warnings fail it only with `strict: 'true'`. The inputs: `files` (bash globs; default `**/*.sh`), `shell` (default: from each script), `bash-version` (`5.2` or `5.3`, the bash release that bash scripts are checked for; default `5.2`, where `${ cmd; }` is an error), `fail-on-warning`, `strict` (also fail on a warning; default `'false'`), `sarif` (also write a SARIF file, for `github/codeql-action/upload-sarif`) and `package` (another npm package spec to run; a relative path is relative to the workspace). The outputs: `errors`, the number of errors; `warnings`, the number of problems that fail the step (the errors, and with `strict` the warnings); and `pitfalls`, the number of pitfalls (warnings and notices; an error is none). The counts come from the tool's `--counts`; with an older tool, `errors` is 0. The annotations of pitfalls are titled `Bash Explainer (pitfall): <code>`, and those that fail the step come first, since GitHub shows only the first annotations of a step. `strict` needs a tool with `--strict`, and `bash-version` one with `--bash-version`: with a `package` pin to an older one, the step fails and says so. In other CI systems, run `npx bash-explainer --check <files>` and use the exit status.
 
 ## In your editor (Language Server)
 

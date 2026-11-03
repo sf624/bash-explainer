@@ -511,4 +511,127 @@ describe('the command-line tool', function () {
     assert.ok(r.out.split('\n').length > 300);
     assert.strictEqual(run(['--check', fixture('posix.sh')], { preload: blocker }).err, '');
   });
+  describe('control characters in what it reads', () => {
+    // ESC (a whole sequence), CR, BEL, DEL and C1 characters: in a comment, a string, a word, a value, a line with a problem.
+    const withControls = '#!/bin/sh\n# a\x1b[2Jb\x07\n'
+      + 'echo "c\x1b]0;title\x07d\re\x9bf\x7fg" \x1b[31mred\x85\n'
+      + 'x=$\'h\\x1b[2Ji\'; echo "$x"\n'
+      + 'if [[ -n \x1b[31m ]]; then rm -rf "$y\x9b"/*; fi\n';
+    // Newline and tab lay the text out; anything else is the script's.
+    const raw = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
+    const file = () => path.join(dir, 'ctl\x1b[2Jname\x9b.sh');
+    const noRaw = (r: { out: string; err: string }, what: string) => {
+      assert.doesNotMatch(r.out, raw, `${what}: ${JSON.stringify(r.out)}`);
+      assert.doesNotMatch(r.err, raw, `${what}: ${JSON.stringify(r.err)}`);
+    };
+
+    before(() => fs.writeFileSync(file(), withControls));
+
+    for (const [what, args] of [
+      ['text', []],
+      ['Markdown', ['--format', 'markdown']],
+      ['JSON', ['--format', 'json']],
+      ['the check as text', ['--check']],
+      ['the check as JSON', ['--check', '--format', 'json']],
+      ['the check as SARIF', ['--check', '--format', 'sarif']],
+      ['the check as annotations', ['--check', '--format', 'github']],
+      ['the check, with a line of the file', ['--check', '--format', 'github', '--strict', '--line', '4']],
+    ] as [string, string[]][]) {
+      it(`leaves none of them raw in ${what}`, () => {
+        const r = run([...args, '--no-color', file()]);
+        assert.ok(r.code === 0 || r.code === 1, r.err);
+        assert.ok(r.out.length > 0, what);
+        noRaw(r, what);
+      });
+    }
+
+    it('keeps each annotation on a line of its own', () => {
+      const lines = run(['--check', '--format', 'github', file()]).out.trimEnd().split('\n');
+      assert.ok(lines.length > 1);
+      for (const l of lines) assert.match(l, /^::(error|warning|notice) file=[^ ]*ctl<ESC>\[2Jname<U\+009B>\.sh,line=\d+,/, l);
+    });
+
+    it('reads the same from a command line and from standard input', () => {
+      noRaw(run(['-e', withControls.split('\n')[2], '--no-color']), '-e');
+      noRaw(run(['-', '--no-color'], { input: withControls }), 'stdin');
+      noRaw(run(['-', '--check', '--no-color'], { input: withControls }), 'stdin, the check');
+    });
+
+    it('writes those of a script and of its name in the form of the examples, as `<ESC>`', () => {
+      const r = run(['--no-color', '--line', '3', file()]);
+      assert.ok(r.out.includes('ctl<ESC>[2Jname<U+009B>.sh:3'), r.out);
+      assert.ok(r.out.includes(`echo "c<ESC>]0;title<BEL>d<CR>e<U+009B>f<DEL>g" <ESC>[31mred<U+0085>`), r.out);
+    });
+
+    it('keeps the data in JSON and SARIF: the same text once it is read', () => {
+      const lines = JSON.parse(run(['--format', 'json', file()]).out) as { file: string; text: string }[];
+      assert.strictEqual(lines[0].file, file());
+      assert.strictEqual(lines.find((l) => l.text.startsWith('echo'))!.text, withControls.split('\n')[2]);
+      assert.ok(JSON.parse(run(['--check', '--format', 'sarif', file()]).out).runs[0].results.some((x: { locations: { physicalLocation: { artifactLocation: { uri: string } } }[] }) => x.locations[0].physicalLocation.artifactLocation.uri === file()));
+      const written = path.join(dir, 'ctl.sarif');
+      run(['--check', '--sarif', written, '--format', 'github', file()]);
+      assert.doesNotMatch(fs.readFileSync(written, 'utf8').replace(/\n/g, ''), raw);
+    });
+
+    it('writes only its own colours with --color', () => {
+      for (const args of [[], ['--check']]) {
+        const r = run([...args, '--color', file()]);
+        assert.match(r.out, /\x1b\[\d+m/, 'colours are on');
+        assert.strictEqual(r.err, '');
+        // Each of its own is a colour; the text's are written out, the sequences that clear the screen and name the window too.
+        assert.doesNotMatch(r.out.replace(/\x1b\[[\d;]+m/g, ''), raw);
+        assert.ok(r.out.includes('<ESC>[2Jname'), r.out);
+        for (const code of r.out.matchAll(/\x1b\[([\d;]+)m/g)) assert.match(code[1], /^(0|1|2;3|3[1-5]|9[01])$/);
+      }
+      assert.ok(run(['--color', '--line', '3', file()]).out.includes('<ESC>[31mred<U+0085>'));
+    });
+
+    it('leaves none in what it says of a file it cannot read, or of an argument', () => {
+      const r = run(['/nonexistent/a\x1b[2Jb\x9b.sh']);
+      assert.strictEqual(r.code, 2);
+      assert.match(r.err, /cannot read \/nonexistent\/a<ESC>\[2Jb<U\+009B>\.sh/);
+      noRaw(r, 'a file');
+      noRaw(run(['--bad\x1b[2J']), 'an option');
+      noRaw(run(['--set', 'shell=\x1b[2J', '-e', 'ls']), 'a setting');
+      noRaw(run(['--print-config', '--set', 'shell=\x1b[2J']), 'the settings');
+    });
+
+    it('leaves none in the messages of the Language Server', () => {
+      const message = (m: unknown) => { const json = JSON.stringify(m); return `Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`; };
+      const uri = 'file:///a.sh';
+      const r = spawnSync(process.execPath, [cli, '--lsp'], {
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH },
+        timeout: 30000,
+        input: [
+          message({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: {} } }),
+          message({ jsonrpc: '2.0', method: 'textDocument/didOpen', params: { textDocument: { uri, languageId: 'shellscript', version: 1, text: withControls } } }),
+          message({ jsonrpc: '2.0', id: 2, method: 'textDocument/hover', params: { textDocument: { uri }, position: { line: 2, character: 1 } } }),
+          message({ jsonrpc: '2.0', id: 3, method: 'shutdown' }),
+          message({ jsonrpc: '2.0', method: 'exit' }),
+        ].join(''),
+      });
+      const bodies = r.stdout.split(/Content-Length: \d+\r\n\r\n/).filter(Boolean);
+      assert.ok(bodies.length >= 3, r.stdout);
+      for (const b of bodies) assert.doesNotMatch(b, raw);
+      assert.doesNotMatch(r.stderr, raw);
+      assert.ok(bodies.some((b) => (JSON.parse(b) as { id?: number }).id === 2), 'the hover was answered');
+    });
+
+    it('gives the columns of the real text', () => {
+      // (Each character counts one, as in an editor, however it is written out.)
+      const script = path.join(dir, 'ctl-column.sh');
+      fs.writeFileSync(script, '#!/bin/sh\necho "\x1b[31m"; [[ -n $x ]]\n');
+      const plainScript = path.join(dir, 'ctl-column-plain.sh');
+      fs.writeFileSync(plainScript, '#!/bin/sh\necho "12345"; [[ -n $x ]]\n');
+      const at = (f: string) => /^[^\n]*?:(\d+):(\d+): error: [^\n]*\[dbracket\]$/m.exec(run(['--check', '--no-color', f]).out)!.slice(1);
+      assert.deepStrictEqual(at(script), at(plainScript));
+    });
+
+    it('prints ordinary text as it is, Japanese too', () => {
+      const r = run(['--no-color', '--lang', 'ja', '-e', 'echo "日本語\té" # コメント']);
+      assert.ok(r.out.includes('echo "日本語\té" # コメント'), r.out);
+      assert.doesNotMatch(r.out, /<(ESC|TAB|U\+)/);
+    });
+  });
 });
