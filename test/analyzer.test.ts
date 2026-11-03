@@ -509,17 +509,17 @@ describe('robustness', () => {
     assert.match(shebang('#!/usr/bin/env -S bash -e', 'ja'), /`env -S` が残りを単語に分け、`bash` を `-e` とスクリプトのパスを引数にして実行する。bash にとって/);
     assert.match(shebang('#!/usr/bin/env -vS bash'), /runs `bash` with the script's path as arguments\. To bash/);
     assert.match(shebang('#!/usr/bin/env -S ${SHELL}'), /runs `…` with the script's path/);
-    assert.match(shebang('#!/usr/bin/env bash -e'), /⚠ On Linux the whole `bash -e` after the interpreter is one argument to env/);
+    assert.match(shebang('#!/usr/bin/env bash -e'), /ⓧ On Linux the whole `bash -e` after the interpreter is one argument to env/);
     assert.match(shebang('#!/usr/bin/env -S -i'), /names no command, so env runs the script's path as the command\. To bash/);
-    assert.match(shebang('#!/usr/bin/env -S"a'), /⚠ env cannot split this string and exits with status 125/);
+    assert.match(shebang('#!/usr/bin/env -S"a'), /ⓧ env cannot split this string and exits with status 125/);
     // (Compared with env in test/wrappers-real.test.ts.)
     assert.match(shebang('#!/usr/bin/env -i bash'), /⚠ On Linux the whole `-i bash` after the interpreter is one argument to env, which reads it as one run of options, so it does not run `bash`/);
     assert.match(shebang('#!/usr/bin/env -i bash', 'ja'), /`bash` をコマンドとして実行しない/);
-    for (const line of ['#!/usr/bin/env bash', '#!/bin/bash -e']) assert.doesNotMatch(shebang(line), /⚠|env -S/, line);
+    for (const line of ['#!/usr/bin/env bash', '#!/bin/bash -e']) assert.doesNotMatch(shebang(line), /⚠|ⓧ|env -S/, line);
     // env with no command runs the script's path, which starts env again (checked with Linux and GNU env: it never ends).
-    assert.match(shebang('#!/usr/bin/env'), /runs `\/usr\/bin\/env \.\/script\.sh args…`\. ⚠ env runs the script's path as the command, so the script starts itself again, without end\. To bash/);
-    assert.match(shebang('#!/usr/bin/env FOO=1 bash'), /⚠ env runs the script's path as the command \(it takes `FOO=1 bash` as a variable to set\), so the script starts itself again/);
-    assert.match(shebang('#!/usr/bin/env FOO=1', 'ja'), /⚠ env はスクリプトのパスをコマンドとして実行する（`FOO=1` は設定する変数として読む）ので、スクリプトが自分自身を終わりなく起動し直す/);
+    assert.match(shebang('#!/usr/bin/env'), /runs `\/usr\/bin\/env \.\/script\.sh args…`\. ⓧ env runs the script's path as the command, so the script starts itself again, without end\. To bash/);
+    assert.match(shebang('#!/usr/bin/env FOO=1 bash'), /ⓧ env runs the script's path as the command \(it takes `FOO=1 bash` as a variable to set\), so the script starts itself again/);
+    assert.match(shebang('#!/usr/bin/env FOO=1', 'ja'), /ⓧ env はスクリプトのパスをコマンドとして実行する（`FOO=1` は設定する変数として読む）ので、スクリプトが自分自身を終わりなく起動し直す/);
     // The kernel opens the interpreter as a path: `bash` alone is looked for in the current directory ("required file not found").
     assert.match(shebang('#!bash'), /runs `bash \.\/script\.sh args…`\. ⚠ The kernel does not search PATH for the interpreter: it looks for `bash` from the current directory/);
     assert.doesNotMatch(shebang('#!env bash'), /finds `bash` on PATH/);

@@ -2,7 +2,7 @@
 // (media/panel.js `item`), the hover (src/ui/hoverView.ts), Markdown (src/ui/render.ts `toPlainMarkdown`) and the command line
 // (cli/main.ts `textOutput`) read this record and differ only in the markup; test/row-source.test.ts fails on an output that reads
 // a token's text by itself. The panel's row model (docs/design/panel-redesign.md, P7a) builds on it.
-import type { Example, Kind, Span, Token, TokenMark, ValueInfo } from '../analyzer-types';
+import type { Kind, Token, TokenMark, ValueInfo } from '../analyzer-types';
 import type { Basis, TryIt } from '../basis';
 import { pictureText } from '../ctlchars';
 import type { Lang } from '../i18n';
@@ -12,7 +12,7 @@ import { basisSaid, type BasisSaid, type FactId } from '../messages';
 import type { TokenTextId } from '../messages-tokens';
 import type { NameInfo } from '../namefacts';
 import type { TokenRole } from '../roles';
-import { markedText } from '../tokenmarks';
+import { markedText, type TextPart, textParts } from '../tokenmarks';
 import { sameSpan } from './hoverParts';
 
 /** What a view marks on a note or a row that rests on bash's behaviour (docs/design/basis.md, 3): the chip, and the try-it. */
@@ -44,6 +44,8 @@ export interface TokenRow {
   labelParts: readonly LabelPart[];
   /** What it means (marked text: code in backticks), with the level's mark before each warning in it. */
   text: string;
+  /** The same text cut at its warnings, for a view that draws each mark in its level's look (src/ui/panelRows.ts). */
+  parts: readonly TextPart[];
   /** The texts of the catalog of token texts it says. */
   texts?: readonly TokenTextId[];
   /** The warnings in its text: each with its id, its level and its text. */
@@ -62,6 +64,9 @@ export interface TokenRow {
   basis?: NoteBasis;
 }
 
+/** The strongest level among warnings. */
+export const strongestLevel = (marks: readonly TokenMark[] | undefined): NoteLevel | undefined => marks?.map((m) => m.level).sort((a, b) => LEVELS[a].rank - LEVELS[b].rank)[0];
+
 /** The row of a token. */
 export function tokenRow(tok: Token, lang: Lang): TokenRow {
   return {
@@ -72,9 +77,10 @@ export function tokenRow(tok: Token, lang: Lang): TokenRow {
     label: tok.label,
     labelParts: labelParts(tok),
     text: markedText(tok),
+    parts: textParts(tok),
     texts: tok.texts,
     marks: tok.marks,
-    level: tok.marks?.map((m) => m.level).sort((a, b) => LEVELS[a].rank - LEVELS[b].rank)[0],
+    level: strongestLevel(tok.marks),
     facts: tok.facts,
     name: tok.name,
     value: tok.value,
@@ -97,11 +103,3 @@ export const partRow = (tok: Token, lang: Lang): TokenRow => ({ ...tokenRow(tok,
 
 /** A row's text with what its command name is, for an output with no badge (the hover's plain form, Markdown, the CLI): "Print arguments to stdout (builtin)". */
 export const rowPlain = (r: TokenRow): string => pictureText(r.name ? r.text + r.name.said.short : r.text);
-
-/** A row as the panel gets it: the record, with the place it selects, the examples placed under it and its parts. */
-export interface PanelRow extends TokenRow { span: Span; examples?: Example[]; children: PanelRow[] }
-
-/** The rows of a line's tokens, for the panel (media/panel.js has no way to make them: it is plain script, and only draws). */
-export function panelRows(items: readonly Token[], lang: Lang): PanelRow[] {
-  return items.map((t) => ({ ...tokenRow(t, lang), span: t.span, examples: t.examples, children: panelRows(t.children, lang) }));
-}

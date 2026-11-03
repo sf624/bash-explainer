@@ -2,7 +2,7 @@
 // tree view of the panel (src/reading.ts), and the labels their explanations need not repeat.
 import type { LineExplanation, ScriptProcess, Token, TokenOrigin } from './analyzer-types';
 import { sameSpan, spanWithin } from './noteanchors';
-import { LEVELS } from './levels';
+import { LEVELS, type NoteLevel } from './levels';
 import { plainOf } from './messages-levels';
 import { readSaid } from './messages-tokens';
 import { KIND_ROLES } from './roles';
@@ -125,7 +125,24 @@ export function sayInstead(t: Token, text: string): void {
   delete t.marks;
 }
 
+/** A stretch of a token's text; `level`: it is one of the warnings in it (`Token.marks`), which a row draws in its level's look. */
+export interface TextPart { text: string; level?: NoteLevel }
+
+/** A token's text cut at the warnings in it: the row model's reading of `markedText` (src/ui/panelRows.ts), which draws each mark from its level. */
+export function textParts(t: Pick<Token, 'explanation' | 'marks'>): TextPart[] {
+  const parts: TextPart[] = [{ text: t.explanation }];
+  for (const m of t.marks ?? []) {
+    const i = parts.findIndex((p) => !p.level && p.text.includes(m.text));
+    if (i < 0) continue;
+    const at = parts[i].text.indexOf(m.text);
+    const before = parts[i].text.slice(0, at);
+    const after = parts[i].text.slice(at + m.text.length);
+    parts.splice(i, 1, ...(before ? [{ text: before }] : []), { text: m.text, level: m.level }, ...(after ? [{ text: after }] : []));
+  }
+  return parts;
+}
+
 /** A token's text as it is shown: the mark of each warning in it (`Token.marks`) before the warning, from the level table. */
 export function markedText(t: Pick<Token, 'explanation' | 'marks'>): string {
-  return (t.marks ?? []).reduce((text, m) => text.replace(m.text, () => `${LEVELS[m.level].mark} ${m.text}`), t.explanation);
+  return textParts(t).map((p) => (p.level ? `${LEVELS[p.level].mark} ${p.text}` : p.text)).join('');
 }

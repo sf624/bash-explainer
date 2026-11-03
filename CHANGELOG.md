@@ -34,6 +34,9 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- A part of a line that fails every time now shows the mark of an error: `echo $((09))`, `env -S'"a' s`, `terraform -foo plan`, and a shebang that `env` cannot run (`#!/usr/bin/env bash -e`). Before, it showed the mark of a warning.
+- What bash expands in an option's attached value is explained, and a command there has its own row: `make -j"$(nproc)"`, `make -j$(nproc)`, `sort -k$n,$n`.
+- `done < file` says that the redirection applies to the whole loop, as the loop's first line does. `if [ -f a ] then …` no longer says its error twice, on the row and in the note.
 - `set -o posix` then `time -p $x` (or `time -p x=1`) no longer stops the explanation with an error. In POSIX mode, `time -- cmd` and `time -x cmd` are now explained as the program `time`, as bash runs them. Before, only `time -p` was.
 - A script with `$(a && b)` or `$(a || b)` in a here-document no longer stops the explanation with an error, and the `$( )` in a here-document shows its operators (`&&`, `|`, `;`, `then`).
 - "In short" keeps the status of a pipeline when the line's problem is about something else, such as a variable lost in a stage's subshell. Before, it left the status out.

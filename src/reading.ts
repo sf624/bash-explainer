@@ -168,7 +168,7 @@ function posIn(n: SyntaxNode, i: number): Pos {
   const nl = before.lastIndexOf('\n');
   return nl < 0 ? point(n.startPosition.row, n.startPosition.column + before.length) : point(n.startPosition.row + before.split('\n').length - 1, before.length - nl - 1);
 }
-const keyOf = (s: Span): string => `${s.start.line}:${s.start.character}-${s.end.line}:${s.end.character}`;
+export const keyOf = (s: Span): string => `${s.start.line}:${s.start.character}-${s.end.line}:${s.end.character}`;
 const same = (a: Span, b: Span): boolean => keyOf(a) === keyOf(b);
 const union = (...lists: (readonly string[] | undefined)[]): readonly string[] => [...new Set(lists.flatMap((l) => l ?? []))];
 

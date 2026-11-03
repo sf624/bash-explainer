@@ -316,14 +316,13 @@ export function caseItem(cx: Explainer, n: SyntaxNode): Token {
 
 /**
  * `if [ -f a ] then …` and `for x in a b do …`: with no `;` or newline before it, `then` / `do` is an ordinary
- * word, the construct lacks its keyword and bash stops with a syntax error. Marks the token and adds a note.
+ * word, the construct lacks its keyword and bash stops with a syntax error. Marks the token and adds a note, which says it (once).
  */
 export function missingKeyword(cx: Explainer, n: SyntaxNode, t: Token): Token {
   const kw = strayKeyword(n);
   if (!kw) return t;
   const f = fact(cx.lang, 'keyword-needs-separator', { kw });
   t.kind = 'error';
-  t.explanation = `${f.body}. ${t.explanation}`;
   cx.note(f, n);
   return t;
 }
@@ -371,7 +370,7 @@ export function group(cx: Explainer, n: SyntaxNode): Token {
 
 /** `do … done`: the body of a loop. */
 export function doGroup(cx: Explainer, n: SyntaxNode): Token {
-  return block(cx, n, 'block', cx.s('ループ本体: `do` から `done` までを繰り返し実行する', 'Loop body: the commands between `do` and `done`'));
+  return block(cx, n, 'block', cx.text('loop-body'));
 }
 
 /** `for (( init; condition; update ))`. */

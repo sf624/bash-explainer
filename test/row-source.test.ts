@@ -20,7 +20,8 @@ import { type FileKind, openDocument, shellsOf } from '../src/document-setup';
 import { partHover, wholeLine } from '../src/ui/hoverView';
 import { panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
-import { type PanelRow, rowPlain, tokenRow } from '../src/ui/tokenRow';
+import type { PanelRow } from '../src/ui/panelRows';
+import { rowPlain, tokenRow } from '../src/ui/tokenRow';
 import { main } from '../cli/main';
 import { corpus } from './support/corpus';
 import { detectShell } from '../src/dialect';
@@ -35,7 +36,7 @@ import { counted, scanAll, virtualFiles } from './support/row-source';
 
 const known: { reads: { file: string; fn: string; kind: string; count: number; reason: string }[] } = JSON.parse(fs.readFileSync(path.join(base, 'test', 'fixtures', 'row-source-known.json'), 'utf8'));
 
-/** The names of the members of an interface of src/ui/tokenRow.ts. */
+/** The names of the members of an interface of a file. */
 function members(sf: ts.SourceFile, name: string): string[] {
   const i = sf.statements.find((st): st is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(st) && st.name.text === name)!;
   return i.members.map((m) => m.name!.getText());
@@ -99,8 +100,8 @@ describe('one record for what a token\'s row holds', function () {
   });
 
   it('has the panel draw the record: `item` reads only what a row holds, and no token reaches the page', () => {
-    const rowFile = ts.createSourceFile('tokenRow.ts', fs.readFileSync(path.join(base, 'src/ui/tokenRow.ts'), 'utf8'), ts.ScriptTarget.ES2022, true);
-    const held = new Set([...members(rowFile, 'TokenRow'), ...members(rowFile, 'PanelRow')]);
+    const rowFile = (name: string) => ts.createSourceFile(name, fs.readFileSync(path.join(base, 'src/ui', name), 'utf8'), ts.ScriptTarget.ES2022, true);
+    const held = new Set([...members(rowFile('tokenRow.ts'), 'TokenRow'), ...members(rowFile('panelRows.ts'), 'PanelRow')]);
     const text = fs.readFileSync(path.join(base, 'media/panel.js'), 'utf8');
     const sf = ts.createSourceFile('panel.js', text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS);
     let item: ts.FunctionDeclaration | undefined;
@@ -131,9 +132,9 @@ describe('one record for what a token\'s row holds', function () {
     for (const [src, lang, id, sentence] of [
       ['#!bash', 'en', 'shebang-relative-interpreter', '. ⚠ The kernel does not search PATH'],
       ['#!bash', 'ja', 'shebang-relative-interpreter', '。⚠ カーネルはインタープリタを PATH から探さず'],
-      ['#!/usr/bin/env bash -e', 'en', 'shebang-env-one-argument', '. ⚠ On Linux the whole `bash -e`'],
-      ['echo $((09))', 'en', 'arith-invalid-number', '⚠ Invalid number `09`'],
-      ['terraform -var-file=x plan', 'en', 'terraform-option-before-subcommand', '⚠ an option before the subcommand'],
+      ['#!/usr/bin/env bash -e', 'en', 'shebang-env-one-argument', '. ⓧ On Linux the whole `bash -e`'],
+      ['echo $((09))', 'en', 'arith-invalid-number', 'ⓧ Invalid number `09`'],
+      ['terraform -var-file=x plan', 'en', 'terraform-option-before-subcommand', 'ⓧ an option before the subcommand'],
     ] as const) {
       const ex = new Analyzer(lang).explainLine(parser.parse(src), 0, 'bash', { reading: true });
       const all = (ts: typeof ex.items): typeof ex.items => ts.flatMap((t) => [t, ...all(t.children)]);
@@ -142,7 +143,7 @@ describe('one record for what a token\'s row holds', function () {
       assert.ok(tok.texts?.includes(id), src);
       assert.ok(!tok.explanation.includes(LEVELS.warning.mark), tok.explanation);
       const row = tokenRow(tok, lang);
-      assert.strictEqual(row.level, 'warning');
+      assert.strictEqual(row.level, id === 'shebang-relative-interpreter' ? 'warning' : 'error');
       assert.ok(row.text.includes(sentence), row.text);
       assert.ok(toPlainMarkdown(ex, src, 'a.sh:1', lang).includes(sentence), src);
       let text = '';
@@ -168,8 +169,8 @@ describe('one record for what a token\'s row holds', function () {
     assert.deepStrictEqual(Object.keys(TOKEN_TEXTS).filter((id) => id in MESSAGES), []);
     assert.ok(Object.keys(TOKEN_TEXTS).length >= ids.length);
     // (A text of a spec carries its id, as `cx.text`'s does.)
-    assert.deepStrictEqual(readSaid(saidText('terraform-option-before-subcommand').en).said.map((x) => [x.id, x.level]), [['terraform-option-before-subcommand', 'warning']]);
-    assert.deepStrictEqual(readSaid(tokenSaid('en', 'shebang-env-string-refused')).said[0].level, 'warning');
+    assert.deepStrictEqual(readSaid(saidText('terraform-option-before-subcommand').en).said.map((x) => [x.id, x.level]), [['terraform-option-before-subcommand', 'error']]);
+    assert.deepStrictEqual(readSaid(tokenSaid('en', 'shebang-env-string-refused')).said[0].level, 'error');
     assert.strictEqual(readSaid(saidText('comment-plain').ja).said[0].level, undefined);
   });
 

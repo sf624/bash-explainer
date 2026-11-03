@@ -310,14 +310,16 @@ function redirectTargetNote(cx: Explainer, d: SyntaxNode): string {
     : '';
 }
 
-/** A redirection after the closing word of a compound command, explained on the line where the construct starts: it applies to the whole construct. */
-function wholeRedirect(cx: Explainer, r: SyntaxNode, body: SyntaxNode): Token {
+/** A redirection after the closing word of a compound command, on the line where the construct starts or on its own (`flatten`): it applies to the whole construct. */
+export function wholeRedirect(cx: Explainer, r: SyntaxNode, body: SyntaxNode): Token {
   const t = cx.full(r);
   const kind = constructName(body);
   const { op, fd } = redirectInfo(r);
   const num = fd !== '' ? Number(fd) : op.startsWith('<') ? 0 : 1;
   const reads = op.startsWith('<') && num === 0;
   const writes = !op.startsWith('<') && (num === 1 || num === 2);
+  // (The inline display stays short: the redirection itself.)
+  t.summary ??= t.explanation;
   t.explanation += cx.text('redirect-whole-construct', { kind, reads, writes, num });
   return t;
 }

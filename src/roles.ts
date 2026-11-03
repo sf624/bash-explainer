@@ -23,3 +23,14 @@ export const KIND_ROLES: Readonly<Record<Kind, TokenRole>> = {
   variable: 'variable', expansion: 'variable', substitution: 'variable', assignment: 'assignment',
   comment: 'comment', shebang: 'shebang', error: 'error',
 };
+
+/**
+ * The kind a node of bash's own reading is coloured as (src/reading.ts, `ShellKind`), where it is not a kind of token
+ * under the same name: so its colour comes from `KIND_ROLES` too. The tree view of the panel draws it (`.kind-*`).
+ */
+export const READING_KINDS: Readonly<Record<string, Kind>> = {
+  commandName: 'command', aliasWord: 'command', expandedName: 'variable', argument: 'argument', assignmentArgument: 'assignment',
+  word: 'argument', name: 'variable', heredoc: 'redirect', quote: 'string', arithmetic: 'expansion', brace: 'expansion',
+  list: 'operator', andList: 'operator', orList: 'operator', pipeline: 'operator', command: 'operator', compound: 'keyword', clause: 'keyword', coprocess: 'keyword',
+  function: 'keyword', script: 'substitution', part: 'operator', expression: 'operator', descriptor: 'redirect', delimiter: 'redirect',
+};

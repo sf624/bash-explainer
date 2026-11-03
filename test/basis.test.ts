@@ -19,7 +19,8 @@ import { basisGate, basisSaid, fact, type FactId, MESSAGES } from '../src/messag
 import { readingNodes } from '../src/reading';
 import { TOKEN_BASES, type TokenBasisId } from '../src/tokenbases';
 import { basisLine, basisMarkdown, noteBasis, readingWithBasis, toPlainMarkdown } from '../src/ui/render';
-import { panelRows, partBasis } from '../src/ui/tokenRow';
+import { panelRows } from '../src/ui/panelRows';
+import { partBasis } from '../src/ui/tokenRow';
 import { allTokens, explain } from './support/explain';
 import { BASIS_COPY, basisCopy, PROBE_KINDS, type ProbeKind, readProbeTable } from './support/probe';
 

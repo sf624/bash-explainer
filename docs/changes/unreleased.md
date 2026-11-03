@@ -221,6 +221,23 @@ The note on zsh syntax a line cannot be read with starts with ⓘ, as informatio
 
 ## Fixed
 
+### A part that fails every time, marked as an error
+
+A row of the explanation marks a warning inside its text. It marked every one with `⚠`, also where the line fails every time as written, which the three levels call an error. These now have `ⓧ`, in the panel, the hover, Markdown and the command line's text, and `level: error` in `--format json`:
+
+- `echo $((09))`: bash stops with an arithmetic error.
+- `env -S'"a' s`: env refuses the string, with status 125.
+- `terraform -foo plan`: terraform stops at an option before the subcommand.
+- In a shebang: `#!/usr/bin/env bash -e` (status 127), `#!/usr/bin/env -S"a` (status 125), `#!/usr/bin/env` (the script starts itself again, without end).
+
+### What bash expands in an option's attached value
+
+`make -j"$(nproc)"` showed `-j` and its value, and nothing of the `$(nproc)` in it, which bash runs. The value now has its parts, as a separate value has: the substitution and the command `nproc` (`make -j$(nproc)`, `sort -k$n,$n`, `-p"$x"`).
+
+### A redirection on the closing line of a block
+
+With the cursor on `done < file`, the redirection now says what it says on the loop's first line: that it applies to the whole loop, and how its commands share the input. `if [ -f a ] then …` says its syntax error once, in the note; its row said it too.
+
 ### "In short" and the status of a pipeline
 
 The sentence of a line leaves out what a problem of the line says. It compared the sections of the manual the problems cite, so a problem about one thing of a section left out a clause about another: `cat f | while read -r l; do n=$l; done` (its problem: `n` is set in a subshell, section 3.2.3) lost "its status is that of the `while` loop" (also 3.2.3). It now compares what the problems say: a clause on a pipeline's status is left out for a pipeline without pipefail, one on `set -e` for the problems that say whether `set -e` stops there.

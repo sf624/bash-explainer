@@ -56,6 +56,24 @@ export const ui = {
       saidSep: '：',
       // (The line box of a line over more than three rows: its tooltip, folded and opened.)
       lineOpen: 'クリックで行全体を表示', lineFold: 'クリックで 3 行までに折りたたむ',
+      // (The Key of the panel: what each mark drawn means, src/ui/panelRows.ts.)
+      key: {
+        frame: {
+          command: '1 つのコマンド', compound: '1 つの複合コマンド（`if`・`for`・`[[ ]]` など）', group: 'パイプラインやリスト（`|`・`&&`・`||`・`;`）でつないだコマンド',
+        },
+        names: {
+          program: 'bash が PATH から見つけて起動するプログラム', builtin: 'bash に組み込まれたコマンド', function: 'スクリプトで定義した関数', alias: 'bash が読むときに置き換えるエイリアス',
+          keyword: 'bash の予約語', none: '実行できるものが見つからない名前',
+        },
+        roles: {
+          command: 'コマンド名', builtin: 'ビルトイン', option: 'オプション', argument: '引数', string: '文字列', number: '数値', keyword: '予約語', operator: '演算子や文法の部分',
+          redirect: 'リダイレクト', pattern: 'パス名展開のパターン', variable: '変数と展開', assignment: '代入', comment: 'コメント', shebang: 'シバン(shebang)', error: 'bash が読めない部分',
+        },
+        ref: 'bash マニュアルの節（押すと開く）', basis: 'マニュアルではなく、実際の bash で確かめた動作', roleLine: 'bash にとっての役割と、それを読むもの',
+        received: {
+          asWritten: 'プログラムが書いたとおりに受け取る単語', changed: 'プログラムが変わった形で受け取る単語', hole: '実行するまで分からない値', many: '1 つとは限らない単語',
+        },
+      },
       tree: {
         label: '行の各部分を誰が読むか', show: '表示',
         // The steps of the tree, from the line alone to every layer: their short names (the buttons) and their names.
@@ -168,6 +186,24 @@ export const ui = {
       inShort: 'In short',
       saidSep: ': ',
       lineOpen: 'Click to show the whole line', lineFold: 'Click to fold the line to three rows',
+      // (The Key of the panel: what each mark drawn means, src/ui/panelRows.ts.)
+      key: {
+        frame: {
+          command: 'one command', compound: 'one compound command (`if`, `for`, `[[ ]]` and the like)', group: 'commands joined into a pipeline or a list (`|`, `&&`, `||`, `;`)',
+        },
+        names: {
+          program: 'a program bash finds in PATH and starts', builtin: 'a command built into bash', function: 'a function defined in the script', alias: 'an alias, replaced when bash reads the line',
+          keyword: 'a reserved word of bash', none: 'a name with nothing to run',
+        },
+        roles: {
+          command: 'command name', builtin: 'builtin', option: 'option', argument: 'argument', string: 'string', number: 'number', keyword: 'reserved word', operator: 'operator or part of the grammar',
+          redirect: 'redirection', pattern: 'glob pattern', variable: 'variable or expansion', assignment: 'assignment', comment: 'comment', shebang: 'shebang', error: 'a part bash cannot read',
+        },
+        ref: 'the section of the bash manual (click to open it)', basis: 'behaviour checked with a real bash, not stated in the manual', roleLine: 'its role to bash, and who reads it',
+        received: {
+          asWritten: 'the program receives this word exactly as written', changed: 'the program receives this word changed', hole: 'a value known only when the line runs', many: 'not always one word',
+        },
+      },
       tree: {
         label: 'Who reads each part of the line', show: 'Show',
         steps: [['Line', 'the line'], ['Lists', 'lists and pipelines'], ['Commands', 'commands'], ['Words', 'words'], ['Inside', 'inside the words (quotes and expansions)'],
