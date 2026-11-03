@@ -50,7 +50,7 @@ A part of a line can say that the command fails every time it runs, with ⓧ on 
 - `shebang-env-one-argument`: `#!/usr/bin/env bash -e`, which fails with status 127 on Linux when the file is run as a program. `#!/usr/bin/env -S bash -e` is fine, and a `#!` that is no first line of a script (a Markdown block, a workflow's `run:`) is a comment.
 - `shebang-env-string-refused`, `shebang-env-loop`, `splice-refused`.
 
-**Compatibility.** `--check` and the Action fail (exit 1, the output `errors`) on these lines, which passed before. To keep one, write `# bash-explainer disable=<code>` above it, or add the code to `bashExplainer.diagnostics.ignore`. In the sample of this repository (2,607 lines of `test/fixtures/`, the sample and the tests' snippets), 2 lines change: `#!/usr/bin/env bash --posix` and `let x=09`, each of which fails in bash and env.
+**Compatibility.** `--check` and the Action fail (exit 1, the output `errors`) on these lines, which passed before. To keep one, write `# bash-explainer disable=<code>` above it, or add the code to `bashExplainer.diagnostics.ignore`. In a sample of 103,267 lines (this repository's fixtures, and 700 shell scripts of a Linux system), no line changes; among the 2,607 lines of the tests' snippets, written to try odd cases, 2 change: `#!/usr/bin/env bash --posix` and `let x=09`, and each fails in env and bash.
 
 A part's warning stays on its row, and is no problem (`#!bash`, `${x:-$((09))}`, `terraform -foo plan`): whether it fails depends on the files there, the options or the path taken.
 

@@ -262,7 +262,7 @@ pre#line[role="button"]:focus-visible {
 #problems { margin: 0 0 0.6rem; }
 .problems-title { display: block; margin: 0 0 0.3rem; font-weight: 600; }
 .problem-list, .problem-around { list-style: none; margin: 0; padding: 0; }
-.note.problem { display: block; scroll-margin-top: var(--top-height, 0); }
+.note.problem { display: block; }
 button.problem-head, span.problem-head, button.problem-pointer {
   display: block;
   width: 100%;
@@ -516,11 +516,16 @@ details.tryit[open] > summary.tryit-head {
 @media (pointer: coarse) {
   .tryit-copy { min-height: 40px; }
   summary.tryit-head { padding-block: 0.6rem; }
+  .problem-more > summary { padding-block: 0.6rem; }
+  /* (A chip's room over and under it does not move the lines of the text around it.) */
+  .problem-chip { min-width: 40px; min-height: 40px; margin-block: -12px; justify-content: center; }
 }
 
 @media (max-width: 520px) {
   html.bx-web .tryit-copy { min-height: 40px; }
   html.bx-web summary.tryit-head { padding-block: 0.6rem; }
+  html.bx-web .problem-more > summary { padding-block: 0.6rem; }
+  html.bx-web .problem-chip { min-width: 40px; min-height: 40px; margin-block: -12px; justify-content: center; }
 }
 
 @media (forced-colors: active) {
