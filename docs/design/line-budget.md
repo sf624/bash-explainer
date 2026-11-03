@@ -1,6 +1,6 @@
 # One line must not stop the whole tool
 
-Status: built (roadmap item of 2026-11-03, #590 and PR_PLACEHOLDER); what stays linear in a document's size is in "What it does not bound". Every product runs the explanations synchronously, on the extension's or the page's only thread, and JavaScript cannot stop its own code from outside. So what a line costs must be bounded from inside, and a failure on a line must stay on that line.
+Status: built (roadmap item of 2026-11-03, #590 and #596); what stays linear in a document's size is in "What it does not bound". Every product runs the explanations synchronously, on the extension's or the page's only thread, and JavaScript cannot stop its own code from outside. So what a line costs must be bounded from inside, and a failure on a line must stay on that line.
 
 ## What a failure does
 
@@ -117,7 +117,7 @@ The walk of a line, with no examples, is not refused, and the models and the pro
 
 ### Whether counting is enough
 
-The attack of PR_PLACEHOLDER, about 1,500 lines from families not listed before (big numbers in 90 tools, long and nested forms in 180 shapes, hosts), found 23 more holes. Three were in what the budget charges: a charge below zero that gave back (`.[] = 1`), perl's `$F[n]`, git's `%<(n)`. Twenty were in what no budget charges, the walk and the models: 2^n from something read twice (4), squares from reading all the words or lines again for each (14), a model that failed and was built again for each line (1), and a spread (1). Each was fixed where it was, and that makes its shape linear for good.
+The attack of #596, about 1,500 lines from families not listed before (big numbers in 90 tools, long and nested forms in 180 shapes, hosts), found 23 more holes. Three were in what the budget charges: a charge below zero that gave back (`.[] = 1`), perl's `$F[n]`, git's `%<(n)`. Twenty were in what no budget charges, the walk and the models: 2^n from something read twice (4), squares from reading all the words or lines again for each (14), a model that failed and was built again for each line (1), and a spread (1). Each was fixed where it was, and that makes its shape linear for good.
 
 So counting steps is the right design for the runners: it is deterministic, the same in every product and order, and there it held. It does not bound the walk, and more shapes like these may exist. If that matters, the next line of defence is a hard limit from outside: the core in a worker, with a time and a memory limit, killed and started again on a line that exceeds them, and that line says so.
 
