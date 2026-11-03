@@ -90,6 +90,7 @@ export interface Extracted {
   substitutions: HostSubstitution[];
 }
 
+import { maskCarried } from '../messages-levels';
 import { Builder } from './builder';
 import { bats } from './bats';
 import { dockerfile } from './dockerfile';
@@ -118,7 +119,8 @@ export function hostKind(languageId: string, fileName: string, text?: string): H
 export const BATS_SHEBANG = /^#![^\n]*[ \t/]bats(?=[ \t\r\n]|$)/;
 
 export function extractShell(kind: HostKind, text: string): Extracted {
-  const b = new Builder(text, kind);
+  // (A host file's own OPEN_TEXT and CLOSE_TEXT are masked here too: the labels of its lines are made from its text.)
+  const b = new Builder(maskCarried(text), kind);
   switch (kind) {
     case 'dockerfile': dockerfile(b); break;
     case 'makefile': makefile(b); break;

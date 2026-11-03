@@ -10,6 +10,7 @@ import { type Joined, nameBefore, prepared } from './continuations';
 import { extglobLike, NUMBER } from './extglob';
 import { attachedSubstitutions, type Children, scriptErrors as errorsOf } from './rereads';
 import { scanGap } from './tokens';
+import { maskCarried } from '../../messages-levels';
 import { splitElement } from '../../staticword';
 
 type Mut = {
@@ -1377,7 +1378,9 @@ class Converter {
 /* c8 ignore next */
 export function createUnbashParser(): BashParser {
   return {
-    parse(text: string): SyntaxTree {
+    parse(source: string): SyntaxTree {
+      // (A script's own OPEN_TEXT and CLOSE_TEXT are masked, as the CRs of a CRLF are below: src/messages-levels.ts, `maskCarried`.)
+      const text = maskCarried(source);
       // (The text unbash reads: ./continuations.ts.)
       const { masked, carriageReturns, joins, script } = prepared(text, parse, children);
       const tree = new Converter(joins ? joins.text : masked, new Set(carriageReturns), text, joins, script).run();

@@ -26,7 +26,9 @@ import type { Explainer } from './context';
 export function readingsParts(cx: Explainer, desc: string | undefined, readings: Readings | undefined, k: number, nodes: readonly SyntaxNode[]): { base: string; rest: string } {
   if (!readings) return { base: desc!, rest: '' };
   // (The command that reads the line, which a role read by it names where another reads the word: "option `-n` of `nice`".)
-  const command = field(nodes[0].parent!, 'name')!.text;
+  // (The words of the program `time` in POSIX mode (`time -p $x`, `time -x $x`) are not those of a command with a name: they are the option
+  // of a `time_statement`, or the name and the arguments of its body.)
+  const command = field(nodes[0].parent!, 'name')?.text ?? 'time';
   const first = readings.kind === 'read' ? firstRole(readings) : undefined;
   const names = namesFor(nodes, command, first);
   // (Each a sentence of its own: ". When …", "。…なら…".)
