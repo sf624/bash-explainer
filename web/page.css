@@ -2683,11 +2683,18 @@ body.resizing .problems-resize {
   outline-offset: -2px;
 }
 
+/* "Ln 20" only where the tabs row does not say it: its form without the line, or no tabs row, with the keyboard. */
 .summary-line {
+  display: none;
   flex: none;
   color: var(--vscode-descriptionForeground);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
+}
+
+.panel-head[data-line="false"] ~ .sheet-summary .summary-line,
+:where(html.bottom-sheet[data-keyboard]) .summary-line {
+  display: inline;
 }
 
 .sheet-summary .icon {
@@ -2717,11 +2724,19 @@ body.resizing .problems-resize {
   stroke-linejoin: round;
 }
 
-/* The keyboard open over the editor: the sheet is the summary row alone, on the keyboard's top (what the keyboard
-   covers is under it, in --sheet-h), with no tabs row, no corner and no animation; the app bar goes, as at full. */
+/* The keyboard open over the editor: the sheet is the summary row alone, on the keyboard's top and along the visual
+   viewport (--kb-*, src/ui/keyboard.ts), at its own size on a zoomed page, with no tabs row, no corner and no animation;
+   the app bar goes, as at full. */
 :where(html.bottom-sheet[data-keyboard]) .panel-pane:not(.dragging) {
+  right: auto;
+  bottom: var(--kb-bottom);
+  left: var(--kb-left);
+  width: var(--kb-width);
+  height: var(--kb-height);
   padding-bottom: 0;
   border-radius: 0;
+  transform: scale(var(--kb-zoom));
+  transform-origin: left bottom;
   transition: none;
 }
 

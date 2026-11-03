@@ -21,15 +21,18 @@ describe('the phone\'s sheet as data', () => {
 
   it('is the summary row alone on the keyboard\'s top while the keyboard is open, and ends the editor at its top', () => {
     const h = snapHeights(844, 53, 49, 48);
-    const closed = { open: false, overlap: 0 };
+    const closed = {};
     // Closed: the height chosen; the editor ends at the sheet's top at half or lower, and as at half under a full sheet.
     assert.deepStrictEqual((['peek', 'half', 'full'] as Snap[]).map((s) => sheetHeight(h, s, closed, 49)), [
       { height: 97, rest: 97 }, { height: 464, rest: 464 }, { height: 791, rest: 464 },
     ]);
-    // Open on Android (the window shrank: nothing covered) and on iOS (the keyboard covers 336 px of the window), at any height chosen.
+    // Open on Android (the window shrank: nothing covered), on iOS (the keyboard covers 336 px of the window), and on a
+    // zoomed page (the row is drawn at its own size, so it takes fewer of the window's px), at any height chosen.
+    const place = (bottom: number, zoom = 1) => ({ place: { left: 0, bottom, width: 390, zoom } });
     for (const snap of ['peek', 'half'] as Snap[]) {
-      assert.deepStrictEqual(sheetHeight(h, snap, { open: true, overlap: 0 }, 49), { height: 49, rest: 49 });
-      assert.deepStrictEqual(sheetHeight(h, snap, { open: true, overlap: 336 }, 49), { height: 385, rest: 385 });
+      assert.deepStrictEqual(sheetHeight(h, snap, place(0), 49), { height: 49, rest: 49 });
+      assert.deepStrictEqual(sheetHeight(h, snap, place(336), 49), { height: 385, rest: 385 });
+      assert.deepStrictEqual(sheetHeight(h, snap, place(336, 1 / 1.25), 49), { height: 376, rest: 376 });
     }
   });
 

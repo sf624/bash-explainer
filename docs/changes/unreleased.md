@@ -32,8 +32,8 @@ Two notes carry their code as data for the first time:
 On a phone (and a tablet held upright), one row says what the cursor's line is: "Ln 20 ⚠ Pitfall: set -e is on here, so the script stops…". It shows the line's first problem, errors first, then pitfalls, then caveats, with its level's mark, in the words of the Problems list; on a line with no problem, its "In short" sentence; on a comment or the shebang, what that is. The row is cut at the screen's end; a screen reader hears it whole, with the level's name ("Line 20: Warning. Pitfall: …").
 
 - While you type in the editor and the on-screen keyboard is open, the app bar goes and the sheet folds to this row alone, just above the keyboard; the line you type stays in view above it. When the keyboard closes, the sheet and the bar come back as they were.
-- The folded sheet is its tabs row and this row under it (about 96 px). Before, it was the tabs row alone.
-- A tap on the row (or Enter) closes the keyboard and shows the explanation at half height; the focus goes to the sheet's bar, not back to the editor. Escape on the row goes back to the editor.
+- The folded sheet is its tabs row and this row under it (about 96 px). Before, it was the tabs row alone. There, the row leaves out "Ln 20" when the tabs row shows it.
+- A tap on the row (or Enter) closes the keyboard and shows the explanation at half height, from any tab; the focus goes to the sheet's bar, not back to the editor. Escape on the row goes back to the editor.
 
 ### Dockerfile HEALTHCHECK and ONBUILD
 

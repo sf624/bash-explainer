@@ -1,4 +1,5 @@
 import { levelTally, type NoteLevel } from '../levels';
+import type { Keyboard } from './keyboard';
 import { type ViewForm, viewControlForms } from './panelHead';
 import type { ViewControl } from './panelView';
 
@@ -33,11 +34,15 @@ export function snapHeights(view: number, top: number, row: number, summary: num
 /**
  * The sheet's height on the page, and the editor's room under it (where the editor ends: at the sheet's top at half or
  * lower; at full, as at half, under the sheet). While the keyboard is open over the editor (src/ui/keyboard.ts), the
- * sheet is its summary row alone (`summary`, with the sheet's edge), on the keyboard's top: the part of the window the
- * keyboard covers (`overlap`) is under it, and the editor ends at the row.
+ * sheet is its summary row alone (`summary`, with the sheet's edge, at the page's zoom) on the keyboard's top, and what
+ * ends at the sheet (the editor, a toast's room) ends at the row, above the part of the window the keyboard covers.
  */
-export function sheetHeight(heights: SnapHeights, snap: Snap, keyboard: { open: boolean; overlap: number }, summary: number): { height: number; rest: number } {
-  if (keyboard.open) return { height: summary + keyboard.overlap, rest: summary + keyboard.overlap };
+export function sheetHeight(heights: SnapHeights, snap: Snap, keyboard: Pick<Keyboard, 'place'>, summary: number): { height: number; rest: number } {
+  const { place } = keyboard;
+  if (place) {
+    const height = Math.ceil(summary * place.zoom) + place.bottom;
+    return { height, rest: height };
+  }
   return { height: heights[snap], rest: Math.min(heights[snap], heights.half) };
 }
 
