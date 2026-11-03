@@ -635,6 +635,8 @@ export const MESSAGES = {
   // none when one is inside a bracket expression, `[\s]`, where a backslash is no operator either way.)
   // (Said in the example in place of its result, of what the guard does not run: src/examples/regexguard.ts.)
   'regex-not-computed': note(['3.2.5.2', '3.5.8.1'], () => ['結果は計算しない: このパターンはこの文字列では時間がかかりすぎるおそれがある。一致するかどうかは、この例では示さない', 'Not computed: this pattern may take too long on this text. This example does not say whether it matches']),
+  // (Said in place of the output of a `printf` whose digits depend on the machine: src/examples/floatdigits.ts.)
+  'digits-not-computed': note(['4.2'], () => ['この数の最後の桁は、機械の浮動小数点型によって変わるため、出力は示さない', "The last digit of this number depends on the machine's floating-point type, so no output is shown"]),
   'regex-backslash-dropped': suggests(broken<{ list: string; digits: boolean; others: boolean; rewrite: readonly Rewrite[] }>(['3.5.9', '3.2.5.2'], ({ list, digits, others, rewrite: [fix] }) => [
     [`\`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）`,
       ...(digits ? [`POSIX の正規表現には \`\\d\` がなく、変数に入れても \`d\` という文字になるので、\`\\d\` は \`[0-9]\`、\`\\D\` は \`[^0-9]\` と書く${!others && fix ? `（\`${fix.code}\`）` : ''}`] : []),

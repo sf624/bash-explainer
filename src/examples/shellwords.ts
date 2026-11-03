@@ -3,7 +3,7 @@ import { coreutilsRejects, type PrintfReader } from '../embedded/format';
 import { MAX_FIELD, sprintf } from './awk';
 import { sameInEveryLibrary } from './floatdigits';
 import { bracketEnd, bracketRegex } from '../bracket';
-import { RegexRefused, scriptRegex } from './regexguard';
+import { MachineDigits, RegexRefused, scriptRegex } from './regexguard';
 import { parseSequence, sequenceWords } from '../braceseq';
 import { BASH_VERSIONS, type BashVersion } from '../bashversion';
 import { Unsupported as RunnerUnsupported } from './unsupported';
@@ -556,7 +556,7 @@ export function bashPrintf(format: string, args: string[], reader?: PrintfReader
       const digits = prec !== undefined && prec >= 0 ? prec : undefined;
       const spec = `%${flags.replace(/'/g, '')}${width ?? ''}${digits !== undefined ? '.' + digits : ''}`;
       const number = numberArg(arg, /[diouxX]/.test(conv));
-      if (!/[diouxX]/.test(conv) && !sameInEveryLibrary(arg || '0', number, conv, digits ?? 6, flags.includes('#'))) throw new Unsupported('digits of a long double');
+      if (!/[diouxX]/.test(conv) && !sameInEveryLibrary(arg || '0', number, conv, digits ?? 6, flags.includes('#'))) throw new MachineDigits('digits of a long double');
       out += sprintf(`${spec}${conv}`, [number]);
     }
     if (stopped) return out;

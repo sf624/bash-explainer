@@ -2,6 +2,7 @@
 // machine, so what is shown is what is the same on all of them, and it must be what the real tools print here.
 import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
+import { fact } from '../src/messages';
 import { exactOfDouble, floatText, sameInEveryLibrary } from '../src/examples/floatdigits';
 import { bashPrintf } from '../src/examples/shellwords';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -61,6 +62,42 @@ describe('the digits of printf', () => {
     assert.ok(!sameInEveryLibrary('4e-324', 5e-324, 'f', 6, false));
     assert.ok(sameInEveryLibrary('3.14159', 3.14159, 'f', 6, false));
     assert.ok(!sameInEveryLibrary('3.14159', 3.14159, 'f', 30, false));
+  });
+
+  it('a number no BigInt should be made of is refused at once, as a zero is shown as one', () => {
+    for (const text of ['1e-300000000', '1e-999999999', '1e999999999', '5e-9999999999999', `1${'0'.repeat(2000)}e-2000`, `0.${'0'.repeat(5000)}1`, `1e${'9'.repeat(400)}`, `0.1e-${'9'.repeat(400)}`]) {
+      const t = Date.now();
+      for (const conv of ['f', 'e', 'g']) assert.ok(!sameInEveryLibrary(text, Number(text), conv, 6, false), text);
+      assert.ok(Date.now() - t < 1000, `${text} took ${Date.now() - t} ms`);
+    }
+    // (A double of 0 is a zero that is written so, whatever its power of ten, or an underflow.)
+    for (const text of ['0e100000000', '0.000e-999999999', '-0e5', '.0E99999999999', `${'0'.repeat(3000)}e-9999999`]) assert.ok(sameInEveryLibrary(text, 0, 'f', 6, false), text);
+    assert.ok(!sameInEveryLibrary('0.0001e-400', 0, 'f', 6, false));
+    assert.ok(!sameInEveryLibrary('1e-400', 0, 'f', 6, false));
+    // (Which a real printf prints as zeros, as ours does where it shows them.)
+    assert.strictEqual(shown('%f', '0e100000000'), '0.000000');
+    assert.deepStrictEqual(real(['printf'], [['%f', '0e100000000'], ['%f', '1e-300000000'], ['%e', '1e999999999']]), ['0.000000', '0.000000', 'inf']);
+    const t = Date.now();
+    for (const line of [`printf '%f\\n' 1e-999999999`, `printf '%f\\n' 1e-300000000`, `printf '%f\\n' 0e100000000`]) examples(line);
+    assert.ok(Date.now() - t < 2000, `${Date.now() - t} ms`);
+    assert.ok(JSON.stringify(examples(`printf '%f\\n' 0e100000000`)).includes('0.000000'));
+    assert.ok(JSON.stringify(examples(`printf '%f\\n' 1e-999999999`)).includes(fact('en', 'digits-not-computed').text));
+  });
+
+  it('where the digits depend on the machine, the example says so, in both languages, in place of its output', () => {
+    for (const lang of ['en', 'ja'] as const) {
+      const note = fact(lang, 'digits-not-computed').text;
+      assert.ok(/machine|機械/.test(note));
+      for (const line of [`printf '%.20f\\n' 0.1`, `printf '%.2f\\n' 2.675`, `printf '%.1f\\n' 0.15`, `printf '%s %.2f\\n' a 1.5 b 2.675`, `printf -v v '%.2f' 2.675`, `x=$(printf '%.2f' 2.675)`, `printf '%.2f\\n' 2.675 | sort`]) {
+        const found = new Analyzer(lang).explainLine(parser.parse(line), 0, 'bash').examples;
+        assert.deepStrictEqual(found.map((e) => [e.note, e.sections]), [[note, []]], `${lang} ${line}`);
+      }
+      // (Digits that are the same on every machine, and the doubles of awk and perl, are shown.)
+      for (const line of [`printf '%.2f\\n' 1.5`, `awk 'BEGIN { printf "%.20f %.2f %.1f\\n", 0.1, 2.675, 0.15 }'`, `perl -e 'printf("%.20f %.2f %.1f\\n", 0.1, 2.675, 0.15)'`]) {
+        const found = new Analyzer(lang).explainLine(parser.parse(line), 0, 'bash').examples;
+        assert.ok(found.length === 1 && found[0].sections.length > 0 && !found[0].note?.includes(note), `${lang} ${line}`);
+      }
+    }
   });
 
   it('no example of what is not followed', () => {

@@ -5,7 +5,7 @@ import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import { pipedOutput } from '../src/examples/pipeline';
 import { posixExec, regexExamples } from '../src/examples/regex';
-import { charge, costOf, guarded, longestExec, RegexRefused, scriptRegex } from '../src/examples/regexguard';
+import { charge, costOf, guarded, keptChars, longestExec, RegexRefused, scriptRegex } from '../src/examples/regexguard';
 import { Parser } from '../src/examples/regexparse';
 import { rerun } from '../src/examples/rerun';
 import { globToRegex } from '../src/examples/shellwords';
@@ -480,6 +480,25 @@ describe('the guard of the regexes a script gives', () => {
 
     it('the patterns read are kept, but not without bound', () => {
       for (let i = 0; i < 600; i++) assert.ok(scriptRegex(`x${i}${'y'.repeat(1000)}`).test(`x${i}${'y'.repeat(1000)}`));
+    });
+
+    it('a text refused is kept to be refused again, but not a long one, and not more than a total', () => {
+      const before = keptChars();
+      assert.ok(refused('(a+)+$|keep0', `${'a'.repeat(40)}!`));
+      assert.strictEqual(keptChars(), before + 41);
+      // (The same text again: counted once.)
+      assert.ok(refused('(a+)+$|keep0', `${'a'.repeat(40)}!`));
+      assert.strictEqual(keptChars(), before + 41);
+      const long = `${'a'.repeat(1e6)}!`;
+      assert.ok(refused('(a+)+$|keep1', long));
+      assert.strictEqual(keptChars(), before + 41);
+      // (Many, which each fits: a total of at most 4e6, which they pass, and the memory is let go.)
+      const text = `${'a'.repeat(9e5)}!`;
+      for (let i = 0; i < 6; i++) {
+        assert.ok(refused(`(a+)+$|keep${i + 2}`, text));
+        assert.ok(keptChars() <= 4e6);
+      }
+      assert.ok(keptChars() < 4e6);
     });
 
     it('test, exec, replace, split, match and matchAll all run through it, from where a global regex stands', () => {

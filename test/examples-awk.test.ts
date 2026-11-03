@@ -142,6 +142,8 @@ describe('the awk runner agrees with gawk on the less common parts', () => {
     'BEGIN { printf "%f|%e|%g|%.0e|%#g|%#.0e|%.5f|%e\\n", 0, 0, 0, 0, 0, 0, 4.9e-324, 4.9e-324 }',
     'BEGIN { printf "[%.*f][%.*f][%.*d][%*d][%*d]\\n", -1, 3.14159, 1.5, 3.14159, -1, 5, -4, 5, 1.5, 5 }',
     'BEGIN { x = -log(0); printf "%f|%e|%g|%d|%10f|%x|%+.3f|%i|%-8d|%08.2f\\n", x, x, x, x, x, x, -x, -x, x, -x }',
+    // (The case of the conversion is the case of the infinity: `+INF` for `%X`, `%E`, `%F` and `%G`.)
+    'BEGIN { x = -log(0); printf "%X|%E|%F|%G|%5.1F|%+G|%x|%e|%-6E|\\n", x, x, x, x, x, -x, -x, x, x }',
     'BEGIN { printf "%c%c|%5s|%-5s|%.2s\\n", 65, "hello", "ab", "cd", "xyz" }',
     'BEGIN { n = split("", a, ","); print n }', 'BEGIN { print match("abc", "z"), RSTART, RLENGTH }',
     'function g(b) { return b[1] } function f(a) { a[1] = 2; return g(a) } BEGIN { print f(x) }',

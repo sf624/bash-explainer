@@ -1,5 +1,7 @@
 import * as assert from 'assert';
 import { run } from './support/run';
+import { Analyzer } from '../src/analyzer';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { perlExample, perlOptions, runPerl } from '../src/examples/perlrun';
 
 function realPerl(words: string[], input: string[]): string[] {
@@ -67,6 +69,8 @@ describe('the perl runner agrees with perl on the less common parts', () => {
     ['-le', 'print 5 - 2, 1 != 2, 1 <= 2, 2 <= 1, "a" ne "b", "a" eq "a", "b" lt "a", "a" gt "b", "b" le "a", "a" ge "b", 2 <=> 2, 1 != 1'],
     ['-le', 'print sprintf("%s-%d", "a", 3), substr("hello", 1), index("abc", "z"), defined($nope) ? 1 : 0, int("x"), lc, uc'],
     ['-le', 'printf "%d|%s\\n", "abc", 1'],
+    // (A format that wants more than it got: perl goes on with an empty string, or 0.)
+    ['-le', 'printf "%s %s|\\n", "a"'], ['-ne', 'printf "%s %s|\\n", $_'], ['-le', 'printf "%d|%s|%5.1f|%x|\\n"'], ['-le', 'print sprintf("%*d|%.*f|", 3)'],
     ['-le', 'if (1) { ; print 1 }'], ['-le', 'for my $x (1..2) { print $x } for $y (3..4) { print $y }'], ['-le', 'print join ",", 1, 2,'],
     ['-le', 'print lc()'], ['-lne', 'my @m = /a/; my @g = /\\w/g; print scalar(@m), scalar(@g)'],
     ['-le', 'print sort qw(b a a)'], ['-lne', 'print s/a/b/r'], ['-lne', 'print tr/a/b/r'], ['-le', 'my $v = 1; $v ||= 2; print $v, $nope // 7, 0 // 8'],
@@ -88,6 +92,17 @@ describe('the perl runner agrees with perl on the less common parts', () => {
       assert.deepStrictEqual(runPerl(parsed.code, parsed.opts, input), realPerl(words, input));
     });
   }
+  it('what awk\'s sprintf will not do gives no example, and throws nothing', () => {
+    // (`sprintf` throws awk\'s own kind of Unsupported: a field past what an example shows, and a NUL byte for `%c`.)
+    assert.strictEqual(runPerl('printf("%10001d", 1)', {}, []), undefined);
+    assert.strictEqual(runPerl('printf "%.10001f", $_', { loop: 'n' }, ['1']), undefined);
+    assert.strictEqual(runPerl('printf("%c|", 65); printf("%c|")', {}, []), undefined);
+    assert.strictEqual(runPerl('printf("%10000d", 1)', {}, [])?.[0].length, 10000);
+    const parser = createUnbashParser();
+    for (const line of [`perl -e 'printf("%10001d", 1)'`, `echo a | perl -ne 'printf("%10001d", 1)'`, `perl -e 'printf("%c")'`]) {
+      assert.deepStrictEqual(new Analyzer('en').explainLine(parser.parse(line), 0, 'bash').examples.filter((e) => e.kind === 'perl'), [], line);
+    }
+  });
   it('reads the switches it knows', () => {
     for (const words of [['-n', undefined, '-e', 'print'], ['-', '-e', 'x'], ['-e'], ['-l0', '-e', 'print'], ['-M', '-e', 'print'], ['-ne'], ['-l', '--', '-e', 'print 1']]) {
       assert.strictEqual(perlOptions(words), undefined, JSON.stringify(words));
