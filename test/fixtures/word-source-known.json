@@ -224,9 +224,10 @@
     },
     {
       "file": "src/examples/source.ts",
-      "reason": "finds the command a process substitution runs (a fact of the syntax)",
+      "reason": "finds a process substitution (a fact of the syntax): the command it runs, and the word of a here-string that is one (its text is the path it expands to)",
       "uses": [
-        {"fn":"pipeOf","kind":"node-type","count":1}
+        {"fn":"pipeOf","kind":"node-type","count":1},
+        {"fn":"stdinOf","kind":"node-type","count":1}
       ]
     },
     {
