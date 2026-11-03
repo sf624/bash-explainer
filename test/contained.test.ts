@@ -71,7 +71,7 @@ describe('contained runs leave no process behind', function () {
     const child = spawn('bash', ['-c', `timeout 60 bash -c 'while :; do sleep 0.1; done' & sleep 60`], { cwd: dir, detached: true, stdio: 'ignore' });
     await new Promise((r) => setTimeout(r, 400));
     assert.ok(processesIn(dir).length > 0);
-    killSession(child.pid!);
+    await killSession(child.pid!);
     assert.deepStrictEqual(await leftIn(dir), []);
   });
 
