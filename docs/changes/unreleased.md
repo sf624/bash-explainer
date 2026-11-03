@@ -1,4 +1,4 @@
-# Changes since 0.9.0, in detail
+# Changes since 0.9.1, in detail
 
 The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
@@ -86,6 +86,7 @@ So `[ -f a`, `unset` of a read-only variable, `bash -c f` of a function not expo
 - `bashExplainer.notes.pitfalls` off no longer hides an error, and `bashExplainer.diagnostics.pitfalls` off leaves the errors of the explanations in the Problems panel: an error is a bug, not advice. Before, `diagnostics.pitfalls` off left out the notes that said a line fails.
 - The GitHub Action's `fail-on-warning: 'false'` lets errors pass too. Its new output `errors` counts them; `warnings` counts what fails the step (the errors, and with `strict` the warnings), and `pitfalls` no longer counts errors. The counts come from the command-line tool's new `--counts <file>`, which appends `errors=`, `warnings=`, `infos=`, `pitfalls=` and `failing=` lines (there `warnings` counts the problems at warning level, and `failing` what the Action's `warnings` counts); with an older tool (a `package:` pin), the Action counts its annotations as before, and `errors` is 0.
 - SARIF has `error` results. GitHub's code scanning fails its "Code scanning results" check on a new `error` alert by default; it blocks merging where a ruleset or branch protection requires that check.
+- `--counts` does not write through a symbolic link at the last part of the path it is given, as `--sarif` does not: the tool says so and exits with status 2. A link earlier in the path is followed.
 
 ### Long lines on the web page wrap between shell words
 
@@ -303,27 +304,3 @@ unbash 6.0.2 and 6.0.3 read more of bash's syntax as bash does, and the explanat
 - `${x#)}` in a `$( )` (`a=$(echo ${x#)})`, bash prints the value): the `)` is pattern text. Before, the line said "Syntax error: this part could not be parsed". The same for `<<` in the pattern of an expansion, and in a `$( )` or `<( )` over several lines (`$((1<<2))` there started a heredoc), and for `${x:-<<EOF}`.
 - `cat <$''` names the target `$''` (an empty file name; bash says "No such file or directory"). Before, the note said "Read file `` as stdin".
 - `<<$'E\0F'`: the heredoc ends at the line `E`, where the delimiter ends at the NUL, as bash reads it. Before, it ran to the end of the file. (The note still words the delimiter as written: roadmap, "Deferred".)
-
-### The GitHub Action installs its tool in a directory of its own
-
-The action installs the package in a new directory under `$RUNNER_TEMP`, with npm running there and with `--ignore-scripts`, and runs the installed program by its path from the workspace.
-
-- The registry is what the workflow or the machine configures: `setup-node`'s `registry-url` (its `NPM_CONFIG_USERCONFIG` and `NODE_AUTH_TOKEN`), `npm_config_registry`, your user's npm settings, npm's global configuration; without any, npm's default. npm settings kept in the repository no longer apply to the action: a workflow that needs another registry sets it in one of these ways.
-- `package:` works as before. A relative path (`./vendor/tool.tgz`, `vendor/tool.tgz`, `file:vendor/tool.tgz`, `./cli`, also after an alias: `name@./vendor/tool.tgz`) is still read from the workspace: that is the workflow's own choice. Install scripts do not run, except that npm prepares a package from git (`git+https:`, `github:`), which runs its `prepare` script.
-- The user's settings and caches come from a directory outside the workspace: a `HOME` or `XDG_CONFIG_HOME` inside it is set aside, also when reached through a symbolic link. So are npm configuration files named by `NPM_CONFIG_USERCONFIG`, `npm_config_userconfig`, `NPM_CONFIG_GLOBALCONFIG` or `npm_config_globalconfig` when they are inside the workspace, except in the runner's temp directory. A file the workflow names in `BASH_EXPLAINER_CONFIG` is read wherever it is.
-- The files checked are inside the workspace: any other file that `files:` matches, by its path or through a symbolic link, is skipped with a notice that names it. A workflow that checks generated scripts writes them inside the workspace.
-- The SARIF file named by `sarif:` is written only inside the workspace or the runner's temp directory when its path is in one of them: a path that a symbolic link leads elsewhere, also by `..` after a link, fails the step with exit status 2. A path outside both is the workflow's to name.
-- A package that cannot be installed, or that has no `bash-explainer` program, fails the step with exit status 2 and an error that says so.
-- The action's description no longer says "Offline": the action gets the tool from npm, and then the tool works offline.
-
-### The command-line tool writes out control characters
-
-All that the command-line tool writes to standard output and standard error passes one place, which writes each C0 and C1 control character and DEL as `<ESC>`, `<CR>`, `<BEL>`, `<DEL>` or `<U+009B>`, the form the examples use. A tab and a newline stay. This covers the text output, Markdown, GitHub annotations, messages on standard error, and file names. Line and column numbers still count the characters of the real text, and a script with no control characters prints as before. `--color` still colours the output.
-
-File names show a newline visibly too (`<LF>`), in every output but JSON and SARIF, where the name is data; so does a problem's message in `--check`. The newlines the tool itself prints stay.
-
-`--sarif` and `--counts` do not write through a symbolic link at the last part of the path they are given: the tool says so and exits with status 2. A link earlier in the path is followed.
-
-Text that GitHub's runner reads as a command anywhere in a line (`##[`) is written `##\[` in text, Markdown and standard error; JSON, SARIF and annotations keep it. Everything after `--` is a file, as the help says: a file named `--lsp` or `-` is read as a file; a `-` before `--` is standard input.
-
-JSON and SARIF, and the messages of the Language Server, keep the text: the encoder now also writes DEL and the C1 characters as `\u` escapes, so the value read back is the same.

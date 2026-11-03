@@ -8,7 +8,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 - `--format json` gives each part of a line its colour role (`role`) and the ids of the facts said about it (`facts`).
 - The panel starts with one sentence that says what the line does.
-- `--check --counts <file>` appends the numbers of problems of each level to a file, as `$GITHUB_OUTPUT` reads them.
+- `--check --counts <file>` appends the numbers of problems of each level to a file, as `$GITHUB_OUTPUT` reads them. It does not write through a symbolic link at the last part of the path.
 - Dockerfile `HEALTHCHECK CMD …` is explained, in the shell and the exec form, and so is an instruction after `ONBUILD`.
 - Quick fixes for the problems whose fix is mechanical, in VS Code, the Language Server and the web page's editor: a failure reported as success, `source` that searches `$PATH`, a `grep` pattern from a variable, a loop over a glob that matches nothing, `read` without `-r`, `[-f x]` and more. Each applies the code the note shows.
 - On a phone, a one-line summary of the cursor's line stays above the keyboard and in the folded sheet; a tap shows the explanation.
@@ -52,11 +52,22 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - In a script with Windows line ends (CRLF), the lines after a heredoc are explained as code again, and the CRLF error sees their keywords. Before, everything after the heredoc was taken for its text.
 - Docker's exec form (`CMD ["echo", "$HOME"]`) and a Python list of arguments are explained as a program run with no shell: `echo` is the program, `cd` and `if` are not found, and `"$HOME"` is a JSON string passed as it is. Before, they were explained as bash's builtins and single-quoted strings.
 - The commands of a `bash -c '…'` string in a Dockerfile, a Makefile, a workflow or another host file, or after blank lines at the top of a script, are placed on their own text. Before, they pointed at line 1 and took their names from there.
+
+[All changes](https://github.com/sf624/bash-explainer/compare/v0.9.1...main)
+
+## 0.9.1
+
+Details and examples: [docs/changes/0.9.1.md](https://github.com/sf624/bash-explainer/blob/v0.9.1/docs/changes/0.9.1.md).
+
+### Fixed
+
 - The GitHub Action installs and runs the tool outside the checked-out repository. Its registry is the one your workflow or machine configures; npm settings kept in the repository no longer apply to it.
 - The command-line tool shows control characters in a script visibly (`<ESC>`) instead of sending them to the terminal, and a newline in a file name (`<LF>`). Text that a CI log would read as a command (`##[`) is written `##\[`.
-- `--sarif` and `--counts` do not write through a symbolic link at the last part of their path, and the GitHub Action writes the SARIF file only inside the workspace or the runner's temp directory when its path is in one of them. A path that leads elsewhere through a link fails with exit status 2.
+- `--sarif` does not write through a symbolic link at the last part of its path, and the GitHub Action writes the SARIF file only inside the workspace or the runner's temp directory when its path is in one of them. A path that leads elsewhere through a link fails with exit status 2.
 - The GitHub Action checks only files inside the workspace. Any other file that `files:` matches, by its path or through a symbolic link, is skipped with a notice that names it.
 - After `--`, a file named `--lsp` or `-` is read as a file.
+
+[All changes](https://github.com/sf624/bash-explainer/compare/v0.9.0...v0.9.1)
 
 ## 0.9.0
 
