@@ -1538,6 +1538,7 @@
  "rm -rf $DIR/*",
  "rm -rf $DIR/build",
  "rm -rf ${D%/}/x",
+ "rm -rf \\\n  x\n",
  "rm-empty-variable-root",
  "run ! true",
  "s/a/b",
