@@ -130,15 +130,8 @@ function splitCommand(cx: Explainer, whole: SyntaxNode, body: SyntaxNode, layout
   }
   const names = [...fds].sort().map((fd) => fdName(fd, fd));
   const cmd = shorten(layout.text, 30);
-  const which = names.length > 1 ? `${names.slice(0, -1).map((x) => x.en).join(', ')} and ${names[names.length - 1].en}` : names[0]?.en;
   // (`exec >log 2>&1`: with no command to run, `exec` applies them to this shell, for every command after it: 4.1.)
-  const w = cx.tok(whole, 'redirect', tail.toShell ? cx.s(
-    `コマンドのない \`${cmd}\` のリダイレクト: このシェル自体の${names.length ? names.map((x) => x.ja).join('・') : '入出力'}を切り替える。この後のコマンドもすべて、切り替えた先を使う`,
-    `Redirections of \`${cmd}\` with no command: they apply to this shell itself, so ${which ? `its ${which} ${names.length > 1 ? 'stay' : 'stays'} redirected` : 'they stay'} for every command after it`,
-  ) : cx.s(
-    `入出力のリダイレクト: \`${cmd}\` の${names.length ? names.map((x) => x.ja).join('・') + 'を' : '入出力を'}切り替える。シェルがコマンドの起動前に設定するので、コマンド自身にはリダイレクトは見えない`,
-    `Redirection applied to \`${cmd}\`${names.length ? `: its ${names.length > 1 ? `${names.slice(0, -1).map((x) => x.en).join(', ')} and ${names[names.length - 1].en}` : names[0].en} ${names.length > 1 ? 'are' : 'is'} redirected` : ''}. The shell sets this up before the command starts, so the command does not see the redirections`,
-  ), sortTokens([inner, ...redirToks]));
+  const w = cx.tok(whole, 'redirect', cx.text(tail.toShell ? 'cmd-redirect-no-command' : 'cmd-redirect-around', { cmd, names }), sortTokens([inner, ...redirToks]));
   w.summary = summaryOf(inner);
   return skeletal(w, whole);
 }
@@ -174,8 +167,7 @@ function aliasArguments(cx: Explainer, n: SyntaxNode, res: AliasResolution, toks
     // (The first word of its text is checked too: `alias a2='b2 ' b2='c2 '`.)
     const chain = target?.kind === 'alias' ? cx.s(`（\`${target.name}\` もエイリアスで、\`${target.alias.value}\` に置き換わる）`, ` (\`${target.name}\` is an alias too, for \`${target.alias.value}\`)`) : '';
     return {
-      ...cx.tok(a.word, 'alias', cx.s(`${lineLabel('ja', line)} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。前のエイリアスの置き換え先が空白で終わるので、bash はこの単語もエイリアスか調べる`,
-        `The alias \`${name}\` defined on ${lineLabel('en', line, 'inline')}: replaced by \`${alias.value}\`${chain}. The text of the alias before it ends with a blank, so bash checks this word for an alias too`)),
+      ...cx.tok(a.word, 'alias', cx.text('cmd-alias-next-word', { line, name, value: alias.value, chain })),
       refs: ['6.6'],
     };
   });
@@ -205,24 +197,16 @@ function commandParts(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode): { pre
       for (const t of cx.sub(c)) {
         t.refs = meaning.named ? ['3.7.4', '4.1'] : stays ? ['3.7.4', '4.4'] : ['3.7.4'];
         t.explanation = meaning.named
-          ? cx.s(`\`${meaning.named}\` がこの名前を受け取るので、この代入はコマンドの後も残り、エクスポートされる: ${t.explanation}`,
-            `\`${meaning.named}\` gets this name, so this assignment stays after the command, exported: ${t.explanation}`)
+          ? cx.text('cmd-prefix-assignment-named', { named: meaning.named, what: t.explanation })
           : stays && !meaning.sure
-          ? cx.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、ここで POSIX モードなら（この前で有効にしているのは一部の経路だけ）、この代入はコマンドの後も残る: ${t.explanation}`,
-            `\`${nameNode.text}\` is a POSIX special builtin, so if POSIX mode is on here (only some paths before here turn it on), this assignment stays after the command: ${t.explanation}`)
+          ? cx.text('cmd-prefix-assignment-posix-maybe', { name: nameNode.text, what: t.explanation })
           : stays
-          ? cx.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、この代入はコマンドの後も残る（bash の通常モードでは実行中だけ）: ${t.explanation}`,
-            `\`${nameNode.text}\` is a POSIX special builtin, so this assignment stays after the command (in bash's normal mode it would last only while the command runs): ${t.explanation}`)
+          ? cx.text('cmd-prefix-assignment-posix', { name: nameNode.text, what: t.explanation })
           : !meaning.sure && !fields(n, 'argument').length
-          ? cx.s(`このコマンドの実行中だけ設定される環境変数（\`${nameNode.text}\` が何の語にもならなければ、シェルの変数として残る）: ${t.explanation}`,
-            `Environment variable set only for this command (if \`${nameNode.text}\` expands to no word at all, it stays as a shell variable): ${t.explanation}`)
+          ? cx.text('cmd-prefix-assignment-env-maybe-alone', { name: nameNode.text, what: t.explanation })
           : !meaning.sure
-          ? cx.s(`このコマンドの実行中だけ設定される環境変数（\`${nameNode.text}\` もその後の語も何の語にもならなければ、シェルの変数として残る）: ${t.explanation}`,
-            `Environment variable set only for this command (if \`${nameNode.text}\` and the words after it expand to no word at all, it stays as a shell variable): ${t.explanation}`)
-          : cx.s(
-            `このコマンドの実行中だけ設定される環境変数: ${t.explanation}`,
-            `Environment variable set only for this command: ${t.explanation}`,
-          );
+          ? cx.text('cmd-prefix-assignment-env-maybe', { name: nameNode.text, what: t.explanation })
+          : cx.text('cmd-prefix-assignment-env', { what: t.explanation });
         prefix.push(t);
       }
       continue;
@@ -266,7 +250,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   const variant = head.kind === 'builtin' ? shellVariant(cx, n, head.spec!) : undefined;
   if (variant) {
     head.spec = { ...head.spec!, ...variant.spec };
-    head.explanation += cx.s(`。${cx.t(variant.text)}`, `. ${cx.t(variant.text)}`);
+    head.explanation += cx.sep() + cx.t(variant.text);
   }
   // (A function of the script is not the command its name suggests: no example of that command. Nor is a name that
   // may run a path `hash -p` gave it (also through an alias), or that runs one of a program the dictionary does not
@@ -297,8 +281,8 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   }
   // `[` is a command and `]` its last argument: they get tokens of their own, around the condition.
   const nameToks = bracket ? [cx.tok(word ?? nameNode, head.kind, head.kind === 'builtin'
-    ? cx.s('コマンド `[`（`test` の別名）', 'Command `[` (an alias of `test`)')
-    : cx.s('プログラム `[`（`test` と同じ）', 'The program `[` (the same as `test`)'), head.nameTokens)] : head.nameTokens;
+    ? cx.text('cmd-bracket-builtin-name')
+    : cx.text('cmd-bracket-program-name'), head.nameTokens)] : head.nameTokens;
   const t = cx.tok(n, bracket ? 'test' : head.kind, head.explanation, sortTokens([
     ...prefix, ...nameToks, ...argToks, ...cx.subs(redirs),
   ]), bracket ? shorten(wordsText(n)) : shorten((word ?? nameNode).text));
@@ -352,9 +336,7 @@ function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedC
   const braced = unquotedWord(word) !== undefined ? braceWords(cx, word) : undefined;
   if (braced?.length) {
     const head = commandHeadFor(cx, nameNode, word, braced[0]);
-    head.explanation = cx.s(
-      `ブレース展開で \`${word.text}\` は \`${braced.join(' ')}\` になるので、コマンド \`${braced[0]}\` を実行する（\`{ }\` のグループではない）${bracesMaybeOff(cx, word)}。${head.explanation}`,
-      `Brace expansion turns \`${word.text}\` into \`${braced.join(' ')}\`, so this runs the command \`${braced[0]}\` (it is not a \`{ }\` group)${bracesMaybeOff(cx, word)}. ${head.explanation}`);
+    head.explanation = cx.text('cmd-brace-expansion-command', { word: word.text, expanded: braced.join(' '), command: braced[0], off: bracesMaybeOff(cx, word), what: head.explanation });
     head.nameTokens = [braceWord(cx, word)!];
     return head;
   }
@@ -362,10 +344,7 @@ function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedC
   const spelled = staticWordValue(word, false, cx.shell);
   // (With no shell, the quotes are the host's string, which the name's token says: `hostString`.)
   if (spelled && spelled !== word.text && !cx.state.noShell) {
-    head.explanation = cx.s(
-      `コマンド名 \`${word.text}\` は、クォートやバックスラッシュ、空の \`$(…)\` を取り除くと \`${shown(spelled)}\` になる。${head.explanation}`,
-      `The command name \`${word.text}\` becomes \`${shown(spelled)}\` once the quotes, backslashes and empty \`$(…)\` are removed. ${head.explanation}`,
-    );
+    head.explanation = cx.text('cmd-name-unquoted', { word: word.text, spelled: shown(spelled), what: head.explanation });
     if (!isPlainWord(word) && !head.nameTokens.length) head.nameTokens = cx.sub(word);
   }
   // `~/bin/foo`: bash expands the tilde of the name before it looks the command up.
@@ -491,8 +470,7 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
   if (res?.maybeHashed?.search) {
     const t = maybeHashedText(cx, res.name, res.maybeHashed);
     // (One bracket with the explanation's own last one: `tr`'s "(stdin only)".)
-    const x = head.explanation;
-    head.explanation = cx.s(x.endsWith('）') ? `${x.slice(0, -1)}。${t}）` : `${x}（${t}）`, x.endsWith(')') ? `${x.slice(0, -1)}; ${t})` : `${x} (${t})`);
+    head.explanation = cx.text('cmd-hashed-clause', { what: head.explanation, clause: t });
   }
   return head;
 }
@@ -512,7 +490,7 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
   if (sv === undefined && (!plain || globbed) && word.type !== 'raw_string') {
     return {
       name, kind: 'command', nameTokens: cx.sub(word), refs: ['3.7.1'], unnamed: true,
-      explanation: cx.s('展開した結果をコマンドとして実行する', 'Run the expanded value as a command'),
+      explanation: cx.text('cmd-run-expanded'),
     };
   }
   // What bash runs (src/semantics/names.ts). An alias over a known command that runs that command with more words
@@ -558,15 +536,12 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
     return {
       name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'], spec, ...(target ? { runs: runs!.name } : {}), ...(basis ? { basis } : {}),
       explanation: res.sure
-        ? cx.s(`このスクリプトの${lineLabel('ja', line)} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${sure}`, `The alias \`${name}\` defined on ${lineLabel('en', line, 'inline')}: replaced by \`${alias.value}\`${sure}`)
+        ? cx.text('cmd-alias-defined-script', { line, name, value: alias.value, sure })
         : maybeSourced
-          ? cx.s(`このファイルの${lineLabel('ja', line)} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは対話シェルがこのファイルを読むとき（\`.bashrc\` や、端末で打つ \`source\`）か、\`shopt -s expand_aliases\` の後だけ。スクリプトとして実行すると、bash はエイリアスを展開しない`,
-            `The alias \`${name}\` defined on ${lineLabel('en', line, 'inline')}: replaced by \`${alias.value}\`${chain}, but only when an interactive shell reads this file (\`.bashrc\`, or \`source\` typed in a terminal), or after \`shopt -s expand_aliases\`. Run as a script, bash does not expand aliases`)
+          ? cx.text('cmd-alias-defined-file', { line, name, value: alias.value, chain })
         : alias.state === 'on'
-          ? cx.s(`このスクリプトの${lineLabel('ja', line)} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは \`shopt -s expand_aliases\` が効いているときだけで、この前で有効にしているのは一部の経路（分岐やループ）だけ`,
-            `The alias \`${name}\` defined on ${lineLabel('en', line, 'inline')}: replaced by \`${alias.value}\`${chain}, but only when \`shopt -s expand_aliases\` is on, and only some paths before here (a branch or a loop) turn it on`)
-          : cx.s(`このスクリプトの${lineLabel('ja', line)} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは定義する行を通ったときだけ（この前で定義しているのは一部の経路だけ）`,
-            `The alias \`${name}\` defined on ${lineLabel('en', line, 'inline')}: replaced by \`${alias.value}\`${chain}, but only when its definition has run (only some paths before here define it)`),
+          ? cx.text('cmd-alias-defined-expand-partial', { line, name, value: alias.value, chain })
+          : cx.text('cmd-alias-defined-partial', { line, name, value: alias.value, chain }),
     };
   }
   // (The parser has read it as a command name: not a keyword.)
@@ -586,20 +561,18 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
         if (off) {
           return {
             name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
-            explanation: cx.s(`このスクリプトの${lineLabel('ja', first + 1)} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし、ここでは \`shopt -u expand_aliases\` でエイリアスの展開が無効なので、対話シェルでも「command not found」になる${unless}`,
-              `The alias \`${name}\` defined on ${lineLabel('en', first + 1, 'inline')} (\`${value}\`). But alias expansion is off here (\`shopt -u expand_aliases\`), so this is "command not found", also in an interactive shell${unless}`),
+            explanation: cx.text('cmd-alias-expansion-off', { line: first + 1, name, value, unless }),
           };
         }
         return {
           name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
-          explanation: cx.s(`このスクリプトの${lineLabel('ja', first + 1)} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる${unless}。sh や dash なら \`${value}\` に置き換わる`,
-            `The alias \`${name}\` defined on ${lineLabel('en', first + 1, 'inline')} (\`${value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found"${unless}. With sh or dash it would be replaced by \`${value}\``),
+          explanation: cx.text('cmd-alias-not-expanded-in-script', { line: first + 1, name, value, unless }),
         };
       }
     }
     if (missed.why === 'later' || missed.why === 'same-unit') {
       cx.note(fact(cx.lang, missed.why === 'same-unit' ? 'alias-defined-same-unit' : 'alias-defined-later', { name, line: first + 1 }), nameNode);
-      if (res.kind === 'file') return { name, res: ran, kind: 'command', nameTokens: [], refs: ['6.6'], explanation: cx.s(`コマンド \`${name}\` を実行する（${lineLabel('ja', first + 1)} のエイリアスはここではまだ効かない）`, `Run the command \`${name}\` (the alias of ${lineLabel('en', first + 1, 'inline')} is not in effect here)`) };
+      if (res.kind === 'file') return { name, res: ran, kind: 'command', nameTokens: [], refs: ['6.6'], explanation: cx.text('cmd-alias-defined-later', { name, line: first + 1 }) };
     }
   }
   if (res.kind === 'function') return { name, res: ran, kind: 'function', fn: res.sure || 'maybe', nameTokens: [], refs: ['3.3'], explanation: functionCall(cx, res) + (globs ? globOver(cx) : '') };
@@ -609,8 +582,7 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
     const line = (docLine(res.sourced) + 1);
     return {
       name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'],
-      explanation: cx.s(`\`${name}\` を実行する。${lineLabel('ja', line)} で読み込んだファイルの関数かもしれない（そうでなければ外部コマンド）`,
-        `Run \`${name}\`: maybe a function of the file read on ${lineLabel('en', line, 'inline')}, else an external command`),
+      explanation: cx.text('cmd-maybe-sourced-function', { name, line }),
     };
   }
   // Where every path runs a path of `hash -p`, but not the same one, it runs one of them.
@@ -618,7 +590,7 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
     const t = maybeHashedText(cx, name, res.maybeHashed);
     return {
       name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'], spec: hashedWords(linesOf(cx, res.maybeHashed.by), name),
-      explanation: cx.s(`外部コマンドを実行する（${t}）`, `Run an external command (${t})`),
+      explanation: cx.text('cmd-external-hashed-maybe', { why: t }),
     };
   }
   // A builtin turned off with `enable -n` runs the program of its name; `hash -p` gives a name a path.
@@ -629,13 +601,13 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
     return {
       // (The words are read as when the path is written out: the program is that file, so a word the dictionary lacks does not point to the manual of the name.)
       name, res: ran, ...(spec ? { spec } : {}), ...(path ? { runs: path } : {}), ...testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'], ...(basis ? { basis } : {}),
-      explanation: cx.s(`${runs}（${why}）${program ? `: ${cx.t(program.summary)}` : ''}`, `${runs} (${why})${program ? `: ${cx.t(program.summary)}` : ''}`),
+      explanation: cx.text('cmd-off-builtin-or-hashed', { runs, why, ...(program ? { summary: cx.t(program.summary) } : {}) }),
     };
   }
   // A command described in the customCommands setting wins over the built-in dictionary.
   const custom = customCommandSpec(cx.opts.customCommands?.[name.split('/').pop()!]);
   if (custom) {
-    return { name, res: ran, spec: custom, kind: 'command', nameTokens: [], explanation: cx.t(custom.summary) + cx.s('（設定 customCommands で定義）', ' (from the customCommands setting)') };
+    return { name, res: ran, spec: custom, kind: 'command', nameTokens: [], explanation: cx.t(custom.summary) + cx.text('cmd-custom-setting') };
   }
   // (No shell reads the words, Docker's exec form: a builtin's name runs the program of its name.)
   if (res.kind === 'file' && res.noShell?.skips) return noShellHead(cx, name, ran, res.noShell.skips);
@@ -648,8 +620,7 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
     return {
       name, res: ran, spec, ...testOf(res), kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(own.length ? { refs: own } : {}), ...(basis ? { basis } : {}),
       explanation: builtin && spec.closingOperand // (zsh splits and globs no unquoted variable, but drops one that is empty all the same.)
-        ? cx.s(`コマンド \`[\`（\`test\` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、\`[\` と \`]\` の前後に空白が要り、${cx.shell === 'zsh' ? '中の引数はほかのコマンドの引数と同じく展開される（クォートしない変数は、空なら引数ごと消える。`[[ ]]` なら消えない）' : '中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）'}`,
-          `Command \`[\` (an alias of \`test\`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so \`[\` and \`]\` need spaces around them, and ${cx.shell === 'zsh' ? 'the arguments inside are expanded as any command\'s are (an unquoted variable that is empty is dropped; `[[ ]]` keeps it)' : 'the arguments inside undergo word splitting and globbing (`[[ ]]` does not)'}`)
+        ? cx.text('cmd-bracket-builtin', { zsh: cx.shell === 'zsh' })
         : cx.t(spec.summary),
     };
   }
@@ -670,16 +641,16 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
       : fact(cx.lang, 'distro-alias-in-script', { name, where, what: whatText, many, instead: distro.portable ? tx(`\`${distro.portable}\` と書きます`, `Write \`${distro.portable}\``) : tx('したいことに合ったコマンドをそのまま書きます', 'Write the command you mean'), ...(reader ? { reader } : {}) }), nameNode);
     return {
       name, ...(interactive ? {} : { res: ran }), spec: distro.command ? lookupCommand(distro.command) : undefined, kind: 'command', nameTokens: [],
-      explanation: cx.s(`${what} \`${name}\`: ${cx.t(distro.meaning)}（${defs}）`, `${distro.kind === 'alias' ? 'Alias' : 'Function'} \`${name}\`: ${cx.t(distro.meaning)} (${defs})`),
+      explanation: cx.text('cmd-distro-alias', { what, alias: distro.kind === 'alias', name, meaning: cx.t(distro.meaning), defs }),
     };
   }
   if (name.includes('/')) {
     // (With no shell, Docker's exec form, the path is run as it is: no section of bash's command search.)
     return cx.state.noShell
-      ? { name, res: ran, kind: 'command', nameTokens: [], explanation: cx.s(`パス \`${name}\` にあるプログラム・スクリプトを、シェルを通さずにそのまま実行する`, `Run the program or script at \`${name}\` as it is, with no shell`) }
-      : { name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'], explanation: cx.s(`パス \`${name}\` にあるプログラム・スクリプトを実行する`, `Run the program or script at \`${name}\``) };
+      ? { name, res: ran, kind: 'command', nameTokens: [], explanation: cx.text('cmd-path-no-shell', { name }) }
+      : { name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'], explanation: cx.text('cmd-path', { name }) };
   }
-  return { name, res: ran, kind: 'command', nameTokens: [], explanation: cx.s(`外部コマンド \`${name}\` を実行する（辞書に未登録。\`man ${name}\` や \`${name} --help\` を参照）`, `Run the external command \`${name}\` (not in the dictionary; see \`man ${name}\`)`) };
+  return { name, res: ran, kind: 'command', nameTokens: [], explanation: cx.text('cmd-external-unknown', { name }) };
 }
 
 /**
@@ -695,10 +666,8 @@ function noShellHead(cx: Explainer, name: string, res: NameResolution, skips: 'b
   return {
     name, res, kind: 'command', nameTokens: [],
     explanation: skips === 'builtin'
-      ? cx.s(`シェルのビルトイン \`${name}\`（${cx.t(spec!.summary)}）。この単語を読むシェルはないので、PATH からプログラムとして探すが、この名前のプログラムはふつうなく、コマンドが見つからずに失敗する`,
-        `The shell's builtin \`${name}\` (${cx.t(spec!.summary)}). No shell reads these words, so it is looked up in PATH as a program, and there is usually none of this name: the command is not found`)
-      : cx.s(`\`${name}\` はシェルの予約語で、コマンドではない。この単語を読むシェルはないので、PATH からプログラムとして探すが、この名前のプログラムはなく、コマンドが見つからずに失敗する`,
-        `\`${name}\` is a reserved word of the shell, not a command. No shell reads these words, so it is looked up in PATH as a program, and there is none of this name: the command is not found`),
+      ? cx.text('cmd-no-shell-builtin', { name, summary: cx.t(spec!.summary) })
+      : cx.text('cmd-no-shell-keyword', { name }),
   };
 }
 
@@ -779,9 +748,7 @@ function timed(cx: Explainer, n: SyntaxNode): Token {
   if (!cmd) {
     // `time` alone: an empty pipeline, timed; in POSIX mode, the times of the shell and its children so far (6.11).
     const posix = option(cx.state.at(n).run, 'set', 'posix') === 'on';
-    const t = cx.tok(n, 'keyword', cx.rests(posix
-      ? cx.s('パイプラインのない `time`: POSIX モードなので、このシェルと終了した子プロセスがここまでに使ったユーザー時間とシステム時間を表示する', '`time` with no pipeline: in POSIX mode, it prints the user and system time this shell and its finished children have used so far')
-      : cx.s('パイプラインのない `time`: 何も計測せず、0 の時間を表示する（POSIX モードなら、シェルがここまでに使った時間）', '`time` with no pipeline: it times nothing, and prints zero times (in POSIX mode, the times the shell has used so far)'), 'time-alone'), lead);
+    const t = cx.tok(n, 'keyword', cx.rests(cx.text(posix ? 'cmd-time-alone-posix' : 'cmd-time-alone'), 'time-alone'), lead);
     return skeletal(posix ? { ...t, refs: ['3.2.3', '6.11'] } : t, n);
   }
   // What `time` times, a command or a whole pipeline, is explained as it would be on its own.
@@ -809,10 +776,7 @@ function timeIsProgram(st: ShellState): boolean {
 function timeProgram(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode | undefined): Token {
   const time = token(n, 'time')!;
   const words = [field(n, 'option')!, ...(cmd?.type === 'command' ? [field(cmd, 'name')!.namedChildren[0]!, ...fields(cmd, 'argument')] : [])];
-  const kw = cx.tok(time, 'keyword', cx.s(
-    'POSIX モードの bash は、`-` で始まる語が続く `time` を予約語として読まない: これはプログラムの `time`（ふつうは `/usr/bin/time`）を実行するコマンドで、関数や組み込みコマンドは実行できない（`cannot run`）',
-    'In POSIX mode bash does not read `time` before a word that starts with `-` as the reserved word: this runs the program `time` (usually `/usr/bin/time`), which cannot run a function or a builtin (`cannot run`)')
-    + (cmd ? '' : cx.s('。実行するコマンドがないので失敗する（GNU の `time` は `missing program to run`、終了ステータス 125）', '. With no command to run, it fails (GNU `time`: `missing program to run`, status 125)')));
+  const kw = cx.tok(time, 'keyword', cx.text('cmd-time-program') + (cmd ? '' : cx.sep() + cx.text('cmd-time-program-no-command')));
   // (The program named as the word is: bash looks it up in PATH.)
   const read = readArgs(cx, specFor(cx, time.text), words, time.text);
   // (A body that is not one simple command, `time -p a | b`, is explained as it is.)
@@ -823,5 +787,5 @@ function timeProgram(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode | undefined):
 /** The keyword `time`, and the option `-p` if there is one: the start of every explanation of it. */
 function timeLead(cx: Explainer, time: SyntaxNode, posix: SyntaxNode | undefined): Token[] {
   const kw = Object.assign(cx.tok(time, 'keyword', cx.t(keywords.time)), { name: nameInfo(cx.lang, { kind: 'keyword', name: 'time' }, cx, time) });
-  return posix ? [kw, cx.tok(posix, 'option', cx.s('POSIX 形式で時間を表示する', 'print the times in the POSIX format'))] : [kw];
+  return posix ? [kw, cx.tok(posix, 'option', cx.text('cmd-time-posix-format'))] : [kw];
 }
