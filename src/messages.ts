@@ -637,15 +637,16 @@ export const MESSAGES = {
   'regex-not-computed': note(['3.2.5.2', '3.5.8.1'], () => ['結果は計算しない: このパターンはこの文字列では時間がかかりすぎるおそれがある。一致するかどうかは、この例では示さない', 'Not computed: this pattern may take too long on this text. This example does not say whether it matches']),
   // (Said in place of the output of a `printf` whose digits depend on the machine: src/examples/floatdigits.ts.)
   'digits-not-computed': note(['4.2'], () => ['この数の最後の桁は、機械の浮動小数点型によって変わるため、出力は示さない', "The last digit of this number depends on the machine's floating-point type, so no output is shown"]),
+  // (The next five are about the tool, not the manual: they cite no section, and test/messages.test.ts names them as `ABOUT_THE_TOOL`.)
   // (Said so where the values a runner makes run out, not a pattern: `x=$x$x`, jq's `.+.`.)
-  'size-not-computed': note(['3.7'], () => ['結果は計算しない: 作られる値が大きくなりすぎるおそれがある。出力は、この例では示さない', 'Not computed: the values this makes may get too large. This example does not show its output']),
+  'size-not-computed': note([], () => ['結果は計算しない: 作られる値が大きくなりすぎるおそれがある。出力は、この例では示さない', 'Not computed: the values this makes may get too large. This example does not show its output']),
   // (Said so where the steps of a runner run out: `jq -n 'def f: f; f'`, awk's `while(1);`.)
-  'steps-not-computed': note(['3.7'], () => ['結果は計算しない: 手順が多すぎて、終わらないおそれがある。出力は、この例では示さない', 'Not computed: this takes too many steps, and may never end. This example does not show its output']),
+  'steps-not-computed': note([], () => ['結果は計算しない: 手順が多すぎて、終わらないおそれがある。出力は、この例では示さない', 'Not computed: this takes too many steps, and may never end. This example does not show its output']),
   // (Said so where what is left of the line's limit, or the line's share of a long document's, ran out: src/examples/regexguard.ts.)
-  'budget-not-computed': note(['3.7'], () => ['結果は計算しない: この行の例に使える分を超えるおそれがある（長いスクリプトでは1行あたりの分が小さくなる）。出力は、この例では示さない', 'Not computed: this may take more than what is left for the examples of this line (each line has less in a long script). This example does not show its output']),
+  'budget-not-computed': note([], () => ['結果は計算しない: この行の例に使える分を超えるおそれがある（長いスクリプトでは1行あたりの分が小さくなる）。出力は、この例では示さない', 'Not computed: this may take more than what is left for the examples of this line (each line has less in a long script). This example does not show its output']),
   // (A boundary, src/failures.ts: the bug itself is told where the product logs.)
-  'example-failed': note(['3.7'], () => ['結果は示さない: この例の計算が Bash Explainer の不具合で失敗した。行の説明の他の部分は、そのまま読める', 'Not shown: computing this example failed, a bug of Bash Explainer. The rest of the explanation of this line stands']),
-  'line-not-explained': note(['3.2'], () => ['この行は説明できなかった: Bash Explainer の不具合で説明の途中に失敗した。スクリプトの誤りではない', 'This line could not be explained: Bash Explainer failed while explaining it, a bug of the tool, not a problem of the script']),
+  'example-failed': note([], () => ['結果は示さない: この例の計算が Bash Explainer の不具合で失敗した。行の説明の他の部分は、そのまま読める', 'Not shown: computing this example failed, a bug of Bash Explainer. The rest of the explanation of this line stands']),
+  'line-not-explained': note([], () => ['この行は説明できなかった: Bash Explainer の不具合で説明の途中に失敗した。スクリプトの誤りではない', 'This line could not be explained: Bash Explainer failed while explaining it, a bug of the tool, not a problem of the script']),
   'regex-backslash-dropped': suggests(broken<{ list: string; digits: boolean; others: boolean; rewrite: readonly Rewrite[] }>(['3.5.9', '3.2.5.2'], ({ list, digits, others, rewrite: [fix] }) => [
     [`\`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）`,
       ...(digits ? [`POSIX の正規表現には \`\\d\` がなく、変数に入れても \`d\` という文字になるので、\`\\d\` は \`[0-9]\`、\`\\D\` は \`[^0-9]\` と書く${!others && fix ? `（\`${fix.code}\`）` : ''}`] : []),

@@ -1,6 +1,6 @@
 # One line must not stop the whole tool
 
-Status: done (roadmap item of 2026-11-03). Every product runs the explanations synchronously, on the extension's or the page's only thread, and JavaScript cannot stop its own code from outside. So what a line costs must be bounded from inside, and a failure on a line must stay on that line.
+Status: built in part (roadmap item of 2026-11-03, #590); the open items are listed in "What it does not bound". Every product runs the explanations synchronously, on the extension's or the page's only thread, and JavaScript cannot stop its own code from outside. So what a line costs must be bounded from inside, and a failure on a line must stay on that line.
 
 ## What a failure does
 
@@ -76,3 +76,18 @@ So a line costs at most 3e7 steps of examples, 3e7 of results and its share of 6
 ## What it does not bound
 
 The explanation of a line without its examples: the walk of its nodes, the pitfalls and the rest, about 2 to 5 ms a line (under tsx). It grows with the line's size and is not refused. The worst measured: one line of 3000 expansions, 60 KB, takes about 20 s, and 40 s more for the panel's Reading tree (`all.find` for each command in src/reading.ts).
+
+### Open: a later PR closes these (roadmap, "One line must not stop the whole tool")
+
+This PR does not finish the item. A review of about 570 attack files found these still hang or abort, on main too:
+
+- Nested expansion: `echo ${x:-${x:-…}}` nested 20 levels takes over 45 s (2^n). Nested command substitution (`echo "$("$(…` 200 deep) fails in the parser, which is outside every boundary, so the output is empty and the other files are lost, as in the next item.
+- Output outside the boundary: `jq -n '[range(99999)]|sort|length'` gives an empty stdout and loses the other files, since `textOutput` is outside every boundary.
+- Unbounded numbers in the coreutils samples: `echo a | cut -f 1000000000` runs out of heap (status 134) and also kills the language server.
+- jq's native operations and products: `jq -n '[range(90000)]-[range(90000)]|length'` takes over 90 s, and `sort` of a long array is not charged.
+
+Planned, then: the nested expansions and substitutions, the parser and the output inside a boundary, a limit on the numbers of the coreutils samples, and charges for jq's native operations and products.
+
+### Linear in the document's size, by design
+
+Very long lines and long documents: the walk, the pitfalls and the panel's Reading tree grow with the size of the text, and are not refused (the line above of 3000 expansions). That stays as it is.
