@@ -1,6 +1,7 @@
 // Where the worked examples say their input comes from (src/examples/source.ts), and whether the real tools, given
 // the files and the standard input the example shows, print what it shows.
 import * as assert from 'assert';
+import { spawnSync } from 'child_process';
 import { parseJsonValues, varyJson } from '../src/examples/jq';
 import { rerun } from '../src/examples/rerun';
 import { exampleOf, has, realOutput } from './support/examples';
@@ -86,7 +87,7 @@ describe('the examples of several files, or of a here-string, agree with the too
     ['sort', 'sort a b'], ['sort', 'sort -r a b c'], ['head', 'head -n 1 a b'], ['tail', 'tail -n 2 a b'], ['head', 'head -q -n 1 a b'], ['head', 'head -v -n 2 a'],
     ['head', 'head -n 1 - a < b'], ['sed', "sed 's/a/X/' a b"], ['sed', "sed -n '$p' a b"], ['sed', "sed 's/l/L/g' <<< hello"], ['sed', "sed 's/a/b/' <<'E'\nabc\naaa\nE"],
     ['gawk', "awk '{ print NR \": \" $0 }' a b"], ['gawk', "awk 'BEGIN { print 1 }' f"], ['gawk', "awk '{ print $2 }' <<< 'x y'"], ['cut', 'cut -d, -f2 a b'],
-    ['tr', 'tr a-z A-Z <<< hello'], ['sort', 'sort a b | uniq -c'], ['sort', 'cat a b | sort -r'], ['sort', "sort <<< b | uniq"],
+    ['tr', 'tr a-z A-Z <<< hello'], ['sort', 'sort a b | uniq -c'], ['sort', 'cat a b | sort -r'], ['sort', "sort <<< b | uniq"], ['sort', "sort <<< <(printf 'b\\na\\n')"],
     ['jq', "cat <<'E' | jq -c .a\n{\"a\":[1,2]}\nE"], ['jq', "echo '{\"a\":1}' | jq -c .a"],
     ['sort', "sort <<< $'b\\na'"], ['sort', 'sort a a'], ['jq', 'jq -c . a.json a.json'], ['head', 'head -n 1 a a'], ['jq', 'jq -cs . a b'],
     ['cat', 'cat a - b < c'], ['cat', 'cat a - - < c'], ['cat', 'cat a b'], ['head', 'head -c 5 a b'], ['head', 'head -c -3 a b'], ['head', 'head -q -c 5 a b'], ['tail', 'tail -c 3 a b'], ['head', 'head -c 11 a b'], ['jq', "jq -cs 'map(.a)' a b"], ['sort', "sort 0<<< $'b\\na' | uniq"], ['sort', "cat 0<<'E' | sort\nb\na\nE"],
@@ -99,6 +100,17 @@ describe('the examples of several files, or of a here-string, agree with the too
       assert.strictEqual(got, want);
     });
   }
+  (has('jq') ? it : it.skip)('gives the path of a process substitution to a command that reads a here-string of it, as bash does', () => {
+    // (The word of the here-string is the file name `/dev/fd/63`, not what the substitution prints.)
+    const line = "jq . <<< <(echo '{\"a\":1}')";
+    const ex = exampleOf(line)!;
+    assert.deepStrictEqual(ex.sections.map((s) => s.label), ['Input: stdin (here-string)', 'Error']);
+    assert.deepStrictEqual(ex.sections[0].lines, ['/dev/fd/63']);
+    const r = spawnSync('bash', ['-c', line], { encoding: 'utf8' });
+    assert.notStrictEqual(r.status, 0);
+    assert.match(r.stderr, /parse error|Invalid/i);
+    assert.strictEqual(spawnSync('bash', ['-c', 'cat <<< >(:)'], { encoding: 'utf8' }).stdout, '/dev/fd/63\n');
+  });
   (has('jq') ? it : it.skip)('reads what the stages before it print, when they are known', () => {
     const line = "printf '%s\\n' '{\"a\":2}' '{\"a\":1}' | sort | jq -c .a";
     const ex = explain(line).examples.find((e) => e.kind === 'jq')!;
