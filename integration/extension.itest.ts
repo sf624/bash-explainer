@@ -3,6 +3,7 @@
 // or process of its own (see watch.ts). In CI on Linux the whole VS Code runs with no network.
 import * as assert from 'assert';
 import * as dns from 'dns';
+import * as fs from 'fs';
 import * as net from 'net';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -168,6 +169,19 @@ describe('Bash Explainer in VS Code', function () {
       editor.selection = new vscode.Selection(line, 0, line, 0);
       await sleep(150);
     }
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  });
+
+  it('draws the panel: its page, read from outside VS Code (integration/run.ts), has the rows of the line', async function () {
+    // The page of a webview cannot be read by the extension test API: run.ts attaches a browser tool to VS Code.
+    const dir = process.env.BASH_EXPLAINER_PANEL_CHECK;
+    if (!dir) return this.skip();
+    this.timeout(120000);
+    await open(fixture('sample.sh'));
+    await vscode.commands.executeCommand('bashExplainer.openPanel');
+    const file = path.join(dir, 'panel-check.txt');
+    const result = await until('the panel to be read', () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''), Boolean, 100000);
+    assert.strictEqual(result, 'ok');
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });
 

@@ -209,13 +209,15 @@ describe('the web page: keyboard and screen reader access', function () {
           line = e.data.lineText;
         }, true);
         window.problemsHeld = () => !!held;
-        window.releaseProblems = () => { open = true; postMessage(held, location.origin); };
+        window.releaseProblems = () => { open = true; return held; };
       })()`);
       const page = await ctx.newPage();
       const panel = await open(page, PROBLEM, 1);
       await until('the problems held', () => panel.evaluate('problemsHeld()') as Promise<boolean>, (h) => h, 15000);
       return { page, panel, released: async () => {
-        await panel.evaluate('releaseProblems()');
+        // (From the page around the panel, as its updates come: the panel reads messages of that page only.)
+        const held = await panel.evaluate('releaseProblems()');
+        await page.evaluate(`document.getElementById('panel').contentWindow.postMessage(${JSON.stringify(held)}, location.origin)`);
         await until('the squiggle', () => panel.locator('#line .squiggle').allTextContents(), (t) => t.join('').includes('read'));
       } };
     }

@@ -149,7 +149,11 @@
     themeTimer = setTimeout(postThemeBase, 50);
   }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
+  // Messages come only from the panel's own origin (VS Code's webview host and the web page have it). The sender is not
+  // asked for: the webview host hides `window.parent` and `window.frameElement` from the panel, in ways that differ between
+  // VS Code versions.
   window.addEventListener('message', (event) => {
+    if (event.origin !== location.origin) return;
     const msg = event.data;
     if (msg.type === 'themeWatch') {
       themeWatching = msg.on;
@@ -388,6 +392,16 @@
     return box;
   }
 
+  /** The address as a URL when it is https, else undefined. */
+  function httpsUrl(/** @type {string} */ address) {
+    try {
+      const u = new URL(address);
+      return u.protocol === 'https:' ? u.href : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   /**
    * The references a row or a note cites, as small links (§3.7.2, execve(2)) to their pages. A link opens in
    * the browser: VS Code opens a webview's links outside it, and the web page in a new tab.
@@ -399,15 +413,19 @@
     box.className = 'refs';
     known.forEach((id, i) => {
       const m = manual[id];
-      const a = document.createElement('a');
-      a.href = m.url;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
+      const url = httpsUrl(m.url);
+      // (An address that is not https is shown as text, with no link.)
+      const a = document.createElement(url ? 'a' : 'span');
       a.textContent = m.text;
       a.title = `${m.label}: ${m.title}`;
-      // (A screen reader hears where it is, what it is about, and that it opens outside the panel.)
-      // (Japanese runs its full-width parenthesis on: "§3.7.2 …（新しいタブで開く）".)
-      a.setAttribute('aria-label', `${m.text} ${m.title}${linkNote.startsWith('(') ? ' ' : ''}${linkNote}`);
+      if (url) {
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        // (A screen reader hears where it is, what it is about, and that it opens outside the panel.)
+        // (Japanese runs its full-width parenthesis on: "§3.7.2 …（新しいタブで開く）".)
+        a.setAttribute('aria-label', `${m.text} ${m.title}${linkNote.startsWith('(') ? ' ' : ''}${linkNote}`);
+      }
       if (i) box.append(' ');
       box.append(a);
     });

@@ -220,7 +220,8 @@ jobs:
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends xvfb
           # Ubuntu 24.04 keeps unprivileged users out of new namespaces unless told otherwise.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          unshare -rn xvfb-run -a node --import tsx integration/run.ts --executable="${{ steps.vscode.outputs.path }}"
+          # Loopback is down in the new namespace: bring it up, for the browser tool port that integration/run.ts reads the panel's page through.
+          unshare -rn sh -c 'ip link set lo up && exec xvfb-run -a node --import tsx integration/run.ts --executable="$1"' sh "${{ steps.vscode.outputs.path }}"
 
       - name: Run the tests in VS Code
         if: runner.os != 'Linux'
