@@ -531,13 +531,13 @@ describe('the guard of the regexes a script gives', () => {
 
     it('a split pays for the text it walks, whatever the separator: a loop of them is refused at once, a single one runs', function () {
       this.timeout(30000);
-      const big = 'BEGIN { s = "%"; for (j = 0; j < 20; j++) s = s s; ';
+      const big = (unit: string) => `BEGIN { s = "${unit}"; for (j = 0; j < 20; j++) s = s s; `;
       const loops = [
-        `${big.replace('%', 'a')}while (i++ < 1000) n += split(s, q, ""); print n }`,
-        `${big.replace('%', 'a')}while (i++ < 1000) n += split(s, q, //); print n }`,
-        `${big.replace('%', 'a')}FS = ""; while (i++ < 1000) { $0 = s; n += NF } print n }`,
-        `${big.replace('%', ',')}while (i++ < 1000) n += split(s, q, ","); print n }`,
-        `${big.replace('%', 'a b')}while (i++ < 1000) n += split(s, q, " "); print n }`,
+        `${big('a')}while (i++ < 1000) n += split(s, q, ""); print n }`,
+        `${big('a')}while (i++ < 1000) n += split(s, q, //); print n }`,
+        `${big('a')}FS = ""; while (i++ < 1000) { $0 = s; n += NF } print n }`,
+        `${big(',')}while (i++ < 1000) n += split(s, q, ","); print n }`,
+        `${big('a b')}while (i++ < 1000) n += split(s, q, " "); print n }`,
       ];
       for (const prog of loops) {
         const t = Date.now();
