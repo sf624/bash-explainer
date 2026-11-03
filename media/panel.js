@@ -159,8 +159,9 @@
     }
     if (msg.type === 'themeColours') setThemeVars(msg.vars);
     if (msg.type === 'update') {
-      const key = JSON.stringify(msg);
-      if (key === lastUpdate) return;
+      // (Without the line's problems: they come a moment after the line is explained, and change only its squiggles.)
+      const key = JSON.stringify({ ...msg, marks: undefined });
+      if (key === lastUpdate) return squiggleLine(msg.marks ?? []);
       lastUpdate = key;
       render(msg);
     }
@@ -247,8 +248,8 @@
       // (And the line box opened whole: a new line shows three rows at most.)
       lineOpen = false;
     }
-    // The same line drawn again (its problems came, the settings changed): a fold button or a link of the list that had the
-    // focus gets it back in the new rows.
+    // The same line drawn again (the settings changed; for its problems alone, see `squiggleLine`): a fold button or a link
+    // of the list that had the focus gets it back in the new rows.
     const kept = where === shownLine ? focusInList() : null;
     shownLine = where;
     shownLineNo = ex.line;
@@ -1011,13 +1012,33 @@
           reveal(flat[idx].token);
         });
       }
-      // (Under the problems of the line, the editor's squiggle in its level's class: where two overlap, the level of the
-      // lower rank wins, a warning over an information.)
-      const mark = marks.filter((/** @type {any} */ m) => m.from < j && i < m.to).sort((/** @type {any} */ a, /** @type {any} */ b) => a.rank - b.rank)[0];
-      if (mark && text.slice(i, j).trim()) span.classList.add('squiggle', mark.className);
+      squiggle(span, marks);
       segments.push(span);
       return span;
     }
+  }
+
+  /**
+   * Under the problems of the line, the editor's squiggle in its level's class: where two overlap, the level of the
+   * lower rank wins, a warning over an information.
+   */
+  function squiggle(/** @type {HTMLElement} */ span, /** @type {any[]} */ marks) {
+    const from = Number(span.dataset.from), to = Number(span.dataset.to);
+    const mark = marks.filter((m) => m.from < to && from < m.to).sort((a, b) => a.rank - b.rank)[0];
+    if (span.dataset.squiggle) span.classList.remove('squiggle', span.dataset.squiggle);
+    delete span.dataset.squiggle;
+    if (!mark || !String(span.textContent).trim()) return;
+    span.classList.add('squiggle', mark.className);
+    span.dataset.squiggle = mark.className;
+  }
+
+  /**
+   * The problems of the line changed, and nothing else. Only the squiggles change: drawing the rows anew would take a key
+   * held on a fold button (Space acts when it is released, on the button it went down on), what is typed in an example's
+   * box and the place of a screen reader, for a row that says the same.
+   */
+  function squiggleLine(/** @type {any[]} */ marks) {
+    for (const span of segments) squiggle(span, marks);
   }
 
   /** The line box was opened whole (a click, Enter or Space): it stays open while the same line is drawn again. */

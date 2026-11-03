@@ -327,11 +327,11 @@ describe('the panel keeps the row acted on in place', function () {
     });
   }
 
-  // The same line drawn again (its problems came, a setting changed) draws the rows anew where they were. Before, the
+  // The same line drawn again (its problems came, a setting changed) leaves the rows where they were. Before, the
   // page went back to the top: in the web page, the problems of a line just typed come a moment after it is explained,
   // and a test that had scrolled meanwhile clicked a row that had moved.
   for (const view of ['list', 'tree'] as const) {
-    it(`VS Code's panel, ${view === 'list' ? 'Meaning' : 'Reading'}: the same line drawn again, with other problems, leaves the page and its rows where they are`, async () => {
+    it(`VS Code's panel, ${view === 'list' ? 'Meaning' : 'Reading'}: the same line drawn again, with other problems or a setting changed, leaves the page and its rows where they are`, async () => {
       const { ctx, panel } = await code.open(view, true);
       const rows = view === 'list' ? '#tree li[data-path] > .row' : '#reading-tree li[role="treeitem"] > .trow';
       const tops = () => panel.evaluate(`JSON.stringify([...document.querySelectorAll('${rows}')].map((r) => Math.round(r.getBoundingClientRect().top)))`) as Promise<string>;
@@ -347,6 +347,12 @@ describe('the panel keeps the row acted on in place', function () {
           assert.ok(Math.abs(await panel.evaluate('scrollY') as number - at) <= 0.5, `scrolled to ${at}: still there (marks ${marks})`);
           assert.strictEqual(await tops(), was, `the rows stay (marks ${marks})`);
         }
+        await panel.evaluate(`window.postMessage({ ...window.MSGS.en, lineLabel: 'again' }, '*')`);
+        await until('the rows drawn anew', () => panel.locator('#where').textContent(), (t) => !!t?.includes('again'));
+        assert.ok(Math.abs(await panel.evaluate('scrollY') as number - at) <= 0.5, `scrolled to ${at}: still there (rows drawn anew)`);
+        assert.strictEqual(await tops(), was, 'the rows stay (rows drawn anew)');
+        await panel.evaluate(`window.postMessage(window.MSGS.en, '*')`);
+        await until('back', () => panel.locator('#where').textContent(), (t) => !t?.includes('again'));
       }
       await ctx.close();
     });
