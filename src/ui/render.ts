@@ -10,6 +10,7 @@ import type { ReadingNode } from '../reading';
 import { errorColour, Role, roleColour, ThemeKind } from './palette';
 import { ui } from './texts';
 import { type NoteBasis, partBasis, rowPlain, tokenRow } from './tokenRow';
+import { mostOf, pushAll } from '../lists';
 
 /** (Moved to src/label.ts, which the message catalog reads too.) */
 export { codeSpan };
@@ -207,19 +208,27 @@ export function examplesMarkdown(examples: Example[], indent?: string, rule = tr
   for (const e of examples) {
     if (indent === undefined) out.push('', ...(rule ? ['---', ''] : []), `#### ${e.title}`);
     else out.push(`${indent}##### ${e.title}`);
-    if (e.note) out.push(...(indent === undefined ? ['', `${quote ? '> ' : ''}${noteText(e.note)}`] : [`${indent}> ${noteText(e.note)}`]));
+    if (e.note) pushAll(out, (indent === undefined ? ['', `${quote ? '> ' : ''}${noteText(e.note)}`] : [`${indent}> ${noteText(e.note)}`]));
     for (const sec of e.sections) {
       if (sec.words) {
-        out.push(...(indent === undefined ? ['', `**${sec.label}**`, '', wordsText(sec)] : [`${indent}**${sec.label}**\\`, `${indent}${wordsText(sec)}`]));
+        pushAll(out, (indent === undefined ? ['', `**${sec.label}**`, '', wordsText(sec)] : [`${indent}**${sec.label}**\\`, `${indent}${wordsText(sec)}`]));
         continue;
       }
       const lines = (sec.lines.length ? sec.lines : [sec.empty ?? '']).map(pictureText);
       // The fence must be longer than any run of backticks inside.
-      const longest = Math.max(2, ...lines.map((l) => Math.max(0, ...(l.match(/`+/g) ?? []).map((m) => m.length))));
+      const longest = mostOf([2, ...lines.map((l) => mostOf([0, ...(l.match(/`+/g) ?? []).map((m) => m.length)]))]);
       const fence = '`'.repeat(longest + 1);
-      if (indent === undefined) out.push('', `**${sec.label}**`, '', `${fence}text`, ...lines, fence);
+      if (indent === undefined) {
+        out.push('', `**${sec.label}**`, '', `${fence}text`);
+        pushAll(out, lines);
+        out.push(fence);
+      }
       // A heading and a fence may each interrupt a paragraph, so the label needs no blank line around it.
-      else out.push(`${indent}**${sec.label}**`, `${indent}${fence}text`, ...lines.map((l) => indent + l), `${indent}${fence}`);
+      else {
+        out.push(`${indent}**${sec.label}**`, `${indent}${fence}text`);
+        pushAll(out, lines.map((l) => indent + l));
+        out.push(`${indent}${fence}`);
+      }
     }
   }
   return out;
@@ -248,14 +257,14 @@ export function plainNotes(ex: LineExplanation, notes: readonly string[], lang: 
 export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: string, lang: Lang = 'en'): string {
   const out: string[] = [`**${where}**`, '', '```bash', lineText.trim(), '```', ''];
   const links = (refs: readonly string[] | undefined) => (refs?.length ? ` (${refsMarkdown(lang, refs)})` : '');
-  out.push(...plainNotes(ex, ex.notes, lang));
+  pushAll(out, plainNotes(ex, ex.notes, lang));
   const walk = (tok: Token, depth: number) => {
     const r = tokenRow(tok, lang);
     out.push(`${'  '.repeat(depth)}- ${labelMarkdown(r.labelParts)} — ${rowPlain(r)}${links(r.refs)}${valueMarkdown(r.value, '  '.repeat(depth + 1))}${basisMarkdown(r.basis, lang, '  '.repeat(depth + 1))}`);
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);
-  out.push(...examplesMarkdown(ex.examples));
+  pushAll(out, examplesMarkdown(ex.examples));
   return out.join('\n').trim() + '\n';
 }
 

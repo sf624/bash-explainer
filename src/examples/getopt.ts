@@ -1,5 +1,6 @@
 // Simulates util-linux getopt(1) for worked examples.
 import { Unsupported as RunnerUnsupported } from './unsupported';
+import { pushAll } from '../lists';
 
 export class GetoptUnsupported extends RunnerUnsupported {}
 
@@ -51,7 +52,7 @@ export function runGetopt(spec: GetoptSpec, args: string[]): string {
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--') {
-      rest.push(...args.slice(i + 1).map(q));
+      pushAll(rest, args.slice(i + 1).map(q));
       break;
     }
     const isLong = a.startsWith('--') || (spec.alternative && /^-[^-]/.test(a) && a.length > 2 && longs.some(([n]) => n.startsWith(a.slice(1).split('=')[0])));
@@ -91,7 +92,7 @@ export function runGetopt(spec: GetoptSpec, args: string[]): string {
     }
     // A non-option argument.
     if (stopEarly) {
-      rest.push(...args.slice(i).map(q));
+      pushAll(rest, args.slice(i).map(q));
       break;
     }
     if (inPlace) opts.push(q(a));

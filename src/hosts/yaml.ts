@@ -4,6 +4,7 @@ import type { HostCi, RegionNote } from './index';
 import type { FactSpec } from '../messages';
 import { LineOut, Builder, indentOf } from './builder';
 import { GITHUB_FILE_NAMES, type HostMeaning } from '../messages-hosts';
+import { pushAll } from '../lists';
 
 /** Keys whose value is a shell script in common CI systems. */
 const YAML_KEYS = /^(run|script|before_script|after_script|bash|sh|cmds?|command)$/;
@@ -58,8 +59,8 @@ export function yaml(b: Builder): void {
   // A Travis CI file names its `language:` at the top level.
   const travis = b.lines.some((l) => /^language\s*:/.test(l));
   // (What the CI and the file's `env:` maps set for the scripts, workflow, job or step: taken for every script.)
-  if (found.length) b.provided.push(...CI_PROVIDED());
-  b.provided.push(...envKeys(b.lines));
+  if (found.length) pushAll(b.provided, CI_PROVIDED());
+  pushAll(b.provided, envKeys(b.lines));
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];
     const m = /^(\s*(?:-\s+)?)([\w-]+)\s*:(?:\s+(.*))?$/.exec(line);

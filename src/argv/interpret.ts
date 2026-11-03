@@ -12,6 +12,7 @@ import { type Depends, type WordReadings, wordReadings } from './profiles';
 import { flexible, readingsOf, type ReadingsTable } from './readings';
 import { type Group, optionFields, regroup, withParse } from './regroup';
 import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
+import { pushAll } from '../lists';
 
 /** A word of the command line, as the program will see it. */
 export interface ArgWord {
@@ -192,6 +193,8 @@ export interface InterpretContext {
 }
 
 const EMPTY: CommandSpec = { summary: { ja: '', en: '' } };
+/** How many commands a line's words run one inside another are read by their specs. */
+const MAX_SLOTS = 8;
 const ASSIGNMENT = /^[A-Za-z_]\w*=/;
 /**
  * The number of words a word gives: fewest (at least one, as the text shows it) and many (two more, where it may give
@@ -228,14 +231,14 @@ export function fieldLine(words: readonly ArgWord[], spread: 'fewest' | 'exact' 
       const { count: _, fields: __, param: ___, ...first } = w;
       const fewest = w.count!.max !== n ? { fewest: true as const } : {};
       groups.push({ from: line.length, n, word: k, shift: n - 1, words: [first, ...Array.from({ length: n - 1 }, (): ArgWord => ({}))], ...fewest });
-      line.push(...groups.at(-1)!.words!);
+      pushAll(line, groups.at(-1)!.words!);
     } else if (!fields) line.push(w);
     else if (fields.length === 1) {
       own.add(k);
       line.push({ value: fields[0] });
     } else {
       groups.push({ from: line.length, n: fields.length, word: k, shift: fields.length - 1, words: fields.map((value) => ({ value })) });
-      line.push(...groups.at(-1)!.words!);
+      pushAll(line, groups.at(-1)!.words!);
     }
   });
   return { line, groups, own };
@@ -307,6 +310,7 @@ export const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ?
 const takesRest = (o: OperandSpec): boolean => !!o.command && (o.command.joinsWords || (o.command.run !== 'shell-string' && !o.command.later));
 class Reader {
   private readonly maxSteps: number;
+  private slots = 0;
   /** `spliced`: the words (the last of an option and its value) whose words this reader has spliced in after them. */
   constructor(private readonly words: ArgWord[], private readonly ctx: InterpretContext, private readonly spliced: Set<number>) {
     this.maxSteps = ctx.maxSteps ?? 100000;
@@ -445,7 +449,7 @@ class Reader {
     const primary = low ?? (words.some((w) => counts(w)[0] !== counts(w)[1]) ? fit((k) => counts(words[k])[1]) : undefined);
     if (!primary) {
       operands.forEach((i, index) => roles.set(i, { role: 'operand', index }));
-      parse.unmatched.push(...operands);
+      pushAll(parse.unmatched, operands);
       return;
     }
     if (record) parse.alternative = primary.index;
@@ -456,7 +460,8 @@ class Reader {
       const n = primary.items[pos];
       const item = pattern[n];
       // Copies of one word with different meanings, or another meaning when the words are more: not certain.
-      const copies = primary.at.flatMap((x, p) => (x === k ? [pattern[primary.items[p]]] : []));
+      const copies: (typeof pattern)[number][] = [];
+      for (let p = pos; primary.at[p] === k; p++) copies.push(pattern[primary.items[p]]);
       const count = words[k].count;
       const each = count?.min === count?.max && copies.some((o) => o.text.en !== item.text.en) ? copies : undefined;
       if (item.command) {
@@ -489,7 +494,8 @@ class Reader {
   /** The role of the first word of a command run by this one, with the words up to `end` read by its spec. */
   private command(slot: CommandSlot, at: number, end: number, of?: string, appended = false): CommandRole {
     const name = this.words[at].value;
-    const found = name === undefined ? undefined : this.ctx.lookup?.(name);
+    // (A command each of whose words runs the next, `sudo sudo sudo …`, is read once for each: past `MAX_SLOTS` the words are no more than words.)
+    const found = name === undefined || ++this.slots > MAX_SLOTS ? undefined : this.ctx.lookup?.(name);
     // A slot that starts a program runs the program of a builtin's name (`env echo`: coreutils echo).
     const spec = slot.run === 'exec' && found?.program ? found.program : found;
     return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', [], false, [], appended), ...(of ? { of } : {}) };
@@ -548,7 +554,7 @@ class Reader {
       const r = text === undefined ? undefined : splitEnvString(text);
       if (r && 'words' in r) return r.words;
       if (r && 'error' in r && value) value.refused = r;
-      st.given.unsplit.push(...o.spec.names);
+      pushAll(st.given.unsplit, o.spec.names);
     }
     return undefined;
   }
@@ -682,8 +688,8 @@ class Reader {
     }
     // `-x$y`: what follows the letters is not known, so it may be more letters; unless a letter takes it as its value, the option is open.
     if (open && !valued) return -1;
-    st.given.specs.push(...given);
-    st.given.flags.push(...flags);
+    pushAll(st.given.specs, given);
+    pushAll(st.given.flags, flags);
     st.roles.set(i, letters.length === 1 ? letters[0] : { role: 'cluster', letters });
     return last;
   }

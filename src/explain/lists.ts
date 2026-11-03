@@ -9,6 +9,7 @@ import { codeSpan, labelText, LABEL_LIMIT, skeleton } from '../label';
 import { field, listElements, listOperator, listOverLines, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { isBlockLike, skeletal, summaryOf } from './nodes';
+import { pushAll } from '../lists';
 
 /**
  * A part as a text names it: its code when it is short and on one line, else its skeleton (`if ‹condition› then
@@ -108,7 +109,7 @@ const REDIRECTS = new Set(['file_redirect', 'heredoc_redirect', 'herestring_redi
 function parts(cx: Explainer, nodes: readonly SyntaxNode[], operator: (c: SyntaxNode) => Token | undefined): Token[] {
   const out: Token[] = [];
   for (const c of nodes) {
-    if (c.named) out.push(...cx.sub(c));
+    if (c.named) pushAll(out, cx.sub(c));
     else if (cx.onLine(c)) {
       const t = operator(c);
       if (t) out.push(t);

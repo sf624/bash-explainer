@@ -15,9 +15,10 @@ import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
 import { docLine, type StateModel } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
-import { listOverLines, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
+import { listOverLines, pastWhole, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { isBased, type RestingText, type TokenBasisId } from '../tokenbases';
 import { effEndRow, intersects, isBlockLike } from './nodes';
+import { pushAll } from '../lists';
 
 /**
  * The command whose arguments are being explained (`Explainer.command`): its name, its words, and their parse
@@ -281,6 +282,7 @@ export class LineExplainer implements Explainer, LineOutput {
       return n.startPosition.row === this.current && !(n.type === 'command_list' && listOverLines(n)) ? [this.walk.explain(n)] : this.walk.flatten(n);
     }
     // A multi-line statement that is not a block (`\` continuation, heredoc…) is explained whole.
+    if (pastWhole(n, this.current)) return this.walk.flatten(n);
     return [this.full(n)];
   }
 
@@ -309,13 +311,13 @@ export class LineExplainer implements Explainer, LineOutput {
 
   say(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): string[] {
     const out = said([f], this.opts.pitfalls);
-    this.facts.push(...out);
+    pushAll(this.facts, out);
     const nodes: readonly (SyntaxNode | undefined)[] = !at ? [undefined] : 'type' in at ? [at] : at;
     return anchored(out.flatMap((x) => nodes.map((node) => ({ ...x, ...(node ? { node } : {}) }))), this.anchors, this.data);
   }
 
   note(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): void {
-    this.notes.push(...this.say(f, at));
+    pushAll(this.notes, this.say(f, at));
   }
 
   sayAt(n: Note & { code: string }, span: Span): string {
@@ -366,7 +368,8 @@ export class LineExplainer implements Explainer, LineOutput {
     if (one) {
       const kept = this.examples.slice(before).filter(keeps);
       this.examples.length = before;
-      this.examples.push(...kept, one);
+      pushAll(this.examples, kept);
+      this.examples.push(one);
     }
     return value;
   }
@@ -376,15 +379,15 @@ export class LineExplainer implements Explainer, LineOutput {
     const value = f();
     const kept = this.examples.slice(before).filter((e) => e.target !== undefined || !drops(value, e));
     this.examples.length = before;
-    this.examples.push(...kept);
+    pushAll(this.examples, kept);
     return value;
   }
 
   adopt(ex: LineExplanation, span: (s: Span) => Span): void {
-    this.notes.push(...ex.notes);
-    this.facts.push(...(ex.facts ?? []));
+    pushAll(this.notes, ex.notes);
+    pushAll(this.facts, (ex.facts ?? []));
     for (const n of ex.noteInfo) this.data.set(n.text, n);
-    this.anchors.push(...(ex.anchors ?? []).map((a) => ({ ...a, span: span(a.span) })));
+    pushAll(this.anchors, (ex.anchors ?? []).map((a) => ({ ...a, span: span(a.span) })));
     // (Every example of a line is anchored at its command: `examplesOf`.)
     for (const e of ex.examples) this.examples.push({ ...e, anchor: span(e.anchor!) });
   }

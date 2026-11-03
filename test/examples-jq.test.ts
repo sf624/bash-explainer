@@ -2,7 +2,8 @@ import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { rerun } from '../src/examples/rerun';
-import { Json, jqExample, jqSteps, runJq } from '../src/examples/jq';
+import { Json, runJq } from '../src/examples/jq';
+import { jqExample, jqSteps } from '../src/examples/jqsample';
 
 /** Expected outputs follow the jq 1.7 manual (examples-jq-real.test.ts also compares with jq when it is installed). */
 function run(filter: string, input: Json, vars?: Record<string, Json>): Json[] | string {

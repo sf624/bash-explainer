@@ -84,9 +84,18 @@ function holeOf(part: SyntaxNode | string, quoted: boolean, w: WordMeaning): Hol
     return h;
   }
   const h: Hole = { ...kindOf(part, quoted, w), quoted: quoted || part.type === 'process_substitution' };
-  if (quoted && part.parent!.type === 'string' && part.parent!.namedChildren.some((c) => severalFields(c, w.state, true))) unkept.add(h);
+  if (quoted && part.parent!.type === 'string' && someSeveral(part.parent!, w)) unkept.add(h);
   if (part.type === 'expansion' && /['"]/.test(part.text)) nulls.add(h);
   return h;
+}
+
+const stringsRead = new WeakMap<SyntaxNode, { state: WordMeaning['state']; several: boolean }>();
+
+/** Whether a part of the string `s` may give several fields: read once for a string, whose parts all ask. */
+function someSeveral(s: SyntaxNode, w: WordMeaning): boolean {
+  let read = stringsRead.get(s);
+  if (read?.state !== w.state) stringsRead.set(s, (read = { state: w.state, several: s.namedChildren.some((c) => severalFields(c, w.state, true)) }));
+  return read!.several;
 }
 
 /** The kind of the hole of `part`, and whether it may be empty. */

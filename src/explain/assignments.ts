@@ -24,6 +24,7 @@ import { arrayKind, isAssoc, unquotedWord, wordAt } from './reads';
 import { redirectedWhole } from './redirections';
 import { inSubshell } from './where';
 import { arithNumber, bash53Variable, notGlobbedHere } from './words';
+import { pushAll } from '../lists';
 
 /**
  * A command with no name: its assignments (`a=1`, `a=1 b=2`), and any redirections between them; redirections
@@ -199,7 +200,7 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     const lang = name.type !== 'subscript' && value.type !== 'array' && children.length === 1 ? variableLanguages[nm] : undefined;
     const emb = lang && embeddedValue(cx, value, lang);
     if (emb) {
-      children[0].children.push(...emb.tokens);
+      pushAll(children[0].children, emb.tokens);
       children[0].explanation += ` — ${emb.note!}`;
     }
   }

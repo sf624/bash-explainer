@@ -8,6 +8,7 @@ import { S, sentenceEnd } from '../messages-sentence';
 import { sayInstead } from '../tokenmarks';
 import { ALNUM, COMMENT_TEST, droppedBefore, tagComment } from './batstags';
 import type { HostRun } from '../semantics/walk/host';
+import { shellLines } from './scripts';
 
 /**
  * How bats-core 1.13 runs a test file (libexec/bats-core/bats-exec-file, bats-exec-test): it sources the file with
@@ -96,7 +97,7 @@ function testHeads(original: string, shell: string): { written: string; head: st
  * than the function. Also the comments bats reads (tags, `# @test`), which bash ignores.
  */
 export function batsTestLine(ex: LineExplanation, extracted: Extracted, original: string[], tests: readonly number[], lang: 'ja' | 'en'): void {
-  const shell = extracted.text.split('\n');
+  const shell = shellLines(extracted);
   for (const c of ex.context) {
     if (!tests.includes(c.line)) continue;
     const t = testHeads(original[c.line], shell[c.line]);

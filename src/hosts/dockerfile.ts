@@ -4,6 +4,7 @@ import type { HostMeaning } from '../messages-hosts';
 import type { RegionNote } from './index';
 import { DECLARATIONS } from '../semantics/effects';
 import { RESERVED } from '../semantics/names';
+import { pushAll } from '../lists';
 
 /** One string of a JSON array (the exec form), with the original column of each character. */
 export interface JsonWord {
@@ -148,7 +149,7 @@ export function dockerfile(b: Builder): void {
     const declared = /^\s*(ARG|ENV)\s+(.*)$/i.exec(line);
     if (declared) {
       const words = declared[2].trim().split(/\s+/);
-      b.provided.push(...(declared[1].toUpperCase() === 'ARG' || words[0].includes('=') ? words.map((w) => /^([A-Za-z_]\w*)/.exec(w)?.[1]).filter((n): n is string => !!n) : [words[0]]));
+      pushAll(b.provided, (declared[1].toUpperCase() === 'ARG' || words[0].includes('=') ? words.map((w) => /^([A-Za-z_]\w*)/.exec(w)?.[1]).filter((n): n is string => !!n) : [words[0]]));
       continue;
     }
     const head = commandHead(b, i);

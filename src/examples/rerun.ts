@@ -4,7 +4,8 @@ import { fact } from '../messages';
 import { formatDate, parseSampleDate, UTC } from '../embedded/format';
 import { runAwk } from './awk';
 import { dateOutputLabel, parseDateValue, relativeFrom, relativeItems, zoneOf } from './dates';
-import { Json, JqFormat, jqOutputLines, jqPrint, JqStep, jqSteps, parseJsonValues, runJq } from './jq';
+import { Json, JqFormat, jqPrint, parseJsonValues, runJq } from './jq';
+import { jqOutputLines, JqStep, jqSteps } from './jqsample';
 import { PerlOptions, runPerl } from './perlrun';
 import { sectionMarks, type SectionMarks, type StageMarks } from './marks';
 import { pipelineExample, Stage, stageMarks } from './pipeline';
@@ -16,6 +17,7 @@ import { runSed } from './sed';
 import { codeSpan } from '../label';
 import { globMatches, globMiss, type GlobMiss, GlobMode, GlobOpts } from './shellwords';
 import { FILTERS, perFile } from './textfilters';
+import { pushAll } from '../lists';
 
 /**
  * Everything needed to run an example again on new input; plain data, so it can go to the webview and back. `reads`:
@@ -233,7 +235,7 @@ export function runAgain(spec: RerunSpec, boxes: string[][], lang: Lang): RerunR
           const before = show(results);
           return { sections: [...(before.length ? [{ label: s('出力', 'Output'), lines: before }] : []), { label: s('エラー', 'Error'), lines: [res.error] }] };
         }
-        results.push(...res.outputs);
+        pushAll(results, res.outputs);
       }
       const lines = show(results);
       const steps = spec.join || spec.nullInput || runs !== 1 || values.length !== 1 ? undefined : jqSteps(spec.filter, values[0], spec.vars);

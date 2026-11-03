@@ -7,7 +7,7 @@ import { reference } from '../src/references';
 import { explain } from './support/explain';
 
 /** The notes about the tool itself (what it did not compute, its own bugs): they cite no section of the manual. */
-const ABOUT_THE_TOOL: readonly string[] = ['size-not-computed', 'steps-not-computed', 'budget-not-computed', 'example-failed', 'line-not-explained'];
+const ABOUT_THE_TOOL: readonly string[] = ['size-not-computed', 'steps-not-computed', 'budget-not-computed', 'example-failed', 'line-not-explained', 'line-too-deep', 'file-not-read'];
 
 describe('the message catalog', () => {
   it('cites only known references (sections of the manual, manual pages), and at least one section', () => {
@@ -65,10 +65,12 @@ describe('the message catalog', () => {
     'prefix-assignment-expanded-first', 'shebang-refused', 'shebang-bom', 'bats-test-line-dropped', 'bats-negation-ignored', 'bats-run-in-pipeline-stage',
     'bats-run-in-pipeline', 'bats-setup-suite-in-test-file', 'regex-backslash-dropped', 'python-string-without-shell'];
   const FAILURES = ['find-action-refused', 'keyword-needs-separator', 'bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'unset-readonly', 'assign-readonly', 'unset-function-and-variable', 'bats-tags-invalid', 'restricted-refused', 'exit-refused'];
+  // (That a line or a file was not read: an error, as a check that could not read it has not passed.)
+  const NOT_READ = ['line-too-deep', 'file-not-read'];
   it('gives each entry the level of the design: error, warning, info or note', () => {
     for (const [id, e] of Object.entries(MESSAGES) as [FactId, { kind: string; level?: unknown }][]) {
       if (typeof e.level === 'function') continue;
-      const want = e.kind === 'note' ? (FAILURES.includes(id) ? 'error' : 'note') : CAVEATS.includes(id) ? 'info' : PITFALL_ERRORS.includes(id) ? 'error' : 'warning';
+      const want = e.kind === 'note' ? (FAILURES.includes(id) || NOT_READ.includes(id) ? 'error' : 'note') : CAVEATS.includes(id) ? 'info' : PITFALL_ERRORS.includes(id) ? 'error' : 'warning';
       assert.strictEqual(e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note'), want, id);
     }
     // The ones whose level depends on the case: an unquoted path given to `rm`, `mv` or `cp`; an unset read that stops a shell.

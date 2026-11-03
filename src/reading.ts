@@ -36,6 +36,7 @@ import { spanWithin } from './noteanchors';
 import { type ExpansionStep, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
 import { setsElement, splitElement, stackTilde, staticWordValue } from './staticword';
 import { field, fields, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
+import { mostOf, pushAll } from './lists';
 
 /** Who reads a part: bash, bash again (a substitution, or a string a command gives a shell), the command, a language. */
 export type Layer = 'bash' | 'child' | 'command' | 'language';
@@ -160,6 +161,17 @@ const ARITHMETIC = new Set(['arithmetic_command', 'arithmetic_expansion', 'c_sty
 const substring = (n: SyntaxNode): boolean => n.type === 'expansion' && n.children.some((c) => c.type === ':');
 
 const le = (a: Pos, b: Pos): boolean => a.line < b.line || (a.line === b.line && a.character <= b.character);
+const ALIAS = new Set(['alias']);
+/** The last of `nodes`, which are in order and do not overlap, that starts at `at` or before it. */
+function lastAt<T extends { span: Span }>(nodes: readonly T[], at: Pos): T | undefined {
+  let [low, high] = [0, nodes.length];
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (le(nodes[mid].span.start, at)) low = mid + 1;
+    else high = mid;
+  }
+  return nodes[low - 1];
+}
 const point = (row: number, column: number): Pos => ({ line: row, character: column });
 const spanOf = (n: SyntaxNode): Span => ({ start: point(n.startPosition.row, n.startPosition.column), end: point(n.endPosition.row, n.endPosition.column) });
 /** The place of the offset `i` of the text, in the node `n`. */
@@ -225,6 +237,24 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   // bash's own tokens, by the text they are about.
   const shellAt = new Map<string, Token[]>();
   for (const t of all.filter((x) => x.origin === 'shell')) shellAt.set(keyOf(t.span), [...(shellAt.get(keyOf(t.span)) ?? []), t]);
+  // The tokens of the commands, by where they start, with their place among all: asked for each command of a line that may have many.
+  const readers = all.map((token, order) => ({ token, order })).filter(({ token }) => token.origin === 'shell' && READERS.has(token.kind))
+    .sort((a, b) => (same(a.token.span, b.token.span) ? a.order - b.order : le(a.token.span.start, b.token.span.start) ? -1 : 1));
+  /** The first of the tokens of the commands, among all, that lie in `span`, for which `keep` holds. */
+  const readerWithin = (span: Span, keep: (t: Token) => boolean): Token | undefined => {
+    let [low, high] = [0, readers.length];
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (le(span.start, readers[mid].token.span.start)) high = mid;
+      else low = mid + 1;
+    }
+    let first: typeof readers[number] | undefined;
+    for (let k = low; k < readers.length && le(readers[k].token.span.start, span.end); k++) {
+      const r = readers[k];
+      if ((!first || r.order < first.order) && spanWithin(r.token.span, span) && keep(r.token)) first = r;
+    }
+    return first?.token;
+  };
   // (`last`: the innermost of those about the same text, a redirection's own under the command's: `>f`.)
   const tokenAt = (s: Span, kinds?: Set<string> | ((kind: string) => boolean), last = false): Token | undefined => {
     const found = shellAt.get(keyOf(s))?.filter((t) => !kinds || (typeof kinds === 'function' ? kinds(t.kind) : kinds.has(t.kind))) ?? [];
@@ -368,7 +398,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const body = field(c, 'body')!;
     const [n] = node(body, layer);
     const redirects = withLists(c).filter((x) => x !== body).flatMap((x) => node(x, layer));
-    n.children.push(...redirects);
+    pushAll(n.children, redirects);
     n.span = spanOf(c);
     n.label = [n.label, ...redirects.map((r) => r.label)].join(' ');
     return n;
@@ -396,7 +426,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
         return [n];
       }
       const alias = aliases.find((a) => a.word === x);
-      if (alias) return [aliasWord(x, alias.res, all.find((t) => t.origin === 'shell' && t.kind === 'alias' && same(t.span, spanOf(x))), layer === 'child' ? { process: 'subshell' } : {}, false).node];
+      if (alias) return [aliasWord(x, alias.res, tokenAt(spanOf(x), ALIAS), layer === 'child' ? { process: 'subshell' } : {}, false).node];
       // (The words of a declaration builtin that are assignments are its arguments: bash expands them as assignments.)
       if (x.type === 'variable_assignment') return [assignment(x, layer, named ? 'assignmentArgument' : 'assignment')];
       // After a name known only when it runs, a word is an argument, or the name when the words before expand to nothing.
@@ -408,8 +438,10 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     // under its own words. (Not when its name is known only when it runs: nor is what it reads.)
     const words = children.filter((w) => w.kind !== 'redirect');
     const place = (p: ReadingNode): void => {
-      const at = words.find((w) => spanWithin(p.span, w.span));
-      const head = !at && p.layer === 'command' && RUNS.has(p.kind) ? words.find((w) => le(w.span.start, p.span.start) && le(p.span.start, w.span.start)) : undefined;
+      // (The words are in order, and do not overlap: only the last that starts by here can hold it. A command of many words asks for each.)
+      const last = lastAt(words, p.span.start);
+      const at = last && spanWithin(p.span, last.span) ? last : undefined;
+      const head = !at && p.layer === 'command' && RUNS.has(p.kind) && last && le(p.span.start, last.span.start) ? last : undefined;
       if (at) at.children.push(p);
       else if (head) {
         // (A builtin that `builtin` or `command` finds runs in this shell, as bash runs a command name: no other
@@ -431,7 +463,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     if (children.some((x) => same(x.span, n.span) && x.text === n.text)) delete n.text;
     // (Its text runs to the end of a here-document, past what follows it on the line: `cat <<E; echo b`.)
     const ends = c.namedChildren.map((x) => ((x.type === 'heredoc_redirect' && x.namedChildren.find((h) => h.type === 'heredoc_start')) || x).endIndex);
-    n.label = short(c.text.slice(0, Math.max(...ends) - c.startIndex));
+    n.label = short(c.text.slice(0, mostOf(ends) - c.startIndex));
     n.refs = union(['3.2.2', '3.7.1'], n.refs);
     return n;
   };
@@ -444,7 +476,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       return SUBSTITUTIONS.has(x.type) ? [spanOf(x)] : x.namedChildren.flatMap(inner);
     });
     const span = spanOf(c);
-    const t = all.find((x) => x.origin === 'shell' && READERS.has(x.kind) && spanWithin(x.span, span) && !subs.some((s) => spanWithin(x.span, s)));
+    const t = readerWithin(span, (x) => !subs.some((s) => spanWithin(x.span, s)));
     // (The name it spells: `"ls"` and `\if` are `ls` and `if`.)
     return t && { token: t, name: short(staticWordValue(name.namedChildren[0], false, cx.shell) ?? name.text) };
   };
@@ -457,7 +489,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const name = staticWordValue(w, false, cx.shell);
     const span = spanOf(w);
     // (`[`: the token of its name, inside that of the test.)
-    const own = all.find((x) => x.origin === 'shell' && READERS.has(x.kind) && same(x.span, span)) ?? t;
+    const own = tokenAt(span, READERS) ?? t;
     const process = layer === 'child' ? { process: 'subshell' as const } : {};
     if (name === undefined) {
       const n = word(w, layer, 'expandedName');
@@ -750,7 +782,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       // script, as an unquoted one is (`eval ls`).
       else if (top && t.kind === 'string' && t.children.some((c) => c.origin === 'script')) {
         out.push({ layer: 'command', kind: 'argument', label: t.label, span: t.span, text: TEXTS.again[cx.lang], reader, children: readParts(t.children, false, reader) });
-      } else if (t.kind !== 'substitution' && (!top || WORD_TOKENS.has(t.kind))) out.push(...readParts(t.children, false, reader, languages));
+      } else if (t.kind !== 'substitution' && (!top || WORD_TOKENS.has(t.kind))) pushAll(out, readParts(t.children, false, reader, languages));
     }
     return out;
   };

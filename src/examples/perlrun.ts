@@ -5,6 +5,7 @@ import { JsRegex, regexExamples, toJsRegex } from './regex';
 import { charge, chargeSize, runnerStep, scriptRegex } from './regexguard';
 import { parseOptions, shortKeys, Unsupported as TextUnsupported } from './textfilters';
 import { Unsupported as RunnerUnsupported } from './unsupported';
+import { mostOf, pushAll } from '../lists';
 
 // ---------------------------------------------------------------- AST
 
@@ -28,6 +29,9 @@ type S =
 
 const NAMED_UNARY = new Set(['length', 'uc', 'lc', 'ucfirst', 'lcfirst', 'chomp', 'chop', 'defined', 'abs', 'int', 'sqrt', 'keys', 'values', 'scalar', 'exists', 'delete', 'chr', 'ord']);
 const LIST_FUNCS = new Set(['print', 'say', 'printf', 'join', 'split', 'sprintf', 'substr', 'index', 'push', 'sort', 'reverse', 'die', 'warn', 'lc', 'uc']);
+
+/** The most fields of a made-up input: what shows them. */
+const MAX_SAMPLE_COLUMNS = 64;
 
 class Parser {
   p = 0;
@@ -57,7 +61,7 @@ class Parser {
       if (this.peek(';')) { this.p++; continue; }
       if ((this.peek('BEGIN') || this.peek('END')) && this.toks[this.p + 1]?.v === '{') {
         const which = this.next().v;
-        (which === 'BEGIN' ? begin : end).push(...this.block());
+        pushAll((which === 'BEGIN' ? begin : end), this.block());
         continue;
       }
       main.push(this.statement());
@@ -698,7 +702,7 @@ class Interp {
       case 'index': return str(this.ev(a[0])).indexOf(str(this.ev(a[1])));
       case 'exists': { const x = a[0]; if (x?.k !== 'helem') throw new Unsupported('exists'); return this.hash(x.name).has(str(this.ev(x.key))) ? 1 : ''; }
       case 'delete': { const x = a[0]; if (x?.k !== 'helem') throw new Unsupported('delete'); const k = str(this.ev(x.key)); const v = this.hash(x.name).get(k); this.hash(x.name).delete(k); return v; }
-      case 'push': { if (a[0]?.k !== 'array') throw new Unsupported('push'); const arr = this.arr(a[0].name); arr.push(...a.slice(1).flatMap((x) => this.list(x))); return arr.length; }
+      case 'push': { if (a[0]?.k !== 'array') throw new Unsupported('push'); const arr = this.arr(a[0].name); pushAll(arr, a.slice(1).flatMap((x) => this.list(x))); return arr.length; }
       case 'keys': return this.hashOf(a[0]).size;
       case 'split': return this.split(e).length;
       case 'next': throw new NextSig();
@@ -884,7 +888,8 @@ export function perlExample(code: string, opts: PerlOptions): { input: string[];
     if (!sep) return undefined;
     input = [['apple', 'red', 'tokyo'], ['banana', 'yellow', 'osaka'], ['cherry', 'green', 'kyoto']].map((r) => r.join(sep));
   } else if (opts.autosplit || fieldUse.length) {
-    const cols = Math.max(3, ...fieldUse.map((f) => f + 1));
+    // (A field past what shows it is empty in every row, however large the number: `$F[1000000000]`.)
+    const cols = Math.min(mostOf([3, ...fieldUse.map((f) => f + 1)]), MAX_SAMPLE_COLUMNS);
     const sep = opts.fieldSep && opts.fieldSep.length === 1 ? opts.fieldSep : opts.fieldSep ? (/^\\s/.test(opts.fieldSep) ? ' ' : opts.fieldSep[0]) : ' ';
     const words = [['apple', 'banana', 'cherry', 'grape'], ['red', 'yellow', 'green', 'purple'], ['tokyo', 'osaka', 'kyoto', 'nara']];
     input = [0, 1, 2, 3].map((r) => Array.from({ length: cols }, (_, c) => {

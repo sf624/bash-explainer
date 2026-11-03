@@ -1,3 +1,4 @@
+import { pushAll } from '../lists';
 // The syntax tree the rest of the extension reads: our own model of a bash script, the same whichever
 // parser library built it. Only the adapters in src/syntax/adapters/ may import a parser library; see
 // docs/design/syntax-tree.md for the model and its rules.
@@ -130,6 +131,11 @@ export interface SyntaxTree {
   readonly root: SyntaxNode;
   /** What the parser could not read. Each one also has an `error` node, or an `incomplete` node, in the tree. */
   readonly errors: readonly SyntaxError[];
+  /**
+   * That this is no reading of `text`, whose `root` is empty: the parser could not follow it, as it nests deeper than the stack
+   * (`too-deep`), or a bug stopped it (`failed`). Every line of it says so, and the document has one problem that says so (src/document.ts).
+   */
+  readonly unread?: 'too-deep' | 'failed';
   /**
    * Where the text had a CR before a LF (Windows line ends), as indexes into the text the tree was built from.
    * An adapter that reads such text masks each of these CRs as a space of the same length, so `text` has a space there
@@ -441,7 +447,7 @@ function runsOf(holder: SyntaxNode): Run[] {
       if (!goesOn) {
         run = { parts: [], elements: [] };
         runs.push(run);
-      } else run!.parts.push(...pending);
+      } else pushAll(run!.parts, pending);
       run!.parts.push(c);
       run!.elements.push(c);
       pending = [];
@@ -533,7 +539,9 @@ export function listOperator(op: SyntaxNode): { part: SyntaxNode; next?: SyntaxN
   const at = listsOf(op.parent!).at.get(op);
   if (!at) return undefined;
   const part = at.run.parts[at.index - 1];
-  const next = at.run.parts.slice(at.index + 1).find((p) => p.named && p.type !== 'comment');
+  // (Not a copy of the rest: this is asked of each operator of a long list.)
+  let next: SyntaxNode | undefined;
+  for (let k = at.index + 1; k < at.run.parts.length && !next; k++) if (at.run.parts[k].named && at.run.parts[k].type !== 'comment') next = at.run.parts[k];
   return next ? { part, next } : { part };
 }
 
@@ -542,6 +550,15 @@ export function inBackground(n: SyntaxNode): boolean {
   const at = n.parent && isListPart(n) ? listsOf(n.parent).at.get(n) : undefined;
   return !!at && at.run.parts[at.index + 1]?.type === '&';
 }
+
+/** The most lines of a statement that each read all of it. */
+const WHOLE_ROWS = 64;
+
+/**
+ * Whether `line` is one of the later lines of a statement too long for each of its lines to read all of it (`\\` continuations, a
+ * here-document): they would make the script's cost the square of its size. Its first line reads it, and each of the others only its part.
+ */
+export const pastWhole = (n: SyntaxNode, line: number): boolean => n.endPosition.row - n.startPosition.row > WHOLE_ROWS && n.startPosition.row !== line;
 
 /** Whether `n` or anything under it is an `error` node or incomplete. */
 export function hasError(n: SyntaxNode): boolean {

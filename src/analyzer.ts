@@ -6,9 +6,9 @@ import { Lang } from './i18n';
 import { idiomsFound } from './idioms';
 import { pitfallFindings } from './pitfalls';
 import { wordFindings } from './wordfacts';
-import type { SyntaxNode, SyntaxTree } from './syntax/tree';
+import { pastWhole, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 import { lookupCommand } from './dict/aliases';
-import { basisGate, fact, pitfallSaid } from './messages';
+import { basisGate, type Fact, fact, pitfallSaid } from './messages';
 import { withoutBases, withTokenBases } from './tokenbases';
 import { pictureNote } from './ctlchars';
 import { withRewritesOf } from './rewrite';
@@ -25,7 +25,7 @@ export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions
 import type { Token } from './analyzer-types';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import { withinLine } from './examples/regexguard';
-import { contained } from './failures';
+import { contained, stackFull } from './failures';
 import { shorten } from './label';
 import { readingTree } from './reading';
 import { KIND_ROLES } from './roles';
@@ -46,8 +46,7 @@ export { isBlockLike, summaryOf };
  * The line a bug stopped from being explained: all it can say is that, on a token of the line, where every product shows a line's
  * explanation. Nothing in it reads the tree but the line's text, in case the tree is what fails.
  */
-function lineNotExplained(lang: Lang, tree: SyntaxTree, line: number, shell: Shell | undefined): LineExplanation {
-  const said = fact(lang, 'line-not-explained');
+function lineNotExplained(said: Fact, tree: SyntaxTree, line: number, shell: Shell | undefined): LineExplanation {
   const text = tree.text.split('\n')[line] ?? '';
   const at = (character: number) => ({ line, character });
   const code = text.trim();
@@ -60,6 +59,8 @@ function lineNotExplained(lang: Lang, tree: SyntaxTree, line: number, shell: She
     context: [],
     notes: [said.text],
     noteInfo: [{ text: said.text, level: said.level, label: said.label, body: said.body, code: said.code }],
+    // (Where a line is too deep, it is a problem there: `noteIssues`. A file not read is one problem, not one for each line.)
+    ...(code && said.code === 'line-too-deep' ? { anchors: [{ text: said.text, span: token.span }] } : {}),
     examples: [],
     summary: code ? summaryOf(token) : '',
   };
@@ -87,12 +88,21 @@ export class Analyzer {
    * that throws in it gives a line that says so, and not a product that stops (src/failures.ts).
    */
   explainLine(tree: SyntaxTree, line: number, shell?: Shell, opts: ExplainOptions = {}): LineExplanation {
-    return contained(`line ${line + 1}`, () => withinLine(tree.root, () => this.explained(tree, line, shell, opts)), () => this.notExplained(tree, line, shell));
+    if (tree.unread) return lineNotExplained(fact(this.lang, 'file-not-read', { why: tree.unread }), tree, line, shell);
+    return contained(`line ${line + 1}`, () => {
+      try {
+        return withinLine(tree.root, () => this.explained(tree, line, shell, opts));
+      } catch (e) {
+        // (No bug: what is nested in the line goes deeper than a walk can follow.)
+        if (!stackFull(e)) throw e;
+        return this.notExplained(tree, line, shell, e);
+      }
+    }, (e) => this.notExplained(tree, line, shell, e));
   }
 
   /** What is said of a line a bug stopped from being explained. */
-  notExplained(tree: SyntaxTree, line: number, shell?: Shell): LineExplanation {
-    return lineNotExplained(this.lang, tree, line, shell);
+  notExplained(tree: SyntaxTree, line: number, shell: Shell | undefined, error: unknown): LineExplanation {
+    return lineNotExplained(fact(this.lang, stackFull(error) ? 'line-too-deep' : 'line-not-explained'), tree, line, shell);
   }
 
   private explained(tree: SyntaxTree, line: number, shell: Shell | undefined, opts: ExplainOptions): LineExplanation {
@@ -114,8 +124,8 @@ export class Analyzer {
     if (opts.basis === false) withoutBases(items);
     else withTokenBases(items, cx.rested);
     markSaid(items);
-    const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'], line)
-      .filter((n) => intersects(n, line));
+    const around = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'], line);
+    const statements = around.filter((n) => intersects(n, line) && !pastWhole(n, line));
     const notes = [
       ...continuationNotes(cx, root, line, items),
       ...tokenErrorNotes(cx, items),
@@ -160,7 +170,8 @@ export class Analyzer {
     const resolveAt = (name: string, w: SyntaxNode) => resolve(cx, name, w, { quoted: w.type !== 'word' || w.text !== name });
     if (opts.argv) result.argv = argvLines(root, line, cx.state, this.lang);
     // (A string read as a script has none: the line's sentence says the command that reads it.)
-    if (opts.sentence && !this.nested) {
+    // (Nor a line of a statement too long for each line to read all of it: it does not say the command.)
+    if (opts.sentence && !this.nested && !around.some((n) => pastWhole(n, line))) {
       const said = lineSentence({ root, line, lang: this.lang, status: cx.status, commands: cx.memo(COMMAND_SAID), problems: new Set([...problemCodes(result), ...opts.hostProblems ?? []]) });
       if (said) result.sentence = said.text;
     }

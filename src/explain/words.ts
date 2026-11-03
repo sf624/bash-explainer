@@ -61,11 +61,19 @@ export function bracketPart(n: SyntaxNode): { opens?: { text: string; at: number
 }
 
 /** The parts of the word that `n` is a part of (as `bracketPart` takes them), their `[…]` across parts, and the index of `n`. */
+const BRACKETS = new WeakMap<SyntaxNode, { spans: BracketSpan[]; at: Map<SyntaxNode, number> }>();
+
 function bracketsOf(n: SyntaxNode): { p: SyntaxNode; spans: BracketSpan[]; i: number } | undefined {
   const p = n.parent;
-  const parts = p?.type === 'concatenation' ? p.namedChildren : p?.type === 'binary_expression' ? fields(p, 'right') : [];
-  const i = parts.indexOf(n);
-  return i < 0 ? undefined : { p: p!, spans: bracketSpans(parts), i };
+  if (p?.type !== 'concatenation' && p?.type !== 'binary_expression') return undefined;
+  // (Asked of each part of a word: a word of many parts, `'a'\''b'\''c'`, reads them once.)
+  let read = BRACKETS.get(p);
+  if (!read) {
+    const parts = p.type === 'concatenation' ? p.namedChildren : fields(p, 'right');
+    BRACKETS.set(p, (read = { spans: bracketSpans(parts), at: new Map(parts.map((x, k) => [x, k])) }));
+  }
+  const i = read.at.get(n);
+  return i === undefined ? undefined : { p, spans: read.spans, i };
 }
 
 /** The text of the `[…]` across parts that the part `n` is inside of, between its `[` and `]` (the `$x` of `[$x]`). */

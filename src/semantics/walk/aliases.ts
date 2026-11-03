@@ -6,6 +6,9 @@ import { plainName, aliasOf, aliasTexts, commandName } from '../effects';
 import { type AliasState, merge, option, type ShellState, withStatus } from '../shellstate';
 import type { Walker } from './walker';
 
+/** How many expansions of aliases a walk follows. */
+const MAX_EXPANSIONS = 20_000;
+
 /** The aliases the walk expands, and the `alias` commands that define them. */
 export class WalkAliases {
   constructor(private readonly w: Walker) {}
@@ -14,6 +17,7 @@ export class WalkAliases {
   readonly defs = new Map<string, SyntaxNode[]>();
   /** The aliases being expanded (an alias is not expanded again inside itself). */
   private readonly expanding = new Set<string>();
+  private expansions = 0;
 
   /** Records the `alias` commands among `nodes`. */
   collect(nodes: readonly SyntaxNode[]): void {
@@ -52,6 +56,11 @@ export class WalkAliases {
     const alias = name !== undefined && !this.expanding.has(name) ? from.aliases.get(name) : undefined;
     const expands = !this.w.bash ? 'on' : option(from, 'shopt', 'expand_aliases');
     if (!alias || alias.state === 'off' || !(expands === 'on' || expands === 'unknown')) return undefined;
+    // (An alias whose text names another twice, and so on, doubles at each level: `alias b='a; a'; alias c='b; b'`. Past this, the walk does not know what runs.)
+    if (++this.expansions > MAX_EXPANSIONS) {
+      if (!this.w.blind) this.w.walkAgain('more aliases to expand than a walk follows');
+      return undefined;
+    }
     const values = (word: string): string[] => {
       const a = from.aliases.get(word);
       return a?.state === 'on' && expands === 'on' ? [a.value] : [];

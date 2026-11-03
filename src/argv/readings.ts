@@ -9,6 +9,7 @@ import { splitEnvString } from './envsplit';
 import { type ArgRole, type ArgvParse, type ArgWord, fieldLine, type InterpretContext, readWritten, type RoleAt, subcommand } from './interpret';
 import { type Group, lineIndex, optionFields, regroup } from './regroup';
 import type { CommandSpec } from './spec';
+import { leastOf, mostOf } from '../lists';
 
 /** The most shapes read for one command (section 2.8): past it, no shape is read. */
 export const SHAPE_CAP = 1024;
@@ -149,8 +150,8 @@ const range = (from: number, to: number): number[] => {
  * VALUE`; none without options) and the longest pattern of its operands.
  */
 export function wordsBound(spec: CommandSpec): number {
-  const values = spec.options ? Math.max(1, ...spec.options.map((o) => (Array.isArray(o.value) ? o.value.length : 1))) : 0;
-  return 2 + values + Math.max(0, ...(spec.operands ?? []).map((a) => a.pattern.length));
+  const values = spec.options ? mostOf([1, ...spec.options.map((o) => (Array.isArray(o.value) ? o.value.length : 1))]) : 0;
+  return 2 + values + mostOf([0, ...(spec.operands ?? []).map((a) => a.pattern.length)]);
 }
 
 /** The roles of a reading, by word, at every level (the words of a subcommand, of a command run). */
@@ -275,7 +276,7 @@ function contextsOf(runs: readonly Run[], variables: readonly CountVariable[], v
       let [k, w] = [1, after(v)];
       while (w < variables.length && variables[w].min === min && variables[w].top === top && same(multOf(w), m)) [k, w] = [k + 1, after(w)];
       // (Past this sum every place the variables add to is at its top, whatever the tuple: more give the same tuples.)
-      const most = Math.max(0, ...m.map((n, i) => (n ? Math.ceil(tops[i] / n) : 0)));
+      const most = mostOf([0, ...m.map((n, i) => (n ? Math.ceil(tops[i] / n) : 0))]);
       // (Where the variables give one word or more, the tuples after some of them may be more than after all of them, and
       // the cap is checked after each, as one by one: they are added one by one, unless no count of them can make more
       // than `cap` tuples, each tuple of `states` with each sum up to `most`. Where they may give none, the tuples only
@@ -396,7 +397,7 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
   const fieldBack = lineIndex(groups);
   const back = (j: number): number => fieldBack(of[j]);
   const specs = specsReached(spec, line, ctx);
-  const bound = Math.max(...[...specs].map(wordsBound));
+  const bound = mostOf([...specs].map(wordsBound));
   const { variables, variableOf } = variablesOf(line, words, back, bound, tails);
   const fixedOf = (j: number): number => line[j].count?.min ?? 1;
   const grouped = new Set(line.flatMap((_, j) => (groups.some((g) => of[j] >= g.from && of[j] < g.from + g.n) ? [j] : [])));
@@ -465,7 +466,7 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
   const base = variables.map((v) => v.base);
   const hedged = (): number[] => {
     if (!variables.length) return [];
-    const first = Math.min(...variables.map((v) => back(v.words[0])));
+    const first = leastOf(variables.map((v) => back(v.words[0])));
     const roles = allRoles(at(base).parse);
     const operand = (r: ArgRole): boolean => r.role === 'operand' || r.role === 'fields' || (r.role === 'command' && !!r.item);
     return range(0, words.length).filter((k) => k >= first || operand(roles.get(k)!));

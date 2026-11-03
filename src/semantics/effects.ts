@@ -170,19 +170,37 @@ export function builtinRead(name: string, args: readonly SyntaxNode[], shell: Sh
  * alone).
  */
 export function wrapped(name: 'command' | 'builtin', args: readonly SyntaxNode[], shell: Shell | undefined): { name: string | undefined; args: SyntaxNode[] } | { lookup: true } {
-  const at = builtinParse(name, args, shell).roles.find((r) => r.role.role === 'command');
+  // (Only the words up to the command it runs matter, and they are few: asked again at each level of `command command …`.)
+  const isCommand = (r: ArgvParse['roles'][number]) => r.role.role === 'command';
+  const at = builtinParse(name, args.slice(0, WRAPPER_WORDS), shell).roles.find(isCommand) ?? (args.length > WRAPPER_WORDS ? builtinParse(name, args, shell).roles.find(isCommand) : undefined);
   return at ? { name: staticWordValue(args[at.word]), args: args.slice(at.word + 1) } : { lookup: true };
 }
+
+const MAX_WRAPPERS = 8;
+const WRAPPER_WORDS = 8;
 
 /**
  * The command name of the simple command `c` and its words, past `command` and `builtin` (undefined: not known);
  * `lookup`: `command -v`; `direct`: not behind them (so it may be a function).
  */
-export function commandWords(c: SyntaxNode, shell: Shell | undefined): { name: string | undefined; args: SyntaxNode[]; lookup: boolean; direct: boolean } {
+export function commandWords(c: SyntaxNode, shell: Shell | undefined): CommandWords {
+  // (Asked of a command several times, and each level of `command command …` reads all the words after it.)
+  let known = wordsOfCommand.get(c);
+  if (!known || known.shell !== shell) wordsOfCommand.set(c, (known = { shell, words: readCommandWords(c, shell) }));
+  return known.words;
+}
+
+interface CommandWords { name: string | undefined; args: SyntaxNode[]; lookup: boolean; direct: boolean }
+
+const wordsOfCommand = new WeakMap<SyntaxNode, { shell: Shell | undefined; words: CommandWords }>();
+
+function readCommandWords(c: SyntaxNode, shell: Shell | undefined): CommandWords {
   let name = commandName(c);
   let args = fields(c, 'argument');
   let direct = true;
-  while (name === 'command' || name === 'builtin') {
+  for (let level = 0; name === 'command' || name === 'builtin'; level++) {
+    // (Each level reads all the words after it: `command command …`, past where anyone writes it, is a command not known.)
+    if (level === MAX_WRAPPERS) return { name: undefined, args, lookup: false, direct };
     const inner = wrapped(name, args, shell);
     if ('lookup' in inner) return { name, args, lookup: true, direct };
     ({ name, args } = inner);

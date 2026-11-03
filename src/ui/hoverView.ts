@@ -15,6 +15,7 @@ import { levelColour, ThemeKind } from './palette';
 import { basisLine, basisMarkdown, colored, esc, ExamplePlacement, examplesMarkdown, labelMarkdown, lineSegments, noteBasis, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, valueMarkdown } from './render';
 import { ui } from './texts';
 import { partRow, rowPlain, type TokenRow } from './tokenRow';
+import { pushAll } from '../lists';
 
 /** What every view of the hover needs. */
 export interface HoverInput {
@@ -315,22 +316,22 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   out.push(`${md(r.text)}${r.refs?.length ? ` <small>${refsMarkdown(x.lang, r.refs)}</small>` : ''}${also(r)}${rests(r, x.lang)}`, '');
   if (r.value) out.push(valueHtml(r.value.said), '');
   const own = rows(shown(part), 1, () => false);
-  out.push(...table(own.rows, x));
+  pushAll(out, table(own.rows, x));
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
   if (command) {
     const c = rowOf(command);
     out.push(`<small>${muted(t.command)}${label(c, x.theme)}${badge(c)} — ${md(c.text)}</small>`, '');
   }
   const { about, others } = partNotes(x.ex, part, x.problems);
-  out.push(...notes(x.ex, x.lang, x.theme, about));
+  pushAll(out, notes(x.ex, x.lang, x.theme, about));
   // Its examples: those of the part and its own parts, else those of the nearest part around it.
   const placed = placeExamples(x.ex).items;
   const below = (tok: Token): Token[] => [tok, ...shown(tok).flatMap(below)];
   const mine = below(part).flatMap((c) => examplesOn(placed, c) ?? []);
   const examples = mine.length ? mine : chain.slice(0, -1).reverse().map((c) => examplesOn(placed, c)).find(Boolean);
-  if (examples?.length) out.push(...examplesMarkdown(examples, undefined, true, false, pictureSpans, wordsHtml));
+  if (examples?.length) pushAll(out, examplesMarkdown(examples, undefined, true, false, pictureSpans, wordsHtml));
   if (others.length) out.push('', lineLink(x, t.moreNotes(others.length)));
-  out.push(...footer(x, { where: true, hidden: own.hidden }));
+  pushAll(out, footer(x, { where: true, hidden: own.hidden }));
   return out.join('\n');
 }
 
@@ -355,7 +356,8 @@ export function wholeLine(x: HoverInput): string {
     out.push('<code>' + segs.map((g) => (g.kind ? colored(g.text, g.kind, theme) : esc(g.text))).join('') + '</code>', '');
   }
   if (!ex.items.length) {
-    out.push(...notes(ex, lang, theme), t.empty);
+    pushAll(out, notes(ex, lang, theme));
+    out.push(t.empty);
     return out.join('\n');
   }
   const placed = x.placement === 'bottom' ? undefined : placeExamples(ex);
@@ -380,13 +382,22 @@ export function wholeLine(x: HoverInput): string {
     const r = rows(shown(tok), 2, isBlock);
     hidden += r.hidden;
     const examples = placed && blockExamples(placed.items, tok, r.rows.map((row) => row.tok));
-    if (examples && x.placement === 'first') out.push(...examplesMarkdown(examples, undefined, false, false, pictureSpans, wordsHtml), '');
-    out.push(...table(r.rows, x));
-    if (examples && x.placement === 'last') out.push(...examplesMarkdown(examples, undefined, false, false, pictureSpans, wordsHtml), '');
+    if (examples && x.placement === 'first') {
+      pushAll(out, examplesMarkdown(examples, undefined, false, false, pictureSpans, wordsHtml));
+      out.push('');
+    }
+    pushAll(out, table(r.rows, x));
+    if (examples && x.placement === 'last') {
+      pushAll(out, examplesMarkdown(examples, undefined, false, false, pictureSpans, wordsHtml));
+      out.push('');
+    }
   }
-  if (ex.notes.length) out.push('---', '', ...notes(ex, lang, theme));
-  out.push(...examplesMarkdown(placed ? placed.examples : ex.examples, undefined, true, false, pictureSpans, wordsHtml));
-  out.push(...footer(x, { hidden }));
+  if (ex.notes.length) {
+    out.push('---', '');
+    pushAll(out, notes(ex, lang, theme));
+  }
+  pushAll(out, examplesMarkdown(placed ? placed.examples : ex.examples, undefined, true, false, pictureSpans, wordsHtml));
+  pushAll(out, footer(x, { hidden }));
   return out.join('\n');
 }
 
@@ -416,13 +427,16 @@ export function plainPartHover(ex: LineExplanation, chain: Token[], lang: Lang, 
   if (s?.also) out.push(`_${s.also}_`, '');
   if (r.value) out.push(pictureText(r.value.said.text), '');
   const kids = shown(part).map(rowOf);
-  if (kids.length) out.push(...kids.map((k) => `- ${flat(k)} — ${rowPlain(k)}${valueMarkdown(k.value, '  ')}${basisMarkdown(k.basis, lang, '  ')}`), '');
+  if (kids.length) {
+    pushAll(out, kids.map((k) => `- ${flat(k)} — ${rowPlain(k)}${valueMarkdown(k.value, '  ')}${basisMarkdown(k.basis, lang, '  ')}`));
+    out.push('');
+  }
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
   if (command) {
     const c = rowOf(command);
     out.push(`${t.command}${flat(c)} — ${rowPlain(c)}`, '');
   }
-  out.push(...plainNotes(ex, partNotes(ex, part).about, lang));
+  pushAll(out, plainNotes(ex, partNotes(ex, part).about, lang));
   out.push('---', '', whole);
   return out.join('\n');
 }

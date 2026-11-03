@@ -6,9 +6,9 @@ import { dialectIssues, type Shell } from '../dialect';
 import type { ReadingNode } from '../reading';
 import { descendants, type SyntaxTree } from '../syntax/tree';
 import { spanOf } from '../noteanchors';
-import { regionAt, regionShell, scriptTree } from './scripts';
+import { regionAt, regionShell, scriptTree, shellLines } from './scripts';
 import { fileRead } from '../semantics/env';
-import { shellState } from '../semantics/state';
+import { shellState, type StateModel } from '../semantics/state';
 import { statusModel } from '../semantics/status';
 import { batsFacts, batsTests } from '../bats';
 import type { ConventionId } from '../conventions';
@@ -19,6 +19,7 @@ import { batsTestLine } from './bats';
 import { batsCommentFacts } from './batstags';
 import { problemCodes } from '../linesentence';
 import { markTokens, sayInstead } from '../tokenmarks';
+import { pushAll } from '../lists';
 
 /**
  * Move every position in an explanation of the extracted shell text back to the original
@@ -40,7 +41,7 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     if (!code) return label;
     const at = sp.start;
     const to = span(sp);
-    const head = extracted.text.split('\n')[at.line].slice(at.character);
+    const head = shellLines(extracted)[at.line].slice(at.character);
     const one = sp.start.line === sp.end.line;
     const spanLength = one ? sp.end.character - at.character : Infinity;
     if (head.startsWith(label) && !label.endsWith('…') && spanLength > label.length) {
@@ -83,9 +84,9 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
   };
   // A note names a placeholder as the extracted text has it (`${SRC}`): in the file it is what it stands for (`$(SRC)`),
   // also in the problems made of the notes.
-  const shellLines = extracted.text.split('\n');
+  const lines = shellLines(extracted);
   const rows = [...new Set([ex.line, ...(ex.anchors ?? []).map((a) => a.span.start.line)])];
-  const names = rows.flatMap((l) => extracted.inserted[l].map(([a, b]) => [shellLines[l].slice(a, b), original[l].slice(extracted.maps[l][a], extracted.maps[l][b])]))
+  const names = rows.flatMap((l) => extracted.inserted[l].map(([a, b]) => [lines[l].slice(a, b), original[l].slice(extracted.maps[l][a], extracted.maps[l][b])]))
     .filter(([inShell, file]) => file && inShell !== file);
   const inFile = (text: string) => names.reduce((t, [inShell, file]) => t.split(inShell).join(file), text);
   const noteInFile = <N extends { text: string; body: string; head?: string }>(n: N): N => ({ ...n, text: inFile(n.text), body: inFile(n.body), ...(n.head ? { head: inFile(n.head) } : {}) });
@@ -132,12 +133,20 @@ const PIPEFAIL: FactSpec = { id: 'dockerfile-pipefail-missing', params: {} };
 function pipeWithoutPipefail(tree: SyntaxTree, region: ShellRegion, line: number, forced?: Shell): boolean {
   const shell = regionShell(region, forced);
   const model = shellState(tree, shell, { read: fileRead(tree.root, region.host) });
-  const statuses = statusModel(model, shell);
-  return descendants(tree.root, ['pipeline']).some((p) => {
-    const rule = statuses.status(p);
-    return p.children.some((c) => c.type === '|' && c.startPosition.row === line) && rule.kind === 'pipeline' && rule.pipefail === 'off';
-  });
+  // (Asked for each line of a region: read once.)
+  let rows = pipeRows.get(model);
+  if (!rows) {
+    const statuses = statusModel(model, shell);
+    rows = new Set(descendants(tree.root, ['pipeline']).filter((p) => {
+      const rule = statuses.status(p);
+      return rule.kind === 'pipeline' && rule.pipefail === 'off';
+    }).flatMap((p) => p.children.filter((c) => c.type === '|').map((c) => c.startPosition.row)));
+    pipeRows.set(model, rows);
+  }
+  return rows.has(line);
 }
+
+const pipeRows = new WeakMap<StateModel, Set<number>>();
 
 /**
  * The variables the host gives the shell code of `region` (`ShellRegion.provided`), and the names of the placeholders in
@@ -145,7 +154,16 @@ function pipeWithoutPipefail(tree: SyntaxTree, region: ShellRegion, line: number
  * before the shell runs, so bash never reads them as variables.
  */
 export function hostProvided(extracted: Extracted, region: ShellRegion): string[] {
-  const rows = extracted.text.split('\n');
+  // (Asked for each line of a region: read once.)
+  let names = providedByRegion.get(region);
+  if (!names) providedByRegion.set(region, (names = providedIn(extracted, region)));
+  return names;
+}
+
+const providedByRegion = new WeakMap<ShellRegion, string[]>();
+
+function providedIn(extracted: Extracted, region: ShellRegion): string[] {
+  const rows = shellLines(extracted);
   const names = extracted.inserted.flatMap((ranges, i) => ranges.flatMap(([from, to]) => [...rows[i].slice(from, to).matchAll(/\$\{?([A-Za-z_]\w*)/g)].map((m) => m[1])));
   return [...new Set([...(region.provided ?? []), ...names])];
 }
@@ -162,23 +180,23 @@ export function explainHostedLine(
   // (The catalog facts of the host go through `said`, like the analyzer's, so `notes.pitfalls` off leaves out their pitfalls.)
   const hostFacts: Fact[] = [];
   // (A warning the host says is the problem `code` of hostIssues.)
-  const spoken = (spec: FactSpec, code?: string) => { const f = said([factOf(lang, spec)], opts.pitfalls); hostFacts.push(...f); return f.map((x) => ({ ...noteData(x), code: code ?? x.code })); };
+  const spoken = (spec: FactSpec, code?: string) => { const f = said([factOf(lang, spec)], opts.pitfalls); pushAll(hostFacts, f); return f.map((x) => ({ ...noteData(x), code: code ?? x.code })); };
   const notes: Note[] = [...(region.notes ?? []).flatMap((n) => spoken(n.spec, n.code)), ...substitutionNotes(extracted, line, lang, opts.pitfalls, hostFacts)];
-  if (region.host.ci === 'github') notes.push(...githubFileNotes(original[line]).flatMap((spec) => spoken(spec)));
+  if (region.host.ci === 'github') pushAll(notes, githubFileNotes(original[line]).flatMap((spec) => spoken(spec)));
   if (region.warnPipefail && pipeWithoutPipefail(tree, region, line, shell)) {
-    notes.push(...spoken(PIPEFAIL, 'dockerPipefail'));
+    pushAll(notes, spoken(PIPEFAIL, 'dockerPipefail'));
   }
   // (The lines bats rewrites where bash then reads a function: not one inside a here-document or a string.)
   const tests = region.tests && batsTests(tree, { ...region, tests: region.tests });
   // (On their nodes, as the analyzer's: the hover and the problems read them there. The facts of a comment on the
   // line: on the comment, else on the function the line defines.)
-  const onRow = (types: string[]) => descendants(tree.root, types).find((d) => d.startPosition.row === line);
+  const onRow = (types: string[]) => descendants(tree.root, types, { from: line, to: line }).find((d) => d.startPosition.row === line);
   const found = tests ? [
     ...batsFacts(tree, region, tests, line, lang),
     ...batsCommentFacts(tree, original[line], line, tests.includes(line), lang).map((fact) => ({ fact, node: onRow(['comment']) ?? onRow(['function_definition']) })),
   ].filter((f) => said([f.fact], opts.pitfalls).length) : [];
-  notes.push(...found.map((f) => noteData(f.fact)));
-  hostFacts.push(...found.map((f) => f.fact));
+  pushAll(notes, found.map((f) => noteData(f.fact)));
+  pushAll(hostFacts, found.map((f) => f.fact));
   const ex = analyzer.explainLine(tree, line, regionShell(region, shell), {
     ...opts, host: region.host, ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}), ...(provided.length ? { hostProvided: provided } : {}),
     ...(region.noShell ? { noShell: region.noShell } : {}),
@@ -191,8 +209,8 @@ export function explainHostedLine(
   if (hostFacts.length) ex.facts = [...(ex.facts ?? []), ...hostFacts.map((f) => basisGate(f, opts.basis))];
   // (The facts bats adds on nodes of the line are about its tokens too.)
   if (tests) markTokens(ex.items, ex);
-  ex.notes.unshift(...notes.map((n) => n.text));
-  ex.noteInfo.unshift(...notes.map((n) => basisGate(n, opts.basis)));
+  ex.notes = [...notes.map((n) => n.text), ...ex.notes];
+  ex.noteInfo = [...notes.map((n) => basisGate(n, opts.basis)), ...ex.noteInfo];
   const out = remapExplanation(ex, extracted, original, lang);
   if (tests) batsTestLine(out, extracted, original, tests, lang);
   return out;

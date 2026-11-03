@@ -20,6 +20,7 @@ import { type WalkSource, wordIn } from '../words';
 import { redirectionMayFail, safeRedirect } from '../redirects';
 import { ArithError, changesWords, NAME, SUBSTITUTIONS } from './shared';
 import type { Walker } from './walker';
+import { pushAll } from '../../lists';
 
 const INTEGER_TESTS = new Set(['-eq', '-ne', '-lt', '-le', '-gt', '-ge']);
 
@@ -204,7 +205,7 @@ export class WalkConditions {
     for (const w of words) {
       const f = wordIn(w, st, this.values(st), 'fields', this.ifsFollowed(st));
       if (!f) return undefined;
-      args.push(...f);
+      pushAll(args, f);
     }
     if (closer && args.pop() !== closer) return 2;
     return testStatus(args, this.testEnv(st));

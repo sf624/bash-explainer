@@ -98,3 +98,14 @@ export function withinTrust(own: Trust, outer: Trust): Trust {
     fdsMayClose: own.fdsMayClose || outer.fdsMayClose,
   };
 }
+
+/** A `${…}` that arithmetic may paste: a value, an element, a length, or a default (`${x:-0}`). */
+export const PASTE = /^\$\{#?[A-Za-z_]\w*(?:\[[^\]]*\])?(?::?-[^{}$`'"]*)?\}/;
+/**
+ * How many trees of aliases expanded the scan reads from one command of the script (each alias in an alias's text
+ * may double them there); the commands of the script are not counted together.
+ */
+export const ALIAS_EXPANSIONS = 1000;
+/** How many texts of one alias with the aliases after it (6.6: a text ending with a blank) the scan reads at one command. */
+export const ALIAS_NEXT = 64;
+export const NO_NAMES: ReadonlySet<string> = new Set();

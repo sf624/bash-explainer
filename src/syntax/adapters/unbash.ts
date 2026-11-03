@@ -9,43 +9,27 @@ import { type BraceBuilder, bracePieces, type Range } from './braces';
 import { type Joined, nameBefore, prepared } from './continuations';
 import { extglobLike, NUMBER } from './extglob';
 import { attachedSubstitutions, type Children, scriptErrors as errorsOf } from './rereads';
-import { scanGap } from './tokens';
+import { BLANKS, DECLARATIONS, HORIZONTAL, IDENTIFIER, type Mut, NO_BRACES, PATTERN_PARTS, scanGap, WORDS } from './tokens';
+import { stackFull } from '../../failures';
 import { maskCarried } from '../../messages-levels';
 import { splitElement } from '../../staticword';
+import { leastOf, mostOf } from '../../lists';
 
-type Mut = {
-  -readonly [K in keyof SyntaxNode]: K extends 'children' | 'namedChildren' ? Mut[] : K extends 'parent' ? Mut | null : SyntaxNode[K];
-} & {
-  /** Where a node with a heredoc ends on its own line, before the body that lies after the lines that follow. */
-  lineEnd?: number;
-};
 
-// (The parser's own list, for the node it builds: the syntax layer does not import the semantic model's, src/semantics/effects.ts.)
-const DECLARATIONS = new Set(['declare', 'typeset', 'export', 'readonly', 'local']);
 type ArithCtx = 'cmd' | 'slice';
 /** A word part that is a node of its own, not a run of plain text. */
 type Part = Exclude<U.WordPart, U.LiteralPart | U.GlobPart | U.ExtendedGlobPart | U.BraceExpansionPart>;
 const PLAIN = new Set(['Literal', 'Glob', 'ExtendedGlob', 'BraceExpansion']);
-/** The roles of the words bash never brace-expands: patterns, the operands of `[[ ]]` and of `${x:-word}`, arithmetic. */
-const NO_BRACES = new Set(['pattern', 'case', 'casealt', 'regex', 'test', 'operand', 'arith', 'index']);
-/** What the pattern of ${a#…} may hold and still be one regex. */
-const WORDS = new Set(['word', 'number', 'string', 'concatenation']);
-const PATTERN_PARTS = new Set(['Literal', 'Glob', 'SimpleExpansion', 'ParameterExpansion']);
 const isPart = (p: U.WordPart): p is Part => !PLAIN.has(p.type);
 /** A part, or a bracket expression's parts that bash expands (`[$x]`, `["$x"].c`) between the text of its `[` and `]`. */
 const unbracket = (p: U.WordPart): readonly U.WordPart[] => (p.type === 'Glob' && p.kind === 'bracket' && p.parts.some(isPart) ? [{ type: 'Literal', pos: p.pos, end: p.pos + 1, text: '[', value: '[' }, ...p.parts, { type: 'Literal', pos: p.end - 1, end: p.end, text: ']', value: ']' }] : [p]);
-/** Blanks, line continuations and comments. */
-const BLANKS = /(?:\s|\\\n|#[^\n]*)*/y;
-/** Blanks that do not end a line, and line continuations. */
-const HORIZONTAL = /(?:[ \t]|\\\n)*/y;
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** unbash's walk of the children of a node, for ./rereads.ts (which reads the nodes by their shape). */
 const children = forEachChild as unknown as Children;
 const scriptErrors = (script: U.ParsedScript): U.ParseError[] => errorsOf(script, children);
 
 class Converter {
-  readonly errors: SyntaxError[] = [];
+  errors: SyntaxError[] = [];
   /** Where the `&` is of a `&>` or `&>>` whose target is a process substitution (`&> >(tee log)`); see `parseScript`. */
   private readonly bothOutputs = new Set<number>();
   /** Where the operator is of a process substitution that is part of a longer word (`a<(:)`); see `parseScript`. */
@@ -118,7 +102,7 @@ class Converter {
     // A node covers its children, whatever range its parser gave it.
     for (const k of kids) owner.endIndex = Math.max(owner.endIndex, k.endIndex);
     // A node whose last line ends before a heredoc body that one of its parts holds.
-    if (kids.some((k) => k.lineEnd !== undefined)) owner.lineEnd = Math.max(...kids.map((k) => k.lineEnd ?? k.endIndex));
+    if (kids.some((k) => k.lineEnd !== undefined)) owner.lineEnd = mostOf(kids.map((k) => k.lineEnd ?? k.endIndex));
     let at = owner.startIndex;
     const gaps: [number, number][] = [];
     for (const k of kids) {
@@ -168,9 +152,9 @@ class Converter {
     this.fill(root);
     this.unreadable(root, script);
     // The program starts at its first token: leading blanks are not part of it.
-    root.startIndex = Math.min(...root.children.map((c) => c.startIndex), this.text.length);
+    root.startIndex = leastOf([...root.children.map((c) => c.startIndex), this.text.length]);
     this.seal(root, null);
-    if (this.joins) this.errors.splice(0, Infinity, ...this.errors.map((e) => ({ ...e, ...this.joins!.span(e) })));
+    if (this.joins) this.errors = this.errors.map((e) => ({ ...e, ...this.joins!.span(e) }));
     this.errors.sort((x, y) => x.startIndex - y.startIndex || x.endIndex - y.endIndex);
     return { text: this.original, root, errors: this.errors, arithmetic: (owner, start, end) => this.arithmetic(owner as Mut, start, end) };
   }
@@ -473,7 +457,7 @@ class Converter {
     const r = this.node('redirected_statement', body.startIndex, Math.max(body.endIndex, end));
     this.add(r, body, 'body');
     for (const x of redirects) this.add(r, this.redirect(x), 'redirect');
-    r.endIndex = Math.max(r.endIndex, ...r.children.map((x) => x.endIndex));
+    r.endIndex = mostOf([r.endIndex, ...r.children.map((x) => x.endIndex)]);
     this.lineEnd(r, end);
     this.fill(r);
     return r;
@@ -482,7 +466,7 @@ class Converter {
   /** `r` ends with a heredoc's body, but its line ends where the last of its parts on that line does. */
   lineEnd(r: Mut, end: number): void {
     if (!r.children.some((x) => x.lineEnd !== undefined)) return;
-    r.lineEnd = Math.max(end, ...r.children.map((x) => x.lineEnd ?? x.endIndex));
+    r.lineEnd = mostOf([end, ...r.children.map((x) => x.lineEnd ?? x.endIndex)]);
   }
 
   /** A word of a command (added by `word`), a word that unbash read as an assignment, or a redirection. */
@@ -1372,16 +1356,31 @@ class Converter {
   }
 }
 
-/** The unbash adapter's parser. */
+/** The tree of `text` read as a script. */
+function treeOf(text: string): SyntaxTree {
+  text = maskCarried(text); // (The script's own U+FDD0 and U+FDD1 are masked, as the CRs below are: `maskCarried`.)
+  const { masked, carriageReturns, joins, script } = prepared(text, parse, children);
+  const tree = new Converter(joins ? joins.text : masked, new Set(carriageReturns), text, joins, script).run();
+  return carriageReturns.length ? { ...tree, carriageReturns } : tree;
+}
+
+/** A tree that reads nothing of `text`, and says why (`SyntaxTree.unread`). What it holds is a parse error, so a string read so makes nothing trusted (src/semantics/trust.ts). */
+export function unreadTree(text: string, why: NonNullable<SyntaxTree['unread']>): SyntaxTree {
+  return { ...treeOf(')'), text, unread: why };
+}
+
+/** The unbash adapter's parser. A text nested deeper than its stack gives a tree that says so: the parser keeps nothing from one text to the next. */
 // (The declaration shows as a branch that never runs: it is the getter tsx makes for the export.)
 /* c8 ignore next */
 export function createUnbashParser(): BashParser {
   return {
     parse(text: string): SyntaxTree {
-      text = maskCarried(text); // (The script's own U+FDD0 and U+FDD1 are masked, as the CRs below are: `maskCarried`.)
-      const { masked, carriageReturns, joins, script } = prepared(text, parse, children);
-      const tree = new Converter(joins ? joins.text : masked, new Set(carriageReturns), text, joins, script).run();
-      return carriageReturns.length ? { ...tree, carriageReturns } : tree;
+      try {
+        return treeOf(text);
+      } catch (e) {
+        if (!stackFull(e)) throw e;
+        return unreadTree(text, 'too-deep');
+      }
     },
   };
 }

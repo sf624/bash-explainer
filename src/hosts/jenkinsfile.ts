@@ -3,6 +3,7 @@ import { CI_PROVIDED, ciVariables } from '../dict/ciVariables';
 import type { RegionNote } from './index';
 import { LineOut, Builder } from './builder';
 import type { HostMeaning } from '../messages-hosts';
+import { pushAll } from '../lists';
 
 /**
  * The scripts of `sh` steps in a Jenkins pipeline: `sh 'cmd'`, `sh "…"`, `sh '''…'''`, `sh """…"""`,
@@ -11,7 +12,7 @@ import type { HostMeaning } from '../messages-hosts';
  */
 export function jenkinsfile(b: Builder): void {
   // (Jenkins sets its variables for every `sh` step: `BUILD_NUMBER`, `JOB_NAME`, `WORKSPACE`…)
-  b.provided.push(...CI_PROVIDED());
+  pushAll(b.provided, CI_PROVIDED());
   const start = /\bsh\s*\(?\s*(?:(?:label|returnStdout|returnStatus|encoding)\s*:\s*(?:'[^']*'|"[^"]*"|true|false)\s*,\s*)*(?:script\s*:\s*)?('''|"""|'|")/g;
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];

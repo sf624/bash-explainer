@@ -18,6 +18,7 @@ import { shellState } from './semantics/state';
 import type { HostRun } from './semantics/walk/host';
 import { field, isShebang, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
+import { pushAll } from './lists';
 
 /** What a span of the script is. A small, stable set: the web page has a class for each. */
 export type HighlightKind =
@@ -348,6 +349,7 @@ export function documentHighlight(doc: ShellDocument, opts: DocumentHighlightOpt
 
 function documentSpans(doc: ShellDocument, opts: DocumentHighlightOptions): LineSpan[] {
   const { tree, extracted } = doc;
+  if (tree.unread) return [];
   const forced = opts.shells?.forced;
   if (!extracted) {
     const starts = lineStarts(tree.text);
@@ -363,7 +365,7 @@ function documentSpans(doc: ShellDocument, opts: DocumentHighlightOptions): Line
     done.add(own);
     const starts = lineStarts(own.text);
     const range = opts.lines && offsetsOf(starts, own.text.length, opts.lines);
-    lines.push(...lineSpans(highlight(own, { range, shell: regionShell(region, forced), read: fileRead(own.root, region.host), ...(region.commands ? { host: region.commands } : {}), ...(region.run ? { run: region.run } : {}) }), own.text, starts));
+    pushAll(lines, lineSpans(highlight(own, { range, shell: regionShell(region, forced), read: fileRead(own.root, region.host), ...(region.commands ? { host: region.commands } : {}), ...(region.run ? { run: region.run } : {}) }), own.text, starts));
   }
   // (Each shell of a host file has lines of its own: put together, their spans are in order once sorted by line.)
   if (done.size > 1) lines.sort((a, b) => a.line - b.line || a.from - b.from);

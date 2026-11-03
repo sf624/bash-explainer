@@ -3,6 +3,7 @@ import type { BashVersion } from '../bashversion';
 import { IFS_ERRATIC, IFS_WHITESPACE } from '../semantics/chars';
 import { globExamples, globMatches } from './shellwords';
 import { parseOptions, Parsed, shortKeys, Unsupported } from './textfilters';
+import { pushAll } from '../lists';
 
 // ---------------------------------------------------------------- xargs
 
@@ -242,7 +243,7 @@ export function runRead(line: string, names: string[], opts: { ifs: string; raw:
       escape = true;
       buf.push(null);
     } else if (c === '\n') break;
-    else buf.push(...(c === '\x01' || c === '\x7f' ? [null, c] : [c]));
+    else pushAll(buf, (c === '\x01' || c === '\x7f' ? [null, c] : [c]));
   }
   if (escape) buf.pop();
   const isIfs = (c: Cell): boolean => c !== null && ifs.includes(c);

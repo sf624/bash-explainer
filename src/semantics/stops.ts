@@ -37,6 +37,8 @@ function mayFail(e: SyntaxNode, nounset: boolean, known: (e: SyntaxNode) => bool
 
 /** `mayFail` of each expansion, per model (the words of a statement ask for each other). */
 const failing = new WeakMap<StateModel, WeakMap<SyntaxNode, boolean>>();
+/** The expansions of each statement that may fail, per model. */
+const mayFailIn = new WeakMap<StateModel, WeakMap<SyntaxNode, SyntaxNode[]>>();
 
 /**
  * Whether another expansion of the statement that holds `part` may fail (`mayFail`), so that bash may not get to
@@ -58,5 +60,10 @@ export function mayStopAround(part: SyntaxNode, model: StateModel, known: (e: Sy
     return v;
   };
   const inside = (a: SyntaxNode, b: SyntaxNode): boolean => a.startIndex >= b.startIndex && a.endIndex <= b.endIndex;
-  return descendants(top, ['simple_expansion', 'expansion', 'arithmetic_expansion']).some((e) => !inside(e, part) && !inside(part, e) && statementOf(e) === top && fails(e));
+  // (Read once for a statement, whose words all ask: most have none.)
+  let byStatement = mayFailIn.get(model);
+  if (!byStatement) mayFailIn.set(model, (byStatement = new WeakMap()));
+  let list = byStatement.get(top);
+  if (!list) byStatement.set(top, (list = descendants(top, ['simple_expansion', 'expansion', 'arithmetic_expansion']).filter((e) => statementOf(e) === top && fails(e))));
+  return list.some((e) => !inside(e, part) && !inside(part, e));
 }

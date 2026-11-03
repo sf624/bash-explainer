@@ -48,6 +48,7 @@ import { wordFields } from '../semantics/words';
 import { receivedFields, writtenPlain } from '../semantics/fieldshape';
 import { wordValue } from './values';
 import { braceExpansion, bracesHere } from './words';
+import { pushAll } from '../lists';
 
 /**
  * Strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). `subject`: the left side of
@@ -448,7 +449,7 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
       const own = exampleWords(cx, [a], !!spec?.prints);
       const made = own.some((w) => w.value === undefined) && !bracesApply(cx, a) ? madeUpWords(cx, cmd, a) : undefined;
       if (!made) return own.map((w) => w.value);
-      values.push(...made.values);
+      pushAll(values, made.values);
       if (made.values.length && regex.includes(k)) inside = true;
       return made.words;
     });
@@ -722,7 +723,7 @@ function setInFunctions(cx: Explainer): ReadonlySet<string> {
   const stack = [...cx.state.definitions.functions.values()].flat();
   for (let n = stack.pop(); n; n = stack.pop()) {
     for (const name of cx.state.writes(n)) names.add(name);
-    stack.push(...n.namedChildren);
+    pushAll(stack, n.namedChildren);
   }
   memo.set(cx.root, names);
   return names;

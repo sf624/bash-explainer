@@ -2,6 +2,7 @@ import { sedEscapeAt } from '../ctlchars';
 import { ordinal, type Lang } from '../i18n';
 import { explainRegex } from './regex';
 import { EmbeddedToken, pick, shift } from './types';
+import { pushAll } from '../lists';
 
 type S = (ja: string, en: string) => string;
 
@@ -162,7 +163,7 @@ class SedParser {
     const range = this.addressRange();
     let target = s('すべての行', 'every line');
     if (range) {
-      children.push(...range.tokens);
+      pushAll(children, range.tokens);
       target = range.text;
     }
     this.skipSpaces();

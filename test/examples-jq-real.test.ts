@@ -1,7 +1,8 @@
 import * as assert from 'assert';
 import { run } from './support/run';
 import { execFileSync, spawnSync } from 'child_process';
-import { Json, jqExample, runJq, toJson } from '../src/examples/jq';
+import { Json, runJq, toJson } from '../src/examples/jq';
+import { jqExample } from '../src/examples/jqsample';
 
 /** Outputs of the real jq (compact), or an error marker. */
 function realJq(filter: string, input: Json, args: string[] = []): string[] | 'error' {

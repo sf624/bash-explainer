@@ -36,6 +36,7 @@ import { parser, WalkAgain } from './walk/shared';
 import { type HostCall, type HostRun, hostRunKey } from './walk/host';
 import { Walker } from './walk/walker';
 import { childStart, restrictedStart } from './walk/child';
+import { stackFull } from '../failures';
 
 export {
   attribute, type AliasState, type Attribute, refTarget, type CommandEntry, defaultOn, type ErrexitWhy, exportedValue, type FunctionState, hashOutcomes, type HashOutcome, merge, NameMap, option,
@@ -288,7 +289,7 @@ export class Scripts implements StringTrees {
     const parsed = this.parse(words);
     let out: NestedScript | NotRead;
     if (!parsed) out = { why: 'not-static' };
-    else if (depth > NESTED_DEPTH) out = { why: 'too-deep' };
+    else if (depth > NESTED_DEPTH || parsed.tree.unread) out = { why: 'too-deep' };
     else {
       const { text, tree } = parsed;
       const scripts = this;
@@ -576,8 +577,10 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     initial = start(w);
     end = w.program(tree.root, initial);
   } catch (e) {
-    /* c8 ignore next -- only `WalkAgain` is thrown out of a walk on purpose */
-    if (!(e instanceof WalkAgain)) throw e;
+    // (Only `WalkAgain` is thrown out of a walk on purpose, and the stack runs out on a script too deep: walked again, as below.)
+    if (stackFull(e)) w.found = 'the script nests too deep to walk';
+    /* c8 ignore next */
+    else if (!(e instanceof WalkAgain)) throw e;
   }
   // (A call not walked took less as changed than its body changes: walked again, with what each body changes. Each
   // walk again finds more; past `REWALKS`, nothing is trusted.)
@@ -602,7 +605,15 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
   if (found) {
     w = new Walker(shell, posix, scripts, BLIND, host, run, undefined, version);
     initial = start(w);
-    end = w.program(tree.root, initial);
+    try {
+      end = w.program(tree.root, initial);
+    } catch (e) {
+      if (!stackFull(e)) throw e;
+      // (A script that nests deeper than a walk can follow: a model that knows nothing of it, and the lines say what they can.)
+      w = new Walker(shell, posix, scripts, BLIND, host, run, undefined, version);
+      initial = w.opaque(start(w));
+      end = w.program(parser().parse('').root, initial);
+    }
   }
   // (A walk that found a reason to trust nothing on the way trusts no function either.)
   const closed = (name: string): boolean => !found && trust.closed(name);

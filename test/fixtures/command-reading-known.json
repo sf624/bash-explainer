@@ -31,7 +31,7 @@
     {"file":"src/idioms.ts","fn":"exitTrap","kind":"dash-prefix","count":2,"to":"commandRead","reason":"`trap`'s `--` and an action that is an option"},
     {"file":"src/idioms.ts","fn":"isPwd","kind":"option-literal","count":1,"to":"commandRead","reason":"`pwd -P`, by text"},
     {"file":"src/idioms.ts","fn":"IDIOMS","kind":"option-literal","count":1,"to":"commandRead","reason":"`find -print0`, by text"},
-    {"file":"src/pitfalls.ts","fn":"runCommands","kind":"interpret-call","count":2,"to":"commandRead","reason":"the reading of a command's words for the style checks"},
+    {"file":"src/pitfalls.ts","fn":"commandsOf","kind":"interpret-call","count":2,"to":"commandRead","reason":"the reading of a command's words for the style checks"},
     {"file":"src/pitfalls.ts","fn":"specRuns","kind":"interpret-call","count":1,"to":"commandRead","reason":"the reading of a command's words for the style checks"},
     {"file":"src/pitfalls.ts","fn":"pitfallFindings","kind":"option-regex","count":2,"to":"commandRead","reason":"`rm -r`, `read -r`, and whether a command replaces the shell, by regex or interpret"},
     {"file":"src/pitfalls.ts","fn":"pitfallFindings","kind":"interpret-call","count":1,"to":"commandRead","reason":"`rm -r`, `read -r`, and whether a command replaces the shell, by regex or interpret"},

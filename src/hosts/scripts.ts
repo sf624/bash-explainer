@@ -46,10 +46,28 @@ export function scriptTree(tree: SyntaxTree, extracted: Extracted, region: Shell
   return own;
 }
 
+/** The lines of the shell text of a host document: asked for each token of each line, read once. */
+export function shellLines(extracted: Extracted): readonly string[] {
+  let lines = linesOf.get(extracted);
+  if (!lines) linesOf.set(extracted, (lines = extracted.text.split('\n')));
+  return lines;
+}
+
+const linesOf = new WeakMap<Extracted, readonly string[]>();
+
 /** The region of a host document that `line` is in (none: the line is the host's own text, not shell code). */
 export function regionAt(extracted: Extracted, line: number): ShellRegion | undefined {
-  return extracted.regions.find((r) => r.start <= line && line <= r.end);
+  // (Asked for each line, and a long file has as many regions: the first that holds each line, read once.)
+  let byLine = regionsByLine.get(extracted);
+  if (!byLine) {
+    byLine = new Map();
+    for (const r of [...extracted.regions].reverse()) for (let l = r.start; l <= r.end; l++) byLine.set(l, r);
+    regionsByLine.set(extracted, byLine);
+  }
+  return byLine.get(line);
 }
+
+const regionsByLine = new WeakMap<Extracted, Map<number, ShellRegion>>();
 
 /**
  * The shell a region's code is explained and checked as: the one chosen (`forced`, the setting or the panel), else the

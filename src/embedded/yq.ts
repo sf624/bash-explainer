@@ -4,6 +4,7 @@ import { lex, ParseError } from './jq';
 import { JQ_ONLY, YQ_ONLY } from './yqfuncs';
 import { wordTable } from '../wordtable';
 import { JQ_STYLE, YQ_NAMES } from '../messages-yq';
+import { pushAll } from '../lists';
 
 export { YQ_NAMES };
 
@@ -202,7 +203,7 @@ export function judgeYq(words: (string | undefined)[], ctx: { doc?: string; host
     flavor = (['mikefarah4', 'kislyuk', 'mikefarah3'] as YqFlavor[]).reduce((a, b) => (score(b) > score(a) ? b : a));
     decided = true;
   }
-  reasons.push(...clues.filter((c) => c.flavor === flavor).map((c) => c.why));
+  pushAll(reasons, clues.filter((c) => c.flavor === flavor).map((c) => c.why));
 
   const compat = {} as YqVerdict['compat'];
   for (const f of ['mikefarah4', 'kislyuk', 'mikefarah3'] as YqFlavor[]) {

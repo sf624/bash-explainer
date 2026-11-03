@@ -73,7 +73,7 @@ export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line
     const { extracted } = doc;
     // (What a host file adds around the line's own explanation has the same boundary: src/failures.ts.)
     // (The budget of the line is by the whole document's size, not that of the part it is in, which has a tree of its own.)
-    return contained(`line ${line + 1}`, () => withinLine(doc.tree.root, () => explainHostedLine(analyzer, doc.tree, extracted, doc.lines, line, lang, shells.forced, opts)), () => analyzer.notExplained(doc.tree, line))
+    return contained(`line ${line + 1}`, () => withinLine(doc.tree.root, () => explainHostedLine(analyzer, doc.tree, extracted, doc.lines, line, lang, shells.forced, opts)), (e) => analyzer.notExplained(doc.tree, line, undefined, e))
       ?? { line, summary: '', items: [], context: [], notes: [], noteInfo: [], examples: [] };
   }
   return analyzer.explainLine(doc.tree, line, shellOf(shells), opts);
@@ -323,6 +323,10 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bas
 }
 
 function issuesOf(doc: ShellDocument, lang: Lang, shells: Shells, version?: BashVersion): DocumentIssue[] {
+  if (doc.tree.unread) {
+    const said = fact(lang, 'file-not-read', { why: doc.tree.unread });
+    return [{ code: said.code, severity: severityOf(said.level), message: problemText(said, lang), startLine: 0, startCol: 0, endLine: 0, endCol: doc.lines[0].length }];
+  }
   if (doc.extracted) {
     return doc.extracted.regions.length ? hostIssues(doc.tree, doc.extracted, doc.lines, lang, shells.forced, version) : [];
   }

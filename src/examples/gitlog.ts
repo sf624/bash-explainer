@@ -1,4 +1,5 @@
 // Formats sample commits the way `git log --pretty=… --date=…` would, for worked examples.
+import { chargeSize } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
 export interface SampleCommit {
@@ -236,6 +237,7 @@ function fit(v: string, dir: string, width: number, trunc?: string): string {
   }
   if (v.length >= width) return v;
   const space = width - v.length;
+  chargeSize(space);
   if (dir === '<') return v + ' '.repeat(space);
   if (dir === '><') return ' '.repeat(Math.floor(space / 2)) + v + ' '.repeat(space - Math.floor(space / 2));
   return ' '.repeat(space) + v;

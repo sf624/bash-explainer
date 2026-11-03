@@ -11,6 +11,7 @@ import { interactive } from './commands';
 import { missSections } from './rerun';
 import { type Operand, testCases } from './runtime';
 import { globExamples, globMatches, type GlobMode, type GlobOpts, hasGlobstar } from './shellwords';
+import { pushAll } from '../lists';
 
 /**
  * The names a glob matches and some it does not. `opts`: the glob options in effect (`globstar` is dropped when the
@@ -50,8 +51,8 @@ export function patternExample(texts: (string | undefined)[], opts: GlobOpts, la
   for (const t of all) {
     const ex = globExamples(t, 'value', opts);
     if (!ex) return undefined;
-    matching.push(...ex.matching.slice(0, all.length > 1 ? 1 : 3));
-    candidates.push(...ex.nonMatching);
+    pushAll(matching, ex.matching.slice(0, all.length > 1 ? 1 : 3));
+    pushAll(candidates, ex.nonMatching);
   }
   const nonMatching = [...new Set(candidates)].filter((v) => !all.some((t) => globMatches(t, v, 'value', opts))).slice(0, 2);
   const lines = [[...new Set(matching)], nonMatching];

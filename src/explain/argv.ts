@@ -49,6 +49,7 @@ import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './s
 import { testTokens } from './tests';
 import { inSubshell } from './where';
 import { braceWord, elementWord, globChildren, globNotes, plainText, tilde, tildeNote, valueNote, word } from './words';
+import { pushAll } from '../lists';
 
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
 function jobSpec(text: string): { ja: string; en: string } | undefined {
@@ -179,7 +180,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             ? cx.text('subcommand-argument-no-shell', { command: parse.command })
             : cx.text('subcommand-argument-shell', { command: parse.command });
           out.push(withReadings(cx, cx.tok(a, 'subcommand', cx.text('subcommand-label', { command: role.parse.command }) + cx.t(role.spec.summary) + note), role.readings, word, nodes));
-          out.push(...render(cx, role.parse, role.spec, nodes, nodes.slice(word + 1, role.parse.end)));
+          pushAll(out, render(cx, role.parse, role.spec, nodes, nodes.slice(word + 1, role.parse.end)));
           break;
         }
         case 'command':
@@ -211,7 +212,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
           break;
         case 'expression':
           // find's expression, read as a whole from its first word.
-          if (word === parse.expression) out.push(...findExpression(cx, nodes.slice(word, parse.end), spec.expressionSpec!));
+          if (word === parse.expression) pushAll(out, findExpression(cx, nodes.slice(word, parse.end), spec.expressionSpec!));
           break;
         case 'fields': {
           // (Each field that is an operand has its number: `p='-- a'; set $p d`, `a` is `$1` and `d` `$2`.)
@@ -949,7 +950,7 @@ function findExpression(cx: Explainer, all: SyntaxNode[], spec: CommandSpec): To
       case 'list': {
         const ops = new Set(n.ops);
         const toks = n.children.flatMap(build);
-        for (const o of ops) toks.push(...opTok(o, cx.s(...operatorTexts(n.type))));
+        for (const o of ops) pushAll(toks, opTok(o, cx.s(...operatorTexts(n.type))));
         return sortTokens(toks);
       }
     }

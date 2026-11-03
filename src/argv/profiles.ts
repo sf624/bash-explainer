@@ -5,6 +5,7 @@
 // complete), or past them a text without conditions. `interpret` gives them to the roles of the words (`readings`).
 import type { ArgRole, ArgvParse } from './interpret';
 import { allRoles, type Coordinate, type Outcome, type ReadingsTable, type WordAt } from './readings';
+import { mostOf } from '../lists';
 
 /** The most clauses a word says (section 2.5, the budget): past them, its other classes are one text without conditions. */
 export const CLAUSES = 4;
@@ -154,7 +155,7 @@ function profileOf(t: ReadingsTable, counts: readonly number[], read: readonly W
   if (orMore && groups.length && groups.at(-1)!.to === counts.at(-1)) groups.at(-1)!.orMore = true;
   // (By place: the role of each word is that of every own count read that has it.)
   const lists = entries.flatMap((e) => (e.roles ? [e.roles] : []));
-  const longest = Math.max(0, ...lists.map((r) => r.length));
+  const longest = mostOf([0, ...lists.map((r) => r.length)]);
   const places = Array.from({ length: longest }, (_, i) => lists.find((r) => r.length > i)![i]);
   const byPlace = lists.every((rs) => rs.every((r, i) => r.key === places[i].key));
   return { key, counts, entries, ...(byPlace ? { places } : {}), groups, orMore };

@@ -1,3 +1,4 @@
+import type { SyntaxNode } from '../tree';
 // The token scanner of the unbash adapter. unbash gives no position for comments, keywords and
 // operators (`then`, `fi`, `&&`, `;`…): they lie in the text between the children it does position.
 // `scanGap` reads such a stretch of text and gives them back, with their ranges. It skips what is not
@@ -109,3 +110,23 @@ export function scanGap(
   }
   return out;
 }
+
+export type Mut = {
+  -readonly [K in keyof SyntaxNode]: K extends 'children' | 'namedChildren' ? Mut[] : K extends 'parent' ? Mut | null : SyntaxNode[K];
+} & {
+  /** Where a node with a heredoc ends on its own line, before the body that lies after the lines that follow. */
+  lineEnd?: number;
+};
+
+// (The parser's own list, for the node it builds: the syntax layer does not import the semantic model's, src/semantics/effects.ts.)
+export const DECLARATIONS = new Set(['declare', 'typeset', 'export', 'readonly', 'local']);
+/** The roles of the words bash never brace-expands: patterns, the operands of `[[ ]]` and of `${x:-word}`, arithmetic. */
+export const NO_BRACES = new Set(['pattern', 'case', 'casealt', 'regex', 'test', 'operand', 'arith', 'index']);
+/** What the pattern of ${a#…} may hold and still be one regex. */
+export const WORDS = new Set(['word', 'number', 'string', 'concatenation']);
+export const PATTERN_PARTS = new Set(['Literal', 'Glob', 'SimpleExpansion', 'ParameterExpansion']);
+/** Blanks, line continuations and comments. */
+export const BLANKS = /(?:\s|\\\n|#[^\n]*)*/y;
+/** Blanks that do not end a line, and line continuations. */
+export const HORIZONTAL = /(?:[ \t]|\\\n)*/y;
+export const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;

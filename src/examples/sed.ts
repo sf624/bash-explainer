@@ -3,6 +3,7 @@ import { JsRegex, posixExec, posixMatches, regexExamples, toJsRegex } from './re
 import { charge, scriptRegex } from './regexguard';
 import type { LineMarks } from './marks';
 import { Unsupported as RunnerUnsupported } from './unsupported';
+import { mostOf, pushAll } from '../lists';
 
 type Addr =
   | { kind: 'line'; n: number }
@@ -385,7 +386,7 @@ export function runSed(script: string, input: string[], given: { quiet: boolean;
       const after: string[] = [];
       const ps = exec(cmds, line, k + 1, k === input.length - 1, st, after, opts.quiet);
       if (ps !== undefined && (!opts.quiet && !st.quit || st.printQuit)) st.out.push(ps);
-      st.out.push(...after);
+      pushAll(st.out, after);
     });
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
@@ -471,7 +472,7 @@ export function sedExample(script: string, opts: { quiet: boolean; extended: boo
   }
   // y needs its characters in the input.
   for (const c of walk(cmds)) if (c.name === 'y' && c.from) lines.push(`${c.from} ${c.from}`);
-  const maxLine = Math.max(0, ...collectLines(cmds));
+  const maxLine = mostOf([0, ...collectLines(cmds)]);
   if (maxLine > 8) return undefined;
   const hasAddress = walk(cmds).some((c) => c.a1);
   const numericOnly = hasAddress && walk(cmds).every((c) => (!c.a1 || c.a1.kind !== 're') && (!c.a2 || c.a2.kind !== 're'));

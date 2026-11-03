@@ -17,13 +17,14 @@ import {
   anon, caseItem, caseStatement, comment, contextLabel, coprocStatement, cStyleFor, doGroup, elifClause, elseClause, forStatement, functionDef,
   group, ifStatement, missingKeyword, negated, pipeline, subshell, whileStatement,
 } from './compound';
-import type { Explainer } from './context';
+import { type Explainer, memoKey } from './context';
 import { ansiCString } from './embedded';
 import { andOrList, commandList } from './lists';
 import { has, skeletal } from './nodes';
 import { fileRedirect, heredoc, herestring, redirected, wholeRedirect } from './redirections';
 import { withValue } from './values';
 import { arithmeticCommand, binary, parenthesized, postfix, regexNode, ternary, test, unary } from './tests';
+import { pushAll } from '../lists';
 import {
   arithmeticExpansion, arithNumber, array, braceWord, casePattern, concatenation, globToken, number, rawString, simpleExpansion, string,
   subscript, variable, word,
@@ -36,8 +37,25 @@ const FRAMES: Readonly<Partial<Record<SyntaxNode['type'], NonNullable<Token['fra
   subshell: 'compound', compound_statement: 'compound', extended_test: 'compound', arithmetic_command: 'compound', function_definition: 'compound',
 };
 
+/**
+ * The token of a node that holds a script's words, once for each place it is read from (a `${…}` reads what is nested in it for its
+ * summary and again for its parts: two walks a level would be 2^n in the depth). What the first walk said stays said.
+ */
+const WALKED = memoKey<{ token: Token; command: Explainer['command']; line: number | null }>('walked');
+const WALKED_ONCE = new Set<SyntaxNode['type']>(['expansion', 'command_substitution', 'process_substitution']);
+
 /** A node's token, with the sections of the manual it is about when it has none of its own. */
 export function explain(cx: Explainer, n: SyntaxNode): Token {
+  if (!WALKED_ONCE.has(n.type)) return explained(cx, n);
+  const memo = cx.memo(WALKED);
+  const had = memo.get(n);
+  if (had && had.command === cx.command && had.line === cx.line) return had.token;
+  const token = explained(cx, n);
+  memo.set(n, { token, command: cx.command, line: cx.line });
+  return token;
+}
+
+function explained(cx: Explainer, n: SyntaxNode): Token {
   const t = claim(explainNode(cx, n), 'shell');
   const frame = FRAMES[n.type];
   if (frame) t.frame = frame;
@@ -135,7 +153,7 @@ export function flatten(cx: Explainer, n: SyntaxNode): Token[] {
     if (has(patterns, c)) out.push(casePattern(cx, c));
     else if (has(around, c)) out.push(wholeRedirect(cx, c, field(n, 'body')!));
     else if (patterns.length && (c.type === '|' || c.type === ')' || c.type === '(')) continue;
-    else if (c.named) out.push(...cx.sub(c));
+    else if (c.named) pushAll(out, cx.sub(c));
     else {
       const k = anon(cx, c);
       if (k) out.push(k);

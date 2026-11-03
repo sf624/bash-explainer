@@ -3,11 +3,13 @@
  * (seq, basename, dirname), simulated with GNU semantics in the C locale.
  */
 import type { LineMarks } from './marks';
+import { chargeSize, chargeWalk } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
 import { type ArgRole, type ArgvParse, interpret } from '../argv/interpret';
 import { lookupCommand } from '../dict/aliases';
 import { wordTable } from '../wordtable';
+import { mostOf, pushAll } from '../lists';
 
 export class Unsupported extends RunnerUnsupported {}
 
@@ -260,7 +262,8 @@ export function runUniq(words: (string | undefined)[], input: string[]): string[
   const width = value(p, 'w') !== undefined ? Number(value(p, 'w')) : Infinity;
   const key = (l: string) => {
     let s = l;
-    for (let i = 0; i < skipF; i++) s = s.replace(/^[ \t]*[^ \t]*/, '');
+    // (Past the last field there is nothing left to skip, however large the number.)
+    for (let i = 0; i < skipF && s; i++) s = s.replace(/^[ \t]*[^ \t]*/, '');
     s = s.slice(skipC).slice(0, width);
     return has(p, 'i') ? s.toLowerCase() : s;
   };
@@ -274,7 +277,7 @@ export function runUniq(words: (string | undefined)[], input: string[]): string[
   for (const g of groups) {
     if (has(p, 'd') && g.length < 2) continue;
     if (has(p, 'u') && g.length > 1) continue;
-    if (has(p, 'D')) { if (g.length > 1) out.push(...g); continue; }
+    if (has(p, 'D')) { if (g.length > 1) pushAll(out, g); continue; }
     out.push(has(p, 'c') ? `${String(g.length).padStart(7)} ${g[0]}` : g[0]);
   }
   return out;
@@ -366,6 +369,9 @@ export function cutMarks(words: (string | undefined)[], input: string[]): LineMa
 
 // ---------------------------------------------------------------- tr
 
+/** What a character of a set of tr costs, against a step of the walk: an array's slot, and it is searched for each character read. */
+const SET_ITEM = 8;
+
 const TR_CLASSES: Record<string, string> = wordTable({
   alpha: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', lower: 'abcdefghijklmnopqrstuvwxyz',
   digit: '0123456789', alnum: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', space: '\t\n\v\f\r ', blank: '\t ',
@@ -396,7 +402,7 @@ export function expandSet(set: string, fillTo?: number, info: SetInfo = { indefi
     if (cls) {
       if (!TR_CLASSES[cls[1]]) throw new Unsupported(`class ${cls[1]}`);
       if (/^(upper|lower)$/.test(cls[1])) info.cases.push(out.length);
-      out.push(...TR_CLASSES[cls[1]]);
+      pushAll(out, [...TR_CLASSES[cls[1]]]);
       i += cls[0].length;
       continue;
     }
@@ -406,7 +412,8 @@ export function expandSet(set: string, fillTo?: number, info: SetInfo = { indefi
       // (A count with a leading 0 is octal; 0 and none fill the set. tr refuses a count that is not a number.)
       if (!/^(0[0-7]*|[1-9]\d{0,5})?$/.test(rep[2])) throw new Unsupported('repeat count');
       const n = rep[2].startsWith('0') ? parseInt(rep[2], 8) : Number(rep[2]);
-      if (n > 0) out.push(...Array(n).fill(c));
+      chargeSize(SET_ITEM * n);
+      if (n > 0) pushAll(out, Array<string>(n).fill(c));
       else { fillAt = out.length; fillChar = c; info.indefinite = true; }
       i += rep[0].length;
       continue;
@@ -424,8 +431,10 @@ export function expandSet(set: string, fillTo?: number, info: SetInfo = { indefi
     out.push(c);
     i += n;
   }
-  if (fillAt >= 0) out.splice(fillAt, 0, ...Array(Math.max(0, (fillTo ?? out.length) - out.length)).fill(fillChar));
-  return out;
+  if (fillAt < 0) return out;
+  // (At most what the other set has: its own characters, charged where they were made.)
+  const fill = Array<string>(Math.max(0, (fillTo ?? out.length) - out.length)).fill(fillChar);
+  return [...out.slice(0, fillAt), ...fill, ...out.slice(fillAt)];
 }
 
 /** The options of tr the simulation follows. */
@@ -446,6 +455,8 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
   // (tr refuses `[c*]` in string1, whatever the options.)
   if (info1.indefinite) throw new Unsupported('[c*] in set1');
   const in1 = (c: string) => (comp ? !set1.includes(c) : set1.includes(c));
+  // (Each character read looks in the sets.)
+  chargeWalk(text.length * (set1.length + 1));
   let out = [...text];
   let squeezeSet: (c: string) => boolean = () => false;
   if (del) {
@@ -464,6 +475,7 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
     let to = expandSet(sets[1]!, from.length, info2);
     // tr: "when not truncating set1, string2 must be non-empty".
     if (!to.length) throw new Unsupported('empty set2');
+    chargeWalk(text.length * to.length);
     // (Refused by tr: an equivalence class or a class but upper and lower in string2; string2 ending in a class when it is the shorter; with -c, a class in
     // string1 unless string2 maps every character to one and -t is not given.)
     if (/\[=|\[:(?!(upper|lower):\])/.test(sets[1]!)) throw new Unsupported('class in set2');
@@ -584,7 +596,7 @@ export function runSeq(words: (string | undefined)[]): string[] {
   let lines = out;
   if (has(p, 'w')) {
     // The width includes a minus sign: `seq -w -2 2` gives -2 -1 00 01 02.
-    const width = Math.max(...out.map((s) => s.length), z.toFixed(digits).length);
+    const width = mostOf([...out.map((s) => s.length), z.toFixed(digits).length]);
     lines = out.map((s) => (s.startsWith('-') ? '-' + s.slice(1).padStart(width - 1, '0') : s.padStart(width, '0')));
   }
   const sep = value(p, 's');
@@ -640,6 +652,12 @@ const SORT_EXTRA: Record<string, string[]> = {
   f: ['Date', 'elder', 'Fig', 'grape', 'Honey', 'kiwi', 'Lime', 'mango'],
   s: ['grape', 'melon', 'peach', 'lemon', 'plum', 'kiwi', 'mango', 'fig'],
 };
+/**
+ * The most columns of a made-up input: what shows an option. A field past them is empty in every row, as the real tool says (`cut -f 1000000000`,
+ * `sort -k 1000000000`), so that a number of any size asks for no more.
+ */
+const MAX_SAMPLE_COLUMNS = 64;
+
 const EXTRA_NAMES = ['dave', 'erin', 'frank', 'grace', 'heidi', 'ivan', 'judy', 'kate', 'leo', 'mia', 'noah', 'olga'];
 const EXTRA_CITIES = ['nagoya', 'sapporo', 'kobe', 'nara', 'fukuoka', 'sendai', 'chiba', 'kawasaki', 'hiroshima', 'akita', 'saga', 'kochi'];
 
@@ -668,8 +686,8 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
           if (more) return [...(unique ? vals : vals.slice(0, 4)), ...SORT_EXTRA[kindOf(global)].slice(0, more)];
           return unique ? vals : vals.slice(0, 4);
         }
-        const cols = Math.max(...keys.map((k) => Math.max(k.sf, k.ef)), 2);
-        const kinds = Array.from({ length: cols }, (_, c) => {
+        const cols = mostOf([...keys.map((k) => Math.max(k.sf, k.ef)), 2]);
+        const kinds = Array.from({ length: Math.min(cols, MAX_SAMPLE_COLUMNS) }, (_, c) => {
           const k = keys.find((x) => x.sf === c + 1);
           return k ? kindOf(k.opts) : 's';
         });
@@ -689,10 +707,10 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
       case 'cut': {
         const p = parseOptions('cut', words, CUT);
         const list = value(p, 'f') ?? value(p, 'c') ?? value(p, 'b') ?? '1';
-        const max = Math.max(...list.split(/[,-]/).filter(Boolean).map(Number));
+        const max = mostOf(list.split(/[,-]/).filter(Boolean).map(Number));
         if (value(p, 'f') !== undefined) {
           const d = value(p, 'd') ?? '\t';
-          const n = Math.max(max + 1, 4);
+          const n = Math.min(Math.max(max + 1, 4), MAX_SAMPLE_COLUMNS);
           const rows = [
             ['1', 'alice', 'tokyo', '30', 'admin', 'x', 'y', 'z'],
             ['2', 'bob', 'osaka', '25', 'user', 'x', 'y', 'z'],

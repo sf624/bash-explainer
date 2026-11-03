@@ -1350,7 +1350,7 @@ export function awkExample(src: string, opts: AwkRunOptions = {}): AwkExample | 
     const lines: string[] = [];
     for (const re of u.regexes.get(0) ?? []) {
       const ex = regexExamples(re, 2);
-      if (ex) lines.push(...ex.matching.filter((m) => !m.startsWith('abc ')).slice(0, 1));
+      if (ex) for (const m of ex.matching.filter((x) => !x.startsWith('abc ')).slice(0, 1)) lines.push(m);
     }
     // Lines of different lengths also exercise conditions such as length($0) > 10.
     input = ['line one', ...lines, 'a somewhat longer line of text', 'line two'];
