@@ -12,7 +12,7 @@ import { undo } from '@codemirror/commands';
 import { ViewUpdate } from '@codemirror/view';
 import { Analyzer, LineExplanation } from '../src/analyzer';
 import type { AutoShell } from '../src/dialect';
-import { autoShellAt, DocumentIssue, explainDocumentLine, ShellDocument, Shells } from '../src/document';
+import { autoShellAt, DocumentIssue, explainDocumentLine, issueFilter, ShellDocument, Shells } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
 import { problemLevels } from '../src/levels';
@@ -250,7 +250,7 @@ function updatePanel(): void {
   const update = panelUpdate({
     lang, explanation, file: scriptName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
     choice: choice(), detected: auto, placement: settings['examples.placement'],
-    animations: settings['panel.animations'], issues: problemsShown, web: true, state: panel.panelState(),
+    animations: settings['panel.animations'], issues: problemsShown, shown: issueFilter(doc, settings, 'web'), web: true, state: panel.panelState(),
   });
   panel.show(update, line);
   yqLine = { options: update.dialect.yqs, value: update.dialect.yq };

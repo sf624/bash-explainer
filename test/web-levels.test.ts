@@ -35,8 +35,8 @@ describe('the web page: the levels of the notes', function () {
       })`) as string[][];
       // (In the box, the level's word says it, and the icon has no name; a plain note's icon has one.)
       assert.deepStrictEqual(notes.map((n) => n.slice(0, 4)), [
-        ['note problem level-error', 'error', 'Error', ',,true'], ['note problem level-warning', 'warning', 'Warning', ',,true'],
-        ['note problem level-info', 'info', 'Information', ',,true'], ['note level-note', 'info', '', 'img,Note,'],
+        ['note problem level-error', 'error', 'Error', ',,true'], ['note problem level-warning', 'warning', 'Pitfall', ',,true'],
+        ['note problem level-info', 'info', 'Caveat', ',,true'], ['note level-note', 'info', '', 'img,Note,'],
       ]);
       assert.deepStrictEqual(notes.slice(0, 3).map((n) => n.slice(4)), [[rgb(error), rgb(error)], [rgb(warning), rgb(warning)], [rgb(info), rgb(info)]]);
       // The panel's copy of the line underlines the problems the editor shows, each in its level's colour.

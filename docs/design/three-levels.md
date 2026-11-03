@@ -42,7 +42,7 @@ Four Errors rest on an assumed system, not on every system. They are kept for th
 - For `sh`: `/bin/sh` is dash, as on Debian and Ubuntu (on Fedora it is bash, where `[[` works).
 - For `sudo` and a path only root writes: the user is not root.
 - For CRLF line ends: the file is run directly, as its shebang says. Under `bash file`, `echo hi` still runs (with a CR in its output); it is the shebang and the keywords (`then`, `fi`) that fail.
-- For `shebang-env-one-argument` (`#!/usr/bin/env bash -e`): the kernel gives env the rest of the line as one argument, as Linux does ("On Linux", the text says). macOS splits it, and the line works there.
+- For `shebang-env-one-argument` (`#!/usr/bin/env bash -e`): the kernel gives env the rest of the line as one argument, as Linux does ("On Linux", the text says). macOS splits it, and the line works there. The texts of `shebang-env-one-argument`, `shebang-env-loop` and `shebang-env-string-refused` state the condition, as `crlf`'s does: they fail "run directly as a program", and `bash file` ignores the line (the kernel, checked 2026-11-04: status 127, a loop that never ends, status 125; `bash file` runs the script).
 
 How to apply it:
 

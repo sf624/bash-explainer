@@ -9,7 +9,7 @@ import { Fix, fixFor, rewriteFix } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues, regionAt, regionShell, type ShellRegion } from './hosts';
 import { Lang } from './i18n';
 import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
-import { conventionOf, fact, isProblemNote, problemText, severityOf } from './messages';
+import { conventionOf, fact, isProblemNote, type Note, problemText, severityOf } from './messages';
 import { PROBLEM_LEVELS } from './messages-levels';
 import { RESERVED } from './semantics/names';
 import { type NestedScript, nestedScripts } from './semantics/nested';
@@ -154,7 +154,7 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
       for (const { span, rewrite } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
         const at = span.start.line;
         const issue: DocumentIssue = {
-          code: n.code!, severity: severityOf(n.level), message: problemText(n, lang), head: n.head!, ...(alwaysFails(n.level) ? {} : { pitfall: true as const }), ...conventionOf(n),
+          code: n.code!, severity: severityOf(n.level), message: problemText(n, lang), head: n.head!, ...pitfallOf(n), ...conventionOf(n),
           ...(rewrite ? { fixes: rewrite.map((r) => rewriteFix(r, place)) } : {}),
           startLine: at, startCol: span.start.character, endLine: at, endCol: span.end.line === at ? span.end.character : doc.lines[at].length,
         };
@@ -227,6 +227,27 @@ function placeOf(starts: readonly number[], i: number): Place {
   return { line, col: i - starts[line] };
 }
 
+/** The `pitfall` field of the problem a note is: advice (`diagnostics.pitfalls` turns it off), where an error is a bug. */
+export const pitfallOf = (n: Pick<Note, 'level'>): { pitfall?: true } => (alwaysFails(n.level) ? {} : { pitfall: true });
+
+/** Whether `diagnostics.enabled` is off, where the surface has the setting. */
+const diagnosticsOff = (settings: Settings, surface: Surface): boolean => settingSpec('diagnostics.enabled')!.surfaces.includes(surface) && !settings['diagnostics.enabled'];
+
+/**
+ * Which problems of `doc` the settings show (`diagnosticsFor`'s `shown`): none while `diagnostics.enabled` is off, nor in the
+ * shell code of another file while `diagnostics.embedded` is off; none with a code in `diagnostics.ignore` or turned off by a
+ * `# bash-explainer disable=` comment on its line or in the file; the pitfalls of the explanations only with
+ * `diagnostics.pitfalls`. The Problems lists read the list through it, and so does the panel's box of the line's
+ * problems (`isListed`), which has no list to read when it is drawn: one rule for what is a problem.
+ */
+export type IssueFilter = (issue: { code: string; startLine: number; pitfall?: true }) => boolean;
+export function issueFilter(doc: ShellDocument | undefined, settings: Settings, surface: Surface): IssueFilter {
+  const off = diagnosticsOff(settings, surface) || (doc?.extracted !== undefined && !settings['diagnostics.embedded']);
+  const ignore = new Set(settings['diagnostics.ignore']);
+  const directives = doc ? parseDirectives(doc.lines) : undefined;
+  return (i) => !off && !ignore.has(i.code) && !(directives && suppressed(directives, i.startLine, i.code)) && (!i.pitfall || settings['diagnostics.pitfalls']);
+}
+
 /**
  * The problems of a document (`open` gives it, `shellsOf` its shells) under the settings: `shown` (none while `diagnostics.enabled` is off, where the
  * surface has it; none in the shell code of another file while `diagnostics.embedded` is off; without the
@@ -257,15 +278,12 @@ export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: 
     return doc ? [...list, ...notesOf(doc, pitfalls)] : list;
   };
   const all = () => (found ??= withNotes(true));
-  const disabled = settingSpec('diagnostics.enabled')!.surfaces.includes(surface) && !settings['diagnostics.enabled'];
-  const ignore = new Set(settings['diagnostics.ignore']);
   const shown = () => {
-    if (disabled) return [];
+    if (diagnosticsOff(settings, surface)) return [];
     // (With `notes.pitfalls` off the explanations leave out their pitfalls, so the problems do too, but not their errors;
-    // with `diagnostics.pitfalls` off, the problems leave out the pitfalls of the explanations, not their errors.)
+    // with `diagnostics.pitfalls` off, the problems leave out the pitfalls of the explanations, not their errors: `issueFilter`.)
     const notes = settings['notes.pitfalls'] ? all() : withNotes(false);
-    const list = settings['diagnostics.pitfalls'] ? notes : notes.filter((i) => !i.pitfall);
-    return doc?.extracted !== undefined && !settings['diagnostics.embedded'] ? [] : list.filter((i) => !ignore.has(i.code));
+    return notes.filter(issueFilter(doc, settings, surface));
   };
   // (The faded ranges are no problems: they come apart from `shown`, where the surface draws them, if `hints.deadCode` is on.)
   const faded = () => (settingSpec('hints.deadCode')!.surfaces.includes(surface) && settings['hints.deadCode'] && (doc ??= open()) ? deadCodeHints(doc, lang, shellsOf(doc), settings['diagnostics.ignore'], settings.bashVersion) : []);

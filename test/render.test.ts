@@ -7,7 +7,7 @@ import { examplesMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, 
 import { partHover, plainPartHover, wholeLine } from '../src/ui/hoverView';
 import { readingNodes } from '../src/reading';
 import { lineMarks, panelUpdate } from '../src/ui/panelView';
-import type { DocumentIssue } from '../src/document';
+import { documentIssues, type DocumentIssue } from '../src/document';
 import type { NoteLevel } from '../src/messages';
 import { said } from './support/shells';
 
@@ -65,6 +65,8 @@ describe('the levels of the notes', () => {
   // A plain fact, a caveat and a pitfall, in the order found.
   const src = 'exit 300; read line; source lib.sh';
   const ex = () => new Analyzer('en').explainLine(parser.parse(src), 0);
+  // (The problems the editor lists: the box shows those.)
+  const problemsOf = (text: string, lang: 'en' | 'ja') => documentIssues({ lines: text.split('\n'), tree: parser.parse(text) }, lang, {});
   const notes = (md: string) => md.split('\n').filter((l) => l.startsWith('> '));
 
   it('puts the warnings first, then the information, then the other notes, each in the order found', () => {
@@ -86,21 +88,21 @@ describe('the levels of the notes', () => {
   });
 
   it('gives the panel each note with its level, its word and the rest, warnings first', () => {
-    const msg = panelUpdate({ lang: 'en', explanation: ex(), file: 'a.sh', line: 0, lineText: src, choice: {}, placement: 'first', animations: true });
+    const msg = panelUpdate({ lang: 'en', explanation: ex(), file: 'a.sh', line: 0, lineText: src, choice: {}, placement: 'first', animations: true, issues: problemsOf(src, 'en') });
     // (The problems go in the box, the other notes under it.)
     assert.deepStrictEqual(msg.problems.map((n) => [n.level, n.label, n.body.slice(0, 8)]), [['warning', 'Pitfall:', '`source '], ['info', 'Caveat:', 'without ']]);
     assert.deepStrictEqual(msg.notes.map((n) => [n.level, n.label, n.body.slice(0, 8)]), [['note', '', 'An exit ']]);
     assert.deepStrictEqual(msg.notes[0].refs, ['3.7.5']);
     // (Each with its level's look from the level table: the class, the icon, and the word or, for a plain note, the icon's name for a screen reader.)
-    assert.deepStrictEqual(msg.problems.map((n) => [n.className, n.icon, n.word]), [['level-warning', 'warning', 'Warning'], ['level-info', 'info', 'Information']]);
+    assert.deepStrictEqual(msg.problems.map((n) => [n.className, n.icon, n.word]), [['level-warning', 'warning', 'Pitfall'], ['level-info', 'info', 'Caveat']]);
     assert.deepStrictEqual(msg.notes.map((n) => [n.className, n.icon, n.iconName]), [['level-note', 'info', 'Note']]);
-    assert.deepStrictEqual(msg.marks, []);
+    assert.deepStrictEqual(msg.marks.map((m) => [m.className, m.from, m.to]), [['level-info', 10, 19], ['level-warning', 28, 34]]);
     // An error first, with its own look, in both languages.
     for (const lang of ['en', 'ja'] as const) {
       const line = '[ -f a; read line';
-      const err = panelUpdate({ lang, explanation: new Analyzer(lang).explainLine(parser.parse(line), 0), file: 'a.sh', line: 0, lineText: line, choice: {}, placement: 'first', animations: true });
+      const err = panelUpdate({ lang, explanation: new Analyzer(lang).explainLine(parser.parse(line), 0), file: 'a.sh', line: 0, lineText: line, choice: {}, placement: 'first', animations: true, issues: problemsOf(line, lang) });
       assert.deepStrictEqual(err.problems.map((n) => [n.className, n.icon, n.word, n.label]), [
-        ['level-error', 'error', lang === 'en' ? 'Error' : 'エラー', lang === 'en' ? 'Error:' : 'エラー:'], ['level-info', 'info', lang === 'en' ? 'Information' : '情報', lang === 'en' ? 'Caveat:' : '注意:'],
+        ['level-error', 'error', lang === 'en' ? 'Error' : 'エラー', lang === 'en' ? 'Error:' : 'エラー:'], ['level-info', 'info', lang === 'en' ? 'Caveat' : '注意', lang === 'en' ? 'Caveat:' : '注意:'],
       ]);
     }
   });

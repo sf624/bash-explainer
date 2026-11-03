@@ -5,11 +5,10 @@ import { autoShellText } from '../messages-shell';
 import { YQ_NAMES } from '../embedded/yq';
 import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
-import type { DocumentIssue, ShellDocument } from '../document';
+import type { DocumentIssue, IssueFilter, ShellDocument } from '../document';
 import { LEVELS, problemLevel } from '../levels';
-import { isProblemNote } from '../messages';
 import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, readingWithBasis } from './render';
-import { boxProblems, problemsAround } from './panelProblems';
+import { boxProblems, isListed, problemsAround } from './panelProblems';
 import { panelRows } from './panelRows';
 import { ui } from './texts';
 import { reference, referenceLabel } from '../references';
@@ -136,6 +135,11 @@ export interface PanelLine {
   animations: boolean;
   /** The document's problems: the line's squiggles (`lineMarks`), and the pointers to those on the lines around it (`problemsAround`). */
   issues?: readonly DocumentIssue[];
+  /**
+   * What the settings, the file's comments and `diagnostics.ignore` let through as a problem (`issueFilter`, src/document.ts): the box of
+   * the line's problems keeps the problem notes it lets through, the others stay notes. Without it, all of them are problems.
+   */
+  shown?: IssueFilter;
   /** The web page's panel, whose links open in a new tab (VS Code opens them in the browser). */
   web?: boolean;
   /** The view and step chosen, for the view control (`viewControl`). */
@@ -181,7 +185,9 @@ export function panelUpdate(p: PanelLine) {
   const t = ui[lang];
   const tp = t.panel;
   const { reading, items, ...explanation } = p.placement === 'bottom' ? ex : placeExamples(ex);
-  const box = boxProblems(ex, items, lang);
+  const issues = p.issues ?? [];
+  const shown = p.shown ?? (() => true);
+  const box = boxProblems(ex, items, lang, shown);
   return {
     type: 'update',
     // (The page's language: the web page's panel has none of its own, and the styles follow it, `:lang(ja)`.)
@@ -219,17 +225,17 @@ export function panelUpdate(p: PanelLine) {
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
     // The box "Problems on this line" (src/ui/panelProblems.ts), and the problems of the constructs around it.
     problems: box,
-    around: problemsAround(ex, p.issues ?? [], box, lang),
+    around: problemsAround(ex, issues, box, lang),
     // The other notes as drawn: each with its level's look (its class, its icon and the icon's name, from the
     // level table, src/levels.ts) and the word after its mark (src/messages.ts), and, where it rests on bash's
     // behaviour rather than the manual, its chip and try-it (`noteBasis`, docs/design/basis.md).
-    notes: notesByLevel(ex).filter((n) => !isProblemNote(n)).map(({ text, level, label, body }) => {
+    notes: notesByLevel(ex).filter((n) => !isListed(ex, n, shown)).map(({ text, level, label, body }) => {
       const basis = noteBasis(ex, text, lang);
       const { className, codicon, name } = LEVELS[level];
       // (A note that is no problem is a fact of the catalog, which has its sections.)
       return { level, className, icon: codicon, iconName: name[lang], label, body, refs: noteRefs(ex, text)!, ...(basis ? { basis } : {}) };
     }),
-    marks: lineMarks(p.issues ?? [], p.line),
+    marks: lineMarks(issues, p.line),
     emptyMessage: t.empty,
     settingsLabel: t.settings,
   };

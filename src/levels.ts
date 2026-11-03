@@ -169,6 +169,13 @@ export const SEVERITIES: Readonly<Record<Severity, SeverityMapping>> = {
   hint: { level: 'note', vscode: 3, lsp: 4, faded: true, sarif: 'note', github: 'notice', codemirror: 'hint', word: 'hint', count: 'hints', fails: 'never' },
 };
 
+/**
+ * The word a problem of `level` starts with, as the panel's box and pointers name it: the word of the notes below ("Pitfall:",
+ * "Caveat:", "Error:") without its colon, so that a problem and its "More" call the level one thing. `name` ("Warning",
+ * "Information") stays the level's name for a screen reader, the Problems lists and the Key. (A plain note has no word.)
+ */
+export const levelWord = (level: NoteLevel, lang: Lang): string => LEVELS[level].word[lang].replace(/:\s*$/, '');
+
 /** The severity of a problem for a note of `level`. */
 export function severityOf(level: NoteLevel): ProblemSeverity {
   return LEVELS[level].severity;

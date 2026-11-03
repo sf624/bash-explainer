@@ -54,7 +54,7 @@ export const ui = {
       inShort: 'ひとことで',
       // (The box of the line's problems: src/ui/panelProblems.ts.)
       problems: {
-        title: 'この行の問題', more: '詳しく', fix: '修正案', toRow: '解説の行へ移動', toProblem: 'この行の問題へ移動',
+        title: 'この行の問題', more: '詳しく', fix: '修正案', toRow: '解説の行へ移動', toggleMore: '詳しい説明を開閉', toProblem: 'この行の問題へ移動',
         onLine: '行 {n} の{word}', toLine: '行 {n} へ移動',
       },
       // (What a screen reader hears between the reading of a worked example's highlighted part and the part itself.)
@@ -191,7 +191,7 @@ export const ui = {
       inShort: 'In short',
       // (The box of the line's problems: src/ui/panelProblems.ts.)
       problems: {
-        title: 'Problems on this line', more: 'More', fix: 'Fix', toRow: 'Go to its row', toProblem: 'Go to the problem',
+        title: 'Problems on this line', more: 'More', fix: 'Fix', toRow: 'Go to its row', toggleMore: 'Show or hide the details', toProblem: 'Go to the problem',
         onLine: '{word} on line {n}', toLine: 'Go to line {n}',
       },
       saidSep: ': ',

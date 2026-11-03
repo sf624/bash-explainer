@@ -67,8 +67,8 @@ describe('the VS Code panel: the levels of the notes', function () {
     // (In the box, each icon has no name, and is hidden from a screen reader: the level's word says it. A plain note's icon has its name.)
     assert.deepStrictEqual(n.map((x) => [x.level, x.icon, x.name, x.label]), [
       ['note problem level-error', 'error', null, 'Error'],
-      ['note problem level-warning', 'warning', null, 'Warning'],
-      ['note problem level-info', 'info', null, 'Information'],
+      ['note problem level-warning', 'warning', null, 'Pitfall'],
+      ['note problem level-info', 'info', null, 'Caveat'],
       ['note level-note', 'info', 'Note', ''],
     ]);
     assert.strictEqual(await page.locator('#problems .level-error svg.note-icon').first().getAttribute('aria-hidden'), 'true');
@@ -78,7 +78,7 @@ describe('the VS Code panel: the levels of the notes', function () {
     // The word is bold.
     assert.strictEqual(await page.locator('#problems .note-label').first().evaluate((e) => e.tagName), 'STRONG');
     const ja = await open('dark', 'ja');
-    assert.deepStrictEqual((await notes(ja)).map((x) => [x.name, x.label]), [[null, 'エラー'], [null, '警告'], [null, '情報'], ['補足', '']]);
+    assert.deepStrictEqual((await notes(ja)).map((x) => [x.name, x.label]), [[null, 'エラー'], [null, '落とし穴'], [null, '注意'], ['補足', '']]);
     assert.deepStrictEqual([...page.errors, ...ja.errors], []);
     await page.close();
     await ja.close();
@@ -110,7 +110,7 @@ describe('the VS Code panel: the levels of the notes', function () {
     const page = await open('dark', 'en', true);
     const [e, w, i, note] = await notes(page);
     assert.deepStrictEqual([e.icon, w.icon, i.icon, note.icon], ['error', 'warning', 'info', 'info']);
-    assert.deepStrictEqual([e.label, w.label, i.label], ['Error', 'Warning', 'Information']);
+    assert.deepStrictEqual([e.label, w.label, i.label], ['Error', 'Pitfall', 'Caveat']);
     assert.deepStrictEqual([e.style, w.style, i.style], ['double', 'dashed', 'solid']);
     // (The icons and the words in the system's text colour, as the rest of the text.)
     const text = await page.evaluate(`getComputedStyle(document.querySelector('.note-text')).color`);

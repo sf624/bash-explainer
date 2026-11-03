@@ -35,7 +35,7 @@ export const FACT_HEADS: { [K in ProblemFactId]: (p: Params<K>) => Head } = {
       ? [`\`${word}\` は数でないので、\`exit\` はエラーを出して終了ステータス 2 で終わる。`, `\`${word}\` is no number, so \`exit\` reports an error and exits with status 2.`]
       : [`\`${word}\` は数でないので、\`exit\` はエラーを出し、シェルは続く。`, `\`${word}\` is no number, so \`exit\` reports an error, and the shell goes on.`]),
   'declaration-masks-status': ({ kw, v }) => [`\`${kw} ${v}=$(…)\` は \`$(…)\` の中の失敗を隠す。`, `\`${kw} ${v}=$(…)\` hides a failure inside \`$(…)\`.`],
-  'pipefail-missing': ({ last }) => [`\`set -o pipefail\` が無いので、\`${last}\` より前の失敗では \`set -e\` で止まらない。`, `Without \`set -o pipefail\`, \`set -e\` does not stop on a failure before \`${last}\`.`],
+  'pipefail-missing': ({ last }) => [`\`set -o pipefail\` がないので、\`${last}\` より前の失敗では \`set -e\` で止まらない。`, `Without \`set -o pipefail\`, \`set -e\` does not stop on a failure before \`${last}\`.`],
   'function-last-test-returns-status': ({ name }) => [`\`&&\` の左側が失敗すると、\`${name}\` は 0 以外を返す。`, `When the left side of \`&&\` fails, \`${name}\` returns a non-zero status.`],
   'function-last-test-stops-script': ({ name }) => [`\`&&\` の左側が失敗すると、\`${name}\` の呼び出しで \`set -e\` がスクリプトを止める。`, `When the left side of \`&&\` fails, \`set -e\` stops the script at the call of \`${name}\`.`],
   'script-last-test-returns-status': ({ left }) => [`\`${left}\` が失敗すると、スクリプトは 0 以外の終了ステータスで終わる。`, `When \`${left}\` fails, the script ends with a non-zero status.`],
@@ -45,7 +45,7 @@ export const FACT_HEADS: { [K in ProblemFactId]: (p: Params<K>) => Head } = {
     fragment: [`スクリプトとして実行すると、\`${left}\` が失敗しても終了ステータス 0 で終わる。`, `Run as a script, it still ends with status 0 if \`${left}\` fails.`],
     errexit: [`\`${left}\` が失敗しても、\`set -e\` はスクリプトを止めない。`, `If \`${left}\` fails, \`set -e\` does not stop the script.`],
   } satisfies Record<typeof where, Head>)[where],
-  'keyword-needs-separator': ({ kw }) => [`\`${kw}\` の前に \`;\` か改行が無いので、構文エラーになる。`, `\`${kw}\` has no \`;\` or newline before it: a syntax error.`],
+  'keyword-needs-separator': ({ kw }) => [`\`${kw}\` の前に \`;\` か改行がないので、構文エラーになる。`, `\`${kw}\` has no \`;\` or newline before it: a syntax error.`],
   'bracket-missing-close': () => ['`[` の最後の引数が `]` でないので、条件を評価せずに失敗する。', '`[` has no `]` as its last argument, so it fails without testing anything.'],
   'bracket-close-glued': ({ word }) => [`\`${word}\` の \`]\` は単語の一部なので、\`[\` は条件を評価せずに失敗する。`, `The \`]\` in \`${word}\` is part of the word, so \`[\` fails without testing anything.`],
   'test-malformed': ({ name }) => [`\`${name}\` はこの引数を条件式として読めないので、失敗する。`, `\`${name}\` cannot read these arguments as a condition, so it fails.`],
@@ -88,8 +88,8 @@ export const FACT_HEADS: { [K in ProblemFactId]: (p: Params<K>) => Head } = {
   'globstar-not-found': ({ on }) => [`\`${on}\` をほかの場所で実行していなければ、\`**\` は1階層しか一致しない。`, `\`**\` matches one level only unless \`${on}\` runs elsewhere.`],
   'globstar-unsupported': ({ shell }) => [`${shell} には globstar がないので、\`**\` は1階層しか一致しない。`, `${shell} has no globstar, so \`**\` matches one level only.`],
   'variable-not-in-remote-shell': ({ v, unread, sent }) => (unread || sent
-    ? [`リモートのシェルには \`${v}\` が無いことがある。`, `The remote shell may not have \`${v}\`.`]
-    : [`リモートのシェルには \`${v}\` が無い。`, `The remote shell does not have \`${v}\`.`]),
+    ? [`リモートのシェルには \`${v}\` がないことがある。`, `The remote shell may not have \`${v}\`.`]
+    : [`リモートのシェルには \`${v}\` がない。`, `The remote shell does not have \`${v}\`.`]),
   'variable-not-passed-by-wrapper': ({ v, via }) => [`\`${via}\` は \`${v}\` を新しいシェルに渡さない。`, `\`${via}\` does not pass \`${v}\` to the new shell.`],
   'variable-not-exported': ({ v, environment, array, unread }) => (array
     ? [`\`${v}\` は配列で、配列はエクスポートできないので、新しいシェルでは空になる。`, `\`${v}\` is an array, which bash cannot export, so it is empty in the new shell.`]
@@ -98,17 +98,17 @@ export const FACT_HEADS: { [K in ProblemFactId]: (p: Params<K>) => Head } = {
       : environment || unread
         ? [`\`${v}\` はエクスポートされていないので、新しいシェルでは空になることがある。`, `\`${v}\` is not exported, so it may be empty in the new shell.`]
         : [`\`${v}\` はエクスポートされていないので、新しいシェルでは空になる。`, `\`${v}\` is not exported, so it is empty in the new shell.`]),
-  'function-not-in-container': ({ name }) => [`コンテナの中には、このスクリプトの関数 \`${name}\` が無い。`, `The container does not have this script's function \`${name}\`.`],
+  'function-not-in-container': ({ name }) => [`コンテナの中には、このスクリプトの関数 \`${name}\` がない。`, `The container does not have this script's function \`${name}\`.`],
   'builtin-or-function-as-program': ({ via, name, isFn }) => (isFn
     ? [`\`${via}\` は \`${name}\` を別のプログラムとして起動するので、シェルの関数は実行できない。`, `\`${via}\` starts \`${name}\` as a program, so it cannot run a shell function.`]
     : [`\`${via}\` は \`${name}\` を別のプログラムとして起動するので、シェルの組み込みコマンドは実行できない。`, `\`${via}\` starts \`${name}\` as a program, so it cannot run a shell builtin.`]),
   'ssh-local-expansion': ({ risky }) => [`\`ssh\` に渡す前に、手元のシェルが \`${risky}\` を展開する。`, `The local shell expands \`${risky}\` before \`ssh\` sends the command.`],
-  'function-not-on-remote': ({ name }) => [`リモートのシェルには、このスクリプトの関数 \`${name}\` が無い。`, `The remote shell does not have this script's function \`${name}\`.`],
-  'function-not-in-new-shell-blocked': ({ via, fn }) => [`\`${via}\` の新しいシェルには、\`export -f\` をしても関数 \`${fn}\` が無い。`, `The new shell of \`${via}\` does not have the function \`${fn}\`, even with \`export -f\`.`],
-  'function-not-in-new-shell': ({ via, fn }) => [`\`${via}\` の新しいシェルには、このスクリプトの関数 \`${fn}\` が無い。`, `The new shell of \`${via}\` does not have this script's function \`${fn}\`.`],
-  'function-not-imported': ({ shell, fn }) => [`${shell} は bash がエクスポートした関数を読まないので、\`${fn}\` が無い。`, `${shell} does not read the functions bash exports, so \`${fn}\` is not there.`],
-  'function-not-in-new-shell-export': ({ via, fn }) => [`\`export -f\` が無いと、\`${via}\` の新しいシェルには関数 \`${fn}\` が無い。`, `Without \`export -f\`, the new shell of \`${via}\` does not have the function \`${fn}\`.`],
-  'function-not-imported-sh': ({ fn }) => [`sh はエクスポートした関数を読まないことがあるので、\`${fn}\` が無いことがある。`, `sh may not read exported functions, so \`${fn}\` may not be there.`],
+  'function-not-on-remote': ({ name }) => [`リモートのシェルには、このスクリプトの関数 \`${name}\` がない。`, `The remote shell does not have this script's function \`${name}\`.`],
+  'function-not-in-new-shell-blocked': ({ via, fn }) => [`\`${via}\` の新しいシェルには、\`export -f\` をしても関数 \`${fn}\` がない。`, `The new shell of \`${via}\` does not have the function \`${fn}\`, even with \`export -f\`.`],
+  'function-not-in-new-shell': ({ via, fn }) => [`\`${via}\` の新しいシェルには、このスクリプトの関数 \`${fn}\` がない。`, `The new shell of \`${via}\` does not have this script's function \`${fn}\`.`],
+  'function-not-imported': ({ shell, fn }) => [`${shell} は bash がエクスポートした関数を読まないので、\`${fn}\` がない。`, `${shell} does not read the functions bash exports, so \`${fn}\` is not there.`],
+  'function-not-in-new-shell-export': ({ via, fn }) => [`\`export -f\` がないと、\`${via}\` の新しいシェルには関数 \`${fn}\` がない。`, `Without \`export -f\`, the new shell of \`${via}\` does not have the function \`${fn}\`.`],
+  'function-not-imported-sh': ({ fn }) => [`sh はエクスポートした関数を読まないことがあるので、\`${fn}\` がないことがある。`, `sh may not read exported functions, so \`${fn}\` may not be there.`],
   'function-shadowed-by-program': ({ name }) => [`このスクリプトの関数ではなく、プログラム \`${name}\` が実行される。`, `The program \`${name}\` runs, not this script's function.`],
   'wrapper-assignment-expanded-first': ({ use, via, v }) => [`\`${via}\` が \`${v}\` を設定する前に、今のシェルが \`${use}\` を展開する。`, `The current shell expands \`${use}\` before \`${via}\` sets \`${v}\`.`],
   'pipeline-subshell-variable': ({ used, partial }) => (partial
@@ -147,7 +147,7 @@ export const FACT_HEADS: { [K in ProblemFactId]: (p: Params<K>) => Head } = {
   'regex-backslash-dropped': ({ list }) => [`\`[[ =~ ]]\` の右辺の ${list} はバックスラッシュが消え、正規表現の演算子にならない。`, `In \`[[ =~ ]]\`, ${list} loses its backslash and is no regex operator.`],
   'distro-alias-in-script': ({ name, what }) => [`\`${name}\` は対話シェル用の${what.ja}で、コマンドではない。`, `\`${name}\` is ${what.en} for interactive shells, not a command.`],
   'dockerfile-pipefail-missing': () => ['パイプの途中のコマンドが失敗しても、RUN は成功してビルドが続く。', 'If a command in the middle of the pipe fails, RUN still succeeds and the build goes on.'],
-  'python-string-without-shell': () => ['shell=True が無いと、文字列全体が1つのプログラム名になる。', 'Without shell=True the whole string is one program name.'],
+  'python-string-without-shell': () => ['shell=True がないと、文字列全体が1つのプログラム名になる。', 'Without shell=True the whole string is one program name.'],
   'python-shell-injection': () => ['Python の値を埋め込んだ文字列をシェルが実行するので、値によって任意のコマンドが実行される。', 'The shell runs a string with Python values pasted in, so a value can run arbitrary commands.'],
   'actions-script-injection': ({ expr }) => [`外部の人が書ける \`${expr}\` がスクリプトに埋め込まれ、値によって任意のコマンドが実行される。`, `\`${expr}\`, which anyone can set, is pasted into the script, so a value can run arbitrary commands.`],
   'stderr-to-original-stdout': ({ dup, file, discards }) => (discards
@@ -157,19 +157,19 @@ export const FACT_HEADS: { [K in ProblemFactId]: (p: Params<K>) => Head } = {
 
 /** The headline of each style check of src/pitfalls.ts, as for a fact: by what the check found (`StyleCase`). */
 export const STYLE_HEADS: Record<StyleCode, (c: StyleCase) => Head> = {
-  'bracket-no-space': () => ['かっこの後に空白が無いので、別のコマンド名として読まれる。', 'With no space after the bracket, this reads as another command name.'],
+  'bracket-no-space': () => ['かっこの後に空白がないので、別のコマンド名として読まれる。', 'With no space after the bracket, this reads as another command name.'],
   'assignment-with-spaces': () => ['これは代入ではなく、コマンドの実行になる。', 'This runs a command; it is not an assignment.'],
-  'brace-no-space': () => ['`{` の後に空白が無いので、グループの始まりではなくコマンド名になる。', 'With no space after `{`, this is a command name, not the start of a group.'],
-  'brace-close-no-separator': () => ['`}` の前に `;` か改行が無いので、グループが閉じない。', '`}` has no `;` or newline before it, so the group is never closed.'],
+  'brace-no-space': () => ['`{` の後に空白がないので、グループの始まりではなくコマンド名になる。', 'With no space after `{`, this is a command name, not the start of a group.'],
+  'brace-close-no-separator': () => ['`}` の前に `;` か改行がないので、グループが閉じない。', '`}` has no `;` or newline before it, so the group is never closed.'],
   'rm-empty-variable-root': () => ['値が空だと、ルートから削除することになる。', 'If the value is empty, this deletes from the root.'],
-  'read-without-r': () => ['`-r` が無いと、入力のバックスラッシュが失われる。', 'Without `-r`, backslashes in the input are lost.'],
+  'read-without-r': () => ['`-r` がないと、入力のバックスラッシュが失われる。', 'Without `-r`, backslashes in the input are lost.'],
   'redirect-in-bracket': () => ['`[ ]` の中の `<` や `>` は比較ではなくリダイレクトになる。', 'A `<` or `>` inside `[ ]` is a redirection, not a comparison.'],
   'bracket-close-in-word': ({ maybeEmpty }) => (maybeEmpty
     ? ['`]` は単語の一部なので、変数が空だと別の条件になり、値があると `[` は失敗する。', 'The `]` is part of the word: an empty variable makes another test, and a value makes `[` fail.']
     : ['`]` は単語の一部なので、`[` は閉じず、失敗する。', 'The `]` is part of the word, so `[` has no closing `]` and fails.']),
-  'and-or-in-bracket': () => ['`[ ]` の中の `&&` や `||` はコマンドをつなぐ演算子になり、`[` の `]` が無くなる。', 'A `&&` or `||` inside `[ ]` joins commands, so `[` loses its `]`.'],
+  'and-or-in-bracket': () => ['`[ ]` の中の `&&` や `||` はコマンドをつなぐ演算子になり、`[` の `]` がなくなる。', 'A `&&` or `||` inside `[ ]` joins commands, so `[` loses its `]`.'],
   'download-run-by-shell': () => ['ダウンロードした内容を、確かめずにシェルが実行する。', 'A shell runs what is downloaded, unchecked.'],
   'trap-goes-on': () => ['この処理のあと、スクリプトは止まらずに続く。', 'After this action, the script goes on from where it was.'],
-  'source-searches-path': () => ['名前に `/` が無いので、ファイルを `$PATH` からも探す。', 'With no `/` in its name, the file is also searched for in `$PATH`.'],
+  'source-searches-path': () => ['名前に `/` がないので、ファイルを `$PATH` からも探す。', 'With no `/` in its name, the file is also searched for in `$PATH`.'],
   'pattern-from-variable': () => ['変数の値はただの文字列ではなく、正規表現として読まれる。', 'The value of the variable is read as a regular expression, not as plain text.'],
 };
