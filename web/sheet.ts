@@ -1,7 +1,7 @@
 // The phone's bottom sheet (docs/design/chrome-redesign.md, step C8a): on a phone, and on a touch screen held upright up
 // to 1024 px (theme-init.js sets `bottom-sheet` on the page), the explanation's pane is a sheet over the editor, at three
 // heights. The whole header is its grabber: a tap on it cycles the heights, a drag moves the sheet and lets it settle,
-// and the arrow keys step it. At full height the app bar slides away (page.css follows `data-sheet` on the page). The
+// and the arrow keys step it. At full height the app bar slides away (page.css follows `.top[inert]`, which this sets). The
 // heights and where a drag, a tap or a key leaves the sheet are decided in src/ui/sheet.ts; here they are measured,
 // drawn and wired. The Problems list is the sheet's Problems tab: it moves into the sheet while the layout is on.
 // Under the tabs row of the folded sheet, a summary row says what the cursor's line is (src/ui/summaryRow.ts); while the

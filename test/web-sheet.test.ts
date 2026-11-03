@@ -467,14 +467,17 @@ describe('the web page: the phone\'s sheet', function () {
       const banner = await box(page, '#channel-banner');
       assert.ok(banner.height > 0, where);
       // What is painted on top at a point, whatever may be tapped: the bar is made takeable for the question (an inert element is
-      // not hit, but it is painted), so the answer is the paint order's alone.
+      // not hit, but it is painted), so the answer is the paint order's. Un-inerting also ends the rule that slides the bar
+      // (.top[inert]), so its margin is pinned to what it is while the question is asked.
       const painted = (selector: string) => page.evaluate(`(() => {
         const bar = document.querySelector('header.top');
         const was = bar.inert;
+        bar.style.marginTop = getComputedStyle(bar).marginTop;
         bar.inert = false;
         const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
         const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
         bar.inert = was;
+        bar.style.marginTop = '';
         return { id: hit && (hit.id || hit.className), inBar: !!hit && bar.contains(hit), inBanner: !!hit && !!hit.closest('#channel-banner'), y: r.top + r.height / 2 };
       })()`) as Promise<{ id: string; inBar: boolean; inBanner: boolean; y: number }>;
       const links = ['#banner-release', '#banner-compare', '#banner-commit', ...(at === 'pr/123/' ? ['#banner-pr'] : [])];
