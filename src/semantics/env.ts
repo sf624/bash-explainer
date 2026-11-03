@@ -115,6 +115,15 @@ export function subshellReasons(n: SyntaxNode): SubshellReason[] {
 }
 
 /**
+ * Whether the statement `n` is a stage of a pipeline joined to the next by `|&`, whose stderr then goes into the pipe
+ * too: the implicit `2>&1` of `|&`, which bash performs after the stage's own redirections (3.2.3).
+ */
+export function stderrPiped(n: SyntaxNode): boolean {
+  const p = n.parent;
+  return p?.type === 'pipeline' && STATEMENTS.has(n.type) && p.children[p.children.indexOf(n) + 1]?.type === '|&';
+}
+
+/**
  * Whether the last stage of a pipeline runs in the shell itself: always in zsh and ksh; in bash with lastpipe on
  * and job control (`set -m`) off.
  */

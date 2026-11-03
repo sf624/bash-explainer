@@ -415,6 +415,14 @@
       ]
     },
     {
+      "file": "src/semantics/stdout.ts",
+      "reason": "where a command's stdout goes is read from the statements and substitutions around it; a word is read only to see `exec` as `command`'s first word",
+      "uses": [
+        {"fn": "movesStdout", "kind": "helper", "count": 1},
+        {"fn": "from", "kind": "node-type", "count": 2}
+      ]
+    },
+    {
       "file": "src/semantics/allow.ts",
       "reason": "the allow-list tables look nodes up by type",
       "uses": [

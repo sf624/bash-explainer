@@ -47,10 +47,10 @@ describe('redirections of a simple command', () => {
   it('say once where each descriptor ends up, also with one among the words', () => {
     // bash: `cat` reads no file named `b`… and its error goes to `f`, as its output does.
     assert.match(filesAfter('cat > f nofile 2>&1; cat f'), /nofile: No such file or directory/);
-    assert.deepEqual(explain('cat > f nofile 2>&1').notes.filter((n) => n.startsWith('Redirections apply')), ['Redirections apply left to right. In the end: stdout → f, stderr → f']);
+    assert.deepEqual(explain('cat > f nofile 2>&1').notes.filter((n) => n.startsWith('ℹ Redirections apply')), ['ℹ Redirections apply left to right. In the end: stdout → f, stderr → f']);
     // A here-string and more redirections: one note, not one for those after the words too.
     assert.equal(runBash('cat <<< x 2>&1 > f; cat f', { files: [] }).stdout, 'x\n');
-    assert.equal(explain('cat <<< x 2>&1 > f').notes.filter((n) => n.startsWith('Redirections apply')).length, 1);
+    assert.equal(explain('cat <<< x 2>&1 > f').notes.filter((n) => n.startsWith('ℹ Redirections apply')).length, 1);
   });
 
   it('of a pipeline stage that writes elsewhere leave no example of the pipeline', () => {

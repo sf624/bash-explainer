@@ -2,7 +2,7 @@
 // which may close fd 0, 1 or 2, so that a copy of one of them may fail too: read by the trust's scan
 // (src/semantics/trust.ts) and the walk (src/semantics/walk/conditions.ts).
 import { staticWordValue } from '../staticword';
-import { field, type SyntaxNode } from '../syntax/tree';
+import { field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 
 /**
  * Whether the redirection `r` cannot fail: to or from `/dev/null`, or a copy of fd 1 or 2 (`2>&1`, `>&2`) when the
@@ -50,4 +50,16 @@ export function closesStandard(r: SyntaxNode): boolean {
   if (target === '-') return fd === undefined || fd <= 2;
   const m = /^(\d+)-$/.exec(target);
   return !!m && Number(m[1]) <= 2;
+}
+
+/**
+ * Whether a statement sends its standard output elsewhere than where it was (`> f`, `&> f`, `>&2`, `1<> f`): what is
+ * around it, a pipe or a command substitution, gets nothing of it.
+ */
+export function writesElsewhere(n: SyntaxNode): boolean {
+  return redirectionsOf(n).some((r) => {
+    const op = r.children.find((c) => !c.named)?.type;
+    const fd = field(r, 'descriptor')?.text ?? '';
+    return r.type === 'file_redirect' && (op?.startsWith('&') || fd === '1' || (fd === '' && !op?.startsWith('<')));
+  });
 }

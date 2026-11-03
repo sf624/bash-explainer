@@ -462,3 +462,33 @@ describe('bash 5.3 variables and shell options', () => {
     for (const c of SHELL_OPTIONS) assert.match(runBash(c.script).stderr, new RegExp(`shopt: ${c.name}: invalid shell option name`), c.script);
   });
 });
+
+describe('`2>&1 >/dev/null` in `${ …; }` (`stdoutAt`, src/semantics/stdout.ts)', () => {
+  const M = '2>&1 >/dev/null';
+  const MAKE = 'make() { echo out; echo err >&2; }\n';
+  const rows: [string, string, string][] = [
+    [`err=\${ make ${M}; }; echo "[$err]"`, '[err]\n', '[]\n'],
+    [`x=\${ cat </dev/null | make ${M}; }; echo "[$x]"`, '[err]\n', '[]\n'],
+    [`f() { make ${M}; }; err=\${ f; }; echo "[$err]"`, '[err]\n', '[]\n'],
+  ];
+  const facts = (src: string) => new Analyzer('en').explainLine(parser.parse(src), 0, undefined, { bashVersion: '5.3' });
+
+  for (const [src, got, swapped] of rows) {
+    it(`takes it as a capture, with no fix: ${src}`, function () {
+      needBash53(this);
+      const ex = facts(src);
+      assert.deepStrictEqual(ex.facts!.filter((f) => f.id === 'stderr-to-original-stdout'), []);
+      assert.ok(ex.notes.some((n) => n.endsWith('(only the error messages make the substitution\'s value)')), ex.notes.join('\n'));
+      assert.strictEqual(runBash(MAKE + src, { program: BASH53, files: [] }).stdout, got);
+      assert.strictEqual(runBash(MAKE + src.split(M).join('>/dev/null 2>&1'), { program: BASH53, files: [] }).stdout, swapped);
+    });
+  }
+
+  it('keeps the caveat in `${| …; }`, whose value is `REPLY`, with no fix', function () {
+    needBash53(this);
+    const src = `x=\${| make ${M}; }; echo "[$x]"`;
+    const f = facts(src).facts!.find((g) => g.id === 'stderr-to-original-stdout')!;
+    assert.strictEqual(f.rewrite, undefined);
+    assert.strictEqual(runBash(MAKE + src, { program: BASH53, files: [] }).stdout, 'err\n[]\n');
+  });
+});
