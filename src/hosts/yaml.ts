@@ -2,7 +2,8 @@ import { type Shell, shellFromName } from '../dialect';
 import { azureVariables as AZURE_VARIABLES, CI_PROVIDED, githubContext } from '../dict/ciVariables';
 import type { HostCi, RegionNote } from './index';
 import type { FactSpec } from '../messages';
-import { LineOut, Builder, spaced, indentOf } from './builder';
+import { LineOut, Builder, indentOf } from './builder';
+import { GITHUB_FILE_NAMES, type HostMeaning } from '../messages-hosts';
 
 /** Keys whose value is a shell script in common CI systems. */
 const YAML_KEYS = /^(run|script|before_script|after_script|bash|sh|cmds?|command)$/;
@@ -275,9 +276,7 @@ function githubLine(b: Builder, i: number, from: number, to: number): void {
       if (!(m[2].includes('.') || b.azure!.vars.has(m[2]))) continue;
       o.copy(line, at, m.index);
       const known = Object.hasOwn(AZURE_VARIABLES, m[2]) ? AZURE_VARIABLES[m[2]] : undefined;
-      const meaning: [string, string] = known
-        ? [`${spaced(known.ja)}を表す Azure Pipelines の変数 \`${m[2]}\` のマクロで、スクリプトが実行される前に値に置き換わります`, `the Azure Pipelines variable \`${m[2]}\`: ${known.en}; the macro is replaced with its value before the script runs`]
-        : [`Azure Pipelines の変数 \`${m[2]}\` のマクロで、スクリプトが実行される前に値に置き換わります`, `an Azure Pipelines macro, replaced with the value of the variable \`${m[2]}\` before the script runs`];
+      const meaning: HostMeaning = { kind: 'azure-macro', name: m[2], what: known };
       o.insert(`\${${m[2].replace(/\W+/g, '_').toUpperCase()}}`, m.index, m.index + m[0].length, meaning);
       b.substitutions.push({ line: i, text: m[0], meaning });
       at = m.index + m[0].length;
@@ -285,9 +284,7 @@ function githubLine(b: Builder, i: number, from: number, to: number): void {
     }
     o.copy(line, at, m.index);
     const name = m[1].replace(/\W+/g, '_').replace(/^_|_$/g, '').toUpperCase() || 'EXPR';
-    const meaning: [string, string] = b.azure
-      ? [`Azure Pipelines のテンプレート式で、パイプラインの展開時に \`${m[1]}\` の値に置き換わります`, `an Azure Pipelines template expression, replaced with the value of \`${m[1]}\` when the pipeline is expanded`]
-      : githubMeaning(m[1]);
+    const meaning: HostMeaning = b.azure ? { kind: 'azure-template', expr: m[1] } : { kind: 'github-expression', expr: m[1], what: githubContext(m[1]) };
     o.insert(`\${${name}}`, m.index, m.index + m[0].length, meaning);
     b.substitutions.push({ line: i, text: m[0], meaning, warning: !b.azure && UNTRUSTED.test(m[1]) ? { id: 'actions-script-injection', params: { expr: m[1] } } : undefined });
     at = m.index + m[0].length;
@@ -295,31 +292,14 @@ function githubLine(b: Builder, i: number, from: number, to: number): void {
   o.copy(line, at, to);
 }
 
-/** What a GitHub Actions expression in a script stands for: `${{ github.head_ref }}` → its branch. */
-function githubMeaning(expr: string): [string, string] {
-  const known = githubContext(expr);
-  return known
-    ? [`${spaced(known.ja)}を表す GitHub Actions の式 \`${expr}\` で、スクリプトが実行される前に値に置き換わります`, `the GitHub Actions expression \`${expr}\`: ${known.en}; replaced with its value before the script runs`]
-    : [`GitHub Actions の式で、スクリプトが実行される前に \`${expr}\` の値に置き換わります`, `a GitHub Actions expression, replaced with the value of \`${expr}\` before the script runs`];
-}
-
 /** Contexts an outside contributor controls (GitHub's security hardening guide). */
 const UNTRUSTED = /^github\.(head_ref|event\.(issue\.(title|body|labels\.\*\.name)|pull_request\.(title|body|labels\.\*\.name|head\.(ref|label|repo\.default_branch))|comment\.body|review\.body|review_comment\.body|discussion\.(title|body)|release\.(name|body)|pages\.[^.]+\.page_name|commits(\.\*|\.\d+|\[\d+\])\.(message|(author|committer)\.(email|name))|head_commit\.(message|(author|committer)\.(email|name))|workflow_run\.(head_branch|display_title|head_commit\.(message|(author|committer)\.(email|name)))))$/;
-
-/** Files GitHub Actions provides to steps, by environment variable. */
-const GITHUB_FILES: Record<string, [string, string]> = {
-  GITHUB_ENV: ['ここに `名前=値` を書くと、後のステップで環境変数として使えます', 'lines `NAME=value` written here become environment variables in later steps'],
-  GITHUB_OUTPUT: ['ここに `名前=値` を書くと、ステップの出力（`steps.<id>.outputs.名前`）になります', 'lines `name=value` written here become step outputs (`steps.<id>.outputs.name`)'],
-  GITHUB_PATH: ['ここに書いたディレクトリが、後のステップの PATH に追加されます', 'directories written here are added to PATH for later steps'],
-  GITHUB_STEP_SUMMARY: ['ここに書いた Markdown が、ジョブの実行結果のページに表示されます', 'Markdown written here is shown on the run\'s summary page'],
-  GITHUB_STATE: ['ここに書いた値を、同じアクションの pre/post の処理で読めます', 'values written here can be read by the action\'s pre and post steps'],
-};
 
 /** Notes for GitHub's special files used on a line of a GitHub Actions step. */
 export function githubFileNotes(text: string): FactSpec[] {
   const out: FactSpec[] = [];
-  for (const [name, [ja, en]] of Object.entries(GITHUB_FILES)) {
-    if (new RegExp(`\\$\\{?${name}\\b`).test(text)) out.push({ id: 'github-file', params: { name, what: { ja, en } } });
+  for (const name of GITHUB_FILE_NAMES) {
+    if (new RegExp(`\\$\\{?${name}\\b`).test(text)) out.push({ id: 'github-file', params: { name } });
   }
   return out;
 }

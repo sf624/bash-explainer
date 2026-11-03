@@ -4,7 +4,8 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { judgeYq, yqNotes } from '../src/embedded/yq';
+import { judgeYq } from '../src/embedded/yq';
+import { fact } from '../src/messages';
 
 const words = (s: string) => (s.match(/'[^']*'|"[^"]*"|\S+/g) ?? []).map((w) => w.replace(/^'(.*)'$/, '$1'));
 
@@ -39,10 +40,11 @@ describe('judgeYq', () => {
     assert.strictEqual(judgeYq(words("'.a' f.yml"), { setting: 'kislyuk' }).flavor, 'kislyuk');
   });
   it('says what it is explained as, why, and where it works', () => {
-    const [head, compat] = yqNotes(judgeYq(words("-o json '.a | pick([\"b\"])' f.yml")), 'en');
+    const verdict = judgeYq(words("-o json '.a | pick([\"b\"])' f.yml"));
+    const [head, compat] = [fact('en', 'yq-flavour', { verdict }).body, fact('en', 'yq-compat', { verdict }).body];
     assert.strictEqual(head, 'yq: explained as mikefarah/yq v4 (v4.22.1 or later). Because: `-o json` is a mikefarah/yq v4 option; `pick` is a mikefarah/yq function (jq has none)');
     assert.strictEqual(compat, 'Works with: mikefarah/yq v4 (v4.22.1 or later) ✓ / kislyuk/yq ✗ (no `-o json`, `pick`) / mikefarah/yq v3 ✗ (no jq-style expressions, `-o json`)');
-    assert.match(yqNotes(judgeYq(words("'.a' f.yml")), 'en')[0], /cannot be told, so it is explained as mikefarah\/yq v4/);
+    assert.match(fact('en', 'yq-flavour', { verdict: judgeYq(words("'.a' f.yml")) }).body, /cannot be told, so it is explained as mikefarah\/yq v4/);
   });
 });
 

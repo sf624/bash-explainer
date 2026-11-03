@@ -167,7 +167,7 @@ export function bats(b: Builder): void {
       const o = b.plain(i, 0, t.keyword ? t.from : indent);
       // (What bats drops before the name, blanked out, so that the columns stay.)
       if (!t.keyword) o.copy(' '.repeat(t.from), indent, t.from);
-      o.insert(t.name, t.from, t.to, [`bats がテストの関数に付ける名前（\`# @test\` のコメントがある関数の名前から作る）`, `the name bats gives the function of the test (made of the name of a function marked with \`# @test\`)`]);
+      o.insert(t.name, t.from, t.to, { kind: 'bats-test-function' });
       if (t.keyword && !t.parens) o.copy(line, t.to, t.end);
       else o.insert('()', t.to, t.end);
       o.copy(line, t.end, line.length);
@@ -182,7 +182,7 @@ export function bats(b: Builder): void {
     const to = from + keyword.length + quoted.length;
     const brace = line.length - body.length - 1;
     const o = b.plain(i, 0, from);
-    o.insert(name, from, to, [`テストの名前: bats はこの名前から関数名 \`${name}\` を作る`, `the name of the test: bats makes the function name \`${name}\` of it`]);
+    o.insert(name, from, to, { kind: 'bats-test-name', name });
     o.insert('()', to, to);
     o.copy(line, to, brace + 1);
     // `@test "x" { }`: bash needs a command in the braces, and bats puts `:;` there.

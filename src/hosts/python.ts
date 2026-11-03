@@ -2,6 +2,7 @@ import { type Shell, shellFromName } from '../dialect';
 import type { RegionNote } from './index';
 import { type JsonWord, execWords } from './dockerfile';
 import { LineOut, Builder } from './builder';
+import type { HostMeaning } from '../messages-hosts';
 
 /** Python calls that run a command; `shell` says whether a string goes to /bin/sh. */
 interface PyCall { shell: 'always' | 'kwarg' | 'never'; args: 'first' | 'all' }
@@ -173,7 +174,7 @@ function pyWord(src: string, a: number, z: number, pos: PyPos): JsonWord | undef
   const expr = src.slice(a, z);
   return {
     line: p.line, start: p.col, end: pos(z - 1).col + 1, value: '', cols: [],
-    placeholder: [`"\${${pyName(expr)}}"`, [`Python の式 \`${expr}\` の値（そのまま1つの引数として渡る）`, `the value of the Python expression \`${expr}\`, passed as one argument`]],
+    placeholder: [`"\${${pyName(expr)}}"`, { kind: 'python-argument', expr }],
   };
 }
 
@@ -210,7 +211,7 @@ function pyScript(b: Builder, src: string, a: number, z: number, pos: PyPos):
   let last = -1;
   let prevEnd = -1;
   const out = (line: number) => (b.outs[line] ??= new LineOut());
-  const insert = (s: string, from: number, to: number, meaning?: [string, string]) => {
+  const insert = (s: string, from: number, to: number, meaning?: HostMeaning) => {
     const p = pos(from);
     // Literals on different lines are joined with nothing between: continue the shell line with `\`.
     if (prevEnd >= 0 && pos(prevEnd).line < p.line) out(pos(prevEnd).line).insert('\\', pos(prevEnd).col, pos(prevEnd).col);
@@ -236,7 +237,7 @@ function pyScript(b: Builder, src: string, a: number, z: number, pos: PyPos):
         let e = c;
         for (; e < str.contentEnd; e++) { if (src[e] === '{') depth++; else if (src[e] === '}' && --depth === 0) break; }
         const expr = src.slice(c + 1, e).replace(/[!:][^}]*$/, '').trim();
-        insert(`\${${pyName(expr)}}`, c, e + 1, [`Python の式 \`${expr}\` の値（実行前に文字列に埋め込まれる）`, `the value of the Python expression \`${expr}\`, pasted into the string before it runs`]);
+        insert(`\${${pyName(expr)}}`, c, e + 1, { kind: 'python-field', expr });
         interpolated = true;
         c = e;
         continue;

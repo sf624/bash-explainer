@@ -5,6 +5,7 @@ import { Analyzer, ExplainOptions } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
 import { fact, factOf } from '../src/messages';
 import { explainHostedLine, Extracted, extractShell, HostKind, hostIssues, hostKind, remapExplanation, substitutionNotes } from '../src/hosts';
+import { hostMeaningText } from '../src/messages-hosts';
 import { customCommandSpec } from '../src/dict/custom';
 import { githubContext } from '../src/dict/ciVariables';
 import { expansionOps, redirects } from '../src/dict/syntax';
@@ -23,7 +24,7 @@ import { explainRegex } from '../src/embedded/regex';
 import { jqExample, runJq } from '../src/examples/jq';
 import { describeGlob, exampleFor, globParts, parseExpansion } from '../src/expansion';
 import { explainJq } from '../src/embedded/jq';
-import { explainYq3Path, judgeYq as judge, yqNotes, yqSameAsJq as sameAsJq } from '../src/embedded/yq';
+import { explainYq3Path, judgeYq as judge, yqSameAsJq as sameAsJq } from '../src/embedded/yq';
 import { explainSed } from '../src/embedded/sed';
 import { bashPrintf, extglobs, globExamples, globMatches, ShellWordsUnsupported } from '../src/examples/shellwords';
 import { braceTexts } from '../src/semantics/brace';
@@ -440,7 +441,7 @@ describe('branches no other test takes', () => {
     assert.strictEqual(v4(['eval', '.a |= 1']), '4.3.2');
     assert.strictEqual(judge(['.a'], { doc: 'uses mikefarah/yq@v3.4.1' }).flavor, 'mikefarah3');
     const undecided = judge(['eval', '.a']);
-    assert.match(yqNotes({ ...undecided, decided: false }, 'ja')[0], /mikefarah\/yq v4 として/);
+    assert.match(fact('ja', 'yq-flavour', { verdict: { ...undecided, decided: false } }).body, /mikefarah\/yq v4 として/);
     const paths = (src: string) => explainYq3Path(src, 'en')?.tokens.map((t) => t.explanation).join('\n');
     assert.match(paths('a[0].b[*].c[+]')!, /element 0[^]*every element[^]*new element/);
     assert.match(paths('a.(b==c).(d!=e).(.==x)')!, /matches `c`[^]*does not match `e`[^]*equal to `x`/);
@@ -550,8 +551,8 @@ describe('host files: branches no other test takes', () => {
     ].join('\n'));
     assert.deepStrictEqual(shells(e), ['2:sh', '3:sh', '5:sh']);
     assert.match(lines(e)[3], /\$\{ENV_GITHUB_REPOSITORY\} \$\{PARAMS_T\} \$\{A_B\} \$\{EXPR\} \$\{ENV_HOME\}/);
-    assert.ok(e.substitutions.some((x) => /owner\/repository/.test(x.meaning[1])));
-    assert.ok(e.substitutions.some((x) => /build parameter `T`/.test(x.meaning[1])));
+    assert.ok(e.substitutions.some((x) => /owner\/repository/.test(hostMeaningText(x.meaning).en)));
+    assert.ok(e.substitutions.some((x) => /build parameter `T`/.test(hostMeaningText(x.meaning).en)));
   });
 
   it('YAML: scripts at the top, Azure on Windows, CircleCI commands, sh keys, shells beside run, job defaults and runners', () => {

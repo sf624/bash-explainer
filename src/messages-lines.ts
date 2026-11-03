@@ -1,7 +1,7 @@
 // The texts of the catalog's facts that were plain notes before (docs/design/sources.md, row 14, SB3a): the order of a
 // command's redirections (`redirections-in-order`, `stderr-to-original-stdout`), where a line is (`heredoc-end-line`,
 // `heredoc-body-line`, `statement-continued`), and the facts whose words come from a table of their own (an idiom, a
-// host's notes, yq's flavour), apart, to keep src/messages.ts short.
+// host's notes), apart, to keep src/messages.ts short.
 import { lineLabel, type Text } from './i18n';
 import type { FdTarget, RedirectOrder } from './idioms';
 import type { StdoutGoes } from './semantics/stdout';
@@ -107,14 +107,6 @@ export const continuedText = ({ line }: { line: number }): Pair => [
 
 /** `idiom`: an idiom of src/idioms.ts (`IDIOMS`), its words from there. */
 export const idiomText = ({ idiom }: { idiom: Text }): Pair => [`定番の書き方: ${idiom.ja}`, `Idiom: ${idiom.en}`];
-
-/** `host-substitution`: what a host's substitution in the shell code means (`$(CC)`, `${{ … }}`; src/hosts/). */
-export const hostSubstitutionText = ({ text, meaning }: { text: string; meaning: Text }): Pair => [
-  `\`${text}\` は${/^[A-Za-z]/.test(meaning.ja) ? ' ' : ''}${meaning.ja}。`, `\`${text}\` is ${meaning.en}.`];
-
-/** `github-file`: a variable that holds the path of a file GitHub Actions provides (`$GITHUB_OUTPUT`). */
-export const githubFileText = ({ name, what }: { name: string; what: Text }): Pair => [
-  `\`$${name}\` は GitHub Actions が用意するファイルのパスです。${what.ja}。`, `\`$${name}\` is the path of a file GitHub Actions provides: ${what.en}.`];
 
 /** `read-ifs-separators`: `read` with an IFS of separators that are not whitespace (`ifs`, `seps`: as bash reads them, `$'\x1b'`). */
 export const readSeparatorsText = ({ ifs, seps }: { ifs: string; seps: readonly string[] }): Pair => {
