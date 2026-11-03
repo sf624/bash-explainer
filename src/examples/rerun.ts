@@ -1,5 +1,6 @@
 // Re-runs a worked example on input the user typed in the panel (regex101's test string).
 import { type Lang, lineLabel } from '../i18n';
+import { fact } from '../messages';
 import { formatDate, parseSampleDate, UTC } from '../embedded/format';
 import { runAwk } from './awk';
 import { dateOutputLabel, parseDateValue, relativeFrom, relativeItems, zoneOf } from './dates';
@@ -8,6 +9,7 @@ import { PerlOptions, runPerl } from './perlrun';
 import { sectionMarks, type SectionMarks, type StageMarks } from './marks';
 import { pipelineExample, Stage, stageMarks } from './pipeline';
 import { JsRegex } from './regex';
+import { guarded, scriptRegex } from './regexguard';
 import { runXargs, showCommand } from './runtime';
 import { runSed } from './sed';
 import { codeSpan } from '../label';
@@ -71,7 +73,7 @@ const boxMarks = (m: StageMarks): Mark[][] => m.ranges.map((rs) => rs.map(([star
 /** Every match of the regex on a line, with the range of each capture group (group 0 is the match). */
 export function matchMarks(regex: JsRegex, line: string): Mark[] {
   // A JsRegex is checked when it is made, and `g` and `d` fit any flags.
-  const re = new RegExp(regex.source, `${regex.flags.replace(/[gd]/g, '')}gd`);
+  const re = scriptRegex(regex.source, `${regex.flags.replace(/[gd]/g, '')}gd`);
   const marks: Mark[] = [];
   for (let m = re.exec(line), n = 0; m && n < 50; m = re.exec(line), n++) {
     const idx = (m as RegExpExecArray & { indices: ([number, number] | undefined)[] }).indices;
@@ -83,7 +85,7 @@ export function matchMarks(regex: JsRegex, line: string): Mark[] {
 
 /** "line 2: `2026` … group 1 = `2026`" for the first few matches that have capture groups. */
 function groupLines(regex: JsRegex, input: string[], lang: Lang): string[] {
-  const re = new RegExp(regex.source, regex.flags.replace(/[gd]/g, ''));
+  const re = scriptRegex(regex.source, regex.flags.replace(/[gd]/g, ''));
   const out: string[] = [];
   input.forEach((line, i) => {
     const m = re.exec(line);
@@ -150,6 +152,10 @@ const words = (ws: (string | null | undefined)[]) => ws.map((w) => w ?? undefine
  * are per line of them all, in that order.
  */
 export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResult {
+  return guarded(() => run(spec, boxes, lang), () => ({ sections: [{ label: lang === 'ja' ? '結果' : 'Result', lines: [fact(lang, 'regex-not-computed').body] }] }));
+}
+
+function run(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResult {
   const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
   const inputs = spec.reads ? spec.reads.map((i) => (i < 0 ? [] : boxes[i])) : boxes;
   const input = inputs.flat();

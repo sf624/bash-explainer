@@ -1,5 +1,6 @@
 import { sedEscapeAt } from '../ctlchars';
 import { JsRegex, posixExec, posixMatches, regexExamples, toJsRegex } from './regex';
+import { scriptRegex } from './regexguard';
 import type { LineMarks } from './marks';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
@@ -155,7 +156,7 @@ class Parser {
         }
         cmd.rep = delim === '/' ? cmd.rep : cmd.rep.split('\\' + delim).join(delim);
         // GNU sed rejects a reference to a group the pattern does not have.
-        const groups = cmd.re ? new RegExp(`${cmd.re.source}|`).exec('')!.length - 1 : 9;
+        const groups = cmd.re ? scriptRegex(`${cmd.re.source}|`).exec('')!.length - 1 : 9;
         if ([...cmd.rep.matchAll(/\\(.)/g)].some(([, d]) => /[1-9]/.test(d) && Number(d) > groups)) throw new Unsupported();
         void repStart;
         return cmd;
@@ -259,7 +260,7 @@ function matches(a: Addr, line: string, no: number, last: boolean, st: RunState)
       // GNU sed stops: "no previous regular expression".
       if (!re) throw new Unsupported();
       st.lastRe = re;
-      return new RegExp(re.source, re.flags).test(line);
+      return scriptRegex(re.source, re.flags).test(line);
     }
   }
 }
@@ -445,7 +446,7 @@ export function sedExample(script: string, opts: { quiet: boolean; extended: boo
     /* c8 ignore next */
     throw e;
   }
-  const res = parser.patterns.map((p) => ({ ...p, rx: new RegExp(p.re.source, p.re.flags) }));
+  const res = parser.patterns.map((p) => ({ ...p, rx: scriptRegex(p.re.source, p.re.flags) }));
   // A pattern that matches the empty string (`^[ \t]*`) matches every line, so it cannot rule lines out.
   const plain = (s: string) => !res.some((p) => !p.rx.test('') && p.rx.test(s));
   const neutral = (k: number) => [`line ${k}`, `text ${k}`, `data ${k}`, `note ${k}`].find(plain) ?? `${k}`;

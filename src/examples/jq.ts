@@ -1,5 +1,6 @@
 import { lex, Lex, ParseError } from '../embedded/jq';
 import { base64Decode, base64Encode, utf8Length } from './bytes';
+import { scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { setOwn } from '../wordtable';
 
@@ -1286,8 +1287,7 @@ class Evaluator {
       case 'test/1': case 'test/2': {
         const flags = a.length > 1 ? str(one(1)) : '';
         if (/[^gix]/.test(flags)) throw new Unsupported('regex flags');
-        const source = flags.includes('x') ? extendedRegex(str(one(0))) : str(one(0));
-        return [new RegExp(source, flags.replace(/[gx]/g, '')).test(str(x))];
+        return [scriptRegex(flags.includes('x') ? extendedRegex(str(one(0))) : str(one(0)), flags.replace(/[gx]/g, '')).test(str(x))];
       }
       case 'explode/0': return [[...str(x)].map((c) => c.codePointAt(0)!)];
       case 'implode/0': return [String.fromCodePoint(...(arr(x) as number[]))];

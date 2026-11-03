@@ -1,6 +1,7 @@
 /** A small Perl subset for one-liner examples: perl -n/-p/-l/-a/-F/-i -e '…'. */
 import { sprintf } from './awk';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
+import { scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { parseOptions, shortKeys, Unsupported as TextUnsupported } from './textfilters';
 
@@ -571,7 +572,7 @@ class Interp {
         return [this.ev(e)];
       case 'match':
         if (e.global) {
-          const re = new RegExp(e.re.source, e.re.flags.replace('g', '') + 'g');
+          const re = scriptRegex(e.re.source, e.re.flags.replace('g', '') + 'g');
           return [...str(e.target ? this.ev(e.target) : this.scalar('_')).matchAll(re)].map((m) => (m.length > 1 ? m[1] : m[0]));
         }
         // In list context a match gives its groups (or 1 without groups), and nothing when it fails.
@@ -592,7 +593,7 @@ class Interp {
     let parts: string[];
     // `split` alone, and `split ' '` or `split " "`, split on runs of blanks and drop leading ones.
     if (!sep || ((sep.k === 'str' || sep.k === 'istr') && sep.v === ' ')) parts = s.replace(/^\s+/, '').split(/\s+/);
-    else if (sep.k === 'match') parts = s.split(new RegExp(sep.re.source, sep.re.flags));
+    else if (sep.k === 'match') parts = s.split(scriptRegex(sep.re.source, sep.re.flags));
     else parts = s.split(str(this.ev(sep)));
     if (limit) throw new Unsupported('split limit');
     while (parts.length && parts[parts.length - 1] === '') parts.pop();
@@ -625,7 +626,7 @@ class Interp {
       case 'list': { let last: V; for (const x of e.items) last = this.ev(x); return last; }
       case 'match': {
         const s = str(e.target ? this.ev(e.target) : this.scalar('_'));
-        const m = new RegExp(e.re.source, e.re.flags.replace('g', '')).exec(s);
+        const m = scriptRegex(e.re.source, e.re.flags.replace('g', '')).exec(s);
         if (m) this.caps = [...m];
         return (!!m !== e.neg) ? 1 : '';
       }
@@ -633,7 +634,7 @@ class Interp {
         const target = e.target ?? { k: 'scalar', name: '_' } as E;
         const s = str(this.ev(target));
         let count = 0;
-        const re = new RegExp(e.re.source, e.re.flags + (e.global ? 'g' : ''));
+        const re = scriptRegex(e.re.source, e.re.flags + (e.global ? 'g' : ''));
         const result = s.replace(re, (...m) => {
           count++;
           const groups = m.slice(0, -2).filter((x) => typeof x === 'string' || x === undefined) as (string | undefined)[];
@@ -896,7 +897,7 @@ export function runPerl(code: string, opts: PerlOptions, input: string[]): strin
         it.scalars.set('_', opts.chompL ? line : line + '\n');
         if (opts.autosplit) {
           // perl splits $_, with its newline unless -l removed it (a blank, for the default split).
-          const parts = sep ? (opts.chompL ? line : line + '\n').split(new RegExp(sep.source, sep.flags)) : line.replace(/^\s+/, '').split(/\s+/);
+          const parts = sep ? (opts.chompL ? line : line + '\n').split(scriptRegex(sep.source, sep.flags)) : line.replace(/^\s+/, '').split(/\s+/);
           while (parts.length && parts[parts.length - 1] === '') parts.pop();
           it.arrays.set('F', parts);
         }

@@ -4,7 +4,7 @@
 // true, and an example's editable form for the panel. The builders are in src/examples/; this module gives them the
 // line (its language, the options where a node is, what a command reads) and adds what they make to the line's
 // examples. The examples of jq and yq are in src/explain/examples-jq.ts.
-import type { Example, ExampleSection } from '../analyzer-types';
+import type { Example, ExampleKind, ExampleSection } from '../analyzer-types';
 import type { ArgvParse } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
 import type { CommandSpec, Layout, LayoutAlt } from '../argv/spec';
@@ -21,6 +21,7 @@ import * as pipelines from '../examples/pipeline';
 import { sectionMarks, type StageMarks } from '../examples/marks';
 import { MAX_SHOWN_LINES, pipedOutput, type Stage } from '../examples/pipeline';
 import { type JsRegex, regexExamples } from '../examples/regex';
+import { guarded, scriptRegex } from '../examples/regexguard';
 import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
 import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
@@ -53,6 +54,10 @@ import { braceExpansion, bracesHere } from './words';
  * `=~`, whose value where it runs, when the model knows it, comes first in its section (`subjectValue`).
  */
 export function regexExample(cx: Explainer, js: JsRegex, mode: 'lines' | 'inverted' | 'values', subject?: SyntaxNode): void {
+  guardedExample(cx, 'regex', () => regexExampleOf(cx, js, mode, subject));
+}
+
+function regexExampleOf(cx: Explainer, js: JsRegex, mode: 'lines' | 'inverted' | 'values', subject?: SyntaxNode): void {
   const ex = regexExamples(js);
   if (!ex) return;
   let yes = ex.matching;
@@ -62,7 +67,7 @@ export function regexExample(cx: Explainer, js: JsRegex, mode: 'lines' | 'invert
   const known = subject && (nocase === 'off' || nocase === 'default') ? subjectValue(cx, subject) : undefined;
   if (known !== undefined) {
     const first = (lines: string[]) => [known, ...lines.filter((l) => l !== known)].slice(0, Math.max(lines.length, 1));
-    if (new RegExp(js.source, js.flags).test(known)) yes = first(yes);
+    if (scriptRegex(js.source, js.flags).test(known)) yes = first(yes);
     else no = first(no);
   }
   let sections: ExampleSection[];
@@ -99,6 +104,11 @@ export function pushExample(cx: Explainer, ex: Example | undefined): void {
   if (ex) cx.example(ex);
 }
 
+/** What `build` adds to the line, or, when it would run a regex that is refused, the example that says it is not computed. */
+export function guardedExample(cx: Explainer, kind: ExampleKind, build: () => void): void {
+  guarded(build, () => cx.example(commandExamples.notComputed(kind, cx.s('例', 'Example'), cx.lang)));
+}
+
 /** An example's editable form for the panel (src/examples/commands.ts). */
 export function interactive(cx: Explainer, spec: RerunSpec, inputs: InputBox[]): Interactive {
   return commandExamples.interactive(spec, inputs, cx.lang);
@@ -111,7 +121,7 @@ export function interactive(cx: Explainer, spec: RerunSpec, inputs: InputBox[]):
  */
 export function patternExample(cx: Explainer, pats: SyntaxNode[], labels: [string, string], known?: { value: string; matches: boolean }): void {
   const texts = pats.map((p) => unquotedWord(p) ?? (p.type === 'extglob_pattern' ? nameText(p) : undefined));
-  pushExample(cx, patterns.patternExample(texts, globOpts(cx, 'pattern', pats[0]), labels, cx.lang, known));
+  guardedExample(cx, 'glob', () => pushExample(cx, patterns.patternExample(texts, globOpts(cx, 'pattern', pats[0]), labels, cx.lang, known)));
 }
 
 /** `[[ x == pat ]]`: the values that match the pattern `pat` and some that do not, with the value of `x` where the model knows it. */
@@ -120,8 +130,10 @@ export function matchExample(cx: Explainer, n: SyntaxNode, pat: SyntaxNode): voi
   const value = left && shoptAt(cx, n).nocasematch !== 'unknown' ? subjectValue(cx, left) : undefined;
   // (Without the line continuations, which bash removes first: `@\<newline>(x|y)` is `@(x|y)`.)
   const text = unquotedWord(pat) ?? nameText(pat);
-  const known = value === undefined ? undefined : { value, matches: globMatches(text, value, 'value', globOpts(cx, 'pattern', pat)) };
-  patternExample(cx, [pat], [cx.s('一致する値', 'Values that match'), cx.s('一致しない値', 'Values that do not match')], known);
+  guardedExample(cx, 'glob', () => {
+    const known = value === undefined ? undefined : { value, matches: globMatches(text, value, 'value', globOpts(cx, 'pattern', pat)) };
+    patternExample(cx, [pat], [cx.s('一致する値', 'Values that match'), cx.s('一致しない値', 'Values that do not match')], known);
+  });
 }
 
 /**
@@ -139,7 +151,7 @@ export function testExample(cx: Explainer, n: SyntaxNode, bracket: TestShape | u
   // (`nocasematch` changes `[[ == ]]`, which the cases do not follow.)
   const nocase = n.children[0].type === '[[' ? shoptAt(cx, n).nocasematch : 'off';
   const known = (x: SyntaxNode) => (nocase === 'off' || nocase === 'default' ? wordValue(cx, x) : undefined);
-  pushExample(cx, patterns.testExample(n, bracket, asKind, cx.lang, known));
+  guardedExample(cx, 'test', () => pushExample(cx, patterns.testExample(n, bracket, asKind, cx.lang, known)));
 }
 
 /**
@@ -278,6 +290,11 @@ export function awkOptions(cx: Explainer): (AwkRunOptions & { vars: Record<strin
 
 /** Sample data run through every stage of a pipeline, showing what each stage leaves. */
 export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefined {
+  // (Nothing is said of the stages after one the guard does not run, nor of those before: the example is of them all.)
+  return guarded(() => wholeExample(cx, n), () => commandExamples.notComputed('pipeline', cx.s('例（パイプライン全体）', 'Example (the whole pipeline)'), cx.lang));
+}
+
+function wholeExample(cx: Explainer, n: SyntaxNode): Example | undefined {
   // A pipeline is explained on the line it is on, or whole (see sub).
   const p = pipelineStages(cx, n);
   if (!p) return undefined;
@@ -456,7 +473,7 @@ export function commandExampleFor(cx: Explainer, n: SyntaxNode, spec: CommandSpe
   if (kind === 'printf' && args.some((a) => braceWordsOf(cx, a)?.length)) return;
   // (printf: the builtin of the bash release explained for, or the coreutils program.)
   const reader = spec.builtin ? cx.opts.bashVersion ?? DEFAULT_BASH_VERSION : 'coreutils';
-  pushExample(cx, commandExamples.commandExampleOf(kind, exampleWords(cx, args, !!spec.prints), cx.lang, src, reader));
+  guardedExample(cx, kind === 'perl' ? 'perl' : 'textFilters', () => pushExample(cx, commandExamples.commandExampleOf(kind, exampleWords(cx, args, !!spec.prints), cx.lang, src, reader)));
 }
 
 /**
@@ -918,7 +935,7 @@ export function wordExample(cx: Explainer, a: SyntaxNode, cmd: { name: string; n
 export function globExample(cx: Explainer, n: SyntaxNode, pattern: string, mode: GlobMode, title: string, labels?: [string, string]): void {
   // A name that matches a pattern of GLOBIGNORE is left out.
   const ignore = mode !== 'value' ? wordAt(cx, n)?.glob.globignore : undefined;
-  pushExample(cx, patterns.globExample(pattern, mode, globOpts(cx, mode !== 'value' ? 'file' : 'none', n), typeof ignore === 'object' ? ignore.value : undefined, title, labels, cx.lang));
+  guardedExample(cx, 'glob', () => pushExample(cx, patterns.globExample(pattern, mode, globOpts(cx, mode !== 'value' ? 'file' : 'none', n), typeof ignore === 'object' ? ignore.value : undefined, title, labels, cx.lang)));
 }
 
 /**

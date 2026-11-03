@@ -4,6 +4,7 @@
 import type { Lang } from '../i18n';
 import { type AwkInvocation, parseAwk, runAwk } from './awk';
 import { type JsRegex, posixExec, toJsRegex } from './regex';
+import { scriptRegex } from './regexguard';
 
 /** Per line, the parts `[start, end)` (UTF-16 units of the line) a stage reads; and the lines (indexes) it leaves out. */
 export interface LineMarks { ranges: [number, number][][]; dropped: number[] }
@@ -44,7 +45,7 @@ function fieldSpans(line: string, fs: string): [number, number][] {
   const out: [number, number][] = [];
   let at = 0;
   // (An FS the runner cannot read stops it before any record: `re` is then a regex.)
-  for (const m of line.matchAll(new RegExp(re!.source, re!.flags + 'g'))) {
+  for (const m of line.matchAll(scriptRegex(re!.source, re!.flags + 'g'))) {
     if (!m[0]) continue;
     out.push([at, m.index]);
     at = m.index + m[0].length;

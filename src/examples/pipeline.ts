@@ -5,6 +5,7 @@ import { echoWordsKnown } from './echo';
 import { perlExample, perlOptions, runPerl } from './perlrun';
 import { awkMarks, joinRanges, type LineMarks, type StageMarks } from './marks';
 import { grepWrap, JsRegex, literalRegex, posixMatches, regexExamples, toJsRegex } from './regex';
+import { guarded, scriptRegex } from './regexguard';
 import { runSed, sedExample, sedMarks } from './sed';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
 import { cutMarks, FILTERS, parseOptions, parseWords, runSeq, sampleInput, shortKeys, sortMarks, sortsUnique, Unsupported } from './textfilters';
@@ -68,7 +69,7 @@ function grepReads(res: JsRegex[], p: ReturnType<typeof parseOptions>, input: st
   let count = 0;
   for (const line of input) {
     if (count >= limit) break;
-    const hit = res.some((r) => new RegExp(r.source, r.flags).test(line));
+    const hit = res.some((r) => scriptRegex(r.source, r.flags).test(line));
     read.push(hit !== has('v'));
     if (hit !== has('v')) count++;
   }
@@ -112,7 +113,7 @@ const SUFFIXES = [' failed', ' timeout', ' retry', ' again'];
 
 /** Whether any of the regexes matches the line. */
 function matchesAny(res: JsRegex[], line: string): boolean {
-  return res.some((r) => new RegExp(r.source, r.flags).test(line));
+  return res.some((r) => scriptRegex(r.source, r.flags).test(line));
 }
 
 /**
@@ -274,6 +275,11 @@ export function stageMarks(stage: Stage, input: string[]): StageMarks | undefine
  * (xargs), whose output is not known.
  */
 export function pipedOutput(stages: Stage[], given?: string[]): string[] | undefined {
+  // (What a stage the guard does not run prints is not known: src/examples/regexguard.ts.)
+  return guarded(() => followed(stages, given), () => undefined);
+}
+
+function followed(stages: Stage[], given?: string[]): string[] | undefined {
   try {
     let data = given ?? sourceOutput(stages[0]);
     if (!data) return undefined;

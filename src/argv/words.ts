@@ -2,6 +2,7 @@
 // quote removal when it is known, the start that is known otherwise, and how many words they become.
 import { parseExpansion, type ParsedExpansion } from '../expansion';
 import { bracesWork, type Shell } from '../shellfeatures';
+import { guarded } from '../examples/regexguard';
 import { globToRegex } from '../examples/shellwords';
 import { braceAlternatives, rejoined } from '../semantics/brace';
 import { givesElements } from '../semantics/elements';
@@ -161,8 +162,11 @@ function mayGiveDashes(w: readonly (SyntaxNode | string)[], shell?: Shell): bool
     const v = staticWordValue(p, false, shell);
     return v === undefined ? '*' : v.replace(/[*?[\\]/g, '\\$&');
   }).join('');
-  const re = globToRegex(pattern, 'file');
-  return !re || re.test('-') || re.test('--');
+  return guarded(() => {
+    const re = globToRegex(pattern, 'file');
+    return !re || re.test('-') || re.test('--');
+    // (Refused only as too long to read: such a word gives no `-`.)
+  }, () => false);
 }
 
 /**

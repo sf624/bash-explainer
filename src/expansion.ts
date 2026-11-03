@@ -1,4 +1,5 @@
 import { evalArith, intValue } from './arith';
+import { scriptRegex } from './examples/regexguard';
 import { Lang } from './i18n';
 import { bracketEnd, bracketItems, bracketRegex, patsubMiscounts, type BracketItem } from './bracket';
 import { messageText, unquoteWord } from './staticword';
@@ -276,7 +277,7 @@ function describeSet(items: BracketItem[], lang: Lang): string {
 
 /** The prefix (`#`) or suffix (`%`) of `value` removed by a pattern, shortest or longest. */
 function strip(value: string, parts: GlobPart[], from: 'start' | 'end', longest: boolean): string {
-  const re = new RegExp(`^(?:${globRegex(parts)})$`);
+  const re = scriptRegex(`^(?:${globRegex(parts)})$`);
   const n = value.length;
   const lengths = Array.from({ length: n + 1 }, (_, k) => (longest ? n - k : k));
   for (const len of lengths) {
@@ -289,15 +290,15 @@ function strip(value: string, parts: GlobPart[], from: 'start' | 'end', longest:
 function replace(value: string, parts: GlobPart[], rep: string, mode: '/' | '//' | '/#' | '/%'): string {
   const src = globRegex(parts);
   if (!src) return value;
-  if (mode === '/#') return value.replace(new RegExp(`^(?:${src})`), () => rep);
+  if (mode === '/#') return value.replace(scriptRegex(`^(?:${src})`), () => rep);
   if (mode === '/%') {
     // Longest suffix match: try the earliest start position whose rest matches.
     for (let k = 0; k <= value.length; k++) {
-      if (new RegExp(`^(?:${src})$`).test(value.slice(k))) return value.slice(0, k) + rep;
+      if (scriptRegex(`^(?:${src})$`).test(value.slice(k))) return value.slice(0, k) + rep;
     }
     return value;
   }
-  return value.replace(new RegExp(src, mode === '//' ? 'g' : ''), () => rep);
+  return value.replace(scriptRegex(src, mode === '//' ? 'g' : ''), () => rep);
 }
 
 const SAMPLES = [
@@ -324,7 +325,7 @@ function convertCase(value: string, op: string, matches?: (c: string) => boolean
 function caseMatcher(pattern: string | undefined): ((c: string) => boolean) | undefined | null {
   const glob = pattern === undefined ? undefined : globParts(pattern);
   if (pattern !== undefined && !glob) return null;
-  const one = glob && new RegExp(`^(?:${globRegex(glob)})$`);
+  const one = glob && scriptRegex(`^(?:${globRegex(glob)})$`);
   return one ? (c: string) => one.test(c) : undefined;
 }
 
@@ -614,10 +615,10 @@ function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; as
       if (!glob || repText === undefined || /&/.test(rep)) return undefined;
       // (A pattern that bash counts otherwise than it matches, `[!]]`, finds nothing here: no example.)
       if (patsubMiscounts(globText(part('pattern')!)!)) return undefined;
-      const test = new RegExp(globRegex(glob));
+      const test = scriptRegex(globRegex(glob));
       // For `/` and `//` show a value with two matches, so "first" vs "every" is visible.
       const twice = p.op === '/' || p.op === '//';
-      const value = (twice ? pickSample((s) => (s.match(new RegExp(globRegex(glob), 'g')) ?? []).length > 1) ?? synthesizeReplace(glob, p.op) : undefined)
+      const value = (twice ? pickSample((s) => (s.match(scriptRegex(globRegex(glob), 'g')) ?? []).length > 1) ?? synthesizeReplace(glob, p.op) : undefined)
         ?? pickSample((s) => test.test(s) && replace(s, glob, repText, p.op as '/') !== s)
         ?? synthesizeReplace(glob, p.op);
       if (!value) return undefined;

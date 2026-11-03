@@ -3,7 +3,7 @@
 // in src/embedded/ (src/embedded/registry.ts); this module gives them the command whose words are explained
 // (`Explainer.command`: the regex flavour, tr's sets, the letters given), places their tokens in the source, and adds
 // the worked example of the text (src/explain/examples.ts, src/explain/examples-jq.ts).
-import type { Token } from '../analyzer-types';
+import type { ExampleKind, Token } from '../analyzer-types';
 import { givenOptions, values } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { YQ_SPECS } from '../dict/yq';
@@ -21,7 +21,7 @@ import { featureWorks } from '../shellfeatures';
 import { type Literal, literalContent, staticWordText } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
-import { awkOptions, dateRun, globExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
+import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
 import { fromEmbedded, same } from './nodes';
 import { given, regexFlavor, trContext } from './reads';
@@ -66,11 +66,18 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
   };
   const r = EMBEDDED[lang](lit.text, ecx);
   if (!r) return undefined;
-  embeddedExample(cx, lang, lit.text, a);
+  guardedEmbeddedExample(cx, lang, lit.text, a);
   return { tokens: r.tokens.map((t) => ({ ...fromEmbedded(t, a, lit, 'embedded'), language: lang })), note: r.note };
 }
 
+/** The kinds of the examples that run the embedded text on data, and may run a regex of it (a regex and a glob say so themselves). */
+const RUNNERS: Partial<Record<EmbeddedLang, ExampleKind>> = { sed: 'sed', awk: 'awk', jq: 'jq', yq4: 'yq' };
+
 /** The worked example of an embedded text that the explainer read (src/embedded/registry.ts), when its language has one. */
+function guardedEmbeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: SyntaxNode): void {
+  guardedExample(cx, RUNNERS[lang] ?? 'regex', () => embeddedExample(cx, lang, text, a));
+}
+
 function embeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: SyntaxNode): void {
   switch (lang) {
     case 'regex': {
