@@ -742,9 +742,10 @@ function timed(cx: Explainer, n: SyntaxNode): Token {
   const lead = timeLead(cx, token(n, 'time')!, field(n, 'option'));
   const cmd = field(n, 'body');
   const bash = !cx.shell || cx.shell === 'bash';
-  // In POSIX mode, `time` before a word that starts with `-` is not the reserved word: bash reads `time -p cmd` as the
-  // command `time`, the program (6.11; not at compatibility level 41 or below). The mode is the one bash read the line in.
-  if (bash && field(n, 'option') && timeIsProgram(cx.state.at(n).parse)) return timeProgram(cx, n, cmd);
+  // In POSIX mode, `time` before a word that starts with `-` is not the reserved word: bash reads `time -p cmd`, `time -- cmd`
+  // and `time -x cmd` as the command `time`, the program (6.11; not at compatibility level 41 or below). The mode is the one
+  // bash read the line in. (It looks at the next character after blanks: after a line continuation, `time` is the keyword.)
+  if (bash && /^[ \t]*-/.test(n.text.slice(token(n, 'time')!.endIndex - n.startIndex)) && timeIsProgram(cx.state.at(n).parse)) return timeProgram(cx, n, cmd);
   if (!cmd && !bash) return skeletal(cx.tok(n, 'keyword', lead[0].explanation, lead), n);
   if (!cmd) {
     // `time` alone: an empty pipeline, timed; in POSIX mode, the times of the shell and its children so far (6.11).
@@ -773,10 +774,11 @@ function timeIsProgram(st: ShellState): boolean {
     && !st.variables.has('BASH_COMPAT');
 }
 
-/** `time -p cmd` in POSIX mode: the program `time`, with its options and the command it runs (as a program). */
+/** `time -p cmd`, `time -- cmd`, `time -x cmd` in POSIX mode: the program `time`, with its options and the command it runs (as a program). */
 function timeProgram(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode | undefined): Token {
   const time = token(n, 'time')!;
-  const words = [field(n, 'option')!, ...(cmd?.type === 'command' ? [field(cmd, 'name')!.namedChildren[0]!, ...fields(cmd, 'argument')] : [])];
+  const option = field(n, 'option');
+  const words = [...(option ? [option] : []), ...(cmd?.type === 'command' ? [field(cmd, 'name')!.namedChildren[0]!, ...fields(cmd, 'argument')] : [])];
   const kw = cx.tok(time, 'keyword', cx.text('cmd-time-program') + (cmd ? '' : cx.sep() + cx.text('cmd-time-program-no-command')));
   // (The program named as the word is: bash looks it up in PATH.)
   const read = readArgs(cx, specFor(cx, time.text), words, time.text);

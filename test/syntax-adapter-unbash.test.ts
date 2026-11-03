@@ -263,6 +263,20 @@ describe('unbash adapter: tokens and comments', () => {
     // (The text of the body, and a quoted body, has no token.)
     assert.deepEqual(types(t.root, 'heredoc_body').map((b) => descendants(b, ['&&']).length), [1, 0]);
   });
+  it('reads a `$( )` with a list or a compound command in a heredoc body (inputs for the corpus: bash-ast and command-tokens compare them)', () => {
+    // (The comparison with bash's parser reads a heredoc body as text; the tokens of a command in it are checked as any command's.)
+    const p = ub;
+    const trees = [
+      p.parse('cat <<E\n$(a && b)\nE\n'),
+      p.parse('cat <<E\n$(if a; then b; fi)\nE\n'),
+      p.parse('cat <<E\nx $(a || b | c) y\nE\n'),
+      p.parse('cat <<-E\n\t$(if a; then b; elif c; then d; else e; fi; f && g)\n\tE\n'),
+      p.parse('cat <<E\n$(while a; do b; done) `c && d` $(for i in 1 2; do e $i; done)\nE\n'),
+    ];
+    assert.deepStrictEqual(trees.map((t) => types(t.root, 'heredoc_body').map((b) => types(b, 'command_substitution').length + types(b, 'backtick_substitution').length)), [[1], [1], [1], [1], [3]]);
+    assert.deepStrictEqual(trees.map((t) => types(t.root, 'heredoc_body').map((b) => descendants(b, ['&&', '||', 'if', 'fi', 'done']).length)), [[1], [2], [1], [3], [3]]);
+    assert.ok(trees.every((t) => !hasError(t.root)));
+  });
   it('every comment is a comment node, in the node it lies in', () => {
     const t = tree('# one\necho a # two\nif x; then # three\n  y # four\nfi # five\necho $(z # six\n) "$(w # seven\n)"\n(# eight\n:)\nx=(a # nine\n b)');
     assert.deepEqual(types(t.root, 'comment').map((c) => c.text), ['# one', '# two', '# three', '# four', '# five', '# six', '# seven', '# eight', '# nine']);

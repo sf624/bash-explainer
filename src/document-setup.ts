@@ -1,6 +1,7 @@
 import { readShell, Shell } from './dialect';
 import type { Shells, ShellDocument } from './document';
 import { Extracted, extractShell, HostKind, hostKind } from './hosts';
+import { maskCarried } from './messages-levels';
 import type { Settings } from './settings';
 import type { SyntaxTree } from './syntax/tree';
 
@@ -110,7 +111,8 @@ export function kindOfDocument(doc: DocumentInfo, settings: Pick<Settings, 'lang
  * of a host file); `extracted` is given when the caller has it cached.
  */
 export function openDocument(text: string, kind: FileKind, parse: (shellText: string) => SyntaxTree, extracted?: Extracted): ShellDocument {
-  const lines = text.split(/\r?\n/);
+  // (A script's own OPEN_TEXT and CLOSE_TEXT are masked in the lines too: a label made from a line must not forge a mark.)
+  const lines = maskCarried(text).split(/\r?\n/);
   if (kind === 'shell') return { lines, tree: parse(text) };
   const hosted = extracted ?? extractShell(kind, text);
   return { lines, extracted: hosted, tree: parse(hosted.text) };
