@@ -16,7 +16,7 @@ import { distroAliases } from '../dict/distroAliases';
 import { fdName, keywords } from '../dict/syntax';
 import { yqSpecsOf } from '../dict/yq';
 import { judgeYq, yqNotes } from '../embedded/yq';
-import { type Text, tx } from '../i18n';
+import { lineLabel, lineListLabel, type Text, tx } from '../i18n';
 import { bracket as bracketLabel, labelText, shorten } from '../label';
 import { fact } from '../messages';
 import { TURNS_ALIASES_ON } from '../messages-alias';
@@ -174,8 +174,8 @@ function aliasArguments(cx: Explainer, n: SyntaxNode, res: AliasResolution, toks
     // (The first word of its text is checked too: `alias a2='b2 ' b2='c2 '`.)
     const chain = target?.kind === 'alias' ? cx.s(`（\`${target.name}\` もエイリアスで、\`${target.alias.value}\` に置き換わる）`, ` (\`${target.name}\` is an alias too, for \`${target.alias.value}\`)`) : '';
     return {
-      ...cx.tok(a.word, 'alias', cx.s(`行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。前のエイリアスの置き換え先が空白で終わるので、bash はこの単語もエイリアスか調べる`,
-        `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}. The text of the alias before it ends with a blank, so bash checks this word for an alias too`)),
+      ...cx.tok(a.word, 'alias', cx.s(`${lineLabel('ja', line)} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。前のエイリアスの置き換え先が空白で終わるので、bash はこの単語もエイリアスか調べる`,
+        `The alias \`${name}\` defined on ${lineLabel('en', line, 'inline')}: replaced by \`${alias.value}\`${chain}. The text of the alias before it ends with a blank, so bash checks this word for an alias too`)),
       refs: ['6.6'],
     };
   });
@@ -377,7 +377,7 @@ function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedC
 /** The lines of `nodes`, in words: "line 1", "lines 1 and 3" (ja: 行 1、3). */
 function linesOf(cx: Explainer, nodes: readonly SyntaxNode[]): string {
   const lines = [...new Set(nodes.map((x) => docLine(x) + 1))].sort((x, y) => x - y);
-  return cx.s(`行 ${lines.join('、')}`, lines.length === 1 ? `line ${lines[0]}` : `lines ${lines.slice(0, -1).join(', ')} and ${lines.at(-1)}`);
+  return cx.s(lineListLabel('ja', lines), lineListLabel('en', lines));
 }
 
 /**
@@ -395,7 +395,7 @@ function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 
     // (Only a builtin is turned off: the program its entry describes.)
     return {
       path: undefined, program: lookupCommand(name)!.program, runs: cx.s(`外部コマンド \`${name}\` を実行する`, `Run the external command \`${name}\``),
-      why: cx.s(`行 ${by} の \`enable -n\` で組み込みの \`${name}\` は無効になっている`, `\`enable -n\` on line ${by} turned the builtin \`${name}\` off`),
+      why: cx.s(`${lineLabel('ja', by)} の \`enable -n\` で組み込みの \`${name}\` は無効になっている`, `\`enable -n\` on ${lineLabel('en', by, 'inline')} turned the builtin \`${name}\` off`),
     };
   }
   const { value } = res.hashed;
@@ -459,11 +459,11 @@ function maybeHashedText(cx: Explainer, name: string, m: MaybeHashed): string {
   const line = docLine(m.by[0]) + 1;
   const p = m.paths.map(hashedPath);
   if (m.plain === 'ran') {
-    return cx.s(jaTidy(`行 ${line} の \`hash -p\` が実行されていれば、\`${name}\` は代わりに${p[0].ja}を実行する`), `if the \`hash -p\` on line ${line} ran, \`${name}\` runs ${p[0].en} instead`);
+    return cx.s(jaTidy(`${lineLabel('ja', line)} の \`hash -p\` が実行されていれば、\`${name}\` は代わりに${p[0].ja}を実行する`), `if the \`hash -p\` on ${lineLabel('en', line, 'inline')} ran, \`${name}\` runs ${p[0].en} instead`);
   }
   if (m.plain === 'hashing') {
-    return cx.s(jaTidy(`コマンドのハッシュが有効なら、\`${name}\` は行 ${line} の \`hash -p\` で指定した${p[0].ja}を実行する。\`set +h\` で無効にする経路がある`),
-      `if hashing is on here, \`${name}\` runs ${p[0].en} that \`hash -p\` on line ${line} gave it; \`set +h\` turns hashing off on some paths`);
+    return cx.s(jaTidy(`コマンドのハッシュが有効なら、\`${name}\` は${lineLabel('ja', line)} の \`hash -p\` で指定した${p[0].ja}を実行する。\`set +h\` で無効にする経路がある`),
+      `if hashing is on here, \`${name}\` runs ${p[0].en} that \`hash -p\` on ${lineLabel('en', line, 'inline')} gave it; \`set +h\` turns hashing off on some paths`);
   }
   const at = linesOf(cx, m.by);
   const ja = p.map((x) => x.ja).join('か');
@@ -559,15 +559,15 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
     return {
       name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'], spec, ...(target ? { runs: runs!.name } : {}), ...(basis ? { basis } : {}),
       explanation: res.sure
-        ? cx.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${sure}`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${sure}`)
+        ? cx.s(`このスクリプトの${lineLabel('ja', line)} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${sure}`, `The alias \`${name}\` defined on ${lineLabel('en', line, 'inline')}: replaced by \`${alias.value}\`${sure}`)
         : maybeSourced
-          ? cx.s(`このファイルの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは対話シェルがこのファイルを読むとき（\`.bashrc\` や、端末で打つ \`source\`）か、\`shopt -s expand_aliases\` の後だけ。スクリプトとして実行すると、bash はエイリアスを展開しない`,
-            `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}, but only when an interactive shell reads this file (\`.bashrc\`, or \`source\` typed in a terminal), or after \`shopt -s expand_aliases\`. Run as a script, bash does not expand aliases`)
+          ? cx.s(`このファイルの${lineLabel('ja', line)} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは対話シェルがこのファイルを読むとき（\`.bashrc\` や、端末で打つ \`source\`）か、\`shopt -s expand_aliases\` の後だけ。スクリプトとして実行すると、bash はエイリアスを展開しない`,
+            `The alias \`${name}\` defined on ${lineLabel('en', line, 'inline')}: replaced by \`${alias.value}\`${chain}, but only when an interactive shell reads this file (\`.bashrc\`, or \`source\` typed in a terminal), or after \`shopt -s expand_aliases\`. Run as a script, bash does not expand aliases`)
         : alias.state === 'on'
-          ? cx.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは \`shopt -s expand_aliases\` が効いているときだけで、この前で有効にしているのは一部の経路（分岐やループ）だけ`,
-            `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}, but only when \`shopt -s expand_aliases\` is on, and only some paths before here (a branch or a loop) turn it on`)
-          : cx.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは定義する行を通ったときだけ（この前で定義しているのは一部の経路だけ）`,
-            `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}, but only when its definition has run (only some paths before here define it)`),
+          ? cx.s(`このスクリプトの${lineLabel('ja', line)} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは \`shopt -s expand_aliases\` が効いているときだけで、この前で有効にしているのは一部の経路（分岐やループ）だけ`,
+            `The alias \`${name}\` defined on ${lineLabel('en', line, 'inline')}: replaced by \`${alias.value}\`${chain}, but only when \`shopt -s expand_aliases\` is on, and only some paths before here (a branch or a loop) turn it on`)
+          : cx.s(`このスクリプトの${lineLabel('ja', line)} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは定義する行を通ったときだけ（この前で定義しているのは一部の経路だけ）`,
+            `The alias \`${name}\` defined on ${lineLabel('en', line, 'inline')}: replaced by \`${alias.value}\`${chain}, but only when its definition has run (only some paths before here define it)`),
     };
   }
   // (The parser has read it as a command name: not a keyword.)
@@ -587,20 +587,20 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
         if (off) {
           return {
             name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
-            explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし、ここでは \`shopt -u expand_aliases\` でエイリアスの展開が無効なので、対話シェルでも「command not found」になる${unless}`,
-              `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But alias expansion is off here (\`shopt -u expand_aliases\`), so this is "command not found", also in an interactive shell${unless}`),
+            explanation: cx.s(`このスクリプトの${lineLabel('ja', first + 1)} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし、ここでは \`shopt -u expand_aliases\` でエイリアスの展開が無効なので、対話シェルでも「command not found」になる${unless}`,
+              `The alias \`${name}\` defined on ${lineLabel('en', first + 1, 'inline')} (\`${value}\`). But alias expansion is off here (\`shopt -u expand_aliases\`), so this is "command not found", also in an interactive shell${unless}`),
           };
         }
         return {
           name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
-          explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる${unless}。sh や dash なら \`${value}\` に置き換わる`,
-            `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found"${unless}. With sh or dash it would be replaced by \`${value}\``),
+          explanation: cx.s(`このスクリプトの${lineLabel('ja', first + 1)} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる${unless}。sh や dash なら \`${value}\` に置き換わる`,
+            `The alias \`${name}\` defined on ${lineLabel('en', first + 1, 'inline')} (\`${value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found"${unless}. With sh or dash it would be replaced by \`${value}\``),
         };
       }
     }
     if (missed.why === 'later' || missed.why === 'same-unit') {
       cx.note(fact(cx.lang, missed.why === 'same-unit' ? 'alias-defined-same-unit' : 'alias-defined-later', { name, line: first + 1 }), nameNode);
-      if (res.kind === 'file') return { name, res: ran, kind: 'command', nameTokens: [], refs: ['6.6'], explanation: cx.s(`コマンド \`${name}\` を実行する（行 ${first + 1} のエイリアスはここではまだ効かない）`, `Run the command \`${name}\` (the alias of line ${first + 1} is not in effect here)`) };
+      if (res.kind === 'file') return { name, res: ran, kind: 'command', nameTokens: [], refs: ['6.6'], explanation: cx.s(`コマンド \`${name}\` を実行する（${lineLabel('ja', first + 1)} のエイリアスはここではまだ効かない）`, `Run the command \`${name}\` (the alias of ${lineLabel('en', first + 1, 'inline')} is not in effect here)`) };
     }
   }
   if (res.kind === 'function') return { name, res: ran, kind: 'function', fn: res.sure || 'maybe', nameTokens: [], refs: ['3.3'], explanation: functionCall(cx, res) + (globs ? globOver(cx) : '') };
@@ -610,8 +610,8 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
     const line = (docLine(res.sourced) + 1);
     return {
       name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'],
-      explanation: cx.s(`\`${name}\` を実行する。行 ${line} で読み込んだファイルの関数かもしれない（そうでなければ外部コマンド）`,
-        `Run \`${name}\`: maybe a function of the file read on line ${line}, else an external command`),
+      explanation: cx.s(`\`${name}\` を実行する。${lineLabel('ja', line)} で読み込んだファイルの関数かもしれない（そうでなければ外部コマンド）`,
+        `Run \`${name}\`: maybe a function of the file read on ${lineLabel('en', line, 'inline')}, else an external command`),
     };
   }
   // Where every path runs a path of `hash -p`, but not the same one, it runs one of them.
@@ -754,14 +754,14 @@ function functionCall(cx: Explainer, res: Extract<NameResolution, { kind: 'funct
     ? cx.s('。ただし、`sh` は Debian や Ubuntu では dash で、dash は bash がエクスポートした関数を読まないので、そこでは同じ名前のコマンドが動く',
       '. But `sh` is dash on Debian and Ubuntu, and dash does not read the functions bash exports: there the command of that name runs')
     : res.maybe === 'startup'
-    ? cx.s(`。ただし、この関数は新しいシェルに渡されないので、定義されているのは起動時に読むファイル（\`-l\`、\`-i\`、\`BASH_ENV\`）${res.sourced ? `か、行 ${docLine(res.sourced) + 1} で読み込むファイル` : ''}が定義する場合だけで、そうでなければ同じ名前のコマンドが動く`,
-      `. But this function is not passed to the new shell: it is defined there only if the files it reads at startup (\`-l\`, \`-i\`, \`BASH_ENV\`)${res.sourced ? `, or the file it reads on line ${docLine(res.sourced) + 1},` : ''} define it; otherwise the command of that name runs`)
+    ? cx.s(`。ただし、この関数は新しいシェルに渡されないので、定義されているのは起動時に読むファイル（\`-l\`、\`-i\`、\`BASH_ENV\`）${res.sourced ? `か、${lineLabel('ja', docLine(res.sourced) + 1)} で読み込むファイル` : ''}が定義する場合だけで、そうでなければ同じ名前のコマンドが動く`,
+      `. But this function is not passed to the new shell: it is defined there only if the files it reads at startup (\`-l\`, \`-i\`, \`BASH_ENV\`)${res.sourced ? `, or the file it reads on ${lineLabel('en', docLine(res.sourced) + 1, 'inline')},` : ''} define it; otherwise the command of that name runs`)
     : res.maybe === 'branch'
     ? cx.s('。ただし、ここまでに定義されているのは一部の経路（分岐など）だけで、そうでなければ同じ名前のコマンドが動く',
       '. But only some paths before here (a branch…) define it; on the others the command of that name runs')
     : cx.s('。ただし、それはこれが動くときに定義されていればで、定義はスクリプトのあとの部分の一部の経路にしかない',
       '. That is, if it is defined when this runs: it is defined later in the script, on some paths only');
-  return cx.s(`このスクリプトの行 ${line} で定義された関数 \`${name}\` を呼び出す${shadows}${may}`, `Call the function \`${name}\` defined on line ${line}${shadows}${may}`);
+  return cx.s(`このスクリプトの${lineLabel('ja', line)} で定義された関数 \`${name}\` を呼び出す${shadows}${may}`, `Call the function \`${name}\` defined on ${lineLabel('en', line, 'inline')}${shadows}${may}`);
 }
 
 export function timeStatement(cx: Explainer, n: SyntaxNode): Token {

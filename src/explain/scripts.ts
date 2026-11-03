@@ -6,7 +6,7 @@
 import type { ExplainOptions, Span, Token } from '../analyzer-types';
 import type { CommandRole } from '../argv/interpret';
 import { specialVariables } from '../dict/syntax';
-import { tx } from '../i18n';
+import { lineLabel, tx } from '../i18n';
 import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
@@ -56,7 +56,7 @@ export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, p
   const used = lines.map((items, i) => ({ items, i })).filter((l) => l.items.length);
   const tokens = used.length === 1 ? used[0].items : used.map(({ items, i }): Token => ({
     kind: 'block', label: shorten(rows[i].trim()), children: items,
-    explanation: cx.s(`文字列の ${i + 1} 行目`, `Line ${i + 1} of the string`),
+    explanation: cx.s(`文字列の${lineLabel('ja', i + 1)}`, `${lineLabel('en', i + 1)} of the string`),
     span: { start: items[0].span.start, end: items[items.length - 1].span.end },
   }));
   const note = script.known ? undefined

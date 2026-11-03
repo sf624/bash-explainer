@@ -8,6 +8,7 @@
 // and a script that ends with one; `cmd || echo "msg"` where its status is the function's or the script's, or where
 // `set -e` would have stopped it.
 import { canonicalName, lookupCommand } from './dict/aliases';
+import { lineLabel } from './i18n';
 import type { FactSpec, Words } from './messages';
 import { featureWorks, type Shell } from './dialect';
 import { outputsOf } from './idioms';
@@ -37,7 +38,7 @@ const row = (n: SyntaxNode): number => n.startPosition.row + 1;
 function where(ig: Ignored): Words {
   if (ig.why === 'condition') {
     const kw = ig.at.type === 'if_statement' ? 'if' : ig.at.children[0].type;
-    return { ja: `\`${kw}\` の条件（行 ${row(ig.at)}）`, en: `in the condition of \`${kw}\` (line ${row(ig.at)})` };
+    return { ja: `\`${kw}\` の条件（${lineLabel('ja', row(ig.at))}）`, en: `in the condition of \`${kw}\` (${lineLabel('en', row(ig.at), 'inline')})` };
   }
   if (ig.why === 'and-or') {
     const op = ig.at.children.find((c) => c.type === '&&' || c.type === '||')!.type;

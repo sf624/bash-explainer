@@ -5,7 +5,7 @@
 // Japanese (joined with `。`). Code is in backticks, one shell word of the line at most in each span (the caller gives
 // the words).
 import { fdName, type RedirectKind } from './dict/syntax';
-import type { Lang } from './i18n';
+import { type Lang, lineLabel } from './i18n';
 
 const pick = (lang: Lang, ja: string, en: string): string => (lang === 'ja' ? ja : en);
 /** An English summary inside a sentence, after a name: `Sort lines` is `sort lines` (a first word in capitals, `SQL`, is kept). */
@@ -14,12 +14,6 @@ const lowerFirst = (s: string): string => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).t
 export function listSaid(lang: Lang, items: readonly string[]): string {
   if (lang === 'ja') return items.join('・');
   return items.length < 3 ? items.join(' and ') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
-}
-
-/** A range of lines of the document (1-based). */
-export function linesSaid(lang: Lang, a: number, b: number): string {
-  if (a === b) return pick(lang, `行 ${a}`, `line ${a}`);
-  return pick(lang, `行 ${a}〜${b}`, `lines ${a}–${b}`);
 }
 
 /** How a stream of a command is redirected: the kinds of `ioSaid` (an operator's, from the dictionary; a descriptor closed or moved; here-documents and here-strings). */
@@ -198,10 +192,10 @@ export const S = {
   spanning: (lang: Lang, what: string, lines: string): string => pick(lang, `${what}（${lines}）`, `${what} (${lines})`),
   functionNamed: (lang: Lang, name: string): string => pick(lang, `関数${name}`, `the function ${name}`),
   ends: (lang: Lang, word: string, what: string, line: number, does: string | undefined): string => pick(lang,
-    `${word}は行 ${line} からの${what}の終わり${does ? `。${does}` : ''}`, `${word} ends ${what} of line ${line}${does ? `: ${does}` : ''}`),
+    `${word}は${lineLabel('ja', line)} からの${what}の終わり${does ? `。${does}` : ''}`, `${word} ends ${what} of ${lineLabel('en', line, 'inline')}${does ? `: ${does}` : ''}`),
   /** The redirections of a compound command, which apply to it whole (they are written after its closing word). */
   wholeIo: (lang: Lang, what: string, io: string): string => pick(lang, `${what}全体の入出力: ${io}`, `the whole of ${what} runs with ${io}`),
-  continues: (lang: Lang, word: string, what: string, line: number): string => pick(lang, `${word}は行 ${line} からの${what}の続き`, `${word} continues ${what} of line ${line}`),
+  continues: (lang: Lang, word: string, what: string, line: number): string => pick(lang, `${word}は${lineLabel('ja', line)} からの${what}の続き`, `${word} continues ${what} of ${lineLabel('en', line, 'inline')}`),
 
   // The idioms with a sentence of their own (src/idioms.ts, `idiomSaid`).
   strictMode: (lang: Lang): string => pick(lang, '`errexit`・`nounset`・`pipefail` を有効にする（定番の strict mode）', 'turns on `errexit`, `nounset` and `pipefail`, the usual strict mode'),
@@ -223,7 +217,7 @@ export const S = {
 /**
  * A Japanese text with a space between each code span and the kana or kanji it touches (docs/japanese-style.md): the
  * clauses put a name next to a particle (`grep`を). A span is fenced by a run of backticks, closed by a run as long
- * (`codeSpan`: ``a`b``); a run that is never closed is text. A line number (`linesSaid`: 行 2, 行 2〜4) is spaced
+ * (`codeSpan`: ``a`b``); a run that is never closed is text. A line number (`lineRangeLabel`: 行 2, 行 2〜4) is spaced
  * from the kana after it too, as in 「行 1 から」.
  */
 export function jaSpaced(text: string): string {

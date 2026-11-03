@@ -1,4 +1,5 @@
 // The texts of the catalog's facts about aliases (src/messages.ts: `alias-*`), apart, to keep src/messages.ts short.
+import { lineLabel } from './i18n';
 import { noShebang, READ_INTERACTIVELY, unreadClause } from './messages-common';
 
 /** What code not read would do to make an alias work: turn `expand_aliases` on (`unreadClause`). */
@@ -29,7 +30,7 @@ export const aliasMaybeText = ({ name, value }: { name: string; value: string })
 
 /** `alias-defined-same-unit` and `alias-defined-later`: the alias is not in effect where the name is read. */
 export const aliasDefinedText = (why: 'same-unit' | 'later') => ({ name, line }: { name: string; line: number }): readonly [string, string] => (why === 'same-unit' ? [
-  `\`${name}\` は行 ${line} で \`alias\` として定義されますが、bash は行（複合コマンドや関数の本体も）をまとめて読んでから実行するので、同じ行で定義したエイリアスはまだ使えません。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
-  `\`${name}\` is defined as an alias on line ${line}, but bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`] : [
-  `\`${name}\` は行 ${line} で \`alias\` として定義されますが、これはその前に読まれ、エイリアスは実行された後に読まれるものにだけ効きます。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
-  `\`${name}\` is defined as an alias on line ${line}, but this is read before that, and an alias works only on what is read after it ran. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`]);
+  `\`${name}\` は${lineLabel('ja', line)} で \`alias\` として定義されますが、bash は行（複合コマンドや関数の本体も）をまとめて読んでから実行するので、同じ行で定義したエイリアスはまだ使えません。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
+  `\`${name}\` is defined as an alias on ${lineLabel('en', line, 'inline')}, but bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`] : [
+  `\`${name}\` は${lineLabel('ja', line)} で \`alias\` として定義されますが、これはその前に読まれ、エイリアスは実行された後に読まれるものにだけ効きます。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
+  `\`${name}\` is defined as an alias on ${lineLabel('en', line, 'inline')}, but this is read before that, and an alias works only on what is read after it ran. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`]);

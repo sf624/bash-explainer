@@ -1,6 +1,6 @@
 import { basisOf, type Basis, type BasisSpec, type TryIt } from './basis';
 import type { ConventionId } from './conventions';
-import type { Lang, Text } from './i18n';
+import { type Lang, lineLabel, type Text } from './i18n';
 import { codeSpan, shorten } from './label';
 import { alwaysFails, LEVELS, namesLevel, type NoteLevel, severityOf } from './levels';
 import { PROBLEM_LEVELS, STYLE_LEVELS, type StyleCase, type StyleCode } from './messages-levels';
@@ -151,11 +151,11 @@ export const MESSAGES = {
     `bash turns \`set -e\` off inside \`${form}\` (without \`shopt -s inherit_errexit\`): if \`${first}\` fails, the commands after it still run`]),
   ({ form }) => (form === '$( )' ? undefined : { kind: 'checked', probe: 'status#funsub-errexit' })),
   'errexit-set-called-where-ignored': note<{ name: string; line: number }>(['4.3.1'], ({ name, line }) => [
-    `この \`set -e\` は \`${name}\` の呼び出しが終わるまで効かない: \`${name}\` は \`set -e\` が無視される所（行 ${line}）から呼ばれる`,
-    `This \`set -e\` takes effect only when the call of \`${name}\` returns: \`${name}\` is called where \`set -e\` is ignored (line ${line})`]),
+    `この \`set -e\` は \`${name}\` の呼び出しが終わるまで効かない: \`${name}\` は \`set -e\` が無視される所（${lineLabel('ja', line)}）から呼ばれる`,
+    `This \`set -e\` takes effect only when the call of \`${name}\` returns: \`${name}\` is called where \`set -e\` is ignored (${lineLabel('en', line, 'inline')})`]),
   'errexit-set-maybe-called-where-ignored': note<{ name: string; line: number }>(['4.3.1'], ({ name, line }) => [
-    `\`${name}\` は \`set -e\` が無視される所（行 ${line}）からも呼ばれ、そのときこの \`set -e\` は呼び出しが終わるまで効かない`,
-    `\`${name}\` is also called where \`set -e\` is ignored (line ${line}); there this \`set -e\` takes effect only when the call returns`]),
+    `\`${name}\` は \`set -e\` が無視される所（${lineLabel('ja', line)}）からも呼ばれ、そのときこの \`set -e\` は呼び出しが終わるまで効かない`,
+    `\`${name}\` is also called where \`set -e\` is ignored (${lineLabel('en', line, 'inline')}); there this \`set -e\` takes effect only when the call returns`]),
   'errexit-set-in-ignored-subshell': note<{ where: Words }>(['4.3.1'], ({ where }) => [
     `この \`set -e\` は効かない: このサブシェルは ${where.ja}にあり、そこでは \`set -e\` が無視される`,
     `This \`set -e\` has no effect: this subshell runs ${where.en}, where \`set -e\` is ignored`]),
@@ -163,8 +163,8 @@ export const MESSAGES = {
     `この \`set -e\` は、それを含むコマンドが終わるまで効かない: ${where.ja}では \`set -e\` が無視される`,
     `This \`set -e\` takes effect only when the command that holds it ends: \`set -e\` is ignored ${where.en}`]),
   'errexit-function-called-only-where-ignored': note<{ name: string; line: number }>(['4.3.1', '3.3'], ({ name, line }) => [
-    `\`${name}\` は \`set -e\` が無視される所（行 ${line}）からしか呼ばれないので、その中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
-    `\`${name}\` is called only where \`set -e\` is ignored (line ${line}), so it is ignored in all of its body too: a command that fails in the middle does not stop it`]),
+    `\`${name}\` は \`set -e\` が無視される所（${lineLabel('ja', line)}）からしか呼ばれないので、その中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
+    `\`${name}\` is called only where \`set -e\` is ignored (${lineLabel('en', line, 'inline')}), so it is ignored in all of its body too: a command that fails in the middle does not stop it`]),
   'errexit-group-where-ignored': note<{ what: string; where: Words }>(['4.3.1'], ({ what, where }) => [
     `${where.ja}で実行されるので、${what}の中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
     `\`set -e\` is ignored in this ${what}, since it runs ${where.en}: a command that fails in the middle does not stop it`]),
@@ -179,11 +179,11 @@ export const MESSAGES = {
   // (3.2.4: the status of a list is that of its last command run; 3.3: a function's is that of the last command of its
   // body; 6.1: a script's is that of its last command. `rewrite`: an `if`, then `return 0` or `exit 0`; src/statusfacts.ts.)
   'function-last-test-returns-status': suggests(caveat<{ name: string; line: number; rewrite: readonly Rewrite[] }>(['3.3', '3.2.4', '6.1'], ({ name, line, rewrite: r }) => [
-    `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、行 ${line} の呼び出しで終わるスクリプトもその終了ステータスになる。${codeSpan(shorten(r[0].code, Infinity))} と書くか、最後に \`${r[1].code}\` を置く`,
-    `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status, and so does the script, which ends with the call on line ${line}. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the function with \`${r[1].code}\``])),
+    `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、${lineLabel('ja', line)} の呼び出しで終わるスクリプトもその終了ステータスになる。${codeSpan(shorten(r[0].code, Infinity))} と書くか、最後に \`${r[1].code}\` を置く`,
+    `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status, and so does the script, which ends with the call on ${lineLabel('en', line, 'inline')}. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the function with \`${r[1].code}\``])),
   'function-last-test-stops-script': saying(suggests(pitfall<{ name: string; line: number; rewrite: readonly Rewrite[] }>(['3.3', '3.2.4', '4.3.1'], ({ name, line, rewrite: r }) => [
-    `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、\`set -e\` により行 ${line} の呼び出しでスクリプトが止まる。${codeSpan(shorten(r[0].code, Infinity))} と書くか、最後に \`${r[1].code}\` を置く`,
-    `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on line ${line}. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the function with \`${r[1].code}\``])), 'errexit'),
+    `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、\`set -e\` により${lineLabel('ja', line)} の呼び出しでスクリプトが止まる。${codeSpan(shorten(r[0].code, Infinity))} と書くか、最後に \`${r[1].code}\` を置く`,
+    `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on ${lineLabel('en', line, 'inline')}. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the function with \`${r[1].code}\``])), 'errexit'),
   'script-last-test-returns-status': suggests(caveat<{ left: string; rewrite: readonly Rewrite[] }>(['3.2.4', '6.1', '3.7.5'], ({ left, rewrite: r }) => [
     `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗すると、スクリプトはその終了ステータス（0 以外）で終わり、呼び出し元（CI や \`make\`、\`./script && next\`）には失敗に見えます。${codeSpan(shorten(r[0].code, Infinity))} と書くか、最後に \`${r[1].code}\` を置きます`,
     `this is the last command of the script, so when \`${left}\` fails, the script ends with its non-zero status, which its caller (CI, \`make\`, \`./script && next\`) sees as a failure. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the script with \`${r[1].code}\``])),
@@ -238,23 +238,23 @@ export const MESSAGES = {
     `\`${name}\` cannot read these arguments as a conditional expression, so it fails when it runs, without evaluating anything ("unary operator expected", "binary operator expected", "too many arguments"…, status 2). This is not a syntax error but an error of the command \`${name}\` at run time`]),
   { kind: 'differs', probe: 'state#test-malformed' }),
   'function-defined-later': note<{ name: string; line: number; runs: Words }>(['3.3'], ({ name, line, runs }) => [
-    `\`${name}\` は行 ${line} で関数として定義されますが、この行はその前に実行されるので、まだ関数ではありません（${runs.ja}）`,
-    `\`${name}\` is defined as a function on line ${line}, but this runs before that, so it is not the function yet (${runs.en})`]),
+    `\`${name}\` は${lineLabel('ja', line)} で関数として定義されますが、この行はその前に実行されるので、まだ関数ではありません（${runs.ja}）`,
+    `\`${name}\` is defined as a function on ${lineLabel('en', line, 'inline')}, but this runs before that, so it is not the function yet (${runs.en})`]),
   'function-defined-in-subshell': note<{ name: string; line: number; runs: Words }>(['3.3', '3.7.3'], ({ name, line, runs }) => [
-    `\`${name}\` は行 ${line} で関数として定義されますが、それはサブシェルの中で、サブシェルで定義した関数は終わると消えます。ここでは関数ではありません（${runs.ja}）`,
-    `\`${name}\` is defined as a function on line ${line}, but in a subshell, and what a subshell defines is gone when it ends. It is not the function here (${runs.en})`]),
+    `\`${name}\` は${lineLabel('ja', line)} で関数として定義されますが、それはサブシェルの中で、サブシェルで定義した関数は終わると消えます。ここでは関数ではありません（${runs.ja}）`,
+    `\`${name}\` is defined as a function on ${lineLabel('en', line, 'inline')}, but in a subshell, and what a subshell defines is gone when it ends. It is not the function here (${runs.en})`]),
   'function-defined-in-uncalled-function': note<{ name: string; line: number; by: string; runs: Words }>(['3.3'], ({ name, line, by, runs }) => [
-    `\`${name}\` は行 ${line} で関数 \`${by}\` の中で定義され、その関数がここより前に実行されないので、まだ関数ではありません（${runs.ja}）`,
-    `\`${name}\` is defined on line ${line} inside the function \`${by}\`, which has not run before this, so it is not a function yet (${runs.en})`]),
+    `\`${name}\` は${lineLabel('ja', line)} で関数 \`${by}\` の中で定義され、その関数がここより前に実行されないので、まだ関数ではありません（${runs.ja}）`,
+    `\`${name}\` is defined on ${lineLabel('en', line, 'inline')} inside the function \`${by}\`, which has not run before this, so it is not a function yet (${runs.en})`]),
   'function-defined-in-dead-branch': note<{ name: string; line: number; runs: Words }>(['3.3', '3.2.5.2'], ({ name, line, runs }) => [
-    `\`${name}\` は行 ${line} で関数として定義されますが、そこは実行されないコード（条件が成り立たない分岐か、\`break\`・\`continue\`・\`return\`・\`exit\` の後）なので、関数ではありません（${runs.ja}）`,
-    `\`${name}\` is defined as a function on line ${line}, but in code that never runs before this (a branch whose condition is never met, or after \`break\`, \`continue\`, \`return\` or \`exit\`), so it is not the function (${runs.en})`]),
+    `\`${name}\` は${lineLabel('ja', line)} で関数として定義されますが、そこは実行されないコード（条件が成り立たない分岐か、\`break\`・\`continue\`・\`return\`・\`exit\` の後）なので、関数ではありません（${runs.ja}）`,
+    `\`${name}\` is defined as a function on ${lineLabel('en', line, 'inline')}, but in code that never runs before this (a branch whose condition is never met, or after \`break\`, \`continue\`, \`return\` or \`exit\`), so it is not the function (${runs.en})`]),
   'function-removed-by-unset': note<{ name: string; line: number; runs: Words }>(['3.3', '4.1'], ({ name, line, runs }) => [
-    `関数 \`${name}\` は行 ${line} の \`unset\` で削除されているので、ここでは関数ではありません（${runs.ja}）`,
-    `The function \`${name}\` was removed by \`unset\` on line ${line}, so it is not a function here (${runs.en})`]),
+    `関数 \`${name}\` は${lineLabel('ja', line)} の \`unset\` で削除されているので、ここでは関数ではありません（${runs.ja}）`,
+    `The function \`${name}\` was removed by \`unset\` on ${lineLabel('en', line, 'inline')}, so it is not a function here (${runs.en})`]),
   'special-builtin-before-function': note<{ name: string; line: number }>(['3.7.2', '6.11'], ({ name, line }) => [
-    `POSIX モードでは特殊ビルトインが関数より先に見つかるので、行 ${line} の関数 \`${name}\` ではなく、ビルトインの \`${name}\` が動きます`,
-    `In POSIX mode a special builtin is found before a function, so the builtin \`${name}\` runs, not the function \`${name}\` of line ${line}`]),
+    `POSIX モードでは特殊ビルトインが関数より先に見つかるので、${lineLabel('ja', line)} の関数 \`${name}\` ではなく、ビルトインの \`${name}\` が動きます`,
+    `In POSIX mode a special builtin is found before a function, so the builtin \`${name}\` runs, not the function \`${name}\` of ${lineLabel('en', line, 'inline')}`]),
   // (4.1 says what `-f` and `-v` each do, not that both together are an error.)
   'unset-function-and-variable': withBasis(failure(['4.1'], () => [
     '`unset` に `-f` と `-v` を同時に指定するとエラーになり（`cannot simultaneously unset a function and a variable`、終了ステータス 1）、何も削除されません',

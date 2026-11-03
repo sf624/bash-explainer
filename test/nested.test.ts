@@ -437,7 +437,7 @@ describe('nested scripts: the explanation', () => {
     const lines = allTokens(explain(src).items).filter((t) => t.kind === 'block');
     assert.deepStrictEqual(lines.map((t) => [t.label, t.explanation]), [['cd /x', 'Line 2 of the string'], ['make \\', 'Line 3 of the string']]);
     assert.strictEqual(spanned(src, 'make').text, 'make \\\n    all');
-    assert.deepStrictEqual(explain(src, 0, 'ja').items[0].children.flatMap((c) => allTokens([c])).filter((t) => t.kind === 'block').map((t) => t.explanation), ['文字列の 2 行目', '文字列の 3 行目']);
+    assert.deepStrictEqual(explain(src, 0, 'ja').items[0].children.flatMap((c) => allTokens([c])).filter((t) => t.kind === 'block').map((t) => t.explanation), ['文字列の行 2', '文字列の行 3']);
   });
 
   it('says why a string is not read, and when its shell is not known', () => {

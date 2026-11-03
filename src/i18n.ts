@@ -34,3 +34,11 @@ const LINE_EN: Record<LineForm, (n: number) => string> = {
 
 /** The label of line `n` (counted from 1) in the form asked for. */
 export const lineLabel = (lang: Lang, n: number, form: LineForm = 'long'): string => (lang === 'ja' ? `行 ${n}` : LINE_EN[form](n));
+
+/** A range of lines (counted from 1): `行 3〜5`, `lines 3–5`; one line when both ends are the same. */
+export const lineRangeLabel = (lang: Lang, a: number, b: number): string =>
+  a === b ? lineLabel(lang, a, 'inline') : lang === 'ja' ? `行 ${a}〜${b}` : `lines ${a}–${b}`;
+
+/** The lines of a list of numbers (counted from 1, in the order given): `行 1、3`, `line 1`, `lines 1 and 3`, `lines 1, 2 and 3`. */
+export const lineListLabel = (lang: Lang, lines: readonly number[]): string =>
+  lang === 'ja' ? `行 ${lines.join('、')}` : lines.length === 1 ? lineLabel(lang, lines[0]!, 'inline') : `lines ${lines.slice(0, -1).join(', ')} and ${lines.at(-1)}`;

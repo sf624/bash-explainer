@@ -17,12 +17,12 @@ import { dupTarget, redirects } from './dict/syntax';
 import type { CommandSaid } from './explain/commands';
 import { effEndRow, intersects, isBlockLike } from './explain/nodes';
 import { redirectParts } from './explain/redirections';
-import type { Lang } from './i18n';
+import { type Lang, lineRangeLabel } from './i18n';
 import { idiomSaid, type IdiomSpeaker } from './idioms';
 import { codeSpan, shorten } from './label';
 import { clausesOf, isProblemNote, type SentenceClause } from './messages';
 import { placeholderAlone, placeholderSaid } from './messages-argv';
-import { EMPTY, ioSaid, linesSaid, listSaid, S, sentenceEnd } from './messages-sentence';
+import { EMPTY, ioSaid, listSaid, S, sentenceEnd } from './messages-sentence';
 import { ownSubshells, STATEMENTS } from './semantics/env';
 import { attribute, docLine } from './semantics/state';
 import { CHANGING } from './semantics/walk/temporaries';
@@ -346,7 +346,7 @@ class Composer implements IdiomSpeaker {
   /** The lines from the first of `a` to the last of `b`, in the document. */
   private lines(a: SyntaxNode, b: SyntaxNode): string {
     const first = this.row(a);
-    return linesSaid(this.lang, first, first + effEndRow(b) - a.startPosition.row);
+    return lineRangeLabel(this.lang, first, first + effEndRow(b) - a.startPosition.row);
   }
 
   /** The line a node starts on, 1-based, in the document. */

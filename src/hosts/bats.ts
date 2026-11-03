@@ -3,7 +3,8 @@ import { BATS_ASSERT_COMMANDS, BATS_COMMANDS, BATS_FILE_COMMANDS, BATS_SUPPORT_C
 import type { CommandSpec } from '../argv/spec';
 import type { Extracted } from './index';
 import { Builder } from './builder';
-import { linesSaid, S, sentenceEnd } from '../messages-sentence';
+import { lineRangeLabel } from '../i18n';
+import { S, sentenceEnd } from '../messages-sentence';
 import { ALNUM, COMMENT_TEST, droppedBefore, tagComment } from './batstags';
 import type { HostRun } from '../semantics/walk/host';
 
@@ -113,7 +114,7 @@ export function batsTestLine(ex: LineExplanation, extracted: Extracted, original
   // (The sentence of the line says the test, not the function bats makes of it: src/linesentence.ts.)
   if (ex.sentence !== undefined) {
     const { start, end } = def.span;
-    ex.sentence = sentenceEnd(lang, [S.batsTest(lang, end.line > start.line ? linesSaid(lang, start.line + 1, end.line + 1) : undefined)]);
+    ex.sentence = sentenceEnd(lang, [S.batsTest(lang, end.line > start.line ? lineRangeLabel(lang, start.line + 1, end.line + 1) : undefined)]);
   }
 }
 

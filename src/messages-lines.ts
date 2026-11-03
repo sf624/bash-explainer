@@ -2,7 +2,7 @@
 // command's redirections (`redirections-in-order`, `stderr-to-original-stdout`), where a line is (`heredoc-end-line`,
 // `heredoc-body-line`, `statement-continued`), and the facts whose words come from a table of their own (an idiom, a
 // host's notes, yq's flavour), apart, to keep src/messages.ts short.
-import type { Text } from './i18n';
+import { lineLabel, type Text } from './i18n';
 import type { FdTarget, RedirectOrder } from './idioms';
 import type { StdoutGoes } from './semantics/stdout';
 
@@ -95,15 +95,15 @@ export function stderrFirstText({ dup, file, discards }: { dup: string; file: st
 
 /** `heredoc-end-line`, `heredoc-body-line`: the line ends a here-document, or is in its body (`operator`: `<<END` as written; `line`: where it starts). */
 export const heredocEndText = ({ end, operator, line }: { end: string; operator: string; line: number }): Pair => [
-  `\`${end}\` はヒアドキュメント（行 ${line} の \`${operator}\`）の終わりを示す行です。`,
-  `\`${end}\` marks the end of the here-document started by \`${operator}\` on line ${line}.`];
+  `\`${end}\` はヒアドキュメント（${lineLabel('ja', line)} の \`${operator}\`）の終わりを示す行です。`,
+  `\`${end}\` marks the end of the here-document started by \`${operator}\` on ${lineLabel('en', line, 'inline')}.`];
 export const heredocBodyText = ({ operator, line }: { operator: string; line: number }): Pair => [
-  `この行はヒアドキュメント（行 ${line} の \`${operator}\`）の本文です。`,
-  `This line is part of the here-document started by \`${operator}\` on line ${line}.`];
+  `この行はヒアドキュメント（${lineLabel('ja', line)} の \`${operator}\`）の本文です。`,
+  `This line is part of the here-document started by \`${operator}\` on ${lineLabel('en', line, 'inline')}.`];
 /** `statement-continued`: the statement started on an earlier line. */
 export const continuedText = ({ line }: { line: number }): Pair => [
-  `この文は行 ${line} から続いています（行末の \`\\\` による行継続など）。`,
-  `This statement starts on line ${line} (e.g. continued with a trailing \`\\\`).`];
+  `この文は${lineLabel('ja', line)} から続いています（行末の \`\\\` による行継続など）。`,
+  `This statement starts on ${lineLabel('en', line, 'inline')} (e.g. continued with a trailing \`\\\`).`];
 
 /** `idiom`: an idiom of src/idioms.ts (`IDIOMS`), its words from there. */
 export const idiomText = ({ idiom }: { idiom: Text }): Pair => [`定番の書き方: ${idiom.ja}`, `Idiom: ${idiom.en}`];
