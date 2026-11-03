@@ -46,6 +46,22 @@ export function sheetHeight(heights: SnapHeights, snap: Snap, keyboard: Pick<Key
   return { height: heights[snap], rest: Math.min(heights[snap], heights.half) };
 }
 
+/** The editor's room: the window's width, what the sheet leaves of its height, and whether the keyboard's fold is on. */
+export interface EditorRoom {
+  width: number;
+  height: number;
+  fold: boolean;
+}
+
+/**
+ * Whether the cursor's line is brought back into view after the sheet moved: always, but while the keyboard's fold stays
+ * on with no less room. There the moves are the visual viewport's pans (a reader scrolling with the keyboard open), which
+ * hide nothing, and leave the editor where the reader scrolled it.
+ */
+export function cursorFollows(before: EditorRoom | undefined, now: EditorRoom): boolean {
+  return !before?.fold || !now.fold || before.width !== now.width || now.height < before.height;
+}
+
 /**
  * The height a drag settles on, from the sheet's height when the finger lets go (px) and its speed then (px per ms,
  * positive upwards). A fling goes to the next height in its direction (the highest or lowest when none is left);

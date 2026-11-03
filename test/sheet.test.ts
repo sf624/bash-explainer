@@ -2,7 +2,7 @@
 // where a drag, a tap or a key leaves it, its height while the keyboard is open, and the forms of its header row. The page measures and wires them
 // (test/web-sheet.test.ts).
 import * as assert from 'assert';
-import { problemCounts, settle, sheetForms, sheetHeight, type Snap, snapHeights, tapped, keyed } from '../src/ui/sheet';
+import { cursorFollows, problemCounts, settle, sheetForms, sheetHeight, type Snap, snapHeights, tapped, keyed } from '../src/ui/sheet';
 import { viewControl } from '../src/ui/panelView';
 
 describe('the phone\'s sheet as data', () => {
@@ -34,6 +34,19 @@ describe('the phone\'s sheet as data', () => {
       assert.deepStrictEqual(sheetHeight(h, snap, place(336), 49), { height: 385, rest: 385 });
       assert.deepStrictEqual(sheetHeight(h, snap, place(336, 1 / 1.25), 49), { height: 376, rest: 376 });
     }
+  });
+
+  it('brings the cursor\'s line back after a move, but when the fold stays on with no less room (a pan with the keyboard open)', () => {
+    const room = { width: 390, height: 300, fold: true };
+    assert.strictEqual(cursorFollows(room, room), false);
+    assert.strictEqual(cursorFollows(room, { ...room, height: 340 }), false);
+    assert.strictEqual(cursorFollows(room, { ...room, height: 260 }), true);
+    assert.strictEqual(cursorFollows(room, { ...room, width: 844 }), true);
+    // The fold starting or ending; the sheet's own moves, as ever.
+    assert.strictEqual(cursorFollows(undefined, room), true);
+    assert.strictEqual(cursorFollows({ ...room, fold: false }, room), true);
+    assert.strictEqual(cursorFollows(room, { ...room, fold: false }), true);
+    assert.strictEqual(cursorFollows({ ...room, fold: false }, { ...room, fold: false, height: 340 }), true);
   });
 
   it('settles a drag on a height from where the finger lets go and how fast it moves', () => {

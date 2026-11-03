@@ -2782,8 +2782,9 @@ html.bottom-sheet #problems #problem-list {
   margin-top: calc(-1 * var(--bar-h));
 }
 
+/* (Not into the keyboard's fold: the sheet must not lie over the editor on the keyboard's top on its way there.) */
 @media (prefers-reduced-motion: no-preference) {
-  :where(html.bottom-sheet) .panel-pane:not(.dragging) {
+  :where(html.bottom-sheet:not([data-keyboard])) .panel-pane:not(.dragging) {
     transition: height 0.25s var(--ease);
   }
 

@@ -29,7 +29,7 @@ Two notes carry their code as data for the first time:
 
 ### A summary of the line on a phone
 
-On a phone (and a tablet held upright), one row says what the cursor's line is: "Ln 20 ⚠ Pitfall: set -e is on here, so the script stops…". It shows the line's first problem, errors first, then pitfalls, then caveats, with its level's mark, in the words of the Problems list; on a line with no problem, its "In short" sentence; on a comment or the shebang, what that is. The row is cut at the screen's end; a screen reader hears it whole, with the level's name ("Line 20: Warning. Pitfall: …").
+On a phone (and a tablet held upright), one row says what the cursor's line is: "Ln 20 ⚠ Pitfall: set -e is on here, so the script stops…". It shows the line's first problem in the Problems list, errors first, then pitfalls, then caveats, with its level's mark, in the list's words; on a line with no problem, its "In short" sentence; on a comment or the shebang, what that is. The row is cut at the screen's end; a screen reader hears it whole, with the level's name ("Line 20: Warning. Pitfall: …").
 
 - While you type in the editor and the on-screen keyboard is open, the app bar goes and the sheet folds to this row alone, just above the keyboard; the line you type stays in view above it. When the keyboard closes, the sheet and the bar come back as they were.
 - The folded sheet is its tabs row and this row under it (about 96 px). Before, it was the tabs row alone. There, the row leaves out "Ln 20" when the tabs row shows it.
