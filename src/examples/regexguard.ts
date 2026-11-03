@@ -337,7 +337,7 @@ let compiled = new Set<string>();
 /** What is left of a line's limit, for its examples and for the results of their panels. */
 interface Account { left: number }
 /** What the line being explained has left (`withinLine`). */
-let line: { examples: Account; results: Account } | undefined;
+let line: { limit: number; examples: Account; results: Account } | undefined;
 
 /** A whole limit, for what runs next. */
 function fresh(): void {
@@ -388,6 +388,15 @@ export function runnerStep(steps: number, max: number): void {
 /** A string or array of `size` a runner, or a model's value, is about to make: charged before it is made. */
 export function chargeSize(size: number): void {
   charge(size, 'size-not-computed');
+}
+
+/** The most columns of a made-up input (`cut -f`, `sort -k`, perl's `$F[n]`). */
+export const MAX_SAMPLE_COLUMNS = 4096;
+
+/** The columns a made-up input needs for what the command asks; past `MAX_SAMPLE_COLUMNS` there is no sample, and the example says so. */
+export function sampleColumns(wanted: number): number {
+  if (wanted > MAX_SAMPLE_COLUMNS) refuse('size-not-computed');
+  return wanted;
 }
 
 /** A runner's own operation about to read `items` things one by one (a sort's comparisons, a copy's slots): charged before it starts, as a step is. */
@@ -825,11 +834,25 @@ export function modelLimit(root: { text: string }): number {
 export function withinLine<T>(root: { text: string }, run: () => T): T {
   if (line) return run();
   const limit = shareOf(root).line;
-  line = { examples: { left: limit }, results: { left: limit } };
+  line = { limit, examples: { left: limit }, results: { left: limit } };
   try {
     return run();
   } finally {
     line = undefined;
+  }
+}
+
+/**
+ * Inside a line's budget, `run` with a budget of its own, of the same size: what is kept for the whole document (src/explain/whole.ts) must not
+ * depend on what the line that asked first had spent already.
+ */
+export function withinOwnLine<T>(run: () => T): T {
+  const outer = line!;
+  line = { limit: outer.limit, examples: { left: outer.limit }, results: { left: outer.limit } };
+  try {
+    return run();
+  } finally {
+    line = outer;
   }
 }
 

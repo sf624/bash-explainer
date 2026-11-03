@@ -557,10 +557,21 @@ export function findIdioms(statements: readonly SyntaxNode[], lang: Lang, status
   return idiomsFound(statements, lang, status).map((f) => f.fact.text);
 }
 
+/** The idioms (by their place in `IDIOMS`) each statement is. */
+const idiomsTested = new WeakMap<StatusModel, WeakMap<SyntaxNode, readonly number[]>>();
+
 /** The notes of `findIdioms`, each with the narrowest statement it was found in (where the part hover shows it). */
 export function idiomsFound(statements: readonly SyntaxNode[], lang: Lang, status: StatusModel): { fact: Fact; node: SyntaxNode }[] {
   const width = (n: SyntaxNode) => n.endIndex - n.startIndex;
-  const found = IDIOMS.map((idiom) => statements.filter((n) => idiom.test(n, status)).sort((a, b) => width(a) - width(b))[0]);
+  // (Each statement is tested once: all the lines of one over several lines ask.)
+  let tested = idiomsTested.get(status);
+  if (!tested) idiomsTested.set(status, (tested = new WeakMap()));
+  const found: (SyntaxNode | undefined)[] = [];
+  for (const n of statements) {
+    let are = tested.get(n);
+    if (!are) tested.set(n, (are = IDIOMS.flatMap((idiom, i) => (idiom.test(n, status) ? [i] : []))));
+    for (const i of are) if (!found[i] || width(n) < width(found[i]!)) found[i] = n;
+  }
   return IDIOMS.flatMap((idiom, i) => (found[i] && !(idiom.unless !== undefined && found[idiom.unless])
     ? [{ fact: fact(lang, idiom.id), node: found[i] }] : []));
 }

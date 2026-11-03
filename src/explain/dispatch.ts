@@ -151,7 +151,7 @@ export function flatten(cx: Explainer, n: SyntaxNode): Token[] {
   for (const c of childrenOnRows(withLists(n), cx.line!, cx.line!)) {
     if (!cx.onLine(c)) continue;
     if (has(patterns, c)) out.push(casePattern(cx, c));
-    else if (has(around, c)) out.push(wholeRedirect(cx, c, field(n, 'body')!));
+    else if (has(around, c)) out.push(c.startPosition.row === cx.line ? wholeRedirect(cx, c, field(n, 'body')!) : cx.whole(c, (own) => wholeRedirect(own, c, field(n, 'body')!)));
     else if (patterns.length && (c.type === '|' || c.type === ')' || c.type === '(')) continue;
     else if (c.named) pushAll(out, cx.sub(c));
     else {

@@ -20,3 +20,14 @@ export function mostOf(items: readonly number[]): number {
   for (const x of items) most = Math.max(most, x);
   return most;
 }
+
+/** The first of the items of each key, in order. */
+export function onceBy<T>(all: readonly T[], key: (x: T) => string): T[] {
+  const seen = new Set<string>();
+  return all.filter((x) => {
+    const k = key(x);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}

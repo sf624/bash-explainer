@@ -198,11 +198,14 @@ export function wantsExample(cx: Explainer, e: Example): boolean {
   return o.enabled && !(e.kind && o.disabled.includes(e.kind));
 }
 
-/** When the line runs several commands, names the one each example is for in its title. */
-export function titledExamples(cx: Explainer, root: SyntaxNode, line: number, examples: readonly Example[]): readonly Example[] {
-  const commands = onLine(root, ['command', 'extended_test', 'arithmetic_command'], line)
-    .filter((c) => intersects(c, line) && !assignmentsOnly(c));
-  if (commands.length < 2) return examples;
+/** Whether the line runs several commands: each example's title then names the one it is for (`titledExamples`). */
+export function runsSeveral(root: SyntaxNode, line: number): boolean {
+  return onLine(root, ['command', 'extended_test', 'arithmetic_command'], line)
+    .filter((c) => intersects(c, line) && !assignmentsOnly(c)).length >= 2;
+}
+
+/** The examples, each with the command it is for in its title. */
+export function titledExamples(cx: Explainer, examples: readonly Example[]): readonly Example[] {
   return examples.map((e) => {
     if (!e.target) return e;
     const target = `\`${e.target}\``;

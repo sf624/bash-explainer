@@ -20,7 +20,7 @@ import { ui } from '../src/ui/texts';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
 import { pushAll } from '../src/lists';
-import { fact } from '../src/messages';
+import { fact, isNotRead } from '../src/messages';
 
 declare const __VERSION__: string;
 
@@ -467,7 +467,7 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
   // (A bug a boundary contained, src/failures.ts: the output goes on with what can be said, standard error tells it, and the
   // exit status is 2, as when the tool stops: it is no finding about the script, and a check that could not read a line has not passed.)
   let failed = 0;
-  /** The files the parser could not follow (`SyntaxTree.unread`): no bug, but nothing of them was read. */
+  /** The files the parser could not follow (`SyntaxTree.unread`), or with a line no walk could follow (`line-too-deep`): no bug, but they were not all read. */
   let unread = 0;
   let file = '';
   const log = loggedOnce((text) => io.stderr(`bash-explainer: ${file}: ${text}\n`));
@@ -493,7 +493,8 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
       const doc = openDocument(input.text, input.kind, (text) => parser.parse(text));
       const lines = doc.lines;
       const shells = shellsOf(lines, input.name, o.shell);
-      if (doc.tree.unread) unread++;
+      // (Said once for a file, however many lines say it.)
+      let notRead = !!doc.tree.unread;
       // (A file not read says so once, on its first line, not on each.)
       const [from, to] = doc.tree.unread ? [input.lines?.[0] ?? 1, input.lines?.[0] ?? 1] : input.lines ?? [1, lines.length];
       if (!o.check && to > lines.length) {
@@ -510,16 +511,22 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
           // (An error fails the check, a warning only with --strict: the level table, src/levels.ts.)
           const fails = (i: DocumentIssue) => failsCheck(i.severity, o.strict);
           for (const i of issues) {
+            // (No finding about the script: no count holds it, and the status says it.)
+            if (isNotRead(i.code)) {
+              notRead = true;
+              continue;
+            }
             counts[SEVERITIES[i.severity].count]++;
             if (i.pitfall) counts.pitfalls++;
             if (fails(i)) counts.failing++;
           }
           if (o.format === 'json' || o.format === 'sarif' || o.sarifFile !== undefined) pushAll(json, issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }), ...(i.convention && o.settings['notes.basis'] !== false ? { convention: i.convention } : {}) })));
-          if (o.format === 'github') for (const i of issues) (fails(i) ? failing : chunks).push(annotation(input.shown, i));
+          if (o.format === 'github') for (const i of issues) (fails(i) || isNotRead(i.code) ? failing : chunks).push(annotation(input.shown, i));
           else if (o.format !== 'json' && o.format !== 'sarif') pushAll(chunks, issues.map((i) => issueText(input.shown, i, o.color)));
         } else {
           for (let line = from - 1; line < to; line++) {
             const ex = explainDocumentLine(analyzer, doc, line, o.lang, shells, explainOptions(o.settings));
+            if (ex.noteInfo.some((n) => isNotRead(n.code))) notRead = true;
             // Without an explicit range, lines with nothing to explain (blank, outside the shell code) are skipped.
             if (!input.lines && !ex.items.length && !ex.notes.length) continue;
             if (o.format === 'json') writeRow({ file: input.name, line: line + 1, text: lines[line], explanation: forJson(ex) });
@@ -531,9 +538,10 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
           }
         }
       }, (e) => {
-        if (stackFull(e)) unread++;
+        if (stackFull(e)) notRead = true;
         chunks.push(`${input.shown}: ${fact(o.lang, 'file-not-read', { why: stackFull(e) ? 'too-deep' : 'failed' }).text}`);
       });
+      if (notRead) unread++;
     }
   } finally {
     failuresGoTo(before);
@@ -554,7 +562,7 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
     write();
     if (wrote) io.stdout('\n');
   }
-  if (unread) io.stderr(`bash-explainer: ${unread} file${unread === 1 ? '' : 's'} could not be read: the output says which.\n`);
+  if (unread) io.stderr(`bash-explainer: ${unread} file${unread === 1 ? '' : 's'} could not be read in full: the output says where.\n`);
   if (failed) {
     io.stderr(`bash-explainer: ${failed} internal error${failed === 1 ? '' : 's'}: what they stopped is missing from the output. This is a bug of the tool, not a problem of the script: please report it.\n`);
   }

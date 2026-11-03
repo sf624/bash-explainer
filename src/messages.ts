@@ -95,7 +95,7 @@ const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) =
  */
 const failure = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> & { level: 'error' } => ({ kind: 'note', refs, text, level: 'error' });
 /** That a line or a file was not read: an error, as a check that could not read it has not passed, though the script may run. */
-const unreadable = <P = Record<string, never>>(text: (p: P) => readonly [string, string]): Entry<P> & { level: 'error' } => ({ kind: 'note', refs: [], text, level: 'error' });
+const unreadable = <P = Record<string, never>>(text: (p: P) => readonly [string, string]): Entry<P> & { level: 'warning' } => ({ kind: 'note', refs: [], text, level: 'warning' });
 const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text, level?: NoteLevel | ((p: P) => NoteLevel)): Entry<P> & { kind: 'pitfall' } =>
   ({ kind: 'pitfall', refs, text, ...(heading ? { heading } : {}), ...(level ? { level } : {}) });
 /**
@@ -656,9 +656,9 @@ export const MESSAGES = {
   'example-failed': note([], () => ['結果は示さない: この例の計算が Bash Explainer の不具合で失敗した。行の説明の他の部分は、そのまま読める', 'Not shown: computing this example failed, a bug of Bash Explainer. The rest of the explanation of this line stands']),
   'line-not-explained': note([], () => ['この行は説明できなかった: Bash Explainer の不具合で説明の途中に失敗した。スクリプトの誤りではない', 'This line could not be explained: Bash Explainer failed while explaining it, a bug of the tool, not a problem of the script']),
   // (No bug, so nothing is logged, and a problem where the file or the line is, so that a check that could not read it does not pass: src/document.ts.)
-  'line-too-deep': unreadable(() => ['この行は説明できなかった: 入れ子が深すぎて、最後までたどれない', 'This line could not be explained: it nests too deep to follow to the end']),
+  'line-too-deep': unreadable(() => ['この行は説明できなかった: 入れ子が深すぎて、このツールでは最後までたどれない。ツールの限界で、スクリプトの誤りではない', 'This line could not be explained: it nests too deep for this tool to follow to the end. That is a limit of the tool, not an error in the script']),
   'file-not-read': unreadable<{ why: 'too-deep' | 'failed' }>(({ why }) => (why === 'too-deep'
-    ? ['このファイルは読めなかった: 入れ子が深すぎて、構文を読み取れない。中身は説明しない', 'This file could not be read: it nests too deep for the parser, and nothing in it is explained']
+    ? ['このファイルは読めなかった: 入れ子が深すぎて、このツールでは構文を読み取れない。中身は説明しない。ツールの限界で、スクリプトの誤りではない', 'This file could not be read: it nests too deep for the parser of this tool, and nothing in it is explained. That is a limit of the tool, not an error in the script']
     : ['このファイルは読めなかった: Bash Explainer の不具合で読み取りに失敗した。スクリプトの誤りではない', 'This file could not be read: Bash Explainer failed while reading it, a bug of the tool, not a problem of the script'])),
   'regex-backslash-dropped': suggests(broken<{ list: string; digits: boolean; others: boolean; rewrite: readonly Rewrite[] }>(['3.5.9', '3.2.5.2'], ({ list, digits, others, rewrite: [fix] }) => [
     [`\`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）`,
@@ -830,6 +830,12 @@ export function isProblem(code: string): boolean {
 export function isProblemNote(n: Pick<Note, 'level' | 'code'>): boolean {
   return n.level !== 'note' && isProblem(n.code!);
 }
+
+/**
+ * The problems that say this tool could not read a line or a file (`unreadable`): no finding about the script, so that no count of findings holds them,
+ * and a check that meets one has not passed (the command-line tool exits with status 2). An error says that the line fails every time, and no one can say that here.
+ */
+export const isNotRead = (code: string | undefined): boolean => code === 'line-too-deep' || code === 'file-not-read';
 
 /** A fact before its language is chosen: its id and its params (language-free, or `Words`). */
 export type FactSpec = { [K in FactId]: { id: K; params: Params<K> } }[FactId];

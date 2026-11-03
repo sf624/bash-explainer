@@ -15,7 +15,7 @@ import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
 import { docLine, type StateModel } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
-import { listOverLines, pastWhole, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
+import { listOverLines, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { isBased, type RestingText, type TokenBasisId } from '../tokenbases';
 import { effEndRow, intersects, isBlockLike } from './nodes';
 import { pushAll } from '../lists';
@@ -43,6 +43,37 @@ export interface Walk {
   flatten(n: SyntaxNode): Token[];
   /** Line `line` of the script `tree`, explained as src/analyzer.ts explains a script, as a string of kind `kind`. */
   nestedLine(tree: SyntaxTree, line: number, shell: Shell | undefined, kind: NestedScript['kind'], opts: ExplainOptions): LineExplanation;
+  /** What `explained` makes of `n`, a statement over several lines, once for the document (src/explain/whole.ts). */
+  whole(n: SyntaxNode, explained: (cx: Explainer) => Token): Whole;
+}
+
+/**
+ * What the explanation of one statement over several lines made, kept for the document: each of its later lines reads this, and does not
+ * walk the statement again (src/explain/whole.ts). The token and those under it are finished, and frozen.
+ */
+export interface Whole {
+  readonly token: Token;
+  /** What the line says of the token (`summaryOf`), from before `dropLabelEcho`. */
+  readonly summary: string;
+  /** The notes, facts, anchors, examples and resting texts the walk collected, as `LineOutput` has them. */
+  readonly notes: readonly string[];
+  readonly facts: readonly Fact[];
+  readonly anchors: readonly NoteAnchor[];
+  readonly examples: readonly Example[];
+  readonly rested: readonly RestingText[];
+  /** The data of its notes, by their text. */
+  readonly data: ReadonlyMap<string, Note>;
+  /** Its notes each once, and what a line of nothing else says with them: their data, its facts, the anchors of its notes. */
+  readonly saidNotes: readonly string[];
+  readonly noteInfo: readonly Note[];
+  readonly saidFacts: readonly Fact[];
+  readonly saidAnchors: readonly NoteAnchor[];
+  /** Every text it says or could say: a line that says one of them too is worked out in full (`Analyzer.explained`). */
+  readonly texts: ReadonlySet<string>;
+  /** What each simple command of the statement is (`COMMAND_SAID`). */
+  readonly commands: ReadonlyMap<SyntaxNode, unknown>;
+  /** What only a line that asks for it reads, made once: its examples (with a title that names their command, or not), its sentences (`SentenceInput.kept`), its reading tree. */
+  readonly later: { examples: [Example[]?, Example[]?]; sentences: Map<string, unknown>; reading?: LineExplanation['reading'] };
 }
 
 /** What the explanation of a part of a line reads, and the only way it adds to what the line collects. */
@@ -95,6 +126,11 @@ export interface Explainer {
   explain(n: SyntaxNode): Token;
   /** Explain a child node, respecting the current line filter. */
   sub(n: SyntaxNode | null | undefined): Token[];
+  /**
+   * The token `explained` makes of `n`, kept for the document (`Whole`): frozen, and an item of the line (`flatten` asks, for one over
+   * several lines, past the start of all that holds it). The line adds what it collected to its own.
+   */
+  whole(n: SyntaxNode, explained: (cx: Explainer) => Token): Token;
   subs(nodes: readonly (SyntaxNode | null | undefined)[]): Token[];
   /** Explain a node ignoring the line filter. */
   full(n: SyntaxNode): Token;
@@ -171,6 +207,8 @@ export interface LineOutput {
   noteOf(text: string): Note;
   /** Ends the line: what is explained after it is explained whole. */
   end(): void;
+  /** The statements of the line that were explained once for the document, in the order of the walk. */
+  readonly wholes: readonly Whole[];
 }
 
 /** The models and options a line is explained with. */
@@ -202,7 +240,7 @@ export class LineExplainer implements Explainer, LineOutput {
   readonly facts: Fact[] = [];
   readonly anchors: NoteAnchor[] = [];
   /** The data of the notes said on this line, by their text. */
-  private readonly data = new Map<string, Note>();
+  readonly data = new Map<string, Note>();
   readonly examples: Example[] = [];
   readonly rested: RestingText[] = [];
   readonly context: ContextEntry[] = [];
@@ -210,6 +248,9 @@ export class LineExplainer implements Explainer, LineOutput {
   command: CommandContext | undefined = undefined;
   private current: number | null;
   private readonly memos = new Map<MemoKey<unknown>, Map<SyntaxNode, unknown>>();
+  readonly wholes: Whole[] = [];
+  /** How many nodes the walk is explaining now: at none, it is making the items of the line. */
+  private explaining = 0;
 
   /** The bash release the explanation follows (`bashExplainer.bashVersion`). */
   get bashVersion(): BashVersion {
@@ -270,20 +311,38 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   explain(n: SyntaxNode): Token {
-    return this.walk.explain(n);
+    this.explaining++;
+    try {
+      return this.walk.explain(n);
+    } finally {
+      this.explaining--;
+    }
   }
 
   sub(n: SyntaxNode | null | undefined): Token[] {
     if (!n) return [];
     if (this.current === null) return [this.walk.explain(n)];
     if (!intersects(n, this.current)) return [];
+    const first = n.startPosition.row === this.current;
     if (isBlockLike(n)) {
       // (A list over several lines of a body has no line of its own: each line explains its part, `{ a⏎ b & }`.)
-      return n.startPosition.row === this.current && !(n.type === 'command_list' && listOverLines(n)) ? [this.walk.explain(n)] : this.walk.flatten(n);
+      return first && !(n.type === 'command_list' && listOverLines(n)) ? [this.explain(n)] : this.walk.flatten(n);
     }
-    // A multi-line statement that is not a block (`\` continuation, heredoc…) is explained whole.
-    if (pastWhole(n, this.current)) return this.walk.flatten(n);
-    return [this.full(n)];
+    // A multi-line statement that is not a block (`\` continuation, heredoc…) is explained whole, by each of its lines. They read one
+    // explanation: a walk for each line would make a script's cost the square of its size. Only where it is an item of the line (a token of a
+    // block on its first line may be changed by that block, and those of a string read as a script are placed in its word), or it is explained here.
+    return [first && (this.explaining || this.nested || n.endPosition.row === n.startPosition.row) ? this.full(n) : this.whole(n, (cx) => cx.full(n))];
+  }
+
+  whole(n: SyntaxNode, explained: (cx: Explainer) => Token): Token {
+    const w = this.walk.whole(n, explained);
+    this.wholes.push(w);
+    pushAll(this.notes, w.notes);
+    pushAll(this.facts, w.facts);
+    pushAll(this.anchors, w.anchors);
+    pushAll(this.examples, w.examples);
+    pushAll(this.rested, w.rested);
+    return w.token;
   }
 
   subs(nodes: readonly (SyntaxNode | null | undefined)[]): Token[] {
@@ -332,7 +391,11 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   noteOf(text: string): Note {
-    // (Every note said on a line has its data: a fact's, or a problem's of its own kind.)
+    // (Every note said on a line has its data: a fact's, or a problem's of its own kind. A statement explained once has its own.)
+    for (const w of this.wholes) {
+      const known = w.data.get(text);
+      if (known) return known;
+    }
     return this.data.get(text)!;
   }
 

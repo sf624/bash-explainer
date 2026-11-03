@@ -19,10 +19,19 @@ import { descendants, field, fields, prefixAssignments, redirectionsOf, type Syn
 
 /** What the program of each simple command with a name on `line` receives, in source order (also those in a substitution). */
 export function argvLines(root: SyntaxNode, line: number, model: StateModel, lang: Lang): ArgvLine[] {
-  return descendants(root, ['command'])
+  let byLang = argvKept.get(model);
+  if (!byLang) argvKept.set(model, (byLang = { en: new WeakMap(), ja: new WeakMap() }));
+  const kept = byLang[lang];
+  return descendants(root, ['command'], { from: line, to: line })
     .filter((c) => c.startPosition.row <= line && line <= c.endPosition.row)
-    .flatMap((c) => argvOf(c, model, lang) ?? []);
+    .flatMap((c) => {
+      // (Each command once: all the lines of one over several lines ask.)
+      if (!kept.has(c)) kept.set(c, argvOf(c, model, lang));
+      return kept.get(c) ?? [];
+    });
 }
+
+const argvKept = new WeakMap<StateModel, Record<Lang, WeakMap<SyntaxNode, ArgvLine | undefined>>>();
 
 /** What the program of the simple command `cmd` receives; undefined for a command with no name (`x=1`, `>f`), which runs none. */
 export function argvOf(cmd: SyntaxNode, model: StateModel, lang: Lang): ArgvLine | undefined {

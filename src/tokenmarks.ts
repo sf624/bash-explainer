@@ -1,6 +1,7 @@
 // What the analyzer marks on the tokens it makes: who reads each part (`Token.origin`, src/analyzer-types.ts), for the
 // tree view of the panel (src/reading.ts), and the labels their explanations need not repeat.
 import type { LineExplanation, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
+import { pushAll } from './lists';
 import { sameSpan, spanWithin } from './noteanchors';
 import { LEVELS, type NoteLevel } from './levels';
 import { plainOf } from './messages-levels';
@@ -78,15 +79,55 @@ export function tokenAtSpan(all: readonly Token[], span: Span): Token | undefine
   return around.find((t) => sameSpan(span, t.span)) ?? around.at(-1);
 }
 
+/** The tokens under a finished token (src/explain/whole.ts), first to last as a walk meets them, with the token each is under. */
+const finished = new WeakMap<Token, { all: Token[]; above: Map<Token, Token> }>();
+function finishedTokens(root: Token) {
+  let known = finished.get(root);
+  if (!known) {
+    const all: Token[] = [];
+    const above = new Map<Token, Token>();
+    const walk = (t: Token) => {
+      all.push(t);
+      for (const c of t.children) {
+        above.set(c, t);
+        walk(c);
+      }
+    };
+    walk(root);
+    finished.set(root, (known = { all, above }));
+  }
+  return known;
+}
+
+/** The finished token `root`, with the facts `over` gives to tokens under it: copies of those and of the tokens above them, and no others. */
+function withFacts(root: Token, over: ReadonlyMap<Token, NonNullable<Token['facts']>>): Token {
+  const { above } = finishedTokens(root);
+  const path = new Set<Token>();
+  for (const at of over.keys()) {
+    for (let t: Token | undefined = at; t && !path.has(t); t = above.get(t)) path.add(t);
+  }
+  const copy = (t: Token): Token => {
+    if (!path.has(t)) return t;
+    const facts = over.get(t);
+    return { ...t, ...(facts ? { facts } : {}), children: t.children.map(copy) };
+  };
+  return copy(root);
+}
+
 /**
  * Gives every token of a line its role (`Token.role`, from its kind: src/roles.ts) and the facts of the line about it
  * (`Token.facts`): a fact said at a node (`LineExplanation.anchors`) belongs to the outermost token of the same range,
  * else to the innermost token around that range; a fact said about the line belongs to none. Made again from the
- * anchors when it runs again (a host adds its own facts: src/hosts/remap.ts).
+ * anchors when it runs again (a host adds its own facts: src/hosts/remap.ts). A finished token (src/explain/whole.ts) keeps what it has, and
+ * what the anchors add to it is on a copy: so the items given back are those of the line.
  */
-export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'facts' | 'anchors'>): void {
+export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'facts' | 'anchors'>): Token[] {
   const all: Token[] = [];
   const walk = (t: Token) => {
+    if (Object.isFrozen(t)) {
+      pushAll(all, finishedTokens(t).all);
+      return;
+    }
     t.role = KIND_ROLES[t.kind];
     delete t.facts;
     all.push(t);
@@ -94,13 +135,18 @@ export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'f
   };
   items.forEach(walk);
   const ids = new Map((ex.facts ?? []).map((f) => [f.text, f.id]));
+  const over = new Map<Token, NonNullable<Token['facts']>>();
   for (const a of ex.anchors ?? []) {
     const id = ids.get(a.text);
     if (!id) continue;
     const at = tokenAtSpan(all, a.span);
     // (Said at several nodes of one token, it is listed once.)
-    if (at) at.facts = [...new Set([...at.facts ?? [], id])];
+    if (!at) continue;
+    const facts = [...new Set([...over.get(at) ?? at.facts ?? [], id])];
+    if (!Object.isFrozen(at)) at.facts = facts;
+    else if (facts.length !== at.facts?.length) over.set(at, facts);
   }
+  return items.map((t) => (over.size && Object.isFrozen(t) ? withFacts(t, over) : t));
 }
 
 /**

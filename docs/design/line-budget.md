@@ -23,11 +23,13 @@ This must not hide bugs. `.mocharc.cjs` loads `test/support/failures-throw.ts`, 
 
 The stack running out is no bug, so it is told to no sink (`stackFull`). It is what a text nested too deep does, and it is caught at three depths:
 
-- **The parser.** `createUnbashParser().parse` never throws for it: it gives a tree with `unread: 'too-deep'`, whose root holds a parse error, so that a string read so makes nothing trusted. The parser keeps nothing from one text to the next. Every line of the file says `file-not-read`, the document has one problem, an error, at its first line, and the command-line tool says so once and exits with status 2. A string read as a script that the parser cannot follow is `too-deep`, as a string nested too deep is. This boundary holds for every product, since all of them parse there.
+- **The parser.** `createUnbashParser().parse` never throws for it: it gives a tree with `unread: 'too-deep'`, whose root holds a parse error, so that a string read so makes nothing trusted. The parser keeps nothing from one text to the next. Every line of the file says `file-not-read`, the document has one problem at its first line, and the command-line tool says so once and exits with status 2. A string read as a script that the parser cannot follow is `too-deep`, as a string nested too deep is. This boundary holds for every product, since all of them parse there.
 - **A line.** `Analyzer.explainLine` says `line-too-deep`, a problem at the line. What goes deep is the line's own walk, about 50 frames for each level of `$( )`, so a level costs more here than in the parser: `echo "$("$(…` is read and not walked at 200 levels. No one writes that.
 - **The trust scan.** `scriptTrust` trusts nothing (`eval 'a;'` 100,000 times); the lines keep their explanations.
 
-How deep the stack goes depends on what the engine has optimised so far, so the exact level is not part of what a line says; the tests stay far from it.
+How deep the stack goes depends on what the engine has optimised so far, so the exact level is not part of what a line says; the tests stay far from it. Bash runs such scripts: `echo $(echo …` 200 levels prints `a`, and it segfaults only past 3,000 levels of `"$(`. So `line-too-deep` and `file-not-read` are the limit of the tool, and say so. They are no errors, which say that a line fails every time, with a row in the bash test: they are warnings, in no count of `--counts` (`isNotRead`, src/messages.ts), no pitfalls, whatever the pitfalls settings say, and the command-line tool exits with status 2, in text and with `--check`, also with `--strict`; the Action then stops with its annotation, a warning, first among them.
+
+The parser's limit is the stack, and low for a cold engine: `"$(` is read at 200 levels and not at 300 on the first parse of a process, and at 1,500 once the code is optimised; `$(`, `(`, `{` at 10,000. With `node --stack-size=4000` it reads past 5,000. A longer stack in a worker, or an iterative walk, would raise that; not built, as no one writes such a line.
 
 In the extension host a throw from a provider, or from a timer, is logged by VS Code and stops nothing, as far as VS Code's own handler goes; the timers have the boundary too. What it does not protect from is what stops the thread or fills the memory, and for those it has only what this document says about the core, which it shares.
 
@@ -63,7 +65,7 @@ What the corpus costs: the examples of a line take 564 steps at the 90th percent
 | awk | each statement and expression, 2e5 a run | a concatenation, what is printed, `split`'s elements, `$n` and `NF` past the end |
 | perl | each statement and expression, 1e5 a run | `.`, `x`, what is printed. `1..n` was limited already |
 | sed | no loops: `b` and `t` are not run | what `s` makes |
-| coreutils | the sets of `tr` searched for each character | a set of `tr`. A number from the script sizes nothing past the input: `uniq -f` stops at the end of the line, and a made-up input has at most 64 columns (`cut -f`, `sort -k`, perl's `$F[n]`), where a field past the end is empty, as the tool says |
+| coreutils | the sets of `tr` searched for each character | a set of `tr`. A number from the script sizes nothing past the input: `uniq -f` stops at the end of the line. A made-up input has the columns the command asks for (`cut -f`, `sort -k`, perl's `$F[n]`), up to 4,096 (`sampleColumns`); past that no sample is made, and the example says so (`size-not-computed`) |
 | git log | | the padding of `%<(n)` |
 
 A cost is charged before the value is made, and a cost a script's values worked out that is no number, or below zero, gives nothing back (`charge`). Where a better algorithm is cheap, there is one: `-` of simple values uses a set.
@@ -103,17 +105,30 @@ The explanation of a line, without its examples, charges nothing. So what it doe
 | `alias c='b; b'`, 40 levels | each expansion expands the next | past 15 s | at most 20,000 expansions, then nothing is trusted |
 | `f2() { f1; f1; }`, 1000 levels | the states an error may end in doubled | past 15 s | 1 s: each state once |
 | `a && a && …` 2,000 times, and the lines around it | the walk ran out of stack, and was built again for each line | each line failed | one model that knows nothing, built once; that line says it is too deep, the others stand |
-| `sudo sudo …`, `command command …` | each reads all the words after it | 400 levels 14 s | past 8 levels the words are only words |
+| `sudo sudo …`, `command command …` | each reads all the words after it | 400 levels 14 s | past 16 commands of a line (8 of `command`) the words are only words, and say that this tool does not read them. The limit costs what it reads: 400 levels 1.2 s at 16, 2.2 s at 64, no 2^n |
 | `eval eval …` | a string read in a string | past 15 s at 4,000 | as deep as the walk reads strings (8), then nothing is trusted |
 | `sed -e … -e …` | each makes the example of the whole script | 400 times 9 s | 4,000 times 2 s |
 | `bash -c 'bash -c …'`, `'a'\''b'…` | the parts of a word looked at for each part | 10 levels past 25 s | 1 s |
 | `a b c …`, `a; b; c`, `"$x$x…"`, a heredoc's `${y:-b}` | each word looks at the others: `wordOf`, `placeOperands`, `listOperator`, `mayStopAround`, `holeOf`, the Reading tree | 8,000 words 40 s | linear, about 1 ms a word |
-| 4,000 lines of `\` continuations, or of a here-document | each line of a statement explains all of it | problems 64 s, first line 27 s | 0.4 s, 1.3 s: past 64 lines, the first says it whole, and each other its part (`pastWhole`) |
+| 4,000 lines of `\` continuations, or of a here-document | each line of a statement explains all of it | problems 64 s, first line 27 s | all lines 0.5 s, one walk: each line reads the statement's explanation, kept for the document (`Whole`, below) |
 | A host file of 1,000 lines | each line looked for its region, its pipes, its names and its bats tests over the whole file | 30 s | 4 s |
+
+### A statement over several lines
+
+A statement over several lines that is not a block is explained whole by each of its lines, and it must stay so: its command, what it does, where it started. A first answer to the square that makes, explaining each line past 64 lines only its part, lost that for 16% of real scripts over 64 lines: raw node names on the lines of a long here-document, no sentence on any line of a long loop, nothing on line 40 of an `awk '`. So nothing depends on a statement's size. What ended the square is that the lines read one walk:
+
+- `Explainer.whole` asks for the statement's `Whole` (src/explain/whole.ts), kept by the node, on the script's model and what else a walk reads (`lang`, the shell, the options that change it). It is walked once, in a context of its own and on a budget of its own, so that it is the same whichever line asks first. What fails (too deep) fails the same way, and is not walked again.
+- Its token is finished there and frozen. So only an item of the line may be one (`flatten`, at no node being explained): a block's own first line, and a string read as a script, still walk theirs, as they change what they hold.
+- A line of nothing else adds what is its own (statement-continued, what finds its problems at nodes that start on it) to what the `Whole` holds, worked out once: its notes, facts, anchors, examples, and the sentence, when all the line says is that statement. A fact of the line about a token is on a copy of that token and those above it (`markTokens`). A line that says a text the statement says too is worked out in full, as its rewrites must join: it takes a string read as a script to get there.
+- What else each line read again of the statement is kept by its node too: the idioms, the argv, the options of a builtin that a version lacks; the problems read each anchor once; a host file's copy of the token is made once.
+
+The results are those of walking each line, on all the sh and bash scripts over 64 lines of /usr and /etc (246 files, 64,185 rows: tokens, notes, facts, sentence, reading, argv, problems), with two exceptions that no such file reaches, both for two statements that meet on a line: a token of one gets its basis only from the texts of its own statement, and each has a budget of its own for its examples.
+
+The output of the command-line tool is what it was: a statement's token is printed on each of its lines, so its text or JSON is the square of the statement's size in bytes (`arr=(` of 5,000 items: 740 MB of text in 27 s).
 
 ## What it does not bound
 
-The walk of a line, with no examples, is not refused, and the models and the problems run over all the lines. That grows with the size of the text, on purpose: about 1 ms for each word of a line (under tsx), so a line of 4,000 words takes seconds, `a&` 100,000 times (200 KB) about 30 s, and each of 250,000 lines 1 to 2 ms. A very long line, or a very long file, keeps the thread that long. It is linear; no input known makes it worse, but nothing proves there is none, as nothing charges it.
+The walk of a line, with no examples, is not refused, and the models and the problems run over all the lines. That grows with the size of the text, on purpose: about 1 ms for each word of a line (under tsx), so a line of 4,000 words takes seconds, `a&` 100,000 times (200 KB) about 30 s, and each of 250,000 lines 1 to 2 ms. A very long line, or a very long file, keeps the thread that long. It is linear; no input known makes it worse, but nothing proves there is none, as nothing charges it. One square is known and left: the readings of a command's words that may give no word (src/argv/readings.ts, `contexts`) read the run's words for each word, so `echo $a0 $a1 …` of 4,000 such words takes 8 s, in the one walk of the statement.
 
 ### Whether counting is enough
 
@@ -129,4 +144,4 @@ So counting steps is the right design for the runners: it is deterministic, the 
 | vscode.dev | Hard: the extension host is itself a web worker. A nested worker needs a script it may load under the host's CSP. `terminate()` works; there is no memory limit. |
 | Web page | Feasible: a Web Worker and `terminate()`; no memory limit, and a worker that fills the memory may take the tab. |
 
-It would cost what the products have now from being synchronous (a hover that answers at once with a whole explanation), and a limit by the clock would make a line's explanation depend on the machine, which the budget avoids. So the budget stays for what it bounds, and a worker would only be a backstop. Not built.
+It would cost what the products have now from being synchronous (a hover that answers at once with a whole explanation), and a limit by the clock would make a line's explanation depend on the machine, which the budget avoids. So the budget stays for what it bounds, and a worker would only be a backstop. Not built: in the roadmap's "Deferred", after 0.10.0.

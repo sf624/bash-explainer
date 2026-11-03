@@ -9,7 +9,7 @@ import { Fix, fixFor, rewriteFix } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues, regionAt, regionShell, type ShellRegion } from './hosts';
 import { Lang } from './i18n';
 import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
-import { conventionOf, fact, isProblemNote, type Note, problemText, severityOf } from './messages';
+import { conventionOf, fact, isNotRead, isProblemNote, type Note, problemText, severityOf } from './messages';
 import { PROBLEM_LEVELS } from './messages-levels';
 import { RESERVED } from './semantics/names';
 import { type NestedScript, nestedScripts } from './semantics/nested';
@@ -151,12 +151,21 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
   // (The rewrites' edits are offsets in the text explained, the document's.)
   const starts = lineStarts(doc.tree.text);
   const place = (i: number) => placeOf(starts, i);
+  // (Each anchor once: a statement over several lines gives the same ones to each of its lines, `Whole`.)
+  const read = new Set<NoteAnchor>();
   for (let line = 0; line < doc.lines.length; line++) {
     const ex = explainDocumentLine(analyzer, doc, line, lang, shells, lean);
+    const anchors = ex.anchors?.filter((a) => !read.has(a)) ?? [];
+    if (!anchors.length) continue;
+    const onNote = new Map<string, NoteAnchor[]>();
+    for (const a of anchors) {
+      read.add(a);
+      onNote.set(a.text, [...onNote.get(a.text) ?? [], a]);
+    }
     for (const n of ex.noteInfo) {
       // (A plain fact is no problem; nor is a caveat the catalog keeps a note, `ssh-local-expansion`, the `…-not-found` of an option.)
       if (!isProblemNote(n)) continue;
-      for (const { span, rewrite } of noteAnchors(ex, n)) {
+      for (const { span, rewrite } of onNote.get(n.text) ?? []) {
         const at = span.start.line;
         const issue: DocumentIssue = {
           code: n.code!, severity: severityOf(n.level), message: problemText(n, lang), head: n.head!, ...pitfallOf(n), ...conventionOf(n),
@@ -233,7 +242,7 @@ function placeOf(starts: readonly number[], i: number): Place {
 }
 
 /** The `pitfall` field of the problem a note is: advice (`diagnostics.pitfalls` turns it off), where an error is a bug. */
-export const pitfallOf = (n: Pick<Note, 'level'>): { pitfall?: true } => (alwaysFails(n.level) ? {} : { pitfall: true });
+export const pitfallOf = (n: Pick<Note, 'level' | 'code'>): { pitfall?: true } => (alwaysFails(n.level) || isNotRead(n.code) ? {} : { pitfall: true });
 
 /** Whether `diagnostics.enabled` is off, where the surface has the setting. */
 const diagnosticsOff = (settings: Settings, surface: Surface): boolean => settingSpec('diagnostics.enabled')!.surfaces.includes(surface) && !settings['diagnostics.enabled'];
@@ -325,7 +334,7 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bas
 function issuesOf(doc: ShellDocument, lang: Lang, shells: Shells, version?: BashVersion): DocumentIssue[] {
   if (doc.tree.unread) {
     const said = fact(lang, 'file-not-read', { why: doc.tree.unread });
-    return [{ code: said.code, severity: severityOf(said.level), message: problemText(said, lang), startLine: 0, startCol: 0, endLine: 0, endCol: doc.lines[0].length }];
+    return [{ code: said.code, severity: severityOf(said.level), message: problemText(said, lang), head: said.head!, startLine: 0, startCol: 0, endLine: 0, endCol: doc.lines[0].length }];
   }
   if (doc.extracted) {
     return doc.extracted.regions.length ? hostIssues(doc.tree, doc.extracted, doc.lines, lang, shells.forced, version) : [];

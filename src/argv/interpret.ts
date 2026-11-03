@@ -193,8 +193,13 @@ export interface InterpretContext {
 }
 
 const EMPTY: CommandSpec = { summary: { ja: '', en: '' } };
-/** How many commands a line's words run one inside another are read by their specs. */
-const MAX_SLOTS = 8;
+/** How many commands a line's words run one inside another are read by their specs: each reads the words after it. */
+const MAX_SLOTS = 16;
+/** What the words of a command past `MAX_SLOTS` are read by: as words, and it says so. */
+const PAST_SLOTS: CommandSpec = {
+  summary: { ja: `${MAX_SLOTS} 段を超えて入れ子になったコマンド。このツールは、この語を読まない`, en: `A command run inside more than ${MAX_SLOTS} others: this tool does not read its words` },
+  unknownOption: { ja: 'オプションに見える語（入れ子が深いので、このツールは読まない）', en: 'Looks like an option; this tool does not read the words of a command nested this deep' },
+};
 const ASSIGNMENT = /^[A-Za-z_]\w*=/;
 /**
  * The number of words a word gives: fewest (at least one, as the text shows it) and many (two more, where it may give
@@ -495,7 +500,7 @@ class Reader {
   private command(slot: CommandSlot, at: number, end: number, of?: string, appended = false): CommandRole {
     const name = this.words[at].value;
     // (A command each of whose words runs the next, `sudo sudo sudo …`, is read once for each: past `MAX_SLOTS` the words are no more than words.)
-    const found = name === undefined || ++this.slots > MAX_SLOTS ? undefined : this.ctx.lookup?.(name);
+    const found = name === undefined ? undefined : ++this.slots > MAX_SLOTS ? PAST_SLOTS : this.ctx.lookup?.(name);
     // A slot that starts a program runs the program of a builtin's name (`env echo`: coreutils echo).
     const spec = slot.run === 'exec' && found?.program ? found.program : found;
     return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', [], false, [], appended), ...(of ? { of } : {}) };
