@@ -110,10 +110,13 @@ describe('where stdout starts out, against bash', () => {
   it('answers for the statement asked, before its own redirections', () => {
     const at = (src: string) => {
       const tree = parser.parse(src);
-      return stdoutAt(shellState(tree, 'bash'), descendants(tree.root, ['command'])[0]);
+      return stdoutAt(shellState(tree, 'bash'), descendants(tree.root, ['command']).find((c) => c.text.startsWith('make'))!);
     };
     assert.strictEqual(at('make >o'), 'plain');
     assert.strictEqual(at('make >o | cat'), 'pipe');
+    // (bash 5.3's forms, also without a bash 5.3 to run them, test/bash53.test.ts: `${ …; }` captures, `${| …; }` does not.)
+    assert.strictEqual(at('x=${ make; }'), 'capture');
+    assert.strictEqual(at('x=${| make; }'), 'unknown');
     // (Another `exec` is no `exec`: its name decides, and a redirection does.)
     assert.strictEqual(at('make; exec 3>f'), 'plain');
     assert.strictEqual(at('make; command ls >f'), 'plain');
