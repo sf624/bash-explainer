@@ -1,3 +1,4 @@
+import { markedText } from '../src/tokenmarks';
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import * as path from 'path';
@@ -503,7 +504,7 @@ describe('robustness', () => {
   });
 
   it('explains the shebangs that run env: Linux gives it the rest as one word, which only `-S` splits', () => {
-    const shebang = (line: string, lang: 'ja' | 'en' = 'en') => explain(line, 0, lang).items[0].explanation;
+    const shebang = (line: string, lang: 'ja' | 'en' = 'en') => markedText(explain(line, 0, lang).items[0]);
     assert.match(shebang('#!/usr/bin/env -S bash -e'), /`env -S` splits the rest into words and runs `bash` with `-e` and the script's path as arguments\. To bash/);
     assert.match(shebang('#!/usr/bin/env -S bash -e', 'ja'), /`env -S` が残りを単語に分け、`bash` を `-e` とスクリプトのパスを引数にして実行する。bash にとって/);
     assert.match(shebang('#!/usr/bin/env -vS bash'), /runs `bash` with the script's path as arguments\. To bash/);
@@ -551,7 +552,7 @@ describe('robustness', () => {
     assert.match(value("env -S'-vx' s", '-vx'), /`-vx` \(print each step on stderr, an option not in the dictionary\)$/);
     assert.match(value("env -S'x${A}' s", 'x${A}'), /`x…` \(the value of `\$\{…\}` is known at run time\) \(the command to run\)$/);
     assert.match(value('env --split-string= s', '--split-string='), /env splits it into no words$/);
-    assert.match(value("env -S'\"a' s", '"a'), /⚠ env refuses this string and exits with status 125, running nothing \(a quote is not closed\)$/);
+    assert.match(value("env -S'\"a' s", '"a'), /env refuses this string and exits with status 125, running nothing \(a quote is not closed\)$/);
     assert.match(value("env -S'a\\' s", 'a\\'), /\(it ends in a backslash\)$/);
     assert.match(value("env -S'a\\x' s", 'a\\x'), /\(`\\x` is not an escape it knows\)$/);
     assert.match(value(`env -S'"\\c"' s`, '"\\c"'), /\(`\\c` is inside double quotes\)$/);

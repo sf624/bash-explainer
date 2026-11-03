@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
 import { Analyzer } from '../src/analyzer';
+import { LEVELS } from '../src/levels';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { partHover, wholeLine } from '../src/ui/hoverView';
 import { panelUpdate } from '../src/ui/panelView';
@@ -78,6 +79,40 @@ describe('one record for what a token\'s row holds', () => {
     assert.ok(!('items' in msg.explanation));
     const keys = (r: PanelRow): string[] => [...Object.keys(r), ...r.children.flatMap(keys)];
     assert.deepStrictEqual(msg.rows.flatMap(keys).filter((k) => !held.has(k)), []);
+  });
+
+  it('draws a warning of a row from its level: the text holds no mark, the record has its level and its id', async () => {
+    const parser = createUnbashParser();
+    for (const [src, lang, id, sentence] of [
+      ['#!bash', 'en', 'shebang-relative-interpreter', '. ⚠ The kernel does not search PATH'],
+      ['#!bash', 'ja', 'shebang-relative-interpreter', '。⚠ カーネルはインタープリタを PATH から探さず'],
+      ['#!/usr/bin/env bash -e', 'en', 'shebang-env-one-argument', '. ⚠ On Linux the whole `bash -e`'],
+      ['echo $((09))', 'en', 'arith-invalid-number', '⚠ Invalid number `09`'],
+      ['terraform -var-file=x plan', 'en', 'terraform-option-before-subcommand', '⚠ an option before the subcommand'],
+    ] as const) {
+      const ex = new Analyzer(lang).explainLine(parser.parse(src), 0, 'bash', { reading: true });
+      const all = (ts: typeof ex.items): typeof ex.items => ts.flatMap((t) => [t, ...all(t.children)]);
+      const tok = all(ex.items).find((t) => t.marks?.some((m) => m.id === id))!;
+      assert.ok(tok, src);
+      assert.ok(tok.texts?.includes(id), src);
+      assert.ok(!tok.explanation.includes(LEVELS.warning.mark), tok.explanation);
+      const row = tokenRow(tok, lang);
+      assert.strictEqual(row.level, 'warning');
+      assert.ok(row.text.includes(sentence), row.text);
+      assert.ok(toPlainMarkdown(ex, src, 'a.sh:1', lang).includes(sentence), src);
+      let text = '';
+      await main(['--no-config', '--no-color', '--lang', lang, '-e', src], { stdout: (s) => { text += s; }, stderr: () => {}, env: {}, isTTY: false });
+      assert.ok(text.includes(sentence.replace(/`/g, '')), text);
+    }
+    // In Reading, and in a line's summary (a shebang's row is what it says), and from the embedded arithmetic.
+    const ex = new Analyzer('en').explainLine(parser.parse('#!bash'), 0, 'bash', { reading: true });
+    const nodes = (n: NonNullable<typeof ex.reading>): (typeof n)[] => [n, ...n.children.flatMap(nodes)];
+    assert.ok(nodes(ex.reading!).some((n) => n.text?.includes('⚠ The kernel')));
+    assert.ok(ex.summary.includes('⚠ The kernel'));
+    const embedded = new Analyzer('en').explainLine(parser.parse('let x=09'), 0, 'bash');
+    assert.ok(JSON.stringify(embedded.items).includes('"marks":[{"id":"arith-invalid-number"'));
+    // (A row with no warning has no level.)
+    assert.strictEqual(tokenRow(new Analyzer('en').explainLine(parser.parse('ls'), 0, 'bash').items[0], 'en').level, undefined);
   });
 
   it('says the same in every output: the record\'s label, text and references, each in its markup', async () => {

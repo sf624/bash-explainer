@@ -1,6 +1,7 @@
 // The helpers on syntax nodes, tokens and positions that the explanation of every part uses (docs/design/analyzer.md,
 // 2.3): which nodes a line explains, how a token is labelled and ordered, where an offset is, and where a token of an
 // embedded explainer is in the source.
+import { markedText } from '../tokenmarks';
 import type { Pos, Span, Token, TokenOrigin } from '../analyzer-types';
 import type { EmbeddedToken } from '../embedded/types';
 import { labelText, shorten, skeleton } from '../label';
@@ -54,7 +55,7 @@ export function skeletal(t: Token, n: SyntaxNode, onlyIfCut = false): Token {
 }
 
 export function summaryOf(t: Token): string {
-  return t.summary ?? t.explanation;
+  return t.summary ?? markedText(t);
 }
 
 export function sortTokens(ts: Token[]): Token[] {
@@ -107,6 +108,8 @@ export function fromEmbedded(t: EmbeddedToken, node: SyntaxNode, lit: Literal, o
     children: t.children.map((c) => fromEmbedded(c, node, lit, origin)),
     origin,
     ...(t.group ? { group: t.group } : {}),
+    ...(t.texts ? { texts: t.texts } : {}),
+    ...(t.marks ? { marks: t.marks } : {}),
   };
 }
 

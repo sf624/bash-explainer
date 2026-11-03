@@ -10,10 +10,14 @@ import { base, counted as countedAny, enclosing, isAllowed, lineOf, parseSource,
 //   plain-note   a call of `plainNote(…)` or `marked(…)`, imported from src/messages.ts, anywhere in src/: a note made from inline text
 //                (syntactic);
 //   notes-push   `notes.push(text)` on a list of strings that a function of src/explain/ or src/examples/ declares as `notes` and returns
-//                as `string[]`: the text of the line's notes, without a fact (syntactic).
+//                as `string[]`: the text of the line's notes, without a fact (syntactic);
+//   token-text   an inline text `cx.s(ja, en)` written where src/explain/ gives a token its text: the third argument of `cx.tok`, a property
+//                `explanation:`, `x.explanation =` or `+=` (syntactic): such a text comes from the catalog of token texts
+//                (`cx.text(id, params)`, src/messages-tokens.ts). A helper's text that reaches the token through a variable or a return is
+//                not found.
 // `npx tsx test/support/note-strings.ts` prints the matches as the known list's entries (counts per file, function and kind), `--lines` the places.
 
-export type Kind = 'note-string' | 'plain-note' | 'notes-push';
+export type Kind = 'note-string' | 'plain-note' | 'notes-push' | 'token-text';
 export type Match = MatchOf<Kind>;
 
 /** The directories whose notes are said through the line's context. */
@@ -49,8 +53,8 @@ function functionAround(n: ts.Node): ts.SignatureDeclaration | undefined {
 
 /** The syntactic matches of one source file of src/, `rel` being its path from the repo root. */
 export function scanSyntax(rel: string, text: string): Match[] {
-  // (Most files name neither: they are not parsed.)
-  if (!/\bplainNote\b|\bmarked\b|(?:const|let)\s+\w*notes\b/i.test(text)) return [];
+  // (Most files outside src/explain/ name neither: they are not parsed.)
+  if (!rel.startsWith('src/explain/') && !/\bplainNote\b|\bmarked\b|(?:const|let)\s+\w*notes\b/i.test(text)) return [];
   const sf = parseSource(rel, text);
   const found: Match[] = [];
   const add = (n: ts.Node, kind: Kind, what: string): void => {
@@ -67,6 +71,19 @@ export function scanSyntax(rel: string, text: string): Match[] {
     ts.forEachChild(n, declared);
   };
   if (inNoteDir(rel)) declared(sf);
+  // The inline texts of an expression that gives a token its text; not those of a function inside it.
+  const inlineTexts = (e: ts.Node): void => {
+    if (ts.isArrowFunction(e) || ts.isFunctionExpression(e)) return;
+    if (ts.isCallExpression(e) && e.expression.getText() === 'cx.s') add(e, 'token-text', 'cx.s');
+    ts.forEachChild(e, inlineTexts);
+  };
+  const tokenText = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && n.expression.getText() === 'cx.tok' && n.arguments[2]) inlineTexts(n.arguments[2]);
+    if (ts.isPropertyAssignment(n) && n.name.getText() === 'explanation') inlineTexts(n.initializer);
+    if (ts.isBinaryExpression(n) && [ts.SyntaxKind.EqualsToken, ts.SyntaxKind.PlusEqualsToken].includes(n.operatorToken.kind) && /\.explanation$/.test(n.left.getText())) inlineTexts(n.right);
+    ts.forEachChild(n, tokenText);
+  };
+  if (rel.startsWith('src/explain/')) tokenText(sf);
   const visit = (n: ts.Node): void => {
     if (ts.isCallExpression(n)) {
       const callee = n.expression;

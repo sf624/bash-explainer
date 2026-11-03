@@ -1,3 +1,580 @@
 {
-  "plain": []
+  "plain": [
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "render",
+      "kind": "token-text",
+      "count": 4,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "declarationOption",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "endOfOptions",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "optionToken",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "equalsToken",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "letterParts",
+      "kind": "token-text",
+      "count": 3,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "valueToken",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "operandToken",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "markedAssignment",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "declaredOperand",
+      "kind": "token-text",
+      "count": 3,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "argumentAssignment",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "wrapped",
+      "kind": "token-text",
+      "count": 3,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "positional",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "findExpression",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/argv.ts",
+      "fn": "testArgs",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/assignments.ts",
+      "fn": "assignmentList",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/assignments.ts",
+      "fn": "assignment",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/commands.ts",
+      "fn": "splitCommand",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/commands.ts",
+      "fn": "aliasArguments",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/commands.ts",
+      "fn": "commandParts",
+      "kind": "token-text",
+      "count": 6,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/commands.ts",
+      "fn": "commandTail",
+      "kind": "token-text",
+      "count": 3,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/commands.ts",
+      "fn": "commandHead",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/commands.ts",
+      "fn": "commandHeadFor",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/commands.ts",
+      "fn": "headOf",
+      "kind": "token-text",
+      "count": 17,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/commands.ts",
+      "fn": "noShellHead",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/commands.ts",
+      "fn": "timed",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/commands.ts",
+      "fn": "timeProgram",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/commands.ts",
+      "fn": "timeLead",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/compound.ts",
+      "fn": "anon",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/compound.ts",
+      "fn": "comment",
+      "kind": "token-text",
+      "count": 4,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/compound.ts",
+      "fn": "shebang",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/compound.ts",
+      "fn": "functionDef",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/compound.ts",
+      "fn": "coprocStatement",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/compound.ts",
+      "fn": "forStatement",
+      "kind": "token-text",
+      "count": 3,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/compound.ts",
+      "fn": "caseStatement",
+      "kind": "token-text",
+      "count": 3,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/compound.ts",
+      "fn": "caseItem",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/compound.ts",
+      "fn": "pipeline",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/dispatch.ts",
+      "fn": "explainNode",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/embedded.ts",
+      "fn": "ansiCString",
+      "kind": "token-text",
+      "count": 4,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/hoststrings.ts",
+      "fn": "hostString",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/lists.ts",
+      "fn": "listOperatorToken",
+      "kind": "token-text",
+      "count": 6,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/redirections.ts",
+      "fn": "redirectedWhole",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/redirections.ts",
+      "fn": "wholeRedirect",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/redirections.ts",
+      "fn": "heredoc",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/redirections.ts",
+      "fn": "herestring",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/scripts.ts",
+      "fn": "scriptTokens",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/scripts.ts",
+      "fn": "joinedScript",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/sequences.ts",
+      "fn": "sequenceParts",
+      "kind": "token-text",
+      "count": 4,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/tests.ts",
+      "fn": "regexNode",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/tests.ts",
+      "fn": "unary",
+      "kind": "token-text",
+      "count": 4,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/tests.ts",
+      "fn": "binary",
+      "kind": "token-text",
+      "count": 4,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/tests.ts",
+      "fn": "ternary",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/tests.ts",
+      "fn": "postfix",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/tests.ts",
+      "fn": "parenthesized",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "bracketPiece",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "word",
+      "kind": "token-text",
+      "count": 4,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "string",
+      "kind": "token-text",
+      "count": 4,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "braceWordToken",
+      "kind": "token-text",
+      "count": 3,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "tilde",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "tildeTokens",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "globToken",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "casePattern",
+      "kind": "token-text",
+      "count": 3,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "variable",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "simpleExpansion",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "arrayValue",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "arrayElement",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "subscript",
+      "kind": "token-text",
+      "count": 3,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "arithChildren",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "arithmeticExpansion",
+      "kind": "token-text",
+      "count": 2,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "rawString",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "number",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    },
+    {
+      "file": "src/explain/words.ts",
+      "fn": "array",
+      "kind": "token-text",
+      "count": 1,
+      "to": "catalog fact",
+      "reason": "an inline text a token shows, not in the catalog of token texts yet (src/messages-tokens.ts)"
+    }
+  ]
 }

@@ -23,6 +23,7 @@
 //
 // The layers come from the tree and from `Token.origin`, never from a label or an explanation. The explanations of
 // the nodes are those of the tokens about the same text: bash's own (`shell`) for the nodes bash reads.
+import { markedText } from './tokenmarks';
 import type { Pos, ScriptProcess, Span, Token } from './analyzer-types';
 import type { Basis, TryIt } from './basis';
 import { binaryTestOperands, binaryTestOps, extendedEqualOps, plainPatternOps, testOperandTexts, unaryTestOperands, unaryTestOps } from './dict/syntax';
@@ -97,7 +98,7 @@ export interface ReadingNode {
 }
 
 /** The text of a token for a node, with its basis and try-it when it has them (docs/design/basis.md, step 4). */
-const saidBy = (t: Token): Pick<ReadingNode, 'text' | 'basis' | 'tryIt'> => ({ text: t.explanation, ...(t.basis ? { basis: t.basis } : {}), ...(t.tryIt ? { tryIt: t.tryIt } : {}) });
+const saidBy = (t: Token): Pick<ReadingNode, 'text' | 'basis' | 'tryIt'> => ({ text: markedText(t), ...(t.basis ? { basis: t.basis } : {}), ...(t.tryIt ? { tryIt: t.tryIt } : {}) });
 
 /** What the reading tree asks of the analyzer. */
 export interface ReadingContext {

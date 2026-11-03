@@ -2,14 +2,17 @@
 // (media/panel.js `item`), the hover (src/ui/hoverView.ts), Markdown (src/ui/render.ts `toPlainMarkdown`) and the command line
 // (cli/main.ts `textOutput`) read this record and differ only in the markup; test/row-source.test.ts fails on an output that reads
 // a token's text by itself. The panel's row model (docs/design/panel-redesign.md, P7a) builds on it.
-import type { Example, Kind, Span, Token, ValueInfo } from '../analyzer-types';
+import type { Example, Kind, Span, Token, TokenMark, ValueInfo } from '../analyzer-types';
 import type { Basis, TryIt } from '../basis';
 import { pictureText } from '../ctlchars';
 import type { Lang } from '../i18n';
 import { type LabelPart, labelParts } from '../label';
-import { basisSaid, type BasisSaid } from '../messages';
+import { LEVELS, type NoteLevel } from '../levels';
+import { basisSaid, type BasisSaid, type FactId } from '../messages';
+import type { TokenTextId } from '../messages-tokens';
 import type { NameInfo } from '../namefacts';
 import { KIND_ROLES, type TokenRole } from '../roles';
+import { markedText } from '../tokenmarks';
 import { sameSpan } from './hoverParts';
 
 /** What a view marks on a note or a row that rests on bash's behaviour (docs/design/basis.md, 3): the chip, and the try-it. */
@@ -39,8 +42,16 @@ export interface TokenRow {
   label: string;
   /** The label as code and placeholders (`if` *condition* `then`). */
   labelParts: readonly LabelPart[];
-  /** What it means (marked text: code in backticks). */
+  /** What it means (marked text: code in backticks), with the level's mark before each warning in it. */
   text: string;
+  /** The texts of the catalog of token texts it says. */
+  texts?: readonly TokenTextId[];
+  /** The warnings in its text: each with its id, its level and its text. */
+  marks?: readonly TokenMark[];
+  /** The strongest level of its warnings. */
+  level?: NoteLevel;
+  /** The facts of the catalog of notes the line says about this part. */
+  facts?: readonly FactId[];
   /** What its command name is, and who looks it up. */
   name?: NameInfo;
   /** The value of the expansion where it runs. */
@@ -59,7 +70,11 @@ export function tokenRow(tok: Token, lang: Lang): TokenRow {
     group: tok.group,
     label: tok.label,
     labelParts: labelParts(tok),
-    text: tok.explanation,
+    text: markedText(tok),
+    texts: tok.texts,
+    marks: tok.marks,
+    level: tok.marks?.map((m) => m.level).sort((a, b) => LEVELS[a].rank - LEVELS[b].rank)[0],
+    facts: tok.facts,
     name: tok.name,
     value: tok.value,
     refs: tok.refs,
