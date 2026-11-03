@@ -176,6 +176,18 @@ describe('the box "Problems on this line"', () => {
     // (Silenced on a line, not on another line with the same text.)
     const two = '# bash-explainer disable=arith-invalid-number\necho $((09))\necho $((09))';
     assert.deepStrictEqual([1, 2].map((l) => update(two, l, defaultSettings()).problems.length), [0, 1]);
+    // (A statement over several lines: the cursor's own line, not silenced, does not let in a problem silenced on another line. The box
+    // and the list agree on every line: the box holds only what the list shows.)
+    const off = '# bash-explainer disable=arith-invalid-number\n';
+    for (const text of [`${off}echo $((09)) \\\n  b`, `${off}echo $((09)) |\n  cat`, 'echo $((09)) \\\n  $((08)) # bash-explainer disable=arith-invalid-number']) {
+      const settings = defaultSettings();
+      const shown = diagnosticsFor(() => doc(text), () => ({ detected: { shell: 'bash', source: 'default' } }) as never, 'en', settings, 'vscode').shown;
+      for (let l = 0; l < text.split('\n').length; l++) {
+        const inBox = update(text, l, settings).problems.map((p) => p.text);
+        const listed = shown.map((i) => i.message);
+        assert.deepStrictEqual(inBox.filter((t) => !listed.includes(t)), [], `${text} @${l}`);
+      }
+    }
     // (Where the settings turn the problems off, none is in the box.)
     assert.deepStrictEqual(update('echo $((09))', 0, { ...defaultSettings(), 'diagnostics.enabled': false }).problems, []);
   });

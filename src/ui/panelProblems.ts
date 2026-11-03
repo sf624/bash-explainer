@@ -2,7 +2,7 @@
 // level's mark and word, its headline, what "more" holds (the whole text and the fixes to copy), and the rows it links to;
 // then a pointer to each problem on the line of a construct around this one. media/panel.js only draws it.
 import type { LineExplanation, Token } from '../analyzer-types';
-import { type DocumentIssue, type IssueFilter, pitfallOf } from '../document';
+import { type DocumentIssue, type IssueFilter, noteAnchors, pitfallOf } from '../document';
 import type { Lang } from '../i18n';
 import { LEVELS, type NoteLevel, levelWord, problemLevel, SEVERITIES, type ProblemSeverity } from '../levels';
 import { isProblemNote, type Note, problemText } from '../messages';
@@ -55,8 +55,9 @@ function tokenPaths(items: readonly Token[], prefix = ''): Map<Token, string> {
  */
 export function isListed(ex: Pick<LineExplanation, 'line' | 'anchors'>, n: Note, shown: IssueFilter): boolean {
   if (!isProblemNote(n)) return false;
-  const lines = new Set([ex.line, ...(ex.anchors?.filter((a) => a.text === n.text).map((a) => a.span.start.line) ?? [])]);
-  return [...lines].some((startLine) => shown({ code: n.code!, startLine, ...pitfallOf(n) }));
+  // (As `noteIssues` does: a note on nodes is judged on their lines only, not on the cursor's own; one on no node, on its line.)
+  const at = noteAnchors(ex, n).map((a) => a.span.start.line);
+  return (at.length ? at : [ex.line]).some((startLine) => shown({ code: n.code!, startLine, ...pitfallOf(n) }));
 }
 
 /** The problems of the line, errors first; the notes that are no problems (or were silenced) stay notes. */
@@ -65,7 +66,7 @@ export function boxProblems(ex: LineExplanation, items: readonly Token[], lang: 
   const tokens = [...paths.keys()];
   return notesByLevel(ex).filter((n) => isListed(ex, n, shown)).map((n) => {
     const { className, codicon } = LEVELS[n.level];
-    const anchors = ex.anchors?.filter((a) => a.text === n.text) ?? [];
+    const anchors = noteAnchors(ex, n);
     const rows = anchors.map((a) => tokenAtSpan(tokens, a.span)).filter((t) => t !== undefined).map((t) => paths.get(t)!);
     const basis = noteBasis(ex, n.text, lang);
     return {
