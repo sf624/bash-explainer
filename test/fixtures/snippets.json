@@ -1877,6 +1877,7 @@
  "x=(",
  "x=*.txt",
  "x=1",
+ "x=1\necho \"$x\"\n[ \"$x\" = 1 ] && echo b\n",
  "x=1\ngrep -iF \"$user\" f",
  "x=1 \"$cmd\"",
  "x=1 $cmd",
