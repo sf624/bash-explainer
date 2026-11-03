@@ -325,6 +325,16 @@ describe('the GitHub Action', function () {
       }
     });
 
+    it('is judged by where it ends when `..` follows a link', async () => {
+      fs.mkdirSync(path.join(dir, 'outside', 'x', 'y'), { recursive: true });
+      fs.symlinkSync('../outside/x/y', path.join(workspace, 'l'));
+      for (const SARIF of ['l/../../r.sarif', 'l/../r.sarif']) {
+        refused(await step({ SARIF }));
+        assert.deepStrictEqual(fs.readdirSync(path.join(dir, 'outside')).sort(), ['later.sh', 'x']);
+        assert.deepStrictEqual(fs.readdirSync(path.join(dir, 'outside', 'x')), ['y']);
+      }
+    });
+
     it('leaves no temporary file when the tool cannot write it', async () => {
       const r = await step({ SARIF: 'missing/dir/r.sarif' });
       assert.strictEqual(r.code, 2, r.out);
@@ -346,6 +356,40 @@ describe('the GitHub Action', function () {
       const global = path.join(dir, 'global-npmrc');
       fs.writeFileSync(global, `registry=${good.url}\n`);
       realToolRan(await step({ PACKAGE: '' }, { RUNNER_TEMP: path.join(workspace, 'tmp'), NPM_CONFIG_GLOBALCONFIG: global }));
+      assert.ok(good.requests.some((q) => q.url === '/bash-explainer'));
+    });
+
+    it('reads the machine\'s global npm settings', async () => {
+      // (PREFIX: where npm looks for them by default, as it does beside node.)
+      const machine = path.join(dir, 'machine');
+      fs.mkdirSync(path.join(machine, 'etc'), { recursive: true });
+      fs.writeFileSync(path.join(machine, 'etc', 'npmrc'), `registry=${good.url}\n`);
+      realToolRan(await step({ PACKAGE: '' }, { PREFIX: machine }));
+      assert.ok(good.requests.some((q) => q.url === '/bash-explainer'));
+    });
+
+    for (const name of ['NPM_CONFIG_USERCONFIG', 'npm_config_userconfig', 'NPM_CONFIG_GLOBALCONFIG', 'npm_config_globalconfig']) {
+      it(`does not read an npm settings file named by ${name} inside the workspace`, async () => {
+        const machine = path.join(dir, 'machine');
+        fs.mkdirSync(path.join(machine, 'etc'), { recursive: true });
+        fs.writeFileSync(path.join(machine, 'etc', 'npmrc'), `registry=${good.url}\n`);
+        fs.symlinkSync(path.join(workspace, '.npmrc'), path.join(dir, 'npmrc-link'));
+        for (const file of [path.join(workspace, '.npmrc'), '.npmrc', path.join(dir, 'npmrc-link')]) {
+          realToolRan(await step({ PACKAGE: '' }, { PREFIX: machine, [name]: file }));
+          assert.ok(good.requests.some((q) => q.url === '/bash-explainer'), file);
+          good.requests.length = 0;
+        }
+      });
+    }
+
+    it('reads an npm settings file in the temp directory, also one inside the workspace', async () => {
+      const temp = path.join(workspace, 'tmp');
+      fs.mkdirSync(temp);
+      const npmrc = path.join(temp, '.npmrc');
+      fs.writeFileSync(npmrc, `registry=${good.url}\n`);
+      const r = await step({ PACKAGE: '' }, { RUNNER_TEMP: temp, NPM_CONFIG_USERCONFIG: npmrc });
+      fs.rmSync(npmrc);
+      realToolRan(r);
       assert.ok(good.requests.some((q) => q.url === '/bash-explainer'));
     });
 
@@ -372,6 +416,62 @@ describe('the GitHub Action', function () {
     it('reads the file a workflow names in BASH_EXPLAINER_CONFIG, wherever it is', async () => {
       fs.writeFileSync(path.join(workspace, 'settings.json'), silent);
       assert.strictEqual((await step({}, { BASH_EXPLAINER_CONFIG: path.join(workspace, 'settings.json') })).code, 0);
+    });
+  });
+
+  describe('files outside the workspace', () => {
+    const notice = (name: string) => `::notice title=Bash Explainer::Skipped ${name}: it is outside the workspace.`;
+    beforeEach(() => {
+      fs.mkdirSync(path.join(dir, 'outside'));
+      fs.writeFileSync(path.join(dir, 'outside', 'secret'), '#!/bin/sh\nsource VALUE_OF_THE_FILE\n');
+    });
+
+    it('skips one that a link at its name leads to, says which, and checks the others', async () => {
+      fs.symlinkSync('../outside/secret', path.join(workspace, 'z.sh'));
+      const r = await step({});
+      realToolRan(r);
+      assert.ok(r.out.split('\n').includes(notice('z.sh')), r.out);
+      assert.doesNotMatch(r.out, /VALUE_OF_THE_FILE/);
+    });
+
+    it('skips one reached through a directory that is a link', async () => {
+      fs.symlinkSync('../outside', path.join(workspace, 'dl'));
+      const r = await step({ FILES: 'dl/* scripts/*.sh' });
+      realToolRan(r);
+      assert.ok(r.out.split('\n').includes(notice('dl/secret')), r.out);
+      assert.doesNotMatch(r.out, /VALUE_OF_THE_FILE/);
+    });
+
+    it('skips one named by its path, and passes when no file is left', async () => {
+      const file = path.join(dir, 'outside', 'secret');
+      const r = await step({ FILES: `${file} ../outside/secret` });
+      assert.strictEqual(r.code, 0, r.out);
+      assert.ok(r.out.split('\n').includes(notice(file)), r.out);
+      assert.ok(r.out.split('\n').includes(notice('../outside/secret')), r.out);
+      assert.match(r.out, /^No files match: /m);
+      assert.deepStrictEqual(r.outputs, { errors: '0', warnings: '0', pitfalls: '0' });
+      assert.doesNotMatch(r.out, /VALUE_OF_THE_FILE/);
+    });
+
+    it('keeps a notice on one line, whatever the name holds', async () => {
+      fs.symlinkSync('../outside/secret', path.join(workspace, 'a\nb%c.sh'));
+      const r = await step({ FILES: 'a*' });
+      assert.ok(r.out.split('\n').includes(notice('a%0Ab%25c.sh')), r.out);
+    });
+
+    it('checks one that a link inside the workspace leads to, under its name', async () => {
+      fs.symlinkSync('scripts/a.sh', path.join(workspace, 'b.sh'));
+      const r = await step({ FILES: 'b.sh' });
+      assert.strictEqual(r.code, 1, r.out);
+      assert.match(r.out, /^::error file=b\.sh,line=2,/m);
+      assert.doesNotMatch(r.out, /::notice/);
+    });
+
+    it('takes the workspace by its real path', async () => {
+      fs.symlinkSync(workspace, path.join(dir, 'link-to-workspace'));
+      const r = await step({ FILES: `${path.join(dir, 'link-to-workspace', 'scripts', 'a.sh')}` });
+      assert.strictEqual(r.code, 1, r.out);
+      assert.doesNotMatch(r.out, /::notice/);
     });
   });
 

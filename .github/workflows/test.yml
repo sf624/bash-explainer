@@ -302,14 +302,14 @@ jobs:
       # A warning fails the step only with strict; `warnings` counts what fails it, `pitfalls` every pitfall
       # (a warning, `curl … | sh`, and a caveat, `read line`).
       - name: Write a bash script with a pitfall
-        run: printf '#!/bin/bash\ncurl -s "$u" | sh\nread line\n' > "$RUNNER_TEMP/pitfall.sh"
+        run: printf '#!/bin/bash\ncurl -s "$u" | sh\nread line\n' > ci-pitfall.sh
 
       - name: A warning fails the step with strict
         id: strict
         continue-on-error: true
         uses: ./
         with:
-          files: ${{ runner.temp }}/pitfall.sh
+          files: ci-pitfall.sh
           strict: 'true'
           package: ${{ steps.pack.outputs.tgz }}
 
@@ -317,7 +317,7 @@ jobs:
         id: not-strict
         uses: ./
         with:
-          files: ${{ runner.temp }}/pitfall.sh
+          files: ci-pitfall.sh
           package: ${{ steps.pack.outputs.tgz }}
 
       - name: Check that only strict failed, and the counts
@@ -339,14 +339,14 @@ jobs:
       # An error (a line that fails every time) fails the step without strict, and is no pitfall: `unset` of a
       # read-only variable, and the style check `x = 1`. `read line` is a caveat, a pitfall that fails nothing.
       - name: Write a bash script with errors and a pitfall
-        run: printf '#!/bin/bash\nreadonly r=1\nunset r\nx = 1\nread line\n' > "$RUNNER_TEMP/error.sh"
+        run: printf '#!/bin/bash\nreadonly r=1\nunset r\nx = 1\nread line\n' > ci-error.sh
 
       - name: An error fails the step without strict
         id: error
         continue-on-error: true
         uses: ./
         with:
-          files: ${{ runner.temp }}/error.sh
+          files: ci-error.sh
           package: ${{ steps.pack.outputs.tgz }}
 
       - name: Check that it failed, and the counts
@@ -363,21 +363,21 @@ jobs:
 
       # bash 5.3's `${ cmd; }` is an error for bash 5.2 (the default), and none with bash-version 5.3.
       - name: Write a bash script with `${ cmd; }`
-        run: printf '#!/bin/bash\nx=${ echo a; }\necho "$x"\n' > "$RUNNER_TEMP/funsub.sh"
+        run: printf '#!/bin/bash\nx=${ echo a; }\necho "$x"\n' > ci-funsub.sh
 
       - name: It fails the step for bash 5.2
         id: bash52
         continue-on-error: true
         uses: ./
         with:
-          files: ${{ runner.temp }}/funsub.sh
+          files: ci-funsub.sh
           package: ${{ steps.pack.outputs.tgz }}
 
       - name: It passes with bash-version 5.3
         id: bash53
         uses: ./
         with:
-          files: ${{ runner.temp }}/funsub.sh
+          files: ci-funsub.sh
           bash-version: '5.3'
           package: ${{ steps.pack.outputs.tgz }}
 
@@ -423,7 +423,7 @@ jobs:
         continue-on-error: true
         uses: ./
         with:
-          files: ${{ runner.temp }}/pitfall.sh
+          files: ci-pitfall.sh
           strict: 'true'
           package: ${{ steps.older-pack.outputs.tgz }}
 

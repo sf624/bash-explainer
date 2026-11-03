@@ -283,6 +283,12 @@ const sgr = (code: string) => `${COLOUR_MARK}${code}m`;
  */
 const shown = (text: string) => controlsShown(text).split(COLOUR_MARK).join('\x1b[');
 
+/**
+ * What GitHub's runner reads as a command anywhere in a line it logs, written as `##\[`: for the outputs for reading (text,
+ * Markdown, standard error). JSON and SARIF are data, and annotations are commands themselves.
+ */
+const forLog = (text: string) => text.replace(/##\[/g, '##\\[');
+
 const ANSI: Partial<Record<Token['kind'], string>> = {
   // (The shebang as the program it names, as the panel draws it.)
   command: '34', subcommand: '34', builtin: '34', function: '34', alias: '34', shebang: '34',
@@ -423,7 +429,7 @@ function writeOwn(file: string, text: string, flags: number, stderr: (s: string)
 // ---- Main -------------------------------------------------------------------------------------
 
 export async function main(argv: string[], streams: { stdout: (s: string) => void; stderr: (s: string) => void; env: NodeJS.ProcessEnv; isTTY: boolean; startLsp?: (config: string | undefined) => void }): Promise<number> {
-  const io = { ...streams, stdout: (s: string) => streams.stdout(shown(s)), stderr: (s: string) => streams.stderr(shown(s)) };
+  const io = { ...streams, stdout: (s: string) => streams.stdout(shown(s)), stderr: (s: string) => streams.stderr(forLog(shown(s))) };
   let o: ReturnType<typeof parseArgs>;
   let inputs: Input[];
   try {
@@ -496,7 +502,10 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
   if (o.format === 'json') io.stdout(jsonText(json, 2) + '\n');
   else if (o.format === 'sarif') io.stdout(jsonText(sarif(json as Problem[]), 2) + '\n');
   else if (o.format === 'github') chunks.unshift(...failing);
-  if (o.format !== 'json' && o.format !== 'sarif' && chunks.length) io.stdout(chunks.join(o.check ? '\n' : o.format === 'markdown' ? '\n\n---\n\n' : '\n\n') + '\n');
+  if (o.format !== 'json' && o.format !== 'sarif' && chunks.length) {
+    const text = chunks.join(o.check ? '\n' : o.format === 'markdown' ? '\n\n---\n\n' : '\n\n') + '\n';
+    io.stdout(o.format === 'github' ? text : forLog(text));
+  }
   return o.check && counts.failing > 0 ? 1 : 0;
 }
 
@@ -510,7 +519,7 @@ if (require.main === module) {
   }).then((code) => {
     process.exitCode = code;
   }, (e) => {
-    process.stderr.write(shown(`bash-explainer: ${e instanceof Error ? e.stack : e}\n`));
+    process.stderr.write(forLog(shown(`bash-explainer: ${e instanceof Error ? e.stack : e}\n`)));
     process.exitCode = 2;
   });
 }
