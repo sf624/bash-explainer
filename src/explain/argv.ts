@@ -27,6 +27,7 @@ import { type ExecEnv, shellEffectOf, type SlotLink, slotEnvs } from '../semanti
 import { type Missed, testSpecOf } from '../semantics/names';
 import { attribute, docLine } from '../semantics/state';
 import { readDeclarationWords, unsetEndsSpecial } from '../semantics/vars';
+import { attachedWritten, prefixCharAt } from '../argv/words';
 import { isPlainWord, type Literal, literalContent, staticWordText, staticWordValue, surelyHasSlash } from '../staticword';
 import { replaceNode } from '../rewrite';
 import { field, fields, inStrayHead, prefixAssignments, type SyntaxNode } from '../syntax/tree';
@@ -318,7 +319,8 @@ function equalsToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const value = role.value!;
   const whole = literalContent(a);
   const litEq = whole?.text.indexOf('=') ?? -1;
-  const val = whole && litEq >= 0 ? whole.text.slice(litEq + 1) : a.text.slice(a.text.indexOf('=') + 1);
+  const written = whole ? undefined : attachedWritten(a, value.attached!);
+  const val = whole && litEq >= 0 ? whole.text.slice(litEq + 1) : written ? written.text : a.text.slice(a.text.indexOf('=') + 1);
   const known = own(value.spec?.values, val);
   const valueLit: Literal | undefined = whole && litEq >= 0
     ? (whole.offsets ? { text: val, offsets: whole.offsets.slice(litEq + 1) } : { text: val, base: whole.base! + litEq + 1 })
@@ -326,7 +328,8 @@ function equalsToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const emb = value.spec?.lang && valueLit ? embeddedText(cx, valueLit, value.spec.lang, a) : undefined;
   const extra = emb?.note ? ` — ${emb.note}` : '';
   const text = role.role === 'option' ? cx.t(role.text) : unknownOption(cx, parse, spec, role.ambiguous);
-  return cx.tok(a, 'option', text + cx.text('option-equals-value', { val, ...(known ? { known: cx.t(known) } : {}) }) + extra + splicedNote(cx, value), emb?.tokens ?? []);
+  // (`--jobs=$(nproc)`: what bash expands in the value has its row, as in a separate value: a command runs there.)
+  return cx.tok(a, 'option', text + cx.text('option-equals-value', { val, ...(known ? { known: cx.t(known) } : {}) }) + extra + splicedNote(cx, value), emb?.tokens ?? cx.subs(written?.nodes ?? []));
 }
 
 /** A letter of an option word (`-e` of `-euo`, `c` of `tar cf`), as a token over its character. */
@@ -338,7 +341,7 @@ function part(a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-
 /** A token over the characters `from` to `to` of the value of the word `a`. */
 function span(a: SyntaxNode, from: number, to: number, kind: Kind, explanation: string, label: string): Token {
   const lit = literalContent(a);
-  const at = (i: number): number => (lit?.offsets ? lit.offsets[i] : (lit?.base ?? 0) + i);
+  const at = (i: number): number => (lit?.offsets ? lit.offsets[i] : lit ? lit.base! + i : prefixCharAt(a.text, i));
   const col = a.startPosition.column;
   const row = a.startPosition.row;
   return { kind, label, explanation, children: [], span: { start: { line: row, character: col + at(from) }, end: { line: row, character: to < 0 ? col + a.text.length : col + at(to - 1) + 1 } } };
@@ -354,10 +357,17 @@ function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec
   if (!value) return parts;
   // In `-F'|'` the value is what is left after quote removal.
   const lit = literalContent(a);
-  const val = lit ? lit.text.slice(value.attached) : a.text.slice(value.attached);
+  const written = lit ? undefined : attachedWritten(a, value.attached!);
+  const val = written ? written.text : lit!.text.slice(value.attached);
   // The value ends where its text ends, not at the closing quote (`-f='X${Package}'`: the label is `X${Package}`).
   const raw = span(a, value.attached!, lit && val ? lit.text.length : -1, 'argument', '', '');
-  raw.label = lit && val ? val : a.text.slice(raw.span.start.character - a.startPosition.column);
+  if (written) {
+    raw.span.start.character = a.startPosition.column + written.from;
+    raw.span.end.character = a.startPosition.column + written.to;
+    // (`-j"$(nproc)"`: what bash expands in the value has its row, as in a separate value: a command runs there.)
+    raw.children = cx.subs(written.nodes);
+  }
+  raw.label = val || a.text.slice(raw.span.start.character - a.startPosition.column);
   raw.valueFor = flag;
   if (value.spec?.how === 'attached-only') {
     // `-i.bak`: the rest of the word is the value. In `-pie` that makes `e` the value, not `-e`.
@@ -377,8 +387,6 @@ function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec
     raw.children = emb.tokens;
     if (emb.note) raw.explanation += ` — ${emb.note}`;
   }
-  // (`-j"$(nproc)"`: what bash expands in the value has its row, as in a separate value: a command runs there.)
-  else if (!lit) raw.children = a.namedChildren.filter((c) => c.startIndex >= a.startIndex + value.attached!).flatMap((c) => cx.sub(c));
   return [...parts, raw];
 }
 

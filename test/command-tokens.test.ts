@@ -195,7 +195,7 @@ describe('command tokens: each token of an explanation lies in one command of ba
     const { files, snippets } = corpus();
     const known: Known = JSON.parse(fs.readFileSync(knownFile, 'utf8'));
     const used = new Set<Finding>();
-    const counts = { inputs: 0, scripts: 0, lines: 0, tokens: 0, separators: 0, lists: 0, known: 0 };
+    const counts = { inputs: 0, scripts: 0, lines: 0, tokens: 0, boxes: 0, separators: 0, lists: 0, known: 0 };
     const pinned: Known['counts'] = { skipped: {}, shapesDiffer: 0, inSubstitution: 0, inHeredoc: 0 };
     const skip = (why: string): void => { pinned.skipped[why] = (pinned.skipped[why] ?? 0) + 1; };
     const fresh: string[] = [];
@@ -328,6 +328,15 @@ describe('command tokens: each token of an explanation lies in one command of ba
           if (sc.differs) continue;
           const theirs = sc.bashAt.get(sc.pathOf.get(own!)!) as Shape | undefined;
           if (theirs?.k !== sc.shapeOf.get(own!)!.k) report(name, `bash-ast has no ${sc.shapeOf.get(own!)!.k} command at ${sc.pathOf.get(own!)} of ${sc.name}`);
+          // A box says "one command" (the panel's Key): it is the whole of a simple command of bash, or of a compound one; a string read
+          // as a script is parsed by its own shell, not here.
+          if (t.frame && t.origin !== 'script') {
+            counts.boxes++;
+            // (Of the same range, a command and the pipeline it starts: `cat <<E | sort` ends with its here-document.)
+            const kinds = commands.filter((c) => scopeOfCommand.get(c) === sc && c.startIndex === a && c.endIndex === b).map((c) => (sc.bashAt.get(sc.pathOf.get(c)!) as Shape | undefined)?.k);
+            const grammar = (k: Shape['k'] | undefined): boolean => k === 'seq' || k === 'and-or' || k === 'pipeline';
+            if (!kinds.some((k) => (t.frame === 'command' ? k === 'simple' : k && k !== 'simple' && !grammar(k)))) report(name, `is boxed as a ${t.frame} one, and bash-ast has ${kinds.join(', ') || 'no command of that range'} in ${sc.name}`);
+          }
         }
       }
     }

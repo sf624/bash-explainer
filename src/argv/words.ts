@@ -30,6 +30,49 @@ export function prefixOf(n: SyntaxNode, shell?: Shell): string {
   return out;
 }
 
+const QUOTES = /["']/;
+
+/** Where the known start of a word (`prefixOf`) has come to after `i` of its characters, in the word's text, and the quote still open there. */
+function afterPrefix(text: string, i: number): { at: number; quote: string } {
+  let at = 0;
+  let quote = '';
+  for (let n = 0; n < i; at++) {
+    if (quote ? text[at] === quote : QUOTES.test(text[at])) quote = quote ? '' : text[at];
+    else {
+      if (text[at] === '\\' && !quote) at++;
+      n++;
+    }
+  }
+  return text[at] === quote ? { at: at + 1, quote: '' } : { at, quote };
+}
+
+/** Where character `i` of the known start of a word lies in its text (`"-j$x"`: `j` is at 2). */
+export function prefixCharAt(text: string, i: number): number {
+  let { at, quote } = afterPrefix(text, i);
+  while (QUOTES.test(text[at])) {
+    quote = quote ? '' : text[at];
+    at++;
+  }
+  return !quote && text[at] === '\\' ? at + 1 : at;
+}
+
+/**
+ * The value attached to an option in a word whose value is not known, as written: from character `i` of the known start to the end
+ * of the word, with the opening quote of a string it starts with (`-j"$x"`), and without the closing quote of one it starts in
+ * (`"-j$x"`, `-"j$x"y`). `from` and `to` are places in the word's text.
+ */
+export function attachedWritten(a: SyntaxNode, i: number): { from: number; to: number; text: string; nodes: SyntaxNode[] } {
+  const { at: from, quote } = afterPrefix(a.text, i);
+  const start = a.startIndex + from;
+  const pieces = a.type === 'concatenation' ? a.namedChildren : [a];
+  // (The parts bash expands: a part of its own after the known start, or those inside the string the start ends in.)
+  const nodes = pieces.flatMap((c) => (c.startIndex >= start ? [c] : c.endIndex > start && c.type === 'string' ? c.namedChildren.filter((x) => x.startIndex >= start && x.type !== 'string_content') : []));
+  if (!quote) return { from, to: a.text.length, text: a.text.slice(from), nodes };
+  const close = pieces.find((c) => c.endIndex > start)!.endIndex - a.startIndex - 1;
+  const text = a.text.slice(from, close) + a.text.slice(close + 1);
+  return { from, to: close + 1 === a.text.length ? close : a.text.length, text, nodes };
+}
+
 const UNQUOTED_EXPANSION = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion']);
 /** The parts of plain text, where a glob character is one. */
 const PLAIN = new Set(['word', 'number']);

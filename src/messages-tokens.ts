@@ -1,6 +1,6 @@
 import type { Lang, Text } from './i18n';
 import type { NoteLevel } from './levels';
-import { CARRIED, CLOSE_TEXT, OPEN_TEXT, type TokenEntry, tokenError } from './messages-levels';
+import { CARRIED, CLOSE_TEXT, OPEN_TEXT, type TokenEntry, tokenError, tokenWarning } from './messages-levels';
 import { ARGV_TEXTS } from './messages-tokens-argv';
 import { COMMAND_TEXTS } from './messages-tokens-commands';
 import { COMPOUND_TEXTS } from './messages-tokens-compound';
@@ -20,6 +20,28 @@ import { WORD_TEXTS } from './messages-tokens-words';
 // So while a line is being explained, a text may hold them: code in src/explain/ that looks at the first or last character of a text it did
 // not write reads `plainOf` of it (src/messages-levels.ts).
 
+/**
+ * What the shell does at a constant it rejects, by where it reads it (`arithFate`, src/explain/words.ts; each is run in
+ * test/arith-shells.test.ts): `drops`, an expansion in bash; `subshell`, an expansion in a subshell; `stops`, an expansion in a shell
+ * that then exits (dash, busybox ash, POSIX sh); `fails`, where only the command fails (`(( ))`, `let`, a here-document's text).
+ */
+export type ArithFate = 'drops' | 'subshell' | 'stops' | 'fails';
+export interface InvalidNumber { text: string; why: string; who: string; fate: ArithFate }
+
+const ARITH_FATES: Readonly<Record<ArithFate, Text>> = {
+  drops: { ja: '算術エラーを出し、このコマンドは実行されず、同じ行やブロックの残りも実行されない', en: 'reports an arithmetic error: this command does not run, nor the rest of its line or block' },
+  subshell: { ja: '算術エラーを出し、このコマンドは実行されず、そのサブシェルの残りも実行されない', en: 'reports an arithmetic error: this command does not run, nor the rest of its subshell' },
+  stops: { ja: '算術エラーを出して止まる', en: 'reports an arithmetic error and stops' },
+  fails: { ja: '算術エラーを出し、このコマンドは終了ステータス 1 で失敗する', en: 'reports an arithmetic error: this command fails with status 1' },
+};
+
+function invalidNumber({ text, why, who, fate }: InvalidNumber, ifRead: boolean): readonly [string, string] {
+  const { ja, en } = ARITH_FATES[fate];
+  return [
+    `不正な数 \`${text}\`: ${why}。${who} ${ifRead ? 'がここを読めば' : 'は'}${ja}`,
+    `Invalid number \`${text}\`: ${why}. ${ifRead ? `If ${who} reads it, it` : who} ${en}`];
+}
+
 export const TOKEN_TEXTS = {
   ...ARGV_TEXTS,
   ...COMMAND_TEXTS,
@@ -30,14 +52,17 @@ export const TOKEN_TEXTS = {
   'splice-refused': tokenError<{ program: string; why: string }>(({ program, why }) => [
     `${program} はこの文字列を受け付けず、何も実行せずに終了ステータス 125 で終わる（${why}）`,
     `${program} refuses this string and exits with status 125, running nothing (${why})`]),
-  /** `$((09))`, `$((2#2))`: a constant bash rejects. */
-  'arith-invalid-number': tokenError<{ text: string; why: string }>(({ text, why }) => [
-    `不正な数 \`${text}\`: ${why}。bash は算術エラーで止まる`,
-    `Invalid number \`${text}\`: ${why}. bash stops with an arithmetic error`]),
-  /** Before the subcommand terraform takes only `-chdir=DIR`, and the version and help options. */
-  'terraform-option-before-subcommand': tokenError(() => [
-    'サブコマンドより前のオプション。terraform がここで受け付けるのは `-chdir=…`、`-version`、`-help` だけで、ほかは「Invalid flags before the subcommand」で止まる。サブコマンドの後に書く',
-    'an option before the subcommand: terraform takes only `-chdir=…`, `-version` and `-help` there, and stops with "Invalid flags before the subcommand" on any other; write it after the subcommand']),
+  /** `$((09))`, `$((2#2))`: a constant the shell rejects, on a path that always reads it. */
+  'arith-invalid-number': tokenError<InvalidNumber>((p) => invalidNumber(p, false)),
+  /** `${x:-$((09))}`, `[[ a || $((09)) ]]`: the same, where the shell may never read it (`readOnlySometimes`, src/explain/reads.ts). */
+  'arith-invalid-number-if-read': tokenWarning<InvalidNumber>((p) => invalidNumber(p, true)),
+  /**
+   * Before the subcommand terraform takes only `-chdir=DIR`, the version and help options, and `-install-autocomplete` and
+   * `-uninstall-autocomplete`. A warning, not an error: terraform is not here to run, and another option with one of those may pass.
+   */
+  'terraform-option-before-subcommand': tokenWarning(() => [
+    'サブコマンドより前のオプション。terraform がここで受け付けるのは `-chdir=…`、`-version`、`-help`、`-install-autocomplete`、`-uninstall-autocomplete` だけで、ほかは多くの場合「Invalid flags before the subcommand」で止まる。サブコマンドの後に書く',
+    'an option before the subcommand: terraform takes only `-chdir=…`, `-version`, `-help`, `-install-autocomplete` and `-uninstall-autocomplete` there, and mostly stops with "Invalid flags before the subcommand" on any other; write it after the subcommand']),
 };
 
 export type TokenTextId = keyof typeof TOKEN_TEXTS;

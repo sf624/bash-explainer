@@ -361,6 +361,13 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
     assert.ok(lines > 5000, String(lines));
   });
 
+  it('says a line lacks the `;` before `then` or `do`, not what the line seems to do: bash stops at it', () => {
+    assert.strictEqual(said('if [ -f a ] then b; fi', 0, 'en'), 'Bash stops with a syntax error (`then` needs a `;` or a newline before it).');
+    assert.strictEqual(said('for x in a b do c; done', 0, 'ja'), 'bash は構文エラーで止まる（`do` の前に `;` か改行が要る）。');
+    assert.strictEqual(said('f() { while a do b; done; }', 0, 'en'), 'Bash stops with a syntax error (`do` needs a `;` or a newline before it).');
+    assert.strictEqual(said('if a then\n  b\nfi', 0, 'en'), 'Bash stops with a syntax error (`then` needs a `;` or a newline before it).');
+  });
+
   describe('over the corpus (sample.sh and the fixtures), in both languages', () => {
     const files = corpus();
 

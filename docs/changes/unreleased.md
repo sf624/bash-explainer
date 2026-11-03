@@ -225,18 +225,36 @@ The note on zsh syntax a line cannot be read with starts with ⓘ, as informatio
 
 A row of the explanation marks a warning inside its text. It marked every one with `⚠`, also where the line fails every time as written, which the three levels call an error. These now have `ⓧ`, in the panel, the hover, Markdown and the command line's text, and `level: error` in `--format json`:
 
-- `echo $((09))`: bash stops with an arithmetic error.
+- `echo $((09))`: below.
 - `env -S'"a' s`: env refuses the string, with status 125.
-- `terraform -foo plan`: terraform stops at an option before the subcommand.
-- In a shebang: `#!/usr/bin/env bash -e` (status 127), `#!/usr/bin/env -S"a` (status 125), `#!/usr/bin/env` (the script starts itself again, without end).
+- In a shebang: `#!/usr/bin/env bash -e` (status 127, on Linux: macOS splits the line), `#!/usr/bin/env -S"a` (status 125), `#!/usr/bin/env` (the script starts itself again, without end).
+
+### An invalid number in arithmetic, shell by shell
+
+`$((09))` said "bash stops" wherever it stood. It now says what the shell the script is read as does, compared with each real shell:
+
+- In bash, `echo $((09))` does not run, nor does the rest of its line or block; a script goes on after them, unless it is in POSIX mode. In a subshell, only the rest of the subshell is dropped. `(( 09 ))`, `let x=09`, `for ((i=09;;))` and a here-document's text only fail the command, with status 1.
+- dash and busybox ash stop, and a script for `sh` is said so as "POSIX sh" (on Fedora it is bash in POSIX mode, which stops too).
+- zsh, ksh93 and mksh read a leading 0 as decimal (`$((09))` is 9, `$((010))` is 10), and yash reads `09` as 9: no message, and `010` is not called octal there.
+- `base#digits` differs between shells (`1#1` is 49 in mksh, `2#` is 0 in zsh, and dash and yash have none): out of bash, only a good constant up to base 36 is explained.
+- Beside an expansion a literal is no constant: `x=1; echo $(( ${x}09 ))` prints 109, and nothing is said of the `09`.
+- Where the shell may never read it, it is a warning that starts "If bash reads it": `${x:-$((09))}`, `${y:+$((09))}`, after `||` or `&&` in `[[ ]]`, a `case` pattern after the first, the update of a C-style `for`.
+
+### terraform's options before the subcommand
+
+`terraform -install-autocomplete` and `terraform -uninstall-autocomplete` are in HashiCorp's CLI documentation as commands to run, and were said to stop terraform. They are options now. Any other option there keeps its warning, which says "mostly": terraform is not at hand to compare with, and `terraform -foo -version` may pass.
 
 ### What bash expands in an option's attached value
 
-`make -j"$(nproc)"` showed `-j` and its value, and nothing of the `$(nproc)` in it, which bash runs. The value now has its parts, as a separate value has: the substitution and the command `nproc` (`make -j$(nproc)`, `sort -k$n,$n`, `-p"$x"`).
+`make -j"$(nproc)"` showed `-j` and its value, and nothing of the `$(nproc)` in it, which bash runs. The value now has its parts, as a separate value has: the substitution and the command `nproc`. So do the long form (`make --jobs=$(nproc)`, `--jobs="$(nproc)"`, `ls --color="$(x)"`), a value that is a separate part only (`sed -i"$x"`, `sort -k$n,$n`), and an option in quotes (`make -"j$(nproc)"`, `make "-j$(nproc)"`, whose value was labelled `j$(nproc)"`).
 
 ### A redirection on the closing line of a block
 
-With the cursor on `done < file`, the redirection now says what it says on the loop's first line: that it applies to the whole loop, and how its commands share the input. `if [ -f a ] then …` says its syntax error once, in the note; its row said it too.
+With the cursor on `done < file`, the redirection now says what it says on the loop's first line: that it applies to the whole loop, and how its commands share the input.
+
+### A `then` or a `do` with no `;` before it
+
+`if [ -f a ] then …` says its syntax error once, in the note; its row said it too. "In short" now says "Bash stops with a syntax error (`then` needs a `;` or a newline before it)"; it said `If its condition () succeeds, tests the condition in [ … ]`. So does `for x in a b do …`, which it read as a loop over `a`, `b`, `do` and `c`.
 
 ### "In short" and the status of a pipeline
 

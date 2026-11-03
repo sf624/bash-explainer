@@ -27,7 +27,7 @@ import { ownSubshells, STATEMENTS } from './semantics/env';
 import { attribute, docLine } from './semantics/state';
 import { CHANGING } from './semantics/walk/temporaries';
 import type { StatusModel } from './semantics/status';
-import { field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from './syntax/tree';
+import { field, fields, prefixAssignments, redirectionsOf, strayKeyword, type SyntaxNode } from './syntax/tree';
 import { writtenAsBracket } from './testexpr';
 
 export interface SentenceInput {
@@ -62,10 +62,15 @@ const BRACKET = '`[ … ]`';
 /** How many items a list names; more are cut with `…`. */
 const ITEMS = 4;
 
+/** The keyword that lacks its separator in a statement or in one under it (`strayKeyword`). */
+const strayIn = (n: SyntaxNode): 'then' | 'do' | undefined => strayKeyword(n) ?? n.namedChildren.map(strayIn).find(Boolean);
+
 /** The sentence of `line`, or none when the line has no code (a comment, a blank line, code bash cannot read). */
 export function lineSentence(input: SentenceInput): Sentence | undefined {
   const pieces = piecesOn(input.root, input.line);
   if (!pieces.length) return undefined;
+  const stray = pieces.map((p) => (p.kind === 'whole' ? strayIn(p.node) : strayKeyword(p.node))).find(Boolean);
+  if (stray) return { text: sentenceEnd(input.lang, [S.keywordMissing(input.lang, stray)]), clauses: [] };
   let said!: Sentence;
   for (const brief of [0, 1, 2] as const) {
     const c = new Composer(input, brief);

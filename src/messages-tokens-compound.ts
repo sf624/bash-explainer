@@ -15,7 +15,7 @@ const endBefore = (p: { what: string; gap: string; co?: string; closer: string }
   p.co ? `End of the list before \`${p.closer}\`: ${waitEn(p)}` : `End of the list before \`${p.closer}\``];
 
 export const COMPOUND_TEXTS = {
-  /** `do … done`: the body of a loop, which is no command of its own (the row model of the panel, src/ui/panelRows.ts, reads the id). */
+  /** `do … done`: the body of a loop, which is no command of its own. */
   'loop-body': tokenText(() => [
     'ループ本体: `do` から `done` までを繰り返し実行する',
     'Loop body: the commands between `do` and `done`']),

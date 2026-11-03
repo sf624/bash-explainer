@@ -352,7 +352,8 @@ class AwkExplainer {
           ? s(`配列の要素 \`${target}\` を削除する`, `delete the array element \`${target}\``)
           : s(`配列 \`${target}\` の要素をすべて削除する`, `delete every element of the array \`${target}\``));
       }
-      case 'getline': return tok(s('次の行を読み込む', 'read the next line'));
+      // (Alone, its word says what the statement says: no part of its own.)
+      case 'getline': return tok(s('次の行を読み込む', 'read the next line'), toks.length > 1 ? undefined : []);
       case 'if': {
         const close = this.matching(k + 1);
         const cond = this.text(this.toks.slice(k + 2, close));

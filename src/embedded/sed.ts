@@ -181,7 +181,8 @@ class SedParser {
     const cmdTok = (expl: string) => this.tok(ci, ci + 1, 'command', expl);
     const done = (summary: string, extra: EmbeddedToken[] = []) => {
       const forWhom = range ? s(`${target}に対して: `, `For ${target}: `) : '';
-      return this.tok(start, this.i, 'command', forWhom + summary, [...children, ...extra]);
+      // (With no address, the command's word is the whole of it, and says what the command says: no part of its own.)
+      return this.tok(start, this.i, 'command', forWhom + summary, [...children, ...extra.filter((x) => x.start !== start || x.end !== this.i)]);
     };
 
     if (c === 's') return this.substitute(start, children, range ? target : undefined);

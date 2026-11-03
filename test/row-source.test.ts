@@ -134,7 +134,7 @@ describe('one record for what a token\'s row holds', function () {
       ['#!bash', 'ja', 'shebang-relative-interpreter', '。⚠ カーネルはインタープリタを PATH から探さず'],
       ['#!/usr/bin/env bash -e', 'en', 'shebang-env-one-argument', '. ⓧ On Linux the whole `bash -e`'],
       ['echo $((09))', 'en', 'arith-invalid-number', 'ⓧ Invalid number `09`'],
-      ['terraform -var-file=x plan', 'en', 'terraform-option-before-subcommand', 'ⓧ an option before the subcommand'],
+      ['terraform -var-file=x plan', 'en', 'terraform-option-before-subcommand', '⚠ an option before the subcommand'],
     ] as const) {
       const ex = new Analyzer(lang).explainLine(parser.parse(src), 0, 'bash', { reading: true });
       const all = (ts: typeof ex.items): typeof ex.items => ts.flatMap((t) => [t, ...all(t.children)]);
@@ -143,7 +143,7 @@ describe('one record for what a token\'s row holds', function () {
       assert.ok(tok.texts?.includes(id), src);
       assert.ok(!tok.explanation.includes(LEVELS.warning.mark), tok.explanation);
       const row = tokenRow(tok, lang);
-      assert.strictEqual(row.level, id === 'shebang-relative-interpreter' ? 'warning' : 'error');
+      assert.strictEqual(row.level, id === 'shebang-relative-interpreter' || id === 'terraform-option-before-subcommand' ? 'warning' : 'error');
       assert.ok(row.text.includes(sentence), row.text);
       assert.ok(toPlainMarkdown(ex, src, 'a.sh:1', lang).includes(sentence), src);
       let text = '';
@@ -169,7 +169,7 @@ describe('one record for what a token\'s row holds', function () {
     assert.deepStrictEqual(Object.keys(TOKEN_TEXTS).filter((id) => id in MESSAGES), []);
     assert.ok(Object.keys(TOKEN_TEXTS).length >= ids.length);
     // (A text of a spec carries its id, as `cx.text`'s does.)
-    assert.deepStrictEqual(readSaid(saidText('terraform-option-before-subcommand').en).said.map((x) => [x.id, x.level]), [['terraform-option-before-subcommand', 'error']]);
+    assert.deepStrictEqual(readSaid(saidText('terraform-option-before-subcommand').en).said.map((x) => [x.id, x.level]), [['terraform-option-before-subcommand', 'warning']]);
     assert.deepStrictEqual(readSaid(tokenSaid('en', 'shebang-env-string-refused')).said[0].level, 'error');
     assert.strictEqual(readSaid(saidText('comment-plain').ja).said[0].level, undefined);
   });

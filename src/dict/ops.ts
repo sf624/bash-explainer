@@ -269,11 +269,14 @@ export const ops: Record<string, CommandSpec> = {
     },
   }),
   kubeadm: cmd('Kubernetes のクラスターを構築する（`init`、`join`、`reset`）', 'Set up Kubernetes clusters (`init`, `join`, `reset`)', [['--config', '設定ファイル', 'configuration file', 'arg']]),
-  // Before the subcommand terraform takes only `-chdir=DIR` (with `=`), and the version and help options; any
-  // other option there stops it ("Invalid flags before the subcommand"). The subcommands take the options.
+  // Before the subcommand terraform takes only `-chdir=DIR` (with `=`), the version and help options, and the two
+  // commands written as options (`-install-autocomplete`, in HashiCorp's CLI page); any other option there mostly
+  // stops it ("Invalid flags before the subcommand"). The subcommands take the options.
   terraform: cmd('Terraform: インフラをコードで管理する', 'Terraform: infrastructure as code', [
     ['-chdir', '指定したディレクトリで実行する（`-chdir=ディレクトリ` と `=` で書き、サブコマンドより前に置く。`-chdir ディレクトリ` は terraform がエラーにする）', 'run in the given directory (written `-chdir=DIR`, with `=`, before the subcommand; terraform rejects `-chdir DIR`)', 'attached'],
     ['-version|-v|--version', '版を表示する', 'print the version'],
+    ['-install-autocomplete', 'シェルのタブ補完を入れる', 'install the shell\'s tab completion'],
+    ['-uninstall-autocomplete', 'シェルのタブ補完を外す', 'remove the shell\'s tab completion'],
     ...persistent([['-help|-h|--help', 'ヘルプを表示する', 'show help']]),
   ], {
     parser: 'single-dash',

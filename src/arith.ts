@@ -1,5 +1,6 @@
 import type { Lang } from './i18n';
-import { tokenSaid } from './messages-tokens';
+import { type ArithFate, tokenSaid } from './messages-tokens';
+import { SHELL_NAMES, type Shell } from './shellfeatures';
 /**
  * Integer constants of bash arithmetic (`$(( ))`, `(( ))`, `let`, array subscripts, `${s:off:len}`):
  * decimal, octal (`010`), hexadecimal (`0x1F`) and `base#digits` (`2#1010`, `64#@`).
@@ -56,6 +57,26 @@ export function arithLiteral(text: string): ArithLiteral | undefined {
   }
   // Like bash, wrap around at 64 bits.
   return { type: 'number', style, base, digits, value: BigInt.asIntN(64, value).toString() };
+}
+
+/**
+ * The constant `text` as `shell` reads it (bash when absent), where that is known; undefined where nothing is said of it. Measured
+ * with dash 0.5.12, busybox 1.36, yash 2.55, ksh93u+m 1.0.8, mksh R59 and zsh 5.9 (test/arith-shells.test.ts):
+ * - `base#digits`: dash and yash have none (and POSIX sh need not), and the other shells differ from bash on the bases and on what
+ *   is wrong with a constant (`1#1` is 49 in mksh, `2#` is 0 in zsh), so only what they agree on is said: a good constant up to base 36.
+ * - A leading 0: octal in bash, dash, busybox ash and yash, where the first three reject `09` and yash reads it as 9. Decimal in
+ *   ksh93, mksh and zsh (`010` is 10, `09` is 9), which reject `08a` for its letter, not as octal.
+ * - `0x` alone is 0 in bash and zsh, and an error elsewhere. Any other constant with a letter is wrong everywhere (`1a`, `0xG`).
+ */
+export function arithLiteralIn(text: string, shell: Shell | undefined): ArithLiteral | undefined {
+  const lit = arithLiteral(text);
+  if (!lit || !shell || shell === 'bash') return lit;
+  if (text.includes('#')) return lit.type === 'number' && lit.base <= 36 && (shell === 'ash' || shell === 'ksh' || shell === 'mksh' || shell === 'zsh') ? lit : undefined;
+  if (/^0\d/.test(text)) {
+    if (shell === 'sh' || shell === 'dash' || shell === 'ash' || (shell === 'yash' && lit.type === 'number')) return lit;
+    return /^\d+$/.test(text) ? { type: 'number', style: 'decimal', base: 10, digits: text, value: BigInt(text).toString() } : undefined;
+  }
+  return lit.type === 'number' && lit.style === 'hex' && !lit.digits ? undefined : lit;
 }
 
 /** The value of a constant with an optional sign (`-5`, `+0x10`, `010`), if it is one bash accepts. */
@@ -163,12 +184,17 @@ export function invalidLiteral(text: string, lit: Extract<ArithLiteral, { type: 
   return { why, message };
 }
 
-/** A constant of an arithmetic expression in words: its base and value, or, from the catalog of token texts, why bash rejects it. */
-export function describeArithLiteral(text: string, lit: ArithLiteral, lang: Lang): string {
+/** Where a shell reads a constant it rejects: which shell, what it does then, and whether it may never read it. */
+export interface InvalidAt { shell: Shell | undefined; fate: ArithFate; ifRead?: boolean }
+
+/** A constant the shell rejects, in words, from the catalog of token texts. */
+export function describeInvalidLiteral(text: string, lit: Extract<ArithLiteral, { type: 'invalid' }>, lang: Lang, at: InvalidAt): string {
+  return tokenSaid(lang, at.ifRead ? 'arith-invalid-number-if-read' : 'arith-invalid-number', { text, why: invalidLiteral(text, lit, lang).why, who: SHELL_NAMES[at.shell ?? 'bash'], fate: at.fate });
+}
+
+/** A constant of an arithmetic expression in words: its base and value. */
+export function describeArithLiteral(text: string, lit: Extract<ArithLiteral, { type: 'number' }>, lang: Lang): string {
   const s = (ja: string, en: string): string => (lang === 'ja' ? ja : en);
-  if (lit.type === 'invalid') {
-    return tokenSaid(lang, 'arith-invalid-number', { text, why: invalidLiteral(text, lit, lang).why });
-  }
   const name: Record<number, [string, string]> = { 2: ['2進数', 'binary'], 8: ['8進数', 'octal'], 16: ['16進数', 'hexadecimal'] };
   const [ja, en] = name[lit.base] ?? [`${lit.base}進数`, `base ${lit.base}`];
   const how = lit.style === 'octal' ? s('先頭が 0 の数は 8 進数として読まれる', 'a number starting with 0 is read as octal')

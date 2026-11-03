@@ -35,11 +35,12 @@ What question 1 varies:
 - **The environment.** A name the script reads may come from it, exported, unless the script sets it on every path before.
 - **How the file runs.** A file with a shebang is run as a program (`./script`). A file with no shebang may also be run with `bash file`, sourced inside a function, or sourced by an interactive shell (`.bashrc` and the like).
 
-Three Errors rest on an assumed system, not on every system. They are kept for that reason, and their texts name it:
+Four Errors rest on an assumed system, not on every system. They are kept for that reason, and their texts name it:
 
 - For `sh`: `/bin/sh` is dash, as on Debian and Ubuntu (on Fedora it is bash, where `[[` works).
 - For `sudo` and a path only root writes: the user is not root.
 - For CRLF line ends: the file is run directly, as its shebang says. Under `bash file`, `echo hi` still runs (with a CR in its output); it is the shebang and the keywords (`then`, `fi`) that fail.
+- For `shebang-env-one-argument` (`#!/usr/bin/env bash -e`): the kernel gives env the rest of the line as one argument, as Linux does ("On Linux", the text says). macOS splits it, and the line works there.
 
 How to apply it:
 
@@ -96,6 +97,11 @@ Every row of note-levels.md's "Warnings" table goes to Error or Warning, and som
 | Style: `download-run-by-shell` | Warning | A script nobody read runs (`curl … \| sh`). |
 | Dialect: `unsupported` | Error | The construct fails in the target shell, or the bash release lacks it (`laterOption`, `funsubBrace`). For `sh`, as decided in section 10: Error only when dash or busybox ash lacks it, Info ("Portability") where both run it (sections 2 and 10). |
 | Problem: `crlf` | Error where it fails every time; Warning otherwise (step 1a, review of #549) | Run directly (section 2), the shebang's interpreter gets a CR; `then` and `fi` before a CR are not found however the file runs; a CR where a command starts (a blank line, or after `;`, `&&`, `\|\|`, `\|` or `&`) is a command, `$'\r'`, not found however the file runs (step 1b, review of #549). A file whose CRs only end words runs (`echo hi\r` prints a CR): `crlfMaybe`, a Warning. |
+| Token: `arith-invalid-number` | Error (`arith-invalid-number-if-read`: Warning, where the shell may never read it) | The expansion or the command fails, every time, in the shell the script is read as: each is run with that shell (test/arith-shells.test.ts). Said only where it holds: not beside an expansion (`${x}09`, no constant), not in zsh, ksh93, mksh or yash for `09`. `${x:-$((09))}`, `${y:+…}`, what follows `\|\|` or `&&` in `[[ ]]`, a `case` pattern after the first and the update of a C-style `for` may not be read: the "if read" text (`readOnlySometimes`). |
+| Token: `splice-refused`, `shebang-env-string-refused`, `shebang-env-loop` | Error | env refuses the string (status 125), or the script starts itself without end. Run in test/panel-rows.test.ts. |
+| Token: `shebang-env-one-argument` | Error | env looks for a program of the whole rest (status 127). An assumed system: Linux (section 2). |
+| Token: `terraform-option-before-subcommand` | Warning | Not Error: terraform is not installed to run it, and `terraform -foo -version` may exit 0. |
+| Token: `shebang-relative-interpreter`, `shebang-env-reads-options` | Warning | Their texts say "mostly": it depends on a file there, or on the options. |
 | Problem: `pythonNoShell` (host code of `python-string-without-shell`) | Error | As the note. |
 | Problem: `injection`, `pythonInjection` (host codes) | Warning | As the notes. |
 
