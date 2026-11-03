@@ -20,6 +20,11 @@ export function tokenWarning<P = Record<string, never>>(text: (p: P) => readonly
   return { text, level: 'warning' };
 }
 
+/** A text that says the line fails every time as written (docs/design/three-levels.md, section 2): a row draws the mark of an error before it. */
+export function tokenError<P = Record<string, never>>(text: (p: P) => readonly [string, string]): TokenEntry<P> {
+  return { text, level: 'error' };
+}
+
 /**
  * The characters that carry a text's id while a line is explained (src/messages-tokens.ts, `carried`): a noncharacter and a character of the
  * private use area that open a text, and a noncharacter that closes it.

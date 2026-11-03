@@ -8,7 +8,7 @@ import { Lang } from '../i18n';
 import type { DocumentIssue, ShellDocument } from '../document';
 import { LEVELS, namesLevel, problemLevel } from '../levels';
 import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, readingWithBasis } from './render';
-import { panelRows } from './tokenRow';
+import { panelRows } from './panelRows';
 import { ui } from './texts';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';

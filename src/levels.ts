@@ -77,6 +77,8 @@ export interface Level {
   wordOnEvery?: true;
   /** Its name, for a screen reader and the Problems pane: 警告・情報・補足 / Warning, Information, Note. */
   name: Text;
+  /** What the level means, in the panel's Key (src/ui/panelRows.ts); from the rule of docs/design/three-levels.md, section 2. */
+  means: Text;
   /** The Codicon that stands for the mark in the panel, the hover and the web page (media/icons.js draws it). */
   codicon: string;
   /** The ANSI colour of the mark and the word in the command-line tool, and of the word of a problem of `--check`. */
@@ -104,6 +106,7 @@ export interface Level {
 export const LEVELS: Readonly<Record<NoteLevel, Level>> = {
   error: {
     rank: 0, mark: 'ⓧ', word: { ja: 'エラー: ', en: 'Error: ' }, wordOnEvery: true, name: { ja: 'エラー', en: 'Error' },
+    means: { ja: '書いたとおりでは毎回失敗する', en: 'fails every time as written' },
     codicon: 'error', ansi: '31', bold: true, className: 'level-error', severity: 'error', forcedBorder: '4px double CanvasText',
     colour: {
       variable: '--vscode-editorError-foreground', name: '--c-error-level', alias: '--c-error', fallback: 'var(--vscode-charts-red, #f14c4c)', dark: '#f14c4c',
@@ -112,7 +115,8 @@ export const LEVELS: Readonly<Record<NoteLevel, Level>> = {
     count: { ja: (n) => `エラー ${n} 件`, en: (n) => `${n} error${n === 1 ? '' : 's'}` },
   },
   warning: {
-    rank: 1, mark: '⚠', word: { ja: '落とし穴: ', en: 'Pitfall: ' }, name: { ja: '警告', en: 'Warning' }, codicon: 'warning', ansi: '33', bold: true,
+    rank: 1, mark: '⚠', word: { ja: '落とし穴: ', en: 'Pitfall: ' }, name: { ja: '警告', en: 'Warning' },
+    means: { ja: '元に戻せない被害が出るか、失敗が成功に見える', en: 'can do damage that cannot be undone, or makes a failure look like success' }, codicon: 'warning', ansi: '33', bold: true,
     className: 'level-warning', severity: 'warning', forcedBorder: '3px dashed CanvasText',
     colour: {
       variable: '--vscode-editorWarning-foreground', name: '--c-warning', fallback: 'var(--vscode-charts-yellow, #cca700)', dark: '#cca700',
@@ -121,7 +125,8 @@ export const LEVELS: Readonly<Record<NoteLevel, Level>> = {
     count: { ja: (n) => `警告 ${n} 件`, en: (n) => `${n} warning${n === 1 ? '' : 's'}` },
   },
   info: {
-    rank: 2, mark: 'ⓘ', word: { ja: '注意: ', en: 'Caveat: ' }, name: { ja: '情報', en: 'Information' }, codicon: 'info', ansi: '34', bold: true,
+    rank: 2, mark: 'ⓘ', word: { ja: '注意: ', en: 'Caveat: ' }, name: { ja: '情報', en: 'Information' },
+    means: { ja: '値やシステムによっては問題になる', en: 'goes wrong only with some values or systems' }, codicon: 'info', ansi: '34', bold: true,
     className: 'level-info', severity: 'info',
     colour: {
       variable: '--vscode-editorInfo-foreground', name: '--c-info', fallback: 'var(--vscode-charts-blue, #3794ff)', dark: '#3794ff',
@@ -129,7 +134,8 @@ export const LEVELS: Readonly<Record<NoteLevel, Level>> = {
     },
     count: { ja: (n) => `注意 ${n} 件`, en: (n) => `${n} caveat${n === 1 ? '' : 's'}` },
   },
-  note: { rank: 3, mark: 'ℹ', word: { ja: '', en: '' }, name: { ja: '補足', en: 'Note' }, codicon: 'info', ansi: '90', bold: false, className: 'level-note', severity: 'info' },
+  note: { rank: 3, mark: 'ℹ', word: { ja: '', en: '' }, name: { ja: '補足', en: 'Note' },
+    means: { ja: 'シェルがこの行をどう実行するかの補足', en: 'a fact of how the shell runs the line' }, codicon: 'info', ansi: '90', bold: false, className: 'level-note', severity: 'info' },
 };
 
 /** A severity of a problem, in each protocol that shows one. */

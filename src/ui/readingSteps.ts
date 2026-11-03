@@ -5,6 +5,7 @@
 import type { ScriptProcess } from '../analyzer-types';
 import type { Lang } from '../i18n';
 import type { Layer, ReadingNode } from '../reading';
+import { READING_KINDS } from '../roles';
 import { ui } from './texts';
 
 /** The layers, in the order the steps add them. */
@@ -131,17 +132,9 @@ export function bandOf(n: ReadingNode, lang: Lang): string {
   return t.bands.bash;
 }
 
-/** The role a node's code is coloured with, as the list colours its tokens (`.kind-*`): a node of the other layers has its token's kind. */
-export const ROLES: Readonly<Record<string, string>> = {
-  commandName: 'command', aliasWord: 'command', expandedName: 'variable', argument: 'argument', assignmentArgument: 'assignment',
-  word: 'argument', name: 'variable', heredoc: 'redirect', quote: 'string', arithmetic: 'expansion', brace: 'expansion',
-  list: 'operator', andList: 'operator', orList: 'operator', pipeline: 'operator', command: 'operator', compound: 'keyword', clause: 'keyword', coprocess: 'keyword',
-  function: 'keyword', script: 'substitution', part: 'operator', expression: 'operator', descriptor: 'redirect', delimiter: 'redirect',
-};
-
-/** The role of a node's code (see `ROLES`). */
+/** The kind a node's code is coloured as, as the list colours its tokens (`.kind-*`): a node of the other layers has its token's kind (`READING_KINDS`). */
 export function roleOf(n: Pick<ReadingNode, 'kind'>): string {
-  return ROLES[n.kind] ?? n.kind;
+  return READING_KINDS[n.kind] ?? n.kind;
 }
 
 /** A node of the reading tree as the panel draws it. */

@@ -377,6 +377,8 @@ function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec
     raw.children = emb.tokens;
     if (emb.note) raw.explanation += ` — ${emb.note}`;
   }
+  // (`-j"$(nproc)"`: what bash expands in the value has its row, as in a separate value: a command runs there.)
+  else if (!lit) raw.children = a.namedChildren.filter((c) => c.startIndex >= a.startIndex + value.attached!).flatMap((c) => cx.sub(c));
   return [...parts, raw];
 }
 
