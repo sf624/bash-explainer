@@ -157,8 +157,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'python-string-without-shell': 'prose',
   'python-shell-injection': 'prose',
   'actions-script-injection': 'prose',
-  // (`2>&1 >file` → `>file 2>&1`: the text shows the code of the rewrite, which the test above cannot read through its placeholder.)
-  'stderr-to-original-stdout': { kind: 'mechanical', via: 'rewrite' },
+  // (Two meanings, each to write out: which is meant, no run can say.)
+  'stderr-to-original-stdout': 'prose',
   'redirections-in-order': 'none',
   'heredoc-end-line': 'none',
   'heredoc-body-line': 'none',
@@ -285,8 +285,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   const WITHOUT: { id: SuggestionId; input: string; why: 'string' | 'heredoc' | 'none' }[] = [
     { id: 'declaration-masks-status', input: "sh -c 'f() {\n  local x=$(false)\n}'", why: 'string' },
     { id: 'bracket-close-glued', input: '[ a = b\\]', why: 'none' },
-    // (`exec 3>&1 1>&2 2>&3` in the file: where the stdout of `make 2>&1 >build.log` goes is not known.)
-    { id: 'stderr-to-original-stdout', input: 'coverage.sh', why: 'none' },
     { id: 'unquoted-variable-as-path', input: "eval 'rm -rf $Q/*'", why: 'string' },
     { id: 'unquoted-variable-as-path', input: "trap 'rm -f $tmp' EXIT", why: 'string' },
     { id: 'nounset-unbound', input: "bash -c 'set -u; f() { echo \"$z\"; }; f'", why: 'string' },
@@ -343,7 +341,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 19, scenario: 25, prose: 20, none: 90 });
+      { mechanical: 18, scenario: 25, prose: 21, none: 90 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });

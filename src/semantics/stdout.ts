@@ -1,5 +1,5 @@
-// Where the stdout that a command starts with goes: the one answer to "does anything depend on the order of its `2>&1`
-// and `>file`" (docs/design/sources.md, M3). The environment's links mark processes, and stdout also changes without one
+// Where the stdout that a command starts with goes, when the model can say: what `2>&1 >file` then gives the errors alone
+// (docs/design/sources.md, M3). The environment's links mark processes, and stdout also changes without one
 // (`{ cmd; } > f`), so this walks the tree from the command up, and through a function's calls and the command that
 // runs a string. Read by src/explain/redirections.ts: the descriptors a command's own redirections set are `redirectOrder`'s.
 import { field, descendants, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
@@ -11,11 +11,11 @@ import { documentRoot, scriptWord, type StateModel } from './state';
 
 /**
  * `pipe`: a pipe (a stage but the last, `<( )`, a coprocess). `capture`: a command substitution (`$( )`, `${ …; }`).
- * `redirected`: a redirection of a statement around the command, of its function, or of its call. `plain`: nothing
- * around it, in every call the script has, all seen, with no stdout `exec` in the script, and not in what a host calls.
- * `unknown`: anything else: the calls differ, or may be unseen; `>( )`, `${| …; }`; a test of bats; a stdout `exec`.
+ * `redirected`: a redirection of a statement around the command, of its function, or of its call. `unknown`: anything
+ * else: nothing around it, where stdout is whatever the script was given; the calls differ, or may be unseen; `>( )`,
+ * `${| …; }`; a test of bats; a stdout `exec` in the script, after which none of the others holds for sure.
  */
-export type StdoutGoes = 'pipe' | 'capture' | 'redirected' | 'plain' | 'unknown';
+export type StdoutGoes = 'pipe' | 'capture' | 'redirected' | 'unknown';
 
 /** Where the stdout that the command or statement `n` starts with goes, before its own redirections. */
 export function stdoutAt(model: StateModel, n: SyntaxNode): StdoutGoes {
@@ -38,17 +38,17 @@ function movesStdout(c: SyntaxNode): boolean {
  */
 function from(model: StateModel, start: SyntaxNode, own: boolean, seen: Map<SyntaxNode, StdoutGoes | undefined>): StdoutGoes | undefined {
   for (let x = start; ; x = x.parent!) {
+    // (A string another command runs: where that command writes. The root itself has no redirections.)
+    if (!x.parent) {
+      const word = scriptWord(x);
+      return word ? from(model, word, true, seen) : 'unknown';
+    }
     if ((own || x !== start) && writesElsewhere(x)) return 'redirected';
     const why = subshellReasons(x);
     if (why.includes('pipeline-stage') || why.includes('coproc')) return 'pipe';
     if (x.type === 'process_substitution') return x.text.startsWith('<') ? 'pipe' : 'unknown';
     if (x.type === 'command_substitution') return substitutionForm(x) === '${|' ? 'unknown' : 'capture';
     if (x.type === 'function_definition') return ofCalls(model, x, seen);
-    if (!x.parent) {
-      // (A string another command runs: where that command writes. The document's own top: nothing around it.)
-      const word = scriptWord(x);
-      return word ? from(model, word, true, seen) : 'plain';
-    }
   }
 }
 

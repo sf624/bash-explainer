@@ -1,7 +1,7 @@
 // What each token of a line says it is and which facts it states (docs/design/sources.md, SB3a): its colour role, from
 // its kind (`Token.role`, src/roles.ts), the same in both languages and the same as the panel's style sheet; and the
 // catalog's facts said at its node (`Token.facts`). And the note on the order of redirections, a fact of the catalog:
-// the table, and `2>&1` before `>file` as a caveat with the rewrite `>file 2>&1`, but not before a pipe.
+// the table, and `2>&1` before `>file` as a caveat that says both things it may mean, but not before a pipe.
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -58,17 +58,18 @@ describe('the role and the facts of each token', () => {
 describe('the order of redirections (3.6)', () => {
   const issue = (text: string) => documentIssues(doc(text), 'en', {}).find((i) => i.code === 'stderr-to-original-stdout');
 
-  it('says where each descriptor goes, as a note, and `2>&1` before `>file` as a caveat with the rewrite `>file 2>&1`', () => {
+  it('says where each descriptor goes, as a note, and `2>&1` before `>file` as a caveat that says both meanings, with no fix', () => {
     const ex = explain('make 2>&1 >build.log');
     assert.deepStrictEqual(ex.facts!.map((f) => [f.id, f.level]), [['redirections-in-order', 'note'], ['stderr-to-original-stdout', 'info']]);
     assert.strictEqual(ex.notes[0], 'ℹ Redirections apply left to right. In the end: stdout → build.log, stderr → the original stdout');
-    assert.strictEqual(ex.notes[1], 'ⓘ Caveat: `2>&1` comes before `>build.log`, so stderr goes to the original stdout, not to the file. To send both to the file, write `>build.log 2>&1`');
+    assert.strictEqual(ex.notes[1], 'ⓘ Caveat: `2>&1` comes before `>build.log`, so stderr goes where stdout went before, not to the file. To send both to the file, write `>build.log 2>&1`; to send only stdout there, `>build.log` is enough');
+    assert.strictEqual(explain('make 2>&1 >/dev/null').notes[1], 'ⓘ Caveat: `2>&1` comes before `>/dev/null`, so stderr goes where stdout went before stdout was discarded. To hide both, write `>/dev/null 2>&1`; to keep only the errors, `>/dev/null` is enough');
+    assert.strictEqual(explain('make 2>&1 >/dev/null', 0, 'ja').notes[1], 'ⓘ 注意: `2>&1` が `>/dev/null` より先にあるので、標準エラー出力は、標準出力が捨てられる前の行き先に出る。両方を捨てるなら `>/dev/null 2>&1` と書く。エラーだけを残すなら `>/dev/null` だけでよい');
     const found = issue('make 2>&1 >build.log')!;
     assert.strictEqual(found.severity, 'info');
-    assert.deepStrictEqual(found.fixes!.map((f) => [f.title[1], f.edits]), [['Rewrite as `>build.log 2>&1`', [{ startLine: 0, startCol: 5, endLine: 0, endCol: 20, text: '>build.log 2>&1' }]]]);
-    // (What is between them stays before: `2>&1 b >f` becomes `b >f 2>&1`; `>>` and the last file stdout goes to.)
-    assert.strictEqual(issue('echo a 2>&1 b >f')!.fixes![0].edits[0].text, 'b >f 2>&1');
-    assert.strictEqual(issue('echo a 2>&1 >a >>b')!.fixes![0].edits[0].text, '>a >>b 2>&1');
+    assert.strictEqual(found.fixes, undefined);
+    // (`>>` and the last file stdout goes to, as written.)
+    assert.match(explain('echo a 2>&1 >a >>b').notes[1], /write `>>b 2>&1`; to send only stdout there, `>>b` is enough$/);
   });
 
   it('says no caveat where stdout is a pipe or a command substitution, which then gets only the errors, nor where stderr goes elsewhere in the end', () => {
@@ -122,6 +123,11 @@ describe('the order of redirections (3.6)', () => {
 
   it('says what bash does: stderr to the original stdout, to the pipe; both to the file once swapped', () => {
     const f = 'f() { echo out; echo err >&2; }\n';
+    // (The caveat's two meanings: `>/dev/null 2>&1` hides both; `>/dev/null` keeps only the errors; as written, stderr goes on stdout.)
+    const streams = (code: string) => { const r = runBash(`${f}${code}`); return [r.stdout, r.stderr]; };
+    assert.deepStrictEqual(streams('f 2>&1 >/dev/null'), ['err\n', '']);
+    assert.deepStrictEqual(streams('f >/dev/null 2>&1'), ['', '']);
+    assert.deepStrictEqual(streams('f >/dev/null'), ['', 'err\n']);
     assert.deepStrictEqual(runBash(`${f}f 2>&1 >o.txt; echo "file: $(<o.txt)"`, { files: [] }).stdout, 'err\nfile: out\n');
     assert.deepStrictEqual(runBash(`${f}f 2>&1 >/dev/null | sed 's/^/pipe: /'`).stdout, 'pipe: err\n');
     assert.deepStrictEqual(runBash(`${f}f >o.txt 2>&1; echo "file: $(<o.txt)"`, { files: [] }).stdout, 'file: out\nerr\n');

@@ -4,8 +4,7 @@
 // host's notes, yq's flavour), apart, to keep src/messages.ts short.
 import type { Text } from './i18n';
 import type { FdTarget, RedirectOrder } from './idioms';
-import { codeSpan, shorten } from './label';
-import type { Rewrite } from './rewrite';
+import type { StdoutGoes } from './semantics/stdout';
 
 type Pair = readonly [ja: string, en: string];
 
@@ -57,8 +56,8 @@ function targetText(t: FdTarget): Pair {
   }
 }
 
-/** What gets the errors alone, when stdout starts out there (`StdoutGoes`, src/semantics/stdout.ts). */
-export type Alone = 'pipe' | 'capture' | 'redirected';
+/** What gets the errors alone, when stdout starts out there (src/semantics/stdout.ts). */
+export type Alone = Exclude<StdoutGoes, 'unknown'>;
 const aloneText = (alone: Alone | undefined): Pair => (alone === 'pipe' ? ['（パイプに流れるのはエラー出力だけ）', ' (only the error messages go into the pipe)']
   : alone === 'capture' ? ['（置換の結果になるのはエラー出力だけ）', ' (only the error messages make the substitution\'s value)']
   : alone === 'redirected' ? ['（外側のリダイレクトの行き先に出るのはエラー出力だけ）', ' (only the error messages go where a redirection around the command sends stdout)'] : ['', '']);
@@ -81,11 +80,17 @@ export function redirectOrderText({ table, alone }: RedirectOrder & { alone?: Al
     `Redirections apply left to right. In the end: ${result(1)}${discarded ? ' (all output, including errors, is discarded)' : ''}${swapped ? ' (stdout and stderr are swapped)' : ''}${aloneText(alone)[1]}`];
 }
 
-/** `stderr-to-original-stdout`: `2>&1` before the redirection of stdout to a file (`dup`, `file`: as written), and the rewrite that swaps them. */
-export function stderrFirstText({ dup, file, rewrite: [r] }: { dup: string; file: string; rewrite: readonly Rewrite[] }): Pair {
-  return [
-    `\`${dup}\` が \`${file}\` より先にあるので、標準エラー出力はファイルではなく元の標準出力に出る。両方をファイルに送るなら ${codeSpan(shorten(r.code, Infinity))} の順に書く`,
-    `\`${dup}\` comes before \`${file}\`, so stderr goes to the original stdout, not to the file. To send both to the file, write ${codeSpan(shorten(r.code, Infinity))}`];
+/**
+ * `stderr-to-original-stdout`: `2>&1` before the redirection of stdout to a file (`dup`, `file`: as written). Which of two
+ * the author means is not known (`discards`: that file is `/dev/null`), so it says both, and no quick fix can be right.
+ */
+export function stderrFirstText({ dup, file, discards }: { dup: string; file: string; discards: boolean }): Pair {
+  const both = `\`${file} ${dup}\``;
+  return discards ? [
+    `\`${dup}\` が \`${file}\` より先にあるので、標準エラー出力は、標準出力が捨てられる前の行き先に出る。両方を捨てるなら ${both} と書く。エラーだけを残すなら \`${file}\` だけでよい`,
+    `\`${dup}\` comes before \`${file}\`, so stderr goes where stdout went before stdout was discarded. To hide both, write ${both}; to keep only the errors, \`${file}\` is enough`] : [
+    `\`${dup}\` が \`${file}\` より先にあるので、標準エラー出力はファイルではなく、標準出力のもとの行き先に出る。両方をファイルに送るなら ${both} と書く。標準出力だけを送るなら \`${file}\` だけでよい`,
+    `\`${dup}\` comes before \`${file}\`, so stderr goes where stdout went before, not to the file. To send both to the file, write ${both}; to send only stdout there, \`${file}\` is enough`];
 }
 
 /** `heredoc-end-line`, `heredoc-body-line`: the line ends a here-document, or is in its body (`operator`: `<<END` as written; `line`: where it starts). */
