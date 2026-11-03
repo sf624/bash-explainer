@@ -51,7 +51,7 @@ export class InlayHintsController implements vscode.InlayHintsProvider, vscode.D
       if (!text.trim()) continue;
       const target = { uri: doc.uri.toString(), line };
       const link = `command:bashExplainer.openPanel?${encodeURIComponent(JSON.stringify([target]))}`;
-      for (const h of nameHints(this.service.explain(doc, line), line, text, lang)) {
+      for (const h of nameHints(this.service.explainTokens(doc, line), line, text, lang)) {
         const tip = new vscode.MarkdownString(`${h.tooltip}\n\n[$(comment-discussion) ${ui[lang].openInPanel}](${link})`, true);
         tip.isTrusted = { enabledCommands: ['bashExplainer.openPanel'] };
         const part = new vscode.InlayHintLabelPart(h.label);

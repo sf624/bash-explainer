@@ -28,7 +28,7 @@ export const ALLOWED: readonly string[] = [
   'src/messages-levels.ts',
   // The words `error` and `info` there belong to the languages of the embedded programs (jq's `error`, awk's and sed's messages).
   'src/embedded/',
-  ...['jq', 'awk', 'sed', 'perlrun', 'yaml', 'regex'].map((n) => `src/examples/${n}.ts`),
+  ...['jq', 'jqvalues', 'awk', 'sed', 'perlrun', 'perllex', 'yaml', 'regex'].map((n) => `src/examples/${n}.ts`),
 ];
 
 /**

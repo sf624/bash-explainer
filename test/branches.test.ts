@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import { guarded } from '../src/examples/regexguard';
 import { run } from './support/run';
 import * as path from 'path';
 import { Analyzer, ExplainOptions } from '../src/analyzer';
@@ -685,7 +686,8 @@ describe('jq runner: what it gives up on, and what newer jq releases do', () => 
     for (const f of ['1 )', '"\\q"', '.a ?// 1', 'f(1 2)', ')', '{"a\\(1)"}', '{(1)}', '{a: .b | .}', '{1: 2}', '{a b}', 'reduce .[] as [$a] ?// $b (0; .)', 'label $a | try break $a', '[range(200000)] | map(. + 1) | length', '@foo', '(1) |= 2',
       '(.[[0]]) |= 1', '(.[1:]) |= .', 'del(.[1:])', '.[1:] = [1]', '.[] |= empty', '.[0] = (1, 2)', '.[0] += (1, 2)', 'test("a"; "q")', 'foo', 'def f($a): $a; f(1, 2)', 'ltrimstr("a", "b")',
       'input', '$__loc__ | .x | input', '.a |', '(1', '(map(.)) |= 1', 'getpath([{"start": 1, "end": null}])', '(.[0] | input)?', '.[input:]?', 'try input', 'reduce .[] as $x 0', 'setpath([{"start": 1, "end": null}]; 1)']) {
-      assert.strictEqual(runJq(f, [1, 2]), undefined, f);
+      // (A loop too long is refused, which the example says: `guarded`.)
+      assert.strictEqual(guarded(() => runJq(f, [1, 2]), () => undefined), undefined, f);
     }
     assert.deepStrictEqual(runJq('$__loc__', null), { outputs: [{ file: '<top-level>', line: 1 }] });
   });

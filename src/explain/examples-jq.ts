@@ -5,7 +5,7 @@
 import { givenOptions, values } from '../argv/query';
 import { yqSameAsJq } from '../embedded/yq';
 import { jqExample, type JqFormat, jqPrint, jqSample, type Json, parseJsonValues, runJq, slurpLines, toJson, varyJson } from '../examples/jq';
-import { type InputBox, jqStepSections, type RerunSpec } from '../examples/rerun';
+import { type InputBox, jqStepSections, type RerunSpec, runAgain } from '../examples/rerun';
 import { type InputSource, knownLines, NO_INPUT, readOrder, shareOut, shownSource, streamLabel } from '../examples/source';
 import { type YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from '../examples/yaml';
 import { literalContent } from '../staticword';
@@ -159,13 +159,15 @@ export function jqExamples(cx: Explainer, spec: Extract<RerunSpec, { kind: 'jq' 
     }
     const inputs: InputBox[] = src.streams.map((st, i) => ({ label: streamLabel(st, cx.lang, nullInput ? readBy : undefined), lines: contents[i] }));
     // (A file named twice is read twice.)
-    const it = interactive(cx, { ...spec, ...(src.reads ? { reads: src.reads } : {}) }, inputs);
+    const run = { ...spec, ...(src.reads ? { reads: src.reads } : {}) };
+    // (The example is this run: it is the result of the panel too, and refused, the example says so.)
+    const result = runAgain(run, inputs.map((b) => b.lines), cx.lang);
     // (An input the filter cannot run on here, such as one too few for `input`: no example.)
-    if (it.result.sections.some((sec) => sec.lines.includes(cx.s('（この入力では実行できません）', '(cannot run on this input)')))) return;
+    if (result.sections.some((sec) => sec.lines.includes(cx.s('（この入力では実行できません）', '(cannot run on this input)')))) return;
     cx.example({ kind: 'jq',
       title: cx.s('例', 'Example'),
-      sections: [...inputs.map((b) => ({ ...b, empty: cx.s('（空）', '(empty)') })), ...it.result.sections],
-      interactive: it,
+      sections: [...inputs.map((b) => ({ ...b, empty: cx.s('（空）', '(empty)') })), ...result.sections],
+      interactive: { spec: run, inputs, result },
     });
     return;
   }

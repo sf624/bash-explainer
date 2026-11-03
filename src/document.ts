@@ -3,6 +3,8 @@ import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import type { BashVersion } from './bashversion';
 import { type AutoShell, dialectIssues, saidShell, Shell, type ShellReading } from './dialect';
 import { parseDirectives, suppressed } from './directives';
+import { withinLine } from './examples/regexguard';
+import { contained } from './failures';
 import { Fix, fixFor, rewriteFix } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues, regionAt, regionShell, type ShellRegion } from './hosts';
 import { Lang } from './i18n';
@@ -63,9 +65,15 @@ export function autoShellAt(doc: ShellDocument, shells: Shells, line: number): A
   return shell === 'parts' || shell === 'none' ? shell : { shell, source: 'host' };
 }
 
+/** The options for what reads a line's tokens and notes, not its examples (the problems, the hints of command names): nothing is run for them. */
+export const withoutExamples = (opts: ExplainOptions): ExplainOptions => ({ ...opts, examples: { enabled: false, disabled: [] } });
+
 export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line: number, lang: Lang, shells: Shells, opts: ExplainOptions): LineExplanation {
   if (doc.extracted) {
-    return explainHostedLine(analyzer, doc.tree, doc.extracted, doc.lines, line, lang, shells.forced, opts)
+    const { extracted } = doc;
+    // (What a host file adds around the line's own explanation has the same boundary: src/failures.ts.)
+    // (The budget of the line is by the whole document's size, not that of the part it is in, which has a tree of its own.)
+    return contained(`line ${line + 1}`, () => withinLine(doc.tree.root, () => explainHostedLine(analyzer, doc.tree, extracted, doc.lines, line, lang, shells.forced, opts)), () => analyzer.notExplained(doc.tree, line))
       ?? { line, summary: '', items: [], context: [], notes: [], noteInfo: [], examples: [] };
   }
   return analyzer.explainLine(doc.tree, line, shellOf(shells), opts);
@@ -124,7 +132,7 @@ const noteIssueCache = new WeakMap<SyntaxTree, Map<string, DocumentIssue[]>>();
  */
 export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts: ExplainOptions, others: readonly DocumentIssue[] = []): DocumentIssue[] {
   // (Examples and idioms add no warning: the line is explained without them, and without its reading tree.)
-  const lean: ExplainOptions = { ...opts, examples: { enabled: false, disabled: [] }, idioms: false, reading: false, argv: false };
+  const lean: ExplainOptions = { ...withoutExamples(opts), idioms: false, reading: false, argv: false };
   const key = JSON.stringify([lang, shells.forced, saidShell(shells.detected), lean, others.map((i) => [i.code, i.startLine, i.startCol, i.endCol, i.message])]);
   let byKey = noteIssueCache.get(doc.tree);
   if (!byKey) noteIssueCache.set(doc.tree, (byKey = new Map()));
@@ -178,6 +186,10 @@ export interface DeadRange { code: 'dead-code'; severity: Faded; message: string
  * says so.
  */
 export function deadCodeHints(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[] = [], version?: BashVersion): DeadRange[] {
+  return contained('the code that never runs', () => deadRanges(doc, lang, shells, ignore, version), () => []);
+}
+
+function deadRanges(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[], version?: BashVersion): DeadRange[] {
   if (doc.extracted || ignore.includes('dead-code')) return [];
   const model = shellState(doc.tree, shellOf(shells), { version });
   const message = plain(fact(lang, 'dead-code').text);
@@ -283,6 +295,11 @@ export function fixTitle(fix: Fix, lang: Lang, opts: { backticks?: boolean } = {
 
 /** The problems of a document; those of bash are the constructs bash `version` lacks (5.2 when absent). */
 function allIssues(doc: ShellDocument, lang: Lang, shells: Shells, version?: BashVersion): DocumentIssue[] {
+  // (The boundary of the problems the lines do not say: a bug here leaves those of the lines, src/failures.ts.)
+  return contained('the problems of a document', () => issuesOf(doc, lang, shells, version), () => []);
+}
+
+function issuesOf(doc: ShellDocument, lang: Lang, shells: Shells, version?: BashVersion): DocumentIssue[] {
   if (doc.extracted) {
     return doc.extracted.regions.length ? hostIssues(doc.tree, doc.extracted, doc.lines, lang, shells.forced, version) : [];
   }

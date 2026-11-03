@@ -250,6 +250,13 @@ export function ancestor(n: SyntaxNode, test: (a: SyntaxNode) => boolean): Synta
  * The nodes of these types under `n` (`n` included), in source order; with `rows`, only the nodes that
  * overlap those lines (inclusive), skipping the subtrees outside them.
  */
+/** The root of the tree `n` is in. */
+export const rootOf = (n: SyntaxNode): SyntaxNode => {
+  let r = n;
+  while (r.parent) r = r.parent;
+  return r;
+};
+
 export function descendants(n: SyntaxNode, types: readonly string[], rows?: { from: number; to: number }): SyntaxNode[] {
   const out: SyntaxNode[] = [];
   const visit = (m: SyntaxNode): void => {

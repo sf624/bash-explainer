@@ -3,7 +3,8 @@
 // tool still needs nothing but fs (the usual libraries also bring sockets).
 import { Analyzer } from '../src/analyzer';
 import { jsonText } from '../src/ctlchars';
-import { DocumentIssue, diagnosticsFor, explainDocumentLine, fixTitle, heredocAt, plain, ShellDocument } from '../src/document';
+import { DocumentIssue, diagnosticsFor, explainDocumentLine, fixTitle, heredocAt, plain, ShellDocument, withoutExamples } from '../src/document';
+import { failuresGoTo, loggedOnce } from '../src/failures';
 import { FileKind, kindOfDocument, openDocument, shellsOf } from '../src/document-setup';
 import { Lang, lineLabel, resolveLang } from '../src/i18n';
 import { SEVERITIES } from '../src/levels';
@@ -82,6 +83,8 @@ export function startLanguageServer(io: Io): void {
     const json = jsonText({ jsonrpc: '2.0', ...msg });
     io.output.write(`Content-Length: ${Buffer.byteLength(json, 'utf8')}\r\n\r\n${json}`);
   };
+  // (A bug a boundary contained, src/failures.ts: told as a log message of the client, type 1 being an error.)
+  failuresGoTo(loggedOnce((message) => send({ method: 'window/logMessage', params: { type: 1, message: `Bash Explainer: ${message}` } })));
 
   /** What kind of document it is, or undefined when it has nothing for us. */
   function kindOf(doc: Doc): FileKind | undefined {
@@ -158,7 +161,7 @@ export function startLanguageServer(io: Io): void {
     const parsed = settings['hints.names'] ? parse(doc) : undefined;
     if (!parsed) return [];
     const analyzer = new Analyzer(lang);
-    const opts = explainOptions(settings);
+    const opts = withoutExamples(explainOptions(settings));
     const out: unknown[] = [];
     for (let line = Math.max(0, from); line <= to && line < parsed.lines.length; line++) {
       if (!parsed.lines[line].trim()) continue;

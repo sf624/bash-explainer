@@ -61,6 +61,8 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `--lsp` | run as a Language Server on standard input and output (see [In your editor](#in-your-editor-language-server)) |
 | `--color`, `--no-color` | colour the text output (default: when writing to a terminal; `NO_COLOR` turns it off) |
 
+The exit status is 0; with `--check`, 1 if a problem fails the check; and 2 if the tool could not run (a usage error, a file it cannot read). It is also 2 after a bug of the tool on a line: the output still has what it could say, and standard error tells the bug.
+
 In the text output, a construct is labelled with its keywords and a placeholder for what is left out (`while` *condition* `do` *commands* `done`): the placeholder is in italics and dim with colour, and shown as `‹condition›` without. With `--format json`, `label` is that text and `labelParts` lists the parts (`{ "text": "while" }`, `{ "text": "condition", "placeholder": true }`…).
 
 A row or a note about a part of bash ends with the sections of the GNU Bash Reference Manual it is about: `(Bash manual 3.7.2)` in the text output, links to the sections on gnu.org with `--format markdown`. The numbers are those of the bash 5.2 manual. With `--format json`, a token has them in `refs` (`["3.7.2"]`), and `facts` lists the notes that come from the message catalog, with their `id`, `kind` (`note` or `pitfall`), `text` and `refs`.

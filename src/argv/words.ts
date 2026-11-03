@@ -2,7 +2,7 @@
 // quote removal when it is known, the start that is known otherwise, and how many words they become.
 import { parseExpansion, type ParsedExpansion } from '../expansion';
 import { bracesWork, type Shell } from '../shellfeatures';
-import { guarded } from '../examples/regexguard';
+import { guardedApart } from '../examples/regexguard';
 import { globToRegex } from '../examples/shellwords';
 import { braceAlternatives, rejoined } from '../semantics/brace';
 import { givesElements } from '../semantics/elements';
@@ -195,6 +195,9 @@ function assignsOf(n: SyntaxNode): string[] | undefined {
   return names.size ? [...names] : undefined;
 }
 
+/** What a pattern's run on `-` and `--` may cost: its length, about (a pattern of the longest read is about 3e5). */
+const WORD_LIMIT = 1e6;
+
 /**
  * The pattern one word of a brace expansion globs with, its expansions standing for any text (`*`): `-*$x` is `-**`.
  * Whether it may match `-` or `--`, which a command reads otherwise than an option (`-*` with the file `--`).
@@ -205,7 +208,8 @@ function mayGiveDashes(w: readonly (SyntaxNode | string)[], shell?: Shell): bool
     const v = staticWordValue(p, false, shell);
     return v === undefined ? '*' : v.replace(/[*?[\\]/g, '\\$&');
   }).join('');
-  return guarded(() => {
+  // (No more than a pattern's length costs here: its limit is its own, as it is kept with the model's words.)
+  return guardedApart(WORD_LIMIT, () => {
     const re = globToRegex(pattern, 'file');
     return !re || re.test('-') || re.test('--');
     // (Refused only as too long to read: such a word gives no `-`.)

@@ -2,16 +2,10 @@
 // `set -eET` on, then calls each test in a process of its own, after the file's `setup` and before its `teardown`,
 // and `setup_file` and `teardown_file` in one more process, around the tests. The walk reads those calls as bash
 // runs them, so the bodies have the states of their calls, and the status model sees `set -e` in them.
-import { field, nameText, type SyntaxNode } from '../../syntax/tree';
+import { field, nameText, type SyntaxNode, rootOf } from '../../syntax/tree';
 import { merge, type ShellState, withStatus } from '../shellstate';
 import type { Target, Walker } from './walker';
 import { ATTRS, widen } from './widen';
-
-const rootOf = (n: SyntaxNode): SyntaxNode => {
-  let r = n;
-  while (r.parent) r = r.parent;
-  return r;
-};
 
 /**
  * The functions the host calls once the script has run, each in a process of its own (bats-core 1.13, libexec/

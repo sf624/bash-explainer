@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import { guarded } from '../src/examples/regexguard';
 import { spawnSync } from 'child_process';
 import { run } from './support/run';
 import { awkExample, awkInvocation, runAwk, sprintf } from '../src/examples/awk';
@@ -210,7 +211,8 @@ describe('the awk runner agrees with gawk on the less common parts', () => {
       'BEGIN { print $++i }', '{ print }}', 'BEGIN { getline; print $0 }',
       '{ x = 1 +', '{ nextfile }', 'BEGIN { x = (\n1); print x }', 'BEGIN { ++1 }', '/[[:foo:]]/', 'BEGIN { x = if }', '{ print $-1 }', 'BEGIN { print foo(1) }', 'BEGIN { print 1 % 0 }',
       'END { next }', 'BEGIN { break }', 'BEGIN { x = (1, 2) }', 'BEGIN { continue }', 'BEGIN { return 1 }', 'BEGIN { print toupper() }', 'function f(a) { a[1] = 1; return a } BEGIN { print f(x) }']) {
-      assert.strictEqual(runAwk(prog, input, {}), undefined, prog);
+      // (A loop too long is refused, which the example says: `guarded`.)
+      assert.strictEqual(guarded(() => runAwk(prog, input, {}), () => undefined), undefined, prog);
     }
   });
 });

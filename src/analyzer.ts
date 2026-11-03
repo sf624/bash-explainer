@@ -8,7 +8,7 @@ import { pitfallFindings } from './pitfalls';
 import { wordFindings } from './wordfacts';
 import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 import { lookupCommand } from './dict/aliases';
-import { basisGate, pitfallSaid } from './messages';
+import { basisGate, fact, pitfallSaid } from './messages';
 import { withoutBases, withTokenBases } from './tokenbases';
 import { pictureNote } from './ctlchars';
 import { withRewritesOf } from './rewrite';
@@ -22,8 +22,13 @@ import { wordMeaning } from './semantics/words';
 
 export { EXAMPLE_KINDS } from './analyzer-types';
 export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
+import type { Token } from './analyzer-types';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
+import { withinLine } from './examples/regexguard';
+import { contained } from './failures';
+import { shorten } from './label';
 import { readingTree } from './reading';
+import { KIND_ROLES } from './roles';
 import { argvLines } from './argvline';
 import { lineSentence, problemCodes } from './linesentence';
 import { COMMAND_SAID } from './explain/commands';
@@ -37,13 +42,60 @@ import { continuationNotes, extglobPitfalls, pipeSubshellPitfalls, statusNotes, 
 
 export { isBlockLike, summaryOf };
 
+/**
+ * The line a bug stopped from being explained: all it can say is that, on a token of the line, where every product shows a line's
+ * explanation. Nothing in it reads the tree but the line's text, in case the tree is what fails.
+ */
+function lineNotExplained(lang: Lang, tree: SyntaxTree, line: number, shell: Shell | undefined): LineExplanation {
+  const said = fact(lang, 'line-not-explained');
+  const text = tree.text.split('\n')[line] ?? '';
+  const at = (character: number) => ({ line, character });
+  const code = text.trim();
+  const start = text.length - text.trimStart().length;
+  const token: Token = { kind: 'error', role: KIND_ROLES.error, label: shorten(code, 40), explanation: said.text, children: [], span: { start: at(start), end: at(start + code.length) } };
+  return {
+    line,
+    ...(shell && shell !== 'bash' ? { shell } : {}),
+    items: code ? [token] : [],
+    context: [],
+    notes: [said.text],
+    noteInfo: [{ text: said.text, level: said.level, label: said.label, body: said.body, code: said.code }],
+    examples: [],
+    summary: code ? summaryOf(token) : '',
+  };
+}
+
+/** The first of each key, in order. */
+function once<T>(all: readonly T[], key: (x: T) => string): T[] {
+  const seen = new Set<string>();
+  return all.filter((x) => {
+    const k = key(x);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 export class Analyzer {
   /** The kind of string this analyzer explains, when it explains a string read as a script (`nestedLine`). */
   private nested: NestedScript['kind'] | undefined;
 
   constructor(private lang: Lang) {}
 
+  /**
+   * The explanation of a line, within the line's budget (src/examples/regexguard.ts). This is the boundary of a line: a bug
+   * that throws in it gives a line that says so, and not a product that stops (src/failures.ts).
+   */
   explainLine(tree: SyntaxTree, line: number, shell?: Shell, opts: ExplainOptions = {}): LineExplanation {
+    return contained(`line ${line + 1}`, () => withinLine(tree.root, () => this.explained(tree, line, shell, opts)), () => this.notExplained(tree, line, shell));
+  }
+
+  /** What is said of a line a bug stopped from being explained. */
+  notExplained(tree: SyntaxTree, line: number, shell?: Shell): LineExplanation {
+    return lineNotExplained(this.lang, tree, line, shell);
+  }
+
+  private explained(tree: SyntaxTree, line: number, shell: Shell | undefined, opts: ExplainOptions): LineExplanation {
     const root = tree.root;
     // (`#!/bin/bash --posix` starts bash in POSIX mode: the state reads it.)
     // (How the file is read: a host's code is run as a script, or typed into a terminal. A string read as a script has
@@ -79,7 +131,8 @@ export class Analyzer {
     ];
     // (A fact said twice, or left out with the pitfalls, is listed once, or not. Said twice, it is about two places,
     // `cp $a b; cp $a c`: its rewrites make the edits of both, so that none of them is left.)
-    const facts = cx.facts.filter((f, i, all) => notes.includes(f.text) && all.findIndex((g) => g.text === f.text) === i)
+    const said = new Set(notes);
+    const facts = once(cx.facts.filter((f) => said.has(f.text)), (f) => f.text)
       .map((f) => basisGate(withRewritesOf(f, cx.facts), cx.opts.basis));
     const result: LineExplanation = {
       line,
@@ -89,11 +142,9 @@ export class Analyzer {
       notes,
       noteInfo: notes.map((n) => basisGate(cx.noteOf(n), cx.opts.basis)),
       ...(facts.length ? { facts } : {}),
-      ...(cx.anchors.some((a) => notes.includes(a.text)) ? { anchors: cx.anchors.filter((a) => notes.includes(a.text)) } : {}),
+      ...(cx.anchors.some((a) => said.has(a.text)) ? { anchors: cx.anchors.filter((a) => said.has(a.text)) } : {}),
       // Each -e of sed explains the same combined script, at the command: drop repeated examples.
-      examples: titledExamples(cx, root, line, cx.examples)
-        .filter((e) => wantsExample(cx, e))
-        .filter((e, i, all) => all.findIndex((x) => JSON.stringify(x) === JSON.stringify(e)) === i)
+      examples: once(titledExamples(cx, root, line, cx.examples).filter((e) => wantsExample(cx, e)), (e) => JSON.stringify(e))
         .map((e) => {
           const note = pictureNote(e.sections.flatMap((sec) => sec.lines), (ja, en) => cx.s(ja, en));
           return note ? { ...e, note } : e;

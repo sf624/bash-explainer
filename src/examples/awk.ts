@@ -1,7 +1,7 @@
 import { lex, Lex } from '../embedded/awk';
 import { JsRegex, posixMatches, posixSpans, regexExamples, toJsRegex } from './regex';
 import { exactOfDouble, floatText } from './floatdigits';
-import { charge, longestFrom, scriptRegex } from './regexguard';
+import { charge, chargeSize, longestFrom, runnerStep, scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { parseWords } from './textfilters';
 import { has } from '../argv/query';
@@ -489,9 +489,9 @@ function isLvalue(e: Expr): boolean {
  * splitter of the runner and of the marks (src/examples/marks.ts). Each call pays for the text it walks and the parts it makes (`PART_COST`: a part is a slice, an element of the array or of `$n`), whatever `fs` is.
  */
 export function fieldSpans(s: string, fs: string | RegExp): [number, number][] {
-  charge(s.length);
+  chargeSize(s.length);
   const out = spansOf(s, fs);
-  charge(PART_COST * out.length);
+  chargeSize(PART_COST * out.length);
   return out;
 }
 
@@ -669,6 +669,9 @@ class ReturnSig {
   constructor(readonly v: Val) {}
 }
 
+/** What a field or an element costs: its slot, by far more than a character. */
+const FIELD_SLOT = 8;
+
 class Interp {
   vars = new Map<string, Val>();
   arrays = new Map<string, Map<string, Val>>();
@@ -685,7 +688,7 @@ class Interp {
   }
 
   private tick(): void {
-    if (++this.steps > 200000) throw new Unsupported('too many steps');
+    runnerStep(++this.steps, 200000);
   }
 
   // --- variables, arrays and fields
@@ -707,6 +710,7 @@ class Interp {
     if (local?.has(name)) { local.set(name, v); return; }
     if (name === 'NF') {
       const n = Math.max(0, Math.trunc(toNum(v)));
+      chargeSize(FIELD_SLOT * (n - this.fields.length));
       while (this.fields.length - 1 < n) this.fields.push('');
       this.fields.length = n + 1;
       this.rebuild();
@@ -754,6 +758,7 @@ class Interp {
   private setField(i: number, v: Val): void {
     if (i < 0) throw new Unsupported('negative field');
     if (i === 0) { this.setRecord(toStr(v)); return; }
+    chargeSize(FIELD_SLOT * (i - this.fields.length));
     while (this.fields.length <= i) this.fields.push('');
     this.fields[i] = toStr(v);
     this.rebuild();
@@ -820,7 +825,11 @@ class Interp {
             const hit = this.regexOf(e.r).test(toStr(this.eval(e.l)));
             return (e.op === '~') === hit ? 1 : 0;
           }
-          case 'concat': return toStr(this.eval(e.l)) + toStr(this.eval(e.r));
+          case 'concat': {
+            const s = toStr(this.eval(e.l)) + toStr(this.eval(e.r));
+            chargeSize(s.length);
+            return s;
+          }
           case '<': return compare(this.eval(e.l), this.eval(e.r)) < 0 ? 1 : 0;
           case '<=': return compare(this.eval(e.l), this.eval(e.r)) <= 0 ? 1 : 0;
           case '>': return compare(this.eval(e.l), this.eval(e.r)) > 0 ? 1 : 0;
@@ -830,7 +839,12 @@ class Interp {
           default: return arith(e.op, toNum(this.eval(e.l)), toNum(this.eval(e.r)));
         }
       }
-      case 'call': return this.call(e.name, e.args);
+      case 'call': {
+        // (What a function makes counts as a concatenation does: `sprintf("%s%s", s, s)`.)
+        const v = this.call(e.name, e.args);
+        if (typeof v === 'string') chargeSize(v.length);
+        return v;
+      }
     }
   }
 
@@ -1001,6 +1015,7 @@ class Interp {
   }
 
   private write(text: string): void {
+    chargeSize(text.length);
     this.out.push(text);
   }
 

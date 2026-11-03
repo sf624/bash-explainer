@@ -33,7 +33,7 @@ export const ALLOWED: readonly string[] = [
   'src/semanticTokens.ts',
   // Other languages.
   'src/embedded/',
-  ...['jq', 'awk', 'sed', 'perlrun', 'yaml', 'regex'].map((n) => `src/examples/${n}.ts`),
+  ...['jq', 'jqvalues', 'awk', 'sed', 'perlrun', 'perllex', 'yaml', 'regex'].map((n) => `src/examples/${n}.ts`),
   'src/arith.ts',
 ];
 

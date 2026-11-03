@@ -9,12 +9,13 @@ import { formatDate as formatDateCommand, parseSampleDate, type PrintfReader, SA
 import { pick } from '../embedded/types';
 import type { Lang } from '../i18n';
 import { fact } from '../messages';
-import type { NotComputedId } from './regexguard';
+import { contained } from '../failures';
+import { guarded, guardedResult, type NotComputedId } from './regexguard';
 import { dateOutputLabel, parseDateValue, relativeFrom, relativeItems, zoneOf } from './dates';
 import { GetoptSpec, GetoptUnsupported, runGetopt, sampleGetoptArgs } from './getopt';
 import { formatDate, GitFormatUnsupported, runGitLog, sampleCommits } from './gitlog';
 import { perlExample, perlOptions } from './perlrun';
-import { InputBox, Interactive, rerun, RerunSpec } from './rerun';
+import { InputBox, Interactive, runAgain, RerunSpec } from './rerun';
 import { InputSource, knownLines, readOrder, shareOut, shownSource, streamLabel, withSystemFiles } from './source';
 import { IFS_WHITESPACE } from '../semantics/chars';
 import { readSampleLine, runRead, showCommand, xargsExample as runXargs } from './runtime';
@@ -26,14 +27,27 @@ import { has, values } from '../argv/query';
 /** A word of the command line: its text when it is known (`literalContent`), and as written. */
 export interface ExampleWord { value: string | undefined; text: string }
 
-/** The example of what the guard does not run (src/examples/regexguard.ts): it says so (`id`), and shows no result. */
-export function notComputed(kind: Example['kind'], title: string, lang: Lang, id: NotComputedId = 'regex-not-computed'): Example {
+/** The example of what the guard does not run (src/examples/regexguard.ts), or of a bug (src/failures.ts): it says so (`id`), and shows no result. */
+export function notComputed(kind: Example['kind'], title: string, lang: Lang, id: NotComputedId | 'example-failed'): Example {
   return { kind, title, note: fact(lang, id).text, sections: [] };
 }
 
-/** An example's editable form for the panel: the spec to run it again, its input boxes, and what they give now. */
-export function interactive(spec: RerunSpec, inputs: InputBox[], lang: Lang): Interactive {
-  return { spec, inputs, result: rerun(spec, inputs.map((b) => b.lines), lang) };
+/**
+ * What `build` makes of an example, or, when what it runs is refused, what `refused` makes of the note that says so; when it throws, a
+ * bug (src/failures.ts), the same with its own note. This is the boundary of an example: the rest of the line is not lost.
+ */
+export function exampleRun<T>(kind: Example['kind'], build: () => T, refused: (id: NotComputedId | 'example-failed') => T): T {
+  return contained(`an example (${kind})`, () => guarded(build, refused), () => refused('example-failed'));
+}
+
+/**
+ * An example's editable form for the panel: the spec to run it again, its input boxes, and what they give now. It runs
+ * apart from the example it is of, as the panel runs it again: none when the line's results have no more left, and then the panel shows
+ * the example as it is. The example, which is the point, never pays for it.
+ */
+export function interactive(spec: RerunSpec, inputs: InputBox[], lang: Lang): Interactive | undefined {
+  const result = guardedResult(() => runAgain(spec, inputs.map((b) => b.lines), lang));
+  return result && { spec, inputs, result };
 }
 
 /** Where a command reads when nothing on the line says (its standard input, from wherever the script's comes). */
@@ -70,7 +84,7 @@ export function ioExample(sample: string[], output: string[], spec: RerunSpec, l
     : spec.kind === 'awk' && src.fileName && streams.some((st) => st.kind === 'file') ? { ...spec, files: names('-'), ...reads } : { ...spec, ...reads };
   // The output of what the files hold, unless they hold the sample as it is.
   const asSample = contents.flat().length === sample.length && !src.reads && !streams.some(knownLines) && !('files' in run);
-  const shown = asSample ? output : rerun(run, contents, lang).sections[0].lines;
+  const shown = asSample ? output : runAgain(run, contents, lang).sections[0].lines;
   const boxes = streams.map((st, i) => ({ label: streamLabel(st, lang), lines: contents[i] }));
   return { kind,
     interactive: interactive(run, boxes, lang),

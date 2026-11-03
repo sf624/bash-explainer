@@ -1,13 +1,29 @@
-// The engine of every regex that comes from a script (grep, sed, awk, perl, `[[ =~ ]]`, jq, a glob…): JavaScript's own
-// matcher cannot be stopped from its thread, and `(a+)+$` takes it 2^n steps on `aaa…!`, so it never runs one. This one
-// takes the same paths in the same order, on an explicit stack, and counts what it does. Its result is the result: past
-// the limit there is none, `RegexRefused`, which every output says as "not computed" (`regex-not-computed`,
-// src/messages.ts), never as a match or as none. No clock is read: what is computed is the same on every machine.
+// The engine of every regex that comes from a script (grep, sed, awk, perl, `[[ =~ ]]`, jq, a glob…), and the budget of
+// all that an example runs. JavaScript's own matcher cannot be stopped from its thread, and `(a+)+$` takes it 2^n steps on
+// `aaa…!`, so it never runs one. This one takes the same paths in the same order, on an explicit stack, and counts what it
+// does; the runners of jq, awk, perl and sed charge their steps and the values they make to the same limit (`charge`). A
+// result is the result: past the limit there is none, `Refused`, which every output says as "not computed" (the `…-not-computed`
+// notes of src/messages.ts), never as a match or as none. No clock is read: what is computed is the same on every machine.
+//
+// What a limit is a limit of (docs/design/line-budget.md): one `guarded` has `LIMIT`; a line has `LINE_LIMIT` for all its
+// examples, in `withinLine`; a long document gives each line a smaller share (`shareOf`), by its size only, so a line is
+// explained the same in the hover, in the panel and in the command-line tool. What the models work out (`guardedApart`) has
+// a limit of its own for each thing: it is kept for the whole document, so it cannot depend on the line that asked first.
 
 import { inRanges, LINE_ENDS, type Node, Parser, type Ranges, WORD } from './regexparse';
 
-/** Thrown instead of a result that would take too long to find: not a match, nor no match. */
-export class RegexRefused extends Error {}
+/**
+ * The note of the catalog (src/messages.ts) that an example says in place of its result: the reason, for what it is true of.
+ * `budget-…`: a limit made smaller by what ran before it on the line, or by the size of the document.
+ */
+export type NotComputedId = 'regex-not-computed' | 'digits-not-computed' | 'size-not-computed' | 'steps-not-computed' | 'budget-not-computed';
+
+/** Thrown instead of a result that would cost too much: not a match, nor no match, nor no output. `why` says what ran out. */
+export class Refused extends Error {
+  constructor(readonly why: NotComputedId = 'regex-not-computed') {
+    super(why);
+  }
+}
 
 /**
  * Thrown instead of the digits of a number that depend on the machine (bash's and coreutils' printf read a `long double`,
@@ -15,16 +31,28 @@ export class RegexRefused extends Error {}
  */
 export class MachineDigits extends Error {}
 
-/** The note of the catalog (src/messages.ts) that an example says in place of its result. */
-export type NotComputedId = 'regex-not-computed' | 'digits-not-computed';
-
 /**
  * What the runs in one `guarded` may cost, in the walk's steps: a whole limit takes 30 to 90 ms, by the kind of pattern.
- * A line has one for each example and expansion, not one for all (docs/roadmap.md, "One line must not stop the whole tool").
  * Ordinary patterns on fifty lines of 90 characters take up to about 3e6, for all the runs of their line
  * (test/examples-regexguard.test.ts, MUST_RUN).
  */
 const LIMIT = 1e7;
+/** What the examples of one line may cost together, and again what the results of their panels may (`withinLine`). */
+const LINE_LIMIT = 3e7;
+/** What the examples of all the lines of a document may cost together: a share of it for each line of code (`shareOf`). */
+const DOCUMENT_LIMIT = 2e9;
+/**
+ * What one thing a model works out may cost (`modelLimit`), and all of them in a document: a share of it for each place one can be.
+ * `${x//a*b/c}` on a value of 1500 characters takes 5e6; past a share, a value is "not known", which an example does not depend on.
+ */
+export const MODEL_LIMIT = 1e7;
+const DOCUMENT_MODEL_LIMIT = 6e7;
+/** The least a thing may cost, however long the document: what an ordinary `${f%.*}` takes, so a very long script costs by its size. */
+const MODEL_LEAST = 2e4;
+/** The longest value of a variable a model keeps, and all of them in a document, as characters: each is read many times, in JavaScript. */
+const VALUE_LIMIT = 1 << 16;
+const DOCUMENT_VALUE_LIMIT = 4e7;
+const VALUE_LEAST = 1024;
 /** A longer pattern is not read: reading it is recursive, and a pattern this long is no ordinary one. */
 const MAX_SOURCE = 2000;
 /**
@@ -301,18 +329,25 @@ const MAX_LONG_CHARS = 4e6;
 
 let depth = 0;
 let left = LIMIT;
+/** What the `guarded` that goes on was given: less than `LIMIT` when the line had less left. */
+let granted = LIMIT;
 /** The patterns whose compilation the runs of this limit paid for, kept or not: what a run costs is the same whatever ran before it in the process. */
-const compiled = new Set<string>();
+let compiled = new Set<string>();
+
+/** What is left of a line's limit, for its examples and for the results of their panels. */
+interface Account { left: number }
+/** What the line being explained has left (`withinLine`). */
+let line: { examples: Account; results: Account } | undefined;
 
 /** A whole limit, for what runs next. */
 function fresh(): void {
-  left = LIMIT;
+  left = granted = LIMIT;
   compiled.clear();
 }
 
-function refuse(): never {
+function refuse(why?: NotComputedId): never {
   left = 0;
-  throw new RegexRefused();
+  throw new Refused(why);
 }
 
 /** Past the limit in a walk. */
@@ -332,11 +367,26 @@ function tooLong(p: Program, text: string, from: number, once: boolean, longest:
 
 /**
  * Takes what a part of a run costs from what is left. A tool charges so what it makes of a match, when that can be many
- * times its size (four times with sed's `&&&&`): strings are made without a limit but memory, and running out of it cannot be caught.
+ * times its size (four times with sed's `&&&&`), and a runner its steps and the values it makes: strings are made without a
+ * limit but memory, and running out of it cannot be caught: it ends the process. `why`: the note, when this is what runs out.
  */
-export function charge(cost: number): void {
+export function charge(cost: number, why?: NotComputedId): void {
   if (!depth) fresh();
-  if ((left -= cost) < 0) refuse();
+  if ((left -= cost) < 0) refuse(why);
+}
+
+/** What a step of a runner costs: about what it takes in time, against a step of the walk. */
+export const STEP_COST = 16;
+
+/** A step of a runner's interpreter (jq, awk, perl, sed), with its own bound `max` for the run: an endless loop stops there. */
+export function runnerStep(steps: number, max: number): void {
+  charge(STEP_COST, 'steps-not-computed');
+  if (steps > max) refuse('steps-not-computed');
+}
+
+/** A string or array of `size` a runner, or a model's value, is about to make: charged before it is made. */
+export function chargeSize(size: number): void {
+  charge(size, 'size-not-computed');
 }
 
 /**
@@ -590,7 +640,7 @@ let kept = 0;
 
 function programOf(source: string, flags: string): Program {
   // (No Unicode regex is made here, and the engine does not read them.)
-  if (source.length > MAX_SOURCE || flags.includes('u') || flags.includes('v')) throw new RegexRefused();
+  if (source.length > MAX_SOURCE || flags.includes('u') || flags.includes('v')) throw new Refused();
   const read = [...flags].filter((f) => 'ims'.includes(f)).join('');
   const key = `${read}/${source}`;
   if (!compiled.has(key)) charge(COMPILE * source.length);
@@ -598,7 +648,7 @@ function programOf(source: string, flags: string): Program {
   if (!p) {
     const parser = new Parser(source);
     const tree = parser.alt();
-    if (parser.unread) throw new RegexRefused();
+    if (parser.unread) throw new Refused();
     p = new Program(tree, source, parser.groups, parser.names, read);
     // (A web page stays open for long, and awk's regexes can be new on each line.)
     if (kept > MAX_KEPT) {
@@ -645,7 +695,7 @@ class GuardedRegExp extends RegExp {
 }
 
 /**
- * A regex that comes from a script, to run on data: each run throws `RegexRefused` when it would cost too much on its
+ * A regex that comes from a script, to run on data: each run throws `Refused` when it would cost too much on its
  * text, and making it does when the engine does not read it. Use it within `guarded`, in place of `new RegExp`.
  */
 export function scriptRegex(source: string, flags = ''): RegExp {
@@ -663,29 +713,123 @@ export function longestFrom(re: RegExp, text: string, at: number): RegExpExecArr
 }
 
 /**
- * A string too long for JavaScript (of what a tool makes of matches), or a stack too deep: one more thing that costs too
- * much. No other RangeError: a precision no number method takes or a code point out of range is a bug of what threw it.
+ * What a size JavaScript cannot go past says: a string too long for it (of what a tool makes of matches), or a stack too
+ * deep (jq's `def f: f; f`). No other RangeError: a precision no number method takes or a code point out of range is a bug of what threw it.
  */
-function tooBigForJavaScript(e: unknown): boolean {
-  return e instanceof RangeError && /Invalid string length|Maximum call stack/.test(e.message);
+function tooBigForJavaScript(e: unknown): NotComputedId | undefined {
+  if (!(e instanceof RangeError)) return undefined;
+  return /Invalid string length/.test(e.message) ? 'size-not-computed' : /Maximum call stack/.test(e.message) ? 'steps-not-computed' : undefined;
+}
+
+/** What `run` gives, or `refused(id)` with the note that says why it did not, when something it runs is refused. */
+function caught<T>(run: () => T, refused: (id: NotComputedId) => T): T {
+  try {
+    return run();
+  } catch (e) {
+    if (e instanceof MachineDigits) return refused('digits-not-computed');
+    const tooBig = tooBigForJavaScript(e);
+    // (A stack too deep, or a string, cost more than the steps counted: it pays for all that is left.)
+    if (tooBig) left = 0;
+    const why = e instanceof Refused ? e.why : tooBig;
+    if (!why) throw e;
+    // (A limit that ran out because the line or the document gave it less says so. A pattern not read at all is refused with some left.)
+    return refused(granted < LIMIT && left <= 0 ? 'budget-not-computed' : why);
+  }
 }
 
 /**
  * What `run` gives, or `refused(id)` when a regex it runs is refused (or the digits it prints depend on the machine), with the
  * note to say instead. The runs in it share one limit (those of a `guarded` inside it as well): a run alone is limited
- * either way, a run of many only here.
+ * either way, a run of many only here. On a line (`withinLine`) that limit comes from what the examples of the line have left.
  */
 export function guarded<T>(run: () => T, refused: (id: NotComputedId) => T): T {
-  if (!depth++) fresh();
+  if (depth) return caught(run, refused);
+  const account = line?.examples;
+  left = granted = Math.min(LIMIT, account ? account.left : LIMIT);
+  compiled.clear();
+  depth++;
   try {
-    return run();
-  } catch (e) {
-    if (e instanceof MachineDigits) return refused('digits-not-computed');
-    if (e instanceof RegexRefused || tooBigForJavaScript(e)) return refused('regex-not-computed');
-    throw e;
+    return caught(run, refused);
   } finally {
     depth--;
+    if (account) account.left -= granted - left;
   }
+}
+
+/**
+ * The same with a limit of its own, whatever goes on around it, and charged to nothing around it: what a model works out, and
+ * keeps for the whole document, is the same whichever line asked first. With `account`: what that has left, and it pays.
+ */
+export function guardedApart<T>(limit: number, run: () => T, refused: (id: NotComputedId) => T, account?: Account): T {
+  const saved = { depth, left, granted, compiled };
+  depth = 1;
+  left = granted = account ? Math.min(limit, account.left) : limit;
+  compiled = new Set();
+  try {
+    return caught(run, refused);
+  } finally {
+    if (account) account.left -= granted - left;
+    ({ depth, left, granted, compiled } = saved);
+  }
+}
+
+/** A share of a document's limit for each of `places`: all of it when they are few, never more than `most`. */
+const share = (whole: number, places: number, most: number) => Math.min(most, Math.floor(whole / Math.max(1, places)));
+
+interface Shares {
+  /** What the examples of a line may cost, and again their results. */
+  line: number;
+  /** What one thing a model works out may cost. */
+  model: number;
+  /** The longest value of a variable the model keeps. */
+  value: number;
+}
+
+const shares = new WeakMap<object, Shares>();
+
+/**
+ * The limits of the lines of a document, from the text alone: what its examples may cost in all, shared among its lines of code, and what
+ * its models may, among the places a regex of theirs can run (a `${…}`, a test's `==`, a `case` pattern's `)`, a line).
+ */
+function shareOf(root: { text: string }): Shares {
+  let known = shares.get(root);
+  if (!known) {
+    const code = root.text.match(/^[ \t]*[^\s#]/gm)?.length ?? 0;
+    const places = root.text.match(/\$\{|[=!]=|\)|\n/g)?.length ?? 0;
+    known = { line: share(DOCUMENT_LIMIT, code, LINE_LIMIT), model: Math.max(MODEL_LEAST, share(DOCUMENT_MODEL_LIMIT, places, MODEL_LIMIT)), value: Math.max(VALUE_LEAST, share(DOCUMENT_VALUE_LIMIT, places, VALUE_LIMIT)) };
+    shares.set(root, known);
+  }
+  return known;
+}
+
+/** The longest value of a variable the model of the script whose root is `root` keeps: past it, a value is not known. */
+export function modelValueLimit(root: { text: string }): number {
+  return shareOf(root).value;
+}
+
+/** What one thing the model of the script whose root is `root` works out may cost. */
+export function modelLimit(root: { text: string }): number {
+  return shareOf(root).model;
+}
+
+/**
+ * Explains a line of the document whose root is `root` within one budget: all the `guarded` in `run` draw from it, and a line of a
+ * string read as a script (or any run in it) from the same one. Its size is a function of the document's text, never of what ran before.
+ */
+export function withinLine<T>(root: { text: string }, run: () => T): T {
+  if (line) return run();
+  const limit = shareOf(root).line;
+  line = { examples: { left: limit }, results: { left: limit } };
+  try {
+    return run();
+  } finally {
+    line = undefined;
+  }
+}
+
+/** What `run` gives for the panel of an example, or undefined when the results of the line have no more left. A refusal here does not touch the example. */
+export function guardedResult<T>(run: () => T): T | undefined {
+  return guardedApart<T | undefined>(LIMIT, run, () => undefined, line?.results);
 }
 
 /** The characters of the texts kept to be refused again, for the tests. */

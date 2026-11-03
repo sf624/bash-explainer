@@ -1,14 +1,16 @@
 import { lex, Lex, ParseError } from '../embedded/jq';
 import { base64Decode, base64Encode, utf8Length } from './bytes';
 import { extendedRegex } from './regex';
-import { scriptRegex } from './regexguard';
+import { cmp, isObj, type JqFormat, jqPrint, type Json, type Obj, sizeOf, sortedKeys, toJson, truthy, typeName, varyJson } from './jqvalues';
+import { chargeSize, runnerStep, scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { setOwn } from '../wordtable';
 
 /** Raised for jq features the example runner does not implement; no example is shown then. */
 class Unsupported extends RunnerUnsupported {}
 
-export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
+export type { JqFormat, Json } from './jqvalues';
+export { JQ_PRETTY, jqPrint, parseJsonValues, toJson, varyJson } from './jqvalues';
 
 // ---------------------------------------------------------------- AST
 
@@ -510,47 +512,6 @@ function each<T>(items: T[], f: (item: T) => Json[]): Json[] {
   return out;
 }
 
-type Obj = { [k: string]: Json };
-const isObj = (v: Json): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
-
-function typeName(v: Json): string {
-  if (v === null) return 'null';
-  if (Array.isArray(v)) return 'array';
-  return typeof v === 'object' ? 'object' : typeof v;
-}
-
-const ORDER = ['null', 'boolean', 'number', 'string', 'array', 'object'];
-
-/** jq's total order: null < false < true < numbers < strings < arrays < objects. */
-function cmp(a: Json, b: Json): number {
-  const ta = ORDER.indexOf(typeName(a));
-  const tb = ORDER.indexOf(typeName(b));
-  if (ta !== tb) return ta - tb;
-  if (typeof a === 'boolean' || typeof a === 'number') return Number(a) - Number(b as number);
-  if (typeof a === 'string') return a < (b as string) ? -1 : a > (b as string) ? 1 : 0;
-  if (Array.isArray(a)) {
-    const bb = b as Json[];
-    for (let i = 0; i < Math.min(a.length, bb.length); i++) {
-      const c = cmp(a[i], bb[i]);
-      if (c) return c;
-    }
-    return a.length - bb.length;
-  }
-  if (isObj(a)) {
-    const bo = b as Obj;
-    const ka = Object.keys(a).sort();
-    const kb = Object.keys(bo).sort();
-    const c = cmp(ka, kb);
-    if (c) return c;
-    for (const k of ka) {
-      const d = cmp(a[k], bo[k]);
-      if (d) return d;
-    }
-  }
-  return 0;
-}
-
-const truthy = (v: Json) => v !== null && v !== false;
 
 function add(a: Json, b: Json): Json {
   if (a === null) return b;
@@ -573,7 +534,11 @@ function arith(op: string, a: Json, b: Json): Json {
       if (typeof a === 'number' && typeof b === 'number') return a * b;
       if (isObj(a) && isObj(b)) return deepMerge(a, b);
       if (typeof a === 'string' && b === Infinity) throw new Unsupported('a repeat without end');
-      if (typeof a === 'string' && typeof b === 'number') return b > 0 ? a.repeat(Math.ceil(b)) : null;
+      if (typeof a === 'string' && typeof b === 'number') {
+        if (!(b > 0)) return null;
+        chargeSize(a.length * Math.ceil(b));
+        return a.repeat(Math.ceil(b));
+      }
       break;
     case '/':
       if (typeof a === 'number' && typeof b === 'number') {
@@ -598,85 +563,6 @@ function deepMerge(a: Obj, b: Obj): Obj {
   return out;
 }
 
-/**
- * The JSON values of a text, one after another, as jq reads a file: separated by whitespace, or by nothing where one
- * ends with a bracket or a quote (`{"a":1}{"a":2}`). Throws a SyntaxError where a value is not JSON.
- */
-export function parseJsonValues(text: string): Json[] {
-  const out: Json[] = [];
-  let i = 0;
-  const ws = /\s/;
-  while (i < text.length) {
-    if (ws.test(text[i])) { i++; continue; }
-    // The end of the value: where its brackets close, its string ends, or (a number, a literal) whitespace or a bracket begins.
-    let depth = 0;
-    let j = i;
-    for (; j < text.length; j++) {
-      const c = text[j];
-      // A number or a literal ends where blanks or another value start.
-      if (depth === 0 && j > i && (ws.test(c) || '{["'.includes(c))) break;
-      if (c === '"') {
-        for (j++; j < text.length && text[j] !== '"'; j++) if (text[j] === '\\') j++;
-        if (depth === 0) { j++; break; }
-      } else if (c === '{' || c === '[') depth++;
-      else if (c === '}' || c === ']') {
-        depth--;
-        if (depth <= 0) { j++; break; }
-      }
-    }
-    out.push(JSON.parse(text.slice(i, j)) as Json);
-    i = j;
-  }
-  return out;
-}
-
-/**
- * A value like `v` for the `k`th file of several (from 0, `v` itself): its numbers plus `k`, and its strings with
- * `k + 1` after them, so that each file's output shows apart.
- */
-export function varyJson(v: Json, k: number): Json {
-  if (k === 0) return v;
-  if (typeof v === 'number') return v + k;
-  if (typeof v === 'string') return `${v}${k + 1}`;
-  if (Array.isArray(v)) return v.map((x) => varyJson(x, k));
-  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([key, x]) => [key, varyJson(x, k)]));
-  return v;
-}
-
-/**
- * How jq prints a value: `indent` spaces a level (2 by default; `--indent n`), a tab (`--tab`), or 0 for one line
- * (`-c`, `--indent 0`); `sortKeys`: the keys of every object in order (`-S`).
- */
-export interface JqFormat { indent: number | '\t'; sortKeys?: boolean }
-
-/** jq's default: two spaces a level. */
-export const JQ_PRETTY: JqFormat = { indent: 2 };
-
-function sortedKeys(v: Json): Json {
-  if (Array.isArray(v)) return v.map(sortedKeys);
-  if (isObj(v)) return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortedKeys(v[k])]));
-  return v;
-}
-
-/** The lines jq prints for a value in this format (`raw`: a string as it is, with `-r` or `-j`). */
-export function jqPrint(v: Json, format: JqFormat, raw = false): string[] {
-  if (raw && typeof v === 'string') return v.split('\n');
-  const x = format.sortKeys ? sortedKeys(v) : v;
-  return (format.indent === 0 ? JSON.stringify(x) : JSON.stringify(x, null, format.indent)).split('\n');
-}
-
-/** Compact JSON as `jq -c` prints it. */
-export function toJson(v: Json): string {
-  return JSON.stringify(v);
-}
-
-function contains(a: Json, b: Json): boolean {
-  if (typeName(a) !== typeName(b)) throw new JqError(`${typeName(a)} and ${typeName(b)} cannot have their containment checked`);
-  if (typeof a === 'string') return a.includes(b as string);
-  if (Array.isArray(a)) return (b as Json[]).every((x) => a.some((y) => typeName(x) === typeName(y) && contains(y, x)));
-  if (isObj(a)) return Object.entries(b as Obj).every(([k, v]) => Object.hasOwn(a, k) && typeName(a[k]) === typeName(v) && contains(a[k], v));
-  return cmp(a, b) === 0;
-}
 
 // ---------------------------------------------------------------- evaluator
 
@@ -703,18 +589,52 @@ function patVars(pats: Pat[]): string[] {
   return [...names];
 }
 
+function contains(a: Json, b: Json): boolean {
+  if (typeName(a) !== typeName(b)) throw new JqError(`${typeName(a)} and ${typeName(b)} cannot have their containment checked`);
+  if (typeof a === 'string') return a.includes(b as string);
+  if (Array.isArray(a)) return (b as Json[]).every((x) => a.some((y) => typeName(x) === typeName(y) && contains(y, x)));
+  if (isObj(a)) return Object.entries(b as Obj).every(([k, v]) => Object.hasOwn(a, k) && typeName(a[k]) === typeName(v) && contains(a[k], v));
+  return cmp(a, b) === 0;
+}
+
+/** A regex of the filter, for this engine: Oniguruma's own syntax (`(?i)`), which JavaScript's does not read, is not run. */
+function readRegex(source: string, flags: string): RegExp {
+  try {
+    return scriptRegex(source, flags);
+  } catch (e) {
+    if (e instanceof SyntaxError) throw new Unsupported('a regex of another syntax');
+    throw e;
+  }
+}
+
+/** The steps of one run of a filter. */
+const MAX_STEPS = 100000;
+/** What a node gives that it makes, and not one it reads or passes on. */
+const MAKES_VALUES: ReadonlySet<Node['t']> = new Set(['bin', 'str', 'fmt', 'array', 'object', 'assign', 'call', 'neg']);
+
+/** What a number of a `range` costs: an array's slot, by far more than a character. */
+const RANGE_ITEM = 8;
+
 class Evaluator {
   private steps = 0;
 
   /** `queue`: the inputs not read yet, which `input` and `inputs` read (jq reads them from the files, or stdin). */
   constructor(private queue?: Json[]) {}
 
+  /** Every value is charged where a node makes it: the budget stops `[range(1e9)]`, a doubling and `[., .]` before they fill the memory. */
   private tick(): void {
-    if (++this.steps > 100000) throw new Unsupported('too many steps');
+    runnerStep(++this.steps, MAX_STEPS);
   }
 
   ev(n: Node, x: Json, env: Env): Json[] {
     this.tick();
+    const out = this.evaluated(n, x, env);
+    chargeSize(out.length);
+    if (MAKES_VALUES.has(n.t)) for (const v of out) chargeSize(sizeOf(v));
+    return out;
+  }
+
+  private evaluated(n: Node, x: Json, env: Env): Json[] {
     switch (n.t) {
       case 'id': return [x];
       case 'recurse': return this.recurse(x);
@@ -1050,6 +970,7 @@ class Evaluator {
       const arr = x === null ? [] : Array.isArray(x) ? [...x] : (() => { throw new JqError(`Cannot index ${typeName(x)} with number`); })();
       const i = k < 0 ? arr.length + k : k;
       if (i < 0) throw new JqError('Out of bounds negative array index');
+      chargeSize(RANGE_ITEM * (i - arr.length));
       while (arr.length <= i) arr.push(null);
       arr[i] = this.setpath(arr[i], rest, value);
       return arr;
@@ -1191,8 +1112,15 @@ class Evaluator {
         const flat = (v: Json[], d: number): Json[] => v.flatMap((e) => (Array.isArray(e) && d > 0 ? flat(e, d - 1) : [e]));
         return [flat(arr(x), depth)];
       }
-      case 'range/1': { const m = one(0) as number; return Array.from({ length: Math.max(0, Math.ceil(m)) }, (_, i) => i); }
-      case 'range/2': { const s = one(0) as number; const e = one(1) as number; const out: number[] = []; for (let i = s; i < e && out.length < 1000; i++) out.push(i); return out; }
+      case 'range/1': { const m = Math.max(0, Math.ceil(one(0) as number)); chargeSize(RANGE_ITEM * m); return Array.from({ length: m }, (_, i) => i); }
+      case 'range/2': {
+        const s = one(0) as number;
+        const e = one(1) as number;
+        chargeSize(RANGE_ITEM * Math.max(0, Math.ceil(e - s)));
+        const out: number[] = [];
+        for (let i = s; i < e; i++) out.push(i);
+        return out;
+      }
       case 'floor/0': return [Math.floor(x as number)];
       case 'ceil/0': return [Math.ceil(x as number)];
       // Halves away from zero, as C's round().
@@ -1289,7 +1217,7 @@ class Evaluator {
       case 'test/1': case 'test/2': {
         const flags = a.length > 1 ? str(one(1)) : '';
         if (/[^gix]/.test(flags)) throw new Unsupported('regex flags');
-        return [scriptRegex(flags.includes('x') ? extendedRegex(str(one(0))) : str(one(0)), flags.replace(/[gx]/g, '')).test(str(x))];
+        return [readRegex(flags.includes('x') ? extendedRegex(str(one(0))) : str(one(0)), flags.replace(/[gx]/g, '')).test(str(x))];
       }
       case 'explode/0': return [[...str(x)].map((c) => c.codePointAt(0)!)];
       case 'implode/0': {

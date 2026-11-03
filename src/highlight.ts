@@ -11,6 +11,7 @@ import { actsOnNames } from './argv/query';
 import { builtins } from './dict/builtins';
 import type { Extracted } from './hosts';
 import { regionShell, scriptTree } from './hosts/scripts';
+import { contained } from './failures';
 import { type HighlightModifier, semanticFacts } from './semanticFacts';
 import { fileRead, type FileRead } from './semantics/env';
 import { shellState } from './semantics/state';
@@ -341,6 +342,11 @@ function offsetsOf(starts: readonly number[], length: number, lines: { from: num
  * explanations read it: a function of one step is not one in the next.
  */
 export function documentHighlight(doc: ShellDocument, opts: DocumentHighlightOptions = {}): LineSpan[] {
+  // (The boundary of the colours: a bug here leaves the text uncoloured, src/failures.ts.)
+  return contained('the colours of a document', () => documentSpans(doc, opts), () => []);
+}
+
+function documentSpans(doc: ShellDocument, opts: DocumentHighlightOptions): LineSpan[] {
   const { tree, extracted } = doc;
   const forced = opts.shells?.forced;
   if (!extracted) {

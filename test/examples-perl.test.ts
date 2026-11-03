@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import { guarded } from '../src/examples/regexguard';
 import { run } from './support/run';
 import { Analyzer } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -143,7 +144,8 @@ describe('the perl runner agrees with perl on the less common parts', () => {
       'print keys 1', '$_ =~ $x', 'print (', '}', 'BEGIN',
       '($x = $_) =~ s/a/b/', 'my %h = (a => 1)', '$s x= 2', 'print map { $_ } 1', 'print "@a[0]"', 'our $x = 1', '{ print 1 }', 'print "a@b.c"', 'print 1 y /2/', 'if (1 { print }', 'print 1/0', 'print 1 % 0', 'for (1..2) { print 1/0 }', 'print exists $x', 'delete $x', 'push $x, 1', 'print foo(1)',
       'for (1..400) { for (1..400) { $x++ } }', 'my @s = sort { $a <=> $b }']) {
-      assert.strictEqual(runPerl(code, { loop: 'n' }, input), undefined, code);
+      // (A loop too long is refused, which the example says: `guarded`.)
+      assert.strictEqual(guarded(() => runPerl(code, { loop: 'n' }, input), () => undefined), undefined, code);
     }
   });
 });
