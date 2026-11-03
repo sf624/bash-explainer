@@ -2,7 +2,7 @@
 // constructs their shell lacks. Offline, like the extension: nothing is sent anywhere.
 import * as fs from 'fs';
 import { Analyzer, Example, LineExplanation, Token } from '../src/analyzer';
-import { pictureText } from '../src/ctlchars';
+import { controlsShown, jsonText, pictureText } from '../src/ctlchars';
 import { BASH_VERSIONS, type BashVersion, DEFAULT_BASH_VERSION } from '../src/bashversion';
 import { Shell, SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, plain } from '../src/document';
@@ -255,6 +255,19 @@ function readInputs(o: Options): Input[] {
 
 // ---- Output -----------------------------------------------------------------------------------
 
+/**
+ * What stands for the start of a colour sequence (ESC [) until `shown` has written out the control characters of the text. It is
+ * made anew in each run, so no script holds it, nor any text an explanation derives from one.
+ */
+const COLOUR_MARK = `\u{E000}${Math.random().toString(36).slice(2)}\u{E001}`;
+const sgr = (code: string) => `${COLOUR_MARK}${code}m`;
+
+/**
+ * All that main writes to standard output and standard error passes here: what it reads from a script, a file name or an
+ * argument can hold control characters, which must not reach the terminal as they are. Only the tool's own colours do.
+ */
+const shown = (text: string) => controlsShown(text).split(COLOUR_MARK).join('\x1b[');
+
 const ANSI: Partial<Record<Token['kind'], string>> = {
   // (The shebang as the program it names, as the panel draws it.)
   command: '34', subcommand: '34', builtin: '34', function: '34', alias: '34', shebang: '34',
@@ -266,7 +279,7 @@ const ANSI: Partial<Record<Token['kind'], string>> = {
 };
 
 function textOutput(name: string, line: number, lineText: string, ex: LineExplanation, color: boolean, lang: Lang): string {
-  const paint = (code: string | undefined, s: string) => (color && code ? `\x1b[${code}m${s}\x1b[0m` : s);
+  const paint = (code: string | undefined, s: string) => (color && code ? `${sgr(code)}${s}${sgr('0')}` : s);
   // The references a row cites, dim: " (Bash manual 3.7.2)", " (Bash manual 3.8, 3.1.3; execve(2))".
   const refs = (r: readonly string[] | undefined) => (r?.length ? paint('90', refsText(lang, r)) : '');
   const out: string[] = [`${paint('1', `${name}:${line + 1}`)}  ${lineText.trim()}`];
@@ -289,7 +302,7 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
   const walk = (t: Token, depth: number) => {
     // Code parts in the colour of the kind; a placeholder in italics and dim (or ‹name› when there is no colour).
     const label = joinParts(labelParts(t), (p) => (p.placeholder
-      ? (color ? `\x1b[2;3m${p.text}\x1b[0m` : `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}`)
+      ? (color ? `${sgr('2;3')}${p.text}${sgr('0')}` : `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}`)
       : paint(ANSI[t.kind], p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
     out.push(`${'  '.repeat(depth + 1)}${label}  ${explained(t).replace(/`/g, '')}${refs(t.refs)}`);
     // (The value of an expansion where it runs, on a line of its own: its backticks are kept, as they mark where each word starts and ends.)
@@ -317,7 +330,7 @@ function exampleText(e: Example, paint: (code: string | undefined, s: string) =>
 /** Problems, one per line, as compilers print them. */
 function issueText(name: string, i: DocumentIssue, color: boolean): string {
   const { word } = SEVERITIES[i.severity];
-  const sev = color ? `\x1b[${problemLevel(i.severity).ansi}m${word}\x1b[0m` : word;
+  const sev = color ? `${sgr(problemLevel(i.severity).ansi)}${word}${sgr('0')}` : word;
   return `${name}:${i.startLine + 1}:${i.startCol + 1}: ${sev}: ${plain(i.message, { backticks: false })} [${i.code}]`;
 }
 
@@ -373,7 +386,8 @@ const forJson = ({ anchors: _, noteInfo: _n, ...ex }: LineExplanation) => ({
 
 // ---- Main -------------------------------------------------------------------------------------
 
-export async function main(argv: string[], io: { stdout: (s: string) => void; stderr: (s: string) => void; env: NodeJS.ProcessEnv; isTTY: boolean }): Promise<number> {
+export async function main(argv: string[], streams: { stdout: (s: string) => void; stderr: (s: string) => void; env: NodeJS.ProcessEnv; isTTY: boolean }): Promise<number> {
+  const io = { ...streams, stdout: (s: string) => streams.stdout(shown(s)), stderr: (s: string) => streams.stderr(shown(s)) };
   let o: ReturnType<typeof parseArgs>;
   let inputs: Input[];
   try {
@@ -381,7 +395,7 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
     if (o === 'help') return io.stdout(HELP), 0;
     if (o === 'version') return io.stdout(`${__VERSION__}\n`), 0;
     for (const w of o.warnings) io.stderr(`bash-explainer: warning: ${w}\n`);
-    if (o.printConfig) return io.stdout(`${JSON.stringify(settingsJson(o.settings, 'cli'), null, 2)}\n`), 0;
+    if (o.printConfig) return io.stdout(`${jsonText(settingsJson(o.settings, 'cli'), 2)}\n`), 0;
     inputs = readInputs(o);
   } catch (e) {
     if (!(e instanceof UsageError)) throw e;
@@ -435,7 +449,7 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
   }
 
   if (o.sarifFile !== undefined) {
-    const text = JSON.stringify(sarif(json as Problem[]), null, 2) + '\n';
+    const text = jsonText(sarif(json as Problem[]), 2) + '\n';
     try {
       fs.writeFileSync(o.sarifFile, text);
     } catch (e) {
@@ -451,8 +465,8 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
       return 2;
     }
   }
-  if (o.format === 'json') io.stdout(JSON.stringify(json, null, 2) + '\n');
-  else if (o.format === 'sarif') io.stdout(JSON.stringify(sarif(json as Problem[]), null, 2) + '\n');
+  if (o.format === 'json') io.stdout(jsonText(json, 2) + '\n');
+  else if (o.format === 'sarif') io.stdout(jsonText(sarif(json as Problem[]), 2) + '\n');
   else if (o.format === 'github') chunks.unshift(...failing);
   if (o.format !== 'json' && o.format !== 'sarif' && chunks.length) io.stdout(chunks.join(o.check ? '\n' : o.format === 'markdown' ? '\n\n---\n\n' : '\n\n') + '\n');
   return o.check && counts.failing > 0 ? 1 : 0;
@@ -472,7 +486,7 @@ if (require.main === module && process.argv.includes('--lsp')) {
   }).then((code) => {
     process.exitCode = code;
   }, (e) => {
-    process.stderr.write(`bash-explainer: ${e instanceof Error ? e.stack : e}\n`);
+    process.stderr.write(shown(`bash-explainer: ${e instanceof Error ? e.stack : e}\n`));
     process.exitCode = 2;
   });
 }

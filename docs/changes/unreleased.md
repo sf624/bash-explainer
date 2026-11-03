@@ -299,3 +299,18 @@ unbash 6.0.2 and 6.0.3 read more of bash's syntax as bash does, and the explanat
 - `${x#)}` in a `$( )` (`a=$(echo ${x#)})`, bash prints the value): the `)` is pattern text. Before, the line said "Syntax error: this part could not be parsed". The same for `<<` in the pattern of an expansion, and in a `$( )` or `<( )` over several lines (`$((1<<2))` there started a heredoc), and for `${x:-<<EOF}`.
 - `cat <$''` names the target `$''` (an empty file name; bash says "No such file or directory"). Before, the note said "Read file `` as stdin".
 - `<<$'E\0F'`: the heredoc ends at the line `E`, where the delimiter ends at the NUL, as bash reads it. Before, it ran to the end of the file. (The note still words the delimiter as written: roadmap, "Deferred".)
+
+### The GitHub Action installs its tool in a directory of its own
+
+The action installs the package in a new directory under `$RUNNER_TEMP`, with npm running there and with `--ignore-scripts`, and runs the installed program by its path from the workspace. Before, it ran `npx` in the workspace.
+
+- The registry is what the workflow or the machine configures: `setup-node`'s `registry-url` (its `NPM_CONFIG_USERCONFIG` and `NODE_AUTH_TOKEN`), `npm_config_registry`, your user's npm settings, npm's global configuration; without any, npm's default. npm settings kept in the repository no longer apply to the action: a workflow that needs another registry sets it in one of these ways.
+- `package:` works as before. A relative path (`./vendor/tool.tgz`, `vendor/tool.tgz`, `file:vendor/tool.tgz`, `./cli`) is still read from the workspace: that is the workflow's own choice.
+- A package that cannot be installed, or that has no `bash-explainer` program, fails the step with exit status 2 and an error that says so.
+- The action's description no longer says "Offline": the action gets the tool from npm, and then the tool works offline.
+
+### The command-line tool writes out control characters
+
+All that the command-line tool writes to standard output and standard error passes one place, which writes each C0 and C1 control character and DEL as `<ESC>`, `<CR>`, `<BEL>`, `<DEL>` or `<U+009B>`, the form the examples use. A tab and a newline stay. This covers the text output, Markdown, GitHub annotations, messages on standard error, and file names. Line and column numbers still count the characters of the real text, and a script with no control characters prints as before. `--color` still colours the output.
+
+JSON and SARIF, and the messages of the Language Server, keep the text: the encoder now also writes DEL and the C1 characters as `\u` escapes, so the value read back is the same.

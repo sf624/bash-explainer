@@ -439,6 +439,34 @@ jobs:
           files: test/fixtures/renderings.sh images/readme/demo.sh
           package: ${{ steps.pack.outputs.tgz }}
 
+      # What the checked-out repository holds has no say in what runs (test/action.test.ts covers more). Last in
+      # this job, as it changes the workspace.
+      - name: Put a registry and a program in the workspace
+        run: |
+          printf 'registry=http://127.0.0.1:9/\n' > .npmrc
+          printf '#!/usr/bin/env node\nrequire("fs").writeFileSync(process.env.RUNNER_TEMP + "/ran", "");\n' > "$RUNNER_TEMP/program"
+          install -m 755 "$RUNNER_TEMP/program" node_modules/.bin/bash-explainer
+          mkdir -p node_modules/bash-explainer
+          install -m 755 "$RUNNER_TEMP/program" node_modules/bash-explainer/cli.js
+          printf '{"name":"bash-explainer","version":"1.0.0","bin":"cli.js"}\n' > node_modules/bash-explainer/package.json
+
+      - name: The tool still runs
+        id: workspace
+        continue-on-error: true
+        uses: ./
+        with:
+          files: test/fixtures/posix.sh
+          package: ${{ steps.pack.outputs.tgz }}
+
+      - name: Check that it was the tool, and nothing of the workspace
+        env:
+          OUTCOME: ${{ steps.workspace.outcome }}
+          ERRORS: ${{ steps.workspace.outputs.errors }}
+        run: |
+          test "$OUTCOME" = failure
+          test "$ERRORS" -gt 0
+          test ! -e "$RUNNER_TEMP/ran"
+
   bash-ast:
     # Compares our syntax tree with bash's own parser through bash-ast (test/bash-ast.test.ts), and the commands
     # the tokens of the explanations lie in (test/command-tokens.test.ts).
