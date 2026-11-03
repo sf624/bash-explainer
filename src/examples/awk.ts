@@ -486,14 +486,21 @@ function isLvalue(e: Expr): boolean {
 /**
  * Where awk's fields lie in `s`, split with `fs` as awk splits a record: " " is runs of blanks, "" (or an empty regex) every
  * character, one other character itself, anything longer a regex (its leftmost longest, non-empty matches). The one
- * splitter of the runner and of the marks (src/examples/marks.ts).
+ * splitter of the runner and of the marks (src/examples/marks.ts). Each call pays for the text it walks and the parts it makes (`PART_COST`: a part is a slice, an element of the array or of `$n`), whatever `fs` is.
  */
 export function fieldSpans(s: string, fs: string | RegExp): [number, number][] {
+  charge(s.length);
+  const out = spansOf(s, fs);
+  charge(PART_COST * out.length);
+  return out;
+}
+
+function spansOf(s: string, fs: string | RegExp): [number, number][] {
   if (typeof fs === 'string' && fs === ' ') return [...s.matchAll(/[^ \t\n]+/g)].map((m) => [m.index, m.index + m[0].length]);
   if (s === '') return [];
   if (fs === '' || (fs instanceof RegExp && fs.source === '(?:)')) {
     const out: [number, number][] = [];
-    for (let i = 0; i < s.length; i += String.fromCodePoint(s.codePointAt(i)!).length) out.push([i, i + String.fromCodePoint(s.codePointAt(i)!).length]);
+    for (let i = 0; i < s.length; i += s.codePointAt(i)! > 0xffff ? 2 : 1) out.push([i, i + (s.codePointAt(i)! > 0xffff ? 2 : 1)]);
     return out;
   }
   if (typeof fs === 'string' && fs.length === 1 && fs !== '\\') {
@@ -508,12 +515,13 @@ export function fieldSpans(s: string, fs: string | RegExp): [number, number][] {
   return posixSpans(re, s);
 }
 
-function unescapeAwk(s: string): string {
-  // (As gawk: a backslash before another character is dropped, `"\&"` is `&`, `"\."` is `.`.)
+function unescapeAwk(s: string, keepPunct = false): string {
+  // (As gawk: a backslash before another character is dropped, `"\&"` is `&`, `"\."` is `.`; `keepPunct` (an `-F` value, a regex) keeps it before punctuation.)
   return s.replace(/\\(x[0-9a-fA-F]{1,2}|[0-7]{1,3}|[^])/g, (_, c: string) => {
     if (/^[0-7]/.test(c)) return String.fromCharCode(parseInt(c, 8));
     if (c.length > 1) return String.fromCharCode(parseInt(c.slice(1), 16));
-    return ({ n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', f: '\f', v: '\v', '\n': '' } as Record<string, string>)[c] ?? c;
+    const known = ({ n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', f: '\f', v: '\v', '\n': '' } as Record<string, string>)[c];
+    return known ?? (keepPunct && /[^A-Za-z0-9\\"/]/.test(c) ? '\\' + c : c);
   });
 }
 
@@ -574,6 +582,8 @@ function compare(a: Val, b: Val): number {
  */
 export const MAX_FIELD = 10000;
 const FIELD_COST = 10;
+/** What a part of a split costs, in steps: a million parts take 0.7 s, and the limit is 10 million steps. */
+const PART_COST = 5;
 
 /**
  * C-style printf formatting for %d %i %o %x %X %u %c %s %e %E %f %F %g %G %%. gawk stops with a fatal error when the format wants
@@ -1048,24 +1058,11 @@ export interface AwkRunOptions {
 }
 
 /**
- * The value of `-v`, `-F` or a `name=value` operand, with its escape sequences processed as awk does
- * (`\t` is a tab, `\\` a backslash). Undefined for a sequence whose meaning differs between awks.
- * `regexFs`: other escaped punctuation stays escaped, so `-F '\|'` is a regex matching a bar.
+ * The value of `-v`, `-F` or a `name=value` operand, with its escape sequences processed as awk does, as in a string
+ * (`\t` is a tab, `\\` a backslash). `regexFs`: other escaped punctuation stays escaped, so `-F '\|'` is a regex matching a bar.
  */
-export function awkUnescape(s: string, regexFs = false): string | undefined {
-  const simple: Record<string, string> = { '\\': '\\', '"': '"', '/': '/', a: '\x07', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
-  let out = '';
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] !== '\\') { out += s[i]; continue; }
-    const n = s[++i];
-    if (n === undefined) { out += '\\'; break; }
-    const oct = /^[0-7]{1,3}/.exec(s.slice(i));
-    if (oct) { out += String.fromCharCode(parseInt(oct[0], 8)); i += oct[0].length - 1; continue; }
-    if (n in simple) { out += simple[n]; continue; }
-    if (regexFs && /[^A-Za-z0-9]/.test(n)) { out += '\\' + n; continue; }
-    return undefined;
-  }
-  return out;
+export function awkUnescape(s: string, regexFs = false): string {
+  return unescapeAwk(s, regexFs);
 }
 
 export interface AwkInvocation extends AwkRunOptions {
@@ -1088,12 +1085,10 @@ export function awkInvocation(words: (string | undefined)[]): AwkInvocation {
   const take = (flag: string, v: string | undefined): void => {
     if (flag === '-F') {
       // `-F'\t'` is a tab; `-Ft` is the letter t in gawk and mawk alike.
-      const fs = v === undefined ? undefined : awkUnescape(v, true);
-      if (fs === undefined) bad('-F'); else r.fs = fs;
+      if (v === undefined) bad('-F'); else r.fs = awkUnescape(v, true);
     } else if (flag === '-v') {
       const eq = v?.indexOf('=') ?? -1;
-      const value = v === undefined || eq < 1 ? undefined : awkUnescape(v.slice(eq + 1));
-      if (v === undefined || value === undefined) bad('-v'); else r.vars[v.slice(0, eq)] = value;
+      if (v === undefined || eq < 1) bad('-v'); else r.vars[v.slice(0, eq)] = awkUnescape(v.slice(eq + 1));
     }
   };
   const parse = parseWords('awk', words);
@@ -1116,8 +1111,7 @@ export function awkInvocation(words: (string | undefined)[]): AwkInvocation {
     if (!m) seenFile = true;
     else if (seenFile) bad('assignment after a file');
     else {
-      const value = awkUnescape(m[2]);
-      if (value === undefined) bad('assignment'); else r.assigns[m[1]] = value;
+      r.assigns[m[1]] = awkUnescape(m[2]);
     }
   }
   return r;

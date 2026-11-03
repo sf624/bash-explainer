@@ -3,6 +3,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
+import { runAwk } from '../src/examples/awk';
 import { pipedOutput } from '../src/examples/pipeline';
 import { posixExec, regexExamples } from '../src/examples/regex';
 import { charge, costOf, guarded, keptChars, longestExec, RegexRefused, scriptRegex } from '../src/examples/regexguard';
@@ -526,6 +527,26 @@ describe('the guard of the regexes a script gives', () => {
     it('gives what the run gives, or says it was refused', () => {
       assert.strictEqual(guarded(() => 1, () => 2), 1);
       assert.strictEqual(guarded(() => (scriptRegex(P.polynomial).test('a'.repeat(10000)) ? 1 : 0), () => 2), 2);
+    });
+
+    it('a split pays for the text it walks, whatever the separator: a loop of them is refused at once, a single one runs', function () {
+      this.timeout(30000);
+      const big = 'BEGIN { s = "%"; for (j = 0; j < 20; j++) s = s s; ';
+      const loops = [
+        `${big.replace('%', 'a')}while (i++ < 1000) n += split(s, q, ""); print n }`,
+        `${big.replace('%', 'a')}while (i++ < 1000) n += split(s, q, //); print n }`,
+        `${big.replace('%', 'a')}FS = ""; while (i++ < 1000) { $0 = s; n += NF } print n }`,
+        `${big.replace('%', ',')}while (i++ < 1000) n += split(s, q, ","); print n }`,
+        `${big.replace('%', 'a b')}while (i++ < 1000) n += split(s, q, " "); print n }`,
+      ];
+      for (const prog of loops) {
+        const t = Date.now();
+        assert.deepStrictEqual(guarded(() => runAwk(prog, []), (id) => [id]), ['regex-not-computed'], prog);
+        assert.ok(Date.now() - t < 5000, `${prog}: ${Date.now() - t} ms`);
+      }
+      const one = 'a'.repeat(1e6);
+      assert.deepStrictEqual(guarded(() => runAwk('{ print NF, $2 }', [one], { fs: '' }), (id) => [id]), ['1000000 a']);
+      assert.deepStrictEqual(guarded(() => runAwk('{ print NF, $2 }', [one.replace(/a{99}/g, 'a,')], { fs: ',' }), (id) => [id]), ['10102 a']);
     });
 
     it('a string too long for JavaScript is one more thing that costs too much', () => {

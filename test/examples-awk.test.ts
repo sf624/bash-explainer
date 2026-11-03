@@ -98,6 +98,9 @@ describe('awk command lines (options and name=value operands) agree with gawk', 
     ['-F', '\t', '{print $2}'], ['{print $2}', 'FS=|'], ['BEGIN{print x}', 'x=1'], ['{print x, $1}', 'x=a\\tb'], ['-v', 'x=a\\\\b', 'BEGIN{print x}'],
     ['END{print x, NR}', 'x=5'], ['-v', 'n=\\101', 'BEGIN{print n}'], ['{print $1}', 'ORS=;'], ['-v', 'x=1', '{print x,y}', 'y=2', '-'],
     ['-f', 'prog.awk'].slice(0, 0).concat(['{print NF}']),
+    // (As in a string, gawk drops the backslash before a character with no escape.)
+    ['-v', 'x=a\\.b', 'BEGIN{print x}'], ['-v', 'x=\\q', 'BEGIN{print x}'], ['-v', 'x=\\x41', 'BEGIN{print x}'], ['-v', 'x=\\&', 'BEGIN{print x}'], ['-v', 'x=\\x', 'BEGIN{print x}'],
+    ['{print x, $1}', 'x=a\\.b'], ['{print x, $1}', 'x=\\q\\f'], ['-F', '\\d', '{print $2}'], ['-F', '\\q', '{print $2}'], ['-F', '\\.', '{print $2}'],
   ];
   for (const words of lines) {
     it(words.join(' '), () => {
@@ -112,7 +115,7 @@ describe('awk command lines (options and name=value operands) agree with gawk', 
     assert.strictEqual(awkInvocation(['-v', 'x=a\\', 'BEGIN{}']).vars.x, 'a\\');
   });
   it('refuses what it cannot follow', () => {
-    for (const words of [['{print}', 'f', 'x=1'], ['-v', 'x=\\q', '{print}'], ['{print}', 'x=\\q'], ['-F', '\\d', '{print}'], ['--posix', '{print}'], ['-v', 'x', '{print}'], ['-F'], [undefined, 'x'], ['-xF:', '{print}']]) {
+    for (const words of [['{print}', 'f', 'x=1'], ['--posix', '{print}'], ['-v', 'x', '{print}'], ['-F'], [undefined, 'x'], ['-xF:', '{print}']]) {
       assert.ok(awkInvocation(words).unsupported !== undefined, JSON.stringify(words));
     }
     const f = awkInvocation(['-f', 'p.awk', 'x=1']);
