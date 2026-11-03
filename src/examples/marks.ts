@@ -2,9 +2,8 @@
 // sed or awk matches, the fields awk reads, what cut takes, the key sort compares; and the lines it leaves out. Each
 // comes from the runner of the stage (src/examples/pipeline.ts `stageMarks`), so that the marks are what it does.
 import type { Lang } from '../i18n';
-import { type AwkInvocation, parseAwk, runAwk } from './awk';
-import { type JsRegex, posixExec, toJsRegex } from './regex';
-import { scriptRegex } from './regexguard';
+import { type AwkInvocation, fieldSpans, parseAwk, runAwk } from './awk';
+import { type JsRegex, posixExec } from './regex';
 
 /** Per line, the parts `[start, end)` (UTF-16 units of the line) a stage reads; and the lines (indexes) it leaves out. */
 export interface LineMarks { ranges: [number, number][][]; dropped: number[] }
@@ -32,26 +31,6 @@ export interface AwkWatch {
   field(fields: string[], i: number): void;
   /** A regex alone (`/re/`) is matched against the record. */
   regex(fields: string[], re: JsRegex): void;
-}
-
-/**
- * Where awk's fields lie in `line`, split with `fs` as awk splits a record: " " is runs of blanks, another single
- * character is itself, anything longer a regex (its non-empty matches).
- */
-function fieldSpans(line: string, fs: string): [number, number][] {
-  if (fs === ' ') return [...line.matchAll(/[^ \t\n]+/g)].map((m) => [m.index, m.index + m[0].length]);
-  if (line === '') return [];
-  const re = fs.length === 1 && fs !== '\\' ? { source: fs.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&'), flags: '' } : toJsRegex(fs, 'ere', { sedEscapes: true });
-  const out: [number, number][] = [];
-  let at = 0;
-  // (An FS the runner cannot read stops it before any record: `re` is then a regex.)
-  for (const m of line.matchAll(scriptRegex(re!.source, re!.flags + 'g'))) {
-    if (!m[0]) continue;
-    out.push([at, m.index]);
-    at = m.index + m[0].length;
-  }
-  out.push([at, line.length]);
-  return out;
 }
 
 /**

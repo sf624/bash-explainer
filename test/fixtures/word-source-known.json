@@ -18,7 +18,6 @@
     {"file":"src/argv/words.ts","fn":"UNQUOTED_EXPANSION","kind":"node-type","count":4,"row":"W-C1"},
     {"file":"src/dialect.ts","fn":"redirectsToNetwork","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/dict/syntax.ts","fn":"rep","kind":"helper","count":1,"row":"W-L3"},
-    {"file":"src/examples/marks.ts","fn":"fieldSpans","kind":"glob-class","count":1,"row":"W-G1"},
     {"file":"src/examples/patterns.ts","fn":"testExample","kind":"helper","count":1,"row":"W-G3"},
     {"file":"src/examples/patterns.ts","fn":"testExample","kind":"node-type","count":7,"row":"W-G3"},
     {"file":"src/examples/runtime.ts","fn":"knownTruth","kind":"glob-class","count":2,"row":"W-G3"},

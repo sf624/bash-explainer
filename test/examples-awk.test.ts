@@ -4,7 +4,7 @@ import { run } from './support/run';
 import { awkExample, awkInvocation, runAwk, sprintf } from '../src/examples/awk';
 
 function realAwk(prog: string, input: string[], fs?: string, vars: Record<string, string> = {}): string[] {
-  const args = [...(fs ? ['-F', fs] : []), ...Object.entries(vars).flatMap(([k, v]) => ['-v', `${k}=${v}`]), prog];
+  const args = [...(fs !== undefined ? ['-F', fs] : []), ...Object.entries(vars).flatMap(([k, v]) => ['-v', `${k}=${v}`]), prog];
   const out = run('gawk', args, { input: input.join('\n') + '\n', check: true }).stdout.toString();
   return out === '' ? [] : out.replace(/\n$/, '').split('\n');
 }
@@ -68,6 +68,13 @@ describe('awk examples agree with gawk', () => {
     ['{ print NF; print $2 }', ['a1b12c', 'x11y'], '1|12|11'], ['{ print NF; print $2 }', ['xaaby', 'aab'], 'a|aa'],
     ['{ print NF, $1, $NF }', ['p ab abc q', 'abcabc'], 'ab|abc'], ['{ print NF }', ['abc', 'axxb'], 'x*'],
     ['{ print $1 }', ['a:b', 'cab'], ':|ab'], ['{ print NF }', ['a b  c', ' a b '], ' +|  '],
+    // An empty separator splits into characters (gawk), a regex that can match the empty string does not.
+    ['{ print NF, $2 }', ['abc', 'é😀x', ''], ''], ['BEGIN { FS = "" } { print NF, $2 }', ['abc', 'é😀x']], ['{ n = split($0, q, ""); print n, q[2] }', ['abc', 'é😀x', '']],
+    ['{ n = split($0, q, //); print n, q[2] }', ['abc', 'é😀x']],
+    // The replacement: \& is a literal &, \\& a backslash and the match, other backslashes stay (gawk's lexer drops the backslash of an unknown escape).
+    ['{ gsub(/a/, "\\&"); print }', ['aba']], ['{ gsub(/a/, "\\\\&"); print }', ['aba']], ['{ gsub(/a/, "\\\\\\&"); print }', ['aba']], ['{ gsub(/a/, "\\\\\\\\&"); print }', ['aba']],
+    ['{ gsub(/a/, "\\\\\\\\\\\\&"); print }', ['aba']], ['{ gsub(/a/, "\\q"); print }', ['aba']], ['{ gsub(/a/, "\\\\q"); print }', ['aba']], ['{ gsub(/a/, "\\\\\\\\"); print }', ['aba']],
+    ['{ gsub(/a/, "\\\\"); print }', ['aba']], ['{ gsub(/a/, "x\\.y\\/z\\"w"); print }', ['aba']], ['{ gsub(/a/, "\\f\\v\\x41\\x4a1\\101"); print }', ['aba']], ['$0 ~ "a\\.b" { print "m" }', ['a.b', 'axb']],
     ['$0 ~ /a|ab$/ { print "m" }', ['xab', 'b']], ['{ if (match($0, /ab|a/)) print RLENGTH }', ['ab']],
   ];
   for (const [prog, input, fs] of longest) {

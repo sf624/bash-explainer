@@ -92,10 +92,11 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - `export "$1"` does not make the state `opaque`, so `foo=1; export "$1"; bash -c 'echo $foo'` still says `foo` is not exported (found in the review of #536).
 - A trap's action of text not known makes the state `opaque` from the `trap` command on, though an `EXIT` trap cannot fire before the lines that follow it, so checks after it become caveats too early (found in the review of #536).
 - The Reading view of no-shell lines (found while fixing the exec form's wording, 2026-11-01): the panel's Reading view shows a no-shell line (Docker's exec form, Python lists) as bash's reading, with bash sections (§3.7.1, §3.7.2 on the name, the quoting of the words). A host layer is needed: the reading of words a program gets with no shell.
-- POSIX-mode `time` forms left from the review of #587 (`set -o posix`): `time -- 2>&1` is shown as `time` with no pipeline, where bash runs the program with `--`; `time -x >f` and `time -- c >f` lose the redirect token; `time -- x=1 c` loses `x=1`; `time -- -x c` calls `-x` an option; `time --` and `time --; c` show a syntax error although bash runs them; `time -p a | b` explains the later stages as commands; `--` has no token.
+- POSIX-mode `time` forms left from the review of #587 (`set -o posix`): `time -- 2>&1`, `time -x >f`, `time -- c >f`, `time -- x=1 c`, `time -- -x c`, `time --`, `time --; c` and `time -p a | b` are read wrongly (lost redirect or assignment, `-x` called an option, a syntax error bash does not give); `--` has no token.
 - A decoded `$'…'` that holds U+FDD0 or U+FDD1 can still show a mark (`alias a=$'\uFDD0…'`), and so can the output of `printf` and `jq` in the Output lines (found in the review of #587).
 - A nested heredoc in `<<-`: `cat <<-EOF` with the body `\t$(cat <<X`, `\tq`, `\tX`, `\t)` and the end `\tEOF` reports `Missing "heredoc_end"`, though bash strips the tabs first and prints `q` (found in the review of #586).
 - perl `printf '%d'` of 2^70 prints the digits where real perl prints `-1` (found in the review of #581).
+- awk examples differ from gawk on `\y` and `\>` (`gsub(/\y/, "X")` on `a`), on a side-effect target (`gsub(/a/, "X", $(i++))` evaluates it twice), on a no-match `gsub` on a field past NF (`$5` should grow NF), and on `.` with a newline in a string (`s = "a\nb"; gsub(/./, "Y", s)`: gawk `YYY`, ours `Y\nY`) (found in the review of #588).
 
 ## Waiting on the maintainer
 
