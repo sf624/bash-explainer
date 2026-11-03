@@ -24,7 +24,7 @@ export type PanelTheme = 'dark' | 'light' | 'hc';
  * have several lines: its first is explained (a loop over several lines is explained whole from its first line).
  * `wrap`: the line box wraps, as with `editor.wordWrap` on (src/ui/lineBox.ts `wrapsLikeEditor`).
  */
-function message(lang: Lang, text: string, file: string, wrap = false): unknown {
+export function message(lang: Lang, text: string, file: string, wrap = false): unknown {
   const src = `#!/bin/bash\n${text}\n`;
   const line = text.split('\n')[0];
   const tree = createUnbashParser().parse(src);

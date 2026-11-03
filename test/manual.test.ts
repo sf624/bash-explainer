@@ -42,6 +42,8 @@ describe('the references', () => {
     assert.ok(REFERENCE_URLS.has(EXECVE) && REFERENCE_URLS.has(manualUrl('3.8')));
     // (The pages of the sections, some shared by several, and the one manual page.)
     assert.strictEqual(REFERENCE_URLS.size, new Set([...SECTIONS.values()].map((s) => s.url)).size + 1);
+    // (The panel makes a link of an https address only: media/panel.js, test/web-panel-origin.test.ts.)
+    for (const url of REFERENCE_URLS) assert.strictEqual(new URL(url).protocol, 'https:', url);
   });
 
   it('writes the sections after "Bash manual", then the manual pages', () => {
