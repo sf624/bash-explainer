@@ -1,8 +1,8 @@
 import * as assert from 'assert';
-import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { runContained } from './support/contained';
 import { explain } from './support/explain';
 
 // `((i++))` with `i` 0 has status 1: a warning where `set -e` stops the shell there (the script breaks as written),
@@ -11,19 +11,18 @@ import { explain } from './support/explain';
 const levelOf = (src: string, line: number): string | undefined => {
   return explain(src, line).noteInfo.find((n) => /exit status is 1 when|gives the value before the (in|de)crement/.test(n.text))?.level;
 };
-const run = (script: string): boolean => {
+const run = async (script: string): Promise<boolean> => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-postfix-'));
   const file = path.join(dir, 's.sh');
   try {
     fs.writeFileSync(file, script);
-    const r = spawnSync('systemd-run', ['--user', '--scope', '-q', '-p', 'MemoryMax=2G', '-p', 'MemorySwapMax=0', '-p', 'TasksMax=300', 'timeout', '20', 'bash', file], { encoding: 'utf8' });
+    const r = await runContained(['bash', file], dir);
     return !r.stdout.includes('after');
   } finally {
     fs.rmSync(file, { force: true });
     fs.rmdirSync(dir);
   }
 };
-const have = spawnSync('systemd-run', ['--user', '--scope', '-q', 'true']).status === 0;
 
 describe('the level of the status of ((i++)) follows set -e', () => {
   // [script, line of the statement (-1: none to check), level, whether bash stops there]
@@ -41,10 +40,9 @@ describe('the level of the status of ((i++)) follows set -e', () => {
     ['set -e\ni=0\nx=$( ((i++)); echo in )\necho after', 2, 'info', false],
   ];
   for (const [src, line, level, stops] of cases) {
-    it(JSON.stringify(src), function () {
-      if (!have) return this.skip();
+    it(JSON.stringify(src), async () => {
       if (line >= 0) assert.strictEqual(levelOf(src, line) ?? 'none', level, 'level');
-      assert.strictEqual(run(src), stops, 'bash');
+      assert.strictEqual(await run(src), stops, 'bash');
     });
   }
 });
