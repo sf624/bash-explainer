@@ -784,4 +784,39 @@ describe('the command-line tool', function () {
       }
     });
   });
+
+  describe('text a CI log reads as a command', () => {
+    const script = 'echo "##[error]a ###[b"\n';
+    it('is written otherwise in text, Markdown and standard error', () => {
+      for (const args of [['--no-color'], ['--format', 'markdown'], ['--color']]) {
+        const r = run([...args, '-e', script.trimEnd()]);
+        assert.doesNotMatch(r.out, /##\[/, args.join(' '));
+        assert.ok(r.out.includes('##\\[error]a ###\\[b'), r.out);
+      }
+      const missing = run(['--check', '--', '##[error]x.sh']);
+      assert.strictEqual(missing.code, 2);
+      assert.doesNotMatch(missing.err, /##\[/);
+      assert.ok(missing.err.includes('cannot read ##\\[error]x.sh'), missing.err);
+      const json = run(['--format', 'json', '--', '##[error]x.sh']);
+      assert.doesNotMatch(json.err, /##\[/);
+    });
+
+    it('is written otherwise in a problem and a file name of the check as text', () => {
+      const f = path.join(dir, '##[error]y.sh');
+      fs.writeFileSync(f, '#!/bin/sh\nif [[ -n $x ]]; then echo; fi\n');
+      const r = run(['--check', '--no-color', '--', f]);
+      assert.strictEqual(r.code, 1, r.err);
+      assert.doesNotMatch(r.out, /##\[/);
+      assert.ok(r.out.includes('##\\[error]y.sh:2:'), r.out);
+    });
+
+    it('stays in JSON and SARIF, which are data, and in annotations', () => {
+      const f = path.join(dir, '##[error]z.sh');
+      fs.writeFileSync(f, '#!/bin/sh\nif [[ -n $x ]]; then echo; fi\n');
+      assert.strictEqual((JSON.parse(run(['--check', '--format', 'json', '--', f]).out) as { file: string }[])[0].file, f);
+      assert.strictEqual(JSON.parse(run(['--check', '--format', 'sarif', '--', f]).out).runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri, f);
+      assert.match(run(['--check', '--format', 'github', '--', f]).out, /^::error file=[^ ]*##\[error\]z\.sh,/m);
+      assert.ok((JSON.parse(run(['--format', 'json', '-e', script.trimEnd()]).out) as { text: string }[])[0].text.includes('##[error]a'));
+    });
+  });
 });
