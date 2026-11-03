@@ -1,5 +1,5 @@
 import { Analyzer } from './analyzer';
-import type { ExplainOptions, LineExplanation } from './analyzer-types';
+import type { ExplainOptions, LineExplanation, NoteAnchor } from './analyzer-types';
 import type { BashVersion } from './bashversion';
 import { type AutoShell, dialectIssues, saidShell, Shell, type ShellReading } from './dialect';
 import { parseDirectives, suppressed } from './directives';
@@ -118,6 +118,11 @@ const SAME_PROBLEM: Readonly<Record<string, string>> = { 'pipefail-missing': 'do
 /** The note problems of a document, by its tree, for the language, shells and options they were found with. */
 const noteIssueCache = new WeakMap<SyntaxTree, Map<string, DocumentIssue[]>>();
 
+/** The nodes a note of the line is about: the one rule for where it is a problem (`noteIssues`, and the panel's box, `isListed`). */
+export function noteAnchors(ex: Pick<LineExplanation, 'anchors'>, n: Note): readonly NoteAnchor[] {
+  return ex.anchors?.filter((a) => a.text === n.text) ?? [];
+}
+
 /**
  * The errors, warnings and caveats the explanations of a document say, as problems (docs/design/note-levels.md, "Notes
  * as problems"): every note of a line at the level `error`, `warning` or `info` (`LineExplanation.noteInfo`), with its
@@ -151,7 +156,7 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
     for (const n of ex.noteInfo) {
       // (A plain fact is no problem; nor is a caveat the catalog keeps a note, `ssh-local-expansion`, the `…-not-found` of an option.)
       if (!isProblemNote(n)) continue;
-      for (const { span, rewrite } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
+      for (const { span, rewrite } of noteAnchors(ex, n)) {
         const at = span.start.line;
         const issue: DocumentIssue = {
           code: n.code!, severity: severityOf(n.level), message: problemText(n, lang), head: n.head!, ...pitfallOf(n), ...conventionOf(n),
