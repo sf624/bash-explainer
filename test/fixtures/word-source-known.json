@@ -300,7 +300,7 @@
       "reason": "reads the model first, and the text only to find the node",
       "uses": [
         {"fn":"inTest","kind":"node-type","count":1},
-        {"fn":"readOnlySometimes","kind":"node-type","count":1},
+        {"fn":"readOnlySometimes","kind":"node-type","count":3},
         {"fn":"ifsAt","kind":"ifs","count":1,"reason":"the default IFS, read next to the model"},
         {"fn":"inArithmetic","kind":"node-type","count":1}
       ]
@@ -327,7 +327,6 @@
       "file": "src/explain/words.ts",
       "reason": "explains a word part by part, by node type (the dispatch of the word module)",
       "uses": [
-        {"fn":"arithFate","kind":"node-type","count":2},
         {"fn":"braceExpansion","kind":"node-type","count":1},
         {"fn":"bracketsOf","kind":"node-type","count":1},
         {"fn":"elementWord","kind":"node-type","count":1},
@@ -338,7 +337,7 @@
         {"fn":"EXPANDING","kind":"node-type","count":5},
         {"fn":"QUOTED","kind":"node-type","count":4},
         {"fn":"arrayValue","kind":"node-type","count":3},
-        {"fn":"arithNumber","kind":"node-type","count":1},
+        {"fn":"arithNumber","kind":"node-type","count":3},
         {"fn":"unbracedElement","kind":"node-type","count":1}
       ]
     },
@@ -377,6 +376,13 @@
         {"fn":"shiftOptind","kind":"node-type","count":2},
         {"fn":"getoptArgs","kind":"node-type","count":1},
         {"fn":"readLoop","kind":"node-type","count":1}
+      ]
+    },
+    {
+      "file": "src/linesentence.ts",
+      "reason": "what bash reads with the line and what it reads only when it is expanded (a here-document's body, backticks): the syntax, not what a word becomes",
+      "uses": [
+        {"fn":"strayIn","kind":"node-type","count":1}
       ]
     },
     {

@@ -92,6 +92,7 @@ export interface Token {
    * What the part is to bash, where the panel draws a box around it: a simple command (3.2.2), or a compound command or a function's
    * definition (3.2.5, 3.3). From the node's type (`explain`, src/explain/dispatch.ts). What a command reads as a command (`sudo ls`)
    * has none: to bash it is a word. A pipeline's `time` and `!` (3.2.3) have none either: the commands under them have theirs.
+   * For the panel: not in `--format json` (`tokenForJson`, cli/main.ts), as `plain` is not.
    */
   frame?: 'command' | 'compound';
   /** It says no more than how bash reads the part (a loop's body, a variable that only expands): the panel shows it at depth 2. */

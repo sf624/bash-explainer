@@ -192,19 +192,16 @@ function unseenDeclarations(cx: Explainer): boolean {
 /** Whether an expression is one of `[[ ]]`, not of arithmetic. */
 const inTest = (n: SyntaxNode): boolean => ancestor(n, (p) => p.type === 'extended_test' || p.type === 'arithmetic_expansion' || p.type === 'arithmetic_command')?.type === 'extended_test';
 
-/** The operators of `${x:-word}` and the like: `word` is read only when the value of `x` calls for it (3.5.3). */
-const CONDITIONAL_WORD = /^:?[-=?+]$/;
-
 /**
- * Whether the shell may run the command around `n` (arithmetic) without reading it: `${x:-$((09))}`, what follows `&&` or `||` in
- * `[[ ]]`, a pattern of `case` after the first, the update of a C-style `for`. (In arithmetic, `$(( 1 || 09 ))` reads it all the same.)
+ * Whether the command that holds `n` (arithmetic) can run without reading it: what follows the parameter in `${x:-…}`, `${x#…}`, `${x:…}`
+ * (read only when the value calls for it: `${x#$((09))}` with `x` empty does not), what follows `&&` or `||` in `[[ ]]`, a pattern of `case`
+ * after the first, the update of a C-style `for`. (`$(( 1 || 09 ))` reads it all the same.) In `$( )` it is another command, which reads it
+ * whenever it runs.
  */
 export function readOnlySometimes(n: SyntaxNode): boolean {
   for (let c = n, p = n.parent; p; c = p, p = p.parent) {
-    if (p.type === 'expansion') {
-      const op = p.children.find((x) => !x.named && CONDITIONAL_WORD.test(x.type));
-      if (op && c.startIndex > op.startIndex) return true;
-    }
+    if (p.type === 'command_substitution' || p.type === 'process_substitution') return false;
+    if (p.type === 'expansion' && c !== p.namedChildren[0]) return true;
     if (p.type === 'binary_expression' && c === p.namedChildren[1] && p.children.some((x) => x.type === '&&' || x.type === '||') && inTest(p)) return true;
     if (p.type === 'case_item' && has(fields(p, 'value'), c) && (c !== fields(p, 'value')[0] || p !== p.parent!.namedChildren.find((x) => x.type === 'case_item'))) return true;
     if (p.type === 'c_style_for_statement' && has(fields(p, 'update'), c)) return true;

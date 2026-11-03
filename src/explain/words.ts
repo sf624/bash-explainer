@@ -5,8 +5,6 @@
 // the descriptions and notes of variables from here.
 import type { Kind, Pos, Token } from '../analyzer-types';
 import { arithLiteralIn, describeArithLiteral, describeInvalidLiteral, evalArith, evalArithWrapping } from '../arith';
-import type { ArithFate } from '../messages-tokens';
-import { processOf } from '../semantics/env';
 import { type BashVersion, earlier } from '../bashversion';
 import { pictureList, visible } from '../ctlchars';
 import { ciVariables } from '../dict/ciVariables';
@@ -896,26 +894,12 @@ export function arithNumber(cx: Explainer, n: SyntaxNode): Token | undefined {
   if (n.parent?.type === 'concatenation' || !inArithmetic(n)) return undefined;
   const lit = arithLiteralIn(n.text, cx.shell);
   if (lit?.type === 'invalid') {
-    const fate = arithFate(cx, n);
-    return fate && cx.tok(n, 'number', describeInvalidLiteral(n.text, lit, cx.lang, { shell: cx.shell, fate, ifRead: readOnlySometimes(n) }));
+    // (Of `(( ))`, a C-style `for` or a subscript in another shell, which most do not have or read otherwise, nothing is said. The first one up decides: a nested `$(( ))` is an expansion in the command `(( ))`.)
+    const place = ancestor(n, (p) => ['arithmetic_expansion', 'subscript', 'arithmetic_command', 'c_style_for_statement'].includes(p.type))!;
+    if (place.type !== 'arithmetic_expansion' && cx.shell && cx.shell !== 'bash') return undefined;
+    return cx.tok(n, 'number', describeInvalidLiteral(n.text, lit, cx.lang, readOnlySometimes(n)));
   }
   return !lit || lit.style === 'decimal' ? undefined : cx.tok(n, 'number', describeArithLiteral(n.text, lit, cx.lang));
-}
-
-/**
- * What the shell does at a constant it rejects, from where it reads it (test/arith-shells.test.ts); undefined where nothing is
- * said of it: a shell other than bash in `(( ))` or a C-style `for`, which most of them have not, or read otherwise.
- */
-function arithFate(cx: Explainer, n: SyntaxNode): ArithFate | undefined {
-  const bash = !cx.shell || cx.shell === 'bash';
-  // (The first one up decides: a nested `$(( ))` is an expansion in the command `(( ))`, and bash treats a subscript in `(( a[09] ))` as one.)
-  const place = ancestor(n, (p) => ['arithmetic_expansion', 'subscript', 'arithmetic_command', 'c_style_for_statement'].includes(p.type))!;
-  if (place.type !== 'arithmetic_expansion' && !bash) return undefined;
-  if (place.type === 'arithmetic_command' || place.type === 'c_style_for_statement') return 'fails';
-  // (A here-document's text is expanded for its command's redirection: only that command fails.)
-  if (ancestor(n, (p) => p.type === 'heredoc_body')) return 'fails';
-  if (processOf(cx.state.env(n)).kind === 'subshell') return 'subshell';
-  return bash ? 'drops' : 'stops';
 }
 
 /** The `,` of an arithmetic expression: a note that its parts run left to right and the last one is the value. */

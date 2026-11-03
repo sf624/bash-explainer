@@ -369,8 +369,8 @@ describe('the panel\'s row model', () => {
 
     it('gives a level\'s mark and what it means, from the level table', () => {
       const [first] = key('echo $((09))');
-      assert.deepStrictEqual(first, { id: 'level:error', sample: 'ⓧ', text: 'Error: fails every time as written' });
-      assert.deepStrictEqual(key('echo $((09))', D1, 'ja')[0], { id: 'level:error', sample: 'ⓧ', text: 'エラー: 書いたとおりでは毎回失敗する' });
+      assert.deepStrictEqual(first, { id: 'level:error', sample: 'ⓧ', text: 'Error: fails every time it runs' });
+      assert.deepStrictEqual(key('echo $((09))', D1, 'ja')[0], { id: 'level:error', sample: 'ⓧ', text: 'エラー: 実行するたびに失敗する' });
       // (And those of the notes of the line.)
       assert.ok(ids('rm $x').includes('level:warning'), ids('rm $x').join());
     });
@@ -403,7 +403,7 @@ describe('the panel\'s row model', () => {
   describe('the levels of what tokens warn of', () => {
     const levelOf = (id: keyof typeof TOKEN_TEXTS) => (TOKEN_TEXTS[id] as { level?: string }).level;
 
-    it('marks what fails every time as written as an error (docs/design/three-levels.md, section 2)', () => {
+    it('marks what fails every time it runs as an error (docs/design/three-levels.md, section 2)', () => {
       for (const [src, id] of [['echo $((09))', 'arith-invalid-number'], ["env -S'\"a' s", 'splice-refused'], ['#!/usr/bin/env bash -e', 'shebang-env-one-argument'], ['#!/usr/bin/env -S"a', 'shebang-env-string-refused'], ['#!/usr/bin/env', 'shebang-env-loop']] as const) {
         const row = all(rowModel(explain(src), D1, 'en').rows).find((r) => r.marks?.some((m) => m.id === id));
         assert.strictEqual(row?.level, 'error', src);

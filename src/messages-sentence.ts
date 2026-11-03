@@ -62,9 +62,9 @@ export const EMPTY = { ja: '空文字列', en: 'the empty string' };
 
 /** The clauses of a sentence (`S.x(lang, …)`). */
 export const S = {
-  /** A command run: its name, what it does (its spec's summary), the options given and what they do, its redirections. */
   /** `if a then b; fi`: the line is a syntax error, whatever it seems to say. */
   keywordMissing: (lang: Lang, kw: string): string => pick(lang, `bash は構文エラーで止まる（\`${kw}\` の前に \`;\` か改行が要る）`, `bash stops with a syntax error (\`${kw}\` needs a \`;\` or a newline before it)`),
+  /** A command run: its name, what it does (its spec's summary), the options given and what they do, its redirections. */
   runs: (lang: Lang, noun: string, options: string, io: string, status?: number): string => (lang === 'ja'
     ? `${noun}を${options ? `${options}を付けて` : ''}実行する${status === undefined ? '' : `（終了ステータス ${status}）`}${io ? `（${io}）` : ''}`
     : `runs ${noun}${options ? ` using ${options}` : ''}${status === undefined ? '' : ` with status ${status}`}${io ? `, with ${io}` : ''}`),

@@ -62,8 +62,11 @@ const BRACKET = '`[ … ]`';
 /** How many items a list names; more are cut with `…`. */
 const ITEMS = 4;
 
-/** The keyword that lacks its separator in a statement or in one under it (`strayKeyword`). */
-const strayIn = (n: SyntaxNode): 'then' | 'do' | undefined => strayKeyword(n) ?? n.namedChildren.map(strayIn).find(Boolean);
+/**
+ * The keyword that lacks its separator in a statement or in one under it (`strayKeyword`), where bash stops as it reads the script. A here-document's
+ * body and backticks are read only when they are expanded: the substitution fails, and bash goes on (test/linesentence.test.ts).
+ */
+const strayIn = (n: SyntaxNode): 'then' | 'do' | undefined => (n.type === 'heredoc_body' || (n.type === 'command_substitution' && n.text[0] === '`') ? undefined : strayKeyword(n) ?? n.namedChildren.map(strayIn).find(Boolean));
 
 /** The sentence of `line`, or none when the line has no code (a comment, a blank line, code bash cannot read). */
 export function lineSentence(input: SentenceInput): Sentence | undefined {
