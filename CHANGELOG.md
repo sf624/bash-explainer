@@ -36,6 +36,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- On a phone, the editor's code stays in view while you drag the explanation sheet, and while it settles. Before, the part the sheet uncovered stayed blank until you let go, and the part it was about to cover turned blank at once.
 - A part of a line that fails every time it runs now shows the mark of an error: `echo $((09))`, `env -S'"a' s`, and a shebang that `env` cannot run (`#!/usr/bin/env bash -e`). Before, it showed the mark of a warning.
 - `$((09))` says that its command does not do its work, and only where the shell rejects the number: not in zsh, ksh93, mksh or yash, not beside an expansion (`$(( ${x}09 ))` is 109), and as a warning where the command may not read it (`${x:-$((09))}`). Before, it said "bash stops" everywhere.
 - `terraform -install-autocomplete` and `-uninstall-autocomplete` are explained as options terraform takes. Before, they were said to stop it.

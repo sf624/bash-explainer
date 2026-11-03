@@ -20,6 +20,7 @@ import { HoverInput, lineCard, partHover } from '../src/ui/hoverView';
 import type { ThemeKind } from '../src/ui/palette';
 import { isMac } from './file-io';
 import { renderCard } from './hover-markdown';
+import { sheetCover } from './layout';
 import { TEXT } from './text';
 
 /** What the hover asks of the page. */
@@ -123,7 +124,7 @@ interface Placed { readonly above: boolean; readonly overLine: boolean; readonly
  */
 function placeCard(view: EditorView, pos: number, at: number, side: -1 | 1, room: '--bx-hover-room' | '--bx-pinned-room'): Placed {
   const pane = view.dom.getBoundingClientRect();
-  const space = { top: Math.max(pane.top, 0), bottom: Math.min(pane.bottom, window.innerHeight) };
+  const space = { top: Math.max(pane.top, 0), bottom: Math.min(pane.bottom - sheetCover(), window.innerHeight) };
   const place = cardPlace(lineRows(view, pos), rowAt(view, pos, at, side), space, window.innerHeight);
   view.dom.style.setProperty(room, `${place.maxHeight}px`);
   view.dom.style.setProperty('--bx-hover-width', `${Math.max(200, Math.round(Math.min(pane.width, window.innerWidth) - 16))}px`);
@@ -340,7 +341,7 @@ export function webHover(host: HoverHost): WebHover {
     tooltips({
       tooltipSpace: (view) => {
         const r = view.dom.getBoundingClientRect();
-        return { top: r.top, left: Math.max(r.left, 8), right: Math.min(r.right, window.innerWidth - 8), bottom: r.bottom };
+        return { top: r.top, left: Math.max(r.left, 8), right: Math.min(r.right, window.innerWidth - 8), bottom: r.bottom - sheetCover() };
       },
     }),
     // CodeMirror puts every hover tooltip in one box: the box takes its side from the first tooltip of the box when it

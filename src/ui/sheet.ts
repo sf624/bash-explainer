@@ -31,19 +31,41 @@ export function snapHeights(view: number, top: number, row: number, summary: num
   return { peek, half: Math.min(full, Math.max(peek, Math.round(view * HALF_SHARE))), full };
 }
 
+/** The sheet on the page, and the editor around it, in px from the window's bottom. */
+export interface SheetRoom {
+  /** The sheet's height. */
+  height: number;
+  /** Where the editor's room ends: at the sheet's top at half or lower; at full, as at half, under the sheet. */
+  rest: number;
+  /**
+   * Where the editor's box ends, which no move of the sheet changes: at the lowest the sheet goes. So the lines a sheet
+   * uncovers are always laid out and drawn, under it, whichever way it moves and however far.
+   */
+  box: number;
+  /** What the sheet covers of the box, at its height (`rest` above `box`): the cursor's line stays above it. */
+  cover: number;
+  /**
+   * The room under the text, at every height: the last line can scroll up to the top of a half sheet, and a move never
+   * cuts the scroll short, which would make the text jump.
+   */
+  past: number;
+}
+
 /**
- * The sheet's height on the page, and the editor's room under it (where the editor ends: at the sheet's top at half or
- * lower; at full, as at half, under the sheet). While the keyboard is open over the editor (src/ui/keyboard.ts), the
- * sheet is its summary row alone (`summary`, with the sheet's edge, at the page's zoom) on the keyboard's top, and what
- * ends at the sheet (the editor, a toast's room) ends at the row, above the part of the window the keyboard covers.
+ * The sheet's height on the page, and the editor around it (`SheetRoom`). While the keyboard is open over the editor
+ * (src/ui/keyboard.ts), the sheet is its summary row alone (`summary`, with the sheet's edge, at the page's zoom) on the
+ * keyboard's top, and what ends at the sheet (the editor, a toast's room) ends at the row, above the part of the window
+ * the keyboard covers.
  */
-export function sheetHeight(heights: SnapHeights, snap: Snap, keyboard: Pick<Keyboard, 'place'>, summary: number): { height: number; rest: number } {
+export function sheetHeight(heights: SnapHeights, snap: Snap, keyboard: Pick<Keyboard, 'place'>, summary: number): SheetRoom {
   const { place } = keyboard;
+  const past = heights.half - heights.peek;
   if (place) {
     const height = Math.ceil(summary * place.zoom) + place.bottom;
-    return { height, rest: height };
+    return { height, rest: height, box: height, cover: 0, past };
   }
-  return { height: heights[snap], rest: Math.min(heights[snap], heights.half) };
+  const rest = Math.min(heights[snap], heights.half);
+  return { height: heights[snap], rest, box: heights.peek, cover: rest - heights.peek, past };
 }
 
 /** The editor's room: the window's width, what the sheet leaves of its height, and whether the keyboard's fold is on. */

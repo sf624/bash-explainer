@@ -239,6 +239,14 @@ The note on zsh syntax a line cannot be read with starts with ⓘ, as informatio
 
 ## Fixed
 
+### The code under the phone's sheet
+
+On a phone, dragging the explanation sheet down left the part of the editor it uncovered blank until the finger lifted; lifting the finger on the way up turned the code about to be covered blank at once, for the quarter of a second the sheet took to settle. The editor now goes on under the sheet at every height, so the code is there through the whole move, also after a fling or a cancelled drag.
+
+- The scroll stays as it was: the text under a moving sheet does not jump when the sheet comes to rest. The last line can scroll up to the top of a half sheet, also while the sheet is folded, as an editor scrolls past its end.
+- The sheet moves more smoothly on a slow phone: a move no longer lays out the page on each frame.
+- A finger on the sheet's header now drags it from the very edge of the screen, in every browser.
+
 ### A part that fails every time, marked as an error
 
 A row of the explanation marks a warning inside its text. It marked every one with `⚠`, also where the line fails every time as written, which the three levels call an error. These now have `ⓧ`, in the panel, the hover, Markdown and the command line's text, and `level: error` in `--format json`:

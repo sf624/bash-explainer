@@ -876,11 +876,11 @@ button {
   height: 28px;
 }
 
-/* The empty editor's block: Paste, Open, Load the sample, 30% down the editor (web/editor-head.ts puts it inside the
-   editor's box); the editor around it takes clicks. */
+/* The empty editor's block: Paste, Open, Load the sample, 30% down what shows of the editor (web/editor-head.ts puts it
+   inside the editor's box, which goes on under a phone's sheet); the editor around it takes clicks. */
 .empty-editor {
   position: absolute;
-  inset: 30% 0 auto;
+  inset: calc((100% - var(--sheet-cover, 0px)) * 0.3) 0 auto;
   z-index: 4;
   display: flex;
   justify-content: center;
@@ -2466,9 +2466,11 @@ body.resizing .problems-resize {
 
 /* ---- The phone's bottom sheet (web/sheet.ts; docs/design/chrome-redesign.md, step C8a) ---------------------------
    On a phone (and a touch screen held upright up to 1024 px: html.bottom-sheet, from theme-init.js) the explanation's
-   pane is a sheet over the editor, at the height in --sheet-h; the editor ends at the sheet's top at half or lower
-   (--sheet-rest). Its header is one 48 px row at every height, and all of it is the grabber. At full height the app
-   bar slides away (data-sheet="full"). */
+   pane is a sheet over the editor, at the height in --sheet-h. The editor's box ends at the lowest the sheet goes
+   (--sheet-box) and goes on under it, so that the lines a move uncovers are there; --sheet-past is the room under its
+   text, and web/editor.ts keeps the cursor's line above what the sheet covers. A move goes by `transform` alone
+   (web/sheet.ts, `glide`: the pane is as tall as the move needs until it ends). Its header is one 48 px row at every
+   height, and all of it is the grabber. At full height the app bar slides away (data-sheet="full"). */
 .sheet-grab,
 #tab-problems,
 .tab-line,
@@ -2484,7 +2486,7 @@ body.resizing .problems-resize {
 
 :where(html.bottom-sheet) .source {
   height: 100%;
-  padding-bottom: var(--sheet-rest, 55dvh);
+  padding-bottom: var(--sheet-box, 55dvh);
 }
 
 :where(html.bottom-sheet) .splitter,
@@ -2505,6 +2507,10 @@ body.resizing .problems-resize {
   border-radius: 12px 12px 0 0;
   background: var(--vscode-editor-background);
   box-shadow: 0 -2px 12px rgb(0 0 0 / 16%);
+}
+
+:where(html.bottom-sheet) .panel-pane.moving {
+  will-change: transform;
 }
 
 :where(html.bottom-sheet) .panel-head {
@@ -2775,9 +2781,14 @@ html.bottom-sheet #problems #problem-list {
   overscroll-behavior: contain;
 }
 
-/* The edges' swipe strips lie over the sheet too, as along the editor. */
+/* The edges' swipe strips lie over the sheet too, as along the editor, but for its header row, which a finger drags from
+   edge to edge in every browser (Chromium alone gives a press on the strip to a control nearby, and not always). */
 :where(html.bottom-sheet) .edge {
+  --row-top: calc(100% - var(--sheet-h, 55dvh));
+  --row-end: calc(var(--row-top) + 49px);
+
   z-index: 13;
+  clip-path: polygon(0 0, 100% 0, 100% var(--row-top), 0 var(--row-top), 0 var(--row-end), 100% var(--row-end), 100% 100%, 0 100%);
 }
 
 /* At full height, and while the keyboard is open, the app bar slides away; it comes back below full. The sheet makes the
@@ -2791,7 +2802,7 @@ html.bottom-sheet #problems #problem-list {
 /* (Not into the keyboard's fold: the sheet must not lie over the editor on the keyboard's top on its way there.) */
 @media (prefers-reduced-motion: no-preference) {
   :where(html.bottom-sheet:not([data-keyboard])) .panel-pane:not(.dragging) {
-    transition: height 0.25s var(--ease);
+    transition: transform 0.25s var(--ease);
   }
 
   :where(html.bottom-sheet) .top {

@@ -23,6 +23,7 @@ import { nameHints, type NameHint } from '../src/ui/nameHints';
 import { CLASSIC_COLOURS, kindColour } from './editor-colors';
 import { drawIcon, iconMask } from './icons';
 import { webHover, WebHover } from './hover';
+import { sheetCover } from './layout';
 import { nameHintsExtension, PlacedHint, setHints } from './name-hints';
 import { withCode } from './problem-list';
 import { Kind } from './samples';
@@ -37,6 +38,11 @@ const MODES: Partial<Record<Kind, StreamParser<unknown>>> = {
 // Long lines wrap between shell words, with a hanging indent and ↪ (web/word-wrap.ts).
 const wrapFor = (on: boolean) => (on ? wordWrap : []);
 const inputModeFor = (on: boolean) => EditorView.contentAttributes.of(on ? { inputmode: 'none' } : {});
+/**
+ * The room under the text: CodeMirror's own 4 px, or what a toast needs, and under a phone's sheet as much as lets the
+ * last line reach the top of a half sheet (page.css, --sheet-past).
+ */
+const roomUnderText = (px: number) => EditorView.theme({ '.cm-content': { paddingBottom: `calc(${px || 4}px + var(--sheet-past, 0px))` } });
 const modeFor = (k: Kind) => (MODES[k] ? StreamLanguage.define(MODES[k]!) : []);
 
 /** The part of the line the pointer is on in the panel. */
@@ -312,7 +318,7 @@ export class Editor {
         extensions: [
           lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), this.historyMode.of(history()),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-          this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.marginMode.of([]), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
+          this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.marginMode.of(roomUnderText(0)), EditorView.scrollMargins.of(() => ({ bottom: this.bottomMargin + sheetCover() })), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
           highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== SEVERITIES[FADED].codemirror) }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []),
           EditorView.updateListener.of((u) => {
@@ -442,9 +448,9 @@ export class Editor {
   }
 
   /**
-   * Keeps `px` at the editor's bottom free for the cursor (a toast lies there): CodeMirror's scroll margin, and as much
-   * padding under the text, since the scroll cannot go past the end of the text and the last line would stay under the
-   * toast. When the cursor's line shows, it is scrolled above the toast.
+   * Keeps `px` at the bottom of what shows of the editor free for the cursor (a toast lies there): CodeMirror's scroll
+   * margin, and as much padding under the text, since the scroll cannot go past the end of the text and the last line
+   * would stay under the toast. When the cursor's line shows, it is scrolled above the toast.
    */
   setBottomMargin(px: number): void {
     if (px === this.bottomMargin) return;
@@ -452,10 +458,10 @@ export class Editor {
     const head = this.view.state.selection.main.head;
     const at = this.view.coordsAtPos(head);
     const box = this.view.scrollDOM.getBoundingClientRect();
-    const inView = !!at && at.bottom > box.top && at.top < box.bottom;
+    const inView = !!at && at.bottom > box.top && at.top < box.bottom - sheetCover();
     this.view.dispatch({
       effects: [
-        this.marginMode.reconfigure(px ? [EditorView.scrollMargins.of(() => ({ bottom: px })), EditorView.theme({ '.cm-content': { paddingBottom: `${px}px` } })] : []),
+        this.marginMode.reconfigure(roomUnderText(px)),
         ...(inView && px ? [EditorView.scrollIntoView(head, { y: 'nearest' })] : []),
       ],
     });

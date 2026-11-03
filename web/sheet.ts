@@ -7,6 +7,8 @@
 // Under the tabs row of the folded sheet, a summary row says what the cursor's line is (src/ui/summaryRow.ts); while the
 // keyboard is open over the editor (web/keyboard.ts), the sheet is that row alone, on the keyboard's top, and the app bar
 // hides (step C8b). A tap on the row shows the explanation, at half.
+// The editor's box does not follow the sheet: it goes on under it (`SheetRoom`), so that no move shows a blank where the
+// editor ends. A move goes by `transform` alone (`glide`, `drags`), so that a frame lays out nothing, here or in the panel.
 import type { LineExplanation } from '../src/analyzer';
 import type { DocumentIssue } from '../src/document';
 import type { Lang } from '../src/i18n';
@@ -121,7 +123,9 @@ export class BottomSheet {
     narrow.addEventListener('change', () => this.layout());
     // (Where the sheet ends its move, the toast takes its place above it.)
     pane.addEventListener('transitionend', (e) => {
-      if (e.target === pane && this.on) host.moved(this.follow);
+      if (e.target !== pane || e.propertyName !== 'transform' || !this.on || pane.classList.contains('dragging')) return;
+      this.rest();
+      host.moved(this.follow);
     });
     this.layout();
     // (Before the watcher's: Tab out of the editor while the fold is on would land on the row, and the fold ends with
@@ -251,8 +255,8 @@ export class BottomSheet {
     if (!on) {
       delete this.root.dataset.sheet;
       delete this.root.dataset.keyboard;
-      this.root.style.removeProperty('--sheet-h');
-      this.root.style.removeProperty('--sheet-rest');
+      for (const name of ['--sheet-h', '--sheet-box', '--sheet-cover', '--sheet-past']) this.root.style.removeProperty(name);
+      this.rest();
       this.hideHint();
       this.inert(false, false);
       this.room = undefined;
@@ -267,9 +271,13 @@ export class BottomSheet {
     // (While the keyboard is open, the summary row with the sheet's edge; the keyboard covers the rest.)
     const row = this.summary.offsetHeight + parseFloat(getComputedStyle(this.pane).borderTopWidth);
     const shown = sheetHeight(this.heights(), this.snap, { place: this.place }, row);
+    const from = this.shownHeight();
     this.root.dataset.sheet = this.snap;
     this.root.style.setProperty('--sheet-h', `${shown.height}px`);
-    this.root.style.setProperty('--sheet-rest', `${shown.rest}px`);
+    this.root.style.setProperty('--sheet-box', `${shown.box}px`);
+    this.root.style.setProperty('--sheet-cover', `${shown.cover}px`);
+    this.root.style.setProperty('--sheet-past', `${shown.past}px`);
+    this.glide(from, shown.height);
     if (this.place) {
       const { left, bottom, width, zoom } = this.place;
       for (const [name, value] of [['--kb-left', `${left}px`], ['--kb-bottom', `${bottom}px`], ['--kb-width', `${width}px`], ['--kb-height', `${row}px`], ['--kb-zoom', String(zoom)]]) this.root.style.setProperty(name, value);
@@ -280,6 +288,43 @@ export class BottomSheet {
     this.follow = cursorFollows(this.room, room);
     this.room = room;
     this.host.moved(this.follow);
+  }
+
+  /** The height the sheet shows now, a move's `transform` included: its box's height, less what is below the window. */
+  private shownHeight(): number {
+    return this.pane.getBoundingClientRect().height - new DOMMatrixReadOnly(getComputedStyle(this.pane).transform).m42;
+  }
+
+  /**
+   * Moves the sheet from the height it shows to its new one by `transform` alone, as page.css animates it: its box is
+   * as tall as the taller of the two until the move ends (`rest`), and it lays out only then. A finger's drag holds the
+   * sheet (`drags`). With no animation (reduced motion, the keyboard's fold), or nowhere to go, it is there at once.
+   */
+  private glide(from: number, to: number): void {
+    const pane = this.pane;
+    if (pane.classList.contains('dragging')) return;
+    if (Math.abs(from - to) < 1 || parseFloat(getComputedStyle(pane).transitionDuration) === 0) return this.rest();
+    const box = Math.max(from, to, parseFloat(pane.style.height) || 0);
+    pane.classList.add('moving');
+    pane.style.transition = 'none';
+    pane.style.height = `${box}px`;
+    pane.style.transform = `translateY(${box - from}px)`;
+    // (That is where the animation starts from.)
+    pane.getBoundingClientRect();
+    pane.style.removeProperty('transition');
+    pane.style.transform = `translateY(${box - to}px)`;
+  }
+
+  /** The move has ended: the sheet's box is its height again, as page.css says, with no animation back to no `transform`. */
+  private rest(): void {
+    const { style } = this.pane;
+    if (!style.height && !style.transform) return;
+    this.pane.classList.remove('moving');
+    style.transition = 'none';
+    style.removeProperty('height');
+    style.removeProperty('transform');
+    this.pane.getBoundingClientRect();
+    style.removeProperty('transition');
   }
 
   /**
@@ -338,7 +383,7 @@ export class BottomSheet {
     }, true);
     this.head.addEventListener('pointerdown', (e) => {
       if (!this.on || e.button !== 0 || (e.target as Element).closest('.view-slot, .panel-tools')) return;
-      const h = this.pane.getBoundingClientRect().height;
+      const h = this.shownHeight();
       drag = { id: e.pointerId, y: e.clientY, h, moved: false, moves: [{ t: e.timeStamp, h }], heights: this.heights() };
     });
     this.head.addEventListener('pointermove', (e) => {
@@ -348,7 +393,9 @@ export class BottomSheet {
       if (!drag.moved) {
         drag.moved = true;
         this.head.setPointerCapture(e.pointerId);
-        this.pane.classList.add('dragging');
+        this.pane.classList.add('dragging', 'moving');
+        // (As tall as any place the finger may take it; the frames from here lay out nothing.)
+        this.pane.style.height = `${drag.heights.full}px`;
         this.hideHint();
       }
       const at = (y: number) => Math.min(drag!.heights.full, Math.max(drag!.heights.peek, drag!.h + drag!.y - y));
@@ -357,7 +404,7 @@ export class BottomSheet {
       const moves = (merged.length ? merged : [e]).map((m) => ({ t: m.timeStamp, h: at(m.clientY) }));
       const last = moves[moves.length - 1];
       drag.moves = [...drag.moves, ...moves].filter((m) => last.t - m.t <= SPEED_MS);
-      this.root.style.setProperty('--sheet-h', `${last.h}px`);
+      this.pane.style.transform = `translateY(${drag.heights.full - last.h}px)`;
     });
     const end = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
@@ -375,6 +422,8 @@ export class BottomSheet {
       const speed = last.t > first.t ? (last.h - first.h) / (last.t - first.t) : 0;
       // (A cancelled drag goes back to the nearest height, with no fling.)
       this.set(settle(heights, last.h, e.type === 'pointerup' ? speed : 0));
+      // (The layout may have gone during the drag: `set` then draws nothing.)
+      if (!this.on) this.rest();
     };
     this.head.addEventListener('pointerup', end);
     this.head.addEventListener('pointercancel', end);
