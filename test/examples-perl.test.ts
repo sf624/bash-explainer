@@ -44,6 +44,17 @@ describe('perl examples agree with perl', () => {
       assert.deepStrictEqual(out, realPerl(words, ex.input).slice(0, out.length), `input ${JSON.stringify(ex.input)}`);
     });
   }
+  it('takes the first alternative that matches, not the longest (unlike awk, sed and grep)', () => {
+    const input = ['cab', 'abcd', 'cabcab', 'foobarbaz', 'xaabbc'];
+    const words: string[][] = [
+      ['-pe', 's/c|cab/X/g'], ['-pe', 's/a|ab|abc/<$&>/g'], ['-lne', 'print $& if /(?:a|ab)(?:c|bcd)?/'], ['-lne', 'print scalar(my @p = split /b|bc/)'],
+      ['-lne', 'print join "|", split /a|ab/'], ['-lne', 'print join ",", /(foo|foobar)(baz)?/'],
+    ];
+    for (const w of words) {
+      const parsed = perlOptions(w)!;
+      assert.deepStrictEqual(runPerl(parsed.code, parsed.opts, input), realPerl(w, input), w.join(' '));
+    }
+  });
   it('declines what it cannot run', () => {
     assert.strictEqual(runPerl('print while <>', { loop: 'n' }, ['a']), undefined);
     assert.strictEqual(runPerl('print if 2..3', { loop: 'n' }, ['a', 'b', 'c']), undefined);

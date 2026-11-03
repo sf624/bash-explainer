@@ -181,8 +181,9 @@ describe('pipeline marks: awk, as gawk splits and matches', () => {
     assert.deepStrictEqual(stageMarks(stage('awk', '{ $0 = "p q"; print $1 }'), input), undefined);
     assert.deepStrictEqual(stageMarks(stage('awk', 'BEGIN { x = $1 } { print $9 }'), input), undefined);
     assert.deepStrictEqual(stageMarks(stage('awk', '{ print $1 } NR == 2 { exit }'), input), { kind: 'field', ranges: [[[0, 1]], [[0, 1]], []], dropped: [2] });
-    // (An FS with a group gives its text to split as a field: the fields are not those of the line.)
-    assert.deepStrictEqual(stageMarks(stage('awk', '-F', '(b)', '{ print $2 }'), input), undefined);
+    // (An FS with a group gives no field of its own: the fields are those of the line.)
+    assert.deepStrictEqual(stageMarks(stage('awk', '-F', '(b)', '{ print $2 }'), input), { kind: 'field', ranges: [[[3, 5]], [], []], dropped: [] });
+    assert.deepStrictEqual(real('gawk', ['-F', '(b)', '{ print $2 }'], input), [' c', '', '']);
     assert.deepStrictEqual(stageMarks(stage('awk', '{ $0 = "zz" } /z/'), input), undefined);
     // (A field and a match that start at the same place; an FS that also matches the empty string, which splits nothing.)
     assert.deepStrictEqual(stageMarks(stage('awk', '/a/ {print $1}'), ['ab c']), { kind: 'field', ranges: [[[0, 2]]], dropped: [] });

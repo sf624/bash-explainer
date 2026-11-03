@@ -116,8 +116,8 @@ describe('the guard of the regexes a script gives', () => {
 
     it('no match takes the process down: each charged by what it gives, and a line of many registers runs', () => {
       const said = (name: string) => out.checks[name];
-      for (const name of ['awk -F, by the size of what it gives', 'perl split, by the size of what it gives', 's///g, by the size of what it gives', 'split by many registers']) assert.deepStrictEqual(said(name), { tokens: true, said: true }, name);
-      for (const name of ['many registers on a long text', 'what takes JavaScript long to compile']) assert.deepStrictEqual(said(name), { tokens: true, said: false }, name);
+      for (const name of ['awk -F, by the size of what it gives', 'perl split, by the size of what it gives', 's///g, by the size of what it gives']) assert.deepStrictEqual(said(name), { tokens: true, said: true }, name);
+      for (const name of ['many registers on a long text', 'split by many registers', 'what takes JavaScript long to compile']) assert.deepStrictEqual(said(name), { tokens: true, said: false }, name);
     });
 
     it('the name of a variable, or of a call in Python, is not read as a regex', () => {

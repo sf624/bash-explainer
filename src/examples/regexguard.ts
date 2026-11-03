@@ -657,6 +657,11 @@ export function longestExec(source: string, flags: string, text: string, at: num
   return new GuardedRegExp(source, flags).longest(text, at);
 }
 
+/** The same for a regex made by `scriptRegex`: its leftmost longest match from `at` on, with its groups. */
+export function longestFrom(re: RegExp, text: string, at: number): RegExpExecArray | null {
+  return (re as GuardedRegExp).longest(text, at);
+}
+
 /**
  * A string too long for JavaScript (of what a tool makes of matches), or a stack too deep: one more thing that costs too
  * much. No other RangeError: a precision no number method takes or a code point out of range is a bug of what threw it.

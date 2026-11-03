@@ -52,6 +52,30 @@ describe('awk examples agree with gawk', () => {
     assert.deepStrictEqual([...ex.output].sort(), realAwk(prog, ex.input).sort());
   });
 
+  // POSIX's leftmost longest match (not the first alternative's) in sub, gsub, match, split and a regex FS.
+  const longest: [string, string[], string?][] = [
+    ['{ gsub(/c|cab/, "X"); print }', ['cab', 'cabcab', 'xcabc', 'c']], ['{ sub(/c|cab/, "[&]"); print }', ['cab', 'zcabz']],
+    ['{ gsub(/a|ab|abc/, "<&>"); print }', ['abc abcd ab a', 'ababab', 'cba']], ['{ gsub(/(a|ab)(c|bcd)/, "<&>"); print }', ['abcd', 'abc', 'abcdabcd']],
+    ['{ gsub(/(a|ab)*/, "-"); print }', ['abaab', 'cabab', '']], ['{ gsub(/(a*)*b|a/, "<&>"); print }', ['aaab aab a', 'ab']],
+    ['{ gsub(/x*/, "-"); print }', ['abc', 'axxb', '']], ['{ gsub(/a*/, "X"); print }', ['baaac', 'aaa', 'b']], ['{ gsub(/^a|b$|ab/, "_"); print }', ['abab', 'ab', 'bab']],
+    ['{ gsub(/(foo|foobar)(baz|bazqux)?/, "[&]"); print }', ['foobarbazqux foobaz', 'foo']], ['{ gsub(/[ab]+|a/, "#"); print }', ['aabba cab']],
+    ['{ gsub(/ab|abcd|abc/, "\\\\&"); print }', ['abcd abc ab']], ['{ n = gsub(/a|aa/, "x"); print n, $0 }', ['aaaaa', 'aaa a']],
+    ['{ n = sub(/(a|ab)(c|bcd)?/, "X"); print n, $0 }', ['zabcd', 'abc', 'q']],
+    ['{ print match($0, /c|cab/), RSTART, RLENGTH }', ['cab', 'xcabx', 'zzz']], ['{ print match($0, /(a|ab)(c|bcd)(d*)/), RLENGTH }', ['abcd', 'xabcdd']],
+    ['{ match($0, /a|ab|abc/); print substr($0, RSTART, RLENGTH) }', ['abc']], ['{ match($0, /x*/); print RSTART, RLENGTH }', ['abc', 'xxa']],
+    ['{ n = split($0, a, /b|bc/); print n, a[1], a[2] }', ['abcd', 'abbc', 'xyz']], ['{ n = split($0, a, /x*/); print n, a[1] }', ['abc', 'axxb']],
+    ['{ n = split($0, a, "(a|b)"); print n, a[1], a[2], a[3] }', ['xaybz']], ['{ n = split($0, a, /,|, /); print n; for (i = 1; i <= n; i++) print "[" a[i] "]" }', ['a, b,c, d']],
+    ['{ print NF; print $2 }', ['a1b12c', 'x11y'], '1|12|11'], ['{ print NF; print $2 }', ['xaaby', 'aab'], 'a|aa'],
+    ['{ print NF, $1, $NF }', ['p ab abc q', 'abcabc'], 'ab|abc'], ['{ print NF }', ['abc', 'axxb'], 'x*'],
+    ['{ print $1 }', ['a:b', 'cab'], ':|ab'], ['{ print NF }', ['a b  c', ' a b '], ' +|  '],
+    ['$0 ~ /a|ab$/ { print "m" }', ['xab', 'b']], ['{ if (match($0, /ab|a/)) print RLENGTH }', ['ab']],
+  ];
+  for (const [prog, input, fs] of longest) {
+    it(`longest: ${prog}`, () => {
+      assert.deepStrictEqual(runAwk(prog, input, { fs }), realAwk(prog, input, fs));
+    });
+  }
+
   it('honours -v variables', () => {
     const prog = '$2 > min { print $1 }';
     const input = ['a 1', 'b 5', 'c 9'];

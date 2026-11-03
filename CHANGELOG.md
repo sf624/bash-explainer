@@ -40,6 +40,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `cmd 2>&1 >o 2>e` and `cmd 2>&1 >o |& tee x` no longer say that stderr goes to the original stdout: it goes to `e`, and to `o`.
 - A line whose regex would take very long, such as `grep -E '(a+)+$'` on a long text, no longer stalls the editor or a CI job: its example says the result is not computed, and the rest of the line is explained. This holds for grep, sed, awk, perl, `[[ =~ ]]`, jq, yq and globs.
 - Examples of `printf` and awk print the digits the real tools print, up to 10000 digits: `printf '%.200f' 1`, `%f` of 1e21. Where they depend on the machine, as `printf '%.20f' 0.1` does, the example says so and shows no output.
+- The examples of awk's `sub`, `gsub`, `match`, `split` and a regex `FS` take the longest match at the leftmost place, as POSIX and gawk do: `gsub(/c|cab/, "X")` on `cab` gives `X`. Before, they took the first alternative that matched (`Xab`).
 - The note on `source lib.sh` suggests a path from the script's directory that holds when the file is itself sourced (`"$(dirname "${BASH_SOURCE[0]}")"/lib.sh`). Before, it suggested `$0`, which then names the caller.
 - The note on a `grep` pattern from a variable no longer suggests `-F` when grep has other patterns (`grep -e 'a.b' -e "$x"`, `-f pats`): `-F` would read them as plain text too. It now says so, whichever pattern comes first.
 - The panel shows code that holds a backtick (`` `date` ``) as one piece of code. Before, it broke it apart at the backtick.

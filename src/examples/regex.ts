@@ -2,7 +2,7 @@ import { sedEscapeAt } from '../ctlchars';
 import type { Flavor } from '../embedded/regex';
 import { wordTable } from '../wordtable';
 import { type Node, Parser } from './regexparse';
-import { longestExec, RegexRefused, scriptRegex } from './regexguard';
+import { longestExec, longestFrom, RegexRefused, scriptRegex } from './regexguard';
 
 /** A POSIX or PCRE pattern translated to a JavaScript RegExp. */
 export interface JsRegex {
@@ -320,6 +320,29 @@ export function posixMatches(res: JsRegex[], line: string, longest: boolean): [n
     at = end > start ? end : start + 1;
   }
   return out;
+}
+
+/**
+ * `text` split at the leftmost longest matches of `re` (made by `scriptRegex`), as awk does (`split`, `FS`): an empty match
+ * separates nothing, and the search goes on after it; the groups of the regex add no part.
+ */
+export function posixSplit(re: RegExp, text: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let scan = 0;
+  for (;;) {
+    const m = longestFrom(re, text, scan);
+    if (!m) break;
+    if (m[0] === '') {
+      scan = m.index + 1;
+      if (scan > text.length) break;
+      continue;
+    }
+    parts.push(text.slice(start, m.index));
+    start = scan = m.index + m[0].length;
+  }
+  parts.push(text.slice(start));
+  return parts;
 }
 
 /** JavaScript's match of `r` from `at` on. */
