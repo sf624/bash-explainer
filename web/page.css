@@ -2113,6 +2113,9 @@ body.resizing .problems-resize {
 /* The banner of the development version and of the previews (/next/, /pr/N/). */
 .banner {
   flex: none;
+  /* Over the app bar when that slides up over it (the phone's sheet at full height): nothing covers the banner. */
+  position: relative;
+  z-index: 1;
   padding: 4px 12px;
   background: var(--vscode-textBlockQuote-background);
   border-bottom: 2px solid var(--vscode-focusBorder);
@@ -2777,8 +2780,11 @@ html.bottom-sheet #problems #problem-list {
   z-index: 13;
 }
 
-/* At full height, and while the keyboard is open, the app bar slides away; it comes back below full. */
-:where(html.bottom-sheet:is([data-sheet="full"], [data-keyboard])) .top {
+/* At full height, and while the keyboard is open, the app bar slides away; it comes back below full. The sheet makes the
+   bar inert exactly then (web/sheet.ts, `inert`), and that is the one fact here: what the sheet hides takes no tap and
+   no focus, and is not seen. The bar slides up over the place of the banner of a preview, which is above it in the
+   page (.banner, z-index) so that the bar never shows over it. */
+:where(html.bottom-sheet) .top[inert] {
   margin-top: calc(-1 * var(--bar-h));
 }
 

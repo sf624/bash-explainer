@@ -24,11 +24,11 @@ describe('the web page: the phone\'s sheet', function () {
   });
 
   /** The page on a phone, the read-mode tip closed and the sample's problems counted. */
-  const open = async (options: BrowserContextOptions, init?: string): Promise<Page> => {
+  const open = async (options: BrowserContextOptions, init?: string, at = ''): Promise<Page> => {
     const ctx = await browser.newContext(options);
     if (init) await ctx.addInitScript(init);
     const page = await ctx.newPage();
-    await page.goto(base);
+    await page.goto(base + at);
     await page.locator('.cm-line').nth(5).waitFor();
     if (await page.locator('#readtip').isVisible()) await page.locator('#readtip-close').tap();
     await until('the sample\'s problems', () => problemsShown(page), (v) => v, 20000);
@@ -456,6 +456,52 @@ describe('the web page: the phone\'s sheet', function () {
       const end = (await settled(page)).pane;
       if (motion === 'reduce') assert.ok(Math.abs(at[0] - end.y) < 0.5 && at[1] <= 0.5, JSON.stringify([at, end]));
       else assert.ok(at[0] > end.y + 20, JSON.stringify([at, end]));
+      await page.context().close();
+    }
+  });
+
+  it('lets nothing of the app bar cover the banner of the development page and the previews at full height, and keeps the banner\'s links reachable', async () => {
+    for (const [width, lang, at] of [[320, 'en', 'pr/123/'], [430, 'ja', 'pr/123/'], [320, 'ja', 'next/'], [430, 'en', 'next/']] as const) {
+      const where = `${at} ${width}px ${lang}`;
+      const page = await open(await phone(width, lang), undefined, at);
+      const banner = await box(page, '#channel-banner');
+      assert.ok(banner.height > 0, where);
+      // What is painted on top at a point, whatever may be tapped: the bar is made takeable for the question (an inert element is
+      // not hit, but it is painted), so the answer is the paint order's alone.
+      const painted = (selector: string) => page.evaluate(`(() => {
+        const bar = document.querySelector('header.top');
+        const was = bar.inert;
+        bar.inert = false;
+        const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        bar.inert = was;
+        return { id: hit && (hit.id || hit.className), inBar: !!hit && bar.contains(hit), inBanner: !!hit && !!hit.closest('#channel-banner'), y: r.top + r.height / 2 };
+      })()`) as Promise<{ id: string; inBar: boolean; inBanner: boolean; y: number }>;
+      const links = ['#banner-release', '#banner-compare', '#banner-commit', ...(at === 'pr/123/' ? ['#banner-pr'] : [])];
+      for (const snap of ['peek', 'half', 'full'] as const) {
+        await snapTo(page, snap);
+        const at2 = `${where} ${snap}`;
+        const reachable = await page.evaluate(`${JSON.stringify(links)}.map((s) => { const r = document.querySelector(s).getClientRects()[0]; const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!hit && hit.closest(s) !== null; })`);
+        assert.deepStrictEqual(reachable, links.map(() => true), at2);
+        if (snap === 'full') {
+          // The bar has slid up over the banner's place: it must not be painted over it, nor take a tap.
+          for (const control of ['#menu-open', '.brand', '#settings-open']) {
+            const p = await painted(control);
+            assert.ok(!p.inBar && (p.y < 0 || p.inBanner), `${at2}: ${control} ${JSON.stringify(p)}`);
+            const hit = await page.evaluate(`(() => { const r = document.querySelector(${JSON.stringify(control)}).getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!e && !!e.closest('header.top'); })()`);
+            assert.strictEqual(hit, false, `${at2}: ${control}`);
+          }
+        } else {
+          // Below full the bar is there, and a tap on its menu button opens the menu, and goes nowhere else.
+          const p = await painted('#menu-open');
+          assert.ok(p.id === 'menu-open' || p.inBar, `${at2}: ${JSON.stringify(p)}`);
+          await page.locator('#menu-open').tap();
+          await until('the menu', () => page.evaluate("document.getElementById('drawer').open"), (v) => v === true);
+          assert.strictEqual(page.url().split('#')[0], base + at, at2);
+          await page.keyboard.press('Escape');
+          await until('the menu closed', () => page.evaluate("document.getElementById('drawer').open"), (v) => v === false);
+        }
+      }
       await page.context().close();
     }
   });
