@@ -63,6 +63,7 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
     letters: () => new Set(givenOptions(cx.command!.parse).map(({ role }) => role.flag.slice(1))),
     given: (...names) => given(cx, ...names),
     bash: () => (cx.command?.spec.builtin ? cx.opts.bashVersion ?? DEFAULT_BASH_VERSION : undefined),
+    shell: cx.shell,
   };
   const r = EMBEDDED[lang](lit.text, ecx);
   if (!r) return undefined;

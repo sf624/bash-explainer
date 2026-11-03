@@ -323,6 +323,8 @@ export function missingKeyword(cx: Explainer, n: SyntaxNode, t: Token): Token {
   if (!kw) return t;
   const f = fact(cx.lang, 'keyword-needs-separator', { kw });
   t.kind = 'error';
+  // (A short form of the row says it too: the note is not always beside it.)
+  t.summary = `${f.body}. ${t.explanation}`;
   cx.note(f, n);
   return t;
 }
@@ -370,7 +372,7 @@ export function group(cx: Explainer, n: SyntaxNode): Token {
 
 /** `do … done`: the body of a loop. */
 export function doGroup(cx: Explainer, n: SyntaxNode): Token {
-  return block(cx, n, 'block', cx.text('loop-body'));
+  return { ...block(cx, n, 'block', cx.text('loop-body')), plain: true };
 }
 
 /** `for (( init; condition; update ))`. */

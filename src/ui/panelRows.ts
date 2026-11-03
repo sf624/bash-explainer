@@ -30,11 +30,10 @@ export type Depth = 1 | 2;
 export interface RowOptions { depth: Depth; receives: boolean }
 
 /**
- * The frame around a row and its parts: `command`, a box around one simple command (with assignments alone, too); `compound`,
- * a box around a compound command (`if`, `[[ ]]`, `{ }`, a function's definition); `group`, a bracket around the commands of a
- * pipeline or a list.
+ * The frame around a row and its parts: `Token.frame` (a box around one simple command, or around a compound command), or `group`,
+ * a bracket around the commands of a pipeline or a list.
  */
-export type RowFrame = 'command' | 'compound' | 'group';
+export type RowFrame = NonNullable<Token['frame']> | 'group';
 
 /** What a part of the line is to one reader, at depth 2 (a node of the reading tree, src/reading.ts). */
 export interface RowRole {
@@ -78,32 +77,16 @@ export interface RowModel { rows: ModelRow[]; key: KeyEntry[] }
 
 /** The kinds that are parts of a word. What the word is to its command says what they are for at depth 1; depth 2 reads them. */
 const WORD_PARTS: ReadonlySet<TokenRow['kind']> = new Set(['string', 'number', 'pattern', 'expansion']);
-/** The texts of a variable that say no more than that it expands. A variable with a meaning of its own (`$USER`) has none of them. */
-const ONLY_EXPANDS = new Set(['variable-plain', 'variable-expands', 'variable-expands-with-note']);
 
 /** The depth a token comes in at by what it is: bash's own syntax and the parts of a word at 2, what a command or a language reads at 1. */
 function ownDepth(t: Token, r: TokenRow): Depth {
   if (t.origin === 'argv' || t.origin === 'embedded') return 1;
-  if (r.texts?.includes('loop-body')) return 2;
-  if (r.kind === 'variable') return r.texts?.some((id) => ONLY_EXPANDS.has(id)) ? 2 : 1;
-  if (WORD_PARTS.has(r.kind)) return 2;
+  if (t.plain || WORD_PARTS.has(r.kind)) return 2;
   return (r.kind === 'keyword' || r.kind === 'operator') && !t.grammar && !t.children.length ? 2 : 1;
 }
 
-/** The frame of a token; `up`: the row above it. */
-function frameOf(t: Token, r: TokenRow, up: TokenRow | undefined, lang: Lang): RowFrame | undefined {
-  if (t.grammar) return 'group';
-  // (What a command reads as a command, `sudo ls`, is one of its words: bash's simple command is `sudo`. Its box says where bash's reading ends.)
-  if (t.origin === 'embedded' || t.origin === 'argv' || r.texts?.includes('loop-body')) return undefined;
-  // (A definition, and a call of the function; the row of the name in a definition has neither: `f() …`.)
-  if (r.kind === 'function') return r.name ? 'command' : t.children.length ? 'compound' : undefined;
-  // (`[ -f x ]` is a simple command, whose name `[` has a row of its own in the same box; `[[ ]]` a compound one, with its conditions in one box.)
-  if (r.kind === 'command' || r.kind === 'builtin' || r.kind === 'alias') return up?.kind === 'test' ? undefined : 'command';
-  if (r.kind === 'test') return up?.kind === 'test' ? undefined : t.children.some((c) => tokenRow(c, lang).name) ? 'command' : 'compound';
-  if (r.kind === 'keyword' || r.kind === 'block') return t.children.length ? 'compound' : undefined;
-  // (`x=1` alone is a simple command; a prefix assignment, `local x=1`, and `a=1 b=2` as parts, are parts of one.)
-  return r.kind === 'assignment' && !(up && ['command', 'builtin', 'function', 'alias', 'assignment'].includes(up.kind)) ? 'command' : undefined;
-}
+/** The frame of a token: what bash's grammar makes of it, which the explanation says (`Token.grammar`, `Token.frame`). */
+const frameOf = (t: Token): RowFrame | undefined => (t.grammar ? 'group' : t.frame);
 
 /**
  * The tokens of the same range under a token: they say more of one part of the line, which is one row. (Not under a pipeline or a
@@ -156,7 +139,7 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
   const children = parts.flatMap((c) => rowsOf(c, own, b));
   if (comesAt > depth) return children;
   const at = keyOf(t.span);
-  const frame = frameOf(head, own, up, b.lang) ?? chain.slice(1).map((x) => frameOf(x, tokenRow(x, b.lang), own, b.lang)).find(Boolean);
+  const frame = [t, ...chain].map(frameOf).find(Boolean);
   const receives = frame === 'command' ? b.lines.get(at) : undefined;
   const received = receives ? undefined : b.words.get(at);
   return [{
@@ -175,7 +158,7 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
     key: t.grammar ? `${at}:${t.grammar}` : at,
     comesAt,
     ...(frame ? { frame } : {}),
-    more: said.filter((r) => r.text !== own.text && (depth === 2 || r.marks)).map((r) => r.parts),
+    more: said.filter((r) => depth === 2 || r.marks).map((r) => r.parts),
     roles: b.roles.get(at) ?? [],
     ...(receives ? { receives } : {}),
     ...(received ? { received } : {}),

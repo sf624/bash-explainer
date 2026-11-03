@@ -4,7 +4,9 @@
 // model (src/semantics/words.ts, through src/explain/reads.ts); a `${…}` is src/expansion-tokens.ts, which reads
 // the descriptions and notes of variables from here.
 import type { Kind, Pos, Token } from '../analyzer-types';
-import { arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from '../arith';
+import { arithLiteralIn, describeArithLiteral, describeInvalidLiteral, evalArith, evalArithWrapping } from '../arith';
+import type { ArithFate } from '../messages-tokens';
+import { processOf } from '../semantics/env';
 import { type BashVersion, earlier } from '../bashversion';
 import { pictureList, visible } from '../ctlchars';
 import { ciVariables } from '../dict/ciVariables';
@@ -30,7 +32,7 @@ import { ancestor, assignmentsOnly, braceKind, descendants, field, fields, joine
 import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
-import { arrayKind, globOff, globState, inArithmetic, isAssoc, shoptAt, unquotedWord, wordAt } from './reads';
+import { arrayKind, globOff, globState, inArithmetic, isAssoc, readOnlySometimes, shoptAt, unquotedWord, wordAt } from './reads';
 import { refusedNote, sequenceParts } from './sequences';
 import { hostString } from './hoststrings';
 import { pidNote, stageCountNote } from './where';
@@ -655,7 +657,7 @@ function stringParam(cx: Explainer, k: number, at: SyntaxNode): string | undefin
 export function variable(cx: Explainer, name: string, n: SyntaxNode): Token {
   stageCountNote(cx, n, name);
   const d = varDesc(cx, name, n);
-  return cx.tok(n, 'variable', d ? `\`$${name}\`: ${d}` : cx.text('variable-plain', { name }));
+  return d ? cx.tok(n, 'variable', `\`$${name}\`: ${d}`) : { ...cx.tok(n, 'variable', cx.text('variable-plain', { name })), plain: true };
 }
 
 export function simpleExpansion(cx: Explainer, n: SyntaxNode): Token {
@@ -668,6 +670,7 @@ export function simpleExpansion(cx: Explainer, n: SyntaxNode): Token {
   const t = cx.tok(n, 'variable', d ?? (note
     ? cx.text('variable-expands-with-note', { name, note })
     : cx.text('variable-expands', { name })));
+  if (d === undefined) t.plain = true;
   t.explanation += matchNote(cx, n) + orderNote(cx, n, name) + variableNote(cx, n, name) + (joined ?? '');
   return t;
 }
@@ -889,9 +892,30 @@ export function arithChildren(cx: Explainer, n: SyntaxNode): Token[] {
 
 /** A constant of an arithmetic expression that is not plain decimal (`0x1F`, `010`, `2#1010`), with its value; undefined for anything else. */
 export function arithNumber(cx: Explainer, n: SyntaxNode): Token | undefined {
-  const lit = arithLiteral(n.text);
-  if (!lit || (lit.type === 'number' && lit.style === 'decimal') || !inArithmetic(n)) return undefined;
-  return cx.tok(n, 'number', describeArithLiteral(n.text, lit, cx.lang));
+  // (Beside an expansion it is no constant: bash reads the digits with its value, `${x}09` is 109.)
+  if (n.parent?.type === 'concatenation' || !inArithmetic(n)) return undefined;
+  const lit = arithLiteralIn(n.text, cx.shell);
+  if (lit?.type === 'invalid') {
+    const fate = arithFate(cx, n);
+    return fate && cx.tok(n, 'number', describeInvalidLiteral(n.text, lit, cx.lang, { shell: cx.shell, fate, ifRead: readOnlySometimes(n) }));
+  }
+  return !lit || lit.style === 'decimal' ? undefined : cx.tok(n, 'number', describeArithLiteral(n.text, lit, cx.lang));
+}
+
+/**
+ * What the shell does at a constant it rejects, from where it reads it (test/arith-shells.test.ts); undefined where nothing is
+ * said of it: a shell other than bash in `(( ))` or a C-style `for`, which most of them have not, or read otherwise.
+ */
+function arithFate(cx: Explainer, n: SyntaxNode): ArithFate | undefined {
+  const bash = !cx.shell || cx.shell === 'bash';
+  // (The first one up decides: a nested `$(( ))` is an expansion in the command `(( ))`, and bash treats a subscript in `(( a[09] ))` as one.)
+  const place = ancestor(n, (p) => ['arithmetic_expansion', 'subscript', 'arithmetic_command', 'c_style_for_statement'].includes(p.type))!;
+  if (place.type !== 'arithmetic_expansion' && !bash) return undefined;
+  if (place.type === 'arithmetic_command' || place.type === 'c_style_for_statement') return 'fails';
+  // (A here-document's text is expanded for its command's redirection: only that command fails.)
+  if (ancestor(n, (p) => p.type === 'heredoc_body')) return 'fails';
+  if (processOf(cx.state.env(n)).kind === 'subshell') return 'subshell';
+  return bash ? 'drops' : 'stops';
 }
 
 /** The `,` of an arithmetic expression: a note that its parts run left to right and the last one is the value. */

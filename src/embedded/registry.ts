@@ -3,6 +3,7 @@
 // set, perl's letters) it asks of the context; the worked examples are the analyzer's (src/explain/embedded.ts).
 import type { BashVersion } from '../bashversion';
 import type { Lang } from '../i18n';
+import type { Shell } from '../shellfeatures';
 import { explainArith } from './arith';
 import { explainAwk } from './awk';
 import { describeFindPattern } from './find';
@@ -37,6 +38,8 @@ export interface EmbeddedContext {
   given(...names: string[]): boolean;
   /** The bash release whose builtin reads the text; undefined when a program does (`env printf`). */
   bash(): BashVersion | undefined;
+  /** The shell the script is read as. */
+  shell: Shell | undefined;
 }
 
 type Explainer = (text: string, cx: EmbeddedContext) => Embedded | undefined;
@@ -82,7 +85,7 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
     const note = describeFindPattern(text, cx.lang);
     return note ? { tokens: explainGlob(text, cx.lang), note } : undefined;
   },
-  arith: (text, cx) => explainArith(text, cx.lang),
+  arith: (text, cx) => explainArith(text, cx.lang, cx.shell),
   // (The value of PS0, PS1, PS2 or PS4: bash reads it each time it prints the prompt, 6.9.)
   prompt: (text, cx) => ({ tokens: explainPrompt(text, cx.lang), note: promptNote(cx.lang) }),
   // Only `+FORMAT` is a format. (A word whose text is not known to start with `+`, as `x*` or `~`, may still reach here: the shell expands it first.)

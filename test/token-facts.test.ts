@@ -41,6 +41,10 @@ describe('the role and the facts of each token', () => {
     assert.deepStrictEqual(stated('rm -rf $d/'), ['$d/: unquoted-variable-as-path']);
     // (A fact the token's text states too.)
     assert.deepStrictEqual(stated('if [ -f a ] then echo x; fi'), ['if ‹condition› fi: keyword-needs-separator']);
+    // (A short form of the row says it too: its text leaves it to the note.)
+    const ex = new Analyzer('en').explainLine(parser.parse('if [ -f a ] then echo x; fi'), 0, 'bash');
+    assert.match(ex.summary, /^A `;` or a newline is needed before `then`.*if statement/);
+    assert.doesNotMatch(ex.items[0].explanation, /is needed/);
     // (At a node with no token of its own: the innermost token around it; the stage of a pipeline is in the pipe's.)
     assert.deepStrictEqual(stated('echo x 2>&1 >out.log'), ['2>&1: redirections-in-order stderr-to-original-stdout', '>out.log: redirections-in-order']);
     // (A fact about the line, where a statement goes on, is on no token.)

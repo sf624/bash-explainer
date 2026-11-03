@@ -16,9 +16,9 @@ import { type NameResolution, resolveName } from '../semantics/names';
 import { attribute, option, type OptionState, refTarget, shoptIn } from '../semantics/state';
 import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
 import { literalContent, staticWordValue, surelyHasSlash } from '../staticword';
-import { nameText, type SyntaxNode } from '../syntax/tree';
+import { ancestor, fields, nameText, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
-import { same } from './nodes';
+import { has, same } from './nodes';
 
 const SHOPT_NAMES = ['globstar', 'dotglob', 'nocaseglob', 'nocasematch', 'nullglob', 'failglob', 'extglob', 'lastpipe', 'expand_aliases'] as const;
 export type ShoptName = typeof SHOPT_NAMES[number];
@@ -187,6 +187,29 @@ export function arrayKind(cx: Explainer, name: string, n: SyntaxNode): 'assoc' |
 function unseenDeclarations(cx: Explainer): boolean {
   const why = cx.state.blind;
   return why !== undefined && !/^(?:arithmetic |an integer variable |indirect expansion|`\w+` may not be associative|a trap's action may end)/.test(why);
+}
+
+/** Whether an expression is one of `[[ ]]`, not of arithmetic. */
+const inTest = (n: SyntaxNode): boolean => ancestor(n, (p) => p.type === 'extended_test' || p.type === 'arithmetic_expansion' || p.type === 'arithmetic_command')?.type === 'extended_test';
+
+/** The operators of `${x:-word}` and the like: `word` is read only when the value of `x` calls for it (3.5.3). */
+const CONDITIONAL_WORD = /^:?[-=?+]$/;
+
+/**
+ * Whether the shell may run the command around `n` (arithmetic) without reading it: `${x:-$((09))}`, what follows `&&` or `||` in
+ * `[[ ]]`, a pattern of `case` after the first, the update of a C-style `for`. (In arithmetic, `$(( 1 || 09 ))` reads it all the same.)
+ */
+export function readOnlySometimes(n: SyntaxNode): boolean {
+  for (let c = n, p = n.parent; p; c = p, p = p.parent) {
+    if (p.type === 'expansion') {
+      const op = p.children.find((x) => !x.named && CONDITIONAL_WORD.test(x.type));
+      if (op && c.startIndex > op.startIndex) return true;
+    }
+    if (p.type === 'binary_expression' && c === p.namedChildren[1] && p.children.some((x) => x.type === '&&' || x.type === '||') && inTest(p)) return true;
+    if (p.type === 'case_item' && has(fields(p, 'value'), c) && (c !== fields(p, 'value')[0] || p !== p.parent!.namedChildren.find((x) => x.type === 'case_item'))) return true;
+    if (p.type === 'c_style_for_statement' && has(fields(p, 'update'), c)) return true;
+  }
+  return false;
 }
 
 export function inArithmetic(n: SyntaxNode): boolean {

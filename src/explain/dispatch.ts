@@ -29,9 +29,18 @@ import {
   subscript, variable, word,
 } from './words';
 
+/** What each node type is to bash, where the panel boxes it (`Token.frame`). */
+const FRAMES: Readonly<Partial<Record<SyntaxNode['type'], NonNullable<Token['frame']>>>> = {
+  command: 'command',
+  if_statement: 'compound', for_statement: 'compound', select_statement: 'compound', c_style_for_statement: 'compound', while_statement: 'compound', case_statement: 'compound',
+  subshell: 'compound', compound_statement: 'compound', extended_test: 'compound', arithmetic_command: 'compound', function_definition: 'compound',
+};
+
 /** A node's token, with the sections of the manual it is about when it has none of its own. */
 export function explain(cx: Explainer, n: SyntaxNode): Token {
   const t = claim(explainNode(cx, n), 'shell');
+  const frame = FRAMES[n.type];
+  if (frame) t.frame = frame;
   if (n.type === 'simple_expansion' || n.type === 'expansion') withValue(cx, n, t);
   const refs = t.refs ?? nodeSections(n);
   if (refs?.length) t.refs = refs;

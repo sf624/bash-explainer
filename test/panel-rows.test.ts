@@ -143,12 +143,52 @@ describe('the panel\'s row model', () => {
       assert.ok(!explain(src, 2).summary.includes('whole loop'), 'the inline display stays short');
     });
 
+    it('says what a row holds once: what a token folded into it says is no repeat of its own text', function () {
+      this.timeout(120000);
+      const { files, snippets } = corpus();
+      for (const { name, text } of [...files, ...snippets]) {
+        const tree = parser.parse(text);
+        const analyzer = new Analyzer('en');
+        text.split('\n').slice(0, 400).forEach((_, line) => {
+          const ex = analyzer.explainLine(tree, line, 'bash', { reading: true, argv: true });
+          for (const r of all(rowModel(ex, D2, 'en').rows)) for (const m of r.more) assert.notStrictEqual(m.map((p) => p.text).join(''), r.text, `${name}, line ${line}: ${r.label}`);
+        });
+      }
+    });
+
     it('explains what bash expands in an option\'s attached value: a command runs there', () => {
       const commands = (src: string) => all(model(src, { depth: 2, receives: true }).rows).filter((r) => r.receives).map((r) => r.label);
       assert.deepStrictEqual(commands('make -j"$(nproc)" build'), ['make', 'nproc']);
       assert.deepStrictEqual(commands('make -j$(nproc)'), ['make', 'nproc']);
       const value = all(model('sort -k$n,$n f', D2).rows).find((r) => r.label === '$n,$n')!;
       assert.deepStrictEqual(value.children.map((c) => c.label), ['$n', ',', '$n']);
+      // (The long form, the value in quotes, and the option's word itself in quotes.)
+      for (const src of ['make --jobs=$(nproc)', 'make --jobs="$(nproc)"', 'make "--jobs=$(nproc)"', 'make -"j$(nproc)"', 'make "-j$(nproc)"', 'make "-j$(nproc)"x', 'make "-j"$(nproc)']) {
+        assert.deepStrictEqual(commands(src), ['make', 'nproc'], src);
+      }
+      assert.deepStrictEqual(commands('ls --color="$(x)"'), ['ls', 'x']);
+      assert.ok(all(model('sed -i"$x" f', D2).rows).some((r) => r.label === '$x'));
+    });
+
+    it('labels the value as written, and places it and the letter in the word: no quote left over', () => {
+      const place = (src: string, label: string) => {
+        const r = all(model(src, D2).rows).find((x) => x.label === label)!;
+        return src.slice(r.span.start.character, r.span.end.character);
+      };
+      assert.strictEqual(place('make "-j$(nproc)"', '$(nproc)'), '$(nproc)');
+      assert.strictEqual(place('make -"j$(nproc)"', '$(nproc)'), '$(nproc)');
+      assert.strictEqual(place('make "-j$(nproc)"x', '$(nproc)x'), '$(nproc)"x');
+      assert.strictEqual(place('make -j"$(nproc)"', '"$(nproc)"'), '"$(nproc)"');
+      assert.strictEqual(place('make "-j"$x', '$x'), '$x');
+      assert.match(explain('make "--jobs=$(nproc)"').items[0].children[0].explanation, /value: `\$\(nproc\)`\)/);
+      // (A letter of a cluster in quotes, too: `v` of `"-vj$x"`.)
+      const letters = (src: string) => tokens(explain(src).items).filter((t) => t.kind === 'option' && t.label.length === 2).map((t) => src.slice(t.span.start.character, t.span.end.character));
+      assert.deepStrictEqual(letters('sort "-rk$x"'), ['r', 'k']);
+      assert.deepStrictEqual(letters('sort -"rk$x"'), ['r', 'k']);
+      assert.deepStrictEqual(letters('sort -\\rk$x'), ['r', 'k']);
+      assert.deepStrictEqual(letters('sort -""rk$x'), ['r', 'k']);
+      // (A part of the value in the word before the expansion is in the value, and has no row of its own.)
+      assert.deepStrictEqual(all(model('sort -k1$x', D2).rows).find((r) => r.label === '1$x')!.children.map((c) => c.label), ['$x']);
     });
   });
 
@@ -179,8 +219,8 @@ describe('the panel\'s row model', () => {
       // (Before the name, too; and around a compound command.)
       assert.deepStrictEqual(outline(model('>o echo a').rows), [['[command] echo', ['>o', 'a']]]);
       assert.deepStrictEqual(outline(model('{ a; } >o').rows), [['[compound] { ‹commands› }', ['[command] a', '>o']]]);
-      // (A redirection alone stays one.)
-      assert.deepStrictEqual(outline(model('>o').rows), ['>o']);
+      // (A redirection alone is bash's simple command of no words.)
+      assert.deepStrictEqual(outline(model('>o').rows), ['[command] >o']);
     });
 
     it('keeps a pipeline apart from its first command when they end together', () => {
@@ -206,6 +246,20 @@ describe('the panel\'s row model', () => {
       assert.deepStrictEqual(frames('[[ -f x && -f y ]]'), ['compound [[ -f x && -f y ]]']);
       assert.deepStrictEqual(frames('f() { a; }'), ['compound f() { ‹commands› }', 'compound { ‹commands› }', 'command a']);
       assert.deepStrictEqual(frames('f() { :; }; f'), ['group f() { ‹commands› }; f', 'compound f() { ‹commands› }', 'compound { ‹commands› }', 'command :', 'command f']);
+    });
+
+    it('takes them from what bash\'s grammar makes of the part: an expression, `time` and `!` are no commands of their own', () => {
+      assert.deepStrictEqual(frames('for ((i=0; i<3; i++)); do :; done'), ['compound for (( ‹init› ; ‹test› ; ‹update› )) do ‹commands› done', 'command :']);
+      assert.deepStrictEqual(frames('(( i=0 ))'), ['compound (( i=0 ))']);
+      // (3.2.3: `time` and `!` are parts of a pipeline, and the commands under them have their boxes.)
+      assert.deepStrictEqual(frames('time a'), ['command a']);
+      assert.deepStrictEqual(frames('time a | b'), ['group a | b', 'command a', 'command b']);
+      assert.deepStrictEqual(frames('! a'), ['command a']);
+      assert.deepStrictEqual(frames('coproc a'), ['command a']);
+      assert.deepStrictEqual(frames('[[ ( -f a ) ]]'), ['compound [[ ( -f a ) ]]']);
+      assert.deepStrictEqual(frames('x=1 [ -f f ]'), ['command x=1 [ -f f ]']);
+      // (A clause of `if` is no command either: on a line of its own, only what it runs is boxed.)
+      assert.deepStrictEqual(all(model('if a; then b\nelif c; then d\nfi', D1, 'en', 1).rows).filter((r) => r.frame).map((r) => `${r.frame} ${r.label}`), ['command c', 'command d']);
     });
 
     it('brackets a pipeline and a list', () => {
@@ -350,7 +404,7 @@ describe('the panel\'s row model', () => {
     const levelOf = (id: keyof typeof TOKEN_TEXTS) => (TOKEN_TEXTS[id] as { level?: string }).level;
 
     it('marks what fails every time as written as an error (docs/design/three-levels.md, section 2)', () => {
-      for (const [src, id] of [['echo $((09))', 'arith-invalid-number'], ["env -S'\"a' s", 'splice-refused'], ['terraform -foo plan', 'terraform-option-before-subcommand'], ['#!/usr/bin/env bash -e', 'shebang-env-one-argument'], ['#!/usr/bin/env -S"a', 'shebang-env-string-refused'], ['#!/usr/bin/env', 'shebang-env-loop']] as const) {
+      for (const [src, id] of [['echo $((09))', 'arith-invalid-number'], ["env -S'\"a' s", 'splice-refused'], ['#!/usr/bin/env bash -e', 'shebang-env-one-argument'], ['#!/usr/bin/env -S"a', 'shebang-env-string-refused'], ['#!/usr/bin/env', 'shebang-env-loop']] as const) {
         const row = all(rowModel(explain(src), D1, 'en').rows).find((r) => r.marks?.some((m) => m.id === id));
         assert.strictEqual(row?.level, 'error', src);
         assert.ok(row!.text.includes('ⓧ'), row!.text);
@@ -359,12 +413,27 @@ describe('the panel\'s row model', () => {
       // ("Mostly": it depends on a file there, or on the options.)
       assert.strictEqual(levelOf('shebang-relative-interpreter'), 'warning');
       assert.strictEqual(levelOf('shebang-env-reads-options'), 'warning');
+      // (terraform is not here to run, and it may let `-foo -version` pass.)
+      assert.strictEqual(all(model('terraform -foo plan').rows).find((r) => r.marks)?.level, 'warning');
+      assert.ok(!all(model('terraform -install-autocomplete').rows).some((r) => r.marks));
+      assert.ok(!all(model('terraform -uninstall-autocomplete').rows).some((r) => r.marks));
+      // (The arithmetic that the shell may never read: test/arith-shells.test.ts runs them.)
+      assert.strictEqual(all(model('echo ${x:-$((09))}').rows).find((r) => r.marks)?.level, 'warning');
     });
 
-    it('checks them against the real tools: each fails, whatever follows', function () {
+    it('checks them against the real tools: each fails, and what follows it on the same line or the next is as they say', function () {
       this.timeout(20000);
-      const arith = spawnSync('bash', ['-c', 'echo $((09)); echo next'], { encoding: 'utf8' });
-      assert.deepStrictEqual([arith.status, arith.stdout], [1, '']);
+      // (The rest of the line does not run; a script goes on at the next line, but in POSIX mode: test/arith-shells.test.ts has the rest.)
+      const arith = (...args: string[]) => spawnSync('bash', [...args, '-c', 'echo $((09)); echo same'], { encoding: 'utf8' });
+      assert.deepStrictEqual([arith().status, arith().stdout], [1, '']);
+      const script = fs.mkdtempSync(path.join(os.tmpdir(), 'arith-'));
+      const file = path.join(script, 's');
+      fs.writeFileSync(file, 'echo $((09)); echo same\necho next\n');
+      const bash = (...args: string[]) => spawnSync('bash', [...args, file], { encoding: 'utf8' });
+      assert.deepStrictEqual([bash().status, bash().stdout], [0, 'next\n']);
+      assert.deepStrictEqual([bash('--posix').status, bash('--posix').stdout], [1, '']);
+      fs.rmSync(file);
+      fs.rmdirSync(script);
       assert.strictEqual(spawnSync('env', ['-S"a', 's']).status, 125);
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shebang-'));
       const run = (name: string, line: string) => {

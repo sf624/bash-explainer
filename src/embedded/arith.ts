@@ -1,5 +1,6 @@
 import type { Lang } from '../i18n';
-import { arithLiteral, describeArithLiteral, evalArith } from '../arith';
+import { arithLiteralIn, describeArithLiteral, describeInvalidLiteral, evalArith } from '../arith';
+import type { Shell } from '../shellfeatures';
 import { EmbeddedToken, pick } from './types';
 
 /**
@@ -144,7 +145,7 @@ function parse(toks: Tok[]): Node | undefined {
 }
 
 /** Explain the arithmetic expression `src`; undefined if it is empty or not an expression. */
-export function explainArith(src: string, lang: Lang): { tokens: EmbeddedToken[]; note?: string } | undefined {
+export function explainArith(src: string, lang: Lang, shell?: Shell): { tokens: EmbeddedToken[]; note?: string } | undefined {
   const s = pick(lang);
   const toks = tokenize(src);
   const root = toks?.length ? parse(toks) : undefined;
@@ -156,10 +157,10 @@ export function explainArith(src: string, lang: Lang): { tokens: EmbeddedToken[]
     const kids = (...ns: Node[]): EmbeddedToken[] => ns.flatMap((x) => tokenOf(x) ?? []);
     switch (n.t) {
       case 'num': {
-        // (Every number token is a constant that arithLiteral reads.)
-        const lit = arithLiteral(text(n))!;
-        if (lit.type === 'number' && lit.style === 'decimal') return undefined;
-        return { ...base, kind: 'number', children: [], explanation: describeArithLiteral(text(n), lit, lang) };
+        // (A constant bash rejects fails `let`, with status 1 (test/arith-shells.test.ts); of another shell's `let`, nothing is said.)
+        const lit = arithLiteralIn(text(n), shell);
+        if (lit?.type === 'invalid') return shell && shell !== 'bash' ? undefined : { ...base, kind: 'number', children: [], explanation: describeInvalidLiteral(text(n), lit, lang, { shell, fate: 'fails' }) };
+        return !lit || lit.style === 'decimal' ? undefined : { ...base, kind: 'number', children: [], explanation: describeArithLiteral(text(n), lit, lang) };
       }
       case 'var': {
         const m = /^(\$?\w+)\[(.*)\]$/s.exec(text(n));

@@ -3,7 +3,7 @@
 // as bash reads it (src/testexpr.ts; the words of the command itself are argv's, which calls `testTokens`). The
 // examples of a test (values that make it true, that match a pattern or a regex) come from src/explain/examples.ts.
 import type { Kind, Token } from '../analyzer-types';
-import { arithLiteral, evalArith, invalidLiteral } from '../arith';
+import { arithLiteralIn, evalArith, invalidLiteral } from '../arith';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, unaryTestOps } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
@@ -147,7 +147,7 @@ function numericTestNote(cx: Explainer, op: string, operands: string[], double: 
   const notes: string[] = [];
   for (const raw of operands) {
     const m = /^([-+]?)(\d[0-9A-Za-z@_#]*)$/.exec(raw);
-    const lit = m ? arithLiteral(m[2]) : undefined;
+    const lit = m ? arithLiteralIn(m[2], cx.shell) : undefined;
     if (!lit && !double && /^[\w+\-/%.,:^]+$/.test(raw) && !/^[-+]?\d+$/.test(raw)) {
       // A word written out in full that is no integer (`1+1`, `1.5`, `x`): `[` and `test` do not calculate.
       const v = evalArith(raw);
@@ -161,7 +161,7 @@ function numericTestNote(cx: Explainer, op: string, operands: string[], double: 
       if (v !== undefined) notes.push(cx.s(`\`[[ ]]\` の ${op} は算術として読むので \`${raw}\` は ${v}`, `\`[[ ]]\` reads ${op} operands as arithmetic, so \`${raw}\` is ${v}`));
       continue;
     }
-    if (!lit || (lit.type === 'number' && lit.style === 'decimal' && !/^0\d/.test(m![2]))) continue;
+    if (!lit || (lit.type === 'number' && lit.style === 'decimal')) continue;
     // (Why arithmetic rejects it: `08` with a leading 0 is octal, `1e3` has a letter, `0#1` a base starting with 0.)
     const bad = lit.type === 'invalid' ? invalidLiteral(m![2], lit, cx.lang) : undefined;
     if (!double) {
