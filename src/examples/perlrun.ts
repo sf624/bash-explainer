@@ -453,7 +453,7 @@ function num(v: V): number {
 }
 
 /** perl's `sprintf`; `Inf` and `NaN` go by rules of their own in a field (`%d` of `Inf`, `%05f`), which are not followed. */
-const perlFormat = (items: V[]): string => (items.slice(1).some((v) => typeof v === 'number' && !Number.isFinite(v)) ? unfollowed('printf of Inf or NaN') : sprintf(str(items[0]), items.slice(1) as never));
+const perlFormat = (items: V[]): string => (items.slice(1).some((v) => typeof v === 'number' && !Number.isFinite(v)) ? unfollowed('printf of Inf or NaN') : sprintf(str(items[0]), items.slice(1) as never, ''));
 
 function str(v: V): string {
   if (v === undefined) return '';
@@ -914,7 +914,7 @@ export function runPerl(code: string, opts: PerlOptions, input: string[]): strin
     }
     run(prog.end);
   } catch (e) {
-    if (e instanceof Unsupported || e instanceof NextSig || e instanceof LastSig) return undefined;
+    if (e instanceof RunnerUnsupported || e instanceof NextSig || e instanceof LastSig) return undefined;
     // A bug in the runner: let it show.
     /* c8 ignore next */
     throw e;

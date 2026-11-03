@@ -73,12 +73,21 @@ export function floatText(x: Exact, conv: string, prec: number, alt: boolean): s
   return (alt && !s.includes('.') ? s.replace(/^(\d+)/, '$1.') : s)[conv === conv.toUpperCase() ? 'toUpperCase' : 'toString']();
 }
 
-/** The value of a number written in decimal, as bash's and coreutils' printf read it, not below 0: `12`, `1.5`, `.5e3`. */
-function exactOfDecimal(text: string): Exact | undefined {
-  const m = /^(\d*)\.?(\d*)(?:[eE]([-+]?\d+))?$/.exec(text);
+/** The most digits, and the largest power of ten, of a number written in decimal that is worked out exactly: a BigInt grows with them. */
+const MAX_DECIMAL = 1000;
+
+const DECIMAL = /^(\d*)\.?(\d*)(?:[eE]([-+]?\d+))?$/;
+
+/**
+ * The value of a number written in decimal, as bash's and coreutils' printf read it, not below 0: `12`, `1.5`, `.5e3`.
+ * `undefined` when it is not written so (hexadecimal), `null` when it is too long or too large to work out (`1e-300000000`).
+ */
+function exactOfDecimal(text: string): Exact | undefined | null {
+  const m = DECIMAL.exec(text);
   if (!m) return undefined;
-  const digits = BigInt(m[1] + m[2]);
   const power = Number(m[3] ?? 0) - m[2].length;
+  if (m[1].length + m[2].length > MAX_DECIMAL || Math.abs(power) > MAX_DECIMAL) return null;
+  const digits = BigInt(m[1] + m[2]);
   return power >= 0 ? { num: digits * 10n ** BigInt(power), den: 1n } : { num: digits, den: 10n ** BigInt(-power) };
 }
 
@@ -92,11 +101,15 @@ export function sameInEveryLibrary(text: string, n: number, conv: string, prec: 
   if (!Number.isFinite(n)) return false;
   const abs = Math.abs(n);
   const double = exactOfDouble(abs);
-  const x = exactOfDecimal(text.replace(/^\s*[-+]?/, ''));
+  const written = text.replace(/^\s*[-+]?/, '');
+  // (A double of 0 is a number that is 0 or that underflows; the power of ten of a written one is not worked out.)
+  const zero = abs === 0 && DECIMAL.exec(written);
+  if (zero) return !/[1-9]/.test(zero[1] + zero[2]);
+  const x = exactOfDecimal(written);
+  if (x === null) return false;
   // (Hexadecimal, or a character: a whole number, which has its bits in a double or not.)
   if (!x) return Number.isSafeInteger(n);
   if (x.num * double.den === double.num * x.den) return true;
-  if (abs === 0) return false;
   // (Half a unit of the last of 53 bits, at most, from a number not below 2^-1022; and a whole unit, below that.)
   const whole = 1n << 1074n;
   const away = (x.num << 1022n) + x.den;

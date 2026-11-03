@@ -52,6 +52,8 @@ const pairs: [string, Json][] = [
   ['map(ceil), map(round), map(fabs), map(abs)', [1.2, -2.5]], ['tonumber', 5], ['tonumber', 'x'], ['min, max', []], ['min_by(.a)', []], ['reverse', null],
   ['[recurse]', [1, [2]]], ['[recurse(.[]?)]', [1]], ['to_entries', 1], ['from_entries', [1]],
   ['with_entries(.)', 1],
+  // (A NaN is a number that is no code point; infinity is one beyond them all.)
+  ['[1e1000-1e1000] | implode', null], ['[1e1000, -1e1000] | implode', null],
   ['ascii_downcase', 'AbC'], ['ltrimstr(1), rtrimstr(1)', 'a1'], ['ltrimstr("a")', 5], ['test("A"; "i"), test("a"; "x")', 'abc'],
   ['fromjson', '{'], ['indices(1)', null], ['indices(1)', 5], ['index(", ")', 'a'], ['[.[] | objects, arrays, booleans, nulls, iterables, scalars]', [{}, [], true, null, 1]],
   ['join(",")', [[1]]], ['.a.b = 1', 5], ['.[0] = 1', {}], ['.a', [1]], ['.["a"]', [1]], ['.[0]', { a: 1 }], ['.[{}]', [1]], ['.[] ', 5], ['.[]?', 5],

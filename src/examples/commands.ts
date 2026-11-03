@@ -9,6 +9,7 @@ import { formatDate as formatDateCommand, parseSampleDate, type PrintfReader, SA
 import { pick } from '../embedded/types';
 import type { Lang } from '../i18n';
 import { fact } from '../messages';
+import type { NotComputedId } from './regexguard';
 import { dateOutputLabel, parseDateValue, relativeFrom, relativeItems, zoneOf } from './dates';
 import { GetoptSpec, GetoptUnsupported, runGetopt, sampleGetoptArgs } from './getopt';
 import { formatDate, GitFormatUnsupported, runGitLog, sampleCommits } from './gitlog';
@@ -25,9 +26,9 @@ import { has, values } from '../argv/query';
 /** A word of the command line: its text when it is known (`literalContent`), and as written. */
 export interface ExampleWord { value: string | undefined; text: string }
 
-/** The example of what the guard does not run (src/examples/regexguard.ts): it says so, and shows no result. */
-export function notComputed(kind: Example['kind'], title: string, lang: Lang): Example {
-  return { kind, title, note: fact(lang, 'regex-not-computed').text, sections: [] };
+/** The example of what the guard does not run (src/examples/regexguard.ts): it says so (`id`), and shows no result. */
+export function notComputed(kind: Example['kind'], title: string, lang: Lang, id: NotComputedId = 'regex-not-computed'): Example {
+  return { kind, title, note: fact(lang, id).text, sections: [] };
 }
 
 /** An example's editable form for the panel: the spec to run it again, its input boxes, and what they give now. */

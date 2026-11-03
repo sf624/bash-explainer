@@ -1295,7 +1295,8 @@ class Evaluator {
       case 'implode/0': {
         if (!Array.isArray(x)) throw new JqError('implode input must be an array');
         return [x.map((c) => {
-          if (typeof c !== 'number') throw new JqError(`${typeName(c)} (${toJson(c)}) can't be imploded, unicode codepoint needs to be numeric`);
+          // (jq's `nan` is a number that prints as `null`, and is no code point.)
+          if (typeof c !== 'number' || Number.isNaN(c)) throw new JqError(`${typeName(c)} (${toJson(c)}) can't be imploded, unicode codepoint needs to be numeric`);
           const unit = Math.trunc(c);
           return unit < 0 || unit > 0x10ffff || (unit >= 0xd800 && unit <= 0xdfff) ? '\ufffd' : String.fromCodePoint(unit);
         }).join('')];

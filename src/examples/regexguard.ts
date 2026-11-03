@@ -10,6 +10,15 @@ import { inRanges, LINE_ENDS, type Node, Parser, type Ranges, WORD } from './reg
 export class RegexRefused extends Error {}
 
 /**
+ * Thrown instead of the digits of a number that depend on the machine (bash's and coreutils' printf read a `long double`,
+ * src/examples/floatdigits.ts): no output, which the example says (`digits-not-computed`).
+ */
+export class MachineDigits extends Error {}
+
+/** The note of the catalog (src/messages.ts) that an example says in place of its result. */
+export type NotComputedId = 'regex-not-computed' | 'digits-not-computed';
+
+/**
  * What the runs in one `guarded` may cost, in the walk's steps: a whole limit takes 30 to 90 ms, by the kind of pattern.
  * A line has one for each example and expansion, not one for all (docs/roadmap.md, "One line must not stop the whole tool").
  * Ordinary patterns on fifty lines of 90 characters take up to about 3e6, for all the runs of their line
@@ -98,8 +107,6 @@ class Program {
   private readonly dotAll: boolean;
   registers: number;
   anchored: boolean;
-  /** The last run past the limit: run again with no more left, it gets as far and no further. A line asks again for each stage and example. */
-  tooLong?: LongRun;
   /**
    * The character of a pattern that starts with `x*` or `x+`, when no back-reference can tell where it started. A start that
    * fails has tried all the places that repeat reaches, so a later start within the run of `x` reaches none that is new:
@@ -283,6 +290,15 @@ function set(reg: number, value: number): void {
   registers[reg] = value;
 }
 
+/**
+ * The last run of each pattern past the limit: run again with no more left, it gets as far and no further. A line asks again
+ * for each stage and example. `MAX_LONG_TEXT` is the longest text kept, and `MAX_LONG_CHARS` the characters of all kept.
+ */
+const longRuns = new Map<Program, LongRun>();
+let longChars = 0;
+const MAX_LONG_TEXT = 1e6;
+const MAX_LONG_CHARS = 4e6;
+
 let depth = 0;
 let left = LIMIT;
 /** The patterns whose compilation the runs of this limit paid for, kept or not: what a run costs is the same whatever ran before it in the process. */
@@ -301,7 +317,16 @@ function refuse(): never {
 
 /** Past the limit in a walk. */
 function tooLong(p: Program, text: string, from: number, once: boolean, longest: boolean, had: number): never {
-  p.tooLong = { text, from, once, longest, left: had };
+  // (A text this long is not kept, and past a total of them none is: a text of 16 million characters is made by a loop of 24 doublings.)
+  if (text.length <= MAX_LONG_TEXT) {
+    const before = longRuns.get(p);
+    longChars += text.length - (before ? before.text.length : 0);
+    if (longChars > MAX_LONG_CHARS) {
+      longRuns.clear();
+      longChars = text.length;
+    }
+    longRuns.set(p, { text, from, once, longest, left: had });
+  }
   refuse();
 }
 
@@ -328,7 +353,7 @@ function walk(p: Program, text: string, from: number, once: boolean, longest: bo
   const length = text.length;
   // (Setting a register is far less than a step.)
   charge(RUN + (p.registers >> 3));
-  const known = p.tooLong;
+  const known = longRuns.get(p);
   if (known && left <= known.left && known.from === from && known.once === once && known.longest === longest && known.text === text) refuse();
   if (registers.length < p.registers) registers = new Int32Array(p.registers);
   const r = registers;
@@ -578,6 +603,8 @@ function programOf(source: string, flags: string): Program {
     // (A web page stays open for long, and awk's regexes can be new on each line.)
     if (kept > MAX_KEPT) {
       programs.clear();
+      longRuns.clear();
+      longChars = 0;
       kept = 0;
     }
     kept += p.code.length;
@@ -639,19 +666,26 @@ function tooBigForJavaScript(e: unknown): boolean {
 }
 
 /**
- * What `run` gives, or `refused()` when a regex it runs is refused. The runs in it share one limit (those of a `guarded`
- * inside it as well): a run alone is limited either way, a run of many only here.
+ * What `run` gives, or `refused(id)` when a regex it runs is refused (or the digits it prints depend on the machine), with the
+ * note to say instead. The runs in it share one limit (those of a `guarded` inside it as well): a run alone is limited
+ * either way, a run of many only here.
  */
-export function guarded<T>(run: () => T, refused: () => T): T {
+export function guarded<T>(run: () => T, refused: (id: NotComputedId) => T): T {
   if (!depth++) fresh();
   try {
     return run();
   } catch (e) {
-    if (e instanceof RegexRefused || tooBigForJavaScript(e)) return refused();
+    if (e instanceof MachineDigits) return refused('digits-not-computed');
+    if (e instanceof RegexRefused || tooBigForJavaScript(e)) return refused('regex-not-computed');
     throw e;
   } finally {
     depth--;
   }
+}
+
+/** The characters of the texts kept to be refused again, for the tests. */
+export function keptChars(): number {
+  return longChars;
 }
 
 /** What the runs in `run` cost, for the tests and the figures of the limit. */

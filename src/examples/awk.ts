@@ -548,13 +548,17 @@ function compare(a: Val, b: Val): number {
 export const MAX_FIELD = 10000;
 const FIELD_COST = 10;
 
-/** C-style printf formatting for %d %i %o %x %X %u %c %s %e %E %f %F %g %G %%. */
-export function sprintf(fmt: string, args: Val[]): string {
+/**
+ * C-style printf formatting for %d %i %o %x %X %u %c %s %e %E %f %F %g %G %%. gawk stops with a fatal error when the format wants
+ * more arguments than it got; `missing` is what a tool that goes on takes in place of one (perl: `''`, which is 0 as a number).
+ */
+export function sprintf(fmt: string, args: Val[], missing?: Val): string {
   let ai = 0;
-  // gawk stops with a fatal error when the format wants more arguments than it got.
+  let absent = false;
   const nextArg = () => {
-    if (ai >= args.length) throw new Unsupported('not enough arguments');
-    return args[ai++];
+    absent = ai >= args.length;
+    if (absent && missing === undefined) throw new Unsupported('not enough arguments');
+    return absent ? missing! : args[ai++];
   };
   return fmt.replace(/%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?([diouxXcseEfFgG%])/g, (_whole, flags: string, w: string | undefined, p: string | undefined, conv: string) => {
     if (conv === '%') return '%';
@@ -569,7 +573,9 @@ export function sprintf(fmt: string, args: Val[]): string {
     if (conv !== 'c' && conv !== 's' && !Number.isFinite(toNum(v))) {
       // (gawk prints the sign of NaN, which JavaScript does not keep, and takes neither the width nor the flags.)
       if (Number.isNaN(toNum(v))) throw new Unsupported('printf of NaN');
-      return toNum(v) > 0 ? '+inf' : '-inf';
+      // (The case follows the conversion's: `%X`, `%E`, `%F` and `%G` print `+INF`.)
+      const inf = `${toNum(v) > 0 ? '+' : '-'}inf`;
+      return /[XEFG]/.test(conv) ? inf.toUpperCase() : inf;
     }
     let body: string;
     let sign = '';
@@ -594,7 +600,11 @@ export function sprintf(fmt: string, args: Val[]): string {
         if (flags.includes('#') && (conv === 'x' || conv === 'X') && u !== 0n) sign = '0' + conv;
         break;
       }
-      case 'c': body = typeof v === 'number' ? String.fromCharCode(v) : toStr(v).slice(0, 1); break;
+      case 'c':
+        // (perl prints a NUL byte for a missing argument.)
+        if (absent) throw new Unsupported('%c without an argument');
+        body = typeof v === 'number' ? String.fromCharCode(v) : toStr(v).slice(0, 1);
+        break;
       case 's': body = toStr(v); if (prec !== undefined) body = body.slice(0, prec); break;
       default: {
         const n = toNum(v);

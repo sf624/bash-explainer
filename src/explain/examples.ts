@@ -106,7 +106,7 @@ export function pushExample(cx: Explainer, ex: Example | undefined): void {
 
 /** What `build` adds to the line, or, when it would run a regex that is refused, the example that says it is not computed. */
 export function guardedExample(cx: Explainer, kind: ExampleKind, build: () => void): void {
-  guarded(build, () => cx.example(commandExamples.notComputed(kind, cx.s('例', 'Example'), cx.lang)));
+  guarded(build, (id) => cx.example(commandExamples.notComputed(kind, cx.s('例', 'Example'), cx.lang, id)));
 }
 
 /** An example's editable form for the panel (src/examples/commands.ts). */
@@ -291,7 +291,7 @@ export function awkOptions(cx: Explainer): (AwkRunOptions & { vars: Record<strin
 /** Sample data run through every stage of a pipeline, showing what each stage leaves. */
 export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefined {
   // (Nothing is said of the stages after one the guard does not run, nor of those before: the example is of them all.)
-  return guarded(() => wholeExample(cx, n), () => commandExamples.notComputed('pipeline', cx.s('例（パイプライン全体）', 'Example (the whole pipeline)'), cx.lang));
+  return guarded(() => wholeExample(cx, n), (id) => commandExamples.notComputed('pipeline', cx.s('例（パイプライン全体）', 'Example (the whole pipeline)'), cx.lang, id));
 }
 
 function wholeExample(cx: Explainer, n: SyntaxNode): Example | undefined {

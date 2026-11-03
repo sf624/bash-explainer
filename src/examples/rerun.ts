@@ -152,7 +152,7 @@ const words = (ws: (string | null | undefined)[]) => ws.map((w) => w ?? undefine
  * are per line of them all, in that order.
  */
 export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResult {
-  return guarded(() => run(spec, boxes, lang), () => ({ sections: [{ label: lang === 'ja' ? '結果' : 'Result', lines: [fact(lang, 'regex-not-computed').body] }] }));
+  return guarded(() => run(spec, boxes, lang), (id) => ({ sections: [{ label: lang === 'ja' ? '結果' : 'Result', lines: [fact(lang, id).body] }] }));
 }
 
 function run(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResult {
