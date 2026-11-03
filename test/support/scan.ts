@@ -97,6 +97,25 @@ export function counted<K extends string>(matches: readonly Match<K>[]): { file:
   return [...by.values()];
 }
 
+/**
+ * One TypeScript program over `roots` and the files that exist in memory only (`virtual`: a guard's own snippets, by absolute path),
+ * built with the repo's tsconfig.
+ */
+export function typedProgram(roots: readonly string[], virtual: ReadonlyMap<string, string>): ts.Program {
+  const config = ts.readConfigFile(path.join(base, 'tsconfig.json'), ts.sys.readFile);
+  // (No ambient @types: the sources need none, and loading them costs half a second.)
+  const options = { ...ts.parseJsonConfigFileContent(config.config, ts.sys, base).options, types: [] };
+  const host = ts.createCompilerHost(options, true);
+  const { getSourceFile, fileExists, readFile } = host;
+  host.fileExists = (f) => virtual.has(path.resolve(f)) || fileExists.call(host, f);
+  host.readFile = (f) => virtual.get(path.resolve(f)) ?? readFile.call(host, f);
+  host.getSourceFile = (f, ...rest) => {
+    const text = virtual.get(path.resolve(f));
+    return text === undefined ? getSourceFile.call(host, f, ...rest) : ts.createSourceFile(f, text, options.target ?? ts.ScriptTarget.ES2022, true);
+  };
+  return ts.createProgram({ rootNames: [...roots, ...virtual.keys()], options, host });
+}
+
 /** The key of a known-list entry. */
 export const keyOf = (file: string, fn: string, kind: string): string => `${file} ${fn} ${kind}`;
 

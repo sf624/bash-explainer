@@ -5,15 +5,16 @@
 import { Example, ExampleSection, LineExplanation, Token } from '../analyzer-types';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
-import { codeSpan, joinParts, labelParts } from '../label';
+import { codeSpan, joinParts } from '../label';
 import { referencesWith } from '../references';
 import { pictureLabel, pictureText, splitPictures } from '../ctlchars';
-import { isCommand, partNotes, ProblemAt, sameSpan, shown, valueOf } from './hoverParts';
+import { isCommand, partNotes, ProblemAt, sameSpan, shown } from './hoverParts';
 import { type Note, SPACE_MARK, type SpaceEnds, type ValueSaid } from '../messages';
 import { LEVELS } from '../levels';
 import { levelColour, ThemeKind } from './palette';
-import { basisLine, basisMarkdown, colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteBasis, noteRefs, notesByLevel, partBasis, placeExamples, plainNotes, refsMarkdown, valueMarkdown } from './render';
+import { basisLine, basisMarkdown, colored, esc, ExamplePlacement, examplesMarkdown, labelMarkdown, lineSegments, noteBasis, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, valueMarkdown } from './render';
 import { ui } from './texts';
+import { partRow, rowPlain, type TokenRow } from './tokenRow';
 
 /** What every view of the hover needs. */
 export interface HoverInput {
@@ -155,37 +156,34 @@ export function wordsHtml(sec: ExampleSection): string {
 }
 
 /**
- * A token's label, coloured by its kind (no code background), cut to `max` characters; a placeholder in italics.
+ * A row's label, coloured by its kind (no code background), cut to `max` characters; a placeholder in italics.
  * `nobreak`: a word joiner after each hyphen, so that a label in a narrow column (`-name *.gz -mtime`) does not break after a dash.
  */
-function label(tok: Token, theme: ThemeKind, max = 22, nobreak = false): string {
+function label(r: TokenRow, theme: ThemeKind, max = 22, nobreak = false): string {
   let left = max;
-  return joinParts(labelParts(tok), (p) => {
+  return joinParts(r.labelParts, (p) => {
     if (left <= 0) return '';
     let text = p.text.replace(/\s*\n\s*/g, ' ⏎ ');
     if (text.length > left) text = text.slice(0, Math.max(1, left - 1)) + '…';
     left -= text.length;
     if (nobreak) text = text.replace(/-/g, '-\u2060');
-    return p.placeholder ? `<i>${colored(text, 'comment', theme)}</i>` : colored(text, tok.kind, theme);
+    return p.placeholder ? `<i>${colored(text, 'comment', theme)}</i>` : colored(text, r.kind, theme);
   });
 }
 
 /** The name's kind as a badge in the theme's badge colours, its tooltip saying what the kind is, and who runs it. */
-function badge(tok: Token): string {
-  const s = tok.name?.said;
+function badge(r: TokenRow): string {
+  const s = r.name?.said;
   if (!s) return '';
   const b = `<span title="${attr(s.title)}"><span style="color:var(--vscode-badge-foreground);background-color:var(--vscode-badge-background);border-radius:4px;">&nbsp;${esc(s.kind)}&nbsp;</span></span>`;
   return ` ${b}${s.by ? ` ${muted(prose(s.by))}` : ''}`;
 }
 
 /** "Same name, also: …", on a line of its own. */
-const also = (tok: Token) => (tok.name?.said.also ? `<br><small>${muted(prose(tok.name.said.also))}</small>` : '');
+const also = (r: TokenRow) => (r.name?.said.also ? `<br><small>${muted(prose(r.name.said.also))}</small>` : '');
 
-/** The value of an expansion where it runs (`Token.value`: the model's), on a line of its own. */
-const value = (tok: Token) => {
-  const v = valueOf(tok);
-  return v ? `<br><small>${valueHtml(v.said)}</small>` : '';
-};
+/** The value of an expansion where it runs, on a line of its own. */
+const value = (r: TokenRow) => (r.value ? `<br><small>${valueHtml(r.value.said)}</small>` : '');
 
 /** The references (the manual's sections, manual pages), small, as HTML links. */
 function refsHtml(lang: Lang, refs?: readonly string[]): string {
@@ -193,14 +191,11 @@ function refsHtml(lang: Lang, refs?: readonly string[]): string {
   return ` <small>${referencesWith(lang, refs, (r, shown) => `<a href="${r.url}" title="${attr(r.title)}">${shown}</a>`)}</small>`;
 }
 
-/** What a part rests on where it is bash's behaviour rather than the manual (`partBasis`), small, on a line of its own. */
-const rests = (tok: Token, lang: Lang) => {
-  const b = partBasis(tok, lang);
-  return b ? `<br><small>${md(basisLine(lang, b, codeSpan))}</small>` : '';
-};
+/** What a part rests on where it is bash's behaviour rather than the manual, small, on a line of its own. */
+const rests = (r: TokenRow, lang: Lang) => (r.basis ? `<br><small>${md(basisLine(lang, r.basis, codeSpan))}</small>` : '');
 
 /** A part as a row's text: its meaning, badge, sections and other meanings. */
-const about = (tok: Token, lang: Lang) => `${prose(tok.explanation)}${badge(tok)}${refsHtml(lang, tok.refs)}${also(tok)}${value(tok)}${rests(tok, lang)}`;
+const about = (r: TokenRow, lang: Lang) => `${prose(r.text)}${badge(r)}${refsHtml(lang, r.refs)}${also(r)}${value(r)}${rests(r, lang)}`;
 
 /** The rows of the parts under a token, `depth` levels deep, indented with non-breaking spaces; `stop` keeps a part out (with its own parts). */
 function rows(items: Token[], depth: number, stop: (t: Token) => boolean): { rows: { tok: Token; level: number }[]; hidden: number } {
@@ -220,22 +215,26 @@ function rows(items: Token[], depth: number, stop: (t: Token) => boolean): { row
 
 function table(list: { tok: Token; level: number }[], x: HoverInput): string[] {
   if (!list.length) return [];
-  const row = ({ tok, level }: { tok: Token; level: number }) => `<tr><td>${'&nbsp;'.repeat(4 * level)}${label(tok, x.theme, 22, true)}</td><td>${about(tok, x.lang)}</td></tr>`;
+  const row = ({ tok, level }: { tok: Token; level: number }) => {
+    const r = partRow(tok, x.lang);
+    return `<tr><td>${'&nbsp;'.repeat(4 * level)}${label(r, x.theme, 22, true)}</td><td>${about(r, x.lang)}</td></tr>`;
+  };
   return ['<table>', ...list.map(row), '</table>', ''];
 }
 
 /** A part of the structure with its meaning as a tooltip. */
-const crumbPart = (tok: Token, theme: ThemeKind, max = 18) => `<span title="${attr(tok.explanation.replace(/`/g, ''))}">${label(tok, theme, max)}</span>`;
+const crumbPart = (r: TokenRow, theme: ThemeKind, max = 18) => `<span title="${attr(r.text.replace(/`/g, ''))}">${label(r, theme, max)}</span>`;
 
 const sep = (s: string) => ` ${muted(s)} `;
 
 /** The structure of a line as one breadcrumb: each part with commands in it, down to its commands (`sudo | xargs › sudo · xargs`). */
-export function structureCrumb(items: Token[], theme: ThemeKind): string {
+export function structureCrumb(items: Token[], theme: ThemeKind, lang: Lang): string {
   const hasCommand = (t: Token): boolean => isCommand(t) || shown(t).some(hasCommand);
   const one = (t: Token): string => {
-    if (isCommand(t)) return `<b>${crumbPart(t, theme, 14)}</b>`;
+    const part = crumbPart(partRow(t, lang), theme, 14);
+    if (isCommand(t)) return `<b>${part}</b>`;
     const kids = shown(t).filter(hasCommand);
-    return kids.length ? `${crumbPart(t, theme, 14)}${sep('›')}${kids.map(one).join(sep('·'))}` : crumbPart(t, theme, 14);
+    return kids.length ? `${part}${sep('›')}${kids.map(one).join(sep('·'))}` : part;
   };
   return items.map(one).join(sep('·'));
 }
@@ -308,16 +307,20 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   const part = chain[chain.length - 1];
   const t = ui[x.lang].hover;
   const out: string[] = [];
-  const crumbs = chain.slice(0, -1).map((c) => crumbPart(c, x.theme));
+  const rowOf = (c: Token) => partRow(c, x.lang);
+  const r = rowOf(part);
+  const crumbs = chain.slice(0, -1).map((c) => crumbPart(rowOf(c), x.theme));
   out.push(`${crumbs.length ? `<small>${crumbs.join(sep('›'))}${sep('›')}</small> &nbsp; ` : ''}${lineLink(x)}`, '');
-  out.push(`<b>${label(part, x.theme, 48)}</b>${badge(part)}`, '');
-  out.push(`${md(part.explanation)}${part.refs?.length ? ` <small>${refsMarkdown(x.lang, part.refs)}</small>` : ''}${also(part)}${rests(part, x.lang)}`, '');
-  const v = valueOf(part);
-  if (v) out.push(valueHtml(v.said), '');
+  out.push(`<b>${label(r, x.theme, 48)}</b>${badge(r)}`, '');
+  out.push(`${md(r.text)}${r.refs?.length ? ` <small>${refsMarkdown(x.lang, r.refs)}</small>` : ''}${also(r)}${rests(r, x.lang)}`, '');
+  if (r.value) out.push(valueHtml(r.value.said), '');
   const own = rows(shown(part), 1, () => false);
   out.push(...table(own.rows, x));
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
-  if (command) out.push(`<small>${muted(t.command)}${label(command, x.theme)}${badge(command)} — ${md(command.explanation)}</small>`, '');
+  if (command) {
+    const c = rowOf(command);
+    out.push(`<small>${muted(t.command)}${label(c, x.theme)}${badge(c)} — ${md(c.text)}</small>`, '');
+  }
   const { about, others } = partNotes(x.ex, part, x.problems);
   out.push(...notes(x.ex, x.lang, x.theme, about));
   // Its examples: those of the part and its own parts, else those of the nearest part around it.
@@ -333,7 +336,7 @@ export function partHover(x: HoverInput, chain: Token[]): string {
 
 /** A position on no part (the indentation, between statements): the line's structure as one breadcrumb, and the link to the whole line. */
 export function lineCard(x: HoverInput): string {
-  return [`<small>${structureCrumb(x.ex.items, x.theme)}</small> &nbsp; ${lineLink(x)}`, ...footer(x, { where: true })].join('\n');
+  return [`<small>${structureCrumb(x.ex.items, x.theme, x.lang)}</small> &nbsp; ${lineLink(x)}`, ...footer(x, { where: true })].join('\n');
 }
 
 /**
@@ -367,12 +370,13 @@ export function wholeLine(x: HoverInput): string {
   };
   collect(ex.items, []);
   const isBlock = (tok: Token) => blocks.some((b) => b.tok === tok);
-  if (blocks.length > 1) out.push(`<small>${structureCrumb(ex.items, theme)}</small>`, '');
+  if (blocks.length > 1) out.push(`<small>${structureCrumb(ex.items, theme, lang)}</small>`, '');
   out.push('---', '');
   let hidden = 0;
   for (const { tok, path } of blocks) {
-    const at = path.filter((p) => !sameSpan(p.span, tok.span)).map((p) => crumbPart(p, theme)).join(sep('›'));
-    out.push(`<b>${label(tok, theme, 40)}</b>${badge(tok)} — ${md(tok.explanation)}${tok.refs?.length ? ` <small>${refsMarkdown(lang, tok.refs)}</small>` : ''}${at ? `<br><small>${muted(t.hover.in)}${at}</small>` : ''}${also(tok)}${rests(tok, lang)}`, '');
+    const at = path.filter((p) => !sameSpan(p.span, tok.span)).map((p) => crumbPart(partRow(p, lang), theme)).join(sep('›'));
+    const b = partRow(tok, lang);
+    out.push(`<b>${label(b, theme, 40)}</b>${badge(b)} — ${md(b.text)}${b.refs?.length ? ` <small>${refsMarkdown(lang, b.refs)}</small>` : ''}${at ? `<br><small>${muted(t.hover.in)}${at}</small>` : ''}${also(b)}${rests(b, lang)}`, '');
     const r = rows(shown(tok), 2, isBlock);
     hidden += r.hidden;
     const examples = placed && blockExamples(placed.items, tok, r.rows.map((row) => row.tok));
@@ -400,21 +404,24 @@ export function plainPartHover(ex: LineExplanation, chain: Token[], lang: Lang, 
   if (!chain.length) return whole;
   const part = chain[chain.length - 1];
   const t = ui[lang].hover;
-  const flat = (tok: Token) => labelMarkdown(labelParts(tok));
+  const rowOf = (tok: Token) => partRow(tok, lang);
+  const flat = (r: TokenRow) => labelMarkdown(r.labelParts);
   const out: string[] = [];
-  if (chain.length > 1) out.push(chain.slice(0, -1).map(flat).join(' › ') + ' ›', '');
-  const s = part.name?.said;
-  out.push(`**${flat(part)}**${s ? ` · _${s.kind}_${s.by ? `, ${s.by}` : ''}` : ''}`, '');
-  out.push(`${pictureText(part.explanation)}${part.refs?.length ? ` (${refsMarkdown(lang, part.refs)})` : ''}`, '');
-  const b = partBasis(part, lang);
-  if (b) out.push(`_${basisLine(lang, b, codeSpan)}_`, '');
+  if (chain.length > 1) out.push(chain.slice(0, -1).map((c) => flat(rowOf(c))).join(' › ') + ' ›', '');
+  const r = rowOf(part);
+  const s = r.name?.said;
+  out.push(`**${flat(r)}**${s ? ` · _${s.kind}_${s.by ? `, ${s.by}` : ''}` : ''}`, '');
+  out.push(`${pictureText(r.text)}${r.refs?.length ? ` (${refsMarkdown(lang, r.refs)})` : ''}`, '');
+  if (r.basis) out.push(`_${basisLine(lang, r.basis, codeSpan)}_`, '');
   if (s?.also) out.push(`_${s.also}_`, '');
-  const v = valueOf(part);
-  if (v) out.push(pictureText(v.said.text), '');
-  const kids = shown(part);
-  if (kids.length) out.push(...kids.map((k) => `- ${flat(k)} — ${explained(k)}${valueMarkdown(valueOf(k), '  ')}${basisMarkdown(k, lang, '  ')}`), '');
+  if (r.value) out.push(pictureText(r.value.said.text), '');
+  const kids = shown(part).map(rowOf);
+  if (kids.length) out.push(...kids.map((k) => `- ${flat(k)} — ${rowPlain(k)}${valueMarkdown(k.value, '  ')}${basisMarkdown(k.basis, lang, '  ')}`), '');
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
-  if (command) out.push(`${t.command}${flat(command)} — ${explained(command)}`, '');
+  if (command) {
+    const c = rowOf(command);
+    out.push(`${t.command}${flat(c)} — ${rowPlain(c)}`, '');
+  }
   out.push(...plainNotes(ex, partNotes(ex, part).about, lang));
   out.push('---', '', whole);
   return out.join('\n');

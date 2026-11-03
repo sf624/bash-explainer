@@ -2,14 +2,14 @@ import { pictureText } from '../ctlchars';
 import { Example, ExampleSection, Kind, LineExplanation, Pos, Span, Token, ValueInfo } from '../analyzer-types';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
-import { codeSpan, joinParts, LabelPart, labelParts } from '../label';
+import { codeSpan, joinParts, LabelPart } from '../label';
 import { referencesWith } from '../references';
-import type { Basis, TryIt } from '../basis';
 import { LEVELS } from '../levels';
-import { basisSaid, type BasisSaid, type Note } from '../messages';
+import type { Note } from '../messages';
 import type { ReadingNode } from '../reading';
 import { errorColour, Role, roleColour, ThemeKind } from './palette';
 import { ui } from './texts';
+import { type NoteBasis, partBasis, rowPlain, tokenRow } from './tokenRow';
 
 /** (Moved to src/label.ts, which the message catalog reads too.) */
 export { codeSpan };
@@ -18,9 +18,6 @@ export { codeSpan };
 export function noteRefs(ex: LineExplanation, note: string): readonly string[] | undefined {
   return ex.facts?.find((f) => f.text === note)?.refs;
 }
-
-/** What a view marks on a note that rests on bash's behaviour (docs/design/basis.md, 3): the chip, and the try-it. */
-export interface NoteBasis extends BasisSaid { tryIt: { code: string; output: string } }
 
 /**
  * The basis a view marks on a note: on a fact that is `checked` or `differs` only, with its try-it (a try-it with no
@@ -31,35 +28,13 @@ export function noteBasis(ex: LineExplanation, note: string, lang: Lang): NoteBa
   return f && partBasis(f, lang);
 }
 
-/**
- * The basis a view marks on a fact, a token or a node of Reading (`basis`, `tryIt`: docs/design/basis.md, step 4), as
- * on a note: for `checked` and `differs` only, with the try-it.
- */
-export function partBasis(x: { basis?: Basis; tryIt?: TryIt }, lang: Lang): NoteBasis | undefined {
-  const said = basisSaid(lang, x.basis);
-  if (!said) return undefined;
-  // (A basis and its try-it come from the same probe row: one with a basis has a try-it, src/basis.ts.)
-  const { code, output } = x.tryIt!;
-  return { ...said, tryIt: { code, output } };
-}
-
-/** A token or a node of Reading as the panel draws it: with the chip and the try-it of its basis (`partBasis`), if any. */
+/** A node of Reading as the panel draws it: with the chip and the try-it of its basis (`partBasis`), if any. */
 export type BasisShown<T> = T & { basisShown?: NoteBasis };
 
-/**
- * The explanation as the panel draws it: each token and each node of Reading with its chip and try-it in the language
- * (`basisShown`), where it rests on bash's behaviour rather than the manual.
- */
-export function withBasisShown(ex: LineExplanation, lang: Lang): LineExplanation {
-  // (A part with nothing to show, and nothing under it, is the same object: the line is sent as it was.)
-  const shown = <T extends { basis?: Basis; tryIt?: TryIt; children: T[] }>(x: T): BasisShown<T> => {
-    const b = partBasis(x, lang);
-    const children = x.children.map(shown);
-    return b || children.some((c, i) => c !== x.children[i]) ? { ...x, ...(b ? { basisShown: b } : {}), children } : x;
-  };
-  const items = ex.items.map(shown);
-  const reading = ex.reading && shown<ReadingNode>(ex.reading);
-  return items.some((t, i) => t !== ex.items[i]) || reading !== ex.reading ? { ...ex, items, ...(reading ? { reading } : {}) } : ex;
+/** Reading's tree as the panel draws it: each node with its chip and try-it in the language, where it rests on bash's behaviour rather than the manual. */
+export function readingWithBasis(node: ReadingNode, lang: Lang): BasisShown<ReadingNode> {
+  const b = partBasis(node, lang);
+  return { ...node, ...(b ? { basisShown: b } : {}), children: node.children.map((c) => readingWithBasis(c, lang)) };
 }
 
 /**
@@ -95,14 +70,6 @@ export function refsText(lang: Lang, refs: readonly string[]): string {
 }
 
 /**
- * A token's explanation for an output with no badge (the hover, Markdown, the CLI): with the kind of its command name,
- * and who runs it, when it is one (`Token.name`): "Print arguments to stdout (builtin)".
- */
-export function explained(tok: Token): string {
-  return pictureText(tok.name ? tok.explanation + tok.name.said.short : tok.explanation);
-}
-
-/**
  * The value of an expansion where it runs (`Token.value`: the model's), for a row of a Markdown list: a hard line
  * break, then the line, indented by `indent` under the row's text. Empty without a value.
  */
@@ -114,8 +81,7 @@ export function valueMarkdown(value: ValueInfo | undefined, indent: string): str
  * What a part rests on where it is bash's behaviour rather than the manual (`partBasis`), for a row of a Markdown list:
  * a hard line break, then the chip's words and the try-it in italics, indented by `indent`. Empty without one.
  */
-export function basisMarkdown(x: { basis?: Basis; tryIt?: TryIt }, lang: Lang, indent: string): string {
-  const b = partBasis(x, lang);
+export function basisMarkdown(b: NoteBasis | undefined, lang: Lang, indent: string): string {
   return b ? `\\\n${indent}_${basisLine(lang, b, codeSpan)}_` : '';
 }
 
@@ -284,7 +250,8 @@ export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: st
   const links = (refs: readonly string[] | undefined) => (refs?.length ? ` (${refsMarkdown(lang, refs)})` : '');
   out.push(...plainNotes(ex, ex.notes, lang));
   const walk = (tok: Token, depth: number) => {
-    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${explained(tok)}${links(tok.refs)}${valueMarkdown(tok.value, '  '.repeat(depth + 1))}${basisMarkdown(tok, lang, '  '.repeat(depth + 1))}`);
+    const r = tokenRow(tok, lang);
+    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(r.labelParts)} — ${rowPlain(r)}${links(r.refs)}${valueMarkdown(r.value, '  '.repeat(depth + 1))}${basisMarkdown(r.basis, lang, '  '.repeat(depth + 1))}`);
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);

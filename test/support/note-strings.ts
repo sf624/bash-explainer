@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as ts from 'typescript';
-import { base, counted as countedAny, enclosing, isAllowed, lineOf, parseSource, scanDirs, sourceFiles, type Match as MatchOf } from './scan';
+import { base, counted as countedAny, enclosing, isAllowed, lineOf, parseSource, scanDirs, sourceFiles, typedProgram, type Match as MatchOf } from './scan';
 
 // The scan behind test/note-strings.test.ts (docs/design/sources.md, row 14, stage SA, step SA5): where a note gets its text without the
 // message catalog (`fact()` in src/messages.ts, which gives it an id, its sections and its level). Three kinds:
@@ -92,18 +92,7 @@ let cached: { program: ts.Program; key: string } | undefined;
 export function program(): ts.Program {
   const key = [...virtualFiles.keys()].join('\0');
   if (cached && cached.key === key) return cached.program;
-  const config = ts.readConfigFile(path.join(base, 'tsconfig.json'), ts.sys.readFile);
-  // (No ambient @types: the sources need none, and loading them costs half a second.)
-  const options = { ...ts.parseJsonConfigFileContent(config.config, ts.sys, base).options, types: [] };
-  const host = ts.createCompilerHost(options, true);
-  const { getSourceFile, fileExists, readFile } = host;
-  host.fileExists = (f) => virtualFiles.has(path.resolve(f)) || fileExists.call(host, f);
-  host.readFile = (f) => virtualFiles.get(path.resolve(f)) ?? readFile.call(host, f);
-  host.getSourceFile = (f, ...rest) => {
-    const text = virtualFiles.get(path.resolve(f));
-    return text === undefined ? getSourceFile.call(host, f, ...rest) : ts.createSourceFile(f, text, options.target ?? ts.ScriptTarget.ES2022, true);
-  };
-  const program = ts.createProgram({ rootNames: [...ROOTS.flatMap((d) => sourceFiles(path.join(base, d))), ...virtualFiles.keys()], options, host });
+  const program = typedProgram(ROOTS.flatMap((d) => sourceFiles(path.join(base, d))), virtualFiles);
   cached = { program, key };
   return program;
 }

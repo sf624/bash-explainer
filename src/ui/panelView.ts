@@ -7,7 +7,8 @@ import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
 import type { DocumentIssue, ShellDocument } from '../document';
 import { LEVELS, namesLevel, problemLevel } from '../levels';
-import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, withBasisShown } from './render';
+import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, readingWithBasis } from './render';
+import { panelRows } from './tokenRow';
 import { ui } from './texts';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
@@ -177,9 +178,7 @@ export function panelUpdate(p: PanelLine) {
   const { lang, explanation: ex } = p;
   const t = ui[lang];
   const tp = t.panel;
-  // (Each row and node of Reading with the chip and try-it of what it rests on, in the panel's language.)
-  const shown = withBasisShown(p.placement === 'bottom' ? ex : placeExamples(ex), lang);
-  const { reading, ...explanation } = shown;
+  const { reading, items, ...explanation } = p.placement === 'bottom' ? ex : placeExamples(ex);
   return {
     type: 'update',
     // (The page's language: the web page's panel has none of its own, and the styles follow it, `:lang(ja)`.)
@@ -201,8 +200,10 @@ export function panelUpdate(p: PanelLine) {
     lineParts: p.wrap === true ? lineParts(p.lineText, lineRuns(p.doc, p.line, p.lineText)) : undefined,
     wrap: p.wrap === true,
     explanation,
-    // (Reading's tree, with what each node and each step shows: src/ui/readingSteps.ts.)
-    reading: reading && readingView(reading, lang),
+    // (What each row holds, the one record of every output: src/ui/tokenRow.ts.)
+    rows: panelRows(items, lang),
+    // (Reading's tree, with what each node and each step shows, and the chip and try-it of what it rests on: src/ui/readingSteps.ts.)
+    reading: reading && readingView(readingWithBasis(reading, lang), lang),
     control: viewControl(p.state ?? {}, lang),
     // (The forms the panel's own header may draw the view control in, widest first, and the names and icons of its tools: src/ui/panelHead.ts.)
     viewForms: viewControlForms(viewControl(p.state ?? {}, lang)),

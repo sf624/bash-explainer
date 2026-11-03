@@ -292,11 +292,11 @@ describe('the hover Markdown', () => {
 
   it('draws the structure of a line as one breadcrumb, each part with its meaning as a tooltip', () => {
     const items = explain(open('sudo find . | xargs rm'), 0).items;
-    const crumb = structureCrumb(items, 'dark');
+    const crumb = structureCrumb(items, 'dark', 'en');
     assert.match(crumb, /^<span title="Pipeline: each command&#39;s stdout feeds/);
     assert.strictEqual((crumb.match(/<b>/g) ?? []).length, 2, crumb);
     // A part with no command in it: itself.
-    assert.match(structureCrumb(explain(open('x=1'), 0).items, 'dark'), /^<span title="Assign[^"]*"><span style="color:[^"]*;">x=1<\/span><\/span>$/);
+    assert.match(structureCrumb(explain(open('x=1'), 0).items, 'dark', 'en'), /^<span title="Assign[^"]*"><span style="color:[^"]*;">x=1<\/span><\/span>$/);
   });
 
   it('shows the whole line per command: the line, its structure, then a block per command with its arguments', () => {

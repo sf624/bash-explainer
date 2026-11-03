@@ -18,7 +18,8 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { basisGate, basisSaid, fact, type FactId, MESSAGES } from '../src/messages';
 import { readingNodes } from '../src/reading';
 import { TOKEN_BASES, type TokenBasisId } from '../src/tokenbases';
-import { basisLine, basisMarkdown, noteBasis, partBasis, toPlainMarkdown, withBasisShown } from '../src/ui/render';
+import { basisLine, basisMarkdown, noteBasis, readingWithBasis, toPlainMarkdown } from '../src/ui/render';
+import { panelRows, partBasis } from '../src/ui/tokenRow';
 import { allTokens, explain } from './support/explain';
 import { BASIS_COPY, basisCopy, PROBE_KINDS, type ProbeKind, readProbeTable } from './support/probe';
 
@@ -300,18 +301,14 @@ describe('basis: what an explanation rests on', () => {
     assert.strictEqual(partBasis(allTokens(ex.items).find((t) => t.label === '$HOME')!, 'en'), undefined);
     // (A basis of the manual's with a try-it: none shown, as for a note.)
     assert.strictEqual(partBasis({ tryIt: tok.tryIt }, 'en'), undefined);
-    const shown = withBasisShown(ex, 'ja');
-    const row = allTokens(shown.items).find((t) => t.label === 'BASH_XTRACEFD=7') as { basisShown?: { label: string } };
-    assert.strictEqual(row.basisShown?.label, 'マニュアルの記述と異なる・bash 5.2・5.3 で確認');
-    const node = readingNodes(shown.reading!).find((n) => n.label === 'BASH_XTRACEFD=7' && n.basis) as { basisShown?: { label: string } };
+    const rows = allTokens(panelRows(ex.items, 'ja'));
+    const row = rows.find((t) => t.label === 'BASH_XTRACEFD=7')!;
+    assert.strictEqual(row.basis?.label, 'マニュアルの記述と異なる・bash 5.2・5.3 で確認');
+    const node = readingNodes(readingWithBasis(ex.reading!, 'ja')).find((n) => n.label === 'BASH_XTRACEFD=7' && n.basis) as { basisShown?: { label: string } };
     assert.strictEqual(node.basisShown?.label, 'マニュアルの記述と異なる・bash 5.2・5.3 で確認');
-    assert.ok(!('basisShown' in allTokens(shown.items).find((t) => t.label === '$HOME')!));
-    // (Without Reading, the rows only; a line with nothing to show is sent as it is.)
-    assert.ok(!('reading' in withBasisShown(explain('BASH_XTRACEFD=7'), 'en')));
-    const plain = explain('echo hi', 0, 'en', { reading: true });
-    assert.strictEqual(withBasisShown(plain, 'en'), plain);
-    assert.strictEqual(basisMarkdown(tok, 'en', '  '), `\\\n  _${basisLine('en', b, (c) => `\`${c}\``)}_`);
-    assert.strictEqual(basisMarkdown({}, 'en', '  '), '');
+    assert.strictEqual(rows.find((t) => t.label === '$HOME')!.basis, undefined);
+    assert.strictEqual(basisMarkdown(b, 'en', '  '), `\\\n  _${basisLine('en', b, (c) => `\`${c}\``)}_`);
+    assert.strictEqual(basisMarkdown(undefined, 'en', '  '), '');
     assert.match(toPlainMarkdown(ex, 'BASH_XTRACEFD=7', 'x.sh:1'), /- `BASH_XTRACEFD=7` — .*\\\n +_Differs from the manual · checked with bash 5\.2 and 5\.3 · Try it in your terminal: `bash -c '[^`]*'` → `fd 3 is still open`_/);
   });
 
@@ -479,11 +476,10 @@ describe('basis: what an explanation rests on', () => {
     const off = explain('sudo grep -n x f', 0, 'en', { reading: true, basis: false });
     assert.deepStrictEqual(allTokens(off.items).filter((t) => t.basis), []);
     assert.deepStrictEqual(readingNodes(off.reading!).filter((n) => n.basis), []);
-    // (`partBasis` and `basisSaid` show `checked` and `differs` only: a line with a spec only is sent as it is.)
+    // (`partBasis` and `basisSaid` show `checked` and `differs` only.)
     const ex = explain('grep -n x f', 0, 'en', { reading: true });
     assert.strictEqual(partBasis(ex.items[0], 'en'), undefined);
     assert.strictEqual(basisSaid('ja', spec('grep')), undefined);
-    assert.strictEqual(withBasisShown(ex, 'en'), ex);
     assert.doesNotMatch(toPlainMarkdown(ex, 'grep -n x f', 'x.sh:1'), /manual ·|Try it/);
   });
 });
