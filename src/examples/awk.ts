@@ -1,6 +1,6 @@
 import { lex, Lex } from '../embedded/awk';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
-import { scriptRegex } from './regexguard';
+import { charge, scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { parseWords } from './textfilters';
 import { has } from '../argv/query';
@@ -889,11 +889,11 @@ class Interp {
         const re = this.regexOf(args[0]);
         const target = args[2] ?? { k: 'field', e: { k: 'num', v: 0 } } as Expr;
         if (!isLvalue(target)) throw new Unsupported('sub target');
-        const repl = toStr(v(1));
+        const repl = toStr(v(1)); // (As gawk and mawk: `\\&` is a backslash and the match, `\&` a literal &, other backslashes stay.)
         let count = 0;
         const result = toStr(this.eval(target)).replace(scriptRegex(re.source, re.flags + (name === 'gsub' ? 'g' : '')), (m) => {
           count++;
-          // As gawk and mawk: `\\&` is a backslash and the match, `\&` a literal &, other backslashes stay.
+          charge(repl.length + (repl.split('&').length - 1) * m.length);
           return repl.replace(/\\\\&|\\&|&/g, (x) => (x === '&' ? m : x === '\\&' ? '&' : `\\${m}`));
         });
         if (count) this.assignTo(target, result);

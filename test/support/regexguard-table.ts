@@ -1,5 +1,5 @@
-// What test/examples-regexguard.test.ts runs in a process of its own, so that a guard that lets a pattern through fails by
-// the parent's timeout instead of holding the test run: `run` prints, as JSON, what each row gives.
+// What test/examples-regexguard.test.ts runs in a process of its own, so that an engine that does not stop fails by the
+// parent's timeout instead of holding the test run: `run` prints, as JSON, what each row gives.
 import * as fs from 'fs';
 import * as path from 'path';
 import { Analyzer } from '../../src/analyzer';
@@ -14,7 +14,7 @@ import { patternMatches } from '../../src/semantics/conditions';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
 
 export const P = JSON.parse(fs.readFileSync(path.join(__dirname, '../fixtures/regexguard-patterns.json'), 'utf8')) as {
-  mustRefuse: [string, [string, number, string], string?][]; unread: string[]; words: string; doubling: string[];
+  mustRefuse: [string, [string, number, string], string?][]; unread: string[]; twice: string; polynomial: string; openBraces: string[]; words: string; doubling: string[];
 };
 
 /** Patterns that take 2^n steps, or n to a high power, on a text of n characters, as a POSIX tool and perl read them. */
@@ -61,12 +61,19 @@ export const IPV4 = '^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0
 
 /** Lines people give patterns: one of a log, others short. */
 export const LINES = ['192.168.1.1', '10.0.0.256', 'alice@example.com', 'ERROR: disk full', 'error: disk', '  # a comment', 'key = value', 'aaa', 'aaa!', 'b', '', '2026-11-03 12:00', 'foo bar foo', '/var/log/syslog', 'a,b,,c', '"a \\" b"', 'abcabc', 'x=1;y=22', 'aa:bb:cc:dd:ee:ff', 'aabbccddeeff', 'hello world and more', SSHD];
-/** Fifty lines of about 80 characters, in which most of the patterns below find nothing. */
-export const MANY = Array.from({ length: 50 }, (_, i) => `Nov  3 12:00:${String(i).padStart(2, '0')} host kernel[${1000 + i}]: usb 1-1.${i}: new device number ${i} using xhci`);
+export const FEW_CHARS = 90;
+/** Fifty lines of 90 characters, in which most of the patterns below find nothing. */
+export const MANY = Array.from({ length: 50 }, (_, i) => `Nov  3 12:00:${String(i).padStart(2, '0')} host kernel[${1000 + i}]: usb 1-1.${String(i).padStart(2, '0')}: new device number ${String(i).padStart(2, '0')} using xhci-hcd xx`);
+/** Fifty lines of a log, of 90 characters, in which they find something. */
+export const LOG = Array.from({ length: 50 }, (_, i) => `Nov  3 12:00:${String(i).padStart(2, '0')} host sshd[1234]: Failed password for root from 192.168.1.${String(i).padStart(3, '0')} port 2222 x`);
+/** A line of 1500 characters. */
+export const CSV = ['a,b,,c,'.repeat(214) + 'a,'];
+/** As a script gives them: what it runs, on a here-document. */
+export const ORDINARY: [string, string[]][] = [['s/.*from ([0-9.]+).*/\\1/', LOG], ['s/,+/;/g', CSV], ['s/,+/;/g', MANY], ['s/[0-9]+/N/g', LOG], ['s/ +/ /g', LOG], ['s/^[^ ]+ +//', LOG], ['s/(.*):.*/\\1/', LOG]];
 
 /** Patterns of everyday use: each runs on these lines, and agrees with the real tools. */
 export const MUST_RUN = [
-  IPV4, '.*Failed.*from', '.*Failed.*from ([0-9.]+).*', '.*foo.*bar', '^.*foo.*bar.*baz$', '.*a.*b.*c.*', P.words, '^([0-9a-f]{2}){6}$',
+  IPV4, '.*Failed.*from', '.*Failed.*from ([0-9.]+).*', '.*from ([0-9.]+).*', ',+', '.*foo.*bar', '^.*foo.*bar.*baz$', '.*a.*b.*c.*', P.words, '^([0-9a-f]{2}){6}$',
   '^([0-9]{1,3}\\.){3}[0-9]{1,3}$', '[a-z]+@[a-z]+\\.[a-z]+', '^(ERROR|WARN):', '^\\s*#', '^[[:space:]]*$', '^[^=]+=[[:space:]]*.*$', '[0-9]{4}-[0-9]{2}-[0-9]{2}',
   '(foo|bar)+', 'foo.*bar', '.*foo.*', '^.*[.]([^.]+)$', '(abc)\\1', '(.)\\1', '"([^"\\\\]|\\\\.)*"', '[a-z]+=[0-9]+(;[a-z]+=[0-9]+)*', '\\<foo\\>', 'a,*b', '^(a|b|c)*$', '[a-z]*[0-9]*', 'o+ ',
   '([0-9a-f]{2}:){5}[0-9a-f]{2}', '^[A-Z][a-z]+ +[0-9]+', 'sshd\\[[0-9]+\\]', '(error|warn|fail)', '^.*:.*:.*$', '[^ ]+ [^ ]+ [^ ]+', 'port [0-9]+', '\\bhost\\b', '^$', '(^| )root( |$)', 'x*',
@@ -106,6 +113,7 @@ function row(line: string, tool: string, pattern: string, length: number, lang: 
 }
 
 const A30 = 'a'.repeat(30);
+const G = '()'.repeat(990);
 const STARS = '*a*a*a*a*a*a*a*a*a*a*a*c';
 const regex = toJsRegex(P.doubling[0], 'ere')!;
 export const SPECS: Record<string, RerunSpec> = {
@@ -121,6 +129,26 @@ export const SPECS: Record<string, RerunSpec> = {
 /** What each line shows of what is not run: the parent says what each must be. */
 const shown = (e: LineExplanation) => e.examples.map((x) => ({ kind: x.kind, note: x.note, sections: x.sections.length }));
 const CHECKS: Record<string, () => unknown> = {
+  // (The review's: what took a process down or seconds, by a match's size or a cost the walk did not count.)
+  ...Object.fromEntries(Object.entries({
+    'awk -F, by the size of what it gives': `echo "${'a'.repeat(100000)}" | awk -F 'a|${G}' '{ print $1 }'`,
+    'perl split, by the size of what it gives': `echo "${'a'.repeat(100000)}" | perl -ne 'print split /a|${G}/'`,
+    's///g, by the size of what it gives': `echo "${'a'.repeat(50000)}" | sed -E 's/a|${G}/x/g'`,
+    'many registers on a long text': `echo "${'a'.repeat(1000000)}" | grep -E 'z${G}'`,
+    'split by many registers': `echo "${'a'.repeat(400000)}" | awk -F 'b${G}' '{ print $1 }'`,
+    'what takes JavaScript long to compile': `printf 'a\\nb\\nc\\n' | grep -E '^z(${'(a?)'.repeat(490)}a)*b'`,
+    'sed, & many times': `echo "${'a'.repeat(1000000)}" | sed -E 's/.*/${'&'.repeat(1000)}/'`,
+    'sed, \\1 many times': `echo "${'a'.repeat(1000000)}" | sed -E 's/(.*)/${'\\1'.repeat(1000)}/'`,
+    'sed, many matches and & many times': `echo "${'a'.repeat(100000)}" | sed -E 's/a/${'&'.repeat(100)}/g'`,
+    'perl, $& many times': `echo "${'a'.repeat(1000000)}" | perl -pe 's/.*/${'$&'.repeat(1000)}/'`,
+    'awk, & many times': `echo "${'a'.repeat(1000000)}" | awk '{ gsub(/.*/, "${'&'.repeat(1000)}"); print }'`,
+    'sed, four times again and again': `echo a | sed -E '${'s/.*/&&&&/;'.repeat(20)}'`,
+    'awk, twice again and again': `echo a | awk '{ x = $0; for (i = 0; i < 40; i++) x = x x; print length(x) }'`,
+    'bash, a long text many times': `x="${'a'.repeat(100000)}"; echo "\${x//a/${'a'.repeat(1000)}}"`,
+    'the end of a name, perl': `echo abc | perl -ne 'print if /\\k<n/'`,
+    'the end of a name, grep -P': `grep -P '\\k<n' file`,
+    'the end of a name, jq': `jq '.a | test("\\\\k<n")' file.json`,
+  }).map(([name, line]) => [name, () => { const e = explain(line); return { tokens: e.items.length > 0, said: e.examples.some((x) => said(x.note) || x.sections.some((sec) => sec.lines.some(said))) }; }])),
   'pipeline en': () => shown(explain(`echo "${A30}!" | grep -E "${P.doubling[0]}" | wc -l`, 'en')),
   'pipeline ja': () => shown(explain(`echo "${A30}!" | grep -E "${P.doubling[0]}" | wc -l`, 'ja')),
   'the tokens stay': () => { const e = explain(`echo "${A30}!" | sed -E "s/${P.doubling[0]}/x/"`); return [e.items.length > 0, /sed/.test(e.summary)]; },
@@ -158,6 +186,11 @@ if (process.argv[2] === 'run') {
     many50: MUST_RUN.map((p) => (guarded<unknown>(() => pipelineExample([{ cmd: 'cat', words: [], text: 'cat', copies: true }, { cmd: 'grep', words: ['-E', p], text: 'grep' }], true, MANY), () => undefined) ? 'ran' : 'refused')),
     many50sed: MUST_RUN.map((p) => guarded<unknown>(() => runSed(`s~${p}~X~`, MANY, { quiet: false, extended: true }), () => 'refused')),
     many50grep: MUST_RUN.map((p) => guarded<unknown>(() => runGrep(['-E', p], MANY), () => 'refused')),
+    log50sed: MUST_RUN.map((p) => guarded<unknown>(() => runSed(`s~${p}~X~g`, LOG, { quiet: false, extended: true }), () => 'refused')),
+    ordinary: ORDINARY.map(([script, text]) => ({
+      said: row(`cat <<EOF | sed -E '${script}'\n${text.join('\n')}\nEOF`, 'sed', script, text.length, 'en').said,
+      out: guarded<unknown>(() => runSed(script, text, { quiet: false, extended: true }), () => 'refused'),
+    })),
     notes: MUST_RUN.filter((p) => !/'/.test(p)).map((p) => [p, row(`echo '${SSHD}' | grep -E '${p}'`, 'grep', p, SSHD.length, 'en').said]),
     doubling: P.doubling.map((p) => [guarded<unknown>(() => runGrep(['-E', p], SHORT), () => 'refused'), guarded<unknown>(() => runSed(`s/${p}/X/`, SHORT, { quiet: false, extended: true }), () => 'refused'), guarded<unknown>(() => runAwk(`/${p}/`, SHORT, {}), () => 'refused')]),
     rerun: Object.fromEntries(Object.entries(SPECS).map(([name, spec]) => {
