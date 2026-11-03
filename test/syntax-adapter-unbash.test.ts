@@ -290,6 +290,36 @@ describe('unbash adapter: redirections', () => {
     assert.match(r.stdout, /^\/dev\/fd\/\d+\n$/);
   });
 
+  it('reads `<<`, `)` and `$\'\'` where bash does not take them for a heredoc, a closer or a missing word (unbash 6.0.2, 6.0.3)', function () {
+    const bash = (script: string): string | undefined => {
+      const r = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
+      return r.error ? undefined : r.stdout + '|' + r.stderr.replace(/^bash: (-c: )?line \d+: /, '');
+    };
+    // `${x#)}` in a `$( )`: its `)` is pattern text, not the end of the substitution.
+    assert.strictEqual(errorsOf('a=$(echo ${x#)})'), '');
+    const closer = bash('x=")ab"; a=$(echo ${x#)}); echo "$a"');
+    if (closer !== undefined) assert.strictEqual(closer, 'ab\n|');
+    // A `<<` in a `$( )` over several lines, and in a `<( )`, starts no heredoc.
+    assert.strictEqual(errorsOf('a=$(\necho $((1<<2))\n)\necho ok'), '');
+    assert.strictEqual(errorsOf('cat <(\necho $((1<<2))\n)\necho ok'), '');
+    const shifted = bash('a=$(\necho $((1<<2))\n)\necho "$a"');
+    if (shifted !== undefined) assert.strictEqual(shifted, '4\n|');
+    // `<<` in the word of `${x:-…}` is text.
+    assert.strictEqual(errorsOf('echo ${x:-<<EOF}\necho ok'), '');
+    assert.strictEqual(o('echo ${x:-<<EOF}\necho ok').includes('heredoc'), false);
+    const text = bash('echo ${x:-<<EOF}');
+    if (text !== undefined) assert.strictEqual(text, '<<EOF\n|');
+    // `<$\'\'` has a target (a word that is empty), as bash reads it: it fails to open the file `` and says so.
+    assert.strictEqual(errorsOf("cat <$''"), '');
+    assert.match(o("cat <$''"), /file_redirect @redirect "<" \(ansi_c_string @destination/);
+    const open = bash("cat <$''");
+    if (open !== undefined) assert.match(open, /No such file or directory/);
+    // The delimiter `$'E\0F'` ends at the NUL: it is `E`.
+    const nul = bash("cat <<$'E\\0F'\nx\nE\necho y");
+    if (nul !== undefined) assert.strictEqual(nul, 'x\ny\n|');
+    assert.strictEqual(errorsOf("cat <<$'E\\0F'\nx\nE\necho y"), '');
+  });
+
   it('sends `&>` to a process substitution after a compound command or before the command name, as bash does', function () {
     // (unbash reads these as an unexpected token, or the process substitution as the command name.)
     const both = ['{ ls; } &> >(tee log)', 'while :; do :; done &>> >(tee log)', 'f() { :; } &> >(tee log)', '(ls) &> >(tee log)',

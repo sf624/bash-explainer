@@ -291,6 +291,11 @@ Code the explainer does not read follows one rule. After a file read with `sourc
 
 bash reads the CR after a heredoc's delimiter as part of it: `cat <<EOF` followed by a CR waits for a line `EOF` followed by a CR, which ends it as the author meant. A line `EOF` with LF alone does not end it, nor does `EOF \r`. With `<<'EOF'` the CR is outside the quotes and still part of the delimiter. Before, the explainer read the delimiter as `EOF` without the CR, so the heredoc ran to the end of the file: every line after it was shown as heredoc text, and the CRLF error missed the keywords there (`fi\r`), and said a warning where bash fails.
 
-### A process substitution after `<<<`
+### The parser update: unbash 6.0.3
 
-`cat <<<>(f)` passes the text of the process substitution (`/dev/fd/63`) to `cat` as a here-string; `cat` reads nothing else. The explanation now shows one here-string redirection, with the substitution as its word. Before, the parser (unbash 6.0.1) made `>(f)` an argument of `cat`, and the note said that `cat` reads a file and ignores its stdin.
+unbash 6.0.2 and 6.0.3 read more of bash's syntax as bash does, and the explanation follows.
+
+- A process substitution after `<<<`: `cat <<<>(f)` passes the text of the process substitution (`/dev/fd/63`) to `cat` as a here-string; `cat` reads nothing else. The explanation shows one here-string redirection, with the substitution as its word. Before, `>(f)` was an argument of `cat`, and the note said that `cat` reads a file and ignores its stdin. The worked example of `sort <<< <(printf 'b\na\n')` shows `/dev/fd/63` as the input and the output, as bash prints (it showed sample lines, sorted); `jq . <<< <(f)` shows the error jq gives for it (it showed a made-up result).
+- `${x#)}` in a `$( )` (`a=$(echo ${x#)})`, bash prints the value): the `)` is pattern text. Before, the line said "Syntax error: this part could not be parsed". The same for `<<` in the pattern of an expansion, and in a `$( )` or `<( )` over several lines (`$((1<<2))` there started a heredoc), and for `${x:-<<EOF}`.
+- `cat <$''` names the target `$''` (an empty file name; bash says "No such file or directory"). Before, the note said "Read file `` as stdin".
+- `<<$'E\0F'`: the heredoc ends at the line `E`, where the delimiter ends at the NUL, as bash reads it. Before, it ran to the end of the file. (The note still words the delimiter as written: roadmap, "Deferred".)

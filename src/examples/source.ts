@@ -194,7 +194,8 @@ export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | un
     if (want === 0 ? fd !== '' && fd !== '0' : fd !== String(want)) continue;
     if (r.type === 'herestring_redirect') {
       const word = r.namedChildren.find((c) => c.type !== 'file_descriptor');
-      const text = word && literal(word);
+      // (A process substitution is expanded to the path it is read through: that path is the text.)
+      const text = word && (word.type === 'process_substitution' ? PROCESS_SUBSTITUTION_PATH : literal(word));
       // (The shell adds a newline at the end.)
       stdin = { from: 'here', doc: false, ...(text !== undefined ? { lines: text.split('\n') } : {}) };
     } else if (r.type === 'heredoc_redirect') {
@@ -287,6 +288,9 @@ export function substitutionLines(ps: SyntaxNode, piped: (pipeline: SyntaxNode, 
   // (A sample of the layout of `ps aux` is not what `<(ps aux)` gives.)
   return got?.sample ? undefined : got?.lines;
 }
+
+/** The path a process substitution expands to (bash takes the highest free descriptor, 63 first). */
+const PROCESS_SUBSTITUTION_PATH = '/dev/fd/63';
 
 /** The command of a process substitution `<(cmd)` (not `>(cmd)`, which takes what is written to it). */
 export function pipeOf(n: SyntaxNode): string | undefined {
