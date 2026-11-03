@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
+import { dialectTexts } from '../src/dialect';
 import { documentIssues, type ShellDocument } from '../src/document';
 import { isProblemNote, MESSAGES, problemText } from '../src/messages';
 import { FACT_HEADS, type ProblemFactId, STYLE_HEADS } from '../src/messages-heads';
@@ -130,6 +131,9 @@ describe('the headline of each problem', () => {
     for (const [code, cases] of Object.entries(STYLE_CASES)) {
       for (const c of cases) assertHead(STYLE_HEADS[code as StyleCode](c), code);
     }
+    // (The dialect checks' headlines are among their texts, in each language.)
+    assert.ok(dialectTexts('en').includes('`local` is not POSIX sh.'));
+    assert.ok(dialectTexts('ja').includes('`local` は POSIX sh にない。'));
     for (const [id, e] of Object.entries(TOKEN_TEXTS)) {
       const { level, problem } = e as { level?: string; problem?: { head: readonly [string, string] } };
       if (level === 'error') assertHead(problem!.head, id);

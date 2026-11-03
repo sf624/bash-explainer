@@ -6,7 +6,7 @@ import { YQ_NAMES } from '../embedded/yq';
 import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
 import type { DocumentIssue, ShellDocument } from '../document';
-import { LEVELS, namesLevel, problemLevel } from '../levels';
+import { LEVELS, problemLevel } from '../levels';
 import { isProblemNote } from '../messages';
 import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, readingWithBasis } from './render';
 import { boxProblems, problemsAround } from './panelProblems';
@@ -222,13 +222,12 @@ export function panelUpdate(p: PanelLine) {
     around: problemsAround(ex, p.issues ?? [], box, lang),
     // The other notes as drawn: each with its level's look (its class, its icon and the icon's name, from the
     // level table, src/levels.ts) and the word after its mark (src/messages.ts), and, where it rests on bash's
-    // behaviour rather than the manual, its chip and try-it (`noteBasis`, docs/design/basis.md). Where the word names
-    // the level ("Error:"), the icon has no name, so that a screen reader says the level once.
+    // behaviour rather than the manual, its chip and try-it (`noteBasis`, docs/design/basis.md).
     notes: notesByLevel(ex).filter((n) => !isProblemNote(n)).map(({ text, level, label, body }) => {
       const basis = noteBasis(ex, text, lang);
       const { className, codicon, name } = LEVELS[level];
-      const iconName = namesLevel(level, label, lang) ? '' : name[lang];
-      return { level, className, icon: codicon, iconName, label, body, refs: noteRefs(ex, text) ?? [], ...(basis ? { basis } : {}) };
+      // (A note that is no problem is a fact of the catalog, which has its sections.)
+      return { level, className, icon: codicon, iconName: name[lang], label, body, refs: noteRefs(ex, text)!, ...(basis ? { basis } : {}) };
     }),
     marks: lineMarks(p.issues ?? [], p.line),
     emptyMessage: t.empty,
