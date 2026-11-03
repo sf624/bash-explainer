@@ -177,7 +177,6 @@ describe('the web page: keyboard and screen reader access', function () {
       await until('unfolded', () => first.getAttribute('aria-expanded'), (v) => v === 'true');
       assert.strictEqual(await body.isVisible(), true);
       // The button looks as the glyph did: no box, the muted colour, in the row's fold column.
-      // (Read in one go: the panel draws the line again when its problems come.)
       const look = await panel.evaluate(`(() => {
         const b = document.querySelector('#tree button.twisty');
         const cs = getComputedStyle(b);
@@ -187,6 +186,75 @@ describe('the web page: keyboard and screen reader access', function () {
       assert.ok(look.left >= 0 && look.left < 12, JSON.stringify(look));
       await ctx.close();
     }
+  });
+
+  // The line's problems come a moment after the line is explained, and change only its squiggles. Before, they drew the
+  // rows anew: a Space held on a fold button did nothing (a button acts when the key is released, on the element it went
+  // down on), and what was typed in an example's box went.
+  describe('when the problems of the line come', () => {
+    /** A line with a problem (`read` without -r), with parts, and with an example's input boxes. */
+    const PROBLEM = 'sort a.txt b.txt | cat; read line';
+
+    /** The page with the panel holding back the update that brings the line's problems, until `released()`. */
+    async function withProblemsHeld(ctx: BrowserContext) {
+      await ctx.addInitScript(`(() => {
+        if (!location.pathname.endsWith('/panel.html')) return;
+        let line, held, open = false;
+        addEventListener('message', (e) => {
+          if (open || e.data.type !== 'update') return;
+          if (e.data.lineText === line && e.data.marks.length) {
+            e.stopImmediatePropagation();
+            held = e.data;
+          }
+          line = e.data.lineText;
+        }, true);
+        window.problemsHeld = () => !!held;
+        window.releaseProblems = () => { open = true; postMessage(held, location.origin); };
+      })()`);
+      const page = await ctx.newPage();
+      const panel = await open(page, PROBLEM, 1);
+      await until('the problems held', () => panel.evaluate('problemsHeld()') as Promise<boolean>, (h) => h, 15000);
+      return { page, panel, released: async () => {
+        await panel.evaluate('releaseProblems()');
+        await until('the squiggle', () => panel.locator('#line .squiggle').allTextContents(), (t) => t.join('').includes('read'));
+      } };
+    }
+
+    it('a Space held on a fold button still folds it, and the button stays the same one with the focus', async () => {
+      const ctx = await context();
+      const { page, panel, released } = await withProblemsHeld(ctx);
+      await page.keyboard.press('F6');
+      await until('the explanation', () => focused(page), (f) => f === 'frame:main#main');
+      await tabTo(page, (f) => f.startsWith('frame:button.twisty'));
+      const button = panel.locator('#tree button.twisty').first();
+      await panel.evaluate(`(() => {
+        document.querySelector('#tree button.twisty').dataset.same = 'yes';
+        window.moves = 0;
+        document.addEventListener('focusin', () => window.moves++);
+      })()`);
+      await page.keyboard.down('Space');
+      await released();
+      await page.keyboard.up('Space');
+      await until('folded', () => button.getAttribute('aria-expanded'), (v) => v === 'false');
+      assert.strictEqual(await button.getAttribute('data-same'), 'yes');
+      // (No focus moved: a screen reader says nothing again.)
+      assert.strictEqual(await panel.evaluate('moves'), 0);
+      assert.ok((await focused(page)).startsWith('frame:button.twisty'));
+      await ctx.close();
+    });
+
+    it('what is typed in an example\'s box stays, with the focus', async () => {
+      const ctx = await context();
+      const { page, panel, released } = await withProblemsHeld(ctx);
+      const box = panel.locator('.example textarea').first();
+      await box.click();
+      await page.keyboard.insertText('typed\n');
+      const value = await box.inputValue();
+      await released();
+      assert.strictEqual(await box.inputValue(), value);
+      assert.ok((await focused(page)).startsWith('frame:textarea'));
+      await ctx.close();
+    });
   });
 
   it('opens a problem of the list with Enter, which puts the cursor on its line in the editor', async () => {

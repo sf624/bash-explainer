@@ -232,6 +232,10 @@ The sentence of a line leaves out what a problem of the line says. It compared t
 
 The note on a grep pattern that is only a variable said to add `-F` also where grep had other patterns, which `-F` reads as fixed strings too: `grep -E -e "$x" -e 'foo|bar' f` with `-F` no longer matches `foo` lines, and `grep -f pats -e "$x"` reads the lines of `pats` as text. It now says that `-F` applies to every pattern, and offers no quick fix. It spoke of the variable only when it was the first pattern (`grep -e "$x" -e 'a.b'`, not `grep -e 'a.b' -e "$x"`); it does in either order now. Checked with GNU grep (test/rewrites-advice.test.ts).
 
+### The explanation when a line's problems arrive
+
+A line's problems arrive a moment after the line is explained (in VS Code too), and they used to draw every row again. A button acts on Space when the key is released, on the element it went down on, so a Space held across that moment did nothing. What was typed in an example's box went, and with it the focus; the focus on a fold button or a link came back, on a new element, which a screen reader can say again. Now only the squiggles of the line change.
+
 ### Code that holds a backtick, in the panel
 
 The panel reads a code span as Markdown does: a run of backticks up to the next run of as many. Code that holds a backtick, written with two (`` `date` ``, ``x='a`b'``), is one piece of code. Before, the panel cut it at each backtick and showed the rest as text.

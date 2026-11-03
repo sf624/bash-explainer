@@ -121,10 +121,18 @@ describe('the VS Code panel: its header', function () {
       assert.deepStrictEqual((await posted(page)).filter((t) => t === 'reveal'), []);
       await page.keyboard.press('Enter');
       assert.strictEqual(await twisty.getAttribute('aria-expanded'), 'true');
-      // The same line drawn again (its problems came): the button keeps the focus, in the new rows.
-      await page.evaluate(`window.postMessage({ ...window.MSGS['${lang}'], marks: [{ from: 0, to: 4, className: 'level-info', rank: 2 }] }, '*')`);
-      await until('drawn again', () => page.locator('#line .squiggle').count(), (n) => n > 0);
+      // The line's problems came: only its squiggles change, and the button stays as it is.
+      await page.evaluate(`document.activeElement.dataset.same = 'yes'; window.postMessage({ ...window.MSGS['${lang}'], marks: [{ from: 0, to: 4, className: 'level-info', rank: 2 }] }, '*')`);
+      await until('the squiggle', () => page.locator('#line .squiggle').count(), (n) => n > 0);
+      assert.strictEqual(await page.evaluate('document.activeElement.dataset.same'), 'yes');
+      // And they went again: no squiggle is left, nor its level's class.
+      await page.evaluate(`window.postMessage({ ...window.MSGS['${lang}'], marks: [] }, '*')`);
+      await until('no squiggle', () => page.locator('#line .squiggle, #line .level-info').count(), (n) => n === 0);
+      // The same line drawn again (a setting changed): the button keeps the focus, in the new rows.
+      await page.evaluate(`window.postMessage({ ...window.MSGS['${lang}'], lineLabel: 'again' }, '*')`);
+      await until('drawn again', () => page.locator('#where').textContent(), (t) => !!t?.includes('again'));
       assert.strictEqual(await page.evaluate('document.activeElement.matches("#tree > li:first-child > .row > button.twisty")'), true);
+      assert.strictEqual(await page.evaluate('document.activeElement.dataset.same'), undefined);
       // VS Code opens a webview's links in the browser.
       const name = (await page.locator('#tree .refs a').first().getAttribute('aria-label'))!;
       assert.ok(name.endsWith(lang === 'en' ? ' (opens in the browser)' : '（ブラウザで開く）'), name);
