@@ -4,7 +4,7 @@
 // model (src/semantics/words.ts, through src/explain/reads.ts); a `${…}` is src/expansion-tokens.ts, which reads
 // the descriptions and notes of variables from here.
 import type { Kind, Pos, Token } from '../analyzer-types';
-import { type ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from '../arith';
+import { arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from '../arith';
 import { type BashVersion, earlier } from '../bashversion';
 import { pictureList, visible } from '../ctlchars';
 import { ciVariables } from '../dict/ciVariables';
@@ -891,12 +891,7 @@ export function arithChildren(cx: Explainer, n: SyntaxNode): Token[] {
 export function arithNumber(cx: Explainer, n: SyntaxNode): Token | undefined {
   const lit = arithLiteral(n.text);
   if (!lit || (lit.type === 'number' && lit.style === 'decimal') || !inArithmetic(n)) return undefined;
-  return cx.tok(n, 'number', arithLiteralText(cx, n.text, lit));
-}
-
-function arithLiteralText(cx: Explainer, text: string, lit: ArithLiteral): string {
-  const said = describeArithLiteral(text, lit, cx.lang);
-  return typeof said === 'string' ? said : cx.said(said);
+  return cx.tok(n, 'number', describeArithLiteral(n.text, lit, cx.lang));
 }
 
 /** The `,` of an arithmetic expression: a note that its parts run left to right and the last one is the value. */

@@ -4,6 +4,40 @@ import type { NoteLevel } from './levels';
 // other problems'. With the catalog, the one source of a note's level; what a level looks like is the level table's
 // (src/levels.ts).
 
+/** A text a token says (the catalog of token texts, src/messages-tokens.ts): in Japanese and English, and, for a warning inside a row's sentence, its level. */
+export interface TokenEntry<P> {
+  text: (p: P) => readonly [ja: string, en: string];
+  level?: NoteLevel;
+}
+
+/** A token's text. */
+export function tokenText<P = Record<string, never>>(text: (p: P) => readonly [string, string]): TokenEntry<P> {
+  return { text };
+}
+
+/** A text that warns: a row draws the level's mark before it, and has its level. */
+export function tokenWarning<P = Record<string, never>>(text: (p: P) => readonly [string, string]): TokenEntry<P> {
+  return { text, level: 'warning' };
+}
+
+/**
+ * The characters that carry a text's id while a line is explained (src/messages-tokens.ts, `carried`): a noncharacter and a character of the
+ * private use area that open a text, and a noncharacter that closes it.
+ */
+export const OPEN_TEXT = '\uFDD0';
+export const CLOSE_TEXT = '\uFDD1';
+export const CARRIED = /\uFDD0([\uE000-\uF8FF])|\uFDD1/g;
+
+/** A text without the ids it carries: for code that looks at its first or last character. */
+export const plainOf = (text: string): string => text.replace(CARRIED, '');
+
+/** `text` with `more` inside the closing bracket it ends with (`close`), or undefined if it does not end with one. */
+export function insideLastBracket(text: string, close: string, more: string): string | undefined {
+  const closes = /\uFDD1*$/.exec(text)!;
+  if (!text.slice(0, closes.index).endsWith(close)) return undefined;
+  return `${text.slice(0, closes.index - close.length)}${more}${close}${closes[0]}`;
+}
+
 /**
  * The level of the problems that are no fact of the catalog: a dialect issue on a construct the target shell lacks
  * (`unsupported`) or that works differently there (`behaviour`, "Portability"), src/dialect.ts; a script with CRLF line

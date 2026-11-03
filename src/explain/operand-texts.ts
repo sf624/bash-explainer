@@ -4,6 +4,7 @@
 import type { Token } from '../analyzer-types';
 import type { Text } from '../i18n';
 import { codeSpan } from '../label';
+import { plainOf } from '../messages-levels';
 import { isPlainWord } from '../staticword';
 import type { ArgRole, ArgWord, FieldsRole, OperandRole, Readings, RoleAt, ValueRole } from '../argv/interpret';
 import { type Role, squeeze, type WordReadings } from '../argv/profiles';
@@ -102,7 +103,7 @@ function roleWords(r: ArgRole): Text {
 }
 
 /** (A space before code or a word in Latin letters after Japanese, as docs/japanese-style.md asks.) */
-const spaced = (text: string): string => (/^[`A-Za-z]/.test(text) ? ' ' : '') + text;
+const spaced = (text: string): string => (/^[`A-Za-z]/.test(plainOf(text)) ? ' ' : '') + text;
 
 /** The value `v` of an option, as the readings name it: "value for `-f`", "name for `--arg`" (`jq --arg NAME VALUE`). */
 function valueWords(v: ValueRole): Text {

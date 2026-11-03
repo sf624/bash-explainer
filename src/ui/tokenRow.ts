@@ -11,7 +11,7 @@ import { LEVELS, type NoteLevel } from '../levels';
 import { basisSaid, type BasisSaid, type FactId } from '../messages';
 import type { TokenTextId } from '../messages-tokens';
 import type { NameInfo } from '../namefacts';
-import { KIND_ROLES, type TokenRole } from '../roles';
+import type { TokenRole } from '../roles';
 import { markedText } from '../tokenmarks';
 import { sameSpan } from './hoverParts';
 
@@ -66,7 +66,8 @@ export interface TokenRow {
 export function tokenRow(tok: Token, lang: Lang): TokenRow {
   return {
     kind: tok.kind,
-    role: KIND_ROLES[tok.kind],
+    // (Every token of a line has it by now: `markTokens`.)
+    role: tok.role!,
     group: tok.group,
     label: tok.label,
     labelParts: labelParts(tok),

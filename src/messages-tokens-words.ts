@@ -1,5 +1,5 @@
 import type { Text } from './i18n';
-import { tokenText } from './messages-tokens-entry';
+import { plainOf, tokenText } from './messages-levels';
 
 // What the tokens of words and expansions (src/explain/words.ts) say.
 
@@ -16,7 +16,7 @@ export const WORD_TEXTS = {
   'glob-bracket-opens': tokenText<{ opens: string }>(({ opens }) => [
     `\`[\` は \`${opens}\` の \`[…]\` の始まり: 間にある文字（展開した値の文字も含む）のどれか1文字に一致する`,
     `\`[\` opens the \`[…]\` of \`${opens}\`: it matches one character of those between, the characters the expansions give included`]),
-  /** `echo hello`: a word that stays as it is. */
+  /** `echo hello`, `ls ~`: a word that stays as it is, or that is only a tilde expansion, as an operand. */
   'word-plain': tokenText<{ text: string }>(({ text }) => [
     `文字列 \`${text}\``,
     `Word \`${text}\``]),
@@ -130,7 +130,7 @@ export const WORD_TEXTS = {
     `index \`${key}\` (an arithmetic expression)`]),
   /** `a=([1]=v)`: an element with an index of its own (`what`: the index or key as one of the entries above says it). */
   'array-element-set': tokenText<{ what: string; value: string; append: boolean }>(({ what, value, append }) => [
-    `${what}${what.endsWith('`') ? ' ' : ''}の要素に \`${value}\` を${append ? '追記' : '代入'}する`,
+    `${what}${plainOf(what).endsWith('`') ? ' ' : ''}の要素に \`${value}\` を${append ? '追記' : '代入'}する`,
     `Element with ${what}: ${append ? 'append' : 'set it to'} \`${value}\``]),
   /** `(( a[@] ))`: all elements in arithmetic. */
   'subscript-all-in-arithmetic': tokenText<{ text: string; name: string }>(({ text, name }) => [

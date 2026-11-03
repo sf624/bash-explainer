@@ -244,7 +244,7 @@ function expanded(cx: Explainer, a: SyntaxNode, t: Token): Token {
  */
 function declarationOption(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' | 'cluster' }>): Token {
   const flags = (role.role === 'cluster' ? role.letters : [role]).flatMap((l) => (l.role !== 'option' ? [] : l.disables ? (l.spec.offText ? [l.spec.offText] : []) : [l.text]));
-  return cx.tok(a, 'option', flags.length ? flags.map((f) => cx.t(f)).join(cx.text('option-list-separator')) : cx.text('option-plain'));
+  return cx.tok(a, 'option', flags.length ? flags.map((f) => cx.t(f)).join(cx.comma()) : cx.text('option-plain'));
 }
 
 /** The token of `--`, which ends the options of a builtin; what else it does, when the spec says (`set --` sets the positional parameters). */
@@ -865,7 +865,7 @@ function positional(cx: Explainer, a: SyntaxNode, desc: string | undefined, lang
     const brace = braceWord(cx, a);
     const base = brace ?? word(cx, a);
     // (A word that is only a tilde expansion is still an operand the command reads: bash's token is under it.)
-    if (!desc) return base.kind === 'expansion' && !brace ? cx.tok(a, 'argument', cx.text('operand-word', { text: a.text }), [base]) : base;
+    if (!desc) return base.kind === 'expansion' && !brace ? cx.tok(a, 'argument', cx.text('word-plain', { text: a.text }), [base]) : base;
     if (brace) return cx.tok(a, 'argument', desc, [brace]);
     const tl = tilde(cx, a);
     // (Tildes after `=` and `:` come as a word with them as its children.)

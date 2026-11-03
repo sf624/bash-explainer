@@ -10,12 +10,13 @@ import { ALLOWED, counted, program, scanAll, scanSyntax, scanTyped, virtualFiles
 //   note-string  `cx.note(text, at)` is not called with a string (the overload for a string; found by the type of the argument, in
 //                src/explain/ and src/examples/);
 //   plain-note   a note is not made from inline text with `plainNote(…)` or `marked(…)` (found in all of src/);
-//   notes-push   a function of src/explain/ or src/examples/ does not hand back its notes as a `string[]` it pushes texts into.
-// test/fixtures/note-strings-known.json lists what src/ does that way, each `to` the catalog fact that replaces it: empty since SB3a (a
+//   notes-push   a function of src/explain/ or src/examples/ does not hand back its notes as a `string[]` it pushes texts into;
+//   token-text   src/explain/ does not write an inline text (`cx.s(ja, en)`) where it gives a token its text: it says one of the catalog of
+//                token texts (`cx.text(id, params)`, src/messages-tokens.ts; SB3c).
+// test/fixtures/note-strings-known.json lists what src/ does that way, each `to` the catalog fact that replaces it: empty since SB3c (a
 // style check's and a dialect issue's notes are made by the catalog too, `styleNote` and `problemNote`, at the level of their tables). A
-// new entry fails the test, and so does an entry that no longer matches. Not found: the inline texts of tokens (`cx.s(ja, en)` in a
-// token's explanation, about 130, which carry no fact id yet: `Token.facts` lists the facts said at a token's node), and a text that
-// reaches the line's notes in a way that none of the three kinds is.
+// new entry fails the test, and so does an entry that no longer matches. Not found: a text of a helper or a variable that reaches a token
+// by a return (`Token.texts` says which tokens have an id), and a text that reaches the line's notes in a way that none of the kinds is.
 
 interface Known { plain: { file: string; fn: string; kind: Kind; count: number; to: string; reason: string }[] }
 const known: Known = JSON.parse(fs.readFileSync(path.join(base, 'test', 'fixtures', 'note-strings-known.json'), 'utf8'));

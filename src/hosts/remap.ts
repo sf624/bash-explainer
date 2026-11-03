@@ -18,7 +18,7 @@ import type { ShellRegion, Extracted } from './index';
 import { batsTestLine } from './bats';
 import { batsCommentFacts } from './batstags';
 import { problemCodes } from '../linesentence';
-import { markTokens } from '../tokenmarks';
+import { markTokens, sayInstead } from '../tokenmarks';
 
 /**
  * Move every position in an explanation of the extracted shell text back to the original
@@ -65,7 +65,11 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     const label = relabel(t.label, t.span, !t.labelParts);
     // A token that is exactly a placeholder is the host syntax it stands for.
     const host = placeholder(t.span);
-    if (host) return { ...t, label, span: sp, explanation: host, children: [] };
+    if (host) {
+      const stands = { ...t, label, span: sp, children: [] };
+      sayInstead(stands, host);
+      return stands;
+    }
     return { ...t, label, span: sp, children: t.children.filter((c) => !insidePlaceholder(c)).map(token) };
   };
   // The reading tree, as the tokens: in the original, labelled with its text there, without the parts of a

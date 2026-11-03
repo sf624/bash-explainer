@@ -6,6 +6,7 @@ import type { LineExplanation } from '../src/analyzer';
 import { Lang } from '../src/i18n';
 import { levelCounts } from '../src/levels';
 import { notesByLevel } from '../src/ui/render';
+import { tokenRow } from '../src/ui/tokenRow';
 import { ui } from '../src/ui/texts';
 import { TEXT } from './text';
 
@@ -33,8 +34,9 @@ export function lineSummary(ex: LineExplanation, line: number, lang: Lang): stri
   const t = TEXT[lang];
   const first = ex.items[0];
   if (!first) return t.lineSummary(line + 1, ui[lang].empty, []);
-  const what = head(first.explanation);
-  const part = what && what !== first.label ? t.partSaid(first.label, what) : first.label;
+  const row = tokenRow(first, lang);
+  const what = head(row.text);
+  const part = what && what !== row.label ? t.partSaid(row.label, what) : row.label;
   return t.lineSummary(line + 1, part, levelCounts(notesByLevel(ex).map((n) => n.level), lang));
 }
 

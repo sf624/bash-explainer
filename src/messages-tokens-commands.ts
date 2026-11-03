@@ -1,5 +1,5 @@
 import { lineLabel, type Text } from './i18n';
-import { tokenText } from './messages-tokens-entry';
+import { insideLastBracket, tokenText } from './messages-levels';
 
 // What the tokens of a command name, and what runs it (src/explain/commands.ts) say.
 
@@ -62,8 +62,8 @@ export const COMMAND_TEXTS = {
     `The command name \`${word}\` becomes \`${spelled}\` once the quotes, backslashes and empty \`$(…)\` are removed. ${what}`]),
   /** `hash -p /opt/bin/x x; x`: the command may run a path `hash -p` gave (`what`: the explanation, `clause`: what may run instead); the clause goes in the explanation's last bracket. */
   'cmd-hashed-clause': tokenText<{ what: string; clause: string }>(({ what, clause }) => [
-    what.endsWith('）') ? `${what.slice(0, -1)}。${clause}）` : `${what}（${clause}）`,
-    what.endsWith(')') ? `${what.slice(0, -1)}; ${clause})` : `${what} (${clause})`]),
+    insideLastBracket(what, '）', `。${clause}`) ?? `${what}（${clause}）`,
+    insideLastBracket(what, ')', `; ${clause}`) ?? `${what} (${clause})`]),
   /** `$cmd args`, `f*`: a name that expands to the command. */
   'cmd-run-expanded': tokenText(() => [
     '展開した結果をコマンドとして実行する',

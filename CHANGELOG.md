@@ -6,7 +6,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
-- `--format json` gives each part of a line its colour role (`role`) and the ids of the facts said about it (`facts`).
+- `--format json` gives each part of a line its colour role (`role`) and the ids of the facts said about it (`facts`). A part's `explanation` no longer holds the `⚠` before a warning: `marks` says where it is, with its `level`, and the line's `summary` keeps the mark.
 - The panel starts with one sentence that says what the line does.
 - `--check --counts <file>` appends the numbers of problems of each level to a file, as `$GITHUB_OUTPUT` reads them. It does not write through a symbolic link at the last part of the path.
 - Dockerfile `HEALTHCHECK CMD …` is explained, in the shell and the exec form, and so is an instruction after `ONBUILD`.

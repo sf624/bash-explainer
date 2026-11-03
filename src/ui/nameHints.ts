@@ -5,6 +5,7 @@ import type { LineExplanation, Pos, Token } from '../analyzer-types';
 import type { Lang } from '../i18n';
 import { nameKindWord } from '../messages';
 import type { NameFacts } from '../semantics/names';
+import { tokenRow } from './tokenRow';
 import { ui } from './texts';
 
 /**
@@ -56,12 +57,13 @@ export interface NameHint {
 export function nameHints(ex: LineExplanation, line: number, lineText: string, lang: Lang): NameHint[] {
   const out: NameHint[] = [];
   const walk = (t: Token) => {
-    const why = t.name && surprise(t.name);
+    const r = tokenRow(t, lang);
+    const why = r.name && surprise(r.name);
     if (why && t.span.start.line === line) {
       const word = /^\S*/.exec(lineText.slice(t.span.start.character))![0];
-      const s = t.name!.said;
-      const tooltip = [`\`${t.name!.name}\` **${s.kind}**${s.by ? ` — ${s.by}` : ''}`, s.also, t.explanation].filter(Boolean).join('\n\n');
-      out.push({ position: { line, character: t.span.start.character + word.length }, label: hintLabel(t.name!, why, lang), tooltip, tok: t });
+      const s = r.name!.said;
+      const tooltip = [`\`${r.name!.name}\` **${s.kind}**${s.by ? ` — ${s.by}` : ''}`, s.also, r.text].filter(Boolean).join('\n\n');
+      out.push({ position: { line, character: t.span.start.character + word.length }, label: hintLabel(r.name!, why, lang), tooltip, tok: t });
     }
     t.children.forEach(walk);
   };
