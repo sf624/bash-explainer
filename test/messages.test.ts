@@ -6,9 +6,13 @@ import { SECTIONS } from '../src/manual';
 import { reference } from '../src/references';
 import { explain } from './support/explain';
 
+/** The notes about the tool itself (what it did not compute, its own bugs): they cite no section of the manual. */
+const ABOUT_THE_TOOL: readonly string[] = ['size-not-computed', 'steps-not-computed', 'budget-not-computed', 'example-failed', 'line-not-explained'];
+
 describe('the message catalog', () => {
   it('cites only known references (sections of the manual, manual pages), and at least one section', () => {
     for (const [id, e] of Object.entries(MESSAGES)) {
+      if (ABOUT_THE_TOOL.includes(id)) { assert.deepStrictEqual(e.refs, [], id); continue; }
       assert.ok(e.refs.length >= 1 && e.refs.length <= 3, id);
       assert.ok(e.refs.some((r) => SECTIONS.has(r)), id);
       for (const r of e.refs) assert.ok(reference(r), `${id}: ${r}`);

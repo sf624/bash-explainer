@@ -276,9 +276,9 @@ Now the regexes of a script run on an engine of our own, which gives what JavaSc
 - The values the model follows through `case`, `[[ == ]]` and `${x%…}` are "not known" where the pattern is not run, so nothing is said to be decided from them.
 - `${x//b/c}`, `${x##*/}` and `${x/#a/b}` find where a match ends with one walk of the pattern, so a long value costs little: a value of 3000 characters takes under 2 ms of the limit, and it was 1.1 s before.
 
-### One line no longer stops the whole tool
+### A line that grows without end, and a failure in one line
 
-Every product runs the examples on its only thread, so what a line costs is now bounded from inside, and a failure stays on its line ([design](../design/line-budget.md)).
+Every product runs the examples on its only thread, so what an example costs is now bounded from inside, and a failure stays on its line ([design](../design/line-budget.md)). Some cases are still open (nested `${x:-${x:-…}}`, a huge `cut -f` number, jq products); the roadmap lists them.
 
 - All the examples of a line share one budget, and a long file shares one among its lines, by its size alone, so a line is explained the same in the hover, in the panel and in the command-line tool. 30 refused `grep`s on a line took 1.7 s and take 0.4 s. A file of 5,000 such lines made the problems take over 90 s and takes 7 s: finding problems no longer runs any example.
 - What it says: why. "the values this makes may get too large" (`jq -n 'reduce range(28) as $i ("a"; .+.)'`, which ended the process, awk's doubling and `split`), "this takes too many steps, and may never end" (`awk 'BEGIN{while(1);}'`, `jq -n 'def f: f; f'`, which said "pattern" with no pattern), "this may take more than what is left for the examples of this line". Before, a loop too long showed no example and did not say why.
