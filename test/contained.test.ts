@@ -56,14 +56,27 @@ describe('contained runs leave no process behind', function () {
     assert.deepStrictEqual(await leftIn(dir), []);
   });
 
-  it('runContained: a fork bomb in a group of its own, which one pass of pkill does not catch', async function () {
+  it('runContained: a fork bomb in a group of its own, which one pass over the session does not catch', async function () {
     // (Only in a cgroup, whose TasksMax stops the bomb at 500 processes; FUNCNEST is 50, the run's default.)
     if (!scoped) return this.skip();
     const start = Date.now();
-    const run = await runContained(['bash', '-c', `timeout 12 bash -c 'f(){ (f) & (f); }; f' & sleep 1`], dir, {}, 3000);
+    // (The `sleep` starts before the bomb, and the shell only waits for it: once the scope is full of the bomb the shell could
+    // not fork a `sleep 1`, bash would back off for seconds in "fork: retry", and `timeout` would end it with status 124.)
+    const run = await runContained(['bash', '-c', `sleep 1 & s=$!; timeout 12 bash -c 'f(){ (f) & (f); }; f' & wait $s`], dir, {}, 3000);
     assert.strictEqual(run.status, 0);
-    assert.ok(Date.now() - start < 6000, `took ${Date.now() - start} ms`);
+    // (Well before the bomb's own `timeout 12` ends it: a run that waited for the bomb to die took 12 s. Starting `systemd-run`
+    // and killing a full scope take seconds on a machine under load, so the bound is not tighter.)
+    assert.ok(Date.now() - start < 10000, `took ${Date.now() - start} ms`);
     assert.deepStrictEqual(await leftIn(dir), []);
+  });
+
+  it('runContained: a shell that ended while the test process was blocked is not a timeout', async () => {
+    // (The timer runs before the poll that would tell that the shell ended: a test process starved or blocked for longer
+    // than the limit, as under CI's load, got "timed out" for a run that had finished.)
+    const run = runContained(['true'], dir, {}, 1000, 200);
+    const end = Date.now() + 1500;
+    while (Date.now() < end) { /* (Blocks the event loop.) */ }
+    assert.strictEqual((await run).status, 0);
   });
 
   it('killSession kills the processes of a session, whatever their group', async () => {
@@ -73,6 +86,26 @@ describe('contained runs leave no process behind', function () {
     assert.ok(processesIn(dir).length > 0);
     await killSession(child.pid!);
     assert.deepStrictEqual(await leftIn(dir), []);
+  });
+
+  it('killSession does not wait for a zombie that nobody reaps', async () => {
+    // (As in a container without an init: the bash `exec`s a `sleep`, which never reaps `setsid sleep 0.2`, a session of its own.)
+    const { spawn } = await import('child_process');
+    const parent = spawn('bash', ['-c', 'setsid sleep 0.2 & echo $!; exec sleep 60'], { cwd: dir, detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    try {
+      const sid = await new Promise<number>((resolve) => parent.stdout.once('data', (d: Buffer) => resolve(Number(String(d).trim()))));
+      let state = '';
+      for (let i = 0; i < 40 && state !== 'Z'; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+        state = fs.readFileSync(`/proc/${sid}/stat`, 'utf8').replace(/^.*\) /, '')[0];
+      }
+      assert.strictEqual(state, 'Z', 'the session leader is a zombie');
+      const start = Date.now();
+      await killSession(sid);
+      assert.ok(Date.now() - start < 1000, `took ${Date.now() - start} ms`);
+    } finally {
+      reap([parent.pid!]);
+    }
   });
 
   it('runArgvBatch: a background loop of the script', async () => {
