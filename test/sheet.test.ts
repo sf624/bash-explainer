@@ -22,17 +22,19 @@ describe('the phone\'s sheet as data', () => {
   it('is the summary row alone on the keyboard\'s top while the keyboard is open, and ends the editor at its top', () => {
     const h = snapHeights(844, 53, 49, 48);
     const closed = {};
-    // Closed: the height chosen; the editor ends at the sheet's top at half or lower, and as at half under a full sheet.
+    // Closed: the height chosen; the editor's room ends at the sheet's top at half or lower, and as at half under a full
+    // sheet. Its box ends at the peek at every height, and what the sheet covers of it is the rest; the room under the
+    // text is the same at every height, so that no move cuts the scroll short.
     assert.deepStrictEqual((['peek', 'half', 'full'] as Snap[]).map((s) => sheetHeight(h, s, closed, 49)), [
-      { height: 97, rest: 97 }, { height: 464, rest: 464 }, { height: 791, rest: 464 },
+      { height: 97, rest: 97, box: 97, cover: 0, past: 367 }, { height: 464, rest: 464, box: 97, cover: 367, past: 367 }, { height: 791, rest: 464, box: 97, cover: 367, past: 367 },
     ]);
     // Open on Android (the window shrank: nothing covered), on iOS (the keyboard covers 336 px of the window), and on a
     // zoomed page (the row is drawn at its own size, so it takes fewer of the window's px), at any height chosen.
     const place = (bottom: number, zoom = 1) => ({ place: { left: 0, bottom, width: 390, zoom } });
     for (const snap of ['peek', 'half'] as Snap[]) {
-      assert.deepStrictEqual(sheetHeight(h, snap, place(0), 49), { height: 49, rest: 49 });
-      assert.deepStrictEqual(sheetHeight(h, snap, place(336), 49), { height: 385, rest: 385 });
-      assert.deepStrictEqual(sheetHeight(h, snap, place(336, 1 / 1.25), 49), { height: 376, rest: 376 });
+      assert.deepStrictEqual(sheetHeight(h, snap, place(0), 49), { height: 49, rest: 49, box: 49, cover: 0, past: 367 });
+      assert.deepStrictEqual(sheetHeight(h, snap, place(336), 49), { height: 385, rest: 385, box: 385, cover: 0, past: 367 });
+      assert.deepStrictEqual(sheetHeight(h, snap, place(336, 1 / 1.25), 49), { height: 376, rest: 376, box: 376, cover: 0, past: 367 });
     }
   });
 

@@ -5,8 +5,11 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { isDeepStrictEqual } from 'util';
-import type { Browser } from 'playwright-core';
+import type { Browser, Page } from 'playwright-core';
 import { openSite, choose, currentShell, openSettingsSection, problemsShown, setShell, root, stable, until } from './support/site';
+
+/** What a phone's sheet covers of the editor's box, which goes on under it (web/sheet.ts): what shows of the editor ends this far above the box's bottom. */
+const covered = (page: Page): Promise<number> => page.evaluate("parseFloat(document.documentElement.style.getPropertyValue('--sheet-cover')) || 0");
 
 describe('the web page: touch screens, stored data and the window', function () {
   this.timeout(120000);
@@ -270,7 +273,7 @@ describe('the web page: touch screens, stored data and the window', function () 
       const ed0 = (await page.locator('#editor').boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.wheel(0, 400);
-      await page.mouse.move(ed0.x + ed0.width / 2, ed0.y + ed0.height / 2);
+      await page.mouse.move(ed0.x + ed0.width / 2, ed0.y + (ed0.height - await covered(page)) / 2);
       await page.mouse.wheel(0, 400);
       await until('the editor scrolled', () => page.evaluate("document.querySelector('.cm-scroller').scrollTop") as Promise<number>, (t) => t > 0);
       await page.evaluate('window.scrollTo(0, 500)');
@@ -286,14 +289,14 @@ describe('the web page: touch screens, stored data and the window', function () 
       const inner = await until('the explanation scrolled', () => panel().evaluate('[document.scrollingElement.scrollHeight > innerHeight, scrollY > 0]') as Promise<boolean[]>, (v) => v[1]);
       assert.deepStrictEqual(inner, [true, true], `${width}×${height}`);
       // The editor and the explanation take the window below the top bar, side by side, or on a phone the explanation
-      // as a sheet over the editor, which ends at its top (its height is test/web-sheet.test.ts's).
+      // as a sheet over the editor, which shows down to its top and goes on under it (its height is test/web-sheet.test.ts's).
       // (The explanation's pane: its header, then the panel's frame, down to the bottom.)
       const ed = (await page.locator(width < 768 ? '#editor' : '.source').boundingBox())!;
       const bar = (await page.locator('.top').boundingBox())!;
       const pane = (await page.locator('#panel-pane').boundingBox())!;
       assert.ok(bar.height <= 49, String(bar.height));
       assert.ok(Math.round(box.y + box.height) === height && box.y > pane.y, JSON.stringify([pane, box]));
-      if (width < 768) assert.ok(ed.width === width && pane.width === width && Math.abs(pane.y - (ed.y + ed.height)) < 1 && Math.round(pane.y + pane.height) === height, JSON.stringify([ed, pane]));
+      if (width < 768) assert.ok(ed.width === width && pane.width === width && Math.abs(pane.y - (ed.y + ed.height - await covered(page))) < 1 && Math.round(pane.y + pane.height) === height, JSON.stringify([ed, pane]));
       else assert.ok(pane.x > ed.x + ed.width && Math.round(ed.height) === height - bar.height && Math.round(pane.height) === height - bar.height, JSON.stringify([ed, pane]));
       await ctx.close();
     }
@@ -314,7 +317,7 @@ describe('the web page: touch screens, stored data and the window', function () 
         const box = (await page.locator('#panel').boundingBox())!;
         return {
           share: await page.locator('#share').isVisible(),
-          stacked: box.y >= ed.y + ed.height,
+          stacked: box.y >= ed.y + ed.height - await covered(page),
           splitter: await page.locator('#splitter').isVisible() ? await page.locator('#splitter').getAttribute('aria-orientation') : 'hidden',
           problems: await page.locator('#problems-toggle').isVisible() ? await page.locator('#problems-toggle').getAttribute('aria-expanded') : 'tab',
           sheet: await page.evaluate('document.documentElement.classList.contains("bottom-sheet")') as boolean,
@@ -399,7 +402,7 @@ describe('the web page: touch screens, stored data and the window', function () 
         const box = (await page.locator('#panel').boundingBox())!;
         return {
           share: await page.locator('#share').isVisible(),
-          stacked: box.y >= ed.y + ed.height,
+          stacked: box.y >= ed.y + ed.height - await covered(page),
           splitter: await page.locator('#splitter').isVisible() ? await page.locator('#splitter').getAttribute('aria-orientation') : 'hidden',
           problems: await page.locator('#problems-toggle').isVisible() ? await page.locator('#problems-toggle').getAttribute('aria-expanded') : 'tab',
           sheet: await page.evaluate('document.documentElement.classList.contains("bottom-sheet")') as boolean,

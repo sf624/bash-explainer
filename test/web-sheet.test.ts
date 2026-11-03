@@ -1,8 +1,9 @@
 // The web page on a phone: the explanation as a bottom sheet over the editor (docs/design/chrome-redesign.md, step C8a),
 // run for real in headless Chromium with the CJK fonts of CI. Its heights and where a drag, a tap or a key leaves it
 // are src/ui/sheet.ts (test/sheet.test.ts); here the page measures, draws and wires them: the header row's boxes at
-// every height and tab, a finger's drag (touch events, as a phone sends them), the taps, the keys, the focus, the app
-// bar at full height, the toast above the sheet, the editor's cursor in view, and reduced motion.
+// every height and tab, a finger's drag (touch events, as a phone sends them), what shows of the editor on each frame of
+// a move, the taps, the keys, the focus, the app bar at full height, the toast above the sheet, the editor's cursor in
+// view, and reduced motion.
 import * as assert from 'assert';
 import type { Browser, BrowserContextOptions, CDPSession, Page } from 'playwright-core';
 import { frames, openSite, problemsShown, stable, until } from './support/site';
@@ -181,7 +182,7 @@ describe('the web page: the phone\'s sheet', function () {
     // Slowly up by 250 px: it follows the finger, and lets go nearer full than half.
     await drag(6, pane.y + 24, pane.y + 24 - 250, 1000, 10, async () => {
       await frames(page);
-      const h = (await box(page, '#panel-pane')).height;
+      const h = 740 - (await box(page, '#panel-pane')).y;
       assert.ok(Math.abs(h - (407 + 125)) < 3, `mid-drag: ${h}`);
     });
     let s = await settled(page);
@@ -193,13 +194,15 @@ describe('the web page: the phone\'s sheet', function () {
     assert.strictEqual((await settled(page)).snap, 'half');
     await drag(6, pane.y + 24, pane.y + 324, 1000);
     assert.strictEqual((await settled(page)).snap, 'peek');
-    // A quick flick of 60 px goes to the next height that way: up from half to full, down from full to half.
+    // A quick flick goes to the next height that way, from nearer the one it left: up from half to full, down from full
+    // to half. (Of 100 px: each of the three moves waits for a frame here, so the flick takes about 100 ms, twice the
+    // speed of a fling; of 60 px, it had none to spare, and a busy machine made it a slow drag.)
     await snapTo(page, 'half');
     pane = (await settled(page)).pane;
-    await drag(6, pane.y + 24, pane.y - 36, 50, 3);
+    await drag(6, pane.y + 24, pane.y - 76, 50, 3);
     assert.strictEqual((await settled(page)).snap, 'full');
     pane = (await settled(page)).pane;
-    await drag(6, pane.y + 24, pane.y + 84, 50, 3);
+    await drag(6, pane.y + 24, pane.y + 124, 50, 3);
     assert.strictEqual((await settled(page)).snap, 'half');
     // A drag that starts on a tab moves the sheet and does not choose the tab.
     pane = (await settled(page)).pane;
@@ -221,6 +224,181 @@ describe('the web page: the phone\'s sheet', function () {
       return [s('#panel-head').touchAction, s('html').overscrollBehaviorY, s('body').overscrollBehaviorY, s('#problem-list').overflowY, s('#problem-list').overscrollBehaviorY];
     })()`), ['none', 'none', 'none', 'auto', 'contain']);
     assert.strictEqual(await page.evaluate('scrollY'), 0);
+    await page.context().close();
+  });
+
+  /**
+   * Starts reading, as each frame was painted (a task right after its animation callbacks, so CodeMirror's measure of
+   * that frame has run): the rows of what shows of the editor, between its strip and the sheet's top, that lie inside
+   * the text's range with no line of the text over them; where the sheet's top is; and where the editor's box ends.
+   */
+  const FRAMES = `(() => {
+    const read = () => {
+      const pane = document.getElementById('panel-pane').getBoundingClientRect();
+      const scroller = document.querySelector('.cm-scroller').getBoundingClientRect();
+      const content = document.querySelector('.cm-content');
+      const box = content.getBoundingClientRect();
+      const style = getComputedStyle(content);
+      const from = Math.ceil(Math.max(document.getElementById('ed-head').getBoundingClientRect().bottom, box.top + parseFloat(style.paddingTop)));
+      const to = Math.floor(Math.min(pane.top, box.bottom - parseFloat(style.paddingBottom)));
+      const lines = [...document.querySelectorAll('.cm-line')].map((l) => l.getBoundingClientRect())
+        .map((r) => [Math.max(r.top, scroller.top), Math.min(r.bottom, scroller.bottom)]).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
+      let y = from, blank = 0;
+      for (const [a, b] of lines) {
+        if (a > y) blank += Math.max(0, Math.min(a, to) - y);
+        y = Math.max(y, b);
+      }
+      return { blank: Math.round(blank + Math.max(0, to - y)), top: pane.top, end: Math.round(scroller.bottom) };
+    };
+    const seen = [];
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => seen.push(read());
+    let on = true;
+    const frame = () => {
+      if (!on) return;
+      channel.port2.postMessage(0);
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+    window.stopFrames = () => {
+      on = false;
+      return seen;
+    };
+  })()`;
+
+  /** The page on a phone 844 px tall, with a script of 400 lines. */
+  const openLong = async (lang: 'en' | 'ja'): Promise<Page> => {
+    const page = await open(await phone(390, lang, { viewport: { width: 390, height: 844 } }));
+    await page.locator('#mode-edit').tap();
+    await page.locator('.cm-content').click({ position: { x: 100, y: 10 } });
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText(Array.from({ length: 400 }, (_, i) => `echo line ${i + 1}`).join('\n') + '\n');
+    await page.keyboard.press('Control+Home');
+    await until('the long script', () => page.locator('.cm-lineNumbers .cm-activeLineGutter').innerText(), (v) => v === '1');
+    return page;
+  };
+
+  const scrollTo = async (page: Page, top: number) => {
+    await page.evaluate(`document.querySelector('.cm-scroller').scrollTop = ${top}`);
+    await frames(page);
+  };
+
+  it('shows the code under every row it uncovers, in each direction, through the drag and the settling, with no blank and no layout per frame', async () => {
+    const page = await openLong('ja');
+    const cdp = await page.context().newCDPSession(page);
+    const drag = finger(cdp, page);
+    await cdp.send('Performance.enable');
+    const layouts = async () => (await cdp.send('Performance.getMetrics')).metrics.find((m) => m.name === 'LayoutCount')!.value;
+    const edge = { peek: 0, half: 0, full: 0 };
+    for (const snap of ['peek', 'half', 'full'] as Snap[]) edge[snap] = (await snapTo(page, snap)).y;
+    const way: [Snap, Snap][] = [['half', 'peek'], ['peek', 'half'], ['half', 'full'], ['full', 'half'], ['full', 'peek'], ['peek', 'full']];
+    const cases: { from: Snap; to: Snap; part: number; ms: number; steps: number; scroll: number }[] = [
+      // Let go at the height, or on the way to it (the settling then does the rest).
+      ...way.flatMap(([from, to]) => [1, 0.7].map((part) => ({ from, to, part, ms: 400, steps: 25, scroll: 0 }))),
+      // From the middle of the script, with no line of it at the top of the window's text.
+      { from: 'half', to: 'peek', part: 0.7, ms: 400, steps: 25, scroll: 2000 }, { from: 'peek', to: 'half', part: 0.7, ms: 400, steps: 25, scroll: 2000 },
+      // A fling.
+      { from: 'half', to: 'peek', part: 0.3, ms: 60, steps: 4, scroll: 0 }, { from: 'peek', to: 'half', part: 0.3, ms: 60, steps: 4, scroll: 0 },
+    ];
+    for (const c of cases) {
+      const at = `${c.from} to ${c.to}, ${c.part} of the way in ${c.ms} ms, the script scrolled by ${c.scroll}`;
+      await snapTo(page, c.from);
+      await scrollTo(page, c.scroll);
+      await page.evaluate(FRAMES);
+      const before = await layouts();
+      const y = edge[c.from] + 24;
+      await drag(6, y, y + (edge[c.to] - edge[c.from]) * c.part, c.ms, c.steps, undefined);
+      // (The moves lay out nothing: the pane once as tall as a drag needs, once when the finger lifts, and the odd one of the page's own.)
+      const during = (await layouts()) - before;
+      assert.ok(c.steps < 10 || during < c.steps / 2, `${at}: ${during} layouts in ${c.steps} moves`);
+      await settled(page);
+      await frames(page);
+      const seen = await page.evaluate('window.stopFrames()') as { blank: number; top: number; end: number }[];
+      assert.ok(seen.length >= 5, `${at}: ${seen.length} frames`);
+      for (const f of seen) {
+        assert.ok(f.blank <= 1, `${at}: ${f.blank} rows of the text show blank, with the sheet's top at ${f.top}`);
+        // (The sheet stays where a finger can take it: it never leaves by the bottom on its way to rest.)
+        assert.ok(f.top >= edge.full - 1 && f.top <= edge.peek + 1, `${at}: the sheet's top at ${f.top}`);
+      }
+      assert.deepStrictEqual([...new Set(seen.map((f) => f.end))], [Math.round(edge.peek)], `${at}: the editor's box ends at the lowest height`);
+    }
+    await page.context().close();
+  });
+
+  it('leaves the text where it is through a drag, and shows no blank when the drag is cancelled, either way', async () => {
+    const page = await openLong('en');
+    const cdp = await page.context().newCDPSession(page);
+    const scrolled = () => page.evaluate("document.querySelector('.cm-scroller').scrollTop");
+    for (const [snap, step] of [['half', 12], ['peek', -12]] as [Snap, number][]) {
+      const y = (await snapTo(page, snap)).y + 24;
+      await scrollTo(page, 500);
+      await page.evaluate(FRAMES);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 6, y }] });
+      for (let i = 1; i <= 20; i++) {
+        await page.waitForTimeout(16);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 6, y: y + i * step }] });
+      }
+      assert.strictEqual(await scrolled(), 500, `${snap}: a drag leaves the text where it is`);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+      await settled(page);
+      await frames(page);
+      const seen = await page.evaluate('window.stopFrames()') as { blank: number }[];
+      assert.ok(seen.length >= 5 && seen.every((f) => f.blank <= 1), `${snap}: ${JSON.stringify(seen.map((f) => f.blank))}`);
+    }
+    await page.context().close();
+  });
+
+  it('keeps the cursor\'s line, the end of the text and the empty editor\'s block above the sheet, though the editor\'s box goes on under it', async () => {
+    const page = await openLong('en');
+    const lineBox = async () => (await page.locator('.cm-activeLine').boundingBox())!;
+    // On a folded sheet, a line low in the window: the sheet's half height would cover it, and it comes back above the sheet.
+    await snapTo(page, 'peek');
+    await page.locator('.cm-content').focus();
+    for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowDown');
+    await frames(page);
+    assert.ok((await lineBox()).y > 500, JSON.stringify(await lineBox()));
+    const half = await snapTo(page, 'half');
+    await frames(page);
+    const at = await lineBox();
+    assert.ok(at.y + at.height <= half.y + 0.5 && at.y >= 0, JSON.stringify({ at, half }));
+    // The arrow keys go on scrolling above the sheet.
+    await page.locator('.cm-content').focus();
+    for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowDown');
+    await frames(page);
+    const moved = await lineBox();
+    assert.ok(moved.y + moved.height <= half.y + 0.5, JSON.stringify({ moved, half }));
+    // The last line reaches the sheet's top at half, and at the end of the scroll a move changes nothing of the text.
+    await page.keyboard.press('Control+End');
+    await frames(page);
+    await scrollTo(page, 1e7);
+    const scroll = () => page.evaluate("document.querySelector('.cm-scroller').scrollTop");
+    const end = await scroll();
+    const last = await lineBox();
+    assert.ok(Math.abs(last.y + last.height - half.y) <= 6, JSON.stringify({ last, half }));
+    await snapTo(page, 'peek');
+    await frames(page);
+    assert.strictEqual(await scroll(), end);
+    // The empty editor's block lies above a half sheet.
+    await snapTo(page, 'half');
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Delete');
+    await page.locator('#empty-editor .empty-box').waitFor();
+    const block = await box(page, '#empty-editor .empty-box');
+    assert.ok(block.y + block.height <= half.y, JSON.stringify({ block, half }));
+    await page.context().close();
+  });
+
+  it('takes a finger on its header at the very edge of the screen, where a swipe strip lies over the rest of the sheet', async () => {
+    const page = await open(await phone(390, 'en'));
+    const hit = (x: number, y: number) => page.evaluate(`(document.elementFromPoint(${x}, ${y}).closest('#panel-head, .edge') ?? {}).id`);
+    for (const snap of ['peek', 'half', 'full'] as Snap[]) {
+      const top = (await snapTo(page, snap)).y;
+      for (const x of [2, 387]) {
+        assert.strictEqual(await hit(x, top + 24), 'panel-head', `${snap}, ${x}`);
+        if (snap !== 'peek') assert.match(String(await hit(x, top + 100)), /^edge/, `${snap}, ${x}, under the header`);
+      }
+    }
     await page.context().close();
   });
 

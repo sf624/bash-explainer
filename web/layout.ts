@@ -15,6 +15,12 @@ export const narrow = {
 };
 
 /**
+ * What the phone's sheet covers of the editor's box, in px, at the height it is at or going to (web/sheet.ts, `apply`):
+ * the box goes on under the sheet, so what is shown of the editor ends this far above its bottom. 0 without the sheet.
+ */
+export const sheetCover = (): number => parseFloat(document.documentElement.style.getPropertyValue('--sheet-cover')) || 0;
+
+/**
  * Whether a row's items fit it: none runs past its end padding (or out of its box). A row of forms (the panel's header,
  * the editor's header) takes the first form whose items fit. `scrollWidth` alone is not enough: Chromium does not count
  * what runs into the end padding, so a form whose last item lay under the edge's swipe strip of a touch screen (12 px
