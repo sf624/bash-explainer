@@ -1,4 +1,4 @@
-import type { FactId, MESSAGES, Params } from './messages';
+import type { FactId, MESSAGES, Params, ProblemEntry } from './messages';
 import type { StyleCase, StyleCode } from './messages-levels';
 import type { Stops } from './messages-posix';
 
@@ -8,11 +8,8 @@ import type { Stops } from './messages-posix';
 // table only as src/messages.ts is at the limit of test/file-length.test.ts; the type makes it complete: a new entry
 // that can be a problem does not compile without its headline.
 
-/** What makes an entry a problem: a pitfall's kind, or a failure's level (`failure`, `pitfall`, `broken`, `caveat`, src/messages.ts). */
-type Problem = { kind: 'pitfall' } | { level: 'error' };
-
 /** The facts that can be problems: those whose entry is one, whatever its level by params. */
-export type ProblemFactId = { [K in FactId]: (typeof MESSAGES)[K] extends Problem ? K : never }[FactId];
+export type ProblemFactId = { [K in FactId]: (typeof MESSAGES)[K] extends ProblemEntry ? K : never }[FactId];
 
 /** A headline, in Japanese and English. */
 export type Head = readonly [ja: string, en: string];
@@ -114,7 +111,9 @@ export const FACT_HEADS: { [K in ProblemFactId]: (p: Params<K>) => Head } = {
   'function-not-imported-sh': ({ fn }) => [`sh はエクスポートした関数を読まないことがあるので、\`${fn}\` が無いことがある。`, `sh may not read exported functions, so \`${fn}\` may not be there.`],
   'function-shadowed-by-program': ({ name }) => [`このスクリプトの関数ではなく、プログラム \`${name}\` が実行される。`, `The program \`${name}\` runs, not this script's function.`],
   'wrapper-assignment-expanded-first': ({ use, via, v }) => [`\`${via}\` が \`${v}\` を設定する前に、今のシェルが \`${use}\` を展開する。`, `The current shell expands \`${use}\` before \`${via}\` sets \`${v}\`.`],
-  'pipeline-subshell-variable': ({ used }) => [`パイプの右側で設定した \`${used}\` は、パイプラインが終わると消える。`, `\`${used}\` set on the right side of the pipe is gone when the pipeline ends.`],
+  'pipeline-subshell-variable': ({ used, partial }) => (partial
+    ? [`\`lastpipe\` が有効でない経路では、パイプの右側で設定した \`${used}\` は消える。`, `Where \`lastpipe\` is off, \`${used}\` set on the right side of the pipe is gone when the pipeline ends.`]
+    : [`パイプの右側で設定した \`${used}\` は、パイプラインが終わると消える。`, `\`${used}\` set on the right side of the pipe is gone when the pipeline ends.`]),
   'unmatched-glob-runs-once': ({ glob, v, how }) => (how.menu
     ? [`\`${glob}\` に一致するファイルがなくても、メニューには項目が出る。`, `When no file matches \`${glob}\`, the menu still shows an entry for it.`]
     : [`\`${glob}\` に一致するファイルがなくても、\`${v}\` がパターンの文字列のままでループが実行される。`, `When no file matches \`${glob}\`, the loop still runs, with \`${v}\` set to the pattern's text.`]),

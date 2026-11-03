@@ -109,7 +109,7 @@ describe('the web page: the box of the line\'s problems', function () {
     const { ctx, page, panel } = await open('echo $((09))');
     await panel().locator('#problems .problem-head').first().waitFor();
     await chooseView(page, 'tree');
-    assert.strictEqual(await panel().locator('#tree').isHidden(), true);
+    await until('Reading', () => panel().locator('#tree').isHidden(), (v) => v);
     assert.strictEqual(await panel().locator('#problems').isVisible(), true);
     await panel().locator('#problems .problem-head').first().click();
     assert.strictEqual(await panel().evaluate(MORE_OPEN), true);

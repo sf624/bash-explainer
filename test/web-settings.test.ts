@@ -189,7 +189,7 @@ describe('the web page: theme and settings', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('#!/bin/bash\n[[ -f x ]] && for f in $(ls); do echo "$f"; done');
     const panelText = () => panel().locator('#main').innerText();
-    await until('the pitfall', panelText, (t) => /Caveat: the output of/.test(t));
+    await until('the pitfall', panelText, (t) => /The output of \$\(ls …\) is split/.test(t));
     // The pitfall is also a problem.
     await until('the pitfall as a problem', () => problemList(page), (t) => /for-over-ls-output/.test(t));
 
@@ -207,7 +207,7 @@ describe('the web page: theme and settings', function () {
     assert.match(await page.locator('.settings-elsewhere').innerText(), /panel\.autoOpen/);
     // A note turned off goes from the explanation and from the problems at once.
     await page.locator('#setting-notes-pitfalls').uncheck();
-    await until('no pitfall', panelText, (t) => !/Caveat/.test(t));
+    await until('no pitfall', panelText, (t) => !/Problems on this line/.test(t));
     await until('no pitfall problem', () => problemsShown(page), (shown) => !shown);
     // The shell: the script is checked for sh, and the panel's own menu says so.
     await (await settingControl(page, 'shell')).selectOption('sh');
@@ -421,7 +421,7 @@ describe('the web page: theme and settings', function () {
       await page.keyboard.press('Control+A');
       await page.keyboard.insertText('#!/bin/bash\nfor f in $(ls); do echo "$f"; done');
       const panelText = () => panel().locator('#main').innerText();
-      await until('the pitfall', panelText, (t) => /Caveat: the output of/.test(t));
+      await until('the pitfall', panelText, (t) => /The output of \$\(ls …\) is split/.test(t));
       await page.locator('#settings-open').click();
       await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
       const b = await boxes(page);
@@ -439,7 +439,7 @@ describe('the web page: theme and settings', function () {
       assert.strictEqual(await page.locator('#settings-dialog').evaluate((d) => d.matches(':modal')), false, seen);
       // A change shows in the explanation at once, with the sheet still open.
       await page.locator('#setting-notes-pitfalls').uncheck();
-      await until('no pitfall', panelText, (t) => !/Caveat/.test(t) && /for/.test(t));
+      await until('no pitfall', panelText, (t) => !/Problems on this line/.test(t) && /for/.test(t));
       assert.strictEqual(await isOpen(page), true);
       // A click on the panel leaves the sheet open (decision 7: the panel stays in view and live).
       await page.mouse.click(b.panel.left + 40, 400);
@@ -978,7 +978,7 @@ describe('the web page: theme and settings', function () {
     await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('#!/bin/bash\nfor f in $(ls); do echo "$f"; done');
-    await until('the pitfall', panelText, (t) => /Caveat: the output of/.test(t));
+    await until('the pitfall', panelText, (t) => /The output of \$\(ls …\) is split/.test(t));
     await page.locator('#settings-open').tap();
     await page.locator('#setting-notes-pitfalls').uncheck();
     // Closed and opened again: the same place, the same sections open.
@@ -987,7 +987,7 @@ describe('the web page: theme and settings', function () {
     assert.ok(at > 800, String(at));
     await page.locator('#settings-done').tap();
     await until('the sheet closed', () => isOpen(page), (v) => !v);
-    await until('no pitfall', panelText, (t) => !/Caveat/.test(t));
+    await until('no pitfall', panelText, (t) => !/Problems on this line/.test(t));
     await page.locator('#settings-open').tap();
     assert.strictEqual(await page.locator('.settings-body').evaluate((b) => b.scrollTop), at);
     assert.strictEqual(await page.locator('#setting-shell').isVisible(), true);

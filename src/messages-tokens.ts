@@ -30,13 +30,15 @@ export const TOKEN_TEXTS = {
   ...SHEBANG_TEXTS,
   ...WORD_TEXTS,
   /** `env -S'"a' s`: the program refuses the string it would split (`why`: what is wrong with it). */
-  'splice-refused': tokenError<{ program: string; why: string }>(['この文字列は拒否され、何も実行されない。', 'This string is refused, and nothing runs.'], ({ program, why }) => [
-    `${program} はこの文字列を受け付けず、何も実行せずに終了ステータス 125 で終わる（${why}）`,
-    `${program} refuses this string and exits with status 125, running nothing (${why})`]),
+  'splice-refused': tokenError<{ program: string; why: string }>({
+    head: ['この文字列は拒否され、何も実行されない。', 'This string is refused, and nothing runs.'],
+    then: ['何も実行せずに終了ステータス 125 で終わる', 'It exits with status 125, running nothing'],
+  }, ({ program, why }) => [`${program} はこの文字列を受け付けない（${why}）`, `${program} refuses this string (${why})`]),
   /** `$((09))`, `$((2#2))`: a constant the shell rejects, in a command that reads it whenever it runs. */
-  'arith-invalid-number': tokenError<InvalidNumber>(['この数は不正なので、算術エラーになり、このコマンドは本来の処理をしない。', 'This number is not valid: an arithmetic error, and this command does not do its work.'], ({ text, why }) => [
-    `不正な数 \`${text}\`: ${why}。シェルは算術エラーを出し、このコマンドは本来の処理をしない`,
-    `Invalid number \`${text}\`: ${why}. The shell reports an arithmetic error, and this command does not do its work`]),
+  'arith-invalid-number': tokenError<InvalidNumber>({
+    head: ['この数は不正なので、算術エラーになり、このコマンドは本来の処理をしない。', 'This number is not valid: an arithmetic error, and this command does not do its work.'],
+    then: ['シェルは算術エラーを出し、このコマンドは本来の処理をしない', 'The shell reports an arithmetic error, and this command does not do its work'],
+  }, ({ text, why }) => [`不正な数 \`${text}\`: ${why}`, `Invalid number \`${text}\`: ${why}`]),
   /**
    * `${x:-$((09))}`, `[[ a || $((09)) ]]`: the same, where the command may run without reading it (`readOnlySometimes`, src/explain/reads.ts).
    * It may have done part of its work by then (the update of a C-style `for` comes after the body).

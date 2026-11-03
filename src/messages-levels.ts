@@ -8,9 +8,15 @@ import type { NoteLevel } from './levels';
 export interface TokenEntry<P> {
   text: (p: P) => readonly [ja: string, en: string];
   level?: NoteLevel;
-  /** Of a text that says the command fails every time: its headline in the problems (src/messages-heads.ts has those of the notes). */
-  head?: readonly [ja: string, en: string];
+  /** Of a text that says the command fails every time: what its problem says beyond the row (`tokenError`). */
+  problem?: TokenProblem;
 }
+
+/**
+ * What the problem of a token's error says beyond its row: its headline (src/messages-heads.ts has those of the notes), and
+ * what follows from the row's text, which the row leaves to the problem so that a fact of the line is said once.
+ */
+export interface TokenProblem { head: readonly [ja: string, en: string]; then: readonly [ja: string, en: string] }
 
 /** A token's text. */
 export function tokenText<P = Record<string, never>>(text: (p: P) => readonly [string, string]): TokenEntry<P> {
@@ -23,8 +29,8 @@ export function tokenWarning<P = Record<string, never>>(text: (p: P) => readonly
 }
 
 /** A text that says the command fails every time it runs (docs/design/three-levels.md, section 2): a row draws the mark of an error before it. */
-export function tokenError<P = Record<string, never>>(head: readonly [string, string], text: (p: P) => readonly [string, string]): TokenEntry<P> {
-  return { text, level: 'error', head };
+export function tokenError<P = Record<string, never>>(problem: TokenProblem, text: (p: P) => readonly [string, string]): TokenEntry<P> {
+  return { text, level: 'error', problem };
 }
 
 /**
