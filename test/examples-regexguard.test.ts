@@ -484,18 +484,18 @@ describe('the guard of the regexes a script gives', () => {
 
     it('a text refused is kept to be refused again, but not a long one, and not more than a total', () => {
       const before = keptChars();
-      assert.ok(refused('(a+)+$|keep0', `${'a'.repeat(40)}!`));
-      assert.strictEqual(keptChars(), before + 41);
+      const short = 'a'.repeat(10000);
+      assert.ok(refused('a*a*b0', short));
+      assert.strictEqual(keptChars(), before + 10000);
       // (The same text again: counted once.)
-      assert.ok(refused('(a+)+$|keep0', `${'a'.repeat(40)}!`));
-      assert.strictEqual(keptChars(), before + 41);
-      const long = `${'a'.repeat(1e6)}!`;
-      assert.ok(refused('(a+)+$|keep1', long));
-      assert.strictEqual(keptChars(), before + 41);
+      assert.ok(refused('a*a*b0', short));
+      assert.strictEqual(keptChars(), before + 10000);
+      assert.ok(refused('a*a*b1', 'a'.repeat(1e6 + 1)));
+      assert.strictEqual(keptChars(), before + 10000);
       // (Many, which each fits: a total of at most 4e6, which they pass, and the memory is let go.)
-      const text = `${'a'.repeat(9e5)}!`;
+      const text = 'a'.repeat(9e5);
       for (let i = 0; i < 6; i++) {
-        assert.ok(refused(`(a+)+$|keep${i + 2}`, text));
+        assert.ok(refused(`a*a*b${i + 2}`, text));
         assert.ok(keptChars() <= 4e6);
       }
       assert.ok(keptChars() < 4e6);
