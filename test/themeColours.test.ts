@@ -213,6 +213,15 @@ describe('reading a colour theme', () => {
     customize(none, {}, 'X');
     customize(none, { tokens: { textMateRules: 'no' }, semantic: { rules: 'no' } }, 'X');
     assert.deepStrictEqual(none, emptyTheme());
+    // (A name with `*`s, any number of them: a setting of a workspace can hold one, and no regex is made of it.)
+    const named = (key: string, name: string) => {
+      const t = emptyTheme();
+      customize(t, { semantic: { [key]: { enabled: true } } }, name);
+      return t.semanticHighlighting === true;
+    };
+    for (const [key, name] of [['[Monokai]', 'Monokai'], ['[Mono*]', 'Monokai'], ['[*kai]', 'Monokai'], ['[M*n*k*i]', 'Monokai'], ['[*]', 'Monokai'], ['[A][*kai]', 'Monokai'], ['[M.n+*]', 'M.n+x'], ['[a*a]', 'aa']]) assert.ok(named(key, name), key);
+    for (const [key, name] of [['[Monokai]', 'Monokai2'], ['[Mono*]', 'Dark'], ['[*kai]', 'Dark'], ['[M*z*i]', 'Monokai'], ['[M.n*]', 'Monokai'], ['[a*a]', 'a'], ['[ab*bc]', 'abc'], ['no brackets', 'no brackets']]) assert.ok(!named(key, name), key);
+    assert.ok(!named(`[${'a*'.repeat(40)}b]`, 'a'.repeat(40)));
   });
 
   it('says when the editor draws our semantic tokens', () => {

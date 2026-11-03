@@ -6,6 +6,7 @@ import { Unsupported as RunnerUnsupported } from './unsupported';
 import { parseOptions, shortKeys, Unsupported as TextUnsupported } from './textfilters';
 
 class Unsupported extends RunnerUnsupported {}
+const unfollowed = (what: string): never => { throw new Unsupported(what); };
 
 // ---------------------------------------------------------------- lexer
 
@@ -451,10 +452,14 @@ function num(v: V): number {
   return m ? Number(m[0]) : 0;
 }
 
+/** perl's `sprintf`; `Inf` and `NaN` go by rules of their own in a field (`%d` of `Inf`, `%05f`), which are not followed. */
+const perlFormat = (items: V[]): string => (items.slice(1).some((v) => typeof v === 'number' && !Number.isFinite(v)) ? unfollowed('printf of Inf or NaN') : sprintf(str(items[0]), items.slice(1) as never));
+
 function str(v: V): string {
   if (v === undefined) return '';
   if (typeof v === 'number') {
     if (Number.isInteger(v) && Math.abs(v) < 1e15) return String(v);
+    if (!Number.isFinite(v)) return Number.isNaN(v) ? 'NaN' : v > 0 ? 'Inf' : '-Inf';
     return sprintf('%.15g', [v]);
   }
   return v;
@@ -714,7 +719,7 @@ class Interp {
       case '%': if (Math.trunc(num(b)) === 0) throw new Unsupported('division by zero'); return ((Math.trunc(num(a)) % Math.trunc(num(b))) + Math.trunc(num(b))) % Math.trunc(num(b));
       case '**': return num(a) ** num(b);
       case '.': return str(a) + str(b);
-      case 'x': return str(a).repeat(Math.max(0, Math.trunc(num(b))));
+      case 'x': return Number.isFinite(num(b)) ? str(a).repeat(Math.max(0, Math.trunc(num(b)))) : ''; // (perl: "Non-finite repeat count does nothing".)
       case '==': return num(a) === num(b) ? 1 : '';
       case '!=': return num(a) !== num(b) ? 1 : '';
       case '<': return num(a) < num(b) ? 1 : '';
@@ -742,12 +747,8 @@ class Interp {
         this.out += items.map(str).join(str(this.scalars.get(','))) + (e.name === 'say' ? '\n' : str(this.scalars.get('\\')));
         return 1;
       }
-      case 'printf': {
-        const items = a.flatMap((x) => this.list(x));
-        this.out += sprintf(str(items[0]), items.slice(1).map((v) => (typeof v === 'string' && /^\s*-?\d/.test(v) ? v : v) as never));
-        return 1;
-      }
-      case 'sprintf': { const items = a.flatMap((x) => this.list(x)); return sprintf(str(items[0]), items.slice(1) as never); }
+      case 'printf': this.out += perlFormat(a.flatMap((x) => this.list(x))); return 1;
+      case 'sprintf': return perlFormat(a.flatMap((x) => this.list(x)));
       case 'length': return a.length || this.scalar('_') !== undefined ? str(one()).length : undefined;
       case 'uc': return str(one()).toUpperCase();
       case 'lc': return str(one()).toLowerCase();

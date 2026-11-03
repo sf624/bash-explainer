@@ -250,7 +250,22 @@ const SHORTHANDS: Record<string, string[]> = {
 /** Whether a key `[Theme A][Monokai*]` names the theme (`*` matches any text). */
 function namesTheme(key: string, theme: string): boolean {
   const names = /^\[(.+)\]$/.exec(key)?.[1].split('][') ?? [];
-  return names.some((n) => new RegExp(`^${n.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`).test(theme));
+  return names.some((n) => wildcardMatches(n, theme));
+}
+
+/** Whether `*`s in `pattern` can stand for text that makes it `text`: each piece at the first place it can be, the last at the end. */
+function wildcardMatches(pattern: string, text: string): boolean {
+  const pieces = pattern.split('*');
+  const last = pieces.pop()!;
+  if (!pieces.length) return pattern === text;
+  if (!text.startsWith(pieces[0]) || !text.endsWith(last)) return false;
+  let at = pieces[0].length;
+  for (const piece of pieces.slice(1)) {
+    const found = text.indexOf(piece, at);
+    if (found < 0) return false;
+    at = found + piece.length;
+  }
+  return at + last.length <= text.length;
 }
 
 /** The user's customizations applied over the theme: those for every theme, then those for this one (`"[Name]": {…}`). */

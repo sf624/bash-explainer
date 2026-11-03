@@ -578,7 +578,16 @@
     "(?<n>a)(?<m>b)?",
     ".*Failed.*from ([0-9.]+).*",
     "^(\\w+ ?)+$",
-    ",+"
+    ",+",
+    "(a*)b\\1$",
+    "(?<n>a*)b\\k<n>$",
+    "a+b\\1|(a)",
+    "((a)|(b))+\\2",
+    "(?:(a)|(b)|(c))+",
+    "((?=(a))a)*",
+    "(((a)*b)*c)*",
+    "(a(?:(b)|(c))*)*d",
+    "(?:(a)|b){2,3}\\1"
   ],
   "engineTexts": [
     "",
@@ -656,7 +665,10 @@
     ".",
     "(",
     "aaaaaaaaaaaa",
-    "abcdefghijkk"
+    "abcdefghijkk",
+    "aaba",
+    "abcabd",
+    "aabaab"
   ],
   "twice": "^(?:(?<n>x)|(?<n>y))\\k<n>(a+)+$",
   "polynomial": "a*a*b",
@@ -664,5 +676,10 @@
     "a{,3}b",
     "a{}b",
     "a\\{,3}b"
-  ]
+  ],
+  "twoWays": "(a|aa)+",
+  "twoWaysEnd": "(a|aa)+$",
+  "twoWaysMark": "(a|aa)+!?$",
+  "backReference": "(a*)b\\1$",
+  "namedBackReference": "(?<n>a*)b\\k<n>$"
 }

@@ -11,7 +11,8 @@ export type Node =
   | { t: 'char'; c: string }
   /** `source`: the class as written (`[a-z]`, `\\d`, `.`). A unit is in it when it is in `ranges`, or, with `negated`, when it is not. `dot`: `.`, which the flag `s` changes. */
   | { t: 'set'; source: string; ranges: Ranges; negated: boolean; pick: (v: number) => string | undefined; dot?: boolean }
-  | { t: 'repeat'; node: Node; min: number; max: number; lazy: boolean }
+  /** `firstGroup` to `lastGroup`: the numbers of the capture groups in it, which run in a row (none when the last is below the first). */
+  | { t: 'repeat'; node: Node; min: number; max: number; lazy: boolean; firstGroup: number; lastGroup: number }
   | { t: 'group'; node: Node; no: number; look?: string }
   /** `name`: of `\\k<name>`, whose number is known when the whole pattern is read. */
   | { t: 'backref'; n: number; name?: string }
@@ -121,6 +122,7 @@ export class Parser {
   private seq(): Node {
     const items: Node[] = [];
     while (this.i < this.s.length && this.s[this.i] !== '|' && this.s[this.i] !== ')') {
+      const firstGroup = this.groups + 1;
       const atom = this.atom();
       // (`{` that starts no such repeat is text, which `atom` reads: `a{,3}`, `a{}`, `a{1`.)
       const q = /^(\*|\+|\?|\{(\d+)(,?)(\d*)\})\??/.exec(this.s.slice(this.i));
@@ -137,7 +139,7 @@ export class Parser {
         min = Number(q[2]);
         max = !q[3] ? min : q[4] ? Number(q[4]) : Infinity;
       }
-      items.push({ t: 'repeat', node: atom, min, max, lazy: q[0].length > q[1].length });
+      items.push({ t: 'repeat', node: atom, min, max, lazy: q[0].length > q[1].length, firstGroup, lastGroup: this.groups });
     }
     return { t: 'seq', items };
   }

@@ -1,5 +1,6 @@
 import { lex, Lex, ParseError } from '../embedded/jq';
 import { base64Decode, base64Encode, utf8Length } from './bytes';
+import { extendedRegex } from './regex';
 import { scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { setOwn } from '../wordtable';
@@ -571,6 +572,7 @@ function arith(op: string, a: Json, b: Json): Json {
     case '*':
       if (typeof a === 'number' && typeof b === 'number') return a * b;
       if (isObj(a) && isObj(b)) return deepMerge(a, b);
+      if (typeof a === 'string' && b === Infinity) throw new Unsupported('a repeat without end');
       if (typeof a === 'string' && typeof b === 'number') return b > 0 ? a.repeat(Math.ceil(b)) : null;
       break;
     case '/':
@@ -1290,7 +1292,14 @@ class Evaluator {
         return [scriptRegex(flags.includes('x') ? extendedRegex(str(one(0))) : str(one(0)), flags.replace(/[gx]/g, '')).test(str(x))];
       }
       case 'explode/0': return [[...str(x)].map((c) => c.codePointAt(0)!)];
-      case 'implode/0': return [String.fromCodePoint(...(arr(x) as number[]))];
+      case 'implode/0': {
+        if (!Array.isArray(x)) throw new JqError('implode input must be an array');
+        return [x.map((c) => {
+          if (typeof c !== 'number') throw new JqError(`${typeName(c)} (${toJson(c)}) can't be imploded, unicode codepoint needs to be numeric`);
+          const unit = Math.trunc(c);
+          return unit < 0 || unit > 0x10ffff || (unit >= 0xd800 && unit <= 0xdfff) ? '\ufffd' : String.fromCodePoint(unit);
+        }).join('')];
+      }
       case 'tojson/0': return [toJson(x)];
       case 'fromjson/0': {
         if (typeof x !== 'string') throw new JqError(`${typeName(x)} (${toJson(x)}) only strings can be parsed`);
@@ -1721,22 +1730,6 @@ export interface JqRun {
   error?: string;
   /** `-s`: the filter reads all the input values as one array, so `input` is that array and the file holds its elements. */
   slurp?: boolean;
-}
-
-/** The pattern with the `x` flag removed: whitespace and `#` comments are not part of an extended regex (outside brackets and after a backslash). */
-function extendedRegex(src: string): string {
-  let out = '';
-  let inClass = false;
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i];
-    if (c === '\\') { out += src.slice(i, i + 2); i++; continue; }
-    if (inClass) { out += c; if (c === ']') inClass = false; continue; }
-    if (c === '[') { inClass = true; out += c; continue; }
-    if (/\s/.test(c)) continue;
-    if (c === '#') { while (i < src.length && src[i] !== '\n') i++; continue; }
-    out += c;
-  }
-  return out;
 }
 
 /** What the flags of jq change in an example. */

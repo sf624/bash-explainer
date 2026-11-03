@@ -102,10 +102,10 @@ export function replaceRange(n: SyntaxNode, start: number, end: number, code: st
 
 /** A name for a variable the rewrite adds, that the document does not use: `base`, else `base2`, `base3`… */
 export function unusedName(n: SyntaxNode, base: string): string {
-  const text = documentRoot(n).text;
+  const used = new Set(documentRoot(n).text.match(/\w+/g));
   for (let i = 1; ; i++) {
     const name = i === 1 ? base : `${base}${i}`;
-    if (!new RegExp(`(?<!\\w)${name}(?!\\w)`).test(text)) return name;
+    if (!used.has(name)) return name;
   }
 }
 

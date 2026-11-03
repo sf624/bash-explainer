@@ -706,10 +706,17 @@ describe('globs that match nothing', () => {
   it('points out a for loop over a glob', () => {
     assert.ok(pitfall(explain('for f in *.log; do gzip "$f"; done')));
     assert.ok(pitfall(explain('for f in "$dir"/*.log; do gzip "$f"; done')));
+    // (Another variable, which starts with this one's name, is no check of it.)
+    assert.ok(pitfall(explain('for f in *.log; do ls -d "$file"; gzip "$f"; done')));
+  });
+  it('says nothing of a name bash rejects, which runs no loop', () => {
+    assert.ok(!pitfall(explain('for a+++ in *.c; do cat x; done')));
+    assert.ok(!pitfall(explain('for a.b in *.c; do cat x; done')));
   });
   it('says nothing when the body checks the file, with nullglob, or for plain words', () => {
     assert.ok(!pitfall(explain('for f in *.log; do [ -e "$f" ] || continue; gzip "$f"; done')));
     assert.ok(!pitfall(explain('for f in *.log; do\n  [[ -f $f ]] || continue\ndone')));
+    assert.ok(!pitfall(explain('for f in *.log; do [ -f "${f}" ] || continue; gzip "$f"; done')));
     assert.ok(!pitfall(explain('shopt -s nullglob\nfor f in *.log; do gzip "$f"; done', 1)));
     assert.ok(!pitfall(explain('for f in a b; do :; done')));
   });

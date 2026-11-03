@@ -3,6 +3,7 @@
 import { sameInEveryLocale } from './chars';
 import type { Shell } from '../shellfeatures';
 import { ansiCWordValue } from '../staticword';
+import { charge, longestExec } from '../examples/regexguard';
 import { hasExtglob } from '../examples/shellwords';
 
 /** A piece of the text of a `${…}` operand: quoted or not, from the source or from an expansion in it. */
@@ -109,11 +110,58 @@ function operandColons(text: string, colons: boolean): number[] {
  */
 export function operandPattern(text: string, ev: OperandValues): string | undefined {
   const segs = hasExtglob(text) ? undefined : operandSegs(text, false, ev.param, ev.w.shell);
-  return segs?.map((g) => (g.quoted ? g.text.replace(/\W/g, '\\$&') : g.text)).join('');
+  const glob = segs?.map((g) => (g.quoted ? g.text.replace(/\W/g, '\\$&') : g.text)).join('');
+  // (One that comes of a variable: `${x#$p}`, with `@(a)` in `p`. Whether it is one depends on extglob.)
+  return glob !== undefined && hasExtglob(glob) ? undefined : glob;
 }
 
 /** The replacement of `${x/p/r}` (its quotes count as in a pattern); undefined with an unquoted `&` (the match, with patsub_replacement). */
 export function operandReplacement(text: string, ev: OperandValues): string | undefined {
   const segs = operandSegs(text, false, ev.param, ev.w.shell);
   return !segs || segs.some((g) => !g.quoted && g.text.includes('&')) ? undefined : segs.map((g) => g.text).join('');
+}
+
+/** The first number from `first` to `last`, going up or down, that `holds`. */
+function firstOf(first: number, last: number, holds: (k: number) => boolean): number | undefined {
+  const step = first <= last ? 1 : -1;
+  for (let k = first; k !== last + step; k += step) if (holds(k)) return k;
+  return undefined;
+}
+
+/** Where a match of `re` (`^…$`, of a glob with no extended pattern) from `k` ends, the longest: one walk, not a run for each end. */
+function longestEnd(re: RegExp, value: string, k: number): number | undefined {
+  const m = longestExec(re.source.slice(1, -1), `${re.flags}y`, value, k);
+  return m ? k + m[0].length : undefined;
+}
+
+/** `${x#p}`, `${x##p}`, `${x%p}` or `${x%%p}` of a value, with the regex of its pattern. */
+export function withoutAffix(op: string, value: string, re: RegExp): string {
+  const len = value.length;
+  if (op === '##') return value.slice(longestEnd(re, value, 0) ?? 0);
+  if (op === '#') return value.slice(firstOf(0, len, (k) => re.test(value.slice(0, k))) ?? 0);
+  return value.slice(0, firstOf(op === '%' ? len : 0, op === '%' ? 0 : len, (k) => re.test(value.slice(k))) ?? len);
+}
+
+/** `${x/p/r}`, `${x//p/r}`, `${x/#p/r}` or `${x/%p/r}` of a value, with the regex of a pattern that matches no empty text. */
+export function replacedMatches(op: string, value: string, re: RegExp, rep: string): string {
+  if (op === '/#') {
+    const e = longestEnd(re, value, 0);
+    return e === undefined ? value : rep + value.slice(e);
+  }
+  if (op === '/%') {
+    const k = firstOf(0, value.length, (s) => re.test(value.slice(s)));
+    return k === undefined ? value : value.slice(0, k) + rep;
+  }
+  let result = '';
+  for (let k = 0; k < value.length;) {
+    const e = longestEnd(re, value, k);
+    if (e === undefined) result += value[k++];
+    else if (op === '/') return result + rep + value.slice(e);
+    else {
+      charge(rep.length);
+      result += rep;
+      k = e;
+    }
+  }
+  return result;
 }

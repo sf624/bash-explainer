@@ -23,7 +23,7 @@ import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, defaultOn, modelVersion, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 import { changedByBash, setAtStart } from './vars';
 import { ARITH, changesDirectory, underscoreValue, unreliableAt, unreliableNames } from './wordsites';
-import { operandPattern, operandReplacement, operandWord } from './operands';
+import { operandPattern, operandReplacement, operandWord, replacedMatches, withoutAffix } from './operands';
 import { CONTEXTS, type ContextRule, declarationOf, declaredWord, ownParts, type WordContext } from './wordcontexts';
 import type { Hole } from './fieldshape';
 export { type Char, ifsEscaped, patternOfChars, quotedIfs } from './chars';
@@ -697,42 +697,12 @@ class Evaluator {
     const re = globToRegex(pattern, 'value', { nocase: nocase === 'on' });
     /* c8 ignore next -- a guard: a pattern without extended globs always converts. */
     if (!re) return undefined;
-    const range = (first: number, last: number): number[] => (first <= last ? Array.from({ length: last - first + 1 }, (_, k) => first + k) : Array.from({ length: first - last + 1 }, (_, k) => first - k));
-    const len = value.length;
-    switch (op) {
-      case '#': case '##': {
-        const i = range(op === '#' ? 0 : len, op === '#' ? len : 0).find((k) => re.test(value.slice(0, k)));
-        return out(i === undefined ? value : value.slice(i));
-      }
-      case '%': case '%%': {
-        const i = range(op === '%' ? len : 0, op === '%' ? 0 : len).find((k) => re.test(value.slice(k)));
-        return out(i === undefined ? value : value.slice(0, i));
-      }
-    }
+    if (op[0] === '#' || op[0] === '%') return out(withoutAffix(op, value, re));
     // `${x/p/r}`, `${x//p/r}`, `${x/#p/r}`, `${x/%p/r}`. An unquoted `&` in the replacement is the match (patsub_replacement).
     const rep = operandReplacement(part('replacement'), this);
     // (A pattern that matches nothing at all, like `*`, has rules of its own at the end of the value; `[!]]`: patsubMiscounts.)
     if (rep === undefined || re.test('') || patsubMiscounts(pattern)) return undefined;
-    const at = (k: number): number | undefined => range(len, k).find((e) => re.test(value.slice(k, e)));
-    if (op === '/#') {
-      const e = at(0);
-      return out(e === undefined ? value : rep + value.slice(e));
-    }
-    if (op === '/%') {
-      const k = range(0, len).find((s) => re.test(value.slice(s)));
-      return out(k === undefined ? value : value.slice(0, k) + rep);
-    }
-    let result = '';
-    for (let k = 0; k < len;) {
-      const e = at(k);
-      if (e === undefined) result += value[k++];
-      else if (op === '/') return out(result + rep + value.slice(e));
-      else {
-        result += rep;
-        k = e;
-      }
-    }
-    return out(result);
+    return out(replacedMatches(op, value, re, rep));
   }
 
   private valued(v: string | null | undefined, out: (t: string) => Piece[]): Piece[] | undefined {

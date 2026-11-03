@@ -233,7 +233,7 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
       const inner = textBetween(first, last);
       const program = stringShell(cx.shell, first.text, words.map((w) => w.text));
       const code = program ? `${program} -c '${inner.replace(/'/g, "'\\''")}'` : `${cx.shell} -c '…'`;
-      const own = !!program && !/[$`]/.test(inner.replace(new RegExp(`\\$(\\{${v}\\}|${v}(?!\\w))`, 'g'), ''));
+      const own = !!program && !/[$`]/.test(inner.replace(/\$(?:\{(\w+)\}|(\w+))/g, (m, braced?: string, bare?: string) => ((braced ?? bare) === v ? '' : m)));
       cx.note(fact(cx.lang, 'wrapper-assignment-expanded-first', { use: use.text, via, v, rewrite: [own ? replaceRange(first, first.startIndex, last.endIndex, code) : { code, edits: [] }] }), use);
       break;
     }
