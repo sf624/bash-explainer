@@ -2,7 +2,7 @@ import { sedEscapeAt } from '../ctlchars';
 import type { Flavor } from '../embedded/regex';
 import { wordTable } from '../wordtable';
 import { type Node, Parser } from './regexparse';
-import { RegexRefused, scriptRegex } from './regexguard';
+import { longestExec, RegexRefused, scriptRegex } from './regexguard';
 
 /** A POSIX or PCRE pattern translated to a JavaScript RegExp. */
 export interface JsRegex {
@@ -259,6 +259,8 @@ export function regexExamples(js: JsRegex, max = 3): RegexExamples | undefined {
   // A guard: it reads to the end.
   /* c8 ignore next */
   if (p.i < js.source.length) return undefined;
+  // (Whether it repeats depends on the release of the tool: no lines to show.)
+  if (p.openBrace) return undefined;
   const matching: string[] = [];
   const left = { steps: 100000 };
   for (let v = 0; v < 12 && matching.length < max; v++) {
@@ -332,17 +334,7 @@ function firstExec(r: JsRegex, line: string, at: number): RegExpExecArray | null
  * the first its alternatives give: `a\|ab` takes `a` of `ab`), with its groups; null when there is none.
  */
 export function posixExec(r: JsRegex, line: string, at: number): RegExpExecArray | null {
-  const first = firstExec(r, line, at);
-  if (!first) return null;
-  let best: RegExpExecArray = first;
-  // A match at the same start that ends further on (the line seen whole, for `$` and lookarounds), until none does.
-  for (;;) {
-    const longer = scriptRegex(`(?:${r.source})(?<=^[\\s\\S]{${best.index + best[0].length + 1},})`, r.flags + 'y');
-    longer.lastIndex = best.index;
-    const m = longer.exec(line);
-    if (!m) return best;
-    best = m;
-  }
+  return longestExec(r.source, r.flags, line, at);
 }
 
 function swapCase(s: string): string {

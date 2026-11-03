@@ -1,7 +1,7 @@
 /** A small Perl subset for one-liner examples: perl -n/-p/-l/-a/-F/-i -e '…'. */
 import { sprintf } from './awk';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
-import { scriptRegex } from './regexguard';
+import { charge, scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { parseOptions, shortKeys, Unsupported as TextUnsupported } from './textfilters';
 
@@ -639,11 +639,9 @@ class Interp {
           count++;
           const groups = m.slice(0, -2).filter((x) => typeof x === 'string' || x === undefined) as (string | undefined)[];
           this.caps = groups;
-          if (e.evalRep) {
-            const p = new Parser(lex(e.rep));
-            return str(this.ev(p.expr()));
-          }
-          return this.interpolate(e.rep);
+          const made = e.evalRep ? str(this.ev(new Parser(lex(e.rep)).expr())) : this.interpolate(e.rep);
+          charge(made.length);
+          return made;
         });
         if (e.ret) return result;
         if (count) this.lvalueSet(target, result);

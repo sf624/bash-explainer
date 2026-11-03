@@ -1,5 +1,5 @@
 import { evalArith, intValue } from './arith';
-import { scriptRegex } from './examples/regexguard';
+import { charge, scriptRegex } from './examples/regexguard';
 import { Lang } from './i18n';
 import { bracketEnd, bracketItems, bracketRegex, patsubMiscounts, type BracketItem } from './bracket';
 import { messageText, unquoteWord } from './staticword';
@@ -298,7 +298,7 @@ function replace(value: string, parts: GlobPart[], rep: string, mode: '/' | '//'
     }
     return value;
   }
-  return value.replace(scriptRegex(src, mode === '//' ? 'g' : ''), () => rep);
+  return value.replace(scriptRegex(src, mode === '//' ? 'g' : ''), () => { charge(rep.length); return rep; });
 }
 
 const SAMPLES = [
@@ -666,7 +666,7 @@ function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; as
 function classSample(body: string): string {
   const { negated, items } = bracketItems(body)!;
   const first = items[0];
-  const re = new RegExp(`^${bracketRegex(body)!}$`);
+  const re = scriptRegex(`^${bracketRegex(body)!}$`);
   const candidates = [negated ? '_' : first.type === 'char' ? first.ch : first.type === 'range' ? first.from : '', ...'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-.]^\\!'];
   return candidates.find((c) => c && re.test(c)) ?? 'x';
 }

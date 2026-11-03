@@ -345,7 +345,7 @@ export function globExamples(pattern: string, mode: GlobMode, opts: GlobOpts = {
       if (c === '[') {
         const end = bracketEnd(pattern, i, to);
         if (end > 0) {
-          const re = new RegExp(`^${bracketRegex(pattern.slice(i + 1, end))!}$`);
+          const re = scriptRegex(`^${bracketRegex(pattern.slice(i + 1, end))!}$`);
           const pool = 'abcxyz0123456789ABC-_defghijklmnopqrstuvwDEFGHIJKLMNOPQRSTUVWXYZ.+@%,=~]!^\\';
           const ok = pool.split('').filter((ch) => re.test(ch));
           out += ok[v % Math.max(ok.length, 1)] ?? 'a';

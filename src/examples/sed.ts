@@ -1,6 +1,6 @@
 import { sedEscapeAt } from '../ctlchars';
 import { JsRegex, posixExec, posixMatches, regexExamples, toJsRegex } from './regex';
-import { scriptRegex } from './regexguard';
+import { charge, scriptRegex } from './regexguard';
 import type { LineMarks } from './marks';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
@@ -217,6 +217,7 @@ function replacement(rep: string, m: RegExpExecArray): string {
   let mode: 'U' | 'L' | '' = '';
   let once: 'u' | 'l' | '' = '';
   const add = (s: string) => {
+    charge(8 * s.length);
     for (const ch of s) {
       let c = mode === 'U' ? ch.toUpperCase() : mode === 'L' ? ch.toLowerCase() : ch;
       if (once) {
