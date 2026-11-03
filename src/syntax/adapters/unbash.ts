@@ -913,11 +913,11 @@ class Converter {
       if (r.delimiter) this.node('heredoc_start', r.delimiter.pos, r.delimiter.end, null, n);
       const closing = r.closing;
       const bodyEnd = closing ? closing.end : r.body.end;
-      this.skip.push([r.body.pos, bodyEnd]);
-      // With `<<-`, the first line's tabs are not part of the body.
+      // The body is skipped only after its expansions are read: their `&&`, `;` and `then` are tokens. With `<<-`, the first line's tabs are not part of the body.
       const bodyStart = r.body.pos + (r.operator === '<<-' ? /^\t*/.exec(this.text.slice(r.body.pos, r.body.end))![0].length : 0);
       const body = this.node('heredoc_body', bodyStart, closing ? closing.pos : r.body.end, null, n);
       this.heredocParts(body, r.body);
+      this.skip.push([r.body.pos, bodyEnd]);
       if (closing) this.node('heredoc_end', closing.pos, closing.end, null, n);
       else this.missing(n, 'heredoc_end', bodyEnd);
       n.endIndex = bodyEnd;

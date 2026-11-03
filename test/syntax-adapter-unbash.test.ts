@@ -251,6 +251,18 @@ describe('unbash adapter: tokens and comments', () => {
     assert.equal(heredoc.text, '<<E && ls\nbody && fi\nE');
     assert.deepEqual(toks(heredoc), ['<<@' + text.indexOf('<<')]);
   });
+  it('finds the operators, keywords and comments of a `$( )` in a heredoc body, and none of the body\'s text', () => {
+    // (They were left out when the whole body was skipped before its expansions were read: `a && b` was a list with no `&&`.)
+    const text = 'cat <<E\nx && y $(a && b | c; if p; then q; fi # c\n) `d || e`\nE\ncat <<-\'E\'\n\t$(a && b)\n\tE\n';
+    const t = tree(text);
+    const lists = descendants(t.root, ['list']);
+    assert.deepEqual(lists.map(toks), [['&&@' + text.indexOf('&& b')], ['||@' + text.indexOf('||')]]);
+    assert.deepEqual(toks(types(t.root, 'pipeline')[0]), ['|@' + text.indexOf('| c')]);
+    assert.deepEqual(toks(types(t.root, 'if_statement')[0]), ['if@' + text.indexOf('if p'), ';@' + text.indexOf('; then'), 'then@' + text.indexOf('then'), ';@' + text.indexOf('; fi'), 'fi@' + text.indexOf('fi #')]);
+    assert.deepEqual(types(t.root, 'comment').map((c) => c.text), ['# c']);
+    // (The text of the body, and a quoted body, has no token.)
+    assert.deepEqual(types(t.root, 'heredoc_body').map((b) => descendants(b, ['&&']).length), [1, 0]);
+  });
   it('every comment is a comment node, in the node it lies in', () => {
     const t = tree('# one\necho a # two\nif x; then # three\n  y # four\nfi # five\necho $(z # six\n) "$(w # seven\n)"\n(# eight\n:)\nx=(a # nine\n b)');
     assert.deepEqual(types(t.root, 'comment').map((c) => c.text), ['# one', '# two', '# three', '# four', '# five', '# six', '# seven', '# eight', '# nine']);

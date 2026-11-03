@@ -466,6 +466,32 @@ describe('the notes on status and errexit', () => {
   });
 });
 
+// `$(a && b)` in a heredoc body threw (`ops.at(-1)!` of a list with no `&&` token): the adapter left the body's expansions
+// without their operators. A substitution's status is a value there, and in bash `set -e` does not stop at it (checked
+// below), so no line says anything about the status.
+describe('a list in a `$( )` of a heredoc body', () => {
+  const lines = (src: string): string[][] => src.split('\n').map((_, i) => notes(src, i));
+  const say = (src: string) => lines(src).flat().filter((n) => /status|returns 0|goes on|set -e|終了ステータス/.test(n));
+  const bodies = ['cat <<EOF\n$(a && b)\nEOF', 'cat <<EOF\n$(a || b)\nEOF', 'cat <<-EOF\n\t$(a && b)\n\tEOF', "cat <<'EOF'\n$(a && b)\nEOF",
+    'cat <<EOF\n$(echo $(a && b))\nEOF', 'cat <<EOF\n$(a; b)\nEOF', 'cat <<EOF\n$(a && b || c)\nEOF', 'cat <<EOF\n`a && b`\nEOF', 'cat <<< "$(a && b)"',
+    'f() {\n  cat <<EOF\n$(a || echo none)\nEOF\n}\nf', 'for i in 1 2; do\n  cat <<EOF\n$(a && b)\nEOF\ndone', 'cat <<EOF | grep x\n$(a && b)\nEOF',
+    '#!/bin/bash\ncat <<EOF\n$(cat f || echo none)\nEOF', 'set -e\ncat <<EOF\n$(false && true)\nEOF\necho after', 'set -e\ncat <<EOF\n$(false || echo none)\nEOF\necho after'];
+  for (const src of bodies) {
+    it(`explains every line of ${JSON.stringify(src)} and says nothing about its status`, () => {
+      assert.deepStrictEqual(say(src), []);
+      // (The list is explained as in any other word: its operator has its token.)
+      const unquoted = !/<<'EOF'/.test(src);
+      const ops = src.split('\n').flatMap((_, i) => explanations(src, i)).filter((e) => /^Run the right side only if/.test(e));
+      assert.strictEqual(ops.length > 0, unquoted && /&&|\|\|/.test(src));
+    });
+  }
+  it('has the status of bash: a failure in the substitution does not stop `set -e`', function () {
+    const run = runBash('set -e\ncat <<EOF\n$(false && true)\nEOF\ncat <<EOF\n$(false || echo none)\nEOF\necho after');
+    if (run.status === -1) return this.skip();
+    assert.deepStrictEqual(run, { stdout: '\nnone\nafter\n', stderr: '', status: 0 });
+  });
+});
+
 describe('a failure reported with `|| echo` where the status matters', () => {
   const said = (src: string, lang: 'en' | 'ja' = 'en', shell?: Shell) => notes(src, src.split('\n').length - 1, lang, shell).filter((n) => /status 0|returns 0|goes on|終了ステータス 0|そのまま続き/.test(n));
   it('says that the script ends with status 0, and that `2>/dev/null` leaves only the message', () => {

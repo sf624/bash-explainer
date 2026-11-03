@@ -34,6 +34,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- A script with `$(a && b)` or `$(a || b)` in a here-document no longer stops the explanation with an error, and the `$( )` in a here-document shows its operators (`&&`, `|`, `;`, `then`).
 - "In short" keeps the status of a pipeline when the line's problem is about something else, such as a variable lost in a stage's subshell. Before, it left the status out.
 - `cmd 2>&1 >o 2>e` and `cmd 2>&1 >o |& tee x` no longer say that stderr goes to the original stdout: it goes to `e`, and to `o`.
 - The note on `source lib.sh` suggests a path from the script's directory that holds when the file is itself sourced (`"$(dirname "${BASH_SOURCE[0]}")"/lib.sh`). Before, it suggested `$0`, which then names the caller.
