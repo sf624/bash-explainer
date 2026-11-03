@@ -716,6 +716,9 @@ export const MESSAGES = {
   'python-string-partial': note<Record<string, never>>(['3.1.1'], () => HOST_NOTES['python-string-partial']),
 } satisfies Record<string, Entry<never>>;
 
+/** What makes an entry a problem, which then needs a headline (src/messages-heads.ts): a pitfall's kind, or a failure's level. */
+export type ProblemEntry = { kind: 'pitfall' } | { level: 'error' };
+
 export type FactId = keyof typeof MESSAGES;
 export type Params<K extends FactId> = Parameters<(typeof MESSAGES)[K]['text']>[0];
 
@@ -772,13 +775,13 @@ export function problemNote(lang: Lang, kind: 'unsupported' | 'behaviour' | 'par
 }
 
 /**
- * The note of a token's text that says the command fails every time (`tokenError`, src/messages-levels.ts): the token's
- * row says it, and as a note it reaches the panel's box and the problems by the one path of every note (`noteIssues`).
+ * The note of a token's text that says the command fails every time (`tokenError`, src/messages-levels.ts): the row's
+ * text and what follows from it. As a note it reaches the panel's box and the problems by the one path of every note (`noteIssues`).
  * Its code is the text's id, as for `# bash-explainer disable=`.
  */
 export function tokenNote(lang: Lang, { id, level, text }: TokenMark): Note & { code: string } {
-  const { head } = TOKEN_TEXTS[id] as TokenEntry<never>;
-  return { ...marked(lang, level, text, { head }), code: id };
+  const { head, then } = (TOKEN_TEXTS[id] as TokenEntry<never>).problem!;
+  return { ...marked(lang, level, lang === 'ja' ? `${text}。${then[0]}` : `${text}. ${then[1]}`, { head }), code: id };
 }
 
 /**

@@ -78,11 +78,11 @@ describe('a constant of arithmetic, in each shell', () => {
 
     it('says it only where the shell rejects the constant, in one text', () => {
       const text = saidOf('echo $((09))', undefined)!.text;
-      assert.match(text, /^Invalid number `09`: .*\. The shell reports an arithmetic error, and this command does not do its work$/);
+      assert.match(text, /^Invalid number `09`: a number starting with 0 is read as octal, and `9` is not an octal digit$/);
       for (const shell of ['bash', 'sh', 'dash', 'ash'] as const) assert.strictEqual(saidOf('echo $((09))', shell)!.text, text, shell);
       for (const shell of ['zsh', 'mksh', 'ksh', 'yash'] as const) assert.strictEqual(saidOf('echo $((09))', shell), undefined, shell);
       // (A letter is wrong in each of them.)
-      assert.match(saidOf('echo $((1a))', 'zsh')!.text, /and this command does not do its work$/);
+      assert.strictEqual(saidOf('echo $((1a))', 'zsh')!.id, 'arith-invalid-number');
       // (Of a `base#digits` other shells do not take alike, nothing.)
       assert.match(saidOf('echo $((2#2))', 'bash')!.text, /`2` is not a digit in base 2/);
       assert.strictEqual(saidOf('echo $((2#2))', 'zsh'), undefined);
@@ -154,7 +154,6 @@ describe('a constant of arithmetic, in each shell', () => {
       (bin ? it : it.skip)(`${shell}: ${JSON.stringify(src)} does not do its work`, () => {
         const said = saidOf(src, shell);
         assert.deepStrictEqual([said?.id, said?.level], ['arith-invalid-number', 'error']);
-        assert.match(said!.text, /and this command does not do its work$/);
         const r = run(bin!, flags, `${src}\n`);
         assert.doesNotMatch(r.stdout + r.stderr, work);
         assert.match(r.stderr, /value too great|arithmetic/);

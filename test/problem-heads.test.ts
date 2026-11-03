@@ -67,7 +67,7 @@ const CASES: { [K in ProblemFactId]: readonly unknown[] } = {
   'function-not-imported-sh': [{ fn: 'f' }],
   'function-shadowed-by-program': [{ name: 'f' }],
   'wrapper-assignment-expanded-first': [{ use: '$x', via: 'env', v: 'x' }],
-  'pipeline-subshell-variable': [{ used: 'x' }],
+  'pipeline-subshell-variable': [{ used: 'x' }, { used: 'x', partial: true }],
   'unmatched-glob-runs-once': [{ glob: '*.txt', v: 'f', how: { menu: true } }, { glob: '*.txt', v: 'f', how: { menu: false } }],
   'prefix-assignment-expanded-first': [{ v: 'x', name: 'a', use: '$x' }],
   'unquoted-variable-as-path': [{ bare: '$x', destroys: true }, { bare: '$x' }],
@@ -131,9 +131,9 @@ describe('the headline of each problem', () => {
       for (const c of cases) assertHead(STYLE_HEADS[code as StyleCode](c), code);
     }
     for (const [id, e] of Object.entries(TOKEN_TEXTS)) {
-      const { level, head } = e as { level?: string; head?: readonly [string, string] };
-      if (level === 'error') assertHead(head!, id);
-      else assert.strictEqual(head, undefined, id);
+      const { level, problem } = e as { level?: string; problem?: { head: readonly [string, string] } };
+      if (level === 'error') assertHead(problem!.head, id);
+      else assert.strictEqual(problem, undefined, id);
     }
   });
 

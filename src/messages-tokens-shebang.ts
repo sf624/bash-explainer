@@ -9,21 +9,26 @@ export const SHEBANG_TEXTS = {
     `カーネルはインタープリタを PATH から探さず、カレントディレクトリからの相対パスとして \`${interp}\` を探すので、実行はたいてい失敗する（required file not found）`,
     `The kernel does not search PATH for the interpreter: it looks for \`${interp}\` from the current directory, so running the file mostly fails ("required file not found")`]),
   /** `#!/usr/bin/env -S"a`: the string `env -S` is given cannot be split. */
-  'shebang-env-string-refused': tokenError(['直接実行すると、env がこの文字列を分けられず、何も実行されない。', 'Run directly, env cannot split this string, and nothing runs.'], () => [
-    'env はこの文字列を分けられず、何も実行せずに終了ステータス 125 で終わる',
-    'env cannot split this string and exits with status 125, running nothing']),
+  'shebang-env-string-refused': tokenError({
+    head: ['直接実行すると、env がこの文字列を分けられず、何も実行されない。', 'Run directly, env cannot split this string, and nothing runs.'],
+    then: ['何も実行せずに終了ステータス 125 で終わる', 'It exits with status 125, running nothing'],
+  }, () => ['env はこの文字列を分けられない', 'env cannot split this string']),
   /** `#!/usr/bin/env -i bash`: env reads the whole word as options. */
   'shebang-env-reads-options': tokenWarning<{ rest: string; last: string }>(({ rest, last }) => [
     `Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になり、env はそれを1つのオプションの並びとして読むので、\`${last}\` をコマンドとして実行しない（多くは不正なオプションとして終了ステータス 125 で終わる）。分けるには \`env -S\` と書く`,
     `On Linux the whole \`${rest}\` after the interpreter is one argument to env, which reads it as one run of options, so it does not run \`${last}\` (it mostly fails with an invalid option and status 125); write \`env -S\` to split it`]),
   /** `#!/usr/bin/env bash -e`: env looks for a program named with the whole rest. */
-  'shebang-env-one-argument': tokenError<{ rest: string }>(['Linux で直接実行すると、env は残り全体を1つのプログラム名として探して失敗する。', 'Run directly on Linux, env looks for one program named with all the rest, and fails.'], ({ rest }) => [
-    `Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になるので、env はその名前のプログラムを探して失敗する。分けるには \`env -S\` と書く`,
-    `On Linux the whole \`${rest}\` after the interpreter is one argument to env, which looks for a program of that name and fails; write \`env -S\` to split it`]),
+  'shebang-env-one-argument': tokenError<{ rest: string }>({
+    head: ['Linux で直接実行すると、env は残り全体を1つのプログラム名として探して失敗する。', 'Run directly on Linux, env looks for one program named with all the rest, and fails.'],
+    then: ['env はその名前のプログラムを探して失敗する。分けるには `env -S` と書く', 'env looks for a program of that name and fails; write `env -S` to split it'],
+  }, ({ rest }) => [`Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になる`, `On Linux the whole \`${rest}\` after the interpreter is one argument to env`]),
   /** env given no command (`#!/usr/bin/env`, or only an assignment): it runs the script's path, whose shebang runs env again. */
-  'shebang-env-loop': tokenError<{ assignment?: string }>(['直接実行すると、スクリプトが自分自身を終わりなく起動し直す。', 'Run directly, the script starts itself again, without end.'], ({ assignment }) => [
-    `env はスクリプトのパスをコマンドとして実行する${assignment ? `（\`${assignment}\` は設定する変数として読む）` : ''}ので、スクリプトが自分自身を終わりなく起動し直す`,
-    `env runs the script's path as the command${assignment ? ` (it takes \`${assignment}\` as a variable to set)` : ''}, so the script starts itself again, without end`]),
+  'shebang-env-loop': tokenError<{ assignment?: string }>({
+    head: ['直接実行すると、スクリプトが自分自身を終わりなく起動し直す。', 'Run directly, the script starts itself again, without end.'],
+    then: ['スクリプトが自分自身を終わりなく起動し直す', 'The script starts itself again, without end'],
+  }, ({ assignment }) => [
+    `env はスクリプトのパスをコマンドとして実行する${assignment ? `（\`${assignment}\` は設定する変数として読む）` : ''}`,
+    `env runs the script's path as the command${assignment ? ` (it takes \`${assignment}\` as a variable to set)` : ''}`]),
   /** `#!`: no interpreter. */
   'shebang-no-interpreter': tokenText(() => [
     'シバン（shebang）だがインタープリタがない: ファイルをプログラムとして実行すると、カーネルはそれを実行できず、実行しようとしたシェル（bash など）が自分でシェルスクリプトとして読む。bash にとってこの行はコメント',

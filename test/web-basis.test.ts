@@ -10,6 +10,8 @@ import type { Browser, Frame } from 'playwright-core';
 import { chooseView, frames, openSite, until } from './support/site';
 
 const LINE = 'x=1; unset -fv x f; exit 300';
+/** A part of a note, in the box of the line's problems (`unset -fv`) or among the other notes (`exit 300`). */
+const both = (part: string) => `#problems ${part}, #notes ${part}`;
 /** A line whose rows rest on bash's behaviour (step 4): `UID=0` before a command (it differs), `$COLUMNS` (not in the manual). */
 const ROWS = 'UID=0 echo "$COLUMNS"';
 
@@ -94,7 +96,7 @@ describe('the web page: what a note rests on', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText(line);
     await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes(line.slice(-8)));
-    await until('the notes', () => panel().locator('#notes .note').count(), (n) => n === notes);
+    await until('the notes', () => panel().locator(both('.note')).count(), (n) => n === notes);
     return { ctx, page, panel, errors };
   }
 
@@ -102,21 +104,23 @@ describe('the web page: what a note rests on', function () {
     it(`marks the notes that rest on bash's behaviour, with a try-it, at ${width} px (${locale})`, async () => {
       const ja = locale === 'ja-JP';
       const { ctx, panel, errors } = await open(width, locale);
-      const chips = await panel().locator('#notes .basis').allTextContents();
+      const chips = await panel().locator(both('.basis')).allTextContents();
       assert.deepStrictEqual(chips, Array(2).fill(ja ? 'マニュアルに記述なし・bash 5.2・5.3 で確認' : 'Not in the manual · checked with bash 5.2 and 5.3'));
-      assert.match(await panel().locator('#notes .basis').first().getAttribute('title') ?? '', ja ? /bash 5\.2・5\.3 で実行して確かめた/ : /checked by running bash 5\.2 and 5\.3/);
+      assert.match(await panel().locator(both('.basis')).first().getAttribute('title') ?? '', ja ? /bash 5\.2・5\.3 で実行して確かめた/ : /checked by running bash 5\.2 and 5\.3/);
       // Folded at first; a click opens it, and a click in it does not fold it again.
-      const heads = panel().locator('#notes summary.tryit-head');
+      const heads = panel().locator(both('summary.tryit-head'));
       assert.deepStrictEqual(await heads.allTextContents(), Array(2).fill(ja ? '端末で試す' : 'Try it in your terminal'));
-      assert.strictEqual(await panel().locator('#notes details.tryit[open]').count(), 0);
+      assert.strictEqual(await panel().locator(both('details.tryit[open]')).count(), 0);
+      await panel().evaluate(`document.querySelectorAll('details.problem-more').forEach((d) => { d.open = true; })`);
+      await openAll(panel(), '#problems');
       await openAll(panel(), '#notes');
-      assert.strictEqual(await panel().locator('#notes details.tryit[open]').count(), 2);
-      assert.deepStrictEqual(await panel().locator('#notes .tryit-output').allTextContents(), [
+      assert.strictEqual(await panel().locator(both('details.tryit[open]')).count(), 2);
+      assert.deepStrictEqual(await panel().locator(both('.tryit-output')).allTextContents(), [
         'bash: line 1: unset: cannot simultaneously unset a function and a variable\nstatus 1, x=1\nfunction', '44']);
-      assert.deepStrictEqual(await panel().locator('#notes .tryit-prints').allTextContents(), Array(2).fill(ja ? '出力' : 'Output'));
+      assert.deepStrictEqual(await panel().locator(both('.tryit-prints')).allTextContents(), Array(2).fill(ja ? '出力' : 'Output'));
       // Nothing is cut or overlaps: the chip, the code, its button and the output stay in their note, the button is
       // beside the code, and the panel does not scroll sideways.
-      const boxes = await panel().evaluate(`[...document.querySelectorAll('#notes .note')].map((n) => {
+      const boxes = await panel().evaluate(`[...document.querySelectorAll('#problems .note, #notes .note')].map((n) => {
         const r = (el) => { const b = el.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom }; };
         return { note: r(n), chip: r(n.querySelector('.basis')), code: r(n.querySelector('.tryit-code')), copy: r(n.querySelector('.tryit-copy')), output: r(n.querySelector('.tryit-output')) };
       })`) as Record<string, { left: number; right: number; top: number; bottom: number }>[];
@@ -130,7 +134,7 @@ describe('the web page: what a note rests on', function () {
       assert.ok(await panel().evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), 'the panel scrolls sideways');
       // The code and the output wrap only between words: no line ends inside one, as after the `-` of `-fv`
       // (`unset -` / `fv` would read as two words). Each line is the characters drawn at one height.
-      const breaks = await panel().evaluate(`[...document.querySelectorAll('#notes .tryit-code, #notes .tryit-output')].flatMap((box) => {
+      const breaks = await panel().evaluate(`[...document.querySelectorAll('#problems .tryit-code, #problems .tryit-output, #notes .tryit-code, #notes .tryit-output')].flatMap((box) => {
         const text = box.textContent;
         const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
         const tops = [];
@@ -155,12 +159,12 @@ describe('the web page: what a note rests on', function () {
       if (process.env.BASH_EXPLAINER_SHOTS) {
         // (One note at a time: a frame's screenshot holds only what its viewport shows.)
         for (let i = 0; i < 2; i++) {
-          await panel().locator('#notes .note').nth(i).screenshot({ path: path.join(process.env.BASH_EXPLAINER_SHOTS, `basis-${width}-${ja ? 'ja' : 'en'}-${i + 1}.png`) });
+          await panel().locator(both('.note')).nth(i).screenshot({ path: path.join(process.env.BASH_EXPLAINER_SHOTS, `basis-${width}-${ja ? 'ja' : 'en'}-${i + 1}.png`) });
         }
       }
       // The copy button puts the command on the clipboard, and says so.
-      await panel().locator('#notes .tryit-copy').nth(1).click();
-      await until('copied', () => panel().locator('#notes .tryit-copy').nth(1).textContent(), (t) => t === (ja ? 'コピーしました' : 'Copied'));
+      await panel().locator(both('.tryit-copy')).nth(1).click();
+      await until('copied', () => panel().locator(both('.tryit-copy')).nth(1).textContent(), (t) => t === (ja ? 'コピーしました' : 'Copied'));
       assert.strictEqual(await panel().evaluate('navigator.clipboard.readText()'), "bash -c '(exit 300); echo $?'");
       assert.deepStrictEqual(errors, []);
       await ctx.close();
@@ -213,7 +217,7 @@ describe('the web page: what a note rests on', function () {
 
   it('shows no chip and no try-it with `notes.basis` off', async () => {
     const { ctx, panel } = await open(1280, 'en-US', { 'bashExplainer.notes.basis': false });
-    assert.strictEqual(await panel().locator('#notes .basis, #notes .tryit').count(), 0);
+    assert.strictEqual(await panel().locator(`${both('.basis')}, ${both('.tryit')}`).count(), 0);
     await ctx.close();
     const rows = await open(1280, 'en-US', { 'bashExplainer.notes.basis': false }, ROWS, 1);
     assert.strictEqual(await rows.panel().locator('.basis, .tryit').count(), 0);
