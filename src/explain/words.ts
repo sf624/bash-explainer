@@ -9,6 +9,7 @@ import { type BashVersion, earlier } from '../bashversion';
 import { pictureList, visible } from '../ctlchars';
 import { ciVariables } from '../dict/ciVariables';
 import { bash53Variables, specialVariables, wellKnownVariables } from '../dict/syntax';
+import { lineLabel } from '../i18n';
 import { explainGlob, globIntro, type GlobTarget, hasGlob, unbroken } from '../embedded/glob';
 import { extglobs, hasGlobstar, isGlob } from '../examples/shellwords';
 import { parseSequence } from '../braceseq';
@@ -714,13 +715,13 @@ function splitNote(cx: Explainer, n: SyntaxNode): { ja: string; en: string } | u
   if (ifs.kind === 'default') {
     [ja, en] = [`空白で分割され${after.split[g][0]}`, `it is word-split${after.split[g][1]}`];
   } else if (ifs.kind === 'unknown') {
-    [ja, en] = [`\`IFS\` は行 ${line} で、ここでは分からない値にしてある。その文字で分割され${after.ifs[g][0]}`, `it is split on the characters of \`IFS\` (set on line ${line} to a value not known here)${after.ifs[g][1]}`];
+    [ja, en] = [`\`IFS\` は${lineLabel('ja', line)} で、ここでは分からない値にしてある。その文字で分割され${after.ifs[g][0]}`, `it is split on the characters of \`IFS\` (set on ${lineLabel('en', line, 'inline')} to a value not known here)${after.ifs[g][1]}`];
   } else if (ifs.value === '') {
-    [ja, en] = [`\`IFS\` が空（行 ${line}）なので単語分割はされない${after.empty[g][0]}`, `\`IFS\` is empty (line ${line}), so it is not word-split${after.empty[g][1]}`];
+    [ja, en] = [`\`IFS\` が空（${lineLabel('ja', line)}）なので単語分割はされない${after.empty[g][0]}`, `\`IFS\` is empty (${lineLabel('en', line, 'inline')}), so it is not word-split${after.empty[g][1]}`];
   } else {
     const noSpace = !/[ \t\n]/.test(ifs.value);
-    [ja, en] = [`\`IFS\`（行 ${line} で \`${shown(ifs.value)}\` にしてある）の文字で分割され${noSpace ? '、空白では分割されない' : ''}${after.value[g][0]}`,
-      `it is split on the characters of \`IFS\` (set to \`${shown(ifs.value)}\` on line ${line})${noSpace ? ', not on spaces' : ''}${after.value[g][1]}`];
+    [ja, en] = [`\`IFS\`（${lineLabel('ja', line)} で \`${shown(ifs.value)}\` にしてある）の文字で分割され${noSpace ? '、空白では分割されない' : ''}${after.value[g][0]}`,
+      `it is split on the characters of \`IFS\` (set to \`${shown(ifs.value)}\` on ${lineLabel('en', line, 'inline')})${noSpace ? ', not on spaces' : ''}${after.value[g][1]}`];
   }
   return { ja: ja + ambiguous.ja, en: en + ambiguous.en };
 }

@@ -17,7 +17,7 @@ import { describeFind, findWords, type FindNode, operatorTexts, parseFind, stray
 import { globIntro, hasGlob } from '../embedded/glob';
 import type { EmbeddedLang } from '../embedded/types';
 import { braceTexts } from '../semantics/brace';
-import type { Text } from '../i18n';
+import { lineLabel, type Text } from '../i18n';
 import { shorten } from '../label';
 import { fact } from '../messages';
 import { nameInfo } from '../namefacts';
@@ -808,18 +808,18 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
     const missed = (res as { missed?: Missed }).missed;
     if (res.kind === 'none') {
       kind = 'command';
-      explanation = res.disabled ? cx.s(`行 ${docLine(res.disabled.at) + 1} の \`enable -n\` で組み込みの \`${name}\` は無効なので、\`builtin\` はエラーになる`, `\`enable -n\` on line ${docLine(res.disabled.at) + 1} turned the builtin \`${name}\` off, so \`builtin\` fails`)
+      explanation = res.disabled ? cx.s(`${lineLabel('ja', docLine(res.disabled.at) + 1)} の \`enable -n\` で組み込みの \`${name}\` は無効なので、\`builtin\` はエラーになる`, `\`enable -n\` on ${lineLabel('en', docLine(res.disabled.at) + 1, 'inline')} turned the builtin \`${name}\` off, so \`builtin\` fails`)
         : cx.s(`\`${name}\` は組み込みコマンドではないので、\`builtin\` はエラーになる`, `\`${name}\` is not a builtin, so \`builtin\` fails`);
     } else if (res.kind === 'file' && res.disabled) {
       // (`enable -n echo; command echo`: the program.)
       kind = 'command';
       const program = role.spec?.program;
       const line = (docLine(res.disabled.at) + 1);
-      explanation = cx.s(`外部コマンド \`${name}\`（行 ${line} の \`enable -n\` で組み込みは無効）${program ? `: ${cx.t(program.summary)}` : ''}`,
-        `the external command \`${name}\` (\`enable -n\` on line ${line} turned the builtin off)${program ? `: ${cx.t(program.summary)}` : ''}`);
+      explanation = cx.s(`外部コマンド \`${name}\`（${lineLabel('ja', line)} の \`enable -n\` で組み込みは無効）${program ? `: ${cx.t(program.summary)}` : ''}`,
+        `the external command \`${name}\` (\`enable -n\` on ${lineLabel('en', line, 'inline')} turned the builtin off)${program ? `: ${cx.t(program.summary)}` : ''}`);
     }
     if (missed?.kind === 'function' && (missed.why === 'command' || missed.why === 'builtin')) {
-      explanation += cx.s(`（行 ${(docLine(missed.def) + 1)} の同じ名前の関数は使わない）`, ` (not the function of that name, defined on line ${(docLine(missed.def) + 1)})`);
+      explanation += cx.s(`（${lineLabel('ja', (docLine(missed.def) + 1))} の同じ名前の関数は使わない）`, ` (not the function of that name, defined on ${lineLabel('en', (docLine(missed.def) + 1), 'inline')})`);
     }
   }
   // `command [ -f x ]`, `env test -f x`: `test` and `[` read their words as an expression, when the name runs one of them.

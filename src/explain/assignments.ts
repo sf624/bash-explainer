@@ -7,6 +7,7 @@ import { evalArith } from '../arith';
 import { visible } from '../ctlchars';
 import { variableAssignments, variableEmptied, variableLanguages } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
+import { lineLabel } from '../i18n';
 import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
@@ -91,8 +92,8 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     expl = cx.s(`\`${nm}\` は参照（nameref）になる: 値 \`${value.text}\` を名前とする変数の別名で、\`${nm}\` への代入や参照は、その変数に対して行われる`,
       `\`${nm}\` becomes a nameref: another name for the variable whose name is the value \`${value.text}\`; assigning to or reading \`${nm}\` then acts on that variable`);
   } else if (!decl && ref?.state === 'on' && op === '=') {
-    expl += cx.s(`。ただし \`${nm}\` は行 ${(docLine(ref.at) + 1)} で nameref として宣言されているので、参照先の変数に代入される`,
-      `. But \`${nm}\` is declared a nameref on line ${(docLine(ref.at) + 1)}, so this sets the variable it points to`);
+    expl += cx.s(`。ただし \`${nm}\` は${lineLabel('ja', (docLine(ref.at) + 1))} で nameref として宣言されているので、参照先の変数に代入される`,
+      `. But \`${nm}\` is declared a nameref on ${lineLabel('en', (docLine(ref.at) + 1), 'inline')}, so this sets the variable it points to`);
   }
   // An integer variable (`declare -i n`) takes the value of an arithmetic expression, and `+=` adds.
   const integer = name.type !== 'subscript' && value && value.type !== 'array' && attribute(st, nm, 'i') === 'on';

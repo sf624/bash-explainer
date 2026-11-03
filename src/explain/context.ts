@@ -6,7 +6,7 @@ import type { ArgvParse } from '../argv/interpret';
 import { type BashVersion, DEFAULT_BASH_VERSION } from '../bashversion';
 import type { CommandSpec } from '../argv/spec';
 import type { Shell } from '../dialect';
-import type { Lang, Text } from '../i18n';
+import { type Lang, lineRangeLabel, type Text } from '../i18n';
 import { shorten } from '../label';
 import { type Fact, type Note, said } from '../messages';
 import { anchored, type Found, spanOf } from '../noteanchors';
@@ -234,10 +234,9 @@ export class LineExplainer implements Explainer, LineOutput {
   lineRef(n: SyntaxNode, to = n, one = false): string {
     const a = docLine(n) + 1;
     const b = a + effEndRow(to) - n.startPosition.row;
-    if (a === b && one) return this.s(`（行 ${a}）`, ` (line ${a})`);
     // (Also a here-document that is not ended: its body starts after the end of the script.)
-    if (a >= b) return '';
-    return this.s(`（行 ${a}〜${b}）`, ` (lines ${a}–${b})`);
+    if (a > b || (a === b && !one)) return '';
+    return this.s(`（${lineRangeLabel('ja', a, b)}）`, ` (${lineRangeLabel('en', a, b)})`);
   }
 
   get line(): number | null {
