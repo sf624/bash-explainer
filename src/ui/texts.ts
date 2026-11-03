@@ -52,6 +52,11 @@ export const ui = {
       words: { collapse: '折りたたむ', expand: '展開する', copy: 'コピー', reference: '早見表', referenceShort: '早見表' },
       // (The sentence of the line at the top of the Meaning view, `LineExplanation.sentence`.)
       inShort: 'ひとことで',
+      // (The box of the line's problems: src/ui/panelProblems.ts.)
+      problems: {
+        title: 'この行の問題', more: '詳しく', fix: '修正案', toRow: '解説の行へ移動', toProblem: 'この行の問題へ移動',
+        onLine: '行 {n} の{word}', toLine: '行 {n} へ移動',
+      },
       // (What a screen reader hears between the reading of a worked example's highlighted part and the part itself.)
       saidSep: '：',
       // (The line box of a line over more than three rows: its tooltip, folded and opened.)
@@ -184,6 +189,11 @@ export const ui = {
       views: 'View', listView: 'Meaning', treeView: 'Reading',
       words: { collapse: 'Collapse', expand: 'Expand', copy: 'Copy', reference: 'Reference', referenceShort: 'Ref' },
       inShort: 'In short',
+      // (The box of the line's problems: src/ui/panelProblems.ts.)
+      problems: {
+        title: 'Problems on this line', more: 'More', fix: 'Fix', toRow: 'Go to its row', toProblem: 'Go to the problem',
+        onLine: '{word} on line {n}', toLine: 'Go to line {n}',
+      },
       saidSep: ': ',
       lineOpen: 'Click to show the whole line', lineFold: 'Click to fold the line to three rows',
       // (The Key of the panel: what each mark drawn means, src/ui/panelRows.ts.)

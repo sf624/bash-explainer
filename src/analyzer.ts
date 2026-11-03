@@ -38,7 +38,7 @@ import { intersects, isBlockLike, onLine, summaryOf } from './explain/nodes';
 import { arrayKind, resolve } from './explain/reads';
 import { titledExamples, wantsExample } from './explain/examples';
 import { explain, flatten } from './explain/dispatch';
-import { continuationNotes, extglobPitfalls, pipeSubshellPitfalls, statusNotes, unmatchedGlobPitfalls } from './explain/line-notes';
+import { continuationNotes, extglobPitfalls, pipeSubshellPitfalls, statusNotes, tokenErrorNotes, unmatchedGlobPitfalls } from './explain/line-notes';
 
 export { isBlockLike, summaryOf };
 
@@ -118,6 +118,7 @@ export class Analyzer {
       .filter((n) => intersects(n, line));
     const notes = [
       ...continuationNotes(cx, root, line, items),
+      ...tokenErrorNotes(cx, items),
       ...cx.anchored(dialectFound(tree, line, shell ?? 'bash', this.lang, opts.bashVersion)),
       ...new Set(cx.notes),
       ...statusNotes(cx, line, false),

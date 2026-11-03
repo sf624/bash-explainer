@@ -154,7 +154,7 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
       for (const { span, rewrite } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
         const at = span.start.line;
         const issue: DocumentIssue = {
-          code: n.code!, severity: severityOf(n.level), message: problemText(n, lang), ...(alwaysFails(n.level) ? {} : { pitfall: true as const }), ...conventionOf(n),
+          code: n.code!, severity: severityOf(n.level), message: problemText(n, lang), head: n.head!, ...(alwaysFails(n.level) ? {} : { pitfall: true as const }), ...conventionOf(n),
           ...(rewrite ? { fixes: rewrite.map((r) => rewriteFix(r, place)) } : {}),
           startLine: at, startCol: span.start.character, endLine: at, endCol: span.end.line === at ? span.end.character : doc.lines[at].length,
         };
@@ -311,7 +311,7 @@ function issuesOf(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bash
     const sameLine = n.startPosition.row === n.endPosition.row;
     const fix = fixFor(i);
     return {
-      code: i.id, severity: severityOf(i.note.level), message: problemText(i.note, lang), ...(fix ? { fixes: [fix] } : {}),
+      code: i.id, severity: severityOf(i.note.level), message: problemText(i.note, lang), head: i.note.head!, ...(fix ? { fixes: [fix] } : {}),
       startLine: n.startPosition.row, startCol: n.startPosition.column,
       endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : doc.lines[n.startPosition.row].length,
     };
@@ -338,7 +338,7 @@ function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined):
       const start = at(source(index(i.place.startPosition), false));
       const end = at(source(index(i.place.endPosition), true));
       out.push({
-        code: i.id, severity: severityOf(i.note.level), message: problemText(i.note, lang),
+        code: i.id, severity: severityOf(i.note.level), message: problemText(i.note, lang), head: i.note.head!,
         startLine: start.line, startCol: start.col, endLine: start.line, endCol: end.line === start.line ? end.col : doc.lines[start.line].length,
       });
     }
@@ -369,6 +369,14 @@ const CRLF_KEEP = [
   'そのままにしてこの指摘を出さないなら、独立した行に `# bash-explainer disable-file=crlf` と書く。',
   'To keep the file as it is and silence this problem, write `# bash-explainer disable-file=crlf` on a line of its own.',
 ] as const;
+
+/** The headline of `CRLF`, by case. */
+const CRLF_HEADS: Readonly<Record<'keyword' | 'command' | 'shebang' | 'maybe', readonly [string, string]>> = {
+  keyword: ['改行が CRLF なので、行末の予約語が読めず、スクリプトが失敗する。', 'With CRLF line ends, a keyword at the end of a line is not read, and the script fails.'],
+  command: ['改行が CRLF なので、行末の CR だけが1つのコマンドとして読まれて失敗する。', 'With CRLF line ends, a CR alone is read as a command, which fails.'],
+  shebang: ['改行が CRLF なので、プログラムとして実行するとインタープリタが見つからない。', 'With CRLF line ends, the interpreter is not found when the file is run as a program.'],
+  maybe: ['改行が CRLF なので、行の最後の単語の末尾に CR が残る。', 'With CRLF line ends, the last word of a line keeps a CR at its end.'],
+};
 
 /**
  * What a CR at the end of a line does: where a keyword stands before one, where one starts a command, on the `#!` line,
@@ -462,5 +470,5 @@ function crlfIssue(tree: SyntaxTree, lang: Lang): DocumentIssue[] {
   // (In the tree the CR is a blank, so the last word is the one before it; a line of nothing else has no word.)
   const text = before.slice(before.lastIndexOf('\n') + 1).trimEnd();
   const word = /\S+$/.exec(text);
-  return [{ code: 'crlf', severity: severityOf(level), message: lang === 'ja' ? CRLF[why][0] + CRLF_KEEP[0] : `${CRLF[why][1]} ${CRLF_KEEP[1]}`, startLine: line, startCol: word?.index ?? 0, endLine: line, endCol: word ? text.length : 0 }];
+  return [{ code: 'crlf', severity: severityOf(level), message: lang === 'ja' ? CRLF[why][0] + CRLF_KEEP[0] : `${CRLF[why][1]} ${CRLF_KEEP[1]}`, head: CRLF_HEADS[why][lang === 'ja' ? 0 : 1], startLine: line, startCol: word?.index ?? 0, endLine: line, endCol: word ? text.length : 0 }];
 }

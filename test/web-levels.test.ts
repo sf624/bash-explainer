@@ -27,16 +27,16 @@ describe('the web page: the levels of the notes', function () {
       await page.locator('.cm-content').click();
       await page.keyboard.press('Control+A');
       await page.keyboard.insertText('exit 300; read line; source lib.sh; [ -f a');
-      await until('the line explained', () => panel().locator('#notes .note').count(), (n) => n === 4);
-      const notes = await panel().evaluate(`[...document.querySelectorAll('#notes .note')].map((p) => {
+      await until('the line explained', () => panel().locator('#problems .note, #notes .note').count(), (n) => n === 4);
+      const notes = await panel().evaluate(`[...document.querySelectorAll('#problems .note, #notes .note')].map((p) => {
         const label = p.querySelector('.note-label');
         const icon = p.querySelector('svg.note-icon');
         return [p.className, icon.dataset.icon, label ? label.textContent : '', [icon.getAttribute('role'), icon.getAttribute('aria-label'), icon.getAttribute('aria-hidden')].join(), getComputedStyle(icon).fill, label ? getComputedStyle(label).color : ''];
       })`) as string[][];
-      // (The error's icon has no name: its word says "Error". A warning's says "Warning", which "Pitfall" does not.)
+      // (In the box, the level's word says it, and the icon has no name; a plain note's icon has one.)
       assert.deepStrictEqual(notes.map((n) => n.slice(0, 4)), [
-        ['note level-error', 'error', 'Error:', ',,true'], ['note level-warning', 'warning', 'Pitfall:', 'img,Warning,'],
-        ['note level-info', 'info', 'Caveat:', 'img,Information,'], ['note level-note', 'info', '', 'img,Note,'],
+        ['note problem level-error', 'error', 'Error', ',,true'], ['note problem level-warning', 'warning', 'Warning', ',,true'],
+        ['note problem level-info', 'info', 'Information', ',,true'], ['note level-note', 'info', '', 'img,Note,'],
       ]);
       assert.deepStrictEqual(notes.slice(0, 3).map((n) => n.slice(4)), [[rgb(error), rgb(error)], [rgb(warning), rgb(warning)], [rgb(info), rgb(info)]]);
       // The panel's copy of the line underlines the problems the editor shows, each in its level's colour.

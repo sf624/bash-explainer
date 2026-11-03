@@ -7,7 +7,9 @@ import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
 import type { DocumentIssue, ShellDocument } from '../document';
 import { LEVELS, namesLevel, problemLevel } from '../levels';
+import { isProblemNote } from '../messages';
 import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, readingWithBasis } from './render';
+import { boxProblems, problemsAround } from './panelProblems';
 import { panelRows } from './panelRows';
 import { ui } from './texts';
 import { reference, referenceLabel } from '../references';
@@ -132,8 +134,8 @@ export interface PanelLine {
   placement: ExamplePlacement;
   /** Whether rows grow and shrink when they are unfolded and folded (`panel.animations`). */
   animations: boolean;
-  /** The problems on the line, as the editor underlines them (`lineMarks`). */
-  marks?: LineMark[];
+  /** The document's problems: the line's squiggles (`lineMarks`), and the pointers to those on the lines around it (`problemsAround`). */
+  issues?: readonly DocumentIssue[];
   /** The web page's panel, whose links open in a new tab (VS Code opens them in the browser). */
   web?: boolean;
   /** The view and step chosen, for the view control (`viewControl`). */
@@ -179,6 +181,7 @@ export function panelUpdate(p: PanelLine) {
   const t = ui[lang];
   const tp = t.panel;
   const { reading, items, ...explanation } = p.placement === 'bottom' ? ex : placeExamples(ex);
+  const box = boxProblems(ex, items, lang);
   return {
     type: 'update',
     // (The page's language: the web page's panel has none of its own, and the styles follow it, `:lang(ja)`.)
@@ -214,17 +217,20 @@ export function panelUpdate(p: PanelLine) {
     examplesFirst: p.placement === 'first',
     animations: p.animations,
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
-    // The notes as drawn: errors first, each with its level's look (its class, its icon and the icon's name, from the
+    // The box "Problems on this line" (src/ui/panelProblems.ts), and the problems of the constructs around it.
+    problems: box,
+    around: problemsAround(ex, p.issues ?? [], box, lang),
+    // The other notes as drawn: each with its level's look (its class, its icon and the icon's name, from the
     // level table, src/levels.ts) and the word after its mark (src/messages.ts), and, where it rests on bash's
     // behaviour rather than the manual, its chip and try-it (`noteBasis`, docs/design/basis.md). Where the word names
     // the level ("Error:"), the icon has no name, so that a screen reader says the level once.
-    notes: notesByLevel(ex).map(({ text, level, label, body }) => {
+    notes: notesByLevel(ex).filter((n) => !isProblemNote(n)).map(({ text, level, label, body }) => {
       const basis = noteBasis(ex, text, lang);
       const { className, codicon, name } = LEVELS[level];
       const iconName = namesLevel(level, label, lang) ? '' : name[lang];
       return { level, className, icon: codicon, iconName, label, body, refs: noteRefs(ex, text) ?? [], ...(basis ? { basis } : {}) };
     }),
-    marks: p.marks ?? [],
+    marks: lineMarks(p.issues ?? [], p.line),
     emptyMessage: t.empty,
     settingsLabel: t.settings,
   };
@@ -258,6 +264,7 @@ export const PANEL_BODY = `<div id="top">
 </div>
 <main id="main">
   <p id="short" hidden></p>
+  <section id="problems" hidden></section>
   <div id="notes"></div>
   <ul id="tree"></ul>
   <section id="reading" hidden>

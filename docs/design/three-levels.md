@@ -206,6 +206,8 @@ What fails `--check` (and the Action) now, without `--strict`, that did not:
 - The 20 pitfalls of the catalog that move to Error (section 3), the Error cases of the 9 split by params (`local-outside-function`, `alias-not-expanded-in-script`, `distro-alias-in-script`, `extglob-in-same-block`, `extglob-not-in-new-shell`, `variable-not-exported`, `variable-not-passed-by-wrapper`, `variable-not-in-remote-shell`, `function-not-in-new-shell-export`), and the Error cases of `nounset-unbound`, the postfix notes, `pipeline-subshell-variable` and `redirect-by-your-shell`.
 - The 7 style checks at Error: `[-f x]`, `x = 1`, `{echo`, `{ echo }`, `[ a > b ]`, `[ -f $x]` (when not empty), `[ a && b ]`.
 
+Added by the panel's P7b ([panel-redesign.md](panel-redesign.md)): the token errors of section 3 (`arith-invalid-number`, `splice-refused`, `shebang-env-string-refused`, `shebang-env-one-argument`, `shebang-env-loop`) are notes and problems, as the catalog's are. A token's warning is not: it stays on its row.
+
 What no longer fails without `--strict`:
 
 - `injection` (a GitHub Actions expression in `run:`), `pythonInjection` and `pythonNoShell`. They are host problems with no `pitfall` mark, so they failed before 1a. They are Warnings, like the other pitfalls (decided, section 10, item 6), and fail only with `--strict` (the Action's `strict: 'true'`). `pythonNoShell` moved to Error in step 2 (#557), so it fails as before.

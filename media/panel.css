@@ -254,6 +254,52 @@ pre#line[role="button"]:focus-visible {
 }
 .note-text { min-width: 0; }
 
+/*
+ * The box "Problems on this line" (media/panel.js `drawProblems`, src/ui/panelProblems.ts): each problem a note of its
+ * level (the headline, then "more"), and the pointers to the problems on the lines around. It wraps between its words,
+ * so nothing depends on how wide they are in a font.
+ */
+#problems { margin: 0 0 0.6rem; }
+.problems-title { display: block; margin: 0 0 0.3rem; font-weight: 600; }
+.problem-list, .problem-around { list-style: none; margin: 0; padding: 0; }
+.note.problem { display: block; scroll-margin-top: var(--top-height, 0); }
+button.problem-head, span.problem-head, button.problem-pointer {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+button.problem-head, button.problem-pointer { cursor: pointer; }
+button.problem-head:hover .problem-head-text, button.problem-pointer:hover .problem-head-text { text-decoration: underline; }
+.problem-head .note-icon, .problem-pointer .note-icon { display: inline-block; vertical-align: -0.12em; margin: 0 0.3em 0 0; }
+.problem-pointer { margin: 0 0 0.3rem; padding-left: 0.6rem; }
+.problem-pointer > span[aria-hidden] { margin-right: 0.3em; color: var(--c-muted); }
+.problem-more { margin-top: 0.15rem; }
+.problem-more > summary { width: fit-content; cursor: pointer; color: var(--c-muted); font-size: 0.9em; }
+.problem-text { margin: 0.25rem 0; overflow-wrap: anywhere; }
+.problem-fix { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25em 0.5em; margin: 0.25rem 0; }
+.problem-fix-label { color: var(--c-muted); font-size: 0.9em; }
+.problem-fix-code { font-family: var(--vscode-editor-font-family, monospace); min-width: 0; overflow-wrap: anywhere; }
+.problem-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: 0.4em;
+  padding: 0 0.15em;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.problem-chip .note-icon { margin: 0; }
+.flash { animation: problem-flash 1s ease-out; }
+@keyframes problem-flash { from { background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33)); } }
+@media (prefers-reduced-motion: reduce) { .flash { animation: none; outline: 1px solid var(--vscode-focusBorder, currentColor); } }
+
 /* The editor's squiggle under the part of the line a problem is about. */
 #line .squiggle {
   text-decoration-line: underline;

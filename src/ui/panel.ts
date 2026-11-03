@@ -3,7 +3,7 @@ import { Span } from '../analyzer-types';
 import { ExplainService } from '../service';
 import { toPlainMarkdown } from './render';
 import { ui } from './texts';
-import { FromPanel, lineMarks, needsReading, PANEL_BODY, PanelState, panelState, panelUpdate } from './panelView';
+import { FromPanel, needsReading, PANEL_BODY, PanelState, panelState, panelUpdate } from './panelView';
 import { wrapsLikeEditor } from './lineBox';
 import { isPanelQuestion, panelReply } from './panelReply';
 import { unreadableThemeNotice } from './builtinThemes';
@@ -169,7 +169,7 @@ export class PanelController implements vscode.Disposable {
       detected: this.service.autoShell(ed.document, line),
       placement: this.service.examplePlacement,
       animations: this.service.panelAnimations,
-      marks: lineMarks(this.service.issues(ed.document), line),
+      issues: this.service.issues(ed.document),
       state: this.state,
     }));
   }

@@ -12,7 +12,7 @@ import { Analyzer } from '../../src/analyzer';
 import { Lang } from '../../src/i18n';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
 import { documentIssues } from '../../src/document';
-import { lineMarks, PANEL_BODY, panelState, panelUpdate } from '../../src/ui/panelView';
+import { PANEL_BODY, panelState, panelUpdate } from '../../src/ui/panelView';
 import { said } from './shells';
 
 const root = path.join(__dirname, '..', '..');
@@ -31,8 +31,8 @@ export function message(lang: Lang, text: string, file: string, wrap = false): u
   const ex = new Analyzer(lang).explainLine(tree, 1, 'bash', { reading: true });
   // (The line's problems, as the editor underlines them.)
   const doc = { lines: src.split('\n'), tree };
-  const marks = lineMarks(documentIssues(doc, lang, { detected: said('bash') }), 1);
-  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, doc, wrap, choice: {}, detected: said('bash'), placement: 'first', animations: true, marks });
+  const issues = documentIssues(doc, lang, { detected: said('bash') });
+  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, doc, wrap, choice: {}, detected: said('bash'), placement: 'first', animations: true, issues });
 }
 
 const HOST = `(function () {

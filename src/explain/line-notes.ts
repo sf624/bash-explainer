@@ -6,7 +6,8 @@
 import type { Token } from '../analyzer-types';
 import { hasExtglob } from '../examples/shellwords';
 import { tx } from '../i18n';
-import { type Fact, fact, factOf, MESSAGES } from '../messages';
+import { alwaysFails } from '../levels';
+import { type Fact, fact, factOf, MESSAGES, tokenNote } from '../messages';
 import { statementBefore } from '../rewrite';
 import { bashrcReader, STATEMENTS } from '../semantics/env';
 import { NAME } from '../semantics/walk/shared';
@@ -159,4 +160,19 @@ export function extglobPitfalls(cx: Explainer, root: SyntaxNode, line: number): 
   // (A new shell started with `-i` reads `.bashrc` first, which often turns extglob on: a caveat.)
   if (id === 'extglob-not-in-new-shell' && bashrcReader(cx.state.env(use), cx.state.read, cx.state.interactiveStart) === 'interactive') return cx.say(fact(cx.lang, id, { use: use.text, reader: 'interactive' }), use);
   return cx.say(fact(cx.lang, id, { use: use.text }), use);
+}
+
+/**
+ * The errors the tokens of a line say (`tokenError`, `Token.marks`), as notes about each token: a token warning stays on
+ * its row, but "fails every time" is a problem of the line (docs/design/panel-redesign.md, P7b). From here it goes the way
+ * of every note: the box, the hover, Markdown, the Problems strip, `--check`.
+ */
+export function tokenErrorNotes(cx: Explainer, items: readonly Token[]): string[] {
+  const found: string[] = [];
+  const walk = (t: Token) => {
+    for (const m of t.marks ?? []) if (alwaysFails(m.level)) found.push(cx.sayAt(tokenNote(cx.lang, m), t.span));
+    t.children.forEach(walk);
+  };
+  items.forEach(walk);
+  return [...new Set(found)];
 }

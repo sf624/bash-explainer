@@ -10,7 +10,7 @@ import { type Lang, lineRangeLabel, type Text } from '../i18n';
 import { shorten } from '../label';
 import { type Fact, type Note, said } from '../messages';
 import { tokenSaid, type TokenTextArgs, type TokenTextId } from '../messages-tokens';
-import { anchored, type Found, spanOf } from '../noteanchors';
+import { anchored, type Found, sameSpan, spanOf } from '../noteanchors';
 import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
 import { docLine, type StateModel } from '../semantics/state';
@@ -113,6 +113,8 @@ export interface Explainer {
   say(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): string[];
   /** Adds a fact's note to the line's (as `say` says it), about the node or nodes `at`. */
   note(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): void;
+  /** A note about a range of the line (a token's): its text, recorded with its data and its place. */
+  sayAt(n: Note & { code: string }, span: Span): string;
   /** Records a construct around the line (`LineExplanation.context`), outermost first. */
   enclosing(entry: ContextEntry): void;
   /** Adds a worked example to the line's. */
@@ -314,6 +316,13 @@ export class LineExplainer implements Explainer, LineOutput {
 
   note(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): void {
     this.notes.push(...this.say(f, at));
+  }
+
+  sayAt(n: Note & { code: string }, span: Span): string {
+    this.data.set(n.text, n);
+    // (A token of a string read as a script: `adopt` already has its place.)
+    if (!this.anchors.some((a) => a.text === n.text && sameSpan(a.span, span))) this.anchors.push({ text: n.text, span, code: n.code });
+    return n.text;
   }
 
   anchored(found: readonly Found[]): string[] {
