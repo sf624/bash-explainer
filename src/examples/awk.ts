@@ -1,5 +1,6 @@
 import { lex, Lex } from '../embedded/awk';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
+import { scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { parseWords } from './textfilters';
 import { has } from '../argv/query';
@@ -737,7 +738,7 @@ class Interp {
     if (fs.length === 1 && fs !== '\\') return s.split(fs);
     const re = toJsRegex(fs, 'ere', { sedEscapes: true });
     if (!re) throw new Unsupported('FS');
-    return s.split(new RegExp(re.source, re.flags));
+    return s.split(scriptRegex(re.source, re.flags));
   }
 
   private rebuild(): void {
@@ -766,10 +767,10 @@ class Interp {
   }
 
   private regexOf(e: Expr): RegExp {
-    if (e.k === 're') return new RegExp(e.re.source, e.re.flags);
+    if (e.k === 're') return scriptRegex(e.re.source, e.re.flags);
     const re = toJsRegex(toStr(this.eval(e)), 'ere', { sedEscapes: true });
     if (!re) throw new Unsupported('dynamic regex');
-    return new RegExp(re.source, re.flags);
+    return scriptRegex(re.source, re.flags);
   }
 
   // --- expressions
@@ -890,8 +891,7 @@ class Interp {
         if (!isLvalue(target)) throw new Unsupported('sub target');
         const repl = toStr(v(1));
         let count = 0;
-        const g = new RegExp(re.source, re.flags + (name === 'gsub' ? 'g' : ''));
-        const result = toStr(this.eval(target)).replace(g, (m) => {
+        const result = toStr(this.eval(target)).replace(scriptRegex(re.source, re.flags + (name === 'gsub' ? 'g' : '')), (m) => {
           count++;
           // As gawk and mawk: `\\&` is a backslash and the match, `\&` a literal &, other backslashes stay.
           return repl.replace(/\\\\&|\\&|&/g, (x) => (x === '&' ? m : x === '\\&' ? '&' : `\\${m}`));

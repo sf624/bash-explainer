@@ -38,6 +38,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A script with `$(a && b)` or `$(a || b)` in a here-document no longer stops the explanation with an error, and the `$( )` in a here-document shows its operators (`&&`, `|`, `;`, `then`).
 - "In short" keeps the status of a pipeline when the line's problem is about something else, such as a variable lost in a stage's subshell. Before, it left the status out.
 - `cmd 2>&1 >o 2>e` and `cmd 2>&1 >o |& tee x` no longer say that stderr goes to the original stdout: it goes to `e`, and to `o`.
+- A line whose regex would take very long, such as `grep -E '(a+)+$'` on a long text, no longer stalls the editor or a CI job: its example says the result is not computed, and the rest of the line is explained. This holds for grep, sed, awk, perl, `[[ =~ ]]`, jq, yq and globs.
 - The note on `source lib.sh` suggests a path from the script's directory that holds when the file is itself sourced (`"$(dirname "${BASH_SOURCE[0]}")"/lib.sh`). Before, it suggested `$0`, which then names the caller.
 - The note on a `grep` pattern from a variable no longer suggests `-F` when grep has other patterns (`grep -e 'a.b' -e "$x"`, `-f pats`): `-F` would read them as plain text too. It now says so, whichever pattern comes first.
 - The panel shows code that holds a backtick (`` `date` ``) as one piece of code. Before, it broke it apart at the backtick.

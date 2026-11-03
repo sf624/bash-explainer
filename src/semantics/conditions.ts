@@ -1,6 +1,7 @@
 // Deciding conditions (docs/design/semantics.md, 4.14): what bash's `test` builtin gives for words whose values are
 // known, and whether a pattern of `case` or `[[ == ]]` matches a known word. The walk of the shell state
 // (src/semantics/walk/conditions.ts) reads the words and calls these; anything not known here is `undefined`.
+import { guarded } from '../examples/regexguard';
 import { globToRegex, hasExtglob } from '../examples/shellwords';
 import { parseTest, type TestExpr, testFails } from '../testexpr';
 
@@ -132,10 +133,12 @@ function evaluate(e: TestExpr, w: readonly string[], env: TestEnv): boolean {
  */
 export function patternMatches(subject: string, pattern: string): boolean | undefined {
   if (/[^\x00-\x7f]/.test(subject + pattern) || hasExtglob(pattern)) return undefined;
-  const re = globToRegex(pattern, 'value');
-  /* c8 ignore next -- an ASCII glob always makes a regular expression */
-  if (!re) return undefined;
-  return re.test(subject);
+  return guarded(() => {
+    const re = globToRegex(pattern, 'value');
+    /* c8 ignore next -- an ASCII glob always makes a regular expression */
+    if (!re) return undefined;
+    return re.test(subject);
+  }, () => undefined);
 }
 
 /**

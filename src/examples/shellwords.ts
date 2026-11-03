@@ -2,6 +2,7 @@
 import { coreutilsRejects, type PrintfReader } from '../embedded/format';
 import { sprintf } from './awk';
 import { bracketEnd, bracketRegex } from '../bracket';
+import { RegexRefused, scriptRegex } from './regexguard';
 import { parseSequence, sequenceWords } from '../braceseq';
 import { BASH_VERSIONS, type BashVersion } from '../bashversion';
 import { Unsupported as RunnerUnsupported } from './unsupported';
@@ -190,8 +191,9 @@ export function globToRegex(pattern: string, mode: GlobMode, opts: GlobOpts = {}
     return out;
   };
   try {
-    return new RegExp(`^${convert(0, pattern.length)}$`, opts.nocase && !file ? 'i' : '');
-  } catch {
+    return scriptRegex(`^${convert(0, pattern.length)}$`, opts.nocase && !file ? 'i' : '');
+  } catch (e) {
+    if (e instanceof RegexRefused) throw e;
     return undefined;
   }
 }
@@ -318,9 +320,9 @@ export function globExamples(pattern: string, mode: GlobMode, opts: GlobOpts = {
           const alt = (k: number) => make(v, ...alts[k % alts.length], miss);
           if (c === '!') {
             const inner = alts.map(([a, b]) => globToRegex(pattern.slice(a, b), 'value')!.source.slice(1, -1)).join('|');
-            out += miss ? make(v, ...alts[v % alts.length]) : (STARS.map((_, k) => STARS[(v + k) % STARS.length]).find((s) => !new RegExp(`^(?:${inner})$`).test(s)) ?? 'zz');
+            out += miss ? make(v, ...alts[v % alts.length]) : (STARS.map((_, k) => STARS[(v + k) % STARS.length]).find((s) => !scriptRegex(`^(?:${inner})$`).test(s)) ?? 'zz');
           } else if (c === '@') {
-            const inner = new RegExp(`^(?:${alts.map(([a, b]) => globToRegex(pattern.slice(a, b), 'value')!.source.slice(1, -1)).join('|')})$`);
+            const inner = scriptRegex(`^(?:${alts.map(([a, b]) => globToRegex(pattern.slice(a, b), 'value')!.source.slice(1, -1)).join('|')})$`);
             out += miss ? (['txt', 'bak', 'zz'].find((x) => !inner.test(x)) ?? 'zz') : alt(v);
           }
           else if (c === '?') out += v % 2 && !miss ? '' : alt(v);

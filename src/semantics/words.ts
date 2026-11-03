@@ -9,6 +9,7 @@
 // known here, an attribute given on some paths) "may" apply: `'unknown'`.
 import type { BashVersion } from '../bashversion';
 import { evalArith } from '../arith';
+import { guarded } from '../examples/regexguard';
 import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
@@ -601,7 +602,7 @@ class Evaluator {
         const start = n.parent!.children.find((c) => c.type === 'heredoc_start')?.text ?? '';
         return /['"\\]/.test(start) ? [{ text: decodedText(n), quoted: true, expanded: false }] : this.inner(n, n.startIndex, n.endIndex, /\\([$`\\\n])/g);
       }
-      case 'simple_expansion': case 'expansion': return this.expansion(n, quoted) ?? this.hole?.(n, quoted);
+      case 'simple_expansion': case 'expansion': return guarded(() => this.expansion(n, quoted), () => undefined) ?? this.hole?.(n, quoted);
       case 'command_substitution': {
         // (`$(true)` prints nothing, unless `true` is a function, an alias or a program here; `${| …; }` gives its `REPLY`.)
         const v = substitutionForm(n) === '${|' ? this.source.reply?.(n) : staticWordValue(n);
@@ -696,30 +697,29 @@ class Evaluator {
     const re = globToRegex(pattern, 'value', { nocase: nocase === 'on' });
     /* c8 ignore next -- a guard: a pattern without extended globs always converts. */
     if (!re) return undefined;
-    const test = (s: string): boolean => re.test(s);
     const range = (first: number, last: number): number[] => (first <= last ? Array.from({ length: last - first + 1 }, (_, k) => first + k) : Array.from({ length: first - last + 1 }, (_, k) => first - k));
     const len = value.length;
     switch (op) {
       case '#': case '##': {
-        const i = range(op === '#' ? 0 : len, op === '#' ? len : 0).find((k) => test(value.slice(0, k)));
+        const i = range(op === '#' ? 0 : len, op === '#' ? len : 0).find((k) => re.test(value.slice(0, k)));
         return out(i === undefined ? value : value.slice(i));
       }
       case '%': case '%%': {
-        const i = range(op === '%' ? len : 0, op === '%' ? 0 : len).find((k) => test(value.slice(k)));
+        const i = range(op === '%' ? len : 0, op === '%' ? 0 : len).find((k) => re.test(value.slice(k)));
         return out(i === undefined ? value : value.slice(0, i));
       }
     }
     // `${x/p/r}`, `${x//p/r}`, `${x/#p/r}`, `${x/%p/r}`. An unquoted `&` in the replacement is the match (patsub_replacement).
     const rep = operandReplacement(part('replacement'), this);
     // (A pattern that matches nothing at all, like `*`, has rules of its own at the end of the value; `[!]]`: patsubMiscounts.)
-    if (rep === undefined || test('') || patsubMiscounts(pattern)) return undefined;
-    const at = (k: number): number | undefined => range(len, k).find((e) => test(value.slice(k, e)));
+    if (rep === undefined || re.test('') || patsubMiscounts(pattern)) return undefined;
+    const at = (k: number): number | undefined => range(len, k).find((e) => re.test(value.slice(k, e)));
     if (op === '/#') {
       const e = at(0);
       return out(e === undefined ? value : rep + value.slice(e));
     }
     if (op === '/%') {
-      const k = range(0, len).find((s) => test(value.slice(s)));
+      const k = range(0, len).find((s) => re.test(value.slice(s)));
       return out(k === undefined ? value : value.slice(0, k) + rep);
     }
     let result = '';
@@ -1049,7 +1049,7 @@ function globField(w: WordMeaning, f: Char[], env: WordEnv | undefined): string[
   const prefix = /^(?:\.\/)*/.exec(pattern)![0];
   const rest = pattern.slice(prefix.length);
   if (rest.startsWith('/') || rest.split('/').some((seg) => seg === '.' || seg === '..') || (g.globskipdots === 'off' && rest.includes('/'))) return undefined;
-  const matched = matchFiles(w, rest, env.files);
+  const matched = guarded(() => matchFiles(w, rest, env.files!), () => undefined);
   if (!matched) return undefined;
   if (prefix && g.globstar === 'on' && rest === '**') matched.unshift('');
   if (matched.length) return matched.map((m) => prefix + m).sort();

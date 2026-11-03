@@ -1,6 +1,8 @@
 import { sedEscapeAt } from '../ctlchars';
 import type { Flavor } from '../embedded/regex';
 import { wordTable } from '../wordtable';
+import { type Node, Parser } from './regexparse';
+import { RegexRefused, scriptRegex } from './regexguard';
 
 /** A POSIX or PCRE pattern translated to a JavaScript RegExp. */
 export interface JsRegex {
@@ -200,141 +202,20 @@ export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: bool
   return { source: out, flags };
 }
 
-// ---------------------------------------------------------------- AST for generation
-
-type Node =
-  | { t: 'seq'; items: Node[] }
-  | { t: 'alt'; options: Node[] }
-  | { t: 'char'; c: string }
-  | { t: 'set'; pick: (v: number) => string | undefined }
-  | { t: 'repeat'; node: Node; min: number; max: number }
-  | { t: 'group'; node: Node; no: number; look?: string }
-  | { t: 'backref'; n: number }
-  | { t: 'empty' };
-
-const DIGITS = '1234567890';
-const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
-const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-
-function shorthand(c: string): (v: number) => string | undefined {
-  switch (c) {
-    case 'd': return (v) => DIGITS[v % 9];
-    case 'w': return (v) => LETTERS[v % 26];
-    case 's': return () => ' ';
-    case 'D': return (v) => LETTERS[v % 26];
-    case 'W': return () => '-';
-    // \S
-    default: return (v) => LETTERS[v % 26];
-  }
-}
-
-/** Characters for a JS class `[…]`, in a readable order (letters and digits first). */
-function classPicker(body: string, negated: boolean): (v: number) => string | undefined {
-  const re = new RegExp(`[${negated ? '^' : ''}${body}]`);
-  const pool = negated ? 'xyzabc_-.1 ' : `${UPPER}${LETTERS}${DIGITS}-_. :/@,;!#%&=+*?$^()[]{}|<>'"\\~\`\t`;
-  const ok = pool.split('').filter((ch) => re.test(ch));
-  // Prefer the first characters of each range (`[0-9]` → 0, 1, 2…; `[A-Z]` → A, B…).
-  const order = body.match(/(.)-(.)/g)?.flatMap((r) => {
-    const lo = r.charCodeAt(0);
-    const hi = r.charCodeAt(2);
-    return Array.from({ length: Math.min(hi - lo + 1, 26) }, (_, k) => String.fromCharCode(lo + k));
-  }) ?? [];
-  const chars = [...new Set([...order.filter((ch) => re.test(ch)), ...ok])];
-  return (v) => (chars.length ? chars[v % chars.length] : undefined);
-}
-
-class Parser {
-  i = 0;
-  groups = 0;
-  constructor(private s: string) {}
-
-  alt(): Node {
-    const options = [this.seq()];
-    while (this.s[this.i] === '|') {
-      this.i++;
-      options.push(this.seq());
-    }
-    return options.length === 1 ? options[0] : { t: 'alt', options };
-  }
-
-  private seq(): Node {
-    const items: Node[] = [];
-    while (this.i < this.s.length && this.s[this.i] !== '|' && this.s[this.i] !== ')') {
-      let atom = this.atom();
-      for (;;) {
-        const q = /^(\*|\+|\?|\{(\d*)(,?)(\d*)\})\??/.exec(this.s.slice(this.i));
-        if (!q) break;
-        this.i += q[0].length;
-        let min = 0;
-        let max = Infinity;
-        if (q[1] === '+') min = 1;
-        else if (q[1] === '?') max = 1;
-        else if (q[1].startsWith('{')) {
-          // {m} → exactly m; {m,} → at least m; {m,n} → m to n; {,n} → at most n.
-          min = q[2] ? Number(q[2]) : 0;
-          max = !q[3] ? min : q[4] ? Number(q[4]) : Infinity;
-        }
-        atom = { t: 'repeat', node: atom, min, max };
-      }
-      items.push(atom);
-    }
-    return { t: 'seq', items };
-  }
-
-  private atom(): Node {
-    const c = this.s[this.i++];
-    if (c === '(') {
-      let capture = true;
-      let look: string | undefined;
-      const ext = /^\?(:|=|!|<=|<!|<[A-Za-z_]\w*>)/.exec(this.s.slice(this.i));
-      if (ext) {
-        this.i += ext[0].length;
-        if (ext[1] === ':') capture = false;
-        else if (!ext[1].startsWith('<') || ext[1].startsWith('<=') || ext[1].startsWith('<!')) { capture = false; look = ext[1]; }
-      }
-      const no = capture ? ++this.groups : 0;
-      const node = this.alt();
-      this.i++; // ')'
-      return { t: 'group', node, no, look };
-    }
-    if (c === '[') {
-      let j = this.i;
-      const negated = this.s[j] === '^';
-      if (negated) j++;
-      let body = '';
-      while (j < this.s.length && this.s[j] !== ']') {
-        if (this.s[j] === '\\') { body += this.s.slice(j, j + 2); j += 2; continue; }
-        body += this.s[j++];
-      }
-      this.i = j + 1;
-      return { t: 'set', pick: classPicker(body, negated) };
-    }
-    if (c === '.') return { t: 'set', pick: (v) => 'xyzabc'[v % 6] };
-    if (c === '^' || c === '$') return { t: 'empty' };
-    if (c === '\\') {
-      const n = this.s[this.i++];
-      if (/[1-9]/.test(n)) return { t: 'backref', n: Number(n) };
-      if (n === 'b' || n === 'B') return { t: 'empty' };
-      if ('dwsDWS'.includes(n)) return { t: 'set', pick: shorthand(n) };
-      const esc: Record<string, string> = { t: '\t', n: '\n', r: '\r', f: '\f', v: '\v' };
-      return { t: 'char', c: esc[n] ?? n };
-    }
-    return { t: 'char', c };
-  }
-}
-
 /** Generate a string for `node`. `v` varies the choices so different variants give different strings. */
-function gen(node: Node, v: number, caps: string[]): string | undefined {
+function gen(node: Node, v: number, caps: string[], left: { steps: number }): string | undefined {
+  // (Like a run on a text, what it makes of `(){2000000000}` or `(ab{1000}){1000}` may take too long.)
+  if (--left.steps < 0) throw new RegexRefused();
   switch (node.t) {
-    case 'empty': return '';
+    case 'anchor': return '';
     case 'char': return node.c;
     case 'set': return node.pick(v);
     case 'backref': return caps[node.n] ?? '';
-    case 'alt': return gen(node.options[v % node.options.length], Math.floor(v / node.options.length), caps);
+    case 'alt': return gen(node.options[v % node.options.length], Math.floor(v / node.options.length), caps, left);
     case 'seq': {
       let out = '';
       for (let k = 0; k < node.items.length; k++) {
-        const part = gen(node.items[k], v, caps);
+        const part = gen(node.items[k], v, caps, left);
         if (part === undefined) return undefined;
         out += part;
       }
@@ -343,7 +224,7 @@ function gen(node: Node, v: number, caps: string[]): string | undefined {
     case 'group': {
       // Negative lookarounds add nothing; positive ones contribute their text to the line.
       if (node.look === '!' || node.look === '<!') return '';
-      const text = gen(node.node, v, caps);
+      const text = gen(node.node, v, caps, left);
       if (text === undefined) return undefined;
       if (node.no) caps[node.no] = text;
       return text;
@@ -354,7 +235,7 @@ function gen(node: Node, v: number, caps: string[]): string | undefined {
       const count = choices[v % choices.length];
       let out = '';
       for (let k = 0; k < count; k++) {
-        const part = gen(node.node, v + k, caps);
+        const part = gen(node.node, v + k, caps, left);
         if (part === undefined) return undefined;
         out += part;
       }
@@ -370,7 +251,7 @@ export interface RegexExamples {
 
 /** Example lines that match (and nearby ones that do not), verified against the pattern itself. */
 export function regexExamples(js: JsRegex, max = 3): RegexExamples | undefined {
-  const re = new RegExp(js.source, js.flags);
+  const re = scriptRegex(js.source, js.flags);
   // Parser reads every regex JavaScript accepts, to the end, and throws nothing of its own: an error from it is a
   // bug, which shows.
   const p = new Parser(js.source);
@@ -379,8 +260,9 @@ export function regexExamples(js: JsRegex, max = 3): RegexExamples | undefined {
   /* c8 ignore next */
   if (p.i < js.source.length) return undefined;
   const matching: string[] = [];
+  const left = { steps: 100000 };
   for (let v = 0; v < 12 && matching.length < max; v++) {
-    const text = gen(tree, v, []);
+    const text = gen(tree, v, [], left);
     if (text === undefined || text === '' || /[\n\r]/.test(text) || matching.includes(text)) continue;
     if (re.test(text)) matching.push(text);
   }
@@ -440,7 +322,7 @@ export function posixMatches(res: JsRegex[], line: string, longest: boolean): [n
 
 /** JavaScript's match of `r` from `at` on. */
 function firstExec(r: JsRegex, line: string, at: number): RegExpExecArray | null {
-  const g = new RegExp(r.source, r.flags + 'g');
+  const g = scriptRegex(r.source, r.flags + 'g');
   g.lastIndex = at;
   return g.exec(line);
 }
@@ -455,7 +337,7 @@ export function posixExec(r: JsRegex, line: string, at: number): RegExpExecArray
   let best: RegExpExecArray = first;
   // A match at the same start that ends further on (the line seen whole, for `$` and lookarounds), until none does.
   for (;;) {
-    const longer = new RegExp(`(?:${r.source})(?<=^[\\s\\S]{${best.index + best[0].length + 1},})`, r.flags + 'y');
+    const longer = scriptRegex(`(?:${r.source})(?<=^[\\s\\S]{${best.index + best[0].length + 1},})`, r.flags + 'y');
     longer.lastIndex = best.index;
     const m = longer.exec(line);
     if (!m) return best;

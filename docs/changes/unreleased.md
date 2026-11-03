@@ -229,6 +229,19 @@ The sentence of a line leaves out what a problem of the line says. It compared t
 
 `make 2>&1 >o 2>e` sends stderr to `e`. The note on the order said so in its table, but added that stderr goes to the original stdout. It no longer does.
 
+### A regex that would take too long is not run
+
+`echo "aaa…a!" | grep -E "(a+)+$"` with 30 `a`s did not return: every product runs the examples synchronously, with JavaScript's backtracking matcher, and this pattern takes 2^n steps on n characters. The same went for `sed`, `awk`, `perl`, `[[ =~ ]]`, jq's `test`, for extended globs and globs with many `*` (`[[ $x == +(a|a) ]]`, `${x%%*a*a*a…}`), and for what is typed in the panel's boxes.
+
+Now each run of a regex that comes from a script is first walked on its own text, by a small matcher that takes the same paths and counts its steps. Past 5 million steps for one example, the example says "Not computed…" / 「結果は計算しない…」 and shows no result: not a match, not a failure, and nothing for the stages after it. The rest of the line is explained as before. No clock is read, so the same text gives the same answer on every machine. A refused example costs about 40 ms, and a line about 120 ms at worst.
+
+- Usual patterns are computed: a strict IPv4 pattern, `.*Failed.*from` on a long log line, `^(\w+ ?)+$`, on fifty lines of 80 characters too.
+- A pattern that can take very long still runs on a short text, where it does not: `(a+)+$` on `aaa`.
+- The limit is on the steps of the walk, which are about 20 times slower than JavaScript's own: `a*b` runs up to about 1000 characters, `a*a*b` up to about 140.
+- Not run at all, as the walk does not read them: a pattern over 2000 characters, inline modifiers (`(?i:a)`), a decimal escape that is no group of the pattern (`\12`, `\2` with one group), `\c` before no letter, `\k<x>` with no such group.
+- Making example lines of a pattern is limited too: `grep -E '(ab{1000}){1000}' file` says the same.
+- The values the model follows through `case`, `[[ == ]]` and `${x%…}` are "not known" where the pattern is not run, so nothing is said to be decided from them.
+
 ### `-F` and the other patterns of grep
 
 The note on a grep pattern that is only a variable said to add `-F` also where grep had other patterns, which `-F` reads as fixed strings too: `grep -E -e "$x" -e 'foo|bar' f` with `-F` no longer matches `foo` lines, and `grep -f pats -e "$x"` reads the lines of `pats` as text. It now says that `-F` applies to every pattern, and offers no quick fix. It spoke of the variable only when it was the first pattern (`grep -e "$x" -e 'a.b'`, not `grep -e 'a.b' -e "$x"`); it does in either order now. Checked with GNU grep (test/rewrites-advice.test.ts).

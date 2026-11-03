@@ -633,6 +633,8 @@ export const MESSAGES = {
   // (`digits`: `\d` or `\D` among them, which no POSIX regex has, even from a variable; `others`: an operator of glibc's
   // regexes among them, `\s`, `\b`…, which a variable keeps. `rewrite`: `[0-9]` in place, or the regex in a variable;
   // none when one is inside a bracket expression, `[\s]`, where a backslash is no operator either way.)
+  // (Said in the example in place of its result, of what the guard does not run: src/examples/regexguard.ts.)
+  'regex-not-computed': note(['3.2.5.2', '3.5.8.1'], () => ['結果は計算しない: このパターンはこの文字列では時間がかかりすぎるおそれがある。一致するかどうかは、この例では示さない', 'Not computed: this pattern may take too long on this text. This example does not say whether it matches']),
   'regex-backslash-dropped': suggests(broken<{ list: string; digits: boolean; others: boolean; rewrite: readonly Rewrite[] }>(['3.5.9', '3.2.5.2'], ({ list, digits, others, rewrite: [fix] }) => [
     [`\`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）`,
       ...(digits ? [`POSIX の正規表現には \`\\d\` がなく、変数に入れても \`d\` という文字になるので、\`\\d\` は \`[0-9]\`、\`\\D\` は \`[^0-9]\` と書く${!others && fix ? `（\`${fix.code}\`）` : ''}`] : []),

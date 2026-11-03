@@ -2,7 +2,7 @@
 // (prefix, name, subscript, operator, word, pattern, offset, length, transform). It reads the descriptions of
 // variables, the notes on a variable and the parts of a glob from the words (src/explain/words.ts), and the rest from
 // the line's context (src/explain/context.ts) and its readers (src/explain/reads.ts: the attributes in effect).
-import type { Kind, Span, Token } from './analyzer-types';
+import type { Example, Kind, Span, Token } from './analyzer-types';
 import { evalArith, intValue } from './arith';
 import { cannotAssign, expansionOps, wellKnownVariables } from './dict/syntax';
 import type { Explainer } from './explain/context';
@@ -11,6 +11,8 @@ import { scriptValue } from './explain/values';
 import { stageCountNote } from './explain/where';
 import { globChildren, joinedNote, orderNote, variableNote, varDesc } from './explain/words';
 import { globIntro, hasGlob } from './embedded/glob';
+import { notComputed } from './examples/commands';
+import { guarded } from './examples/regexguard';
 import { hasExtglob } from './examples/shellwords';
 import { ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformOf } from './expansion';
 import { Lang, ordinal, Text } from './i18n';
@@ -67,9 +69,11 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   const joined = all && joinedNote(h, n, all, parsed.subscript === undefined);
   // (`"$@"` keeps the arguments apart only where words are split: not here.)
   if (joined) summary.explanation = (parsed.subscript === undefined && !parsed.op ? h.s('全ての位置パラメータ', 'All positional parameters') : summary.explanation) + joined;
-  const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n), integer: isInteger(h, parsed.name, n), assigned: operandAssigned(n, h.state), script: scriptValue(h, n, parsed) });
+  const notRun = () => notComputed('expansion', h.s(`\`${text}\` の例`, `Example for \`${text}\``), h.lang);
+  const cases = guarded<ReturnType<typeof exampleFor> | Example>(() => exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n), integer: isInteger(h, parsed.name, n), assigned: operandAssigned(n, h.state), script: scriptValue(h, n, parsed) }), notRun);
   // A `${…}` on one line is always on the line explained.
-  if (cases) {
+  if (cases && !Array.isArray(cases)) h.example({ ...cases, target: '', anchor: summary.span });
+  else if (cases) {
     h.example({ kind: 'expansion',
       title: h.s(`\`${text}\` の例`, `Example for \`${text}\``),
       // The title already names the expansion.
