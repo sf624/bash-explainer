@@ -483,9 +483,7 @@ describe('the guard of the regexes a script gives', () => {
       for (let i = 0; i < 600; i++) assert.ok(scriptRegex(`x${i}${'y'.repeat(1000)}`).test(`x${i}${'y'.repeat(1000)}`));
     });
 
-    it('a text refused is kept to be refused again, but not a long one, and not more than a total', function () {
-      // (Eight whole limits: seconds, with coverage on a loaded runner.)
-      this.timeout(30000);
+    it('a text refused is kept to be refused again, but not a long one, and not more than a total', () => {
       const before = keptChars();
       const short = 'a'.repeat(10000);
       assert.ok(refused('a*a*b0', short));
@@ -493,12 +491,20 @@ describe('the guard of the regexes a script gives', () => {
       // (The same text again: counted once.)
       assert.ok(refused('a*a*b0', short));
       assert.strictEqual(keptChars(), before + 10000);
-      assert.ok(refused('a*a*b1', 'a'.repeat(1e6 + 1)));
+      // (A run keeps its text however far it went, so the others have little left: a whole limit takes about a second with
+      // coverage, and eight of them took all of this test's time on a loaded runner.)
+      const soon = (source: string, text: string) => guarded(() => {
+        charge(1e7 - 1e4);
+        return refused(source, text);
+      }, () => false);
+      assert.ok(soon('a*a*b1', 'a'.repeat(1e6 + 1)));
       assert.strictEqual(keptChars(), before + 10000);
       // (Many, which each fits: a total of at most 4e6, which they pass, and the memory is let go.)
       const text = 'a'.repeat(9e5);
       for (let i = 0; i < 6; i++) {
-        assert.ok(refused(`a*a*b${i + 2}`, text));
+        const was = keptChars();
+        assert.ok(soon(`a*a*b${i + 2}`, text));
+        assert.ok(keptChars() === was + 9e5 || keptChars() === 9e5);
         assert.ok(keptChars() <= 4e6);
       }
       assert.ok(keptChars() < 4e6);
