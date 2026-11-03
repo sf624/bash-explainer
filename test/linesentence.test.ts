@@ -207,6 +207,8 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["f() { :; }\necho a \\\n && f || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, calls the function `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、関数 `f` を呼び出す。"],
     ["echo a \\\n && declare -i n=1+1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `declare` and sets `n` to what `1+1` gives.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`declare` を実行する。`n` に `1+1` の結果を代入する。"],
     ["echo a \\\n && declare n=1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `declare` and sets `n` to `1`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`declare` を実行する。`n` に `1` を代入する。"],
+    ["echo a \\\n && $c x || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `$c`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`$c` を実行する。"],
+    ["if x; then f() { :; }; fi\necho a \\\n && f || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`f` を実行する。"],
 ];
 
 /** The files of the corpus: sample.sh and the other fixtures, the host files with their shell parts. */

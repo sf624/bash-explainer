@@ -490,10 +490,10 @@ class Composer implements IdiomSpeaker {
 
   /** The function a command surely calls, from the model, where the line has no record of the command (its name when plain). */
   private functionNamed(c: SyntaxNode): string | undefined {
-    const name = field(c, 'name');
-    if (!name || !/^[\w.:+-]+$/.test(name.text)) return undefined;
+    const name = field(c, 'name')!;
+    if (!/^[\w.:+-]+$/.test(name.text)) return undefined;
     const res = resolveName(this.input.status.state, name.text, c, { command: true });
-    return res.kind === 'function' && res.sure && !res.maybe ? res.name : undefined;
+    return res.kind === 'function' && res.sure ? res.name : undefined;
   }
 
   /** A command as a noun: its names, with what it does unless the sentence is brief. */
