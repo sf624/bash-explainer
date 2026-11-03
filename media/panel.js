@@ -164,8 +164,11 @@
     if (msg.type === 'themeColours') setThemeVars(msg.vars);
     if (msg.type === 'update') {
       // (Without the line's problems: they come a moment after the line is explained, and change only its squiggles.)
-      const key = JSON.stringify({ ...msg, marks: undefined });
-      if (key === lastUpdate) return squiggleLine(msg.marks ?? []);
+      const key = JSON.stringify({ ...msg, marks: undefined, around: undefined });
+      if (key === lastUpdate) {
+        drawAround(msg.around ?? []);
+        return squiggleLine(msg.marks ?? []);
+      }
       lastUpdate = key;
       render(msg);
     }
@@ -204,6 +207,8 @@
     $('context').textContent = '';
     $('line').replaceChildren();
     $('notes').replaceChildren();
+    $('problems').replaceChildren();
+    $('problems').hidden = true;
     $('short').replaceChildren();
     $('short').hidden = true;
     $('tree').replaceChildren();
@@ -269,6 +274,7 @@
 
     renderLine(msg.lineText, ex.line, msg.rows, msg.marks ?? [], msg.lineParts, msg.wrap === true);
 
+    drawProblems(msg.problems ?? [], msg.around ?? []);
     // Each note with the icon of its level in place of its mark, and the word that names the level in bold: the icon's
     // shape and the word say it without the colour. The class, the icon and its name come from the level table
     // (src/levels.ts, through `panelUpdate`); an icon with no name (where the word names the level, "Error:") is hidden
@@ -310,6 +316,129 @@
     $('empty').hidden = msg.rows.length > 0;
     applyView();
     renderReading();
+  }
+
+  /** The icon of a level, in front of a word that names it (hidden from a screen reader, which says the word). */
+  function levelIcon(/** @type {string} */ icon) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('class', 'note-icon');
+    svg.setAttribute('aria-hidden', 'true');
+    drawIcon(svg, icon);
+    return svg;
+  }
+
+  /** The problems whose "more" the reader opened, by their text: an update of the panel (the same line again) keeps them open. */
+  const openProblems = new Set();
+
+  /** Brings a row or a problem into view, and shows for a moment where it is. */
+  function flash(/** @type {HTMLElement} */ target) {
+    target.scrollIntoView({ block: 'nearest' });
+    target.classList.remove('flash');
+    void target.offsetWidth;
+    target.classList.add('flash');
+  }
+
+  /** Goes to the row at `path`: its folded parents open, and its chip (in the row) gets the focus. */
+  function toRow(/** @type {string} */ path, /** @type {number} */ index) {
+    const row = document.querySelector(`#tree li[data-path="${path}"] > .row`);
+    // (In Reading the list is not drawn: the click opens what the problem says.)
+    if (view === 'tree') {
+      const more = document.querySelector(`#problem-${index} details.problem-more`);
+      if (more instanceof HTMLDetailsElement) more.open = !more.open;
+      return;
+    }
+    if (!(row instanceof HTMLElement)) return;
+    for (let li = row.closest('li'); li; li = li.parentElement?.closest('li') ?? null) if (li.querySelector(':scope > .row') !== row) setCollapsed(li, false);
+    flash(row);
+    const chip = row.querySelector(`.problem-chip[data-problem="${index}"]`);
+    if (chip instanceof HTMLElement) chip.focus({ preventScroll: true });
+  }
+
+  /** Goes from a row's chip to its problem: its "more" opens, and its headline gets the focus. */
+  function toProblem(/** @type {number} */ index) {
+    const li = document.getElementById(`problem-${index}`);
+    if (!li) return;
+    const more = li.querySelector('details.problem-more');
+    if (more instanceof HTMLDetailsElement) more.open = true;
+    flash(li);
+    const head = li.querySelector('.problem-head');
+    if (head instanceof HTMLElement) head.focus({ preventScroll: true });
+  }
+
+  /** A fix of a problem: its code, and a button that copies it; where the page may not write to the clipboard, the code is selected. */
+  function fixLine(/** @type {string} */ fix) {
+    const code = el('code', { class: 'problem-fix-code' }, ...shellWords(fix));
+    const copy = el('button', { type: 'button', class: 'tryit-copy' }, labels.copyCode);
+    copy.addEventListener('click', () => {
+      const done = () => {
+        copy.textContent = labels.copiedCode;
+        setTimeout(() => { copy.textContent = labels.copyCode; }, 1500);
+      };
+      const select = () => getSelection()?.selectAllChildren(code);
+      if (navigator.clipboard) navigator.clipboard.writeText(fix).then(done, select);
+      else select();
+    });
+    return el('span', { class: 'problem-fix' }, el('span', { class: 'problem-fix-label' }, labels.problems.fix), code, copy);
+  }
+
+  /** One problem of the box: its level's icon and word and its headline (a button to its row, where it has one), then "more". */
+  function problemItem(/** @type {any} */ p, /** @type {number} */ index) {
+    const head = el(p.rows.length ? 'button' : 'span', { class: 'problem-head' }, levelIcon(p.icon), el('strong', { class: 'note-label' }, p.word), ' ', el('span', { class: 'problem-head-text' }, ...inline(p.head)));
+    if (p.rows.length) {
+      head.setAttribute('type', 'button');
+      head.setAttribute('title', labels.problems.toRow);
+      head.addEventListener('click', () => toRow(p.rows[0], index));
+    }
+    const more = /** @type {HTMLDetailsElement} */ (el('details', { class: 'problem-more' }, el('summary', {}, labels.problems.more)));
+    more.open = openProblems.has(p.text);
+    more.addEventListener('toggle', () => (more.open ? openProblems.add(p.text) : openProblems.delete(p.text)));
+    const whole = el('p', { class: 'problem-text' });
+    if (p.label) whole.append(el('strong', { class: 'note-label' }, p.label), ' ');
+    whole.append(...inline(p.body), ...refLinks(p.refs), ...basisParts(p.basis));
+    more.append(whole, ...p.fixes.map(fixLine));
+    return el('li', { class: `note problem ${p.className}`, id: `problem-${index}` }, head, more);
+  }
+
+  /** A chip on each row a problem is about: its level's icon, a button back to the problem. */
+  function problemChips(/** @type {any[]} */ problems) {
+    problems.forEach((p, index) => {
+      for (const path of p.rows) {
+        const row = document.querySelector(`#tree li[data-path="${path}"] > .row`);
+        if (!row) continue;
+        const chip = el('button', { type: 'button', class: `problem-chip ${p.className}`, 'data-problem': String(index), title: labels.problems.toProblem, 'aria-label': `${labels.problems.toProblem}: ${p.word}` }, levelIcon(p.icon));
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toProblem(index);
+        });
+        const text = row.querySelector(':scope > .text');
+        if (text) text.append(chip);
+      }
+    });
+  }
+
+  /** The pointers of the box: a problem on the line of a construct around this one, a click on which goes there. */
+  function drawAround(/** @type {any[]} */ around) {
+    const box = $('problems');
+    box.querySelector('.problem-around')?.remove();
+    if (around.length) {
+      box.append(el('ul', { class: 'problem-around' }, ...around.map((/** @type {any} */ a) => {
+        const go = el('button', { type: 'button', class: `problem-pointer ${a.className}`, title: a.title },
+          el('span', { 'aria-hidden': 'true' }, '↑'), levelIcon(a.icon), el('strong', { class: 'note-label' }, a.where), ' ', el('span', { class: 'problem-head-text' }, ...inline(a.head)));
+        go.addEventListener('click', () => vscode.postMessage({ type: 'reveal', span: { start: { line: a.line, character: a.column }, end: { line: a.line, character: a.endColumn } }, preserveFocus: false }));
+        return el('li', {}, go);
+      })));
+    }
+    box.hidden = !box.hasChildNodes();
+  }
+
+  /** The box "Problems on this line" (src/ui/panelProblems.ts): the line's problems, then the pointers to those around it. */
+  function drawProblems(/** @type {any[]} */ problems, /** @type {any[]} */ around) {
+    const box = $('problems');
+    box.setAttribute('aria-label', labels.problems.title);
+    box.replaceChildren(...(problems.length ? [el('strong', { class: 'problems-title' }, labels.problems.title), el('ul', { class: 'problem-list' }, ...problems.map(problemItem))] : []));
+    drawAround(around);
+    problemChips(problems);
   }
 
   /**

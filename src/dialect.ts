@@ -7,6 +7,7 @@ import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
 import { type Note, problemNote } from './messages';
+import type { Head } from './messages-heads';
 import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
 import { networkPath, networkTarget } from './dict/syntax';
 import { bracesInContext } from './semantics/words';
@@ -79,28 +80,32 @@ export function restrictedByName(name: string): boolean {
  * Constructs that work everywhere but behave differently from bash in some shells (the letters
  * in `differs`, measured like FEATURES).
  */
-interface Behaviour { differs: string; ja: (shell: string) => string; en: (shell: string) => string }
+interface Behaviour { differs: string; ja: (shell: string) => string; en: (shell: string) => string; head: (shell: string) => Head }
 
 export const BEHAVIOURS: Record<string, Behaviour> = {
   echoEscape: {
     differs: 'dymz',
     ja: (sh) => `${sh} の \`echo\` は引数の \`\\t\` や \`\\n\` などを解釈します（bash は文字のまま表示）。どちらでも同じにするには \`printf\` を使います。`,
     en: (sh) => `${sh}'s \`echo\` interprets \`\\t\`, \`\\n\` and the like in its arguments (bash prints them as they are). Use \`printf\` to get the same result everywhere.`,
+    head: (sh) => [`${sh} の \`echo\` は \`\\t\` や \`\\n\` などを解釈する。`, `${sh}'s \`echo\` interprets \`\\t\`, \`\\n\` and the like.`],
   },
   wordSplit: {
     differs: 'z',
     ja: (sh) => `${sh} ではクォートしない \`$変数\` も単語分割・グロブ展開されません（bash では空白で分かれます）。`,
     en: (sh) => `In ${sh} an unquoted \`$var\` is not split into words or globbed (bash splits it on spaces).`,
+    head: (sh) => [`${sh} ではクォートしない \`$変数\` も分かれない。`, `In ${sh} an unquoted \`$var\` is not split.`],
   },
   typesetScope: {
     differs: 'k',
     ja: (sh) => `${sh} では \`name() { … }\` の形の関数の中の \`typeset\` はローカル変数になりません（グローバル変数を変更します）。ローカルにするには \`function name { … }\` の形で定義します。`,
     en: (sh) => `In ${sh}, \`typeset\` inside a function written \`name() { … }\` does not make a local variable (it changes the global one); define the function as \`function name { … }\` for local scope.`,
+    head: (sh) => [`${sh} では、この形の関数の中の \`typeset\` はグローバル変数を変更する。`, `In ${sh}, \`typeset\` in a function of this form changes the global variable.`],
   },
   arrayBase: {
     differs: 'yz',
     ja: (sh) => `${sh} の配列の添字は 1 から始まります（bash は 0 から）。この解説は bash の数え方です。`,
     en: (sh) => `Array subscripts start at 1 in ${sh} (bash starts at 0); this explanation counts the bash way.`,
+    head: (sh) => [`${sh} の配列の添字は 1 から始まる。`, `Array subscripts start at 1 in ${sh}.`],
   },
 };
 
@@ -295,8 +300,8 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
 }
 
 /** The note of a construct the target shell lacks: an error ("Error:", the word of its level), since the line fails there every time. */
-function unsupported(lang: Lang, id: string, body: string): Note & { code: string } {
-  return problemNote(lang, 'unsupported', id, body);
+function unsupported(lang: Lang, id: string, body: string, head: Head = [body, body]): Note & { code: string } {
+  return problemNote(lang, 'unsupported', id, body, head);
 }
 
 /** A problem in a script for its target shell, with where it is. */
@@ -342,6 +347,12 @@ function portableInSh(id: string, shell: Shell): boolean {
   return shell === 'sh' && shFails(FEATURES[id]).length === 0;
 }
 
+function featureHead(id: string, shell: Shell): Head {
+  const { ja, en } = FEATURES[id];
+  return shell === 'sh' ? [`${jaJoin(ja, 'は POSIX sh にない')}。`, `${en} is not POSIX sh.`]
+    : [`${jaJoin(ja, 'は')} ${SHELL_NAMES[shell]} では使えない。`, `${en} is not available in ${SHELL_NAMES[shell]}.`];
+}
+
 function featureMessage(id: string, shell: Shell, lang: Lang): string | undefined {
   const s = pick(lang);
   const f = FEATURES[id];
@@ -368,23 +379,38 @@ function versionMessage(id: string, version: BashVersion, lang: Lang): string {
   return s(`${jaJoin(f.ja, 'は')} bash ${since} からの書き方です。bash ${version} では${before[0]}。${alt}`, `${f.en} is bash ${since} syntax: bash ${version} ${before[1]}.${alt}`);
 }
 
+function versionHead(id: string): Head {
+  const f = FEATURES[id];
+  const { version: since } = SINCE[id];
+  return [`${jaJoin(f.ja, 'は')} bash ${since} からの書き方。`, `${f.en} is bash ${since} syntax.`];
+}
+
 /** Every text the dialect checks can say of a construct in `lang`, for each shell and bash version (checked by test/ja-style.test.ts). */
 export function dialectTexts(lang: Lang): string[] {
   const shells = Object.keys(SHELL_NAMES) as Shell[];
   return [
-    ...Object.keys(FEATURES).flatMap((id) => shells.map((sh) => featureMessage(id, sh, lang))),
-    ...Object.keys(BEHAVIOURS).flatMap((id) => shells.map((sh) => behaviourMessage(id, sh, lang))),
-    ...Object.keys(SINCE).flatMap((id) => BASH_VERSIONS.filter((v) => earlier(v, SINCE[id].version)).map((v) => versionMessage(id, v, lang))),
+    ...Object.keys(FEATURES).flatMap((id) => shells.flatMap((sh) => [featureMessage(id, sh, lang), featureHead(id, sh)[lang === 'ja' ? 0 : 1]])),
+    ...Object.keys(BEHAVIOURS).flatMap((id) => shells.flatMap((sh) => [behaviourMessage(id, sh, lang), behaviourHead(id, sh)[lang === 'ja' ? 0 : 1]])),
+    ...Object.keys(SINCE).flatMap((id) => [...BASH_VERSIONS.filter((v) => earlier(v, SINCE[id].version)).map((v) => versionMessage(id, v, lang)), versionHead(id)[lang === 'ja' ? 0 : 1]]),
   ].filter((t): t is string => t !== undefined);
+}
+
+/** The names of the shells among `shell` (for POSIX sh, the common /bin/sh implementations) where a behaviour differs. */
+function behaviourIn(id: string, shell: Shell): string {
+  const b = BEHAVIOURS[id];
+  // For POSIX sh, name the common /bin/sh implementations that differ.
+  const differ = shell === 'sh' ? (['dash', 'ash'] as RealShell[]).filter((sh) => b.differs.includes(LETTER[sh])) : shell !== 'bash' && b.differs.includes(LETTER[shell]) ? [shell] : [];
+  return differ.map((x) => SHELL_NAMES[x]).join(' / ');
 }
 
 function behaviourMessage(id: string, shell: Shell, lang: Lang): string | undefined {
   const s = pick(lang);
   const b = BEHAVIOURS[id];
-  // For POSIX sh, name the common /bin/sh implementations that differ.
-  const differ = shell === 'sh' ? (['dash', 'ash'] as RealShell[]).filter((sh) => b.differs.includes(LETTER[sh])) : shell !== 'bash' && b.differs.includes(LETTER[shell]) ? [shell] : [];
-  return differ.length ? s(b.ja(differ.map((x) => SHELL_NAMES[x]).join('・')), b.en(differ.map((x) => SHELL_NAMES[x]).join(' and '))) : undefined;
+  const shells = behaviourIn(id, shell).split(' / ');
+  return shells[0] ? s(b.ja(shells.join('・')), b.en(shells.join(' and '))) : undefined;
 }
+
+const behaviourHead = (id: string, shell: Shell): Head => BEHAVIOURS[id].head(behaviourIn(id, shell).split(' / ').join(' and '));
 
 /** The line and column of an offset in the text. */
 function pointAt(text: string, index: number): Point {
@@ -413,7 +439,7 @@ function zshSyntaxPlaces(tree: SyntaxTree, from: number, to: number): Place[] {
 }
 
 /** The note on a line with zsh syntax that cannot be read (the issue `zshSyntax`). */
-const zshSyntax = (lang: Lang): Note & { code: string } => problemNote(lang, 'parse', 'zshSyntax', ZSH_SYNTAX[lang === 'ja' ? 0 : 1]);
+const zshSyntax = (lang: Lang): Note & { code: string } => problemNote(lang, 'parse', 'zshSyntax', ZSH_SYNTAX[lang === 'ja' ? 0 : 1], ['この行には解析できない部分がある。', 'Part of this line could not be parsed.']);
 const ZSH_SYNTAX: [string, string] = [
   'この行には解析できない部分があります。zsh 独自の書き方（グロブ修飾子 `*(.)`、パラメータフラグ `${(f)var}` など）は解説できません。',
   'Part of this line could not be parsed. zsh-only syntax (glob qualifiers like `*(.)`, parameter flags like `${(f)var}`…) is not explained.',
@@ -455,7 +481,7 @@ function laterOptions(tree: SyntaxTree, from: number, to: number, version: BashV
 export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from = 0, to = tree.root.endPosition.row, version: BashVersion = DEFAULT_BASH_VERSION): Issue[] {
   if (shell === 'bash') {
     const lacking = collectFeatures(tree.root, from, to).filter((f) => lacks(f.id, version))
-      .map((f): Issue => ({ id: f.id, kind: 'unsupported', note: unsupported(lang, f.id, versionMessage(f.id, version, lang)), node: f.node, place: f.node }));
+      .map((f): Issue => ({ id: f.id, kind: 'unsupported', note: unsupported(lang, f.id, versionMessage(f.id, version, lang), versionHead(f.id)), node: f.node, place: f.node }));
     // (Where bash lacks `${ …; }`, the issue above says what it does.)
     const unclosed = lacks('funsub', version) ? [] : descendants(tree.root, ['command_substitution'], { from, to }).flatMap((n): Issue[] => {
       const how = braceTakenAsWord(n);
@@ -474,12 +500,12 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
   }
   // (A construct that works differently, and in sh one that dash and busybox ash run, is "Portability"; one the shell lacks, an error.)
   const found = [
-    ...collectBehaviours(tree.root, from, to).map((f) => ({ f, kind: 'behaviour' as const, body: behaviourMessage(f.id, shell, lang) })),
-    ...collectFeatures(tree.root, from, to).map((f) => ({ f, kind: portableInSh(f.id, shell) ? 'behaviour' as const : 'unsupported' as const, body: featureMessage(f.id, shell, lang) })),
+    ...collectBehaviours(tree.root, from, to).map((f) => ({ f, kind: 'behaviour' as const, body: behaviourMessage(f.id, shell, lang), head: () => behaviourHead(f.id, shell) })),
+    ...collectFeatures(tree.root, from, to).map((f) => ({ f, kind: portableInSh(f.id, shell) ? 'behaviour' as const : 'unsupported' as const, body: featureMessage(f.id, shell, lang), head: () => featureHead(f.id, shell) })),
   ];
-  for (const { f, kind, body } of found) {
+  for (const { f, kind, body, head } of found) {
     if (!body) continue;
-    const note = kind === 'behaviour' ? problemNote(lang, 'behaviour', f.id, body) : unsupported(lang, f.id, body);
+    const note = kind === 'behaviour' ? problemNote(lang, 'behaviour', f.id, body, head()) : unsupported(lang, f.id, body, head());
     issues.push({ id: f.id, kind, note, node: f.node, place: f.node });
   }
   return issues;

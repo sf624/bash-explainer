@@ -45,40 +45,40 @@ describe('the VS Code panel: the levels of the notes', function () {
       if (m.type() === 'error') errors.push(m.text());
     });
     await page.goto(panel.url(theme, lang));
-    await until('the notes', () => page.locator('#notes .note').count(), (n) => n === 4);
+    await until('the notes', () => page.locator('#problems .note, #notes .note').count(), (n) => n === 4);
     return Object.assign(page, { errors });
   }
 
   /** Each note as drawn: its class, its icon and the icon's name, its word, and the colours of the icon, the word and the border. */
-  const notes = (page: Page) => page.evaluate(`[...document.querySelectorAll('#notes .note')].map((p) => {
+  const notes = (page: Page) => page.evaluate(`[...document.querySelectorAll('#problems .note, #notes .note')].map((p) => {
     const svg = p.querySelector('svg.note-icon');
     const label = p.querySelector('.note-label');
     const cs = (e) => e && getComputedStyle(e);
     return {
       level: p.className, icon: svg.dataset.icon, name: svg.getAttribute('aria-label'), label: label ? label.textContent : '',
       fill: cs(svg).fill, colour: label ? cs(label).color : '', border: cs(p).borderLeftColor, style: cs(p).borderLeftStyle,
-      text: p.querySelector('.note-text').textContent.slice(0, 20),
+      text: p.querySelector('.problem-head-text, .note-text').textContent.slice(0, 20),
     };
   })`) as Promise<{ level: string; icon: string; name: string; label: string; fill: string; colour: string; border: string; style: string; text: string }[]>;
 
   it('draws each note with the icon and the word of its level, errors first', async () => {
     const page = await open();
     const n = await notes(page);
-    // (An error's icon has no name, and is hidden from a screen reader: its word says "Error".)
+    // (In the box, each icon has no name, and is hidden from a screen reader: the level's word says it. A plain note's icon has its name.)
     assert.deepStrictEqual(n.map((x) => [x.level, x.icon, x.name, x.label]), [
-      ['note level-error', 'error', null, 'Error:'],
-      ['note level-warning', 'warning', 'Warning', 'Pitfall:'],
-      ['note level-info', 'info', 'Information', 'Caveat:'],
+      ['note problem level-error', 'error', null, 'Error'],
+      ['note problem level-warning', 'warning', null, 'Warning'],
+      ['note problem level-info', 'info', null, 'Information'],
       ['note level-note', 'info', 'Note', ''],
     ]);
-    assert.strictEqual(await page.locator('#notes .level-error svg.note-icon').getAttribute('aria-hidden'), 'true');
-    assert.ok(n[0].text.startsWith('Error: [ has no'), n[0].text);
-    assert.ok(n[1].text.startsWith('Pitfall: source lib'), n[1].text);
+    assert.strictEqual(await page.locator('#problems .level-error svg.note-icon').first().getAttribute('aria-hidden'), 'true');
+    assert.ok(n[0].text.startsWith('[ has no ]'), n[0].text);
+    assert.ok(n[1].text.startsWith('With no / in its'), n[1].text);
     assert.ok(n[3].text.startsWith('An exit status'), n[3].text);
     // The word is bold.
-    assert.strictEqual(await page.locator('#notes .note-label').first().evaluate((e) => e.tagName), 'STRONG');
+    assert.strictEqual(await page.locator('#problems .note-label').first().evaluate((e) => e.tagName), 'STRONG');
     const ja = await open('dark', 'ja');
-    assert.deepStrictEqual((await notes(ja)).map((x) => [x.name, x.label]), [[null, 'エラー:'], ['警告', '落とし穴:'], ['情報', '注意:'], ['補足', '']]);
+    assert.deepStrictEqual((await notes(ja)).map((x) => [x.name, x.label]), [[null, 'エラー'], [null, '警告'], [null, '情報'], ['補足', '']]);
     assert.deepStrictEqual([...page.errors, ...ja.errors], []);
     await page.close();
     await ja.close();
@@ -110,7 +110,7 @@ describe('the VS Code panel: the levels of the notes', function () {
     const page = await open('dark', 'en', true);
     const [e, w, i, note] = await notes(page);
     assert.deepStrictEqual([e.icon, w.icon, i.icon, note.icon], ['error', 'warning', 'info', 'info']);
-    assert.deepStrictEqual([e.label, w.label, i.label], ['Error:', 'Pitfall:', 'Caveat:']);
+    assert.deepStrictEqual([e.label, w.label, i.label], ['Error', 'Warning', 'Information']);
     assert.deepStrictEqual([e.style, w.style, i.style], ['double', 'dashed', 'solid']);
     // (The icons and the words in the system's text colour, as the rest of the text.)
     const text = await page.evaluate(`getComputedStyle(document.querySelector('.note-text')).color`);

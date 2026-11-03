@@ -88,7 +88,7 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
   const names = rows.flatMap((l) => extracted.inserted[l].map(([a, b]) => [shellLines[l].slice(a, b), original[l].slice(extracted.maps[l][a], extracted.maps[l][b])]))
     .filter(([inShell, file]) => file && inShell !== file);
   const inFile = (text: string) => names.reduce((t, [inShell, file]) => t.split(inShell).join(file), text);
-  const noteInFile = <N extends { text: string; body: string }>(n: N): N => ({ ...n, text: inFile(n.text), body: inFile(n.body) });
+  const noteInFile = <N extends { text: string; body: string; head?: string }>(n: N): N => ({ ...n, text: inFile(n.text), body: inFile(n.body), ...(n.head ? { head: inFile(n.head) } : {}) });
   // A fact's rewrites edit the extracted text, at its offsets and in its syntax (`${MSG}` for make's `$(MSG)`, `$f`
   // for `$$f`, a line a backslash continues in a Dockerfile): not the file. The facts of a host carry none (src/rewrite.ts),
   // nor do the places of its notes (no quick fix).
@@ -120,7 +120,7 @@ export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja'
 }
 
 /** A fact's note, without what only the fact has (its id, kind, sections, basis and try-it). */
-const noteData = (f: Fact): Note => ({ text: f.text, level: f.level, label: f.label, body: f.body, code: f.code, ...conventionOf(f) });
+const noteData = (f: Fact): Note => ({ text: f.text, level: f.level, label: f.label, body: f.body, ...(f.head ? { head: f.head } : {}), code: f.code, ...conventionOf(f) });
 
 const PIPEFAIL: FactSpec = { id: 'dockerfile-pipefail-missing', params: {} };
 
@@ -203,6 +203,8 @@ export interface DocIssue {
   code: string;
   severity: ProblemSeverity;
   message: string;
+  /** One sentence with what happens: `Note.head`, for the panel's pointer to a problem on a line around (`problemsAround`, src/ui/panelProblems.ts). */
+  head: string;
   startLine: number; startCol: number; endLine: number; endCol: number;
   /** The habit the advice is, when it is one (`Note.convention`, src/conventions.ts). */
   convention?: ConventionId;
@@ -222,14 +224,14 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
   for (const region of extracted.regions) {
     const own = scriptTree(tree, extracted, region);
     for (const issue of dialectIssues(own, regionShell(region, shell) ?? 'bash', lang, region.start, region.end, version)) {
-      out.push({ code: issue.id, severity: severityOf(issue.note.level), message: problemText(issue.note, lang), ...at(issue.place) });
+      out.push({ code: issue.id, severity: severityOf(issue.note.level), message: problemText(issue.note, lang), head: issue.note.head!, ...at(issue.place) });
     }
     if (region.warnPipefail) {
       for (let line = region.start; line <= region.end; line++) {
         if (!pipeWithoutPipefail(own, region, line, shell)) continue;
         const pipe = original[line].search(/(?<!\|)\|(?!\|)/);
         const f = factOf(lang, PIPEFAIL);
-        out.push({ code: 'dockerPipefail', severity: severityOf(f.level), message: problemText(f, lang), startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1, ...conventionOf(f) });
+        out.push({ code: 'dockerPipefail', severity: severityOf(f.level), message: problemText(f, lang), head: f.head!, startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1, ...conventionOf(f) });
       }
     }
     for (const n of region.notes ?? []) {
@@ -237,14 +239,14 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
       if (n.code === undefined) continue;
       const first = extracted.maps[region.start];
       const f = factOf(lang, n.spec);
-      out.push({ code: n.code, severity: severityOf(f.level), message: problemText(f, lang), startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1], ...conventionOf(f) });
+      out.push({ code: n.code, severity: severityOf(f.level), message: problemText(f, lang), head: f.head!, startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1], ...conventionOf(f) });
     }
   }
   for (const sub of extracted.substitutions) {
     if (!sub.warning) continue;
     const c = Math.max(0, original[sub.line].indexOf(sub.text));
     const f = factOf(lang, sub.warning);
-    out.push({ code: 'injection', severity: severityOf(f.level), message: problemText(f, lang), startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length, ...conventionOf(f) });
+    out.push({ code: 'injection', severity: severityOf(f.level), message: problemText(f, lang), head: f.head!, startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length, ...conventionOf(f) });
   }
   return out;
 }

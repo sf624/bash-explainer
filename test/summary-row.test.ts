@@ -66,7 +66,7 @@ describe('the summary row of a line', () => {
   });
 
   it('takes the highest level first, then from the left, and only the problems of the line', () => {
-    const line = (severity: 'error' | 'warning' | 'info', startCol: number, startLine = 0) => ({ code: 'x', severity, message: `${severity} ${startCol}`, startLine, startCol, endLine: startLine, endCol: startCol + 1 });
+    const line = (severity: 'error' | 'warning' | 'info', startCol: number, startLine = 0) => ({ code: 'x', severity, message: `${severity} ${startCol}`, head: 'h', startLine, startCol, endLine: startLine, endCol: startCol + 1 });
     const ex = explain('ls', 0, 'en', { sentence: true });
     const pick = (...list: ReturnType<typeof line>[]) => summaryRow(ex, list, 0, 'en').text;
     assert.strictEqual(pick(line('info', 0), line('warning', 5), line('error', 9)), 'error 9');

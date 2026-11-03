@@ -42,6 +42,24 @@ On a phone (and a tablet held upright), one row says what the cursor's line is: 
 
 ## Changed
 
+### The errors of a part of a line are problems
+
+A part of a line can say that the command fails every time it runs, with ⓧ on its row. Those errors stopped at the row: the Problems strip said "no problems", VS Code showed no squiggle, and `--check` exited 0. Now they are notes of the line, and go where every note goes: the panel, the hover, Markdown, the Problems lists of VS Code, the Language Server and the web page, `--check` in every format (`text`, `github`, `json`, `sarif`), and the GitHub Action.
+
+- `arith-invalid-number`: `echo $((09))`, `$((2#2))`, `let x=09`, `(( 08 ))`, `bash -c 'echo $((09))'`. Not `$((10#09))`, `[ 09 -eq 9 ]` (`[` reads a decimal) or `${a[09]}`.
+- `shebang-env-one-argument`: `#!/usr/bin/env bash -e`, which fails with status 127 on Linux when the file is run as a program. `#!/usr/bin/env -S bash -e` is fine, and a `#!` that is no first line of a script (a Markdown block, a workflow's `run:`) is a comment.
+- `shebang-env-string-refused`, `shebang-env-loop`, `splice-refused`.
+
+**Compatibility.** `--check` and the Action fail (exit 1, the output `errors`) on these lines, which passed before. To keep one, write `# bash-explainer disable=<code>` above it, or add the code to `bashExplainer.diagnostics.ignore`. In the sample of this repository (2,607 lines of `test/fixtures/`, the sample and the tests' snippets), 2 lines change: `#!/usr/bin/env bash --posix` and `let x=09`, each of which fails in bash and env.
+
+A part's warning stays on its row, and is no problem (`#!bash`, `${x:-$((09))}`, `terraform -foo plan`): whether it fails depends on the files there, the options or the path taken.
+
+### The box of the line's problems
+
+In the Meaning and Reading views, the problems of the line come first, under "Problems on this line" / 「この行の問題」, errors first. Each says its level and one sentence with what happens, written for it and by case (`((i++))` says "the script stops" only under `set -e`). "More" holds the whole text, the same as the Problems lists, what it cites, and each fix with a copy button. A click on the sentence goes to the row it is about, and a chip on the row comes back. Other notes stay below it, as they were.
+
+On a line inside a construct, the box points to the problems on the construct's line: "↑ Warning on line 3: …" goes there.
+
 ### Errors: a third level of problems
 
 A problem is now an error, a warning or information, as VS Code and SARIF have them. An error is a line that fails every time as written; it starts with ⓧ and the word "Error:" / 「エラー:」, whatever kind of note it is. In VS Code its squiggle and its icon in the Problems panel are the editor's error's, and the file's name turns red in the explorer and its tab. The Language Server gives it severity 1, `--check` prints `error:` (red in a terminal), its JSON `"severity": "error"`, SARIF `"level": "error"`, and the GitHub annotations `::error`, first. The panel, the hover and the web page draw it with VS Code's error icon in the error colour (red); the panel, the hover and the terminal put it before the other notes of the line (the Problems lists keep the order of the lines):

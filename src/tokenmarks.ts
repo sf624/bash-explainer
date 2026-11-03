@@ -1,6 +1,6 @@
 // What the analyzer marks on the tokens it makes: who reads each part (`Token.origin`, src/analyzer-types.ts), for the
 // tree view of the panel (src/reading.ts), and the labels their explanations need not repeat.
-import type { LineExplanation, ScriptProcess, Token, TokenOrigin } from './analyzer-types';
+import type { LineExplanation, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
 import { sameSpan, spanWithin } from './noteanchors';
 import { LEVELS, type NoteLevel } from './levels';
 import { plainOf } from './messages-levels';
@@ -71,6 +71,13 @@ export function dropLabelEcho(t: Token): void {
   for (const c of t.children) dropLabelEcho(c);
 }
 
+/** The token a range is about, among a line's tokens in the order of a walk: the outermost of the same range, else the innermost around it. */
+export function tokenAtSpan(all: readonly Token[], span: Span): Token | undefined {
+  const around = all.filter((t) => spanWithin(span, t.span));
+  // (The tokens around a range are a chain from the outermost in, in the order of the walk: the last is the innermost.)
+  return around.find((t) => sameSpan(span, t.span)) ?? around.at(-1);
+}
+
 /**
  * Gives every token of a line its role (`Token.role`, from its kind: src/roles.ts) and the facts of the line about it
  * (`Token.facts`): a fact said at a node (`LineExplanation.anchors`) belongs to the outermost token of the same range,
@@ -90,10 +97,7 @@ export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'f
   for (const a of ex.anchors ?? []) {
     const id = ids.get(a.text);
     if (!id) continue;
-    const around = all.filter((t) => spanWithin(a.span, t.span));
-    const exact = around.find((t) => sameSpan(a.span, t.span));
-    // (The tokens around a range are a chain from the outermost in, in the order of the walk: the last is the innermost.)
-    const at = exact ?? around.at(-1);
+    const at = tokenAtSpan(all, a.span);
     // (Said at several nodes of one token, it is listed once.)
     if (at) at.facts = [...new Set([...at.facts ?? [], id])];
   }

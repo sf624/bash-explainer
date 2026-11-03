@@ -326,7 +326,7 @@ describe('the pitfalls of a script, as problems', () => {
   it('leaves out a pitfall that another problem at its place already says', () => {
     const doc = script('x = 1');
     const [mine] = noteIssues(doc, 'en', {}, {});
-    const other = { code: 'other', severity: 'warning' as const, message: 'something else', startLine: 0, startCol: 0, endLine: 0, endCol: 1 };
+    const other = { code: 'other', severity: 'warning' as const, message: 'something else', head: 'h', startLine: 0, startCol: 0, endLine: 0, endCol: 1 };
     assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [other]), [mine]);
     assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [{ ...other, message: mine.message }]), []);
     assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [{ ...other, code: mine.code }]), []);

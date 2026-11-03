@@ -15,6 +15,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Changed
 
+- `--check` and the GitHub Action now fail on the errors marked on a part of a line, such as `echo $((09))` and `#!/usr/bin/env bash -e`, which the panel marked ⓧ while `--check` passed them and the Problems strip said there was no problem. **Compatibility:** such a line now gives exit 1 and counts in the Action's `errors`; `# bash-explainer disable=arith-invalid-number` (the code in the message) keeps one.
+- The panel starts with a box of the line's problems: each with its level and one sentence, "More" with the whole text and the fix to copy, and a chip that links it to its row and back. A line inside a loop or an `if` points to the problems on that line.
 - Problems have a third level, Error, for a line that fails every time as written (`[ -f a` without `]`, `x = 1`, a construct the script's shell lacks). `--check` and the GitHub Action fail on every error, and on a warning only with `--strict`. **Compatibility:** errors that were pitfalls now fail without `--strict`; a few warnings now fail only with it, and two caveats newly with it (the details list them).
 - Errors look different from warnings in every view: the panel, the hover and the terminal show a red ⓧ icon and "Error:", before the other notes, and the web page's editor and Problems list the red icon. A problem's own text no longer repeats "Error:" after its severity (`file:2:1: error: …`).
 - In a `#!/bin/sh` script, `local`, `echo -n`, `read -p` and `set -E`, which dash runs, are now information ("Portability") and fail no check. Before, they failed `--check`.

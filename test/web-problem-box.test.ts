@@ -1,0 +1,124 @@
+import * as assert from 'assert';
+import type { Browser, BrowserContext, Frame, Page } from 'playwright-core';
+import { chooseView, cursorToLine, openSite, stable, until } from './support/site';
+
+// The box "Problems on this line" on the web page (docs/design/panel-redesign.md, P7b), and an error's mark with the Problems strip.
+
+/** Whether the first problem's "more" is open. */
+const MORE_OPEN = `document.querySelector('details.problem-more').open`;
+
+describe('the web page: the box of the line\'s problems', function () {
+  this.timeout(60000);
+  let browser: Browser;
+  let base = '';
+
+  before(async function () {
+    ({ browser, base } = await openSite(this));
+  });
+
+  const open = async (text: string, line = 1, width = 1280, lang: 'en' | 'ja' = 'en'): Promise<{ ctx: BrowserContext; page: Page; panel: () => Frame; errors: string[] }> => {
+    const ctx = await browser.newContext({ viewport: { width, height: 800 }, locale: lang === 'ja' ? 'ja-JP' : 'en-US' });
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(base);
+    const panel = (): Frame => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText(text);
+    await cursorToLine(page, line);
+    await until('the line explained', async () => (await panel().locator('#where').textContent()) ?? '', (t) => new RegExp(`(Ln|line|Line|行) ?${line}\\b`).test(t));
+    return { ctx, page, panel, errors };
+  };
+
+  it('shows a token\'s error in the box, the strip and the editor together', async () => {
+    const { ctx, page, panel, errors } = await open('echo $((09))');
+    const heads = await until('the box', () => panel().locator('#problems .problem-head').allTextContents(), (h) => h.length === 1);
+    assert.match(heads[0], /^Error This number is not valid/);
+    await until('the row\'s mark', () => panel().locator('#tree .row', { hasText: 'ⓧ' }).count(), (n) => n > 0);
+    // (The strip counts it: never a mark beside "no problems".)
+    await until('the strip', () => page.locator('#problems-counts .count').allTextContents(), (c) => c.join(' ').includes('1'));
+    await until('the squiggle', () => page.locator('.cm-lintRange-error, .cm-lintRange').count(), (n) => n > 0);
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('has no box on a clean line, and keeps a plain note below it', async () => {
+    const { ctx, panel } = await open('echo hello');
+    assert.strictEqual(await panel().locator('#problems').isHidden(), true);
+    assert.strictEqual(await panel().locator('#problems .note').count(), 0);
+    await ctx.close();
+    const noted = await open('exit 300');
+    await until('the note', () => noted.panel().locator('#notes .note').count(), (n) => n === 1);
+    assert.strictEqual(await noted.panel().locator('#problems').isHidden(), true);
+    await noted.ctx.close();
+  });
+
+  it('links a problem and its row, both ways, with the row\'s parents opened', async () => {
+    const { ctx, panel } = await open('echo $((09))');
+    const head = panel().locator('#problems .problem-head').first();
+    await head.waitFor();
+    // (Folded, the row's parents are opened by the link.)
+    await panel().locator('#tree > li > .row > button.twisty').first().click();
+    await until('the row folded', () => panel().locator('#tree .problem-chip').first().isVisible(), (v) => !v);
+    await head.click();
+    const chip = panel().locator('#tree .problem-chip').first();
+    await until('the row opened', () => chip.isVisible(), (v) => v);
+    assert.strictEqual(await panel().evaluate(`document.activeElement.className`), 'problem-chip level-error');
+    assert.match(await chip.getAttribute('aria-label') ?? '', /Go to the problem: Error/);
+    assert.strictEqual(await panel().evaluate(MORE_OPEN), false);
+    await chip.click();
+    assert.strictEqual(await panel().evaluate(MORE_OPEN), true);
+    assert.match(await panel().evaluate(`document.activeElement.className`) as string, /problem-head/);
+    // ("More" stays open when the same line is drawn again, and says the whole text.)
+    assert.match(await panel().locator('.problem-text').first().textContent() ?? '', /^Error: Invalid number 09: a number starting with 0/);
+    await ctx.close();
+  });
+
+  it('gives a fix to copy, and points to the problem on the line of a construct around', async () => {
+    const { ctx, page, panel } = await open('read line\nfor f in $(ls); do\n  echo hi\ndone', 1);
+    await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await panel().locator('details.problem-more > summary').first().click();
+    assert.strictEqual(await panel().locator('.problem-fix-code').first().textContent(), 'read -r');
+    await panel().locator('.problem-fix .tryit-copy').first().click();
+    await until('copied', () => panel().locator('.problem-fix .tryit-copy').first().textContent(), (t) => t === 'Copied');
+    assert.strictEqual(await page.evaluate('navigator.clipboard.readText()'), 'read -r');
+    await cursorToLine(page, 3);
+    const pointer = panel().locator('.problem-pointer').first();
+    await pointer.waitFor();
+    assert.match(await pointer.textContent() ?? '', /↑Information on line 2 The output of/);
+    await pointer.click();
+    await until('the cursor there', () => page.locator('.cm-lineNumbers .cm-activeLineGutter').first().textContent(), (t) => t === '2');
+    await ctx.close();
+  });
+
+  it('in Reading, a click on a headline opens what it says', async () => {
+    const { ctx, page, panel } = await open('echo $((09))');
+    await panel().locator('#problems .problem-head').first().waitFor();
+    await chooseView(page, 'tree');
+    assert.strictEqual(await panel().locator('#tree').isHidden(), true);
+    assert.strictEqual(await panel().locator('#problems').isVisible(), true);
+    await panel().locator('#problems .problem-head').first().click();
+    assert.strictEqual(await panel().evaluate(MORE_OPEN), true);
+    await ctx.close();
+  });
+
+  for (const width of [640, 1280]) {
+    for (const lang of ['en', 'ja'] as const) {
+      it(`clips nothing, with long names, at ${width} in ${lang}`, async () => {
+        const name = `a_very_long_variable_name_${'x'.repeat(60)}`;
+        const { ctx, panel } = await open(`set -u; read line; rm -rf $${name}/*; echo $((09)) $undefined_${name}`, 1, width, lang);
+        await until('the box', () => panel().locator('#problems .problem-head').count(), (n) => n > 2);
+        await panel().evaluate(`document.querySelectorAll('details.problem-more').forEach((d) => { d.open = true; })`);
+        const out = await stable('the box', () => panel().evaluate(`(() => {
+          const w = document.documentElement.clientWidth;
+          const past = [...document.querySelectorAll('#problems, #problems *')].filter((e) => e.getBoundingClientRect().right > w + 1).map((e) => e.className);
+          return { past, scroll: document.documentElement.scrollWidth - w };
+        })()`) as Promise<{ past: string[]; scroll: number }>);
+        assert.deepStrictEqual(out, { past: [], scroll: 0 });
+        await ctx.close();
+      });
+    }
+  }
+});

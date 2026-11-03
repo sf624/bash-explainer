@@ -3,7 +3,9 @@ import type { ConventionId } from './conventions';
 import { type Lang, lineLabel, type Text } from './i18n';
 import { codeSpan, shorten } from './label';
 import { alwaysFails, LEVELS, namesLevel, type NoteLevel, severityOf } from './levels';
-import { PROBLEM_LEVELS, STYLE_LEVELS, type StyleCase, type StyleCode } from './messages-levels';
+import { FACT_HEADS, type Head, STYLE_HEADS } from './messages-heads';
+import { PROBLEM_LEVELS, STYLE_LEVELS, type StyleCase, type StyleCode, type TokenEntry } from './messages-levels';
+import { TOKEN_TEXTS } from './messages-tokens';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
 import { aliasDefinedText, aliasMaybeText, aliasNotExpandedText } from './messages-alias';
 import { inTrap, LOCAL_SOURCED, noShebang, readByBashrc, unreadClause } from './messages-common';
@@ -21,6 +23,7 @@ import {
 import { type GithubFileName, githubFileText, type HostMeaning, hostSubstitutionText } from './messages-hosts';
 import { noShellLines } from './messages-shell';
 import { yqCompatText, yqFlavourText } from './messages-yq';
+import type { TokenMark } from './analyzer-types';
 import type { YqVerdict } from './embedded/yq';
 import type { RedirectOrder } from './idioms';
 import type { Rewrite } from './rewrite';
@@ -82,38 +85,41 @@ interface Entry<P> {
   rewrite?: (p: P) => readonly Rewrite[];
 }
 
+/** The parameters of an entry, for what a wrapper adds to it. */
+type ParamsOf<E> = E extends Entry<infer P> ? P : never;
+
 const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text });
 /**
  * A fact that says the line fails every time it runs: a note at the level `error`, said whatever the pitfalls settings
  * say. Each has a row in the bash test of test/error-level.test.ts that runs it and sees it fail.
  */
-const failure = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text, level: 'error' });
-const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text, level?: NoteLevel | ((p: P) => NoteLevel)): Entry<P> =>
+const failure = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> & { level: 'error' } => ({ kind: 'note', refs, text, level: 'error' });
+const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text, level?: NoteLevel | ((p: P) => NoteLevel)): Entry<P> & { kind: 'pitfall' } =>
   ({ kind: 'pitfall', refs, text, ...(heading ? { heading } : {}), ...(level ? { level } : {}) });
 /**
  * A pitfall at the level `error`: the line fails every time as written (docs/design/three-levels.md, section 2), said
  * whatever the pitfalls settings say. Each has a row in the bash test of test/error-level.test.ts that runs it and sees it fail.
  */
-const broken = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> => pitfall(refs, text, heading, 'error');
+const broken = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> & { kind: 'pitfall' } => pitfall(refs, text, heading, 'error');
 /** A pitfall at the level `info`: harmless with most values, systems or paths. */
-const caveat = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> => pitfall(refs, text, heading, 'info');
+const caveat = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> & { kind: 'pitfall' } => pitfall(refs, text, heading, 'info');
 /**
  * A caveat that stays a note: the panel, the hover and the CLI say it with its level, but it is no problem in the
  * editors, since it is often meant, or wrong where a file is read after the option is set (docs/design/note-levels.md,
  * "Notes as problems").
  */
-const notProblem = <P>(e: Entry<P>): Entry<P> => ({ ...e, problem: false });
+const notProblem = <E>(e: E): E => ({ ...e, problem: false });
 /**
  * An entry that says what a clause of a line's sentence on the models says (`SentenceClause`): a problem of the line
  * that is this fact leaves the clause out (src/linesentence.ts).
  */
-const saying = <P>(e: Entry<P>, ...says: SentenceClause[]): Entry<P> => ({ ...e, says });
+const saying = <E>(e: E, ...says: SentenceClause[]): E => ({ ...e, says });
 /** An entry with its basis: the probe row that checks it and gives a try-it (src/basis.ts, docs/design/basis.md). */
-const withBasis = <P>(e: Entry<P>, basis: BasisSpec | ((p: P) => BasisSpec | undefined)): Entry<P> => ({ ...e, basis });
+const withBasis = <E>(e: E, basis: BasisSpec | ((p: ParamsOf<E>) => BasisSpec | undefined)): E => ({ ...e, basis });
 /** A pitfall whose advice is a habit, beside the fact it states (src/conventions.ts). */
-const withConvention = <P>(e: Entry<P>, convention: ConventionId): Entry<P> => ({ ...e, convention });
+const withConvention = <E>(e: E, convention: ConventionId): E => ({ ...e, convention });
 /** An entry whose suggestion is rewrites: its params carry them (`rewrite`), its text renders their code, its fact those with edits. */
-const suggests = <P extends { rewrite: readonly Rewrite[] }>(e: Entry<P>): Entry<P> => ({ ...e, rewrite: (p) => p.rewrite.filter((r) => r.edits.length) });
+const suggests = <E>(e: E): E => ({ ...e, rewrite: (p: { rewrite: readonly Rewrite[] }) => p.rewrite.filter((r) => r.edits.length) });
 
 /**
  * The level of a pitfall that fails every time but in some cases, where it is a caveat: `unread` (`unreadClause`),
@@ -718,10 +724,12 @@ export type Params<K extends FactId> = Parameters<(typeof MESSAGES)[K]['text']>[
  * the word, the body), its level, the word after the mark that names the level or the kind of problem ("Pitfall:",
  * "Caveat:", "Script injection risk:"; empty when there is none), and the rest. `code`: the problem it is, in the
  * editors (`DocumentIssue.code`: a fact's id, a style check, a dialect issue). The views read the level and the word
- * from here, never from the text. `convention`: the habit its advice is, beside the fact it states (src/conventions.ts;
- * data only, no view shows it).
+ * from here, never from the text. `head`: one sentence with what happens, on every note that can be a problem (a fact's
+ * and a style check's from src/messages-heads.ts, a dialect issue's, a token's error's from its text's entry), which the
+ * panel's box shows first. `convention`: the habit its advice is, beside the fact it states (src/conventions.ts; data
+ * only, no view shows it).
  */
-export interface Note { text: string; level: NoteLevel; label: string; body: string; code?: string; convention?: ConventionId }
+export interface Note { text: string; level: NoteLevel; label: string; body: string; head?: string; code?: string; convention?: ConventionId }
 
 /**
  * A fact as a note: its id (also its `code`), its kind, and the sections it cites; where it is bash's behaviour rather
@@ -738,11 +746,11 @@ export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly 
  * the catalog makes notes (docs/design/sources.md, row 14): a fact (`fact`), a style check's (`styleNote`), a dialect
  * issue's (`problemNote`).
  */
-function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?: FactKind; heading?: Text } = {}): Note {
-  const { kind = 'note', heading } = opts;
+function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?: FactKind; heading?: Text; head?: Head } = {}): Note {
+  const { kind = 'note', heading, head } = opts;
   const { word: levelWord, wordOnEvery } = LEVELS[level];
   const word = heading ? heading[lang] : kind === 'pitfall' || wordOnEvery ? levelWord[lang] : '';
-  return { text: `${LEVELS[level].mark} ${word}${body}`, level, label: word.trimEnd(), body };
+  return { text: `${LEVELS[level].mark} ${word}${body}`, level, label: word.trimEnd(), body, ...(head ? { head: head[lang === 'ja' ? 0 : 1] } : {}) };
 }
 
 /**
@@ -751,7 +759,7 @@ function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?: FactK
  */
 export function styleNote(lang: Lang, code: StyleCode, body: string, c: StyleCase = {}): Note & { code: StyleCode } {
   const entry = STYLE_LEVELS[code];
-  return { ...marked(lang, typeof entry === 'function' ? entry(c) : entry, body, { kind: 'pitfall' }), code };
+  return { ...marked(lang, typeof entry === 'function' ? entry(c) : entry, body, { kind: 'pitfall', head: STYLE_HEADS[code](c) }), code };
 }
 
 /**
@@ -759,8 +767,18 @@ export function styleNote(lang: Lang, code: StyleCode, body: string, c: StyleCas
  * its level from `PROBLEM_LEVELS`: a construct the target shell lacks (`unsupported`, "Error:"), one that works
  * differently there (`behaviour`, "Portability:"), zsh syntax the line cannot be read with (`parse`, information).
  */
-export function problemNote(lang: Lang, kind: 'unsupported' | 'behaviour' | 'parse', code: string, body: string): Note & { code: string } {
-  return { ...marked(lang, PROBLEM_LEVELS[kind], body, kind === 'behaviour' ? { heading: PORTABILITY } : {}), code };
+export function problemNote(lang: Lang, kind: 'unsupported' | 'behaviour' | 'parse', code: string, body: string, head: Head): Note & { code: string } {
+  return { ...marked(lang, PROBLEM_LEVELS[kind], body, { head, ...(kind === 'behaviour' ? { heading: PORTABILITY } : {}) }), code };
+}
+
+/**
+ * The note of a token's text that says the command fails every time (`tokenError`, src/messages-levels.ts): the token's
+ * row says it, and as a note it reaches the panel's box and the problems by the one path of every note (`noteIssues`).
+ * Its code is the text's id, as for `# bash-explainer disable=`.
+ */
+export function tokenNote(lang: Lang, { id, level, text }: TokenMark): Note & { code: string } {
+  const { head } = TOKEN_TEXTS[id] as TokenEntry<never>;
+  return { ...marked(lang, level, text, { head }), code: id };
 }
 
 /**
@@ -781,10 +799,11 @@ export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> e
   const e = MESSAGES[id] as Entry<unknown>;
   const [ja, en] = e.text(params[0]);
   const level = typeof e.level === 'function' ? e.level(params[0]) : e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note');
-  const { text, label, body } = marked(lang, level, lang === 'ja' ? ja : en, { kind: e.kind, heading: e.heading });
+  const head = (FACT_HEADS as unknown as Record<string, ((p: unknown) => Head) | undefined>)[id]?.(params[0]);
+  const { text, label, body, head: said } = marked(lang, level, lang === 'ja' ? ja : en, { kind: e.kind, heading: e.heading, head });
   const { basis, tryIt } = basisOf(typeof e.basis === 'function' ? e.basis(params[0]) : e.basis);
   const rewrite = e.rewrite?.(params[0]);
-  return { id, kind: e.kind, level, text, refs: e.refsOf?.(params[0]) ?? e.refs, label, body, code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(e.convention ? { convention: e.convention } : {}), ...(rewrite?.length ? { rewrite } : {}) };
+  return { id, kind: e.kind, level, text, refs: e.refsOf?.(params[0]) ?? e.refs, label, body, ...(said ? { head: said } : {}), code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(e.convention ? { convention: e.convention } : {}), ...(rewrite?.length ? { rewrite } : {}) };
 }
 
 /** The clauses of a line's sentence that the fact `code` says (none for a code that is no fact: a style check, a dialect issue). */

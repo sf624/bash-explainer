@@ -244,6 +244,42 @@ describe('the command-line tool', function () {
     assert.match(bad.err, /cannot write/);
   });
 
+
+  it('--check reports the error of a part of a line, in every format, with exit 1 (panel P7b)', () => {
+    const line = 'echo $((09))';
+    const text = run(['--check', '--lang', 'en', '-e', line]);
+    assert.strictEqual(text.code, 1);
+    assert.match(text.out, /\(command\):1:9: error: Invalid number 09: .* \[arith-invalid-number\]\n$/);
+    // (`--strict` adds nothing to an error.)
+    assert.strictEqual(run(['--check', '--strict', '-e', line]).code, 1);
+    const gh = run(['--check', '--lang', 'en', '--format', 'github', '-e', line]);
+    assert.strictEqual(gh.code, 1);
+    assert.match(gh.out, /^::error file=\(command\),line=1,col=9,endLine=1,endColumn=11,title=Bash Explainer%3A arith-invalid-number::Invalid number 09/);
+    // (An error is no pitfall: its annotation's title does not say so, and the Action counts it among the errors.)
+    assert.doesNotMatch(gh.out, /pitfall/);
+    const json = run(['--check', '--format', 'json', '-e', line]);
+    assert.strictEqual(json.code, 1);
+    assert.deepStrictEqual(JSON.parse(json.out).map((p: { severity: string; code: string; column: number }) => [p.severity, p.code, p.column]), [['error', 'arith-invalid-number', 9]]);
+    const sarif = run(['--check', '--format', 'sarif', '-e', line]);
+    assert.strictEqual(sarif.code, 1);
+    const [one] = JSON.parse(sarif.out).runs;
+    assert.deepStrictEqual(one.tool.driver.rules.map((r: { id: string }) => r.id), ['arith-invalid-number']);
+    assert.deepStrictEqual(one.results.map((r: { ruleId: string; level: string }) => [r.ruleId, r.level]), [['arith-invalid-number', 'error']]);
+    const counts = path.join(dir, 'token-counts');
+    assert.strictEqual(run(['--check', '--counts', counts, '-e', line]).code, 1);
+    assert.match(fs.readFileSync(counts, 'utf8'), /errors=1\nwarnings=0\ninfos=0\npitfalls=0\nfailing=1/);
+    // (A file's shebang; a directive, or `diagnostics.ignore`, keeps a line.)
+    const file = path.join(dir, 'env-e.sh');
+    fs.writeFileSync(file, '#!/usr/bin/env bash -e\necho a\n');
+    const shebang = run(['--check', '--lang', 'en', file]);
+    assert.strictEqual(shebang.code, 1);
+    assert.match(shebang.out, /:1:1: error: On Linux .* \[shebang-env-one-argument\]/);
+    assert.strictEqual(run(['--check', '--strict', '-e', '# bash-explainer disable=arith-invalid-number\necho $((09))']).code, 0);
+    assert.strictEqual(run(['--check', '--set', 'diagnostics.ignore=["arith-invalid-number"]', '-e', line]).code, 0);
+    // (A warning of a part stays on its row: nothing to report, even with `--strict`.)
+    assert.deepStrictEqual([run(['--check', '--strict', '-e', 'echo ${x:-$((09))}']).code, run(['--check', '--strict', '-e', 'echo $((10#09))']).code], [0, 0]);
+  });
+
   it('writes problems as GitHub annotations or SARIF, in line order (for annotations, those that fail the check first)', () => {
     const gh = run(['--check', '--format', 'github', fixture('posix.sh')]);
     assert.strictEqual(gh.code, 1);

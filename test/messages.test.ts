@@ -156,11 +156,11 @@ describe('the message catalog', () => {
     assert.ok(fact('en', 'unset-readonly', { name: 'x' }).text.startsWith('ⓧ Error: The variable `x` is read-only'));
     // (A heading of its own in place of the word.)
     assert.ok(fact('en', 'python-shell-injection').text.startsWith('⚠ Shell injection risk: '));
-    assert.deepStrictEqual(problemNote('en', 'behaviour', 'echoE', 'dash\'s `echo`'), { text: 'ⓘ Portability: dash\'s `echo`', level: 'info', label: 'Portability:', body: 'dash\'s `echo`', code: 'echoE' });
-    assert.strictEqual(problemNote('ja', 'behaviour', 'echoE', 'x').text, 'ⓘ 移植性: x');
+    assert.deepStrictEqual(problemNote('en', 'behaviour', 'echoE', 'dash\'s `echo`', ['見出し', 'Head']), { text: 'ⓘ Portability: dash\'s `echo`', level: 'info', label: 'Portability:', body: 'dash\'s `echo`', head: 'Head', code: 'echoE' });
+    assert.strictEqual(problemNote('ja', 'behaviour', 'echoE', 'x', ['見出し', 'Head']).text, 'ⓘ 移植性: x');
     // (zsh syntax not read, information with no word; a style check at its level, with the word of a pitfall.)
-    assert.strictEqual(problemNote('en', 'parse', 'zshSyntax', 'x').text, 'ⓘ x');
-    assert.deepStrictEqual(styleNote('en', 'read-without-r', 'x'), { text: 'ⓘ Caveat: x', level: 'info', label: 'Caveat:', body: 'x', code: 'read-without-r' });
+    assert.strictEqual(problemNote('en', 'parse', 'zshSyntax', 'x', ['見出し', 'Head']).text, 'ⓘ x');
+    assert.deepStrictEqual(styleNote('en', 'read-without-r', 'x'), { text: 'ⓘ Caveat: x', level: 'info', label: 'Caveat:', body: 'x', head: 'Without `-r`, backslashes in the input are lost.', code: 'read-without-r' });
     assert.strictEqual(styleNote('en', 'bracket-close-in-word', 'x', { maybeEmpty: true }).level, 'warning');
   });
 
@@ -168,10 +168,10 @@ describe('the message catalog', () => {
     assert.deepStrictEqual((['en', 'ja'] as const).map((lang) => [
       problemText(fact(lang, 'unset-readonly', { name: 'x' }), lang).slice(0, 14),
       // (A pitfall at the error level has the error's word: left out, as the dialect issue's; a heading names no level: kept.)
-      problemText(styleNote(lang, 'bracket-no-space', 'x'), lang), problemText(problemNote(lang, 'unsupported', 'arrays', 'x'), lang),
+      problemText(styleNote(lang, 'bracket-no-space', 'x'), lang), problemText(problemNote(lang, 'unsupported', 'arrays', 'x', ['見出し', 'Head']), lang),
       problemText(fact(lang, 'python-string-without-shell'), lang).slice(0, 2),
       // (The words of the other levels are no level's name: kept, as the plain fact's text.)
-      problemText(styleNote(lang, 'rm-empty-variable-root', 'x'), lang), problemText(problemNote(lang, 'behaviour', 'echoE', 'x'), lang), problemText(problemNote(lang, 'parse', 'zshSyntax', 'x'), lang),
+      problemText(styleNote(lang, 'rm-empty-variable-root', 'x'), lang), problemText(problemNote(lang, 'behaviour', 'echoE', 'x', ['見出し', 'Head']), lang), problemText(problemNote(lang, 'parse', 'zshSyntax', 'x', ['見出し', 'Head']), lang),
     ]), [
       ['ⓧ The variable', 'ⓧ x', 'ⓧ x', 'ⓧ ', '⚠ Pitfall: x', 'ⓘ Portability: x', 'ⓘ x'],
       ['ⓧ 変数 `x` は読み取り', 'ⓧ x', 'ⓧ x', 'ⓧ ', '⚠ 落とし穴: x', 'ⓘ 移植性: x', 'ⓘ x'],
