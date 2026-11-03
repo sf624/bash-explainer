@@ -543,7 +543,7 @@ describe('the guard of the regexes a script gives', () => {
       ];
       for (const prog of loops) {
         const t = Date.now();
-        assert.deepStrictEqual(guarded(() => runAwk(prog, []), (id) => [id]), ['regex-not-computed'], prog);
+        assert.deepStrictEqual(guarded(() => runAwk(prog, []), (id) => [id]), ['size-not-computed'], prog);
         assert.ok(Date.now() - t < 5000, `${prog}: ${Date.now() - t} ms`);
       }
       const one = 'a'.repeat(1e6);
