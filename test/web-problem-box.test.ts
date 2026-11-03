@@ -76,6 +76,18 @@ describe('the web page: the box of the line\'s problems', function () {
     await ctx.close();
   });
 
+  it('brings a problem into view below the panel\'s header, from a row far down', async () => {
+    const { ctx, panel } = await open(`echo ${Array.from({ length: 60 }, (_, i) => `w${i}`).join(' ')} $((09))`);
+    await panel().locator('#problems .problem-head').first().click();
+    const chip = panel().locator('#tree .problem-chip').first();
+    await until('the row in view', () => chip.evaluate((e) => e.getBoundingClientRect().bottom <= e.ownerDocument.documentElement.clientHeight), (v) => v);
+    assert.ok(await panel().evaluate('window.scrollY') as number > 0);
+    await chip.click();
+    const places = await stable('the box', () => panel().evaluate(`[document.getElementById('problem-0').getBoundingClientRect().top, document.getElementById('top').getBoundingClientRect().bottom]`) as Promise<number[]>);
+    assert.ok(places[0] >= places[1], places.join(' '));
+    await ctx.close();
+  });
+
   it('gives a fix to copy, and points to the problem on the line of a construct around', async () => {
     const { ctx, page, panel } = await open('read line\nfor f in $(ls); do\n  echo hi\ndone', 1);
     await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);

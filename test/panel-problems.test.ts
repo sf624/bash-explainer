@@ -122,6 +122,22 @@ describe('the box "Problems on this line"', () => {
     assert.strictEqual(box('read line', 0, 'ja')[0].word, '情報');
   });
 
+  it('says in "more" what a problem cites and rests on', () => {
+    const [p] = box('unset -fv x');
+    assert.deepStrictEqual(p.refs, ['4.1']);
+    assert.strictEqual(p.basis?.kind, 'checked');
+    assert.match(p.basis!.tryIt.code, /unset -fv/);
+    assert.strictEqual(box('read line')[0].basis, undefined);
+  });
+
+  it('gives the panel the box, the pointers and the squiggles from the document\'s problems', () => {
+    const text = 'for f in $(ls); do\n  echo $((09))\ndone';
+    const message = panelUpdate({ lang: 'en', explanation: explain(text, 1), line: 1, lineText: '  echo $((09))', file: 'f', choice: {}, detected: { shell: 'bash', source: 'default' }, placement: 'first', animations: false, doc: doc(text), issues: documentIssues(doc(text), 'en', {}) } as never);
+    assert.deepStrictEqual(message.problems.map((p) => p.word), ['Error']);
+    assert.ok(message.around.length > 0);
+    assert.deepStrictEqual(message.marks.map((m) => [m.from, m.to, m.className]), [[10, 12, 'level-error']]);
+  });
+
   it('puts errors first, and leaves plain notes and the caveats that are no problems as notes', () => {
     assert.deepStrictEqual(box('read line; x = 1').map((p) => p.level), ['error', 'info']);
     // (`ssh-local-expansion` stays a note: no problem in the editors.)

@@ -333,6 +333,8 @@
 
   /** Brings a row or a problem into view, and shows for a moment where it is. */
   function flash(/** @type {HTMLElement} */ target) {
+    // (The header stays over the top of the page: what comes into view stays below it.)
+    target.style.scrollMarginTop = `${$('top').offsetHeight + 4}px`;
     target.scrollIntoView({ block: 'nearest' });
     target.classList.remove('flash');
     void target.offsetWidth;
