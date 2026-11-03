@@ -189,6 +189,12 @@ describe('pipeline marks: awk, as gawk splits and matches', () => {
     assert.deepStrictEqual(stageMarks(stage('awk', '/a/ {print $1}'), ['ab c']), { kind: 'field', ranges: [[[0, 2]]], dropped: [] });
     assert.deepStrictEqual(stageMarks(stage('awk', '-F', ':*', '{print $2}'), ['a:b']), { kind: 'field', ranges: [[[2, 3]]], dropped: [] });
     assert.deepStrictEqual(real('gawk', ['-F', ':*', '{print $2}'], ['a:b']), ['b']);
+    // (Fields are split at the leftmost longest match, and an empty FS gives every character: the marks lie where the fields do.)
+    for (const [fs, line, field] of [['a|ab', 'xaby', 'y'], [',|, ', 'a, b,c', 'b'], ['1|12', 'a12b', 'b'], ['', 'abc', 'b']]) {
+      const m = stageMarks(stage('awk', '-F', fs, '{ print $2 }'), [line]);
+      assert.deepStrictEqual(real('gawk', ['-F', fs, '{ print $2 }'], [line]), [field]);
+      assert.deepStrictEqual(m?.ranges.map((r) => r.map(([a, b]) => line.slice(a, b))), [[field]], `-F ${fs}`);
+    }
     // END reads the last record.
     assert.deepStrictEqual(stageMarks(stage('awk', 'END { print $3 }'), input), { kind: 'field', ranges: [[], [], [[4, 5]]], dropped: [] });
   });

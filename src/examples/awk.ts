@@ -1,5 +1,5 @@
 import { lex, Lex } from '../embedded/awk';
-import { JsRegex, posixMatches, posixSplit, regexExamples, toJsRegex } from './regex';
+import { JsRegex, posixMatches, posixSpans, regexExamples, toJsRegex } from './regex';
 import { exactOfDouble, floatText } from './floatdigits';
 import { charge, longestFrom, scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
@@ -483,10 +483,37 @@ function isLvalue(e: Expr): boolean {
   return e.k === 'var' || e.k === 'idx' || e.k === 'field';
 }
 
+/**
+ * Where awk's fields lie in `s`, split with `fs` as awk splits a record: " " is runs of blanks, "" (or an empty regex) every
+ * character, one other character itself, anything longer a regex (its leftmost longest, non-empty matches). The one
+ * splitter of the runner and of the marks (src/examples/marks.ts).
+ */
+export function fieldSpans(s: string, fs: string | RegExp): [number, number][] {
+  if (typeof fs === 'string' && fs === ' ') return [...s.matchAll(/[^ \t\n]+/g)].map((m) => [m.index, m.index + m[0].length]);
+  if (s === '') return [];
+  if (fs === '' || (fs instanceof RegExp && fs.source === '(?:)')) {
+    const out: [number, number][] = [];
+    for (let i = 0; i < s.length; i += String.fromCodePoint(s.codePointAt(i)!).length) out.push([i, i + String.fromCodePoint(s.codePointAt(i)!).length]);
+    return out;
+  }
+  if (typeof fs === 'string' && fs.length === 1 && fs !== '\\') {
+    const out: [number, number][] = [];
+    let at = 0;
+    for (let i = s.indexOf(fs); i >= 0; i = s.indexOf(fs, at)) { out.push([at, i]); at = i + 1; }
+    return [...out, [at, s.length]];
+  }
+  if (fs instanceof RegExp) return posixSpans({ source: fs.source, flags: fs.flags }, s);
+  const re = toJsRegex(fs, 'ere', { sedEscapes: true });
+  if (!re) throw new Unsupported('FS');
+  return posixSpans(re, s);
+}
+
 function unescapeAwk(s: string): string {
-  return s.replace(/\\([nt"\\/rab]|[0-7]{1,3})/g, (_, c: string) => {
+  // (As gawk: a backslash before another character is dropped, `"\&"` is `&`, `"\."` is `.`.)
+  return s.replace(/\\(x[0-9a-fA-F]{1,2}|[0-7]{1,3}|[^])/g, (_, c: string) => {
     if (/^[0-7]/.test(c)) return String.fromCharCode(parseInt(c, 8));
-    return ({ n: '\n', t: '\t', '"': '"', '\\': '\\', '/': '/', r: '\r', a: '\x07', b: '\b' } as Record<string, string>)[c];
+    if (c.length > 1) return String.fromCharCode(parseInt(c.slice(1), 16));
+    return ({ n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', f: '\f', v: '\v', '\n': '' } as Record<string, string>)[c] ?? c;
   });
 }
 
@@ -700,18 +727,8 @@ class Interp {
     this.fields = [line, ...this.split(line, toStr(this.vars.get('FS')))];
   }
 
-  /** Split like awk: " " means runs of blanks, one other character is literal, anything longer is a regex. */
   private split(s: string, fs: string | RegExp): string[] {
-    if (fs instanceof RegExp) return s === '' ? [] : posixSplit(fs, s);
-    if (fs === ' ') {
-      const t = s.replace(/^[ \t\n]+|[ \t\n]+$/g, '');
-      return t ? t.split(/[ \t\n]+/) : [];
-    }
-    if (s === '') return [];
-    if (fs.length === 1 && fs !== '\\') return s.split(fs);
-    const re = toJsRegex(fs, 'ere', { sedEscapes: true });
-    if (!re) throw new Unsupported('FS');
-    return posixSplit(scriptRegex(re.source, re.flags), s);
+    return fieldSpans(s, fs).map(([from, to]) => s.slice(from, to));
   }
 
   private rebuild(): void {
@@ -862,7 +879,7 @@ class Interp {
         const re = this.regexOf(args[0]);
         const target = args[2] ?? { k: 'field', e: { k: 'num', v: 0 } } as Expr;
         if (!isLvalue(target)) throw new Unsupported('sub target');
-        const repl = toStr(v(1)); // (As gawk and mawk: `\\&` is a backslash and the match, `\&` a literal &, other backslashes stay.)
+        const repl = toStr(v(1)); // (As gawk: `\\\&` is `\&`, `\\&` a backslash and the match, `\&` a literal &, other backslashes stay.)
         // (POSIX's leftmost longest match: `gsub(/c|cab/, "X")` changes all of `cab`; as sed's, an empty match right after one is none.)
         const text = toStr(this.eval(target));
         const first = name === 'sub' ? longestFrom(re, text, 0) : null;
@@ -874,7 +891,7 @@ class Interp {
           count++;
           const m = text.slice(from, to);
           charge(repl.length + (repl.split('&').length - 1) * m.length);
-          result += text.slice(pos, from) + repl.replace(/\\\\&|\\&|&/g, (x) => (x === '&' ? m : x === '\\&' ? '&' : `\\${m}`));
+          result += text.slice(pos, from) + repl.replace(/\\\\\\&|\\\\&|\\&|&/g, (x) => (x === '&' ? m : x === '\\&' ? '&' : x === '\\\\&' ? `\\${m}` : '\\&'));
           pos = to;
         }
         result += text.slice(pos);
