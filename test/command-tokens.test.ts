@@ -296,7 +296,8 @@ describe('command tokens: each token of an explanation lies in one command of ba
           // The script the token is in, by position: the innermost one whose text holds it.
           const where = [...scopes.values()].filter((s) => s.from <= a && b <= s.to).sort((x, y) => (x.to - x.from) - (y.to - y.from))[0];
           let own: SyntaxNode | undefined;
-          const body = all.find((h) => h.type === 'heredoc_body' && holds(h, a, b));
+          // (A token in a `$( )` of the body is in that script, whose commands are its own: only the rest of the body is the redirection's.)
+          const body = all.find((h) => h.type === 'heredoc_body' && holds(h, a, b) && !(where.node !== tree.root && holds(h, where.node.startIndex, where.node.endIndex)));
           if (body) {
             // A token in a here-document's body belongs to the command of its redirection, by the tree.
             pinned.inHeredoc++;
