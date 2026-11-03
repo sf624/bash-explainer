@@ -181,14 +181,11 @@ export function ansiCString(cx: Explainer, n: SyntaxNode): Token {
     const escapes = /\\/.test(n.text);
     // (A `\'`: dash's quote ends there, and the `'` after it opens another; the word is not what the tree shows.)
     if (cx.shell === 'dash' && n.text.slice(2, -1).includes("'")) {
-      return cx.tok(n, 'string', cx.s('bash・ksh・zsh の `$\'…\'` 文字列だが、dash にはこの書き方がない。dash では `$` はただの文字で、`\'…\'` はシングルクォートの文字列だが、その引用は `\\\'` で終わり、その後の `\'` から別の引用が始まる',
-        'A bash, ksh and zsh `$\'…\'` string, which dash does not have: in dash, `$` is plain text and `\'…\'` a single-quoted string, but that quote ends at the `\\\'`, and the `\'` after it opens another quoted string'));
+      return cx.tok(n, 'string', cx.text('ansi-c-dash-quote-ends'));
     }
     return cx.tok(n, 'string', cx.shell === 'dash'
-      ? cx.s(`bash・ksh・zsh の \`$'…'\` 文字列だが、dash にはこの書き方がない。dash では \`$\` はただの文字で、\`'…'\` はシングルクォートの文字列${escapes ? 'なので、エスケープは書いたまま残る' : 'になる'}`,
-        `A bash, ksh and zsh \`$'…'\` string, which dash does not have: in dash, \`$\` is plain text and \`'…'\` a single-quoted string${escapes ? ', so the escapes stay as written' : ''}`) + valueNote(cx, n)
-      : cx.s('bash・ksh・zsh の `$\'…\'` 文字列（エスケープを解釈した文字列になる）だが、POSIX sh のすべてにあるわけではない。dash では `$` はただの文字で、`\'…\'` はシングルクォートの文字列になる',
-        'A bash, ksh and zsh `$\'…\'` string (backslash escapes are interpreted), which not every POSIX sh has: in dash, `$` is plain text and `\'…\'` a single-quoted string'));
+      ? cx.text('ansi-c-dash', { escapes }) + valueNote(cx, n)
+      : cx.text('ansi-c-not-posix'));
   }
-  return cx.tok(n, 'string', cx.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? valueNote(cx, n) : ''), ansiCChildren(cx, n));
+  return cx.tok(n, 'string', cx.text('ansi-c-string') + (/\\/.test(n.text) ? valueNote(cx, n) : ''), ansiCChildren(cx, n));
 }

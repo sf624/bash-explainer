@@ -57,18 +57,14 @@ export function listOperatorToken(cx: Explainer, op: SyntaxNode): Token | undefi
   if (!at) return undefined;
   if (op.type === '&') {
     const what = partName(cx, at.part, at.part.type === 'list' || at.part.type === 'pipeline');
-    return { ...cx.tok(op, 'operator', cx.s(
-      `${what}${gap(what)}をバックグラウンドで実行する: シェルはサブシェルで非同期に実行し、終了を待たずに${at.next ? '次へ' : '先へ'}進む（終了ステータスは 0）`,
-      `Run ${what} in the background: the shell runs it asynchronously in a subshell and goes on${at.next ? ' to the next' : ''} without waiting (the status is 0)`,
-    )), refs: ['3.2.4'] };
+    return { ...cx.tok(op, 'operator', cx.text('list-background', { what, gap: gap(what), next: !!at.next })), refs: ['3.2.4'] };
   }
   const what = partName(cx, at.part, false);
   // (A coprocess runs in the background as if ended by `&`, 3.2.6: the shell does not wait for it.)
   const co = at.part.type === 'coproc_statement' ? code(field(at.part, 'body') ?? at.part) : undefined;
-  const waitJa = co ? `\`coproc\` がバックグラウンドで実行する ${co} は待たない` : `${what}${gap(what)}の終了を待つ`;
-  const waitEn = co ? `do not wait for ${co}, which \`coproc\` runs in the background` : `wait for ${what} to end`;
+  const said = { what, gap: gap(what), co };
   if (at.next) {
-    return { ...cx.tok(op, 'operator', cx.s(co ? `区切り: \`coproc\` がバックグラウンドで実行する ${co} は待たずに、次を実行する` : `区切り: ${what}${gap(what)}の終了を待ってから、次を実行する`, `Separator: ${waitEn}, then run the next`)), refs: ['3.2.4'] };
+    return { ...cx.tok(op, 'operator', cx.text('list-separator', said)), refs: ['3.2.4'] };
   }
   // (The reserved word after it, or the one a clause after it starts with: `do` of `do … done`, `else`; at the end of
   // an `elif` or `else` clause or a last `case` item, what comes after it: `fi`, `esac`.)
@@ -77,19 +73,17 @@ export function listOperatorToken(cx: Explainer, op: SyntaxNode): Token | undefi
   const after = next(op) ?? (clause ? next(op.parent!) : undefined);
   const word = after?.named ? after.children[0] : after;
   const closer = word && !word.named && CLOSERS.has(word.type) ? word.type : undefined;
-  if (!closer) return { ...cx.tok(op, 'operator', cx.s(`リストの終わり: ${waitJa}`, `End of the list: ${waitEn}`)), refs: ['3.2.4'] };
+  if (!closer) return { ...cx.tok(op, 'operator', cx.text('list-end', said)), refs: ['3.2.4'] };
   // A reserved word is one only where a command can start: after a simple command's words it would be one more word
   // (`if a then`), but after a compound command it may follow at once (`if [[ a ]] then`).
   // (What `;` says before a reserved word is that the commands before it end there, so that `closer` can be read; not
   // that bash waits, which it does after every command of a list. A coprocess is the exception: bash does not wait.)
-  const ja = co ? `\`${closer}\` の前でリストを終え、${waitJa}` : `\`${closer}\` の前でリストを終える`;
-  const en = co ? `End of the list before \`${closer}\`: ${waitEn}` : `End of the list before \`${closer}\``;
   const ends = endOf(at.part);
   return { ...cx.tok(op, 'operator', ends === 'words'
-    ? cx.s(`${ja}（ここに \`;\` か改行がないと、\`${closer}\` は予約語として読まれない）`, `${en} (without a \`;\` or a newline here, \`${closer}\` would not be read as a reserved word)`)
+    ? cx.text('list-end-before-words', { ...said, closer })
     : ends === 'coproc'
-      ? cx.s(`${ja}（\`coproc\` と単語1つの後では bash が予約語を読むので、ここでは省いてもよい）`, `${en} (bash reads a reserved word after \`coproc\` and one word, so it may be left out here)`)
-      : cx.s(`${ja}（複合コマンドの後では bash が \`${closer}\` を予約語として読むので、省いてもよい）`, `${en} (it may be left out: after a compound command, bash reads \`${closer}\` as a reserved word)`)), refs: ['3.2.4'] };
+      ? cx.text('list-end-before-coproc', { ...said, closer })
+      : cx.text('list-end-before-compound', { ...said, closer })), refs: ['3.2.4'] };
 }
 
 /**

@@ -19,8 +19,7 @@ export function hostString(cx: Explainer, n: SyntaxNode): Token | undefined {
   const pictures = pictureList([value], (ja, en) => cx.s(ja, en));
   // (It cites no section of bash's manual: no shell reads it.)
   return {
-    ...cx.tok(n, 'string', cx.s(`${host.word[0]}: \`${value}\` がそのまま1つの単語としてコマンドに渡る${pictures ? `（制御文字は記号で表している: ${pictures}）` : ''}。先にシェルが \`$\`・\`*\`・クォート・空白を読むことはない`,
-      `${host.word[1]}: \`${value}\` goes to the command as one word, as it is${pictures ? ` (control characters are shown as symbols: ${pictures})` : ''}. No shell reads its \`$\`, \`*\`, quotes or spaces first`)),
+    ...cx.tok(n, 'string', cx.text('host-string-word', { word: host.word, value, pictures })),
     refs: [],
   };
 }
