@@ -231,10 +231,9 @@ A row of the explanation marks a warning inside its text. It marked every one wi
 
 ### An invalid number in arithmetic, shell by shell
 
-`$((09))` said "bash stops" wherever it stood. It now says what the shell the script is read as does, compared with each real shell:
+`$((09))` said "bash stops" wherever it stood. It now says what holds whenever the command runs, in bash, dash and busybox ash, compared with each: "The shell reports an arithmetic error, and this command does not do its work". This holds for `echo $((09))`, `x=$((09))`, `(( 09 ))`, `let x=09`, `for ((i=09;;))`, `cat < $((09))`, `ls /nonexistent 2> $((09))` and a here-document's text. It says nothing of what follows the command, which differs between the shells.
 
-- In bash, `echo $((09))` does not run, nor does the rest of its line or block; a script goes on after them, unless it is in POSIX mode. In a subshell, only the rest of the subshell is dropped. `(( 09 ))`, `let x=09`, `for ((i=09;;))` and a here-document's text only fail the command, with status 1.
-- dash and busybox ash stop, and a script for `sh` is said so as "POSIX sh" (on Fedora it is bash in POSIX mode, which stops too).
+- The mark is about the command: `true || echo $((09))` is an error, since that `echo` fails whenever it runs. It is a warning ("If the shell reads it…") where the same command can run without reading the number: after the parameter in `${x:-…}`, `${x#…}`, `${x/…/…}`, `${x:…}`, after `&&` or `||` in `[[ ]]`, in a later `case` pattern, in the update of a C-style `for`.
 - zsh, ksh93 and mksh read a leading 0 as decimal (`$((09))` is 9, `$((010))` is 10), and yash reads `09` as 9: no message, and `010` is not called octal there.
 - `base#digits` differs between shells (`1#1` is 49 in mksh, `2#` is 0 in zsh, and dash and yash have none): out of bash, only a good constant up to base 36 is explained.
 - Beside an expansion a literal is no constant: `x=1; echo $(( ${x}09 ))` prints 109, and nothing is said of the `09`.

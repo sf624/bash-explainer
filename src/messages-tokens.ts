@@ -20,27 +20,8 @@ import { WORD_TEXTS } from './messages-tokens-words';
 // So while a line is being explained, a text may hold them: code in src/explain/ that looks at the first or last character of a text it did
 // not write reads `plainOf` of it (src/messages-levels.ts).
 
-/**
- * What the shell does at a constant it rejects, by where it reads it (`arithFate`, src/explain/words.ts; each is run in
- * test/arith-shells.test.ts): `drops`, an expansion in bash; `subshell`, an expansion in a subshell; `stops`, an expansion in a shell
- * that then exits (dash, busybox ash, POSIX sh); `fails`, where only the command fails (`(( ))`, `let`, a here-document's text).
- */
-export type ArithFate = 'drops' | 'subshell' | 'stops' | 'fails';
-export interface InvalidNumber { text: string; why: string; who: string; fate: ArithFate }
-
-const ARITH_FATES: Readonly<Record<ArithFate, Text>> = {
-  drops: { ja: '算術エラーを出し、このコマンドは実行されず、同じ行やブロックの残りも実行されない', en: 'reports an arithmetic error: this command does not run, nor the rest of its line or block' },
-  subshell: { ja: '算術エラーを出し、このコマンドは実行されず、そのサブシェルの残りも実行されない', en: 'reports an arithmetic error: this command does not run, nor the rest of its subshell' },
-  stops: { ja: '算術エラーを出して止まる', en: 'reports an arithmetic error and stops' },
-  fails: { ja: '算術エラーを出し、このコマンドは終了ステータス 1 で失敗する', en: 'reports an arithmetic error: this command fails with status 1' },
-};
-
-function invalidNumber({ text, why, who, fate }: InvalidNumber, ifRead: boolean): readonly [string, string] {
-  const { ja, en } = ARITH_FATES[fate];
-  return [
-    `不正な数 \`${text}\`: ${why}。${who} ${ifRead ? 'がここを読めば' : 'は'}${ja}`,
-    `Invalid number \`${text}\`: ${why}. ${ifRead ? `If ${who} reads it, it` : who} ${en}`];
-}
+/** A constant the shell rejects (`09`), and why. What follows the command depends on too much to say: fork or not, builtin or not, the shell. */
+export interface InvalidNumber { text: string; why: string }
 
 export const TOKEN_TEXTS = {
   ...ARGV_TEXTS,
@@ -52,10 +33,17 @@ export const TOKEN_TEXTS = {
   'splice-refused': tokenError<{ program: string; why: string }>(({ program, why }) => [
     `${program} はこの文字列を受け付けず、何も実行せずに終了ステータス 125 で終わる（${why}）`,
     `${program} refuses this string and exits with status 125, running nothing (${why})`]),
-  /** `$((09))`, `$((2#2))`: a constant the shell rejects, on a path that always reads it. */
-  'arith-invalid-number': tokenError<InvalidNumber>((p) => invalidNumber(p, false)),
-  /** `${x:-$((09))}`, `[[ a || $((09)) ]]`: the same, where the shell may never read it (`readOnlySometimes`, src/explain/reads.ts). */
-  'arith-invalid-number-if-read': tokenWarning<InvalidNumber>((p) => invalidNumber(p, true)),
+  /** `$((09))`, `$((2#2))`: a constant the shell rejects, in a command that reads it whenever it runs. */
+  'arith-invalid-number': tokenError<InvalidNumber>(({ text, why }) => [
+    `不正な数 \`${text}\`: ${why}。シェルは算術エラーを出し、このコマンドは本来の処理をしない`,
+    `Invalid number \`${text}\`: ${why}. The shell reports an arithmetic error, and this command does not do its work`]),
+  /**
+   * `${x:-$((09))}`, `[[ a || $((09)) ]]`: the same, where the command may run without reading it (`readOnlySometimes`, src/explain/reads.ts).
+   * It may have done part of its work by then (the update of a C-style `for` comes after the body).
+   */
+  'arith-invalid-number-if-read': tokenWarning<InvalidNumber>(({ text, why }) => [
+    `不正な数 \`${text}\`: ${why}。シェルがここを読むと算術エラーを出し、このコマンドはそこで止まる`,
+    `Invalid number \`${text}\`: ${why}. If the shell reads it, it reports an arithmetic error and this command stops there`]),
   /**
    * Before the subcommand terraform takes only `-chdir=DIR`, the version and help options, and `-install-autocomplete` and
    * `-uninstall-autocomplete`. A warning, not an error: terraform is not here to run, and another option with one of those may pass.

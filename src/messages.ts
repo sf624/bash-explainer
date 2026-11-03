@@ -219,8 +219,8 @@ export const MESSAGES = {
   // error, the manual only implies: 6.3.3, item 19, says that in an interactive shell "Parser syntax errors will not
   // cause the shell to exit". Checked.)
   'keyword-needs-separator': withBasis(failure<{ kw: string }>(['3.2.1', '3.2.5.1', '3.2.5.2'], ({ kw }) => [
-    `\`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」で止まる`,
-    `A \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash stops with "syntax error near unexpected token"`]),
+    `\`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」を出す`,
+    `A \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash reports "syntax error near unexpected token"`]),
   { kind: 'checked', probe: 'state#keyword-separator' }),
   // (4.1: "When the [ form is used, the last argument to the command must be a ]"; 3.7.5: "All builtins return an exit
   // status of 2 to indicate incorrect usage, generally invalid options or missing arguments". The manual's; the probe

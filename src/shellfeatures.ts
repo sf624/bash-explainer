@@ -6,10 +6,6 @@ import { braceKind, type SyntaxNode, wordBraces } from './syntax/tree';
 export type Shell = 'bash' | 'sh' | 'dash' | 'ash' | 'yash' | 'ksh' | 'mksh' | 'zsh';
 export type RealShell = Exclude<Shell, 'sh'>;
 
-export const SHELL_NAMES: Record<Shell, string> = {
-  bash: 'bash', sh: 'POSIX sh', dash: 'dash', ash: 'busybox ash', yash: 'yash', ksh: 'ksh93', mksh: 'mksh', zsh: 'zsh',
-};
-
 /**
  * Where the shell a script is read as comes from: a ShellCheck directive, the `#!` line, the file name, or none of them
  * (the default, bash); `host`: the file type, for the shell code in a host file (a Dockerfile's RUN runs in sh, a

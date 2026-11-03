@@ -159,7 +159,7 @@ export function explainArith(src: string, lang: Lang, shell?: Shell): { tokens: 
       case 'num': {
         // (A constant bash rejects fails `let`, with status 1 (test/arith-shells.test.ts); of another shell's `let`, nothing is said.)
         const lit = arithLiteralIn(text(n), shell);
-        if (lit?.type === 'invalid') return shell && shell !== 'bash' ? undefined : { ...base, kind: 'number', children: [], explanation: describeInvalidLiteral(text(n), lit, lang, { shell, fate: 'fails' }) };
+        if (lit?.type === 'invalid') return shell && shell !== 'bash' ? undefined : { ...base, kind: 'number', children: [], explanation: describeInvalidLiteral(text(n), lit, lang) };
         return !lit || lit.style === 'decimal' ? undefined : { ...base, kind: 'number', children: [], explanation: describeArithLiteral(text(n), lit, lang) };
       }
       case 'var': {

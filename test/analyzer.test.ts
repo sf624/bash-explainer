@@ -1118,6 +1118,8 @@ describe('a short option with a quoted value glued on', () => {
     assert.strictEqual(line.slice(value.span.start.character, value.span.end.character), 'X${Package}');
     const dir = allTokens(explain("tar -C'/tmp' -xf a.tar").items).find((t) => t.explanation.startsWith('Value for `-C`'))!;
     assert.strictEqual(dir.label, '/tmp');
+    // (An empty value has no text of its own: `dpkg-query -W -f= bash` prints nothing for it.)
+    assert.strictEqual(allTokens(explain('dpkg-query -W -f= bash').items).find((t) => t.explanation.startsWith('Value for `-f`'))!.label, '');
   });
 });
 

@@ -366,6 +366,12 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
     assert.strictEqual(said('for x in a b do c; done', 0, 'ja'), 'bash は構文エラーで止まる（`do` の前に `;` か改行が要る）。');
     assert.strictEqual(said('f() { while a do b; done; }', 0, 'en'), 'Bash stops with a syntax error (`do` needs a `;` or a newline before it).');
     assert.strictEqual(said('if a then\n  b\nfi', 0, 'en'), 'Bash stops with a syntax error (`then` needs a `;` or a newline before it).');
+    // (`$( )` is read with the line, also inside `${ }`: bash stops. A here-document's body and backticks are read when they are expanded, and bash goes on.)
+    assert.match(said('echo "$(if a then b; fi)"', 0, 'en')!, /^Bash stops with a syntax error/);
+    assert.match(said('echo ${x:-$(if a then b; fi)}', 0, 'en')!, /^Bash stops with a syntax error/);
+    for (const src of ['cat <<E\n$(if a then b; fi)\nE\necho next', 'cat <<E\n$(while a do b; done)\nE\necho next', "cat <<'E'\n$(if a then b; fi)\nE\necho next", 'cat <<"E"\n`if a then b; fi`\nE\necho next', 'echo `if a then b; fi`']) {
+      assert.doesNotMatch(said(src, 0, 'en')!, /syntax error/, src);
+    }
   });
 
   describe('over the corpus (sample.sh and the fixtures), in both languages', () => {

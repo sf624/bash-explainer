@@ -324,7 +324,7 @@ export function missingKeyword(cx: Explainer, n: SyntaxNode, t: Token): Token {
   const f = fact(cx.lang, 'keyword-needs-separator', { kw });
   t.kind = 'error';
   // (A short form of the row says it too: the note is not always beside it.)
-  t.summary = `${f.body}. ${t.explanation}`;
+  t.summary = f.body + cx.s('。', '. ') + t.explanation;
   cx.note(f, n);
   return t;
 }

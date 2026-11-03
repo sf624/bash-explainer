@@ -51,6 +51,13 @@ describe('the command-line tool', function () {
     assert.deepStrictEqual([json[0].explanation.items[0].name.runs, json[0].explanation.items[0].name.also[0].kind], ['builtin', 'program']);
   });
 
+  it('keeps what only the panel reads out of the JSON, at every depth', () => {
+    const json = JSON.stringify(JSON.parse(run(['--format', 'json', '-e', 'for x in a; do if true; then echo $x; fi; done']).out));
+    assert.doesNotMatch(json, /"(frame|plain)":/);
+    // (The tokens themselves stay, with those under them.)
+    assert.match(json, /"children":\[\{/);
+  });
+
   it('names the sections of the Bash manual: numbers in the text, links in Markdown, ids in JSON', () => {
     const text = run(['-e', 'exit 300', '--no-color']).out;
     assert.match(text, /ℹ An exit status is 0–255, so `exit 300` gives 44 \(the value modulo 256\) \(Bash manual 3\.7\.5\)$/m);

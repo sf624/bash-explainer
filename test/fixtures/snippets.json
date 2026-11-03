@@ -898,6 +898,7 @@
  "docker run -H x alpine",
  "docker run -it alpine",
  "dockerfile",
+ "dpkg-query -W -f= bash",
  "e=-e; grep $e pat f",
  "e=; cat > $e$e",
  "echo",

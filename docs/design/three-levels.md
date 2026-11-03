@@ -8,7 +8,7 @@ The plan to split today's warnings into errors and warnings, as VS Code and SARI
 
 | Level | Mark | Word | Squiggle | Problems | When |
 | --- | --- | --- | --- | --- | --- |
-| `error` | ⓧ | Error / エラー | error (red) | error | The line fails every time as written. |
+| `error` | ⓧ | Error / エラー | error (red) | error | It fails every time it runs. |
 | `warning` | ⚠ | Pitfall / 落とし穴 | warning (yellow) | warning | Damage that cannot be undone under some values or conditions, or a failure that turns the script's own exit status into success. |
 | `info` | ⓘ | Caveat / 注意 | information (blue) | information | Limited damage, only some values or systems, portability. |
 | `note` | ℹ | none | none | none | A fact of how the shell runs the line. As today. |
@@ -28,6 +28,8 @@ Ask three questions, in this order. The first "yes" gives the level.
 3. **Otherwise** (the damage is limited, it goes wrong only with some values or on some systems, it works differently in another shell, a failure goes unnoticed inside the script): **Info**.
 
 A note that states how the shell runs the line, with nothing wrong, is a plain `note`.
+
+A mark on a token is about its command, not its line: ⓧ means this command fails every time it runs. So `true || echo $((09)); echo same` is an Error (that `echo` fails whenever it runs), with no analysis of lists or branches, and a token's Warning for the same reason is only where the same command can run without the failing part.
 
 What question 1 varies:
 
@@ -97,7 +99,7 @@ Every row of note-levels.md's "Warnings" table goes to Error or Warning, and som
 | Style: `download-run-by-shell` | Warning | A script nobody read runs (`curl … \| sh`). |
 | Dialect: `unsupported` | Error | The construct fails in the target shell, or the bash release lacks it (`laterOption`, `funsubBrace`). For `sh`, as decided in section 10: Error only when dash or busybox ash lacks it, Info ("Portability") where both run it (sections 2 and 10). |
 | Problem: `crlf` | Error where it fails every time; Warning otherwise (step 1a, review of #549) | Run directly (section 2), the shebang's interpreter gets a CR; `then` and `fi` before a CR are not found however the file runs; a CR where a command starts (a blank line, or after `;`, `&&`, `\|\|`, `\|` or `&`) is a command, `$'\r'`, not found however the file runs (step 1b, review of #549). A file whose CRs only end words runs (`echo hi\r` prints a CR): `crlfMaybe`, a Warning. |
-| Token: `arith-invalid-number` | Error (`arith-invalid-number-if-read`: Warning, where the shell may never read it) | The expansion or the command fails, every time, in the shell the script is read as: each is run with that shell (test/arith-shells.test.ts). Said only where it holds: not beside an expansion (`${x}09`, no constant), not in zsh, ksh93, mksh or yash for `09`. `${x:-$((09))}`, `${y:+…}`, what follows `\|\|` or `&&` in `[[ ]]`, a `case` pattern after the first and the update of a C-style `for` may not be read: the "if read" text (`readOnlySometimes`). |
+| Token: `arith-invalid-number` | Error (`arith-invalid-number-if-read`: Warning, where the same command can run without reading it) | The command does not do its work, every time it runs: each is run with bash, dash and busybox ash (test/arith-shells.test.ts). The text says nothing of what follows the command, which depends on the shell, on a fork, on a builtin. Said only where it holds: not beside an expansion (`${x}09`, no constant), not in zsh, ksh93, mksh or yash for `09`. What follows the parameter in `${x:-…}`, `${x#…}`, `${x:…}` (any operator: run with an empty `x`), what follows `\|\|` or `&&` in `[[ ]]`, a `case` pattern after the first and the update of a C-style `for` may not be read: the "if read" text (`readOnlySometimes`). In `$( )` it is another command: `${x:-$(echo $((09)))}` is an Error on that `echo`. |
 | Token: `splice-refused`, `shebang-env-string-refused`, `shebang-env-loop` | Error | env refuses the string (status 125), or the script starts itself without end. Run in test/panel-rows.test.ts. |
 | Token: `shebang-env-one-argument` | Error | env looks for a program of the whole rest (status 127). An assumed system: Linux (section 2). |
 | Token: `terraform-option-before-subcommand` | Warning | Not Error: terraform is not installed to run it, and `terraform -foo -version` may exit 0. |

@@ -320,7 +320,7 @@ function equalsToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const whole = literalContent(a);
   const litEq = whole?.text.indexOf('=') ?? -1;
   const written = whole ? undefined : attachedWritten(a, value.attached!);
-  const val = whole && litEq >= 0 ? whole.text.slice(litEq + 1) : written ? written.text : a.text.slice(a.text.indexOf('=') + 1);
+  const val = written ? written.text : whole!.text.slice(litEq + 1);
   const known = own(value.spec?.values, val);
   const valueLit: Literal | undefined = whole && litEq >= 0
     ? (whole.offsets ? { text: val, offsets: whole.offsets.slice(litEq + 1) } : { text: val, base: whole.base! + litEq + 1 })

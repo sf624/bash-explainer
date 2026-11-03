@@ -1,6 +1,6 @@
 import type { Lang } from './i18n';
-import { type ArithFate, tokenSaid } from './messages-tokens';
-import { SHELL_NAMES, type Shell } from './shellfeatures';
+import { tokenSaid } from './messages-tokens';
+import type { Shell } from './shellfeatures';
 /**
  * Integer constants of bash arithmetic (`$(( ))`, `(( ))`, `let`, array subscripts, `${s:off:len}`):
  * decimal, octal (`010`), hexadecimal (`0x1F`) and `base#digits` (`2#1010`, `64#@`).
@@ -184,12 +184,9 @@ export function invalidLiteral(text: string, lit: Extract<ArithLiteral, { type: 
   return { why, message };
 }
 
-/** Where a shell reads a constant it rejects: which shell, what it does then, and whether it may never read it. */
-export interface InvalidAt { shell: Shell | undefined; fate: ArithFate; ifRead?: boolean }
-
-/** A constant the shell rejects, in words, from the catalog of token texts. */
-export function describeInvalidLiteral(text: string, lit: Extract<ArithLiteral, { type: 'invalid' }>, lang: Lang, at: InvalidAt): string {
-  return tokenSaid(lang, at.ifRead ? 'arith-invalid-number-if-read' : 'arith-invalid-number', { text, why: invalidLiteral(text, lit, lang).why, who: SHELL_NAMES[at.shell ?? 'bash'], fate: at.fate });
+/** A constant the shell rejects, in words, from the catalog of token texts; `ifRead`: the command may run without reading it. */
+export function describeInvalidLiteral(text: string, lit: Extract<ArithLiteral, { type: 'invalid' }>, lang: Lang, ifRead = false): string {
+  return tokenSaid(lang, ifRead ? 'arith-invalid-number-if-read' : 'arith-invalid-number', { text, why: invalidLiteral(text, lit, lang).why });
 }
 
 /** A constant of an arithmetic expression in words: its base and value. */

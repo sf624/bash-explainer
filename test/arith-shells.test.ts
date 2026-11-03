@@ -36,12 +36,12 @@ const CONSTANTS = ['09', '08', '010', '1a', '0xG', '0x1f', '0x', '2#101', '36#z'
 describe('a constant of arithmetic, in each shell', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arith-shells-'));
   const file = path.join(dir, 's');
-  after(() => { fs.rmSync(file, { force: true }); fs.rmdirSync(dir); });
+  after(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
   /** Runs a script file in a shell, with a limit. */
   const run = (bin: string, flags: string[], text: string) => {
     fs.writeFileSync(file, text);
-    return spawnSync(bin, [...flags, file], { encoding: 'utf8', timeout: 5000, killSignal: 'SIGKILL', env: { ...process.env, FUNCNEST: '50' } });
+    return spawnSync(bin, [...flags, file], { cwd: dir, encoding: 'utf8', timeout: 5000, killSignal: 'SIGKILL', env: { ...process.env, FUNCNEST: '50' } });
   };
 
   for (const [shell, names, flags] of SHELLS) {
@@ -63,18 +63,6 @@ describe('a constant of arithmetic, in each shell', () => {
     });
   }
 
-  const rejecting: [Shell, string[], string[]][] = SHELLS.filter(([s]) => ['dash', 'ash'].includes(s));
-  for (const [shell, names, flags] of rejecting) {
-    const bin = locate(names);
-    (bin ? it : it.skip)(`stops ${shell} at an expansion, where it says so, and only its subshell in a subshell`, () => {
-      assert.match(saidOf('echo $((09)); echo same', shell)!.text, /reports an arithmetic error and stops$/);
-      const stops = run(bin!, flags, 'echo $((09)); echo same\necho next\n');
-      assert.deepStrictEqual([stops.status === 0, stops.stdout], [false, '']);
-      assert.match(saidOf('(echo $((09)); echo in); echo a', shell)!.text, /nor the rest of its subshell$/);
-      assert.strictEqual(run(bin!, flags, '(echo $((09)); echo in); echo a\n').stdout, 'a\n');
-    });
-  }
-
   describe('what the explanation says, by the shell the script is read as', () => {
     it('reads each constant as the shell does, also with no such shell here', () => {
       const style = (text: string, shell: Shell | undefined) => { const l = arithLiteralIn(text, shell); return l?.type === 'number' ? l.style : l?.type; };
@@ -88,15 +76,13 @@ describe('a constant of arithmetic, in each shell', () => {
       assert.deepStrictEqual([style('0x', 'dash'), style('0x1f', 'dash'), style('1a', 'zsh'), style('1a', undefined), style('x', 'zsh')], [undefined, 'hex', 'invalid', 'invalid', undefined]);
     });
 
-    it('says it only where the shell rejects the constant, and names that shell', () => {
-      assert.match(saidOf('echo $((09))', undefined)!.text, /^Invalid number `09`: .*\. bash reports an arithmetic error/);
-      assert.match(saidOf('echo $((09))', 'bash')!.text, /\. bash reports/);
-      assert.match(saidOf('echo $((09))', 'sh')!.text, /\. POSIX sh reports an arithmetic error and stops$/);
-      assert.match(saidOf('echo $((09))', 'dash')!.text, /\. dash reports/);
-      assert.match(saidOf('echo $((09))', 'ash')!.text, /\. busybox ash reports/);
+    it('says it only where the shell rejects the constant, in one text', () => {
+      const text = saidOf('echo $((09))', undefined)!.text;
+      assert.match(text, /^Invalid number `09`: .*\. The shell reports an arithmetic error, and this command does not do its work$/);
+      for (const shell of ['bash', 'sh', 'dash', 'ash'] as const) assert.strictEqual(saidOf('echo $((09))', shell)!.text, text, shell);
       for (const shell of ['zsh', 'mksh', 'ksh', 'yash'] as const) assert.strictEqual(saidOf('echo $((09))', shell), undefined, shell);
-      // (A letter is wrong in each of them, and each stops.)
-      assert.match(saidOf('echo $((1a))', 'zsh')!.text, /\. zsh reports an arithmetic error and stops$/);
+      // (A letter is wrong in each of them.)
+      assert.match(saidOf('echo $((1a))', 'zsh')!.text, /and this command does not do its work$/);
       // (Of a `base#digits` other shells do not take alike, nothing.)
       assert.match(saidOf('echo $((2#2))', 'bash')!.text, /`2` is not a digit in base 2/);
       assert.strictEqual(saidOf('echo $((2#2))', 'zsh'), undefined);
@@ -129,71 +115,127 @@ describe('a constant of arithmetic, in each shell', () => {
     });
   });
 
+  // What a rejected constant does to the command that holds it. Each row: the script, and what would show that the command did its
+  // work (in stdout or stderr). Nothing is said, and nothing tested, of what follows the command: that depends on the shell, on a fork,
+  // and on a builtin. `work` is printed if the command runs.
+  const FAILS: [string, RegExp][] = [
+    ['echo work $((09))', /work/],
+    ['x=work\nx=$((09))\necho "x=$x"', /x=(?!work\n)/],
+    ['echo work > 9\ncat < $((09))', /work/],
+    ['ls /nonexistent 2> $((09))', /nonexistent/],
+    ['cat <<E\nwork $((09))\nE', /work/],
+    ['read x <<E\nwork $((09))\nE\necho "x=[$x]"', /x=\[work/],
+    ['{ cat; } <<E\nwork $((09))\nE', /work/],
+    ['{ echo work; } <<E\n$((09))\nE', /work/],
+    ['echo work $((09)) | cat', /work/],
+  ];
+  const FAILS_IN_BASH: [string, RegExp][] = [
+    ['(( 09 )) && echo work', /work/],
+    ['(( x=09 ))\necho "x=[$x]"', /x=\[\d/],
+    ['let x=09\necho "x=[$x]"', /x=\[\d/],
+    ['for ((i=09;;)); do echo work; break; done', /work/],
+    ['for ((i=0;i<09;)); do echo work; break; done', /work/],
+    // (Always read: in arithmetic, also what `||` and `?:` skip; a subscript; the first pattern; the left of `||` in `[[ ]]`.)
+    ['echo work $(( 1 || 09 ))', /work/],
+    ['echo work $(( 1 ? 2 : 09 ))', /work/],
+    ['echo work $(( 1 || $((09)) ))', /work/],
+    ['(( 1 || 09 )) && echo work', /work/],
+    ['(( $((09)) )) && echo work', /work/],
+    ['(( a[09] )) && echo work', /work/],
+    ['case $((09)) in *) echo work ;; esac', /work/],
+    ['case x in $((09))|x) echo work ;; esac', /work/],
+    ['[[ $((09)) == 1 || 1 == 1 ]] && echo work', /work/],
+    ['a=(1); echo work ${a[$((09))]}', /work/],
+    ['y=; echo ${y:-$(echo work $((09)))}', /work/],
+  ];
+  for (const [shell, names, flags] of SHELLS.filter(([s]) => ['bash', 'dash', 'ash'].includes(s))) {
+    const bin = locate(names);
+    for (const [src, work] of shell === 'bash' ? [...FAILS, ...FAILS_IN_BASH] : FAILS) {
+      (bin ? it : it.skip)(`${shell}: ${JSON.stringify(src)} does not do its work`, () => {
+        const said = saidOf(src, shell);
+        assert.deepStrictEqual([said?.id, said?.level], ['arith-invalid-number', 'error']);
+        assert.match(said!.text, /and this command does not do its work$/);
+        const r = run(bin!, flags, `${src}\n`);
+        assert.doesNotMatch(r.stdout + r.stderr, work);
+        assert.match(r.stderr, /value too great|arithmetic/);
+      });
+    }
+  }
+
   describe('in bash, against bash', () => {
     const bash = locate(['bash']);
-    // [the script, what is said after the error's words (none: nothing is said), what it prints, its status]
-    const ROWS: [string, RegExp | undefined, string, number][] = [
-      // Expansions: the command does not run, nor the rest of the line or block; a script goes on after them.
-      ['echo $((09)); echo same\necho next', /this command does not run, nor the rest of its line or block$/, 'next\n', 0],
-      ['x=$((09)); echo same', /nor the rest of its line or block$/, '', 1],
-      ['echo a > $((09)); echo same', /nor the rest of its line or block$/, '', 1],
-      ['x=abc; echo ${x#$((09))}; echo same', /nor the rest of its line or block$/, '', 1],
-      ['echo $(( 1 || 09 )); echo same', /nor the rest of its line or block$/, '', 1],
-      ['echo $(( 1 ? 2 : 09 )); echo same', /nor the rest of its line or block$/, '', 1],
-      ['echo $(( 1 || $((09)) )); echo same', /nor the rest of its line or block$/, '', 1],
-      ['(( 1 || 09 )); echo "after $?"', /this command fails with status 1$/, 'after 1\n', 0],
-      ['(( $((09)) )); echo same', /nor the rest of its line or block$/, '', 1],
-      ['(( a[09] )); echo same', /nor the rest of its line or block$/, '', 1],
-      ['if true; then\n echo $((09))\n echo inside\nfi\necho next', /nor the rest of its line or block$/, 'next\n', 0],
-      ['case $((09)) in x) ;; esac; echo same', /nor the rest of its line or block$/, '', 1],
-      ['case x in $((09))|y) ;; esac; echo same', /nor the rest of its line or block$/, '', 1],
-      ['[[ $((09)) == 1 || 1 == 1 ]]; echo same', /nor the rest of its line or block$/, '', 1],
-      // In a subshell: its rest.
-      ['(echo $((09)); echo in); echo out', /nor the rest of its subshell$/, 'out\n', 0],
-      ['echo $((09)) | cat; echo out', /nor the rest of its subshell$/, 'out\n', 0],
-      ['echo "$(echo $((09)); echo in)"; echo out', /nor the rest of its subshell$/, '\nout\n', 0],
-      // Only the command fails, with status 1.
-      ['(( 09 )); echo "after $?"', /this command fails with status 1$/, 'after 1\n', 0],
-      ['let x=09; echo "after $?"', /this command fails with status 1$/, 'after 1\n', 0],
-      ['for ((i=09;;)); do :; done; echo "after $?"', /this command fails with status 1$/, 'after 1\n', 0],
-      ['for ((i=0;i<09;)); do :; done; echo "after $?"', /this command fails with status 1$/, 'after 1\n', 0],
-      ['cat <<E; echo "after $?"\n$((09))\nE', /this command fails with status 1$/, 'after 1\n', 0],
-      // Where the shell may never read it: this path does not, the line runs.
-      ['x=1; echo ${x:-$((09))}; echo same', /^.*If bash reads it, it reports/, '1\nsame\n', 0],
-      ['x=1; echo ${x-$((09))}; echo same', /If bash reads it/, '1\nsame\n', 0],
-      ['x=1; echo ${x:=$((09))}; echo same', /If bash reads it/, '1\nsame\n', 0],
-      ['x=1; echo ${x=$((09))}; echo same', /If bash reads it/, '1\nsame\n', 0],
-      ['x=1; echo ${x:?$((09))}; echo same', /If bash reads it/, '1\nsame\n', 0],
-      ['x=1; echo ${x?$((09))}; echo same', /If bash reads it/, '1\nsame\n', 0],
-      ['echo ${y:+$((09))}; echo same', /If bash reads it/, '\nsame\n', 0],
-      ['echo ${y+"a$((09))"}; echo same', /If bash reads it/, '\nsame\n', 0],
-      ['[[ 1 == 1 || $((09)) == 1 ]]; echo same', /If bash reads it/, 'same\n', 0],
-      ['[[ 1 == 2 && $((09)) == 1 ]]; echo same', /If bash reads it/, 'same\n', 0],
-      ['case x in x) ;; $((09))) ;; esac; echo same', /If bash reads it/, 'same\n', 0],
-      ['case x in x|$((09))) ;; esac; echo same', /If bash reads it/, 'same\n', 0],
-      ['for ((i=0;i<0;i+=09)); do :; done; echo same', /If bash reads it/, 'same\n', 0],
-      // Beside an expansion it is no constant: nothing is said, and the line runs.
-      ['x=1; echo $(( ${x}09 ))', undefined, '109\n', 0],
-      ['x=1; echo $(( 1${x}09 ))', undefined, '1109\n', 0],
-      ['x=1; echo $(( $x$((1))09 ))', undefined, '1109\n', 0],
-      ['x=1; echo $(( ${x}010 ))', undefined, '1010\n', 0],
-      ['declare -A m; m[k]=1; echo "${m[09]}"; echo same', undefined, '\nsame\n', 0],
+    it('marks the command, not the path to it: this `echo` fails whenever it runs', () => {
+      for (const src of ['true || echo $((09)); echo same', 'false && echo $((09))', 'if false; then echo $((09)); fi']) assert.strictEqual(saidOf(src, undefined)?.level, 'error', src);
+    });
+
+    // The same command can run without reading it: what bash then prints. (Read, it reports the error: each of the last group.)
+    const NOT_READ: [string, string][] = [
+      ['x=1; echo ${x:-$((09))}', '1\n'],
+      ['x=1; echo ${x-$((09))}', '1\n'],
+      ['x=1; echo ${x:=$((09))}', '1\n'],
+      ['x=1; echo ${x=$((09))}', '1\n'],
+      ['x=1; echo ${x:?$((09))}', '1\n'],
+      ['x=1; echo ${x?$((09))}', '1\n'],
+      ['echo ${y:+$((09))}', '\n'],
+      ['echo ${y+"a$((09))"}', '\n'],
+      // (Every other operator reads its word only if the value is not empty.)
+      ['echo "[${y#$((09))}]"', '[]\n'],
+      ['echo "[${y%%$((09))}]"', '[]\n'],
+      ['echo "[${y/$((09))/z}]"', '[]\n'],
+      ['echo "[${y/a/$((09))}]"', '[]\n'],
+      ['echo "[${y:$((09))}]"', '[]\n'],
+      ['echo "[${y:0:$((09))}]"', '[]\n'],
+      ['echo "[${y^$((09))}]"', '[]\n'],
+      ['echo "[${y,,$((09))}]"', '[]\n'],
+      ['[[ 1 == 1 || $((09)) == 1 ]] && echo work', 'work\n'],
+      ['[[ 1 == 2 && $((09)) == 1 ]] || echo work', 'work\n'],
+      ['case x in x) echo work ;; $((09))) ;; esac', 'work\n'],
+      ['case x in x|$((09))) echo work ;; esac', 'work\n'],
+      ['for ((i=0;i<0;i+=09)); do :; done && echo work', 'work\n'],
     ];
-    for (const [src, says, out, status] of ROWS) {
-      (bash ? it : it.skip)(JSON.stringify(src), () => {
+    for (const [src, out] of NOT_READ) {
+      (bash ? it : it.skip)(`may not read it: ${JSON.stringify(src)}`, () => {
         const said = saidOf(src, undefined);
-        if (says) {
-          assert.match(said!.text, says);
-          assert.strictEqual(said!.level, /If bash reads it/.test(says.source) ? 'warning' : 'error');
-        } else assert.strictEqual(said, undefined);
+        assert.deepStrictEqual([said?.id, said?.level], ['arith-invalid-number-if-read', 'warning']);
+        assert.match(said!.text, /\. If the shell reads it, it reports an arithmetic error and this command stops there$/);
         const r = run(bash!, ['--norc'], `${src}\n`);
-        assert.deepStrictEqual([r.stdout, r.status], [out, status]);
+        assert.deepStrictEqual([r.stdout, r.stderr], [out, '']);
       });
     }
 
-    (bash ? it : it.skip)('stops only in POSIX mode', () => {
-      const r = run(bash!, ['--norc', '--posix'], 'echo $((09)); echo same\necho next\n');
-      assert.deepStrictEqual([r.stdout, r.status], ['', 1]);
-    });
+    const READ: [string, string][] = [
+      ['echo work ${y:-$((09))}', ''],
+      ['x=a; echo work "${x#$((09))}"', ''],
+      ['[[ 1 == 2 || $((09)) == 1 ]] && echo work', ''],
+      ['case x in y) ;; $((09))) echo work ;; esac', ''],
+      // (Its body has run by then: the command stops there.)
+      ['for ((i=0;i<1;i+=09)); do echo body; done', 'body\n'],
+    ];
+    for (const [src, out] of READ) {
+      (bash ? it : it.skip)(`reads it here: ${JSON.stringify(src)}`, () => {
+        assert.strictEqual(saidOf(src, undefined)?.level, 'warning');
+        const r = run(bash!, ['--norc'], `${src}\n`);
+        assert.strictEqual(r.stdout, out);
+        assert.match(r.stderr, /value too great/);
+      });
+    }
+
+    // Beside an expansion it is no constant: nothing is said, and the line runs.
+    const NOTHING: [string, string][] = [
+      ['x=1; echo $(( ${x}09 ))', '109\n'],
+      ['x=1; echo $(( 1${x}09 ))', '1109\n'],
+      ['x=1; echo $(( $x$((1))09 ))', '1109\n'],
+      ['x=1; echo $(( ${x}010 ))', '1010\n'],
+      ['x=1; echo $(( ${x:-09} ))', '1\n'],
+      ['declare -A m; m[k]=1; echo "${m[09]}"', '\n'],
+      // (A quoted here-document's text is no arithmetic.)
+      ["cat <<'E'\n$((09))\nE", '$((09))\n'],
+    ];
+    for (const [src, out] of NOTHING) {
+      (bash ? it : it.skip)(`says nothing: ${JSON.stringify(src)}`, () => {
+        assert.strictEqual(saidOf(src, undefined), undefined);
+        assert.strictEqual(run(bash!, ['--norc'], `${src}\n`).stdout, out);
+      });
+    }
   });
 });

@@ -20,7 +20,7 @@ export function tokenWarning<P = Record<string, never>>(text: (p: P) => readonly
   return { text, level: 'warning' };
 }
 
-/** A text that says the line fails every time as written (docs/design/three-levels.md, section 2): a row draws the mark of an error before it. */
+/** A text that says the command fails every time it runs (docs/design/three-levels.md, section 2): a row draws the mark of an error before it. */
 export function tokenError<P = Record<string, never>>(text: (p: P) => readonly [string, string]): TokenEntry<P> {
   return { text, level: 'error' };
 }

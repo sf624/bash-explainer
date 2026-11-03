@@ -9,7 +9,7 @@ import type { ThemeKind } from './ui/palette';
 
 /**
  * The level of a note (docs/design/three-levels.md, section 2: the first question answered yes gives it):
- * - `error` (ⓧ "Error" / 「エラー」, red): the line fails every time as written (`[ -f x`, `unset` of a read-only
+ * - `error` (ⓧ "Error" / 「エラー」, red): it fails every time it runs (`[ -f x`, `unset` of a read-only
  *   variable, a construct the target shell lacks, a function a new shell does not have). Said whatever the pitfalls
  *   settings say, and it fails `--check`.
  * - `warning` (⚠ "Pitfall" / 「落とし穴」, yellow): damage that cannot be undone under some values or conditions, or a
@@ -106,7 +106,7 @@ export interface Level {
 export const LEVELS: Readonly<Record<NoteLevel, Level>> = {
   error: {
     rank: 0, mark: 'ⓧ', word: { ja: 'エラー: ', en: 'Error: ' }, wordOnEvery: true, name: { ja: 'エラー', en: 'Error' },
-    means: { ja: '書いたとおりでは毎回失敗する', en: 'fails every time as written' },
+    means: { ja: '実行するたびに失敗する', en: 'fails every time it runs' },
     codicon: 'error', ansi: '31', bold: true, className: 'level-error', severity: 'error', forcedBorder: '4px double CanvasText',
     colour: {
       variable: '--vscode-editorError-foreground', name: '--c-error-level', alias: '--c-error', fallback: 'var(--vscode-charts-red, #f14c4c)', dark: '#f14c4c',

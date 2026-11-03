@@ -398,11 +398,15 @@ function sarif(problems: Problem[]) {
   };
 }
 
+/** A token and those under it, without what only the panel reads and may change with it: its frame and its depth hint. */
+const tokenForJson = ({ frame: _, plain: _p, ...t }: Token): Omit<Token, 'frame' | 'plain' | 'children'> & { children: unknown[] } => ({ ...t, children: t.children.map(tokenForJson) });
+
 /** Without what only the editor's views use: the examples' reruns, the ranges of the notes (for the part hover). */
 // (The anchors and the notes' data are for the views: the JSON keeps what it had, the notes and the facts' ids, with
 // what a fact rests on where it is not the manual, and its try-it: docs/design/basis.md.)
 const forJson = ({ anchors: _, noteInfo: _n, ...ex }: LineExplanation) => ({
   ...ex,
+  items: ex.items.map(tokenForJson),
   ...(ex.facts ? { facts: ex.facts.map(({ id, kind, level, text, refs, basis, tryIt, convention }) => ({ id, kind, level, text, refs, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(convention ? { convention } : {}) })) } : {}),
   examples: ex.examples.map(({ interactive: _i, ...e }) => e),
 });

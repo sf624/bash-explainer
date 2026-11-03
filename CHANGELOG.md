@@ -34,12 +34,12 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
-- A part of a line that fails every time now shows the mark of an error: `echo $((09))`, `env -S'"a' s`, and a shebang that `env` cannot run (`#!/usr/bin/env bash -e`). Before, it showed the mark of a warning.
-- `$((09))` is said to fail only in the shells where it does, as each shell runs it: not in zsh, ksh93, mksh or yash, not beside an expansion (`$(( ${x}09 ))` is 109), and as a warning where the shell may not read it (`${x:-$((09))}`). Before, it said "bash stops" everywhere.
+- A part of a line that fails every time it runs now shows the mark of an error: `echo $((09))`, `env -S'"a' s`, and a shebang that `env` cannot run (`#!/usr/bin/env bash -e`). Before, it showed the mark of a warning.
+- `$((09))` says that its command does not do its work, and only where the shell rejects the number: not in zsh, ksh93, mksh or yash, not beside an expansion (`$(( ${x}09 ))` is 109), and as a warning where the command may not read it (`${x:-$((09))}`). Before, it said "bash stops" everywhere.
 - `terraform -install-autocomplete` and `-uninstall-autocomplete` are explained as options terraform takes. Before, they were said to stop it.
 - What bash expands in an option's attached value is explained, and a command there has its own row: `make -j"$(nproc)"`, `make --jobs=$(nproc)`, `ls --color="$(x)"`, `make "-j$(nproc)"`.
 - `done < file` says that the redirection applies to the whole loop, as the loop's first line does.
-- `if [ -f a ] then …` says its error once, in the note, and "In short" says that bash stops with a syntax error. Before, it said what the line seemed to do.
+- `if [ -f a ] then …` says its error once, in the note, and "In short" says that bash stops with a syntax error (not in a here-document or in backticks, where bash goes on). Before, it said what the line seemed to do.
 - `set -o posix` then `time -p $x` (or `time -p x=1`) no longer stops the explanation with an error. In POSIX mode, `time -- cmd` and `time -x cmd` are now explained as the program `time`, as bash runs them. Before, only `time -p` was.
 - A script with `$(a && b)` or `$(a || b)` in a here-document no longer stops the explanation with an error, and the `$( )` in a here-document shows its operators (`&&`, `|`, `;`, `then`).
 - "In short" keeps the status of a pipeline when the line's problem is about something else, such as a variable lost in a stage's subshell. Before, it left the status out.
