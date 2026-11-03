@@ -337,7 +337,7 @@ describe('the dictionary', () => {
     const bad: string[] = [];
     everySpec((path, doc) => {
       for (const opt of doc.options ?? []) {
-        if (opt.value && !(opt.value as ValueSpec).optional && /この|これ|\bthis\b/.test(opt.text.ja + ' ' + opt.text.en.replace(/\bthis (?:is|one)\b/g, ''))) bad.push(`${path} ${opt.names[0]}: ${opt.text.ja} / ${opt.text.en}`);
+        if (opt.value && !(opt.value as ValueSpec).optional && /この|これ|\bthis\b(?! (?:is|one)\b)/.test(opt.text.ja + ' ' + opt.text.en)) bad.push(`${path} ${opt.names[0]}: ${opt.text.ja} / ${opt.text.en}`);
       }
     });
     assert.deepStrictEqual(bad, [], 'say "指定した…" / "the given …" for the value');

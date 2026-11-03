@@ -102,7 +102,7 @@ export function python(b: Builder): void {
     }
   }
   if (!names.size) return;
-  const callRe = new RegExp(`(?<![\\w.])(${[...names.keys()].map((n) => n.replace(/\./g, '\\.')).join('|')})\\s*\\(`, 'g');
+  const callRe = new RegExp(`(?<![\\w.])(${[...names.keys()].map((n) => n.replace(/\W/g, '\\$&')).join('|')})\\s*\\(`, 'g');
   for (const m of src.matchAll(callRe)) {
     const at = m.index!;
     // Not inside a comment or a string on the same line.

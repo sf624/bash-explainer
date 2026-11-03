@@ -254,6 +254,10 @@ With the cursor on `done < file`, the redirection now says what it says on the l
 
 `if [ -f a ] then …` says its syntax error once, in the note; its row said it too. "In short" now says "Bash stops with a syntax error (`then` needs a `;` or a newline before it)"; it said `If its condition () succeeds, tests the condition in [ … ]`. So does `for x in a b do …`, which it read as a loop over `a`, `b`, `do` and `c`.
 
+### A command named like a JavaScript method
+
+`printf 'a\n' | valueOf` stopped the explanation with an error, and the command-line tool with it, also with `--check`: the examples' table of text filters was an object, so the word found a method of `Object`. `printf 'a\n' | toString` and `constructor` did not stop it, but their stage ran the method. `awk -v __proto__=1 'BEGIN{print __proto__}'` printed an empty line in its example, where gawk prints `1`. Tables read with a word of the script now have no prototype.
+
 ### "In short" and the status of a pipeline
 
 The sentence of a line leaves out what a problem of the line says. It compared the sections of the manual the problems cite, so a problem about one thing of a section left out a clause about another: `cat f | while read -r l; do n=$l; done` (its problem: `n` is set in a subshell, section 3.2.3) lost "its status is that of the `while` loop" (also 3.2.3). It now compares what the problems say: a clause on a pipeline's status is left out for a pipeline without pipefail, one on `set -e` for the problems that say whether `set -e` stops there.

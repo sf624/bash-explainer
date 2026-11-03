@@ -590,7 +590,7 @@ describe('tricky lines (round 3)', () => {
     // The examples: the keys of an associative array come in no fixed order, so only the count is one.
     const decl = 'declare -A m=([a]=1 [b]=2 [c]=3)';
     assert.deepStrictEqual(examplesOf('declare -A m; echo ${#m[@]}').map((e) => e.sections[0].lines), [['3']]);
-    assert.strictEqual(bash(`${decl}; echo -n \${#m[@]}`.replace('\\', '')), '3');
+    assert.strictEqual(bash(`${decl}; echo -n \${#m[@]}`), '3');
     assert.deepStrictEqual(examplesOf('declare -A m; echo ${#m[*]}').map((e) => e.sections[0].lines), [['3']]);
     assert.match(new Analyzer('ja').explainLine(parser.parse('declare -A m; echo ${#m[@]}'), 0).examples[0].sections[0].label, /declare -A m=\(\[a\]=1 \[b\]=2 \[c\]=3\)` のとき/);
     assert.match(find('declare -A m; echo $(( m[k] ))', 'm[k]').explanation, /Element of associative array `m` with the key `k` \(a string\)/);

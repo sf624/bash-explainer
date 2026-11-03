@@ -51,7 +51,8 @@ const ENTITIES: Record<string, string> = { lt: '<', gt: '>', amp: '&', quot: '"'
 export function parsePlist(xml: string): Plist {
   // The tags and the text between them, without the prolog, comments and the <plist> element.
   // Each tag written one way: `<string />` as `<string/>`, `</key >` as `</key>`.
-  const parts = (xml.replace(/<\?[^]*?\?>|<!--[^]*?-->|<!DOCTYPE[^>]*>|<\/?plist[^>]*>/g, '').match(/<[^>]+>|[^<]+/g) ?? [])
+  const parts = (xml.match(/<\?[^]*?\?>|<!--[^]*?-->|<[^>]+>|[^<]+/g) ?? [])
+    .filter((p) => !/^<(?:[?!]|\/?plist\b)/.test(p))
     .map((p) => p.replace(/^<\s*(\/?)\s*(\w+)[^>/]*(\/?)\s*>$/, '<$1$2$3>'));
   let i = 0;
   const text = (s: string) => s.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[0-9a-f]+);/gi, (_, e: string) =>
@@ -72,11 +73,7 @@ export function parsePlist(xml: string): Plist {
     if (name === 'dict') {
       const out: Record<string, Plist> = {};
       for (skip(); parts[i] === '<key>' || parts[i] === '<key/>'; skip()) {
-        let key = '';
-        if (parts[i++] === '<key>') {
-          if (parts[i] !== '</key>') key = text(parts[i++]);
-          i++;
-        }
+        const key = value() as string;
         out[key] = value();
       }
       i++;

@@ -339,7 +339,7 @@ export class WalkArith {
     for (const m of text.matchAll(ARITH_ASSIGNED)) targets.add(`${m[1] ?? m[3] ?? m[4]}${m[2] ? '[' : ''}`);
     for (const name of new Set(text.match(/[A-Za-z_]\w*/g))) for (const t of this.valueAssigns(st, name)) targets.add(t);
     let after = st;
-    for (const t of targets) after = this.w.builtins.assign(after, t.replace('[', ''), t.endsWith('['), { append: false, text: undefined, array: false }, at, false);
+    for (const t of targets) after = this.w.builtins.assign(after, t.replace(/\[$/, ''), t.endsWith('['), { append: false, text: undefined, array: false }, at, false);
     return after === st ? st : merge([st, after], this.w.posix);
   }
 

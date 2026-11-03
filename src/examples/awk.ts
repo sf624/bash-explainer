@@ -5,6 +5,7 @@ import { charge, chargeSize, longestFrom, runnerStep, scriptRegex } from './rege
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { parseWords } from './textfilters';
 import { has } from '../argv/query';
+import { wordTable } from '../wordtable';
 import type { AwkWatch } from './marks';
 
 /** Raised for awk features the example runner does not implement; no example is shown then. */
@@ -1085,7 +1086,8 @@ export interface AwkInvocation extends AwkRunOptions {
  * explanation reads them). A word that is not literal is undefined.
  */
 export function awkInvocation(words: (string | undefined)[]): AwkInvocation {
-  const r: AwkInvocation = { vars: {}, assigns: {} };
+  // (No prototype: `-v __proto__=1` is a variable like any other.)
+  const r: AwkInvocation = { vars: wordTable({}), assigns: wordTable({}) };
   const bad = (why: string) => { r.unsupported ??= why; };
   // The value of `-F` or `-v` (undefined: missing or not literal).
   const take = (flag: string, v: string | undefined): void => {
@@ -1116,9 +1118,7 @@ export function awkInvocation(words: (string | undefined)[]): AwkInvocation {
     const m = /^([A-Za-z_]\w*)=([^]*)$/.exec(w);
     if (!m) seenFile = true;
     else if (seenFile) bad('assignment after a file');
-    else {
-      r.assigns[m[1]] = awkUnescape(m[2]);
-    }
+    else r.assigns[m[1]] = awkUnescape(m[2]);
   }
   return r;
 }

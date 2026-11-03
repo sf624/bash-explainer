@@ -71,7 +71,7 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
     const html = fs.readFileSync(doc, 'utf8');
     const start = html.indexOf('id="Shell-Parameter-Expansion"');
     const section = html.slice(start, html.indexOf('<hr>', start + 10));
-    const terms = [...section.matchAll(/<dt[^>]*>(.*?)<\/dt>/gs)].map((m) => m[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/−|&minus;/g, '-').trim());
+    const terms = [...section.matchAll(/<dt[^>]*>(.*?)<\/dt>/gs)].map((m) => m[1].split(/<[^>]+>/).join('').replace(/&amp;|&minus;|−/g, (e) => (e === '&amp;' ? '&' : '-')).trim());
     // (The letters of `${parameter@operator}` are the terms after it.)
     const transform = terms.indexOf('${parameter@operator}');
     const letters = terms.slice(transform + 1).filter((t) => /^[A-Za-z]$/.test(t));

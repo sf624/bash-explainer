@@ -75,7 +75,7 @@ export function bracketItems(body: string): { negated: boolean; items: BracketIt
   return { negated, items };
 }
 
-const escapeInClass = (c: string): string => c.replace(/[\\\]\[^-]/, '\\$&');
+const escapeInClass = (c: string): string => c.replace(/[\\\]\[^-]/g, '\\$&');
 
 /** The JS character class for the text between the brackets; undefined where `bracketItems` does not read it. */
 export function bracketRegex(body: string): string | undefined {

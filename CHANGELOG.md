@@ -40,6 +40,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - What bash expands in an option's attached value is explained, and a command there has its own row: `make -j"$(nproc)"`, `make --jobs=$(nproc)`, `ls --color="$(x)"`, `make "-j$(nproc)"`.
 - `done < file` says that the redirection applies to the whole loop, as the loop's first line does.
 - `if [ -f a ] then …` says its error once, in the note, and "In short" says that bash stops with a syntax error (not in a here-document or in backticks, where bash goes on). Before, it said what the line seemed to do.
+- A command named like a JavaScript method after a pipe (`printf 'a\n' | valueOf`, also `hasOwnProperty`, `__proto__`) no longer stops the explanation with an error, in `--check` too.
 - `set -o posix` then `time -p $x` (or `time -p x=1`) no longer stops the explanation with an error. In POSIX mode, `time -- cmd` and `time -x cmd` are now explained as the program `time`, as bash runs them. Before, only `time -p` was.
 - A script with `$(a && b)` or `$(a || b)` in a here-document no longer stops the explanation with an error, and the `$( )` in a here-document shows its operators (`&&`, `|`, `;`, `then`).
 - "In short" keeps the status of a pipeline when the line's problem is about something else, such as a variable lost in a stage's subshell. Before, it left the status out.

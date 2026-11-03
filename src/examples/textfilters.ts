@@ -626,9 +626,9 @@ function runCat(words: (string | undefined)[], input: string[]): string[] {
   return input;
 }
 
-export const FILTERS: Record<string, (words: (string | undefined)[], input: string[]) => string[]> = {
+export const FILTERS: Record<string, (words: (string | undefined)[], input: string[]) => string[]> = wordTable({
   cat: runCat, sort: runSort, uniq: runUniq, cut: runCut, tr: runTr, head: runHead, tail: runTail,
-};
+});
 
 const WORDS = ['banana', 'apple', 'cherry', 'grape', 'melon', 'peach'];
 const COLUMNS = [WORDS, ['red', 'green', 'blue', 'yellow', 'pink', 'white'], ['tokyo', 'osaka', 'kyoto', 'nara', 'kobe', 'sendai']];

@@ -85,7 +85,7 @@ describe('git agrees with the real git', () => {
 
   it('git\'s own short options do not cluster or take an attached value', () => {
     for (const [line, word] of [['git -pP --version', '-pP'], ['git -C. --version', '-C.'], ['git -cx=1 --version', '-cx=1'], ['git -ph --version', '-ph'], ['git -c=x --version', '-c=x'], ['git -C=. --version', '-C=.']]) {
-      assert.match(run(line, dir).err, new RegExp(`unknown option: ${word.replace(/[.]/g, '\\$&')}`), line);
+      assert.ok(run(line, dir).err.includes(`unknown option: ${word}`), line);
       assert.strictEqual(roleOf(line, word).role.role, 'unknown-option', line);
     }
     // Written apart they are fine, and a subcommand's own short options do cluster.
