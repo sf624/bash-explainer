@@ -566,6 +566,8 @@ export function runSeq(words: (string | undefined)[]): string[] {
   const [first, inc, last] = nums.length === 1 ? ['1', '1', nums[0]!] : nums.length === 2 ? [nums[0]!, '1', nums[1]!] : [nums[0]!, nums[1]!, nums[2]!];
   const prec = (s: string) => (s.includes('.') ? s.split('.')[1].length : 0);
   const digits = Math.max(prec(first), prec(inc));
+  // (GNU seq prints them, but `toFixed` stops there, and beyond about 15 digits they are those of a `long double`.)
+  if (digits > 100) throw new Unsupported('seq digits');
   const a = Number(first);
   const d = Number(inc);
   const z = Number(last);

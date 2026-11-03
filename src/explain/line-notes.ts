@@ -9,6 +9,7 @@ import { tx } from '../i18n';
 import { type Fact, fact, factOf, MESSAGES } from '../messages';
 import { statementBefore } from '../rewrite';
 import { bashrcReader, STATEMENTS } from '../semantics/env';
+import { NAME } from '../semantics/walk/shared';
 import { wordPatterns } from '../semantics/globwords';
 import { lostVariable } from '../semantics/pipeline';
 import { docLine } from '../semantics/state';
@@ -96,13 +97,14 @@ export function unmatchedGlobPitfalls(cx: Explainer, root: SyntaxNode, line: num
     const lists = words.map((w) => wordPatterns(w, cx.state));
     const at = lists.findIndex((l) => l?.some((x) => x.patterns.length));
     const v = field(loop, 'variable')?.text;
-    if (at < 0 || !v) continue;
+    // (`for a+ in *.c`: bash rejects the name, and the loop never runs.)
+    if (at < 0 || !v || !NAME.test(v)) continue;
     const glob = words[at];
     const bodyNode = field(loop, 'body');
     // `for f in *` while typing: there is no body to look at yet.
     if (!bodyNode) continue;
     const body = bodyNode.text;
-    if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
+    if ([...body.matchAll(/-[efdrsLh]\s+"?\$\{?(\w+)/g)].some((m) => m[1] === v)) continue;
     // The rewrites: a test first in the body (`do` with no command is a syntax error: nothing runs once), where each
     // pass of the loop is over a pattern (it would skip the others too, `for i in a *.c` or `for i in {a,*.c}`, which
     // are no files), and not in a `select`, whose menu shows the pattern still (choosing it would only ask again); and

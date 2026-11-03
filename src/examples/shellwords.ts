@@ -1,6 +1,7 @@
 /** Brace expansion, glob matching examples and printf, as bash does them. */
 import { coreutilsRejects, type PrintfReader } from '../embedded/format';
-import { sprintf } from './awk';
+import { MAX_FIELD, sprintf } from './awk';
+import { sameInEveryLibrary } from './floatdigits';
 import { bracketEnd, bracketRegex } from '../bracket';
 import { RegexRefused, scriptRegex } from './regexguard';
 import { parseSequence, sequenceWords } from '../braceseq';
@@ -479,7 +480,7 @@ function numberArg(a: string | undefined, integer = false): number {
   const s = a.replace(/^\s+/, '');
   let n: number;
   if (/^[-+]?0[xX][0-9a-fA-F]+$/.test(s)) n = (s.startsWith('-') ? -1 : 1) * parseInt(s.replace(/^[-+]/, ''), 16);
-  else if (/^[-+]?0[0-7]+$/.test(s)) n = (s.startsWith('-') ? -1 : 1) * parseInt(s.replace(/^[-+]/, ''), 8);
+  else if (integer && /^[-+]?0[0-7]+$/.test(s)) n = (s.startsWith('-') ? -1 : 1) * parseInt(s.replace(/^[-+]/, ''), 8);
   else if (/^[-+]?\d+$/.test(s) || (!integer && /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s))) n = Number(s);
   else throw new Unsupported('invalid number');
   // Beyond 2^53 a JavaScript number is no longer exact (and bash clamps at 2^63 with a warning).
@@ -523,6 +524,7 @@ export function bashPrintf(format: string, args: string[], reader?: PrintfReader
       // (`%Q`: bash 5.2 reads the argument of a `*` precision and ignores it; `%.Q` prints nothing, in both.)
       if (written === 'Q' && p === '*' && reader !== '5.2' && reader !== '5.3') throw new Unsupported('%.*Q');
       if (written === 'Q' && p === '' && w !== undefined) throw new Unsupported('%N.Q');
+      if (Math.abs(width ?? 0) > MAX_FIELD || (prec ?? 0) > MAX_FIELD) throw new Unsupported('a field too wide to show');
       const arg = args[ai++];
       if (wide && /[sc]/.test(conv) && /[^\x00-\x7f]/.test(arg ?? '')) throw new Unsupported('a wide string');
       if (conv === 'b') {
@@ -550,8 +552,12 @@ export function bashPrintf(format: string, args: string[], reader?: PrintfReader
         out += stringField((arg ?? '').slice(0, 1) || '\0', flags, width, wide && reader === '5.3' ? prec : undefined);
         continue;
       }
-      const spec = `%${flags.replace("'", '')}${width ?? ''}${prec !== undefined ? '.' + prec : ''}`;
-      out += sprintf(`${spec}${conv}`, [numberArg(arg, /[diouxX]/.test(conv))]);
+      // (As in C, a negative precision from `*` is none.)
+      const digits = prec !== undefined && prec >= 0 ? prec : undefined;
+      const spec = `%${flags.replace(/'/g, '')}${width ?? ''}${digits !== undefined ? '.' + digits : ''}`;
+      const number = numberArg(arg, /[diouxX]/.test(conv));
+      if (!/[diouxX]/.test(conv) && !sameInEveryLibrary(arg || '0', number, conv, digits ?? 6, flags.includes('#'))) throw new Unsupported('digits of a long double');
+      out += sprintf(`${spec}${conv}`, [number]);
     }
     if (stopped) return out;
     // Reuse the format only while it consumed arguments and some remain.

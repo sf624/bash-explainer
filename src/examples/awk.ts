@@ -1,5 +1,6 @@
 import { lex, Lex } from '../embedded/awk';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
+import { exactOfDouble, floatText } from './floatdigits';
 import { charge, scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { parseWords } from './textfilters';
@@ -540,6 +541,13 @@ function compare(a: Val, b: Val): number {
   return x < y ? -1 : x > y ? 1 : 0;
 }
 
+/**
+ * The widest field and the most digits shown. A tool prints any, to a size no example shows, and past this there is no
+ * example; `MAX_FIELD` digits take 0.5 ms (which `FIELD_COST` charges).
+ */
+export const MAX_FIELD = 10000;
+const FIELD_COST = 10;
+
 /** C-style printf formatting for %d %i %o %x %X %u %c %s %e %E %f %F %g %G %%. */
 export function sprintf(fmt: string, args: Val[]): string {
   let ai = 0;
@@ -551,15 +559,25 @@ export function sprintf(fmt: string, args: Val[]): string {
   return fmt.replace(/%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?([diouxXcseEfFgG%])/g, (_whole, flags: string, w: string | undefined, p: string | undefined, conv: string) => {
     if (conv === '%') return '%';
     const width = w === '*' ? toNum(nextArg()) : w ? Number(w) : 0;
-    const prec = p === '*' ? toNum(nextArg()) : p !== undefined ? Number(p || 0) : undefined;
+    const given = p === '*' ? Math.trunc(toNum(nextArg())) : p !== undefined ? Number(p || 0) : undefined;
+    // (As in C, a negative precision from `*` is none, and a negative width means `-`.)
+    const prec = given !== undefined && given >= 0 ? given : undefined;
+    if (width < 0) flags += '-';
+    if (Math.abs(width) > MAX_FIELD || (prec ?? 0) > MAX_FIELD) throw new Unsupported('a field too wide to show');
+    charge(FIELD_COST * (prec ?? 0));
     const v = nextArg();
+    if (conv !== 'c' && conv !== 's' && !Number.isFinite(toNum(v))) {
+      // (gawk prints the sign of NaN, which JavaScript does not keep, and takes neither the width nor the flags.)
+      if (Number.isNaN(toNum(v))) throw new Unsupported('printf of NaN');
+      return toNum(v) > 0 ? '+inf' : '-inf';
+    }
     let body: string;
     let sign = '';
     switch (conv) {
       case 'd': case 'i': {
         const n = Math.trunc(toNum(v));
         sign = n < 0 ? '-' : flags.includes('+') ? '+' : flags.includes(' ') ? ' ' : '';
-        body = prec === 0 && n === 0 ? '' : String(Math.abs(n)); // (a zero precision prints no digits for 0)
+        body = prec === 0 && n === 0 ? '' : BigInt(Math.abs(n)).toString(); // (a zero precision prints no digits for 0)
         if (prec !== undefined) body = body.padStart(prec, '0');
         break;
       }
@@ -581,72 +599,17 @@ export function sprintf(fmt: string, args: Val[]): string {
       default: {
         const n = toNum(v);
         sign = n < 0 || Object.is(n, -0) ? '-' : flags.includes('+') ? '+' : flags.includes(' ') ? ' ' : '';
-        body = formatFloat(Math.abs(n), conv, prec ?? 6, flags.includes('#'));
+        body = floatText(exactOfDouble(Math.abs(n)), conv, prec ?? 6, flags.includes('#'));
       }
     }
     let out = sign + body;
-    if (out.length < width) {
-      if (flags.includes('-')) out = out.padEnd(width);
+    if (out.length < Math.abs(width)) {
+      if (flags.includes('-')) out = out.padEnd(Math.abs(width));
       else if (flags.includes('0') && /[diouxXeEfFgG]/.test(conv) && !(prec !== undefined && /[diouxX]/.test(conv))) out = sign + body.padStart(width - sign.length, '0');
       else out = out.padStart(width);
     }
     return out;
   });
-}
-
-function expFix(s: string): string {
-  return s.replace(/e([+-])(\d)$/, 'e$10$2');
-}
-
-/**
- * toFixed with C's rounding: an exact tie (2.25 → 1 digit) goes to the even digit (2.2), where
- * JavaScript rounds up (2.3). Only ties differ, since both otherwise round the exact binary value.
- */
-function toFixedC(n: number, prec: number): string {
-  const s = n.toFixed(prec);
-  if (prec > 60) return s;
-  const exact = n.toFixed(Math.min(100, prec + 40));
-  const dot = exact.indexOf('.');
-  const tail = exact.slice(dot + 1 + prec);
-  if (!/^50*$/.test(tail)) return s;
-  const digits = s.replace(/^-/, '').replace('.', '');
-  if (Number(digits[digits.length - 1]) % 2 === 0) return s;
-  // toFixed went up to an odd digit; the even neighbour is the truncated value.
-  const truncated = exact.slice(0, prec ? dot + 1 + prec : dot);
-  return truncated;
-}
-
-/** toExponential with C's rounding of an exact tie (12345 to 3 digits is 1.234e+04, not 1.235e+4). */
-function toExponentialC(n: number, prec: number): string {
-  const s = n.toExponential(prec);
-  if (prec > 60) return s;
-  const exact = n.toExponential(Math.min(100, prec + 40));
-  const [mant, exp] = exact.split('e');
-  if (s.split('e')[1] !== exp) return s; // the carry made the last digit 0
-  const digits = mant.replace('.', '');
-  if (!/^50*$/.test(digits.slice(prec + 1))) return s;
-  if (Number(digits[prec]) % 2 === 1) return s;
-  return digits.slice(0, 1) + (prec ? '.' + digits.slice(1, prec + 1) : '') + 'e' + exp;
-}
-
-function formatFloat(n: number, conv: string, prec: number, alt: boolean): string {
-  const upper = conv === conv.toUpperCase();
-  let s: string;
-  if (conv === 'f' || conv === 'F') s = toFixedC(n, prec);
-  else if (conv === 'e' || conv === 'E') s = expFix(toExponentialC(n, prec));
-  else {
-    const p = prec === 0 ? 1 : prec;
-    const e = n === 0 ? 0 : Math.floor(Math.log10(n));
-    if (e < -4 || e >= p) {
-      s = expFix(toExponentialC(n, p - 1));
-      if (!alt) s = s.replace(/\.?0+e/, 'e');
-    } else {
-      s = toFixedC(n, Math.max(0, p - 1 - e));
-      if (!alt && s.includes('.')) s = s.replace(/\.?0+$/, '');
-    }
-  }
-  // (`#`: always a decimal point: `%#.0f` of 3 is `3.`, `%#.0e` is `3.e+00`.)
-  return (alt && !s.includes('.') ? s.replace(/^(\d+)/, '$1.') : s)[upper ? 'toUpperCase' : 'toString']();
 }
 
 // ---------------------------------------------------------------- interpreter

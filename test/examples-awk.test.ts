@@ -135,6 +135,13 @@ describe('the awk runner agrees with gawk on the less common parts', () => {
     '{ if ($2) print "t:" $1; if ("") print "never" }', '$2 <= 3', 'BEGIN { printf "%.f|%+f|% f|%.0g|%#.3g|%G|%E|%.62f\\n", 2.5, 1, 1, 0, 1, 1e-10, 12345, 0.1 }',
     '{ NF = 7; print; print NF }', 'BEGIN { printf "%#x %#o %#X %x %o %u|%#5x|%#.3x|%.0d|%5.2d|%.3e|%.0e|%.0e|%.1e\\n", 255, 8, 255, -1, -8, -1, 255, 5, 0, 3, 12345, 2.5, 9.5, 0.25 }',
     'BEGIN { printf "%.0x|%.0o|%#.0o|%.0x|%.62e|%.62g\\n", 0, 0, 0, 5, 0.1, 0.1 }',
+    // (Digits past what JavaScript's own methods give, a tie at any place, and what `%g` decides after rounding.)
+    'BEGIN { printf "%.101f|%.200e|%.150g|%.300f\\n", 1.5, 0.1, 0.1, 1e-300 }',
+    'BEGIN { printf "%f|%.3f|%.0f|%d|%d|%e|%E|%g\\n", 1e21, 1e300, 1e22, 2^70, -2^70, 1e300, 1e-300, 1e300 }',
+    'BEGIN { printf "%g|%g|%g|%g|%.0e|%.2e|%.1f|%.0f|%.0f|%.1e|%.0e|%.3g\\n", 999999.5, 100000, 1000000, 0.0001, 15, 12345, 2.25, 2.5, 3.5, 9.5, 9.5, 999.5 }',
+    'BEGIN { printf "%f|%e|%g|%.0e|%#g|%#.0e|%.5f|%e\\n", 0, 0, 0, 0, 0, 0, 4.9e-324, 4.9e-324 }',
+    'BEGIN { printf "[%.*f][%.*f][%.*d][%*d][%*d]\\n", -1, 3.14159, 1.5, 3.14159, -1, 5, -4, 5, 1.5, 5 }',
+    'BEGIN { x = -log(0); printf "%f|%e|%g|%d|%10f|%x|%+.3f|%i|%-8d|%08.2f\\n", x, x, x, x, x, x, -x, -x, x, -x }',
     'BEGIN { printf "%c%c|%5s|%-5s|%.2s\\n", 65, "hello", "ab", "cd", "xyz" }',
     'BEGIN { n = split("", a, ","); print n }', 'BEGIN { print match("abc", "z"), RSTART, RLENGTH }',
     'function g(b) { return b[1] } function f(a) { a[1] = 2; return g(a) } BEGIN { print f(x) }',

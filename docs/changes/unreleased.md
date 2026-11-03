@@ -233,7 +233,7 @@ The sentence of a line leaves out what a problem of the line says. It compared t
 
 `echo "aaa…a!" | grep -E "(a+)+$"` with 30 `a`s did not return: every product runs the examples synchronously, with JavaScript's backtracking matcher, and this pattern takes 2^n steps on n characters. The same went for `sed`, `awk`, `perl`, `[[ =~ ]]`, jq's `test`, for extended globs and globs with many `*` (`[[ $x == +(a|a) ]]`, `${x%%*a*a*a…}`), and for what is typed in the panel's boxes.
 
-Now the regexes of a script run on an engine of our own, which gives what JavaScript gives and counts all it does. Past 10 million steps for one example, about 50 ms, the example says "Not computed…" / 「結果は計算しない…」 and shows no result: not a match, not a failure, and nothing for the stages after it. The rest of the line is explained as before. No clock is read, so the same text gives the same answer on every machine.
+Now the regexes of a script run on an engine of our own, which gives what JavaScript gives and counts all it does. Past 10 million steps for one example, 30 to 90 ms measured for each kind of pattern, the example says "Not computed…" / 「結果は計算しない…」 and shows no result: not a match, not a failure, and nothing for the stages after it. The rest of the line is explained as before. No clock is read, so the same text gives the same answer on every machine, and whatever was explained before it. The limit is for each example and each expansion, not for the line yet: a line of many refused patterns takes a limit for each (30 different ones on a line, about 1.5 s).
 
 - Usual patterns are computed, on fifty lines of 90 characters too: a strict IPv4 pattern, `s/.*from ([0-9.]+).*/\1/`, `.*foo.*bar`, `^(\w+ ?)+$`, and `s/,+/;/g` on a line of 1500 characters.
 - A pattern that can take very long still runs on a short text, where it does not: `(a+)+$` on `aaa`. Limits on the text: `(a+)+$` up to about 18 characters, `a*a*b` up to about 2000, `a*b` and `.*foo` over a million.
@@ -241,6 +241,17 @@ Now the regexes of a script run on an engine of our own, which gives what JavaSc
 - What a match gives counts too, so a process cannot run out of memory: thousands of matches with a thousand empty groups each (`awk -F 'a|()()…'`), `s/.*/&&&&…/` on a long line. Those say the same.
 - Making example lines of a pattern is limited too: `grep -E '(ab{1000}){1000}' file` says the same.
 - The values the model follows through `case`, `[[ == ]]` and `${x%…}` are "not known" where the pattern is not run, so nothing is said to be decided from them.
+- `${x//b/c}`, `${x##*/}` and `${x/#a/b}` find where a match ends with one walk of the pattern, so a long value costs little: a value of 3000 characters takes under 2 ms of the limit, and it was 1.1 s before.
+
+### The digits of `printf` and awk
+
+The examples compute the digits of a number from its exact value, as C does, at any precision up to 10000 digits; past that, or for a field wider than that, there is no example. Before, `printf '%.200f' 1` and awk's `%.101f` failed; `%f` of 1e21 gave `1e+21`; `%g` of 999999.5 gave `1000000`, where the tools print `1e+06`; `%d` of 2^70 gave `1.1805916207174113e+21`.
+
+- `printf` of bash and coreutils reads a `long double`, whose size depends on the machine, so `printf '%.20f' 0.1` prints `0.10000000000000000000` on x86-64 and `0.10000000000000000555` where it is a double, and `printf '%.1f' 0.15` is `0.2` or `0.1`. These now have no example; before, they showed the digits of a double. Digits that are the same on every machine are shown as before.
+- `printf '%f' 010` is 10, not 8: only `%d` and the like read octal. A negative precision from `*` counts as none (`printf '%.*f' -1 3.14`).
+- gawk's `+inf` and `-inf` take no width or flags, and `%x` of an infinite number prints them too; a NaN has no example, as gawk prints its sign. Negative widths and precisions from `*` are read as in C.
+- perl prints `Inf` and `NaN` as itself; `printf` with one of them has no example, and `"a" x 9**9**9` is empty.
+- jq's `implode` gives U+FFFD for a number out of range, as jq does, and its error for what is no number or no array. Before, it failed or read `null` as 0.
 
 ### `-F` and the other patterns of grep
 

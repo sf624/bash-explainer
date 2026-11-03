@@ -97,7 +97,8 @@ export function python(b: Builder): void {
   for (const m of src.matchAll(/^[ \t]*from[ \t]+([\w.]+)[ \t]+import[ \t]+(?:\(([^)]*)\)|([\w \t,]+))/gm)) {
     for (const part of (m[2] ?? m[3]).split(',')) {
       const [fn, alias] = part.trim().split(/\s+as\s+/);
-      if (PY_CALLS[`${m[1]}.${fn}`]) names.set(alias ?? fn, `${m[1]}.${fn}`);
+      // (What follows `as` between parentheses can be any text: a name goes into the regex below.)
+      if (PY_CALLS[`${m[1]}.${fn}`] && (alias === undefined || /^\w+$/.test(alias))) names.set(alias ?? fn, `${m[1]}.${fn}`);
     }
   }
   if (!names.size) return;

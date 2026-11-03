@@ -36,7 +36,7 @@ const pairs: [string, Json][] = [
   ['try error("x") catch ., (.a.b)?', 1], ['.a.b', 1], ['[.[] | select(.ok)] | length', [{ ok: true }, { ok: false }, {}]],
   ['contains(["a"]), inside(["a", "b", "c"])', ['a', 'b']], ['contains("bar"), contains({a: [1]})', 'foobar'], ['has("x"), has("y")', { x: 1 }],
   ['any, all, (map(. > 1) | any)', [1, 2]], ['flatten, flatten(1)', [[1], [2, [3]]]], ['walk(if type == "number" then . + 1 else . end)', [1, { a: 2 }]],
-  ['[range(3)], [range(1; 4)]', null], ['indices(1), index(1), rindex(1)', [1, 2, 1]], ['indices(", ")', 'a, b, c'], ['explode | implode', 'héllo'],
+  ['[range(3)], [range(1; 4)]', null], ['indices(1), index(1), rindex(1)', [1, 2, 1]], ['indices(", ")', 'a, b, c'], ['implode', [1114112]], ['implode', [-1]], ['implode', [55296, 56320]], ['implode', [1.5, 65, 97.9]], ['implode', []], ['implode', [1114111, 128512]], ['implode', ['a']], ['implode', [null]], ['implode', 1], ['implode', {}], ['implode', ['a', 1]], ['explode | implode', 'héllo'],
   ['tojson, (tojson | fromjson)', { a: [1] }], ['[.[] | type]', [null, true, 1, 'a', [], {}]], ['map(select(type == "string"))', [1, 'a', 'b']],
   ['add', ['a', 'b']], ['add', [[1], [2]]], ['add', []], ['length', null], ['length', -5], ['utf8bytelength', 'é'],
   ['.[] | numbers, strings', [1, 'a']], ['map(floor), map(sqrt)', [4.7, 9]], ['[.[] | . as $x | $x + 1]', [1, 2]],

@@ -10,8 +10,9 @@ import { inRanges, LINE_ENDS, type Node, Parser, type Ranges, WORD } from './reg
 export class RegexRefused extends Error {}
 
 /**
- * What the runs in one `guarded` may cost, in the walk's steps: about 200 of them run in a microsecond, so a whole limit
- * takes about 50 ms. Ordinary patterns on fifty lines of 90 characters take up to about 3e6, for all the runs of their line
+ * What the runs in one `guarded` may cost, in the walk's steps: a whole limit takes 30 to 90 ms, by the kind of pattern.
+ * A line has one for each example and expansion, not one for all (docs/roadmap.md, "One line must not stop the whole tool").
+ * Ordinary patterns on fifty lines of 90 characters take up to about 3e6, for all the runs of their line
  * (test/examples-regexguard.test.ts, MUST_RUN).
  */
 const LIMIT = 1e7;
@@ -19,11 +20,12 @@ const LIMIT = 1e7;
 const MAX_SOURCE = 2000;
 /**
  * What else costs, in steps: a regex made (`NEW`, and a step per character of its pattern to look it up) and, the first
- * time, compiled (per character); a run; a match's result, each of its captures (an array slot and a string), and a step
- * per character of what they hold. Measured against the steps of a walk: each is about what it takes in time.
+ * time in a limit, compiled (per character, whether or not it is kept from before: a refusal does not depend on what ran before); a
+ * run; a match's result, each of its captures (an array slot and a string), and a step per character of what they hold.
+ * Measured against the steps of a walk: each is about what it takes in time.
  */
 const NEW = 64;
-const COMPILE = 64;
+const COMPILE = 128;
 const RUN = 24;
 const MATCH = 64;
 const CAPTURE = 8;
@@ -34,10 +36,9 @@ const enum Op { Unit, Fold, Set, Split, Jump, Save, Assert, Ref, Reset, Loop, Cl
 /** What `Op.Assert` checks: `^`, `$`, `\b`, `\B`, and `^`, `$` at the ends of lines too (the flag `m`). */
 const enum At { Start, End, Word, NotWord, LineStart, LineEnd }
 
-/** An instruction. `a` to `d`: what `walk` reads for its `op`. `groups`: the capture groups a round of a repeat clears. */
-interface Ins { op: Op; a: number; b: number; c: number; d: number; exit: number; groups: number[] }
+/** An instruction. `a` to `d`: what `walk` reads for its `op`. */
+interface Ins { op: Op; a: number; b: number; c: number; d: number; exit: number }
 
-const NO_GROUPS: number[] = [];
 const WORD_UNITS = Uint8Array.from({ length: 128 }, (_, c) => (inRanges(WORD, c) ? 1 : 0));
 const isWord = (c: number) => WORD_UNITS[c] === 1;
 
@@ -84,28 +85,8 @@ class CharSet {
   }
 }
 
-/** The groups of a node, for what a round of a repeat around them clears. */
-function groupsIn(n: Node): number[] {
-  switch (n.t) {
-    case 'seq': return n.items.flatMap(groupsIn);
-    case 'alt': return n.options.flatMap(groupsIn);
-    case 'group': return [...(n.no ? [n.no] : []), ...groupsIn(n.node)];
-    case 'repeat': return groupsIn(n.node);
-    default: return [];
-  }
-}
-
-/** Whether a node reads at least a character on every path. */
-function consumes(n: Node): boolean {
-  switch (n.t) {
-    case 'char': case 'set': return true;
-    case 'seq': return n.items.some(consumes);
-    case 'alt': return n.options.every(consumes);
-    case 'group': return !n.look && consumes(n.node);
-    case 'repeat': return n.min > 0 && consumes(n.node);
-    default: return false;
-  }
-}
+/** All that decides how a walk of a program goes, and what it had left. */
+interface LongRun { text: string; from: number; once: boolean; longest: boolean; left: number }
 
 /** The pattern as instructions for `walk`. Registers: 2 for each group (the first for the whole match), then those of the repeats and lookarounds. */
 class Program {
@@ -117,8 +98,8 @@ class Program {
   private readonly dotAll: boolean;
   registers: number;
   anchored: boolean;
-  /** The text a whole limit was not enough for: each stage of a pipeline asks again, and the answer is known. */
-  tooLongOn?: string;
+  /** The last run past the limit: run again with no more left, it gets as far and no further. A line asks again for each stage and example. */
+  tooLong?: LongRun;
   /**
    * The character of a pattern that starts with `x*` or `x+`, when no back-reference can tell where it started. A start that
    * fails has tried all the places that repeat reaches, so a later start within the run of `x` reaches none that is new:
@@ -126,6 +107,8 @@ class Program {
    */
   run?: Ins;
   private hasRef = false;
+  /** Whether a node reads at least a character on every path, once for each node: a pattern can be 1000 repeats deep. */
+  private readonly reading = new Map<Node, boolean>();
 
   constructor(tree: Node, source: string, readonly groups: number, readonly names: ReadonlyMap<string, number>, flags: string) {
     this.fold = flags.includes('i') ? canonicalTable() : undefined;
@@ -153,13 +136,38 @@ class Program {
   }
 
   private ins(op: Op, a = 0, b = 0, c = 0, d = 0): Ins {
-    return { op, a, b, c, d, exit: 0, groups: NO_GROUPS };
+    return { op, a, b, c, d, exit: 0 };
   }
 
   private emit(op: Op, a = 0, b = 0, c = 0, d = 0): Ins {
     const ins = this.ins(op, a, b, c, d);
     this.code.push(ins);
     return ins;
+  }
+
+  private consumes(n: Node): boolean {
+    let known = this.reading.get(n);
+    if (known === undefined) {
+      known = this.reads(n);
+      this.reading.set(n, known);
+    }
+    return known;
+  }
+
+  private reads(n: Node): boolean {
+    switch (n.t) {
+      case 'char': case 'set': return true;
+      case 'seq': return n.items.some((x) => this.consumes(x));
+      case 'alt': return n.options.every((x) => this.consumes(x));
+      case 'group': return !n.look && this.consumes(n.node);
+      case 'repeat': return n.min > 0 && this.consumes(n.node);
+      default: return false;
+    }
+  }
+
+  /** What starts a round of a repeat: clearing the groups in it, which are numbered in a row. */
+  private clear(n: Node & { t: 'repeat' }): void {
+    if (n.lastGroup >= n.firstGroup) this.emit(Op.Clear, n.firstGroup, n.lastGroup);
   }
 
   private charSet(n: Node & { t: 'set' }): number {
@@ -220,7 +228,7 @@ class Program {
         if (n.no) this.emit(Op.Save, 2 * n.no + (back ? 0 : 1));
         return;
       case 'repeat': {
-        if (consumes(n.node) && ((n.min <= 1 && n.max === Infinity) || (n.min === 0 && n.max === 1))) {
+        if (this.consumes(n.node) && ((n.min <= 1 && n.max === Infinity) || (n.min === 0 && n.max === 1))) {
           this.plainRepeat(n, back);
           return;
         }
@@ -230,8 +238,7 @@ class Program {
         const at = this.code.length;
         const loop = this.emit(Op.Loop, count, n.min, n.max, n.lazy ? 1 : 0);
         this.emit(Op.Save, place);
-        const groups = groupsIn(n.node);
-        if (groups.length) this.emit(Op.Clear).groups = groups;
+        this.clear(n);
         this.node(n.node, back);
         this.emit(Op.Round, place, count, n.min, at);
         loop.exit = this.code.length;
@@ -243,8 +250,7 @@ class Program {
   private plainRepeat(n: Node & { t: 'repeat' }, back: boolean): void {
     const at = this.code.length;
     const round = () => {
-      const groups = groupsIn(n.node);
-      if (groups.length) this.emit(Op.Clear).groups = groups;
+      this.clear(n);
       this.node(n.node, back);
     };
     if (n.min === 1) {
@@ -279,15 +285,23 @@ function set(reg: number, value: number): void {
 
 let depth = 0;
 let left = LIMIT;
+/** The patterns whose compilation the runs of this limit paid for, kept or not: what a run costs is the same whatever ran before it in the process. */
+const compiled = new Set<string>();
+
+/** A whole limit, for what runs next. */
+function fresh(): void {
+  left = LIMIT;
+  compiled.clear();
+}
 
 function refuse(): never {
   left = 0;
   throw new RegexRefused();
 }
 
-/** Past the limit in a walk. `whole`: it had the whole limit for itself. */
-function tooMany(p: Program, text: string, whole: boolean): never {
-  if (whole) p.tooLongOn = text;
+/** Past the limit in a walk. */
+function tooLong(p: Program, text: string, from: number, once: boolean, longest: boolean, had: number): never {
+  p.tooLong = { text, from, once, longest, left: had };
   refuse();
 }
 
@@ -296,7 +310,7 @@ function tooMany(p: Program, text: string, whole: boolean): never {
  * times its size (four times with sed's `&&&&`): strings are made without a limit but memory, and running out of it cannot be caught.
  */
 export function charge(cost: number): void {
-  if (!depth) left = LIMIT;
+  if (!depth) fresh();
   if ((left -= cost) < 0) refuse();
 }
 
@@ -306,16 +320,16 @@ export function charge(cost: number): void {
  * comes to first, as a POSIX tool wants it. It costs one step for each instruction and each entry gone back past.
  */
 function walk(p: Program, text: string, from: number, once: boolean, longest: boolean): Int32Array | undefined {
-  if (!depth) left = LIMIT;
+  if (!depth) fresh();
   const { code, charSets, fold, run: repeated } = p;
   const runCost = repeated?.op === Op.Set ? charSets[repeated.a].cost : 1;
   // (What one instruction can push: a place or two, and a round's groups.)
   const margin = 2 * p.registers + 8;
   const length = text.length;
-  // (But for what making the regex cost.)
-  const whole = left > 0.98 * LIMIT;
   // (Setting a register is far less than a step.)
   charge(RUN + (p.registers >> 3));
+  const known = p.tooLong;
+  if (known && left <= known.left && known.from === from && known.once === once && known.longest === longest && known.text === text) refuse();
   if (registers.length < p.registers) registers = new Int32Array(p.registers);
   const r = registers;
   r.fill(-1, 0, p.registers);
@@ -330,7 +344,7 @@ function walk(p: Program, text: string, from: number, once: boolean, longest: bo
     let pc = 0;
     let pos = start;
     for (;;) {
-      if (++steps > limit) tooMany(p, text, whole);
+      if (++steps > limit) tooLong(p, text, from, once, longest, limit);
       if (sp + margin > paid) {
         paid *= 2;
         steps += paid >> 2;
@@ -419,8 +433,8 @@ function walk(p: Program, text: string, from: number, once: boolean, longest: bo
           break;
         }
         case Op.Clear:
-          steps += 2 * i.groups.length;
-          for (const g of i.groups) {
+          steps += 2 * (i.b - i.a + 1);
+          for (let g = i.a; g <= i.b; g++) {
             if (r[2 * g] >= 0) set(2 * g, -1);
             if (r[2 * g + 1] >= 0) set(2 * g + 1, -1);
           }
@@ -500,7 +514,7 @@ function walk(p: Program, text: string, from: number, once: boolean, longest: bo
     while (repeated && start < length) {
       const unit = text.charCodeAt(start);
       steps += unit < 256 ? 1 : runCost;
-      if (steps > limit) tooMany(p, text, whole);
+      if (steps > limit) tooLong(p, text, from, once, longest, limit);
       const inRun = repeated.op === Op.Unit ? unit === repeated.a : repeated.op === Op.Fold ? fold![unit] === repeated.a : charSets[repeated.a].has(unit);
       if (!inRun) break;
       start++;
@@ -538,7 +552,6 @@ function resultOf(p: Program, text: string, r: Int32Array, withIndices: boolean)
 
 /** A run of `p`: what it matched, or null. */
 function run(p: Program, text: string, from: number, once: boolean, withIndices: boolean, longest: boolean): RegExpExecArray | null {
-  if (p.tooLongOn === text) refuse();
   try {
     const r = walk(p, text, from, once, longest);
     return r ? resultOf(p, text, r, withIndices) : null;
@@ -555,9 +568,9 @@ function programOf(source: string, flags: string): Program {
   if (source.length > MAX_SOURCE || flags.includes('u') || flags.includes('v')) throw new RegexRefused();
   const read = [...flags].filter((f) => 'ims'.includes(f)).join('');
   const key = `${read}/${source}`;
+  if (!compiled.has(key)) charge(COMPILE * source.length);
   let p = programs.get(key);
   if (!p) {
-    charge(COMPILE * source.length);
     const parser = new Parser(source);
     const tree = parser.alt();
     if (parser.unread) throw new RegexRefused();
@@ -570,6 +583,7 @@ function programOf(source: string, flags: string): Program {
     kept += p.code.length;
     programs.set(key, p);
   }
+  compiled.add(key);
   return p;
 }
 
@@ -617,16 +631,23 @@ export function longestExec(source: string, flags: string, text: string, at: num
 }
 
 /**
+ * A string too long for JavaScript (of what a tool makes of matches), or a stack too deep: one more thing that costs too
+ * much. No other RangeError: a precision no number method takes or a code point out of range is a bug of what threw it.
+ */
+function tooBigForJavaScript(e: unknown): boolean {
+  return e instanceof RangeError && /Invalid string length|Maximum call stack/.test(e.message);
+}
+
+/**
  * What `run` gives, or `refused()` when a regex it runs is refused. The runs in it share one limit (those of a `guarded`
  * inside it as well): a run alone is limited either way, a run of many only here.
  */
 export function guarded<T>(run: () => T, refused: () => T): T {
-  if (!depth++) left = LIMIT;
+  if (!depth++) fresh();
   try {
     return run();
   } catch (e) {
-    // (A string too long for JavaScript, of what a tool makes of matches, is one more thing that costs too much.)
-    if (e instanceof RegexRefused || e instanceof RangeError) return refused();
+    if (e instanceof RegexRefused || tooBigForJavaScript(e)) return refused();
     throw e;
   } finally {
     depth--;

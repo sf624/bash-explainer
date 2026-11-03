@@ -340,3 +340,19 @@ export function posixExec(r: JsRegex, line: string, at: number): RegExpExecArray
 function swapCase(s: string): string {
   return s.replace(/[a-zA-Z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
 }
+
+/** The pattern with the `x` flag removed: whitespace and `#` comments are not part of an extended regex (outside brackets and after a backslash). */
+export function extendedRegex(src: string): string {
+  let out = '';
+  let inClass = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === '\\') { out += src.slice(i, i + 2); i++; continue; }
+    if (inClass) { out += c; if (c === ']') inClass = false; continue; }
+    if (c === '[') { inClass = true; out += c; continue; }
+    if (/\s/.test(c)) continue;
+    if (c === '#') { while (i < src.length && src[i] !== '\n') i++; continue; }
+    out += c;
+  }
+  return out;
+}

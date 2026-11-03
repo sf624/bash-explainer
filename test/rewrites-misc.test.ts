@@ -24,6 +24,8 @@ describe('the rewrite of `wrapper-assignment-expanded-first`', () => {
     assert.deepStrictEqual(fix('f() {\n  sudo -E v=1 cmd ${v}x\n}', ID), ["f() {\n  sudo -E v=1 bash -c 'cmd ${v}x'\n}"]);
     // (Before, `sh -c` in every script: dash's `echo` prints `-e bar`, and its `printf` has no `%q`.)
     assert.deepStrictEqual(fix('sudo FOO=bar echo -e $FOO', ID), ["sudo FOO=bar bash -c 'echo -e $FOO'"]);
+    // (`$v` and `${v}`, however it is written.)
+    assert.deepStrictEqual(fix('sudo v=1 echo $v ${v} ', ID), ["sudo v=1 bash -c 'echo $v ${v}' "]);
     assert.deepStrictEqual(fix("sudo FOO=bar printf '%q\\n' $FOO", ID), ["sudo FOO=bar bash -c 'printf '\\''%q\\n'\\'' $FOO'"]);
     assert.deepStrictEqual(fix('#!/bin/dash\nsudo v=1 echo $v', ID, 'dash'), ["#!/bin/dash\nsudo v=1 dash -c 'echo $v'"]);
   });
@@ -38,7 +40,7 @@ describe('the rewrite of `wrapper-assignment-expanded-first`', () => {
   });
   it('is said, but not carried as edits, where the string would be expanded by another shell than this one', () => {
     // (`$HOME` and `$(…)` are expanded here now; in the string, the new shell would expand them.)
-    for (const src of ['sudo v=1 echo $v $HOME', 'sudo v=1 echo $v $(date)', 'sudo v=1 echo `date` $v', 'sudo v=1 echo ${v:-x}']) {
+    for (const src of ['sudo v=1 echo $v $vv', 'sudo v=1 echo $v ${vv}', 'sudo v=1 echo $v $1', 'sudo v=1 echo $v $HOME', 'sudo v=1 echo $v $(date)', 'sudo v=1 echo `date` $v', 'sudo v=1 echo ${v:-x}']) {
       const [f] = factsOf(src, ID);
       assert.strictEqual(f.rewrite, undefined, src);
       assert.match(f.text, /go through a shell: `sudo v=… bash -c '.*'`$/, src);

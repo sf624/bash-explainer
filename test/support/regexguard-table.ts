@@ -11,9 +11,15 @@ import { guarded, RegexRefused, scriptRegex } from '../../src/examples/regexguar
 import { rerun, type RerunSpec } from '../../src/examples/rerun';
 import { runSed } from '../../src/examples/sed';
 import { patternMatches } from '../../src/semantics/conditions';
+import { extractShell } from '../../src/hosts';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
 
 export const P = JSON.parse(fs.readFileSync(path.join(__dirname, '../fixtures/regexguard-patterns.json'), 'utf8')) as {
+  twoWays: string;
+  twoWaysEnd: string;
+  twoWaysMark: string;
+  backReference: string;
+  namedBackReference: string;
   mustRefuse: [string, [string, number, string], string?][]; unread: string[]; twice: string; polynomial: string; openBraces: string[]; words: string; doubling: string[];
 };
 
@@ -199,6 +205,9 @@ if (process.argv[2] === 'run') {
     })),
     rerunShort: rerun(SPECS.regex, [['aaa', 'aaa!']], 'en').sections[0].lines,
     checks: Object.fromEntries(Object.entries(CHECKS).map(([name, check]) => [name, check()])),
+    // (The text of a script as a variable's name: no regex is made of it, and neither does a name after `as` in a Python file.)
+    names: [`for ${'a*'.repeat(12)}b in *.c; do [ -f $${'a'.repeat(40)}c ]; done`, 'for a+++ in *.c; do cat x; done', `x=1 eval "$${'a'.repeat(40)}c"`].map((line) => row(line, 'names', '', 0, 'en').tokens > 0),
+    python: extractShell('python', `from subprocess import (run as ${'a*'.repeat(12)}b)\n${'a'.repeat(40)}c("x")\nfrom subprocess import (run as +++)\nrun("ls")\n`).text,
   };
   process.stdout.write(JSON.stringify(results));
 }

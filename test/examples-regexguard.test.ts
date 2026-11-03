@@ -5,7 +5,7 @@ import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import { pipedOutput } from '../src/examples/pipeline';
 import { posixExec, regexExamples } from '../src/examples/regex';
-import { charge, costOf, guarded, RegexRefused, scriptRegex } from '../src/examples/regexguard';
+import { charge, costOf, guarded, longestExec, RegexRefused, scriptRegex } from '../src/examples/regexguard';
 import { Parser } from '../src/examples/regexparse';
 import { rerun } from '../src/examples/rerun';
 import { globToRegex } from '../src/examples/shellwords';
@@ -118,6 +118,11 @@ describe('the guard of the regexes a script gives', () => {
       const said = (name: string) => out.checks[name];
       for (const name of ['awk -F, by the size of what it gives', 'perl split, by the size of what it gives', 's///g, by the size of what it gives', 'split by many registers']) assert.deepStrictEqual(said(name), { tokens: true, said: true }, name);
       for (const name of ['many registers on a long text', 'what takes JavaScript long to compile']) assert.deepStrictEqual(said(name), { tokens: true, said: false }, name);
+    });
+
+    it('the name of a variable, or of a call in Python, is not read as a regex', () => {
+      assert.deepStrictEqual(out.names, [true, true, true]);
+      assert.strictEqual(typeof out.python, 'string');
     });
 
     it('what a tool makes of a match counts too, however many times its size: no process goes down', () => {
@@ -238,17 +243,26 @@ describe('the guard of the regexes a script gives', () => {
       assert.ok(each('a', '(a*)', '') > each('a'.repeat(0), '(a*)', ''));
       assert.ok(costOf(() => scriptRegex('(a*)').exec('a'.repeat(1000))) > 2000);
       // (A start that fails leaves the registers as they were: it need not set them again.)
-      scriptRegex(`z${G}`);
-      assert.ok(costOf(() => scriptRegex(`z${G}`).test('a'.repeat(10000))) < 30000);
+      assert.ok(guarded(() => {
+        scriptRegex(`z${G}`);
+        return costOf(() => scriptRegex(`z${G}`).test('a'.repeat(10000)));
+      }, () => Infinity) < 30000);
       // (Each round of a repeat clears its groups, and a deep stack costs more than its steps.)
       assert.ok(costOf(() => scriptRegex(`(?:${G}a)*b`).test('aaa')) > 3 * 990 * 2);
-      assert.ok(costOf(() => scriptRegex('^(?:a|b)*').test('a'.repeat(5000))) > costOf(() => scriptRegex('^(?:a|b)*').test('a'.repeat(100))) * 50 + 2000);
+      const deep = (n: number) => guarded(() => {
+        scriptRegex('^(?:a|b)*');
+        return costOf(() => scriptRegex('^(?:a|b)*').test('a'.repeat(n)));
+      }, () => Infinity);
+      assert.ok(deep(5000) > deep(100) * 50 + 2000);
       // (A character of a class above the small ones is looked for each time, and more so in a long class.)
       assert.ok(costOf(() => scriptRegex('[あ-ん]z').test('亜'.repeat(100))) > 2 * costOf(() => scriptRegex('[a-c]z').test('d'.repeat(100))));
-      // (A pattern is compiled once.)
+      // (A pattern is paid for once in a limit.)
       const long = `${'x'.repeat(1500)}${Date.now()}`;
       assert.ok(costOf(() => scriptRegex(long)) > 64 * 1500);
-      assert.ok(costOf(() => scriptRegex(long)) < 3000);
+      assert.ok(guarded(() => {
+        scriptRegex(long);
+        return costOf(() => scriptRegex(long));
+      }, () => Infinity) < 3000);
     });
 
     it('`.*x` looks through a line once, not from each character, and goes on after the line\'s end', () => {
@@ -388,13 +402,80 @@ describe('the guard of the regexes a script gives', () => {
       assert.ok(!refused('foo', 'a'.repeat(100000)));
     });
 
-    it('a text refused once is refused at once, when the whole limit was tried', () => {
+    it('a run refused once is refused again only when all that decides it is the same', () => {
       const re = scriptRegex(P.polynomial);
       const text = 'a'.repeat(10000);
       assert.throws(() => re.test(text), RegexRefused);
       assert.strictEqual(guarded(() => costOf(() => scriptRegex(P.polynomial).test(text)), () => -1), Infinity);
       assert.throws(() => scriptRegex(P.polynomial).test(text), RegexRefused);
       assert.ok(!refused(P.polynomial, 'a'.repeat(5)));
+      const A = `${'a'.repeat(40)}!`;
+      // (From another place, and at one place only.)
+      const moved = scriptRegex(P.twoWaysEnd, 'g');
+      assert.throws(() => moved.test(A), RegexRefused);
+      moved.lastIndex = 40;
+      assert.strictEqual(moved.test(A), false);
+      assert.throws(() => scriptRegex(P.twoWaysMark).test(`${A}b`), RegexRefused);
+      assert.strictEqual(scriptRegex(P.twoWaysMark, 'y').test(`b${A}`), false);
+      assert.throws(() => scriptRegex(P.twoWaysMark).test(`b${A}b`), RegexRefused);
+      assert.strictEqual(scriptRegex(P.twoWaysMark, 'y').test(`b${A}b`), false);
+      // (The longest match, and the first that JavaScript's order comes to.)
+      assert.throws(() => longestExec(P.twoWays, '', A, 0), RegexRefused);
+      assert.strictEqual(scriptRegex(P.twoWays).exec(A)![0], 'a'.repeat(40));
+      assert.throws(() => longestExec(P.twoWays, '', A, 0), RegexRefused);
+      // (With less left, and then with more.)
+      const costs = costOf(() => scriptRegex('b*a*c').test('a'.repeat(1000)));
+      const late = () => guarded(() => {
+        charge(1e7 - costs / 2);
+        scriptRegex('b*a*c').test('a'.repeat(1000));
+        return true;
+      }, () => false);
+      assert.strictEqual(late(), false);
+      assert.ok(!refused('b*a*c', 'a'.repeat(1000)));
+    });
+
+    it('what a run costs does not depend on whether its pattern was kept, nor does a refusal', () => {
+      const once = (source: string, text: string) => costOf(() => scriptRegex(source).test(text));
+      for (const source of ['qz1*q', `${'(?:q|z)'.repeat(285)}q`, '(q)*z\\1']) assert.strictEqual(once(source, 'abc'), once(source, 'abc'), source);
+      // (In one limit, it is paid for once; the next limit pays again.)
+      const twice = guarded(() => [once('qz2*q', 'abc'), once('qz2*q', 'abc')], () => []);
+      assert.ok(twice[0] > twice[1]);
+      assert.strictEqual(once('qz2*q', 'abc'), twice[0]);
+    });
+
+    it('what is explained does not depend on what was explained before', () => {
+      const A = `${'a'.repeat(40)}!`;
+      const parser = createUnbashParser();
+      const TABLE_OF_LINES = [
+        `echo ${A} | perl -lpe 's/${P.twoWays}/x/'`, `echo ${A} | sed -E 's/${P.twoWays}/x/'`, `x=${A}; [[ $x =~ ${P.twoWays} ]]`, `echo ${A} | grep -oE '${P.twoWays}'`,
+        `echo ${A} | sed -E 's/${P.twoWays}/x/g'`, `echo ${A} | perl -lpe 's/${P.twoWays}/x/g'`, `echo ${A} | awk '{ sub(/${P.twoWays}/, "x"); print }'`, `echo '"${A}"' | jq 'test("${P.twoWays}")'`,
+        `echo ${A} | grep -E '${P.twoWaysEnd}'`, `echo ${A} | grep -cE '${P.twoWaysEnd}'`, `x=${A}; echo "\${x%%*a*a*a*a*a*a*a*b}"`, `x=${A}; echo "\${x//a*a*b/c}"`, `[[ ${A} == +(a|aa) ]]`,
+        `echo aaa | sed -E 's/${P.twoWays}/x/'`, `echo aaa | grep -E '${P.twoWaysEnd}'`,
+      ];
+      const explain = (line: string) => JSON.stringify(new Analyzer('en').explainLine(parser.parse(line), 0, 'bash'));
+      const forward = TABLE_OF_LINES.map(explain);
+      const backward = [...TABLE_OF_LINES].reverse().map(explain).reverse();
+      const differ = TABLE_OF_LINES.filter((_, i) => forward[i] !== backward[i]);
+      assert.deepStrictEqual(differ, []);
+      // (The first match of JavaScript's order comes at once; the longest takes too long.)
+      assert.ok(forward[0].includes('x!') && !forward[0].includes('Not computed'));
+      assert.ok(forward[1].includes('Not computed'));
+      assert.ok(forward[2].includes(A) && !forward[2].includes('Not computed'));
+    });
+
+    it('a start past a leading repeat is not left out where a back-reference tells where the repeat began', () => {
+      assert.deepStrictEqual([...scriptRegex(P.backReference).exec('aaba')!], ['aba', 'a']);
+      assert.deepStrictEqual([...scriptRegex(P.namedBackReference).exec('aaba')!], ['aba', 'a']);
+      assert.strictEqual(scriptRegex(P.backReference).exec('aaba')!.index, 1);
+    });
+
+    it('a pattern of many levels takes as long to make as any of its length', function () {
+      // (Each level with the groups of those in it was cubic: a second for each of these, and the time of this test was 40 s.)
+      this.timeout(15000);
+      for (let k = 0; k < 40; k++) scriptRegex(`${'('.repeat(650)}a${')*'.repeat(650)}${String.fromCharCode(0x61 + k)}`);
+      assert.ok(costOf(() => scriptRegex(`${'('.repeat(650)}a${')*'.repeat(650)}`)) > 2000 * 64);
+      assert.deepStrictEqual([...scriptRegex('((a)|(b))*').exec('ab')!], ['ab', 'b', undefined, 'b']);
+      assert.deepStrictEqual([...scriptRegex('(?:(a)|b)*(c)|(d)').exec('abc')!], ['abc', undefined, 'c', undefined]);
     });
 
     it('the patterns read are kept, but not without bound', () => {
@@ -449,8 +530,20 @@ describe('the guard of the regexes a script gives', () => {
       assert.ok(costOf(() => { charge(1e7 - whole); re.test(text); }) <= 1e7);
     });
 
-    it('lets anything else through', () => {
+    it('lets anything else through, a RangeError that is not of a size too', () => {
       assert.throws(() => guarded(() => { throw new TypeError('x'); }, () => 2), TypeError);
+      assert.throws(() => guarded(() => (1).toFixed(200), () => '2'), RangeError);
+      assert.throws(() => guarded(() => String.fromCodePoint(0x110000), () => '2'), RangeError);
+      const deep = (n: number): number => deep(n + 1) + 1;
+      assert.strictEqual(guarded(() => deep(0), () => -1), -1);
+    });
+
+    it('a note on a pattern only where there is one: numbers print their digits, and nothing is said of a pattern', () => {
+      const parser = createUnbashParser();
+      for (const line of [`printf '%.200f\\n' 1`, `awk 'BEGIN { printf "%.101f", 1.5 }'`, `jq -n '[1114112] | implode'`, `printf '%.20f\\n' 0.1`, `printf '%99999s' a`, `awk 'BEGIN { printf "%.99999f", 1 }'`]) {
+        const said = JSON.stringify(new Analyzer('en').explainLine(parser.parse(line), 0, 'bash').examples);
+        assert.ok(!said.includes('Not computed'), line);
+      }
     });
 
     it('the runs in it share one limit, those of one inside it too; the next has its own', () => {
@@ -474,35 +567,73 @@ describe('the guard of the regexes a script gives', () => {
 
   describe('one source', () => {
     /**
-     * Each file of src/ that makes a RegExp in another way than `scriptRegex`, how many times, and why it may: none runs a
-     * script's pattern, so JavaScript's matcher never does. Anything else is a bug: a new one fails here, and so does one gone.
+     * Each call in src/ that makes a RegExp in another way than `scriptRegex`, as written up to the end of what it is given,
+     * and where what it holds comes from: nothing of a script, so JavaScript's matcher never runs a script's pattern. Anything
+     * else is a bug: a new call fails here, one gone, and one changed: another name in a template. A call that is not
+     * of constants of ours has no place here: compare the strings, or read them with a constant regex and compare.
      */
-    const ALLOWED: Record<string, [number, string]> = {
-      'src/dict/builtins.ts': [5, 'Signal names of the table.'],
-      'src/dict/types.ts': [1, 'A pattern of the dictionary.'],
-      'src/embedded/gitformat.ts': [1, 'Colour names of the table.'],
-      'src/examples/regex.ts': [1, 'Only compiled, to see that it is one.'],
-      'src/explain/line-notes.ts': [1, 'A variable name.'],
-      'src/explain/scripts.ts': [1, 'A variable name.'],
-      'src/hosts/bats.ts': [2, 'Constants of the file and names of libraries.'],
-      'src/hosts/batstags.ts': [1, 'A constant.'],
-      'src/hosts/detect.ts': [2, 'Keys of YAML, constants.'],
-      'src/hosts/python.ts': [2, 'Function names escaped, and keyword names.'],
-      'src/hosts/yaml.ts': [1, 'A variable name of the table.'],
-      'src/levels.ts': [1, 'A constant.'],
-      'src/rewrite.ts': [1, 'A variable name.'],
-      'src/semantics/effects.ts': [1, 'A constant.'],
-      'src/semantics/fieldshape.ts': [1, 'A constant class, on the characters of IFS.'],
-      'src/ui/themeTokens.ts': [1, 'Theme names of a settings table, not a script.'],
+    const ALLOWED: Record<string, Record<string, string>> = {
+      'src/dict/builtins.ts': {
+        "new RegExp(`^-(?!s[A-Za-z])(?:${anyCase('SIG')})?(${anyCase(SIGNALS)})$`)": 'The table of signals.',
+        "new RegExp(`^-(?!s[A-Za-z])${anyCase('SIG')}(${anyCase(SIGNALS)})$`)": 'The table of signals.',
+        "new RegExp(`^-(?:${anyCase('SIG')})?(${anyCase(SIGNALS)})$`)": 'The table of signals.',
+        "new RegExp(`^(?!${ALIAS_NAME}=)[^=]+=`)": 'A constant.',
+        "new RegExp(`^${ALIAS_NAME}=[^]*[ \\\\t]$`)": 'A constant.',
+      },
+      'src/dict/types.ts': {
+        "new RegExp(nextIf)": 'A pattern of the dictionary.',
+      },
+      'src/embedded/gitformat.ts': {
+        "new RegExp(`^C(${COLORS.join('|')})`)": 'The table of colours.',
+      },
+      'src/examples/regex.ts': {
+        "new RegExp(out, flags)": 'Only compiled, to see that it is one.',
+      },
+      'src/hosts/bats.ts': {
+        "new RegExp(`[${ALNUM}]`, 'u')": 'A constant.',
+        "new RegExp(`(?:^|[/'\"\\\\s])${lib}(?:$|[/'\"\\\\s])`)": 'The names of the table LIBRARIES.',
+      },
+      'src/hosts/batstags.ts': {
+        "new RegExp(`^ *(${TAG})?( *, *${TAG})* *$`, 'u')": 'A constant.',
+      },
+      'src/hosts/detect.ts': {
+        "new RegExp(`^(${k})\\\\s*:(\\\\s|$)`)": 'Keys of YAML, constants.',
+        "new RegExp(`^\\\\s+(-\\\\s+)?(${k})\\\\s*:(\\\\s|$)`)": 'Keys of YAML, constants.',
+      },
+      'src/hosts/python.ts': {
+        "new RegExp(`(?<![\\\\w.])(${[...names.keys()].map((n) => n.replace(/\\./g, '\\\\.')).join('|')})\\\\s*\\\\(`, 'g')": 'Names of the table PY_CALLS, or `\\w+` after `as`, which is tested (test/support/regexguard-table.ts).',
+        "new RegExp(`^${k}\\\\s*=\\\\s*([\\\\s\\\\S]*)$`)": 'Names of keywords, constants.',
+      },
+      'src/hosts/yaml.ts': {
+        "new RegExp(`\\\\$\\\\{?${name}\\\\b`)": 'The names of the table GITHUB_FILES.',
+      },
+      'src/levels.ts': {
+        "new RegExp(`^[${LEVEL_ORDER.map((l) => LEVELS[l].mark).join('')}]\\\\uFE0F?\\\\s*`, 'u')": 'A constant.',
+      },
+      'src/semantics/effects.ts': {
+        "new RegExp(`^(${ALIAS_NAME})=(['\"]?)([\\\\s\\\\S]*)\\\\2$`)": 'A constant.',
+      },
+      'src/semantics/fieldshape.ts': {
+        "new RegExp(`[${h.kind === 'digits' ? '' : '-'}0-9]`)": 'A constant class, on the characters of IFS.',
+      },
     };
-    /** The calls of a text, wherever their lines break, out of comments. */
-    const calls = (text: string) => (text.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '').match(/(?<![\w.])(?:new\s+)?RegExp\s*\(/g) ?? []).length;
+    /** The calls of a text, as written up to the end of what they are given, out of comments. */
+    const calls = (text: string) => [...text.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '').matchAll(/(?<![\w.])(?:new\s+)?RegExp\s*\((?:`(?:[^`\\]|\\.)*`(?:, '[a-z]*')?\)|[^`\n)]*\)?)/g)].map((m) => m[0]);
     const files = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(path.join(dir, e.name)) : e.name.endsWith('.ts') ? [path.join(dir, e.name)] : []));
 
     it('every regex of a script runs through it', () => {
       const root = path.join(__dirname, '..');
-      const found = Object.fromEntries(files(path.join(root, 'src')).map((f) => [path.relative(root, f).replace(/\\/g, '/'), calls(fs.readFileSync(f, 'utf8'))]).filter(([, n]) => n));
-      assert.deepStrictEqual(found, Object.fromEntries(Object.entries(ALLOWED).map(([f, [n]]) => [f, n])));
+      const found = Object.fromEntries(files(path.join(root, 'src')).map((f) => [path.relative(root, f).replace(/\\/g, '/'), calls(fs.readFileSync(f, 'utf8'))]).filter(([, n]) => n.length));
+      assert.deepStrictEqual(found, Object.fromEntries(Object.entries(ALLOWED).map(([f, list]) => [f, Object.keys(list)])));
+    });
+
+    it('a variable of a script reaches no regex, as its name or in one: no call that takes a name from it', () => {
+      const root = path.join(__dirname, '..');
+      for (const f of ['src/explain/line-notes.ts', 'src/explain/scripts.ts', 'src/rewrite.ts', 'src/ui/themeTokens.ts']) assert.deepStrictEqual(calls(fs.readFileSync(path.join(root, f), 'utf8')), [], f);
+      // (`RegExp` as a value, which the list above would not see: `const R = RegExp`.)
+      const asValue = /(?<![:<|] ?|<\w+, |\b(?:extends|as|instanceof) )\bRegExp\b(?!\s*\()/;
+      const seen = files(path.join(root, 'src')).filter((f) => asValue.test(fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')));
+      assert.deepStrictEqual(seen.map((f) => path.relative(root, f).replace(/\\/g, '/')), []);
     });
 
     /** `.match(x)`, `.matchAll(x)` and `.search(x)` make a RegExp of a string `x`: each of those with other than a literal, a constant in capitals or `scriptRegex(`. */
@@ -524,8 +655,8 @@ describe('the guard of the regexes a script gives', () => {
       assert.deepStrictEqual(source.match(/\bsuper\.\w+|RegExp\.prototype|Reflect\.\w+/g), null);
     });
 
-    it('finds a call over several lines, and none in a comment', () => {
-      assert.strictEqual(calls('const a = new RegExp(\n  x,\n);\n// new RegExp(y)\n/* RegExp(z) */ RegExp(w);\nr.source;'), 2);
+    it('finds each call, as written, and none in a comment', () => {
+      assert.deepStrictEqual(calls('const a = new RegExp(\n  x,\n);\n// new RegExp(y)\n/* RegExp(z) */ RegExp(w);\nr.source;'), ['new RegExp(', 'RegExp(w)']);
     });
   });
 });
