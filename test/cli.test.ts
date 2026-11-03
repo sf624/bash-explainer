@@ -578,7 +578,7 @@ describe('the command-line tool', function () {
         const r = run([...args, '--color', file()]);
         assert.match(r.out, /\x1b\[\d+m/, 'colours are on');
         assert.strictEqual(r.err, '');
-        // Each of its own is a colour; the text's are written out, the sequences that clear the screen and name the window too.
+        // Each of its own is a colour; the text's are written out, whatever they are.
         assert.doesNotMatch(r.out.replace(/\x1b\[[\d;]+m/g, ''), raw);
         assert.ok(r.out.includes('<ESC>[2Jname'), r.out);
         for (const code of r.out.matchAll(/\x1b\[([\d;]+)m/g)) assert.match(code[1], /^(0|1|2;3|3[1-5]|9[01])$/);
@@ -632,6 +632,156 @@ describe('the command-line tool', function () {
       const r = run(['--no-color', '--lang', 'ja', '-e', 'echo "日本語\té" # コメント']);
       assert.ok(r.out.includes('echo "日本語\té" # コメント'), r.out);
       assert.doesNotMatch(r.out, /<(ESC|TAB|U\+)/);
+    });
+  });
+  describe('a newline in a file name', () => {
+    const name = () => path.join(dir, 'x\n::error title=a::b\nx.sh:1:1: error: text [code]\n.sh');
+    const shown = 'x<LF>::error title=a::b<LF>x.sh:1:1: error: text [code]<LF>.sh';
+    const oneLineEach = (text: string, what: string) => {
+      // (Annotations encode `:` and `,` in a name as well.)
+      assert.ok(text.replace(/%3A/g, ':').replace(/%2C/g, ',').includes(shown), `${what}: ${JSON.stringify(text)}`);
+      assert.doesNotMatch(text, /^(::error title=a|x\.sh:1:1)/m, what);
+    };
+    before(() => fs.writeFileSync(name(), '#!/bin/sh\nif [[ -n $x ]]; then echo "$x"; fi\n'));
+
+    for (const [what, args] of [
+      ['text', ['--no-color']],
+      ['colours', ['--color']],
+      ['Markdown', ['--format', 'markdown']],
+      ['the check as text', ['--check', '--no-color']],
+      ['the check in colour', ['--check', '--color']],
+      ['the check as annotations', ['--check', '--format', 'github']],
+    ] as [string, string[]][]) {
+      it(`is shown visibly in ${what}`, () => oneLineEach(run([...args, '--', name()]).out, what));
+    }
+
+    it('is kept in JSON and SARIF, where it is data', () => {
+      const lines = JSON.parse(run(['--format', 'json', '--', name()]).out) as { file: string }[];
+      assert.strictEqual(lines[0].file, name());
+      assert.strictEqual((JSON.parse(run(['--check', '--format', 'json', '--', name()]).out) as { file: string }[])[0].file, name());
+      assert.strictEqual(JSON.parse(run(['--check', '--format', 'sarif', '--', name()]).out).runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri, name());
+    });
+
+    it('is shown visibly in what it says of a file it cannot read, a line it lacks, or a file it cannot write', () => {
+      const missing = path.join(dir, 'gone\n::error title=a::b\n');
+      const a = run(['--check', '--', missing]);
+      assert.strictEqual(a.code, 2);
+      assert.doesNotMatch(a.err, /^::error/m);
+      assert.ok(a.err.includes('gone<LF>::error title=a::b<LF>'), a.err);
+      const b = run([`--line=99`, '--', name()]);
+      assert.strictEqual(b.code, 2);
+      oneLineEach(b.err, 'a line it lacks');
+      for (const option of ['--sarif', '--counts']) {
+        const c = run(['--check', option, path.join(missing, 'r'), '--', fixture('renderings.sh')]);
+        assert.strictEqual(c.code, 2, c.err);
+        assert.doesNotMatch(c.err, /^::error/m, option);
+      }
+    });
+
+    it('keeps a problem on one line, whatever the script\'s text holds', () => {
+      const r = run(['--check', '--no-color', '-'], { input: 'x = "a\nx.sh:1:1: error: text [code]"\n' });
+      assert.doesNotMatch(r.out, /^x\.sh:1:1/m);
+      assert.ok(r.out.includes('a<LF>x.sh:1:1: error: text [code]'), r.out);
+      for (const l of r.out.trimEnd().split('\n')) assert.match(l, /^-:\d+:\d+: /);
+    });
+
+    it('leaves the newlines of the tool itself', () => {
+      assert.ok(run(['--check', '--no-color', '--', fixture('posix.sh')]).out.trimEnd().split('\n').length > 1);
+    });
+  });
+
+  describe('the files it writes', () => {
+    const problems = '#!/bin/sh\nif [[ -n $x ]]; then echo "$x"; fi\n';
+    let script = '';
+    let at = '';
+    before(() => {
+      at = fs.mkdtempSync(path.join(dir, 'written-'));
+      script = path.join(at, 'a.sh');
+      fs.writeFileSync(script, problems);
+    });
+    for (const [option, kept] of [['--sarif', '"version"'], ['--counts', 'errors=']]) {
+      it(`does not write ${option} through a link at its path`, () => {
+        const target = path.join(at, `target${option}`);
+        fs.writeFileSync(target, 'original\n');
+        const link = path.join(at, `link${option}`);
+        fs.symlinkSync(target, link);
+        const r = run(['--check', option, link, '--', script]);
+        assert.strictEqual(r.code, 2, r.err);
+        assert.match(r.err, /is a symbolic link/);
+        assert.strictEqual(fs.readFileSync(target, 'utf8'), 'original\n');
+        assert.strictEqual(fs.lstatSync(link).isSymbolicLink(), true);
+      });
+
+      it(`does not create what a dangling link at the path of ${option} names`, () => {
+        const link = path.join(at, `dangling${option}`);
+        fs.symlinkSync(path.join(at, `new${option}`), link);
+        assert.strictEqual(run(['--check', option, link, '--', script]).code, 2);
+        assert.strictEqual(fs.existsSync(path.join(at, `new${option}`)), false);
+      });
+
+      it(`writes ${option} to a new file, to a device, and through a directory that is a link`, () => {
+        const file = path.join(at, `new-file${option}`);
+        assert.strictEqual(run(['--check', option, file, '--', script]).code, 1);
+        assert.ok(fs.readFileSync(file, 'utf8').includes(kept));
+        assert.strictEqual(run(['--check', option, '/dev/null', '--', script]).code, 1);
+        fs.mkdirSync(path.join(at, `real${option}`));
+        fs.symlinkSync(path.join(at, `real${option}`), path.join(at, `dir${option}`));
+        assert.strictEqual(run(['--check', option, path.join(at, `dir${option}`, 'f'), '--', script]).code, 1);
+        assert.ok(fs.readFileSync(path.join(at, `real${option}`, 'f'), 'utf8').includes(kept));
+      });
+    }
+
+    it('replaces the content of a --sarif file, and adds to a --counts file', () => {
+      const sarif = path.join(at, 'old.sarif');
+      fs.writeFileSync(sarif, 'x'.repeat(100000));
+      run(['--check', '--sarif', sarif, '--', script]);
+      assert.ok(JSON.parse(fs.readFileSync(sarif, 'utf8')).runs);
+      const counts = path.join(at, 'old.counts');
+      fs.writeFileSync(counts, 'before=1\n');
+      run(['--check', '--counts', counts, '--', script]);
+      assert.match(fs.readFileSync(counts, 'utf8'), /^before=1\nerrors=/);
+    });
+  });
+
+  describe('names after --', () => {
+    const script = '#!/bin/sh\nif [[ -n $x ]]; then echo "$x"; fi\n';
+    let at = '';
+    const inDir = (args: string[], input?: string) => {
+      const r = spawnSync(process.execPath, [cli, ...args], { cwd: at, input, encoding: 'utf8', env: { PATH: process.env.PATH }, timeout: 30000 });
+      return { code: r.status, out: r.stdout, err: r.stderr };
+    };
+    before(() => {
+      at = fs.mkdtempSync(path.join(dir, 'names-'));
+      for (const f of ['--lsp', '-']) fs.writeFileSync(path.join(at, f), script);
+    });
+
+    it('reads a file named --lsp, and does not start the Language Server', () => {
+      const r = inDir(['--check', '--format', 'github', '--', '--lsp']);
+      assert.strictEqual(r.code, 1, r.err);
+      assert.match(r.out, /^::error file=--lsp,line=2,/m);
+    });
+
+    it('takes --lsp as the value of an option', () => {
+      const r = inDir(['--no-color', '-e', '--lsp']);
+      assert.strictEqual(r.code, 0, r.err);
+      assert.match(r.out, /^\(command\):1 {2}--lsp$/m);
+    });
+
+    it('reads a file named -, and standard input for a - before --', () => {
+      const r = inDir(['--check', '--format', 'github', '--', '-'], 'echo hi\n');
+      assert.strictEqual(r.code, 1, r.err);
+      assert.match(r.out, /^::error file=-,line=2,/m);
+      assert.strictEqual(inDir(['--check', '-'], 'echo hi\n').code, 0);
+    });
+
+    it('still says an option is unknown without --lsp, and takes --stdio with it', () => {
+      assert.strictEqual(inDir(['--stdio', '-e', 'ls']).code, 2);
+      for (const args of [['--lsp', '--stdio'], ['--stdio', '--lsp'], ['--lsp', '--some-option=1']]) {
+        const json = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: {} } });
+        const exit = JSON.stringify({ jsonrpc: '2.0', method: 'exit' });
+        const r = inDir(args, `Content-Length: ${json.length}\r\n\r\n${json}Content-Length: ${exit.length}\r\n\r\n${exit}`);
+        assert.match(r.out, /"capabilities"/, args.join(' '));
+      }
     });
   });
 });

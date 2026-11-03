@@ -31,11 +31,14 @@ inputs:
       either way. Needs a command-line tool 0.9.0 or later (see `package`).
     default: 'false'
   sarif:
-    description: Also write the problems to this SARIF file, for github/codeql-action/upload-sarif.
+    description: >-
+      Also write the problems to this SARIF file, for github/codeql-action/upload-sarif. A path in the
+      workspace or the runner's temp directory must stay there when its symbolic links are followed.
     default: ''
   package:
     description: >-
       The npm package to run, as npm reads a package spec; a relative path is relative to the workspace.
+      Install scripts do not run, except that npm prepares a package from git.
       Default, bash-explainer at this action's version.
     default: ''
 
@@ -98,27 +101,69 @@ runs:
         tool=$(mktemp -d "${RUNNER_TEMP:-/tmp}/bash-explainer.XXXXXX") || exit 2
         trap 'rm -rf -- "$tool"' EXIT
         printf '{"private":true}\n' > "$tool/package.json"
-        # (The user's settings and caches are outside the workspace, even with a home directory inside it.)
-        case "${HOME:-}/" in "$workspace"/*) export HOME=$tool ;; esac
-        package=${PACKAGE:-bash-explainer@$(cd "$tool" && node -p 'require(process.env.ACTION_PATH + "/cli/package.json").version')}
+        # The node found from that directory runs everything below, by its path.
+        node=$(cd "$tool" && node -p process.execPath)
+
+        # A path with its symbolic links followed, to its end even where that does not exist yet.
+        real() {
+          "$node" -p '
+            const fs = require("fs"), path = require("path");
+            const parts = (p) => p.slice(path.parse(p).root.length).split(path.sep === "/" ? "/" : /[\\/]/);
+            const full = path.isAbsolute(process.argv[1]) ? process.argv[1] : process.cwd() + path.sep + process.argv[1];
+            let at = path.parse(full).root, left = parts(full), links = 0;
+            while (left.length) {
+              const part = left.shift();
+              if (part === "" || part === ".") continue;
+              if (part === "..") { at = path.dirname(at); continue; }
+              const next = path.join(at, part);
+              let target;
+              try { target = fs.readlinkSync(next); } catch { at = next; continue; }
+              if (++links > 40) throw new Error("too many links");
+              if (path.isAbsolute(target)) at = path.parse(target).root;
+              left = [...parts(target), ...left];
+            }
+            at;
+          ' -- "$1" 2>/dev/null
+        }
+        inside() { case "$1/" in "$2"/*) ;; *) return 1 ;; esac; }
+        root=$(real .)
+        temp=$(real "${RUNNER_TEMP:-$tool}")
+        here() { inside "$1" "$root" || inside "$1" "$workspace" || inside "$1" "$temp"; }
+
+        # The user's settings and caches are those of a directory outside the workspace.
+        if [ -n "${HOME:-}" ] && inside "$(real "$HOME")" "$root"; then export HOME=$tool; fi
+        if [ -n "${XDG_CONFIG_HOME:-}" ] && inside "$(real "$XDG_CONFIG_HOME")" "$root"; then unset XDG_CONFIG_HOME; fi
+
+        # A SARIF file named inside the workspace or the temp directory is written there. A path that
+        # goes elsewhere is the workflow's to name.
+        if [ -n "$SARIF" ] && here "$("$node" -p 'require("path").resolve(process.argv[1])' -- "$SARIF")"; then
+          target=$(real "$SARIF")
+          if [ -z "$target" ] || ! inside "$target" "$root" && ! inside "$target" "$temp"; then
+            echo "::error title=Bash Explainer::sarif: $SARIF leads outside the workspace."
+            exit 2
+          fi
+          [ -L "$SARIF" ] && rm -f -- "$SARIF"
+        fi
+
+        package=${PACKAGE:-bash-explainer@$(cd "$tool" && "$node" -p 'require(process.env.ACTION_PATH + "/cli/package.json").version')}
+        # A relative path in `package:`, also after an alias (`name@./x`), is the workflow's choice, read
+        # from the workspace as npm would read it there.
+        alias= path_or_spec=$package
+        if [[ $package =~ ^((@[^@/:]+/)?[^@/:.][^@/:]*@)(.*)$ ]]; then alias=${BASH_REMATCH[1]} path_or_spec=${BASH_REMATCH[3]}; fi
         spec=$package
-        # A relative path in `package:` is the workflow's choice, relative to the workspace, as npm would read it there.
-        case $package in
+        case $path_or_spec in
           file:/*) ;;
-          file:*) spec=$workspace/${package#file:} ;;
+          file:*) spec=$alias$workspace/${path_or_spec#file:} ;;
           /* | '~/'* | *:* | *\#*) ;;
-          .* | */*/* | *.tgz | *.tar.gz | *.tar) spec=$workspace/$package ;;
+          .* | */*/* | *.tgz | *.tar.gz | *.tar) spec=$alias$workspace/$path_or_spec ;;
         esac
         if ! (
           cd "$tool" || exit
-          npm install --ignore-scripts --save --no-package-lock --no-audit --no-fund --loglevel=error -- "$spec" > /dev/null
+          npm install --prefix "$tool" --ignore-scripts --save --no-package-lock --no-audit --no-fund --loglevel=error -- "$spec" > /dev/null
         ); then
           echo "::error title=Bash Explainer::Could not install $package."
           exit 2
         fi
-        # The program its package names, by path, run with the node found in that directory: a version
-        # manager's shim would otherwise read the workspace to choose one.
-        node=$(cd "$tool" && node -p process.execPath)
         program=$(cd "$tool" && "$node" -p '
           const path = require("path");
           const dir = path.resolve("node_modules", Object.keys(require(path.resolve("package.json")).dependencies)[0]);
@@ -154,7 +199,7 @@ runs:
         # pitfalls). An older one has no errors; its counts come from its annotations, below.
         counts=
         if grep -q -- '--counts <file>' <<< "$help"; then
-          counts=$(mktemp "${RUNNER_TEMP:-/tmp}/bash-explainer-counts.XXXXXX")
+          counts=$(mktemp "$tool/counts.XXXXXX")
           args+=(--counts "$counts")
         fi
 
@@ -176,7 +221,6 @@ runs:
         if [ -n "$counts" ]; then
           declare -A n=()
           while IFS='=' read -r name value; do n[$name]=$value; done < "$counts"
-          rm -f -- "$counts"
           errors=${n[errors]:-0} warnings=${n[failing]:-0} pitfalls=${n[pitfalls]:-0}
         else
           # An older CLI: the annotations of pitfalls have their own title; their warnings fail the

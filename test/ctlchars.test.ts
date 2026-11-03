@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
-import { controlAbbr, controlMarks, controlsShown, controlSuffix, jsonText, pictureCode, pictureLabel, pictureNote, pictureText, splitPictures } from '../src/ctlchars';
+import { controlAbbr, controlMarks, controlsShown, controlSuffix, jsonText, oneLine, pictureCode, pictureLabel, pictureNote, pictureText, splitPictures } from '../src/ctlchars';
 import { explainEscapes, explainPrintf } from '../src/embedded/format';
 import { explainTrSet } from '../src/embedded/textutils';
 import { explainGitFormat } from '../src/embedded/gitformat';
@@ -219,6 +219,11 @@ describe('control characters on the way to a terminal', () => {
     const text = 'a\tb\nc 日本語 é ÿ \u00a0 \u2028 \u202e 🙂';
     assert.strictEqual(controlsShown(text), text);
     assert.doesNotMatch(controlsShown(every), /[\x00-\x08\x0b-\x1f\x7f-\x9f]/);
+  });
+
+  it('writes a newline in a file name as <LF>, and leaves the rest of it', () => {
+    assert.strictEqual(oneLine('a\nb\n'), 'a<LF>b<LF>');
+    assert.strictEqual(oneLine('日本語\tb.sh'), '日本語\tb.sh');
   });
 
   it('leaves no control character in JSON text, and the value read back is the same', () => {

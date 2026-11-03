@@ -190,11 +190,13 @@ describe('the GitHub Action', function () {
   it('reads a relative path in `package` from the workspace, as the workflow\'s choice', async () => {
     fs.mkdirSync(path.join(workspace, 'vendor'));
     fs.copyFileSync(tgz, path.join(workspace, 'vendor', 'tool.tgz'));
-    for (const PACKAGE of ['./vendor/tool.tgz', 'vendor/tool.tgz', 'file:vendor/tool.tgz', '../workspace/vendor/tool.tgz']) realToolRan(await step({ PACKAGE }));
+    for (const PACKAGE of ['./vendor/tool.tgz', 'vendor/tool.tgz', 'file:vendor/tool.tgz', '../workspace/vendor/tool.tgz', 'alias@file:vendor/tool.tgz', 'alias@./vendor/tool.tgz', '@scope/alias@vendor/tool.tgz']) realToolRan(await step({ PACKAGE }));
     fs.cpSync(path.join(build, 'pkg'), path.join(workspace, 'vendor', 'tool', 'dir'), { recursive: true });
     for (const PACKAGE of ['./vendor/tool/dir', 'vendor/tool/dir']) realToolRan(await step({ PACKAGE }));
     fs.copyFileSync(tgz, path.join(workspace, 'tool.tgz'));
     realToolRan(await step({ PACKAGE: 'tool.tgz' }));
+    fs.copyFileSync(tgz, path.join(workspace, 'tool@1.tgz'));
+    for (const PACKAGE of ['./tool@1.tgz', 'vendor/../tool@1.tgz']) realToolRan(await step({ PACKAGE }));
     realToolRan(await step({ PACKAGE: `file:${tgz}` }));
   });
 
@@ -252,6 +254,134 @@ describe('the GitHub Action', function () {
     assert.strictEqual((await step({ FILES: 'scripts/c.sh', CHECK_BASH_VERSION: '5.3' })).code, 0);
     const shell = await step({ FILES: 'scripts/c.sh', CHECK_SHELL: 'sh' });
     assert.strictEqual(shell.code, 1, shell.out);
+  });
+
+  describe('the SARIF file', () => {
+    const later = () => path.join(dir, 'outside', 'later.sh');
+    beforeEach(() => {
+      fs.mkdirSync(path.join(dir, 'outside'));
+      fs.writeFileSync(later(), 'original\n');
+    });
+    const refused = (r: { code: number | null; out: string }) => {
+      assert.strictEqual(r.code, 2, r.out);
+      assert.match(r.out, /^::error title=Bash Explainer::sarif: .* leads outside the workspace\.$/m);
+      assert.strictEqual(fs.readFileSync(later(), 'utf8'), 'original\n');
+    };
+
+    it('is not written through a link at its path that leads out', async () => {
+      fs.symlinkSync('../outside/later.sh', path.join(workspace, 'results.sarif'));
+      refused(await step({ SARIF: 'results.sarif' }));
+      refused(await step({ SARIF: path.join(workspace, 'results.sarif') }));
+    });
+
+    it('is not written through a link that leads out to a file not there yet', async () => {
+      fs.symlinkSync('../outside/new.sarif', path.join(workspace, 'results.sarif'));
+      refused(await step({ SARIF: 'results.sarif' }));
+      assert.strictEqual(fs.existsSync(path.join(dir, 'outside', 'new.sarif')), false);
+    });
+
+    it('is not written through a directory that leads out', async () => {
+      fs.symlinkSync('../outside', path.join(workspace, 'out'));
+      refused(await step({ SARIF: 'out/r.sarif' }));
+      assert.deepStrictEqual(fs.readdirSync(path.join(dir, 'outside')), ['later.sh']);
+    });
+
+    it('takes the place of a link that stays inside, and leaves its target', async () => {
+      const before = fs.readFileSync(path.join(workspace, 'scripts', 'a.sh'), 'utf8');
+      fs.symlinkSync('scripts/a.sh', path.join(workspace, 'results.sarif'));
+      realToolRan(await step({ SARIF: 'results.sarif' }));
+      assert.strictEqual(fs.lstatSync(path.join(workspace, 'results.sarif')).isSymbolicLink(), false);
+      assert.ok(JSON.parse(fs.readFileSync(path.join(workspace, 'results.sarif'), 'utf8')).runs);
+      assert.strictEqual(fs.readFileSync(path.join(workspace, 'scripts', 'a.sh'), 'utf8'), before);
+    });
+
+    it('does the same for a tool that writes it by a second run', async () => {
+      const pkg = path.join(dir, 'older');
+      fs.mkdirSync(pkg);
+      fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: 'older', version: '1.0.0', bin: { 'bash-explainer': 'cli.js' } }));
+      fs.writeFileSync(path.join(pkg, 'cli.js'), "if (process.argv.includes('--help')) console.log('usage'); else if (process.argv.includes('sarif')) console.log('{}');\n");
+      const before = fs.readFileSync(path.join(workspace, 'scripts', 'a.sh'), 'utf8');
+      fs.symlinkSync('scripts/a.sh', path.join(workspace, 'results.sarif'));
+      assert.strictEqual((await step({ SARIF: 'results.sarif', PACKAGE: pkg })).code, 0);
+      assert.strictEqual(fs.readFileSync(path.join(workspace, 'results.sarif'), 'utf8'), '{}\n');
+      assert.strictEqual(fs.readFileSync(path.join(workspace, 'scripts', 'a.sh'), 'utf8'), before);
+    });
+
+    it('is written where the workflow names it: inside, through a directory that stays inside, in the temp directory, or elsewhere', async () => {
+      fs.mkdirSync(path.join(workspace, 'real'));
+      fs.symlinkSync('real', path.join(workspace, 'inner'));
+      fs.symlinkSync(workspace, path.join(dir, 'link-to-workspace'));
+      for (const [SARIF, at] of [
+        ['r.sarif', path.join(workspace, 'r.sarif')],
+        ['inner/r.sarif', path.join(workspace, 'real', 'r.sarif')],
+        [path.join(dir, 'temp', 'r.sarif'), path.join(dir, 'temp', 'r.sarif')],
+        [path.join(dir, 'outside', 'r.sarif'), path.join(dir, 'outside', 'r.sarif')],
+        ['../outside/r2.sarif', path.join(dir, 'outside', 'r2.sarif')],
+        [path.join(dir, 'link-to-workspace', 'r3.sarif'), path.join(workspace, 'r3.sarif')],
+      ]) {
+        realToolRan(await step({ SARIF }));
+        assert.ok(JSON.parse(fs.readFileSync(at, 'utf8')).runs, SARIF);
+        fs.rmSync(at);
+      }
+    });
+
+    it('leaves no temporary file when the tool cannot write it', async () => {
+      const r = await step({ SARIF: 'missing/dir/r.sarif' });
+      assert.strictEqual(r.code, 2, r.out);
+      assert.deepStrictEqual(fs.readdirSync(path.join(dir, 'temp')).filter((f) => f !== 'output'), []);
+    });
+  });
+
+  describe('configuration', () => {
+    // (For bash, the script's `[[ ]]` is no error.)
+    const silent = JSON.stringify({ shell: 'bash' });
+    const settingsIn = (config: string) => {
+      fs.mkdirSync(path.join(config, 'bash-explainer'), { recursive: true });
+      fs.writeFileSync(path.join(config, 'bash-explainer', 'settings.json'), silent);
+    };
+
+    it('does not read npm settings of a project whose workspaces hold the temp directory', async () => {
+      fs.writeFileSync(path.join(workspace, 'package.json'), JSON.stringify({ name: 'project', version: '1.0.0', workspaces: ['tmp/*'] }));
+      fs.mkdirSync(path.join(workspace, 'tmp'));
+      const global = path.join(dir, 'global-npmrc');
+      fs.writeFileSync(global, `registry=${good.url}\n`);
+      realToolRan(await step({ PACKAGE: '' }, { RUNNER_TEMP: path.join(workspace, 'tmp'), NPM_CONFIG_GLOBALCONFIG: global }));
+      assert.ok(good.requests.some((q) => q.url === '/bash-explainer'));
+    });
+
+    it('does not take a home reached through a link into the workspace for the user\'s', async () => {
+      const global = path.join(dir, 'global-npmrc');
+      fs.writeFileSync(global, `registry=${good.url}\n`);
+      fs.symlinkSync(workspace, path.join(dir, 'home-link'));
+      realToolRan(await step({ PACKAGE: '' }, { HOME: path.join(dir, 'home-link'), NPM_CONFIG_GLOBALCONFIG: global }));
+      assert.ok(good.requests.some((q) => q.url === '/bash-explainer'));
+    });
+
+    it('reads settings from the user\'s directory only when it is outside the workspace', async () => {
+      settingsIn(path.join(workspace, '.config'));
+      realToolRan(await step({}, { XDG_CONFIG_HOME: path.join(workspace, '.config') }));
+      realToolRan(await step({}, { HOME: workspace }));
+      fs.symlinkSync(path.join(workspace, '.config'), path.join(dir, 'config-link'));
+      realToolRan(await step({}, { XDG_CONFIG_HOME: path.join(dir, 'config-link') }));
+      settingsIn(path.join(dir, 'xdg'));
+      assert.strictEqual((await step({}, { XDG_CONFIG_HOME: path.join(dir, 'xdg') })).code, 0);
+      settingsIn(path.join(dir, 'home', '.config'));
+      assert.strictEqual((await step({})).code, 0);
+    });
+
+    it('reads the file a workflow names in BASH_EXPLAINER_CONFIG, wherever it is', async () => {
+      fs.writeFileSync(path.join(workspace, 'settings.json'), silent);
+      assert.strictEqual((await step({}, { BASH_EXPLAINER_CONFIG: path.join(workspace, 'settings.json') })).code, 0);
+    });
+  });
+
+  it('checks files whose names look like options or standard input', async () => {
+    fs.writeFileSync(path.join(workspace, '--lsp'), '#!/bin/sh\nif [[ -n $x ]]; then echo "$x"; fi\n');
+    fs.writeFileSync(path.join(workspace, '-'), '#!/bin/sh\nif [[ -n $x ]]; then echo "$x"; fi\n');
+    const r = await step({ FILES: '*' });
+    assert.strictEqual(r.code, 1, r.out);
+    assert.match(r.out, /^::error file=--lsp,line=2,/m);
+    assert.match(r.out, /^::error file=-,line=2,/m);
   });
 
   it('does not call itself offline: it gets the tool from npm', () => {

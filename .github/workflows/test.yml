@@ -439,8 +439,8 @@ jobs:
           files: test/fixtures/renderings.sh images/readme/demo.sh
           package: ${{ steps.pack.outputs.tgz }}
 
-      # What the checked-out repository holds has no say in what runs (test/action.test.ts covers more). Last in
-      # this job, as it changes the workspace.
+      # The action runs the package it was given, in a workspace that holds another (test/action.test.ts covers
+      # more). Last in this job, as it changes the workspace.
       - name: Put a registry and a program in the workspace
         run: |
           printf 'registry=http://127.0.0.1:9/\n' > .npmrc
