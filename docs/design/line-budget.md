@@ -53,7 +53,7 @@ What the corpus costs: the examples of a line take 564 steps at the 90th percent
 
 The bounds a run had before stay, but they say so now (`steps-not-computed`), where the example just went away. Each step and each character is charged to the same limit as the regexes, `STEP_COST` a step.
 
-A process abort is out of reach of `try`: charging the size before a value is made is what makes it impossible. The table of test/support/line-budget-table.ts runs in a child under a memory cap, and fails on a run that aborts, or that takes long.
+A process abort is out of reach of `try`: charging the size before a value is made is what makes it impossible. The table of test/support/line-budget-table.ts runs in a child under a memory cap, and fails on a run that aborts, or that takes long. With a number of lines, it measures documents as well, by hand: each takes the whole bound of a document.
 
 ## What it costs
 
