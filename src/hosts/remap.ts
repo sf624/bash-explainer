@@ -219,7 +219,7 @@ export function explainHostedLine(
   // (Through the gate of `notes.basis`, as the analyzer's.)
   if (hostFacts.length) ex.facts = [...(ex.facts ?? []), ...hostFacts.map((f) => basisGate(f, opts.basis))];
   // (The facts bats adds on nodes of the line are about its tokens too.)
-  if (tests) ex.items = markTokens(ex.items, ex);
+  if (tests) ex.items = markTokens(ex.items, { facts: ex.facts, anchors: ex.anchors! });
   ex.notes = [...notes.map((n) => n.text), ...ex.notes];
   ex.noteInfo = [...notes.map((n) => basisGate(n, opts.basis)), ...ex.noteInfo];
   const out = remapExplanation(ex, extracted, original, lang);

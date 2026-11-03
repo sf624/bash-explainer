@@ -449,6 +449,23 @@ describe('one line must not stop the whole tool', () => {
         assert.ok(two.sentence);
       });
 
+      it('the redirection after a closing word, over several lines: it says the same on each, and what it does to the construct', () => {
+        const script = 'while read -r l; do\n  echo "$l"\ndone <<EOF\na $v\nb\nEOF\n';
+        const tree = parser.parse(script);
+        const a = new Analyzer('en');
+        const later = [4, 5].map((l) => a.explainLine(tree, l, 'bash').items);
+        assert.ok(Object.isFrozen(later[0][0]));
+        assert.strictEqual(later[0][0], later[1][0]);
+        assert.match(later[0][0].explanation, /loop/);
+      });
+
+      it('with `notes.basis` off, no token of it has a basis', () => {
+        const tree = parser.parse('rm -rf \\\n  x\n');
+        const hasBasis = (t: LineExplanation['items'][number]): boolean => !!t.basis || t.children.some(hasBasis);
+        assert.ok(new Analyzer('en').explainLine(tree, 1, 'bash').items.some(hasBasis));
+        assert.ok(!new Analyzer('en').explainLine(tree, 1, 'bash', { basis: false }).items.some(hasBasis));
+      });
+
       it('a line that says what its statement says too is worked out in full', () => {
         // (In the string, `c` starts on a line that a statement started on its line 1 goes on over; and so does the line of the file.)
         const said = fact('en', 'statement-continued', { line: 1 });
@@ -469,8 +486,9 @@ describe('one line must not stop the whole tool', () => {
         assert.ok(inner.notes.includes(fact('en', 'statement-continued', { line: 2 }).text), inner.notes.join());
         assert.ok(inner.sentence);
         // (bats adds its own facts to the tokens of a line: on a copy.)
-        const bats = openDocument('@test "x" {\n  run foo \\\n    bar\n  # bats test_tags=a b:c\n}\n', 'bats', parserOf);
-        assert.ok(explainDocumentLine(a, bats, 2, 'en', {}, {}).items.length);
+        const bats = openDocument('@test "x" {\n  sudo cd \\\n    /x\n}\n', 'bats', parserOf);
+        const marked = explainDocumentLine(a, bats, 2, 'en', {}, {});
+        assert.ok(JSON.stringify(marked.items).includes('builtin-or-function-as-program'), JSON.stringify(marked.items).slice(0, 300));
       });
 
       it('what a walk could not do is not done again, and each line says so', () => {

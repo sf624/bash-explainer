@@ -1,6 +1,6 @@
 // What the analyzer marks on the tokens it makes: who reads each part (`Token.origin`, src/analyzer-types.ts), for the
 // tree view of the panel (src/reading.ts), and the labels their explanations need not repeat.
-import type { LineExplanation, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
+import type { LineExplanation, NoteAnchor, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
 import { pushAll } from './lists';
 import { sameSpan, spanWithin } from './noteanchors';
 import { LEVELS, type NoteLevel } from './levels';
@@ -121,7 +121,7 @@ function withFacts(root: Token, over: ReadonlyMap<Token, NonNullable<Token['fact
  * anchors when it runs again (a host adds its own facts: src/hosts/remap.ts). A finished token (src/explain/whole.ts) keeps what it has, and
  * what the anchors add to it is on a copy: so the items given back are those of the line.
  */
-export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'facts' | 'anchors'>): Token[] {
+export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'facts'> & { anchors: readonly NoteAnchor[] }): Token[] {
   const all: Token[] = [];
   const walk = (t: Token) => {
     if (Object.isFrozen(t)) {
@@ -136,7 +136,7 @@ export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'f
   items.forEach(walk);
   const ids = new Map((ex.facts ?? []).map((f) => [f.text, f.id]));
   const over = new Map<Token, NonNullable<Token['facts']>>();
-  for (const a of ex.anchors ?? []) {
+  for (const a of ex.anchors) {
     const id = ids.get(a.text);
     if (!id) continue;
     const at = tokenAtSpan(all, a.span);
