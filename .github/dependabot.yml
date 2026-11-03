@@ -27,6 +27,9 @@ updates:
         versions: ['>=12']
       - dependency-name: '@vscode/vsce'
         versions: ['>=3']
+      # stylelint 17 needs Node.js 20.19 or later, outside what CI's Node.js 18 job supports (it only warns there).
+      - dependency-name: stylelint
+        versions: ['>=17']
       # TypeScript 6 changes defaults tsconfig.json relies on (it no longer loads @types/* by itself).
       - dependency-name: typescript
         versions: ['>=6']

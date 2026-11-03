@@ -23,7 +23,7 @@ Bash Explainer includes the following third-party software and artwork (CC-BY-4.
 | [@codemirror/lint](https://code.haverbeke.berlin/codemirror/lint) | 6.9.7 | MIT | bundled into `app.js` |
 | [@codemirror/state](https://code.haverbeke.berlin/codemirror/state) | 6.7.6 | MIT | bundled into `app.js` |
 | [@codemirror/streamparser](https://code.haverbeke.berlin/codemirror/streamparser) | 6.0.0 | MIT | bundled into `app.js` |
-| [@codemirror/view](https://code.haverbeke.berlin/codemirror/view) | 6.43.14 | MIT | bundled into `app.js` |
+| [@codemirror/view](https://code.haverbeke.berlin/codemirror/view) | 6.43.15 | MIT | bundled into `app.js` |
 | [@lezer/common](https://code.haverbeke.berlin/lezer/common) | 1.5.3 | MIT | bundled into `app.js` |
 | [@lezer/highlight](https://code.haverbeke.berlin/lezer/highlight) | 1.2.5 | MIT | bundled into `app.js` |
 | [@marijn/find-cluster-break](https://code.haverbeke.berlin/marijn/find-cluster-break) | 1.0.4 | MIT | bundled into `app.js` |
