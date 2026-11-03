@@ -1,5 +1,6 @@
 // The two characters that carry a message text's id inside a token's text (OPEN_TEXT and CLOSE_TEXT, src/messages-levels.ts)
-// are masked in a script's own text as it is read, so that a script cannot forge a mark (a warning, a text it has not got).
+// are masked in a script's own text as it is read, so that the script's raw text cannot forge a mark (a warning, a text it has not got).
+// (A mark that a decoded `$'\uFDD0'` or the output of `printf` makes is not in the text, and is not masked.)
 import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
 import { explainDocumentLine } from '../src/document';

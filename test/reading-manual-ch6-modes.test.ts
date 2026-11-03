@@ -255,6 +255,31 @@ describe('the reading tree as the Bash manual reads chapter 6 (6.8, 6.9, 6.11, 6
     });
   });
 
+  it('reads `time` and a dash word after line continuations, and a body that is an assignment, as bash does in POSIX mode (6.11)', () => {
+    const program = /^In POSIX mode bash does not read `time` before a word that starts with `-` as the reserved word/;
+    // (The `-` must follow `time`, its line continuations and blanks; a continuation after a blank leaves the keyword.)
+    const forms: [string, boolean][] = [
+      ['time\\\n -p c', true], ['time\\\n\\\n -p c', true], ['time\\\n\t-x c', true], ['time  -p c', true], ['time\t-- c', true],
+      ['time \\\n -p c', false], ['time\\\n \\\n -p c', false], ['time \\\n-p c', false],
+    ];
+    for (const [src, isProgram] of forms) {
+      const t = nodes(`set -o posix\n${src}`, 1).find((n) => n.layer === 'bash' && n.kind === 'keyword' && n.label === 'time')!;
+      assert.strictEqual(program.test(t.text!), isProgram, JSON.stringify(src));
+    }
+    // (The assignment words `x=1` are words of the program, `time -- x=1` runs `time` with `-- x=1`; the explanation is made, and no word is lost
+    // but the assignment: `time -- a=(1)` is a syntax error in bash.)
+    for (const src of ['time -- x=1', 'time -p x=1', 'time -- a=(1)', 'time -- x=1 c']) {
+      assert.match(find(`set -o posix\n${src}`, 'time', 'bash', 'keyword', 1).text!, program, src);
+    }
+    each((p, who) => {
+      const run = (script: string) => runBash(script, { ...p, files: [] });
+      // (The program `time` writes `time: …` on stderr; the reserved word runs `c`, which is not found.)
+      for (const [src, isProgram] of forms) assert.strictEqual(/^time: /.test(run(`set -o posix\n${src}`).stderr.replace(/^[^\n]*(?:line \d+: )/, '')), isProgram, `${who}: ${JSON.stringify(src)}`);
+      for (const src of ['time -- x=1', 'time -p x=1']) assert.match(run(`set -o posix\n${src}`).stderr, /^time: cannot run x=1/, `${who}: ${src}`);
+      assert.match(run('set -o posix\ntime -- a=(1)').stderr, /syntax error/, who);
+    });
+  });
+
   it('follows the review of the other texts: tildes, option names, compat levels, arithmetic', () => {
     // A number past intmax is no entry of the stack; a tilde in a double-quoted `${x:-word}` is not expanded.
     assert.deepStrictEqual(find('echo ~99999999999999999999999', '~99999999999999999999999', 'bash', 'argument').refs, ['3.7.1', '3.5.2']);
