@@ -23,6 +23,7 @@ import { codeSpan, shorten } from './label';
 import { clausesOf, isProblemNote, type SentenceClause } from './messages';
 import { placeholderAlone, placeholderSaid } from './messages-argv';
 import { EMPTY, ioSaid, listSaid, S, sentenceEnd } from './messages-sentence';
+import { resolveName } from './semantics/names';
 import { ownSubshells, STATEMENTS } from './semantics/env';
 import { attribute, docLine } from './semantics/state';
 import { CHANGING } from './semantics/walk/temporaries';
@@ -467,8 +468,11 @@ class Composer implements IdiomSpeaker {
     }
     // (The assignments before the name are said with the redirections: what the command runs with.)
     const io = [...assignments.map((a) => S.prefixSet(lang, codeSpan(field(a, 'name')!.text), this.value(a))), ...(redirectionsOf(c).length ? [this.io(redirectionsOf(c))] : [])].join(lang === 'ja' ? '、' : ', ');
-    if (said?.test) return S.tests(lang, BRACKET, io);
+    // (A command on another line of a statement over several lines has no record of the command, as a closing line's: its spelling tells `[`, and the model a function.)
+    if (said?.test || (!said && writtenAsBracket(c))) return S.tests(lang, BRACKET, io);
     if (said?.kind === 'function') return S.calls(lang, codeSpan(said.names[0]), io);
+    const called = said ? undefined : this.functionNamed(c);
+    if (called) return S.calls(lang, codeSpan(called), io);
     // (The options given, each once, of a command whose spec says what it does; a value given with `=` is not the option.)
     const given = said?.what ? [...new Map(said.options.map((o) => [o.name.replace(/=.*/s, ''), o.what])).entries()] : [];
     const options = this.brief === 0 && given.length && given.length <= 2 ? listSaid(lang, given.map(([name, what]) => S.option(lang, codeSpan(name), what))) : '';
@@ -478,8 +482,18 @@ class Composer implements IdiomSpeaker {
     const clause = S.runs(lang, this.noun(c), options, io, status);
     // (A declaration builtin's assignments, `local x=$1`: the values they give.)
     // (Options may change what the builtin stores, `declare -i n=1+1`: then the value is what the word gives.)
-    const declared = this.assigned(fields(c, 'argument').filter((x) => x.type === 'variable_assignment'), said!.options.length ? 'changed' : 'declared');
+    // (Without the record, any word that is an option may be one that changes the value.)
+    const optioned = said ? said.options.length > 0 : fields(c, 'argument').some((x) => /^[-+]/.test(x.text));
+    const declared = this.assigned(fields(c, 'argument').filter((x) => x.type === 'variable_assignment'), optioned ? 'changed' : 'declared');
     return declared ? S.declares(lang, clause, declared) : clause;
+  }
+
+  /** The function a command surely calls, from the model, where the line has no record of the command (its name when plain). */
+  private functionNamed(c: SyntaxNode): string | undefined {
+    const name = field(c, 'name');
+    if (!name || !/^[\w.:+-]+$/.test(name.text)) return undefined;
+    const res = resolveName(this.input.status.state, name.text, c, { command: true });
+    return res.kind === 'function' && res.sure && !res.maybe ? res.name : undefined;
   }
 
   /** A command as a noun: its names, with what it does unless the sentence is brief. */
