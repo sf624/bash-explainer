@@ -20,7 +20,6 @@ type Mut = {
   lineEnd?: number;
 };
 
-
 // (The parser's own list, for the node it builds: the syntax layer does not import the semantic model's, src/semantics/effects.ts.)
 const DECLARATIONS = new Set(['declare', 'typeset', 'export', 'readonly', 'local']);
 type ArithCtx = 'cmd' | 'slice';
@@ -1378,10 +1377,8 @@ class Converter {
 /* c8 ignore next */
 export function createUnbashParser(): BashParser {
   return {
-    parse(source: string): SyntaxTree {
-      // (A script's own OPEN_TEXT and CLOSE_TEXT are masked, as the CRs of a CRLF are below: src/messages-levels.ts, `maskCarried`.)
-      const text = maskCarried(source);
-      // (The text unbash reads: ./continuations.ts.)
+    parse(text: string): SyntaxTree {
+      text = maskCarried(text); // (The script's own U+FDD0 and U+FDD1 are masked, as the CRs below are: `maskCarried`.)
       const { masked, carriageReturns, joins, script } = prepared(text, parse, children);
       const tree = new Converter(joins ? joins.text : masked, new Set(carriageReturns), text, joins, script).run();
       return carriageReturns.length ? { ...tree, carriageReturns } : tree;
