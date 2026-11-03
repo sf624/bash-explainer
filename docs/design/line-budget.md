@@ -55,6 +55,24 @@ The bounds a run had before stay, but they say so now (`steps-not-computed`), wh
 
 A process abort is out of reach of `try`: charging the size before a value is made is what makes it impossible. The table of test/support/line-budget-table.ts runs in a child under a memory cap, and fails on a run that aborts, or that takes long.
 
+## What it costs
+
+Measured under tsx, on the maintainer's machine, before and after:
+
+| Case | Before | After |
+| --- | --- | --- |
+| 30 refused greps on a line | 1.7 s | 0.35 s |
+| 11 refused expansions on a line | 0.9 s | 0.7 s |
+| 12 examples at a limit each, with their results | | 0.4 s |
+| `x=$x$x` × 24 | 54 s, 1.9 GB | 0.23 s |
+| `jq -n '[range(1e9)] \| length'`, `reduce range(28) … .+.` | process abort | 50 ms |
+| 5000 lines, a different adversarial grep on each: problems; all lines' explanations | over 90 s; not finished | 7 s; 19 s |
+| 5000 lines, a different adversarial expansion on each: problems; all lines' explanations | | 5 s; 10 s |
+| 3000 ordinary lines of 90 characters: problems; all lines' explanations | 17 s; 13 s | 9 s; 10 s |
+| the corpus, en and ja | 20 s | 16 s, byte-identical |
+
+So a line costs at most 3e7 steps of examples, 3e7 of results and its share of 6e7 of the models: 0.1 to 1 s by the kind of pattern, on top of the explanation itself. No line of the corpus is refused.
+
 ## What it does not bound
 
-The explanation of a line without its examples: the walk of its nodes, the pitfalls and the rest, about 2 to 5 ms a line (under tsx). It grows with the line's size and is not refused; a very long line costs more.
+The explanation of a line without its examples: the walk of its nodes, the pitfalls and the rest, about 2 to 5 ms a line (under tsx). It grows with the line's size and is not refused. The worst measured: one line of 3000 expansions, 60 KB, takes about 20 s, and 40 s more for the panel's Reading tree (`all.find` for each command in src/reading.ts).

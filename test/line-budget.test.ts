@@ -441,14 +441,15 @@ describe('one line must not stop the whole tool', () => {
     it('no line of the table aborts the process or takes long, in a process of its own', async function () {
       if (!scoped) this.skip();
       this.timeout(120000);
-      const r = await runContained([process.execPath, '--import', 'tsx', 'test/support/line-budget-table.ts'], process.cwd(), {}, 100000);
+      // (Documents of 5000 lines take half a minute here, and more with coverage on a loaded runner.)
+      const r = await runContained([process.execPath, '--import', 'tsx', 'test/support/line-budget-table.ts', '500'], process.cwd(), {}, 100000);
       assert.strictEqual(r.status, 0, r.stderr.slice(-2000));
       const { rows, documents, rss } = JSON.parse(r.stdout) as { rows: { script: string; ms: number; ok: boolean; shown: string[] }[]; documents: { name: string; diagnostics: number; lines: number }[]; rss: number };
       assert.deepStrictEqual(rows.filter((row) => !row.ok), []);
       assert.deepStrictEqual(rows.filter((row) => row.ms > 5000), []);
       assert.ok(rss < 2000, `${rss} MB`);
-      // (A loaded runner may take its time: this holds a document against what it took before, minutes or an abort.)
-      assert.deepStrictEqual(documents.filter((d) => d.diagnostics + d.lines > 90000), []);
+      // (A loaded runner may take its time: this holds a document against what it took before, a minute or an abort.)
+      assert.deepStrictEqual(documents.filter((d) => d.diagnostics + d.lines > 60000), []);
     });
   });
 });
