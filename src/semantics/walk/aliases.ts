@@ -58,6 +58,8 @@ export class WalkAliases {
     if (!alias || alias.state === 'off' || !(expands === 'on' || expands === 'unknown')) return undefined;
     // (An alias whose text names another twice, and so on, doubles at each level: `alias b='a; a'; alias c='b; b'`. Past this, the walk does not know what runs.)
     if (++this.expansions > MAX_EXPANSIONS) {
+      // (A guard: the scan reads the same texts, and past its own limit, `ALIAS_TREES`, nothing is trusted by then.)
+      /* c8 ignore next */
       if (!this.w.blind) this.w.walkAgain('more aliases to expand than a walk follows');
       return undefined;
     }

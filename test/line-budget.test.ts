@@ -21,10 +21,11 @@ import { leastOf, mostOf, pushAll } from '../src/lists';
 import { commandWords } from '../src/semantics/effects';
 import { fact } from '../src/messages';
 import { scriptTrust, type StringTrees } from '../src/semantics/trust';
+import { Walker } from '../src/semantics/walk/walker';
 import { shellState } from '../src/semantics/state';
 import { wordFields } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { descendants } from '../src/syntax/tree';
+import { descendants, type SyntaxNode } from '../src/syntax/tree';
 import { main } from '../cli/main';
 import { startLanguageServer } from '../cli/lsp';
 import { corpus } from './support/corpus';
@@ -371,6 +372,52 @@ describe('one line must not stop the whole tool', () => {
     it('strings in strings: as deep as the walk reads them, and nothing is trusted past that', () => {
       assert.ok(shellState(parser.parse(`${'eval '.repeat(20)}a`), 'bash').blind);
       assert.strictEqual(shellState(parser.parse('eval eval a'), 'bash').blind, undefined);
+    });
+
+    it('a walk that runs out of stack: a model that knows nothing, once, and the lines stand', () => {
+      const proto = Walker.prototype as unknown as { program: (root: SyntaxNode, st: unknown) => unknown };
+      const real = proto.program;
+      let walks = 0;
+      proto.program = function (this: Walker, root: SyntaxNode, st: unknown) {
+        if (root.namedChildren.length) {
+          walks++;
+          throw OVERFLOW;
+        }
+        return real.call(this, root, st);
+      };
+      try {
+        const tree = parser.parse('x=1\necho "$x"\n[ "$x" = 1 ] && echo b\n');
+        const a = new Analyzer('en');
+        assert.ok(a.explainLine(tree, 1, 'bash').items.length);
+        assert.ok(a.explainLine(tree, 2, 'bash').items.length);
+        assert.match(shellState(tree, 'bash').blind!, /too deep/);
+        // (The first walk and the walk with nothing trusted; then it is kept.)
+        assert.strictEqual(walks, 2);
+        proto.program = function () { throw new Error('planted'); };
+        assert.throws(() => shellState(parser.parse('echo a'), 'bash'), /planted/);
+        // (Only the blind walk runs out: what the first walk found, as in a string it does not read.)
+        let count = 0;
+        proto.program = function (this: Walker, root: SyntaxNode, st: unknown) {
+          if (++count === 2) throw new Error('planted');
+          return real.call(this, root, st);
+        };
+        assert.throws(() => shellState(parser.parse(`${'eval '.repeat(20)}a`), 'bash'), /planted/);
+      } finally {
+        proto.program = real;
+      }
+    });
+
+    it('a bats file: a pipe over several lines is said on its first', () => {
+      const text = '@test "x" {\n  run a |\n    b\n}\n';
+      const doc = openDocument(text, 'bats', parserOf);
+      const said = (line: number) => explainDocumentLine(new Analyzer('en'), doc, line, 'en', {}, {}).notes.filter((n) => /`run`/.test(n)).length;
+      assert.ok(said(1) > 0);
+      assert.strictEqual(said(2), 0);
+    });
+
+    it('a jq object with a value that gives none: none, and nothing to charge', () => {
+      assert.deepStrictEqual(runJq('{a:empty,b:1}', null), { outputs: [] });
+      assert.deepStrictEqual(runJq('{a:(1,2),b:(3,4)}|.a+.b', null), { outputs: [4, 5, 5, 6] });
     });
 
     it('aliases that double: a walk follows so many, and then trusts nothing', () => {

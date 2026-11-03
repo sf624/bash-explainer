@@ -4,6 +4,26 @@ import type { SyntaxNode } from '../tree';
 // `scanGap` reads such a stretch of text and gives them back, with their ranges. It skips what is not
 // a token of the stretch: quotes, `$( )`, `${ }`, backquotes, line continuations and heredoc bodies.
 
+export type Mut = {
+  -readonly [K in keyof SyntaxNode]: K extends 'children' | 'namedChildren' ? Mut[] : K extends 'parent' ? Mut | null : SyntaxNode[K];
+} & {
+  /** Where a node with a heredoc ends on its own line, before the body that lies after the lines that follow. */
+  lineEnd?: number;
+};
+
+// (The parser's own list, for the node it builds: the syntax layer does not import the semantic model's, src/semantics/effects.ts.)
+export const DECLARATIONS = new Set(['declare', 'typeset', 'export', 'readonly', 'local']);
+/** The roles of the words bash never brace-expands: patterns, the operands of `[[ ]]` and of `${x:-word}`, arithmetic. */
+export const NO_BRACES = new Set(['pattern', 'case', 'casealt', 'regex', 'test', 'operand', 'arith', 'index']);
+/** What the pattern of ${a#…} may hold and still be one regex. */
+export const WORDS = new Set(['word', 'number', 'string', 'concatenation']);
+export const PATTERN_PARTS = new Set(['Literal', 'Glob', 'SimpleExpansion', 'ParameterExpansion']);
+/** Blanks, line continuations and comments. */
+export const BLANKS = /(?:\s|\\\n|#[^\n]*)*/y;
+/** Blanks that do not end a line, and line continuations. */
+export const HORIZONTAL = /(?:[ \t]|\\\n)*/y;
+export const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 export interface Piece {
   /** `token`: a keyword or an operator, with its own text; `comment`: `# …` up to the end of the line; `word`: any other word, which only a scan with `words` gives. */
   readonly kind: 'token' | 'comment' | 'word';
@@ -110,23 +130,3 @@ export function scanGap(
   }
   return out;
 }
-
-export type Mut = {
-  -readonly [K in keyof SyntaxNode]: K extends 'children' | 'namedChildren' ? Mut[] : K extends 'parent' ? Mut | null : SyntaxNode[K];
-} & {
-  /** Where a node with a heredoc ends on its own line, before the body that lies after the lines that follow. */
-  lineEnd?: number;
-};
-
-// (The parser's own list, for the node it builds: the syntax layer does not import the semantic model's, src/semantics/effects.ts.)
-export const DECLARATIONS = new Set(['declare', 'typeset', 'export', 'readonly', 'local']);
-/** The roles of the words bash never brace-expands: patterns, the operands of `[[ ]]` and of `${x:-word}`, arithmetic. */
-export const NO_BRACES = new Set(['pattern', 'case', 'casealt', 'regex', 'test', 'operand', 'arith', 'index']);
-/** What the pattern of ${a#…} may hold and still be one regex. */
-export const WORDS = new Set(['word', 'number', 'string', 'concatenation']);
-export const PATTERN_PARTS = new Set(['Literal', 'Glob', 'SimpleExpansion', 'ParameterExpansion']);
-/** Blanks, line continuations and comments. */
-export const BLANKS = /(?:\s|\\\n|#[^\n]*)*/y;
-/** Blanks that do not end a line, and line continuations. */
-export const HORIZONTAL = /(?:[ \t]|\\\n)*/y;
-export const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
