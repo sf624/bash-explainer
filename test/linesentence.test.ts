@@ -201,6 +201,12 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["case x in a) b ;; c) d ;;\nesac", 0, "Runs the first branch whose pattern matches `x`; if the value matches `a`, runs `b`; if the value matches `c`, runs `d`.", "`x` に最初に一致したパターンの分岐を実行する。値が `a` に一致したら、`b` を実行する。値が `c` に一致したら、`d` を実行する。"],
     ["e=\na=($e)", 1, "Sets `a` to an empty array.", "`a` に空の配列を代入する。"],
     ["e=\nfor x in $e a; do :; done", 1, "Runs its body (`:`) with `$x` set to `a`, one at a time.", "`$x` を `a` に順に設定して、本体（`:`）を実行する。"],
+    // (A command on another line of a statement over several lines has no record of the command: `b`, `[`, a function, a declaration.)
+    ["echo a \\\n && b || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `b`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`b` を実行する。"],
+    ["x=1 \\\n && [ -n \"$s\" ] || {\n y=2\n}", 0, "Sets `x` to `1`; if that succeeds, tests the condition in `[ … ]`.", "`x` に `1` を代入する。成功したら、`[ … ]` の条件を判定する。"],
+    ["f() { :; }\necho a \\\n && f || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, calls the function `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、関数 `f` を呼び出す。"],
+    ["echo a \\\n && declare -i n=1+1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `declare` and sets `n` to what `1+1` gives.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`declare` を実行する。`n` に `1+1` の結果を代入する。"],
+    ["echo a \\\n && declare n=1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `declare` and sets `n` to `1`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`declare` を実行する。`n` に `1` を代入する。"],
 ];
 
 /** The files of the corpus: sample.sh and the other fixtures, the host files with their shell parts. */
