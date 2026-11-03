@@ -234,7 +234,7 @@ The note on a grep pattern that is only a variable said to add `-F` also where g
 
 ### The explanation when a line's problems arrive
 
-A line's problems arrive a moment after the line is explained (in VS Code too), and they used to draw every row again. A button acts on Space when the key is released, on the element it went down on, so a Space held across that moment did nothing. What was typed in an example's box went, and with it the focus; the focus on a fold button or a link came back, on a new element, which a screen reader can say again. Now only the squiggles of the line change.
+A line's problems arrive a moment after the line is explained, and they used to draw every row again. A button acts on Space when the key is released, on the element it went down on, so a Space held across that moment did nothing. What was typed in an example's box went, and with it the focus; the focus on a fold button or a link came back, on a new element, which a screen reader can say again. Now only the squiggles of the line change.
 
 ### Code that holds a backtick, in the panel
 
