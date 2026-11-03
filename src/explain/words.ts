@@ -104,10 +104,10 @@ function bracketPiece(cx: Explainer, n: SyntaxNode): Token | undefined {
   // (`[!…]`, `[^…]`: an unquoted `!` or `^` first makes it match any other character.)
   const negated = !!opens && /[!^]/.test(n.text[opens.at + 1] ?? '') && !ifs.includes(n.text[opens.at + 1]);
   const said = [
-    closes && cx.s(`\`]\` は \`${closes.text}\` の \`[…]\` の終わり`, `\`]\` closes the \`[…]\` of \`${closes.text}\``),
+    closes && cx.text('glob-bracket-closes', { closes: closes.text }),
     opens && (negated
-      ? cx.s(`\`[${n.text[opens.at + 1]}\` は \`${opens.text}\` の \`[…]\` の始まり: 間にある文字（展開した値の文字も含む）以外の1文字に一致する`, `\`[${n.text[opens.at + 1]}\` opens the \`[…]\` of \`${opens.text}\`: it matches any one character except those between, the characters the expansions give included`)
-      : cx.s(`\`[\` は \`${opens.text}\` の \`[…]\` の始まり: 間にある文字（展開した値の文字も含む）のどれか1文字に一致する`, `\`[\` opens the \`[…]\` of \`${opens.text}\`: it matches one character of those between, the characters the expansions give included`)),
+      ? cx.text('glob-bracket-opens-negated', { mark: `[${n.text[opens.at + 1]}`, opens: opens.text })
+      : cx.text('glob-bracket-opens', { opens: opens.text })),
   ].filter(Boolean);
   const before = closes ? '' : n.text.slice(0, opens!.at);
   const after = opens ? '' : n.text.slice(closes!.at + 1);
@@ -115,7 +115,7 @@ function bracketPiece(cx: Explainer, n: SyntaxNode): Token | undefined {
     ...(hasGlob(before) ? globChildren(cx, n, before, 0) : []),
     ...(hasGlob(after) ? globChildren(cx, n, after, closes!.at + 1) : []),
   ];
-  return { ...cx.tok(n, 'pattern', `${globIntro(cx.lang, target)}${cx.s('。', '. ')}${said.join(cx.s('。', '. '))}`, children), refs: ['3.5.8.1'] };
+  return { ...cx.tok(n, 'pattern', `${globIntro(cx.lang, target)}${cx.sep()}${said.join(cx.sep())}`, children), refs: ['3.5.8.1'] };
 }
 
 export function word(cx: Explainer, n: SyntaxNode): Token {
@@ -125,21 +125,21 @@ export function word(cx: Explainer, n: SyntaxNode): Token {
   const bracket = bracketPiece(cx, n);
   if (bracket) return bracket;
   const off = hasGlob(text) && globOff(cx, n);
-  if (off) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + off);
-  if (hasGlob(text) && notGlobbedHere(cx, n)) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + notGlobbedHere(cx, n));
+  if (off) return cx.tok(n, 'argument', cx.text('word-plain', { text }) + off);
+  if (hasGlob(text) && notGlobbedHere(cx, n)) return cx.tok(n, 'argument', cx.text('word-plain', { text }) + notGlobbedHere(cx, n));
   // (The glob characters that bash quotes because `IFS` holds them: all, or some, `IFS='?'; ls $x[ab]?`.)
   const ifs = hasGlob(text) ? quotedByIfs(cx, n) : undefined;
-  if (ifs && !hasGlob(ifs.text)) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + noWildcardByIfs(cx, ifs.kept));
+  if (ifs && !hasGlob(ifs.text)) return cx.tok(n, 'argument', cx.text('word-plain', { text }) + noWildcardByIfs(cx, ifs.kept));
   if (ifs) return { ...cx.tok(n, 'pattern', globIntro(cx.lang, 'file') + globNotes(cx, ifs.text, n, text), explainGlob(ifs.text, cx.lang, true, ifs.inserted).map((t) => fromEmbedded(t, n, ifs, 'shell'))), refs: ['3.5.8'] };
   if (hasGlob(text)) return { ...cx.tok(n, 'pattern', globIntro(cx.lang, 'file') + globNotes(cx, text, n), globChildren(cx, n, text, 0)), refs: ['3.5.8'] };
-  return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + valueNote(cx, n));
+  return cx.tok(n, 'argument', cx.text('word-plain', { text }) + valueNote(cx, n));
 }
 
 export function string(cx: Explainer, n: SyntaxNode): Token {
   // `$"…"`: a `$` and a string, in the same node or beside each other.
   const dollar = sibling(n, -1);
   if (dollar?.type === '$' && dollar.endIndex === n.startIndex) {
-    const t = cx.tok(n, 'string', cx.s('`$"…"` 文字列: ロケールに応じて翻訳される文字列（翻訳がなければそのまま。中の変数は展開される）', '`$"…"` string: translated according to the locale (as it is when there is no translation; variables inside expand)'), cx.subs(n.namedChildren.filter((c) => c.type !== 'string_content')), shorten('$' + n.text));
+    const t = cx.tok(n, 'string', cx.text('string-locale'), cx.subs(n.namedChildren.filter((c) => c.type !== 'string_content')), shorten('$' + n.text));
     t.span = { start: spanOf(dollar).start, end: t.span.end };
     return t;
   }
@@ -149,16 +149,7 @@ export function string(cx: Explainer, n: SyntaxNode): Token {
   // (Text in the quotes joins the first and the last element, and makes one word when there are none: `"pre$@post"`.)
   const text = n.namedChildren.some((c) => c.type === 'string_content');
   unbracedElement(cx, n);
-  return cx.tok(n, 'string', (perElement && text ? cx.s(
-    'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開され、単語分割やグロブ展開はされない。ただし `"$@"` や `"${配列[@]}"` は、クォートの中でも要素ごとに別々の単語になる。前の文字列は最初の要素に、後ろの文字列は最後の要素にくっつく（要素が無ければ文字列だけで1つの単語になる）',
-    'Double-quoted string: `$vars` and `$(…)` expand, with no word splitting or globbing. But `"$@"` and `"${array[@]}"` still give one word per element, even inside the quotes: the text before joins the first element, and the text after the last (with no elements, the text alone makes one word)',
-  ) : perElement ? cx.s(
-    'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開され、単語分割やグロブ展開はされない。ただし `"$@"` や `"${配列[@]}"` は、クォートの中でも要素ごとに別々の単語になる（要素が無ければ単語は0個）',
-    'Double-quoted string: `$vars` and `$(…)` expand, with no word splitting or globbing. But `"$@"` and `"${array[@]}"` still give one word per element, even inside the quotes (no word at all when there are none)',
-  ) : cx.s(
-    'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開されるが、単語分割やグロブ展開はされない（1つの引数のまま）',
-    'Double-quoted string: `$vars` and `$(…)` expand, but no word splitting or globbing (stays one argument)',
-  )) + (/\\/.test(n.text) ? valueNote(cx, n) : ''), cx.subs(n.namedChildren.filter((c) => c.type !== 'string_content')));
+  return cx.tok(n, 'string', cx.text(perElement && text ? 'string-double-per-element-with-text' : perElement ? 'string-double-per-element' : 'string-double') + (/\\/.test(n.text) ? valueNote(cx, n) : ''), cx.subs(n.namedChildren.filter((c) => c.type !== 'string_content')));
 }
 
 /** Whether the word that holds `n` may be many words (an argument, a `for` list), seen through a `${x:-…}` around it. */
@@ -318,7 +309,7 @@ function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   if (text === undefined || !bracesHere(cx, n)) return undefined;
   const words = braceExpansion(n, cx.bashVersion);
   if (words === null) {
-    return cx.tok(n, 'expansion', cx.s(`ブレース展開: \`${text}\` は多くの単語に展開される`, `Brace expansion: \`${text}\` expands to many words`));
+    return cx.tok(n, 'expansion', cx.text('brace-expansion-many', { text }));
   }
   if (!words) return undefined;
   // (An empty word that stays is shown as `''`: a lone backslash, as `{Z..a}` makes, is gone after quote removal.)
@@ -342,9 +333,8 @@ function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
     ? cx.s('。ただし、範囲が作る `` ` `` の後ろに文字が続く語では、bash はそれを閉じていないコマンド置換の始まりと読み、失敗する（"bad substitution"）',
       '; but where text follows a `` ` `` that the range gives, bash reads it as the start of a command substitution that nothing closes, and fails ("bad substitution")') : '';
   return cx.tok(n, 'expansion', (words.length
-    ? cx.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${later}${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}${refused}${fails}`,
-      `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${later}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}${refused}${fails}`)
-    : cx.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`)) + bracesMaybeOff(cx, n), parts);
+    ? cx.text('brace-expansion-words', { text, count: words.length, list, later, comma, pad, refused, fails })
+    : cx.text('brace-expansion-empty', { text })) + bracesMaybeOff(cx, n), parts);
 }
 
 /** Whether the model knows that each word of the brace expansion of the word of `n` gives one field, which is no glob. */
@@ -444,10 +434,10 @@ export function tilde(cx: Explainer, n: SyntaxNode): Token | undefined {
     const after = globbed
       ? cx.s(`。続く \`${rest}\` にはワイルドカードがあるので、展開後のパスがグロブとして一致するファイル名に置き換わる`, `. The rest, \`${rest}\`, has wildcards: the expanded path is then a glob, replaced by the file names it matches`)
       : rest ? cx.s(`。残りの \`${rest}\` はそのまま続く`, `. The rest, \`${rest}\`, stays as it is`) : '';
-    return { origin: 'shell', ...cx.tok(n, 'expansion', cx.s(`チルダ展開: ${tildeTarget(cx, first.user)}に置き換わる`, `Tilde expansion: ${tildeTarget(cx, first.user)}`)
+    return { origin: 'shell', ...cx.tok(n, 'expansion', cx.text('tilde-expansion', { target: tildeTarget(cx, first.user) })
       + after + (hasGlob(n.text) ? notGlobbedHere(cx, n) + globOff(cx, n) : ''), globbed ? globChildren(cx, n, rest, first.end) : []), refs: ['3.5.2', ...stackSection(first.user), ...(globbed ? ['3.5.8'] : [])] };
   }
-  return cx.tok(n, 'argument', cx.s(`文字列 \`${n.text}\``, `Word \`${n.text}\``) + tildeNote(cx, n), tildeTokens(cx, tildes));
+  return cx.tok(n, 'argument', cx.text('word-plain', { text: n.text }) + tildeNote(cx, n), tildeTokens(cx, tildes));
 }
 
 /** The tokens of the tilde prefixes of a word, each where it is written (past a line continuation: `a=\<newline>~`). */
@@ -461,8 +451,8 @@ function tildeTokens(cx: Explainer, tildes: readonly TildePrefix[]): Token[] {
     kind: 'expansion' as Kind, label: t.node.text.slice(t.start, t.end), children: [], origin: 'shell' as const,
     span: { start: at(t.node, t.start), end: at(t.node, t.end) },
     explanation: t.after
-      ? cx.s(`チルダ展開（\`${t.after}\` の後ろ）: ${tildeTarget(cx, t.user)}に置き換わる`, `Tilde expansion (after \`${t.after}\`): ${tildeTarget(cx, t.user)}`)
-      : cx.s(`チルダ展開: ${tildeTarget(cx, t.user)}に置き換わる`, `Tilde expansion: ${tildeTarget(cx, t.user)}`),
+      ? cx.text('tilde-expansion-after', { after: t.after, target: tildeTarget(cx, t.user) })
+      : cx.text('tilde-expansion', { target: tildeTarget(cx, t.user) }),
   }));
 }
 
@@ -482,7 +472,7 @@ export function globToken(cx: Explainer, n: SyntaxNode, target: GlobTarget, text
   // (A part that opens or closes a `[…]` of its word: the `[` of `[$x]` in a `case` pattern.)
   const bracket = bracketPiece(cx, n);
   if (bracket) return bracket;
-  if (!hasGlob(text)) return cx.tok(n, kind, cx.s(`パターン \`${text}\`（ワイルドカードを含まないので、この文字列そのものに一致）`, `Pattern \`${text}\` (no wildcards, so it matches exactly this text)`));
+  if (!hasGlob(text)) return cx.tok(n, kind, cx.text('pattern-literal', { text }));
   return cx.tok(n, kind, globIntro(cx.lang, target) + extglobNote(cx, text), globChildren(cx, n, text, base));
 }
 
@@ -496,11 +486,7 @@ export function casePattern(cx: Explainer, p: SyntaxNode): Token {
   const unquoted = parts.some((x) => EXPANDING.has(x.type));
   // (The quoted parts of a default or alternate value are literal too: in `${q:-"*"}`, the `*`.)
   const quoted = parts.some((x) => QUOTED.has(x.type) || (x.type === 'expansion' && /^:?[-+=]$/.test(String(parseExpansion(x.text)!.op)) && x.namedChildren.some((c) => QUOTED.has(c.type))));
-  return cx.tok(p, 'pattern', !unquoted
-    ? cx.s(`パターン \`${p.text}\`: 展開はクォートされているので、その値は文字列そのものとして照合される（値の中の \`*\` や \`?\` はワイルドカードにならない）`, `Pattern \`${p.text}\`: the expansion is quoted, so its value is matched as literal text (\`*\` and \`?\` in the value are not wildcards)`)
-    : quoted
-      ? cx.s(`パターン \`${p.text}\`: クォートしていない展開の結果はパターンになり、クォートした部分は文字列そのものとして照合される`, `Pattern \`${p.text}\`: what the unquoted expansions give is a pattern, and the quoted parts are matched as literal text`)
-      : cx.s(`パターン \`${p.text}\`: 展開した結果がパターンになる`, `Pattern \`${p.text}\`: what it expands to is the pattern`), cx.sub(p));
+  return cx.tok(p, 'pattern', cx.text(!unquoted ? 'pattern-quoted-expansion' : quoted ? 'pattern-mixed-expansion' : 'pattern-expansion', { text: p.text }), cx.sub(p));
 }
 const EXPANDING = new Set(['simple_expansion', 'expansion', 'command_substitution', 'process_substitution', 'arithmetic_expansion']);
 const QUOTED = new Set(['string', 'raw_string', 'ansi_c_string', 'translated_string']);
@@ -669,7 +655,7 @@ function stringParam(cx: Explainer, k: number, at: SyntaxNode): string | undefin
 export function variable(cx: Explainer, name: string, n: SyntaxNode): Token {
   stageCountNote(cx, n, name);
   const d = varDesc(cx, name, n);
-  return cx.tok(n, 'variable', d ? `\`$${name}\`: ${d}` : cx.s(`変数 \`${name}\``, `Variable \`${name}\``));
+  return cx.tok(n, 'variable', d ? `\`$${name}\`: ${d}` : cx.text('variable-plain', { name }));
 }
 
 export function simpleExpansion(cx: Explainer, n: SyntaxNode): Token {
@@ -680,8 +666,8 @@ export function simpleExpansion(cx: Explainer, n: SyntaxNode): Token {
   const note = splitNote(cx, n);
   stageCountNote(cx, n, name);
   const t = cx.tok(n, 'variable', d ?? (note
-    ? cx.s(`変数 \`${name}\` の値に置き換わる（クォートしないと${note.ja.startsWith('`') ? ' ' : ''}${note.ja}）`, `Expands to the value of \`${name}\` (unquoted, ${note.en})`)
-    : cx.s(`変数 \`${name}\` の値に置き換わる`, `Expands to the value of \`${name}\``)));
+    ? cx.text('variable-expands-with-note', { name, note })
+    : cx.text('variable-expands', { name })));
   t.explanation += matchNote(cx, n) + orderNote(cx, n, name) + variableNote(cx, n, name) + (joined ?? '');
   return t;
 }
@@ -848,11 +834,10 @@ function arrayValue(cx: Explainer, n: SyntaxNode): Token | undefined {
   const values = n.parent!.namedChildren.filter((c) => c.type !== 'comment');
   // (After a first value `[k]=v`, each needs its `[k]=`.)
   if (splitElement(values[0].text)) {
-    return cx.tok(n, 'error', cx.rests(cx.s(`bash はこの値を受け付けない: 最初の値が \`[キー]=\` で始まるので、どの値にも \`[キー]=\` が要る（「must use subscript when assigning associative array」）。bash 5.2 はそう表示して続けるが、bash 5.3 はさらにこの行の残りを実行しない（終了ステータス 1）`,
-      `Bash refuses this value: the first value starts with \`[key]=\`, so each one needs its \`[key]=\` ("must use subscript when assigning associative array"). bash 5.2 says so and goes on; bash 5.3 also abandons the rest of the line (status 1)`), 'assoc-missing-subscript'));
+    return cx.tok(n, 'error', cx.rests(cx.text('array-assoc-missing-subscript'), 'assoc-missing-subscript'));
   }
   const i = values.indexOf(n);
-  const what = (i % 2 === 0 ? cx.s(`キー \`${n.text}\``, `Key \`${n.text}\``) : cx.s(`キー \`${values[i - 1].text}\` の値 \`${n.text}\``, `Value \`${n.text}\` of the key \`${values[i - 1].text}\``)) + tilde;
+  const what = (i % 2 === 0 ? cx.text('array-key', { text: n.text }) : cx.text('array-value-of-key', { key: values[i - 1].text, text: n.text })) + tilde;
   // (A value of one part, `$x` or `"a b"`, whose token says it too; braces are text there, `{a,b}`.)
   const [part] = n.type === 'concatenation' || n.type === 'brace_expression' || isPlainWord(n) ? [] : cx.sub(n);
   return part ? { ...part, explanation: `${what}: ${part.explanation}` } : cx.tok(n, 'argument', what, n.type === 'concatenation' ? cx.sub(n) : []);
@@ -864,8 +849,7 @@ function arrayElement(cx: Explainer, n: SyntaxNode, kind: 'assoc' | 'indexed' | 
   // (bash 5.2 brace-expands the word first, into values with no index of their own.)
   const braces = wordAt(cx, n)!.steps.find((s) => s.kind === 'brace')!.applies === true ? braceExpansion(n, '5.2') : undefined;
   if (braces) {
-    return cx.tok(n, 'argument', cx.rests(cx.s(`bash 5.2 はこの語を先にブレース展開し、${braces.map((w) => `\`${w}\``).join('・')} という添字のない値にする（それぞれが次の要素になる）。bash 5.3 はブレース展開せず、添字 \`${e.key}\` の要素に \`${e.value}\` を${e.plus ? '追記' : '代入'}する`,
-      `bash 5.2 brace-expands this word first, into the values ${braces.map((w) => `\`${w}\``).join(', ')}, with no index of their own (each is the next element); bash 5.3 does not, and ${e.plus ? 'appends' : 'sets'} \`${e.value}\` ${e.plus ? 'to' : 'as'} the element with the index \`${e.key}\``), 'array-brace-value'));
+    return cx.tok(n, 'argument', cx.rests(cx.text('array-brace-value', { braces, key: e.key, value: e.value, plus: !!e.plus }), 'array-brace-value'));
   }
   // The key as bash reads it once the quotes are removed (`["a b"]` is `a b`); as written when it holds an expansion.
   const key = unquoteWord(e.key) ?? e.key;
@@ -873,17 +857,14 @@ function arrayElement(cx: Explainer, n: SyntaxNode, kind: 'assoc' | 'indexed' | 
   // The subscript of an associative array is a key (a string); that of an indexed array is arithmetic (`1+1` is 2).
   // (Arithmetic only when the array is surely not associative: `declare -A` may be in a file read with `source`.)
   const v = evalArith(m[1]);
-  const what = kind === 'assoc' ? cx.s(`キー \`${m[1]}\`（文字列で、計算はされない）`, `key \`${m[1]}\` (a string, not evaluated)`)
-    : kind === 'unknown' ? cx.s(`添字 \`${m[1]}\`（連想配列ならキー、そうでなければ算術式）`, `subscript \`${m[1]}\` (a key if the array is associative, an arithmetic expression otherwise)`)
-    : v !== undefined && String(v) !== m[1] ? cx.s(`添字 \`${m[1]}\`（算術式として計算すると ${v}）`, `index \`${m[1]}\` (an arithmetic expression: ${v})`)
-    : v !== undefined ? cx.s(`添字 \`${m[1]}\``, `index \`${m[1]}\``)
+  const what = kind === 'assoc' ? cx.text('array-element-key', { key: m[1] })
+    : kind === 'unknown' ? cx.text('array-element-subscript-unknown', { key: m[1] })
+    : v !== undefined && String(v) !== m[1] ? cx.text('array-element-index-computed', { key: m[1], value: v })
+    : v !== undefined ? cx.text('array-element-index', { key: m[1] })
     // (`[k]=w` is index 0 when `k` is not set: a name is a variable.)
-    : /^[A-Za-z_]\w*$/.test(m[1]) ? cx.s(`添字 \`${m[1]}\`（算術式なので変数 \`${m[1]}\` の値。未設定なら 0）`, `index \`${m[1]}\` (an arithmetic expression: the value of the variable \`${m[1]}\`, 0 when it is not set)`)
-      : cx.s(`添字 \`${m[1]}\`（算術式として計算される）`, `index \`${m[1]}\` (an arithmetic expression)`);
-  return cx.tok(n, 'argument', cx.s(
-    `${what}${what.endsWith('`') ? ' ' : ''}の要素に \`${m[3]}\` を${m[2] ? '追記' : '代入'}する`,
-    `Element with ${what}: ${m[2] ? 'append' : 'set it to'} \`${m[3]}\``,
-  ) + more, tildeTokens(cx, wordAt(cx, n)!.tildes.filter((t) => tildeTarget(cx, t.user))));
+    : /^[A-Za-z_]\w*$/.test(m[1]) ? cx.text('array-element-index-variable', { key: m[1] })
+      : cx.text('array-element-index-arithmetic', { key: m[1] });
+  return cx.tok(n, 'argument', cx.text('array-element-set', { what, value: m[3], append: !!m[2] }) + more, tildeTokens(cx, wordAt(cx, n)!.tildes.filter((t) => tildeTarget(cx, t.user))));
 }
 
 export function subscript(cx: Explainer, n: SyntaxNode): Token {
@@ -891,19 +872,18 @@ export function subscript(cx: Explainer, n: SyntaxNode): Token {
   const idx = field(n, 'index')!.text;
   // (A subscript explained alone is in arithmetic, which takes one element: `(( a[@] ))` fails.)
   if (idx === '@' || idx === '*') {
-    return cx.tok(n, 'error', cx.s(`算術式では \`${n.text}\` は使えず、エラーになる（\`bad array subscript\`）。要素は \`${name}[0]\` のように1つずつ指定する`,
-      `Not allowed in arithmetic: \`${n.text}\` is an error (\`bad array subscript\`); name one element, such as \`${name}[0]\``));
+    return cx.tok(n, 'error', cx.text('subscript-all-in-arithmetic', { text: n.text, name }));
   }
   // The index is arithmetic (`a[0x1]` is element 1).
   const index = field(n, 'index')!;
   const num = arithNumber(cx, index);
-  if (isAssoc(cx, name, n)) return cx.tok(n, 'variable', cx.s(`連想配列 \`${name}\` のキー \`${idx}\`（文字列）の要素`, `Element of associative array \`${name}\` with the key \`${idx}\` (a string)`));
-  return cx.tok(n, 'variable', cx.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``), num ? [num] : []);
+  if (isAssoc(cx, name, n)) return cx.tok(n, 'variable', cx.text('subscript-assoc-element', { name, key: idx }));
+  return cx.tok(n, 'variable', cx.text('subscript-element', { name, index: idx }), num ? [num] : []);
 }
 
 /** The expressions of an arithmetic command or expansion, with its commas. */
 export function arithChildren(cx: Explainer, n: SyntaxNode): Token[] {
-  const commas = n.children.filter((c) => c.type === ',').map((c) => cx.tok(c, 'operator', cx.s('`,` コンマ演算子: 左の式を評価して値を捨て、右の式に進む', '`,` comma operator: evaluate the left expression, drop its value, go on to the right one')));
+  const commas = n.children.filter((c) => c.type === ',').map((c) => cx.tok(c, 'operator', cx.text('arith-comma-operator')));
   return sortTokens([...cx.subs(n.namedChildren), ...commas]);
 }
 
@@ -939,15 +919,15 @@ export function wrapNote(cx: Explainer, n: SyntaxNode): string {
 
 /** `$(( … ))`, and the obsolete `$[ … ]`. */
 export function arithmeticExpansion(cx: Explainer, n: SyntaxNode): Token {
-  return cx.tok(n, 'substitution', cx.s('算術展開: 中の式を整数として計算した結果に置き換える', 'Arithmetic expansion: replaced by the integer result of the expression')
-    + (n.text.startsWith('$[') ? cx.s('。`$[…]` は古い書き方（廃止予定）で、`$((…))` と同じ意味', '. `$[…]` is the obsolete form of `$((…))`') : '') + commaNote(cx, n) + wrapNote(cx, n), arithChildren(cx, n));
+  return cx.tok(n, 'substitution', cx.text('arith-expansion')
+    + (n.text.startsWith('$[') ? cx.text('arith-expansion-obsolete') : '') + commaNote(cx, n) + wrapNote(cx, n), arithChildren(cx, n));
 }
 
 /** A single-quoted string. */
 export function rawString(cx: Explainer, n: SyntaxNode): Token {
   const host = hostString(cx, n);
   if (host) return host;
-  return cx.tok(n, 'string', cx.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
+  return cx.tok(n, 'string', cx.text('string-single'));
 }
 
 /**
@@ -977,12 +957,12 @@ export function concatenation(cx: Explainer, n: SyntaxNode): Token {
 
 /** A number: a constant of arithmetic that is not plain decimal, with its value (`arithNumber`), or a plain number. */
 export function number(cx: Explainer, n: SyntaxNode): Token {
-  return arithNumber(cx, n) ?? cx.tok(n, 'number', cx.s('数値', 'Number'));
+  return arithNumber(cx, n) ?? cx.tok(n, 'number', cx.text('arith-number'));
 }
 
 /** `( … )` of an array assignment: its values, which say more than words where `arrayValue` does. */
 export function array(cx: Explainer, n: SyntaxNode): Token {
   // (A list over several lines is explained whole: every value is on the line.)
   const values = n.namedChildren.flatMap((c) => (c.type === 'comment' ? cx.sub(c) : [arrayValue(cx, c) ?? cx.full(c)]));
-  return cx.tok(n, 'expansion', cx.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), values);
+  return cx.tok(n, 'expansion', cx.text('array-compound'), values);
 }
