@@ -8,19 +8,25 @@
 // keyboard is open over the editor (web/keyboard.ts), the sheet is that row alone, on the keyboard's top, and the app bar
 // hides (step C8b). A tap on the row shows the explanation, at half.
 import type { LineExplanation } from '../src/analyzer';
+import type { DocumentIssue } from '../src/document';
 import type { Lang } from '../src/i18n';
 import { LEVELS } from '../src/levels';
 import type { Keyboard, RowPlace } from '../src/ui/keyboard';
-import { keyed, settle, sheetHeight, type Snap, type SnapHeights, snapHeights, SNAPS, tapped } from '../src/ui/sheet';
+import { cursorFollows, type EditorRoom, keyed, settle, sheetHeight, type Snap, type SnapHeights, snapHeights, SNAPS, tapped } from '../src/ui/sheet';
 import { summaryRow } from '../src/ui/summaryRow';
+import { watchKeyboard } from './keyboard';
 import { narrow } from './layout';
 import { readStored, STORAGE_KEYS, writeStored } from './storage';
 import { TEXT } from './text';
 
 export interface SheetHost {
   lang(): Lang;
-  /** The sheet moved or settled, or the layout changed: the editor measures again and keeps its cursor in view, the toast moves. */
-  moved(): void;
+  /** The sheet moved or settled, or the layout changed: the editor measures again, its cursor's line back in view if `follow` (`cursorFollows`), and the toast moves. */
+  moved(follow: boolean): void;
+  /** The element that takes the editor's text, whose focus the keyboard comes with. */
+  textElement(): HTMLElement;
+  /** Edit mode and the focus in the editor. */
+  typing(): boolean;
   /** Read mode is on (a tap on a line raises a folded sheet, to show its explanation). */
   reading(): boolean;
   /** Shows the Explanation tab (after a problem was chosen in the Problems tab). */
@@ -49,6 +55,11 @@ export class BottomSheet {
   private readonly summary: HTMLElement;
   /** Where the summary row goes while the keyboard is open over the editor (web/keyboard.ts): the sheet is that row alone. */
   private place: RowPlace | undefined;
+  /** Reads the keyboard again (web/keyboard.ts). */
+  private readKeyboard: () => void = () => undefined;
+  /** The editor's room at the last draw, and whether its cursor followed. */
+  private room: EditorRoom | undefined;
+  private follow = true;
   private readonly problems: HTMLElement | null;
   private readonly source: HTMLElement | null;
   /** The hint showed in this page: it shows once. */
@@ -89,13 +100,12 @@ export class BottomSheet {
     // keyboard: the focus leaves the editor. (The press keeps the editor's focus until the click: the keyboard, and the
     // row with it, must not go before the tap ends.) The focus goes to the grabber, not to `paneStops`'s explanation stop:
     // the row it was on goes, and the frame would take a key from a finger's tap (the exception is stated at `paneStops`).
+    // It goes first: a screen reader then says the slider's new value, and the live region says nothing more (`set`).
     // Escape gives the focus back to the editor.
     this.summary.addEventListener('mousedown', (e) => e.preventDefault());
     this.summary.addEventListener('click', () => {
-      (document.activeElement as HTMLElement | null)?.blur();
-      this.release();
+      this.focus();
       this.picked();
-      this.grab.focus({ preventScroll: true });
     });
     this.summary.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
@@ -111,9 +121,15 @@ export class BottomSheet {
     narrow.addEventListener('change', () => this.layout());
     // (Where the sheet ends its move, the toast takes its place above it.)
     pane.addEventListener('transitionend', (e) => {
-      if (e.target === pane && this.on) host.moved();
+      if (e.target === pane && this.on) host.moved(this.follow);
     });
     this.layout();
+    // (Before the watcher's: Tab out of the editor while the fold is on would land on the row, and the fold ends with
+    // that blur, hiding it. The focus goes on to the grabber, the next stop once the fold has ended.)
+    host.textElement().addEventListener('blur', (e) => {
+      if (this.place && e.relatedTarget === this.summary) this.focus();
+    });
+    this.readKeyboard = watchKeyboard(host.textElement(), { typing: () => this.on && host.typing(), changed: (k) => this.fold(k) });
   }
 
   get on(): boolean {
@@ -127,7 +143,7 @@ export class BottomSheet {
 
   /**
    * The sheet is folded: its content, the explanation and the Problems list, is inert (`inert`). The height chosen, not
-   * the keyboard's fold: a stop in the sheet (`paneStops`) ends that fold first (`release`).
+   * the keyboard's fold: a stop in the sheet (`paneStops`) ends that fold first (`leaving`).
    */
   get folded(): boolean {
     return this.on && this.snap === 'peek';
@@ -140,12 +156,15 @@ export class BottomSheet {
 
   /** The focus on the grabber: the editor's stop while the sheet covers it, the explanation's while folded (`paneStops`). */
   focus(): void {
-    this.release();
-    this.grab.focus({ preventScroll: true });
+    this.leaving(() => this.grab.focus({ preventScroll: true }));
   }
 
-  /** The keyboard opened over the editor, closed, or moved (web/keyboard.ts). */
-  typing(k: Pick<Keyboard, 'place'>): void {
+  /**
+   * A new reading of the keyboard (web/keyboard.ts): it opened over the editor, closed, or moved. The fold's state is
+   * here alone.
+   */
+  private fold(k: Pick<Keyboard, 'place'>): void {
+    if (JSON.stringify(k.place) === JSON.stringify(this.place)) return;
     this.place = k.place;
     if (k.place) {
       this.hideHint();
@@ -155,17 +174,20 @@ export class BottomSheet {
   }
 
   /**
-   * The focus is about to leave the editor for a place in the sheet: the sheet is back at its height at once, since what
-   * the keyboard's fold hides takes no focus. (The browser takes the keyboard away after the focus has gone.)
+   * Moves the focus (`move`) to a place the keyboard's fold may hide, which takes no focus while hidden: the fold ends
+   * first, and the keyboard is read after, so that it is on again if the focus has stayed in the editor (a frame hidden
+   * by the Problems tab). The browser takes the keyboard away once the focus has gone.
    */
-  release(): void {
-    if (this.place) this.typing({});
+  leaving(move: () => void): void {
+    this.fold({});
+    move();
+    this.readKeyboard();
   }
 
-  /** Draws the summary row of the cursor's line (`line`, from 0): "Ln 20", its first problem's mark, and its text. */
-  summarize(ex: LineExplanation, line: number): void {
+  /** Draws the summary row of the cursor's line (`line`, from 0), from the problems the list shows: "Ln 20", its first problem's mark, and its text. */
+  summarize(ex: LineExplanation, problems: readonly DocumentIssue[], line: number): void {
     const t = TEXT[this.host.lang()];
-    const row = summaryRow(ex, this.host.lang());
+    const row = summaryRow(ex, problems, line, this.host.lang());
     const part = (id: string) => this.summary.querySelector<HTMLElement>(`#${id}`)!;
     part('summary-line').textContent = t.line(line + 1);
     part('summary-mark').textContent = row.mark;
@@ -233,7 +255,8 @@ export class BottomSheet {
       this.root.style.removeProperty('--sheet-rest');
       this.hideHint();
       this.inert(false, false);
-      return this.host.moved();
+      this.room = undefined;
+      return this.host.moved(true);
     }
     this.apply();
   }
@@ -253,7 +276,10 @@ export class BottomSheet {
     }
     this.inert(this.folded || !!this.place, this.covers);
     this.name();
-    this.host.moved();
+    const room = { width: window.innerWidth, height: window.innerHeight - shown.rest, fold: !!this.place };
+    this.follow = cursorFollows(this.room, room);
+    this.room = room;
+    this.host.moved(this.follow);
   }
 
   /**

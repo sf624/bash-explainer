@@ -62,14 +62,14 @@ describe('the web page: the phone\'s keyboard and the summary row', function () 
     ...(await import('playwright-core')).devices['iPhone 13'], viewport: { width, height: HEIGHT }, locale: lang === 'ja' ? 'ja-JP' : 'en-US', reducedMotion: 'reduce',
   });
 
-  /** The page on a phone, the read-mode tip closed, the sample's problems counted, the cursor on line 20 (its pitfall). */
-  const open = async (width: number, lang: 'en' | 'ja'): Promise<Page> => {
-    const ctx = await browser.newContext(await phone(width, lang));
+  /** The page on a phone, the read-mode tip closed (or kept: `tip`), the sample's problems counted, the cursor on line 20 (its pitfall). */
+  const open = async (width: number, lang: 'en' | 'ja', more: BrowserContextOptions = {}, tip = false): Promise<Page> => {
+    const ctx = await browser.newContext({ ...(await phone(width, lang)), ...more });
     await ctx.addInitScript(IOS);
     const page = await ctx.newPage();
     await page.goto(base);
     await page.locator('.cm-line').nth(5).waitFor();
-    if (await page.locator('#readtip').isVisible()) await page.locator('#readtip-close').tap();
+    if (!tip && (await page.locator('#readtip').isVisible())) await page.locator('#readtip-close').tap();
     await until('the sample\'s problems', () => problemsShown(page), (v) => v, 20000);
     await cursorToLine(page, 20);
     await until('the row of line 20', () => page.locator('#summary-line').textContent(), (t) => t === (lang === 'ja' ? '行 20' : 'Ln 20'));
@@ -261,6 +261,129 @@ describe('the web page: the phone\'s keyboard and the summary row', function () 
     assert.ok(close(row.x, 20) && close(row.width, 312) && close(row.height, 48 / 1.25) && close(row.y + row.height, 40 + 352), JSON.stringify(row));
     const end = await box(page, '#sheet-summary .chev');
     assert.ok(end.x + end.width <= 332 - 12 / 1.25 + 0.5, JSON.stringify(end));
+    await page.context().close();
+  });
+
+  it('folds at once with motion on, at the first open and the next: the sheet never lies over the editor on the keyboard\'s top', async () => {
+    const page = await open(390, 'en', { reducedMotion: 'no-preference' });
+    const openNow = `(() => { window.keyboard(${KEYBOARD}); const r = document.getElementById('panel-pane').getBoundingClientRect(); return { top: r.top, height: r.height }; })()`;
+    for (const round of ['first', 'second', 'third']) {
+      const at = await page.evaluate(openNow) as { top: number; height: number };
+      assert.ok(Math.abs(at.height - 49) < 1 && Math.abs(at.top - (HEIGHT - KEYBOARD - 49)) < 1, `${round}: ${JSON.stringify(at)}`);
+      await page.evaluate('window.keyboard(0)');
+      await until(`${round}: closed`, () => box(page, '#panel-pane'), (b) => b.height > 300);
+      await page.waitForTimeout(350);
+    }
+    await page.context().close();
+  });
+
+  it('says of a line what the Problems list says: a problem turned off in the script is not in the row', async () => {
+    const page = await open(390, 'en');
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('# bash-explainer disable=rm-empty-variable-root,unquoted-variable-as-path\nrm -rf $DIR/*\nrm -rf $DIR/*\n');
+    await cursorToLine(page, 2);
+    await until('the row of line 2', () => page.locator('#sheet-summary').getAttribute('aria-label'), (t) => !!t && t.startsWith('Line 2: ') && !t.includes('Warning'));
+    assert.strictEqual(await page.locator('#summary-mark').textContent(), '');
+    assert.match((await page.locator('#summary-text').textContent())!, /^Runs rm /);
+    await page.context().close();
+  });
+
+  it('places the row by the layout viewport, also where a browser reports the visual viewport as the window\'s size', async () => {
+    const page = await open(390, 'en');
+    // (Safari is said to give innerWidth and innerHeight of the visual viewport on a zoomed page.)
+    await page.evaluate(`(() => {
+      Object.defineProperty(window, 'innerHeight', { configurable: true, get: () => Math.round(visualViewport.height) });
+      Object.defineProperty(window, 'innerWidth', { configurable: true, get: () => Math.round(visualViewport.width) });
+      window.keyboard(${KEYBOARD}, 40, 1.25, 20);
+    })()`);
+    await until('the keyboard', () => state(page), (v) => v.keyboard);
+    const row = await stable('the row', () => box(page, '#sheet-summary'));
+    assert.ok(Math.abs(row.y + row.height - (40 + 352)) < 1 && Math.abs(row.width - 312) < 1, JSON.stringify(row));
+    await page.context().close();
+  });
+
+  it('says a new height once: on the row\'s Enter and tap, the grabber takes the focus first and says it', async () => {
+    for (const how of ['Enter', 'tap'] as const) {
+      const page = await open(390, 'en');
+      await page.locator('#sheet-grab').focus();
+      await page.keyboard.press('Home');
+      await until('the peek', () => page.locator('#sheet-summary').isVisible(), (v) => v);
+      await page.waitForTimeout(700);
+      await page.evaluate(`(() => {
+        const region = document.getElementById('announce');
+        window.said = [];
+        new MutationObserver(() => window.said.push(region.textContent)).observe(region, { childList: true, characterData: true, subtree: true });
+      })()`);
+      if (how === 'Enter') {
+        await page.locator('#sheet-summary').focus();
+        await page.keyboard.press('Enter');
+      } else await page.locator('#sheet-summary').tap();
+      assert.strictEqual((await state(page)).focus, 'sheet-grab', how);
+      await page.waitForTimeout(100);
+      assert.deepStrictEqual(await page.evaluate('window.said'), [], how);
+      await page.context().close();
+    }
+  });
+
+  it('stays folded on F6 when the focus cannot leave the editor: the Problems tab chosen, the frame hidden', async () => {
+    const page = await open(390, 'en');
+    await page.locator('#tab-problems').tap();
+    await until('the tab', () => page.locator('#tab-problems').getAttribute('aria-selected'), (v) => v === 'true');
+    await cursorToLine(page, 20);
+    await keyboardOn(page, 'iOS');
+    await folded(page, HEIGHT - KEYBOARD, 'Problems');
+    await page.keyboard.press('F6');
+    await page.waitForTimeout(100);
+    const after = await state(page);
+    assert.deepStrictEqual([after.inEditor, after.keyboard], [true, true]);
+    await page.context().close();
+  });
+
+  it('sends Tab on to the grabber while the keyboard is open: the focus never falls to a hidden row or to the page', async () => {
+    const page = await open(390, 'en');
+    await keyboardOn(page, 'iOS');
+    await folded(page, HEIGHT - KEYBOARD, 'Tab');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(100);
+    // The next stop once the fold has ended: the sheet's grabber, shown.
+    const at = await page.evaluate(`(() => { const e = document.activeElement; return { id: e.id, shown: e.checkVisibility({ visibilityProperty: true }) }; })()`);
+    assert.deepStrictEqual(at, { id: 'sheet-grab', shown: true });
+    assert.strictEqual((await state(page)).keyboard, false);
+    await page.context().close();
+  });
+
+  it('keeps the read tip under Read as the strip moves up with the fold, with motion and without', async () => {
+    for (const reducedMotion of ['reduce', 'no-preference'] as const) {
+      const page = await open(390, 'en', { reducedMotion }, true);
+      assert.strictEqual(await page.locator('#readtip').isVisible(), true, reducedMotion);
+      await keyboardOn(page, 'iOS');
+      await until('the keyboard', () => state(page), (v) => v.keyboard);
+      await page.waitForTimeout(400);
+      const [read, tip] = [await box(page, '#mode-read'), await box(page, '#readtip')];
+      assert.ok(Math.abs(tip.y - (read.y + read.height + 10)) < 1.5, `${reducedMotion}: ${JSON.stringify([read, tip])}`);
+      await page.context().close();
+    }
+  });
+
+  it('leaves the editor where the reader scrolled it when the visual viewport pans; the cursor comes back when the fold starts', async () => {
+    const page = await open(390, 'en');
+    await keyboardOn(page, 'iOS');
+    await folded(page, HEIGHT - KEYBOARD, 'pan');
+    const scroller = page.locator('.cm-scroller');
+    // (Far from the cursor's line, and from the end, where more room would move it.)
+    await scroller.evaluate((e) => { e.scrollTop = 1500; });
+    await page.waitForTimeout(150);
+    const top = await scroller.evaluate((e) => e.scrollTop);
+    await page.evaluate(`window.keyboard(${KEYBOARD}, 40)`);
+    await page.waitForTimeout(200);
+    assert.strictEqual(await scroller.evaluate((e) => e.scrollTop), top);
+    // The keyboard closed and opened again: the cursor's line is back in view above the row.
+    await page.evaluate('window.keyboard(0)');
+    await until('closed', () => state(page), (v) => !v.keyboard);
+    await page.evaluate(`window.keyboard(${KEYBOARD})`);
+    await folded(page, HEIGHT - KEYBOARD, 'open again');
     await page.context().close();
   });
 

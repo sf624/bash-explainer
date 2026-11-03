@@ -39,8 +39,7 @@ import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
 import { ProblemStrip, roomAboveStrip, watchStrip } from './problem-list';
 import { ReadEdit } from './read-edit';
-import { watchKeyboard } from './keyboard';
-import { BottomSheet, sheetLayout } from './sheet';
+import { BottomSheet } from './sheet';
 import { CopyState, DEFAULT_THEME, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
@@ -247,7 +246,7 @@ function updatePanel(): void {
   const auto = autoShellAt(doc, s, line);
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);
-  sheet?.summarize(explanation, line);
+  sheet?.summarize(explanation, problemsShown, line);
   const update = panelUpdate({
     lang, explanation, file: scriptName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
     choice: choice(), detected: auto, placement: settings['examples.placement'],
@@ -446,7 +445,7 @@ type Stop = 'editor' | 'settings' | 'grabber' | 'panel' | 'toast';
  * Where the editor's and the explanation's stops are, while what covers them makes them inert: side by side, the
  * settings sheet takes the editor's; on a phone, the sheet's grabber takes the editor's while the sheet is full, and
  * the explanation's while it is folded. The one source for `focusHome` and F6 (`paneKeys`). The keyboard's fold of the
- * sheet is no stop: a stop in the sheet ends it (`BottomSheet.release`). The one exception: a tap on the summary row
+ * sheet is no stop: a stop in the sheet ends it (`BottomSheet.leaving`). The one exception: a tap on the summary row
  * puts the focus on the grabber itself, at half, since a finger's tap must not put it in the frame (web/sheet.ts).
  */
 function paneStops(): { home: Stop; panel: Stop } {
@@ -458,10 +457,7 @@ function paneStops(): { home: Stop; panel: Stop } {
 function focusStop(stop: Stop, touch = false): void {
   if (stop === 'settings') settingsDialog?.focus();
   else if (stop === 'grabber') sheet?.focus();
-  else if (stop === 'panel') {
-    sheet?.release();
-    toPanel();
-  }
+  else if (stop === 'panel') (sheet ? sheet.leaving(toPanel) : toPanel());
   else if (stop === 'toast') toast.focus();
   else if (touch) editor.focusUnlessTouch();
   else editor.view.focus();
@@ -553,18 +549,19 @@ narrow.addEventListener('change', () => editor.keepCursorInView());
 const panePane = document.getElementById('panel-pane');
 const sheet = panePane && mode.hasChrome ? new BottomSheet(panePane, {
   lang: () => lang,
-  moved() {
+  moved(follow) {
     editor.view.requestMeasure();
-    editor.keepCursorInView('nearest');
+    if (follow) editor.keepCursorInView('nearest');
     toast.place();
+    readEdit.placeTip();
   },
+  textElement: () => editor.view.contentDOM,
+  typing: () => !readEdit.read && editor.view.hasFocus,
   reading: () => readEdit.read,
   explain: () => panel.explain(),
   announce: (text) => announcer?.say(text),
   home: () => focusStop(paneStops().home),
 }) : undefined;
-// While the keyboard is open over the editor, the sheet is the summary row on its top (web/keyboard.ts).
-if (sheet) watchKeyboard(editor.view.contentDOM, { typing: () => sheetLayout() && !readEdit.read && editor.view.hasFocus, changed: (k) => sheet.typing(k) });
 
 /** Hides the toast whose Undo goes back over an edit, when another edit of the editor's text comes first. */
 function dropUndo(): void {

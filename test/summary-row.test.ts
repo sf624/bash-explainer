@@ -4,9 +4,20 @@
 import * as assert from 'assert';
 import { LEVELS } from '../src/levels';
 import { summaryRow } from '../src/ui/summaryRow';
+import { diagnosticsFor } from '../src/document';
+import { openDocument, shellsOf } from '../src/document-setup';
+import { defaultSettings } from '../src/settings';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { explain } from './support/explain';
 
-const row = (src: string, line: number, lang: 'en' | 'ja') => summaryRow(explain(src, line, lang, { sentence: true }), lang);
+const parser = createUnbashParser();
+
+/** The problems the list shows of a script, as the page gets them (src/document.ts, `diagnosticsFor`). */
+const shown = (src: string, lang: 'en' | 'ja', settings = defaultSettings()) => {
+  const doc = openDocument(src, 'shell', (text) => parser.parse(text));
+  return diagnosticsFor(() => doc, () => shellsOf(src.split('\n'), 'x.sh', undefined), lang, settings, 'web').shown;
+};
+const row = (src: string, line: number, lang: 'en' | 'ja', settings = defaultSettings()) => summaryRow(explain(src, line, lang, { sentence: true }), shown(src, lang, settings), line, lang);
 
 describe('the summary row of a line', () => {
   it('shows the line\'s first problem by level, with its level\'s mark, in the words of the Problems list', () => {
@@ -35,7 +46,32 @@ describe('the summary row of a line', () => {
     // (`ssh-local-expansion` is a caveat, but no problem in the editors.)
     const ssh = explain('ssh host "echo $HOME"', 0, 'en', { sentence: true });
     assert.deepStrictEqual(ssh.noteInfo.map((n) => n.level), ['info']);
-    assert.deepStrictEqual(summaryRow(ssh, 'en'), { mark: '', text: 'Runs ssh (connect to a remote host over SSH (optionally run a command)).' });
+    assert.deepStrictEqual(summaryRow(ssh, shown('ssh host "echo $HOME"', 'en'), 0, 'en'), { mark: '', text: 'Runs ssh (connect to a remote host over SSH (optionally run a command)).' });
+  });
+
+  it('shows only what the Problems list shows: a problem turned off is not in the row', () => {
+    const sentence = { mark: '', text: 'Runs rm (remove files (no trash; permanent)) using -r (remove directories and their contents) and -f (ignore nonexistent files, never prompt).' };
+    const rm = 'rm -rf $DIR/*';
+    const off = (change: Partial<ReturnType<typeof defaultSettings>>) => ({ ...defaultSettings(), ...change });
+    // A comment in the script, for every level's problem of the line.
+    assert.deepStrictEqual(row(`# bash-explainer disable=rm-empty-variable-root,unquoted-variable-as-path\n${rm}`, 1, 'en'), sentence);
+    // A comment for one of the two: the row says the other.
+    assert.match(row(`# bash-explainer disable=rm-empty-variable-root\n${rm}`, 1, 'en').text, /^Pitfall: /);
+    assert.notStrictEqual(row(`# bash-explainer disable=rm-empty-variable-root\n${rm}`, 1, 'en').text, row(rm, 0, 'en').text);
+    // The settings: an ignored code, the problems off, the pitfalls off (an error stays).
+    assert.deepStrictEqual(row(rm, 0, 'en', off({ 'diagnostics.ignore': ['rm-empty-variable-root', 'unquoted-variable-as-path'] })), sentence);
+    assert.deepStrictEqual(row(rm, 0, 'en', off({ 'diagnostics.enabled': false })), sentence);
+    assert.deepStrictEqual(row(rm, 0, 'en', off({ 'diagnostics.pitfalls': false })), sentence);
+    assert.strictEqual(row('[ -f y', 0, 'en', off({ 'diagnostics.pitfalls': false })).level, 'error');
+  });
+
+  it('takes the highest level first, then from the left, and only the problems of the line', () => {
+    const line = (severity: 'error' | 'warning' | 'info', startCol: number, startLine = 0) => ({ code: 'x', severity, message: `${severity} ${startCol}`, startLine, startCol, endLine: startLine, endCol: startCol + 1 });
+    const ex = explain('ls', 0, 'en', { sentence: true });
+    const pick = (...list: ReturnType<typeof line>[]) => summaryRow(ex, list, 0, 'en').text;
+    assert.strictEqual(pick(line('info', 0), line('warning', 5), line('error', 9)), 'error 9');
+    assert.strictEqual(pick(line('warning', 5), line('warning', 2)), 'warning 2');
+    assert.strictEqual(pick(line('error', 0, 1), line('info', 3)), 'info 3');
   });
 
   it('shows what a line without code is, and says when there is nothing to explain', () => {

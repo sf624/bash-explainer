@@ -27,6 +27,8 @@ export class ReadEdit {
     }
     document.getElementById('readtip-close')?.addEventListener('click', () => this.hideTip(true));
     window.addEventListener('resize', () => this.placeTip());
+    // (The strip moves with the app bar, when it slides away and back.)
+    document.querySelector('header.top')?.addEventListener('transitionend', () => this.placeTip());
     this.show();
     this.showTip();
   }

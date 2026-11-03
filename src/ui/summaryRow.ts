@@ -1,9 +1,7 @@
 import type { LineExplanation } from '../analyzer-types';
-import { plain } from '../document';
+import { type DocumentIssue, plain } from '../document';
 import type { Lang } from '../i18n';
-import { LEVELS, type NoteLevel } from '../levels';
-import { isProblemNote, problemText } from '../messages';
-import { notesByLevel } from './render';
+import { LEVELS, type NoteLevel, problemLevel, problemLevels } from '../levels';
 import { ui } from './texts';
 
 // The phone's summary row of the cursor's line (docs/design/chrome-redesign.md, step C8b): one line under the sheet's
@@ -20,13 +18,16 @@ export interface SummaryRow {
 }
 
 /**
- * The row of a line: its first problem by level (`notesByLevel`: an error, a pitfall, then a caveat; `isProblemNote`),
- * in the words of the Problems list (`problemText`: "Pitfall: …", an error without "Error:"); else its "In short" sentence (`LineExplanation.sentence`, on every line
- * with code); else the line's summary (`LineExplanation.summary`: what a comment or a shebang is); else that there is
- * nothing to explain.
+ * The row of line `line`: its first problem of those the Problems list shows (`problems`, the list itself, which has
+ * decided what is turned off), the highest level first and then from the left, in the list's words ("Pitfall: …", an
+ * error without "Error:"); else its "In short" sentence (`LineExplanation.sentence`, on every line with code); else the
+ * line's summary (`LineExplanation.summary`: what a comment or a shebang is); else that there is nothing to explain.
  */
-export function summaryRow(ex: LineExplanation, lang: Lang): SummaryRow {
-  const problem = notesByLevel(ex).find(isProblemNote);
-  if (problem) return { level: problem.level, mark: LEVELS[problem.level].mark, text: plain(problemText(problem, lang), { backticks: false }) };
+export function summaryRow(ex: LineExplanation, problems: readonly DocumentIssue[], line: number, lang: Lang): SummaryRow {
+  const [first] = problems.filter((i) => i.startLine === line).sort((a, b) => problemLevel(a.severity).rank - problemLevel(b.severity).rank || a.startCol - b.startCol);
+  if (first) {
+    const [level] = problemLevels([first.severity]);
+    return { level, mark: LEVELS[level].mark, text: plain(first.message, { backticks: false }) };
+  }
   return { mark: '', text: plain(ex.sentence ?? (ex.summary || ui[lang].empty), { backticks: false }) };
 }
