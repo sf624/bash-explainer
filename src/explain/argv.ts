@@ -136,9 +136,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
           out.push(withReadings(cx, cx.tok(a, 'option', cx.t(role.text), wordParts(cx, a)), role.readings, word, nodes));
           break;
         case 'open-option':
-          out.push(cx.tok(a, 'option', cx.s(
-            '実行時に決まるオプション（展開した結果を、コマンドがオプションとして読む）',
-            'Options known only at run time (the command reads what the expansion gives as options)'), wordParts(cx, a)));
+          out.push(cx.tok(a, 'option', cx.text('option-open'), wordParts(cx, a)));
           break;
         case 'value':
           out.push(withReadings(cx, expanded(cx, a, valueToken(cx, a, role, disables)), role.readings, word, nodes));
@@ -160,9 +158,9 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
         }
         case 'terminator':
           out.push(cx.tok(a, 'operator', role.text === '+'
-            ? cx.s(`\`${role.of}\` の終わり: 見つかったファイルをまとめて1回のコマンドに渡す`, `End of \`${role.of}\`: pass all matches to one command invocation`)
+            ? cx.text('find-exec-end-batch', { of: role.of })
             // (No shell to escape it from where no shell reads the words, Docker's exec form.)
-            : cx.s(`\`${role.of}\` の終わり: 見つかったファイル1件ごとにコマンドを実行${cx.state.noShell ? '' : '（\`;\` はシェルに解釈されないようエスケープが必要）'}`, `End of \`${role.of}\`: run once per match${cx.state.noShell ? '' : ' (\`;\` must be escaped from the shell)'}`)));
+            : cx.text('find-exec-end-each', { of: role.of, escaped: !cx.state.noShell })));
           break;
         case 'operand': {
           // (A word that expands to another number of words, `$x` or `{a,b}`, shifts the numbers: from it on, they are not
@@ -177,9 +175,9 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
         case 'subcommand': {
           // (Where no shell reads the words, Docker's exec form, the program gets them as they are.)
           const note = cx.state.noShell
-            ? cx.s(`（シェルを通さずに \`${parse.command}\` が受け取る引数で、\`${parse.command}\` 自身が解釈する）`, ` (an argument \`${parse.command}\` gets with no shell in between, and interprets itself)`)
-            : cx.s(`（シェルから見れば \`${parse.command}\` への引数で、\`${parse.command}\` 自身が解釈する）`, ` (to the shell it is an argument to \`${parse.command}\`, which interprets it itself)`);
-          out.push(withReadings(cx, cx.tok(a, 'subcommand', cx.s(`サブコマンド \`${role.parse.command}\`: `, `Subcommand \`${role.parse.command}\`: `) + cx.t(role.spec.summary) + note), role.readings, word, nodes));
+            ? cx.text('subcommand-argument-no-shell', { command: parse.command })
+            : cx.text('subcommand-argument-shell', { command: parse.command });
+          out.push(withReadings(cx, cx.tok(a, 'subcommand', cx.text('subcommand-label', { command: role.parse.command }) + cx.t(role.spec.summary) + note), role.readings, word, nodes));
           out.push(...render(cx, role.parse, role.spec, nodes, nodes.slice(word + 1, role.parse.end)));
           break;
         }
@@ -246,14 +244,14 @@ function expanded(cx: Explainer, a: SyntaxNode, t: Token): Token {
  */
 function declarationOption(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' | 'cluster' }>): Token {
   const flags = (role.role === 'cluster' ? role.letters : [role]).flatMap((l) => (l.role !== 'option' ? [] : l.disables ? (l.spec.offText ? [l.spec.offText] : []) : [l.text]));
-  return cx.tok(a, 'option', flags.length ? flags.map((f) => cx.t(f)).join(cx.s('、', ', ')) : cx.s('オプション', 'Option'));
+  return cx.tok(a, 'option', flags.length ? flags.map((f) => cx.t(f)).join(cx.text('option-list-separator')) : cx.text('option-plain'));
 }
 
 /** The token of `--`, which ends the options of a builtin; what else it does, when the spec says (`set --` sets the positional parameters). */
 function endOfOptions(cx: Explainer, n: SyntaxNode, spec: CommandSpec): Token {
   const own = spec.options?.find((o) => o.names.includes('--'));
   if (own) return cx.tok(n, 'option', cx.t(own.text));
-  return cx.tok(n, 'option', cx.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument'));
+  return cx.tok(n, 'option', cx.text('option-end-of-options'));
 }
 
 /** The tokens of an expansion in a word read as an option (`-$opts`), if any. */
@@ -303,7 +301,7 @@ function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
     const flags = parts.filter((p) => p.kind === 'option');
     // `-F,` / `-n5`: one option with its value attached is not a combination.
     return cx.tok(a, 'option', flags.length > 1
-      ? cx.s(`短いオプション ${flags.map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${flags.map((p) => `\`${p.label}\``).join(' ')}`)
+      ? cx.text('option-combined-short', { labels: flags.map((p) => `\`${p.label}\``).join(' ') })
       : flags[0].explanation, flags.length > 1 ? parts : parts.filter((p) => p.kind === 'argument'));
   }
   if (role.role === 'unknown-option') return cx.tok(a, 'option', role.refused && !role.ambiguous ? cx.t(role.refused) : unknownOption(cx, parse, spec, role.ambiguous, role.late));
@@ -328,7 +326,7 @@ function equalsToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const emb = value.spec?.lang && valueLit ? embeddedText(cx, valueLit, value.spec.lang, a) : undefined;
   const extra = emb?.note ? ` — ${emb.note}` : '';
   const text = role.role === 'option' ? cx.t(role.text) : unknownOption(cx, parse, spec, role.ambiguous);
-  return cx.tok(a, 'option', text + cx.s(`（値: \`${val}\`${known ? ' — ' + cx.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + cx.t(known) : ''})`) + extra + splicedNote(cx, value), emb?.tokens ?? []);
+  return cx.tok(a, 'option', text + cx.text('option-equals-value', { val, ...(known ? { known: cx.t(known) } : {}) }) + extra + splicedNote(cx, value), emb?.tokens ?? []);
 }
 
 /** A letter of an option word (`-e` of `-euo`, `c` of `tar cf`), as a token over its character. */
@@ -364,14 +362,14 @@ function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec
   if (value.spec?.how === 'attached-only') {
     // `-i.bak`: the rest of the word is the value. In `-pie` that makes `e` the value, not `-e`.
     const trap = /^[a-zA-Z]/.test(val) && spec.options?.some((o) => o.names.includes('-' + val[0]))
-      && cx.s(`。注意: \`${val}\` は別のオプションではなく \`${flag}\` の値として扱われる`, `. Note: \`${val}\` is taken as the value of \`${flag}\`, not as more options`);
+      && cx.text('option-attached-value-trap', { val, flag });
     raw.label = val;
-    raw.explanation = cx.s(`\`${flag}\` の値 \`${val}\``, `Value \`${val}\` for \`${flag}\``) + (trap || '');
+    raw.explanation = cx.text('option-attached-value', { flag, val }) + (trap || '');
     return [...parts, raw];
   }
   const known = own(value.spec?.values, val);
   const glued = lit && !isPlainWord(a);
-  raw.explanation = (known ? `${val}: ${cx.t(known)}` : cx.s(`\`${flag}\` の値`, `Value for \`${flag}\``) + (glued ? cx.s(`（クォートを外すと \`${val}\`）`, ` (\`${val}\` after quote removal)`) : '')) + splicedNote(cx, value);
+  raw.explanation = (known ? `${val}: ${cx.t(known)}` : cx.text('option-value-for', { flag }) + (glued ? cx.text('option-value-unquoted', { val }) : '')) + splicedNote(cx, value);
   // `-k3,3nr`, `-f2-4`: the attached value can be broken down like a separate one.
   const lang = value.spec?.lang;
   const emb = lang && lit ? embeddedText(cx, lit.offsets ? { text: val, offsets: lit.offsets.slice(value.attached) } : { text: val, base: lit.base! + value.attached! }, lang, a) : undefined;
@@ -399,9 +397,7 @@ function valueToken(cx: Explainer, v: SyntaxNode, role: ValueRole, disables: boo
   }
   // `jq --arg NAME VALUE`: two words follow; the first is the name.
   if (Array.isArray(role.option?.value) && role.option.value.length === 2) {
-    const names = [cx.s('名前', 'name'), cx.s('値', 'value')];
-    const name = names[role.index];
-    t.explanation = cx.s(`\`${flag}\` の${name}`, `${name[0].toUpperCase()}${name.slice(1)} for \`${flag}\``) + (role.index === 0 ? cx.s('（フィルタでは `$` を付けて使う）', ' (use it as `$name` in the filter)') : '');
+    t.explanation = (role.index === 0 ? cx.text('option-name-for', { flag }) + cx.text('option-name-filter-hint') : cx.text('option-value-for', { flag }));
   }
   t.explanation += splicedNote(cx, role);
   t.valueFor = flag;
@@ -459,11 +455,11 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
   if (item?.assignment) {
     const name = a.text.slice(0, a.text.indexOf('='));
     assigned.push(name);
-    return cx.tok(a, 'argument', cx.s(`環境変数 \`${name}\` の設定（実行するコマンドの環境にだけ入る）`, `Sets the variable \`${name}\` for the command to run`), wordParts(cx, a));
+    return cx.tok(a, 'argument', cx.text('operand-env-assignment', { name }), wordParts(cx, a));
   }
   // `%1`, `%%`, `%name`: a job, not a file or a PID.
   const job = item?.type === 'job' && isPlainWord(a) ? jobSpec(a.text) : undefined;
-  if (job) return cx.tok(a, 'argument', cx.s(`ジョブ指定: ${job.ja}`, `Job spec: ${job.en}`));
+  if (job) return cx.tok(a, 'argument', cx.text('operand-job-spec', { job }));
   let desc: string | undefined;
   // (A function gets every word, also those that look like options: `f -g b` gives `b` as $2.)
   if (isFn) desc = functionArgs(cx, nodes, word);
@@ -523,7 +519,7 @@ function markedAssignment(cx: Explainer, a: SyntaxNode, desc: string, command: s
     sentences.push(isFn === 'maybe' ? cx.s('関数が動くなら代入はされず、動かなければビルトインが代入する', 'If the function runs, nothing is assigned; otherwise the builtin assigns it')
       : cx.s('代入はされない', 'Nothing is assigned'));
   }
-  return cx.tok(a, 'argument', [desc, ...sentences].join(cx.s('。', '. ')), cx.sub(value));
+  return cx.tok(a, 'argument', [desc, ...sentences].join(cx.sep()), cx.sub(value));
 }
 
 /** What a declaration builtin `command` does with its word `a`, whose braces bash expands or may expand (`local {a,b}`, see `bracedUnset`). */
@@ -573,10 +569,10 @@ function declaredOperand(cx: Explainer, a: SyntaxNode, space: ReturnType<typeof 
   const written = staticWordValue(a, false, cx.shell);
   if (space !== 'function' && !element && written !== undefined && !validName(/^[^=]*?(?=\+?=|$)/.exec(written)![0]) && !(written === '-' && builtins[command].localOptions)
     && !(builtins[command].locals && readDeclarationWords(command, fields(a.parent!, 'argument'), cx.state.shell).on.includes('p'))) {
-    return cx.tok(a, 'variable', cx.s('bash はこの語を受け付けない: 変数の名前として正しくない（「not a valid identifier」で終了ステータス 1）', 'Bash refuses this word: it is not a valid variable name ("not a valid identifier", status 1)'));
+    return cx.tok(a, 'variable', cx.text('declare-invalid-name'));
   }
   if (space === 'function' || !element) {
-    return cx.tok(a, 'variable', space === 'function' ? cx.s(`関数 \`${a.text}\` を対象にする`, `Function \`${a.text}\``) : cx.s(`変数 \`${a.text}\` を対象にする`, `Variable \`${a.text}\``));
+    return cx.tok(a, 'variable', space === 'function' ? cx.text('declare-function-target', { name: a.text }) : cx.text('declare-variable-target', { name: a.text }));
   }
   // `declare x[3]` declares the array `x`, and bash ignores the subscript (6.7); `export` and `readonly` refuse the word,
   // and `declare -p` finds no such name. Checked with bash 5.2 and 5.3.
@@ -606,15 +602,9 @@ function argumentAssignment(cx: Explainer, a: SyntaxNode, command: string): Toke
     : cx.s(`変数 \`${name}\` に \`${value}\` を代入する`, `Assign \`${value}\` to the variable \`${name}\``);
   // (In POSIX mode, after `command`, bash expands it as an assignment: the word model's context, `assignmentAfterCommand`.)
   if (word?.context === 'declaration-assignment') {
-    return cx.tok(a, 'assignment', cx.s(
-      `${what}（\`${command}\` がこの語を代入として読む）。POSIX モードの bash は、\`command\` の後でもこの語を代入として展開する（単語分割もグロブ展開もしない）`,
-      `${what} (\`${command}\` reads the word as an assignment). In POSIX mode, bash expands it as an assignment after \`command\` too (no word splitting or globbing)`,
-    ), a.type === 'concatenation' ? cx.sub(a).flatMap((t) => t.children) : []);
+    return cx.tok(a, 'assignment', cx.text('declare-assignment-posix', { what, command }), a.type === 'concatenation' ? cx.sub(a).flatMap((t) => t.children) : []);
   }
-  return cx.tok(a, 'assignment', cx.s(
-    `${what}（\`${command}\` がこの語を代入として読む）。ただし bash にとっては普通の引数で、代入ではない（コマンド名が \`${command}\` そのものではないため）${split ? '。クォートしない展開は単語分割とグロブ展開を受ける' : ''}`,
-    `${what} (\`${command}\` reads the word as an assignment). To bash it is an ordinary argument, not an assignment, since the command name is not \`${command}\` itself${split ? ': an unquoted expansion in it is split and globbed' : ''}`,
-  ), a.type === 'concatenation' ? cx.sub(a).flatMap((t) => t.children) : []);
+  return cx.tok(a, 'assignment', cx.text('declare-assignment-argument', { what, command, split: !!split }), a.type === 'concatenation' ? cx.sub(a).flatMap((t) => t.children) : []);
 }
 
 /**
@@ -838,7 +828,7 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
     // `{}` is replaced by find (and `xargs -I{}`) with each path.
     const mark = (ts: Token[]) => ts.forEach((t) => {
       if (t.label === '{}') {
-        t.explanation = cx.s('`{}`: 見つかったファイルのパスに置き換わる', '`{}`: replaced with the path that was found');
+        t.explanation = cx.text('find-exec-placeholder');
         t.children = [];
       } else mark(t.children);
     });
@@ -860,7 +850,7 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   return {
     kind, ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}), ...(direct ? { refs: builtinSections(res.name, res.special) } : program.length ? { refs: program } : {}), ...(basis ? { basis } : {}),
     label: shorten(name),
-    explanation: (role.of ? cx.s('実行するコマンド: ', 'Command to run: ') : '') + (direct ? '' : cx.s(`\`${name}\` を実行: `, `runs \`${name}\`: `)) + explanation,
+    explanation: (role.of ? cx.text('wrapped-command-to-run') : '') + (direct ? '' : cx.text('wrapped-runs', { name })) + explanation,
     span, children, summary: `${name}: ${explanation}`,
   };
 }
@@ -875,7 +865,7 @@ function positional(cx: Explainer, a: SyntaxNode, desc: string | undefined, lang
     const brace = braceWord(cx, a);
     const base = brace ?? word(cx, a);
     // (A word that is only a tilde expansion is still an operand the command reads: bash's token is under it.)
-    if (!desc) return base.kind === 'expansion' && !brace ? cx.tok(a, 'argument', cx.s(`文字列 \`${a.text}\``, `Word \`${a.text}\``), [base]) : base;
+    if (!desc) return base.kind === 'expansion' && !brace ? cx.tok(a, 'argument', cx.text('operand-word', { text: a.text }), [base]) : base;
     if (brace) return cx.tok(a, 'argument', desc, [brace]);
     const tl = tilde(cx, a);
     // (Tildes after `=` and `:` come as a word with them as its children.)
@@ -928,28 +918,28 @@ function findExpression(cx: Explainer, all: SyntaxNode[], spec: CommandSpec): To
   if (!tree || apart) return [...read(0, nodes.length), ...empty];
   const exprArgs = nodes;
 
-  const opTok = (idx: number, ja: string, en: string): Token[] => [cx.tok(exprArgs[idx], 'operator', cx.s(ja, en))];
+  const opTok = (idx: number, text: string): Token[] => [cx.tok(exprArgs[idx], 'operator', text)];
   const build = (n: FindNode): Token[] => {
     switch (n.type) {
       case 'primary':
         return read(n.from, n.to + 1);
       case 'not':
-        return [...opTok(n.op, '`!`: 直後の条件を否定する', '`!`: negates what follows'), ...build(n.child)];
+        return [...opTok(n.op, cx.text('find-not')), ...build(n.child)];
       case 'group': {
         const inner = [
-          ...opTok(n.open, '`\\(`: グループの開始（シェルに解釈されないよう `\\` でエスケープする）', '`\\(`: start of a group (escaped so the shell leaves it alone)'),
+          ...opTok(n.open, cx.text('find-group-open')),
           ...build(n.child),
-          ...opTok(n.close, '`\\)`: グループの終わり', '`\\)`: end of the group'),
+          ...opTok(n.close, cx.text('find-group-close')),
         ];
         const span: Span = { start: spanOf(exprArgs[n.open]).start, end: spanOf(exprArgs[n.close]).end };
-        return [{ kind: 'block', label: shorten(words.slice(n.open, n.close + 1).join(' ')), span, children: inner, explanation: cx.s('グループ: 括弧の中を先にまとめて評価する', 'Group: evaluated as one condition') }];
+        return [{ kind: 'block', label: shorten(words.slice(n.open, n.close + 1).join(' ')), span, children: inner, explanation: cx.text('find-group') }];
       }
       case 'and':
       case 'or':
       case 'list': {
         const ops = new Set(n.ops);
         const toks = n.children.flatMap(build);
-        for (const o of ops) toks.push(...opTok(o, ...operatorTexts(n.type)));
+        for (const o of ops) toks.push(...opTok(o, cx.s(...operatorTexts(n.type))));
         return sortTokens(toks);
       }
     }
@@ -986,7 +976,7 @@ export function testArgs(cx: Explainer, n: SyntaxNode, test: CommandTest, bracke
     inner = testTokens(cx, n, test.test, test.test.expr, builtin ? ['4.1', '6.4'] : undefined);
   } else inner = cx.subs(test.words);
   if (!test.close) return inner;
-  return [...inner, cx.tok(test.close, 'argument', cx.s('`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）', 'The last argument passed to `[`. `[` checks it to find the end of the expression (without it, an error)'))];
+  return [...inner, cx.tok(test.close, 'argument', cx.text('test-last-bracket'))];
 }
 
 /**
