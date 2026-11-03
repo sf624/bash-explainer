@@ -1,6 +1,8 @@
 // What the analyzer marks on the tokens it makes: who reads each part (`Token.origin`, src/analyzer-types.ts), for the
 // tree view of the panel (src/reading.ts), and the labels their explanations need not repeat.
-import type { ScriptProcess, Token, TokenOrigin } from './analyzer-types';
+import type { LineExplanation, ScriptProcess, Token, TokenOrigin } from './analyzer-types';
+import { sameSpan, spanWithin } from './noteanchors';
+import { KIND_ROLES } from './roles';
 import { type ExecEnv, processOf, whereOf } from './semantics/env';
 
 /** Marks `t` and the tokens under it that have no origin yet as read by `origin` (`Token.origin`). */
@@ -59,4 +61,32 @@ export function dropLabelEcho(t: Token): void {
     if (m) t.explanation = rest.slice(m[0].length);
   }
   for (const c of t.children) dropLabelEcho(c);
+}
+
+/**
+ * Gives every token of a line its role (`Token.role`, from its kind: src/roles.ts) and the facts of the line about it
+ * (`Token.facts`): a fact said at a node (`LineExplanation.anchors`) belongs to the outermost token of the same range,
+ * else to the innermost token around that range; a fact said about the line belongs to none. Made again from the
+ * anchors when it runs again (a host adds its own facts: src/hosts/remap.ts).
+ */
+export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'facts' | 'anchors'>): void {
+  const all: Token[] = [];
+  const walk = (t: Token) => {
+    t.role = KIND_ROLES[t.kind];
+    delete t.facts;
+    all.push(t);
+    t.children.forEach(walk);
+  };
+  items.forEach(walk);
+  const ids = new Map((ex.facts ?? []).map((f) => [f.text, f.id]));
+  for (const a of ex.anchors ?? []) {
+    const id = ids.get(a.text);
+    if (!id) continue;
+    const around = all.filter((t) => spanWithin(a.span, t.span));
+    const exact = around.find((t) => sameSpan(a.span, t.span));
+    // (The tokens around a range are a chain from the outermost in, in the order of the walk: the last is the innermost.)
+    const at = exact ?? around.at(-1);
+    // (Said at several nodes of one token, it is listed once.)
+    if (at) at.facts = [...new Set([...at.facts ?? [], id])];
+  }
 }

@@ -1,17 +1,20 @@
 // The explanation of redirections (docs/design/analyzer.md, step 5): each operator with its descriptor and target
 // (`>`, `>>`, `>|`, `<`, `<>`, `&>`, `>&`, `<&`, their `-` and `{fd}` forms), here-documents and here-strings, and
 // the redirections that apply to a compound command, `time` or assignments as a whole. What a list of
-// redirections does to the descriptors comes from `simulateRedirects` (src/idioms.ts); the words of a target are
+// redirections does to the descriptors comes from `redirectOrder` (src/idioms.ts); the words of a target are
 // words (src/explain/words.ts). A simple command with redirections before or after its words (`splitCommand`) is
 // the commands' (src/explain/commands.ts).
 import type { Token } from '../analyzer-types';
 import { SHELL_NAMES, featureWorks, type Shell } from '../dialect';
 import { fdName, networkPathAsFile, networkRedirect, networkTarget, redirects, specialDestinations } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
-import { type Redirect, simulateRedirects } from '../idioms';
+import { type FdTarget, type Redirect, redirectOrder, sameTarget } from '../idioms';
 import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
+import { stderrPiped } from '../semantics/env';
+import { stdoutAt } from '../semantics/stdout';
+import { replaceSpan, textBetween } from '../rewrite';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { field, fields, fileContentsOf, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
@@ -39,8 +42,7 @@ export function redirected(cx: Explainer, n: SyntaxNode): Token {
  * (`>f`). `bodyToks` explain it.
  */
 export function redirectedWhole(cx: Explainer, n: SyntaxNode, body: SyntaxNode | undefined, text: string | undefined, bodyToks: Token[], redirs: SyntaxNode[]): Token {
-  const effect = simulateRedirects(redirs.map((r) => redirectInfo(r)), cx.lang);
-  if (effect) cx.note(effect, redirs);
+  redirectionNotes(cx, n, redirs);
   const redirToks = cx.subs(redirs);
   // `time >o`: the keyword carries its redirections.
   if (bodyToks.length === 1 && n.type === 'redirected_statement' && field(n, 'body')!.type === 'time_statement') {
@@ -81,7 +83,35 @@ function nameless(cx: Explainer, n: SyntaxNode, text: string | undefined): strin
   );
 }
 
-/** Operator, descriptor and target of a redirection node, for `simulateRedirects`. */
+/**
+ * The notes on what the redirections of a command (or of the statement they apply to, `n`) do together, in their order
+ * (3.6): where each descriptor points in the end (`redirections-in-order`), and a `2>&1` before stdout goes to a file,
+ * so that stderr goes to the original stdout (`stderr-to-original-stdout`). Not where that stdout goes somewhere known
+ * (`stdoutAt`, src/semantics/stdout.ts): `cmd 2>&1 >/dev/null | grep …`, `err=$(cmd 2>&1 >/dev/null)` and
+ * `{ cmd 2>&1 >/dev/null; } > errors` keep its error messages alone, on purpose. Its quick fix only where the answer
+ * is `plain`; where it is not known, the caveat says what bash does, and offers no edit.
+ */
+export function redirectionNotes(cx: Explainer, n: SyntaxNode, redirs: readonly SyntaxNode[]): void {
+  const order = redirectOrder(redirs.map((r) => redirectInfo(r)), { stderrPiped: stderrPiped(n) });
+  if (!order) return;
+  const to = (fd: number): FdTarget | undefined => order.table.find((e) => e.fd === fd)?.to;
+  // (Where stderr still goes to the original stdout in the end: not `2>&1 >f 2>e`, nor `2>&1 >f |&`.)
+  const first = order.stderrFirst && sameTarget(to(2), { kind: 'original', fd: 1 }) ? order.stderrFirst : undefined;
+  const goes = first && stdoutAt(cx.state, n);
+  // (Where that stdout goes somewhere known, which then gets the errors alone: `$(cmd 2>&1 >/dev/null)`.)
+  const alone = goes === 'pipe' || goes === 'capture' || goes === 'redirected' ? goes : undefined;
+  cx.note(fact(cx.lang, 'redirections-in-order', { ...order, ...(alone ? { alone } : {}) }), redirs);
+  if (!first || alone) return;
+  const dup = redirs[first.dup];
+  const file = redirs[first.stdoutTo];
+  // (`2>&1 x >f` becomes `x >f 2>&1`: what is between them stays, before.)
+  const code = `${textBetween(dup, file).slice(dup.text.length).replace(/^[ \t]+/, '')} ${dup.text}`;
+  // (The fix only where nothing can depend on the order; the text says how to write it either way.)
+  const rewrite = goes === 'plain' ? replaceSpan(dup, file, code) : { code, edits: [] };
+  cx.note(fact(cx.lang, 'stderr-to-original-stdout', { dup: dup.text, file: file.text, rewrite: [rewrite] }), dup);
+}
+
+/** Operator, descriptor and target of a redirection node, for `redirectOrder`. */
 export function redirectInfo(r: SyntaxNode): Redirect {
   if (r.type === 'file_redirect') {
     const { op, dest } = redirectParts(r);

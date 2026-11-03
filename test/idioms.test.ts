@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
-import { findIdioms, simulateRedirects } from '../src/idioms';
+import { findIdioms, type Redirect, redirectOrder } from '../src/idioms';
+import { fact } from '../src/messages';
 import { Analyzer, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
@@ -16,6 +17,12 @@ function idioms(lines: string[], lang: 'en' | 'ja'): string[] {
 /** Whether the statements of `src` hold one `set` that turns on errexit, nounset and pipefail. */
 const isStrictMode = (src: string): boolean => idioms([src], 'en').some((n) => /strict mode/.test(n));
 
+/** The text of the note on the order of `redirs`, or undefined where the order cannot matter. */
+const simulateRedirects = (redirs: Redirect[], lang: 'ja' | 'en'): string | undefined => {
+  const order = redirectOrder(redirs);
+  return order && fact(lang, 'redirections-in-order', order).body;
+};
+
 describe('redirect order', () => {
   it('follows redirections left to right', () => {
     assert.match(simulateRedirects([{ op: '>', fd: '', dest: '/dev/null' }, { op: '>&', fd: '2', dest: '1' }], 'en')!,
@@ -25,7 +32,8 @@ describe('redirect order', () => {
   it('warns about 2>&1 before the file redirection', () => {
     const r = simulateRedirects([{ op: '>&', fd: '2', dest: '1' }, { op: '>', fd: '', dest: 'out.log' }], 'en')!;
     assert.match(r, /stdout → out\.log, stderr → the original stdout/);
-    assert.match(r, /Note: `2>&1` comes before the file redirection/);
+    // (The caveat, a fact of its own: the `2>&1` and the last redirection of stdout to a file after it.)
+    assert.deepStrictEqual(redirectOrder([{ op: '>&', fd: '2', dest: '1' }, { op: '>', fd: '', dest: 'a' }, { op: '>>', fd: '1', dest: 'b' }])!.stderrFirst, { dup: 0, stdoutTo: 2 });
   });
 
   it('recognises a swap through a third descriptor', () => {
@@ -125,7 +133,7 @@ describe('reading a file line by line', () => {
   const notes = (stmt: string) => idioms([stmt], 'en').filter((n) => /line by line/.test(n));
 
   it('knows a loop fed by a file and one fed by a command', () => {
-    assert.match(notes('while read -r line; do echo "$line"; done < input.txt')[0], /^Idiom: `while read … done < file`.*unless the loop is `while read -r line \|\| \[ -n "\$line" \]`$/);
+    assert.match(notes('while read -r line; do echo "$line"; done < input.txt')[0], /^ℹ Idiom: `while read … done < file`.*unless the loop is `while read -r line \|\| \[ -n "\$line" \]`$/);
     assert.match(notes('while read -r line; do echo "$line"; done < "$f"')[0], /done < file/);
     assert.match(notes('while IFS= read -r line; do n=$((n+1)); done < <(ls)')[0], /done < <\(command\)`.*current shell/);
     assert.match(idioms(['while read -r l; do :; done < <(ls)'], 'ja').join(), /カレントシェル/);

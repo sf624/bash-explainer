@@ -511,7 +511,7 @@ describe('conventions: the habit a note recommends', () => {
       'actions-script-injection': 'actions-expression-through-env',
     };
     const pitfalls = (Object.keys(MESSAGES) as FactId[]).filter((id) => MESSAGES[id].kind === 'pitfall');
-    assert.strictEqual(pitfalls.length, 64, 'a new pitfall: sort it in this test (fact, or the habit of its advice)');
+    assert.strictEqual(pitfalls.length, 65, 'a new pitfall: sort it in this test (fact, or the habit of its advice)');
     for (const id of Object.keys(MESSAGES) as FactId[]) assert.strictEqual(conventionOfEntry(id) ?? 'fact', both[id] ?? 'fact', id);
     assert.deepStrictEqual(STYLE_CONVENTIONS, {
       'bracket-no-space': null, 'assignment-with-spaces': null, 'brace-no-space': null, 'brace-close-no-separator': null,
@@ -573,7 +573,8 @@ describe('conventions: the habit a note recommends', () => {
     assert.deepStrictEqual([...off.ex.facts!, ...off.ex.noteInfo].filter((n) => 'convention' in n), []);
 
     const actions = lines('yaml', 'on: issues\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo "${{ github.event.issue.title }}"\n', 5);
-    assert.deepStrictEqual(actions.ex.facts?.map((f) => [f.id, f.convention]), [['actions-script-injection', 'actions-expression-through-env']]);
+    // (And what the substitution means, a note with no habit.)
+    assert.deepStrictEqual(actions.ex.facts?.map((f) => [f.id, f.convention]), [['actions-script-injection', 'actions-expression-through-env'], ['host-substitution', undefined]]);
     assert.ok(actions.issues.some((i) => i.code === 'injection' && i.convention === 'actions-expression-through-env'));
 
     const python = lines('python', 'import subprocess\nname = "x"\nsubprocess.run(f"echo {name}", shell=True)\n', 2);

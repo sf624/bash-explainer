@@ -8,6 +8,7 @@ import { givenOptions } from '../argv/query';
 import type { CommandSpec, EachFile, IoUse } from '../argv/spec';
 import { pick } from '../embedded/types';
 import type { Lang } from '../i18n';
+import { writesElsewhere } from '../semantics/redirects';
 import { field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import { systemFileLines } from './systemfiles';
 
@@ -285,15 +286,6 @@ export function substitutionLines(ps: SyntaxNode, piped: (pipeline: SyntaxNode, 
   const got = writesElsewhere(p.namedChildren[p.namedChildren.length - 1]) ? undefined : piped(p, p.namedChildren.length);
   // (A sample of the layout of `ps aux` is not what `<(ps aux)` gives.)
   return got?.sample ? undefined : got?.lines;
-}
-
-/** Whether a command sends its standard output elsewhere than where it was (`> f`, `&> f`, `>&2`): a pipe after it gets nothing. */
-export function writesElsewhere(cmd: SyntaxNode): boolean {
-  return redirectionsOf(cmd).some((r) => {
-    const op = r.children.find((c) => !c.named)?.type;
-    const fd = field(r, 'descriptor')?.text ?? '';
-    return r.type === 'file_redirect' && (op?.startsWith('&') || (!op?.startsWith('<') && (fd === '' || fd === '1')));
-  });
 }
 
 /** The command of a process substitution `<(cmd)` (not `>(cmd)`, which takes what is written to it). */

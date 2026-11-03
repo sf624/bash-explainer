@@ -9,6 +9,7 @@ import type { ArgvParse } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
 import type { CommandSpec, Layout, LayoutAlt } from '../argv/spec';
 import { argWordFor } from '../argv/words';
+import { writesElsewhere } from '../semantics/redirects';
 import { bracesIn } from '../semantics/argwords';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { visible } from '../ctlchars';
@@ -24,7 +25,7 @@ import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
 import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
 import { ENVIRONMENT, exportOrder, layoutOf, layoutSample, madeUpPath, type Run, START_NAMES, type Started, startValue } from '../examples/layouts';
-import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines, withSystemFiles, writesElsewhere } from '../examples/source';
+import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines, withSystemFiles } from '../examples/source';
 import { type Text, tx } from '../i18n';
 import { codeSpan, shorten } from '../label';
 import { EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
@@ -807,7 +808,7 @@ function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[], parse: Ar
   if (input === 'unknown') return;
   const r = commandExamples.readExample(words, ifs, input === 'sample' ? undefined : input.text, cx.lang, cx.opts.bashVersion ?? DEFAULT_BASH_VERSION, input !== 'sample' && input.first);
   if (!r) return;
-  if (r.note) cx.note(r.note, n);
+  if (r.note) cx.note(fact(cx.lang, 'read-ifs-separators', r.note), n);
   cx.example(r.example);
 }
 

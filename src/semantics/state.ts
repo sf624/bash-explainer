@@ -177,6 +177,9 @@ export function docIndex(n: SyntaxNode, end = false): number {
   return i;
 }
 
+/** The word that a string read as a script comes from, for the root of its tree; none for the document's. */
+export const scriptWord = (root: SyntaxNode): SyntaxNode | undefined => rootOwners.get(root)?.words[0];
+
 const lineStarts = new WeakMap<SyntaxNode, number[]>();
 /** The root of the document `n` is in: of the script, also for a node of a string read as a script (4.13). */
 export function documentRoot(n: SyntaxNode): SyntaxNode {

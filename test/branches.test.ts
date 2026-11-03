@@ -3,7 +3,7 @@ import { run } from './support/run';
 import * as path from 'path';
 import { Analyzer, ExplainOptions } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
-import { factOf, plainNote } from '../src/messages';
+import { fact, factOf } from '../src/messages';
 import { explainHostedLine, Extracted, extractShell, HostKind, hostIssues, hostKind, remapExplanation, substitutionNotes } from '../src/hosts';
 import { customCommandSpec } from '../src/dict/custom';
 import { githubContext } from '../src/dict/ciVariables';
@@ -15,7 +15,7 @@ import { explainMode } from '../src/embedded/mode';
 import { explainSortKey, explainTrSet, trSummary } from '../src/embedded/textutils';
 import { GetoptUnsupported, runGetopt, sampleGetoptArgs } from '../src/examples/getopt';
 import { rerun } from '../src/examples/rerun';
-import { simulateRedirects } from '../src/idioms';
+import { redirectOrder } from '../src/idioms';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { BashParser } from '../src/syntax/tree';
 import { dialectIssues, dialectNotes, featuresOnLine } from '../src/dialect';
@@ -134,10 +134,10 @@ describe('branches no other test takes', () => {
   });
 
   it('redirections: copies of high descriptors, closing, and here-documents', () => {
-    const r = simulateRedirects([{ op: '>&', fd: '3', dest: '7' }, { op: '>&', fd: '1', dest: '-' }, { op: '<<', fd: '', dest: 'EOF' }, { op: '>', fd: '1', dest: 'f' }, { op: '>&', fd: '2', dest: '1' }], 'en')!;
+    const r = fact('en', 'redirections-in-order', redirectOrder([{ op: '>&', fd: '3', dest: '7' }, { op: '>&', fd: '1', dest: '-' }, { op: '<<', fd: '', dest: 'EOF' }, { op: '>', fd: '1', dest: 'f' }, { op: '>&', fd: '2', dest: '1' }])!).body;
     assert.match(r, /fd 3 → the original fd 7/);
     assert.match(r, /stdin → the here-document/);
-    assert.match(simulateRedirects([{ op: '>&', fd: '2', dest: '1' }, { op: '>', fd: '1', dest: 'f' }], 'en')!, /Note: `2>&1` comes before/);
+    assert.deepStrictEqual(redirectOrder([{ op: '>&', fd: '2', dest: '1' }, { op: '>', fd: '1', dest: 'f' }])!.stderrFirst, { dup: 0, stdoutTo: 1 });
   });
 
   it('render: an example with no anchor, a token over several lines, empty sections, notes and backticks', () => {
@@ -151,7 +151,7 @@ describe('branches no other test takes', () => {
     const inside = placeExamples({ line: 0, summary: '', items: [outer], context: [], notes: [], noteInfo: [], examples: [{ title: 'E', sections: [], anchor: span(0, 0, 0, 1) }] });
     assert.strictEqual(inside.items[0].examples!.length, 1);
     assert.deepStrictEqual(examplesMarkdown([{ title: 'T', sections: [{ label: 'L', lines: [] }] }]).slice(-3), ['```text', '', '```']);
-    const md = toPlainMarkdown({ ...explain('echo `date`'), notes: ['a note'], noteInfo: [plainNote('a note')] }, 'echo `date`', 'a.sh:1');
+    const md = toPlainMarkdown({ ...explain('echo `date`'), notes: ['a note'], noteInfo: [{ text: 'a note', level: 'note', label: '', body: 'a note' }] }, 'echo `date`', 'a.sh:1');
     assert.match(md, /> a note/);
     assert.match(md, /- `echo` — /);
     assert.match(md, /`` `date` `` — /);
@@ -652,7 +652,7 @@ describe('host files: branches no other test takes', () => {
     const mk = explainHost('makefile', 'all:\n\techo $(CC)', 1, 'ja')!;
     const every = (ts: typeof mk.items): typeof mk.items => ts.flatMap((t) => [t, ...every(t.children)]);
     assert.ok(every(mk.items).some((t) => /make の変数/.test(t.explanation)));
-    assert.ok(mk.notes.some((n) => /^`\$\(CC\)` は make の変数/.test(n)), mk.notes.join('\n'));
+    assert.ok(mk.notes.some((n) => /^ℹ `\$\(CC\)` は make の変数/.test(n)), mk.notes.join('\n'));
     assert.strictEqual(mk.context[0].label, 'Makefile のレシピ');
     const gh = explainHost('yaml', 'jobs:\n  a:\n    steps:\n      - run: echo "${{ github.head_ref }}"', 3, 'ja')!;
     assert.ok(gh.notes.some((n) => /スクリプトインジェクション/.test(n)));

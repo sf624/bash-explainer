@@ -1,6 +1,7 @@
 import { type Shell, shellFromName } from '../dialect';
 import { azureVariables as AZURE_VARIABLES, CI_PROVIDED, githubContext } from '../dict/ciVariables';
-import type { HostCi } from './index';
+import type { HostCi, RegionNote } from './index';
+import type { FactSpec } from '../messages';
 import { LineOut, Builder, spaced, indentOf } from './builder';
 
 /** Keys whose value is a shell script in common CI systems. */
@@ -251,10 +252,7 @@ function yamlBlock(b: Builder, at: number, indent: number, header: string, label
 }
 
 /** The note on a folded block whose lines YAML joins. */
-const FOLDED: [string, string] = [
-  'YAML の折り畳みブロック（`>`）は、同じ字下げで隣り合う行をスペースでつなぎます。シェルはつながった 1 行を受け取ります。ここではつなぎ目を ` \\` と改行として読むので、単一引用符の中と `#` のコメントの後では YAML と読み方が違います（YAML はつないだ次の行も文字列やコメントに含めます）。',
-  'A YAML folded block (`>`) joins lines next to each other at the same indentation with a space: the shell gets them as one line. Here each join is read as ` \\` and a line break, which differs from YAML inside single quotes and after a `#` comment (YAML takes the joined line into the string or the comment).',
-];
+const FOLDED: RegionNote = { spec: { id: 'yaml-folded-block', params: {} } };
 
 /** A one-line value, plain or quoted. */
 function yamlScalar(b: Builder, i: number, from: number, value: string, label: [string, string], shell: Shell | undefined): void {
@@ -318,10 +316,10 @@ const GITHUB_FILES: Record<string, [string, string]> = {
 };
 
 /** Notes for GitHub's special files used on a line of a GitHub Actions step. */
-export function githubFileNotes(text: string, lang: 'ja' | 'en'): string[] {
-  const out: string[] = [];
+export function githubFileNotes(text: string): FactSpec[] {
+  const out: FactSpec[] = [];
   for (const [name, [ja, en]] of Object.entries(GITHUB_FILES)) {
-    if (new RegExp(`\\$\\{?${name}\\b`).test(text)) out.push(lang === 'ja' ? `\`$${name}\` は GitHub Actions が用意するファイルのパスです。${ja}。` : `\`$${name}\` is the path of a file GitHub Actions provides: ${en}.`);
+    if (new RegExp(`\\$\\{?${name}\\b`).test(text)) out.push({ id: 'github-file', params: { name, what: { ja, en } } });
   }
   return out;
 }
