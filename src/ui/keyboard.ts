@@ -9,7 +9,7 @@
 // the window as it was before the user started typing: a window that is short for another reason (split screen, a
 // foldable, a hardware keyboard, which shows none) is no keyboard.
 
-/** What the page reads: the window's size (`innerWidth`, `innerHeight`) and the visual viewport's box and scale. */
+/** What the page reads: the layout viewport's size (the root's client box) and the visual viewport's box and scale. */
 export interface Viewport {
   width: number;
   height: number;
