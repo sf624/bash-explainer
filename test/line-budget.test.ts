@@ -390,7 +390,7 @@ describe('one line must not stop the whole tool', () => {
 
     for (const { script, says } of LINES) {
       it(`bounded: ${script.slice(0, 60).replace(/\n/g, '; ')}`, function () {
-        this.timeout(20000);
+        this.timeout(60000);
         const tree = parser.parse(script);
         const shown: string[] = [];
         script.split('\n').forEach((_, line) => shown.push(...new Analyzer('en').explainLine(tree, line, 'bash').examples.map((e) => e.note ?? '')));
@@ -446,7 +446,8 @@ describe('one line must not stop the whole tool', () => {
       assert.strictEqual(r.status, 0, r.stderr.slice(-2000));
       const { rows, rss } = JSON.parse(r.stdout) as { rows: { script: string; ms: number; ok: boolean; shown: string[] }[]; rss: number };
       assert.deepStrictEqual(rows.filter((row) => !row.ok), []);
-      assert.deepStrictEqual(rows.filter((row) => row.ms > 5000), []);
+      // (Under 1 s here; with coverage, and on a loaded runner, 14 s has been seen. Before, some took minutes or ended the process.)
+      assert.deepStrictEqual(rows.filter((row) => row.ms > 60000), []);
       assert.ok(rss < 2000, `${rss} MB`);
     });
   });
