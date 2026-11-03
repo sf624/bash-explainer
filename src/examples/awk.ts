@@ -1,7 +1,7 @@
 import { lex, Lex } from '../embedded/awk';
-import { JsRegex, regexExamples, toJsRegex } from './regex';
+import { JsRegex, posixMatches, posixSplit, regexExamples, toJsRegex } from './regex';
 import { exactOfDouble, floatText } from './floatdigits';
-import { charge, scriptRegex } from './regexguard';
+import { charge, longestFrom, scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { parseWords } from './textfilters';
 import { has } from '../argv/query';
@@ -702,7 +702,7 @@ class Interp {
 
   /** Split like awk: " " means runs of blanks, one other character is literal, anything longer is a regex. */
   private split(s: string, fs: string | RegExp): string[] {
-    if (fs instanceof RegExp) return s === '' ? [] : s.split(fs);
+    if (fs instanceof RegExp) return s === '' ? [] : posixSplit(fs, s);
     if (fs === ' ') {
       const t = s.replace(/^[ \t\n]+|[ \t\n]+$/g, '');
       return t ? t.split(/[ \t\n]+/) : [];
@@ -711,7 +711,7 @@ class Interp {
     if (fs.length === 1 && fs !== '\\') return s.split(fs);
     const re = toJsRegex(fs, 'ere', { sedEscapes: true });
     if (!re) throw new Unsupported('FS');
-    return s.split(scriptRegex(re.source, re.flags));
+    return posixSplit(scriptRegex(re.source, re.flags), s);
   }
 
   private rebuild(): void {
@@ -863,17 +863,27 @@ class Interp {
         const target = args[2] ?? { k: 'field', e: { k: 'num', v: 0 } } as Expr;
         if (!isLvalue(target)) throw new Unsupported('sub target');
         const repl = toStr(v(1)); // (As gawk and mawk: `\\&` is a backslash and the match, `\&` a literal &, other backslashes stay.)
+        // (POSIX's leftmost longest match: `gsub(/c|cab/, "X")` changes all of `cab`; as sed's, an empty match right after one is none.)
+        const text = toStr(this.eval(target));
+        const first = name === 'sub' ? longestFrom(re, text, 0) : null;
+        const ms = name === 'gsub' ? posixMatches([{ source: re.source, flags: re.flags }], text, true) : first ? [[first.index, first.index + first[0].length]] : [];
         let count = 0;
-        const result = toStr(this.eval(target)).replace(scriptRegex(re.source, re.flags + (name === 'gsub' ? 'g' : '')), (m) => {
+        let result = '';
+        let pos = 0;
+        for (const [from, to] of ms) {
           count++;
+          const m = text.slice(from, to);
           charge(repl.length + (repl.split('&').length - 1) * m.length);
-          return repl.replace(/\\\\&|\\&|&/g, (x) => (x === '&' ? m : x === '\\&' ? '&' : `\\${m}`));
-        });
+          result += text.slice(pos, from) + repl.replace(/\\\\&|\\&|&/g, (x) => (x === '&' ? m : x === '\\&' ? '&' : `\\${m}`));
+          pos = to;
+        }
+        result += text.slice(pos);
         if (count) this.assignTo(target, result);
         return count;
       }
       case 'match': {
-        const m = this.regexOf(args[1]).exec(toStr(v(0)));
+        const re = this.regexOf(args[1]);
+        const m = longestFrom(re, toStr(v(0)), 0);
         this.vars.set('RSTART', m ? m.index + 1 : 0);
         this.vars.set('RLENGTH', m ? m[0].length : -1);
         return m ? m.index + 1 : 0;

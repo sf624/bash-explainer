@@ -254,6 +254,14 @@ The examples compute the digits of a number from its exact value, as C does, to 
 - perl prints `Inf` and `NaN` as itself; `printf` with one of them has no example, and `"a" x 9**9**9` is empty.
 - jq's `implode` gives U+FFFD for a number out of range, as jq does, and its error for what is no number (`nan` too) or no array. Before, it failed or read `null` as 0.
 
+### awk takes the longest match
+
+POSIX says that a regex matches the longest string at the leftmost place; grep and sed already did so in the examples, and awk now does in `sub`, `gsub`, `match`, `split` and a regex `FS` (or `-F`). `echo cab | awk '{gsub(/c|cab/, "X"); print}'` prints `X` (before: `Xab`), and `match("cab", /c|cab/)` sets `RLENGTH` to 3 (before: 1). `~` and `!~` only tell whether there is a match, so they never differed.
+
+- A regex that splits (`split`, `FS`) separates nothing at an empty match, as gawk does (`-F 'x*'` on `abc` is one field), and a group in it adds no field (`-F '(a|b)'` on `xaybz` is three).
+- `gsub(/a*/, "X")` on `baaac` gives `XbXcX`: an empty match right after another match is none, as in sed.
+- perl stays leftmost-first (`s/c|cab/X/` on `cab` gives `Xab`), as perl does.
+
 ### `-F` and the other patterns of grep
 
 The note on a grep pattern that is only a variable said to add `-F` also where grep had other patterns, which `-F` reads as fixed strings too: `grep -E -e "$x" -e 'foo|bar' f` with `-F` no longer matches `foo` lines, and `grep -f pats -e "$x"` reads the lines of `pats` as text. It now says that `-F` applies to every pattern, and offers no quick fix. It spoke of the variable only when it was the first pattern (`grep -e "$x" -e 'a.b'`, not `grep -e 'a.b' -e "$x"`); it does in either order now. Checked with GNU grep (test/rewrites-advice.test.ts).
