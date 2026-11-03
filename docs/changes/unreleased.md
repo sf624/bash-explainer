@@ -290,3 +290,7 @@ Code the explainer does not read follows one rule. After a file read with `sourc
 ### Heredocs in scripts with CRLF line ends
 
 bash reads the CR after a heredoc's delimiter as part of it: `cat <<EOF` followed by a CR waits for a line `EOF` followed by a CR, which ends it as the author meant. A line `EOF` with LF alone does not end it, nor does `EOF \r`. With `<<'EOF'` the CR is outside the quotes and still part of the delimiter. Before, the explainer read the delimiter as `EOF` without the CR, so the heredoc ran to the end of the file: every line after it was shown as heredoc text, and the CRLF error missed the keywords there (`fi\r`), and said a warning where bash fails.
+
+### A process substitution after `<<<`
+
+`cat <<<>(f)` passes the text of the process substitution (`/dev/fd/63`) to `cat` as a here-string; `cat` reads nothing else. The explanation now shows one here-string redirection, with the substitution as its word. Before, the parser (unbash 6.0.1) made `>(f)` an argument of `cat`, and the note said that `cat` reads a file and ignores its stdin.

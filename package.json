@@ -1186,7 +1186,7 @@
     "images": "node scripts/capture-readme-images.mjs"
   },
   "dependencies": {
-    "unbash": "6.0.1"
+    "unbash": "6.0.3"
   },
   "devDependencies": {
     "@codemirror/commands": "6.11.1",
