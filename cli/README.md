@@ -50,7 +50,7 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `--bash-version <v>` | the bash release to explain for: `5.2` (default) or `5.3`; constructs of a later release are explained as it runs them, and `--check` warns about them |
 | `--kind <kind>` | what the file is: `shell`, `dockerfile`, `makefile`, `yaml`, `npm`, `markdown`, `python`, `jenkinsfile` (default: from the file name) |
 | `--lang <en\|ja>` | language (default: from `LANG`) |
-| `--sarif <file>` | with `--check`, also write the problems to this file as SARIF, whatever `--format` prints (so one run gives annotations and a SARIF file) |
+| `--sarif <file>` | with `--check`, also write the problems to this file as SARIF, whatever `--format` prints (so one run gives annotations and a SARIF file). A symbolic link at the last part of the path is refused |
 | `--format <format>` | `text`, `markdown` or `json`; with `--check`, also `github` (annotations in GitHub Actions) or `sarif` (for code scanning) |
 | `--no-examples` | leave out worked examples |
 | `--config <file>` | read the settings from this file (see [Settings](#settings)) |
@@ -123,7 +123,7 @@ With `language` set to `auto` (the default), the language follows `LC_ALL`, `LC_
 
 ## In CI (GitHub Actions)
 
-The repository is also a GitHub Action, which runs this tool at its own version:
+The repository is also a GitHub Action, which installs this tool at its own version in a directory of its own, outside the checked-out repository, and runs it there on your files. The registry is the one your workflow or machine configures (`setup-node`'s `registry-url`, `npm_config_registry`, your user's npm settings); npm settings kept in the repository do not apply to it:
 
 ```yaml
 - uses: actions/checkout@v5
@@ -136,7 +136,7 @@ The repository is also a GitHub Action, which runs this tool at its own version:
 
 ![Warnings from the action on a pull request's diff](../images/action-annotations.png)
 
-Warnings appear on the pull request's diff, and fail the step (`fail-on-warning: 'false'` keeps it green); the pitfalls appear too, but fail it only with `strict: 'true'`. The inputs: `files` (bash globs; default `**/*.sh`), `shell` (default: from each script), `bash-version` (`5.2` or `5.3`, the bash release that bash scripts are checked for; default `5.2`, where `${ cmd; }` is a warning), `fail-on-warning`, `strict` (also fail on a warning on a pitfall; default `'false'`), `sarif` (also write a SARIF file, for `github/codeql-action/upload-sarif`) and `package` (another npm package spec to run). The outputs: `warnings`, the number of warnings that fail the step (those on pitfalls only with `strict`), and `pitfalls`, the number of pitfalls (warnings and notices). The annotations of pitfalls are titled `Bash Explainer (pitfall): <code>`, and those that fail the step come first, since GitHub shows only the first annotations of a step. `strict` needs a tool with `--strict`, and `bash-version` one with `--bash-version`: with a `package` pin to an older one, the step fails and says so. In other CI systems, run `npx bash-explainer --check <files>` and use the exit status.
+Warnings appear on the pull request's diff, and fail the step (`fail-on-warning: 'false'` keeps it green); the pitfalls appear too, but fail it only with `strict: 'true'`. The inputs: `files` (bash globs; default `**/*.sh`; a file whose real path is outside the workspace is skipped with a notice), `shell` (default: from each script), `bash-version` (`5.2` or `5.3`, the bash release that bash scripts are checked for; default `5.2`, where `${ cmd; }` is a warning), `fail-on-warning`, `strict` (also fail on a warning on a pitfall; default `'false'`), `sarif` (also write a SARIF file, for `github/codeql-action/upload-sarif`; a path in the workspace or the runner's temp directory must stay there when its symbolic links are followed) and `package` (another npm package spec to run; a relative path is relative to the workspace; install scripts do not run, except that npm prepares a package from git). The outputs: `warnings`, the number of warnings that fail the step (those on pitfalls only with `strict`), and `pitfalls`, the number of pitfalls (warnings and notices). The annotations of pitfalls are titled `Bash Explainer (pitfall): <code>`, and those that fail the step come first, since GitHub shows only the first annotations of a step. `strict` needs a tool with `--strict`, and `bash-version` one with `--bash-version`: with a `package` pin to an older one, the step fails and says so. In other CI systems, run `npx bash-explainer --check <files>` and use the exit status.
 
 ## In your editor (Language Server)
 

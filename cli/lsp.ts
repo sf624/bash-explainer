@@ -2,6 +2,7 @@
 // explanations, the problems as diagnostics and their quick fixes, hints after surprising command names, and (with highlight.enabled) semantic tokens. Hand-written JSON-RPC, so the
 // tool still needs nothing but fs (the usual libraries also bring sockets).
 import { Analyzer } from '../src/analyzer';
+import { jsonText } from '../src/ctlchars';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, heredocAt, plain, ShellDocument } from '../src/document';
 import { FileKind, kindOfDocument, openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
@@ -77,7 +78,7 @@ export function startLanguageServer(io: Io): void {
   let requests = 0;
 
   const send = (msg: Message) => {
-    const json = JSON.stringify({ jsonrpc: '2.0', ...msg });
+    const json = jsonText({ jsonrpc: '2.0', ...msg });
     io.output.write(`Content-Length: ${Buffer.byteLength(json, 'utf8')}\r\n\r\n${json}`);
   };
 

@@ -1,5 +1,5 @@
 name: Bash Explainer check
-description: Check shell scripts, and the shell code in Dockerfiles, Makefiles and workflows, for constructs their shell lacks. Offline, no AI.
+description: Check shell scripts, and the shell code in Dockerfiles, Makefiles and workflows, for constructs their shell lacks. No AI.
 author: Shun Fujioka
 branding:
   icon: terminal
@@ -9,7 +9,7 @@ inputs:
   files:
     description: >-
       Files to check: bash globs separated by spaces or new lines (** matches any directories;
-      node_modules and .git are skipped). Dockerfiles, Makefiles, YAML, package.json, Markdown and
+      node_modules and .git are skipped, and so is a file whose real path is outside the workspace). Dockerfiles, Makefiles, YAML, package.json, Markdown and
       Python files are read for the shell code in them.
     default: '**/*.sh'
   shell:
@@ -29,10 +29,15 @@ inputs:
       The pitfalls are reported either way. Needs a command-line tool 0.9.0 or later (see `package`).
     default: 'false'
   sarif:
-    description: Also write the problems to this SARIF file, for github/codeql-action/upload-sarif.
+    description: >-
+      Also write the problems to this SARIF file, for github/codeql-action/upload-sarif. A path in the
+      workspace or the runner's temp directory must stay there when its symbolic links are followed.
     default: ''
   package:
-    description: The npm package to run. Default, bash-explainer at this action's version.
+    description: >-
+      The npm package to run, as npm reads a package spec; a relative path is relative to the workspace.
+      Install scripts do not run, except that npm prepares a package from git.
+      Default, bash-explainer at this action's version.
     default: ''
 
 outputs:
@@ -65,31 +70,144 @@ runs:
         # GitHub runs this with bash -e; the exit statuses below are handled by hand.
         set +e -uo pipefail
         shopt -s globstar nullglob
-        package=${PACKAGE:-bash-explainer@$(node -p 'require(process.env.ACTION_PATH + "/cli/package.json").version')}
+        workspace=$PWD
+
+        # The tool is installed in a directory of its own, and npm runs there, so that what is installed
+        # and run depends only on the action's inputs and on npm's configuration outside the workspace:
+        # the workflow's or the machine's (setup-node's NPM_CONFIG_USERCONFIG and NODE_AUTH_TOKEN,
+        # npm_config_registry, the user's and the global settings), else npm's default.
+        tool=$(mktemp -d "${RUNNER_TEMP:-/tmp}/bash-explainer.XXXXXX") || exit 2
+        trap 'rm -rf -- "$tool"' EXIT
+        printf '{"private":true}\n' > "$tool/package.json"
+        # The node found from that directory runs everything below, by its path.
+        node=$(cd "$tool" && node -p process.execPath)
+        if [ -z "$node" ]; then
+          echo "::error title=Bash Explainer::node was not found."
+          exit 2
+        fi
+
+        # `real`: a path with its symbolic links followed, to its end even where that does not exist yet.
+        real_js='
+          const fs = require("fs"), path = require("path");
+          const parts = (p) => p.slice(path.parse(p).root.length).split(path.sep === "/" ? "/" : /[\\/]/);
+          const real = (given) => {
+            const full = path.isAbsolute(given) ? given : process.cwd() + path.sep + given;
+            let at = path.parse(full).root, left = parts(full), links = 0;
+            while (left.length) {
+              const part = left.shift();
+              if (part === "" || part === ".") continue;
+              if (part === "..") { at = path.dirname(at); continue; }
+              const next = path.join(at, part);
+              let target;
+              try { target = fs.readlinkSync(next); } catch { at = next; continue; }
+              if (++links > 40) throw new Error("too many links");
+              if (path.isAbsolute(target)) at = path.parse(target).root;
+              left = [...parts(target), ...left];
+            }
+            return at;
+          };
+        '
+        real() { "$node" -p "$real_js; real(process.argv[1])" -- "$1" 2>/dev/null; }
+        inside() { case "$1/" in "$2"/*) ;; *) return 1 ;; esac; }
+        root=$(real .)
+        temp=$(real "${RUNNER_TEMP:-$tool}")
+        here() { inside "$1" "$root" || inside "$1" "$workspace" || inside "$1" "$temp"; }
 
         # Expand each pattern as a glob, skipping dependencies and git internals.
-        files=()
+        found=()
         read -r -d '' -a patterns <<< "$FILES" || true
         for pattern in "${patterns[@]}"; do
           for file in $pattern; do
             case "/$file/" in */node_modules/* | */.git/*) continue ;; esac
-            [ -f "$file" ] && files+=("$file")
+            [ -f "$file" ] && found+=("$file")
           done
         done
+        # The files read are those of the workspace; each other one is named, and skipped.
+        files=()
+        while IFS= read -r -d '' entry; do
+          name=${entry:1}
+          if [ "${entry:0:1}" = + ]; then
+            files+=("$name")
+          else
+            name=${name//%/%25} name=${name//$'\r'/%0D} name=${name//$'\n'/%0A}
+            echo "::notice title=Bash Explainer::Skipped $name: it is outside the workspace."
+          fi
+        done < <("$node" -e "$real_js"'
+          const root = real(".") + path.sep;
+          for (const file of process.argv.slice(1)) {
+            let kept = false;
+            try { kept = (real(file) + path.sep).startsWith(root); } catch {}
+            process.stdout.write((kept ? "+" : "-") + file + "\0");
+          }
+        ' -- "${found[@]}")
         if [ "${#files[@]}" -eq 0 ]; then
           echo "No files match: $FILES"
           printf 'warnings=0\npitfalls=0\n' >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
+        # The user's settings and caches are those of a directory outside the workspace.
+        if [ -n "${HOME:-}" ] && inside "$(real "$HOME")" "$root"; then export HOME=$tool; fi
+        if [ -n "${XDG_CONFIG_HOME:-}" ] && inside "$(real "$XDG_CONFIG_HOME")" "$root"; then unset XDG_CONFIG_HOME; fi
+        # So are npm's configuration files, whose name a job may set; one in the temp directory is the
+        # workflow's (setup-node's).
+        for name in NPM_CONFIG_USERCONFIG npm_config_userconfig NPM_CONFIG_GLOBALCONFIG npm_config_globalconfig; do
+          value=${!name:-}
+          if [ -n "$value" ] && inside "$(real "$value")" "$root" && ! inside "$(real "$value")" "$temp"; then unset "$name"; fi
+        done
+
+        # A SARIF file named inside the workspace or the temp directory is written there, and one whose
+        # path takes `..` after a link is judged by where it ends. Any other path is the workflow's to name.
+        if [ -n "$SARIF" ]; then
+          named=$("$node" -p 'require("path").resolve(process.argv[1])' -- "$SARIF")
+          target=$(real "$SARIF")
+          if here "$named" || [ "$target" != "$(real "$named")" ]; then
+            if [ -z "$target" ] || ! inside "$target" "$root" && ! inside "$target" "$temp"; then
+              echo "::error title=Bash Explainer::sarif: $SARIF leads outside the workspace."
+              exit 2
+            fi
+            [ -L "$SARIF" ] && rm -f -- "$SARIF"
+          fi
+        fi
+
+        package=${PACKAGE:-bash-explainer@$(cd "$tool" && "$node" -p 'require(process.env.ACTION_PATH + "/cli/package.json").version')}
+        # A relative path in `package:`, also after an alias (`name@./x`), is the workflow's choice, read
+        # from the workspace as npm would read it there.
+        alias= path_or_spec=$package
+        if [[ $package =~ ^((@[^@/:]+/)?[^@/:.][^@/:]*@)(.*)$ ]]; then alias=${BASH_REMATCH[1]} path_or_spec=${BASH_REMATCH[3]}; fi
+        spec=$package
+        case $path_or_spec in
+          file:/*) ;;
+          file:*) spec=$alias$workspace/${path_or_spec#file:} ;;
+          /* | '~/'* | *:* | *\#*) ;;
+          .* | */*/* | *.tgz | *.tar.gz | *.tar) spec=$alias$workspace/$path_or_spec ;;
+        esac
+        if ! (
+          cd "$tool" || exit
+          npm install --workspaces=false --ignore-scripts --save --no-package-lock --no-audit --no-fund --loglevel=error -- "$spec" > /dev/null
+        ); then
+          echo "::error title=Bash Explainer::Could not install $package."
+          exit 2
+        fi
+        program=$(cd "$tool" && "$node" -p '
+          const path = require("path");
+          const dir = path.resolve("node_modules", Object.keys(require(path.resolve("package.json")).dependencies)[0]);
+          const { bin } = require(path.join(dir, "package.json"));
+          path.join(dir, typeof bin === "string" ? bin : bin["bash-explainer"]);
+        ' 2>/dev/null)
+        if [ ! -f "$program" ]; then
+          echo "::error title=Bash Explainer::$package has no bash-explainer program."
+          exit 2
+        fi
+
         args=(--check)
         [ -n "$CHECK_SHELL" ] && args+=(--shell "$CHECK_SHELL")
         [ "$STRICT" = 'true' ] && args+=(--strict)
-        check() { npx --yes --package="$package" bash-explainer "${args[@]}" "$@" -- "${files[@]}"; }
+        check() { "$node" "$program" "${args[@]}" "$@" -- "${files[@]}"; }
 
         # What the CLI can do, from its help: an older one (an earlier version, or a `package:` pin)
         # may lack --strict, --bash-version or --sarif.
-        help=$(npx --yes --package="$package" bash-explainer --help 2>/dev/null)
+        help=$("$node" "$program" --help 2>/dev/null)
         if [ "$STRICT" = 'true' ] && ! grep -q -- '--strict' <<< "$help"; then
           echo "::error title=Bash Explainer::strict needs a command-line tool with --strict (0.9.0 or later); $package has none."
           exit 2

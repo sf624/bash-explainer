@@ -2,7 +2,7 @@
 // constructs their shell lacks. Offline, like the extension: nothing is sent anywhere.
 import * as fs from 'fs';
 import { Analyzer, Example, LineExplanation, Token } from '../src/analyzer';
-import { pictureText } from '../src/ctlchars';
+import { controlsShown, jsonText, oneLine, pictureText } from '../src/ctlchars';
 import { BASH_VERSIONS, type BashVersion, DEFAULT_BASH_VERSION } from '../src/bashversion';
 import { Shell, SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, plain } from '../src/document';
@@ -76,7 +76,8 @@ error.
 class UsageError extends Error {}
 
 interface Options {
-  inputs: { spec: string; lines?: [number, number] }[];
+  /** After `--`, a name is a file's (`file`), whatever it looks like: `-` is not standard input. */
+  inputs: { spec: string; lines?: [number, number]; file?: boolean }[];
   command?: string;
   lines?: [number, number];
   check: boolean;
@@ -93,6 +94,9 @@ interface Options {
   /** Keys and values from the settings file or --set that were left out. */
   warnings: string[];
   printConfig: boolean;
+  /** Run as a Language Server; `config` names its settings file. */
+  lsp: boolean;
+  config?: string;
 }
 
 function parseRange(text: string): [number, number] {
@@ -108,18 +112,19 @@ const locale = (env: NodeJS.ProcessEnv) => env.LC_ALL || env.LC_MESSAGES || env.
 
 export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean): Options | 'help' | 'version' {
   const o: Options = {
-    inputs: [], check: false, strict: false, lang: 'en', format: 'text', color: isTTY && !env.NO_COLOR, settings: mergeSettings(), warnings: [], printConfig: false,
+    inputs: [], check: false, strict: false, lang: 'en', format: 'text', color: isTTY && !env.NO_COLOR, settings: mergeSettings(), warnings: [], printConfig: false, lsp: false,
   };
   let config: string | undefined;
   let noConfig = false;
   const sets: Record<string, unknown> = {};
   /** The settings the dedicated options set, which win over the file and --set. */
   const flags: Partial<Settings> = {};
+  let unknown: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     // Everything after -- is a file, even if it starts with -.
     if (arg === '--') {
-      o.inputs.push(...argv.slice(i + 1).map((spec) => ({ spec })));
+      o.inputs.push(...argv.slice(i + 1).map((spec) => ({ spec, file: true })));
       break;
     }
     const [name, inline] = arg.startsWith('--') && arg.includes('=') ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)] : [arg, undefined];
@@ -146,6 +151,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
         sets[a.key] = a.value;
         break;
       }
+      case '--lsp': o.lsp = true; break;
       case '--color': o.color = true; break;
       case '--no-color': o.color = false; break;
       case '--shell': {
@@ -183,7 +189,10 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
         if (o.sarifFile === '-') throw new UsageError('--sarif needs a file, not - (use --format sarif for standard output)');
         break;
       default: {
-        if (arg.startsWith('-') && arg !== '-') throw new UsageError(`unknown option: ${arg}`);
+        if (arg.startsWith('-') && arg !== '-') {
+          unknown ??= arg;
+          break;
+        }
         // file:12 or file:3-8 (a real file whose name ends that way wins)
         const m = /^(.+):(\d+(?:-\d+)?)$/.exec(arg);
         if (m && !fs.existsSync(arg)) o.inputs.push({ spec: m[1], lines: parseRange(m[2]) });
@@ -191,6 +200,9 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
       }
     }
   }
+  // (A Language Server takes what editors add, as --stdio, the only transport there is.)
+  if (o.lsp) return { ...o, config };
+  if (unknown !== undefined) throw new UsageError(`unknown option: ${unknown}`);
   if ((o.format === 'sarif' || o.format === 'github') && !o.check) throw new UsageError(`--format ${o.format} goes with --check`);
   if (o.sarifFile !== undefined && !o.check) throw new UsageError('--sarif goes with --check');
   if (o.strict && !o.check) throw new UsageError('--strict goes with --check');
@@ -220,8 +232,10 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
 // ---- Documents --------------------------------------------------------------------------------
 
 interface Input {
-  /** Shown in the output: the file name, "-" or "(command)". */
+  /** The file name, "-" or "(command)". */
   name: string;
+  /** The name as the outputs for reading show it. */
+  shown: string;
   text: string;
   kind: Kind;
   lines?: [number, number];
@@ -229,22 +243,42 @@ interface Input {
 
 function readInputs(o: Options): Input[] {
   const out: Input[] = [];
-  if (o.command !== undefined) out.push({ name: '(command)', text: o.command, kind: o.kind ?? 'shell', lines: o.lines });
+  if (o.command !== undefined) out.push({ name: '(command)', shown: '(command)', text: o.command, kind: o.kind ?? 'shell', lines: o.lines });
   for (const input of o.inputs) {
+    const stdin = input.spec === '-' && !input.file;
     let text: string;
     try {
-      text = input.spec === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(input.spec, 'utf8');
+      text = stdin ? fs.readFileSync(0, 'utf8') : fs.readFileSync(input.spec, 'utf8');
     } catch (e) {
-      throw new UsageError(`cannot read ${input.spec}: ${(e as NodeJS.ErrnoException).code ?? e}`);
+      throw new UsageError(`cannot read ${oneLine(input.spec)}: ${(e as NodeJS.ErrnoException).code ?? e}`);
     }
-    const kind = o.kind ?? (input.spec === '-' ? 'shell' : hostKind('', input.spec, text) ?? 'shell');
+    const kind = o.kind ?? (stdin ? 'shell' : hostKind('', input.spec, text) ?? 'shell');
     // A shell script keeps its CRs: the parser reads them as blanks and the check warns about them.
-    out.push({ name: input.spec, text: kind === 'shell' ? text : text.replace(/\r\n/g, '\n'), kind, lines: input.lines ?? o.lines });
+    out.push({ name: input.spec, shown: oneLine(input.spec), text: kind === 'shell' ? text : text.replace(/\r\n/g, '\n'), kind, lines: input.lines ?? o.lines });
   }
   return out;
 }
 
 // ---- Output -----------------------------------------------------------------------------------
+
+/**
+ * What stands for the start of a colour sequence (ESC [) until `shown` has written out the control characters of the text. It is
+ * made anew in each run, so no script holds it, nor any text an explanation derives from one.
+ */
+const COLOUR_MARK = `\u{E000}${Math.random().toString(36).slice(2)}\u{E001}`;
+const sgr = (code: string) => `${COLOUR_MARK}${code}m`;
+
+/**
+ * All that main writes to standard output and standard error passes here: what it reads from a script, a file name or an
+ * argument can hold control characters, which must not reach the terminal as they are. Only the tool's own colours do.
+ */
+const shown = (text: string) => controlsShown(text).split(COLOUR_MARK).join('\x1b[');
+
+/**
+ * What GitHub's runner reads as a command anywhere in a line it logs, written as `##\[`: for the outputs for reading (text,
+ * Markdown, standard error). JSON and SARIF are data, and annotations are commands themselves.
+ */
+const forLog = (text: string) => text.replace(/##\[/g, '##\\[');
 
 const ANSI: Partial<Record<Token['kind'], string>> = {
   // (The shebang as the program it names, as the panel draws it.)
@@ -259,7 +293,7 @@ const ANSI: Partial<Record<Token['kind'], string>> = {
 const NOTE_ANSI = { warning: '33', info: '34', note: '90' } as const;
 
 function textOutput(name: string, line: number, lineText: string, ex: LineExplanation, color: boolean, lang: Lang): string {
-  const paint = (code: string | undefined, s: string) => (color && code ? `\x1b[${code}m${s}\x1b[0m` : s);
+  const paint = (code: string | undefined, s: string) => (color && code ? `${sgr(code)}${s}${sgr('0')}` : s);
   // The references a row cites, dim: " (Bash manual 3.7.2)", " (Bash manual 3.8, 3.1.3; execve(2))".
   const refs = (r: readonly string[] | undefined) => (r?.length ? paint('90', refsText(lang, r)) : '');
   const out: string[] = [`${paint('1', `${name}:${line + 1}`)}  ${lineText.trim()}`];
@@ -281,7 +315,7 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
   const walk = (t: Token, depth: number) => {
     // Code parts in the colour of the kind; a placeholder in italics and dim (or ‹name› when there is no colour).
     const label = joinParts(labelParts(t), (p) => (p.placeholder
-      ? (color ? `\x1b[2;3m${p.text}\x1b[0m` : `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}`)
+      ? (color ? `${sgr('2;3')}${p.text}${sgr('0')}` : `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}`)
       : paint(ANSI[t.kind], p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
     out.push(`${'  '.repeat(depth + 1)}${label}  ${explained(t).replace(/`/g, '')}${refs(t.refs)}`);
     // (The value of an expansion where it runs, on a line of its own: its backticks are kept, as they mark where each word starts and ends.)
@@ -308,8 +342,8 @@ function exampleText(e: Example, paint: (code: string | undefined, s: string) =>
 
 /** Problems, one per line, as compilers print them. */
 function issueText(name: string, i: DocumentIssue, color: boolean): string {
-  const sev = i.severity === 'warning' ? (color ? '\x1b[33mwarning\x1b[0m' : 'warning') : (color ? '\x1b[34minfo\x1b[0m' : 'info');
-  return `${name}:${i.startLine + 1}:${i.startCol + 1}: ${sev}: ${plain(i.message, { backticks: false })} [${i.code}]`;
+  const sev = i.severity === 'warning' ? (color ? `${sgr('33')}warning${sgr('0')}` : 'warning') : (color ? `${sgr('34')}info${sgr('0')}` : 'info');
+  return `${name}:${i.startLine + 1}:${i.startCol + 1}: ${sev}: ${oneLine(plain(i.message, { backticks: false }))} [${i.code}]`;
 }
 
 /** A GitHub Actions workflow command, which shows the problem on the pull request's diff. */
@@ -362,17 +396,40 @@ const forJson = ({ anchors: _, noteInfo: _n, ...ex }: LineExplanation) => ({
   examples: ex.examples.map(({ interactive: _i, ...e }) => e),
 });
 
+/**
+ * Writes a file the options name, in place, and not through a symbolic link at the last part of its path (O_NOFOLLOW, which
+ * Windows lacks; the link stays as it is). In place, as a device such as /dev/null stays one.
+ */
+function writeOwn(file: string, text: string, flags: number, stderr: (s: string) => void): boolean {
+  try {
+    const fd = fs.openSync(file, flags | (fs.constants.O_NOFOLLOW ?? 0), 0o666);
+    try {
+      fs.writeFileSync(fd, text);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return true;
+  } catch (e) {
+    // (Node's message names the file too.)
+    const why = (e as NodeJS.ErrnoException).code === 'ELOOP' ? 'it is a symbolic link' : (e as Error).message;
+    stderr(oneLine(`bash-explainer: cannot write ${file}: ${why}`) + '\n');
+    return false;
+  }
+}
+
 // ---- Main -------------------------------------------------------------------------------------
 
-export async function main(argv: string[], io: { stdout: (s: string) => void; stderr: (s: string) => void; env: NodeJS.ProcessEnv; isTTY: boolean }): Promise<number> {
+export async function main(argv: string[], streams: { stdout: (s: string) => void; stderr: (s: string) => void; env: NodeJS.ProcessEnv; isTTY: boolean; startLsp?: (config: string | undefined) => void }): Promise<number> {
+  const io = { ...streams, stdout: (s: string) => streams.stdout(shown(s)), stderr: (s: string) => streams.stderr(forLog(shown(s))) };
   let o: ReturnType<typeof parseArgs>;
   let inputs: Input[];
   try {
     o = parseArgs(argv, io.env, io.isTTY);
     if (o === 'help') return io.stdout(HELP), 0;
     if (o === 'version') return io.stdout(`${__VERSION__}\n`), 0;
+    if (o.lsp) return io.startLsp?.(o.config), 0;
     for (const w of o.warnings) io.stderr(`bash-explainer: warning: ${w}\n`);
-    if (o.printConfig) return io.stdout(`${JSON.stringify(settingsJson(o.settings, 'cli'), null, 2)}\n`), 0;
+    if (o.printConfig) return io.stdout(`${jsonText(settingsJson(o.settings, 'cli'), 2)}\n`), 0;
     inputs = readInputs(o);
   } catch (e) {
     if (!(e instanceof UsageError)) throw e;
@@ -401,12 +458,12 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
       const fails = (i: DocumentIssue) => i.severity === 'warning' && (o.strict || !i.pitfall);
       warnings += issues.filter(fails).length;
       if (o.format === 'json' || o.format === 'sarif' || o.sarifFile !== undefined) json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }), ...(i.convention && o.settings['notes.basis'] !== false ? { convention: i.convention } : {}) })));
-      if (o.format === 'github') for (const i of issues) (fails(i) ? failing : chunks).push(annotation(input.name, i));
-      else if (o.format !== 'json' && o.format !== 'sarif') chunks.push(...issues.map((i) => issueText(input.name, i, o.color)));
+      if (o.format === 'github') for (const i of issues) (fails(i) ? failing : chunks).push(annotation(input.shown, i));
+      else if (o.format !== 'json' && o.format !== 'sarif') chunks.push(...issues.map((i) => issueText(input.shown, i, o.color)));
     } else {
       const [from, to] = input.lines ?? [1, lines.length];
       if (to > lines.length) {
-        io.stderr(`bash-explainer: ${input.name} has ${lines.length} lines\n`);
+        io.stderr(`bash-explainer: ${input.shown} has ${lines.length} lines\n`);
         return 2;
       }
       for (let line = from - 1; line < to; line++) {
@@ -414,43 +471,37 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
         // Without an explicit range, lines with nothing to explain (blank, outside the shell code) are skipped.
         if (!input.lines && !ex.items.length && !ex.notes.length) continue;
         if (o.format === 'json') json.push({ file: input.name, line: line + 1, text: lines[line], explanation: forJson(ex) });
-        else if (o.format === 'markdown') chunks.push(toPlainMarkdown(ex, lines[line], `${input.name}:${line + 1}`, o.lang).trimEnd());
-        else chunks.push(textOutput(input.name, line, lines[line], ex, o.color, o.lang));
+        else if (o.format === 'markdown') chunks.push(toPlainMarkdown(ex, lines[line], `${input.shown}:${line + 1}`, o.lang).trimEnd());
+        else chunks.push(textOutput(input.shown, line, lines[line], ex, o.color, o.lang));
       }
     }
   }
 
   if (o.sarifFile !== undefined) {
-    const text = JSON.stringify(sarif(json as Problem[]), null, 2) + '\n';
-    try {
-      fs.writeFileSync(o.sarifFile, text);
-    } catch (e) {
-      io.stderr(`bash-explainer: cannot write ${o.sarifFile}: ${(e as Error).message}\n`);
-      return 2;
-    }
+    const text = jsonText(sarif(json as Problem[]), 2) + '\n';
+    if (!writeOwn(o.sarifFile, text, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC, io.stderr)) return 2;
   }
-  if (o.format === 'json') io.stdout(JSON.stringify(json, null, 2) + '\n');
-  else if (o.format === 'sarif') io.stdout(JSON.stringify(sarif(json as Problem[]), null, 2) + '\n');
+  if (o.format === 'json') io.stdout(jsonText(json, 2) + '\n');
+  else if (o.format === 'sarif') io.stdout(jsonText(sarif(json as Problem[]), 2) + '\n');
   else if (o.format === 'github') chunks.unshift(...failing);
-  if (o.format !== 'json' && o.format !== 'sarif' && chunks.length) io.stdout(chunks.join(o.check ? '\n' : o.format === 'markdown' ? '\n\n---\n\n' : '\n\n') + '\n');
+  if (o.format !== 'json' && o.format !== 'sarif' && chunks.length) {
+    const text = chunks.join(o.check ? '\n' : o.format === 'markdown' ? '\n\n---\n\n' : '\n\n') + '\n';
+    io.stdout(o.format === 'github' ? text : forLog(text));
+  }
   return o.check && warnings > 0 ? 1 : 0;
 }
 
-if (require.main === module && process.argv.includes('--lsp')) {
-  // --stdio, which some editors add, is the only transport there is. --config names the settings file.
-  const at = process.argv.findIndex((a) => a === '--config' || a.startsWith('--config='));
-  const config = at < 0 ? undefined : process.argv[at].startsWith('--config=') ? process.argv[at].slice('--config='.length) : process.argv[at + 1];
-  startLanguageServer({ input: process.stdin, output: process.stdout, env: process.env, version: __VERSION__, exit: (code) => process.exit(code), config });
-} else if (require.main === module) {
+if (require.main === module) {
   main(process.argv.slice(2), {
     stdout: (s) => process.stdout.write(s),
     stderr: (s) => process.stderr.write(s),
     env: process.env,
     isTTY: !!process.stdout.isTTY,
+    startLsp: (config) => startLanguageServer({ input: process.stdin, output: process.stdout, env: process.env, version: __VERSION__, exit: (code) => process.exit(code), config }),
   }).then((code) => {
     process.exitCode = code;
   }, (e) => {
-    process.stderr.write(`bash-explainer: ${e instanceof Error ? e.stack : e}\n`);
+    process.stderr.write(forLog(shown(`bash-explainer: ${e instanceof Error ? e.stack : e}\n`)));
     process.exitCode = 2;
   });
 }

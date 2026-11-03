@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.1
+
+Details and examples: [docs/changes/0.9.1.md](https://github.com/sf624/bash-explainer/blob/v0.9.1/docs/changes/0.9.1.md).
+
+### Fixed
+
+- The GitHub Action installs and runs the tool outside the checked-out repository. Its registry is the one your workflow or machine configures; npm settings kept in the repository no longer apply to it.
+- The command-line tool shows control characters in a script visibly (`<ESC>`) instead of sending them to the terminal, and a newline in a file name (`<LF>`). Text that a CI log would read as a command (`##[`) is written `##\[`.
+- `--sarif` does not write through a symbolic link at the last part of its path, and the GitHub Action writes the SARIF file only inside the workspace or the runner's temp directory when its path is in one of them. A path that leads elsewhere through a link fails with exit status 2.
+- The GitHub Action checks only files inside the workspace. Any other file that `files:` matches, by its path or through a symbolic link, is skipped with a notice that names it.
+- After `--`, a file named `--lsp` or `-` is read as a file.
+
+[All changes](https://github.com/sf624/bash-explainer/compare/v0.9.0...v0.9.1)
+
 ## 0.9.0
 
 Every warning the explanations give is now a problem with a code, a command name that does not run what it suggests gets a hint, code that never runs is faded, and the panel shows how bash reads the line, as the Bash manual does. Scripts can be explained for bash 5.3.

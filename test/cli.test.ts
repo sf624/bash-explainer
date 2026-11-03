@@ -461,4 +461,308 @@ describe('the command-line tool', function () {
     assert.ok(r.out.split('\n').length > 300);
     assert.strictEqual(run(['--check', fixture('posix.sh')], { preload: blocker }).err, '');
   });
+  describe('control characters in what it reads', () => {
+    // ESC (a whole sequence), CR, BEL, DEL and C1 characters: in a comment, a string, a word, a value, a line with a problem.
+    const withControls = '#!/bin/sh\n# a\x1b[2Jb\x07\n'
+      + 'echo "c\x1b]0;title\x07d\re\x9bf\x7fg" \x1b[31mred\x85\n'
+      + 'x=$\'h\\x1b[2Ji\'; echo "$x"\n'
+      + 'if [[ -n \x1b[31m ]]; then rm -rf "$y\x9b"/*; fi\n';
+    // Newline and tab lay the text out; anything else is the script's.
+    const raw = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
+    const file = () => path.join(dir, 'ctl\x1b[2Jname\x9b.sh');
+    const noRaw = (r: { out: string; err: string }, what: string) => {
+      assert.doesNotMatch(r.out, raw, `${what}: ${JSON.stringify(r.out)}`);
+      assert.doesNotMatch(r.err, raw, `${what}: ${JSON.stringify(r.err)}`);
+    };
+
+    before(() => fs.writeFileSync(file(), withControls));
+
+    for (const [what, args] of [
+      ['text', []],
+      ['Markdown', ['--format', 'markdown']],
+      ['JSON', ['--format', 'json']],
+      ['the check as text', ['--check']],
+      ['the check as JSON', ['--check', '--format', 'json']],
+      ['the check as SARIF', ['--check', '--format', 'sarif']],
+      ['the check as annotations', ['--check', '--format', 'github']],
+      ['the check, with a line of the file', ['--check', '--format', 'github', '--strict', '--line', '4']],
+    ] as [string, string[]][]) {
+      it(`leaves none of them raw in ${what}`, () => {
+        const r = run([...args, '--no-color', file()]);
+        assert.ok(r.code === 0 || r.code === 1, r.err);
+        assert.ok(r.out.length > 0, what);
+        noRaw(r, what);
+      });
+    }
+
+    it('keeps each annotation on a line of its own', () => {
+      const lines = run(['--check', '--format', 'github', file()]).out.trimEnd().split('\n');
+      assert.ok(lines.length > 1);
+      for (const l of lines) assert.match(l, /^::(error|warning|notice) file=[^ ]*ctl<ESC>\[2Jname<U\+009B>\.sh,line=\d+,/, l);
+    });
+
+    it('reads the same from a command line and from standard input', () => {
+      noRaw(run(['-e', withControls.split('\n')[2], '--no-color']), '-e');
+      noRaw(run(['-', '--no-color'], { input: withControls }), 'stdin');
+      noRaw(run(['-', '--check', '--no-color'], { input: withControls }), 'stdin, the check');
+    });
+
+    it('writes those of a script and of its name in the form of the examples, as `<ESC>`', () => {
+      const r = run(['--no-color', '--line', '3', file()]);
+      assert.ok(r.out.includes('ctl<ESC>[2Jname<U+009B>.sh:3'), r.out);
+      assert.ok(r.out.includes(`echo "c<ESC>]0;title<BEL>d<CR>e<U+009B>f<DEL>g" <ESC>[31mred<U+0085>`), r.out);
+    });
+
+    it('keeps the data in JSON and SARIF: the same text once it is read', () => {
+      const lines = JSON.parse(run(['--format', 'json', file()]).out) as { file: string; text: string }[];
+      assert.strictEqual(lines[0].file, file());
+      assert.strictEqual(lines.find((l) => l.text.startsWith('echo'))!.text, withControls.split('\n')[2]);
+      assert.ok(JSON.parse(run(['--check', '--format', 'sarif', file()]).out).runs[0].results.some((x: { locations: { physicalLocation: { artifactLocation: { uri: string } } }[] }) => x.locations[0].physicalLocation.artifactLocation.uri === file()));
+      const written = path.join(dir, 'ctl.sarif');
+      run(['--check', '--sarif', written, '--format', 'github', file()]);
+      assert.doesNotMatch(fs.readFileSync(written, 'utf8').replace(/\n/g, ''), raw);
+    });
+
+    it('writes only its own colours with --color', () => {
+      for (const args of [[], ['--check']]) {
+        const r = run([...args, '--color', file()]);
+        assert.match(r.out, /\x1b\[\d+m/, 'colours are on');
+        assert.strictEqual(r.err, '');
+        // Each of its own is a colour; the text's are written out, whatever they are.
+        assert.doesNotMatch(r.out.replace(/\x1b\[[\d;]+m/g, ''), raw);
+        assert.ok(r.out.includes('<ESC>[2Jname'), r.out);
+        for (const code of r.out.matchAll(/\x1b\[([\d;]+)m/g)) assert.match(code[1], /^(0|1|2;3|3[1-5]|9[01])$/);
+      }
+      assert.ok(run(['--color', '--line', '3', file()]).out.includes('<ESC>[31mred<U+0085>'));
+    });
+
+    it('leaves none in what it says of a file it cannot read, or of an argument', () => {
+      const r = run(['/nonexistent/a\x1b[2Jb\x9b.sh']);
+      assert.strictEqual(r.code, 2);
+      assert.match(r.err, /cannot read \/nonexistent\/a<ESC>\[2Jb<U\+009B>\.sh/);
+      noRaw(r, 'a file');
+      noRaw(run(['--bad\x1b[2J']), 'an option');
+      noRaw(run(['--set', 'shell=\x1b[2J', '-e', 'ls']), 'a setting');
+      noRaw(run(['--print-config', '--set', 'shell=\x1b[2J']), 'the settings');
+    });
+
+    it('leaves none in the messages of the Language Server', () => {
+      const message = (m: unknown) => { const json = JSON.stringify(m); return `Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`; };
+      const uri = 'file:///a.sh';
+      const r = spawnSync(process.execPath, [cli, '--lsp'], {
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH },
+        timeout: 30000,
+        input: [
+          message({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: {} } }),
+          message({ jsonrpc: '2.0', method: 'textDocument/didOpen', params: { textDocument: { uri, languageId: 'shellscript', version: 1, text: withControls } } }),
+          message({ jsonrpc: '2.0', id: 2, method: 'textDocument/hover', params: { textDocument: { uri }, position: { line: 2, character: 1 } } }),
+          message({ jsonrpc: '2.0', id: 3, method: 'shutdown' }),
+          message({ jsonrpc: '2.0', method: 'exit' }),
+        ].join(''),
+      });
+      const bodies = r.stdout.split(/Content-Length: \d+\r\n\r\n/).filter(Boolean);
+      assert.ok(bodies.length >= 3, r.stdout);
+      for (const b of bodies) assert.doesNotMatch(b, raw);
+      assert.doesNotMatch(r.stderr, raw);
+      assert.ok(bodies.some((b) => (JSON.parse(b) as { id?: number }).id === 2), 'the hover was answered');
+    });
+
+    it('gives the columns of the real text', () => {
+      // (Each character counts one, as in an editor, however it is written out.)
+      const script = path.join(dir, 'ctl-column.sh');
+      fs.writeFileSync(script, '#!/bin/sh\necho "\x1b[31m"; [[ -n $x ]]\n');
+      const plainScript = path.join(dir, 'ctl-column-plain.sh');
+      fs.writeFileSync(plainScript, '#!/bin/sh\necho "12345"; [[ -n $x ]]\n');
+      const at = (f: string) => /^[^\n]*?:(\d+):(\d+): warning: [^\n]*\[dbracket\]$/m.exec(run(['--check', '--no-color', f]).out)!.slice(1);
+      assert.deepStrictEqual(at(script), at(plainScript));
+    });
+
+    it('prints ordinary text as it is, Japanese too', () => {
+      const r = run(['--no-color', '--lang', 'ja', '-e', 'echo "日本語\té" # コメント']);
+      assert.ok(r.out.includes('echo "日本語\té" # コメント'), r.out);
+      assert.doesNotMatch(r.out, /<(ESC|TAB|U\+)/);
+    });
+  });
+  describe('a newline in a file name', () => {
+    const name = () => path.join(dir, 'x\n::error title=a::b\nx.sh:1:1: error: text [code]\n.sh');
+    const shown = 'x<LF>::error title=a::b<LF>x.sh:1:1: error: text [code]<LF>.sh';
+    const oneLineEach = (text: string, what: string) => {
+      // (Annotations encode `:` and `,` in a name as well.)
+      assert.ok(text.replace(/%3A/g, ':').replace(/%2C/g, ',').includes(shown), `${what}: ${JSON.stringify(text)}`);
+      assert.doesNotMatch(text, /^(::error title=a|x\.sh:1:1)/m, what);
+    };
+    before(() => fs.writeFileSync(name(), '#!/bin/sh\nif [[ -n $x ]]; then echo "$x"; fi\n'));
+
+    for (const [what, args] of [
+      ['text', ['--no-color']],
+      ['colours', ['--color']],
+      ['Markdown', ['--format', 'markdown']],
+      ['the check as text', ['--check', '--no-color']],
+      ['the check in colour', ['--check', '--color']],
+      ['the check as annotations', ['--check', '--format', 'github']],
+    ] as [string, string[]][]) {
+      it(`is shown visibly in ${what}`, () => oneLineEach(run([...args, '--', name()]).out, what));
+    }
+
+    it('is kept in JSON and SARIF, where it is data', () => {
+      const lines = JSON.parse(run(['--format', 'json', '--', name()]).out) as { file: string }[];
+      assert.strictEqual(lines[0].file, name());
+      assert.strictEqual((JSON.parse(run(['--check', '--format', 'json', '--', name()]).out) as { file: string }[])[0].file, name());
+      assert.strictEqual(JSON.parse(run(['--check', '--format', 'sarif', '--', name()]).out).runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri, name());
+    });
+
+    it('is shown visibly in what it says of a file it cannot read, a line it lacks, or a file it cannot write', () => {
+      const missing = path.join(dir, 'gone\n::error title=a::b\n');
+      const a = run(['--check', '--', missing]);
+      assert.strictEqual(a.code, 2);
+      assert.doesNotMatch(a.err, /^::error/m);
+      assert.ok(a.err.includes('gone<LF>::error title=a::b<LF>'), a.err);
+      const b = run([`--line=99`, '--', name()]);
+      assert.strictEqual(b.code, 2);
+      oneLineEach(b.err, 'a line it lacks');
+      for (const option of ['--sarif']) {
+        const c = run(['--check', option, path.join(missing, 'r'), '--', fixture('renderings.sh')]);
+        assert.strictEqual(c.code, 2, c.err);
+        assert.doesNotMatch(c.err, /^::error/m, option);
+      }
+    });
+
+    it('keeps a problem on one line, whatever the script\'s text holds', () => {
+      const r = run(['--check', '--no-color', '-'], { input: 'x = "a\nx.sh:1:1: error: text [code]"\n' });
+      assert.doesNotMatch(r.out, /^x\.sh:1:1/m);
+      assert.ok(r.out.includes('a<LF>x.sh:1:1: error: text [code]'), r.out);
+      for (const l of r.out.trimEnd().split('\n')) assert.match(l, /^-:\d+:\d+: /);
+    });
+
+    it('leaves the newlines of the tool itself', () => {
+      assert.ok(run(['--check', '--no-color', '--', fixture('posix.sh')]).out.trimEnd().split('\n').length > 1);
+    });
+  });
+
+  describe('the files it writes', () => {
+    const problems = '#!/bin/sh\nif [[ -n $x ]]; then echo "$x"; fi\n';
+    let script = '';
+    let at = '';
+    before(() => {
+      at = fs.mkdtempSync(path.join(dir, 'written-'));
+      script = path.join(at, 'a.sh');
+      fs.writeFileSync(script, problems);
+    });
+    for (const [option, kept] of [['--sarif', '"version"']]) {
+      it(`does not write ${option} through a link at its path`, () => {
+        const target = path.join(at, `target${option}`);
+        fs.writeFileSync(target, 'original\n');
+        const link = path.join(at, `link${option}`);
+        fs.symlinkSync(target, link);
+        const r = run(['--check', option, link, '--', script]);
+        assert.strictEqual(r.code, 2, r.err);
+        assert.match(r.err, /is a symbolic link/);
+        assert.strictEqual(fs.readFileSync(target, 'utf8'), 'original\n');
+        assert.strictEqual(fs.lstatSync(link).isSymbolicLink(), true);
+      });
+
+      it(`does not create what a dangling link at the path of ${option} names`, () => {
+        const link = path.join(at, `dangling${option}`);
+        fs.symlinkSync(path.join(at, `new${option}`), link);
+        assert.strictEqual(run(['--check', option, link, '--', script]).code, 2);
+        assert.strictEqual(fs.existsSync(path.join(at, `new${option}`)), false);
+      });
+
+      it(`writes ${option} to a new file, to a device, and through a directory that is a link`, () => {
+        const file = path.join(at, `new-file${option}`);
+        assert.strictEqual(run(['--check', option, file, '--', script]).code, 1);
+        assert.ok(fs.readFileSync(file, 'utf8').includes(kept));
+        assert.strictEqual(run(['--check', option, '/dev/null', '--', script]).code, 1);
+        fs.mkdirSync(path.join(at, `real${option}`));
+        fs.symlinkSync(path.join(at, `real${option}`), path.join(at, `dir${option}`));
+        assert.strictEqual(run(['--check', option, path.join(at, `dir${option}`, 'f'), '--', script]).code, 1);
+        assert.ok(fs.readFileSync(path.join(at, `real${option}`, 'f'), 'utf8').includes(kept));
+      });
+    }
+
+    it('replaces the content of a --sarif file', () => {
+      const sarif = path.join(at, 'old.sarif');
+      fs.writeFileSync(sarif, 'x'.repeat(100000));
+      run(['--check', '--sarif', sarif, '--', script]);
+      assert.ok(JSON.parse(fs.readFileSync(sarif, 'utf8')).runs);
+    });
+  });
+
+  describe('names after --', () => {
+    const script = '#!/bin/sh\nif [[ -n $x ]]; then echo "$x"; fi\n';
+    let at = '';
+    const inDir = (args: string[], input?: string) => {
+      const r = spawnSync(process.execPath, [cli, ...args], { cwd: at, input, encoding: 'utf8', env: { PATH: process.env.PATH }, timeout: 30000 });
+      return { code: r.status, out: r.stdout, err: r.stderr };
+    };
+    before(() => {
+      at = fs.mkdtempSync(path.join(dir, 'names-'));
+      for (const f of ['--lsp', '-']) fs.writeFileSync(path.join(at, f), script);
+    });
+
+    it('reads a file named --lsp, and does not start the Language Server', () => {
+      const r = inDir(['--check', '--format', 'github', '--', '--lsp']);
+      assert.strictEqual(r.code, 1, r.err);
+      assert.match(r.out, /^::warning file=--lsp,line=2,/m);
+    });
+
+    it('takes --lsp as the value of an option', () => {
+      const r = inDir(['--no-color', '-e', '--lsp']);
+      assert.strictEqual(r.code, 0, r.err);
+      assert.match(r.out, /^\(command\):1 {2}--lsp$/m);
+    });
+
+    it('reads a file named -, and standard input for a - before --', () => {
+      const r = inDir(['--check', '--format', 'github', '--', '-'], 'echo hi\n');
+      assert.strictEqual(r.code, 1, r.err);
+      assert.match(r.out, /^::warning file=-,line=2,/m);
+      assert.strictEqual(inDir(['--check', '-'], 'echo hi\n').code, 0);
+    });
+
+    it('still says an option is unknown without --lsp, and takes --stdio with it', () => {
+      assert.strictEqual(inDir(['--stdio', '-e', 'ls']).code, 2);
+      for (const args of [['--lsp', '--stdio'], ['--stdio', '--lsp'], ['--lsp', '--some-option=1']]) {
+        const json = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: {} } });
+        const exit = JSON.stringify({ jsonrpc: '2.0', method: 'exit' });
+        const r = inDir(args, `Content-Length: ${json.length}\r\n\r\n${json}Content-Length: ${exit.length}\r\n\r\n${exit}`);
+        assert.match(r.out, /"capabilities"/, args.join(' '));
+      }
+    });
+  });
+
+  describe('text a CI log reads as a command', () => {
+    const script = 'echo "##[error]a ###[b"\n';
+    it('is written otherwise in text, Markdown and standard error', () => {
+      for (const args of [['--no-color'], ['--format', 'markdown'], ['--color']]) {
+        const r = run([...args, '-e', script.trimEnd()]);
+        assert.doesNotMatch(r.out, /##\[/, args.join(' '));
+        assert.ok(r.out.includes('##\\[error]a ###\\[b'), r.out);
+      }
+      const missing = run(['--check', '--', '##[error]x.sh']);
+      assert.strictEqual(missing.code, 2);
+      assert.doesNotMatch(missing.err, /##\[/);
+      assert.ok(missing.err.includes('cannot read ##\\[error]x.sh'), missing.err);
+      const json = run(['--format', 'json', '--', '##[error]x.sh']);
+      assert.doesNotMatch(json.err, /##\[/);
+    });
+
+    it('is written otherwise in a problem and a file name of the check as text', () => {
+      const f = path.join(dir, '##[error]y.sh');
+      fs.writeFileSync(f, '#!/bin/sh\nif [[ -n $x ]]; then echo; fi\n');
+      const r = run(['--check', '--no-color', '--', f]);
+      assert.strictEqual(r.code, 1, r.err);
+      assert.doesNotMatch(r.out, /##\[/);
+      assert.ok(r.out.includes('##\\[error]y.sh:2:'), r.out);
+    });
+
+    it('stays in JSON and SARIF, which are data, and in annotations', () => {
+      const f = path.join(dir, '##[error]z.sh');
+      fs.writeFileSync(f, '#!/bin/sh\nif [[ -n $x ]]; then echo; fi\n');
+      assert.strictEqual((JSON.parse(run(['--check', '--format', 'json', '--', f]).out) as { file: string }[])[0].file, f);
+      assert.strictEqual(JSON.parse(run(['--check', '--format', 'sarif', '--', f]).out).runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri, f);
+      assert.match(run(['--check', '--format', 'github', '--', f]).out, /^::warning file=[^ ]*##\[error\]z\.sh,/m);
+      assert.ok((JSON.parse(run(['--format', 'json', '-e', script.trimEnd()]).out) as { text: string }[])[0].text.includes('##[error]a'));
+    });
+  });
 });

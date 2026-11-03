@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
-import { controlAbbr, controlMarks, controlSuffix, pictureCode, pictureLabel, pictureNote, pictureText, splitPictures } from '../src/ctlchars';
+import { controlAbbr, controlMarks, controlsShown, controlSuffix, jsonText, oneLine, pictureCode, pictureLabel, pictureNote, pictureText, splitPictures } from '../src/ctlchars';
 import { explainEscapes, explainPrintf } from '../src/embedded/format';
 import { explainTrSet } from '../src/embedded/textutils';
 import { explainGitFormat } from '../src/embedded/gitformat';
@@ -210,6 +210,31 @@ describe('notes on the control pictures in examples', () => {
 
 /** The Unicode control pictures and the arrow for a tab: boxes on a machine whose fonts lack their blocks. */
 const PICTURE = /[\u2400-\u241f\u2421\u21e5]/;
+
+describe('control characters on the way to a terminal', () => {
+  const every = Array.from({ length: 0xa0 }, (_, c) => String.fromCharCode(c)).join('');
+
+  it('writes out each C0 and C1 control character and DEL, and leaves a tab, a newline and any other text', () => {
+    assert.strictEqual(controlsShown('a\x1b[2Jb\rc\x07d\x7fe\x80f\x9bg\x00h'), 'a<ESC>[2Jb<CR>c<BEL>d<DEL>e<U+0080>f<U+009B>g<NUL>h');
+    const text = 'a\tb\nc 日本語 é ÿ \u00a0 \u2028 \u202e 🙂';
+    assert.strictEqual(controlsShown(text), text);
+    assert.doesNotMatch(controlsShown(every), /[\x00-\x08\x0b-\x1f\x7f-\x9f]/);
+  });
+
+  it('writes a newline in a file name as <LF>, and leaves the rest of it', () => {
+    assert.strictEqual(oneLine('a\nb\n'), 'a<LF>b<LF>');
+    assert.strictEqual(oneLine('日本語\tb.sh'), '日本語\tb.sh');
+  });
+
+  it('leaves no control character in JSON text, and the value read back is the same', () => {
+    const value = { [every]: [every, '日本語'] };
+    const text = jsonText(value, 2);
+    assert.doesNotMatch(text.replace(/\n/g, ''), /[\x00-\x1f\x7f-\x9f]/);
+    assert.deepStrictEqual(JSON.parse(text), value);
+    assert.strictEqual(jsonText({ a: 'é 日本語' }), JSON.stringify({ a: 'é 日本語' }));
+    assert.strictEqual(jsonText({ a: 'é' }, 2), JSON.stringify({ a: 'é' }, null, 2));
+  });
+});
 
 describe('the control pictures in the outputs', () => {
   const MARK = (label: string) => `<span style="color:var(--vscode-badge-foreground);background-color:var(--vscode-badge-background);border-radius:2px;"><small>&nbsp;${label}&nbsp;</small></span>`;
