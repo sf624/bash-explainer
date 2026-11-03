@@ -3,7 +3,7 @@ import { coreutilsRejects, type PrintfReader } from '../embedded/format';
 import { MAX_FIELD, sprintf } from './awk';
 import { sameInEveryLibrary } from './floatdigits';
 import { bracketEnd, bracketRegex } from '../bracket';
-import { MachineDigits, RegexRefused, scriptRegex } from './regexguard';
+import { MachineDigits, Refused, scriptRegex } from './regexguard';
 import { parseSequence, sequenceWords } from '../braceseq';
 import { BASH_VERSIONS, type BashVersion } from '../bashversion';
 import { Unsupported as RunnerUnsupported } from './unsupported';
@@ -194,7 +194,7 @@ export function globToRegex(pattern: string, mode: GlobMode, opts: GlobOpts = {}
   try {
     return scriptRegex(`^${convert(0, pattern.length)}$`, opts.nocase && !file ? 'i' : '');
   } catch (e) {
-    if (e instanceof RegexRefused) throw e;
+    if (e instanceof Refused) throw e;
     return undefined;
   }
 }

@@ -7,7 +7,7 @@ import type { Ends } from '../../argv/spec';
 import type { Shell } from '../../dialect';
 import { builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
-import { assignmentsOnly, coprocName, descendants, field, fields, nameText, prefixAssignments, redirectionsOf, type SyntaxNode } from '../../syntax/tree';
+import { assignmentsOnly, coprocName, descendants, field, fields, nameText, prefixAssignments, redirectionsOf, type SyntaxNode, rootOf } from '../../syntax/tree';
 import { commandName } from '../effects';
 import { lastStageInShell, slotEnvs, STATEMENTS, subshellReasons } from '../env';
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
@@ -35,12 +35,6 @@ export type { ChildPass, Frame, Target } from './shared';
 const POSIX_SHELLS = new Set<Shell>(['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh']);
 /** The statements whose failure stops the shell under `set -e` (a compound command stops in the command that fails). */
 const ERREXIT_STOPS = new Set(['command', 'extended_test', 'arithmetic_command', 'subshell', 'pipeline']);
-
-const rootOf = (n: SyntaxNode): SyntaxNode => {
-  let r = n;
-  while (r.parent) r = r.parent;
-  return r;
-};
 
 /** How many times a function body is walked with different states before the rest of its calls are guessed. */
 const WALKS_PER_FUNCTION = 4;

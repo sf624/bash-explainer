@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { createUnbashParser } from './syntax/adapters/unbash';
 import { TreeCache } from './syntax/cache';
+import { failuresGoTo, loggedOnce } from './failures';
 import { ExplainService } from './service';
 import { TOKEN_SETTINGS } from './settings';
 import { DiagnosticsController } from './ui/diagnostics';
@@ -12,6 +13,12 @@ import { SemanticTokensController } from './ui/semanticTokens';
 import { featureNames, ui } from './ui/texts';
 
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
+  // (A bug that a boundary keeps from stopping the extension is told here: src/failures.ts. The channel is made when there is one.)
+  let channel: vscode.OutputChannel | undefined;
+  failuresGoTo(loggedOnce((text) => {
+    if (!channel) ctx.subscriptions.push((channel = vscode.window.createOutputChannel('Bash Explainer')));
+    channel.appendLine(text);
+  }));
   const parser = createUnbashParser();
   const service = new ExplainService(new TreeCache(parser));
   const hover = new HoverController(service);

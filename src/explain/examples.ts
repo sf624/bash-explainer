@@ -21,7 +21,7 @@ import * as pipelines from '../examples/pipeline';
 import { sectionMarks, type StageMarks } from '../examples/marks';
 import { MAX_SHOWN_LINES, pipedOutput, type Stage } from '../examples/pipeline';
 import { type JsRegex, regexExamples } from '../examples/regex';
-import { guarded, scriptRegex } from '../examples/regexguard';
+import { scriptRegex } from '../examples/regexguard';
 import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
 import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
@@ -104,13 +104,22 @@ export function pushExample(cx: Explainer, ex: Example | undefined): void {
   if (ex) cx.example(ex);
 }
 
-/** What `build` adds to the line, or, when it would run a regex that is refused, the example that says it is not computed. */
+/** Whether the line wants examples at all: without, nothing is run for them (`lean`, src/document.ts; `examples.enabled`). */
+export const examplesWanted = (cx: Explainer): boolean => cx.opts.examples?.enabled !== false;
+
+/** What `build` adds to the line, when the line wants examples, or the example that says why it is not computed (`exampleRun`). */
 export function guardedExample(cx: Explainer, kind: ExampleKind, build: () => void): void {
-  guarded(build, (id) => cx.example(commandExamples.notComputed(kind, cx.s('例', 'Example'), cx.lang, id)));
+  if (!examplesWanted(cx)) return;
+  guardedRun(cx, kind, build);
+}
+
+/** The same, whether the line wants examples or not: for what also gives a note that has no other source (`read`). */
+function guardedRun(cx: Explainer, kind: ExampleKind, build: () => void): void {
+  commandExamples.exampleRun(kind, build, (id) => cx.example(commandExamples.notComputed(kind, cx.s('例', 'Example'), cx.lang, id)));
 }
 
 /** An example's editable form for the panel (src/examples/commands.ts). */
-export function interactive(cx: Explainer, spec: RerunSpec, inputs: InputBox[]): Interactive {
+export function interactive(cx: Explainer, spec: RerunSpec, inputs: InputBox[]): Interactive | undefined {
   return commandExamples.interactive(spec, inputs, cx.lang);
 }
 
@@ -290,8 +299,9 @@ export function awkOptions(cx: Explainer): (AwkRunOptions & { vars: Record<strin
 
 /** Sample data run through every stage of a pipeline, showing what each stage leaves. */
 export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefined {
+  if (!examplesWanted(cx)) return undefined;
   // (Nothing is said of the stages after one the guard does not run, nor of those before: the example is of them all.)
-  return guarded(() => wholeExample(cx, n), (id) => commandExamples.notComputed('pipeline', cx.s('例（パイプライン全体）', 'Example (the whole pipeline)'), cx.lang, id));
+  return commandExamples.exampleRun<Example | undefined>('pipeline', () => wholeExample(cx, n), (id) => commandExamples.notComputed('pipeline', cx.s('例（パイプライン全体）', 'Example (the whole pipeline)'), cx.lang, id));
 }
 
 function wholeExample(cx: Explainer, n: SyntaxNode): Example | undefined {
@@ -460,39 +470,42 @@ export function commandExampleFor(cx: Explainer, n: SyntaxNode, spec: CommandSpe
   // (`x='-n 3'; head $x f`: the example would read `$x` as written.)
   if (!spec?.example || readsFields(parse)) return;
   if (spec.example === 'read') {
-    readExample(cx, n, args, parse);
+    guardedRun(cx, 'textFilters', () => readExample(cx, n, args, parse));
     return;
   }
+  if (!examplesWanted(cx)) return;
   // (`/usr/bin/printf --version`: the word read as an option it takes only alone prints the version, not the format.)
   if (parse.roles.some((r) => r.role.role === 'option' && spec.soleOptions?.includes(r.role.spec))) return;
   const kind = spec.example;
-  const src = inputSource(cx, n, parse, args, spec);
-  // A command that prints what it reads as it is (cat) shows what it does when it joins several streams (`cat a - b`).
-  if (spec.copies && src.streams.length < 2 && !src.reads) return;
-  // (printf with a brace expansion: its output is in the example of the expansion, with the words.)
-  if (kind === 'printf' && args.some((a) => braceWordsOf(cx, a)?.length)) return;
-  // (printf: the builtin of the bash release explained for, or the coreutils program.)
-  const reader = spec.builtin ? cx.opts.bashVersion ?? DEFAULT_BASH_VERSION : 'coreutils';
-  guardedExample(cx, kind === 'perl' ? 'perl' : 'textFilters', () => pushExample(cx, commandExamples.commandExampleOf(kind, exampleWords(cx, args, !!spec.prints), cx.lang, src, reader)));
+  guardedExample(cx, kind === 'perl' ? 'perl' : 'textFilters', () => {
+    const src = inputSource(cx, n, parse, args, spec);
+    // A command that prints what it reads as it is (cat) shows what it does when it joins several streams (`cat a - b`).
+    if (spec.copies && src.streams.length < 2 && !src.reads) return;
+    // (printf with a brace expansion: its output is in the example of the expansion, with the words.)
+    if (kind === 'printf' && args.some((a) => braceWordsOf(cx, a)?.length)) return;
+    // (printf: the builtin of the bash release explained for, or the coreutils program.)
+    const reader = spec.builtin ? cx.opts.bashVersion ?? DEFAULT_BASH_VERSION : 'coreutils';
+    pushExample(cx, commandExamples.commandExampleOf(kind, exampleWords(cx, args, !!spec.prints), cx.lang, src, reader));
+  });
 }
 
 /**
  * What a command reads (src/examples/source.ts): the files its words name as its input, or its standard input, from
  * the syntax around it. By default, the command whose words are being read (`cx.command`).
  */
-export function inputSource(cx: Explainer, cmd?: SyntaxNode, parse?: ArgvParse, nodes?: SyntaxNode[], spec?: CommandSpec): InputSource {
+export function inputSource(cx: Explainer, cmd?: SyntaxNode, parse?: ArgvParse, nodes?: SyntaxNode[], spec?: CommandSpec, piped: (cx: Explainer, n: SyntaxNode, index: number) => Piped = pipedLines): InputSource {
   const ctx = cx.command!;
   const words = (nodes ?? ctx.nodes).map((a): SourceWord => {
     const value = literalContent(a)?.text ?? staticWordValue(a, false, cx.shell);
     const glob = wordAt(cx, a)?.steps.find((st) => st.kind === 'glob');
-    return pipeOf(a) ? { text: a.text, pipe: pipeOf(a), lines: substitutionLines(a, (p, i) => pipedLines(cx, p, i)) } : { value, text: a.text, ...(value === undefined ? { many: 'unknown' as const } : glob && glob.applies !== false ? { many: 'glob' as const } : {}) };
+    return pipeOf(a) ? { text: a.text, pipe: pipeOf(a), lines: substitutionLines(a, (p, i) => piped(cx, p, i)) } : { value, text: a.text, ...(value === undefined ? { many: 'unknown' as const } : glob && glob.applies !== false ? { many: 'glob' as const } : {}) };
   });
-  return sources.inputSource(parse ?? ctx.parse, words, stdinOf(cx, cmd ?? ctx.args[0].parent!), parse ? spec : ctx.spec);
+  return sources.inputSource(parse ?? ctx.parse, words, stdinOf(cx, cmd ?? ctx.args[0].parent!, piped), parse ? spec : ctx.spec);
 }
 
-function stdinOf(cx: Explainer, cmd: SyntaxNode): Stdin {
+function stdinOf(cx: Explainer, cmd: SyntaxNode, piped: (cx: Explainer, n: SyntaxNode, index: number) => Piped): Stdin {
   // (A here-string's word is not split or globbed: `$'b\na'` is two lines.)
-  return sources.stdinOf(cmd, (w) => literalContent(w)?.text ?? staticWordValue(w, false, cx.shell), (p, i) => pipedLines(cx, p, i));
+  return sources.stdinOf(cmd, (w) => literalContent(w)?.text ?? staticWordValue(w, false, cx.shell), (p, i) => piped(cx, p, i));
 }
 
 /**
@@ -745,7 +758,8 @@ function exportedEnvironment(cx: Explainer, cmd: SyntaxNode): ReadonlyMap<string
 
 /** A note when the command reads files it names, so not the standard input the line gives it (`jq . a.json < b.json`). */
 export function unreadStdin(cx: Explainer, n: SyntaxNode, parse: ArgvParse, args: SyntaxNode[], name: string): void {
-  const src = inputSource(cx, n, parse, args);
+  // (What the note says is where stdin comes from, not what comes: nothing is run for it.)
+  const src = inputSource(cx, n, parse, args, undefined, () => ({ by: '' }));
   const file = src.streams.find((st): st is Extract<Stream, { kind: 'file' }> => st.kind !== 'stdin');
   if (!src.unread || !file) return;
   const u = src.unread;

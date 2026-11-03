@@ -276,6 +276,18 @@ Now the regexes of a script run on an engine of our own, which gives what JavaSc
 - The values the model follows through `case`, `[[ == ]]` and `${x%…}` are "not known" where the pattern is not run, so nothing is said to be decided from them.
 - `${x//b/c}`, `${x##*/}` and `${x/#a/b}` find where a match ends with one walk of the pattern, so a long value costs little: a value of 3000 characters takes under 2 ms of the limit, and it was 1.1 s before.
 
+### One line no longer stops the whole tool
+
+Every product runs the examples on its only thread, so what a line costs is now bounded from inside, and a failure stays on its line ([design](../design/line-budget.md)).
+
+- All the examples of a line share one budget, and a long file shares one among its lines, by its size alone, so a line is explained the same in the hover, in the panel and in the command-line tool. 30 refused `grep`s on a line took 1.7 s and take 0.4 s. A file of 5,000 such lines made the problems take over 90 s and takes about 10 s, of which the regexes take none, since finding problems no longer runs any example.
+- What it says: why. "the values this makes may get too large" (`jq -n 'reduce range(28) as $i ("a"; .+.)'`, which ended the process, awk's doubling and `split`), "this takes too many steps, and may never end" (`awk 'BEGIN{while(1);}'`, `jq -n 'def f: f; f'`, which said "pattern" with no pattern), "this may take more than what is left for the examples of this line". Before, a loop too long showed no example and did not say why.
+- `x=$x$x` 24 times took over 20 s, and takes 0.3 s: a variable's value past 65,536 characters is not known to the model.
+- With `x=aaaaaaaaaaaaaaaaa!`, `[[ $x =~ (a+)+$ ]]` showed its example and said "Not computed" in the panel. The panel's result has its own budget now; where that runs out, the panel shows the example without its input box.
+- A regex with `jq`'s own syntax that JavaScript lacks (`test("^(?i)foo")`) lost the whole explanation; it has no example now.
+- `jq`'s `range(a; b)` stopped at 1,000 numbers in its example; it counts as jq does.
+- A bug that throws while an example is computed drops that example: "Not shown: computing this example failed, a bug of Bash Explainer". One that throws while a line is explained leaves a line that says so, and the other lines are explained. The problems the lines do not say, the colours and the faded code are left out the same way. The bug goes to the "Bash Explainer" output channel in VS Code, to `window/logMessage` in the Language Server, to the console on the web page, and to standard error in `bash-explainer`, which prints what it can and exits with status 2.
+
 ### The digits of `printf` and awk
 
 The examples compute the digits of a number from its exact value, as C does, to 10000 digits: a precision or a width past 10000 has no example. A number written with more than 1000 digits, or with a power of ten past 1000 (`1e-300000000`), is not worked out either, and it is said as below. (Without a limit, the powers of ten of such a number took seconds to compute, or threw.) Before, `printf '%.200f' 1` and awk's `%.101f` failed; `%f` of 1e21 gave `1e+21`; `%g` of 999999.5 gave `1000000`, where the tools print `1e+06`; `%d` of 2^70 gave `1.1805916207174113e+21`.

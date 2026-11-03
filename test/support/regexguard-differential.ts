@@ -4,7 +4,7 @@
 // mistake here can mean a run without end: `tsx regexguard-differential.ts <seed> <rounds>` prints, as JSON, what it found.
 import * as fs from 'fs';
 import * as path from 'path';
-import { costOf, RegexRefused, scriptRegex } from '../../src/examples/regexguard';
+import { costOf, Refused, scriptRegex } from '../../src/examples/regexguard';
 import { Parser } from '../../src/examples/regexparse';
 
 export const TABLE = JSON.parse(fs.readFileSync(path.join(__dirname, '../fixtures/regexguard-patterns.json'), 'utf8')) as { engine: string[]; engineTexts: string[] };
@@ -38,7 +38,7 @@ const gives = (use: (make: () => RegExp, text: string) => unknown, make: () => R
   try {
     return JSON.stringify(use(make, text)) ?? 'undefined';
   } catch (e) {
-    return e instanceof RegexRefused ? 'refused' : (e as Error).name;
+    return e instanceof Refused ? 'refused' : (e as Error).name;
   }
 };
 
@@ -56,7 +56,7 @@ export function compare(source: string, flags: string, text: string, found: Foun
   try {
     made = scriptRegex(source, flags);
   } catch (e) {
-    if (e instanceof RegexRefused) {
+    if (e instanceof Refused) {
       found.refused++;
       if (!isValid) found.wrong.push(`/${source}/${flags}: refused, and JavaScript says a syntax error`);
       return;

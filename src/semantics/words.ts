@@ -9,13 +9,13 @@
 // known here, an attribute given on some paths) "may" apply: `'unknown'`.
 import type { BashVersion } from '../bashversion';
 import { evalArith } from '../arith';
-import { guarded } from '../examples/regexguard';
+import { guardedApart, modelLimit, modelValueLimit } from '../examples/regexguard';
 import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
-import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode, rootOf } from '../syntax/tree';
 import { caseConverted, type Char, GLOB_CHARS, globbedByBash, IFS_ERRATIC, IFS_WHITESPACE, ownChars, patternOfChars, releasesDiffer, sameInEveryLocale, splitOn, substring } from './chars';
 import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
@@ -484,6 +484,8 @@ export interface ValueSource {
   arith?(n: SyntaxNode): bigint | undefined;
   /** What the `${| …; }` `n` gives (its `REPLY` at the end, bash 5.3), when it is known. */
   reply?(n: SyntaxNode): string | undefined;
+  /** The expansions refused with these values, where they are the same each time. */
+  readonly refused?: WeakSet<SyntaxNode>;
 }
 
 /** The values the walk's conditions read, and the shell the walk is of (bash when absent). */
@@ -496,9 +498,18 @@ export interface WalkSource extends ValueSource {
  * `trusted`: only the values of the variables the model trusts (src/semantics/trust.ts), with no environment: the
  * values Meaning shows (`trustedPart`, for src/semantics/values.ts).
  */
+const refusedExpansions = new WeakMap<StateModel, { all: WeakSet<SyntaxNode>; trusted: WeakSet<SyntaxNode> }>();
+
 class ModelValues implements ValueSource {
   constructor(private readonly w: WordMeaning, private readonly model: StateModel, private readonly env: WordEnv | undefined,
     private readonly expanding: ReadonlySet<SyntaxNode>, private readonly trusted = false) {}
+
+  get refused(): WeakSet<SyntaxNode> | undefined {
+    if (this.env) return undefined;
+    let sets = refusedExpansions.get(this.model);
+    if (!sets) refusedExpansions.set(this.model, (sets = { all: new WeakSet(), trusted: new WeakSet() }));
+    return this.trusted ? sets.trusted : sets.all;
+  }
 
   variable(name: string, node: SyntaxNode): string | null | undefined {
     if (name === '_') return this.trusted ? undefined : underscoreValue(node, this.model);
@@ -570,7 +581,10 @@ class Evaluator {
 
   /** The value of the parameter `name`: a string, null when unset, undefined when not known here. */
   variable(name: string, node: SyntaxNode): string | null | undefined {
-    return this.unreliable === 'all' || this.unreliable.has(name) ? undefined : this.source.variable(name, node);
+    if (this.unreliable === 'all' || this.unreliable.has(name)) return undefined;
+    const v = this.source.variable(name, node);
+    // (Past the longest value the model keeps, it is not known here: `x=$x$x` twenty times over would fill the memory.)
+    return v && v.length > modelValueLimit(rootOf(node)) ? undefined : v;
   }
 
   /** The value of `$name` in an operand of `${…}`: empty when unset (an error under `set -u`), undefined when not known. */
@@ -578,6 +592,16 @@ class Evaluator {
     const v = this.variable(name, this.w.nodes[0]);
     return v === null ? this.unset((t) => [{ text: t, quoted: false, expanded: true }])?.[0].text : v !== undefined && sameInEveryLocale(v) ? v : undefined;
   };
+
+  /** What an expansion gives within its limit. A word is read many times: refused once, by the same values, it costs no more. */
+  private limitedExpansion(n: SyntaxNode, quoted: boolean): Piece[] | undefined {
+    const refused = this.source.refused;
+    if (refused?.has(n)) return undefined;
+    return guardedApart(modelLimit(rootOf(n)), () => this.expansion(n, quoted), () => {
+      refused?.add(n);
+      return undefined;
+    });
+  }
 
   /** The pieces of a node of the word, or undefined when they are not known here. */
   pieces(n: SyntaxNode, quoted: boolean): Piece[] | undefined {
@@ -602,7 +626,7 @@ class Evaluator {
         const start = n.parent!.children.find((c) => c.type === 'heredoc_start')?.text ?? '';
         return /['"\\]/.test(start) ? [{ text: decodedText(n), quoted: true, expanded: false }] : this.inner(n, n.startIndex, n.endIndex, /\\([$`\\\n])/g);
       }
-      case 'simple_expansion': case 'expansion': return guarded(() => this.expansion(n, quoted), () => undefined) ?? this.hole?.(n, quoted);
+      case 'simple_expansion': case 'expansion': return this.limitedExpansion(n, quoted) ?? this.hole?.(n, quoted);
       case 'command_substitution': {
         // (`$(true)` prints nothing, unless `true` is a function, an alias or a program here; `${| …; }` gives its `REPLY`.)
         const v = substitutionForm(n) === '${|' ? this.source.reply?.(n) : staticWordValue(n);
@@ -1019,7 +1043,7 @@ function globField(w: WordMeaning, f: Char[], env: WordEnv | undefined): string[
   const prefix = /^(?:\.\/)*/.exec(pattern)![0];
   const rest = pattern.slice(prefix.length);
   if (rest.startsWith('/') || rest.split('/').some((seg) => seg === '.' || seg === '..') || (g.globskipdots === 'off' && rest.includes('/'))) return undefined;
-  const matched = guarded(() => matchFiles(w, rest, env.files!), () => undefined);
+  const matched = guardedApart(modelLimit(rootOf(w.nodes[0])), () => matchFiles(w, rest, env.files!), () => undefined);
   if (!matched) return undefined;
   if (prefix && g.globstar === 'on' && rest === '**') matched.unshift('');
   if (matched.length) return matched.map((m) => prefix + m).sort();

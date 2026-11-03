@@ -6,6 +6,7 @@ import { controlsShown, jsonText, oneLine, pictureText } from '../src/ctlchars';
 import { BASH_VERSIONS, type BashVersion, DEFAULT_BASH_VERSION } from '../src/bashversion';
 import { Shell, SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, plain } from '../src/document';
+import { failuresGoTo, loggedOnce } from '../src/failures';
 import { FILE_KINDS, FileKind, openDocument, shellsOf } from '../src/document-setup';
 import { hostKind } from '../src/hosts';
 import { Lang, resolveLang } from '../src/i18n';
@@ -461,40 +462,54 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
   // (What --counts writes: the problems by severity, the pitfalls, and those that fail the check.)
   const counts: Record<string, number> = { ...Object.fromEntries(Object.values(SEVERITIES).filter((s) => !s.faded).map((s) => [s.count, 0])), pitfalls: 0, failing: 0 };
 
-  for (const input of inputs) {
-    const doc = openDocument(input.text, input.kind, (text) => parser.parse(text));
-    const lines = doc.lines;
-    const shells = shellsOf(lines, input.name, o.shell);
+  // (A bug a boundary contained, src/failures.ts: the output goes on with what can be said, standard error tells it, and the
+  // exit status is 2, as when the tool stops: it is no finding about the script, and a check that could not read a line has not passed.)
+  let failed = 0;
+  let file = '';
+  const log = loggedOnce((text) => io.stderr(`bash-explainer: ${file}: ${text}\n`));
+  const before = failuresGoTo((f) => {
+    failed++;
+    log(f);
+  });
+  try {
+    for (const input of inputs) {
+      file = input.shown;
+      const doc = openDocument(input.text, input.kind, (text) => parser.parse(text));
+      const lines = doc.lines;
+      const shells = shellsOf(lines, input.name, o.shell);
 
-    if (o.check) {
-      const issues = diagnosticsFor(() => doc, () => shells, o.lang, o.settings, 'cli').shown
-        .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
-        .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
-      // (An error fails the check, a warning only with --strict: the level table, src/levels.ts.)
-      const fails = (i: DocumentIssue) => failsCheck(i.severity, o.strict);
-      for (const i of issues) {
-        counts[SEVERITIES[i.severity].count]++;
-        if (i.pitfall) counts.pitfalls++;
-        if (fails(i)) counts.failing++;
-      }
-      if (o.format === 'json' || o.format === 'sarif' || o.sarifFile !== undefined) json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }), ...(i.convention && o.settings['notes.basis'] !== false ? { convention: i.convention } : {}) })));
-      if (o.format === 'github') for (const i of issues) (fails(i) ? failing : chunks).push(annotation(input.shown, i));
-      else if (o.format !== 'json' && o.format !== 'sarif') chunks.push(...issues.map((i) => issueText(input.shown, i, o.color)));
-    } else {
-      const [from, to] = input.lines ?? [1, lines.length];
-      if (to > lines.length) {
-        io.stderr(`bash-explainer: ${input.shown} has ${lines.length} lines\n`);
-        return 2;
-      }
-      for (let line = from - 1; line < to; line++) {
-        const ex = explainDocumentLine(analyzer, doc, line, o.lang, shells, explainOptions(o.settings));
-        // Without an explicit range, lines with nothing to explain (blank, outside the shell code) are skipped.
-        if (!input.lines && !ex.items.length && !ex.notes.length) continue;
-        if (o.format === 'json') json.push({ file: input.name, line: line + 1, text: lines[line], explanation: forJson(ex) });
-        else if (o.format === 'markdown') chunks.push(toPlainMarkdown(ex, lines[line], `${input.shown}:${line + 1}`, o.lang).trimEnd());
-        else chunks.push(textOutput(input.shown, line, lines[line], ex, o.color, o.lang));
+      if (o.check) {
+        const issues = diagnosticsFor(() => doc, () => shells, o.lang, o.settings, 'cli').shown
+          .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
+          .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
+        // (An error fails the check, a warning only with --strict: the level table, src/levels.ts.)
+        const fails = (i: DocumentIssue) => failsCheck(i.severity, o.strict);
+        for (const i of issues) {
+          counts[SEVERITIES[i.severity].count]++;
+          if (i.pitfall) counts.pitfalls++;
+          if (fails(i)) counts.failing++;
+        }
+        if (o.format === 'json' || o.format === 'sarif' || o.sarifFile !== undefined) json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }), ...(i.convention && o.settings['notes.basis'] !== false ? { convention: i.convention } : {}) })));
+        if (o.format === 'github') for (const i of issues) (fails(i) ? failing : chunks).push(annotation(input.shown, i));
+        else if (o.format !== 'json' && o.format !== 'sarif') chunks.push(...issues.map((i) => issueText(input.shown, i, o.color)));
+      } else {
+        const [from, to] = input.lines ?? [1, lines.length];
+        if (to > lines.length) {
+          io.stderr(`bash-explainer: ${input.shown} has ${lines.length} lines\n`);
+          return 2;
+        }
+        for (let line = from - 1; line < to; line++) {
+          const ex = explainDocumentLine(analyzer, doc, line, o.lang, shells, explainOptions(o.settings));
+          // Without an explicit range, lines with nothing to explain (blank, outside the shell code) are skipped.
+          if (!input.lines && !ex.items.length && !ex.notes.length) continue;
+          if (o.format === 'json') json.push({ file: input.name, line: line + 1, text: lines[line], explanation: forJson(ex) });
+          else if (o.format === 'markdown') chunks.push(toPlainMarkdown(ex, lines[line], `${input.shown}:${line + 1}`, o.lang).trimEnd());
+          else chunks.push(textOutput(input.shown, line, lines[line], ex, o.color, o.lang));
+        }
       }
     }
+  } finally {
+    failuresGoTo(before);
   }
 
   if (o.sarifFile !== undefined) {
@@ -511,6 +526,10 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
   if (o.format !== 'json' && o.format !== 'sarif' && chunks.length) {
     const text = chunks.join(o.check ? '\n' : o.format === 'markdown' ? '\n\n---\n\n' : '\n\n') + '\n';
     io.stdout(o.format === 'github' ? text : forLog(text));
+  }
+  if (failed) {
+    io.stderr(`bash-explainer: ${failed} internal error${failed === 1 ? '' : 's'}: what they stopped is missing from the output. This is a bug of the tool, not a problem of the script: please report it.\n`);
+    return 2;
   }
   return o.check && counts.failing > 0 ? 1 : 0;
 }

@@ -24,7 +24,7 @@
 // The walk is in src/semantics/walk/ (walker.ts and its parts); the state it carries, in src/semantics/shellstate.ts.
 import { type BashVersion, DEFAULT_BASH_VERSION } from '../bashversion';
 import { restrictedByName, type Shell } from '../dialect';
-import { ancestor, field, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
+import { ancestor, field, type SyntaxNode, type SyntaxTree, rootOf } from '../syntax/tree';
 import { SET_LETTERS } from './effects';
 import { EnvModel, type ExecEnv, fileRead, type FileRead, INTERACTIVE_FLAGS, linksAfter, MAIN_SHELL, NO_BASHRC_FLAGS, type SlotLink } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
@@ -154,12 +154,6 @@ export interface StateModel {
 const owners = new WeakMap<SyntaxTree, NestedScript>();
 /** The same, by the tree's root. */
 const rootOwners = new WeakMap<SyntaxNode, NestedScript>();
-
-const rootOf = (n: SyntaxNode): SyntaxNode => {
-  let r = n;
-  while (r.parent) r = r.parent;
-  return r;
-};
 
 /** Whether `n` is in a string another shell runs (`bash -c S`, also through the strings around it), which has a model of its own. */
 export function inAnotherShell(n: SyntaxNode): boolean {

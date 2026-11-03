@@ -9,7 +9,8 @@ import { PerlOptions, runPerl } from './perlrun';
 import { sectionMarks, type SectionMarks, type StageMarks } from './marks';
 import { pipelineExample, Stage, stageMarks } from './pipeline';
 import { JsRegex } from './regex';
-import { guarded, scriptRegex } from './regexguard';
+import { contained } from '../failures';
+import { guarded, type NotComputedId, scriptRegex } from './regexguard';
 import { runXargs, showCommand } from './runtime';
 import { runSed } from './sed';
 import { codeSpan } from '../label';
@@ -152,10 +153,12 @@ const words = (ws: (string | null | undefined)[]) => ws.map((w) => w ?? undefine
  * are per line of them all, in that order.
  */
 export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResult {
-  return guarded(() => run(spec, boxes, lang), (id) => ({ sections: [{ label: lang === 'ja' ? '結果' : 'Result', lines: [fact(lang, id).body] }] }));
+  const said = (id: NotComputedId | 'example-failed') => ({ sections: [{ label: lang === 'ja' ? '結果' : 'Result', lines: [fact(lang, id).body] }] });
+  return contained('an example run again', () => guarded(() => runAgain(spec, boxes, lang), said), () => said('example-failed'));
 }
 
-function run(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResult {
+/** What `rerun` runs, for what has a guard of its own (`interactive`, src/examples/commands.ts). */
+export function runAgain(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResult {
   const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
   const inputs = spec.reads ? spec.reads.map((i) => (i < 0 ? [] : boxes[i])) : boxes;
   const input = inputs.flat();

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import { type AutoShell, readShell, Shell, type ShellReading } from './dialect';
-import { autoShellAt, DeadRange, DocumentIssue, diagnosticsFor, explainDocumentLine, ShellDocument, Shells } from './document';
+import { autoShellAt, DeadRange, DocumentIssue, diagnosticsFor, explainDocumentLine, ShellDocument, Shells, withoutExamples } from './document';
 import { HOST_LANGUAGES, HOST_PATTERNS, kindOfDocument, openDocument, semanticSelector } from './document-setup';
 import { Extracted, extractShell, HostKind } from './hosts';
 import { Lang, resolveLang } from './i18n';
@@ -161,9 +161,18 @@ export class ExplainService implements vscode.Disposable {
   /** The explanation of a line; with `reading`, its reading tree too (the panel's tree view); with `sentence`, its sentence (the panel's "In short"). */
   explain(doc: vscode.TextDocument, line: number, reading = false, sentence = false): LineExplanation {
     const lang = this.lang;
+    return explainDocumentLine(this.analyzerOf(lang), this.document(doc), line, lang, this.shells(doc), { ...this.explainOptions(doc), reading, sentence });
+  }
+
+  private analyzerOf(lang: Lang): Analyzer {
     let analyzer = this.analyzers.get(lang);
     if (!analyzer) this.analyzers.set(lang, (analyzer = new Analyzer(lang)));
-    return explainDocumentLine(analyzer, this.document(doc), line, lang, this.shells(doc), { ...this.explainOptions(doc), reading, sentence });
+    return analyzer;
+  }
+
+  /** The explanation of a line for what reads its tokens only, as the hints of command names do: no example is run for it. */
+  explainTokens(doc: vscode.TextDocument, line: number): LineExplanation {
+    return explainDocumentLine(this.analyzerOf(this.lang), this.document(doc), line, this.lang, this.shells(doc), withoutExamples(this.explainOptions(doc)));
   }
 
   /** The document's lines and parse tree; for a host file, the tree of its shell parts. */

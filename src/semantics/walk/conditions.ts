@@ -2,9 +2,10 @@
 // known (`[ ]`, `[[ ]]`, `true`, `(( ))`, assignments), the lists of a `case` that run, and what each condition decided.
 import type { Shell } from '../../dialect';
 import { evalArith } from '../../arith';
+import { modelLimit } from '../../examples/regexguard';
 import { parseExpansion } from '../../expansion';
 import { staticWordValue, substitutionNames } from '../../staticword';
-import { assignmentsOnly, descendants, field, fields, prefixAssignments, substitutionForm, type SyntaxNode } from '../../syntax/tree';
+import { assignmentsOnly, descendants, field, fields, prefixAssignments, rootOf, substitutionForm, type SyntaxNode } from '../../syntax/tree';
 import { compareIntegers, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
 import { attribute, EMPTY, merge, option, type ShellState, type Tri, withStatus } from '../shellstate';
 import type { Decision } from '../state';
@@ -252,7 +253,7 @@ export class WalkConditions {
         if (op === '==' || op === '=' || op === '!=') {
           const nocase = option(st, 'shopt', 'nocasematch');
           const pattern = nocase === 'off' || nocase === 'default' ? right && wordIn(right, st, this.values(st), 'pattern') : undefined;
-          const m = pattern === undefined ? undefined : patternMatches(value, pattern);
+          const m = pattern === undefined ? undefined : patternMatches(value, pattern, modelLimit(rootOf(e)));
           return m === undefined ? undefined : m === (op !== '!=');
         }
         if (op === '=~') {
@@ -439,7 +440,7 @@ export class WalkConditions {
         for (let j = i; j < items.length && found < 0; j++) {
           for (const v of fields(items[j], 'value')) {
             const pattern = wordIn(v, st, this.values(st), 'pattern');
-            const m = pattern === undefined ? undefined : patternMatches(word, pattern);
+            const m = pattern === undefined ? undefined : patternMatches(word, pattern, modelLimit(rootOf(n)));
             if (m === undefined) return undefined;
             if (m) {
               found = j;

@@ -2,7 +2,7 @@ import { sedEscapeAt } from '../ctlchars';
 import type { Flavor } from '../embedded/regex';
 import { wordTable } from '../wordtable';
 import { type Node, Parser } from './regexparse';
-import { longestExec, RegexRefused, scriptRegex } from './regexguard';
+import { longestExec, Refused, scriptRegex } from './regexguard';
 
 /** A POSIX or PCRE pattern translated to a JavaScript RegExp. */
 export interface JsRegex {
@@ -205,7 +205,7 @@ export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: bool
 /** Generate a string for `node`. `v` varies the choices so different variants give different strings. */
 function gen(node: Node, v: number, caps: string[], left: { steps: number }): string | undefined {
   // (Like a run on a text, what it makes of `(){2000000000}` or `(ab{1000}){1000}` may take too long.)
-  if (--left.steps < 0) throw new RegexRefused();
+  if (--left.steps < 0) throw new Refused();
   switch (node.t) {
     case 'anchor': return '';
     case 'char': return node.c;

@@ -20,7 +20,7 @@ export const ALLOWED: readonly string[] = [
   // The parser's adapter reads the syntax of `[[ -f x ]]` and the like (its operators are not a command's options).
   'src/syntax/adapters/',
   // Other languages: the dash there is an operator or part of a pattern, not an option.
-  ...['jq', 'awk', 'sed', 'perlrun', 'yaml', 'regex'].map((n) => `src/examples/${n}.ts`),
+  ...['jq', 'jqvalues', 'awk', 'sed', 'perlrun', 'perllex', 'yaml', 'regex'].map((n) => `src/examples/${n}.ts`),
   'src/arith.ts',
   'src/semantics/walk/arith.ts',
 ];

@@ -1,6 +1,6 @@
 {
   "deciders": [
-    {"file":"src/analyzer.ts","fn":"explainLine","kind":"node-type","count":1,"row":"W-P4"},
+    {"file":"src/analyzer.ts","fn":"explained","kind":"node-type","count":1,"row":"W-P4"},
     {"file":"src/argv/words.ts","fn":"argWordFor","kind":"helper","count":2,"row":"W-C1"},
     {"file":"src/argv/words.ts","fn":"assignsOf","kind":"node-type","count":7,"row":"W-C1"},
     {"file":"src/argv/words.ts","fn":"countOf","kind":"node-type","count":1,"row":"W-C1"},

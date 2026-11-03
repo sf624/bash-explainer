@@ -11,8 +11,8 @@ import { scriptValue } from './explain/values';
 import { stageCountNote } from './explain/where';
 import { globChildren, joinedNote, orderNote, variableNote, varDesc } from './explain/words';
 import { globIntro, hasGlob } from './embedded/glob';
-import { notComputed } from './examples/commands';
-import { guarded, type NotComputedId } from './examples/regexguard';
+import { exampleRun, notComputed } from './examples/commands';
+import type { NotComputedId } from './examples/regexguard';
 import { hasExtglob } from './examples/shellwords';
 import { ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformOf } from './expansion';
 import { Lang, ordinal, Text } from './i18n';
@@ -69,8 +69,9 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   const joined = all && joinedNote(h, n, all, parsed.subscript === undefined);
   // (`"$@"` keeps the arguments apart only where words are split: not here.)
   if (joined) summary.explanation = (parsed.subscript === undefined && !parsed.op ? h.s('全ての位置パラメータ', 'All positional parameters') : summary.explanation) + joined;
-  const notRun = (id: NotComputedId) => notComputed('expansion', h.s(`\`${text}\` の例`, `Example for \`${text}\``), h.lang, id);
-  const cases = guarded<ReturnType<typeof exampleFor> | Example>(() => exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n), integer: isInteger(h, parsed.name, n), assigned: operandAssigned(n, h.state), script: scriptValue(h, n, parsed) }), notRun);
+  const notRun = (id: NotComputedId | 'example-failed') => notComputed('expansion', h.s(`\`${text}\` の例`, `Example for \`${text}\``), h.lang, id);
+  // (The expansion's example is an example like the others: not made where the line wants none.)
+  const cases = h.opts.examples?.enabled === false ? undefined : exampleRun<ReturnType<typeof exampleFor> | Example>('expansion', () => exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n), integer: isInteger(h, parsed.name, n), assigned: operandAssigned(n, h.state), script: scriptValue(h, n, parsed) }), notRun);
   // A `${…}` on one line is always on the line explained.
   if (cases && !Array.isArray(cases)) h.example({ ...cases, target: '', anchor: summary.span });
   else if (cases) {

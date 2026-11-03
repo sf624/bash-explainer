@@ -6,7 +6,7 @@ import { Analyzer } from '../src/analyzer';
 import { runAwk } from '../src/examples/awk';
 import { pipedOutput } from '../src/examples/pipeline';
 import { posixExec, regexExamples } from '../src/examples/regex';
-import { charge, costOf, guarded, keptChars, longestExec, RegexRefused, scriptRegex } from '../src/examples/regexguard';
+import { charge, costOf, guarded, keptChars, longestExec, Refused, scriptRegex } from '../src/examples/regexguard';
 import { Parser } from '../src/examples/regexparse';
 import { rerun } from '../src/examples/rerun';
 import { globToRegex } from '../src/examples/shellwords';
@@ -24,7 +24,7 @@ function refused(source: string, text: string, flags = ''): boolean {
     scriptRegex(source, flags).test(text);
     return false;
   } catch (e) {
-    if (e instanceof RegexRefused) return true;
+    if (e instanceof Refused) return true;
     throw e;
   }
 }
@@ -306,9 +306,9 @@ describe('the guard of the regexes a script gives', () => {
 
   describe('what it does not follow is refused', () => {
     it('what the engine does not read', () => {
-      for (const p of P.unread) assert.throws(() => scriptRegex(p), RegexRefused, p);
-      assert.throws(() => scriptRegex('a'.repeat(2001)), RegexRefused);
-      for (const flag of ['u']) assert.throws(() => scriptRegex('a', flag), RegexRefused, flag);
+      for (const p of P.unread) assert.throws(() => scriptRegex(p), Refused, p);
+      assert.throws(() => scriptRegex('a'.repeat(2001)), Refused);
+      for (const flag of ['u']) assert.throws(() => scriptRegex('a', flag), Refused, flag);
     });
 
     /** What `source` gives where JavaScript has it: refused, else JavaScript's syntax error. */
@@ -319,7 +319,7 @@ describe('the guard of the regexes a script gives', () => {
       } catch {
         has = false;
       }
-      assert.throws(() => scriptRegex(source), has ? RegexRefused : SyntaxError);
+      assert.throws(() => scriptRegex(source), has ? Refused : SyntaxError);
     };
 
     it('modifiers, where JavaScript has them', () => {
@@ -336,7 +336,7 @@ describe('the guard of the regexes a script gives', () => {
     });
 
     it('a glob too long to read is refused where it is made', () => {
-      assert.throws(() => globToRegex('x'.repeat(2001), 'value'), RegexRefused);
+      assert.throws(() => globToRegex('x'.repeat(2001), 'value'), Refused);
     });
   });
 
@@ -375,7 +375,7 @@ describe('the guard of the regexes a script gives', () => {
     });
 
     it('of making lines of a pattern', () => {
-      assert.throws(() => regexExamples({ source: '(ab{1000}){1000}', flags: '' }), RegexRefused);
+      assert.throws(() => regexExamples({ source: '(ab{1000}){1000}', flags: '' }), Refused);
     });
 
     it('in the models: not known', () => {
@@ -406,24 +406,24 @@ describe('the guard of the regexes a script gives', () => {
     it('a run refused once is refused again only when all that decides it is the same', () => {
       const re = scriptRegex(P.polynomial);
       const text = 'a'.repeat(10000);
-      assert.throws(() => re.test(text), RegexRefused);
+      assert.throws(() => re.test(text), Refused);
       assert.strictEqual(guarded(() => costOf(() => scriptRegex(P.polynomial).test(text)), () => -1), Infinity);
-      assert.throws(() => scriptRegex(P.polynomial).test(text), RegexRefused);
+      assert.throws(() => scriptRegex(P.polynomial).test(text), Refused);
       assert.ok(!refused(P.polynomial, 'a'.repeat(5)));
       const A = `${'a'.repeat(40)}!`;
       // (From another place, and at one place only.)
       const moved = scriptRegex(P.twoWaysEnd, 'g');
-      assert.throws(() => moved.test(A), RegexRefused);
+      assert.throws(() => moved.test(A), Refused);
       moved.lastIndex = 40;
       assert.strictEqual(moved.test(A), false);
-      assert.throws(() => scriptRegex(P.twoWaysMark).test(`${A}b`), RegexRefused);
+      assert.throws(() => scriptRegex(P.twoWaysMark).test(`${A}b`), Refused);
       assert.strictEqual(scriptRegex(P.twoWaysMark, 'y').test(`b${A}`), false);
-      assert.throws(() => scriptRegex(P.twoWaysMark).test(`b${A}b`), RegexRefused);
+      assert.throws(() => scriptRegex(P.twoWaysMark).test(`b${A}b`), Refused);
       assert.strictEqual(scriptRegex(P.twoWaysMark, 'y').test(`b${A}b`), false);
       // (The longest match, and the first that JavaScript's order comes to.)
-      assert.throws(() => longestExec(P.twoWays, '', A, 0), RegexRefused);
+      assert.throws(() => longestExec(P.twoWays, '', A, 0), Refused);
       assert.strictEqual(scriptRegex(P.twoWays).exec(A)![0], 'a'.repeat(40));
-      assert.throws(() => longestExec(P.twoWays, '', A, 0), RegexRefused);
+      assert.throws(() => longestExec(P.twoWays, '', A, 0), Refused);
       // (With less left, and then with more.)
       const costs = costOf(() => scriptRegex('b*a*c').test('a'.repeat(1000)));
       const late = () => guarded(() => {
@@ -504,10 +504,10 @@ describe('the guard of the regexes a script gives', () => {
 
     it('test, exec, replace, split, match and matchAll all run through it, from where a global regex stands', () => {
       const long = 'a'.repeat(10000);
-      assert.throws(() => long.replace(scriptRegex(P.polynomial), 'x'), RegexRefused);
+      assert.throws(() => long.replace(scriptRegex(P.polynomial), 'x'), Refused);
       assert.strictEqual(guarded(() => long.split(scriptRegex(P.polynomial)).length, () => 0), 0);
-      assert.throws(() => long.match(scriptRegex(P.polynomial)), RegexRefused);
-      assert.throws(() => [...long.matchAll(scriptRegex(P.polynomial, 'g'))], RegexRefused);
+      assert.throws(() => long.match(scriptRegex(P.polynomial)), Refused);
+      assert.throws(() => [...long.matchAll(scriptRegex(P.polynomial, 'g'))], Refused);
       assert.deepStrictEqual('a,b'.split(scriptRegex(',')), ['a', 'b']);
       assert.strictEqual('aXa'.replace(scriptRegex('a', 'g'), 'b'), 'bXb');
       assert.deepStrictEqual([...'aa'.matchAll(scriptRegex('a', 'g'))].map((m) => m.index), [0, 1]);
@@ -557,7 +557,7 @@ describe('the guard of the regexes a script gives', () => {
       assert.strictEqual(costOf(() => charge(1000)), 1000);
       assert.strictEqual(costOf(() => charge(1e9)), Infinity);
       // (Outside it, each by itself, and the limit is for it alone.)
-      assert.throws(() => charge(1e9), RegexRefused);
+      assert.throws(() => charge(1e9), Refused);
       charge(1e6);
     });
 

@@ -7,7 +7,7 @@ import type { LineExplanation } from '../../src/analyzer-types';
 import { runAwk } from '../../src/examples/awk';
 import { pipedOutput, pipelineExample, runGrep } from '../../src/examples/pipeline';
 import { toJsRegex } from '../../src/examples/regex';
-import { guarded, RegexRefused, scriptRegex } from '../../src/examples/regexguard';
+import { guarded, Refused, scriptRegex } from '../../src/examples/regexguard';
 import { rerun, type RerunSpec } from '../../src/examples/rerun';
 import { runSed } from '../../src/examples/sed';
 import { patternMatches } from '../../src/semantics/conditions';
@@ -100,7 +100,7 @@ function verdict(source: string, text: string, flags = ''): string {
   try {
     return String(scriptRegex(source, flags).test(text));
   } catch (e) {
-    if (e instanceof RegexRefused) return 'refused';
+    if (e instanceof Refused) return 'refused';
     throw e;
   }
 }
