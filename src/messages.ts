@@ -664,10 +664,10 @@ export const MESSAGES = {
   // (src/messages-lines.ts, src/messages-idioms.ts; plain notes before SB3a of docs/design/sources.md. 3.6: "Redirections
   // are processed in the order they appear, from left to right", and "the order of redirections is significant":
   // `ls 2>&1 > dirlist` sends only stdout to the file. A caveat, not a pitfall: the order is often meant; none where the
-  // command's stdout goes somewhere known, where it is the way to send stderr alone there (`alone`); its quick fix only
-  // where nothing can depend on the order, `stdoutAt` of src/semantics/stdout.ts.)
+  // command's stdout goes somewhere known, where it is the way to send stderr alone there (`alone`, `stdoutAt` of
+  // src/semantics/stdout.ts). No quick fix: `>f 2>&1` changes what the line does, and the author may mean either of two.)
   'redirections-in-order': note<RedirectOrder & { alone?: Alone }>(['3.6', '3.6.8'], redirectOrderText),
-  'stderr-to-original-stdout': suggests(caveat<{ dup: string; file: string; rewrite: readonly Rewrite[] }>(['3.6', '3.6.8'], stderrFirstText)),
+  'stderr-to-original-stdout': caveat<{ dup: string; file: string; discards: boolean }>(['3.6', '3.6.8'], stderrFirstText),
   'heredoc-end-line': note<{ end: string; operator: string; line: number }>(['3.6.6'], heredocEndText),
   'heredoc-body-line': note<{ operator: string; line: number }>(['3.6.6'], heredocBodyText),
   'statement-continued': note<{ line: number }>(['3.1.2.1'], continuedText),

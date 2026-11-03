@@ -60,6 +60,6 @@ export function writesElsewhere(n: SyntaxNode): boolean {
   return redirectionsOf(n).some((r) => {
     const op = r.children.find((c) => !c.named)?.type;
     const fd = field(r, 'descriptor')?.text ?? '';
-    return r.type === 'file_redirect' && (op?.startsWith('&') || fd === '1' || (fd === '' && !op?.startsWith('<')));
+    return r.type === 'file_redirect' && (op?.startsWith('&') || Number(fd) === 1 || (fd === '' && !op?.startsWith('<')));
   });
 }
