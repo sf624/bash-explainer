@@ -1,5 +1,6 @@
 import { SyntaxNode, assignmentSpan, field, fields, redirectionsOf, wordsText } from './syntax/tree';
 import { writtenAsBracket } from './testexpr';
+import { mostOf, pushAll } from './lists';
 
 /** The first line of `text`, cut to `max` characters, with " …" when more lines follow. */
 export function shorten(text: string, max = 60): string {
@@ -82,7 +83,7 @@ function compound(n: SyntaxNode): LabelPart[] {
       next = c.type === 'in' ? (isCase ? 'patterns' : 'words') : AFTER[c.type] ?? 'commands';
       last = undefined;
     } else if (STRUCTURE.has(c.type)) {
-      out.push(...skeleton(c));
+      pushAll(out, skeleton(c));
       last = undefined;
     } else if (c.field === 'variable') {
       out.push(keep(c.text, 'name'));
@@ -107,7 +108,7 @@ function cStyleFor(n: SyntaxNode): LabelPart[] {
       // (The `;` after the `))` is not one of the loop's.)
       if (c.type === '))') closed = true;
       if (['for', '((', '))'].includes(c.type) || (c.type === ';' && !closed)) out.push(code(c.type));
-    } else if (c.type === 'do_group') out.push(...skeleton(c));
+    } else if (c.type === 'do_group') pushAll(out, skeleton(c));
     else out.push(placeholder(c.field === 'initializer' ? 'init' : c.field === 'condition' ? 'test' : 'update'));
   }
   return out;
@@ -131,7 +132,7 @@ function functionDef(n: SyntaxNode): LabelPart[] {
   const name = field(n, 'name')!;
   out.push(code(flat(name.text) + (parens ? '()' : '')));
   const body = field(n, 'body');
-  if (body) out.push(...skeleton(body));
+  if (body) pushAll(out, skeleton(body));
   return out;
 }
 
@@ -186,7 +187,7 @@ function sequence(n: SyntaxNode): LabelPart[] {
       else if (c.named) {
         // (Two parts of a list with no operator between them are on two lines: the newline separates them as `;` does.)
         if (part && x.type === 'command_list') semicolon();
-        out.push(...stage(c));
+        pushAll(out, stage(c));
         part = true;
         continue;
       } else if (c.type === '|' || c.type === '|&' || c.type === '&&' || c.type === '||' || c.type === '&') out.push(code(c.type));
@@ -263,7 +264,7 @@ export function skeleton(n: SyntaxNode): LabelPart[] {
 
 /** Text as a Markdown code span: the fence is longer than any run of backticks inside, and a backtick at either end is set off by a space. */
 export function codeSpan(text: string): string {
-  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((m) => m.length));
+  const longest = mostOf([0, ...(text.match(/`+/g) ?? []).map((m) => m.length)]);
   const fence = '`'.repeat(longest + 1);
   return text.startsWith('`') || text.endsWith('`') ? `${fence} ${text} ${fence}` : `${fence}${text}${fence}`;
 }

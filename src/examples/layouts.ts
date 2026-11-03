@@ -5,6 +5,7 @@
 import type { ArgvParse } from '../argv/interpret';
 import { givenOptions } from '../argv/query';
 import type { CommandSpec, Layout, LayoutAlt } from '../argv/spec';
+import { mostOf } from '../lists';
 
 /**
  * A command of the pipeline as it runs: its argument list (`argv`, as ps shows it), the path bash runs it by when
@@ -113,7 +114,7 @@ function human(size: number): string {
 /** What `ls -l` prints of the entries: the total, then a line each, its columns as wide as their widest cell. */
 function longListing(entries: Entry[], size: (n: number) => string, total: string): string[] {
   const rows = entries.map((e) => [e.mode, String(e.links), e.owner, e.owner, size(e.size), e.date, e.name]);
-  const widths = rows[0].map((_, i) => Math.max(...rows.map((r) => r[i].length)));
+  const widths = rows[0].map((_, i) => mostOf(rows.map((r) => r[i].length)));
   const right = [false, true, false, false, true, false, false];
   return [`total ${total}`, ...table(widths.map((width, i) => ({ width, right: right[i] })), rows)];
 }

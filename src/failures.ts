@@ -30,16 +30,31 @@ export function failuresThrow(on: boolean): boolean {
 }
 
 /** What `run` gives, or, when it throws, what `instead` gives, once the failure has been told. */
-export function contained<T>(where: string, run: () => T, instead: () => T): T {
+export function contained<T>(where: string, run: () => T, instead: (error: unknown) => T): T {
   try {
     return run();
   } catch (error) {
     if (throwing) throw error;
-    // (A sink that fails must not undo the boundary.)
+    // (A sink that fails must not undo the boundary. The stack running out is no bug, and what asks says so: `stackFull`.)
     try {
-      sink({ where, error });
+      if (!stackFull(error)) sink({ where, error });
     } catch { /* nothing is left to tell */ }
-    return instead();
+    return instead(error);
+  }
+}
+
+/** Whether `e` is the stack running out: no bug, but a text that nests deeper than this walk can follow (what says so: `Analyzer.explainLine`). */
+export function stackFull(e: unknown): boolean {
+  return e instanceof RangeError && /Maximum call stack/.test(e.message);
+}
+
+/** What `run` gives, or nothing where the stack runs out. */
+export function unlessStackFull<T>(run: () => T): T | undefined {
+  try {
+    return run();
+  } catch (e) {
+    if (!stackFull(e)) throw e;
+    return undefined;
   }
 }
 

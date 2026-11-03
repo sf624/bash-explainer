@@ -9,6 +9,7 @@ import { isPanelQuestion, panelReply } from './panelReply';
 import { unreadableThemeNotice } from './builtinThemes';
 import { THEME_SETTINGS, themeRoleColours } from './themeColours';
 import { panelPalette, paletteVars, type PanelBase } from './themePalette';
+import { contained } from '../failures';
 
 /** Where the panel's view and step are kept between sessions (the webview's own state dies with the panel). */
 const STATE_KEY = 'bashExplainer.panelState';
@@ -104,10 +105,11 @@ export class PanelController implements vscode.Disposable {
     this.editor = editor;
     this.pinnedLine = undefined;
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
+    // (A timer's exception reaches no provider's boundary: src/failures.ts.)
+    this.timer = setTimeout(() => contained('the panel', () => {
       if (!this.panel && this.service.enabled('panel') && !this.dismissed) this.open(editor);
       else this.post();
-    }, delay);
+    }, () => undefined), delay);
   }
 
   /** Asks the panel to report what it draws on when the colours follow the theme (`themeWatch`), and sends them. */

@@ -4,7 +4,7 @@
 import { Analyzer } from '../src/analyzer';
 import { jsonText } from '../src/ctlchars';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, fixTitle, heredocAt, plain, ShellDocument, withoutExamples } from '../src/document';
-import { failuresGoTo, loggedOnce } from '../src/failures';
+import { contained, failuresGoTo, loggedOnce } from '../src/failures';
 import { FileKind, kindOfDocument, openDocument, shellsOf } from '../src/document-setup';
 import { Lang, lineLabel, resolveLang } from '../src/i18n';
 import { SEVERITIES } from '../src/levels';
@@ -16,6 +16,7 @@ import { plainPartHover } from '../src/ui/hoverView';
 import { nameHints } from '../src/ui/nameHints';
 import { pruneDepth, toPlainMarkdown } from '../src/ui/render';
 import { readSettingsFile, settingsFile } from './settings-file';
+import { pushAll } from '../src/lists';
 
 type Message = { id?: number | string; method?: string; params?: any; result?: unknown; error?: unknown };
 
@@ -61,7 +62,7 @@ export function startLanguageServer(io: Io): void {
     try {
       const read = readSettingsFile(file);
       fromFile = read.settings;
-      notices.push(...read.warnings);
+      pushAll(notices, read.warnings);
     } catch (e) {
       notices.push((e as Error).message);
     }
@@ -136,7 +137,8 @@ export function startLanguageServer(io: Io): void {
 
   function schedule(uri: string): void {
     clearTimeout(timers.get(uri));
-    timers.set(uri, setTimeout(() => publish(uri), 200));
+    // (Nothing catches what a timer throws, and it would end the server: the boundary of a document, src/failures.ts.)
+    timers.set(uri, setTimeout(() => contained('the problems of a document', () => publish(uri), () => undefined), 200));
   }
 
   /** The part at the position first, then the whole line below a rule (plain Markdown: editors show no HTML, and run no command links). */

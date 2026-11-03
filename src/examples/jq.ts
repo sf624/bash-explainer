@@ -1,20 +1,21 @@
 import { lex, Lex, ParseError } from '../embedded/jq';
 import { base64Decode, base64Encode, utf8Length } from './bytes';
 import { extendedRegex } from './regex';
-import { cmp, isObj, type JqFormat, jqPrint, type Json, type Obj, sizeOf, sortedKeys, toJson, truthy, typeName, varyJson } from './jqvalues';
-import { chargeSize, runnerStep, scriptRegex } from './regexguard';
+import { cmp, isObj, type Json, type Obj, sizeOf, toJson, truthy, typeName } from './jqvalues';
+import { chargeSize, chargeWalk, runnerStep, scriptRegex } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { setOwn } from '../wordtable';
+import { pushAll } from '../lists';
 
 /** Raised for jq features the example runner does not implement; no example is shown then. */
-class Unsupported extends RunnerUnsupported {}
+export class Unsupported extends RunnerUnsupported {}
 
 export type { JqFormat, Json } from './jqvalues';
 export { JQ_PRETTY, jqPrint, parseJsonValues, toJson, varyJson } from './jqvalues';
 
 // ---------------------------------------------------------------- AST
 
-type Node =
+export type Node =
   | { t: 'id' } | { t: 'recurse' }
   | { t: 'field'; base: Node; name: string; opt?: boolean }
   | { t: 'index'; base: Node; idx: Node; opt?: boolean }
@@ -43,7 +44,7 @@ type Node =
   | { t: 'def'; name: string; params: string[]; body: Node; rest: Node };
 
 /** A destructuring pattern after `as`: `$x`, `[$a, $b]`, `{k: $v, $w}`. */
-type Pat =
+export type Pat =
   | { k: 'var'; name: string }
   | { k: 'arr'; items: Pat[] }
   | { k: 'obj'; entries: { key: Node; bind?: string; pat?: Pat }[] };
@@ -483,6 +484,20 @@ export function parseJq(src: string): Node | undefined {
 
 // ---------------------------------------------------------------- values
 
+/** What one comparison of a sort costs against a step of the walk, and a slot of an object or an array made: about what they take in time. */
+const COMPARE = 8;
+export const SLOT = 8;
+/** What an object of `to_entries` costs, and an entry read back: more than a slot. */
+const ENTRY = 32;
+
+/** The length of a string in code points, as jq says it, without an array of them. */
+function codePoints(s: string): number {
+  chargeWalk(s.length);
+  let n = 0;
+  for (const _ of s) n++;
+  return n;
+}
+
 class JqError extends Error {
   /** What was output before the error (jq streams its outputs, so `try` keeps them). */
   partial: Json[] = [];
@@ -503,7 +518,7 @@ function each<T>(items: T[], f: (item: T) => Json[]): Json[] {
   const out: Json[] = [];
   for (const item of items) {
     try {
-      out.push(...f(item));
+      pushAll(out, f(item));
     } catch (e) {
       if (e instanceof JqError) e.partial = [...out, ...e.partial];
       throw e;
@@ -518,8 +533,14 @@ function add(a: Json, b: Json): Json {
   if (b === null) return a;
   if (typeof a === 'number' && typeof b === 'number') return a + b;
   if (typeof a === 'string' && typeof b === 'string') return a + b;
-  if (Array.isArray(a) && Array.isArray(b)) return [...a, ...b];
-  if (isObj(a) && isObj(b)) return { ...a, ...b };
+  if (Array.isArray(a) && Array.isArray(b)) {
+    chargeWalk(a.length + b.length);
+    return [...a, ...b];
+  }
+  if (isObj(a) && isObj(b)) {
+    chargeWalk(SLOT * (Object.keys(a).length + Object.keys(b).length));
+    return { ...a, ...b };
+  }
   throw new JqError(`${typeName(a)} and ${typeName(b)} cannot be added`);
 }
 
@@ -528,7 +549,7 @@ function arith(op: string, a: Json, b: Json): Json {
     case '+': return add(a, b);
     case '-':
       if (typeof a === 'number' && typeof b === 'number') return a - b;
-      if (Array.isArray(a) && Array.isArray(b)) return a.filter((x) => !b.some((y) => cmp(x, y) === 0));
+      if (Array.isArray(a) && Array.isArray(b)) return without(a, b);
       break;
     case '*':
       if (typeof a === 'number' && typeof b === 'number') return a * b;
@@ -545,7 +566,10 @@ function arith(op: string, a: Json, b: Json): Json {
         if (b === 0) throw new JqError(`${a} and ${b} cannot be divided because the divisor is zero`);
         return a / b;
       }
-      if (typeof a === 'string' && typeof b === 'string') return a.split(b);
+      if (typeof a === 'string' && typeof b === 'string') {
+        chargeSize(SLOT * a.length);
+        return a.split(b);
+      }
       break;
     case '%':
       if (typeof a === 'number' && typeof b === 'number') {
@@ -557,7 +581,44 @@ function arith(op: string, a: Json, b: Json): Json {
   throw new JqError(`${typeName(a)} and ${typeName(b)} cannot be ${op === '-' ? 'subtracted' : op === '*' ? 'multiplied' : 'divided'}`);
 }
 
+/** `a - b`: a set where the values of `b` are simple; else each item of `a` is compared with `b`, which is charged first. */
+function without(a: Json[], b: Json[]): Json[] {
+  chargeWalk(a.length + b.length);
+  if (b.every((y) => y === null || typeof y !== 'object')) {
+    // (A number that is no number equals nothing, also itself; a set would find it.)
+    const set = new Set<Json>(b.filter((y) => y === y));
+    return a.filter((x) => !set.has(x));
+  }
+  chargeWalk(COMPARE * a.length * sizeOf(b));
+  return a.filter((x) => !b.some((y) => cmp(x, y) === 0));
+}
+
+/** What sorting `list` takes: its comparisons, each as long as the values are. */
+function chargeSort(list: Json[]): void {
+  chargeWalk(COMPARE * Math.ceil(Math.log2(list.length + 1)) * sizeOf(list));
+}
+
+/** `list` sorted as jq does, charged first. */
+function sorted(list: Json[]): Json[] {
+  chargeSort(list);
+  return [...list].sort(cmp);
+}
+
+/** The items of `list` with the keys `key` gives, sorted by key, stably, charged first. */
+function sortedBy(list: Json[], key: (v: Json) => Json[]): (readonly [Json[], Json])[] {
+  const pairs = list.map((v) => [key(v), v] as const);
+  chargeSort(pairs.map((p) => p[0]));
+  return pairs.sort((p, q) => cmp(p[0], q[0]));
+}
+
+/** Comparing two values reads at most the shorter one. */
+function compared(a: Json, b: Json): number {
+  chargeWalk(Math.min(sizeOf(a), sizeOf(b)));
+  return cmp(a, b);
+}
+
 function deepMerge(a: Obj, b: Obj): Obj {
+  chargeWalk(SLOT * (Object.keys(a).length + Object.keys(b).length));
   const out: Obj = { ...a };
   for (const [k, v] of Object.entries(b)) setOwn(out, k, Object.hasOwn(out, k) && isObj(out[k]) && isObj(v) ? deepMerge(out[k] as Obj, v) : v);
   return out;
@@ -578,7 +639,7 @@ interface Env {
 }
 
 /** The variable names a list of patterns binds. */
-function patVars(pats: Pat[]): string[] {
+export function patVars(pats: Pat[]): string[] {
   const names = new Set<string>();
   const walk = (p: Pat): void => {
     if (p.k === 'var') names.add(p.name);
@@ -592,7 +653,10 @@ function patVars(pats: Pat[]): string[] {
 function contains(a: Json, b: Json): boolean {
   if (typeName(a) !== typeName(b)) throw new JqError(`${typeName(a)} and ${typeName(b)} cannot have their containment checked`);
   if (typeof a === 'string') return a.includes(b as string);
-  if (Array.isArray(a)) return (b as Json[]).every((x) => a.some((y) => typeName(x) === typeName(y) && contains(y, x)));
+  if (Array.isArray(a)) {
+    chargeWalk(COMPARE * a.length * (b as Json[]).length);
+    return (b as Json[]).every((x) => a.some((y) => typeName(x) === typeName(y) && contains(y, x)));
+  }
   if (isObj(a)) return Object.entries(b as Obj).every(([k, v]) => Object.hasOwn(a, k) && typeName(a[k]) === typeName(v) && contains(a[k], v));
   return cmp(a, b) === 0;
 }
@@ -665,7 +729,8 @@ class Evaluator {
         let outs = [''];
         for (const part of n.parts) {
           if (typeof part === 'string') { outs = outs.map((o) => o + part); continue; }
-          const vals = this.ev(part, x, env).map((v) => (n.fmt ? this.format(n.fmt, v) : typeof v === 'string' ? v : toJson(v)));
+          const vals = this.ev(part, x, env).map((v) => (n.fmt ? this.format(n.fmt, v) : typeof v === 'string' ? v : this.json(v)));
+          chargeSize(SLOT * outs.length * vals.length);
           outs = outs.flatMap((o) => vals.map((v) => o + v));
         }
         return outs;
@@ -699,12 +764,12 @@ class Evaluator {
         // jq evaluates the right operand first, then the left, and outputs every combination.
         return this.ev(n.r, x, env).flatMap((b) => this.ev(n.l, x, env).map((a) => {
           switch (n.op) {
-            case '==': return cmp(a, b) === 0;
-            case '!=': return cmp(a, b) !== 0;
-            case '<': return cmp(a, b) < 0;
-            case '<=': return cmp(a, b) <= 0;
-            case '>': return cmp(a, b) > 0;
-            case '>=': return cmp(a, b) >= 0;
+            case '==': return compared(a, b) === 0;
+            case '!=': return compared(a, b) !== 0;
+            case '<': return compared(a, b) < 0;
+            case '<=': return compared(a, b) <= 0;
+            case '>': return compared(a, b) > 0;
+            case '>=': return compared(a, b) >= 0;
             default: return arith(n.op, a, b);
           }
         }));
@@ -715,6 +780,8 @@ class Evaluator {
         for (const { key, value } of n.entries) {
           const keys = this.ev(key, x, env);
           const vals = this.ev(value, x, env);
+          // (Each object made holds the keys so far: a product of `range`s fills the memory before any of them is a value.)
+          chargeSize(SLOT * outs.length * keys.length * vals.length * (Object.keys(outs[0] ?? {}).length + 1));
           outs = outs.flatMap((o) => keys.flatMap((k) => {
             if (typeof k !== 'string') throw new JqError(`Object keys must be strings`);
             return vals.map((v) => ({ ...o, [k]: v }));
@@ -743,7 +810,7 @@ class Evaluator {
         for (const item of this.ev(n.src, x, env)) {
           for (const inner of this.bindAll(n.pats, item, x, env)) {
             accs = accs.flatMap((a) => this.ev(n.update, a, inner));
-            for (const a of accs) out.push(...(n.extract ? this.ev(n.extract, a, inner) : [a]));
+            for (const a of accs) pushAll(out, (n.extract ? this.ev(n.extract, a, inner) : [a]));
           }
         }
         return out;
@@ -761,6 +828,7 @@ class Evaluator {
       }
       case 'break': throw new BreakSignal(env.labels?.get(n.name));
       case 'def': {
+        chargeWalk(env.funcs.size);
         const inner: Env = { ...env, funcs: new Map(env.funcs) };
         inner.funcs.set(`${n.name}/${n.params.length}`, { params: n.params, body: n.body, env: inner });
         return this.ev(n.rest, x, inner);
@@ -772,7 +840,10 @@ class Evaluator {
 
   /** The environments a pattern makes for a value (an object key may give several). */
   private bind(p: Pat, v: Json, x: Json, env: Env): Env[] {
-    const set = (e: Env, name: string, val: Json): Env => ({ ...e, vars: new Map(e.vars).set(name, val) });
+    const set = (e: Env, name: string, val: Json): Env => {
+      chargeWalk(e.vars.size);
+      return { ...e, vars: new Map(e.vars).set(name, val) };
+    };
     switch (p.k) {
       case 'var': return [set(env, p.name, v)];
       case 'arr': {
@@ -844,7 +915,9 @@ class Evaluator {
       const n = Math.floor(v as number);
       return Math.max(0, Math.min(len, n < 0 ? len + n : n));
     };
-    return b.slice(norm(from, 0), norm(to, len)) as Json;
+    const [start, end] = [norm(from, 0), norm(to, len)];
+    chargeWalk(Math.max(0, end - start));
+    return b.slice(start, end) as Json;
   }
 
   private iterate(b: Json): Json[] {
@@ -854,17 +927,29 @@ class Evaluator {
   }
 
   private recurse(x: Json): Json[] {
-    const out: Json[] = [x];
-    if (Array.isArray(x)) for (const v of x) out.push(...this.recurse(v));
-    else if (isObj(x)) for (const v of Object.values(x)) out.push(...this.recurse(v));
+    chargeWalk(sizeOf(x));
+    const out: Json[] = [];
+    const go = (v: Json): void => {
+      out.push(v);
+      if (Array.isArray(v)) v.forEach(go);
+      else if (isObj(v)) Object.values(v).forEach(go);
+    };
+    go(x);
     return out;
   }
 
+  /** A value as text: what it takes is about what it holds. */
+  private json(v: Json): string {
+    chargeWalk(sizeOf(v));
+    return toJson(v);
+  }
+
   private format(name: string, v: Json): string {
-    const text = typeof v === 'string' ? v : toJson(v);
+    const text = typeof v === 'string' ? v : this.json(v);
+    chargeWalk(text.length);
     switch (name) {
       case '@text': return text;
-      case '@json': return toJson(v);
+      case '@json': return this.json(v);
       case '@base64': return base64Encode(text);
       case '@base64d':
         // One character left over cannot be decoded.
@@ -908,16 +993,22 @@ class Evaluator {
       }));
       case 'iter': return this.paths(n.base, x, env).flatMap((p) => {
         const b = this.getpath(x, p);
-        if (Array.isArray(b)) return b.map((_, i) => [...p, i]);
-        if (isObj(b)) return Object.keys(b).map((k) => [...p, k]);
+        const keys: Path = Array.isArray(b) ? b.map((_, i) => i) : isObj(b) ? Object.keys(b) : [];
+        // (Each path is a copy of the one it goes on from.)
+        chargeSize(SLOT * keys.length * (p.length + 1));
+        if (Array.isArray(b) || isObj(b)) return keys.map((k) => [...p, k]);
         if (b === null && n.opt) return [];
         throw new JqError(`Cannot iterate over ${typeName(b)}`);
       });
-      case 'pipe': return this.paths(n.l, x, env).flatMap((p) => this.paths(n.r, this.getpath(x, p), env).map((q) => [...p, ...q]));
+      case 'pipe': return this.paths(n.l, x, env).flatMap((p) => this.paths(n.r, this.getpath(x, p), env).map((q) => {
+        chargeWalk(p.length + q.length);
+        return [...p, ...q];
+      }));
       case 'comma': return [...this.paths(n.l, x, env), ...this.paths(n.r, x, env)];
       case 'recurse': {
         const out: Path[] = [];
         const walk = (v: Json, p: Path) => {
+          chargeSize(SLOT * (p.length + 1));
           out.push(p);
           if (Array.isArray(v)) v.forEach((c, i) => walk(c, [...p, i]));
           else if (isObj(v)) Object.entries(v).forEach(([k, c]) => walk(c, [...p, k]));
@@ -953,6 +1044,7 @@ class Evaluator {
   }
 
   getpath(x: Json, p: Path): Json {
+    chargeWalk(p.length);
     let v = x;
     for (const k of p) {
       if (v === null) return null;
@@ -964,37 +1056,50 @@ class Evaluator {
 
   setpath(x: Json, p: Path, value: Json): Json {
     if (!p.length) return value;
+    // (A copy of what the path goes through, at each of its steps: `.[] = 1` of a long array copies it for each item.)
+    chargeWalk(p.length);
     const [k, ...rest] = p;
     if (typeof k === 'object') throw new Unsupported('slice path');
     if (typeof k === 'number') {
-      const arr = x === null ? [] : Array.isArray(x) ? [...x] : (() => { throw new JqError(`Cannot index ${typeName(x)} with number`); })();
+      if (x !== null && !Array.isArray(x)) throw new JqError(`Cannot index ${typeName(x)} with number`);
+      chargeWalk(x?.length ?? 0);
+      const arr = x === null ? [] : [...x];
       const i = k < 0 ? arr.length + k : k;
       if (i < 0) throw new JqError('Out of bounds negative array index');
-      chargeSize(RANGE_ITEM * (i - arr.length));
+      chargeSize(RANGE_ITEM * Math.max(0, i - arr.length));
       while (arr.length <= i) arr.push(null);
       arr[i] = this.setpath(arr[i], rest, value);
       return arr;
     }
-    const obj = x === null ? {} : isObj(x) ? { ...x } : (() => { throw new JqError(`Cannot index ${typeName(x)} with "${k}"`); })();
+    if (x !== null && !isObj(x)) throw new JqError(`Cannot index ${typeName(x)} with "${k}"`);
+    chargeWalk(SLOT * Object.keys(x ?? {}).length);
+    const obj = { ...x };
     return setOwn(obj, k, this.setpath(Object.hasOwn(obj, k) ? obj[k] : null, rest, value));
   }
 
   private delpaths(x: Json, paths: Path[]): Json {
     // Delete the longest paths first so indexes stay valid.
-    const sorted = [...paths].sort((a, b) => cmp(b as Json[], a as Json[]));
+    chargeSort(paths as Json[]);
+    const longestFirst = [...paths].sort((a, b) => cmp(b as Json[], a as Json[]));
     let v = x;
-    for (const p of sorted) v = this.delpath(v, p);
+    for (const p of longestFirst) v = this.delpath(v, p);
     return v;
   }
 
   private delpath(x: Json, p: Path): Json {
     if (!p.length) return null;
+    chargeWalk(p.length);
     const [k, ...rest] = p;
     if (x === null) return null;
     // Paths from `del` hold no slices (they are not followed).
     if (!rest.length) {
-      if (Array.isArray(x) && typeof k === 'number') return x.filter((_, i) => i !== (k < 0 ? x.length + k : k));
+      // (Each deletion copies what it deletes from: `del(.[])` of a long array copies it for each item.)
+      if (Array.isArray(x) && typeof k === 'number') {
+        chargeWalk(x.length);
+        return x.filter((_, i) => i !== (k < 0 ? x.length + k : k));
+      }
       if (isObj(x) && typeof k === 'string') {
+        chargeWalk(SLOT * Object.keys(x).length);
         const { [k]: _, ...others } = x;
         return others;
       }
@@ -1036,6 +1141,7 @@ class Evaluator {
     const user = env.funcs.get(`${n.name}/${n.args.length}`);
     if (user) {
       const closures = new Map<string, { node: Node; env: Env }>();
+      chargeWalk(user.env.vars.size);
       const vars = new Map(user.env.vars);
       user.params.forEach((p, i) => {
         if (p.startsWith('$')) {
@@ -1074,12 +1180,15 @@ class Evaluator {
         if (x === null) return [0];
         if (typeof x === 'boolean') throw new JqError('boolean has no length');
         if (typeof x === 'number') return [Math.abs(x)];
-        if (typeof x === 'string') return [[...x].length];
+        if (typeof x === 'string') return [codePoints(x)];
         return [Array.isArray(x) ? x.length : Object.keys(x).length];
-      case 'utf8bytelength/0': return [utf8Length(str(x))];
+      case 'utf8bytelength/0':
+        chargeWalk(str(x).length);
+        return [utf8Length(str(x))];
       case 'keys/0': case 'keys_unsorted/0':
         if (Array.isArray(x)) return [x.map((_, i) => i)];
         if (!isObj(x)) throw new JqError(`${typeName(x)} has no keys`);
+        chargeSort(Object.keys(x));
         return [n.name === 'keys' ? Object.keys(x).sort() : Object.keys(x)];
       case 'values/0': return x === null ? [] : [x];
       case 'has/1': {
@@ -1109,8 +1218,16 @@ class Evaluator {
       case 'all/1': return [arr(x).every((v) => by(a[0])(v).every(truthy))];
       case 'flatten/0': case 'flatten/1': {
         const depth = a.length ? (one(0) as number) : 1e9;
-        const flat = (v: Json[], d: number): Json[] => v.flatMap((e) => (Array.isArray(e) && d > 0 ? flat(e, d - 1) : [e]));
-        return [flat(arr(x), depth)];
+        const out: Json[] = [];
+        const flat = (v: Json[], d: number): void => {
+          chargeWalk(v.length);
+          for (const e of v) {
+            if (Array.isArray(e) && d > 0) flat(e, d - 1);
+            else out.push(e);
+          }
+        };
+        flat(arr(x), depth);
+        return [out];
       }
       case 'range/1': { const m = Math.max(0, Math.ceil(one(0) as number)); chargeSize(RANGE_ITEM * m); return Array.from({ length: m }, (_, i) => i); }
       case 'range/2': {
@@ -1127,7 +1244,7 @@ class Evaluator {
       case 'round/0': return [Math.sign(x as number) * Math.round(Math.abs(x as number))];
       case 'sqrt/0': return [Math.sqrt(x as number)];
       case 'fabs/0': case 'abs/0': return [Math.abs(x as number)];
-      case 'tostring/0': return [typeof x === 'string' ? x : toJson(x)];
+      case 'tostring/0': return [typeof x === 'string' ? x : this.json(x)];
       case 'tonumber/0': {
         if (typeof x === 'number') return [x];
         const v = Number(str(x));
@@ -1135,10 +1252,10 @@ class Evaluator {
         return [v];
       }
       case 'type/0': return [typeName(x)];
-      case 'sort/0': return [[...arr(x, 'sort')].sort(cmp)];
-      case 'sort_by/1': return [[...arr(x, 'sort')].map((v) => [by(a[0])(v), v] as const).sort((p, q) => cmp(p[0], q[0])).map((p) => p[1])];
+      case 'sort/0': return [sorted(arr(x, 'sort'))];
+      case 'sort_by/1': return [sortedBy(arr(x, 'sort'), by(a[0])).map((p) => p[1])];
       case 'group_by/1': {
-        const pairs = [...arr(x)].map((v) => [by(a[0])(v), v] as const).sort((p, q) => cmp(p[0], q[0]));
+        const pairs = sortedBy(arr(x), by(a[0]));
         const groups: Json[][] = [];
         pairs.forEach((p, i) => {
           if (i === 0 || cmp(p[0], pairs[i - 1][0]) !== 0) groups.push([]);
@@ -1146,21 +1263,23 @@ class Evaluator {
         });
         return [groups];
       }
-      case 'unique/0': return [[...arr(x)].sort(cmp).filter((v, i, s) => i === 0 || cmp(v, s[i - 1]) !== 0)];
+      case 'unique/0': return [sorted(arr(x)).filter((v, i, s) => i === 0 || cmp(v, s[i - 1]) !== 0)];
       case 'unique_by/1': {
-        const pairs = [...arr(x)].map((v) => [by(a[0])(v), v] as const).sort((p, q) => cmp(p[0], q[0]));
+        const pairs = sortedBy(arr(x), by(a[0]));
         return [pairs.filter((p, i) => i === 0 || cmp(p[0], pairs[i - 1][0]) !== 0).map((p) => p[1])];
       }
       case 'min/0': case 'max/0': {
-        const v = [...arr(x)].sort(cmp);
+        const v = sorted(arr(x));
         return [v.length ? (n.name === 'min' ? v[0] : v[v.length - 1]) : null];
       }
       case 'min_by/1': case 'max_by/1': {
-        const pairs = [...arr(x)].map((v) => [by(a[0])(v), v] as const).sort((p, q) => cmp(p[0], q[0]));
+        const pairs = sortedBy(arr(x), by(a[0]));
         if (!pairs.length) return [null];
         return [n.name === 'min_by' ? pairs[0][1] : pairs[pairs.length - 1][1]];
       }
-      case 'reverse/0': return [typeof x === 'string' ? [...x].reverse().join('') : x === null ? [] : [...arr(x)].reverse()];
+      case 'reverse/0':
+        chargeSize(SLOT * (typeof x === 'string' ? x.length : Array.isArray(x) ? x.length : 0));
+        return [typeof x === 'string' ? [...x].reverse().join('') : x === null ? [] : [...arr(x)].reverse()];
       case 'first/0': return [this.index(x, 0)];
       case 'last/0': return [this.index(x, -1)];
       case 'nth/1': return [this.index(x, one(0))];
@@ -1181,10 +1300,12 @@ class Evaluator {
       }
       case 'to_entries/0': {
         if (!isObj(x)) throw new JqError(`${typeName(x)} has no keys`);
+        chargeSize(ENTRY * Object.keys(x).length);
         return [Object.entries(x).map(([key, value]) => ({ key, value }))];
       }
       case 'from_entries/0': {
         const o: Obj = {};
+        chargeSize(ENTRY * arr(x).length);
         for (const e of arr(x)) {
           if (!isObj(e)) throw new JqError('from_entries: bad entry');
           const k = e.key ?? e.k ?? e.name ?? e.Name ?? e.Key ?? e.K;
@@ -1194,6 +1315,7 @@ class Evaluator {
       }
       case 'with_entries/1': {
         if (!isObj(x)) throw new JqError(`${typeName(x)} has no keys`);
+        chargeSize(ENTRY * Object.keys(x).length);
         const mapped = Object.entries(x).flatMap(([key, value]) => by(a[0])({ key, value }));
         return this.call({ t: 'call', name: 'from_entries', args: [] }, mapped, env);
       }
@@ -1204,11 +1326,18 @@ class Evaluator {
       case 'to_array/0': return [Array.isArray(x) ? x : [x]];
       case 'join/1': {
         const sep = str(one(0));
+        chargeWalk(sizeOf(x) + sep.length * arr(x).length);
         return [arr(x).map((v) => (v === null ? '' : typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : (() => { throw new JqError(`Cannot join with ${typeName(v)}`); })())).join(sep)];
       }
-      case 'split/1': return [str(x).split(str(one(0)))];
-      case 'ascii_downcase/0': return [str(x).replace(/[A-Z]/g, (c) => c.toLowerCase())];
-      case 'ascii_upcase/0': return [str(x).replace(/[a-z]/g, (c) => c.toUpperCase())];
+      case 'split/1':
+        chargeSize(SLOT * str(x).length);
+        return [str(x).split(str(one(0)))];
+      case 'ascii_downcase/0':
+        chargeWalk(SLOT * str(x).length);
+        return [str(x).replace(/[A-Z]/g, (c) => c.toLowerCase())];
+      case 'ascii_upcase/0':
+        chargeWalk(SLOT * str(x).length);
+        return [str(x).replace(/[a-z]/g, (c) => c.toUpperCase())];
       case 'ltrimstr/1': { const p = one(0); return [typeof x === 'string' && typeof p === 'string' && x.startsWith(p) ? x.slice(p.length) : x]; }
       case 'rtrimstr/1': { const p = one(0); return [typeof x === 'string' && typeof p === 'string' && x.endsWith(p) && p ? x.slice(0, -p.length) : x]; }
       case 'trim/0': return [str(x).trim()];
@@ -1219,9 +1348,12 @@ class Evaluator {
         if (/[^gix]/.test(flags)) throw new Unsupported('regex flags');
         return [readRegex(flags.includes('x') ? extendedRegex(str(one(0))) : str(one(0)), flags.replace(/[gx]/g, '')).test(str(x))];
       }
-      case 'explode/0': return [[...str(x)].map((c) => c.codePointAt(0)!)];
+      case 'explode/0':
+        chargeSize(SLOT * str(x).length);
+        return [[...str(x)].map((c) => c.codePointAt(0)!)];
       case 'implode/0': {
         if (!Array.isArray(x)) throw new JqError('implode input must be an array');
+        chargeSize(SLOT * x.length);
         return [x.map((c) => {
           // (jq's `nan` is a number that prints as `null`, and is no code point.)
           if (typeof c !== 'number' || Number.isNaN(c)) throw new JqError(`${typeName(c)} (${toJson(c)}) can't be imploded, unicode codepoint needs to be numeric`);
@@ -1229,9 +1361,10 @@ class Evaluator {
           return unit < 0 || unit > 0x10ffff || (unit >= 0xd800 && unit <= 0xdfff) ? '\ufffd' : String.fromCodePoint(unit);
         }).join('')];
       }
-      case 'tojson/0': return [toJson(x)];
+      case 'tojson/0': return [this.json(x)];
       case 'fromjson/0': {
-        if (typeof x !== 'string') throw new JqError(`${typeName(x)} (${toJson(x)}) only strings can be parsed`);
+        if (typeof x !== 'string') throw new JqError(`${typeName(x)} (${this.json(x)}) only strings can be parsed`);
+        chargeSize(SLOT * x.length);
         // jq reads `nan` as a number (printed as null).
         if (x.trim() === 'nan') return [null];
         try {
@@ -1244,9 +1377,11 @@ class Evaluator {
         const t = one(0);
         let pos: number[] = [];
         if (typeof x === 'string' && typeof t === 'string' && t) {
+          chargeSize(SLOT * x.length);
           for (let i = x.indexOf(t); i >= 0; i = x.indexOf(t, i + 1)) pos.push(i);
         } else if (Array.isArray(x)) {
           const needle = Array.isArray(t) ? t : [t];
+          chargeWalk(COMPARE * x.length * sizeOf(needle));
           for (let i = 0; i + needle.length <= x.length; i++) if (needle.every((v, j) => cmp(x[i + j], v) === 0)) pos.push(i);
         } else if (x === null || (isObj(x) && typeof t === 'string')) return [null];
         else if (typeof x === 'string' && typeof t === 'string') return [n.name === 'indices' ? [] : null];
@@ -1300,470 +1435,4 @@ export function runJq(filter: string, input: Json, vars: Record<string, Json> = 
     /* c8 ignore next */
     throw e;
   }
-}
-
-// ---------------------------------------------------------------- input shape
-
-/** What the filter expects its input to look like, refined while walking the filter. */
-class Shape {
-  kind: 'unknown' | 'object' | 'array' | 'number' | 'string' | 'boolean' = 'unknown';
-  fields = new Map<string, Shape>();
-  elem?: Shape;
-  thresholds: number[] = [];
-  strings: string[] = [];
-  /** Arrays: indexes and slices used, so the example array is long enough to show them. */
-  minLength = 0;
-  /** The left side of `//`: a second example leaves it out, so the default is used. */
-  optional = false;
-  /** Values to avoid (the default of `//`), so the example shows the difference. */
-  avoid: Json[] = [];
-  /** Removed by del(), so other fields are needed for the example to show a change. */
-  deleted = false;
-
-  constructor(public name = '') {}
-
-  obj(): Shape {
-    if (this.kind === 'unknown') this.kind = 'object';
-    return this;
-  }
-
-  field(name: string): Shape {
-    this.obj();
-    let f = this.fields.get(name);
-    if (!f) { f = new Shape(name); this.fields.set(name, f); }
-    return f;
-  }
-
-  arr(): Shape {
-    if (this.kind === 'unknown') this.kind = 'array';
-    this.elem ??= new Shape(singular(this.name));
-    return this.elem;
-  }
-
-  set(kind: Shape['kind']): void {
-    if (this.kind === 'unknown') this.kind = kind;
-  }
-}
-
-function singular(name: string): string {
-  return name.replace(/ies$/, 'y').replace(/s$/, '');
-}
-
-/** The builtins the inferer reads with their argument, which jq does not define without one. */
-const ONE_ARGUMENT = new Set(['select', 'map', 'map_values', 'sort_by', 'group_by', 'unique_by', 'min_by', 'max_by', 'index', 'rindex', 'indices', 'contains', 'inside', 'del']);
-
-class Inferer {
-  private vars = new Map<string, Shape>();
-  private defs = new Map<string, Node>();
-
-  /** `inputs`: the shape of the values `input` and `inputs` read. */
-  constructor(private inputs = new Shape()) {}
-
-  run(n: Node, s: Shape): Shape {
-    switch (n.t) {
-      case 'id': return s;
-      case 'recurse': return new Shape();
-      case 'field': return this.run(n.base, s).field(n.name);
-      case 'index': {
-        const b = this.run(n.base, s);
-        if (n.idx.t === 'lit' && typeof n.idx.v === 'number') {
-          const el = b.arr();
-          // `.[-2]` is a negation, not a literal: the index is 0 or more.
-          b.minLength = Math.max(b.minLength, n.idx.v + 1);
-          return el;
-        }
-        if (n.idx.t === 'str' && n.idx.parts.length === 1 && typeof n.idx.parts[0] === 'string') return b.field(n.idx.parts[0]);
-        return new Shape();
-      }
-      case 'slice': {
-        const b = this.run(n.base, s);
-        b.arr();
-        const lim = (x?: Node) => (x?.t === 'lit' && typeof x.v === 'number' ? Math.abs(x.v) : 0);
-        // A slice shows best with a few elements beyond its end.
-        b.minLength = Math.max(b.minLength, lim(n.to) + 1, lim(n.from) + 2);
-        return b;
-      }
-      case 'str':
-        for (const part of n.parts) if (typeof part !== 'string') this.run(part, s);
-        return new Shape();
-      case 'def':
-        if (!n.params.length) this.defs.set(n.name, n.body);
-        return this.run(n.rest, s);
-      case 'iter': {
-        const b = this.run(n.base, s);
-        if (b.kind === 'object') return b.fields.values().next().value ?? new Shape();
-        return b.arr();
-      }
-      case 'try': return this.run(n.body, s);
-      // `@csv` and `@tsv` format an array.
-      case 'fmt': if (n.name === '@csv' || n.name === '@tsv') s.arr(); return new Shape();
-      case 'pipe': return this.run(n.r, this.run(n.l, s));
-      case 'comma': this.run(n.l, s); return this.run(n.r, s);
-      case 'alt': {
-        const left = this.run(n.l, s);
-        if (left !== s && left.name) left.optional = true;
-        if (n.r.t === 'lit') left.avoid.push(n.r.v);
-        return this.run(n.r, s);
-      }
-      case 'neg': this.run(n.e, s).set('number'); return new Shape();
-      case 'var': return this.vars.get(n.name) ?? new Shape();
-      case 'as': {
-        this.bindShapes(n.pats, this.run(n.src, s));
-        return this.run(n.body, s);
-      }
-      case 'label': return this.run(n.body, s);
-      case 'bin': {
-        const l = this.run(n.l, s);
-        const r = this.run(n.r, s);
-        const lit = (x: Node) => (x.t === 'lit' ? x.v : x.t === 'str' && x.parts.length === 1 && typeof x.parts[0] === 'string' ? x.parts[0] : undefined);
-        for (const [side, other] of [[l, lit(n.r)], [r, lit(n.l)]] as const) {
-          if (typeof other === 'number') { side.set('number'); side.thresholds.push(other); }
-          if (typeof other === 'string') { side.set('string'); side.strings.push(other); }
-          if (typeof other === 'boolean') side.set('boolean');
-        }
-        // `. + [1]`, `. - [1]`, `. + {"a": 1}`: the other side has the kind of the literal array or object.
-        for (const [side, other] of [[l, n.r], [r, n.l]] as const) {
-          if (n.op === '+' || n.op === '-') { if (other.t === 'array') side.arr(); else if (other.t === 'object' && n.op === '+') side.obj(); }
-        }
-        if (['-', '*', '/', '%'].includes(n.op) && n.l.t !== 'array' && n.r.t !== 'array') { l.set('number'); r.set('number'); }
-        // `. + $x` with a numeric accumulator adds numbers.
-        if (n.op === '+' && (l.kind === 'number' || r.kind === 'number')) { l.set('number'); r.set('number'); }
-        if (n.op === 'and' || n.op === 'or') { l.set('boolean'); r.set('boolean'); }
-        return new Shape();
-      }
-      case 'assign': {
-        // `.x |= f` runs f on the value at .x; `.x = f` runs f on the whole input.
-        const target = this.run(n.l, s);
-        this.run(n.r, n.op === '=' ? s : target);
-        return s;
-      }
-      case 'array': { const out = new Shape(); if (n.e) { out.kind = 'array'; out.elem = this.run(n.e, s); } return out; }
-      case 'object': {
-        const out = new Shape();
-        out.kind = 'object';
-        for (const e of n.entries) {
-          const v = this.run(e.value, s);
-          if (e.key.t === 'lit' && typeof e.key.v === 'string') out.fields.set(e.key.v, v);
-        }
-        return out;
-      }
-      case 'if':
-        for (const [c, b] of n.branches) { this.cond(c, s); this.run(b, s); }
-        return n.else ? this.run(n.else, s) : s;
-      case 'reduce': case 'foreach': {
-        this.bindShapes(n.pats, this.run(n.src, s));
-        const acc = new Shape();
-        if (n.init.t === 'lit' && typeof n.init.v === 'number') acc.kind = 'number';
-        this.run(n.update, acc);
-        return new Shape();
-      }
-      case 'call': return this.call(n, s);
-      default: return new Shape();
-    }
-  }
-
-  /** `. as [$a, $b]` expects an array; `{k: $v}` an object with the field `k`; the variables get the shapes of their places. */
-  private bindShapes(pats: Pat[], s: Shape): void {
-    const walk = (p: Pat, at: Shape): void => {
-      if (p.k === 'var') { this.vars.set(p.name, at); return; }
-      if (p.k === 'arr') {
-        const el = at.arr();
-        at.minLength = Math.max(at.minLength, p.items.length);
-        p.items.forEach((item) => walk(item, el));
-        return;
-      }
-      for (const e of p.entries) {
-        const key = e.key.t === 'lit' && typeof e.key.v === 'string' ? e.key.v : e.key.t === 'str' && e.key.parts.length === 1 && typeof e.key.parts[0] === 'string' ? e.key.parts[0] : undefined;
-        const field = key === undefined ? new Shape() : at.field(key);
-        if (e.bind) this.vars.set(e.bind, field);
-        if (e.pat) walk(e.pat, field);
-      }
-    };
-    if (pats.length === 1) walk(pats[0], s);
-    else for (const name of patVars(pats)) this.vars.set(name, new Shape());
-  }
-
-  private cond(c: Node, s: Shape): void {
-    const r = this.run(c, s);
-    // `select(.ok)`: a field used directly as a condition is a boolean.
-    if (r !== s && r.name) r.set('boolean');
-  }
-
-  private call(n: Extract<Node, { t: 'call' }>, s: Shape): Shape {
-    const a = n.args;
-    // jq has these only with an argument: `select` alone is not defined (`jq: error: select/0 is not defined`).
-    if (!a.length && ONE_ARGUMENT.has(n.name)) throw new Unsupported(`${n.name}/0`);
-    switch (n.name) {
-      case 'input': case 'inputs': return this.inputs;
-      case 'select': this.cond(a[0], s); return s;
-      case 'map': { const el = s.arr(); const out = new Shape(); out.kind = 'array'; out.elem = this.run(a[0], el); return out; }
-      case 'map_values': this.run(a[0], s.kind === 'array' ? s.arr() : new Shape()); return s;
-      case 'sort_by': case 'group_by': case 'unique_by': case 'min_by': case 'max_by': {
-        const el = s.arr();
-        const k = this.run(a[0], el);
-        if (k.kind === 'unknown' && /^(age|count|price|size|score|total|amount|year|id|rank|qty|quantity|level|priority|value)$/.test(k.name)) k.set('number');
-        return n.name.endsWith('_by') && (n.name === 'min_by' || n.name === 'max_by') ? el : s;
-      }
-      case 'sort': case 'unique': case 'reverse': case 'min': case 'max': case 'first': case 'last': case 'flatten':
-        if (!a.length) { const el = s.arr(); return n.name === 'min' || n.name === 'max' || n.name === 'first' || n.name === 'last' ? el : s; }
-        return this.run(a[0], s);
-      case 'add': { const el = s.arr(); el.set('number'); return el; }
-      case 'any': case 'all': if (a.length) this.cond(a[0], s.arr()); else s.arr().set('boolean'); return new Shape();
-      case 'join': s.arr().set('string'); return new Shape();
-      case 'length': if (s.kind === 'unknown') s.arr(); return new Shape();
-      case 'keys': case 'keys_unsorted': case 'to_entries': case 'with_entries': case 'has': s.obj(); return new Shape();
-      case 'test': case 'startswith': case 'endswith': case 'ltrimstr': case 'rtrimstr': case 'ascii_downcase': case 'ascii_upcase': case 'split': case 'tonumber':
-        s.set('string');
-        if (n.name === 'tonumber') s.strings.push('42');
-        return new Shape();
-      case 'index': case 'rindex': case 'indices': {
-        // `index(",")` finds a piece of text; `index(1)` an element of an array.
-        const arg = a[0];
-        if (arg.t === 'str' && arg.parts.length === 1 && typeof arg.parts[0] === 'string') { s.set('string'); s.strings.push(arg.parts[0]); }
-        else s.arr();
-        return new Shape();
-      }
-      case 'contains': case 'inside': {
-        // The input has the kind of the literal it is compared with, and holds it.
-        const arg = a[0];
-        if (arg.t === 'str' && arg.parts.length === 1 && typeof arg.parts[0] === 'string') { s.set('string'); s.strings.push(arg.parts[0]); }
-        else if (arg.t === 'array') { const el = s.arr(); const only = arg.e?.t === 'str' && arg.e.parts.length === 1 ? arg.e.parts[0] : undefined; if (typeof only === 'string') { el.set('string'); el.strings.push(only); } }
-        else if (arg.t === 'object') s.obj();
-        return new Shape();
-      }
-      case 'del': this.run(a[0], s).deleted = true; return s;
-      case 'not': return new Shape();
-      case 'tostring': if (!a.length) s.set('number'); return new Shape();
-      default: {
-        const def = !a.length ? this.defs.get(n.name) : undefined;
-        if (def) return this.run(def, s);
-        for (const arg of a) this.run(arg, s);
-        return new Shape();
-      }
-    }
-  }
-}
-
-const NAMES: Record<string, string[]> = Object.assign(Object.create(null), {
-  name: ['alice', 'bob', 'carol'], user: ['alice', 'bob', 'carol'], author: ['alice', 'bob', 'carol'],
-  email: ['alice@example.com', 'bob@example.com', 'carol@example.com'], city: ['Tokyo', 'Osaka', 'Kyoto'],
-  title: ['Intro', 'Guide', 'Notes'], status: ['active', 'inactive', 'active'], type: ['book', 'pen', 'book'],
-  id: ['a1', 'b2', 'c3'], tag: ['sale', 'new', 'sale'], url: ['https://example.com/a', 'https://example.com/b', 'https://example.com/c'],
-  version: ['1.0.0', '1.2.0', '2.0.0'], date: ['2026-01-15', '2026-03-02', '2026-07-21'], key: ['host', 'port', 'user'],
-});
-const NUMBERS: Record<string, number[]> = Object.assign(Object.create(null), {
-  age: [30, 25, 41], price: [80, 150, 120], count: [3, 7, 1], id: [1, 2, 3], score: [72, 95, 88], size: [120, 2048, 512],
-  total: [10, 30, 20], year: [2024, 2025, 2026], timeout: [30, 60, 10], port: [8080, 3000, 5432],
-});
-const BOOLS = /^(ok|enabled|active|done|valid|deleted|published|visible|admin|is_\w+|has_\w+)$/;
-
-/** A JSON value of the given shape; `i` varies values between array elements. `omit` leaves out optional fields. */
-function materialize(s: Shape, i: number, depth = 0, omit = false): Json {
-  // Pick another variant if this one equals a value to avoid (the default of `//`).
-  for (let k = 0; k < 3 && s.avoid.length; k++) {
-    const v = materializeOnce(s, i + k, depth, omit);
-    if (!s.avoid.some((a) => cmp(a, v) === 0)) return v;
-  }
-  return materializeOnce(s, i, depth, omit);
-}
-
-function materializeOnce(s: Shape, i: number, depth: number, omit: boolean): Json {
-  switch (s.kind) {
-    case 'object': {
-      // An object used only as a whole (keys, to_entries…) still needs some content.
-      if (!s.fields.size) return { name: NAMES.name[i % 3], age: NUMBERS.age[i % 3] };
-      const obj = Object.fromEntries([...s.fields].filter(([, f]) => !(omit && f.optional)).map(([k, f]) => [k, materialize(f, i, depth + 1, omit)]));
-      // del(.x) only shows a change if something else remains.
-      if ([...s.fields.values()].every((f) => f.deleted)) return { name: NAMES.name[i % 3], ...obj };
-      return obj;
-    }
-    case 'array': {
-      const len = Math.min(Math.max(depth > 1 ? 2 : 3, s.minLength), 8);
-      return Array.from({ length: len }, (_, j) => materialize(s.elem!, j, depth + 1, omit));
-    }
-    case 'number': {
-      if (s.thresholds.length) {
-        const t = s.thresholds[0];
-        const vals = t === 0 ? [-1, 3, 5] : [Math.round(t * 0.5), Math.round(t * 1.5), Math.round(t * 1.2)];
-        return vals[i % 3];
-      }
-      return (NUMBERS[s.name] ?? [10, 25, 7])[i % 3];
-    }
-    case 'boolean': return [true, false, true][i % 3];
-    case 'string':
-      if (s.strings.length) return i % 2 === 0 ? s.strings[0] : (NAMES[s.name]?.[i % 3] ?? `other${i}`);
-      return (NAMES[s.name] ?? NAMES[singular(s.name)] ?? [`${s.name || 'value'}1`, `${s.name || 'value'}2`, `${s.name || 'value'}3`])[i % 3];
-    case 'unknown':
-      if (NUMBERS[s.name]) return NUMBERS[s.name][i % 3];
-      if (BOOLS.test(s.name)) return [true, false, true][i % 3];
-      if (NAMES[s.name]) return NAMES[s.name][i % 3];
-      return depth === 0 ? { name: 'alice', age: 30 } : `${s.name || 'value'}${i + 1}`;
-  }
-}
-
-/** One stage of a top-level pipe chain: its text, and every value it leaves. */
-export interface JqStep {
-  text: string;
-  values: Json[];
-}
-
-/**
- * Split a filter at its top-level pipes and run the stages one after another, keeping the
- * values after each. Undefined when there is no top-level pipe, when a piece is not a filter on
- * its own (`. as $x | …`, `def f: …; …`), when a stage cannot be run here, or when the pieces
- * together do not give what the whole filter gives.
- */
-export function jqSteps(filter: string, input: Json, vars: Record<string, Json> = {}): JqStep[] | undefined {
-  // (Callers have run the filter, so it lexes.)
-  const toks = lex(filter);
-  const pieces: string[] = [];
-  let depth = 0;
-  let from = 0;
-  for (const t of toks) {
-    if (t.type === 'str') continue;
-    if (['(', '[', '{', 'if'].includes(t.text)) depth++;
-    else if ([')', ']', '}', 'end'].includes(t.text)) depth--;
-    else if (t.text === '|' && t.type === 'op' && depth === 0) {
-      pieces.push(filter.slice(from, t.start).trim());
-      from = t.end;
-    }
-  }
-  if (!pieces.length) return undefined;
-  pieces.push(filter.slice(from).trim());
-  let values: Json[] = [input];
-  const steps: JqStep[] = [];
-  for (const text of pieces) {
-    const next: Json[] = [];
-    for (const v of values) {
-      const res = runJq(text, v, vars);
-      if (!res || 'error' in res) return undefined;
-      next.push(...res.outputs);
-    }
-    values = next;
-    steps.push({ text, values });
-  }
-  // A guard against a split that changes the meaning: no filter known gives a different result.
-  const whole = runJq(filter, input, vars);
-  /* c8 ignore next */
-  if (!whole || 'error' in whole || toJson(whole.outputs) !== toJson(values)) return undefined;
-  return steps;
-}
-
-export interface JqRun {
-  input: Json;
-  /** The values after each stage of a top-level pipe chain (see jqSteps). */
-  steps?: JqStep[];
-  outputs: string[];
-  /** The results as values (up to five). */
-  values: Json[];
-  error?: string;
-  /** `-s`: the filter reads all the input values as one array, so `input` is that array and the file holds its elements. */
-  slurp?: boolean;
-}
-
-/** What the flags of jq change in an example. */
-export interface JqFlags {
-  raw?: boolean;
-  /** `-j`: raw strings, and no newline after any output. */
-  join?: boolean;
-  /** `-s` */
-  slurp?: boolean;
-  /** How the results are printed (`-c`, `--tab`, `--indent`, `-S`); one line each when not given. */
-  format?: JqFormat;
-}
-
-/**
- * The lines jq prints for its results: in `format`, one after another (with `-j` with no newline between them);
- * `raw` (`-r`, `-j`) prints strings as they are. `cap`: at most this many results, then `…`.
- */
-export function jqOutputLines(values: Json[], opts: JqFlags, cap = Infinity): string[] {
-  const format = opts.format ?? { indent: 0 };
-  const raw = !!(opts.raw || opts.join);
-  if (opts.join) return values.length ? values.map((v) => jqPrint(v, format, raw).join('\n')).join('').split('\n') : [];
-  const shown = values.length > cap ? values.slice(0, cap - 1) : values;
-  return [...shown.flatMap((v) => jqPrint(v, format, raw)), ...(shown.length < values.length ? ['…'] : [])];
-}
-
-/** The jq function of the filter that reads more inputs (`input`, `inputs`), if any. */
-export function jqReadsInputs(filter: string): 'input' | 'inputs' | undefined {
-  let found: 'input' | 'inputs' | undefined;
-  // A call anywhere in the parse, whatever node holds it.
-  const walk = (x: unknown): void => {
-    if (found || !x || typeof x !== 'object') return;
-    const n = x as { t?: string; name?: string; args?: unknown[] };
-    if (n.t === 'call' && (n.name === 'input' || n.name === 'inputs') && !n.args!.length) found = n.name;
-    else for (const v of Object.values(x)) walk(v);
-  };
-  walk(parseJq(filter));
-  return found;
-}
-
-/**
- * Sample input of a filter, as jq reads it from a file: the `k`th value (from 0), like the others with its numbers
- * and strings changed (`varyJson`). `nullInput`: the values `input` and `inputs` read, as `.` is null; `rawInput`
- * (`-R`): lines, which jq reads as strings. Undefined when the filter cannot be read.
- */
-export function jqSample(filter: string, opts: { nullInput?: boolean; rawInput?: boolean } = {}): ((k: number) => Json) | undefined {
-  const node = parseJq(filter);
-  // (The analyzer asks for filters its explanation has read: a guard.)
-  /* c8 ignore next */
-  if (!node) return undefined;
-  const shape = new Shape();
-  const inputs = opts.nullInput ? new Shape() : shape;
-  try {
-    new Inferer(inputs).run(node, shape);
-  } catch (e) {
-    if (e instanceof Unsupported) return undefined;
-    /* c8 ignore next */
-    throw e;
-  }
-  if (opts.rawInput) {
-    // A line is a string: one the filter fits, or plain text.
-    return inputs.kind === 'string' ? (k) => materialize(inputs, k) : (k) => `line ${k + 1}`;
-  }
-  const first = materialize(inputs, 0);
-  return (k) => varyJson(first, k);
-}
-
-/** The sample file of a slurped example: the values the filter's array is made of, one per line. */
-export function slurpLines(input: Json): string[] {
-  return (input as Json[]).map(toJson);
-}
-
-/**
- * Infer an input that fits the filter, run the filter, and show the outputs (raw strings with -r).
- * With `//`, a second run leaves the optional value out so the default shows.
- */
-export function jqExample(filter: string, opts: JqFlags & { vars?: Record<string, Json>; nullInput?: boolean } = {}): JqRun[] | undefined {
-  const node = parseJq(filter);
-  if (!node) return undefined;
-  const run = (input: Json): JqRun | undefined => {
-    const res = runJq(filter, input, opts.vars);
-    if (!res) return undefined;
-    if ('error' in res) return { input, outputs: [], values: [], error: res.error };
-    // `-j` prints the outputs one right after another, with no newline at all.
-    const outputs = jqOutputLines(res.outputs, opts, 5);
-    const steps = opts.join ? undefined : jqSteps(filter, input, opts.vars);
-    return { input, ...(steps ? { steps } : {}), ...(opts.slurp ? { slurp: true } : {}), outputs, values: res.outputs.slice(0, 5) };
-  };
-  if (opts.nullInput) {
-    const r = run(null);
-    return r && [r];
-  }
-  const shape = new Shape();
-  try {
-    new Inferer().run(node, shape);
-  } catch (e) {
-    // (A filter jq refuses, `select` with no argument: no example. Anything else is a bug, which shows.)
-    if (e instanceof Unsupported) return undefined;
-    /* c8 ignore next */
-    throw e;
-  }
-  // With `-s` the filter sees an array of the values in the file.
-  const sample = (v: Json): Json => (opts.slurp && !Array.isArray(v) ? [v] : v);
-  const first = run(sample(materialize(shape, 0)));
-  if (!first) return undefined;
-  const without = sample(materialize(shape, 0, 0, true));
-  const second = toJson(without) !== toJson(first.input) ? run(without) : undefined;
-  return second && !second.error ? [first, second] : [first];
 }

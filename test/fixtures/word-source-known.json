@@ -275,7 +275,8 @@
       "file": "src/explain/dispatch.ts",
       "reason": "dispatch by node type (a module per kind of node)",
       "uses": [
-        {"fn":"explain","kind":"node-type","count":2},
+        {"fn":"WALKED_ONCE","kind":"node-type","count":3,"reason":"the nodes the walk reads once for a line: only their syntax"},
+        {"fn":"explained","kind":"node-type","count":2},
         {"fn":"explainNode","kind":"node-type","count":13}
       ]
     },
@@ -328,7 +329,7 @@
       "reason": "explains a word part by part, by node type (the dispatch of the word module)",
       "uses": [
         {"fn":"braceExpansion","kind":"node-type","count":1},
-        {"fn":"bracketsOf","kind":"node-type","count":1},
+        {"fn":"bracketsOf","kind":"node-type","count":2},
         {"fn":"elementWord","kind":"node-type","count":1},
         {"fn":"string","kind":"node-type","count":3},
         {"fn":"concatenationNote","kind":"node-type","count":1},

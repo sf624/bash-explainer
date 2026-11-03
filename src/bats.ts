@@ -52,7 +52,9 @@ export function batsTests(tree: SyntaxTree, region: Pick<ShellRegion, 'commands'
  */
 export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands' | 'run'>, tests: readonly number[], line: number, lang: Lang): { fact: Fact; node: SyntaxNode }[] {
   const out: { fact: Fact; node: SyntaxNode }[] = [];
-  const def0 = tests.includes(line) && descendants(tree.root, ['function_definition']).find((d) => d.startPosition.row === line);
+  // (Only what lies on the line: this is asked for each line of a long file.)
+  const here = { from: line, to: line };
+  const def0 = tests.includes(line) && descendants(tree.root, ['function_definition'], here).find((d) => d.startPosition.row === line);
   if (def0) out.push({ fact: fact(lang, 'bats-test'), node: def0 });
   // (The model the analyzer reads for a bats file, which reads bats' functions by their specs.)
   const state = shellState(tree, undefined, { host: region.commands, run: region.run, read: 'script' });
@@ -64,10 +66,10 @@ export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands'
     out.push({ fact: fact(lang, 'bats-hook', { name: nameText(field(def, 'name')!), when }), node: def });
   }
   // (bats calls `setup_suite` only from setup_suite.bash: of a test file, it warns.)
-  const suite = descendants(tree.root, ['function_definition']).find((d) => d.startPosition.row === line && nameText(field(d, 'name')!) === 'setup_suite');
+  const suite = descendants(tree.root, ['function_definition'], here).find((d) => d.startPosition.row === line && nameText(field(d, 'name')!) === 'setup_suite');
   if (suite) out.push({ fact: fact(lang, 'bats-setup-suite-in-test-file'), node: suite });
   // `! cmd` in a test, not its last command: bash ignores `set -e` after `!`, so it fails nothing.
-  for (const def of descendants(tree.root, ['function_definition'])) {
+  for (const def of descendants(tree.root, ['function_definition'], here)) {
     if (!tests.includes(def.startPosition.row)) continue;
     // (No body: a line bats itself reads wrongly, `@test "a" { echo {x}`.)
     const body = field(def, 'body');
@@ -84,7 +86,7 @@ export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands'
   }
   // `run cmd | …`: the pipe gets run's output, which is none, and run's variables are set in a subshell; `… | run
   // cmd`: run reads the pipe, but sets its variables in a subshell too (unless lastpipe runs the last stage here).
-  for (const p of descendants(tree.root, ['pipeline'])) {
+  for (const p of descendants(tree.root, ['pipeline'], here)) {
     if (p.startPosition.row !== line) continue;
     p.namedChildren.filter((c) => STATEMENTS.has(c.type)).forEach((cmd, k) => {
       // (`run cmd 2>&1 | …`: its redirections are its own.)

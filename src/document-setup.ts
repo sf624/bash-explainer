@@ -3,6 +3,8 @@ import type { Shells, ShellDocument } from './document';
 import { Extracted, extractShell, HostKind, hostKind } from './hosts';
 import { maskCarried } from './messages-levels';
 import type { Settings } from './settings';
+import { contained, stackFull } from './failures';
+import { unreadTree } from './syntax/adapters/unbash';
 import type { SyntaxTree } from './syntax/tree';
 
 // What every product does to open a document: which kind of file it is, its lines, its shell code and its
@@ -113,9 +115,12 @@ export function kindOfDocument(doc: DocumentInfo, settings: Pick<Settings, 'lang
 export function openDocument(text: string, kind: FileKind, parse: (shellText: string) => SyntaxTree, extracted?: Extracted): ShellDocument {
   // (A script's own OPEN_TEXT and CLOSE_TEXT are masked in the lines too: a label made from a line must not forge a mark from the raw text.)
   const lines = maskCarried(text).split(/\r?\n/);
-  if (kind === 'shell') return { lines, tree: parse(text) };
-  const hosted = extracted ?? extractShell(kind, text);
-  return { lines, extracted: hosted, tree: parse(hosted.text) };
+  // (The boundary of a document, src/failures.ts: a bug in reading it leaves a document that says so.)
+  return contained('reading the document', () => {
+    if (kind === 'shell') return { lines, tree: parse(text) };
+    const hosted = extracted ?? extractShell(kind, text);
+    return { lines, extracted: hosted, tree: parse(hosted.text) };
+  }, (e) => ({ lines, tree: unreadTree(text, stackFull(e) ? 'too-deep' : 'failed') }));
 }
 
 /** The shell chosen by the user (`forced`), and the one the file says (shebang, ShellCheck directive, file name). */

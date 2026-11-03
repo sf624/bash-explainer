@@ -28,6 +28,7 @@ import { kept, temporaries } from './temporaries';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
 import { changesWords, ExpansionError, type Frame, OPAQUE, processIn, type SetAt, type Statement, type Target, WalkAgain } from './shared';
+import { leastOf, pushAll } from '../../lists';
 
 export type { ChildPass, Frame, Target } from './shared';
 
@@ -1019,7 +1020,7 @@ export class Walker {
       const unit = this.unitTarget();
       if (seen) {
         exit = seen.exit;
-        if (unit && unit.dead === this.mode.dead) unit.aborts.push(...seen.aborts);
+        if (unit && unit.dead === this.mode.dead) pushAll(unit.aborts, seen.aborts);
         for (const m of seen.maybes) this.abort(m, false);
         for (const key of seen.changed) {
           this.lastChange.set(key, ++this.changeCount);
@@ -1039,7 +1040,8 @@ export class Walker {
         } finally {
           this.collecting.pop();
         }
-        if (!this.silent) walks.push({ entry: st, exit, how, aborts: unit?.aborts.slice(from) ?? [], maybes: unit?.maybes.slice(maybesFrom) ?? [], changed });
+        // (Each state once: a body that calls a function twice would otherwise double them at each level of calls, `f2() { f1; f1; }`.)
+        if (!this.silent) walks.push({ entry: st, exit, how, aborts: [...new Set(unit?.aborts.slice(from))], maybes: [...new Set(unit?.maybes.slice(maybesFrom))], changed });
       }
     }
     return fn.state === 'on' ? exit : merge([st, exit], this.posix);
@@ -1218,7 +1220,7 @@ export class Walker {
     const expand = this.expand;
     this.aliasHost ??= host;
     const { root, text, errors } = script.tree;
-    const stop = errors.length ? text.slice(0, Math.min(...errors.map((e) => e.startIndex))).split('\n').length - 1 : Infinity;
+    const stop = errors.length ? text.slice(0, leastOf(errors.map((e) => e.startIndex))).split('\n').length - 1 : Infinity;
     const statements = root.children.filter((c) => c.endPosition.row < stop && STATEMENTS.has(c.type));
     const { end, sure } = this.units(statements, st);
     this.aliasHost = outer;

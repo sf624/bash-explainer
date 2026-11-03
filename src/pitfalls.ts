@@ -20,6 +20,7 @@ import type { ConventionId } from './conventions';
 import { type Note, styleNote } from './messages';
 import { STYLE_LEVELS, type StyleCase, type StyleCode } from './messages-levels';
 import { type Rewrite, replaceNode, replaceSpan, stopCommand, textBetween, type TextEdit } from './rewrite';
+import { mostOf } from './lists';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
 // `rm -rf $DIR/…`, `read` without `-r`, `<` and `>` or a missing `]` inside `[ ]`), explained where they appear: what
@@ -120,6 +121,17 @@ export interface RunCommand { nameWord: SyntaxNode; name: string | undefined; ar
 
 /** The commands the simple command `n` runs (see `RunCommand`), itself first. */
 export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | undefined): RunCommand[] {
+  let byNode = commandsRun.get(model);
+  if (!byNode) commandsRun.set(model, (byNode = new WeakMap()));
+  let runs = byNode.get(n);
+  if (!runs) byNode.set(n, (runs = commandsOf(n, model, shell)));
+  return runs;
+}
+
+/** What each pitfall asks of a command, read once for each command of a model (`runCommands`). */
+const commandsRun = new WeakMap<StateModel, WeakMap<SyntaxNode, RunCommand[]>>();
+
+function commandsOf(n: SyntaxNode, model: StateModel, shell: Shell | undefined): RunCommand[] {
   const nameWord = field(n, 'name');
   if (!nameWord) return [];
   const name = commandName(n);
@@ -579,7 +591,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         const lastArg = a[a.length - 1];
         if (shell !== 'zsh' && lastArg?.type === 'word' && lastArg.text === '}' && n.parent?.type === 'compound_statement' && n.parent.incomplete) {
           // (`;` right before the `}`, after the words and redirections before it: `echo b >f; }`.)
-          const at = Math.max(...n.children.filter((c) => c.endIndex <= lastArg.startIndex).map((c) => c.endIndex));
+          const at = mostOf(n.children.filter((c) => c.endIndex <= lastArg.startIndex).map((c) => c.endIndex));
           const fix = editSpan(n, lastArg, [{ start: at, end: at, text: ';' }]);
           // (The name as written: `{ ./x b }`, `{ $cmd b }`.)
           const head = field(n, 'name')!.text;

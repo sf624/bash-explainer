@@ -3,6 +3,7 @@
 import type { Shell } from '../shellfeatures';
 import { staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
+import { pushAll } from '../lists';
 
 /** The names in an arithmetic text or a value read as one (not the digits of `0x1f` or `16#ff`, nor `${#x}`'s). */
 const IDENTIFIERS = /(?<![\w#@.])[A-Za-z_]\w*/g;
@@ -48,7 +49,7 @@ export function writtenValue(v: SyntaxNode | undefined, renamed: (name: string) 
     switch (n.type) {
       case 'word': case 'number': case 'raw_string': case 'string_content':
         parts.push(n.text);
-        names.push(...identifiers(n.text));
+        pushAll(names, identifiers(n.text));
         return true;
       case 'string': case 'concatenation': return n.namedChildren.every(known);
       case 'simple_expansion': case 'expansion': {

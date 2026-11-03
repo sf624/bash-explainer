@@ -1,3 +1,4 @@
+import { pushAll } from '../lists';
 // The structure of a JavaScript regex: what the examples generate lines from (src/examples/regex.ts) and what the engine
 // runs (src/examples/regexguard.ts). It reads what JavaScript reads, annex B included, of a pattern that `new RegExp`
 // accepts, or says `unread`.
@@ -172,7 +173,7 @@ export class Parser {
     if (negated) this.i++;
     const from = this.i;
     const ranges: (readonly [number, number])[] = [];
-    const add = (m: number | Ranges) => { if (typeof m === 'number') ranges.push([m, m]); else ranges.push(...m); };
+    const add = (m: number | Ranges) => { if (typeof m === 'number') ranges.push([m, m]); else pushAll(ranges, m); };
     while (this.i < this.s.length && this.s[this.i] !== ']') {
       const a = this.member();
       if (this.s[this.i] === '-' && this.s[this.i + 1] !== ']') {

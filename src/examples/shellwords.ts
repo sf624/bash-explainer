@@ -7,6 +7,7 @@ import { MachineDigits, Refused, scriptRegex } from './regexguard';
 import { parseSequence, sequenceWords } from '../braceseq';
 import { BASH_VERSIONS, type BashVersion } from '../bashversion';
 import { Unsupported as RunnerUnsupported } from './unsupported';
+import { pushAll } from '../lists';
 
 class Unsupported extends RunnerUnsupported {}
 
@@ -368,7 +369,10 @@ export function globExamples(pattern: string, mode: GlobMode, opts: GlobOpts = {
   // Show what the options add: a hidden file, or the other case.
   const lastSeg = base.lastIndexOf('/') + 1;
   const extra = [opts.dotglob && mode === 'file' ? base.slice(0, lastSeg) + '.' + base.slice(lastSeg) : '', opts.nocase ? base.slice(0, lastSeg) + swapCase(base.slice(lastSeg)) : ''].filter((n) => n && n !== base && globMatches(pattern, n, mode, opts));
-  if (extra.length) matching.splice(Math.max(1, 3 - extra.length), Infinity, ...extra);
+  if (extra.length) {
+    matching.length = Math.min(matching.length, Math.max(1, 3 - extra.length));
+    pushAll(matching, extra);
+  }
   const ext = /\.[^./()|]+$/.exec(pattern)?.[0];
   const candidates = [
     // What an extended glob leaves out: `keep.log` for `!(keep).log`.

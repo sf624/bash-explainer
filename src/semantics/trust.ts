@@ -50,16 +50,16 @@ import { STATEMENTS } from './env';
 import { localeWritten, openingBlinds, type Opening } from './opening';
 import { closesStandard } from './redirects';
 import { inExtendedTest, testSplits, testWordShape } from './testwords';
-import { BLIND, type HostCommands, NO_HOST, type StringTrees, type Trust } from './trustmodel';
+import { ALIAS_EXPANSIONS, ALIAS_NEXT, BLIND, type HostCommands, NO_HOST, NO_NAMES, PASTE, type StringTrees, type Trust } from './trustmodel';
 import { COPY, identifiers, joined, writtenValue } from './written';
 import { ARITH_ASSIGNED, assignsArithmetic, changedUnseen, localeVariable, optionRoles, readDeclarationWords, writeEffect, type Declaration } from './vars';
 import { arithReads, commandNames, compoundReads, promptReads, ps4Writes, reachable, throughNamerefs, valuesWritten, type Value, type Write } from './writechecks';
+import { unlessStackFull } from '../failures';
+import { NESTED_DEPTH } from './nested';
 
 export { BLIND, type HostCommands, NO_HOST, type StringTrees, type Trust, withinTrust } from './trustmodel';
 
 const NAME = /^[A-Za-z_]\w*$/;
-/** A `${…}` that arithmetic may paste: a value, an element, a length, or a default (`${x:-0}`). */
-const PASTE = /^\$\{#?[A-Za-z_]\w*(?:\[[^\]]*\])?(?::?-[^{}$`'"]*)?\}/;
 
 /**
  * Where a node is: the function whose body holds it, whether it is in the text of an `eval`, a trap or an alias
@@ -69,14 +69,6 @@ const PASTE = /^\$\{#?[A-Za-z_]\w*(?:\[[^\]]*\])?(?::?-[^{}$`'"]*)?\}/;
  */
 interface Where { fn: string | undefined; foreign: boolean; now: boolean; rest?: { at: number; where: Where } }
 
-/**
- * How many trees of aliases expanded the scan reads from one command of the script (each alias in an alias's text
- * may double them there); the commands of the script are not counted together.
- */
-const ALIAS_EXPANSIONS = 1000;
-/** How many texts of one alias with the aliases after it (6.6: a text ending with a blank) the scan reads at one command. */
-const ALIAS_NEXT = 64;
-const NO_NAMES: ReadonlySet<string> = new Set();
 
 
 /** An alias an `alias` command defines: its name and text, the word that gives them, and where the command is. */
@@ -806,9 +798,15 @@ class Scan {
    * The tree of an `eval`'s string, a trap's action or an alias's text: read as part of the script, run from
    * elsewhere (`now`: where it stands, an `eval`'s). None: its text is not known, for `why`.
    */
+  private stringDepth = 0;
+
   private foreign(root: SyntaxNode | undefined, why: string, w: Where, now = false): void {
     if (!root) this.blindFor(why);
+    // (`eval eval eval …`: past what the walk reads, which then trusts nothing itself.)
+    if (this.stringDepth > NESTED_DEPTH + 1) return;
+    this.stringDepth++;
     this.visit(root, { fn: w.fn, foreign: true, now: now && w.now });
+    this.stringDepth--;
   }
 
   /**
@@ -968,7 +966,9 @@ class Scan {
  * with (`#!/bin/bash -k`).
  */
 export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST, opening: Opening | undefined, shell: Shell | undefined, version?: BashVersion, posix = false): Trust {
-  const scan = new Scan(root, strings, host, opening, shell, version, posix);
+  // (Where the script nests too deep to scan, nothing is trusted, and the lines keep what they say without it.)
+  const scan = unlessStackFull(() => new Scan(root, strings, host, opening, shell, version, posix));
+  if (!scan) return { ...BLIND, blind: 'the script nests too deep to scan' };
   if (scan.blind) return { ...BLIND, blind: scan.blind };
   const unseen = new Set<string>();
   for (const [name, ws] of scan.writes) if (ws.some((w) => w.foreign || (w.fn !== undefined && scan.callbacks.has(w.fn)))) unseen.add(name);

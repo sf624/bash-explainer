@@ -61,7 +61,7 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `--lsp` | run as a Language Server on standard input and output (see [In your editor](#in-your-editor-language-server)) |
 | `--color`, `--no-color` | colour the text output (default: when writing to a terminal; `NO_COLOR` turns it off) |
 
-The exit status is 0; with `--check`, 1 if a problem fails the check; and 2 if the tool could not run (a usage error, a file it cannot read). It is also 2 after a bug of the tool on a line: the output still has what it could say, and standard error tells the bug.
+The exit status is 0; with `--check`, 1 if a problem fails the check; and 2 if the tool could not run (a usage error, a file it cannot read). It is also 2 after a bug of the tool on a line, and for a file nested too deep to read: the output still has what it could say, the other files too, and standard error tells which.
 
 In the text output, a construct is labelled with its keywords and a placeholder for what is left out (`while` *condition* `do` *commands* `done`): the placeholder is in italics and dim with colour, and shown as `‹condition›` without. With `--format json`, `label` is that text and `labelParts` lists the parts (`{ "text": "while" }`, `{ "text": "condition", "placeholder": true }`…).
 

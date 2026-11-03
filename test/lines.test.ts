@@ -9,7 +9,7 @@ import { explainPrintf } from '../src/embedded/format';
 import { explainPerl } from '../src/embedded/perl';
 import { judgeYq, yqSameAsJq } from '../src/embedded/yq';
 import { relativeDate, runGitLog, sampleCommits } from '../src/examples/gitlog';
-import { jqExample } from '../src/examples/jq';
+import { jqExample } from '../src/examples/jqsample';
 import { pipelineExample } from '../src/examples/pipeline';
 import { regexExamples } from '../src/examples/regex';
 import { runAwk } from '../src/examples/awk';

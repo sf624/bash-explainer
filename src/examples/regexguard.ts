@@ -372,7 +372,8 @@ function tooLong(p: Program, text: string, from: number, once: boolean, longest:
  */
 export function charge(cost: number, why?: NotComputedId): void {
   if (!depth) fresh();
-  if ((left -= cost) < 0) refuse(why);
+  // (A cost worked out from what a script gave may be no number, or below zero: nothing a script writes gives back what is left.)
+  if (cost > 0 && (left -= cost) < 0) refuse(why);
 }
 
 /** What a step of a runner costs: about what it takes in time, against a step of the walk. */
@@ -387,6 +388,11 @@ export function runnerStep(steps: number, max: number): void {
 /** A string or array of `size` a runner, or a model's value, is about to make: charged before it is made. */
 export function chargeSize(size: number): void {
   charge(size, 'size-not-computed');
+}
+
+/** A runner's own operation about to read `items` things one by one (a sort's comparisons, a copy's slots): charged before it starts, as a step is. */
+export function chargeWalk(items: number): void {
+  charge(items, 'steps-not-computed');
 }
 
 /**

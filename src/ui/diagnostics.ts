@@ -3,6 +3,7 @@ import { fixTitle, plain } from '../document';
 import type { Fix } from '../fixes';
 import { SEVERITIES } from '../levels';
 import { ExplainService } from '../service';
+import { contained } from '../failures';
 
 /** The source of our diagnostics, by which the hover finds them (src/ui/hover.ts). */
 export const DIAGNOSTIC_SOURCE = 'Bash Explainer';
@@ -46,7 +47,8 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
   private schedule(doc: vscode.TextDocument): void {
     const key = doc.uri.toString();
     clearTimeout(this.timers.get(key));
-    this.timers.set(key, setTimeout(() => this.update(doc), 500));
+    // (A timer's exception reaches no provider's boundary: src/failures.ts.)
+    this.timers.set(key, setTimeout(() => contained('the problems of a document', () => this.update(doc), () => undefined), 500));
   }
 
   private clear(doc: vscode.TextDocument): void {

@@ -32,7 +32,10 @@ export function readsFields(parse: ArgvParse): boolean {
  * option, the letters of a cluster (`-rn`) and of old-style letters (`tar cvf`) each on its own.
  */
 export function givenOptions(parse: ArgvParse): GivenOption[] {
-  const out: GivenOption[] = [];
+  let out = optionsGiven.get(parse);
+  if (out) return out;
+  out = [];
+  optionsGiven.set(parse, out);
   for (const { word, role } of parse.roles) {
     for (const r of role.role === 'cluster' || role.role === 'old-style' ? role.letters : [role]) {
       if (r.role === 'option' || r.role === 'unknown-option') out.push({ word, role: r });
@@ -40,6 +43,9 @@ export function givenOptions(parse: ArgvParse): GivenOption[] {
   }
   return out;
 }
+
+/** Asked for each word of a long command: read once for each parse. A parse does not change once it is read. */
+const optionsGiven = new WeakMap<ArgvParse, GivenOption[]>();
 
 /**
  * The words read as regular expressions that match inside longer text too (`grep "$USER"` finds `bobby` for `bob`):

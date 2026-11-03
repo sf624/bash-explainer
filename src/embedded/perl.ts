@@ -192,14 +192,14 @@ class PerlExplainer {
     if (tr) return this.transliteration(start, end);
     if (/^\/.*\/[a-z]*$/.test(text) || /^m\W/.test(text)) return this.condition(start, end);
     const head = /^[a-z]+/.exec(text)?.[0] ?? '';
-    const atoms = this.atoms(start, end);
+    let atoms = this.atoms(start, end);
     if (['next', 'last', 'redo'].includes(head)) {
       const d = { next: ['この行の処理を終えて次の行へ進む', 'skip to the next line'], last: ['ループを抜ける', 'leave the loop'], redo: ['同じ行をやり直す', 'redo this line'] }[head]!;
       return this.tok(start, end, 'keyword', s(d[0], d[1]), atoms);
     }
     if (FUNCS[head]) {
       // The statement already explains its leading function.
-      atoms.splice(0, atoms.length, ...atoms.filter((t) => t.start !== start));
+      atoms = atoms.filter((t) => t.start !== start);
       const args = text.slice(head.length).trim();
       const what = s(FUNCS[head][0], FUNCS[head][1]);
       return this.tok(start, end, 'command', args ? s(`\`${head}\`: ${what}（\`${args}\`）`, `\`${head}\`: ${what} (\`${args}\`)`) : `\`${head}\`: ${what}`, atoms);

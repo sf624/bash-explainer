@@ -27,6 +27,15 @@ export const intersects = (n: SyntaxNode, line: number) => n.startPosition.row <
 
 /** Whether each line of the node explains only its own part (a block over several lines); otherwise `sub` explains it whole. */
 export function isBlockLike(n: SyntaxNode): boolean {
+  // (Once for a node: a list holds a list on its left, and each level asks of all those under it.)
+  let known = blockLike.get(n);
+  if (known === undefined) blockLike.set(n, (known = readBlockLike(n)));
+  return known;
+}
+
+const blockLike = new WeakMap<SyntaxNode, boolean>();
+
+function readBlockLike(n: SyntaxNode): boolean {
   if (BLOCKS.has(n.type)) return isMultiline(n);
   // (A list of a body over several lines, a newline between its commands, is a block too: `{ a⏎ b & }`.)
   if (n.type === 'command_list' && listOverLines(n)) return true;

@@ -6,6 +6,7 @@ import { STATEMENTS } from '../env';
 import { attribute, merge, option, type ShellState, type Tri, type VariableState, withoutErrexitWhy } from '../shellstate';
 import { ArithError, ExpansionError, type Frame, inShell, numberOfLengths, SUBSTITUTIONS, type Target } from './shared';
 import type { Walker } from './walker';
+import { pushAll } from '../../lists';
 
 /** Where an expression is arithmetic: an arithmetic expansion in it is run with the expression. */
 const ARITH_HOSTS = ['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement'];
@@ -157,7 +158,7 @@ export class WalkExpansions {
     }
     // (Its status is its last command's, or the one `return` gives.)
     end = merge([end, ...target.returns, ...target.aborts, ...target.maybes], this.w.posix);
-    this.w.statement.deferred.push(...target.jumps.map((j) => ({ ...j, st: leave(j.st) })));
+    pushAll(this.w.statement.deferred, target.jumps.map((j) => ({ ...j, st: leave(j.st) })));
     if (reply && !this.w.silent) this.replies.set(c, [...(this.replies.get(c) ?? []), replyText(end.variables.get('REPLY')!)]);
     return leave(end);
   }

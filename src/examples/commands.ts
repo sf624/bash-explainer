@@ -23,6 +23,7 @@ import { bashPrintf, ShellWordsUnsupported } from './shellwords';
 import { commandExample, parseOptions, parseWords, shortKeys, Unsupported as TextFiltersUnsupported } from './textfilters';
 import type { ArgvParse } from '../argv/interpret';
 import { has, values } from '../argv/query';
+import { pushAll } from '../lists';
 
 /** A word of the command line: its text when it is known (`literalContent`), and as written. */
 export interface ExampleWord { value: string | undefined; text: string }
@@ -188,7 +189,7 @@ function getoptExample(words: (string | undefined)[], lang: Lang): Example | und
   }
   for (const [key, v] of p.opts) {
     if (key === 'o') spec.short = v;
-    else if (key === 'l') spec.long.push(...v.split(','));
+    else if (key === 'l') pushAll(spec.long, v.split(','));
     else if (key === 'a') spec.alternative = true;
   }
   // The old form: `getopt OPTSTRING ARGS…`, when no `-o` is given.

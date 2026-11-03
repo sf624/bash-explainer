@@ -3,6 +3,7 @@
 import { staticWordValue } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import { COPY, type WrittenValue } from './written';
+import { pushAll } from '../lists';
 
 /** Whether `n` is in `[[ ]]` (where `-eq` and the others read arithmetic; in `test` and `[`, integers only). */
 export function inExtendedTest(n: SyntaxNode): boolean {
@@ -63,7 +64,7 @@ export function testSplits(writes: (name: string) => readonly WrittenValue[], sp
       if (typeof v !== 'object' || v.appended) return undefined;
       const copy = COPY.exec(v.text)?.[1];
       // (An empty value is the one value with no `fixed`, but no names either; a copy of IFS is one of its own values.)
-      if (v.fixed || !v.names.length) values.push(...(v.each ?? [v.text]).map((text) => ({ text, ...(v.arith ? { arith: v.arith } : {}) })));
+      if (v.fixed || !v.names.length) pushAll(values, (v.each ?? [v.text]).map((text) => ({ text, ...(v.arith ? { arith: v.arith } : {}) })));
       else if (copy && v.names.length === 1) {
         if (!chain.has(copy)) queue.push(copy);
         chain.add(copy);

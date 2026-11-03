@@ -25,6 +25,7 @@ import { staticWordValue } from '../staticword';
 import type { HostId } from '../hosts';
 import type { ShellState, StateModel, Tri } from './state';
 import type { HostCall } from './walk/host';
+import { pushAll } from '../lists';
 
 /** Why a node runs in a subshell. */
 export type SubshellReason = 'parentheses' | 'command-substitution' | 'process-substitution' | 'background' | 'coproc' | 'pipeline-stage';
@@ -189,8 +190,8 @@ export class EnvModel {
 
   /** The subshell links from `n` up to the body of the function that holds it (not that body's base). */
   private within(n: SyntaxNode, def: SyntaxNode): SubshellLink[] {
-    const links: SubshellLink[] = [];
-    for (let x: SyntaxNode = n; x !== def; x = x.parent!) links.unshift(...this.own(x));
+    let links: SubshellLink[] = [];
+    for (let x: SyntaxNode = n; x !== def; x = x.parent!) links = [...this.own(x), ...links];
     return links;
   }
 
@@ -644,7 +645,7 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
       if (value?.spec?.sendsEnv) {
         // (The names the spec reads in the value, `ssh -o SendEnv=NAME`; a value not known here may send any: `*`.)
         const text = w.args[word].value?.slice(value.attached);
-        sends.push(...(text === undefined ? ['*'] : value.spec.sendsEnv(text)));
+        pushAll(sends, (text === undefined ? ['*'] : value.spec.sendsEnv(text)));
       }
       if (role.role === 'operand' && role.spec?.assignment) {
         // (By its value where it is static: `env 'BASH_COMPAT=31' bash -c …`.)

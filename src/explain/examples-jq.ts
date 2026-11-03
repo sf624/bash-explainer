@@ -4,7 +4,8 @@
 // command whose words are explained (`Explainer.command`) and adds the examples to the line.
 import { givenOptions, values } from '../argv/query';
 import { yqSameAsJq } from '../embedded/yq';
-import { jqExample, type JqFormat, jqPrint, jqSample, type Json, parseJsonValues, runJq, slurpLines, toJson, varyJson } from '../examples/jq';
+import { type JqFormat, jqPrint, type Json, parseJsonValues, runJq, toJson, varyJson } from '../examples/jq';
+import { jqExample, jqSample, slurpLines } from '../examples/jqsample';
 import { type InputBox, jqStepSections, type RerunSpec, runAgain } from '../examples/rerun';
 import { type InputSource, knownLines, NO_INPUT, readOrder, shareOut, shownSource, streamLabel } from '../examples/source';
 import { type YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from '../examples/yaml';
@@ -13,6 +14,7 @@ import { wordTable } from '../wordtable';
 import type { Explainer } from './context';
 import { inputSource, interactive } from './examples';
 import { given, optionValues } from './reads';
+import { pushAll } from '../lists';
 
 /**
  * Whether mikefarah/yq's `-r` (`--unwrapScalar`) is on: it prints a string as it is, also in JSON. The last one given
@@ -222,7 +224,7 @@ function yqStreams(cx: Explainer, filter: string, style: YamlStyle, src: InputSo
       // (Values the line gives may make the filter fail, or take too long to run here.)
       const res = runJq(filter, v, vars);
       if (!res || 'error' in res) return;
-      outs.push(...res.outputs);
+      pushAll(outs, res.outputs);
     }
     results.push(outs);
   }

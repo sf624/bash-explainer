@@ -8,7 +8,7 @@ import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
 import { type Note, problemNote } from './messages';
 import type { Head } from './messages-heads';
-import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
+import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, pastWhole, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
 import { networkPath, networkTarget } from './dict/syntax';
 import { bracesInContext } from './semantics/words';
 import { staticWordValue } from './staticword';
@@ -454,7 +454,7 @@ function laterOptions(tree: SyntaxTree, from: number, to: number, version: BashV
   const out: Issue[] = [];
   for (const c of descendants(tree.root, ['command'], { from, to })) {
     const name = field(c, 'name');
-    if (!name || !Object.hasOwn(builtins, name.text)) continue;
+    if (!name || !Object.hasOwn(builtins, name.text) || (from === to && pastWhole(c, from))) continue;
     const prefix = prefixAssignments(c);
     const args = c.namedChildren.filter((x) => x !== name && !prefix.includes(x) && x.field !== 'redirect');
     const parse = interpret(builtins[name.text], args.map(argWord), { name: name.text });

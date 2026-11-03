@@ -12,7 +12,7 @@ import { EMBEDDED, type EmbeddedContext } from '../embedded/registry';
 import type { EmbeddedLang } from '../embedded/types';
 import { awkExample } from '../examples/awk';
 import { dateExample, gitLogExample } from '../examples/commands';
-import { jqReadsInputs } from '../examples/jq';
+import { jqReadsInputs } from '../examples/jqsample';
 import { grepWrap, literalRegex, toJsRegex } from '../examples/regex';
 import type { RerunSpec } from '../examples/rerun';
 import { sedExample, sedPattern } from '../examples/sed';
@@ -20,7 +20,7 @@ import { NO_INPUT } from '../examples/source';
 import { featureWorks } from '../shellfeatures';
 import { type Literal, literalContent, staticWordText } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
-import type { Explainer } from './context';
+import { type Explainer, memoKey } from './context';
 import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
 import { fromEmbedded, same } from './nodes';
@@ -75,6 +75,8 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
 const RUNNERS: Partial<Record<EmbeddedLang, ExampleKind>> = { sed: 'sed', awk: 'awk', jq: 'jq', yq4: 'yq' };
 
 /** The worked example of an embedded text that the explainer read (src/embedded/registry.ts), when its language has one. */
+const SED_EXAMPLE = memoKey<true>('sedExample');
+
 function guardedEmbeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: SyntaxNode): void {
   guardedExample(cx, RUNNERS[lang] ?? 'regex', () => embeddedExample(cx, lang, text, a));
 }
@@ -89,6 +91,10 @@ function embeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: Syn
       break;
     }
     case 'sed': {
+      // (Each -e makes the same example, of the whole script: once for a command.)
+      const made = cx.memo(SED_EXAMPLE);
+      if (made.has(cx.command!.nodes[0])) break;
+      made.set(cx.command!.nodes[0], true);
       // (Each -e script is read with the options given before it: `sed -e 's/a+/x/' -E -e 's/(b)/\1/'` mixes BRE and
       // ERE, which the example, of one script, does not show.)
       const flavors = new Set(values(cx.command!.parse, '-e').map(({ word }) => regexFlavor(cx, word)));

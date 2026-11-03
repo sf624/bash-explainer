@@ -26,6 +26,7 @@ import { ARITH, changesDirectory, underscoreValue, unreliableAt, unreliableNames
 import { operandPattern, operandReplacement, operandWord, replacedMatches, withoutAffix } from './operands';
 import { CONTEXTS, type ContextRule, declarationOf, declaredWord, ownParts, type WordContext } from './wordcontexts';
 import type { Hole } from './fieldshape';
+import { pushAll } from '../lists';
 export { type Char, ifsEscaped, patternOfChars, quotedIfs } from './chars';
 
 export { underscoreValue, unreliableNames };
@@ -172,14 +173,14 @@ export function wordOf(n: SyntaxNode): { nodes: SyntaxNode[]; context: WordConte
   while (w.parent && IN_WORD.has(w.parent.type)) w = w.parent;
   const context = contextOf(w);
   if (!context) return undefined;
+  // (A word of many: the others are not looked at, or a long command would look at them for each.)
+  if (w.field !== 'right') return { nodes: [w], context };
   // `[[ x == $p* ]]`: the right side comes in parts, side by side.
   const siblings = w.parent!.children.filter((c) => c.named);
   let i = siblings.indexOf(w);
   let j = i;
-  if (w.field === 'right') {
-    while (i > 0 && siblings[i - 1].field === 'right' && siblings[i - 1].endIndex === siblings[i].startIndex) i--;
-    while (j + 1 < siblings.length && siblings[j + 1].field === 'right' && siblings[j + 1].startIndex === siblings[j].endIndex) j++;
-  }
+  while (i > 0 && siblings[i - 1].field === 'right' && siblings[i - 1].endIndex === siblings[i].startIndex) i--;
+  while (j + 1 < siblings.length && siblings[j + 1].field === 'right' && siblings[j + 1].startIndex === siblings[j].endIndex) j++;
   return { nodes: siblings.slice(i, j + 1), context };
 }
 
@@ -666,7 +667,7 @@ class Evaluator {
         : (c.type === 'arithmetic_expansion' || integerParameter(c) !== undefined) && elements());
       const p = split ? this.hole!(c, false) : this.pieces(c, true);
       if (!p) return undefined;
-      out.push(...p);
+      pushAll(out, p);
       at = c.endIndex;
     }
     flush(to);
@@ -883,7 +884,7 @@ function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, ex
     for (const f of split) {
       const g = globField(w, f, env);
       if (!g) return unknown;
-      fields.push(...g);
+      pushAll(fields, g);
     }
     if (w.rule.fields === 'one-or-error' && fields.length !== 1) return { error: 'ambiguous-redirect', failure: { kind: 'command', applies: true } };
     return { fields };
@@ -905,7 +906,7 @@ function splitFields(w: WordMeaning, ev: Evaluator): Char[][] | undefined {
     if (!pieces) return undefined;
     const split = splitPieces(w, pieces);
     if (!split) return undefined;
-    out.push(...split);
+    pushAll(out, split);
   }
   return out;
 }
@@ -945,7 +946,7 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: WalkSource, as: 'f
     for (const f of split) {
       const g = globField(w, f, undefined);
       if (!g) return undefined;
-      fields.push(...g);
+      pushAll(fields, g);
     }
     return fields;
   } catch (e) {
@@ -978,8 +979,12 @@ function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator,
       if (t && w.rule.tilde !== 'none' && (t[0].length < r.text.length || (i === parts.length - 1 && !r.empty))) {
         const home = ev.tilde(t[1]);
         if (home === undefined && !hole) return undefined;
-        out.push(...(home === undefined ? hole!(true, undefined, t[0]) : [{ text: home, quoted: true, expanded: false }]), ...plain(r.text.slice(t[0].length)));
-      } else out.push(...plain(r.text), ...(r.empty ? [{ text: '', quoted: true, expanded: false }] : []));
+        pushAll(out, home === undefined ? hole!(true, undefined, t[0]) : [{ text: home, quoted: true, expanded: false }]);
+        pushAll(out, plain(r.text.slice(t[0].length)));
+      } else {
+        pushAll(out, plain(r.text));
+        if (r.empty) out.push({ text: '', quoted: true, expanded: false });
+      }
       continue;
     }
     const tildes = w.tildes.filter((t) => t.node === n);
@@ -988,15 +993,16 @@ function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator,
       for (const t of tildes) {
         const v = ev.tilde(t.user);
         if (v === undefined && !hole) return undefined;
-        out.push(...plain(n.text.slice(at, t.start)), ...(v === undefined ? hole!(true, undefined, n.text.slice(t.start, t.end)) : [{ text: v, quoted: true, expanded: false }]));
+        pushAll(out, plain(n.text.slice(at, t.start)));
+        pushAll(out, v === undefined ? hole!(true, undefined, n.text.slice(t.start, t.end)) : [{ text: v, quoted: true, expanded: false }]);
         at = t.end;
       }
-      out.push(...plain(n.text.slice(at)));
+      pushAll(out, plain(n.text.slice(at)));
       continue;
     }
     const p = ev.pieces(n, false) ?? hole?.(QUOTES.has(n.type), n);
     if (!p) return undefined;
-    out.push(...p);
+    pushAll(out, p);
   }
   return out;
 }

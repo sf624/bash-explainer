@@ -9,6 +9,7 @@ import { braceKind, joinedText, type SyntaxNode } from '../syntax/tree';
 import { assignmentHead, ownParts } from './wordcontexts';
 import type { Tri } from './state';
 import type { Applies, ExpansionStep, WordMeaning } from './words';
+import { pushAll } from '../lists';
 
 /** The plain words of a word that are brace expressions (`{a,b}`, `{1..3}`). */
 export function bracedWords(plain: readonly SyntaxNode[]): SyntaxNode[] {
@@ -145,7 +146,7 @@ function alternativesOf(n: SyntaxNode, version: BashVersion | undefined): BraceA
     else {
       const words = item ? alternativesOf(item, version) : [['']];
       if (!words) return null;
-      out.push(...words);
+      pushAll(out, words);
       item = undefined;
     }
   }

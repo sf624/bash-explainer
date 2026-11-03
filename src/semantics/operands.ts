@@ -5,6 +5,7 @@ import type { Shell } from '../shellfeatures';
 import { ansiCWordValue } from '../staticword';
 import { charge, longestExec } from '../examples/regexguard';
 import { hasExtglob } from '../examples/shellwords';
+import { pushAll } from '../lists';
 
 /** A piece of the text of a `${…}` operand: quoted or not, from the source or from an expansion in it. */
 export interface Seg { text: string; quoted: boolean }
@@ -53,7 +54,8 @@ export function operandSegs(text: string, quoted: boolean, param: (name: string)
       if (end < 0) return undefined;
       const inner = operandSegs(text.slice(i + 1, end), true, param, shell);
       if (!inner) return undefined;
-      out.push({ text: '', quoted: true }, ...inner);
+      out.push({ text: '', quoted: true });
+      pushAll(out, inner);
       i = end;
     } else out.push({ text: c, quoted });
   }
@@ -75,7 +77,7 @@ export function operandWord(text: string, quoted: boolean, ev: OperandValues, as
   const out: { text: string; quoted: boolean; expanded: boolean }[] = [];
   const segs = (t: string): boolean => {
     const got = operandSegs(t, quoted, ev.param, ev.w.shell);
-    out.push(...(got ?? []).map((g) => ({ text: g.text, quoted: g.quoted || quoted, expanded: true })));
+    pushAll(out, (got ?? []).map((g) => ({ text: g.text, quoted: g.quoted || quoted, expanded: true })));
     return !!got;
   };
   let at = 0;

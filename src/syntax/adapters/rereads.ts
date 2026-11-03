@@ -1,3 +1,4 @@
+import { pushAll } from '../../lists';
 // What the unbash adapter (./unbash.ts) reads in unbash's AST before it builds the tree: the errors of a script, and the
 // process substitutions that unbash ends a word at, which the adapter has it read again. It works on the shape of the
 // AST only (given the walk of its children), since only ./unbash.ts may import unbash.
@@ -34,7 +35,7 @@ export function walk(script: AstNode, children: Children, visit: (n: AstNode) =>
 export function scriptErrors<E extends AstError>(script: AstNode, children: Children): E[] {
   const errors: E[] = [];
   walk(script, children, (n) => {
-    if (n.type === 'Script') errors.push(...((n.errors ?? []) as E[]));
+    if (n.type === 'Script') pushAll(errors, ((n.errors ?? []) as E[]));
   });
   return errors;
 }

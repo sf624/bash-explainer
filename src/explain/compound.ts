@@ -22,14 +22,15 @@ import { groupSubshell } from './where';
 import { casePattern } from './words';
 import type { Text } from '../i18n';
 import type { TokenTextArgs, TokenTextId } from '../messages-tokens';
+import { pushAll } from '../lists';
 
 /** Children (keywords and named nodes, the lists of commands of a body as one) in source order, filtered to the current line. */
 function ordered(cx: Explainer, n: SyntaxNode, skip: (c: SyntaxNode) => boolean = () => false): Token[] {
   const out: Token[] = [];
   for (const c of withLists(n)) {
     if (skip(c)) continue;
-    if (c.named) out.push(...cx.sub(c));
-    else out.push(...anonOnLine(cx, [c]));
+    if (c.named) pushAll(out, cx.sub(c));
+    else pushAll(out, anonOnLine(cx, [c]));
   }
   return out;
 }

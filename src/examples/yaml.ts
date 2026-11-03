@@ -1,5 +1,6 @@
 import type { Json } from './jq';
 import { Unsupported as RunnerUnsupported } from './unsupported';
+import { pushAll } from '../lists';
 
 /** Whose YAML: mikefarah/yq (yaml.v3, YAML 1.2) or kislyuk/yq (PyYAML, YAML 1.1). */
 export type YamlStyle = 'mikefarah' | 'kislyuk';
@@ -73,7 +74,7 @@ export function yqYamlOutput(values: Json[], style: YamlStyle): string[] {
   const out: string[] = [];
   values.forEach((v, i) => {
     if (i) out.push('---');
-    out.push(...yamlLines(v, style));
+    pushAll(out, yamlLines(v, style));
   });
   const last = values[values.length - 1];
   // PyYAML ends a document that is a single plain (unquoted) scalar with `...`.

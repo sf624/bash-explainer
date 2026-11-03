@@ -270,8 +270,9 @@ function describe(n: FindNode, lang: Lang): string {
   const s = pick(lang);
   switch (n.type) {
     case 'primary': return phrase(n, lang);
-    case 'not': return s(`「${describe(n.child, lang)}」ではない`, `not (${describe(n.child, lang)})`);
-    case 'group': return s(`（${describe(n.child, lang)}）`, `(${describe(n.child, lang)})`);
+    // (What is inside once: as an argument of each language it would be read twice for each level.)
+    case 'not': { const inner = describe(n.child, lang); return s(`「${inner}」ではない`, `not (${inner})`); }
+    case 'group': { const inner = describe(n.child, lang); return s(`（${inner}）`, `(${inner})`); }
     // Only at the top or in `( )`: `-o` binds the loosest.
     case 'or': return n.children.map((c) => describe(c, lang)).join(s('、または ', '; or '));
     case 'list': return n.children.map((c) => describe(c, lang)).join(s('。次に ', ', then '));
