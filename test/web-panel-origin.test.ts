@@ -2,8 +2,8 @@
 // Run for real in headless Chromium (test/support/site.ts), with requests outside this machine blocked: an update from
 // another origin (`localhost` against 127.0.0.1) is ignored, whether it is posted to the panel's frame or to the page
 // that holds it, and the same update from the panel's own origin is shown (the control). The panel also draws its
-// updates when VS Code's preload has hidden `window.parent`, `window.top` and `window.frameElement` from it, as the
-// versions before 1.103 do (by `delete`) and the later ones (by assignment).
+// updates when VS Code's preload has deleted or replaced `window.parent`, `window.top` and `window.frameElement`, as the
+// versions before 1.103 do (by `delete`) and the later ones (by assignment, which replaces `parent` only).
 import * as assert from 'assert';
 import * as http from 'http';
 import type { AddressInfo } from 'net';
@@ -123,8 +123,9 @@ describe('the panel: messages and links', function () {
     }
   });
 
-  // What VS Code's preload does to the panel's page: `pre/index.html` deletes the three properties up to VS Code 1.102
-  // and assigns them from 1.103 (where the assignment changes nothing, as `parent` and `top` are read-only).
+  // What VS Code's preload does to the panel's page (`pre/index.html`): it deletes the three properties up to VS Code
+  // 1.102, and assigns them from 1.103. The assignment replaces `parent` (with the window itself) and leaves `top` and
+  // `frameElement` as they are.
   const PRELOADS: Record<string, string> = {
     'deleted (VS Code 1.85 to 1.102)': 'delete window.parent; delete window.top; delete window.frameElement;',
     'assigned (VS Code 1.103 and later)': 'window.parent = window; window.top = window; window.frameElement = null;',

@@ -179,9 +179,12 @@ describe('Bash Explainer in VS Code', function () {
     this.timeout(120000);
     await open(fixture('sample.sh'));
     await vscode.commands.executeCommand('bashExplainer.openPanel');
+    // Asked for after this test opened the panel: the answer carries the number, so it is about this panel.
+    const request = String(Date.now());
+    fs.writeFileSync(path.join(dir, 'panel-request.txt'), request);
     const file = path.join(dir, 'panel-check.txt');
-    const result = await until('the panel to be read', () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''), Boolean, 100000);
-    assert.strictEqual(result, 'ok');
+    const result = await until('the panel to be read', () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''), (r) => r.startsWith(request), 80000);
+    assert.strictEqual(result, `${request} ok`);
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });
 

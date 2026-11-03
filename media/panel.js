@@ -149,9 +149,9 @@
     themeTimer = setTimeout(postThemeBase, 50);
   }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
-  // Messages come only from the panel's own origin (VS Code's webview host and the web page have it). The sender is not
-  // asked for: the webview host hides `window.parent` and `window.frameElement` from the panel, in ways that differ between
-  // VS Code versions.
+  // Messages come only from the panel's own origin (VS Code's webview host and the web page have it). The sender window is
+  // not asked for: the webview host changes what the panel sees of `window.parent` and `window.frameElement`, and
+  // differently between VS Code versions (deleted up to 1.102; from 1.103 `parent` is the window itself).
   window.addEventListener('message', (event) => {
     if (event.origin !== location.origin) return;
     const msg = event.data;
