@@ -8,10 +8,13 @@ export const scoped = spawnSync('systemd-run', ['--user', '--scope', '-q', 'true
 
 /**
  * Kills every process of the session `sid` (its leader's pid), whatever process group it is in. The session outlives its
- * leader: it lasts as long as one of its processes.
+ * leader: it lasts as long as one of its processes. `pkill` is not atomic: a process that forks meanwhile can survive a
+ * pass, so it is repeated while it kills something (it exits 1 when nothing matches), a few times at most.
  */
 export function killSession(sid: number): void {
-  spawnSync('pkill', ['-KILL', '-s', String(sid)]);
+  for (let i = 0; i < 20; i++) {
+    if (spawnSync('pkill', ['-KILL', '-s', String(sid)]).status !== 0) return;
+  }
 }
 
 /** The pids of the processes whose working directory or command line is in `dir` (the leaks a test looks for). */
@@ -35,10 +38,13 @@ export function processesIn(dir: string): number[] {
  * `systemd-run --user` works, under `timeout`, spawned in a process group of its own and killed as a group if it
  * outlives `ms`, so that a script that forks without end cannot fill the machine.
  *
- * Nothing the run started outlives it: a process that made a group of its own (`timeout` does) is out of reach of the
- * group kill, and stays when the run's shell is killed before it kills it. So the run is a session (`detached`), every
- * process of which is killed at the end (`killSession`), and the scope has a lifetime of its own, as a backstop for
- * a test process that is itself killed.
+ * What the run starts does not outlive it, in a process group of its own too (`timeout` makes one, out of reach of the
+ * group kill): the run is a session (`detached`), every process of which is killed when the shell ends or on a timeout
+ * (`killSession`). A process that leaves the session (`setsid`) is not reached by that; only the scope's lifetime
+ * (`RuntimeMaxSec`, which also covers a test process that is itself killed) ends it, and only where `systemd-run` works.
+ *
+ * Because the session is killed as soon as the shell ends, output that a process left running would still write
+ * (`echo hi > >(sleep 0.3; cat)`, `(sleep 0.3; echo late) &`) is lost; no caller relies on it.
  */
 export function runContained(argv: string[], cwd: string, env: NodeJS.ProcessEnv = {}, ms = 20000): Promise<ContainedRun> {
   const seconds = String(Math.ceil(ms / 1000));
