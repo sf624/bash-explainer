@@ -34,7 +34,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
-- `set -o posix` then `time -p $x` no longer stops the explanation with an error, and in POSIX mode every `time` followed by a word that starts with `-` (`time -- cmd`, `time -x cmd`, not after a line continuation) is explained as the program `time`, as bash reads it. Before, only `time -p` was.
+- `set -o posix` then `time -p $x` (or `time -p x=1`) no longer stops the explanation with an error. In POSIX mode, `time -- cmd` and `time -x cmd` are now explained as the program `time`, as bash runs them. Before, only `time -p` was.
 - A script with `$(a && b)` or `$(a || b)` in a here-document no longer stops the explanation with an error, and the `$( )` in a here-document shows its operators (`&&`, `|`, `;`, `then`).
 - "In short" keeps the status of a pipeline when the line's problem is about something else, such as a variable lost in a stage's subshell. Before, it left the status out.
 - `cmd 2>&1 >o 2>e` and `cmd 2>&1 >o |& tee x` no longer say that stderr goes to the original stdout: it goes to `e`, and to `o`.
