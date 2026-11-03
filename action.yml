@@ -46,7 +46,7 @@ outputs:
   errors:
     description: >-
       The number of errors: lines that fail every time as written, and constructs the shell lacks.
-      Needs a command-line tool with --counts, a release after 0.9.0 (see `package`); 0 with an older one.
+      Needs a command-line tool with --counts, a release after 0.9.1 (see `package`); 0 with an older one.
     value: ${{ steps.check.outputs.errors }}
   warnings:
     description: >-
