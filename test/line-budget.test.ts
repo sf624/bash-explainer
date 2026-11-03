@@ -432,6 +432,11 @@ describe('one line must not stop the whole tool', () => {
       assert.match(JSON.stringify(explain(`jq -n 'null | .[2] = 1'`).examples[0].sections), /null/);
     });
 
+    it('a value the line gives that the runner does not take: no example, and what a sample of `ps` gives is not its input', () => {
+      assert.deepStrictEqual(explain(`yq '. * 1e1000' <<< '"ab"'`, 0, { yqFlavor: 'kislyuk' }).examples, []);
+      assert.doesNotMatch(JSON.stringify(explain('sort <(ps aux)').examples), /USER/);
+    });
+
     it('a regex of the syntax of another engine: no example, and no failure', () => {
       assert.deepStrictEqual(explain(`jq -R 'test("^(?i)foo")'`).examples, []);
       assert.throws(() => scriptRegex('^(?i)foo'), SyntaxError);
