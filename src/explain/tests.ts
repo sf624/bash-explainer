@@ -321,6 +321,10 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
   const plain = (x: SyntaxNode) => !bracketPart(x) && ((isPlainWord(x) && !(inArithmetic(n) && arithNumber(cx, x))) || (x.type === 'extglob_pattern' && rights.length === 1 && !hasGlob(x.text)));
   // The grammar leaves some patterns as words (`*.txt`, `--?(a)b`, `-@(!(-*)e*|-edit)`); on the right of `==` in `[[ ]]` they are patterns all the same.
   const pattern = (x: SyntaxNode) => x.type === 'word' && ['=', '==', '!='].includes(op) && hasGlob(x.text) && !!ancestor(n, (a) => a.type === 'extended_test');
+  // (`&&`, `||`, `-a` and `-o` join tests: every operand is walked once, here, and not again for the operands below, which would double the walk at each level.)
+  if (!inArithmetic(n) && binaryTestOps[op] && (op === '&&' || op === '||' || op === '-a' || op === '-o')) {
+    return cx.tok(n, 'test', cx.t(binaryTestOps[op]), cx.subs([left, ...rights]));
+  }
   const operands = sortTokens([
     ...cx.subs([left, ...rights].filter((x) => x && !plain(x) && !pattern(x))),
     ...rights.filter(pattern).map((x) => globToken(cx, x, 'value')),
@@ -338,9 +342,6 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
   }
   if (!inArithmetic(n) && binaryTestOps[op]) {
     const num = numericTestNote(cx, op, [n.namedChildren[0].text, rightText], true);
-    if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
-      return cx.tok(n, 'test', cx.t(binaryTestOps[op]), cx.subs([left, ...rights]));
-    }
     // (A pattern with no wildcard matches only itself: `[[ $x == 1 ]]` is a plain comparison, which the row of `==`
     // says in Reading; from the word model, as nocasematch and a quoted `*` decide it.)
     const plain = extendedEqualOps[op] && plainPatternText(rights[0], cx.state) !== undefined ? cx.t(plainPatternOps.condition[op]) : undefined;

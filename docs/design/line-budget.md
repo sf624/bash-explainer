@@ -42,7 +42,7 @@ All costs are in the steps of the regex engine (`walk`, src/examples/regexguard.
 | Limit | Value | Of what |
 | --- | --- | --- |
 | `LIMIT` | 1e7 | one `guarded` (one example) |
-| `LINE_LIMIT` | 3e7 | all the examples of one line (`withinLine`) and, again, all the results of their panels (`guardedResult`) |
+| `LINE_LIMIT` | 3e7 | all the examples of one line, or of one statement over several lines, which is walked once (`withinLine`), and, again, all the results of their panels (`guardedResult`) |
 | `DOCUMENT_LIMIT` | 2e9 | the examples of all lines: a line's limit is a share of it, by the document's lines of code |
 | `MODEL_LIMIT` | 1e7 | one thing a model works out (`guardedApart`) |
 | `DOCUMENT_MODEL_LIMIT` | 6e7 | a share of it for each place one can be: a `${`, a test's `==`, a `)`, a line. Never less than 2e4, what an ordinary `${f%.*}` takes: past that, a very long script costs by its size. An expansion refused once is not run again with the same values (`ValueSource.refused`) |
@@ -92,7 +92,7 @@ Measured under tsx, on the maintainer's machine, before and after:
 | 3000 ordinary lines of 90 characters: problems; all lines' explanations | 17 s; 13 s | 9 s; 10 s |
 | the corpus, en and ja | 20 s | 16 s, byte-identical |
 
-So a line costs at most 3e7 steps of examples, 3e7 of results and its share of 6e7 of the models: 0.1 to 1 s by the kind of pattern, on top of the explanation itself. No line of the corpus is refused.
+So a line, or a statement over several lines (one walk, one budget), costs at most 3e7 steps of examples, 3e7 of results and its share of 6e7 of the models: 0.1 to 1 s by the kind of pattern, on top of the explanation itself. The total stays bounded because the limit is a share of the document's, by its lines of code: a statement has at least one, so all the statements together stay within `DOCUMENT_LIMIT` (2e9) for the examples and again for the results. No line of the corpus is refused.
 
 ## Reading once
 
@@ -105,7 +105,8 @@ The explanation of a line, without its examples, charges nothing. So what it doe
 | `alias c='b; b'`, 40 levels | each expansion expands the next | past 15 s | at most 20,000 expansions, then nothing is trusted |
 | `f2() { f1; f1; }`, 1000 levels | the states an error may end in doubled | past 15 s | 1 s: each state once |
 | `a && a && …` 2,000 times, and the lines around it | the walk ran out of stack, and was built again for each line | each line failed | one model that knows nothing, built once; that line says it is too deep, the others stand |
-| `sudo sudo …`, `command command …` | each reads all the words after it | 400 levels 14 s | past 16 commands of a line (8 of `command`) the words are only words, and say that this tool does not read them. The limit costs what it reads: 400 levels 1.2 s at 16, 2.2 s at 64, no 2^n |
+| `[[ a && a && … ]]`, `\|\|`, `[ a -a a -a … ]` | each level walked its operands twice (`binary`, src/explain/tests.ts) | 20 operands 5 s, 24 operands 80 s | 40 operands in milliseconds: each operand once |
+| `sudo sudo …`, `command command …` | each reads all the words after it | 400 levels 14 s | past 16 commands that each run the next (the 17th says so, for `command` as for `sudo`), the words are only words, and say that this tool does not read them. (The model's own walk past `command` and `builtin` stops at 8 levels, `MAX_WRAPPERS`, and knows no command name there; that says nothing.) The limit costs what it reads: 400 levels 1.2 s at 16, 2.2 s at 64, no 2^n |
 | `eval eval …` | a string read in a string | past 15 s at 4,000 | as deep as the walk reads strings (8), then nothing is trusted |
 | `sed -e … -e …` | each makes the example of the whole script | 400 times 9 s | 4,000 times 2 s |
 | `bash -c 'bash -c …'`, `'a'\''b'…` | the parts of a word looked at for each part | 10 levels past 25 s | 1 s |
@@ -128,7 +129,7 @@ The output of the command-line tool is what it was: a statement's token is print
 
 ## What it does not bound
 
-The walk of a line, with no examples, is not refused, and the models and the problems run over all the lines. That grows with the size of the text, on purpose: about 1 ms for each word of a line (under tsx), so a line of 4,000 words takes seconds, `a&` 100,000 times (200 KB) about 30 s, and each of 250,000 lines 1 to 2 ms. A very long line, or a very long file, keeps the thread that long. It is linear; no input known makes it worse, but nothing proves there is none, as nothing charges it. One square is known and left: the readings of a command's words that may give no word (src/argv/readings.ts, `contexts`) read the run's words for each word, so `echo $a0 $a1 …` of 4,000 such words takes 8 s, in the one walk of the statement.
+The walk of a line, with no examples, is not refused, and the models and the problems run over all the lines. That grows with the size of the text, on purpose: about 1 ms for each word of a line (under tsx), so a line of 4,000 words takes seconds, `a&` 100,000 times (200 KB) about 30 s, and each of 250,000 lines 1 to 2 ms. A very long line, or a very long file, keeps the thread that long. It is linear but for the squares known and left, and nothing proves there are no others, as nothing charges the walk. One: the readings of a command's words that may give no word (src/argv/readings.ts, `contexts`) read the run's words for each word, so `echo $a0 $a1 …` of 4,000 such words takes 8 s, in the one walk of the statement. Another: a problem on every line of one statement, `rm \<newline> $a0 \<newline> …`, takes 0.4 s at 500 lines, 4 s at 2,000, and 8,000 did not finish in 200 s (the argv interpreter's reading of the other operands, `tokenErrorNotes`, `markTokens`; the roadmap, Deferred, lists them).
 
 ### Whether counting is enough
 

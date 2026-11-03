@@ -4,7 +4,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import { PassThrough } from 'stream';
-import { Analyzer, type LineExplanation } from '../src/analyzer';
+import { Analyzer, type LineExplanation, type Token } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
 import { deadCodeHints, documentIssues, explainDocumentLine, type ShellDocument } from '../src/document';
 import { openDocument } from '../src/document-setup';
@@ -605,6 +605,33 @@ describe('one line must not stop the whole tool', () => {
       assert.deepStrictEqual(runJq('{a:(1,2),b:(3,4)}|.a+.b', null), { outputs: [4, 5, 5, 6] });
     });
 
+    it('tests joined by `&&`, `||`, `-a` and `-o`: each operand is walked once, and the explanation is as it was', function () {
+      this.timeout(30000);
+      const rows = (t: Token, depth = 0): string[] => [`${' '.repeat(depth)}${t.explanation}`, ...t.children.flatMap((c) => rows(c, depth + 1))];
+      const short = (script: string) => explain(script).items.flatMap((t) => rows(t)).slice(1);
+      assert.deepStrictEqual(short('[[ -f a && -d $b || -z c ]]'), [
+        ' either condition is true',
+        '  both conditions are true',
+        '   Condition: `a` is an existing regular file',
+        '   Condition: `$b` is an existing directory',
+        '    Expands to the value of `b`',
+        '  Condition: `c` is an empty string']);
+      assert.deepStrictEqual(short('[ -f a -a -d b -o -z c ]').slice(0, 6), [
+        ' Command `[` (an alias of `test`)',
+        ' either is true (OR, obsolescent)',
+        '  both are true (AND, obsolescent)',
+        '   Condition: `a` is an existing regular file',
+        '   Condition: `b` is an existing directory',
+        '  Condition: `c` is an empty string']);
+      // (Walking each operand twice at each level is 2^n: 40 operands would never end. A walk of 40 takes a few milliseconds.)
+      for (const op of ['&&', '||']) {
+        const started = Date.now();
+        const items = explain(`[[ ${Array(40).fill('-n "$a"').join(` ${op} `)} ]]`).items;
+        assert.ok(Date.now() - started < 5000, op);
+        assert.strictEqual(items.flatMap((t) => rows(t)).filter((r) => r.trim().startsWith('Condition: `"$a"`')).length, 40);
+      }
+    });
+
     it('aliases that double: a walk follows so many, and then trusts nothing', () => {
       const lines = Array.from({ length: 16 }, (_, i) => `alias a${i + 1}='a${i}; a${i}'`);
       const script = `shopt -s expand_aliases\n${lines.join('\n')}\na16\n`;
@@ -693,6 +720,63 @@ describe('one line must not stop the whole tool', () => {
       } finally {
         fs.rmSync(worst);
         fs.rmSync(other);
+        fs.rmdirSync(dir);
+      }
+    });
+
+    it('the command-line tool: a file not read says so whichever line is asked, in a host or after a blank first line', async function () {
+      this.timeout(60000);
+      const deep = 'coproc '.repeat(5e4);
+      const dir = fs.mkdtempSync(`${os.tmpdir()}/line-budget-`);
+      const files: Record<string, string> = {
+        'dq.Dockerfile': `FROM x\nRUN ${deep}\n`,
+        'README.md': `# Title\n\n\`\`\`bash\n${deep}\n\`\`\`\n`,
+        'blank.sh': `\n${deep}\n`,
+      };
+      const cli = async (...argv: string[]) => {
+        let out = '';
+        let err = '';
+        const status = await main([...argv, '--no-config', '--no-color'], { stdout: (s) => { out += s; }, stderr: (s) => { err += s; }, env: {}, isTTY: false });
+        return { out, err, status };
+      };
+      try {
+        for (const [name, text] of Object.entries(files)) {
+          const path = `${dir}/${name}`;
+          fs.writeFileSync(path, text);
+          const plain = await cli(path);
+          assert.strictEqual(plain.status, 2, name);
+          assert.strictEqual(plain.out, `${path}: ${NOT_READ}\n`, name);
+          assert.match(plain.err, /1 file could not be read/, name);
+          const json = await cli('--format', 'json', path);
+          assert.strictEqual(json.status, 2, name);
+          assert.deepStrictEqual((JSON.parse(json.out) as { file: string; line: number; explanation: { notes: string[] } }[]).map((r) => [r.file, r.line, r.explanation.notes]), [[path, 1, [NOT_READ]]], name);
+          const markdown = await cli('--format', 'markdown', path);
+          assert.strictEqual(markdown.status, 2, name);
+          assert.match(markdown.out, /could not be read/, name);
+          assert.ok(!markdown.out.includes(deep), name);
+          const check = await cli('--check', '--format', 'json', path);
+          assert.strictEqual(check.status, 2, name);
+          assert.deepStrictEqual((JSON.parse(check.out) as { code: string; line: number }[]).map((r) => [r.code, r.line]), [['file-not-read', 1]], name);
+        }
+      } finally {
+        for (const name of Object.keys(files)) fs.rmSync(`${dir}/${name}`);
+        fs.rmdirSync(dir);
+      }
+    });
+
+    it('the command-line tool: a line range past the end of a file leaves the array of --format json closed, and the status 2', async () => {
+      const dir = fs.mkdtempSync(`${os.tmpdir()}/line-budget-`);
+      const file = `${dir}/a.sh`;
+      fs.writeFileSync(file, 'echo a\necho b\n');
+      try {
+        let out = '';
+        let err = '';
+        const status = await main(['--format', 'json', file, `${file}:50`, '--no-config', '--no-color'], { stdout: (s) => { out += s; }, stderr: (s) => { err += s; }, env: {}, isTTY: false });
+        assert.strictEqual(status, 2);
+        assert.deepStrictEqual((JSON.parse(out) as { line: number }[]).map((r) => r.line), [1, 2]);
+        assert.match(err, /a\.sh has \d+ lines/);
+      } finally {
+        fs.rmSync(file);
         fs.rmdirSync(dir);
       }
     });
@@ -1049,9 +1133,12 @@ describe('one line must not stop the whole tool', () => {
       assert.deepStrictEqual(output('cut -d, -f70 a.csv').slice(0, 3), ['f70', 'f70', 'f70']);
       assert.ok(output('sort -t, -k70 a.csv').every((l) => l.split(',').length === 70));
       assert.ok(output("perl -lane 'print $F[70]' a.csv").every((l) => l !== ''));
-      assert.ok(output('cut -f 4095 a').every((l) => l === 'f4095'));
+      // (Up to 4,096 columns, as the documents say: `-f4096` is the last of them.)
+      for (const n of [4095, 4096]) assert.ok(output(`cut -f ${n} a`).every((l) => l === `f${n}`), `${n}`);
+      assert.ok(output('sort -k 4096 a').length);
+      assert.ok(output("perl -lane 'print $F[4095]' a").length);
       // (Past what a sample can be, it says that no sample was made, and shows no output.)
-      for (const script of ['cut -f 5000 a', 'cut -f 1000000000', 'sort -k 5000 a', 'sort -k 1000000000', "perl -lane 'print $F[5000]' a", "perl -lane 'print $F[1000000000]' a"]) {
+      for (const script of ['cut -f 4097 a', 'cut -f 5000 a', 'cut -f 1000000000', 'sort -k 4097 a', 'sort -k 5000 a', 'sort -k 1000000000', "perl -lane 'print $F[4096]' a", "perl -lane 'print $F[5000]' a", "perl -lane 'print $F[1000000000]' a"]) {
         const [example] = explain(script).examples;
         assert.match(example.note ?? '', /too large/, script);
         assert.deepStrictEqual(example.sections.flatMap((x) => x.lines), [], script);
