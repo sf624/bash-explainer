@@ -13,7 +13,8 @@ import { failsCheck, LEVELS, type ProblemSeverity, problemLevel, SEVERITIES } fr
 import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { explained, type NoteBasis, noteBasis, noteRefs, notesByLevel, partBasis, refsText, toPlainMarkdown, wordsMarkdown } from '../src/ui/render';
+import { noteBasis, noteRefs, notesByLevel, refsText, toPlainMarkdown, wordsMarkdown } from '../src/ui/render';
+import { type NoteBasis, rowPlain, tokenRow } from '../src/ui/tokenRow';
 import { ui } from '../src/ui/texts';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
@@ -321,14 +322,15 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
     based(noteBasis(ex, n, lang), '    ');
   }
   const walk = (t: Token, depth: number) => {
+    const r = tokenRow(t, lang);
     // Code parts in the colour of the kind; a placeholder in italics and dim (or ‹name› when there is no colour).
-    const label = joinParts(labelParts(t), (p) => (p.placeholder
+    const label = joinParts(r.labelParts, (p) => (p.placeholder
       ? (color ? `${sgr('2;3')}${p.text}${sgr('0')}` : `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}`)
-      : paint(ANSI[t.kind], p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
-    out.push(`${'  '.repeat(depth + 1)}${label}  ${explained(t).replace(/`/g, '')}${refs(t.refs)}`);
+      : paint(ANSI[r.kind], p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
+    out.push(`${'  '.repeat(depth + 1)}${label}  ${rowPlain(r).replace(/`/g, '')}${refs(r.refs)}`);
     // (The value of an expansion where it runs, on a line of its own: its backticks are kept, as they mark where each word starts and ends.)
-    if (t.value) out.push(`${'  '.repeat(depth + 2)}${paint('90', '=')} ${pictureText(t.value.said.text)}`);
-    based(partBasis(t, lang), '  '.repeat(depth + 2));
+    if (r.value) out.push(`${'  '.repeat(depth + 2)}${paint('90', '=')} ${pictureText(r.value.said.text)}`);
+    based(r.basis, '  '.repeat(depth + 2));
     for (const c of t.children) walk(c, depth + 1);
   };
   for (const t of ex.items) walk(t, 0);

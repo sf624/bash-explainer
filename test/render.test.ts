@@ -165,8 +165,8 @@ describe('links to the Bash manual', () => {
     assert.match(plainPartHover(prefix, [prefix.items[0]], 'en', ''), /^- `UID=0` — .*\\\n {2}_Differs from the manual · checked with bash 5\.2 and 5\.3 · Try it in your terminal: /m);
     // The panel's rows and Reading's nodes, with the chip's words in the panel's language.
     const msg = panelUpdate({ lang: 'ja', explanation: new Analyzer('ja').explainLine(parser.parse('BASH_XTRACEFD=7'), 0, 'bash', { reading: true }), file: 'a.sh', line: 0, lineText: 'BASH_XTRACEFD=7', choice: {}, detected: said('bash'), placement: 'first', animations: true });
-    const shown = msg.explanation.items[0] as { basisShown?: { label: string; tryIt: { output: string } } };
-    assert.deepStrictEqual([shown.basisShown?.label, shown.basisShown?.tryIt.output], ['マニュアルの記述と異なる・bash 5.2・5.3 で確認', 'fd 3 is still open']);
+    const shown = msg.rows[0];
+    assert.deepStrictEqual([shown.basis?.label, shown.basis?.tryIt.output], ['マニュアルの記述と異なる・bash 5.2・5.3 で確認', 'fd 3 is still open']);
     assert.ok(readingNodes(msg.reading!.root).some((n) => (n as { basisShown?: unknown }).basisShown));
     // With the setting off, none.
     const off = new Analyzer('en').explainLine(parser.parse('BASH_XTRACEFD=7'), 0, 'bash', { basis: false });

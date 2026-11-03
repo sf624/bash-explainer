@@ -256,14 +256,14 @@
     reading = msg.reading?.root ?? null;
     lineSteps = msg.reading?.steps ?? [];
     const tree = $('tree');
-    tree.replaceChildren(...ex.items.map((t, i) => item(t, `${i}`)));
+    tree.replaceChildren(...msg.rows.map((/** @type {any} */ r, /** @type {number} */ i) => item(r, `${i}`)));
     if (kept) {
       const row = tree.querySelector(`li[data-path="${kept.path}"] > .row`);
       const target = row && (kept.link < 0 ? row.querySelector(':scope > button.twisty') : row.querySelectorAll('.refs a')[kept.link]);
       if (target instanceof HTMLElement) target.focus({ preventScroll: true });
     }
 
-    renderLine(msg.lineText, ex.line, ex.items, msg.marks ?? [], msg.lineParts, msg.wrap === true);
+    renderLine(msg.lineText, ex.line, msg.rows, msg.marks ?? [], msg.lineParts, msg.wrap === true);
 
     // Each note with the icon of its level in place of its mark, and the word that names the level in bold: the icon's
     // shape and the word say it without the colour. The class, the icon and its name come from the level table
@@ -303,7 +303,7 @@
     } else short.replaceChildren();
     $('examples').replaceChildren(...(ex.examples ?? []).map((e) => example(e, false)));
     $('empty').textContent = msg.emptyMessage;
-    $('empty').hidden = ex.items.length > 0;
+    $('empty').hidden = msg.rows.length > 0;
     applyView();
     renderReading();
   }
@@ -780,20 +780,20 @@
 
   // ---------------------------------------------------------------- tree
 
-  /** Tree item for a token and its children. */
-  function item(token, path) {
+  /** Tree item for a row (`TokenRow`, src/ui/tokenRow.ts: this draws what it holds, and decides none of it) and its parts. */
+  function item(/** @type {any} */ part, /** @type {string} */ path) {
     const li = document.createElement('li');
     li.dataset.path = path;
     const row = document.createElement('div');
-    row.className = `row kind-${token.kind}`;
+    row.className = `row kind-${part.kind}`;
     // A row with parts folds with its twisty: a button for the keyboard and a screen reader (named by the row's label,
     // its state in `aria-expanded`); the glyph is only drawn. A row with no parts keeps the room of one.
-    const twisty = document.createElement(token.children.length ? 'button' : 'span');
+    const twisty = document.createElement(part.children.length ? 'button' : 'span');
     twisty.className = 'twisty';
-    if (token.children.length) {
+    if (part.children.length) {
       const b = /** @type {HTMLButtonElement} */ (twisty);
       b.type = 'button';
-      b.setAttribute('aria-label', String(labels.partsOf ?? '{name}').replace('{name}', token.label));
+      b.setAttribute('aria-label', String(labels.partsOf ?? '{name}').replace('{name}', part.label));
       b.setAttribute('aria-expanded', 'true');
       b.append(el('span', { 'aria-hidden': 'true' }, '▾'));
       twisty.addEventListener('click', (e) => {
@@ -802,10 +802,9 @@
       });
     }
     const label = document.createElement('code');
-    label.className = token.group ? `label grp-label grp-${((token.group - 1) % 6) + 1}` : 'label';
+    label.className = part.group ? `label grp-label grp-${((part.group - 1) % 6) + 1}` : 'label';
     // A skeleton: code parts as they are (the label is monospace), placeholders apart in italics.
-    const parts = token.labelParts ?? [{ text: token.label }];
-    parts.forEach((p, i) => {
+    part.labelParts.forEach((p, i) => {
       if (i && !p.tight) label.append(' ');
       if (p.placeholder) {
         const ph = document.createElement('span');
@@ -816,40 +815,40 @@
     });
     const text = document.createElement('span');
     text.className = 'text';
-    text.append(...inline(token.explanation));
-    const also = nameAlso(token.name);
+    text.append(...inline(part.text));
+    const also = nameAlso(part.name);
     if (also) text.append(also);
-    const value = valueLine(token.value);
+    const value = valueLine(part.value);
     if (value) text.append(value);
     // Where the text rests on bash's behaviour rather than the manual: its chip after the text, as a note's, and its
     // try-it under the row, as wide as the row (beside the label, the text's column is narrow on a phone).
-    const [chip, ...tryIt] = basisParts(token.basisShown);
+    const [chip, ...tryIt] = basisParts(part.basis);
     if (chip) text.append(chip);
-    row.append(twisty, label, ...nameBadge(token.name), text, ...refLinks(token.refs), ...tryIt);
+    row.append(twisty, label, ...nameBadge(part.name), text, ...refLinks(part.refs), ...tryIt);
     li.append(row);
-    if (token.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
+    if (part.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
     // Examples placed under this token go before (first) or after (last) its parts.
-    const examples = (token.examples ?? []).map((e) => example(e, true));
+    const examples = (part.examples ?? []).map((e) => example(e, true));
     // What lies under the row (its examples and parts), in one box: the indent guide is drawn beside it.
     const body = document.createElement('div');
     body.className = 'body';
     if (examplesFirst) body.append(...examples);
     const index = flat.length;
-    flat.push({ token, el: row });
+    flat.push({ token: part, el: row });
     row.addEventListener('mouseenter', () => focus(index));
     row.addEventListener('mouseleave', () => focus(-1));
     // As in VS Code's trees: a click on a row with parts folds or unfolds it, and still selects it.
     row.addEventListener('click', (e) => {
       if (selecting()) return;
       if (!(e.target instanceof Element && e.target.closest('a, button, input, textarea, select'))) {
-        if (token.children.length) toggle(li);
+        if (part.children.length) toggle(li);
       }
-      reveal(token);
+      reveal(part);
       revealInLine(index);
     });
-    if (token.children.length) {
+    if (part.children.length) {
       const ul = document.createElement('ul');
-      ul.append(...token.children.map((c, i) => item(c, `${path}.${i}`)));
+      ul.append(...part.children.map((c, i) => item(c, `${path}.${i}`)));
       body.append(ul);
     }
     if (!examplesFirst) body.append(...examples);
