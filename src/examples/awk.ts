@@ -669,8 +669,8 @@ class ReturnSig {
   constructor(readonly v: Val) {}
 }
 
-/** What a field or an element costs: its slot, by far more than a character. */
-const FIELD_SLOT = 8;
+/** A string the program makes, charged. */
+const made = (s: string): string => { chargeSize(s.length); return s; };
 
 class Interp {
   vars = new Map<string, Val>();
@@ -710,7 +710,7 @@ class Interp {
     if (local?.has(name)) { local.set(name, v); return; }
     if (name === 'NF') {
       const n = Math.max(0, Math.trunc(toNum(v)));
-      chargeSize(FIELD_SLOT * (n - this.fields.length));
+      chargeSize(PART_COST * (n - this.fields.length));
       while (this.fields.length - 1 < n) this.fields.push('');
       this.fields.length = n + 1;
       this.rebuild();
@@ -758,7 +758,7 @@ class Interp {
   private setField(i: number, v: Val): void {
     if (i < 0) throw new Unsupported('negative field');
     if (i === 0) { this.setRecord(toStr(v)); return; }
-    chargeSize(FIELD_SLOT * (i - this.fields.length));
+    chargeSize(PART_COST * (i - this.fields.length));
     while (this.fields.length <= i) this.fields.push('');
     this.fields[i] = toStr(v);
     this.rebuild();
@@ -825,11 +825,7 @@ class Interp {
             const hit = this.regexOf(e.r).test(toStr(this.eval(e.l)));
             return (e.op === '~') === hit ? 1 : 0;
           }
-          case 'concat': {
-            const s = toStr(this.eval(e.l)) + toStr(this.eval(e.r));
-            chargeSize(s.length);
-            return s;
-          }
+          case 'concat': return made(toStr(this.eval(e.l)) + toStr(this.eval(e.r)));
           case '<': return compare(this.eval(e.l), this.eval(e.r)) < 0 ? 1 : 0;
           case '<=': return compare(this.eval(e.l), this.eval(e.r)) <= 0 ? 1 : 0;
           case '>': return compare(this.eval(e.l), this.eval(e.r)) > 0 ? 1 : 0;
@@ -839,12 +835,8 @@ class Interp {
           default: return arith(e.op, toNum(this.eval(e.l)), toNum(this.eval(e.r)));
         }
       }
-      case 'call': {
-        // (What a function makes counts as a concatenation does: `sprintf("%s%s", s, s)`.)
-        const v = this.call(e.name, e.args);
-        if (typeof v === 'string') chargeSize(v.length);
-        return v;
-      }
+      // (What a function makes counts as a concatenation does: `sprintf("%s%s", s, s)`.)
+      case 'call': { const v = this.call(e.name, e.args); return typeof v === 'string' ? made(v) : v; }
     }
   }
 
@@ -1015,8 +1007,7 @@ class Interp {
   }
 
   private write(text: string): void {
-    chargeSize(text.length);
-    this.out.push(text);
+    this.out.push(made(text));
   }
 
   /** Whether a main rule's pattern selects the current record. */
