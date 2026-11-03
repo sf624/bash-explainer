@@ -20,6 +20,7 @@ import { has, intersects, same, skeletal, sortTokens, summaryOf } from './nodes'
 import { specFor } from './reads';
 import { groupSubshell } from './where';
 import { casePattern } from './words';
+import type { Text } from '../i18n';
 import type { TokenTextArgs, TokenTextId } from '../messages-tokens';
 
 /** Children (keywords and named nodes, the lists of commands of a body as one) in source order, filtered to the current line. */
@@ -36,7 +37,7 @@ function ordered(cx: Explainer, n: SyntaxNode, skip: (c: SyntaxNode) => boolean 
 /** Token for an anonymous node (keyword or operator), or undefined for plain punctuation. */
 export function anon(cx: Explainer, n: SyntaxNode): Token | undefined {
   if (n.type === '{' && n.parent?.type === 'compound_statement' && groupSubshell(cx, n.parent)) {
-    return { ...cx.tok(n, 'keyword', cx.s('コマンドグループの開始（ここではサブシェルで実行される）', 'Start of a command group (here it runs in a subshell)')), refs: ['3.2.5.3', '3.7.3'] };
+    return { ...cx.tok(n, 'keyword', cx.text('group-start-subshell')), refs: ['3.2.5.3', '3.7.3'] };
   }
   if (n.type === ';' || n.type === '&') {
     // (Of a list, or of the head of a `for`; else the operator's own text, as after text the parser could not read.)
@@ -92,13 +93,13 @@ export function comment(cx: Explainer, n: SyntaxNode): Token {
   if (own) {
     const codes = own[2].split(',').map((c) => `\`${c}\``).join(own[2].includes(',') ? cx.s('・', ', ') : '');
     return cx.tok(n, 'comment', own[1] === 'disable-file'
-      ? cx.s(`Bash Explainer への指示コメント: このファイル全体で警告 ${codes} を出さない`, `Bash Explainer directive: no ${codes} warnings in this file`)
-      : cx.s(`Bash Explainer への指示コメント: ${n.startPosition.column ? 'この行' : '次の行'}で警告 ${codes} を出さない`, `Bash Explainer directive: no ${codes} warnings on ${n.startPosition.column ? 'this' : 'the next'} line`));
+      ? cx.text('comment-directive-file', { codes })
+      : cx.text('comment-directive-line', { codes, inline: n.startPosition.column > 0 }));
   }
   if (/^#\s*shellcheck\s/.test(n.text)) {
-    return cx.tok(n, 'comment', cx.s('ShellCheck への指示コメント（警告の抑制など）', 'ShellCheck directive (e.g. disable a warning)'));
+    return cx.tok(n, 'comment', cx.text('comment-shellcheck'));
   }
-  return cx.tok(n, 'comment', cx.s('コメント: `#` から行末までは実行されない', 'Comment: everything after `#` is ignored'));
+  return cx.tok(n, 'comment', cx.text('comment-plain'));
 }
 
 /** What the shebang's text says of env, and whether that is a warning. */
@@ -120,9 +121,7 @@ const warning = <K extends TokenTextId>(cx: Explainer, id: K, ...params: TokenTe
 function shebang(cx: Explainer, n: SyntaxNode): Token {
   const [, interp, arg] = /^#![ \t]*(\S*)\s*([^]*?)\s*$/.exec(n.text)!;
   if (!interp) {
-    return cx.tok(n, 'shebang', cx.s(
-      'シバン（shebang）だがインタープリタがない: ファイルをプログラムとして実行すると、カーネルはそれを実行できず、実行しようとしたシェル（bash など）が自分でシェルスクリプトとして読む。bash にとってこの行はコメント',
-      'Shebang with no interpreter: run as a program, the kernel cannot start the file, and the shell that runs it reads it as a shell script itself. To bash this line is a comment'));
+    return cx.tok(n, 'shebang', cx.text('shebang-no-interpreter'));
   }
   // (`#!/usr/bin/env` alone: env runs the script's path, as with an assignment.)
   const env0 = arg ? shebangEnv(cx, `${interp} ${arg}`) : /\/env$/.test(interp) ? envLoop(cx) : { text: '' };
@@ -137,18 +136,11 @@ function shebang(cx: Explainer, n: SyntaxNode): Token {
   const relative = interp.includes('/') ? '' : sentence(cx, 'shebang-relative-interpreter', { interp });
   const said = detectShell(n.text);
   const used = cx.shell ?? 'bash';
-  const dialect = !said ? ['', '']
-    : said === used ? [`。Bash Explainer はこの行から、スクリプトを ${SHELL_NAMES[said]} のものとして解説する`, `. Bash Explainer explains the script as ${SHELL_NAMES[said]}, from this line`]
-      : [`。Bash Explainer はここではスクリプトを ${SHELL_NAMES[said]} ではなく ${SHELL_NAMES[used]} のものとして解説する（ShellCheck の指示コメントか設定で選ばれている）`,
-        `. Bash Explainer explains the script as ${SHELL_NAMES[used]} here, not as ${SHELL_NAMES[said]} (a ShellCheck directive or a setting chooses it)`];
-  return cx.tok(n, 'shebang', cx.s(
-    `シバン（shebang）: ファイルをプログラムとして実行すると（\`./script.sh\`、または PATH から見つかるコマンドとして）、カーネル（それをしないシステムでは bash）が \`${shown} ./script.sh 引数…\` を実行する`
-      + `${oneArg ? `（Linux では行の残りの \`${arg}\` 全体が1つの引数になる）` : ''}${relative}${env ? `。\`env\` は PATH から \`${arg}\` を探して実行する` : ''}${notes}`
-      + `。bash にとってこの行はコメントで、\`bash script.sh\`・\`sh script.sh\`・\`source script.sh\`・\`. script.sh\` では無視される${dialect[0]}`,
-    `Shebang: when the file is run as a program (\`./script.sh\`, or a command found on PATH), the kernel (or bash, on a system whose kernel does not) runs \`${shown} ./script.sh args…\``
-      + `${oneArg ? ` (on Linux the whole rest of the line, \`${arg}\`, is one argument)` : ''}${relative}${env ? `, and \`env\` finds \`${arg}\` on PATH and runs it` : ''}${notes}`
-      + `. To bash this line is a comment: \`bash script.sh\`, \`sh script.sh\`, \`source script.sh\` and \`. script.sh\` ignore it${dialect[1]}`,
-  ), shebangParts(cx, n, interp, arg));
+  const dialect: Text = !said ? { ja: '', en: '' }
+    : said === used ? { ja: `。Bash Explainer はこの行から、スクリプトを ${SHELL_NAMES[said]} のものとして解説する`, en: `. Bash Explainer explains the script as ${SHELL_NAMES[said]}, from this line` }
+      : { ja: `。Bash Explainer はここではスクリプトを ${SHELL_NAMES[said]} ではなく ${SHELL_NAMES[used]} のものとして解説する（ShellCheck の指示コメントか設定で選ばれている）`,
+        en: `. Bash Explainer explains the script as ${SHELL_NAMES[used]} here, not as ${SHELL_NAMES[said]} (a ShellCheck directive or a setting chooses it)` };
+  return cx.tok(n, 'shebang', cx.text('shebang-line', { shown, oneArg, arg, relative, env, notes, dialect }), shebangParts(cx, n, interp, arg));
 }
 
 /**
@@ -214,10 +206,9 @@ export function functionDef(cx: Explainer, n: SyntaxNode): Token {
   const nameNode = field(n, 'name')!;
   const name = nameText(nameNode);
   // A definition is explained on the line it starts on, where its name is.
-  const nameTok = [cx.tok(nameNode, 'function', cx.s('関数名', 'Function name'))];
+  const nameTok = [cx.tok(nameNode, 'function', cx.text('function-name'))];
   // A redirection after the body is part of the function: it is applied on every call.
   const redirected = n.namedChildren.some((c) => c.type === 'file_redirect' || c.type === 'heredoc_redirect' || c.type === 'herestring_redirect' || c.type === 'redirected_statement');
-  const stored = redirected ? cx.s('。本体のあとのリダイレクトは、定義した時ではなく関数を呼ぶたびに適用される', '. The redirection after the body is applied each time the function is called, not when it is defined') : '';
   // In POSIX mode a function cannot have the name of a special builtin, nor in bash 5.2 a name that is not valid (the
   // status model; in another shell, a special builtin's name: `definitionFails`).
   const exit = cx.status.posixExit(n);
@@ -226,21 +217,17 @@ export function functionDef(cx: Explainer, n: SyntaxNode): Token {
     const id = exit?.exit.why === 'function-name' ? 'posix-function-name' : 'posix-special-function-name';
     cx.note(fact(cx.lang, fails === 'on' ? id : `${id}-maybe`, exit ? { stops: exit.stops } : {}), nameNode);
   }
-  return skeletal(cx.tok(n, 'function', cx.s(
-    `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${stored}${cx.lineRef(n)}`,
-    `Defines function \`${name}\`; call it like a command (arguments become $1, $2…)${stored}${cx.lineRef(n)}`,
-  ), sortTokens([...nameTok, ...ordered(cx, n, (c) => same(c, nameNode) || c.type === '(' || c.type === ')')])), n);
+  return skeletal(cx.tok(n, 'function', cx.text('function-definition', { name, redirected, lineRef: cx.lineRef(n) }),
+    sortTokens([...nameTok, ...ordered(cx, n, (c) => same(c, nameNode) || c.type === '(' || c.type === ')')])), n);
 }
 
 /** `coproc [NAME] command`: runs the command in the background, with two pipes to it kept in an array. */
 export function coprocStatement(cx: Explainer, n: SyntaxNode): Token {
   const nameNode = field(n, 'name');
   const arr = coprocName(n);
-  const nameTok = nameNode ? [cx.tok(nameNode, 'variable', cx.s(`コプロセスの名前: 配列 \`${arr}\` と変数 \`${arr}_PID\` の名前になる`, `Name of the co-process: names the array \`${arr}\` and the variable \`${arr}_PID\``))] : [];
-  return skeletal(cx.tok(n, 'keyword', cx.s(
-    `\`coproc\`: コマンドをバックグラウンドのコプロセスとして実行し、その出力と入力につながるファイルディスクリプタを配列 \`${arr}\` に入れる（\`\${${arr}[0]}\` はコプロセスの出力を読む側、\`\${${arr}[1]}\` はその入力に書く側）。プロセス ID は \`${arr}_PID\`${cx.lineRef(n)}`,
-    `\`coproc\`: runs the command in the background as a co-process and puts the descriptors connected to its output and input in the array \`${arr}\` (\`\${${arr}[0]}\` reads its output, \`\${${arr}[1]}\` writes to its input). Its process ID is \`${arr}_PID\`${cx.lineRef(n)}`,
-  ), sortTokens([...nameTok, ...ordered(cx, n, (c) => same(c, nameNode))])), n);
+  const nameTok = nameNode ? [cx.tok(nameNode, 'variable', cx.text('coproc-name', { arr }))] : [];
+  return skeletal(cx.tok(n, 'keyword', cx.text('coproc-statement', { arr, lineRef: cx.lineRef(n) }),
+    sortTokens([...nameTok, ...ordered(cx, n, (c) => same(c, nameNode))])), n);
 }
 
 export function forStatement(cx: Explainer, n: SyntaxNode): Token {
@@ -267,11 +254,11 @@ export function forStatement(cx: Explainer, n: SyntaxNode): Token {
   const extra: Token[] = [];
   // (`select` sets it to the word whose number is read, and to an empty string after any other line: 3.2.5.2.)
   if (v && cx.onLine(v)) extra.push(cx.tok(v, 'variable', select
-    ? cx.s('選んだ単語が入る変数: 入力した番号の単語（メニューの番号でない行なら空文字列）', 'Variable set to the chosen word: the one whose number is typed (an empty string when the line is not one of the numbers)')
-    : cx.s('ループ変数: 繰り返しごとに次の値が入る', 'Loop variable: receives the next value on each iteration')));
+    ? cx.text('select-variable')
+    : cx.text('for-variable')));
   for (const val of values) {
     for (const t of cx.sub(val)) {
-      t.explanation = cx.s('繰り返す値: ', 'Value to iterate: ') + t.explanation;
+      t.explanation = cx.text('for-value', { what: t.explanation });
       extra.push(t);
     }
   }
@@ -289,19 +276,16 @@ export function whileStatement(cx: Explainer, n: SyntaxNode): Token {
 export function caseStatement(cx: Explainer, n: SyntaxNode): Token {
   const v = field(n, 'value')!;
   const children = ordered(cx, n, (c) => same(c, v));
-  const vt = v.text ? cx.sub(v).map((t) => ({ ...t, explanation: cx.s('照合する値: ', 'Value to match: ') + t.explanation })) : []; // (`case` alone: no value yet.)
+  const vt = v.text ? cx.sub(v).map((t) => ({ ...t, explanation: cx.text('case-value', { what: t.explanation }) })) : []; // (`case` alone: no value yet.)
   for (const c of children) {
-    if (c.kind === 'keyword' && c.label === 'in') c.explanation = cx.s('値の後に、パターンごとの分岐を並べる', 'Introduces the list of pattern branches');
+    if (c.kind === 'keyword' && c.label === 'in') c.explanation = cx.text('case-in');
   }
   // `;&` and `;;&` change what happens after a match.
   const enders = n.namedChildren.flatMap((c) => c.children.filter((t) => t.type === ';&' || t.type === ';;&')).map((t) => t.type);
   const fall = !enders.length ? '' : cx.s(
     `。ただしこの文には \`${[...new Set(enders)].join('\` と \`')}\` があり、分岐の終わりが \`;;\` なら終了、\`;&\` なら次の分岐の中身をパターンを調べずに実行、\`;;&\` なら次以降のパターンの照合を続ける`,
     `. This one has \`${[...new Set(enders)].join('\` and \`')}\`: a branch ending in \`;;\` stops the \`case\`, \`;&\` runs the next branch's commands without testing its pattern, and \`;;&\` goes on testing the patterns after it`);
-  return skeletal(cx.tok(n, 'keyword', cx.s(
-    `case 文: ${v.text ? `\`${v.text}\` ` : '値（まだ書かれていない）'}を各パターンと上から順に照合し、最初に一致した分岐を実行`,
-    `case statement: match ${v.text ? `\`${v.text}\`` : 'the value (not written yet)'} against each pattern in order and run the first match`,
-  ) + fall + cx.lineRef(n), sortTokens([...children, ...vt])), n);
+  return skeletal(cx.tok(n, 'keyword', cx.text('case-statement', { value: v.text }) + fall + cx.lineRef(n), sortTokens([...children, ...vt])), n);
 }
 
 export function caseItem(cx: Explainer, n: SyntaxNode): Token {
@@ -327,7 +311,7 @@ export function caseItem(cx: Explainer, n: SyntaxNode): Token {
   if (!isDefault && (cx.line === null || pats.some((p) => intersects(p, cx.line!)))) {
     cx.examplesAt(n, () => caseExample(cx, n, pats));
   }
-  return skeletal(cx.tok(n, 'pattern', expl + (prev && !isDefault ? cx.s('。', '. ') + viaPrev : '') + cx.lineRef(n), sortTokens([...patToks, ...rest])), n);
+  return skeletal(cx.tok(n, 'pattern', expl + (prev && !isDefault ? cx.sep() + viaPrev : '') + cx.lineRef(n), sortTokens([...patToks, ...rest])), n);
 }
 
 /**
@@ -361,10 +345,7 @@ export function pipeline(cx: Explainer, n: SyntaxNode): Token {
     return whole && { ...whole, anchor: spanOf(n), kind: 'pipeline' };
   }, (e) => !!e.kind && BASH_WORD_EXAMPLES.has(e.kind));
   const cmds = children.filter((c) => c.kind !== 'operator' && c.kind !== 'keyword');
-  const t = cx.tok(n, 'operator', cx.s(
-    `パイプライン: 各コマンドの標準出力を次のコマンドの標準入力につないで、同時に実行する`,
-    `Pipeline: each command's stdout feeds the next command's stdin; they run concurrently`,
-  ), children);
+  const t = cx.tok(n, 'operator', cx.text('pipeline'), children);
   t.summary = cmds.map(summaryOf).join(' | ');
   t.grammar = 'pipeline';
   return skeletal(t, n);

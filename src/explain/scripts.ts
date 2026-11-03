@@ -6,7 +6,7 @@
 import type { ExplainOptions, Span, Token } from '../analyzer-types';
 import type { CommandRole } from '../argv/interpret';
 import { specialVariables } from '../dict/syntax';
-import { lineLabel, tx } from '../i18n';
+import { tx } from '../i18n';
 import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
@@ -56,7 +56,7 @@ export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, p
   const used = lines.map((items, i) => ({ items, i })).filter((l) => l.items.length);
   const tokens = used.length === 1 ? used[0].items : used.map(({ items, i }): Token => ({
     kind: 'block', label: shorten(rows[i].trim()), children: items,
-    explanation: cx.s(`文字列の${lineLabel('ja', i + 1)}`, `${lineLabel('en', i + 1)} of the string`),
+    explanation: cx.text('script-string-line', { line: i + 1 }),
     span: { start: items[0].span.start, end: items[items.length - 1].span.end },
   }));
   const note = script.known ? undefined
@@ -81,7 +81,7 @@ export function joinedScript(cx: Explainer, words: SyntaxNode[], desc: string | 
   const joinedText = cx.s('（単語を空白でつないだ文字列を、スクリプトとして読む）', ' (the words, joined with spaces, are read as a script)');
   return {
     kind: 'argument', label: shorten(text), span, children: script.tokens,
-    explanation: (desc ?? cx.s('もう一度読んで実行する文字列', 'Text to read and run again')) + joinedText + (script.note ?? ''),
+    explanation: (desc ?? cx.text('script-run-again')) + joinedText + (script.note ?? ''),
   };
 }
 

@@ -3,7 +3,6 @@
 import type { EmbeddedToken } from '../embedded/types';
 import { braceSequence } from '../examples/shellwords';
 import { lastValue, parseSequence, sequenceRefusal } from '../braceseq';
-import { ordinal } from '../i18n';
 import { codeSpan } from '../label';
 import { joinedText, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
@@ -54,8 +53,8 @@ export function sequenceParts(cx: Explainer, s: SyntaxNode): EmbeddedToken[] {
   // (Where the last value is the end, it lands on it, even when bash 5.2 prints it cut to an `int`: `{0001..2147483648..2147483647}`.)
   const stops = lastValue(seq) !== seq.end ? cx.s(`（増分で届かないので、最後の単語は \`${last}\`）`, ` (the steps do not land on it: the last word is \`${last}\`)`) : '';
   const out: EmbeddedToken[] = [
-    { start: xn.startIndex, end: xn.endIndex, kind, explanation: cx.s(`開始: \`${x}\``, `Start: \`${x}\``) + padded(x), children: [] },
-    { start: yn.startIndex, end: yn.endIndex, kind, explanation: cx.s(`終わり: \`${y}\``, `End: \`${y}\``) + stops + padded(y), children: [] },
+    { start: xn.startIndex, end: xn.endIndex, kind, explanation: cx.text('brace-start', { x }) + padded(x), children: [] },
+    { start: yn.startIndex, end: yn.endIndex, kind, explanation: cx.text('brace-end', { y }) + stops + padded(y), children: [] },
   ];
   if (!zn) return out;
   const z = joinedText(zn);
@@ -64,8 +63,8 @@ export function sequenceParts(cx: Explainer, s: SyntaxNode): EmbeddedToken[] {
   out.push({
     start: zn.startIndex, end: zn.endIndex, kind: 'number',
     explanation: numbers
-      ? cx.s(`増分: \`${z}\`（単語ごとに ${step} ${down ? '減る' : '増える'}）${sign}`, `Increment: \`${z}\` (each word is ${step} ${down ? 'less' : 'more'} than the one before)${sign}`)
-      : cx.s(`増分: \`${z}\`（${step} 文字ごとに${down ? '逆向きに' : ''}進む）${sign}`, `Increment: \`${z}\` (${step === 1n ? 'each letter' : `every ${ordinal(step)} letter`}, counting ${down ? 'down' : 'up'})${sign}`),
+      ? cx.text('brace-increment-numbers', { z, step, down, sign })
+      : cx.text('brace-increment-letters', { z, step, down, sign }),
     children: [],
   });
   return out;

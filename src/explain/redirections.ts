@@ -59,10 +59,7 @@ export function redirectedWhole(cx: Explainer, n: SyntaxNode, body: SyntaxNode |
   }
   // `f() { …; } >&2`: the redirection belongs to the function, not to its definition.
   const ofFunction = n.parent?.type === 'function_definition';
-  const w = cx.tok(n, 'redirect', n.type === 'command' && (cx.shell ?? 'bash') === 'bash' ? nameless(cx, n, text) : cx.s(
-    `入出力のリダイレクト: ${text !== undefined ? `\`${shorten(text, 30)}\` 全体` : 'コマンド'}の入出力を切り替える${ofFunction ? '。関数に付けたリダイレクトは関数と一緒に保存され、関数を呼ぶたびに適用される' : ''}`,
-    `Redirection applied to ${text !== undefined ? `\`${shorten(text, 30)}\` as a whole` : 'the command'}${ofFunction ? '. A redirection on a function is stored with it and applied each time the function is called' : ''}`,
-  ), sortTokens([...bodyToks, ...redirToks]));
+  const w = cx.tok(n, 'redirect', n.type === 'command' && (cx.shell ?? 'bash') === 'bash' ? nameless(cx, n, text) : cx.text('redirect-whole', { target: text !== undefined ? shorten(text, 30) : undefined, ofFunction }), sortTokens([...bodyToks, ...redirToks]));
   w.summary = [...bodyToks.map(summaryOf), ...redirToks.map((r) => r.label)].join(' ');
   return skeletal(w, n);
 }
@@ -321,10 +318,7 @@ function wholeRedirect(cx: Explainer, r: SyntaxNode, body: SyntaxNode): Token {
   const num = fd !== '' ? Number(fd) : op.startsWith('<') ? 0 : 1;
   const reads = op.startsWith('<') && num === 0;
   const writes = !op.startsWith('<') && (num === 1 || num === 2);
-  t.explanation += cx.s(
-    `。${kind.ja}全体に付いている: 中のコマンドすべてに働く${reads ? '（標準入力を読むコマンド、たとえば `read` は、ここから読む。同じ入力を分け合うので、1つが読んだ分は次のコマンドには届かない）' : writes ? `（中のコマンドが${num === 1 ? '標準出力' : '標準エラー出力'}に出すものはここに出る）` : ''}`,
-    `. It applies to the whole ${kind.en}: every command in it${reads ? ' that reads stdin, such as `read`, reads from here; they share this one input, so what one reads is not left for the next' : writes ? ` has its ${num === 1 ? 'stdout' : 'stderr'} sent here` : ' is affected'}`,
-  );
+  t.explanation += cx.text('redirect-whole-construct', { kind, reads, writes, num });
   return t;
 }
 
@@ -377,9 +371,7 @@ export function heredoc(cx: Explainer, n: SyntaxNode): Token {
   const to = hereTarget(cx, n);
   // `cat <<` while typing: the delimiter is not there yet.
   if (!startNode) {
-    return cx.tok(n, 'redirect', cx.s(
-      `ヒアドキュメント \`${op}\`: 区切り語がまだない。次の行から区切り語だけの行までを${to}として渡す`,
-      `Here-document \`${op}\`: the delimiter is not written yet. The following lines up to a line containing only the delimiter become ${to}`));
+    return cx.tok(n, 'redirect', cx.text('heredoc-no-delimiter', { op, to }));
   }
   const start = startNode.text;
   const body = n.namedChildren.find((c) => c.type === 'heredoc_body');
@@ -414,11 +406,7 @@ export function herestring(cx: Explainer, n: SyntaxNode): Token {
   const to = hereTarget(cx, n);
   const later = replacedBy(n);
   return cx.tok(n, 'redirect', later
-    ? cx.s(`ヒアストリング \`<<<\`: 続く文字列（末尾に改行が付く）。${to}として開かれるが、後の \`${written(later)}\` が続けて${to}を置き換えるので、コマンドはこれを読まない`,
-      `Here-string \`<<<\`: the following word (plus a newline), opened as ${to}; but the later \`${written(later)}\` then replaces ${to}, so the command does not read it`)
-    : cx.s(
-      `ヒアストリング \`<<<\`: 続く文字列（末尾に改行が付く）を${to}として渡す`,
-      `Here-string \`<<<\`: the following word (plus a newline) becomes ${to}`,
+    ? cx.text('herestring-replaced', { to, later: written(later) })
     // (A plain word says nothing more, but its tildes: `<<< ~/x`, `<<< x:~`.)
-    ), [...cx.subs(n.namedChildren.filter((c) => !isPlainWord(c) && c.type !== 'file_descriptor')), ...n.namedChildren.filter(isPlainWord).flatMap((c) => tilde(cx, c) ?? [])]);
+    : cx.text('herestring', { to }), [...cx.subs(n.namedChildren.filter((c) => !isPlainWord(c) && c.type !== 'file_descriptor')), ...n.namedChildren.filter(isPlainWord).flatMap((c) => tilde(cx, c) ?? [])]);
 }

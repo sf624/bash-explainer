@@ -97,7 +97,7 @@ function explainNode(cx: Explainer, n: SyntaxNode): Token {
     case 'coproc_statement': return coprocStatement(cx, n);
     case 'case_statement': return caseStatement(cx, n);
     case 'case_item': return caseItem(cx, n);
-    case 'error': return cx.tok(n, 'error', cx.s('構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）', 'Syntax error: this part could not be parsed (unclosed quote or bracket?)'), cx.subs(n.namedChildren));
+    case 'error': return cx.tok(n, 'error', cx.text('syntax-error'), cx.subs(n.namedChildren));
     // Every type the adapters build is explained above or by its parent. This is for a type added to the model
     // before the analyzer learns it: callers explain keywords and operators themselves, and any other node is shown as itself.
     /* c8 ignore start */

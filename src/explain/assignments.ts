@@ -44,7 +44,7 @@ function assignmentList(cx: Explainer, n: SyntaxNode, inner: SyntaxNode[]): Toke
     const t = skeletal(assignment(cx, only), only, true);
     return { ...t, refs: t.refs ?? nodeSections(only) };
   }
-  const t = cx.tok(n, 'assignment', cx.s('複数の変数への代入', 'Several variable assignments'), cx.subs(inner));
+  const t = cx.tok(n, 'assignment', cx.text('assignments-several'), cx.subs(inner));
   t.refs = nodeSections(only);
   if (inner.length === n.namedChildren.length) return t;
   // (Redirections outside them: the token is the assignments' only.)
@@ -192,7 +192,7 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     const w = wordAt(cx, value);
     const expands = !!w && (w.tildes.length > 0 || w.steps[0].applies !== false);
     for (const t of cx.sub(value)) {
-      if (!(t.kind === 'expansion' && expands) && unquotedWord(value) !== undefined && !arithNumber(cx, value)) t.explanation = intValueText ? `\`${value.text}\`: ${intValueText}` : cx.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``) + (hasGlob(value.text) ? notGlobbedHere(cx, value) : '');
+      if (!(t.kind === 'expansion' && expands) && unquotedWord(value) !== undefined && !arithNumber(cx, value)) t.explanation = intValueText ? `\`${value.text}\`: ${intValueText}` : cx.text('assignment-value', { value: value.text }) + (hasGlob(value.text) ? notGlobbedHere(cx, value) : '');
       children.push(t);
     }
     // The value of a prompt string (`PS1`, `PS4`…), as bash reads it each time it prints it (6.9): under the value.

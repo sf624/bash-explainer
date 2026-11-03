@@ -117,7 +117,7 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
         ? cx.s(`。ただし bash 5.3 はここで \`${slice(inner.at, inner.at)}\` ではなく、式の最初の語 \`${slice(inner.truth, inner.truth)}\` が空でないかを調べる（bash 5.3 の不具合）`,
           `. But bash 5.3 tests here whether the first word of the test, \`${slice(inner.truth, inner.truth)}\`, is not empty, not \`${slice(inner.at, inner.at)}\` (a bug of bash 5.3)`)
         : '';
-      return [make('operator', cx.s('括弧でまとめた式', 'Parenthesized expression') + odd, testTokens(cx, n, b, inner, refs))];
+      return [make('operator', cx.text('arith-parenthesized') + odd, testTokens(cx, n, b, inner, refs))];
     }
     case 'unary': {
       const d = unaryTestOps[words[e.op].text!];
@@ -245,7 +245,7 @@ export function regexNode(cx: Explainer, n: SyntaxNode): Token {
   }
   // (A part of a right side with quotes or expansions: the example is the whole regex's, made by `binary`.)
   if (js && n.parent?.type !== 'concatenation') regexExample(cx, js, 'values', field(n.parent!, 'left')!);
-  return cx.tok(n, 'pattern', cx.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
+  return cx.tok(n, 'pattern', cx.text('regex-ere'), tokens);
 }
 
 /**
@@ -291,16 +291,16 @@ export function unary(cx: Explainer, n: SyntaxNode): Token {
   const operand = n.namedChildren.find((c) => !same(c, opNode));
   // `[[ $a && -n` while typing: the operand is not written yet.
   if (!operand) {
-    return cx.tok(n, 'test', cx.s(`単項演算 \`${op}\`: 対象がまだ書かれていない`, `Unary operator \`${op}\`: the operand is not written yet`));
+    return cx.tok(n, 'test', cx.text('test-unary-missing', { op }));
   }
   if (op === '!' && !inArithmetic(n)) {
-    return cx.tok(n, 'test', cx.s(`否定: \`${operand.text}\` が偽なら真`, `Negation: true if \`${operand.text}\` is false`), cx.sub(operand));
+    return cx.tok(n, 'test', cx.text('test-negation', { operand: operand.text }), cx.sub(operand));
   }
   const d = unaryTestOps[op];
   if (d && !inArithmetic(n)) {
-    return cx.tok(n, 'test', cx.s(`条件: \`${operand.text}\` が${cx.t(d)}`, `Condition: \`${operand.text}\` ${cx.t(d)}`), [...cx.subs([operand].filter((x) => !isPlainWord(x))), ...tildeTokens(cx, [operand].filter(isPlainWord))]);
+    return cx.tok(n, 'test', cx.text('test-unary', { operand: operand.text, what: cx.t(d) }), [...cx.subs([operand].filter((x) => !isPlainWord(x))), ...tildeTokens(cx, [operand].filter(isPlainWord))]);
   }
-  return cx.tok(n, 'operator', cx.s(`算術の単項演算 \`${op}\``, `Arithmetic unary operator \`${op}\``), cx.subs(n.namedChildren));
+  return cx.tok(n, 'operator', cx.text('arith-unary', { op }), cx.subs(n.namedChildren));
 }
 
 export function binary(cx: Explainer, n: SyntaxNode): Token {
@@ -313,9 +313,7 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
   const op = field(n, 'operator')!.text;
   // `$((1 +))`, `((2 *))`: an operator with no operand after it, which the parser keeps. bash refuses the expression.
   if (inArithmetic(n) && !rightFields.length && left && rights[0].startIndex === left.startIndex) {
-    return cx.tok(n, 'error', cx.rests(cx.s(
-      `算術式の構文エラー: \`${op}\` の後ろに被演算子がない。bash は \`syntax error: operand expected\` と表示し${expressionHost(n) === 'arithmetic_expansion' ? '、それを含むスクリプトのコマンドの残り（この行、または囲む繰り返しや関数呼び出し）を中断する（終了ステータス 1。POSIX モードではスクリプトが終了する）' : '、このコマンドは失敗する（終了ステータス 1）'}`,
-      `Arithmetic syntax error: \`${op}\` has no operand after it. bash says \`syntax error: operand expected\`${expressionHost(n) === 'arithmetic_expansion' ? ', and abandons the rest of the command of the script it is in (the line, or the loop or function call around it), status 1 (in POSIX mode, a script ends there)' : ', and the command fails (status 1)'}`), 'arith-syntax-abandons'));
+    return cx.tok(n, 'error', cx.rests(cx.text('arith-operand-missing', { op, abandons: expressionHost(n) === 'arithmetic_expansion' }), 'arith-syntax-abandons'));
   }
   // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; it is only a word to explain, and in `[ ]` any text is.
   // (A constant such as `0x1F` is not plain in arithmetic: it has a value to show.)
@@ -347,15 +345,12 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
     // says in Reading; from the word model, as nocasematch and a quoted `*` decide it.)
     const plain = extendedEqualOps[op] && plainPatternText(rights[0], cx.state) !== undefined ? cx.t(plainPatternOps.condition[op]) : undefined;
     const text = quotedPatternNote(cx, n, op, rights) ?? plain ?? (extendedEqualOps[op] ? cx.t(extendedEqualOps[op]) : binaryText(cx, n, op, true, true));
-    return cx.tok(n, 'test', cx.s(
-      `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${text}${num}`,
-      `Condition: \`${left?.text}\` vs \`${rightText}\` — ${text}${num}`,
-    ), operands);
+    return cx.tok(n, 'test', cx.text('test-binary', { left: left?.text, right: rightText, text, num }), operands);
   }
   const assignOps = ['=', '+=', '-=', '*=', '/=', '%='];
   return cx.tok(n, 'operator', assignOps.includes(op)
-    ? cx.s(`算術代入: \`${left?.text}\` ${op} \`${rightText}\``, `Arithmetic assignment: \`${left?.text}\` ${op} \`${rightText}\``)
-    : cx.s(`算術演算: \`${left?.text}\` ${op} \`${rightText}\``, `Arithmetic: \`${left?.text}\` ${op} \`${rightText}\``), operands);
+    ? cx.text('arith-assignment', { left: left?.text, op, right: rightText })
+    : cx.text('arith-binary', { left: left?.text, op, right: rightText }), operands);
 }
 
 /**
@@ -398,17 +393,17 @@ function quotedPatternNote(cx: Explainer, n: SyntaxNode, op: string, rights: Syn
 
 /** `a ? b : c` in arithmetic. */
 export function ternary(cx: Explainer, n: SyntaxNode): Token {
-  return cx.tok(n, 'expansion', cx.s('三項演算子: 条件 ? 真のときの値 : 偽のときの値', 'Ternary: cond ? if-true : if-false'), cx.subs(n.namedChildren));
+  return cx.tok(n, 'expansion', cx.text('arith-ternary'), cx.subs(n.namedChildren));
 }
 
 /** `i++` and `i--` in arithmetic. */
 export function postfix(cx: Explainer, n: SyntaxNode): Token {
-  return cx.tok(n, 'operator', cx.s(`算術: \`${n.text}\`（${n.text.endsWith('++') ? '1 増やす' : '1 減らす'}）`, `Arithmetic: \`${n.text}\` (${n.text.endsWith('++') ? 'increment' : 'decrement'})`));
+  return cx.tok(n, 'operator', cx.text('arith-postfix', { text: n.text, increment: n.text.endsWith('++') }));
 }
 
 /** `( … )` in arithmetic. */
 export function parenthesized(cx: Explainer, n: SyntaxNode): Token {
-  return cx.tok(n, 'operator', cx.s('括弧でまとめた式', 'Parenthesized expression'), cx.subs(n.namedChildren));
+  return cx.tok(n, 'operator', cx.text('arith-parenthesized'), cx.subs(n.namedChildren));
 }
 
 /** `(( … ))` as a command, with the note on the status of a postfix `++` or `--`. */
