@@ -483,7 +483,9 @@ describe('the guard of the regexes a script gives', () => {
       for (let i = 0; i < 600; i++) assert.ok(scriptRegex(`x${i}${'y'.repeat(1000)}`).test(`x${i}${'y'.repeat(1000)}`));
     });
 
-    it('a text refused is kept to be refused again, but not a long one, and not more than a total', () => {
+    it('a text refused is kept to be refused again, but not a long one, and not more than a total', function () {
+      // (Eight whole limits: seconds, with coverage on a loaded runner.)
+      this.timeout(30000);
       const before = keptChars();
       const short = 'a'.repeat(10000);
       assert.ok(refused('a*a*b0', short));

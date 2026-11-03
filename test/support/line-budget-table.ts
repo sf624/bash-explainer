@@ -1,6 +1,6 @@
 // The lines that made one line stop the whole tool (docs/design/line-budget.md), and a run of them that reports what each cost:
 // run as a program, under a memory cap, by test/line-budget.test.ts, as one may still fill the memory (a process abort cannot be caught).
-// usage: npx tsx test/support/line-budget-table.ts
+// usage: npx tsx test/support/line-budget-table.ts [lines of each document]
 import { Analyzer } from '../../src/analyzer';
 import { documentIssues } from '../../src/document';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
@@ -56,11 +56,11 @@ export const LINES: { script: string; says?: RegExp }[] = [
   { script: `x=${A40}; ${Array.from({ length: 11 }, (_, i) => `echo "\${x%%${'*a'.repeat(40)}${i}}"`).join('; ')}`, says: /Not computed/ },
 ];
 
-/** A document of many lines, each adversarial in its own way. */
-export const DOCUMENTS: Record<string, string> = {
-  greps: many(5000, (i) => `echo ${A40} | grep -E '(a+)+$|z${i}'`),
-  expansions: `x=${A40}\n${many(5000, (i) => `echo "\${x%%${'*a'.repeat(12)}${i}}"`)}`,
-};
+/** Documents of `n` lines, each adversarial in its own way. */
+const documentsOf = (n: number): Record<string, string> => ({
+  greps: many(n, (i) => `echo ${A40} | grep -E '(a+)+$|z${i}'`),
+  expansions: `x=${A40}\n${many(n, (i) => `echo "\${x%%${'*a'.repeat(12)}${i}}"`)}`,
+});
 
 if (require.main === module) {
   const parser = createUnbashParser();
@@ -75,7 +75,7 @@ if (require.main === module) {
     });
     return { script: script.slice(0, 70), ms: Date.now() - t0, ok: !says || shown.some((n) => says.test(n)), shown: [...new Set(shown)].map((n) => n.slice(0, 40)) };
   });
-  const documents = Object.entries(DOCUMENTS).map(([name, script]) => {
+  const documents = Object.entries(documentsOf(Number(process.argv[2] ?? 5000))).map(([name, script]) => {
     const tree = parser.parse(script);
     const lines = script.split('\n');
     const t0 = Date.now();
