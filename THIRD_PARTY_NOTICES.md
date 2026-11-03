@@ -8,7 +8,7 @@ Bash Explainer includes the following third-party software and artwork (CC-BY-4.
 
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |
-| [unbash](https://github.com/webpro-nl/unbash) | 6.0.1 | ISC | bundled into `dist/extension.js`; bundled into `dist/web/extension.js` |
+| [unbash](https://github.com/webpro-nl/unbash) | 6.0.3 | ISC | bundled into `dist/extension.js`; bundled into `dist/web/extension.js` |
 | [@vscode/codicons](https://github.com/microsoft/vscode-codicons) | 0.0.46-24 | CC-BY-4.0 | icons copied into `media/icons.js` |
 | [microsoft/vscode](https://github.com/microsoft/vscode) | 1.143.1 | MIT | the token colours of the default colour themes copied into `src/ui/vscodeThemes.json`, bundled into `dist/extension.js` and `dist/web/extension.js` |
 
@@ -16,7 +16,7 @@ Bash Explainer includes the following third-party software and artwork (CC-BY-4.
 
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |
-| [unbash](https://github.com/webpro-nl/unbash) | 6.0.1 | ISC | bundled into `app.js` |
+| [unbash](https://github.com/webpro-nl/unbash) | 6.0.3 | ISC | bundled into `app.js` |
 | [@codemirror/commands](https://code.haverbeke.berlin/codemirror/commands) | 6.11.1 | MIT | bundled into `app.js` |
 | [@codemirror/language](https://code.haverbeke.berlin/codemirror/language) | 6.13.1 | MIT | bundled into `app.js` |
 | [@codemirror/legacy-modes](https://code.haverbeke.berlin/codemirror/legacy-modes) | 6.5.5 | MIT | bundled into `app.js` |
@@ -36,7 +36,7 @@ Bash Explainer includes the following third-party software and artwork (CC-BY-4.
 
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |
-| [unbash](https://github.com/webpro-nl/unbash) | 6.0.1 | ISC | bundled into `dist/cli.js` |
+| [unbash](https://github.com/webpro-nl/unbash) | 6.0.3 | ISC | bundled into `dist/cli.js` |
 
 ## License texts
 

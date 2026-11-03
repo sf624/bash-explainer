@@ -281,6 +281,15 @@ describe('unbash adapter: redirections', () => {
     if (r.error) return this.skip();
     assert.strictEqual(r.stdout, 'got:b\n');
   });
+  it('reads a process substitution after `<<<` as the here-string, as bash does', function () {
+    // (unbash 6.0.1 made `cat` an argument `>(f)` of it, with a bare `<<<`.)
+    assert.strictEqual(o('cat <<<>(f)'),
+      '(program (command (command_name @name (word "cat")) (herestring_redirect @redirect "<<<" (process_substitution ">(" (command (command_name @name (word "f"))) ")"))))');
+    const r = spawnSync('bash', ['-c', 'cat <<<>(:)'], { encoding: 'utf8' });
+    if (r.error) return this.skip();
+    assert.match(r.stdout, /^\/dev\/fd\/\d+\n$/);
+  });
+
   it('sends `&>` to a process substitution after a compound command or before the command name, as bash does', function () {
     // (unbash reads these as an unexpected token, or the process substitution as the command name.)
     const both = ['{ ls; } &> >(tee log)', 'while :; do :; done &>> >(tee log)', 'f() { :; } &> >(tee log)', '(ls) &> >(tee log)',
