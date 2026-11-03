@@ -3,7 +3,8 @@ import { plain } from '../document';
 import type { Lang } from '../i18n';
 import { LEVELS, type NoteLevel } from '../levels';
 import { isProblemNote, problemText } from '../messages';
-import { notesByLevel, ui } from './render';
+import { notesByLevel } from './render';
+import { ui } from './texts';
 
 // The phone's summary row of the cursor's line (docs/design/chrome-redesign.md, step C8b): one line under the sheet's
 // tabs row when it is folded, and alone on the keyboard's top while the user types. The page (web/sheet.ts) draws it

@@ -141,10 +141,15 @@ describe('the web page: the phone\'s sheet', function () {
         if (snap === 'peek') {
           assert.ok(Math.abs(pane.height - 97) < 1 && Math.round(pane.y + pane.height) === 740, `${at}: ${JSON.stringify(pane)}`);
           assert.ok(Math.abs(summary.y - (head.y + head.height)) < 0.5 && Math.abs(summary.height - 48) < 0.5 && summary.x === 0 && summary.width === width, `${at}: ${JSON.stringify([head, summary])}`);
-          const parts = await page.locator('#sheet-summary > :not(:empty)').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; }));
+          const parts = await page.locator('#sheet-summary > :not(:empty)').evaluateAll((els) => els.filter((e) => e.checkVisibility()).map((e) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; }));
           for (const r of parts) assert.ok(r.left >= EDGE - 0.5 && r.right <= width - EDGE + 0.5 && r.top >= summary.y && r.bottom <= summary.y + summary.height, `${at}: ${JSON.stringify([summary, parts])}`);
           const text = await page.locator('#summary-text').evaluate((e) => ({ one: e.scrollHeight <= e.clientHeight + 1, words: e.textContent }));
           assert.ok(text.one && text.words, `${at}: ${JSON.stringify(text)}`);
+          // "Ln 8" in one place: in the tabs row, or in this row where the tabs row's form has none (its name always has it).
+          const inTabs = (await page.locator('#panel-head').getAttribute('data-line')) === 'true';
+          assert.strictEqual(await page.locator('#tab-explain .tab-line').isVisible(), inTabs, at);
+          assert.strictEqual(await page.locator('#summary-line').isVisible(), !inTabs, at);
+          assert.match((await page.locator('#sheet-summary').getAttribute('aria-label'))!, lang === 'ja' ? /^行 \d+：/ : /^Line \d+: /, at);
         } else {
           assert.strictEqual(await page.locator('#sheet-summary').isVisible(), false, at);
         }

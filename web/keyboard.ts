@@ -1,6 +1,6 @@
 // The phone's on-screen keyboard (docs/design/chrome-redesign.md, step C8b): the page reads the window's and the visual
 // viewport's numbers at each change, and src/ui/keyboard.ts tells from them whether the keyboard is open over the
-// editor while the user types there, and how much of the window it covers. The sheet (web/sheet.ts) follows.
+// editor while the user types there, and where the summary row goes. The sheet (web/sheet.ts) follows.
 import { keyboard, type Keyboard, type Tallest } from '../src/ui/keyboard';
 
 export interface KeyboardHost {
@@ -16,12 +16,13 @@ export function watchKeyboard(editor: HTMLElement, host: KeyboardHost): void {
   // (Every browser the page supports has one.)
   if (!vv) return;
   let tallest: Tallest | undefined;
-  let last: Keyboard | undefined;
+  let last: string | undefined = 'unread';
   const check = () => {
-    const k = keyboard(tallest, { width: window.innerWidth, height: window.innerHeight, visualHeight: vv.height, visualTop: vv.offsetTop, scale: vv.scale }, host.typing());
+    const k = keyboard(tallest, { width: window.innerWidth, height: window.innerHeight, visualLeft: vv.offsetLeft, visualTop: vv.offsetTop, visualWidth: vv.width, visualHeight: vv.height, scale: vv.scale }, host.typing());
     tallest = k.tallest;
-    if (last && last.open === k.open && last.overlap === k.overlap) return;
-    last = k;
+    const place = JSON.stringify(k.place);
+    if (place === last) return;
+    last = place;
     host.changed(k);
   };
   vv.addEventListener('resize', check);

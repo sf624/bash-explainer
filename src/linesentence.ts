@@ -20,7 +20,7 @@ import { redirectParts } from './explain/redirections';
 import type { Lang } from './i18n';
 import { idiomSaid, type IdiomSpeaker } from './idioms';
 import { codeSpan, shorten } from './label';
-import { isProblem } from './messages';
+import { isProblemNote } from './messages';
 import { placeholderAlone, placeholderSaid } from './messages-argv';
 import { STYLE_REFS, type StyleCode } from './pitfalls';
 import { EMPTY, ioSaid, linesSaid, listSaid, S, sentenceEnd } from './messages-sentence';
@@ -47,12 +47,12 @@ export interface Sentence { text: string; sections: string[] }
 
 /**
  * The sections of the manual the problems of a line cite (a fact's `refs`, a style check's `STYLE_REFS`): the sentence
- * says nothing about them, since the problem says it, in the box (a plain note is no problem: `isProblem`).
+ * says nothing about them, since the problem says it, in the box (a plain note is no problem: `isProblemNote`).
  */
 export function problemSections(ex: Pick<LineExplanation, 'noteInfo' | 'facts'>): Set<string> {
   const out = new Set<string>();
   for (const n of ex.noteInfo) {
-    if (n.level === 'note' || !isProblem(n.code!)) continue;
+    if (!isProblemNote(n)) continue;
     for (const r of ex.facts?.find((f) => f.text === n.text)?.refs ?? STYLE_REFS[n.code as StyleCode] ?? []) out.add(r);
   }
   return out;

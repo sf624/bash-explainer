@@ -445,7 +445,9 @@ type Stop = 'editor' | 'settings' | 'grabber' | 'panel' | 'toast';
 /**
  * Where the editor's and the explanation's stops are, while what covers them makes them inert: side by side, the
  * settings sheet takes the editor's; on a phone, the sheet's grabber takes the editor's while the sheet is full, and
- * the explanation's while it is folded. The one source for `focusHome` and F6 (`paneKeys`).
+ * the explanation's while it is folded. The one source for `focusHome` and F6 (`paneKeys`). The keyboard's fold of the
+ * sheet is no stop: a stop in the sheet ends it (`BottomSheet.release`). The one exception: a tap on the summary row
+ * puts the focus on the grabber itself, at half, since a finger's tap must not put it in the frame (web/sheet.ts).
  */
 function paneStops(): { home: Stop; panel: Stop } {
   const home = settingsDialog?.sideBySide ? 'settings' : sheet?.covers ? 'grabber' : 'editor';
@@ -456,7 +458,10 @@ function paneStops(): { home: Stop; panel: Stop } {
 function focusStop(stop: Stop, touch = false): void {
   if (stop === 'settings') settingsDialog?.focus();
   else if (stop === 'grabber') sheet?.focus();
-  else if (stop === 'panel') toPanel();
+  else if (stop === 'panel') {
+    sheet?.release();
+    toPanel();
+  }
   else if (stop === 'toast') toast.focus();
   else if (touch) editor.focusUnlessTouch();
   else editor.view.focus();

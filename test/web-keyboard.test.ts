@@ -13,20 +13,27 @@ type Box = { x: number; y: number; width: number; height: number };
 
 /**
  * iOS's keyboard, as the page sees it: the visual viewport loses `px` of its height at the bottom (and Safari may scroll
- * it down by `by`: the keyboard's top is then lower in the window, by as much); the window keeps its size. A grey box stands for the keyboard in screenshots.
+ * it down by `by`: the keyboard's top is then lower in the window, by as much; or zoom the page by `scale` and scroll it
+ * right by `left`); the window keeps its size. A grey box stands for the keyboard in screenshots.
  */
 const IOS = `(() => {
   const vv = window.visualViewport;
   const proto = Object.getPrototypeOf(vv);
-  const height = Object.getOwnPropertyDescriptor(proto, 'height');
-  const top = Object.getOwnPropertyDescriptor(proto, 'offsetTop');
+  const real = (name) => Object.getOwnPropertyDescriptor(proto, name).get.call(vv);
   let kb = 0;
-  let scroll = 0;
-  Object.defineProperty(vv, 'height', { get: () => height.get.call(vv) - kb });
-  Object.defineProperty(vv, 'offsetTop', { get: () => top.get.call(vv) + scroll });
-  window.keyboard = (px, by = 0) => {
+  let top = 0;
+  let zoom = 1;
+  let side = 0;
+  Object.defineProperty(vv, 'height', { get: () => (real('height') - kb) / zoom });
+  Object.defineProperty(vv, 'width', { get: () => real('width') / zoom });
+  Object.defineProperty(vv, 'offsetTop', { get: () => real('offsetTop') + top });
+  Object.defineProperty(vv, 'offsetLeft', { get: () => real('offsetLeft') + side });
+  Object.defineProperty(vv, 'scale', { get: () => zoom });
+  window.keyboard = (px, by = 0, scale = 1, left = 0) => {
     kb = px;
-    scroll = by;
+    top = by;
+    zoom = scale;
+    side = left;
     let box = document.getElementById('test-keyboard');
     if (!box) {
       box = Object.assign(document.createElement('div'), { id: 'test-keyboard' });
@@ -65,7 +72,7 @@ describe('the web page: the phone\'s keyboard and the summary row', function () 
     if (await page.locator('#readtip').isVisible()) await page.locator('#readtip-close').tap();
     await until('the sample\'s problems', () => problemsShown(page), (v) => v, 20000);
     await cursorToLine(page, 20);
-    await until('the row of line 20', () => page.locator('#summary-line').textContent(), (t) => t === (lang === 'ja' ? '20 行目' : 'Ln 20'));
+    await until('the row of line 20', () => page.locator('#summary-line').textContent(), (t) => t === (lang === 'ja' ? '行 20' : 'Ln 20'));
     return page;
   };
 
@@ -87,6 +94,8 @@ describe('the web page: the phone\'s keyboard and the summary row', function () 
     const row = await stable('the row', () => box(page, '#sheet-summary'));
     const pane = await box(page, '#panel-pane');
     assert.ok(Math.abs(row.y + row.height - top) < 1 && Math.abs(row.height - 48) < 0.5 && Math.abs(pane.y - (row.y - 1)) < 1, `${where}: ${JSON.stringify([row, pane])}`);
+    // The row says the line: there is no tabs row to say it.
+    assert.strictEqual(await page.locator('#summary-line').isVisible(), true, where);
     // No tabs row; the app bar is out of view and out of the focus order; the strip stays at the top.
     assert.strictEqual(await page.locator('#panel-head').isVisible(), false, where);
     const bar = await box(page, 'header.top');
@@ -113,7 +122,7 @@ describe('the web page: the phone\'s keyboard and the summary row', function () 
       assert.match(await page.locator('#summary-mark').getAttribute('class') ?? '', /level-warning/);
       const text = (await page.locator('#summary-text').textContent())!;
       assert.ok(text.startsWith(lang === 'ja' ? '落とし穴: ' : 'Pitfall: '), text);
-      assert.strictEqual(await page.locator('#sheet-summary').getAttribute('aria-label'), lang === 'ja' ? `20 行目：警告。${text}` : `Line 20: Warning. ${text}`);
+      assert.strictEqual(await page.locator('#sheet-summary').getAttribute('aria-label'), lang === 'ja' ? `行 20：警告。${text}` : `Line 20: Warning. ${text}`);
       // Safari scrolls the visual viewport to the caret: the row follows the keyboard's top, 40 px lower in the window.
       await page.evaluate(`window.keyboard(${KEYBOARD}, 40)`);
       await folded(page, HEIGHT - KEYBOARD + 40, `iOS ${lang}, scrolled`);
@@ -163,6 +172,98 @@ describe('the web page: the phone\'s keyboard and the summary row', function () 
     }
   });
 
+  /** Opens the keyboard over the editor, as `how` does. */
+  const keyboardOn = async (page: Page, how: 'iOS' | 'Android') => {
+    if (how === 'iOS') await page.evaluate(`window.keyboard(${KEYBOARD})`);
+    else await page.setViewportSize({ width: 390, height: HEIGHT - KEYBOARD });
+  };
+
+  it('shows the explanation on a tap of the row, whichever tab was chosen, at the peek and with the keyboard open', async () => {
+    const selected = (page: Page) => page.evaluate("[...document.querySelectorAll('#panel-tabs [role=tab]')].filter((t) => t.getAttribute('aria-selected') === 'true').map((t) => t.id)");
+    for (const tab of ['tab-problems', 'tab-ref']) {
+      for (const how of ['peek', 'iOS', 'Android'] as const) {
+        const where = `${tab}, ${how}`;
+        const page = await open(390, 'en');
+        await page.locator(`#${tab}`).tap();
+        await until(`${where}: the tab`, () => selected(page), (v) => JSON.stringify(v) === JSON.stringify([tab]));
+        if (how === 'peek') {
+          await page.locator('#sheet-grab').focus();
+          await page.keyboard.press('Home');
+          await until(`${where}: the row`, () => page.locator('#sheet-summary').isVisible(), (v) => v);
+        } else {
+          await cursorToLine(page, 20);
+          await keyboardOn(page, how);
+          await folded(page, HEIGHT - KEYBOARD, where);
+        }
+        await page.locator('#sheet-summary').tap();
+        await until(`${where}: the Explanation tab`, () => selected(page), (v) => JSON.stringify(v) === '["tab-explain"]');
+        const after = await state(page);
+        assert.deepStrictEqual([after.sheet, after.keyboard, after.inEditor, after.focus], ['half', false, false, 'sheet-grab'], where);
+        assert.strictEqual(await page.locator('#panel-body').isVisible(), true, where);
+        assert.strictEqual(await page.locator('#panel-pane').getAttribute('data-problems'), null, where);
+        await page.context().close();
+      }
+    }
+  });
+
+  it('takes a window short for another reason for no keyboard: resized before the editor has the focus, then a real keyboard from there', async () => {
+    const page = await open(390, 'en');
+    // Split screen, a foldable: the window shrinks while the focus is elsewhere.
+    await page.locator('#sheet-grab').focus();
+    await page.setViewportSize({ width: 390, height: 400 });
+    await page.waitForTimeout(200);
+    await cursorToLine(page, 20);
+    await page.waitForTimeout(200);
+    assert.strictEqual((await state(page)).keyboard, false);
+    assert.strictEqual(await page.locator('#panel-head').isVisible(), true);
+    // A keyboard over that window folds it, and closing it with the focus kept brings the sheet back.
+    await page.evaluate('window.keyboard(200)');
+    await until('the keyboard', () => state(page), (v) => v.keyboard);
+    const row = await box(page, '#sheet-summary');
+    assert.ok(Math.abs(row.y + row.height - 200) < 1, JSON.stringify(row));
+    await page.evaluate('window.keyboard(0)');
+    await until('closed', () => state(page), (v) => !v.keyboard);
+    assert.strictEqual((await state(page)).inEditor, true);
+    await page.context().close();
+  });
+
+  it('goes on with F6 while the keyboard is open: the fold ends, and the focus lands on what is shown', async () => {
+    // At half: the explanation's frame.
+    let page = await open(390, 'en');
+    await keyboardOn(page, 'iOS');
+    await folded(page, HEIGHT - KEYBOARD, 'F6 at half');
+    await page.keyboard.press('F6');
+    await until('the frame', () => state(page), (v) => v.focus === 'panel');
+    assert.deepStrictEqual(await state(page), { sheet: 'half', keyboard: false, inEditor: false, focus: 'panel' });
+    assert.strictEqual(await page.locator('#panel-body').isVisible(), true);
+    await page.context().close();
+    // Folded: the grabber, with the tabs row back.
+    page = await open(390, 'en');
+    await page.locator('#sheet-grab').focus();
+    await page.keyboard.press('Home');
+    await cursorToLine(page, 20);
+    await keyboardOn(page, 'iOS');
+    await folded(page, HEIGHT - KEYBOARD, 'F6 at the peek');
+    await page.keyboard.press('F6');
+    await until('the grabber', () => state(page), (v) => v.focus === 'sheet-grab');
+    assert.deepStrictEqual(await state(page), { sheet: 'peek', keyboard: false, inEditor: false, focus: 'sheet-grab' });
+    assert.strictEqual(await page.locator('#panel-head').isVisible(), true);
+    await page.context().close();
+  });
+
+  it('keeps the row along the visual viewport of a zoomed page (iOS zooms into a small field), whole and at its own size', async () => {
+    const page = await open(390, 'en');
+    // Zoomed by 1.25, scrolled by (20, 40): the visual viewport is 312 × 352 at (20, 40).
+    await page.evaluate(`window.keyboard(${KEYBOARD}, 40, 1.25, 20)`);
+    await until('the keyboard', () => state(page), (v) => v.keyboard);
+    const row = await stable('the row', () => box(page, '#sheet-summary'));
+    const close = (a: number, b: number) => Math.abs(a - b) < 1;
+    assert.ok(close(row.x, 20) && close(row.width, 312) && close(row.height, 48 / 1.25) && close(row.y + row.height, 40 + 352), JSON.stringify(row));
+    const end = await box(page, '#sheet-summary .chev');
+    assert.ok(end.x + end.width <= 332 - 12 / 1.25 + 0.5, JSON.stringify(end));
+    await page.context().close();
+  });
+
   it('does not fold for a keyboard of another field, in Read mode, or for the browser\'s bars', async () => {
     const page = await open(390, 'en');
     // The browser's bar shown again: less than a keyboard.
@@ -203,7 +304,7 @@ describe('the web page: the phone\'s keyboard and the summary row', function () 
       await cdp.detach();
       const text = (await page.locator('#summary-text').textContent())!;
       assert.deepStrictEqual([nodes[0].role?.value, nodes[0].name?.value, nodes[0].description?.value], [
-        'button', lang === 'ja' ? `20 行目：警告。${text}` : `Line 20: Warning. ${text}`, lang === 'ja' ? '解説を表示' : 'Show the explanation',
+        'button', lang === 'ja' ? `行 20：警告。${text}` : `Line 20: Warning. ${text}`, lang === 'ja' ? '解説を表示' : 'Show the explanation',
       ]);
       // Escape: the focus back in the editor, the sheet as it was.
       await page.keyboard.press('Escape');
