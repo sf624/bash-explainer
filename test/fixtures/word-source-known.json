@@ -194,6 +194,13 @@
   ],
   "syntax": [
     {
+      "file": "src/argv/words.ts",
+      "reason": "the parts of a word after the start the interpreter knows, as they are written: only its syntax",
+      "uses": [
+        {"fn":"attachedWritten","kind":"node-type","count":3}
+      ]
+    },
+    {
       "file": "src/dialect.ts",
       "reason": "finds syntax a shell lacks",
       "uses": [
@@ -292,6 +299,8 @@
       "file": "src/explain/reads.ts",
       "reason": "reads the model first, and the text only to find the node",
       "uses": [
+        {"fn":"inTest","kind":"node-type","count":1},
+        {"fn":"readOnlySometimes","kind":"node-type","count":1},
         {"fn":"ifsAt","kind":"ifs","count":1,"reason":"the default IFS, read next to the model"},
         {"fn":"inArithmetic","kind":"node-type","count":1}
       ]
@@ -318,6 +327,7 @@
       "file": "src/explain/words.ts",
       "reason": "explains a word part by part, by node type (the dispatch of the word module)",
       "uses": [
+        {"fn":"arithFate","kind":"node-type","count":2},
         {"fn":"braceExpansion","kind":"node-type","count":1},
         {"fn":"bracketsOf","kind":"node-type","count":1},
         {"fn":"elementWord","kind":"node-type","count":1},
