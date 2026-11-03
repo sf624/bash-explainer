@@ -1,14 +1,15 @@
 import { type Shell, shellFromName } from '../dialect';
 import { LineOut, Builder } from './builder';
-import { wordTable } from '../wordtable';
+import { isMakeAutomatic, type HostMeaning, type MakeAutomatic } from '../messages-hosts';
 
-const MAKE_AUTO: Record<string, [string, string, string]> = wordTable({
-  '@': ['make_target', 'ターゲット名', 'the target name'],
-  '<': ['make_first_prerequisite', '最初の依存ファイル', 'the first prerequisite'],
-  '^': ['make_prerequisites', 'すべての依存ファイル', 'all prerequisites'],
-  '?': ['make_newer_prerequisites', 'ターゲットより新しい依存ファイル', 'the prerequisites newer than the target'],
-  '*': ['make_stem', 'パターンルールの `%` に当たる部分', 'the stem matched by `%`'],
-});
+/** The shell variable that stands for each of make's automatic variables (what they mean is said by the catalog, src/messages-hosts.ts). */
+const MAKE_AUTO: Record<MakeAutomatic, string> = {
+  '@': 'make_target',
+  '<': 'make_first_prerequisite',
+  '^': 'make_prerequisites',
+  '?': 'make_newer_prerequisites',
+  '*': 'make_stem',
+};
 
 export function makefile(b: Builder): void {
   let shell: Shell = 'sh';
@@ -54,10 +55,9 @@ function makeRecipeLine(b: Builder, i: number, first: boolean): void {
       k += 2;
       continue;
     }
-    if (next && MAKE_AUTO[next]) {
-      const [name, ja, en] = MAKE_AUTO[next];
-      const meaning: [string, string] = [`make の自動変数（${ja}）で、シェルが実行される前に make が展開します`, `make's automatic variable (${en}), expanded by make before the shell runs`];
-      o.insert(`\${${name}}`, k, k + 2, meaning);
+    if (next && isMakeAutomatic(next)) {
+      const meaning: HostMeaning = { kind: 'make-automatic', char: next };
+      o.insert(`\${${MAKE_AUTO[next]}}`, k, k + 2, meaning);
       b.substitutions.push({ line: i, text: `$${next}`, meaning });
       k += 2;
       continue;
@@ -68,9 +68,7 @@ function makeRecipeLine(b: Builder, i: number, first: boolean): void {
       const inner = line.slice(k + 2, close);
       const simple = /^[\w.]+$/.test(inner);
       const name = simple ? inner.replace(/\./g, '_') : `make_${inner.split(/\s/)[0].replace(/\W/g, '_')}`;
-      const meaning: [string, string] = simple
-          ? [`make の変数 \`${inner}\` で、シェルが実行される前に make が展開します`, `the make variable \`${inner}\`, expanded by make before the shell runs`]
-          : [`make の関数 \`${inner.split(/\s/)[0]}\` の呼び出しで、シェルが実行される前に make が結果に置き換えます`, `a call of the make function \`${inner.split(/\s/)[0]}\`, replaced by its result before the shell runs`];
+      const meaning: HostMeaning = simple ? { kind: 'make-variable', name: inner } : { kind: 'make-function', name: inner.split(/\s/)[0] };
       o.insert(`\${${name}}`, k, close + 1, meaning);
       b.substitutions.push({ line: i, text: line.slice(k, close + 1), meaning });
       k = close + 1;
@@ -78,7 +76,7 @@ function makeRecipeLine(b: Builder, i: number, first: boolean): void {
     }
     // `$X`: a one-letter make variable.
     if (next && /\w/.test(next)) {
-      const meaning: [string, string] = [`make の変数 \`${next}\` で、シェルが実行される前に make が展開します`, `the make variable \`${next}\`, expanded by make before the shell runs`];
+      const meaning: HostMeaning = { kind: 'make-variable', name: next };
       o.insert(`\${${next}}`, k, k + 2, meaning);
       b.substitutions.push({ line: i, text: `$${next}`, meaning });
       k += 2;

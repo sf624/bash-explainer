@@ -1,6 +1,7 @@
 import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
 import type { FactSpec } from '../messages';
+import type { HostMeaning } from '../messages-hosts';
 import type { HostRun } from '../semantics/walk/host';
 
 /** Kinds of files whose shell snippets are explained. */
@@ -70,7 +71,7 @@ export interface NoShell {
 export interface HostSubstitution {
   line: number;
   text: string;
-  meaning: [string, string];
+  meaning: HostMeaning;
   /** A warning about the substitution (e.g. untrusted input pasted into a script). */
   warning?: FactSpec;
 }
@@ -84,7 +85,7 @@ export interface Extracted {
   text: string;
   maps: number[][];
   /** Per line, the ranges of the shell text that replace host syntax (`${CC}` for `$(CC)`). */
-  inserted: [number, number, [string, string]?][][];
+  inserted: [number, number, HostMeaning?][][];
   regions: ShellRegion[];
   substitutions: HostSubstitution[];
 }

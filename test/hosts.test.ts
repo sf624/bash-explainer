@@ -7,6 +7,9 @@ import type { Shell } from '../src/dialect';
 import { Analyzer, Token } from '../src/analyzer';
 import { batsTestName, explainHostedLine, extractShell, hostIssues, hostKind } from '../src/hosts';
 import { githubContext } from '../src/dict/ciVariables';
+import { tx } from '../src/i18n';
+import { fact } from '../src/messages';
+import { GITHUB_FILE_NAMES, type HostMeaning, hostMeaningText } from '../src/messages-hosts';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { allTokens, tokensOf } from './support/explain';
 
@@ -1070,3 +1073,49 @@ describe('one mapping from a program name to a shell (hosts)', () => {
     assert.deepStrictEqual(ci('README.md', '```bash\necho a\n```\n'), [{ kind: 'markdown' }]);
   });
 });
+
+describe('the words of host syntax (the catalog, src/messages-hosts.ts)', () => {
+  // (One or two of every kind, typed so that a kind added to the union needs a row here.)
+  const MEANINGS: Record<HostMeaning['kind'], { meaning: HostMeaning; en: RegExp; ja: RegExp }[]> = {
+    'make-automatic': [{ meaning: { kind: 'make-automatic', char: '@' }, en: /automatic variable \(the target name\)/, ja: /自動変数（ターゲット名）/ }],
+    'make-variable': [{ meaning: { kind: 'make-variable', name: 'CC' }, en: /make variable `CC`/, ja: /make の変数 `CC`/ }],
+    'make-function': [{ meaning: { kind: 'make-function', name: 'shell' }, en: /make function `shell`/, ja: /make の関数 `shell`/ }],
+    'azure-macro': [
+      { meaning: { kind: 'azure-macro', name: 'Build.BuildId', what: tx('ビルド番号', 'the build ID') }, en: /variable `Build.BuildId`: the build ID;/, ja: /ビルド番号を表す Azure/ },
+      { meaning: { kind: 'azure-macro', name: 'foo.bar' }, en: /macro, replaced with the value of the variable `foo.bar`/, ja: /^Azure Pipelines の変数 `foo.bar`/ },
+    ],
+    'azure-template': [{ meaning: { kind: 'azure-template', expr: 'x' }, en: /template expression, replaced with the value of `x`/, ja: /テンプレート式/ }],
+    'github-expression': [
+      { meaning: { kind: 'github-expression', expr: 'github.sha', what: tx('コミットの識別子', 'the commit SHA') }, en: /expression `github.sha`: the commit SHA;/, ja: /^コミットの識別子を表す GitHub Actions の式/ },
+      { meaning: { kind: 'github-expression', expr: 'foo' }, en: /^a GitHub Actions expression, replaced with the value of `foo`/, ja: /^GitHub Actions の式で/ },
+    ],
+    'jenkins-expression': [{ meaning: { kind: 'jenkins-expression', expr: 'a.b()' }, en: /value of the Groovy expression `a.b\(\)`/, ja: /Groovy の式 `a.b\(\)` の値/ }],
+    'jenkins-variable': [{ meaning: { kind: 'jenkins-variable', expr: 'env.X', what: tx('名前`x`', 'a name') }, en: /expression `env.X`: a name;/, ja: /名前`x` を表す Groovy/ }],
+    'jenkins-parameter': [{ meaning: { kind: 'jenkins-parameter', expr: 'params.T', name: 'T' }, en: /expression `params.T`: the build parameter `T`;/, ja: /ビルドパラメータ `T` を表す Groovy/ }],
+    'python-field': [{ meaning: { kind: 'python-field', expr: 'a' }, en: /Python expression `a`, pasted into the string/, ja: /Python の式 `a` の値（実行前/ }],
+    'python-argument': [{ meaning: { kind: 'python-argument', expr: 'a' }, en: /Python expression `a`, passed as one argument/, ja: /1つの引数として渡る/ }],
+    'bats-test-function': [{ meaning: { kind: 'bats-test-function' }, en: /name bats gives the function of the test/, ja: /関数に付ける名前/ }],
+    'bats-test-name': [{ meaning: { kind: 'bats-test-name', name: 'test_a' }, en: /function name `test_a`/, ja: /関数名 `test_a`/ }],
+  };
+
+  it('says every kind of substitution in both languages', () => {
+    for (const rows of Object.values(MEANINGS)) {
+      for (const { meaning, en, ja } of rows) {
+        const text = hostMeaningText(meaning);
+        assert.match(text.en, en);
+        assert.match(text.ja, ja);
+        assert.match(fact('en', 'host-substitution', { text: '$(X)', meaning }).body, /^`\$\(X\)` is /);
+        assert.match(fact('ja', 'host-substitution', { text: '$(X)', meaning }).body, /^`\$\(X\)` は/);
+      }
+    }
+  });
+
+  it('says every file GitHub Actions provides', () => {
+    assert.deepStrictEqual(GITHUB_FILE_NAMES, ['GITHUB_ENV', 'GITHUB_OUTPUT', 'GITHUB_PATH', 'GITHUB_STEP_SUMMARY', 'GITHUB_STATE']);
+    for (const name of GITHUB_FILE_NAMES) {
+      assert.match(fact('en', 'github-file', { name }).body, new RegExp(`^\`\\$${name}\` is the path of a file GitHub Actions provides: `));
+      assert.match(fact('ja', 'github-file', { name }).body, new RegExp(`^\`\\$${name}\` は GitHub Actions が用意するファイルのパスです。`));
+    }
+  });
+});
+

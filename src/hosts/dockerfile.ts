@@ -1,5 +1,6 @@
 import { type Shell, shellFromName } from '../dialect';
 import { LineOut, Builder } from './builder';
+import type { HostMeaning } from '../messages-hosts';
 import type { RegionNote } from './index';
 import { DECLARATIONS } from '../semantics/effects';
 import { RESERVED } from '../semantics/names';
@@ -8,7 +9,7 @@ import { RESERVED } from '../semantics/names';
 export interface JsonWord {
   line: number; start: number; end: number; value: string; cols: number[];
   /** Not a literal: shell text standing for the value of a host expression, and what it means. */
-  placeholder?: [string, [string, string]];
+  placeholder?: [string, HostMeaning];
 }
 
 /** The escapes of a JSON string, but `\uXXXX`: what each stands for. */

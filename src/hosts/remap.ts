@@ -1,4 +1,5 @@
 import { githubFileNotes } from './yaml';
+import { hostMeaningText } from '../messages-hosts';
 import type { ArgvLine, ArgvWord, ExplainOptions, LineExplanation, Pos, Span, Token } from '../analyzer-types';
 import type { BashVersion } from '../bashversion';
 import { dialectIssues, type Shell } from '../dialect';
@@ -56,7 +57,7 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
       ? extracted.inserted[sp.start.line].find(([a, b]) => a === sp.start.character && b === sp.end.character)
       : undefined;
     if (!whole?.[2]) return undefined;
-    const m = whole[2][lang === 'ja' ? 0 : 1];
+    const m = hostMeaningText(whole[2])[lang];
     return lang === 'en' ? m[0].toUpperCase() + m.slice(1) : m;
   };
   const token = (t: Token): Token => {
@@ -108,7 +109,7 @@ export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja'
     .filter((s) => s.line === line && !seen.has(s.text) && seen.add(s.text))
     .flatMap((s) => {
       const warnings = s.warning ? said([factOf(lang, s.warning)], pitfalls).map((f): Note => (facts?.push(f), { ...noteData(f), code: 'injection' })) : [];
-      const meaning = fact(lang, 'host-substitution', { text: s.text, meaning: { ja: s.meaning[0], en: s.meaning[1] } });
+      const meaning = fact(lang, 'host-substitution', { text: s.text, meaning: s.meaning });
       facts?.push(meaning);
       return [...warnings, noteData(meaning)];
     });

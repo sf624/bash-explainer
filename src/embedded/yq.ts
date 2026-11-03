@@ -3,15 +3,12 @@ import type { HostId } from '../hosts';
 import { lex, ParseError } from './jq';
 import { JQ_ONLY, YQ_ONLY } from './yqfuncs';
 import { wordTable } from '../wordtable';
+import { JQ_STYLE, YQ_NAMES } from '../messages-yq';
+
+export { YQ_NAMES };
 
 /** The three tools called `yq`. */
 export type YqFlavor = 'mikefarah4' | 'kislyuk' | 'mikefarah3';
-
-export const YQ_NAMES: Record<YqFlavor, [string, string]> = {
-  mikefarah4: ['mikefarah/yq v4', 'mikefarah/yq v4'],
-  kislyuk: ['kislyuk/yq（Python 版。jq のラッパー）', 'kislyuk/yq (the Python jq wrapper)'],
-  mikefarah3: ['mikefarah/yq v3', 'mikefarah/yq v3'],
-};
 
 /** A reason for the verdict, and how strongly it points at a flavor. */
 interface Clue { flavor: YqFlavor; weight: number; why: [string, string] }
@@ -216,31 +213,6 @@ export function judgeYq(words: (string | undefined)[], ctx: { doc?: string; host
     compat[f] = { ok: !missing.length, min, missing: [...new Set(missing)] };
   }
   return { flavor, decided, reasons, compat, expression };
-}
-
-/** Marks "a jq-style expression" in the missing features of v3. */
-const JQ_STYLE = '\u0000jq-style';
-
-/** The verdict as notes: what the explanation follows, why, and where the command works. */
-export function yqNotes(v: YqVerdict, lang: Lang): string[] {
-  const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
-  const name = (f: YqFlavor) => YQ_NAMES[f][lang === 'ja' ? 0 : 1];
-  const short = (f: YqFlavor) => (f === 'kislyuk' ? 'kislyuk/yq' : name(f));
-  const item = (m: string) => (m === JQ_STYLE ? s('jq 形式の式', 'jq-style expressions') : m);
-  const ver = (f: YqFlavor) => (f === 'mikefarah4' && v.compat.mikefarah4.min && v.compat.mikefarah4.min !== '4.0.0' ? s(`（v${v.compat.mikefarah4.min} 以降）`, ` (v${v.compat.mikefarah4.min} or later)`) : '');
-  const head = v.decided
-    ? s(`yq: ${name(v.flavor)}${ver(v.flavor) || (name(v.flavor).endsWith('）') ? '' : ' ')}として解説。根拠: ${v.reasons.map((r) => r[0]).join('、')}`, `yq: explained as ${name(v.flavor)}${ver(v.flavor)}. Because: ${v.reasons.map((r) => r[1]).join('; ')}`)
-    : s(`yq: どの yq か判定できないため、${name('mikefarah4')}${ver('mikefarah4') || ' '}として解説（利用者が多いため）`, `yq: which yq this is cannot be told, so it is explained as ${name('mikefarah4')}${ver('mikefarah4')} (the most common one)`);
-  const compat = (['mikefarah4', 'kislyuk', 'mikefarah3'] as YqFlavor[]).map((f) => {
-    const c = v.compat[f];
-    if (c.ok) {
-      const extra = f === 'kislyuk' && v.flavor !== 'kislyuk' ? s('。出力は JSON（YAML にするには `-y`）', '; output is JSON (`-y` for YAML)') : '';
-      return `${short(f)}${f === 'mikefarah4' ? ver(f) : ''} ✓${extra}`;
-    }
-    const list = c.missing.slice(0, 2).map(item);
-    return `${short(f)} ✗${s(`（${list.join('・')} が使えない）`, ` (no ${list.join(', ')})`)}`;
-  });
-  return [head, s(`互換性: ${compat.join(' ／ ')}`, `Works with: ${compat.join(' / ')}`)];
 }
 
 /** Explain a mikefarah/yq v3 path such as `a.b[0].c`, `a.(name==x).c`, `a.**` or `a.[+]`. */

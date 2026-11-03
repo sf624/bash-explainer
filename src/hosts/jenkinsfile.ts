@@ -1,7 +1,8 @@
 import { shellFromName } from '../dialect';
 import { CI_PROVIDED, ciVariables } from '../dict/ciVariables';
 import type { RegionNote } from './index';
-import { LineOut, Builder, spaced } from './builder';
+import { LineOut, Builder } from './builder';
+import type { HostMeaning } from '../messages-hosts';
 
 /**
  * The scripts of `sh` steps in a Jenkins pipeline: `sh 'cmd'`, `sh "…"`, `sh '''…'''`, `sh """…"""`,
@@ -78,10 +79,8 @@ function groovyText(b: Builder, i: number, from: number, to: number, interpolate
         const expr = braced >= 0 && braced < to ? line.slice(k + 2, braced).trim() : bare![1];
         // `env.BRANCH_NAME`, `params.TARGET`.
         const envVar = /^env\.(\w+)$/.exec(expr)?.[1];
-        const known = envVar && Object.hasOwn(ciVariables, envVar) ? ciVariables[envVar].meaning : /^params\.\w+$/.test(expr) ? { ja: `ビルドパラメータ \`${expr.slice(7)}\``, en: `the build parameter \`${expr.slice(7)}\`` } : undefined;
-        const meaning: [string, string] = known
-          ? [`${spaced(known.ja)}を表す Groovy の式 \`${expr}\` で、シェルが実行される前に Jenkins が値を埋め込みます`, `the Groovy expression \`${expr}\`: ${known.en}; Jenkins fills in its value before the shell runs`]
-          : [`Groovy の式 \`${expr}\` の値で、シェルが実行される前に Jenkins が埋め込みます`, `the value of the Groovy expression \`${expr}\`, filled in by Jenkins before the shell runs`];
+        const meaning: HostMeaning = envVar && Object.hasOwn(ciVariables, envVar) ? { kind: 'jenkins-variable', expr, what: ciVariables[envVar].meaning }
+          : /^params\.\w+$/.test(expr) ? { kind: 'jenkins-parameter', expr, name: expr.slice(7) } : { kind: 'jenkins-expression', expr };
         o.insert(`\${${expr.replace(/\W+/g, '_').replace(/^_|_$/g, '').toUpperCase() || 'EXPR'}}`, k, end, meaning);
         b.substitutions.push({ line: i, text: line.slice(k, end), meaning });
         k = end;

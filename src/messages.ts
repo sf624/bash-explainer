@@ -16,9 +16,12 @@ import {
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
 import { IDIOM_MESSAGES } from './messages-idioms';
 import {
-  type Alone, continuedText, githubFileText, heredocBodyText, heredocEndText, HOST_NOTES, hostSubstitutionText, readSeparatorsText, redirectOrderText, stderrFirstText,
+  type Alone, continuedText, heredocBodyText, heredocEndText, HOST_NOTES, readSeparatorsText, redirectOrderText, stderrFirstText,
 } from './messages-lines';
+import { type GithubFileName, githubFileText, type HostMeaning, hostSubstitutionText } from './messages-hosts';
 import { noShellLines } from './messages-shell';
+import { yqCompatText, yqFlavourText } from './messages-yq';
+import type { YqVerdict } from './embedded/yq';
 import type { RedirectOrder } from './idioms';
 import type { Rewrite } from './rewrite';
 import type { NameFacts, NameKind } from './semantics/names';
@@ -675,12 +678,12 @@ export const MESSAGES = {
   ...IDIOM_MESSAGES,
   // (yq: which of the three tools of that name this is, and which run the line: the name is looked up in PATH, 3.7.2.
   // The words are src/embedded/yq.ts's, `yqNoteTexts`.)
-  'yq-flavour': note<{ text: Words }>(['3.7.2'], ({ text }) => [text.ja, text.en]),
-  'yq-compat': note<{ text: Words }>(['3.7.2'], ({ text }) => [text.ja, text.en]),
+  'yq-flavour': note<{ verdict: YqVerdict }>(['3.7.2'], yqFlavourText),
+  'yq-compat': note<{ verdict: YqVerdict }>(['3.7.2'], yqCompatText),
   // (A host replaces its substitutions before the shell reads the line, 3.1.1; a variable of the environment GitHub
   // Actions gives, 3.7.4; the host's notes on how its code is run, 6.1, and on a status, 3.7.5.)
-  'host-substitution': note<{ text: string; meaning: Words }>(['3.1.1'], hostSubstitutionText),
-  'github-file': note<{ name: string; what: Words }>(['3.7.4'], githubFileText),
+  'host-substitution': note<{ text: string; meaning: HostMeaning }>(['3.1.1'], hostSubstitutionText),
+  'github-file': note<{ name: GithubFileName }>(['3.7.4'], githubFileText),
   'dockerfile-onbuild': note<Record<string, never>>(['6.1'], () => HOST_NOTES['dockerfile-onbuild']),
   'dockerfile-healthcheck': note<Record<string, never>>(['3.7.5'], () => HOST_NOTES['dockerfile-healthcheck']),
   'dockerfile-exec-form': note<Record<string, never>>(['3.7.2'], () => HOST_NOTES['dockerfile-exec-form']),

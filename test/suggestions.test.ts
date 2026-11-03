@@ -17,6 +17,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
+import { judgeYq } from '../src/embedded/yq';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { type FactId, MESSAGES } from '../src/messages';
 import { STYLE_REWRITES, type StyleCode } from '../src/pitfalls';
@@ -252,8 +253,16 @@ const ANY: unknown = new Proxy(function () { /* placeholder */ }, {
   apply: () => ANY,
 });
 
+/** The parameters of the facts whose text reads the shape of its data (a verdict, a kind of substitution, a name of a table), not a string. */
+const SAMPLE: Partial<Record<FactId, unknown>> = {
+  'yq-flavour': { verdict: judgeYq(['.a']) },
+  'yq-compat': { verdict: judgeYq(['.a']) },
+  'host-substitution': { text: 'X', meaning: { kind: 'make-variable', name: 'X' } },
+  'github-file': { name: 'GITHUB_ENV' },
+};
+
 describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
-  const english = (id: FactId): string => (MESSAGES[id].text as (p: unknown) => readonly [string, string])(ANY)[1];
+  const english = (id: FactId): string => (MESSAGES[id].text as (p: unknown) => readonly [string, string])(SAMPLE[id] ?? ANY)[1];
 
   it('classifies an entry as a suggestion exactly when its text suggests a rewrite', () => {
     const wrong = (Object.keys(MESSAGES) as FactId[]).filter((id) => {

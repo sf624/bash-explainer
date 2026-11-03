@@ -1,8 +1,6 @@
 import type { Shell } from '../dialect';
+import type { HostMeaning } from '../messages-hosts';
 import type { HostKind, NoShell, RegionNote, ShellRegion, HostSubstitution, Extracted } from './index';
-
-/** Japanese text followed by more: a space after a closing backtick, so the code span ends. */
-export const spaced = (ja: string) => (ja.endsWith('`') ? `${ja} ` : ja);
 
 /** Builds the shell text of one line from pieces of the original line and inserted text. */
 export class LineOut {
@@ -11,7 +9,7 @@ export class LineOut {
   /** Original end (exclusive) of each character. */
   ends: number[] = [];
   /** Ranges [start, end) of the shell text that stand in for host syntax, with what it means. */
-  inserted: [number, number, [string, string]?][] = [];
+  inserted: [number, number, HostMeaning?][] = [];
   /** Copy original columns [from, to). */
   copy(line: string, from: number, to: number): void {
     for (let i = from; i < to; i++) {
@@ -21,7 +19,7 @@ export class LineOut {
     }
   }
   /** Insert `text` standing for original columns [from, to). */
-  insert(text: string, from: number, to: number, meaning?: [string, string]): void {
+  insert(text: string, from: number, to: number, meaning?: HostMeaning): void {
     if (text.length > 1) this.inserted.push([this.text.length, this.text.length + text.length, meaning]);
     for (let i = 0; i < text.length; i++) {
       this.text += text[i];

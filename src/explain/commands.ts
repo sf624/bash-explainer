@@ -15,7 +15,7 @@ import { customCommandSpec } from '../dict/custom';
 import { distroAliases } from '../dict/distroAliases';
 import { fdName, keywords } from '../dict/syntax';
 import { yqSpecsOf } from '../dict/yq';
-import { judgeYq, yqNotes } from '../embedded/yq';
+import { judgeYq } from '../embedded/yq';
 import { lineLabel, lineListLabel, type Text, tx } from '../i18n';
 import { bracket as bracketLabel, labelText, shorten } from '../label';
 import { fact } from '../messages';
@@ -251,9 +251,8 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
     head.spec = yq[verdict.flavor];
     head.explanation = cx.t(head.spec.summary);
     // A command over several lines is explained whole, so it always starts on the line explained.
-    const [ja, en] = [yqNotes(verdict, 'ja'), yqNotes(verdict, 'en')];
-    cx.note(fact(cx.lang, 'yq-flavour', { text: { ja: ja[0], en: en[0] } }), n);
-    cx.note(fact(cx.lang, 'yq-compat', { text: { ja: ja[1], en: en[1] } }), n);
+    cx.note(fact(cx.lang, 'yq-flavour', { verdict }), n);
+    cx.note(fact(cx.lang, 'yq-compat', { verdict }), n);
   }
   const where = head.kind === 'builtin' && onlyInFunction(head.spec!, cx.shell) && scopeOf(n) !== 'substitution' ? inFunction(cx.state.env(n)) : undefined;
   if (where === 'no' || where === 'trap') {
