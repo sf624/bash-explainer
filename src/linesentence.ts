@@ -64,7 +64,8 @@ const ITEMS = 4;
 
 /**
  * The keyword that lacks its separator in a statement or in one under it (`strayKeyword`), where bash stops as it reads the script. A here-document's
- * body and backticks are read only when they are expanded: the substitution fails, and bash goes on (test/linesentence.test.ts).
+ * body and backticks are read only when they are expanded, and bash goes on after the error: a `$( )` in a body drops its command too (status 1),
+ * and backticks are empty and their command runs (test/linesentence.test.ts).
  */
 const strayIn = (n: SyntaxNode): 'then' | 'do' | undefined => (n.type === 'heredoc_body' || (n.type === 'command_substitution' && n.text[0] === '`') ? undefined : strayKeyword(n) ?? n.namedChildren.map(strayIn).find(Boolean));
 

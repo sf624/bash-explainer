@@ -237,7 +237,6 @@ A row of the explanation marks a warning inside its text. It marked every one wi
 - zsh, ksh93 and mksh read a leading 0 as decimal (`$((09))` is 9, `$((010))` is 10), and yash reads `09` as 9: no message, and `010` is not called octal there.
 - `base#digits` differs between shells (`1#1` is 49 in mksh, `2#` is 0 in zsh, and dash and yash have none): out of bash, only a good constant up to base 36 is explained.
 - Beside an expansion a literal is no constant: `x=1; echo $(( ${x}09 ))` prints 109, and nothing is said of the `09`.
-- Where the shell may never read it, it is a warning that starts "If bash reads it": `${x:-$((09))}`, `${y:+$((09))}`, after `||` or `&&` in `[[ ]]`, a `case` pattern after the first, the update of a C-style `for`.
 
 ### terraform's options before the subcommand
 
