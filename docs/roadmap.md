@@ -31,7 +31,7 @@ Priority order decided by the maintainer on 2026-10-31: the remaining correctnes
 
 Decided by the maintainer on 2026-10-31: correctness work on rare corners waits until the UX work is done. These items are to be judged again after the release with the new UX, 0.10.0: whether to do them at all. Open bugs stay listed here with their details.
 
-- "In short" reads as fine on other syntax errors (`if a; then b fi`, `while a; do b done`, `case x in a) ;;`, `{ a }`): it says what the line seems to do, as it did before P7a for a missing `;` before `then`.
+- "In short" reads as fine on other syntax errors (`if a; then b fi`, `while a; do b done`, `case x in a) ;;`, `{ a }`): it says what the line seems to do, as it did before P7a for a missing `;` before `then`. Also, accepted as rare: "Runs `cat`" for `cat <<E` whose body has such an error in `$( )`, where bash drops the command.
 - Fail `--check` on chosen codes (found in the review of #549): since step 1a of the three note levels, `injection`, `pythonInjection` and `pythonNoShell` are warnings, so an Action user cannot fail on script injection alone without `strict`, which fails on every warning. An option (a list of codes that fail, like `diagnostics.ignore`) would give that back.
 - Flaky `ps rUroot` test (test/oldstyle-real.test.ts:276).
 - `ps aux | grep {nginx,python}`: the pipeline example filters the ps rows, but bash's brace expansion makes grep read the file `python`, not stdin (predates P6; found in the review of #568).
