@@ -28,7 +28,7 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'declaration-masks-status': { subjects: 6, ran: 5, checks: 11, skipped: { 'bash does not parse it': 1 } },
   'failure-reported-as-success': { subjects: 2, ran: 2, checks: 16, skipped: {} },
   'for-over-unquoted-args': { subjects: 4, ran: 4, checks: 12, skipped: {} },
-  'nounset-unbound': { subjects: 5, ran: 5, checks: 15, skipped: {} },
+  'nounset-unbound': { subjects: 6, ran: 6, checks: 18, skipped: {} },
   'pattern-from-variable': { subjects: 11, ran: 6, checks: 24, skipped: { '`eval`': 1, 'a file outside the run\'s directory': 2, 'its stdin is a pipe': 1, 'the script sets `x`': 1 } },
   'postfix-increment-status': { subjects: 14, ran: 14, checks: 28, skipped: {} },
   'prefix-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },

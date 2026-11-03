@@ -551,15 +551,6 @@ export function inBackground(n: SyntaxNode): boolean {
   return !!at && at.run.parts[at.index + 1]?.type === '&';
 }
 
-/** The most lines of a statement that each read all of it. */
-const WHOLE_ROWS = 64;
-
-/**
- * Whether `line` is one of the later lines of a statement too long for each of its lines to read all of it (`\\` continuations, a
- * here-document): they would make the script's cost the square of its size. Its first line reads it, and each of the others only its part.
- */
-export const pastWhole = (n: SyntaxNode, line: number): boolean => n.endPosition.row - n.startPosition.row > WHOLE_ROWS && n.startPosition.row !== line;
-
 /** Whether `n` or anything under it is an `error` node or incomplete. */
 export function hasError(n: SyntaxNode): boolean {
   return n.type === 'error' || n.incomplete || n.children.some(hasError);

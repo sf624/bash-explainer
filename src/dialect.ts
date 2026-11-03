@@ -8,7 +8,7 @@ import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
 import { type Note, problemNote } from './messages';
 import type { Head } from './messages-heads';
-import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, pastWhole, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
+import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
 import { networkPath, networkTarget } from './dict/syntax';
 import { bracesInContext } from './semantics/words';
 import { staticWordValue } from './staticword';
@@ -451,26 +451,36 @@ const ZSH_SYNTAX: [string, string] = [
  * (`SHELL_OPTIONS_SINCE`, in an operand of type `shell-option`: `shopt -s NAME`).
  */
 function laterOptions(tree: SyntaxTree, from: number, to: number, version: BashVersion, lang: Lang): Issue[] {
+  return descendants(tree.root, ['command'], { from, to }).flatMap((c) => laterOptionsOf(c, version, lang));
+}
+
+/** What `laterOptions` finds in the command `c`, once for it: each line of a command over several lines asks. */
+const laterKept = new WeakMap<SyntaxNode, Map<string, Issue[]>>();
+function laterOptionsOf(c: SyntaxNode, version: BashVersion, lang: Lang): Issue[] {
+  const name = field(c, 'name');
+  if (!name || !Object.hasOwn(builtins, name.text)) return [];
+  let byKey = laterKept.get(c);
+  if (!byKey) laterKept.set(c, (byKey = new Map()));
+  const key = `${version} ${lang}`;
+  const known = byKey.get(key);
+  if (known) return known;
   const out: Issue[] = [];
-  for (const c of descendants(tree.root, ['command'], { from, to })) {
-    const name = field(c, 'name');
-    if (!name || !Object.hasOwn(builtins, name.text) || (from === to && pastWhole(c, from))) continue;
-    const prefix = prefixAssignments(c);
-    const args = c.namedChildren.filter((x) => x !== name && !prefix.includes(x) && x.field !== 'redirect');
-    const parse = interpret(builtins[name.text], args.map(argWord), { name: name.text });
-    const add = (word: number, text: [string, string]): void => {
-      out.push({ id: 'laterOption', kind: 'unsupported', note: unsupported(lang, 'laterOption', `${text[lang === 'ja' ? 0 : 1]}${lang === 'ja' ? '。' : '.'}`), node: args[word], place: args[word] });
-    };
-    for (const { word, role } of givenOptions(parse)) {
-      const since = role.role === 'option' ? role.spec.since : undefined;
-      if (since && earlier(version, since)) add(word, laterOption(name.text, role.flag, since, version, builtins[name.text].builtin === 'special'));
-    }
-    for (const { word, role } of parse.roles) {
-      const option = role.role === 'operand' && role.spec?.type === 'shell-option' ? argWord(args[word]).value : undefined;
-      const since = option !== undefined && Object.hasOwn(SHELL_OPTIONS_SINCE, option) ? SHELL_OPTIONS_SINCE[option] : undefined;
-      if (since && earlier(version, since)) add(word, laterShellOption(option!, since, version));
-    }
+  const prefix = prefixAssignments(c);
+  const args = c.namedChildren.filter((x) => x !== name && !prefix.includes(x) && x.field !== 'redirect');
+  const parse = interpret(builtins[name.text], args.map(argWord), { name: name.text });
+  const add = (word: number, text: [string, string]): void => {
+    out.push({ id: 'laterOption', kind: 'unsupported', note: unsupported(lang, 'laterOption', `${text[lang === 'ja' ? 0 : 1]}${lang === 'ja' ? '。' : '.'}`), node: args[word], place: args[word] });
+  };
+  for (const { word, role } of givenOptions(parse)) {
+    const since = role.role === 'option' ? role.spec.since : undefined;
+    if (since && earlier(version, since)) add(word, laterOption(name.text, role.flag, since, version, builtins[name.text].builtin === 'special'));
   }
+  for (const { word, role } of parse.roles) {
+    const option = role.role === 'operand' && role.spec?.type === 'shell-option' ? argWord(args[word]).value : undefined;
+    const since = option !== undefined && Object.hasOwn(SHELL_OPTIONS_SINCE, option) ? SHELL_OPTIONS_SINCE[option] : undefined;
+    if (since && earlier(version, since)) add(word, laterShellOption(option!, since, version));
+  }
+  byKey.set(key, out);
   return out;
 }
 

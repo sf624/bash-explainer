@@ -21,6 +21,8 @@ import { problemCodes } from '../linesentence';
 import { markTokens, sayInstead } from '../tokenmarks';
 import { pushAll } from '../lists';
 
+const remappedTokens = new WeakMap<Extracted, Record<'ja' | 'en', WeakMap<Token, Token>>>();
+
 /**
  * Move every position in an explanation of the extracted shell text back to the original
  * document, and relabel tokens with the original text (`$(CC)` rather than `${CC}`).
@@ -94,9 +96,18 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
   // for `$$f`, a line a backslash continues in a Dockerfile): not the file. The facts of a host carry none (src/rewrite.ts),
   // nor do the places of its notes (no quick fix).
   const factInFile = ({ rewrite: _r, ...f }: Fact): Fact => noteInFile(f);
+  let byLang = remappedTokens.get(extracted);
+  if (!byLang) remappedTokens.set(extracted, (byLang = { en: new WeakMap(), ja: new WeakMap() }));
+  const kept = byLang[lang];
   return {
     ...ex,
-    items: ex.items.map(token),
+    items: ex.items.map((t) => {
+      if (!Object.isFrozen(t)) return token(t);
+      // (A statement over several lines, the same token on each of them: `Whole`.)
+      let mapped = kept.get(t);
+      if (!mapped) kept.set(t, (mapped = token(t)));
+      return mapped;
+    }),
     examples: ex.examples.map((e) => (e.anchor ? { ...e, anchor: span(e.anchor) } : e)),
     notes: ex.notes.map(inFile),
     noteInfo: ex.noteInfo.map(noteInFile),
@@ -208,7 +219,7 @@ export function explainHostedLine(
   // (Through the gate of `notes.basis`, as the analyzer's.)
   if (hostFacts.length) ex.facts = [...(ex.facts ?? []), ...hostFacts.map((f) => basisGate(f, opts.basis))];
   // (The facts bats adds on nodes of the line are about its tokens too.)
-  if (tests) markTokens(ex.items, ex);
+  if (tests) ex.items = markTokens(ex.items, ex);
   ex.notes = [...notes.map((n) => n.text), ...ex.notes];
   ex.noteInfo = [...notes.map((n) => basisGate(n, opts.basis)), ...ex.noteInfo];
   const out = remapExplanation(ex, extracted, original, lang);

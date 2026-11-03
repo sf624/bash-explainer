@@ -39,6 +39,8 @@ export interface SentenceInput {
   commands: ReadonlyMap<SyntaxNode, CommandSaid>;
   /** The codes of the problems of the line (fact ids, style checks): a clause one of them says is left out (`clausesOf`). */
   problems: ReadonlySet<string>;
+  /** The sentences of a statement over several lines, which says the same on each of them, kept by what they depend on (`Whole`): each would read all of it. */
+  kept?: Map<string, unknown>;
 }
 
 /** The sentence, and the clauses on the models it says (for the tests of the rules). */
@@ -73,6 +75,13 @@ const strayIn = (n: SyntaxNode): 'then' | 'do' | undefined => (n.type === 'hered
 export function lineSentence(input: SentenceInput): Sentence | undefined {
   const pieces = piecesOn(input.root, input.line);
   if (!pieces.length) return undefined;
+  const key = input.kept && pieces.every((p) => p.kind === 'whole') ? [pieces.map((p) => p.node.startIndex).join(), ...[...input.problems].sort()].join(' ') : undefined;
+  if (key === undefined) return composed(input, pieces);
+  if (!input.kept!.has(key)) input.kept!.set(key, composed(input, pieces));
+  return input.kept!.get(key) as Sentence | undefined;
+}
+
+function composed(input: SentenceInput, pieces: Piece[]): Sentence | undefined {
   const stray = pieces.map((p) => (p.kind === 'whole' ? strayIn(p.node) : strayKeyword(p.node))).find(Boolean);
   if (stray) return { text: sentenceEnd(input.lang, [S.keywordMissing(input.lang, stray)]), clauses: [] };
   let said!: Sentence;

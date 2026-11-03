@@ -87,10 +87,14 @@ export const LINES: { script: string; says?: RegExp }[] = [
   { script: `jq 'def a0: .; ${Array.from({ length: 40 }, (_, i) => `def a${i + 1}: a${i}|a${i};`).join(' ')} a40'`, says: /too many steps/ },
   { script: `shopt -s expand_aliases\n${Array.from({ length: 40 }, (_, i) => `alias a${i + 1}='a${i}; a${i}'`).join('\n')}\na40` },
   { script: `${Array.from({ length: 300 }, (_, i) => `f${i + 1}() { f${i}; f${i}; }`).join('\n')}\nf300` },
-  // Statements over more lines than each should read: each of these takes the square of its lines without the limit, and these are few of them to explain.
-  { script: `echo a${' \\\n a'.repeat(300)}` },
-  { script: `cat <<E\n${'$x $(a) ${y:-b}\n'.repeat(300)}E` },
-  { script: `a=(\n${'x\n'.repeat(300)})` },
+  // Statements over more lines than each should read: each of these takes the square of its lines without the walk kept for the document (src/explain/whole.ts).
+  { script: `echo a${' \\\n a'.repeat(3000)}` },
+  { script: `cat <<E\n${'$x $(a) ${y:-b}\n'.repeat(1000)}E` },
+  { script: `cat <<E\n${'a\n'.repeat(5000)}E` },
+  { script: `echo "\n${'a\n'.repeat(5000)}"` },
+  { script: `a=(\n${'x\n'.repeat(3000)})` },
+  { script: `x=$(\n${'a\n'.repeat(2000)})` },
+  { script: `export a${' \\\n b=1'.repeat(2000)}` },
   // A number from the script that sized a loop or an array.
   { script: 'echo a | cut -f 1000000000' },
   { script: 'echo a | cut -f 1-100000000' },

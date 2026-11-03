@@ -283,7 +283,7 @@ describe('one line must not stop the whole tool', () => {
       const lines = ['coproc '.repeat(5e4), 'echo b'];
       const doc = openDocument(lines.join('\n'), 'shell', parserOf);
       const issues = documentIssues(doc, 'en', {});
-      assert.deepStrictEqual(issues.map((i) => [i.code, i.severity, i.startLine, i.endCol]), [['file-not-read', 'error', 0, lines[0].length]]);
+      assert.deepStrictEqual(issues.map((i) => [i.code, i.severity, i.startLine, i.endCol]), [['file-not-read', 'warning', 0, lines[0].length]]);
       assert.match(issues[0].message, /could not be read: it nests too deep/);
       assert.deepStrictEqual(deadCodeHints(doc, 'en', {}), []);
       assert.deepStrictEqual(documentHighlight(doc), []);
@@ -321,7 +321,7 @@ describe('one line must not stop the whole tool', () => {
         assert.deepStrictEqual(e.anchors?.map((a) => a.span.start.character), [2]);
         assert.ok(new Analyzer('en').explainLine(doc.tree, 0).items.length);
         const issues = documentIssues({ lines, tree: parser.parse(lines.join('\n')) }, 'en', {}).filter((i) => i.code === 'line-too-deep');
-        assert.deepStrictEqual(issues.map((i) => [i.startLine, i.severity]), [[1, 'error']]);
+        assert.deepStrictEqual(issues.map((i) => [i.startLine, i.severity]), [[1, 'warning']]);
         // (Nothing to say it on.)
         assert.strictEqual(new Analyzer('en').explainLine(parser.parse('a\n\nb'), 1).anchors, undefined);
       } finally {
@@ -337,21 +337,180 @@ describe('one line must not stop the whole tool', () => {
       assert.throws(() => scriptTrust(tree.root, failing, undefined, undefined, 'bash'), /planted/);
     });
 
-    it('a statement over very many lines: its first line says it whole, and each other line its part', () => {
-      const script = `echo a${' \\\n b'.repeat(300)}\n`;
-      const tree = parser.parse(script);
-      const a = new Analyzer('en');
-      const first = a.explainLine(tree, 0, 'bash');
-      assert.strictEqual(first.items.length, 1);
-      assert.strictEqual(first.items[0].span.end.line, 300);
-      const later = a.explainLine(tree, 100, 'bash');
-      assert.ok(later.items.every((t) => t.span.start.line === 100 && t.span.end.line === 100), JSON.stringify(later.items.map((t) => t.span)));
-      // (A shorter one, as ever, is explained whole on each line.)
-      const short = parser.parse(`echo a${' \\\n b'.repeat(60)}\n`);
-      assert.strictEqual(a.explainLine(short, 30, 'bash').items[0].span.start.line, 0);
-      assert.strictEqual(a.explainLine(short, 30, 'bash').items[0].span.end.line, 60);
-      // (What the first line says of the command is said once for the file.)
-      assert.deepStrictEqual(documentIssues({ lines: [`set -- ${'-x'}`, ...`${'[ a ] \\\n'.repeat(300)}`.split('\n')], tree: parser.parse(`set -- -x\n${'[ a ] \\\n'.repeat(300)}`) }, 'en', {}).filter((i) => i.code === 'file-not-read'), []);
+    describe('a statement over several lines, walked once for the document', () => {
+      const rows = (n: number, row: (i: number) => string) => Array.from({ length: n }, (_, i) => row(i)).join('\n');
+      const LONG: [string, string][] = [
+        ['a here-document', `cat <<EOF\n${rows(70, (i) => `Usage line ${i}`)}\nEOF\n`],
+        ['a string', `echo "\n${rows(70, (i) => `line ${i}`)}\n"\n`],
+        ['awk', `awk '\n${rows(70, (i) => `{ print $${i % 9} }`)}\n' f\n`],
+        ['sed', `sed '\n${rows(70, (i) => `s/${i}/b/`)}\n' f\n`],
+        ['a trap', `trap '\n${rows(70, (i) => `echo ${i}`)}\n' EXIT\n`],
+        ['a shell string', `sudo bash -c '\n${rows(70, (i) => `echo ${i}`)}\n'\n`],
+        ['an array', `arr=(\n${rows(70, (i) => `item${i}`)}\n)\n`],
+        ['continuations', `docker run \\\n${rows(70, (i) => `  -e X${i}=1 \\`)}\n  img\n`],
+        ['a substitution', `x=$(\n${rows(70, (i) => `echo ${i}`)}\n)\n`],
+      ];
+      const said = (e: LineExplanation) => JSON.stringify({ ...e, examples: e.examples.map(({ interactive: _, ...x }) => x) });
+
+      for (const [name, script] of LONG) {
+        it(`${name}: an inner line says it whole, says where it started, and has a sentence`, () => {
+          const e = explain(script, 40, { sentence: true, reading: true });
+          assert.strictEqual(e.items.length, 1);
+          assert.strictEqual(e.items[0].span.start.line, 0);
+          assert.ok(e.items[0].span.end.line >= 70);
+          assert.ok(e.notes.some((n) => n === fact('en', 'statement-continued', { line: 1 }).text || /here-document/.test(n)), e.notes.join());
+          assert.ok(e.sentence, 'sentence');
+          assert.ok(e.reading, 'reading');
+          // (The same whichever line asks first, and in any order.)
+          const tree = parser.parse(script);
+          const a = new Analyzer('en');
+          const opts = { sentence: true, reading: true };
+          const late = [71, 40, 1, 0].map((l) => said(a.explainLine(tree, l, 'bash', opts)));
+          for (const [i, l] of [71, 40, 1, 0].entries()) assert.strictEqual(said(new Analyzer('en').explainLine(parser.parse(script), l, 'bash', opts)), late[i], `line ${l}`);
+        });
+      }
+
+      for (const [name, script] of [
+        ['while … done < file', `while read -r l; do\n${rows(70, (i) => `echo ${i}`)}\ndone < file\n`],
+        ['cat f | while', `cat f | while read -r l; do\n${rows(70, (i) => `echo ${i}`)}\ndone\n`],
+        ['{ …; } > out', `{\n${rows(70, (i) => `echo ${i}`)}\n} > out\n`],
+        ['foo || { … }', `foo || {\n${rows(70, (i) => `echo ${i}`)}\n}\n`],
+        ['for … done | sort', `for x in a b; do\n${rows(70, (i) => `echo ${i}`)}\ndone | sort\n`],
+      ] as const) {
+        it(`${name}: a line inside it has its sentence and its reading`, () => {
+          const e = explain(script, 40, { sentence: true, reading: true });
+          assert.match(e.sentence ?? '', /`echo`/);
+          assert.ok(e.reading);
+        });
+      }
+
+      it('is walked once, however many lines ask, and its token is not changed by any', () => {
+        const proto = LineExplainer.prototype as unknown as { full: (n: SyntaxNode) => unknown };
+        const real = proto.full;
+        let walks = 0;
+        proto.full = function (this: LineExplainer, n: SyntaxNode) {
+          if (this.line !== null && n.endPosition.row > n.startPosition.row) walks++;
+          return real.call(this, n);
+        };
+        try {
+          const script = `echo a${' \\\n b'.repeat(300)}\n`;
+          const tree = parser.parse(script);
+          const a = new Analyzer('en');
+          const all = Array.from({ length: 301 }, (_, l) => a.explainLine(tree, l, 'bash'));
+          assert.strictEqual(walks, 1);
+          assert.ok(all.every((e) => e.items.length === 1 && e.items[0] === all[0].items[0]));
+          assert.ok(Object.isFrozen(all[0].items[0]) && Object.isFrozen(all[0].items[0].children));
+          // (The problems ask once for the file.)
+          walks = 0;
+          documentIssues({ lines: script.split('\n'), tree }, 'en', {});
+          assert.strictEqual(walks, 1);
+        } finally {
+          proto.full = real;
+        }
+      });
+
+      it('what a line says of a word of it is on a copy, on that line only', () => {
+        const tree = parser.parse('set -u\necho $a \\\n  $b\n');
+        const a = new Analyzer('en');
+        const factsOf = (l: number, opts = {}) => {
+          const out: [string, string[]][] = [];
+          const walk = (t: LineExplanation['items'][number]) => {
+            if (t.facts) out.push([t.label, t.facts]);
+            t.children.forEach(walk);
+          };
+          const e = a.explainLine(tree, l, 'bash', opts);
+          e.items.forEach(walk);
+          return { out, frozen: Object.isFrozen(e.items[0]), reading: e.reading };
+        };
+        const on = factsOf(1);
+        assert.deepStrictEqual(on.out, [['$a', ['nounset-unbound']]]);
+        assert.strictEqual(on.frozen, false);
+        const off = factsOf(2);
+        assert.deepStrictEqual(off.out, []);
+        assert.strictEqual(off.frozen, true);
+        // (And again: nothing stayed on the token all lines read. A reading is of the tokens of its line.)
+        assert.deepStrictEqual(factsOf(1, { reading: true }).out, on.out);
+        assert.ok(factsOf(1, { reading: true }).reading);
+        assert.deepStrictEqual(factsOf(2).out, []);
+      });
+
+      it('with other tokens on the line: each says its own', () => {
+        const e = explain('{ echo $x \\\n  b; echo $y; }\n', 1, { sentence: true, reading: true, argv: true });
+        assert.deepStrictEqual(e.items.map((t) => t.label.at(-1)), [';', '}']);
+        assert.ok(Object.isFrozen(e.items[0]));
+        assert.ok(!Object.isFrozen(e.items[1]));
+        assert.match(e.summary, / ; /);
+        assert.ok(e.reading);
+        assert.ok(e.sentence);
+        assert.strictEqual(e.argv?.length, 2);
+        // (Two statements over several lines that meet on a line.)
+        const two = explain('{ a \\\n  b; c \\\n  d\n  e; }\n', 1, { sentence: true, reading: true });
+        assert.deepStrictEqual(two.items.filter((t) => Object.isFrozen(t)).map((t) => t.label.split(' ')[0]), ['a', 'c']);
+        assert.ok(two.sentence);
+      });
+
+      it('a line that says what its statement says too is worked out in full', () => {
+        // (In the string, `c` starts on a line that a statement started on its line 1 goes on over; and so does the line of the file.)
+        const said = fact('en', 'statement-continued', { line: 1 });
+        const e = explain(`bash -c '{ a "\n  b"; c; }\n'\n`, 1);
+        assert.strictEqual(e.notes.filter((n) => n === said.text).length, 2);
+        assert.strictEqual(e.facts?.filter((f) => f.id === 'statement-continued').length, 1);
+        assert.strictEqual(e.noteInfo.length, e.notes.length);
+      });
+
+      it('a host file reads it once too, and its tokens are in the file', () => {
+        const script = `FROM x\nRUN apt-get install -y \\\n${rows(70, (i) => `  pkg${i} \\`)}\n  z\n`;
+        const doc = openDocument(script, 'dockerfile', parserOf);
+        const a = new Analyzer('en');
+        const at = (l: number) => explainDocumentLine(a, doc, l, 'en', {}, { sentence: true });
+        const inner = at(40);
+        assert.strictEqual(inner.items[0].span.start.line, 1);
+        assert.strictEqual(inner.items[0], at(41).items[0]);
+        assert.ok(inner.notes.includes(fact('en', 'statement-continued', { line: 2 }).text), inner.notes.join());
+        assert.ok(inner.sentence);
+        // (bats adds its own facts to the tokens of a line: on a copy.)
+        const bats = openDocument('@test "x" {\n  run foo \\\n    bar\n  # bats test_tags=a b:c\n}\n', 'bats', parserOf);
+        assert.ok(explainDocumentLine(a, bats, 2, 'en', {}, {}).items.length);
+      });
+
+      it('what a walk could not do is not done again, and each line says so', () => {
+        let walks = 0;
+        withBoundaries(() => planted('end', () => {
+          const tree = parser.parse('echo a \\\n  b \\\n  c\n');
+          const a = new Analyzer('en');
+          for (const l of [0, 1, 2]) assert.deepStrictEqual(a.explainLine(tree, l, 'bash').notes, [say('line-not-explained')]);
+        }, () => { walks++; return true; }));
+        assert.strictEqual(walks, 1);
+      });
+
+      it('no output shows the name of a node of the model, long statement or short', function () {
+        this.timeout(120000);
+        const NODES = /\b(?:heredoc_body|heredoc_content|heredoc_end|heredoc_start|string_content)\b/;
+        const check = (e: LineExplanation, where: string) => {
+          const walk = (t: LineExplanation['items'][number]) => {
+            assert.ok(!NODES.test(t.label) && !NODES.test(t.explanation) && !NODES.test(t.summary ?? ''), `${where}: ${t.label}`);
+            t.children.forEach(walk);
+          };
+          e.items.forEach(walk);
+          assert.ok(!NODES.test(e.summary) && !NODES.test(e.notes.join()) && !NODES.test(e.sentence ?? ''), where);
+        };
+        for (const lang of ['en', 'ja'] as const) {
+          for (const [name, script] of LONG) {
+            const short = script.split('\n').filter((_, i) => i < 4 || i > 68).join('\n');
+            for (const text of [script, short]) {
+              const tree = parser.parse(text);
+              const a = new Analyzer(lang);
+              for (let l = 0; l < text.split('\n').length; l++) check(a.explainLine(tree, l, 'bash', { sentence: true }), `${name} ${lang} ${l}`);
+            }
+          }
+        }
+        const { files, snippets } = corpus();
+        for (const { text } of [...files, ...snippets]) {
+          const tree = parser.parse(text);
+          const a = new Analyzer('en');
+          for (let l = 0; l < text.split('\n').length; l++) check(a.explainLine(tree, l, 'bash', { sentence: true }), text);
+        }
+      });
     });
 
     it('commands that run each other: read as far as anyone writes them', () => {
@@ -366,7 +525,15 @@ describe('one line must not stop the whole tool', () => {
       const parse = interpret(lookupCommand('sudo')!, Array.from({ length: 20 }, () => ({ value: 'sudo' })), { name: 'sudo', lookup: lookupCommand });
       let depth = 0;
       for (let p = parse, r = p.roles.find((x) => x.role.role === 'command'); r?.role.role === 'command' && r.role.spec; p = r.role.parse!, r = p.roles.find((x) => x.role.role === 'command')) depth++;
-      assert.strictEqual(depth, 8);
+      // (Sixteen read, and one that says it is not.)
+      assert.strictEqual(depth, 17);
+      // (Nine that anyone may write are read as they are; past the limit, a word says that it is not read, not that the command lacks it.)
+      const wrapped = JSON.stringify(explain('sudo nice env nohup timeout 5 ionice stdbuf -o0 setsid command grep -c x f').items);
+      assert.ok(!wrapped.includes('not in the dictionary'), wrapped);
+      const past = JSON.stringify(explain(`${'sudo '.repeat(20)}grep -c x f`).items);
+      assert.ok(!past.includes('not in the dictionary'));
+      assert.match(past, /does not read the words of a command nested this deep/);
+      assert.match(past, /does not read its words/);
     });
 
     it('strings in strings: as deep as the walk reads them, and nothing is trusted past that', () => {
@@ -510,6 +677,55 @@ describe('one line must not stop the whole tool', () => {
         fs.rmSync(other);
         fs.rmdirSync(dir);
       }
+    });
+
+    it('the command-line tool: a line no walk can follow is the limit of the tool, as a file it cannot read is, and no finding', async function () {
+      this.timeout(60000);
+      const dir = fs.mkdtempSync(`${os.tmpdir()}/line-budget-`);
+      const deep = `${dir}/deep.sh`;
+      const unread = `${dir}/unread.sh`;
+      const other = `${dir}/other.sh`;
+      // (bash runs it: the status is 0, it prints `a`.)
+      fs.writeFileSync(deep, `echo ${'$(echo '.repeat(1000)}a${')'.repeat(1000)}\n`);
+      fs.writeFileSync(unread, `${'coproc '.repeat(5e4)}\n`);
+      fs.writeFileSync(other, 'echo other\n');
+      const counts = `${dir}/counts`;
+      const cli = async (...argv: string[]) => {
+        let out = '';
+        let err = '';
+        fs.rmSync(counts, { force: true });
+        const status = await main([...argv, '--no-config', '--no-color', '--counts', counts], { stdout: (s) => { out += s; }, stderr: (s) => { err += s; }, env: {}, isTTY: false });
+        return { out, err, status, counts: fs.existsSync(counts) ? fs.readFileSync(counts, 'utf8') : '' };
+      };
+      for (const file of [deep, unread]) {
+        for (const flags of [[], ['--strict']]) {
+          const check = await cli('--check', ...flags, file);
+          assert.strictEqual(check.status, 2, check.out);
+          assert.match(check.out, /warning: .*That is a limit of the tool, not an error in the script/);
+          assert.match(check.err, /1 file could not be read in full/);
+          assert.match(check.counts, /^errors=0$/m);
+          assert.match(check.counts, /^warnings=0$/m);
+          assert.match(check.counts, /^pitfalls=0$/m);
+          assert.match(check.counts, /^failing=0$/m);
+        }
+        const github = await cli('--check', '--format', 'github', file);
+        assert.strictEqual(github.status, 2);
+        assert.match(github.out, /^::warning file=.*,title=Bash Explainer%3A (line-too-deep|file-not-read)::.*not an error in the script/);
+        const json = JSON.parse((await cli('--check', '--format', 'json', file)).out) as { severity: string }[];
+        assert.deepStrictEqual(json.map((p) => p.severity), ['warning']);
+      }
+      let printed = '';
+      assert.strictEqual(await main([deep, '--no-config', '--no-color'], { stdout: (t) => { printed += t; }, stderr: () => {}, env: {}, isTTY: false }), 2);
+      assert.match(printed, /That is a limit of the tool/);
+      // (Twice in a file, or with a finding beside it: one file, and the finding counts as ever.)
+      const two = `${dir}/two.sh`;
+      fs.writeFileSync(two, `echo ${'$(echo '.repeat(1000)}a${')'.repeat(1000)}\necho ${'$(echo '.repeat(1000)}b${')'.repeat(1000)}\n[ -f a\n`);
+      const check = await cli('--check', two);
+      assert.strictEqual(check.status, 2);
+      assert.match(check.err, /1 file could not/);
+      assert.match(check.counts, /^errors=1$/m);
+      assert.strictEqual((await cli('--check', other)).status, 0);
+      fs.rmSync(dir, { recursive: true });
     });
 
     it('the command-line tool, in a process of its own, on files that each once stopped it: the other files print', async function () {
@@ -811,9 +1027,17 @@ describe('one line must not stop the whole tool', () => {
         const real = run(tool, args, { input, env: { LC_ALL: 'C' } }).stdout.toString().split('\n').slice(0, -1);
         assert.deepStrictEqual(FILTERS[tool](args, input.split('\n').slice(0, -1)), real, `${tool} ${args.join(' ')}`);
       }
-      // (Its made-up input is no wider for a number that large: a field past the end is empty, as `cut` says.)
-      assert.ok(output('cut -f 1000000000').every((l) => l === '' || l === 'no delimiter here'));
-      assert.ok(output('sort -k 1000000000').length);
+      // (A made-up input is as wide as the command asks: the field it names is there.)
+      assert.deepStrictEqual(output('cut -d, -f70 a.csv').slice(0, 3), ['f70', 'f70', 'f70']);
+      assert.ok(output('sort -t, -k70 a.csv').every((l) => l.split(',').length === 70));
+      assert.ok(output("perl -lane 'print $F[70]' a.csv").every((l) => l !== ''));
+      assert.ok(output('cut -f 4095 a').every((l) => l === 'f4095'));
+      // (Past what a sample can be, it says that no sample was made, and shows no output.)
+      for (const script of ['cut -f 5000 a', 'cut -f 1000000000', 'sort -k 5000 a', 'sort -k 1000000000', "perl -lane 'print $F[5000]' a", "perl -lane 'print $F[1000000000]' a"]) {
+        const [example] = explain(script).examples;
+        assert.match(example.note ?? '', /too large/, script);
+        assert.deepStrictEqual(example.sections.flatMap((x) => x.lines), [], script);
+      }
     });
 
     it('a set of `tr` that fills what is asked, and one refused before it is made', () => {

@@ -3,7 +3,7 @@
  * (seq, basename, dirname), simulated with GNU semantics in the C locale.
  */
 import type { LineMarks } from './marks';
-import { chargeSize, chargeWalk } from './regexguard';
+import { chargeSize, chargeWalk, sampleColumns } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
 import { type ArgRole, type ArgvParse, interpret } from '../argv/interpret';
@@ -652,12 +652,6 @@ const SORT_EXTRA: Record<string, string[]> = {
   f: ['Date', 'elder', 'Fig', 'grape', 'Honey', 'kiwi', 'Lime', 'mango'],
   s: ['grape', 'melon', 'peach', 'lemon', 'plum', 'kiwi', 'mango', 'fig'],
 };
-/**
- * The most columns of a made-up input: what shows an option. A field past them is empty in every row, as the real tool says (`cut -f 1000000000`,
- * `sort -k 1000000000`), so that a number of any size asks for no more.
- */
-const MAX_SAMPLE_COLUMNS = 64;
-
 const EXTRA_NAMES = ['dave', 'erin', 'frank', 'grace', 'heidi', 'ivan', 'judy', 'kate', 'leo', 'mia', 'noah', 'olga'];
 const EXTRA_CITIES = ['nagoya', 'sapporo', 'kobe', 'nara', 'fukuoka', 'sendai', 'chiba', 'kawasaki', 'hiroshima', 'akita', 'saga', 'kochi'];
 
@@ -687,7 +681,7 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
           return unique ? vals : vals.slice(0, 4);
         }
         const cols = mostOf([...keys.map((k) => Math.max(k.sf, k.ef)), 2]);
-        const kinds = Array.from({ length: Math.min(cols, MAX_SAMPLE_COLUMNS) }, (_, c) => {
+        const kinds = Array.from({ length: sampleColumns(cols) }, (_, c) => {
           const k = keys.find((x) => x.sf === c + 1);
           return k ? kindOf(k.opts) : 's';
         });
@@ -710,7 +704,7 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
         const max = mostOf(list.split(/[,-]/).filter(Boolean).map(Number));
         if (value(p, 'f') !== undefined) {
           const d = value(p, 'd') ?? '\t';
-          const n = Math.min(Math.max(max + 1, 4), MAX_SAMPLE_COLUMNS);
+          const n = sampleColumns(Math.max(max + 1, 4));
           const rows = [
             ['1', 'alice', 'tokyo', '30', 'admin', 'x', 'y', 'z'],
             ['2', 'bob', 'osaka', '25', 'user', 'x', 'y', 'z'],

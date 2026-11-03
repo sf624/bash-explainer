@@ -230,6 +230,24 @@ describe('the GitHub Action', function () {
     assert.deepStrictEqual(good.requests, []);
   });
 
+  it('a line the tool cannot follow: the step stops with status 2, and its annotation says it is the limit of the tool', async () => {
+    const deep = path.join(workspace, 'deep');
+    fs.mkdirSync(deep);
+    fs.writeFileSync(path.join(deep, 'a.sh'), `#!/bin/bash\necho ${'$(echo '.repeat(1000)}a${')'.repeat(1000)}\n`);
+    const sarif = path.join(dir, 'temp', 'deep.sarif');
+    try {
+      const r = await step({ FILES: 'deep/*.sh', SARIF: sarif });
+      assert.strictEqual(r.code, 2, r.out);
+      assert.match(r.out, /^::warning file=.*title=Bash Explainer%3A line-too-deep::.*not an error in the script/m);
+      assert.doesNotMatch(r.out, /^::error/m);
+      const results = JSON.parse(fs.readFileSync(sarif, 'utf8')).runs[0].results as { ruleId: string; level: string }[];
+      assert.deepStrictEqual(results.map((x) => [x.ruleId, x.level]), [['line-too-deep', 'warning']]);
+    } finally {
+      fs.rmSync(deep, { recursive: true });
+      fs.rmSync(sarif, { force: true });
+    }
+  });
+
   it('keeps its inputs, outputs and exit statuses', async () => {
     const lenient = await step({ FAIL_ON_WARNING: 'false' });
     assert.strictEqual(lenient.code, 0, lenient.out);

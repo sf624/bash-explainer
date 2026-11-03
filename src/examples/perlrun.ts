@@ -2,7 +2,7 @@
 import { sprintf } from './awk';
 import { lex, type Tok, unfollowed, Unsupported } from './perllex';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
-import { charge, chargeSize, runnerStep, scriptRegex } from './regexguard';
+import { charge, chargeSize, runnerStep, sampleColumns, scriptRegex } from './regexguard';
 import { parseOptions, shortKeys, Unsupported as TextUnsupported } from './textfilters';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { mostOf, pushAll } from '../lists';
@@ -29,9 +29,6 @@ type S =
 
 const NAMED_UNARY = new Set(['length', 'uc', 'lc', 'ucfirst', 'lcfirst', 'chomp', 'chop', 'defined', 'abs', 'int', 'sqrt', 'keys', 'values', 'scalar', 'exists', 'delete', 'chr', 'ord']);
 const LIST_FUNCS = new Set(['print', 'say', 'printf', 'join', 'split', 'sprintf', 'substr', 'index', 'push', 'sort', 'reverse', 'die', 'warn', 'lc', 'uc']);
-
-/** The most fields of a made-up input: what shows them. */
-const MAX_SAMPLE_COLUMNS = 64;
 
 class Parser {
   p = 0;
@@ -888,8 +885,7 @@ export function perlExample(code: string, opts: PerlOptions): { input: string[];
     if (!sep) return undefined;
     input = [['apple', 'red', 'tokyo'], ['banana', 'yellow', 'osaka'], ['cherry', 'green', 'kyoto']].map((r) => r.join(sep));
   } else if (opts.autosplit || fieldUse.length) {
-    // (A field past what shows it is empty in every row, however large the number: `$F[1000000000]`.)
-    const cols = Math.min(mostOf([3, ...fieldUse.map((f) => f + 1)]), MAX_SAMPLE_COLUMNS);
+    const cols = sampleColumns(mostOf([3, ...fieldUse.map((f) => f + 1)]));
     const sep = opts.fieldSep && opts.fieldSep.length === 1 ? opts.fieldSep : opts.fieldSep ? (/^\\s/.test(opts.fieldSep) ? ' ' : opts.fieldSep[0]) : ' ';
     const words = [['apple', 'banana', 'cherry', 'grape'], ['red', 'yellow', 'green', 'purple'], ['tokyo', 'osaka', 'kyoto', 'nara']];
     input = [0, 1, 2, 3].map((r) => Array.from({ length: cols }, (_, c) => {
