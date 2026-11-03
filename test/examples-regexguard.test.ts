@@ -441,7 +441,12 @@ describe('the guard of the regexes a script gives', () => {
     });
 
     it('a run stops as it looks through a run of characters, with nothing left', () => {
-      assert.strictEqual(costOf(() => { charge(9999900); scriptRegex('a*b').test('a'.repeat(1000)); }), Infinity);
+      const re = scriptRegex('a*b');
+      const text = 'a'.repeat(1000);
+      const whole = costOf(() => re.test(text));
+      // (Enough for the walk from the first place, and for the run of `a`s up to its last ones.)
+      assert.strictEqual(costOf(() => { charge(1e7 - whole + 10); re.test(text); }), Infinity);
+      assert.ok(costOf(() => { charge(1e7 - whole); re.test(text); }) <= 1e7);
     });
 
     it('lets anything else through', () => {
