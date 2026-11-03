@@ -205,6 +205,11 @@ export function controlsShown(text: string): string {
   });
 }
 
+/** What the outputs for reading show on one line (a file name, a problem's message): a newline written as `<LF>`. */
+export function oneLine(text: string): string {
+  return text.replace(/\n/g, `<${controlAbbr(0x0a)}>`);
+}
+
 /**
  * `value` as JSON with no control character left in the text: the encoder writes the C0 ones as escapes, but not DEL and the
  * C1 ones. The value read back is the same.

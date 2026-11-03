@@ -52,7 +52,9 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Docker's exec form (`CMD ["echo", "$HOME"]`) and a Python list of arguments are explained as a program run with no shell: `echo` is the program, `cd` and `if` are not found, and `"$HOME"` is a JSON string passed as it is. Before, they were explained as bash's builtins and single-quoted strings.
 - The commands of a `bash -c '…'` string in a Dockerfile, a Makefile, a workflow or another host file, or after blank lines at the top of a script, are placed on their own text. Before, they pointed at line 1 and took their names from there.
 - The GitHub Action installs and runs the tool outside the checked-out repository. Its registry is the one your workflow or machine configures; npm settings kept in the repository no longer apply to it.
-- The command-line tool shows control characters in a script visibly (`<ESC>`) instead of sending them to the terminal.
+- The command-line tool shows control characters in a script visibly (`<ESC>`) instead of sending them to the terminal, and a newline in a file name (`<LF>`).
+- `--sarif` and `--counts` do not write through a symbolic link at their path, and the GitHub Action writes the SARIF file only inside the workspace or the runner's temp directory when its path is in one of them. A path that leads elsewhere through a link fails with exit status 2.
+- After `--`, a file named `--lsp` or `-` is read as a file.
 
 ## 0.9.0
 
