@@ -69,7 +69,8 @@ export function autoShellAt(doc: ShellDocument, shells: Shells, line: number): A
 export const withoutExamples = (opts: ExplainOptions): ExplainOptions => ({ ...opts, examples: { enabled: false, disabled: [] } });
 
 export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line: number, lang: Lang, shells: Shells, opts: ExplainOptions): LineExplanation {
-  if (doc.extracted) {
+  // (A file not read says so on every line, in a host too, where a line outside a region has nothing else to say: one path, the analyzer's.)
+  if (doc.extracted && !doc.tree.unread) {
     const { extracted } = doc;
     // (What a host file adds around the line's own explanation has the same boundary: src/failures.ts.)
     // (The budget of the line is by the whole document's size, not that of the part it is in, which has a tree of its own.)

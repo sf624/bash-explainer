@@ -469,6 +469,8 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
   let failed = 0;
   /** The files the parser could not follow (`SyntaxTree.unread`), or with a line no walk could follow (`line-too-deep`): no bug, but they were not all read. */
   let unread = 0;
+  /** A line range past the end of its file, which stops the files after it. */
+  let badRange = false;
   let file = '';
   const log = loggedOnce((text) => io.stderr(`bash-explainer: ${file}: ${text}\n`));
   const before = failuresGoTo((f) => {
@@ -499,7 +501,9 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
       const [from, to] = doc.tree.unread ? [input.lines?.[0] ?? 1, input.lines?.[0] ?? 1] : input.lines ?? [1, lines.length];
       if (!o.check && to > lines.length) {
         io.stderr(`bash-explainer: ${input.shown} has ${lines.length} lines\n`);
-        return 2;
+        // (What was streamed before it is complete: the array is closed below, and the status says that the rest was not read.)
+        badRange = true;
+        break;
       }
 
       // (The boundary of a file: a bug in what it prints leaves the other files.)
@@ -566,7 +570,7 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
   if (failed) {
     io.stderr(`bash-explainer: ${failed} internal error${failed === 1 ? '' : 's'}: what they stopped is missing from the output. This is a bug of the tool, not a problem of the script: please report it.\n`);
   }
-  if (failed || unread) return 2;
+  if (failed || unread || badRange) return 2;
   return o.check && counts.failing > 0 ? 1 : 0;
 }
 

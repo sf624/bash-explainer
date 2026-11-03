@@ -37,7 +37,10 @@ export class MachineDigits extends Error {}
  * (test/examples-regexguard.test.ts, MUST_RUN).
  */
 const LIMIT = 1e7;
-/** What the examples of one line may cost together, and again what the results of their panels may (`withinLine`). */
+/**
+ * What the examples of one line may cost together, and again what the results of their panels may (`withinLine`). A statement over several
+ * lines is walked once and has this once; there are at most as many statements as lines of code, so `DOCUMENT_LIMIT` bounds all of them.
+ */
 const LINE_LIMIT = 3e7;
 /** What the examples of all the lines of a document may cost together: a share of it for each line of code (`shareOf`). */
 const DOCUMENT_LIMIT = 2e9;

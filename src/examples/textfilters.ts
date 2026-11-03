@@ -3,7 +3,7 @@
  * (seq, basename, dirname), simulated with GNU semantics in the C locale.
  */
 import type { LineMarks } from './marks';
-import { chargeSize, chargeWalk, sampleColumns } from './regexguard';
+import { chargeSize, chargeWalk, MAX_SAMPLE_COLUMNS, sampleColumns } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
 import { type ArgRole, type ArgvParse, interpret } from '../argv/interpret';
@@ -704,7 +704,8 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
         const max = mostOf(list.split(/[,-]/).filter(Boolean).map(Number));
         if (value(p, 'f') !== undefined) {
           const d = value(p, 'd') ?? '\t';
-          const n = sampleColumns(Math.max(max + 1, 4));
+          // (One column past the last field asked for, up to the limit: `-f4096` is the last column.)
+          const n = Math.min(Math.max(sampleColumns(max) + 1, 4), MAX_SAMPLE_COLUMNS);
           const rows = [
             ['1', 'alice', 'tokyo', '30', 'admin', 'x', 'y', 'z'],
             ['2', 'bob', 'osaka', '25', 'user', 'x', 'y', 'z'],

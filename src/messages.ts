@@ -94,7 +94,7 @@ const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) =
  * say. Each has a row in the bash test of test/error-level.test.ts that runs it and sees it fail.
  */
 const failure = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> & { level: 'error' } => ({ kind: 'note', refs, text, level: 'error' });
-/** That a line or a file was not read: an error, as a check that could not read it has not passed, though the script may run. */
+/** That a line or a file was not read: a warning, no finding about the script (`isNotRead`); the CLI's status 2 says that a check that could not read it has not passed. */
 const unreadable = <P = Record<string, never>>(text: (p: P) => readonly [string, string]): Entry<P> & { level: 'warning' } => ({ kind: 'note', refs: [], text, level: 'warning' });
 const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text, level?: NoteLevel | ((p: P) => NoteLevel)): Entry<P> & { kind: 'pitfall' } =>
   ({ kind: 'pitfall', refs, text, ...(heading ? { heading } : {}), ...(level ? { level } : {}) });
