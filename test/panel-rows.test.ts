@@ -10,6 +10,7 @@ import { keyOf } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { TOKEN_TEXTS } from '../src/messages-tokens';
 import { markedText, textParts } from '../src/tokenmarks';
+import { sameSpan } from '../src/ui/hoverParts';
 import { type ModelRow, type RowOptions, rowModel, wholeLineExamples } from '../src/ui/panelRows';
 import { panelUpdate } from '../src/ui/panelView';
 import { roleOf } from '../src/ui/readingSteps';
@@ -267,16 +268,26 @@ describe('the panel\'s row model', () => {
   });
 
   describe('what a command name is, at depth 1', () => {
-    it('has the row of `time …` say what the reserved word is, and what else its name is', () => {
-      for (const [src, label] of [['time git commit -m x', 'time git'], ['time sort f | uniq', 'time sort | uniq'], ['time -p a', 'time -p a'], ['time', 'time']]) {
-        const row = all(model(src).rows).find((r) => r.label === label)!;
-        assert.ok(row, src);
-        assert.strictEqual(row.name?.said.kind, 'keyword', src);
-        assert.match(row.name?.said.also ?? '', /\/usr\/bin\/time/, src);
+    it('gives the reserved word `time` a row of its own, with its badge, among the parts of what it times', () => {
+      for (const [src, whole, timed] of [['time sort f | uniq', 'time sort | uniq', 'sort | uniq'], ['time a', 'time a', 'a'], ['time { a; }', 'time { ‹commands› }', '{ ‹commands› }'], ['time > "$o" a', 'time a', 'a'], ['time -p a', 'time -p a', 'a']]) {
+        const [top] = model(src).rows;
+        assert.strictEqual(top.label, whole, src);
+        assert.strictEqual(top.name, undefined, src);
+        const [time, ...rest] = top.children;
+        assert.strictEqual(time.label, 'time', src);
+        assert.strictEqual(time.name?.said.kind, 'keyword', src);
+        assert.match(time.name?.said.also ?? '', /\/usr\/bin\/time/, src);
+        assert.strictEqual(time.text, 'Measure and report the run time of the pipeline', src);
+        assert.notStrictEqual(time.text, top.text, src);
+        assert.strictEqual(rest.at(-1)!.label, timed, src);
+        // (At depth 2, the same row and the badge, once.)
+        const deep = all(model(src, D2).rows);
+        assert.deepStrictEqual(deep.filter((r) => r.name?.said.kind === 'keyword').map((r) => r.label), ['time'], src);
+        assert.strictEqual(deep.filter((r) => r.label === 'time').length, 1, src);
       }
-      // (At depth 2 the reserved word has its row, which says it once.)
-      const deep = all(model('time git commit -m x', D2).rows).filter((r) => r.name?.said.kind === 'keyword');
-      assert.deepStrictEqual(deep.map((r) => r.label), ['time']);
+      // (With nothing to time, the word is the row.)
+      const [alone] = model('time').rows;
+      assert.deepStrictEqual([alone.label, alone.name?.said.kind, alone.children], ['time', 'keyword', []]);
     });
 
     it('loses no name: each token that has one has a row that says it, over the corpus', function () {
@@ -288,11 +299,16 @@ describe('the panel\'s row model', () => {
         text.split('\n').slice(0, 400).forEach((_, line) => {
           const ex = analyzer.explainLine(tree, line, 'bash');
           const m = rowModel(ex, D1, 'en');
-          for (const t of tokens(ex.items)) {
-            if (!t.name) continue;
-            const row = m.places.get(t)!.split('.').reduce<ModelRow | undefined>((r, i) => (r ? r.children : m.rows)[Number(i)], undefined);
-            assert.strictEqual(row?.name, t.name, `${name}, line ${line}: ${t.label}`);
-          }
+          const check = (t: Token, up: Token | undefined): void => {
+            if (t.name) {
+              const row = m.places.get(t)!.split('.').reduce<ModelRow | undefined>((r, i) => (r ? r.children : m.rows)[Number(i)], undefined);
+              assert.strictEqual(row?.name, t.name, `${name}, line ${line}: ${t.label}`);
+              // (Its own row: not that of a part around it, but where the two are one row, a part of the same range or a command in its redirections.)
+              if (up && !sameSpan(up.span, t.span) && up.around !== 'redirections') assert.notStrictEqual(m.places.get(t), m.places.get(up), `${name}, line ${line}: ${t.label}`);
+            }
+            t.children.forEach((c) => check(c, t));
+          };
+          ex.items.forEach((t) => check(t, undefined));
         });
       }
     });

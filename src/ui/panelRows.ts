@@ -128,8 +128,8 @@ interface Build {
 /**
  * The rows of a token. A redirection around a command is the command's row, with its redirections among its parts: the box is
  * the command, what bash sets up for it included. A token that does not come in at this depth gives its place to its parts,
- * unless it holds what the panel must show (a warning, a fact, a value, an example, a capture group's colour); a line always
- * has its top rows. A command's name with no row of its own at this depth (the reserved word `time`) goes on the row around it.
+ * unless it holds what the panel must show (a warning, a fact, a value, an example, a capture group's colour, what a command name
+ * is: the reserved word `time` has its badge on its own row); a line always has its top rows.
  */
 function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
   const { depth } = b.options;
@@ -146,7 +146,8 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
   const value = all.find((r) => r.value)?.value;
   const group = all.find((r) => r.group)?.group;
   const examples = (head === t ? chain : [t, ...chain]).flatMap((x) => x.examples ?? []);
-  const holds = !!(marks.length || facts.length || value || group || examples.length);
+  const name = all.find((r) => r.name)?.name;
+  const holds = !!(marks.length || facts.length || value || group || examples.length || name);
   const comesAt: Depth = !up || holds ? 1 : ownDepth(head, own);
   const children = parts.flatMap((c) => rowsOf(c, own, b));
   if (comesAt > depth) return children;
@@ -160,7 +161,7 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
     level: strongestLevel(marks),
     facts: facts.length ? facts : undefined,
     texts: unique(all.flatMap((r) => r.texts ?? [])),
-    name: [...all, ...parts.filter((c) => !b.made.has(c)).map((c) => tokenRow(c, b.lang))].find((r) => r.name)?.name,
+    name,
     value,
     group,
     refs: unique(all.flatMap((r) => r.refs ?? [])),
