@@ -101,7 +101,7 @@ describe('the panel: what the program receives', () => {
 
   it('says a builtin or a function runs inside the shell where bash does: against `type -t`', () => {
     const table: [string, string, 'builtin' | 'function' | undefined][] = [
-      ['', 'echo', 'builtin'], ['', '[', 'builtin'], ['', 'source', 'builtin'], ['', 'ls', undefined], ['', '/bin/echo', undefined],
+      ['if a; then f() { :; }; fi\n', 'f', undefined], ['', 'echo', 'builtin'], ['', '[', 'builtin'], ['', 'source', 'builtin'], ['', 'ls', undefined], ['', '/bin/echo', undefined],
       ['f() { :; }\n', 'f', 'function'], ['echo() { :; }\n', 'echo', 'function'], ['enable -n echo\n', 'echo', undefined],
     ];
     const script = table.map(([before, name]) => `( ${before}type -t ${name}; printf '.\\n' )`).join('\n');
@@ -109,8 +109,13 @@ describe('the panel: what the program receives', () => {
     table.forEach(([before, name, inside], i) => {
       const said = explain(`${before}${name} a`, before ? 1 : 0).argv!.at(-1)!.inside;
       assert.strictEqual(said, inside, `${before}${name}`);
+      // (On that path `a` fails, so bash finds no function: "may be" is no claim.)
       assert.strictEqual(out[i] === 'builtin' || out[i] === 'function' ? out[i] : undefined, inside, `bash, ${before}${name}: ${out[i]}`);
     });
+  });
+
+  it('makes no claim of a builtin turned off on some paths', () => {
+    assert.strictEqual(explain('if a; then enable -n echo; fi\necho x', 1).argv![0].inside, undefined);
   });
 
   it('gives a function and a builtin the words bash gives them', () => {
@@ -132,6 +137,9 @@ describe('the panel: what the program receives', () => {
     const cp = hosted('makefile', 'all:\n\tcp $< "$@" $(CC) \'$(OUT)\'\n', 1);
     assert.deepStrictEqual(cp.rows.find((r) => r.label === 'cp')!.receives!.chips.map(shown), ['cp', '‹the words of `$<`›', '‹the words of `"$@"`›', '‹the words of `$(CC)`›', '$(OUT)']);
     for (const r of [...make.rows, ...cp.rows]) assert.doesNotMatch([r.text, ...r.more.map((m) => m.map((p) => p.text).join(''))].join(' '), /make_target|make_first|\$\{OUT\}|\$\{CC\}/, r.label);
+    // (A warning on a token, as the row draws it, says the file's text too.)
+    const marked = hosted('makefile', 'all:\n\t$$((09)) $(OUT)\n', 1);
+    assert.ok(marked.rows.some((r) => r.marks?.length), marked.rows.map((r) => r.label).join(' '));
     const yaml = hosted('yaml', 'on: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: echo a > "${{ env.X }}"\n', 5);
     assert.ok(yaml.rows.some((r) => r.text === 'Write stdout (fd 1) to file `"${{ env.X }}"` (overwrite)'), yaml.rows.map((r) => r.text).join('\n'));
     for (const r of yaml.rows) assert.doesNotMatch(r.text, /ENV_X/);
@@ -176,6 +184,13 @@ describe('the panel: the mark "handled by bash"', () => {
       assert.deepStrictEqual(marked(src, { line: at }), want, `${src}, line ${at}, depth 1`);
       assert.deepStrictEqual(marked(src, { line: at, depth: 2 }), want, `${src}, line ${at}, depth 2`);
     }
+  });
+
+  it('marks a run with no row of depth 1 at depth 2 only', () => {
+    const src = 'if a\nthen b; fi';
+    assert.deepStrictEqual(marked(src, { line: 0, depth: 1 }), marked(src, { line: 0, depth: 2 }));
+    const semi = rowModel({ ...explain('a'), items: [{ ...explain('a').items[0], frame: undefined }] }, { depth: 1, receives: true }, 'en').rows;
+    assert.strictEqual(semi[0].handled, undefined, 'a word of a command is no construct: its name has an argv');
   });
 
   it('shows only with the switch on', () => {
@@ -260,6 +275,11 @@ describe('the panel: the mark "not in POSIX sh"', () => {
     }
   });
 
+  it('says a sentence once on a row, and finds the row of a part with no row of its own', () => {
+    assert.deepStrictEqual(rows('x=$\'a\'$\'b\'').filter((r) => r.notPosix).map((r) => [r.label, r.notPosix!.length]), [["$'a'$'b'", 1]]);
+    assert.deepStrictEqual(rowModel({ ...explain('ls'), notPosix: [{ span: { start: { line: 9, character: 0 }, end: { line: 9, character: 1 } }, says: 'x' }] }, { depth: 1, receives: false }, 'en').rows[0].notPosix, undefined, 'nor a mark with no row');
+  });
+
   it('says it in Japanese, and is in the Key only where it is drawn', () => {
     assert.deepStrictEqual(marks('[[ a ]]', { lang: 'ja' }), [['[[ a ]]', ['`[[ ]]` は POSIX sh にない書き方です（dash では動きません）。代わりに `[ ]` を使う。']]]);
     const key = (src: string, lang: Lang = 'en') => rowModel(explain(src, 0, lang), { depth: 1, receives: true }, lang).key.filter((k) => k.id.startsWith('mark:')).map((k) => [k.id, k.sample]);
@@ -277,9 +297,9 @@ describe('the panel: the mark "not in POSIX sh"', () => {
       const analyzer = new Analyzer('en');
       text.split('\n').slice(0, 300).forEach((source, at) => {
         const ex = analyzer.explainLine(tree, at, 'bash', { ...OPTIONS, reading: false, argv: false });
+        const drawn = all(rowModel(ex, { depth: 1, receives: false }, 'en').rows).flatMap((r) => r.notPosix ?? []);
         // (A line in a script bash cannot read may hold a part of a construct with no row of it.)
         if (tree.errors.length) return;
-        const drawn = all(rowModel(ex, { depth: 1, receives: false }, 'en').rows).flatMap((r) => r.notPosix ?? []);
         for (const n of ex.notPosix ?? []) {
           seen++;
           assert.ok(drawn.includes(n.says) || !ex.items.length, `${name}: ${at}: ${source}: ${n.says}`);
