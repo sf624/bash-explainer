@@ -23,13 +23,13 @@ import { codeSpan, shorten } from './label';
 import { clausesOf, isProblemNote, type SentenceClause } from './messages';
 import { placeholderAlone, placeholderSaid } from './messages-argv';
 import { EMPTY, ioSaid, listSaid, S, sentenceEnd } from './messages-sentence';
-import { resolveName } from './semantics/names';
+import { resolveRun, testSpecAt } from './semantics/names';
 import { ownSubshells, STATEMENTS } from './semantics/env';
 import { attribute, docLine } from './semantics/state';
 import { CHANGING } from './semantics/walk/temporaries';
 import type { StatusModel } from './semantics/status';
-import { field, fields, prefixAssignments, redirectionsOf, strayKeyword, type SyntaxNode } from './syntax/tree';
-import { writtenAsBracket } from './testexpr';
+import { field, fields, nameText, prefixAssignments, redirectionsOf, strayKeyword, type SyntaxNode } from './syntax/tree';
+import { staticWordValue } from './staticword';
 
 export interface SentenceInput {
   root: SyntaxNode;
@@ -445,7 +445,7 @@ class Composer implements IdiomSpeaker {
     const { lang } = this;
     const c = cond.length === 1 ? cond[0] : undefined;
     // (A line that closes the block has no record of the command: `[ … ]` is told by its spelling there.)
-    if (c?.type === 'command') return this.commands(c)?.test || writtenAsBracket(c) ? S.testSubject(lang, BRACKET) : this.noun(c);
+    if (c?.type === 'command') return this.isTest(c) ? S.testSubject(lang, BRACKET) : this.noun(c);
     if (c?.type === 'extended_test') return S.testSubject(lang, '`[[ … ]]`');
     if (c?.type === 'arithmetic_command') return S.testSubject(lang, '`(( … ))`');
     if (c?.type === 'negated_command') return S.notSubject(lang, this.subject(c.namedChildren));
@@ -468,8 +468,8 @@ class Composer implements IdiomSpeaker {
     }
     // (The assignments before the name are said with the redirections: what the command runs with.)
     const io = [...assignments.map((a) => S.prefixSet(lang, codeSpan(field(a, 'name')!.text), this.value(a))), ...(redirectionsOf(c).length ? [this.io(redirectionsOf(c))] : [])].join(lang === 'ja' ? '、' : ', ');
-    // (A command on another line of a statement over several lines has no record of the command, as a closing line's: its spelling tells `[`, and the model a function.)
-    if (said?.test || (!said && writtenAsBracket(c))) return S.tests(lang, BRACKET, io);
+    // (A command on another line of a statement over several lines has no record of the command, as a closing line's: the model tells `[` and a function.)
+    if (this.isTest(c)) return S.tests(lang, BRACKET, io);
     if (said?.kind === 'function') return S.calls(lang, codeSpan(said.names[0]), io);
     const called = said ? undefined : this.functionNamed(c);
     if (called) return S.calls(lang, codeSpan(called), io);
@@ -480,20 +480,42 @@ class Composer implements IdiomSpeaker {
     const rule = this.input.status.status(c);
     const status = rule.kind === 'given' && !rule.refused && fields(c, 'argument').some((a) => a.text === String(rule.value)) ? rule.value : undefined;
     const clause = S.runs(lang, this.noun(c), options, io, status);
-    // (A declaration builtin's assignments, `local x=$1`: the values they give.)
-    // (Options may change what the builtin stores, `declare -i n=1+1`: then the value is what the word gives.)
-    // (Without the record, any word that is an option may be one that changes the value.)
-    const optioned = said ? said.options.length > 0 : fields(c, 'argument').some((x) => /^[-+]/.test(x.text));
-    const declared = this.assigned(fields(c, 'argument').filter((x) => x.type === 'variable_assignment'), optioned ? 'changed' : 'declared');
+    // (A declaration builtin's assignments, `local x=$1`: the values they give; none where its options make it name functions or print, `declare -f x=1`.)
+    const how = this.declaring(c, said);
+    const declared = how === 'none' ? '' : this.assigned(fields(c, 'argument').filter((x) => x.type === 'variable_assignment'), how);
     return declared ? S.declares(lang, clause, declared) : clause;
   }
 
-  /** The function a command surely calls, from the model, where the line has no record of the command (its name when plain). */
+  /**
+   * Whether a command is the test `[ … ]`: from its record, or where the line has none (a command on another line of a
+   * statement), from what its name runs there (a function named `[` is not the test).
+   */
+  private isTest(c: SyntaxNode): boolean {
+    const said = this.commands(c);
+    const { state } = this.input.status;
+    return said ? !!said.test : testSpecAt(state, c, state.shell)?.closingOperand !== undefined;
+  }
+
+  /** The function a command surely calls, from the model, where the line has no record of the command. */
   private functionNamed(c: SyntaxNode): string | undefined {
-    const name = field(c, 'name')!;
-    if (!/^[\w.:+-]+$/.test(name.text)) return undefined;
-    const res = resolveName(this.input.status.state, name.text, c, { command: true });
-    return res.kind === 'function' && res.sure ? res.name : undefined;
+    const { state } = this.input.status;
+    const res = resolveRun(state, { nameWord: field(c, 'name')! }, state.shell);
+    return res?.kind === 'function' && res.sure ? res.name : undefined;
+  }
+
+  /**
+   * What a declaration builtin does with the assignments among its words: `declared` (the word as the builtin receives
+   * it), `changed` (an option may change what is stored, `declare -i n=1+1`, or a word whose value is not known may be
+   * one, `declare $o n=1`: then what the word gives), or `none` (`-f`, `-F`, and `-p` of `declare`: it names
+   * functions or prints, and sets no variable).
+   */
+  private declaring(c: SyntaxNode, said: CommandSaid | undefined): 'declared' | 'changed' | 'none' {
+    const values = fields(c, 'argument').filter((x) => x.type !== 'variable_assignment').map((x) => staticWordValue(x));
+    // (`-p` of `declare`, `typeset` and `local` only prints: `export -p x=1` and `readonly -p x=1` set `x`, checked with bash.)
+    const name = said ? said.names[0] : field(c, 'name')!.text;
+    const naming = ['declare', 'typeset', 'local'].includes(name) ? /^[-+][a-zA-Z]*[fFp]/ : /^[-+][a-zA-Z]*[fF]/;
+    if (values.some((v) => v !== undefined && naming.test(v))) return 'none';
+    return values.some((v) => v === undefined || /^[-+]/.test(v)) || (said && said.options.length > 0) ? 'changed' : 'declared';
   }
 
   /** A command as a noun: its names, with what it does unless the sentence is brief. */
@@ -509,7 +531,7 @@ class Composer implements IdiomSpeaker {
     const block = this.compoundOf(c);
     if (block) return this.constructName(block);
     const name = c.type === 'command' ? field(c, 'name') : undefined;
-    return codeSpan(name ? name.text : tokenOf(c, c.startPosition.row)!.text);
+    return codeSpan(name ? nameText(name) : tokenOf(c, c.startPosition.row)!.text);
   }
 
   /** The names of statements, for a list of them (`grep`, `sort`). */
