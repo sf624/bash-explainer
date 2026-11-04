@@ -31,6 +31,7 @@ import { readingTree } from './reading';
 import { KIND_ROLES } from './roles';
 import { argvLines } from './argvline';
 import { lineSentence, problemCodes } from './linesentence';
+import { isKept } from './tokenkept';
 import { claim, dropLabelEcho, markSaid, markTokens } from './tokenmarks';
 import { LineExplainer, type LineInit, type Walk } from './explain/context';
 import { intersects, isBlockLike, onLine, summaryOf } from './explain/nodes';
@@ -103,7 +104,7 @@ export class Analyzer {
     const cx = this.explainer({ opts, root, tree, source: tree.text, line, shell, state, status: statusModel(state, shell), nested: this.nested });
     const items = flatten(cx, root);
     // (The tokens of a statement over several lines, `cx.whole`, are finished.)
-    const own = items.filter((t) => !Object.isFrozen(t));
+    const own = items.filter((t) => !isKept(t));
     // (A token that shows a text stating bash's behaviour gets its basis and try-it, over the spec a program's token
     // has; with `notes.basis` off, no token has a basis.)
     if (opts.basis === false) withoutBases(own);

@@ -18,6 +18,7 @@ import type { ShellRegion, Extracted } from './index';
 import { batsTestLine } from './bats';
 import { batsCommentFacts } from './batstags';
 import { problemCodes } from '../linesentence';
+import { isKept } from '../tokenkept';
 import { markTokens, sayInstead } from '../tokenmarks';
 import { pushAll } from '../lists';
 
@@ -102,7 +103,7 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
   return {
     ...ex,
     items: ex.items.map((t) => {
-      if (!Object.isFrozen(t)) return token(t);
+      if (!isKept(t)) return token(t);
       // (A statement over several lines, the same token on each of them: `Whole`.)
       let mapped = kept.get(t);
       if (!mapped) kept.set(t, (mapped = token(t)));
