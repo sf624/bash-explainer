@@ -1,6 +1,6 @@
 import type { CommandSpec } from '../argv/spec';
 import { tx } from '../i18n';
-import { args, cmd, GNU_INFO, operand, OptSpec, pos, runs } from './types';
+import { args, cmd, GNU_INFO, operand, OptSpec, pos, runs, wraps } from './types';
 
 // System administration commands from the LPIC and LinuC objectives: boot loaders and kernel
 // modules, package tools of the Debian and Red Hat families, accounts, scheduling, time, logs,
@@ -653,7 +653,7 @@ export const admin: Record<string, CommandSpec> = {
     ['-c|--compute', '変更する前に、プロセスの遷移後のコンテキストを計算する', 'compute the process transition context before changing it'],
     ['-l|--range', 'レベルレンジ', 'level range', 'arg'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
+  ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [wraps()] }] }),
   semanage: cmd('SELinux のポリシーの設定（ポート・ファイル・ブール値）を管理する', 'Manage SELinux policy settings (ports, files, booleans)', [], {
     subcommands: {
       port: cmd('ポートのタイプを管理する（`-a -t http_port_t -p tcp 8080`）', 'Manage port types (`-a -t http_port_t -p tcp 8080`)', [['-a|--add', '追加', 'add'], ['-d|--delete', '削除', 'delete'], ['-l|--list', '一覧表示', 'list'], ['-t|--type', 'タイプ', 'type', 'arg'], ['-p|--proto', 'プロトコル', 'protocol', 'arg']]),

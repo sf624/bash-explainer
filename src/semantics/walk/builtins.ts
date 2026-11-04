@@ -17,7 +17,7 @@ import { aliasOf, builtinParse, builtinRead, type BuiltinRead, commandName, DECL
 import { attribute, type Attribute, type CommandEntry, environmentHas, exportFromEnvironment, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy, withStatus } from '../shellstate';
 import { builtinExit, definitionExit, exitRefusal } from '../posixexits';
 import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
-import { ExpansionError, NAME, type Operand, processIn, type Target } from './shared';
+import { ExpansionError, exitSignal, NAME, type Operand, processIn, type Target } from './shared';
 import { restrictedFromHere } from './child';
 import type { Walker } from './walker';
 
@@ -116,10 +116,9 @@ export class WalkBuiltins {
         }
         if (name === 'eval') return this.w.evalScript(script, n, st);
         const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]) ?? '');
-        const exit = (x: string) => /^(SIG)?EXIT$|^0$/i.test(x);
-        if (!this.w.silent) this.w.traps.push({ script, host: this.w.aliasHost ?? n, st, since: this.w.changeCount, proc: processIn(this.w.targets), exit: signals.some(exit), exitOnly: signals.every(exit), dead: this.w.mode.dead > 0 });
+        if (!this.w.silent) this.w.traps.push({ script, host: this.w.aliasHost ?? n, st, since: this.w.changeCount, proc: processIn(this.w.targets), exit: signals.some(exitSignal), exitOnly: signals.every(exitSignal), dead: this.w.mode.dead > 0 });
         // (What it changes, it may change after any later statement; an EXIT trap runs at the end only.)
-        if (!signals.every(exit)) {
+        if (!signals.every(exitSignal)) {
           const keys = new Set<string>();
           this.w.collecting.push(keys);
           this.w.silent++;

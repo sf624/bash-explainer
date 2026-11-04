@@ -623,4 +623,10 @@ export interface CommandSlot {
   later?: boolean;
   /** The shell a `shell-string` slot starts, when the program's name does not say it (procps `watch` runs `sh -c`). */
   shell?: Shell;
+  /**
+   * The program runs the command exactly when it runs itself, here, whatever its input (`env`, `timeout`, `sudo`, `sh -c`, `eval`). Without it, the command may not run at
+   * all: per item of its input (`xargs`, `find -exec`), by a lock or a timer (`flock`, `watch`), on another machine whose shell is not known (`ssh`, `docker run`).
+   * So a fault in a string it runs is an Error only with `once` (`stringSurelyRuns`, src/semantics/scriptstops.ts).
+   */
+  once?: boolean;
 }

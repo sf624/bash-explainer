@@ -1,5 +1,5 @@
 import type { CommandSpec } from '../argv/spec';
-import { cmd, pos, runs } from './types';
+import { cmd, pos, wraps } from './types';
 
 // Commands that exist on macOS only (or are met mostly there): the clipboard and `open`, disk,
 // service and network management, Spotlight, signing, property lists and system information.
@@ -46,7 +46,7 @@ export const macos: Record<string, CommandSpec> = {
     ['-u', 'ユーザーが操作したことにしてディスプレイを起こす', 'declare the user active and wake the display'],
     ['-t', '指定した秒数だけ防ぐ', 'prevent sleep for the given number of seconds', 'arg'],
     ['-w', '指定した PID のプロセスが終わるまで防ぐ', 'prevent sleep until the given PID exits', 'arg'],
-  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [wraps()] }] }),
   diskutil: cmd('ディスク・パーティション・ボリュームを管理する（macOS）', 'Manage disks, partitions and volumes (macOS)', [], {
     subcommands: {
       list: cmd('ディスクとパーティションを一覧表示する', 'List disks and partitions', [['-plist', 'plist 形式で出力', 'output as a plist']], { parser: 'single-dash' }),

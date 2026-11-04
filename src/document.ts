@@ -12,7 +12,7 @@ import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
 import { conventionOf, fact, isProblemNote, type Note, problemText, severityOf } from './messages';
 import { isNotRead } from './messages-unread';
 import { PROBLEM_LEVELS } from './messages-levels';
-import { type Fault, keptQuiet, quietString, type Stop, stopAt, surelyRuns } from './semantics/scriptstops';
+import { type Fault, keptQuiet, quietString, type Stop, stopAt } from './semantics/scriptstops';
 import { RESERVED } from './semantics/names';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { shellState } from './semantics/state';
@@ -370,7 +370,7 @@ function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined, 
   // (The strings in a string are read only when one may be read by a shell other than bash: another shell it starts,
   // or its own `eval` and traps when it is not bash. Reading them builds the string's model.)
   const descend = (s: NestedScript) => /\b(?:sh|dash|zsh|ksh|watch)\b/.test(s.text) || (!!s.shell && s.shell !== 'bash' && /\b(?:eval|trap)\b/.test(s.text));
-  for (const { script, source } of nestedScripts(doc.tree, shell, descend)) {
+  for (const { script, source, surely } of nestedScripts(doc.tree, shell, descend)) {
     if (!script.shell || script.shell === 'bash') continue;
     // (The issues give places as positions in the string's text.)
     const rows = lineStarts(script.tree.text);
@@ -380,7 +380,7 @@ function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined, 
     const stops = (n: SyntaxNode, fault?: Fault): Stop | undefined => {
       const own = stopAt(script.tree, n.startIndex, undefined, shellState(script.tree, script.shell));
       const outer = stopAt(doc.tree, source(n.startIndex, false), undefined, shellState(doc.tree, shell, { version }));
-      return own === 'sure' || outer === 'sure' ? 'sure' : own ?? outer ?? (surelyRuns(script.words[0]) && !keptQuiet(quiet, fault) ? undefined : 'may');
+      return own === 'sure' || outer === 'sure' ? 'sure' : own ?? outer ?? (surely && !keptQuiet(quiet, fault) ? undefined : 'may');
     };
     for (const i of dialectIssues(script.tree, script.shell, lang, undefined, undefined, undefined, stops)) {
       const start = at(source(index(i.place.startPosition), false));

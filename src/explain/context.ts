@@ -388,7 +388,7 @@ export class LineExplainer implements Explainer, LineOutput {
   evidenceAt(n: SyntaxNode): ReadKnown | undefined {
     if (this.opts.unread) return undefined;
     const known = this.opts.host ? hostReadAs(this.tree, n.startIndex, this.opts.stopsFrom) : readAs(this.tree, n.startIndex, this.opts.script, this.state);
-    return known && this.opts.unsure ? 'unsure' : known;
+    return known && (this.opts.unsure || this.opts.sometimes) ? 'unsure' : known;
   }
 
   reachedAt(n: SyntaxNode): boolean {

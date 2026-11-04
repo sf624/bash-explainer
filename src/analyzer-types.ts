@@ -203,7 +203,7 @@ export interface ExplainOptions {
   unread?: boolean;
   unsure?: boolean;
   unreached?: boolean;
-  /** Set for a string run by a command that may be left out (`surelyRuns`): an error of the dialect in it is a warning (`Explainer.stopAt`). */
+  /** Set for a string that may not run (`stringSurelyRuns`): an error of the dialect in it, or of its text, is a warning (`Explainer.stopAt`, `evidenceAt`). */
   sometimes?: boolean;
   /** Set for a string run by a command that discards its stderr, where a failure leaves the script going (`quietAt`): an error of the dialect in it is a warning. `status`: only a failure with a status (`eval`, in the script's own shell). */
   quiet?: Quiet;

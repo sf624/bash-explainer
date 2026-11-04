@@ -25,7 +25,7 @@ import { bracesInContext, wordFields, type WordEnv } from './semantics/words';
 import { staticWordValue } from './staticword';
 import { type Feature, FEATURES, featureWorks, type InShell, LETTER, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, works } from './shellfeatures';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
-import { writtenTestWords } from './testexpr';
+import { binaryOperators, parseTest, writtenTestWords } from './testexpr';
 
 // (The shells and the table of features are in src/shellfeatures.ts, a leaf module that src/staticword.ts reads too.)
 export { type AutoShell, bracesWork, FEATURES, featureWorks, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource } from './shellfeatures';
@@ -202,6 +202,13 @@ function redirectsToNetwork(n: SyntaxNode): boolean {
   return !!networkPath(target) && !!networkTarget(n.children.find((c) => !c.named)!.type, field(n, 'descriptor')?.text ?? '', target);
 }
 
+/** Whether the test `n` reads a word as the operator `==` (`[ a == b ]`, `test a == b`): not as an operand (`[ "$1" = == ]`). */
+function eqeqOperator(n: SyntaxNode): boolean {
+  const texts = writtenTestWords(n)?.map((w) => staticWordValue(w) ?? null);
+  const test = texts && parseTest(texts);
+  return !!test && binaryOperators(test).some((op) => texts[op] === '==');
+}
+
 function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): void {
   switch (n.type) {
     case 'arithmetic_command': add('arithCommand'); return;
@@ -210,13 +217,12 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       if (descendants(n, ['=~']).length) add('regex');
       return;
     case 'command': {
-      // (`[ a == b ]`, `test a == b`, by their spelling.)
-      if (writtenTestWords(n)?.some((w) => w.text === '==')) add('eqeqTest');
+      if (eqeqOperator(n)) add('eqeqTest');
       const name = field(n, 'name');
       // (A command with no name has only assignments: their own case.)
       if (!name) return;
       const prefix = prefixAssignments(n);
-      commandFeatures(name.text, n.namedChildren.filter((c) => c !== name && !prefix.includes(c)), add);
+      commandFeatures(name.text, n.namedChildren.filter((c) => c !== name && !prefix.includes(c) && c.field !== 'redirect'), add);
       return;
     }
     case 'coproc_statement': add('coproc'); return;
@@ -313,7 +319,8 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
     case 'type': if (on('-t')) add('typeT'); break;
     case 'printf':
       if (on('-v')) add('printfV');
-      if (nodes.some((w) => /%q/.test(w.text))) add('printfQ');
+      // (The format's value, as a word not known says nothing, and `%%` is a percent sign: `%5q`, `%-5q` are refused too.)
+      if (operands(parse, 'FORMAT').some(({ word }) => /%[-+ #0']*[\d*]*(?:\.[\d*]*)?q/.test((argWord(nodes[word]).value ?? '').replace(/%%/g, '')))) add('printfQ');
       break;
     case 'echo':
       if (on('-e')) add('echoE');

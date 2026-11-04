@@ -14,7 +14,7 @@ import { admin } from './admin';
 import { netadmin, SSH_CONFIG_OPTION } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
-import { args, ASSIGNMENTS, byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, DOAS_SETS, SUDO_KEEPS, SSH_MAY_SEND, SSH_SETS, CONTAINER_SETS, SUDO_OWN, SUDO_SETS, wordTable, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
+import { args, ASSIGNMENTS, byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, DOAS_SETS, SUDO_KEEPS, SSH_MAY_SEND, SSH_SETS, CONTAINER_SETS, SUDO_OWN, SUDO_SETS, wordTable, wraps, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -1356,9 +1356,9 @@ export const core: Record<string, CommandSpec> = {
   ], {
     parser: 'getopt_long', optionsFirst: true, unknownOption: SUDO_UNKNOWN_OPTION,
     operands: [
-      { when: { option: ['-s', '-i'] }, pattern: [ASSIGNMENTS, runs({ run: 'shell-string', joinsWords: true, escapesWords: true, env: 'reset', keeps: SUDO_KEEPS, sets: SUDO_SETS })] },
-      { when: { option: ['-E', '--preserve-env'] }, pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'variables', sets: SUDO_OWN })] },
-      { pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset', keeps: SUDO_KEEPS, sets: SUDO_SETS })] },
+      { when: { option: ['-s', '-i'] }, pattern: [ASSIGNMENTS, wraps({ run: 'shell-string', joinsWords: true, escapesWords: true, env: 'reset', keeps: SUDO_KEEPS, sets: SUDO_SETS })] },
+      { when: { option: ['-E', '--preserve-env'] }, pattern: [ASSIGNMENTS, wraps({ run: 'exec', env: 'variables', sets: SUDO_OWN })] },
+      { pattern: [ASSIGNMENTS, wraps({ run: 'exec', env: 'reset', keeps: SUDO_KEEPS, sets: SUDO_SETS })] },
     ],
   }),
   // env's `-S` splits its value into the command and its first arguments; the operands after it are more arguments.
@@ -1383,18 +1383,18 @@ export const core: Record<string, CommandSpec> = {
       // `env -S'-i A=1' cmd`: the interpreter reads the words of the string in its place. A string it cannot
       // split here (`-S"$cmd"`) may hold the command, so the words after it are only arguments.
       { when: { unsplit: ['-S', '--split-string'] }, pattern: [operand('ARG', '`-S` の文字列から作るコマンドへの引数', 'argument to the command made from the string of `-S`', { repeat: '*' })] },
-      { when: { option: ['-i', '--ignore-environment', '-'] }, pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset' })] },
-      { pattern: [ASSIGNMENTS, runs()] },
+      { when: { option: ['-i', '--ignore-environment', '-'] }, pattern: [ASSIGNMENTS, wraps({ run: 'exec', env: 'reset' })] },
+      { pattern: [ASSIGNMENTS, wraps()] },
     ],
   }),
   doas: cmd('他のユーザー（既定は root）の権限でコマンドを実行する（OpenBSD 由来の sudo の代わり）', 'Run a command as another user (root by default; the OpenBSD alternative to sudo)', [
     ['-u', '実行するユーザー', 'run as the given user', 'arg'],
     ['-n', 'パスワードを尋ねない（必要なら失敗）', 'never prompt for a password'],
     ['-s', 'ログインシェルでなく、ユーザーのシェルを起動する', 'run the user\'s shell'],
-  ], { optionsFirst: true, operands: [{ pattern: [runs({ run: 'exec', env: 'reset', keeps: DOAS_KEEPS, sets: DOAS_SETS })] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [wraps({ run: 'exec', env: 'reset', keeps: DOAS_KEEPS, sets: DOAS_SETS })] }] }),
   nohup: cmd('ログアウト(ハングアップ)してもコマンドが止まらないように実行する', 'Run a command immune to hangups (survives logout)', [
     ...GNU_INFO,
-  ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
+  ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [wraps()] }] }),
   timeout: cmd('制限時間を超えたらコマンドを終了させる', 'Run a command with a time limit', [
     ['-s|--signal', 'タイムアウト時に送るシグナル', 'signal to send on timeout', 'arg'],
     ['-k|--kill-after', 'さらに指定した時間経っても終わらなければ KILL', 'also send KILL if it is still running after the given extra time', 'arg'],
@@ -1403,7 +1403,7 @@ export const core: Record<string, CommandSpec> = {
     ['-v|--verbose', '時間切れでシグナルを送ったら、標準エラー出力に知らせる', 'report on stderr when a signal is sent on timeout'],
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
-  ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [operand('DURATION', '制限時間（`5`、`30s`、`2m`、`1h`）', 'time limit (`5`, `30s`, `2m`, `1h`)', { repeat: '?', type: 'duration' }), runs()] }] }),
+  ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [operand('DURATION', '制限時間（`5`、`30s`、`2m`、`1h`）', 'time limit (`5`, `30s`, `2m`, `1h`)', { repeat: '?', type: 'duration' }), wraps()] }] }),
   nice: cmd('優先度を変えてコマンドを実行する', 'Run a command with modified priority', [
     ['-n', '優先度の調整値', 'niceness adjustment', 'arg'],
     ['--adjustment', 'ニス値の増分', 'niceness increment', 'arg'],
@@ -1420,7 +1420,7 @@ export const core: Record<string, CommandSpec> = {
       // `nice --5`: an adjustment of -5.
       { pattern: /^--(\d+)$/, text: ([, n]) => tx(`優先度の調整値 -${n}（\`-n -${n}\` の古い書き方。負の値には権限が必要）`, `niceness adjustment -${n} (old way to write \`-n -${n}\`; a negative value needs privileges)`) },
     ],
-    operands: [{ pattern: [runs()] }],
+    operands: [{ pattern: [wraps()] }],
   }),
   watch: cmd('コマンドを定期的に実行して結果を全画面表示する', 'Run a command periodically and show its output', [
     ['-n|--interval', '実行間隔（秒）', 'interval in seconds', 'arg'],

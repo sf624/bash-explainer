@@ -12,6 +12,7 @@ import { descendants, fields, nameText } from '../syntax/tree';
 import type { SyntaxNode, SyntaxTree } from '../syntax/tree';
 import { commandName } from './effects';
 import { type ExecEnv, type SlotLink, slotEnvs } from './env';
+import { stringSurelyRuns } from './scriptstops';
 // (state.ts imports this module too; each uses the other's functions only when they run.)
 import { shellState, type StateModel } from './state';
 
@@ -116,12 +117,12 @@ export function commandSlots(model: StateModel, cmd: SyntaxNode, strings?: Map<S
 
 /**
  * Every string of `tree` that a command slot runs as a script (docs/design/semantics.md, 4.13), and those inside them,
- * outermost first, each with `source`: where offset `i` of its text is in `tree`'s text (`end`: as the end of a range).
- * For the dialect checks of the strings (src/document.ts).
+ * outermost first, each with `source`: where offset `i` of its text is in `tree`'s text (`end`: as the end of a range), and
+ * `surely`: it and the strings around it surely run (`stringSurelyRuns`). For the dialect checks of the strings (src/document.ts).
  */
-export function nestedScripts(tree: SyntaxTree, shell?: Shell, descend: (script: NestedScript) => boolean = () => true): { script: NestedScript; source: (i: number, end: boolean) => number }[] {
-  const out: { script: NestedScript; source: (i: number, end: boolean) => number }[] = [];
-  const visit = (t: SyntaxTree, model: StateModel, source: (i: number, end: boolean) => number): void => {
+export function nestedScripts(tree: SyntaxTree, shell?: Shell, descend: (script: NestedScript) => boolean = () => true): { script: NestedScript; source: (i: number, end: boolean) => number; surely: boolean }[] {
+  const out: { script: NestedScript; source: (i: number, end: boolean) => number; surely: boolean }[] = [];
+  const visit = (t: SyntaxTree, model: StateModel, source: (i: number, end: boolean) => number, around: boolean): void => {
     for (const cmd of descendants(t.root, ['command'])) {
       const strings = new Map<SyntaxNode, SyntaxNode[]>();
       const envs = commandSlots(model, cmd, strings);
@@ -130,12 +131,13 @@ export function nestedScripts(tree: SyntaxTree, shell?: Shell, descend: (script:
         const script = model.script(words, envs.get(first)!);
         if ('why' in script) continue;
         const inner = (i: number, end: boolean) => source(scriptSourceIndex(script, i, end), end);
-        out.push({ script, source: inner });
+        const surely = around && stringSurelyRuns(script);
+        out.push({ script, source: inner, surely });
         // (Reading the strings in it builds its model: not done when the caller does not need them.)
-        if (descend(script)) visit(script.tree, script.model, inner);
+        if (descend(script)) visit(script.tree, script.model, inner, surely);
       }
     }
   };
-  visit(tree, shellState(tree, shell), (i) => i);
+  visit(tree, shellState(tree, shell), (i) => i, true);
   return out;
 }

@@ -1,4 +1,5 @@
 import type { ScriptEvidence } from '../shellfeatures';
+import { parseExpansion } from '../expansion';
 import { outputsOf } from '../idioms';
 import { staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
@@ -6,9 +7,9 @@ import { shellFromName } from '../dialect';
 import { commandName } from './effects';
 import { processOf, subshellReasons } from './env';
 import type { NestedScript } from './nested';
-import type { StateModel } from './state';
+import { shellState, type StateModel } from './state';
 import { conditionOf, statusModel } from './status';
-import { parser } from './walk/shared';
+import { exitSignal, parser } from './walk/shared';
 
 // What may keep a shell from getting to a line, or from reading it as it is written: the one table of the problems that say
 // a fault of a script (docs/design/three-levels.md, "Where a shell stops"). The table follows no path; where the tree has no error, what
@@ -166,6 +167,17 @@ function stopOf(c: SyntaxNode, lastError: number): Stop | undefined {
   return !inSubshell(c) && (atTop(c) || c.endIndex <= lastError || handsOver(c, words)) ? 'sure' : 'may';
 }
 
+/**
+ * Whether the expansion `e` may end the shell: `${x:?}` and `${x?}` do when the variable has no value, here or by the time it runs (`: "${BASH_VERSION:?needs bash}"`). Not in a
+ * subshell, which it ends, and the script goes on; nor where the script surely gave the variable a value (`x=1; : "${x:?}"`), an empty one being none for `:?`.
+ */
+function expansionStops(e: SyntaxNode, tree: SyntaxTree): boolean {
+  const p = parseExpansion(e.text);
+  if (!p?.op || !/^:?\?$/.test(p.op) || inSubshell(e)) return false;
+  const v = shellState(tree).at(e).run.variables.get(p.name);
+  return v?.set !== 'on' || (p.op === ':?' && !v.value);
+}
+
 /** Each kind of stop of a tree, in the order they end: where, and on which row. */
 type Marks = Readonly<Record<Stop, readonly { end: number; row: number }[]>>;
 
@@ -179,6 +191,9 @@ function marksOf(tree: SyntaxTree): Marks {
     for (const c of descendants(tree.root, ['command'])) {
       const stop = field(c, 'name') ? stopOf(c, lastError) : undefined;
       if (stop) found[stop].push({ end: c.endIndex, row: c.startPosition.row });
+    }
+    for (const e of descendants(tree.root, ['expansion'])) {
+      if (expansionStops(e, tree)) found.may.push({ end: e.endIndex, row: e.startPosition.row });
     }
     found.sure.sort((a, b) => a.end - b.end);
     found.may.sort((a, b) => a.end - b.end);
@@ -267,6 +282,33 @@ export function surelyRuns(n: SyntaxNode): boolean {
     if (leftOut(c, p)) return false;
   }
   return true;
+}
+
+/**
+ * Whether the action of `trap` surely runs once the shell gets to the `trap`: only at the end of the shell (EXIT, 0), as a signal may never come, and unless something takes it
+ * back: a later `trap` of EXIT, or of signals not known here, or an `exec`, which runs no trap.
+ */
+function runsAtExit(action: SyntaxNode): boolean {
+  const trap = ancestor(action, (a) => a.type === 'command')!;
+  const words = fields(trap, 'argument');
+  if (!words.slice(words.indexOf(action) + 1).some((w) => exitSignal(staticWordValue(w) ?? ''))) return false;
+  return !descendants(ancestor(action, (a) => !a.parent)!, ['command']).some((c) => {
+    if (c.startIndex <= trap.startIndex) return false;
+    const later = fields(c, 'argument').map((a) => staticWordValue(a));
+    const name = commandName(c);
+    return name === 'trap' ? later.some((w) => w === undefined || exitSignal(w)) : name === 'exec' && execWord(later) !== undefined;
+  });
+}
+
+/**
+ * Whether a string is surely run once the shell gets to the statement around it (`surelyRuns`), so that what fails in it fails every time: `eval`'s, or another shell's through
+ * slots that run it exactly when they run (`CommandSlot.once`), not with `sh -n`, which reads it and runs nothing; a trap's, as `runsAtExit`. (A string in a string asks for each
+ * level: `later` here, for a trap around it, says nothing of this one.) What the dictionary does not say is not surely run.
+ */
+export function stringSurelyRuns(script: Pick<NestedScript, 'kind' | 'words' | 'env'>): boolean {
+  if (!surelyRuns(script.words[0])) return false;
+  if (script.kind === 'later') return runsAtExit(script.words[0]);
+  return script.env.links.every((l) => l.kind !== 'slot' || l.slot.later || (l.slot.once && !l.invocation?.some((o) => /^-[A-Za-z]*n/.test(o.flag))));
 }
 
 /**
