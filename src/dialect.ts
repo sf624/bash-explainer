@@ -23,7 +23,7 @@ import { testWordShape } from './semantics/testwords';
 import { testedFirst } from './semantics/unbound';
 import { bracesInContext, wordFields, type WordEnv } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { COMMON_SH, type Feature, FEATURES, featureWorks, type InShell, LETTER, type Measured, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, works } from './shellfeatures';
+import { builtinRow, COMMON_SH, type Feature, FEATURES, featureWorks, type InShell, LETTER, type Measured, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, works } from './shellfeatures';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { binaryOperators, parseTest, writtenTestWords } from './testexpr';
 
@@ -322,7 +322,7 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
   const on = (...names: string[]): boolean => has(parse, ...names);
   // The values of `set -o NAME` (not `set +o NAME`), also bundled as in `set -euo pipefail`.
   const setOption = (option: string): boolean => values(parse, '-o').some(({ word, role }) => role.of.startsWith('-') && argWord(nodes[word]).value === option);
-  const own = Object.keys(FEATURES).find((id) => FEATURES[id].builtins?.includes(name));
+  const own = builtinRow(name);
   if (own) add(on('-A') && (name === 'declare' || name === 'typeset') ? 'assoc' : own);
   switch (name) {
     case 'export': if (on('-f')) add('exportF'); break;

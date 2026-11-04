@@ -163,8 +163,9 @@ export function featureWorks(id: string, shell?: Shell): boolean {
   return !shell || (shell !== 'sh' && works(FEATURES[id], shell as RealShell));
 }
 
-/** The row of FEATURES about the builtin `name`, if any. */
-const builtinRow = (name: string): Feature | undefined => Object.values(FEATURES).find((f) => f.builtins?.includes(name));
+/** The row of FEATURES about the builtin `name`, by the rows' `builtins`: asked at each command. */
+const BUILTIN_ROWS: ReadonlyMap<string, string> = new Map(Object.entries(FEATURES).flatMap(([id, f]) => (f.builtins ?? []).map((name): [string, string] => [name, id])));
+export const builtinRow = (name: string): string | undefined => BUILTIN_ROWS.get(name);
 
 /** The shells run for what they do with what they lack (the rows' `dash` and `ash`). */
 export type Measured = 'dash' | 'ash';
@@ -176,9 +177,9 @@ export const COMMON_SH: readonly Measured[] = ['dash', 'ash'];
  * In `sh`, where the common shells differ, the one that lacks it decides: `source` fails in dash, so it is not counted on.
  */
 export function builtinIn(name: string, shell?: Shell): boolean {
-  const row = builtinRow(name);
-  if (!row) return true;
-  return shell === 'sh' ? COMMON_SH.every((sh) => works(row, sh)) : works(row, shell ?? 'bash');
+  const id = builtinRow(name);
+  if (!id) return true;
+  return shell === 'sh' ? COMMON_SH.every((sh) => works(FEATURES[id], sh)) : works(FEATURES[id], shell ?? 'bash');
 }
 
 /** The feature of a brace expression: a list (`{a,b}`) or a sequence (`{1..3}`). */
