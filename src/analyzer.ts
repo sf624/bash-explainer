@@ -176,6 +176,7 @@ export class Analyzer {
     if (opts.sentence && !this.nested) {
       const fault = syntaxFaultOf(cx);
       // (A blank line or a comment of the command says nothing, as any.)
+      const syntaxError = fault && fault.firstRow <= line && line <= fault.lastRow && /^\s*[^\s#]/.test(tree.text.split('\n')[line]) ? fault.what : undefined;
       const said = lineSentence({ root, line, lang: this.lang, status: cx.status, commands: commandsSaid(cx), problems: new Set([...problemCodes(result), ...opts.hostProblems ?? []]), kept: alone?.later.sentences, syntaxError });
       if (said) result.sentence = said.text;
     }

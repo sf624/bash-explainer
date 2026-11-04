@@ -19,6 +19,7 @@ import type { Shell } from '../src/shellfeatures';
 import { syntaxFault } from '../src/semantics/syntaxerror';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { SyntaxErrorWhat } from '../src/syntax/tree';
+import { agreesWithBash, agreesWithDash, shellSays } from './support/syntax-shells';
 
 const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'syntax-errors.json'), 'utf8')) as { scripts: string[]; onlyBash: Record<string, string> };
 const corpus = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'snippets.json'), 'utf8')) as string[];
@@ -143,7 +144,7 @@ describe('a syntax error is a problem, as bash -n says', function () {
       ['if true; then\n  echo a\n', 0, 0, 2, '`fi` is missing', '`fi` がない'],
       ['echo a\nwhile a; do b done\n', 1, 9, 11, '`done` is missing', '`done` がない'],
       ["echo 'a\n", 0, 5, 7, '`\'` is missing', '`\'` がない'],
-      ['[[ a b ]]\n', 0, 5, 6, '`b` cannot stand here', 'ここに `b` は書けない'],
+      ['[[ a b ]]\n', 0, 5, 6, 'the shell cannot read this command', 'シェルはこのコマンドを読めない'],
       ['a |\n', 0, 2, 3, 'a command is missing here', 'ここにコマンドがない'],
       ['a >\n', 0, 2, 3, 'the redirection has no target', 'リダイレクトの行き先がない'],
       ['f()\n', 0, 0, 3, 'the function has no body', '関数の本体がない'],
@@ -283,6 +284,52 @@ describe('a syntax error is a problem, as bash -n says', function () {
     }
   });
 
+  it('says none where bash 5.2 and dash read a `${ ` as text, whatever follows; bash 5.3 does not', () => {
+    const bash53 = process.env.BASH_EXPLAINER_BASH53;
+    for (const text of ['echo ${ { a; }\n', 'echo ${ f() { a; }\n', 'echo ${| { a; }\n']) {
+      for (const shell of ['bash', 'sh'] as const) assert.strictEqual(syntaxFault(parser.parse(text), shell, '5.2'), undefined, `${shell}: ${text}`);
+      assert.strictEqual(syntaxFault(parser.parse(text), 'sh', '5.3'), undefined, text);
+      assert.ok(syntaxFault(parser.parse(text), 'bash', '5.3'), text);
+      if (has('bash', /version 5\.2/)) assert.strictEqual(rejected('bash', [text]).size, 0, text);
+      assert.strictEqual(rejected('dash', [text]).size, 0, text);
+      if (bash53) assert.strictEqual(rejected(bash53, [text]).size, 1, text);
+    }
+  });
+
+  it('says none where the text runs on: a process substitution glued to a word on a compound command', () => {
+    const texts = ['{ a; } < <(b)x\n', '( a ) < <(b)c\n', '[[ a ]] < <(b)c\n', 'f() { a; } < <(b)c\n', 'while a; do b; done < <(ls).txt\n', 'while a; do b; done < <(ls)done\n', 'cat < <(ls)x\n'];
+    for (const tool of ['bash', ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])]) assert.strictEqual(rejected(tool, texts).size, 0, tool);
+    for (const text of texts) assert.strictEqual(syntaxFault(parser.parse(text), 'bash'), undefined, text);
+    const r = spawnSync('bash', ['-c', 'while read l; do echo in; done < <(echo x)y; echo after'], { encoding: 'utf8' });
+    assert.deepStrictEqual([r.status, /after/.test(r.stdout)], [0, true]);
+  });
+
+  it('says none where dash reads `$\'` as a `$` and a quote; `$"` it reads as bash does', () => {
+    const quote = "echo $'a\\'\n";
+    assert.strictEqual(rejected('dash', [quote]).size, 0);
+    assert.strictEqual(rejected('bash', [quote]).size, 1);
+    assert.strictEqual(syntaxFault(parser.parse(quote), 'sh'), undefined);
+    assert.ok(syntaxFault(parser.parse(quote), 'bash'));
+    const r = spawnSync('dash', ['-c', "echo $'a\\'"], { encoding: 'utf8' });
+    assert.deepStrictEqual([r.status, r.stdout], [0, '$a\\\n']);
+    // (The same quote earlier in the file: dash reads all that follows otherwise. `it\'s` closes it there, and opens another.)
+    assert.strictEqual(syntaxFault(parser.parse("echo $'it\\'s'\necho ok )\necho 'x'\n"), 'sh'), undefined);
+    const double = 'echo $"a\\"\n';
+    for (const [tool, shell] of [['bash', 'bash'], ['dash', 'sh']] as const) {
+      assert.strictEqual(rejected(tool, [double]).size, 1, tool);
+      assert.ok(syntaxFault(parser.parse(double), shell), shell);
+    }
+  });
+
+  it('asks the text once, however many lines ask: 20,000 lines with a fault at the end', () => {
+    const lines = Array.from({ length: 20000 }, (_, i) => `echo ${i}`);
+    const tree = parser.parse(`#!/bin/bash\n${lines.join('\n')}\nfi\n`);
+    const started = Date.now();
+    // (As the explanation of each line does. Reading the text for each line took more than 10 s here.)
+    for (const _ of lines) assert.ok(syntaxFault(tree, 'bash'));
+    assert.ok(Date.now() - started < 2000, `${Date.now() - started} ms`);
+  });
+
   it('does not read a string as a script of its own', () => {
     for (const text of ["bash -c 'echo ok )'\n", "eval 'echo ok )'\n", "sh -c 'if a'\n", "trap 'echo ok )' EXIT\n", "x='echo ok )'\n"]) {
       assert.deepStrictEqual(documentIssues(script(text), 'en', {}).filter((i) => i.code === 'syntax-error'), [], text);
@@ -359,10 +406,12 @@ describe('what bash does with "bad substitution", and with a builtin behind a wr
   });
 
   // (`--check` fails on the first: `tokenErrorNotes`. The gate is the syntax error's, `surelyRead`, and no path that may leave it out.)
-  // (Only a subshell, `$( )`, a stage of a pipeline or `&` keeps it to itself: so the text states no status.)
+  // (What runs before it on the line has run; a subshell, `$( )`, a stage of a pipeline, `&`, `eval` and a file sourced keep it to themselves: so the text states no status.)
   it('`${(f)var}`: bash drops what it read with it, and goes on to the next line', () => {
     const rows: [string, string][] = [
       ['echo ${(f)y}; echo same\necho $? next\n', '1 next\n'],
+      ['echo before; echo ${(f)y}; echo same\necho $? next\n', 'before\n1 next\n'],
+      ['eval \'echo ${(f)y}; echo in\'; echo after\n', 'after\n'],
       ['echo ${(f)y} || echo z\necho $? next\n', '1 next\n'],
       ['f() { echo ${(f)y}; echo in-f; }; f; echo $?\n', ''],
       ['f() { echo ${(f)y}; echo in-f; }\nf\necho $? next\n', '1 next\n'],
@@ -385,7 +434,7 @@ describe('what bash does with "bad substitution", and with a builtin behind a wr
       assert.doesNotMatch(problem.message, /status 1|ステータス 1|fails/, lang);
     }
     const [one] = documentIssues(script('echo ${(f)y}\n'), 'en', { script: 'said' }).filter((i) => i.code === 'bad-substitution-always');
-    assert.match(one.message, /bash reports "bad substitution".*It does not run this command or what it read with it/);
+    assert.match(one.message, /bash reports "bad substitution".*It does not run this command or the rest of what it read with it/);
   });
 
   it('`${(f)var}` is a problem only where a run surely gets to it', () => {
@@ -431,7 +480,7 @@ describe('what bash does with "bad substitution", and with a builtin behind a wr
     // (On its row, a warning that says when.)
     const walk = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...walk(t.children)]);
     const row = walk(new Analyzer('en').explainLine(parser.parse('if a; then echo ${(f)x}; fi\n'), 0, undefined, { script: 'said' }).items).find((t) => t.label === '${(f)x}' && t.marks)!;
-    assert.match(row.explanation, /if this runs, bash reports "bad substitution" \(.*\), and does not run this command or what it read with it$/);
+    assert.match(row.explanation, /if this runs, bash reports "bad substitution" \(.*\), and does not run this command or the rest of what it read with it$/);
     assert.deepStrictEqual(row.marks?.map((m) => m.level), ['warning']);
     // (A string read as a script, and a text not surely a script: the same.)
     assert.deepStrictEqual(walk(new Analyzer('en').explainLine(parser.parse('echo ${(f)x}\n'), 0, undefined, {}).items).find((t) => t.label === '${(f)x}' && t.marks)!.marks?.map((m) => m.level), ['warning']);
@@ -770,6 +819,16 @@ describe('how a file is known to be a script decides the level', () => {
     }
   });
 
+  it('is no pitfall at either level: a fault of the text is no advice', () => {
+    for (const shells of [{ script: 'said' }, { script: 'name' }] as const) {
+      for (const text of ['echo ok )\n', 'echo ${(f)x}\n']) {
+        const found = documentIssues(script(text), 'en', shells).filter((i) => /^(?:syntax-error|bad-substitution)/.test(i.code));
+        assert.strictEqual(found.length, 1, text);
+        assert.strictEqual(found[0].pitfall, undefined, text);
+      }
+    }
+  });
+
   it('a name of another shell says nothing, whoever says it is a script', () => {
     for (const name of ['x.fish', 'd/config.fish', 'x.csh', '.cshrc', 'x.tcsh', '.tcshrc', 'x.zsh', 'x.zsh-theme', 'x.ksh', '.kshrc', '.mkshrc', '.yashrc', '.yash_profile', '.zshrc']) {
       for (const given of [undefined, 'name', 'said'] as const) {
@@ -791,47 +850,13 @@ describe('names the token the shell names', function () {
   const { contexts, shapes, alone } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'syntax-tokens.json'), 'utf8')) as { contexts: string[]; shapes: string[]; alone: string[] };
   const rows = [...new Set([...contexts.flatMap((c) => shapes.map((s) => `${c}${s}\n`)), ...alone.map((s) => `${s}\n`), ...fixture.scripts])];
 
-  /** What `tool -n` prints for each row, in one process: its whole stderr. */
-  function messages(tool: string, scripts: readonly string[]): string[] {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-syntax-'));
-    try {
-      scripts.forEach((s, i) => fs.writeFileSync(path.join(dir, String(i)), s));
-      const loop = `i=0; while [ "$i" -lt ${scripts.length} ]; do "$1" -n "$i" 2>&1; printf '\\036'; i=$((i+1)); done`;
-      return spawnSync('bash', ['-c', loop, 'loop', tool], { encoding: 'utf8', maxBuffer: 1 << 26, cwd: dir }).stdout.split('\x1e');
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-  }
-
-  /** Whether what the fault says agrees with bash's message; undefined if it names no token. */
-  function agreesWithBash(what: SyntaxErrorWhat, message: string): boolean | undefined {
-    const near = /near (?:unexpected token )?`([^]*?)'(?: while looking for matching `.')?$/m.exec(message)?.[1];
-    const atEnd = /unexpected end of file/.test(message);
-    switch (what.kind) {
-      case 'token': case 'after-paren': return near === what.token;
-      // (A heredoc's delimiter it says it wanted; else the end of the file, or the closing it looks for.)
-      case 'missing': return atEnd || message.includes(`wanted \`${what.token}'`) || what.token.endsWith(/matching `(.)'/.exec(message)?.[1] ?? '\0');
-      default: return undefined;
-    }
-  }
-
-  /** The same with dash's: it names a token as bash does, or says `word` for any word. */
-  function agreesWithDash(what: SyntaxErrorWhat, message: string): boolean | undefined {
-    const said = /Syntax error: (.*)$/m.exec(message)?.[1] ?? '';
-    switch (what.kind) {
-      case 'token': case 'after-paren': return said.startsWith(`"${what.token}" unexpected`) || (said.startsWith('word unexpected') && !/^(?:[()|&;]|then|do|done|fi|else|elif|esac|in)/.test(what.token));
-      case 'missing': return /end of file unexpected|Unterminated|Missing/.test(message);
-      default: return undefined;
-    }
-  }
-
   function check(tool: string, shell: Shell, agrees: (what: SyntaxErrorWhat, message: string) => boolean | undefined) {
     const found = rows.flatMap((s) => {
       const fault = syntaxFault(parser.parse(s), shell);
       return fault && !fault.said ? [{ s, what: fault.what }] : [];
     });
-    const said = messages(tool, found.map((f) => f.s));
-    const judged = found.map((f, i) => ({ ...f, message: said[i], agrees: agrees(f.what, said[i]) }));
+    const said = shellSays(tool, found.map((f) => f.s));
+    const judged = found.map((f, i) => ({ ...f, message: said[i].message, agrees: agrees(f.what, said[i].message) }));
     assert.strictEqual(judged.filter((j) => j.agrees === false).map((j) => `${JSON.stringify(j.s)}: ${JSON.stringify(j.what)}; ${j.message}`).join('\n'), '');
     return judged.filter((j) => j.agrees).length;
   }

@@ -56,6 +56,8 @@ const BASH_WORDS = /(?:^|[\s;&|(])(?:\[\[|\]\]|function|coproc|select|time)(?=[\
  * command (`f() b`), a subscript, and what is read only when it is expanded in dash (`"${x:-'}"`, `$(( ) ))`).
  */
 function dashReads(tree: SyntaxTree, chain: readonly SyntaxNode[], e: SyntaxError): boolean {
+  // (`$'a\'`: to dash a `$`, and a quote that ends at the second `'`. It reads every quote after that otherwise, so anywhere in the file.)
+  if (tree.text.includes("$'")) return true;
   const later = (n: SyntaxNode) => n.type === 'expansion' || (n.type === 'function_definition' && !n.namedChildren.some((c) => c.type === 'compound_statement'));
   if (e.what.kind === 'subscript' || chain.some(later)) return true;
   const top = chain[1] ?? chain[0];
@@ -73,34 +75,95 @@ function continuedFrom(text: string, row: number): number {
 }
 
 /** The reserved words and operators that bash names as they stand, where the parser stops on one. */
-const NAMED_TOKEN = /^(?:[()!}]|;;&?|;&?|&&?|\|[|&]?|\]\]|then|do|done|fi|else|elif|esac|in)$/;
+const NAMED_TOKEN = /^(?:[()!}]|;;&?|;&?|&&?|\|[|&]?|\]\]|then|do|done|fi|else|elif|esac)$/;
 
-/** `$(( ))`, `(( ))`: what bash reads as text first, to its `))`. */
+/** `$(( ))`, `(( ))`: what bash reads as text first, to its `))`, and as a subshell if that fails. The parser reads arithmetic. */
 const ARITHMETIC: ReadonlySet<string> = new Set(['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement']);
+
+/**
+ * Whether the error is the parser's alone, from the text before it, where bash reads on:
+ * - `done < <(ls).txt`: one word to bash; the parser ends it at the `)` on a compound command's redirection.
+ * - `$((x) y)`: arithmetic to the parser, a subshell to bash.
+ * - `$(a case )`, `<(a case )`: the word `case` to bash; the parser looks for its `esac`.
+ */
+function parserAlone(text: string, at: number): boolean {
+  const before = text.slice(0, at);
+  const open = before.lastIndexOf('((');
+  return (before.endsWith(')') && /[<>]\(/.test(before)) || (open > before.lastIndexOf('))') && text.includes(')', open))
+    || /[$<>]\([^)]*(?<![\w./-])case(?![\w./-])[^)]*$/.test(before);
+}
+
+/** Quotes, an escape (a line continuation too) and a comment, for `readsOtherwise`: none of their text is an operator. */
+const OPAQUE = /\\[^]|'[^']*'|"(?:[^"\\]|\\[^])*"|(?<!\S)#[^\n]*/g;
+/**
+ * In the text with its operators replaced (`readsOtherwise`), what the parser reads on from where bash has stopped already. `×`
+ * is `&&`, `||` or `|&`; `÷` the end of a case item; `>` any redirection.
+ */
+const STOPS_BEFORE = [
+  // An operator with no command before it.
+  /(?:^|[;&|(×÷\n])\s*[;&|×]/,
+  /(?<![\w.\/-])(?:if|then|elif|else|while|until|do|time|coproc|\{|!)\s*[;&|×]/,
+  // A redirection with no word after it, where the line goes on.
+  />[ \t]*(?:[\n;&|×÷()>]|\d+>|function(?![\w.\/-]))/,
+  // A function's parentheses, with no name before them or no body after them.
+  /\([ \t]*\)[ \t]*[;&|×]/,
+  /(?:^|[;&|×\n])[ \t]*\([ \t]*\)/,
+  // The head of `case`, `for` and `function`, which the parser recovers from at another word.
+  /(?<![\w.\/-])case\s+\S+\s+(?!\s|in(?![\w.\/-]))/,
+  /(?<![\w.\/-])case(?:\s+\S*)?$/,
+  /(?<![\w.\/-])for[ \t]+\w+[ \t]+(?![ \t]|(?:in|do)(?![\w.\/-]))/,
+  /(?<![\w.\/-])for(?:[ \t]+(?![ \t]|\w+[ \t\n;])|[\n;&|×]|$)/,
+  /(?<![\w.\/-])(?:for|select)[ \t]+\w+\s+in(?![\w.\/-])[^;\n]*[&|×]/,
+  // A reserved word where bash wants a command (one after an operator, or after a word that opens a list).
+  /(?:[|×]|(?<![\w.\/-])(?:if|while|until|time|coproc|done|fi|esac))\s*(?:function|then|do|done|fi|else|elif|esac)(?![\w.\/-])/,
+  /\)\s*time(?![\w.\/-])/,
+  /(?<![\w.\/-])coproc[ \t]*\n/,
+  /(?<![\w.\/-])function(?:\s+[\w-]*[ \t]*[;&|×)>\n]|\s+[^\s\w(-])/,
+  // `[[ ]]` with an operand missing: its `]]` is the operand. What is left open is `readsOtherwise`.
+  /(?:\[\[|[!=~>×])[ \t]*\]\]/,
+];
+
+/**
+ * Whether bash has stopped, or reads otherwise, somewhere in `before` (the text up to what the parser stops at), so that
+ * what the parser found is not what bash names: the parser takes what bash rejects (`if a; || then`), and goes on to
+ * a later token. It says that it cannot be sure: what is said then names nothing, and so it may say that too often.
+ */
+function readsOtherwise(text: string, before: string): boolean {
+  const opaque = before.replace(OPAQUE, '"');
+  if (/<<(?!<)[^\n]*$/.test(opaque) || opaque.lastIndexOf('[[') > opaque.lastIndexOf(']]') || /\$\[/.test(text) || (text.replace(OPAQUE, '"').match(/`/g)?.length ?? 0) % 2 === 1) return true;
+  const clauses = opaque.match(/(?<![\w./-])(?:if|elif|then|else)(?![\w./-])/g) ?? [];
+  if (clauses.some((w, i) => /^(?:else|elif)$/.test(w) && /^(?:if|elif)$/.test(clauses[i - 1] ?? ''))) return true;
+  const operators = opaque.replace(/&&|\|\||\|&/g, '×').replace(/;;&|;;|;&/g, '÷').replace(/[<>]\(/g, 'P').replace(/&>>?|<<<|<<-|<<|>>|<>|>\||>&|<&|</g, '>');
+  return STOPS_BEFORE.some((r) => r.test(operators));
+}
 
 /**
  * What the parser found, where bash names the same; else `unreadable`, which names nothing. test/syntax-error.test.ts holds the
  * table: each shape of a fault against `bash -n` and `dash -n`, so a token that bash does not name fails. The parser
  * recovers and goes on where bash stops, so:
- * - A token is said only as a reserved word or an operator, which bash takes as it stands, or as a word of `[[ ]]`, which it names itself.
+ * - A token is said only as a reserved word or an operator, which bash takes as it stands, and where bash has read what is before it as the parser did (`readsOtherwise`).
  * - What is missing is said where the text reads in full with it added (`missingAdded`): bash then got to the end of the file. A `$( )` left open is read
  *   to its `)` first, so what is open inside it is not what bash says.
  */
 function bashNames(tree: SyntaxTree, shell: Shell, chain: readonly SyntaxNode[], e: SyntaxError): SyntaxErrorWhat {
   const { what } = e;
-  if (what.kind !== 'token' && what.kind !== 'missing') return what;
+  const inOpen = chain.some((n) => (n.type === 'command_substitution' || n.type === 'process_substitution') && n.incomplete);
+  // (`coproc function (`: bash reads on past `coproc`, the parser stops there.)
+  if (what.kind !== 'token' && what.kind !== 'missing') return inOpen || (what.kind === 'after' && what.token === 'coproc') ? { kind: 'unreadable' } : what;
   if (what.token.includes('\n')) return { kind: 'unreadable' };
-  const inOpen = chain.some((n) => n.type === 'command_substitution' && n.incomplete);
   const said = what.kind === 'token'
-    ? (NAMED_TOKEN.test(what.token) || chain.some((n) => n.type === 'extended_test')) && !inOpen && !chain.some((n) => ARITHMETIC.has(n.type)) && !(what.token === 'in' && chain.some((n) => n.type === 'case_statement'))
+    ? NAMED_TOKEN.test(what.token) && !inOpen && !chain.some((n) => ARITHMETIC.has(n.type))
     : what.token !== ';' && !chain.some((n) => n.type === 'extended_test') && (!inOpen || what.token === ')' || what.token === '`') && missingAdded(tree);
-  return said && !(shell === 'sh' && dashNamesOther(tree, chain, what)) ? what : { kind: 'unreadable' };
+  return said && !(shell === 'sh' && dashNamesOther(chain, what)) ? what : { kind: 'unreadable' };
 }
 
-/** Where dash, the `sh` of the levels, stops at another token than bash: bash's own operators, `case`, an array, a backtick left open. */
-function dashNamesOther(tree: SyntaxTree, chain: readonly SyntaxNode[], what: SyntaxErrorWhat & { token: string }): boolean {
-  return what.kind === 'missing' ? what.token === ')' || what.token === '`' : /^(?:;;&|;&|\|&)$/.test(what.token) || tree.text.includes('<<<') || chain.some((n) => n.type === 'case_statement');
+/** Where dash, the `sh` of the levels, stops at another token than bash: bash's own operators, `case`, a backtick left open. */
+function dashNamesOther(chain: readonly SyntaxNode[], what: SyntaxErrorWhat & { token: string }): boolean {
+  return what.kind === 'missing' ? what.token === ')' || what.token === '`' : /^(?:;;&|;&|\|&)$/.test(what.token) || chain.some((n) => n.type === 'case_statement');
 }
+
+/** What dash stops at, as no syntax of its own, before the parser's place. */
+const DASH_STOPS = /[<>=]\(|\(\(|<<<|!\s+!|;&|\|&|&>/;
 
 /**
  * Whether the text reads with no error once what the parser found missing is added at its end, in that order (`if a;`: `then`, `fi`),
@@ -165,18 +228,25 @@ function findFault(tree: SyntaxTree, shell: Shell, version: BashVersion): Syntax
   const delimiter = e.what.kind === 'heredoc' ? chain.find((n) => n.type === 'heredoc_redirect')?.namedChildren.find((c) => c.type === 'heredoc_start')?.text : undefined;
   // (A here-document that ends with the file: bash warns, and runs it, unless it took the end of a construct around it.)
   if ((delimiter !== undefined && !chain.some(open)) || chain.some(later) || (shell === 'sh' && dashReads(tree, chain, e))) return undefined;
+  if (parserAlone(tree.text, e.startIndex)) return undefined;
+  // (`${ { a; }`: what bash 5.2 and dash read as text, to a `}`, at run time; the parser reads a command.)
+  if ((shell === 'sh' || lacks('funsub', version)) && /\$\{[\s|]/.test(tree.text)) return undefined;
   // (`[[ a b ]]`: the parser misses the `]]` just before the word it cannot read, the word that bash names.)
   const next = tree.errors[1];
   const named = e.startIndex === e.endIndex && next?.kind === 'unreadable' && !tree.text.slice(e.startIndex, next.startIndex).trim() ? next : e;
   const at = named === e ? chain : around(tree.root, named);
   const before = wordParen(tree, named);
-  const what: SyntaxErrorWhat = before?.what ?? (delimiter !== undefined ? { kind: 'missing', token: delimiter } : bashNames(tree, shell, [...chain, ...at], named));
+  const found: SyntaxErrorWhat = before?.what ?? (delimiter !== undefined ? { kind: 'missing', token: delimiter } : bashNames(tree, shell, [...chain, ...at], named));
+  // (A substitution after `(`: bash prints it in its own form, not as it is written.)
+  const upTo = tree.text.slice(0, named.startIndex);
+  const what: SyntaxErrorWhat = readsOtherwise(tree.text, upTo) || (shell === 'sh' && DASH_STOPS.test(upTo)) || (found.kind === 'after-paren' && /[(`]/.test(found.token)) ? { kind: 'unreadable' } : found;
   const top = at[1] ?? at[0];
   const parent = at[at.length - 2];
+  const fromRow = continuedFrom(tree.text, top.startPosition.row);
   return {
     node: before?.node ?? pointAt(at, named, what), what,
     // (The commands that end on its line are read with it: `fi )`.)
-    firstRow: tree.root.namedChildren.find((c) => c.endPosition.row >= continuedFrom(tree.text, top.startPosition.row))!.startPosition.row, lastRow: top.endPosition.row,
+    firstRow: tree.root.namedChildren.find((c) => c.endPosition.row >= fromRow)!.startPosition.row, lastRow: top.endPosition.row,
     said: chain.some((n) => strayKeyword(n) !== undefined || (n.type === 'compound_statement' && n.namedChildren.some(braceAsArgument)))
       || ('token' in named.what && named.what.token === '}' && parent !== undefined && parent.namedChildren.some((c) => c.endIndex <= named.startIndex && gluedBrace(c))),
   };
@@ -223,11 +293,19 @@ function mayEnd(c: SyntaxNode): boolean {
  */
 const TEMPLATE = /\{\{|\{%|<%|@[A-Za-z_]\w*@|<<[#^/]?\s*(?:parameters|pipeline)\.|\$\[\[/;
 
-/** Whether the text is what a shell reads, as it is written, in a shell whose reading is known. */
+const plainTexts = new WeakMap<SyntaxTree, boolean>();
+
+/** Whether the text is what a shell reads, as it is written, in a shell whose reading is known. Each line asks: it is read once. */
 function surelyText(tree: SyntaxTree, shell: Shell): boolean {
-  // (With CRs in the text, it is not what bash reads: a CR after `&&` is a command, `fi` before one a word. The problem
-  // `crlf` says so. A NUL on the first line makes bash refuse the file: "cannot execute binary file", status 126.)
-  return (shell === 'bash' || shell === 'sh') && !tree.carriageReturns && !tree.text.includes('\0') && !TEMPLATE.test(tree.text) && !SHEBANG_STOPS.test(tree.text.split('\n', 1)[0]);
+  if (shell !== 'bash' && shell !== 'sh') return false;
+  let plain = plainTexts.get(tree);
+  if (plain === undefined) {
+    // (With CRs in the text, it is not what bash reads: a CR after `&&` is a command, `fi` before one a word. The problem
+    // `crlf` says so. A NUL on the first line makes bash refuse the file: "cannot execute binary file", status 126.)
+    plain = !tree.carriageReturns && !tree.text.includes('\0') && !TEMPLATE.test(tree.text) && !SHEBANG_STOPS.test(tree.text.split('\n', 1)[0]);
+    plainTexts.set(tree, plain);
+  }
+  return plain;
 }
 
 const ends = new WeakMap<SyntaxTree, number>();
@@ -236,7 +314,8 @@ const ends = new WeakMap<SyntaxTree, number>();
 function firstEnd(tree: SyntaxTree): number {
   let at = ends.get(tree);
   if (at === undefined) {
-    at = Math.min(Infinity, ...descendants(tree.root, ['command']).filter((c) => field(c, 'name') && mayEnd(c)).map((c) => field(c, 'name')!.endIndex));
+    at = Infinity;
+    for (const c of descendants(tree.root, ['command'])) if (field(c, 'name') && mayEnd(c)) at = Math.min(at, field(c, 'name')!.endIndex);
     ends.set(tree, at);
   }
   return at;

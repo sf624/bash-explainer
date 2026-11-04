@@ -546,7 +546,7 @@ describe('one line must not stop the whole tool', () => {
       // (Sixteen read, and one that says it is not.)
       assert.strictEqual(depth, 17);
       // (Nine that anyone may write are read as they are; past the limit, a word says that it is not read, not that the command lacks it.)
-      const wrapped = JSON.stringify(explain('sudo nice env nohup timeout 5 ionice stdbuf -o0 setsid command grep -c x f').items);
+      const wrapped = JSON.stringify(explain('sudo nice env nohup timeout 5 ionice stdbuf -o0 setsid xargs grep -c x f').items);
       assert.ok(!wrapped.includes('not in the dictionary'), wrapped);
       const past = JSON.stringify(explain(`${'sudo '.repeat(20)}grep -c x f`).items);
       assert.ok(!past.includes('not in the dictionary'));

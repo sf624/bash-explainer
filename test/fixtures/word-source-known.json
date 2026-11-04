@@ -430,7 +430,7 @@
       "reason": "where a parser's error lies and what is read later (an expansion in dash, a function's body, `${ …; }`): the syntax, not what a word becomes",
       "uses": [
         {"fn":"ARITHMETIC","kind":"node-type","count":1},
-        {"fn":"bashNames","kind":"node-type","count":1},
+        {"fn":"bashNames","kind":"node-type","count":2},
         {"fn":"dashReads","kind":"node-type","count":1},
         {"fn":"findFault","kind":"node-type","count":1},
         {"fn":"mayEnd","kind":"helper","count":1,"reason":"the words of a `set` or a `command` before a syntax error, as written: the model trusts nothing in a tree with an error"}

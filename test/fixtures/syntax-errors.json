@@ -557,6 +557,10 @@
   "echo ?(a)\n": "an extended glob: `bash -n` runs no `shopt -s extglob`, so it rejects what a run accepts. The model's own caveat says this (extglob-*)",
   "echo *(a)\n": "an extended glob: `bash -n` runs no `shopt -s extglob`, so it rejects what a run accepts. The model's own caveat says this (extglob-*)",
   "echo +(a)\n": "an extended glob: `bash -n` runs no `shopt -s extglob`, so it rejects what a run accepts. The model's own caveat says this (extglob-*)",
-  "case x in @(a)) ;; esac\n": "an extended glob: `bash -n` runs no `shopt -s extglob`, so it rejects what a run accepts. The model's own caveat says this (extglob-*)"
+  "case x in @(a)) ;; esac\n": "an extended glob: `bash -n` runs no `shopt -s extglob`, so it rejects what a run accepts. The model's own caveat says this (extglob-*)",
+  "((1)\n": "arithmetic to the parser, a subshell to bash when `))` does not close it: what the parser finds there says nothing of what bash reads (`echo $((x) y)` is fine)",
+  "echo $(( ( ))\n": "arithmetic to the parser, a subshell to bash when `))` does not close it: what the parser finds there says nothing of what bash reads (`echo $((x) y)` is fine)",
+  "echo $(( 1 + (2 ))\n": "arithmetic to the parser, a subshell to bash when `))` does not close it: what the parser finds there says nothing of what bash reads (`echo $((x) y)` is fine)",
+  "echo $(( ) ))\n": "arithmetic to the parser, a subshell to bash when `))` does not close it: what the parser finds there says nothing of what bash reads (`echo $((x) y)` is fine)"
  }
 }

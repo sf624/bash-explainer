@@ -173,7 +173,7 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["a &&", 0, "The shell stops with a syntax error (a command is missing here).", "シェルは構文エラーで止まる（ここにコマンドがない）。"],
     ["for", 0, "The shell stops with a syntax error.", "シェルは構文エラーで止まる。"],
     ["select", 0, "The shell stops with a syntax error.", "シェルは構文エラーで止まる。"],
-    ["coproc", 0, "The shell stops with a syntax error (no command follows `coproc`).", "シェルは構文エラーで止まる（`coproc` の後にコマンドがない）。"],
+    ["coproc", 0, "The shell stops with a syntax error.", "シェルは構文エラーで止まる。"],
     ["cat f | while read l; do echo \"$l\"; done", 0, "Pipes `cat` into a `while` loop; the `while` loop runs in a subshell: repeats its body (`echo`) while `read` succeeds; its status is that of the `while` loop.", "`cat`（ファイルの内容を連結して標準出力に出す）の出力を `while` ループに渡す。`while` ループはサブシェルで実行される。`read`（標準入力から1行読み、変数に代入する）が成功する間、本体（`echo`）をくり返す。終了ステータスは `while` ループのもの。"],
     ["cat f | while read l; do\n  echo \"$l\"\ndone | sort", 2, "`done` ends the `while` loop of line 1: repeats line 2 while `read` succeeds; pipes its output into `sort` (sort lines).", "`done` は行 1 からの `while` ループの終わり。`read` が成功する間、行 2 をくり返す。その出力を `sort`（行を並べ替える）に渡す。"],
     ["cat f | while read l; do\n  echo \"$l\"\ndone", 1, "Runs `echo` (print arguments to stdout, separated by spaces).", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。"],
