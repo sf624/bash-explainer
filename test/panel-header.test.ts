@@ -116,7 +116,7 @@ describe('the VS Code panel: its header', function () {
       await twisty.focus();
       await page.keyboard.press('Enter');
       assert.strictEqual(await twisty.getAttribute('aria-expanded'), 'false');
-      await until('folded', () => page.locator('#tree > li').first().locator(':scope > .body').isVisible(), (v) => !v);
+      await until('folded', () => page.locator('#tree > li').first().locator(':scope > .item > .body').isVisible(), (v) => !v);
       // (The fold is the button's: the row's own click, which also selects the part in the editor, is not posted.)
       assert.deepStrictEqual((await posted(page)).filter((t) => t === 'reveal'), []);
       await page.keyboard.press('Enter');
@@ -131,7 +131,7 @@ describe('the VS Code panel: its header', function () {
       // The same line drawn again (a setting changed): the button keeps the focus, in the new rows.
       await page.evaluate(`window.postMessage({ ...window.MSGS['${lang}'], lineLabel: 'again' }, '*')`);
       await until('drawn again', () => page.locator('#where').textContent(), (t) => !!t?.includes('again'));
-      assert.strictEqual(await page.evaluate('document.activeElement.matches("#tree > li:first-child > .row > button.twisty")'), true);
+      assert.strictEqual(await page.evaluate('document.activeElement.matches("#tree > li:first-child > .item > .row > button.twisty")'), true);
       assert.strictEqual(await page.evaluate('document.activeElement.dataset.same'), undefined);
       // VS Code opens a webview's links in the browser.
       const name = (await page.locator('#tree .refs a').first().getAttribute('aria-label'))!;

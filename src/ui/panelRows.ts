@@ -4,7 +4,7 @@
 // frames around commands, each row's roles, what the program receives, and the Key of what is drawn.
 //
 // A deeper depth only adds: the rows of depth 1 are all at depth 2, in the same order, saying the same (test/panel-rows.test.ts).
-// Nothing draws the model yet (P7c does); media/panel.js gets `panelRows`.
+// media/panel.js draws the rows of depth 1 (P7c) and decides none of it.
 import type { ArgvLine, Example, LineExplanation, Span, Token } from '../analyzer-types';
 import type { Lang } from '../i18n';
 import { LEVELS, type NoteLevel } from '../levels';
@@ -14,14 +14,6 @@ import { sameSpan, shown } from './hoverParts';
 import { bandOf, chipOf, readerOf, startsBand } from './readingSteps';
 import { ui } from './texts';
 import { strongestLevel, type TokenRow, tokenRow } from './tokenRow';
-
-/** A row as the panel gets it: the record, with the place it selects, the examples placed under it and its parts. */
-export interface PanelRow extends TokenRow { span: Span; examples?: Example[]; children: PanelRow[] }
-
-/** The rows of a line's tokens, for the panel (media/panel.js has no way to make them: it is plain script, and only draws). */
-export function panelRows(items: readonly Token[], lang: Lang): PanelRow[] {
-  return items.map((t) => ({ ...tokenRow(t, lang), span: t.span, examples: t.examples, children: panelRows(t.children, lang) }));
-}
 
 /** How deep the panel reads the line: 1, what it does; 2, how bash reads it. */
 export type Depth = 1 | 2;
@@ -52,7 +44,11 @@ export interface RowRole {
 export type Received = 'asWritten' | 'changed';
 
 /** A row of the model. */
-export interface ModelRow extends PanelRow {
+export interface ModelRow extends TokenRow {
+  /** The place it selects. */
+  span: Span;
+  /** The examples placed under it. */
+  examples?: Example[];
   /** Which part of the line it is: the same in both languages, at both depths and with the switch either way. */
   key: string;
   /** The first depth that shows it. */
@@ -72,8 +68,12 @@ export interface ModelRow extends PanelRow {
 /** A mark drawn on the panel and what it means. `sample`: its text, where it has one (a level's mark, a badge's word). */
 export interface KeyEntry { id: string; sample?: string; text: string }
 
-/** The rows of a line, and the Key of what they draw. */
-export interface RowModel { rows: ModelRow[]; key: KeyEntry[] }
+/**
+ * The rows of a line, the Key of what they draw, and where each token of the line is shown: the path of its row (`0.1`, the second
+ * part of the first row), or of the nearest row around it where it has none at this depth. One map, read by whatever goes from a
+ * token to its row (a problem's chip, the characters of the line box), so that none decides again which rows there are.
+ */
+export interface RowModel { rows: ModelRow[]; key: KeyEntry[]; places: ReadonlyMap<Token, string> }
 
 /** The kinds that are parts of a word. What the word is to its command says what they are for at depth 1; depth 2 reads them. */
 const WORD_PARTS: ReadonlySet<TokenRow['kind']> = new Set(['string', 'number', 'pattern', 'expansion']);
@@ -101,6 +101,16 @@ function aroundOf(t: Token, r: TokenRow, lang: Lang): Token | undefined {
   return others.length === 1 ? others[0] : undefined;
 }
 
+/**
+ * The examples that run a whole statement of the line (a pipeline's): the view draws them apart, folded, above the rows. A
+ * pipeline inside a construct of the line keeps its place, under its row. A statement of a list (`a | b; c | d`) counts.
+ */
+export function wholeLineExamples(ex: Pick<LineExplanation, 'items' | 'examples'>): Example[] {
+  const statements = (t: Token): Token[] => (t.grammar ? [t, ...t.children.flatMap(statements)] : [t]);
+  const whole = ex.items.flatMap(statements);
+  return ex.examples.filter((e) => e.kind === 'pipeline' && whole.some((t) => sameSpan(t.span, e.anchor!)));
+}
+
 const byStart = (a: Token, b: Token): number => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character;
 const unique = <T>(xs: readonly T[]): T[] => [...new Set(xs)];
 
@@ -111,6 +121,8 @@ interface Build {
   roles: ReadonlyMap<string, RowRole[]>;
   lines: ReadonlyMap<string, ArgvLine>;
   words: ReadonlyMap<string, Received>;
+  /** The row each token was folded into or made. */
+  made: Map<Token, ModelRow>;
 }
 
 /**
@@ -142,7 +154,7 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
   const frame = [t, ...chain].map(frameOf).find(Boolean);
   const receives = frame === 'command' ? b.lines.get(at) : undefined;
   const received = receives ? undefined : b.words.get(at);
-  return [{
+  const row: ModelRow = {
     ...own,
     marks: marks.length ? marks : undefined,
     level: strongestLevel(marks),
@@ -163,7 +175,28 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
     ...(receives ? { receives } : {}),
     ...(received ? { received } : {}),
     children,
-  }];
+  };
+  for (const x of [t, ...chain]) b.made.set(x, row);
+  return [row];
+}
+
+/** Where each token of the line is shown (`RowModel.places`). */
+function placesOf(items: readonly Token[], rows: readonly ModelRow[], made: ReadonlyMap<Token, ModelRow>): Map<Token, string> {
+  const paths = new Map<ModelRow, string>();
+  const number = (rs: readonly ModelRow[], prefix: string): void => rs.forEach((r, i) => {
+    paths.set(r, `${prefix}${i}`);
+    number(r.children, `${prefix}${i}.`);
+  });
+  number(rows, '');
+  const places = new Map<Token, string>();
+  const walk = (t: Token, up: string): void => {
+    // (A line's top rows are always there, so that a token with no row has one around it.)
+    const at = paths.get(made.get(t)!) ?? up;
+    places.set(t, at);
+    t.children.forEach((c) => walk(c, at));
+  };
+  items.forEach((t) => walk(t, ''));
+  return places;
 }
 
 /** The word a simple command's name is: to the reader it is the command, which has its row. */
@@ -232,7 +265,8 @@ export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' 
     roles: options.depth === 2 && ex.reading ? rolesOf(ex.reading, lang) : new Map(),
     lines: new Map(lines.map((l) => [keyOf(l.span), l])),
     words: receivedWords(lines),
+    made: new Map(),
   };
   const rows = ex.items.flatMap((t) => rowsOf(t, undefined, build));
-  return { rows, key: keyEntries(rows, ex.noteInfo.map((n) => n.level), lang) };
+  return { rows, key: keyEntries(rows, ex.noteInfo.map((n) => n.level), lang), places: placesOf(ex.items, rows, build.made) };
 }

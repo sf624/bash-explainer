@@ -52,8 +52,10 @@
     postHeader();
   }
 
-  /** @type {Array<{ token: any, el: HTMLElement }>} */
+  /** @type {Array<{ token: any, el: HTMLElement, end: number }>} */
   let flat = [];
+  /** What each level looks like on a row (`levels`, src/ui/panelView.ts). */
+  let levels = /** @type {Record<string, { className: string, icon: string, name: string }>} */ ({});
   let examplesFirst = true;
   /** @type {HTMLElement[]} */
   let segments = [];
@@ -217,6 +219,7 @@
     $('short').hidden = true;
     $('tree').replaceChildren();
     $('examples').replaceChildren();
+    $('whole-line').replaceChildren();
     $('reading-tree').replaceChildren();
     reading = null;
     lineSteps = [];
@@ -229,6 +232,7 @@
   function render(msg) {
     const ex = msg.explanation;
     labels = msg.labels ?? labels;
+    levels = msg.levels ?? levels;
     control = msg.control ?? control;
     viewForms = msg.viewForms ?? viewForms;
     tools = msg.tools ?? tools;
@@ -271,12 +275,12 @@
     const tree = $('tree');
     tree.replaceChildren(...msg.rows.map((/** @type {any} */ r, /** @type {number} */ i) => item(r, `${i}`)));
     if (kept) {
-      const row = tree.querySelector(`li[data-path="${kept.path}"] > .row`);
+      const row = tree.querySelector(`li[data-path="${kept.path}"] > .item > .row`);
       const target = row && (kept.link < 0 ? row.querySelector(':scope > button.twisty') : row.querySelectorAll('.refs a')[kept.link]);
       if (target instanceof HTMLElement) target.focus({ preventScroll: true });
     }
 
-    renderLine(msg.lineText, ex.line, msg.rows, msg.marks ?? [], msg.lineParts, msg.wrap === true);
+    renderLine(msg.lineText, msg.lineRuns, msg.marks ?? [], msg.lineParts, msg.wrap === true);
 
     drawProblems(msg.problems ?? [], msg.around ?? []);
     // Each note with the icon of its level in place of its mark, and the word that names the level in bold: the icon's
@@ -312,7 +316,10 @@
       label.textContent = labels.inShort;
       short.replaceChildren(label, ' ', ...inline(ex.sentence));
     } else short.replaceChildren();
-    $('examples').replaceChildren(...(ex.examples ?? []).map((e) => example(e, false)));
+    // The example of the whole line, folded: above the rows where examples come first, else with those at the end.
+    const whole = msg.wholeLine.map(foldedExample);
+    $('whole-line').replaceChildren(...(examplesFirst ? whole : []));
+    $('examples').replaceChildren(...(examplesFirst ? [] : whole), ...(ex.examples ?? []).map((e) => example(e, false)));
     $('empty').textContent = msg.emptyMessage;
     $('empty').hidden = msg.rows.length > 0;
     applyView();
@@ -344,7 +351,7 @@
 
   /** Goes to the row at `path`: its folded parents open, and its chip (in the row) gets the focus. */
   function toRow(/** @type {string} */ path, /** @type {number} */ index) {
-    const row = document.querySelector(`#tree li[data-path="${path}"] > .row`);
+    const row = document.querySelector(`#tree li[data-path="${path}"] > .item > .row`);
     // (In Reading the list is not drawn: the click opens what the problem says.)
     if (view === 'tree') {
       const more = document.querySelector(`#problem-${index} details.problem-more`);
@@ -352,7 +359,7 @@
       return;
     }
     if (!(row instanceof HTMLElement)) return;
-    for (let li = row.closest('li'); li; li = li.parentElement?.closest('li') ?? null) if (li.querySelector(':scope > .row') !== row) setCollapsed(li, false);
+    for (let li = row.closest('li'); li; li = li.parentElement?.closest('li') ?? null) if (li.querySelector(':scope > .item > .row') !== row) setCollapsed(li, false);
     flash(row);
     const chip = row.querySelector(`.problem-chip[data-problem="${index}"]`);
     if (chip instanceof HTMLElement) chip.focus({ preventScroll: true });
@@ -410,7 +417,7 @@
   function problemChips(/** @type {any[]} */ problems) {
     problems.forEach((p, index) => {
       for (const path of p.rows) {
-        const row = document.querySelector(`#tree li[data-path="${path}"] > .row`);
+        const row = document.querySelector(`#tree li[data-path="${path}"] > .item > .row`);
         if (!row) continue;
         const chip = el('button', { type: 'button', class: `problem-chip ${p.className}`, 'data-problem': String(index), title: labels.problems.toProblem, 'aria-label': `${labels.problems.toProblem}: ${p.word}` }, levelIcon(p.icon));
         chip.addEventListener('click', (e) => {
@@ -604,18 +611,32 @@
     box.className = nested ? 'example nested' : 'example';
     const h = document.createElement('h3');
     h.append(...inline(ex.title));
-    box.append(h);
+    box.append(h, ...exampleBody(ex));
+    return box;
+  }
+
+  /** What an example shows under its title: its note, then its sections, or the inputs to edit and the results. */
+  function exampleBody(/** @type {any} */ ex) {
+    const out = [];
     if (ex.note) {
       const note = document.createElement('p');
       note.className = 'example-note';
       note.append(...inline(ex.note));
-      box.append(note);
+      out.push(note);
     }
-    if (ex.interactive) {
-      box.append(...editable(ex.interactive));
-      return box;
-    }
-    box.append(...sections(ex.sections));
+    out.push(...(ex.interactive ? editable(ex.interactive) : sections(ex.sections)));
+    return out;
+  }
+
+  /** The examples of the whole line the reader opened, by their titles: an update of the panel (the same line again) keeps them open. */
+  const openExamples = new Set();
+
+  /** An example of the whole line: folded under its title. */
+  function foldedExample(/** @type {any} */ ex) {
+    const box = /** @type {HTMLDetailsElement} */ (el('details', { class: 'example whole-line' }, el('summary', {}, el('h3', {}, ...inline(ex.title)))));
+    box.open = openExamples.has(ex.title);
+    box.addEventListener('toggle', () => (box.open ? openExamples.add(ex.title) : openExamples.delete(ex.title)));
+    box.append(...exampleBody(ex));
     return box;
   }
 
@@ -934,10 +955,34 @@
 
   // ---------------------------------------------------------------- tree
 
-  /** Tree item for a row (`TokenRow`, src/ui/tokenRow.ts: this draws what it holds, and decides none of it) and its parts. */
-  function item(/** @type {any} */ part, /** @type {string} */ path) {
+  /** A text cut at its warnings (`TextPart`, src/tokenmarks.ts): each warning with its level's icon, named, and in its level's look. */
+  function textParts(/** @type {{ text: string, level?: string }[]} */ parts) {
+    return parts.flatMap((p) => {
+      if (!p.level) return inline(p.text);
+      const { className, icon, name } = levels[p.level];
+      const svg = levelIcon(icon);
+      svg.removeAttribute('aria-hidden');
+      svg.setAttribute('role', 'img');
+      svg.setAttribute('aria-label', name);
+      return [el('span', { class: `row-mark ${className}` }, svg, ' ', ...inline(p.text))];
+    });
+  }
+
+  /**
+   * A row of the row model (src/ui/panelRows.ts: this draws what it holds, and decides none of it) and its parts. The row is a
+   * grid of two columns, the code and what it means (media/panel.css): `--lvl` and `--bx` say how far it is indented, so that
+   * its code column ends where the others do. A frame (`row.frame`) is a box around a command or a bracket around a pipeline or
+   * a list; one that holds parts is a group named by the row's code, so that a screen reader says where they belong, with no
+   * word for the box itself.
+   */
+  function item(/** @type {any} */ part, /** @type {string} */ path, lvl = 0, boxes = 0) {
     const li = document.createElement('li');
     li.dataset.path = path;
+    const inner = boxes + (part.frame ? 1 : 0);
+    li.style.setProperty('--lvl', String(lvl));
+    li.style.setProperty('--bx', String(inner));
+    const box = document.createElement('div');
+    box.className = part.frame ? `item frame frame-${part.frame}` : 'item';
     const row = document.createElement('div');
     row.className = `row kind-${part.kind}`;
     // A row with parts folds with its twisty: a button for the keyboard and a screen reader (named by the row's label,
@@ -967,9 +1012,18 @@
         label.append(ph);
       } else label.append(p.text);
     });
+    if (part.frame && part.children.length) {
+      label.id = `row-code-${path}`;
+      box.setAttribute('role', 'group');
+      box.setAttribute('aria-labelledby', label.id);
+    }
+    const code = document.createElement('div');
+    code.className = 'code';
+    code.append(label, ...nameBadge(part.name));
     const text = document.createElement('span');
     text.className = 'text';
-    text.append(...inline(part.text));
+    text.append(...textParts(part.parts));
+    for (const more of part.more) text.append(el('span', { class: 'row-more' }, ...textParts(more)));
     const also = nameAlso(part.name);
     if (also) text.append(also);
     const value = valueLine(part.value);
@@ -978,8 +1032,10 @@
     // try-it under the row, as wide as the row (beside the label, the text's column is narrow on a phone).
     const [chip, ...tryIt] = basisParts(part.basis);
     if (chip) text.append(chip);
-    row.append(twisty, label, ...nameBadge(part.name), text, ...refLinks(part.refs), ...tryIt);
-    li.append(row);
+    text.append(...refLinks(part.refs));
+    row.append(twisty, code, text, ...tryIt);
+    box.append(row);
+    li.append(box);
     if (part.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
     // Examples placed under this token go before (first) or after (last) its parts.
     const examples = (part.examples ?? []).map((e) => example(e, true));
@@ -988,7 +1044,8 @@
     body.className = 'body';
     if (examplesFirst) body.append(...examples);
     const index = flat.length;
-    flat.push({ token: part, el: row });
+    const shown = { token: part, el: row, end: 0 };
+    flat.push(shown);
     row.addEventListener('mouseenter', () => focus(index));
     row.addEventListener('mouseleave', () => focus(-1));
     // As in VS Code's trees: a click on a row with parts folds or unfolds it, and still selects it.
@@ -1002,11 +1059,13 @@
     });
     if (part.children.length) {
       const ul = document.createElement('ul');
-      ul.append(...part.children.map((c, i) => item(c, `${path}.${i}`)));
+      ul.append(...part.children.map((/** @type {any} */ c, /** @type {number} */ i) => item(c, `${path}.${i}`, lvl + 1, inner)));
       body.append(ul);
     }
     if (!examplesFirst) body.append(...examples);
-    if (body.childElementCount) li.append(body);
+    if (body.childElementCount) box.append(body);
+    // (The rows of a part follow it in `flat`: this one and its parts are the rows from its index up to `end`.)
+    shown.end = flat.length;
     return li;
   }
 
@@ -1015,7 +1074,7 @@
     const a = document.activeElement;
     const li = a instanceof HTMLElement && $('tree').contains(a) ? /** @type {HTMLElement | null} */ (a.closest('li[data-path]')) : null;
     if (!li || !a) return null;
-    const row = li.querySelector(':scope > .row');
+    const row = li.querySelector(':scope > .item > .row');
     if (a.matches('button.twisty')) return { path: String(li.dataset.path), link: -1 };
     const links = row ? Array.from(row.querySelectorAll('.refs a')) : [];
     return links.includes(a) ? { path: String(li.dataset.path), link: links.indexOf(a) } : null;
@@ -1027,12 +1086,12 @@
     const path = String(li.dataset.path);
     if (want) collapsedKeys.add(path);
     else collapsedKeys.delete(path);
-    const tw = li.querySelector(':scope > .row > button.twisty');
+    const tw = li.querySelector(':scope > .item > .row > button.twisty');
     if (tw) {
       tw.setAttribute('aria-expanded', String(!want));
       /** @type {Element} */ (tw.firstElementChild).textContent = want ? '▸' : '▾';
     }
-    const body = /** @type {HTMLElement | null} */ (li.querySelector(':scope > .body'));
+    const body = /** @type {HTMLElement | null} */ (li.querySelector(':scope > .item > .body'));
     return body && { el: body, open: !want };
   }
 
@@ -1060,7 +1119,7 @@
       updateToggle();
       return;
     }
-    const items = Array.from($('tree').querySelectorAll('li')).filter((li) => li.querySelector(':scope > .body > ul'));
+    const items = Array.from($('tree').querySelectorAll('li')).filter((li) => li.querySelector(':scope > .item > .body > ul'));
     const collapse = !items.some(isCollapsed);
     // Collapse below the top level, so the outline stays visible.
     const want = (/** @type {HTMLElement} */ li) => collapse && li.parentElement !== $('tree');
@@ -1100,26 +1159,9 @@
    * are runs that stay on one row (`.run`) and the blanks between them, where a row may end when the box wraps
    * (`wrap`: the web page's `editor.wrap`, VS Code's `editor.wordWrap`); otherwise it is one row that scrolls sideways.
    */
-  function renderLine(text, line, items, marks = [], parts = null, wrap = false) {
-    const owner = new Array(text.length).fill(-1);
-    const depthAt = new Array(text.length).fill(-1);
-    const visit = (token, depth) => {
-      const idx = flat.findIndex((f) => f.token === token);
-      const { start, end } = token.span;
-      if (start.line <= line && end.line >= line) {
-        const from = start.line < line ? 0 : start.character;
-        const to = end.line > line ? text.length : end.character;
-        for (let i = from; i < to && i < text.length; i++) {
-          if (depth >= depthAt[i]) {
-            depthAt[i] = depth;
-            owner[i] = idx;
-          }
-        }
-      }
-      token.children.forEach((c) => visit(c, depth + 1));
-    };
-    items.forEach((t) => visit(t, 0));
-
+  function renderLine(text, runs, marks = [], parts = null, wrap = false) {
+    // (The rows by their paths: a run names the row a pointer on it goes to.)
+    const indexOf = new Map(flat.map((f, i) => [f.el.closest('li')?.dataset.path, i]));
     const pre = $('line');
     const rows = document.createElement('span');
     rows.className = 'rows';
@@ -1139,23 +1181,21 @@
 
     /** The characters [from, to) of the line in `box`, a span per token. */
     function drawPart(/** @type {HTMLElement} */ box, /** @type {number} */ from, /** @type {number} */ to) {
-      let i = from;
-      while (i < to) {
-        let j = i;
-        while (j < to && owner[j] === owner[i]) j++;
-        box.append(segment(i, j));
-        i = j;
+      for (const run of runs) {
+        const i = Math.max(from, run.from), j = Math.min(to, run.to);
+        if (i < j) box.append(segment(i, j, run));
       }
     }
 
-    function segment(/** @type {number} */ i, /** @type {number} */ j) {
+    function segment(/** @type {number} */ i, /** @type {number} */ j, /** @type {{ kind?: string, row?: string }} */ run) {
       const span = document.createElement('span');
       span.textContent = text.slice(i, j);
       span.dataset.from = String(i);
       span.dataset.to = String(j);
-      const idx = owner[i];
-      if (idx >= 0 && text.slice(i, j).trim()) {
-        span.className = `seg kind-${flat[idx].token.kind}`;
+      if (run.kind && text.slice(i, j).trim()) {
+        // (Its colour is its token's; a token with no row at this depth goes to the row around it.)
+        const idx = /** @type {number} */ (indexOf.get(run.row));
+        span.className = `seg kind-${run.kind}`;
         span.dataset.idx = String(idx);
         span.addEventListener('mouseenter', () => focus(idx));
         span.addEventListener('mouseleave', () => focus(-1));
@@ -1337,6 +1377,7 @@
     $('tree').hidden = tree;
     $('short').hidden = tree || !$('short').hasChildNodes();
     $('examples').hidden = tree;
+    $('whole-line').hidden = tree;
     $('reading').hidden = !tree || !reading;
     if (tools) updateToggle();
     markLine(null);
@@ -1820,7 +1861,7 @@
 
   /** Finds the row of the item at `path` in the list (`#tree`) or in the reading tree, as drawn when it is called. */
   const rowAt = (/** @type {'list' | 'reading'} */ list, /** @type {string} */ path) => () =>
-    document.querySelector(list === 'list' ? `#tree li[data-path="${path}"] > .row` : `#reading-tree li[data-path="${path}"] > .trow`);
+    document.querySelector(list === 'list' ? `#tree li[data-path="${path}"] > .item > .row` : `#reading-tree li[data-path="${path}"] > .trow`);
 
   /**
    * Of `items`, the first row on the screen (below `below`, the sticky rows at the top) that `stays` after a change;
@@ -2093,24 +2134,14 @@
     if (token.span.start.line === shownLineNo && token.span.end.line === shownLineNo) vscode.postMessage({ type: 'reveal', span: token.span, preserveFocus: keepFocus });
   }
 
-  /** The rows of a token and of all its parts. */
-  function coveredBy(idx) {
-    const covered = new Set();
-    if (idx >= 0) {
-      const mark = (t) => {
-        covered.add(flat.findIndex((f) => f.token === t));
-        t.children.forEach(mark);
-      };
-      mark(flat[idx].token);
-    }
-    return covered;
-  }
+  /** Whether a row is the row `idx` or one of its parts; no row is, for -1. */
+  const coveredBy = (/** @type {number} */ idx) => (/** @type {number} */ i) => idx >= 0 && i >= idx && i < flat[idx].end;
 
   /** Scrolls the line sideways to a token's characters, as the editor does when the row is selected. */
   function revealInLine(idx) {
     const pre = $('line');
     const covered = coveredBy(idx);
-    const shown = segments.filter((s) => covered.has(Number(s.dataset.idx)));
+    const shown = segments.filter((s) => covered(Number(s.dataset.idx)));
     if (!shown.length) return;
     const box = pre.getBoundingClientRect();
     const pad = parseFloat(getComputedStyle(pre).paddingLeft);
@@ -2124,7 +2155,7 @@
   function focus(idx) {
     flat.forEach((f, i) => f.el.classList.toggle('active', i === idx));
     const covered = coveredBy(idx);
-    segments.forEach((s) => s.classList.toggle('active', covered.has(Number(s.dataset.idx))));
+    segments.forEach((s) => s.classList.toggle('active', covered(Number(s.dataset.idx))));
     vscode.postMessage({ type: 'highlight', span: idx >= 0 ? flat[idx].token.span : null });
   }
 

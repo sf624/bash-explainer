@@ -22,22 +22,22 @@ describe('the web page: the explanation panel and the editor', function () {
     await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
-    await page.keyboard.insertText('echo hello | tr a-z A-Z');
-    await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('tr a-z'));
+    await page.keyboard.insertText('sort -rn -u x');
+    await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('sort -rn'));
     // The parts of the first item with parts: beside what lies under each one but the last, a line in the
-    // column of the row's own border that keeps clear of the rows, as an example's rule does.
-    const kids = panel().locator('#tree > li > .body > ul > li');
+    // column of the row's own border that keeps clear of the rows, as an example's rule does. A box needs none: it shows where its parts end.
+    const kids = panel().locator('#tree > li > .item > .body > ul > li');
     const n = await kids.count();
     assert.ok(n >= 2, `${n} parts`);
     const info = (i: number) => kids.nth(i).evaluate((li) => {
       const w = li.ownerDocument.defaultView!;
-      const body = li.querySelector(':scope > .body');
+      const body = li.querySelector(':scope > .item > .body');
       if (!body) return { line: false };
       const b = w.getComputedStyle(body, '::before');
       if (b.content === 'none' || b.content === 'normal') return { line: false };
       const box = body.getBoundingClientRect();
-      const row = li.querySelector(':scope > .row')!.getBoundingClientRect();
-      const next = li.nextElementSibling?.querySelector(':scope > .row')?.getBoundingClientRect();
+      const row = li.querySelector(':scope > .item > .row')!.getBoundingClientRect();
+      const next = li.nextElementSibling?.querySelector(':scope > .item > .row')?.getBoundingClientRect();
       const top = box.top + parseFloat(b.top), bottom = box.bottom - parseFloat(b.bottom);
       return {
         line: true, column: box.left === row.left, width: b.borderLeftWidth, style: b.borderLeftStyle,
@@ -155,7 +155,7 @@ describe('the web page: the explanation panel and the editor', function () {
     await page.keyboard.press('Control+Home');
     await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('-z'));
     // The if covers lines 1 to 3: a click folds it, and the cursor and the panel stay on line 1.
-    await panel().locator('#tree > li > .row .label').first().click();
+    await panel().locator('#tree > li > .item > .row .label').first().click();
     await until('folded', () => panel().locator('#tree > li').first().evaluate((e) => e.classList.contains('collapsed')), (v) => v);
     // (The panel follows the cursor after a short delay: look at it once it has settled.)
     const shown = await stable('the panel', async () => ({ line: (await panel().locator('#line').textContent()) ?? '', active: await page.locator('.cm-activeLine').innerText() }));
@@ -179,14 +179,14 @@ describe('the web page: the explanation panel and the editor', function () {
     const links = (sel: string) => panel().locator(sel).evaluateAll((as) => as.map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('target'), a.getAttribute('title')]));
     const manual = 'https://www.gnu.org/software/bash/manual/html_node/';
     assert.deepStrictEqual(await links('#notes .refs a'), [['§3.7.5', `${manual}Exit-Status.html`, '_blank', 'Bash manual 3.7.5: Exit Status']]);
-    assert.deepStrictEqual(await links('#tree > li > .row .refs a'), [
+    assert.deepStrictEqual(await links('#tree > li > .item > .row .refs a'), [
       ['§4.1', `${manual}Bourne-Shell-Builtins.html`, '_blank', 'Bash manual 4.1: Bourne Shell Builtins'],
       ['§4.4', `${manual}Special-Builtins.html`, '_blank', 'Bash manual 4.4: Special Builtins'],
     ]);
-    // The links end the row, after its explanation, on the same line.
-    const box = await panel().locator('#tree > li > .row').first().evaluate((row) => {
+    // The links end the row's text, on its last line.
+    const box = await panel().locator('#tree > li > .item > .row').first().evaluate((row) => {
       const r = row.getBoundingClientRect(), refs = row.querySelector('.refs')!.getBoundingClientRect(), text = row.querySelector('.text')!.getBoundingClientRect();
-      return { inside: refs.right <= r.right + 0.5 && refs.left >= text.right, sameLine: Math.abs(refs.top - text.top) < 8 };
+      return { inside: refs.right <= r.right + 0.5 && refs.right <= text.right + 0.5 && refs.bottom <= text.bottom + 0.5, sameLine: Math.abs(refs.bottom - text.bottom) < 8 };
     });
     assert.deepStrictEqual(box, { inside: true, sameLine: true });
     // A click opens the page in a new tab.
@@ -208,30 +208,30 @@ describe('the web page: the explanation panel and the editor', function () {
     await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('tr a-z'));
     const selected = () => page.locator('.cm-selectionBackground').count();
     // The first row with parts, and a row without.
-    const parent = () => panel().locator('#tree li:has(> .body > ul)').first();
+    const parent = () => panel().locator('#tree li:has(> .item > .body > ul)').first();
     const folded = async () => parent().evaluate((li) => li.classList.contains('collapsed'));
-    const twisty = async () => (await parent().locator('> .row > .twisty').textContent()) ?? '';
-    const leaf = () => panel().locator('#tree li:not(:has(> .body > ul)) > .row').first();
+    const twisty = async () => (await parent().locator('> .item > .row > .twisty').textContent()) ?? '';
+    const leaf = () => panel().locator('#tree li:not(:has(> .item > .body > ul)) > .item > .row').first();
 
     // A click on the text of the row folds it, and again unfolds it.
     await page.keyboard.press('Home');
     assert.strictEqual(await folded(), false);
-    await parent().locator('> .row > .text').click();
+    await parent().locator('> .item > .row > .text').click();
     assert.strictEqual(await folded(), true);
     assert.strictEqual(await twisty(), '▸');
     await until('the token selected', selected, (n) => n > 0);
-    await parent().locator('> .row > .label').click();
+    await parent().locator('> .item > .row > .code > .label').click();
     assert.strictEqual(await folded(), false);
     assert.strictEqual(await twisty(), '▾');
 
     // The twisty folds once, not twice.
-    await parent().locator('> .row > .twisty').click();
+    await parent().locator('> .item > .row > .twisty').click();
     assert.strictEqual(await folded(), true);
-    await parent().locator('> .row > .twisty').click();
+    await parent().locator('> .item > .row > .twisty').click();
     assert.strictEqual(await folded(), false);
 
     // Dragging over the text to select it does not fold.
-    const text = parent().locator('> .row > .text');
+    const text = parent().locator('> .item > .row > .text');
     const box = (await text.boundingBox())!;
     await page.mouse.move(box.x + 2, box.y + 8);
     await page.mouse.down();
@@ -249,7 +249,7 @@ describe('the web page: the explanation panel and the editor', function () {
 
     // A fold survives the panel being drawn again for the same line (here by another shell being chosen).
     await panel().evaluate('getSelection().removeAllRanges()');
-    await parent().locator('> .row > .text').click();
+    await parent().locator('> .item > .row > .text').click();
     assert.strictEqual(await folded(), true);
     await parent().evaluate((li) => ((li as any).mark = 1));
     await setShell(page, 'dash');

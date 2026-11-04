@@ -7,9 +7,9 @@ import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
 import type { DocumentIssue, IssueFilter, ShellDocument } from '../document';
 import { LEVELS, problemLevel } from '../levels';
-import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, readingWithBasis } from './render';
+import { ExamplePlacement, lineOwners, noteBasis, noteRefs, notesByLevel, placeExamples, readingWithBasis } from './render';
 import { boxProblems, isListed, problemsAround } from './panelProblems';
-import { panelRows } from './panelRows';
+import { rowModel, wholeLineExamples } from './panelRows';
 import { ui } from './texts';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
@@ -184,10 +184,15 @@ export function panelUpdate(p: PanelLine) {
   const { lang, explanation: ex } = p;
   const t = ui[lang];
   const tp = t.panel;
-  const { reading, items, ...explanation } = p.placement === 'bottom' ? ex : placeExamples(ex);
+  // (The example of the whole line is drawn apart, folded: above the rows where examples come first, else with those at the end.)
+  const whole = wholeLineExamples(ex);
+  const others = { ...ex, examples: ex.examples.filter((e) => !whole.includes(e)) };
+  const { reading, items, ...explanation } = p.placement === 'bottom' ? others : placeExamples(others);
   const issues = p.issues ?? [];
   const shown = p.shown ?? (() => true);
-  const box = boxProblems(ex, items, lang, shown);
+  // (The rows of depth 1, the Meaning tab; depth 2 and the switch come with P8 and P9.)
+  const model = rowModel({ ...ex, items }, { depth: 1, receives: false }, lang);
+  const box = boxProblems(ex, model.places, lang, shown);
   return {
     type: 'update',
     // (The page's language: the web page's panel has none of its own, and the styles follow it, `:lang(ja)`.)
@@ -209,8 +214,13 @@ export function panelUpdate(p: PanelLine) {
     lineParts: p.wrap === true ? lineParts(p.lineText, lineRuns(p.doc, p.line, p.lineText)) : undefined,
     wrap: p.wrap === true,
     explanation,
-    // (What each row holds, the one record of every output: src/ui/tokenRow.ts.)
-    rows: panelRows(items, lang),
+    // (Which rows, in which order, and what each holds: the one row model, src/ui/panelRows.ts.)
+    rows: model.rows,
+    wholeLine: whole,
+    // (The line box: each run coloured by the kind of the deepest token, and the row a pointer on it goes to.)
+    lineRuns: lineOwners(p.lineText, ex.line, items).map(({ from, to, owner }) => ({ from, to, ...(owner ? { kind: owner.kind, row: model.places.get(owner) } : {}) })),
+    // (The look of a warning on a row, from the level table.)
+    levels: Object.fromEntries(Object.entries(LEVELS).map(([level, { className, codicon, name }]) => [level, { className, icon: codicon, name: name[lang] }])),
     // (Reading's tree, with what each node and each step shows, and the chip and try-it of what it rests on: src/ui/readingSteps.ts.)
     reading: reading && readingView(readingWithBasis(reading, lang), lang),
     control: viewControl(p.state ?? {}, lang),
@@ -271,6 +281,7 @@ export const PANEL_BODY = `<div id="top">
   <p id="short" hidden></p>
   <section id="problems" hidden></section>
   <div id="notes"></div>
+  <div id="whole-line"></div>
   <ul id="tree"></ul>
   <section id="reading" hidden>
     <div id="layers" role="group"><span id="layers-label"></span></div>

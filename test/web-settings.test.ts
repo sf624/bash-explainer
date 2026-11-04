@@ -475,7 +475,7 @@ describe('the web page: theme and settings', function () {
     // (The panel explains the line of the cursor: one long line, so that the panel is longer than the window.)
     await page.keyboard.insertText(`echo ${Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ')}`);
     const scrolled = () => panel().evaluate('(document.scrollingElement || document.documentElement).scrollTop') as Promise<number>;
-    const rows = () => panel().locator('#tree > li > .row > button.twisty');
+    const rows = () => panel().locator('#tree > li > .item > .row > button.twisty');
     await until('the rows', async () => panel().locator('#tree .row').count(), (n) => n > 40);
     await page.locator('#settings-open').click();
     await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));

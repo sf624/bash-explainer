@@ -338,17 +338,26 @@ ul {
 
 ul#tree {
   padding-left: 0;
+  /* The rows' two columns: where the code column ends, for a row at the left of the list; how far a row's parts are indented; what a
+     frame takes at its left. Together they keep the text column at one place on every row, without measuring a word. */
+  --code: clamp(10rem, 34vw, 18rem);
+  --nest: 1.1rem;
+  --frame-pad: 0.25rem;
+  --frame: calc(1px + var(--frame-pad));
 }
 
-/* Indent guides, as in VS Code's trees: a faint line in the column of the rows' own coloured
-   border, beside what lies under an item (its examples and parts), when a sibling follows. Like the
-   rule beside an example, it keeps clear of the rows: it starts below the item's row and ends above
-   the next sibling's. */
-#tree li:not(:last-child) > .body {
+#tree ul {
+  padding-left: var(--nest);
+}
+
+/* Indent guides, as in VS Code's trees: a faint line in the column of the rows' own coloured border, beside what lies under an item (its
+   examples and parts), when a sibling follows. Like the rule beside an example, it keeps clear of the rows: it starts below the item's row
+   and ends above the next sibling's. A frame needs none: it shows where its parts end. */
+#tree li:not(:last-child) > .item:not(.frame) > .body {
   position: relative;
 }
 
-#tree li:not(:last-child) > .body::before {
+#tree li:not(:last-child) > .item:not(.frame) > .body::before {
   content: "";
   position: absolute;
   left: 0;
@@ -359,23 +368,54 @@ ul#tree {
 }
 
 /* Parts come closer to the row (0.15rem) than an example does: start the line as far below it. */
-#tree li:not(:last-child) > .body:has(> ul:first-child)::before {
+#tree li:not(:last-child) > .item:not(.frame) > .body:has(> ul:first-child)::before {
   top: 0.35rem;
 }
 
-/* A row: the fold mark, the label (the part's code), its name badge, the explanation and the links. A label
-   and its explanation share the row when at least half of it (60% on a narrow panel) is left for the
-   explanation; otherwise the explanation goes under the label, in line with it, and the label, shown whole,
-   wraps at its spaces (or anywhere in a long word) when it is longer than the row. Links that would take
-   that room go under the explanation, at the right. The fold mark sits in the
-   left padding (a negative margin), so that a wrapped line starts under the label, not under the mark; the
-   shares are of the row from the fold mark on (--fold: the mark and its gap), as when the mark was in line. */
+/* A frame: a box around a command (.frame-command, a simple command; .frame-compound, what bash runs as one: `if`, `[[ ]]`, a function),
+   and a bracket at the left of a pipeline or a list (.frame-group). */
+.frame-command, .frame-compound {
+  margin: 0.3rem 0;
+  padding: 0 var(--frame-pad);
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.35));
+  border-radius: 4px;
+}
+
+.frame-group {
+  position: relative;
+  margin: 0.3rem 0;
+  padding-left: calc(var(--frame) - 2px);
+  border-left: 2px solid var(--c-operator);
+}
+
+.frame-group::before, .frame-group::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  width: 0.4rem;
+  border-top: 2px solid var(--c-operator);
+  pointer-events: none;
+}
+
+.frame-group::before { top: 0; }
+.frame-group::after { bottom: 0; }
+
+/* (The bracket says what the row's own edge says.) */
+.frame-group > .row { border-left-color: transparent; }
+
+/* A row: the fold mark, then the code and what it means in two columns. The code column (--here) ends where every row's does (--lvl, --bx:
+   how far this row is indented, media/panel.js `item`), and the text column has what is left. The code wraps at its blanks; where one word
+   of it is longer than the column, the code takes the room of that word (a flex item's automatic minimum width, up to the whole row),
+   the two no longer fit in one row, and the text goes under the code. So a long name does not squeeze the text into a narrow column, and
+   no width of a word in a font is assumed or measured. The fold mark sits in the left padding (a negative margin), so that a
+   wrapped line starts under the code, not under the mark. */
 .row {
   --fold: calc(0.8em + 0.6rem);
-  --share: 0.5;
+  --gap: 0.6rem;
+  --here: max(4rem, calc(var(--code) - var(--lvl, 0) * var(--nest) - var(--bx, 0) * var(--frame)));
   display: flex;
   flex-wrap: wrap;
-  column-gap: 0.6rem;
+  column-gap: var(--gap);
   row-gap: 0;
   align-items: baseline;
   padding: 0.15rem 0.4rem 0.15rem calc(0.4rem + var(--fold));
@@ -389,12 +429,26 @@ ul#tree {
   margin-left: calc(-1 * var(--fold));
 }
 
-.row .text {
-  flex: 1 1 calc(var(--share) * (100% + var(--fold)));
+.row > .code {
+  flex: 0 1 var(--here);
+  max-width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 0.4rem;
+  align-items: baseline;
+}
+
+/* (A pixel less than what is left: the two must fit in a row however the sizes round.) */
+.row > .text {
+  flex: 1 1 calc(100% - var(--here) - var(--gap) - 1px);
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--vscode-foreground);
 }
+
+/* What else a row says of its range, and a warning, in its level's look: the level table's rules colour the icon. */
+.row-more { display: block; }
+.row-mark .note-icon { display: inline-block; vertical-align: -0.12em; margin: 0; }
 
 /* The sections of the manual a row or a note is about: small links at the end, quiet until pointed at. */
 .refs {
@@ -402,10 +456,7 @@ ul#tree {
   white-space: nowrap;
 }
 
-.row .refs {
-  margin-left: auto;
-}
-
+.row .refs,
 .note .refs {
   margin-left: 0.5em;
 }
@@ -517,6 +568,7 @@ details.tryit[open] > summary.tryit-head {
   .tryit-copy { min-height: 40px; }
   summary.tryit-head { padding-block: 0.6rem; }
   .problem-more > summary { padding-block: 0.6rem; }
+  .whole-line > summary { padding-block: 0.6rem; }
   /* (A chip's room over and under it does not move the lines of the text around it.) */
   .problem-chip { min-width: 40px; min-height: 40px; margin-block: -12px; justify-content: center; }
 }
@@ -525,6 +577,7 @@ details.tryit[open] > summary.tryit-head {
   html.bx-web .tryit-copy { min-height: 40px; }
   html.bx-web summary.tryit-head { padding-block: 0.6rem; }
   html.bx-web .problem-more > summary { padding-block: 0.6rem; }
+  html.bx-web .whole-line > summary { padding-block: 0.6rem; }
   html.bx-web .problem-chip { min-width: 40px; min-height: 40px; margin-block: -12px; justify-content: center; }
 }
 
@@ -552,11 +605,9 @@ details.tryit[open] > summary.tryit-head {
 .label {
   font-family: var(--vscode-editor-font-family);
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   flex: 0 1 auto;
-  min-width: 0;
   max-width: 100%;
-  overflow: hidden;
 }
 
 /* A placeholder in a label (what a skeleton leaves out): proportional, italic and muted, unlike the code around it. */
@@ -564,8 +615,6 @@ details.tryit[open] > summary.tryit-head {
   font-family: var(--vscode-font-family);
   font-style: italic;
   color: var(--c-muted);
-  /* An italic letter leans out of its box; the label clips what overflows, so give the last one room. */
-  padding-right: 0.15em;
 }
 
 code {
@@ -720,6 +769,23 @@ code {
   .example .ex-left-out {
     color: GrayText;
   }
+}
+
+/* The example of the whole line: folded, above the rows, under its title. */
+.example.whole-line {
+  margin: 0 0 0.6rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
+  border-radius: 4px;
+}
+
+.whole-line > summary {
+  cursor: pointer;
+}
+
+.whole-line > summary > h3 {
+  display: inline;
+  margin: 0;
 }
 
 /* An example placed under its token: indented with the token's children, set off by a left rule. */
@@ -1021,12 +1087,12 @@ button.twisty:focus-visible {
   outline-offset: 1px;
 }
 
-li.collapsed > .body {
+li.collapsed > .item > .body {
   display: none;
 }
 
 /* A box folded by hand is drawn until it has shrunk (panel.js, fold). */
-li.collapsed > .body[data-closing],
+li.collapsed > .item > .body[data-closing],
 #reading-tree ul[role="group"][hidden][data-closing] {
   display: block;
 }
@@ -1141,10 +1207,19 @@ li.collapsed > .body[data-closing],
   border-radius: 3px;
 }
 
-/* Narrow panels (a phone): the explanation keeps 60% of the row beside a label, or goes under it. */
+/* Narrow panels (a phone): one column, the text under its code; the indents take less. */
 @media (max-width: 520px) {
-  .row {
-    --share: 0.6;
+  ul#tree {
+    --nest: 0.6rem;
+    --frame-pad: 0.15rem;
+  }
+
+  .row > .code {
+    flex-basis: auto;
+  }
+
+  .row > .text {
+    flex-basis: 100%;
   }
 }
 

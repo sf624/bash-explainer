@@ -36,7 +36,7 @@ describe('the web page: the box of the line\'s problems', function () {
     const { ctx, page, panel, errors } = await open('echo $((09))');
     const heads = await until('the box', () => panel().locator('#problems .problem-head').allTextContents(), (h) => h.length === 1);
     assert.match(heads[0], /^Error This number is not valid/);
-    await until('the row\'s mark', () => panel().locator('#tree .row', { hasText: 'ⓧ' }).count(), (n) => n > 0);
+    await until('the row\'s mark', () => panel().locator('#tree .row-mark.level-error').count(), (n) => n > 0);
     // (The strip counts it: never a mark beside "no problems".)
     await until('the strip', () => page.locator('#problems-counts .count').allTextContents(), (c) => c.join(' ').includes('1'));
     await until('the squiggle', () => page.locator('.cm-lintRange-error, .cm-lintRange').count(), (n) => n > 0);
@@ -80,7 +80,7 @@ describe('the web page: the box of the line\'s problems', function () {
     const head = panel().locator('#problems .problem-head').first();
     await head.waitFor();
     // (Folded, the row's parents are opened by the link.)
-    await panel().locator('#tree > li > .row > button.twisty').first().click();
+    await panel().locator('#tree > li > .item > .row > button.twisty').first().click();
     await until('the row folded', () => panel().locator('#tree .problem-chip').first().isVisible(), (v) => !v);
     await head.click();
     const chip = panel().locator('#tree .problem-chip').first();
@@ -150,7 +150,7 @@ describe('the web page: the box of the line\'s problems', function () {
     assert.strictEqual(await panel().locator('#problems').isHidden(), true);
     assert.match(await panel().locator('#notes .note').first().textContent() ?? '', /Invalid number/);
     // (The row says what the token is, and keeps its mark: a silence is the reader's own choice.)
-    await until('the row\'s mark', () => panel().locator('#tree .row', { hasText: 'ⓧ' }).count(), (n) => n > 0);
+    await until('the row\'s mark', () => panel().locator('#tree .row-mark.level-error').count(), (n) => n > 0);
     await until('the strip empty', () => page.locator('#problems-counts .count').count(), (n) => n === 0);
     assert.deepStrictEqual(errors, []);
     await ctx.close();

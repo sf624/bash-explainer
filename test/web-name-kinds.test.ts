@@ -103,7 +103,8 @@ describe('the web page: what a command name is, in both views', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('time git commit -m x');
     await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('time git'));
-    assert.deepStrictEqual((await badges(panel())).items.map((b) => b.text), ['keyword', 'program']);
+    // (Meaning has no row for the reserved word: `time`'s row says what it does; Reading has it, with what else its name is.)
+    assert.deepStrictEqual((await badges(panel())).items.map((b) => b.text), ['program']);
     await chooseView(page, 'tree');
     await until('the tree', () => panel().locator('#reading-tree li').count(), (n) => n > 3);
     assert.deepStrictEqual((await badges(panel())).items.map((b) => b.text), ['program']);
