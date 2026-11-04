@@ -142,7 +142,7 @@ export function noteAnchors(ex: Pick<LineExplanation, 'anchors'>, n: Note): read
  */
 export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts: ExplainOptions, others: readonly DocumentIssue[] = []): DocumentIssue[] {
   // (Examples and idioms add no warning: the line is explained without them, and without its reading tree.)
-  const lean: ExplainOptions = { ...withoutExamples(opts), idioms: false, reading: false, argv: false };
+  const lean: ExplainOptions = { ...withoutExamples(opts), idioms: false, reading: false, argv: false, notPosix: false };
   const key = JSON.stringify([lang, shells.forced, saidShell(shells.detected), shells.script, lean, others.map((i) => [i.code, i.startLine, i.startCol, i.endCol, i.message])]);
   let byKey = noteIssueCache.get(doc.tree);
   if (!byKey) noteIssueCache.set(doc.tree, (byKey = new Map()));

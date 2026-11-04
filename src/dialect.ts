@@ -194,6 +194,11 @@ export function featuresOnLine(root: SyntaxNode, line: number): string[] {
   return ids(collectFeatures(root, line, line));
 }
 
+/** The constructs on the lines `rows` that POSIX sh does not have (no feature of FEATURES is POSIX sh), each with what the problems of a sh script say of it, in `lang`. A fact of the construct, for a mark, whatever shell the script is for. */
+export function notPosixOn(root: SyntaxNode, rows: Iterable<number>, lang: Lang): { node: SyntaxNode; says: string }[] {
+  return [...rows].flatMap((row) => collectFeatures(root, row, row)).map((f) => ({ node: f.node, says: featureMessage(f.id, 'sh', lang)! }));
+}
+
 /** A redirection to `/dev/tcp/host/port` (or `/dev/udp/…`), as the value of its word: quoted, it connects too. */
 function redirectsToNetwork(n: SyntaxNode): boolean {
   const dests = fields(n, 'destination');

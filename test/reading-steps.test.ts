@@ -1,10 +1,10 @@
 // What each node of the reading tree is on a row of depth 2 (src/ui/panelRoles.ts), and the view slot's contract (src/ui/panelView.ts:
-// `panelState`, `needsReading`, `viewControl`; docs/design/panel-redesign.md, 6.1). media/panel.js draws what these say; it decides none of it.
+// `panelState`, `explainNeeds`, `viewControl`; docs/design/panel-redesign.md, 6.1). media/panel.js draws what these say; it decides none of it.
 import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
 import { type ReadingNode, readingNodes } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { isPressed, needsReading, PANEL_DEFAULTS, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
+import { explainNeeds, isPressed, needsDiffer, PANEL_DEFAULTS, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
 import { panelTools, viewControlForms } from '../src/ui/panelHead';
 import { aboutKey, aboutOf, bandOf, chipOf, readerOf, roleFor, roleLine, roleOf, startsBand } from '../src/ui/panelRoles';
 
@@ -115,13 +115,13 @@ describe('the view slot\'s contract (src/ui/panelView.ts)', () => {
 
   it('keeps every field of the state: a field added to PanelState and not read back fails here', () => {
     // (Required<PanelState>: a new field must be given a value here, and `panelState` must keep it.)
-    const every: Required<PanelState> = { depth: 2 };
+    const every: Required<PanelState> = { depth: 2, receives: false };
     assert.deepStrictEqual(panelState(every), every);
     assert.deepStrictEqual(panelState(JSON.parse(JSON.stringify(panelState(every)))), every);
   });
 
   it('presses an option by one rule: the state, with its defaults, has everything the option sets', () => {
-    assert.deepStrictEqual(PANEL_DEFAULTS, { depth: 1 });
+    assert.deepStrictEqual(PANEL_DEFAULTS, { depth: 1, receives: true });
     assert.ok(isPressed({}, { depth: 1 }) && !isPressed({}, { depth: 2 }));
     assert.ok(isPressed({ depth: 2 }, { depth: 2 }));
     assert.ok(isPressed({ depth: 2 }, {}), 'an option that sets nothing is always shown');
@@ -131,8 +131,28 @@ describe('the view slot\'s contract (src/ui/panelView.ts)', () => {
     }
   });
 
-  it('says when the explanation needs the reading tree: at depth 2 only', () => {
-    assert.deepStrictEqual([{}, { depth: 1 as const }, { depth: 2 as const }].map(needsReading), [false, false, true]);
+  it('says what the explanation needs: the reading tree at depth 2, what each program receives with the switch on, the marks of POSIX sh either way', () => {
+    assert.deepStrictEqual(
+      [{}, { depth: 1 as const }, { depth: 2 as const }, { receives: false }, { depth: 2 as const, receives: false }].map(explainNeeds),
+      [
+        { reading: false, argv: true, notPosix: true },
+        { reading: false, argv: true, notPosix: true },
+        { reading: true, argv: true, notPosix: true },
+        { reading: false, argv: false, notPosix: true },
+        { reading: true, argv: false, notPosix: true },
+      ],
+    );
+    const at = (state: PanelState) => explainNeeds(state);
+    assert.strictEqual(needsDiffer(at({}), at({ depth: 1, receives: true })), false, 'what was the default, chosen');
+    assert.strictEqual(needsDiffer(at({}), at({ depth: 2 })), true);
+    assert.strictEqual(needsDiffer(at({}), at({ receives: false })), true);
+  });
+
+  it('keeps the switch only once it was chosen, and a value that is no choice not at all', () => {
+    assert.deepStrictEqual(panelState({ depth: 1 }), { depth: 1 });
+    assert.deepStrictEqual(panelState({ receives: false }), { receives: false });
+    assert.deepStrictEqual(panelState({ receives: 'no' }), {});
+    assert.deepStrictEqual(panelState({ view: 'tree', receives: true }), { depth: 2, receives: true });
   });
 
   it('describes the view control as data: the depths, their names, the one pressed, what a press sets', () => {

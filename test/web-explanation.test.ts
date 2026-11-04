@@ -183,8 +183,9 @@ describe('the web page: the explanation panel and the editor', function () {
       ['§4.1', `${manual}Bourne-Shell-Builtins.html`, '_blank', 'Bash manual 4.1: Bourne Shell Builtins'],
       ['§4.4', `${manual}Special-Builtins.html`, '_blank', 'Bash manual 4.4: Special Builtins'],
     ]);
-    // The links end the row's text, on its last line.
+    // The links end the row's text, on its last line (what the program receives comes under it).
     const box = await panel().locator('#tree > li > .item > .row').first().evaluate((row) => {
+      row.querySelector('.receives')?.remove();
       const r = row.getBoundingClientRect(), refs = row.querySelector('.refs')!.getBoundingClientRect(), text = row.querySelector('.text')!.getBoundingClientRect();
       return { inside: refs.right <= r.right + 0.5 && refs.right <= text.right + 0.5 && refs.bottom <= text.bottom + 0.5, sameLine: Math.abs(refs.bottom - text.bottom) < 8 };
     });
@@ -337,6 +338,7 @@ describe('the web page: the explanation panel and the editor', function () {
     // A Dockerfile: its own mode for FROM and RUN, ours for the shell code after RUN.
     await pickKind(page, 'dockerfile');
     await page.locator('#kind-replace').click(); // replace the typed script with the sample
+    await page.mouse.move(0, 0); // (A pointer left on a row of the panel highlights that part in the editor, and cuts it in pieces.)
     const run = await until('the RUN line coloured', () => pieces('RUN apt-get update'), (p) => p.some((x) => x.startsWith('apt-get|cm-bx-command')));
     assert.deepEqual(run.map((x) => x.split('|')[1]), ['', 'cm-bx-command', '']);
     assert.notStrictEqual(run[0].split('|')[2], run[2].split('|')[2], 'RUN is coloured by the Dockerfile mode');

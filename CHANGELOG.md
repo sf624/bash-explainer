@@ -8,6 +8,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 - `--format json` gives each part of a line its colour role (`role`) and the ids of the facts said about it (`facts`). A part's `explanation` no longer holds the `⚠` before a warning: `marks` says where it is, with its `level`, and the line's `summary` keeps the mark.
 - The panel starts with one sentence that says what the line does.
+- A switch in the panel, on by default (key W), shows what each program receives: its words after bash's expansions, and the parts bash handles itself. A quiet mark shows what POSIX sh lacks, in a bash script too; the Key lists the marks on screen.
 - `--check --counts <file>` appends the numbers of problems of each level to a file, as `$GITHUB_OUTPUT` reads them. It does not write through a symbolic link at the last part of the path.
 - Dockerfile `HEALTHCHECK CMD …` is explained, in the shell and the exec form, and so is an instruction after `ONBUILD`.
 - Quick fixes for the problems whose fix is mechanical, in VS Code, the Language Server and the web page's editor: a failure reported as success, `source` that searches `$PATH`, a `grep` pattern from a variable, a loop over a glob that matches nothing, `read` without `-r`, `[-f x]` and more. Each applies the code the note shows.
@@ -41,6 +42,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - The opening animation on the web page follows the Language setting. Before, a Japanese browser with the setting on English still showed it in Japanese (and the other way round).
+- In a Makefile, a workflow file and the other host files, a row's text and "In short" name what the file says (`"$(OUT)"`, `"$@"`). Before, they named the script made from it (`"${OUT}"`, `"${make_target}"`).
 - `--check` no longer fails on what comes after a command that surely stops the script, such as pip's `exec` wrapper or `exit 0` before a payload. After one that only may stop it (`source`, `trap`, an `exit` in a function), `x = 1`, `[-f x]` and a syntax error are warnings; before, nothing was said or they were Errors.
 - In a `sh`, `dash` or `ash` script, an Error now means what really fails, and only that fails `--check`: what the shell refuses while it reads the file (`a=(1)`, `<<<`, also in a function never called), and what fails where it surely gets to it. `$RANDOM`, `$UID`, `echo -e`, `{a,b}`, `&>` and `**` are warnings that say what the shell does; a construct the shell lacks after `source`, in a branch or in a function is a warning with the same words, as is one whose message the script discards where the failure leaves it going (`if (set -o pipefail) 2>/dev/null`); `${UID:-0}` says nothing. `--strict` fails on these warnings.
 - In a script for bash, ksh, mksh, yash or zsh, what that shell or the chosen bash release lacks is now a warning with the same words where it may not run: in a function, in a branch, on the right of `&&`, after `trap` or `. ./lib`. For example `read -E`, `source -p`, `compgen -V` and `${ …; }` with bash 5.2. Before, an Error.

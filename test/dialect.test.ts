@@ -8,6 +8,8 @@ import { BEHAVIOURS, behavioursOnLine, detectShell, dialectIssues, dialectNotes,
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { SINCE } from '../src/bashversion';
 import type { Stop } from '../src/semantics/scriptstops';
+import { Analyzer } from '../src/analyzer';
+import { type ModelRow, rowModel } from '../src/ui/panelRows';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -155,6 +157,44 @@ describe('the dialect detector finds each feature in its own probe', () => {
       const found = new Set<string>();
       for (let line = 0; line <= tree.root.endPosition.row; line++) featuresOnLine(tree.root, line).forEach((f) => found.add(f));
       assert.ok(found.has(id), `${code}: ${[...found].join(' ')}`);
+    });
+  }
+});
+
+// The mark of the panel on what POSIX sh lacks (docs/design/panel-redesign.md, P9) says a fact of the construct. What dash and yash do is its oracle
+// (`bash --posix` runs `[[ ]]`, `==` in `[ ]` and `source`): the table is measured above, and POSIX's own forms run in them here.
+describe('the mark "not in POSIX sh"', () => {
+  const marked = (code: string): string[] => code.split('\n').flatMap((_, line) => {
+    const ex = new Analyzer('en').explainLine(parser.parse(code), line, 'bash', { notPosix: true });
+    const all = (rows: readonly ModelRow[]): ModelRow[] => rows.flatMap((r) => [r, ...all(r.children)]);
+    return all(rowModel(ex, { depth: 1, receives: false }, 'en').rows).flatMap((r) => r.notPosix ?? []);
+  });
+
+  for (const [id, code] of Object.entries(PROBES)) {
+    it(`is on what ${id} is written as`, () => {
+      // (By the sentence the problems say: the table's name for the feature is in it.)
+      const name = FEATURES[id].en;
+      assert.ok(marked(code).some((text) => text.startsWith(name)), `${code}: ${marked(code).join(' | ')}`);
+      // (A feature dash or yash lacks fails there, as the table measures; one both have is still no POSIX sh, and the sentence does not say it fails.)
+      if (featureWorks(id, 'dash') && featureWorks(id, 'ash')) assert.ok(marked(code).some((text) => text.startsWith(name) && !text.includes('fails in')), id);
+    });
+  }
+
+  const POSIX: readonly string[] = [
+    '[ a = a ] && echo ok', 'x=1; [ "${x:-d}" = 1 ] && echo ok', 'x=ab; [ "${x#a}" = b ] && [ "${#x}" = 2 ] && echo ok', 'for i in a; do echo ok; done', 'case a in a) echo ok;; esac',
+    'f() { echo ok; }; f', '[ $((1+1)) = 2 ] && echo ok', '. /dev/null; echo ok', 'if true; then echo ok; fi', '(echo ok)', '{ echo ok; }', 'echo ok | cat', 'false || echo ok',
+    'cat <<E\nok\nE', 'x=$(echo ok); echo "$x"', 'x=`echo ok`; echo "$x"', 'echo ok 2>/dev/null', 'until true; do :; done; while false; do :; done; echo ok', 'set -e; set -u; echo ok', 'read x <<E\nok\nE\necho "$x"',
+  ];
+  it('is not on a form of POSIX sh', () => {
+    for (const code of POSIX) assert.deepStrictEqual(marked(code), [], code);
+  });
+  for (const [names, flag] of [[['dash'], undefined], [['yash'], '--posix']] as const) {
+    const bin = locate([...names]);
+    (bin ? it : it.skip)(`and those forms run in ${names[0]}`, () => {
+      for (const code of POSIX) {
+        const r = spawnSync(bin!, [...(flag ? [flag] : []), '-c', code], { timeout: 5000, input: '' });
+        assert.strictEqual(r.stdout.toString().trim(), 'ok', code);
+      }
     });
   }
 });

@@ -6,7 +6,7 @@ import { Analyzer } from '../../src/analyzer';
 import { documentIssues, explainDocumentLine, issueFilter } from '../../src/document';
 import { defaultSettings, explainOptions } from '../../src/settings';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
-import { needsReading, panelUpdate } from '../../src/ui/panelView';
+import { explainNeeds, panelUpdate } from '../../src/ui/panelView';
 
 export interface Moves {
   lines: number;
@@ -24,7 +24,7 @@ export function panelMoves(text: string, count: number, depth: 1 | 2 = 1): Moves
   const issues = documentIssues(doc, 'en', SHELLS);
   const analyzer = new Analyzer('en');
   const settings = defaultSettings();
-  const options = { ...explainOptions(settings), sentence: true, reading: needsReading({ depth }) };
+  const options = { ...explainOptions(settings), sentence: true, ...explainNeeds({ depth }) };
   const longest = [...tree.root.namedChildren].sort((a, b) => (b.endPosition.row - b.startPosition.row) - (a.endPosition.row - a.startPosition.row));
   const at = new Set([...Array(count).keys()].map((i) => Math.floor((i * lines.length) / count)));
   for (const n of longest.slice(0, Math.ceil(count / 10))) at.add(n.startPosition.row);

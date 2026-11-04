@@ -7,7 +7,7 @@
 // state it has (`header`).
 import { Span } from '../src/analyzer';
 import { Lang } from '../src/i18n';
-import { FromPanel, needsReading, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
+import { explainNeeds, FromPanel, needsDiffer, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
 import { isPanelQuestion, panelReply } from '../src/ui/panelReply';
 import type { NoteLevel } from '../src/levels';
 import { PanelHead } from './panel-head';
@@ -68,12 +68,12 @@ export class PanelBridge {
 
   /** Keeps the panel's state (storage), draws the view control from it, and explains the line again when it needs other data. */
   private keep(state: PanelState): void {
-    const before = needsReading(this.state);
+    const before = explainNeeds(this.state);
     this.state = state;
     writeStored(STORAGE_KEYS.panel, JSON.stringify(this.state));
     this.head?.draw();
     // The rows of the depth just chosen, with the reading tree at depth 2.
-    if (needsReading(this.state) !== before) this.host.update();
+    if (needsDiffer(explainNeeds(this.state), before)) this.host.update();
   }
 
   private loaded(): void {
@@ -86,12 +86,12 @@ export class PanelBridge {
     this.host.update();
   }
 
-  /** The depth the viewer chose last time (VS Code keeps it in the webview's state, which the frame has not). */
+  /** What the viewer chose last time (VS Code keeps it in the webview's state, which the frame has not). */
   private sendState(): void {
     this.send({ type: 'panelState', state: this.state });
   }
 
-  /** The depth the panel shows: what the explanation needs comes from it (`needsReading`). */
+  /** The depth and the switch the panel shows: what the explanation needs comes from them (`explainNeeds`). */
   panelState(): PanelState {
     return this.state;
   }

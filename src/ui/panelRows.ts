@@ -10,11 +10,12 @@ import type { ArgvLine, Example, LineExplanation, Span, Token } from '../analyze
 import type { Lang } from '../i18n';
 import type { TokenTextId } from '../messages-tokens';
 import { LEVELS, type NoteLevel } from '../levels';
-import { keyOf, type Layer, type ReadingNode } from '../reading';
+import { keyOf, type Layer, type ReadingNode, tokenLines } from '../reading';
 import { KIND_ROLES } from '../roles';
 import type { TextPart } from '../tokenmarks';
 import { sameSpan, shown } from './hoverParts';
 import { aboutOf, nodeKind, roleFor, type RoleLine, roleLine, type RowRole } from './panelRoles';
+import { markHandled, markNotPosix, receivesLine, type ReceivesLine } from './panelReceives';
 import { type StepsLine, stepsLine } from './panelSteps';
 import { ui } from './texts';
 import { partBasis, strongestLevel, type TokenRow, tokenRow } from './tokenRow';
@@ -62,14 +63,29 @@ export interface ModelRow extends TokenRow {
   /** It starts folded: all its parts come at depth 2 (`foldDeep`). */
   folded?: true;
   /** With the switch on, on a simple command: what its program receives (src/argvline.ts). */
-  receives?: ArgvLine;
+  receives?: ReceivesLine;
   /** With the switch on, on a word of a simple command. */
   received?: Received;
+  /** A token of a string read as a script: another shell's reading (`Token.origin`). */
+  inScript?: true;
+  /** With the switch on: the first row of a construct no program receives (`markHandled`). */
+  handled?: true;
+  /** The first row of a construct POSIX sh does not have (`markNotPosix`): what it says of each feature. */
+  notPosix?: string[];
   children: ModelRow[];
 }
 
 /** A mark drawn on the panel and what it means. `sample`: its text, where it has one (a level's mark, a badge's word). */
 export interface KeyEntry { id: string; sample?: string; text: string }
+
+/** The marks of the rows, as drawn: the words the shell of the script gives them. */
+export interface RowMarks { handled: string; handledSays: string; notPosix: string }
+
+/** The shell's name in a mark: a script read as another shell's is not handled by bash. */
+function shellSaid(shell: LineExplanation['shell'], lang: Lang): string {
+  const t = ui[lang].panel.receives;
+  return !shell || shell === 'bash' ? t.bash : t.theShell;
+}
 
 /**
  * The rows of a line, the Key of what they draw, and where each token of the line is shown: the path of its row (`0.1`, the second
@@ -80,6 +96,7 @@ export interface RowModel {
   rows: ModelRow[];
   key: KeyEntry[];
   places: ReadonlyMap<Token, string>;
+  marks: RowMarks;
   /** At depth 2, with the reading tree: the role of the whole line (`bash reads the line`), which no row stands for. */
   line?: RoleLine & { refs: readonly string[] };
 }
@@ -141,6 +158,8 @@ interface Build {
   /** A simple command's name by its own range, where that is not the command's: the role of a row of that word alone (`[` of `[ -f f ]`). */
   names: ReadonlyMap<string, RowRole>;
   lines: ReadonlyMap<string, ArgvLine>;
+  /** The shell's name in what the rows say (`shellSaid`). */
+  shell: string;
   words: ReadonlyMap<string, Received>;
   /** The row each token was folded into or made. */
   made: Map<Token, ModelRow>;
@@ -181,8 +200,9 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build, shell: Shell = { l
   if (comesAt > depth) return children;
   const range = b.roles.size ? roleOfRow(t, whole, b.names.get(at), inShell, b.lang) : undefined;
   const frame = [t, ...chain].map(frameOf).find(Boolean);
-  const receives = frame === 'command' ? b.lines.get(at) : undefined;
-  const received = receives ? undefined : b.words.get(at);
+  const argv = frame === 'command' ? b.lines.get(at) : undefined;
+  // (A program's name is its first word; a builtin or a function has no such word.)
+  const received = !argv ? b.words.get(at) : argv.inside ? undefined : argv.words[0].asWritten ? 'asWritten' : 'changed';
   const row: ModelRow = {
     ...own,
     marks: marks.length ? marks : undefined,
@@ -204,8 +224,9 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build, shell: Shell = { l
     more: folded.flatMap((x, i) => (depth === 2 || said[i].marks || (x !== t && saysAtDepth1(x, said[i])) ? [said[i].parts] : [])),
     roles: range?.roles ?? [],
     ...(range ? roleFields(range, unique(all.flatMap((r) => r.refs ?? [])), b.lang) : {}),
-    ...(receives ? { receives } : {}),
+    ...(argv ? { receives: receivesLine(argv, b.lang, b.shell) } : {}),
     ...(received ? { received } : {}),
+    ...(t.origin === 'script' ? { inScript: true as const } : {}),
     children,
   };
   for (const x of said) if (x.texts?.length) b.saying.set(x.parts, x.texts);
@@ -307,7 +328,8 @@ const NODE_ROWS: ReadonlySet<string> = new Set(['keyword', 'operator', 'descript
 
 /** Where a row of a node goes: under the deepest row around it, among its parts in the order of the line. False: it holds rows of tokens, so it is no row. */
 function placeRow(list: ModelRow[], row: ModelRow): boolean {
-  const around = list.find((r) => within(r.span, row.span));
+  // (The first line of a compound command has a range of that line, and a part from its last line: `< x` of `done < x`.)
+  const around = list.find((r) => within(r.span, row.span)) ?? list.find((r) => aroundRow(r.children, row.span));
   if (around) return placeRow(around.children, row);
   if (list.some((r) => within(row.span, r.span))) return false;
   const at = list.findIndex((r) => startsBefore(row.span, r.span));
@@ -458,7 +480,7 @@ function connect(rows: readonly ModelRow[], lang: Lang): void {
 
 /** What each word of the simple commands of a line is to its program, by the range of the word. */
 function receivedWords(lines: readonly ArgvLine[]): Map<string, Received> {
-  return new Map(lines.flatMap((l) => l.words.map((w): [string, Received] => [keyOf(w.from), w.asWritten ? 'asWritten' : 'changed'])));
+  return new Map(lines.flatMap((l) => (l.inside ? l.words.slice(1) : l.words).map((w): [string, Received] => [keyOf(w.from), w.asWritten ? 'asWritten' : 'changed'])));
 }
 
 const LEVEL_ORDER = (Object.keys(LEVELS) as NoteLevel[]).sort((a, b) => LEVELS[a].rank - LEVELS[b].rank);
@@ -467,7 +489,7 @@ const LEVEL_ORDER = (Object.keys(LEVELS) as NoteLevel[]).sort((a, b) => LEVELS[a
  * The Key: what each mark drawn means, and only those drawn. Each entry is found on the rows, or among the notes of the line
  * for a level (the problems box draws them, P7b).
  */
-function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[], lang: Lang): KeyEntry[] {
+function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[], marks: RowMarks, lang: Lang): KeyEntry[] {
   const t = ui[lang].panel.key;
   const all = (rs: readonly ModelRow[]): ModelRow[] => rs.flatMap((r) => [r, ...all(r.children)]);
   const drawn = all(rows);
@@ -476,7 +498,7 @@ function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[],
   const names = new Map(drawn.flatMap((r) => (r.name ? [[r.name.runs, r.name.said.kind] as const] : [])));
   const roles = new Set(drawn.map((r) => r.role));
   const received = new Set(drawn.map((r) => r.received));
-  const words = drawn.flatMap((r) => r.receives?.words ?? []);
+  const chips = drawn.flatMap((r) => r.receives?.chips ?? []);
   const basis = drawn.find((r) => r.basis)?.basis;
   const when = (on: boolean, entry: KeyEntry): KeyEntry[] => (on ? [entry] : []);
   return [
@@ -489,17 +511,17 @@ function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[],
     ...when(drawn.some((r) => r.roles.length), { id: 'roleLine', text: t.roleLine }),
     ...when(received.has('asWritten'), { id: 'received:asWritten', text: t.received.asWritten }),
     ...when(received.has('changed'), { id: 'received:changed', text: t.received.changed }),
-    ...when(words.some((w) => w.parts.some((p) => 'hole' in p)), { id: 'received:hole', text: t.received.hole }),
-    ...when(words.some((w) => w.count), { id: 'received:many', text: t.received.many }),
+    ...when(chips.some((c) => c.parts.some((p) => 'hole' in p)), { id: 'received:hole', text: t.received.hole }),
+    ...when(chips.some((c) => c.many), { id: 'received:many', text: t.received.many }),
+    ...when(drawn.some((r) => r.handled), { id: 'mark:handled', sample: marks.handled, text: marks.handledSays }),
+    ...when(drawn.some((r) => r.notPosix), { id: 'mark:notPosix', sample: marks.notPosix, text: t.notPosix }),
   ];
 }
 
-/** The lines the tokens of a line are on. */
-const linesOf = (items: readonly Token[]): Set<number> => new Set(items.flatMap(function walk(t: Token): number[] { return [t.span.start.line, ...t.children.flatMap(walk)]; }));
-
 /** The rows the panel shows of a line, at a depth and with the switch, and the Key of what they draw. */
-export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' | 'noteInfo'>, options: RowOptions, lang: Lang): RowModel {
+export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' | 'noteInfo' | 'notPosix' | 'shell'>, options: RowOptions, lang: Lang): RowModel {
   const lines = options.receives ? ex.argv ?? [] : [];
+  const shell = shellSaid(ex.shell, lang);
   const read = options.depth === 2 && ex.reading ? rolesOf(ex.reading, lang) : undefined;
   const build: Build = {
     options,
@@ -507,17 +529,23 @@ export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' 
     roles: read?.roles ?? new Map(),
     names: read?.names ?? new Map(),
     lines: new Map(lines.map((l) => [keyOf(l.span), l])),
+    shell,
     words: receivedWords(lines),
     made: new Map(),
     saying: new Map(),
   };
   const rows = ex.items.flatMap((t) => rowsOf(t, undefined, build));
   if (options.depth === 2 && ex.reading) {
-    addNodeRows(rows, ex.reading, build.roles, linesOf(ex.items), lang);
+    addNodeRows(rows, ex.reading, build.roles, tokenLines(ex.items), lang);
     foldDeep(rows);
     sayOnce(rows, build.saying);
   }
+  // (Without the data, as in an explanation made for the hover, no mark says what no program receives.)
+  if (options.receives && ex.argv) markHandled(rows, lines);
+  markNotPosix(rows, ex.notPosix ?? []);
+  const tm = ui[lang].panel.receives;
+  const marks: RowMarks = { handled: tm.handled.replace('{shell}', () => shell), handledSays: tm.handledSays.replace('{shell}', () => shell), notPosix: tm.notPosix };
   // (A line with nothing to explain has no role either.)
   const whole = read && rows.length ? roleLine([roleFor(ex.reading!, undefined, lang)!]) : undefined;
-  return { rows, key: keyEntries(rows, ex.noteInfo.map((n) => n.level), lang), places: placesOf(ex.items, rows, build.made), ...(whole ? { line: { ...whole, refs: [] } } : {}) };
+  return { rows, marks, key: keyEntries(rows, ex.noteInfo.map((n) => n.level), marks, lang), places: placesOf(ex.items, rows, build.made), ...(whole ? { line: { ...whole, refs: [] } } : {}) };
 }

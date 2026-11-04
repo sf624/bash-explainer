@@ -513,7 +513,7 @@ describe('the panel\'s row model', () => {
           for (const l of ex.argv ?? []) {
             // (In POSIX mode, `time -p` with a first word that may start with a dash is a command that reads its command, as `sudo` does.)
             if (l.span.start.line !== line || l.span.end.line !== line || text.startsWith('set -o posix\ntime')) continue;
-            assert.strictEqual(rows.filter((r) => r.receives === l).length, 1, `${name}: ${source}: ${keyOf(l.span)}`);
+            assert.strictEqual(rows.filter((r) => r.receives && keyOf(r.receives.span) === keyOf(l.span)).length, 1, `${name}: ${source}: ${keyOf(l.span)}`);
           }
           for (const r of rows) if (r.receives) assert.strictEqual(r.frame, 'command', source);
         });
@@ -1194,10 +1194,10 @@ describe('the panel\'s row model', () => {
     it('puts what a program receives on its command, and says of each word if it comes as written, with the switch on', () => {
       const rows = all(model('grep -h "$USER" f 2>/dev/null', on).rows);
       const cmd = rows.find((r) => r.label === 'grep')!;
-      assert.deepStrictEqual(cmd.receives!.words.length, 4);
-      assert.deepStrictEqual(cmd.receives!.removed.map((x) => x.text), ['2>/dev/null']);
+      assert.deepStrictEqual(cmd.receives!.chips.length, 4);
+      assert.strictEqual(cmd.receives!.lead, 'receives:');
       assert.deepStrictEqual(rows.slice(1).map((r) => [r.label, r.received]), [['-h', 'asWritten'], ['"$USER"', 'changed'], ['$USER', undefined], ['f', 'asWritten'], ['2>/dev/null', undefined]]);
-      assert.strictEqual(cmd.received, undefined);
+      assert.strictEqual(cmd.received, 'asWritten', 'a program gets its name as its first word');
     });
 
     it('says nothing of it with the switch off', () => {
@@ -1238,7 +1238,7 @@ describe('the panel\'s row model', () => {
     it('lists what the switch draws', () => {
       const on: RowOptions = { depth: 1, receives: true };
       assert.deepStrictEqual(ids('sort -r', on).filter((k) => k.startsWith('received')), ['received:asWritten']);
-      assert.deepStrictEqual(ids('sort "$x"', on).filter((k) => k.startsWith('received')), ['received:changed', 'received:hole']);
+      assert.deepStrictEqual(ids('sort "$x"', on).filter((k) => k.startsWith('received')), ['received:asWritten', 'received:changed', 'received:hole']);
       assert.ok(ids('sort *.txt', on).includes('received:many'), ids('sort *.txt', on).join());
       assert.deepStrictEqual(ids('sort "$x"').filter((k) => k.startsWith('received')), []);
     });

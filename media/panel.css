@@ -1368,6 +1368,232 @@ body[data-depth="2"] .row.connector {
   overflow-wrap: anywhere;
 }
 
+/* The row under the line box: the switch "What the program receives" and the Key (media/panel.js `drawViewRow`). It wraps between the two only. */
+#view-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+#view-row[hidden] {
+  display: none;
+}
+
+#receives,
+#key-open {
+  background: none;
+  border: 0;
+  color: var(--vscode-foreground);
+  font: inherit;
+  padding: 0.15rem 0.25rem;
+  min-height: 1.75rem;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+#receives {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  text-align: start;
+}
+
+#receives:focus-visible,
+#key-open:focus-visible,
+.mk-posix:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, currentColor);
+  outline-offset: 1px;
+}
+
+/* A switch, in the foreground's own tints: its state is also in where the thumb sits, so no colour says it alone. */
+.switch-track {
+  flex: 0 0 auto;
+  position: relative;
+  width: 1.9rem;
+  height: 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--c-muted);
+  box-sizing: border-box;
+}
+
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--c-muted);
+}
+
+#receives[aria-checked="true"] .switch-track {
+  background: var(--vscode-button-background, var(--c-command));
+  border-color: var(--vscode-button-background, var(--c-command));
+}
+
+#receives[aria-checked="true"] .switch-track::after {
+  left: auto;
+  right: 1px;
+  background: var(--vscode-button-foreground, #fff);
+}
+
+/* (A finger's room, on a touch screen: the row's own height, and around a mark that is a button.) */
+@media (pointer: coarse) {
+  #receives,
+  #key-open {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  button.mk-posix {
+    position: relative;
+  }
+
+  button.mk-posix::after {
+    content: "";
+    position: absolute;
+    inset: -0.7rem -0.2rem;
+  }
+}
+
+#key-open::after {
+  content: " \25be";
+}
+
+#key-open[aria-expanded="true"]::after {
+  content: " \25b4";
+}
+
+/* The Key: one entry a line, its sample first; a long text wraps beside its sample. */
+#key {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
+  border-radius: 3px;
+  font-size: 0.92em;
+}
+
+#key li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+}
+
+#key li > :first-child {
+  flex: 0 0 auto;
+}
+
+#key .key-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#key .note-icon {
+  margin: 0;
+  align-self: center;
+}
+
+.key-frame {
+  display: inline-block;
+  width: 1.4rem;
+  height: 0.9rem;
+  align-self: center;
+}
+
+/* The marks of a row, beside its code (media/panel.js `marksOf`): quiet, one size, never split over two lines. */
+.mk {
+  flex: 0 0 auto;
+  font-size: 0.72em;
+  line-height: 1.35;
+  padding: 0 0.35em;
+  color: var(--c-muted);
+  border: 1px solid color-mix(in srgb, var(--c-muted) 55%, transparent);
+  border-radius: 3px;
+  white-space: nowrap;
+  background: none;
+  font-family: inherit;
+}
+
+button.mk-posix,
+.mk-posix {
+  border-style: dashed;
+}
+
+button.mk-posix {
+  cursor: pointer;
+}
+
+.posix-said {
+  display: block;
+  color: var(--c-muted);
+  font-size: 0.9em;
+  margin-top: 0.1rem;
+}
+
+.posix-said[hidden] {
+  display: none;
+}
+
+/* What a program receives, under its command (media/panel.js `receivesOf`): the lead muted, then the words; each chip stays whole while it fits, and only a word wider than the line wraps. */
+.receives {
+  display: block;
+  font-size: 0.9em;
+  margin-top: 0.15rem;
+}
+
+.receives-words {
+  display: inline;
+}
+
+.text code.recv-word {
+  display: inline-block;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0 0.3em 0.1em 0;
+  overflow-wrap: anywhere;
+  border-color: color-mix(in srgb, var(--c-muted) 55%, transparent);
+  vertical-align: top;
+}
+
+.recv-word .ph {
+  font-style: italic;
+}
+
+:lang(ja) .recv-word .ph {
+  font-style: normal;
+}
+
+.text code.recv-asWritten,
+.label.recv-asWritten,
+.key-word.recv-asWritten {
+  background: color-mix(in srgb, var(--c-argument) 22%, transparent);
+  border-radius: 3px;
+}
+
+.text code.recv-many,
+.key-word.recv-many {
+  border-style: dashed;
+}
+
+.label.recv-changed,
+.key-word.recv-changed {
+  outline: 1px dashed color-mix(in srgb, var(--c-muted) 70%, transparent);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+.receives-fails {
+  display: block;
+  margin-top: 0.1rem;
+}
+
 /* The value of an expansion where it runs (media/panel.js `valueLine`, docs/design/expansion-values.md): a line under
    the meaning, the lead muted, the value and its words as chips with an edge, so that two words read as two (and a
    space inside a word stays visible). */
@@ -1444,8 +1670,35 @@ body[data-depth="2"] .row.connector {
 
   .nk-by,
   .nk-also,
-  .ev-lead {
+  .ev-lead,
+  .mk,
+  .posix-said {
     color: CanvasText;
+  }
+
+  .mk,
+  .text code.recv-word {
+    border-color: CanvasText;
+  }
+
+  /* (No background here: as written is said with a thicker edge, and the switch's state by where its thumb sits.) */
+  .text code.recv-asWritten,
+  .label.recv-asWritten {
+    outline: 2px solid CanvasText;
+    outline-offset: -1px;
+  }
+
+  .switch-track::after {
+    background: CanvasText;
+  }
+
+  #receives[aria-checked="true"] .switch-track {
+    background: Highlight;
+    border-color: Highlight;
+  }
+
+  #receives[aria-checked="true"] .switch-track::after {
+    background: HighlightText;
   }
 
   .text code.ev-word,

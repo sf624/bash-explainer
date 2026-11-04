@@ -73,7 +73,7 @@ describe('the web page: the sentence of the line, "In short"', function () {
             const e = document.getElementById('short');
             const r = e.getBoundingClientRect();
             const notes = document.getElementById('notes').getBoundingClientRect();
-            return { bottom: r.bottom, right: r.right, notes: notes.top, width: document.documentElement.clientWidth, scroll: e.scrollWidth - e.clientWidth, first: e.parentElement.firstElementChild === e };
+            return { bottom: r.bottom, right: r.right, notes: notes.top, width: document.documentElement.clientWidth, scroll: e.scrollWidth - e.clientWidth, first: [...e.parentElement.children].filter((c) => c.id !== 'view-row' && c.id !== 'key')[0] === e };
           })()`) as { bottom: number; right: number; notes: number; width: number; scroll: number; first: boolean };
           assert.ok(box.first && box.bottom <= box.notes + 1 && box.right <= box.width && box.scroll <= 0, JSON.stringify(box));
           // (Each code span is one `code` element, also one whose code holds backticks: `` `date` ``.)

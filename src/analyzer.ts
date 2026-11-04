@@ -12,7 +12,7 @@ import { basisGate, type Fact, fact, pitfallSaid } from './messages';
 import { onceBy } from './lists';
 import { withoutBases, withTokenBases } from './tokenbases';
 import { pictureNote } from './ctlchars';
-import { dialectFound, Shell } from './dialect';
+import { dialectFound, notPosixOn, Shell } from './dialect';
 import { fileRead } from './semantics/env';
 import { shellState } from './semantics/state';
 import type { NestedScript } from './semantics/nested';
@@ -27,7 +27,8 @@ import type { Example, ExplainOptions, LineExplanation } from './analyzer-types'
 import { withinLine } from './examples/regexguard';
 import { contained, stackFull } from './failures';
 import { shorten } from './label';
-import { readingTree } from './reading';
+import { readingTree, tokenLines } from './reading';
+import { spanOf } from './noteanchors';
 import { KIND_ROLES } from './roles';
 import { argvLines } from './argvline';
 import { lineSentence, problemCodes } from './linesentence';
@@ -172,7 +173,10 @@ export class Analyzer {
     const marked = new Set(apart ? [] : cx.wholes.flatMap((w) => w.saidAnchors));
     result.items = markTokens(items, { facts: lineFacts, anchors: anchorsOfLine.filter((a) => !marked.has(a)) });
     const resolveAt = (name: string, w: SyntaxNode) => resolve(cx, name, w, { quoted: w.type !== 'word' || w.text !== name });
-    if (opts.argv) result.argv = argvLines(root, line, cx.state, this.lang);
+    // (A statement continued on other lines shows all its commands, and all its constructs.)
+    const shown = opts.argv || opts.notPosix ? tokenLines(result.items) : undefined;
+    if (opts.argv) result.argv = argvLines(root, line, cx.state, this.lang, shown);
+    if (opts.notPosix) result.notPosix = notPosixOn(root, shown!, this.lang).map(({ node, says }) => ({ span: spanOf(node), says }));
     // (A string read as a script has none: the line's sentence says the command that reads it.)
     if (opts.sentence && !this.nested) {
       const fault = syntaxFaultOf(cx);

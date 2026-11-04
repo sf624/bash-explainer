@@ -408,7 +408,7 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
   });
 
   it('is drawn at the top of the Meaning view, with its label', () => {
-    assert.ok(/<main id="main">\s*<p id="short" hidden><\/p>\s*<section id="problems" hidden><\/section>\s*<div id="notes">/.test(PANEL_BODY));
+    assert.ok(/<main id="main">\s*<div id="view-row" hidden>[^]*?<\/div>\s*<ul id="key" hidden><\/ul>\s*<p id="short" hidden><\/p>\s*<section id="problems" hidden><\/section>\s*<div id="notes">/.test(PANEL_BODY));
     const explanation = new Analyzer('ja').explainLine(parser.parse('sort f'), 0, undefined, { sentence: true });
     const msg = panelUpdate({ lang: 'ja', explanation, file: 'a.sh', line: 0, lineText: 'sort f', choice: {}, placement: 'bottom', animations: false });
     assert.deepStrictEqual([msg.explanation.sentence, msg.labels.inShort, ui.en.panel.inShort], ['`sort`（行を並べ替える）を実行する。', 'ひとことで', 'In short']);
