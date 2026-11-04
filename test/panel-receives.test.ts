@@ -245,7 +245,7 @@ describe('the panel: the mark "not in POSIX sh"', () => {
   it('is on the construct only, with the sentence of the problems of a sh script, in a bash script too and with the switch off', () => {
     const table: [string, [string, string[]][]][] = [
       ['if [[ a ]]; then b; fi', [['[[ a ]]', ['`[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.']]]],
-      ['[[ a =~ b ]]', [['[[ a =~ b ]]', ['`[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.', '`[[ =~ ]]` regex matching is not POSIX sh (it fails in dash and busybox ash). Instead, use `expr` or `grep -E`.']]]],
+      ['[[ a =~ b ]]', [['[[ a =~ b ]]', ['`[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.', '`[[ =~ ]]` regex matching is not POSIX sh (it fails in dash; busybox ash matches it, but a `(` in it is a syntax error). Instead, use `expr` or `grep -E`.']]]],
       ['[ a == b ]', [['[ a == b ]', ['`==` in `[ ]` is not POSIX sh (it fails in dash). Instead, use `=`.']]]],
       ['source f', [['source', ['`source` is not POSIX sh (it fails in dash). Instead, use `.`.']]]],
       ['f() { local x; }', [['local', ['`local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it).']]]],
