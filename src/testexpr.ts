@@ -50,6 +50,17 @@ export function collation(double: boolean, version: BashVersion, posix: 'on' | '
   return posixLocale === 'off' && compat === 'on' ? { order: 'bytes', why: 'compat' } : { order: 'unknown', why: 'compat' };
 }
 
+/** The words a test reads as binary operators. */
+export function binaryOperators(e: TestExpr): number[] {
+  switch (e.type) {
+    case 'word': case 'unary': return [];
+    case 'binary': return [e.op];
+    case 'not': return binaryOperators(e.operand);
+    case 'group': return binaryOperators(e.inner);
+    default: return [...binaryOperators(e.left), ...binaryOperators(e.right)];
+  }
+}
+
 /** The first and last word a test covers. */
 export function testRange(e: TestExpr): [number, number] {
   switch (e.type) {

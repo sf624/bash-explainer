@@ -1,7 +1,7 @@
 import { Text, tx } from '../i18n';
 import { based, basedSpec } from '../tokenbases';
 import type { BuiltinCall, CommandSlot, CommandSpec, NameOptions, OperandAlt, OperandSpec, OptionSpec, PatternOption, ShellVariant, ValueSpec, ValueType, VariableSet } from '../argv/spec';
-import { args, cmd, operand, optionOf, OptSpec, runs, wordTable } from './types';
+import { args, cmd, operand, optionOf, OptSpec, runs, wordTable, wraps } from './types';
 import { declarationCommands, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags } from './syntax';
 
 /**
@@ -575,13 +575,13 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   '.': actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', SOURCE_OPTIONS, { ...SOURCE_OPERANDS, restricted: { slash: 'operand' } }), undefined, { runsUnread: 'file' }),
   // The words are joined with spaces and read again as a command of this shell.
   eval: cmd('引数を連結して文字列をコマンドとして再解釈・実行する（注入に注意）', 'Concatenate arguments and execute the result as a command (beware of injection)', [], {
-    builtin: 'special', optionsFirst: true, operands: [{ pattern: [operand('STRING', 'もう一度読んで実行する文字列', 'text to read and run again', { repeat: '?', command: { run: 'current-shell', joinsWords: true } })] }],
+    builtin: 'special', optionsFirst: true, operands: [{ pattern: [operand('STRING', 'もう一度読んで実行する文字列', 'text to read and run again', { repeat: '?', command: { run: 'current-shell', joinsWords: true, once: true } })] }],
   }),
   exec: cmd('現在のシェルを指定したコマンドで置き換える。引数なしならリダイレクトをシェル自体に適用', 'Replace the shell with the command; without a command, apply redirections to the shell itself', [
     ['-a', 'コマンドに 0 番目の引数（`$0`）として渡す名前', 'name to pass as the zeroth argument (`$0`) of the command', 'arg'],
     ['-c', '環境変数を空にしてコマンドを実行する', 'run the command with an empty environment'],
     ['-l', 'コマンドの 0 番目の引数の先頭に `-` を付ける（ログインシェルのように）', 'put a `-` in front of the zeroth argument (as a login shell has)'],
-  ], { builtin: 'special', optionsFirst: true, operands: [{ pattern: [runs({ run: 'exec', replacesShell: true })] }], restricted: { command: true } }),
+  ], { builtin: 'special', optionsFirst: true, operands: [{ pattern: [wraps({ run: 'exec', replacesShell: true })] }], restricted: { command: true } }),
   shift: actsOnShell(special('位置パラメータを左にずらす（$2 が $1 になる）', 'Shift positional parameters left ($2 becomes $1)', [], numeric(operand('N', 'ずらす数（省略時は 1）', 'how many (default 1)')))),
   getopts: actsOnShell(b('スクリプトのオプション引数を1つずつ解析する（`while getopts … ; do case … esac; done` の形で使い、次に読む位置は $OPTIND）', 'Parse script options one at a time (used as `while getopts …; do case … esac; done`; $OPTIND tracks the position)', [], args(
     operand('OPTSTRING', '受け付けるオプション文字（`:` 付きは引数を取る）', 'option letters (`:` means takes an argument)', { lang: 'getopts' }),
@@ -684,11 +684,11 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     operands: [
       // `command -v git`: the names are looked up, and nothing runs.
       { when: { option: ['-v', '-V'] }, pattern: [operand('NAME', '調べる名前', 'name to look up', { repeat: '*' })] },
-      { pattern: [runs({ run: 'current-shell', lookup: 'no-functions' })] },
+      { pattern: [wraps({ run: 'current-shell', lookup: 'no-functions' })] },
     ],
     restricted: { options: ['-p'], command: true, namesOption: true },
   }),
-  builtin: cmd('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', optionsFirst: true, operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
+  builtin: cmd('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', optionsFirst: true, operands: [{ pattern: [wraps({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
   hash: actsOnShell(b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache', [
     ['-r', 'キャッシュを空にする（コマンドを移動・インストールした後に使う）', 'empty the cache (after moving or installing a command)'],
     ['-d', '名前をキャッシュから削除する', 'forget the names given'],

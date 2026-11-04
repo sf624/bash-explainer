@@ -1,5 +1,5 @@
 import type { CommandSpec, OperandAlt } from '../argv/spec';
-import { byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, GNU_INFO, operand, pos, runs } from './types';
+import { byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, GNU_INFO, operand, pos, wraps } from './types';
 
 // Everyday commands a Linux learner meets early (and that the LPIC-1 and LinuC-1 objectives name):
 // finding help and files, who is logged in, power control, small text tools, terminals and editors.
@@ -216,7 +216,7 @@ export const basic: Record<string, CommandSpec> = {
     ['--userspec', '実行するユーザーとグループ（`ユーザー:グループ`）', 'user and group to run as (`user:group`)', 'arg'],
     ['--groups', '追加するグループ（コンマ区切り）', 'supplementary groups (comma-separated)', 'arg'],
     ['--skip-chdir', '新しいルートの `/` に移動しない', 'do not change directory to `/`'],
-  ], { optionsFirst: true, operands: [{ pattern: [operand('NEWROOT', '新しいルートにするディレクトリ', 'directory to use as the new root', { repeat: '?', type: 'dir' }), runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [operand('NEWROOT', '新しいルートにするディレクトリ', 'directory to use as the new root', { repeat: '?', type: 'dir' }), wraps()] }] }),
   // ---- text and number tools ----------------------------------------------------------------
   unlink: cmd('1つのファイルを削除する（`rm` より機能が少ない）', 'Remove a single file (a plainer `rm`)', [...GNU_INFO], { parser: 'getopt_long', positional: [files], atMost: { count: 1, extra: EXTRA_OPERAND } }),
   link: cmd('既存のファイルへのハードリンクを作る', 'Create a hard link to an existing file', [...GNU_INFO], { parser: 'getopt_long', positional: [pos('元のファイル', 'existing file'), pos('作るリンク名', 'link name to create')], atMost: { count: 2, extra: EXTRA_OPERAND } }),
@@ -252,7 +252,7 @@ export const basic: Record<string, CommandSpec> = {
     ['-o|--output', '結果を指定したファイルに書く', 'write the result to the given file', 'arg'],
     ['-a|--append', '`-o` のファイルに追記する', 'append to the `-o` file'],
     ['-f|--format', '出力の書式（`%e` 経過秒、`%M` 最大メモリ KB…）', 'output format (`%e` elapsed seconds, `%M` max memory in KB…)', 'arg'],
-  ], { path: '/usr/bin/time', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
+  ], { path: '/usr/bin/time', optionsFirst: true, operands: [{ pattern: [wraps()] }] }),
   sum: cmd('ファイルの簡易チェックサムとブロック数を出力する（古い形式）', 'Print a simple checksum and block count of files (old format)', [
     ['-r', 'BSD の方式で計算する（既定）', 'use the BSD algorithm (default)'],
     ['-s|--sysv', 'System V の方式で計算する', 'use the System V algorithm'],

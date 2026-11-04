@@ -719,3 +719,204 @@ describe('surelyRuns', () => {
     it(`may be left out: ${code}`, () => assert.strictEqual(place(code), false));
   }
 });
+
+// Whether a string surely runs, the two sides of a level (the Problems, and the note in the explanation), and what dash and busybox ash do.
+describe('a string that may not run, and what is said by mistake as a fault', () => {
+  const inDocument = (code: string) => {
+    const doc = openDocument(`#!/bin/sh\n${code}\n`, 'shell', (x) => parser.parse(x));
+    return documentIssues(doc, 'en', shellsOf(doc.lines, 'script', undefined));
+  };
+  /** The level of the problem `id`, as the Problems say it and as the notes do (by their mark). */
+  const sides = (code: string, id: string): [string[], string[]] => {
+    const text = `#!/bin/sh\n${code}\n`;
+    const tree = parser.parse(text);
+    const label = FEATURES[id]?.en;
+    const notes = code.split('\n').flatMap((_, line) => new Analyzer('en').explainLine(tree, line + 1, 'sh', { script: 'said' }).notes);
+    const marks = notes.filter((n) => /^[ⓧ⚠]/.test(n) && (!label || n.includes(label))).map((n) => (n[0] === 'ⓧ' ? 'error' : 'warning'));
+    return [inDocument(code).filter((i) => i.code === id).map((i) => i.severity), [...new Set(marks)]];
+  };
+  const says = (code: string, id: string, level: 'error' | 'warning' | undefined): void => {
+    const [problems, notes] = sides(code, id);
+    assert.deepStrictEqual(problems, level ? [level] : [], `problems: ${code}`);
+    assert.deepStrictEqual(notes, level ? [level] : [], `notes: ${code}`);
+  };
+
+  /** The script run by each shell, as `sh` too (a folder first on PATH, where `sh` is that shell). */
+  const inEach = (code: string, check: (r: { status: number | null; out: string; err: string }, sh: Real) => void): void => {
+    for (const sh of REALS) {
+      if (!COMMANDS[sh]) continue;
+      const bin = path.join(dir, `bin-${sh}`);
+      if (!fs.existsSync(bin)) {
+        fs.mkdirSync(bin);
+        fs.symlinkSync(COMMANDS[sh]![0], path.join(bin, sh === 'ash' ? 'busybox' : 'dash'));
+        fs.symlinkSync(COMMANDS[sh]![0], path.join(bin, 'sh'));
+      }
+      const file = path.join(dir, 'string-script');
+      fs.writeFileSync(file, `${code}\n`);
+      const r = spawnSync(path.join(bin, 'sh'), [file], { cwd: dir, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', env: { PATH: `${bin}:${process.env.PATH}`, FUNCNEST: '50' } });
+      check({ status: r.status, out: r.stdout, err: r.stderr }, sh);
+    }
+  };
+  const quiet = (code: string): void => inEach(code, (r, sh) => assert.deepStrictEqual([r.status, r.err], [0, ''], `${sh}: ${code}`));
+  const fails = (code: string): void => inEach(code, (r, sh) => assert.notStrictEqual(r.status, 0, `${sh}: ${code}`));
+
+  // A trap's action runs if its signal comes.
+  const TEMP_TRAP = 'tmp=$(mktemp)\ntrap \'[[ -f "$tmp" ]] && rm -f "$tmp"; exit 1\' INT TERM\necho work; rm -f "$tmp"';
+  for (const [code, id] of [
+    [TEMP_TRAP, 'dbracket'], ["trap 'a=(1)' USR1", 'array'], ["trap 'a=(1)' INT", 'array'], ["trap 'a=(1)' TERM", 'array'], ["trap 'x=$(cat <<< a)' INT TERM", 'herestring'],
+    ["trap 'shopt -s x' INT", 'shopt'], ["trap 'declare -p x; exit 1' TERM", 'declare'], ["trap 'echo \"${x:1}\"' USR2", 'substr'],
+    ["trap 'a=(1)' EXIT\ntrap - EXIT", 'array'], ["trap 'a=(1)' EXIT\ntrap '' EXIT", 'array'], ["trap 'a=(1)' 0\ntrap 0", 'array'], ["trap 'a=(1)' exit\ntrap - 0", 'array'], ["trap 'a=(1)' EXIT\nexec true", 'array'],
+    ["if false; then trap 'a=(1)' EXIT; fi", 'array'],
+  ]) {
+    it(`a Warning, status 0 with nothing on stderr: ${code.replace(/\n/g, '; ')}`, () => {
+      says(code, id, 'warning');
+      quiet(code);
+    });
+  }
+  for (const signal of ['INT', 'TERM', 'USR1']) {
+    it(`what a string read only when ${signal} comes does then`, () => {
+      inEach(`trap 'a=(1)' ${signal}\nkill -${signal} $$\necho next`, (r, sh) => assert.deepStrictEqual([r.status, r.out], [2, ''], sh));
+    });
+  }
+  for (const code of ["trap 'a=(1)' EXIT", "trap 'a=(1)' 0", "trap 'a=(1)' exit", "trap 'a=(1)' INT EXIT", "trap -- 'a=(1)' EXIT", "trap 'a=(1)' EXIT\ntrap : INT", "trap 'a=(1)' EXIT\nexec 3>&1", "(trap 'a=(1)' EXIT; echo a)\nexit $?"]) {
+    it(`an Error, as the end of the shell runs it: ${code.replace(/\n/g, '; ')}`, () => {
+      says(code, 'array', 'error');
+      inEach(code, (r, sh) => assert.match(r.err, /[Ss]yntax error/, `${sh}: ${code}`));
+    });
+  }
+  it('an EXIT trap dash cannot run and busybox ash can: dash is enough', () => {
+    const code = "trap '[[ -f x ]] && rm x' EXIT";
+    says(code, 'dbracket', 'error');
+    inEach(code, (r, sh) => assert.strictEqual(/\[\[: not found/.test(r.err), sh === 'dash', sh));
+  });
+  it('a later `trap` of signals not known here may take the end back; a signal word not known is no EXIT', () => {
+    says("trap 'a=(1)' EXIT\ntrap : \"$s\"", 'array', 'warning');
+    says("trap 'a=(1)' \"$s\"", 'array', 'warning');
+    says("if a; then trap 'a=(1)' EXIT; fi", 'array', 'warning');
+  });
+
+  // Each slot of the dictionary: `run` where the row runs in the shells here (the others are other machines, or need a privilege).
+  const STRING = "sh -c 'shopt -s x'";
+  const SURE: [string, boolean][] = [
+    ['env', true], ['env -i PATH="$PATH"', true], ['timeout 5', true], ['nice', true], ['nohup', true], ['exec', true], ['command', true], ['setsid -w', true], ['stdbuf -o0', true],
+    ['sudo', false], ['sudo -E', false], ['doas', false], ['ionice', false], ['chroot /', false], ['unshare', false], ['nsenter', false], ['runcon -t x', false], ['strace', false], ['ltrace', false], ['perf stat', false], ['perf record', false], ['caffeinate', false],
+  ];
+  for (const [wrapper, run] of SURE) {
+    it(`an Error: ${wrapper} ${STRING}`, () => {
+      says(`${wrapper} ${STRING}`, 'shopt', 'error');
+      if (run) fails(`${wrapper} ${STRING}`);
+    });
+  }
+  for (const code of ["eval 'shopt -s x'", "builtin eval 'shopt -s x'", "command eval 'shopt -s x'", STRING, `(${STRING})`, `: | ${STRING}`, `y=$(${STRING}) || exit 1`, 'dash -c \'shopt -s x\'', `env timeout 5 ${STRING}`, `sudo env ${STRING}`, `time ${STRING}`, `/usr/bin/time ${STRING}`]) {
+    it(`an Error: ${code}`, () => says(code, 'shopt', 'error'));
+  }
+  const SOMETIMES = [
+    `xargs ${STRING}`, `xargs -r ${STRING}`, `xargs -I{} ${STRING}`, `find . -exec ${STRING} \\;`, `find . -execdir ${STRING} \\;`, `find . -ok ${STRING} \\;`, `find . -exec ${STRING} _ {} +`, `watch ${STRING}`, 'watch \'shopt -s x\'', 'watch -x sh -c \'shopt -s x\'',
+    `ssh h sh -c "'shopt -s x'"`, `su -c "${STRING}"`, `docker run i ${STRING}`, `docker exec c ${STRING}`, `docker compose run s ${STRING}`, `docker compose exec s ${STRING}`, `kubectl exec p -- ${STRING}`, `kubectl run p --image=i -- ${STRING}`, `kubectl debug p -- ${STRING}`,
+    `flock f ${STRING}`, `flock -n f ${STRING}`, `systemd-run ${STRING}`, `systemd-cat ${STRING}`, `uv run ${STRING}`, `poetry run ${STRING}`, `npx ${STRING}`, `jobs -x ${STRING}`, `sudo xargs ${STRING}`, `xargs env ${STRING}`, `sh -n -c 'shopt -s x'`, `sh -en -c 'shopt -s x'`, `if a; then ${STRING}; fi`,
+  ];
+  for (const code of SOMETIMES) {
+    it(`a Warning: ${code}`, () => says(code, 'shopt', 'warning'));
+  }
+  it('a slot that runs per item, or reads and runs nothing: status 0 where it does not run', () => {
+    for (const code of ['find . -name nonexist -exec sh -c \'shopt -s x\' \\;', 'find . -name nonexist -exec sh -c \'a=(1)\' \\;', ': | xargs -r sh -c \'[[ -f "$1" ]]\' _', "sh -n -c 'shopt -s x'"]) quiet(code);
+    says('find . -name nonexist -exec sh -c \'shopt -s x\' \\;', 'shopt', 'warning');
+    says('find . -name nonexist -exec sh -c \'a=(1)\' \\;', 'array', 'warning');
+    says(': | xargs -r sh -c \'[[ -f "$1" ]]\' _', 'dbracket', 'warning');
+  });
+  it('a program the dictionary does not know: no string is read', () => {
+    assert.deepStrictEqual(inDocument(`parallel ${STRING}`).filter((i) => i.code === 'shopt'), []);
+  });
+  it('a string in a string asks at each level', () => {
+    says('sh -c "sh -c \'a=(1)\'"', 'array', 'error');
+    says('trap "sh -c \'a=(1)\'" EXIT', 'array', 'error');
+    says('trap "sh -c \'a=(1)\'" INT', 'array', 'warning');
+    says('trap \'eval "a=(1)"\' INT', 'array', 'warning');
+    says('trap \'eval "a=(1)"\' EXIT', 'array', 'error');
+    says('if a; then sh -c "sh -c \'a=(1)\'"; fi', 'array', 'warning');
+    says('find . -exec sh -c "sh -c \'a=(1)\'" \\;', 'array', 'warning');
+    says('sh -c "trap \'a=(1)\' INT"', 'array', 'warning');
+    says('sh -c "trap \'a=(1)\' EXIT"', 'array', 'error');
+    says('watch "trap \'a=(1)\' EXIT"', 'array', 'warning');
+  });
+  it('a fault of the text of a string follows the same rule', () => {
+    says("trap 'if a then b; fi' INT", 'keyword-needs-separator', 'warning');
+    says("trap 'x = 1' INT", 'assignment-with-spaces', 'warning');
+    says("if a; then sh -c 'if a then b; fi'; fi", 'keyword-needs-separator', 'warning');
+    says("find . -exec sh -c 'if a then b; fi' \\;", 'keyword-needs-separator', 'warning');
+    says("trap 'if a then b; fi' EXIT", 'keyword-needs-separator', 'error');
+    says("sh -c 'if a then b; fi'", 'keyword-needs-separator', 'error');
+  });
+
+  // `printf`: the format alone is read.
+  for (const code of [`printf '%d%%quality\\n' 90`, `printf '%s\\n' '50%quota'`, `printf "%s: %s\\n" "%q" x`, `printf '%%q\\n'`, `printf '%%%%q\\n'`, 'printf "$f" x', `printf '%s' %q`]) {
+    it(`nothing of %q: ${code}`, () => {
+      says(code, 'printfQ', undefined);
+      inEach(code, (r, sh) => assert.deepStrictEqual([r.status, r.err], [0, ''], `${sh}: ${code}`));
+    });
+  }
+  for (const code of ['printf %q x', `printf '%q\\n' x`, `printf 'a%qb' x`, `printf -- '%q' x`, `printf '%5q' x`, `printf '%-5q' x`, `printf '%%%q' x`, `printf >f '%q' x`, `printf "%q" x`]) {
+    it(`an Error: ${code}`, () => {
+      says(code, 'printfQ', 'error');
+      fails(code);
+    });
+  }
+
+  it('a format not known says nothing; with `-v`, dash refuses it, and busybox ash reads `-v` as the format', () => {
+    says('printf "$f%q" x', 'printfQ', undefined);
+    says('printf -v v %q x', 'printfQ', 'error');
+    inEach('printf -v v %q x', (r, sh) => assert.strictEqual(r.status, sh === 'dash' ? 2 : 0, sh));
+  });
+
+  // `==`: where the test reads it as an operator.
+  for (const [code, status] of [['[ "$1" = == ]', 1], ['[ == ]', 0], ['[ == = == ]', 0], ['test == = ==', 0], ['[ a = b -o c = == ]', 1], ['[ ! == ]', 1], ['[ -n == ]', 0]] as const) {
+    it(`nothing of ==, as an operand: ${code}`, () => {
+      says(code, 'eqeqTest', undefined);
+      inEach(code, (r, sh) => assert.deepStrictEqual([r.status, r.err], [status, ''], `${sh}: ${code}`));
+    });
+  }
+  it('nothing of ==, in a test that fails with or without it', () => {
+    says('[ a == ]', 'eqeqTest', undefined);
+    says('[ == a ]', 'eqeqTest', undefined);
+    inEach('[ a == ]', (r, sh) => assert.strictEqual(r.status, 2, sh));
+  });
+  for (const code of ['test a == a', '[ a == b ]', `[ a '==' b ]`, '[ "$x" == "$y" ]', '[ ! a == b ]', '[ a = a -a b == b ]', '[ \\( a == b \\) ]', '[ == == == ]']) {
+    it(`an Error, as an operator, which dash refuses: ${code}`, () => {
+      says(code, 'eqeqTest', 'error');
+      inEach(code, (r, sh) => {
+        if (sh === 'dash') assert.strictEqual(r.status, 2, code);
+        else assert.strictEqual(r.err, '', code);
+      });
+    });
+  }
+
+  // `${x:?}` may end the shell.
+  for (const [first, then, id] of [
+    [': "${BASH_VERSION:?needs bash}"', 'shopt -s x', 'shopt'], [': "${BASH_VERSION:?needs bash}"', 'a=(1)', 'array'], [': "${BASH_VERSION?needs bash}"', 'shopt -s x', 'shopt'], [': "${x?}"', 'a=(1)', 'array'],
+    [': "${1:?usage}"', 'shopt -s x', 'shopt'], ['y="${1:?usage}"', 'shopt -s x', 'shopt'], ['x=; : "${x:?}"', 'shopt -s x', 'shopt'], ['x=$(true); : "${x:?}"', 'shopt -s x', 'shopt'], ['unset x; : "${x?}"', 'shopt -s x', 'shopt'],
+  ]) {
+    it(`a Warning after what stops the shell: ${first}; ${then}`, () => {
+      says(`${first}\n${then}`, id, 'warning');
+      inEach(`${first}\n${then}\necho next`, (r, sh) => {
+        assert.strictEqual(r.status, 2, `${sh}: ${first}`);
+        assert.strictEqual(r.out, '', `${sh}: ${first}`);
+        assert.doesNotMatch(r.err, /shopt|\($/, `${sh}: ${first}`);
+      });
+    });
+  }
+  for (const first of ['x=1; : "${x:?}"', 'x=; : "${x?}"', '(: "${x:?}")', 'y=$(: "${x:?}")', ': "${x:?}" | cat', ': "${x:-a}"']) {
+    it(`an Error, as the shell goes on: ${first}; shopt -s x`, () => {
+      says(`${first}\nshopt -s x`, 'shopt', 'error');
+      inEach(`${first}\nshopt -s x`, (r, sh) => assert.match(r.err, /shopt: not found/, `${sh}: ${first}`));
+    });
+  }
+  it('what the shell refuses on the same line comes first', () => {
+    says(': "${x:?}"; a=(1)', 'array', 'error');
+    inEach(': "${x:?}"; a=(1)', (r, sh) => assert.match(r.err, /[Ss]yntax error/, sh));
+  });
+  it('an expansion read only sometimes, or in a function, may still stop it; one the shell has no reading of does not', () => {
+    says(': "${y:-${x:?}}"\nshopt -s x', 'shopt', 'warning');
+    says('f() { : "${x:?}"; }\nshopt -s x', 'shopt', 'warning');
+    says(': "${(f)x}"\nshopt -s x', 'shopt', 'error');
+  });
+});

@@ -8,6 +8,9 @@ import type { NameMap, OptionState, ShellState, VariableState } from '../shellst
 
 export const NAME = /^[A-Za-z_]\w*$/;
 
+/** A word of `trap` that names the end of the shell. */
+export const exitSignal = (x: string): boolean => /^(SIG)?EXIT$|^0$/i.test(x);
+
 export const SUBSTITUTIONS = ['command_substitution', 'process_substitution'];
 
 /** Whether the command substitution `c` is bash 5.3's `${ …; }` or `${| …; }`, which runs in the shell itself (docs/design/bash-versions.md, 4.1). */

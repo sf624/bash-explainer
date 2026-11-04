@@ -213,6 +213,8 @@ export const COMMAND_TEXT = tx('実行するコマンド', 'command to run');
 
 /** The operand from which the words are the command a wrapper runs (`sudo cmd args`), started as `slot` says. */
 export const runs = (slot: CommandSlot = { run: 'exec' }): OperandSpec => ({ name: 'COMMAND', text: COMMAND_TEXT, repeat: '?', command: slot });
+/** The same for a program that surely runs it (`CommandSlot.once`). */
+export const wraps = (slot: CommandSlot = { run: 'exec' }): OperandSpec => runs({ ...slot, once: true });
 
 /**
  * The variables of the caller's environment that sudo passes on by default, although `env_reset` starts the command

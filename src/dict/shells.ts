@@ -16,7 +16,7 @@ const SHELL_OPERANDS: OperandAlt[] = [
   {
     when: { option: ['-c'] },
     pattern: [
-      operand('COMMAND_STRING', 'コマンド文字列: 実行するコマンド', 'The command string: the commands to run', { command: { run: 'shell-string', env: 'exported', params: true } }),
+      operand('COMMAND_STRING', 'コマンド文字列: 実行するコマンド', 'The command string: the commands to run', { command: { run: 'shell-string', env: 'exported', params: true, once: true } }),
       operand('NAME', '`$0` になる名前（スクリプト名の代わりで、エラーメッセージにも出る）で、引数ではない', 'the name for `$0` (in place of a script name, shown in error messages), not an argument', { repeat: '?' }),
       shellArgs('コマンド文字列の位置パラメータ `$N`', 'Positional parameter `$N` of the command string'),
     ],
