@@ -4,7 +4,7 @@
 // width, never against how wide a font draws a word (CI's fonts are not a desktop's).
 import * as assert from 'assert';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { chooseView, frames, openSite, until } from './support/site';
+import { chooseDepth, frames, openSite, until } from './support/site';
 
 /** Lines whose labels are long: a shebang, a pipeline, a long path (one word, no space to break at). */
 const LONG = [
@@ -14,7 +14,7 @@ const LONG = [
   'cat /usr/share/doc/some-very-long-package-name-with-many-parts/examples/configuration-file-template.conf.example',
 ];
 
-/** What each Meaning row looks like: its box, its label's, its explanation's, and what is cut or sticks out. */
+/** What each row looks like: its box, its label's, its explanation's, and what is cut or sticks out. */
 const meaningRows = (panel: Frame) => panel.evaluate(`(() => [...document.querySelectorAll('#tree .row')].filter((r) => r.getClientRects().length).map((r) => {
   const box = (e) => { const b = e.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width, height: b.height }; };
   const label = r.querySelector(':scope > .code > .label');
@@ -71,7 +71,7 @@ describe('the web page: long labels in the panel', function () {
       const { page, panel, close } = await open(width, lang);
       for (const line of LONG) {
         await type(page, panel, line);
-        await chooseView(page, 'list');
+        await chooseDepth(page, 1);
         await until('the rows', () => panel().locator('#tree .row').count(), (n) => n > 0);
         const where = `${width} ${lang} ${line.slice(0, 20)}`;
         const rows = await meaningRows(panel());
@@ -97,15 +97,16 @@ describe('the web page: long labels in the panel', function () {
         }
         // Nothing on the page scrolls sideways.
         assert.strictEqual(await panel().evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true, where);
-        // Reading: the code's pill and the explanation stay inside their row.
-        await chooseView(page, 'tree');
-        await until('the tree', () => panel().locator('#reading-tree .trow').count(), (n) => n > 0);
-        const out = await panel().evaluate(`[...document.querySelectorAll('#reading-tree .trow')].filter((r) => {
+        // Depth 2: the code and the text, with the role line and the steps, stay inside their row.
+        await chooseDepth(page, 2);
+        await until('the role lines', () => panel().locator('#tree .role-line').count(), (n) => n > 0);
+        const out = await panel().evaluate(`[...document.querySelectorAll('#tree .row')].filter((r) => {
           const right = r.getBoundingClientRect().right;
-          return r.scrollWidth > r.clientWidth + 0.5 || [...r.querySelectorAll('.tcode, .text')].some((c) => c.getBoundingClientRect().right > right + 0.5);
+          return r.scrollWidth > r.clientWidth + 0.5 || [...r.querySelectorAll('.code, .text, .role-line, .steps')].some((c) => c.getBoundingClientRect().right > right + 0.5);
         }).map((r) => r.textContent.slice(0, 40))`);
-        assert.deepStrictEqual(out, [], `${where}: Reading`);
-        await chooseView(page, 'list');
+        assert.deepStrictEqual(out, [], `${where}: depth 2`);
+        await chooseDepth(page, 1);
+        await until('the rows of depth 1', () => panel().locator('#tree .role-line').count(), (n) => n === 0);
       }
       await close();
     }
@@ -116,7 +117,7 @@ describe('the web page: long labels in the panel', function () {
       const { page, panel, close } = await open(width, 'en');
       for (const line of ['grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt && echo "done: $(date +%F)" || exit 1', 'sudo -u www-data tar -xzf site.tar.gz -C /var/www']) {
         await type(page, panel, line);
-        await chooseView(page, 'list');
+        await chooseDepth(page, 1);
         const rows = await meaningRows(panel());
         const short = rows.filter((r) => r.natural <= r.contentWidth / 3);
         assert.ok(short.length >= 5, `${width}: ${short.length} short labels`);

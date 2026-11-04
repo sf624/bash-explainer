@@ -7,9 +7,9 @@ import type { PanelColours } from '../settings';
 
 /** What the webview reports of the theme in use: the colours it draws text on and the panel's own colours. */
 export interface PanelBase {
-  /** A high contrast theme: text needs 7:1, and the Reading view draws no tints. */
+  /** A high contrast theme: text needs 7:1, and no tint is counted. */
   highContrast: boolean;
-  /** The backgrounds text is drawn on; the first, the editor's, is the base of the Reading view's tints. */
+  /** The backgrounds text is drawn on; the first, the editor's, is the base of the tints. */
   backgrounds: string[];
   /** The text colour of the editor (a part the theme does not colour is drawn in it). */
   foreground: string;
@@ -37,7 +37,7 @@ export const GROUP: Record<Role, string> = {
  */
 export const ROLE_ORDER: readonly Role[] = ['command', 'operator', 'string', 'argument', 'variable', 'builtin', 'keyword', 'option', 'pattern', 'redirect', 'assignment', 'number', 'comment', 'shebang'];
 
-/** The roles each layer of the Reading view tints its band with (media/panel.css `--l-*`), and the tint's share. */
+/** The roles and the share of the tints of Reading's bands. No view draws them since the tabs went (panel-redesign.md, P8); taking them out changes the colours in a theme: P10. */
 const TINT_ROLES: readonly Role[] = ['keyword', 'command', 'argument', 'option'];
 const TINT = 0.06;
 
@@ -53,7 +53,7 @@ const rgb = (css: string): RGB => parseColour(css) ?? [128, 128, 128];
 /** A colour as the panel gets it: rounded to `#rrggbb` (the contrast is measured on that). */
 const rounded = (c: RGB): RGB => rgb(toHex(c));
 
-/** The surfaces a palette's text is drawn on: the backgrounds, and in a theme that is not high contrast, the Reading view's tints (with a row or a code block over them). */
+/** The surfaces a palette's text is drawn on: the backgrounds, and in a theme that is not high contrast, the tints (with a row or a code block over them). */
 function surfaces(base: PanelBase, palette?: Record<Role, string>): RGB[] {
   const first = rgb(base.backgrounds[0]);
   const bgs = [first, ...base.backgrounds.slice(1).map((b) => parseColour(b, first) ?? first)];

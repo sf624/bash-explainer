@@ -58,12 +58,12 @@ describe('the VS Code panel: its header', function () {
     // The shell's dropdown: named by its label (for screen readers only) and its tooltip; its arrow is an icon.
     assert.strictEqual(await page.getByRole('combobox', { name: 'Shell' }).getAttribute('title'), 'Shell');
     assert.strictEqual(await page.locator('#shell-box .ico path').count(), 1);
-    // The view switch: two words, the view shown pressed.
-    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#view-options button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['Meaning true', 'Reading false']);
-    assert.strictEqual(await page.locator('#view-options').getAttribute('aria-label'), 'View');
+    // The view control: the depths, with their digits, the depth shown pressed, with its name.
+    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#view-options button')].map((b) => b.querySelector('.vc-digit').textContent + ' ' + b.getAttribute('aria-label') + ' ' + b.getAttribute('aria-pressed'))`), ['1 What it does true', '2 How bash reads it false']);
+    assert.strictEqual(await page.locator('#view-options').getAttribute('aria-label'), 'Depth');
     assert.strictEqual(await page.locator('header #views').count(), 1, 'the view switch is in the header');
     const ja = await open('dark', 600, 'ja');
-    assert.deepStrictEqual(await ja.evaluate(`[...document.querySelectorAll('header .tb, #view-options button')].map((b) => b.title || b.textContent)`), ['意味', '読まれ方', 'すべて折りたたむ', 'Markdown でコピー', '早見表', '設定']);
+    assert.deepStrictEqual(await ja.evaluate(`[...document.querySelectorAll('header .tb, #view-options button')].map((b) => b.title || b.textContent)`), ['何をするか', 'bash がどう読むか', 'すべて折りたたむ', 'Markdown でコピー', '早見表', '設定']);
     assert.deepStrictEqual([...page.errors, ...ja.errors], []);
     await page.close();
     await ja.close();
@@ -96,13 +96,13 @@ describe('the VS Code panel: its header', function () {
       'false | true',
       'false | false',
     ]);
-    // The view switch: the tree, then the list again, each time told to the host.
-    await page.locator('#view-tree').click();
+    // The depth: 2, then 1 again, each time told to the host, which sends the rows.
+    await page.locator('#view-depth2').click();
     assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#view-options button')].map((b) => b.getAttribute('aria-pressed'))`), ['false', 'true']);
-    assert.strictEqual(await page.locator('#reading').isVisible(), true);
-    assert.deepStrictEqual(await page.evaluate('window.POSTED.filter((m) => m.type === "panelState").map((m) => m.state.view)'), ['tree']);
-    await page.locator('#view-list').click();
-    assert.strictEqual(await page.locator('#tree').isVisible(), true);
+    await until('the rows of depth 2', () => page.evaluate('document.body.dataset.depth'), (d) => d === '2');
+    assert.deepStrictEqual(await page.evaluate('window.POSTED.filter((m) => m.type === "panelState").map((m) => m.state.depth)'), [2]);
+    await page.locator('#view-depth1').click();
+    await until('the rows of depth 1', () => page.evaluate('document.body.dataset.depth'), (d) => d === '1');
     assert.deepStrictEqual(page.errors, []);
     await page.close();
   });
@@ -235,15 +235,15 @@ describe('the VS Code panel: its header', function () {
       assert.strictEqual(await fits(), true, `${lang} ${width}px`);
       assert.strictEqual(await page.locator('#view-options').isHidden(), true);
       const open_ = page.locator('#view-open');
-      assert.strictEqual(await open_.getAttribute('aria-label'), lang === 'en' ? 'View: Meaning' : '表示: 意味');
+      assert.strictEqual(await open_.getAttribute('aria-label'), lang === 'en' ? 'Depth: 1 What it does' : '深さ: 1 何をするか');
       assert.strictEqual(await open_.getAttribute('aria-expanded'), 'false');
       // Opened with the keyboard: the option shown takes the focus; Escape closes it, the focus back on its button.
       await open_.focus();
       await page.keyboard.press('Enter');
       assert.strictEqual(await open_.getAttribute('aria-expanded'), 'true');
-      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'view-list');
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'view-depth1');
       await page.keyboard.press('ArrowDown');
-      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'view-tree');
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'view-depth2');
       await page.keyboard.press('Escape');
       assert.strictEqual(await page.locator('#view-options').isHidden(), true);
       assert.strictEqual(await page.evaluate('document.activeElement.id'), 'view-open');
@@ -251,15 +251,15 @@ describe('the VS Code panel: its header', function () {
       await page.keyboard.press('Enter');
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
-      await until('the tree', () => page.locator('#reading').isVisible(), (v) => v);
+      await until('the rows of depth 2', () => page.evaluate('document.body.dataset.depth'), (d) => d === '2');
       assert.strictEqual(await page.locator('#view-options').isHidden(), true);
       assert.strictEqual(await page.evaluate('document.activeElement.id'), 'view-open');
-      assert.strictEqual(await open_.getAttribute('aria-label'), lang === 'en' ? 'View: Reading' : '表示: 読まれ方');
-      assert.deepStrictEqual(await page.evaluate('window.POSTED.filter((m) => m.type === "panelState").map((m) => m.state.view)'), ['tree']);
+      assert.strictEqual(await open_.getAttribute('aria-label'), lang === 'en' ? 'Depth: 2 How bash reads it' : '深さ: 2 bash がどう読むか');
+      assert.deepStrictEqual(await page.evaluate('window.POSTED.filter((m) => m.type === "panelState").map((m) => m.state.depth)'), [2]);
       // The button keeps its width whichever option it says (each name drawn over the other, unseen).
       const w = await open_.evaluate((b) => b.getBoundingClientRect().width);
       await open_.click();
-      await page.locator('#view-list').click();
+      await page.locator('#view-depth1').click();
       assert.strictEqual(await open_.evaluate((b) => b.getBoundingClientRect().width), w, lang);
       // A press elsewhere closes it.
       await open_.click();

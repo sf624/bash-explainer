@@ -6,30 +6,8 @@ import { panelHeaderForms, panelTools, ToolButton, viewControlForms } from '../s
 import { ViewControl, viewControl } from '../src/ui/panelView';
 
 describe('the panel header as data', () => {
-  it('gives the view control as segments, then as a menu: before P8, Meaning | Reading without digits and no label drawn', () => {
-    assert.deepStrictEqual(viewControlForms(viewControl({}, 'en')), [
-      { kind: 'segments' },
-      { kind: 'menu', button: [{ text: 'Meaning', name: 'View: Meaning' }, { text: 'Reading', name: 'View: Reading' }] },
-    ]);
-    // (The words are the panel's, in the panel's language; the form does not change with the option shown.)
-    assert.deepStrictEqual(viewControlForms(viewControl({ view: 'tree' }, 'ja')), [
-      { kind: 'segments' },
-      { kind: 'menu', button: [{ text: '意味', name: '表示: 意味' }, { text: '読まれ方', name: '表示: 読まれ方' }] },
-    ]);
-  });
-
   it('draws the label before options with digits, and the menu says the label and the digit ("Depth 1")', () => {
-    // (The depths of P8, as `viewControl` will give them.)
-    const depth = (lang: 'en' | 'ja'): ViewControl => {
-      const [label, does, reads, full1, full2] = lang === 'en' ? ['Depth', 'Does', 'Reads', 'What it does', 'How bash reads it'] : ['深さ', '何をする', '読まれ方', '何をするか', 'bash がどう読むか'];
-      return {
-        label,
-        options: [
-          { id: 'list', digit: '1', short: does, full: full1, pressed: true, sets: { view: 'list' } },
-          { id: 'tree', digit: '2', short: reads, full: full2, pressed: false, sets: { view: 'tree' } },
-        ],
-      };
-    };
+    const depth = (lang: 'en' | 'ja'): ViewControl => viewControl({}, lang);
     assert.deepStrictEqual(viewControlForms(depth('en')), [
       { kind: 'segments', label: 'Depth' },
       { kind: 'menu', button: [{ text: 'Depth 1', name: 'Depth: 1 What it does' }, { text: 'Depth 2', name: 'Depth: 2 How bash reads it' }] },
@@ -38,6 +16,9 @@ describe('the panel header as data', () => {
       { kind: 'segments', label: '深さ' },
       { kind: 'menu', button: [{ text: '深さ 1', name: '深さ: 1 何をするか' }, { text: '深さ 2', name: '深さ: 2 bash がどう読むか' }] },
     ]);
+    // (An option with no digit: its name, and no label drawn.)
+    const named: ViewControl = { label: 'View', options: [{ id: 'depth1', short: 'A', full: 'Full A', pressed: true, sets: {} }] };
+    assert.deepStrictEqual(viewControlForms(named), [{ kind: 'segments' }, { kind: 'menu', button: [{ text: 'A', name: 'View: Full A' }] }]);
   });
 
   it('gives the web page\'s header forms widest first: the segments kept longest, the tools\' words under their icons before the menu, the tabs\' short words last', () => {

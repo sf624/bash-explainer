@@ -181,16 +181,16 @@ describe('the web page: touch screens, stored data and the window', function () 
         assert.ok(pill.height >= 44 && pill.x >= 0 && pill.x + pill.width <= width, `${width}px: ${JSON.stringify(pill)}`);
         await open.tap();
       }
-      const options = await Promise.all(['#slot-list', '#slot-tree'].map(async (id) => (await page.locator(id).boundingBox())!));
+      const options = await Promise.all(['#slot-depth1', '#slot-depth2'].map(async (id) => (await page.locator(id).boundingBox())!));
       for (const b of options) assert.ok(b.width >= 44 && b.height >= 44 && b.x >= 0 && b.x + b.width <= width, `${width}px: ${JSON.stringify(b)}`);
-      assert.strictEqual(await page.locator('#slot-list').getAttribute('aria-pressed'), 'true');
-      await page.locator('#slot-tree').tap();
-      assert.strictEqual(await page.locator('#slot-tree').getAttribute('aria-pressed'), 'true');
-      await until('the tree', () => panel().locator('#reading').isVisible(), (v) => v);
+      assert.strictEqual(await page.locator('#slot-depth1').getAttribute('aria-pressed'), 'true');
+      await page.locator('#slot-depth2').tap();
+      assert.strictEqual(await page.locator('#slot-depth2').getAttribute('aria-pressed'), 'true');
+      await until('the rows of depth 2', () => panel().evaluate('document.body.dataset.depth'), (d) => d === '2');
       await page.reload();
       await page.locator('.cm-line').first().waitFor();
-      assert.strictEqual(await page.locator('#slot-tree').getAttribute('aria-pressed'), 'true', 'remembered');
-      await until('the tree after a reload', () => panel()?.locator('#reading').isVisible() ?? Promise.resolve(false), (v) => v);
+      assert.strictEqual(await page.locator('#slot-depth2').getAttribute('aria-pressed'), 'true', 'remembered');
+      await until('the rows of depth 2 after a reload', () => panel()?.evaluate('document.body.dataset.depth') ?? Promise.resolve(''), (d) => d === '2');
       await ctx.close();
     }
   });

@@ -1,6 +1,6 @@
 // The sentence of the line, "In short" (src/linesentence.ts; docs/design/panel-redesign.md, P5), on the web page's
-// panel (media/panel.js, the same panel as VS Code's), in headless Chromium: it is at the top of the Meaning view, above
-// the problems, in the page's language, and gone in the Reading view; a long sentence wraps inside the panel at a
+// panel (media/panel.js, the same panel as VS Code's), in headless Chromium: it is at the top of the view, above
+// the problems, in the page's language, at both depths; a long sentence wraps inside the panel at a
 // phone's width. Screenshots are kept when `SENTENCE_SHOTS` names a directory.
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -8,7 +8,7 @@ import * as path from 'path';
 import type { Browser, Frame, Page } from 'playwright-core';
 import { Analyzer } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { chooseView, openSite, until } from './support/site';
+import { chooseDepth, openSite, until } from './support/site';
 
 const SCRIPT = [
   '#!/bin/bash',
@@ -59,7 +59,7 @@ describe('the web page: the sentence of the line, "In short"', function () {
 
   for (const [lang, locale] of [['en', 'en-US'], ['ja', 'ja-JP']] as const) {
     for (const width of [390, 1280]) {
-      it(`starts the Meaning view with the sentence, above the problems, wrapped in the panel (${lang}, ${width} px)`, async () => {
+      it(`starts the view with the sentence, above the problems, wrapped in the panel (${lang}, ${width} px)`, async () => {
         const ctx = await browser.newContext({ viewport: { width, height: 900 }, locale });
         const page = await ctx.newPage();
         const panel = await open(page);
@@ -86,9 +86,12 @@ describe('the web page: the sentence of the line, "In short"', function () {
             await page.screenshot({ path: path.join(dir, `sentence-${name}-${lang}-${width}.png`) });
           }
         }
-        // (The Reading view has none.)
-        await chooseView(page, 'tree');
-        await until('hidden in Reading', () => panel.locator('#short').isVisible(), (v) => !v);
+        // (Depth 2 keeps it, at its place.)
+        const top = await panel.locator('#short').evaluate((e) => e.getBoundingClientRect().top);
+        await chooseDepth(page, 2);
+        await until('the rows of depth 2', () => panel.evaluate('document.body.dataset.depth'), (d) => d === '2');
+        assert.strictEqual(await panel.locator('#short').isVisible(), true);
+        assert.strictEqual(await panel.locator('#short').evaluate((e) => e.getBoundingClientRect().top), top);
         await ctx.close();
       });
     }

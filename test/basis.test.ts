@@ -18,7 +18,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { basisGate, basisSaid, fact, type FactId, MESSAGES } from '../src/messages';
 import { readingNodes } from '../src/reading';
 import { TOKEN_BASES, type TokenBasisId } from '../src/tokenbases';
-import { basisLine, basisMarkdown, noteBasis, readingWithBasis, toPlainMarkdown } from '../src/ui/render';
+import { basisLine, basisMarkdown, noteBasis, toPlainMarkdown } from '../src/ui/render';
 import { rowModel } from '../src/ui/panelRows';
 import { partBasis } from '../src/ui/tokenRow';
 import { allTokens, explain } from './support/explain';
@@ -307,8 +307,6 @@ describe('basis: what an explanation rests on', () => {
     const rows = allTokens(rowModel(ex, { depth: 2, receives: false }, 'ja').rows);
     const row = rows.find((t) => t.label === 'BASH_XTRACEFD=7')!;
     assert.strictEqual(row.basis?.label, 'マニュアルの記述と異なる・bash 5.2・5.3 で確認');
-    const node = readingNodes(readingWithBasis(ex.reading!, 'ja')).find((n) => n.label === 'BASH_XTRACEFD=7' && n.basis) as { basisShown?: { label: string } };
-    assert.strictEqual(node.basisShown?.label, 'マニュアルの記述と異なる・bash 5.2・5.3 で確認');
     assert.strictEqual(rows.find((t) => t.label === '$HOME')!.basis, undefined);
     assert.strictEqual(basisMarkdown(b, 'en', '  '), `\\\n  _${basisLine('en', b, (c) => `\`${c}\``)}_`);
     assert.strictEqual(basisMarkdown(undefined, 'en', '  '), '');

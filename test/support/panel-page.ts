@@ -12,7 +12,7 @@ import { Analyzer } from '../../src/analyzer';
 import { Lang } from '../../src/i18n';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
 import { documentIssues } from '../../src/document';
-import { PANEL_BODY, panelState, panelUpdate } from '../../src/ui/panelView';
+import { PANEL_BODY, panelUpdate } from '../../src/ui/panelView';
 import { said } from './shells';
 
 const root = path.join(__dirname, '..', '..');
@@ -24,15 +24,15 @@ export type PanelTheme = 'dark' | 'light' | 'hc';
  * have several lines: its first is explained (a loop over several lines is explained whole from its first line).
  * `wrap`: the line box wraps, as with `editor.wordWrap` on (src/ui/lineBox.ts `wrapsLikeEditor`). `at`: the line explained, counted in `text` from 1.
  */
-export function message(lang: Lang, text: string, file: string, wrap = false, at = 1): unknown {
+export function message(lang: Lang, text: string, file: string, wrap = false, at = 1, depth: 1 | 2 = 1): unknown {
   const src = `#!/bin/bash\n${text}\n`;
   const line = text.split('\n')[at - 1];
   const tree = createUnbashParser().parse(src);
-  const ex = new Analyzer(lang).explainLine(tree, at, 'bash', { reading: true, sentence: true });
+  const ex = new Analyzer(lang).explainLine(tree, at, 'bash', { reading: depth === 2, sentence: true });
   // (The line's problems, as the editor underlines them.)
   const doc = { lines: src.split('\n'), tree };
   const issues = documentIssues(doc, lang, { detected: said('bash') });
-  return panelUpdate({ lang, explanation: ex, file, line: at, lineText: line, doc, wrap, choice: {}, detected: said('bash'), placement: 'first', animations: true, issues });
+  return panelUpdate({ lang, explanation: ex, file, line: at, lineText: line, doc, wrap, choice: {}, detected: said('bash'), placement: 'first', animations: true, issues, state: { depth } });
 }
 
 const HOST = `(function () {
@@ -47,9 +47,12 @@ const HOST = `(function () {
     postMessage: (m) => {
       window.POSTED.push(m);
       if (m.type === 'ready') setTimeout(() => {
-        window.postMessage({ type: 'panelState', state: { ...window.STATE, view: q.get('view') || 'list' } }, '*');
-        window.postMessage(window.MSGS[document.documentElement.lang], '*');
+        const depth = Number(q.get('depth')) || 1;
+        window.postMessage({ type: 'panelState', state: { depth } }, '*');
+        window.postMessage(depth === 2 ? window.DEEP[document.documentElement.lang] : window.MSGS[document.documentElement.lang], '*');
       });
+      // (As a host explains the line again for the depth chosen.)
+      if (m.type === 'panelState') setTimeout(() => window.postMessage(m.state.depth === 2 ? window.DEEP[document.documentElement.lang] : window.MSGS[document.documentElement.lang], '*'));
     },
     getState: () => undefined,
     setState: () => {},
@@ -78,15 +81,14 @@ ${PANEL_BODY}
 `;
 
 export interface PanelServer {
-  /** The page's address for a theme, a language and a view. */
-  url(theme?: PanelTheme, lang?: Lang, view?: 'list' | 'tree'): string;
+  /** The page's address for a theme, a language and a depth. */
+  url(theme?: PanelTheme, lang?: Lang, depth?: 1 | 2): string;
   close(): Promise<void>;
 }
 
 /** Serves the panel's page on 127.0.0.1, explaining `line` of the script `file` (its line box wrapped with `wrap`). */
 export async function servePanel(line = SAMPLE, file = 'cleanup.sh', wrap = false, at = 1): Promise<PanelServer> {
-  // (The state a host sends: kept from a version before the steps, the layers up to the scripts inside.)
-  const msg = `window.MSGS = ${JSON.stringify({ en: message('en', line, file, wrap, at), ja: message('ja', line, file, wrap, at) })};\nwindow.STATE = ${JSON.stringify(panelState({ level: 2 }))};\n`;
+  const msg = `window.MSGS = ${JSON.stringify({ en: message('en', line, file, wrap, at), ja: message('ja', line, file, wrap, at) })};\nwindow.DEEP = ${JSON.stringify({ en: message('en', line, file, wrap, at, 2), ja: message('ja', line, file, wrap, at, 2) })};\n`;
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://x');
     const send = (type: string, body: string | Buffer) => res.writeHead(200, { 'Content-Type': type }).end(body);
@@ -105,7 +107,7 @@ export async function servePanel(line = SAMPLE, file = 'cleanup.sh', wrap = fals
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {
-    url: (theme = 'dark', lang = 'en', view = 'list') => `${base}/panel.html?theme=${theme}&lang=${lang}&view=${view}`,
+    url: (theme = 'dark', lang = 'en', depth = 1) => `${base}/panel.html?theme=${theme}&lang=${lang}&depth=${depth}`,
     close: () => new Promise((r) => server.close(() => r())),
   };
 }

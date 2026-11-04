@@ -115,7 +115,7 @@ header {
 }
 
 html {
-  scroll-padding-top: calc(var(--line-h, 0px) + var(--controls-h, 0px) + 0.25rem);
+  scroll-padding-top: calc(var(--line-h, 0px) + 0.25rem);
   /* The panel keeps the row folded or unfolded in place itself (media/panel.js, `hold`): the browser's own
      anchoring would choose another row. */
   overflow-anchor: none;
@@ -223,7 +223,7 @@ pre#line[role="button"]:focus-visible {
   background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
 }
 
-/* The sentence of the line, "In short", at the top of the Meaning view: plain text, its label in bold. */
+/* The sentence of the line, "In short", at the top of the view: plain text, its label in bold. */
 #short {
   margin: 0 0 0.6rem;
   overflow-wrap: anywhere;
@@ -1087,13 +1087,13 @@ button.twisty:focus-visible {
   outline-offset: 1px;
 }
 
-li.collapsed > .item > .body {
+/* (A folded example stays as its title: one line, a fold of its own.) */
+li.collapsed > .item > .body > :not(details.example) {
   display: none;
 }
 
-/* A box folded by hand is drawn until it has shrunk (panel.js, fold). */
-li.collapsed > .item > .body[data-closing],
-#reading-tree ul[role="group"][hidden][data-closing] {
+/* What is folded by hand is drawn until it has shrunk (panel.js, fold). */
+li.collapsed > .item > .body > [data-closing] {
   display: block;
 }
 
@@ -1221,438 +1221,62 @@ li.collapsed > .item > .body[data-closing],
   .row > .text {
     flex-basis: 100%;
   }
-}
 
-/* ---------------------------------------------------------------- the tree view */
-
-/* The layers of the tree view (src/reading.ts), in the colours of the roles: bash in the keyword colour, a
-   the shell of a script inside in the command colour, a command's reading in the argument colour, a language in the option colour. */
-body {
-  --l-bash: var(--c-keyword);
-  --l-child: var(--c-command);
-  --l-command: var(--c-argument);
-  --l-language: var(--c-option);
-}
-
-.l-bash { --l: var(--l-bash); }
-.l-child { --l: var(--l-child); }
-.l-command { --l: var(--l-command); }
-.l-language { --l: var(--l-language); }
-
-#layers {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.3rem;
-  margin: 0 0 0.5rem;
-}
-
-#layers button {
-  font: inherit;
-  font-size: 0.9em;
-  color: var(--vscode-foreground);
-  background: transparent;
-  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.4));
-  border-radius: 4px;
-  padding: 0.1rem 0.6rem;
-  cursor: pointer;
-}
-
-#layers-label {
-  color: var(--c-muted);
-  font-size: 0.9em;
-  /* (On one line: squeezed, the label would wrap a character per line and never make the row overflow, so
-     fitControls would not hide it.) */
-  white-space: nowrap;
-  flex: none;
-}
-
-#layers button:focus-visible {
-  outline: 2px solid var(--vscode-focusBorder);
-  outline-offset: 1px;
-}
-
-/* The steps of the tree view (media/panel.js, STEPS): the row of controls stays under the line at the top while
-   the tree scrolls under it. Each step has the colour of its reader; the steps shown before the current one keep a
-   light tint, so the row reads as how far the tree is unfolded. */
-#layers {
-  position: sticky;
-  top: var(--line-h, 0px);
-  z-index: 1;
-  background: var(--vscode-editor-background);
-  padding: 0.2rem 0;
-}
-
-#layers.stuck {
-  box-shadow: 0 1px 0 var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
-}
-
-#layers button {
-  min-height: 24px;
-  min-width: 24px;
-  white-space: nowrap;
-}
-
-#layers button[aria-disabled="true"] {
-  opacity: 0.45;
-  cursor: default;
-}
-
-#layers .tp-icon {
-  display: inline-block;
-  min-width: 1em;
-  text-align: center;
-}
-
-.tp-live {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-/* A segmented row of the steps, on one line; where it does not fit (panel.js adds .compact), a stepper whose
-   middle button opens the steps as a menu. */
-#layers {
-  flex-wrap: nowrap;
-}
-
-.step-pick {
-  display: contents;
-}
-
-#steps {
-  display: inline-flex;
-}
-
-#steps button.step {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  border-radius: 0;
-  margin-left: -1px;
-  padding: 0.1rem 0.5rem;
-}
-
-#steps button.step:first-child {
-  border-radius: 4px 0 0 4px;
-  margin-left: 0;
-}
-
-#steps button.step:last-child {
-  border-radius: 0 4px 4px 0;
-}
-
-#layers .num {
-  font-size: 0.85em;
-  color: var(--c-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-#layers button.step.passed {
-  background: color-mix(in srgb, var(--l) 8%, transparent);
-}
-
-#layers button.step[aria-current="step"] {
-  position: relative;
-  border-color: var(--l);
-  background: color-mix(in srgb, var(--l) 22%, transparent);
-}
-
-#layers button.step.empty .short {
-  opacity: 0.6;
-}
-
-/* With forced colours the step's tint is gone: the current step is drawn in the system's highlight. */
-@media (forced-colors: active) {
-  #layers button.step[aria-current="step"] {
-    forced-color-adjust: none;
-    background: Highlight;
-    border-color: Highlight;
-    color: HighlightText;
+  /* (A pipe's sign is one character: what it says goes beside it, on a phone too.) */
+  .row.connector > .code {
+    flex-basis: 1em;
   }
 
-  #layers button.step[aria-current="step"] * {
-    color: HighlightText;
+  .row.connector > .text {
+    flex-basis: calc(100% - 1em - var(--gap) - 1px);
   }
 }
 
-#step-menu {
-  display: none;
-}
+/* ---------------------------------------------------------------- depth 2: what each reader makes of a row */
 
-#layers.tight #layers-label,
-#layers.tighter:not(.compact) #tp-back,
-#layers.tighter:not(.compact) #tp-forward,
-#layers.tighter #steps .num {
-  display: none;
-}
-
-#layers.tighter #steps button.step {
-  padding: 0.1rem 0.4rem;
-}
-
-#layers.compact .step-pick {
-  position: relative;
-  display: inline-flex;
-  min-width: 0;
-  flex: 0 1 auto;
-}
-
-#layers.compact #step-menu {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  min-width: 0;
-  border-color: var(--l);
-}
-
-#step-menu .sm-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-#step-menu .sm-count {
+/* A row's role line (media/panel.js `roleLineOf`): one muted line under its text, at one place on every row. A name's tooltip says
+   who reads it and what the kind is. */
+.role-line,
+.steps {
+  display: block;
+  font-size: 0.86em;
+  line-height: 1.35;
   color: var(--c-muted);
-  font-variant-numeric: tabular-nums;
 }
 
-#layers.compact #steps {
-  display: none;
+.role-chip {
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
 }
 
-#layers.compact.open #steps {
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 0;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 12rem;
-  padding: 0.25rem;
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, rgba(127, 127, 127, 0.4)));
-  border-radius: 4px;
-  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
-}
-
-#layers.compact.open #steps button.step {
+/* (Depth 2 has more rows, each with a line more: they stand closer. The rows keep their order and their text column.) */
+body[data-depth="2"] .row {
   margin: 0;
-  border-radius: 4px;
-  justify-content: flex-start;
+  padding-top: 0.1rem;
+  padding-bottom: 0.1rem;
 }
 
-/* Touch screens and the web page on a phone: larger targets. */
-@media (pointer: coarse) {
-  #layers button {
-    min-height: 40px;
-    min-width: 40px;
-  }
-}
+/* What bash does to a word: a step that does nothing is struck through (and says why); where none acts, the line folds. */
+.steps .step-on { color: var(--vscode-foreground); }
+.steps-lead { font-weight: 500; }
+details.steps > summary { cursor: pointer; }
+details.steps > .fold-body { padding-left: 0.9em; }
 
-@media (max-width: 520px) {
-  html.bx-web #layers button {
-    min-height: 40px;
-    min-width: 40px;
-  }
-}
-
-/* The tree view: an outline. Each row has the code in a pill and the kind on its first line, the text on a line
-   of its own under them. Connectors are drawn with borders: a vertical line per group of children, under the
-   twisty of their parent, and an elbow to each child at the middle of its first line; where a new reader takes
-   over, the item and what lies under it have the layer's tint.
-   The lengths below place the lines: a group is indented by --t-indent, a row's twisty is --t-tw wide at
-   --t-twisty, and its code starts at --t-code. */
-#reading-tree {
-  --t-indent: 1.2rem;
-  --t-twisty: 0.3rem;
-  --t-tw: 0.9rem;
-  --t-code: 1.3rem;
-  --t-pad: 0.15rem;
-  /* Where a group's line is, from the left of each child: under the middle of the parent's twisty. */
-  --t-line: calc(var(--t-twisty) + var(--t-tw) / 2 - var(--t-indent));
-  /* The middle of a row's first line (the rows have the body's line height, 1.5). */
-  --t-elbow: calc(var(--t-pad) + 0.75em);
-  --t-guide: color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
-  --t-bg: var(--vscode-editor-background, Canvas);
-}
-
-#reading-tree,
-#reading-tree ul {
-  list-style: none;
+/* A pipe between two commands: one line, its role beside what goes from one to the other. */
+body[data-depth="2"] .row.connector {
   margin: 0;
-  padding: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
-#reading-tree ul {
-  padding-left: var(--t-indent);
+.row.connector > .text > .role-line {
+  display: inline;
+  margin-left: 0.5em;
 }
 
-/* A band where a reader takes over: the item and what lies under it, in its layer's tint. The tint is opaque
-   (the layer's colour mixed with the background, not laid over it), so a band in a band has the same tint as
-   one at the top: the text measures the same on every band (at least 4.5:1, test/contrast.test.ts).
-   Its edges show where the reader's part starts and ends: a rule in the layer's colour down its left side, and a
-   hairline at its top and its bottom, mixed with the background but still 3:1 against the background and every
-   tint (test/contrast.test.ts). No edge on the right: nested bands end at the same right edge. Borders, not a
-   shadow, so the row under the pointer does not paint over them; the negative margins give back the room they
-   take, so the content and the outline's lines stay where they are. */
-#reading-tree li.band {
-  background: color-mix(in srgb, var(--l) 6%, var(--t-bg));
-  border-radius: 4px;
-  border: 1px solid color-mix(in srgb, var(--l) 80%, var(--t-bg));
-  border-left: 2px solid var(--l);
-  border-right: 0;
-  margin: -1px 0 -1px -2px;
-}
-
-#reading-tree ul[role="group"] > li {
-  position: relative;
-}
-
-#reading-tree ul[role="group"] > li::before,
-#reading-tree ul[role="group"] > li::after {
-  content: "";
-  position: absolute;
-  left: var(--t-line);
-  pointer-events: none;
-}
-
-/* The group's line, along each child; it stops at the last child's elbow. */
-#reading-tree ul[role="group"] > li::before {
-  top: 0;
-  bottom: 0;
-  border-left: 1px solid var(--t-guide);
-}
-
-#reading-tree ul[role="group"] > li:last-child::before {
-  bottom: auto;
-  height: var(--t-elbow);
-}
-
-/* The elbow, to the child's twisty, or to its code when it has none. */
-#reading-tree ul[role="group"] > li::after {
-  top: var(--t-elbow);
-  width: calc(var(--t-twisty) - var(--t-line) - 0.1rem);
-  border-top: 1px solid var(--t-guide);
-}
-
-#reading-tree ul[role="group"] > li:not([aria-expanded])::after {
-  width: calc(var(--t-code) - var(--t-line) - 0.2rem);
-}
-
-#reading-tree li:focus {
-  outline: none;
-}
-
-.trow {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  column-gap: 0.5rem;
-  /* The twisty sits in the left padding: the text under the code lines up with it. */
-  padding: var(--t-pad) 0.4rem var(--t-pad) var(--t-code);
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-/* The code and the kind, which wrap together; the reader's name and the links keep to the first line. */
-.trow .thead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 0.5rem;
-  min-width: 0;
-}
-
-.trow .tright {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-}
-
-.trow .twisty {
-  position: absolute;
-  left: var(--t-twisty);
-  width: var(--t-tw);
-  text-align: center;
-}
-
-#reading-tree li:focus-visible > .trow {
-  outline: 2px solid var(--vscode-focusBorder);
-  outline-offset: -2px;
-}
-
-.trow.active {
-  background: var(--vscode-list-hoverBackground);
-}
-
-.trow .chip {
-  color: var(--l);
-  font-weight: 600;
-  font-size: 0.85em;
-  white-space: nowrap;
-}
-
-/* The pill has the background of the page, not a code block's grey: its code measures as on the page. */
-.trow .tcode {
-  font-family: var(--vscode-editor-font-family);
-  background: var(--t-bg);
-  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
-  border-radius: 4px;
-  padding: 0 0.35em;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-
-.trow .text {
-  grid-column: 1 / -1;
-  min-width: 0;
-  color: var(--vscode-foreground);
-  overflow-wrap: anywhere;
-}
-
-.trow .text.about {
-  color: var(--c-muted);
-  font-style: italic;
-}
-
-.trow .band-label {
-  color: var(--l);
-  font-size: 0.75em;
-  font-weight: 600;
-  white-space: nowrap;
-  border: 1px solid color-mix(in srgb, var(--l) 60%, transparent);
-  border-radius: 3px;
-  padding: 0 0.3em;
-}
-
-/* The tree view's highlight in the line at the top. */
-pre#line span.mark {
-  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
-  border-radius: 2px;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .trow {
-    transition: background-color 0.15s;
-  }
-}
-
-/* High contrast: no tints, a solid edge round each band instead (VS Code's themes, and the system's forced
-   colours). An outline, not a border: it takes no room, so the lines stay where they are. */
-body.vscode-high-contrast #reading-tree li.band,
-body.vscode-high-contrast-light #reading-tree li.band {
-  background: none;
-  border: 0;
-  margin: 0;
-  outline: 1px solid var(--l);
-  outline-offset: -1px;
-}
+/* (A fold's content, which moves as a whole: panel.js `foldingDetails`.) */
+.fold-body { display: block; }
 
 /* What a command name is (media/panel.js `nameBadge`, src/namefacts.ts), in both views: a badge with the kind's
    word after the name, then who looks the name up when another command does, and a muted line on the other
@@ -1704,11 +1328,6 @@ body.vscode-high-contrast-light #reading-tree li.band {
   font-size: 0.9em;
   margin-top: 0.1rem;
   overflow-wrap: anywhere;
-}
-
-.trow .nk-also {
-  grid-column: 1 / -1;
-  min-width: 0;
 }
 
 /* The value of an expansion where it runs (media/panel.js `valueLine`, docs/design/expansion-values.md): a line under
@@ -1772,21 +1391,8 @@ body.vscode-high-contrast-light #reading-tree li.band {
     color: CanvasText;
   }
 
-  #reading-tree li.band {
-    background: none;
-    border: 0;
-    margin: 0;
-    outline: 1px solid CanvasText;
-    outline-offset: -1px;
-  }
-
-  #reading-tree ul[role="group"] > li::before,
-  #reading-tree ul[role="group"] > li::after {
-    border-color: CanvasText;
-  }
-
-  .trow .chip,
-  .trow .band-label {
+  .role-line,
+  .steps {
     color: CanvasText;
   }
 
@@ -1813,45 +1419,11 @@ body.vscode-high-contrast-light #reading-tree li.band {
     color: CanvasText;
   }
 
-  .trow .band-label {
-    border-color: CanvasText;
-  }
-
-  /* What backgrounds say elsewhere (the row in focus or under the pointer, the pressed button, the marked
-     characters) is said with an outline or the system's highlight colours. */
-  .trow.active {
-    outline: 2px solid Highlight;
-    outline-offset: -2px;
-  }
-
+  /* What backgrounds say elsewhere (the pressed button) is said with an outline or the system's highlight colours. */
   .vc-options button[aria-pressed="true"],
-  .tb[aria-pressed="true"],
-  #layers button[aria-pressed="true"] {
+  .tb[aria-pressed="true"] {
     outline: 2px solid Highlight;
     outline-offset: 1px;
     border-color: Highlight;
-  }
-
-  pre#line span.mark {
-    forced-color-adjust: none;
-    background: Highlight;
-    color: HighlightText;
-  }
-}
-
-/* A phone: a smaller indent. */
-@media (max-width: 480px) {
-  #reading-tree {
-    --t-indent: 0.9rem;
-    --t-twisty: 0.15rem;
-    --t-tw: 0.8rem;
-    --t-code: 1.05rem;
-  }
-}
-
-/* A narrow VS Code panel: a long kind ("command name · program") deep in the tree wraps, not past the edge. */
-@media (max-width: 340px) {
-  .trow .chip {
-    white-space: normal;
   }
 }

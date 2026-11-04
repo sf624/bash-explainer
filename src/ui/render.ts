@@ -6,7 +6,6 @@ import { codeSpan, joinParts, LabelPart } from '../label';
 import { referencesWith } from '../references';
 import { LEVELS } from '../levels';
 import type { Note } from '../messages';
-import type { ReadingNode } from '../reading';
 import { errorColour, Role, roleColour, ThemeKind } from './palette';
 import { ui } from './texts';
 import { type NoteBasis, partBasis, rowPlain, tokenRow } from './tokenRow';
@@ -27,15 +26,6 @@ export function noteRefs(ex: LineExplanation, note: string): readonly string[] |
 export function noteBasis(ex: LineExplanation, note: string, lang: Lang): NoteBasis | undefined {
   const f = ex.facts?.find((g) => g.text === note);
   return f && partBasis(f, lang);
-}
-
-/** A node of Reading as the panel draws it: with the chip and the try-it of its basis (`partBasis`), if any. */
-export type BasisShown<T> = T & { basisShown?: NoteBasis };
-
-/** Reading's tree as the panel draws it: each node with its chip and try-it in the language, where it rests on bash's behaviour rather than the manual. */
-export function readingWithBasis(node: ReadingNode, lang: Lang): BasisShown<ReadingNode> {
-  const b = partBasis(node, lang);
-  return { ...node, ...(b ? { basisShown: b } : {}), children: node.children.map((c) => readingWithBasis(c, lang)) };
 }
 
 /**

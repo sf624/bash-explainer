@@ -1,4 +1,4 @@
-// The reading tree of a line (src/reading.ts), which the panel's tree view draws: who reads each part, in layers.
+// The reading tree of a line (src/reading.ts), which depth 2 of the panel reads: who reads each part, in layers.
 // The layers come from the tree and from `Token.origin`, which the analyzer sets where it makes each token.
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
@@ -8,7 +8,7 @@ import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainHostedLine, extractShell, type HostKind } from '../src/hosts';
 import { readingNodes, readingTree, type ReadingNode } from '../src/reading';
-import { type DrawnNode, readingView } from '../src/ui/readingSteps';
+import { chipOf } from '../src/ui/panelRoles';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { panelUpdate } from '../src/ui/panelView';
 import { ui } from '../src/ui/texts';
@@ -969,11 +969,10 @@ describe('the origins of the tokens', () => {
 });
 
 describe('the reading tree in the panel and in host files', () => {
-  it('is sent to the panel with the sections its nodes cite', () => {
+  it('gives the panel the sections its nodes cite', () => {
     const ex = explain('x=1');
     const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: 'x=1', choice: {}, placement: 'first', animations: true });
-    // (As drawn, with what each node shows: src/ui/readingSteps.ts; the explanation is sent without it.)
-    assert.deepStrictEqual(readingNodes(msg.reading!.root).map((n) => n.label), readingNodes(ex.reading!).map((n) => n.label));
+    // (The explanation is sent without it: the rows hold what depth 2 reads.)
     assert.ok(!('reading' in msg.explanation));
     assert.ok(msg.manual['3.4']);
     assert.ok(!panelUpdate({ lang: 'en', explanation: analyzer.explainLine(parser.parse('x=1'), 0, 'bash'), file: 'a.sh', line: 0, lineText: 'x=1', choice: {}, placement: 'first', animations: true }).manual['3.2.2']);
@@ -1065,10 +1064,10 @@ describe('the reading tree in the panel and in host files', () => {
     it('says so in the panel: the badge names the option, in both languages', () => {
       assert.strictEqual(ui.en.panel.tree.valueFor.replace('{flag}', '-f'), 'value of -f');
       assert.strictEqual(ui.ja.panel.tree.valueFor.replace('{flag}', '-f'), '-f の値');
-      // (The chip the panel draws: src/ui/readingSteps.ts.)
+      // (The chip the panel draws: src/ui/panelRoles.ts.)
       for (const [lang, chip] of [['en', 'value of -f'], ['ja', '-f の値']] as const) {
         const tree = new Analyzer(lang).explainLine(parser.parse('tar -czf out.tgz x'), 0, 'bash', { reading: true }).reading!;
-        assert.strictEqual((readingNodes(readingView(tree, lang).root) as DrawnNode[]).find((n) => n.layer === 'command' && n.label === 'out.tgz')?.chip, chip);
+        assert.strictEqual(chipOf(readingNodes(tree).find((n) => n.layer === 'command' && n.label === 'out.tgz')!, lang), chip);
       }
     });
 

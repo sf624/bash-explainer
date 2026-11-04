@@ -47,14 +47,15 @@ export const ui = {
       tryIt: '端末で試す', tryItHint: '端末に貼り付けて実行するコマンド。ここでは実行しない', prints: '出力', copyCode: 'コピー', copiedCode: 'コピーしました',
       // (The fold button of a row with parts, named by the row's label; the links' note on where they open: `linkNote`, src/ui/panelView.ts.)
       partsOf: '{name} の内訳', opensTab: '（新しいタブで開く）', opensBrowser: '（ブラウザで開く）',
-      views: '表示', listView: '意味', treeView: '読まれ方',
+      // (The depths of the panel, in its view slot: the names on the control, and the full ones, its tooltip and accessible name.)
+      views: '深さ', depths: { 1: { short: '何をする', full: '何をするか' }, 2: { short: '読まれ方', full: 'bash がどう読むか' } },
       // (The short words of the panel's tools, each contained in the tool's name: src/ui/panelHead.ts.)
       words: { collapse: '折りたたむ', expand: '展開する', copy: 'コピー', reference: '早見表', referenceShort: '早見表' },
-      // (The sentence of the line at the top of the Meaning view, `LineExplanation.sentence`.)
+      // (The sentence of the line at the top of the view, `LineExplanation.sentence`.)
       inShort: 'ひとことで',
       // (The box of the line's problems: src/ui/panelProblems.ts.)
       problems: {
-        title: 'この行の問題', more: '詳しく', fix: '修正案', toRow: '解説の行へ移動', toggleMore: '詳しい説明を開閉', toProblem: 'この行の問題へ移動',
+        title: 'この行の問題', more: '詳しく', fix: '修正案', toRow: '解説の行へ移動', toProblem: 'この行の問題へ移動',
         onLine: '行 {n} の{word}', toLine: '行 {n} へ移動',
       },
       // (What a screen reader hears between the reading of a worked example's highlighted part and the part itself.)
@@ -79,15 +80,15 @@ export const ui = {
           asWritten: 'プログラムが書いたとおりに受け取る単語', changed: 'プログラムが変わった形で受け取る単語', hole: '実行するまで分からない値', many: '1 つとは限らない単語',
         },
       },
+      // (What bash does to a word, on a row of depth 2: src/ui/panelSteps.ts.)
+      steps: {
+        lead: 'bash の手順:', summary: '展開はなし', maybe: '{kind}（ありうる）', none: 'なし', and: '、',
+        kinds: { brace: 'ブレース展開', tilde: 'チルダ展開', parameter: 'パラメータ展開', command: 'コマンド置換', arithmetic: '算術展開', process: 'プロセス置換', split: '単語分割', glob: 'グロブ', 'quote-removal': 'クォート除去' },
+        why: { quoted: 'クォート内', context: 'ここでは行わない', cond: '`[[ ]]` の中では行わない', assign: '代入では行わない', noglob: '`set -f`', 'ifs-empty': 'IFS が空', 'posix-mode': 'POSIX モード', 'braceexpand-off': 'braceexpand が無効', dialect: 'このシェルにはない', zsh: 'zsh' },
+      },
+      // (A row between two commands of a pipeline.)
+      connector: { pipe: '{from} の標準出力 → {to} の標準入力', both: '{from} の標準出力と標準エラー出力 → {to} の標準入力' },
       tree: {
-        label: '行の各部分を誰が読むか', show: '表示',
-        // The steps of the tree, from the line alone to every layer: their short names (the buttons) and their names.
-        steps: [['行', '行'], ['リスト', 'リストとパイプライン'], ['コマンド', 'コマンド'], ['単語', '単語'], ['単語の中', '単語の中身（クォートと展開）'],
-          ['スクリプト', '中のスクリプト'], ['引数', '各コマンドによる引数の読み方'], ['言語', '言語']],
-        stepper: {
-          group: 'ステップ', back: '前のステップ', forward: '次のステップ',
-          step: 'ステップ {i}/{n}：{name}', empty: 'この行では増えるものなし', jump: 'ステップを選ぶ',
-        },
         reads: '{name} が読む',
         bands: { bash: 'bash', child: { subshell: 'サブシェル', shell: '新しいシェル', same: '同じシェルでもう一度', remote: 'リモートのシェル', container: 'コンテナのシェル' } },
         readers: {
@@ -100,7 +101,7 @@ export const ui = {
           promptLanguage: 'bash 自身が、プロンプトを表示するたびに読む',
         },
         kinds: {
-          line: 'bash がこの行を読む', script: '中のスクリプト', list: 'リスト', andList: 'AND リスト', orList: 'OR リスト', pipeline: 'パイプライン', command: '単純コマンド', compound: '複合コマンド',
+          script: '中のスクリプト', list: 'リスト', andList: 'AND リスト', orList: 'OR リスト', pipeline: 'パイプライン', command: '単純コマンド', compound: '複合コマンド',
           clause: '節', coprocess: 'コプロセス', function: '関数定義', commandName: 'コマンド名', aliasWord: 'エイリアス（読むときに置き換わる）', expandedName: '最初の単語', option: 'オプション', argument: '引数',
           assignmentArgument: '代入の引数', word: '単語', name: '名前', assignment: '代入', redirect: 'リダイレクト', heredoc: 'ヒアドキュメント', quote: 'クォート',
           expansion: '展開', substitution: '置換', arithmetic: '算術式展開', brace: 'ブレース展開', operator: '演算子', keyword: '予約語',
@@ -117,7 +118,6 @@ export const ui = {
           number: '数値', comment: 'コメント', shebang: 'シバン', assignment: '代入', test: '条件', pattern: 'パターン', block: 'ブロック', error: 'エラー',
         },
         about: {
-          line: 'bash はこの行をコマンドに分け、単純コマンドをさらに代入・単語・リダイレクトに分ける。',
           script: 'シェルがこのテキストを独立したスクリプトとしてもう一度解析し、実行する。`$( )`・`<( )`・バッククォートではサブシェルが実行する。',
           list: 'リスト: `;`・`&`・改行で区切ったパイプラインの並び。`&&` と `||` のほうが強く結び付くので、区切られた1つ1つはパイプラインか AND・OR リスト。`;` はその前の部分の終了を待ち、`&` はその前の部分だけをバックグラウンドで実行する。',
           andList: 'AND リスト: `a && b` は `a` が成功（終了ステータス 0）したときだけ `b` を実行する。`&&` と `||` が続くときは左から読む。',
@@ -186,12 +186,12 @@ export const ui = {
       editHint: 'Editable; the result updates as you type', noMatch: 'Nothing found',
       tryIt: 'Try it in your terminal', tryItHint: 'A command to paste into your terminal; it is not run here', prints: 'Output', copyCode: 'Copy', copiedCode: 'Copied',
       partsOf: 'Parts of {name}', opensTab: '(opens in a new tab)', opensBrowser: '(opens in the browser)',
-      views: 'View', listView: 'Meaning', treeView: 'Reading',
+      views: 'Depth', depths: { 1: { short: 'Does', full: 'What it does' }, 2: { short: 'Reads', full: 'How bash reads it' } },
       words: { collapse: 'Collapse', expand: 'Expand', copy: 'Copy', reference: 'Reference', referenceShort: 'Ref' },
       inShort: 'In short',
       // (The box of the line's problems: src/ui/panelProblems.ts.)
       problems: {
-        title: 'Problems on this line', more: 'More', fix: 'Fix', toRow: 'Go to its row', toggleMore: 'Show or hide the details', toProblem: 'Go to the problem',
+        title: 'Problems on this line', more: 'More', fix: 'Fix', toRow: 'Go to its row', toProblem: 'Go to the problem',
         onLine: '{word} on line {n}', toLine: 'Go to line {n}',
       },
       saidSep: ': ',
@@ -214,15 +214,14 @@ export const ui = {
           asWritten: 'the program receives this word exactly as written', changed: 'the program receives this word changed', hole: 'a value known only when the line runs', many: 'not always one word',
         },
       },
+      steps: {
+        lead: "bash's steps:", summary: 'nothing expands', maybe: '{kind} (maybe)', none: 'none', and: ', ',
+        kinds: { brace: 'brace expansion', tilde: 'tilde expansion', parameter: 'parameter expansion', command: 'command substitution', arithmetic: 'arithmetic expansion', process: 'process substitution', split: 'word splitting', glob: 'globbing', 'quote-removal': 'quote removal' },
+        why: { quoted: 'quoted', context: 'not done here', cond: 'not in `[[ ]]`', assign: 'not in an assignment', noglob: '`set -f`', 'ifs-empty': 'IFS is empty', 'posix-mode': 'POSIX mode', 'braceexpand-off': 'braceexpand is off', dialect: 'not in this shell', zsh: 'zsh' },
+      },
+      connector: { pipe: 'stdout of {from} → stdin of {to}', both: 'stdout and stderr of {from} → stdin of {to}' },
       tree: {
-        label: 'Who reads each part of the line', show: 'Show',
-        steps: [['Line', 'the line'], ['Lists', 'lists and pipelines'], ['Commands', 'commands'], ['Words', 'words'], ['Inside', 'inside the words (quotes and expansions)'],
-          ['Scripts', 'scripts inside'], ['Arguments', 'how each command reads its arguments'], ['Languages', 'languages']],
-        stepper: {
-          group: 'Steps', back: 'Previous step', forward: 'Next step',
-          step: 'Step {i} of {n}: {name}', empty: 'Adds nothing on this line', jump: 'Choose a step',
-        },
-        reads: '{name} reads',
+        reads: '{name} reads it',
         bands: { bash: 'bash', child: { subshell: 'subshell', shell: 'new shell', same: 'same shell, again', remote: 'remote shell', container: 'container shell' } },
         readers: {
           bash: 'bash parses it',
@@ -234,7 +233,7 @@ export const ui = {
           promptLanguage: 'bash reads it itself, each time it prints the prompt',
         },
         kinds: {
-          line: 'bash reads the line', script: 'script inside', list: 'list', andList: 'AND list', orList: 'OR list', pipeline: 'pipeline', command: 'simple command', compound: 'compound command',
+          script: 'script inside', list: 'list', andList: 'AND list', orList: 'OR list', pipeline: 'pipeline', command: 'simple command', compound: 'compound command',
           clause: 'clause', coprocess: 'coprocess', function: 'function definition', commandName: 'command name', aliasWord: 'alias, replaced when the line is read', expandedName: 'first word', option: 'option', argument: 'argument',
           assignmentArgument: 'assignment argument', word: 'word', name: 'name', assignment: 'assignment', redirect: 'redirection', heredoc: 'here-document', quote: 'quotes',
           expansion: 'expansion', substitution: 'substitution', arithmetic: 'arithmetic expansion', brace: 'brace expansion', operator: 'operator', keyword: 'reserved word',
@@ -251,7 +250,6 @@ export const ui = {
           number: 'number', comment: 'comment', shebang: 'shebang', assignment: 'assignment', test: 'condition', pattern: 'pattern', block: 'block', error: 'error',
         },
         about: {
-          line: 'bash splits the line into commands, then each simple command into assignments, words and redirections.',
           script: 'The shell parses this text again, as a script of its own, and runs it: a subshell does, in `$( )`, `<( )` and backquotes.',
           list: 'A list: pipelines separated by `;`, `&` or newlines. `&&` and `||` bind tighter, so each part is a pipeline or an AND or OR list. `;` waits for the part before it to end; `&` runs that part alone in the background.',
           andList: 'An AND list: `a && b` runs `b` only if `a` succeeds (status 0). A chain of `&&` and `||` is read from the left.',

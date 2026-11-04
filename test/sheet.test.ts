@@ -3,6 +3,7 @@
 // (test/web-sheet.test.ts).
 import * as assert from 'assert';
 import { cursorFollows, problemCounts, settle, sheetForms, sheetHeight, type Snap, snapHeights, tapped, keyed } from '../src/ui/sheet';
+import { viewControlForms } from '../src/ui/panelHead';
 import { viewControl } from '../src/ui/panelView';
 
 describe('the phone\'s sheet as data', () => {
@@ -102,7 +103,7 @@ describe('the phone\'s sheet as data', () => {
   it('gives the header row\'s forms in order: the tools, then "Ref", then the highest level only, then the line', () => {
     for (const lang of ['en', 'ja'] as const) {
       const control = viewControl({}, lang);
-      const [segments, menu] = [{ kind: 'segments' }, { kind: 'menu', button: control.options.map((o) => ({ text: o.short, name: `${control.label}: ${o.full}` })) }];
+      const [segments, menu] = viewControlForms(control);
       assert.deepStrictEqual(sheetForms(control), [
         { view: segments, tools: 'under', line: true, ref: 'full', counts: 'all' },
         { view: menu, tools: 'under', line: true, ref: 'full', counts: 'all' },

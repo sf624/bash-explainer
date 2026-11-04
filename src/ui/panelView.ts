@@ -7,13 +7,12 @@ import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
 import type { DocumentIssue, IssueFilter, ShellDocument } from '../document';
 import { LEVELS, problemLevel } from '../levels';
-import { ExamplePlacement, lineOwners, noteBasis, noteRefs, notesByLevel, placeExamples, readingWithBasis } from './render';
+import { ExamplePlacement, lineOwners, noteBasis, noteRefs, notesByLevel, placeExamples } from './render';
 import { boxProblems, isListed, problemsAround } from './panelProblems';
-import { rowModel, wholeLineExamples } from './panelRows';
+import { type Depth, rowModel, wholeLineExamples } from './panelRows';
 import { ui } from './texts';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
-import { levelOf, readingView, StepName, stepNames, STEPS } from './readingSteps';
 import { lineParts, lineRuns } from './lineBox';
 import { panelTools, viewControlForms } from './panelHead';
 import type { PanelBase } from './themePalette';
@@ -24,7 +23,7 @@ import type { PanelBase } from './themePalette';
 export type FromPanel =
   | { type: 'ready' }
   | { type: 'highlight'; span: Span | null }
-  /** `preserveFocus`: the tree view's keys and clicks select the range without taking the focus from the panel. */
+  /** `preserveFocus`: the range is selected without taking the focus from the panel. */
   | { type: 'reveal'; span: Span; preserveFocus?: boolean }
   | { type: 'openSettings' }
   /** `inputs`: the text of each input box, in order. */
@@ -32,7 +31,7 @@ export type FromPanel =
   | { type: 'copy' }
   | { type: 'override'; key: 'shell' | 'yq'; value: string }
   | { type: 'reference' }
-  /** The view and step chosen: the host keeps them for the next visit (VS Code's global state, the web page's storage), builds the tree only in the tree view, and sends them back as `panelState` when the panel starts. */
+  /** The depth chosen: the host keeps it for the next visit (VS Code's global state, the web page's storage), builds the reading tree only at depth 2 (`needsReading`), and sends it back as `panelState` when the panel starts. */
   | { type: 'panelState'; state: PanelState }
   /** What the panel draws text on, and its own colours, in the theme in use (asked for by `themeWatch`). */
   | { type: 'themeBase'; base: PanelBase }
@@ -42,35 +41,30 @@ export type FromPanel =
 /** An icon button of the panel's header: its name (tooltip and accessible name) and its icon. */
 export interface HeaderButton { name: string; icon: string }
 
-/**
- * What the panel remembers per viewer: the list or the tree view, and the step of the tree it shows (1–8: the line
- * alone up to every layer). `level` (1–4: the layers) is what it kept before the steps, read when there is no step.
- */
-export interface PanelState { view?: 'list' | 'tree'; level?: number; step?: number }
+/** What the panel remembers per viewer: how deep it reads the line. */
+export interface PanelState { depth?: Depth }
 
 /**
- * A state as kept (VS Code's global state, the web page's storage, a message): the view, the step (from `level`
- * when there is none), and `level` for a version from before the steps. What is not one of them is left out.
+ * A state as kept (VS Code's global state, the web page's storage, a message): the depth. A version from before the depths kept a view:
+ * Reading opens at depth 2, Meaning at depth 1. What is none of them is left out.
  */
 export function panelState(kept: unknown): PanelState {
   const s = (kept && typeof kept === 'object' ? kept : {}) as Record<string, unknown>;
-  const view = s.view === 'tree' || s.view === 'list' ? s.view : undefined;
-  const valid = (n: unknown, max: number): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= max;
-  const step = valid(s.step, STEPS) ? s.step : valid(s.level, 4) ? s.level + 4 : undefined;
-  return { ...(view ? { view } : {}), ...(step ? { step, level: levelOf(step) } : {}) };
+  const depth = s.depth === 1 || s.depth === 2 ? s.depth : s.view === 'tree' ? 2 : s.view === 'list' ? 1 : undefined;
+  return depth ? { depth } : {};
 }
 
-/** Whether the explanation needs the reading tree for the state: the hosts build it only then (the tree view). */
+/** Whether the explanation needs the reading tree for the state: the hosts build it only then (depth 2). */
 export function needsReading(state: PanelState): boolean {
-  return state.view === 'tree';
+  return (state.depth ?? PANEL_DEFAULTS.depth) === 2;
 }
 
 /** An option of the view control (docs/design/panel-redesign.md, 6.1). */
 export interface ViewOption {
-  id: 'list' | 'tree';
-  /** An icon drawn before the short name (none yet: the views are named in words). */
+  id: 'depth1' | 'depth2';
+  /** An icon drawn before the short name (none yet: the depths are named in words). */
   icon?: string;
-  /** The option's digit, drawn before its name; the name only when the option is shown (none yet: the depths of P8 have them). */
+  /** The option's digit, drawn before its name; the name only when the option is shown. */
   digit?: string;
   /** The name on the control. */
   short: string;
@@ -79,8 +73,6 @@ export interface ViewOption {
   pressed: boolean;
   /** What a press changes in the state: a host applies it without knowing what the option means. */
   sets: PanelState;
-  /** The steps the option has: Reading's eight, drawn in the panel's own row. */
-  steps?: StepName[];
 }
 
 /** The panel's view control as data: the web page draws its view switch from it, the panel its own header. */
@@ -90,8 +82,8 @@ export interface ViewControl {
   options: ViewOption[];
 }
 
-/** What the panel shows when the state does not say: the list view, at the last step (media/panel.js starts so). */
-export const PANEL_DEFAULTS: Required<Pick<PanelState, 'view' | 'step'>> = { view: 'list', step: STEPS };
+/** What the panel shows when the state does not say: depth 1 (media/panel.js starts so). */
+export const PANEL_DEFAULTS: Required<PanelState> = { depth: 1 };
 
 /**
  * Whether an option is the one shown: the state, with its defaults, has everything the option `sets`. media/panel.js
@@ -102,16 +94,13 @@ export function isPressed(state: PanelState, sets: PanelState): boolean {
   return (Object.keys(sets) as (keyof PanelState)[]).every((k) => shown[k] === sets[k]);
 }
 
-/** The view control for a state: Meaning | Reading, the one shown pressed. */
+/** The view control for a state: the depths, the one shown pressed. */
 export function viewControl(state: PanelState, lang: Lang): ViewControl {
   const tp = ui[lang].panel;
   const option = (o: Omit<ViewOption, 'pressed'>): ViewOption => ({ ...o, pressed: isPressed(state, o.sets) });
   return {
     label: tp.views,
-    options: [
-      option({ id: 'list', short: tp.listView, full: tp.listView, sets: { view: 'list' } }),
-      option({ id: 'tree', short: tp.treeView, full: tp.treeView, sets: { view: 'tree' }, steps: stepNames(lang) }),
-    ],
+    options: ([1, 2] as const).map((depth) => option({ id: `depth${depth}`, digit: String(depth), short: tp.depths[depth].short, full: tp.depths[depth].full, sets: { depth } })),
   };
 }
 
@@ -142,7 +131,7 @@ export interface PanelLine {
   shown?: IssueFilter;
   /** The web page's panel, whose links open in a new tab (VS Code opens them in the browser). */
   web?: boolean;
-  /** The view and step chosen, for the view control (`viewControl`). */
+  /** The depth chosen, for the rows and the view control (`viewControl`). */
   state?: PanelState;
 }
 
@@ -157,7 +146,7 @@ function manualLinks(lang: Lang, ex: LineExplanation): Record<string, { text: st
     t.children.forEach(walk);
   };
   ex.items.forEach(walk);
-  // (And those of the tree view: the sections of bash's own reading, where no token says them.)
+  // (And those of the role lines: the sections of bash's own reading, where no token says them.)
   for (const n of ex.reading ? readingNodes(ex.reading) : []) for (const id of n.refs ?? []) ids.add(id);
   return Object.fromEntries([...ids].map((id) => {
     const r = reference(id)!;
@@ -187,11 +176,12 @@ export function panelUpdate(p: PanelLine) {
   // (The example of the whole line is drawn apart, folded: above the rows where examples come first, else with those at the end.)
   const whole = wholeLineExamples(ex);
   const others = { ...ex, examples: ex.examples.filter((e) => !whole.includes(e)) };
-  const { reading, items, ...explanation } = p.placement === 'bottom' ? others : placeExamples(others);
+  const { reading: _reading, items, ...explanation } = p.placement === 'bottom' ? others : placeExamples(others);
   const issues = p.issues ?? [];
   const shown = p.shown ?? (() => true);
-  // (The rows of depth 1, the Meaning tab; depth 2 and the switch come with P8 and P9.)
-  const model = rowModel({ ...ex, items }, { depth: 1, receives: false }, lang);
+  // (The rows of the depth chosen; the switch comes with P9.)
+  const depth = p.state?.depth ?? PANEL_DEFAULTS.depth;
+  const model = rowModel({ ...ex, items }, { depth, receives: false }, lang);
   const box = boxProblems(ex, model.places, lang, shown);
   return {
     type: 'update',
@@ -221,8 +211,7 @@ export function panelUpdate(p: PanelLine) {
     lineRuns: lineOwners(p.lineText, ex.line, items).map(({ from, to, owner }) => ({ from, to, ...(owner ? { kind: owner.kind, row: model.places.get(owner) } : {}) })),
     // (The look of a warning on a row, from the level table.)
     levels: Object.fromEntries(Object.entries(LEVELS).map(([level, { className, codicon, name }]) => [level, { className, icon: codicon, name: name[lang] }])),
-    // (Reading's tree, with what each node and each step shows, and the chip and try-it of what it rests on: src/ui/readingSteps.ts.)
-    reading: reading && readingView(readingWithBasis(reading, lang), lang),
+    depth,
     control: viewControl(p.state ?? {}, lang),
     // (The forms the panel's own header may draw the view control in, widest first, and the names and icons of its tools: src/ui/panelHead.ts.)
     viewForms: viewControlForms(viewControl(p.state ?? {}, lang)),
@@ -283,10 +272,6 @@ export const PANEL_BODY = `<div id="top">
   <div id="notes"></div>
   <div id="whole-line"></div>
   <ul id="tree"></ul>
-  <section id="reading" hidden>
-    <div id="layers" role="group"><span id="layers-label"></span></div>
-    <ul id="reading-tree" role="tree"></ul>
-  </section>
   <div id="examples"></div>
   <p id="empty" hidden></p>
 </main>

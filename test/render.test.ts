@@ -168,11 +168,10 @@ describe('links to the Bash manual', () => {
     assert.ok(plainPartHover(ex, chain, 'en', '').includes(`\n_${line}_\n`));
     const prefix = new Analyzer('en').explainLine(parser.parse('UID=0 echo hi'), 0);
     assert.match(plainPartHover(prefix, [prefix.items[0]], 'en', ''), /^- `UID=0` — .*\\\n {2}_Differs from the manual · checked with bash 5\.2 and 5\.3 · Try it in your terminal: /m);
-    // The panel's rows and Reading's nodes, with the chip's words in the panel's language.
+    // The panel's rows, with the chip's words in the panel's language.
     const msg = panelUpdate({ lang: 'ja', explanation: new Analyzer('ja').explainLine(parser.parse('BASH_XTRACEFD=7'), 0, 'bash', { reading: true }), file: 'a.sh', line: 0, lineText: 'BASH_XTRACEFD=7', choice: {}, detected: said('bash'), placement: 'first', animations: true });
     const shown = msg.rows[0];
     assert.deepStrictEqual([shown.basis?.label, shown.basis?.tryIt.output], ['マニュアルの記述と異なる・bash 5.2・5.3 で確認', 'fd 3 is still open']);
-    assert.ok(readingNodes(msg.reading!.root).some((n) => (n as { basisShown?: unknown }).basisShown));
     // With the setting off, none.
     const off = new Analyzer('en').explainLine(parser.parse('BASH_XTRACEFD=7'), 0, 'bash', { basis: false });
     assert.ok(!toPlainMarkdown(off, 'BASH_XTRACEFD=7', 'a.sh:1').includes('Differs from the manual'));

@@ -33,7 +33,7 @@ export interface PanelHost {
 
 export class PanelBridge {
   private ready = false;
-  /** The panel's view and step: from storage, then as the panel says. */
+  /** The panel's depth: from storage, then as the panel says. */
   private state: PanelState = panelState(readStoredObject(STORAGE_KEYS.panel));
   /** The panel's header on the page (none in panel mode, or on the compare page). */
   private readonly head: PanelHead | undefined;
@@ -72,7 +72,7 @@ export class PanelBridge {
     this.state = state;
     writeStored(STORAGE_KEYS.panel, JSON.stringify(this.state));
     this.head?.draw();
-    // The tree has to be built for the tree view: explain the line again.
+    // The rows of the depth just chosen, with the reading tree at depth 2.
     if (needsReading(this.state) !== before) this.host.update();
   }
 
@@ -86,12 +86,12 @@ export class PanelBridge {
     this.host.update();
   }
 
-  /** The view and step the viewer chose last time (VS Code keeps them in the webview's state, which the frame has not). */
+  /** The depth the viewer chose last time (VS Code keeps it in the webview's state, which the frame has not). */
   private sendState(): void {
     this.send({ type: 'panelState', state: this.state });
   }
 
-  /** The view and step the panel shows: what the explanation needs comes from it (`needsReading`). */
+  /** The depth the panel shows: what the explanation needs comes from it (`needsReading`). */
   panelState(): PanelState {
     return this.state;
   }

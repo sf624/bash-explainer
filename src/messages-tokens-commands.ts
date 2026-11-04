@@ -148,6 +148,8 @@ export const COMMAND_TEXTS = {
   'cmd-time-alone': tokenText(() => [
     'パイプラインのない `time`: 何も計測せず、0 の時間を表示する（POSIX モードなら、シェルがここまでに使った時間）',
     '`time` with no pipeline: it times nothing, and prints zero times (in POSIX mode, the times the shell has used so far)']),
+  /** `time >o`: the word, on its own row: the row of the whole says what it does here. */
+  'cmd-time-word': tokenText(() => ['予約語 `time`', 'The reserved word `time`']),
   /** `set -o posix; time -p ls`: the program `time`, not the reserved word. */
   'cmd-time-program': tokenText(() => [
     'POSIX モードの bash は、`-` で始まる語が続く `time` を予約語として読まない: これはプログラムの `time`（ふつうは `/usr/bin/time`）を実行するコマンドで、関数や組み込みコマンドは実行できない（`cannot run`）',

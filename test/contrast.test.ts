@@ -190,51 +190,8 @@ describe('the contrast of the colours of the roles', () => {
     });
   }
 
-  // The tree view tints the items each reader covers with its layer's colour (media/panel.css): an opaque mix of
-  // the layer's colour and the background, the same at every depth. The kind and the reader's name are in the
-  // layer's colour, the texts in the foreground or the muted colour; the code is in a pill of the background's colour.
-  it('reaches 4.5:1 on the layer tints of the tree view', () => {
-    const pct = Number(/#reading-tree li\.band \{\s*background: color-mix\(in srgb, var\(--l\) (\d+)%, var\(--t-bg\)\);/.exec(panel)?.[1]);
-    assert.ok(pct > 0 && pct < 20, `the tint: ${pct}%`);
-    assert.match(panel, /\.trow \.tcode \{[^}]*background: var\(--t-bg\);/);
-    const LAYERS: Record<string, Role> = { bash: 'operator', child: 'command', command: 'argument', language: 'option' };
-    for (const [kind, vars] of [['web light', web.light], ['web dark', web.dark]] as const) {
-      const bg = parse(vars['--vscode-editor-background']);
-      for (const [layer, role] of Object.entries(LAYERS)) {
-        const colour = parse(vars[CHARTS[role]]);
-        const tint = colour.map((c, i) => (pct / 100) * c + (1 - pct / 100) * bg[i]) as RGB;
-        const texts: Record<string, string> = { [`the ${layer} layer`]: vars[CHARTS[role]] };
-        for (const v of ['descriptionForeground', 'foreground']) texts[v] = vars[`--vscode-${v}`];
-        check(`${kind}, ${layer}'s tint`, texts, { [`${layer}'s tint`]: tint }, 4.5);
-      }
-    }
-  });
-
-  // A band's edges (media/panel.css): the rule on its left in the layer's colour, the hairlines at its top and
-  // bottom a mix of it with the background. Each is drawn on the background or on any band's tint (a band in a
-  // band, or one after another), and reaches WCAG's 3:1 for what is not text against all of them.
-  it('reaches 3:1 for the edges of the tree view\'s bands', () => {
-    const rule = /#reading-tree li\.band \{[^}]*\}/.exec(panel)?.[0] ?? '';
-    const pct = Number(/background: color-mix\(in srgb, var\(--l\) (\d+)%, var\(--t-bg\)\);/.exec(rule)?.[1]);
-    const edge = Number(/\n  border: 1px solid color-mix\(in srgb, var\(--l\) (\d+)%, var\(--t-bg\)\);/.exec(rule)?.[1]);
-    assert.match(rule, /\n  border-left: 2px solid var\(--l\);/);
-    assert.ok(pct > 0 && edge > 0 && edge <= 100, `${pct}% ${edge}%`);
-    const LAYERS: Record<string, Role> = { bash: 'operator', child: 'command', command: 'argument', language: 'option' };
-    for (const [kind, vars] of [['web light', web.light], ['web dark', web.dark]] as const) {
-      const bg = parse(vars['--vscode-editor-background']);
-      const mix = (c: RGB, p: number) => c.map((x, i) => (p / 100) * x + (1 - p / 100) * bg[i]) as RGB;
-      const under: Record<string, RGB> = { background: bg };
-      for (const [layer, role] of Object.entries(LAYERS)) under[`${layer}'s tint`] = mix(parse(vars[CHARTS[role]]), pct);
-      const hex = (c: RGB) => `#${c.map((x) => Math.round(x).toString(16).padStart(2, '0')).join('')}`;
-      for (const [layer, role] of Object.entries(LAYERS)) {
-        const colour = parse(vars[CHARTS[role]]);
-        check(`${kind}, the edges of ${layer}'s bands`, { rule: hex(colour), hairline: hex(mix(colour, edge)) }, under, 3);
-      }
-    }
-  });
-
   // The badge of a command name (media/panel.css `.nk-badge`): its word in the foreground colour, the muted lines
-  // after it in the muted colour (both measured above, on the backgrounds and the tints); its edge, in the colour of
+  // after it in the muted colour (both measured above, on the backgrounds); its edge, in the colour of
   // the command role (the keyword's for a reserved word) or the foreground, at least 3:1 (WCAG's non-text contrast).
   it('reaches 3:1 for the edge of a name\'s badge, and 4.5:1 for its text', () => {
     const rule = (sel: string) => new RegExp(`(^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`).exec(panel)?.[2] ?? '';
@@ -243,13 +200,10 @@ describe('the contrast of the colours of the roles', () => {
     assert.match(rule('.nk-badge.nk-program'), /border-color: var\(--vscode-foreground\);/);
     assert.match(rule('.nk-badge.nk-none'), /border-color: var\(--vscode-foreground\);/);
     for (const sel of ['.nk-by', '.nk-also']) assert.match(rule(sel), /color: var\(--c-muted\);/, sel);
-    const pct = Number(/#reading-tree li\.band \{\s*background: color-mix\(in srgb, var\(--l\) (\d+)%, var\(--t-bg\)\);/.exec(panel)?.[1]);
     for (const [kind, vars] of [['web light', web.light], ['web dark', web.dark]] as const) {
-      const bg = parse(vars['--vscode-editor-background']);
-      const tints = Object.fromEntries(Object.values(CHARTS).map((c) => [`${c}'s tint`, parse(vars[c]).map((x, i) => (pct / 100) * x + (1 - pct / 100) * bg[i]) as RGB]));
       const edges = { command: vars[CHARTS.command], keyword: vars[CHARTS.operator], foreground: vars['--vscode-foreground'] };
-      check(`${kind}, a badge's edge`, edges, { ...backgrounds(vars), ...tints }, 3);
-      check(`${kind}, a badge's text`, { foreground: vars['--vscode-foreground'], muted: vars['--vscode-descriptionForeground'] }, { ...backgrounds(vars), ...tints }, 4.5);
+      check(`${kind}, a badge's edge`, edges, backgrounds(vars), 3);
+      check(`${kind}, a badge's text`, { foreground: vars['--vscode-foreground'], muted: vars['--vscode-descriptionForeground'] }, backgrounds(vars), 4.5);
     }
   });
 

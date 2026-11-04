@@ -1423,6 +1423,7 @@
  "ls -l",
  "ls -l a",
  "ls -l | awk '{print $5}' | paste -sd+",
+ "ls /var/log/*.log",
  "ls 3>o 2>e >f",
  "ls @(a\nb)",
  "ls @(a')'b|c)",

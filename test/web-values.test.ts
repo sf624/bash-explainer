@@ -19,7 +19,7 @@ const lines = (f: Frame) => f.evaluate(`(() => ({ vw: document.documentElement.c
     return { text: v.textContent, chips: chips.map((c) => c.textContent), right: r.right, chipsRight: chips.map((c) => c.getBoundingClientRect().right), under: r.top > text.top + 1 };
   }) }))()`) as Promise<{ vw: number; sw: number; items: Line[] }>;
 
-describe('the web page: the values of expansions in Meaning', function () {
+describe('the web page: the values of expansions', function () {
   this.timeout(120000);
   let browser: Browser;
   let base = '';
