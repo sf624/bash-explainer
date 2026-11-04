@@ -326,6 +326,8 @@ const READING_ORDER: Readonly<Record<Layer, number>> = { bash: 0, child: 0, comm
 
 /** One more role of a row, in the order of its reader, whatever the range of its node. */
 function addRole(row: ModelRow, role: RowRole | undefined): void {
+  // (A guard: what speaks for a row (`speaksFor`) has had a name on every line of the corpus and the fuzz inputs; a part with none would only lose its name here.)
+  /* c8 ignore next */
   if (!role) return;
   row.roles = [...row.roles, role].sort((a, b) => READING_ORDER[a.layer] - READING_ORDER[b.layer]);
   row.roleLine = { ...roleLine(row.roles)!, refs: row.roleLine?.refs ?? [] };
