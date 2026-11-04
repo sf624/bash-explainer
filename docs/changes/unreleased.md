@@ -6,7 +6,7 @@ The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
 ### "In short": one sentence for each line
 
-The Meaning view of the panel, in VS Code and on the web page, starts with one sentence that says what the line does, under the label "In short" / 「ひとことで」. Every line with code has one; the Reading view has none.
+The panel, in VS Code and on the web page, starts with one sentence that says what the line does, under the label "In short" / 「ひとことで」. Every line with code has one, at both depths.
 
 - A command: what it is and does, the options given, and its redirections: "Runs `sort` (sort lines) using `-u` (output only unique lines), with stdin (fd 0) from `in.txt`, stdout (fd 1) to `out.txt`."
 - An assignment: the value the variable gets, with a placeholder for what is known only when the line runs: "Sets `workdir` to the output of `$(mktemp -d)`", "Sets `x` to ‹home directory›`/bin`".
@@ -56,7 +56,7 @@ A part's warning stays on its row, and is no problem (`#!bash`, `${x:-$((09))}`,
 
 ### The box of the line's problems
 
-In the Meaning and Reading views, the problems of the line come first, under "Problems on this line" / 「この行の問題」, errors first. Each says its level and one sentence with what happens, written for it and by case (`((i++))` says "the script stops" only under `set -e`). "More" holds the whole text, the same as the Problems lists, what it cites, and each fix with a copy button. A click on the sentence goes to the row it is about, and a chip on the row comes back. Other notes stay below it, as they were.
+At both depths, the problems of the line come first, under "Problems on this line" / 「この行の問題」, errors first. Each says its level and one sentence with what happens, written for it and by case (`((i++))` says "the script stops" only under `set -e`). "More" holds the whole text, the same as the Problems lists, what it cites, and each fix with a copy button. A click on the sentence goes to the row it is about, and a chip on the row comes back. Other notes stay below it, as they were.
 
 On a line inside a construct, the box points to the problems on the construct's line: "↑ Pitfall on line 3: …" goes there. A problem you silenced (`# bash-explainer disable=<code>`, `diagnostics.ignore`) leaves the box and shows below it as a plain note; its row keeps its mark.
 
@@ -80,9 +80,26 @@ A checker that passed `echo ok )` had a hole: `--check` exited 0, and the web pa
 - It names a token only where `bash -n` and `dash -n` name that token, by a table of more than 2,000 shapes of a fault in test/syntax-error.test.ts: a reserved word or an operator it stops at, what is missing at the end of a file. `echo (hello)` names `hello`, as bash reads `word (` as a function definition, and says that parentheses meant as text need quotes; before, it said that `)` cannot stand there. Elsewhere it says "The shell cannot read this command" (`for x in (a b); do c; done`, `case x y in`).
 - `${(f)var}` and `${#x:-a}` are problems only where a run surely gets to them: the same conditions, and not in a function, a branch, a loop or after `&&` or `||`, as a guard for zsh (`if [ -n "$ZSH_VERSION" ]; then a=(${(f)x}); fi`) runs fine in bash. An Error, code `bad-substitution-always`; with only a name, a warning, code `bad-substitution-if-bash`, as above. Elsewhere the row has a warning's mark and says "if this runs".
 
-### The rows of the Meaning view
+### One view with a depth
 
-The Meaning view shows what each command does, in two columns: the code, and what it means, at one place on every row. A word's own parts (`"…"`, a number, a pattern, a variable that only expands) and bash's reserved words and separators (`then`, `;`, `do`, `|`) have no row of their own there, unless they have something to say: a warning, a value, an example. Reading has nearly all of them. A few short notes on a word are in neither view now, such as "may make several words" for `$BUILD_DIR/cache`.
+The panel has one view instead of the tabs Meaning and Reading, and a control **Depth** in its header (on the web page, in the explanation's header): **1 What it does**, **2 How bash reads it**, or the keys `1` and `2` when the focus is in the panel. It remembers the depth; a Reading kept from before opens at depth 2, a Meaning at depth 1. The eight steps of Reading are gone, and so are its colour bands and its tree's arrow keys: the rows are reached with Tab, as in Meaning.
+
+Depth 2 only adds: the rows of depth 1 stay, in the same order, saying the same, and the first row on the screen stays where it is.
+
+- Each row has one role line, at one place: what the part is to each reader and who reads it last (`argument → value of -f · tar reads it`), with the sections of the manual its text does not cite. A pointer on a name says what the kind is, as Reading said in words.
+- A pipe says what goes where: "stdout of `grep` → stdin of `sort`" (with `|&`, and stderr).
+- A word that expands shows bash's steps in bash's order: `parameter expansion → word splitting, globbing (quoted) → quote removal`, with arithmetic expansion and process substitution named. Where no step acts (`"failed"`), the line folds to "bash's steps: nothing expands". A word that only is its text (`-h`) has none.
+- `[[`, `]]` and each operator of `[[ ]]` have rows, and so do the parts of a redirection (`2`, `>`, `/dev/null`) and of an assignment. A row whose parts all come at depth 2 starts folded, so that the parts of `2>/dev/null` or of a glob are one press away.
+- What double quotes do is said once on a line.
+- On the first line of a loop over several lines, Reading drew the whole loop, the other lines as kinds with no text. Depth 2 shows that line's rows; the others are one move of the cursor away.
+
+`bashExplainer.panel.animations` drives the folds of the rows, the steps, "More" and the examples.
+
+Depth 1 now keeps what changes what a line means, which it hid before: awk's "classic dedupe idiom" on its rule, "expands to 3 words" on `project/{src,test,docs}`, and a row of `${s:$i:2}` that says what it takes, also where no example is drawn. It leaves out what the row above already shows: "Variable `s`" under `${s:$i:2}`, and "Value `notes.txt`" under `x=notes.txt`, as for `a=1`. `time >o` says what `time` does there on its top row, and its own row names only the word. A glob's example is folded under its title at both depths.
+
+### The rows at depth 1
+
+Depth 1 shows what each command does, in two columns: the code, and what it means, at one place on every row. A word's own parts (`"…"`, a number, a pattern, a variable that only expands) and bash's reserved words and separators (`then`, `;`, `do`, `|`) have no row of their own there, unless they have something to say: a warning, a value, an example. Depth 2 has all of them.
 
 - A box goes around each simple command and compound command (`if`, `[[ ]]`, a function), and a bracket at the left of a pipeline or a list. `sudo ls` is one box: to bash, `ls` is an argument of `sudo`. A screen reader hears a box with parts as a group named by its code.
 - The example of a whole pipeline is folded above the rows, under its title; the setting `examples.placement` puts it at the end with `last` or `bottom`. One inside a construct (`for …; do a | b; done`) stays under its row.
@@ -196,10 +213,10 @@ One button in the editor's header, before ⋯, shows the file type and the shell
 
 ### The explanation's header on the web page
 
-The explanation has a header of its own, above it, as wide as it: the tabs **Explanation** and **Reference** (the quick reference), the view (**Meaning** | **Reading**), **Collapse** and **Copy**. Before, the view switch and the icons of Collapse all, Copy as Markdown and the quick reference were in the top bar, and on a phone the view and Copy as Markdown were in the menu.
+The explanation has a header of its own, above it, as wide as it: the tabs **Explanation** and **Reference** (the quick reference), the depth, **Collapse** and **Copy**. Before, the view switch and the icons of Collapse all, Copy as Markdown and the quick reference were in the top bar, and on a phone the view and Copy as Markdown were in the menu.
 
 - Collapse and Copy show a word beside their icon; where the explanation is narrow, the word goes under the icon, smaller. Their full names ("Collapse all", "Expand all", "Copy as Markdown") are the tooltip and what a screen reader says.
-- The view is two segments where they fit; where they do not, one button that opens them as a menu ("Meaning ⌄"; a screen reader hears "View: Meaning"). Escape closes the menu, and the focus goes back to its button. On a phone the button is a 44 px pill. Where nothing else fits, the Reference tab reads "Ref".
+- The depth is two segments where they fit (`Depth [1 Does] [2]`); where they do not, one button that opens them as a menu ("Depth 1 ⌄"; a screen reader hears "Depth: 1 What it does"). Escape closes the menu, and the focus goes back to its button. On a phone the button is a 44 px pill. Where nothing else fits, the Reference tab reads "Ref".
 - Nothing in the header moves when you press a view, fold everything or choose a tab: each word is as wide as the longest it can become. On the Reference tab, the view and Collapse keep their room, unseen.
 - The tabs are one stop of Tab; the arrow keys move between them. A click on Reference puts the cursor in its search field, as before; the arrow keys leave the focus on the tab.
 - In VS Code, the panel's view switch becomes the same menu when the panel is too narrow for it beside the buttons. Its fold button now says "Expand all" as soon as one row is folded. Before, it said so only after Collapse all.
@@ -419,8 +436,8 @@ Fixes found by the panel's prototype (step P2 of [docs/design/panel-redesign.md]
 
 - `if` starts the condition: "Start of the condition: if the last of the commands up to `then` exits 0, the `then` branch runs" (the last one decides: `if false; true; then` runs the branch). Before, "Start a conditional; run the `then` branch if the condition exits 0".
 - A `;` before a reserved word ends the commands before it: "End of the list before `then`", and whether the `;` may be left out. Before, it said that bash waits for the commands to end, which it does after every command of a list. Before `}` after a coprocess, it still says that bash does not wait.
-- `[[ $x == 1 ]]`: a pattern in which nothing acts as a wildcard matches only itself, so the condition says "strings are equal", and Reading's row of `==` says it is a plain comparison. Before, both said "the right side is a glob pattern". Whether a pattern has a wildcard comes from the word model: a quoted `*` is none, a value the script sets is read (`p=1; [[ $x == $p ]]`), and with `shopt -s nocasematch` it stays a pattern (`a` matches `A`). After code the walk does not read (`eval "$c"`, `source ./x.sh`), which may have set nocasematch or changed `p`, it stays a pattern too.
-- Reading gives `[[` and `]]` a row ("Start of the conditional expression"), and each operand of `[[ ]]` says what it is to its operator: "The file `-f` tests", "The string on the left of `==`", "A value `-eq` compares: evaluated as an arithmetic expression".
+- `[[ $x == 1 ]]`: a pattern in which nothing acts as a wildcard matches only itself, so the condition says "strings are equal", and the row of `==` at depth 2 says it is a plain comparison. Before, both said "the right side is a glob pattern". Whether a pattern has a wildcard comes from the word model: a quoted `*` is none, a value the script sets is read (`p=1; [[ $x == $p ]]`), and with `shopt -s nocasematch` it stays a pattern (`a` matches `A`). After code the walk does not read (`eval "$c"`, `source ./x.sh`), which may have set nocasematch or changed `p`, it stays a pattern too.
+- Depth 2 gives `[[` and `]]` a row ("Start of the conditional expression"), and each operand of `[[ ]]` says what it is to its operator: "The file `-f` tests", "The string on the left of `==`", "A value `-eq` compares: evaluated as an arithmetic expression".
 - tar's operands by mode: with `-c`, `-r` and `-u` they are "files and directories to put into the archive"; with `-x`, `-t` and `-d`, "names in the archive to act on (all when none)"; with `--delete`, "names in the archive to delete" (with no name it deletes nothing); with `-A`, "archives whose members are appended". Before, "Word `~/docs`".
 - `failure-reported-as-success` names a long command by its name (`tar`) rather than cutting it in a word (`tar -czf "$backup" ~/docs 2>/…`).
 - Japanese: the status of an AND or OR list is 「最後に実行したコマンドのもの」 (before, 「最後に実行したもののもの」); `$HOME` is 「ホームディレクトリ」, as in English.

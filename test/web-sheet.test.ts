@@ -212,7 +212,7 @@ describe('the web page: the phone\'s sheet', function () {
     assert.strictEqual(await page.locator('#tab-explain').getAttribute('aria-selected'), 'true');
     // The view control's pill (a menu here) opens its options upwards on a folded sheet, inside the window; the height stays.
     await page.locator('#slot-open').tap();
-    const options = await box(page, '#slot-tree');
+    const options = await box(page, '#slot-depth2');
     const pill = await box(page, '#slot-open');
     assert.ok(options.y + options.height <= pill.y && options.y >= 0 && options.x + options.width <= 390.5, JSON.stringify([options, pill]));
     assert.strictEqual((await settled(page)).snap, 'peek');

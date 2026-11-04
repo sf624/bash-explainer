@@ -1,12 +1,12 @@
-// The web page with the keyboard alone and for a screen reader, in headless Chromium: the Meaning view's fold buttons
+// The web page with the keyboard alone and for a screen reader, in headless Chromium: the rows' fold buttons
 // (media/panel.js), the Problems list's buttons (web/problem-list.ts), the editor's name and the hint on how to leave it,
 // the live region that says what the line is about and F6 between the editor and the explanation (web/a11y.ts), the
-// hover card opened by the keyboard (web/hover.ts), the example's input box named by its label, the Reading view's row
+// hover card opened by the keyboard (web/hover.ts), the example's input box named by its label, a row at depth 2
 // kept clear of the sticky rows, forced colours, and the reference links that say they open a new tab. In English and
 // in Japanese where the page says something.
 import * as assert from 'assert';
 import type { Browser, BrowserContext, Frame, Page } from 'playwright-core';
-import { chooseView, frames, menuItem, openSite, until, type Site } from './support/site';
+import { chooseDepth, frames, menuItem, openSite, until, type Site } from './support/site';
 
 // A pitfall on line 3 (`set -e` and `(( count++ ))`), a pipeline with parts, and a command whose example has input boxes.
 const SCRIPT = 'set -e\ncount=0\n(( count++ ))\ngrep -c foo f | sort\nsort a.txt b.txt';
@@ -131,13 +131,13 @@ describe('the web page: keyboard and screen reader access', function () {
     await until('the explanation', () => focused(page), (f) => f === 'frame:main#main');
     await page.keyboard.press('F6');
     await until('the editor', () => focused(page), (f) => f.includes('cm-content'));
-    await chooseView(page, 'tree');
+    // (At depth 2 as at depth 1: the explanation, from where a screen reader reads on.)
+    await chooseDepth(page, 2);
     const panel = panelOf(page);
-    await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 3);
+    await until('the rows of depth 2', () => panel.evaluate('document.body.dataset.depth'), (d) => d === '2');
     await page.locator('.cm-content').focus();
     await page.keyboard.press('F6');
-    await until('the tree item', () => focused(page), (f) => f.startsWith('frame:li'));
-    assert.strictEqual(await panel.evaluate('document.activeElement.getAttribute("tabindex")'), '0');
+    await until('the explanation', () => focused(page), (f) => f === 'frame:main#main');
     await page.keyboard.press('Shift+F6');
     await until('the editor', () => focused(page), (f) => f.includes('cm-content'));
     // The menu has it, with its key, in Help (Open and Save have theirs in Script).
@@ -145,11 +145,11 @@ describe('the web page: keyboard and screen reader access', function () {
     assert.deepStrictEqual(await page.locator('#drawer .menu-item:has(kbd)').evaluateAll((els) => els.map((e) => e.textContent)), ['Open file…Ctrl+O', 'Saveuntitled.shCtrl+S', 'Go to the explanation and backF6']);
     assert.strictEqual(await page.locator('#menu-panes').evaluate((e) => e.closest('section')!.id), 'menu-g-help');
     await page.locator('#menu-panes').click();
-    await until('the tree item', () => focused(page), (f) => f.startsWith('frame:li'));
+    await until('the explanation', () => focused(page), (f) => f === 'frame:main#main');
     await ctx.close();
   });
 
-  it('folds and unfolds the Meaning view\'s parts with buttons that say their state', async () => {
+  it('folds and unfolds the rows\' parts with buttons that say their state', async () => {
     for (const lang of ['en', 'ja'] as const) {
       const ctx = await context(lang);
       const page = await ctx.newPage();
@@ -365,36 +365,34 @@ describe('the web page: keyboard and screen reader access', function () {
     }
   });
 
-  it('keeps the focused row of the Reading view clear of the sticky line and steps', async () => {
+  it('keeps a row scrolled into view by the keyboard clear of the sticky line at depth 2', async () => {
     const ctx = await context('en', { viewport: { width: 1280, height: 500 } });
     const page = await ctx.newPage();
     const panel = await open(page, 'grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt && echo "done: $(date +%F)" || exit 1');
-    await chooseView(page, 'tree');
-    await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 10);
-    await panel.locator('#reading-tree li[tabindex="0"]').focus();
-    const place = () => panel.evaluate(`(() => {
-      const row = document.activeElement.querySelector(':scope > .trow').getBoundingClientRect();
-      const cover = Math.max(document.getElementById('top').getBoundingClientRect().bottom, document.getElementById('layers').getBoundingClientRect().bottom);
-      return { top: row.top - cover, bottom: innerHeight - row.bottom };
-    })()`) as Promise<{ top: number; bottom: number }>;
+    await chooseDepth(page, 2);
+    await until('the rows of depth 2', () => panel.evaluate('document.body.dataset.depth'), (d) => d === '2');
+    await panel.locator('#tree button.twisty').first().focus();
     const hidden: string[] = [];
-    for (const key of [...Array(20).fill('ArrowDown'), ...Array(20).fill('ArrowUp')]) {
+    for (const key of [...Array(12).fill('Tab'), ...Array(12).fill('Shift+Tab')]) {
       await page.keyboard.press(key);
       await frames(panel);
-      const p = await place();
+      const p = await panel.evaluate(`(() => {
+        const a = document.activeElement.getBoundingClientRect();
+        return { top: a.top - document.getElementById('top').getBoundingClientRect().bottom, bottom: innerHeight - a.bottom };
+      })()`) as { top: number; bottom: number };
       if (p.top < -1 || p.bottom < -1) hidden.push(`${key} ${JSON.stringify(p)}`);
     }
     assert.deepStrictEqual(hidden, []);
     await ctx.close();
   });
 
-  it('shows the current step and the cursor\'s line with forced colours', async () => {
+  it('shows the depth chosen and the cursor\'s line with forced colours', async () => {
     const ctx = await context('en');
     const page = await ctx.newPage();
     await page.emulateMedia({ forcedColors: 'active' });
     const panel = await open(page, SCRIPT, 4);
-    await chooseView(page, 'tree');
-    await until('the steps', () => panel.locator('#layers button.step').count(), (n) => n > 1);
+    await chooseDepth(page, 2);
+    await until('the rows of depth 2', () => panel.evaluate('document.body.dataset.depth'), (d) => d === '2');
     /** A system colour as this browser computes it. */
     const system = (where: Page | Frame, name: string) => where.evaluate(`(() => {
       const p = document.createElement('span');
@@ -404,10 +402,9 @@ describe('the web page: keyboard and screen reader access', function () {
       p.remove();
       return c;
     })()`) as Promise<string>;
-    const steps = await panel.locator('#layers button.step').evaluateAll((bs) => bs.map((b) => [b.getAttribute('aria-current'), b.ownerDocument.defaultView!.getComputedStyle(b).backgroundColor]));
-    const highlight = await system(panel, 'Highlight');
-    assert.deepStrictEqual(steps.filter(([c]) => c === 'step').map(([, bg]) => bg), [highlight]);
-    assert.ok(steps.filter(([c]) => c !== 'step').every(([, bg]) => bg !== highlight), JSON.stringify(steps));
+    // (The role line stays in the text's colour: no muted colour left to read.)
+    const canvas = await system(panel, 'CanvasText');
+    assert.strictEqual(await panel.locator('.role-line').first().evaluate((e) => e.ownerDocument.defaultView!.getComputedStyle(e).color), canvas);
     const line = await page.locator('.cm-activeLine').evaluate((e) => [e.ownerDocument.defaultView!.getComputedStyle(e).outlineStyle, e.ownerDocument.defaultView!.getComputedStyle(e).outlineColor]);
     assert.deepStrictEqual(line, ['solid', await system(page, 'Highlight')]);
     await ctx.close();

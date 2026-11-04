@@ -531,7 +531,7 @@ Files that both series, or several steps, edit. The second PR to land rebases on
 | src/ui/panelView.ts | P1, C1b (the runs in the update), P7 |
 | web/storage.ts, `STORAGE_KEYS` | C2 (the list's state), C8a (the sheet and its hint), P9 (W) |
 | web/text.ts (Help lists the panel's keys) | C4, P8 |
-| test/support/site.ts, `chooseView` | P1, C7, P8 |
+| test/support/site.ts, `chooseDepth` (`chooseView` until P8) | P1, C7, P8 |
 | README "The web page" and "The panel" | C9, P8 |
 
 A proposed sequence: C0 and P1; then C1a to C6 beside P2 to P6; C7 after P1; C8a and C8b; then P7 to P10; C9. The usability test runs after C9 and P10.

@@ -184,8 +184,8 @@ export async function menuItem(page: Page, id: string): Promise<void> {
  * Chooses the panel's view in the view control of the panel's header (media/view-control.js): its segment, or, where
  * the control is a menu, the menu's item (the menu closes as it is chosen).
  */
-export async function chooseView(page: Page, view: 'list' | 'tree'): Promise<void> {
-  const option = page.locator(`#slot-${view}`);
+export async function chooseDepth(page: Page, depth: 1 | 2): Promise<void> {
+  const option = page.locator(`#slot-depth${depth}`);
   if (!(await option.isVisible())) await page.locator('#slot-open').click();
   await option.click();
 }

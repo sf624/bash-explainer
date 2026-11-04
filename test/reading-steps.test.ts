@@ -1,96 +1,42 @@
-// The steps of the panel's Reading view and what each node shows there (src/ui/readingSteps.ts), and the view slot's
-// contract (src/ui/panelView.ts: `panelState`, `needsReading`, `viewControl`; docs/design/panel-redesign.md, 6.1).
-// media/panel.js draws what these say; it decides none of it (docs/design/sources.md, SB2).
+// What each node of the reading tree is on a row of depth 2 (src/ui/panelRoles.ts), and the view slot's contract (src/ui/panelView.ts:
+// `panelState`, `needsReading`, `viewControl`; docs/design/panel-redesign.md, 6.1). media/panel.js draws what these say; it decides none of it.
 import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
-import type { ReadingNode } from '../src/reading';
+import { type ReadingNode, readingNodes } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { isPressed, needsReading, PANEL_DEFAULTS, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
 import { panelTools, viewControlForms } from '../src/ui/panelHead';
-import {
-  aboutKey, bandOf, chipOf, DrawnNode, layerOfStep, levelOf, measureSteps, ownStep, readerOf, readingView, roleOf, startsBand, stepFrom, stepNames, STEPS,
-} from '../src/ui/readingSteps';
+import { aboutKey, aboutOf, bandOf, chipOf, readerOf, roleFor, roleLine, roleOf, startsBand } from '../src/ui/panelRoles';
 
 const parser = createUnbashParser();
 const reading = (src: string, lang: 'en' | 'ja' = 'en') => new Analyzer(lang).explainLine(parser.parse(src), 0, 'bash', { reading: true }).reading!;
 const span = { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } };
 /** A node of the reading tree, for the cases no short line gives. */
 const node = (n: Partial<ReadingNode> & Pick<ReadingNode, 'layer' | 'kind'>): ReadingNode => ({ label: 'x', span, children: [], ...n });
-const drawn = (root: DrawnNode): DrawnNode[] => [root, ...root.children.flatMap(drawn)];
-const find = (root: DrawnNode, layer: string, label: string) => drawn(root).find((n) => n.layer === layer && n.label === label)!;
+const find = (root: ReadingNode, layer: string, label: string) => readingNodes(root).find((n) => n.layer === layer && n.label === label)!;
+/** The node `n` and the one around it. */
+const upOf = (root: ReadingNode, n: ReadingNode): ReadingNode | undefined => readingNodes(root).find((u) => u.children.includes(n));
 
-describe('the steps of Reading (src/ui/readingSteps.ts)', () => {
-  it('puts each node at its own step, or its parent\'s when that is later', () => {
-    assert.strictEqual(STEPS, 8);
-    assert.deepStrictEqual(['line', 'pipeline', 'command', 'argument', 'quote'].map((kind) => ownStep({ layer: 'bash', kind })), [1, 2, 3, 4, 5]);
-    assert.deepStrictEqual((['child', 'command', 'language'] as const).map((layer) => ownStep({ layer, kind: 'argument' })), [6, 7, 8]);
-    assert.deepStrictEqual([1, 4, 5, 6, 7, 8].map(levelOf), [1, 1, 1, 2, 3, 4]);
-    assert.deepStrictEqual([1, 5, 6, 7, 8].map(layerOfStep), ['bash', 'bash', 'child', 'command', 'language']);
-    const view = readingView(reading('x=$(date +%F); [[ $x =~ ^a+ ]]'), 'en');
-    // (The regex of `=~` is a word of step 4, read as a language at step 8; date's format under the subshell at 6.)
-    assert.deepStrictEqual(['line', 'list', 'command', 'assignment', 'substitution'].map((kind) => drawn(view.root).find((n) => n.kind === kind)!.appears), [1, 2, 3, 4, 5]);
-    assert.strictEqual(find(view.root, 'child', 'date +%F').appears, 6);
-    assert.strictEqual(find(view.root, 'command', '+%F').appears, 7);
-    assert.strictEqual(find(view.root, 'language', 'regex').appears, 8);
-    assert.deepStrictEqual(view.steps.map((s) => s.adds), [true, true, true, true, true, true, true, true]);
-  });
-
-  it('counts what each step adds, and the arrows pass over the steps that add nothing', () => {
-    const m = measureSteps(reading('tar -czf "$b" *.txt'));
-    // (No list, no script inside, no language.)
-    assert.deepStrictEqual(m.added.map((n) => n > 0), [true, false, true, true, true, false, true, false]);
-    assert.deepStrictEqual([stepFrom(1, 1, m.added), stepFrom(3, -1, m.added), stepFrom(5, 1, m.added), stepFrom(7, 1, m.added), stepFrom(1, -1, m.added)], [3, 1, 7, 7, 1]);
-    const view = readingView(reading('tar -czf "$b" *.txt'), 'en');
-    assert.deepStrictEqual(view.steps.map((s) => [s.adds, s.back, s.forward]), [
-      [true, 1, 3], [false, 1, 3], [true, 1, 4], [true, 3, 5], [true, 4, 7], [false, 5, 7], [true, 5, 7], [false, 7, 8],
-    ]);
-    assert.strictEqual(view.steps[0].full, 'Step 1 of 8: the line');
-    assert.strictEqual(view.steps[1].said, 'Step 2 of 8: lists and pipelines');
-    assert.match(view.steps[1].full, /^Step 2 of 8: lists and pipelines \(.+\)$/);
-    assert.strictEqual(readingView(reading('tar -czf "$b" *.txt', 'ja'), 'ja').steps[0].full, 'ステップ 1/8：行');
-  });
-
-  it('names the steps, with the layer each adds', () => {
-    assert.deepStrictEqual(stepNames('en').map((s) => `${s.short}:${s.layer}`), ['Line:bash', 'Lists:bash', 'Commands:bash', 'Words:bash', 'Inside:bash', 'Scripts:child', 'Arguments:command', 'Languages:language']);
-    assert.deepStrictEqual(stepNames('ja').map((s) => s.short), ['行', 'リスト', 'コマンド', '単語', '単語の中', 'スクリプト', '引数', '言語']);
-  });
-
-  it('says what a kind is in general on its first node only, by step and then in order', () => {
-    const view = readingView(reading('x=$(date +%F); [[ $x =~ ^a+ ]]'), 'en');
-    const about = drawn(view.root).filter((n) => n.about).map((n) => `${n.layer}/${n.kind} ${n.label}`);
-    assert.deepStrictEqual(about, ['bash/line ', 'bash/command x=$(date +%F)', 'child/script date +%F', 'child/argument +%F', 'language/language date', 'language/language regex']);
-    // (The regex of `=~` is bash's own language; date's format is date's.)
-    assert.match(find(view.root, 'language', 'regex').about!, /POSIX extended regular expression|ERE/);
-    // A kind seen first deep under a later step goes to the node that appears earlier.
-    const late = node({ layer: 'child', kind: 'word', children: [] });
-    const early = node({ layer: 'bash', kind: 'word' });
-    const root = node({ layer: 'bash', kind: 'line', children: [node({ layer: 'child', kind: 'script', children: [late] }), early] });
-    const m = measureSteps(root);
-    assert.ok(m.aboutAt.has(early) && !m.aboutAt.has(late));
-    // A node a token explains has no general text.
-    assert.ok(!measureSteps(node({ layer: 'bash', kind: 'line', text: 'said' })).aboutAt.size);
-  });
-
+describe('the roles of a row (src/ui/panelRoles.ts)', () => {
   it('keys the general texts by kind, a language by who reads it, and a language\'s own tokens not at all', () => {
     assert.strictEqual(aboutKey({ layer: 'bash', kind: 'argument', label: 'a' }), 'argument');
     assert.strictEqual(aboutKey({ layer: 'language', kind: 'language', label: 'regex', reader: 'bash' }), 'bashLanguage');
     assert.strictEqual(aboutKey({ layer: 'language', kind: 'language', label: 'prompt', reader: 'bash' }), 'promptLanguage');
     assert.strictEqual(aboutKey({ layer: 'language', kind: 'language', label: 'sed', reader: 'sed' }), 'language');
     assert.strictEqual(aboutKey({ layer: 'language', kind: 'keyword', label: '^', reader: 'bash' }), '');
-    // (No general text for that key: none is drawn.)
-    const lang = node({ layer: 'language', kind: 'language', label: 'sed', reader: 'sed', children: [node({ layer: 'language', kind: 'keyword', reader: 'sed' })] });
-    assert.strictEqual(readingView(node({ layer: 'bash', kind: 'line', text: 'said', children: [lang] }), 'en').root.children[0].children[0].about, undefined);
+    // (No general text for that key: none is said.)
+    assert.strictEqual(aboutOf(node({ layer: 'language', kind: 'keyword', reader: 'sed' }), 'en'), undefined);
+    assert.match(aboutOf(node({ layer: 'bash', kind: 'descriptor' }), 'en')!, /file descriptor/i);
   });
 
   it('shows each node with its kind, the command name with what it runs, a value with its option', () => {
-    const view = readingView(reading('tar -czf "$b" *.txt'), 'en');
-    assert.deepStrictEqual(['', 'tar -czf "$b" *.txt', 'tar', '-czf'].map((l) => find(view.root, 'bash', l).chip), ['bash reads the line', 'simple command', 'command name', 'argument']);
-    assert.strictEqual(find(view.root, 'command', '"$b"').chip, 'value of -f');
-    assert.strictEqual(find(view.root, 'command', '-c').chip, 'option');
-    const ja = readingView(reading('tar -czf "$b" *.txt', 'ja'), 'ja');
-    assert.strictEqual(find(ja.root, 'command', '"$b"').chip, '-f の値');
-    assert.strictEqual(find(readingView(reading('date +%F'), 'en').root, 'command', '+%F').chip, 'operand');
-    assert.strictEqual(find(readingView(reading('date +%F'), 'en').root, 'language', 'date').chip, 'date format');
+    const root = reading('tar -czf "$b" *.txt');
+    assert.deepStrictEqual(['tar -czf "$b" *.txt', 'tar', '-czf'].map((l) => chipOf(find(root, 'bash', l), 'en')), ['simple command', 'command name', 'argument']);
+    assert.strictEqual(chipOf(find(root, 'command', '"$b"'), 'en'), 'value of -f');
+    assert.strictEqual(chipOf(find(root, 'command', '-c'), 'en'), 'option');
+    assert.strictEqual(chipOf(find(reading('tar -czf "$b" *.txt', 'ja'), 'command', '"$b"'), 'ja'), '-f の値');
+    assert.strictEqual(chipOf(find(reading('date +%F'), 'command', '+%F'), 'en'), 'operand');
+    assert.strictEqual(chipOf(find(reading('date +%F'), 'language', 'date'), 'en'), 'date format');
   });
 
   it('shows the cases no short line in the tests above gives', () => {
@@ -106,12 +52,13 @@ describe('the steps of Reading (src/ui/readingSteps.ts)', () => {
   });
 
   it('says who reads each node, and where a new reader\'s band starts', () => {
-    const view = readingView(reading('x=$(date +%F); [[ $x =~ ^a+ ]]'), 'en');
-    assert.deepStrictEqual(drawn(view.root).filter((n) => n.band !== undefined).map((n) => `${n.label}: ${n.band}`), [': bash', 'date +%F: subshell', '+%F: date reads', 'date: date format', 'regex: regex']);
-    assert.strictEqual(find(view.root, 'child', 'date +%F').readBy, 'a subshell (a copy of this shell) parses it again');
-    assert.strictEqual(find(view.root, 'command', '+%F').readBy, 'date reads it, not bash');
-    assert.strictEqual(find(view.root, 'language', 'regex').readBy, 'bash reads it itself (its regex matching, POSIX ERE)');
-    assert.strictEqual(find(view.root, 'bash', '$x').readBy, 'bash parses it');
+    const root = reading('x=$(date +%F); [[ $x =~ ^a+ ]]');
+    const roles = readingNodes(root).map((n) => [n, roleFor(n, upOf(root, n), 'en')] as const);
+    assert.deepStrictEqual(roles.filter(([, r]) => r.band !== undefined).map(([n, r]) => `${n.label}: ${r.band}`), [': bash', 'date +%F: subshell', '+%F: date reads it', 'date: date format', 'regex: regex']);
+    assert.strictEqual(readerOf(find(root, 'child', 'date +%F'), 'en'), 'a subshell (a copy of this shell) parses it again');
+    assert.strictEqual(readerOf(find(root, 'command', '+%F'), 'en'), 'date reads it, not bash');
+    assert.strictEqual(readerOf(find(root, 'language', 'regex'), 'en'), 'bash reads it itself (its regex matching, POSIX ERE)');
+    assert.strictEqual(readerOf(find(root, 'bash', '$x'), 'en'), 'bash parses it');
     // (A language's own tokens are in its band: no name of their own.)
     assert.strictEqual(bandOf(node({ layer: 'language', kind: 'keyword' }), 'en'), '');
     assert.strictEqual(readerOf(node({ layer: 'language', kind: 'language', label: 'prompt', reader: 'bash' }), 'en'), 'bash reads it itself, each time it prints the prompt');
@@ -128,69 +75,89 @@ describe('the steps of Reading (src/ui/readingSteps.ts)', () => {
     assert.ok(!startsBand(node({ layer: 'bash', kind: 'word' }), node({ layer: 'bash', kind: 'line' })));
   });
 
+  it('says a row\'s roles on one line: the names in order, an arrow where another reader takes it, the last reader', () => {
+    const line = (src: string, layer: string, label: string) => {
+      const root = reading(src);
+      const n = find(root, layer, label);
+      const up = upOf(root, n);
+      return roleLine([...(up && up.layer !== n.layer ? [roleFor(up, upOf(root, up), 'en')] : []), roleFor(n, up, 'en')])!;
+    };
+    const said = (l: ReturnType<typeof roleLine>) => l!.chips.map((c) => `${c.changes ? '→ ' : ''}${c.text}`).join(' | ') + (l!.reader ? ` | ${l!.reader}` : '');
+    assert.strictEqual(said(line('tar -czf "$b" x', 'command', '"$b"')), 'argument | → value of -f | tar reads it');
+    assert.strictEqual(line('x=$(date +%F)', 'child', 'date +%F').reader, 'subshell');
+    assert.strictEqual(roleLine([]), undefined);
+    // (bash taking over says no reader: it is the default.)
+    assert.strictEqual(roleLine([roleFor(node({ layer: 'bash', kind: 'word' }), undefined, 'en')])!.reader, undefined);
+    // (The same name twice is one name; its tooltip says who reads it, and what the kind is.)
+    const name = roleFor(node({ layer: 'bash', kind: 'argument' }), node({ layer: 'bash', kind: 'line' }), 'en');
+    assert.deepStrictEqual(roleLine([name, name])!.chips.length, 1);
+    assert.match(roleLine([name])!.chips[0].title, /An argument: bash expands it.*\(bash parses it\)/);
+    assert.strictEqual(roleLine([roleFor(node({ layer: 'bash', kind: 'unheard-of' }), node({ layer: 'bash', kind: 'line' }), 'en')])!.chips[0].title, 'bash parses it');
+  });
+
   it('colours a node\'s code by the role of its kind, as the list colours its tokens', () => {
     assert.deepStrictEqual(['commandName', 'expandedName', 'quote', 'pipeline', 'script', 'option'].map((kind) => roleOf({ kind })), ['command', 'variable', 'string', 'operator', 'substitution', 'option']);
   });
 });
 
 describe('the view slot\'s contract (src/ui/panelView.ts)', () => {
-  it('reads a kept state: the view, the step (from the layers kept before the steps), nothing else', () => {
-    assert.deepStrictEqual(panelState({ view: 'tree', step: 7 }), { view: 'tree', step: 7, level: 3 });
-    assert.deepStrictEqual(panelState({ view: 'list', level: 2 }), { view: 'list', step: 6, level: 2 });
-    assert.deepStrictEqual(panelState({ step: 2, level: 4 }), { step: 2, level: 1 });
-    for (const kept of [undefined, null, 'tree', 3, {}, { view: 'graph', step: 9, level: 5 }, { step: 2.5, level: 0 }, { step: '3' }]) assert.deepStrictEqual(panelState(kept), {}, JSON.stringify(kept));
+  it('reads a kept state: the depth; a view kept before the depths opens at the depth it has become', () => {
+    assert.deepStrictEqual(panelState({ depth: 2 }), { depth: 2 });
+    assert.deepStrictEqual(panelState({ depth: 1, view: 'tree' }), { depth: 1 });
+    assert.deepStrictEqual(panelState({ view: 'tree', step: 7, level: 3 }), { depth: 2 });
+    assert.deepStrictEqual(panelState({ view: 'list', level: 2 }), { depth: 1 });
+    for (const kept of [undefined, null, 'tree', 3, {}, { view: 'graph', step: 9, level: 5 }, { step: 2 }, { depth: 3 }, { depth: '2' }]) assert.deepStrictEqual(panelState(kept), {}, JSON.stringify(kept));
   });
 
   it('keeps every field of the state: a field added to PanelState and not read back fails here', () => {
     // (Required<PanelState>: a new field must be given a value here, and `panelState` must keep it.)
-    const every: Required<PanelState> = { view: 'tree', step: 7, level: 3 };
+    const every: Required<PanelState> = { depth: 2 };
     assert.deepStrictEqual(panelState(every), every);
     assert.deepStrictEqual(panelState(JSON.parse(JSON.stringify(panelState(every)))), every);
   });
 
   it('presses an option by one rule: the state, with its defaults, has everything the option sets', () => {
-    assert.deepStrictEqual(PANEL_DEFAULTS, { view: 'list', step: STEPS });
-    assert.ok(isPressed({}, { view: 'list' }) && !isPressed({}, { view: 'tree' }));
-    assert.ok(isPressed({ view: 'tree', step: 3 }, { view: 'tree' }));
-    assert.ok(isPressed({ step: 3 }, { view: 'list', step: 3 }) && !isPressed({ step: 3 }, { view: 'list', step: 8 }));
-    assert.ok(isPressed({ view: 'tree' }, {}), 'an option that sets nothing is always shown');
+    assert.deepStrictEqual(PANEL_DEFAULTS, { depth: 1 });
+    assert.ok(isPressed({}, { depth: 1 }) && !isPressed({}, { depth: 2 }));
+    assert.ok(isPressed({ depth: 2 }, { depth: 2 }));
+    assert.ok(isPressed({ depth: 2 }, {}), 'an option that sets nothing is always shown');
     // viewControl applies it to each option.
-    for (const state of [{}, { view: 'list' as const }, { view: 'tree' as const, step: 2 }]) {
+    for (const state of [{}, { depth: 1 as const }, { depth: 2 as const }]) {
       for (const o of viewControl(state, 'en').options) assert.strictEqual(o.pressed, isPressed(state, o.sets), `${JSON.stringify(state)} ${o.id}`);
     }
   });
 
-  it('says when the explanation needs the reading tree: in the tree view only', () => {
-    assert.deepStrictEqual([{}, { view: 'list' as const, step: 8 }, { view: 'tree' as const }].map(needsReading), [false, false, true]);
+  it('says when the explanation needs the reading tree: at depth 2 only', () => {
+    assert.deepStrictEqual([{}, { depth: 1 as const }, { depth: 2 as const }].map(needsReading), [false, false, true]);
   });
 
-  it('describes the view control as data: the options, their names, the one pressed, what a press sets', () => {
+  it('describes the view control as data: the depths, their names, the one pressed, what a press sets', () => {
     const en = viewControl({}, 'en');
-    assert.strictEqual(en.label, 'View');
-    assert.deepStrictEqual(en.options.map((o) => [o.id, o.short, o.full, o.pressed, JSON.stringify(o.sets), o.steps?.length]), [
-      ['list', 'Meaning', 'Meaning', true, '{"view":"list"}', undefined],
-      ['tree', 'Reading', 'Reading', false, '{"view":"tree"}', 8],
+    assert.strictEqual(en.label, 'Depth');
+    assert.deepStrictEqual(en.options.map((o) => [o.id, o.digit, o.short, o.full, o.pressed, JSON.stringify(o.sets)]), [
+      ['depth1', '1', 'Does', 'What it does', true, '{"depth":1}'],
+      ['depth2', '2', 'Reads', 'How bash reads it', false, '{"depth":2}'],
     ]);
-    const ja = viewControl({ view: 'tree', step: 3 }, 'ja');
-    assert.deepStrictEqual(ja.options.map((o) => `${o.short} ${o.pressed}`), ['意味 false', '読まれ方 true']);
-    assert.strictEqual(ja.label, '表示');
-    assert.deepStrictEqual(ja.options[1].steps, stepNames('ja'));
+    const ja = viewControl({ depth: 2 }, 'ja');
+    assert.deepStrictEqual(ja.options.map((o) => `${o.digit} ${o.short} ${o.full} ${o.pressed}`), ['1 何をする 何をするか false', '2 読まれ方 bash がどう読むか true']);
+    assert.strictEqual(ja.label, '深さ');
     // (No option is drawn as an icon alone: none has an icon yet.)
     assert.ok(en.options.every((o) => o.icon === undefined && o.short));
   });
 
-  it('sends the control and the reading view with the line; the explanation goes without its tree', () => {
+  it('sends the control and the rows of the depth with the line; the explanation goes without its tree', () => {
     const ex = new Analyzer('en').explainLine(parser.parse('ls -l'), 0, 'bash', { reading: true });
-    const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: 'ls -l', choice: {}, placement: 'first', animations: true, state: { view: 'tree' } });
-    assert.deepStrictEqual(msg.control, viewControl({ view: 'tree' }, 'en'));
+    const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: 'ls -l', choice: {}, placement: 'first', animations: true, state: { depth: 2 } });
+    assert.deepStrictEqual(msg.control, viewControl({ depth: 2 }, 'en'));
     // (And the forms the panel's own header may draw it in, and its tools' names: src/ui/panelHead.ts.)
     assert.deepStrictEqual(msg.viewForms, viewControlForms(msg.control));
     assert.deepStrictEqual(msg.tools, panelTools('en'));
-    assert.strictEqual(msg.reading?.root.chip, 'bash reads the line');
-    assert.strictEqual(msg.reading?.steps.length, STEPS);
-    assert.ok(!('reading' in msg.explanation));
-    const list = panelUpdate({ lang: 'en', explanation: new Analyzer('en').explainLine(parser.parse('ls -l'), 0, 'bash'), file: 'a.sh', line: 0, lineText: 'ls -l', choice: {}, placement: 'first', animations: true });
-    assert.strictEqual(list.reading, undefined);
-    assert.strictEqual(list.control.options[0].pressed, true);
+    assert.strictEqual(msg.depth, 2);
+    assert.deepStrictEqual(msg.rows[0].roleLine!.chips.map((c) => c.text), ['simple command', 'command name']);
+    assert.ok(!('reading' in msg) && !('reading' in msg.explanation));
+    const one = panelUpdate({ lang: 'en', explanation: new Analyzer('en').explainLine(parser.parse('ls -l'), 0, 'bash'), file: 'a.sh', line: 0, lineText: 'ls -l', choice: {}, placement: 'first', animations: true });
+    assert.strictEqual(one.depth, 1);
+    assert.strictEqual(one.rows[0].roleLine, undefined);
+    assert.strictEqual(one.control.options[0].pressed, true);
   });
 });

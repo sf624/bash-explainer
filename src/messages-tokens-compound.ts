@@ -143,6 +143,11 @@ export const COMPOUND_TEXTS = {
   'script-string-line': tokenText<{ line: number }>(({ line }) => [`文字列の${lineLabel('ja', line)}`, `${lineLabel('en', line)} of the string`]),
   /** `eval "$x"`: a string read and run again. */
   'script-run-again': tokenText(() => ['もう一度読んで実行する文字列', 'Text to read and run again']),
+  /** The delimiters of `[[ ]]` (3.2.5.2), at depth 2 of the panel. */
+  'test-open': tokenText(() => ['条件式の始まり', 'Start of the conditional expression']),
+  'test-close': tokenText(() => ['条件式の終わり', 'End of the conditional expression']),
+  /** An alias the explanation reads as the command it runs (`alias grep='grep --color=auto'`), at depth 2 of the panel. */
+  'alias-replaced': tokenText<{ name: string; value: string }>(({ name, value }) => [`エイリアス \`${name}\`: bash は行を読むときに \`${value}\` に置き換える`, `The alias \`${name}\`: bash replaces it with \`${value}\` when it reads the line`]),
   /** A word of a host's string no shell reads (`word`: how the host calls it). */
   'host-string-word': tokenText<{ word: readonly [string, string]; value: string; pictures: string | undefined }>(({ word, value, pictures }) => [
     `${word[0]}: \`${value}\` がそのまま1つの単語としてコマンドに渡る${pictures ? `（制御文字は記号で表している: ${pictures}）` : ''}。先にシェルが \`$\`・\`*\`・クォート・空白を読むことはない`,

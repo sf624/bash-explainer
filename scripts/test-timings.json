@@ -196,8 +196,6 @@
   "test/web-share.test.ts": {"18":0.5,"24":18.8},
   "test/web-storage.test.ts": {"18":0.4,"24":1.1},
   "test/web-topbar.test.ts": {"18":0.9,"24":24.8},
-  "test/web-tree-steps.test.ts": {"18":0.4,"24":31.8},
-  "test/web-tree.test.ts": {"18":0.5,"24":28.8},
   "test/web-values.test.ts": {"18":0.6,"24":15.2},
   "test/word-notes.test.ts": {"18":1.3,"24":2.1},
   "test/word-probes.test.ts": {"18":1.1,"24":2.3},

@@ -63,10 +63,11 @@
   let lastUpdate = '';
   /** The pointers last drawn (`drawAround`), as JSON. */
   let lastAround = '[]';
-  /** Paths of the collapsed tree items of the line shown; kept when the same line is drawn again. */
-  let collapsedKeys = new Set();
-  /** The file and line `collapsedKeys` belongs to. */
+  /** What the viewer folded and unfolded of the line shown, by row (`key`: the same at both depths); kept when the same line is drawn again. */
+  let foldChoices = /** @type {Map<string, boolean>} */ (new Map());
+  /** The file and line `foldChoices` belongs to, and the depth drawn. */
   let shownLine = '';
+  let shownDepth = 1;
   /** UI strings from the extension. */
   let labels = /** @type {any} */ ({});
   /** The control pictures (`\u240a`) with the name drawn for each (`LF`) and what it stands for, from the extension (`controlMarks`, src/ctlchars.ts). */
@@ -83,24 +84,15 @@
   /** @type {Array<{ category: string, syntax: string, meaning: string }> | undefined} */
   let reference;
 
-  /** The view shown ('list' or 'tree') and the step of the tree shown (1–8, see `stepNames`): what the viewer chose last. */
-  let view = 'list';
-  let step = 8;
+  /** The depth shown (1 what it does, 2 how bash reads it): what the viewer chose last. */
+  let depth = 1;
   applyState(vscode.getState());
-  /** The reading tree of the line shown, as drawn (src/ui/readingSteps.ts `ReadingView`: each node with its step, chip, band…), if any. */
-  let reading = /** @type {any} */ (null);
-  /** The steps of the line shown (`StepView`: whether each adds something, its words, where the arrows go from it). */
-  let lineSteps = /** @type {{ adds: boolean, said: string, full: string, back: number, forward: number }[]} */ ([]);
-  /** The view control (src/ui/panelView.ts `viewControl`), from the host with each line: the header's view switch. */
-  let control = /** @type {{ label: string, options: { id: string, digit?: string, short: string, full: string, pressed: boolean, sets: any, steps?: { short: string, name: string, layer: string }[] }[] }} */ ({ label: '', options: [] });
+  /** The view control (src/ui/panelView.ts `viewControl`), from the host with each line: the header's depth. */
+  let control = /** @type {{ label: string, options: { id: string, digit?: string, short: string, full: string, pressed: boolean, sets: any }[] }} */ ({ label: '', options: [] });
   /** The forms the view control may take, widest first (src/ui/panelHead.ts `viewControlForms`): the first that fits is drawn. */
   let viewForms = /** @type {{ kind: 'segments' | 'menu', label?: string, button?: { text: string, name: string }[] }[]} */ ([{ kind: 'segments' }]);
   /** The line shown (its number in the document). */
   let shownLineNo = 0;
-  /** Paths of the folded items of the tree view, and of the one with the focus; kept while the same line is shown. */
-  let foldedKeys = new Set();
-  let currentKey = '';
-
   /** True while the user has text selected (a drag to copy should not count as a click). */
   const selecting = () => String(window.getSelection() ?? '').length > 0;
 
@@ -197,12 +189,8 @@
       if (msg.folded !== undefined && msg.folded !== header.folded) toggleAll();
     }
     if (msg.type === 'panelState') {
-      const was = view;
       applyState(msg.state);
-      // (The web page's own switch of views: the room kept below the other view goes, as with the panel's buttons.)
-      if (view !== was) dropSpacer();
-      applyView();
-      renderReading();
+      drawViews();
     }
   });
   vscode.postMessage({ type: 'ready' });
@@ -220,11 +208,7 @@
     $('tree').replaceChildren();
     $('examples').replaceChildren();
     $('whole-line').replaceChildren();
-    $('reading-tree').replaceChildren();
-    reading = null;
-    lineSteps = [];
     dropSpacer();
-    $('reading').hidden = true;
     $('empty').textContent = message;
     $('empty').hidden = false;
   }
@@ -244,7 +228,7 @@
     if (tools) nameButton('copy', tools.copy.name);
     // The quick reference stays open while the cursor moves; keep its button saying how to go back.
     nameRef();
-    // (The fold button is named once the rows are drawn: `applyView`, below. Naming it "Collapse all" first would tell
+    // (The fold button is named once the rows are drawn, below. Naming it "Collapse all" first would tell
     // the host for a moment that nothing is folded while a fold kept for this line is drawn again.)
     $('ref-search').setAttribute('placeholder', labels.search);
     examplesFirst = msg.examplesFirst !== false;
@@ -259,10 +243,9 @@
     if (where !== shownLine) {
       // A new line is drawn anew: what was folded, and the room kept below the old one, go.
       dropSpacer();
-      collapsedKeys = new Set();
+      foldChoices = new Map();
       openExamples = new Set();
-      foldedKeys = new Set();
-      currentKey = '';
+      openSteps = new Set();
       // (And the line box opened whole: a new line shows three rows at most.)
       lineOpen = false;
     }
@@ -270,14 +253,16 @@
     // of the list that had the focus gets it back in the new rows.
     const kept = where === shownLine ? focusInList() : null;
     const keptFold = where === shownLine ? [...document.querySelectorAll('details.whole-line > summary')].indexOf(/** @type {Element} */ (document.activeElement)) : -1;
+    // Another depth of the same line: the first row on the screen that it still shows stays where it is.
+    if (where === shownLine && msg.depth !== shownDepth) holdForDepth(msg.rows);
     shownLine = where;
+    shownDepth = msg.depth;
+    document.body.dataset.depth = String(msg.depth);
     shownLineNo = ex.line;
-    reading = msg.reading?.root ?? null;
-    lineSteps = msg.reading?.steps ?? [];
     const tree = $('tree');
     tree.replaceChildren(...msg.rows.map((/** @type {any} */ r, /** @type {number} */ i) => item(r, `${i}`)));
     if (kept) {
-      const row = tree.querySelector(`li[data-path="${kept.path}"] > .item > .row`);
+      const row = tree.querySelector(`li[data-key="${kept.key}"] > .item > .row`);
       const target = row && (kept.link < 0 ? row.querySelector(':scope > button.twisty') : row.querySelectorAll('.refs a')[kept.link]);
       if (target instanceof HTMLElement) target.focus({ preventScroll: true });
     }
@@ -309,9 +294,10 @@
       p.append(svg, text);
       return p;
     }));
-    // The sentence of the line, "In short" (src/linesentence.ts), at the top of the Meaning view: marked text, its
+    // The sentence of the line, "In short" (src/linesentence.ts), at the top of the view: marked text, its
     // label in bold before it.
     const short = $('short');
+    short.hidden = !ex.sentence;
     if (ex.sentence) {
       const label = document.createElement('strong');
       label.className = 'short-label';
@@ -325,8 +311,9 @@
     whole[keptFold]?.querySelector('summary')?.focus({ preventScroll: true });
     $('empty').textContent = msg.emptyMessage;
     $('empty').hidden = msg.rows.length > 0;
-    applyView();
-    renderReading();
+    drawViews();
+    if (tools) updateToggle();
+    requestAnimationFrame(syncLine);
   }
 
   /** The icon of a level, in front of a word that names it (hidden from a screen reader, which says the word). */
@@ -355,12 +342,6 @@
   /** Goes to the row at `path`: its folded parents open, and its chip (in the row) gets the focus. */
   function toRow(/** @type {string} */ path, /** @type {number} */ index) {
     const row = document.querySelector(`#tree li[data-path="${path}"] > .item > .row`);
-    // (In Reading the list is not drawn: the click opens what the problem says.)
-    if (view === 'tree') {
-      const more = document.querySelector(`#problem-${index} details.problem-more`);
-      if (more instanceof HTMLDetailsElement) more.open = !more.open;
-      return;
-    }
     if (!(row instanceof HTMLElement)) return;
     for (let li = row.closest('li'); li; li = li.parentElement?.closest('li') ?? null) if (li.querySelector(':scope > .item > .row') !== row) setCollapsed(li, false);
     flash(row);
@@ -400,10 +381,7 @@
     const head = el(p.rows.length ? 'button' : 'span', { class: 'problem-head' }, levelIcon(p.icon), el('strong', { class: 'note-label' }, p.word), ' ', el('span', { class: 'problem-head-text' }, ...inline(p.head)));
     if (p.rows.length) {
       head.setAttribute('type', 'button');
-      // (In Reading the click opens or closes "More", not a row: the tooltip says what the click does now, as the view may change meanwhile.)
-      const aim = () => head.setAttribute('title', view === 'tree' ? labels.problems.toggleMore : labels.problems.toRow);
-      aim();
-      for (const type of ['pointerenter', 'focus']) head.addEventListener(type, aim);
+      head.setAttribute('title', labels.problems.toRow);
       head.addEventListener('click', () => toRow(p.rows[0], index));
     }
     const more = /** @type {HTMLDetailsElement} */ (el('details', { class: 'problem-more' }, el('summary', {}, labels.problems.more)));
@@ -412,7 +390,9 @@
     const whole = el('p', { class: 'problem-text' });
     if (p.label) whole.append(el('strong', { class: 'note-label' }, p.label), ' ');
     whole.append(...inline(p.body), ...refLinks(p.refs), ...basisParts(p.basis));
-    more.append(whole, ...p.fixes.map(fixLine));
+    const moreBody = el('div', { class: 'fold-body' }, whole, ...p.fixes.map(fixLine));
+    more.append(moreBody);
+    foldingDetails(more, moreBody);
     return el('li', { class: `note problem ${p.className}`, id: `problem-${index}` }, head, more);
   }
 
@@ -428,7 +408,8 @@
           toProblem(index);
         });
         const text = row.querySelector(':scope > .text');
-        if (text) text.append(chip);
+        // (At depth 2, before the role line: a chip ends the row's text.)
+        if (text) text.insertBefore(chip, text.querySelector(':scope > .role-line, :scope > .steps'));
       }
     });
   }
@@ -631,16 +612,48 @@
     return out;
   }
 
-  /** The examples of the whole line the reader opened, by their place (two can have one title): the same line drawn again keeps them open, as `collapsedKeys` does. */
+  /** The folded examples the reader opened, by their place (two can have one title): the same line drawn again keeps them open, as `foldChoices` does. */
   let openExamples = new Set();
 
-  /** An example of the whole line, the `at`th: folded under its title. */
-  function foldedExample(/** @type {any} */ ex, /** @type {number} */ at) {
+  /** A folded example (of the whole line, or a row's: `ModelRow.examples`), at its place `at`: under its title. */
+  function foldedExample(/** @type {any} */ ex, /** @type {number | string} */ at) {
     const box = /** @type {HTMLDetailsElement} */ (el('details', { class: 'example whole-line' }, el('summary', {}, el('h3', {}, ...inline(ex.title)))));
     box.open = openExamples.has(at);
     box.addEventListener('toggle', () => (box.open ? openExamples.add(at) : openExamples.delete(at)));
-    box.append(...exampleBody(ex));
+    const body = el('div', { class: 'fold-body' }, ...exampleBody(ex));
+    box.append(body);
+    return foldingDetails(box, body);
+  }
+
+  /** A row's role line: the names of its roles (their tooltip says who reads them and what the kind is), an arrow where another reader takes it, who reads it last, and its sections. */
+  function roleLineOf(/** @type {any} */ line) {
+    if (!line) return null;
+    const box = el('span', { class: 'role-line' });
+    line.chips.forEach((/** @type {{ text: string, title: string, changes: boolean }} */ c, /** @type {number} */ i) => {
+      if (i) box.append(c.changes ? ' → ' : ' · ');
+      box.append(el('span', { class: 'role-chip', title: c.title }, c.text));
+    });
+    if (line.reader) box.append(' · ', line.reader);
+    box.append(...refLinks(line.refs));
     return box;
+  }
+
+  /** The steps of a word, in order: one that does nothing is struck through, with why. */
+  function stepList(/** @type {{ text: string, off: boolean, why?: string }[]} */ steps) {
+    return steps.flatMap((s, i) => [...(i ? [' → '] : []), s.off ? el('s', { class: 'step-off' }, s.text) : el('span', { class: 'step-on' }, s.text), ...(s.why ? [' (', ...inline(s.why), ')'] : [])]);
+  }
+
+  /** The steps kept open by the reader, by row (for the same line drawn again). */
+  let openSteps = new Set();
+
+  /** What bash does to a word: its line, or, where no step acts, folded to one line (`StepsLine`, src/ui/panelSteps.ts). */
+  function stepsOf(/** @type {any} */ line, /** @type {string} */ key) {
+    if (line.acts) return el('span', { class: 'steps' }, el('span', { class: 'steps-lead' }, line.lead), ' ', ...stepList(line.steps));
+    const body = el('div', { class: 'fold-body' }, ...stepList(line.steps));
+    const box = /** @type {HTMLDetailsElement} */ (el('details', { class: 'steps' }, el('summary', {}, el('span', { class: 'steps-lead' }, line.lead), ' ', line.summary), body));
+    box.open = openSteps.has(key);
+    box.addEventListener('toggle', () => (box.open ? openSteps.add(key) : openSteps.delete(key)));
+    return foldingDetails(box, body);
   }
 
   function sections(list) {
@@ -984,10 +997,11 @@
     const inner = boxes + (part.frame ? 1 : 0);
     li.style.setProperty('--lvl', String(lvl));
     li.style.setProperty('--bx', String(inner));
+    li.dataset.key = part.key;
     const box = document.createElement('div');
     box.className = part.frame ? `item frame frame-${part.frame}` : 'item';
     const row = document.createElement('div');
-    row.className = `row kind-${part.kind}`;
+    row.className = `row kind-${part.kind}${part.connector ? ' connector' : ''}`;
     // A row with parts folds with its twisty: a button for the keyboard and a screen reader (named by the row's label,
     // its state in `aria-expanded`); the glyph is only drawn. A row with no parts keeps the room of one.
     const twisty = document.createElement(part.children.length ? 'button' : 'span');
@@ -1036,12 +1050,16 @@
     const [chip, ...tryIt] = basisParts(part.basis);
     if (chip) text.append(chip);
     text.append(...refLinks(part.refs));
+    // At depth 2: what the part is to each reader, and what bash does to a word.
+    const role = roleLineOf(part.roleLine);
+    if (role) text.append(role);
+    if (part.steps) text.append(stepsOf(part.steps, part.key));
     row.append(twisty, code, text, ...tryIt);
     box.append(row);
     li.append(box);
-    if (part.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
+    if (part.children.length && (foldChoices.get(part.key) ?? part.folded === true)) setCollapsed(li, true);
     // Examples placed under this token go before (first) or after (last) its parts.
-    const examples = (part.examples ?? []).map((e) => example(e, true));
+    const examples = (part.examples ?? []).map((/** @type {any} */ e, /** @type {number} */ i) => (e.folded ? foldedExample(e, `${part.key}/${i}`) : example(e, true)));
     // What lies under the row (its examples and parts), in one box: the indent guide is drawn beside it.
     const body = document.createElement('div');
     body.className = 'body';
@@ -1078,30 +1096,29 @@
     const li = a instanceof HTMLElement && $('tree').contains(a) ? /** @type {HTMLElement | null} */ (a.closest('li[data-path]')) : null;
     if (!li || !a) return null;
     const row = li.querySelector(':scope > .item > .row');
-    if (a.matches('button.twisty')) return { path: String(li.dataset.path), link: -1 };
+    if (a.matches('button.twisty')) return { key: String(li.dataset.key), link: -1 };
     const links = row ? Array.from(row.querySelectorAll('.refs a')) : [];
-    return links.includes(a) ? { path: String(li.dataset.path), link: links.indexOf(a) } : null;
+    return links.includes(a) ? { key: String(li.dataset.key), link: links.indexOf(a) } : null;
   }
 
   /** Folds or unfolds an item of the list; the change returned says how what lies under it moves (see `fold`). */
   function setCollapsed(/** @type {HTMLElement} */ li, /** @type {boolean} */ want) {
     li.classList.toggle('collapsed', want);
-    const path = String(li.dataset.path);
-    if (want) collapsedKeys.add(path);
-    else collapsedKeys.delete(path);
+    foldChoices.set(String(li.dataset.key), want);
     const tw = li.querySelector(':scope > .item > .row > button.twisty');
     if (tw) {
       tw.setAttribute('aria-expanded', String(!want));
       /** @type {Element} */ (tw.firstElementChild).textContent = want ? '▸' : '▾';
     }
-    const body = /** @type {HTMLElement | null} */ (li.querySelector(':scope > .item > .body'));
+    // (The parts move; a folded example stays as its title.)
+    const body = /** @type {HTMLElement | null} */ (li.querySelector(':scope > .item > .body > ul'));
     return body && { el: body, open: !want };
   }
 
   const isCollapsed = (/** @type {HTMLElement} */ li) => li.classList.contains('collapsed');
 
   function toggle(/** @type {HTMLElement} */ li) {
-    hold(rowAt('list', String(li.dataset.path)));
+    hold(rowAt(String(li.dataset.key)));
     fold([setCollapsed(li, !isCollapsed(li))]);
     // (The fold button then says what it will do: unfold when something is folded.)
     updateToggle();
@@ -1110,18 +1127,6 @@
   $('toggle').addEventListener('click', () => toggleAll());
   /** Folds everything below the top level, or unfolds it all (the fold button). */
   function toggleAll() {
-    if (view === 'tree' && reading) {
-      // The tree view: fold everything below the line, or unfold it all.
-      const all = /** @type {HTMLElement[]} */ (Array.from($('reading-tree').querySelectorAll('li[aria-expanded]')));
-      const close = !all.some((li) => li.getAttribute('aria-expanded') === 'false');
-      const want = (/** @type {HTMLElement} */ li) => close && li.getAttribute('aria-level') !== '1';
-      // (The first row on the screen that stays drawn stays where it is, and so do the controls, as for a step.)
-      const below = $('layers').getBoundingClientRect().bottom;
-      hold(firstOnScreen(visibleItems(), 'reading', below, (li) => !close || Number(li.getAttribute('aria-level')) <= 2), stuckRange(), below);
-      fold(all.filter((li) => want(li) !== (li.getAttribute('aria-expanded') === 'false')).map((li) => setFolded(li, want(li))));
-      updateToggle();
-      return;
-    }
     const items = Array.from($('tree').querySelectorAll('li')).filter((li) => li.querySelector(':scope > .item > .body > ul'));
     const collapse = !items.some(isCollapsed);
     // Collapse below the top level, so the outline stays visible.
@@ -1130,14 +1135,13 @@
     const top = (/** @type {Element | null | undefined} */ li) => li?.parentElement === $('tree');
     const shownItems = /** @type {HTMLElement[]} */ (Array.from($('tree').querySelectorAll('li[data-path]'))).filter((li) => li.getClientRects().length);
     const below = $('top').getBoundingClientRect().bottom;
-    hold(firstOnScreen(shownItems, 'list', below, (li) => !collapse || top(li) || top(li.parentElement?.closest('li'))), null, below);
+    hold(firstOnScreen(shownItems, below, (li) => !collapse || top(li) || top(li.parentElement?.closest('li'))), null, below);
     fold(items.filter((li) => want(li) !== isCollapsed(li)).map((li) => setCollapsed(li, want(li))));
     nameToggle(collapse);
   }
-  /** The shared button says what it will do in the view shown: unfold when something is folded, else fold. */
+  /** The shared button says what it will do: unfold when something is folded, else fold. */
   function updateToggle() {
-    const folded = view === 'tree' && reading ? foldedKeys.size > 0 : $('tree').querySelector('li.collapsed') !== null;
-    nameToggle(folded);
+    nameToggle($('tree').querySelector('li.collapsed') !== null);
   }
   $('copy').addEventListener('click', () => vscode.postMessage({ type: 'copy' }));
 
@@ -1148,11 +1152,6 @@
     const top = $('top');
     document.documentElement.style.setProperty('--line-h', `${top.offsetHeight}px`);
     top.classList.toggle('stuck', window.scrollY > 0);
-    // (And the tree view's steps, which stay under them: a row scrolled into view goes below both.)
-    const steps = $('layers');
-    const on = !$('reading').hidden;
-    document.documentElement.style.setProperty('--controls-h', `${on ? steps.offsetHeight : 0}px`);
-    steps.classList.toggle('stuck', on && window.scrollY > 0 && steps.getBoundingClientRect().top <= top.offsetHeight + 1);
   }
   window.addEventListener('scroll', syncLine, { passive: true });
   window.addEventListener('resize', syncLine);
@@ -1314,44 +1313,32 @@
   }).observe($('line'));
 
 
-  // ---------------------------------------------------------------- tree view (src/reading.ts)
+  // ---------------------------------------------------------------- the depth
 
-  /** The steps of the tree view (src/ui/readingSteps.ts `stepNames`): the option of the view control that has them, Reading's. */
-  const stepNames = () => control.options.find((o) => o.steps)?.steps ?? [];
-
-  /** Tells the host the choice: it keeps it for the next time (VS Code's global state, the web page's storage) and, in the list view, builds no tree. */
+  /** Tells the host the choice: it keeps it for the next time (VS Code's global state, the web page's storage) and explains the line for it. */
   function save() {
-    // (The host keeps it with `level` too, what the panel kept before the steps: src/ui/panelView.ts `panelState`.)
-    const state = { view, step };
+    const state = { depth };
     vscode.setState(state);
     vscode.postMessage({ type: 'panelState', state });
   }
 
-  /**
-   * The view and step the viewer chose (VS Code's webview state; the host sends them as it keeps them, src/ui/panelView.ts
-   * `panelState`), or what an option of the view control sets.
-   */
+  /** The depth the viewer chose (VS Code's webview state; the host sends it as it keeps it, src/ui/panelView.ts `panelState`), or what an option of the view control sets. */
   function applyState(/** @type {any} */ state) {
-    if (!state || typeof state !== 'object') return;
-    if (state.view === 'tree' || state.view === 'list') view = state.view;
-    // (The eight steps of src/ui/readingSteps.ts `STEPS`.)
-    if (Number.isInteger(state.step) && state.step >= 1 && state.step <= 8) step = state.step;
+    if (state?.depth === 1 || state?.depth === 2) depth = state.depth;
   }
 
   /** Whether an option of the view control is the one shown: the state has what it sets (the rule of src/ui/panelView.ts `isPressed`). */
-  const pressed = (/** @type {{ sets: Record<string, unknown> }} */ o) => Object.entries(o.sets).every(([k, v]) => /** @type {Record<string, unknown>} */ ({ view, step })[k] === v);
+  const pressed = (/** @type {{ sets: Record<string, unknown> }} */ o) => Object.entries(o.sets).every(([k, v]) => /** @type {Record<string, unknown>} */ ({ depth })[k] === v);
 
-  /**
-   * The header's view control (media/view-control.js, the component the web page draws too): a press applies what
-   * the option sets at once, and tells the host.
-   */
-  const viewControl = /** @type {any} */ (globalThis).BashExplainerViewControl.create($('views'), 'view', (/** @type {any} */ sets) => {
-    dropSpacer();
+  /** A depth chosen: the control shows it at once, and the rows come with the host's next update. */
+  function press(/** @type {any} */ sets) {
     applyState(sets);
     save();
-    applyView();
-    renderReading();
-  });
+    drawViews();
+  }
+
+  /** The header's view control (media/view-control.js, the component the web page draws too). */
+  const viewControl = /** @type {any} */ (globalThis).BashExplainerViewControl.create($('views'), 'view', press);
 
   /** Draws the view control from the host's data, each option pressed by the panel's own state, in the first of its forms that fits the header's row. */
   function drawViews() {
@@ -1373,57 +1360,13 @@
     }
   }).observe(/** @type {HTMLElement} */ (document.querySelector('header')));
 
-  /** Shows the list or the tree view. */
-  function applyView() {
-    const tree = view === 'tree';
-    drawViews();
-    $('tree').hidden = tree;
-    $('short').hidden = tree || !$('short').hasChildNodes();
-    $('examples').hidden = tree;
-    $('whole-line').hidden = tree;
-    $('reading').hidden = !tree || !reading;
-    if (tools) updateToggle();
-    markLine(null);
-    requestAnimationFrame(syncLine);
-  }
-
-
-  /** Whether a node is drawn at the step shown. */
-  const shown = (/** @type {any} */ c) => (c.appears ?? 1) <= step;
-
-  function renderReading() {
-    // (A step back whose rows are still shrinking: the tree is drawn at the step now.)
-    flushMotion();
-    const ul = $('reading-tree');
-    // A new update or step redraws the tree: the focus goes back to the item it was on.
-    const hadFocus = ul.contains(document.activeElement);
-    const t = labels.tree;
-    if (!t) return void ul.replaceChildren();
-    ul.setAttribute('aria-label', t.label);
-    renderControls();
-    // (The rows are replaced in one step, after the controls have measured themselves: that layout, with the tree
-    // emptied, let the browser scroll the shorter page back to the top when the same line was drawn again.)
-    if (!reading || view !== 'tree') return void ul.replaceChildren();
-    ul.replaceChildren(treeItem(reading, '0', 1, 1, 1));
-    const items = visibleItems();
-    const current = items.find((li) => li.dataset.path === currentKey) ?? items[0];
-    if (current) current.tabIndex = 0;
-    if (hadFocus) {
-      // (The item itself, or the nearest one above it that is drawn: its step may be past.)
-      let key = currentKey;
-      let again = items.find((li) => li.dataset.path === key);
-      while (!again && key.includes('.')) {
-        key = key.slice(0, key.lastIndexOf('.'));
-        again = items.find((li) => li.dataset.path === key);
-      }
-      if (again ?? current) focusItem(/** @type {HTMLElement} */ (again ?? current));
-    }
-  }
-
-  // ---------------------------------------------------------------- the steps of the tree
-
-  /** The step `d` steps from the one shown, among those that add something (the one shown at either end). */
-  const stepFrom = (/** @type {number} */ d) => lineSteps[step - 1]?.[d > 0 ? 'forward' : 'back'] ?? step;
+  // Keys 1 and 2 choose the depth when the focus is in the panel, not while a text is typed (an example's input, the search of the quick reference).
+  document.addEventListener('keydown', (e) => {
+    if ((e.key !== '1' && e.key !== '2') || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+    if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]')) return;
+    e.preventDefault();
+    press({ depth: Number(e.key) });
+  });
 
   const el = (/** @type {string} */ tag, /** @type {Record<string, string>} */ attrs = {}, /** @type {(Node | string)[]} */ ...kids) => {
     const e = document.createElement(tag);
@@ -1434,206 +1377,6 @@
     e.append(...kids);
     return e;
   };
-  const icon = (/** @type {string} */ text) => el('span', { class: 'tp-icon', 'aria-hidden': 'true' }, text);
-
-  /**
-   * Makes the controls (once): step back, a button per step, and step forward; where the buttons do not fit, a
-   * stepper whose middle opens the steps as a menu (see `fitControls`). A polite live region says the step.
-   */
-  function buildControls(/** @type {HTMLElement} */ box) {
-    // (A plain box: #layers is the group of the controls, and the stepper's menu opens this box of its buttons.)
-    const steps = el('div', { id: 'steps' });
-    stepNames().forEach(({ layer }, i) => {
-      steps.append(el('button', { type: 'button', class: `step l-${layer}`, 'data-step': String(i + 1) },
-        el('span', { class: 'num', 'aria-hidden': 'true' }, String(i + 1)), el('span', { class: 'short' })));
-    });
-    box.replaceChildren(el('span', { id: 'layers-label' }), el('button', { type: 'button', id: 'tp-back' }, icon('◁')),
-      el('span', { class: 'step-pick' },
-        el('button', { type: 'button', id: 'step-menu', 'aria-expanded': 'false', 'aria-controls': 'steps' },
-          el('span', { class: 'sm-count' }), ' ', el('span', { class: 'sm-name' }), el('span', { class: 'sm-caret', 'aria-hidden': 'true' }, '▾')),
-        steps),
-      el('button', { type: 'button', id: 'tp-forward' }, icon('▷')),
-      el('span', { id: 'tp-live', class: 'tp-live', 'aria-live': 'polite' }));
-  }
-
-  /** The words of step `s` on the line shown: its short name, and "Step 4 of 8: words" (with what it adds, when nothing). */
-  function stepWords(/** @type {number} */ s) {
-    return { short: stepNames()[s - 1].short, ...lineSteps[s - 1] };
-  }
-
-  /** Draws the controls as the step is now (the line's steps: there are none without a reading tree, and the controls are hidden then). */
-  function renderControls() {
-    const t = labels.tree;
-    if (!t || !lineSteps.length) return;
-    const p = t.stepper;
-    const box = $('layers');
-    if (!document.getElementById('steps')) buildControls(box);
-    box.setAttribute('aria-label', p.group);
-    $('layers-label').textContent = t.show;
-    const here = stepWords(step);
-    box.querySelectorAll('button.step').forEach((b) => {
-      const s = Number(/** @type {HTMLElement} */ (b).dataset.step);
-      const w = stepWords(s);
-      /** @type {HTMLElement} */ (b.querySelector('.short')).textContent = w.short;
-      b.setAttribute('aria-label', w.full);
-      /** @type {HTMLElement} */ (b).title = w.full;
-      if (s === step) b.setAttribute('aria-current', 'step');
-      else b.removeAttribute('aria-current');
-      b.classList.toggle('passed', s < step);
-      b.classList.toggle('empty', !w.adds);
-      // (One stop for Tab: the step shown; the arrows go to the others.)
-      /** @type {HTMLElement} */ (b).tabIndex = s === step ? 0 : -1;
-    });
-    const menu = $('step-menu');
-    /** @type {HTMLElement} */ (menu.querySelector('.sm-count')).textContent = `${step}/${stepNames().length}`;
-    /** @type {HTMLElement} */ (menu.querySelector('.sm-name')).textContent = here.short;
-    menu.setAttribute('aria-label', `${p.jump}: ${here.said}`);
-    menu.title = p.jump;
-    menu.className = `l-${stepNames()[step - 1].layer}`;
-    for (const [id, text] of [['tp-back', p.back], ['tp-forward', p.forward]]) {
-      $(id).setAttribute('aria-label', text);
-      $(id).title = text;
-    }
-    // (aria-disabled, not disabled: a button that the focus is on keeps it at the first or the last step.)
-    $('tp-back').setAttribute('aria-disabled', String(stepFrom(-1) === step));
-    $('tp-forward').setAttribute('aria-disabled', String(stepFrom(1) === step));
-    fitControls();
-  }
-
-  /**
-   * The step buttons stay on one line: where they do not fit, the label goes first (.tight), then the steps' numbers
-   * and the step back and forward buttons (.tighter: the steps are at hand), and last the buttons fold into a
-   * stepper with a menu of the steps (.compact).
-   */
-  function fitControls() {
-    const box = $('layers');
-    if (!document.getElementById('steps') || box.closest('[hidden]')) return;
-    const open = box.classList.contains('open');
-    box.classList.remove('tight', 'tighter', 'compact', 'open');
-    for (const level of ['tight', 'tighter', 'compact']) {
-      if (box.scrollWidth <= box.clientWidth + 1) break;
-      box.classList.add(level);
-    }
-    // (The menu stays open only while the stepper is shown.)
-    box.classList.toggle('open', open && box.classList.contains('compact'));
-    $('step-menu').setAttribute('aria-expanded', String(box.classList.contains('open')));
-  }
-  new ResizeObserver(() => {
-    fitControls();
-    syncLine();
-  }).observe($('layers'));
-
-  function announce(/** @type {string} */ text) {
-    const live = document.getElementById('tp-live');
-    if (live) live.textContent = text;
-  }
-
-  /**
-   * The focus moves among the controls without scrolling: they are on the screen (sticky), and Chromium would
-   * scroll the page to where they would be without sticking.
-   */
-  const STAY = { preventScroll: true };
-
-  /** Opens or closes the menu of the steps (the stepper of narrow panels). */
-  function stepMenu(/** @type {boolean} */ open, /** @type {boolean} */ focusIt = true) {
-    const box = $('layers');
-    if (!box.classList.contains('compact')) return;
-    box.classList.toggle('open', open);
-    $('step-menu').setAttribute('aria-expanded', String(open));
-    if (!focusIt) return;
-    if (open) /** @type {HTMLElement | null} */ (box.querySelector('button.step[aria-current]'))?.focus(STAY);
-    else $('step-menu').focus(STAY);
-  }
-
-  /** A step chosen by the viewer: shown, and kept. */
-  function choose(/** @type {number} */ s) {
-    // (The step shown, or ◁ and ▷ at either end: nothing to do, and a motion running goes on.)
-    if (s === step) return;
-    setStep(s);
-    save();
-  }
-
-  /**
-   * Shows step `s`: the rows it adds grow from their parent and those it takes away shrink into it. The controls
-   * stay where they are, and so does the first row of the tree on the screen that the step keeps (`firstRowKept`).
-   */
-  function setStep(/** @type {number} */ s) {
-    s = Math.max(1, Math.min(stepNames().length, s));
-    if (flushMotion()) renderReading();
-    const was = step;
-    if (s !== was && view === 'tree' && reading) hold(firstRowKept(s), stuckRange(), $('layers').getBoundingClientRect().bottom);
-    step = s;
-    if (s !== was && reading) announce(lineSteps[s - 1].full);
-    if (s === was || view !== 'tree' || !reading || !motion()) {
-      renderReading();
-      return;
-    }
-    if (s > was) {
-      const before = new Set(Array.from($('reading-tree').querySelectorAll('li[role="treeitem"]'), (li) => /** @type {HTMLElement} */ (li).dataset.path ?? ''));
-      renderReading();
-      growIn(before);
-      return;
-    }
-    renderControls();
-    const gone = /** @type {HTMLElement[]} */ (Array.from($('reading-tree').querySelectorAll('li[role="treeitem"]')))
-      .filter((li) => !shown(readingNodes.get(li)) && shown(readingNodes.get(/** @type {HTMLElement} */ (li.parentElement?.closest('li[role="treeitem"]')))));
-    if (!gone.length) {
-      renderReading();
-      return;
-    }
-    shrinking = fold(gone.map((li) => ({ el: li, open: false })), () => {
-      shrinking = null;
-      renderReading();
-    });
-  }
-
-  $('layers').addEventListener('click', (e) => {
-    const b = e.target instanceof Element ? e.target.closest('button') : null;
-    if (!b) return;
-    const box = $('layers');
-    if (b.matches('button.step')) {
-      const inMenu = box.classList.contains('open');
-      choose(Number(/** @type {HTMLElement} */ (b).dataset.step));
-      if (inMenu) stepMenu(false);
-      else /** @type {HTMLElement | null} */ (box.querySelector('button.step[aria-current]'))?.focus(STAY);
-    } else if (b.id === 'step-menu') stepMenu(!box.classList.contains('open'));
-    else if (b.id === 'tp-back' || b.id === 'tp-forward') choose(stepFrom(b.id === 'tp-back' ? -1 : 1));
-  });
-  // The arrows step (among the steps that add something), Home and End go to the line alone and to every layer. In
-  // the menu of the steps, the arrows up and down move the focus, and Escape closes it.
-  $('layers').addEventListener('keydown', (e) => {
-    const box = $('layers');
-    const onStep = e.target instanceof Element && e.target.matches('button.step');
-    if (box.classList.contains('open')) {
-      const list = /** @type {HTMLElement[]} */ (Array.from(box.querySelectorAll('button.step')));
-      const i = list.indexOf(/** @type {HTMLElement} */ (e.target));
-      if (e.key === 'Escape') stepMenu(false);
-      else if (e.key === 'ArrowDown' && i >= 0) list[Math.min(list.length - 1, i + 1)].focus(STAY);
-      else if (e.key === 'ArrowUp' && i >= 0) list[Math.max(0, i - 1)].focus(STAY);
-      else if (e.key === 'Home' && i >= 0) list[0].focus(STAY);
-      else if (e.key === 'End' && i >= 0) list[list.length - 1].focus(STAY);
-      else if (e.key === 'Tab') {
-        stepMenu(false, false);
-        return;
-      } else return;
-      e.preventDefault();
-      return;
-    }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') choose(stepFrom(e.key === 'ArrowLeft' ? -1 : 1));
-    else if (e.key === 'Home') choose(1);
-    else if (e.key === 'End') choose(stepNames().length);
-    else return;
-    e.preventDefault();
-    if (onStep) /** @type {HTMLElement | null} */ (box.querySelector('button.step[aria-current]'))?.focus(STAY);
-  });
-  // A click or the focus elsewhere closes the menu.
-  document.addEventListener('pointerdown', (e) => {
-    if ($('layers').classList.contains('open') && !(e.target instanceof Node && $('layers').querySelector('.step-pick')?.contains(e.target))) stepMenu(false, false);
-  });
-  $('layers').addEventListener('focusout', (e) => {
-    const pick = $('layers').querySelector('.step-pick');
-    if ($('layers').classList.contains('open') && !(e.relatedTarget instanceof Node && pick?.contains(e.relatedTarget))) stepMenu(false, false);
-  });
 
   // ---------------------------------------------------------------- folding and unfolding, with motion
 
@@ -1648,18 +1391,6 @@
   const running = /** @type {WeakMap<Element, Animation>} */ (new WeakMap());
   /** The moves of heights, while they run: the row held in place follows them (`hold`). */
   const moves = /** @type {Set<Animation>} */ (new Set());
-  /** A step back whose rows are shrinking: they are drawn away when it ends. */
-  let shrinking = /** @type {{ cancel(): void } | null} */ (null);
-
-  /** Ends a step back at once (true when one was moving). */
-  function flushMotion() {
-    if (!shrinking) return false;
-    const s = shrinking;
-    shrinking = null;
-    s.cancel();
-    return true;
-  }
-
   /**
    * @typedef {{ el: HTMLElement, open: boolean, delay?: number }} Fold
    * A box that has just been unfolded (`open`) or folded: the state is the new one already (the class, `hidden`,
@@ -1724,27 +1455,30 @@
     return { cancel: () => started.forEach((a) => a.cancel()) };
   }
 
-  /** The rows a step adds grow from their parent (each new subtree, one after the other), and a new reader's band takes its tint and its edges from the band around it. */
-  function growIn(/** @type {Set<string>} */ before) {
-    const ul = $('reading-tree');
-    const roots = /** @type {HTMLElement[]} */ (Array.from(ul.querySelectorAll('li[role="treeitem"]')))
-      .filter((li) => !before.has(li.dataset.path ?? '') && before.has((li.dataset.path ?? '').replace(/\.\d+$/, '')));
-    fold(roots.map((li, k) => ({ el: li, open: true, delay: Math.min(k, 8) * 30 })));
-    roots.forEach((li, k) => {
-      if (!li.classList.contains('band')) return;
-      const style = getComputedStyle(li);
-      const parent = li.parentElement?.closest('li');
-      const from = parent ? getComputedStyle(parent).backgroundColor : 'transparent';
-      // (Its edges come in with the tint.)
-      const to = { backgroundColor: style.backgroundColor, borderLeftColor: style.borderLeftColor, borderTopColor: style.borderTopColor, borderBottomColor: style.borderBottomColor };
-      li.animate([{ backgroundColor: from, borderLeftColor: from, borderTopColor: from, borderBottomColor: from }, to], { duration: MOTION_MS + 200, delay: Math.min(k, 8) * 30 + 80, easing: 'ease-out', fill: 'backwards' });
+  /**
+   * A `<details>` that moves when it opens or closes (`panel.animations`; off, or with reduced motion, at once). `body` holds what it folds.
+   * A click on the summary still toggles it: the state is `open`, which the fold follows.
+   */
+  function foldingDetails(/** @type {HTMLDetailsElement} */ box, /** @type {HTMLElement} */ body) {
+    const summary = /** @type {HTMLElement} */ (box.querySelector(':scope > summary'));
+    summary.addEventListener('click', (e) => {
+      if (selecting()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      hold(() => summary);
+      if (box.open) fold([{ el: body, open: false }], () => { box.open = false; });
+      else {
+        box.open = true;
+        fold([{ el: body, open: true }]);
+      }
     });
+    return box;
   }
 
   // ---------------------------------------------------------------- keeping the row acted on in place
 
   /*
-   * A fold, an unfold or a step changes the height of what lies around the row the viewer acted on. The panel
+   * A fold, an unfold or another depth changes the height of what lies around the row the viewer acted on. The panel
    * scrolls so that this row stays where it was on the screen: right after the change, at every frame of the motion
    * (a frame's callback runs after the moves have stepped and before the frame is drawn), and at its end. CSS's own
    * scroll anchoring (`overflow-anchor`) is turned off (panel.css): it chooses its own row, it differs from browser
@@ -1862,273 +1596,34 @@
     trimSpacer();
   }
 
-  /** Finds the row of the item at `path` in the list (`#tree`) or in the reading tree, as drawn when it is called. */
-  const rowAt = (/** @type {'list' | 'reading'} */ list, /** @type {string} */ path) => () =>
-    document.querySelector(list === 'list' ? `#tree li[data-path="${path}"] > .item > .row` : `#reading-tree li[data-path="${path}"] > .trow`);
+  /** Finds the row of the item `key`, as drawn when it is called. */
+  const rowAt = (/** @type {string} */ key) => () => document.querySelector(`#tree li[data-key="${key}"] > .item > .row`);
 
   /**
    * Of `items`, the first row on the screen (below `below`, the sticky rows at the top) that `stays` after a change;
    * else the nearest item around the first on the screen that stays.
    */
-  function firstOnScreen(/** @type {HTMLElement[]} */ items, /** @type {'list' | 'reading'} */ list, /** @type {number} */ below, /** @type {(li: HTMLElement) => boolean} */ stays) {
+  function firstOnScreen(/** @type {HTMLElement[]} */ items, /** @type {number} */ below, /** @type {(li: HTMLElement) => boolean} */ stays) {
     const on = items.filter((li) => {
-      const r = /** @type {HTMLElement} */ (li.firstElementChild).getBoundingClientRect();
+      const r = /** @type {HTMLElement} */ (li.querySelector(':scope > .item > .row')).getBoundingClientRect();
       return r.bottom > below && r.top < window.innerHeight;
     });
     let li = /** @type {HTMLElement | null | undefined} */ (on.find(stays) ?? on[0]);
     while (li && !stays(li)) li = /** @type {HTMLElement | null} */ (li.parentElement?.closest('li'));
-    return li ? rowAt(list, String(li.dataset.path)) : null;
+    return li ? rowAt(String(li.dataset.key)) : null;
   }
 
-  /**
-   * Where the step controls are stuck under the line, when they are: between the scroll position where they start
-   * to stick and the one where the end of the tree (their section) would take them up with it. A step keeps them
-   * where they are, before the row it holds: when that row would have to go further, it moves.
-   */
-  function stuckRange() {
-    const box = $('layers');
-    const top = parseFloat(getComputedStyle(box).top);
-    const at = () => $('reading').getBoundingClientRect().top + window.scrollY - top;
-    if (window.scrollY < at() - 0.5) return null;
-    // (Sticky keeps the box with its margin inside the section.)
-    return () => [at(), $('reading').getBoundingClientRect().bottom + window.scrollY - top - box.offsetHeight - parseFloat(getComputedStyle(box).marginBottom)];
+  /** Before the rows of another depth are drawn: the first row on the screen that they still have stays where it is. */
+  function holdForDepth(/** @type {any[]} */ rows) {
+    const keys = new Set();
+    const add = (/** @type {any} */ r) => {
+      keys.add(r.key);
+      r.children.forEach(add);
+    };
+    rows.forEach(add);
+    const items = /** @type {HTMLElement[]} */ (Array.from($('tree').querySelectorAll('li[data-key]'))).filter((li) => li.getClientRects().length);
+    hold(firstOnScreen(items, $('top').getBoundingClientRect().bottom, (li) => keys.has(li.dataset.key)));
   }
-
-  /** The row of the reading tree a change to step `s` keeps in place: the first on the screen that the step still shows. */
-  function firstRowKept(/** @type {number} */ s) {
-    return firstOnScreen(visibleItems(), 'reading', $('layers').getBoundingClientRect().bottom, (li) => (readingNodes.get(li)?.appears ?? 1) <= s);
-  }
-
-  /** A node of the reading tree as an item of the ARIA tree, with the visible layers of its children. */
-  function treeItem(n, path, depth, pos, size) {
-    const li = document.createElement('li');
-    li.setAttribute('role', 'treeitem');
-    li.setAttribute('aria-level', String(depth));
-    li.setAttribute('aria-posinset', String(pos));
-    li.setAttribute('aria-setsize', String(size));
-    li.tabIndex = -1;
-    li.dataset.path = path;
-    li.className = `ti l-${n.layer}`;
-    // (A band starts where the reader changes: another layer, another command, another shell.)
-    const band = n.band !== undefined;
-    if (band) li.classList.add('band');
-    const kids = n.children.filter((/** @type {any} */ c) => shown(c));
-    const row = document.createElement('div');
-    row.className = 'trow';
-    const twisty = document.createElement('span');
-    twisty.className = 'twisty';
-    twisty.setAttribute('aria-hidden', 'true');
-    const folded = foldedKeys.has(path);
-    if (kids.length) twisty.textContent = folded ? '▸' : '▾';
-    const chip = document.createElement('span');
-    chip.className = 'chip';
-    chip.textContent = n.chip;
-    // The first line: the code in a pill (in the colour of its role, as in the list) and the kind; at its right,
-    // where a reader takes over, the reader's name, and the links. The text has a line of its own under them.
-    const head = document.createElement('span');
-    head.className = 'thead';
-    const code = !['line', 'language'].includes(n.kind) ? n.label : '';
-    if (code) {
-      const c = document.createElement('code');
-      c.className = `tcode kind-${n.role}`;
-      c.textContent = code;
-      head.append(c);
-    }
-    // (The badge after the code, then the kind of node; a reserved word's kind says what it is.)
-    const badge = n.kind === 'keyword' ? [] : nameBadge(n.name);
-    head.append(...badge, chip);
-    const about = n.text ?? n.about ?? '';
-    const text = document.createElement('span');
-    // (What the kind is in general, where no token says more: quieter than an explanation.)
-    text.className = n.text === undefined ? 'text about' : 'text';
-    text.append(...inline(about), ...(n.text === undefined ? [] : basisParts(n.basisShown)));
-    const links = refLinks(n.refs);
-    links.forEach((l) => l.querySelectorAll('a').forEach((a) => { a.tabIndex = -1; }));
-    const right = document.createElement('span');
-    right.className = 'tright';
-    const bandName = n.band ?? '';
-    if (bandName) {
-      const b = document.createElement('span');
-      b.className = 'band-label';
-      b.setAttribute('aria-hidden', 'true');
-      b.textContent = bandName;
-      right.append(b);
-    }
-    right.append(...links);
-    row.append(twisty, head, right);
-    if (about) row.append(text);
-    const also = nameAlso(n.name);
-    if (also) row.append(also);
-    const spoken = badge.length ? `, ${nameSpoken(n.name)}` : '';
-    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}${spoken}. ${n.readBy}. ${spokenMarks(about.replace(/`/g, ''))}${also ? `. ${also.textContent}` : ''}`);
-    li.append(row);
-    readingNodes.set(li, n);
-    row.addEventListener('mouseenter', () => showNode(n));
-    row.addEventListener('mouseleave', () => showNode(focusedNode()));
-    row.addEventListener('click', (e) => {
-      if (selecting()) return;
-      focusItem(li);
-      if (kids.length && !(e.target instanceof Element && e.target.closest('a'))) toggleItem(li);
-      reveal(n, true);
-    });
-    if (kids.length) {
-      li.setAttribute('aria-expanded', String(!folded));
-      const group = document.createElement('ul');
-      group.setAttribute('role', 'group');
-      group.hidden = folded;
-      group.append(...kids.map((/** @type {any} */ c, /** @type {number} */ i) => treeItem(c, `${path}.${n.children.indexOf(c)}`, depth + 1, i + 1, kids.length)));
-      li.append(group);
-    }
-    return li;
-  }
-
-  /** The nodes of the items drawn. */
-  const readingNodes = new WeakMap();
-
-  /** The items not inside a folded one (nor in a row a step takes away), in order. */
-  function visibleItems() {
-    return /** @type {HTMLElement[]} */ (Array.from($('reading-tree').querySelectorAll('li[role="treeitem"]')))
-      .filter((li) => !li.parentElement?.closest('ul[role="group"][hidden]') && !li.closest('li[data-closing]'));
-  }
-
-  function focusedNode() {
-    const li = document.activeElement instanceof HTMLElement && document.activeElement.closest('#reading-tree li[role="treeitem"]');
-    return li ? readingNodes.get(li) : null;
-  }
-
-  function focusItem(/** @type {HTMLElement} */ li) {
-    $('reading-tree').querySelectorAll('li[tabindex="0"]').forEach((x) => { /** @type {HTMLElement} */ (x).tabIndex = -1; });
-    li.tabIndex = 0;
-    currentKey = String(li.dataset.path);
-    // (Not scrolled by the focus: a click leaves the row where it is, and the keys scroll it into view themselves.)
-    li.focus({ preventScroll: true });
-  }
-
-  function toggleItem(/** @type {HTMLElement} */ li) {
-    const group = li.querySelector(':scope > ul[role="group"]');
-    if (!group) return;
-    hold(rowAt('reading', String(li.dataset.path)));
-    fold([setFolded(li, !/** @type {HTMLElement} */ (group).hidden)]);
-    updateToggle();
-  }
-
-  /** Folds or unfolds an item of the tree; the change returned says how its group moves (see `fold`). */
-  function setFolded(/** @type {HTMLElement} */ li, /** @type {boolean} */ fold) {
-    const group = /** @type {HTMLElement | null} */ (li.querySelector(':scope > ul[role="group"]'));
-    if (!group) return null;
-    group.hidden = fold;
-    li.setAttribute('aria-expanded', String(!fold));
-    const path = String(li.dataset.path);
-    if (fold) foldedKeys.add(path);
-    else foldedKeys.delete(path);
-    if (fold) {
-      // What was hidden cannot keep the focus or the Tab stop: they go to this item.
-      if (group.contains(document.activeElement)) focusItem(li);
-      else if (group.querySelector('li[tabindex="0"]')) {
-        group.querySelectorAll('li[tabindex="0"]').forEach((x) => { /** @type {HTMLElement} */ (x).tabIndex = -1; });
-        li.tabIndex = 0;
-        currentKey = path;
-      }
-    }
-    const tw = li.querySelector(':scope > .trow > .twisty');
-    if (tw) tw.textContent = fold ? '▸' : '▾';
-    return { el: group, open: !fold };
-  }
-
-  /** Highlights a node: its row, its characters in the line, its range in the editor (null: none). */
-  function showNode(n) {
-    $('reading-tree').querySelectorAll('.trow.active').forEach((r) => r.classList.remove('active'));
-    if (n) {
-      for (const li of visibleItems()) if (readingNodes.get(li) === n) li.querySelector(':scope > .trow')?.classList.add('active');
-    }
-    markLine(n ? n.span : null);
-    vscode.postMessage({ type: 'highlight', span: n ? n.span : null });
-  }
-
-  /** Marks the characters of a span in the line at the top (the tree view's highlight). */
-  function markLine(span) {
-    for (const s of segments) {
-      const from = Number(s.dataset.from), to = Number(s.dataset.to);
-      let on = false;
-      if (span && span.start.line <= shownLineNo && span.end.line >= shownLineNo) {
-        const a = span.start.line < shownLineNo ? 0 : span.start.character;
-        const b = span.end.line > shownLineNo ? Infinity : span.end.character;
-        on = from < b && a < to;
-      }
-      s.classList.toggle('mark', on);
-    }
-  }
-
-  /** The links of an item's row are in the Tab order only while the item has the focus: Tab goes into them, and on past the tree. */
-  function linksTabbable(/** @type {HTMLElement | null} */ li) {
-    $('reading-tree').querySelectorAll('.refs a').forEach((a) => {
-      /** @type {HTMLAnchorElement} */ (a).tabIndex = li && a.closest('li') === li ? 0 : -1;
-    });
-  }
-
-  $('reading-tree').addEventListener('focusin', (e) => {
-    const li = e.target instanceof HTMLElement ? /** @type {HTMLElement | null} */ (e.target.closest('li[role="treeitem"]')) : null;
-    linksTabbable(li);
-    if (li) showNode(readingNodes.get(li));
-    // (Tab into the tree: the browser shows the item, which may leave its row under the sticky rows.)
-    if (li && e.target === li && Date.now() - pointerAt > 500) showRow(li);
-  });
-  $('reading-tree').addEventListener('focusout', (e) => {
-    if (!(e.relatedTarget instanceof Node && $('reading-tree').contains(e.relatedTarget))) {
-      linksTabbable(null);
-      showNode(null);
-    }
-  });
-
-  // The keys of the ARIA tree pattern.
-  $('reading-tree').addEventListener('keydown', (e) => {
-    const li = e.target instanceof HTMLElement ? /** @type {HTMLElement | null} */ (e.target.closest('li[role="treeitem"]')) : null;
-    if (!li) return;
-    // A key on one of the item's links is the link's (Enter follows it).
-    if (e.target instanceof Element && e.target.closest('a') && (e.key === 'Enter' || e.key === ' ')) return;
-    const items = visibleItems();
-    const i = items.indexOf(li);
-    const group = /** @type {HTMLElement | null} */ (li.querySelector(':scope > ul[role="group"]'));
-    let next = /** @type {HTMLElement | null | undefined} */ (null);
-    switch (e.key) {
-      case 'ArrowDown': next = items[i + 1]; break;
-      case 'ArrowUp': next = items[i - 1]; break;
-      case 'Home': next = items[0]; break;
-      case 'End': next = items[items.length - 1]; break;
-      case 'ArrowRight':
-        if (group && group.hidden) toggleItem(li);
-        else if (group) next = /** @type {HTMLElement} */ (group.firstElementChild);
-        break;
-      case 'ArrowLeft':
-        if (group && !group.hidden) toggleItem(li);
-        else next = /** @type {HTMLElement | null} */ (li.parentElement?.closest('li[role="treeitem"]') ?? null);
-        break;
-      case 'Enter':
-      case ' ':
-        toggleItem(li);
-        reveal(readingNodes.get(li), true);
-        break;
-      default:
-        return;
-    }
-    e.preventDefault();
-    if (next) {
-      focusItem(next);
-      showRow(next);
-    }
-  });
-
-  /**
-   * Scrolls an item's own row into view, below the sticky line and step controls (the page's `scroll-padding-top`):
-   * the item holds its group too, taller than the screen, which the browser would take as in view already.
-   */
-  function showRow(/** @type {HTMLElement} */ li) {
-    li.querySelector(':scope > .trow')?.scrollIntoView({ block: 'nearest' });
-  }
-
-  /** When the pointer last went down: a focus soon after it is the pointer's, and leaves the row where it is. */
-  let pointerAt = 0;
-  document.addEventListener('pointerdown', () => { pointerAt = Date.now(); }, true);
 
   /** Selects a token's range in the editor, only when it lies on the line explained. A range on another line (a clause of a
       `case` under its `while`, one over several lines: an if, a loop, a function) would move the cursor there, and the panel
@@ -2283,13 +1778,11 @@
   $('settings').addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
 
   /**
-   * Puts the focus in the explanation (the web page's key from the editor, F6): the tree view's current item, the quick
-   * reference's search field, or else the explanation itself, from where a screen reader reads on.
+   * Puts the focus in the explanation (the web page's key from the editor, F6): the quick reference's search field, or else
+   * the explanation itself, from where a screen reader reads on.
    */
   function focusExplanation() {
     if (!$('reference').hidden) return $('ref-search').focus();
-    const li = view === 'tree' && reading ? /** @type {HTMLElement | null} */ ($('reading-tree').querySelector('li[tabindex="0"]')) : null;
-    if (li) return li.focus();
     $('main').tabIndex = -1;
     $('main').focus();
   }

@@ -7,7 +7,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import type { Browser, Frame } from 'playwright-core';
-import { chooseView, frames, openSite, until } from './support/site';
+import { chooseDepth, frames, openSite, until } from './support/site';
 
 const LINE = 'x=1; unset -fv x f; exit 300';
 /** A part of a note, in the box of the line's problems (`unset -fv`) or among the other notes (`exit 300`). */
@@ -16,7 +16,7 @@ const both = (part: string) => `#problems ${part}, #notes ${part}`;
 const ROWS = 'UID=0 echo "$COLUMNS"';
 
 /**
- * The boxes of each part of `sel` (a note, a row of Meaning or Reading) that has a chip, with its open try-it: they
+ * The boxes of each part of `sel` (a note, a row) that has a chip, with its open try-it: they
  * stay in it, the copy button is right of the code, the output under it.
  */
 const boxesOf = (sel: string) => `[...document.querySelectorAll(${JSON.stringify(sel)})].filter((n) => n.querySelector('.basis')).map((n) => {
@@ -171,9 +171,9 @@ describe('the web page: what a note rests on', function () {
     });
   }
 
-  // Step 4: the rows of Meaning and the nodes of Reading whose text rests on bash's behaviour.
+  // Step 4: the rows whose text rests on bash's behaviour, at both depths.
   for (const [width, locale] of [[1280, 'en-US'], [1280, 'ja-JP'], [390, 'en-US'], [390, 'ja-JP']] as const) {
-    it(`marks the rows and the nodes of Reading that rest on bash's behaviour, with a try-it, at ${width} px (${locale})`, async () => {
+    it(`marks the rows that rest on bash's behaviour, with a try-it, at both depths, at ${width} px (${locale})`, async () => {
       const ja = locale === 'ja-JP';
       const { ctx, page, panel, errors } = await open(width, locale, {}, ROWS, 1);
       const differs = ja ? 'マニュアルの記述と異なる・bash 5.2・5.3 で確認' : 'Differs from the manual · checked with bash 5.2 and 5.3';
@@ -193,23 +193,17 @@ describe('the web page: what a note rests on', function () {
         const rows = panel().locator('#tree .row').filter({ has: panel().locator('.basis') });
         for (let i = 0; i < await rows.count(); i++) await rows.nth(i).screenshot({ path: path.join(shots, `basis-rows-${width}-${ja ? 'ja' : 'en'}-${i + 1}.png`) });
       }
-      // Reading: the nodes with the same texts, the chip under the text.
-      await chooseView(page, 'tree');
-      await until('the tree', () => panel().locator('#reading-tree .trow .basis').count(), (n) => n >= 2);
-      assert.deepStrictEqual([...new Set(await panel().locator('#reading-tree .trow .basis').allTextContents())].sort(), [differs, checked].sort());
-      // (A try-it opened in Meaning is open here too: the panel keeps it open by its code. The others open with a click.)
-      const n = await panel().locator('#reading-tree .trow details.tryit').count();
-      await openAll(panel(), '#reading-tree .trow');
-      assert.strictEqual(await panel().locator('#reading-tree .trow details.tryit[open]').count(), n);
-      // (A click in it does not fold the item: its parts stay.)
-      assert.strictEqual(await panel().locator('#reading-tree ul[role="group"][hidden]').count(), 0);
-      assertBoxes(await panel().evaluate(boxesOf('#reading-tree .trow')) as Record<string, Box>[], 'node');
-      assert.ok(await panel().evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), 'Reading scrolls sideways');
-      assert.deepStrictEqual(await panel().evaluate(BREAKS), [], 'a line breaks inside a word in Reading');
-      if (shots) {
-        const rows = panel().locator('#reading-tree .trow').filter({ has: panel().locator('.basis') });
-        for (let i = 0; i < await rows.count(); i++) await rows.nth(i).screenshot({ path: path.join(shots, `basis-reading-${width}-${ja ? 'ja' : 'en'}-${i + 1}.png`) });
-      }
+      // Depth 2: the rows with the same texts, with their role lines: the chips and the try-its stay whole.
+      await chooseDepth(page, 2);
+      await until('the role lines', () => panel().locator('#tree .row .role-line').count(), (n) => n >= 2);
+      assert.deepStrictEqual([...new Set(await panel().locator('#tree .row .basis').allTextContents())].sort(), [differs, checked].sort());
+      // (A try-it opened at depth 1 is open here too: the panel keeps it open by its code.)
+      const n = await panel().locator('#tree .row details.tryit').count();
+      await openAll(panel(), '#tree .row');
+      assert.strictEqual(await panel().locator('#tree .row details.tryit[open]').count(), n);
+      assertBoxes(await panel().evaluate(boxesOf('#tree .row')) as Record<string, Box>[], 'row at depth 2');
+      assert.ok(await panel().evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), 'depth 2 scrolls sideways');
+      assert.deepStrictEqual(await panel().evaluate(BREAKS), [], 'a line breaks inside a word at depth 2');
       assert.deepStrictEqual(errors, []);
       await ctx.close();
     });

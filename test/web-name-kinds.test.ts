@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import type { Browser, Frame, Page } from 'playwright-core';
 import { servePanel, type PanelServer } from './support/panel-page';
-import { chooseView, frames, openSite, until } from './support/site';
+import { chooseDepth, frames, openSite, until } from './support/site';
 
 const LINE = 'sudo echo hi; echo hi';
 
@@ -37,7 +37,7 @@ function checkGeometry(where: string, got: { vw: number; sw: number; items: Badg
   }
 }
 
-describe('the web page: what a command name is, in both views', function () {
+describe('the web page: what a command name is, at both depths', function () {
   this.timeout(120000);
   let browser: Browser;
   let base = '';
@@ -73,27 +73,26 @@ describe('the web page: what a command name is, in both views', function () {
       assert.deepStrictEqual(list.items.map((b) => [b.text, b.by]), [['program', ''], ['program', 'run by sudo'], ['builtin', '']]);
       assert.strictEqual(list.items[1].also, 'sudo looks the name up, so this is the program, not bash\'s builtin');
       assert.strictEqual(list.items[2].also, 'Same name, also: a program, usually /usr/bin/echo (run with env echo)');
-      checkGeometry(`Meaning, ${width}`, list);
+      checkGeometry(`depth 1, ${width}`, list);
       // (The panel's page takes the language of the explanation: its styles follow it, `:lang(ja)`.)
       assert.strictEqual(await panel.evaluate('document.documentElement.lang'), 'en');
       // (The badge's word is in the row's text, for a screen reader.)
       assert.match(await panel.locator('.row').filter({ hasText: 'Print arguments' }).last().textContent() ?? '', /echobuiltinPrint arguments/);
 
-      await chooseView(page, 'tree');
-      await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 3);
+      // At depth 2 the same rows, with the same badges: each row's role line says "command name", not what it runs.
+      await chooseDepth(page, 2);
+      await until('the role lines', () => panel.locator('#tree .role-line').count(), (n) => n > 3);
       await frames(panel);
-      const tree = await badges(panel);
-      assert.deepStrictEqual(tree.items.map((b) => [b.text, b.by]), [['program', ''], ['program', 'run by sudo'], ['builtin', '']]);
-      checkGeometry(`Reading, ${width}`, tree);
-      assert.match(tree.items[1].label, /^command name echo, program, run by sudo\. sudo reads it, not bash\. .*\. sudo looks the name up/);
-      // The badge replaces the "· builtin" after the kind.
-      assert.deepStrictEqual(await panel.locator('#reading-tree .chip').allTextContents().then((cs) => cs.filter((c) => c.includes('·'))), []);
+      const deep = await badges(panel);
+      assert.deepStrictEqual(deep.items.map((b) => [b.text, b.by]), list.items.map((b) => [b.text, b.by]));
+      checkGeometry(`depth 2, ${width}`, deep);
+      assert.deepStrictEqual(await panel.locator('#tree .role-chip').allTextContents().then((cs) => cs.filter((c) => c.includes('·'))), []);
       assert.deepStrictEqual(errors, []);
       await ctx.close();
     });
   }
 
-  it('puts no badge on a reserved word in Reading, and none on a subcommand', async () => {
+  it('keeps the badge of the reserved word at both depths, and none on a subcommand', async () => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US' });
     const page = await ctx.newPage();
     await page.goto(base);
@@ -103,15 +102,13 @@ describe('the web page: what a command name is, in both views', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('time git commit -m x');
     await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('time git'));
-    // (The reserved word has its row in both views: in Meaning with its badge and what else its name is, as a command's has.)
+    // (The reserved word has its row: with its badge and what else its name is, as a command's has.)
     const meaning = (await badges(panel())).items;
     assert.deepStrictEqual(meaning.map((b) => b.text), ['keyword', 'program']);
     assert.match(meaning[0].also, /usually \/usr\/bin\/time/);
-    await chooseView(page, 'tree');
-    await until('the tree', () => panel().locator('#reading-tree li').count(), (n) => n > 3);
-    assert.deepStrictEqual((await badges(panel())).items.map((b) => b.text), ['program']);
-    // (The reserved word still says what else its name is.)
-    assert.match(await panel().locator('#reading-tree .nk-also').first().textContent() ?? '', /usually \/usr\/bin\/time/);
+    await chooseDepth(page, 2);
+    await until('the role lines', () => panel().locator('#tree .role-line').count(), (n) => n > 3);
+    assert.deepStrictEqual((await badges(panel())).items.map((b) => b.text), ['keyword', 'program']);
     await ctx.close();
   });
 });
@@ -136,54 +133,35 @@ describe('the VS Code panel: what a command name is', function () {
     await server?.close();
   });
 
-  for (const [theme, view, width] of [['dark', 'list', 300], ['light', 'tree', 300], ['hc', 'tree', 600]] as const) {
-    it(`shows the badges, ${theme}, ${view}, ${width} px`, async () => {
+  for (const [theme, depth, width] of [['dark', 1, 300], ['light', 2, 300], ['hc', 2, 600]] as const) {
+    it(`shows the badges, ${theme}, depth ${depth}, ${width} px`, async () => {
       const page = await browser!.newPage({ viewport: { width, height: 700 } });
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-      await page.goto(server.url(theme, 'ja', view));
-      // (The stub's panel shows the tree at its step of bash's words: not yet what `sudo` reads.)
-      const want = view === 'list' ? [['プログラム', ''], ['プログラム', 'sudo が実行'], ['ビルトイン', '']] : [['プログラム', ''], ['ビルトイン', '']];
+      await page.goto(server.url(theme, 'ja', depth));
+      const want = [['プログラム', ''], ['プログラム', 'sudo が実行'], ['ビルトイン', '']];
       await until('the badges', () => page.locator('.nk-badge:visible').count(), (n) => n === want.length);
       await frames(page);
       const got = await badges(page);
       assert.deepStrictEqual(got.items.map((b) => [b.text, b.by]), want);
-      checkGeometry(`${theme} ${view} ${width}`, got);
+      checkGeometry(`${theme} ${depth} ${width}`, got);
       assert.deepStrictEqual(errors, []);
       await page.close();
     });
   }
 
-  it('keeps the steps label on one line in Japanese, and the "run by" upright', async () => {
+  it('keeps the "run by" upright in Japanese', async () => {
     const page = await browser!.newPage({ viewport: { width: 700, height: 700 } });
-    await page.goto(server.url('light', 'ja', 'list'));
+    await page.goto(server.url('light', 'ja', 1));
     await until('the badges', () => page.locator('.nk-by:visible').count(), (n) => n === 1);
     assert.strictEqual(await page.evaluate("getComputedStyle(document.querySelector('.nk-by')).fontStyle"), 'normal');
-    await page.goto(server.url('light', 'ja', 'tree'));
-    await until('the steps', () => page.locator('#steps button').count(), (n) => n > 3);
-    for (let width = 300; width <= 700; width += 25) {
-      await page.setViewportSize({ width, height: 700 });
-      await frames(page);
-      // (The lines of its text, by their tops; and the label ends before the first step, inside the row. Hidden, it has no box.)
-      const got = await page.evaluate(`(() => {
-        const l = document.getElementById('layers-label');
-        if (!l.getClientRects().length) return { hidden: true };
-        const range = document.createRange(); range.selectNodeContents(l);
-        const tops = new Set([...range.getClientRects()].map((r) => Math.round(r.top)));
-        const step = document.querySelector('#layers button:not([hidden])').getBoundingClientRect();
-        return { hidden: false, lines: tops.size, right: l.getBoundingClientRect().right, step: step.left, box: document.getElementById('layers').getBoundingClientRect().right };
-      })()`) as { hidden: boolean; lines?: number; right?: number; step?: number; box?: number };
-      if (got.hidden) continue;
-      assert.strictEqual(got.lines, 1, `${width} px: the label wraps`);
-      assert.ok(got.right! <= got.step! + 0.5 && got.right! <= got.box! + 0.5, `${width} px: ${JSON.stringify(got)}`);
-    }
     await page.close();
   });
 
   it('draws the badge in the system colours when colours are forced', async () => {
     const page = await browser!.newPage({ viewport: { width: 600, height: 700 }, forcedColors: 'active' });
-    await page.goto(server.url('dark', 'en', 'list'));
+    await page.goto(server.url('dark', 'en', 1));
     await until('the badges', () => page.locator('.nk-badge').count(), (n) => n === 3);
     const [color, edge, text] = await page.evaluate(`(() => {
       const b = document.querySelector('.nk-badge'); const s = getComputedStyle(b);

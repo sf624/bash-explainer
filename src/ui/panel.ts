@@ -11,7 +11,7 @@ import { THEME_SETTINGS, themeRoleColours } from './themeColours';
 import { panelPalette, paletteVars, type PanelBase } from './themePalette';
 import { contained } from '../failures';
 
-/** Where the panel's view and step are kept between sessions (the webview's own state dies with the panel). */
+/** Where the panel's depth is kept between sessions (the webview's own state dies with the panel). */
 const STATE_KEY = 'bashExplainer.panelState';
 
 /** Side pane that follows the cursor and shows a regex101-style breakdown of the current line. */
@@ -28,7 +28,7 @@ export class PanelController implements vscode.Disposable {
     borderRadius: '2px',
   });
   private disposables: vscode.Disposable[] = [];
-  /** The view and step the viewer chose, kept in the global state: the tree is built only in the tree view. */
+  /** The depth the viewer chose, kept in the global state: the reading tree is built only at depth 2. */
   private state: PanelState;
   /** What the panel last said it draws on (`themeBase`), and the number of the last theme request (an older answer is dropped). */
   private themeBase: PanelBase | undefined;
@@ -188,7 +188,7 @@ export class PanelController implements vscode.Disposable {
       const before = needsReading(this.state);
       this.state = panelState(m.state);
       void this.ctx.globalState.update(STATE_KEY, this.state);
-      // The tree is built only for the tree view: explain the line again for the view just chosen.
+      // The rows of the depth just chosen, with the reading tree at depth 2.
       if (needsReading(this.state) !== before) this.post();
       return;
     }
@@ -210,7 +210,7 @@ export class PanelController implements vscode.Disposable {
       ed.setDecorations(this.highlight, m.span ? [toRange(m.span)] : []);
     } else if (m.type === 'reveal') {
       const r = toRange(m.span);
-      void vscode.window.showTextDocument(ed.document, { viewColumn: ed.viewColumn, selection: new vscode.Selection(r.start, r.end), preserveFocus: m.preserveFocus }); // (the tree view keeps the focus in the panel)
+      void vscode.window.showTextDocument(ed.document, { viewColumn: ed.viewColumn, selection: new vscode.Selection(r.start, r.end), preserveFocus: m.preserveFocus });
     }
   }
 

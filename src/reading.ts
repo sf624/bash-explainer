@@ -23,6 +23,7 @@
 //
 // The layers come from the tree and from `Token.origin`, never from a label or an explanation. The explanations of
 // the nodes are those of the tokens about the same text: bash's own (`shell`) for the nodes bash reads.
+import { readSaid, tokenSaid, type TokenTextArgs, type TokenTextId } from './messages-tokens';
 import { markedText } from './tokenmarks';
 import type { Pos, ScriptProcess, Span, Token } from './analyzer-types';
 import type { Basis, TryIt } from './basis';
@@ -33,6 +34,7 @@ import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } 
 import { aliasesAfter, type AliasResolution, type NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
 import { spanWithin } from './noteanchors';
+import { type WordStep, wordSteps } from './semantics/wordsteps';
 import { type ExpansionStep, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
 import { setsElement, splitElement, stackTilde, staticWordValue } from './staticword';
 import { field, fields, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
@@ -92,6 +94,8 @@ export interface ReadingNode {
   replacement?: string;
   /** On a command name (and the reserved word `time`): what the name is, and what else (`Token.name`). */
   name?: NameInfo;
+  /** On a word bash does something to: what it does, in its order (3.5; `wordSteps`), and the word's place. */
+  steps?: { list: readonly WordStep[]; context: string };
   /** With `text`: what it rests on where it states bash's behaviour, and a command that shows it (`Token.basis`, `Token.tryIt`). */
   basis?: Basis;
   tryIt?: TryIt;
@@ -115,19 +119,6 @@ export interface ReadingContext {
   /** The shell the script is for (bash when absent): what a word spells there (`$'echo'` is `$echo` in dash). */
   shell?: Shell;
 }
-
-/** The texts the tree says itself, where no token says them. */
-const TEXTS = {
-  /** An alias the analyzer explains as the command it runs (`alias grep='grep --color=auto'`). */
-  alias: { ja: (name: string, value: string) => `エイリアス \`${name}\`: bash は行を読むときに \`${value}\` に置き換える`, en: (name: string, value: string) => `The alias \`${name}\`: bash replaces it with \`${value}\` when it reads the line` },
-  /** A string `eval` reads again (the analyzer's own text for the words it joins). */
-  again: { ja: 'もう一度読んで実行する文字列', en: 'Text to read and run again' },
-  /** The text of the analyzer for a word it says nothing more of (`Analyzer.word`). */
-  word: { ja: (w: string) => `文字列 \`${w}\``, en: (w: string) => `Word \`${w}\`` },
-  /** The delimiters of `[[ ]]` (3.2.5.2), which no token explains. */
-  testOpen: { ja: '条件式の始まり', en: 'Start of the conditional expression' },
-  testClose: { ja: '条件式の終わり', en: 'End of the conditional expression' },
-};
 
 /** The words of an alias's text, when it is plain words a command name can start (no quotes, no operators, no assignment). */
 function plainWords(value: string): string[] | undefined {
@@ -222,6 +213,8 @@ function constructKind(type: string): ShellKind {
  * the line has nothing to explain.
  */
 export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: ReadingContext): ReadingNode | undefined {
+  /** A text of the catalog of token texts, where no token says it: plain, as a node holds its text. */
+  const said = <K extends TokenTextId>(id: K, ...params: TokenTextArgs<K>): string => readSaid(tokenSaid(cx.lang, id, ...params)).text;
   if (!items.length) return undefined;
   const range: Span = {
     // (The items are in the order of the text; one before may end later: `cat <<E; echo a` ends with its here-document.)
@@ -290,7 +283,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       // for a newline.)
       const reserved = /^[a-z]|^[{}!]$|^\[\[$|^\]\]$/.test(c.type) && !isExpression(c.parent!) && !PARTS.has(c.parent!.type);
       const n = shellNode(c, layer, reserved ? 'keyword' : 'operator', [], new Set(['keyword', 'operator']));
-      if (!n.text && c.parent!.type === 'extended_test' && (c.type === '[[' || c.type === ']]')) n.text = TEXTS[c.type === '[[' ? 'testOpen' : 'testClose'][cx.lang];
+      if (!n.text && c.parent!.type === 'extended_test' && (c.type === '[[' || c.type === ']]')) n.text = said(c.type === '[[' ? 'test-open' : 'test-close');
       // An operator of a conditional expression in `[[ ]]` (6.4): what it tests. (Its sections are the expression's,
       // src/refs.ts: `&&` there is not a list's.)
       if (isExpression(c.parent!) && c.field === 'operator' && expressionHost(c) === 'extended_test' && !n.text) {
@@ -532,7 +525,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     }));
     return {
       node: {
-        layer, kind: 'aliasWord', label: short(w.text), span, ...(aliasText ? saidBy(own!) : res.sure ? { text: TEXTS.alias[cx.lang](w.text, value) } : {}),
+        layer, kind: 'aliasWord', label: short(w.text), span, ...(aliasText ? saidBy(own!) : res.sure ? { text: said('alias-replaced', { name: w.text, value }) } : {}),
         // (Without its own token: bash replaces it only where it is expanded, `res.sure`; elsewhere the node says nothing, a script does not expand aliases unless the shell option is on.)
         // (The token of an alias as the command name has its name's facts: the analyzer resolves it.)
         refs: ['6.6'], replacement: value, ...(own?.name ? { name: own.name } : {}), ...process, children,
@@ -548,6 +541,13 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   const isPart = (c: SyntaxNode): boolean =>
     PARTS.has(c.type) && (c.type !== 'brace_expression' || cx.meaning(c)!.steps.find((s) => s.kind === 'brace')!.applies !== false);
 
+  /** What bash does to the word `w`, on its node (or on an assignment, of its value). */
+  const setSteps = (n: ReadingNode, w: SyntaxNode): void => {
+    const m = cx.meaning(w);
+    const list = m && wordSteps(m);
+    if (list) n.steps = { list, context: m.context };
+  };
+
   const word = (w: SyntaxNode, layer: Layer, kind: ShellKind): ReadingNode => {
     // (A word that is one part, a quote or an expansion, has that part under it, with its explanation.)
     const one = isPart(w);
@@ -556,7 +556,10 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     if (w.type === 'brace_expression' && !one) delete n.refs;
     // (What bash does to it that no part shows: brace and tilde expansion, splitting, globbing, a pattern's matching.
     // An item of a brace expression is a piece of the word, which cites them.)
-    if (w.parent!.type !== 'brace_expression') n.refs = union(kind === 'argument' ? ['3.7.1'] : [], n.refs, expansionSections(cx.meaning(w)));
+    if (w.parent!.type !== 'brace_expression') {
+      n.refs = union(kind === 'argument' ? ['3.7.1'] : [], n.refs, expansionSections(cx.meaning(w)));
+      setSteps(n, w);
+    }
     // A language in a word no command reads, which bash reads itself (the regex of `=~`), is under the word.
     if (w.parent!.type !== 'command' && w.parent!.type !== 'command_name') {
       for (const c of tokenAt(n.span, WORD_TOKENS)?.children ?? []) if (c.origin === 'embedded') language(n.children, c, 'bash');
@@ -697,7 +700,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       // (A key or a value of an associative array, which the explanation says it is: not a plain `Word`.)
       const [n] = node(e, layer);
       const t = tokenAt(n.span, new Set(['argument', 'error']));
-      return [t && !n.text && t.explanation !== TEXTS.word[cx.lang](e.text) ? { ...n, ...saidBy(t) } : n];
+      return [t && !n.text && t.explanation !== said('word-plain', { text: e.text }) ? { ...n, ...saidBy(t) } : n];
     }
     const range = (from: number, to: number): Span => ({ start: posIn(e, from), end: posIn(e, to) });
     const op = (from: number, label: string): ReadingNode => ({ layer, kind: 'operator', label, span: range(from, from + label.length), refs: ['6.7'], children: [] });
@@ -731,7 +734,10 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     // argument of a declaration builtin, 3.4 says, is expanded as an assignment.)
     if (kind === 'assignment' && a.parent!.type === 'command') n.refs = union(n.refs, ['3.7.1']);
     // (What bash does to its value that no part shows: a tilde after `=` or `:`, `x=~/a:~/b`.)
-    if (value && value.type !== 'array') n.refs = union(n.refs, expansionSections(cx.meaning(value)));
+    if (value && value.type !== 'array') {
+      n.refs = union(n.refs, expansionSections(cx.meaning(value)));
+      setSteps(n, value);
+    }
     return n;
   };
 
@@ -781,7 +787,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       // A quoted word whose text a shell reads again (`eval "ls; echo hi"`) is an operand the command reads as a
       // script, as an unquoted one is (`eval ls`).
       else if (top && t.kind === 'string' && t.children.some((c) => c.origin === 'script')) {
-        out.push({ layer: 'command', kind: 'argument', label: t.label, span: t.span, text: TEXTS.again[cx.lang], reader, children: readParts(t.children, false, reader) });
+        out.push({ layer: 'command', kind: 'argument', label: t.label, span: t.span, text: said('script-run-again'), reader, children: readParts(t.children, false, reader) });
       } else if (t.kind !== 'substitution' && (!top || WORD_TOKENS.has(t.kind))) pushAll(out, readParts(t.children, false, reader, languages));
     }
     return out;
@@ -791,7 +797,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   const tokenNode = (t: Token, layer: Layer, reader: string): ReadingNode => ({
     layer, kind: t.kind, label: t.label, span: t.span, reader, ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}), ...(t.expands ? { expands: t.expands } : {}),
     // (A word the command reads as a script, which the analyzer says only is a word: `eval ls`.)
-    ...(t.explanation === TEXTS.word[cx.lang](t.label) && t.children.some((c) => c.origin === 'script') ? { text: TEXTS.again[cx.lang] } : saidBy(t)),
+    ...(t.explanation === said('word-plain', { text: t.label }) && t.children.some((c) => c.origin === 'script') ? { text: said('script-run-again') } : saidBy(t)),
     children: readParts(t.children, false, RUNS.has(t.kind) ? t.label : reader, t.kind !== 'assignment'),
   });
 

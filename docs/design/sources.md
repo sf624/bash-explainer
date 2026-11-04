@@ -120,7 +120,7 @@ In the roadmap's "Deferred", to be judged again after 0.10.0. Each step lists it
 | SC8 | One test evaluator (M5) | 11 | medium |
 | SC9 | Named bash-version differences | 12 | small to medium |
 | SC10 | One colour table per kind | 18 | small |
-| SC11 | The view switch's copies, if P1, P8 and chrome C7 leave any | 19 | small |
+| SC11 | The view switch's copies, if P1, P8 and chrome C7 leave any (P8 left none) | 19 | small |
 
 Order: SC1 and SC2 first (the others read words and commands), then SC3, SC4 and SC8, then the rest in any order. Word-source step 6 (fieldshape) comes before trust-fields step 3, as word-source.md says.
 

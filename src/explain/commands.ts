@@ -751,7 +751,8 @@ function timed(cx: Explainer, n: SyntaxNode): Token {
   if (!cmd) {
     // `time` alone: an empty pipeline, timed; in POSIX mode, the times of the shell and its children so far (6.11).
     const posix = option(cx.state.at(n).run, 'set', 'posix') === 'on';
-    const t = cx.tok(n, 'keyword', cx.rests(cx.text(posix ? 'cmd-time-alone-posix' : 'cmd-time-alone'), 'time-alone'), lead);
+    // (The top row says what `time` does here: its own row is only the word.)
+    const t = cx.tok(n, 'keyword', cx.rests(cx.text(posix ? 'cmd-time-alone-posix' : 'cmd-time-alone'), 'time-alone'), lead.map((k, i) => (i ? k : { ...k, explanation: cx.text('cmd-time-word') })));
     return skeletal(posix ? { ...t, refs: ['3.2.3', '6.11'] } : t, n);
   }
   // What `time` times, a command or a whole pipeline, is explained as it would be on its own.

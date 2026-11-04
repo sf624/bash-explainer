@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import type { Browser, BrowserContext, Frame, Page } from 'playwright-core';
-import { chooseView, cursorToLine, openSite, stable, until } from './support/site';
+import { chooseDepth, cursorToLine, openSite, stable, until } from './support/site';
 
 // The box "Problems on this line" on the web page (docs/design/panel-redesign.md, P7b), and an error's mark with the Problems strip.
 
@@ -125,22 +125,18 @@ describe('the web page: the box of the line\'s problems', function () {
     await ctx.close();
   });
 
-  it('in Reading, a click on a headline opens what it says', async () => {
+  it('at both depths, a click on a headline goes to its row', async () => {
     const { ctx, page, panel } = await open('echo $((09))');
     await panel().locator('#problems .problem-head').first().waitFor();
-    await chooseView(page, 'tree');
-    await until('Reading', () => panel().locator('#tree').isHidden(), (v) => v);
-    assert.strictEqual(await panel().locator('#problems').isVisible(), true);
-    const head = panel().locator('#problems .problem-head').first();
-    // (The tooltip says what the click does: here no row is drawn to go to.)
-    await head.hover();
-    assert.strictEqual(await head.getAttribute('title'), 'Show or hide the details');
-    await head.click();
-    assert.strictEqual(await panel().evaluate(MORE_OPEN), true);
-    await chooseView(page, 'list');
-    await until('the list', () => panel().locator('#tree').isVisible(), (v) => v);
-    await head.hover();
-    assert.strictEqual(await head.getAttribute('title'), 'Go to its row');
+    for (const depth of [2, 1] as const) {
+      await chooseDepth(page, depth);
+      await until('the rows of the depth', () => panel().evaluate('document.body.dataset.depth'), (d) => d === String(depth));
+      assert.strictEqual(await panel().locator('#problems').isVisible(), true);
+      const head = panel().locator('#problems .problem-head').first();
+      assert.strictEqual(await head.getAttribute('title'), 'Go to its row');
+      await head.click();
+      assert.ok(await panel().locator('#tree .problem-chip').first().evaluate((c) => c === c.ownerDocument.activeElement), `depth ${depth}: the chip of its row has the focus`);
+    }
     await ctx.close();
   });
 

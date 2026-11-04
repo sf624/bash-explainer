@@ -110,7 +110,9 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
     const nested = nestedIn(h, n, col + part.start, col + part.end);
     // The parts of a glob pattern (those with an expansion in them have only the expansions).
     const globbed = part.role === 'pattern' && !nested.length ? globChildren(h, n, part.text, part.start, !plainExt) : [];
-    return [{ kind: expl[0], label: part.text, explanation: expl[1], span, children: [...nested, ...globbed] }];
+    // (The name of a variable with no meaning of its own: the expansion's row says what happens to it.)
+    const plain = part.role === 'name' && !varDesc(h, part.text);
+    return [{ kind: expl[0], label: part.text, explanation: expl[1], span, children: [...nested, ...globbed], ...(plain ? { plain: true as const } : {}) }];
   });
   return summary;
 }

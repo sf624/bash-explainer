@@ -5,7 +5,7 @@
 // tabs work from the keyboard. The press of the view control is kept after a reload: test/web-tree.test.ts.
 import * as assert from 'assert';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { chooseView, frames, openSite, until } from './support/site';
+import { chooseDepth, frames, openSite, until } from './support/site';
 
 describe('the web page: the panel\'s header', function () {
   this.timeout(180000);
@@ -87,9 +87,9 @@ describe('the web page: the panel\'s header', function () {
           const m = await measure(page);
           assert.deepStrictEqual([m.view, m.tools, m.tabs, m.slot, m.collapse, m.copy, m.tabsBox], [before.view, before.tools, before.tabs, before.slot, before.collapse, before.copy, before.tabsBox], `${at}, ${what}`);
         };
-        await chooseView(page, 'tree');
-        await until('the tree', () => panel().locator('#reading').isVisible(), (v) => v);
-        await same('Reading');
+        await chooseDepth(page, 2);
+        await until('the rows of depth 2', () => panel().evaluate('document.body.dataset.depth'), (d) => d === '2');
+        await same('depth 2');
         await page.locator('#collapse').click();
         await until('folded', async () => (await page.locator('#collapse').getAttribute('aria-label')) ?? '', (t) => t === (lang === 'en' ? 'Expand all' : 'すべて展開する'));
         await same('folded');
@@ -101,9 +101,9 @@ describe('the web page: the panel\'s header', function () {
         assert.strictEqual(await page.locator('#panel-body').getAttribute('aria-labelledby'), 'tab-ref');
         await page.locator('#tab-explain').click();
         await until('the explanation', () => panel().locator('#main').isVisible(), (v) => v);
-        await chooseView(page, 'list');
-        await until('the list', () => panel().locator('#tree').isVisible(), (v) => v);
-        await same('Meaning again');
+        await chooseDepth(page, 1);
+        await until('the rows of depth 1', () => panel().evaluate('document.body.dataset.depth'), (d) => d === '1');
+        await same('depth 1 again');
         await close();
       }
     }
@@ -114,21 +114,21 @@ describe('the web page: the panel\'s header', function () {
     // Where the menu is drawn (narrow enough for it), from the keyboard.
     for (let width = 1240; width >= 320 && (await measure(page)).view === 'segments'; width -= 40) await resize(page, width);
     const button = page.locator('#slot-open');
-    assert.strictEqual(await button.getAttribute('aria-label'), 'View: Meaning');
+    assert.strictEqual(await button.getAttribute('aria-label'), 'Depth: 1 What it does');
     assert.strictEqual(await button.getAttribute('aria-controls'), 'slot-options');
     await button.focus();
     await page.keyboard.press('Enter');
     assert.strictEqual(await button.getAttribute('aria-expanded'), 'true');
-    assert.strictEqual(await page.evaluate('document.activeElement.id'), 'slot-list');
+    assert.strictEqual(await page.evaluate('document.activeElement.id'), 'slot-depth1');
     await page.keyboard.press('Escape');
     assert.strictEqual(await page.locator('#slot-options').isHidden(), true);
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'slot-open');
     await page.keyboard.press('Space');
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
-    await until('the tree', () => panel().locator('#reading').isVisible(), (v) => v);
+    await until('the rows of depth 2', () => panel().evaluate('document.body.dataset.depth'), (d) => d === '2');
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'slot-open');
-    assert.strictEqual(await button.getAttribute('aria-label'), 'View: Reading');
+    assert.strictEqual(await button.getAttribute('aria-label'), 'Depth: 2 How bash reads it');
     // Tab leaves the open menu and closes it.
     await page.keyboard.press('Enter');
     await page.keyboard.press('Tab');
@@ -138,7 +138,7 @@ describe('the web page: the panel\'s header', function () {
     await button.focus();
     await resize(page, 1280);
     assert.strictEqual((await measure(page)).view, 'segments');
-    assert.strictEqual(await page.evaluate('document.activeElement.id'), 'slot-tree');
+    assert.strictEqual(await page.evaluate('document.activeElement.id'), 'slot-depth2');
     // And back: from the option to the menu's button.
     for (let width = 1240; width >= 320 && (await measure(page)).view === 'segments'; width -= 40) await resize(page, width);
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'slot-open');
@@ -150,10 +150,10 @@ describe('the web page: the panel\'s header', function () {
       const { page, close } = await open(lang, 1280);
       const names = await page.evaluate(`['#tab-explain', '#tab-ref', '#slot-options', '#collapse', '#copy-md'].map((s) => { const e = document.querySelector(s); return [e.getAttribute('aria-label'), e.getAttribute('role')]; })`);
       assert.deepStrictEqual(names, lang === 'en'
-        ? [['Explanation', 'tab'], ['Reference', 'tab'], ['View', 'group'], ['Collapse all', null], ['Copy as Markdown', null]]
-        : [['解説', 'tab'], ['早見表', 'tab'], ['表示', 'group'], ['すべて折りたたむ', null], ['Markdown でコピー', null]]);
-      assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#slot-options button')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])`),
-        lang === 'en' ? [['Meaning', 'true'], ['Reading', 'false']] : [['意味', 'true'], ['読まれ方', 'false']]);
+        ? [['Explanation', 'tab'], ['Reference', 'tab'], ['Depth', 'group'], ['Collapse all', null], ['Copy as Markdown', null]]
+        : [['解説', 'tab'], ['早見表', 'tab'], ['深さ', 'group'], ['すべて折りたたむ', null], ['Markdown でコピー', null]]);
+      assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#slot-options button')].map((b) => [b.querySelector('.vc-digit').textContent + ' ' + b.getAttribute('aria-label'), b.getAttribute('aria-pressed')])`),
+        lang === 'en' ? [['1 What it does', 'true'], ['2 How bash reads it', 'false']] : [['1 何をするか', 'true'], ['2 bash がどう読むか', 'false']]);
       // The tabs are one stop of Tab; the tabpanel holds the frame.
       assert.deepStrictEqual(await page.evaluate(`['#tab-explain', '#tab-ref'].map((s) => document.querySelector(s).tabIndex)`), [0, -1]);
       assert.strictEqual(await page.locator('#panel-body[role="tabpanel"] #panel').count(), 1);

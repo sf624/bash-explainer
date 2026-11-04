@@ -24,7 +24,7 @@ export const STORAGE_KEYS = {
   split: 'bash-explainer-split',
   /** The height of the Problems list under the editor, and whether it is folded away. */
   problems: 'bash-explainer-problems',
-  /** The panel's view (the list or the tree) and the step its tree shows (src/ui/panelView.ts `PanelState`). */
+  /** The panel's depth (src/ui/panelView.ts `PanelState`). */
   panel: 'bash-explainer-panel',
   /** The phone's sheet showed its one-time hint (at its first full height): '1'. */
   sheetHint: 'bash-explainer-sheet-hint',

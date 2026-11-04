@@ -343,7 +343,7 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
   if (!inArithmetic(n) && binaryTestOps[op]) {
     const num = numericTestNote(cx, op, [n.namedChildren[0].text, rightText], true);
     // (A pattern with no wildcard matches only itself: `[[ $x == 1 ]]` is a plain comparison, which the row of `==`
-    // says in Reading; from the word model, as nocasematch and a quoted `*` decide it.)
+    // says at depth 2 of the panel; from the word model, as nocasematch and a quoted `*` decide it.)
     const plain = extendedEqualOps[op] && plainPatternText(rights[0], cx.state) !== undefined ? cx.t(plainPatternOps.condition[op]) : undefined;
     const text = quotedPatternNote(cx, n, op, rights) ?? plain ?? (extendedEqualOps[op] ? cx.t(extendedEqualOps[op]) : binaryText(cx, n, op, true, true));
     return cx.tok(n, 'test', cx.text('test-binary', { left: left?.text, right: rightText, text, num }), operands);

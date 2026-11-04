@@ -193,7 +193,12 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     const w = wordAt(cx, value);
     const expands = !!w && (w.tildes.length > 0 || w.steps[0].applies !== false);
     for (const t of cx.sub(value)) {
-      if (!(t.kind === 'expansion' && expands) && unquotedWord(value) !== undefined && !arithNumber(cx, value)) t.explanation = intValueText ? `\`${value.text}\`: ${intValueText}` : cx.text('assignment-value', { value: value.text }) + (hasGlob(value.text) ? notGlobbedHere(cx, value) : '');
+      if (!(t.kind === 'expansion' && expands) && unquotedWord(value) !== undefined && !arithNumber(cx, value)) {
+        const glob = hasGlob(value.text);
+        t.explanation = intValueText ? `\`${value.text}\`: ${intValueText}` : cx.text('assignment-value', { value: value.text }) + (glob ? notGlobbedHere(cx, value) : '');
+        // (The assignment's own code shows a value that only is its text: how bash reads it is depth 2 of the panel.)
+        if (!intValueText && !glob) t.plain = true;
+      }
       children.push(t);
     }
     // The value of a prompt string (`PS1`, `PS4`…), as bash reads it each time it prints it (6.9): under the value.
