@@ -46,6 +46,14 @@ export function scriptTree(tree: SyntaxTree, extracted: Extracted, region: Shell
   return own;
 }
 
+/**
+ * The row where the shell that runs `line` of `region` started, for what may stop it (`stopBefore`, src/semantics/scriptstops.ts): in the tree of the region's
+ * group (`scriptTree`), which is one shell. But a reader runs each fence of a Markdown file by itself, and bats runs each test in a process of its own.
+ */
+export function shellStart(region: ShellRegion, line: number): number {
+  return region.host.kind === 'markdown' ? region.start : region.tests?.filter((t) => t <= line).pop() ?? 0;
+}
+
 /** The lines of the shell text of a host document: asked for each token of each line, read once. */
 export function shellLines(extracted: Extracted): readonly string[] {
   let lines = linesOf.get(extracted);

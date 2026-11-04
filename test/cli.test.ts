@@ -35,6 +35,14 @@ describe('the command-line tool', function () {
     assert.match(r.out, /-r {2}search directories recursively/);
   });
 
+  it('takes standard input with no first line as a script known by its name: a reading is a warning, which fails only --strict', () => {
+    assert.strictEqual(run(['--check', '--no-config', '-'], { input: 'x = 1\n' }).code, 0);
+    assert.match(run(['--check', '--no-config', '-'], { input: 'x = 1\n' }).out + run(['--check', '--no-config', '-'], { input: 'x = 1\n' }).err, /warning.*assignment-with-spaces/);
+    assert.strictEqual(run(['--check', '--strict', '--no-config', '-'], { input: 'x = 1\n' }).code, 1);
+    assert.strictEqual(run(['--check', '--no-config', '-'], { input: '#!/bin/bash\nx = 1\n' }).code, 1);
+    assert.strictEqual(run(['--check', '--strict', '--no-config', '-'], { input: '#!/usr/bin/python3\nx = 1\n' }).code, 0);
+  });
+
   it('writes the words of a brace expansion on one line, each in backticks, then what echo prints', () => {
     const text = run(['-e', 'echo {1..10..3}', '--no-color']).out;
     assert.match(text, /^ {4}Resulting words \(4 separate arguments of `echo`\)\n {6}`1` `4` `7` `10`\n {4}Output\n {6}1 4 7 10$/m);

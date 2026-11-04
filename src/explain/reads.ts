@@ -14,7 +14,8 @@ import { programSections } from '../refs';
 import type { ExecEnv } from '../semantics/env';
 import { type NameResolution, resolveName } from '../semantics/names';
 import { attribute, option, type OptionState, refTarget, shoptIn } from '../semantics/state';
-import { surelyRead, type SyntaxFault, syntaxFault } from '../semantics/syntaxerror';
+import { type ReadKnown, readAs } from '../semantics/scriptstops';
+import { type SyntaxFault, syntaxFault } from '../semantics/syntaxerror';
 import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
 import { literalContent, staticWordValue, surelyHasSlash } from '../staticword';
 import { ancestor, fields, nameText, type SyntaxNode } from '../syntax/tree';
@@ -224,16 +225,16 @@ export const syntaxFaultOf = (cx: Explainer): SyntaxFault | undefined => (inSure
 const SOMETIMES: ReadonlySet<string> = new Set(['function_definition', 'if_statement', 'while_statement', 'for_statement', 'c_style_for_statement', 'select_statement', 'case_statement']);
 
 /**
- * Whether a run of the script surely runs the command that holds `n`, whatever the values: in a script surely read up to it
- * (`surelyRead`, as a syntax error), with no error in the tree, and on no path that may leave it out (`SOMETIMES`, what
- * follows `&&` or `||`, `readOnlySometimes`). So a guard for another shell (`if [ -n "$ZSH_VERSION" ]; then a=(\${(f)x}); fi`) says nothing.
+ * How a fault of the command that holds `n` is said (`readAs`) where a run of the script gets to it, whatever the values: with no error in
+ * the tree, and on no path that may leave it out (`SOMETIMES`, what follows `&&` or `||`, `readOnlySometimes`). None elsewhere,
+ * so a guard for another shell (`if [ -n "$ZSH_VERSION" ]; then a=(\${(f)x}); fi`) says nothing.
  */
-export function surelyRuns(cx: Explainer, n: SyntaxNode): boolean {
-  if (!inSurelyScript(cx) || cx.tree.errors.length || !surelyRead(cx.tree, cx.shell ?? 'bash', n.startIndex) || readOnlySometimes(n)) return false;
+export function runsAs(cx: Explainer, n: SyntaxNode): ReadKnown | undefined {
+  if (!inSurelyScript(cx) || cx.tree.errors.length || readOnlySometimes(n)) return undefined;
   for (let c = n, p = n.parent; p; c = p, p = p.parent) {
-    if (SOMETIMES.has(p.type) || (p.type === 'list' && c !== p.namedChildren[0]) || ((p.type === 'command_substitution' || p.type === 'process_substitution') && readOnlySometimes(p))) return false;
+    if (SOMETIMES.has(p.type) || (p.type === 'list' && c !== p.namedChildren[0]) || ((p.type === 'command_substitution' || p.type === 'process_substitution') && readOnlySometimes(p))) return undefined;
   }
-  return true;
+  return readAs(cx.tree, n.startIndex, cx.opts.script);
 }
 
 export function inArithmetic(n: SyntaxNode): boolean {

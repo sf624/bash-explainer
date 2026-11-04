@@ -227,8 +227,8 @@ export const MESSAGES = {
   // error, the manual only implies: 6.3.3, item 19, says that in an interactive shell "Parser syntax errors will not
   // cause the shell to exit". Checked.)
   'keyword-needs-separator': withBasis(failure<{ kw: string }>(['3.2.1', '3.2.5.1', '3.2.5.2'], ({ kw }) => [
-    `\`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」を出す`,
-    `A \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash reports "syntax error near unexpected token"`]),
+    `\`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash はこの行まで来ると「syntax error near unexpected token」を出す`,
+    `A \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and, if it reaches this line, bash reports "syntax error near unexpected token"`]),
   { kind: 'checked', probe: 'state#keyword-separator' }),
   'syntax-error': withBasis(failure<{ what: SyntaxErrorWhat }>(['3.1.1'], syntaxErrorText), { kind: 'checked', probe: 'state#syntax-error' }),
   'syntax-error-if-bash': withBasis({ ...failure<{ what: SyntaxErrorWhat }>(['3.1.1'], syntaxErrorText), level: 'warning' as const }, { kind: 'checked', probe: 'state#syntax-error' }),
@@ -746,7 +746,7 @@ export interface Note { text: string; level: NoteLevel; label: string; body: str
  * where it suggests mechanical rewrites, those (`rewrite`: alternatives, each complete, the first recommended;
  * src/rewrite.ts), which its text renders.
  */
-export interface Fact extends Note { id: FactId; kind: FactKind; heading?: Text; refs: readonly string[]; code: FactId; basis?: Basis; tryIt?: TryIt; rewrite?: readonly Rewrite[] }
+export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly string[]; code: FactId; basis?: Basis; tryIt?: TryIt; rewrite?: readonly Rewrite[] }
 
 /**
  * The note of a style check of src/pitfalls.ts, which is no fact of the catalog (its text is the check's): a pitfall,
@@ -794,7 +794,14 @@ export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> e
   const { text, label, body, head: said } = marked(lang, level, lang === 'ja' ? ja : en, { kind: e.kind, heading: e.heading, head });
   const { basis, tryIt } = basisOf(typeof e.basis === 'function' ? e.basis(params[0]) : e.basis);
   const rewrite = e.rewrite?.(params[0]);
-  return { id, kind: e.kind, ...(e.heading ? { heading: e.heading } : {}), level, text, refs: e.refsOf?.(params[0]) ?? e.refs, label, body, ...(said ? { head: said } : {}), code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(e.convention ? { convention: e.convention } : {}), ...(rewrite?.length ? { rewrite } : {}) };
+  return { id, kind: e.kind, level, text, refs: e.refsOf?.(params[0]) ?? e.refs, label, body, ...(said ? { head: said } : {}), code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(e.convention ? { convention: e.convention } : {}), ...(rewrite?.length ? { rewrite } : {}) };
+}
+
+/** The fact `f` where a shell may not read the text as it is written (`readAs`, src/semantics/scriptstops.ts): a warning with the same words. */
+export function warningOf(lang: Lang, f: Fact): Fact {
+  // (An error is a problem, so it has its headline: src/messages-heads.ts.)
+  const { text, level, label } = marked(lang, 'warning', f.body, { kind: f.kind, heading: (MESSAGES[f.id] as Entry<unknown>).heading, head: [f.head!, f.head!] });
+  return { ...f, text, level, label };
 }
 
 /** The clauses of a line's sentence that the fact `code` says (none for a code that is no fact: a style check, a dialect issue). */

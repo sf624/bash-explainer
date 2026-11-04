@@ -269,10 +269,14 @@ The note on zsh syntax a line cannot be read with starts with ⓘ, as informatio
 
 ## Fixed
 
-### Errors in text a shell does not read
+### Errors after a command that may stop the script
 
-`--check` failed pip's wrapper, a `#!/bin/sh` header followed by Python (`x = 1` was `assignment-with-spaces`), and every Error after an `exit`. The Errors that say the shell reads the text wrongly now follow the rule of the syntax error: `assignment-with-spaces`, `brace-no-space`, `brace-close-no-separator`, `bracket-no-space`, `redirect-in-bracket`, `bracket-close-in-word` (when its word is never empty), `and-or-in-bracket`, `keyword-needs-separator`, `bracket-close-glued` and `$((09))`. An Error where a first line, a directive, `--shell`, `-e` or the web page say the file is a script and nothing before the line may end the script or change how it is read (`exit`, `exec`, `source`, `trap`, `shopt`…); a warning with the same words where only a name says so; nothing after those words, or in a file nobody says is a script. The other Errors (`[` without `]`, `print` in sh, the dialect's) are silent after an `exit` or an `exec` with a command in the script itself. A Dockerfile `RUN` and a Markdown fence are as they were. A string a command runs (`bash -c 'x = 1'`) is as sure as the command.
+`--check` failed pip's wrapper, a `#!/bin/sh` header followed by Python (`x = 1` was `assignment-with-spaces`), and every Error after an `exit`. What may stop a script is now one table, of two kinds:
 
+- After a command that surely stops it, nothing is said: `exit`, `logout` or `return` as statements of the script, `exec` with a command anywhere (`if a; then exec b; else exec c; fi`, also `command exec x`, `{ exec x; }`), `eval 'exec perl -S $0'`, `set -n`. In a host, in the same shell: `RUN exit 0; x = 1` says nothing, the next `RUN` does. A Markdown fence and a bats test are shells of their own.
+- After a command that may stop it, what says the shell reads the text wrongly is a warning, with the same words: an `exit` in a function or a branch, `trap`, `source`, `eval "$x"`, `alias`, `shopt`, `kill`, `$cmd a`. So `source ./lib.sh`, then `[-f x] && y` or a stray `fi`, is a warning (it was nothing since the first syntax error check), and `trap 'rm -f t' EXIT`, then `x = 1`, too (it was an Error). `[` without `]`, `print` in `#!/bin/sh` and the other Errors of a command stay Errors: they fail whenever they run.
+
+`exec 3>&1`, `set -- "$x"` and `command -v "$x"` stop nothing. The Errors that say the shell reads the text wrongly are `assignment-with-spaces`, `brace-no-space`, `brace-close-no-separator`, `bracket-no-space`, `redirect-in-bracket`, `bracket-close-in-word` (when its word is never empty), `and-or-in-bracket`, `keyword-needs-separator`, `bracket-close-glued`, `$((09))`, `${(f)x}` and a syntax error. They are a warning too where only a name says the file is a script (`.sh`), or the text comes from standard input with no first line, and nothing in a file nobody says is a script. `env -S'"a' s` and `sh -c '[[ a = a ]]'` after an `exit` said an Error; now nothing. A syntax error at the end of a file (`f()`, then blank lines) was pointed at the first line, also after an `exit`; now at its own.
 
 ### The code under the phone's sheet
 

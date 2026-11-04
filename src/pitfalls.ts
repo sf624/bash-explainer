@@ -2,9 +2,10 @@ import { interpret, type ArgRole, type ArgvParse } from './argv/interpret';
 import { downloadsTo, givenOptions, has, readsScriptFromStdin, regexWords } from './argv/query';
 import type { CommandSpec, OptionSpec } from './argv/spec';
 import { argWordFor } from './argv/words';
-import type { ScriptEvidence, Shell } from './dialect';
+import type { Shell } from './dialect';
 import { canonicalName, impliedOptions, lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
+import type { ReadKnown } from './semantics/scriptstops';
 import { argWordIn, bracesIn } from './semantics/argwords';
 import { type ExecEnv, readAs, runsString, slotEnvs } from './semantics/env';
 import { commandName as staticName, plainName } from './semantics/effects';
@@ -535,11 +536,10 @@ function escapedComparison(n: SyntaxNode, redirect: SyntaxNode): Rewrite | undef
 
 /**
  * The style checks whose node starts on a line from `from` to `to`, in one walk of the tree, with the model of the tree and its shell.
- * A check at the level `error` says the shell reads the text wrongly, so it is said by how the file is known to be a script (`read`:
- * `readAs`, `ScriptEvidence`): as an error, as a warning where only the name says so, or not at all where a shell may not read the
- * text as it stands. Without `read` it is an error, as for a snippet.
+ * A check at the level `error` says the shell reads the text wrongly, so it is said at the level of what is known of the text (`read`:
+ * `readAs`, src/semantics/scriptstops.ts): as an error, as a warning, or not at all. Without `read` it is an error, as for a snippet.
  */
-export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined, read?: (n: SyntaxNode) => ScriptEvidence | undefined): StyleFinding[] {
+export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined, read?: (n: SyntaxNode) => ReadKnown | undefined): StyleFinding[] {
   const s = pick(lang);
   const found: StyleFinding[] = [];
   // (`rewrite`: the rewrites the text shows the code of; the finding carries those with edits, as a fact does. `c`:
@@ -548,7 +548,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
     if (read && styleLevel(code, c) === 'error') {
       const said = read(node);
       if (!said) return;
-      if (said === 'name') c = { ...c, byName: true };
+      if (said === 'unsure') c = { ...c, unsure: true };
     }
     const convention = STYLE_CONVENTIONS[code];
     const edits = rewrite.filter((r) => r.edits.length);

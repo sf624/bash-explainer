@@ -12,7 +12,7 @@ import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
 import { conventionOf, fact, isProblemNote, type Note, problemText, severityOf } from './messages';
 import { isNotRead } from './messages-unread';
 import { PROBLEM_LEVELS } from './messages-levels';
-import { reachedAt } from './semantics/syntaxerror';
+import { reachedAt } from './semantics/scriptstops';
 import { RESERVED } from './semantics/names';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { shellState } from './semantics/state';
@@ -375,7 +375,8 @@ function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined):
     // (The issues give places as positions in the string's text.)
     const rows = lineStarts(script.tree.text);
     const index = (p: Point) => rows[p.row] + p.column;
-    for (const i of dialectIssues(script.tree, script.shell, lang)) {
+    // (A string is said as far as the shell gets to it, and the command that runs it.)
+    for (const i of dialectIssues(script.tree, script.shell, lang, undefined, undefined, undefined, (n) => reachedAt(script.tree, n.startIndex) && reachedAt(doc.tree, source(n.startIndex, false)))) {
       const start = at(source(index(i.place.startPosition), false));
       const end = at(source(index(i.place.endPosition), true));
       out.push({

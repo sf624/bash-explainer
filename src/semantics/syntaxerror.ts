@@ -1,16 +1,14 @@
 import { type BashVersion, DEFAULT_BASH_VERSION, lacks } from '../bashversion';
-import type { ScriptEvidence, Shell } from '../shellfeatures';
-import { staticWordValue } from '../staticword';
-import { ancestor, braceAsArgument, descendants, field, fields, gluedBrace, readWhenExpanded, strayKeyword, substitutionForm, type SyntaxError, type SyntaxErrorWhat, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
-import { commandName } from './effects';
+import type { Shell } from '../shellfeatures';
+import { braceAsArgument, descendants, field, gluedBrace, readWhenExpanded, strayKeyword, substitutionForm, type SyntaxError, type SyntaxErrorWhat, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
+import { plainText, reachedAt } from './scriptstops';
 
 // The syntax error bash stops at in a script, from the parser's errors (`SyntaxTree.errors`), for the problem
 // `syntax-error` and the line's sentence. bash reads a script as it runs it, one complete command at a time, and stops
 // at the first it cannot read. So `bash -n` is no measure of what a script does: code never reached is no fault of a script
-// that works (`exit 0` before a payload, a polyglot, an alias that closes an `if`). The worst outcome is a false failure,
-// so it is said only where it is positively known: the first error of a file surely a script of bash or sh (`Shells.script`),
-// with nothing before it that may end the script or change how it is read (`surelyRead`, which what else says a fault of
-// a script's text reads too), and no template marker (docs/design/three-levels.md). test/syntax-error.test.ts compares this with real shells, by running them.
+// that works (`exit 0` before a payload, a polyglot). The worst outcome is a false failure, so it is said only as far as it
+// is known: the first error of a file surely a script of bash or sh (`Shells.script`), after no sure stop and in a text with no
+// template marker (src/semantics/scriptstops.ts, whose `readAs` gives its level; docs/design/three-levels.md). test/syntax-error.test.ts compares this with real shells, by running them.
 
 export interface SyntaxFault {
   /** What to point at: the text bash stops on, or the opening of the construct left open. */
@@ -33,6 +31,9 @@ function around(root: SyntaxNode, e: SyntaxError): SyntaxNode[] {
   const out = [root];
   // (At a node's end and the next one's start: the first, which has not ended.)
   for (let inner = root.children.find(has); inner; inner = inner.children.find(has)) out.push(inner);
+  // (`f()` with blank lines after it: the parser puts what is missing at the end of the file, past the construct left open.)
+  const open = out.length === 1 && e.startIndex === e.endIndex ? root.children.filter((c) => c.endIndex <= i && c.incomplete).pop() : undefined;
+  if (open) out.push(open);
   return out;
 }
 
@@ -252,133 +253,20 @@ function findFault(tree: SyntaxTree, shell: Shell, version: BashVersion): Syntax
   };
 }
 
-/** What ends a script, or changes how the rest is read: a function or an alias may close what looks open, a file sourced may do any of it. */
-const MAY_END: ReadonlySet<string> = new Set(['exit', 'exec', 'eval', 'alias', 'trap', 'source', '.', 'shopt', 'kill', 'logout']);
-/**
- * The options of `set` after which a script may never get to a line and still exit 0: `-t` (`onecmd`) runs one more command
- * and exits with its status. `-n` (`noexec`) runs nothing. `-e` and `-u` are not here: they stop a script only with a failing
- * status, so a script that works never holds a fault it stops before, and the text says "if the shell reaches this line".
- * Measured in test/syntax-error.test.ts: "stops first only with a failing status".
- */
-const SET_STOPS = /^-[A-Za-z]*[nt]|^(?:noexec|onecmd)$/;
-/**
- * `#!/bin/bash -t`: the same, from the first line. Run as a program, `-s` reads stdin (exit 0, with none), and `-c` runs its word: neither reads
- * the file. Of the long options, only those that leave the reading alone are not here (`--version`, `--help`, `--rcfile` exit 0).
- */
-const SHEBANG_STOPS = /^#!.*\s(?:-[A-Za-z]*[nstc]|--(?!(?:login|posix|noprofile|norc)?(?:\s|$)))/;
-/** `mapfile -C "exit 0;"`: the callback runs in this shell. */
-const CALLBACK = /^-[A-Za-z]*C/;
-
-/**
- * Whether a command may end the script or change how it is read. The word is enough, wherever it is (a function body, a
- * branch, a list), and no path is followed: `shellState.dead()` trusts nothing when the tree has an error. A name read
- * only when it runs may be any of them. `return` ends a file sourced, outside a function.
- */
-function mayEnd(c: SyntaxNode): boolean {
-  const name = commandName(c);
-  if (name === undefined) return true;
-  const words = () => fields(c, 'argument').map((a) => staticWordValue(a));
-  switch (name) {
-    case 'command': case 'builtin': return words().some((w) => w === undefined || w === 'set' || w === 'mapfile' || w === 'readarray' || MAY_END.has(w));
-    case 'mapfile': case 'readarray': return words().some((w) => w === undefined || CALLBACK.test(w));
-    case 'set': return words().some((w) => w === undefined || SET_STOPS.test(w));
-    case 'return': return !ancestor(c, (a) => a.type === 'function_definition');
-    default: return MAY_END.has(name);
-  }
-}
-
-/**
- * What a template engine replaces before a shell reads the code: Jinja and Go (`{{ x }}`, `{% if a %}`), ERB (`<% a %>`),
- * autoconf (`@VAR@`), CircleCI's parameters (`<< parameters.x >>`), GitLab's inputs (`$[[ inputs.x ]]`). Anywhere in the file.
- */
-const TEMPLATE = /\{\{|\{%|<%|@[A-Za-z_]\w*@|<<[#^/]?\s*(?:parameters|pipeline)\.|\$\[\[/;
-
-const plainTexts = new WeakMap<SyntaxTree, boolean>();
-
-/** Whether the text is what a shell reads, as it is written, in a shell whose reading is known. Each line asks: it is read once. */
-function surelyText(tree: SyntaxTree, shell: Shell): boolean {
-  return (shell === 'bash' || shell === 'sh') && plainText(tree);
-}
-
-/** Whether the text is what a shell reads, as it is written, whichever shell: no CR, no NUL, no template marker, and no first line that stops the shell. */
-function plainText(tree: SyntaxTree): boolean {
-  let plain = plainTexts.get(tree);
-  if (plain === undefined) {
-    // (With CRs in the text, it is not what bash reads: a CR after `&&` is a command, `fi` before one a word. The problem
-    // `crlf` says so. A NUL on the first line makes bash refuse the file: "cannot execute binary file", status 126.)
-    plain = !tree.carriageReturns && !tree.text.includes('\0') && !TEMPLATE.test(tree.text) && !SHEBANG_STOPS.test(tree.text.split('\n', 1)[0]);
-    plainTexts.set(tree, plain);
-  }
-  return plain;
-}
-
-const ends = new WeakMap<SyntaxTree, number>();
-const exits = new WeakMap<SyntaxTree, number>();
-
-/** Where the first command that `stops` has ended (`endOf`: its name, or the whole command); Infinity with none. */
-function firstEndOf(tree: SyntaxTree, stops: (c: SyntaxNode) => boolean, endOf: (c: SyntaxNode) => number, kept: WeakMap<SyntaxTree, number>): number {
-  let at = kept.get(tree);
-  if (at === undefined) {
-    at = Infinity;
-    for (const c of descendants(tree.root, ['command'])) if (field(c, 'name') && stops(c)) at = Math.min(at, endOf(c));
-    kept.set(tree, at);
-  }
-  return at;
-}
-
-/** Where the first command that may end the script or change how it is read has ended its name; Infinity with none. */
-const firstEnd = (tree: SyntaxTree): number => firstEndOf(tree, mayEnd, (c) => field(c, 'name')!.endIndex, ends);
-
-/**
- * Whether a command ends the script when the shell gets to it, or hands the script over to another program: `exit`, and `exec` with
- * a command (`exec 3>&1` does not), as a statement of the script itself, not in a function, a branch or a loop that may not run.
- */
-const endsAtOnce = (c: SyntaxNode): boolean => c.parent?.type === 'program' && (commandName(c) === 'exit' || (commandName(c) === 'exec' && fields(c, 'argument').length > 0));
-
-/**
- * The gate of whatever says a fault of a script's text: whether a shell surely reads the text up to offset `at`, as it is
- * written. Nothing before it may end the script or change how it is read, and the text is one a shell reads as it stands.
- * A failing stop of `set -e` or `set -u` may come first, which no script that works has: see `SET_STOPS`.
- */
-export function surelyRead(tree: SyntaxTree, shell: Shell, at: number): boolean {
-  return surelyText(tree, shell) && firstEnd(tree) > at;
-}
-
-/**
- * How a fault of the text at offset `at` is said, by how the file is known to be a script (`ScriptEvidence`): the one rule of
- * every Error that claims the shell reads the text wrongly (`x = 1`, `if a then b; fi`, `[-f x]`, `$((09))`). `said`: an error.
- * `name`: a warning with the same words, since another shell may source a file of that name. None where a shell may not read the
- * text as it stands (`surelyRead`: after an `exit`, in a polyglot's other language), or no one says the file is a script. Whichever
- * shell it is: a claim that the shell fails on the text, not that bash's parser rejects it (`surelyRead`, the syntax error).
- */
-export function readAs(tree: SyntaxTree, at: number, script: ScriptEvidence | undefined): ScriptEvidence | undefined {
-  return script && plainText(tree) && firstEnd(tree) > at ? script : undefined;
-}
-
-/**
- * Whether the shell gets to offset `at`, for an Error that is a fact of one command or of the shell's dialect (`[` without its `]`,
- * `print` in sh): not after an `exit` or an `exec` of the script itself, where it ends or hands over to a polyglot's other language,
- * whose lines are no shell commands. Less than `readAs`: a `source`, `trap` or `shopt` before it, and an `exit` in a function, do not
- * silence it, as the command fails whenever it runs.
- */
-export function reachedAt(tree: SyntaxTree, at: number): boolean {
-  return firstEndOf(tree, endsAtOnce, (c) => c.endIndex, exits) > at;
-}
-
 const cache = new WeakMap<SyntaxTree, Map<string, SyntaxFault | undefined>>();
 
 /**
- * The syntax error bash stops at in the script of `tree`, where a shell surely gets to it (`surelyRead`). The caller says
- * that the text is surely a script (`Shells.script`).
+ * The syntax error bash stops at in the script of `tree`, where a shell may get to it (`reachedAt`), in a text as a shell reads it
+ * (`plainText`). The caller says that the text is surely a script (`Shells.script`), and gives its level (`readAs`).
  */
 export function syntaxFault(tree: SyntaxTree, shell: Shell, version: BashVersion = DEFAULT_BASH_VERSION): SyntaxFault | undefined {
-  if (!tree.errors.length || !surelyText(tree, shell)) return undefined;
+  if (!tree.errors.length || (shell !== 'bash' && shell !== 'sh') || !plainText(tree)) return undefined;
   const key = `${shell} ${version}`;
   let known = cache.get(tree);
   if (!known) cache.set(tree, (known = new Map()));
   if (!known.has(key)) {
     const fault = findFault(tree, shell, version);
-    known.set(key, fault && surelyRead(tree, shell, fault.node.startIndex) ? fault : undefined);
+    known.set(key, fault && reachedAt(tree, fault.node.startIndex) ? fault : undefined);
   }
   return known.get(key);
 }

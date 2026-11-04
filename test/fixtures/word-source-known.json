@@ -302,7 +302,7 @@
       "uses": [
         {"fn":"inTest","kind":"node-type","count":1},
         {"fn":"readOnlySometimes","kind":"node-type","count":3},
-        {"fn":"surelyRuns","kind":"node-type","count":2,"reason":"the paths that may leave a command out, and `&&` or `||` of a list: the syntax, not what a word becomes"},
+        {"fn":"runsAs","kind":"node-type","count":2,"reason":"the paths that may leave a command out, and `&&` or `||` of a list: the syntax, not what a word becomes"},
         {"fn":"ifsAt","kind":"ifs","count":1,"reason":"the default IFS, read next to the model"},
         {"fn":"inArithmetic","kind":"node-type","count":1}
       ]
@@ -432,8 +432,7 @@
         {"fn":"ARITHMETIC","kind":"node-type","count":1},
         {"fn":"bashNames","kind":"node-type","count":2},
         {"fn":"dashReads","kind":"node-type","count":1},
-        {"fn":"findFault","kind":"node-type","count":1},
-        {"fn":"mayEnd","kind":"helper","count":1,"reason":"the words of a `set` or a `command` before a syntax error, as written: the model trusts nothing in a tree with an error"}
+        {"fn":"findFault","kind":"node-type","count":1}
       ]
     },
     {
@@ -528,6 +527,13 @@
         {"fn":"expansionError","kind":"node-type","count":6},
         {"fn":"enclosingBlock","kind":"node-type","count":1},
         {"fn":"cannotFail","kind":"node-type","count":2}
+      ]
+    },
+    {
+      "file": "src/semantics/scriptstops.ts",
+      "reason": "the words of a command that may stop the shell, as written: the model trusts nothing in a tree with an error",
+      "uses": [
+        {"fn":"stopOf","kind":"helper","count":1}
       ]
     },
     {

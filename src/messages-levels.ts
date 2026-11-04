@@ -1,6 +1,6 @@
 import type { Lang, Text } from './i18n';
 import { LEVELS, type NoteLevel } from './levels';
-import type { Fact, FactKind, Note } from './messages';
+import type { FactKind, Note } from './messages';
 import type { Head } from './messages-heads';
 
 /** A note that is a problem in the editors: it has its code and its headline (the catalog's types, src/messages-heads.ts, and test/problem-heads.test.ts on the corpus), so that no view reads either as missing. */
@@ -91,7 +91,7 @@ export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-n
   | 'download-run-by-shell' | 'trap-goes-on' | 'source-searches-path' | 'pattern-from-variable';
 
 /** What a style check found that its level depends on (`STYLE_LEVELS`): `maybeEmpty`, the part before a `]` may be empty. */
-export interface StyleCase { maybeEmpty?: boolean; byName?: boolean }
+export interface StyleCase { maybeEmpty?: boolean; unsure?: boolean }
 
 /**
  * The level of each style check (src/pitfalls.ts), by the rule of docs/design/three-levels.md (section 2): `error`
@@ -113,18 +113,18 @@ export const STYLE_LEVELS: Record<StyleCode, NoteLevel | ((c: StyleCase) => Note
 };
 
 /**
- * The level of a style check that found `c`. `byName`: the file is a script only by its name (`ScriptEvidence`), where another
- * shell may source it and read the text otherwise: an error is a warning then, with the same words (docs/design/three-levels.md).
+ * The level of a style check that found `c`. `unsure`: only a name says the file is a script, or a stop may come first
+ * (`readAs`, src/semantics/scriptstops.ts): an error is a warning then, with the same words (docs/design/three-levels.md).
  */
 export function styleLevel(code: StyleCode, c: StyleCase = {}): NoteLevel {
   const entry = STYLE_LEVELS[code];
   const level = typeof entry === 'function' ? entry(c) : entry;
-  return c.byName && level === 'error' ? 'warning' : level;
+  return c.unsure && level === 'error' ? 'warning' : level;
 }
 
 /**
  * The facts at the level `error` that say the shell reads the text wrongly (the glued `]` of `[ -f x]`, `then` with no `;` before
- * it): said by how the file is known to be a script (`Explainer.evidenceAt`, `ScriptEvidence`), as the syntax error is. Every other
+ * it): said at the level of what is known of the text (`Explainer.evidenceAt`), as the syntax error is. Every other
  * error is a fact of one command or of the dialect, and is said where the shell gets to it (`Explainer.reachedAt`).
  */
 export const READ_FAULTS: ReadonlySet<string> = new Set(['keyword-needs-separator', 'bracket-close-glued']);
@@ -140,11 +140,4 @@ export function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?
   const { word: levelWord, wordOnEvery } = LEVELS[level];
   const word = heading ? heading[lang] : kind === 'pitfall' || wordOnEvery ? levelWord[lang] : '';
   return { text: `${LEVELS[level].mark} ${word}${body}`, level, label: word.trimEnd(), body, ...(head ? { head: head[lang === 'ja' ? 0 : 1] } : {}) };
-}
-
-/** The fact `f` for a file that is a script only by its name (`ScriptEvidence`): a warning with the same words, as another shell may source the file. */
-export function byName(lang: Lang, f: Fact): Fact {
-  // (An error is a problem, so it has its headline: src/messages-heads.ts.)
-  const { text, level, label } = marked(lang, 'warning', f.body, { kind: f.kind, heading: f.heading, head: [f.head!, f.head!] });
-  return { ...f, text, level, label };
 }

@@ -173,7 +173,7 @@ export const WORD_TEXTS = {
   'bad-transform': tokenWarning<{ op: string }>(({ op }) => [
     `パラメータ展開: \`@${op}\` は bash にない変換。変換する値があれば（空でも）「bad substitution」のエラーになり、それを実行しているシェルが止まる（終了ステータス 1）。値がなければ空になる`,
     `Parameter expansion: \`@${op}\` is no transform bash has. With a value to transform, even an empty one, bash reports "bad substitution" and the shell that runs it stops (status 1); with none, it is empty`]),
-  // (`${#a-b}`, `${(f)var}`: whatever the values, on a path a run surely takes (`surelyRuns`). No status: bash drops what it read with the line
+  // (`${#a-b}`, `${(f)var}`: whatever the values, on a path a run surely takes (`runsAs`). No status: bash drops what it read with the line
   // and goes on to the next, so that `$?` is 1 there, but `|| x` does not run, and a function or a loop stops whole. Checked: test/syntax-error.test.ts.)
   'bad-substitution-always': tokenError<BadSubstitution>(BAD_SUBSTITUTION, badSubstitutionRow),
   // (The same, where only a name says the file is one of bash: another shell may source it, docs/design/three-levels.md.)

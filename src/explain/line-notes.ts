@@ -31,7 +31,7 @@ const statusFactCache = new WeakMap<StatusModel, WeakMap<SyntaxNode, Map<number,
 export function syntaxErrorNotes(cx: Explainer, line: number): string[] {
   const fault = syntaxFaultOf(cx);
   if (!fault || fault.said || fault.node.startPosition.row !== line) return [];
-  return cx.say(fact(cx.lang, cx.opts.script === 'said' ? 'syntax-error' : 'syntax-error-if-bash', { what: fault.what }), fault.node);
+  return cx.say(fact(cx.lang, cx.evidenceAt(fault.node) === 'known' ? 'syntax-error' : 'syntax-error-if-bash', { what: fault.what }), fault.node);
 }
 
 /** The notes on where line `line` is: in a here-document or at its end, or in a statement that started on a line before. */
