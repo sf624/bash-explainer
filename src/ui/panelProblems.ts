@@ -4,8 +4,10 @@
 import type { LineExplanation, Token } from '../analyzer-types';
 import { type DocumentIssue, type IssueFilter, noteAnchors, pitfallOf } from '../document';
 import type { Lang } from '../i18n';
-import { LEVELS, type NoteLevel, levelWord, problemLevel, SEVERITIES, type ProblemSeverity } from '../levels';
+import { LEVELS, type NoteLevel, levelWord, NOT_READ_WORD, problemLevel, SEVERITIES, type ProblemSeverity } from '../levels';
 import { isProblemNote, type Note, problemText } from '../messages';
+import type { ProblemNote } from '../messages-levels';
+import { isNotRead } from '../messages-unread';
 import { tokenAtSpan } from '../tokenmarks';
 import { type NoteBasis } from './tokenRow';
 import { noteBasis, noteRefs, notesByLevel } from './render';
@@ -53,11 +55,11 @@ function tokenPaths(items: readonly Token[], prefix = ''): Map<Token, string> {
  * match (the web page's comes a moment after the line), and a problem that was silenced is in the box, the strip and the
  * pointers alike: in none, and a plain note.
  */
-export function isListed(ex: Pick<LineExplanation, 'line' | 'anchors'>, n: Note, shown: IssueFilter): boolean {
+export function isListed(ex: Pick<LineExplanation, 'line' | 'anchors'>, n: Note, shown: IssueFilter): n is ProblemNote {
   if (!isProblemNote(n)) return false;
   // (As `noteIssues` does: a note on nodes is judged on their lines only, not on the cursor's own; one on no node, on its line.)
   const at = noteAnchors(ex, n).map((a) => a.span.start.line);
-  return (at.length ? at : [ex.line]).some((startLine) => shown({ code: n.code!, startLine, ...pitfallOf(n) }));
+  return (at.length ? at : [ex.line]).some((startLine) => shown({ code: n.code, startLine, ...pitfallOf(n) }));
 }
 
 /** The problems of the line, errors first; the notes that are no problems (or were silenced) stay notes. */
@@ -70,9 +72,9 @@ export function boxProblems(ex: LineExplanation, items: readonly Token[], lang: 
     const rows = anchors.map((a) => tokenAtSpan(tokens, a.span)).filter((t) => t !== undefined).map((t) => paths.get(t)!);
     const basis = noteBasis(ex, n.text, lang);
     return {
-      level: n.level, className, icon: codicon, word: levelWord(n.level, lang),
+      level: n.level, className, icon: codicon, word: isNotRead(n.code) ? NOT_READ_WORD[lang] : levelWord(n.level, lang),
       // (Every note that can be a problem has its headline: the catalog's type, and test/problem-heads.test.ts on the corpus.)
-      head: n.head!,
+      head: n.head,
       label: n.label, body: n.body, refs: noteRefs(ex, n.text) ?? [], ...(basis ? { basis } : {}), text: problemText(n, lang),
       fixes: [...new Set(anchors.flatMap((a) => a.rewrite ?? []).map((r) => r.code))],
       rows: [...new Set(rows)],
@@ -94,7 +96,7 @@ export function problemsAround(ex: Pick<LineExplanation, 'line' | 'context'>, is
     const n = String(i.startLine + 1);
     return {
       level: i.severity, className, icon: codicon,
-      where: t.onLine.replace('{word}', levelWord(SEVERITIES[i.severity].level, lang)).replace('{n}', n), title: t.toLine.replace('{n}', n), head: i.head,
+      where: t.onLine.replace('{word}', isNotRead(i.code) ? NOT_READ_WORD[lang] : levelWord(SEVERITIES[i.severity].level, lang)).replace('{n}', n), title: t.toLine.replace('{n}', n), head: i.head,
       line: i.startLine, column: i.startCol, endColumn: i.endCol,
     };
   });

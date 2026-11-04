@@ -4,7 +4,7 @@ import { type Lang, lineLabel, type Text } from './i18n';
 import { codeSpan, shorten } from './label';
 import { alwaysFails, LEVELS, namesLevel, type NoteLevel, severityOf } from './levels';
 import { FACT_HEADS, type Head, STYLE_HEADS } from './messages-heads';
-import { PROBLEM_LEVELS, STYLE_LEVELS, type StyleCase, type StyleCode, type TokenEntry } from './messages-levels';
+import { PROBLEM_LEVELS, type ProblemNote, STYLE_LEVELS, type StyleCase, type StyleCode, type TokenEntry } from './messages-levels';
 import { TOKEN_TEXTS } from './messages-tokens';
 import { UNREAD } from './messages-unread';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
@@ -822,7 +822,7 @@ export function isProblem(code: string): boolean {
 }
 
 /** Whether a note of a line is a problem in the editors: a warning, a caveat or an error, which the catalog does not keep a note (`isProblem`). */
-export function isProblemNote(n: Pick<Note, 'level' | 'code'>): boolean {
+export function isProblemNote<N extends Pick<Note, 'level' | 'code'>>(n: N): n is N & ProblemNote {
   return n.level !== 'note' && isProblem(n.code!);
 }
 

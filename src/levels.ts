@@ -176,6 +176,9 @@ export const SEVERITIES: Readonly<Record<Severity, SeverityMapping>> = {
  */
 export const levelWord = (level: NoteLevel, lang: Lang): string => LEVELS[level].word[lang].replace(/:\s*$/, '');
 
+/** The word of a problem that says this tool could not read a line or a file (`isNotRead`): a limit of the tool, so neither a pitfall nor an error of the script. */
+export const NOT_READ_WORD: Text = { ja: '読めていない', en: 'Not read' };
+
 /** The severity of a problem for a note of `level`. */
 export function severityOf(level: NoteLevel): ProblemSeverity {
   return LEVELS[level].severity;

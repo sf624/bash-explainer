@@ -489,7 +489,11 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
     io.stdout(o.format === 'github' ? text : forLog(text));
   };
   let rows = 0;
-  const writeRow = (row: unknown) => io.stdout(`${rows++ ? ',\n' : '[\n'}  ${jsonText(row, 2).replace(/\n/g, '\n  ')}`);
+  const writeRow = (row: unknown) => {
+    // (The text first: a row that fails to print leaves no comma or bracket behind.)
+    const text = jsonText(row, 2).replace(/\n/g, '\n  ');
+    io.stdout(`${rows++ ? ',\n' : '[\n'}  ${text}`);
+  };
   try {
     for (const input of inputs) {
       file = input.shown;
@@ -511,7 +515,7 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
       contained(`the file ${input.shown}`, () => {
         if (o.check) {
           const issues = diagnosticsFor(() => doc, () => shells, o.lang, o.settings, 'cli').shown
-            .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
+            .filter((i) => !input.lines || isNotRead(i.code) || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
             .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
           // (An error fails the check, a warning only with --strict: the level table, src/levels.ts.)
           const fails = (i: DocumentIssue) => failsCheck(i.severity, o.strict);

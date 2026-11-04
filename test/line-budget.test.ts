@@ -757,6 +757,10 @@ describe('one line must not stop the whole tool', () => {
           const check = await cli('--check', '--format', 'json', path);
           assert.strictEqual(check.status, 2, name);
           assert.deepStrictEqual((JSON.parse(check.out) as { code: string; line: number }[]).map((r) => [r.code, r.line]), [['file-not-read', 1]], name);
+          // (Whatever the range: a check that could not read the file says so.)
+          const ranged = await cli('--check', '--format', 'json', `${path}:2`);
+          assert.strictEqual(ranged.status, 2, name);
+          assert.deepStrictEqual((JSON.parse(ranged.out) as { code: string; line: number }[]).map((r) => [r.code, r.line]), [['file-not-read', 1]], name);
         }
       } finally {
         for (const name of Object.keys(files)) fs.rmSync(`${dir}/${name}`);
