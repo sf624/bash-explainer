@@ -7,7 +7,7 @@ import type { ReadingNode } from '../reading';
 import { descendants, type SyntaxTree } from '../syntax/tree';
 import { spanOf } from '../noteanchors';
 import { regionAt, regionShell, scriptTree, shellLines, shellStart } from './scripts';
-import { reachedAt } from '../semantics/scriptstops';
+import { stopAt } from '../semantics/scriptstops';
 import { fileRead } from '../semantics/env';
 import { shellState, type StateModel } from '../semantics/state';
 import { statusModel } from '../semantics/status';
@@ -254,7 +254,7 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
   };
   for (const region of extracted.regions) {
     const own = scriptTree(tree, extracted, region);
-    for (const issue of dialectIssues(own, regionShell(region, shell) ?? 'bash', lang, region.start, region.end, version, (n) => reachedAt(own, n.startIndex, shellStart(region, n.startPosition.row)))) {
+    for (const issue of dialectIssues(own, regionShell(region, shell) ?? 'bash', lang, region.start, region.end, version, (n) => stopAt(own, n.startIndex, shellStart(region, n.startPosition.row)))) {
       out.push({ code: issue.id, severity: severityOf(issue.note.level), message: problemText(issue.note, lang), head: issue.note.head!, ...at(issue.place) });
     }
     if (region.warnPipefail) {

@@ -119,7 +119,7 @@ export class Analyzer {
       ...continuationNotes(cx, root, line, items),
       ...tokenErrorNotes(cx, items),
       ...syntaxErrorNotes(cx, line),
-      ...cx.anchored(dialectFound(tree, line, shell ?? 'bash', this.lang, opts.bashVersion, (n) => cx.reachedAt(n))),
+      ...cx.anchored(dialectFound(tree, line, shell ?? 'bash', this.lang, opts.bashVersion, (n) => cx.stopAt(n))),
     ];
     const walked = alone ? alone.saidNotes : [...new Set(cx.notes)];
     const after = [

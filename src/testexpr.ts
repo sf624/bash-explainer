@@ -249,6 +249,12 @@ export function bracketWords(n: SyntaxNode): { words: SyntaxNode[]; close?: Synt
   return last?.text === ']' ? { words: args.slice(0, -1), close: last } : { words: args };
 }
 
+/** The words of the expression of a command written `[ … ]` or `test …`, by its spelling (a function of that name is not looked at here). */
+export function writtenTestWords(n: SyntaxNode): SyntaxNode[] | undefined {
+  if (writtenAsBracket(n)) return bracketWords(n).words;
+  return n.children.find((c) => c.type === 'command_name')?.text === 'test' ? n.children.filter((c) => c.field === 'argument') : undefined;
+}
+
 /**
  * The arguments of a command that runs `test` or `[` (src/semantics/names.ts, `testSpecOf`, decides it), read as bash
  * does: `words` are those of the expression, `close` the last `]` that `[` wants, `unclosed` when it is surely not

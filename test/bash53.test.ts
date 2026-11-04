@@ -382,7 +382,8 @@ describe('bash 5.3 options of builtins', () => {
       assert.ok(found.length >= 1, c.script);
       // (`source`, `.` and `trap` are special builtins: in POSIX mode, their error exits the shell.)
       const special = ['source', '.', 'trap'].includes(c.command) ? '; an error of a special builtin, so in POSIX mode the shell exits' : '';
-      assert.strictEqual(found[0].message, `ⓧ \`${c.command} ${c.flag}\` is a bash 5.3 option: bash 5.2 reports "invalid option", and \`${c.command}\` does nothing (status 2${special}).`, c.script);
+      // (In a function's body or after a `trap` it may not run: a dialect Error is one only where the shell surely gets there.)
+      assert.strictEqual(found[0].message.replace(/^(?:ⓧ|⚠ Portability:) /, ''), `\`${c.command} ${c.flag}\` is a bash 5.3 option: bash 5.2 reports "invalid option", and \`${c.command}\` does nothing (status 2${special}).`, c.script);
       // (On the option's word.)
       assert.strictEqual(c.script.slice(found[0].startCol, found[0].endCol), c.flag, c.script);
       assert.deepStrictEqual(issues('5.3'), [], c.script);

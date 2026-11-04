@@ -92,7 +92,6 @@ const ROWS: readonly Row[] = [
   { id: 'extglob-in-same-block', text: '#!/bin/bash\nf() {\n  shopt -s extglob\n  echo !(x)\n}\nf\n', line: 4, works: 'yes-match', files: { 'yes-match': '', x: '' }, ways: AS_PROGRAM },
   { id: 'extglob-turned-off', text: '#!/bin/bash\nshopt -u extglob\necho !(x)\n', line: 3, works: 'yes-match', files: { 'yes-match': '', x: '' } },
   { id: 'extglob-not-in-new-shell', text: "#!/bin/bash\nshopt -s extglob\nbash -c 'echo !(x)'\n", line: 3, works: 'yes-match', files: { 'yes-match': '', x: '' } },
-  { id: 'globstar-unsupported', shell: 'sh', text: '#!/bin/sh\nfor f in **/x; do echo "$f"; done\n', line: 2, works: 'd/e/x', files: { 'd/e/x': '' }, assumes: '/bin/sh is dash' },
   { id: 'variable-not-in-remote-shell', text: "#!/bin/bash\nx=it-works\nssh host 'echo $x'\n", line: 3, works: 'it-works', reads: ['x'] },
   { id: 'variable-not-passed-by-wrapper', text: "#!/bin/bash\nexport x=it-works\nenv -i bash -c 'echo \"$x\"'\n", line: 3, works: 'it-works', reads: ['x'] },
   { id: 'variable-not-exported', text: "#!/bin/bash\nunset x\nx=it-works\nbash -c 'echo \"$x\"'\n", line: 4, works: 'it-works', reads: ['x'] },
@@ -184,7 +183,7 @@ const ROWS: readonly Row[] = [
 const HEADED_FOR_ERROR: readonly string[] = [
   'keyword-needs-separator', 'syntax-error', 'bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'find-action-refused', 'unset-readonly',
   'unset-function-and-variable', 'local-outside-function', 'posix-special-function-name', 'alias-not-expanded-in-script',
-  'distro-alias-in-script', 'extglob-in-same-block', 'extglob-turned-off', 'extglob-not-in-new-shell', 'globstar-unsupported',
+  'distro-alias-in-script', 'extglob-in-same-block', 'extglob-turned-off', 'extglob-not-in-new-shell',
   'variable-not-in-remote-shell', 'variable-not-passed-by-wrapper', 'variable-not-exported', 'function-not-in-container',
   'builtin-or-function-as-program', 'function-not-on-remote', 'function-not-in-new-shell-blocked', 'function-not-in-new-shell',
   'function-not-imported', 'function-not-in-new-shell-export', 'wrapper-assignment-expanded-first', 'prefix-assignment-expanded-first',

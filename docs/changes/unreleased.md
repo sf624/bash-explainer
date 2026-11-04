@@ -156,6 +156,19 @@ So `[ -f a`, `unset` of a read-only variable, `bash -c f` of a function not expo
 - SARIF has `error` results. GitHub's code scanning fails its "Code scanning results" check on a new `error` alert by default; it blocks merging where a ruleset or branch protection requires that check.
 - `--counts` does not write through a symbolic link at the last part of the path it is given, as `--sarif` does not: the tool says so and exits with status 2. A link earlier in the path is followed.
 
+### Dialect issues in sh, as dash and busybox ash run them
+
+An Error says that a line fails, and `--check` fails on it. In a script for `sh`, `dash` or `ash`, the dialect checks said Error for everything the shell lacks, with "it fails in dash". Each one has now been run in dash and in busybox ash, and `sh` names the shell each result is about:
+
+- A variable the shell does not set (`$RANDOM`, `$SECONDS`, `$UID`, `$EUID`, `$HOSTNAME`, `$FUNCNAME`, `$PIPESTATUS`, `$BASH_VERSION`, `$BASH`, `$OSTYPE`, `$HOSTTYPE`, `$MACHTYPE`, `$REPLY`, `$EPOCHSECONDS`…): a warning, "dash does not set it, so it expands to nothing"; `$((RANDOM % 5))` is one too, "it counts as 0". busybox ash sets `$RANDOM`, `$EPOCHSECONDS`, `$FUNCNAME` and `$HOSTNAME`, so only dash is named. Before, an Error that said it fails.
+- It stays an Error where it does fail: `[ "$UID" -ne 0 ]`, `[ $UID = 0 ]`, `test $UID -eq 0` (status 2, and the script goes on as if the test were false), `${UID:?need}`, `$(($RANDOM % 5))`, and under `set -u`, unless a test of the name comes first. Where only a subshell stops (`set -u; cd "$(dirname "$BASH_SOURCE")"`), a warning that says so.
+- Nothing where the word gives the value: `${UID:-0}`, `${UID:-$(id -u)}`, `${BASH_SOURCE:-$0}`. Before, "expands to nothing".
+- Status 0 with another result: a warning with what the shell does. `echo -e` prints `-e`; `{a,b}` and `{1..3}` keep their braces; `$'a'` is a `$` and a quoted string; `cmd &>f` is `cmd &` and `>f`, which empties the file; `**` is `*`, in every shell that has no globstar.
+- Nothing of a variable the script sets itself (`[ -z "$RANDOM" ] && RANDOM=…`), of a command it defines (`print() { …; }`), or of a name that is none of bash's (`$BASH_TSTOUT`, `$BASH_COMPLETION_VERSINFO`, which looked like one).
+- `test a == b` now says what `[ a == b ]` says: status 2 in dash.
+
+In any shell, a dialect Error is an Error only where the shell surely gets to it. After `. ./lib`, a nested `exit` (`if [ -z "$BASH" ]; then exit; fi`) or `eval`, and in a branch, a loop's body, after `&&` or `||` or in a function, it is a warning with the same words: `[ -n "$BASH_VERSION" ] && shopt -s x`, `type shopt && shopt -s x`, `if a; then x=(1); fi`, `if a; then sh -c '[[ a ]]'; fi`. Only `--strict` fails on it. After a command that surely stops the script, nothing is said, `**` included.
+
 ### Long lines on the web page wrap between shell words
 
 The editor of the web page wraps a long line only between the words bash reads: a word keeps its quotes, `$( )`, `${ }`, `<( )` and backquotes on one row. In `grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt && echo "done: $(date +%F)" || exit 1`, a row ends before `"done: $(date +%F)"`, never inside it. The rows after the first are indented by the line's own indentation and two more columns, and the gutter marks each of them with ↪. A word wider than a row breaks at its own blanks, and only as a last resort anywhere, so nothing scrolls sideways.

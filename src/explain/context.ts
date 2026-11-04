@@ -15,7 +15,7 @@ import { tokenSaid, type TokenTextArgs, type TokenTextId } from '../messages-tok
 import { anchored, type Found, sameSpan, spanOf } from '../noteanchors';
 import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
-import { hostReadAs, reachedAt, readAs, type ReadKnown } from '../semantics/scriptstops';
+import { hostReadAs, readAs, type ReadKnown, type Stop, stopAt } from '../semantics/scriptstops';
 import { docLine, type StateModel } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
 import { listOverLines, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
@@ -142,7 +142,7 @@ export interface Explainer {
    * Line `line` of a string read as a script (src/explain/scripts.ts), explained as a script of its own: with its
    * tree, its shell and its kind (`nested`), and the options of this line, but no reading tree.
    */
-  nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional'], outer?: Pick<ExplainOptions, 'unread' | 'unsure' | 'unreached'>): LineExplanation;
+  nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional'], outer?: Pick<ExplainOptions, 'unread' | 'unsure' | 'unreached' | 'sometimes'>): LineExplanation;
 
   /**
    * A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`, and with the node or nodes
@@ -162,6 +162,8 @@ export interface Explainer {
   evidenceAt(n: SyntaxNode): ReadKnown | undefined;
   /** Whether the shell gets to the text at `n` (`reachedAt`): not after a sure stop, nor in a string run by a command it does not get to. */
   reachedAt(n: SyntaxNode): boolean;
+  /** The strongest stop before the text at `n` (`stopAt`), and of the command that runs its string: a string run where a shell may not get to counts as after a `may` stop. */
+  stopAt(n: SyntaxNode): Stop | undefined;
   /** A note about a range of the line (a token's): its text, recorded with its data and its place. */
   sayAt(n: Note & { code: string }, span: Span): string;
   /** Records a construct around the line (`LineExplanation.context`), outermost first. */
@@ -374,7 +376,7 @@ export class LineExplainer implements Explainer, LineOutput {
     }
   }
 
-  nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional'], outer: Pick<ExplainOptions, 'unread' | 'unsure' | 'unreached'> = {}): LineExplanation {
+  nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional'], outer: Pick<ExplainOptions, 'unread' | 'unsure' | 'unreached' | 'sometimes'> = {}): LineExplanation {
     // (The positional parameters are those of this string's shell: a string in it has its own, or none.)
     return this.walk.nestedLine(script.tree, line, script.shell, script.kind, { ...this.opts, argv: false, positional, ...outer });
   }
@@ -390,7 +392,12 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   reachedAt(n: SyntaxNode): boolean {
-    return !this.opts.unreached && reachedAt(this.tree, n.startIndex, this.opts.stopsFrom, this.opts.host ? undefined : this.state);
+    return this.stopAt(n) !== 'sure';
+  }
+
+  stopAt(n: SyntaxNode): Stop | undefined {
+    if (this.opts.unreached) return 'sure';
+    return stopAt(this.tree, n.startIndex, this.opts.stopsFrom, this.opts.host ? undefined : this.state) ?? (this.opts.sometimes ? 'may' : undefined);
   }
 
   say(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): string[] {

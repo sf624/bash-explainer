@@ -1,0 +1,511 @@
+// What each dialect issue says in sh, dash and busybox ash, against those shells (docs/design/three-levels.md, section 10): an Error
+// is what really fails where the shell surely gets to it, an empty variable or another result with status 0 is a Warning.
+// Every row of FEATURES has a row here; each runs in real dash and, where it is on PATH or in $BASH_EXPLAINER_SHELLS, real busybox.
+import * as assert from 'assert';
+import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { dialectIssues, dialectNotes, dialectTexts, FEATURES, type Shell } from '../src/dialect';
+import { documentIssues } from '../src/document';
+import { openDocument, shellsOf } from '../src/document-setup';
+import { Analyzer } from '../src/analyzer';
+import { works } from '../src/shellfeatures';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { surelyRuns } from '../src/semantics/scriptstops';
+import { descendants, type BashParser } from '../src/syntax/tree';
+
+/** Where a program is, on $BASH_EXPLAINER_SHELLS or PATH. */
+function locate(program: string): string | undefined {
+  const dirs = [process.env.BASH_EXPLAINER_SHELLS, ...(process.env.PATH ?? '').split(':')].filter(Boolean) as string[];
+  for (const d of dirs) if (fs.existsSync(path.join(d, program))) return path.join(d, program);
+  return undefined;
+}
+
+/** The snippets of each feature dash lacks or runs, each using only that construct. */
+const ROWS: Record<string, string[]> = {
+  dbracket: ['[[ a = a ]]'],
+  regex: ['[[ a =~ a ]] && echo y'],
+  array: ['a=(1 2)', 'echo "${a[0]}"'],
+  assoc: ['declare -A m'],
+  plusAssign: ['a=1; a+=2'],
+  replace: ['x=abc; echo "${x/a/b}"'],
+  replaceAnchor: ['x=abc; echo "${x/#a/b}"'],
+  caseMod: ['x=abc; echo "${x^^}"'],
+  substr: ['x=abc; echo "${x:1}"'],
+  indirect: ['x=a; echo "${!x}"'],
+  prefixNames: ['echo "${!a*}"'],
+  arrayKeys: ['echo "${!a[@]}"'],
+  transform: ['x=abc; echo "${x@Q}"'],
+  negIndex: ['echo "${a[-1]}"'],
+  funcKeyword: ['function f { echo a; }', 'function f {\n  echo a\n}', 'function f() { echo a; }'],
+  herestring: ['cat <<< a'],
+  ansiC: ["echo $'a\\tb'"],
+  ansiCQuote: ["echo $'a\\'b'"],
+  procSub: ['cat <(echo a)'],
+  ampRedirect: ['echo a &>out; wait; echo "[$(cat out)]"'],
+  ampAppend: ['echo a &>>out; wait; echo "[$(cat out)]"'],
+  netRedirect: ['echo a >/dev/tcp/127.0.0.1/1'],
+  pipeAmp: ['echo a |& cat'],
+  eqeqTest: ['[ a == a ]'],
+  arithCommand: ['((1+1))'],
+  cFor: ['for ((i=0;i<1;i++)); do echo a; done'],
+  braceRange: ['echo {1..3}'],
+  braceList: ['echo {a,b}'],
+  caseFall: ['case a in a) echo a;& b) echo b;; esac'],
+  caseCont: ['case a in a) echo a;;& b) echo b;; esac'],
+  extglob: ['echo @(a|b)'],
+  select: ['select x in a; do break; done </dev/null'],
+  local: ['f() { local x=1; echo "$x"; }; f'],
+  declare: ['declare x=1'],
+  typeset: ['typeset x=1'],
+  readarray: ['mapfile x </dev/null'],
+  source: ['source /dev/null'],
+  let: ['let x=1'],
+  shopt: ['shopt -s nullglob'],
+  pushd: ['pushd /tmp'],
+  exportF: ['f() { :; }; export -f f'],
+  waitN: ['sleep 0 & wait -n'],
+  coproc: ['coproc cat'],
+  print: ['print hello'],
+  whence: ['whence ls'],
+  typeT: ['type -t ls'],
+  printfV: ['printf -v x a'],
+  printfQ: ['printf %q a'],
+  echoE: ['echo -e "a\\tb"'],
+  echoN: ['echo -n a'],
+  readA: ['read -a x </dev/null'],
+  readP: ['echo a | read -p x y'],
+  readOpts: ['read -n 1 x <file', 'read -s x <file', 'read -t 1 x <file', 'read -d : x <file'],
+  pipefail: ['set -o pipefail'],
+  trapErr: ["trap 'echo e' ERR"],
+  errtrace: ['set -E'],
+  random: ['echo "x$RANDOM"'],
+  seconds: ['echo "x$SECONDS"'],
+  pipestatus: ['echo "x$PIPESTATUS"'],
+  bashVar: ['echo "x$BASH"', 'echo "x$BASH_VERSION"', 'echo "x${BASH_ENV}"', 'echo "x$BASHPID"', 'echo "x$BASHOPTS"'],
+  epoch: ['echo "x$EPOCHSECONDS"', 'echo "x$EPOCHREALTIME"'],
+  setByBash: ['echo "x$OSTYPE"', 'echo "x$HOSTTYPE"', 'echo "x$MACHTYPE"', 'echo "x$REPLY"', 'echo "x$SHELLOPTS"', 'echo "x$GROUPS"', 'echo "x$DIRSTACK"'],
+  funcname: ['f() { echo "x$FUNCNAME"; }; f'],
+  uid: ['echo "x$UID"', 'echo "x$EUID"'],
+  hostname: ['echo "x$HOSTNAME"'],
+  funsub: ['echo ${ echo a; }'],
+  valsub: ['echo ${| REPLY=a; }'],
+};
+
+let parser: BashParser;
+let dir: string;
+before(() => {
+  parser = createUnbashParser();
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-dialect-dash-'));
+  fs.writeFileSync(path.join(dir, 'file'), 'a:b\n');
+});
+after(() => {
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+type Real = 'dash' | 'ash';
+const COMMANDS: Record<Real, string[] | undefined> = { dash: locate('dash') ? [locate('dash')!] : undefined, ash: locate('busybox') ? [locate('busybox')!, 'sh'] : undefined };
+const REALS = ['dash', 'ash'] as const;
+
+const runIn = (command: string[], text: string) => {
+  const file = path.join(dir, 'script');
+  fs.writeFileSync(file, text);
+  const r = spawnSync(command[0], [...command.slice(1), file], { cwd: dir, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', env: { PATH: process.env.PATH, FUNCNEST: '50' } });
+  return { status: r.status, out: r.stdout, err: r.stderr };
+};
+
+const issues = (text: string, shell: Shell = 'sh') => dialectIssues(parser.parse(text), shell, 'en');
+const levelOf = (text: string, id: string, shell: Shell = 'sh'): string[] => issues(text, shell).filter((i) => i.id === id).map((i) => i.note.level);
+
+/** What the shell does at the snippet: `stops` the script, `fails` with a status, or `runs` with status 0. */
+function does(sh: Real, code: string): 'stops' | 'fails' | 'runs' {
+  const next = /next=(\d+)/.exec(runIn(COMMANDS[sh]!, `${code}\necho "next=$?"\n`).out);
+  return !next ? 'stops' : next[1] === '0' ? 'runs' : 'fails';
+}
+
+/** The level a feature has at the top of a script, from what its row says of the shell. */
+const expected = (id: string, sh: Real): string | undefined => (works(FEATURES[id], sh) ? undefined : FEATURES[id][sh] ? 'warning' : 'error');
+
+for (const sh of REALS) {
+  (locate(sh === 'ash' ? 'busybox' : 'dash') ? describe : describe.skip)(`the dialect issues, against ${sh}`, () => {
+    it('has a row for every feature', () => {
+      assert.deepStrictEqual(Object.keys(ROWS).sort(), Object.keys(FEATURES).sort());
+    });
+
+    for (const [id, snippets] of Object.entries(ROWS)) {
+      for (const code of snippets) {
+        it(`${id}: ${code.replace(/\n/g, ' ')}`, () => {
+          const f = FEATURES[id];
+          const said = issues(code, sh).filter((i) => i.id === id);
+          const result = does(sh, code);
+          if (works(f, sh)) {
+            assert.strictEqual(result, 'runs');
+            assert.deepStrictEqual(said, []);
+            return;
+          }
+          assert.deepStrictEqual([...new Set(said.map((i) => i.note.level))], [expected(id, sh)]);
+          const notes = said.map((i) => i.note.text).join('\n');
+          if (f[sh] === 'empty') {
+            assert.strictEqual(result, 'runs');
+            assert.strictEqual(runIn(COMMANDS[sh]!, code).out, 'x\n');
+            assert.match(notes, /not set it, so it expands to nothing/);
+          } else if (f[sh]) {
+            assert.strictEqual(result, 'runs');
+            // (Status 0, with another result than bash's. `=~` only where it holds a `(`.)
+            if (id !== 'regex') assert.notStrictEqual(runIn(COMMANDS[sh]!, code).out, runIn(['bash', '--norc', '--noprofile'], code).out);
+          } else {
+            assert.notStrictEqual(result, 'runs');
+            assert.match(notes, /is not available in/);
+          }
+        });
+      }
+    }
+
+    // Each row wrapped: where it runs, what fails still fails; the level follows `surelyRuns` (test of the rule below).
+    const WRAPS: [string, (code: string) => string, boolean][] = [
+      ['a function', (code) => `f() {\n${code}\necho "st=$?"\n}\nf`, false],
+      ['a pipe', (code) => `{ ${code}\necho "st=$?"\n} | cat`, true],
+      ['$( )', (code) => `y=$(${code}\necho "st=$?"\n)\necho "$y"`, true],
+      ['set -e', (code) => `set -e\n${code}\necho "st=$?"`, true],
+      ['if', (code) => `if true; then\n${code}\necho "st=$?"\nfi`, false],
+      ['&&', (code) => `true && {\n${code}\necho "st=$?"\n}`, false],
+    ];
+    for (const [where, wrap, sure] of WRAPS) {
+      it(`what fails, in ${where}`, () => {
+        for (const [id, snippets] of Object.entries(ROWS)) {
+          // (`function f {` in dash is a command and a block, whose `}` closes what is around it.)
+          if (works(FEATURES[id], sh) || FEATURES[id][sh] || id === 'funcKeyword') continue;
+          for (const code of snippets) {
+            const script = wrap(code);
+            const r = runIn(COMMANDS[sh]!, script);
+            assert.doesNotMatch(r.out, /st=0/, `${id}: ${code}`);
+            for (const level of levelOf(script, id, sh)) assert.strictEqual(level, sure ? 'error' : 'warning', `${id}: ${code}`);
+          }
+        }
+      });
+      it(`what gives status 0, in ${where}`, () => {
+        for (const [id, snippets] of Object.entries(ROWS)) {
+          if (works(FEATURES[id], sh) || !FEATURES[id][sh] || id === 'funcname') continue;
+          for (const code of snippets) {
+            const script = wrap(code);
+            assert.match(runIn(COMMANDS[sh]!, script).out, /st=0/, `${id}: ${code}`);
+            for (const level of levelOf(script, id, sh)) assert.strictEqual(level, 'warning', `${id}: ${code}`);
+          }
+        }
+      });
+    }
+
+    it('what fails, under set -eu', () => {
+      for (const [id, snippets] of Object.entries(ROWS)) {
+        if (works(FEATURES[id], sh) || FEATURES[id][sh] || id === 'funcKeyword') continue;
+        for (const code of snippets) {
+          const script = `set -eu\n${code}\necho "st=$?"`;
+          assert.doesNotMatch(runIn(COMMANDS[sh]!, script).out, /st=0/, `${id}: ${code}`);
+          assert.deepStrictEqual([...new Set(levelOf(script, id, sh))], ['error'], `${id}: ${code}`);
+        }
+      }
+    });
+    it('a variable it does not set stops the shell under set -eu, and another result does not', () => {
+      for (const [id, snippets] of Object.entries(ROWS)) {
+        if (works(FEATURES[id], sh) || !FEATURES[id][sh]) continue;
+        const empty = FEATURES[id][sh] === 'empty';
+        for (const code of snippets) {
+          const script = `set -eu\n${code}\necho "st=$?"`;
+          const r = runIn(COMMANDS[sh]!, script);
+          // (The rows that keep a value with `set -u`: `$REPLY` and the like have none.)
+          assert.strictEqual(/st=0/.test(r.out), !empty, `${id}: ${code}`);
+          // (In a function's body, a warning at any rate.)
+          assert.deepStrictEqual([...new Set(levelOf(script, id, sh))], [empty && id !== 'funcname' ? 'error' : 'warning'], `${id}: ${code}`);
+        }
+      }
+    });
+
+    it('`**` is `*` here, with status 0', () => {
+      fs.mkdirSync(path.join(dir, 'd/e'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'd/e/x'), '');
+      assert.strictEqual(runIn(COMMANDS[sh]!, 'for f in **/x; do echo "$f"; done\necho "next=$?"\n').out, '**/x\nnext=0\n');
+    });
+
+    // A variable the shell does not set, as `[` or `test` reads it.
+    const SECONDS = sh === 'ash' ? 'SECONDS' : 'RANDOM';
+    for (const code of ['[ "$UID" -ne 0 ]', '[ "$EUID" -ne 0 ]', '[ $UID = 0 ]', 'test $UID -eq 0', '[ "$SECONDS" -gt 10 ]', `[ $${SECONDS} -lt 5 ]`]) {
+      it(`status 2 is an Error: ${code}`, () => {
+        assert.strictEqual(runIn(COMMANDS[sh]!, `${code}\necho "st=$?"`).out, 'st=2\n');
+        const said = issues(code, sh);
+        assert.deepStrictEqual(said.map((i) => i.note.level), ['error']);
+        assert.match(said[0].note.text, /the test reports an error \(status 2\), and counts as false/);
+      });
+    }
+    it('the body of the test that failed does not run, and what follows does', () => {
+      assert.strictEqual(runIn(COMMANDS[sh]!, 'if [ "$UID" -ne 0 ]; then echo must be root; exit 1; fi\necho rest').out, 'rest\n');
+      assert.deepStrictEqual(issues('if [ "$UID" -ne 0 ]; then echo must be root; exit 1; fi', sh).map((i) => i.note.level), ['error']);
+    });
+    for (const code of ['[ "$UID" = 0 ]', '[ $UID ]', '[ -z "$UID" ]', '[ -n $UID ]', '[ "$UID" = "$x" ]', '[ "$UID" = "$RANDOM" ]', '[ "$UID" = "$@" ]', '[ "$UID" = $x ]', '[ "$(echo "$UID")" -ne 0 ]', '[ a = b ] >"$UID"', 'for f in $UID; do :; done', 'case $UID in a) ;; esac', 'cat <"$UID"']) {
+      it(`status 0 or 1, or not known, is a Warning: ${code}`, () => {
+        assert.deepStrictEqual(levelOf(code, 'uid', sh), ['warning']);
+      });
+    }
+    it('a test that gives its own value says nothing', () => {
+      for (const code of ['[ "${UID-0}" -eq 0 ]', '[ "${UID:-0}" -eq 0 ]', 'UID=1; [ "$UID" -ne 0 ]']) {
+        assert.strictEqual(runIn(COMMANDS[sh]!, `${code}\necho "st=$?"`).out.endsWith('st=1\n') || runIn(COMMANDS[sh]!, `${code}\necho "st=$?"`).out.endsWith('st=0\n'), true, code);
+        assert.deepStrictEqual(issues(code, sh), [], code);
+      }
+    });
+
+    // The word gives another value: the shell gives it.
+    for (const [code, out] of [['echo "${UID:-0}"', '0\n'], ['echo "${UID-0}"', '0\n'], ['echo "${UID:-$(echo 7)}"', '7\n'], ['echo "${BASH_SOURCE:-b}"', 'b\n'], ['echo "${UID:=3}"', '3\n'], ['echo "${UID:+a}"', '\n']]) {
+      it(`says nothing where the word gives the value: ${code}`, () => {
+        assert.strictEqual(runIn(COMMANDS[sh]!, code).out, out);
+        assert.deepStrictEqual(issues(code, sh), []);
+      });
+    }
+    for (const code of ['echo "${UID:?need}"', 'echo "${UID?need}"', ': "${UID:?}"; echo "$UID"']) {
+      it(`an Error where the word stops the shell: ${code}`, () => {
+        assert.strictEqual(does(sh, code), 'stops');
+        assert.deepStrictEqual(issues(code, sh).map((i) => i.note.level), ['error']);
+        assert.match(issues(code, sh)[0].note.text, /so the shell stops here/);
+      });
+    }
+
+    // Under `set -u`.
+    for (const code of ['set -u; echo "x$UID"', 'set -u; echo "${UID#x}"', 'set -u; [ -z "$UID" ]']) {
+      it(`an Error where set -u stops the shell: ${code}`, () => {
+        assert.strictEqual(does(sh, code), 'stops');
+        assert.deepStrictEqual(levelOf(code, 'uid', sh), ['error']);
+        assert.match(issues(code, sh)[0].note.text, /so the shell stops here/);
+      });
+    }
+    for (const code of ['set -u; x=$(echo "$UID")', 'set -u; echo "$UID" | cat', 'set -u; (echo "$UID")', 'y=$(: "${UID:?}")']) {
+      it(`a Warning where only a subshell stops: ${code}`, () => {
+        assert.strictEqual(runIn(COMMANDS[sh]!, `${code}\necho next`).out.endsWith('next\n'), true);
+        assert.deepStrictEqual(levelOf(code, 'uid', sh), ['warning']);
+        assert.match(issues(code, sh)[0].note.text, /that subshell stops here, and the script goes on/);
+      });
+    }
+    it('a subshell stops, and the script goes on: `cd "$(dirname "$BASH_SOURCE")"`', () => {
+      assert.strictEqual(runIn(COMMANDS[sh]!, 'set -u; cd "$(dirname "$BASH_SOURCE")"; echo NEXT').out, 'NEXT\n');
+      assert.deepStrictEqual(levelOf('set -u; cd "$(dirname "$BASH_SOURCE")"; echo NEXT', 'bashVar', sh), ['warning']);
+    });
+    for (const code of ['set -u; [ -n "${UID:-}" ] && echo "$UID"', 'set -u; if [ -n "${UID+x}" ]; then echo "$UID"; fi', 'set -u; [ -z "${UID:-}" ] && exit 1\necho "$UID"', '. ./lib\nset -u\necho "$UID"']) {
+      it(`no stop is said after a test of the name, or what the model does not read: ${code.replace(/\n/g, ' ')}`, () => {
+        for (const i of issues(code, sh).filter((x) => x.id === 'uid')) {
+          assert.strictEqual(i.note.level, 'warning');
+          assert.doesNotMatch(i.note.text, /stops/);
+        }
+      });
+    }
+
+    it('a name in `$(( ))` counts as 0, with status 0', () => {
+      for (const [code, out] of [['echo $((UID + 1))', '1\n'], ['echo $((SECONDS/60))', '0\n'], ['echo $((UID))', '0\n']]) {
+        assert.strictEqual(runIn(COMMANDS[sh]!, code).out, out);
+        const said = issues(code, sh);
+        assert.deepStrictEqual(said.map((i) => i.note.level), ['warning'], code);
+        assert.match(said[0].note.text, /counts as 0 in arithmetic/);
+      }
+      // (`(( ))` is its own issue, and a name set in the script none.)
+      assert.deepStrictEqual(issues('((UID + 1))', sh).map((i) => i.id), ['arithCommand']);
+      assert.deepStrictEqual(issues('UID=2; echo $((UID + 1))', sh), []);
+    });
+    for (const code of ['echo $(($SECONDS % 5))', 'echo $((1 + $SECONDS))', 'echo $((-$SECONDS))', 'echo $((($SECONDS)))', 'echo "$((${SECONDS} % 5))"']) {
+      it(`an Error where an operand is missing: ${code}`, () => {
+        assert.strictEqual(does(sh, code), 'stops');
+        assert.deepStrictEqual(levelOf(code, 'seconds', sh), ['error']);
+      });
+    }
+    for (const code of ['echo $(($SECONDS + 1))', 'echo $(($SECONDS - 1))', 'echo $((1$SECONDS))', 'echo $(($SECONDS$SECONDS + 1))', 'echo $((${SECONDS:-1} % 5))', 'echo "$(echo $SECONDS)"', 'echo "${SECONDS%x}"']) {
+      it(`a Warning, or nothing, where the operands are there: ${code}`, () => {
+        assert.strictEqual(does(sh, code), 'runs');
+        for (const level of levelOf(code, 'seconds', sh)) assert.strictEqual(level, 'warning');
+      });
+    }
+    it('`$(($x))` alone stops dash, and is 0 in busybox ash', () => {
+      assert.strictEqual(does(sh, 'echo $(($SECONDS))'), sh === 'dash' ? 'stops' : 'runs');
+      assert.deepStrictEqual(levelOf('echo $(($SECONDS))', 'seconds', sh), [sh === 'dash' ? 'error' : 'warning']);
+    });
+
+    it('says nothing of a variable the script sets, or of a name that is no variable of bash', () => {
+      for (const code of ['UID=3; echo "$UID"', 'read UID </dev/null; echo "$UID"', 'echo "${UID=1}"', '[ -z "$UID" ] && UID=3\necho $(($UID % 5))']) {
+        assert.deepStrictEqual(issues(code, sh).filter((i) => i.id === 'uid'), [], code);
+      }
+      // (tests/run-all in bash's source; bash-completion.)
+      for (const name of ['BASH_TSTOUT', 'BASH_COMPLETION_VERSINFO', 'BASHFOO', 'EPOCHS']) assert.deepStrictEqual(issues(`echo "$${name}"`, sh), [], name);
+      assert.deepStrictEqual(issues('BASH_TSTOUT=/tmp/x; echo "$BASH_TSTOUT"', sh), []);
+    });
+
+    it('says nothing of a command the script defines', () => {
+      for (const code of ['print() { echo "$1"; }\nprint x', 'f() { shopt a; }\nshopt() { :; }\nf']) {
+        assert.strictEqual(does(sh, code), 'runs', code);
+        assert.deepStrictEqual(issues(code, sh), [], code);
+      }
+    });
+
+    it('says that an expansion fails once, not that its variable is empty as well', () => {
+      assert.deepStrictEqual(issues('echo "${UID^^}"', sh).map((i) => `${i.id} ${i.note.level}`), ['caseMod error']);
+      assert.deepStrictEqual(issues('f() { echo "${FUNCNAME[0]}"; }', sh).map((i) => `${i.id} ${i.note.level}`), ['array warning']);
+    });
+
+    it('`test a == a`, as `[ a == a ]`', () => {
+      for (const code of ['test a == a', '[ a == a ]']) {
+        assert.strictEqual(does(sh, code), sh === 'dash' ? 'fails' : 'runs');
+        assert.deepStrictEqual(levelOf(code, 'eqeqTest', sh), sh === 'dash' ? ['error'] : []);
+      }
+    });
+  });
+}
+
+describe('`sh`, dash or busybox ash', () => {
+  const textOf = (code: string, id: string): string => issues(code).find((i) => i.id === id)!.note.text;
+  it('names the shell that fails, and the worst decides', () => {
+    assert.strictEqual(textOf('echo a &>>f', 'ampAppend'), 'ⓧ Error: `&>>` is not POSIX sh (dash reads `cmd &` and `>>file`: the output is not redirected, and nothing is added to the file; it fails in busybox ash). Instead, write `>>file 2>&1`.');
+    assert.strictEqual(textOf('printf -v x a', 'printfV'), 'ⓧ Error: `printf -v` is not POSIX sh (it fails in dash; busybox ash prints `-v` as text, and sets no variable). Instead, write `v=$(printf …)`.');
+    assert.strictEqual(textOf('type -t ls', 'typeT'), 'ⓧ Error: `type -t` is not POSIX sh (it fails in dash; busybox ash\'s `type -t` prints the name, not the kind). Instead, use `command -v`.');
+    assert.strictEqual(textOf('shopt -s x', 'shopt'), 'ⓧ Error: `shopt` is not POSIX sh (it fails in dash and busybox ash).');
+  });
+  it('names only the shell that does not set a variable', () => {
+    assert.match(textOf('echo "$EPOCHSECONDS"', 'epoch'), /\(dash does not set it, so it expands to nothing\)/);
+    assert.match(textOf('echo "$RANDOM"', 'random'), /\(dash does not set it, so it expands to nothing\)/);
+    assert.match(textOf('f() { echo "$FUNCNAME"; }', 'funcname'), /\(dash does not set it/);
+    assert.match(textOf('echo "$HOSTNAME"', 'hostname'), /\(dash does not set it/);
+    assert.match(textOf('echo "$UID"', 'uid'), /\(dash and busybox ash do not set it, so it expands to nothing\)/);
+  });
+  it('reads each shell apart at a missing operand, and in what the model cannot say of a call', () => {
+    assert.deepStrictEqual(levelOf('echo $((-$UID))', 'uid'), ['error']);
+    assert.match(textOf('echo $((-$UID))', 'uid'), /\(dash and busybox ash do not set it, so the shell stops here\)/);
+    assert.match(textOf('echo $(($UID % 5))', 'uid'), /\(dash and busybox ash do not set it, so the shell stops here\)/);
+    assert.match(textOf('echo $(( $(echo $UID) + 1))', 'uid'), /so it expands to nothing/);
+    // (A function called in a pipe and by itself: where it stops is not one place, and a function's body is a warning at any rate.)
+    assert.deepStrictEqual(levelOf('set -u; f() { echo "$UID"; }; f | cat; f', 'uid'), ['warning']);
+    assert.match(textOf('set -u; f() { echo "$UID"; }; f | cat; f', 'uid'), /so the shell stops here/);
+    // (`[[ ]]` is its own issue in dash; the variable in it is no test of `[`.)
+    assert.deepStrictEqual(levelOf('[[ $UID ]]', 'uid'), ['warning']);
+  });
+  it('is an Error where either fails, and what each does', () => {
+    // (`$RANDOM` is set in busybox ash, and the test passes there.)
+    assert.deepStrictEqual(levelOf('[ $RANDOM -lt 5 ]', 'random'), ['error']);
+    assert.match(textOf('[ $RANDOM -lt 5 ]', 'random'), /\(dash does not set it, so the test reports an error/);
+    assert.deepStrictEqual(levelOf('echo $(($RANDOM % 5))', 'random'), ['error']);
+    assert.match(textOf('echo $(($UID))', 'uid'), /\(dash does not set it, so the shell stops here; busybox ash does not set it, so it expands to nothing\)/);
+    assert.deepStrictEqual(levelOf('[ a == a ]', 'eqeqTest'), ['error']);
+  });
+  it('keeps information for what both run', () => {
+    assert.deepStrictEqual(levelOf('f() { local x; }', 'local'), ['info']);
+    assert.deepStrictEqual(levelOf('set -E', 'errtrace'), ['info']);
+  });
+  it('says the same in a script for dash and for busybox ash, in the words of that shell, and leaves the other shells', () => {
+    const note = (code: string, shell: Shell = 'dash') => dialectNotes(parser.parse(code), 0, shell, 'en');
+    assert.deepStrictEqual(note('echo "$UID"'), ['⚠ Portability: `$UID` / `$EUID` is not available in dash (dash does not set it, so it expands to nothing). Instead, use `$(id -u)`.']);
+    assert.deepStrictEqual(note('echo "$UID"', 'ash'), ['⚠ Portability: `$UID` / `$EUID` is not available in busybox ash (busybox ash does not set it, so it expands to nothing). Instead, use `$(id -u)`.']);
+    assert.deepStrictEqual(note('echo $(($UID % 2))'), ['ⓧ Error: `$UID` / `$EUID` is not available in dash (dash does not set it, so the shell stops here). Instead, use `$(id -u)`.']);
+    assert.deepStrictEqual(note('echo -e a'), ['⚠ Portability: `echo -e` is not available in dash (dash\'s `echo` prints `-e` as text). Instead, use `printf` (dash\'s `echo` always interprets `\\t` and friends).']);
+    assert.deepStrictEqual(note('shopt -s x'), ['ⓧ Error: `shopt` is not available in dash.']);
+    assert.deepStrictEqual(note('f() { local x; }'), []);
+    assert.deepStrictEqual(note('echo {a,b}', 'ash'), ['⚠ Portability: brace expansion `{a,b}` is not available in busybox ash (in busybox ash the braces stay, as one word).']);
+    // (Not run here: the shell's lack is an error, as it was; a name in `$(( ))` says nothing, as it did.)
+    assert.deepStrictEqual(levelOf('echo "$UID"', 'uid', 'ksh'), ['error']);
+    assert.deepStrictEqual(levelOf('echo {1..3}', 'braceRange', 'mksh'), ['error']);
+    assert.deepStrictEqual(levelOf('echo $((UID + 1))', 'uid', 'ksh'), []);
+  });
+  it('writes each text in Japanese too, in the words of the style check', () => {
+    const texts = dialectTexts('ja');
+    assert.ok(texts.includes('`$UID` / `$EUID` は POSIX sh にない書き方です（dash・busybox ash には設定されないので、展開すると空になります）。代わりに `$(id -u)` を使う。'));
+    assert.ok(texts.includes('`$UID` / `$EUID` は POSIX sh にない書き方です（dash・busybox ash には設定されないので、ここでシェルが止まります）。代わりに `$(id -u)` を使う。'));
+    assert.ok(texts.includes('`shopt` は POSIX sh にない書き方です（dash・busybox ash では動きません）。'));
+  });
+});
+
+describe('an error of the dialect, where the shell surely gets to it', () => {
+  const inDocument = (text: string) => {
+    const doc = openDocument(text, 'shell', (x) => parser.parse(x));
+    return documentIssues(doc, 'en', shellsOf(doc.lines, 'script', undefined));
+  };
+  const sh = (code: string) => inDocument(`#!/bin/sh\n${code}\n`);
+  const levels = (code: string, id: string) => sh(code).filter((i) => i.code === id).map((i) => i.severity);
+
+  for (const code of ['shopt -s x', 'y=$(shopt -s x)', 'shopt -s x | cat', '(shopt -s x)', '{ shopt -s x; }', 'if shopt -s x; then :; fi', 'shopt -s x && echo a', 'while shopt -s x; do :; done', 'for f in $(shopt -s x); do :; done', 'case $(shopt -s x) in a) ;; esac', 'if [ "$UID" -ne 0 ]; then :; fi; shopt -s x']) {
+    it(`is an Error where it is reached: ${code}`, () => {
+      assert.deepStrictEqual(levels(code, 'shopt'), ['error']);
+    });
+  }
+  for (const code of ['exit 0; shopt -s x', 'exec bash "$0"; shopt -s x']) {
+    it(`says nothing after a sure stop: ${code}`, () => {
+      assert.deepStrictEqual(levels(code, 'shopt'), []);
+    });
+  }
+  it('says nothing that reports a problem after a sure stop, whatever its kind', () => {
+    for (const [code, id] of [['exit 0\necho -e a', 'echoE'], ['exit 0\necho {a,b}', 'braceList'], ['exit 0\necho "$UID"', 'uid'], ['exit 0\na=(1)', 'array']]) {
+      assert.deepStrictEqual(levels(code, id), [], code);
+    }
+  });
+  for (const code of ['if [ -z "$BASH" ]; then exit; fi\nshopt -s x', '. ./lib\nshopt -s x', 'source ./lib\nshopt -s x', 'eval "$(cat lib)"\nshopt -s x', 'f() { exit 1; }\nshopt -s x', 'trap "exit 0" INT\nshopt -s x']) {
+    it(`is a Warning after a stop that may come first: ${code.replace(/\n/g, ' ')}`, () => {
+      assert.deepStrictEqual(levels(code, 'shopt'), ['warning']);
+    });
+  }
+  for (const code of ['if a; then shopt -s x; fi', 'if a; then :; else shopt -s x; fi', 'if a; then :; elif shopt -s x; then :; fi', 'if a; then :; elif b; then shopt -s x; fi', 'case a in a) shopt -s x;; esac', 'a && shopt -s x', 'a || shopt -s x', 'f() { shopt -s x; }', 'function g { :; }\nh() { shopt -s x; }', 'while a; do shopt -s x; done', 'for f in a; do shopt -s x; done', 'echo "${x:-$(shopt -s x)}"', '[ -n "$BASH_VERSION" ] && shopt -s x', 'type shopt >/dev/null && shopt -s x']) {
+    it(`is a Warning in what may be left out: ${code.replace(/\n/g, ' ')}`, () => {
+      assert.deepStrictEqual(levels(code, 'shopt'), ['warning']);
+    });
+  }
+  it('keeps the same words at a Warning, under its own heading', () => {
+    const issue = sh('if a; then shopt -s x; fi').find((i) => i.code === 'shopt')!;
+    assert.match(issue.message, /`shopt` is not POSIX sh \(it fails in dash and busybox ash\)/);
+    assert.strictEqual(issue.severity, 'warning');
+  });
+  it('says nothing of `**` after a sure stop, as of the rest', () => {
+    assert.deepStrictEqual(levels('ls **/x', 'globstar-unsupported'), ['warning']);
+    assert.deepStrictEqual(levels('. ./lib\nls **/x', 'globstar-unsupported'), ['warning']);
+    assert.deepStrictEqual(levels('exit 0\nls **/x', 'globstar-unsupported'), []);
+  });
+  it('holds for what a shell cannot read: the words claim no more', () => {
+    for (const sh2 of REALS.filter((x) => COMMANDS[x])) {
+      // (A shell that reads this stops at it, whatever runs, if it gets to read it at all.)
+      assert.strictEqual(runIn(COMMANDS[sh2]!, 'if false; then\na=(1 2)\nfi\necho after\n').status, 2);
+      assert.strictEqual(runIn(COMMANDS[sh2]!, 'echo before\nexit 0\na=(1 2)\n').out, 'before\n');
+    }
+    assert.deepStrictEqual(levels('a=(1 2)', 'array'), ['error']);
+    assert.deepStrictEqual(levels('if false; then a=(1 2); fi', 'array'), ['warning']);
+    assert.deepStrictEqual(levels('. ./lib\na=(1 2)', 'array'), ['warning']);
+    assert.deepStrictEqual(levels('exit 0\na=(1 2)', 'array'), []);
+    assert.doesNotMatch(sh('a=(1 2)')[0].message, /whatever|no test/);
+  });
+  it('holds in the other shells and in a release of bash, where it is no fact of the shell', () => {
+    const issuesIn = (code: string, shell: Shell) => dialectIssues(parser.parse(code), shell, 'en', undefined, undefined, '5.2').map((i) => `${i.id} ${i.note.level}`);
+    assert.deepStrictEqual(issuesIn('[[ a ]]; declare x', 'mksh').filter((x) => x.startsWith('declare')), ['declare error']);
+    assert.deepStrictEqual(issuesIn('if a; then declare x; fi', 'mksh').filter((x) => x.startsWith('declare')), ['declare warning']);
+    assert.deepStrictEqual(issuesIn('if a; then echo ${ echo b; }; fi', 'bash').map((x) => x.split(' ')[1]), ['warning']);
+  });
+  it('reads a string run by a command the same way, as the explanation does', () => {
+    const inBash = (code: string, id: string) => inDocument(`#!/bin/bash\n${code}\n`).filter((i) => i.code === id).map((i) => i.severity);
+    assert.deepStrictEqual(inBash(`sh -c '[[ a ]]'`, 'dbracket'), ['error']);
+    assert.deepStrictEqual(inBash(`if a; then sh -c '[[ a ]]'; fi`, 'dbracket'), ['warning']);
+    assert.deepStrictEqual(inBash(`sh -c 'if a; then [[ a ]]; fi'`, 'dbracket'), ['warning']);
+    assert.deepStrictEqual(inBash(`. ./lib\nsh -c '[[ a ]]'`, 'dbracket'), ['warning']);
+    assert.deepStrictEqual(inBash(`exit 0\nsh -c '[[ a ]]'`, 'dbracket'), []);
+    assert.deepStrictEqual(inBash(`sh -c '. ./lib; [[ a ]]'`, 'dbracket'), ['warning']);
+    assert.deepStrictEqual(inBash(`sh -c 'exit 0; [[ a ]]'`, 'dbracket'), []);
+    const explained = (text: string, line: number): string[] => new Analyzer('en').explainLine(parser.parse(text), line, text.startsWith('#!/bin/sh') ? 'sh' : 'bash', { script: 'said' }).notes;
+    const notesOf = (code: string, line: number) => explained(`#!/bin/bash\n${code}\n`, line).filter((n) => n.includes('[[')).map((n) => n[0]);
+    assert.deepStrictEqual(notesOf(`sh -c '[[ a ]]'`, 1), ['ⓧ']);
+    assert.deepStrictEqual(notesOf(`if a; then sh -c '[[ a ]]'; fi`, 1), ['⚠']);
+    assert.deepStrictEqual(notesOf(`. ./lib\nsh -c '[[ a ]]'`, 2), ['⚠']);
+    assert.deepStrictEqual(notesOf(`exit 0\nsh -c '[[ a ]]'`, 2), []);
+    const scriptNotes = (code: string, line: number) => explained(`#!/bin/sh\n${code}\n`, line).filter((n) => n.includes('`shopt`')).map((n) => n[0]);
+    assert.deepStrictEqual(scriptNotes('shopt -s x', 1), ['ⓧ']);
+    assert.deepStrictEqual(scriptNotes('. ./lib\nshopt -s x', 2), ['⚠']);
+    assert.deepStrictEqual(scriptNotes('exit 0\nshopt -s x', 2), []);
+  });
+});
+
+describe('surelyRuns', () => {
+  const place = (code: string, name = 'c'): boolean => {
+    const n = descendants(parser.parse(code).root, ['command']).find((c) => c.children[0].text === name)!;
+    return surelyRuns(n);
+  };
+  for (const code of ['c', 'c | d', 'c &', '( c )', '{ c; }', '! c', 'x=$(c)', 'c && d', 'if c; then d; fi', 'while c; do d; done', 'until c; do d; done', 'for x in $(c); do d; done', 'case $(c) in a) ;; esac', 'select x in $(c); do d; done', 'for ((i=$(c);;)); do d; done']) {
+    it(`runs: ${code}`, () => assert.strictEqual(place(code), true));
+  }
+  for (const code of ['f() { c; }', 'if a; then c; fi', 'if a; then :; else c; fi', 'if a; then :; elif c; then :; fi', 'if a; then :; elif b; then c; fi', 'while a; do c; done', 'until a; do c; done', 'for x in a; do c; done', 'select x in a; do c; done', 'for ((;;)); do c; done', 'for ((;;i=$(c))); do d; done', 'case a in a) c;; esac', 'a && c', 'a || c', 'a && b && c', 'echo ${x:-$(c)}', '[[ a || $(c) ]]', 'case a in a|$(c)) ;; esac']) {
+    it(`may be left out: ${code}`, () => assert.strictEqual(place(code), false));
+  }
+});

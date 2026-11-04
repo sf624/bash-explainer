@@ -74,15 +74,16 @@ export function insideLastBracket(text: string, close: string, more: string): st
 
 /**
  * The level of the problems that are no fact of the catalog: a dialect issue on a construct the target shell lacks
- * (`unsupported`) or that works differently there (`behaviour`, "Portability"), src/dialect.ts; a script with CRLF line
+ * (`unsupported`), that gives status 0 with another result there (`differs`) or that works differently there
+ * (`behaviour`), the last two "Portability", src/dialect.ts; a script with CRLF line
  * ends (`crlf`, src/document.ts), an error when a CR ends the `#!` line or a keyword stands just before a CR (run as
  * a program, the interpreter is not found; `fi` is read as `fi\r`, every time), a warning otherwise (`crlfMaybe`:
  * `bash file` runs `echo hi`, with a CR at the end of its output); zsh syntax a line of a zsh script cannot be read with
  * (`parse`, src/dialect.ts), information: the line is not explained (a problem of that severity, as it always was).
  */
-export const PROBLEM_LEVELS = { unsupported: 'error', behaviour: 'info', parse: 'info', crlf: 'error', crlfMaybe: 'warning' } as const satisfies Record<string, NoteLevel>;
+export const PROBLEM_LEVELS = { unsupported: 'error', differs: 'warning', behaviour: 'info', parse: 'info', crlf: 'error', crlfMaybe: 'warning' } as const satisfies Record<string, NoteLevel>;
 
-/** The heading of a dialect note on a construct that works differently in the target shell (src/dialect.ts). */
+/** The heading of a dialect note on a construct that runs in the target shell, differently (src/dialect.ts). */
 export const PORTABILITY = { ja: '移植性: ', en: 'Portability: ' };
 
 /** The codes of the style checks of src/pitfalls.ts, as diagnostics show them (`# bash-explainer disable=<code>`). */

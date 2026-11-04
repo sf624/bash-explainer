@@ -5,6 +5,7 @@ import { shellFromName } from '../dialect';
 import { commandName } from './effects';
 import { subshellReasons } from './env';
 import type { StateModel } from './state';
+import { conditionOf } from './status';
 import { parser } from './walk/shared';
 
 // What may keep a shell from getting to a line, or from reading it as it is written: the one table of the problems that say
@@ -232,7 +233,50 @@ function inDead(tree: SyntaxTree, model: Deadness, at: number): boolean {
 }
 
 /** The strongest stop at offset `at`, with what the model of a script with no error in its tree says never runs (none in a host's code, whose tree holds several shells). */
-const stopAt = (tree: SyntaxTree, at: number, from: number | undefined, model: Deadness | undefined): Stop | undefined => (model && !tree.errors.length && inDead(tree, model, at) ? 'sure' : stopBefore(tree, at, from));
+export const stopAt = (tree: SyntaxTree, at: number, from?: number, model?: Deadness): Stop | undefined => (model && !tree.errors.length && inDead(tree, model, at) ? 'sure' : stopBefore(tree, at, from));
+
+const inTest = (n: SyntaxNode): boolean => ancestor(n, (p) => p.type === 'extended_test' || p.type === 'arithmetic_expansion' || p.type === 'arithmetic_command')?.type === 'extended_test';
+
+/**
+ * Whether the command that holds `n` (arithmetic) can run without reading it: what follows the parameter in `${x:-…}`, `${x#…}`, `${x:…}`
+ * (read only when the value calls for it: `${x#$((09))}` with `x` empty does not), what follows `&&` or `||` in `[[ ]]`, a pattern of `case`
+ * after the first, the update of a C-style `for`. (`$(( 1 || 09 ))` reads it all the same.) In `$( )` it is another command, which reads it
+ * whenever it runs.
+ */
+export function readOnlySometimes(n: SyntaxNode): boolean {
+  for (let c = n, p = n.parent; p; c = p, p = p.parent) {
+    if (p.type === 'command_substitution' || p.type === 'process_substitution') return false;
+    if (p.type === 'expansion' && c !== p.namedChildren[0]) return true;
+    if (p.type === 'binary_expression' && c === p.namedChildren[1] && p.children.some((x) => x.type === '&&' || x.type === '||') && inTest(p)) return true;
+    if (p.type === 'case_item' && fields(p, 'value').includes(c) && (c !== fields(p, 'value')[0] || p !== p.parent!.namedChildren.find((x) => x.type === 'case_item'))) return true;
+    if (p.type === 'c_style_for_statement' && fields(p, 'update').includes(c)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether the shell surely gets to `n` once it gets to the statement of the script around it, whatever the values. What may be left out: a function,
+ * which may never be called; a branch of `if` or `case` (not the condition of the `if`, which runs); the body of a loop, which may run no time;
+ * what follows `&&` or `||`; what is read only sometimes in a word or a test (`readOnlySometimes`).
+ */
+export function surelyRuns(n: SyntaxNode): boolean {
+  if (readOnlySometimes(n)) return false;
+  for (let c = n, p = n.parent; p; c = p, p = p.parent) {
+    if (leftOut(c, p)) return false;
+  }
+  return true;
+}
+
+function leftOut(c: SyntaxNode, p: SyntaxNode): boolean {
+  switch (p.type) {
+    case 'function_definition': case 'elif_clause': case 'else_clause': case 'case_item': return true;
+    case 'if_statement': case 'while_statement': return !conditionOf(p)!.includes(c);
+    case 'for_statement': case 'c_style_for_statement': case 'select_statement': return c.field === 'body' || c.field === 'update';
+    case 'list': return c !== p.namedChildren[0];
+    case 'command_substitution': case 'process_substitution': return readOnlySometimes(p);
+    default: return false;
+  }
+}
 
 /**
  * What a template engine replaces before a shell reads the code: Jinja and Go (`{{ x }}`, `{% if a %}`), ERB (`<% a %>`),
