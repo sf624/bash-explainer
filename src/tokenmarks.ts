@@ -7,9 +7,10 @@ import { LEVELS, type NoteLevel } from './levels';
 import { plainOf } from './messages-levels';
 import { readSaid } from './messages-tokens';
 import { KIND_ROLES } from './roles';
+import { eachOwn, isKept } from './tokenkept';
 import { type ExecEnv, processOf, whereOf } from './semantics/env';
 
-/** Marks `t` and the tokens under it that have no origin yet as read by `origin` (`Token.origin`). */
+/** Marks `t` and the tokens under it that have no origin yet as read by `origin` (`Token.origin`). A kept token has one, on every token (src/explain/whole.ts), so it is not written. */
 export function claim(t: Token, origin: TokenOrigin): Token {
   if (!t.origin) {
     t.origin = origin;
@@ -56,20 +57,19 @@ export function scriptProcess(env: ExecEnv): ScriptProcess {
  * mentions the label in a sentence. Done on the finished tree, since the same texts stand alone elsewhere
  * (notes, summaries, examples).
  */
-export function dropLabelEcho(t: Token): void {
-  const label = t.label.trim();
-  const e = t.explanation;
-  if (e.startsWith('`' + label + '`')) {
+export function dropLabelEcho(root: Token): void {
+  eachOwn(root, (t) => {
+    const label = t.label.trim();
+    const e = t.explanation;
+    if (!e.startsWith('`' + label + '`')) return;
     const rest = e.slice(label.length + 2);
     const m = /^(?::\s+|：\s*)(?=\S)/.exec(rest);
-    if (m) {
-      t.explanation = rest.slice(m[0].length);
-      // (A warning that opens with the label loses it too, and keeps its mark: `markedText` finds it by its text.)
-      const opening = e.slice(0, e.length - t.explanation.length);
-      if (t.marks) t.marks = t.marks.map((w) => (w.text.startsWith(opening) ? { ...w, text: w.text.slice(opening.length) } : w));
-    }
-  }
-  for (const c of t.children) dropLabelEcho(c);
+    if (!m) return;
+    t.explanation = rest.slice(m[0].length);
+    // (A warning that opens with the label loses it too, and keeps its mark: `markedText` finds it by its text.)
+    const opening = e.slice(0, e.length - t.explanation.length);
+    if (t.marks) t.marks = t.marks.map((w) => (w.text.startsWith(opening) ? { ...w, text: w.text.slice(opening.length) } : w));
+  });
 }
 
 /** The token a range is about, among a line's tokens in the order of a walk: the outermost of the same range, else the innermost around it. */
@@ -118,13 +118,13 @@ function withFacts(root: Token, over: ReadonlyMap<Token, NonNullable<Token['fact
  * Gives every token of a line its role (`Token.role`, from its kind: src/roles.ts) and the facts of the line about it
  * (`Token.facts`): a fact said at a node (`LineExplanation.anchors`) belongs to the outermost token of the same range,
  * else to the innermost token around that range; a fact said about the line belongs to none. Made again from the
- * anchors when it runs again (a host adds its own facts: src/hosts/remap.ts). A finished token (src/explain/whole.ts) keeps what it has, and
- * what the anchors add to it is on a copy: so the items given back are those of the line.
+ * anchors when it runs again (a host adds its own facts: src/hosts/remap.ts). A kept token (src/tokenkept.ts) keeps what it has, and
+ * what the anchors add to it is on a copy of it and of the tokens above it: so the items given back are those of the line.
  */
 export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'facts'> & { anchors: readonly NoteAnchor[] }): Token[] {
   const all: Token[] = [];
   const walk = (t: Token) => {
-    if (Object.isFrozen(t)) {
+    if (isKept(t)) {
       pushAll(all, finishedTokens(t).all);
       return;
     }
@@ -143,10 +143,18 @@ export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'f
     // (Said at several nodes of one token, it is listed once.)
     if (!at) continue;
     const facts = [...new Set([...over.get(at) ?? at.facts ?? [], id])];
-    if (!Object.isFrozen(at)) at.facts = facts;
+    if (!isKept(at)) at.facts = facts;
     else if (facts.length !== at.facts?.length) over.set(at, facts);
   }
-  return items.map((t) => (over.size && Object.isFrozen(t) ? withFacts(t, over) : t));
+  if (!over.size) return items.slice();
+  // (A kept token may lie under a token of the line, the pattern of a `case` branch: the line's token, which it owns, takes the copy.)
+  const given = (t: Token): Token => {
+    if (isKept(t)) return withFacts(t, over);
+    const children = t.children.map(given);
+    if (children.some((c, i) => c !== t.children[i])) t.children = children;
+    return t;
+  };
+  return items.map(given);
 }
 
 /**
@@ -155,7 +163,7 @@ export function markTokens(items: readonly Token[], ex: Pick<LineExplanation, 'f
  * own from that line's explanation, and keeps them.
  */
 export function markSaid(items: readonly Token[]): void {
-  const walk = (t: Token) => {
+  items.forEach((root) => eachOwn(root, (t) => {
     const { text, said } = readSaid(t.explanation);
     t.explanation = text;
     if (t.summary) t.summary = plainOf(t.summary);
@@ -163,9 +171,7 @@ export function markSaid(items: readonly Token[]): void {
     const marks = said.filter((s) => s.level).map((s) => ({ id: s.id, level: s.level!, text: s.text }));
     // (A text said twice in one token is marked once.)
     if (marks.length) t.marks = marks.filter((m, i) => marks.findIndex((o) => o.id === m.id && o.text === m.text) === i);
-    t.children.forEach(walk);
-  };
-  items.forEach(walk);
+  }));
 }
 
 /** Gives a token another text (a host's reading of a part: src/hosts/): the ids and the warnings of the text it had go with that text. */

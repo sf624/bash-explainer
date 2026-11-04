@@ -9,6 +9,7 @@
 import type { Token } from './analyzer-types';
 import { basisOf, type BasisSpec } from './basis';
 import type { Text } from './i18n';
+import { eachOwn } from './tokenkept';
 
 export const TOKEN_BASES = {
   // 5.2 `_`: "expands to the last argument to the previous simple command executed in the foreground, after
@@ -154,13 +155,13 @@ export interface RestingText { text: string; id: TokenBasisId }
  */
 export function withTokenBases(tokens: Token[], rested: readonly RestingText[]): void {
   if (!rested.length) return;
-  const walk = (t: Token) => {
-    const found = rested.find((r) => t.explanation.includes(r.text));
-    // (Every entry names a probe row with a try-it; its basis is `checked` or `differs`.)
-    if (found) Object.assign(t, basisOf(TOKEN_BASES[found.id]));
-    t.children.forEach(walk);
-  };
-  tokens.forEach(walk);
+  for (const root of tokens) {
+    eachOwn(root, (t) => {
+      const found = rested.find((r) => t.explanation.includes(r.text));
+      // (Every entry names a probe row with a try-it; its basis is `checked` or `differs`.)
+      if (found) Object.assign(t, basisOf(TOKEN_BASES[found.id]));
+    });
+  }
 }
 
 /**
@@ -169,9 +170,5 @@ export function withTokenBases(tokens: Token[], rested: readonly RestingText[]):
  * (`withTokenBases`), and not with the setting off.
  */
 export function withoutBases(tokens: Token[]): void {
-  const walk = (t: Token) => {
-    delete t.basis;
-    t.children.forEach(walk);
-  };
-  tokens.forEach(walk);
+  for (const root of tokens) eachOwn(root, (t) => void delete t.basis);
 }

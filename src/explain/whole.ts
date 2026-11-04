@@ -10,6 +10,7 @@ import { withRewritesOf } from '../rewrite';
 import type { StateModel } from '../semantics/state';
 import type { SyntaxNode } from '../syntax/tree';
 import { withTokenBases, withoutBases } from '../tokenbases';
+import { keep } from '../tokenkept';
 import { claim, dropLabelEcho, markSaid, markTokens } from '../tokenmarks';
 import { COMMAND_SAID, type CommandSaid } from './commands';
 import type { Explainer, LineExplainer, LineInit, Whole } from './context';
@@ -23,13 +24,6 @@ const kept = new WeakMap<StateModel, Map<string, Map<SyntaxNode, Kept>>>();
 /** The facts of `all` that `said` holds, each once, with the rewrites of all those places. */
 export function factsSaid(all: readonly Fact[], said: ReadonlySet<string>, basis: boolean | undefined): Fact[] {
   return onceBy(all.filter((f) => said.has(f.text)), (f) => f.text).map((f) => basisGate(withRewritesOf(f, all), basis));
-}
-
-/** A token and those under it can no longer change: what reads them makes copies (`markTokens`, `remapExplanation`). */
-function freeze(t: Token): void {
-  Object.freeze(t);
-  Object.freeze(t.children);
-  t.children.forEach(freeze);
 }
 
 function explainedOnce(cx: LineExplainer, explained: (cx: Explainer) => Token): Whole {
@@ -46,7 +40,7 @@ function explainedOnce(cx: LineExplainer, explained: (cx: Explainer) => Token): 
   cx.end();
   dropLabelEcho(claim(token, 'shell'));
   markTokens([token], { facts: saidFacts, anchors: saidAnchors });
-  freeze(token);
+  keep(token);
   return {
     token, summary, notes: cx.notes, facts: cx.facts, anchors: cx.anchors, examples: cx.examples, rested: cx.rested, data: cx.data,
     saidNotes, noteInfo: saidNotes.map((n) => basisGate(cx.noteOf(n), cx.opts.basis)), saidFacts, saidAnchors,
