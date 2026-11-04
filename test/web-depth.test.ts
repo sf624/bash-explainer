@@ -156,7 +156,7 @@ describe('the panel: one view with a depth', function () {
   for (const [width, lang, theme] of [[1280, 'en', 'dark'], [1280, 'ja', 'light'], [640, 'en', 'light'], [640, 'ja', 'dark'], [390, 'en', 'dark'], [390, 'ja', 'light']] as const) {
     it(`draws one role line at one place on each row, a pipe on one line, nothing sticking out, ${width} px, ${lang}, ${theme}`, async () => {
       const ctx = await browser.newContext({ locale: lang === 'ja' ? 'ja-JP' : 'en-US', viewport: { width, height: 800 }, colorScheme: theme });
-      await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.panel.animations': false })); localStorage.setItem('bash-explainer-panel', '{"depth":2,"receives":${receives === 'on'}}'); } catch {}`);
+      await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.panel.animations': false })); localStorage.setItem('bash-explainer-panel', '{"depth":2}'); } catch {}`);
       const page = await ctx.newPage();
       const panel = await open(page, SCRIPTS.s2[0]);
       await depthDrawn(panel, 2);

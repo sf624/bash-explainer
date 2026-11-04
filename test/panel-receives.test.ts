@@ -170,6 +170,7 @@ describe('the panel: the mark "handled by bash"', () => {
       ['# c', 0, []],
       ['#!/bin/bash', 0, []],
       ['sh -c "a | b; x=1"', 0, []],
+      ['docker exec c sh -c ls', 0, []],
     ];
     for (const [src, at, want] of table) {
       assert.deepStrictEqual(marked(src, { line: at }), want, `${src}, line ${at}, depth 1`);
