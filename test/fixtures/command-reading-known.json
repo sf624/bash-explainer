@@ -62,7 +62,8 @@
     {"file":"src/semantics/walk/builtins.ts","fn":"builtinOn","kind":"dash-prefix","count":1,"to":"commandRead","reason":"`--` before a builtin's operands"},
     {"file":"src/statusfacts.ts","fn":"splitDeclaration","kind":"option-regex","count":1,"to":"commandRead","reason":"`-r` of `declare` and `readonly`, by regex"},
     {"file":"src/statusfacts.ts","fn":"printsAndSucceeds","kind":"dash-prefix","count":1,"to":"commandRead","reason":"a dash first word of `echo`, by dash"},
-    {"file":"src/statusfacts.ts","fn":"tests","kind":"option-regex","count":1,"to":"commandRead","reason":"`grep -q`, `--quiet`, `--silent`, by regex"}
+    {"file":"src/statusfacts.ts","fn":"tests","kind":"option-regex","count":1,"to":"commandRead","reason":"`grep -q`, `--quiet`, `--silent`, by regex"},
+    {"file":"src/linesentence.ts","fn":"declaring","kind":"option-regex","count":2,"to":"commandRead","reason":"the options `-f`, `-F` and `-p` of a declaration builtin on a line with no record of the command (a command on another line of a statement), by their letters"}
   ],
   "other": [
     {"file":"src/dialect.ts","uses":[{"fn":"commandFeatures","kind":"dash-prefix","count":1,"reason":"the sign of the option name that the interpreter reported (`-o` or `+o`), not of a word"}]},
