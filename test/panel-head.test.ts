@@ -17,7 +17,7 @@ describe('the panel header as data', () => {
       { kind: 'menu', button: [{ text: '深さ 1', name: '深さ: 1 何をするか' }, { text: '深さ 2', name: '深さ: 2 bash がどう読むか' }] },
     ]);
     // (An option with no digit: its name, and no label drawn.)
-    const named: ViewControl = { label: 'View', options: [{ id: 'depth1', short: 'A', full: 'Full A', pressed: true, sets: {} }] };
+    const named: ViewControl = { label: 'View', options: [{ id: 'depth1', short: 'A', full: 'Full A', said: 'Full A', pressed: true, sets: {} }] };
     assert.deepStrictEqual(viewControlForms(named), [{ kind: 'segments' }, { kind: 'menu', button: [{ text: 'A', name: 'View: Full A' }] }]);
   });
 

@@ -8,12 +8,13 @@
 // parts of bash's grammar that have no token (`[[`, `2>`'s parts). media/panel.js draws the rows and decides none of it.
 import type { ArgvLine, Example, LineExplanation, Span, Token } from '../analyzer-types';
 import type { Lang } from '../i18n';
+import type { TokenTextId } from '../messages-tokens';
 import { LEVELS, type NoteLevel } from '../levels';
-import { keyOf, type ReadingNode } from '../reading';
+import { keyOf, type Layer, type ReadingNode } from '../reading';
 import { KIND_ROLES } from '../roles';
 import type { TextPart } from '../tokenmarks';
 import { sameSpan, shown } from './hoverParts';
-import { aboutOf, nodeKind, roleFor, type RoleLine, roleLine, type RowRole, tokenRole } from './panelRoles';
+import { aboutOf, nodeKind, roleFor, type RoleLine, roleLine, type RowRole } from './panelRoles';
 import { type StepsLine, stepsLine } from './panelSteps';
 import { ui } from './texts';
 import { partBasis, strongestLevel, type TokenRow, tokenRow } from './tokenRow';
@@ -73,7 +74,13 @@ export interface KeyEntry { id: string; sample?: string; text: string }
  * part of the first row), or of the nearest row around it where it has none at this depth. One map, read by whatever goes from a
  * token to its row (a problem's chip, the characters of the line box), so that none decides again which rows there are.
  */
-export interface RowModel { rows: ModelRow[]; key: KeyEntry[]; places: ReadonlyMap<Token, string> }
+export interface RowModel {
+  rows: ModelRow[];
+  key: KeyEntry[];
+  places: ReadonlyMap<Token, string>;
+  /** At depth 2, with the reading tree: the role of the whole line (`bash reads the line`), which no row stands for. */
+  line?: RoleLine & { refs: readonly string[] };
+}
 
 /**
  * The kinds that are parts of a word. What the word is to its command says what they are for at depth 1; depth 2 reads them. (Not an
@@ -129,10 +136,14 @@ interface Build {
   options: RowOptions;
   lang: Lang;
   roles: ReadonlyMap<string, RoleOfRange>;
+  /** A simple command's name by its own range, where that is not the command's: the role of a row of that word alone (`[` of `[ -f f ]`). */
+  names: ReadonlyMap<string, RowRole>;
   lines: ReadonlyMap<string, ArgvLine>;
   words: ReadonlyMap<string, Received>;
   /** The row each token was folded into or made. */
   made: Map<Token, ModelRow>;
+  /** What each text in a row's `more` says, by the catalog of token texts, where it has ids there. */
+  saying: Map<readonly TextPart[], readonly TokenTextId[]>;
 }
 
 /**
@@ -141,7 +152,7 @@ interface Build {
  * unless it holds what the panel must show (a warning, a fact, a value, an example, a capture group's colour, what a command name
  * is: the reserved word `time` has its badge on its own row); a line always has its top rows.
  */
-function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
+function rowsOf(t: Token, up: TokenRow | undefined, b: Build, shell: Layer = 'bash'): ModelRow[] {
   const { depth } = b.options;
   const outer = tokenRow(t, b.lang);
   const head = aroundOf(t) ?? t;
@@ -159,15 +170,13 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
   const name = all.find((r) => r.name)?.name;
   const holds = !!(marks.length || facts.length || value || group || examples.length || name);
   const comesAt: Depth = !up || holds ? 1 : ownDepth(head, own);
-  const children = parts.flatMap((c) => rowsOf(c, own, b));
+  const at = keyOf(t.span);
+  const whole = b.roles.get(at);
+  const inShell = whole?.roles.find((r) => r.layer === 'child' || r.layer === 'bash')?.layer ?? shell;
+  const children = parts.flatMap((c) => rowsOf(c, own, b, inShell));
   if (t.grammar === 'pipeline') connect(children, b.lang);
   if (comesAt > depth) return children;
-  const at = keyOf(t.span);
-  // (A list and its first command can have one range: `cat <<E | sort`. Each row has its own roles.)
-  const whole = b.roles.get(at);
-  const ownRoles = whole?.roles.filter((r) => GRAMMAR_ROLES.has(r.id) === !!t.grammar) ?? [];
-  // (Each row has a role line: where the tree has no node of its range, what its token is.)
-  const range: RoleOfRange | undefined = b.roles.size ? { refs: [], ...whole, roles: ownRoles.length ? ownRoles : [tokenRole(head, b.lang)] } : undefined;
+  const range = b.roles.size ? roleOfRow(t, whole, b.names.get(at), inShell, b.lang) : undefined;
   const frame = [t, ...chain].map(frameOf).find(Boolean);
   const receives = frame === 'command' ? b.lines.get(at) : undefined;
   const received = receives ? undefined : b.words.get(at);
@@ -181,6 +190,7 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
     value,
     group,
     refs: unique(all.flatMap((r) => r.refs ?? [])),
+    ...(range && !range.roles.length ? { refs: unique([...all.flatMap((r) => r.refs ?? []), ...range.refs]) } : {}),
     basis: all.find((r) => r.basis)?.basis,
     span: t.span,
     // (A glob's box of names is long for what it adds: under its title.)
@@ -195,6 +205,7 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
     ...(received ? { received } : {}),
     children,
   };
+  for (const x of said) if (x.texts?.length) b.saying.set(x.parts, x.texts);
   for (const x of [t, ...chain]) b.made.set(x, row);
   return [row];
 }
@@ -224,6 +235,25 @@ const NAME_KINDS = new Set(['commandName', 'aliasWord', 'expandedName']);
 /** The roles of what bash's grammar makes of the commands: a list or a pipeline (`Token.grammar`). */
 const GRAMMAR_ROLES: ReadonlySet<string> = new Set(['list', 'andList', 'orList', 'pipeline'].flatMap((k) => [`bash:${k}`, `child:${k}`]));
 
+/** The role of a part of bash's grammar with no node of its range. (Its reader is the one around it: no new one starts here.) */
+function grammarRole(kind: string, t: Token, layer: Layer, lang: Lang): RowRole {
+  const n: ReadingNode = { layer, kind, label: '', span: t.span, children: [] };
+  return roleFor(n, n, lang);
+}
+
+/**
+ * What a row is in bash's reading: the place its range has there (the nodes of the reading tree), never what its token is lexically, so a row with
+ * no place says no role (`/cache` of `$d/cache`, one piece of a word). A list and its first command can have one range (`cat <<E | sort`), and each
+ * row has its own roles. A row of bash's grammar is that part of it, with a node or not: `time` and `!` are parts of the pipeline (3.2.3), which
+ * has one node, so `ls | wc` of `time ls | wc` has none.
+ */
+function roleOfRow(t: Token, whole: RoleOfRange | undefined, name: RowRole | undefined, shell: Layer, lang: Lang): RoleOfRange {
+  const grammar = t.grammar ?? (t.around === 'pipeline' ? 'pipeline' : undefined);
+  const own = (whole?.roles ?? []).filter((r) => (GRAMMAR_ROLES.has(r.id) ? (grammar ? r.id === `${r.layer}:${grammar}` : !t.frame) : !grammar));
+  const said = own.length ? own : grammar ? [grammarRole(grammar, t, shell, lang)] : name ? [name] : [];
+  return { refs: [], ...whole, roles: said };
+}
+
 /** What the reading tree says of a range of the line. */
 interface RoleOfRange {
   roles: RowRole[];
@@ -234,36 +264,38 @@ interface RoleOfRange {
 /** The range a node is about on a row: a simple command's name is the command, which has its row. */
 const rangeOf = (n: ReadingNode, up: ReadingNode): string => keyOf(NAME_KINDS.has(n.kind) && up.kind === 'command' ? up.span : n.span);
 
-/** The roles of the parts of a line, from the reading tree, by their range. Quoting is a property of a word, not a role of it. */
-function rolesOf(root: ReadingNode, lang: Lang): Map<string, RoleOfRange> {
-  const out = new Map<string, RoleOfRange>();
+/** The roles of the parts of a line, from the reading tree, by their range, and the names of simple commands by their own. Quoting is a property of a word, not a role of it: it adds its sections. */
+function rolesOf(root: ReadingNode, lang: Lang): { roles: Map<string, RoleOfRange>; names: Map<string, RowRole> } {
+  const roles = new Map<string, RoleOfRange>();
+  const names = new Map<string, RowRole>();
   const walk = (n: ReadingNode, up: ReadingNode): void => {
-    if (n.kind !== 'quote') {
-      const key = rangeOf(n, up);
-      const was = out.get(key);
-      out.set(key, { ...was, roles: [...was?.roles ?? [], roleFor(n, up, lang)], refs: unique([...was?.refs ?? [], ...n.refs ?? []]), ...(n.steps ? { steps: n.steps } : {}) });
-    }
+    const key = rangeOf(n, up);
+    const was = roles.get(key);
+    const role = n.kind === 'quote' ? [] : [roleFor(n, up, lang)];
+    roles.set(key, { ...was, roles: [...was?.roles ?? [], ...role], refs: unique([...was?.refs ?? [], ...n.refs ?? []]), ...(n.steps ? { steps: n.steps } : {}) });
+    if (key !== keyOf(n.span) && role.length) names.set(keyOf(n.span), role[0]);
     n.children.forEach((c) => walk(c, n));
   };
   root.children.forEach((c) => walk(c, root));
-  return out;
+  return { roles, names };
 }
 
 /** What the reading tree adds to a row of a range: its role line and its steps. */
 function roleFields(range: RoleOfRange, said: readonly string[], lang: Lang): Pick<ModelRow, 'roleLine' | 'steps'> {
+  const line = roleLine(range.roles);
   return {
-    // (A row of depth 2 always has a role: its node's, or its token's.)
-    roleLine: { ...roleLine(range.roles)!, refs: range.refs.filter((r) => !said.includes(r)) },
+    ...(line ? { roleLine: { ...line, refs: range.refs.filter((r) => !said.includes(r)) } } : {}),
     ...(range.steps ? { steps: stepsLine(range.steps.list, range.steps.context, lang) } : {}),
   };
 }
 
+const samePlace = (a: Span['start'], b: Span['start']): boolean => a.line === b.line && a.character === b.character;
 const within = (outer: Span, inner: Span): boolean => (outer.start.line < inner.start.line || (outer.start.line === inner.start.line && outer.start.character <= inner.start.character))
   && (outer.end.line > inner.end.line || (outer.end.line === inner.end.line && outer.end.character >= inner.end.character));
 const startsBefore = (a: Span, b: Span): boolean => a.start.line < b.start.line || (a.start.line === b.start.line && a.start.character < b.start.character);
 
 /** The kinds of bash's grammar that have a row whether or not a text is said of them: reserved words, operators, and what makes up a redirection or an assignment. */
-const NODE_ROWS: ReadonlySet<string> = new Set(['keyword', 'operator', 'descriptor', 'delimiter', 'name', 'word', 'expression', 'brace']);
+const NODE_ROWS: ReadonlySet<string> = new Set(['keyword', 'operator', 'descriptor', 'delimiter', 'name', 'word', 'value', 'expression', 'brace']);
 
 /** Where a row of a node goes: under the deepest row around it, among its parts in the order of the line. False: it holds rows of tokens, so it is no row. */
 function placeRow(list: ModelRow[], row: ModelRow): boolean {
@@ -284,16 +316,27 @@ function aroundRow(rows: readonly ModelRow[], span: Span): ModelRow | undefined 
 /** One more role of a row. */
 function addRole(row: ModelRow, role: RowRole): void {
   row.roles = [...row.roles, role];
-  row.roleLine = { ...roleLine(row.roles)!, refs: row.roleLine!.refs };
+  row.roleLine = { ...roleLine(row.roles)!, refs: row.roleLine?.refs ?? [] };
+}
+
+/** Sections a node cites where it has no row of its own: on the row around it, with its roles when it has them. */
+function addRefs(row: ModelRow | undefined, refs: readonly string[] | undefined): void {
+  if (!row || !refs) return;
+  const said = [...row.refs ?? [], ...row.roleLine?.refs ?? []];
+  const more = refs.filter((r) => !said.includes(r));
+  if (row.roleLine) row.roleLine = { ...row.roleLine, refs: [...row.roleLine.refs, ...more] };
+  else row.refs = [...row.refs ?? [], ...more];
 }
 
 /**
- * Whether a node with no row of its range is one more role of the row around it: a language in a word; a part the row already says all of
- * (`rm` in `xargs rm -f`). A reserved word or an operator always has its row (`&&` in `[[ a && b ]]`).
+ * Whether a node with no row of its range is one more role of the row around it: a language in a word; the body of a here-document, under its
+ * redirection, on the lines after it; a part the row already says all of (`rm` in `xargs rm -f`), or the word the row is named by (`echo` of
+ * `sudo echo hi`, whose row is what `sudo` runs). A reserved word or an operator always has its row (`&&` in `[[ a && b ]]`).
  */
 function speaksFor(n: ReadingNode, rows: readonly ModelRow[]): boolean {
   const around = aroundRow(rows, n.span);
-  return !!around && (n.kind === 'language' || (n.text === around.text && n.kind !== 'keyword' && n.kind !== 'operator'));
+  if (!around || n.kind === 'keyword' || n.kind === 'operator') return false;
+  return n.kind === 'language' || n.kind === 'heredoc' || n.text === around.text || (n.label === around.label && samePlace(n.span.start, around.span.start));
 }
 
 /** The row of a part of bash's grammar with no token (`[[`, `2>`'s parts): its text if the tree has one, and what its kind is, the first time. */
@@ -338,20 +381,23 @@ function addNodeRows(rows: ModelRow[], root: ReadingNode, roles: ReadonlyMap<str
   const walk = (n: ReadingNode, up: ReadingNode): void => {
     const at = rangeOf(n, up);
     const row = byRange.get(at);
-    if (n.kind !== 'quote' && lines.has(n.span.start.line)) {
+    if (lines.has(n.span.start.line) || n.kind === 'heredoc') {
       if (row) {
-        if (n.text && !row.connector && !texts.has(n.text)) {
+        if (n.kind !== 'quote' && n.text && !row.connector && !texts.has(n.text)) {
           row.more = [...row.more, [{ text: n.text }]];
           texts.add(n.text);
         }
-      } else if (speaksFor(n, rows)) addRole(aroundRow(rows, n.span)!, roleFor(n, up, lang));
-      else if (n.kind !== 'language' && (n.text !== undefined || NODE_ROWS.has(n.kind))) {
+      } else if (n.kind !== 'quote' && speaksFor(n, rows)) {
+        const around = (n.kind === 'heredoc' && byRange.get(keyOf(up.span))) || aroundRow(rows, n.span)!;
+        addRole(around, roleFor(n, up, lang));
+        addRefs(around, n.refs);
+      } else {
         const about = n.text === undefined && !kinds.has(n.kind) ? aboutOf(n, lang) : undefined;
-        const made = nodeRow(n, roles.get(at)!, about, lang);
-        if (placeRow(rows, made)) {
+        const made = n.kind !== 'quote' && n.kind !== 'language' && (n.text !== undefined || NODE_ROWS.has(n.kind)) ? nodeRow(n, roles.get(at)!, about, lang) : undefined;
+        if (made && placeRow(rows, made)) {
           byRange.set(at, made);
           kinds.add(n.kind);
-        }
+        } else addRefs(aroundRow(rows, n.span), n.refs);
       }
     }
     n.children.forEach((c) => walk(c, n));
@@ -369,12 +415,15 @@ function foldDeep(rows: readonly ModelRow[]): void {
   }
 }
 
-/** A text folded into several rows of a line (what double quotes do) is said once, on the first; a warning stays on each. */
-function sayOnce(rows: readonly ModelRow[]): void {
+/**
+ * A text folded into several rows of a line is said once, on the first: the same words (what double quotes do), or the same message of the catalog with
+ * another name in it (`Redirection applied to \`x\``), which says what such a part is in general. A warning stays on each.
+ */
+function sayOnce(rows: readonly ModelRow[], saying: Build['saying']): void {
   const said = new Set<string>();
   const walk = (r: ModelRow): void => {
     r.more = r.more.filter((m) => {
-      const text = m.map((p) => p.text).join('');
+      const text = saying.get(m)?.join(' ') ?? m.map((p) => p.text).join('');
       const first = !said.has(text);
       said.add(text);
       return first || m.some((p) => p.level);
@@ -389,7 +438,7 @@ function connect(rows: readonly ModelRow[], lang: Lang): void {
   const t = ui[lang].panel.connector;
   rows.forEach((r, i) => {
     if (r.kind !== 'operator' || r.marks || !rows[i - 1] || !rows[i + 1]) return;
-    const text = (r.label === '|&' ? t.both : t.pipe).replace('{from}', `\`${rows[i - 1].label}\``).replace('{to}', `\`${rows[i + 1].label}\``);
+    const text = (r.label === '|&' ? t.both : t.pipe).replace('{from}', () => `\`${rows[i - 1].label}\``).replace('{to}', () => `\`${rows[i + 1].label}\``);
     Object.assign(r, { connector: true, text, parts: [{ text }] });
   });
 }
@@ -438,19 +487,24 @@ const linesOf = (items: readonly Token[]): Set<number> => new Set(items.flatMap(
 /** The rows the panel shows of a line, at a depth and with the switch, and the Key of what they draw. */
 export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' | 'noteInfo'>, options: RowOptions, lang: Lang): RowModel {
   const lines = options.receives ? ex.argv ?? [] : [];
+  const read = options.depth === 2 && ex.reading ? rolesOf(ex.reading, lang) : undefined;
   const build: Build = {
     options,
     lang,
-    roles: options.depth === 2 && ex.reading ? rolesOf(ex.reading, lang) : new Map(),
+    roles: read?.roles ?? new Map(),
+    names: read?.names ?? new Map(),
     lines: new Map(lines.map((l) => [keyOf(l.span), l])),
     words: receivedWords(lines),
     made: new Map(),
+    saying: new Map(),
   };
   const rows = ex.items.flatMap((t) => rowsOf(t, undefined, build));
   if (options.depth === 2 && ex.reading) {
     addNodeRows(rows, ex.reading, build.roles, linesOf(ex.items), lang);
     foldDeep(rows);
-    sayOnce(rows);
+    sayOnce(rows, build.saying);
   }
-  return { rows, key: keyEntries(rows, ex.noteInfo.map((n) => n.level), lang), places: placesOf(ex.items, rows, build.made) };
+  // (A line with nothing to explain has no role either.)
+  const whole = read && rows.length ? roleLine([roleFor(ex.reading!, undefined, lang)]) : undefined;
+  return { rows, key: keyEntries(rows, ex.noteInfo.map((n) => n.level), lang), places: placesOf(ex.items, rows, build.made), ...(whole ? { line: { ...whole, refs: [] } } : {}) };
 }

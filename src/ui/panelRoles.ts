@@ -1,6 +1,6 @@
 // What a node of the reading tree (src/reading.ts) is at depth 2 of the panel: its name, who reads it, where a new reader takes over,
 // what its kind is in general and the colour of its code; and the one line a row says of them (docs/design/panel-redesign.md, P8).
-import type { Kind, ScriptProcess, Token } from '../analyzer-types';
+import type { Kind, ScriptProcess } from '../analyzer-types';
 import type { Lang } from '../i18n';
 import type { Layer, ReadingNode } from '../reading';
 import { READING_KINDS } from '../roles';
@@ -12,10 +12,13 @@ const of = (table: object, key: string): string | undefined => (table as Record<
 /** The shell that parses a node of the layer `child` (a substitution's subshell where it is not said). */
 const processOf = (n: ReadingNode): ScriptProcess => n.process ?? 'subshell';
 
-/** The key of a node's general text in `about` ('' for a language's own tokens: its `keyword` is not bash's reserved word). */
+/**
+ * The key of a node's general text in `about`: what a kind is to bash, so '' for what a command or a language reads (`-q` of `grep` is no
+ * option of a reserved word; a language's `keyword` is not bash's reserved word).
+ */
 export function aboutKey(n: Pick<ReadingNode, 'layer' | 'kind' | 'reader' | 'label'>): string {
   if (n.kind === 'language') return n.reader !== 'bash' ? 'language' : n.label === 'prompt' ? 'promptLanguage' : 'bashLanguage';
-  return n.layer === 'language' ? '' : n.kind;
+  return n.layer === 'bash' || n.layer === 'child' ? n.kind : '';
 }
 
 /** What a node's kind is in general, where the table says it. */
@@ -79,36 +82,26 @@ export interface RowRole {
   layer: Layer;
   /** Its name (`chipOf`). */
   chip: string;
-  /** Who reads it, in full (`readerOf`): the tooltip of its name, with `about`. */
-  readBy: string;
   /** Who takes over the reading here (`bandOf`): '' for a language's own tokens, none where bash goes on reading. */
   band?: string;
-  /** What its kind is in general (`aboutOf`): said on a row with no text of its own, and in the tooltip of its name. */
-  about?: string;
+  /** What its name opens to: what its kind is in general (`aboutOf`), and who reads it, in full (`readerOf`). */
+  said: string;
 }
 
 /** The role of a node on a row: `up`, the node around it. */
 export function roleFor(n: ReadingNode, up: ReadingNode | undefined, lang: Lang): RowRole {
   const id = [n.layer, n.kind, ...(n.valueFor ? [`value:${n.valueFor}`] : []), ...(n.expands ? [n.expands] : [])].join(':');
   const about = aboutOf(n, lang);
-  return { id, layer: n.layer, chip: chipOf(n, lang), readBy: readerOf(n, lang), ...(startsBand(n, up) ? { band: bandOf(n, lang) } : {}), ...(about ? { about } : {}) };
+  const reader = readerOf(n, lang);
+  const said = about ? about + ui[lang].panel.steps.because.replace('{why}', () => reader) : reader;
+  return { id, layer: n.layer, chip: chipOf(n, lang), ...(startsBand(n, up) ? { band: bandOf(n, lang) } : {}), said };
 }
 
-/** The role of a row the reading tree has no node for (a piece of a word, an assignment's value in quotes): what its token is. */
-export function tokenRole(t: Pick<Token, 'kind' | 'origin'>, lang: Lang): RowRole {
-  const tree = texts(lang);
-  const chip = of(tree.tokenKinds, t.kind) ?? t.kind;
-  const bash = !t.origin || t.origin === 'shell';
-  return { id: `token:${t.kind}`, layer: bash ? 'bash' : t.origin === 'embedded' ? 'language' : 'command', chip, readBy: bash ? tree.readers.bash : '' };
-}
-
-/** A name on a row's role line: what comes from another reader starts with an arrow. */
-export interface RoleChip { text: string; title: string; changes: boolean }
+/** A name on a row's role line: what comes from another reader starts with an arrow. `said`: what it opens to; `id`: the same in both languages. */
+export interface RoleChip { id: string; text: string; said: string; changes: boolean }
 
 /** A row's role line: its names, in the order the readers come to it, and who reads it last when that is not bash. */
 export interface RoleLine { chips: RoleChip[]; reader?: string }
-
-const titleOf = (r: RowRole): string => (r.about ? `${r.about} (${r.readBy})` : r.readBy);
 
 /**
  * The one line of a row's roles (`argument → value of -f · tar reads`): the names in order, an arrow where another reader takes it, and the
@@ -118,7 +111,7 @@ export function roleLine(roles: readonly RowRole[]): RoleLine | undefined {
   if (!roles.length) return undefined;
   const chips: RoleChip[] = [];
   for (const [i, r] of roles.entries()) {
-    if (!chips.some((c) => c.text === r.chip)) chips.push({ text: r.chip, title: titleOf(r), changes: i > 0 && roles[i - 1].layer !== r.layer });
+    if (!chips.some((c) => c.text === r.chip)) chips.push({ id: r.id, text: r.chip, said: r.said, changes: i > 0 && roles[i - 1].layer !== r.layer });
   }
   // (A language's band is its own name, which is on the line already: the reader is the one before it.)
   const last = [...roles].reverse().find((r) => r.band !== undefined && r.band !== r.chip);

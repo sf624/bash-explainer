@@ -56,6 +56,7 @@ export type ShellKind =
   | 'option' // an option of a reserved word, read as written: `time -p` (3.2.3)
   | 'argument' // a word after the command name
   | 'assignmentArgument' // an argument of a declaration builtin that is an assignment (`local x=1`)
+  | 'value' // the value of an assignment, a word (not a compound assignment's list): `notes.txt` of `x=notes.txt` (3.4)
   | 'word' | 'name' | 'assignment' | 'redirect' | 'heredoc'
   | 'quote' | 'expansion' | 'substitution' | 'arithmetic' | 'brace'
   | 'operator' | 'keyword' | 'comment'
@@ -729,7 +730,9 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     // (Its operator, `=` or `+=`, between the name and the value: 3.4.)
     const op = a.children.find((c) => !c.named && c.type.endsWith('='))!;
     const name = field(a, 'name')!;
-    const n = shellNode(a, layer, kind, [name.type === 'subscript' ? subscript(name, layer) : shellNode(name, layer, 'name', []), shellNode(op, layer, 'operator', []), ...parts], new Set(['assignment']));
+    // (A word is the value, whatever its parts are; `array` says what a list is.)
+    const said = value && value.type !== 'array' ? [shellNode(value, layer, 'value', parts)] : parts;
+    const n = shellNode(a, layer, kind, [name.type === 'subscript' ? subscript(name, layer) : shellNode(name, layer, 'name', []), shellNode(op, layer, 'operator', []), ...said], new Set(['assignment']));
     // (An assignment of a simple command, before its name or with none: 3.7.1 says when it is made. One that is an
     // argument of a declaration builtin, 3.4 says, is expanded as an assignment.)
     if (kind === 'assignment' && a.parent!.type === 'command') n.refs = union(n.refs, ['3.7.1']);

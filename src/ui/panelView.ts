@@ -70,6 +70,8 @@ export interface ViewOption {
   short: string;
   /** The tooltip and the accessible name, where it says more than `short`. */
   full: string;
+  /** What a screen reader hears when it is chosen. */
+  said: string;
   pressed: boolean;
   /** What a press changes in the state: a host applies it without knowing what the option means. */
   sets: PanelState;
@@ -100,7 +102,7 @@ export function viewControl(state: PanelState, lang: Lang): ViewControl {
   const option = (o: Omit<ViewOption, 'pressed'>): ViewOption => ({ ...o, pressed: isPressed(state, o.sets) });
   return {
     label: tp.views,
-    options: ([1, 2] as const).map((depth) => option({ id: `depth${depth}`, digit: String(depth), short: tp.depths[depth].short, full: tp.depths[depth].full, sets: { depth } })),
+    options: ([1, 2] as const).map((depth) => option({ id: `depth${depth}`, digit: String(depth), short: tp.depths[depth].short, full: tp.depths[depth].full, said: `${tp.views} ${depth}: ${tp.depths[depth].full}`, sets: { depth } })),
   };
 }
 
@@ -206,6 +208,7 @@ export function panelUpdate(p: PanelLine) {
     explanation,
     // (Which rows, in which order, and what each holds: the one row model, src/ui/panelRows.ts.)
     rows: model.rows,
+    lineRole: model.line,
     wholeLine: whole,
     // (The line box: each run coloured by the kind of the deepest token, and the row a pointer on it goes to.)
     lineRuns: lineOwners(p.lineText, ex.line, items).map(({ from, to, owner }) => ({ from, to, ...(owner ? { kind: owner.kind, row: model.places.get(owner) } : {}) })),
@@ -248,6 +251,7 @@ export function panelUpdate(p: PanelLine) {
  * buttons), so a narrow panel's rows do not depend on how wide the words are in the font (media/panel.css).
  */
 export const PANEL_BODY = `<div id="top">
+<p id="said" class="sr-only" aria-live="polite"></p>
 <header>
   <div class="here">
     <div class="where"><span id="where"></span><span id="context"></span></div>
@@ -272,6 +276,7 @@ export const PANEL_BODY = `<div id="top">
   <div id="notes"></div>
   <div id="whole-line"></div>
   <ul id="tree"></ul>
+  <div id="line-role"></div>
   <div id="examples"></div>
   <p id="empty" hidden></p>
 </main>

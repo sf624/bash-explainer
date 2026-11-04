@@ -82,7 +82,7 @@ export const ui = {
       },
       // (What bash does to a word, on a row of depth 2: src/ui/panelSteps.ts.)
       steps: {
-        lead: 'bash の手順:', summary: '展開はなし', maybe: '{kind}（ありうる）', none: 'なし', and: '、',
+        lead: 'bash の手順:', summary: '展開はなし', maybe: '{kind}（ありうる）', off: '{kinds}はしない', and: '・', lastAnd: '・', because: '（{why}）',
         kinds: { brace: 'ブレース展開', tilde: 'チルダ展開', parameter: 'パラメータ展開', command: 'コマンド置換', arithmetic: '算術展開', process: 'プロセス置換', split: '単語分割', glob: 'グロブ', 'quote-removal': 'クォート除去' },
         why: { quoted: 'クォート内', context: 'ここでは行わない', cond: '`[[ ]]` の中では行わない', assign: '代入では行わない', noglob: '`set -f`', 'ifs-empty': 'IFS が空', 'posix-mode': 'POSIX モード', 'braceexpand-off': 'braceexpand が無効', dialect: 'このシェルにはない', zsh: 'zsh' },
       },
@@ -101,9 +101,9 @@ export const ui = {
           promptLanguage: 'bash 自身が、プロンプトを表示するたびに読む',
         },
         kinds: {
-          script: '中のスクリプト', list: 'リスト', andList: 'AND リスト', orList: 'OR リスト', pipeline: 'パイプライン', command: '単純コマンド', compound: '複合コマンド',
+          line: 'bash がこの行を読む', script: '中のスクリプト', list: 'リスト', andList: 'AND リスト', orList: 'OR リスト', pipeline: 'パイプライン', command: '単純コマンド', compound: '複合コマンド',
           clause: '節', coprocess: 'コプロセス', function: '関数定義', commandName: 'コマンド名', aliasWord: 'エイリアス（読むときに置き換わる）', expandedName: '最初の単語', option: 'オプション', argument: '引数',
-          assignmentArgument: '代入の引数', word: '単語', name: '名前', assignment: '代入', redirect: 'リダイレクト', heredoc: 'ヒアドキュメント', quote: 'クォート',
+          assignmentArgument: '代入の引数', value: '値', word: '単語', name: '名前', assignment: '代入', redirect: 'リダイレクト', heredoc: 'ヒアドキュメント', quote: 'クォート',
           expansion: '展開', substitution: '置換', arithmetic: '算術式展開', brace: 'ブレース展開', operator: '演算子', keyword: '予約語',
           comment: 'コメント', shebang: 'シバン（bash にとってはコメント）', expression: '式', descriptor: 'ファイルディスクリプタ', delimiter: '終わりの区切り', part: '部分',
         },
@@ -118,6 +118,8 @@ export const ui = {
           number: '数値', comment: 'コメント', shebang: 'シバン', assignment: '代入', test: '条件', pattern: 'パターン', block: 'ブロック', error: 'エラー',
         },
         about: {
+          line: 'bash はこの行をコマンドに分け、単純コマンドをさらに代入・単語・リダイレクトに分ける。',
+          value: '代入の値: bash がチルダ展開・パラメータ展開・コマンド置換・算術展開をしてクォートを取り除き、その結果を代入する。単語分割とグロブはしない。',
           script: 'シェルがこのテキストを独立したスクリプトとしてもう一度解析し、実行する。`$( )`・`<( )`・バッククォートではサブシェルが実行する。',
           list: 'リスト: `;`・`&`・改行で区切ったパイプラインの並び。`&&` と `||` のほうが強く結び付くので、区切られた1つ1つはパイプラインか AND・OR リスト。`;` はその前の部分の終了を待ち、`&` はその前の部分だけをバックグラウンドで実行する。',
           andList: 'AND リスト: `a && b` は `a` が成功（終了ステータス 0）したときだけ `b` を実行する。`&&` と `||` が続くときは左から読む。',
@@ -215,7 +217,7 @@ export const ui = {
         },
       },
       steps: {
-        lead: "bash's steps:", summary: 'nothing expands', maybe: '{kind} (maybe)', none: 'none', and: ', ',
+        lead: "bash's steps:", summary: 'nothing expands', maybe: '{kind} (maybe)', off: 'no {kinds}', and: ', ', lastAnd: ' or ', because: ' ({why})',
         kinds: { brace: 'brace expansion', tilde: 'tilde expansion', parameter: 'parameter expansion', command: 'command substitution', arithmetic: 'arithmetic expansion', process: 'process substitution', split: 'word splitting', glob: 'globbing', 'quote-removal': 'quote removal' },
         why: { quoted: 'quoted', context: 'not done here', cond: 'not in `[[ ]]`', assign: 'not in an assignment', noglob: '`set -f`', 'ifs-empty': 'IFS is empty', 'posix-mode': 'POSIX mode', 'braceexpand-off': 'braceexpand is off', dialect: 'not in this shell', zsh: 'zsh' },
       },
@@ -233,9 +235,9 @@ export const ui = {
           promptLanguage: 'bash reads it itself, each time it prints the prompt',
         },
         kinds: {
-          script: 'script inside', list: 'list', andList: 'AND list', orList: 'OR list', pipeline: 'pipeline', command: 'simple command', compound: 'compound command',
+          line: 'bash reads the line', script: 'script inside', list: 'list', andList: 'AND list', orList: 'OR list', pipeline: 'pipeline', command: 'simple command', compound: 'compound command',
           clause: 'clause', coprocess: 'coprocess', function: 'function definition', commandName: 'command name', aliasWord: 'alias, replaced when the line is read', expandedName: 'first word', option: 'option', argument: 'argument',
-          assignmentArgument: 'assignment argument', word: 'word', name: 'name', assignment: 'assignment', redirect: 'redirection', heredoc: 'here-document', quote: 'quotes',
+          assignmentArgument: 'assignment argument', value: 'value', word: 'word', name: 'name', assignment: 'assignment', redirect: 'redirection', heredoc: 'here-document', quote: 'quotes',
           expansion: 'expansion', substitution: 'substitution', arithmetic: 'arithmetic expansion', brace: 'brace expansion', operator: 'operator', keyword: 'reserved word',
           comment: 'comment', shebang: 'shebang, a comment to bash', expression: 'expression', descriptor: 'file descriptor', delimiter: 'delimiter', part: 'part',
         },
@@ -250,6 +252,8 @@ export const ui = {
           number: 'number', comment: 'comment', shebang: 'shebang', assignment: 'assignment', test: 'condition', pattern: 'pattern', block: 'block', error: 'error',
         },
         about: {
+          line: 'bash splits the line into commands, then each simple command into assignments, words and redirections.',
+          value: 'The value of an assignment: bash does tilde and parameter expansion, command substitution and arithmetic expansion, removes the quotes, and assigns the result. It does no word splitting or globbing.',
           script: 'The shell parses this text again, as a script of its own, and runs it: a subshell does, in `$( )`, `<( )` and backquotes.',
           list: 'A list: pipelines separated by `;`, `&` or newlines. `&&` and `||` bind tighter, so each part is a pipeline or an AND or OR list. `;` waits for the part before it to end; `&` runs that part alone in the background.',
           andList: 'An AND list: `a && b` runs `b` only if `a` succeeds (status 0). A chain of `&&` and `||` is read from the left.',

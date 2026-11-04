@@ -86,11 +86,12 @@ The panel has one view instead of the tabs Meaning and Reading, and a control **
 
 Depth 2 only adds: the rows of depth 1 stay, in the same order, saying the same, and the first row on the screen stays where it is.
 
-- Each row has one role line, at one place: what the part is to each reader and who reads it last (`argument → value of -f · tar reads it`), with the sections of the manual its text does not cite. A pointer on a name says what the kind is, as Reading said in words.
+- Each row has one role line, at one place: what the part is to each reader and who reads it last (`argument → value of -f · tar reads it`), A name on the line is a button: a click, a tap or Enter opens under the line what the kind is and who reads it, as Reading said in words, with the sections of the manual its text does not cite. The line is one stop of the Tab order, and the arrows go from name to name. The line as a whole has its own ("bash reads the line"), under the rows, and a here-document's body has one on its redirection. A role says where the part stands in bash's reading: the value of `x=notes.txt` says "value"; a pipeline with `!` or `time` says "pipeline"; a piece of a word (`/cache` of `$d/cache`) says nothing, as the word has the role.
 - A pipe says what goes where: "stdout of `grep` → stdin of `sort`" (with `|&`, and stderr).
-- A word that expands shows bash's steps in bash's order: `parameter expansion → word splitting, globbing (quoted) → quote removal`, with arithmetic expansion and process substitution named. Where no step acts (`"failed"`), the line folds to "bash's steps: nothing expands". A word that only is its text (`-h`) has none.
+- A word that expands shows bash's steps in bash's order: `parameter expansion → no word splitting or globbing (quoted) → quote removal`, with arithmetic expansion and process substitution named. Where no step acts (`"failed"`), the line folds to "bash's steps: nothing expands". A word that only is its text (`-h`) has none.
 - `[[`, `]]` and each operator of `[[ ]]` have rows, and so do the parts of a redirection (`2`, `>`, `/dev/null`) and of an assignment. A row whose parts all come at depth 2 starts folded, so that the parts of `2>/dev/null` or of a glob are one press away.
-- What double quotes do is said once on a line.
+- What double quotes do is said once on a line, and so is a general text that differs only by a name ("Expands to the value of `e`", "Redirection applied to `x`").
+- A screen reader hears the depth when it changes. The focus of the keyboard marks its row and that row's characters in the line, as a pointer does; when its row goes with the depth, the focus moves to the row that owns it.
 - On the first line of a loop over several lines, Reading drew the whole loop, the other lines as kinds with no text. Depth 2 shows that line's rows; the others are one move of the cursor away.
 
 `bashExplainer.panel.animations` drives the folds of the rows, the steps, "More" and the examples.
