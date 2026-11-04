@@ -1481,6 +1481,8 @@
   const motion = () => animations && !matchMedia('(prefers-reduced-motion: reduce)').matches && !document.body.classList.contains('vscode-reduce-motion');
   /** The move of each box that moves. */
   const running = /** @type {WeakMap<Element, Animation>} */ (new WeakMap());
+  /** The boxes inside a box that moves, which are drawn (`data-closing`) until it has shrunk. */
+  const insides = /** @type {WeakMap<Element, Element[]>} */ (new WeakMap());
   /** The moves of heights, while they run: the row held in place follows them (`hold`). */
   const moves = /** @type {Set<Animation>} */ (new Set());
   /**
@@ -1517,6 +1519,12 @@
     const none = Object.fromEntries(['height', ...EDGES].map((k) => [k, '0px']));
     const from = outer.map((c) => ({ h: running.has(c.el) || !c.open ? height(c.el) : 0, o: running.has(c.el) ? Number(getComputedStyle(c.el).opacity) : c.open ? 0 : 1, size: running.has(c.el) || !c.open ? size(c.el) : none }));
     outer.forEach((c) => running.get(c.el)?.cancel());
+    // (What the moves that were cancelled kept drawn, and is not folded by this one, is hidden again, and a box that opens is no longer
+    // kept drawn as one that folds; then the heights it grows to are measured.)
+    for (const c of outer) {
+      for (const x of insides.get(c.el) ?? []) if (!closing.some((o) => o.el === x)) delete /** @type {HTMLElement} */ (x).dataset.closing;
+      if (c.open) delete c.el.dataset.closing;
+    }
     const to = outer.map((c) => (c.open ? { h: height(c.el), size: size(c.el) } : { h: 0, size: none }));
     /** @type {Animation[]} */
     const started = [];
@@ -1527,6 +1535,7 @@
     outer.forEach((c, i) => {
       const box = c.el;
       const inner = list.filter((o) => o !== c && box.contains(o.el));
+      insides.set(box, inner.map((o) => o.el));
       // (A clip, not overflow: the lines to the parent lie left of the box.)
       box.style.clipPath = 'inset(0 -100vw)';
       // (Its children's margins lie inside it while it moves, so that they grow and shrink with it.)
@@ -1542,12 +1551,13 @@
         if (over) return false;
         over = true;
         // (A move that was cancelled to start another on the same box ends late, after the other has started: it leaves the box as the other
-        // has set it, and the other clears what is left.)
+        // has set it, and what it kept drawn is cleared when the other starts.)
         if (running.get(box) !== a) return false;
         running.delete(box);
+        insides.delete(box);
         box.style.clipPath = '';
         box.style.display = '';
-        for (const x of [c, ...inner]) delete x.el.dataset.closing;
+        for (const x of c.open ? inner : [c, ...inner]) delete x.el.dataset.closing;
         return true;
       };
       a.onfinish = () => {

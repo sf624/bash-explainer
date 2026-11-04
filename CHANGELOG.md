@@ -36,6 +36,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - On a phone, the explanation is a sheet over the editor: tap or drag its bar for a folded, half or full sheet; Problems is one of its tabs. Read and Edit above the editor switch between reading and typing. Before, the screen was split into two halves, the editor and the explanation.
 - `cmd 2>&1 >file` is a problem at the Information level, and says both things the order may mean: how to send both to the file, and how to send only stdout there. Where stdout is a pipe, `$( )` or a redirection around the command, which then get only the errors (`err=$(cmd 2>&1 >/dev/null)`), it is no problem. Before, it was a plain note.
 - The notes on idioms, here-documents, a continued statement, yq and host files start with ℹ, as the other notes do. Before, they had no mark.
+- Folding a row moves its examples with its parts, and a tall box takes longer to fold (up to 0.4 s, not 0.22 s) so that it does not rush. Before, an example under a row vanished at once while the parts moved.
 
 ### Fixed
 
