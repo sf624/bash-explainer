@@ -483,6 +483,7 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   theme: () => theme,
   setTheme,
   pane: () => document.querySelector<HTMLElement>('main > .source'),
+  splitter: () => document.getElementById('splitter'),
   shellReading: autoShell,
 });
 

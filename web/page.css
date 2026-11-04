@@ -2967,35 +2967,58 @@ html.view-panel .split {
 
 /* ---- The settings sheet ----------------------------------------------------------------------- */
 
-/* Side by side, the settings lie over the editor, from the left as the menu comes, and never wider than the editor's
-   pane (--pane-w, from web/settings-dialog.ts): the explanation they change stays in view and live. They start below the
-   top bar (--pane-top: the pane's own top, under the banner of a preview too), so that the whole bar stays in use, and
-   the editor they cover is inert. The sheet is not a modal dialog there (no backdrop): the panel scrolls and takes
-   clicks, and the sheet stays open. It is
-   not in the top layer, so it needs a z-index above the page (and under the toasts, 20). In the narrow layout (a phone, a narrow window) they are a
-   modal dialog and take the whole screen, from the right. */
+/* The settings come from the right edge at every width, as the gear that opens them is at the right. Side by side the
+   sheet lies along that edge over the editor's side of the page, as wide as the editor's pane and the divider at most
+   (--pane-w, held on the page by web/settings-dialog.ts) and below the top bar (--pane-top: the pane's own top, under the banner of a
+   preview too), and the explanation moves left by its width (below), so that nothing it shows is covered: what a setting
+   changes stays in view and live. The editor under the sheet is inert. The sheet is not a modal dialog there (no
+   backdrop): the panel scrolls and takes clicks, and the sheet stays open. It is not in the top layer, so it needs a
+   z-index above the page (and under the toasts, 20). In the narrow layout (a phone, a narrow window) the settings are a
+   modal dialog and take the whole screen. */
 #settings-dialog {
   width: 100vw;
   border-radius: 0;
 }
 
 :where(html:not(.narrow)) #settings-dialog {
-  inset: var(--pane-top, 0px) auto 0 0;
+  inset: var(--pane-top, 0px) 0 0 auto;
   height: auto;
-  /* As wide as the pane, so that no strip of the (inert) editor shows beside it; the text keeps a column of 40rem
-     (--side: the room each side of it), as the pane is 40rem at 1280 px and wider after. */
+  /* As wide as the pane with the divider, so that the explanation fits exactly beside it; the text keeps a column of 40rem (--side: the room
+     each side of it), as the pane is 40rem at 1280 px and wider after. */
   width: var(--pane-w, 36rem);
   --side: max(0px, calc((100% - 40rem) / 2));
-  border-left: 0;
-  border-right: 1px solid var(--vscode-panel-border);
-  border-radius: 0 12px 12px 0;
+  border-radius: 12px 0 0 12px;
   z-index: 15;
 }
 
-@starting-style {
-  :where(html:not(.narrow)) #settings-dialog[open] {
-    transform: translateX(-100%);
-  }
+/* The explanation moves left by the sheet's width, with the sheet: the same transition (--ease, 0.22s), started in the
+   same frame (`data-shift` of the page: open, drag while a swipe holds the sheet, closing; web/settings-dialog.ts).
+   It only moves: its width, so its text, and its scroll stay. The sheet is as wide as the editor's pane at most, so the
+   explanation, which has the rest of the page, never leaves it. It lies above the editor (and its hint) while it is
+   there, and the divider, which would show on top, is out of reach and hidden. A `transform` here is safe: nothing
+   inside the pane is placed `fixed` (the frame's own popups are in the frame), and the toast is outside it. */
+:where(html:not(.narrow))[data-shift] .panel-pane {
+  position: relative;
+  z-index: 12;
+  transition: transform 0.22s var(--ease);
+}
+
+:where(html:not(.narrow))[data-shift="open"] .panel-pane {
+  transform: translateX(calc(-1 * var(--pane-w)));
+}
+
+:where(html:not(.narrow))[data-shift="drag"] .panel-pane {
+  transform: translateX(calc(var(--drag, 0px) - var(--pane-w)));
+  transition: none;
+}
+
+/* A new width of the pane while the sheet is out (a resized window): the explanation moves with the sheet at once. */
+:where(html:not(.narrow))[data-shift][data-shift-now] .panel-pane {
+  transition: none;
+}
+
+:where(html:not(.narrow))[data-shift] .splitter {
+  visibility: hidden;
 }
 
 :where(html:not(.narrow)) #settings-dialog :is(.settings-head, .settings-nav, .settings-body, .settings-foot) {
