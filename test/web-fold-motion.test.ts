@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { chooseDepth, openSite, until } from './support/site';
+import { chooseDepth, openSite, stable, until } from './support/site';
 
 // A box that folds shrinks to nothing before it is hidden (media/panel.js, `fold`; media/panel.css keeps it drawn while it moves, `data-closing`),
 // and one that unfolds grows. Every kind of fold is measured: the moves are paused half way (`currentTime`), so that no timer is raced.
@@ -27,9 +27,10 @@ const MID = `(async ([boxes, click]) => {
   for (const a of moving.flat()) a.currentTime = a.effect.getComputedTiming().duration - 0.01;
   window.markEnd = mark();
   for (const a of moving.flat()) a.currentTime = a.effect.getComputedTiming().duration / 2;
+  const markMid = mark();
   return all().map((b, i) => ({
     animations: moving[i].length, duration: moving[i][0]?.effect.getComputedTiming().duration ?? 0, display: getComputedStyle(b).display, visible: b.checkVisibility(),
-    before: before[i], mid: height(b), closing: b.hasAttribute('data-closing'), open: b.closest('details')?.open ?? null, rest, start, markEnd: window.markEnd,
+    before: before[i], mid: height(b), closing: b.hasAttribute('data-closing'), open: b.closest('details')?.open ?? null, rest, start, markEnd: window.markEnd, markMid,
   }));
 })`;
 
@@ -73,12 +74,15 @@ describe('the panel: boxes that fold and unfold move', function () {
       await chooseDepth(page, 2);
       await until('depth 2', () => panel.evaluate('document.body.dataset.depth'), (d) => d === '2');
     }
+    // (The rows are drawn again when the page learns more of the line: wait until they have not been drawn again for half a second.)
+    await panel.evaluate(`window.drawn = 0; new MutationObserver(() => { window.drawn++; }).observe(document.getElementById('tree'), { childList: true })`);
+    await stable('the rows', () => panel.evaluate('window.drawn'), 12);
     // (Nothing moves yet: the first drawing of the rows has ended.)
     await until('no motion', () => panel.evaluate('document.getAnimations().filter((a) => a.playState === "running").length'), (n) => n === 0);
     return { page, panel, close: () => ctx.close() };
   }
 
-  type Mid = { animations: number; duration: number; rest: number; start: number; markEnd: number; display: string; visible: boolean; before: number; mid: number; closing: boolean; open: boolean | null };
+  type Mid = { markMid: number; animations: number; duration: number; rest: number; start: number; markEnd: number; display: string; visible: boolean; before: number; mid: number; closing: boolean; open: boolean | null };
   type End = { markAfter: number; animations: number; display: string; visible: boolean; end: number; closing: boolean; clip: string; open: boolean | null };
   const mid = (panel: Frame, boxes: string[], click: string) => panel.evaluate(`${MID}(${JSON.stringify([boxes, click])})`) as Promise<Mid[]>;
   const end = (panel: Frame, boxes: string[]) => panel.evaluate(`${END}(${JSON.stringify([boxes])})`) as Promise<End[]>;
@@ -145,6 +149,88 @@ describe('the panel: boxes that fold and unfold move', function () {
     const [unfolded] = await end(panel, [PARTS]);
     noJump(unfold, unfolded, 2.5, 'unfolding the tall parts');
     assert.strictEqual(unfold.duration, takes(unfolded.end));
+    await close();
+  });
+
+  // The line of the maintainer's report: the row of `sort` holds an example (open, not folded) and its parts; `+%F` of `date` too.
+  const LINE = 'grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt && echo "done: $(date +%F)" || exit 1';
+  /** The boxes a row folds: its parts, and the example that lies under it. */
+  const under = (path: string) => [`#tree li[data-path="${path}"] > .item > .body > ul`, `#tree li[data-path="${path}"] > .item > .body > section.example`];
+  const twistyOf = (path: string) => `#tree li[data-path="${path}"] > .item > .row > button.twisty`;
+
+  for (const [depth, path] of [[1, '0.0.1'], [2, '0.0.2'], [1, '0.1.0.0.0.0']] as const) {
+    it(`a row that holds an example folds the example with its parts: the line of the report, the row ${path} at depth ${depth}`, async () => {
+      const { panel, close } = await open(LINE, {}, depth);
+      const boxes = under(path);
+      const [parts, example] = await mid(panel, boxes, twistyOf(path));
+      for (const [m, what] of [[parts, 'the parts'], [example, 'the example']] as const) {
+        drawnHalf(m, `folding ${what}`);
+        assert.ok(m.mid < m.before, `${what}: lower than before (${m.mid} of ${m.before})`);
+        assert.strictEqual(m.closing, true);
+      }
+      assert.ok(example.before > 100, `a tall example (${example.before})`);
+      // (They move side by side, for as long as both are high: before, the example was gone in the first frame, 270 px at once.)
+      assert.strictEqual(parts.duration, example.duration);
+      assert.strictEqual(example.duration, takes(parts.before + example.before));
+      // (The margins of the example and of the parts, drawn side by side, no longer meet: up to 3.5 px at the start; before, the whole example, 270 px.)
+      assert.ok(Math.abs(parts.start - parts.rest) <= 3.5, `the start of the move: what lies below moved by ${parts.start - parts.rest}`);
+      const folded = await end(panel, boxes);
+      assert.ok(parts.markMid < parts.rest && parts.markMid > folded[0].markAfter, `half way: ${folded[0].markAfter} < ${parts.markMid} < ${parts.rest}`);
+      // (What lies below has moved by about half of the height the row loses, after the ease: more than a tenth and less than nine tenths.)
+      const lost = parts.rest - folded[0].markAfter;
+      assert.ok(lost > parts.before + example.before - 5, `the row loses its parts and its example (${lost})`);
+      assert.ok(parts.rest - parts.markMid > lost / 10 && parts.rest - parts.markMid < (lost * 9) / 10, `half way, what lies below has moved by ${parts.rest - parts.markMid} of ${lost}`);
+      noJump(parts, folded[0], 3.5, 'folding the row');
+      for (const m of folded) assert.deepStrictEqual(shape(m), { animations: 0, display: 'none', visible: false, end: 0, markAfter: 0, closing: false, clip: '', open: null });
+      // Unfolded again, both grow.
+      const [grow, growEx] = await mid(panel, boxes, twistyOf(path));
+      drawnHalf(grow, 'unfolding the parts');
+      drawnHalf(growEx, 'unfolding the example');
+      const unfolded = await end(panel, boxes);
+      noJump(grow, unfolded[0], 3.5, 'unfolding the row');
+      assert.strictEqual(unfolded[1].end, example.before);
+      assert.strictEqual(unfolded[0].markAfter, parts.rest);
+      await close();
+    });
+  }
+
+  it('the fold button on the line of the report folds the examples with their rows', async () => {
+    const { panel, close } = await open(LINE, {}, 1);
+    const outer = [under('0.0')[0], under('0.1')[0]];
+    const boxes = [...outer, ...under('0.0.1'), ...under('0.1.0.0.0.0')];
+    const ms = await mid(panel, boxes, '#toggle');
+    ms.forEach((m, i) => {
+      assert.notStrictEqual(m.display, 'none', `box ${i}: drawn`);
+      assert.strictEqual(m.closing, true, `box ${i}: kept drawn`);
+    });
+    // (Only the outermost box of a branch moves: the parts of `grep | sort` and of `echo` carry the rows inside them, with the examples of `sort` and `+%F`.)
+    assert.deepStrictEqual(ms.map((m) => m.animations), [1, 1, 0, 0, 0, 0]);
+    for (const m of ms.slice(0, 2)) assert.ok(m.mid > 0 && m.mid < m.before, `${m.mid} of ${m.before}`);
+    // (Each outermost box that folds, two here, holds the margins of its first and last rows: up to 5 px each at the start; before, the examples of 270 and 180 px.)
+    assert.ok(Math.abs(ms[0].start - ms[0].rest) <= 10, `the start of the fold: what lies below moved by ${ms[0].start - ms[0].rest}`);
+    const folded = await end(panel, boxes);
+    for (const m of folded) assert.deepStrictEqual(shape(m), { animations: 0, display: 'none', visible: false, end: 0, markAfter: 0, closing: false, clip: '', open: null });
+    // (The same, about 9 px for each of the two boxes, at the end: the margins of their rows, which meet once the boxes are gone.)
+    assert.ok(Math.abs(folded[0].markAfter - ms[0].markEnd) <= 20, `the end of the fold: what lies below moved by ${folded[0].markAfter - ms[0].markEnd}`);
+    assert.ok(ms[0].rest - folded[0].markAfter > 700, 'the examples and the parts are all gone');
+    await close();
+  });
+
+  it('a fold, an unfold and a fold within one frame leave the boxes moving: the late end of the first two clears nothing of the third', async () => {
+    const { panel, close } = await open(LINE, {}, 1);
+    const boxes = under('0.0.1');
+    const state = await panel.evaluate(`(async ([boxes, twisty]) => {
+      const all = boxes.map((s) => document.querySelector(s));
+      for (let i = 0; i < 3; i++) document.querySelector(twisty).click();
+      // (Paused, so that nothing ends; the cancelled moves end a frame later.)
+      for (const b of all) for (const a of b.getAnimations()) { a.pause(); a.currentTime = 100; }
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+      return all.map((b) => ({ animations: b.getAnimations().length, display: getComputedStyle(b).display, inline: b.style.display, clip: b.style.clipPath !== '', closing: b.hasAttribute('data-closing'), height: b.getBoundingClientRect().height }));
+    })`
+      + `(${JSON.stringify([boxes, twistyOf('0.0.1')])})`) as { animations: number; display: string; inline: string; clip: boolean; closing: boolean; height: number }[];
+    for (const b of state) {
+      assert.deepStrictEqual({ ...b, height: b.height > 0 }, { animations: 1, display: 'flow-root', inline: 'flow-root', clip: true, closing: true, height: true });
+    }
     await close();
   });
 
