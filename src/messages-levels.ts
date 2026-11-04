@@ -144,6 +144,7 @@ export function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?
 
 /** The fact `f` for a file that is a script only by its name (`ScriptEvidence`): a warning with the same words, as another shell may source the file. */
 export function byName(lang: Lang, f: Fact): Fact {
-  const { text, level, label } = marked(lang, 'warning', f.body, { kind: f.kind, heading: f.heading, ...(f.head ? { head: [f.head, f.head] as const } : {}) });
+  // (An error is a problem, so it has its headline: src/messages-heads.ts.)
+  const { text, level, label } = marked(lang, 'warning', f.body, { kind: f.kind, heading: f.heading, head: [f.head!, f.head!] });
   return { ...f, text, level, label };
 }
