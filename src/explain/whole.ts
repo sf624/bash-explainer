@@ -55,9 +55,9 @@ function explainedOnce(cx: LineExplainer, explained: (cx: Explainer) => Token): 
  * same on every line, whichever asks first. What failed (a statement nested too deep to walk) fails the same way, and is not walked again.
  */
 export function wholeOf(lang: string, init: LineInit, n: SyntaxNode, explained: (cx: Explainer) => Token, explainer: () => LineExplainer): Whole {
-  // (The options that change a walk and are not in the model's key; the rest are read after it.)
-  const { yqFlavor, examples, idioms, pitfalls, basis, customCommands, positional } = init.opts;
-  const key = JSON.stringify([lang, init.shell, init.nested, yqFlavor, examples, idioms, pitfalls, basis, customCommands, positional]);
+  // (The options that change a walk and are not in the model's key, `reading` for a string read as a script in it; the rest are read after it.)
+  const { yqFlavor, examples, idioms, pitfalls, basis, customCommands, positional, reading } = init.opts;
+  const key = JSON.stringify([lang, init.shell, init.nested, yqFlavor, examples, idioms, pitfalls, basis, customCommands, positional, !!reading]);
   let byKey = kept.get(init.state);
   if (!byKey) kept.set(init.state, (byKey = new Map()));
   let byNode = byKey.get(key);

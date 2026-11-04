@@ -3,13 +3,14 @@
 // its lines is explained as a script of its own (`Explainer.nestedLine`), with its tokens placed in the source. And
 // the notes on a command that another one runs, which follow from where its slot runs it (src/semantics/env.ts): a
 // function or a builtin that a program cannot run, a variable that a new shell does not get.
-import type { ExplainOptions, Span, Token } from '../analyzer-types';
+import type { ExplainOptions, ScriptProcess, Span, Token } from '../analyzer-types';
 import type { CommandRole } from '../argv/interpret';
 import { specialVariables } from '../dict/syntax';
 import { tx } from '../i18n';
 import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
+import { keyOf, readAgain, type ReadingNode, readingNodes } from '../reading';
 import { type ExecEnv, linksAfter, reachOf, type SlotLink, variableIn, whereOf } from '../semantics/env';
 import { fromEnvironment, unlessUnread } from '../semantics/shellstate';
 import { type Missed, runsOwnName } from '../semantics/names';
@@ -43,7 +44,7 @@ export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, p
       : cx.s('。文字列の中の文字列が深すぎるので、スクリプトとしては解説しない', '. Strings nested this deep are not explained as scripts') };
   }
   const rows = script.tree.text.split('\n');
-  const lines: Token[][] = [];
+  const lines: { items: Token[]; root?: ReadingNode }[] = [];
   // (A fault of the text of a string is said as the command that runs it is: `Explainer.evidenceAt`, `reachedAt`.)
   const known = cx.evidenceAt(words[0]);
   const outer = { ...(!known ? { unread: true } : known === 'unsure' ? { unsure: true } : {}), ...(!cx.reachedAt(words[0]) ? { unreached: true } : {}) };
@@ -51,21 +52,35 @@ export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, p
     const ex = cx.nestedLine(script, line, positional, outer);
     // (A statement over several lines is explained whole on each of them: keep it, and its notes, on its first.)
     const items = ex.items.filter((t) => t.span.start.line === line);
-    lines.push(items.map((t) => fromScript(cx, t, script)));
+    lines.push({ items: items.map((t) => fromScript(cx, t, script)), ...(items.length && ex.reading ? { root: ex.reading } : {}) });
     // (Not the notes of a script that never runs, `find . -exec bash -c 's' _ {} ;`, which find refuses: `notes` false.)
     if (!items.length || !notes) continue;
     cx.adopt(ex, (span) => scriptSpan(cx, span, script));
   }
-  const used = lines.map((items, i) => ({ items, i })).filter((l) => l.items.length);
+  const process = scriptProcess(env);
+  const read = cx.opts.reading ? linesRead(lines.map((l) => l.root), process, (span) => scriptSpan(cx, span, script)) : undefined;
+  const used = lines.map(({ items }, i) => ({ items, i })).filter((l) => l.items.length);
   const tokens = used.length === 1 ? used[0].items : used.map(({ items, i }): Token => ({
     kind: 'block', label: shorten(rows[i].trim()), children: items,
     explanation: cx.text('script-string-line', { line: i + 1 }),
     span: { start: items[0].span.start, end: items[items.length - 1].span.end },
+    ...(read ? { reading: read[i] } : {}),
   }));
+  if (used.length === 1 && read) tokens[0].reading = read[used[0].i];
   const note = script.known ? undefined
     : cx.s('。実行するシェルはここではわからない（ユーザーのログインシェル）ので、bash として解説する', ". The shell that runs it is not known here (the user's login shell): it is explained as bash");
-  for (const t of tokens) readAsScript(t, scriptProcess(env));
+  for (const t of tokens) readAsScript(t, process);
   return { tokens, ...(note ? { note } : {}) };
+}
+
+/**
+ * The reading of each line of a string read as a script (the root of each, `LineExplanation.reading`), as the line around it has it (`readAgain`): the
+ * parts that start on the line, without those of a later line that says them itself (the reading of a line has a block around it whole).
+ */
+function linesRead(roots: readonly (ReadingNode | undefined)[], process: ScriptProcess, span: (s: Span) => Span): ReadingNode[][] {
+  const starting = roots.map((r, line) => (r?.children ?? []).filter((n) => n.span.start.line === line));
+  const own = starting.map((nodes) => new Set(nodes.flatMap(readingNodes).map((n) => keyOf(n.span))));
+  return starting.map((nodes, line) => nodes.map((n) => readAgain(n, process, span, (c) => c.span.start.line === line || !own[c.span.start.line].has(keyOf(c.span)))));
 }
 
 /** `t` with the tokens of a string read as a script under the token of its word (the quoted string, when `t` holds it). */
