@@ -61,7 +61,8 @@ export function redirectedWhole(cx: Explainer, n: SyntaxNode, body: SyntaxNode |
   const ofFunction = n.parent?.type === 'function_definition';
   const w = cx.tok(n, 'redirect', n.type === 'command' && (cx.shell ?? 'bash') === 'bash' ? nameless(cx, n, text) : cx.text('redirect-whole', { target: text !== undefined ? shorten(text, 30) : undefined, ofFunction }), sortTokens([...bodyToks, ...redirToks]));
   w.summary = [...bodyToks.map(summaryOf), ...redirToks.map((r) => r.label)].join(' ');
-  if (bodyToks.length === 1) w.around = 'redirections';
+  // (Not the assignments of a command with no name, `n` a `command`: the redirections apply to nothing, and the row says so: 3.7.1.)
+  if (bodyToks.length === 1 && n.type !== 'command') w.around = 'redirections';
   return skeletal(w, n);
 }
 

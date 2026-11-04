@@ -210,6 +210,7 @@ describe('the panel\'s row model', () => {
       ['{ a; } > "$f"', 0, '> "$f"', /^Write stdout/, ['"$f"', '$f']],
       ['x=1 > "$f"', 0, '> "$f"', /^Write stdout/, ['"$f"', '$f']],
       ['exec > "$f"', 0, '> "$f"', /^Write stdout/, ['"$f"', '$f']],
+      ['x=$(ls /nope) 2>/dev/null', 0, '2>/dev/null', /^Write stderr/, []],
       ['while read l; do\n  echo "$l"\ndone < "$f"', 2, '< "$f"', /^Read file .* It applies to the whole loop/, ['"$f"', '$f']],
       ['while read l; do\n  echo "$l"\ndone < input.txt', 2, '< input.txt', /^Read file .* It applies to the whole loop/, []],
     ];
@@ -232,6 +233,21 @@ describe('the panel\'s row model', () => {
       assert.ok(echo.children[1].children[0].value);
     });
 
+    it('says at depth 1 that the redirections of a command with no name apply to nothing, not even to its assignments', () => {
+      for (const [src, word] of [['x=$(ls /nope) 2>/dev/null', '2>/dev/null'], ['x=1 > "$f"', '> "$f"'], ['x=1 y=2 > "$f"', '> "$f"']]) {
+        const [row, ...others] = model(src).rows;
+        assert.deepStrictEqual(others, [], src);
+        assert.strictEqual(row.frame, 'command', src);
+        assert.match(row.text, /^Redirections of a command with no name: .*nor do they apply to/, src);
+        // (The redirection and the assignments are parts of that row, side by side.)
+        assert.ok(row.children.some((c) => c.label === word), src);
+        assert.ok(row.children.some((c) => c.label.startsWith('x=')), src);
+      }
+      // (With a name, or around a compound command, the row is the command's.)
+      assert.strictEqual(model('ls /nope 2>/dev/null').rows[0].label, 'ls');
+      assert.match(model('{ ls; } 2>/dev/null').rows[0].text, /^Command group/);
+    });
+
     it('takes a command\'s redirections for what stands around it, whatever their targets hold', () => {
       assert.deepStrictEqual(outline(model('tar c x 2>/dev/null').rows), [['[command] tar', ['c', 'x', '2>/dev/null']]]);
       assert.deepStrictEqual(outline(model('>"$f" cat').rows), [['[command] cat', ['>"$f"']]]);
@@ -239,7 +255,7 @@ describe('the panel\'s row model', () => {
       assert.deepStrictEqual(outline(model('cat <<< "$(a > "$f")"').rows), [['[command] cat', [['<<< "$(a > "$f")"', [['$(a > "$f")', [['[command] a', ['> "$f"']]]]]]]]]);
       // (No command, or more than one assignment, to stand around: the row of the redirections.)
       assert.deepStrictEqual(outline(model('> "$f"').rows), ['[command] > "$f"']);
-      assert.deepStrictEqual(outline(model('x=1 y=2 > "$f"').rows)[0], ['[command] x=1 y=2', ['x=1', 'y=2', '> "$f"']]);
+      assert.deepStrictEqual(outline(model('x=1 y=2 > "$f"').rows)[0], ['[command] x=1 y=2 > "$f"', [['x=1 y=2', ['x=1', 'y=2']], '> "$f"']]);
     });
 
     it('leaves what it stands around out of `--format json`', async () => {
