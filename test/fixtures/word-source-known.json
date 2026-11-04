@@ -204,14 +204,15 @@
       "file": "src/dialect.ts",
       "reason": "finds syntax a shell lacks",
       "uses": [
-        {"fn":"collectBehaviours","kind":"node-type","count":5},
-        {"fn":"classify","kind":"node-type","count":17},
         {"fn":"classify","kind":"glob-class","count":1},
-        {"fn":"zshSyntaxPlaces","kind":"node-type","count":2},
-        {"fn":"zshSyntaxPlaces","kind":"glob-class","count":1},
+        {"fn":"classify","kind":"node-type","count":17},
+        {"fn":"collectBehaviours","kind":"node-type","count":5},
+        {"fn":"eqeqOperator","kind":"helper","count":1},
         {"fn":"issuesFound","kind":"node-type","count":1},
         {"fn":"parameterRead","kind":"node-type","count":1},
-        {"fn":"unsetDoes","kind":"node-type","count":3}
+        {"fn":"unsetDoes","kind":"node-type","count":3},
+        {"fn":"zshSyntaxPlaces","kind":"glob-class","count":1},
+        {"fn":"zshSyntaxPlaces","kind":"node-type","count":2}
       ]
     },
     {
@@ -534,8 +535,10 @@
       "uses": [
         {"fn":"inTest","kind":"node-type","count":1},
         {"fn":"leftOut","kind":"node-type","count":2},
+        {"fn":"marksOf","kind":"node-type","count":1},
         {"fn":"readOnlySometimes","kind":"node-type","count":3},
         {"fn":"readWithItsLine","kind":"node-type","count":5},
+        {"fn":"runsAtExit","kind":"helper","count":2},
         {"fn":"stderrDiscarded","kind":"node-type","count":4},
         {"fn":"stopOf","kind":"helper","count":1}
       ]
@@ -671,6 +674,7 @@
       "file": "src/testexpr.ts",
       "reason": "checks the shape of the source (\"the word is one `$x`\"), not what bash does with it",
       "uses": [
+        {"fn":"binaryOperators","kind":"node-type","count":1},
         {"fn":"testRange","kind":"node-type","count":1}
       ]
     },
