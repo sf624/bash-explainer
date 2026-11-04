@@ -97,7 +97,8 @@ export interface Token {
   frame?: 'command' | 'compound';
   /**
    * What the part stands around, where bash's grammar makes it no part of its own: `redirections`, a command's redirections, whose parts are
-   * the redirections and the one command they apply to (3.6; not a redirection itself, whose parts are the words of its target);
+   * the redirections and the one command they apply to (3.6; not a redirection itself, whose parts are the words of its target, nor those of
+   * a command with no name, which apply to nothing: 3.7.1);
    * `pipeline`, a pipeline's `time` or `!`, whose parts hold the rest of that pipeline (3.2.3). From the node (src/explain/). For the
    * panel: not in `--format json`, as `frame` is not.
    */
