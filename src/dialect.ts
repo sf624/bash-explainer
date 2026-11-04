@@ -471,7 +471,7 @@ function versionHead(id: string): Head {
 export function dialectTexts(lang: Lang): string[] {
   const shells = Object.keys(SHELL_NAMES) as Shell[];
   return [
-    ...Object.keys(FEATURES).flatMap((id) => shells.flatMap((sh) => [featureMessage(id, sh, lang), ...(isVariableRow(FEATURES[id]) ? UNSET_CASES.map((does) => featureMessage(id, sh, lang, { ...(FEATURES[id].dash === 'empty' ? { dash: does } : {}), ...(FEATURES[id].ash === 'empty' ? { ash: does } : {}) })) : []), featureHead(id, sh)[lang === 'ja' ? 0 : 1]])),
+    ...Object.keys(FEATURES).flatMap((id) => shells.flatMap((sh) => [featureMessage(id, sh, lang), ...(isVariableRow(FEATURES[id]) ? UNSET_CASES.map((does) => featureMessage(id, sh, lang, { dash: does, ...(FEATURES[id].ash === 'empty' ? { ash: does } : {}) })) : []), featureHead(id, sh)[lang === 'ja' ? 0 : 1]])),
     ...Object.keys(BEHAVIOURS).flatMap((id) => shells.flatMap((sh) => [behaviourMessage(id, sh, lang), behaviourHead(id, sh)[lang === 'ja' ? 0 : 1]])),
     ...Object.keys(SINCE).flatMap((id) => [...BASH_VERSIONS.filter((v) => earlier(v, SINCE[id].version)).map((v) => versionMessage(id, v, lang)), versionHead(id)[lang === 'ja' ? 0 : 1]]),
   ].filter((t): t is string => t !== undefined);
@@ -623,8 +623,8 @@ function issuesFound(tree: SyntaxTree, shell: Shell, lang: Lang, from: number, t
   return issues;
 }
 
-/** A row of a variable the shell does not set. */
-const isVariableRow = (f: Feature): boolean => f.dash === 'empty' || f.ash === 'empty';
+/** A row of a variable a shell does not set: dash sets the fewest. */
+const isVariableRow = (f: Feature): boolean => f.dash === 'empty';
 
 const UNSET_CASES = ['stops', 'subshell', 'test', 'empty', 'zero'] as const;
 
