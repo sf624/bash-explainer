@@ -51,7 +51,10 @@
     let lang = (/[#&]lang=(ja|en)(&|$)/.exec(location.hash) || [])[1];
     if (!lang) {
       try {
-        const saved = JSON.parse(localStorage.getItem('bash-explainer-settings') || '{}').language;
+        // The page keeps `{"bashExplainer.language": "en"}` (src/settings.ts `changedSettings`; `auto` is the default and not kept),
+        // and reads it also without the prefix and nested (`readSettings`).
+        const all = JSON.parse(localStorage.getItem('bash-explainer-settings') || '{}');
+        const saved = all['bashExplainer.language'] || all.language || (all.bashExplainer || {}).language;
         if (saved === 'ja' || saved === 'en') lang = saved;
       } catch {
         // No storage, or not JSON: the browser's language.

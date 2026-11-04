@@ -40,6 +40,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- The opening animation on the web page follows the Language setting. Before, a Japanese browser with the setting on English still showed it in Japanese (and the other way round).
 - `--check` no longer fails on what comes after a command that surely stops the script, such as pip's `exec` wrapper or `exit 0` before a payload. After one that only may stop it (`source`, `trap`, an `exit` in a function), `x = 1`, `[-f x]` and a syntax error are warnings; before, nothing was said or they were Errors.
 - In a `sh`, `dash` or `ash` script, an Error now means what really fails, and only that fails `--check`: what the shell refuses while it reads the file (`a=(1)`, `<<<`, also in a function never called), and what fails where it surely gets to it. `$RANDOM`, `$UID`, `echo -e`, `{a,b}`, `&>` and `**` are warnings that say what the shell does; a construct the shell lacks after `source`, in a branch or in a function is a warning with the same words, as is one whose message the script discards where the failure leaves it going (`if (set -o pipefail) 2>/dev/null`); `${UID:-0}` says nothing. `--strict` fails on these warnings.
 - In a script for bash, ksh, mksh, yash or zsh, what that shell or the chosen bash release lacks is now a warning with the same words where it may not run: in a function, in a branch, on the right of `&&`, after `trap` or `. ./lib`. For example `read -E`, `source -p`, `compgen -V` and `${ …; }` with bash 5.2. Before, an Error.
