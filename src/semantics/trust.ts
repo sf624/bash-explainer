@@ -933,7 +933,7 @@ class Scan {
         this.copied.set(c.owner, set);
       }
     }
-    const why = arithReads(this.arith, this.writes, this.refUnknown) ?? compoundReads(this.unknownCompounds, writesOf, this.refTargets) ?? commandNames(this.commandVariables, this.writes, this.functions, this.callbacks) ?? ps4Writes(writesOf('PS4'));
+    const why = arithReads(this.arith, this.writes, this.refUnknown) ?? compoundReads(this.unknownCompounds, writesOf, this.refTargets) ?? commandNames(this.commandVariables, this.writes, this.functions) ?? ps4Writes(writesOf('PS4'));
     if (why) this.blindFor(why);
     // A nameref whose target is not known, assigned or unset: any variable may change. Read, too: bash expands the
     // target's subscript (`declare -n r=$1; : "$r"` with `$1` = `a[u=2]` sets `u`).

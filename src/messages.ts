@@ -9,7 +9,7 @@ import { TOKEN_TEXTS } from './messages-tokens';
 import { UNREAD } from './messages-unread';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
 import { aliasDefinedText, aliasMaybeText, aliasNotExpandedText } from './messages-alias';
-import { inTrap, LOCAL_SOURCED, noShebang, readByBashrc, unreadClause } from './messages-common';
+import { inTrap, LOCAL_SOURCED, noShebang, readByBashrc, SOURCED_NAME, unreadClause } from './messages-common';
 import { extglobText, globstarText, type LoopHow, type LoopPattern, unmatchedGlobText } from './messages-glob';
 import {
   builtinOrFunctionAsProgramText, functionNotImportedShText, functionNotImportedText, functionNotInContainerText, functionNotInNewShellBlockedText,
@@ -981,8 +981,8 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
     : (ja ? `\`${f.by ?? 'builtin'}\` が探しても \`${f.name}\` という名前のビルトインはない` : `\`${f.by ?? 'builtin'}\` finds no builtin named \`${f.name}\``))
     : f.by === undefined ? undefined : ja ? `\`${f.by}\` が実行` : `run by \`${f.by}\``;
   // (A special builtin, as the manual names it (4.4), differs from the others in POSIX mode only.)
-  const title = f.special ? SPECIAL_TITLE[lang] : k.title[lang];
-  const word = f.special ? SPECIAL_WORD[lang] : k.word[lang];
+  const title = f.special ? SPECIAL_TITLE[lang] : f.sourced ? SOURCED_NAME.title[lang] : k.title[lang];
+  const word = f.special ? SPECIAL_WORD[lang] : f.sourced ? SOURCED_NAME.word[lang] : k.word[lang];
   return {
     kind: word, title, ...(by ? { by } : {}), ...(lines.length ? { also: lines.join(ja ? '。' : '. ') } : {}),
     short: ja ? `（${word}${by ? `。${by}` : ''}）` : ` (${word}${by ? `, ${by}` : ''})`,

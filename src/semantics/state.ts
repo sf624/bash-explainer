@@ -568,7 +568,8 @@ export const modelVersion = (model: StateModel): BashVersion => modelVersions.ge
  */
 function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, file: Pick<StateModel, 'read' | 'provides' | 'interactiveStart' | 'noShell'>, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening, version?: BashVersion): StateModel {
   const scripts = new Scripts(depth, shell);
-  const own = scriptTrust(tree.root, scripts, host, opening, shell, version, posix);
+  // (CR LF line ends: bash keeps each CR in the last word of its line, where the tree has a blank, `SyntaxTree.carriageReturns`. So no value or name read from the tree holds.)
+  const own = tree.carriageReturns?.length ? { ...BLIND, blind: 'the script has CR LF line ends' } : scriptTrust(tree.root, scripts, host, opening, shell, version, posix);
   const trust = outer ? withinTrust(own, outer) : own;
   let w = new Walker(shell, posix, scripts, trust, host, run, undefined, version);
   let initial!: ShellState;

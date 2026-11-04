@@ -4,7 +4,7 @@
 import { fdName, specialVariables, wellKnownVariables } from './dict/syntax';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
-import { type HoleSource, writtenPlain } from './semantics/fieldshape';
+import { type HoleSource, type Unmatched, writtenPlain } from './semantics/fieldshape';
 import { wordTable } from './wordtable';
 
 /** What a placeholder stands for: a part of a word (`HoleSource`), the names a pattern matches, or a whole word not known here. */
@@ -24,8 +24,15 @@ const nounOf = (name: string): Text | undefined => (specialVariables[name] ?? we
 /** The tilde prefixes whose value is that of a variable (manual 3.5.2): `~`, `~+`, `~-`. */
 const TILDES: Readonly<Record<string, string>> = wordTable({ '': 'HOME', '+': 'PWD', '-': 'OLDPWD' });
 
+/** What a pattern gives where no file matches (manual 3.5.8), after "else": the classic surprise of `*.txt` with no such file. */
+const UNMATCHED: Readonly<Record<Unmatched, Text>> = {
+  stays: { ja: 'パターン自身', en: 'the pattern itself' },
+  none: { ja: '単語なし', en: 'no word' },
+  fails: { ja: 'bash が止まる', en: 'bash stops' },
+};
+
 /** A placeholder's text, in `lang`, for what it stands for (`kind`) and its code. */
-export function placeholderSaid(lang: Lang, h: HoleSource | { kind: 'names' | 'word'; code: string }): string {
+export function placeholderSaid(lang: Lang, h: HoleSource | { kind: 'word'; code: string } | { kind: 'names'; code: string; unmatched?: Unmatched }): string {
   const ja = lang === 'ja';
   const c = code(h.code);
   switch (h.kind) {
@@ -51,7 +58,10 @@ export function placeholderSaid(lang: Lang, h: HoleSource | { kind: 'names' | 'w
       if (variable) return nounOf(variable)![lang];
       return /^[+-]?\d/.test(h.user) ? (ja ? `${c} の結果` : `what ${c} gives`) : ja ? `${code(h.user)} のホームディレクトリ` : `home directory of ${code(h.user)}`;
     }
-    case 'names': return ja ? `${c} に一致する各ファイル名` : `each file name matching ${c}`;
+    case 'names': {
+      const none = h.unmatched && UNMATCHED[h.unmatched][lang];
+      return ja ? `${c} に一致する各ファイル名${none ? `、なければ${none}` : ''}` : `each file name matching ${c}${none ? `, else ${none}` : ''}`;
+    }
     case 'word': return ja ? `${c} から得られる単語` : `the words of ${c}`;
     case 'string': return ja ? `${c} の結果` : `what ${c} gives`;
   }

@@ -2,9 +2,25 @@
 // assign before one of its words is expanded, the value of `$_` after a command that is only an assignment, and
 // whether the script changes its directory.
 import { parseExpansion } from '../expansion';
+import { decodedText } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import { STATEMENTS } from './env';
 import { ARITH_ASSIGNED, attribute, refTarget, type ShellState, type StateModel } from './state';
+
+/**
+ * Whether bash makes the value of the part `n` from an integer: `$#`, `$?`, `$$` and a length (`${#x}`, `${#a[@]}`),
+ * also `$#`, `$?` and `$$` behind an operator that keeps a value that is set (`${#:-1}`); `maybe-empty`: `$!`, empty
+ * before any `&`. Any other operator over them gives text: `${#:+-v}`, `${#/#/-}`; `${##1}` with one element is empty.
+ * Such a value is not quoted in double quotes with `"$@"` before it or after it (F84, F97).
+ */
+export function integerParameter(n: SyntaxNode): 'digits' | 'maybe-empty' | undefined {
+  if (n.type !== 'simple_expansion' && n.type !== 'expansion') return undefined;
+  const p = parseExpansion(n.type === 'simple_expansion' ? `\${${n.text.slice(1)}}` : decodedText(n));
+  if (p?.prefix === '#' && !p.op) return 'digits';
+  if (!p || p.prefix || p.subscript !== undefined) return undefined;
+  if (/^[#?$]$/.test(p.name) && [undefined, '-', ':-', '=', ':=', '?', ':?'].includes(p.op)) return 'digits';
+  return p.name === '!' && !p.op ? 'maybe-empty' : undefined;
+}
 
 /** The nodes whose text is arithmetic. */
 export const ARITH = new Set(['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement']);

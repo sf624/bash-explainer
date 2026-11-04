@@ -1,9 +1,10 @@
 // What the switch "What the program receives" adds to the panel's rows (docs/design/panel-redesign.md, P9), and the marks of what no
-// program receives or POSIX sh lacks: pure functions over the rows of src/ui/panelRows.ts, from the data of the explanation (`ArgvLine`, src/argvline.ts;
+// program receives or a sh may lack: pure functions over the rows of src/ui/panelRows.ts, from the data of the explanation (`ArgvLine`, src/argvline.ts;
 // `NotPosix`, src/dialect.ts). media/panel.js draws them and decides none of it.
 import type { ArgvLine, ArgvWord, NotPosix, Span } from '../analyzer-types';
 import type { Lang } from '../i18n';
 import { shownWord } from '../messages';
+import { spanWithin } from '../noteanchors';
 import { keyOf } from '../reading';
 import { ui } from './texts';
 
@@ -41,7 +42,7 @@ function shownChips(chips: ReceivedChip[], lang: Lang): Pick<ReceivesLine, 'chip
 /** The line a simple command shows: its program's words with the name first; a builtin's or a function's without it, as it runs inside the shell and has no `argv[0]`. */
 export function receivesLine(l: ArgvLine, lang: Lang, shell: string): ReceivesLine {
   const t = ui[lang].panel.receives;
-  const fails = l.fails ? { fails: t.fails.replace('{error}', () => t.errors[l.fails!.error]) } : {};
+  const fails = l.fails ? { fails: t.fails.replace('{shell}', () => shell).replace('{error}', () => t.errors[l.fails!.error]) } : {};
   if (l.inside) {
     const chips = l.words.slice(1).filter(gives).map(chipOf);
     const says = t.inside[l.inside];
@@ -76,9 +77,11 @@ const sameEnd = (a: Span, b: Span): boolean => a.end.line === b.end.line && a.en
  * first row. A construct is a compound command, a pipeline or a list; a command with no name, as nothing runs; what bash takes out of a simple
  * command (`ArgvLine.removed`); and, at the top of a line of a construct over several lines, the rows of that construct on the line (`then`,
  * `done < f`), one run of rows. What lies inside one is no construct of its own, nor is the word of a command, however bash expands it; a command
- * in a substitution is. A string another shell reads is that shell's reading.
+ * in a substitution is. A string another shell reads is that shell's reading. A keyword bash has and this shell lacks is no construct (`plain`).
  */
-export function markHandled<R extends Markable>(rows: readonly R[], lines: readonly ArgvLine[]): void {
+export function markHandled<R extends Markable>(rows: readonly R[], lines: readonly ArgvLine[], plain: readonly Span[] = []): void {
+  // (A keyword of bash that this shell reads as a command, or does not have: its grammar handles nothing there. `plainWords`.)
+  const plainHere = new Set(plain.map(keyOf));
   // (By where it starts: the range of a here-document's redirection ends with its body, its row's with `<<E`. A row of no frame that starts there is that part.)
   const placeOf = (s: Span): string => `${s.start.line}:${s.start.character}`;
   const removed = new Set(lines.flatMap((l) => l.removed.map((r) => placeOf(r.span))));
@@ -86,8 +89,11 @@ export function markHandled<R extends Markable>(rows: readonly R[], lines: reado
   const inside = (r: R): void => r.children.forEach((c) => visit(c, r));
   const visit = (r: R, up: R | undefined): void => {
     if (r.inScript) return;
-    const samePipeline = up?.handled && !up.frame && r.frame === 'group' && sameEnd(up.span, r.span);
-    if (((r.frame === 'command' && !r.receives) || r.frame === 'compound' || r.frame === 'group') && !samePipeline) r.handled = true;
+    // (What a word before it applies to is one construct with it: `time a | b`, `! { a; }`, `coproc N { a; }`, `f() { a; }`.)
+    const applied = up?.handled && (!up.frame || up.kind === 'function') && (r.frame === 'group' || r.frame === 'compound') && sameEnd(up.span, r.span);
+    // (A list of assignments alone runs nothing: `x=1; y=2`, one mark.)
+    const inAssignments = up?.handled && r.frame === 'command' && !r.receives && up.frame === 'group' && up.children.every((c) => !c.frame || (c.frame === 'command' && !c.receives));
+    if (((r.frame === 'command' && !r.receives) || r.frame === 'compound' || r.frame === 'group') && !applied && !inAssignments && !plainHere.has(keyOf(r.span))) r.handled = true;
     else if (isRemoved(r, up)) r.handled = true;
     inside(r);
   };
@@ -95,7 +101,7 @@ export function markHandled<R extends Markable>(rows: readonly R[], lines: reado
   let run: R[] = [];
   const endRun = (): void => {
     const first = run.find((r) => r.comesAt === 1) ?? run[0];
-    if (first) first.handled = true;
+    if (first && !plainHere.has(keyOf(first.span))) first.handled = true;
     run = [];
   };
   for (const r of rows) {
@@ -109,19 +115,16 @@ export function markHandled<R extends Markable>(rows: readonly R[], lines: reado
   }
 }
 
-const within = (outer: Span, inner: Span): boolean => (outer.start.line < inner.start.line || (outer.start.line === inner.start.line && outer.start.character <= inner.start.character))
-  && (outer.end.line > inner.end.line || (outer.end.line === inner.end.line && outer.end.character >= inner.end.character));
-
 /** The row of a construct: the outermost of its range, else the deepest around it, else the outermost that starts where it does (a compound command's first line). */
 function rowOfConstruct<R extends Markable>(rows: readonly R[], span: Span): R | undefined {
   const all = (rs: readonly R[]): R[] => rs.flatMap((r) => [r, ...all(r.children)]);
   const every = all(rows);
   const key = keyOf(span);
   const starts = (r: R): boolean => r.span.start.line === span.start.line && r.span.start.character === span.start.character;
-  return every.find((r) => keyOf(r.span) === key) ?? every.filter((r) => within(r.span, span)).pop() ?? every.find(starts);
+  return every.find((r) => keyOf(r.span) === key) ?? every.filter((r) => spanWithin(span, r.span)).pop() ?? every.find(starts);
 }
 
-/** The mark "not in POSIX sh": on the row of each construct of the line that uses a feature POSIX sh has not. It says what the problems of a sh script say of it. */
+/** The mark "not portable to sh": on the row of each construct of the line that uses a feature of the dialect table. It says what the problems of a sh script say of it. */
 export function markNotPosix<R extends Markable>(rows: readonly R[], found: readonly NotPosix[]): void {
   for (const { span, says } of found) {
     const row = rowOfConstruct(rows, span);

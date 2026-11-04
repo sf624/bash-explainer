@@ -383,7 +383,7 @@ describe('the command-line tool', function () {
     const gh = run(['--check', '--format', 'github', fixture('posix.sh')]);
     assert.strictEqual(gh.code, 1);
     const lines = gh.out.trim().split('\n');
-    assert.match(lines[0], /^::error file=.*posix\.sh,line=3,col=1,endLine=3,endColumn=\d+,title=Bash Explainer%3A pipefail::set -o pipefail is not POSIX sh/);
+    assert.match(lines[0], /^::error file=.*posix\.sh,line=3,col=1,endLine=3,endColumn=\d+,title=Bash Explainer%3A pipefail::set -o pipefail is POSIX only since 2024/);
     const fails = (l: string) => l.startsWith('::error ');
     const first = lines.filter(fails);
     assert.deepStrictEqual(lines.slice(0, first.length), first);

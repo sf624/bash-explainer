@@ -420,7 +420,7 @@ describe('the fields of a word the model knows, read as bash gives them (bug 7 o
     assert.strictEqual(tokenOf("p='a b'; bash -c 'echo $1' $p d", 'd').explanation, 'Positional parameter `$2` of the command string');
     // (After a word whose count is not known, the numbers may shift; with one word, `--` is a parameter too.)
     assert.strictEqual(tokenOf('p="a b"; set -- $u $p d', '$p').explanation, 'expands to `a` (becomes the positional parameter `$2`) and `b` (becomes the positional parameter `$3`) (if this word or one before it expands to more or fewer words, the number shifts)');
-    assert.strictEqual(tokenOf('p="-- a"; set $u $p d', 'd').explanation, 'becomes the positional parameter `$4` (if this word or one before it expands to more or fewer words, the number shifts)');
+    assert.strictEqual(tokenOf('p="-- a"; set $u $p d', 'd').explanation, 'becomes the positional parameter `$3` (if this word or one before it expands to more or fewer words, the number shifts)');
     const script = 'echo "$1|$2"';
     assert.strictEqual(runBash(`p="-- a"; set $p d; echo "$1|$2"; printf '%s' '${script}' > s.sh; p="s.sh a"; bash $p d; p="a b"; bash -c 'echo $0:$1:$2' $p d`, { files: ['.keep'] }).stdout, 'a|d\na|d\na:b:d\n');
   });

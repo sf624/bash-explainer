@@ -120,10 +120,10 @@ export function compoundReads(names: readonly string[], writesOf: (name: string)
 
 /**
  * A command named by a variable (`variables`): each value the script gives it must be a command that changes
- * nothing, or a function (which runs where the walk does not see it: added to `callbacks`); unquoted, not empty
- * (`cmd=; $cmd eval x=2` runs `eval`).
+ * nothing; not a function of the script (`c=f; $c` runs `f` where the walk does not see it, and what it changes is not
+ * known), and, unquoted, not empty (`cmd=; $cmd eval x=2` runs `eval`).
  */
-export function commandNames(variables: readonly { name: string; quoted: boolean }[], writesOf: ReadonlyMap<string, readonly Write[]>, functions: ReadonlySet<string>, callbacks: Set<string>): string | undefined {
+export function commandNames(variables: readonly { name: string; quoted: boolean }[], writesOf: ReadonlyMap<string, readonly Write[]>, functions: ReadonlySet<string>): string | undefined {
   const why = 'a command name not known';
   for (const { name, quoted } of variables) {
     const writes = writesOf.get(name) ?? [];
@@ -131,8 +131,7 @@ export function commandNames(variables: readonly { name: string; quoted: boolean
     for (const w of writes) {
       const v = w.value;
       if (!w.plain || typeof v !== 'object' || !v.fixed || (!quoted && (v.text === '' || /[\s*?[]/.test(v.text)))) return why;
-      if (functions.has(v.text)) callbacks.add(v.text);
-      else if (builtins[v.text] && !SAFE_BUILTINS.has(v.text)) return why;
+      if (functions.has(v.text) || (builtins[v.text] && !SAFE_BUILTINS.has(v.text))) return why;
     }
   }
   return undefined;

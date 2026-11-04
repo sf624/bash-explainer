@@ -13,7 +13,8 @@ import { severalFields } from './globwords';
 import { attribute, option } from './shellstate';
 import type { StateModel } from './state';
 import { changedByBash } from './vars';
-import { type Fields, holedWords, integerParameter, modelValues, patternOfChars, type Piece, type ValueSource, wordFields, wordMeaning, type WordMeaning } from './words';
+import { integerParameter } from './wordsites';
+import { type Fields, holedWords, modelValues, patternOfChars, type Piece, type ValueSource, wordFields, wordMeaning, type WordMeaning } from './words';
 import { declaredWord } from './wordcontexts';
 
 /**
@@ -641,7 +642,14 @@ export type ReceivedPart = { text: string } | { hole: HoleSource; splits: boolea
  * names it matches take its place, and this is the pattern as written (quoted glob characters behind a `\\`, each hole
  * as its code).
  */
-export interface ReceivedField { parts: ReceivedPart[]; min: number; max?: number; pattern?: string }
+export interface ReceivedField {
+  parts: ReceivedPart[]; min: number; max?: number; pattern?: string;
+  /** With `pattern`: what bash does where no file matches, as far as the model knows its options (3.5.8): the pattern `stays` as a word, `none` is left (nullglob), or bash `fails` (failglob, which goes first). */
+  unmatched?: Unmatched;
+}
+
+/** What a pattern gives where no file matches (`ReceivedField.unmatched`). */
+export type Unmatched = 'stays' | 'none' | 'fails';
 
 /** What the hole of `part` (a string: a tilde prefix not known) stands for; `joined`: the word joins the elements of a parameter into one field. */
 function holeSource(part: SyntaxNode | string, h: Hole, joined: boolean): HoleSource {
@@ -669,7 +677,7 @@ function patternShown(f: readonly Atom[], of: ReadonlyMap<Hole, SyntaxNode | str
 }
 
 /**
- * What the word that holds `n` gives the program where it runs, with no environment (the script's own values): the
+ * What the word that holds `n` gives the program where it runs, with no environment (the script's own values, none where the model is `blind`): the
  * fields of `wordFields` and bash's error on it, and where the fields are not known, the fields with a hole for each
  * part whose value is known only when the line runs (`holed`, from `receivedWords`). The one reader of a word for
  * what a program receives (src/argvline.ts). test/argvline.test.ts checks that `receivedWords` gives the fields of
@@ -691,6 +699,12 @@ export function receivedFields(n: SyntaxNode, model: StateModel): Fields & { hol
  * (`misread`), one that may assign IFS other than by arithmetic (`${IFS=:}$x`) or has an unquoted `$!` (F73), an IFS not known where an
  * expansion is split, the cases `wordShapes` leaves out, and a word bash fails on (`${x:?}`; `wordFields` says it).
  */
+const unmatchedOf = ({ glob: { failglob, nullglob } }: WordMeaning): { unmatched?: Unmatched } => {
+  if (failglob === 'on') return { unmatched: 'fails' };
+  if (failglob !== 'off' || nullglob === 'unknown') return {};
+  return { unmatched: nullglob === 'on' ? 'none' : 'stays' };
+};
+
 export function receivedWords(n: SyntaxNode, model: StateModel): ReceivedField[] | undefined {
   const w = model.shell && model.shell !== 'bash' ? undefined : wordMeaning(n, model);
   if (!w) return undefined;
@@ -737,7 +751,7 @@ export function receivedWords(n: SyntaxNode, model: StateModel): ReceivedField[]
       }
       const several = f.some((a) => isHole(a) && (a.splits || (gs.applies !== false && globby(a.hole))));
       const pattern = gs.applies !== false && (isGlob(patternText(f, '')) || isGlob(patternText(f, 'x'))) ? patternShown(f, of) : undefined;
-      out.push({ parts, min: has && !(pattern !== undefined && nullglob) ? 1 : 0, ...(several || pattern !== undefined ? {} : { max: 1 }), ...(pattern !== undefined ? { pattern } : {}) });
+      out.push({ parts, min: has && !(pattern !== undefined && nullglob) ? 1 : 0, ...(several || pattern !== undefined ? {} : { max: 1 }), ...(pattern !== undefined ? { pattern, ...unmatchedOf(w) } : {}) });
     }
   }
   return out;

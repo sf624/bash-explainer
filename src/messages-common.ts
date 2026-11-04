@@ -1,5 +1,6 @@
 // Fragments shared by several facts of the catalog (src/messages.ts and its parts), so that each case is said in one
 // way: code the model does not read (`unread`), a file with no shebang that something else may read (`sourced`).
+import type { Text } from './i18n';
 
 /**
  * The clause of a fact whose param `unread` says that a path before here ran code the model does not read
@@ -68,6 +69,12 @@ export function inTrap(trap: boolean | undefined, [ja, en]: readonly [string, st
     `${ja}。ここはトラップの動作で、トラップが起きた場所で実行されるので、関数の中のこともあれば、関数の外のこともあります`,
     `${en}. This is a trap's action: it runs where the trap fires, which may be inside a function or outside one`] : [ja, en];
 }
+
+/** The badge of a name that may be a function of a file read (`NameFacts.sourced`), in place of the program's. */
+export const SOURCED_NAME: { word: Text; title: Text } = {
+  word: { ja: 'プログラムか関数', en: 'program or function' },
+  title: { ja: '前に読み込んだファイルの関数かもしれない。そうでなければ、PATH から見つけて別のプロセスとして動かすプログラム', en: 'maybe a function of a file read before here; else a program found in PATH and run as another process' },
+};
 
 /** `local-outside-function` in a file with no shebang (`sourced`): a function may read it with `source`, and `local` then works. */
 export const LOCAL_SOURCED: readonly [string, string] = ['関数の中から `source` で読み込まれたときは、`local` はその関数のローカル変数を宣言します', 'when a function reads it with `source`, `local` works there, and declares a variable of that function'];

@@ -37,6 +37,7 @@ const PROBES: Record<string, string> = {
   herestring: 'cat <<< ok',
   ansiC: 'v=$\'a\\tb\'; [ "$v" = "$(printf \'a\\tb\')" ] && echo ok',
   ansiCQuote: 'v=$\'a\\\'b\'; [ "$v" = "a\'b" ] && echo ok',
+  translated: '[ $"ok" = ok ] && echo ok',
   procSub: 'cat <(echo ok)',
   // (A shell that connects reports the refused connection; one that does not, a missing file.)
   netRedirect: '(exec 3</dev/tcp/127.0.0.1/9 && echo onnect) 2>&1 | grep -q onnect && echo ok',
@@ -72,6 +73,7 @@ const PROBES: Record<string, string> = {
   readA: "echo 'a b' | { read -a arr; [ \"${arr[1]}\" = b ] && echo ok; }",
   readP: "echo ok | { read -p '' v; echo $v; }",
   readOpts: 'echo ok | { read -s v; echo $v; }',
+  readD: 'printf "ok:" | { read -d : v; echo $v; }',
   pipefail: 'set -o pipefail && echo ok',
   trapErr: "trap 'true' ERR 2>/dev/null && echo ok",
   errtrace: 'set -E 2>/dev/null && echo ok',
@@ -163,7 +165,7 @@ describe('the dialect detector finds each feature in its own probe', () => {
 
 // The mark of the panel on what POSIX sh lacks (docs/design/panel-redesign.md, P9) says a fact of the construct. What dash and yash do is its oracle
 // (`bash --posix` runs `[[ ]]`, `==` in `[ ]` and `source`): the table is measured above, and POSIX's own forms run in them here.
-describe('the mark "not in POSIX sh"', () => {
+describe('the mark "not portable to sh"', () => {
   const marked = (code: string): string[] => code.split('\n').flatMap((_, line) => {
     const ex = new Analyzer('en').explainLine(parser.parse(code), line, 'bash', { notPosix: true });
     const all = (rows: readonly ModelRow[]): ModelRow[] => rows.flatMap((r) => [r, ...all(r.children)]);
@@ -185,6 +187,39 @@ describe('the mark "not in POSIX sh"', () => {
     'f() { echo ok; }; f', '[ $((1+1)) = 2 ] && echo ok', '. /dev/null; echo ok', 'if true; then echo ok; fi', '(echo ok)', '{ echo ok; }', 'echo ok | cat', 'false || echo ok',
     'cat <<E\nok\nE', 'x=$(echo ok); echo "$x"', 'x=`echo ok`; echo "$x"', 'echo ok 2>/dev/null', 'until true; do :; done; while false; do :; done; echo ok', 'set -e; set -u; echo ok', 'read x <<E\nok\nE\necho "$x"',
   ];
+  it('says "POSIX only since 2024" of what POSIX.1-2024 has, with what fails in the shells of today', () => {
+    const table: [string, string, string][] = [
+      ["echo $'a\\tb'", "a `$'…'` string is POSIX only since 2024 (dash reads a `$` and then a quoted string). Instead, use `printf`.", "`$'…'` の文字列は POSIX では 2024 年版からの書き方です（dash では `$` と引用符の中の文字のままになります）。代わりに `printf` を使う。"],
+      ["echo $'a\\'b'", "a `$'…'` string with `\\'` in it is POSIX only since 2024 (it fails in dash). Instead, use `printf` (dash ends the quote at the `\\'`, and the `'` after it opens another quoted string up to the next `'` of the script, or a syntax error if there is none).", "`\\'` を含む `$'…'` の文字列は POSIX では 2024 年版からの書き方です（dash では動きません）。代わりに `printf` を使う（dash では `\\'` で引用が終わり、その後の `'` からスクリプトの次の `'` までが別の引用になる。次の `'` が無ければ構文エラー）。"],
+      ['case a in a) :;& esac', '`;&` in `case` (fall through) is POSIX only since 2024 (it fails in dash and busybox ash).', '`case` の `;&`（次の分岐へ続ける）は POSIX では 2024 年版からの書き方です（dash・busybox ash では動きません）。'],
+      ['set -o pipefail', '`set -o pipefail` is POSIX only since 2024 (it fails in dash).', '`set -o pipefail` は POSIX では 2024 年版からの書き方です（dash では動きません）。'],
+      ['read -d : x', '`read -d` is POSIX only since 2024 (it fails in dash).', '`read -d` は POSIX では 2024 年版からの書き方です（dash では動きません）。'],
+      ['read -n 1 x', '`read -n` / `-s` / `-t` is not POSIX sh (it fails in dash).', '`read` の `-n` / `-s` / `-t` は POSIX sh にない書き方です（dash では動きません）。'],
+      ['cat <<< x', "a here-string `<<<` is not POSIX sh (it fails in dash and busybox ash). Instead, use `printf '%s\\n' … |` or a here-document.", "ヒアストリング `<<<` は POSIX sh にない書き方です（dash・busybox ash では動きません）。代わりに `printf '%s\\n' … |` やヒアドキュメントを使う。"],
+      ['a=(1)', 'an array is not POSIX sh (it fails in dash and busybox ash). Instead, use the positional parameters (`set -- …`).', '配列は POSIX sh にない書き方です（dash・busybox ash では動きません）。代わりに位置パラメータ（`set -- …`）を使う。'],
+      ['echo $"a"', 'a `$"…"` string is not POSIX sh (in dash and busybox ash the `$` stays, before the string). Instead, write `"…"`.', '`$"…"` の文字列は POSIX sh にない書き方です（dash・busybox ash では `$` がそのまま残ります）。代わりに `"…"` と書く。'],
+    ];
+    const ja = (code: string): string[] => {
+      const ex = new Analyzer('ja').explainLine(parser.parse(code), 0, 'bash', { notPosix: true });
+      const all = (rows: readonly ModelRow[]): ModelRow[] => rows.flatMap((r) => [r, ...all(r.children)]);
+      return all(rowModel(ex, { depth: 1, receives: false }, 'ja').rows).flatMap((r) => r.notPosix ?? []);
+    };
+    for (const [code, en, inJa] of table) {
+      assert.deepStrictEqual(marked(code), [en], code);
+      assert.deepStrictEqual(ja(code), [inJa], code);
+    }
+  });
+
+  it('runs those forms as the row says: dash fails all three, busybox ash runs pipefail and `$\'…\'` and refuses `;&`', function () {
+    const dash = locate(['dash']);
+    const busybox = locate(['busybox']);
+    const running = (argv: string[], code: string) => spawnSync(argv[0], [...argv.slice(1), '-c', code], { timeout: 5000, input: '' });
+    const FORMS: [string, string][] = [["printf '[%s]' $'a\\tb'", '[a\tb]'], ['set -o pipefail && printf ok', 'ok'], ['case a in a) printf 1;& b) printf 2;; esac', '12'], ['printf "ok:" | { read -d : v; printf %s "$v"; }', 'ok']];
+    assert.deepStrictEqual(FORMS.map(([code]) => running(['bash', '--norc'], code).stdout.toString()), FORMS.map(([, out]) => out));
+    if (dash) assert.deepStrictEqual(FORMS.map(([code]) => running([dash], code).stdout.toString()), ["[$a\\tb]", '', '', '']);
+    if (busybox) assert.deepStrictEqual(FORMS.map(([code]) => running([busybox, 'sh'], code).stdout.toString()), ['[a\tb]', 'ok', '', 'ok']);
+  });
+
   it('is not on a form of POSIX sh', () => {
     for (const code of POSIX) assert.deepStrictEqual(marked(code), [], code);
   });

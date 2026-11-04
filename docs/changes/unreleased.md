@@ -20,10 +20,14 @@ The sentence never repeats a problem of the line: where a problem is about the l
 
 A switch under the panel's line box, "What the program receives" / 「プログラムが受け取るもの」, is on by default and remembered once chosen (key `W` when the focus is in the panel).
 
-- Under each command, its words after bash's expansions, quote removal, splitting and globbing, as chips: `grep -h "$USER" /var/log/*.log` receives `grep`, `-h`, ‹current user name›, ‹each file name matching `/var/log/*.log`›. A word received as written is tinted, here and on its row; a value known only when the line runs is in ‹ ›, dashed where it is not always one word. A statement continued on other lines says it of each command it shows.
-- A builtin or a function runs inside bash, with no first word of its name ("runs inside bash, gets:"; `pwd`, "gets no arguments"). `sort` alone "receives only its name"; `$e` with `e=` leaves no word, so nothing runs. An alias's words are its text, not its name. Where bash stops first (`x=; ls ${x:?}`), the line says so: the program does not run.
+- Under each command, its words after bash's expansions, quote removal, splitting and globbing, as chips: `grep -h "$USER" /var/log/*.log` receives `grep`, `-h`, ‹current user name›, ‹each file name matching `/var/log/*.log`, else the pattern itself› ("else no word" with `nullglob`, "else bash stops" with `failglob`). A word received as written is tinted, here and on its row; a value known only when the line runs is in ‹ ›, dashed where it is not always one word. A statement continued on other lines says it of each command it shows.
+- A builtin or a function runs inside bash, with no first word of its name ("runs inside bash, gets:"; `pwd`, "gets no arguments"). `sort` alone "receives only its name"; `{,}` leaves no word, so nothing runs. An alias's words are its text, not its name. Where bash stops first (`x=; ls ${x:?}`), the line says so: the program does not run.
+- After a file read or a text not known (`. ./s.sh`, `eval "$y"`, also `declare -c`, `c=f; $c`), a variable is a value known only when the line runs, not the value the script gave it: `x=1; . ./s.sh; ls $x` receives ‹value of `$x`›. A name the dictionary does not know is "a program, or a function of the file read". With `set -k`, `ls a=b c` receives `ls`, `c`.
+- In a script of another shell, a builtin it lacks is a program there: `declare x=1` in sh "receives" `declare`, `x=1`, as dash says "not found". `[[ a ]]` and `time a` are no constructs of that shell (dash runs `/usr/bin/time`), and `$"hi"` gives `$hi`.
+- A word a host pastes before the shell reads the line is any number of words, in quotes and under bash too: `"${{ env.Y }}"` is ‹the words of `"${{ env.Y }}"`›.
+- In a file with CR LF line ends, the last word of a line holds the CR, as bash reads it: `ls a` receives `a␍`, not tinted.
 - The mark "handled by bash" / 「bash が処理」 is on what no program receives, once per construct, on its first row, at both depths: one on `if … fi`, one on a pipeline, one on each redirection and prefix assignment, none on a word however bash expands it. In a script of another shell it says "handled by the shell". Before, nothing in the panel told what reaches the program from what bash keeps.
-- The mark "not in POSIX sh" / 「POSIX sh にない」 is on the construct only (`[[ ]]`, `==` in `[ ]`, `source`, `local`, `<<<`, `{a,b}`), with the switch on or off, in a bash script too, as a fact of the construct: the problems still show only for the script's own shell. A press opens what the problems of a sh script say of it (which `/bin/sh` fails on it, and what to write instead). A string another shell reads has no marks yet.
+- The mark "not portable to sh" / 「sh に移植できない」 is on the construct only (`[[ ]]`, `==` in `[ ]`, `source`, `local`, `<<<`, `{a,b}`), with the switch on or off, in a bash script too, as a fact of the construct: the problems still show only for the script's own shell. A press opens what the problems of a sh script say of it (which `/bin/sh` fails on it, and what to write instead). A string another shell reads has no marks yet.
 - The button **Key** beside the switch lists, inline in the panel, what each mark on screen means, the levels' marks included, and only those.
 
 ### Quick fixes from the notes
@@ -188,6 +192,10 @@ A string is surely run only where nothing may leave it out: `eval`, `sh -c`, als
 `${x:?}` and `${x?}` may stop the script, as `exit` in a branch does: after `: "${BASH_VERSION:?needs bash}"`, `shopt -s x` is a warning.
 
 So the default `--check` catches a bashism where it surely fails; `--strict` is what catches one in a function, in a branch or after a command that may stop the script.
+
+A row `translated` says a `$"…"` string is not POSIX sh: dash and busybox ash keep the `$`, and POSIX leaves it unspecified. `$'…'`, `;&`, `set -o pipefail` and `read -d` are in POSIX.1-2024 (2.2.4, 2.9.4.3, 2.9.2, `read`): "`set -o pipefail` is POSIX only since 2024 (it fails in dash)". `read -n`, `-s` and `-t` stay "not POSIX sh". The words of these sentences read as one thing now: "a here-string `<<<` is not POSIX sh", before "here-strings `<<<` is not POSIX sh".
+
+A builtin a shell lacks is explained as a program in its scripts, where the table says so: `declare`, `typeset`, `pushd` (neither dash nor busybox ash has them), `let`, `source` (dash has not; in `sh`, not counted on), so `declare x=1; echo "$x"` no longer takes `x` as set. Bash's `print` and `whence`, which only ksh, mksh and zsh have, the same. `local`, in both, stays a builtin.
 
 ### Long lines on the web page wrap between shell words
 

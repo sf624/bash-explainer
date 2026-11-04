@@ -5,7 +5,8 @@ import type { BashVersion } from '../bashversion';
 import { dialectIssues, type Shell } from '../dialect';
 import { type ReadingNode, tokenLines } from '../reading';
 import { descendants, type SyntaxTree } from '../syntax/tree';
-import { spanOf } from '../noteanchors';
+import { sameSpan, spanOf } from '../noteanchors';
+import { placeholderSaid } from '../messages-argv';
 import { regionAt, regionShell, scriptTree, shellLines, shellStart } from './scripts';
 import { stopAt } from '../semantics/scriptstops';
 import { fileRead } from '../semantics/env';
@@ -72,6 +73,8 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
   const names = rows.flatMap((l) => extracted.inserted[l].map(([a, b]) => [lines[l].slice(a, b), original[l].slice(extracted.maps[l][a], extracted.maps[l][b])]))
     .filter(([inShell, file]) => file && inShell !== file);
   const inFile = (text: string) => names.reduce((t, [inShell, file]) => t.split(inShell).join(file), text);
+  // (Those the host pastes as text, which say what they stand for.)
+  const pasted = rows.flatMap((l) => extracted.inserted[l].filter(([, , meaning]) => meaning).map(([a, b]) => lines[l].slice(a, b)));
   const token = (t: Token): Token => {
     const sp = span(t.span);
     const label = relabel(t.label, t.span, !t.labelParts);
@@ -119,8 +122,9 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     ...(ex.anchors ? { anchors: ex.anchors.map(({ rewrite: _r, ...a }) => ({ ...a, text: inFile(a.text), span: span(a.span) })) } : {}),
     ...(ex.reading ? { reading: reading(ex.reading) } : {}),
     ...(ex.sentence ? { sentence: inFile(ex.sentence) } : {}),
-    ...(ex.argv ? { argv: ex.argv.map((l) => argvLine(l, span, inFile)) } : {}),
+    ...(ex.argv ? { argv: ex.argv.map((l) => argvLine(pastedWords(l, pasted, lines, inFile, lang), span, inFile)) } : {}),
     ...(ex.notPosix ? { notPosix: ex.notPosix.map((n) => ({ ...n, span: span(n.span) })) } : {}),
+    ...(ex.plainWords ? { plainWords: ex.plainWords.map(span) } : {}),
   };
 }
 
@@ -284,6 +288,22 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
     out.push({ code: 'injection', severity: severityOf(f.level), message: problemText(f, lang), head: f.head!, startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length, ...conventionOf(f) });
   }
   return out;
+}
+
+/**
+ * A word that holds a placeholder (`${{ env.Y }}`, `$(DST)`) is pasted as text before the shell reads the line, whatever the quotes around it, so no word of it is known: it may be any number
+ * of words (`Y='a" "b'` gives two), one for the whole word as the file has it. The rest of the line is what the shell reads. `placeholders`: their text in the extracted script.
+ */
+function pastedWords(l: ArgvLine, placeholders: readonly string[], lines: readonly string[], inFile: (text: string) => string, lang: 'ja' | 'en'): ArgvLine {
+  const pasted = (w: ArgvWord): boolean => w.parts.some((p) => placeholders.some((h) => ('text' in p ? p.text : p.code).includes(h)));
+  const words = (ws: readonly ArgvWord[]): ArgvWord[] => ws.flatMap((w, i) => {
+    const sameFrom = ws.filter((o) => sameSpan(o.from, w.from));
+    if (!sameFrom.some(pasted)) return [w];
+    if (ws.findIndex((o) => sameSpan(o.from, w.from)) !== i) return [];
+    const code = inFile(lines[w.from.start.line].slice(w.from.start.character, w.from.start.line === w.from.end.line ? w.from.end.character : undefined));
+    return [{ from: w.from, parts: [{ hole: 'word' as const, code, label: placeholderSaid(lang, { kind: 'word', code }) }], count: { min: 0 } }];
+  });
+  return { ...l, words: words(l.words), removed: l.removed.map((r) => (r.word ? { ...r, word: words(r.word) } : r)) };
 }
 
 /** What a program receives (`LineExplanation.argv`), with its places in the file (`span`) and its texts as the file has them (`inFile`: `$(OUT)`, not the extracted `${OUT}`). */

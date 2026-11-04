@@ -336,12 +336,18 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     const out = spawnSync('bash', ['--norc', '-c', cases.map(({ line }) => `(${line}); echo .`).join('\n')], { encoding: 'utf8', input: '' }).stdout;
     const real = out.split('.\n').slice(0, -1).map((o) => o.split('\n').slice(1, -1));
     assert.strictEqual(real.length, cases.length, out);
+    let given = 0;
     cases.forEach(({ line, known }, i) => {
       const tree = parser.parse(line);
       const last = descendants(tree.root, ['command']).at(-1)!.namedChildren.at(-1)!;
-      const fields = fieldsIn(last, shellState(tree, 'bash'));
-      assert.deepStrictEqual(fields, known ? real[i] : undefined, `${line}: bash gives ${JSON.stringify(real[i])}`);
+      const model = shellState(tree, 'bash');
+      const fields = fieldsIn(last, model);
+      // (Where nothing is trusted, `StateModel.blind`, no value is taken.)
+      const says = known && !model.blind;
+      if (says) given++;
+      assert.deepStrictEqual(fields, says ? real[i] : undefined, `${line}: bash gives ${JSON.stringify(real[i])}`);
     });
+    assert.ok(given > 10, `${given} rows known`);
   });
 
   it('a number, an integer default too, gives one word, unless the IFS holds a digit or `-` (bash 5.2)', () => {

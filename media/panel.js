@@ -1209,7 +1209,7 @@
     return li;
   }
 
-  /** What of the list's rows has the focus: its row and the rows around it (`keys`, nearest first), and a row's fold button (`link` -1), its link number `link` or a role's name (`role`); null: nothing there. */
+  /** What of the list's rows has the focus: its row and the rows around it (`keys`, nearest first), and a row's fold button (`link` -1), its link number `link`, a role's name (`role`) or its mark's button (`mark`); null: nothing there. */
   function focusInList() {
     const a = document.activeElement;
     const li = a instanceof HTMLElement && $('tree').contains(a) ? /** @type {HTMLElement | null} */ (a.closest('li[data-path]')) : null;
@@ -1218,18 +1218,18 @@
     for (let up = /** @type {HTMLElement | null | undefined} */ (li); up; up = up.parentElement?.closest('li[data-path]')) keys.push(String(up.dataset.key));
     const row = /** @type {Element} */ (li.querySelector(':scope > .item > .row'));
     const links = Array.from(row.querySelectorAll('.refs a'));
-    return { keys, link: a.matches('button.twisty') ? -1 : links.indexOf(a), role: /** @type {HTMLElement} */ (a).dataset.role };
+    return { keys, link: a.matches('button.twisty') ? -1 : links.indexOf(a), role: /** @type {HTMLElement} */ (a).dataset.role, mark: a.matches('.mk-posix') };
   }
 
   /**
    * The focus again, in the rows just drawn: on what had it, or, when that row is gone (its depth was left) or does not have it now, on the row that
    * owns it: its fold button, or the row itself, so that the next Tab goes on from there and not from the top of the page.
    */
-  function focusAgain(/** @type {{ keys: string[], link: number, role?: string }} */ kept) {
+  function focusAgain(/** @type {{ keys: string[], link: number, role?: string, mark: boolean }} */ kept) {
     const row = kept.keys.map((key) => document.querySelector(`#tree li[data-key="${key}"] > .item > .row`)).find(Boolean);
     if (!(row instanceof HTMLElement)) return;
     const same = row === document.querySelector(`#tree li[data-key="${kept.keys[0]}"] > .item > .row`);
-    const target = same && (kept.role ? row.querySelector(`.role-chip[data-role="${kept.role}"]`) : kept.link >= 0 ? row.querySelectorAll('.refs a')[kept.link] : null);
+    const target = same && (kept.mark ? row.querySelector('.mk-posix') : kept.role ? row.querySelector(`.role-chip[data-role="${kept.role}"]`) : kept.link >= 0 ? row.querySelectorAll('.refs a')[kept.link] : null);
     if (target instanceof HTMLElement) {
       // (Where the Tab order has it: a name kept has the line's stop.)
       if (kept.role) row.querySelectorAll('.role-chip').forEach((c) => { /** @type {HTMLElement} */ (c).tabIndex = c === target ? 0 : -1; });
@@ -1585,7 +1585,8 @@
   // Keys 1 and 2 choose the depth, and W turns the switch, when the focus is in the panel, not while a text is typed (an example's input, the search of the quick reference).
   document.addEventListener('keydown', (e) => {
     const toggles = e.key === 'w' || e.key === 'W';
-    if ((e.key !== '1' && e.key !== '2' && !toggles) || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+    // (A key held down turns the switch once, not at each repeat, which would explain the line again each time.)
+    if ((e.key !== '1' && e.key !== '2' && !toggles) || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
     if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]')) return;
     e.preventDefault();
     press(toggles ? { receives: !receivesShown } : { depth: Number(e.key) });

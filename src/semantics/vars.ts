@@ -193,7 +193,8 @@ export const usuallyInEnvironment = (name: string): boolean => !!known(name)?.en
 /**
  * The variables bash exports from the start with no value (`declare -x OLDPWD`, until `cd`): a shell the script
  * starts gets what the script assigns to them (it keeps an `OLDPWD` that names a directory). The walk's state starts
- * with them so (`Walker.initial`). (`PWD` is exported too, with a value the model does not know: not in the state.)
+ * with them so (`Walker.initial`), and a word read before anything changes them has no known value: bash keeps what
+ * the environment gives (`ModelValues`). (`PWD` is exported too, with a value the model does not know: not in the state.)
  */
 export const EXPORTED_AT_START: readonly string[] = ['OLDPWD'];
 

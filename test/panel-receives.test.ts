@@ -1,4 +1,7 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import type { LineExplanation } from '../src/analyzer-types';
 import { explainHostedLine, extractShell, type HostKind } from '../src/hosts';
@@ -7,6 +10,7 @@ import { keyOf } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { ReceivedChip } from '../src/ui/panelReceives';
 import { type ModelRow, rowModel } from '../src/ui/panelRows';
+import { shellState } from '../src/semantics/state';
 import { corpus } from './support/corpus';
 import { run } from './support/run';
 
@@ -15,10 +19,12 @@ import { run } from './support/run';
 
 const parser = createUnbashParser();
 const OPTIONS = { reading: true, argv: true, notPosix: true, script: 'said' } as const;
-const explain = (src: string, line = 0, lang: Lang = 'en', shell: 'bash' | 'sh' = 'bash'): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line, shell, OPTIONS);
+type Sh = 'bash' | 'sh' | 'dash' | 'ash';
+const explain = (src: string, line = 0, lang: Lang = 'en', shell: Sh = 'bash'): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line, shell, OPTIONS);
 const all = (rows: readonly ModelRow[]): ModelRow[] => rows.flatMap((r) => [r, ...all(r.children)]);
-const rows = (src: string, { line = 0, depth = 1 as 1 | 2, lang = 'en' as Lang, shell = 'bash' as 'bash' | 'sh', receives = true } = {}): ModelRow[] => all(rowModel(explain(src, line, lang, shell), { depth, receives }, lang).rows);
+const rows = (src: string, { line = 0, depth = 1 as 1 | 2, lang = 'en' as Lang, shell = 'bash' as Sh, receives = true } = {}): ModelRow[] => all(rowModel(explain(src, line, lang, shell), { depth, receives }, lang).rows);
 const shown = (c: ReceivedChip): string => c.parts.map((p) => ('text' in p ? p.text : `‹${p.hole}›`)).join('');
+const FILE_READ = 'a program, or a function of the file read, gets:';
 /** What a command's row says it receives: the lead, then the words as chips show them. */
 const line = (src: string, label: string, options: Parameters<typeof rows>[1] = {}): string[] => {
   const r = rows(src, options).filter((x) => x.label === label && x.receives).pop()!.receives!;
@@ -28,7 +34,7 @@ const line = (src: string, label: string, options: Parameters<typeof rows>[1] = 
 describe('the panel: what the program receives', () => {
   it('says the words of a program, the name first, and of a builtin or a function without it', () => {
     const table: [string, string, string[]][] = [
-      ['grep -h "$USER" /var/log/*.log', 'grep', ['receives:', 'grep', '-h', '‹current user name›', '‹each file name matching `/var/log/*.log`›']],
+      ['grep -h "$USER" /var/log/*.log', 'grep', ['receives:', 'grep', '-h', '‹current user name›', '‹each file name matching `/var/log/*.log`, else the pattern itself›']],
       ['sort', 'sort', ['receives only its name:', 'sort']],
       ['tar -czf "$b" ~/d', 'tar', ['receives:', 'tar', '-czf', '‹value of `$b`›', '‹home directory›/d']],
       ['echo "a  b" c', 'echo', ['runs inside bash, gets:', 'a  b', 'c']],
@@ -38,8 +44,8 @@ describe('the panel: what the program receives', () => {
       ['f() { :; }; f a', 'f', ['a function of the shell, gets:', 'a']],
       ['f() { :; }; f', 'f', ['a function of the shell, gets no arguments']],
       ['$cmd a', '$cmd', ['receives:', '‹value of `$cmd`›', 'a']],
-      ['e=; $e a', '$e', ['receives only its name:', 'a']],
-      ['e=; $e', '$e', ['no word is left, so nothing runs']],
+      ['{,} a', '{,}', ['receives only its name:', 'a']],
+      ['{,}', '{,}', ['no word is left, so nothing runs']],
       ['echo ""', 'echo', ['runs inside bash, gets:', '∅']],
     ];
     for (const [src, label, want] of table) assert.deepStrictEqual(line(src, label), want, src);
@@ -71,7 +77,7 @@ describe('the panel: what the program receives', () => {
   it('says where bash stops, so that the program does not run', () => {
     const fails = (src: string, label: string, lang: Lang = 'en') => rows(src, { lang }).filter((x) => x.label === label && x.receives).pop()!.receives!.fails;
     assert.strictEqual(fails('x=; ls ${x:?}', 'ls'), 'bash stops here, so it does not run: a variable is empty or not set (`${x:?}`)');
-    assert.strictEqual(fails('x=; ls ${x:?}', 'ls', 'ja'), 'ここで bash が止まり、実行されない: 変数が空か設定されていない（`${x:?}`）');
+    assert.strictEqual(fails('x=; ls ${x:?}', 'ls', 'ja'), 'bash がここで止まり、実行されない: 変数が空か設定されていない（`${x:?}`）');
     assert.strictEqual(fails('x="a b"; cat < $x', 'cat'), 'bash stops here, so it does not run: the target of a redirection is not one word');
     assert.strictEqual(fails('ls "${x:?no}"', 'ls'), undefined, 'only where the model knows it fails');
     // (bash, the same words: the program does not run.)
@@ -135,7 +141,7 @@ describe('the panel: what the program receives', () => {
     assert.ok(make.rows.some((r) => r.text === 'Write stdout (fd 1) to file `"$(OUT)"` (overwrite)'), make.rows.map((r) => r.text).join('\n'));
     assert.match(make.ex.sentence ?? '', /`"\$\(OUT\)"`/);
     const cp = hosted('makefile', 'all:\n\tcp $< "$@" $(CC) \'$(OUT)\'\n', 1);
-    assert.deepStrictEqual(cp.rows.find((r) => r.label === 'cp')!.receives!.chips.map(shown), ['cp', '‹the words of `$<`›', '‹the words of `"$@"`›', '‹the words of `$(CC)`›', '$(OUT)']);
+    assert.deepStrictEqual(cp.rows.find((r) => r.label === 'cp')!.receives!.chips.map(shown), ['cp', '‹the words of `$<`›', '‹the words of `"$@"`›', '‹the words of `$(CC)`›', '‹the words of `\'$(OUT)\'`›']);
     for (const r of [...make.rows, ...cp.rows]) assert.doesNotMatch([r.text, ...r.more.map((m) => m.map((p) => p.text).join(''))].join(' '), /make_target|make_first|\$\{OUT\}|\$\{CC\}/, r.label);
     // (A warning on a token, as the row draws it, says the file's text too.)
     const marked = hosted('makefile', 'all:\n\t$$((09)) $(OUT)\n', 1);
@@ -168,6 +174,15 @@ describe('the panel: the mark "handled by bash"', () => {
       ['a &', 0, ['a &']],
       ['(a) > f', 0, ['( ‹commands› )']],
       ['time a | b', 0, ['time a | b']],
+      ['f() { a; }', 0, ['f() { ‹commands› }']],
+      ['function f { a; }', 0, ['function f { ‹commands› }']],
+      ['f() ( a )', 0, ['f() ( ‹commands› )']],
+      ['time { a; }', 0, ['time { ‹commands› }']],
+      ['! { a; }', 0, ['! { ‹commands› }']],
+      ['coproc N { a; }', 0, ['coproc N { ‹commands› }']],
+      ['x=1; { a; }', 0, ['x=1; { ‹commands› }', 'x=1', '{ ‹commands› }']],
+      ['x=1; y=2; z=3', 0, ['x=1; y=2; z=3']],
+      ['x=1; y=2; a', 0, ['x=1; y=2; a', 'x=1', 'y=2']],
       ['! a | b', 0, ['! a | b']],
       ['a; ! b | c', 0, ['a; ! b | c', 'b | c']],
       ['cat <<E\nx\nE', 0, ['<<E']],
@@ -200,10 +215,10 @@ describe('the panel: the mark "handled by bash"', () => {
 
   it('says the shell a script is read as', () => {
     const say = (shell: 'bash' | 'sh', lang: Lang) => { const m = rowModel(explain('a | b', 0, lang, shell), { depth: 1, receives: true }, lang).marks; return [m.handled, m.handledSays]; };
-    assert.deepStrictEqual(say('bash', 'en'), ['handled by bash', 'bash handles it; the program never sees it']);
-    assert.deepStrictEqual(say('bash', 'ja'), ['bash が処理', 'bash が処理し、プログラムには渡らない']);
-    assert.deepStrictEqual(say('sh', 'en'), ['handled by the shell', 'the shell handles it; the program never sees it']);
-    assert.deepStrictEqual(say('sh', 'ja'), ['シェルが処理', 'シェルが処理し、プログラムには渡らない']);
+    assert.deepStrictEqual(say('bash', 'en'), ['handled by bash', 'bash handles it; it is not among the program\'s words']);
+    assert.deepStrictEqual(say('bash', 'ja'), ['bash が処理', 'bash が処理し、プログラムの単語にはならない']);
+    assert.deepStrictEqual(say('sh', 'en'), ['handled by the shell', 'the shell handles it; it is not among the program\'s words']);
+    assert.deepStrictEqual(say('sh', 'ja'), ['シェルが処理', 'シェルが処理し、プログラムの単語にはならない']);
     assert.deepStrictEqual(rows('ls | pwd', { shell: 'sh' }).find((r) => r.label === 'pwd')!.receives!.lead, 'runs inside the shell, gets no arguments');
   });
 
@@ -238,7 +253,11 @@ describe('the panel: the mark "handled by bash"', () => {
               assert.ok(!(box < 0 ? open : open.slice(0, box)).some((u) => u.handled), `${where}: ${r.label} twice in one construct`);
             }
           }
-          if (r.frame === 'compound' || (r.frame === 'command' && !r.receives)) {
+          // (What a word before it applies to, `f() { a; }`, and a list of assignments alone have one mark, on the first row.)
+          const parent = up.at(-1);
+          const applied = parent?.handled && (!parent.frame || parent.kind === 'function') && r.span.end.line === parent.span.end.line && r.span.end.character === parent.span.end.character;
+          const inAssignments = parent?.handled && parent.frame === 'group' && parent.children.every((c) => !c.frame || (c.frame === 'command' && !c.receives));
+          if ((r.frame === 'compound' || (r.frame === 'command' && !r.receives)) && !applied && !inAssignments) {
             constructs++;
             assert.ok(r.handled, `${where}: ${r.label} has no mark`);
           }
@@ -264,7 +283,7 @@ describe('the panel: the mark "not in POSIX sh"', () => {
       ['[ a == b ]', [['[ a == b ]', ['`==` in `[ ]` or `test` is not POSIX sh (it fails in dash). Instead, use `=`.']]]],
       ['source f', [['source', ['`source` is not POSIX sh (it fails in dash). Instead, use `.`.']]]],
       ['f() { local x; }', [['local', ['`local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it).']]]],
-      ['cat <<< x', [['<<< x', ['here-strings `<<<` is not POSIX sh (it fails in dash and busybox ash). Instead, use `printf \'%s\\n\' … |` or a here-document.']]]],
+      ['cat <<< x', [['<<< x', ['a here-string `<<<` is not POSIX sh (it fails in dash and busybox ash). Instead, use `printf \'%s\\n\' … |` or a here-document.']]]],
       ['echo {a,b}', [['{a,b}', ['brace expansion `{a,b}` is not POSIX sh (in dash and busybox ash the braces stay, as one word).']]]],
       ['for ((;;)); do\n  a\ndone', [['for (( ; ; )) do ‹commands› done', ['C-style `for (( ; ; ))` is not POSIX sh (it fails in dash and busybox ash). Instead, use `while` with `$(( ))`.']]]],
       ['[ a = b ] && . f; echo "${x:-d}" $((1+2)); a | b; c > d', []],
@@ -284,8 +303,8 @@ describe('the panel: the mark "not in POSIX sh"', () => {
     assert.deepStrictEqual(marks('[[ a ]]', { lang: 'ja' }), [['[[ a ]]', ['`[[ ]]` は POSIX sh にない書き方です（dash では動きません）。代わりに `[ ]` を使う。']]]);
     const key = (src: string, lang: Lang = 'en') => rowModel(explain(src, 0, lang), { depth: 1, receives: true }, lang).key.filter((k) => k.id.startsWith('mark:')).map((k) => [k.id, k.sample]);
     assert.deepStrictEqual(key('ls'), []);
-    assert.deepStrictEqual(key('[[ a ]]'), [['mark:handled', 'handled by bash'], ['mark:notPosix', 'not in POSIX sh']]);
-    assert.deepStrictEqual(key('[[ a ]]', 'ja'), [['mark:handled', 'bash が処理'], ['mark:notPosix', 'POSIX sh にない']]);
+    assert.deepStrictEqual(key('[[ a ]]'), [['mark:handled', 'handled by bash'], ['mark:notPosix', 'not portable to sh']]);
+    assert.deepStrictEqual(key('[[ a ]]', 'ja'), [['mark:handled', 'bash が処理'], ['mark:notPosix', 'sh に移植できない']]);
   });
 
   it('holds each construct of the corpus on one row of the line', function () {
@@ -309,4 +328,227 @@ describe('the panel: the mark "not in POSIX sh"', () => {
     assert.ok(seen > 400, `${seen} marks`);
   });
 
+});
+
+// What the review of #606 ran: the words the panel says against what a recorder gets from real bash, where the model cannot read a file or a text, or where
+// the shell is not bash. A row: the script, its files, the variables of its environment, the line and row, what the recorders print with the status, and what the row says.
+interface RunRow { src: string; files?: Record<string, string>; env?: string; at?: number; label: string; out: string; says: string[] }
+
+describe('the panel: what the program receives, where the model cannot read, against real runs', () => {
+  const recorder = '#!/bin/sh\nprintf "%s" "${0##*/}"\nfor a; do printf " [%s]" "$a"; done\necho\n';
+  const IN_FILE = { 's.sh': 'x=2\n' };
+  const table: RunRow[] = [
+    // A file or a text the model does not read: a variable is a value known only when the line runs.
+    { src: 'x=1; . ./s.sh; ls $x', files: IN_FILE, label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    { src: 'x=1; source ./s.sh; ls $x', files: IN_FILE, label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    { src: 'x=1; eval "$y"; ls $x', env: 'y=x=2', label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    { src: 'x=1; eval "$(cmd)"; ls $x', label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    { src: 'x=1; eval $(cmd); ls $x', label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    { src: '. ./s.sh\nx="a,b c"; ls $x', files: { 's.sh': 'IFS=,\n' }, at: 1, label: 'ls', out: 'ls [a] [b c]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    { src: 'n=x; x=1; unset "$n"; ls "$x"', label: 'ls', out: 'ls []\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    { src: 'declare -c x; x=abc; ls $x', label: 'ls', out: 'ls [Abc]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    { src: 'HOME=/h; . ./s.sh; ls ~', files: { 's.sh': 'HOME=/j\n' }, label: 'ls', out: 'ls [/j]\nstatus=0', says: ['receives:', 'ls', '‹home directory›'] },
+    { src: 'x=1; . ./s.sh; ls a "b c"', files: IN_FILE, label: 'ls', out: 'ls [a] [b c]\nstatus=0', says: ['receives:', 'ls', 'a', 'b c'] },
+    // `set -k`: a word in the form of an assignment is the command's, wherever it stands.
+    { src: 'set -k; ls a=b c', label: 'ls', out: 'ls [c]\nstatus=0', says: ['receives:', 'ls', 'c'] },
+    { src: 'set -k; ls a=b "d=e" f+=1 g[1]=2 =h c', label: 'ls', out: 'ls [d=e] [=h] [c]\nstatus=0', says: ['receives:', 'ls', 'd=e', '=h', 'c'] },
+    { src: 'set -k; set +k; ls a=b c', label: 'ls', out: 'ls [a=b] [c]\nstatus=0', says: ['receives:', 'ls', 'a=b', 'c'] },
+    // A name the dictionary does not know, after a file read: maybe a function of it.
+    { src: '. ./lib.sh\nlg hello', files: { 'lib.sh': 'lg() { printf "lg [%s]\\n" "$1"; }\n' }, at: 1, label: 'lg', out: 'lg [hello]\nstatus=0', says: [FILE_READ, 'hello'] },
+    { src: '. ./lib.sh\nrec hello', files: { 'lib.sh': ':\n' }, at: 1, label: 'rec', out: 'rec [hello]\nstatus=0', says: [FILE_READ, 'hello'] },
+    { src: '. ./lib.sh\nls hello', files: { 'lib.sh': ':\n' }, at: 1, label: 'ls', out: 'ls [hello]\nstatus=0', says: ['receives:', 'ls', 'hello'] },
+    // A command named by a variable may run a function, which changes what the walk does not see.
+    { src: 'c=f; f() { x=2; }; x=1; $c; ls $x', label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    { src: 'c=f; f() { x=2; }; x=1; "$c"; ls $x', label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    { src: 'f() { :; }; c=cmd; x=1; $c; ls $x', label: 'ls', out: 'x=2\nls [1]\nstatus=0', says: ['receives:', 'ls', '1'] },
+    // An inherited `OLDPWD` that names a directory stays.
+    { src: 'ls $OLDPWD', env: 'OLDPWD=/', label: 'ls', out: 'ls [/]\nstatus=0', says: ['receives:', 'ls', '‹previous directory›'] },
+    { src: 'ls $OLDPWD', label: 'ls', out: 'ls\nstatus=0', says: ['receives:', 'ls', '‹previous directory›'] },
+    // CR LF: the CR is in the last word of the line.
+    { src: 'ls a\r\n', label: 'ls', out: 'ls [a\r]\nstatus=0', says: ['receives:', 'ls', 'a␍'] },
+    { src: 'ls a \r\n', label: 'ls', out: 'ls [a] [\r]\nstatus=0', says: ['receives:', 'ls', 'a', '␍'] },
+    { src: 'ls "a b"\r\n', label: 'ls', out: 'ls [a b\r]\nstatus=0', says: ['receives:', 'ls', 'a b␍'] },
+    { src: 'ls {a,b}\r\n', label: 'ls', out: 'ls [a\r] [b\r]\nstatus=0', says: ['receives:', 'ls', 'a␍', 'b␍'] },
+    { src: 'x=1\r\nls "$x"\r\n', at: 1, label: 'ls', out: 'ls [1\r\r]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›␍'] },
+    { src: 'ls a # c\r\n', label: 'ls', out: 'ls [a]\nstatus=0', says: ['receives:', 'ls', 'a'] },
+    { src: 'ls\r\n', label: 'ls', out: 'status=127', says: ['receives only its name:', 'ls␍'] },
+    { src: 'ls *.nomatch\r\n', label: 'ls', out: 'ls [*.nomatch\r]\nstatus=0', says: ['receives:', 'ls', '‹each file name matching `*.nomatch␍`›'] },
+    // Where no file matches.
+    { src: 'ls *.nomatch', label: 'ls', out: 'ls [*.nomatch]\nstatus=0', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else the pattern itself›'] },
+    { src: 'shopt -s nullglob\nls *.nomatch', at: 1, label: 'ls', out: 'ls\nstatus=0', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else no word›'] },
+    { src: 'shopt -s failglob\nls *.nomatch', at: 1, label: 'ls', out: 'status=1', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else bash stops›'] },
+    { src: 'shopt -s nullglob failglob\nls *.nomatch', at: 1, label: 'ls', out: 'status=1', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else bash stops›'] },
+  ];
+
+  let dir: string;
+  before(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-receives-'));
+    fs.mkdirSync(path.join(dir, 'bin'));
+    for (const name of ['ls', 'rec']) fs.writeFileSync(path.join(dir, 'bin', name), recorder, { mode: 0o755 });
+    // (Its output is run, or recorded.)
+    fs.writeFileSync(path.join(dir, 'bin', 'cmd'), '#!/bin/sh\necho x=2\n', { mode: 0o755 });
+  });
+  after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it('says what bash gives each row', () => {
+    table.forEach((row, i) => {
+      const at = path.join(dir, `case-${i}`);
+      fs.mkdirSync(at);
+      fs.writeFileSync(path.join(at, 'script'), row.src);
+      fs.writeFileSync(path.join(at, 'env'), row.env ? `export ${row.env}\n` : '');
+      for (const [name, text] of Object.entries(row.files ?? {})) fs.writeFileSync(path.join(at, name), text);
+    });
+    // (One process for the table; each script in a bash of its own, with no file that matches.)
+    const driver = `B=$(command -v bash); D=$PWD; PATH=$D/bin; i=0; while [ -d "$D/case-$i" ]; do ( cd "$D/case-$i"; unset OLDPWD; . ./env; FUNCNEST=50 "$B" ./script 2>/dev/null; printf 'status=%s\\n' "$?" ); printf '\\036'; i=$((i+1)); done`;
+    const got = run('bash', ['-c', driver], { cwd: dir, timeout: 60000 }).stdout.toString().split('\x1e');
+    table.forEach((row, i) => {
+      assert.strictEqual(got[i].trimEnd(), row.out, `bash: ${JSON.stringify(row.src)}`);
+      assert.deepStrictEqual(line(row.src, row.label, { line: row.at ?? 0 }), row.says, JSON.stringify(row.src));
+    });
+  });
+
+  it('says the same with one analyzer moved through the file', () => {
+    for (const row of table) {
+      const lines = row.src.split('\n').keys();
+      const analyzer = new Analyzer('en');
+      const tree = parser.parse(row.src);
+      const each = [...lines];
+      for (const at of [...each, ...[...each].reverse()]) {
+        const moved = all(rowModel(analyzer.explainLine(tree, at, 'bash', OPTIONS), { depth: 1, receives: true }, 'en').rows);
+        const fresh = rows(row.src, { line: at });
+        assert.deepStrictEqual(moved.map((r) => [r.label, r.receives, r.handled, r.notPosix]), fresh.map((r) => [r.label, r.receives, r.handled, r.notPosix]), `${JSON.stringify(row.src)}, line ${at}`);
+      }
+    }
+  });
+
+  it('says nothing is known of a word that `set -k` may take, and tints no word with a CR', () => {
+    assert.deepStrictEqual(line('if q; then set -k; fi; ls a=b c', 'ls'), ['receives:', 'ls', '‹the words of `a=b`›', 'c']);
+    for (const src of ['ls a\r\n', 'ls a\r']) {
+      const r = rows(src).find((x) => x.label === 'ls')!.receives!;
+      assert.deepStrictEqual(r.chips.map((c) => c.asWritten), [true, undefined], JSON.stringify(src));
+    }
+    assert.strictEqual(shellState(parser.parse('ls a\r\n'), 'bash').blind, 'the script has CR LF line ends');
+  });
+
+  it('says a program or a function, in both languages, on the name too', () => {
+    const src = '. ./lib.sh\nlg hello\nlg';
+    const said = (at: number, lang: Lang) => { const r = rows(src, { line: at, lang }).find((x) => x.label === 'lg')!; return [r.name!.said.kind, r.name!.sourced, r.received, r.receives!.lead]; };
+    assert.deepStrictEqual(said(1, 'en'), ['program or function', true, undefined, FILE_READ]);
+    assert.deepStrictEqual(said(2, 'en'), ['program or function', true, undefined, 'a program, or a function of the file read, gets no arguments']);
+    assert.deepStrictEqual(said(1, 'ja'), ['プログラムか関数', true, undefined, 'プログラムか、読み込んだファイルの関数で、受け取るのは:']);
+    assert.deepStrictEqual(said(2, 'ja'), ['プログラムか関数', true, undefined, 'プログラムか、読み込んだファイルの関数で、引数はなし']);
+    const key = rowModel(explain(src, 1), { depth: 1, receives: true }, 'en').key.find((k) => k.id === 'name:sourced');
+    assert.deepStrictEqual([key?.sample, key?.text], ['program or function', 'a program, or a function of a file read before here']);
+    assert.strictEqual(rowModel(explain('ls'), { depth: 1, receives: true }, 'en').key.some((k) => k.id === 'name:sourced'), false);
+  });
+
+  it('says what is true of a part bash takes out: the program gets it, though not as a word', () => {
+    assert.strictEqual(run('bash', ['-c', 'A=1 printenv A']).stdout.toString(), '1\n');
+    assert.strictEqual(run('bash', ['-c', 'cat <<<x']).stdout.toString(), 'x\n');
+    assert.deepStrictEqual(line('A=1 printenv A', 'printenv'), ['receives:', 'printenv', 'A']);
+    assert.deepStrictEqual(line('cat <<<x', 'cat'), ['receives only its name:', 'cat']);
+    assert.ok(rows('cat <<<x').some((r) => r.label === '<<<x' && r.handled));
+    assert.strictEqual(rowModel(explain('cat <<<x'), { depth: 1, receives: true }, 'en').marks.handledSays, 'bash handles it; it is not among the program\'s words');
+  });
+});
+
+describe('the panel: what the program receives, in a shell that is not bash, against dash and busybox ash', () => {
+  const programs: Record<'dash' | 'ash', string[] | undefined> = (() => {
+    const dirs = [process.env.BASH_EXPLAINER_SHELLS, ...(process.env.PATH ?? '').split(':')].filter(Boolean) as string[];
+    const find = (p: string): string | undefined => dirs.map((d) => path.join(d, p)).find((f) => fs.existsSync(f));
+    const [d, b] = [find('dash'), find('busybox')];
+    return { dash: d ? [d] : undefined, ash: b ? [b, 'sh'] : undefined };
+  })();
+  const running = (sh: 'dash' | 'ash', code: string) => {
+    const r = run(programs[sh]![0], [...programs[sh]!.slice(1), '-c', code], { timeout: 5000 });
+    return { out: r.stdout.toString(), err: r.stderr.toString(), status: r.status };
+  };
+  const PLAIN = (name: string, ...args: string[]): string[] => ['receives:', name, ...args];
+  const INSIDE = (...args: string[]): string[] => ['runs inside the shell, gets:', ...args];
+
+  it('says a builtin the shell lacks is looked for as a program', () => {
+    const table: [string, string, Record<'sh' | 'dash' | 'ash', string[]>, Record<'dash' | 'ash', number>][] = [
+      ['declare x=1', 'declare', { sh: PLAIN('declare', 'x=1'), dash: PLAIN('declare', 'x=1'), ash: PLAIN('declare', 'x=1') }, { dash: 127, ash: 127 }],
+      ['typeset x=1', 'typeset', { sh: PLAIN('typeset', 'x=1'), dash: PLAIN('typeset', 'x=1'), ash: PLAIN('typeset', 'x=1') }, { dash: 127, ash: 127 }],
+      ['let x=1', 'let', { sh: PLAIN('let', 'x=1'), dash: PLAIN('let', 'x=1'), ash: INSIDE('x=1') }, { dash: 127, ash: 0 }],
+      ['source /dev/null', 'source', { sh: PLAIN('source', '/dev/null'), dash: PLAIN('source', '/dev/null'), ash: INSIDE('/dev/null') }, { dash: 127, ash: 0 }],
+      ['shopt -s x', 'shopt', { sh: PLAIN('shopt', '-s', 'x'), dash: PLAIN('shopt', '-s', 'x'), ash: PLAIN('shopt', '-s', 'x') }, { dash: 127, ash: 127 }],
+      ['mapfile x', 'mapfile', { sh: PLAIN('mapfile', 'x'), dash: PLAIN('mapfile', 'x'), ash: PLAIN('mapfile', 'x') }, { dash: 127, ash: 127 }],
+      ['echo a', 'echo', { sh: INSIDE('a'), dash: INSIDE('a'), ash: INSIDE('a') }, { dash: 0, ash: 0 }],
+    ];
+    for (const [src, label, says, status] of table) {
+      for (const shell of ['sh', 'dash', 'ash'] as const) assert.deepStrictEqual(line(src, label, { shell }), says[shell], `${src} in ${shell}`);
+      for (const sh of ['dash', 'ash'] as const) if (programs[sh]) assert.strictEqual(running(sh, src).status, status[sh], `${src} in ${sh}`);
+    }
+    // (`local`, not POSIX, is a builtin of both: outside a function, each says so.)
+    assert.deepStrictEqual(line('local x', 'local', { shell: 'sh' }), INSIDE('x'));
+    for (const sh of ['dash', 'ash'] as const) if (programs[sh]) assert.match(running(sh, 'local x').err, /not in a function/);
+    // (Nor has bash a builtin the table does not give it: bash says "not found".)
+    assert.deepStrictEqual(line('print a', 'print'), PLAIN('print', 'a'));
+    assert.strictEqual(run('bash', ['-c', 'PATH=/nonexistent; print a']).status, 127);
+  });
+
+  it('says no shell handles a keyword it lacks', () => {
+    const handled = (src: string, shell: Sh): string[] => rows(src, { shell }).filter((r) => r.handled).map((r) => r.label);
+    const table: [string, string[], string[], string[]][] = [
+      ['[[ a ]]', [], [], ['[[ a ]]']],
+      ['time true', [], [], []],
+      ['coproc true', [], [], []],
+      ['if [[ a ]]; then :; fi', ['if ‹condition› then ‹commands› fi'], ['if ‹condition› then ‹commands› fi'], ['if ‹condition› then ‹commands› fi', '[[ a ]]']],
+      ['time a | b', ['a | b'], ['a | b'], ['a | b']],
+    ];
+    for (const [src, sh, dash, ash] of table) assert.deepStrictEqual([handled(src, 'sh'), handled(src, 'dash'), handled(src, 'ash')], [sh, dash, ash], src);
+    assert.deepStrictEqual(handled('[[ a ]]', 'bash'), ['[[ a ]]']);
+    assert.deepStrictEqual(handled('time true', 'bash'), ['time true']);
+    if (programs.dash) {
+      assert.strictEqual(running('dash', '[[ a ]]').status, 127);
+      assert.match(running('dash', '[[ a ]]').err, /\[\[: not found/);
+      assert.doesNotMatch(running('dash', 'command -V time').out, /keyword/);
+    }
+    if (programs.ash) {
+      assert.strictEqual(running('ash', '[[ a ]]').status, 0);
+      assert.doesNotMatch(running('ash', 'command -V time').out, /keyword/);
+      assert.strictEqual(running('ash', 'coproc true').status, 127);
+    }
+  });
+
+  it('reads a `$"…"` as the shell does', () => {
+    for (const shell of ['sh', 'dash', 'ash'] as const) assert.deepStrictEqual(line('printf "[%s]" $"hi"', 'printf', { shell }), INSIDE('[%s]', '$hi'), shell);
+    assert.deepStrictEqual(line('printf "[%s]" $"hi"', 'printf'), ['runs inside bash, gets:', '[%s]', 'hi']);
+    for (const sh of ['dash', 'ash'] as const) if (programs[sh]) assert.strictEqual(running(sh, 'printf "[%s]" $"hi"').out, '[$hi]');
+    assert.strictEqual(run('bash', ['-c', 'printf "[%s]" $"hi"']).stdout.toString(), '[hi]');
+  });
+
+  it('says the shell stops, not bash', () => {
+    const fails = (shell: Sh, lang: Lang) => rows('x=; printf a ${x:?}', { shell, lang }).find((r) => r.label === 'printf')!.receives!.fails;
+    assert.strictEqual(fails('sh', 'en'), 'the shell stops here, so it does not run: a variable is empty or not set (`${x:?}`)');
+    assert.strictEqual(fails('dash', 'ja'), 'シェルがここで止まり、実行されない: 変数が空か設定されていない（`${x:?}`）');
+    assert.strictEqual(fails('bash', 'en'), 'bash stops here, so it does not run: a variable is empty or not set (`${x:?}`)');
+    for (const sh of ['dash', 'ash'] as const) if (programs[sh]) assert.strictEqual(running(sh, 'x=; printf a ${x:?}').out, '');
+  });
+});
+
+describe('the panel: a word a host pastes as text', () => {
+  const hosted = (kind: HostKind, src: string, at: number, label: string): string[] => {
+    const extracted = extractShell(kind, src);
+    const ex = explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, src.split('\n'), at, 'en', undefined, OPTIONS)!;
+    const r = all(rowModel(ex, { depth: 2, receives: true }, 'en').rows).find((x) => x.label === label)!.receives!;
+    return [r.lead, ...r.chips.map((c) => shown(c) + (c.many ? '*' : ''))];
+  };
+  const step = (run: string, shell = ''): string => `on: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - ${shell ? `shell: ${shell}\n        ` : ''}run: ${run}\n`;
+
+  it('is any number of words, under bash too', () => {
+    // (What the runner pastes: `a" "b` makes two words of the one written.)
+    assert.strictEqual(run('bash', ['-c', 'printf "[%s]" "a" "b"']).stdout.toString(), '[a][b]');
+    const words = ['runs inside bash, gets:', '%s', '‹the words of `"${{ env.Y }}"`›*'];
+    assert.deepStrictEqual(hosted('yaml', step('printf %s "${{ env.Y }}"'), 5, 'printf'), words);
+    assert.deepStrictEqual(hosted('yaml', step('printf %s "${{ env.Y }}"', 'bash'), 6, 'printf'), words);
+    assert.deepStrictEqual(hosted('yaml', step('printf %s "${{ env.Y }}" lit "$x"', 'bash'), 6, 'printf'), [...words, 'lit', '‹value of `$x`›']);
+    assert.deepStrictEqual(hosted('yaml', step('echo a${{ env.Y }}b{c,d}'), 5, 'echo'), ['runs inside bash, gets:', '‹the words of `a${{ env.Y }}b{c,d}`›*']);
+    const make = (recipe: string, first = ''): string => `${first}all:\n\t${recipe}\n`;
+    assert.deepStrictEqual(hosted('makefile', make('cp "$(DST)" x', 'SHELL := /bin/bash\n'), 2, 'cp'), ['receives:', 'cp', '‹the words of `"$(DST)"`›*', 'x']);
+    assert.deepStrictEqual(hosted('makefile', make('cp "$(DST)" x'), 1, 'cp'), ['receives:', 'cp', '‹the words of `"$(DST)"`›*', 'x']);
+    // (A variable of the shell is the shell's: `$$f` is `$f` to it.)
+    assert.deepStrictEqual(hosted('makefile', make('f=a; echo "$$f"', 'SHELL := /bin/bash\n'), 2, 'echo'), ['runs inside bash, gets:', 'a']);
+  });
 });

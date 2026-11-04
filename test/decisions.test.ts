@@ -67,6 +67,8 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       "u=1; mapfile -C 'u=2; :' -c 1 arr <<< q", "u=1; readarray -C 'u=2; :' -c 1 arr <<< q", 'u=1; jobs -x eval u=2',
       // (The review of the allow-list's step 4: an empty command name, and a write through a nameref by its target's row.)
       'u=1; cmd=; $cmd eval u=2', 'u=1; declare -n r=FUNCNEST; r=1; g() { u=2; }; f() { g; }; f\n',
+      // (A command named by a variable that runs a function: the review of panel P9.)
+      'c=f; f() { u=2; }; u=1; $c', 'c=f; f() { u=2; }; u=1; "$c"',
     ].map((s) => ({ text: `${s}; ${test('u')}; : M4`.replace('\n; ', '\n'), constructs: [{ id: 1, type: 'if_statement' }] }));
     list.push({ text: 'enable -n exit; exit 2>/dev/null; : M1', constructs: [] });
     // (The recursive call runs the code after `return`, and what it calls: `h`'s body runs.)
