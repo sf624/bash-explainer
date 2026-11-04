@@ -22,17 +22,17 @@ export type PanelTheme = 'dark' | 'light' | 'hc';
 /**
  * The update message for `text` (from the second line of the script `file`), as the extension sends it. `text` may
  * have several lines: its first is explained (a loop over several lines is explained whole from its first line).
- * `wrap`: the line box wraps, as with `editor.wordWrap` on (src/ui/lineBox.ts `wrapsLikeEditor`).
+ * `wrap`: the line box wraps, as with `editor.wordWrap` on (src/ui/lineBox.ts `wrapsLikeEditor`). `at`: the line explained, counted in `text` from 1.
  */
-export function message(lang: Lang, text: string, file: string, wrap = false): unknown {
+export function message(lang: Lang, text: string, file: string, wrap = false, at = 1): unknown {
   const src = `#!/bin/bash\n${text}\n`;
-  const line = text.split('\n')[0];
+  const line = text.split('\n')[at - 1];
   const tree = createUnbashParser().parse(src);
-  const ex = new Analyzer(lang).explainLine(tree, 1, 'bash', { reading: true });
+  const ex = new Analyzer(lang).explainLine(tree, at, 'bash', { reading: true });
   // (The line's problems, as the editor underlines them.)
   const doc = { lines: src.split('\n'), tree };
   const issues = documentIssues(doc, lang, { detected: said('bash') });
-  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, doc, wrap, choice: {}, detected: said('bash'), placement: 'first', animations: true, issues });
+  return panelUpdate({ lang, explanation: ex, file, line: at, lineText: line, doc, wrap, choice: {}, detected: said('bash'), placement: 'first', animations: true, issues });
 }
 
 const HOST = `(function () {
@@ -84,9 +84,9 @@ export interface PanelServer {
 }
 
 /** Serves the panel's page on 127.0.0.1, explaining `line` of the script `file` (its line box wrapped with `wrap`). */
-export async function servePanel(line = SAMPLE, file = 'cleanup.sh', wrap = false): Promise<PanelServer> {
+export async function servePanel(line = SAMPLE, file = 'cleanup.sh', wrap = false, at = 1): Promise<PanelServer> {
   // (The state a host sends: kept from a version before the steps, the layers up to the scripts inside.)
-  const msg = `window.MSGS = ${JSON.stringify({ en: message('en', line, file, wrap), ja: message('ja', line, file, wrap) })};\nwindow.STATE = ${JSON.stringify(panelState({ level: 2 }))};\n`;
+  const msg = `window.MSGS = ${JSON.stringify({ en: message('en', line, file, wrap, at), ja: message('ja', line, file, wrap, at) })};\nwindow.STATE = ${JSON.stringify(panelState({ level: 2 }))};\n`;
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://x');
     const send = (type: string, body: string | Buffer) => res.writeHead(200, { 'Content-Type': type }).end(body);

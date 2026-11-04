@@ -58,7 +58,7 @@ function lineNotExplained(said: Fact, tree: SyntaxTree, line: number, shell: She
     items: code ? [token] : [],
     context: [],
     notes: [said.text],
-    noteInfo: [{ text: said.text, level: said.level, label: said.label, body: said.body, code: said.code }],
+    noteInfo: [{ text: said.text, level: said.level, label: said.label, body: said.body, code: said.code, ...(said.head ? { head: said.head } : {}) }],
     // (Where a line is too deep, it is a problem there: `noteIssues`. A file not read is one problem, not one for each line.)
     ...(code && said.code === 'line-too-deep' ? { anchors: [{ text: said.text, span: token.span }] } : {}),
     examples: [],

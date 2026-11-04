@@ -1,4 +1,8 @@
 import type { NoteLevel } from './levels';
+import type { Note } from './messages';
+
+/** A note that is a problem in the editors: it has its code and its headline (the catalog's types, src/messages-heads.ts, and test/problem-heads.test.ts on the corpus), so that no view reads either as missing. */
+export type ProblemNote = Note & { code: string; head: string };
 
 // The levels of the notes that are no fact of the catalog (src/messages.ts has each fact's): the style checks' and the
 // other problems'. With the catalog, the one source of a note's level; what a level looks like is the level table's

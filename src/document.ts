@@ -170,7 +170,7 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
       for (const { span, rewrite } of onNote.get(n.text) ?? []) {
         const at = span.start.line;
         const issue: DocumentIssue = {
-          code: n.code!, severity: severityOf(n.level), message: problemText(n, lang), head: n.head!, ...pitfallOf(n), ...conventionOf(n),
+          code: n.code, severity: severityOf(n.level), message: problemText(n, lang), head: n.head, ...pitfallOf(n), ...conventionOf(n),
           ...(rewrite ? { fixes: rewrite.map((r) => rewriteFix(r, place)) } : {}),
           startLine: at, startCol: span.start.character, endLine: at, endCol: span.end.line === at ? span.end.character : doc.lines[at].length,
         };
