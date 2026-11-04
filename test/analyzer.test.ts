@@ -243,7 +243,7 @@ describe('statements as bash reads them', () => {
     assert.match(find(e, '${x@Z}', 'expansion').explanation, /bad substitution/);
     assert.match(find(e, 'Z').explanation, /not a transform bash has/);
     assert.strictEqual(find(e, 'Z').kind, 'error');
-    assert.match(find(explain('echo ${x@Z}', 0, 'ja'), 'Z').explanation, /bad substitution/);
+    assert.match(find(explain('echo ${x@Z}', 0, 'ja'), 'Z').explanation, /bash にない変換/);
     // The letters bash has are explained as before.
     assert.match(find(explain('echo ${x@Q}'), '${x@Q}', 'expansion').explanation, /quote it/);
   });

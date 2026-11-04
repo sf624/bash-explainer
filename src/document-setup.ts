@@ -1,4 +1,4 @@
-import { readShell, Shell } from './dialect';
+import { readShell, type ScriptEvidence, Shell, surelyScript } from './dialect';
 import type { Shells, ShellDocument } from './document';
 import { Extracted, extractShell, HostKind, hostKind } from './hosts';
 import { maskCarried } from './messages-levels';
@@ -123,7 +123,11 @@ export function openDocument(text: string, kind: FileKind, parse: (shellText: st
   }, (e) => ({ lines, tree: unreadTree(text, stackFull(e) ? 'too-deep' : 'failed') }));
 }
 
-/** The shell chosen by the user (`forced`), and the one the file says (shebang, ShellCheck directive, file name). */
-export function shellsOf(lines: readonly string[], fileName: string, forced: Shell | undefined): Shells {
-  return { forced, detected: readShell(lines.slice(0, 50).join('\n'), fileName) };
+/**
+ * The shell chosen by the user (`forced`), the one the file says (shebang, ShellCheck directive, file name), and how it is known to be a
+ * script (`given`: who else says it is one, `surelyScript`; a shell chosen says it).
+ */
+export function shellsOf(lines: readonly string[], fileName: string, forced: Shell | undefined, given?: ScriptEvidence): Shells {
+  const head = lines.slice(0, 50).join('\n');
+  return { forced, detected: readShell(head, fileName), script: surelyScript(head, fileName, forced ? 'said' : given) };
 }

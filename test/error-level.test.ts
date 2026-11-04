@@ -73,6 +73,7 @@ const AS_PROGRAM: readonly Way[] = ['direct', 'file'];
 const ROWS: readonly Row[] = [
   // ---- the `failure()` facts
   { id: 'keyword-needs-separator', text: '#!/bin/bash\nif true then echo it-works; fi\n', line: 2, works: 'it-works' },
+  { id: 'syntax-error', text: '#!/bin/bash\necho it-works )\n', line: 2, works: 'it-works' },
   { id: 'bracket-missing-close', text: '#!/bin/bash\nif [ -d / ; then echo it-works; fi\n', line: 2, works: 'it-works' },
   { id: 'bracket-close-glued', text: '#!/bin/bash\nif [ -d /]; then echo it-works; fi\n', line: 2, works: 'it-works' },
   { id: 'test-malformed', text: '#!/bin/bash\nif [ 1 -eq ]; then echo it-works; else echo NO; fi\n', line: 2, error: /expected/ },
@@ -181,7 +182,7 @@ const ROWS: readonly Row[] = [
 
 /** The ids section 3 of docs/design/three-levels.md puts at Error (or at Error in some cases), and the `failure()` facts it left out. */
 const HEADED_FOR_ERROR: readonly string[] = [
-  'keyword-needs-separator', 'bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'find-action-refused', 'unset-readonly',
+  'keyword-needs-separator', 'syntax-error', 'bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'find-action-refused', 'unset-readonly',
   'unset-function-and-variable', 'local-outside-function', 'posix-special-function-name', 'alias-not-expanded-in-script',
   'distro-alias-in-script', 'extglob-in-same-block', 'extglob-turned-off', 'extglob-not-in-new-shell', 'globstar-unsupported',
   'variable-not-in-remote-shell', 'variable-not-passed-by-wrapper', 'variable-not-exported', 'function-not-in-container',

@@ -244,8 +244,7 @@ export function skeleton(n: SyntaxNode): LabelPart[] {
     case 'negated_command': return [code('!'), ...n.namedChildren.flatMap(stage)];
     case 'time_statement': {
       const body = field(n, 'body');
-      const option = field(n, 'option');
-      return [code('time'), ...(option ? [code(option.text)] : []), ...(body ? stage(body) : [])];
+      return [code('time'), ...fields(n, 'option').map((o) => code(o.text)), ...(body ? stage(body) : [])];
     }
     case 'coproc_statement': {
       const name = field(n, 'name');

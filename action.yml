@@ -46,7 +46,8 @@ outputs:
   errors:
     description: >-
       The number of errors: lines that fail every time as written (also where a part of the line says so:
-      `echo $((09))`, `#!/usr/bin/env bash -e`), and constructs the shell lacks.
+      `echo $((09))`, `#!/usr/bin/env bash -e`; a syntax error, in a plain script with a first line, where nothing before it may
+      end the script with status 0 or change how it is read: `exit`, `source`…, even in a function), and constructs the shell lacks.
       Needs a command-line tool with --counts, a release after 0.9.1 (see `package`); 0 with an older one.
     value: ${{ steps.check.outputs.errors }}
   warnings:

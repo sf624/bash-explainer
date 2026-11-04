@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
-import { type AutoShell, readShell, Shell, type ShellReading } from './dialect';
+import { type AutoShell, readShell, Shell, type ShellReading, surelyScript } from './dialect';
 import { autoShellAt, DeadRange, DocumentIssue, diagnosticsFor, explainDocumentLine, issueFilter, type IssueFilter, ShellDocument, Shells, withoutExamples } from './document';
 import { HOST_LANGUAGES, HOST_PATTERNS, kindOfDocument, openDocument, semanticSelector } from './document-setup';
 import { Extracted, extractShell, HostKind } from './hosts';
@@ -184,7 +184,8 @@ export class ExplainService implements vscode.Disposable {
 
   /** The shells a document is explained with: the one chosen (panel, setting) and the one the file says. */
   shells(doc: vscode.TextDocument): Shells {
-    return { forced: this.forcedShell(doc), detected: this.shellReading(doc) };
+    // (The editor's language says it is a script, as a name does, or the document is a host's, which says no syntax error.)
+    return { forced: this.forcedShell(doc), detected: this.shellReading(doc), script: surelyScript(doc.getText(new vscode.Range(0, 0, 50, 0)), doc.fileName, this.forcedShell(doc) ? 'said' : 'name') };
   }
 
   private explainOptions(doc: vscode.TextDocument): ExplainOptions {

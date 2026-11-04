@@ -34,7 +34,7 @@
     {"file":"src/explain/argv.ts","fn":"span","kind":"helper","count":1,"row":"W-L2"},
     {"file":"src/explain/argv.ts","fn":"unsetOperand","kind":"helper","count":3,"row":"W-G1"},
     {"file":"src/explain/argv.ts","fn":"wordParts","kind":"helper","count":1,"row":"W-P1"},
-    {"file":"src/explain/argv.ts","fn":"wrapped","kind":"helper","count":2,"row":"W-L1"},
+    {"file":"src/explain/argv.ts","fn":"wrapped","kind":"helper","count":3,"row":"W-L1"},
     {"file":"src/explain/assignments.ts","fn":"assignment","kind":"helper","count":3,"row":"W-L1"},
     {"file":"src/explain/commands.ts","fn":"commandHead","kind":"helper","count":3,"row":"W-L1"},
     {"file":"src/explain/commands.ts","fn":"commandParts","kind":"helper","count":1,"row":"W-L1"},
@@ -302,6 +302,7 @@
       "uses": [
         {"fn":"inTest","kind":"node-type","count":1},
         {"fn":"readOnlySometimes","kind":"node-type","count":3},
+        {"fn":"surelyRuns","kind":"node-type","count":2,"reason":"the paths that may leave a command out, and `&&` or `||` of a list: the syntax, not what a word becomes"},
         {"fn":"ifsAt","kind":"ifs","count":1,"reason":"the default IFS, read next to the model"},
         {"fn":"inArithmetic","kind":"node-type","count":1}
       ]
@@ -380,13 +381,6 @@
       ]
     },
     {
-      "file": "src/linesentence.ts",
-      "reason": "what bash reads with the line and what it reads only when it is expanded (a here-document's body, backticks): the syntax, not what a word becomes",
-      "uses": [
-        {"fn":"strayIn","kind":"node-type","count":1}
-      ]
-    },
-    {
       "file": "src/pitfalls.ts",
       "reason": "checks the shape of the source (\"the word is one `$x`\"), not what bash does with it",
       "uses": [
@@ -396,7 +390,7 @@
         {"fn":"REGEX_SPECIAL","kind":"glob-class","count":1,"reason":"regex special characters in the text of a pitfall"},
         {"fn":"braceSpaced","kind":"node-type","count":2},
         {"fn":"comparisonAt","kind":"helper","count":1},
-        {"fn":"pitfallFindings","kind":"node-type","count":3}
+        {"fn":"pitfallFindings","kind":"node-type","count":2}
       ]
     },
     {
@@ -429,6 +423,17 @@
       "uses": [
         {"fn":"roles","kind":"node-type","count":3},
         {"fn":"variable","kind":"node-type","count":3}
+      ]
+    },
+    {
+      "file": "src/semantics/syntaxerror.ts",
+      "reason": "where a parser's error lies and what is read later (an expansion in dash, a function's body, `${ …; }`): the syntax, not what a word becomes",
+      "uses": [
+        {"fn":"ARITHMETIC","kind":"node-type","count":1},
+        {"fn":"bashNames","kind":"node-type","count":1},
+        {"fn":"dashReads","kind":"node-type","count":1},
+        {"fn":"findFault","kind":"node-type","count":1},
+        {"fn":"mayEnd","kind":"helper","count":1,"reason":"the words of a `set` or a `command` before a syntax error, as written: the model trusts nothing in a tree with an error"}
       ]
     },
     {
@@ -645,6 +650,8 @@
       "file": "src/syntax/tree.ts",
       "reason": "the tree model: lists of commands, stray keywords and `$(<file)`, read from the parser's nodes",
       "uses": [
+        {"fn":"braceAsArgument","kind":"node-type","count":1},
+        {"fn":"readWhenExpanded","kind":"node-type","count":1},
         {"fn":"fileContentsOf","kind":"node-type","count":1},
         {"fn":"strayKeyword","kind":"node-type","count":2},
         {"fn":"LIST_HOLDERS","kind":"node-type","count":2}

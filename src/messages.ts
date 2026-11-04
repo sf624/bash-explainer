@@ -4,7 +4,7 @@ import { type Lang, lineLabel, type Text } from './i18n';
 import { codeSpan, shorten } from './label';
 import { alwaysFails, LEVELS, namesLevel, type NoteLevel, severityOf } from './levels';
 import { FACT_HEADS, type Head, STYLE_HEADS } from './messages-heads';
-import { PROBLEM_LEVELS, type ProblemNote, STYLE_LEVELS, type StyleCase, type StyleCode, type TokenEntry } from './messages-levels';
+import { PORTABILITY, PROBLEM_LEVELS, type ProblemNote, STYLE_LEVELS, type StyleCase, type StyleCode, type TokenEntry } from './messages-levels';
 import { TOKEN_TEXTS } from './messages-tokens';
 import { UNREAD } from './messages-unread';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
@@ -16,6 +16,7 @@ import {
   functionNotInNewShellExportText, functionNotInNewShellText, functionNotOnRemoteText, functionShadowedText, sshLocalExpansionText,
   variableNotExportedText, variableNotInRemoteText, variableNotPassedText,
 } from './messages-wrappers';
+import { syntaxErrorText, type SyntaxErrorWhat } from './messages-syntax';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
 import { IDIOM_MESSAGES } from './messages-idioms';
 import {
@@ -229,6 +230,9 @@ export const MESSAGES = {
     `\`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」を出す`,
     `A \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash reports "syntax error near unexpected token"`]),
   { kind: 'checked', probe: 'state#keyword-separator' }),
+  'syntax-error': withBasis(failure<{ what: SyntaxErrorWhat }>(['3.1.1'], syntaxErrorText), { kind: 'checked', probe: 'state#syntax-error' }),
+  // (The same, where only a name says the file is one of bash: another shell may source it, docs/design/three-levels.md.)
+  'syntax-error-if-bash': withBasis({ ...failure<{ what: SyntaxErrorWhat }>(['3.1.1'], syntaxErrorText), level: 'warning' as const }, { kind: 'checked', probe: 'state#syntax-error' }),
   // (4.1: "When the [ form is used, the last argument to the command must be a ]"; 3.7.5: "All builtins return an exit
   // status of 2 to indicate incorrect usage, generally invalid options or missing arguments". The manual's; the probe
   // row's try-it is kept as data, which the views do not show for the manual's facts.)
@@ -795,9 +799,6 @@ export function tokenNote(lang: Lang, { id, level, text }: TokenMark): Note & { 
 export function problemText(n: Note, lang: Lang): string {
   return namesLevel(n.level, n.label, lang) ? `${LEVELS[n.level].mark} ${n.body}` : n.text;
 }
-
-/** The heading of a dialect note on a construct that works differently in the target shell (src/dialect.ts). */
-export const PORTABILITY: Text = { ja: '移植性: ', en: 'Portability: ' };
 
 /** The note of a fact, in `lang`. */
 export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> extends Record<string, never> ? [] : [Params<K>]): Fact {

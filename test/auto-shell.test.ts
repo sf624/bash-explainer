@@ -39,8 +39,8 @@ describe('readShell: the shell a script says and where it says it', () => {
   }
 
   it('shellsOf keeps the reading, and saidShell says none for the default', () => {
-    assert.deepStrictEqual(shellsOf(['#!/bin/dash'], 'a.sh', undefined), { forced: undefined, detected: { shell: 'dash', source: 'shebang' } });
-    assert.deepStrictEqual(shellsOf(['echo'], 'a.zsh', 'sh'), { forced: 'sh', detected: { shell: 'zsh', source: 'filename' } });
+    assert.deepStrictEqual(shellsOf(['#!/bin/dash'], 'a.sh', undefined), { forced: undefined, detected: { shell: 'dash', source: 'shebang' }, script: 'said' });
+    assert.deepStrictEqual(shellsOf(['echo'], 'a.zsh', 'sh'), { forced: 'sh', detected: { shell: 'zsh', source: 'filename' }, script: 'said' });
     const none = shellsOf(['echo'], 'a.sh', undefined);
     assert.deepStrictEqual(none.detected, { shell: 'bash', source: 'default' });
     assert.strictEqual(saidShell(none.detected), undefined);

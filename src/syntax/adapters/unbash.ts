@@ -8,6 +8,7 @@ import type { BashParser, FieldName, Point, SyntaxError, SyntaxNode, SyntaxTree 
 import { type BraceBuilder, bracePieces, type Range } from './braces';
 import { type Joined, nameBefore, prepared } from './continuations';
 import { extglobLike, NUMBER } from './extglob';
+import { whatOf } from './errors';
 import { attachedSubstitutions, type Children, scriptErrors as errorsOf } from './rereads';
 import { BLANKS, DECLARATIONS, HORIZONTAL, IDENTIFIER, type Mut, NO_BRACES, PATTERN_PARTS, scanGap, WORDS } from './tokens';
 import { stackFull } from '../../failures';
@@ -29,7 +30,7 @@ const children = forEachChild as unknown as Children;
 const scriptErrors = (script: U.ParsedScript): U.ParseError[] => errorsOf(script, children);
 
 class Converter {
-  errors: SyntaxError[] = [];
+  errors: Omit<SyntaxError, 'what'>[] = [];
   /** Where the `&` is of a `&>` or `&>>` whose target is a process substitution (`&> >(tee log)`); see `parseScript`. */
   private readonly bothOutputs = new Set<number>();
   /** Where the operator is of a process substitution that is part of a longer word (`a<(:)`); see `parseScript`. */
@@ -145,7 +146,7 @@ class Converter {
 
   // Script and statements
 
-  run(): SyntaxTree {
+  run(): Omit<SyntaxTree, 'errorsOf'> {
     const script = this.parseScript();
     const root = this.node('program', 0, this.text.length);
     this.statements(root, script.commands, this.text.length);
@@ -156,7 +157,7 @@ class Converter {
     this.seal(root, null);
     if (this.joins) this.errors = this.errors.map((e) => ({ ...e, ...this.joins!.span(e) }));
     this.errors.sort((x, y) => x.startIndex - y.startIndex || x.endIndex - y.endIndex);
-    return { text: this.original, root, errors: this.errors, arithmetic: (owner, start, end) => this.arithmetic(owner as Mut, start, end) };
+    return { text: this.original, root, errors: this.errors.map((e) => ({ ...e, what: whatOf(e.message) })), arithmetic: (owner, start, end) => this.arithmetic(owner as Mut, start, end) };
   }
 
   /** `SyntaxTree.arithmetic`: the text read as `(( ))` reads its expression, placed where it is, under `owner`. */
@@ -379,10 +380,8 @@ class Converter {
     const n = this.node('time_statement', t.pos, t.keywordEnd);
     this.tok('time', t.pos, n);
     let end = t.keywordEnd;
-    if (t.posix) {
-      this.node('word', t.posix.pos, t.posix.end, 'option', n);
-      end = t.posix.end;
-    }
+    // (`time -p -- a`: both are read by bash's lexer after the keyword, 3.2.3.)
+    for (const o of [t.posix, t.endOfOptions]) if (o) end = this.node('word', o.pos, o.end, 'option', n).endIndex;
     n.endIndex = end;
     if (!body) return n;
     if (body.type === 'command' && body.children.every((c) => c.field === 'redirect')) {
@@ -1361,7 +1360,17 @@ function treeOf(text: string): SyntaxTree {
   text = maskCarried(text); // (The script's own U+FDD0 and U+FDD1 are masked, as the CRs below are: `maskCarried`.)
   const { masked, carriageReturns, joins, script } = prepared(text, parse, children);
   const tree = new Converter(joins ? joins.text : masked, new Set(carriageReturns), text, joins, script).run();
-  return carriageReturns.length ? { ...tree, carriageReturns } : tree;
+  return { ...tree, errorsOf: (other: string) => readText(other).errors, ...(carriageReturns.length ? { carriageReturns } : {}) };
+}
+
+/** The tree of `text`, or one that says it nests deeper than the parser's stack. */
+function readText(text: string): SyntaxTree {
+  try {
+    return treeOf(text);
+  } catch (e) {
+    if (!stackFull(e)) throw e;
+    return unreadTree(text, 'too-deep');
+  }
 }
 
 /** A tree that reads nothing of `text`, and says why (`SyntaxTree.unread`). What it holds is a parse error, so a string read so makes nothing trusted (src/semantics/trust.ts). */
@@ -1373,14 +1382,10 @@ export function unreadTree(text: string, why: NonNullable<SyntaxTree['unread']>)
 // (The declaration shows as a branch that never runs: it is the getter tsx makes for the export.)
 /* c8 ignore next */
 export function createUnbashParser(): BashParser {
-  return {
+  const parser: BashParser = {
     parse(text: string): SyntaxTree {
-      try {
-        return treeOf(text);
-      } catch (e) {
-        if (!stackFull(e)) throw e;
-        return unreadTree(text, 'too-deep');
-      }
+      return readText(text);
     },
   };
+  return parser;
 }

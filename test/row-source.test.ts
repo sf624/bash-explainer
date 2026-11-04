@@ -174,14 +174,15 @@ describe('one record for what a token\'s row holds', function () {
     assert.strictEqual(readSaid(saidText('comment-plain').ja).said[0].level, undefined);
   });
 
-  it('has no two ids of one text in both languages', () => {
+  // (A pair at two levels has one text: what a file only its name says is a script fails, `bad-substitution-always` and `-if-bash`.)
+  it('has no two ids of one text in both languages, at one level', () => {
     // (The params of an entry stand for themselves; an entry that reads more of one than a string has is left out.)
     const param = new Proxy({}, { get: (_, k) => (typeof k === 'string' ? `<${k}>` : undefined) });
     const seen = new Map<string, string[]>();
     let read = 0;
     for (const [id, entry] of Object.entries(TOKEN_TEXTS)) {
       try {
-        const key = JSON.stringify((entry.text as (p: unknown) => readonly [string, string])(param));
+        const key = JSON.stringify([entry.level, (entry.text as (p: unknown) => readonly [string, string])(param)]);
         seen.set(key, [...seen.get(key) ?? [], id]);
         read++;
       } catch { /* c8 ignore next */ }

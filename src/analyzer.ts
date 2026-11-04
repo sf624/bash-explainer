@@ -34,11 +34,11 @@ import { lineSentence, problemCodes } from './linesentence';
 import { claim, dropLabelEcho, markSaid, markTokens } from './tokenmarks';
 import { LineExplainer, type LineInit, type Walk } from './explain/context';
 import { intersects, isBlockLike, onLine, summaryOf } from './explain/nodes';
-import { arrayKind, resolve } from './explain/reads';
+import { arrayKind, resolve, syntaxFaultOf } from './explain/reads';
 import { runsSeveral, titledExamples, wantsExample } from './explain/examples';
 import { commandsSaid, factsSaid, wholeOf } from './explain/whole';
 import { explain, flatten } from './explain/dispatch';
-import { continuationNotes, extglobPitfalls, pipeSubshellPitfalls, statusNotes, tokenErrorNotes, unmatchedGlobPitfalls } from './explain/line-notes';
+import { continuationNotes, extglobPitfalls, pipeSubshellPitfalls, statusNotes, syntaxErrorNotes, tokenErrorNotes, unmatchedGlobPitfalls } from './explain/line-notes';
 
 export { isBlockLike, summaryOf };
 
@@ -100,7 +100,7 @@ export class Analyzer {
     // (How the file is read: a host's code is run as a script, or typed into a terminal. A string read as a script has
     // the model of its file, which this does not change.)
     const state = shellState(tree, shell, { host: opts.hostCommands, run: opts.hostRun, version: opts.bashVersion, ...(opts.host ? { read: fileRead(root, opts.host) } : {}), ...(opts.hostProvided?.length ? { provided: opts.hostProvided } : {}), ...(opts.noShell ? { noShell: true } : {}) });
-    const cx = this.explainer({ opts, root, source: tree.text, line, shell, state, status: statusModel(state, shell), nested: this.nested });
+    const cx = this.explainer({ opts, root, tree, source: tree.text, line, shell, state, status: statusModel(state, shell), nested: this.nested });
     const items = flatten(cx, root);
     // (The tokens of a statement over several lines, `cx.whole`, are finished.)
     const own = items.filter((t) => !Object.isFrozen(t));
@@ -117,6 +117,7 @@ export class Analyzer {
     const before = [
       ...continuationNotes(cx, root, line, items),
       ...tokenErrorNotes(cx, items),
+      ...syntaxErrorNotes(cx, line),
       ...cx.anchored(dialectFound(tree, line, shell ?? 'bash', this.lang, opts.bashVersion)),
     ];
     const walked = alone ? alone.saidNotes : [...new Set(cx.notes)];
@@ -173,7 +174,9 @@ export class Analyzer {
     if (opts.argv) result.argv = argvLines(root, line, cx.state, this.lang);
     // (A string read as a script has none: the line's sentence says the command that reads it.)
     if (opts.sentence && !this.nested) {
-      const said = lineSentence({ root, line, lang: this.lang, status: cx.status, commands: commandsSaid(cx), problems: new Set([...problemCodes(result), ...opts.hostProblems ?? []]), kept: alone?.later.sentences });
+      const fault = syntaxFaultOf(cx);
+      // (A blank line or a comment of the command says nothing, as any.)
+      const said = lineSentence({ root, line, lang: this.lang, status: cx.status, commands: commandsSaid(cx), problems: new Set([...problemCodes(result), ...opts.hostProblems ?? []]), kept: alone?.later.sentences, syntaxError });
       if (said) result.sentence = said.text;
     }
     if (opts.reading) {

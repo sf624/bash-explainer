@@ -6,8 +6,8 @@
 import type { Token } from '../analyzer-types';
 import { hasExtglob } from '../examples/shellwords';
 import { tx } from '../i18n';
-import { alwaysFails } from '../levels';
 import { type Fact, fact, factOf, MESSAGES, tokenNote } from '../messages';
+import { saysProblem } from '../messages-tokens';
 import { statementBefore } from '../rewrite';
 import { bashrcReader, STATEMENTS } from '../semantics/env';
 import { NAME } from '../semantics/walk/shared';
@@ -19,13 +19,20 @@ import { statusFacts, type StatusFact } from '../statusfacts';
 import { ancestor, field, fields, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { intersects, onLine } from './nodes';
-import { shoptAt } from './reads';
+import { shoptAt, syntaxFaultOf } from './reads';
 
 /**
  * The status facts of a script, by line, computed once per status model and tree (both languages): the strings `eval`
  * runs are in the model of the script around them, in trees of their own.
  */
 const statusFactCache = new WeakMap<StatusModel, WeakMap<SyntaxNode, Map<number, StatusFact[]>>>();
+
+/** The syntax error bash stops at (`syntaxFault`), on the line of what it points at: as a problem, unless another says it. */
+export function syntaxErrorNotes(cx: Explainer, line: number): string[] {
+  const fault = syntaxFaultOf(cx);
+  if (!fault || fault.said || fault.node.startPosition.row !== line) return [];
+  return cx.say(fact(cx.lang, cx.opts.script === 'said' ? 'syntax-error' : 'syntax-error-if-bash', { what: fault.what }), fault.node);
+}
 
 /** The notes on where line `line` is: in a here-document or at its end, or in a statement that started on a line before. */
 export function continuationNotes(cx: Explainer, root: SyntaxNode, line: number, items: Token[]): string[] {
@@ -170,7 +177,7 @@ export function extglobPitfalls(cx: Explainer, root: SyntaxNode, line: number): 
 export function tokenErrorNotes(cx: Explainer, items: readonly Token[]): string[] {
   const found: string[] = [];
   const walk = (t: Token) => {
-    for (const m of t.marks ?? []) if (alwaysFails(m.level)) found.push(cx.sayAt(tokenNote(cx.lang, m), t.span));
+    for (const m of t.marks ?? []) if (saysProblem(m)) found.push(cx.sayAt(tokenNote(cx.lang, m), t.span));
     t.children.forEach(walk);
   };
   items.forEach(walk);

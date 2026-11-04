@@ -2,7 +2,7 @@
 import type { CommandSpec } from './argv/spec';
 import type { Basis, TryIt } from './basis';
 import type { BashVersion } from './bashversion';
-import type { Shell } from './dialect';
+import type { ScriptEvidence, Shell } from './dialect';
 import type { SectionMarks } from './examples/marks';
 import type { Interactive } from './examples/rerun';
 import type { HostId, NoShell } from './hosts';
@@ -181,6 +181,10 @@ export interface ExplainOptions {
   hostRun?: HostRun;
   /** Variables the host gives the script, and the names of its placeholders (src/hosts/remap.ts, `hostProvided`). */
   hostProvided?: readonly string[];
+  /**
+   * The file is surely a script (`Shells.script`), so that a syntax error can be said: never a host's code, for now.
+   */
+  script?: ScriptEvidence;
   /**
    * The host runs the line's words with no shell (`ShellRegion.noShell`: Docker's exec form, a Python list of
    * arguments): the model looks the name up as a program (`StateModel.noShell`), and each word is the host's string.

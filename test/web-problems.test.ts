@@ -120,6 +120,19 @@ describe('the web page: the Problems strip', function () {
     await ctx.close();
   });
 
+  it('counts a syntax error, not "No problems" beside a red row', async () => {
+    for (const [text, line] of [['echo ok )', 1], ['echo a\nif true; then', 2], ["echo 'a", 1]] as const) {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+      const page = await ctx.newPage();
+      await open(page, text);
+      await until('the error counted', () => page.locator('#problems-said').textContent(), (t) => t === 'Problems: 1 error', 15000);
+      const rows = page.locator('#problem-list .problem');
+      const tip = await until('the row', () => rows.first().getAttribute('title'), (t) => !!t);
+      assert.match(tip!, new RegExp(`^Ln ${line}: .*a syntax error.*\\(syntax-error\\)$`));
+      await ctx.close();
+    }
+  });
+
   it('says "No problems" alone, with nothing to open or go to', async () => {
     for (const lang of ['en', 'ja'] as const) {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: lang === 'ja' ? 'ja-JP' : 'en-US' });

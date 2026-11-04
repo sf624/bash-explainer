@@ -21,6 +21,7 @@ import { type Explainer, memoKey } from './context';
 import { ansiCString } from './embedded';
 import { andOrList, commandList } from './lists';
 import { has, skeletal } from './nodes';
+import { syntaxFaultOf } from './reads';
 import { fileRedirect, heredoc, herestring, redirected, wholeRedirect } from './redirections';
 import { withValue } from './values';
 import { arithmeticCommand, binary, parenthesized, postfix, regexNode, ternary, test, unary } from './tests';
@@ -29,6 +30,12 @@ import {
   arithmeticExpansion, arithNumber, array, braceWord, casePattern, concatenation, globToken, number, rawString, simpleExpansion, string,
   subscript, variable, word,
 } from './words';
+
+/** What a part the parser could not read says: in the words of the problem, on the lines of the command the shell stops at. */
+function errorText(cx: Explainer, n: SyntaxNode): string {
+  const fault = syntaxFaultOf(cx);
+  return fault && !fault.said && fault.firstRow <= n.startPosition.row && n.startPosition.row <= fault.lastRow ? cx.text('syntax-error-here', { what: fault.what }) : cx.text('not-parsed');
+}
 
 /** What each node type is to bash, where the panel boxes it (`Token.frame`). */
 const FRAMES: Readonly<Partial<Record<SyntaxNode['type'], NonNullable<Token['frame']>>>> = {
@@ -124,7 +131,7 @@ function explainNode(cx: Explainer, n: SyntaxNode): Token {
     case 'coproc_statement': return coprocStatement(cx, n);
     case 'case_statement': return caseStatement(cx, n);
     case 'case_item': return caseItem(cx, n);
-    case 'error': return cx.tok(n, 'error', cx.text('syntax-error'), cx.subs(n.namedChildren));
+    case 'error': return cx.tok(n, 'error', errorText(cx, n), cx.subs(n.namedChildren));
     // Every type the adapters build is explained above or by its parent. This is for a type added to the model
     // before the analyzer learns it: callers explain keywords and operators themselves, and any other node is shown as itself.
     /* c8 ignore start */

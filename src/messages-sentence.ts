@@ -6,6 +6,8 @@
 // the words).
 import { fdName, type RedirectKind } from './dict/syntax';
 import { type Lang, lineLabel } from './i18n';
+import { syntaxErrorWhat } from './messages-syntax';
+import type { SyntaxErrorWhat } from './syntax/tree';
 
 const pick = (lang: Lang, ja: string, en: string): string => (lang === 'ja' ? ja : en);
 /** An English summary inside a sentence, after a name: `Sort lines` is `sort lines` (a first word in capitals, `SQL`, is kept). */
@@ -63,7 +65,12 @@ export const EMPTY = { ja: '空文字列', en: 'the empty string' };
 /** The clauses of a sentence (`S.x(lang, …)`). */
 export const S = {
   /** `if a then b; fi`: the line is a syntax error, whatever it seems to say. */
-  keywordMissing: (lang: Lang, kw: string): string => pick(lang, `bash は構文エラーで止まる（\`${kw}\` の前に \`;\` か改行が要る）`, `bash stops with a syntax error (\`${kw}\` needs a \`;\` or a newline before it)`),
+  keywordMissing: (lang: Lang, kw: string): string => pick(lang, `シェルは構文エラーで止まる（\`${kw}\` の前に \`;\` か改行が要る）`, `the shell stops with a syntax error (\`${kw}\` needs a \`;\` or a newline before it)`),
+  /** `echo ok )`, `if a; then b fi`: the command this line is in is a syntax error, whatever it seems to say. */
+  syntaxStops: (lang: Lang, what: SyntaxErrorWhat): string => {
+    const [ja, en] = syntaxErrorWhat(what);
+    return what.kind === 'unreadable' ? pick(lang, 'シェルは構文エラーで止まる', 'the shell stops with a syntax error') : pick(lang, `シェルは構文エラーで止まる（${ja}）`, `the shell stops with a syntax error (${en})`);
+  },
   /** A command run: its name, what it does (its spec's summary), the options given and what they do, its redirections. */
   runs: (lang: Lang, noun: string, options: string, io: string, status?: number): string => (lang === 'ja'
     ? `${noun}を${options ? `${options}を付けて` : ''}実行する${status === undefined ? '' : `（終了ステータス ${status}）`}${io ? `（${io}）` : ''}`

@@ -1,7 +1,7 @@
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation, NoteAnchor } from './analyzer-types';
 import type { BashVersion } from './bashversion';
-import { type AutoShell, dialectIssues, saidShell, Shell, type ShellReading } from './dialect';
+import { type AutoShell, dialectIssues, saidShell, type ScriptEvidence, Shell, type ShellReading } from './dialect';
 import { parseDirectives, suppressed } from './directives';
 import { withinLine } from './examples/regexguard';
 import { contained } from './failures';
@@ -43,6 +43,8 @@ export interface Shells {
   forced?: Shell;
   /** The shell the file says (shebang, ShellCheck directive, file name) and where: `readShell`'s; its `default` says none. */
   detected?: ShellReading;
+  /** The text is surely a script, and how that is known (`surelyScript`), so that a syntax error can be said, and at what level. */
+  script?: ScriptEvidence;
 }
 
 /** The shell a document is explained as: the one chosen, else the one the file says; undefined for neither (bash). */
@@ -78,7 +80,7 @@ export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line
     return contained(`line ${line + 1}`, () => withinLine(doc.tree.root, () => explainHostedLine(analyzer, doc.tree, extracted, doc.lines, line, lang, shells.forced, opts)), (e) => analyzer.notExplained(doc.tree, line, undefined, e))
       ?? { line, summary: '', items: [], context: [], notes: [], noteInfo: [], examples: [] };
   }
-  return analyzer.explainLine(doc.tree, line, shellOf(shells), opts);
+  return analyzer.explainLine(doc.tree, line, shellOf(shells), shells.script ? { ...opts, script: shells.script } : opts);
 }
 
 /** A here-document operator (`<<EOF`): its line, and its place among the here-documents that start on that line. */
@@ -140,7 +142,7 @@ export function noteAnchors(ex: Pick<LineExplanation, 'anchors'>, n: Note): read
 export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts: ExplainOptions, others: readonly DocumentIssue[] = []): DocumentIssue[] {
   // (Examples and idioms add no warning: the line is explained without them, and without its reading tree.)
   const lean: ExplainOptions = { ...withoutExamples(opts), idioms: false, reading: false, argv: false };
-  const key = JSON.stringify([lang, shells.forced, saidShell(shells.detected), lean, others.map((i) => [i.code, i.startLine, i.startCol, i.endCol, i.message])]);
+  const key = JSON.stringify([lang, shells.forced, saidShell(shells.detected), shells.script, lean, others.map((i) => [i.code, i.startLine, i.startCol, i.endCol, i.message])]);
   let byKey = noteIssueCache.get(doc.tree);
   if (!byKey) noteIssueCache.set(doc.tree, (byKey = new Map()));
   const known = byKey.get(key);

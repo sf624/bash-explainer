@@ -156,6 +156,10 @@ export const COMMAND_TEXTS = {
   'cmd-time-program-no-command': tokenText(() => [
     '実行するコマンドがないので失敗する（GNU の `time` は `missing program to run`、終了ステータス 125）',
     'With no command to run, it fails (GNU `time`: `missing program to run`, status 125)']),
+  /** `time -- ls`: bash reads `--` after the reserved word, and the next word is the command, even if it starts with a dash. */
+  'cmd-time-end-of-options': tokenText(() => [
+    '`time` のオプションはここまで',
+    'the end of the options of `time`']),
   /** `time -p ls`: the option `-p`. */
   'cmd-time-posix-format': tokenText(() => [
     'POSIX 形式で時間を表示する',

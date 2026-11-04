@@ -6,7 +6,7 @@ import type { Example, Kind, Span, Token } from './analyzer-types';
 import { evalArith, intValue } from './arith';
 import { cannotAssign, expansionOps, wellKnownVariables } from './dict/syntax';
 import type { Explainer } from './explain/context';
-import { arrayKind, isAssoc, isInteger, shoptAt } from './explain/reads';
+import { arrayKind, isAssoc, isInteger, shoptAt, surelyRuns } from './explain/reads';
 import { scriptValue } from './explain/values';
 import { stageCountNote } from './explain/where';
 import { globChildren, joinedNote, orderNote, variableNote, varDesc } from './explain/words';
@@ -35,17 +35,27 @@ function inDoubleQuotes(n: SyntaxNode): boolean {
   return false;
 }
 
+/**
+ * What is said of `${…}` that bash always rejects: in bash, a problem where a run surely gets to it (`surelyRuns`), at the level of
+ * how the file is known to be a script (`ScriptEvidence`), or else a warning on its row; in another shell, only what bash does.
+ */
+function badSubstitution(h: Explainer, n: SyntaxNode, why: 'length' | 'flags', [ja, en]: readonly [string, string]): string {
+  if (h.shell && h.shell !== 'bash') return h.s(ja, en);
+  if (!surelyRuns(h, n)) return h.text('bad-substitution-if-run', { why });
+  return h.opts.script === 'said' ? h.text('bad-substitution-always', { why }) : h.text('bad-substitution-if-bash', { why });
+}
+
 /** `${…}`: the overall meaning plus a worked example, broken down into its parts. */
 export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   // `${#a-b}` and `${#a[1]b}`: the length of a name takes no operator. The parser reads `$#` with an operator; bash says "bad substitution".
   const hash = n.children[1];
   const op = field(n, 'operator');
   if (n.type === 'expansion' && hash?.type === 'special_variable_name' && hash.text === '#' && op && /^[\w[]/.test(op.text)) {
-    return h.tok(n, 'error', h.s('パラメータ展開: bash は「bad substitution」のエラーにする（`${#` の後ろに変数名を書いたら、演算子は付けられない）', 'Parameter expansion: bash reports "bad substitution" (a `${#name}` length takes no operator)'));
+    return h.tok(n, 'error', badSubstitution(h, n, 'length', ['パラメータ展開: bash は「bad substitution」のエラーにする（`${#` の後ろに変数名を書いたら、演算子は付けられない）', 'Parameter expansion: bash reports "bad substitution" (a `${#name}` length takes no operator)']));
   }
   // `${(f)var}`: parameter flags are zsh's; bash reads `(f)var` as a name and says "bad substitution" (with zsh as the shell, the dialect check marks the line as not parsed).
   if (n.type === 'expansion' && n.text.startsWith('${(') && h.shell !== 'zsh') {
-    return h.tok(n, 'error', h.s('パラメータ展開: bash は「bad substitution」のエラーにする（`${(` のパラメータフラグは zsh の書き方）', 'Parameter expansion: bash reports "bad substitution" (`${(f)var}` parameter flags are zsh syntax)'));
+    return h.tok(n, 'error', badSubstitution(h, n, 'flags', ['パラメータ展開: bash は「bad substitution」のエラーにする（`${(` のパラメータフラグは zsh の書き方）', 'Parameter expansion: bash reports "bad substitution" (`${(f)var}` parameter flags are zsh syntax)']));
   }
   const summary = expansionSummary(h, n);
   const text = n.text;
@@ -62,7 +72,10 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   }
   const tf = parsed.op === '@' ? transformOf(parsed.parts.find((p) => p.role === 'transform')?.text ?? '', parsed) : undefined;
   if (tf) summary.explanation = h.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
-  else if (parsed.op === '@' && parsed.parts.some((p) => p.role === 'transform')) summary.explanation = h.s('パラメータ展開: bash は「bad substitution」のエラーにする（`@` の後ろの文字が変換の種類ではない）', 'Parameter expansion: bash reports "bad substitution" (the letter after `@` is not a transform)');
+  else if (parsed.op === '@' && parsed.parts.some((p) => p.role === 'transform')) {
+    const op = parsed.parts.find((p) => p.role === 'transform')!.text;
+    summary.explanation = !h.shell || h.shell === 'bash' ? h.text('bad-transform', { op }) : h.s(`パラメータ展開: \`@${op}\` は bash にない変換`, `Parameter expansion: \`@${op}\` is no transform bash has`);
+  }
   if (parsed.op === ':') summary.explanation = h.s('パラメータ展開: ', 'Parameter expansion: ') + substringSummary(h, parsed);
   // `t=${a[@]}`: where the word stays one string, the elements are joined into one.
   const all = parsed.prefix ? undefined : parsed.subscript === '@' || parsed.subscript === '*' ? parsed.subscript : parsed.subscript === undefined && (parsed.name === '@' || parsed.name === '*') ? parsed.name : undefined;
@@ -298,7 +311,7 @@ function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, is
     default: {
       const m = transformOf(t, p);
       // Any letter can come after `@`; bash reports the ones it does not have as a bad substitution.
-      if (!m) return ['error', h.s(`\`${t}\`: bash にない変換（bad substitution になる）`, `\`${t}\`: not a transform bash has (bash reports "bad substitution")`)];
+      if (!m) return ['error', h.s(`\`${t}\`: bash にない変換`, `\`${t}\`: not a transform bash has`)];
       return ['operator', `\`${t}\`: ${m[h.lang === 'ja' ? 0 : 1]}`];
     }
   }

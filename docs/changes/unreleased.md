@@ -60,6 +60,26 @@ In the Meaning and Reading views, the problems of the line come first, under "Pr
 
 On a line inside a construct, the box points to the problems on the construct's line: "↑ Pitfall on line 3: …" goes there. A problem you silenced (`# bash-explainer disable=<code>`, `diagnostics.ignore`) leaves the box and shows below it as a plain note; its row keeps its mark.
 
+### A syntax error is a problem, where it is positively known
+
+A checker that passed `echo ok )` had a hole: `--check` exited 0, and the web page's Problems strip said "No problems" beside a red row. Now such a line is a problem of a plain shell script, in every Problems list, in `--check` and in the Action. It takes `# bash-explainer disable=<code>` and `diagnostics.ignore`, as other problems do.
+
+- How the file is known to be a script decides its level. With a first line, a ShellCheck directive, `--shell`, `-e` or on the web page, where the reader chooses the shell: an Error, code `syntax-error`. With only a name (`.sh`, `.bash`, `.bashrc`…), `--kind` or an editor's language, which another shell's file may have too (`aliases.sh`, sourced by zsh, with `a=(${(f)"$(x)"})` or `for f (a b) echo $f`): a warning, code `syntax-error-if-bash`, with the same text. It is in the box and the Problems list, and only `--strict` fails on it.
+
+- **Compatibility:** `--check` and the Action now fail on the Error, where nothing before it may end the script with status 0 or change how it is read. Hosts are not reported, nor code after an `exit`, a `source` or the other words below, even in a function.
+- It is on the text bash stops at, or on the opening of what is left open: `)` in `echo ok )`, `if` in `if true; then` with no `fi`, `'a` in `echo 'a`.
+- It says what is true, by what bash and dash do, on the path the script takes: if the shell reaches this line, it stops reading there, having run the commands it read in full before; the command it is in, and the others on the line where it starts, do not run. It states no status: `x=(1 2` exits 1, and a file sourced returns to the script that sources it. It says "the shell", as dash runs `#!/bin/sh`, and `-e` has no file.
+- A script in strict mode is checked as any other (`set -e`, `set -u`, `set -euo pipefail`, `#!/bin/bash -e`, `#!/usr/bin/env -S bash -eu`): they stop a script only with a failing status, so a script that works never holds such a line. A script that stops before the line gets the Error all the same, and has already failed.
+- One problem for a file, the first: bash stops there. No second problem where another says the same: `{ a }`, `f() { a }`, `{echo a;}`, `if a then b; fi`.
+- Not said where `bash -n` accepts it: a here-document that ends with the file (bash warns, and runs it), an error in a here-document's body or in backticks (read when they run, and the script goes on), `!` alone, `${ …; }` with bash 5.2 (its own problem says so). In a `#!/bin/sh` script it follows `dash -n`: `[[ a b ]]`, `f() b`, `$(( ) ))` are no syntax errors to dash (`[[` has its own problem). `time -- :`, which bash runs, no longer reads as an error.
+- Not said where the code may never be read, as `bash -n` cannot know: a command before it named `exit`, `exec`, `eval`, `alias`, `trap`, `source`, `.`, `shopt`, `kill`, `logout`, `mapfile` or `readarray` with `-C`, or `set` with `-n` or `-t` (also behind `command` or `builtin`, or read only when it runs, `$cmd`), wherever it is. So a self-extracting script, pip's `'''exec'` wrapper, and `exit 1` in a usage function before a real error are all silent. A script with a real syntax error after such a word gets nothing.
+- Not said where the file may not be a script: a first line that names another program (`#!/usr/bin/env node`), or a shell with `-n`, `-t`, `-s`, `-c` or a long option that may leave the file unread (`#!/bin/bash -s` reads stdin, not the file, and exits 0; `--version`, `--help`); with no first line, a name that is no shell's (`--kind`, `--shell` and an editor's language say it is one), or a name of another shell (`.fish`, `.csh`, `.cshrc`, `.tcsh`, `.tcshrc`, `.zsh-theme`, `.yashrc`, all in VS Code's language for shell scripts, whatever else says it is one); a template marker anywhere (`<%`, `{{`, `@VAR@`, `<< parameters.`); CRLF line ends; a NUL anywhere (bash calls it a binary file, status 126, with one on the first line); and a string read as a script (`bash -c '…'`).
+- A file with no first line that is named `.sh` or `.bash` counts as a script by its name alone, so a text that is no script gets the warning (a Debian doc-base control file named `bash-doc.bash`, 1 of 46 such files on one machine; bash does reject it). It fails only `--strict`.
+- Not said in another file, for now: a Dockerfile, a Makefile, a bats file, GitHub Actions, CircleCI, Markdown, an npm script, a string of Python or Groovy, any other YAML. What runs that code can be another program, or the text is not all of it.
+- "In short" says it on every line of the command the shell refuses that holds code: "The shell stops with a syntax error (`fi` is missing)." Before, it said what the line seemed to do: "If `a` succeeds, runs …". A line after that command still says what it does. The row of what it stops at says the same words: "Syntax error: `)` cannot stand here".
+- It names a token only where `bash -n` and `dash -n` name that token, by a table of more than 2,000 shapes of a fault in test/syntax-error.test.ts: a reserved word or an operator it stops at, what is missing at the end of a file. `echo (hello)` names `hello`, as bash reads `word (` as a function definition, and says that parentheses meant as text need quotes; before, it said that `)` cannot stand there. Elsewhere it says "The shell cannot read this command" (`for x in (a b); do c; done`, `case x y in`).
+- `${(f)var}` and `${#x:-a}` are problems only where a run surely gets to them: the same conditions, and not in a function, a branch, a loop or after `&&` or `||`, as a guard for zsh (`if [ -n "$ZSH_VERSION" ]; then a=(${(f)x}); fi`) runs fine in bash. An Error, code `bad-substitution-always`; with only a name, a warning, code `bad-substitution-if-bash`, as above. Elsewhere the row has a warning's mark and says "if this runs".
+
 ### Errors: a third level of problems
 
 A problem is now an error, a warning or information, as VS Code and SARIF have them. An error is a line that fails every time as written; it starts with ⓧ and the word "Error:" / 「エラー:」, whatever kind of note it is. In VS Code its squiggle and its icon in the Problems panel are the editor's error's, and the file's name turns red in the explorer and its tab. The Language Server gives it severity 1, `--check` prints `error:` (red in a terminal), its JSON `"severity": "error"`, SARIF `"level": "error"`, and the GitHub annotations `::error`, first. The panel, the hover and the web page draw it with VS Code's error icon in the error colour (red); the panel, the hover and the terminal put it before the other notes of the line (the Problems lists keep the order of the lines):
@@ -247,6 +267,12 @@ On a phone, dragging the explanation sheet down left the part of the editor it u
 - The sheet moves more smoothly on a slow phone: a move no longer lays out the page on each frame.
 - A finger on the sheet's header now drags it from the very edge of the screen, in every browser.
 
+### "bad substitution", when it happens
+
+`echo ${x@Z}` said that bash reports "bad substitution". It does so only with a value to transform, even an empty one: the shell then stops (status 1). With none (`x` unset, an element that is not there, no positional parameters), the line prints an empty line. Now the row says so, with the mark of a warning. `${x@w}` too; this is a mark of the row, of which `--check` says nothing. `${(f)var}` and `${#x:-a}` fail whatever `x` is: bash reports "bad substitution", drops what it read with that line, and goes on to the next line, so `|| x` does not run, and a function or a loop stops whole. Only a subshell, `$( )`, a stage of a pipeline or `&` keeps this to itself. So the text states no status.
+
+`nohup let x=09` and `sudo let x=09` said "arithmetic error", but `let` is no program, so they fail to run it (`nohup: failed to run command 'let'`) and read nothing. The problem that says so stays. The words of another builtin behind a wrapper changed too: `sudo source lib.sh` and `timeout 5 cd /tmp` show `/tmp` as "Word `/tmp`", as a program's operand, and `time -p -- ls` has a row for `--`.
+
 ### A part that fails every time, marked as an error
 
 A row of the explanation marks a warning inside its text. It marked every one with `⚠`, also where the line fails every time as written, which the three levels call an error. These now have `ⓧ`, in the panel, the hover, Markdown and the command line's text, and `level: error` in `--format json`:
@@ -278,7 +304,7 @@ With the cursor on `done < file`, the redirection now says what it says on the l
 
 ### A `then` or a `do` with no `;` before it
 
-`if [ -f a ] then …` says its syntax error once, in the note; its row said it too. "In short" now says "Bash stops with a syntax error (`then` needs a `;` or a newline before it)"; it said `If its condition () succeeds, tests the condition in [ … ]`. So does `for x in a b do …`, which it read as a loop over `a`, `b`, `do` and `c`.
+`if [ -f a ] then …` says its syntax error once, in the note; its row said it too. "In short" now says "The shell stops with a syntax error (`then` needs a `;` or a newline before it)"; it said `If its condition () succeeds, tests the condition in [ … ]`. So does `for x in a b do …`, which it read as a loop over `a`, `b`, `do` and `c`.
 
 ### A command named like a JavaScript method
 

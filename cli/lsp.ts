@@ -104,7 +104,7 @@ export function startLanguageServer(io: Io): void {
     if (doc) doc.parsed = undefined;
   }
 
-  const shells = (doc: ShellDocument, uri: string) => shellsOf(doc.lines, fileName(uri), forcedShell(settings));
+  const shells = (doc: ShellDocument, uri: string) => shellsOf(doc.lines, fileName(uri), forcedShell(settings), 'name');
 
   function found(doc: Doc) {
     return diagnosticsFor(() => parse(doc), (d) => shells(d, doc.uri), lang, settings, 'lsp');
