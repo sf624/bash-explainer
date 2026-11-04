@@ -73,6 +73,8 @@ describe('the web page: what the next stage of a pipeline reads is marked, and i
       await page.keyboard.insertText("ps aux | grep nginx | awk '{print $2}'");
       await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('grep nginx'));
       await frames(panel());
+      // (The example of the whole line is folded.)
+      await panel().locator('details.whole-line > summary').click();
       const got = await stable('the marked sections', () => sections(panel()));
       const ja = locale === 'ja-JP';
       assert.deepStrictEqual(got.map((s) => s.said), ja ? [['grep nginx が一致する部分：'], ["awk '{print $2}' が読む部分："]] : [['matched by grep nginx: '], ["read by awk '{print $2}': "]]);
@@ -105,6 +107,7 @@ describe('the web page: what the next stage of a pipeline reads is marked, and i
     await page.keyboard.insertText("ps aux | grep nginx | awk '{print $2}'");
     await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('grep nginx'));
     await frames(panel());
+    await panel().locator('details.whole-line > summary').click();
     await stable('the marked sections', () => sections(panel()));
     const pre = panel().locator('.example pre:has(mark.ex-read)').first();
     await pre.evaluate((p) => { p.scrollLeft = 0; });

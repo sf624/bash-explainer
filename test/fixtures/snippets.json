@@ -1740,6 +1740,7 @@
  "tar -C'/tmp' -xf a.tar",
  "tar -czf out.tgz x",
  "tar -czf out.tgz ~/docs",
+ "tar -czf x y 2>/dev/null",
  "tee >(gzip > f.gz)",
  "terraform plan -chdir=x",
  "terraform plan -var-file=prod.tfvars",

@@ -128,13 +128,13 @@ describe('the panel keeps the row acted on in place', function () {
 
   const track = (panel: Frame, selectors: string[], target: string) => panel.evaluate(`(${TRACK})(${JSON.stringify([selectors, target])})`) as Promise<Track>;
 
-  const rowSel = (view: 'list' | 'tree', path: string) => (view === 'list' ? `#tree li[data-path="${path}"] > .row` : `#reading-tree li[data-path="${path}"] > .trow`);
+  const rowSel = (view: 'list' | 'tree', path: string) => (view === 'list' ? `#tree li[data-path="${path}"] > .item > .row` : `#reading-tree li[data-path="${path}"] > .trow`);
 
 
   /** The rows with parts that are unfolded and drawn, with their tops on the screen (`below`: under the sticky rows). */
   async function foldable(panel: Frame, view: 'list' | 'tree'): Promise<{ path: string; top: number; below: number }[]> {
     return panel.evaluate(`(() => {
-      const items = ${view === 'list'} ? [...document.querySelectorAll('#tree li[data-path]')].filter((li) => li.querySelector(':scope > .body > ul') && !li.classList.contains('collapsed'))
+      const items = ${view === 'list'} ? [...document.querySelectorAll('#tree li[data-path]')].filter((li) => li.querySelector(':scope > .item > .body > ul') && !li.classList.contains('collapsed'))
         : [...document.querySelectorAll('#reading-tree li[aria-expanded="true"]')];
       const below = (${view === 'list'} ? document.getElementById('top') : document.getElementById('layers')).getBoundingClientRect().bottom;
       return items.filter((li) => li.getClientRects().length).map((li) => ({ path: li.dataset.path, top: li.firstElementChild.getBoundingClientRect().top, below }));
@@ -247,7 +247,7 @@ describe('the panel keeps the row acted on in place', function () {
    */
   const screen = (panel: Frame, view: 'list' | 'tree') => panel.evaluate(`(() => {
     const sticky = document.getElementById(${JSON.stringify(view === 'list' ? 'top' : 'layers')}).getBoundingClientRect();
-    const rows = [...document.querySelectorAll(${JSON.stringify(view === 'list' ? '#tree li[data-path] > .row' : '#reading-tree li[role="treeitem"] > .trow')})].filter((r) => {
+    const rows = [...document.querySelectorAll(${JSON.stringify(view === 'list' ? '#tree li[data-path] > .item > .row' : '#reading-tree li[role="treeitem"] > .trow')})].filter((r) => {
       const b = r.getBoundingClientRect();
       return b.height && b.bottom > sticky.bottom && b.top < innerHeight;
     });
@@ -333,7 +333,7 @@ describe('the panel keeps the row acted on in place', function () {
   for (const view of ['list', 'tree'] as const) {
     it(`VS Code's panel, ${view === 'list' ? 'Meaning' : 'Reading'}: the same line drawn again, with other problems or a setting changed, leaves the page and its rows where they are`, async () => {
       const { ctx, panel } = await code.open(view, true);
-      const rows = view === 'list' ? '#tree li[data-path] > .row' : '#reading-tree li[role="treeitem"] > .trow';
+      const rows = view === 'list' ? '#tree li[data-path] > .item > .row' : '#reading-tree li[role="treeitem"] > .trow';
       const tops = () => panel.evaluate(`JSON.stringify([...document.querySelectorAll('${rows}')].map((r) => Math.round(r.getBoundingClientRect().top)))`) as Promise<string>;
       assert.ok(await panel.locator('#line .squiggle').count() > 0, 'the line has problems');
       const max = await panel.evaluate('document.documentElement.scrollHeight - innerHeight') as number;

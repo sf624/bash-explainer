@@ -27,7 +27,7 @@ export interface BoxProblem {
   text: string;
   /** "More": the code of each fix it suggests, the first the one it recommends (`NoteAnchor.rewrite`, P3). */
   fixes: readonly string[];
-  /** The rows of the line it is about, by their paths in the list (`0.1`: the second part of the first row). */
+  /** The rows of the line it is about, by their paths in the list (`RowModel.places`, src/ui/panelRows.ts). */
   rows: readonly string[];
 }
 
@@ -41,11 +41,6 @@ export interface ProblemPointer {
   head: string;
   /** Its place, 0-based. */
   line: number; column: number; endColumn: number;
-}
-
-/** The path of each token, as the list numbers its rows (media/panel.js `item`). */
-function tokenPaths(items: readonly Token[], prefix = ''): Map<Token, string> {
-  return new Map(items.flatMap((t, i) => [[t, `${prefix}${i}`] as const, ...tokenPaths(t.children, `${prefix}${i}.`)]));
 }
 
 /**
@@ -63,13 +58,12 @@ export function isListed(ex: Pick<LineExplanation, 'line' | 'anchors'>, n: Note,
 }
 
 /** The problems of the line, errors first; the notes that are no problems (or were silenced) stay notes. */
-export function boxProblems(ex: LineExplanation, items: readonly Token[], lang: Lang, shown: IssueFilter): BoxProblem[] {
-  const paths = tokenPaths(items);
-  const tokens = [...paths.keys()];
+export function boxProblems(ex: LineExplanation, places: ReadonlyMap<Token, string>, lang: Lang, shown: IssueFilter): BoxProblem[] {
+  const tokens = [...places.keys()];
   return notesByLevel(ex).filter((n) => isListed(ex, n, shown)).map((n) => {
     const { className, codicon } = LEVELS[n.level];
     const anchors = noteAnchors(ex, n);
-    const rows = anchors.map((a) => tokenAtSpan(tokens, a.span)).filter((t) => t !== undefined).map((t) => paths.get(t)!);
+    const rows = anchors.map((a) => tokenAtSpan(tokens, a.span)).filter((t) => t !== undefined).map((t) => places.get(t)!);
     const basis = noteBasis(ex, n.text, lang);
     return {
       level: n.level, className, icon: codicon, word: isNotRead(n.code) ? NOT_READ_WORD[lang] : levelWord(n.level, lang),

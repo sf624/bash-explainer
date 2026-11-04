@@ -17,7 +17,7 @@ const LONG = [
 /** What each Meaning row looks like: its box, its label's, its explanation's, and what is cut or sticks out. */
 const meaningRows = (panel: Frame) => panel.evaluate(`(() => [...document.querySelectorAll('#tree .row')].filter((r) => r.getClientRects().length).map((r) => {
   const box = (e) => { const b = e.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width, height: b.height }; };
-  const label = r.querySelector(':scope > .label');
+  const label = r.querySelector(':scope > .code > .label');
   const text = r.querySelector(':scope > .text');
   const twisty = r.querySelector(':scope > .twisty');
   const cs = getComputedStyle(r);

@@ -10,6 +10,7 @@ import type { StyleCase, StyleCode } from '../src/messages-levels';
 import { TOKEN_TEXTS } from '../src/messages-tokens';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { boxProblems } from '../src/ui/panelProblems';
+import { rowModel } from '../src/ui/panelRows';
 
 // The headline of each problem (docs/design/panel-redesign.md, P7b): one sentence, in both languages, for each case of its params.
 
@@ -159,7 +160,7 @@ describe('the headline of each problem', () => {
         for (let line = 0; line < d.lines.length; line++) {
           const ex = analyzer.explainLine(d.tree, line);
           for (const n of ex.noteInfo.filter(isProblemNote)) assert.ok(n.head, `${n.code} in ${JSON.stringify(text)}`);
-          const box = boxProblems(ex, ex.items, lang, () => true);
+          const box = boxProblems(ex, rowModel(ex, { depth: 1, receives: false }, lang).places, lang, () => true);
           assert.deepStrictEqual(box.map((p) => p.text).sort(), ex.noteInfo.filter(isProblemNote).map((n) => problemText(n, lang)).sort());
           seen += box.length;
           // (A problem with a place is one of the document's problems, with the same text.)

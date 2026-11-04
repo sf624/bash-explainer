@@ -20,8 +20,9 @@ import { type FileKind, openDocument, shellsOf } from '../src/document-setup';
 import { partHover, wholeLine } from '../src/ui/hoverView';
 import { panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
-import type { PanelRow } from '../src/ui/panelRows';
-import { rowPlain, tokenRow } from '../src/ui/tokenRow';
+import { type ModelRow, rowModel } from '../src/ui/panelRows';
+import { placeExamples } from '../src/ui/render';
+import { rowPlain, type TokenRow, tokenRow } from '../src/ui/tokenRow';
 import { main } from '../cli/main';
 import { corpus } from './support/corpus';
 import { detectShell } from '../src/dialect';
@@ -101,7 +102,7 @@ describe('one record for what a token\'s row holds', function () {
 
   it('has the panel draw the record: `item` reads only what a row holds, and no token reaches the page', () => {
     const rowFile = (name: string) => ts.createSourceFile(name, fs.readFileSync(path.join(base, 'src/ui', name), 'utf8'), ts.ScriptTarget.ES2022, true);
-    const held = new Set([...members(rowFile('tokenRow.ts'), 'TokenRow'), ...members(rowFile('panelRows.ts'), 'PanelRow')]);
+    const held = new Set([...members(rowFile('tokenRow.ts'), 'TokenRow'), ...members(rowFile('panelRows.ts'), 'ModelRow')]);
     const text = fs.readFileSync(path.join(base, 'media/panel.js'), 'utf8');
     const sf = ts.createSourceFile('panel.js', text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS);
     let item: ts.FunctionDeclaration | undefined;
@@ -123,8 +124,27 @@ describe('one record for what a token\'s row holds', function () {
     assert.doesNotMatch(text, /\bex\.items\b|\.explanation\.items\b/);
     const msg = panelUpdate({ lang: 'en', explanation: new Analyzer('en').explainLine(createUnbashParser().parse('ls "$x" # y'), 0, 'bash'), file: 'a.sh', line: 0, lineText: 'ls "$x" # y', choice: {}, placement: 'first', animations: true });
     assert.ok(!('items' in msg.explanation));
-    const keys = (r: PanelRow): string[] => [...Object.keys(r), ...r.children.flatMap(keys)];
+    const keys = (r: ModelRow): string[] => [...Object.keys(r), ...r.children.flatMap(keys)];
     assert.deepStrictEqual(msg.rows.flatMap(keys).filter((k) => !held.has(k)), []);
+  });
+
+  it('has one source of which rows there are, and in which order: the row model, which the panel draws as it comes', () => {
+    const text = fs.readFileSync(path.join(base, 'media/panel.js'), 'utf8');
+    const sf = ts.createSourceFile('panel.js', text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS);
+    // (`item` asks a row's parts how many they are and draws them: no filter, no sort, no row of its own.)
+    const asked = new Set<string>();
+    const visit = (n: ts.Node): void => {
+      if (ts.isPropertyAccessExpression(n) && /\bchildren$/.test(n.expression.getText()) && n.expression.getText() === 'part.children') asked.add(n.name.text);
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    assert.deepStrictEqual([...asked].sort(), ['length', 'map']);
+    assert.doesNotMatch(text, /msg\.rows\.(filter|sort|slice|flatMap)|\.frame\s*===|\.comesAt\b/);
+    // (The hosts get the rows of the model, and no second list of tokens.)
+    const src = 'if a | b; then c "$d" 2>/dev/null; fi # y';
+    const ex = new Analyzer('en').explainLine(createUnbashParser().parse(src), 0, 'bash');
+    const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: src, choice: {}, placement: 'first', animations: true });
+    assert.deepStrictEqual(msg.rows, rowModel(placeExamples(ex), { depth: 1, receives: false }, 'en').rows);
   });
 
   it('draws a warning of a row from its level: the text holds no mark, the record has its level and its id', async () => {
@@ -309,16 +329,19 @@ describe('one record for what a token\'s row holds', function () {
       const x = { ex, lang, theme: 'dark' as const, lineText: src, panelLink: 'command:p', lineLink: 'command:l', keys: 'k', placement: 'first' as const };
       const whole = wholeLine(x);
       const msg = panelUpdate({ lang, explanation: ex, file: 'a.sh', line: 0, lineText: src, choice: {}, placement: 'bottom', animations: true });
-      const rowsOf = (rs: PanelRow[]): PanelRow[] => rs.flatMap((r) => [r, ...rowsOf(r.children)]);
+      const rowsOf = (rs: ModelRow[]): ModelRow[] => rs.flatMap((r) => [r, ...rowsOf(r.children)]);
       const sent = rowsOf(msg.rows);
+      const records: TokenRow[] = [];
       const walk = (t: (typeof ex.items)[number]): void => {
         const r = tokenRow(t, lang);
+        records.push(r);
         assert.ok(md.includes(`${rowPlain(r)}`), r.label);
         assert.ok(text.includes(rowPlain(r).replace(/`/g, '')), r.label);
-        assert.ok(sent.some((s) => s.label === r.label && s.text === r.text && s.kind === r.kind), r.label);
         t.children.forEach(walk);
       };
       ex.items.forEach(walk);
+      // (The panel draws the rows of its depth: each of them is the record of a token of the line.)
+      for (const s of sent) assert.ok(records.some((r) => s.label === r.label && s.text === r.text && s.kind === r.kind), s.label);
       assert.ok(whole.includes('grep'));
       // (The part's own hover opens with the same row.)
       assert.ok(partHover(x, [ex.items[0]]).length > 0);

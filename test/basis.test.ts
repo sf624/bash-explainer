@@ -19,7 +19,7 @@ import { basisGate, basisSaid, fact, type FactId, MESSAGES } from '../src/messag
 import { readingNodes } from '../src/reading';
 import { TOKEN_BASES, type TokenBasisId } from '../src/tokenbases';
 import { basisLine, basisMarkdown, noteBasis, readingWithBasis, toPlainMarkdown } from '../src/ui/render';
-import { panelRows } from '../src/ui/panelRows';
+import { rowModel } from '../src/ui/panelRows';
 import { partBasis } from '../src/ui/tokenRow';
 import { allTokens, explain } from './support/explain';
 import { BASIS_COPY, basisCopy, PROBE_KINDS, type ProbeKind, readProbeTable } from './support/probe';
@@ -304,7 +304,7 @@ describe('basis: what an explanation rests on', () => {
     assert.strictEqual(partBasis(allTokens(ex.items).find((t) => t.label === '$HOME')!, 'en'), undefined);
     // (A basis of the manual's with a try-it: none shown, as for a note.)
     assert.strictEqual(partBasis({ tryIt: tok.tryIt }, 'en'), undefined);
-    const rows = allTokens(panelRows(ex.items, 'ja'));
+    const rows = allTokens(rowModel(ex, { depth: 2, receives: false }, 'ja').rows);
     const row = rows.find((t) => t.label === 'BASH_XTRACEFD=7')!;
     assert.strictEqual(row.basis?.label, 'マニュアルの記述と異なる・bash 5.2・5.3 で確認');
     const node = readingNodes(readingWithBasis(ex.reading!, 'ja')).find((n) => n.label === 'BASH_XTRACEFD=7' && n.basis) as { basisShown?: { label: string } };

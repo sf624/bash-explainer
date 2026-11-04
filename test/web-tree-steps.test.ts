@@ -277,12 +277,12 @@ describe('the web page: the steps of the tree view, and motion', function () {
 
     // The list.
     await chooseView(page, 'list');
-    const li = panel.locator('#tree li:has(> .body > ul)').first();
-    await li.locator('> .row > .twisty').click();
+    const li = panel.locator('#tree li:has(> .item > .body > ul)').first();
+    await li.locator('> .item > .row > .twisty').click();
     assert.strictEqual(await li.evaluate((e) => e.classList.contains('collapsed')), true);
     assert.ok(await moving(panel) > 0);
-    assert.strictEqual(await li.locator('> .body').isVisible(), true, 'still drawn while it shrinks');
-    await until('folded', () => li.locator('> .body').isVisible(), (v) => !v, 2000);
+    assert.strictEqual(await li.locator('> .item > .body').isVisible(), true, 'still drawn while it shrinks');
+    await until('folded', () => li.locator('> .item > .body').isVisible(), (v) => !v, 2000);
     await ctx.close();
   });
 
@@ -302,10 +302,10 @@ describe('the web page: the steps of the tree view, and motion', function () {
       assert.strictEqual(await moving(panel), 0);
       assert.strictEqual(await panel.locator('#reading-tree li[data-closing]').count(), 0);
       await chooseView(page, 'list');
-      const li = panel.locator('#tree li:has(> .body > ul)').first();
-      await li.locator('> .row > .twisty').click();
+      const li = panel.locator('#tree li:has(> .item > .body > ul)').first();
+      await li.locator('> .item > .row > .twisty').click();
       assert.strictEqual(await moving(panel), 0);
-      assert.strictEqual(await li.locator('> .body').isVisible(), false);
+      assert.strictEqual(await li.locator('> .item > .body').isVisible(), false);
       await ctx.close();
     });
   }

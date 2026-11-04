@@ -10,13 +10,14 @@ import { keyOf } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { TOKEN_TEXTS } from '../src/messages-tokens';
 import { markedText, textParts } from '../src/tokenmarks';
-import { type ModelRow, type RowOptions, rowModel } from '../src/ui/panelRows';
+import { type ModelRow, type RowOptions, rowModel, wholeLineExamples } from '../src/ui/panelRows';
+import { panelUpdate } from '../src/ui/panelView';
 import { roleOf } from '../src/ui/readingSteps';
 import { placeExamples } from '../src/ui/render';
 import { corpus } from './support/corpus';
 
 // The panel's row model (docs/design/panel-redesign.md, P7a): which rows a line has at each depth, a box around each command, the roles,
-// what a program receives, and the Key. The model is a pure function of the explanation; nothing draws it yet (P7c does).
+// what a program receives, and the Key. The model is a pure function of the explanation; media/panel.js draws it (P7c).
 
 const parser = createUnbashParser();
 const explain = (src: string, line = 0, lang: Lang = 'en'): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line, 'bash', { reading: true, argv: true });
@@ -230,6 +231,82 @@ describe('the panel\'s row model', () => {
       assert.strictEqual(rows[0].frame, 'group');
       assert.strictEqual(rows[0].receives, undefined);
       assert.ok(all(rows).some((r) => r.frame === 'command' && r.receives));
+    });
+  });
+
+  describe('where each token is shown', () => {
+    /** The row at a path. */
+    const at = (rows: readonly ModelRow[], path: string): ModelRow => path.split('.').map(Number).reduce<{ children: readonly ModelRow[] }>((r, i) => r.children[i], { children: rows }) as ModelRow;
+    const placeOf = (src: string, label: string, options = D1) => {
+      const ex = explain(src);
+      const { rows, places } = rowModel(ex, options, 'en');
+      const token = tokens(ex.items).find((t) => t.label === label)!;
+      return at(rows, places.get(token)!).label;
+    };
+
+    it('is the token\'s own row where it has one', () => {
+      assert.strictEqual(placeOf('sort -u f | head', '-u'), '-u');
+      assert.strictEqual(placeOf('sort -u f | head', 'head'), 'head');
+    });
+
+    it('is the row it is folded into: a word made of one expansion, a command with its redirection', () => {
+      const ex = explain('tar -czf x y 2>/dev/null');
+      const { rows, places } = rowModel(ex, D1, 'en');
+      for (const t of ex.items) assert.strictEqual(places.get(t), '0');
+      assert.strictEqual(rows[0].label, 'tar');
+    });
+
+    it('is the nearest row around it where it has none at this depth, and its own at depth 2', () => {
+      const src = 'if [ -f a ]; then echo b; fi';
+      assert.strictEqual(placeOf(src, 'then'), 'if ‹condition› then ‹commands› fi');
+      assert.strictEqual(placeOf(src, 'then', D2), 'then');
+      assert.strictEqual(placeOf('echo "a b"', '"a b"'), '"a b"');
+    });
+
+    it('names a row for every token of the corpus, at both depths', function () {
+      this.timeout(120000);
+      for (const { text } of corpus().snippets.filter((_, i) => i % 5 === 0)) {
+        const ex = explain(text);
+        for (const options of [D1, D2]) {
+          const { rows, places } = rowModel(ex, options, 'en');
+          for (const t of tokens(ex.items)) assert.ok(at(rows, places.get(t)!), `${t.label} in ${text}`);
+        }
+      }
+    });
+  });
+
+  describe('the line box', () => {
+    it('colours each run by the deepest token, and goes to the row that shows it or lies around it', () => {
+      const lineText = '  if [ "$x" ]; then y; fi';
+      const explanation = explain(lineText);
+      const { lineRuns, rows } = panelUpdate({ lang: 'en', explanation, file: 'f', line: 0, lineText, choice: {}, placement: 'first', animations: true });
+      const at = (word: string) => lineRuns.find((r) => r.from <= lineText.indexOf(word) && lineText.indexOf(word) < r.to)!;
+      // (The indent is nobody's.)
+      assert.deepStrictEqual(lineRuns[0], { from: 0, to: 2 });
+      assert.strictEqual(at('$x').kind, 'variable');
+      assert.strictEqual(at('then').row, '0');
+      assert.strictEqual(rows[0].label.startsWith('if'), true);
+      // (Every character is in one run, in order.)
+      assert.strictEqual(lineRuns.at(-1)!.to, lineText.length);
+      lineRuns.slice(1).forEach((r, i) => assert.strictEqual(r.from, lineRuns[i].to));
+    });
+  });
+
+  describe('the example of the whole line', () => {
+    const whole = (src: string) => {
+      const ex = explain(src);
+      return wholeLineExamples(ex).map((e) => e.kind);
+    };
+
+    it('is that of a pipeline that is the line, or a statement of its list', () => {
+      assert.deepStrictEqual(whole('printf "a\\n" | sort'), ['pipeline']);
+      assert.deepStrictEqual(whole('printf "a\\n" | sort; printf "b\\n" | tac'), ['pipeline', 'pipeline']);
+    });
+
+    it('is not that of a pipeline inside a construct of the line, nor any other example', () => {
+      assert.deepStrictEqual(whole('for x in a; do printf "a\\n" | sort; done'), []);
+      assert.deepStrictEqual(whole('y=$(printf "a\\n" | sort)'), []);
+      assert.deepStrictEqual(whole('grep "a.b" f'), []);
     });
   });
 

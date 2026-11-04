@@ -60,7 +60,7 @@ describe('the web page: no request to another site, and offline', function () {
 
     // Pointing at a part highlights it in the editor. The pointer goes on the part's row: the middle of
     // the whole item may fall between rows (a nested list's margin), depending on the fonts.
-    await panel().locator('#tree > li > .row').first().hover();
+    await panel().locator('#tree > li > .item > .row').first().hover();
     const lit = await until('the highlight', () => page.locator('.cm-bx-highlight').allTextContents(), (t) => t.length > 0);
     assert.ok(lit.join('').startsWith('sed -E'), lit.join(''));
 

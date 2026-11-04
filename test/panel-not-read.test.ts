@@ -6,6 +6,7 @@ import type { Lang } from '../src/i18n';
 import { LineExplainer } from '../src/explain/context';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { boxProblems, problemsAround } from '../src/ui/panelProblems';
+import { rowModel } from '../src/ui/panelRows';
 import { PanelServer, servePanel } from './support/panel-page';
 import { until } from './support/site';
 
@@ -39,12 +40,12 @@ describe('a line too deep and a file not read, in the panel', () => {
     it(`boxProblems gives the headline and the word of their own (${lang})`, function () {
       this.timeout(60000);
       const line = tooDeep([0], () => new Analyzer(lang).explainLine(parser.parse(deep), 0));
-      const [p, ...none] = boxProblems(line, line.items, lang, () => true);
+      const [p, ...none] = boxProblems(line, rowModel(line, { depth: 1, receives: false }, lang).places, lang, () => true);
       assert.strictEqual(none.length, 0);
       assert.match(p.head, HEAD.line[lang]);
       assert.strictEqual(p.word, WORD[lang]);
       const file = new Analyzer(lang).explainLine(parser.parse(unreadFile), 3);
-      const [f] = boxProblems(file, file.items, lang, () => true);
+      const [f] = boxProblems(file, rowModel(file, { depth: 1, receives: false }, lang).places, lang, () => true);
       assert.match(f.head, HEAD.file[lang]);
       assert.strictEqual(f.word, WORD[lang]);
     });

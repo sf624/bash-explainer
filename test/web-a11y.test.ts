@@ -165,7 +165,7 @@ describe('the web page: keyboard and screen reader access', function () {
       await page.keyboard.press('F6');
       await until('the explanation', () => focused(page), (f) => f === 'frame:main#main');
       await tabTo(page, (f) => f.startsWith('frame:button.twisty'));
-      const body = panel.locator('#tree > li').first().locator(':scope > .body > ul');
+      const body = panel.locator('#tree > li').first().locator(':scope > .item > .body > ul');
       assert.strictEqual(await body.isVisible(), true);
       await page.keyboard.press('Enter');
       await until('folded', () => first.getAttribute('aria-expanded'), (v) => v === 'false');
@@ -248,6 +248,8 @@ describe('the web page: keyboard and screen reader access', function () {
     it('what is typed in an example\'s box stays, with the focus', async () => {
       const ctx = await context();
       const { page, panel, released } = await withProblemsHeld(ctx);
+      // (The example of the whole line is folded.)
+      await panel.locator('details.whole-line > summary').click();
       const box = panel.locator('.example textarea').first();
       await box.click();
       await page.keyboard.insertText('typed\n');

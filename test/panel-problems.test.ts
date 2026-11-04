@@ -9,6 +9,7 @@ import { defaultSettings, type Settings } from '../src/settings';
 import { failsCheck } from '../src/levels';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { boxProblems, problemsAround } from '../src/ui/panelProblems';
+import { rowModel } from '../src/ui/panelRows';
 import { panelUpdate } from '../src/ui/panelView';
 import { placeExamples } from '../src/ui/render';
 
@@ -118,10 +119,12 @@ describe('the errors of the tokens, as problems', () => {
   });
 });
 
+const DEPTH1 = { depth: 1, receives: false } as const;
+
 describe('the box "Problems on this line"', () => {
   const box = (text: string, line = 0, lang: 'en' | 'ja' = 'en') => {
     const ex = placeExamples(explain(text, line, lang));
-    return boxProblems(ex, ex.items, lang, () => true);
+    return boxProblems(ex, rowModel(ex, DEPTH1, lang).places, lang, () => true);
   };
 
   it('gives each problem its level\'s word and look, its headline, and the whole text under "more"', () => {
@@ -205,16 +208,17 @@ describe('the box "Problems on this line"', () => {
 
   it('links a problem to the rows it is about, by their paths in the list', () => {
     const ex = placeExamples(explain('echo $((09))'));
-    const [p] = boxProblems(ex, ex.items, 'en', () => true);
+    const { rows, places } = rowModel(ex, DEPTH1, 'en');
+    const [p] = boxProblems(ex, places, 'en', () => true);
     assert.strictEqual(p.rows.length, 1);
-    const at = p.rows[0].split('.').map(Number).reduce<{ children: typeof ex.items; label?: string }>((t, i) => t.children[i], { children: ex.items });
+    const at = p.rows[0].split('.').map(Number).reduce<{ children: typeof rows; label?: string }>((t, i) => t.children[i], { children: rows });
     assert.strictEqual(at.label, '09');
     // (About two places: a row each, and one fix for both.)
     const two = box('cp $a b; cp $a c').find((x) => x.fixes.length)!;
     assert.strictEqual(two.rows.length, 2);
     assert.strictEqual(two.fixes.length, 1);
     // (A note about no node has no row: no link.)
-    assert.deepStrictEqual(boxProblems({ ...explain('echo a'), notes: ['⚠ x'], noteInfo: [{ text: '⚠ x', level: 'warning', label: '', body: 'x', head: 'h', code: 'c' }] }, [], 'en', () => true).map((p) => p.rows), [[]]);
+    assert.deepStrictEqual(boxProblems({ ...explain('echo a'), notes: ['⚠ x'], noteInfo: [{ text: '⚠ x', level: 'warning', label: '', body: 'x', head: 'h', code: 'c' }] }, new Map(), 'en', () => true).map((p) => p.rows), [[]]);
   });
 
   it('points to a problem on the line of a construct around, unless the line says it too', () => {

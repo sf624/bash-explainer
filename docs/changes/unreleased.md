@@ -79,6 +79,15 @@ A checker that passed `echo ok )` had a hole: `--check` exited 0, and the web pa
 - "In short" says it on every line of the command the shell refuses that holds code: "The shell stops with a syntax error (`fi` is missing)." Before, it said what the line seemed to do: "If `a` succeeds, runs …". A line after that command still says what it does. The row of what it stops at says the same words: "Syntax error: `)` cannot stand here".
 - It names a token only where `bash -n` and `dash -n` name that token, by a table of more than 2,000 shapes of a fault in test/syntax-error.test.ts: a reserved word or an operator it stops at, what is missing at the end of a file. `echo (hello)` names `hello`, as bash reads `word (` as a function definition, and says that parentheses meant as text need quotes; before, it said that `)` cannot stand there. Elsewhere it says "The shell cannot read this command" (`for x in (a b); do c; done`, `case x y in`).
 - `${(f)var}` and `${#x:-a}` are problems only where a run surely gets to them: the same conditions, and not in a function, a branch, a loop or after `&&` or `||`, as a guard for zsh (`if [ -n "$ZSH_VERSION" ]; then a=(${(f)x}); fi`) runs fine in bash. An Error, code `bad-substitution-always`; with only a name, a warning, code `bad-substitution-if-bash`, as above. Elsewhere the row has a warning's mark and says "if this runs".
+### The rows of the Meaning view
+
+The Meaning view shows what each command does, in two columns: the code, and what it means, at one place on every row. A word's own parts (`"…"`, a number, a pattern, a variable that only expands) and bash's reserved words and separators (`then`, `;`, `do`, `|`) have no row of their own there, unless they have something to say: a warning, a value, an example. Reading still has them all.
+
+- A box goes around each simple command and compound command (`if`, `[[ ]]`, a function), and a bracket at the left of a pipeline or a list. `sudo ls` is one box: to bash, `ls` is an argument of `sudo`. A screen reader hears a box with parts as a group named by its code.
+- The example of a whole pipeline is folded above the rows, under its title; the setting `examples.placement` puts it at the end with `last` or `bottom`. One inside a construct (`for …; do a | b; done`) stays under its row.
+- A warning on a row has its level's icon and colour.
+- On a phone or a narrow pane, each text goes under its code. In any width, a word longer than the code column (a long path) keeps its row and its text goes under it.
+- The copy of the line at the top keeps its colours for every part, also those with no row: pointing at one lights the row around it.
 
 ### Errors: a third level of problems
 

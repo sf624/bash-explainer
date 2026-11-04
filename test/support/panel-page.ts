@@ -28,7 +28,7 @@ export function message(lang: Lang, text: string, file: string, wrap = false, at
   const src = `#!/bin/bash\n${text}\n`;
   const line = text.split('\n')[at - 1];
   const tree = createUnbashParser().parse(src);
-  const ex = new Analyzer(lang).explainLine(tree, at, 'bash', { reading: true });
+  const ex = new Analyzer(lang).explainLine(tree, at, 'bash', { reading: true, sentence: true });
   // (The line's problems, as the editor underlines them.)
   const doc = { lines: src.split('\n'), tree };
   const issues = documentIssues(doc, lang, { detected: said('bash') });

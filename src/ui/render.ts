@@ -156,8 +156,8 @@ export function colored(text: string, kind: Kind, theme: ThemeKind): string {
 }
 
 
-/** Split a line into runs, each owned by the deepest token covering it (as the panel does). */
-export function lineSegments(text: string, line: number, items: Token[]): { text: string; kind?: Kind }[] {
+/** Split a line into runs, each owned by the deepest token covering it (`to`, past the last character of the run). */
+export function lineOwners(text: string, line: number, items: readonly Token[]): { from: number; to: number; owner?: Token }[] {
   const owner: (Token | undefined)[] = new Array(text.length).fill(undefined);
   const depthAt: number[] = new Array(text.length).fill(-1);
   const visit = (tok: Token, depth: number) => {
@@ -175,15 +175,22 @@ export function lineSegments(text: string, line: number, items: Token[]): { text
     tok.children.forEach((c) => visit(c, depth + 1));
   };
   items.forEach((t) => visit(t, 0));
-  const out: { text: string; kind?: Kind }[] = [];
+  const out: { from: number; to: number; owner?: Token }[] = [];
   for (let i = 0; i < text.length;) {
     let j = i;
     while (j < text.length && owner[j] === owner[i]) j++;
-    const part = text.slice(i, j);
-    out.push({ text: part, kind: part.trim() ? owner[i]?.kind : undefined });
+    out.push({ from: i, to: j, owner: owner[i] });
     i = j;
   }
   return out;
+}
+
+/** The runs of a line with the kind of the token that owns each (a run of blanks has none), as the panel and the hover colour them. */
+export function lineSegments(text: string, line: number, items: Token[]): { text: string; kind?: Kind }[] {
+  return lineOwners(text, line, items).map(({ from, to, owner }) => {
+    const part = text.slice(from, to);
+    return { text: part, kind: part.trim() ? owner?.kind : undefined };
+  });
 }
 
 
