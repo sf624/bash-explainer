@@ -26,6 +26,8 @@ const CASES: { [K in ProblemFactId]: readonly unknown[] } = {
   'script-last-test-returns-status': [{ left: 'a' }],
   'failure-reported-as-success': [{ where: 'function', name: 'f', left: 'a' }, { where: 'script', name: 'f', left: 'a' }, { where: 'fragment', name: 'f', left: 'a' }, { where: 'errexit', name: 'f', left: 'a' }],
   'keyword-needs-separator': [{ kw: 'then' }],
+  'line-too-deep': [{}],
+  'file-not-read': [{ why: 'too-deep' }, { why: 'failed' }],
   'bracket-missing-close': [{}],
   'bracket-close-glued': [{ word: 'a]' }],
   'test-malformed': [{ name: '[' }],

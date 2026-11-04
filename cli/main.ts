@@ -20,7 +20,8 @@ import { ui } from '../src/ui/texts';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
 import { pushAll } from '../src/lists';
-import { fact, isNotRead } from '../src/messages';
+import { fact } from '../src/messages';
+import { isNotRead } from '../src/messages-unread';
 
 declare const __VERSION__: string;
 
