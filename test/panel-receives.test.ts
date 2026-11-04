@@ -381,8 +381,11 @@ describe('the panel: what the program receives, where the model cannot read, aga
     // Where no file matches.
     { src: 'ls *.nomatch', label: 'ls', out: 'ls [*.nomatch]\nstatus=0', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else the pattern itself›'] },
     { src: 'shopt -s nullglob\nls *.nomatch', at: 1, label: 'ls', out: 'ls\nstatus=0', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else no word›'] },
-    { src: 'shopt -s failglob\nls *.nomatch', at: 1, label: 'ls', out: 'status=1', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else bash stops›'] },
-    { src: 'shopt -s nullglob failglob\nls *.nomatch', at: 1, label: 'ls', out: 'status=1', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else bash stops›'] },
+    { src: 'shopt -s failglob\nls *.nomatch', at: 1, label: 'ls', out: 'status=1', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else the command does not run›'] },
+    { src: 'shopt -s nullglob failglob\nls *.nomatch', at: 1, label: 'ls', out: 'status=1', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else the command does not run›'] },
+    // (The command does not run; the rest of the statement it is in goes too, and the next one runs.)
+    { src: 'shopt -s failglob\nf() {\n  ls *.nomatch\n  ls y\n}\nf\nls x', at: 2, label: 'ls', out: 'ls [x]\nstatus=0', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else the command does not run›'] },
+    { src: 'shopt -s failglob\n{ ls *.nomatch; }\nls x', at: 1, label: 'ls', out: 'ls [x]\nstatus=0', says: ['receives:', 'ls', '‹each file name matching `*.nomatch`, else the command does not run›'] },
   ];
 
   let dir: string;

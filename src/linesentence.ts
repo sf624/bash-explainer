@@ -588,12 +588,14 @@ class Composer implements IdiomSpeaker {
     const { lang } = this;
     const v = field(a, 'value');
     if (!v) return EMPTY[lang];
-    // (A value is one word: where the model does not know what it gives, it says what the word gives.)
-    if (v.type !== 'array') {
-      const [one, ...more] = argvWords(v, this.input.status.state, lang);
-      return !more.length && one.parts.length === 1 && 'hole' in one.parts[0] && one.parts[0].hole === 'word' ? placeholderSaid(lang, { kind: 'string', code: v.text }) : this.word(v);
-    }
+    if (v.type !== 'array') return this.oneWord(v);
     return S.array(lang, this.items(v.namedChildren.flatMap((w) => this.fieldsOf(w)).map((w) => this.argvWord(w))));
+  }
+
+  /** A word that is one word to bash (a value, a redirection's target): where the model does not know what it gives, what the word gives, not "the words of" it. */
+  private oneWord(v: SyntaxNode): string {
+    const [one, ...more] = argvWords(v, this.input.status.state, this.lang);
+    return !more.length && one.parts.length === 1 && 'hole' in one.parts[0] && one.parts[0].hole === 'word' ? placeholderSaid(this.lang, { kind: 'string', code: v.text }) : this.word(v);
   }
 
   /**
@@ -642,7 +644,7 @@ class Composer implements IdiomSpeaker {
       const fd = field(r, 'descriptor')?.text ?? '';
       if (r.type === 'heredoc_redirect') return ioSaid(lang, 'heredoc', fd, '');
       const target = r.namedChildren.find((c) => c.field !== 'descriptor');
-      if (r.type === 'herestring_redirect') return ioSaid(lang, 'herestring', fd, this.word(target!));
+      if (r.type === 'herestring_redirect') return ioSaid(lang, 'herestring', fd, this.oneWord(target!));
       const { op, dest } = redirectParts(r);
       const { kind, says } = redirects[op];
       const numbered = /^\d*$/.test(fd);
@@ -650,7 +652,7 @@ class Composer implements IdiomSpeaker {
         const to = dupTarget(dest);
         if (to.kind === 'copy') return ioSaid(lang, kind, fd, to.fd);
         if (to.kind !== 'word') return ioSaid(lang, to.kind, fd || (kind === 'dup' ? '1' : '0'), to.kind === 'move' ? to.fd : '');
-      } else if (numbered && target) return ioSaid(lang, kind, fd, this.word(target));
+      } else if (numbered && target) return ioSaid(lang, kind, fd, this.oneWord(target));
       // (Any other: a named descriptor, `>&word`, a redirection being typed: the dictionary's text.)
       const text = says(fd, dest)[lang];
       return lang === 'ja' ? text : text.charAt(0).toLowerCase() + text.slice(1);

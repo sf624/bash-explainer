@@ -28,7 +28,7 @@ const TILDES: Readonly<Record<string, string>> = wordTable({ '': 'HOME', '+': 'P
 const UNMATCHED: Readonly<Record<Unmatched, Text>> = {
   stays: { ja: 'パターン自身', en: 'the pattern itself' },
   none: { ja: '単語なし', en: 'no word' },
-  fails: { ja: 'bash が止まる', en: 'bash stops' },
+  fails: { ja: 'コマンドは実行されない', en: 'the command does not run' },
 };
 
 /** A placeholder's text, in `lang`, for what it stands for (`kind`) and its code. */
