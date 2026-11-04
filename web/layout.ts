@@ -234,6 +234,9 @@ function sheetSide(sheet: HTMLElement): -1 | 1 {
 export function closeSheet(sheet: HTMLDialogElement): void {
   if (!sheet.open || closing.has(sheet)) return;
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // (A swipe has left the sheet where the finger let go: it opens at its place next time.)
+    sheet.classList.remove('dragging');
+    sheet.style.transform = '';
     sheet.close();
     return;
   }

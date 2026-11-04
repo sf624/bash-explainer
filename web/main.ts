@@ -45,7 +45,7 @@ import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
 import { closePopovers, setUpFocusRings } from './popover';
 import { ScopeControl } from './scope-chip';
-import { SettingsDialog } from './settings-dialog';
+import { SettingsDialog, sheetRoom } from './settings-dialog';
 import { takeLinkFromAddress, inflate, readHash, scriptParams } from './share';
 import { clearStoredData, readStored, removeStored, STORAGE_KEYS, writeStored } from './storage';
 import { TEXT } from './text';
@@ -321,7 +321,7 @@ if (mode.compare) {
 /** The page's toast (web/toast.ts): above the Problems strip, inside the editor's pane (none on the compare page or in panel mode). */
 const toast = new Toast($('status'), {
   labels: () => ({ more: TEXT[lang].toastMore, why: TEXT[lang].toastWhy }),
-  room: () => (mode.compare || mode.panel ? undefined : roomAboveStrip()),
+  room: () => sheetRoom() ?? (mode.compare || mode.panel ? undefined : roomAboveStrip()),
   covers: (px) => editor.setBottomMargin(px),
   focusBack: () => focusHome(),
 });
@@ -484,6 +484,8 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   setTheme,
   pane: () => document.querySelector<HTMLElement>('main > .source'),
   splitter: () => document.getElementById('splitter'),
+  beside: () => [...document.querySelectorAll<HTMLElement>('.panel-pane, .compare > .copy')],
+  moved: () => toast.place(),
   shellReading: autoShell,
 });
 
