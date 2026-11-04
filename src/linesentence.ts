@@ -504,9 +504,9 @@ class Composer implements IdiomSpeaker {
 
   /**
    * What a declaration builtin does with the assignments among its words: `declared` (the word as the builtin receives
-   * it), `changed` (an option may change what is stored, `declare -i n=1+1`, or a word whose value is not known may be
-   * one, `declare $o n=1`: then what the word gives), or `none` (`-f`, `-F`, and `-p` of `declare`: it names
-   * functions or prints, and sets no variable).
+   * it), `changed` (an option may change what is stored, `declare -i n=1+1`: then what the word gives), or `none` (`-f`,
+   * `-F`, and `-p` of `declare`: it names functions or prints, and sets no variable; or a word whose value is not known,
+   * `declare $o n=1`, which may be one of those).
    */
   private declaring(c: SyntaxNode, said: CommandSaid | undefined): 'declared' | 'changed' | 'none' {
     // (The words the other words give, from the word model: a value is known when every part of the word is text.)
@@ -515,11 +515,13 @@ class Composer implements IdiomSpeaker {
         const texts = w.parts.flatMap((p) => ('text' in p ? [p.text] : []));
         return texts.length === w.parts.length ? texts.join('') : undefined;
       }));
-    // (`-p` of `declare`, `typeset` and `local` only prints: `export -p x=1` and `readonly -p x=1` set `x`, checked with bash.)
-    const name = said ? said.names[0] : field(c, 'name')!.text;
-    const naming = ['declare', 'typeset', 'local'].includes(name) ? /^[-+][a-zA-Z]*[fFp]/ : /^[-+][a-zA-Z]*[fF]/;
-    if (values.some((v) => v !== undefined && naming.test(v))) return 'none';
-    return values.some((v) => v === undefined || /^[-+]/.test(v)) || (said && said.options.length > 0) ? 'changed' : 'declared';
+    // (A word whose value is not known may be `-f` or `-p`: nothing is said of the values then.)
+    if (values.includes(undefined)) return 'none';
+    // (`-f` and `-F` name functions, and `-p` of `declare`, `typeset` and `local` prints (`+p` too): none sets a variable. `export -p x=1` and `readonly -p x=1` set `x`; `+f` and `+F` turn an attribute off. Checked with bash.)
+    const name = said ? said.names[0] : nameText(field(c, 'name')!);
+    const naming = ['declare', 'typeset', 'local'].includes(name) ? /^(-[a-zA-Z]*[fFp]|\+[a-zA-Z]*p)/ : /^-[a-zA-Z]*[fF]/;
+    if (values.some((v) => naming.test(v!))) return 'none';
+    return values.some((v) => /^[-+]/.test(v!)) || (said && said.options.length > 0) ? 'changed' : 'declared';
   }
 
   /** A command as a noun: its names, with what it does unless the sentence is brief. */

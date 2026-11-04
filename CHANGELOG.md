@@ -69,7 +69,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - In a script with Windows line ends (CRLF), the lines after a heredoc are explained as code again, and the CRLF error sees their keywords. Before, everything after the heredoc was taken for its text.
 - Docker's exec form (`CMD ["echo", "$HOME"]`) and a Python list of arguments are explained as a program run with no shell: `echo` is the program, `cd` and `if` are not found, and `"$HOME"` is a JSON string passed as it is. Before, they were explained as bash's builtins and single-quoted strings.
 - The commands of a `bash -c '…'` string in a Dockerfile, a Makefile, a workflow or another host file, or after blank lines at the top of a script, are placed on their own text. Before, they pointed at line 1 and took their names from there.
-- The Reading view no longer fails ("this line could not be explained") on a line whose statement uses an alias on a later line, such as a `case` branch that calls it.
+- The Reading view no longer fails on a line whose statement uses an alias on a later line, such as a `case` branch that calls it.
 
 [All changes](https://github.com/sf624/bash-explainer/compare/v0.9.1...main)
 
