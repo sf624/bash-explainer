@@ -251,9 +251,9 @@ function rolesOf(root: ReadingNode, lang: Lang): Map<string, RoleOfRange> {
 
 /** What the reading tree adds to a row of a range: its role line and its steps. */
 function roleFields(range: RoleOfRange, said: readonly string[], lang: Lang): Pick<ModelRow, 'roleLine' | 'steps'> {
-  const line = roleLine(range.roles);
   return {
-    ...(line ? { roleLine: { ...line, refs: range.refs.filter((r) => !said.includes(r)) } } : {}),
+    // (A row of depth 2 always has a role: its node's, or its token's.)
+    roleLine: { ...roleLine(range.roles)!, refs: range.refs.filter((r) => !said.includes(r)) },
     ...(range.steps ? { steps: stepsLine(range.steps.list, range.steps.context, lang) } : {}),
   };
 }
@@ -284,7 +284,7 @@ function aroundRow(rows: readonly ModelRow[], span: Span): ModelRow | undefined 
 /** One more role of a row. */
 function addRole(row: ModelRow, role: RowRole): void {
   row.roles = [...row.roles, role];
-  row.roleLine = { ...roleLine(row.roles)!, refs: row.roleLine?.refs ?? [] };
+  row.roleLine = { ...roleLine(row.roles)!, refs: row.roleLine!.refs };
 }
 
 /**
