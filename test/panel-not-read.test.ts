@@ -3,6 +3,7 @@ import type { Browser, Page } from 'playwright-core';
 import { Analyzer } from '../src/analyzer';
 import { documentIssues, type ShellDocument } from '../src/document';
 import type { Lang } from '../src/i18n';
+import { LineExplainer } from '../src/explain/context';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { boxProblems, problemsAround } from '../src/ui/panelProblems';
 import { PanelServer, servePanel } from './support/panel-page';
@@ -12,7 +13,23 @@ import { until } from './support/site';
 // of its own ("Not read", not "Pitfall"), and no error in the page (src/messages-unread.ts, src/levels.ts `NOT_READ_WORD`).
 
 const parser = createUnbashParser();
-const deep = `echo $(${'echo $('.repeat(1999)}true${')'.repeat(2000)}`;
+// (How deep a walk can go depends on the stack of the machine: the walk of the line `deep` is made to run out of it, as in test/line-budget.test.ts.)
+const deep = 'echo a';
+const OVERFLOW = new RangeError('Maximum call stack size exceeded');
+/** Runs `run` with the walk of the lines `lines` (0-based, of the script) running out of stack. */
+function tooDeep<T>(lines: readonly number[], run: () => T): T {
+  const proto = LineExplainer.prototype as unknown as { end: () => void };
+  const real = proto.end;
+  proto.end = function (this: LineExplainer) {
+    if (lines.includes((this as unknown as { line: number }).line)) throw OVERFLOW;
+    real.call(this);
+  };
+  try {
+    return run();
+  } finally {
+    proto.end = real;
+  }
+}
 const WORD = { en: 'Not read', ja: '読めていない' } as const;
 const HEAD = { line: { en: /nests too deep to follow/, ja: /入れ子が深すぎて最後までたどれない/ }, file: { en: /nests too deep to be read/, ja: /入れ子が深すぎて読めない/ } } as const;
 const unreadFile = 'coproc '.repeat(5e4);
@@ -21,7 +38,7 @@ describe('a line too deep and a file not read, in the panel', () => {
   for (const lang of ['en', 'ja'] as const) {
     it(`boxProblems gives the headline and the word of their own (${lang})`, function () {
       this.timeout(60000);
-      const line = new Analyzer(lang).explainLine(parser.parse(deep), 0);
+      const line = tooDeep([0], () => new Analyzer(lang).explainLine(parser.parse(deep), 0));
       const [p, ...none] = boxProblems(line, line.items, lang, () => true);
       assert.strictEqual(none.length, 0);
       assert.match(p.head, HEAD.line[lang]);
@@ -36,8 +53,8 @@ describe('a line too deep and a file not read, in the panel', () => {
       const text = `if ${deep}; then\n  :\nfi\n`;
       const tree = parser.parse(text);
       const doc: ShellDocument = { lines: text.split('\n'), tree };
-      const ex = new Analyzer(lang).explainLine(tree, 1);
-      const [pointer, ...none] = problemsAround(ex, documentIssues(doc, lang, {}), [], lang);
+      const ex = tooDeep([0], () => new Analyzer(lang).explainLine(tree, 1));
+      const [pointer, ...none] = problemsAround(ex, tooDeep([0], () => documentIssues(doc, lang, {})), [], lang);
       assert.strictEqual(none.length, 0);
       assert.match(pointer.head, HEAD.line[lang]);
       assert.ok(pointer.where.includes(WORD[lang]), pointer.where);
@@ -65,7 +82,8 @@ describe('a line too deep and a file not read, in the panel', () => {
         return this.skip();
       }
       for (const [name, c] of Object.entries(cases)) {
-        const s = await servePanel(c.text, c.file, false, c.at);
+        // (The script of the page has a first line before the text's: line 1 is the text's first.)
+        const s = await tooDeep([1], () => servePanel(c.text, c.file, false, c.at));
         servers.push(s);
         serverOf.set(name, s);
       }
