@@ -103,7 +103,7 @@
     {"file":"src/pitfalls.ts","fn":"rootTarget","kind":"helper","count":1,"row":"W-L3"},
     {"file":"src/pitfalls.ts","fn":"rootTarget","kind":"node-type","count":8,"row":"W-L3"},
     {"file":"src/pitfalls.ts","fn":"specRuns","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/reading.ts","fn":"readingTree","kind":"helper","count":3,"row":"W-L1"},
+    {"file":"src/reading.ts","fn":"readingTree","kind":"helper","count":2,"row":"W-L1"},
     {"file":"src/semanticFacts.ts","fn":"command","kind":"helper","count":2,"row":"W-L1"},
     {"file":"src/semantics/argwords.ts","fn":"countIn","kind":"helper","count":1,"row":"W-C2"},
     {"file":"src/semantics/deferred.ts","fn":"expands","kind":"helper","count":2,"row":"W-T1"},
