@@ -2980,7 +2980,7 @@ html.view-panel .split {
   border-radius: 0;
 }
 
-:where(html:not(.narrow)) #settings-dialog {
+#settings-dialog:not(:modal) {
   inset: var(--pane-top, 0px) 0 0 auto;
   height: auto;
   /* As wide as the pane with the divider, so that the explanation fits exactly beside it; the text keeps a column of 40rem (--side: the room
@@ -2996,24 +2996,27 @@ html.view-panel .split {
    It only moves: its width, so its text, and its scroll stay. The sheet is as wide as the editor's pane at most, so the
    explanation, which has the rest of the page, never leaves it. It lies above the editor (and its hint) while it is
    there, and the divider, which would show on top, is out of reach and hidden. A `transform` here is safe: nothing
-   inside the pane is placed `fixed` (the frame's own popups are in the frame), and the toast is outside it. */
-:where(html:not(.narrow))[data-shift] .panel-pane {
+   inside the pane is placed `fixed` (the frame's own popups are in the frame), and the toast is outside it, over the
+   sheet while it is out (`sheetRoom`). On the compare page the two copies move, the script's pane lying under them and
+   the sheet; below 1000 px, where the script lies above the copies, the sheet is a modal dialog on the whole window. */
+/* (And on the compare page, the two copies: `beside` in web/main.ts.) */
+:where(html:not(.narrow))[data-shift] :is(.panel-pane, .compare > .copy) {
   position: relative;
   z-index: 12;
   transition: transform 0.22s var(--ease);
 }
 
-:where(html:not(.narrow))[data-shift="open"] .panel-pane {
+:where(html:not(.narrow))[data-shift="open"] :is(.panel-pane, .compare > .copy) {
   transform: translateX(calc(-1 * var(--pane-w)));
 }
 
-:where(html:not(.narrow))[data-shift="drag"] .panel-pane {
+:where(html:not(.narrow))[data-shift="drag"] :is(.panel-pane, .compare > .copy) {
   transform: translateX(calc(var(--drag, 0px) - var(--pane-w)));
   transition: none;
 }
 
 /* A new width of the pane while the sheet is out (a resized window): the explanation moves with the sheet at once. */
-:where(html:not(.narrow))[data-shift][data-shift-now] .panel-pane {
+:where(html:not(.narrow))[data-shift][data-shift-now] :is(.panel-pane, .compare > .copy) {
   transition: none;
 }
 

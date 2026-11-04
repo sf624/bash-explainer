@@ -41,6 +41,10 @@ export interface SettingsHost {
   pane(): HTMLElement | null;
   /** The divider between the editor and the explanation: out of reach while the sheet is open, since the explanation has moved. */
   splitter(): HTMLElement | null;
+  /** What lies right of the editor's pane and moves left beside the sheet (the panel; on the compare page, its two copies): page.css moves the same. */
+  beside(): HTMLElement[];
+  /** The sheet came, went or changed its width side by side: whatever is placed by its room (the toast) is placed again. */
+  moved(): void;
   /** The shell the script reads as, and where from: the Shell setting's "Auto (now: bash, from #!)". */
   shellReading(): AutoShell | undefined;
 }
@@ -59,6 +63,18 @@ const coarse = () => window.matchMedia('(pointer: coarse)').matches;
 const hovers = () => !window.matchMedia('(hover: none)').matches;
 /** "Show VS Code setting names": the keys under the titles, in the options and in the descriptions. */
 const keysShown = () => readStored(STORAGE_KEYS.settingNames) === '1';
+
+/**
+ * The room of the page's toast while the settings are open side by side: the sheet's box, where it lies at rest (its right
+ * edge is the window's, its width `--pane-w`), since the explanation has moved beside it and the editor's pane under it is
+ * covered. Undefined otherwise, and while the sheet slides out.
+ */
+export function sheetRoom(): { left: number; width: number; bottom: number } | undefined {
+  const root = document.documentElement;
+  if (root.dataset.shift !== 'open' && root.dataset.shift !== 'drag') return undefined;
+  const width = parseFloat(root.style.getPropertyValue('--pane-w'));
+  return { left: root.clientWidth - width, width, bottom: window.innerHeight };
+}
 
 export class SettingsDialog {
   private dialog: HTMLDialogElement;
@@ -113,12 +129,7 @@ export class SettingsDialog {
       this.syncShift();
     }).observe(dialog, { attributes: true, attributeFilter: ['class', 'style', 'open'] });
     // The window crossing between the layouts while the sheet is open: it opens again in the other kind.
-    narrow.addEventListener('change', () => {
-      if (!this.dialog.open || this.modal === narrow.matches) return;
-      this.reopening++;
-      this.dialog.close();
-      this.show();
-    });
+    narrow.addEventListener('change', () => this.recheck());
     // A settings file dropped on the dialog is imported.
     dialog.addEventListener('dragover', (e) => {
       if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
@@ -132,12 +143,34 @@ export class SettingsDialog {
     // The width follows the editor's pane, and the cut of the descriptions the width.
     const fit = () => {
       if (!this.dialog.open) return;
+      this.recheck();
+      if (!this.dialog.open) return;
       this.fitWidth();
       this.fitDescsSoon();
     };
     window.addEventListener('resize', fit);
     const pane = host.pane();
     if (pane && typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(pane);
+  }
+
+  /**
+   * Whether the sheet is a modal dialog: in the narrow layout, and where the explanation does not lie right of the
+   * editor, so that there is nothing to move aside (the compare page below 1000 px, the script above its copies). Read
+   * from the boxes' places in the page, which a `transform` does not change (`offsetLeft`).
+   */
+  private shouldBeModal(): boolean {
+    if (narrow.matches) return true;
+    const pane = this.host.pane();
+    const side = this.host.beside()[0];
+    return !!pane && !!side && side.offsetLeft < pane.offsetLeft + pane.offsetWidth - 2;
+  }
+
+  /** The window crossing between the layouts while the sheet is open: it opens again in the other kind. */
+  private recheck(): void {
+    if (!this.dialog.open || this.modal === this.shouldBeModal()) return;
+    this.reopening++;
+    this.dialog.close();
+    this.show();
   }
 
   get open(): boolean {
@@ -147,7 +180,7 @@ export class SettingsDialog {
   show(): void {
     if (reopenSheet(this.dialog) || this.dialog.open) return;
     this.clearing = undefined;
-    this.modal = narrow.matches;
+    this.modal = this.shouldBeModal();
     const active = document.activeElement;
     this.opener ??= active instanceof HTMLElement && active !== document.body ? active : document.getElementById('settings-open');
     this.render();
@@ -201,13 +234,15 @@ export class SettingsDialog {
   private syncShift(): void {
     const root = document.documentElement;
     const d = this.dialog;
-    if (!d.open || this.modal) {
-      delete root.dataset.shift;
-      return;
+    const was = root.dataset.shift;
+    if (!d.open || this.modal) delete root.dataset.shift;
+    else {
+      const state = d.classList.contains('closing') ? 'closing' : d.classList.contains('dragging') ? 'drag' : 'open';
+      if (state === 'drag') root.style.setProperty('--drag', `${Math.max(0, d.getBoundingClientRect().right - root.clientWidth)}px`);
+      root.dataset.shift = state;
     }
-    const state = d.classList.contains('closing') ? 'closing' : d.classList.contains('dragging') ? 'drag' : 'open';
-    if (state === 'drag') root.style.setProperty('--drag', `${Math.max(0, d.getBoundingClientRect().right - root.clientWidth)}px`);
-    root.dataset.shift = state;
+    // (The toast lies over the sheet while it is out, and over the editor's pane otherwise.)
+    if (was !== root.dataset.shift) this.host.moved();
   }
 
   /** The gear again shuts the sheet (or, while it slides out, brings it back). */
@@ -253,10 +288,15 @@ export class SettingsDialog {
     const root = document.documentElement;
     const width = `${Math.floor(this.host.splitter()?.getBoundingClientRect().right ?? r.right)}px`;
     if (root.style.getPropertyValue('--pane-w') !== width) {
-      root.dataset.shiftNow = '';
+      // (While the explanation is still on its way, the move goes on to the new place: cutting it would make it jump.)
+      const moving = this.host.beside().some((e) => e.getAnimations().length);
+      if (!moving) root.dataset.shiftNow = '';
       root.style.setProperty('--pane-w', width);
-      void document.getElementById('panel-pane')?.offsetWidth;
-      delete root.dataset.shiftNow;
+      if (!moving) {
+        void document.documentElement.offsetWidth;
+        delete root.dataset.shiftNow;
+      }
+      this.host.moved();
     }
     this.dialog.style.setProperty('--pane-top', `${Math.floor(r.top)}px`);
   }

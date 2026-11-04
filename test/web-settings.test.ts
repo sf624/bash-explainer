@@ -536,25 +536,30 @@ describe('the web page: theme and settings', function () {
     const page = await ctx.newPage();
     await page.goto(base);
     await page.locator('.cm-line').first().waitFor();
-    const gap = async () => {
-      const b = await boxes(page);
-      return { gap: b.sheet.left - b.side.right, left: b.side.left, sheet: b.sheet.left };
-    };
     // Mid-move, with the animations held at a fraction of their length: the explanation's right edge is the sheet's left edge
-    // (the same duration and easing, begun in the same frame), going out and coming back.
-    const hold = (fraction: number) => page.evaluate(`(async () => {
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      for (const a of document.getAnimations()) { a.pause(); a.currentTime = ${fraction} * 220; }
-    })()`);
+    // (the same duration and easing, begun in the same frame), going out and coming back. The gear is pressed, held and
+    // measured in one go inside the page, and the sheet's 500 ms safety timer (web/layout.ts) is left out meanwhile, so that
+    // a slow machine cannot close the sheet under the measure.
+    const holdAt = (fraction: number) => page.evaluate(`(async () => {
+      const set = window.setTimeout;
+      window.setTimeout = (f, ms, ...rest) => (ms === 500 ? 0 : set(f, ms, ...rest));
+      try {
+        document.getElementById('settings-open').click();
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        for (const a of document.getAnimations()) { a.pause(); a.currentTime = ${fraction} * 220; }
+        const box = (id) => document.getElementById(id).getBoundingClientRect();
+        return { gap: box('settings-dialog').left - box('panel-pane').right, left: box('panel-pane').left };
+      } finally {
+        window.setTimeout = set;
+      }
+    })()`) as Promise<{ gap: number; left: number }>;
     const atRest = () => stable('at rest', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left + ':' + d.hasAttribute('open')));
     for (const closing of [false, true]) {
       const lefts = new Set<number>();
       for (const f of [0, 0.25, 0.5, 0.75]) {
         // The sheet is at rest (shut when it is to open, open when it is to close); the gear starts the move.
         assert.strictEqual(await isOpen(page), closing);
-        await page.locator('#settings-open').click();
-        await hold(f);
-        const g = await gap();
+        const g = await holdAt(f);
         lefts.add(g.left);
         assert.ok(Math.abs(g.gap) < 0.5, `${closing ? 'closing' : 'opening'} at ${f}: ${JSON.stringify(g)}`);
         await page.evaluate('for (const a of document.getAnimations()) a.finish()');
@@ -616,6 +621,199 @@ describe('the web page: theme and settings', function () {
       assert.ok(Math.abs(b.sheet.right - width) < 0.5 && b.side.left >= -0.5 && Math.abs(b.side.right - b.sheet.left) < 0.5, `${width}: ${JSON.stringify(b)}`);
       assert.ok(Math.abs(b.sheet.width - b.split.right) < 1, `${width}: ${JSON.stringify(b)}`);
     }
+    await ctx.close();
+  });
+
+  it('moves the two copies of the compare page left beside the sheet, as the explanation moves on the editor page, and takes the whole window below 1000 px', async function () {
+    this.timeout(120000);
+    const compare = `${base}compare.html`;
+    const rects = (page: Page) => page.evaluate(`(() => {
+      const r = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return { left: b.left, right: b.right, width: b.width, top: b.top, bottom: b.bottom }; };
+      return { sheet: r('settings-dialog'), pane: (({ left, right, width, top, bottom }) => ({ left, right, width, top, bottom }))(document.querySelector('.compare > .source').getBoundingClientRect()), this: r('col-this'), other: r('col-other'), shift: document.documentElement.dataset.shift, modal: document.getElementById('settings-dialog').matches(':modal') };
+    })()`) as Promise<{ sheet: Box; pane: Box; this: Box; other: Box; shift: string | undefined; modal: boolean }>;
+    for (const width of [1001, 1280, 1920]) {
+      const ctx = await browser.newContext({ locale: 'en-US', viewport: { width, height: 800 } });
+      const page = await ctx.newPage();
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      await page.goto(compare);
+      await page.locator('.cm-line').first().waitFor();
+      const before = await rects(page);
+      await page.locator('#settings-open').click();
+      await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+      await stable('the copies moved', () => page.locator('#col-this').evaluate((d) => d.getBoundingClientRect().left));
+      const open = await rects(page);
+      const seen = `${width}: ${JSON.stringify(before)}\n ${JSON.stringify(open)}`;
+      // The sheet lies along the right edge, as wide as the script's pane; the two copies moved left by its width, keeping their
+      // widths, touching each other and the sheet, over the script's pane, which the sheet leaves in view of nothing.
+      assert.strictEqual(open.modal, false, seen);
+      assert.ok(Math.abs(open.sheet.right - width) < 0.5 && Math.abs(open.sheet.width - Math.floor(before.pane.right)) < 0.5, seen);
+      for (const key of ['this', 'other'] as const) {
+        assert.ok(Math.abs(open[key].left - (before[key].left - open.sheet.width)) < 0.5, `${key}: ${seen}`);
+        assert.ok(Math.abs(open[key].width - before[key].width) < 0.01, `${key}: ${seen}`);
+        assert.ok(open[key].left >= -0.5 && open[key].right <= width + 0.5, `${key}: ${seen}`);
+      }
+      assert.ok(Math.abs(open.this.right - open.other.left) < 0.5 && Math.abs(open.other.right - open.sheet.left) < 0.5, seen);
+      // Both copies are what the eye finds there: nothing of the script's pane is over them.
+      for (const id of ['frame-this', 'frame-other']) {
+        const hit = await page.evaluate(`(() => { const b = document.getElementById('${id}').getBoundingClientRect(); return document.elementFromPoint(b.left + b.width / 2, b.top + 100)?.id; })()`);
+        assert.strictEqual(hit, id, seen);
+      }
+      assert.strictEqual(await page.evaluate("document.querySelector('.compare > .source').inert"), true);
+      // Back as it was.
+      await page.locator('#settings-open').click();
+      await until('the sheet closed', () => isOpen(page), (v) => !v);
+      await stable('the copies moved back', () => page.locator('#col-this').evaluate((d) => d.getBoundingClientRect().left));
+      assert.deepStrictEqual({ ...(await rects(page)), sheet: before.sheet }, before, seen);
+      assert.deepStrictEqual(errors, []);
+      await ctx.close();
+    }
+    // Up to 1000 px the script lies above the copies: there is nothing to move aside, so the sheet takes the whole window, as a modal dialog.
+    for (const width of [1000, 768]) {
+      const ctx = await browser.newContext({ locale: 'en-US', viewport: { width, height: 800 } });
+      const page = await ctx.newPage();
+      await page.goto(compare);
+      await page.locator('.cm-line').first().waitFor();
+      const before = await rects(page);
+      await page.locator('#settings-open').click();
+      await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+      const open = await rects(page);
+      assert.strictEqual(open.modal, true, JSON.stringify(open));
+      assert.deepStrictEqual([open.sheet.left, open.sheet.width, open.sheet.top, open.sheet.bottom], [0, width, 0, 800]);
+      assert.strictEqual(open.shift, undefined);
+      assert.deepStrictEqual([open.this, open.other], [before.this, before.other]);
+      await page.keyboard.press('Escape');
+      await until('the sheet closed', () => isOpen(page), (v) => !v);
+      await ctx.close();
+    }
+    // A window crossing 1000 px with the sheet open: it opens again in the other kind, the copies moving only when it is beside them.
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+    await page.goto(compare);
+    await page.locator('.cm-line').first().waitFor();
+    await page.locator('#settings-open').click();
+    await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    assert.strictEqual((await rects(page)).shift, 'open');
+    await page.setViewportSize({ width: 900, height: 800 });
+    await until('modal', async () => (await rects(page)).modal, (v) => v);
+    assert.strictEqual((await rects(page)).shift, undefined);
+    assert.strictEqual(await page.evaluate("getComputedStyle(document.getElementById('col-this')).transform"), 'none');
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await until('beside', async () => (await rects(page)).shift, (v) => v === 'open');
+    await stable('the copies moved', () => page.locator('#col-this').evaluate((d) => d.getBoundingClientRect().left));
+    const b = await rects(page);
+    assert.ok(b.this.left >= -0.5 && Math.abs(b.other.right - b.sheet.left) < 0.5 && b.modal === false, JSON.stringify(b));
+    await ctx.close();
+  });
+
+  it('crosses 768 px with the sheet open, both ways: the explanation moves only while the sheet is beside it, and goes with it', async function () {
+    this.timeout(60000);
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1000, height: 700 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    const state = () => page.evaluate(`({ shift: document.documentElement.dataset.shift, transform: getComputedStyle(document.getElementById('panel-pane')).transform, modal: document.getElementById('settings-dialog').matches(':modal') })`) as Promise<{ shift?: string; transform: string; modal: boolean }>;
+    await page.locator('#settings-open').click();
+    await until('beside', async () => (await state()).shift, (v) => v === 'open');
+    for (const [width, narrow] of [[700, true], [1000, false], [700, true], [1000, false]] as const) {
+      await page.setViewportSize({ width, height: 700 });
+      await until(`${width} px`, async () => (await state()).modal, (v) => v === narrow);
+      await stable('at rest', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+      const s = await state();
+      if (narrow) assert.deepStrictEqual({ shift: s.shift, transform: s.transform }, { shift: undefined, transform: 'none' }, `${width}`);
+      else {
+        assert.strictEqual(s.shift, 'open');
+        const b = await boxes(page);
+        assert.ok(Math.abs(b.side.right - b.sheet.left) < 0.5 && b.side.left >= -0.5, JSON.stringify(b));
+      }
+    }
+    // Narrow to wide: the explanation and the sheet come together, not one at once and the other sliding.
+    await page.setViewportSize({ width: 700, height: 700 });
+    await until('narrow', async () => (await state()).modal, (v) => v);
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await until('beside', async () => (await state()).shift, (v) => v === 'open');
+    const gaps = await page.evaluate(`(async () => {
+      const out = [];
+      for (let i = 0; i < 8; i++) {
+        const box = (id) => document.getElementById(id).getBoundingClientRect();
+        out.push(Math.abs(box('settings-dialog').left - box('panel-pane').right));
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+      return out;
+    })()`) as number[];
+    assert.ok(gaps.every((g) => g < 1), gaps.join());
+    await ctx.close();
+  });
+
+  it('puts the toast over the sheet, never over the explanation beside it, while the settings are open side by side', async function () {
+    this.timeout(90000);
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 700 }, acceptDownloads: true });
+    // (A save is a download, with its toast: without the file pickers of the browser.)
+    await ctx.addInitScript('delete window.showOpenFilePicker; delete window.showSaveFilePicker;');
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('echo hello');
+    const toast = () => page.evaluate(`(() => { const e = document.getElementById('status'); const b = e.getBoundingClientRect(); const p = document.getElementById('panel-pane').getBoundingClientRect(); const s = document.getElementById('settings-dialog').getBoundingClientRect(); const m = document.getElementById('source').getBoundingClientRect(); const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return { shown: e.classList.contains('shown'), box: [b.left, b.top, b.right, b.bottom], panel: [p.left, p.top, p.right, p.bottom], sheet: [s.left, s.top, s.right, s.bottom], pane: [m.left, m.top, m.right, m.bottom], hitInPanel: !!hit && document.getElementById('panel-pane').contains(hit), hitInToast: !!hit && e.contains(hit) }; })()`) as Promise<{ shown: boolean; box: number[]; panel: number[]; sheet: number[]; pane: number[]; hitInPanel: boolean; hitInToast: boolean }>;
+    const apart = (a: number[], b: number[]) => a[2] <= b[0] + 0.5 || b[2] <= a[0] + 0.5 || a[3] <= b[1] + 0.5 || b[3] <= a[1] + 0.5;
+    const within = (a: number[], b: number[]) => a[0] >= b[0] - 0.5 && a[2] <= b[2] + 0.5 && a[3] <= b[3] + 0.5;
+    const save = async () => { const [d] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+S')]); void d; await until('the toast', async () => (await toast()).shown, (v) => v); };
+    // A toast shown with the sheet open lies over the sheet.
+    await page.locator('#settings-open').click();
+    await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    await page.locator('#settings-search').focus();
+    await save();
+    let t = await toast();
+    assert.ok(apart(t.box, t.panel) && within(t.box, t.sheet) && t.hitInToast && !t.hitInPanel, JSON.stringify(t));
+    // The sheet shuts with the toast still there: the toast is in the editor's pane again, as before the sheet.
+    await page.locator('#settings-open').click();
+    await until('the sheet closed', () => isOpen(page), (v) => !v);
+    await stable('at rest', () => page.locator('#status').evaluate((d) => d.getBoundingClientRect().left));
+    t = await toast();
+    assert.ok(t.shown && within(t.box, t.pane) && apart(t.box, t.panel), JSON.stringify(t));
+    // A toast already showing as the sheet opens goes over the sheet, and not over the explanation that moves to its place.
+    await page.locator('#settings-open').click();
+    await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    t = await toast();
+    assert.ok(t.shown && apart(t.box, t.panel) && within(t.box, t.sheet) && t.hitInToast && !t.hitInPanel, JSON.stringify(t));
+    await ctx.close();
+
+    // The compare page: a toast there lies over the sheet too.
+    const c = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
+    const cp = await c.newPage();
+    await cp.goto(`${base}compare.html`);
+    await cp.locator('.cm-content').click();
+    await cp.keyboard.press('Control+A');
+    await cp.keyboard.insertText('echo hello');
+    await cp.locator('#sample').click();
+    await cp.locator('#settings-open').click();
+    await stable('the sheet slid in', () => cp.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    const ct = await cp.evaluate(`(() => { const e = document.getElementById('status'); const b = e.getBoundingClientRect(); const s = document.getElementById('settings-dialog').getBoundingClientRect(); const o = document.getElementById('col-other').getBoundingClientRect(); return { shown: e.classList.contains('shown'), box: [b.left, b.top, b.right, b.bottom], sheet: [s.left, s.top, s.right, s.bottom], other: [o.left, o.top, o.right, o.bottom] }; })()`) as { shown: boolean; box: number[]; sheet: number[]; other: number[] };
+    assert.ok(ct.shown && apart(ct.box, ct.other) && within(ct.box, ct.sheet), JSON.stringify(ct));
+    await c.close();
+  });
+
+  it('puts the sheet back at its place after a long swipe with reduced motion, which closes it at once', async function () {
+    this.timeout(60000);
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1180, height: 700 }, hasTouch: true, reducedMotion: 'reduce' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    await page.locator('#settings-open').click();
+    await stable('the sheet in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    const rest = await boxes(page);
+    const cdp = await ctx.newCDPSession(page);
+    const touch = (type: string, x?: number) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x === undefined ? [] : [{ x, y: 300 }] } as never);
+    await touch('touchStart', 800);
+    for (let i = 1; i <= 5; i++) await touch('touchMove', 800 + i * 30);
+    await touch('touchEnd');
+    await until('the swipe closed the sheet', () => isOpen(page), (v) => !v);
+    assert.strictEqual(await page.locator('#settings-dialog').evaluate((d) => (d as unknown as { style: { transform: string } }).style.transform), '');
+    await page.locator('#settings-open').click();
+    await until('open again', () => isOpen(page), (v) => v);
+    await stable('the sheet in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    assert.deepStrictEqual(await boxes(page), rest);
     await ctx.close();
   });
 
