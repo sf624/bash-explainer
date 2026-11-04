@@ -5,7 +5,7 @@ import type { Lang } from '../i18n';
 import { stepActs, stepsChange, type WordStep } from '../semantics/wordsteps';
 import { ui } from './texts';
 
-/** One step, or several in a row that do nothing for one reason, as drawn: `off`, struck through. */
+/** One step, or several in a row that do nothing for one reason, in words that say it: `off`, it does nothing (drawn muted, which the words do not need); `why`, marked text. */
 export interface StepSaid { text: string; off: boolean; why?: string }
 
 /** What a row says of its word's steps. */
@@ -30,18 +30,27 @@ export function stepsLine(steps: readonly WordStep[], context: string, lang: Lan
   const t = ui[lang].panel.steps;
   const acts = stepsChange(steps);
   const said: StepSaid[] = [];
+  const off = new Map<StepSaid, string[]>();
   for (const s of steps) {
-    const on = stepActs(s);
     const name = t.kinds[s.kind];
-    if (on) {
+    if (stepActs(s)) {
       said.push({ text: s.applies === 'unknown' ? t.maybe.replace('{kind}', name) : name, off: false });
       continue;
     }
     if (acts && !s.why) continue;
-    const why = s.why === 'context' ? t.why[WHY_OF_PLACE(context)] : s.why ? t.why[s.why] : t.none;
+    const why = s.why === 'context' ? t.why[WHY_OF_PLACE(context)] : s.why ? t.why[s.why] : undefined;
     const last = said[said.length - 1];
-    if (last?.off && last.why === why) last.text += t.and + name;
-    else said.push({ text: name, off: true, why });
+    if (last?.off && last.why === why) off.get(last)!.push(name);
+    else {
+      const entry: StepSaid = { text: '', off: true, why };
+      said.push(entry);
+      off.set(entry, [name]);
+    }
+  }
+  // (An entry names its steps at once: `no word splitting or globbing (quoted)`.)
+  for (const [entry, names] of off) {
+    entry.text = t.off.replace('{kinds}', names.length > 1 ? names.slice(0, -1).join(t.and) + t.lastAnd + names[names.length - 1] : names[0]);
+    entry.why = entry.why && t.because.replace('{why}', entry.why);
   }
   return { lead: t.lead, acts, summary: t.summary, steps: said };
 }

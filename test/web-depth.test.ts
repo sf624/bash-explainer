@@ -203,7 +203,7 @@ describe('the panel: one view with a depth', function () {
       const lines = await panel.locator('.row:has(.steps) .steps').allTextContents();
       assert.strictEqual(lines.length, 3);
       assert.match(lines[0], /^bash's steps: nothing expands/);
-      assert.match(lines[1], /parameter expansion → word splitting, globbing \(quoted\) → quote removal/);
+      assert.match(lines[1], /parameter expansion → no word splitting or globbing \(quoted\) → quote removal/);
       assert.match(lines[2], /arithmetic expansion/, 'arithmetic expansion is named');
       const fold = panel.locator('details.steps').first();
       // (A click, then a look at the next frame: the fold's motion runs or it does not.)
@@ -215,7 +215,7 @@ describe('the panel: one view with a depth', function () {
       assert.strictEqual(moved, animations, 'the fold moves as the setting says');
       assert.strictEqual(await fold.getAttribute('open'), '');
       await until('the motion over', () => panel.evaluate('document.getAnimations().filter((a) => a.playState === "running").length'), (n) => n === 0);
-      assert.match(await fold.textContent() ?? '', /brace expansion, tilde expansion.*word splitting, globbing \(none\) → quote removal/);
+      assert.match(await fold.textContent() ?? '', /no brace expansion, tilde expansion.*word splitting or globbing → quote removal/);
       await fold.locator('summary').click();
       await until('closed', () => fold.getAttribute('open'), (o) => o === null);
       await ctx.close();

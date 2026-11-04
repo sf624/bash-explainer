@@ -246,26 +246,33 @@
       foldChoices = new Map();
       openExamples = new Set();
       openSteps = new Set();
+      openRoles = new Map();
       // (And the line box opened whole: a new line shows three rows at most.)
       lineOpen = false;
     }
     // The same line drawn again (the settings changed; for its problems alone, see `squiggleLine`): a fold button or a link
     // of the list that had the focus gets it back in the new rows.
     const kept = where === shownLine ? focusInList() : null;
+    const keptRole = where === shownLine && document.activeElement instanceof HTMLElement && $('line-role').contains(document.activeElement) ? document.activeElement.dataset.role : undefined;
     const keptFold = where === shownLine ? [...document.querySelectorAll('details.whole-line > summary')].indexOf(/** @type {Element} */ (document.activeElement)) : -1;
     // Another depth of the same line: the first row on the screen that it still shows stays where it is.
-    if (where === shownLine && msg.depth !== shownDepth) holdForDepth(msg.rows);
+    if (where === shownLine && msg.depth !== shownDepth) {
+      holdForDepth(msg.rows);
+      // (A screen reader hears the depth, whichever control chose it: the panel's, the keys, the page's slot.)
+      $('said').textContent = msg.control.options.find((/** @type {{ sets: any }} */ o) => o.sets.depth === msg.depth).said;
+    }
     shownLine = where;
     shownDepth = msg.depth;
     document.body.dataset.depth = String(msg.depth);
     shownLineNo = ex.line;
     const tree = $('tree');
+    drawnRoles = new Set();
+    $('line-role').replaceChildren(...(msg.lineRole ? [roleLineOf(msg.lineRole, LINE_ROLE)] : []));
     tree.replaceChildren(...msg.rows.map((/** @type {any} */ r, /** @type {number} */ i) => item(r, `${i}`)));
-    if (kept) {
-      const row = tree.querySelector(`li[data-key="${kept.key}"] > .item > .row`);
-      const target = row && (kept.link < 0 ? row.querySelector(':scope > button.twisty') : row.querySelectorAll('.refs a')[kept.link]);
-      if (target instanceof HTMLElement) target.focus({ preventScroll: true });
-    }
+    // (A name that the new rows do not have is no longer open. The rows of depth 1 have no names: they come back with depth 2.)
+    if (msg.depth === 2) openRoles = new Map([...openRoles].filter(([key]) => drawnRoles.has(key)));
+    if (keptRole) /** @type {HTMLElement | null} */ ($('line-role').querySelector(`[data-role="${keptRole}"]`))?.focus({ preventScroll: true });
+    if (kept) focusAgain(kept);
 
     renderLine(msg.lineText, msg.lineRuns, msg.marks ?? [], msg.lineParts, msg.wrap === true);
 
@@ -625,22 +632,59 @@
     return foldingDetails(box, body);
   }
 
-  /** A row's role line: the names of its roles (their tooltip says who reads them and what the kind is), an arrow where another reader takes it, who reads it last, and its sections. */
-  function roleLineOf(/** @type {any} */ line) {
-    if (!line) return null;
+  /** The name opened on each role line, by its row's `key` (for the same line drawn again, as `foldChoices`). */
+  let openRoles = /** @type {Map<string, string>} */ (new Map());
+  /** The rows drawn just now whose open name is on them. */
+  let drawnRoles = /** @type {Set<string>} */ (new Set());
+  /** The `key` of the line's own role line, which no row has. */
+  const LINE_ROLE = '';
+
+  /**
+   * A role line: the names of a row's roles, an arrow where another reader takes it, and who reads it last. A name is a button: a tap, a click or
+   * Enter opens under the line what the kind is and who reads it, with the line's sections, and leaves the row as it is. One name is open on a line,
+   * and the line is one stop of the Tab order: the arrows go from name to name, and the links are there only while it is open.
+   */
+  function roleLineOf(/** @type {any} */ line, /** @type {string} */ key) {
     const box = el('span', { class: 'role-line' });
-    line.chips.forEach((/** @type {{ text: string, title: string, changes: boolean }} */ c, /** @type {number} */ i) => {
+    const said = el('span', { class: 'role-said', id: `role-said-${nextId++}` });
+    const chips = line.chips.map((/** @type {{ id: string, text: string, said: string, changes: boolean }} */ c, /** @type {number} */ i) => {
+      const chip = el('button', { type: 'button', class: 'role-chip', 'aria-controls': said.id, 'data-role': c.id, tabindex: i ? '-1' : '0' }, c.text);
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hold(() => box);
+        if (openRoles.get(key) === c.id) openRoles.delete(key);
+        else openRoles.set(key, c.id);
+        show();
+      });
       if (i) box.append(c.changes ? ' → ' : ' · ');
-      box.append(el('span', { class: 'role-chip', title: c.title }, c.text));
+      box.append(chip);
+      return chip;
     });
+    const show = () => {
+      const open = line.chips.find((/** @type {{ id: string }} */ c) => c.id === openRoles.get(key));
+      chips.forEach((/** @type {HTMLElement} */ chip) => chip.setAttribute('aria-expanded', String(chip.dataset.role === open?.id)));
+      said.hidden = !open;
+      said.replaceChildren(...(open ? [...inline(open.said), ...refLinks(line.refs)] : []));
+      if (open) drawnRoles.add(key);
+    };
+    box.addEventListener('keydown', (e) => {
+      const by = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      const at = chips.indexOf(e.target);
+      if (!by || at < 0) return;
+      e.preventDefault();
+      const next = chips[(at + by + chips.length) % chips.length];
+      chips.forEach((/** @type {HTMLElement} */ chip) => { chip.tabIndex = chip === next ? 0 : -1; });
+      next.focus();
+    });
+    show();
     if (line.reader) box.append(' · ', line.reader);
-    box.append(...refLinks(line.refs));
+    box.append(said);
     return box;
   }
 
-  /** The steps of a word, in order: one that does nothing is struck through, with why. */
+  /** The steps of a word, in order: each says itself whether it acts (a line read aloud has no drawing), and one that does nothing says why. */
   function stepList(/** @type {{ text: string, off: boolean, why?: string }[]} */ steps) {
-    return steps.flatMap((s, i) => [...(i ? [' → '] : []), s.off ? el('s', { class: 'step-off' }, s.text) : el('span', { class: 'step-on' }, s.text), ...(s.why ? [' (', ...inline(s.why), ')'] : [])]);
+    return steps.flatMap((s, i) => [...(i ? [' → '] : []), el('span', { class: s.off ? 'step-off' : 'step-on' }, s.text), ...(s.why ? inline(s.why) : [])]);
   }
 
   /** The steps kept open by the reader, by row (for the same line drawn again). */
@@ -1051,8 +1095,7 @@
     if (chip) text.append(chip);
     text.append(...refLinks(part.refs));
     // At depth 2: what the part is to each reader, and what bash does to a word.
-    const role = roleLineOf(part.roleLine);
-    if (role) text.append(role);
+    if (part.roleLine) text.append(roleLineOf(part.roleLine, part.key));
     if (part.steps) text.append(stepsOf(part.steps, part.key));
     row.append(twisty, code, text, ...tryIt);
     box.append(row);
@@ -1068,11 +1111,11 @@
     const shown = { token: part, el: row, end: 0 };
     flat.push(shown);
     row.addEventListener('mouseenter', () => focus(index));
-    row.addEventListener('mouseleave', () => focus(-1));
+    row.addEventListener('mouseleave', () => focus(focusByKeys ? focusedRow() : -1));
     // As in VS Code's trees: a click on a row with parts folds or unfolds it, and still selects it.
     row.addEventListener('click', (e) => {
       if (selecting()) return;
-      if (!(e.target instanceof Element && e.target.closest('a, button, input, textarea, select'))) {
+      if (!(e.target instanceof Element && e.target.closest('a, button, input, textarea, select, .role-said'))) {
         if (part.children.length) toggle(li);
       }
       reveal(part);
@@ -1090,16 +1133,64 @@
     return li;
   }
 
-  /** What of the list's rows has the focus: a row's fold button (`link` -1) or its link number `link`; null: nothing there. */
+  /** What of the list's rows has the focus: its row and the rows around it (`keys`, nearest first), and a row's fold button (`link` -1), its link number `link` or a role's name (`role`); null: nothing there. */
   function focusInList() {
     const a = document.activeElement;
     const li = a instanceof HTMLElement && $('tree').contains(a) ? /** @type {HTMLElement | null} */ (a.closest('li[data-path]')) : null;
     if (!li || !a) return null;
-    const row = li.querySelector(':scope > .item > .row');
-    if (a.matches('button.twisty')) return { key: String(li.dataset.key), link: -1 };
-    const links = row ? Array.from(row.querySelectorAll('.refs a')) : [];
-    return links.includes(a) ? { key: String(li.dataset.key), link: links.indexOf(a) } : null;
+    const keys = [];
+    for (let up = /** @type {HTMLElement | null | undefined} */ (li); up; up = up.parentElement?.closest('li[data-path]')) keys.push(String(up.dataset.key));
+    const row = /** @type {Element} */ (li.querySelector(':scope > .item > .row'));
+    const links = Array.from(row.querySelectorAll('.refs a'));
+    return { keys, link: a.matches('button.twisty') ? -1 : links.indexOf(a), role: /** @type {HTMLElement} */ (a).dataset.role };
   }
+
+  /**
+   * The focus again, in the rows just drawn: on what had it, or, when that row is gone (its depth was left) or does not have it now, on the row that
+   * owns it: its fold button, or the row itself, so that the next Tab goes on from there and not from the top of the page.
+   */
+  function focusAgain(/** @type {{ keys: string[], link: number, role?: string }} */ kept) {
+    const row = kept.keys.map((key) => document.querySelector(`#tree li[data-key="${key}"] > .item > .row`)).find(Boolean);
+    if (!(row instanceof HTMLElement)) return;
+    const same = row === document.querySelector(`#tree li[data-key="${kept.keys[0]}"] > .item > .row`);
+    const target = same && (kept.role ? row.querySelector(`.role-chip[data-role="${kept.role}"]`) : kept.link >= 0 ? row.querySelectorAll('.refs a')[kept.link] : null);
+    if (target instanceof HTMLElement) {
+      // (Where the Tab order has it: a name kept has the line's stop.)
+      if (kept.role) row.querySelectorAll('.role-chip').forEach((c) => { /** @type {HTMLElement} */ (c).tabIndex = c === target ? 0 : -1; });
+      target.focus({ preventScroll: true });
+      return;
+    }
+    const fold = row.querySelector(':scope > button.twisty');
+    if (fold instanceof HTMLElement) fold.focus({ preventScroll: true });
+    else {
+      row.tabIndex = -1;
+      row.focus({ preventScroll: true });
+    }
+  }
+
+  /** The number of the row that has the focus; -1: none has. */
+  function focusedRow() {
+    const a = document.activeElement;
+    const li = a instanceof HTMLElement && $('tree').contains(a) ? a.closest('li[data-path]') : null;
+    const row = li?.querySelector(':scope > .item > .row');
+    return row ? flat.findIndex((f) => f.el === row) : -1;
+  }
+
+  /** When the pointer last went down: a focus soon after it is the pointer's, which marks its row by being on it. */
+  let pointerAt = 0;
+  document.addEventListener('pointerdown', () => { pointerAt = Date.now(); }, true);
+  /** Whether the focus in the rows came from the keyboard. */
+  let focusByKeys = false;
+  // The focus of the keyboard marks its row and that row's characters in the line, as a pointer on it does.
+  $('tree').addEventListener('focusin', () => {
+    focusByKeys = Date.now() - pointerAt > 500;
+    if (focusByKeys) focus(focusedRow());
+  });
+  $('tree').addEventListener('focusout', (e) => {
+    if (e.relatedTarget instanceof Node && $('tree').contains(e.relatedTarget)) return;
+    if (focusByKeys) focus(-1);
+    focusByKeys = false;
+  });
 
   /** Folds or unfolds an item of the list; the change returned says how what lies under it moves (see `fold`). */
   function setCollapsed(/** @type {HTMLElement} */ li, /** @type {boolean} */ want) {
@@ -1601,14 +1692,21 @@
 
   /**
    * Of `items`, the first row on the screen (below `below`, the sticky rows at the top) that `stays` after a change;
-   * else the nearest item around the first on the screen that stays.
+   * else the nearest item around the first on the screen that stays. With no row on the screen, only what lies under one (a long example): the
+   * deepest item that reaches the screen, whose example is held where it is, so that it stays on the screen whatever its row above does.
    */
   function firstOnScreen(/** @type {HTMLElement[]} */ items, /** @type {number} */ below, /** @type {(li: HTMLElement) => boolean} */ stays) {
-    const on = items.filter((li) => {
-      const r = /** @type {HTMLElement} */ (li.querySelector(':scope > .item > .row')).getBoundingClientRect();
+    const reaches = (/** @type {Element} */ e) => {
+      const r = e.getBoundingClientRect();
       return r.bottom > below && r.top < window.innerHeight;
-    });
-    let li = /** @type {HTMLElement | null | undefined} */ (on.find(stays) ?? on[0]);
+    };
+    const on = items.filter((li) => reaches(/** @type {HTMLElement} */ (li.querySelector(':scope > .item > .row'))));
+    if (!on.length) {
+      const under = items.filter((li) => reaches(/** @type {HTMLElement} */ (li.querySelector(':scope > .item')))).pop();
+      const place = under && Array.from(under.querySelectorAll(':scope > .item > .body > .example')).findIndex(reaches);
+      if (under && stays(under) && place !== undefined && place >= 0) return () => document.querySelectorAll(`#tree li[data-key="${under.dataset.key}"] > .item > .body > .example`)[place] ?? null;
+    }
+    let li = /** @type {HTMLElement | null | undefined} */ (on.find(stays) ?? on[0] ?? items.filter((x) => reaches(/** @type {HTMLElement} */ (x.querySelector(':scope > .item')))).pop());
     while (li && !stays(li)) li = /** @type {HTMLElement | null} */ (li.parentElement?.closest('li'));
     return li ? rowAt(String(li.dataset.key)) : null;
   }

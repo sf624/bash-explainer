@@ -88,11 +88,11 @@ describe('the roles of a row (src/ui/panelRoles.ts)', () => {
     assert.strictEqual(roleLine([]), undefined);
     // (bash taking over says no reader: it is the default.)
     assert.strictEqual(roleLine([roleFor(node({ layer: 'bash', kind: 'word' }), undefined, 'en')])!.reader, undefined);
-    // (The same name twice is one name; its tooltip says who reads it, and what the kind is.)
+    // (The same name twice is one name; it opens to who reads it, and what the kind is.)
     const name = roleFor(node({ layer: 'bash', kind: 'argument' }), node({ layer: 'bash', kind: 'line' }), 'en');
     assert.deepStrictEqual(roleLine([name, name])!.chips.length, 1);
-    assert.match(roleLine([name])!.chips[0].title, /An argument: bash expands it.*\(bash parses it\)/);
-    assert.strictEqual(roleLine([roleFor(node({ layer: 'bash', kind: 'unheard-of' }), node({ layer: 'bash', kind: 'line' }), 'en')])!.chips[0].title, 'bash parses it');
+    assert.match(roleLine([name])!.chips[0].said, /An argument: bash expands it.*\(bash parses it\)/);
+    assert.strictEqual(roleLine([roleFor(node({ layer: 'bash', kind: 'unheard-of' }), node({ layer: 'bash', kind: 'line' }), 'en')])!.chips[0].said, 'bash parses it');
   });
 
   it('colours a node\'s code by the role of its kind, as the list colours its tokens', () => {

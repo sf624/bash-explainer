@@ -13,9 +13,9 @@ import { markedText, textParts } from '../src/tokenmarks';
 import { sameSpan } from '../src/ui/hoverParts';
 import { type ModelRow, type RowOptions, rowModel, wholeLineExamples } from '../src/ui/panelRows';
 import { panelUpdate } from '../src/ui/panelView';
-import { roleOf, tokenRole } from '../src/ui/panelRoles';
+import { roleOf } from '../src/ui/panelRoles';
 import { stepsLine } from '../src/ui/panelSteps';
-import { placeExamples } from '../src/ui/render';
+import { placeExamples, toPlainMarkdown } from '../src/ui/render';
 import { main } from '../cli/main';
 import { corpus } from './support/corpus';
 
@@ -570,20 +570,145 @@ describe('the panel\'s row model', () => {
       // (The ja role line reads the same ids.)
       assert.strictEqual(row('tar -czf "$b" x', '"$b"', 'ja').roleLine!.chips[1].text, '-f の値');
       assert.strictEqual(row('tar -czf "$b" x', '"$b"', 'ja').roleLine!.reader, 'tar が読む');
-      // A row the tree has no node of: what its token is.
-      assert.deepStrictEqual(line('cd $d/x', '/x').slice(0, 2), ['argument', undefined]);
-      assert.strictEqual(row('cd $d/x', '/x').roles[0].id, 'token:argument');
-      assert.strictEqual(row('x="a"', '"a"').roleLine!.chips[0].text, 'literal');
-      // Over the corpus below: every row has one.
       assert.strictEqual(rows('cd $d/x', D1)[0].roleLine, undefined);
     });
 
-    it('says who reads what a command or a language reads, where the tree has no node of the row', () => {
-      const argv = tokenRole({ kind: 'argument', origin: 'argv' }, 'en');
-      assert.deepStrictEqual([argv.layer, argv.readBy], ['command', '']);
-      const language = tokenRole({ kind: 'pattern', origin: 'embedded' }, 'en');
-      assert.deepStrictEqual([language.layer, language.chip], ['language', 'pattern']);
-      assert.strictEqual(tokenRole({ kind: 'unheard' as Token['kind'] }, 'en').chip, 'unheard');
+    // A role says where a part stands in bash's reading: the place its range has there, never what its token is lexically. Each row: the code,
+    // its names in English and in Japanese ('' for no role), and who reads it last. Where main's Reading had a node of the range, its names are here too,
+    // but for quotes, which are a property of a word (`x="$DIR"` said "quotes": it is the value); what is added is a place that Reading did not draw.
+    const ROLES: readonly (readonly [src: string, label: string, en: string, ja: string, reader?: string])[] = [
+      // The value of an assignment, whatever its token's kind is.
+      ['x=notes.txt', 'notes.txt', 'value', '値'],
+      ['d=/tmp', '/tmp', 'value', '値'],
+      ['x=1', '1', 'value', '値'],
+      ['x="$DIR"', '"$DIR"', 'value', '値'],
+      ["x='a b'", "'a b'", 'value', '値'],
+      ['x=$y', '$y', 'value | expansion', '値 | 展開'],
+      ['x=$(date)', '$(date)', 'value | substitution', '値 | 置換'],
+      ['x=a$b', 'a$b', 'value', '値'],
+      ['x+=1', '1', 'value', '値'],
+      ['a[0]=x', 'x', 'value', '値'],
+      ['backup="${HOME}/b-$(date +%F).tar.gz"', '"${HOME}/b-$(date +%F).tar.gz"', 'value', '値'],
+      ['export LANG=C', 'C', 'value', '値'],
+      ['local v="$1"', '"$1"', 'value', '値'],
+      // The first word, when the name is known only when it runs.
+      ['"$cmd" x', '"$cmd"', 'simple command | first word', '単純コマンド | 最初の単語'],
+      ['$cmd x', '$cmd', 'simple command | first word', '単純コマンド | 最初の単語'],
+      ['$cmd x', 'x', 'word', '単語'],
+      // A pipeline with its `!` or `time`, on its top row, and what `time` stands before.
+      ['! grep -q x f', '! grep', 'pipeline', 'パイプライン'],
+      ['! grep -q x f', '!', 'reserved word', '予約語'],
+      ['! a && b', '! a', 'pipeline', 'パイプライン'],
+      ['! a && b', '! a && b', 'AND list', 'AND リスト'],
+      ['time ls', 'time ls', 'pipeline', 'パイプライン'],
+      ['time -p ls | wc', 'time -p ls | wc', 'pipeline', 'パイプライン'],
+      ['time -p ls | wc', 'time', 'reserved word', '予約語'],
+      ['time -p ls | wc', '-p', 'option', 'オプション'],
+      ['time -p ls | wc', 'ls | wc', 'pipeline', 'パイプライン'],
+      ['time -p', 'time -p', 'pipeline', 'パイプライン'],
+      ['echo $(time -p a | b)', 'a | b', 'pipeline', 'パイプライン'],
+      // A piece of a word has no role: the word has it. A part bash reads in it has its own.
+      ['cd $d/cache', '$d/cache', 'argument | operand: each word it splits into', '引数 | オペランド: 分割された語ごと', 'cd reads it'],
+      ['cd $d/cache', '/cache', '', ''],
+      ['cd $d/cache', '$d', 'expansion', '展開'],
+      ['echo a$b', 'a', '', ''],
+      ['echo "a"b', '"a"', '', ''],
+      ['echo "a"b', 'b', '', ''],
+      ['x=a$b', 'a', '', ''],
+      ['alias ll="ls -l"', 'll=', '', ''],
+      // A whole word.
+      ['echo "$a"', '"$a"', 'argument | operand', '引数 | オペランド', 'echo reads it'],
+      ["echo 'x'", "'x'", 'argument | operand', '引数 | オペランド', 'echo reads it'],
+      ['echo *.txt', '*.txt', 'argument | operand: each matching file name', '引数 | オペランド: 一致したファイル名ごと', 'echo reads it'],
+      ['echo {a,b}', '{a,b}', 'argument | brace expansion | operand: each word the braces give', '引数 | ブレース展開 | オペランド: ブレース展開の語ごと', 'echo reads it'],
+      // A command name, and what another command runs: to bash an argument.
+      ['[ -f f ]', '[ -f f ]', 'simple command | command name', '単純コマンド | コマンド名'],
+      ['[ -f f ]', '[', 'command name', 'コマンド名'],
+      ['sudo echo hi', 'echo', 'argument | command name', '引数 | コマンド名', 'sudo reads it'],
+      ['nice -n 5 ls', 'ls', 'argument | command name', '引数 | コマンド名', 'nice reads it'],
+      ['xargs rm -f', 'rm', 'argument | command name', '引数 | コマンド名', 'xargs reads it'],
+      ['tar -czf "$out" x', '"$out"', 'argument | value of -f', '引数 | -f の値', 'tar reads it'],
+      // What a reader's language calls its parts, as main's Reading did.
+      ["grep -E '^a' f", "'^a'", 'argument | operand | regex', '引数 | オペランド | 正規表現', 'grep reads it'],
+      // Redirections, here-documents, lists, compound commands.
+      ['cat <<E\nhi\nE', '<<E', 'redirection | here-document', 'リダイレクト | ヒアドキュメント'],
+      ['cat <<E\nhi\nE', 'E', 'delimiter', '終わりの区切り'],
+      ['a >x', 'x', 'word', '単語'],
+      ['a 2>&1', '2', 'file descriptor', 'ファイルディスクリプタ'],
+      ['a; b &', 'a; b &', 'list', 'リスト'],
+      ['a | b', 'a | b', 'pipeline', 'パイプライン'],
+      ['a && b || c', 'a && b || c', 'OR list', 'OR リスト'],
+      ['if a; then b; fi', 'then', 'reserved word', '予約語'],
+      ['(a; b)', 'a; b', 'list', 'リスト'],
+      ['echo $(a)', '$(a)', 'argument | substitution | operand: each word it splits into', '引数 | 置換 | オペランド: 分割された語ごと', 'echo reads it'],
+      ['echo ${items[1]}', '[1]', 'expression', '式'],
+      ["PS1='\\u@\\h'", "'\\u@\\h'", 'value | prompt string', '値 | プロンプト文字列', ''],
+    ];
+    for (const lang of ['en', 'ja'] as const) {
+      it(`says each row's role by its place in bash's reading, not by its token's kind, ${lang}`, () => {
+        const got = ROLES.map(([src, label]) => {
+          const r = all(rowModel(explain(src, 0, lang), D2, lang).rows).find((x) => x.label === label);
+          assert.ok(r, `${src}: no row ${label}`);
+          return (r.roleLine?.chips ?? []).map((c) => c.text).join(' | ');
+        });
+        assert.deepStrictEqual(got, ROLES.map((r) => (lang === 'en' ? r[2] : r[3])));
+      });
+    }
+
+    it('copies the same at both depths: the Markdown does not read the reading tree', () => {
+      for (const src of ['x=notes.txt', 'grep -q "$a" f | sort', 'time -p ls | wc', 'cat <<E\nhi\nE']) {
+        const line = src.split('\n')[0];
+        const lean = new Analyzer('en').explainLine(parser.parse(src), 0, 'bash', { reading: false, argv: true });
+        assert.strictEqual(toPlainMarkdown(explain(src), line, 'a.sh:1', 'en'), toPlainMarkdown(lean, line, 'a.sh:1', 'en'), src);
+      }
+    });
+
+    it('says who reads a row last, on the table of roles', () => {
+      for (const [src, label, , , reader] of ROLES) {
+        if (reader === '') continue;
+        assert.strictEqual(all(rowModel(explain(src), D2, 'en').rows).find((x) => x.label === label)!.roleLine?.reader, reader, `${src}: ${label}`);
+      }
+    });
+
+    it('opens a name to what it is and who reads it; what a command or a language reads has no text of bash\'s', () => {
+      const said = (src: string, label: string) => row(src, label).roleLine!.chips.map((c) => c.said);
+      assert.deepStrictEqual(said('grep -q x f', '-q'), ['An argument: bash expands it and passes its fields to the command. (bash parses it)', 'grep reads it, not bash']);
+      assert.match(said('x=a', 'a')[0], /^The value of an assignment: .*no word splitting or globbing/);
+      assert.match(said('cat <<E\nhi\nE', '<<E')[1], /^The body of the here-document/);
+      // (In Japanese, who reads it in full-width parentheses.)
+      assert.match(row('x=a', 'a', 'ja').roleLine!.chips[0].said, /。（bash が解析する）$/);
+      // (The ids are the same in both languages.)
+      assert.deepStrictEqual(row('x=a', 'a', 'ja').roleLine!.chips.map((c) => c.id), row('x=a', 'a').roleLine!.chips.map((c) => c.id));
+    });
+
+    it('gives the whole line its role, which no row stands for, at depth 2 with the reading tree only', () => {
+      for (const [lang, name, about] of [['en', 'bash reads the line', /^bash splits the line into commands/], ['ja', 'bash がこの行を読む', /^bash はこの行をコマンドに分け/]] as const) {
+        const chip = model('a; b', D2, lang).line!.chips[0];
+        assert.strictEqual(chip.text, name);
+        assert.match(chip.said, about);
+      }
+      assert.strictEqual(model('a; b').line, undefined);
+      assert.strictEqual(rowModel({ ...explain('a'), reading: undefined }, D2, 'en').line, undefined);
+      assert.strictEqual(rowModel({ ...explain('a'), items: [] }, D2, 'en').line, undefined);
+    });
+
+    it('keeps the section of what has no row of its own, on the row around it', () => {
+      const refs = (src: string, label: string) => { const r = row(src, label); return [...r.refs ?? [], ...r.roleLine?.refs ?? []]; };
+      assert.ok(refs("git log --format='%h %s'", "--format='%h %s'").includes('3.1.2.2'));
+      assert.ok(refs('echo ${items[1]}', '[1]').includes('6.5'));
+      assert.ok(refs('a; b', ';').includes('3.2.4') || refs('a; b', 'a; b').includes('3.2.4'));
+      assert.ok(refs('cut -d"," -f2 f', '-d","').includes('3.1.2.3'));
+      // (A piece of a word has no role line: its section is beside its text.)
+      assert.ok((row('echo "a"b', '"a"').refs ?? []).includes('3.1.2.3'));
+    });
+
+    it('says a text of the catalog once on a line: the same message with another name in it', () => {
+      const more = (src: string) => all(rowModel(explain(src), D2, 'en').rows).flatMap((r) => r.more.map((m) => m.map((p) => p.text).join('')));
+      assert.strictEqual(more('a >x | b >y').filter((t) => t.startsWith('Redirection applied to')).length, 1);
+      assert.strictEqual(more('echo $e $f $g').filter((t) => t.startsWith('Expands to the value of')).length, 1);
+      // (A warning stays on each.)
+      const warned = all(rowModel(explain('rm -rf $a $b'), D2, 'en').rows).flatMap((r) => r.more).filter((m) => m.some((p) => p.level));
+      assert.deepStrictEqual(warned.length, all(rowModel(explain('rm -rf $a $b'), D1, 'en').rows).flatMap((r) => r.more).filter((m) => m.some((p) => p.level)).length);
     });
 
     it('gives a list and its first command, of one range, each its own roles', () => {
@@ -655,8 +780,8 @@ describe('the panel\'s row model', () => {
 
     it('gives a word bash changes its steps in bash\'s order, on the row of the word; none to a plain word', () => {
       const line = (src: string, label: string) => row(src, label).steps;
-      const text = (src: string, label: string) => line(src, label)!.steps.map((s) => (s.off ? `~${s.text}~ (${s.why})` : s.text));
-      assert.deepStrictEqual(text('echo "$a"', '"$a"'), ['parameter expansion', '~word splitting, globbing~ (quoted)', 'quote removal']);
+      const text = (src: string, label: string) => line(src, label)!.steps.map((s) => (s.off ? `${s.text}${s.why}` : s.text));
+      assert.deepStrictEqual(text('echo "$a"', '"$a"'), ['parameter expansion', 'no word splitting or globbing (quoted)', 'quote removal']);
       assert.deepStrictEqual(text('echo $a', '$a'), ['parameter expansion', 'word splitting', 'globbing']);
       assert.deepStrictEqual(text('echo *.txt', '*.txt'), ['globbing']);
       assert.deepStrictEqual(text('echo ~/a', '~/a'), ['tilde expansion']);
@@ -665,9 +790,9 @@ describe('the panel\'s row model', () => {
       assert.deepStrictEqual(text('echo $((1+2))', '$((1+2))'), ['arithmetic expansion', 'word splitting', 'globbing']);
       assert.deepStrictEqual(text('cat <(a)', '<(a)'), ['process substitution']);
       assert.strictEqual(line('set -f; echo *', '*')!.acts, false);
-      assert.ok(text('set -f; echo *', '*').includes('~globbing~ (`set -f`)'));
-      assert.deepStrictEqual(text('x=$a', 'x=$a'), ['parameter expansion', '~word splitting, globbing~ (not in an assignment)']);
-      assert.deepStrictEqual(text('[[ $a == b ]]', '$a'), ['parameter expansion', '~word splitting, globbing~ (not in `[[ ]]`)']);
+      assert.ok(text('set -f; echo *', '*').includes('no globbing (`set -f`)'));
+      assert.deepStrictEqual(text('x=$a', 'x=$a'), ['parameter expansion', 'no word splitting or globbing (not in an assignment)']);
+      assert.deepStrictEqual(text('[[ $a == b ]]', '$a'), ['parameter expansion', 'no word splitting or globbing (not in `[[ ]]`)']);
       assert.strictEqual(line('echo a', 'a'), undefined);
       assert.strictEqual(line('x=a', 'x=a'), undefined);
       assert.strictEqual(line('tar -c', '-c'), undefined);
@@ -681,15 +806,17 @@ describe('the panel\'s row model', () => {
       assert.strictEqual(fold.summary, 'nothing expands');
       assert.strictEqual(fold.lead, "bash's steps:");
       assert.deepStrictEqual(fold.steps.map((s) => [s.text, s.off, s.why]), [
-        ['brace expansion, tilde expansion, parameter expansion, command substitution, arithmetic expansion, process substitution, word splitting, globbing', true, 'none'],
+        ['no brace expansion, tilde expansion, parameter expansion, command substitution, arithmetic expansion, process substitution, word splitting or globbing', true, undefined],
         ['quote removal', false, undefined],
       ]);
-      assert.strictEqual(row('echo "a"', '"a"', 'ja').steps!.steps[0].why, 'なし');
+      assert.strictEqual(row('echo "a"', '"a"', 'ja').steps!.steps[0].text, 'ブレース展開・チルダ展開・パラメータ展開・コマンド置換・算術展開・プロセス置換・単語分割・グロブはしない');
+      // (In Japanese, the reason in full-width parentheses: docs/japanese-style.md.)
+      assert.deepStrictEqual(row('echo "$a"', '"$a"', 'ja').steps!.steps[1], { text: '単語分割・グロブはしない', off: true, why: '（クォート内）' });
       assert.strictEqual(row('echo "a"', '"a"', 'ja').steps!.summary, '展開はなし');
       // "maybe": a step known only when the line runs.
       const unknown = stepsLine([{ kind: 'split', applies: 'unknown', manual: '3.5.7' }], 'argument', 'en');
       assert.deepStrictEqual(unknown.steps, [{ text: 'word splitting (maybe)', off: false }]);
-      assert.deepStrictEqual(stepsLine([{ kind: 'split', applies: false, why: 'context', manual: '3.5.7' }], 'other', 'en').steps.map((s) => s.why), ['not done here']);
+      assert.deepStrictEqual(stepsLine([{ kind: 'split', applies: false, why: 'context', manual: '3.5.7' }], 'other', 'en').steps.map((s) => s.why), [' (not done here)']);
     });
 
     it('starts folded a row whose parts all come at depth 2, and never one that holds a row of depth 1', () => {
@@ -710,7 +837,7 @@ describe('the panel\'s row model', () => {
       assert.ok(ex("sed 's/a/b/' f", 2).every((e) => e.kind !== 'glob' && !e.folded));
     });
 
-    it('over the corpus: depth 2 only adds, holds every text of the line, has a row for each reserved word and operator on the line, a role line on each row; nothing of depth 1 is folded away', function () {
+    it('over the corpus: depth 2 only adds, holds every text of the line, has a row for each reserved word and operator on the line, roles from places only; nothing of depth 1 is folded away', function () {
       this.timeout(300000);
       const { files, snippets } = corpus();
       for (const { name, text } of [...files, ...snippets]) {
@@ -735,10 +862,15 @@ describe('the panel\'s row model', () => {
           const plainOf = (t: Token) => markedText(t);
           for (const t of tokens(ex.items)) {
             if (two.some((r) => r.connector && sameSpan(r.span, t.span))) continue;
-            assert.ok(said.has(plainOf(t)) || [...said].some((x) => x.includes(textParts(t).map((p) => p.text).join(''))), `${at}: "${plainOf(t)}" of ${t.label}`);
+            // (Or the same message of the catalog, said once on the line, with another name.)
+            const again = !!t.texts?.length && !t.marks?.length && tokens(ex.items).some((o) => o !== t && o.texts?.join(' ') === t.texts!.join(' ') && said.has(plainOf(o)));
+            assert.ok(again || said.has(plainOf(t)) || [...said].some((x) => x.includes(textParts(t).map((p) => p.text).join(''))), `${at}: "${plainOf(t)}" of ${t.label}`);
           }
-          // Each row has its role line.
-          for (const r of two) assert.ok(r.roleLine?.chips.length, `${at}: ${r.label}`);
+          // A role comes from a place: a row of bash's grammar has its own, one on a list's range is that list, and a row with none is a piece.
+          for (const r of two) {
+            if (r.frame === 'group') assert.ok(r.roleLine?.chips.length, `${at}: ${r.label}`);
+            assert.ok(!r.roles.some((x) => x.id.startsWith('token:')), `${at}: ${r.label}`);
+          }
           // A row for each reserved word and operator of the tree on the lines shown, unless a row around it speaks for it.
           const shownLines = new Set(tokens(ex.items).map((t) => t.span.start.line));
           for (const n of ex.reading ? readingNodes(ex.reading) : []) {
@@ -767,7 +899,8 @@ describe('the panel\'s row model', () => {
       assert.deepStrictEqual(roles('ja'), roles('en'));
       const value = all(model(src, D2).rows).find((r) => r.label === '"$out"')!;
       assert.deepStrictEqual(value.roles.map((x) => x.chip), ['argument', 'value of -f']);
-      assert.deepStrictEqual(value.roles.map((x) => x.readBy), ['bash parses it', 'tar reads it, not bash']);
+      assert.match(value.roles[0].said, /\(bash parses it\)$/);
+      assert.strictEqual(value.roles[1].said, 'tar reads it, not bash');
       assert.deepStrictEqual(value.roles.map((x) => x.band), [undefined, 'tar reads it']);
       assert.strictEqual(all(model(src, D2, 'ja').rows).find((r) => r.label === '"$out"')!.roles[1].chip, '-f の値');
       assert.deepStrictEqual(all(model(src).rows).flatMap((r) => r.roles), []);

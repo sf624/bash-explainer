@@ -1234,8 +1234,8 @@ li.collapsed > .item > .body > [data-closing] {
 
 /* ---------------------------------------------------------------- depth 2: what each reader makes of a row */
 
-/* A row's role line (media/panel.js `roleLineOf`): one muted line under its text, at one place on every row. A name's tooltip says
-   who reads it and what the kind is. */
+/* A row's role line (media/panel.js `roleLineOf`): one muted line under its text, at one place on every row. A name is a button, which opens
+   what the kind is and who reads it under the line. */
 .role-line,
 .steps {
   display: block;
@@ -1245,10 +1245,51 @@ li.collapsed > .item > .body > [data-closing] {
 }
 
 .role-chip {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: inherit;
   text-decoration: underline dotted;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.2em;
 }
+
+/* (On a touch screen, more room to press than the line draws.) */
+@media (pointer: coarse) {
+  .role-chip {
+    padding-block: 0.4em;
+    margin-block: -0.4em;
+  }
+}
+
+.role-chip[aria-expanded="true"] {
+  color: var(--vscode-foreground);
+  text-decoration-style: solid;
+}
+
+.role-chip:focus-visible,
+.row:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+/* (What a name opens to: its own line, in the colour of a text, under the role line.) */
+.role-said {
+  display: block;
+  margin: 0.15em 0 0.25em;
+  color: var(--vscode-foreground);
+  overflow-wrap: anywhere;
+}
+
+.role-said[hidden] { display: none; }
+
+/* (Under the rows: above them it would move them, and "In short", when the depth changes.) */
+#line-role .role-line { margin-top: 0.4rem; }
 
 /* (Depth 2 has more rows, each with a line more: they stand closer. The rows keep their order and their text column.) */
 body[data-depth="2"] .row {
@@ -1257,7 +1298,7 @@ body[data-depth="2"] .row {
   padding-bottom: 0.1rem;
 }
 
-/* What bash does to a word: a step that does nothing is struck through (and says why); where none acts, the line folds. */
+/* What bash does to a word: a step that does nothing says so in words, and why, muted; where none acts, the line folds. */
 .steps .step-on { color: var(--vscode-foreground); }
 .steps-lead { font-weight: 500; }
 details.steps > summary { cursor: pointer; }

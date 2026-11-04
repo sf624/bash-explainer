@@ -1553,6 +1553,7 @@
  "rm -rf \"${DIR}/build\"",
  "rm -rf $DIR/*",
  "rm -rf $DIR/build",
+ "rm -rf $a $b",
  "rm -rf ${D%/}/x",
  "rm -rf \\\n  x\n",
  "rm-empty-variable-root",
