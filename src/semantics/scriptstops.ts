@@ -308,7 +308,7 @@ function runsAtExit(action: SyntaxNode): boolean {
 export function stringSurelyRuns(script: Pick<NestedScript, 'kind' | 'words' | 'env'>): boolean {
   if (!surelyRuns(script.words[0])) return false;
   if (script.kind === 'later') return runsAtExit(script.words[0]);
-  return script.env.links.every((l) => l.kind !== 'slot' || l.slot.later || (l.slot.once && !l.invocation?.some((o) => /^-[A-Za-z]*n/.test(o.flag))));
+  return script.env.links.every((l) => l.kind !== 'slot' || l.slot.later || (l.slot.once && !l.invocation?.some((o) => o.flag === '-n')));
 }
 
 /**

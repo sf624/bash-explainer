@@ -687,10 +687,10 @@ describe('argv specs: the dictionary entries `cmd` builds', () => {
       const c = p.roles.find((r) => r.role.role === 'command')!.role;
       return c.role === 'command' ? c.slot : undefined;
     };
-    assert.deepStrictEqual(slot('command ls'), { run: 'current-shell', lookup: 'no-functions' });
-    assert.deepStrictEqual(slot('builtin cd'), { run: 'current-shell', lookup: 'builtins-only' });
-    assert.deepStrictEqual(slot('exec ls'), { run: 'exec', replacesShell: true });
-    assert.deepStrictEqual(slot('chroot /mnt ls'), { run: 'exec' });
+    assert.deepStrictEqual(slot('command ls'), { run: 'current-shell', lookup: 'no-functions', once: true });
+    assert.deepStrictEqual(slot('builtin cd'), { run: 'current-shell', lookup: 'builtins-only', once: true });
+    assert.deepStrictEqual(slot('exec ls'), { run: 'exec', replacesShell: true, once: true });
+    assert.deepStrictEqual(slot('chroot /mnt ls'), { run: 'exec', once: true });
     const k = parseOf('kubectl exec pod -- ls').roles[0].role;
     assert.ok(k.role === 'subcommand' && k.parse.roles[2].role.role === 'command');
     // A positional language applies to its own index only.
