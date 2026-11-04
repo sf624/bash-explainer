@@ -348,6 +348,81 @@ describe('the web page: the phone\'s sheet', function () {
     await page.context().close();
   });
 
+  it('lets a second finger on its header go without a move, and ends a drag when the window changes under the finger', async () => {
+    // A second finger down and up with no move: the first one's drag ends as usual, and the sheet answers its keys.
+    let page = await open(await phone(390, 'en'));
+    let cdp = await page.context().newCDPSession(page);
+    const edge = { full: (await snapTo(page, 'full')).y, half: (await snapTo(page, 'half')).y };
+    let y = edge.half + 24;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 6, y, id: 0 }] });
+    for (let i = 1; i <= 10; i++) {
+      await page.waitForTimeout(16);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 6, y: y - i * 10, id: 0 }] });
+    }
+    const two = [{ x: 6, y: y - 100, id: 0 }, { x: 200, y: y - 100, id: 1 }];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: two });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await settled(page);
+    assert.strictEqual(await page.locator('#panel-pane').evaluate((e) => e.classList.contains('dragging')), false, 'the drag has ended');
+    await page.locator('#sheet-grab').focus();
+    await page.keyboard.press('End');
+    const full = await settled(page);
+    assert.deepStrictEqual([full.snap, full.pane.y], ['full', edge.full]);
+    assert.ok(!/height|transform/.test((await page.locator('#panel-pane').getAttribute('style')) ?? ''), 'no height nor move left on the sheet');
+    await page.context().close();
+
+    // The window changes mid-drag: the phone turned (the layout is wide), and the keyboard opened (the window shrinks).
+    // The next move draws nothing of the old drag, and the sheet is where a finger can find it.
+    for (const change of ['turned', 'keyboard'] as const) {
+      page = await open(await phone(390, 'en', { viewport: { width: 390, height: 844 } }));
+      cdp = await page.context().newCDPSession(page);
+      y = (await snapTo(page, 'half')).y + 24;
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 6, y }] });
+      for (let i = 1; i <= 10; i++) {
+        await page.waitForTimeout(16);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 6, y: y - i * 10 }] });
+      }
+      assert.strictEqual(await page.locator('#panel-pane').evaluate((e) => e.classList.contains('dragging')), true, change);
+      await page.setViewportSize(change === 'turned' ? { width: 844, height: 390 } : { width: 390, height: 844 - 300 });
+      await until(`${change}: the drag has ended`, () => page.locator('#panel-pane').evaluate((e) => e.classList.contains('dragging')), (v) => v === false);
+      for (let i = 11; i <= 14; i++) {
+        await page.waitForTimeout(16);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 6, y: y - i * 10 }] });
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      const now = await settled(page);
+      assert.ok(now.pane.y >= 0 && now.pane.y + now.pane.height <= (change === 'turned' ? 390 : 544) + 0.5, `${change}: ${JSON.stringify(now)}`);
+      assert.deepStrictEqual(await page.evaluate(`(() => {
+        const pane = document.getElementById('panel-pane');
+        return [pane.style.transform, pane.style.height, /dragging|moving/.test(pane.className)];
+      })()`), ['', '', false], change);
+      await page.context().close();
+    }
+  });
+
+  it('keeps a card open over the editor clear of the sheet as the sheet moves', async () => {
+    const page = await open(await phone(390, 'en', { viewport: { width: 390, height: 844 } }));
+    await snapTo(page, 'peek');
+    await page.locator('#mode-edit').tap();
+    await page.locator('.cm-line').nth(3).tap({ position: { x: 40, y: 5 } });
+    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+I');
+    const card = page.locator('.cm-bx-hover-pinned');
+    await until('the card', () => card.count(), (n) => n === 1);
+    // (Keys sent to the grabber without taking the focus from the editor: the card stays. Not to full: the editor is inert then, and the card goes.)
+    const key = (name: string) => page.evaluate(`document.getElementById('sheet-grab').dispatchEvent(new KeyboardEvent('keydown', { key: '${name}', bubbles: true }))`);
+    const cdp = await page.context().newCDPSession(page);
+    const drag = finger(cdp, page);
+    for (const up of [true, false, true]) {
+      const from = (await settled(page)).pane;
+      await drag(6, from.y + 24, up ? 380 + 24 : 747 + 24, 600, 12);
+      const pane = (await settled(page)).pane;
+      const tip = await stable('the card', () => box(page, '.cm-bx-hover-pinned'), 4);
+      assert.ok(tip.y + tip.height <= pane.y + 0.5, `${up ? 'up' : 'down'}: the card ${JSON.stringify(tip)} over the sheet ${JSON.stringify(pane)}`);
+    }
+    await page.context().close();
+  });
+
   it('keeps the cursor\'s line, the end of the text and the empty editor\'s block above the sheet, though the editor\'s box goes on under it', async () => {
     const page = await openLong('en');
     const lineBox = async () => (await page.locator('.cm-activeLine').boundingBox())!;
@@ -634,6 +709,18 @@ describe('the web page: the phone\'s sheet', function () {
       const end = (await settled(page)).pane;
       if (motion === 'reduce') assert.ok(Math.abs(at[0] - end.y) < 0.5 && at[1] <= 0.5, JSON.stringify([at, end]));
       else assert.ok(at[0] > end.y + 20, JSON.stringify([at, end]));
+      if (motion === 'no-preference') {
+        // Down from full: the sheet's box was as tall as the full one while it moved. Settled, it is its own height again
+        // (no inline height nor transform), so that the explanation's last rows can be reached.
+        await page.keyboard.press('ArrowDown');
+        await settled(page);
+        const rested = () => page.evaluate(`(() => {
+          const pane = document.getElementById('panel-pane');
+          return { style: pane.getAttribute('style') ?? '', height: pane.getBoundingClientRect().height, var: parseFloat(document.documentElement.style.getPropertyValue('--sheet-h')), cls: pane.className };
+        })()`) as Promise<{ style: string; height: number; var: number; cls: string }>;
+        const r = await until('the sheet at rest', rested, (v) => !/height|transform/.test(v.style));
+        assert.ok(Math.abs(r.height - r.var) < 0.5 && !/moving/.test(r.cls), JSON.stringify(r));
+      }
       await page.context().close();
     }
   });

@@ -9,7 +9,7 @@
 // web/file-io.ts (opening a file, saving to one), web/editor-head.ts (the editor's header, its hint and empty block),
 // web/kinds.ts (the file kind and its samples), web/scope-chip.ts (the chip of the file type and the shell).
 import { undo } from '@codemirror/commands';
-import { ViewUpdate } from '@codemirror/view';
+import { repositionTooltips, ViewUpdate } from '@codemirror/view';
 import { Analyzer, LineExplanation } from '../src/analyzer';
 import type { AutoShell } from '../src/dialect';
 import { autoShellAt, DocumentIssue, explainDocumentLine, issueFilter, ShellDocument, Shells } from '../src/document';
@@ -551,6 +551,8 @@ const sheet = panePane && mode.hasChrome ? new BottomSheet(panePane, {
   lang: () => lang,
   moved(follow) {
     editor.view.requestMeasure();
+    // (A card open over the editor keeps clear of the sheet's new top: its space ends there, `tooltipSpace`.)
+    repositionTooltips(editor.view);
     if (follow) editor.keepCursorInView('nearest');
     toast.place();
     readEdit.placeTip();
