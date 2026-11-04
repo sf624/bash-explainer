@@ -1312,7 +1312,9 @@ body[data-depth="2"] .row.connector {
 }
 
 /* (A fold's content, which moves as a whole: panel.js `foldingDetails`.) */
-.fold-body { display: block; }
+/* What moves when it folds or unfolds holds its first and last children's margins: they would lie outside its height, and jump in or out
+   as the move starts and ends (panel.js, `fold`, does the same for the parts of a row while they move). */
+.fold-body { display: flow-root; }
 
 /* What a command name is (media/panel.js `nameBadge`, src/namefacts.ts), in both views: a badge with the kind's
    word after the name, then who looks the name up when another command does, and a muted line on the other

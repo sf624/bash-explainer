@@ -6,23 +6,30 @@ import { chooseDepth, openSite, until } from './support/site';
 // and one that unfolds grows. Every kind of fold is measured: the moves are paused half way (`currentTime`), so that no timer is raced.
 // (A rule of the style sheet that hid a closing box at once went through unseen: the box had no motion left, and nothing measured it.)
 
-/** Half of `MOTION_MS` in media/panel.js. */
-const HALF = 110;
-
 /**
- * Runs in the panel's page. Clicks `click`, pauses the moves of the boxes `boxes` half way, and returns what is drawn then. `before` is each
- * box's height before the click.
+ * Runs in the panel's page. Clicks `click`, pauses the moves of the boxes `boxes` and returns what is drawn half way. `before` is each box's
+ * height before the click. A 1px marker under the rows shows how far everything below moves: at rest before the click (\`rest\`), at the start
+ * of the move, and a hair before its end, which \`END\` compares with the marker when the move has ended and the box is hidden or shown as
+ * it is at rest (a box's margins that lie outside its height jump in or out there).
  */
-const MID = `(async ([boxes, click, half]) => {
+const MID = `(async ([boxes, click]) => {
   const all = () => boxes.flatMap((s) => [...document.querySelectorAll(s)]);
   const height = (e) => e.getBoundingClientRect().height;
+  if (!document.getElementById('mark')) document.getElementById('tree').insertAdjacentHTML('afterend', '<div id="mark" style="height:1px"></div>');
+  const mark = () => document.getElementById('mark').getBoundingClientRect().top + scrollY;
   const before = all().map(height);
+  const rest = mark();
   document.querySelector(click).click();
   const moving = all().map((b) => b.getAnimations());
-  for (const a of moving.flat()) { a.pause(); a.currentTime = half; }
+  const total = moving.flat().map((a) => a.effect.getComputedTiming().duration);
+  for (const a of moving.flat()) { a.pause(); a.currentTime = 0; }
+  const start = mark();
+  for (const a of moving.flat()) a.currentTime = a.effect.getComputedTiming().duration - 0.01;
+  window.markEnd = mark();
+  for (const a of moving.flat()) a.currentTime = a.effect.getComputedTiming().duration / 2;
   return all().map((b, i) => ({
-    animations: moving[i].length, display: getComputedStyle(b).display, visible: b.checkVisibility(), before: before[i], mid: height(b),
-    closing: b.hasAttribute('data-closing'), open: b.closest('details')?.open ?? null,
+    animations: moving[i].length, duration: moving[i][0]?.effect.getComputedTiming().duration ?? 0, display: getComputedStyle(b).display, visible: b.checkVisibility(),
+    before: before[i], mid: height(b), closing: b.hasAttribute('data-closing'), open: b.closest('details')?.open ?? null, rest, start, markEnd: window.markEnd,
   }));
 })`;
 
@@ -35,6 +42,7 @@ const END = `(async ([boxes]) => {
   return all.map((b) => ({
     animations: b.getAnimations().length, display: getComputedStyle(b).display, visible: b.checkVisibility(), end: b.getBoundingClientRect().height,
     closing: b.hasAttribute('data-closing'), clip: b.style.clipPath, open: b.closest('details')?.open ?? null,
+    markAfter: document.getElementById('mark').getBoundingClientRect().top + scrollY,
   }));
 })`;
 
@@ -47,9 +55,9 @@ describe('the panel: boxes that fold and unfold move', function () {
     ({ browser, base } = await openSite(this));
   });
 
-  type Options = { animations?: boolean; reducedMotion?: 'reduce' | 'no-preference' };
+  type Options = { width?: number; animations?: boolean; reducedMotion?: 'reduce' | 'no-preference' };
   async function open(text: string, options: Options = {}, depth: 1 | 2 = 1): Promise<{ page: Page; panel: Frame; close: () => Promise<void> }> {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US', reducedMotion: options.reducedMotion ?? 'no-preference' });
+    const ctx = await browser.newContext({ viewport: { width: options.width ?? 1280, height: 800 }, locale: 'en-US', reducedMotion: options.reducedMotion ?? 'no-preference' });
     if (options.animations === false) await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.panel.animations': false })); } catch {}`);
     const page = await ctx.newPage();
     await page.goto(base);
@@ -70,15 +78,24 @@ describe('the panel: boxes that fold and unfold move', function () {
     return { page, panel, close: () => ctx.close() };
   }
 
-  type Mid = { animations: number; display: string; visible: boolean; before: number; mid: number; closing: boolean; open: boolean | null };
-  type End = { animations: number; display: string; visible: boolean; end: number; closing: boolean; clip: string; open: boolean | null };
-  const mid = (panel: Frame, boxes: string[], click: string) => panel.evaluate(`${MID}(${JSON.stringify([boxes, click, HALF])})`) as Promise<Mid[]>;
+  type Mid = { animations: number; duration: number; rest: number; start: number; markEnd: number; display: string; visible: boolean; before: number; mid: number; closing: boolean; open: boolean | null };
+  type End = { markAfter: number; animations: number; display: string; visible: boolean; end: number; closing: boolean; clip: string; open: boolean | null };
+  const mid = (panel: Frame, boxes: string[], click: string) => panel.evaluate(`${MID}(${JSON.stringify([boxes, click])})`) as Promise<Mid[]>;
   const end = (panel: Frame, boxes: string[]) => panel.evaluate(`${END}(${JSON.stringify([boxes])})`) as Promise<End[]>;
 
   /** The parts of the first row that has some: its box, and its twisty. */
   const LOOP = 'for f in *.txt; do\n  wc -l "$f"\ndone';
   const PARTS = '#tree > li > .item > .body > ul';
   const TWISTY = '#tree > li > .item > .row > button.twisty';
+
+  const shape = (e: End) => ({ ...e, end: 0, markAfter: 0 });
+  /** How far a move of a box jumps what lies below it, at its start and at its end (px): a box's margins that lie outside its height would. */
+  function noJump(m: Mid, after: End, limit: number, what: string): void {
+    assert.ok(Math.abs(m.start - m.rest) <= limit, `${what}: at the start of the move, what lies below moved by ${m.start - m.rest}`);
+    assert.ok(Math.abs(after.markAfter - m.markEnd) <= limit, `${what}: at the end of the move, what lies below moved by ${after.markAfter - m.markEnd}`);
+  }
+  /** What a box of this height (px) takes to move (ms): `motionMs` in media/panel.js. */
+  const takes = (height: number) => Math.min(400, Math.max(220, Math.round(120 + height / 2)));
 
   /** A box that is drawn half way: neither hidden nor at its full height nor at nothing. */
   function drawnHalf(m: Mid, what: string): void {
@@ -98,15 +115,36 @@ describe('the panel: boxes that fold and unfold move', function () {
     assert.ok(fold.mid < full, `folding: lower than the full height (${fold.mid} of ${full})`);
     assert.strictEqual(fold.closing, true);
     const [folded] = await end(panel, [PARTS]);
-    assert.deepStrictEqual({ ...folded, end: 0 }, { animations: 0, display: 'none', visible: false, end: 0, closing: false, clip: '', open: null });
+    // (The parts of a row lie between margins that do not meet once they are drawn; what is left of them is under 3 px, before it was 4.8.)
+    noJump(fold, folded, 3, 'folding the parts');
+    assert.strictEqual(fold.duration, takes(full), 'a tall box takes longer');
+    assert.deepStrictEqual(shape(folded), { animations: 0, display: 'none', visible: false, end: 0, markAfter: 0, closing: false, clip: '', open: null });
     assert.strictEqual(await panel.locator(TWISTY).getAttribute('aria-expanded'), 'false');
 
     const [unfold] = await mid(panel, [PARTS], TWISTY);
     drawnHalf(unfold, 'unfolding');
     const [unfolded] = await end(panel, [PARTS]);
+    noJump(unfold, unfolded, 3, 'unfolding the parts');
     assert.ok(unfold.mid < unfolded.end, `unfolding: lower than the full height (${unfold.mid} of ${unfolded.end})`);
     assert.strictEqual(unfolded.end, full);
-    assert.deepStrictEqual({ ...unfolded, end: 0 }, { animations: 0, display: 'block', visible: true, end: 0, closing: false, clip: '', open: null });
+    assert.deepStrictEqual(shape(unfolded), { animations: 0, display: 'block', visible: true, end: 0, markAfter: 0, closing: false, clip: '', open: null });
+    await close();
+  });
+
+  for (const width of [1280, 390]) it(`a tall row's twisty, ${width} px: the parts move for as long as their height asks, and nothing below them jumps by more than the gap between two rows`, async () => {
+    const { panel, close } = await open("ps aux | grep nginx | awk '{print $2}'", { width });
+    const full = (await panel.evaluate(`document.querySelector(${JSON.stringify(PARTS)}).getBoundingClientRect().height`)) as number;
+    assert.ok(full > 300, `a tall box (${full})`);
+    const [fold] = await mid(panel, [PARTS], TWISTY);
+    drawnHalf(fold, 'folding');
+    const [folded] = await end(panel, [PARTS]);
+    // (Before, the margins of the first row lay outside the parts: 4.8 px jumped away at the end. What is left, 2.4 px, is the margin of the row above, which no longer meets the next one's.)
+    noJump(fold, folded, 2.5, 'folding the tall parts');
+    assert.strictEqual(fold.duration, takes(full));
+    const [unfold] = await mid(panel, [PARTS], TWISTY);
+    const [unfolded] = await end(panel, [PARTS]);
+    noJump(unfold, unfolded, 2.5, 'unfolding the tall parts');
+    assert.strictEqual(unfold.duration, takes(unfolded.end));
     await close();
   });
 
@@ -121,7 +159,7 @@ describe('the panel: boxes that fold and unfold move', function () {
     assert.ok(back.mid >= fold.mid && back.mid < full, `grows from ${fold.mid} towards ${full}: ${back.mid}`);
     const [after] = await end(panel, [PARTS]);
     assert.strictEqual(after.end, full);
-    assert.deepStrictEqual({ ...after, end: 0 }, { animations: 0, display: 'block', visible: true, end: 0, closing: false, clip: '', open: null });
+    assert.deepStrictEqual(shape(after), { animations: 0, display: 'block', visible: true, end: 0, markAfter: 0, closing: false, clip: '', open: null });
     await close();
   });
 
@@ -141,7 +179,7 @@ describe('the panel: boxes that fold and unfold move', function () {
         half.forEach((m, i) => {
           if (m.animations) drawnHalf(m, 'unfolding');
           if (m.animations) assert.ok(m.mid < done[i].end, `unfolding: lower than the full height (${m.mid} of ${done[i].end})`);
-          assert.deepStrictEqual({ ...done[i], end: 0 }, { animations: 0, display: 'block', visible: true, end: 0, closing: false, clip: '', open: null });
+          assert.deepStrictEqual(shape(done[i]), { animations: 0, display: 'block', visible: true, end: 0, markAfter: 0, closing: false, clip: '', open: null });
         });
       };
       const fold = async () => {
@@ -154,7 +192,7 @@ describe('the panel: boxes that fold and unfold move', function () {
           drawnHalf(m, 'folding');
           assert.ok(m.mid < m.before, `folding: lower than the full height (${m.mid} of ${m.before})`);
         });
-        for (const m of await end(panel, sel)) assert.deepStrictEqual({ ...m, end: 0 }, { animations: 0, display: 'none', visible: false, end: 0, closing: false, clip: '', open: null });
+        for (const m of await end(panel, sel)) assert.deepStrictEqual(shape(m), { animations: 0, display: 'none', visible: false, end: 0, markAfter: 0, closing: false, clip: '', open: null });
       };
       // (The button unfolds when something is folded, else folds: at depth 2 the rows whose parts all come at depth 2 start folded.)
       if (await panel.evaluate(`document.querySelector('#tree li.collapsed') !== null`)) { await unfold(); await fold(); } else { await fold(); await unfold(); }
@@ -162,21 +200,26 @@ describe('the panel: boxes that fold and unfold move', function () {
     });
   }
 
-  it('a folded example opens and closes with motion: the body is drawn half way, and the closed box hides it', async () => {
-    const { panel, close } = await open("ps aux | grep nginx | awk '{print $2}'");
+  for (const width of [1280, 390]) it(`a folded example opens and closes with motion, ${width} px: the body is drawn half way, nothing below it jumps, and the closed box hides it`, async () => {
+    const { panel, close } = await open("ps aux | grep nginx | awk '{print $2}'", { width });
     const body = 'details.whole-line > .fold-body';
     const [opening] = await mid(panel, [body], 'details.whole-line > summary');
     drawnHalf(opening, 'opening');
     assert.strictEqual(opening.open, true);
     const [opened] = await end(panel, [body]);
+    noJump(opening, opened, 0.5, 'opening the example');
+    assert.strictEqual(opening.duration, takes(opened.end), 'a tall example takes longer');
+    assert.ok(opening.duration > 220 && opening.duration < 400, `${opening.duration} ms`);
     assert.ok(opening.mid < opened.end);
-    assert.deepStrictEqual({ ...opened, end: 0 }, { animations: 0, display: 'block', visible: true, end: 0, closing: false, clip: '', open: true });
+    assert.deepStrictEqual(shape(opened), { animations: 0, display: 'flow-root', visible: true, end: 0, markAfter: 0, closing: false, clip: '', open: true });
     const [closing] = await mid(panel, [body], 'details.whole-line > summary');
     drawnHalf(closing, 'closing');
     assert.ok(closing.mid < closing.before, `lower than before (${closing.mid} of ${closing.before})`);
     assert.strictEqual(closing.open, true, 'still open while it shrinks');
     const [closed] = await end(panel, [body]);
-    assert.deepStrictEqual({ ...closed, end: 0 }, { animations: 0, display: 'block', visible: false, end: 0, closing: false, clip: '', open: false });
+    noJump(closing, closed, 0.5, 'closing the example');
+    assert.strictEqual(closing.duration, opening.duration, 'closes as long as it opens');
+    assert.deepStrictEqual(shape(closed), { animations: 0, display: 'flow-root', visible: false, end: 0, markAfter: 0, closing: false, clip: '', open: false });
     await close();
   });
 
@@ -187,12 +230,14 @@ describe('the panel: boxes that fold and unfold move', function () {
       const [opening] = await mid(panel, [box], click);
       drawnHalf(opening, `${box} opening`);
       const [opened] = await end(panel, [box]);
+      noJump(opening, opened, 0.5, `${box} opening`);
       assert.ok(opening.mid < opened.end);
       assert.strictEqual(opened.open, true);
       const [closing] = await mid(panel, [box], click);
       drawnHalf(closing, `${box} closing`);
       assert.ok(closing.mid < closing.before, `${box}: lower than before (${closing.mid} of ${closing.before})`);
       const [closed] = await end(panel, [box]);
+      noJump(closing, closed, 0.5, `${box} closing`);
       assert.strictEqual(closed.open, false);
       assert.strictEqual(closed.visible, false);
       await close();

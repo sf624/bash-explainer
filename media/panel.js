@@ -1471,8 +1471,10 @@
 
   // ---------------------------------------------------------------- folding and unfolding, with motion
 
-  /** How long a row takes to grow or shrink (ms), and how. */
+  /** How long a short box takes to grow or shrink (ms), and how. A taller one takes longer, up to `MOTION_MAX_MS`, so that a tall box does not rush (`motionMs`). */
   const MOTION_MS = 220;
+  const MOTION_MAX_MS = 400;
+  const motionMs = (/** @type {number} */ height) => Math.min(MOTION_MAX_MS, Math.max(MOTION_MS, Math.round(120 + height / 2)));
   const EASE = 'cubic-bezier(0.2, 0, 0, 1)';
   /** The setting `panel.animations`, from the host. */
   let animations = true;
@@ -1518,8 +1520,10 @@
       const inner = closing.filter((o) => o !== c && box.contains(o.el));
       // (A clip, not overflow: the lines to the parent lie left of the box.)
       box.style.clipPath = 'inset(0 -100vw)';
+      // (Its children's margins lie inside it while it moves, so that they grow and shrink with it.)
+      box.style.display = 'flow-root';
       const a = box.animate([{ height: `${from[i].h}px`, opacity: from[i].o }, { height: `${to[i]}px`, opacity: c.open ? 1 : 0 }],
-        { duration: MOTION_MS, delay: c.delay ?? 0, easing: EASE, fill: c.open ? 'backwards' : 'forwards' });
+        { duration: motionMs(Math.max(from[i].h, to[i])), delay: c.delay ?? 0, easing: EASE, fill: c.open ? 'backwards' : 'forwards' });
       running.set(box, a);
       moves.add(a);
       started.push(a);
@@ -1530,6 +1534,7 @@
         over = true;
         if (running.get(box) === a) running.delete(box);
         box.style.clipPath = '';
+        box.style.display = '';
         for (const x of c.open ? inner : [c, ...inner]) delete x.el.dataset.closing;
         return true;
       };
