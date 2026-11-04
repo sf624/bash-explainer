@@ -1201,16 +1201,15 @@
       tw.setAttribute('aria-expanded', String(!want));
       /** @type {Element} */ (tw.firstElementChild).textContent = want ? '▸' : '▾';
     }
-    // (The parts move; a folded example stays as its title.)
-    const body = /** @type {HTMLElement | null} */ (li.querySelector(':scope > .item > .body > ul'));
-    return body && { el: body, open: !want };
+    // (Everything that lies under the row moves together, its parts and its examples; a folded example stays as its title. panel.css, `li.collapsed`, hides the same.)
+    return /** @type {HTMLElement[]} */ (Array.from(li.querySelectorAll(':scope > .item > .body > :not(details.example)'))).map((el) => ({ el, open: !want }));
   }
 
   const isCollapsed = (/** @type {HTMLElement} */ li) => li.classList.contains('collapsed');
 
   function toggle(/** @type {HTMLElement} */ li) {
     hold(rowAt(String(li.dataset.key)));
-    fold([setCollapsed(li, !isCollapsed(li))]);
+    fold(setCollapsed(li, !isCollapsed(li)));
     // (The fold button then says what it will do: unfold when something is folded.)
     updateToggle();
   }
@@ -1227,7 +1226,7 @@
     const shownItems = /** @type {HTMLElement[]} */ (Array.from($('tree').querySelectorAll('li[data-path]'))).filter((li) => li.getClientRects().length);
     const below = $('top').getBoundingClientRect().bottom;
     hold(firstOnScreen(shownItems, below, (li) => !collapse || top(li) || top(li.parentElement?.closest('li'))), null, below);
-    fold(items.filter((li) => want(li) !== isCollapsed(li)).map((li) => setCollapsed(li, want(li))));
+    fold(items.filter((li) => want(li) !== isCollapsed(li)).flatMap((li) => setCollapsed(li, want(li))));
     nameToggle(collapse);
   }
   /** The shared button says what it will do: unfold when something is folded, else fold. */
@@ -1508,22 +1507,32 @@
     const closing = list.filter((c) => !c.open);
     for (const c of closing) c.el.dataset.closing = '';
     const height = (/** @type {HTMLElement} */ e) => e.getBoundingClientRect().height;
-    const from = outer.map((c) => ({ h: running.has(c.el) || !c.open ? height(c.el) : 0, o: running.has(c.el) ? Number(getComputedStyle(c.el).opacity) : c.open ? 0 : 1 }));
+    // (The size of a box as its style says it, with the margins, padding and borders that lie outside or around its height: all of them go
+    // to nothing and come back with it, or what lies below would jump by them as the move starts and ends. A box without them has none.)
+    const EDGES = ['marginTop', 'marginBottom', 'paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth'];
+    const size = (/** @type {HTMLElement} */ e) => {
+      const cs = getComputedStyle(e);
+      return Object.fromEntries(['height', ...EDGES].map((k) => [k, /** @type {any} */ (cs)[k]]));
+    };
+    const none = Object.fromEntries(['height', ...EDGES].map((k) => [k, '0px']));
+    const from = outer.map((c) => ({ h: running.has(c.el) || !c.open ? height(c.el) : 0, o: running.has(c.el) ? Number(getComputedStyle(c.el).opacity) : c.open ? 0 : 1, size: running.has(c.el) || !c.open ? size(c.el) : none }));
     outer.forEach((c) => running.get(c.el)?.cancel());
-    const to = outer.map((c) => (c.open ? height(c.el) : 0));
+    const to = outer.map((c) => (c.open ? { h: height(c.el), size: size(c.el) } : { h: 0, size: none }));
     /** @type {Animation[]} */
     const started = [];
     let left = outer.length;
     if (!left) after();
+    // (The boxes that move side by side, a row's parts and its examples, take as long as all of them are high.)
+    const takes = outer.map((c, i) => motionMs(outer.reduce((n, o, j) => n + (o.el.parentElement === c.el.parentElement ? Math.max(from[j].h, to[j].h) : 0), 0)));
     outer.forEach((c, i) => {
       const box = c.el;
-      const inner = closing.filter((o) => o !== c && box.contains(o.el));
+      const inner = list.filter((o) => o !== c && box.contains(o.el));
       // (A clip, not overflow: the lines to the parent lie left of the box.)
       box.style.clipPath = 'inset(0 -100vw)';
       // (Its children's margins lie inside it while it moves, so that they grow and shrink with it.)
       box.style.display = 'flow-root';
-      const a = box.animate([{ height: `${from[i].h}px`, opacity: from[i].o }, { height: `${to[i]}px`, opacity: c.open ? 1 : 0 }],
-        { duration: motionMs(Math.max(from[i].h, to[i])), delay: c.delay ?? 0, easing: EASE, fill: c.open ? 'backwards' : 'forwards' });
+      const a = box.animate([{ ...from[i].size, opacity: from[i].o }, { ...to[i].size, opacity: c.open ? 1 : 0 }],
+        { duration: takes[i], delay: c.delay ?? 0, easing: EASE, fill: c.open ? 'backwards' : 'forwards' });
       running.set(box, a);
       moves.add(a);
       started.push(a);
@@ -1532,10 +1541,13 @@
         moves.delete(a);
         if (over) return false;
         over = true;
-        if (running.get(box) === a) running.delete(box);
+        // (A move that was cancelled to start another on the same box ends late, after the other has started: it leaves the box as the other
+        // has set it, and the other clears what is left.)
+        if (running.get(box) !== a) return false;
+        running.delete(box);
         box.style.clipPath = '';
         box.style.display = '';
-        for (const x of c.open ? inner : [c, ...inner]) delete x.el.dataset.closing;
+        for (const x of [c, ...inner]) delete x.el.dataset.closing;
         return true;
       };
       a.onfinish = () => {
