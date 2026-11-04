@@ -16,6 +16,7 @@ import { panelUpdate } from '../src/ui/panelView';
 import { roleOf } from '../src/ui/panelRoles';
 import { stepsLine } from '../src/ui/panelSteps';
 import { placeExamples, toPlainMarkdown } from '../src/ui/render';
+import { ui } from '../src/ui/texts';
 import { main } from '../cli/main';
 import { corpus } from './support/corpus';
 
@@ -654,6 +655,233 @@ describe('the panel\'s row model', () => {
         assert.deepStrictEqual(got, ROLES.map((r) => (lang === 'en' ? r[2] : r[3])));
       });
     }
+
+    describe('a role is a place in bash\'s reading, or nothing', () => {
+      /** Each row, from the column `from` on, with the line it says: `label: names · reader`. */
+      const lines = (src: string, lang: Lang = 'en', from = 0, line = 0): string[] => all(rowModel(explain(src, line, lang), D2, lang).rows).filter((r) => r.span.start.line > line || r.span.start.character >= from).map((r) => {
+        const l = r.roleLine;
+        return `${r.label}: ${l ? l.chips.map((c) => `${c.changes ? '→ ' : ''}${c.text}`).join(' | ') : '-'}${l?.reader ? ` · ${l.reader}` : ''}`;
+      });
+      /** What the name `chip` opens to on the row `label`. */
+      const opens = (src: string, label: string, chip: string, lang: Lang = 'en', line = 0): string => {
+        const r = all(rowModel(explain(src, line, lang), D2, lang).rows).find((x) => x.label === label);
+        assert.ok(r, `${src}: no row ${label}`);
+        const c = r.roleLine?.chips.find((x) => x.text === chip);
+        assert.ok(c, `${src}: ${label} has no ${chip}: ${r.roleLine?.chips.map((x) => x.text).join(' | ')}`);
+        return c.said;
+      };
+      const noReader = (l: string): string => l.replace(/ · [^·|]*$/, '');
+
+      it('reads a string a shell reads as the same code at the top level: the same roles', () => {
+        const everywhere = ['for i in 1; do echo $i; done', 'rm -rf "$w"', 'echo $a', 'echo "$a" | wc -l', 'if [ "$c" = yes ]; then :; fi', 'find . -exec rm {} \;', 'echo ${a[@]} ${a[*]} ${a[1]}', 'time ls | wc', 'date +%F', 'x=1 y=$z', 'cat <f >g 2>&1', 'while read l; do echo; done < f', 'coproc foo { cat; }', 'f() { :; }; f'];
+        const wrappers: [string, string][] = [["sh -c '", "'"], ["bash -c '", "'"], ["eval '", "'"], ["trap '", "' EXIT"], ["ssh h '", "'"], ['x=$(', ')']];
+        for (const lang of ['en', 'ja'] as const) {
+          for (const code of everywhere) {
+            const top = lines(code, lang).map(noReader);
+            for (const [open, close] of wrappers) {
+              const src = open + code + close;
+              // (The text of a `$( )` is a script, whose name a statement all of it shares: a place more, of that text.)
+              const got = lines(src, lang, open.length).filter((l) => !l.startsWith('EXIT:')).map(noReader).map((l) => l.replace(/: (?:script inside|中のスクリプト) \| /, ': '));
+              assert.deepStrictEqual(got, top, src);
+            }
+          }
+        }
+      });
+
+      it('says the loop of `sh -c`, and opens the text of what each part is, with the shell that reads it', () => {
+        const src = "sh -c 'for i in 1; do echo $i; done'";
+        assert.deepStrictEqual(lines(src, 'en', 7), [
+          'for i in ‹words› do ‹commands› done: compound command · new shell',
+          'for: reserved word',
+          'i: name',
+          'in: reserved word',
+          '1: word',
+          ';: operator',
+          'do ‹commands› done: part',
+          'do: reserved word',
+          'echo: simple command | command name',
+          '$i: argument | expansion | → operand: each word it splits into · echo reads it',
+          ';: operator',
+          'done: reserved word',
+        ]);
+        assert.deepStrictEqual(lines(src, 'ja', 7), [
+          'for i in ‹words› do ‹commands› done: 複合コマンド · 新しいシェル',
+          'for: 予約語',
+          'i: 名前',
+          'in: 予約語',
+          '1: 単語',
+          ';: 演算子',
+          'do ‹commands› done: 部分',
+          'do: 予約語',
+          'echo: 単純コマンド | コマンド名',
+          '$i: 引数 | 展開 | → オペランド: 分割された語ごと · echo が読む',
+          ';: 演算子',
+          'done: 予約語',
+        ]);
+        const whole = 'for i in ‹words› do ‹commands› done';
+        assert.strictEqual(opens(src, whole, 'compound command'), 'a newly started shell (another process) parses it again');
+        assert.strictEqual(opens(src, 'i', 'name'), 'a newly started shell (another process) parses it again');
+        assert.match(opens(src, 'for', 'reserved word'), /^A reserved word: .*\(a newly started shell \(another process\) parses it again\)$/);
+        assert.match(opens(src, 'for', '予約語', 'ja'), /^予約語: .*（新しく起動したシェル（別のプロセス）がもう一度解析する）$/);
+        assert.strictEqual(opens(src, '$i', 'expansion'), 'a newly started shell (another process) parses it again');
+      });
+
+      it('says the word of a trap expands: an argument, and its `$w` an expansion; no literal, no variable', () => {
+        const src = 'trap \'rm -rf "$w"\' EXIT';
+        const skip = "trap '".length;
+        assert.deepStrictEqual(lines(src, 'en', skip), [
+          'rm: simple command | command name · same shell, again',
+          '-rf: argument | → option · rm reads it',
+          '-r: option',
+          '-f: option',
+          '"$w": argument | → operand · rm reads it',
+          '$w: expansion',
+          'EXIT: argument | → operand · trap reads it',
+        ]);
+        assert.deepStrictEqual(lines(src, 'ja', skip), [
+          'rm: 単純コマンド | コマンド名 · 同じシェルでもう一度',
+          '-rf: 引数 | → オプション · rm が読む',
+          '-r: オプション',
+          '-f: オプション',
+          '"$w": 引数 | → オペランド · rm が読む',
+          '$w: 展開',
+          'EXIT: 引数 | → オペランド · trap が読む',
+        ]);
+      });
+
+      it('says who reads a string once, from the string: this shell again, a new one, a remote one, also under a command\'s argument', () => {
+        const AGAIN = ['the shell that runs it parses this string again (no new process)', 'それを実行するシェルが、この文字列をもう一度解析する（新しいプロセスなし）'] as const;
+        const NEW = ['a newly started shell (another process) parses it again', '新しく起動したシェル（別のプロセス）がもう一度解析する'] as const;
+        const REMOTE = ['a shell on another machine parses it', '別のマシンのシェルが解析する'] as const;
+        const table: [string, string, readonly [string, string]][] = [
+          ["eval 'echo $a'", '$a', AGAIN],
+          ['trap \'rm -f "$w"\' EXIT', '$w', AGAIN],
+          ["bash -c 'echo $a'", '$a', NEW],
+          ["sh -c 'rm -f \"$w\"'", '$w', NEW],
+          ['ssh h \'echo "$a"\'', '$a', REMOTE],
+          ['ssh h "echo \\$a"', '$a', REMOTE],
+        ];
+        for (const [src, label, [en, ja]] of table) {
+          assert.strictEqual(opens(src, label, 'expansion'), en, src);
+          assert.strictEqual(opens(src, label, '展開', 'ja'), ja, src);
+        }
+        // (A `$( )` in it has a subshell of its own, and a string in the string its own shell.)
+        assert.strictEqual(opens("bash -c 'echo $(ls)'", 'ls', 'command name').endsWith('(a subshell (a copy of this shell) parses it again)'), true);
+        assert.strictEqual(opens("bash -c 'eval \"ls\"'", 'ls', 'command name').endsWith('(the shell that runs it parses this string again (no new process))'), true);
+        // (A pipeline with no node of its own, in a string, is that shell's too.)
+        assert.strictEqual(opens("ssh h 'time ls | wc'", 'ls | wc', 'pipeline'), 'a shell on another machine parses it');
+        assert.deepStrictEqual(lines("ssh h 'time ls | wc'", 'en', 7).slice(0, 1), ['time ls | wc: pipeline · remote shell']);
+      });
+
+      it('names a language\'s reader by the command, never by the code around it', () => {
+        const sed = 'bash -c "echo a | sed \'s/a/b/\'"';
+        assert.strictEqual(opens(sed, 's/a/b/', 'sed script'), 'A language of its own inside the word: the command reads it by its own rules, not bash. (a language of its own, read by sed)');
+        assert.strictEqual(opens(sed, 's/a/b/', 'sed スクリプト', 'ja'), '単語の中にある独自の言語: bash ではなく、コマンドが独自の規則で読む。（sed が読む独自の言語）');
+        const test = 'trap \'if [ "$cleanup" = yes ]; then :; fi\' EXIT';
+        assert.strictEqual(opens(test, '"$cleanup" = yes', 'condition'), '[ reads it, not bash');
+        assert.strictEqual(opens(test, '"$cleanup" = yes', '条件', 'ja'), 'bash ではなく [ が読む');
+      });
+
+      it('says the shell first and the command after, whatever the ranges: `rm` of `find -exec`', () => {
+        for (const [src, skip] of [['find . -exec rm {} \;', 0], ["sh -c 'find . -exec rm {} \;'", 7]] as const) {
+          assert.deepStrictEqual(lines(src, 'en', skip).filter((l) => l.startsWith('rm:')), ['rm: argument | → command name'], src);
+          assert.deepStrictEqual(lines(src, 'ja', skip).filter((l) => l.startsWith('rm:')), ['rm: 引数 | → コマンド名'], src);
+        }
+        assert.deepStrictEqual(lines('xargs rm').filter((l) => l.startsWith('rm:')), ['rm: argument | → command name · xargs reads it']);
+      });
+
+      it('draws no chip on a token inside a language: the word\'s row says the language, and the colours stay', () => {
+        const table: [string, string[]][] = [
+          ['date +%F', ['+%F: argument | → operand | → date format · date reads it', '+: -', '%F: -']],
+          ["printf 'a\\n'", ["'a\\n': argument | → operand | → printf format · printf reads it", 'a: -', '\\n: -']],
+          ["grep -E '^([a-z]+)$' f", ["'^([a-z]+)$': argument | → operand | → regex · grep reads it", '^: -', '([a-z]+): -', '[a-z]: -', '+: -', '$: -', 'f: argument | → operand · grep reads it']],
+          ["jq '.a' f", ["'.a': argument | → operand · jq reads it", '.a: jq filter', 'f: argument | → operand · jq reads it']],
+          ['chmod u+x f', ['u+x: argument | → operand | → file mode · chmod reads it', 'f: argument | → operand · chmod reads it']],
+          ['[[ a =~ ^b ]]', ['[[ a =~ ^b ]]: compound command', '[[: reserved word', 'a =~ ^b: expression', 'a: word', '=~: operator', '^b: word | → regex', '^: -', 'b: -', ']]: reserved word']],
+        ];
+        const skip = (l: string): boolean => !/^(date|printf|grep|jq|chmod): /.test(l);
+        for (const [src, want] of table) assert.deepStrictEqual(lines(src).filter(skip).filter((l) => !/^(-E): /.test(l)), want, src);
+        // (A token's colour is its own kind.)
+        const row = all(rowModel(explain('date +%F'), D2, 'en').rows).find((r) => r.label === '%F')!;
+        assert.strictEqual(row.kind, 'variable');
+      });
+
+      it('over the corpus, a name is a place: of the shell, of a command\'s reading, or a language', () => {
+        const { files, snippets } = corpus();
+        const { kinds, commandKinds } = ui.en.panel.tree;
+        for (const { name, text } of [...files.filter((f) => f.name === 'sample.sh'), ...snippets.slice(0, 400)]) {
+          const tree = parser.parse(text);
+          text.split('\n').forEach((_, l) => {
+            const ex = new Analyzer('en').explainLine(tree, l, 'bash', { reading: true, argv: true });
+            for (const r of all(rowModel(ex, D2, 'en').rows)) {
+              for (const role of r.roles) {
+                const [layer, kind] = role.id.split(':');
+                assert.ok(layer === 'language' ? kind === 'language' : kind in (layer === 'command' ? commandKinds : kinds), `${name}:${l + 1}: ${r.label}: ${role.id}`);
+              }
+            }
+          });
+        }
+      });
+
+      it('gives `[@]` and `[*]` a role where `[1]` has one: all the elements, no expression', () => {
+        for (const [src, skip] of [['echo ${a[@]} ${a[*]} ${a[1]}', 0], ["eval 'echo ${a[@]} ${a[*]} ${a[1]}'", 6]] as const) {
+          assert.deepStrictEqual(lines(src, 'en', skip).filter((l) => /^\[.\]:/.test(l)), ['[@]: subscript', '[*]: subscript', '[1]: expression'], src);
+          assert.deepStrictEqual(lines(src, 'ja', skip).filter((l) => /^\[.\]:/.test(l)), ['[@]: 添字', '[*]: 添字', '[1]: 式'], src);
+        }
+        assert.strictEqual(opens('echo ${a[@]}', '[@]', 'subscript'), 'The subscript `@` or `*`: all the elements of the array, not one. It is no expression. (bash parses it)');
+        assert.strictEqual(opens('echo ${a[@]}', '[@]', '添字', 'ja'), '添字 `@`・`*`: 配列の 1 つの要素ではなく、すべての要素。式ではない。（bash が解析する）');
+        // (Where no text says it, as an element's key: a row of its own.)
+        assert.deepStrictEqual(lines('declare -A m=([@]=x)').filter((l) => l.startsWith('@:')), ['@: subscript']);
+      });
+
+      it('says the redirection of a compound command on a later line, with its parts, from its first line', () => {
+        const loop = 'while read -r line; do\n  echo\ndone < input.txt';
+        const after = (src: string, lang: Lang = 'en') => lines(src, lang, 0, 0).slice(-3);
+        assert.deepStrictEqual(after(loop), ['< input.txt: redirection', '<: operator', 'input.txt: word']);
+        assert.deepStrictEqual(after(loop, 'ja'), ['< input.txt: リダイレクト', '<: 演算子', 'input.txt: 単語']);
+        assert.deepStrictEqual(after('((\n1\n)) > out.txt'), ['> out.txt: redirection', '>: operator', 'out.txt: word']);
+        assert.deepStrictEqual(after('{ a\n} > f'), ['> f: redirection', '>: operator', 'f: word']);
+        // (On a line of its body, not; and on its last, as before.)
+        assert.ok(!lines(loop, 'en', 0, 1).some((l) => l.includes('input.txt')));
+        assert.deepStrictEqual(lines(loop, 'en', 0, 2), ['done: reserved word', '< input.txt: redirection', '<: operator', 'input.txt: word']);
+      });
+
+      it('says the name of a coprocess is a name, which bash does not expand', () => {
+        assert.deepStrictEqual(lines('coproc foo { cat; }').slice(0, 3), ['coproc foo { ‹commands› }: coprocess', 'coproc: reserved word', 'foo: name']);
+        assert.deepStrictEqual(lines('coproc foo { cat; }', 'ja').slice(0, 3), ['coproc foo { ‹commands› }: コプロセス', 'coproc: 予約語', 'foo: 名前']);
+        assert.strictEqual(opens('coproc foo { cat; }', 'foo', 'name'), 'bash parses it');
+        assert.strictEqual(opens('coproc foo { cat; }', 'foo', '名前', 'ja'), 'bash が解析する');
+      });
+
+      it('reads each line of a string on its own, with what spans lines once', () => {
+        const src = "bash -c 'for i in 1; do\n echo $i\n\ndone > f # c\n'";
+        assert.deepStrictEqual(lines(src, 'en', 9).slice(0, 2), ['for i in 1; do: compound command · new shell', 'for: reserved word']);
+        const said = all(rowModel(explain(src), D2, 'en').rows);
+        const line = (label: string) => said.find((r) => r.label === label)!;
+        assert.deepStrictEqual(line('echo $i').roleLine!.chips.map((c) => c.text), ['simple command', 'command name']);
+        assert.deepStrictEqual(said.filter((r) => r.label === '> f').map((r) => r.roleLine!.chips.map((c) => c.text)), [['redirection'], ['redirection']]);
+        assert.deepStrictEqual(line('# c').roleLine!.chips.map((c) => c.text), ['comment']);
+        // (A line of a string has no place of its own: its row says which, and its parts their roles.)
+        assert.strictEqual(line('done > f # c').roleLine, undefined);
+        // (Parts on a later line that no reading of that line starts with: `c`, in a list that started on the first.)
+        const list = lines("bash -c '{ a \"\n  b\"; c; }\n'", 'en', 9);
+        assert.ok(list.includes('c: simple command | command name'), list.join('\n'));
+        // (A second token of a line, `# c`, has its node from the first's.)
+        assert.deepStrictEqual(lines("bash -c 'a # c'", 'en', 9), ['a: simple command | command name · new shell', '# c: comment · new shell']);
+      });
+
+      it('has the string\'s reading in a statement over several lines, whichever asks for it first', () => {
+        const src = "bash -c 'ls' \\\n  x";
+        const analyzer = new Analyzer('en');
+        const tree = parser.parse(src);
+        analyzer.explainLine(tree, 0, 'bash', { reading: false });
+        const ex = analyzer.explainLine(tree, 0, 'bash', { reading: true, argv: true });
+        assert.deepStrictEqual(all(rowModel(ex, D2, 'en').rows).find((r) => r.label === 'ls')!.roleLine!.chips.map((c) => c.text), ['simple command', 'command name']);
+        // (The other way round, the tokens of a line that does not ask have none.)
+        const lean = new Analyzer('en').explainLine(parser.parse("bash -c 'ls'"), 0, 'bash', { reading: false });
+        assert.ok(tokens(lean.items).every((t) => t.reading === undefined));
+      });
+    });
 
     it('copies the same at both depths: the Markdown does not read the reading tree', () => {
       for (const src of ['x=notes.txt', 'grep -q "$a" f | sort', 'time -p ls | wc', 'cat <<E\nhi\nE']) {

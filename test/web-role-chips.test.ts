@@ -11,7 +11,7 @@ const PIPE = 'grep -h "$USER" /var/log/*.log | sort | uniq -c | sort -rn | head 
 const AWK = "awk -F: '$3 >= 1000 && $7 !~ /nologin/ {print $1, $3}' /etc/passwd | sed -E 's/^([a-z]+) ([0-9]+)$/{\"user\":\"\\1\",\"uid\":\\2}/' | jq -s 'map(select(.uid > 1000)) | sort_by(.uid) | .[0:5]'";
 
 /** The stops of the Tab order in the rows and around them. */
-const STOPS = `[...document.querySelectorAll('#main a[href], #main button, #main summary, #main input, #main [tabindex]')].filter((e) => e.getClientRects().length && e.tabIndex >= 0).length`;
+const STOPS = `[...document.querySelectorAll('#main a[href], #main button, #main summary, #main input, #main textarea, #main [tabindex]')].filter((e) => e.getClientRects().length && e.tabIndex >= 0).length`;
 
 describe('the panel at depth 2: the names on a role line, the depth and the focus', function () {
   this.timeout(240000);
@@ -310,8 +310,8 @@ describe('the panel at depth 2: the names on a role line, the depth and the focu
   });
 
   it('keeps the Tab order and the page within what it has reached, on long lines', async () => {
-    // (What the rows of a line need, in stops and in px of the panel's page, en: panel-redesign.md, "The length budget". A review measured 105 stops and 4,513 px at 390 before the sections went into the names and a general text was said once.)
-    for (const [line, stops, h1280, h390] of [[PIPE, 45, 1250, 1950], [LONG, 66, 1950, 3600], [AWK, 100, 4150, 6100]] as const) {
+    // (What the rows of a line need, in stops and in px of the panel's page, en: panel-redesign.md, "The length budget". A review measured 105 stops and 4,513 px at 390 before the sections went into the names and a general text was said once; the awk line had 98 stops and 5,718 px at 390 before a token inside a language lost its chip.)
+    for (const [line, stops, h1280, h390] of [[PIPE, 44, 1170, 1850], [LONG, 62, 1850, 3470], [AWK, 52, 3330, 5280]] as const) {
       for (const [width, budget] of [[1280, h1280], [390, h390]] as const) {
         const page = await open(line, { width });
         await page.waitForTimeout(100);
