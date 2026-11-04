@@ -133,7 +133,7 @@
     {"file":"src/semantics/redirects.ts","fn":"redirectionMayFail","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/redirects.ts","fn":"safeRedirect","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/shvalues.ts","fn":"readOtherwise","kind":"helper","count":2,"row":"W-P4"},
-    {"file":"src/semantics/shvalues.ts","fn":"readOtherwise","kind":"node-type","count":4,"row":"W-P4"},
+    {"file":"src/semantics/shvalues.ts","fn":"readOtherwise","kind":"node-type","count":2,"row":"W-P4"},
     {"file":"src/semantics/shvalues.ts","fn":"shellValueRefused","kind":"node-type","count":1,"row":"W-P4"},
     {"file":"src/semantics/state.ts","fn":"childModel","kind":"helper","count":2,"row":"W-L1"},
     {"file":"src/semantics/testwords.ts","fn":"testSplits","kind":"glob-class","count":1,"row":"W-C3"},
