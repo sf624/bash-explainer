@@ -28,7 +28,9 @@ inputs:
   strict:
     description: >-
       Also fail on a warning ('true' or 'false'), such as `rm -rf $DIR/*`. The warnings are reported
-      either way. Needs a command-line tool 0.9.0 or later (see `package`).
+      either way. Without it, a construct the shell lacks fails the step only where it surely fails (what
+      the shell refuses while reading, or a command it surely reaches); in a function, in a branch or after
+      a command that may stop the script, only this catches it. Needs a command-line tool 0.9.0 or later (see `package`).
     default: 'false'
   sarif:
     description: >-

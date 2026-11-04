@@ -12,7 +12,7 @@ import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
 import { conventionOf, fact, isProblemNote, type Note, problemText, severityOf } from './messages';
 import { isNotRead } from './messages-unread';
 import { PROBLEM_LEVELS } from './messages-levels';
-import { type Stop, stopAt, surelyRuns } from './semantics/scriptstops';
+import { type Fault, keptQuiet, quietString, type Stop, stopAt, surelyRuns } from './semantics/scriptstops';
 import { RESERVED } from './semantics/names';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { shellState } from './semantics/state';
@@ -376,10 +376,11 @@ function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined, 
     const rows = lineStarts(script.tree.text);
     const index = (p: Point) => rows[p.row] + p.column;
     // (A string is said as far as the shell gets to it, and the command that runs it, which may itself be left out.)
-    const stops = (n: SyntaxNode): Stop | undefined => {
+    const quiet = quietString(script);
+    const stops = (n: SyntaxNode, fault?: Fault): Stop | undefined => {
       const own = stopAt(script.tree, n.startIndex, undefined, shellState(script.tree, script.shell));
       const outer = stopAt(doc.tree, source(n.startIndex, false), undefined, shellState(doc.tree, shell, { version }));
-      return own === 'sure' || outer === 'sure' ? 'sure' : own ?? outer ?? (surelyRuns(script.words[0]) ? undefined : 'may');
+      return own === 'sure' || outer === 'sure' ? 'sure' : own ?? outer ?? (surelyRuns(script.words[0]) && !keptQuiet(quiet, fault) ? undefined : 'may');
     };
     for (const i of dialectIssues(script.tree, script.shell, lang, undefined, undefined, undefined, stops)) {
       const start = at(source(index(i.place.startPosition), false));

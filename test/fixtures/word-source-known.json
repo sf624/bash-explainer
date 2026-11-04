@@ -530,11 +530,13 @@
     },
     {
       "file": "src/semantics/scriptstops.ts",
-      "reason": "the words of a command that may stop the shell, as written: the model trusts nothing in a tree with an error",
+      "reason": "the words of a command that may stop the shell, as written: the model trusts nothing in a tree with an error; which kind of word holds a node decides when a shell reads its text, and whether a command's redirections cover it, whatever its value",
       "uses": [
         {"fn":"inTest","kind":"node-type","count":1},
         {"fn":"leftOut","kind":"node-type","count":2},
         {"fn":"readOnlySometimes","kind":"node-type","count":3},
+        {"fn":"readWithItsLine","kind":"node-type","count":5},
+        {"fn":"stderrDiscarded","kind":"node-type","count":4},
         {"fn":"stopOf","kind":"helper","count":1}
       ]
     },

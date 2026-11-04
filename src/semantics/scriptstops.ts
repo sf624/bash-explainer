@@ -1,11 +1,13 @@
 import type { ScriptEvidence } from '../shellfeatures';
+import { outputsOf } from '../idioms';
 import { staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { shellFromName } from '../dialect';
 import { commandName } from './effects';
-import { subshellReasons } from './env';
+import { processOf, subshellReasons } from './env';
+import type { NestedScript } from './nested';
 import type { StateModel } from './state';
-import { conditionOf } from './status';
+import { conditionOf, statusModel } from './status';
 import { parser } from './walk/shared';
 
 // What may keep a shell from getting to a line, or from reading it as it is written: the one table of the problems that say
@@ -266,6 +268,76 @@ export function surelyRuns(n: SyntaxNode): boolean {
   }
   return true;
 }
+
+/**
+ * How a shell fails at a construct it lacks: `read`, it refuses the text while it reads it; `stop`, the shell stops where the construct runs; `status`, it gives a status and goes on.
+ * (`FEATURES`, `dash` and `ash`, measured.)
+ */
+export type Fault = 'read' | 'stop' | 'status';
+
+/**
+ * The statement of the script that a shell reads `n` with: the first of those on the line. It reads a whole line, and a compound command up to its end, before it runs any of it:
+ * a syntax error in `exit 0; a=(1)`, in `if a; then exit\na=(1)\nfi` or in a function's body comes first, and only what ran on the lines before can keep the shell from it.
+ */
+export function readWith(n: SyntaxNode): SyntaxNode {
+  let top = n;
+  while (top.parent!.parent) top = top.parent!;
+  const statements = top.parent!.namedChildren;
+  let i = statements.indexOf(top);
+  while (i > 0 && statements[i - 1].endPosition.row === statements[i].startPosition.row) i--;
+  return statements[i];
+}
+
+/** Whether a shell reads `n` with the line it is on: `$( )` it reads there; the text of `${…}` when it runs, and that of a backquote when it runs it, as a string. */
+export function readWithItsLine(n: SyntaxNode): boolean {
+  const word = (a: SyntaxNode): boolean => a.type === 'expansion' || a.type === 'command_substitution';
+  return n.type !== 'expansion' && ancestor(n, word)?.type !== 'expansion' && !ancestor(n, (a) => a.type === 'command_substitution' && a.children[0].type === '`');
+}
+
+/** Whether what `n` prints on stderr goes nowhere: the nearest redirection of fd 2 around it is to `/dev/null`. A command's words are expanded before its redirections apply: `echo "${x:1}" 2>/dev/null` shows the message, and `$( )` in a word too; not those of a command with no name (`x=$(a) 2>/dev/null` hides it, in dash and busybox ash). */
+function stderrDiscarded(n: SyntaxNode): boolean {
+  let inWord = false;
+  for (let c: SyntaxNode | null = n; c; c = c.parent) {
+    if (c.type === 'expansion' || c.type === 'simple_expansion' || c.type === 'arithmetic_expansion' || c.type === 'command_substitution') inWord = true;
+    else if (c.type === 'command' && inWord && field(c, 'name')) inWord = false;
+    else {
+      const { err } = outputsOf(c);
+      if (err !== undefined) return err === '/dev/null';
+    }
+  }
+  return false;
+}
+
+/** Whether `set -e` stops the script at a failure of the statement `c`: through the `( )` around it too, whose status it then is. A failure in `$( )` or a stage of a pipe is the status of something else, which is not read here. */
+function errexitStops(c: SyntaxNode, state: StateModel): boolean {
+  const e = statusModel(state).errexit(c);
+  if (e.active !== 'on' || e.checked !== true) return false;
+  if (e.stops !== 'subshell') return e.stops === 'script';
+  const around = ancestor(c, (a) => a.type === 'subshell');
+  return !!around && errexitStops(around, state);
+}
+
+export type Quiet = 'any' | 'status';
+
+/**
+ * What a script that probes its shell keeps from anyone at `n`, the mark of `if (set -o pipefail) 2>/dev/null`, `shopt -s x 2>/dev/null || true`: it discards the message, on the
+ * command or on what is around it, and `set -e` does not make the failure a stop. `any`: in a subshell, so any failure leaves the script going; `status`: in the script's own shell, so
+ * only a failure with a status does (`set -o pipefail 2>/dev/null || true` still stops dash). None: the failure is seen, or stops the script.
+ */
+export function quietAt(n: SyntaxNode, state: StateModel): Quiet | undefined {
+  if (!stderrDiscarded(n) || errexitStops(n.type === 'command' ? n : ancestor(n, (a) => a.type === 'command') ?? n, state)) return undefined;
+  const p = processOf(state.env(n));
+  return p.kind === 'subshell' && p.sure ? 'any' : 'status';
+}
+
+/** The same for a string run by a command that discards its stderr: a shell of its own only gives that command a status. */
+export function quietString(script: Pick<NestedScript, 'kind' | 'words' | 'outer'>): Quiet | undefined {
+  const quiet = quietAt(ancestor(script.words[0], (a) => a.type === 'command')!, script.outer);
+  return quiet && (script.kind === 'child' ? 'any' : quiet);
+}
+
+/** Whether a failure of this kind is kept quiet. */
+export const keptQuiet = (quiet: Quiet | undefined, fault: Fault | undefined): boolean => quiet === 'any' || (quiet === 'status' && fault === 'status');
 
 function leftOut(c: SyntaxNode, p: SyntaxNode): boolean {
   switch (p.type) {

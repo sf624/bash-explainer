@@ -363,12 +363,12 @@ describe('bash 5.3 printf', () => {
  * prints, what the explanation says of the option, and the command and flag the issue of bash 5.2 mode names. bash 5.2
  * rejects each ("invalid option", status 2), and the builtin does nothing.
  */
-const OPTIONS: { script: string; out: string; command: string; flag: string; says: RegExp }[] = [
-  { script: 'd=$(mktemp -d); mkdir "$d/a" "$d/b"; echo "echo in-b" > "$d/b/f.sh"; source -p "$d/a:$d/b" f.sh; echo "st=$?"; rm -r "$d"', out: 'in-b\nst=0\n', command: 'source', flag: '-p', says: /bash 5\.3: look for the file in the given directories, separated by colons, instead of `\$PATH`/ },
-  { script: 'd=$(mktemp -d); echo "echo in-cwd" > "$d/f.sh"; cd "$d"; . -p "" f.sh; . -p /nonexistent f.sh; echo "st=$?"; cd /; rm -r "$d"', out: 'in-cwd\nst=1\n', command: '.', flag: '-p', says: /the current directory only for an empty entry/ },
-  { script: 'f() { compgen -V arr -W "alpha beta gamma" -- b; }; f; echo "st=$? ${arr[*]} n=${#arr[@]}"', out: 'st=0 beta n=1\n', command: 'compgen', flag: '-V', says: /bash 5\.3: store the candidates in the named indexed array instead of printing them/ },
-  { script: 'trap "echo hi" INT USR1; trap -P INT USR1; echo "st=$?"; trap -P; echo "st=$?"', out: 'echo hi\necho hi\nst=0\nst=2\n', command: 'trap', flag: '-P', says: /bash 5\.3: print only the command set for each signal given/ },
-  { script: 'read -E x <<< line; echo "st=$? [$x]"', out: 'st=0 [line]\n', command: 'read', flag: '-E', says: /bash 5\.3: read with Readline line editing and bash's own completion/ },
+const OPTIONS: { script: string; out: string; command: string; flag: string; says: RegExp; levels: string[] }[] = [
+  { script: 'd=$(mktemp -d); mkdir "$d/a" "$d/b"; echo "echo in-b" > "$d/b/f.sh"; source -p "$d/a:$d/b" f.sh; echo "st=$?"; rm -r "$d"', out: 'in-b\nst=0\n', command: 'source', flag: '-p', levels: ['error'], says: /bash 5\.3: look for the file in the given directories, separated by colons, instead of `\$PATH`/ },
+  { script: 'd=$(mktemp -d); echo "echo in-cwd" > "$d/f.sh"; cd "$d"; . -p "" f.sh; . -p /nonexistent f.sh; echo "st=$?"; cd /; rm -r "$d"', out: 'in-cwd\nst=1\n', command: '.', flag: '-p', levels: ['error', 'warning'], says: /the current directory only for an empty entry/ },
+  { script: 'f() { compgen -V arr -W "alpha beta gamma" -- b; }; f; echo "st=$? ${arr[*]} n=${#arr[@]}"', out: 'st=0 beta n=1\n', command: 'compgen', flag: '-V', levels: ['warning'], says: /bash 5\.3: store the candidates in the named indexed array instead of printing them/ },
+  { script: 'trap "echo hi" INT USR1; trap -P INT USR1; echo "st=$?"; trap -P; echo "st=$?"', out: 'echo hi\necho hi\nst=0\nst=2\n', command: 'trap', flag: '-P', levels: ['warning', 'warning'], says: /bash 5\.3: print only the command set for each signal given/ },
+  { script: 'read -E x <<< line; echo "st=$? [$x]"', out: 'st=0 [line]\n', command: 'read', flag: '-E', levels: ['error'], says: /bash 5\.3: read with Readline line editing and bash's own completion/ },
 ];
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -382,8 +382,9 @@ describe('bash 5.3 options of builtins', () => {
       assert.ok(found.length >= 1, c.script);
       // (`source`, `.` and `trap` are special builtins: in POSIX mode, their error exits the shell.)
       const special = ['source', '.', 'trap'].includes(c.command) ? '; an error of a special builtin, so in POSIX mode the shell exits' : '';
-      // (In a function's body or after a `trap` it may not run: a dialect Error is one only where the shell surely gets there.)
-      assert.strictEqual(found[0].message.replace(/^(?:ⓧ|⚠ Portability:) /, ''), `\`${c.command} ${c.flag}\` is a bash 5.3 option: bash 5.2 reports "invalid option", and \`${c.command}\` does nothing (status 2${special}).`, c.script);
+      // (A dialect Error is one only where the shell surely gets there: `compgen -V` is in a function's body, `trap -P` after a `trap`, the second `. -p` after a `.`.)
+      assert.deepStrictEqual(found.map((i) => i.severity), c.levels, c.script);
+      assert.strictEqual(found[0].message, `${c.levels[0] === 'error' ? 'ⓧ' : '⚠ Portability:'} \`${c.command} ${c.flag}\` is a bash 5.3 option: bash 5.2 reports "invalid option", and \`${c.command}\` does nothing (status 2${special}).`, c.script);
       // (On the option's word.)
       assert.strictEqual(c.script.slice(found[0].startCol, found[0].endCol), c.flag, c.script);
       assert.deepStrictEqual(issues('5.3'), [], c.script);

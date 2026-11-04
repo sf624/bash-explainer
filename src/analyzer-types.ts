@@ -9,6 +9,7 @@ import type { HostId, NoShell } from './hosts';
 import type { LabelPart } from './label';
 import type { NoteLevel } from './levels';
 import type { Fact, FactId, Note, SpaceEnds, ValueSaid } from './messages';
+import type { Quiet } from './semantics/scriptstops';
 import type { TokenTextId } from './messages-tokens';
 import type { TokenRole } from './roles';
 import type { NameInfo } from './namefacts';
@@ -204,6 +205,8 @@ export interface ExplainOptions {
   unreached?: boolean;
   /** Set for a string run by a command that may be left out (`surelyRuns`): an error of the dialect in it is a warning (`Explainer.stopAt`). */
   sometimes?: boolean;
+  /** Set for a string run by a command that discards its stderr, where a failure leaves the script going (`quietAt`): an error of the dialect in it is a warning. `status`: only a failure with a status (`eval`, in the script's own shell). */
+  quiet?: Quiet;
   /** The row where the shell of this line started, in a host's text that holds several (`shellStart`, src/hosts/scripts.ts): a stop before it is another shell's (`stopBefore`). */
   stopsFrom?: number;
   /**

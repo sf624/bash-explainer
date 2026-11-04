@@ -15,7 +15,8 @@ import { networkPath, networkTarget } from './dict/syntax';
 import { VARIABLE_SECTIONS } from './manual';
 import { testStatus } from './semantics/conditions';
 import { processOf } from './semantics/env';
-import { type Stop, surelyRuns } from './semantics/scriptstops';
+import { resolveName } from './semantics/names';
+import { type Fault, keptQuiet, quietAt, readWith, readWithItsLine, type Stop, surelyRuns } from './semantics/scriptstops';
 import { shellState, type StateModel } from './semantics/state';
 import { optionOn } from './semantics/status';
 import { testWordShape } from './semantics/testwords';
@@ -340,8 +341,8 @@ function unsupported(lang: Lang, id: string, body: string, head: Head = [body, b
 export interface Issue {
   id: string;
   /**
-   * `unsupported`: fails in the shell (an error); `differs`: in sh, dash and busybox ash, status 0 with another result, or
-   * a failure that is not surely reached (a warning, "Portability"); `behaviour`: works differently, or, in sh, is not
+   * `unsupported`: fails in the shell (an error); `differs`: in sh, dash and busybox ash, status 0 with another result, a variable
+   * the environment may set, a failure that is not surely reached, or one the script discards (`quietAt`) (a warning, "Portability"); `behaviour`: works differently, or, in sh, is not
    * POSIX but dash and busybox ash run it (information, "Portability"); `parse`: zsh-only syntax (information: the line is
    * not explained).
    */
@@ -352,6 +353,8 @@ export interface Issue {
   place: Place;
   /** The construct, for the issues about one (not `parse`). */
   node?: SyntaxNode;
+  /** How a shell that was run fails at it, the worst of them. */
+  fault?: Fault;
 }
 
 export interface Place { startPosition: Point; endPosition: Point }
@@ -395,7 +398,7 @@ function featureHead(id: string, shell: Shell): Head {
  * (`set -u`, `${x:?}`, no operand in `$(( ))`), or only the `subshell` it is read in; `test`: `[` reports an error (status 2); `empty`,
  * `zero`: its value is nothing, or 0 in arithmetic, status 0. Or what the row of FEATURES says, status 0.
  */
-type Does = 'fails' | 'stops' | 'subshell' | 'test' | 'empty' | 'zero' | Exclude<InShell, 'empty'>;
+type Does = 'fails' | 'stops' | 'subshell' | 'test' | 'empty' | 'zero' | Exclude<InShell, 'empty' | 'refused' | 'stops'>;
 type Doing = Partial<Record<Measured, Does>>;
 
 /** What follows "does not set it, so". */
@@ -424,11 +427,17 @@ function doingText(how: Doing, lang: Lang): string {
   }).join(s('。', '; '));
 }
 
+/** What a row says a shell that lacks it does there, in the words of its text. */
+function doesOf(f: Feature, sh: Measured): Does {
+  const row = f[sh];
+  return row === undefined || row === 'refused' || row === 'stops' ? 'fails' : row;
+}
+
 /** What the shells of `shell` do with feature `f` when nothing around it says more. */
 function usualDoing(f: Feature, shell: Shell): Doing {
   const how: Doing = {};
   for (const sh of MEASURED[shell] ?? []) {
-    if (!works(f, sh)) how[sh] = f[sh] ?? 'fails';
+    if (!works(f, sh)) how[sh] = doesOf(f, sh);
   }
   return how;
 }
@@ -570,15 +579,17 @@ function laterOptionsOf(c: SyntaxNode, version: BashVersion, lang: Lang): Issue[
  * Problems on lines [from, to] of a script written for `shell`; for bash, the constructs that bash `version` lacks
  * (src/bashversion.ts), and in a version that has `${ …; }`, the ones it does not close (`braceTakenAsWord`).
  */
-export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from = 0, to = tree.root.endPosition.row, version: BashVersion = DEFAULT_BASH_VERSION, stopAt?: (n: SyntaxNode) => Stop | undefined): Issue[] {
+export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from = 0, to = tree.root.endPosition.row, version: BashVersion = DEFAULT_BASH_VERSION, stopAt?: (n: SyntaxNode, fault?: Fault) => Stop | undefined): Issue[] {
   return issuesFound(tree, shell, lang, from, to, version).flatMap((i) => {
     // (A problem says the shell fails on the construct: whatever its kind, by its level. Not where it does not get to, after an `exit`
     // or in a polyglot's other language: `print(x)` of Python is not `print` of ksh. The command a construct is in, not the construct: `source -p dir f` is read, and `-p` is its error.)
     if (!i.node || !failsCheck(severityOf(i.note.level), true)) return [i];
-    const stop = stopAt?.(ancestor(i.node, (a) => a.type === 'command') ?? i.node);
+    // (What the shell refuses while it reads the text fails even where the text never runs: only what keeps the shell from reading that line counts.)
+    const read = i.fault === 'read';
+    const stop = stopAt?.(read ? readWith(i.node) : ancestor(i.node, (a) => a.type === 'command') ?? i.node, i.fault);
     if (stop === 'sure') return [];
-    // (An error of the dialect is said only where the shell surely gets there. Elsewhere it may be a test's other branch, or the shell may have stopped: the same words, as a warning.)
-    return i.kind === 'unsupported' && (stop || !surelyRuns(i.node)) ? [{ ...i, kind: 'differs' as const, note: problemNote(lang, 'differs', i.note.code, i.note.body, [i.note.head!, i.note.head!]) }] : [i];
+    // (Any other error of the dialect is said only where the shell surely gets there. Elsewhere it may be a test's other branch, or the shell may have stopped: the same words, as a warning.)
+    return i.kind === 'unsupported' && (stop || (!read && !surelyRuns(i.node))) ? [{ ...i, kind: 'differs' as const, note: problemNote(lang, 'differs', i.note.code, i.note.body, [i.note.head!, i.note.head!]) }] : [i];
   });
 }
 
@@ -608,17 +619,17 @@ function issuesFound(tree: SyntaxTree, shell: Shell, lang: Lang, from: number, t
   // (`${UID:0:1}`, `${FUNCNAME[0]}`: that it fails is what dash does there, not that the variable is empty.)
   const failing = new Set(features.filter((f) => !isVariableRow(FEATURES[f.id]) && measured?.some((sh) => !works(FEATURES[f.id], sh))).map((f) => f.node));
   const found = [
-    ...collectBehaviours(tree.root, from, to).map((f) => ({ f, kind: 'behaviour' as const, body: behaviourMessage(f.id, shell, lang), head: () => behaviourHead(f.id, shell) })),
+    ...collectBehaviours(tree.root, from, to).map((f) => ({ f, kind: 'behaviour' as const, fault: undefined, body: behaviourMessage(f.id, shell, lang), head: () => behaviourHead(f.id, shell) })),
     ...features.flatMap((f) => {
       // (A name in `$(( ))` is read only where it was run.)
       const reading = measured ? measuredReading(f, tree, shell, failing, measured) : f.node.type === 'variable_name' ? undefined : { kind: 'unsupported' as const };
-      return reading ? [{ f, kind: reading.kind, body: featureMessage(f.id, shell, lang, reading.how), head: () => featureHead(f.id, shell) }] : [];
+      return reading ? [{ f, kind: reading.kind, fault: reading.fault, body: featureMessage(f.id, shell, lang, reading.how), head: () => featureHead(f.id, shell) }] : [];
     }),
   ];
-  for (const { f, kind, body, head } of found) {
+  for (const { f, kind, fault, body, head } of found) {
     if (!body) continue;
     const note = kind === 'unsupported' ? unsupported(lang, f.id, body, head()) : problemNote(lang, kind, f.id, body, head());
-    issues.push({ id: f.id, kind, note, node: f.node, place: f.node });
+    issues.push({ id: f.id, kind, note, node: f.node, place: f.node, fault });
   }
   return issues;
 }
@@ -688,26 +699,38 @@ function unsetDoes(n: SyntaxNode, sh: Measured, tree: SyntaxTree, model: StateMo
   return testFails(n, sh, model) ? 'test' : 'empty';
 }
 
+/** How `sh` fails at the feature `row` found at `n`: `${a[0]}`, of a row whose `a=(…)` is refused, is read when it runs. */
+function faultOf(row: Feature, sh: Measured, n: SyntaxNode): Fault {
+  const said = row[sh];
+  return said === 'refused' && readWithItsLine(n) ? 'read' : said === 'refused' || said === 'stops' ? 'stop' : 'status';
+}
+
+const FAULTS: readonly Fault[] = ['read', 'stop', 'status'];
+
 /**
  * The kind of the issue of a feature in a shell that was run, from what the shell does with it, and what its text adds; none where
- * the script itself sets the variable or defines the command, or where another feature of the node (`failing`) is what the shell does. A variable
- * empty or another result with status 0 is a warning; what fails or stops the shell, an error.
+ * the script itself sets the variable or defines the command there, or where another feature of the node (`failing`) is what the shell does. Another result with status 0 is a warning,
+ * and so is a variable the shell does not set, whatever follows without it: the environment may set it (`UID=7 dash`; docs/design/three-levels.md, section 2). What fails, an error,
+ * unless the script discards its message and the failure leaves it going (`quietAt`).
  */
-function measuredReading(f: Found, tree: SyntaxTree, shell: Shell, failing: ReadonlySet<SyntaxNode>, shells: readonly Measured[]): { kind: 'unsupported' | 'differs' | 'behaviour'; how?: Doing } | undefined {
+function measuredReading(f: Found, tree: SyntaxTree, shell: Shell, failing: ReadonlySet<SyntaxNode>, shells: readonly Measured[]): { kind: 'unsupported' | 'differs' | 'behaviour'; how?: Doing; fault?: Fault } | undefined {
   const row = FEATURES[f.id];
   if (portableInSh(f.id, shell)) return { kind: 'behaviour' };
   const model = shellState(tree, shell);
   // (`${UID:?}` counts as the script's setting it, past itself: it is the read that fails.)
   if (isVariableRow(row) && (failing.has(f.node) || (model.assigned.has(parameterRead(f.node).name) && !unsetAtOwnTest(f.node, model)))) return undefined;
-  if (f.node.type === 'command' && model.definitions.functions.has(field(f.node, 'name')!.text)) return undefined;
+  if (f.node.type === 'command' && resolveName(model, field(f.node, 'name')!.text, f.node, { shell, command: true }).kind === 'function') return undefined;
   const how: Doing = {};
   for (const sh of shells) {
-    const does = works(row, sh) ? undefined : row[sh] === 'empty' ? unsetDoes(f.node, sh, tree, model) : row[sh] ?? 'fails';
+    const does = works(row, sh) ? undefined : row[sh] === 'empty' ? unsetDoes(f.node, sh, tree, model) : doesOf(row, sh);
     if (does) how[sh] = does;
   }
   const done = Object.values(how);
   if (!done.length) return undefined;
-  return { kind: done.some((d) => d === 'fails' || d === 'stops' || d === 'test') ? 'unsupported' : 'differs', how };
+  const failed = (Object.keys(how) as Measured[]).filter((sh) => how[sh] === 'fails').map((sh) => faultOf(row, sh, f.node));
+  if (!failed.length) return { kind: 'differs', how };
+  const fault = FAULTS.find((x) => failed.includes(x))!;
+  return { kind: fault !== 'read' && keptQuiet(quietAt(f.node, model), fault) ? 'differs' : 'unsupported', how, fault };
 }
 
 /** Notes for the line: features the target shell lacks, and behaviour that differs. */
@@ -716,7 +739,7 @@ export function dialectNotes(tree: SyntaxTree, line: number, shell: Shell, lang:
 }
 
 /** The notes of `dialectNotes`, each with the place of its construct and its issue's id (the note on zsh syntax is about the line: none). */
-export function dialectFound(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion, stopAt?: (n: SyntaxNode) => Stop | undefined): (Note & { code: string; node?: Place })[] {
+export function dialectFound(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion, stopAt?: (n: SyntaxNode, fault?: Fault) => Stop | undefined): (Note & { code: string; node?: Place })[] {
   const issues = dialectIssues(tree, shell, lang, line, line, version, stopAt).filter((i) => i.kind !== 'parse');
   // On every line a zsh parse error covers, not only where it starts.
   const parse = shell === 'zsh' && zshSyntaxPlaces(tree, 0, tree.root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
