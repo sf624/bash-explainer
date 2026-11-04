@@ -216,13 +216,20 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["f() { echo FN; }\nalias f='echo AL'\necho a \\\n && f || {\n y=2\n}", 2, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`f` を実行する。", "zsh"],
     ["f() { echo FN; }\necho a \\\n && \"f\" || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, calls the function `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、関数 `f` を呼び出す。"],
     ["f() { echo FN; }\necho a \\\n && f\\\n || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, calls the function `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、関数 `f` を呼び出す。"],
-    ["echo a \\\n && declare $o n=1+1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `declare` and sets `n` to what `1+1` gives.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`declare` を実行する。`n` に `1+1` の結果を代入する。"],
-    ["declare $o n=1+1", 0, "Runs `declare` (declare variables and set attributes) and sets `n` to what `1+1` gives.", "`declare`（変数を宣言し、属性を設定する）を実行する。`n` に `1+1` の結果を代入する。"],
+    ["echo a \\\n && declare $o n=1+1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `declare`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`declare` を実行する。"],
+    ["declare $o n=1+1", 0, "Runs `declare` (declare variables and set attributes).", "`declare`（変数を宣言し、属性を設定する）を実行する。"],
     ["declare -f n=1", 0, "Runs `declare` (declare variables and set attributes) using `-f` (operate on function names).", "`declare`（変数を宣言し、属性を設定する）を `-f`（関数名を対象にする）を付けて実行する。"],
     ["declare -p n=1", 0, "Runs `declare` (declare variables and set attributes) using `-p` (print attributes and values).", "`declare`（変数を宣言し、属性を設定する）を `-p`（属性と値を表示）を付けて実行する。"],
     ["echo a \\\n && export -f x=1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `export`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`export` を実行する。"],
     ["echo a \\\n && readonly -p x=1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `readonly` and sets `x` to what `1` gives.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`readonly` を実行する。`x` に `1` の結果を代入する。"],
     ["echo a \\\n && ec\\\nho b || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `echo`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`echo` を実行する。"],
+    ["echo a \\\n && decl\\\nare -p n=1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `declare`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`declare` を実行する。"],
+    ["echo a \\\n && typ\\\neset -p n=1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `typeset`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`typeset` を実行する。"],
+    ["echo a \\\n && lo\\\ncal -p n=1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `local`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`local` を実行する。"],
+    ["declare $(echo -p) n=1", 0, "Runs `declare` (declare variables and set attributes).", "`declare`（変数を宣言し、属性を設定する）を実行する。"],
+    ["declare +f n=1", 0, "Runs `declare` (declare variables and set attributes) using `+f` (Option) and sets `n` to what `1` gives.", "`declare`（変数を宣言し、属性を設定する）を `+f`（オプション）を付けて実行する。`n` に `1` の結果を代入する。"],
+    ["declare +p n=1", 0, "Runs `declare` (declare variables and set attributes) using `+p` (Option).", "`declare`（変数を宣言し、属性を設定する）を `+p`（オプション）を付けて実行する。"],
+    ["o=-p; declare $o n=1", 0, "Sets `o` to `-p`; then runs `declare` (declare variables and set attributes) using `$o` (expands to `-p` (option: print attributes and values)).", "`o` に `-p` を代入する。続けて、`declare`（変数を宣言し、属性を設定する）を `$o`（`-p`（オプション: 属性と値を表示）に展開される）を付けて実行する。"],
 ];
 
 /** The files of the corpus: sample.sh and the other fixtures, the host files with their shell parts. */
