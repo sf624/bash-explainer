@@ -246,11 +246,11 @@ describe('the panel: the mark "not in POSIX sh"', () => {
     const table: [string, [string, string[]][]][] = [
       ['if [[ a ]]; then b; fi', [['[[ a ]]', ['`[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.']]]],
       ['[[ a =~ b ]]', [['[[ a =~ b ]]', ['`[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.', '`[[ =~ ]]` regex matching is not POSIX sh (it fails in dash; busybox ash matches it, but a `(` in it is a syntax error). Instead, use `expr` or `grep -E`.']]]],
-      ['[ a == b ]', [['[ a == b ]', ['`==` in `[ ]` is not POSIX sh (it fails in dash). Instead, use `=`.']]]],
+      ['[ a == b ]', [['[ a == b ]', ['`==` in `[ ]` or `test` is not POSIX sh (it fails in dash). Instead, use `=`.']]]],
       ['source f', [['source', ['`source` is not POSIX sh (it fails in dash). Instead, use `.`.']]]],
       ['f() { local x; }', [['local', ['`local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it).']]]],
       ['cat <<< x', [['<<< x', ['here-strings `<<<` is not POSIX sh (it fails in dash and busybox ash). Instead, use `printf \'%s\\n\' … |` or a here-document.']]]],
-      ['echo {a,b}', [['{a,b}', ['brace expansion `{a,b}` is not POSIX sh (it fails in dash and busybox ash).']]]],
+      ['echo {a,b}', [['{a,b}', ['brace expansion `{a,b}` is not POSIX sh (in dash and busybox ash the braces stay, as one word).']]]],
       ['for ((;;)); do\n  a\ndone', [['for (( ; ; )) do ‹commands› done', ['C-style `for (( ; ; ))` is not POSIX sh (it fails in dash and busybox ash). Instead, use `while` with `$(( ))`.']]]],
       ['[ a = b ] && . f; echo "${x:-d}" $((1+2)); a | b; c > d', []],
     ];
