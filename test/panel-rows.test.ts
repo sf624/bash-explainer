@@ -608,6 +608,7 @@ describe('the panel\'s row model', () => {
       assert.match(said(rows('ls ~/a', D1)[1]).join(' '), /Tilde expansion/);
       assert.deepStrictEqual(rows('ls "a"', D1)[1].more, []);
       assert.deepStrictEqual(rows('rm $d/x', D1)[1].more, [], 'how bash joins the parts of a word, at depth 2');
+      assert.deepStrictEqual(rows('tr a-z A-Z', D1)[1].more, [], 'a text that only repeats its code, at depth 2');
       assert.match(said(rows('rm $d/x')[1]).join(' '), /Concatenation/);
       assert.deepStrictEqual(rows('tar x 2>/dev/null', D1)[0].more, [], 'the redirection around a command, at depth 2');
     });

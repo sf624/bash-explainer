@@ -272,8 +272,9 @@ describe('the panel keeps the row acted on in place', function () {
         await frames(panel);
         const after = await Promise.all(on.map(top));
         const k = after.findIndex((t) => t !== null);
-        // (Going to depth 1, the screen may hold only rows that go: the row around them then comes under the line.)
-        assert.ok(k >= 0 || to === 1, `${to}: a row stays`);
+        // (Going to depth 1, the screen may hold only rows that go: the row around them then comes under the line. On a phone it may hold an
+        // example and no row at all.)
+        assert.ok(k >= 0 || to === 1 || !on.length, `${to}: a row stays`);
         if (k >= 0) assert.ok(Math.abs(after[k]! - before[k]!) <= 1, `depth ${to}: the row ${on[k]} moved from ${before[k]} to ${after[k]}`);
         // (A page that became shorter is held by the spacer, which goes as the viewer scrolls up.)
         await scrollTo(panel, 0);
