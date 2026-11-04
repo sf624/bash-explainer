@@ -128,9 +128,9 @@ describe('the web page: the menu and the settings sheet', function () {
     const { devices } = await import('playwright-core');
     const phone = { ...devices['iPhone 13'], viewport: { width: 390, height: 844 }, locale: 'en-US' };
     const wide = { viewport: { width: 1280, height: 800 }, locale: 'en-US' };
-    // The menu comes from the left; the settings from the right on a phone, where they fill the screen, and from the
-    // left side by side, over the editor.
-    for (const [name, dialog, opener, closer, signs] of [['menu', '#drawer', '#menu-open', '#menu-close', { phone: -1, wide: -1 }], ['settings', '#settings-dialog', '#settings-open', '#settings-dialog .settings-x', { phone: 1, wide: -1 }]] as const) {
+    // The menu comes from the left; the settings from the right, on a phone, where they fill the screen, and side by
+    // side too (changed 2026-11-05: from the left before): the gear is at the right.
+    for (const [name, dialog, opener, closer, signs] of [['menu', '#drawer', '#menu-open', '#menu-close', { phone: -1, wide: -1 }], ['settings', '#settings-dialog', '#settings-open', '#settings-dialog .settings-x', { phone: 1, wide: 1 }]] as const) {
       const start = async (options: Parameters<Browser['newContext']>[0]) => {
         const ctx = await browser.newContext(options);
         const page = await ctx.newPage();

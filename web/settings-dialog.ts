@@ -2,11 +2,12 @@
 // control each, applied at once, and kept by the page (localStorage). They come in sections (src/ui/settingsPage.ts):
 // Common first, then Examples, Checks, Editor and Data, folded, each opened by its heading or its "Jump to" link; a
 // search finds a setting by its title or its key. A description shows two lines, with "More" after the last word shown;
-// on a touch screen it shows whole. Side by side the sheet lies over the editor, never wider than the editor's pane, so
-// that the explanation the settings change stays in view and live: it is not a modal dialog there (the panel can be
-// scrolled and clicked, and a click on it leaves the sheet open; Esc, × and Close shut it). The editor under it is
-// inert (nothing in it can take the focus unseen), and the top bar stays above the sheet, in use. In the narrow layout it is
-// a modal dialog and takes the whole screen (page.css).
+// on a touch screen it shows whole. The sheet comes from the right edge at every width, as the gear that opens it is at
+// the right. Side by side it lies over the editor's side of the page, never wider than the editor's pane, and the
+// explanation moves left by its width (`data-shift`, below), so that what the settings change stays in view and live: it
+// is not a modal dialog there (the panel can be scrolled and clicked, and a click on it leaves the sheet open; Esc, × and
+// Close shut it). The editor under it, and the divider, are inert (nothing in them can take the focus unseen), and the
+// top bar stays above the sheet, in use. In the narrow layout it is a modal dialog and takes the whole screen (page.css).
 // It comes back as it was left: the sections open, the search and the scroll (docs/design/chrome-redesign.md, C6).
 import { closeSheet, narrow, reopenSheet } from './layout';
 import type { AutoShell } from '../src/dialect';
@@ -38,6 +39,8 @@ export interface SettingsHost {
   setTheme(t: Theme): void;
   /** The editor's pane, which the sheet covers side by side and is never wider than. */
   pane(): HTMLElement | null;
+  /** The divider between the editor and the explanation: out of reach while the sheet is open, since the explanation has moved. */
+  splitter(): HTMLElement | null;
   /** The shell the script reads as, and where from: the Shell setting's "Auto (now: bash, from #!)". */
   shellReading(): AutoShell | undefined;
 }
@@ -103,8 +106,12 @@ export class SettingsDialog {
       const at = e.target as Node | null;
       if (at === document.body || (at && this.dialog.contains(at))) this.escape(e);
     });
-    // (Sliding out and coming back are class changes of the sheet: web/layout.ts.)
-    new MutationObserver(() => this.syncInert()).observe(dialog, { attributes: true, attributeFilter: ['class'] });
+    // (Sliding out and coming back are class changes of the sheet, and a swipe moves its style: web/layout.ts. The
+    // explanation follows them.)
+    new MutationObserver(() => {
+      this.syncInert();
+      this.syncShift();
+    }).observe(dialog, { attributes: true, attributeFilter: ['class', 'style', 'open'] });
     // The window crossing between the layouts while the sheet is open: it opens again in the other kind.
     narrow.addEventListener('change', () => {
       if (!this.dialog.open || this.modal === narrow.matches) return;
@@ -181,8 +188,26 @@ export class SettingsDialog {
    * shuts the page itself).
    */
   private syncInert(): void {
-    const pane = this.host.pane();
-    if (pane) pane.inert = this.dialog.open && !this.modal && !this.dialog.classList.contains('closing');
+    const inert = this.dialog.open && !this.modal && !this.dialog.classList.contains('closing');
+    for (const part of [this.host.pane(), this.host.splitter()]) if (part) part.inert = inert;
+  }
+
+  /**
+   * Side by side the explanation moves left by the sheet's width (`--pane-w`), beside the sheet instead of under it:
+   * page.css reads `data-shift` of the page, which holds while the sheet is out and slides out, and `--drag`, how far a
+   * swipe has taken the sheet towards the edge (the panel goes with the finger). It moves as the sheet moves: the same
+   * transition, started in the same frame.
+   */
+  private syncShift(): void {
+    const root = document.documentElement;
+    const d = this.dialog;
+    if (!d.open || this.modal) {
+      delete root.dataset.shift;
+      return;
+    }
+    const state = d.classList.contains('closing') ? 'closing' : d.classList.contains('dragging') ? 'drag' : 'open';
+    if (state === 'drag') root.style.setProperty('--drag', `${Math.max(0, d.getBoundingClientRect().right - root.clientWidth)}px`);
+    root.dataset.shift = state;
   }
 
   /** The gear again shuts the sheet (or, while it slides out, brings it back). */
@@ -214,12 +239,25 @@ export class SettingsDialog {
     return this.dialog.querySelector<HTMLElement>('.settings-body')!;
   }
 
-  /** Side by side, the sheet lies exactly over the editor's pane: never wider, and below the top bar (page.css reads `--pane-w` and `--pane-top`). */
+  /**
+   * Side by side, the sheet is as wide as the editor's pane and the divider beside it, never wider: that is how far the
+   * explanation moves left, to the page's edge, and the sheet takes the room it leaves, with no strip of the editor
+   * between them. And it lies below the top bar (page.css reads `--pane-w` and `--pane-top`). The page holds the width,
+   * since the explanation moves by it too. A new width while the sheet is out moves the explanation at once, with the
+   * sheet: no transition runs for it.
+   */
   private fitWidth(): void {
     const pane = this.host.pane();
     if (!pane) return;
     const r = pane.getBoundingClientRect();
-    this.dialog.style.setProperty('--pane-w', `${Math.floor(r.width)}px`);
+    const root = document.documentElement;
+    const width = `${Math.floor(this.host.splitter()?.getBoundingClientRect().right ?? r.right)}px`;
+    if (root.style.getPropertyValue('--pane-w') !== width) {
+      root.dataset.shiftNow = '';
+      root.style.setProperty('--pane-w', width);
+      void document.getElementById('panel-pane')?.offsetWidth;
+      delete root.dataset.shiftNow;
+    }
     this.dialog.style.setProperty('--pane-top', `${Math.floor(r.top)}px`);
   }
 

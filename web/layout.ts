@@ -218,9 +218,9 @@ export function setUpProblems(
 const closing = new WeakMap<HTMLDialogElement, () => void>();
 
 /**
- * The edge a side sheet lies along, as a sign: -1 for the left one (the menu; the settings side by side, over the
- * editor), 1 for the right one (a sheet as wide as the screen comes from the right). Read from where it is drawn, so
- * that one rule of page.css decides it.
+ * The edge a side sheet lies along, as a sign: -1 for the left one (the menu), 1 for the right one (the settings, at
+ * every width; a sheet as wide as the screen comes from the right). Read from where it is drawn, so that one rule of
+ * page.css decides it.
  */
 function sheetSide(sheet: HTMLElement): -1 | 1 {
   const r = sheet.getBoundingClientRect();
