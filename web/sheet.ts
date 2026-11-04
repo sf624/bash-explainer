@@ -62,6 +62,8 @@ export class BottomSheet {
   /** The editor's room at the last draw, and whether its cursor followed. */
   private room: EditorRoom | undefined;
   private follow = true;
+  /** Ends a drag at once, where the sheet is (the window changed under the finger): set by `drags`. */
+  private cancel: () => void = () => undefined;
   private readonly problems: HTMLElement | null;
   private readonly source: HTMLElement | null;
   /** The hint showed in this page: it shows once. */
@@ -75,7 +77,7 @@ export class BottomSheet {
     this.problems = document.getElementById('problems');
     this.source = document.getElementById('source');
     // (First: the click that ends a drag goes nowhere.)
-    this.drags();
+    this.cancel = this.drags();
     this.grab.addEventListener('keydown', (e) => {
       const to = keyed(this.snap, e.key);
       if (to === undefined || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -240,6 +242,7 @@ export class BottomSheet {
 
   /** Into the sheet's layout or out of it: the Problems list goes into the sheet (its Problems tab) or back under the editor. */
   private layout(): void {
+    this.cancel();
     const on = this.on;
     if (this.problems && this.source) {
       const home = on ? this.pane : this.source;
@@ -267,7 +270,9 @@ export class BottomSheet {
 
   /** Draws the height shown: the sheet's height, the editor's room above it, what is out of sight, and the grabber's name. */
   private apply(): void {
-    if (!this.on) return;
+    // (A drag measured the heights of a window that is gone: the sheet settles from where it is, as a cancelled drag does.)
+    this.cancel();
+    if (!this.on) return this.rest();
     // (While the keyboard is open, the summary row with the sheet's edge; the keyboard covers the rest.)
     const row = this.summary.offsetHeight + parseFloat(getComputedStyle(this.pane).borderTopWidth);
     const shown = sheetHeight(this.heights(), this.snap, { place: this.place }, row);
@@ -373,7 +378,7 @@ export class BottomSheet {
    * go, the sheet settles on a height from where it is and how fast it went. A tap is left to the grabber or the tab
    * under it; the click that ends a drag does nothing.
    */
-  private drags(): void {
+  private drags(): () => void {
     let drag: { id: number; y: number; h: number; moved: boolean; moves: { t: number; h: number }[]; heights: SnapHeights } | undefined;
     let quietUntil = 0;
     this.head.addEventListener('click', (e) => {
@@ -382,7 +387,8 @@ export class BottomSheet {
       e.preventDefault();
     }, true);
     this.head.addEventListener('pointerdown', (e) => {
-      if (!this.on || e.button !== 0 || (e.target as Element).closest('.view-slot, .panel-tools')) return;
+      // (A second finger leaves the first one's drag alone: it would end with no move, and `dragging` would stay.)
+      if (drag || !this.on || e.button !== 0 || (e.target as Element).closest('.view-slot, .panel-tools')) return;
       const h = this.shownHeight();
       drag = { id: e.pointerId, y: e.clientY, h, moved: false, moves: [{ t: e.timeStamp, h }], heights: this.heights() };
     });
@@ -406,6 +412,16 @@ export class BottomSheet {
       drag.moves = [...drag.moves, ...moves].filter((m) => last.t - m.t <= SPEED_MS);
       this.pane.style.transform = `translateY(${drag.heights.full - last.h}px)`;
     });
+    /** The drag ends where it is, with no settling of its own: the caller draws the sheet's height. */
+    const stop = (): void => {
+      if (!drag) return;
+      const { id, moved } = drag;
+      drag = undefined;
+      if (!moved) return;
+      this.pane.classList.remove('dragging');
+      if (this.head.hasPointerCapture(id)) this.head.releasePointerCapture(id);
+      quietUntil = performance.now() + 400;
+    };
     const end = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
       const { moved, heights } = drag;
@@ -427,5 +443,6 @@ export class BottomSheet {
     };
     this.head.addEventListener('pointerup', end);
     this.head.addEventListener('pointercancel', end);
+    return stop;
   }
 }
