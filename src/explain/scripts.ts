@@ -45,8 +45,8 @@ export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, p
   const rows = script.tree.text.split('\n');
   const lines: Token[][] = [];
   // (A fault of the text of a string is said as the command that runs it is: `Explainer.evidenceAt`, `reachedAt`.)
-  const known = words.length ? cx.evidenceAt(words[0]) : undefined;
-  const outer = { ...(!known ? { unread: true } : known === 'unsure' ? { unsure: true } : {}), ...(!words.length || !cx.reachedAt(words[0]) ? { unreached: true } : {}) };
+  const known = cx.evidenceAt(words[0]);
+  const outer = { ...(!known ? { unread: true } : known === 'unsure' ? { unsure: true } : {}), ...(!cx.reachedAt(words[0]) ? { unreached: true } : {}) };
   for (let line = 0; line < rows.length; line++) {
     const ex = cx.nestedLine(script, line, positional, outer);
     // (A statement over several lines is explained whole on each of them: keep it, and its notes, on its first.)
