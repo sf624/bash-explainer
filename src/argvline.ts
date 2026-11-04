@@ -27,7 +27,16 @@ export function argvLines(root: SyntaxNode, line: number, model: StateModel, lan
   if (!byLang) argvKept.set(model, (byLang = { en: new WeakMap(), ja: new WeakMap() }));
   const kept = byLang[lang];
   const rows = [line, ...shown];
-  return descendants(root, ['command'], { from: leastOf(rows), to: mostOf(rows) })
+  const range = { from: leastOf(rows), to: mostOf(rows) };
+  // (All the lines of a statement over several lines ask for its range.)
+  const key = `${range.from} ${range.to}`;
+  let commands = commandsKept.get(model)?.get(key);
+  if (!commands) {
+    commands = descendants(root, ['command'], range);
+    if (!commandsKept.has(model)) commandsKept.set(model, new Map());
+    commandsKept.get(model)!.set(key, commands);
+  }
+  return commands
     .filter((c) => (c.startPosition.row <= line && line <= c.endPosition.row) || shown.has(c.startPosition.row))
     .flatMap((c) => {
       // (Each command once: all the lines of one over several lines ask.)
@@ -36,6 +45,7 @@ export function argvLines(root: SyntaxNode, line: number, model: StateModel, lan
     });
 }
 
+const commandsKept = new WeakMap<StateModel, Map<string, SyntaxNode[]>>();
 const argvKept = new WeakMap<StateModel, Record<Lang, WeakMap<SyntaxNode, ArgvLine | undefined>>>();
 
 /** What the program of the simple command `cmd` receives; undefined for a command with no name (`x=1`, `>f`), which runs none. */

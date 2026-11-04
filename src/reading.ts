@@ -184,10 +184,17 @@ function posIn(n: SyntaxNode, i: number): Pos {
   const nl = before.lastIndexOf('\n');
   return nl < 0 ? point(n.startPosition.row, n.startPosition.column + before.length) : point(n.startPosition.row + before.split('\n').length - 1, before.length - nl - 1);
 }
-/** The lines the tokens of a line are on. */
+/** The lines the tokens of a line are on. (Each token once: all the lines of a statement over several lines have the same tokens, whose lines do not change.) */
 export function tokenLines(items: readonly Token[]): Set<number> {
-  return new Set(items.flatMap(function walk(t: Token): number[] { return [t.span.start.line, ...t.children.flatMap(walk)]; }));
+  const lines = new Set<number>();
+  for (const t of items) {
+    let on = linesKept.get(t);
+    if (!on) linesKept.set(t, (on = [...new Set(function walk(x: Token): number[] { return [x.span.start.line, ...x.children.flatMap(walk)]; }(t))]));
+    for (const l of on) lines.add(l);
+  }
+  return lines;
 }
+const linesKept = new WeakMap<Token, readonly number[]>();
 
 export const keyOf = (s: Span): string => `${s.start.line}:${s.start.character}-${s.end.line}:${s.end.character}`;
 const same = (a: Span, b: Span): boolean => keyOf(a) === keyOf(b);

@@ -6,7 +6,7 @@ import { builtins } from './dict/builtins';
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
-import { pushAll } from './lists';
+import { leastOf, mostOf, pushAll } from './lists';
 import { failsCheck, severityOf } from './levels';
 import { type Note, problemNote } from './messages';
 import type { Head } from './messages-heads';
@@ -195,8 +195,9 @@ export function featuresOnLine(root: SyntaxNode, line: number): string[] {
 }
 
 /** The constructs on the lines `rows` that POSIX sh does not have (no feature of FEATURES is POSIX sh), each with what the problems of a sh script say of it, in `lang`. A fact of the construct, for a mark, whatever shell the script is for. */
-export function notPosixOn(root: SyntaxNode, rows: Iterable<number>, lang: Lang): { node: SyntaxNode; says: string }[] {
-  return [...rows].flatMap((row) => collectFeatures(root, row, row)).map((f) => ({ node: f.node, says: featureMessage(f.id, 'sh', lang)! }));
+export function notPosixOn(root: SyntaxNode, rows: ReadonlySet<number>, lang: Lang): { node: SyntaxNode; says: string }[] {
+  const on = [...rows];
+  return collectFeatures(root, leastOf(on), mostOf(on)).filter((f) => rows.has(f.node.startPosition.row)).map((f) => ({ node: f.node, says: featureMessage(f.id, 'sh', lang)! }));
 }
 
 /** A redirection to `/dev/tcp/host/port` (or `/dev/udp/…`), as the value of its word: quoted, it connects too. */
