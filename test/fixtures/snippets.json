@@ -1196,6 +1196,7 @@
  "for i in 1; do seq 3 | sort; done",
  "for i in {a,b} x{c,d} {*.c,*.h}; do :; done",
  "for in do",
+ "for o; do case $x in\n  $(\n   cat $a;\n   rm -rf $b/\n  )) ;;\nesac; done\n",
  "for x in a; do b; done",
  "for x; do :; done",
  "for-over-ls-output",
