@@ -355,7 +355,7 @@ export function pipeline(cx: Explainer, n: SyntaxNode): Token {
 
 /** `!` before a pipeline: its status, negated. */
 export function negated(cx: Explainer, n: SyntaxNode): Token {
-  return skeletal(cx.tok(n, 'operator', cx.t(keywords[n.namedChildren[0]?.type === 'pipeline' ? '! pipeline' : '!']), cx.subs(n.namedChildren)), n);
+  return skeletal({ ...cx.tok(n, 'operator', cx.t(keywords[n.namedChildren[0]?.type === 'pipeline' ? '! pipeline' : '!']), cx.subs(n.namedChildren)), around: 'pipeline' }, n);
 }
 
 /** `( … )`: the list in a subshell. */

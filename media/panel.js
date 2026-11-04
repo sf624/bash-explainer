@@ -260,6 +260,7 @@
       // A new line is drawn anew: what was folded, and the room kept below the old one, go.
       dropSpacer();
       collapsedKeys = new Set();
+      openExamples = new Set();
       foldedKeys = new Set();
       currentKey = '';
       // (And the line box opened whole: a new line shows three rows at most.)
@@ -268,6 +269,7 @@
     // The same line drawn again (the settings changed; for its problems alone, see `squiggleLine`): a fold button or a link
     // of the list that had the focus gets it back in the new rows.
     const kept = where === shownLine ? focusInList() : null;
+    const keptFold = where === shownLine ? [...document.querySelectorAll('details.whole-line > summary')].indexOf(/** @type {Element} */ (document.activeElement)) : -1;
     shownLine = where;
     shownLineNo = ex.line;
     reading = msg.reading?.root ?? null;
@@ -320,6 +322,7 @@
     const whole = msg.wholeLine.map(foldedExample);
     $('whole-line').replaceChildren(...(examplesFirst ? whole : []));
     $('examples').replaceChildren(...(examplesFirst ? [] : whole), ...(ex.examples ?? []).map((e) => example(e, false)));
+    whole[keptFold]?.querySelector('summary')?.focus({ preventScroll: true });
     $('empty').textContent = msg.emptyMessage;
     $('empty').hidden = msg.rows.length > 0;
     applyView();
@@ -628,14 +631,14 @@
     return out;
   }
 
-  /** The examples of the whole line the reader opened, by their titles: an update of the panel (the same line again) keeps them open. */
-  const openExamples = new Set();
+  /** The examples of the whole line the reader opened, by their place (two can have one title): the same line drawn again keeps them open, as `collapsedKeys` does. */
+  let openExamples = new Set();
 
-  /** An example of the whole line: folded under its title. */
-  function foldedExample(/** @type {any} */ ex) {
+  /** An example of the whole line, the `at`th: folded under its title. */
+  function foldedExample(/** @type {any} */ ex, /** @type {number} */ at) {
     const box = /** @type {HTMLDetailsElement} */ (el('details', { class: 'example whole-line' }, el('summary', {}, el('h3', {}, ...inline(ex.title)))));
-    box.open = openExamples.has(ex.title);
-    box.addEventListener('toggle', () => (box.open ? openExamples.add(ex.title) : openExamples.delete(ex.title)));
+    box.open = openExamples.has(at);
+    box.addEventListener('toggle', () => (box.open ? openExamples.add(at) : openExamples.delete(at)));
     box.append(...exampleBody(ex));
     return box;
   }

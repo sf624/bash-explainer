@@ -95,6 +95,13 @@ export interface Token {
    * For the panel: not in `--format json` (`tokenForJson`, cli/main.ts), as `plain` is not.
    */
   frame?: 'command' | 'compound';
+  /**
+   * What the part stands around, where bash's grammar makes it no part of its own: `redirections`, a command's redirections, whose parts are
+   * the redirections and the one command they apply to (3.6; not a redirection itself, whose parts are the words of its target);
+   * `pipeline`, a pipeline's `time` or `!`, whose parts hold the rest of that pipeline (3.2.3). From the node (src/explain/). For the
+   * panel: not in `--format json`, as `frame` is not.
+   */
+  around?: 'redirections' | 'pipeline';
   /** It says no more than how bash reads the part (a loop's body, a variable that only expands): the panel shows it at depth 2. */
   plain?: true;
   /** Worked examples shown right under this token (see `placeExamples`). */

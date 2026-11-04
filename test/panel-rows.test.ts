@@ -14,6 +14,7 @@ import { type ModelRow, type RowOptions, rowModel, wholeLineExamples } from '../
 import { panelUpdate } from '../src/ui/panelView';
 import { roleOf } from '../src/ui/readingSteps';
 import { placeExamples } from '../src/ui/render';
+import { main } from '../cli/main';
 import { corpus } from './support/corpus';
 
 // The panel's row model (docs/design/panel-redesign.md, P7a): which rows a line has at each depth, a box around each command, the roles,
@@ -193,6 +194,94 @@ describe('the panel\'s row model', () => {
     });
   });
 
+  describe('a redirection at depth 1', () => {
+    // [the script, its line, the row of the redirection, what it says, what lies in its target]
+    const table: readonly [string, number, string, RegExp, readonly string[]][] = [
+      ['echo a > "$f"', 0, '> "$f"', /^Write stdout \(fd 1\) to file/, ['"$f"', '$f']],
+      ['echo a > $b', 0, '> $b', /^Write stdout \(fd 1\) to file/, ['$b']],
+      ['echo a 2>"$f"', 0, '2>"$f"', /^Write stderr \(fd 2\) to file/, ['"$f"', '$f']],
+      ['cat < "$f"', 0, '< "$f"', /^Read file/, ['"$f"', '$f']],
+      ['cat <<< "$x"', 0, '<<< "$x"', /^Here-string/, ['"$x"', '$x']],
+      ['cat <<< \'hi\'', 0, '<<< \'hi\'', /^Here-string/, ['\'hi\'']],
+      ['cat <<EOF\n$var\nEOF', 0, '<<EOF', /^Here-document/, ['$var']],
+      ['[ $a < $b ]', 0, '< $b', /^Read file/, ['$b']],
+      ['echo a > "$f" b', 0, '> "$f"', /^Write stdout/, ['"$f"', '$f']],
+      ['tar c x 2>"$f"', 0, '2>"$f"', /^Write stderr/, ['"$f"', '$f']],
+      ['{ a; } > "$f"', 0, '> "$f"', /^Write stdout/, ['"$f"', '$f']],
+      ['x=1 > "$f"', 0, '> "$f"', /^Write stdout/, ['"$f"', '$f']],
+      ['exec > "$f"', 0, '> "$f"', /^Write stdout/, ['"$f"', '$f']],
+      ['while read l; do\n  echo "$l"\ndone < "$f"', 2, '< "$f"', /^Read file .* It applies to the whole loop/, ['"$f"', '$f']],
+      ['while read l; do\n  echo "$l"\ndone < input.txt', 2, '< input.txt', /^Read file .* It applies to the whole loop/, []],
+    ];
+    for (const [src, line, label, says, target] of table) {
+      it(`keeps the row of \`${label}\` in \`${src.replace(/\n/g, '; ')}\`, and takes its target for no part of the command`, () => {
+        const rows = all(model(src, D1, 'en', line).rows);
+        const row = rows.find((r) => r.label === label);
+        assert.ok(row, rows.map((r) => r.label).join());
+        assert.match(row.text, says);
+        assert.ok(row.refs?.some((r) => r.startsWith('3.6')), src);
+        assert.deepStrictEqual(rows.filter((r) => r !== row && r.children.some((c) => target.includes(c.label))).map((r) => r.label), []);
+      });
+    }
+
+    it('shows a target\'s value under the redirection, not as a part of the command', () => {
+      const rows = all(model('f=out.txt; echo a > "$f"').rows);
+      const echo = rows.find((r) => r.label === 'echo')!;
+      assert.deepStrictEqual(echo.children.map((r) => r.label), ['a', '> "$f"']);
+      assert.deepStrictEqual(echo.children[1].children.map((r) => r.label), ['$f']);
+      assert.ok(echo.children[1].children[0].value);
+    });
+
+    it('takes a command\'s redirections for what stands around it, whatever their targets hold', () => {
+      assert.deepStrictEqual(outline(model('tar c x 2>/dev/null').rows), [['[command] tar', ['c', 'x', '2>/dev/null']]]);
+      assert.deepStrictEqual(outline(model('>"$f" cat').rows), [['[command] cat', ['>"$f"']]]);
+      // (A redirection in a word's command is that command's.)
+      assert.deepStrictEqual(outline(model('cat <<< "$(a > "$f")"').rows), [['[command] cat', [['<<< "$(a > "$f")"', [['$(a > "$f")', [['[command] a', ['> "$f"']]]]]]]]]);
+      // (No command, or more than one assignment, to stand around: the row of the redirections.)
+      assert.deepStrictEqual(outline(model('> "$f"').rows), ['[command] > "$f"']);
+      assert.deepStrictEqual(outline(model('x=1 y=2 > "$f"').rows)[0], ['[command] x=1 y=2', ['x=1', 'y=2', '> "$f"']]);
+    });
+
+    it('leaves what it stands around out of `--format json`', async () => {
+      let text = '';
+      await main(['--no-config', '--format', 'json', '-e', 'tar c x > "$f"; time a | b; ! c | d'], { stdout: (s) => { text += s; }, stderr: () => {}, env: {}, isTTY: false });
+      assert.ok(text.includes('tar'));
+      assert.doesNotMatch(text, /"around"/);
+    });
+  });
+
+  describe('what a command name is, at depth 1', () => {
+    it('has the row of `time …` say what the reserved word is, and what else its name is', () => {
+      for (const [src, label] of [['time git commit -m x', 'time git'], ['time sort f | uniq', 'time sort | uniq'], ['time -p a', 'time -p a'], ['time', 'time']]) {
+        const row = all(model(src).rows).find((r) => r.label === label)!;
+        assert.ok(row, src);
+        assert.strictEqual(row.name?.said.kind, 'keyword', src);
+        assert.match(row.name?.said.also ?? '', /\/usr\/bin\/time/, src);
+      }
+      // (At depth 2 the reserved word has its row, which says it once.)
+      const deep = all(model('time git commit -m x', D2).rows).filter((r) => r.name?.said.kind === 'keyword');
+      assert.deepStrictEqual(deep.map((r) => r.label), ['time']);
+    });
+
+    it('loses no name: each token that has one has a row that says it, over the corpus', function () {
+      this.timeout(120000);
+      const { files, snippets } = corpus();
+      for (const { name, text } of [...files, ...snippets]) {
+        const tree = parser.parse(text);
+        const analyzer = new Analyzer('en');
+        text.split('\n').slice(0, 400).forEach((_, line) => {
+          const ex = analyzer.explainLine(tree, line, 'bash');
+          const m = rowModel(ex, D1, 'en');
+          for (const t of tokens(ex.items)) {
+            if (!t.name) continue;
+            const row = m.places.get(t)!.split('.').reduce<ModelRow | undefined>((r, i) => (r ? r.children : m.rows)[Number(i)], undefined);
+            assert.strictEqual(row?.name, t.name, `${name}, line ${line}: ${t.label}`);
+          }
+        });
+      }
+    });
+  });
+
   describe('one row per range', () => {
     it('folds the tokens of one range into a row, which says the rest at depth 2 and a warning at both', () => {
       const texts = (src: string, options: RowOptions) => all(model(src, options).rows).find((r) => r.label === '"$a"')!.more.map((p) => p.map((x) => x.text).join(''));
@@ -301,6 +390,20 @@ describe('the panel\'s row model', () => {
     it('is that of a pipeline that is the line, or a statement of its list', () => {
       assert.deepStrictEqual(whole('printf "a\\n" | sort'), ['pipeline']);
       assert.deepStrictEqual(whole('printf "a\\n" | sort; printf "b\\n" | tac'), ['pipeline', 'pipeline']);
+    });
+
+    it('is that of a pipeline after its `time` or `!`, which are parts of it (3.2.3)', () => {
+      for (const src of ['time sort f | uniq', '! sort f | uniq', 'time -p sort f | uniq', '! sort f | uniq && ls', 'time sort f | uniq; ls']) {
+        const ex = explain(src);
+        assert.deepStrictEqual(wholeLineExamples(ex).map((e) => e.kind), ['pipeline'], src);
+        // (So it is drawn apart: no row holds it.)
+        const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: src, choice: {}, placement: 'first', animations: true });
+        assert.strictEqual(msg.wholeLine.length, 1, src);
+        assert.deepStrictEqual(all(msg.rows).filter((r) => r.examples?.length).map((r) => r.label), [], src);
+      }
+      // (Inside a construct, it keeps its place.)
+      assert.deepStrictEqual(whole('if ! sort f | uniq; then :; fi'), []);
+      assert.deepStrictEqual(whole('for x in a; do time sort f | uniq; done'), []);
     });
 
     it('is not that of a pipeline inside a construct of the line, nor any other example', () => {

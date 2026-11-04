@@ -111,16 +111,23 @@ describe('the panel: the grid and the boxes', function () {
   });
 
   it('draws what the row model says: each row in its order, with its frame, and no other', async () => {
-    for (const line of [PIPELINE, COMPOUND, ...LONG]) {
+    // (A line with two top rows, and with rows of every kind: the page may neither turn them around nor hide one.)
+    const twoTop = 'ls -l "$x" # a note';
+    for (const line of [twoTop, PIPELINE, COMPOUND, ...LONG]) {
       const page = await open(line);
       const msg = message('en', line, 'a.sh', true) as { rows: ModelRow[] };
-      const want: [string, string][] = [];
+      if (line === twoTop) assert.strictEqual(msg.rows.length, 2);
+      const want: [string, string, string][] = [];
       const walk = (rs: readonly ModelRow[], at: string): void => rs.forEach((r, i) => {
-        want.push([`${at}${i}`, r.frame ?? '']);
+        want.push([`${at}${i}`, r.frame ?? '', r.label.replace(/[‹›]/g, '')]);
         walk(r.children, `${at}${i}.`);
       });
       walk(msg.rows, '');
-      const drawn = await page.evaluate(`[...document.querySelectorAll('#tree li')].map((li) => [li.dataset.path, /frame-(\\w+)/.exec(li.firstElementChild.className)?.[1] ?? ''])`);
+      // (Those a reader sees: a row that is there but hidden is no row.)
+      const drawn = await page.evaluate(`[...document.querySelectorAll('#tree .row')].filter((r) => r.getClientRects().length).map((r) => {
+        const li = r.closest('li');
+        return [li.dataset.path, /frame-(\\w+)/.exec(li.firstElementChild.className)?.[1] ?? '', r.querySelector(':scope > .code > .label').textContent];
+      })`);
       assert.deepStrictEqual(drawn, want);
       await page.close();
     }
@@ -187,7 +194,37 @@ describe('the panel: the grid and the boxes', function () {
     // (Drawn again: the settings changed, say.)
     await page.evaluate(`window.postMessage({ ...window.MSGS.en, animations: false }, '*')`);
     await until('redrawn', () => page.evaluate(`document.querySelector('#whole-line details').open`), (v) => v === true);
+    // (And the focus stays on its title, as it does on a fold button or a link of the rows.)
+    assert.strictEqual(await page.evaluate(`document.activeElement === document.querySelector('#whole-line details > summary')`), true);
     await page.close();
+  });
+
+  it('forgets on another line which examples were open, and keeps two of one title apart', async () => {
+    const page = await open('sort f | uniq; sort g | wc -l');
+    const folds = page.locator('#whole-line details.whole-line');
+    assert.strictEqual(await folds.count(), 2);
+    const titles = await folds.locator('summary').allTextContents();
+    assert.strictEqual(titles[0], titles[1]);
+    await folds.nth(0).locator('summary').click();
+    await until('the first open', () => folds.nth(0).getAttribute('open'), (v) => v !== null);
+    assert.strictEqual(await folds.nth(1).getAttribute('open'), null);
+    // (The same line again: the first stays open, the second closed.)
+    await page.evaluate(`window.postMessage({ ...window.MSGS.en, animations: false }, '*')`);
+    await until('redrawn', () => page.evaluate(`document.querySelector('#whole-line details').open`), (v) => v === true);
+    assert.strictEqual(await folds.nth(1).getAttribute('open'), null);
+    // (Another line, with examples of the same titles.)
+    await page.evaluate(`window.postMessage({ ...window.MSGS.en, explanation: { ...window.MSGS.en.explanation, line: 7 } }, '*')`);
+    await until('closed on the other line', () => page.evaluate(`[...document.querySelectorAll('#whole-line details')].filter((d) => d.open).length`), (n) => n === 0);
+    await page.close();
+  });
+
+  it('counts `time` and `!` as parts of the whole line\'s pipeline', async () => {
+    for (const line of ['time sort f | uniq', '! sort f | uniq']) {
+      const page = await open(line);
+      assert.strictEqual(await page.locator('#whole-line details.whole-line').count(), 1, line);
+      assert.strictEqual(await page.locator('#tree .example').count(), 0, line);
+      await page.close();
+    }
   });
 
   for (const theme of ['dark', 'light', 'hc'] as const) {

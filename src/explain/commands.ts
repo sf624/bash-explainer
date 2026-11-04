@@ -134,6 +134,7 @@ function splitCommand(cx: Explainer, whole: SyntaxNode, body: SyntaxNode, layout
   // (`exec >log 2>&1`: with no command to run, `exec` applies them to this shell, for every command after it: 4.1.)
   const w = cx.tok(whole, 'redirect', cx.text(tail.toShell ? 'cmd-redirect-no-command' : 'cmd-redirect-around', { cmd, names }), sortTokens([inner, ...redirToks]));
   w.summary = summaryOf(inner);
+  w.around = 'redirections';
   return skeletal(w, whole);
 }
 
@@ -762,6 +763,7 @@ function timed(cx: Explainer, n: SyntaxNode): Token {
   );
   const t = cx.tok(n, 'keyword', explanation, sortTokens([...lead, ...inner]));
   t.summary = `time ${inner.map(summaryOf).join(' ')}`;
+  t.around = 'pipeline';
   return skeletal(t, n);
 }
 
