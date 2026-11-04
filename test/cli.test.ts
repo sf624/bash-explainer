@@ -300,6 +300,18 @@ describe('the command-line tool', function () {
     assert.strictEqual(run([...portable, '--strict']).code, 0);
     const json = JSON.parse(run(['--check', '--format', 'json', '--shell', 'dash', '-e', '[[ -f x ]]']).out);
     assert.deepStrictEqual(json.map((i: { code: string }) => i.code), ['dbracket']);
+    // What the shell refuses while it reads fails, where it would never run too; a variable the environment may set does not.
+    for (const shebang of ['sh', 'dash', 'ash']) {
+      assert.strictEqual(run(['--check', '-e', `#!/bin/${shebang}\nf() { a=(1); }\necho hi`]).code, 1, shebang);
+      assert.strictEqual(run(['--check', '-e', `#!/bin/${shebang}\n[ "$UID" -ne 0 ]`]).code, 0, shebang);
+      assert.strictEqual(run(['--check', '--strict', '-e', `#!/bin/${shebang}\n[ "$UID" -ne 0 ]`]).code, 1, shebang);
+      assert.strictEqual(run(['--check', '-e', `#!/bin/${shebang}\nset -u; echo "$UID"`]).code, 0, shebang);
+      assert.strictEqual(run(['--check', '-e', `#!/bin/${shebang}\necho "\${UID:?}"`]).code, 0, shebang);
+    }
+    assert.strictEqual(run(['--check', '-e', '#!/bin/sh\necho $(($RANDOM % 5))']).code, 0);
+    // A script that probes its shell.
+    assert.strictEqual(run(['--check', '-e', '#!/bin/sh\nif (set -o pipefail) 2>/dev/null; then :; fi']).code, 0);
+    assert.strictEqual(run(['--check', '-e', '#!/bin/sh\nset -o pipefail 2>/dev/null || true']).code, 1);
   });
 
   it('names in JSON the habit a note advises, in the facts and the records of --check, unless `notes.basis` is off (docs/design/basis-spec-convention.md, step 5b)', () => {
