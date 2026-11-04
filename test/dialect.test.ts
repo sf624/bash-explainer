@@ -227,6 +227,12 @@ describe('dialect notes', () => {
     assert.deepStrictEqual(notes('[[ -f x ]]', 'bash'), []);
   });
 
+  it('after a sure stop drops what reports a problem, by its level, and keeps information', () => {
+    const ids = (reached: boolean) => dialectIssues(parser.parse('echo -e a\nf() { local v; }\n[[ a ]]\n'), 'sh', 'en', undefined, undefined, undefined, () => reached).map((i) => `${i.id} ${i.note.level}`);
+    assert.deepStrictEqual(ids(true).sort(), ['dbracket error', 'echoE error', 'local info']);
+    assert.deepStrictEqual(ids(false), ['local info']);
+  });
+
   it('notes behaviour that differs from bash', () => {
     const notes = (src: string, shell: Parameters<typeof dialectNotes>[2]) => dialectNotes(parser.parse(src), 0, shell, 'en');
     assert.deepStrictEqual(behavioursOnLine(parser.parse("echo 'a\\tb' $v ${a[0]} \"$q\"").root, 0), ['echoEscape', 'wordSplit', 'arrayBase']);

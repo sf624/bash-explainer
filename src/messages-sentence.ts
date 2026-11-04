@@ -62,14 +62,19 @@ export function ioSaid(lang: Lang, kind: IoKind, fd: string, to: string): string
 /** A value: the empty string. */
 export const EMPTY = { ja: '空文字列', en: 'the empty string' };
 
+/** A syntax error, as a problem says it at its level: where something may keep the shell from the line, only if it gets there. */
+const stops = (lang: Lang, unsure: boolean): string => (unsure
+  ? pick(lang, 'この行まで来ると、シェルは構文エラーで止まる', 'if the shell reaches this line, it stops with a syntax error')
+  : pick(lang, 'シェルは構文エラーで止まる', 'the shell stops with a syntax error'));
+
 /** The clauses of a sentence (`S.x(lang, …)`). */
 export const S = {
   /** `if a then b; fi`: the line is a syntax error, whatever it seems to say. */
-  keywordMissing: (lang: Lang, kw: string): string => pick(lang, `シェルは構文エラーで止まる（\`${kw}\` の前に \`;\` か改行が要る）`, `the shell stops with a syntax error (\`${kw}\` needs a \`;\` or a newline before it)`),
+  keywordMissing: (lang: Lang, kw: string, unsure: boolean): string => `${stops(lang, unsure)}${pick(lang, `（\`${kw}\` の前に \`;\` か改行が要る）`, ` (\`${kw}\` needs a \`;\` or a newline before it)`)}`,
   /** `echo ok )`, `if a; then b fi`: the command this line is in is a syntax error, whatever it seems to say. */
-  syntaxStops: (lang: Lang, what: SyntaxErrorWhat): string => {
+  syntaxStops: (lang: Lang, what: SyntaxErrorWhat, unsure: boolean): string => {
     const [ja, en] = syntaxErrorWhat(what);
-    return what.kind === 'unreadable' ? pick(lang, 'シェルは構文エラーで止まる', 'the shell stops with a syntax error') : pick(lang, `シェルは構文エラーで止まる（${ja}）`, `the shell stops with a syntax error (${en})`);
+    return `${stops(lang, unsure)}${what.kind === 'unreadable' ? '' : pick(lang, `（${ja}）`, ` (${en})`)}`;
   },
   /** A command run: its name, what it does (its spec's summary), the options given and what they do, its redirections. */
   runs: (lang: Lang, noun: string, options: string, io: string, status?: number): string => (lang === 'ja'

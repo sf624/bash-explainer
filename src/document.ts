@@ -346,8 +346,8 @@ function issuesOf(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bash
   }
   const crlf = crlfIssue(doc.tree, lang);
   const shell = shellOf(shells);
-  const nested = nestedIssues(doc, lang, shell);
-  return [...crlf, ...nested, ...dialectIssues(doc.tree, shell ?? 'bash', lang, undefined, undefined, version, (n) => reachedAt(doc.tree, n.startIndex)).map((i): DocumentIssue => {
+  const nested = nestedIssues(doc, lang, shell, version);
+  return [...crlf, ...nested, ...dialectIssues(doc.tree, shell ?? 'bash', lang, undefined, undefined, version, (n) => reachedAt(doc.tree, n.startIndex, undefined, shellState(doc.tree, shell, { version }))).map((i): DocumentIssue => {
     const n = i.place;
     const sameLine = n.startPosition.row === n.endPosition.row;
     const fix = fixFor(i);
@@ -363,7 +363,7 @@ function issuesOf(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bash
  * The dialect issues of the strings run as scripts by a shell other than bash (`sh -c '[[ … ]]'`, an `eval` string in
  * an sh script), at their places in the document (docs/design/semantics.md, 4.13).
  */
-function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined): DocumentIssue[] {
+function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined, version?: BashVersion): DocumentIssue[] {
   const out: DocumentIssue[] = [];
   const starts = lineStarts(doc.tree.text);
   const at = (i: number) => placeOf(starts, i);
@@ -376,7 +376,7 @@ function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined):
     const rows = lineStarts(script.tree.text);
     const index = (p: Point) => rows[p.row] + p.column;
     // (A string is said as far as the shell gets to it, and the command that runs it.)
-    for (const i of dialectIssues(script.tree, script.shell, lang, undefined, undefined, undefined, (n) => reachedAt(script.tree, n.startIndex) && reachedAt(doc.tree, source(n.startIndex, false)))) {
+    for (const i of dialectIssues(script.tree, script.shell, lang, undefined, undefined, undefined, (n) => reachedAt(script.tree, n.startIndex, undefined, shellState(script.tree, script.shell)) && reachedAt(doc.tree, source(n.startIndex, false), undefined, shellState(doc.tree, shell, { version })))) {
       const start = at(source(index(i.place.startPosition), false));
       const end = at(source(index(i.place.endPosition), true));
       out.push({

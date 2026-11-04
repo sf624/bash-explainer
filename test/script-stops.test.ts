@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { hostReadAs, reachedAt, readAs, type Stop, stopBefore } from '../src/semantics/scriptstops';
+import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const parser = createUnbashParser();
@@ -27,7 +28,8 @@ const ROWS: [text: string, stop: Stop | undefined, run: Run][] = [
   // (In a script, `return` and `logout` say so and go on. A file sourced, or a login shell's, is what has them.)
   ['return 0', 'sure', 'stops-sourced'],
   ['logout', 'sure', 'stops-login'],
-  // `exec` with a command, anywhere.
+  ['exit 0 || echo a', 'sure', 'stops'],
+  // `exec` with a command, at the top of the script.
   ['exec true', 'sure', 'stops'],
   ['exec -- true', 'sure', 'stops'],
   ['exec -c true', 'sure', 'stops'],
@@ -36,17 +38,36 @@ const ROWS: [text: string, stop: Stop | undefined, run: Run][] = [
   ['x=true; exec "$x"', 'sure', 'stops'],
   ["'''exec' true \"$0\"", 'sure', 'stops'],
   ['"exec" true', 'sure', 'stops'],
-  ['{ exec true; }', 'sure', 'stops'],
   ['exec true || exit 1', 'sure', 'stops'],
   ['command exec true', 'sure', 'stops'],
   ['builtin exec true', 'sure', 'stops'],
-  ['if true; then exec true; else exec true; fi', 'sure', 'stops'],
-  ['for p in true; do exec "$p"; done', 'sure', 'stops'],
-  ['f() { exec true; }\nf', 'sure', 'stops'],
-  // (Silent on the path that does not take it, and with no word left: a loss, never a false claim. The word is enough.)
-  ['if false; then exec true; fi', 'sure', 'goes-on'],
+  // (With no word left it goes on: a loss, never a false claim. The word is enough.)
   ['exec $nothing', 'sure', 'goes-on'],
-  // `eval` of a text known to end the shell.
+  // Not at the top, where it hands the script over: it names the file, or the word it runs is a shell or an interpreter. (A loss on the path that does not take it.)
+  ['true && exec true "$0"', 'sure', 'stops'],
+  ['if true; then exec true "${0}"; fi', 'sure', 'stops'],
+  ['if true; then exec true "${BASH_SOURCE[0]}"; fi', 'sure', 'stops'],
+  ['if false; then exec true "$0"; fi', 'sure', 'goes-on'],
+  ['if true; then exec true "$0"; else exec true "$0"; fi', 'sure', 'stops'],
+  ['for p in true; do exec "$p" "$0"; done', 'sure', 'stops'],
+  ['f() { exec true "$0"; }\nf', 'sure', 'stops'],
+  ['if false; then exec bash "$self"; fi', 'sure', 'goes-on'],
+  ['if false; then exec /bin/sh "$self"; fi', 'sure', 'goes-on'],
+  ['if false; then exec python3 "$self"; fi', 'sure', 'goes-on'],
+  ['if false; then exec /x/perl -x "$self"; fi', 'sure', 'goes-on'],
+  ['if false; then exec "$PYTHON" "$self"; fi', 'sure', 'goes-on'],
+  ['if false; then exec "${PYTHON_BIN}" "$self"; fi', 'sure', 'goes-on'],
+  ['if false; then exec "$CONFIG_SHELL" "$self"; fi', 'sure', 'goes-on'],
+  ['if false; then exec env python3 "$self"; fi', 'sure', 'goes-on'],
+  ['if false; then exec -a x python3 "$self"; fi', 'sure', 'goes-on'],
+  ['if false; then builtin command exec python3 "$self"; fi', 'sure', 'goes-on'],
+  ['if false; then command exec -- python3 "$self"; fi', 'sure', 'goes-on'],
+  ["if false; then eval 'exec perl -S $0'; fi", 'sure', 'goes-on'],
+  ["if false; then eval 'exec perl -S x'; fi", 'sure', 'goes-on'],
+  // Or where what follows is what the parser cannot read, another language's.
+  ['if true; then exec true; fi\nfi', 'sure', 'stops'],
+  ['if true; then set -n; fi\nfi', 'sure', 'stops'],
+  // `eval` of a text known to end the shell, by this table.
   ["eval 'exec true'", 'sure', 'stops'],
   ['eval "exit 0"', 'sure', 'stops'],
   ["eval 'exec true -x -wS $0 ${1+\"$@\"}'\n  if 0;", 'sure', 'stops'],
@@ -69,10 +90,27 @@ const ROWS: [text: string, stop: Stop | undefined, run: Run][] = [
   ['{ exit 0; }', 'may', 'stops'],
   ['if true; then return 0; fi', 'may', 'stops-sourced'],
   ['if false; then logout; fi', 'may', 'goes-on'],
+  // `exec`, `eval` and `set` that may be one path's end, where nothing says they hand the script over.
+  ['{ exec true; }', 'may', 'stops'],
+  ['if true; then exec echo; fi', 'may', 'stops'],
+  ['if false; then exec echo "$usage"; fi', 'may', 'goes-on'],
+  ['if true; then exec true; else exec true; fi', 'may', 'stops'],
+  ['for p in true; do exec "$p"; done', 'may', 'stops'],
+  ['f() { exec true; }\nf', 'may', 'stops'],
+  ['f() { exec true; }', 'may', 'goes-on'],
+  ['true && exec ./start.sh', 'may', 'stops'],
+  ['true && exec true', 'may', 'stops'],
+  ['if true; then command exec true; fi', 'may', 'stops'],
+  ['if true; then eval "exec true"; fi', 'may', 'stops'],
+  ['{ set -n; }', 'may', 'stops'],
+  ['if true; then set -o noexec; fi', 'may', 'stops'],
+  ['if false; then set -n; fi', 'may', 'goes-on'],
   // In a subshell the script goes on, but what follows in the subshell may not run.
   ['(exit 0)', 'may', 'goes-on'],
   ['(exec true)', 'may', 'goes-on'],
   ['exec true | cat', 'may', 'goes-on'],
+  ['echo a | exec cat', 'may', 'goes-on'],
+  ['echo a | exec cat "$0" > /dev/null', 'may', 'goes-on'],
   ['exec true &', 'may', 'goes-on'],
   ['x=$(exit 0)', 'may', 'goes-on'],
   ['x=$(exec true)', 'may', 'goes-on'],
@@ -86,6 +124,8 @@ const ROWS: [text: string, stop: Stop | undefined, run: Run][] = [
   [': > f.inc\n. ./f.inc', 'may', 'goes-on'],
   ['x="exit 0"; eval "$x"', 'may', 'stops'],
   ['eval "echo a"', 'may', 'goes-on'],
+  ["eval 'exec 3>&1'", 'may', 'goes-on'],
+  ["eval 'echo exit'", 'may', 'goes-on'],
   ['eval', 'may', 'goes-on'],
   ['alias a=b', 'may', 'goes-on'],
   ['shopt -s expand_aliases', 'may', 'goes-on'],
@@ -205,6 +245,27 @@ describe('what may keep a shell from a line', () => {
     assert.deepStrictEqual([readAs(sure, at(sure), 'said'), readAs(sure, at(sure), 'name')], [undefined, undefined]);
     assert.deepStrictEqual([hostReadAs(none, at(none), undefined), hostReadAs(may, at(may), undefined), hostReadAs(sure, at(sure), undefined), hostReadAs(sure, at(sure), 1)], ['known', 'unsure', undefined, 'known']);
     assert.deepStrictEqual([reachedAt(none, at(none)), reachedAt(may, at(may)), reachedAt(sure, at(sure)), reachedAt(sure, at(sure), 1)], [true, true, false, true]);
+  });
+
+  it('counts what the model says never runs as after a sure stop, where it knows, and where the tree has no error', () => {
+    const at = (text: string, mark = 'x = 1') => {
+      const tree = parser.parse(text);
+      const model = shellState(tree, 'bash');
+      const i = tree.text.indexOf(mark);
+      return [readAs(tree, i, 'said', model), reachedAt(tree, i, undefined, model)];
+    };
+    for (const text of ['while :; do :; done\nx = 1\n', 'if true; then exit; fi\nx = 1\n', '{ exit 0; }\nx = 1\n', 'if false; then x = 1; fi\n', 'if a; then exit; else exit; fi\nx = 1\n', 'f() { exit; x = 1; }\nf\n']) {
+      assert.deepStrictEqual(at(text), [undefined, false], text);
+      // (bash does not get there; the loop runs until the timeout.)
+      assert.doesNotMatch(spawnSync('bash', ['-c', text.replace('x = 1', 'echo REACHED')], { encoding: 'utf8', env: { PATH: process.env.PATH, FUNCNEST: '50' }, timeout: 300 }).stdout, /REACHED/, text);
+    }
+    for (const text of ['x = 1\n', 'if a; then exit; fi\nx = 1\n', 'f() { x = 1; }\n', 'f() { exit; x = 1; }\n', 'a && { b; exit; }\nx = 1\n', 'if true; then exit; fi\nx = 1\nfi\n', 'case x in a) x = 1 ;;\n']) {
+      assert.strictEqual(at(text)[1], true, text);
+      assert.ok(at(text)[0], text);
+    }
+    // (Before what stops it, and after a statement that never runs but in it.)
+    assert.deepStrictEqual(at('echo a\nif false; then y; fi\nx = 1\n'), ['known', true]);
+    assert.deepStrictEqual(at('if false; then y; fi\nx = 1\nif false; then z; fi\n'), ['known', true]);
   });
 
   it('keeps nothing of a text a shell does not read as it is written', () => {

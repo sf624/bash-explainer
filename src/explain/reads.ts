@@ -234,7 +234,7 @@ export function runsAs(cx: Explainer, n: SyntaxNode): ReadKnown | undefined {
   for (let c = n, p = n.parent; p; c = p, p = p.parent) {
     if (SOMETIMES.has(p.type) || (p.type === 'list' && c !== p.namedChildren[0]) || ((p.type === 'command_substitution' || p.type === 'process_substitution') && readOnlySometimes(p))) return undefined;
   }
-  return readAs(cx.tree, n.startIndex, cx.opts.script);
+  return readAs(cx.tree, n.startIndex, cx.opts.script, cx.state);
 }
 
 export function inArithmetic(n: SyntaxNode): boolean {
