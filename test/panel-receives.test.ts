@@ -19,7 +19,7 @@ import { run } from './support/run';
 
 const parser = createUnbashParser();
 const OPTIONS = { reading: true, argv: true, notPosix: true, script: 'said' } as const;
-type Sh = 'bash' | 'sh' | 'dash' | 'ash';
+type Sh = 'bash' | 'sh' | 'dash' | 'ash' | 'zsh';
 const explain = (src: string, line = 0, lang: Lang = 'en', shell: Sh = 'bash'): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line, shell, OPTIONS);
 const all = (rows: readonly ModelRow[]): ModelRow[] => rows.flatMap((r) => [r, ...all(r.children)]);
 const rows = (src: string, { line = 0, depth = 1 as 1 | 2, lang = 'en' as Lang, shell = 'bash' as Sh, receives = true } = {}): ModelRow[] => all(rowModel(explain(src, line, lang, shell), { depth, receives }, lang).rows);
@@ -345,6 +345,8 @@ describe('the panel: what the program receives, where the model cannot read, aga
     { src: 'x=1; eval "$(cmd)"; ls $x', label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
     { src: 'x=1; eval $(cmd); ls $x', label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
     { src: '. ./s.sh\nx="a,b c"; ls $x', files: { 's.sh': 'IFS=,\n' }, at: 1, label: 'ls', out: 'ls [a] [b c]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    { src: '. ./s.sh; ls "$y"', files: { 's.sh': 'y="a b"\n' }, label: 'ls', out: 'ls [a b]\nstatus=0', says: ['receives:', 'ls', '‹value of `$y`›'] },
+    { src: '. ./s.sh; read <<< a; ls "$REPLY"', files: { 's.sh': ':\n' }, label: 'ls', out: 'ls [a]\nstatus=0', says: ['receives:', 'ls', '‹value of `$REPLY`›'] },
     { src: 'n=x; x=1; unset "$n"; ls "$x"', label: 'ls', out: 'ls []\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
     { src: 'declare -c x; x=abc; ls $x', label: 'ls', out: 'ls [Abc]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
     { src: 'HOME=/h; . ./s.sh; ls ~', files: { 's.sh': 'HOME=/j\n' }, label: 'ls', out: 'ls [/j]\nstatus=0', says: ['receives:', 'ls', '‹home directory›'] },
@@ -364,8 +366,11 @@ describe('the panel: what the program receives, where the model cannot read, aga
     // An inherited `OLDPWD` that names a directory stays.
     { src: 'ls $OLDPWD', env: 'OLDPWD=/', label: 'ls', out: 'ls [/]\nstatus=0', says: ['receives:', 'ls', '‹previous directory›'] },
     { src: 'ls $OLDPWD', label: 'ls', out: 'ls\nstatus=0', says: ['receives:', 'ls', '‹previous directory›'] },
+    { src: 'unset OLDPWD; ls $OLDPWD', env: 'OLDPWD=/', label: 'ls', out: 'ls\nstatus=0', says: ['receives only its name:', 'ls'] },
     // CR LF: the CR is in the last word of the line.
     { src: 'ls a\r\n', label: 'ls', out: 'ls [a\r]\nstatus=0', says: ['receives:', 'ls', 'a␍'] },
+    { src: 'ls $x\r\n', label: 'ls', out: 'ls [\r]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›␍'] },
+    { src: 'set -k; ls c a=b\r\n', label: 'ls', out: 'ls [c]\nstatus=0', says: ['receives:', 'ls', 'c'] },
     { src: 'ls a \r\n', label: 'ls', out: 'ls [a] [\r]\nstatus=0', says: ['receives:', 'ls', 'a', '␍'] },
     { src: 'ls "a b"\r\n', label: 'ls', out: 'ls [a b\r]\nstatus=0', says: ['receives:', 'ls', 'a b␍'] },
     { src: 'ls {a,b}\r\n', label: 'ls', out: 'ls [a\r] [b\r]\nstatus=0', says: ['receives:', 'ls', 'a␍', 'b␍'] },
@@ -419,6 +424,12 @@ describe('the panel: what the program receives, where the model cannot read, aga
         assert.deepStrictEqual(moved.map((r) => [r.label, r.receives, r.handled, r.notPosix]), fresh.map((r) => [r.label, r.receives, r.handled, r.notPosix]), `${JSON.stringify(row.src)}, line ${at}`);
       }
     }
+  });
+
+  it('says nothing of a pattern with no match where the options are not known', () => {
+    const name = '‹each file name matching `*.x`›';
+    assert.deepStrictEqual(line('if q; then shopt -s nullglob; fi\nls *.x', 'ls', { line: 1 }), ['receives:', 'ls', name]);
+    assert.deepStrictEqual(line('if q; then shopt -s failglob; fi\nls *.x', 'ls', { line: 1 }), ['receives:', 'ls', name]);
   });
 
   it('says nothing is known of a word that `set -k` may take, and tints no word with a CR', () => {
@@ -500,6 +511,10 @@ describe('the panel: what the program receives, in a shell that is not bash, aga
     for (const [src, sh, dash, ash] of table) assert.deepStrictEqual([handled(src, 'sh'), handled(src, 'dash'), handled(src, 'ash')], [sh, dash, ash], src);
     assert.deepStrictEqual(handled('[[ a ]]', 'bash'), ['[[ a ]]']);
     assert.deepStrictEqual(handled('time true', 'bash'), ['time true']);
+    // (A shell the table gives them.)
+    assert.deepStrictEqual(handled('[[ a ]]', 'zsh'), ['[[ a ]]']);
+    assert.deepStrictEqual(handled('coproc true', 'zsh'), ['coproc true']);
+    assert.deepStrictEqual(handled('time true', 'zsh'), ['time true']);
     if (programs.dash) {
       assert.strictEqual(running('dash', '[[ a ]]').status, 127);
       assert.match(running('dash', '[[ a ]]').err, /\[\[: not found/);
@@ -514,6 +529,7 @@ describe('the panel: what the program receives, in a shell that is not bash, aga
 
   it('reads a `$"…"` as the shell does', () => {
     for (const shell of ['sh', 'dash', 'ash'] as const) assert.deepStrictEqual(line('printf "[%s]" $"hi"', 'printf', { shell }), INSIDE('[%s]', '$hi'), shell);
+    assert.deepStrictEqual(line('printf "[%s]" $"$(x)"', 'printf', { shell: 'dash' }), INSIDE('[%s]', '‹the words of `$"$(x)"`›'));
     assert.deepStrictEqual(line('printf "[%s]" $"hi"', 'printf'), ['runs inside bash, gets:', '[%s]', 'hi']);
     for (const sh of ['dash', 'ash'] as const) if (programs[sh]) assert.strictEqual(running(sh, 'printf "[%s]" $"hi"').out, '[$hi]');
     assert.strictEqual(run('bash', ['-c', 'printf "[%s]" $"hi"']).stdout.toString(), '[hi]');

@@ -41,7 +41,8 @@ export function placeholderSaid(lang: Lang, h: HoleSource | { kind: 'word'; code
       // (The arguments or the elements, each a word of its own, or joined into one: `x="$@"`, as `"$*"`.)
       const args = /^[@*]$/.test(h.name);
       if (h.elements === 'each' && args) return ja ? '各引数' : 'each argument';
-      if (h.elements === 'each' && /^[A-Za-z_]\w*$/.test(h.name)) return ja ? `${code(h.name)} の各要素` : `each element of ${code(h.name)}`;
+      // (`$y` itself may give several only as a nameref, in code the model does not read: it stays the value of `$y`.)
+      if (h.elements === 'each' && !plain && /^[A-Za-z_]\w*$/.test(h.name)) return ja ? `${code(h.name)} の各要素` : `each element of ${code(h.name)}`;
       if ((h.elements === 'joined' || plain) && args) return ja ? '引数をつなげた文字列' : 'the arguments joined';
       if (h.elements === 'joined' && /^[A-Za-z_]\w*$/.test(h.name)) return ja ? `${code(h.name)} の要素をつなげた文字列` : `the elements of ${code(h.name)} joined`;
       if (plain && /^[1-9]\d*$/.test(h.name)) return ja ? `${h.name}番目の引数` : `argument ${h.name}`;

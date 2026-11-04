@@ -84,7 +84,7 @@ export function argvOf(cmd: SyntaxNode, model: StateModel, lang: Lang, carriageR
   const aliases = res !== 'dynamic' && res.kind === 'alias' ? [nameWord, ...aliasesAfter(cmd, res, (n, at) => resolveName(model, n, at, { shell: model.shell, command: true, program: isProgram })).map((a) => a.word)] : [];
   const argv = words.flatMap((w) => (w === lastWord && crOnWord ? withCarriageReturn(given(w), w, lang) : given(w)));
   // (A blank before the CR: to bash, the CR is a word of its own.)
-  const crWord: ArgvWord[] = crAt !== undefined && crAt > cmd.endIndex ? [{ from: spanOf(lastWord), parts: [{ text: '\r' }] }] : [];
+  const crWord: ArgvWord[] = crAt !== undefined && crAt > cmd.endIndex ? [{ from: { start: spanOf(cmd).end, end: spanOf(cmd).end }, parts: [{ text: '\r' }] }] : [];
   return { span: spanOf(cmd), ...(inside ? { inside } : {}), words: [...argv, ...crWord], removed, ...(failing ? { fails: { span: spanOf(failing), error: read(failing).error! } } : {}) };
 }
 
@@ -115,7 +115,8 @@ function withCarriageReturn(words: ArgvWord[], node: SyntaxNode, lang: Lang): Ar
     const last = w.parts[w.parts.length - 1];
     const before = w.parts.slice(0, -1);
     if (last && 'hole' in last && last.hole === 'names') return { ...w, parts: [...before, { ...last, code: `${last.code}\r`, label: placeholderSaid(lang, { kind: 'names', code: `${last.code}␍` }) }] };
-    if (!last) return { ...rest, parts: [{ text: '\r' }] };
+    // (`set -k`: an assignment, whose value holds it.)
+    if (!last) return w;
     return { ...rest, ...(count ? { count } : {}), parts: 'text' in last ? [...before, { text: `${last.text}\r` }] : [...w.parts, { text: '\r' }] };
   };
   return wordBraces(node).length ? words.map(carried) : [...words.slice(0, -1), carried(words[words.length - 1])];

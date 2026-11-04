@@ -2,7 +2,7 @@
 
 The plan that turns prototype B into real PRs, then the usability test. Agreed with the maintainer on 2026-10-27; revised after an independent review of the plan (PR #418).
 
-Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#543), started early (decided by the maintainer 2026-10-31), beside the three note levels. P3 done (#560), after the levels. P4 done (#563): what each program receives, as data. P5 done (#566): "In short" on every line. P6 done (#568): examples of the whole line and of globs. SB3 comes before P7a: SB3a done (#570: facts and roles on tokens, no string notes); SB3d done (#569: the `ui` texts); SB3c done (the row record, src/ui/tokenRow.ts). P7a done (the row model, src/ui/panelRows.ts, drawn by nothing yet). P7b done (the problems box, in today's Meaning; token errors are problems). P7c done (the Meaning tab draws the row model: the grid and the boxes). P8 done (depth 2 in one view; the tabs and the eight steps are gone). P9 done (the switch "What the program receives", the marks "handled by bash" and "not in POSIX sh", the Key).
+Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#543), started early (decided by the maintainer 2026-10-31), beside the three note levels. P3 done (#560), after the levels. P4 done (#563): what each program receives, as data. P5 done (#566): "In short" on every line. P6 done (#568): examples of the whole line and of globs. SB3 comes before P7a: SB3a done (#570: facts and roles on tokens, no string notes); SB3d done (#569: the `ui` texts); SB3c done (the row record, src/ui/tokenRow.ts). P7a done (the row model, src/ui/panelRows.ts, drawn by nothing yet). P7b done (the problems box, in today's Meaning; token errors are problems). P7c done (the Meaning tab draws the row model: the grid and the boxes). P8 done (depth 2 in one view; the tabs and the eight steps are gone). P9 done (the switch "What the program receives", the marks "handled by bash" and "not portable to sh", the Key).
 
 ## 1. Goal
 
@@ -426,13 +426,13 @@ What P9 came to, for P10 and the usability test:
   | --- | --- | --- | --- | --- |
   | s1, `for f in *.txt; do` | 592 → 628 (628) | 806 → 857 (842) | 334 → 384 (370) | 451 → 502 (487) |
   | s1, the loop's body | 382 → 441 (418) | 460 → 519 (496) | 221 → 280 (257) | 299 → 358 (335) |
-  | s2, the pipeline | 1,208 → 1,380 (1,244) | 1,735 → 1,921 (1,771) | 794 → 981 (830) | 1,242 → 1,429 (1,278) |
+  | s2, the pipeline | 1,208 → 1,398 (1,244) | 1,735 → 1,939 (1,771) | 794 → 998 (830) | 1,242 → 1,447 (1,278) |
   | s3, `backup="…"` | 892 → 951 (928) | 1,150 → 1,209 (1,186) | 629 → 688 (665) | 822 → 881 (858) |
   | s3, `tar … \|\| echo … >&2` | 1,151 → 1,254 (1,187) | 1,561 → 1,664 (1,597) | 720 → 823 (756) | 1,091 → 1,194 (1,127) |
-  | s4, `if [[ … ]]; then …; fi` | 1,082 → 1,141 (1,118) | 1,468 → 1,542 (1,504) | 578 → 652 (614) | 774 → 848 (810) |
+  | s4, `if [[ … ]]; then …; fi` | 1,082 → 1,141 (1,118) | 1,468 → 1,556 (1,504) | 578 → 652 (614) | 774 → 862 (810) |
 
   The row costs 36 px, and each command's line about 23 (one more where it wraps). That is what the switch is, so it is **not the budget's fault that it grows**: test/web-depth.test.ts holds 1,420 and 1,980 on, and 1,280 and 1,820 off, where P8 held 1,300 and 1,850; the maintainer may judge it. Over the plan's 750 and 1,500 by more than P8 was. A reader who wants the shortest page turns the switch off, which is why it is remembered.
-- **Speed.** Against main (8833dae5), nvm.sh, one Analyzer moving through the file, with the switch on, in ms (p50 / p95 / worst): depth 1, 1.3 / 7.5 / 23 → 1.6 / 9.0 / 27; depth 2, 1.9 / 9.4 / 407 → 2.1 / 12.2 / 354. Within the budget; test/panel-speed.test.ts holds it, now with what `explainNeeds` gives.
+- **Speed.** Against main (8833dae5), nvm.sh, one Analyzer moving through the file, with the switch on, in ms (p50 / p95 / worst): depth 1, 1.3 / 7.5 / 23 → 1.6 / 9.0 / 27; depth 2, 1.9 / 9.4 / 407 → 2.1 / 12.2 / 354. After the review of #606: depth 1, 1.1 / 6.4 / 20; depth 2, 1.6 / 9.7 / 289 (nvm.sh sources a file, so its words read no values). Within the budget; test/panel-speed.test.ts holds it, now with what `explainNeeds` gives.
 
 ### P10. Clean-up and the last measure
 

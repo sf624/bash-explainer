@@ -528,7 +528,7 @@ class ModelValues implements ValueSource {
     }
     if (v.declared === 'unknown' || v.set === 'unknown') return undefined;
     // (As bash starts: no value, unless the environment gives one, `EXPORTED_AT_START`.)
-    if (v.set === 'off') return EXPORTED_AT_START.includes(name) && !v.at.parent && !this.env ? undefined : null;
+    if (v.set === 'off') return EXPORTED_AT_START.includes(name) && !v.at.parent ? undefined : null;
     // (`x=$'\u00e9'` sets `é` in a UTF-8 locale, `\u00E9` in C: src/semantics/chars.ts.)
     if (v.value !== undefined && !sameInEveryLocale(v.value) && /\\[uU]/.test(v.at.text)) return undefined;
     // An array, an associative array or a nameref (also on some paths only): its value is not followed.
