@@ -84,6 +84,8 @@ export interface ReadingNode {
   refs?: readonly string[];
   /** In the layers `command` and `language`: who reads it, the name of the command (or `bash`, the regex of `=~`). */
   reader?: string;
+  /** In the layer `command`: its reader is a builtin or a function, so the shell that runs it reads it, no program of its own (from the name resolution). */
+  inShell?: true;
   /** In the layer `child`: which shell parses it (`ScriptProcess`). */
   process?: ScriptProcess;
   /** On a word a command reads as an operand or a value: how bash changes it first, so the command gets other words (`Token.expands`). */
@@ -140,6 +142,15 @@ const REDIRECTS = new Set(['file_redirect', 'heredoc_redirect', 'herestring_redi
 const READERS = new Set(['command', 'builtin', 'function', 'alias', 'test']);
 /** The kinds of token of a command another one runs (`sudo ls`, `builtin cd`): it reads the words after its name itself. */
 const RUNS = new Set(['command', 'builtin']);
+
+/** The command that reads a word: its name, and whether it is a part of the shell that runs it (`ReadingNode.inShell`). */
+interface Reader { name: string; inShell: boolean }
+/** The fields of a node that `reader` reads. */
+const readBy = ({ name, inShell }: Reader): Pick<ReadingNode, 'reader' | 'inShell'> => ({ reader: name, ...(inShell ? { inShell } : {}) });
+/** What a name resolves to reads in the shell that runs it: a builtin or a function. */
+const resolvesInShell = (res: NameResolution | undefined): boolean => res?.kind === 'builtin' || res?.kind === 'function';
+/** A builtin that `builtin` or `command` finds runs in this shell, as bash runs a command name; one that another program names is that program's (`sudo cd`). */
+const builtinHere = (t: Pick<ReadingNode, 'kind' | 'name'>): boolean => t.kind === 'builtin' && !!t.name && t.name.by === undefined;
 /** The kinds of token about a word, or a part of one. */
 const WORD_TOKENS = new Set(['string', 'variable', 'expansion', 'substitution', 'number', 'pattern']);
 /** The kinds of bash's tokens inside a word that have no node: a glob's parts, an escape, a tilde, a brace expansion. */
@@ -309,7 +320,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
         if (!isShebang(c)) return [shellNode(c, layer, 'comment', [])];
         // (The shebang: what its interpreter reads the word after it as, `#!/bin/bash -eu`, which the kernel passes.)
         const reader = /^#![ \t]*(\S*)/.exec(c.text)![1];
-        return [shellNode(c, layer, 'shebang', readParts(tokenAt(spanOf(c))!.children, false, reader.slice(reader.lastIndexOf('/') + 1)))];
+        return [shellNode(c, layer, 'shebang', readParts(tokenAt(spanOf(c))!.children, false, { name: reader.slice(reader.lastIndexOf('/') + 1), inShell: false }))];
       }
       case 'variable_name': case 'special_variable_name': return [shellNode(c, layer, 'name', [])];
       case 'subscript': return [subscript(c, layer)];
@@ -408,17 +419,17 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
    */
   const simple = (c: SyntaxNode, layer: Layer): ReadingNode => {
     const reads = readingOf(c);
-    let reader = reads?.name;
+    let reader: Reader | undefined;
     let named = false;
     let dynamic = false;
     let aliases: ReturnType<typeof aliasesAfter> = [];
     const children = c.namedChildren.flatMap((x): ReadingNode[] => {
       if (x.type === 'command_name') {
         named = true;
-        const { node: n, runs, res } = commandName(x.namedChildren[0], layer, reads?.token);
+        const { node: n, runs, res } = commandName(x.namedChildren[0], layer, reads);
         dynamic = n.kind === 'expandedName';
         // (After an alias, the command that reads the words is the one its text runs: `ll x` is `ls -l x`.)
-        if (runs) reader = runs;
+        reader = runs;
         // (Words after it that bash reads as aliases too, when its text ends with a blank: 6.6.)
         if (res) aliases = aliasesAfter(c, res, cx.resolve);
         return [n];
@@ -442,10 +453,9 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       const head = !at && p.layer === 'command' && RUNS.has(p.kind) && last && le(p.span.start, last.span.start) ? last : undefined;
       if (at) at.children.push(p);
       else if (head) {
-        // (A builtin that `builtin` or `command` finds runs in this shell, as bash runs a command name: no other
-        // command reads it, `builtin cd`. What it reads of the words after it is still its own.)
-        const { reader: _, ...own } = p;
-        head.children.push(p.kind === 'builtin' && p.name && p.name.by === undefined
+        // (A builtin run in this shell: no other command reads it, `builtin cd`. What it reads of the words after it is still its own.)
+        const { reader: _, inShell: __, ...own } = p;
+        head.children.push(builtinHere(p)
           ? { ...own, layer, kind: 'commandName', resolves: 'builtin', span: head.span, children: [] }
           : { ...p, span: head.span, children: [] });
         p.children.forEach(place);
@@ -455,7 +465,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
         children.splice(i, 0, p);
       }
     };
-    (reads && !dynamic ? readParts(reads.token.children, true, reader!) : []).forEach(place);
+    (reads && !dynamic ? readParts(reads.children, true, reader!) : []).forEach(place);
     const n = shellNode(c, layer, 'command', children, new Set(['redirect']));
     // (`>f` alone: the redirection's text is its own, not the command's too.)
     if (children.some((x) => same(x.span, n.span) && x.text === n.text)) delete n.text;
@@ -466,24 +476,22 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     return n;
   };
 
-  /** The token of the command `c` (the outermost about it: not one of a command in a substitution inside it), and its name. */
-  const readingOf = (c: SyntaxNode): { token: Token; name: string } | undefined => {
+  /** The token of the command `c` (the outermost about it: not one of a command in a substitution inside it). */
+  const readingOf = (c: SyntaxNode): Token | undefined => {
     const name = field(c, 'name');
     if (!name) return undefined;
     const subs = c.namedChildren.flatMap(function inner(x: SyntaxNode): Span[] {
       return SUBSTITUTIONS.has(x.type) ? [spanOf(x)] : x.namedChildren.flatMap(inner);
     });
     const span = spanOf(c);
-    const t = readerWithin(span, (x) => !subs.some((s) => spanWithin(x.span, s)));
-    // (The name it spells: `"ls"` and `\if` are `ls` and `if`.)
-    return t && { token: t, name: short(staticWordValue(name.namedChildren[0], false, cx.shell) ?? name.text) };
+    return readerWithin(span, (x) => !subs.some((s) => spanWithin(x.span, s)));
   };
 
   /**
    * The first word of a simple command: the command name as written, which bash looks up (3.7.2), with what the
    * explanation says of the command; or, when it has an expansion, a word whose first field is the name when it runs.
    */
-  const commandName = (w: SyntaxNode, layer: Layer, t: Token | undefined): { node: ReadingNode; runs?: string; res?: AliasResolution } => {
+  const commandName = (w: SyntaxNode, layer: Layer, t: Token | undefined): { node: ReadingNode; runs?: Reader; res?: AliasResolution } => {
     const name = staticWordValue(w, false, cx.shell);
     const span = spanOf(w);
     // (`[`: the token of its name, inside that of the test.)
@@ -503,6 +511,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
         layer, kind: 'commandName', label: short(w.text), span, ...(own ? saidBy(own) : {}),
         refs: union(['3.7.1', '3.7.2'], own?.refs, expansionSections(cx.meaning(w))), resolves: res.kind, ...(own?.name ? { name: own.name } : {}), ...process, children: wordParts(w, layer),
       },
+      // (The name it spells: `"ls"` and `\if` are `ls` and `if`.)
+      runs: { name: short(name), inShell: resolvesInShell(res) },
     };
   };
 
@@ -513,7 +523,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
    * reads the words after it. A word after an alias whose text ends with a blank (`first` false) may be one too: its
    * text's words are then arguments.
    */
-  const aliasWord = (w: SyntaxNode, res: AliasResolution, own: Token | undefined, process: { process?: 'subshell' }, first = true): { node: ReadingNode; runs: string } => {
+  const aliasWord = (w: SyntaxNode, res: AliasResolution, own: Token | undefined, process: { process?: 'subshell' }, first = true): { node: ReadingNode; runs: Reader } => {
     const span = spanOf(w);
     const layer: Layer = process.process ? 'child' : 'bash';
     const value = res.alias.value;
@@ -535,7 +545,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
         // (The token of an alias as the command name has its name's facts: the analyzer resolves it.)
         refs: ['6.6'], replacement: value, ...(own?.name ? { name: own.name } : {}), ...process, children,
       },
-      runs: runs?.name ?? short(value),
+      runs: { name: runs?.name ?? short(value), inShell: resolvesInShell(runs) },
     };
   };
 
@@ -781,12 +791,12 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
    * `languages`: false under an assignment a command reads (`export PS1='\u'`), whose value's language is bash's (a
    * prompt string), under the value in bash's layer.
    */
-  const readParts = (tokens: readonly Token[], top: boolean, reader: string, languages = true): ReadingNode[] => {
+  const readParts = (tokens: readonly Token[], top: boolean, reader: Reader, languages = true): ReadingNode[] => {
     const out: ReadingNode[] = [];
     for (const t of tokens) {
       if (t.origin === 'argv') out.push(tokenNode(t, 'command', reader));
       else if (t.origin === 'embedded') {
-        if (languages) language(out, t, reader);
+        if (languages) language(out, t, reader.name);
       }
       // (A string a shell reads: its own reading, which the string's first token holds, src/explain/scripts.ts.)
       else if (t.origin === 'script') pushAll(out, t.reading ?? []);
@@ -795,18 +805,18 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       // A quoted word whose text a shell reads again (`eval "ls; echo hi"`) is an operand the command reads as a
       // script, as an unquoted one is (`eval ls`).
       else if (top && t.kind === 'string' && t.children.some((c) => c.origin === 'script')) {
-        out.push({ layer: 'command', kind: 'argument', label: t.label, span: t.span, text: said('script-run-again'), reader, children: readParts(t.children, false, reader) });
+        out.push({ layer: 'command', kind: 'argument', label: t.label, span: t.span, text: said('script-run-again'), ...readBy(reader), children: readParts(t.children, false, reader) });
       } else if (t.kind !== 'substitution' && (!top || WORD_TOKENS.has(t.kind))) pushAll(out, readParts(t.children, false, reader, languages));
     }
     return out;
   };
 
   /** A token the command reads, and the tokens under it by their own origins. (A command it runs reads what follows.) */
-  const tokenNode = (t: Token, layer: Layer, reader: string): ReadingNode => ({
-    layer, kind: t.kind, label: t.label, span: t.span, reader, ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}), ...(t.expands ? { expands: t.expands } : {}),
+  const tokenNode = (t: Token, layer: Layer, reader: Reader): ReadingNode => ({
+    layer, kind: t.kind, label: t.label, span: t.span, ...readBy(reader), ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}), ...(t.expands ? { expands: t.expands } : {}),
     // (A word the command reads as a script, which the analyzer says only is a word: `eval ls`.)
     ...(t.explanation === said('word-plain', { text: t.label }) && t.children.some((c) => c.origin === 'script') ? { text: said('script-run-again') } : saidBy(t)),
-    children: readParts(t.children, false, RUNS.has(t.kind) ? t.label : reader, t.kind !== 'assignment'),
+    children: readParts(t.children, false, RUNS.has(t.kind) ? { name: t.label, inShell: builtinHere(t) } : reader, t.kind !== 'assignment'),
   });
 
   /** Adds a token of a language to `out`: under the node of its language, which it starts when it is the first. */

@@ -778,8 +778,8 @@ describe('the panel\'s row model', () => {
         assert.strictEqual(opens(sed, 's/a/b/', 'sed script'), 'A language of its own inside the word: the command reads it by its own rules, not bash. (a language of its own, read by sed)');
         assert.strictEqual(opens(sed, 's/a/b/', 'sed スクリプト', 'ja'), '単語の中にある独自の言語: bash ではなく、コマンドが独自の規則で読む。（sed が読む独自の言語）');
         const test = 'trap \'if [ "$cleanup" = yes ]; then :; fi\' EXIT';
-        assert.strictEqual(opens(test, '"$cleanup" = yes', 'condition'), '[ reads it, not bash');
-        assert.strictEqual(opens(test, '"$cleanup" = yes', '条件', 'ja'), 'bash ではなく [ が読む');
+        assert.strictEqual(opens(test, '"$cleanup" = yes', 'condition'), '[ reads it, inside the shell');
+        assert.strictEqual(opens(test, '"$cleanup" = yes', '条件', 'ja'), 'シェルの中で [ が読む');
       });
 
       it('says the shell first and the command after, whatever the ranges: `rm` of `find -exec`', () => {
@@ -908,6 +908,45 @@ describe('the panel\'s row model', () => {
       // (The ids are the same in both languages.)
       assert.deepStrictEqual(row('x=a', 'a', 'ja').roleLine!.chips.map((c) => c.id), row('x=a', 'a').roleLine!.chips.map((c) => c.id));
     });
+
+    // Who reads a word: "not bash" only of a program that is not this shell. A builtin or a function is the shell (what the name resolves to, not a list of names).
+    const PROGRAM = (name: string) => [`${name} reads it, not bash`, `bash ではなく ${name} が読む`];
+    const IN_SHELL = (name: string) => [`${name} reads it, inside the shell`, `シェルの中で ${name} が読む`];
+    const NEW_BASH = ['a new bash reads it, not this shell', 'このシェルではなく、新しく起動した bash が読む'];
+    for (const [src, label, [en, ja]] of [
+      ['grep -n x f', '-n', PROGRAM('grep')],
+      ['sudo ls -l', 'ls', PROGRAM('sudo')],
+      ['sudo echo -n x', '-n', PROGRAM('echo')],
+      ['sudo cd /x', '/x', PROGRAM('cd')],
+      ['sh -c \'x\'', '-c', PROGRAM('sh')],
+      ['/usr/bin/[ -f x ]', '-f x', PROGRAM('/usr/bin/[')],
+      ['enable -n echo\necho -n x', '-n', PROGRAM('echo')],
+      ['shopt -s expand_aliases\nalias g=grep\ng -n x', '-n', PROGRAM('grep')],
+      ['bash -c \'x\'', '-c', NEW_BASH],
+      ['bash -c \'x\'', '\'x\'', NEW_BASH],
+      ['/bin/bash -c \'x\'', '-c', NEW_BASH],
+      ['sudo bash -c \'x\'', '-c', NEW_BASH],
+      ['exec bash -c \'x\'', '-c', NEW_BASH],
+      ['#!/bin/bash -x', '-x', NEW_BASH],
+      ['eval \'x\'', '\'x\'', IN_SHELL('eval')],
+      ['trap \'x\' EXIT', '\'x\'', IN_SHELL('trap')],
+      ['trap \'x\' EXIT', 'EXIT', IN_SHELL('trap')],
+      ['exec bash -c \'x\'', 'bash', IN_SHELL('exec')],
+      ['command ls -l', 'ls', IN_SHELL('command')],
+      ['command ls -l', '-l', PROGRAM('ls')],
+      ['builtin echo -n x', '-n', IN_SHELL('echo')],
+      ['echo -n x | cat', '-n', IN_SHELL('echo')],
+      ['[ -f x ]', '-f x', IN_SHELL('[')],
+      ['f() { :; }; f -x', '-x', IN_SHELL('f')],
+      ['bash() { :; }; bash -c x', '-c', IN_SHELL('bash')],
+      ['shopt -s expand_aliases\nalias a=eval\na x', 'x', IN_SHELL('eval')],
+      ['shopt -s expand_aliases\nf() { :; }\nalias a=f\na -x', '-x', IN_SHELL('f')],
+    ] as const) {
+      it(`says who reads ${label} of ${JSON.stringify(src)}: ${en}`, () => {
+        const line = src.split('\n').length - 1;
+        for (const [lang, text] of [['en', en], ['ja', ja]] as const) assert.strictEqual(row(src, label, lang, line).roleLine!.chips.at(-1)!.said, text, lang);
+      });
+    }
 
     it('gives the whole line its role, which no row stands for, at depth 2 with the reading tree only', () => {
       for (const [lang, name, about] of [['en', 'bash reads the line', /^bash splits the line into commands/], ['ja', 'bash がこの行を読む', /^bash はこの行をコマンドに分け/]] as const) {
