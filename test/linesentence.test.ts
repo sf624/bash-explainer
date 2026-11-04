@@ -209,6 +209,20 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["echo a \\\n && declare n=1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `declare` and sets `n` to `1`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`declare` を実行する。`n` に `1` を代入する。"],
     ["echo a \\\n && $c x || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `$c`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`$c` を実行する。"],
     ["if x; then f() { :; }; fi\necho a \\\n && f || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`f` を実行する。"],
+    // (Review of the first fix: the model tells `[`, a function and an alias in the shell it is read in, a computed word may be an option, `-f` and `-p` set nothing, a name with a line continuation.)
+    ["[() { echo hi; }\necho a \\\n && [ -n \"$s\" ] || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, calls the function `[`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、関数 `[` を呼び出す。"],
+    ["[() { echo hi; }\nif [ a ]; then :; fi", 1, "If `[` succeeds, runs `:` (no-op that always succeeds; used in `while :` or to evaluate expansions).", "`[` が成功したら、`:`（何もしないコマンド（常に成功）。無限ループ `while :` や引数の展開だけしたい時に使う）を実行する。"],
+    ["f() { echo FN; }\nalias f='echo AL'\necho a \\\n && f || {\n y=2\n}", 2, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`f` を実行する。", "dash"],
+    ["f() { echo FN; }\nalias f='echo AL'\necho a \\\n && f || {\n y=2\n}", 2, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`f` を実行する。", "zsh"],
+    ["f() { echo FN; }\necho a \\\n && \"f\" || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, calls the function `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、関数 `f` を呼び出す。"],
+    ["f() { echo FN; }\necho a \\\n && f\\\n || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, calls the function `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、関数 `f` を呼び出す。"],
+    ["echo a \\\n && declare $o n=1+1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `declare` and sets `n` to what `1+1` gives.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`declare` を実行する。`n` に `1+1` の結果を代入する。"],
+    ["declare $o n=1+1", 0, "Runs `declare` (declare variables and set attributes) and sets `n` to what `1+1` gives.", "`declare`（変数を宣言し、属性を設定する）を実行する。`n` に `1+1` の結果を代入する。"],
+    ["declare -f n=1", 0, "Runs `declare` (declare variables and set attributes) using `-f` (operate on function names).", "`declare`（変数を宣言し、属性を設定する）を `-f`（関数名を対象にする）を付けて実行する。"],
+    ["declare -p n=1", 0, "Runs `declare` (declare variables and set attributes) using `-p` (print attributes and values).", "`declare`（変数を宣言し、属性を設定する）を `-p`（属性と値を表示）を付けて実行する。"],
+    ["echo a \\\n && export -f x=1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `export`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`export` を実行する。"],
+    ["echo a \\\n && readonly -p x=1 || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `readonly` and sets `x` to what `1` gives.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`readonly` を実行する。`x` に `1` の結果を代入する。"],
+    ["echo a \\\n && ec\\\nho b || {\n y=2\n}", 0, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `echo`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`echo` を実行する。"],
 ];
 
 /** The files of the corpus: sample.sh and the other fixtures, the host files with their shell parts. */
@@ -276,6 +290,22 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
     for (const [src, line, en, ja, shell] of SHAPES) {
       assert.deepStrictEqual([said(src, line, 'en', shell) ?? null, said(src, line, 'ja', shell) ?? null], [en, ja], `${JSON.stringify(src)}:${line}`);
     }
+  });
+
+  it('explains a line with the reading tree too when an alias is read on another line of its statement, saying only what is true of it', () => {
+    // (Before, `aliasWord` of src/reading.ts took the line's token of the alias, which a line with only the clause has not: a TypeError.)
+    const rows = (src: string) => {
+      const tree = parser.parse(src);
+      return [1, 2, 3].map((line) => new Analyzer('en').explainLine(tree, line, undefined, { sentence: true, reading: true }));
+    };
+    const aliasNodes = (n: any): any[] => (n.kind === 'aliasWord' ? [n] : []).concat(...(n.children ?? []).map(aliasNodes));
+    const script = rows('alias a=b\ncase "$1" in\n s)\n a\n ;;\nesac');
+    assert.deepStrictEqual(script.map((r) => r.sentence), ['Runs the first branch (lines 3–5) whose pattern matches argument 1.', 'If the value matches `s`, runs line 4.', 'Runs `a`.']);
+    // (A script does not expand aliases unless `expand_aliases` is on: the node of line 2 says nothing of a replacement, where the one of line 3 says so.)
+    assert.strictEqual(aliasNodes(script[1].reading!)[0].text, undefined);
+    assert.match(aliasNodes(script[2].reading!)[0].text, /only when an interactive shell reads this file/);
+    const tree = parser.parse('shopt -s expand_aliases\nalias a=b\ncase "$1" in\n s)\n a\n ;;\nesac');
+    assert.match(aliasNodes(new Analyzer('en').explainLine(tree, 3, undefined, { reading: true }).reading!)[0].text, /^The alias `a`: bash replaces it with `b`/);
   });
 
   it('is a field of the explanation only when it is asked for, and not of a string read as a script', () => {

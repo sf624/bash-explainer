@@ -495,12 +495,13 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const children: ReadingNode[] = (words ?? []).map((x, i) => ({
       layer, kind: i || !first ? 'argument' : 'commandName', label: x, span, ...process,
       // (A first word of plain text is one the resolution follows: `target`.)
-      ...(i || !first ? { refs: ['3.7.1'] } : { refs: ['3.7.1', '3.7.2'], resolves: res.target!.kind, ...(aliasText ? {} : saidBy(own!)) }),
+      ...(i || !first ? { refs: ['3.7.1'] } : { refs: ['3.7.1', '3.7.2'], resolves: res.target!.kind, ...(aliasText || !own ? {} : saidBy(own)) }),
       children: [],
     }));
     return {
       node: {
-        layer, kind: 'aliasWord', label: short(w.text), span, ...(aliasText ? saidBy(own!) : { text: TEXTS.alias[cx.lang](w.text, value) }),
+        layer, kind: 'aliasWord', label: short(w.text), span, ...(aliasText ? saidBy(own!) : res.sure ? { text: TEXTS.alias[cx.lang](w.text, value) } : {}),
+        // (Without its own token: bash replaces it only where it is expanded, `res.sure`; elsewhere the node says nothing, a script does not expand aliases unless the shell option is on.)
         // (The token of an alias as the command name has its name's facts: the analyzer resolves it.)
         refs: ['6.6'], replacement: value, ...(own?.name ? { name: own.name } : {}), ...process, children,
       },

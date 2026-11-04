@@ -1625,6 +1625,7 @@
  "shopt -s dotglob; ls .*",
  "shopt -s expand_aliases\nalias [=echo\n[ -f c ]",
  "shopt -s expand_aliases\nalias a=:\na = 1",
+ "shopt -s expand_aliases\nalias a=b\ncase \"$1\" in\n s)\n a\n ;;\nesac",
  "shopt -s expand_aliases\nalias echo='echo -n'\necho x",
  "shopt -s expand_aliases\nalias echo=printf\necho %s x",
  "shopt -s expand_aliases\nalias g=grep\ng -n x f",
