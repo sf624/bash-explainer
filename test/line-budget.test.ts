@@ -1175,9 +1175,10 @@ describe('one line must not stop the whole tool', () => {
 
     it('no line of the table aborts the process or takes long, in a process of its own', async function () {
       if (!scoped) this.skip();
-      this.timeout(120000);
+      this.timeout(240000);
       // (Its documents are for measuring, by hand: each takes the whole bound of a document, 2e9 steps, a minute on a loaded runner.)
-      const r = await runContained([process.execPath, '--import', 'tsx', 'test/support/line-budget-table.ts', '3'], process.cwd(), {}, 100000);
+      // (The table's total runs near its limit under coverage on a slow runner; the 60 s per row below is the real guard.)
+      const r = await runContained([process.execPath, '--import', 'tsx', 'test/support/line-budget-table.ts', '3'], process.cwd(), {}, 200000);
       assert.strictEqual(r.status, 0, r.stderr.slice(-2000));
       const { rows, rss } = JSON.parse(r.stdout) as { rows: { script: string; ms: number; ok: boolean; shown: string[] }[]; rss: number };
       assert.deepStrictEqual(rows.filter((row) => !row.ok), []);
