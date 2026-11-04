@@ -1181,6 +1181,8 @@ describe('tricky lines (round 4)', () => {
     assert.match(arg.explanation, /^command to run \(`-` resets, empty string ignores\)\. Single quotes keep `\$x` from being expanded here: it is expanded when the trap runs, with the value it has then$/i);
     assert.match(tokensAt(ROUND4[7], 0, 'ja').find((t) => t.kind === 'argument' && t.label === "'echo bye $x'")!.explanation, /シングルクォートなので `\$x` はここでは展開されず、トラップが実行されるときに展開される/);
     assert.match(tokens('trap \'echo ${x} $(date) `id` $x\' EXIT').find((t) => t.kind === 'argument' && t.label.startsWith("'echo"))!.explanation, /keep `\$\{x\}`, `\$\(…\)`, `\$x` from being expanded/);
+    // (The whole expansion, as it is written: not cut at the first character that is no part of a name.)
+    assert.match(tokens('trap \'echo "${a[@]}" ${#b} ${c:-${d}}\' EXIT').find((t) => t.kind === 'argument' && t.label.startsWith("'echo"))!.explanation, /keep `\$\{a\[@\]\}`, `\$\{#b\}`, `\$\{c:-\$\{d\}\}` from being expanded/);
     assert.match(tokens('trap "echo bye $x" EXIT').find((t) => t.kind === 'argument' && t.label === '"echo bye $x"')!.explanation, /Double quotes expand `\$x` now, and the trap keeps that text \(use single quotes to get the value at run time\)/);
     assert.match(tokens('trap "echo bye $x" EXIT', 'ja').find((t) => t.kind === 'argument' && t.label === '"echo bye $x"')!.explanation, /ダブルクォートなので `\$x` は今ここで展開され/);
     for (const src of ['trap \'echo bye\' EXIT', 'trap "echo bye" EXIT', 'trap cleanup EXIT', 'trap $cmd EXIT', 'trap - EXIT']) {

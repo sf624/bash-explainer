@@ -125,7 +125,7 @@ function scriptSpan(cx: Explainer, sp: Span, script: NestedScript): Span {
 /** The command string of `trap`: when its `$variables` are expanded depends on the quotes. */
 export function trapNote(cx: Explainer, a: SyntaxNode): string {
   // (In double quotes, the expansions the parser finds: `\$x` is text.)
-  const found = a.type === 'raw_string' ? a.text.match(/\$\{?[A-Za-z_]\w*\}?|\$\(|`/g) ?? []
+  const found = a.type === 'raw_string' ? a.text.match(/\$\{(?:[^{}]|\$\{[^}]*\})*\}|\$[A-Za-z_]\w*|\$\(|`/g) ?? []
     : descendants(a, ['simple_expansion', 'expansion', 'command_substitution']).map((e) => (e.type === 'command_substitution' ? '$(' : e.text));
   const vars = [...new Set(found)].map((v) => (v === '$(' || v === '`' ? '$(…)' : v));
   if (!vars.length) return '';

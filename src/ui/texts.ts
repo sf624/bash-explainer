@@ -97,7 +97,7 @@ export const ui = {
             subshell: 'サブシェル（このシェルのコピー）がもう一度解析する', shell: '新しく起動したシェル（別のプロセス）がもう一度解析する', same: 'それを実行するシェルが、この文字列をもう一度解析する（新しいプロセスなし）',
             remote: '別のマシンのシェルが解析する', container: 'コンテナの中のシェルが解析する',
           },
-          command: 'bash ではなく {name} が読む', language: '{name} が読む独自の言語', bashLanguage: 'bash 自身が読む（正規表現の照合、POSIX の拡張正規表現(ERE)）',
+          command: 'bash ではなく {name} が読む', inShell: 'シェルの中で {name} が読む', newBash: 'このシェルではなく、新しく起動した bash が読む', language: '{name} が読む独自の言語', bashLanguage: 'bash 自身が読む（正規表現の照合、POSIX の拡張正規表現(ERE)）',
           promptLanguage: 'bash 自身が、プロンプトを表示するたびに読む',
         },
         kinds: {
@@ -230,7 +230,7 @@ export const ui = {
             subshell: 'a subshell (a copy of this shell) parses it again', shell: 'a newly started shell (another process) parses it again', same: 'the shell that runs it parses this string again (no new process)',
             remote: 'a shell on another machine parses it', container: 'a shell in the container parses it',
           },
-          command: '{name} reads it, not bash', language: 'a language of its own, read by {name}', bashLanguage: 'bash reads it itself (its regex matching, POSIX ERE)',
+          command: '{name} reads it, not bash', inShell: '{name} reads it, inside the shell', newBash: 'a new bash reads it, not this shell', language: 'a language of its own, read by {name}', bashLanguage: 'bash reads it itself (its regex matching, POSIX ERE)',
           promptLanguage: 'bash reads it itself, each time it prints the prompt',
         },
         kinds: {

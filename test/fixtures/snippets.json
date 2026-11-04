@@ -1812,6 +1812,7 @@
  "trap \"echo \\$x\" INT",
  "trap \"echo bye $x\" EXIT",
  "trap '/usr/bin/echo bye' INT",
+ "trap 'echo \"${a[@]}\" ${#b} ${c:-${d}}' EXIT",
  "trap 'echo ${x} $(date) `id` $x' EXIT",
  "trap 'echo caught' 2",
  "trap 'echo caught' EXIT INT",

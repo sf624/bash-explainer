@@ -46,12 +46,15 @@ export function chipOf(n: ReadingNode, lang: Lang): string {
   return n.resolves && !n.name ? `${kind} · ${t.resolves[n.resolves]}` : kind;
 }
 
-/** Who reads a node, in full: bash, which shell parses it again, the command, or the language and who reads it. */
+/** Who reads a node, in full: bash, which shell parses it again, the command (a part of the shell, a program, a new bash), or the language and who reads it. */
 export function readerOf(n: ReadingNode, lang: Lang): string {
   const r = texts(lang).readers;
   if (n.layer === 'child') return r.child[processOf(n)];
   // (bash reads two languages itself: the regex of `=~`, and a prompt string, the value of `PS1` or `PS4`.)
   if (n.layer === 'language' && n.reader === 'bash') return n.label === 'prompt' ? r.promptLanguage : r.bashLanguage;
+  // (A builtin or a function is no other than the shell; and a new bash is a bash too: its reader cannot be "not bash".)
+  if (n.inShell) return r.inShell.replace('{name}', n.reader!);
+  if (n.layer === 'command' && n.reader!.split('/').pop() === 'bash') return r.newBash;
   return r[n.layer].replace('{name}', n.reader ?? '');
 }
 

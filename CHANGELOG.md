@@ -47,6 +47,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `terraform -install-autocomplete` and `-uninstall-autocomplete` are explained as options terraform takes. Before, they were said to stop it.
 - What bash expands in an option's attached value is explained, and a command there has its own row: `make -j"$(nproc)"`, `make --jobs=$(nproc)`, `ls --color="$(x)"`, `make "-j$(nproc)"`.
 - `done < file` says that the redirection applies to the whole loop, as the loop's first line does.
+- The note on the single quotes of `trap 'echo "${a[@]}"' EXIT` names the whole expansion. Before, it said `${a`.
 - `if [ -f a ] then …` says its error once, in the note, and "In short" says that the shell stops with a syntax error (not in a here-document or in backticks, where bash goes on). Before, it said what the line seemed to do.
 - A command named like a JavaScript method after a pipe (`printf 'a\n' | valueOf`, also `hasOwnProperty`, `__proto__`) no longer stops the explanation with an error, in `--check` too.
 - The panel now reads messages only from its own origin, and shows a reference as a link only when its address is https.
