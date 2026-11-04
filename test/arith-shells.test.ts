@@ -17,7 +17,7 @@ const parser = createUnbashParser();
 const tokens = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...tokens(t.children)]);
 /** The marked text about a number on the first line of `src` with `09` or `((`, in a script for `shell`. */
 const saidOf = (src: string, shell: Shell | undefined): { id: string; level: string; text: string } | undefined => {
-  const items = new Analyzer('en').explainLine(parser.parse(src), src.split('\n').findIndex((l) => /09|\(\(/.test(l)), shell).items;
+  const items = new Analyzer('en').explainLine(parser.parse(src), src.split('\n').findIndex((l) => /09|\(\(/.test(l)), shell, { script: 'said' }).items;
   const mark = tokens(items).flatMap((t) => t.marks ?? []).find((m) => m.id.startsWith('arith-invalid-number'));
   return mark && { id: mark.id, level: mark.level, text: readSaid(mark.text).text };
 };

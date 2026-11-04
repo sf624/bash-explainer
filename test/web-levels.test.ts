@@ -26,7 +26,7 @@ describe('the web page: the levels of the notes', function () {
       await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
       await page.locator('.cm-content').click();
       await page.keyboard.press('Control+A');
-      await page.keyboard.insertText('exit 300; read line; source lib.sh; [ -f a');
+      await page.keyboard.insertText('[ -f a; read line; source lib.sh; exit 300');
       await until('the line explained', () => panel().locator('#problems .note, #notes .note').count(), (n) => n === 4);
       const notes = await panel().evaluate(`[...document.querySelectorAll('#problems .note, #notes .note')].map((p) => {
         const label = p.querySelector('.note-label');
@@ -48,7 +48,7 @@ describe('the web page: the levels of the notes', function () {
         levels.set(key, [...(levels.get(key) ?? []), t!]);
       }
       assert.deepStrictEqual([...levels].map(([key, parts]) => [parts.join('').replace(/\s/g, ''), ...key.split(/ (?=rgb)/)]), [
-        ['readline', 'level-info', rgb(info)], ['lib.sh', 'level-warning', rgb(warning)], ['[-fa', 'level-error', rgb(error)],
+        ['[-fa', 'level-error', rgb(error)], ['readline', 'level-info', rgb(info)], ['lib.sh', 'level-warning', rgb(warning)],
       ]);
       // The Problems list: ⓧ, ⚠ and ⓘ, in the levels' colours, an error's message without the word "Error:"; in the
       // order of the script.
@@ -57,7 +57,7 @@ describe('the web page: the levels of the notes', function () {
         const icon = e.querySelector('.icon')!;
         return [icon.textContent, e.ownerDocument.defaultView!.getComputedStyle(icon).color, e.querySelector('.message')?.textContent?.slice(0, 8)];
       })), (r) => r.length === 3);
-      assert.deepStrictEqual(rows, [['ⓘ', rgb(info), 'Caveat: '], ['⚠', rgb(warning), 'Pitfall:'], ['ⓧ', rgb(error), '[ has no']]);
+      assert.deepStrictEqual(rows, [['ⓧ', rgb(error), '[ has no'], ['ⓘ', rgb(info), 'Caveat: '], ['⚠', rgb(warning), 'Pitfall:']]);
       // The strip: the count of each level, its mark in its colour, the worst first; in words for a screen reader.
       const counts = await page.locator('#problems-counts .count').evaluateAll((els) => els.map((e) => {
         const icon = e.querySelector('.icon')!;

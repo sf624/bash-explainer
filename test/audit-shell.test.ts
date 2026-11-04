@@ -182,7 +182,7 @@ describe('shell audit fixes', () => {
   });
 
   it('local outside a function, in each shell', () => {
-    const notes = (src: string, shell: Shell, lang: 'ja' | 'en' = 'en') => new Analyzer(lang).explainLine(createUnbashParser().parse(src), 0, shell).notes.join('\n');
+    const notes = (src: string, shell: Shell, lang: 'ja' | 'en' = 'en') => new Analyzer(lang).explainLine(createUnbashParser().parse(src), 0, shell, { script: 'said' }).notes.join('\n');
     // bash, dash and busybox ash (and so a POSIX sh) refuse it outside a function: bash goes on (status 1), dash
     // stops the script.
     assert.match(notes('local y=1', 'bash'), /it fails with "can only be used in a function"/);

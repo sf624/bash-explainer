@@ -221,7 +221,7 @@ describe('bash 5.3 command substitutions', () => {
   });
 
   it('rejects a `}` that does not end the substitution, as bash 5.3 does (the warning also without a bash 5.3)', function () {
-    const issues = (script: string, version: BashVersion) => documentIssues({ lines: script.split('\n'), tree: parser.parse(script) }, 'en', {}, [], { pitfalls: false, bashVersion: version });
+    const issues = (script: string, version: BashVersion) => documentIssues({ lines: script.split('\n'), tree: parser.parse(script) }, 'en', { script: 'said' }, [], { pitfalls: false, bashVersion: version });
     for (const { script, how } of UNCLOSED) {
       const found = issues(script, '5.3');
       assert.deepStrictEqual(found.map((i) => i.code), ['funsubBrace'], script);
@@ -252,10 +252,10 @@ describe('bash 5.3 command substitutions', () => {
 
   it('warns in bash 5.2 mode, as bash 5.2 fails', function () {
     for (const c of CASES) {
-      const issues = documentIssues({ lines: c.script.split('\n'), tree: parser.parse(c.script) }, 'en', {}, [], { pitfalls: false });
+      const issues = documentIssues({ lines: c.script.split('\n'), tree: parser.parse(c.script) }, 'en', { script: 'said' }, [], { pitfalls: false });
       assert.deepStrictEqual(issues.map((i) => i.code), [c.form], c.script);
       assert.match(issues[0].message, /bash 5\.3 syntax: bash 5\.2 reports "bad substitution" and stops there: the rest of the line, and the rest of the `if`, loop or function around it, do not run \(status 1\)\. Under `set -e`, and in POSIX mode, the shell exits; in a subshell, only the subshell stops\./);
-      assert.deepStrictEqual(documentIssues({ lines: [c.script], tree: parser.parse(c.script) }, 'en', {}, [], { pitfalls: false, bashVersion: '5.3' }), [], c.script);
+      assert.deepStrictEqual(documentIssues({ lines: [c.script], tree: parser.parse(c.script) }, 'en', { script: 'said' }, [], { pitfalls: false, bashVersion: '5.3' }), [], c.script);
     }
     if (releaseOf('bash') !== '5.2') this.skip();
     for (const c of CASES) assert.match(runBash(c.script).stderr, /bad substitution/, c.script);
@@ -377,7 +377,7 @@ describe('bash 5.3 options of builtins', () => {
   it('explains each one, with an issue in bash 5.2 mode (also without a bash 5.3)', () => {
     for (const c of OPTIONS) {
       assert.match(said(c.script).tokens, c.says, c.script);
-      const issues = (version: BashVersion) => documentIssues({ lines: [c.script], tree: parser.parse(c.script) }, 'en', {}, [], { pitfalls: false, bashVersion: version }).filter((i) => i.code === 'laterOption');
+      const issues = (version: BashVersion) => documentIssues({ lines: [c.script], tree: parser.parse(c.script) }, 'en', { script: 'said' }, [], { pitfalls: false, bashVersion: version }).filter((i) => i.code === 'laterOption');
       const found = issues('5.2');
       assert.ok(found.length >= 1, c.script);
       // (`source`, `.` and `trap` are special builtins: in POSIX mode, their error exits the shell.)
@@ -439,7 +439,7 @@ describe('bash 5.3 variables and shell options', () => {
     assert.match(allTokens(explain('echo "$BASH_TRAPSIG"').items).map((t) => t.explanation).join('\n'), /A plain variable in bash 5\.2/);
     for (const c of SHELL_OPTIONS) {
       assert.match(said(c.script).tokens, c.says, c.script);
-      const issues = (version: BashVersion) => documentIssues({ lines: [c.script], tree: parser.parse(c.script) }, 'en', {}, [], { pitfalls: false, bashVersion: version });
+      const issues = (version: BashVersion) => documentIssues({ lines: [c.script], tree: parser.parse(c.script) }, 'en', { script: 'said' }, [], { pitfalls: false, bashVersion: version });
       const found = issues('5.2');
       assert.deepStrictEqual(found.map((i) => i.code), ['laterOption'], c.script);
       assert.strictEqual(found[0].message, `ⓧ \`${c.name}\` is a bash 5.3 \`shopt\` option: bash 5.2 reports "invalid shell option name" for it (status 1; the other names are still set).`, c.script);

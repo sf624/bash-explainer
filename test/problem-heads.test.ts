@@ -156,9 +156,9 @@ describe('the headline of each problem', () => {
       // (Japanese has the same notes: a part of the corpus says so, at a fifth of the time.)
       for (const text of [sample, ...snippets.filter((_, i) => lang === 'en' || i % 5 === 0)]) {
         const d = doc(text);
-        const messages = new Set(documentIssues(d, lang, {}).map((i) => i.message));
+        const messages = new Set(documentIssues(d, lang, { script: 'said' }).map((i) => i.message));
         for (let line = 0; line < d.lines.length; line++) {
-          const ex = analyzer.explainLine(d.tree, line);
+          const ex = analyzer.explainLine(d.tree, line, undefined, { script: 'said' });
           for (const n of ex.noteInfo.filter(isProblemNote)) assert.ok(n.head, `${n.code} in ${JSON.stringify(text)}`);
           const box = boxProblems(ex, rowModel(ex, { depth: 1, receives: false }, lang).places, lang, () => true);
           assert.deepStrictEqual(box.map((p) => p.text).sort(), ex.noteInfo.filter(isProblemNote).map((n) => problemText(n, lang)).sort());

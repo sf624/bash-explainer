@@ -99,7 +99,7 @@ export function factsIn(input: string, text: string): CorpusFact[] {
 function suggestionsIn(text: string, shell: Shell | undefined, only?: 'facts' | 'style'): Suggestion[] {
   const tree = parser.parse(text);
   const lines = text.split('\n');
-  const facts = only === 'style' ? [] : lines.flatMap((_, line) => new Analyzer('en').explainLine(tree, line, shell).facts ?? []);
+  const facts = only === 'style' ? [] : lines.flatMap((_, line) => new Analyzer('en').explainLine(tree, line, shell, { script: 'said' }).facts ?? []);
   const style = only === 'facts' ? [] : pitfallFindings(tree.root, 'en', 0, lines.length, shellState(tree, shell), shell).map((f) => ({ id: f.code, text: f.text, ...(f.rewrite ? { rewrite: f.rewrite } : {}) }));
   return [...facts, ...style];
 }

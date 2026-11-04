@@ -44,8 +44,10 @@ export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, p
   }
   const rows = script.tree.text.split('\n');
   const lines: Token[][] = [];
+  // (A fault of the text of a string is said only where the command that runs it is surely read, or gets to: `Explainer.evidenceAt`, `reachedAt`.)
+  const outer = { ...(!words.length || !cx.evidenceAt(words[0]) ? { unread: true } : {}), ...(!words.length || !cx.reachedAt(words[0]) ? { unreached: true } : {}) };
   for (let line = 0; line < rows.length; line++) {
-    const ex = cx.nestedLine(script, line, positional);
+    const ex = cx.nestedLine(script, line, positional, outer);
     // (A statement over several lines is explained whole on each of them: keep it, and its notes, on its first.)
     const items = ex.items.filter((t) => t.span.start.line === line);
     lines.push(items.map((t) => fromScript(cx, t, script)));

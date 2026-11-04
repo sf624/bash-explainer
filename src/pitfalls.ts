@@ -2,7 +2,7 @@ import { interpret, type ArgRole, type ArgvParse } from './argv/interpret';
 import { downloadsTo, givenOptions, has, readsScriptFromStdin, regexWords } from './argv/query';
 import type { CommandSpec, OptionSpec } from './argv/spec';
 import { argWordFor } from './argv/words';
-import type { Shell } from './dialect';
+import type { ScriptEvidence, Shell } from './dialect';
 import { canonicalName, impliedOptions, lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
 import { argWordIn, bracesIn } from './semantics/argwords';
@@ -18,7 +18,7 @@ import { parseExpansion } from './expansion';
 import { hasUnquotedExpansion, quoteExpansions } from './fixes';
 import type { ConventionId } from './conventions';
 import { type Note, styleNote } from './messages';
-import { STYLE_LEVELS, type StyleCase, type StyleCode } from './messages-levels';
+import { STYLE_LEVELS, type StyleCase, type StyleCode, styleLevel } from './messages-levels';
 import { type Rewrite, replaceNode, replaceSpan, stopCommand, textBetween, type TextEdit } from './rewrite';
 import { mostOf } from './lists';
 
@@ -533,13 +533,23 @@ function escapedComparison(n: SyntaxNode, redirect: SyntaxNode): Rewrite | undef
   return editSpan(field(n, 'name')!, close, [{ start: redirect.startIndex, end: redirect.endIndex, text: `${pre}${m[1] ? `${m[1]} ` : ''}\\${m[2]} ${dest.text}` }]);
 }
 
-/** The style checks whose node starts on a line from `from` to `to`, in one walk of the tree, with the model of the tree and its shell. */
-export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined): StyleFinding[] {
+/**
+ * The style checks whose node starts on a line from `from` to `to`, in one walk of the tree, with the model of the tree and its shell.
+ * A check at the level `error` says the shell reads the text wrongly, so it is said by how the file is known to be a script (`read`:
+ * `readAs`, `ScriptEvidence`): as an error, as a warning where only the name says so, or not at all where a shell may not read the
+ * text as it stands. Without `read` it is an error, as for a snippet.
+ */
+export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined, read?: (n: SyntaxNode) => ScriptEvidence | undefined): StyleFinding[] {
   const s = pick(lang);
   const found: StyleFinding[] = [];
   // (`rewrite`: the rewrites the text shows the code of; the finding carries those with edits, as a fact does. `c`:
   // what the check found that its level depends on, `STYLE_LEVELS`.)
   const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string, rewrite: readonly Rewrite[] = [], c: StyleCase = {}) => {
+    if (read && styleLevel(code, c) === 'error') {
+      const said = read(node);
+      if (!said) return;
+      if (said === 'name') c = { ...c, byName: true };
+    }
     const convention = STYLE_CONVENTIONS[code];
     const edits = rewrite.filter((r) => r.edits.length);
     found.push({ ...styleNote(lang, code, s(ja, en), c), node, ...(convention ? { convention } : {}), ...(edits.length ? { rewrite: edits } : {}) });

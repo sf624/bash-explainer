@@ -22,7 +22,7 @@ import { corpus } from './support/corpus';
 // what a program receives, and the Key. The model is a pure function of the explanation; media/panel.js draws it (P7c).
 
 const parser = createUnbashParser();
-const explain = (src: string, line = 0, lang: Lang = 'en'): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line, 'bash', { reading: true, argv: true });
+const explain = (src: string, line = 0, lang: Lang = 'en'): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line, 'bash', { reading: true, argv: true, script: 'said' });
 const all = (rows: readonly ModelRow[]): ModelRow[] => rows.flatMap((r) => [r, ...all(r.children)]);
 const tokens = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...tokens(t.children)]);
 const D1: RowOptions = { depth: 1, receives: false };

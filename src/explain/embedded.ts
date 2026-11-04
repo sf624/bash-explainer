@@ -24,6 +24,7 @@ import { type Explainer, memoKey } from './context';
 import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
 import { fromEmbedded, same } from './nodes';
+import { invalidHow } from '../arith';
 import { given, regexFlavor, trContext } from './reads';
 import { hostString } from './hoststrings';
 import { valueNote } from './words';
@@ -64,6 +65,7 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
     given: (...names) => given(cx, ...names),
     bash: () => (cx.command?.spec.builtin ? cx.opts.bashVersion ?? DEFAULT_BASH_VERSION : undefined),
     shell: cx.shell,
+    invalid: () => invalidHow(cx.evidenceAt(a)),
   };
   const r = EMBEDDED[lang](lit.text, ecx);
   if (!r) return undefined;

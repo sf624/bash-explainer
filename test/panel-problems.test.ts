@@ -17,8 +17,8 @@ import { placeExamples } from '../src/ui/render';
 
 const parser = createUnbashParser();
 const doc = (text: string): ShellDocument => ({ lines: text.split('\n'), tree: parser.parse(text) });
-const explain = (text: string, line = 0, lang: 'en' | 'ja' = 'en') => new Analyzer(lang).explainLine(parser.parse(text), line);
-const issues = (text: string, opts: Parameters<typeof documentIssues>[4] = {}, ignore: string[] = []) => documentIssues(doc(text), 'en', {}, ignore, opts);
+const explain = (text: string, line = 0, lang: 'en' | 'ja' = 'en') => new Analyzer(lang).explainLine(parser.parse(text), line, undefined, { script: 'said' });
+const issues = (text: string, opts: Parameters<typeof documentIssues>[4] = {}, ignore: string[] = []) => documentIssues(doc(text), 'en', { script: 'said' }, ignore, opts);
 const errors = (text: string) => issues(text).filter((i) => i.severity === 'error').map((i) => i.code);
 
 describe('the errors of the tokens, as problems', () => {
@@ -103,7 +103,7 @@ describe('the errors of the tokens, as problems', () => {
         const r = spawnSync('bash', [file], { encoding: 'utf8', timeout: 5000, cwd: dir, env: { PATH: process.env.PATH, FUNCNEST: '20' } });
         assert.ok(r.status === 0 && r.stdout.includes('ran'), `${script}: ${r.status} ${r.stdout}`);
         for (const lang of ['en', 'ja'] as const) {
-          const [i] = documentIssues(doc(script), lang, {}).filter((x) => x.severity === 'error');
+          const [i] = documentIssues(doc(script), lang, { script: 'said' }).filter((x) => x.severity === 'error');
           assert.match(i.message, lang === 'en' ? /Run directly as a program, .*\(`bash file` ignores the line\)/ : /プログラムとして直接実行すると.*（`bash file` ではこの行はコメント）/, `${lang} ${script}`);
           assert.match(i.head, lang === 'en' ? /^(Run directly as a program|Run directly as a program on Linux)/ : /プログラムとして直接実行すると|Linux でプログラムとして直接実行すると/, `${lang} ${script}`);
         }
@@ -148,7 +148,7 @@ describe('the box "Problems on this line"', () => {
 
   it('gives the panel the box, the pointers and the squiggles from the document\'s problems', () => {
     const text = 'for f in $(ls); do\n  echo $((09))\ndone';
-    const message = panelUpdate({ lang: 'en', explanation: explain(text, 1), line: 1, lineText: '  echo $((09))', file: 'f', choice: {}, detected: { shell: 'bash', source: 'default' }, placement: 'first', animations: false, doc: doc(text), issues: documentIssues(doc(text), 'en', {}) } as never);
+    const message = panelUpdate({ lang: 'en', explanation: explain(text, 1), line: 1, lineText: '  echo $((09))', file: 'f', choice: {}, detected: { shell: 'bash', source: 'default' }, placement: 'first', animations: false, doc: doc(text), issues: documentIssues(doc(text), 'en', { script: 'said' }) } as never);
     assert.deepStrictEqual(message.problems.map((p) => p.word), ['Error']);
     assert.ok(message.around.length > 0);
     assert.deepStrictEqual(message.marks.map((m) => [m.from, m.to, m.className]), [[10, 12, 'level-error']]);
@@ -157,7 +157,7 @@ describe('the box "Problems on this line"', () => {
   it('leaves a silenced problem out of the box, and shows it as a plain note below it', () => {
     const update = (text: string, line: number, settings: Settings) => panelUpdate({
       lang: 'en', explanation: explain(text, line), line, lineText: text.split('\n')[line], file: 'f', choice: {}, detected: { shell: 'bash', source: 'default' },
-      placement: 'first', animations: false, doc: doc(text), issues: diagnosticsFor(() => doc(text), () => ({ detected: { shell: 'bash', source: 'default' } }) as never, 'en', settings, 'vscode').shown,
+      placement: 'first', animations: false, doc: doc(text), issues: diagnosticsFor(() => doc(text), () => ({ detected: { shell: 'bash', source: 'default' }, script: 'said' }) as never, 'en', settings, 'vscode').shown,
       shown: issueFilter(doc(text), settings, 'vscode'),
     } as never);
     const ignoring = { ...defaultSettings(), 'diagnostics.ignore': ['arith-invalid-number'] };
@@ -184,7 +184,7 @@ describe('the box "Problems on this line"', () => {
     const off = '# bash-explainer disable=arith-invalid-number\n';
     for (const text of [`${off}echo $((09)) \\\n  b`, `${off}echo $((09)) |\n  cat`, 'echo $((09)) \\\n  $((08)) # bash-explainer disable=arith-invalid-number']) {
       const settings = defaultSettings();
-      const shown = diagnosticsFor(() => doc(text), () => ({ detected: { shell: 'bash', source: 'default' } }) as never, 'en', settings, 'vscode').shown;
+      const shown = diagnosticsFor(() => doc(text), () => ({ detected: { shell: 'bash', source: 'default' }, script: 'said' }) as never, 'en', settings, 'vscode').shown;
       for (let l = 0; l < text.split('\n').length; l++) {
         const inBox = update(text, l, settings).problems.map((p) => p.text);
         const listed = shown.map((i) => i.message);
@@ -223,14 +223,14 @@ describe('the box "Problems on this line"', () => {
 
   it('points to a problem on the line of a construct around, unless the line says it too', () => {
     const text = 'for f in $(ls); do\n  echo hi\ndone';
-    const all = documentIssues(doc(text), 'en', {});
+    const all = documentIssues(doc(text), 'en', { script: 'said' });
     const ex = explain(text, 1);
     assert.deepStrictEqual(ex.context.map((c) => c.line), [0]);
     const pointers = problemsAround(ex, all, [], 'en');
     assert.ok(pointers.length > 0);
     assert.deepStrictEqual(pointers.map((p) => [p.level, p.where, p.title, p.line]).slice(0, 1), [['info', 'Caveat on line 1', 'Go to line 1', 0]]);
     assert.match(pointers[0].head, /split on spaces/);
-    assert.strictEqual(problemsAround(explain(text, 1, 'ja'), documentIssues(doc(text), 'ja', {}), [], 'ja')[0].where, '行 1 の注意');
+    assert.strictEqual(problemsAround(explain(text, 1, 'ja'), documentIssues(doc(text), 'ja', { script: 'said' }), [], 'ja')[0].where, '行 1 の注意');
     // (Its own line, and a problem it says itself, are in the box.)
     assert.deepStrictEqual(problemsAround({ line: 0, context: [{ line: 0, label: 'x' } as never] }, all, [], 'en'), []);
     assert.deepStrictEqual(problemsAround(ex, all, all.map((i) => ({ text: i.message })) as never, 'en'), []);

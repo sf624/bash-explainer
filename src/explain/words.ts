@@ -4,7 +4,7 @@
 // model (src/semantics/words.ts, through src/explain/reads.ts); a `${…}` is src/expansion-tokens.ts, which reads
 // the descriptions and notes of variables from here.
 import type { Kind, Pos, Token } from '../analyzer-types';
-import { arithLiteralIn, describeArithLiteral, describeInvalidLiteral, evalArith, evalArithWrapping } from '../arith';
+import { arithLiteralIn, describeArithLiteral, describeInvalidLiteral, evalArith, evalArithWrapping, invalidHow } from '../arith';
 import { type BashVersion, earlier } from '../bashversion';
 import { pictureList, visible } from '../ctlchars';
 import { ciVariables } from '../dict/ciVariables';
@@ -905,7 +905,7 @@ export function arithNumber(cx: Explainer, n: SyntaxNode): Token | undefined {
     // (Of `(( ))`, a C-style `for` or a subscript in another shell, which most do not have or read otherwise, nothing is said. The first one up decides: a nested `$(( ))` is an expansion in the command `(( ))`.)
     const place = ancestor(n, (p) => ['arithmetic_expansion', 'subscript', 'arithmetic_command', 'c_style_for_statement'].includes(p.type))!;
     if (place.type !== 'arithmetic_expansion' && cx.shell && cx.shell !== 'bash') return undefined;
-    return cx.tok(n, 'number', describeInvalidLiteral(n.text, lit, cx.lang, readOnlySometimes(n)));
+    return cx.tok(n, 'number', describeInvalidLiteral(n.text, lit, cx.lang, invalidHow(cx.evidenceAt(n), readOnlySometimes(n))));
   }
   return !lit || lit.style === 'decimal' ? undefined : cx.tok(n, 'number', describeArithLiteral(n.text, lit, cx.lang));
 }

@@ -322,7 +322,7 @@ describe('the hover Markdown', () => {
 
   it('says where the whole line is, and when there is nothing to explain', () => {
     const doc = open('#!/bin/sh\n[[ -f x ]]\n\n');
-    const x = { ...input(doc, 1), ex: new Analyzer('en').explainLine(doc.tree, 1, 'sh') };
+    const x = { ...input(doc, 1), ex: new Analyzer('en').explainLine(doc.tree, 1, 'sh', { script: 'said' }) };
     const md = wholeLine(x);
     assert.match(md, /^\*\*Bash Explainer\*\* · Line 2 · checked for POSIX sh/);
     // (The mark is the level's codicon, in the level's colour, then the level's word: an error, with the error icon in
@@ -334,7 +334,7 @@ describe('the hover Markdown', () => {
 
   it('shows each note with its level: its codicon and word in its colour, errors first', () => {
     // A plain fact, a caveat, a pitfall and an error, in the order found.
-    const doc = open('exit 300; read line; source lib.sh; [ -f a');
+    const doc = open('[ -f a; read line; source lib.sh; exit 300');
     const notes = (md: string) => md.split('\n').filter((l) => isNote(l));
     const whole = (theme: ThemeKind) => notes(wholeLine(input(doc, 0, { theme })));
     const w = 'var(--vscode-editorWarning-foreground)';
@@ -441,8 +441,8 @@ describe('the hover Markdown', () => {
     assert.deepStrictEqual(notes(part(loc, kw, masks)), []);
     // A dialect issue too.
     const sh = open('#!/bin/sh\n[[ -f x ]]');
-    const shx = { ...input(sh, 1), ex: new Analyzer('en').explainLine(sh.tree, 1, 'sh') };
-    const shProblems = problemsAt(sh, 1, 0, defaultSettings(), { detected: said('sh') });
+    const shx = { ...input(sh, 1), ex: new Analyzer('en').explainLine(sh.tree, 1, 'sh', { script: 'said' }) };
+    const shProblems = problemsAt(sh, 1, 0, defaultSettings(), { detected: said('sh'), script: 'said' });
     assert.ok(shProblems.length && shx.ex.anchors!.some((a) => a.code === shProblems[0].code));
     assert.strictEqual(partHover({ ...shx, problems: shProblems }, partAt(shx.ex.items, { line: 1, character: 0 })).split('\n').filter(isNote).length, 0);
     assert.strictEqual(partHover(shx, partAt(shx.ex.items, { line: 1, character: 0 })).split('\n').filter(isNote).length, 1);

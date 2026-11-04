@@ -85,7 +85,7 @@ describe('branches no other test takes', () => {
     const doc = (text: string): ShellDocument => ({ lines: text.split('\n'), tree: parser.parse(text) });
     const empty = { lines: ['FROM alpine'], tree: parser.parse(''), extracted: { text: '', regions: [] } } as unknown as ShellDocument;
     assert.deepStrictEqual(documentIssues(empty, 'en', {}), []);
-    const issues = documentIssues(doc('echo -e "a\\tb"\nf() {\n  local x\n}\narr=(a\n b)'), 'en', { forced: 'sh' });
+    const issues = documentIssues(doc('echo -e "a\\tb"\nf() {\n  local x\n}\narr=(a\n b)'), 'en', { forced: 'sh', script: 'said' });
     assert.ok(issues.some((i) => i.severity === 'info'), JSON.stringify(issues));
     assert.ok(issues.some((i) => i.endLine === i.startLine && i.endCol === 'arr=(a'.length), JSON.stringify(issues));
   });

@@ -1,5 +1,5 @@
 import { type BashVersion, DEFAULT_BASH_VERSION, lacks } from '../bashversion';
-import type { Shell } from '../shellfeatures';
+import type { ScriptEvidence, Shell } from '../shellfeatures';
 import { staticWordValue } from '../staticword';
 import { ancestor, braceAsArgument, descendants, field, fields, gluedBrace, readWhenExpanded, strayKeyword, substitutionForm, type SyntaxError, type SyntaxErrorWhat, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { commandName } from './effects';
@@ -297,7 +297,11 @@ const plainTexts = new WeakMap<SyntaxTree, boolean>();
 
 /** Whether the text is what a shell reads, as it is written, in a shell whose reading is known. Each line asks: it is read once. */
 function surelyText(tree: SyntaxTree, shell: Shell): boolean {
-  if (shell !== 'bash' && shell !== 'sh') return false;
+  return (shell === 'bash' || shell === 'sh') && plainText(tree);
+}
+
+/** Whether the text is what a shell reads, as it is written, whichever shell: no CR, no NUL, no template marker, and no first line that stops the shell. */
+function plainText(tree: SyntaxTree): boolean {
   let plain = plainTexts.get(tree);
   if (plain === undefined) {
     // (With CRs in the text, it is not what bash reads: a CR after `&&` is a command, `fi` before one a word. The problem
@@ -309,17 +313,27 @@ function surelyText(tree: SyntaxTree, shell: Shell): boolean {
 }
 
 const ends = new WeakMap<SyntaxTree, number>();
+const exits = new WeakMap<SyntaxTree, number>();
 
-/** Where the first command that may end the script or change how it is read has ended its name; Infinity with none. */
-function firstEnd(tree: SyntaxTree): number {
-  let at = ends.get(tree);
+/** Where the first command that `stops` has ended (`endOf`: its name, or the whole command); Infinity with none. */
+function firstEndOf(tree: SyntaxTree, stops: (c: SyntaxNode) => boolean, endOf: (c: SyntaxNode) => number, kept: WeakMap<SyntaxTree, number>): number {
+  let at = kept.get(tree);
   if (at === undefined) {
     at = Infinity;
-    for (const c of descendants(tree.root, ['command'])) if (field(c, 'name') && mayEnd(c)) at = Math.min(at, field(c, 'name')!.endIndex);
-    ends.set(tree, at);
+    for (const c of descendants(tree.root, ['command'])) if (field(c, 'name') && stops(c)) at = Math.min(at, endOf(c));
+    kept.set(tree, at);
   }
   return at;
 }
+
+/** Where the first command that may end the script or change how it is read has ended its name; Infinity with none. */
+const firstEnd = (tree: SyntaxTree): number => firstEndOf(tree, mayEnd, (c) => field(c, 'name')!.endIndex, ends);
+
+/**
+ * Whether a command ends the script when the shell gets to it, or hands the script over to another program: `exit`, and `exec` with
+ * a command (`exec 3>&1` does not), as a statement of the script itself, not in a function, a branch or a loop that may not run.
+ */
+const endsAtOnce = (c: SyntaxNode): boolean => c.parent?.type === 'program' && (commandName(c) === 'exit' || (commandName(c) === 'exec' && fields(c, 'argument').length > 0));
 
 /**
  * The gate of whatever says a fault of a script's text: whether a shell surely reads the text up to offset `at`, as it is
@@ -328,6 +342,27 @@ function firstEnd(tree: SyntaxTree): number {
  */
 export function surelyRead(tree: SyntaxTree, shell: Shell, at: number): boolean {
   return surelyText(tree, shell) && firstEnd(tree) > at;
+}
+
+/**
+ * How a fault of the text at offset `at` is said, by how the file is known to be a script (`ScriptEvidence`): the one rule of
+ * every Error that claims the shell reads the text wrongly (`x = 1`, `if a then b; fi`, `[-f x]`, `$((09))`). `said`: an error.
+ * `name`: a warning with the same words, since another shell may source a file of that name. None where a shell may not read the
+ * text as it stands (`surelyRead`: after an `exit`, in a polyglot's other language), or no one says the file is a script. Whichever
+ * shell it is: a claim that the shell fails on the text, not that bash's parser rejects it (`surelyRead`, the syntax error).
+ */
+export function readAs(tree: SyntaxTree, at: number, script: ScriptEvidence | undefined): ScriptEvidence | undefined {
+  return script && plainText(tree) && firstEnd(tree) > at ? script : undefined;
+}
+
+/**
+ * Whether the shell gets to offset `at`, for an Error that is a fact of one command or of the shell's dialect (`[` without its `]`,
+ * `print` in sh): not after an `exit` or an `exec` of the script itself, where it ends or hands over to a polyglot's other language,
+ * whose lines are no shell commands. Less than `readAs`: a `source`, `trap` or `shopt` before it, and an `exit` in a function, do not
+ * silence it, as the command fails whenever it runs.
+ */
+export function reachedAt(tree: SyntaxTree, at: number): boolean {
+  return firstEndOf(tree, endsAtOnce, (c) => c.endIndex, exits) > at;
 }
 
 const cache = new WeakMap<SyntaxTree, Map<string, SyntaxFault | undefined>>();

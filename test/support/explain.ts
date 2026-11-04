@@ -8,9 +8,9 @@ export function allTokens<T extends { children: T[] }>(tokens: readonly T[]): T[
   return tokens.flatMap((t) => [t, ...allTokens(t.children)]);
 }
 
-/** The explanation of line `line` (0-based) of `src`; `opts` are the analyzer's options (pitfalls, host…). */
+/** The explanation of line `line` (0-based) of `src`, as a script a first line names (`script: 'said'`); `opts` are the analyzer's options (pitfalls, host…). */
 export function explain(src: string, line = 0, lang: 'ja' | 'en' = 'en', opts?: ExplainOptions): LineExplanation {
-  return new Analyzer(lang).explainLine(parser.parse(src), line, undefined, opts);
+  return new Analyzer(lang).explainLine(parser.parse(src), line, undefined, { script: 'said', ...opts });
 }
 
 /** The tokens of line `line` of `src`, flattened. */

@@ -156,7 +156,7 @@ describe('one record for what a token\'s row holds', function () {
       ['echo $((09))', 'en', 'arith-invalid-number', 'ⓧ Invalid number `09`'],
       ['terraform -var-file=x plan', 'en', 'terraform-option-before-subcommand', '⚠ an option before the subcommand'],
     ] as const) {
-      const ex = new Analyzer(lang).explainLine(parser.parse(src), 0, 'bash', { reading: true });
+      const ex = new Analyzer(lang).explainLine(parser.parse(src), 0, 'bash', { reading: true, script: 'said' });
       const all = (ts: typeof ex.items): typeof ex.items => ts.flatMap((t) => [t, ...all(t.children)]);
       const tok = all(ex.items).find((t) => t.marks?.some((m) => m.id === id))!;
       assert.ok(tok, src);
@@ -175,7 +175,7 @@ describe('one record for what a token\'s row holds', function () {
     const nodes = (n: NonNullable<typeof ex.reading>): (typeof n)[] => [n, ...n.children.flatMap(nodes)];
     assert.ok(nodes(ex.reading!).some((n) => n.text?.includes('⚠ The kernel')));
     assert.ok(ex.summary.includes('⚠ The kernel'));
-    const embedded = new Analyzer('en').explainLine(parser.parse('let x=09'), 0, 'bash');
+    const embedded = new Analyzer('en').explainLine(parser.parse('let x=09'), 0, 'bash', { script: 'said' });
     assert.ok(JSON.stringify(embedded.items).includes('"marks":[{"id":"arith-invalid-number"'));
     // (A row with no warning has no level.)
     assert.strictEqual(tokenRow(new Analyzer('en').explainLine(parser.parse('ls'), 0, 'bash').items[0], 'en').level, undefined);

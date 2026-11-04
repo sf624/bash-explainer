@@ -119,13 +119,13 @@ export class Analyzer {
       ...continuationNotes(cx, root, line, items),
       ...tokenErrorNotes(cx, items),
       ...syntaxErrorNotes(cx, line),
-      ...cx.anchored(dialectFound(tree, line, shell ?? 'bash', this.lang, opts.bashVersion)),
+      ...cx.anchored(dialectFound(tree, line, shell ?? 'bash', this.lang, opts.bashVersion, (n) => cx.reachedAt(n))),
     ];
     const walked = alone ? alone.saidNotes : [...new Set(cx.notes)];
     const after = [
       ...statusNotes(cx, line, false),
       ...(cx.opts.idioms === false ? [] : idiomsFound(statements, this.lang, cx.status).flatMap((f) => cx.say(f.fact, f.node))),
-      ...cx.anchored(pitfallFindings(root, this.lang, line, line, cx.state, cx.shell).filter((f) => pitfallSaid(f.level, cx.opts.pitfalls))),
+      ...cx.anchored(pitfallFindings(root, this.lang, line, line, cx.state, cx.shell, (n) => cx.evidenceAt(n)).filter((f) => pitfallSaid(f.level, cx.opts.pitfalls))),
       ...new Set(wordFindings(root, this.lang, cx.state, cx.shell, line, line).flatMap((w) => cx.say(w.fact, w.node))),
       ...extglobPitfalls(cx, root, line),
       ...unmatchedGlobPitfalls(cx, root, line),

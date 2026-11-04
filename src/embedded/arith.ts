@@ -1,5 +1,5 @@
 import type { Lang } from '../i18n';
-import { arithLiteralIn, describeArithLiteral, describeInvalidLiteral, evalArith } from '../arith';
+import { arithLiteralIn, describeArithLiteral, describeInvalidLiteral, evalArith, type InvalidHow } from '../arith';
 import type { Shell } from '../shellfeatures';
 import { EmbeddedToken, pick } from './types';
 
@@ -145,7 +145,7 @@ function parse(toks: Tok[]): Node | undefined {
 }
 
 /** Explain the arithmetic expression `src`; undefined if it is empty or not an expression. */
-export function explainArith(src: string, lang: Lang, shell?: Shell): { tokens: EmbeddedToken[]; note?: string } | undefined {
+export function explainArith(src: string, lang: Lang, shell?: Shell, invalid: InvalidHow = 'always'): { tokens: EmbeddedToken[]; note?: string } | undefined {
   const s = pick(lang);
   const toks = tokenize(src);
   const root = toks?.length ? parse(toks) : undefined;
@@ -159,7 +159,7 @@ export function explainArith(src: string, lang: Lang, shell?: Shell): { tokens: 
       case 'num': {
         // (A constant bash rejects fails `let`, with status 1 (test/arith-shells.test.ts); of another shell's `let`, nothing is said.)
         const lit = arithLiteralIn(text(n), shell);
-        if (lit?.type === 'invalid') return shell && shell !== 'bash' ? undefined : { ...base, kind: 'number', children: [], explanation: describeInvalidLiteral(text(n), lit, lang) };
+        if (lit?.type === 'invalid') return shell && shell !== 'bash' ? undefined : { ...base, kind: 'number', children: [], explanation: describeInvalidLiteral(text(n), lit, lang, invalid) };
         return !lit || lit.style === 'decimal' ? undefined : { ...base, kind: 'number', children: [], explanation: describeArithLiteral(text(n), lit, lang) };
       }
       case 'var': {

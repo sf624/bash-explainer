@@ -404,7 +404,7 @@ describe('nested scripts: the pitfall of a variable another shell does not get',
 });
 
 describe('nested scripts: the explanation', () => {
-  const explain = (src: string, line = 0, lang: 'en' | 'ja' = 'en', shell?: Shell) => new Analyzer(lang).explainLine(parser.parse(src), line, shell);
+  const explain = (src: string, line = 0, lang: 'en' | 'ja' = 'en', shell?: Shell) => new Analyzer(lang).explainLine(parser.parse(src), line, shell, { script: 'said' });
   /** The token labelled `label`, and the source text it spans. */
   const spanned = (src: string, label: string, line = 0): { token: Token; text: string } => {
     const token = allTokens(explain(src, line).items).find((t) => t.label === label);

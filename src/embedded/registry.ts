@@ -4,6 +4,7 @@
 import type { BashVersion } from '../bashversion';
 import type { Lang } from '../i18n';
 import type { Shell } from '../shellfeatures';
+import type { InvalidHow } from '../arith';
 import { explainArith } from './arith';
 import { explainAwk } from './awk';
 import { describeFindPattern } from './find';
@@ -40,6 +41,8 @@ export interface EmbeddedContext {
   bash(): BashVersion | undefined;
   /** The shell the script is read as. */
   shell: Shell | undefined;
+  /** How a constant the shell rejects is said where the text stands (`invalidHow`). */
+  invalid(): InvalidHow;
 }
 
 type Explainer = (text: string, cx: EmbeddedContext) => Embedded | undefined;
@@ -85,7 +88,7 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
     const note = describeFindPattern(text, cx.lang);
     return note ? { tokens: explainGlob(text, cx.lang), note } : undefined;
   },
-  arith: (text, cx) => explainArith(text, cx.lang, cx.shell),
+  arith: (text, cx) => explainArith(text, cx.lang, cx.shell, cx.invalid()),
   // (The value of PS0, PS1, PS2 or PS4: bash reads it each time it prints the prompt, 6.9.)
   prompt: (text, cx) => ({ tokens: explainPrompt(text, cx.lang), note: promptNote(cx.lang) }),
   // Only `+FORMAT` is a format. (A word whose text is not known to start with `+`, as `x*` or `~`, may still reach here: the shell expands it first.)

@@ -194,6 +194,12 @@ export interface ExplainOptions {
    */
   script?: ScriptEvidence;
   /**
+   * Set for a string run by a command that the script does not surely read as it stands (`unread`: no reading of its text is said, `Explainer.evidenceAt`),
+   * or does not get to (`unreached`: no fact of a command or of the dialect is said, `Explainer.reachedAt`).
+   */
+  unread?: boolean;
+  unreached?: boolean;
+  /**
    * The host runs the line's words with no shell (`ShellRegion.noShell`: Docker's exec form, a Python list of
    * arguments): the model looks the name up as a program (`StateModel.noShell`), and each word is the host's string.
    */

@@ -13,7 +13,7 @@ before(async () => {
   parser = createUnbashParser();
 });
 
-const explain = (src: string, lang: 'en' | 'ja' = 'en', line = 0): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line);
+const explain = (src: string, lang: 'en' | 'ja' = 'en', line = 0): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line, undefined, { script: 'said' });
 /** The explanation of the token labelled `label`, without its trailing detail. */
 const about = (src: string, label: string, lang: 'en' | 'ja' = 'en'): string => {
   const t = allTokens(explain(src, lang).items).find((x) => x.label === label);
