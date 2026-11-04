@@ -1,5 +1,5 @@
 import { controlMarks } from '../ctlchars';
-import { LineExplanation, Span, Token } from '../analyzer-types';
+import { ExplainOptions, LineExplanation, Span, Token } from '../analyzer-types';
 import { type AutoShell, Shell, SHELL_NAMES } from '../dialect';
 import { autoShellText } from '../messages-shell';
 import { YQ_NAMES } from '../embedded/yq';
@@ -31,7 +31,7 @@ export type FromPanel =
   | { type: 'copy' }
   | { type: 'override'; key: 'shell' | 'yq'; value: string }
   | { type: 'reference' }
-  /** The depth chosen: the host keeps it for the next visit (VS Code's global state, the web page's storage), builds the reading tree only at depth 2 (`needsReading`), and sends it back as `panelState` when the panel starts. */
+  /** What the viewer chose: the host keeps it for the next visit (VS Code's global state, the web page's storage), explains the line with what it needs (`explainNeeds`), and sends it back as `panelState` when the panel starts. */
   | { type: 'panelState'; state: PanelState }
   /** What the panel draws text on, and its own colours, in the theme in use (asked for by `themeWatch`). */
   | { type: 'themeBase'; base: PanelBase }
@@ -41,22 +41,31 @@ export type FromPanel =
 /** An icon button of the panel's header: its name (tooltip and accessible name) and its icon. */
 export interface HeaderButton { name: string; icon: string }
 
-/** What the panel remembers per viewer: how deep it reads the line. */
-export interface PanelState { depth?: Depth }
+/** What the panel remembers per viewer: how deep it reads the line, and whether it shows what each program receives. */
+export interface PanelState { depth?: Depth; receives?: boolean }
 
 /**
- * A state as kept (VS Code's global state, the web page's storage, a message): the depth. A version from before the depths kept a view:
- * Reading opens at depth 2, Meaning at depth 1. What is none of them is left out.
+ * A state as kept (VS Code's global state, the web page's storage, a message): the depth, and the switch once it was chosen. A version from before
+ * the depths kept a view: Reading opens at depth 2, Meaning at depth 1. What is none of them is left out.
  */
 export function panelState(kept: unknown): PanelState {
   const s = (kept && typeof kept === 'object' ? kept : {}) as Record<string, unknown>;
   const depth = s.depth === 1 || s.depth === 2 ? s.depth : s.view === 'tree' ? 2 : s.view === 'list' ? 1 : undefined;
-  return depth ? { depth } : {};
+  return { ...(depth ? { depth } : {}), ...(typeof s.receives === 'boolean' ? { receives: s.receives } : {}) };
 }
 
-/** Whether the explanation needs the reading tree for the state: the hosts build it only then (depth 2). */
-export function needsReading(state: PanelState): boolean {
-  return (state.depth ?? PANEL_DEFAULTS.depth) === 2;
+/** What the panel asks of an explanation: the options of a state, which both hosts pass (`ExplainOptions`). */
+export type ExplainNeeds = Required<Pick<ExplainOptions, 'reading' | 'argv' | 'notPosix'>>;
+
+/** What the explanation needs for the state: the reading tree at depth 2, what each program receives with the switch on, and the marks of what POSIX sh lacks, which show either way. */
+export function explainNeeds(state: PanelState): ExplainNeeds {
+  const shown = { ...PANEL_DEFAULTS, ...state };
+  return { reading: shown.depth === 2, argv: shown.receives, notPosix: true };
+}
+
+/** Whether another state needs another explanation. */
+export function needsDiffer(a: ExplainNeeds, b: ExplainNeeds): boolean {
+  return a.reading !== b.reading || a.argv !== b.argv;
 }
 
 /** An option of the view control (docs/design/panel-redesign.md, 6.1). */
@@ -84,8 +93,8 @@ export interface ViewControl {
   options: ViewOption[];
 }
 
-/** What the panel shows when the state does not say: depth 1 (media/panel.js starts so). */
-export const PANEL_DEFAULTS: Required<PanelState> = { depth: 1 };
+/** What the panel shows when the state does not say: depth 1 (media/panel.js starts so), and what each program receives. */
+export const PANEL_DEFAULTS: Required<PanelState> = { depth: 1, receives: true };
 
 /**
  * Whether an option is the one shown: the state, with its defaults, has everything the option `sets`. media/panel.js
@@ -181,9 +190,9 @@ export function panelUpdate(p: PanelLine) {
   const { reading: _reading, items, ...explanation } = p.placement === 'bottom' ? others : placeExamples(others);
   const issues = p.issues ?? [];
   const shown = p.shown ?? (() => true);
-  // (The rows of the depth chosen; the switch comes with P9.)
-  const depth = p.state?.depth ?? PANEL_DEFAULTS.depth;
-  const model = rowModel({ ...ex, items }, { depth, receives: false }, lang);
+  // (The rows of the depth chosen, with the switch as it is.)
+  const { depth, receives } = { ...PANEL_DEFAULTS, ...p.state };
+  const model = rowModel({ ...ex, items }, { depth, receives }, lang);
   const box = boxProblems(ex, model.places, lang, shown);
   return {
     type: 'update',
@@ -215,6 +224,10 @@ export function panelUpdate(p: PanelLine) {
     // (The look of a warning on a row, from the level table.)
     levels: Object.fromEntries(Object.entries(LEVELS).map(([level, { className, codicon, name }]) => [level, { className, icon: codicon, name: name[lang] }])),
     depth,
+    receives,
+    // (What the marks of the rows say, and the Key of what is drawn: src/ui/panelRows.ts.)
+    rowMarks: model.marks,
+    key: model.key,
     control: viewControl(p.state ?? {}, lang),
     // (The forms the panel's own header may draw the view control in, widest first, and the names and icons of its tools: src/ui/panelHead.ts.)
     viewForms: viewControlForms(viewControl(p.state ?? {}, lang)),
@@ -271,6 +284,11 @@ export const PANEL_BODY = `<div id="top">
 <pre id="line"></pre>
 </div>
 <main id="main">
+  <div id="view-row" hidden>
+    <button id="receives" type="button" role="switch" aria-checked="true"><span class="switch-track" aria-hidden="true"></span><span id="receives-name"></span></button>
+    <button id="key-open" type="button" aria-expanded="false" aria-controls="key"></button>
+  </div>
+  <ul id="key" hidden></ul>
   <p id="short" hidden></p>
   <section id="problems" hidden></section>
   <div id="notes"></div>

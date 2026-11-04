@@ -16,6 +16,16 @@ The panel, in VS Code and on the web page, starts with one sentence that says wh
 
 The sentence never repeats a problem of the line: where a problem is about the line's status or `set -e`, the sentence says nothing of them.
 
+### What the program receives
+
+A switch under the panel's line box, "What the program receives" / 「プログラムが受け取るもの」, is on by default and remembered once chosen (key `W` when the focus is in the panel).
+
+- Under each command, its words after bash's expansions, quote removal, splitting and globbing, as chips: `grep -h "$USER" /var/log/*.log` receives `grep`, `-h`, ‹current user name›, ‹each file name matching `/var/log/*.log`›. A word received as written is tinted, here and on its row; a value known only when the line runs is in ‹ ›, dashed where it is not always one word. A statement continued on other lines says it of each command it shows.
+- A builtin or a function runs inside bash, with no first word of its name ("runs inside bash, gets:"; `pwd`, "gets no arguments"). `sort` alone "receives only its name"; `$e` with `e=` leaves no word, so nothing runs. An alias's words are its text, not its name. Where bash stops first (`x=; ls ${x:?}`), the line says so: the program does not run.
+- The mark "handled by bash" / 「bash が処理」 is on what no program receives, once per construct, on its first row, at both depths: one on `if … fi`, one on a pipeline, one on each redirection and prefix assignment, none on a word however bash expands it. In a script of another shell it says "handled by the shell". Before, nothing in the panel told what reaches the program from what bash keeps.
+- The mark "not in POSIX sh" / 「POSIX sh にない」 is on the construct only (`[[ ]]`, `==` in `[ ]`, `source`, `local`, `<<<`, `{a,b}`), with the switch on or off, in a bash script too, as a fact of the construct: the problems still show only for the script's own shell. A press opens what the problems of a sh script say of it (which `/bin/sh` fails on it, and what to write instead). A string another shell reads has no marks yet.
+- The button **Key** beside the switch lists, inline in the panel, what each mark on screen means, the levels' marks included, and only those.
+
 ### Quick fixes from the notes
 
 A note that suggests code to write in place of the line's (`Fact.rewrite`, `StyleFinding.rewrite`: docs/design/oracles.md, 3.2) offers it as a quick fix of its problem: the light bulb and Ctrl+. in VS Code, `textDocument/codeAction` in the Language Server, and buttons in the tooltip of the web page's editor. The fix makes the edits of the code the note shows, at the place of that problem (`cp $a b; cp $a c`: each `$a` its own); where the note gives two ways, both are offered, the one it recommends first (preferred, for VS Code's Auto Fix). The title is the code, cut at 60 characters: "Add `[ -e "$f" ] || continue`" where the fix only adds code, "Rewrite as `read -r`" where it changes some. The web page's buttons show it as plain text, without the backticks (CodeMirror draws an action's name as text); VS Code and the Language Server keep them, as in their messages. Each rewrite is run in bash 5.2 and 5.3 (test/rewrites*.test.ts).
@@ -311,6 +321,10 @@ The notes that were plain text now start with ℹ, as the notes on facts do, and
 The note on zsh syntax a line cannot be read with starts with ⓘ, as information: the level it always had in the Problems list.
 
 ## Fixed
+
+### A host file's own text in the explanation
+
+In a Makefile, a workflow file and the other host files, a row's text, a role's text and the sentence "In short" named the script made from the file: `echo a > "$(OUT)"` said file `"${OUT}"`, and `> "$@"` said `"${make_target}"`, where the row's code said `"$@"`. They now say what the file says, as the notes do.
 
 ### Errors after a command that may stop the script
 

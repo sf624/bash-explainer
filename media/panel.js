@@ -86,6 +86,12 @@
 
   /** The depth shown (1 what it does, 2 how bash reads it): what the viewer chose last. */
   let depth = 1;
+  /** The switch "What the program receives" once the viewer chose it; until then the host's default, which comes with each line. */
+  let receivesChosen = /** @type {boolean | undefined} */ (undefined);
+  /** The switch as drawn. */
+  let receivesShown = true;
+  /** The switch of the rows drawn. */
+  let shownReceives = true;
   applyState(vscode.getState());
   /** The view control (src/ui/panelView.ts `viewControl`), from the host with each line: the header's depth. */
   let control = /** @type {{ label: string, options: { id: string, digit?: string, short: string, full: string, pressed: boolean, sets: any }[] }} */ ({ label: '', options: [] });
@@ -208,6 +214,8 @@
     $('tree').replaceChildren();
     $('examples').replaceChildren();
     $('whole-line').replaceChildren();
+    $('view-row').hidden = true;
+    $('key').hidden = true;
     dropSpacer();
     $('empty').textContent = message;
     $('empty').hidden = false;
@@ -247,6 +255,7 @@
       openExamples = new Set();
       openSteps = new Set();
       openRoles = new Map();
+      openMarks = new Set();
       // (And the line box opened whole: a new line shows three rows at most.)
       lineOpen = false;
     }
@@ -256,13 +265,16 @@
     const keptRole = where === shownLine && document.activeElement instanceof HTMLElement && $('line-role').contains(document.activeElement) ? document.activeElement.dataset.role : undefined;
     const keptFold = where === shownLine ? [...document.querySelectorAll('details.whole-line > summary')].indexOf(/** @type {Element} */ (document.activeElement)) : -1;
     // Another depth of the same line: the first row on the screen that it still shows stays where it is.
-    if (where === shownLine && msg.depth !== shownDepth) {
+    if (where === shownLine && (msg.depth !== shownDepth || msg.receives !== shownReceives)) {
       holdForDepth(msg.rows);
       // (A screen reader hears the depth, whichever control chose it: the panel's, the keys, the page's slot.)
-      $('said').textContent = msg.control.options.find((/** @type {{ sets: any }} */ o) => o.sets.depth === msg.depth).said;
+      if (msg.depth !== shownDepth) $('said').textContent = msg.control.options.find((/** @type {{ sets: any }} */ o) => o.sets.depth === msg.depth).said;
+      else $('said').textContent = msg.receives ? labels.receives.on : labels.receives.off;
     }
     shownLine = where;
     shownDepth = msg.depth;
+    shownReceives = msg.receives;
+    rowMarks = msg.rowMarks;
     document.body.dataset.depth = String(msg.depth);
     shownLineNo = ex.line;
     const tree = $('tree');
@@ -275,6 +287,7 @@
     if (kept) focusAgain(kept);
 
     renderLine(msg.lineText, msg.lineRuns, msg.marks ?? [], msg.lineParts, msg.wrap === true);
+    drawViewRow(msg);
 
     drawProblems(msg.problems ?? [], msg.around ?? []);
     // Each note with the icon of its level in place of its mark, and the word that names the level in bold: the icon's
@@ -966,16 +979,76 @@
     return m;
   }
 
-  /** A word as a chip with an edge; `ends`: how many characters at each end are marks of a space (`spaceMark`). */
-  function wordChip(/** @type {string} */ text, /** @type {number[] | undefined} */ ends, /** @type {string | undefined} */ label) {
-    const c = document.createElement('code');
-    c.className = 'ev-word';
+  /** A word's text in a chip; `ends`: how many characters at each end are marks of a space (`spaceMark`). */
+  function wordText(/** @type {HTMLElement} */ c, /** @type {string} */ text, /** @type {readonly number[] | undefined} */ ends, /** @type {string | undefined} */ label) {
     const [before, after] = ends || [0, 0];
     const chars = [...text];
     for (let i = 0; i < before; i++) c.append(spaceMark(label));
     c.append(...withMarks(chars.slice(before, chars.length - after).join('')));
     for (let i = 0; i < after; i++) c.append(spaceMark(label));
+  }
+
+  /** A word as a chip with an edge. */
+  function wordChip(/** @type {string} */ text, /** @type {number[] | undefined} */ ends, /** @type {string | undefined} */ label) {
+    const c = document.createElement('code');
+    c.className = 'ev-word';
+    wordText(c, text, ends, label);
     return c;
+  }
+
+  /**
+   * The line under a command with the switch on (src/ui/panelReceives.ts): the words its program receives, each a chip that wraps as a whole; a word
+   * received as written is tinted, a placeholder is in ‹ › and dashed where it is not always one word.
+   */
+  function receivesOf(/** @type {any} */ line) {
+    const box = el('span', { class: 'receives' }, el('span', { class: 'ev-lead' }, ...inline(line.lead)));
+    if (line.chips.length) {
+      box.append(' ', el('span', { class: 'receives-words', role: 'list' }, ...line.chips.map((/** @type {any} */ chip) => {
+        const c = el('code', { class: `ev-word recv-word${chip.asWritten ? ' recv-asWritten' : ''}${chip.many ? ' recv-many' : ''}`, role: 'listitem' });
+        for (const p of chip.parts) {
+          if ('hole' in p) c.append(el('span', { class: 'ph' }, '\u2039', ...inline(p.hole), '\u203a'));
+          else wordText(c, p.text, p.ends, labels.receives.space);
+        }
+        if (chip.many) c.append(el('span', { class: 'sr-only' }, ` (${labels.receives.many})`));
+        return c;
+      })));
+    }
+    if (line.more) box.append(' ', el('span', { class: 'ev-lead' }, line.more));
+    if (line.fails) box.append(el('span', { class: 'receives-fails' }, ...inline(line.fails)));
+    return box;
+  }
+
+  /** What the marks of the rows say (`RowModel.marks`). */
+  let rowMarks = /** @type {any} */ ({});
+  /** The rows whose mark "not in POSIX sh" is open, by `key` (for the same line drawn again, as `foldChoices`). */
+  let openMarks = /** @type {Set<string>} */ (new Set());
+
+  /**
+   * The marks of a row, beside its code: "handled by bash", quiet, with what it means in its tooltip and the Key; "not in POSIX sh", a button that opens
+   * under the text what the row's construct lacks, so that a phone and a keyboard read it too. `said`: the place of that text.
+   */
+  function marksOf(/** @type {any} */ part, /** @type {any} */ said) {
+    const out = [];
+    if (part.handled) out.push(el('span', { class: 'mk mk-handled', title: rowMarks.handledSays }, rowMarks.handled));
+    if (part.notPosix) {
+      const b = el('button', { type: 'button', class: 'mk mk-posix', 'aria-controls': said.id }, rowMarks.notPosix);
+      const show = () => {
+        const open = openMarks.has(part.key);
+        b.setAttribute('aria-expanded', String(open));
+        said.hidden = !open;
+      };
+      said.replaceChildren(...part.notPosix.map((/** @type {string} */ text) => el('span', { class: 'row-more' }, ...inline(text))));
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hold(() => b);
+        if (openMarks.has(part.key)) openMarks.delete(part.key);
+        else openMarks.add(part.key);
+        show();
+      });
+      show();
+      out.push(b);
+    }
+    return out;
   }
 
   /**
@@ -1062,7 +1135,7 @@
       });
     }
     const label = document.createElement('code');
-    label.className = part.group ? `label grp-label grp-${((part.group - 1) % 6) + 1}` : 'label';
+    label.className = `${part.group ? `label grp-label grp-${((part.group - 1) % 6) + 1}` : 'label'}${part.received ? ` recv-${part.received}` : ''}`;
     // A skeleton: code parts as they are (the label is monospace), placeholders apart in italics.
     part.labelParts.forEach((p, i) => {
       if (i && !p.tight) label.append(' ');
@@ -1080,7 +1153,8 @@
     }
     const code = document.createElement('div');
     code.className = 'code';
-    code.append(label, ...nameBadge(part.name));
+    const posixSaid = part.notPosix ? el('span', { class: 'posix-said', id: `posix-said-${nextId++}` }) : null;
+    code.append(label, ...nameBadge(part.name), ...marksOf(part, posixSaid));
     const text = document.createElement('span');
     text.className = 'text';
     text.append(...textParts(part.parts));
@@ -1097,6 +1171,8 @@
     // At depth 2: what the part is to each reader, and what bash does to a word.
     if (part.roleLine) text.append(roleLineOf(part.roleLine, part.key));
     if (part.steps) text.append(stepsOf(part.steps, part.key));
+    if (posixSaid) text.append(posixSaid);
+    if (part.receives) text.append(receivesOf(part.receives));
     row.append(twisty, code, text, ...tryIt);
     box.append(row);
     li.append(box);
@@ -1407,24 +1483,80 @@
 
   /** Tells the host the choice: it keeps it for the next time (VS Code's global state, the web page's storage) and explains the line for it. */
   function save() {
-    const state = { depth };
+    const state = { depth, ...(receivesChosen === undefined ? {} : { receives: receivesChosen }) };
     vscode.setState(state);
     vscode.postMessage({ type: 'panelState', state });
   }
 
-  /** The depth the viewer chose (VS Code's webview state; the host sends it as it keeps it, src/ui/panelView.ts `panelState`), or what an option of the view control sets. */
+  /** What the viewer chose (VS Code's webview state; the host sends it as it keeps it, src/ui/panelView.ts `panelState`), or what an option of the view control sets. */
   function applyState(/** @type {any} */ state) {
     if (state?.depth === 1 || state?.depth === 2) depth = state.depth;
+    if (typeof state?.receives === 'boolean') {
+      receivesChosen = state.receives;
+      receivesShown = state.receives;
+    }
   }
 
   /** Whether an option of the view control is the one shown: the state has what it sets (the rule of src/ui/panelView.ts `isPressed`). */
   const pressed = (/** @type {{ sets: Record<string, unknown> }} */ o) => Object.entries(o.sets).every(([k, v]) => /** @type {Record<string, unknown>} */ ({ depth })[k] === v);
 
-  /** A depth chosen: the control shows it at once, and the rows come with the host's next update. */
+  /** A depth or the switch chosen: the control shows it at once, and the rows come with the host's next update. */
   function press(/** @type {any} */ sets) {
     applyState(sets);
     save();
     drawViews();
+    drawSwitch();
+  }
+
+  /** The switch as it is. */
+  function drawSwitch() {
+    $('receives').setAttribute('aria-checked', String(receivesShown));
+  }
+
+  $('receives').addEventListener('click', () => press({ receives: !receivesShown }));
+
+  /** Whether the Key is open, and what it lists of the line drawn. */
+  let keyOpen = false;
+  let keyEntries = /** @type {{ id: string, sample?: string, text: string }[]} */ ([]);
+  $('key-open').addEventListener('click', () => {
+    keyOpen = !keyOpen;
+    drawKey();
+  });
+
+  /** The Key as it is: what each mark drawn means, while it is open. */
+  function drawKey() {
+    $('key').hidden = !keyOpen;
+    $('key-open').setAttribute('aria-expanded', String(keyOpen));
+    $('key').replaceChildren(...(keyOpen ? keyEntries.map((e) => el('li', { 'data-key-id': e.id }, keySample(e), el('span', { class: 'key-text' }, ...inline(e.text)))) : []));
+  }
+
+  /** A sample of a mark in the Key: as the rows draw it, from the Key's id. */
+  function keySample(/** @type {{ id: string, sample?: string }} */ entry) {
+    const [kind, what] = entry.id.split(':');
+    const text = entry.sample ?? '';
+    switch (kind) {
+      case 'level': return levelIcon(levels[what].icon);
+      case 'name': return el('span', { class: `nk-badge nk-${what}` }, text);
+      case 'frame': return el('span', { class: `key-frame frame-${what}` }, '\u00a0');
+      case 'role': return el('code', { class: `label kind-${what}` }, 'abc');
+      case 'ref': return el('span', { class: 'refs' }, '\u00a7');
+      case 'basis': return el('span', { class: 'basis' }, text);
+      case 'roleLine': return el('span', { class: 'role-chip key-chip' }, 'abc');
+      case 'received': return what === 'hole' ? el('code', { class: 'ev-word recv-word' }, el('span', { class: 'ph' }, '\u2039\u2026\u203a'))
+        : el('code', { class: `ev-word recv-word key-word ${what === 'asWritten' ? 'recv-asWritten' : what === 'many' ? 'recv-many' : 'recv-changed'}` }, 'abc');
+      default: return el('span', { class: `mk ${what === 'handled' ? 'mk-handled' : 'mk-posix'}` }, text);
+    }
+  }
+
+  /** The row under the line box: the switch, and the Key of what is drawn (`RowModel.key`), inline in the panel. */
+  function drawViewRow(/** @type {any} */ msg) {
+    if (receivesChosen === undefined) receivesShown = msg.receives;
+    $('view-row').hidden = false;
+    $('receives-name').textContent = labels.receives.switch;
+    drawSwitch();
+    $('key-open').textContent = labels.receives.keyButton;
+    keyEntries = msg.key;
+    drawKey();
   }
 
   /** The header's view control (media/view-control.js, the component the web page draws too). */
@@ -1450,12 +1582,13 @@
     }
   }).observe(/** @type {HTMLElement} */ (document.querySelector('header')));
 
-  // Keys 1 and 2 choose the depth when the focus is in the panel, not while a text is typed (an example's input, the search of the quick reference).
+  // Keys 1 and 2 choose the depth, and W turns the switch, when the focus is in the panel, not while a text is typed (an example's input, the search of the quick reference).
   document.addEventListener('keydown', (e) => {
-    if ((e.key !== '1' && e.key !== '2') || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+    const toggles = e.key === 'w' || e.key === 'W';
+    if ((e.key !== '1' && e.key !== '2' && !toggles) || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
     if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]')) return;
     e.preventDefault();
-    press({ depth: Number(e.key) });
+    press(toggles ? { receives: !receivesShown } : { depth: Number(e.key) });
   });
 
   const el = (/** @type {string} */ tag, /** @type {Record<string, string>} */ attrs = {}, /** @type {(Node | string)[]} */ ...kids) => {

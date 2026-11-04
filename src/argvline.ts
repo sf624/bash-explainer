@@ -11,19 +11,24 @@ import { redirects } from './dict/syntax';
 import { redirectParts } from './explain/redirections';
 import type { Lang } from './i18n';
 import { assignmentSaid, hereSaid, placeholderSaid } from './messages-argv';
+import { leastOf, mostOf } from './lists';
 import { spanOf } from './noteanchors';
 import { receivedFields } from './semantics/fieldshape';
-import { assignmentsOf, resolveName } from './semantics/names';
+import { aliasesAfter, assignmentsOf, type NameResolution, resolveName } from './semantics/names';
 import type { StateModel } from './semantics/state';
 import { descendants, field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from './syntax/tree';
 
-/** What the program of each simple command with a name on `line` receives, in source order (also those in a substitution). */
-export function argvLines(root: SyntaxNode, line: number, model: StateModel, lang: Lang): ArgvLine[] {
+/**
+ * What the program of each simple command with a name on `line` receives, in source order (also those in a substitution). `shown`: the
+ * lines of the tokens the line shows, where a statement continued on other lines shows all its commands (`grep x \\`, then `| wc -l`).
+ */
+export function argvLines(root: SyntaxNode, line: number, model: StateModel, lang: Lang, shown: ReadonlySet<number> = new Set([line])): ArgvLine[] {
   let byLang = argvKept.get(model);
   if (!byLang) argvKept.set(model, (byLang = { en: new WeakMap(), ja: new WeakMap() }));
   const kept = byLang[lang];
-  return descendants(root, ['command'], { from: line, to: line })
-    .filter((c) => c.startPosition.row <= line && line <= c.endPosition.row)
+  const rows = [line, ...shown];
+  return descendants(root, ['command'], { from: leastOf(rows), to: mostOf(rows) })
+    .filter((c) => (c.startPosition.row <= line && line <= c.endPosition.row) || shown.has(c.startPosition.row))
     .flatMap((c) => {
       // (Each command once: all the lines of one over several lines ask.)
       if (!kept.has(c)) kept.set(c, argvOf(c, model, lang));
@@ -39,6 +44,8 @@ export function argvOf(cmd: SyntaxNode, model: StateModel, lang: Lang): ArgvLine
   if (!nameNode) return undefined;
   const nameWord = nameNode.namedChildren[0];
   const read = reader(model);
+  const names = read(nameWord).fields;
+  const res = names?.length === 1 ? resolveName(model, names[0], nameNode, { shell: model.shell, command: true, quoted: names[0] !== nameWord.text }) : 'dynamic';
   const words = [nameWord, ...fields(cmd, 'argument')];
   const assignments = prefixAssignments(cmd);
   const redirections = redirectionsOf(cmd);
@@ -46,8 +53,18 @@ export function argvOf(cmd: SyntaxNode, model: StateModel, lang: Lang): ArgvLine
   const failing = [...words, ...assignments.flatMap((a) => fields(a, 'value')), ...redirections.flatMap((r) => r.namedChildren.filter((c) => c.field !== 'descriptor'))]
     .find((w) => read(w).error);
   const removed = [...assignments, ...redirections].sort((a, b) => a.startIndex - b.startIndex)
-    .map((x): ArgvRemoved => (x.type === 'variable_assignment' ? assignment(x, cmd, nameWord, model, read, lang) : redirection(x, read, lang)));
-  return { span: spanOf(cmd), words: words.flatMap((w) => wordArgv(w, read, lang)), removed, ...(failing ? { fails: { span: spanOf(failing), error: read(failing).error! } } : {}) };
+    .map((x): ArgvRemoved => (x.type === 'variable_assignment' ? assignment(x, cmd, res, model, read, lang) : redirection(x, read, lang)));
+  const inside = runsInside(res);
+  // (An alias is replaced by its text before bash reads the words: what they then are, the alias's text says, not its name. One that ends in a blank does so to the next word too.)
+  const aliases = res !== 'dynamic' && res.kind === 'alias' ? [nameWord, ...aliasesAfter(cmd, res, (n, at) => resolveName(model, n, at, { shell: model.shell, command: true })).map((a) => a.word)] : [];
+  return { span: spanOf(cmd), ...(inside ? { inside } : {}), words: words.flatMap((w) => (aliases.includes(w) ? whole(w, lang) : wordArgv(w, read, lang))), removed, ...(failing ? { fails: { span: spanOf(failing), error: read(failing).error! } } : {}) };
+}
+
+/** Where the name surely runs in the shell itself, with no program started: a builtin, or a function on every path (`resolveName`, which test/names-probes.test.ts compares with `type -t`). */
+function runsInside(res: NameResolution | 'dynamic'): ArgvLine['inside'] {
+  if (res === 'dynamic') return undefined;
+  if (res.kind === 'builtin') return res.disabled ? undefined : 'builtin';
+  return res.kind === 'function' && res.sure ? 'function' : undefined;
 }
 
 /** The words the word `w` gives (`wordArgv`), read alone: a value or a target the sentence of the line says (src/linesentence.ts). */
@@ -88,9 +105,7 @@ function wordArgv(w: SyntaxNode, read: Reader, lang: Lang): ArgvWord[] {
 const whole = (w: SyntaxNode, lang: Lang): ArgvWord[] => [{ from: spanOf(w), parts: [{ hole: 'word', code: w.text, label: placeholderSaid(lang, { kind: 'word', code: w.text }) }], count: { min: 0 } }];
 
 /** A prefix assignment of `cmd`: what it does to the variable (`assignmentsOf`), and its value. */
-function assignment(a: SyntaxNode, cmd: SyntaxNode, nameWord: SyntaxNode, model: StateModel, read: Reader, lang: Lang): ArgvRemoved {
-  const name = read(nameWord).fields;
-  const res = name?.length === 1 ? resolveName(model, name[0], field(cmd, 'name')!, { shell: model.shell, command: true, quoted: name[0] !== nameWord.text }) : 'dynamic';
+function assignment(a: SyntaxNode, cmd: SyntaxNode, res: NameResolution | 'dynamic', model: StateModel, read: Reader, lang: Lang): ArgvRemoved {
   const meaning = assignmentsOf(model, cmd, res).find((m) => m.node === a)!;
   const how = meaning.scope !== 'persists' ? 'command' : meaning.sure ? 'stays' : 'maybe-stays';
   const v = field(a, 'value');

@@ -1,4 +1,5 @@
 // The public types of an explanation (src/analyzer.ts makes them; the products, the panel and the hosts read them).
+import type { Fields } from './semantics/words';
 import type { CommandSpec } from './argv/spec';
 import type { Basis, TryIt } from './basis';
 import type { BashVersion } from './bashversion';
@@ -216,6 +217,8 @@ export interface ExplainOptions {
   noShell?: NoShell;
   /** Also build the reading tree of the line (`LineExplanation.reading`), for the panel's tree view. */
   reading?: boolean;
+  /** Also say which constructs on the line POSIX sh does not have (`LineExplanation.notPosix`). */
+  notPosix?: boolean;
   /** Also give what the program of each simple command on the line receives (`LineExplanation.argv`, src/argvline.ts). */
   argv?: boolean;
   /** Also give the sentence of the line, "In short" (`LineExplanation.sentence`, src/linesentence.ts). */
@@ -265,6 +268,8 @@ export interface LineExplanation {
   shell?: Shell;
   /** Who reads each part of the line, layer by layer (src/reading.ts); only when `ExplainOptions.reading` asks for it. */
   reading?: ReadingNode;
+  /** The constructs shown on the line that POSIX sh does not have; only when `ExplainOptions.notPosix` asks for it. */
+  notPosix?: NotPosix[];
   /** What the program of each simple command on the line receives, in source order (src/argvline.ts); only when `ExplainOptions.argv` asks for it. */
   argv?: ArgvLine[];
   /**
@@ -304,7 +309,17 @@ export interface ArgvRemoved { kind: 'assignment' | 'redirect'; span: Span; text
  * ambiguous redirection), in the order bash expands them: the words, then the values of the assignments, then the
  * redirections; so the program does not run.
  */
-export interface ArgvLine { span: Span; words: ArgvWord[]; removed: ArgvRemoved[]; fails?: { span: Span; error: string } }
+export interface ArgvLine {
+  span: Span;
+  /** The name surely runs in the shell itself, with no program started (`words[0]` is the name all the same): it gets its arguments only, not an `argv[0]`. */
+  inside?: 'builtin' | 'function';
+  words: ArgvWord[];
+  removed: ArgvRemoved[];
+  fails?: { span: Span; error: NonNullable<Fields['error']> };
+}
+
+/** A construct on a line that POSIX sh does not have (`collectFeatures`, src/dialect.ts): where, and what it says of it. A fact of the construct, whatever shell the script is for. */
+export interface NotPosix { span: Span; says: string }
 
 export interface ExampleSection {
   label: string;

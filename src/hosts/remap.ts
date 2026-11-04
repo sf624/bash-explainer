@@ -1,9 +1,9 @@
 import { githubFileNotes } from './yaml';
 import { hostMeaningText } from '../messages-hosts';
-import type { ArgvLine, ArgvWord, ExplainOptions, LineExplanation, Pos, Span, Token } from '../analyzer-types';
+import type { ArgvLine, ArgvPart, ArgvWord, ExplainOptions, LineExplanation, Pos, Span, Token } from '../analyzer-types';
 import type { BashVersion } from '../bashversion';
 import { dialectIssues, type Shell } from '../dialect';
-import type { ReadingNode } from '../reading';
+import { type ReadingNode, tokenLines } from '../reading';
 import { descendants, type SyntaxTree } from '../syntax/tree';
 import { spanOf } from '../noteanchors';
 import { regionAt, regionShell, scriptTree, shellLines, shellStart } from './scripts';
@@ -65,6 +65,13 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     const m = hostMeaningText(whole[2])[lang];
     return lang === 'en' ? m[0].toUpperCase() + m.slice(1) : m;
   };
+  // A note names a placeholder as the extracted text has it (`${SRC}`): in the file it is what it stands for (`$(SRC)`),
+  // also in the problems made of the notes.
+  const lines = shellLines(extracted);
+  const rows = [...new Set([ex.line, ...(ex.anchors ?? []).map((a) => a.span.start.line), ...tokenLines(ex.items)])];
+  const names = rows.flatMap((l) => extracted.inserted[l].map(([a, b]) => [lines[l].slice(a, b), original[l].slice(extracted.maps[l][a], extracted.maps[l][b])]))
+    .filter(([inShell, file]) => file && inShell !== file);
+  const inFile = (text: string) => names.reduce((t, [inShell, file]) => t.split(inShell).join(file), text);
   const token = (t: Token): Token => {
     const sp = span(t.span);
     const label = relabel(t.label, t.span, !t.labelParts);
@@ -75,24 +82,19 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
       sayInstead(stands, host);
       return stands;
     }
-    return { ...t, label, span: sp, children: t.children.filter((c) => !insidePlaceholder(c)).map(token) };
+    // (What it says names a placeholder as the file has it, as a note does.)
+    const said = { explanation: inFile(t.explanation), ...(t.marks ? { marks: t.marks.map((m) => ({ ...m, text: inFile(m.text) })) } : {}) };
+    return { ...t, ...said, label, span: sp, children: t.children.filter((c) => !insidePlaceholder(c)).map(token) };
   };
   // The reading tree, as the tokens: in the original, labelled with its text there, without the parts of a
   // placeholder. (The labels that are not code stay: a skeleton, a language's name.)
   const reading = (n: ReadingNode): ReadingNode => {
     const code = n.kind !== 'language' && n.kind !== 'line' && !n.label.includes('‹');
-    const out: ReadingNode = { ...n, label: relabel(n.label, n.span, code), span: span(n.span) };
+    const out: ReadingNode = { ...n, label: relabel(n.label, n.span, code), span: span(n.span), ...(n.text !== undefined ? { text: inFile(n.text) } : {}) };
     const host = placeholder(n.span);
     if (host) return { ...out, text: host, children: [] };
     return { ...out, children: n.children.filter((c) => !insidePlaceholder(c)).map(reading) };
   };
-  // A note names a placeholder as the extracted text has it (`${SRC}`): in the file it is what it stands for (`$(SRC)`),
-  // also in the problems made of the notes.
-  const lines = shellLines(extracted);
-  const rows = [...new Set([ex.line, ...(ex.anchors ?? []).map((a) => a.span.start.line)])];
-  const names = rows.flatMap((l) => extracted.inserted[l].map(([a, b]) => [lines[l].slice(a, b), original[l].slice(extracted.maps[l][a], extracted.maps[l][b])]))
-    .filter(([inShell, file]) => file && inShell !== file);
-  const inFile = (text: string) => names.reduce((t, [inShell, file]) => t.split(inShell).join(file), text);
   const noteInFile = <N extends { text: string; body: string; head?: string }>(n: N): N => ({ ...n, text: inFile(n.text), body: inFile(n.body), ...(n.head ? { head: inFile(n.head) } : {}) });
   // A fact's rewrites edit the extracted text, at its offsets and in its syntax (`${MSG}` for make's `$(MSG)`, `$f`
   // for `$$f`, a line a backslash continues in a Dockerfile): not the file. The facts of a host carry none (src/rewrite.ts),
@@ -116,7 +118,9 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     ...(ex.facts ? { facts: ex.facts.map(factInFile) } : {}),
     ...(ex.anchors ? { anchors: ex.anchors.map(({ rewrite: _r, ...a }) => ({ ...a, text: inFile(a.text), span: span(a.span) })) } : {}),
     ...(ex.reading ? { reading: reading(ex.reading) } : {}),
-    ...(ex.argv ? { argv: ex.argv.map((l) => argvLine(l, span)) } : {}),
+    ...(ex.sentence ? { sentence: inFile(ex.sentence) } : {}),
+    ...(ex.argv ? { argv: ex.argv.map((l) => argvLine(l, span, inFile)) } : {}),
+    ...(ex.notPosix ? { notPosix: ex.notPosix.map((n) => ({ ...n, span: span(n.span) })) } : {}),
   };
 }
 
@@ -282,12 +286,13 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
   return out;
 }
 
-/** What a program receives (`LineExplanation.argv`), with its places in the file (`span`); the texts stay as the extracted script has them. */
-function argvLine(l: ArgvLine, span: (sp: Span) => Span): ArgvLine {
-  const word = (w: ArgvWord): ArgvWord => ({ ...w, from: span(w.from) });
+/** What a program receives (`LineExplanation.argv`), with its places in the file (`span`) and its texts as the file has them (`inFile`: `$(OUT)`, not the extracted `${OUT}`). */
+function argvLine(l: ArgvLine, span: (sp: Span) => Span, inFile: (text: string) => string): ArgvLine {
+  const part = (p: ArgvPart): ArgvPart => ('text' in p ? { text: inFile(p.text) } : { ...p, code: inFile(p.code), label: inFile(p.label) });
+  const word = (w: ArgvWord): ArgvWord => ({ ...w, from: span(w.from), parts: w.parts.map(part) });
   return {
     ...l, span: span(l.span), words: l.words.map(word),
-    removed: l.removed.map((r) => ({ ...r, span: span(r.span), ...(r.word ? { word: r.word.map(word) } : {}) })),
+    removed: l.removed.map((r) => ({ ...r, span: span(r.span), text: inFile(r.text), says: inFile(r.says), ...(r.word ? { word: r.word.map(word) } : {}) })),
     ...(l.fails ? { fails: { ...l.fails, span: span(l.fails.span) } } : {}),
   };
 }

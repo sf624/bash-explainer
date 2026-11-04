@@ -18,7 +18,7 @@ import { Lang, resolveLang } from '../src/i18n';
 import { problemLevels } from '../src/levels';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { needsReading, panelUpdate } from '../src/ui/panelView';
+import { explainNeeds, panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
 import { editorAttributes, editorHint, isPaneKey, LineAnnouncer } from './a11y';
 import { CHANNEL, COMMIT, PR, UP, VERSION } from './build-info';
@@ -242,7 +242,7 @@ function updatePanel(): void {
   if (!doc) return;
   const line = editor.cursorLine();
   const s = shells();
-  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: needsReading(panel.panelState()), sentence: true });
+  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), ...explainNeeds(panel.panelState()), sentence: true });
   const auto = autoShellAt(doc, s, line);
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);

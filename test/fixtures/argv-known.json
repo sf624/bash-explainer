@@ -15,8 +15,8 @@
       "values": { "ran": 245, "words": 781, "placeholders": 93 }
     },
     "snippets": {
-      "probe": { "ran": 380, "words": 895, "placeholders": 115 },
-      "values": { "ran": 385, "words": 907, "placeholders": 115 }
+      "probe": { "ran": 380, "words": 889, "placeholders": 121 },
+      "values": { "ran": 385, "words": 901, "placeholders": 121 }
     }
   },
   "known": [

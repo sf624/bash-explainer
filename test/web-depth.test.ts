@@ -21,10 +21,10 @@ const SCRIPTS = {
 
 /**
  * The longest a page may be at depth 2, in px, by the page's width. The plan proposed 750 and 1,500, half the prototype's; what each row must
- * hold leaves more: panel-redesign.md, "The length budget". These are what the folds and the closer rows reach (1,207 and 1,713), with room
- * for a font's width.
+ * hold leaves more: panel-redesign.md, "The length budget". These are what the folds and the closer rows reach, with room for a font's width: with
+ * the switch "What the program receives" on (its row, and a line under each command: 1,380 and 1,921) and off (its row: 1,244 and 1,771).
  */
-const BUDGET = { 1280: 1300, 390: 1850 } as const;
+const BUDGET = { on: { 1280: 1420, 390: 1980 }, off: { 1280: 1280, 390: 1820 } } as const;
 
 describe('the panel: one view with a depth', function () {
   this.timeout(240000);
@@ -156,7 +156,7 @@ describe('the panel: one view with a depth', function () {
   for (const [width, lang, theme] of [[1280, 'en', 'dark'], [1280, 'ja', 'light'], [640, 'en', 'light'], [640, 'ja', 'dark'], [390, 'en', 'dark'], [390, 'ja', 'light']] as const) {
     it(`draws one role line at one place on each row, a pipe on one line, nothing sticking out, ${width} px, ${lang}, ${theme}`, async () => {
       const ctx = await browser.newContext({ locale: lang === 'ja' ? 'ja-JP' : 'en-US', viewport: { width, height: 800 }, colorScheme: theme });
-      await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.panel.animations': false })); localStorage.setItem('bash-explainer-panel', '{"depth":2}'); } catch {}`);
+      await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.panel.animations': false })); localStorage.setItem('bash-explainer-panel', '{"depth":2,"receives":${receives === 'on'}}'); } catch {}`);
       const page = await ctx.newPage();
       const panel = await open(page, SCRIPTS.s2[0]);
       await depthDrawn(panel, 2);
@@ -242,17 +242,17 @@ describe('the panel: one view with a depth', function () {
   });
 
   for (const width of [1280, 390] as const) {
-    it(`keeps the page at depth 2 within its budget for each line of the four test scripts, ${width} px, in both languages`, async () => {
+    for (const receives of ['on', 'off'] as const) it(`keeps the page at depth 2 within its budget for each line of the four test scripts, ${width} px, in both languages, with the switch ${receives}`, async () => {
       for (const lang of ['en', 'ja'] as const) {
         const ctx = await browser.newContext({ locale: lang === 'ja' ? 'ja-JP' : 'en-US', viewport: { width, height: 800 } });
-        await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.panel.animations': false })); localStorage.setItem('bash-explainer-panel', '{"depth":2}'); } catch {}`);
+        await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.panel.animations': false })); localStorage.setItem('bash-explainer-panel', '{"depth":2,"receives":${receives === 'on'}}'); } catch {}`);
         const page = await ctx.newPage();
         for (const [name, [text, line]] of Object.entries(SCRIPTS)) {
           const panel = await open(page, text, line);
           await depthDrawn(panel, 2);
           await page.waitForTimeout(100);
           const h = await panel.evaluate(`Math.ceil(document.getElementById('main').getBoundingClientRect().bottom + scrollY)`) as number;
-          assert.ok(h <= BUDGET[width], `${name}, ${lang}: ${h} px`);
+          assert.ok(h <= BUDGET[receives][width], `${name}, ${lang}: ${h} px`);
         }
         await ctx.close();
       }

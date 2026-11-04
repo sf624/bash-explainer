@@ -3,7 +3,7 @@ import { Span } from '../analyzer-types';
 import { ExplainService } from '../service';
 import { toPlainMarkdown } from './render';
 import { ui } from './texts';
-import { FromPanel, needsReading, PANEL_BODY, PanelState, panelState, panelUpdate } from './panelView';
+import { explainNeeds, FromPanel, needsDiffer, PANEL_BODY, PanelState, panelState, panelUpdate } from './panelView';
 import { wrapsLikeEditor } from './lineBox';
 import { isPanelQuestion, panelReply } from './panelReply';
 import { unreadableThemeNotice } from './builtinThemes';
@@ -157,7 +157,7 @@ export class PanelController implements vscode.Disposable {
       return;
     }
     const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
-    const ex = this.service.explain(ed.document, line, needsReading(this.state), true);
+    const ex = this.service.explain(ed.document, line, explainNeeds(this.state), true);
     this.panel.title = `${t.title}: ${fileName(ed.document)}:${line + 1}`;
     void this.panel.webview.postMessage(panelUpdate({
       lang,
@@ -185,11 +185,11 @@ export class PanelController implements vscode.Disposable {
       return this.post();
     }
     if (m.type === 'panelState') {
-      const before = needsReading(this.state);
+      const before = explainNeeds(this.state);
       this.state = panelState(m.state);
       void this.ctx.globalState.update(STATE_KEY, this.state);
-      // The rows of the depth just chosen, with the reading tree at depth 2.
-      if (needsReading(this.state) !== before) this.post();
+      // The rows of what was just chosen, with the data they read.
+      if (needsDiffer(explainNeeds(this.state), before)) this.post();
       return;
     }
     if (m.type === 'themeBase') {

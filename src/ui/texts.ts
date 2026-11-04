@@ -79,6 +79,23 @@ export const ui = {
         received: {
           asWritten: 'プログラムが書いたとおりに受け取る単語', changed: 'プログラムが変わった形で受け取る単語', hole: '実行するまで分からない値', many: '1 つとは限らない単語',
         },
+        notPosix: 'POSIX sh にない書き方。bash の問題ではなく、sh に移すときに関わる',
+      },
+      // (What the switch adds, and the marks of the rows: src/ui/panelReceives.ts.)
+      receives: {
+        switch: 'プログラムが受け取るもの', on: 'プログラムが受け取るものを表示', off: 'プログラムが受け取るものを非表示',
+        program: '受け取る単語:', onlyName: '受け取るのは名前だけ:', nothing: '単語が残らず、何も実行されない',
+        inside: {
+          builtin: { some: '{shell}の中で動き、受け取るのは:', none: '{shell}の中で動き、引数はなし' },
+          function: { some: 'シェルの関数で、受け取るのは:', none: 'シェルの関数で、引数はなし' },
+        },
+        fails: 'ここで bash が止まり、実行されない: {error}',
+        errors: {
+          'ambiguous-redirect': 'リダイレクト先が 1 語にならない', 'no-match': 'パターンに合うファイル名がない（`failglob`）', unbound: '設定されていない変数がある（`set -u`）',
+          'parameter-null': '変数が空か設定されていない（`${x:?}`）', substring: '`${x:offset:length}` の長さが負になる',
+        },
+        many: '1 つとは限らない単語', space: '空白',
+        handled: '{shell}が処理', handledSays: '{shell}が処理し、プログラムには渡らない', bash: 'bash ', theShell: 'シェル', more: 'ほか {n} 語', notPosix: 'POSIX sh にない', keyButton: '凡例',
       },
       // (What bash does to a word, on a row of depth 2: src/ui/panelSteps.ts.)
       steps: {
@@ -214,6 +231,23 @@ export const ui = {
         received: {
           asWritten: 'the program receives this word exactly as written', changed: 'the program receives this word changed', hole: 'a value known only when the line runs', many: 'not always one word',
         },
+        notPosix: 'a form POSIX sh does not have: no problem in bash, but it matters when moving to sh',
+      },
+      // (What the switch adds, and the marks of the rows: src/ui/panelReceives.ts.)
+      receives: {
+        switch: 'What the program receives', on: 'Showing what each program receives', off: 'Not showing what each program receives',
+        program: 'receives:', onlyName: 'receives only its name:', nothing: 'no word is left, so nothing runs',
+        inside: {
+          builtin: { some: 'runs inside {shell}, gets:', none: 'runs inside {shell}, gets no arguments' },
+          function: { some: 'a function of the shell, gets:', none: 'a function of the shell, gets no arguments' },
+        },
+        fails: 'bash stops here, so it does not run: {error}',
+        errors: {
+          'ambiguous-redirect': 'the target of a redirection is not one word', 'no-match': 'no file name matches the pattern (`failglob`)', unbound: 'a variable is not set (`set -u`)',
+          'parameter-null': 'a variable is empty or not set (`${x:?}`)', substring: 'the length in `${x:offset:length}` is negative',
+        },
+        many: 'not always one word', space: 'space',
+        handled: 'handled by {shell}', handledSays: '{shell} handles it; the program never sees it', bash: 'bash', theShell: 'the shell', more: 'and {n} more words', notPosix: 'not in POSIX sh', keyButton: 'Key',
       },
       steps: {
         lead: "bash's steps:", summary: 'nothing expands', maybe: '{kind} (maybe)', off: 'no {kinds}', and: ', ', lastAnd: ' or ', because: ' ({why})',
