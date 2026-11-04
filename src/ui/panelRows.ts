@@ -226,7 +226,7 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build, shell: Shell = { l
     ...(range ? roleFields(range, unique(all.flatMap((r) => r.refs ?? [])), b.lang) : {}),
     ...(argv ? { receives: receivesLine(argv, b.lang, b.shell) } : {}),
     ...(received ? { received } : {}),
-    ...(t.origin === 'script' ? { inScript: true as const } : {}),
+    ...([t, ...chain].some((x) => x.origin === 'script') ? { inScript: true as const } : {}),
     children,
   };
   for (const x of said) if (x.texts?.length) b.saying.set(x.parts, x.texts);
