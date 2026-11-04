@@ -41,11 +41,15 @@ describe('the roles of a row (src/ui/panelRoles.ts)', () => {
 
   it('shows the cases no short line in the tests above gives', () => {
     const en = (n: Partial<ReadingNode> & Pick<ReadingNode, 'layer' | 'kind'>) => chipOf(node(n), 'en');
-    // A value that bash expands first; an operand that does; a language the table does not name; a kind of no table.
+    // A value that bash expands first; an operand that does; a language the table does not name.
     assert.strictEqual(en({ layer: 'command', kind: 'argument', valueFor: '-f', expands: 'glob' }), 'value of -f: the first of the expanded words; the rest are operands');
     assert.strictEqual(en({ layer: 'command', kind: 'argument', expands: 'split' }), 'operand: each word it splits into');
     assert.strictEqual(en({ layer: 'language', kind: 'language', label: 'brainfuck' }), 'brainfuck');
-    assert.strictEqual(en({ layer: 'bash', kind: 'unheard-of' }), 'unheard-of');
+    assert.strictEqual(en({ layer: 'bash', kind: 'unheard-of' }), '');
+    // (Inside a language, and on a piece of a word bash has no node for, a token's kind is no place: no name.)
+    assert.strictEqual(en({ layer: 'language', kind: 'keyword' }), '');
+    assert.strictEqual(en({ layer: 'child', kind: 'pattern' }), '');
+    assert.strictEqual(en({ layer: 'command', kind: 'pattern' }), '');
     // A command name with what bash runs for it, when it has no name badge to say so.
     assert.strictEqual(en({ layer: 'bash', kind: 'commandName', resolves: 'builtin' }), 'command name · builtin');
     assert.strictEqual(en({ layer: 'command', kind: 'command', resolves: 'file', name: { kind: 'program' } as unknown as ReadingNode['name'] }), 'command name');
@@ -54,13 +58,13 @@ describe('the roles of a row (src/ui/panelRoles.ts)', () => {
   it('says who reads each node, and where a new reader\'s band starts', () => {
     const root = reading('x=$(date +%F); [[ $x =~ ^a+ ]]');
     const roles = readingNodes(root).map((n) => [n, roleFor(n, upOf(root, n), 'en')] as const);
-    assert.deepStrictEqual(roles.filter(([, r]) => r.band !== undefined).map(([n, r]) => `${n.label}: ${r.band}`), [': bash', 'date +%F: subshell', '+%F: date reads it', 'date: date format', 'regex: regex']);
+    assert.deepStrictEqual(roles.filter(([, r]) => r?.band !== undefined).map(([n, r]) => `${n.label}: ${r!.band}`), [': bash', 'date +%F: subshell', '+%F: date reads it', 'date: date format', 'regex: regex']);
     assert.strictEqual(readerOf(find(root, 'child', 'date +%F'), 'en'), 'a subshell (a copy of this shell) parses it again');
     assert.strictEqual(readerOf(find(root, 'command', '+%F'), 'en'), 'date reads it, not bash');
     assert.strictEqual(readerOf(find(root, 'language', 'regex'), 'en'), 'bash reads it itself (its regex matching, POSIX ERE)');
     assert.strictEqual(readerOf(find(root, 'bash', '$x'), 'en'), 'bash parses it');
-    // (A language's own tokens are in its band: no name of their own.)
-    assert.strictEqual(bandOf(node({ layer: 'language', kind: 'keyword' }), 'en'), '');
+    // (A language's own tokens have no role.)
+    assert.strictEqual(roleFor(node({ layer: 'language', kind: 'keyword' }), undefined, 'en'), undefined);
     assert.strictEqual(readerOf(node({ layer: 'language', kind: 'language', label: 'prompt', reader: 'bash' }), 'en'), 'bash reads it itself, each time it prints the prompt');
     // A script a command gives a shell, and one whose shell is not said (a substitution's: a subshell).
     assert.strictEqual(readerOf(node({ layer: 'child', kind: 'script', process: 'shell' }), 'en'), 'a newly started shell (another process) parses it again');
@@ -80,19 +84,19 @@ describe('the roles of a row (src/ui/panelRoles.ts)', () => {
       const root = reading(src);
       const n = find(root, layer, label);
       const up = upOf(root, n);
-      return roleLine([...(up && up.layer !== n.layer ? [roleFor(up, upOf(root, up), 'en')] : []), roleFor(n, up, 'en')])!;
+      return roleLine([...(up && up.layer !== n.layer ? [roleFor(up, upOf(root, up), 'en')!] : []), roleFor(n, up, 'en')!])!;
     };
     const said = (l: ReturnType<typeof roleLine>) => l!.chips.map((c) => `${c.changes ? '→ ' : ''}${c.text}`).join(' | ') + (l!.reader ? ` | ${l!.reader}` : '');
     assert.strictEqual(said(line('tar -czf "$b" x', 'command', '"$b"')), 'argument | → value of -f | tar reads it');
     assert.strictEqual(line('x=$(date +%F)', 'child', 'date +%F').reader, 'subshell');
     assert.strictEqual(roleLine([]), undefined);
     // (bash taking over says no reader: it is the default.)
-    assert.strictEqual(roleLine([roleFor(node({ layer: 'bash', kind: 'word' }), undefined, 'en')])!.reader, undefined);
+    assert.strictEqual(roleLine([roleFor(node({ layer: 'bash', kind: 'word' }), undefined, 'en')!])!.reader, undefined);
     // (The same name twice is one name; it opens to who reads it, and what the kind is.)
-    const name = roleFor(node({ layer: 'bash', kind: 'argument' }), node({ layer: 'bash', kind: 'line' }), 'en');
+    const name = roleFor(node({ layer: 'bash', kind: 'argument' }), node({ layer: 'bash', kind: 'line' }), 'en')!;
     assert.deepStrictEqual(roleLine([name, name])!.chips.length, 1);
     assert.match(roleLine([name])!.chips[0].said, /An argument: bash expands it.*\(bash parses it\)/);
-    assert.strictEqual(roleLine([roleFor(node({ layer: 'bash', kind: 'unheard-of' }), node({ layer: 'bash', kind: 'line' }), 'en')])!.chips[0].said, 'bash parses it');
+    assert.strictEqual(roleLine([roleFor(node({ layer: 'bash', kind: 'operator' }), node({ layer: 'bash', kind: 'line' }), 'en')!])!.chips[0].said, 'bash parses it');
   });
 
   it('colours a node\'s code by the role of its kind, as the list colours its tokens', () => {

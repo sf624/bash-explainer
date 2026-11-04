@@ -134,6 +134,8 @@ export interface Token {
   language?: string;
   /** On the tokens of a string read as a script (`origin` `script`): which shell reads it. */
   process?: ScriptProcess;
+  /** With `ExplainOptions.reading`, on the first token of a string read as a script: the string's own reading (src/explain/scripts.ts). */
+  reading?: ReadingNode[];
   /**
    * On the token of a command name (a simple command's, a command another runs, `[`, and the reserved words `time`
    * and `[[`): what the name is here, who looks it up, and what else the same name is (src/namefacts.ts).

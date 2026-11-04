@@ -376,7 +376,7 @@ export class LineExplainer implements Explainer, LineOutput {
 
   nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional'], outer: Pick<ExplainOptions, 'unread' | 'unsure' | 'unreached'> = {}): LineExplanation {
     // (The positional parameters are those of this string's shell: a string in it has its own, or none.)
-    return this.walk.nestedLine(script.tree, line, script.shell, script.kind, { ...this.opts, reading: false, argv: false, positional, ...outer });
+    return this.walk.nestedLine(script.tree, line, script.shell, script.kind, { ...this.opts, argv: false, positional, ...outer });
   }
 
   end(): void {

@@ -24,21 +24,22 @@ export function aboutKey(n: Pick<ReadingNode, 'layer' | 'kind' | 'reader' | 'lab
 /** What a node's kind is in general, where the table says it. */
 export const aboutOf = (n: ReadingNode, lang: Lang): string | undefined => of(texts(lang).about, aboutKey(n));
 
-/** The name a node is shown with: its kind (a command name with what it runs), or the language. */
+/**
+ * The name a node is shown with: where it stands in bash's reading or in its command's (a command name with what it runs), or the language. '' where
+ * it stands nowhere that can be named: a token inside a language, whose row says what it is, and a piece of a word bash has no node for (`*` of `*.txt`).
+ */
 export function chipOf(n: ReadingNode, lang: Lang): string {
   const t = texts(lang);
   if (n.kind === 'language') return of(t.languages, n.label) ?? n.label;
   // (A word the command reads that is not an option is an operand: bash's arguments are called arguments.)
-  // (A command another runs is a command name too, as bash's own are: its badge says what it is, and who runs it.)
-  const named = n.name && ['command', 'builtin', 'function', 'alias'].includes(n.kind);
   if (n.layer === 'command' && n.valueFor) {
     // (A word that bash expands first: the command reads each word that comes out, not the word as written. Its
     // first word is the value of the option.)
     return (n.expands ? t.valueExpands : t.valueFor).replace('{flag}', n.valueFor);
   }
-  const shell = n.layer === 'bash' || n.layer === 'child';
-  let kind = (named && t.kinds.commandName) || (shell && of(t.kinds, n.kind)) || (n.layer === 'command' && of(t.commandKinds, n.kind))
-    || of(t.tokenKinds, n.kind) || n.kind;
+  // (A command another runs is a command name too, as bash's own are: its badge says what it is, and who runs it.)
+  let kind = n.layer === 'command' ? of(t.commandKinds, n.kind) : n.layer === 'language' ? undefined : of(t.kinds, n.kind);
+  if (!kind) return '';
   const expands = n.layer === 'command' && n.expands ? t.expands[n.expands] : undefined;
   if (expands) kind = expands.replace('{kind}', kind);
   // (A command name's badge says what it runs.)
@@ -60,12 +61,12 @@ export function startsBand(n: ReadingNode, parent: ReadingNode | undefined): boo
     || (n.layer === 'child' && parent.process !== n.process);
 }
 
-/** The name at the right of a band: where a new reader takes over ('' for a language's own tokens). */
+/** The name at the right of a band: where a new reader takes over. */
 export function bandOf(n: ReadingNode, lang: Lang): string {
   const t = texts(lang);
   // (A node of the layer `command` always has its reader: the command's name, src/reading.ts.)
   if (n.layer === 'command') return t.reads.replace('{name}', n.reader!);
-  if (n.layer === 'language') return n.kind === 'language' ? chipOf(n, lang) : '';
+  if (n.layer === 'language') return chipOf(n, lang);
   if (n.layer === 'child') return t.bands.child[processOf(n)];
   return t.bands.bash;
 }
@@ -82,19 +83,23 @@ export interface RowRole {
   layer: Layer;
   /** Its name (`chipOf`). */
   chip: string;
-  /** Who takes over the reading here (`bandOf`): '' for a language's own tokens, none where bash goes on reading. */
+  /** Who takes over the reading here (`bandOf`), none where the same reader goes on. */
   band?: string;
+  /** In the layer `child`: which shell parses it. */
+  process?: ScriptProcess;
   /** What its name opens to: what its kind is in general (`aboutOf`), and who reads it, in full (`readerOf`). */
   said: string;
 }
 
-/** The role of a node on a row: `up`, the node around it. */
-export function roleFor(n: ReadingNode, up: ReadingNode | undefined, lang: Lang): RowRole {
+/** The role of a node on a row: `up`, the node around it. None where it has no name (`chipOf`). */
+export function roleFor(n: ReadingNode, up: ReadingNode | undefined, lang: Lang): RowRole | undefined {
+  const chip = chipOf(n, lang);
+  if (!chip) return undefined;
   const id = [n.layer, n.kind, ...(n.valueFor ? [`value:${n.valueFor}`] : []), ...(n.expands ? [n.expands] : [])].join(':');
   const about = aboutOf(n, lang);
   const reader = readerOf(n, lang);
   const said = about ? about + ui[lang].panel.steps.because.replace('{why}', () => reader) : reader;
-  return { id, layer: n.layer, chip: chipOf(n, lang), ...(startsBand(n, up) ? { band: bandOf(n, lang) } : {}), said };
+  return { id, layer: n.layer, chip, ...(startsBand(n, up) ? { band: bandOf(n, lang) } : {}), ...(n.process ? { process: n.process } : {}), said };
 }
 
 /** A name on a row's role line: what comes from another reader starts with an arrow. `said`: what it opens to; `id`: the same in both languages. */

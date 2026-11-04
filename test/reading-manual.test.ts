@@ -392,7 +392,7 @@ describe('the reading tree as the Bash manual reads the builtins (chapter 4)', (
     assert.deepStrictEqual(child.refs, ['3.7.1', '3.7.2', '4.2']);
     // (The other nodes of such a string keep their tokens' sections, and a value cites none: `eval 'x=1'`.)
     const parts = readingNodes(reading("eval 'x=1'")).filter((n) => n.layer === 'child').map((n) => [n.kind, n.label, n.refs]);
-    assert.deepStrictEqual(parts, [['assignment', 'x=1', ['3.4']], ['number', '1', undefined]]);
+    assert.deepStrictEqual(parts, [['command', 'x=1', ['3.2.2', '3.7.1']], ['assignment', 'x=1', ['3.4', '3.7.1']], ['name', 'x', undefined], ['operator', '=', ['3.4']], ['value', '1', undefined]]);
   });
 
   it('reads the operands of `set` as the positional parameters, `-` and `--` as 4.3.1 says', () => {
@@ -659,8 +659,8 @@ describe('the reading tree as the Bash manual reads aliases and arrays (chapter 
     assert.deepStrictEqual(kids(node(src, 'a[$i]', 'name')), ['name a', 'operator [', 'expansion $i', 'operator ]']);
     assert.deepStrictEqual(kids(node(src, 'a[i]', 'name')), ['name a', 'operator [', 'name i', 'operator ]']);
     // `@` and `*`: all the elements, a node of their own.
-    assert.deepStrictEqual(kids(node(src, 'a[@]', 'name')), ['name a', 'operator [', 'operator @', 'operator ]']);
-    assert.deepStrictEqual([node(src, '@', 'operator').refs, node(src, '*', 'operator').text], [['6.7'], 'applies to every element of the array']);
+    assert.deepStrictEqual(kids(node(src, 'a[@]', 'name')), ['name a', 'operator [', 'subscript @', 'operator ]']);
+    assert.deepStrictEqual([node(src, '@', 'subscript').refs, node(src, '*', 'subscript').text], [['6.7'], 'applies to every element of the array']);
     // (An element in the index, and an index that is no expression: a word, as bash would fail on it.)
     assert.deepStrictEqual(kids(node(src, 'b[1]+2', 'expression')), ['name b[1]', 'operator +', 'expression 2']);
     assert.deepStrictEqual(kids(node(src, 'b[1]', 'name')), ['name b', 'operator [', 'expression 1', 'operator ]']);
@@ -764,7 +764,7 @@ describe('the reading tree as the Bash manual reads aliases and arrays (chapter 
     assert.match(node('a=(1); a[@]=x', 'a[@]=x', 'assignment').text!, /^Bash refuses this assignment: `@` is no index of an indexed array \("bad array subscript", status 1\)$/);
     assert.match(node('source f; a[*]=x', 'a[*]=x', 'assignment').text!, /status 1; if `a` is associative, it sets the element with the key `\*`\)$/);
     assert.match(node('declare -A m; m[@]=x', 'm[@]=x', 'assignment').text!, /with the key `@`/);
-    assert.deepStrictEqual(kids(node('a=(1); a[@]=x', 'a[@]', 'name')), ['name a', 'operator [', 'operator @', 'operator ]']);
+    assert.deepStrictEqual(kids(node('a=(1); a[@]=x', 'a[@]', 'name')), ['name a', 'operator [', 'subscript @', 'operator ]']);
     assert.strictEqual(said("declare -A m; unset 'm[@]'", "'m[@]'"), 'Unset the element of the associative array `m` with the key `@` (not all the elements)');
     assert.strictEqual(said("a=(1); unset 'a[@]'", "'a[@]'"), 'Remove all the elements of the array `a` (it stays, empty)');
     assert.strictEqual(said("source f; unset 'a[*]'", "'a[*]'"), 'Remove all the elements of the array `a` (it stays, empty; if it is associative, only the element with the key `*`)');

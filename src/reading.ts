@@ -12,8 +12,8 @@
 // - `child`: a text bash parses again as a script: the text of a `$( )`, `<( )` or backquotes, which a subshell runs
 //   (the commands under a substitution node); or a string a command gives a shell (`Token.origin` `script`): `bash -c`
 //   starts another shell, `eval` and `trap` read it again in this shell, `ssh` sends it to a shell on another machine.
-//   `ReadingNode.process` says which. Levels inside levels (`bash -c 'echo $(pwd)'`, a `$( )` in a `$( )`) are all
-//   this layer: they are not counted.
+//   `ReadingNode.process` says which. A string has the reading a script of that text has (`Token.reading`, `readAgain`).
+//   Levels inside levels (`bash -c 'echo $(pwd)'`, a `$( )` in a `$( )`) are all this layer: they are not counted.
 // - `command`: each command reads its arguments as its spec says: the tokens of the argument interpreter
 //   (`Token.origin` `argv`: options, operands, subcommands, a command it runs, the expression of `test`), under the
 //   argument word each is about (or after the words, when one reads several: `-n 5`, `[`'s expression).
@@ -64,14 +64,15 @@ export type ShellKind =
   | 'expression' // an expression of `[[ ]]` (a conditional expression, 6.4) or of arithmetic (6.5), and a number there
   | 'descriptor' // the file descriptor a redirection is about, written before its operator: `2>`, `{fd}>` (3.6)
   | 'delimiter' // the word after `<<`, which ends a here-document: not a word bash expands (3.6.6)
+  | 'subscript' // `@` or `*` as the index of an array: all its elements (6.7), no expression
   | 'part'; // another part of a construct: the body of a loop, `do … done`
 
 export interface ReadingNode {
   layer: Layer;
   /**
-   * A `ShellKind` in the layers `bash` and `child` (except under a string a command gives a shell, which has tokens
-   * only, and the parts bash reads in a word that have no node of their own: a glob, an escape); in the others, the
-   * token's `Kind`, or `language` (the root of a language, labelled with its name).
+   * A `ShellKind` in the layers `bash` and `child` (except the parts bash reads in a word that have no node of their
+   * own, a glob, an escape, which have their token's `Kind`); in the others, the token's `Kind`, or `language` (the root
+   * of a language, labelled with its name).
    */
   kind: string;
   /** The code (its first line, shortened); the language of a `language`. */
@@ -270,6 +271,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   /** The parts of the line in `n` that the explanation covers; `layer`: who reads `n`. */
   const collect = (n: SyntaxNode, layer: Layer): ReadingNode[] => withLists(n).flatMap((c) => {
     const s = spanOf(c);
+    // (A redirection of a compound command after its end, on a later line, which the line of its first word says too: `done < f`.)
+    if (REDIRECTS.has(c.type) && c.parent!.type === 'redirected_statement' && le(range.end, s.start) && shellAt.has(keyOf(s))) return node(c, layer);
     if (c.endIndex === c.startIndex || le(s.end, range.start) || le(range.end, s.start)) return [];
     if (spanWithin(s, range)) return node(c, layer);
     // A block around the line: its parts on the line. (A statement that is not a block is explained whole, so the
@@ -367,7 +370,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   /** A compound command, a list, a pipeline, a function: its parts in order, keywords and operators included. */
   const construct = (c: SyntaxNode, layer: Layer, kind: ShellKind): ReadingNode => {
     const children = withLists(c).flatMap((x) => {
-      if (x.field === 'name' && kind === 'function') return [shellNode(x, layer, 'name', [])];
+      // (The name of a function or of a coprocess, which bash does not expand.)
+      if (x.field === 'name' && (kind === 'function' || kind === 'coprocess')) return [shellNode(x, layer, 'name', [])];
       // (`time -p`: the option of the reserved word, which bash reads as written, not a word it expands.)
       if (x.field === 'option' && c.type === 'time_statement') return [{ ...shellNode(x, layer, 'option', [], new Set(['option'])), refs: ['3.2.3'] }];
       // `time` and `!` are parts of the pipeline after them (3.2.3: `[time [-p]] [!] command1 [| command2]…`), as in
@@ -666,7 +670,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const at = 'type' in ix ? { start: ix.startIndex, end: ix.endIndex } : ix;
     const text = owner.text.slice(at.start - owner.startIndex, at.end - owner.startIndex);
     const span: Span = { start: posIn(owner, at.start), end: posIn(owner, at.end) };
-    if (text === '@' || text === '*') return { layer, kind: 'operator', label: text, span, ...(said ? saidBy(said) : {}), refs: ['6.7'], children: [] };
+    if (text === '@' || text === '*') return { layer, kind: 'subscript', label: text, span, ...(said ? saidBy(said) : {}), refs: ['6.7'], children: [] };
     const expr = cx.arrayKind(name, owner) !== 'indexed' ? undefined
       : 'type' in ix && (ix.type === 'number' || isExpression(ix)) ? ix : tree.arithmetic(owner, at.start, at.end);
     if (expr) {
@@ -784,7 +788,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       else if (t.origin === 'embedded') {
         if (languages) language(out, t, reader);
       }
-      else if (t.origin === 'script') out.push(scriptNode(t, t.process ?? 'shell'));
+      // (A string a shell reads: its own reading, which the string's first token holds, src/explain/scripts.ts.)
+      else if (t.origin === 'script') pushAll(out, t.reading ?? []);
       // (At the top, bash's tokens are the command's name, assignments and redirections, and the words it takes as
       // they are, with what is under them: the script of `eval "ls"`.)
       // A quoted word whose text a shell reads again (`eval "ls; echo hi"`) is an operand the command reads as a
@@ -804,33 +809,6 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     children: readParts(t.children, false, RUNS.has(t.kind) ? t.label : reader, t.kind !== 'assignment'),
   });
 
-  /** A token of a string a shell reads as a script; `process`: which shell. */
-  const scriptNode = (t: Token, process: ScriptProcess): ReadingNode => {
-    const kind = scriptKind(t);
-    // (A command name there is one that shell looks up, as bash does one of this line: 3.7.1, 3.7.2.)
-    const refs = kind.kind === 'commandName' ? union(['3.7.1', '3.7.2'], t.refs) : t.refs;
-    return {
-      layer: 'child', ...kind, label: t.label, span: t.span, ...saidBy(t), ...(refs ? { refs } : {}), ...(t.name ? { name: t.name } : {}), process,
-      // (What is not the script's is what a command of it reads: `t` is that command.)
-      children: t.children.flatMap((c) => (c.origin === 'script' ? [scriptNode(c, process)] : readParts([c], false, t.label))),
-    };
-  };
-
-  /**
-   * What a token of a script is, as the nodes of bash's reading say it: a command's token is its name (an alias, a
-   * builtin, a function; a name known only when it runs), and the others have their token's kind.
-   */
-  const scriptKind = (t: Token): { kind: string; resolves?: NameResolution['kind'] } => {
-    // (A list, an AND or OR list, a pipeline: as bash's own nodes are named, not as their tokens' kind, `operator`.)
-    if (t.grammar) return { kind: t.grammar };
-    if (t.kind === 'builtin') return { kind: 'commandName', resolves: 'builtin' };
-    if (t.kind === 'alias') return { kind: 'aliasWord' };
-    if (t.kind === 'function') return { kind: 'commandName', resolves: 'function' };
-    // (A name that is an expansion cites 3.7.1 alone.)
-    if (t.kind === 'command') return { kind: String(t.refs) === '3.7.1' ? 'expandedName' : 'commandName' };
-    return { kind: t.kind };
-  };
-
   /** Adds a token of a language to `out`: under the node of its language, which it starts when it is the first. */
   const language = (out: ReadingNode[], t: Token, reader: string): void => {
     const last = out[out.length - 1];
@@ -849,6 +827,15 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   // (A node that cites no section has no `refs`.)
   for (const n of readingNodes(root)) if (n.refs && !n.refs.length) delete n.refs;
   return root;
+}
+
+/**
+ * A node of the reading of a string a shell reads as a script, as the reading of the line around it has it: what the string's own shell parses
+ * is the layer `child`, of `process`, at `span` in the source; what it holds keeps its own reader (a command, a language, a `$( )` of that shell).
+ */
+export function readAgain(n: ReadingNode, process: ScriptProcess, span: (s: Span) => Span, keep: (c: ReadingNode) => boolean): ReadingNode {
+  const children = n.children.filter(keep).map((c) => readAgain(c, process, span, keep));
+  return { ...n, ...(n.layer === 'bash' ? { layer: 'child' as const, process } : {}), span: span(n.span), children };
 }
 
 /** Every node of a reading tree, depth first. */

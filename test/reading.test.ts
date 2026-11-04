@@ -247,22 +247,30 @@ describe('the reading tree of a line', () => {
       "    bash/argument 'echo a | wc -l'",
       "      bash/quote 'echo a | wc -l'",
       "      command/argument 'echo a | wc -l'",
-      '        child/pipeline echo | wc',
-      '          child/commandName echo',
-      '            command/argument a',
+      '        child/pipeline echo a | wc -l',
+      '          child/command echo a',
+      '            child/commandName echo',
+      '            child/argument a',
+      '              command/argument a',
       '          child/operator |',
-      '          child/commandName wc',
-      '            command/option -l',
+      '          child/command wc -l',
+      '            child/commandName wc',
+      '            child/argument -l',
+      '              command/option -l',
     ]);
     const r = explain("bash -c 'echo a | wc -l'").reading!;
     assert.strictEqual(find(r, 'echo', 'child').process, 'shell');
     assert.strictEqual(find(r, '-l', 'command').reader, 'wc');
     // (Levels inside levels are the same layer: the `$( )` of a string `bash -c` runs.)
-    assert.deepStrictEqual(outline(find(explain("bash -c 'echo $(pwd)'").reading!, 'echo', 'child')), [
-      'child/commandName echo',
-      '  command/argument $(pwd)',
+    assert.deepStrictEqual(outline(find(explain("bash -c 'echo $(pwd)'").reading!, 'echo $(pwd)', 'child')), [
+      'child/command echo $(pwd)',
+      '  child/commandName echo',
+      '  child/argument $(pwd)',
       '    child/substitution $(pwd)',
-      '      child/commandName pwd',
+      '      child/script pwd',
+      '        child/command pwd',
+      '          child/commandName pwd',
+      '    command/argument $(pwd)',
     ]);
   });
 
@@ -277,20 +285,26 @@ describe('the reading tree of a line', () => {
       '        bash/quote "ls; echo hi"',
       // (eval reads its operand as a script, which the shell that runs it reads again.)
       '        command/argument "ls; echo hi"',
-      '          child/list ls; echo',
-      '            child/commandName ls',
+      '          child/list ls; echo hi',
+      '            child/command ls',
+      '              child/commandName ls',
       '            child/operator ;',
-      '            child/commandName echo',
-      '              command/argument hi',
+      '            child/command echo hi',
+      '              child/commandName echo',
+      '              child/argument hi',
+      '                command/argument hi',
       '    bash/operator ;',
       "    bash/command trap 'rm -f x' EXIT",
       '      bash/commandName trap',
       "      bash/argument 'rm -f x'",
       "        bash/quote 'rm -f x'",
       "        command/argument 'rm -f x'",
-      '          child/commandName rm',
-      '            command/option -f',
-      '            command/argument x',
+      '          child/command rm -f x',
+      '            child/commandName rm',
+      '            child/argument -f',
+      '              command/option -f',
+      '            child/argument x',
+      '              command/argument x',
       '      bash/argument EXIT',
       '        command/argument EXIT',
     ]);
@@ -308,13 +322,15 @@ describe('the reading tree of a line', () => {
 
   it('shows every operand of `eval` as a text it reads as a script, quoted or not, and where the shell that reads it runs', () => {
     const operand = (src: string) => readingNodes(explain(src).reading!).filter((n) => n.layer === 'command' && n.reader === 'eval').map((n) => `${n.label}: ${n.text} > ${n.children.map((c) => `${c.layer}/${c.kind} ${c.label}`).join(', ')}`);
-    assert.deepStrictEqual(operand('eval ls'), ['ls: Text to read and run again > child/commandName ls']);
+    assert.deepStrictEqual(operand('eval ls'), ['ls: Text to read and run again > child/command ls']);
     // (The command names in it, as bash's own: a function, a name that is an expansion.)
-    assert.deepStrictEqual(operand("f() { :; }; eval f '$x'").map((x) => x.split(' > ')[1]), ['child/commandName f']);
-    assert.deepStrictEqual(operand("eval '$x y'").map((x) => x.split(' > ')[1]), ['child/expandedName $x']);
-    assert.deepStrictEqual(operand('eval "ls"'), ['"ls": Text to read and run again > child/commandName ls']);
+    assert.deepStrictEqual(operand("f() { :; }; eval f '$x'").map((x) => x.split(' > ')[1]), ['child/command f $x']);
+    assert.deepStrictEqual(operand("eval '$x y'").map((x) => x.split(' > ')[1]), ['child/command $x y']);
+    assert.strictEqual(find(explain("f() { :; }; eval f '$x'").reading!, 'f', 'child', 'commandName').resolves, 'function');
+    assert.strictEqual(find(explain("eval '$x y'").reading!, '$x', 'child', 'expandedName').process, 'same');
+    assert.deepStrictEqual(operand('eval "ls"'), ['"ls": Text to read and run again > child/command ls']);
     // (The list `ls; echo hi` in it, named as bash's own lists are.)
-    assert.deepStrictEqual(operand("eval 'ls; echo hi'"), ["'ls; echo hi': Text to read and run again > child/list ls; echo"]);
+    assert.deepStrictEqual(operand("eval 'ls; echo hi'"), ["'ls; echo hi': Text to read and run again > child/list ls; echo hi"]);
     assert.strictEqual(find(new Analyzer('ja').explainLine(parser.parse('eval "ls"'), 0, 'bash', { reading: true }).reading!, '"ls"', 'command').text, 'もう一度読んで実行する文字列');
     // In a pipeline or a `$( )`, eval runs in a subshell, and that shell reads the string: no new process, but not
     // the script's own shell. The tree says "the shell that runs it".
@@ -423,7 +439,7 @@ describe('the reading tree of a line', () => {
     assert.deepStrictEqual(find(assign, 'x', 'bash', 'aliasWord').children, []);
     assert.strictEqual(find(assign, 'a', 'command').reader, 'FOO=1 ls');
     // An alias in a string `eval` reads again; with no `expand_aliases`, bash looks up the name as written.
-    assert.strictEqual(find(explain("shopt -s expand_aliases\nalias ll='ls -l'\neval ll", 2).reading!, 'll', 'child').kind, 'aliasWord');
+    assert.strictEqual(find(explain("shopt -s expand_aliases\nalias ll='ls -l'\neval ll", 2).reading!, 'll', 'child', 'aliasWord').process, 'same');
     assert.strictEqual(find(explain("#!/bin/bash\nalias ll='ls -l'\nll x", 2).reading!, 'll').kind, 'commandName');
     // In a `$( )`, the subshell replaces it the same way.
     assert.deepStrictEqual(outline(find(explain("shopt -s expand_aliases\nalias ll='ls -l'\nx=$(ll a)", 2).reading!, 'll', 'child')), [
@@ -491,7 +507,8 @@ describe('the reading tree of a line', () => {
       '      command/option -c',
       '    bash/argument ls',
       '      command/argument ls',
-      '        child/commandName ls',
+      '        child/command ls',
+      '          child/commandName ls',
     ]);
   });
 

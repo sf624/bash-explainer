@@ -32,5 +32,5 @@ export const READING_KINDS: Readonly<Record<string, Kind>> = {
   commandName: 'command', aliasWord: 'command', expandedName: 'variable', argument: 'argument', assignmentArgument: 'assignment',
   word: 'argument', name: 'variable', heredoc: 'redirect', quote: 'string', arithmetic: 'expansion', brace: 'expansion',
   list: 'operator', andList: 'operator', orList: 'operator', pipeline: 'operator', command: 'operator', compound: 'keyword', clause: 'keyword', coprocess: 'keyword',
-  function: 'keyword', script: 'substitution', part: 'operator', expression: 'operator', descriptor: 'redirect', delimiter: 'redirect',
+  function: 'keyword', script: 'substitution', part: 'operator', expression: 'operator', subscript: 'operator', descriptor: 'redirect', delimiter: 'redirect',
 };
