@@ -14,7 +14,7 @@ import { programSections } from '../refs';
 import type { ExecEnv } from '../semantics/env';
 import { type NameResolution, resolveName } from '../semantics/names';
 import { attribute, option, type OptionState, refTarget, shoptIn } from '../semantics/state';
-import { type ReadKnown, readAs } from '../semantics/scriptstops';
+import { type ReadKnown, readAs, surelyRuns } from '../semantics/scriptstops';
 import { type SyntaxFault, syntaxFault } from '../semantics/syntaxerror';
 import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
 import { literalContent, staticWordValue, surelyHasSlash } from '../staticword';
@@ -192,25 +192,6 @@ function unseenDeclarations(cx: Explainer): boolean {
 }
 
 /** Whether an expression is one of `[[ ]]`, not of arithmetic. */
-const inTest = (n: SyntaxNode): boolean => ancestor(n, (p) => p.type === 'extended_test' || p.type === 'arithmetic_expansion' || p.type === 'arithmetic_command')?.type === 'extended_test';
-
-/**
- * Whether the command that holds `n` (arithmetic) can run without reading it: what follows the parameter in `${x:-…}`, `${x#…}`, `${x:…}`
- * (read only when the value calls for it: `${x#$((09))}` with `x` empty does not), what follows `&&` or `||` in `[[ ]]`, a pattern of `case`
- * after the first, the update of a C-style `for`. (`$(( 1 || 09 ))` reads it all the same.) In `$( )` it is another command, which reads it
- * whenever it runs.
- */
-export function readOnlySometimes(n: SyntaxNode): boolean {
-  for (let c = n, p = n.parent; p; c = p, p = p.parent) {
-    if (p.type === 'command_substitution' || p.type === 'process_substitution') return false;
-    if (p.type === 'expansion' && c !== p.namedChildren[0]) return true;
-    if (p.type === 'binary_expression' && c === p.namedChildren[1] && p.children.some((x) => x.type === '&&' || x.type === '||') && inTest(p)) return true;
-    if (p.type === 'case_item' && has(fields(p, 'value'), c) && (c !== fields(p, 'value')[0] || p !== p.parent!.namedChildren.find((x) => x.type === 'case_item'))) return true;
-    if (p.type === 'c_style_for_statement' && has(fields(p, 'update'), c)) return true;
-  }
-  return false;
-}
-
 /**
  * Where the text may be a script of its own, so that a fault of its text can be said: in a file surely a script
  * (`ExplainOptions.script`). A host's code is none for now (docs/roadmap.md), and a string read as a script says none: its
@@ -221,19 +202,13 @@ const inSurelyScript = (cx: Explainer): boolean => !!cx.opts.script && !cx.neste
 /** The syntax error of the script of a line. */
 export const syntaxFaultOf = (cx: Explainer): SyntaxFault | undefined => (inSurelyScript(cx) ? syntaxFault(cx.tree, cx.shell ?? 'bash', cx.opts.bashVersion) : undefined);
 
-/** What may not run when the script gets to it: a function, which may never be called; a branch; a loop, whose body may run no time. */
-const SOMETIMES: ReadonlySet<string> = new Set(['function_definition', 'if_statement', 'while_statement', 'for_statement', 'c_style_for_statement', 'select_statement', 'case_statement']);
-
 /**
  * How a fault of the command that holds `n` is said (`readAs`) where a run of the script gets to it, whatever the values: with no error in
- * the tree, and on no path that may leave it out (`SOMETIMES`, what follows `&&` or `||`, `readOnlySometimes`). None elsewhere,
+ * the tree, and on no path that may leave it out (`surelyRuns`). None elsewhere,
  * so a guard for another shell (`if [ -n "$ZSH_VERSION" ]; then a=(\${(f)x}); fi`) says nothing.
  */
 export function runsAs(cx: Explainer, n: SyntaxNode): ReadKnown | undefined {
-  if (!inSurelyScript(cx) || cx.tree.errors.length || readOnlySometimes(n)) return undefined;
-  for (let c = n, p = n.parent; p; c = p, p = p.parent) {
-    if (SOMETIMES.has(p.type) || (p.type === 'list' && c !== p.namedChildren[0]) || ((p.type === 'command_substitution' || p.type === 'process_substitution') && readOnlySometimes(p))) return undefined;
-  }
+  if (!inSurelyScript(cx) || cx.tree.errors.length || !surelyRuns(n)) return undefined;
   return readAs(cx.tree, n.startIndex, cx.opts.script, cx.state);
 }
 

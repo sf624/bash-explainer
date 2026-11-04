@@ -79,7 +79,7 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
   const st = model.at(n).run;
   if (option(st, 'set', 'nounset') !== 'on' || st.opaque) return undefined;
   const statement = ancestor(n, (a) => STATEMENTS.has(a.type))!;
-  if (model.dead(statement) || setBefore(statement, n, name) || unreliableNames(n).has(name) || guarded(n, name) || testedBefore(n, statement, name)) return undefined;
+  if (model.dead(statement) || setBefore(statement, n, name) || unreliableNames(n).has(name) || testedFirst(n, name)) return undefined;
   const isFunction = (a: SyntaxNode): boolean => a.type === 'function_definition';
   for (let fn = ancestor(n, isFunction); fn; fn = ancestor(fn, isFunction)) {
     if (!model.closed(nameText(field(fn, 'name')!)) || !model.calls.get(fn)?.size) return undefined;
@@ -103,6 +103,11 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
   const p = processOf(model.env(n));
   const exits = program ? 'command' : !p.sure ? 'shell' : p.kind === 'main' ? 'script' : p.kind === 'subshell' ? 'subshell' : 'shell';
   return { shown, name, exits, environment };
+}
+
+/** Whether a test of the name `name` keeps the read `n` from running unset: around it (`guarded`), or before its statement (`testedBefore`). */
+export function testedFirst(n: SyntaxNode, name: string): boolean {
+  return guarded(n, name) || testedBefore(n, ancestor(n, (a) => STATEMENTS.has(a.type))!, name);
 }
 
 const firstCache = new WeakMap<StateModel, Map<string, WeakMap<SyntaxNode, SyntaxNode | undefined>>>();

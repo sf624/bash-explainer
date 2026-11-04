@@ -14,6 +14,7 @@ import { keyOf, readAgain, type ReadingNode, readingNodes } from '../reading';
 import { type ExecEnv, linksAfter, reachOf, type SlotLink, variableIn, whereOf } from '../semantics/env';
 import { fromEnvironment, unlessUnread } from '../semantics/shellstate';
 import { type Missed, runsOwnName } from '../semantics/names';
+import { surelyRuns } from '../semantics/scriptstops';
 import { type NestedScript, plainReads, scriptSourceIndex } from '../semantics/nested';
 import { givenToEveryShell } from '../semantics/vars';
 import { type ExpansionStep, wordMeaning } from '../semantics/words';
@@ -47,7 +48,7 @@ export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, p
   const lines: { items: Token[]; root?: ReadingNode }[] = [];
   // (A fault of the text of a string is said as the command that runs it is: `Explainer.evidenceAt`, `reachedAt`.)
   const known = cx.evidenceAt(words[0]);
-  const outer = { ...(!known ? { unread: true } : known === 'unsure' ? { unsure: true } : {}), ...(!cx.reachedAt(words[0]) ? { unreached: true } : {}) };
+  const outer = { ...(!known ? { unread: true } : known === 'unsure' ? { unsure: true } : {}), ...(!cx.reachedAt(words[0]) ? { unreached: true } : {}), ...(cx.stopAt(words[0]) || !surelyRuns(words[0]) ? { sometimes: true } : {}) };
   for (let line = 0; line < rows.length; line++) {
     const ex = cx.nestedLine(script, line, positional, outer);
     // (A statement over several lines is explained whole on each of them: keep it, and its notes, on its first.)

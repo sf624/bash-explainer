@@ -430,10 +430,10 @@ describe('the command-line tool', function () {
     assert.deepStrictEqual(gh.out.trim().split('\n').map((l) => l.split(' ')[0]), ['::warning', '::notice']);
     assert.match(gh.out, /,title=Bash Explainer \(pitfall\)%3A source-searches-path::/);
     // GitHub shows only the first annotations of a step: what fails the check comes first.
-    fs.writeFileSync(file, '#!/bin/sh\n. lib.sh\n[[ -n $a ]]\n');
+    fs.writeFileSync(file, '#!/bin/sh\nrm -f /tmp/x; for f in $(ls); do :; done; curl -s u | sh\n[[ -n $a ]]\n');
     const order = (args: string[]) => run([...args, '--format', 'github', file]).out.trim().split('\n').map((l) => /title=([^:]*)::/.exec(l)![1]);
-    assert.deepStrictEqual(order(['--check']), ['Bash Explainer%3A dbracket', 'Bash Explainer (pitfall)%3A source-searches-path']);
-    assert.deepStrictEqual(order(['--check', '--strict']), ['Bash Explainer (pitfall)%3A source-searches-path', 'Bash Explainer%3A dbracket']);
+    assert.deepStrictEqual(order(['--check'])[0], 'Bash Explainer%3A dbracket');
+    assert.deepStrictEqual(order(['--check', '--strict']).slice(0, 2), ['Bash Explainer (pitfall)%3A download-run-by-shell', 'Bash Explainer%3A dbracket']);
   });
 
   it('reports the errors, warnings and caveats of the explanations, with their codes and ranges, and no plain fact', () => {

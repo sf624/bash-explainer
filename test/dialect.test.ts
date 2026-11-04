@@ -7,6 +7,7 @@ import { fixFor } from '../src/fixes';
 import { BEHAVIOURS, behavioursOnLine, detectShell, dialectIssues, dialectNotes, featuresOnLine, FEATURES, featureWorks } from '../src/dialect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { SINCE } from '../src/bashversion';
+import type { Stop } from '../src/semantics/scriptstops';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -78,6 +79,7 @@ const PROBES: Record<string, string> = {
   funcname: 'f() { [ "$FUNCNAME" = f ] && echo ok; }; f',
   uid: '[ -n "$UID" ] && echo ok',
   hostname: '[ -n "$HOSTNAME" ] && echo ok',
+  epoch: '[ -n "$EPOCHSECONDS" ] && echo ok',
   // (bash 5.2 lacks both, as FEATURES says; a bash 5.3 on PATH has them, as SINCE says. test/bash53.test.ts runs them.)
   funsub: 'x=1; v=${ x=ok; echo out; }; [ "$v" = out ] && echo $x',
   valsub: 'v=${| REPLY=ok; }; echo $v',
@@ -90,7 +92,8 @@ const BEHAVIOUR_PROBES: Record<string, string> = {
   typesetScope: 'f() { typeset v=in; }; v=out; f; [ "$v" = in ] && echo ok',
 };
 // Probes that cannot be checked with `sh -c` (bash needs `shopt -s extglob` before parsing).
-const UNPROBED = ['extglob', 'bashVar'];
+// (`setByBash`: its letters claim nothing of the other shells: test/dialect-dash.test.ts runs it in dash and busybox ash.)
+const UNPROBED = ['extglob', 'bashVar', 'setByBash'];
 
 /** Find a shell in $BASH_EXPLAINER_SHELLS (a directory) or on PATH. */
 function locate(names: string[]): string | undefined {
@@ -222,15 +225,16 @@ describe('dialect notes', () => {
     const kinds = (src: string) => dialectIssues(parser.parse(src), 'sh', 'en').map((i) => `${i.id} ${i.kind} ${i.note.level}`);
     assert.deepStrictEqual(kinds('f() { local v; }\necho -n x\nread -p "? " a\nset -E'), ['local behaviour info', 'echoN behaviour info', 'readP behaviour info', 'errtrace behaviour info']);
     assert.deepStrictEqual(kinds('[[ -f x ]]\nx=(1 2)'), ['dbracket unsupported error', 'array unsupported error']);
-    assert.deepStrictEqual(notes('cmd &> log', 'dash')[0], 'ⓧ Error: `&>` (redirect stdout and stderr together) is not available in dash. Instead, write `>file 2>&1` (dash reads `cmd &> file` as "run in the background, then an empty redirection").');
+    assert.deepStrictEqual(notes('cmd &> log', 'dash')[0], '⚠ Portability: `&>` (redirect stdout and stderr together) is not available in dash (dash reads `cmd &` and `>file`: the output is not redirected, and the file is emptied). Instead, write `>file 2>&1`.');
     assert.deepStrictEqual(notes('[[ -f x ]]', 'ksh'), []);
     assert.deepStrictEqual(notes('[[ -f x ]]', 'bash'), []);
   });
 
   it('after a sure stop drops what reports a problem, by its level, and keeps information', () => {
-    const ids = (reached: boolean) => dialectIssues(parser.parse('echo -e a\nf() { local v; }\n[[ a ]]\n'), 'sh', 'en', undefined, undefined, undefined, () => reached).map((i) => `${i.id} ${i.note.level}`);
-    assert.deepStrictEqual(ids(true).sort(), ['dbracket error', 'echoE error', 'local info']);
-    assert.deepStrictEqual(ids(false), ['local info']);
+    const ids = (stop?: Stop) => dialectIssues(parser.parse('echo -e a\nf() { local v; }\n[[ a ]]\n'), 'sh', 'en', undefined, undefined, undefined, () => stop).map((i) => `${i.id} ${i.note.level}`);
+    assert.deepStrictEqual(ids().sort(), ['dbracket error', 'echoE warning', 'local info']);
+    assert.deepStrictEqual(ids('may').sort(), ['dbracket warning', 'echoE warning', 'local info']);
+    assert.deepStrictEqual(ids('sure'), ['local info']);
   });
 
   it('notes behaviour that differs from bash', () => {

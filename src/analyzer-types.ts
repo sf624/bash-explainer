@@ -202,6 +202,8 @@ export interface ExplainOptions {
   unread?: boolean;
   unsure?: boolean;
   unreached?: boolean;
+  /** Set for a string run by a command that may be left out (`surelyRuns`): an error of the dialect in it is a warning (`Explainer.stopAt`). */
+  sometimes?: boolean;
   /** The row where the shell of this line started, in a host's text that holds several (`shellStart`, src/hosts/scripts.ts): a stop before it is another shell's (`stopBefore`). */
   stopsFrom?: number;
   /**

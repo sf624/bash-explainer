@@ -21,6 +21,7 @@ import { splitsIn } from '../argv/words';
 import { braceAlternatives, braceTexts, rereadFails } from '../semantics/brace';
 import { mayGiveNoField } from '../semantics/nofield';
 import { replaceRange } from '../rewrite';
+import { readOnlySometimes } from '../semantics/scriptstops';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
 import { givesElements } from '../semantics/elements';
@@ -30,7 +31,7 @@ import { ancestor, assignmentsOnly, braceKind, descendants, field, fields, joine
 import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
-import { arrayKind, globOff, globState, inArithmetic, isAssoc, readOnlySometimes, shoptAt, unquotedWord, wordAt } from './reads';
+import { arrayKind, globOff, globState, inArithmetic, isAssoc, shoptAt, unquotedWord, wordAt } from './reads';
 import { refusedNote, sequenceParts } from './sequences';
 import { hostString } from './hoststrings';
 import { pidNote, stageCountNote } from './where';
@@ -568,7 +569,8 @@ function starStarNote(cx: Explainer, text: string, n: SyntaxNode): string {
   if (globstar === 'default') {
     cx.note(fact(cx.lang, 'globstar-not-found', { on }), n);
   }
-  if (globstar === 'unsupported') {
+  // (A warning, and what the shell does at it: only where it gets there.)
+  if (globstar === 'unsupported' && cx.reachedAt(n)) {
     cx.note(fact(cx.lang, 'globstar-unsupported', { shell: cx.shell! }), n);
   }
   // (With dotglob on, `**` goes into directories starting with `.` too; the note on dotglob says so.)

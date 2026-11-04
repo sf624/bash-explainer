@@ -450,8 +450,8 @@ export function partMeaning(part: SyntaxNode, model: StateModel): PartMeaning | 
 export interface WordEnv {
   /** The environment: a variable the script does not touch has this value, or none (unset). */
   variables?: Readonly<Record<string, string>>;
-  /** The current directory (`~+`). */
-  pwd?: string;
+  /** What is unset where the script does not set it, the rest of the environment not being known (a variable a shell lacks: src/dialect.ts). */ unset?: (name: string) => boolean;
+  /** The current directory (`~+`). */ pwd?: string;
   /** The files of the current directory and under it (a directory ends with `/`): a pattern elsewhere is not decided from them. */
   files?: readonly string[];
 }
@@ -515,11 +515,11 @@ class ModelValues implements ValueSource {
   variable(name: string, node: SyntaxNode): string | null | undefined {
     if (name === '_') return this.trusted ? undefined : underscoreValue(node, this.model);
     // (Bash changes some values itself: `RANDOM`, `SECONDS`, a readonly `UID`; src/semantics/vars.ts.)
-    if (!/^[A-Za-z_]\w*$/.test(name) || changedByBash(name) || (this.trusted && !this.model.trusts(name))) return undefined;
+    if (!/^[A-Za-z_]\w*$/.test(name) || (changedByBash(name) && !this.env?.unset?.(name)) || (this.trusted && !this.model.trusts(name))) return undefined;
     const st = this.w.state;
     const v = st.variables.get(name);
     if (!v) {
-      if (!this.env?.variables) return undefined;
+      if (!this.env?.variables) return this.env?.unset?.(name) ? null : undefined;
       // (Not in the environment: unset, unless bash sets it at start, or it is in capitals, which may come from elsewhere.)
       return Object.hasOwn(this.env.variables, name) ? this.env.variables[name] : setAtStart(name) || name === name.toUpperCase() ? undefined : null;
     }

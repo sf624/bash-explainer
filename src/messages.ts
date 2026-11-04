@@ -432,7 +432,7 @@ export const MESSAGES = {
   'extglob-not-in-new-shell': withBasis(pitfall<{ use: string; reader?: 'interactive' }>(['3.5.8.1', '4.3.2', '3.7.3'], extglobText('not-in-new-shell'), undefined, byCase), { kind: 'checked', probe: 'state#extglob-new-shell', also: ['state#extglob-off'] }),
   'globstar-maybe-on': caveat<{ on: string }>(['3.5.8', '4.3.2'], globstarText('maybe-on')),
   'globstar-not-found': notProblem(caveat<{ on: string }>(['3.5.8', '4.3.2'], globstarText('not-found'))),
-  'globstar-unsupported': broken<{ shell: string }>(['3.5.8'], ({ shell }) => [
+  'globstar-unsupported': pitfall<{ shell: string }>(['3.5.8'], ({ shell }) => [
     `${shell} には globstar がなく、\`**\` は \`*\` と同じく1階層分にしか一致しません。サブディレクトリまでたどるには \`find\` を使います`,
     `${shell} has no globstar, so \`**\` is the same as \`*\` and matches one level only. To reach into subdirectories, use \`find\``]),
 
@@ -758,11 +758,11 @@ export function styleNote(lang: Lang, code: StyleCode, body: string, c: StyleCas
 
 /**
  * The note of a dialect issue of src/dialect.ts, which is no fact of the catalog (its text is the dialect table's), at
- * its level from `PROBLEM_LEVELS`: a construct the target shell lacks (`unsupported`, "Error:"), one that works
- * differently there (`behaviour`, "Portability:"), zsh syntax the line cannot be read with (`parse`, information).
+ * its level from `PROBLEM_LEVELS`: `unsupported`, "Error:"; `differs` (a warning) and `behaviour` (information),
+ * "Portability:"; `parse`, information (src/messages-levels.ts).
  */
-export function problemNote(lang: Lang, kind: 'unsupported' | 'behaviour' | 'parse', code: string, body: string, head: Head): Note & { code: string } {
-  return { ...marked(lang, PROBLEM_LEVELS[kind], body, { head, ...(kind === 'behaviour' ? { heading: PORTABILITY } : {}) }), code };
+export function problemNote(lang: Lang, kind: 'unsupported' | 'differs' | 'behaviour' | 'parse', code: string, body: string, head: Head): Note & { code: string } {
+  return { ...marked(lang, PROBLEM_LEVELS[kind], body, { head, ...(kind === 'behaviour' || kind === 'differs' ? { heading: PORTABILITY } : {}) }), code };
 }
 
 /**

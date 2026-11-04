@@ -64,9 +64,10 @@ function unary(op: string, arg: string, env: TestEnv): boolean {
 
 /**
  * The exit status of bash's `test` (and of `[`, without its `]`) with the arguments `args`: 0 (true), 1 (false), 2 (an
- * error); undefined when it depends on what is not known here (files, a terminal, options the state does not know).
+ * error); undefined when it depends on what is not known here (files, a terminal, options the state does not know, a
+ * word that is null).
  */
-export function testStatus(args: readonly string[], env: TestEnv): number | undefined {
+export function testStatus(args: readonly (string | null)[], env: TestEnv): number | undefined {
   if (!args.length) return 1;
   // (The model does not take the release: a reading bash 5.2 and 5.3 share.)
   const e = parseTest([...args], 'both');
@@ -83,17 +84,22 @@ export function testStatus(args: readonly string[], env: TestEnv): number | unde
 }
 
 /** Evaluates a parsed test as bash does: both sides of `-a` and `-o` (an error in either is the test's error). */
-function evaluate(e: TestExpr, w: readonly string[], env: TestEnv): boolean {
+function evaluate(e: TestExpr, words: readonly (string | null)[], env: TestEnv): boolean {
+  const w = (at: number): string => {
+    const word = words[at];
+    if (word === null) throw new Unknown();
+    return word;
+  };
   switch (e.type) {
-    case 'word': return w[e.at] !== '';
-    case 'unary': return unary(w[e.op], w[e.arg], env);
-    case 'not': return !evaluate(e.operand, w, env);
-    case 'group': return evaluate(e.inner, w, env);
+    case 'word': return w(e.at) !== '';
+    case 'unary': return unary(w(e.op), w(e.arg), env);
+    case 'not': return !evaluate(e.operand, words, env);
+    case 'group': return evaluate(e.inner, words, env);
     case 'and': case 'or': {
       // (Both sides are read, as test.c does; a side not known leaves the result known when the other decides it.)
       const side = (x: TestExpr): boolean | undefined => {
         try {
-          return evaluate(x, w, env);
+          return evaluate(x, words, env);
         } catch (err) {
           if (err instanceof Unknown) return undefined;
           throw err;
@@ -107,9 +113,9 @@ function evaluate(e: TestExpr, w: readonly string[], env: TestEnv): boolean {
       return !decides;
     }
     case 'binary': {
-      const a = w[e.left];
-      const op = w[e.op];
-      const b = w[e.right];
+      const a = w(e.left);
+      const op = w(e.op);
+      const b = w(e.right);
       if (op === '=' || op === '==') return a === b;
       if (op === '!=') return a !== b;
       // (`<` and `>` follow the locale in POSIX mode, which POSIXLY_CORRECT from the environment turns on: not decided.)

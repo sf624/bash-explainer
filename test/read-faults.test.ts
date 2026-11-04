@@ -1,8 +1,8 @@
 // What says a fault of a script follows one table of what may stop a shell (src/semantics/scriptstops.ts; docs/design/three-levels.md, "Where a shell stops").
 // The Errors that say the shell reads the text wrongly (`x = 1`, `{ echo a }`, `if a then b; fi`, `[-f x]`, `[ a > b ]`, `$((09))`): an Error where the file
 // is said to be a script, a warning with the same words where only a name says so or a stop may come first, nothing after a sure stop, in
-// a polyglot's other language, or in a file nobody says is a script. The Errors that are a fact of one command or of the dialect (`[` without its
-// `]`, `print` in sh) stay Errors but after a sure stop. A false Error fails someone's CI, and silence loses what the tool finds. Compared with real
+// a polyglot's other language, or in a file nobody says is a script. The Errors that are a fact of one command (`[` without its `]`) stay Errors
+// but after a sure stop; one of the dialect (`print` in sh) is a warning after a stop that may come first. A false Error fails someone's CI, and silence loses what the tool finds. Compared with real
 // shells (bash, dash), and with the command-line tool's exit status.
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
@@ -125,13 +125,16 @@ describe('an Error that says the shell reads the text wrongly follows the rule o
     }
   });
 
+  // (A fact of one command keeps its Error; one of the dialect does not: three-levels.md, section 10, item 2.)
+  const keepsError = (f: { code: string; fact?: boolean }): boolean => !!f.fact && f.code !== 'print';
+
   it('after a stop that may come first, says a reading as a warning and keeps the Error of a command', () => {
     const stops = ['source ./lib.sh', '. ./lib.sh', "trap 'rm -f t' EXIT", '[ -f y ] || exit 1', 'f() { exit 1; }', '$cmd a', 'eval "$x"', 'alias a=b', 'shopt -s nullglob', 'kill -0 1', 'if a; then logout; fi', '(exit 0)'];
     for (const f of FAULTS) {
       for (const stop of stops) {
         // (`x` may be a function of the file sourced: `runsCommand`, src/pitfalls.ts.)
         const none = f.code === 'assignment-with-spaces' && /^(?:source|\.)/.test(stop);
-        assert.deepStrictEqual(problems(f, after(f, stop), 'a.sh'), none ? [] : [f.fact ? 'error' : 'warning'], `${f.code} after ${stop}`);
+        assert.deepStrictEqual(problems(f, after(f, stop), 'a.sh'), none ? [] : [keepsError(f) ? 'error' : 'warning'], `${f.code} after ${stop}`);
       }
     }
   });
@@ -167,7 +170,8 @@ describe('an Error that says the shell reads the text wrongly follows the rule o
     assert.ok(nested.length > 0);
     assert.deepStrictEqual(codes('#!/bin/bash\nexit 0\nsh -c \'[[ a = a ]]\'\n'), []);
     assert.deepStrictEqual(codes('#!/bin/bash\nsh -c \'exit 0; [[ a = a ]]\'\n'), []);
-    assert.deepStrictEqual(codes('#!/bin/bash\ntrap a EXIT\nsh -c \'[[ a = a ]]\'\n'), nested);
+    // (A dialect Error is one only where the shell surely gets there: three-levels.md, section 10, item 2.)
+    assert.deepStrictEqual(codes('#!/bin/bash\ntrap a EXIT\nsh -c \'[[ a = a ]]\'\n'), []);
   });
 
   it('a syntax error at the end of a file is at its own place', () => {
@@ -259,7 +263,7 @@ describe('an Error that says the shell reads the text wrongly follows the rule o
         assert.strictEqual(await check(dir, after(f, 'exit 0'), `${at}/exit`, '--strict'), 0, `${f.code} after exit`);
         // (After a stop that may come first: a reading fails only `--strict`, a command as before.)
         // (`[ 1 && 2 ]` is also `[` without its `]`, a fact of the command.)
-        assert.strictEqual(await check(dir, after(f, "trap 'rm -f t' EXIT"), `${at}/trap`), f.fact || f.code === 'and-or-in-bracket' ? 1 : 0, `${f.code} after trap`);
+        assert.strictEqual(await check(dir, after(f, "trap 'rm -f t' EXIT"), `${at}/trap`), keepsError(f) || f.code === 'and-or-in-bracket' ? 1 : 0, `${f.code} after trap`);
         assert.strictEqual(await check(dir, after(f, "trap 'rm -f t' EXIT"), `${at}/trap`, '--strict'), 1, `${f.code} after trap, strict`);
         if (f.text.startsWith('#!') || f.fact) continue;
         // (`[ 1 && 2 ]` is also `[` without its `]`, a fact of the command: an Error wherever the shell gets to it.)

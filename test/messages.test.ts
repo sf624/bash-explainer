@@ -60,7 +60,7 @@ describe('the message catalog', () => {
     'globstar-not-found', 'ssh-local-expansion', 'function-not-imported-sh', 'unmatched-glob-runs-once', 'for-over-ls-output', 'for-over-unquoted-args',
     'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment', 'alias-maybe-not-expanded',
     'stderr-to-original-stdout'];
-  const PITFALL_ERRORS = ['posix-special-function-name', 'extglob-turned-off', 'globstar-unsupported', 'function-not-in-container', 'builtin-or-function-as-program',
+  const PITFALL_ERRORS = ['posix-special-function-name', 'extglob-turned-off', 'function-not-in-container', 'builtin-or-function-as-program',
     'function-not-on-remote', 'function-not-in-new-shell-blocked', 'function-not-in-new-shell', 'function-not-imported', 'wrapper-assignment-expanded-first',
     'prefix-assignment-expanded-first', 'shebang-refused', 'shebang-bom', 'bats-test-line-dropped', 'bats-negation-ignored', 'bats-run-in-pipeline-stage',
     'bats-run-in-pipeline', 'bats-setup-suite-in-test-file', 'regex-backslash-dropped', 'python-string-without-shell'];
