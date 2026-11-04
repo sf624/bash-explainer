@@ -8,7 +8,7 @@ export function whatOf(message: string): SyntaxErrorWhat {
   if (message.startsWith('unterminated extended glob')) return { kind: 'missing', token: ')' };
   if (message.includes('subscript')) return { kind: 'subscript' };
   const token = /^unexpected (?:token )?'([^]*)'$/.exec(message)?.[1];
-  if (token !== undefined) return /^(?:newline|\s*)$/.test(token) ? { kind: 'line-end' } : { kind: 'token', token };
+  if (token !== undefined) return /^(?:newline|\s*)$/.test(token) ? { kind: 'unreadable' } : { kind: 'token', token };
   const missing = /^Missing "([^]*)"$/.exec(message)?.[1] ?? message;
   const after = /^expected command after '(.*)'/.exec(missing)?.[1];
   if (after) return { kind: 'after', token: after };

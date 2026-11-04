@@ -15,7 +15,6 @@ export function syntaxErrorWhat(what: SyntaxErrorWhat): readonly [string, string
     case 'token': case 'after-paren': return [`ここに \`${what.token}\` は書けない`, `\`${what.token}\` cannot stand here`];
     case 'missing': return [`\`${what.token}\` がない`, `\`${what.token}\` is missing`];
     case 'after': return [`\`${what.token}\` の後にコマンドがない`, `no command follows \`${what.token}\``];
-    case 'line-end': return ['行がここで終わってはいけない', 'the line cannot end here'];
     case 'command': return ['ここにコマンドがない', 'a command is missing here'];
     case 'target': case 'heredoc': return ['リダイレクトの行き先がない', 'the redirection has no target'];
     case 'body': return ['関数の本体がない', 'the function has no body'];

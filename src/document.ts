@@ -245,8 +245,8 @@ function placeOf(starts: readonly number[], i: number): Place {
   return { line, col: i - starts[line] };
 }
 
-/** The `pitfall` field of the problem a note is: advice (`diagnostics.pitfalls` turns it off), where an error is a bug. */
-export const pitfallOf = (n: Pick<Note, 'level' | 'code'>): { pitfall?: true } => (alwaysFails(n.level) || isNotRead(n.code) ? {} : { pitfall: true });
+/** The `pitfall` field of the problem a note is: advice (`diagnostics.pitfalls` turns it off), where an error is a bug, and a fault of the text that only a file's name leaves in doubt is no advice either. */
+export const pitfallOf = (n: Pick<Note, 'level' | 'code'>): { pitfall?: true } => (alwaysFails(n.level) || isNotRead(n.code) || n.code?.endsWith('-if-bash') ? {} : { pitfall: true });
 
 /** Whether `diagnostics.enabled` is off, where the surface has the setting. */
 const diagnosticsOff = (settings: Settings, surface: Surface): boolean => settingSpec('diagnostics.enabled')!.surfaces.includes(surface) && !settings['diagnostics.enabled'];

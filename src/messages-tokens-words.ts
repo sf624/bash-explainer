@@ -11,8 +11,8 @@ const badSubstitutionWhy = (why: BadSubstitution['why']): readonly [string, stri
   : ['`${(` のパラメータフラグは zsh の書き方', '`${(f)var}` parameter flags are zsh syntax']);
 
 const BAD_SUBSTITUTION: TokenProblem = {
-  head: ['bash はこの展開を「bad substitution」のエラーにし、このコマンドも、一緒に読んだコマンドも実行しない。', 'bash reports "bad substitution" for this expansion, and does not run this command or what it read with it.'],
-  then: ['このコマンドも、一緒に読んだコマンドも実行しない（その範囲を区切るのはサブシェル、`$( )`、パイプラインの各段、`&` だけ）', 'It does not run this command or what it read with it (only a subshell, `$( )`, a stage of a pipeline or `&` keeps this to itself)'],
+  head: ['bash はこの展開を「bad substitution」のエラーにし、このコマンドも、一緒に読んだ残りのコマンドも実行しない。', 'bash reports "bad substitution" for this expansion, and does not run this command or the rest of what it read with it.'],
+  then: ['このコマンドも、一緒に読んだ残りのコマンドも実行しない', 'It does not run this command or the rest of what it read with it'],
 };
 
 const badSubstitutionRow = ({ why }: BadSubstitution): readonly [string, string] => {
@@ -182,8 +182,8 @@ export const WORD_TEXTS = {
   'bad-substitution-if-run': tokenWarning<BadSubstitution>(({ why }) => {
     const [ja, en] = badSubstitutionWhy(why);
     return [
-      `パラメータ展開: ここが実行されると、bash は「bad substitution」のエラーにし（${ja}）、このコマンドも、一緒に読んだコマンドも実行しない`,
-      `Parameter expansion: if this runs, bash reports "bad substitution" (${en}), and does not run this command or what it read with it`];
+      `パラメータ展開: ここが実行されると、bash は「bad substitution」のエラーにし（${ja}）、このコマンドも、一緒に読んだ残りのコマンドも実行しない`,
+      `Parameter expansion: if this runs, bash reports "bad substitution" (${en}), and does not run this command or the rest of what it read with it`];
   }),
   /** `echo $[1+2]`: the obsolete form of an arithmetic expansion. */
   'arith-expansion-obsolete': tokenText(() => [

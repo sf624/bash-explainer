@@ -1382,10 +1382,5 @@ export function unreadTree(text: string, why: NonNullable<SyntaxTree['unread']>)
 // (The declaration shows as a branch that never runs: it is the getter tsx makes for the export.)
 /* c8 ignore next */
 export function createUnbashParser(): BashParser {
-  const parser: BashParser = {
-    parse(text: string): SyntaxTree {
-      return readText(text);
-    },
-  };
-  return parser;
+  return { parse: readText };
 }

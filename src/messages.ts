@@ -231,7 +231,6 @@ export const MESSAGES = {
     `A \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash reports "syntax error near unexpected token"`]),
   { kind: 'checked', probe: 'state#keyword-separator' }),
   'syntax-error': withBasis(failure<{ what: SyntaxErrorWhat }>(['3.1.1'], syntaxErrorText), { kind: 'checked', probe: 'state#syntax-error' }),
-  // (The same, where only a name says the file is one of bash: another shell may source it, docs/design/three-levels.md.)
   'syntax-error-if-bash': withBasis({ ...failure<{ what: SyntaxErrorWhat }>(['3.1.1'], syntaxErrorText), level: 'warning' as const }, { kind: 'checked', probe: 'state#syntax-error' }),
   // (4.1: "When the [ form is used, the last argument to the command must be a ]"; 3.7.5: "All builtins return an exit
   // status of 2 to indicate incorrect usage, generally invalid options or missing arguments". The manual's; the probe

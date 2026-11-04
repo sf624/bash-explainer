@@ -124,7 +124,7 @@ export interface SyntaxNode {
  */
 export type SyntaxErrorWhat =
   | { kind: 'token' | 'after-paren' | 'missing' | 'after'; token: string }
-  | { kind: 'line-end' | 'command' | 'target' | 'heredoc' | 'body' | 'subscript' | 'unreadable' };
+  | { kind: 'command' | 'target' | 'heredoc' | 'body' | 'subscript' | 'unreadable' };
 
 export interface SyntaxError {
   /** `missing`: a token the grammar expects is not there (see `incomplete`); `unreadable`: text the parser could not read (see the `error` node). */
