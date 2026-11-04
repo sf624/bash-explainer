@@ -385,12 +385,12 @@ export class LineExplainer implements Explainer, LineOutput {
 
   evidenceAt(n: SyntaxNode): ReadKnown | undefined {
     if (this.opts.unread) return undefined;
-    const known = this.opts.host ? hostReadAs(this.tree, n.startIndex, this.opts.stopsFrom) : readAs(this.tree, n.startIndex, this.opts.script);
+    const known = this.opts.host ? hostReadAs(this.tree, n.startIndex, this.opts.stopsFrom) : readAs(this.tree, n.startIndex, this.opts.script, this.state);
     return known && this.opts.unsure ? 'unsure' : known;
   }
 
   reachedAt(n: SyntaxNode): boolean {
-    return !this.opts.unreached && reachedAt(this.tree, n.startIndex, this.opts.stopsFrom);
+    return !this.opts.unreached && reachedAt(this.tree, n.startIndex, this.opts.stopsFrom, this.opts.host ? undefined : this.state);
   }
 
   say(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): string[] {

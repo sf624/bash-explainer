@@ -28,6 +28,7 @@ import { ownSubshells, STATEMENTS } from './semantics/env';
 import { attribute, docLine } from './semantics/state';
 import { CHANGING } from './semantics/walk/temporaries';
 import type { StatusModel } from './semantics/status';
+import type { ReadKnown } from './semantics/scriptstops';
 import { field, fields, nameText, prefixAssignments, readWhenExpanded, redirectionsOf, strayKeyword, type SyntaxErrorWhat, type SyntaxNode } from './syntax/tree';
 
 export interface SentenceInput {
@@ -41,8 +42,10 @@ export interface SentenceInput {
   problems: ReadonlySet<string>;
   /** The sentences of a statement over several lines, which says the same on each of them, kept by what they depend on (`Whole`): each would read all of it. */
   kept?: Map<string, unknown>;
-  /** The syntax error of the command this line is in, whose bash runs nothing (`syntaxFault`). */
-  syntaxError?: SyntaxErrorWhat;
+  /** The syntax error of the command this line is in, whose bash runs nothing (`syntaxFault`), and where it is. */
+  syntaxError?: { what: SyntaxErrorWhat; node: SyntaxNode };
+  /** What is known of a fault of the text at a node, as a problem says it (`Explainer.evidenceAt`): the sentence says no more than that. */
+  evidence(n: SyntaxNode): ReadKnown | undefined;
 }
 
 /** The sentence, and the clauses on the models it says (for the tests of the rules). */
@@ -71,7 +74,7 @@ const ITEMS = 4;
  * body and backticks are read only when they are expanded, and bash goes on after the error: a `$( )` in a body drops its command too (status 1),
  * and backticks are empty and their command runs (test/linesentence.test.ts).
  */
-const strayIn = (n: SyntaxNode): 'then' | 'do' | undefined => (readWhenExpanded(n) ? undefined : strayKeyword(n) ?? n.namedChildren.map(strayIn).find(Boolean));
+const strayIn = (n: SyntaxNode): SyntaxNode | undefined => (readWhenExpanded(n) ? undefined : strayKeyword(n) ? n : n.namedChildren.map(strayIn).find(Boolean));
 
 /** The sentence of `line`, or none when the line has no code (a comment, a blank line, code bash cannot read). */
 export function lineSentence(input: SentenceInput): Sentence | undefined {
@@ -85,9 +88,16 @@ export function lineSentence(input: SentenceInput): Sentence | undefined {
 }
 
 function composed(input: SentenceInput, pieces: Piece[]): Sentence | undefined {
-  const stray = pieces.map((p) => (p.kind === 'whole' ? strayIn(p.node) : strayKeyword(p.node))).find(Boolean);
-  if (stray) return { text: sentenceEnd(input.lang, [S.keywordMissing(input.lang, stray)]), clauses: [] };
-  if (input.syntaxError) return { text: sentenceEnd(input.lang, [S.syntaxStops(input.lang, input.syntaxError)]), clauses: [] };
+  const stray = pieces.map((p) => (p.kind === 'whole' ? strayIn(p.node) : strayKeyword(p.node) && p.node)).find(Boolean);
+  const fault = stray ?? input.syntaxError?.node;
+  if (fault) {
+    // (Where a problem would say nothing of it, nor does the sentence: after a sure stop, what follows may be another language's.)
+    const known = input.evidence(fault);
+    if (!known) return undefined;
+    const unsure = known === 'unsure';
+    const said = stray ? S.keywordMissing(input.lang, strayKeyword(stray)!, unsure) : S.syntaxStops(input.lang, input.syntaxError!.what, unsure);
+    return { text: sentenceEnd(input.lang, [said]), clauses: [] };
+  }
   let said!: Sentence;
   for (const brief of [0, 1, 2] as const) {
     const c = new Composer(input, brief);

@@ -103,16 +103,25 @@ describe('an Error that says the shell reads the text wrongly follows the rule o
         return documentIssues(doc, 'en', shellsOf(doc.lines, 'a.sh', undefined, s)).find((i) => i.code.replace(/-if-bash$/, '') === f.code)!.message.replace(/^\S+ (?:Error: |Pitfall: )?/, '');
       };
       // (Of `$((09))`, what bash does: zsh reads `09`, and may source the file.)
-      if (f.code === 'arith-invalid-number') assert.match(message('name'), /If bash reaches this line, it reports/);
+      if (f.code === 'arith-invalid-number') assert.match(message('name'), /If the shell reaches this line, it reports/);
       else assert.strictEqual(message('name'), message('said'), f.code);
     }
   });
 
   it('says nothing after a sure stop', () => {
     for (const f of FAULTS) {
-      for (const stop of ['exit 0', 'exec true', 'command exec x', '{ exec x; }', 'exec x || exit 1', 'logout', 'return 0', 'set -n', "eval 'exec x'", 'if a; then exec b; else exec c; fi']) {
+      for (const stop of ['exit 0', 'exec true', 'command exec x', '{ exec x "$0"; }', 'exec x || exit 1', 'logout', 'return 0', 'set -n', "eval 'exec x'", 'if a; then exec bash "$self"; else exec "$PYTHON" "$0"; fi']) {
         assert.deepStrictEqual(problems(f, after(f, stop), 'a.sh'), [], `${f.code} after ${stop}`);
       }
+    }
+  });
+
+  it('says nothing on what the model says never runs, in a tree with no error', () => {
+    for (const f of FAULTS.filter((x) => x.tool === 'bash' && !parser.parse(x.text).errors.length)) {
+      for (const stop of ['if true; then exit; fi', '{ exit 0; }', 'while :; do :; done', 'if a; then exit; else exit; fi']) {
+        assert.deepStrictEqual(problems(f, after(f, stop), 'a.sh'), [], `${f.code} after ${stop}`);
+      }
+      assert.deepStrictEqual(problems(f, `#!/bin/bash\nif false; then\n${f.text}fi\n`, 'a.sh'), [], `${f.code} in a branch not taken`);
     }
   });
 
@@ -134,8 +143,8 @@ describe('an Error that says the shell reads the text wrongly follows the rule o
     };
     assert.match(issue('#!/bin/bash\ntrap a EXIT\nif a then b; fi\n', 'keyword-needs-separator').message, /if it reaches this line, bash reports/);
     assert.match(issue('#!/bin/bash\ntrap a EXIT\nif a then b; fi\n', 'keyword-needs-separator').head, /if it reaches this line/);
-    assert.match(issue('#!/bin/bash\ntrap a EXIT\necho $((09))\n', 'arith-invalid-number-if-bash').message, /If bash reaches this line, it reports an arithmetic error/);
-    assert.match(issue('#!/bin/bash\ntrap a EXIT\necho $((09))\n', 'arith-invalid-number-if-bash').head, /if bash reaches this line/);
+    assert.match(issue('#!/bin/bash\ntrap a EXIT\necho $((09))\n', 'arith-invalid-number-if-bash').message, /If the shell reaches this line, it reports an arithmetic error/);
+    assert.match(issue('#!/bin/bash\ntrap a EXIT\necho $((09))\n', 'arith-invalid-number-if-bash').head, /if the shell reaches this line/);
     assert.match(issue('#!/bin/bash\ntrap a EXIT\nfi\n', 'syntax-error-if-bash').message, /If the shell reaches this line/);
     assert.strictEqual(issue('#!/bin/bash\ntrap a EXIT\nfi\n', 'syntax-error-if-bash').severity, 'warning');
   });
@@ -230,7 +239,8 @@ describe('an Error that says the shell reads the text wrongly follows the rule o
       assert.deepStrictEqual(issues('text\n\n```bash\nexit 0\nx = 1\n```\n', 'a.md'), []);
       assert.deepStrictEqual(issues('#!/usr/bin/env bats\nexit 0\n@test "a" {\n  [ -f x\n}\n', 'a.bats', 'bracket-missing-close'), [[3, 'error']]);
       assert.deepStrictEqual(issues('#!/usr/bin/env bats\n@test "a" {\n  exec b\n}\n@test "b" {\n  [ -f x\n}\n', 'a.bats', 'bracket-missing-close'), [[5, 'error']]);
-      assert.deepStrictEqual(issues('#!/usr/bin/env bats\n@test "a" {\n  exec b\n  [ -f x\n}\n', 'a.bats', 'bracket-missing-close'), []);
+      assert.deepStrictEqual(issues('#!/usr/bin/env bats\n@test "a" {\n  exec b "$0"\n  [ -f x\n}\n', 'a.bats', 'bracket-missing-close'), []);
+      assert.deepStrictEqual(issues('#!/usr/bin/env bats\n@test "a" {\n  exec b\n  [ -f x\n}\n', 'a.bats', 'bracket-missing-close'), [[3, 'error']]);
     });
 
     it('a recipe of .ONESHELL is one shell', () => {

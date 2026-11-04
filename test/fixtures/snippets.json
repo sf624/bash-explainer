@@ -974,6 +974,7 @@
  "echo 'a\\tb' $v ${a[0]} \"$q\"",
  "echo (hello)\n",
  "echo *.log",
+ "echo -e a\nf() { local v; }\n[[ a ]]\n",
  "echo -n \"$D\" || exit 1\nrm -rf $D/x",
  "echo ===",
  "echo ==========",

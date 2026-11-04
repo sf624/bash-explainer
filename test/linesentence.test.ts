@@ -323,6 +323,31 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
     assert.strictEqual(new Analyzer('en').explainLine(tree, 2, undefined, { sentence: true }).sentence, 'Runs `bash` (run the bash shell (a script or a command string)).');
   });
 
+  it('says of a syntax error what a problem of the line says: only if the shell gets there, and nothing after a sure stop', () => {
+    const inFile = (src: string, line: number, lang: 'en' | 'ja', script?: 'said' | 'name') => new Analyzer(lang).explainLine(parser.parse(src), line, undefined, { sentence: true, ...(script ? { script } : {}) }).sentence;
+    // (A stop that may come first: the problem is a warning, "if the shell reaches this line".)
+    assert.strictEqual(inFile('trap a EXIT\nfi\n', 1, 'en', 'said'), 'If the shell reaches this line, it stops with a syntax error (`fi` cannot stand here).');
+    assert.strictEqual(inFile('trap a EXIT\nfi\n', 1, 'ja', 'said'), 'この行まで来ると、シェルは構文エラーで止まる（ここに `fi` は書けない）。');
+    assert.strictEqual(inFile('trap a EXIT\nif a then b; fi\n', 1, 'en', 'said'), 'If the shell reaches this line, it stops with a syntax error (`then` needs a `;` or a newline before it).');
+    assert.strictEqual(inFile('trap a EXIT\nif a then b; fi\n', 1, 'ja', 'said'), 'この行まで来ると、シェルは構文エラーで止まる（`then` の前に `;` か改行が要る）。');
+    // (After a sure stop no problem says anything: what follows may be another language's.)
+    for (const lang of ['en', 'ja'] as const) {
+      for (const script of ['said', 'name'] as const) {
+        assert.strictEqual(inFile('exit 0\nif a then b; fi\n', 1, lang, script), undefined);
+        assert.doesNotMatch(inFile('exit 0\necho ok )\n', 1, lang, script)!, /syntax error|構文エラー/);
+      }
+      assert.strictEqual(inFile("#!/bin/sh\n'''exec' \"/x/python\" \"$0\" \"$@\"\n' '''\nif a then b: pass\n", 3, lang, 'said'), undefined);
+    }
+    // (Only a name says it is a script: another shell may source it.)
+    assert.strictEqual(inFile('if a then b; fi\n', 0, 'en', 'name'), 'If the shell reaches this line, it stops with a syntax error (`then` needs a `;` or a newline before it).');
+    assert.strictEqual(inFile('echo ok )\n', 0, 'ja', 'name'), 'この行まで来ると、シェルは構文エラーで止まる（ここに `)` は書けない）。');
+    // (No one says it: the row says nothing of it either.)
+    assert.strictEqual(inFile('if a then b; fi\n', 0, 'en'), undefined);
+    assert.strictEqual(inFile('if a then b; fi\n', 0, 'en', 'said'), 'The shell stops with a syntax error (`then` needs a `;` or a newline before it).');
+    assert.strictEqual(inFile('for\n', 0, 'en', 'said'), 'The shell stops with a syntax error.');
+    assert.strictEqual(inFile('trap a EXIT\nfor\n', 1, 'en', 'said'), 'If the shell reaches this line, it stops with a syntax error.');
+  });
+
   it('reads the codes of the problems of a line: a fact\'s, a style check\'s, a dialect issue\'s; none for a plain note', () => {
     const codes = (src: string, shell?: Shell) => [...problemCodes(new Analyzer('en').explainLine(parser.parse(src), 0, shell, { script: 'said' }))].sort();
     assert.deepStrictEqual(codes('set -e; cmd || echo failed >&2'), ['failure-reported-as-success']);
@@ -342,7 +367,7 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
     const pipe = 'set -e\ncurl -s x | tar -x';
     const tree = parser.parse(pipe);
     const status = statusModel(shellState(tree, 'bash'));
-    const said = (problems: string[]) => lineSentence({ root: tree.root, line: 1, lang: 'en', status, commands: new Map(), problems: new Set(problems) })!;
+    const said = (problems: string[]) => lineSentence({ root: tree.root, line: 1, lang: 'en', status, commands: new Map(), problems: new Set(problems), evidence: () => 'known' })!;
     assert.deepStrictEqual(said([]).clauses, ['pipeStatus']);
     assert.deepStrictEqual(said(['pipefail-missing']).clauses, []);
     assert.deepStrictEqual(said(['pipeline-subshell-variable', 'nounset-unbound']).clauses, ['pipeStatus']);

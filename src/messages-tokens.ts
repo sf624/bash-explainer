@@ -27,10 +27,10 @@ const INVALID_NUMBER: TokenProblem = {
   head: ['この数は不正なので、算術エラーになり、このコマンドは本来の処理をしない。', 'This number is not valid: an arithmetic error, and this command does not do its work.'],
   then: ['シェルは算術エラーを出し、このコマンドは本来の処理をしない', 'The shell reports an arithmetic error, and this command does not do its work'],
 };
-// (A warning: zsh reads `09` as a decimal number and may source the file, or a stop may come first. So it is bash's, if it gets there.)
+// (A warning: zsh reads `09` as a decimal number and may source the file, or a stop may come first. So it is bash's and sh's, if they get there.)
 const INVALID_NUMBER_IF_BASH: TokenProblem = {
-  head: ['この数は bash では不正なので、この行まで来ると算術エラーになり、このコマンドは本来の処理をしない。', 'This number is not valid in bash: if bash reaches this line, an arithmetic error, and this command does not do its work.'],
-  then: ['bash はこの行まで来ると算術エラーを出し、このコマンドは本来の処理をしない', 'If bash reaches this line, it reports an arithmetic error, and this command does not do its work'],
+  head: ['この数は bash と sh では不正なので、この行まで来ると算術エラーになり、このコマンドは本来の処理をしない。', 'Not valid in bash or sh: if the shell reaches this line, an arithmetic error, and this command does not do its work.'],
+  then: ['シェルはこの行まで来ると算術エラーを出し、このコマンドは本来の処理をしない', 'If the shell reaches this line, it reports an arithmetic error, and this command does not do its work'],
 };
 const spliceRefusedRow = ({ program, why }: { program: string; why: string }): readonly [string, string] => [`${program} はこの文字列を受け付けない（${why}）`, `${program} refuses this string (${why})`];
 const invalidNumberRow = ({ text, why }: InvalidNumber): readonly [string, string] => [`不正な数 \`${text}\`: ${why}`, `Invalid number \`${text}\`: ${why}`];

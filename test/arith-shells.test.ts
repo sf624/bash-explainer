@@ -164,7 +164,9 @@ describe('a constant of arithmetic, in each shell', () => {
   describe('in bash, against bash', () => {
     const bash = locate(['bash']);
     it('marks the command, not the path to it: this `echo` fails whenever it runs', () => {
-      for (const src of ['true || echo $((09)); echo same', 'false && echo $((09))', 'if false; then echo $((09)); fi']) assert.strictEqual(saidOf(src, undefined)?.level, 'error', src);
+      for (const src of ['a || echo $((09)); echo same', 'a && echo $((09))', 'if a; then echo $((09)); fi']) assert.strictEqual(saidOf(src, undefined)?.level, 'error', src);
+      // (Where the model knows it never runs, as after a sure stop: only what it would do, on its row.)
+      for (const src of ['true || echo $((09)); echo same', 'false && echo $((09))', 'if false; then echo $((09)); fi']) assert.strictEqual(saidOf(src, undefined)?.level, 'warning', src);
     });
 
     // The same command can run without reading it: what bash then prints. (Read, it reports the error: each of the last group.)

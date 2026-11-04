@@ -6,6 +6,7 @@ import { builtins } from './dict/builtins';
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
+import { failsCheck, severityOf } from './levels';
 import { type Note, problemNote } from './messages';
 import type { Head } from './messages-heads';
 import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
@@ -511,9 +512,9 @@ function laterOptionsOf(c: SyntaxNode, version: BashVersion, lang: Lang): Issue[
  */
 export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from = 0, to = tree.root.endPosition.row, version: BashVersion = DEFAULT_BASH_VERSION, reached?: (n: SyntaxNode) => boolean): Issue[] {
   const issues = issuesFound(tree, shell, lang, from, to, version);
-  // (An error says the shell fails on the construct: not where it does not get to, after an `exit` or in a polyglot's other language,
-  // `print(x)` of Python is not `print` of ksh. `reached`: `reachedAt`. The command a construct is in, not the construct: `source -p dir f` is read, and `-p` is its error.)
-  return reached ? issues.filter((i) => i.kind !== 'unsupported' || !i.node || reached(ancestor(i.node, (a) => a.type === 'command') ?? i.node)) : issues;
+  // (A problem says the shell fails on the construct: not where it does not get to, after an `exit` or in a polyglot's other language,
+  // `print(x)` of Python is not `print` of ksh; whatever its kind, by its level. `reached`: `reachedAt`. The command a construct is in, not the construct: `source -p dir f` is read, and `-p` is its error.)
+  return reached ? issues.filter((i) => !failsCheck(severityOf(i.note.level), true) || !i.node || reached(ancestor(i.node, (a) => a.type === 'command') ?? i.node)) : issues;
 }
 
 function issuesFound(tree: SyntaxTree, shell: Shell, lang: Lang, from: number, to: number, version: BashVersion): Issue[] {
