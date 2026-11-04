@@ -42,6 +42,7 @@ const ROWS: Record<string, string[]> = {
   herestring: ['cat <<< a'],
   ansiC: ["echo $'a\\tb'"],
   ansiCQuote: ["echo $'a\\'b'"],
+  translated: ['echo $"a"'],
   procSub: ['cat <(echo a)'],
   ampRedirect: ['echo a &>out; wait; echo "[$(cat out)]"'],
   ampAppend: ['echo a &>>out; wait; echo "[$(cat out)]"'],
@@ -76,7 +77,8 @@ const ROWS: Record<string, string[]> = {
   echoN: ['echo -n a'],
   readA: ['read -a x </dev/null'],
   readP: ['echo a | read -p x y'],
-  readOpts: ['read -n 1 x <file', 'read -s x <file', 'read -t 1 x <file', 'read -d : x <file'],
+  readOpts: ['read -n 1 x <file', 'read -s x <file', 'read -t 1 x <file'],
+  readD: ['read -d : x <file'],
   pipefail: ['set -o pipefail'],
   trapErr: ["trap 'echo e' ERR"],
   errtrace: ['set -E'],
@@ -651,7 +653,7 @@ describe('an error of the dialect, where the shell surely gets to it', () => {
     assert.deepStrictEqual(inBash(`. ./lib\nsh -c 'a=(1)'`, 'array'), ['warning']);
     assert.deepStrictEqual(inBash(`exit 0\nsh -c 'a=(1)'`, 'array'), []);
     assert.deepStrictEqual(levels(`if a; then eval 'a=(1)'; fi`, 'array'), ['warning']);
-    const explained = (code: string, line: number): string[] => new Analyzer('en').explainLine(parser.parse(`#!/bin/bash\n${code}\n`), line, 'bash', { script: 'said' }).notes.filter((n) => n.includes('arrays')).map((n) => n[0]);
+    const explained = (code: string, line: number): string[] => new Analyzer('en').explainLine(parser.parse(`#!/bin/bash\n${code}\n`), line, 'bash', { script: 'said' }).notes.filter((n) => n.includes('an array')).map((n) => n[0]);
     assert.deepStrictEqual(explained(`sh -c 'if false; then a=(1); fi'`, 1), ['ⓧ']);
     assert.deepStrictEqual(explained(`if a; then sh -c 'a=(1)'; fi`, 1), ['⚠']);
   });
@@ -671,7 +673,7 @@ describe('an error of the dialect, where the shell surely gets to it', () => {
       assert.deepStrictEqual(inShell(shell, code, id), want, code);
       const lines = code.split('\n');
       const notes = new Analyzer('en').explainLine(parser.parse(`#!/bin/${shell}\n${code}\n`), lines.length, shell as Shell, { script: 'said' }).notes;
-      assert.deepStrictEqual(notes.filter((n) => n.includes(id === 'array' ? 'arrays' : '`shopt`')).map((n) => n[0]), [want[0] === 'error' ? 'ⓧ' : '⚠'], `explained: ${code}`);
+      assert.deepStrictEqual(notes.filter((n) => n.includes(id === 'array' ? 'an array' : '`shopt`')).map((n) => n[0]), [want[0] === 'error' ? 'ⓧ' : '⚠'], `explained: ${code}`);
     }
     for (const name of REALS.filter((x) => COMMANDS[x])) {
       assert.deepStrictEqual([/next/.test(realOf(name, 'if (eval "a=(1)") 2>/dev/null; then :; fi\necho next\n').out), realOf(name, 'if (eval "a=(1)") 2>/dev/null; then :; fi\necho next\n').err], [true, '']);

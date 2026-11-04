@@ -13,6 +13,7 @@ import { guardedApart, modelLimit, modelValueLimit } from '../examples/regexguar
 import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
+import { featureWorks } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode, rootOf } from '../syntax/tree';
@@ -21,8 +22,8 @@ import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, defaultOn, modelVersion, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
-import { changedByBash, setAtStart } from './vars';
-import { ARITH, changesDirectory, underscoreValue, unreliableAt, unreliableNames } from './wordsites';
+import { changedByBash, EXPORTED_AT_START, setAtStart } from './vars';
+import { ARITH, changesDirectory, integerParameter, underscoreValue, unreliableAt, unreliableNames } from './wordsites';
 import { operandPattern, operandReplacement, operandWord, replacedMatches, withoutAffix } from './operands';
 import { CONTEXTS, type ContextRule, declarationOf, declaredWord, ownParts, type WordContext } from './wordcontexts';
 import type { Hole } from './fieldshape';
@@ -513,6 +514,8 @@ class ModelValues implements ValueSource {
   }
 
   variable(name: string, node: SyntaxNode): string | null | undefined {
+    // (Nothing the walk knows holds where the script runs what it does not read, `StateModel.blind`: only the values given do, `WordEnv`.)
+    if (!this.env && this.model.blind) return undefined;
     if (name === '_') return this.trusted ? undefined : underscoreValue(node, this.model);
     // (Bash changes some values itself: `RANDOM`, `SECONDS`, a readonly `UID`; src/semantics/vars.ts.)
     if (!/^[A-Za-z_]\w*$/.test(name) || (changedByBash(name) && !this.env?.unset?.(name)) || (this.trusted && !this.model.trusts(name))) return undefined;
@@ -524,7 +527,8 @@ class ModelValues implements ValueSource {
       return Object.hasOwn(this.env.variables, name) ? this.env.variables[name] : setAtStart(name) || name === name.toUpperCase() ? undefined : null;
     }
     if (v.declared === 'unknown' || v.set === 'unknown') return undefined;
-    if (v.set === 'off') return null;
+    // (As bash starts: no value, unless the environment gives one, `EXPORTED_AT_START`.)
+    if (v.set === 'off') return EXPORTED_AT_START.includes(name) && !v.at.parent && !this.env ? undefined : null;
     // (`x=$'\u00e9'` sets `é` in a UTF-8 locale, `\u00E9` in C: src/semantics/chars.ts.)
     if (v.value !== undefined && !sameInEveryLocale(v.value) && /\\[uU]/.test(v.at.text)) return undefined;
     // An array, an associative array or a nameref (also on some paths only): its value is not followed.
@@ -537,7 +541,7 @@ class ModelValues implements ValueSource {
   }
 
   /** (Not for the values Meaning shows: `REPLY` is not one the decisions trust.) */
-  reply = (n: SyntaxNode): string | undefined => (this.trusted ? undefined : this.model.reply(n));
+  reply = (n: SyntaxNode): string | undefined => (this.trusted || this.model.blind ? undefined : this.model.reply(n));
 
   builtinRuns(name: string, at: SyntaxNode): boolean {
     const r = resolveName(this.model, name, at.namedChildren[0]);
@@ -546,6 +550,7 @@ class ModelValues implements ValueSource {
 
   /** `~+` and `~-` not after a `cd` anywhere; `~0` and `~+0`, entry 0 of the directory stack, are `~+` (6.8). */
   tilde(user: string): string | undefined {
+    if (!this.env && this.model.blind) return undefined;
     const name = user === '' ? 'HOME' : user === '+' || stackTilde(user)?.at === '+0' ? 'PWD' : user === '-' ? 'OLDPWD' : undefined;
     if (!name || (name !== 'HOME' && changesDirectory(this.w.nodes[0])) || (this.trusted && !this.model.trusts(name))) return undefined;
     if (name === 'PWD') return this.env?.pwd;
@@ -553,21 +558,6 @@ class ModelValues implements ValueSource {
     if (v) return v.set === 'on' ? v.value : undefined;
     return this.env?.variables?.[name];
   }
-}
-
-/**
- * Whether bash makes the value of the part `n` from an integer: `$#`, `$?`, `$$` and a length (`${#x}`, `${#a[@]}`),
- * also `$#`, `$?` and `$$` behind an operator that keeps a value that is set (`${#:-1}`); `maybe-empty`: `$!`, empty
- * before any `&`. Any other operator over them gives text: `${#:+-v}`, `${#/#/-}`; `${##1}` with one element is empty.
- * Such a value is not quoted in double quotes with `"$@"` before it or after it (F84, F97).
- */
-export function integerParameter(n: SyntaxNode): 'digits' | 'maybe-empty' | undefined {
-  if (n.type !== 'simple_expansion' && n.type !== 'expansion') return undefined;
-  const p = parseExpansion(n.type === 'simple_expansion' ? `\${${n.text.slice(1)}}` : decodedText(n));
-  if (p?.prefix === '#' && !p.op) return 'digits';
-  if (!p || p.prefix || p.subscript !== undefined) return undefined;
-  if (/^[#?$]$/.test(p.name) && [undefined, '-', ':-', '=', ':=', '?', ':?'].includes(p.op)) return 'digits';
-  return p.name === '!' && !p.op ? 'maybe-empty' : undefined;
 }
 
 /** What a word gives, read from its nodes with the values of a `ValueSource`. */
@@ -620,7 +610,10 @@ class Evaluator {
         return v === undefined || !sameInEveryLocale(v) ? undefined : [{ text: v, quoted: true, expanded: false }];
       }
       // (A translation may be any text: `holedWords` reads it as a hole.)
-      case 'translated_string': return this.hole ? this.hole(n, true) : this.pieces(n.namedChildren[0], quoted);
+      case 'translated_string':
+        // (A shell with no `$"…"` reads a `$`, and then the string: `$"hi"` is `$hi` in dash and busybox ash.)
+        if (!featureWorks('translated', this.w.shell)) return ((inner) => inner && [{ text: '$', quoted: true, expanded: false }, ...inner])(this.pieces(n.namedChildren[0], quoted));
+        return this.hole ? this.hole(n, true) : this.pieces(n.namedChildren[0], quoted);
       case 'string': return this.inner(n, n.startIndex + 1, n.endIndex - 1, /\\([$`"\\\n])/g);
       case 'heredoc_body': {
         // A quoted delimiter: the body is text as it is. (No delimiter yet, `cat <<` while typing: an empty body.)

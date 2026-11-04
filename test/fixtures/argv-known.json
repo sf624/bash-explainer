@@ -12,7 +12,7 @@
   "lines": {
     "fixtures": {
       "probe": { "ran": 135, "words": 443, "placeholders": 46 },
-      "values": { "ran": 245, "words": 781, "placeholders": 93 }
+      "values": { "ran": 245, "words": 778, "placeholders": 106 }
     },
     "snippets": {
       "probe": { "ran": 383, "words": 895, "placeholders": 121 },

@@ -688,10 +688,13 @@ describe('tricky lines (round 3)', () => {
     assert.strictEqual(count('set -- "$a"$b'), '1');
     // (In a redirection, no word is "ambiguous redirect" in bash, also where nothing is split: an empty IFS, POSIX mode;
     // dash keeps the empty name, and fails to open it.)
-    for (const src of ['e=; cat > $e$e', 'IFS=; e=; cat > $e$e', 'set -f; IFS=; e=; cat > $e$e', 'set -o posix; e=; cat > $e$e']) {
+    for (const src of ['e=; cat > $e$e', 'IFS=; e=; cat > $e$e', 'set -f; IFS=; e=; cat > $e$e']) {
       assert.match(said(src, '$e$e'), /^Concatenation: the parts below all expand to nothing, and an unquoted empty expansion is removed: no word is left, which bash refuses here \("ambiguous redirect"\)$/, src);
       assert.match(bashErr(src), /\$e\$e: ambiguous redirect/, src);
     }
+    // (`set -o posix` makes the model blind, `StateModel.blind`: no value is taken from it.)
+    assert.match(bashErr('set -o posix; e=; cat > $e$e'), /\$e\$e: ambiguous redirect/);
+    assert.doesNotMatch(said('set -o posix; e=; cat > $e$e', '$e$e'), /no word is left/);
     const dash = new Analyzer('en').explainLine(parser.parse('e=; cat > $e$e'), 0, 'dash');
     assert.strictEqual(allTokens(dash.items).find((t) => t.label === '$e$e')!.explanation, 'Concatenation: the parts below are joined into one word');
     const sh = new Analyzer('en').explainLine(parser.parse('echo hi > $1$2'), 0, 'sh');

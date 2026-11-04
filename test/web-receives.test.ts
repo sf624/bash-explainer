@@ -1,6 +1,6 @@
 // The switch "What the program receives" and the marks of the rows (docs/design/panel-redesign.md, P9), in the web page with CI's fonts: on by default, kept once
 // chosen, key W when the focus is in the panel; the words under each command as chips that stay whole, at three widths, in both languages and both themes; the Key lists the marks
-// drawn, and only those; a mark "not in POSIX sh" opens what it says, for a phone and a keyboard.
+// drawn, and only those; a mark "not portable to sh" opens what it says, for a phone and a keyboard.
 import * as assert from 'assert';
 import type { Browser, Frame, Page } from 'playwright-core';
 import { openSite, until } from './support/site';
@@ -43,7 +43,7 @@ describe('the panel: what the program receives, drawn', function () {
     assert.strictEqual(await panel.locator('#receives-name').textContent(), 'What the program receives');
     await until('the chips', () => lines(panel), (l) => l.length === 3);
     assert.deepStrictEqual(await lines(panel), [
-      ['receives:', 'grep', '-h', '‹current user name›', '‹each file name matching /var/log/*.log› (not always one word)'],
+      ['receives:', 'grep', '-h', '‹current user name›', '‹each file name matching /var/log/*.log, else the pattern itself› (not always one word)'],
       ['receives only its name:', 'sort'],
       ['receives:', 'uniq', '-c'],
     ]);
@@ -141,7 +141,7 @@ describe('the panel: what the program receives, drawn', function () {
     }
   });
 
-  it('marks a construct once at both depths, and "not in POSIX sh" opens what it says', async () => {
+  it('marks a construct once at both depths, and "not portable to sh" opens what it says', async () => {
     const { page, panel } = await open(IF);
     const marked = () => panel.evaluate(`[...document.querySelectorAll('#tree .mk-handled')].map((m) => m.closest('.row').querySelector('.label').textContent)`) as Promise<string[]>;
     await until('depth 1', () => marked(), (m) => m.length === 2);
@@ -151,7 +151,7 @@ describe('the panel: what the program receives, drawn', function () {
     await until('depth 2', () => panel.evaluate('document.body.dataset.depth'), (d) => d === '2');
     assert.deepStrictEqual(await marked(), ['if condition then commands fi', '[[ expression ]]']);
     const posix = panel.locator('#tree .mk-posix');
-    assert.deepStrictEqual(await posix.allTextContents(), ['not in POSIX sh', 'not in POSIX sh']);
+    assert.deepStrictEqual(await posix.allTextContents(), ['not portable to sh', 'not portable to sh']);
     const first = posix.first();
     assert.strictEqual(await first.getAttribute('aria-expanded'), 'false');
     const rowCount = await panel.locator('#tree li[data-key]').count();
@@ -161,6 +161,19 @@ describe('the panel: what the program receives, drawn', function () {
     assert.strictEqual(await panel.locator('#tree li[data-key]').count(), rowCount, 'it does not fold the row');
     await first.press('Enter');
     assert.strictEqual(await panel.locator('.posix-said:visible').count(), 0);
+    // (Key W with the focus on it: the same mark has the focus after the switch turns, and a key held down turns it once.)
+    await first.focus();
+    await page.keyboard.press('w');
+    await until('the switch off', () => checked(panel), (c) => c === 'false');
+    await until('the rows again', () => lines(panel), (l) => l.length === 0);
+    assert.strictEqual(await panel.evaluate(`document.activeElement.classList.contains('mk-posix')`), true);
+    await page.keyboard.down('w');
+    await until('the switch on', () => checked(panel), (c) => c === 'true');
+    await page.keyboard.down('w');
+    await page.keyboard.down('w');
+    await page.keyboard.up('w');
+    await page.waitForTimeout(100);
+    assert.strictEqual(await checked(panel), 'true', 'a repeat of the key does not turn it again');
     await page.context().close();
   });
 

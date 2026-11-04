@@ -433,9 +433,6 @@ const declares = (c: BuiltinCall): boolean => c.operands.length > 0 && !has(c, '
 /** `set +f`, `set +o noglob`. */
 const GLOB_AGAIN = tx('グロブ（ワイルドカード展開）を再び有効にする', 'enable globbing (wildcard expansion) again');
 
-/** The builtins of bash that sh-like shells (dash, ksh…) are not taken to have: there they are programs, if any. */
-export const BASH_ONLY_BUILTINS: ReadonlySet<string> = new Set(['shopt', 'mapfile', 'readarray']);
-
 export const builtins: Record<string, CommandSpec> = wordTable({
   export: actsOnShell(declarationSpec('export', exportFlags, FUNCTION_NAMES, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
   readonly: actsOnShell(declarationSpec('readonly', readonlyFlags, FUNCTION_NAMES, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),

@@ -59,8 +59,8 @@ describe('what the program receives (src/argvline.ts, panel P4)', () => {
   });
 
   it('names each value known only when the line runs in a placeholder, with how many words it may give', () => {
-    assert.strictEqual(shown('grep -h "$USER" /var/log/*.log'), 'grep -h ‹current user name› ‹each file name matching `/var/log/*.log`›{1,}');
-    assert.strictEqual(shown('grep -h "$USER" /var/log/*.log', 'ja'), 'grep -h ‹現在のユーザー名› ‹`/var/log/*.log` に一致する各ファイル名›{1,}');
+    assert.strictEqual(shown('grep -h "$USER" /var/log/*.log'), 'grep -h ‹current user name› ‹each file name matching `/var/log/*.log`, else the pattern itself›{1,}');
+    assert.strictEqual(shown('grep -h "$USER" /var/log/*.log', 'ja'), 'grep -h ‹現在のユーザー名› ‹`/var/log/*.log` に一致する各ファイル名、なければパターン自身›{1,}');
     assert.strictEqual(shown('echo ~/d ~+ ~- ~bob/x ~2 "$@" $* "$*" "${a[@]}" $1 "$#" "$v" "${v:-d}"'),
       'echo ‹home directory›/d ‹current directory› ‹previous directory› ‹home directory of `bob`›/x ‹what `~2` gives›'
       + ' ‹each argument›{0,} ‹each argument›{0,} ‹the arguments joined› ‹each element of `a`›{0,} ‹argument 1›{0,} ‹number of arguments› ‹value of `$v`› ‹what `${v:-d}` gives›');
@@ -90,10 +90,10 @@ describe('what the program receives (src/argvline.ts, panel P4)', () => {
   });
 
   it('names a pattern by its text: the whole word as written, else the field', () => {
-    assert.strictEqual(shown('ls "$d"/*.log'), 'ls ‹each file name matching `"$d"/*.log`›{1,}');
+    assert.strictEqual(shown('ls "$d"/*.log'), 'ls ‹each file name matching `"$d"/*.log`, else the pattern itself›{1,}');
     // (Several fields of one word: each its own pattern, with a quoted glob character behind a backslash.)
-    assert.strictEqual(shown('x="a b*"; ls $x"*"$y*'), 'ls a ‹each file name matching `b*\\*$y*`›{1,}');
-    assert.strictEqual(argvShown(lines('shopt -s nullglob; ls *.c')[1].words), 'ls ‹each file name matching `*.c`›{0,}');
+    assert.strictEqual(shown('x="a b*"; ls $x"*"$y*'), 'ls a ‹each file name matching `b*\\*$y*`, else the pattern itself›{1,}');
+    assert.strictEqual(argvShown(lines('shopt -s nullglob; ls *.c')[1].words), 'ls ‹each file name matching `*.c`, else no word›{0,}');
   });
 
   it('stands for a word it cannot read with one placeholder, any number of words', () => {

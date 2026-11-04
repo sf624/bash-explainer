@@ -12,7 +12,7 @@ import { basisGate, type Fact, fact, pitfallSaid } from './messages';
 import { onceBy } from './lists';
 import { withoutBases, withTokenBases } from './tokenbases';
 import { pictureNote } from './ctlchars';
-import { dialectFound, notPosixOn, Shell } from './dialect';
+import { dialectFound, keywordsNotIn, notPosixOn, Shell } from './dialect';
 import { fileRead } from './semantics/env';
 import { shellState } from './semantics/state';
 import type { NestedScript } from './semantics/nested';
@@ -175,7 +175,11 @@ export class Analyzer {
     const resolveAt = (name: string, w: SyntaxNode) => resolve(cx, name, w, { quoted: w.type !== 'word' || w.text !== name });
     // (A statement continued on other lines shows all its commands, and all its constructs.)
     const shown = opts.argv || opts.notPosix ? tokenLines(result.items) : undefined;
-    if (opts.argv) result.argv = argvLines(root, line, cx.state, this.lang, shown);
+    if (opts.argv) {
+      result.argv = argvLines(root, line, cx.state, this.lang, shown, tree.carriageReturns);
+      const plain = keywordsNotIn(root, shown!, shell);
+      if (plain.length) result.plainWords = plain.map(spanOf);
+    }
     if (opts.notPosix) result.notPosix = notPosixOn(root, shown!, this.lang).map(({ node, says }) => ({ span: spanOf(node), says }));
     // (A string read as a script has none: the line's sentence says the command that reads it.)
     if (opts.sentence && !this.nested) {

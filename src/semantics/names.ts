@@ -13,7 +13,8 @@
 // src/semantics/env.ts. It does not know the file system: a name that is none of the others is a file to search.
 import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
-import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
+import { builtins } from '../dict/builtins';
+import { builtinIn } from '../shellfeatures';
 import { staticWordValue } from '../staticword';
 import type { ArgvParse } from '../argv/interpret';
 import { actedNames, actsOnNames } from '../argv/query';
@@ -220,8 +221,8 @@ interface Place {
   /** Another shell (`bash -c f`): none of this script's aliases, and only the functions it is given. */
   shellString: boolean;
   lookup?: 'no-functions' | 'builtins-only';
-  /** The shell that looks it up has bash's builtins. */
-  bash: boolean;
+  /** The shell that looks it up (none: bash), for the builtins it has. */
+  shell?: Shell;
   st: ShellState;
   /** A `source` that may have run before (its file may define functions). */
   sourced?: SyntaxNode;
@@ -267,7 +268,7 @@ export function resolveName(model: StateModel, name: string, at: SyntaxNode, opt
     exec: slot?.slot.run === 'exec' || noShell,
     shellString,
     lookup: opts.lookup ?? (slot?.slot.run === 'current-shell' ? slot.slot.lookup : undefined),
-    bash: shellString ? slot!.shell === 'bash' || slot!.shell === 'unknown' : !opts.shell || opts.shell === 'bash',
+    ...(shellString ? (slot!.shell === 'unknown' ? {} : { shell: slot!.shell as Shell }) : opts.shell ? { shell: opts.shell } : {}),
     st: model.at(at).run,
     ...sourcedBefore(model, at),
     pathPrefix: pathPrefix(at.type === 'command_name' ? at.parent! : at),
@@ -349,8 +350,8 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
 }
 
 /** The builtin or the file `name` runs, past aliases and functions. */
-function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash, st, sourced, pathPrefix }: Place, missed: Missed | undefined): NameResolution {
-  const spec = name.includes('/') || exec || (!bash && BASH_ONLY_BUILTINS.has(name)) ? undefined : builtins[name];
+function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, shell, st, sourced, pathPrefix }: Place, missed: Missed | undefined): NameResolution {
+  const spec = name.includes('/') || exec || !builtinIn(name, shell) ? undefined : builtins[name];
   const disabled = spec ? st.disabled.get(name) : undefined;
   const m = missed ? { missed } : {};
   if (spec && disabled?.state !== 'on') return { kind: 'builtin', name, special: spec.builtin === 'special', ...m, ...(disabled?.state === 'unknown' ? { disabled } : {}) };
@@ -620,6 +621,8 @@ export interface NameFacts {
   noShell?: { skips?: 'keyword' | 'builtin' };
   /** The other meanings of the name, in bash's order (3.7.2): empty when it has none. */
   also: NameOther[];
+  /** A program, or a function of a file read before here (`NameResolution.sourced`): the model cannot say which. */
+  sourced?: true;
   /** It runs a POSIX special builtin (4.4): in POSIX mode, it differs from the other builtins. */
   special?: true;
 }
@@ -643,8 +646,7 @@ export function nameFacts(res: NameResolution, opts: {
   // (`builtin cd`, `command echo`: the builtin runs in this shell, as bash would run it: no other command runs it.)
   const by = slot && !(slot.slot.run === 'current-shell' && res.kind === 'builtin') ? { by: slot.via } : {};
   const { name } = res;
-  const bash = !opts.shell || opts.shell === 'bash' || !BASH_ONLY_BUILTINS.has(name);
-  const builtin = Object.hasOwn(builtins, name) && bash ? builtins[name] : undefined;
+  const builtin = Object.hasOwn(builtins, name) && builtinIn(name, opts.shell) ? builtins[name] : undefined;
   const program = !!builtin?.program || !!opts.program?.(name);
   // (A reserved word looked up as a file: no program has its name, `command [[` is "command not found".)
   const notFound = res.kind === 'file' && res.path === 'search' && RESERVED.has(name) && !program;
@@ -681,5 +683,5 @@ export function nameFacts(res: NameResolution, opts: {
     const path = opts.path?.(name);
     add({ kind: 'program', reach: reach.length ? reach : [`env ${name}`], ...(path ? { path } : {}) });
   }
-  return { name, runs, ...by, ...why, ...noProgram, also, ...(res.kind === 'builtin' && res.special ? { special: true as const } : {}) };
+  return { name, runs, ...by, ...why, ...noProgram, also, ...(res.kind === 'builtin' && res.special ? { special: true as const } : {}), ...(res.kind === 'file' && res.sourced ? { sourced: true as const } : {}) };
 }

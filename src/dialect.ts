@@ -23,7 +23,7 @@ import { testWordShape } from './semantics/testwords';
 import { testedFirst } from './semantics/unbound';
 import { bracesInContext, wordFields, type WordEnv } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { type Feature, FEATURES, featureWorks, type InShell, LETTER, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, works } from './shellfeatures';
+import { COMMON_SH, type Feature, FEATURES, featureWorks, type InShell, LETTER, type Measured, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, works } from './shellfeatures';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { binaryOperators, parseTest, writtenTestWords } from './testexpr';
 
@@ -194,10 +194,22 @@ export function featuresOnLine(root: SyntaxNode, line: number): string[] {
   return ids(collectFeatures(root, line, line));
 }
 
-/** The constructs on the lines `rows` that POSIX sh does not have (no feature of FEATURES is POSIX sh), each with what the problems of a sh script say of it, in `lang`. A fact of the construct, for a mark, whatever shell the script is for. */
+/** The constructs on the lines `rows` that a sh may not have (each feature of FEATURES: not in POSIX, or only since its 2024 edition), each with what the problems of a sh script say of it, in `lang`. A fact of the construct, for a mark, whatever shell the script is for. */
 export function notPosixOn(root: SyntaxNode, rows: ReadonlySet<number>, lang: Lang): { node: SyntaxNode; says: string }[] {
   const on = [...rows];
   return collectFeatures(root, leastOf(on), mostOf(on)).filter((f) => rows.has(f.node.startPosition.row)).map((f) => ({ node: f.node, says: featureMessage(f.id, 'sh', lang)! }));
+}
+
+/**
+ * The keywords of bash on the lines `rows` that `shell` reads as a command, or does not have, where the table says so: `[[ ]]`, `coproc`, and `time`,
+ * which is no keyword in dash and busybox ash (`time rec a` runs a program there, or an applet). A shell with them has none here.
+ */
+export function keywordsNotIn(root: SyntaxNode, rows: ReadonlySet<number>, shell: Shell | undefined): SyntaxNode[] {
+  if (!shell || shell === 'bash') return [];
+  const on = [...rows];
+  const lacks = (id: string): boolean => !featureWorks(id, shell);
+  const types = [...(lacks('dbracket') ? ['extended_test'] : []), ...(lacks('coproc') ? ['coproc_statement'] : []), ...(shell === 'sh' || shell === 'dash' || shell === 'ash' ? ['time_statement'] : [])];
+  return types.length ? descendants(root, types, { from: leastOf(on), to: mostOf(on) }).filter((n) => rows.has(n.startPosition.row)) : [];
 }
 
 /** A redirection to `/dev/tcp/host/port` (or `/dev/udp/…`), as the value of its word: quoted, it connects too. */
@@ -244,6 +256,7 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
     case 'herestring_redirect': add('herestring'); return;
     // (A `'` in the body is a `\'`, where dash's quote ends.)
     case 'ansi_c_string': add(n.text.slice(2, -1).includes("'") ? 'ansiCQuote' : 'ansiC'); return;
+    case 'translated_string': add('translated'); return;
     case 'process_substitution': add('procSub'); return;
     case 'file_redirect':
       if (kids.includes('&>')) add('ampRedirect');
@@ -309,17 +322,9 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
   const on = (...names: string[]): boolean => has(parse, ...names);
   // The values of `set -o NAME` (not `set +o NAME`), also bundled as in `set -euo pipefail`.
   const setOption = (option: string): boolean => values(parse, '-o').some(({ word, role }) => role.of.startsWith('-') && argWord(nodes[word]).value === option);
+  const own = Object.keys(FEATURES).find((id) => FEATURES[id].builtins?.includes(name));
+  if (own) add(on('-A') && (name === 'declare' || name === 'typeset') ? 'assoc' : own);
   switch (name) {
-    case 'declare': add(on('-A') ? 'assoc' : 'declare'); break;
-    case 'typeset': add(on('-A') ? 'assoc' : 'typeset'); break;
-    case 'local': add('local'); break;
-    case 'readarray': case 'mapfile': add('readarray'); break;
-    case 'source': add('source'); break;
-    case 'let': add('let'); break;
-    case 'shopt': add('shopt'); break;
-    case 'pushd': case 'popd': case 'dirs': add('pushd'); break;
-    case 'print': add('print'); break;
-    case 'whence': add('whence'); break;
     case 'export': if (on('-f')) add('exportF'); break;
     case 'wait': if (on('-n')) add('waitN'); break;
     case 'type': if (on('-t')) add('typeT'); break;
@@ -335,7 +340,8 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
     case 'read':
       if (on('-a')) add('readA');
       if (on('-p')) add('readP');
-      if (on('-n', '-s', '-t', '-d')) add('readOpts');
+      if (on('-n', '-s', '-t')) add('readOpts');
+      if (on('-d')) add('readD');
       break;
     case 'set':
       if (setOption('pipefail')) add('pipefail');
@@ -383,9 +389,8 @@ function jaJoin(a: string, b: string): string {
   return a + (gap ? ' ' : '') + b;
 }
 
-/** The shells run for what they do with what they lack (the rows' `dash` and `ash`): `sh` is either, a common `/bin/sh`. */
-type Measured = 'dash' | 'ash';
-const MEASURED: Partial<Record<Shell, readonly Measured[]>> = { sh: ['dash', 'ash'], dash: ['dash'], ash: ['ash'] };
+/** The shells run for what they do with what they lack: `sh` is either, a common `/bin/sh`. */
+const MEASURED: Partial<Record<Shell, readonly Measured[]>> = { sh: COMMON_SH, dash: ['dash'], ash: ['ash'] };
 
 /** The common `/bin/sh` implementations that lack a feature: dash (Debian's and Ubuntu's) and busybox ash. */
 function shFails(f: Feature): RealShell[] {
@@ -401,7 +406,8 @@ function portableInSh(id: string, shell: Shell): boolean {
 }
 
 function featureHead(id: string, shell: Shell): Head {
-  const { ja, en } = FEATURES[id];
+  const { ja, en, posixSince } = FEATURES[id];
+  if (shell === 'sh' && posixSince) return [`${jaJoin(ja, `は POSIX では ${posixSince} 年版から`)}。`, `${en} is POSIX only since ${posixSince}.`];
   return shell === 'sh' ? [`${jaJoin(ja, 'は POSIX sh にない')}。`, `${en} is not POSIX sh.`]
     : [`${jaJoin(ja, 'は')} ${SHELL_NAMES[shell]} では使えない。`, `${en} is not available in ${SHELL_NAMES[shell]}.`];
 }
@@ -463,6 +469,8 @@ function featureMessage(id: string, shell: Shell, lang: Lang, how: Doing = usual
   if (shell === 'sh') {
     // Name the common /bin/sh implementations it breaks on.
     const lacks = shFails(f).length > 0;
+    // (Not POSIX before its 2024 edition: what fails is what a sh of today does.)
+    if (f.posixSince) return s(`${jaJoin(label, `は POSIX では ${f.posixSince} 年版からの書き方です`)}（${doingText(how, lang)}）。${alt}`, `${label} is POSIX only since ${f.posixSince} (${doingText(how, lang)}).${alt}`);
     return s(
       `${jaJoin(label, 'は POSIX sh にない書き方です')}${lacks ? `（${doingText(how, lang)}）` : '（dash・busybox ash では動きますが、POSIX にはありません）'}。${alt}`,
       `${label} is not POSIX sh${lacks ? ` (${doingText(how, lang)})` : ' (dash and busybox ash accept it, but POSIX does not have it)'}.${alt}`,

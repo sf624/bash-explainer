@@ -38,7 +38,8 @@ export function saidShell(reading: ShellReading | undefined): Shell | undefined 
 /**
  * Where each bash feature works, measured with bash 5.2, dash 0.5.12, busybox 1.36 ash, yash 2.55,
  * ksh93u+m 1.0.8, mksh R59 and zsh 5.9 (see test/dialect.test.ts, which re-checks the installed ones).
- * The letters are b d a y k m z; none of them is in POSIX sh. A feature of a later bash (`SINCE` in src/bashversion.ts)
+ * The letters are b d a y k m z. None is in POSIX before its 2024 edition; a few came in with that edition (`posixSince`),
+ * which the shells named here do not all follow yet. A feature of a later bash (`SINCE` in src/bashversion.ts)
  * has no `b`: bash's own check is by its version (`dialectIssues`).
  */
 export interface Feature {
@@ -53,6 +54,10 @@ export interface Feature {
   ash?: InShell;
   /** The variables the row is about (`variableFeature`). */
   vars?: readonly string[];
+  /** The builtins the row is about: a shell the row says lacks it runs no builtin of that name (`builtinIn`). */
+  builtins?: readonly string[];
+  /** The edition of POSIX that added it (IEEE Std 1003.1-2024: `$'…'` in 2.2.4, `;&` in 2.9.4.3, `pipefail` in 2.9.2, `read -d`): the sentence says so, as a shell may still lack it. */
+  posixSince?: 2024;
 }
 
 /**
@@ -65,56 +70,61 @@ export type InShell = 'empty' | 'refused' | 'stops' | { ja: (shell: string) => s
 /** The rows that keep the braces, in dash and busybox ash. */
 const BRACES: InShell = { ja: (sh) => `${sh} ではブレースのまま 1 つの単語になります`, en: (sh) => `in ${sh} the braces stay, as one word` };
 
+/** What dash and busybox ash make of `$"…"`. */
+const DOLLAR_THEN_QUOTE: InShell = { ja: (sh) => `${sh} では \`$\` がそのまま残ります`, en: (sh) => `in ${sh} the \`$\` stays, before the string` };
+
 export const FEATURES: Record<string, Feature> = {
   dbracket: { works: 'bayk mz', ja: '`[[ ]]`', en: '`[[ ]]`', altJa: '`[ ]` を使う', altEn: 'use `[ ]`' },
   regex: { works: 'b  yk z', ash: { ja: (sh) => `${sh} は照合しますが、中の \`(\` は構文エラーになります`, en: (sh) => `${sh} matches it, but a \`(\` in it is a syntax error` }, ja: '`[[ =~ ]]` の正規表現マッチ', en: '`[[ =~ ]]` regex matching', altJa: '`expr` や `grep -E` を使う', altEn: 'use `expr` or `grep -E`' },
-  array: { works: 'b  ykmz', dash: 'refused', ash: 'refused', ja: '配列', en: 'arrays', altJa: '位置パラメータ（`set -- …`）を使う', altEn: 'use the positional parameters (`set -- …`)' },
-  assoc: { works: 'b   kmz', ja: '連想配列', en: 'associative arrays' },
+  array: { works: 'b  ykmz', dash: 'refused', ash: 'refused', ja: '配列', en: 'an array', altJa: '位置パラメータ（`set -- …`）を使う', altEn: 'use the positional parameters (`set -- …`)' },
+  assoc: { works: 'b   kmz', ja: '連想配列', en: 'an associative array' },
   plusAssign: { works: 'b   kmz', ja: '`+=` による追加', en: 'appending with `+=`', altJa: '`v="${v}…"` と書く', altEn: 'write `v="${v}…"`' },
   replace: { works: 'b ayk mz', dash: 'stops', ja: '`${var/pattern/string}` の置換', en: '`${var/pattern/string}` replacement', altJa: '`sed` などを使う', altEn: 'use `sed` or similar' },
   replaceAnchor: { works: 'b  ykmz', dash: 'stops', ash: { ja: (sh) => `${sh} では置換されず、値はそのままになります`, en: (sh) => `${sh} replaces nothing, and the value stays as it is` }, ja: '`${var/#…}` / `${var/%…}` の置換', en: '`${var/#…}` / `${var/%…}` replacement' },
   caseMod: { works: 'b', dash: 'stops', ash: 'stops', ja: '`${var^^}` などの大文字・小文字変換', en: '`${var^^}`-style case conversion', altJa: '`tr` を使う', altEn: 'use `tr`' },
-  substr: { works: 'b a kmz', dash: 'stops', ja: '`${var:offset:length}` の部分文字列', en: '`${var:offset:length}` substrings', altJa: '`cut` や `expr substr` を使う', altEn: 'use `cut` or `expr substr`' },
+  substr: { works: 'b a kmz', dash: 'stops', ja: '`${var:offset:length}` の部分文字列', en: 'a `${var:offset:length}` substring', altJa: '`cut` や `expr substr` を使う', altEn: 'use `cut` or `expr substr`' },
   indirect: { works: 'b', dash: 'stops', ash: 'stops', ja: '`${!var}` の間接参照', en: '`${!var}` indirection', altJa: '`eval` を使う', altEn: 'use `eval`' },
-  prefixNames: { works: 'b   k', dash: 'stops', ash: 'stops', ja: '`${!prefix*}` の変数名一覧', en: '`${!prefix*}` name lists' },
-  arrayKeys: { works: 'b   km', dash: 'stops', ash: 'stops', ja: '`${!array[@]}` のインデックス一覧', en: '`${!array[@]}` index lists' },
-  transform: { works: 'b', dash: 'stops', ash: 'stops', ja: '`${var@Q}` などの変換', en: '`${var@Q}`-style transformations' },
-  negIndex: { works: 'b  yk z', dash: 'stops', ash: 'stops', ja: '負の添字 `${a[-1]}`', en: 'negative subscripts `${a[-1]}`' },
+  prefixNames: { works: 'b   k', dash: 'stops', ash: 'stops', ja: '`${!prefix*}` の変数名一覧', en: 'a `${!prefix*}` name list' },
+  arrayKeys: { works: 'b   km', dash: 'stops', ash: 'stops', ja: '`${!array[@]}` のインデックス一覧', en: 'a `${!array[@]}` index list' },
+  transform: { works: 'b', dash: 'stops', ash: 'stops', ja: '`${var@Q}` などの変換', en: 'a `${var@Q}`-style transformation' },
+  negIndex: { works: 'b  yk z', dash: 'stops', ash: 'stops', ja: '負の添字 `${a[-1]}`', en: 'a negative subscript `${a[-1]}`' },
   funcKeyword: { works: 'b aykmz', dash: 'refused', ja: '`function` キーワードによる関数定義', en: 'the `function` keyword', altJa: '`name() { … }` と書く', altEn: 'write `name() { … }`' },
-  herestring: { works: 'b  ykmz', dash: 'refused', ash: 'refused', ja: 'ヒアストリング `<<<`', en: 'here-strings `<<<`', altJa: '`printf \'%s\\n\' … |` やヒアドキュメントを使う', altEn: 'use `printf \'%s\\n\' … |` or a here-document' },
-  ansiC: { works: 'b a kmz', ja: '`$\'…\'` の文字列', en: '`$\'…\'` strings', altJa: '`printf` を使う', altEn: 'use `printf`', dash: { ja: (sh) => `${sh} では \`$\` と引用符の中の文字のままになります`, en: (sh) => `${sh} reads a \`$\` and then a quoted string` } },
+  herestring: { works: 'b  ykmz', dash: 'refused', ash: 'refused', ja: 'ヒアストリング `<<<`', en: 'a here-string `<<<`', altJa: '`printf \'%s\\n\' … |` やヒアドキュメントを使う', altEn: 'use `printf \'%s\\n\' … |` or a here-document' },
+  ansiC: { works: 'b a kmz', posixSince: 2024, ja: '`$\'…\'` の文字列', en: 'a `$\'…\'` string', altJa: '`printf` を使う', altEn: 'use `printf`', dash: { ja: (sh) => `${sh} では \`$\` と引用符の中の文字のままになります`, en: (sh) => `${sh} reads a \`$\` and then a quoted string` } },
   // (dash ends the quote at the `\'`: the rest of the word, from the `'` after it, is another quoted string.)
-  ansiCQuote: { works: 'b a kmz', dash: 'stops', ja: '`\\\'` を含む `$\'…\'` の文字列', en: '`$\'…\'` strings with `\\\'` in them', altJa: '`printf` を使う（dash では `\\\'` で引用が終わり、その後の `\'` からスクリプトの次の `\'` までが別の引用になる。次の `\'` が無ければ構文エラー）', altEn: 'use `printf` (dash ends the quote at the `\\\'`, and the `\'` after it opens another quoted string up to the next `\'` of the script, or a syntax error if there is none)' },
+  ansiCQuote: { works: 'b a kmz', posixSince: 2024, dash: 'stops', ja: '`\\\'` を含む `$\'…\'` の文字列', en: 'a `$\'…\'` string with `\\\'` in it', altJa: '`printf` を使う（dash では `\\\'` で引用が終わり、その後の `\'` からスクリプトの次の `\'` までが別の引用になる。次の `\'` が無ければ構文エラー）', altEn: 'use `printf` (dash ends the quote at the `\\\'`, and the `\'` after it opens another quoted string up to the next `\'` of the script, or a syntax error if there is none)' },
+  // (What dash and busybox ash do is measured; POSIX leaves a `$` before a quote unspecified. Other shells are not run on this: their letters say nothing is claimed there.)
+  translated: { works: 'b  ykmz', dash: DOLLAR_THEN_QUOTE, ash: DOLLAR_THEN_QUOTE, ja: '`$"…"` の文字列', en: 'a `$"…"` string', altJa: '`"…"` と書く', altEn: 'write `"…"`' },
   procSub: { works: 'b ayk z', dash: 'refused', ja: 'プロセス置換 `<(…)` / `>(…)`', en: 'process substitution `<(…)` / `>(…)`', altJa: '一時ファイルや名前付きパイプを使う', altEn: 'use a temporary file or a named pipe' },
   ampRedirect: { works: 'b a kmz', ja: '`&>`（標準出力と標準エラー出力をまとめてリダイレクト）', en: '`&>` (redirect stdout and stderr together)', altJa: '`>file 2>&1` と書く', altEn: 'write `>file 2>&1`', dash: { ja: (sh) => `${sh} では \`cmd &\` と \`>file\` に分かれ、コマンドの出力はそのままで、ファイルは空になります`, en: (sh) => `${sh} reads \`cmd &\` and \`>file\`: the output is not redirected, and the file is emptied` } },
   ampAppend: { works: 'b    mz', ash: 'refused', ja: '`&>>`', en: '`&>>`', altJa: '`>>file 2>&1` と書く', altEn: 'write `>>file 2>&1`', dash: { ja: (sh) => `${sh} では \`cmd &\` と \`>>file\` に分かれ、コマンドの出力はそのままで、ファイルには何も足されません`, en: (sh) => `${sh} reads \`cmd &\` and \`>>file\`: the output is not redirected, and nothing is added to the file` } },
   // (Measured by the probe in test/dialect.test.ts: bash and yash connect, dash does not (yash in CI, where it is
   // installed). The others are from their documentation: ksh93 connects for `/dev/tcp` and `/dev/udp`; busybox
   // ash, mksh and zsh have no such names.)
-  netRedirect: { works: 'b  yk', ja: '`/dev/tcp/ホスト/ポート` へのリダイレクトによるネットワーク接続', en: 'network connections by redirecting to `/dev/tcp/host/port`', altJa: '`nc` などのコマンドを使う', altEn: 'use a command such as `nc`' },
+  netRedirect: { works: 'b  yk', ja: '`/dev/tcp/ホスト/ポート` へのリダイレクトによるネットワーク接続', en: 'a network connection by redirecting to `/dev/tcp/host/port`', altJa: '`nc` などのコマンドを使う', altEn: 'use a command such as `nc`' },
   pipeAmp: { works: 'b     z', dash: 'refused', ash: 'refused', ja: '`|&`（標準エラー出力もパイプに流す）', en: '`|&` (pipe stderr too)', altJa: '`2>&1 |` と書く', altEn: 'write `2>&1 |`' },
   eqeqTest: { works: 'b ayk m', ja: '`[ a == b ]` や `test a == b` の `==`', en: '`==` in `[ ]` or `test`', altJa: '`=` を使う', altEn: 'use `=`' },
   arithCommand: { works: 'b   kmz', ja: '算術コマンド `(( ))`', en: 'the arithmetic command `(( ))`', altJa: '`[ "$((式))" -ne 0 ]` と書く', altEn: 'write `[ "$((expr))" -ne 0 ]`' },
   cFor: { works: 'b   k z', dash: 'refused', ash: 'refused', ja: 'C 言語風の `for (( ; ; ))`', en: 'C-style `for (( ; ; ))`', altJa: '`while` と `$(( ))` で書く', altEn: 'use `while` with `$(( ))`' },
-  braceRange: { works: 'b   k z', ja: 'ブレース展開 `{1..3}`', en: 'brace ranges `{1..3}`', altJa: '`seq` を使う', altEn: 'use `seq`', dash: BRACES, ash: BRACES },
+  braceRange: { works: 'b   k z', ja: 'ブレース展開 `{1..3}`', en: 'a brace range `{1..3}`', altJa: '`seq` を使う', altEn: 'use `seq`', dash: BRACES, ash: BRACES },
   braceList: { works: 'b   kmz', ja: 'ブレース展開 `{a,b}`', en: 'brace expansion `{a,b}`', dash: BRACES, ash: BRACES },
-  caseFall: { works: 'b   kmz', dash: 'refused', ash: 'refused', ja: '`case` の `;&`（次の分岐へ続ける）', en: '`;&` in `case` (fall through)' },
+  caseFall: { works: 'b   kmz', posixSince: 2024, dash: 'refused', ash: 'refused', ja: '`case` の `;&`（次の分岐へ続ける）', en: '`;&` in `case` (fall through)' },
   caseCont: { works: 'b    m', dash: 'refused', ash: 'refused', ja: '`case` の `;;&`（続けて次のパターンも調べる）', en: '`;;&` in `case` (test the next patterns too)' },
-  extglob: { works: 'b   km', dash: 'refused', ash: 'refused', ja: '拡張グロブ `@(…)` など', en: 'extended globs like `@(…)`' },
-  select: { works: 'b   kmz', dash: 'refused', ash: 'refused', ja: '`select` ループ', en: '`select` loops' },
-  local: { works: 'bday mz', ja: '`local`', en: '`local`' },
-  declare: { works: 'b     z', ja: '`declare`', en: '`declare`' },
-  typeset: { works: 'b  ykmz', ja: '`typeset`', en: '`typeset`' },
-  readarray: { works: 'b', ja: '`readarray` / `mapfile`', en: '`readarray` / `mapfile`', altJa: '`while read` で1行ずつ読む', altEn: 'read lines with `while read`' },
-  source: { works: 'b a kmz', ja: '`source`', en: '`source`', altJa: '`.` を使う', altEn: 'use `.`' },
-  let: { works: 'b a kmz', ja: '`let`', en: '`let`', altJa: '`$(( ))` を使う', altEn: 'use `$(( ))`' },
-  shopt: { works: 'b', ja: '`shopt`', en: '`shopt`' },
-  pushd: { works: 'b  y  z', ja: '`pushd` / `popd`', en: '`pushd` / `popd`', altJa: '`cd` と変数で戻り先を覚える', altEn: 'remember the directory in a variable and `cd`' },
+  extglob: { works: 'b   km', dash: 'refused', ash: 'refused', ja: '拡張グロブ `@(…)` など', en: 'an extended glob like `@(…)`' },
+  select: { works: 'b   kmz', dash: 'refused', ash: 'refused', ja: '`select` ループ', en: 'a `select` loop' },
+  local: { works: 'bday mz', builtins: ['local'], ja: '`local`', en: '`local`' },
+  declare: { works: 'b     z', builtins: ['declare'], ja: '`declare`', en: '`declare`' },
+  typeset: { works: 'b  ykmz', builtins: ['typeset'], ja: '`typeset`', en: '`typeset`' },
+  readarray: { works: 'b', builtins: ['readarray', 'mapfile'], ja: '`readarray` / `mapfile`', en: '`readarray` / `mapfile`', altJa: '`while read` で1行ずつ読む', altEn: 'read lines with `while read`' },
+  source: { works: 'b a kmz', builtins: ['source'], ja: '`source`', en: '`source`', altJa: '`.` を使う', altEn: 'use `.`' },
+  let: { works: 'b a kmz', builtins: ['let'], ja: '`let`', en: '`let`', altJa: '`$(( ))` を使う', altEn: 'use `$(( ))`' },
+  shopt: { works: 'b', builtins: ['shopt'], ja: '`shopt`', en: '`shopt`' },
+  pushd: { works: 'b  y  z', builtins: ['pushd', 'popd', 'dirs'], ja: '`pushd` / `popd`', en: '`pushd` / `popd`', altJa: '`cd` と変数で戻り先を覚える', altEn: 'remember the directory in a variable and `cd`' },
   exportF: { works: 'b', dash: 'stops', ash: 'stops', ja: '`export -f`', en: '`export -f`' },
   waitN: { works: 'b a', ja: '`wait -n`', en: '`wait -n`' },
   coproc: { works: 'b     z', ja: '`coproc`', en: '`coproc`' },
-  print: { works: '    kmz', ja: '`print`', en: '`print`', altJa: '`printf \'%s\\n\'` を使う', altEn: 'use `printf \'%s\\n\'`' },
-  whence: { works: '    kmz', ja: '`whence`', en: '`whence`', altJa: '`command -v` を使う', altEn: 'use `command -v`' },
+  print: { works: '    kmz', builtins: ['print'], ja: '`print`', en: '`print`', altJa: '`printf \'%s\\n\'` を使う', altEn: 'use `printf \'%s\\n\'`' },
+  whence: { works: '    kmz', builtins: ['whence'], ja: '`whence`', en: '`whence`', altJa: '`command -v` を使う', altEn: 'use `command -v`' },
   typeT: { works: 'b   k', ash: { ja: (sh) => `${sh} の \`type -t\` は種類ではなく名前を表示します`, en: (sh) => `${sh}'s \`type -t\` prints the name, not the kind` }, ja: '`type -t`', en: '`type -t`', altJa: '`command -v` を使う', altEn: 'use `command -v`' },
   printfV: { works: 'b   k z', ash: { ja: (sh) => `${sh} は \`-v\` を文字として表示し、変数を設定しません`, en: (sh) => `${sh} prints \`-v\` as text, and sets no variable` }, ja: '`printf -v`', en: '`printf -v`', altJa: '`v=$(printf …)` と書く', altEn: 'write `v=$(printf …)`' },
   printfQ: { works: 'b     z', ja: '`printf %q`', en: '`printf %q`' },
@@ -122,8 +132,9 @@ export const FEATURES: Record<string, Feature> = {
   echoN: { works: 'bda kmz', ja: '`echo -n`', en: '`echo -n`', altJa: '`printf` を使う', altEn: 'use `printf`' },
   readA: { works: 'b   k', ja: '`read -a`', en: '`read -a`' },
   readP: { works: 'bday', ja: '`read -p`（プロンプト）', en: '`read -p` (prompt)', altJa: '`printf` でプロンプトを出してから `read` する（ksh/mksh/zsh の `-p` は別の意味）', altEn: 'print the prompt with `printf`, then `read` (`-p` means something else in ksh, mksh and zsh)' },
-  readOpts: { works: 'b a kmz', ja: '`read` の `-n` / `-s` / `-t` / `-d`', en: '`read -n` / `-s` / `-t` / `-d`' },
-  pipefail: { works: 'b aykmz', dash: 'stops', ja: '`set -o pipefail`', en: '`set -o pipefail`' },
+  readOpts: { works: 'b a kmz', ja: '`read` の `-n` / `-s` / `-t`', en: '`read -n` / `-s` / `-t`' },
+  readD: { works: 'b a kmz', posixSince: 2024, ja: '`read -d`', en: '`read -d`' },
+  pipefail: { works: 'b aykmz', posixSince: 2024, dash: 'stops', ja: '`set -o pipefail`', en: '`set -o pipefail`' },
   trapErr: { works: 'b a kmz', ja: '`trap … ERR`', en: '`trap … ERR`' },
   errtrace: { works: 'bda   z', ja: '`set -E`', en: '`set -E`' },
   random: { works: 'b aykmz', vars: ['RANDOM'], ja: '`$RANDOM`', en: '`$RANDOM`', altJa: '`awk \'BEGIN{srand(); print int(rand()*32768)}\'` などを使う', altEn: 'use e.g. `awk \'BEGIN{srand(); print int(rand()*32768)}\'`', dash: 'empty' },
@@ -147,9 +158,27 @@ export function works(f: Feature, shell: RealShell): boolean {
   return f.works.includes(LETTER[shell]);
 }
 
-/** Whether feature `id` of FEATURES works in `shell` (bash when absent; POSIX sh has none of them). */
+/** Whether feature `id` of FEATURES works in `shell` (bash when absent; `sh` may be any, so none is counted on there). */
 export function featureWorks(id: string, shell?: Shell): boolean {
   return !shell || (shell !== 'sh' && works(FEATURES[id], shell as RealShell));
+}
+
+/** The row of FEATURES about the builtin `name`, if any. */
+const builtinRow = (name: string): Feature | undefined => Object.values(FEATURES).find((f) => f.builtins?.includes(name));
+
+/** The shells run for what they do with what they lack (the rows' `dash` and `ash`). */
+export type Measured = 'dash' | 'ash';
+/** The common `/bin/sh` implementations: what they both run is counted on in a sh script (`local`, not POSIX, is there in both). */
+export const COMMON_SH: readonly Measured[] = ['dash', 'ash'];
+
+/**
+ * Whether `shell` (bash when absent) has a builtin of this name, as far as the table says: the row of the builtin, where it has one.
+ * In `sh`, where the common shells differ, the one that lacks it decides: `source` fails in dash, so it is not counted on.
+ */
+export function builtinIn(name: string, shell?: Shell): boolean {
+  const row = builtinRow(name);
+  if (!row) return true;
+  return shell === 'sh' ? COMMON_SH.every((sh) => works(row, sh)) : works(row, shell ?? 'bash');
 }
 
 /** The feature of a brace expression: a list (`{a,b}`) or a sequence (`{1..3}`). */

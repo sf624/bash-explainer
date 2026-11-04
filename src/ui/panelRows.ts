@@ -495,7 +495,7 @@ function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[],
   const drawn = all(rows);
   const levels = new Set([...noteLevels, ...drawn.flatMap((r) => r.marks?.map((m) => m.level) ?? [])]);
   const frames = new Set(drawn.map((r) => r.frame));
-  const names = new Map(drawn.flatMap((r) => (r.name ? [[r.name.runs, r.name.said.kind] as const] : [])));
+  const names = new Map(drawn.flatMap((r) => (r.name ? [[r.name.sourced ? 'sourced' : r.name.runs, r.name.said.kind] as const] : [])));
   const roles = new Set(drawn.map((r) => r.role));
   const received = new Set(drawn.map((r) => r.received));
   const chips = drawn.flatMap((r) => r.receives?.chips ?? []);
@@ -519,7 +519,7 @@ function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[],
 }
 
 /** The rows the panel shows of a line, at a depth and with the switch, and the Key of what they draw. */
-export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' | 'noteInfo' | 'notPosix' | 'shell'>, options: RowOptions, lang: Lang): RowModel {
+export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' | 'noteInfo' | 'notPosix' | 'plainWords' | 'shell'>, options: RowOptions, lang: Lang): RowModel {
   const lines = options.receives ? ex.argv ?? [] : [];
   const shell = shellSaid(ex.shell, lang);
   const read = options.depth === 2 && ex.reading ? rolesOf(ex.reading, lang) : undefined;
@@ -541,7 +541,7 @@ export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' 
     sayOnce(rows, build.saying);
   }
   // (Without the data, as in an explanation made for the hover, no mark says what no program receives.)
-  if (options.receives && ex.argv) markHandled(rows, lines);
+  if (options.receives && ex.argv) markHandled(rows, lines, ex.plainWords ?? []);
   markNotPosix(rows, ex.notPosix ?? []);
   const tm = ui[lang].panel.receives;
   const marks: RowMarks = { handled: tm.handled.replace('{shell}', () => shell), handledSays: tm.handledSays.replace('{shell}', () => shell), notPosix: tm.notPosix };

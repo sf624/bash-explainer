@@ -7,7 +7,8 @@ import type { CommandSpec } from '../../argv/spec';
 import { actedNames, has, onlyInFunction } from '../../argv/query';
 import { prefixOf } from '../../argv/words';
 import { bracesMayWork } from '../../shellfeatures';
-import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
+import { builtins } from '../../dict/builtins';
+import { builtinIn } from '../../shellfeatures';
 import { elementClose, staticWordValue, tildeParts, tildeSpots } from '../../staticword';
 import { descendants, field, fields, type SyntaxNode, wordBraces } from '../../syntax/tree';
 import { parseExpansion } from '../../expansion';
@@ -275,7 +276,7 @@ export class WalkBuiltins {
 
   /** Whether `name` is read here as bash's builtin (the others are programs, or other shells' builtins). */
   bashBuiltin(name: string): boolean {
-    return this.w.bash || !BASH_ONLY_BUILTINS.has(name);
+    return builtinIn(name, this.w.shell);
   }
 
   /** Sets the variable `name` names (`v`, `a[1]`: an element), to a value not known here. */

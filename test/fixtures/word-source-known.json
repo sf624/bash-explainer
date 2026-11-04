@@ -205,7 +205,7 @@
       "reason": "finds syntax a shell lacks",
       "uses": [
         {"fn":"classify","kind":"glob-class","count":1},
-        {"fn":"classify","kind":"node-type","count":17},
+        {"fn":"classify","kind":"node-type","count":18},
         {"fn":"collectBehaviours","kind":"node-type","count":5},
         {"fn":"eqeqOperator","kind":"helper","count":1},
         {"fn":"issuesFound","kind":"node-type","count":1},

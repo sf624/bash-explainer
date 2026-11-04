@@ -273,6 +273,11 @@ export interface LineExplanation {
   /** What the program of each simple command on the line receives, in source order (src/argvline.ts); only when `ExplainOptions.argv` asks for it. */
   argv?: ArgvLine[];
   /**
+   * With `argv`: the keywords of bash on the lines shown that the script's shell reads as a command, or does not have (`[[ ]]`, `time`, `coproc` in dash):
+   * bash's grammar does not handle them there (`keywordsNotIn`, src/dialect.ts).
+   */
+  plainWords?: Span[];
+  /**
    * One sentence that says what the line does, "In short" (src/linesentence.ts; marked text: code in backticks); only
    * when `ExplainOptions.sentence` asks for it, and on a line with code.
    */
@@ -311,8 +316,11 @@ export interface ArgvRemoved { kind: 'assignment' | 'redirect'; span: Span; text
  */
 export interface ArgvLine {
   span: Span;
-  /** The name surely runs in the shell itself, with no program started (`words[0]` is the name all the same): it gets its arguments only, not an `argv[0]`. */
-  inside?: 'builtin' | 'function';
+  /**
+   * The name surely runs in the shell itself, with no program started (`words[0]` is the name all the same): it gets its arguments only, not an `argv[0]`.
+   * `sourced`: a name the dictionary does not know, after a `source` or `.`, which may be a function of the file read (`NameResolution.sourced`), or else a program.
+   */
+  inside?: 'builtin' | 'function' | 'sourced';
   words: ArgvWord[];
   removed: ArgvRemoved[];
   fails?: { span: Span; error: NonNullable<Fields['error']> };
