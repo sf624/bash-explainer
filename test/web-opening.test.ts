@@ -63,6 +63,57 @@ describe('the web page: the opening', function () {
     await ctx.close();
   });
 
+  describe('in the language of the setting', () => {
+    const EN = ['Sort lines', 'output only unique lines', 'target file', 'Pipe', 'Count lines, words and bytes', 'count lines'];
+    const JA = ['行を並べ替える', '重複行を1つにまとめる', '対象のファイル', 'パイプ', '行数・単語数・バイト数を数える', '行数を数える'];
+    /** The labels the eye sees: those of the language shown (the other one is display: none). */
+    const labels = async (page: Page) =>
+      (await page.locator('#opening .opening-line .chip :is(.l-en, .l-ja):visible').allInnerTexts()).map((t) => t.replace(/\u00a0/g, ' '));
+    /** The language the opening of a new tab has (the attribute theme-init.js sets), and its visible labels. */
+    const opening = async (page: Page) => {
+      await page.waitForSelector('#opening', { state: 'attached' });
+      assert.ok((await state(page)).shown, 'the opening plays');
+      return { lang: await page.evaluate("document.documentElement.getAttribute('data-opening-lang')"), labels: await labels(page) };
+    };
+    /** Chooses the language in the page's settings dialog, which saves it as the page does, once the opening has left. */
+    const choose = async (ctx: Awaited<ReturnType<Site['firstLoad']>>, language: 'auto' | 'en' | 'ja') => {
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await until('the opening to leave', async () => (await state(page)).there, (v) => !v);
+      await page.locator('#settings-open').click();
+      await page.locator('#setting-language').selectOption(language);
+      await page.locator('#settings-done').click();
+      await page.close();
+    };
+
+    for (const [locale, setting, want] of [
+      ['ja-JP', 'en', 'en'],
+      ['en-US', 'ja', 'ja'],
+      ['ja-JP', 'auto', 'ja'],
+      ['en-US', 'auto', 'en'],
+    ] as const) {
+      it(`on a ${locale} browser with the language setting ${setting}, is in ${want === 'en' ? 'English' : 'Japanese'}`, async () => {
+        const ctx = await firstLoad({ locale });
+        // `auto` is the default, which the page does not keep: set another value first, so that the choice is saved and then removed.
+        if (setting === 'auto') await choose(ctx, locale === 'ja-JP' ? 'en' : 'ja');
+        await choose(ctx, setting);
+        const page = await ctx.newPage();
+        await page.goto(base);
+        assert.deepStrictEqual(await opening(page), { lang: want, labels: want === 'en' ? EN : JA });
+        await ctx.close();
+      });
+    }
+
+    it('follows the link\'s language before the setting', async () => {
+      const ctx = await firstLoad({ locale: 'ja-JP' });
+      await choose(ctx, 'en');
+      const page = await ctx.newPage();
+      await page.goto(`${base}#lang=ja`);
+      assert.deepStrictEqual(await opening(page), { lang: 'ja', labels: JA });
+      await ctx.close();
+    });
+  });
+
   it('ends at a key or a click once the page is ready, before its labels have stayed', async () => {
     for (const end of ['key', 'click'] as const) {
       const ctx = await firstLoad();
