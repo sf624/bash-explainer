@@ -45,6 +45,10 @@ export const FACT_HEADS: { [K in ProblemFactId]: (p: Params<K>) => Head } = {
     fragment: [`スクリプトとして実行すると、\`${left}\` が失敗しても終了ステータス 0 で終わる。`, `Run as a script, it still ends with status 0 if \`${left}\` fails.`],
     errexit: [`\`${left}\` が失敗しても、\`set -e\` はスクリプトを止めない。`, `If \`${left}\` fails, \`set -e\` does not stop the script.`],
   } satisfies Record<typeof where, Head>)[where],
+  'line-too-deep': () => ['入れ子が深すぎて最後までたどれないので、この行は説明されない。', 'The line nests too deep to follow to the end, so it is not explained.'],
+  'file-not-read': ({ why }) => (why === 'too-deep'
+    ? ['入れ子が深すぎて読めないので、このファイルは何も説明されない。', 'The file nests too deep to be read, so none of it is explained.']
+    : ['Bash Explainer の不具合で読めなかったので、このファイルは何も説明されない。', 'A bug of the tool stopped it reading the file, so none of it is explained.']),
   'keyword-needs-separator': ({ kw }) => [`\`${kw}\` の前に \`;\` か改行がないので、構文エラーになる。`, `\`${kw}\` has no \`;\` or newline before it: a syntax error.`],
   'bracket-missing-close': () => ['`[` の最後の引数が `]` でないので、条件を評価せずに失敗する。', '`[` has no `]` as its last argument, so it fails without testing anything.'],
   'bracket-close-glued': ({ word }) => [`\`${word}\` の \`]\` は単語の一部なので、\`[\` は条件を評価せずに失敗する。`, `The \`]\` in \`${word}\` is part of the word, so \`[\` fails without testing anything.`],
