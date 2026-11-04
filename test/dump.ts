@@ -28,7 +28,7 @@ const root = path.join(__dirname, '..');
   };
   lines.forEach((text, i) => {
     if (only && Number(only) !== i + 1) return;
-    const e = extracted ? explainHostedLine(analyzer, tree, extracted, lines, i, lang as 'ja' | 'en') : analyzer.explainLine(tree, i, detectShell(src, file));
+    const e = extracted ? explainHostedLine(analyzer, tree, extracted, lines, i, lang as 'ja' | 'en') : analyzer.explainLine(tree, i, detectShell(src, file), { script: 'said' });
     if (!e) return;
     console.log(`\n### ${i + 1}: ${text}`);
     if (e.context.length) console.log('  context: ' + e.context.map((c) => `${c.label}@${c.line + 1}`).join(' > '));

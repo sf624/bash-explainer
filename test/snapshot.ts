@@ -31,7 +31,7 @@ Date.now = () => FIXED_NOW;
       for (let i = 0; i < count; i++) {
         let explanation: unknown;
         try {
-          explanation = analyzer.explainLine(tree, i, shell);
+          explanation = analyzer.explainLine(tree, i, shell, { script: 'said' });
         } catch (e) {
           explanation = { threw: String(e) };
         }

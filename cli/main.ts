@@ -253,6 +253,8 @@ interface Input {
   text: string;
   kind: Kind;
   lines?: [number, number];
+  /** Read from standard input: a script by what is given, as a file named `.sh` is (`ScriptEvidence`). */
+  stdin?: boolean;
 }
 
 function readInputs(o: Options): Input[] {
@@ -268,7 +270,7 @@ function readInputs(o: Options): Input[] {
     }
     const kind = o.kind ?? (stdin ? 'shell' : hostKind('', input.spec, text) ?? 'shell');
     // A shell script keeps its CRs: the parser reads them as blanks and the check warns about them.
-    out.push({ name: input.spec, shown: oneLine(input.spec), text: kind === 'shell' ? text : text.replace(/\r\n/g, '\n'), kind, lines: input.lines ?? o.lines });
+    out.push({ name: input.spec, shown: oneLine(input.spec), text: kind === 'shell' ? text : text.replace(/\r\n/g, '\n'), kind, lines: input.lines ?? o.lines, ...(stdin ? { stdin } : {}) });
   }
   return out;
 }
@@ -499,7 +501,7 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
       file = input.shown;
       const doc = openDocument(input.text, input.kind, (text) => parser.parse(text));
       const lines = doc.lines;
-      const shells = shellsOf(lines, input.name, o.shell, o.command !== undefined ? 'said' : o.kind !== undefined ? 'name' : undefined);
+      const shells = shellsOf(lines, input.name, o.shell, o.command !== undefined ? 'said' : o.kind !== undefined || input.stdin ? 'name' : undefined);
       // (Said once for a file, however many lines say it.)
       let notRead = !!doc.tree.unread;
       // (A file not read says so once, on its first line, not on each.)

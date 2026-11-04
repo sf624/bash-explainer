@@ -6,7 +6,7 @@ import type { Example, Kind, Span, Token } from './analyzer-types';
 import { evalArith, intValue } from './arith';
 import { cannotAssign, expansionOps, wellKnownVariables } from './dict/syntax';
 import type { Explainer } from './explain/context';
-import { arrayKind, isAssoc, isInteger, shoptAt, surelyRuns } from './explain/reads';
+import { arrayKind, isAssoc, isInteger, runsAs, shoptAt } from './explain/reads';
 import { scriptValue } from './explain/values';
 import { stageCountNote } from './explain/where';
 import { globChildren, joinedNote, orderNote, variableNote, varDesc } from './explain/words';
@@ -36,13 +36,14 @@ function inDoubleQuotes(n: SyntaxNode): boolean {
 }
 
 /**
- * What is said of `${…}` that bash always rejects: in bash, a problem where a run surely gets to it (`surelyRuns`), at the level of
- * how the file is known to be a script (`ScriptEvidence`), or else a warning on its row; in another shell, only what bash does.
+ * What is said of `${…}` that bash always rejects: in bash, a problem where a run gets to it, at its level (`runsAs`), or else a
+ * warning on its row; in another shell, only what bash does.
  */
 function badSubstitution(h: Explainer, n: SyntaxNode, why: 'length' | 'flags', [ja, en]: readonly [string, string]): string {
   if (h.shell && h.shell !== 'bash') return h.s(ja, en);
-  if (!surelyRuns(h, n)) return h.text('bad-substitution-if-run', { why });
-  return h.opts.script === 'said' ? h.text('bad-substitution-always', { why }) : h.text('bad-substitution-if-bash', { why });
+  const known = runsAs(h, n);
+  if (!known) return h.text('bad-substitution-if-run', { why });
+  return known === 'known' ? h.text('bad-substitution-always', { why }) : h.text('bad-substitution-if-bash', { why });
 }
 
 /** `${…}`: the overall meaning plus a worked example, broken down into its parts. */

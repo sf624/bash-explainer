@@ -1,6 +1,7 @@
 import type { Lang } from './i18n';
 import { tokenSaid } from './messages-tokens';
-import type { ScriptEvidence, Shell } from './shellfeatures';
+import type { ReadKnown } from './semantics/scriptstops';
+import type { Shell } from './shellfeatures';
 /**
  * Integer constants of bash arithmetic (`$(( ))`, `(( ))`, `let`, array subscripts, `${s:off:len}`):
  * decimal, octal (`010`), hexadecimal (`0x1F`) and `base#digits` (`2#1010`, `64#@`).
@@ -185,14 +186,14 @@ export function invalidLiteral(text: string, lit: Extract<ArithLiteral, { type: 
 }
 
 /**
- * How a constant the shell rejects is said: `always`, an error; `if-bash`, where only a name says the file is a script of bash (a
- * warning with the same words); `if-read`, where the command may run without reading it, or no one says the shell reads the text
+ * How a constant the shell rejects is said: `always`, an error; `if-bash`, where only a name says the file is a script of bash, or a
+ * stop may come first (a problem at a warning's level); `if-read`, where the command may run without reading it, or no one says the shell reads the text
  * as it stands (a warning on its row).
  */
 export type InvalidHow = 'always' | 'if-bash' | 'if-read';
 
-/** `how` for the evidence that a shell reads the text (`Explainer.evidenceAt`), and whether the command may run without reading it. */
-export const invalidHow = (said: ScriptEvidence | undefined, sometimes = false): InvalidHow => (sometimes || !said ? 'if-read' : said === 'name' ? 'if-bash' : 'always');
+/** `how` for what is known of a fault of the text (`Explainer.evidenceAt`), and whether the command may run without reading it. */
+export const invalidHow = (known: ReadKnown | undefined, sometimes = false): InvalidHow => (sometimes || !known ? 'if-read' : known === 'unsure' ? 'if-bash' : 'always');
 
 /** A constant the shell rejects, in words, from the catalog of token texts. */
 export function describeInvalidLiteral(text: string, lit: Extract<ArithLiteral, { type: 'invalid' }>, lang: Lang, how: InvalidHow = 'always'): string {

@@ -28,6 +28,8 @@ const parser = createUnbashParser();
 const script = (text: string): ShellDocument => openDocument(text, 'shell', (t) => parser.parse(t));
 const problems = (doc: ShellDocument, shell?: Shell, bashVersion?: BashVersion, lang: 'ja' | 'en' = 'en'): DocumentIssue[] => documentIssues(doc, lang, { script: 'said', ...(shell ? { forced: shell } : {}) }, [], { bashVersion });
 const syntax = (doc: ShellDocument, shell?: Shell, version?: BashVersion) => problems(doc, shell, version).filter((i) => i.code === 'syntax-error');
+/** The same at a warning's level: after a stop that may come first (`readAs`, src/semantics/scriptstops.ts). */
+const warned = (doc: ShellDocument) => problems(doc).filter((i) => i.code === 'syntax-error-if-bash');
 
 /** Which scripts `tool -n` rejects, in one process (the table is long): a file each, as a script is read. */
 function rejected(tool: string, scripts: readonly string[]): Set<string> {
@@ -147,7 +149,7 @@ describe('a syntax error is a problem, as bash -n says', function () {
       ['[[ a b ]]\n', 0, 5, 6, 'the shell cannot read this command', 'シェルはこのコマンドを読めない'],
       ['a |\n', 0, 2, 3, 'a command is missing here', 'ここにコマンドがない'],
       ['a >\n', 0, 2, 3, 'the redirection has no target', 'リダイレクトの行き先がない'],
-      ['f()\n', 0, 0, 3, 'the function has no body', '関数の本体がない'],
+      ['f()\n', 0, 1, 2, 'the function has no body', '関数の本体がない'],
       ['x=(1 2\n', 0, 1, 2, '`)` is missing', '`)` がない'],
       ['if a; then fi\n', 0, 11, 13, 'no command follows `then`', '`then` の後にコマンドがない'],
     ];
@@ -405,7 +407,7 @@ describe('what bash does with "bad substitution", and with a builtin behind a wr
     }
   });
 
-  // (`--check` fails on the first: `tokenErrorNotes`. The gate is the syntax error's, `surelyRead`, and no path that may leave it out.)
+  // (`--check` fails on the first: `tokenErrorNotes`. The rule is the syntax error's, `readAs`, and no path that may leave it out: `runsAs`.)
   // (What runs before it on the line has run; a subshell, `$( )`, a stage of a pipeline, `&`, `eval` and a file sourced keep it to themselves: so the text states no status.)
   it('`${(f)var}`: bash drops what it read with it, and goes on to the next line', () => {
     const rows: [string, string][] = [
@@ -461,6 +463,7 @@ describe('what bash does with "bad substitution", and with a builtin behind a wr
     const silent: [string, number, number | null][] = [
       ['exit 0\necho ${(f)x}\n', 1, 0],
       ['eval "exit 0"\necho ${#x:-a}\n', 1, 0],
+      ['trap "exit 0" EXIT\necho ${(f)x}\n', 1, 0],
       ['if [ -n "$ZSH_VERSION" ]; then echo ${(f)x}; fi\n', 0, 0],
       ['[ -n "$ZSH_VERSION" ] && echo ${(f)x}\ntrue\n', 0, 0],
       ['[ -z "$ZSH_VERSION" ] || echo ${(f)x}\n', 0, 0],
@@ -477,6 +480,9 @@ describe('what bash does with "bad substitution", and with a builtin behind a wr
       assert.ok(!notes(text, line).includes('bad-substitution-always'), text);
       if (status !== null) assert.strictEqual(runs(text).status, status, text);
     }
+    // (After a stop that may come first, a problem at a warning's level; after a sure one, no problem.)
+    assert.ok(notes('trap "exit 0" EXIT\necho ${(f)x}\n', 1).includes('bad-substitution-if-bash'));
+    assert.ok(!notes('exit 0\necho ${(f)x}\n', 1).includes('bad-substitution-if-bash'));
     // (On its row, a warning that says when.)
     const walk = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...walk(t.children)]);
     const row = walk(new Analyzer('en').explainLine(parser.parse('if a; then echo ${(f)x}; fi\n'), 0, undefined, { script: 'said' }).items).find((t) => t.label === '${(f)x}' && t.marks)!;
@@ -583,27 +589,21 @@ describe('says nothing where it is not positively known', function () {
   /** `name` (a file of that name), the script, the shell to run it in, and its status there; null: the status is the tool's (`go` may be absent). */
   type Row = [string, string | Buffer, 'bash' | 'dash', number | null];
   const gz = Buffer.concat([Buffer.from('#!/bin/bash\ntail -n +4 "$0" | tar xz\nexit 0\n'), gzipSync(Buffer.from('payload '.repeat(200))), Buffer.from(")'\"`\n")]);
+  // (A stop that is sure: nothing is said after it.)
   const reachedNot: Row[] = [
     ['self-extracting, with text', '#!/bin/bash\ntail -n +4 "$0" | tar xz\nexit 0\n__DATA__\n) ( binary \' " `\n', 'bash', 0],
     ['self-extracting, with gzip', gz, 'bash', 0],
     ['exit', 'exit 0\n)\n', 'bash', 0],
     ['exit in sh', '#!/bin/sh\nexit 0\n)\n', 'dash', 0],
     ['exec', 'exec true\n)\n', 'bash', 0],
-    ['exit in `{ }`', '{ echo a; exit 0; }\n)\n', 'bash', 0],
-    ['exit in a function', 'main() { exit 0; }\nmain\n__DATA__\n)\n', 'bash', 0],
-    ['exit in a branch and in the other', 'if true; then exit 0; else exit 0; fi\n)\n', 'bash', 0],
-    ['exit in a case', 'case "$1" in *) exit 0;; esac\n)\n', 'bash', 0],
-    ['prose after an exit', "exit 0\nThis is prose, and don't read it.\n", 'bash', 0],
-    ['exit after `&&`', '[ x ] && exit 0\n)\n', 'bash', 0],
+    ['exec in `{ }`', '{ exec true; }\n)\n', 'bash', 0],
+    ['exec in a branch and in the other', 'if true; then exec true; else exec true; fi\n)\n', 'bash', 0],
     ['exit quoted', '"ex"it 0\n)\n', 'bash', 0],
     ['exit with a backslash', '\\exit 0\n)\n', 'bash', 0],
     ['exit over a continuation', 'ex\\\nit 0\n)\n', 'bash', 0],
     ['exit by `command`', 'command exit 0\n)\n', 'bash', 0],
     ['exit by `builtin`', 'builtin exit 0\n)\n', 'bash', 0],
-    ['exit by a variable', 'e=exit\n$e 0\n)\n', 'bash', 0],
-    ['kill', 'kill -9 $$\n)\n', 'bash', null],
-    ['source', 'echo "exit 0" > f.inc\n. ./f.inc\n)\n', 'bash', 0],
-    ['source, by its name', 'echo "exit 0" > f.inc\nsource ./f.inc\n)\n', 'bash', 0],
+    ['prose after an exit', "exit 0\nThis is prose, and don't read it.\n", 'bash', 0],
     ['eval', 'eval "exit 0"\n)\n', 'bash', 0],
     ["pip's", '#!/bin/sh\n\'\'\'exec\' true "$0" "$@"\n\' \'\'\'\nprint(")")\n', 'dash', 0],
     ['eval perl', "eval 'exec true -x -wS $0 ${1+\"$@\"}'\n  if 0;\n", 'bash', 0],
@@ -614,15 +614,39 @@ describe('says nothing where it is not positively known', function () {
     ['set -t in a cluster', 'set -xt\necho a\n)\n', 'bash', 0],
     ['onecmd', 'set -o onecmd\necho a\n)\n', 'bash', 0],
     ['a NUL on the first line: no script to bash', 'echo a\0b\n)\n', 'bash', 126],
-    ['an alias that closes', 'shopt -s expand_aliases\nalias fi2=fi\nif true; then echo; fi2\n', 'bash', 0],
-    ['an alias that closes, in sh', '#!/bin/sh\nalias fi2=fi\nif true; then echo; fi2\n', 'dash', 0],
+    ['a function at the end, after an exit: its place is its own, not the first line', 'exit 0\nf()\n\n', 'bash', 0],
   ];
   for (const [name, text, tool, status] of reachedNot) {
     it(name, () => {
       const r = runFile(text, tool);
       assert.strictEqual(r.syntax, false, `${tool} reports a syntax error`);
       if (status !== null) assert.strictEqual(r.status, status);
+      assert.deepStrictEqual(problems(script(text.toString())).filter((i) => i.code.startsWith('syntax-error')), []);
+    });
+  }
+
+  // (A stop that may come first: no Error, as a script that works must not fail `--check`, but a warning that says "if the shell reaches this line".)
+  const mayNotReach: Row[] = [
+    ['exit in `{ }`', '{ echo a; exit 0; }\n)\n', 'bash', 0],
+    ['exit in a function', 'main() { exit 0; }\nmain\n__DATA__\n)\n', 'bash', 0],
+    ['exit in a branch and in the other', 'if true; then exit 0; else exit 0; fi\n)\n', 'bash', 0],
+    ['exit in a case', 'case "$1" in *) exit 0;; esac\n)\n', 'bash', 0],
+    ['exit after `&&`', '[ x ] && exit 0\n)\n', 'bash', 0],
+    ['exit by a variable', 'e=exit\n$e 0\n)\n', 'bash', 0],
+    ['kill', 'kill -9 $$\n)\n', 'bash', null],
+    ['source', 'echo "exit 0" > f.inc\n. ./f.inc\n)\n', 'bash', 0],
+    ['source, by its name', 'echo "exit 0" > f.inc\nsource ./f.inc\n)\n', 'bash', 0],
+    ['an alias that closes', 'shopt -s expand_aliases\nalias fi2=fi\nif true; then echo; fi2\n', 'bash', 0],
+    ['an alias that closes, in sh', '#!/bin/sh\nalias fi2=fi\nif true; then echo; fi2\n', 'dash', 0],
+  ];
+  for (const [name, text, tool, status] of mayNotReach) {
+    it(`${name}: a warning`, () => {
+      const r = runFile(text, tool);
+      assert.strictEqual(r.syntax, false, `${tool} reports a syntax error`);
+      if (status !== null) assert.strictEqual(r.status, status);
       assert.deepStrictEqual(syntax(script(text.toString())), []);
+      assert.strictEqual(warned(script(text.toString())).length, 1);
+      assert.match(warned(script(text.toString()))[0].message, /[Ii]f the shell reaches this line/);
     });
   }
 
@@ -691,6 +715,7 @@ describe('says nothing where it is not positively known', function () {
     const text = 'trap "exit 0" EXIT\n)\n';
     assert.deepStrictEqual([runFile(text).status, runFile(text).syntax], [0, true]);
     assert.deepStrictEqual(syntax(script(text)), []);
+    assert.strictEqual(warned(script(text)).length, 1);
   });
 
   it('a shebang that reads no file, or stops first with status 0', () => {
@@ -729,10 +754,12 @@ describe('says nothing where it is not positively known', function () {
       const r = runFile(text);
       assert.deepStrictEqual([r.status, r.syntax], [0, false], text);
       assert.deepStrictEqual(syntax(script(text)), [], text);
+      assert.strictEqual(warned(script(text)).length, 1, text);
     }
-    // (Without a callback it ends nothing. The word is enough to be silent: `$o` may be `-C`.)
+    // (Without a callback it ends nothing. A word read only when it runs may be `-C`.)
     assert.strictEqual(syntax(script('mapfile -t x </etc/passwd\n)\n')).length, 1);
     assert.deepStrictEqual(syntax(script('mapfile $o x </etc/passwd\n)\n')), []);
+    assert.strictEqual(warned(script('mapfile $o x </etc/passwd\n)\n')).length, 1);
   });
 
   it('keeps `-n`, which runs nothing', () => {
@@ -744,16 +771,19 @@ describe('says nothing where it is not positively known', function () {
   });
 
   it('counts what it cannot read: a word of `set` or `command` read only when it runs', () => {
-    for (const text of ['o=-e\nset $o\nfalse\n)\n', 'c=exit\ncommand $c 0\n)\n', 'c=exit\nbuiltin $c 0\n)\n', 'command set -e\nfalse\n)\n']) {
+    for (const text of ['o=-e\nset $o\nfalse\n)\n', 'c=exit\ncommand $c 0\n)\n', 'c=exit\nbuiltin $c 0\n)\n']) {
       assert.strictEqual(runFile(text).syntax, false, text);
       assert.deepStrictEqual(syntax(script(text)), [], text);
+      assert.strictEqual(warned(script(text)).length, 1, text);
     }
-    assert.strictEqual(syntax(script('command echo a\n)\n')).length, 1);
-    assert.strictEqual(syntax(script('set -- a\n)\n')).length, 1);
+    // (Only what stops: `command set -e` stops as `set -e` does, with a failing status. Here the dynamic part cannot be the option or the name.)
+    for (const text of ['command echo a\n)\n', 'set -- a\n)\n', 'set -- "$x"\n)\n', 'command -v "$x"\n)\n', 'exec 3>&1\n)\n', 'command set -e\nfalse\n)\n']) assert.strictEqual(syntax(script(text)).length, 1, text);
   });
 
   it('a `return` ends a file sourced, not a function', () => {
     assert.deepStrictEqual(syntax(script('return 0\n)\n')), []);
+    assert.deepStrictEqual(warned(script('return 0\n)\n')), []);
+    assert.strictEqual(warned(script('if a; then return 0; fi\n)\n')).length, 1);
     assert.strictEqual(syntax(script('f() { return 0; }\n)\n')).length, 1);
   });
 

@@ -1,6 +1,6 @@
 import type { Lang, Text } from './i18n';
 import type { NoteLevel } from './levels';
-import { CARRIED, CLOSE_TEXT, OPEN_TEXT, type TokenEntry, tokenError, type TokenProblem, tokenProblemWarning, tokenWarning } from './messages-levels';
+import { CARRIED, CLOSE_TEXT, OPEN_TEXT, type TokenEntry, tokenError, type TokenProblem, tokenProblemWarning, tokenText, tokenWarning } from './messages-levels';
 import { ARGV_TEXTS } from './messages-tokens-argv';
 import { COMMAND_TEXTS } from './messages-tokens-commands';
 import { COMPOUND_TEXTS } from './messages-tokens-compound';
@@ -27,6 +27,12 @@ const INVALID_NUMBER: TokenProblem = {
   head: ['この数は不正なので、算術エラーになり、このコマンドは本来の処理をしない。', 'This number is not valid: an arithmetic error, and this command does not do its work.'],
   then: ['シェルは算術エラーを出し、このコマンドは本来の処理をしない', 'The shell reports an arithmetic error, and this command does not do its work'],
 };
+// (A warning: zsh reads `09` as a decimal number and may source the file, or a stop may come first. So it is bash's, if it gets there.)
+const INVALID_NUMBER_IF_BASH: TokenProblem = {
+  head: ['この数は bash では不正なので、この行まで来ると算術エラーになり、このコマンドは本来の処理をしない。', 'This number is not valid in bash: if bash reaches this line, an arithmetic error, and this command does not do its work.'],
+  then: ['bash はこの行まで来ると算術エラーを出し、このコマンドは本来の処理をしない', 'If bash reaches this line, it reports an arithmetic error, and this command does not do its work'],
+};
+const spliceRefusedRow = ({ program, why }: { program: string; why: string }): readonly [string, string] => [`${program} はこの文字列を受け付けない（${why}）`, `${program} refuses this string (${why})`];
 const invalidNumberRow = ({ text, why }: InvalidNumber): readonly [string, string] => [`不正な数 \`${text}\`: ${why}`, `Invalid number \`${text}\`: ${why}`];
 
 export const TOKEN_TEXTS = {
@@ -39,11 +45,13 @@ export const TOKEN_TEXTS = {
   'splice-refused': tokenError<{ program: string; why: string }>({
     head: ['この文字列は拒否され、何も実行されない。', 'This string is refused, and nothing runs.'],
     then: ['何も実行せずに終了ステータス 125 で終わる', 'It exits with status 125, running nothing'],
-  }, ({ program, why }) => [`${program} はこの文字列を受け付けない（${why}）`, `${program} refuses this string (${why})`]),
+  }, spliceRefusedRow),
+  // (The same after a stop that keeps the shell from it (`reachedAt`): only what it would do, on its row.)
+  'splice-refused-if-reached': tokenText<{ program: string; why: string }>(spliceRefusedRow),
   /** `$((09))`, `$((2#2))`: a constant the shell rejects, in a command that reads it whenever it runs. */
   'arith-invalid-number': tokenError<InvalidNumber>(INVALID_NUMBER, invalidNumberRow),
-  // (The same, where only a name says the file is one of bash: zsh reads `09` as a decimal number, and may source it, docs/design/three-levels.md.)
-  'arith-invalid-number-if-bash': tokenProblemWarning<InvalidNumber>(INVALID_NUMBER, invalidNumberRow),
+  // (The same, where only a name says the file is one of bash, or a stop may come first, docs/design/three-levels.md.)
+  'arith-invalid-number-if-bash': tokenProblemWarning<InvalidNumber>(INVALID_NUMBER_IF_BASH, invalidNumberRow),
   /**
    * `${x:-$((09))}`, `[[ a || $((09)) ]]`: the same, where the command may run without reading it (`readOnlySometimes`, src/explain/reads.ts).
    * It may have done part of its work by then (the update of a C-style `for` comes after the body).

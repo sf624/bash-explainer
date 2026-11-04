@@ -52,7 +52,7 @@ export const FACT_HEADS: { [K in ProblemFactId]: (p: Params<K>) => Head } = {
     : ['Bash Explainer の不具合で読めなかったので、このファイルは何も説明されない。', 'A bug of the tool stopped it reading the file, so none of it is explained.']),
   'syntax-error': (p) => syntaxErrorHead(p) as Head,
   'syntax-error-if-bash': (p) => syntaxErrorHead(p) as Head,
-  'keyword-needs-separator': ({ kw }) => [`\`${kw}\` の前に \`;\` か改行がないので、構文エラーになる。`, `\`${kw}\` has no \`;\` or newline before it: a syntax error.`],
+  'keyword-needs-separator': ({ kw }) => [`\`${kw}\` の前に \`;\` か改行がないので、シェルはこの行まで来ると構文エラーで止まる。`, `\`${kw}\` has no \`;\` or newline before it: the shell stops with a syntax error if it reaches this line.`],
   'bracket-missing-close': () => ['`[` の最後の引数が `]` でないので、条件を評価せずに失敗する。', '`[` has no `]` as its last argument, so it fails without testing anything.'],
   'bracket-close-glued': ({ word }) => [`\`${word}\` の \`]\` は単語の一部なので、\`[\` は条件を評価せずに失敗する。`, `The \`]\` in \`${word}\` is part of the word, so \`[\` fails without testing anything.`],
   'test-malformed': ({ name }) => [`\`${name}\` はこの引数を条件式として読めないので、失敗する。`, `\`${name}\` cannot read these arguments as a condition, so it fails.`],

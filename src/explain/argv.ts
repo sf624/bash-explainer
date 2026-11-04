@@ -430,7 +430,7 @@ function splicedNote(cx: Explainer, v: ValueRole): string {
       'c-in-quotes': cx.s('ダブルクォートの中に `\\c` がある', '`\\c` is inside double quotes'),
       dollar: cx.s('`$` は `${名前}` の形でしか使えない', '`$` is only allowed as `${NAME}`'),
     };
-    return cx.sep() + cx.text('splice-refused', { program, why: why[v.refused.error] });
+    return cx.sep() + cx.text(cx.reachedAt(cx.command!.nodes[0]) ? 'splice-refused' : 'splice-refused-if-reached', { program, why: why[v.refused.error] });
   }
   if (!v.split) return '';
   const items = wordItems(cx, v.split.words, v.split.roles, false);
