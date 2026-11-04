@@ -79,7 +79,7 @@ const sameEnd = (a: Span, b: Span): boolean => a.end.line === b.end.line && a.en
  * `done < f`), one run of rows. What lies inside one is no construct of its own, nor is the word of a command, however bash expands it; a command
  * in a substitution is. A string another shell reads is that shell's reading. A keyword bash has and this shell lacks is no construct (`plain`).
  */
-export function markHandled<R extends Markable>(rows: readonly R[], lines: readonly ArgvLine[], plain: readonly Span[] = []): void {
+export function markHandled<R extends Markable>(rows: readonly R[], lines: readonly ArgvLine[], plain: readonly Span[]): void {
   // (A keyword of bash that this shell reads as a command, or does not have: its grammar handles nothing there. `plainWords`.)
   const plainHere = new Set(plain.map(keyOf));
   // (By where it starts: the range of a here-document's redirection ends with its body, its row's with `<<E`. A row of no frame that starts there is that part.)

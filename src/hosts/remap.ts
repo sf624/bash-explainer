@@ -300,7 +300,9 @@ function pastedWords(l: ArgvLine, placeholders: readonly string[], lines: readon
     const sameFrom = ws.filter((o) => sameSpan(o.from, w.from));
     if (!sameFrom.some(pasted)) return [w];
     if (ws.findIndex((o) => sameSpan(o.from, w.from)) !== i) return [];
-    const code = inFile(lines[w.from.start.line].slice(w.from.start.character, w.from.start.line === w.from.end.line ? w.from.end.character : undefined));
+    const { start, end } = w.from;
+    const text = lines.slice(start.line, end.line + 1).join('\n');
+    const code = inFile(text.slice(start.character, text.length - lines[end.line].length + end.character));
     return [{ from: w.from, parts: [{ hole: 'word' as const, code, label: placeholderSaid(lang, { kind: 'word', code }) }], count: { min: 0 } }];
   });
   return { ...l, words: words(l.words), removed: l.removed.map((r) => (r.word ? { ...r, word: words(r.word) } : r)) };
