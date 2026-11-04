@@ -4,7 +4,7 @@ import { type Lang, lineLabel, type Text } from './i18n';
 import { codeSpan, shorten } from './label';
 import { alwaysFails, LEVELS, namesLevel, type NoteLevel, severityOf } from './levels';
 import { FACT_HEADS, type Head, STYLE_HEADS } from './messages-heads';
-import { PORTABILITY, PROBLEM_LEVELS, type ProblemNote, STYLE_LEVELS, type StyleCase, type StyleCode, type TokenEntry } from './messages-levels';
+import { marked, PORTABILITY, PROBLEM_LEVELS, type ProblemNote, styleLevel, type StyleCase, type StyleCode, type TokenEntry } from './messages-levels';
 import { TOKEN_TEXTS } from './messages-tokens';
 import { UNREAD } from './messages-unread';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
@@ -746,28 +746,14 @@ export interface Note { text: string; level: NoteLevel; label: string; body: str
  * where it suggests mechanical rewrites, those (`rewrite`: alternatives, each complete, the first recommended;
  * src/rewrite.ts), which its text renders.
  */
-export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly string[]; code: FactId; basis?: Basis; tryIt?: TryIt; rewrite?: readonly Rewrite[] }
-
-/**
- * A note of `level` whose text starts with its mark, then the word that names the level (or its heading, `heading`)
- * for a pitfall, and for every note at a level whose word goes with every kind (an error: "Error:"), then `body`. Only
- * the catalog makes notes (docs/design/sources.md, row 14): a fact (`fact`), a style check's (`styleNote`), a dialect
- * issue's (`problemNote`).
- */
-function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?: FactKind; heading?: Text; head?: Head } = {}): Note {
-  const { kind = 'note', heading, head } = opts;
-  const { word: levelWord, wordOnEvery } = LEVELS[level];
-  const word = heading ? heading[lang] : kind === 'pitfall' || wordOnEvery ? levelWord[lang] : '';
-  return { text: `${LEVELS[level].mark} ${word}${body}`, level, label: word.trimEnd(), body, ...(head ? { head: head[lang === 'ja' ? 0 : 1] } : {}) };
-}
+export interface Fact extends Note { id: FactId; kind: FactKind; heading?: Text; refs: readonly string[]; code: FactId; basis?: Basis; tryIt?: TryIt; rewrite?: readonly Rewrite[] }
 
 /**
  * The note of a style check of src/pitfalls.ts, which is no fact of the catalog (its text is the check's): a pitfall,
  * at its level from `STYLE_LEVELS` (by what the check found, `c`), with its code.
  */
 export function styleNote(lang: Lang, code: StyleCode, body: string, c: StyleCase = {}): Note & { code: StyleCode } {
-  const entry = STYLE_LEVELS[code];
-  return { ...marked(lang, typeof entry === 'function' ? entry(c) : entry, body, { kind: 'pitfall', head: STYLE_HEADS[code](c) }), code };
+  return { ...marked(lang, styleLevel(code, c), body, { kind: 'pitfall', head: STYLE_HEADS[code](c) }), code };
 }
 
 /**
@@ -808,7 +794,7 @@ export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> e
   const { text, label, body, head: said } = marked(lang, level, lang === 'ja' ? ja : en, { kind: e.kind, heading: e.heading, head });
   const { basis, tryIt } = basisOf(typeof e.basis === 'function' ? e.basis(params[0]) : e.basis);
   const rewrite = e.rewrite?.(params[0]);
-  return { id, kind: e.kind, level, text, refs: e.refsOf?.(params[0]) ?? e.refs, label, body, ...(said ? { head: said } : {}), code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(e.convention ? { convention: e.convention } : {}), ...(rewrite?.length ? { rewrite } : {}) };
+  return { id, kind: e.kind, ...(e.heading ? { heading: e.heading } : {}), level, text, refs: e.refsOf?.(params[0]) ?? e.refs, label, body, ...(said ? { head: said } : {}), code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(e.convention ? { convention: e.convention } : {}), ...(rewrite?.length ? { rewrite } : {}) };
 }
 
 /** The clauses of a line's sentence that the fact `code` says (none for a code that is no fact: a style check, a dialect issue). */

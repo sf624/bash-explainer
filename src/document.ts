@@ -12,6 +12,7 @@ import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
 import { conventionOf, fact, isProblemNote, type Note, problemText, severityOf } from './messages';
 import { isNotRead } from './messages-unread';
 import { PROBLEM_LEVELS } from './messages-levels';
+import { reachedAt } from './semantics/syntaxerror';
 import { RESERVED } from './semantics/names';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { shellState } from './semantics/state';
@@ -346,7 +347,7 @@ function issuesOf(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bash
   const crlf = crlfIssue(doc.tree, lang);
   const shell = shellOf(shells);
   const nested = nestedIssues(doc, lang, shell);
-  return [...crlf, ...nested, ...dialectIssues(doc.tree, shell ?? 'bash', lang, undefined, undefined, version).map((i): DocumentIssue => {
+  return [...crlf, ...nested, ...dialectIssues(doc.tree, shell ?? 'bash', lang, undefined, undefined, version, (n) => reachedAt(doc.tree, n.startIndex)).map((i): DocumentIssue => {
     const n = i.place;
     const sameLine = n.startPosition.row === n.endPosition.row;
     const fix = fixFor(i);

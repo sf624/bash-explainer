@@ -21,7 +21,7 @@ export const programs = [...(runBash('true').status === 0 ? [{ name: 'bash 5.2',
 /** The facts of id `id` on every line of `src`, in `lang`. */
 export function factsOf(src: string, id: FactId, shell?: Shell, lang: 'en' | 'ja' = 'en'): Fact[] {
   const tree = parser.parse(src);
-  return src.split('\n').flatMap((_, i) => new Analyzer(lang).explainLine(tree, i, shell).facts ?? []).filter((f) => f.id === id);
+  return src.split('\n').flatMap((_, i) => new Analyzer(lang).explainLine(tree, i, shell, { script: 'said' }).facts ?? []).filter((f) => f.id === id);
 }
 
 /** `text` with the edits of `r` made. */

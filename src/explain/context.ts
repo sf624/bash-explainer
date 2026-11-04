@@ -5,14 +5,17 @@ import type { ContextEntry, Example, ExplainOptions, Kind, LineExplanation, Note
 import type { ArgvParse } from '../argv/interpret';
 import { type BashVersion, DEFAULT_BASH_VERSION } from '../bashversion';
 import type { CommandSpec } from '../argv/spec';
-import type { Shell } from '../dialect';
+import type { ScriptEvidence, Shell } from '../dialect';
 import { type Lang, lineRangeLabel, type Text } from '../i18n';
 import { shorten } from '../label';
 import { type Fact, type Note, said } from '../messages';
+import { byName, READ_FAULTS } from '../messages-levels';
+import { alwaysFails } from '../levels';
 import { tokenSaid, type TokenTextArgs, type TokenTextId } from '../messages-tokens';
 import { anchored, type Found, sameSpan, spanOf } from '../noteanchors';
 import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
+import { reachedAt, readAs } from '../semantics/syntaxerror';
 import { docLine, type StateModel } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
 import { listOverLines, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
@@ -139,7 +142,7 @@ export interface Explainer {
    * Line `line` of a string read as a script (src/explain/scripts.ts), explained as a script of its own: with its
    * tree, its shell and its kind (`nested`), and the options of this line, but no reading tree.
    */
-  nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional']): LineExplanation;
+  nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional'], outer?: Pick<ExplainOptions, 'unread' | 'unreached'>): LineExplanation;
 
   /**
    * A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`, and with the node or nodes
@@ -151,6 +154,14 @@ export interface Explainer {
   say(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): string[];
   /** Adds a fact's note to the line's (as `say` says it), about the node or nodes `at`. */
   note(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): void;
+  /**
+   * How a fault in the shell's reading of the text at `n` is said (`readAs`, src/semantics/syntaxerror.ts), by how the file is known to
+   * be a script: an error (`said`), a warning with the same words (`name`), or none where a shell may not read the text as it
+   * stands. A host's code is the shell's whole input: an error. None for a string run by a command the script does not surely get to.
+   */
+  evidenceAt(n: SyntaxNode): ScriptEvidence | undefined;
+  /** Whether the shell gets to the text at `n` (`reachedAt`): not after an `exit` or an `exec`, nor in a string run by a command it does not get to. */
+  reachedAt(n: SyntaxNode): boolean;
   /** A note about a range of the line (a token's): its text, recorded with its data and its place. */
   sayAt(n: Note & { code: string }, span: Span): string;
   /** Records a construct around the line (`LineExplanation.context`), outermost first. */
@@ -363,19 +374,32 @@ export class LineExplainer implements Explainer, LineOutput {
     }
   }
 
-  nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional']): LineExplanation {
+  nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional'], outer: Pick<ExplainOptions, 'unread' | 'unreached'> = {}): LineExplanation {
     // (The positional parameters are those of this string's shell: a string in it has its own, or none.)
-    return this.walk.nestedLine(script.tree, line, script.shell, script.kind, { ...this.opts, reading: false, argv: false, positional });
+    return this.walk.nestedLine(script.tree, line, script.shell, script.kind, { ...this.opts, reading: false, argv: false, positional, ...outer });
   }
 
   end(): void {
     this.current = null;
   }
 
+  evidenceAt(n: SyntaxNode): ScriptEvidence | undefined {
+    return this.opts.unread ? undefined : this.opts.host ? 'said' : readAs(this.tree, n.startIndex, this.opts.script);
+  }
+
+  reachedAt(n: SyntaxNode): boolean {
+    return !this.opts.unreached && reachedAt(this.tree, n.startIndex);
+  }
+
   say(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): string[] {
-    const out = said([f], this.opts.pitfalls);
-    pushAll(this.facts, out);
     const nodes: readonly (SyntaxNode | undefined)[] = !at ? [undefined] : 'type' in at ? [at] : at;
+    // (An error says the shell fails on the text: only where it gets there, and for a reading of the text only where a shell surely reads
+    // it, as a warning where only a name says that the file is a script.)
+    const fails = alwaysFails(f.level) && nodes[0];
+    const evidence = fails && READ_FAULTS.has(f.id) ? this.evidenceAt(nodes[0]!) : fails && !this.reachedAt(nodes[0]!) ? undefined : 'said';
+    if (!evidence) return [];
+    const out = said([evidence === 'name' ? byName(this.lang, f) : f], this.opts.pitfalls);
+    pushAll(this.facts, out);
     return anchored(out.flatMap((x) => nodes.map((node) => ({ ...x, ...(node ? { node } : {}) }))), this.anchors, this.data);
   }
 

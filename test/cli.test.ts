@@ -801,7 +801,7 @@ describe('the command-line tool', function () {
     });
 
     it('keeps a problem on one line, whatever the script\'s text holds', () => {
-      const r = run(['--check', '--no-color', '-'], { input: 'x = "a\nx.sh:1:1: error: text [code]"\n' });
+      const r = run(['--check', '--no-color', '-'], { input: '#!/bin/bash\nx = "a\nx.sh:1:1: error: text [code]"\n' });
       assert.doesNotMatch(r.out, /^x\.sh:1:1/m);
       assert.ok(r.out.includes('a<LF>x.sh:1:1: error: text [code]'), r.out);
       for (const l of r.out.trimEnd().split('\n')) assert.match(l, /^-:\d+:\d+: /);

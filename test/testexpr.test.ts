@@ -419,7 +419,7 @@ describe('a command named [ is explained as what bash runs', () => {
   /** The explanation of the last line of `src`, and all its tokens. */
   const explain = (src: string, shell: 'bash' | 'dash' = 'bash') => {
     const tree = parser.parse(src)!;
-    const e = new Analyzer('en').explainLine(tree, src.split('\n').length - 1, shell);
+    const e = new Analyzer('en').explainLine(tree, src.split('\n').length - 1, shell, { script: 'said' });
     const all: Token[] = [];
     const walk = (t: Token) => { all.push(t); t.children.forEach(walk); };
     e.items.forEach(walk);

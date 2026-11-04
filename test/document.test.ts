@@ -46,9 +46,9 @@ describe('documents without VS Code', () => {
     const text = '#!/bin/sh\n[[ -f x ]] && echo y';
     const detected = readShell(text, 'x.sh');
     // (It is also the last command of a script run as a program: `script-last-test-returns-status`.)
-    assert.deepStrictEqual(documentIssues(script(text), 'en', { detected }).map((i) => i.code), ['dbracket', 'script-last-test-returns-status']);
+    assert.deepStrictEqual(documentIssues(script(text), 'en', { detected, script: 'said' }).map((i) => i.code), ['dbracket', 'script-last-test-returns-status']);
     assert.deepStrictEqual(documentIssues(script(text), 'en', { forced: 'bash', detected }).map((i) => i.code), ['script-last-test-returns-status']);
-    assert.ok(documentIssues(script(text), 'en', { detected })[0].fixes);
+    assert.ok(documentIssues(script(text), 'en', { detected, script: 'said' })[0].fixes);
   });
 
   // (docs/design/panel-redesign.md, P3: the rewrites a note suggests at its place, `NoteAnchor.rewrite`, are the quick
@@ -96,16 +96,16 @@ describe('documents without VS Code', () => {
     assert.deepStrictEqual(ticks.map((f) => fixTitle(f, 'en')), ['Rewrite as `` echo `date` ``', 'Add `` `date` ``']);
     assert.deepStrictEqual(ticks.map((f) => fixTitle(f, 'en', { backticks: false })), ['Rewrite as echo `date`', 'Add `date`']);
     // (The dialect fixes too: `[[ ]]` in sh.)
-    const [dialect] = documentIssues(script('#!/bin/sh\n[[ -f x ]] && echo y'), 'en', { detected: readShell('#!/bin/sh\n[[ -f x ]] && echo y', 'x.sh') })[0].fixes!;
+    const [dialect] = documentIssues(script('#!/bin/sh\n[[ -f x ]] && echo y'), 'en', { detected: readShell('#!/bin/sh\n[[ -f x ]] && echo y', 'x.sh'), script: 'said' })[0].fixes!;
     assert.strictEqual(fixTitle(dialect, 'en', { backticks: false }), 'Rewrite [[ ]] as [ ]');
   });
 
   it('leaves out ignored codes and codes disabled in the file', () => {
     const text = '#!/bin/sh\n[[ -f x ]] && echo -e y';
     const detected = readShell(text, 'x.sh');
-    assert.deepStrictEqual(documentIssues(script(text), 'en', { detected }, ['echoE', 'script-last-test-returns-status']).map((i) => i.code), ['dbracket']);
+    assert.deepStrictEqual(documentIssues(script(text), 'en', { detected, script: 'said' }, ['echoE', 'script-last-test-returns-status']).map((i) => i.code), ['dbracket']);
     const disabled = '#!/bin/sh\n# bash-explainer disable=dbracket,script-last-test-returns-status\n[[ -f x ]] && echo -e y';
-    assert.deepStrictEqual(documentIssues(script(disabled), 'en', { detected }).map((i) => i.code), ['echoE']);
+    assert.deepStrictEqual(documentIssues(script(disabled), 'en', { detected, script: 'said' }).map((i) => i.code), ['echoE']);
   });
 
   it('reads a script with CRLF line ends as one with LF, and warns about it once', () => {
@@ -180,7 +180,7 @@ describe('documents without VS Code', () => {
 describe('the pitfalls of a script, as problems', () => {
   // (The problems of the explanations: their warnings and caveats are pitfalls, their errors, of the catalog or of the
   // style checks, are not.)
-  const found = (text: string, shells: { forced?: 'bash' | 'sh' | 'zsh' } = {}) => documentIssues(script(text), 'en', shells)
+  const found = (text: string, shells: { forced?: 'bash' | 'sh' | 'zsh' } = {}) => documentIssues(script(text), 'en', { script: 'said', ...shells })
     .filter((i) => i.pitfall || (i.severity === 'error' && (i.code in MESSAGES || i.code in STYLE_LEVELS))).map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endLine, i.endCol]);
   // The script, and its pitfalls: code, severity, and range (line, column, line, column).
   const cases: [string, (string | number)[][]][] = [
@@ -275,10 +275,10 @@ describe('the pitfalls of a script, as problems', () => {
 
   it('honours the directives of the file, the codes to leave out, and `pitfalls: false`', () => {
     const text = 'x = 1\n# bash-explainer disable=read-without-r\nread a\nread b';
-    assert.deepStrictEqual(documentIssues(script(text), 'en', {}).map((i) => [i.code, i.startLine]), [['assignment-with-spaces', 0], ['read-without-r', 3]]);
-    assert.deepStrictEqual(documentIssues(script(text), 'en', {}, ['assignment-with-spaces']).map((i) => i.code), ['read-without-r']);
+    assert.deepStrictEqual(documentIssues(script(text), 'en', { script: 'said' }).map((i) => [i.code, i.startLine]), [['assignment-with-spaces', 0], ['read-without-r', 3]]);
+    assert.deepStrictEqual(documentIssues(script(text), 'en', { script: 'said' }, ['assignment-with-spaces']).map((i) => i.code), ['read-without-r']);
     // (An error is no pitfall: said with the pitfalls off, as a bug.)
-    assert.deepStrictEqual(documentIssues(script(text), 'en', {}, [], { pitfalls: false }).map((i) => i.code), ['assignment-with-spaces']);
+    assert.deepStrictEqual(documentIssues(script(text), 'en', { script: 'said' }, [], { pitfalls: false }).map((i) => i.code), ['assignment-with-spaces']);
   });
 
   it('follows the shell: none where zsh syntax leaves the line unread; in a host file, at the columns of the file', () => {
@@ -325,12 +325,13 @@ describe('the pitfalls of a script, as problems', () => {
 
   it('leaves out a pitfall that another problem at its place already says', () => {
     const doc = script('x = 1');
-    const [mine] = noteIssues(doc, 'en', {}, {});
+    const said = { script: 'said' } as const;
+    const [mine] = noteIssues(doc, 'en', said, {});
     const other = { code: 'other', severity: 'warning' as const, message: 'something else', head: 'h', startLine: 0, startCol: 0, endLine: 0, endCol: 1 };
-    assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [other]), [mine]);
-    assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [{ ...other, message: mine.message }]), []);
-    assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [{ ...other, code: mine.code }]), []);
-    assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [{ ...other, code: mine.code, startCol: 5, endCol: 6 }]), [mine]);
-    assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [{ ...other, code: mine.code, startLine: 1, endLine: 1 }]), [mine]);
+    assert.deepStrictEqual(noteIssues(doc, 'en', said, {}, [other]), [mine]);
+    assert.deepStrictEqual(noteIssues(doc, 'en', said, {}, [{ ...other, message: mine.message }]), []);
+    assert.deepStrictEqual(noteIssues(doc, 'en', said, {}, [{ ...other, code: mine.code }]), []);
+    assert.deepStrictEqual(noteIssues(doc, 'en', said, {}, [{ ...other, code: mine.code, startCol: 5, endCol: 6 }]), [mine]);
+    assert.deepStrictEqual(noteIssues(doc, 'en', said, {}, [{ ...other, code: mine.code, startLine: 1, endLine: 1 }]), [mine]);
   });
 });

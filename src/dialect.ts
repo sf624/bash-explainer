@@ -509,7 +509,14 @@ function laterOptionsOf(c: SyntaxNode, version: BashVersion, lang: Lang): Issue[
  * Problems on lines [from, to] of a script written for `shell`; for bash, the constructs that bash `version` lacks
  * (src/bashversion.ts), and in a version that has `${ …; }`, the ones it does not close (`braceTakenAsWord`).
  */
-export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from = 0, to = tree.root.endPosition.row, version: BashVersion = DEFAULT_BASH_VERSION): Issue[] {
+export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from = 0, to = tree.root.endPosition.row, version: BashVersion = DEFAULT_BASH_VERSION, reached?: (n: SyntaxNode) => boolean): Issue[] {
+  const issues = issuesFound(tree, shell, lang, from, to, version);
+  // (An error says the shell fails on the construct: not where it does not get to, after an `exit` or in a polyglot's other language,
+  // `print(x)` of Python is not `print` of ksh. `reached`: `reachedAt`. The command a construct is in, not the construct: `source -p dir f` is read, and `-p` is its error.)
+  return reached ? issues.filter((i) => i.kind !== 'unsupported' || !i.node || reached(ancestor(i.node, (a) => a.type === 'command') ?? i.node)) : issues;
+}
+
+function issuesFound(tree: SyntaxTree, shell: Shell, lang: Lang, from: number, to: number, version: BashVersion): Issue[] {
   if (shell === 'bash') {
     const lacking = collectFeatures(tree.root, from, to).filter((f) => lacks(f.id, version))
       .map((f): Issue => ({ id: f.id, kind: 'unsupported', note: unsupported(lang, f.id, versionMessage(f.id, version, lang), versionHead(f.id)), node: f.node, place: f.node }));
@@ -548,8 +555,8 @@ export function dialectNotes(tree: SyntaxTree, line: number, shell: Shell, lang:
 }
 
 /** The notes of `dialectNotes`, each with the place of its construct and its issue's id (the note on zsh syntax is about the line: none). */
-export function dialectFound(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion): (Note & { code: string; node?: Place })[] {
-  const issues = dialectIssues(tree, shell, lang, line, line, version).filter((i) => i.kind !== 'parse');
+export function dialectFound(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion, reached?: (n: SyntaxNode) => boolean): (Note & { code: string; node?: Place })[] {
+  const issues = dialectIssues(tree, shell, lang, line, line, version, reached).filter((i) => i.kind !== 'parse');
   // On every line a zsh parse error covers, not only where it starts.
   const parse = shell === 'zsh' && zshSyntaxPlaces(tree, 0, tree.root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
     ? [zshSyntax(lang)] : [];

@@ -9,7 +9,7 @@ import { PanelServer, PanelTheme, servePanel } from './support/panel-page';
 import { until } from './support/site';
 
 // A plain fact, a caveat, a pitfall and an error, in the order found.
-const LINE = 'exit 300; read line; source lib.sh; [ -f a';
+const LINE = '[ -f a; read line; source lib.sh; exit 300';
 
 /** A colour as the browser computes it. */
 const rgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;

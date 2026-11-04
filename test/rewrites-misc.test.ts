@@ -238,7 +238,7 @@ describe('the rewrite of `bracket-close-glued`', () => {
     const [f] = factsOf('[ a = b\\]', ID);
     assert.strictEqual(f.rewrite, undefined);
     assert.match(f.text, /status 2\)\. This `\]` is escaped \(`\\\]`\): with a space before it, it is still a character of the word\. End the test with another `\]`, after a space$/);
-    const ja = new Analyzer('ja').explainLine(parser.parse('[ a = b\\]'), 0).facts!.find((x) => x.id === ID)!;
+    const ja = new Analyzer('ja').explainLine(parser.parse('[ a = b\\]'), 0, undefined, { script: 'said' }).facts!.find((x) => x.id === ID)!;
     assert.match(ja.text, /この `\]` はエスケープされている（`\\\]`）ので、空白を入れても単語の文字のままです。/);
   });
   it('is said, but not carried as edits, in a string another command reads as a script', () => {
@@ -248,7 +248,7 @@ describe('the rewrite of `bracket-close-glued`', () => {
   });
   it('is what the note says', () => {
     assert.match(factsOf('[ -f a.txt]', ID)[0].text, /status 2\)\. `\]` needs a space before it \(`a\.txt \]`\)$/);
-    const ja = new Analyzer('ja').explainLine(parser.parse('[ -f a.txt]'), 0).facts!.find((f) => f.id === ID)!;
+    const ja = new Analyzer('ja').explainLine(parser.parse('[ -f a.txt]'), 0, undefined, { script: 'said' }).facts!.find((f) => f.id === ID)!;
     assert.match(ja.text, /`\]` の前に空白が要ります（`a\.txt \]`）$/);
   });
 

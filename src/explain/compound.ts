@@ -321,7 +321,8 @@ export function caseItem(cx: Explainer, n: SyntaxNode): Token {
  */
 export function missingKeyword(cx: Explainer, n: SyntaxNode, t: Token): Token {
   const kw = strayKeyword(n);
-  if (!kw) return t;
+  // (Said by how the file is known to be a script, `Explainer.say`: where it is not, the row says nothing of it either.)
+  if (!kw || !cx.evidenceAt(n)) return t;
   const f = fact(cx.lang, 'keyword-needs-separator', { kw });
   t.kind = 'error';
   // (A short form of the row says it too: the note is not always beside it.)

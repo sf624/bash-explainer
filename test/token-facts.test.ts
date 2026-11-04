@@ -42,7 +42,7 @@ describe('the role and the facts of each token', () => {
     // (A fact the token's text states too.)
     assert.deepStrictEqual(stated('if [ -f a ] then echo x; fi'), ['if ‹condition› fi: keyword-needs-separator']);
     // (A short form of the row says it too: its text leaves it to the note.)
-    const ex = new Analyzer('en').explainLine(parser.parse('if [ -f a ] then echo x; fi'), 0, 'bash');
+    const ex = new Analyzer('en').explainLine(parser.parse('if [ -f a ] then echo x; fi'), 0, 'bash', { script: 'said' });
     assert.match(ex.summary, /^A `;` or a newline is needed before `then`.*if statement/);
     assert.doesNotMatch(ex.items[0].explanation, /is needed/);
     // (At a node with no token of its own: the innermost token around it; the stage of a pipeline is in the pipe's.)

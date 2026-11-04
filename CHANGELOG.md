@@ -38,6 +38,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- `x = 1`, `{ echo a }`, `if a then b; fi`, `[-f x]` and the like are Errors only where the shell surely reads them, as the syntax error is: not after an `exit` or an `exec`, so pip's `#!/bin/sh` wrapper with Python after it passes `--check`; a warning with the same words for a file known by its name alone (`.sh`); nothing in a file nobody says is a script. `print` in a `#!/bin/sh` file, `[` without `]` and the other Errors of a command are silent after an `exit` or an `exec` too. Before, they failed `--check` there.
 - On a phone, the editor's code stays in view while you drag the explanation sheet, and while it settles. Before, the part the sheet uncovered stayed blank until you let go, and the part it was about to cover turned blank at once.
 - `${x@Z}` says when it fails: only with a value to transform. `${(f)var}` and `${#x:-a}` say that bash reports "bad substitution", and does not run the command or the rest of what it read with it. `nohup let x=09` no longer says "arithmetic error".
 - A part of a line that fails every time it runs now shows the mark of an error: `echo $((09))`, `env -S'"a' s`, and a shebang that `env` cannot run (`#!/usr/bin/env bash -e`). Before, it showed the mark of a warning.

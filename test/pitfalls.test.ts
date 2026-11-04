@@ -359,7 +359,7 @@ describe('the spacing of [ ], against bash', () => {
       // The tool finds the same mistake.
       const one = cmd.replace(/^a=.*?; /, '').replace(/^a=1; b=2; /, '');
       // (`[ -d /]`: the analyzer says that `[` fails, a fact of the model.)
-      const failsNote = new Analyzer('en').explainLine(parser.parse(one), 0, 'bash').facts?.some((f) => /^bracket-|^test-malformed$/.test(f.id));
+      const failsNote = new Analyzer('en').explainLine(parser.parse(one), 0, 'bash', { script: 'said' }).facts?.some((f) => /^bracket-|^test-malformed$/.test(f.id));
       const mistakes = notes(one).length > 0 || failsNote || (() => { const t = parser.parse(one); return wordFacts(t.root, 0, 'en', shellState(t)); })().length > 0;
       if (expected === 'fails') assert.ok(mistakes, cmd);
     });
@@ -369,7 +369,7 @@ describe('the spacing of [ ], against bash', () => {
 // The setting `notes.pitfalls` is applied where a note is said (Analyzer.say), by the pitfall kind of its catalog entry.
 describe('the pitfall gate', () => {
   const explainNotes = (src: string, line: number, pitfalls: boolean) =>
-    new Analyzer('en').explainLine(parser.parse(src), line, undefined, { pitfalls }).notes;
+    new Analyzer('en').explainLine(parser.parse(src), line, undefined, { pitfalls, script: 'said' }).notes;
 
   it('the [[ =~ ]] backslash note is an error, said with pitfalls off too; bash does read \\b as b', () => {
     const src = '[[ $x =~ \\bfoo ]]';

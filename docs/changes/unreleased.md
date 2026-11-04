@@ -269,6 +269,11 @@ The note on zsh syntax a line cannot be read with starts with ⓘ, as informatio
 
 ## Fixed
 
+### Errors in text a shell does not read
+
+`--check` failed pip's wrapper, a `#!/bin/sh` header followed by Python (`x = 1` was `assignment-with-spaces`), and every Error after an `exit`. The Errors that say the shell reads the text wrongly now follow the rule of the syntax error: `assignment-with-spaces`, `brace-no-space`, `brace-close-no-separator`, `bracket-no-space`, `redirect-in-bracket`, `bracket-close-in-word` (when its word is never empty), `and-or-in-bracket`, `keyword-needs-separator`, `bracket-close-glued` and `$((09))`. An Error where a first line, a directive, `--shell`, `-e` or the web page say the file is a script and nothing before the line may end the script or change how it is read (`exit`, `exec`, `source`, `trap`, `shopt`…); a warning with the same words where only a name says so; nothing after those words, or in a file nobody says is a script. The other Errors (`[` without `]`, `print` in sh, the dialect's) are silent after an `exit` or an `exec` with a command in the script itself. A Dockerfile `RUN` and a Markdown fence are as they were. A string a command runs (`bash -c 'x = 1'`) is as sure as the command.
+
+
 ### The code under the phone's sheet
 
 On a phone, dragging the explanation sheet down left the part of the editor it uncovered blank until the finger lifted; lifting the finger on the way up turned the code about to be covered blank at once, for the quarter of a second the sheet took to settle. The editor now goes on under the sheet at every height, so the code is there through the whole move, also after a fling or a cancelled drag.

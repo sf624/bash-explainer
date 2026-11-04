@@ -324,7 +324,7 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
   });
 
   it('reads the codes of the problems of a line: a fact\'s, a style check\'s, a dialect issue\'s; none for a plain note', () => {
-    const codes = (src: string, shell?: Shell) => [...problemCodes(new Analyzer('en').explainLine(parser.parse(src), 0, shell))].sort();
+    const codes = (src: string, shell?: Shell) => [...problemCodes(new Analyzer('en').explainLine(parser.parse(src), 0, shell, { script: 'said' }))].sort();
     assert.deepStrictEqual(codes('set -e; cmd || echo failed >&2'), ['failure-reported-as-success']);
     assert.deepStrictEqual(codes('rm -rf $d/'), ['rm-empty-variable-root', 'unquoted-variable-as-path']);
     assert.deepStrictEqual(codes('[[ a ]]', 'sh'), ['dbracket']);

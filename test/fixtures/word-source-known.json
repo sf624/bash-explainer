@@ -209,7 +209,7 @@
         {"fn":"classify","kind":"glob-class","count":1},
         {"fn":"zshSyntaxPlaces","kind":"node-type","count":2},
         {"fn":"zshSyntaxPlaces","kind":"glob-class","count":1},
-        {"fn":"dialectIssues","kind":"node-type","count":1}
+        {"fn":"issuesFound","kind":"node-type","count":1}
       ]
     },
     {
