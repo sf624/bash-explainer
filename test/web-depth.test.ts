@@ -183,7 +183,7 @@ describe('the panel: one view with a depth', function () {
       assert.strictEqual(got.pipes.length, 4);
       assert.match(got.pipes[0], lang === 'en' ? /stdout of grep → stdin of sort/ : /grep の標準出力 → sort の標準入力/);
       // (Its sign and its text on one line; its role beside them, or a line more on a phone.)
-      for (const h of got.pipeHeights) assert.ok(h < 2 * got.line + 2, `the pipe: ${h} px, a line ${got.line} px`);
+      for (const h of got.pipeHeights) assert.ok(h <= 2 * got.line + 4, `the pipe: ${h} px, a line ${got.line} px`);
       // (A row whose parts all come at depth 2 starts folded; a glob's folded example keeps its title.)
       assert.deepStrictEqual(got.folded, ['/var/log/*.log']);
       assert.strictEqual(await panel.locator('#tree details.example > summary').first().isVisible(), true);

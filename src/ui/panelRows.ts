@@ -90,9 +90,10 @@ function ownDepth(t: Token, r: TokenRow): Depth {
 
 /**
  * Whether a token folded into a row says its text at depth 1: what a row of its own would (what a command or a language reads, an expansion:
- * it may change what the line means), but for the word itself, whose text is how bash joins its parts, which depth 1 does not show.
+ * it may change what the line means), but for the word itself, whose text is how bash joins its parts, which depth 1 does not show, and for a
+ * text that only repeats its code (`a-z` of `tr a-z`).
  */
-const saysAtDepth1 = (t: Token, r: TokenRow): boolean => ownDepth(t, r) === 1 && (t.origin === 'argv' || t.origin === 'embedded' || r.kind !== 'argument');
+const saysAtDepth1 = (t: Token, r: TokenRow): boolean => ownDepth(t, r) === 1 && r.text !== r.label && (t.origin === 'argv' || t.origin === 'embedded' || r.kind !== 'argument');
 
 /** The frame of a token: what bash's grammar makes of it, which the explanation says (`Token.grammar`, `Token.frame`). */
 const frameOf = (t: Token): RowFrame | undefined => (t.grammar ? 'group' : t.frame);
