@@ -10,6 +10,17 @@
       "output": "bash: line 1: unset: cannot simultaneously unset a function and a variable\nstatus 1, x=1\nfunction"
     }
   },
+  "state#syntax-error": {
+    "manual": "3.1.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'echo before\necho ok )\necho after'",
+      "output": "before\nbash: -c: line 2: syntax error near unexpected token `)'\nbash: -c: line 2: `echo ok )'"
+    }
+  },
   "state#keyword-separator": {
     "manual": "3.2.1",
     "bash": [

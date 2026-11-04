@@ -118,10 +118,20 @@ export interface SyntaxNode {
   readonly incomplete: boolean;
 }
 
+/**
+ * What is wrong where the parser stops, in the terms of the language: a token it does not expect (`token`), what is missing
+ * there, and so on. `heredoc`: a here-document with no end; `subscript`: one not closed. `unreadable`: its own words say more.
+ */
+export type SyntaxErrorWhat =
+  | { kind: 'token' | 'after-paren' | 'missing' | 'after'; token: string }
+  | { kind: 'line-end' | 'command' | 'target' | 'heredoc' | 'body' | 'subscript' | 'unreadable' };
+
 export interface SyntaxError {
   /** `missing`: a token the grammar expects is not there (see `incomplete`); `unreadable`: text the parser could not read (see the `error` node). */
   readonly kind: 'missing' | 'unreadable';
+  /** The parser's own words, for a log; `what` says it for everything that reads it. */
   readonly message: string;
+  readonly what: SyntaxErrorWhat;
   readonly startIndex: number;
   readonly endIndex: number;
 }
@@ -131,6 +141,8 @@ export interface SyntaxTree {
   readonly root: SyntaxNode;
   /** What the parser could not read. Each one also has an `error` node, or an `incomplete` node, in the tree. */
   readonly errors: readonly SyntaxError[];
+  /** What the parser cannot read in another text (`if a; then` with its `fi` added). */
+  errorsOf(text: string): readonly SyntaxError[];
   /**
    * That this is no reading of `text`, whose `root` is empty: the parser could not follow it, as it nests deeper than the stack
    * (`too-deep`), or a bug stopped it (`failed`). Every line of it says so, and the document has one problem that says so (src/document.ts).
@@ -377,6 +389,31 @@ export function strayKeyword(n: SyntaxNode): 'then' | 'do' | undefined {
 
 function strayHead(n: SyntaxNode): readonly SyntaxNode[] {
   return n.type === 'for_statement' || n.type === 'select_statement' ? n.namedChildren : n.namedChildren.slice(0, 1);
+}
+
+/**
+ * What bash does not read with the line: a here-document's body and backticks are read when they are expanded, so an error
+ * there fails that expansion, and the script goes on.
+ */
+export const readWhenExpanded = (n: SyntaxNode): boolean => n.type === 'heredoc_body' || (n.type === 'command_substitution' && n.text[0] === '`');
+
+/**
+ * The `}` that is the last argument of a command directly in a group left open: `{ a }`, where it closes nothing since a
+ * reserved word is one only as the first word of a command (3.2.1).
+ */
+export function braceAsArgument(command: SyntaxNode): SyntaxNode | undefined {
+  if (command.type !== 'command' || command.parent?.type !== 'compound_statement' || !command.parent.incomplete) return undefined;
+  const last = command.namedChildren.filter((c) => c.field !== 'redirect').pop();
+  return last !== command.namedChildren.find((c) => c.field === 'name') && last?.type === 'word' && last.text === '}' ? last : undefined;
+}
+
+/** A word that is `{` with no space after it, and a name. */
+export const GLUED_BRACE = /^\{[A-Za-z_]\w*$/;
+
+/** The name of a command that is `{` with no space after it, `{echo a;}`: it starts no group, and its `}` closes nothing. */
+export function gluedBrace(command: SyntaxNode): SyntaxNode | undefined {
+  const name = command.type === 'command' ? field(command, 'name') : undefined;
+  return name && GLUED_BRACE.test(name.text) ? name : undefined;
 }
 
 /**

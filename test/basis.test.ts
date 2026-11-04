@@ -171,6 +171,8 @@ describe('basis: what an explanation rests on', () => {
       'exit-modulo': ['checked', 'manual'],
       'errexit-off-in-substitution': ['manual', 'checked'],
       'keyword-needs-separator': ['checked'],
+      'syntax-error': ['checked'],
+      'syntax-error-if-bash': ['checked'],
       'test-malformed': ['differs'],
       'unset-function-and-variable': ['checked'],
       'unset-readonly': ['checked'],

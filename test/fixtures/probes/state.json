@@ -5223,6 +5223,24 @@
     }
   },
   {
+    "id": "syntax-error",
+    "manual": "3.1.1",
+    "snippet": "x=1\necho ok )\nx=2",
+    "note": "bash stops reading the file at a syntax error, having run the commands it read in full before: the command it is in and what follows do not run",
+    "try": {
+      "code": "bash -c 'echo before\necho ok )\necho after'",
+      "output": "before\nbash: -c: line 2: syntax error near unexpected token `)'\nbash: -c: line 2: `echo ok )'",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "status": 2,
+      "stderr": "SCRIPT: line 2: syntax error near unexpected token `)'"
+    }
+  },
+  {
     "id": "keyword-separator",
     "manual": "3.2.1",
     "snippet": "if true then :; fi",

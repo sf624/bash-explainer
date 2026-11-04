@@ -25,7 +25,7 @@ import { probeSkipReason } from './support/probe';
 
 const parser = createUnbashParser();
 const said = (src: string, line: number, lang: 'en' | 'ja', shell?: Shell): string | undefined =>
-  new Analyzer(lang).explainLine(parser.parse(src), line, shell, { sentence: true }).sentence;
+  new Analyzer(lang).explainLine(parser.parse(src), line, shell, { sentence: true, script: 'said' }).sentence;
 
 /** Each shape: the script, the line, the sentence in English and in Japanese (null: none), the shell when not bash. */
 const SHAPES: [string, number, string | null, string | null, Shell?][] = [
@@ -170,10 +170,10 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["a=(1 2)\na=(3)", 1, "Sets `a` to an array of `3`.", "`a` に配列（`3`）を代入する。"],
     ["declare -a a=(1 2)", 0, "Runs `declare` (declare variables and set attributes) using `-a` (declare an indexed array) and sets `a` to an array of `1` and `2`.", "`declare`（変数を宣言し、属性を設定する）を `-a`（インデックス配列として宣言）を付けて実行する。`a` に配列（`1`・`2`）を代入する。"],
     ["!", 0, "Does nothing, and negates its status.", "何もしない（終了ステータスは反転）。"],
-    ["a &&", 0, "Runs `a`.", "`a` を実行する。"],
-    ["for", 0, "Runs its body with `$` set to each argument, one at a time.", "`$` を各引数に順に設定して、本体を実行する。"],
-    ["select", 0, "Shows a menu of each argument and runs its body with `$` set to the choice.", "各引数のメニューを表示し、選ばれた値を `$` に設定して本体を実行する。"],
-    ["coproc", 0, "Does nothing.", "何もしない。"],
+    ["a &&", 0, "The shell stops with a syntax error (a command is missing here).", "シェルは構文エラーで止まる（ここにコマンドがない）。"],
+    ["for", 0, "The shell stops with a syntax error.", "シェルは構文エラーで止まる。"],
+    ["select", 0, "The shell stops with a syntax error.", "シェルは構文エラーで止まる。"],
+    ["coproc", 0, "The shell stops with a syntax error (no command follows `coproc`).", "シェルは構文エラーで止まる（`coproc` の後にコマンドがない）。"],
     ["cat f | while read l; do echo \"$l\"; done", 0, "Pipes `cat` into a `while` loop; the `while` loop runs in a subshell: repeats its body (`echo`) while `read` succeeds; its status is that of the `while` loop.", "`cat`（ファイルの内容を連結して標準出力に出す）の出力を `while` ループに渡す。`while` ループはサブシェルで実行される。`read`（標準入力から1行読み、変数に代入する）が成功する間、本体（`echo`）をくり返す。終了ステータスは `while` ループのもの。"],
     ["cat f | while read l; do\n  echo \"$l\"\ndone | sort", 2, "`done` ends the `while` loop of line 1: repeats line 2 while `read` succeeds; pipes its output into `sort` (sort lines).", "`done` は行 1 からの `while` ループの終わり。`read` が成功する間、行 2 をくり返す。その出力を `sort`（行を並べ替える）に渡す。"],
     ["cat f | while read l; do\n  echo \"$l\"\ndone", 1, "Runs `echo` (print arguments to stdout, separated by spaces).", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。"],
@@ -407,13 +407,13 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
   });
 
   it('says a line lacks the `;` before `then` or `do`, not what the line seems to do: bash stops at it', () => {
-    assert.strictEqual(said('if [ -f a ] then b; fi', 0, 'en'), 'Bash stops with a syntax error (`then` needs a `;` or a newline before it).');
-    assert.strictEqual(said('for x in a b do c; done', 0, 'ja'), 'bash は構文エラーで止まる（`do` の前に `;` か改行が要る）。');
-    assert.strictEqual(said('f() { while a do b; done; }', 0, 'en'), 'Bash stops with a syntax error (`do` needs a `;` or a newline before it).');
-    assert.strictEqual(said('if a then\n  b\nfi', 0, 'en'), 'Bash stops with a syntax error (`then` needs a `;` or a newline before it).');
+    assert.strictEqual(said('if [ -f a ] then b; fi', 0, 'en'), 'The shell stops with a syntax error (`then` needs a `;` or a newline before it).');
+    assert.strictEqual(said('for x in a b do c; done', 0, 'ja'), 'シェルは構文エラーで止まる（`do` の前に `;` か改行が要る）。');
+    assert.strictEqual(said('f() { while a do b; done; }', 0, 'en'), 'The shell stops with a syntax error (`do` needs a `;` or a newline before it).');
+    assert.strictEqual(said('if a then\n  b\nfi', 0, 'en'), 'The shell stops with a syntax error (`then` needs a `;` or a newline before it).');
     // (`$( )` is read with the line, also inside `${ }`: bash stops. A here-document's body and backticks are read when they are expanded, and bash goes on.)
-    assert.match(said('echo "$(if a then b; fi)"', 0, 'en')!, /^Bash stops with a syntax error/);
-    assert.match(said('echo ${x:-$(if a then b; fi)}', 0, 'en')!, /^Bash stops with a syntax error/);
+    assert.match(said('echo "$(if a then b; fi)"', 0, 'en')!, /^The shell stops with a syntax error/);
+    assert.match(said('echo ${x:-$(if a then b; fi)}', 0, 'en')!, /^The shell stops with a syntax error/);
     for (const src of ['cat <<E\n$(if a then b; fi)\nE\necho next', 'cat <<E\n$(while a do b; done)\nE\necho next', "cat <<'E'\n$(if a then b; fi)\nE\necho next", 'cat <<"E"\n`if a then b; fi`\nE\necho next', 'echo `if a then b; fi`']) {
       assert.doesNotMatch(said(src, 0, 'en')!, /syntax error/, src);
     }

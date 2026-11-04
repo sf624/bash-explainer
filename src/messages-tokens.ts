@@ -108,3 +108,6 @@ export function saidText<K extends TokenTextId>(id: K, ...params: TokenTextArgs<
   const [ja, en] = entryOf(id).text(params[0]);
   return { ja: carried(id, ja), en: carried(id, en) };
 }
+
+/** Whether a token's mark is a problem of the line, not only of its row (`tokenError`, `tokenProblemWarning`). */
+export const saysProblem = ({ id }: { id: TokenTextId }): boolean => (TOKEN_TEXTS[id] as TokenEntry<never>).problem !== undefined;

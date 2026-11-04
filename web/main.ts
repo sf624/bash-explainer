@@ -136,7 +136,7 @@ function shellDocument(): ShellDocument | undefined {
 function shells(): Shells {
   const doc = editor.view.state.doc;
   const lines = Array.from({ length: Math.min(50, doc.lines) }, (_, i) => doc.line(i + 1).text);
-  return shellsOf(lines, scriptName(), forcedShell(settings));
+  return shellsOf(lines, scriptName(), forcedShell(settings), 'said');
 }
 
 /** The shell the cursor's line is explained as when none is chosen, and where from: what the chip, its popover and the Shell setting say. */

@@ -28,6 +28,8 @@ const CASES: { [K in ProblemFactId]: readonly unknown[] } = {
   'keyword-needs-separator': [{ kw: 'then' }],
   'line-too-deep': [{}],
   'file-not-read': [{ why: 'too-deep' }, { why: 'failed' }],
+  'syntax-error': [{ what: { kind: 'token', token: ')' } }, { what: { kind: 'missing', token: 'fi' } }, { what: { kind: 'after', token: 'then' } }, { what: { kind: 'unreadable' } }],
+  'syntax-error-if-bash': [{ what: { kind: 'after-paren', token: 'a' } }],
   'bracket-missing-close': [{}],
   'bracket-close-glued': [{ word: 'a]' }],
   'test-malformed': [{ name: '[' }],
@@ -138,8 +140,8 @@ describe('the headline of each problem', () => {
     assert.ok(dialectTexts('ja').includes('`local` は POSIX sh にない。'));
     for (const [id, e] of Object.entries(TOKEN_TEXTS)) {
       const { level, problem } = e as { level?: string; problem?: { head: readonly [string, string] } };
-      if (level === 'error') assertHead(problem!.head, id);
-      else assert.strictEqual(problem, undefined, id);
+      if (level === 'error') assert.ok(problem, id);
+      if (problem) assertHead(problem.head, id);
     }
   });
 

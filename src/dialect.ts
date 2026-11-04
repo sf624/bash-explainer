@@ -12,12 +12,12 @@ import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, fie
 import { networkPath, networkTarget } from './dict/syntax';
 import { bracesInContext } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { type Feature, FEATURES, featureWorks, LETTER, type RealShell, saidShell, type Shell, type ShellReading, type ShellSource, works } from './shellfeatures';
+import { type Feature, FEATURES, featureWorks, LETTER, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, works } from './shellfeatures';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
 // (The shells and the table of features are in src/shellfeatures.ts, a leaf module that src/staticword.ts reads too.)
-export { type AutoShell, bracesWork, FEATURES, featureWorks, saidShell, type Shell, type ShellReading, type ShellSource } from './shellfeatures';
+export { type AutoShell, bracesWork, FEATURES, featureWorks, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource } from './shellfeatures';
 
 export const SHELL_NAMES: Record<Shell, string> = {
   bash: 'bash', sh: 'POSIX sh', dash: 'dash', ash: 'busybox ash', yash: 'yash', ksh: 'ksh93', mksh: 'mksh', zsh: 'zsh',
@@ -45,11 +45,32 @@ export function readShell(text: string, fileName = ''): ShellReading {
     }
     return found(shellFromName(prog), 'shebang');
   }
-  const base = fileName.split(/[\\/]/).pop()!;
-  if (/\.zsh$|^\.?z(shrc|profile|login|logout|shenv)$/.test(base)) return { shell: 'zsh', source: 'filename' };
-  if (/\.ksh$|^\.?mkshrc$/.test(base)) return { shell: base.includes('mksh') ? 'mksh' : 'ksh', source: 'filename' };
+  const base = baseName(fileName);
+  if (/\.zsh(?:-theme)?$|^\.?z(shrc|profile|login|logout|shenv)$/.test(base)) return { shell: 'zsh', source: 'filename' };
+  if (/\.ksh$|^\.?m?kshrc$/.test(base)) return { shell: base.includes('mksh') ? 'mksh' : 'ksh', source: 'filename' };
+  if (/^\.?yash(?:rc|_profile)$/.test(base)) return { shell: 'yash', source: 'filename' };
   if (/\.bash$|^\.?bash(rc|_profile|_login|_logout|_aliases)$/.test(base)) return { shell: 'bash', source: 'filename' };
   return { shell: 'bash', source: 'default' };
+}
+
+const baseName = (fileName: string): string => fileName.split(/[\\/]/).pop()!;
+
+/** A file name of a shell with another language, which the reading above has no shell for: fish, csh and tcsh, all in VS Code's `shellscript` language. */
+const OTHER_LANGUAGE_NAME = /\.(?:fish|t?csh)$|^\.?t?cshrc$/;
+
+/**
+ * Whether a text is surely a script, so that what the parser cannot read in it is the script's fault, and how that is known.
+ * A first line that names another program says no (`#!/usr/bin/env node`, `#!/usr/bin/fish`), as a name of another language does
+ * (`x.fish`). Otherwise the first line or a ShellCheck directive says so (`said`); the caller does (`given`: `said` for the
+ * user's `--shell` or `-e`, or the web page, `name` for `--kind` or an editor's language); or the name does: `.sh`, what `readShell`
+ * reads as a shell's. When in doubt, no.
+ */
+export function surelyScript(text: string, fileName: string, given?: ScriptEvidence): ScriptEvidence | undefined {
+  if (text.startsWith('#!')) return readShell(text.split('\n', 1)[0]).source === 'shebang' ? 'said' : undefined;
+  if (OTHER_LANGUAGE_NAME.test(baseName(fileName))) return undefined;
+  const { source } = readShell(text, fileName);
+  if (given === 'said' || source === 'directive') return 'said';
+  return given || fileName.endsWith('.sh') || source !== 'default' ? 'name' : undefined;
 }
 
 /** The shell a script says it is written for (`readShell`'s, undefined when it says none): the callers that only need the shell. */

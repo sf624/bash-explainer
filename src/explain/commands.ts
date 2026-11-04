@@ -739,7 +739,7 @@ export function timeStatement(cx: Explainer, n: SyntaxNode): Token {
 
 /** `time [-p] command …`: the keyword, and the rest explained as the command it times. */
 function timed(cx: Explainer, n: SyntaxNode): Token {
-  const lead = timeLead(cx, token(n, 'time')!, field(n, 'option'));
+  const lead = timeLead(cx, token(n, 'time')!, fields(n, 'option'));
   const cmd = field(n, 'body');
   const bash = !cx.shell || cx.shell === 'bash';
   // In POSIX mode, `time` before a word that starts with `-` is not the reserved word: bash reads `time -p cmd`, `time -- cmd`
@@ -777,8 +777,7 @@ function timeIsProgram(st: ShellState): boolean {
 /** `time -p cmd`, `time -- cmd`, `time -x cmd` in POSIX mode: the program `time`, with its options and the command it runs (as a program). */
 function timeProgram(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode | undefined): Token {
   const time = token(n, 'time')!;
-  const option = field(n, 'option');
-  const words = [...(option ? [option] : []), ...(cmd?.type === 'command' ? [...(field(cmd, 'name') ? [field(cmd, 'name')!.namedChildren[0]!] : []), ...fields(cmd, 'argument')] : [])];
+  const words = [...fields(n, 'option'), ...(cmd?.type === 'command' ? [...(field(cmd, 'name') ? [field(cmd, 'name')!.namedChildren[0]!] : []), ...fields(cmd, 'argument')] : [])];
   const kw = cx.tok(time, 'keyword', cx.text('cmd-time-program') + (cmd ? '' : cx.sep() + cx.text('cmd-time-program-no-command')));
   // (The program named as the word is: bash looks it up in PATH.)
   const read = readArgs(cx, specFor(cx, time.text), words, time.text);
@@ -787,8 +786,8 @@ function timeProgram(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode | undefined):
   return skeletal({ ...cx.tok(n, 'command', kw.explanation, sortTokens([kw, ...read.tokens, ...rest])), refs: ['3.2.3', '6.11'] }, n);
 }
 
-/** The keyword `time`, and the option `-p` if there is one: the start of every explanation of it. */
-function timeLead(cx: Explainer, time: SyntaxNode, posix: SyntaxNode | undefined): Token[] {
+/** The keyword `time`, and its `-p` and `--` if there are: the start of every explanation of it. */
+function timeLead(cx: Explainer, time: SyntaxNode, options: readonly SyntaxNode[]): Token[] {
   const kw = Object.assign(cx.tok(time, 'keyword', cx.t(keywords.time)), { name: nameInfo(cx.lang, { kind: 'keyword', name: 'time' }, cx, time) });
-  return posix ? [kw, cx.tok(posix, 'option', cx.text('cmd-time-posix-format'))] : [kw];
+  return [kw, ...options.map((o) => cx.tok(o, 'option', cx.text(o.text === '-p' ? 'cmd-time-posix-format' : 'cmd-time-end-of-options')))];
 }

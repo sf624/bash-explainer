@@ -1,7 +1,24 @@
 import type { Text } from './i18n';
-import { plainOf, tokenText } from './messages-levels';
+import { plainOf, tokenError, type TokenProblem, tokenProblemWarning, tokenText, tokenWarning } from './messages-levels';
 
 // What the tokens of words and expansions (src/explain/words.ts) say.
+
+/** Why bash always rejects a `${…}`. */
+interface BadSubstitution { why: 'length' | 'flags' }
+
+const badSubstitutionWhy = (why: BadSubstitution['why']): readonly [string, string] => (why === 'length'
+  ? ['`${#` の後ろに変数名を書いたら、演算子は付けられない', 'a `${#name}` length takes no operator']
+  : ['`${(` のパラメータフラグは zsh の書き方', '`${(f)var}` parameter flags are zsh syntax']);
+
+const BAD_SUBSTITUTION: TokenProblem = {
+  head: ['bash はこの展開を「bad substitution」のエラーにし、このコマンドも、一緒に読んだコマンドも実行しない。', 'bash reports "bad substitution" for this expansion, and does not run this command or what it read with it.'],
+  then: ['このコマンドも、一緒に読んだコマンドも実行しない（その範囲を区切るのはサブシェル、`$( )`、パイプラインの各段、`&` だけ）', 'It does not run this command or what it read with it (only a subshell, `$( )`, a stage of a pipeline or `&` keeps this to itself)'],
+};
+
+const badSubstitutionRow = ({ why }: BadSubstitution): readonly [string, string] => {
+  const [ja, en] = badSubstitutionWhy(why);
+  return [`パラメータ展開: bash は「bad substitution」のエラーにする（${ja}）`, `Parameter expansion: bash reports "bad substitution" (${en})`];
+};
 
 export const WORD_TEXTS = {
   /** `ls a[$x]`: the `]` of a bracket expression that an expansion opens (`closes`: the text of the part that opens it). */
@@ -152,6 +169,22 @@ export const WORD_TEXTS = {
   'arith-expansion': tokenText(() => [
     '算術展開: 中の式を整数として計算した結果に置き換える',
     'Arithmetic expansion: replaced by the integer result of the expression']),
+  // (`${x@Z}`: the letter is read only with a value to transform. Checked: test/syntax-error.test.ts.)
+  'bad-transform': tokenWarning<{ op: string }>(({ op }) => [
+    `パラメータ展開: \`@${op}\` は bash にない変換。変換する値があれば（空でも）「bad substitution」のエラーになり、それを実行しているシェルが止まる（終了ステータス 1）。値がなければ空になる`,
+    `Parameter expansion: \`@${op}\` is no transform bash has. With a value to transform, even an empty one, bash reports "bad substitution" and the shell that runs it stops (status 1); with none, it is empty`]),
+  // (`${#a-b}`, `${(f)var}`: whatever the values, on a path a run surely takes (`surelyRuns`). No status: bash drops what it read with the line
+  // and goes on to the next, so that `$?` is 1 there, but `|| x` does not run, and a function or a loop stops whole. Checked: test/syntax-error.test.ts.)
+  'bad-substitution-always': tokenError<BadSubstitution>(BAD_SUBSTITUTION, badSubstitutionRow),
+  // (The same, where only a name says the file is one of bash: another shell may source it, docs/design/three-levels.md.)
+  'bad-substitution-if-bash': tokenProblemWarning<BadSubstitution>(BAD_SUBSTITUTION, badSubstitutionRow),
+  // (The same on a path a run may not take, or in a text that may not be read as written: a warning, on its row.)
+  'bad-substitution-if-run': tokenWarning<BadSubstitution>(({ why }) => {
+    const [ja, en] = badSubstitutionWhy(why);
+    return [
+      `パラメータ展開: ここが実行されると、bash は「bad substitution」のエラーにし（${ja}）、このコマンドも、一緒に読んだコマンドも実行しない`,
+      `Parameter expansion: if this runs, bash reports "bad substitution" (${en}), and does not run this command or what it read with it`];
+  }),
   /** `echo $[1+2]`: the obsolete form of an arithmetic expansion. */
   'arith-expansion-obsolete': tokenText(() => [
     '。`$[…]` は古い書き方（廃止予定）で、`$((…))` と同じ意味',

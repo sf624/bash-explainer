@@ -28,7 +28,7 @@ import { ownSubshells, STATEMENTS } from './semantics/env';
 import { attribute, docLine } from './semantics/state';
 import { CHANGING } from './semantics/walk/temporaries';
 import type { StatusModel } from './semantics/status';
-import { field, fields, nameText, prefixAssignments, redirectionsOf, strayKeyword, type SyntaxNode } from './syntax/tree';
+import { field, fields, nameText, prefixAssignments, readWhenExpanded, redirectionsOf, strayKeyword, type SyntaxErrorWhat, type SyntaxNode } from './syntax/tree';
 
 export interface SentenceInput {
   root: SyntaxNode;
@@ -41,6 +41,8 @@ export interface SentenceInput {
   problems: ReadonlySet<string>;
   /** The sentences of a statement over several lines, which says the same on each of them, kept by what they depend on (`Whole`): each would read all of it. */
   kept?: Map<string, unknown>;
+  /** The syntax error of the command this line is in, whose bash runs nothing (`syntaxFault`). */
+  syntaxError?: SyntaxErrorWhat;
 }
 
 /** The sentence, and the clauses on the models it says (for the tests of the rules). */
@@ -69,12 +71,13 @@ const ITEMS = 4;
  * body and backticks are read only when they are expanded, and bash goes on after the error: a `$( )` in a body drops its command too (status 1),
  * and backticks are empty and their command runs (test/linesentence.test.ts).
  */
-const strayIn = (n: SyntaxNode): 'then' | 'do' | undefined => (n.type === 'heredoc_body' || (n.type === 'command_substitution' && n.text[0] === '`') ? undefined : strayKeyword(n) ?? n.namedChildren.map(strayIn).find(Boolean));
+const strayIn = (n: SyntaxNode): 'then' | 'do' | undefined => (readWhenExpanded(n) ? undefined : strayKeyword(n) ?? n.namedChildren.map(strayIn).find(Boolean));
 
 /** The sentence of `line`, or none when the line has no code (a comment, a blank line, code bash cannot read). */
 export function lineSentence(input: SentenceInput): Sentence | undefined {
   const pieces = piecesOn(input.root, input.line);
-  if (!pieces.length) return undefined;
+  // (A `)` alone on its line is no piece of any statement: the line still says that bash stops.)
+  if (!pieces.length && !input.syntaxError) return undefined;
   const key = input.kept && pieces.every((p) => p.kind === 'whole') ? [pieces.map((p) => p.node.startIndex).join(), ...[...input.problems].sort()].join(' ') : undefined;
   if (key === undefined) return composed(input, pieces);
   if (!input.kept!.has(key)) input.kept!.set(key, composed(input, pieces));
@@ -84,6 +87,7 @@ export function lineSentence(input: SentenceInput): Sentence | undefined {
 function composed(input: SentenceInput, pieces: Piece[]): Sentence | undefined {
   const stray = pieces.map((p) => (p.kind === 'whole' ? strayIn(p.node) : strayKeyword(p.node))).find(Boolean);
   if (stray) return { text: sentenceEnd(input.lang, [S.keywordMissing(input.lang, stray)]), clauses: [] };
+  if (input.syntaxError) return { text: sentenceEnd(input.lang, [S.syntaxStops(input.lang, input.syntaxError)]), clauses: [] };
   let said!: Sentence;
   for (const brief of [0, 1, 2] as const) {
     const c = new Composer(input, brief);
@@ -278,7 +282,7 @@ class Composer implements IdiomSpeaker {
       case 'list': return this.list(n);
       // (While it is typed, `!` and `a &&` have nothing after them yet.)
       case 'negated_command': return S.negated(lang, n.namedChildren.length ? this.describe(n.namedChildren[0]) : S.nothing(lang));
-      case 'time_statement': return S.timed(lang, n.namedChildren.length ? this.describe(n.namedChildren[0]) : S.nothing(lang));
+      case 'time_statement': return S.timed(lang, field(n, 'body') ? this.describe(field(n, 'body')!) : S.nothing(lang));
       case 'coproc_statement': return field(n, 'body') ? S.coproc(lang, this.noun(field(n, 'body')!)) : S.nothing(lang);
       case 'redirected_statement': return S.withIo(lang, this.describe(field(n, 'body')!), this.io(redirectionsOf(n)));
       case 'subshell': return S.subshell(lang, body());

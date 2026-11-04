@@ -833,8 +833,10 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   const vspec = variant ? { ...role.spec!, ...variant.spec } : undefined;
   // (`enable -n echo; command echo --version`: `command` runs the program, and its words are the program's.)
   const offProgram = role.slot.run === 'current-shell' && res?.kind === 'file' && res.disabled ? role.spec?.program : undefined;
+  // (`nohup let x=09`: no program has that name, so nothing reads its words: `builtin-or-function-as-program` says so.)
+  const notReached = role.slot.run === 'exec' && isPlainWord(first) && !!role.spec?.builtin && !role.spec.program;
   const children = test ? testArgs(cx, first.parent!, commandTest(test, words.slice(1), bashTest(cx, test)), test.closingOperand !== undefined, !!test.builtin)
-    : ownWords(cx, vspec ?? offProgram, name, first, parse, role.spec, nodes, words.slice(1), refusal);
+    : ownWords(cx, vspec ?? offProgram ?? (notReached ? NO_SPEC : undefined), name, first, parse, role.spec, nodes, words.slice(1), refusal);
   if (role.of) {
     // `{}` is replaced by find (and `xargs -I{}`) with each path.
     const mark = (ts: Token[]) => ts.forEach((t) => {

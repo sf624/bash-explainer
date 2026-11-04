@@ -1,5 +1,6 @@
 import { lineLabel, ordinal, type Text } from './i18n';
 import { tokenText } from './messages-levels';
+import { syntaxErrorWhat, type SyntaxErrorWhat } from './messages-syntax';
 
 // What the tokens of the compound commands, tests, lists, redirections and the rest of src/explain/ say.
 
@@ -25,9 +26,14 @@ export const COMPOUND_TEXTS = {
     'コマンドグループの開始（ここではサブシェルで実行される）',
     'Start of a command group (here it runs in a subshell)']),
   /** `error`: a part the parser could not read (`echo "a`). */
-  'syntax-error': tokenText(() => [
+  'not-parsed': tokenText(() => [
     '構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）',
     'Syntax error: this part could not be parsed (unclosed quote or bracket?)']),
+  /** `echo ok )`: what the shell stops at, in a script where that is known (`syntaxFault`): in the words of the problem. */
+  'syntax-error-here': tokenText<{ what: SyntaxErrorWhat }>(({ what }) => {
+    const [ja, en] = syntaxErrorWhat(what);
+    return [`構文エラー: ${ja}`, `Syntax error: ${en}`];
+  }),
   // Comments.
   /** `# bash-explainer disable-file SC2086`: a directive for the whole file. */
   'comment-directive-file': tokenText<{ codes: string }>(({ codes }) => [

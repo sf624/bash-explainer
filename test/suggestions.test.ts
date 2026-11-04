@@ -50,6 +50,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   // `cmd || echo "msg"` → `cmd || { echo "msg" >&2; exit 1; }`: the status is 1 when `cmd` fails.
   'failure-reported-as-success': 'mechanical',
   'keyword-needs-separator': 'none',
+  'syntax-error': 'none',
+  'syntax-error-if-bash': 'none',
   'bracket-missing-close': 'none',
   // `[ -f $x]` → `[ -f $x ]`.
   'bracket-close-glued': 'mechanical',

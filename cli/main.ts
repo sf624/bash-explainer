@@ -499,7 +499,7 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
       file = input.shown;
       const doc = openDocument(input.text, input.kind, (text) => parser.parse(text));
       const lines = doc.lines;
-      const shells = shellsOf(lines, input.name, o.shell);
+      const shells = shellsOf(lines, input.name, o.shell, o.command !== undefined ? 'said' : o.kind !== undefined ? 'name' : undefined);
       // (Said once for a file, however many lines say it.)
       let notRead = !!doc.tree.unread;
       // (A file not read says so once, on its first line, not on each.)

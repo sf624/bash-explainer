@@ -1,6 +1,7 @@
 import type { FactId, MESSAGES, Params, ProblemEntry } from './messages';
 import type { StyleCase, StyleCode } from './messages-levels';
 import type { Stops } from './messages-posix';
+import { syntaxErrorHead } from './messages-syntax';
 
 // The headline of each problem of the catalog: one sentence with what happens, which the panel's box "Problems on this
 // line" shows first (docs/design/panel-redesign.md, P7b); "more" holds the whole text. It says only what the text says
@@ -49,6 +50,8 @@ export const FACT_HEADS: { [K in ProblemFactId]: (p: Params<K>) => Head } = {
   'file-not-read': ({ why }) => (why === 'too-deep'
     ? ['入れ子が深すぎて読めないので、このファイルは何も説明されない。', 'The file nests too deep to be read, so none of it is explained.']
     : ['Bash Explainer の不具合で読めなかったので、このファイルは何も説明されない。', 'A bug of the tool stopped it reading the file, so none of it is explained.']),
+  'syntax-error': (p) => syntaxErrorHead(p) as Head,
+  'syntax-error-if-bash': (p) => syntaxErrorHead(p) as Head,
   'keyword-needs-separator': ({ kw }) => [`\`${kw}\` の前に \`;\` か改行がないので、構文エラーになる。`, `\`${kw}\` has no \`;\` or newline before it: a syntax error.`],
   'bracket-missing-close': () => ['`[` の最後の引数が `]` でないので、条件を評価せずに失敗する。', '`[` has no `]` as its last argument, so it fails without testing anything.'],
   'bracket-close-glued': ({ word }) => [`\`${word}\` の \`]\` は単語の一部なので、\`[\` は条件を評価せずに失敗する。`, `The \`]\` in \`${word}\` is part of the word, so \`[\` fails without testing anything.`],

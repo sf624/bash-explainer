@@ -44,6 +44,26 @@ describe('the web page: the box of the line\'s problems', function () {
     await ctx.close();
   });
 
+  it('says the same in the box and in the row, where the fault is not the part it cannot read', async () => {
+    const { ctx, panel, errors } = await open('{ ; }');
+    const heads = await until('the box', () => panel().locator('#problems .problem-head').allTextContents(), (h) => h.length === 1);
+    assert.match(heads[0], /^Error A command is missing here: the shell stops with a syntax error if it reaches this line\./);
+    const row = await until('the row', () => panel().locator('#tree .row', { hasText: 'Syntax error' }).allTextContents(), (r) => r.length > 0);
+    assert.match(row[0], /Syntax error: a command is missing here/);
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('shows a syntax error in the box, in the words of its row', async () => {
+    const { ctx, panel, errors } = await open('echo ok )');
+    const heads = await until('the box', () => panel().locator('#problems .problem-head').allTextContents(), (h) => h.length === 1);
+    assert.match(heads[0], /^Error `?\)`? cannot stand here: the shell stops with a syntax error if it reaches this line\./);
+    const row = await until('the row', () => panel().locator('#tree .row', { hasText: 'Syntax error' }).allTextContents(), (r) => r.length > 0);
+    assert.match(row[0], /Syntax error: `?\)`? cannot stand here/);
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
   it('has no box on a clean line, and keeps a plain note below it', async () => {
     const { ctx, panel } = await open('echo hello');
     assert.strictEqual(await panel().locator('#problems').isHidden(), true);

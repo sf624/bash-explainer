@@ -12,7 +12,7 @@ export type ProblemNote = Note & { code: string; head: string };
 export interface TokenEntry<P> {
   text: (p: P) => readonly [ja: string, en: string];
   level?: NoteLevel;
-  /** Of a text that says the command fails every time: what its problem says beyond the row (`tokenError`). */
+  /** Of a text that says the command fails every time: what its problem says beyond the row (`tokenError`, `tokenProblemWarning`). */
   problem?: TokenProblem;
 }
 
@@ -35,6 +35,11 @@ export function tokenWarning<P = Record<string, never>>(text: (p: P) => readonly
 /** A text that says the command fails every time it runs (docs/design/three-levels.md, section 2): a row draws the mark of an error before it. */
 export function tokenError<P = Record<string, never>>(problem: TokenProblem, text: (p: P) => readonly [string, string]): TokenEntry<P> {
   return { text, level: 'error', problem };
+}
+
+/** The same at a warning's level: where only a file's name says a shell reads it (`ScriptEvidence`). A problem still, as the error is. */
+export function tokenProblemWarning<P = Record<string, never>>(problem: TokenProblem, text: (p: P) => readonly [string, string]): TokenEntry<P> {
+  return { text, level: 'warning', problem };
 }
 
 /**
@@ -74,6 +79,9 @@ export function insideLastBracket(text: string, close: string, more: string): st
  * (`parse`, src/dialect.ts), information: the line is not explained (a problem of that severity, as it always was).
  */
 export const PROBLEM_LEVELS = { unsupported: 'error', behaviour: 'info', parse: 'info', crlf: 'error', crlfMaybe: 'warning' } as const satisfies Record<string, NoteLevel>;
+
+/** The heading of a dialect note on a construct that works differently in the target shell (src/dialect.ts). */
+export const PORTABILITY = { ja: '移植性: ', en: 'Portability: ' };
 
 /** The codes of the style checks of src/pitfalls.ts, as diagnostics show them (`# bash-explainer disable=<code>`). */
 export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-no-space' | 'brace-close-no-separator'

@@ -10,7 +10,7 @@ import { type ExecEnv, readAs, runsString, slotEnvs } from './semantics/env';
 import { commandName as staticName, plainName } from './semantics/effects';
 import { resolveName, resolveRun } from './semantics/names';
 import { option, type StateModel } from './semantics/state';
-import { ancestor, childrenOnRows, descendants, field, fields, redirectionsOf } from './syntax/tree';
+import { ancestor, braceAsArgument, childrenOnRows, descendants, field, fields, GLUED_BRACE, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, operatorFits, testFails, writtenAsBracket } from './testexpr';
 import { staticWordValue, unquoteWord } from './staticword';
@@ -580,7 +580,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
             `\`${written} ${a[0].text}…\` runs a command named \`${written}\`; it is not an assignment. Write ${how} with no spaces around \`=\``, fix ? [fix] : []);
         }
         // `{echo a;}`: no space after `{`, so it is a command named `{echo`.
-        if (written && /^\{[A-Za-z_]\w*$/.test(written)) {
+        if (written && GLUED_BRACE.test(written)) {
           const fix = braceSpaced(n, field(n, 'name')!, a);
           const how = fix && !fix.code.includes('\n') ? `\`${fix.code}\`` : `\`{ ${written.slice(1)} …; }\``;
           add('brace-no-space', field(n, 'name')!, `\`${written}\` は \`{\` の直後に空白がないので、グループの開始ではなく \`${written}\` というコマンド名です。\`{\` の後には空白が必要で、\`}\` の前には \`;\` か改行が必要です: ${how}`,
@@ -588,8 +588,8 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         }
         // `{ echo a; echo b }`: `}` is an argument of the last command, and the group is never closed. (Not in zsh, where
         // a `}` closes the group anywhere unless IGNORE_CLOSE_BRACES is set: zshoptions.)
-        const lastArg = a[a.length - 1];
-        if (shell !== 'zsh' && lastArg?.type === 'word' && lastArg.text === '}' && n.parent?.type === 'compound_statement' && n.parent.incomplete) {
+        const lastArg = braceAsArgument(n);
+        if (shell !== 'zsh' && lastArg) {
           // (`;` right before the `}`, after the words and redirections before it: `echo b >f; }`.)
           const at = mostOf(n.children.filter((c) => c.endIndex <= lastArg.startIndex).map((c) => c.endIndex));
           const fix = editSpan(n, lastArg, [{ start: at, end: at, text: ';' }]);

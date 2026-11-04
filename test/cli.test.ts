@@ -197,6 +197,85 @@ describe('the command-line tool', function () {
     assert.match(r.out, /apk add --no-cache/);
   });
 
+  it('fails the check on `${(f)x}` only where a run surely gets to it, as real bash does', () => {
+    const check = (name: string, text: string) => {
+      const file = path.join(dir, name);
+      fs.writeFileSync(file, text);
+      return run(['--check', '--no-color', file]);
+    };
+    // (With a first line. With only a name it is a warning: the test of the evidence below.)
+    assert.strictEqual(check('stops.sh', '#!/bin/bash\necho ${(f)x}\n').code, 1);
+    assert.strictEqual(spawnSync('bash', [path.join(dir, 'stops.sh')]).status, 1);
+    assert.strictEqual(check('after.sh', 'exit 0\necho ${(f)x}\n').code, 0);
+    assert.strictEqual(spawnSync('bash', [path.join(dir, 'after.sh')]).status, 0);
+    assert.strictEqual(check('zsh.sh', 'if [ -n "$ZSH_VERSION" ]; then a=(${(f)x}); fi\n').code, 0);
+    assert.strictEqual(spawnSync('bash', [path.join(dir, 'zsh.sh')]).status, 0);
+    assert.strictEqual(check('Dockerfile', 'FROM a\nRUN echo ${(f)x}\n').code, 0);
+    assert.strictEqual(check('a.md', '```bash\necho ${(f)x}\n```\n').code, 0);
+  });
+
+  it('a file only its name says is a script: a warning, which only `--strict` fails on', () => {
+    const write = (name: string, text: string) => {
+      const file = path.join(dir, name);
+      fs.writeFileSync(file, text);
+      return file;
+    };
+    for (const [text, code, message] of [['echo ok )\n', 'syntax-error-if-bash', /cannot stand here: a syntax error/], ['a=(${(f)"$(x)"})\n', 'bad-substitution-if-bash', /bad substitution/]] as const) {
+      for (const args of [[write('named.sh', text)], [write('named.bash', text)], ['--kind', 'shell', write('named', text)]]) {
+        assert.strictEqual(run(['--check', '--no-color', ...args]).code, 0, args.join(' '));
+        assert.strictEqual(run(['--check', '--strict', '--no-color', ...args]).code, 1, args.join(' '));
+        const said = run(['--check', '--no-color', ...args]).out;
+        assert.ok(said.includes(`warning: `) && said.includes(`[${code}]`) && message.test(said), said);
+        const json = JSON.parse(run(['--check', '--no-color', '--format', 'json', ...args]).out) as { code: string; severity: string }[];
+        assert.deepStrictEqual(json.map((p) => [p.code, p.severity]), [[code, 'warning']]);
+        const sarif = JSON.parse(run(['--check', '--no-color', '--format', 'sarif', ...args]).out) as { runs: { results: { ruleId: string; level: string }[] }[] };
+        assert.deepStrictEqual(sarif.runs[0].results.map((r) => [r.ruleId, r.level]), [[code, 'warning']]);
+      }
+      // (A first line, a shell chosen, a command given: an error.)
+      const error = code.replace('-if-bash', code.startsWith('bad') ? '-always' : '');
+      for (const args of [[write('first.sh', `#!/bin/bash\n${text}`)], ['--shell', 'bash', write('chosen.sh', text)], ['-e', text]]) {
+        assert.strictEqual(run(['--check', '--no-color', ...args]).code, 1, args.join(' '));
+        const json = JSON.parse(run(['--check', '--no-color', '--format', 'json', ...args]).out) as { code: string; severity: string }[];
+        assert.deepStrictEqual(json.map((p) => [p.code, p.severity]), [[error, 'error']]);
+      }
+    }
+    // (Silenced by its own code, and a name of another shell says nothing, even with `--strict`.)
+    assert.strictEqual(run(['--check', '--strict', '--no-color', write('off.sh', '# bash-explainer disable=syntax-error-if-bash\necho ok )\n')]).code, 0);
+    for (const name of ['x.fish', 'x.csh', '.cshrc', 'x.tcsh', '.tcshrc', 'x.zsh-theme']) assert.strictEqual(run(['--check', '--strict', '--no-color', write(name, 'if test a\n  echo b\nend\n')]).code, 0, name);
+  });
+
+  it('fails the check on a syntax error, in each format, unless it is silenced', () => {
+    const args = ['--check', '--no-color', '-e', 'echo a\necho ok )\necho b'];
+    for (const format of [[], ['--format', 'github'], ['--format', 'json'], ['--format', 'sarif']]) assert.strictEqual(run([...args, ...format]).code, 1, format.join(' '));
+    assert.match(run(args).out, /^\(command\):2:9: error: \) cannot stand here: a syntax error\. If the shell reaches this line, it stops reading here, having run the commands it read in full before; the command this is in, and the others on the line where it starts, do not run \[syntax-error\]$/m);
+    assert.match(run([...args, '--format', 'github']).out, /^::error file=.*,line=2,.*title=Bash Explainer%3A syntax-error::/m);
+    const json = JSON.parse(run([...args, '--format', 'json']).out) as { code: string; severity: string; line: number; column: number }[];
+    assert.deepStrictEqual(json.map((p) => [p.code, p.severity, p.line, p.column]), [['syntax-error', 'error', 2, 9]]);
+    const sarif = JSON.parse(run([...args, '--format', 'sarif']).out) as { runs: { results: { ruleId: string; level: string }[] }[] };
+    assert.deepStrictEqual(sarif.runs[0].results.map((r) => [r.ruleId, r.level]), [['syntax-error', 'error']]);
+    // (A script left open; and as many formats of silence as other problems have.)
+    assert.strictEqual(run(['--check', '-e', 'if true; then']).code, 1);
+    assert.strictEqual(run(['--check', '-e', "echo 'a"]).code, 1);
+    assert.strictEqual(run(['--check', '-e', '# bash-explainer disable=syntax-error\necho ok )']).code, 0);
+    assert.strictEqual(run(['--check', '-e', 'echo ok )', '--set', 'diagnostics.ignore=["syntax-error"]']).code, 0);
+    // (`diagnostics.pitfalls` off leaves an error. A host's code says none, and a file not surely a script, unless the user says it is.)
+    assert.strictEqual(run(['--check', '-e', 'echo ok )', '--set', 'diagnostics.pitfalls=false']).code, 1);
+    const file = path.join(dir, 'Dockerfile');
+    fs.writeFileSync(file, 'FROM a\nRUN echo ok )\n');
+    assert.strictEqual(run(['--check', '--no-color', file]).code, 0);
+    const plain = path.join(dir, 'tool');
+    fs.writeFileSync(plain, 'echo ok )\n');
+    assert.strictEqual(run(['--check', plain]).code, 0);
+    assert.strictEqual(run(['--check', '--shell', 'bash', plain]).code, 1);
+    fs.writeFileSync(`${plain}.first.sh`, '#!/bin/bash\necho ok )\n');
+    assert.strictEqual(run(['--check', `${plain}.first.sh`]).code, 1);
+    fs.writeFileSync(`${plain}.after.sh`, '#!/bin/bash\nexit 0\necho ok )\n');
+    assert.strictEqual(run(['--check', `${plain}.after.sh`]).code, 0);
+    const md = path.join(dir, 'a.md');
+    fs.writeFileSync(md, '```bash\ncp <from> <to>\necho ok )\n```\n');
+    assert.strictEqual(run(['--check', md]).code, 0);
+  });
+
   it('checks a script for its shell, and exits 1 on an error', () => {
     const r = run(['--check', '--no-color', '-e', '#!/bin/sh\n[[ -f x ]] && echo y']);
     assert.strictEqual(r.code, 1);

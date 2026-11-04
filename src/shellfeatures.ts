@@ -17,6 +17,13 @@ export type ShellSource = 'directive' | 'shebang' | 'filename' | 'default' | 'ho
 export interface ShellReading { shell: Shell; source: ShellSource }
 
 /**
+ * How a text is known to be a script of the shell it is read as (`surelyScript`, src/dialect.ts). `said`: its first line or a
+ * directive says it, or someone chose (`--shell`, `-e`, the web page's reader). `name`: only its file name or an editor's
+ * language does, which another shell's file may have too (`aliases.sh`, sourced by zsh), so what it fails is a warning.
+ */
+export type ScriptEvidence = 'said' | 'name';
+
+/**
  * The automatic shell at a place of a document, as the page and the panel say it: a reading; `parts` in a host file
  * whose parts run in shells of their own, at a line in none of them; or `none` where the host runs the words with no
  * shell (Docker's exec form, a Python list of arguments; `ShellRegion.noShell`). `autoShellAt`, src/document.ts.
