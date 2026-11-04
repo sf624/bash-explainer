@@ -94,19 +94,19 @@ const frameOf = (t: Token): RowFrame | undefined => (t.grammar ? 'group' : t.fra
  */
 const sameRange = (t: Token): Token[] => (t.grammar ? [] : t.children.filter((c) => sameSpan(c.span, t.span)).flatMap((c) => [c, ...sameRange(c)]));
 
-/** What a redirection is around (`tar … 2>/dev/null`, `while … done < f`, `>f cmd`): its one part that is no redirection. */
-function aroundOf(t: Token, r: TokenRow, lang: Lang): Token | undefined {
-  if (r.kind !== 'redirect') return undefined;
-  const others = t.children.filter((c) => tokenRow(c, lang).kind !== 'redirect');
-  return others.length === 1 ? others[0] : undefined;
-}
+/**
+ * The command that a command's redirections stand around (`tar … 2>/dev/null`, `>f cmd`), which the explanation says (`Token.around`): their one
+ * part that is no redirection. A redirection itself stands around nothing: the part under `> "$f"` is the word of its target.
+ */
+const aroundOf = (t: Token): Token | undefined => (t.around === 'redirections' ? t.children.find((c) => c.kind !== 'redirect') : undefined);
 
 /**
  * The examples that run a whole statement of the line (a pipeline's): the view draws them apart, folded, above the rows. A
- * pipeline inside a construct of the line keeps its place, under its row. A statement of a list (`a | b; c | d`) counts.
+ * pipeline inside a construct of the line keeps its place, under its row. A statement of a list (`a | b; c | d`) counts, and so does a
+ * pipeline after its `time` or `!`, which are parts of it (3.2.3).
  */
 export function wholeLineExamples(ex: Pick<LineExplanation, 'items' | 'examples'>): Example[] {
-  const statements = (t: Token): Token[] => (t.grammar ? [t, ...t.children.flatMap(statements)] : [t]);
+  const statements = (t: Token): Token[] => (t.grammar || t.around === 'pipeline' ? [t, ...t.children.flatMap(statements)] : [t]);
   const whole = ex.items.flatMap(statements);
   return ex.examples.filter((e) => e.kind === 'pipeline' && whole.some((t) => sameSpan(t.span, e.anchor!)));
 }
@@ -129,12 +129,12 @@ interface Build {
  * The rows of a token. A redirection around a command is the command's row, with its redirections among its parts: the box is
  * the command, what bash sets up for it included. A token that does not come in at this depth gives its place to its parts,
  * unless it holds what the panel must show (a warning, a fact, a value, an example, a capture group's colour); a line always
- * has its top rows.
+ * has its top rows. A command's name with no row of its own at this depth (the reserved word `time`) goes on the row around it.
  */
 function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
   const { depth } = b.options;
   const outer = tokenRow(t, b.lang);
-  const head = aroundOf(t, outer, b.lang) ?? t;
+  const head = aroundOf(t) ?? t;
   const own = head === t ? outer : tokenRow(head, b.lang);
   const chain = [head, ...sameRange(head)];
   const folded = [...(head === t ? [] : [t]), ...chain.slice(1)];
@@ -160,7 +160,7 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build): ModelRow[] {
     level: strongestLevel(marks),
     facts: facts.length ? facts : undefined,
     texts: unique(all.flatMap((r) => r.texts ?? [])),
-    name: all.find((r) => r.name)?.name,
+    name: [...all, ...parts.filter((c) => !b.made.has(c)).map((c) => tokenRow(c, b.lang))].find((r) => r.name)?.name,
     value,
     group,
     refs: unique(all.flatMap((r) => r.refs ?? [])),
