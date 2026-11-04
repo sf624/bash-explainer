@@ -40,6 +40,8 @@ export type Received = 'asWritten' | 'changed';
 export interface ModelRow extends TokenRow {
   /** The place it selects. */
   span: Span;
+  /** The references it cites. */
+  refs: readonly string[];
   /** The examples placed under it. */
   examples?: (Example & { folded?: true })[];
   /** Which part of the line it is: the same in both languages, at both depths and with the switch either way. */
@@ -319,13 +321,11 @@ function addRole(row: ModelRow, role: RowRole): void {
   row.roleLine = { ...roleLine(row.roles)!, refs: row.roleLine?.refs ?? [] };
 }
 
-/** Sections a node cites where it has no row of its own: on the row around it, with its roles when it has them. */
+/** Sections a node cites where it has no row of its own: on the role line of the row around it. (Such a row has one: what holds a node with sections is no piece of a word.) */
 function addRefs(row: ModelRow | undefined, refs: readonly string[] | undefined): void {
-  if (!row || !refs) return;
-  const said = [...row.refs ?? [], ...row.roleLine?.refs ?? []];
-  const more = refs.filter((r) => !said.includes(r));
-  if (row.roleLine) row.roleLine = { ...row.roleLine, refs: [...row.roleLine.refs, ...more] };
-  else row.refs = [...row.refs ?? [], ...more];
+  if (!row?.roleLine || !refs) return;
+  const said = [...row.refs, ...row.roleLine.refs];
+  row.roleLine = { ...row.roleLine, refs: [...row.roleLine.refs, ...refs.filter((r) => !said.includes(r))] };
 }
 
 /**
@@ -351,6 +351,7 @@ function nodeRow(n: ReadingNode, range: RoleOfRange, about: string | undefined, 
     labelParts: [{ text: n.label }],
     text,
     parts: text ? [{ text }] : [],
+    refs: [],
     basis: partBasis(n, lang),
     span: n.span,
     key,
