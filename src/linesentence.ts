@@ -29,7 +29,6 @@ import { attribute, docLine } from './semantics/state';
 import { CHANGING } from './semantics/walk/temporaries';
 import type { StatusModel } from './semantics/status';
 import { field, fields, nameText, prefixAssignments, redirectionsOf, strayKeyword, type SyntaxNode } from './syntax/tree';
-import { staticWordValue } from './staticword';
 
 export interface SentenceInput {
   root: SyntaxNode;
@@ -510,7 +509,12 @@ class Composer implements IdiomSpeaker {
    * functions or prints, and sets no variable).
    */
   private declaring(c: SyntaxNode, said: CommandSaid | undefined): 'declared' | 'changed' | 'none' {
-    const values = fields(c, 'argument').filter((x) => x.type !== 'variable_assignment').map((x) => staticWordValue(x));
+    // (The words the other words give, from the word model: a value is known when every part of the word is text.)
+    const values = fields(c, 'argument').filter((x) => x.type !== 'variable_assignment')
+      .flatMap((x) => argvWords(x, this.input.status.state, this.lang).map((w) => {
+        const texts = w.parts.flatMap((p) => ('text' in p ? [p.text] : []));
+        return texts.length === w.parts.length ? texts.join('') : undefined;
+      }));
     // (`-p` of `declare`, `typeset` and `local` only prints: `export -p x=1` and `readonly -p x=1` set `x`, checked with bash.)
     const name = said ? said.names[0] : field(c, 'name')!.text;
     const naming = ['declare', 'typeset', 'local'].includes(name) ? /^[-+][a-zA-Z]*[fFp]/ : /^[-+][a-zA-Z]*[fF]/;
