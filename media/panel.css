@@ -1087,14 +1087,9 @@ button.twisty:focus-visible {
   outline-offset: 1px;
 }
 
-/* (A folded example stays as its title: one line, a fold of its own.) */
-li.collapsed > .item > .body > :not(details.example) {
+/* (A folded example stays as its title: one line, a fold of its own. What is folded by hand is drawn until it has shrunk, panel.js, `fold`.) */
+li.collapsed > .item > .body > :not(details.example, [data-closing]) {
   display: none;
-}
-
-/* What is folded by hand is drawn until it has shrunk (panel.js, fold). */
-li.collapsed > .item > .body > [data-closing] {
-  display: block;
 }
 
 /* Capture groups: the same colour for the group in the tree and what it matched in the examples. */
