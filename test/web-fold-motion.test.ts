@@ -21,12 +21,13 @@ const MID = `(async ([boxes, click]) => {
   const rest = mark();
   document.querySelector(click).click();
   const moving = all().map((b) => b.getAnimations());
-  const total = moving.flat().map((a) => a.effect.getComputedTiming().duration);
-  for (const a of moving.flat()) { a.pause(); a.currentTime = 0; }
+  // (Every move of the page, not only those of the boxes: a box that is not listed would run in real time between this and END.)
+  const every = document.getAnimations();
+  for (const a of every) { a.pause(); a.currentTime = 0; }
   const start = mark();
-  for (const a of moving.flat()) a.currentTime = a.effect.getComputedTiming().duration - 0.01;
+  for (const a of every) a.currentTime = a.effect.getComputedTiming().duration - 0.01;
   window.markEnd = mark();
-  for (const a of moving.flat()) a.currentTime = a.effect.getComputedTiming().duration / 2;
+  for (const a of every) a.currentTime = a.effect.getComputedTiming().duration / 2;
   const markMid = mark();
   return all().map((b, i) => ({
     animations: moving[i].length, duration: moving[i][0]?.effect.getComputedTiming().duration ?? 0, display: getComputedStyle(b).display, visible: b.checkVisibility(),
@@ -37,7 +38,7 @@ const MID = `(async ([boxes, click]) => {
 /** Runs in the panel's page. Lets the paused moves of the boxes end, and returns what is drawn after. */
 const END = `(async ([boxes]) => {
   const all = boxes.flatMap((s) => [...document.querySelectorAll(s)]);
-  for (const b of all) for (const a of b.getAnimations()) { a.play(); a.finish(); }
+  for (const a of document.getAnimations()) { a.play(); a.finish(); }
   // (The events of the ends, then the frame that follows them.)
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
   return all.map((b) => ({
@@ -196,7 +197,7 @@ describe('the panel: boxes that fold and unfold move', function () {
 
   it('the fold button on the line of the report folds the examples with their rows', async () => {
     const { panel, close } = await open(LINE, {}, 1);
-    const outer = [under('0.0')[0], under('0.1')[0]];
+    const outer = [under('0.0')[0], under('0.1')[0], under('0.2')[0]];
     const boxes = [...outer, ...under('0.0.1'), ...under('0.1.0.0.0.0')];
     const ms = await mid(panel, boxes, '#toggle');
     ms.forEach((m, i) => {
@@ -204,14 +205,14 @@ describe('the panel: boxes that fold and unfold move', function () {
       assert.strictEqual(m.closing, true, `box ${i}: kept drawn`);
     });
     // (Only the outermost box of a branch moves: the parts of `grep | sort` and of `echo` carry the rows inside them, with the examples of `sort` and `+%F`.)
-    assert.deepStrictEqual(ms.map((m) => m.animations), [1, 1, 0, 0, 0, 0]);
-    for (const m of ms.slice(0, 2)) assert.ok(m.mid > 0 && m.mid < m.before, `${m.mid} of ${m.before}`);
-    // (Each outermost box that folds, two here, holds the margins of its first and last rows: up to 5 px each at the start; before, the examples of 270 and 180 px.)
+    assert.deepStrictEqual(ms.map((m) => m.animations), [1, 1, 1, 0, 0, 0, 0]);
+    for (const m of ms.slice(0, 3)) assert.ok(m.mid > 0 && m.mid < m.before, `${m.mid} of ${m.before}`);
+    // (Three outermost boxes fold here: `grep | sort`, `echo` and `exit`. The margins of their rows, which do not meet once the boxes exist, show 9.6 px
+    // at the start and 2.4 px at the end; before, the examples of 270 and 180 px.)
     assert.ok(Math.abs(ms[0].start - ms[0].rest) <= 10, `the start of the fold: what lies below moved by ${ms[0].start - ms[0].rest}`);
     const folded = await end(panel, boxes);
     for (const m of folded) assert.deepStrictEqual(shape(m), { animations: 0, display: 'none', visible: false, end: 0, markAfter: 0, closing: false, clip: '', open: null });
-    // (The same, about 9 px for each of the two boxes, at the end: the margins of their rows, which meet once the boxes are gone.)
-    assert.ok(Math.abs(folded[0].markAfter - ms[0].markEnd) <= 20, `the end of the fold: what lies below moved by ${folded[0].markAfter - ms[0].markEnd}`);
+    assert.ok(Math.abs(folded[0].markAfter - ms[0].markEnd) <= 3, `the end of the fold: what lies below moved by ${folded[0].markAfter - ms[0].markEnd}`);
     assert.ok(ms[0].rest - folded[0].markAfter > 700, 'the examples and the parts are all gone');
     await close();
   });
@@ -233,6 +234,89 @@ describe('the panel: boxes that fold and unfold move', function () {
     }
     await close();
   });
+
+  /** Runs in the panel's page: the steps of `code` (a function of the page, given `at`), then every move finished and a frame; returns what it returns. */
+  const steps = (panel: Frame, code: string, args: unknown) => panel.evaluate(`(async (args) => { ${code} })(${JSON.stringify(args)})`) as Promise<any>;
+  const PAUSE = `const pause = (t) => { for (const a of document.getAnimations()) { a.pause(); a.currentTime = t; } };
+    const frames = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const finish = async () => { for (const a of document.getAnimations()) { a.play(); a.finish(); } await frames(); };
+    const click = (s) => document.querySelector(s).click();`;
+
+  it('Collapse all, then one row unfolded while it moves: the rows inside it that Collapse all folded are hidden at the end, none stays drawn', async () => {
+    const { panel, close } = await open(LINE, {}, 1);
+    const state = await steps(panel, `${PAUSE}
+      click('#toggle');
+      pause(100);
+      // (The twisty of \`grep | sort\`, in the middle of the move that folds it: its move is cancelled, the cancel comes a frame later.)
+      click(args.twisty);
+      pause(100);
+      await finish();
+      const li = (path) => document.querySelector('#tree li[data-path="' + path + '"]');
+      const box = (path, sel) => li(path).querySelector(':scope > .item > .body > ' + sel);
+      return {
+        collapsed: ['0', '0.0', '0.0.0', '0.0.1', '0.1', '0.2'].map((p) => li(p).classList.contains('collapsed')),
+        display: { parts: getComputedStyle(box('0.0', 'ul')).display, sortParts: getComputedStyle(box('0.0.1', 'ul')).display, sortExample: getComputedStyle(box('0.0.1', 'section.example')).display, echo: getComputedStyle(box('0.1', 'ul')).display },
+        closing: document.querySelectorAll('[data-closing]').length, animations: document.getAnimations().length, clip: document.querySelectorAll('#tree [style*="clip-path"]').length,
+      };`, { twisty: twistyOf('0.0') });
+    assert.deepStrictEqual(state, {
+      collapsed: [false, false, true, true, true, true],
+      display: { parts: 'block', sortParts: 'none', sortExample: 'none', echo: 'none' },
+      closing: 0, animations: 0, clip: 0,
+    });
+    await close();
+  });
+
+  it('a box that opens while a row above it folds stays drawn until that row has shrunk: its own end does not clear the mark the fold put on it', async () => {
+    const { panel, close } = await open(LINE, {}, 1);
+    const state = await steps(panel, `${PAUSE}
+      const twisty = args.twisty; const box = document.querySelector(args.box);
+      click(twisty); await finish();
+      click(twisty);
+      pause(30);
+      // (The box opens, and Collapse all folds the row around it: the open move of the box is still the one that runs on it.)
+      const opening = box.getAnimations().length;
+      click('#toggle');
+      pause(100);
+      // (The opening move of the box ends while the fold of the row around it has not.)
+      for (const a of box.getAnimations()) { a.play(); a.finish(); }
+      await frames();
+      const during = { opening, closing: box.hasAttribute('data-closing'), display: getComputedStyle(box).display };
+      await finish();
+      return { during, after: { closing: document.querySelectorAll('[data-closing]').length, display: getComputedStyle(box).display } };`, { twisty: twistyOf('0.0.0.1'), box: under('0.0.0.1')[0] });
+    assert.deepStrictEqual(state, { during: { opening: 1, closing: true, display: 'block' }, after: { closing: 0, display: 'none' } });
+    await close();
+  });
+
+  for (const [text, depth] of [[LINE, 1], [LINE, 2], ['find . -name "*.log" -mtime +7 | xargs rm -f', 1]] as const) {
+    it(`what a row's fold moves is what the style sheet hides: every row of ${JSON.stringify(text.slice(0, 12))} at depth ${depth}`, async () => {
+      const { panel, close } = await open(text, {}, depth);
+      const rows = await steps(panel, `${PAUSE}
+        const out = [];
+        for (const li of [...document.querySelectorAll('#tree li')]) {
+          const twisty = li.querySelector(':scope > .item > .row > button.twisty');
+          const children = [...li.querySelectorAll(':scope > .item > .body > *')];
+          if (!twisty || !children.length) continue;
+          // (A row that starts folded is unfolded first.)
+          if (li.classList.contains('collapsed')) { twisty.click(); await finish(); }
+          twisty.click();
+          const kinds = children.map((c) => c.tagName.toLowerCase() + (c.classList.contains('example') ? '.example' : ''));
+          const moved = children.map((c) => c.hasAttribute('data-closing'));
+          await finish();
+          const hidden = children.map((c) => getComputedStyle(c).display === 'none');
+          out.push({ path: li.dataset.path, kinds, moved, hidden });
+          twisty.click(); await finish();
+        }
+        return out;`, null) as { path: string; kinds: string[]; moved: boolean[]; hidden: boolean[] }[];
+      assert.ok(rows.length > 0);
+      for (const r of rows) {
+        assert.deepStrictEqual(r.moved, r.hidden, `row ${r.path}: the boxes that move, and the boxes the style sheet hides`);
+        r.kinds.forEach((k, i) => assert.strictEqual(r.hidden[i], k !== 'details.example', `row ${r.path}: ${k} is ${r.hidden[i] ? 'hidden' : 'kept'}`));
+      }
+      // (A folded example is the only box kept: the glob example of `*.log`.)
+      assert.strictEqual(rows.some((r) => r.kinds.includes('details.example')), text.startsWith('find'));
+      await close();
+    });
+  }
 
   it('folded, then unfolded half way: the parts grow again from where they were, and stay drawn', async () => {
     const { panel, close } = await open(LOOP);

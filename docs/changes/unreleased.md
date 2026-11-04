@@ -96,7 +96,7 @@ Depth 2 only adds: the rows of depth 1 stay, in the same order, saying the same,
 - A screen reader hears the depth when it changes. The focus of the keyboard marks its row and that row's characters in the line, as a pointer does; when its row goes with the depth, the focus moves to the row that owns it.
 - On the first line of a loop over several lines, Reading drew the whole loop, the other lines as kinds with no text. Depth 2 shows that line's rows; the others are one move of the cursor away.
 
-`bashExplainer.panel.animations` drives the folds of the rows, the steps, "More" and the examples.
+`bashExplainer.panel.animations` drives the folds of the rows, the steps, "More" and the examples. A row's fold moves everything it hides, its parts and its examples together, for as long as the two are high together: 220 ms for a short box, 120 ms plus half its height in px for a taller one, at most 400 ms. A folded example keeps its title. The margins, padding and borders of a box that moves go to nothing and come back with it, so that nothing below it jumps by them.
 
 Depth 1 now keeps what changes what a line means, which it hid before: awk's "classic dedupe idiom" on its rule, "expands to 3 words" on `project/{src,test,docs}`, and a row of `${s:$i:2}` that says what it takes, also where no example is drawn. It leaves out what the row above already shows: "Variable `s`" under `${s:$i:2}`, and "Value `notes.txt`" under `x=notes.txt`, as for `a=1`. `time >o` says what `time` does there on its top row, and its own row names only the word. In the Hover and the CLI too, `time` where there is no pipeline now says "The reserved word `time`"; before, "Measure and report the run time of the pipeline". A glob's example is folded under its title at both depths.
 
