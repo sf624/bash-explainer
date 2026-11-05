@@ -581,3 +581,10 @@ In double quotes bash takes a backslash away only before `$`, a backtick, `"`, `
 
 - `find . -name 'a?(b)'` said "extended glob". find has none: it looks for `a`, one character, `(b)`.
 - A script that holds a noncharacter of U+FDD2 to U+FDEF shows it as U+FFFD, as U+FDD0 and U+FDD1 already did.
+
+### PCRE escapes and `tr -c`
+
+- `grep -P`, `perl` and the other PCRE readers: `\K` is "keep what has matched so far out of the reported match" (`grep -oP 'a=\K\S+'` on `a=b` prints `b`). Also read now: `\G`, `\R`, `\N`, `\X`, `\h` `\H` `\v` `\V` (also in `[…]`), `\f` `\e` `\a`, `\Q…\E`, `\x41`, `\x{263a}`, `\101`, `\cA`, `\p{Lu}`, `\g1` `\g{-1}` `\k<name>`, and the groups `(?>…)` (atomic), `(?i:…)`, `(?#…)`, `(?'name'…)`.
+- In PCRE `\<` and `\>` are the characters `<` and `>`, not word boundaries; `[\b]` is a backspace; `\12` is the octal code 012 unless there are 12 groups.
+- A letter after `\` that PCRE does not know (`\y`) is an error, as `grep -P` says ("unrecognized character follows \"); one it knows but this explainer does not read (`\C`), and `(?|…)`, `(?1)`, `(?R)`, `(*UTF)`, `(?P=n)`, are said to be unread. Before, they were "Literal y" or a group with a stray `?`.
+- `tr -c`: the first string is the characters left alone. `tr -dc 'a-z'` is "characters to keep (every other character is deleted)", `tr -c 'a-z' x` "characters to leave as they are (every other character is replaced)", `tr -cs 'a-z'` "characters to leave alone (repeats of every other character are squeezed)". With `-ds` the second string is not complemented (`tr -cds a-b b`). The case summary ("converts lowercase to uppercase") is no longer said for `tr -c a-z A-Z`. `[\n*]` (as in `tr -cs A-Za-z '[\n*]'`) is "newline repeated as needed"; before, it was read as the characters `[`, newline, `*`, `]`.

@@ -266,12 +266,14 @@ export function notForEarlier(cx: Explainer, parse: ArgvParse, word: number, rol
 }
 
 /** How tr uses the set in `a`: its position among the sets (the operands) and the -d/-s options. */
-export function trContext(cx: Explainer, a: SyntaxNode): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[] } {
+export function trContext(cx: Explainer, a: SyntaxNode): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[]; complement: boolean } {
   const { nodes, parse } = cx.command!;
   const sets = operands(parse).map(({ word }) => nodes[word]);
   const idx = sets.findIndex((w) => same(w, a));
   const lits = sets.map((w) => literalContent(w)?.text ?? w.text);
-  if (given(cx, '-d')) return { role: idx === 0 ? 'delete' : 'squeeze', sets: lits };
-  if (given(cx, '-s') && sets.length === 1) return { role: 'squeeze', sets: lits };
-  return { role: idx === 0 ? 'from' : 'to', sets: lits };
+  // (`-c` complements the first string only: with `-ds`, the string to squeeze is read as it is.)
+  const complement = given(cx, '-c');
+  if (given(cx, '-d')) return { role: idx === 0 ? 'delete' : 'squeeze', sets: lits, complement: complement && idx === 0 };
+  if (given(cx, '-s') && sets.length === 1) return { role: 'squeeze', sets: lits, complement };
+  return { role: idx === 0 ? 'from' : 'to', sets: lits, complement };
 }

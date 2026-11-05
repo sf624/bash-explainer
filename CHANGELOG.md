@@ -98,6 +98,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The commands of a `bash -c '…'` string in a Dockerfile, a Makefile, a workflow or another host file, or after blank lines at the top of a script, are placed on their own text. Before, they pointed at line 1 and took their names from there.
 - The Reading view no longer fails on a line whose statement uses an alias on a later line, such as a `case` branch that calls it.
 - A script or pattern with a backslash in double quotes, or unquoted, is read as the program gets it: `sed -E "s#^//([^:]*):#\1/#"`, `grep "a\.b"`, `awk "{print \$1}"` and `awk -F "\t"` show their parts and the example, as the single-quoted form does; where bash removes a backslash (`\$`, `\\`), the explanation says so.
+- `grep -oP 'a=\K\S+'` explains `\K` and the other PCRE escapes (`\R`, `\h`, `\Q…\E`, `\g1`, `(?>…)`); one it cannot read is said to be unread, not shown as a literal letter. `tr -dc 'a-z'` says it keeps those characters and deletes the rest; `-c` is read in every `tr` call.
 
 [All changes](https://github.com/sf624/bash-explainer/compare/v0.9.1...main)
 

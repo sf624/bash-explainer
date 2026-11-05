@@ -84,8 +84,17 @@ const TR_ESCAPES: Record<string, [string, string]> = {
   a: ['ベル', 'bell'], b: ['バックスペース', 'backspace'], f: ['改ページ', 'form feed'], v: ['垂直タブ', 'vertical tab'],
 };
 
+/** The character a `[c*]` repeats, as written (`x`, `\n`, `\101`): its name in Japanese and in English. */
+function trCharName(c: string): [string, string] {
+  if (c.length > 1 && /^\\[0-7]/.test(c)) return [`8進数 ${c.slice(1)} の文字`, `the character with octal code ${c.slice(1)}`];
+  const named = c[0] === '\\' ? TR_ESCAPES[c[1]] : undefined;
+  if (named) return named;
+  const ch = c[c.length - 1];
+  return ch === ' ' ? ['スペース', 'space'] : [`「${ch}」`, `"${ch}"`];
+}
+
 /** One `tr` character set. `role` says how tr uses it. */
-export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'squeeze', lang: Lang): Explained | undefined {
+export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'squeeze', lang: Lang, complement = false): Explained | undefined {
   const s = pick(lang);
   const tokens: EmbeddedToken[] = [];
   const names: string[] = [];
@@ -107,9 +116,10 @@ export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'sque
     if ((m = /^\[:(\w+):\]/.exec(rest)) && TR_CLASSES[m[1]]) {
       len = m[0].length;
       text = s(TR_CLASSES[m[1]][0], TR_CLASSES[m[1]][1]);
-    } else if ((m = /^\[(.)\*(\d*)\]/.exec(rest))) {
+    } else if ((m = /^\[(\\[0-7]{1,3}|\\.|.)\*(\d*)\]/.exec(rest))) {
       len = m[0].length;
-      text = m[2] ? s(`「${m[1]}」を ${m[2]} 個`, `"${m[1]}" ${m[2]} times`) : s(`「${m[1]}」を必要なだけ繰り返す`, `"${m[1]}" repeated as needed`);
+      const [ja, en] = trCharName(m[1]);
+      text = m[2] ? s(`${ja}を ${m[2]} 個`, `${en} ${m[2]} times`) : s(`${ja}を必要なだけ繰り返す`, `${en} repeated as needed`);
     } else if ((m = /^\\([0-7]{1,3})/.exec(rest))) {
       len = m[0].length;
       text = s(`8進数 ${m[1]} の文字${controlSuffix(parseInt(m[1], 8), s)}`, `the character with octal code ${m[1]}${controlSuffix(parseInt(m[1], 8), s)}`);
@@ -130,10 +140,12 @@ export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'sque
   }
   if (!tokens.length) return undefined;
   const list = names.join(s('、', ', '));
-  const note = role === 'delete' ? s(`削除する文字: ${list}`, `characters to delete: ${list}`)
-    : role === 'squeeze' ? s(`連続したら1つにまとめる文字: ${list}`, `characters whose repeats are squeezed: ${list}`)
-      : role === 'from' ? s(`変換元の文字: ${list}`, `characters to replace: ${list}`)
-        : s(`変換先の文字: ${list}（1つ目の集合の各文字が、同じ位置のこの文字に置き換わる）`, `replacement characters: ${list} (each character of the first set becomes the one at the same position here)`);
+  // (`-c`: tr works on every character the set does not name.)
+  const note = role === 'delete' ? (complement ? s(`残す文字（これ以外はすべて削除する）: ${list}`, `characters to keep (every other character is deleted): ${list}`) : s(`削除する文字: ${list}`, `characters to delete: ${list}`))
+    : role === 'squeeze' ? (complement ? s(`そのままにする文字（これ以外の文字は連続したら1つにまとめる）: ${list}`, `characters to leave alone (repeats of every other character are squeezed): ${list}`) : s(`連続したら1つにまとめる文字: ${list}`, `characters whose repeats are squeezed: ${list}`))
+      : role === 'from' ? (complement ? s(`そのままにする文字（これ以外はすべて置き換える）: ${list}`, `characters to leave as they are (every other character is replaced): ${list}`) : s(`変換元の文字: ${list}`, `characters to replace: ${list}`))
+        : complement ? s(`変換先の文字: ${list}（1つ目の集合に含まれない文字が、文字コード順にこの文字へ1つずつ置き換わる）`, `replacement characters: ${list} (the characters outside the first set are replaced by these one by one, in character-code order)`)
+          : s(`変換先の文字: ${list}（1つ目の集合の各文字が、同じ位置のこの文字に置き換わる）`, `replacement characters: ${list} (each character of the first set becomes the one at the same position here)`);
   return { tokens, note };
 }
 

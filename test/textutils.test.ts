@@ -41,6 +41,13 @@ describe('tr sets', () => {
     assert.match(explainTrSet('\\r', 'delete', 'en')!.note!, /^characters to delete/);
   });
 
+  it('names the character a repeat is made of, escaped or not', () => {
+    assert.deepStrictEqual(explainTrSet('[\\n*][\\101*2][\\q*][ *3]', 'to', 'en')!.tokens.map((t) => t.explanation), [
+      '`[\\n*]`: newline repeated as needed', '`[\\101*2]`: the character with octal code 101 2 times', '`[\\q*]`: "q" repeated as needed', '`[ *3]`: space 3 times',
+    ]);
+    assert.match(explainTrSet('[\\n*]', 'to', 'ja')!.tokens[0].explanation, /改行を必要なだけ繰り返す/);
+  });
+
   it('summarises case conversion', () => {
     assert.strictEqual(trSummary('[:upper:]', '[:lower:]', 'en'), 'converts uppercase to lowercase');
     assert.strictEqual(trSummary('a-z', 'A-Z', 'en'), 'converts lowercase to uppercase');
