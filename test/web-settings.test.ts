@@ -4,7 +4,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { openSite, choose, currentShell, openSettingsSection, setShell, problemList, problemsShown, settingControl, stable, until } from './support/site';
+import { classicScrollbars, openSite, choose, currentShell, openSettingsSection, setShell, problemList, problemsShown, settingControl, stable, until } from './support/site';
 
 describe('the web page: theme and settings', function () {
   this.timeout(120000);
@@ -402,6 +402,7 @@ describe('the web page: theme and settings', function () {
 
   /** The boxes of the sheet, the editor's pane, the divider, the explanation's pane and its frame. */
   type Box = { left: number; right: number; width: number; top: number; bottom: number };
+  type Pt = { left: number; right: number; top: number };
   const boxes = (page: Page) => page.evaluate(`(() => {
     const r = (e) => { const b = e.getBoundingClientRect(); return { left: b.left, right: b.right, width: b.width, top: b.top, bottom: b.bottom }; };
     return { sheet: r(document.getElementById('settings-dialog')), pane: r(document.querySelector('main > .source')), split: r(document.getElementById('splitter')), side: r(document.getElementById('panel-pane')), panel: r(document.getElementById('panel')) };
@@ -470,9 +471,9 @@ describe('the web page: theme and settings', function () {
 
   it('moves the explanation left by the sheet\'s width while the settings are open side by side, as the sheet comes from the right, and back when they close', async function () {
     this.timeout(240000);
-    // Each width, with the divider in the middle and at both ends (15 and 85 %): the explanation keeps its width, its scroll and
+    // Each width, with the divider in the middle and towards both ends (the sheet has 240 px at least: narrower it is a modal dialog): the explanation keeps its width, its scroll and
     // its place beside the sheet, inside the window, and moves back when the sheet closes. 768 px is the narrowest side by side.
-    for (const [width, split] of [[768, 50], [768, 15], [768, 85], [1024, 50], [1280, 50], [1280, 15], [1280, 85], [1920, 50], [1920, 85]] as const) {
+    for (const [width, split] of [[768, 50], [768, 33], [768, 85], [1024, 50], [1280, 50], [1280, 20], [1280, 85], [1920, 50], [1920, 85]] as const) {
       const ctx = await browser.newContext({ locale: 'en-US', viewport: { width, height: 700 } });
       await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-split', JSON.stringify({ wide: ${split} })); } catch {}`);
       const page = await ctx.newPage();
@@ -542,11 +543,13 @@ describe('the web page: theme and settings', function () {
     // a slow machine cannot close the sheet under the measure.
     const holdAt = (fraction: number) => page.evaluate(`(async () => {
       const set = window.setTimeout;
+      // (The sheet's time is a property of the page, so that the sheet and the explanation share one.)
+      const sheetTime = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sheet-time')) * 1000;
       window.setTimeout = (f, ms, ...rest) => (ms === 500 ? 0 : set(f, ms, ...rest));
       try {
         document.getElementById('settings-open').click();
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-        for (const a of document.getAnimations()) { a.pause(); a.currentTime = ${fraction} * 220; }
+        for (const a of document.getAnimations()) { a.pause(); a.currentTime = ${fraction} * sheetTime; }
         const box = (id) => document.getElementById(id).getBoundingClientRect();
         return { gap: box('settings-dialog').left - box('panel-pane').right, left: box('panel-pane').left };
       } finally {
@@ -615,8 +618,24 @@ describe('the web page: theme and settings', function () {
     // A window resized while the sheet is open: the sheet and the explanation follow at once, still side by side, inside the window.
     await page.locator('#settings-open').click();
     await stable('the sheet in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    // At once: in the page, at every frame from before the resize on, the explanation's right edge is the sheet's left edge (no
+    // transition runs for the new width), and some frames are seen at all.
+    const gapsWhile = (move: () => Promise<void>) => {
+      const sampling = page.evaluate(`(async () => {
+        const out = [];
+        const end = performance.now() + 800;
+        while (performance.now() < end) {
+          const box = (id) => document.getElementById(id).getBoundingClientRect();
+          out.push(Math.abs(box('settings-dialog').left - box('panel-pane').right));
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+        return out;
+      })()`) as Promise<number[]>;
+      return move().then(() => sampling);
+    };
     for (const width of [900, 768, 1100, 1500]) {
-      await page.setViewportSize({ width, height: 700 });
+      const gaps = await gapsWhile(() => page.setViewportSize({ width, height: 700 }));
+      assert.ok(gaps.length >= 8 && gaps.every((g) => g < 1), `${width}: ${gaps.join()}`);
       const b = await stable('the resized boxes', () => boxes(page).then((x) => JSON.stringify(x))).then((x) => JSON.parse(x) as Awaited<ReturnType<typeof boxes>>);
       assert.ok(Math.abs(b.sheet.right - width) < 0.5 && b.side.left >= -0.5 && Math.abs(b.side.right - b.sheet.left) < 0.5, `${width}: ${JSON.stringify(b)}`);
       assert.ok(Math.abs(b.sheet.width - b.split.right) < 1, `${width}: ${JSON.stringify(b)}`);
@@ -706,6 +725,128 @@ describe('the web page: theme and settings', function () {
     await ctx.close();
   });
 
+  it('keeps the sheet a modal dialog inside the window where the compare page scrolls, with classic scrollbars: no cut text, out to the right, the page behind still, the gear in view after', async function () {
+    this.timeout(120000);
+    // (The default browser hides its scrollbars, and so hides how much room a scrollbar takes: this one draws them.)
+    const classic = await classicScrollbars(this);
+    for (const [path, width] of [['compare.html', 900], ['compare.html', 767], ['compare.html', 500], ['', 767], ['', 500]] as const) {
+      const ctx = await classic.newContext({ locale: 'en-US', viewport: { width, height: 700 } });
+      const page = await ctx.newPage();
+      await page.goto(`${base}${path}`);
+      await page.locator('.cm-line').first().waitFor();
+      const seen = `${path || 'index'} at ${width}`;
+      await page.locator('#settings-open').click();
+      await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+      const at = (await page.evaluate(`(() => {
+        const r = (e) => { const b = e.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top }; };
+        const d = document.getElementById('settings-dialog');
+        return { modal: d.matches(':modal'), sheet: r(d), jump: r(d.querySelector('.settings-jump')), close: r(document.getElementById('settings-close')), room: document.documentElement.clientWidth, bar: window.innerWidth - document.documentElement.clientWidth };
+      })()`)) as { modal: boolean; sheet: Pt; jump: Pt; close: Pt; room: number; bar: number };
+      assert.strictEqual(at.modal, true, seen);
+      // The whole window, from its left edge to the right one, with no scrollbar left beside it: nothing is cut at the left.
+      assert.deepStrictEqual([at.sheet.left, at.sheet.right, at.bar], [0, width, 0], `${seen}: ${JSON.stringify(at)}`);
+      assert.ok(at.jump.left >= 0 && at.close.right <= width, `${seen}: ${JSON.stringify(at)}`);
+      // A wheel over the sheet's head does not scroll the page behind it.
+      await page.mouse.move(width / 2, 30);
+      await page.mouse.wheel(0, 400);
+      await page.waitForTimeout(150);
+      assert.strictEqual(await page.evaluate('window.scrollY'), 0, seen);
+      // × slides it out to the right, the edge it came from.
+      const out = await page.evaluate(`(() => { document.getElementById('settings-close').click(); return document.getElementById('settings-dialog').style.transform; })()`);
+      assert.strictEqual(out, 'translateX(100%)', seen);
+      await until('the sheet closed', () => isOpen(page), (v) => !v);
+      // Opened again and shut by Esc: the gear, which has the focus, is in view.
+      await page.locator('#settings-open').click();
+      await until('the sheet open', () => isOpen(page), (v) => v);
+      await page.keyboard.press('Escape');
+      await until('the sheet closed by Esc', () => isOpen(page), (v) => !v);
+      const gear = await page.evaluate(`(() => { const b = document.getElementById('settings-open').getBoundingClientRect(); return { focused: document.activeElement.id, top: b.top, scroll: window.scrollY }; })()`) as { focused: string; top: number; scroll: number };
+      assert.deepStrictEqual([gear.focused, gear.top >= 0, gear.scroll], ['settings-open', true, 0], `${seen}: ${JSON.stringify(gear)}`);
+      // The page scrolls again once the sheet is gone.
+      if (path) assert.strictEqual(await page.evaluate('(scrollTo(0, 300), scrollY)'), 300, seen);
+      await ctx.close();
+    }
+  });
+
+  it('opens as a modal dialog where the divider leaves the sheet too narrow beside the editor, and as before where it fits', async function () {
+    this.timeout(60000);
+    // The sheet is as wide as the editor's pane with its divider (web/settings-dialog.ts, SHEET_MIN: 240 px). At 768 px a divider
+    // at 15 % leaves 122 px; at 1280 px, 18 % leaves about 235 px and 19 % about 250.
+    for (const [width, share, modal] of [[768, 15, true], [1280, 15, true], [1280, 18, true], [1280, 19, false], [1280, 50, false]] as const) {
+      const ctx = await browser.newContext({ locale: 'en-US', viewport: { width, height: 700 } });
+      await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-split', JSON.stringify({ wide: ${share} })); } catch {}`);
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('.cm-line').first().waitFor();
+      await page.locator('#settings-open').click();
+      await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+      const b = await boxes(page);
+      const seen = `${width} px, ${share} %: ${JSON.stringify(b)}`;
+      assert.strictEqual(await page.evaluate("document.getElementById('settings-dialog').matches(':modal')"), modal, seen);
+      if (modal) assert.deepStrictEqual([b.sheet.left, b.sheet.width], [0, width], seen);
+      else assert.ok(b.sheet.width >= 240 && b.sheet.right === width, seen);
+      await ctx.close();
+    }
+  });
+
+  it('puts the focus back on the setting that had it when the window crosses between the layouts with the sheet open', async function () {
+    this.timeout(60000);
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1100, height: 800 } });
+    const page = await ctx.newPage();
+    await page.goto(`${base}compare.html`);
+    await page.locator('.cm-line').first().waitFor();
+    await page.locator('#settings-open').click();
+    await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    for (const [width, modal] of [[900, true], [1100, false], [900, true]] as const) {
+      await page.locator('#setting-notes-pitfalls').focus();
+      await page.setViewportSize({ width, height: 800 });
+      await until(`${width} px`, () => page.evaluate("document.getElementById('settings-dialog').matches(':modal')") as Promise<boolean>, (v) => v === modal);
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'setting-notes-pitfalls', `${width} px`);
+    }
+    await ctx.close();
+  });
+
+  it('closes the sheet like any close when the window crosses between the layouts while it slides out: what was typed in it is gone, the focus is back on the gear', async function () {
+    this.timeout(60000);
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1100, height: 800 } });
+    const page = await ctx.newPage();
+    await page.goto(`${base}compare.html`);
+    await page.locator('.cm-line').first().waitFor();
+    // Without a clipboard the settings come out as text to copy by hand: a status and a paste box with their text.
+    await page.evaluate('navigator.clipboard.writeText = () => Promise.reject(new Error("denied"))');
+    await page.locator('#settings-open').click();
+    await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    await openSettingsSection(page, 'data');
+    await page.locator('#settings-copy').click();
+    await until('the status', () => page.locator('#settings-io-status').innerText(), (t) => t !== '');
+    assert.notStrictEqual(await page.locator('#settings-paste-text').inputValue(), '');
+    // × starts the slide out; the animation is held there while the window crosses 1000 px.
+    await page.evaluate(`(async () => {
+      const set = window.setTimeout;
+      window.setTimeout = (f, ms, ...rest) => (ms === 500 ? 0 : set(f, ms, ...rest));
+      try {
+        document.getElementById('settings-close').click();
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        for (const a of document.getAnimations()) a.pause();
+      } finally {
+        window.setTimeout = set;
+      }
+    })()`);
+    assert.strictEqual(await page.evaluate("document.getElementById('settings-dialog').classList.contains('closing')"), true);
+    await page.setViewportSize({ width: 900, height: 800 });
+    await page.evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
+    await page.evaluate('for (const a of document.getAnimations()) a.finish()');
+    await until('the sheet closed', () => isOpen(page), (v) => !v);
+    // Closed as it would be without the crossing: the focus is on the gear, and it opens again with nothing left of before.
+    await until('the focus on the gear', () => page.evaluate('document.activeElement.id') as Promise<string>, (id) => id === 'settings-open');
+    await page.locator('#settings-open').click();
+    await until('open again', () => isOpen(page), (v) => v);
+    assert.strictEqual(await page.locator('#settings-io-status').innerText(), '');
+    assert.strictEqual(await page.locator('#settings-paste-text').inputValue(), '');
+    assert.strictEqual(await page.locator('#settings-paste').evaluate((d) => (d as unknown as { open: boolean }).open), false);
+    await ctx.close();
+  });
+
   it('crosses 768 px with the sheet open, both ways: the explanation moves only while the sheet is beside it, and goes with it', async function () {
     this.timeout(60000);
     const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1000, height: 700 } });
@@ -727,20 +868,26 @@ describe('the web page: theme and settings', function () {
         assert.ok(Math.abs(b.side.right - b.sheet.left) < 0.5 && b.side.left >= -0.5, JSON.stringify(b));
       }
     }
-    // Narrow to wide: the explanation and the sheet come together, not one at once and the other sliding.
+    // Narrow to wide: the explanation and the sheet come together, not one at once and the other sliding. The gap between them is
+    // sampled in the page, frame by frame, from before the window changes (a sample started after a round trip could
+    // begin when the move is over), at every frame the page is shifted.
     await page.setViewportSize({ width: 700, height: 700 });
     await until('narrow', async () => (await state()).modal, (v) => v);
-    await page.setViewportSize({ width: 1000, height: 700 });
-    await until('beside', async () => (await state()).shift, (v) => v === 'open');
-    const gaps = await page.evaluate(`(async () => {
+    const sampling = page.evaluate(`(async () => {
       const out = [];
-      for (let i = 0; i < 8; i++) {
-        const box = (id) => document.getElementById(id).getBoundingClientRect();
-        out.push(Math.abs(box('settings-dialog').left - box('panel-pane').right));
+      const end = performance.now() + 1000;
+      while (performance.now() < end) {
+        if (document.documentElement.dataset.shift) {
+          const box = (id) => document.getElementById(id).getBoundingClientRect();
+          out.push(Math.abs(box('settings-dialog').left - box('panel-pane').right));
+        }
         await new Promise((r) => requestAnimationFrame(r));
       }
       return out;
-    })()`) as number[];
+    })()`) as Promise<number[]>;
+    await page.setViewportSize({ width: 1000, height: 700 });
+    const gaps = await sampling;
+    assert.ok(gaps.length >= 8, `frames seen beside: ${gaps.length}`);
     assert.ok(gaps.every((g) => g < 1), gaps.join());
     await ctx.close();
   });

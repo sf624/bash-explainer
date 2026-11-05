@@ -318,7 +318,10 @@ if (mode.compare) {
 
 // ---- Toolbar --------------------------------------------------------------------------------
 
-/** The page's toast (web/toast.ts): above the Problems strip, inside the editor's pane (none on the compare page or in panel mode). */
+/**
+ * The page's toast (web/toast.ts): above the Problems strip, inside the editor's pane (none on the compare page or in panel
+ * mode); while the settings are open side by side, over the sheet, never over the explanation beside it (`sheetRoom`).
+ */
 const toast = new Toast($('status'), {
   labels: () => ({ more: TEXT[lang].toastMore, why: TEXT[lang].toastWhy }),
   room: () => sheetRoom() ?? (mode.compare || mode.panel ? undefined : roomAboveStrip()),
@@ -484,7 +487,7 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   setTheme,
   pane: () => document.querySelector<HTMLElement>('main > .source'),
   splitter: () => document.getElementById('splitter'),
-  beside: () => [...document.querySelectorAll<HTMLElement>('.panel-pane, .compare > .copy')],
+  beside: () => [...document.querySelectorAll<HTMLElement>('[data-beside]')],
   moved: () => toast.place(),
   shellReading: autoShell,
 });
