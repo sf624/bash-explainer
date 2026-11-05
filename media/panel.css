@@ -1320,7 +1320,7 @@ body[data-depth="2"] .row.connector {
    word after the name, then who looks the name up when another command does, and a muted line on the other
    meanings of the same name. The word is in the foreground colour; the edge only repeats the role's colour: solid
    for bash's own (a keyword, a builtin, a function, an alias) in the role's colour, quiet (the muted colour) for a
-   program or a file started as another process, and dotted where nothing runs. Dashed says only "changed" (below). */
+   program or a file started as another process, and dotted where nothing runs. Dashed is not a kind of name: it says "received changed", "not always one word" and "not in POSIX sh" (below). */
 .nk-badge {
   font-size: 0.78em;
   font-weight: 600;
@@ -1587,9 +1587,21 @@ body.vscode-high-contrast-light .text code.ev-word.recv-word {
   border-radius: 3px;
 }
 
-.text code.recv-many,
-.key-word.recv-many {
+.text code.recv-many {
   border-style: dashed;
+}
+
+/* (The Key's sample is not in a `.text`: it has its own edge, as the chip's.) */
+.key-word.recv-many {
+  border: 1px dashed var(--c-muted);
+  padding: 0 0.3em;
+}
+
+/* (As `.text code.ev-word` sets the whole border and comes later, this says it again with its specificity; and a dashed edge keeps the full colour,
+   since at the chips' light one it could not be told from a solid one.) */
+.text code.ev-word.recv-many {
+  border-style: dashed;
+  border-color: var(--c-muted);
 }
 
 .label.recv-changed,
@@ -1690,7 +1702,7 @@ body.vscode-high-contrast-light .text code.ev-word.recv-word {
   }
 
   .mk,
-  .text code.recv-word {
+  .text code.ev-word.recv-word {
     border-color: CanvasText;
   }
 

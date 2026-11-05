@@ -20,8 +20,8 @@ describe('the panel: what the program receives, drawn', function () {
   });
 
   const panelOf = (page: Page): Frame => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
-  async function open(text: string, options: { width?: number; lang?: 'en' | 'ja'; theme?: 'light' | 'dark'; kept?: unknown } = {}): Promise<{ page: Page; panel: Frame }> {
-    const ctx = await browser.newContext({ locale: options.lang === 'ja' ? 'ja-JP' : 'en-US', viewport: { width: options.width ?? 1280, height: 800 }, colorScheme: options.theme ?? 'light' });
+  async function open(text: string, options: { width?: number; lang?: 'en' | 'ja'; theme?: 'light' | 'dark'; kept?: unknown; forced?: boolean } = {}): Promise<{ page: Page; panel: Frame }> {
+    const ctx = await browser.newContext({ locale: options.lang === 'ja' ? 'ja-JP' : 'en-US', viewport: { width: options.width ?? 1280, height: 800 }, colorScheme: options.theme ?? 'light', ...(options.forced ? { forcedColors: 'active' as const } : {}) });
     if (options.kept) await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-panel', ${JSON.stringify(JSON.stringify(options.kept))}); } catch {}`);
     const page = await ctx.newPage();
     await page.goto(base);
@@ -141,6 +141,31 @@ describe('the panel: what the program receives, drawn', function () {
         }
       }
     }
+  });
+
+  // (A word that is not always one is dashed: at the light edge of the others a dashed edge could not be told from a solid one, so it keeps the full colour.)
+  it('keeps the full edge of a dashed chip, and the system colour of every chip when colours are forced', async () => {
+    for (const theme of ['light', 'dark'] as const) {
+      const { page, panel } = await open('cat *.txt "$x" done', { theme, kept: { depth: 1 } });
+      await until('the chips', () => panel.locator('#tree .recv-many').count(), (n) => n > 0);
+      const got = await panel.evaluate(`(() => {
+        const probe = document.createElement('span'); probe.style.color = 'var(--c-muted)'; document.body.append(probe);
+        const edge = (c) => { const s = getComputedStyle(c); return [s.borderTopStyle, s.borderTopColor]; };
+        return { muted: getComputedStyle(probe).color, many: [...document.querySelectorAll('#tree .recv-many')].map(edge), plain: edge(document.querySelector('#tree .recv-word:not(.recv-many)')) };
+      })()`) as { muted: string; many: string[][]; plain: string[] };
+      assert.ok(got.many.length >= 1 && got.many.every(([style, colour]) => style === 'dashed' && colour === got.muted), `${theme}: ${JSON.stringify(got)}`);
+      assert.strictEqual(got.plain[0], 'solid');
+      assert.notStrictEqual(got.plain[1], got.muted, `${theme}: a plain chip's edge is lighter`);
+      await page.context().close();
+    }
+    const { page, panel } = await open('cat *.txt "$x" done', { forced: true, kept: { depth: 1 } });
+    await until('the chips', () => panel.locator('#tree .recv-many').count(), (n) => n > 0);
+    const forced = await panel.evaluate(`(() => {
+      const probe = document.createElement('span'); probe.style.color = 'CanvasText'; document.body.append(probe);
+      return { text: getComputedStyle(probe).color, edges: [...document.querySelectorAll('#tree .recv-word')].map((c) => getComputedStyle(c).borderTopColor) };
+    })()`) as { text: string; edges: string[] };
+    assert.ok(forced.edges.length >= 2 && forced.edges.every((e) => e === forced.text), JSON.stringify(forced));
+    await page.context().close();
   });
 
   it('has the Key list the marks drawn, and only those', async () => {
