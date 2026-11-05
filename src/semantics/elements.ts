@@ -25,13 +25,6 @@ export function elementsOf(w: WordMeaning): SyntaxNode[] {
 
 const SUBSTITUTIONS = new Set(['command_substitution', 'process_substitution', 'arithmetic_expansion']);
 
-/** Whether the expansion `n` joins every element into one word, which only the IFS and the elements say: `$*`, `${a[*]}`, `${!a[*]}`, `${!pre*}`. */
-export function joinsElements(n: SyntaxNode): boolean {
-  if (n.type === 'simple_expansion') return nameText(n) === '$*';
-  const p = n.type === 'expansion' ? parseExpansion(n.text) : undefined;
-  return !!p && p.prefix !== '#' && (p.name === '*' || p.subscript === '*' || (p.prefix === '!' && p.op === '*'));
-}
-
 /**
  * Whether the expansion `n` gives one word per element (manual 3.4.2, 3.5.3): `$@`, `${a[@]}` and `${!a[@]}`,
  * `${!pre@}`, also with a slice, a pattern or case operator, a transform but `A`, `K` and `k`, or `-`, `:-`, `?`,

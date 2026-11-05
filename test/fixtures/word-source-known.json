@@ -117,7 +117,6 @@
     {"file":"src/semantics/effects.ts","fn":"wordsAfterAlias","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/effects.ts","fn":"wrapped","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/elements.ts","fn":"givesElements","kind":"node-type","count":3,"row":"W-C5"},
-    {"file":"src/semantics/elements.ts","fn":"joinsElements","kind":"node-type","count":2,"row":"W-C5"},
     {"file":"src/semantics/env.ts","fn":"shellEffectOf","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/globwords.ts","fn":"severalFields","kind":"node-type","count":7,"row":"W-C5"},
     {"file":"src/semantics/names.ts","fn":"assignmentsOf","kind":"helper","count":1,"row":"W-L1"},

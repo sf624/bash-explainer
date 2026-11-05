@@ -85,11 +85,13 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   gitformat: (text, cx) => explainGitFormat(text, cx.lang),
   gitdate: (text, cx) => explainGitDate(text, cx.lang),
   glob: (text, cx) => {
+    // (What a program matches by fnmatch has no extended globs: `find -name 'a?(b)'` is `a`, any character, `(b)`.)
+    const tokens = explainGlob(text, cx.lang, false);
     // (What a pattern with a hole matches depends on the value: only its parts.)
-    if (hasHole(text)) return { tokens: explainGlob(text, cx.lang) };
+    if (hasHole(text)) return { tokens };
     // (find's patterns: unlike the shell's, `*` matches a leading dot too.)
     const note = describeFindPattern(text, cx.lang);
-    return note ? { tokens: explainGlob(text, cx.lang), note } : undefined;
+    return note ? { tokens, note } : undefined;
   },
   arith: (text, cx) => explainArith(text, cx.lang, cx.shell, cx.invalid()),
   // (The value of PS0, PS1, PS2 or PS4: bash reads it each time it prints the prompt, 6.9.)

@@ -97,7 +97,8 @@ class SedParser {
     // (A hole standing alone where an address goes: `${n}p`, `$a,$b d`.)
     if (isHole(src[start])) {
       this.i++;
-      return { token: holeToken(start, 'address'), text: s(`\`${src[start]}\` が選ぶ行`, `the lines \`${src[start]}\` selects`) };
+      // (`1,5` as the value works only where the hole is the whole address: not beside a `,`, `1,${n}d`.)
+      return { token: holeToken(start, 'address', { around: src[start - 1] === ',' || src[this.i] === ',' }), text: s(`\`${src[start]}\` が選ぶ行`, `the lines \`${src[start]}\` selects`) };
     }
     if ((m = /^(\d+)~(\d+)/.exec(src.slice(start)))) {
       this.i += m[0].length;
@@ -382,7 +383,7 @@ class SedParser {
           flush(i);
           out.push({ ...this.tok(i, i + 2, 'variable', n === '0' ? s('`\\0`: 一致した部分全体', '`\\0`: the whole match') : s(`\`\\${n}\`: グループ ${n} に一致した部分`, `\`\\${n}\`: what group ${n} matched`)), ...(n !== '0' ? { group: Number(n) } : {}) });
           i++;
-        } else if (escapeIntoHole(src, i, false)) {
+        } else if (escapeIntoHole(src, i, 'sed')) {
           // (`\x$n`, `\c$x`: the escape takes characters of the value.)
           flush(i);
           out.push(holeStop(i));

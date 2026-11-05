@@ -13,8 +13,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Dockerfile `HEALTHCHECK CMD …` is explained, in the shell and the exec form, and so is an instruction after `ONBUILD`.
 - Quick fixes for the problems whose fix is mechanical, in VS Code, the Language Server and the web page's editor: a failure reported as success, `source` that searches `$PATH`, a `grep` pattern from a variable, a loop over a glob that matches nothing, `read` without `-r`, `[-f x]` and more. Each applies the code the note shows.
 - On a phone, a one-line summary of the cursor's line stays above the keyboard and in the folded sheet; a tap shows the explanation.
-
-- Words with an expansion in double quotes are read by the command's own reader: `sed "s/$old/$new/g"`, `grep "$x\.log" f`, `find . -name "$p*.txt"`, `date +"%F $x"`. Each expansion says how its value is read and what in it would break the line. Where the value decides what the command is (`sed "$x"`, `awk "{print \$$n}"`, `jq ".$key"`), a note says so.
+- Words with an expansion in double quotes are read by the command's own reader: `sed "s/$old/$new/g"`, `grep "$x\.log" f`, `find . -name "$p*.txt"`, `date +"%F $x"`. The line says once what a value's characters do there, and where the value decides what the command is (`sed "$x"`, `awk "{print \$$n}"`, `jq ".$key"`), a note says so.
 
 ### Changed
 
