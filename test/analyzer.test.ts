@@ -338,8 +338,8 @@ describe('input that is not finished', () => {
   });
   it('reads a `[ ]` without its `]` word by word', () => {
     const e = explain('[ a = *"$a"*z');
-    assert.deepStrictEqual(e.items[0].children.map((c) => c.label), ['[', 'a = *"$a"*z']);
-    assert.match(e.items[0].children[1].explanation, /^Condition: `a` vs `\*"\$a"\*z`/);
+    assert.deepStrictEqual(e.items[0].children.map((c) => c.label), ['a = *"$a"*z']);
+    assert.match(e.items[0].children[0].explanation, /^Condition: `a` vs `\*"\$a"\*z`/);
   });
   it('leaves out a redirection the parser could not read at all', () => {
     const e = explain('[range(200000)] | map(. + 1)');
@@ -1034,39 +1034,38 @@ describe('a subcommand', () => {
 
 describe('[ ] shows its syntax', () => {
   const cases: [string, string[]][] = [
-    ['[ -f "$f" ]', ['[', '-f "$f"', ']']],
-    ['[ -n "$x" -a -f y ]', ['[', '-n "$x" -a -f y', ']']],
-    ['[ a = b ]', ['[', 'a = b', ']']],
+    ['[ -f "$f" ]', ['-f "$f"', ']']],
+    ['[ -n "$x" -a -f y ]', ['-n "$x" -a -f y', ']']],
+    ['[ a = b ]', ['a = b', ']']],
   ];
   for (const [src, labels] of cases) {
-    it(`gives [ and ] a token of their own: ${src}`, () => {
+    it(`is the command \`[\`, with its arguments and \`]\` under it: ${src}`, () => {
       const t = explain(src).items[0];
+      assert.deepStrictEqual([t.kind, t.label], ['builtin', '[']);
+      assert.strictEqual(spanText(src, t), src);
       assert.deepStrictEqual(t.children.map((c) => c.label), labels);
-      assert.deepStrictEqual([t.children[0].kind, t.children.at(-1)!.kind], ['builtin', 'argument']);
-      assert.strictEqual(spanText(src, t.children[0]), '[');
+      assert.strictEqual(t.children.at(-1)!.kind, 'argument');
       assert.strictEqual(spanText(src, t.children.at(-1)!), ']');
-      assert.strictEqual(t.children[0].span.start.character, 0);
       assert.strictEqual(t.children.at(-1)!.span.end.character, src.length);
     });
   }
   it('explains it as the command `[`, in en and ja', () => {
     const en = explain('[ -f x ]').items[0];
     assert.match(en.explanation, /^Command `\[` \(an alias of `test`\): .*ordinary command, not shell syntax.*word splitting and globbing \(`\[\[ \]\]` does not\)$/);
-    assert.strictEqual(en.children[0].explanation, 'Command `[` (an alias of `test`)');
-    assert.match(en.children[2].explanation, /^The last argument passed to `\[`\./);
+    assert.match(en.children[1].explanation, /^The last argument passed to `\[`\./);
     const ja = explain('[ -f x ]', 0, 'ja').items[0];
     assert.match(ja.explanation, /^コマンド `\[`（`test` の別名）: .*単語分割とグロブ展開がかかる（`\[\[ \]\]` ならかからない）$/);
-    assert.strictEqual(ja.children[2].explanation, '`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）');
+    assert.strictEqual(ja.children[1].explanation, '`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）');
   });
   it('spans a continuation over lines', () => {
     const src = '[ \\\n  -f y ]';
     const t = explain(src).items[0];
-    assert.deepStrictEqual(t.children.map((c) => c.label), ['[', '-f y', ']']);
-    assert.deepStrictEqual([t.children[0].span.start, t.children[0].span.end], [{ line: 0, character: 0 }, { line: 0, character: 1 }]);
-    assert.deepStrictEqual([t.children[2].span.start, t.children[2].span.end], [{ line: 1, character: 7 }, { line: 1, character: 8 }]);
+    assert.deepStrictEqual(t.children.map((c) => c.label), ['-f y', ']']);
+    assert.deepStrictEqual([t.span.start, t.span.end], [{ line: 0, character: 0 }, { line: 1, character: 8 }]);
+    assert.deepStrictEqual([t.children[1].span.start, t.children[1].span.end], [{ line: 1, character: 7 }, { line: 1, character: 8 }]);
   });
   it('has no ] token, and no condition, when the test is not closed', () => {
-    assert.deepStrictEqual(explain('[ -f x').items[0].children.map((c) => c.label), ['[', '-f', 'x']);
+    assert.deepStrictEqual(explain('[ -f x').items[0].children.map((c) => c.label), ['-f', 'x']);
   });
   it('keeps `test -f x` as a builtin command', () => {
     const t = explain('test -f x').items[0];

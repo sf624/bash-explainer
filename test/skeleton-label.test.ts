@@ -70,11 +70,11 @@ const CASES: [string, string, string][] = [
   ['( a ) | b', '( ‹commands› ) | b', '( *commands* ) | b'],
   ['if a; then b; fi | c', '‹command› | c', '*command* | c'],
   // A short test, arithmetic command or assignment keeps its text; a long one gets a skeleton.
-  ['[ -f x ]', '[ -f x ]', '[ -f x ]'],
   ['[[ -f a && $x =~ ^[0-9]+$ ]]', '[[ -f a && $x =~ ^[0-9]+$ ]]', '[[ -f a && $x =~ ^[0-9]+$ ]]'],
   ['(( count++ ))', '(( count++ ))', '(( count++ ))'],
   ['x=1', 'x=1', 'x=1'],
-  [`[ ${long} -a ${long} ]`, '[ ‹expression› ]', '[ *expression* ]'],
+  [`[ ${long} -a ${long} ] && a`, '[ ‹expression› ] && a', '[ *expression* ] && a'],
+  ['[ a \\\n  = b ] && c', '[ ‹expression› ] && c', '[ *expression* ] && c'],
   [`[[ ${long} ]]`, '[[ ‹expression› ]]', '[[ *expression* ]]'],
   [`(( ${long} + 1 ))`, '(( ‹expression› ))', '(( *expression* ))'],
   [`x=${long}`, 'x=‹value›', 'x=*value*'],

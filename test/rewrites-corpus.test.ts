@@ -22,7 +22,7 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'assignment-with-spaces': { subjects: 11, ran: 9, checks: 18, skipped: { 'an assignment to `PATH`': 1, 'bash does not parse it': 1 } },
   'brace-close-no-separator': { subjects: 6, ran: 4, checks: 4, skipped: { 'a command named by a path': 1, 'a command named by an expansion': 1 } },
   'brace-no-space': { subjects: 7, ran: 7, checks: 7, skipped: {} },
-  'bracket-close-glued': { subjects: 3, ran: 2, checks: 2, skipped: { 'not a plain name before `]`': 1 } },
+  'bracket-close-glued': { subjects: 4, ran: 3, checks: 3, skipped: { 'not a plain name before `]`': 1 } },
   'bracket-close-in-word': { subjects: 7, ran: 7, checks: 40, skipped: {} },
   'bracket-no-space': { subjects: 4, ran: 4, checks: 8, skipped: {} },
   'declaration-masks-status': { subjects: 6, ran: 5, checks: 11, skipped: { 'bash does not parse it': 1 } },

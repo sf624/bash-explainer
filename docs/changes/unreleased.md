@@ -10,7 +10,7 @@ The panel, in VS Code and on the web page, starts with one sentence that says wh
 
 - A command: what it is and does, the options given, and its redirections: "Runs `sort` (sort lines) using `-u` (output only unique lines), with stdin (fd 0) from `in.txt`, stdout (fd 1) to `out.txt`."
 - An assignment: the value the variable gets, with a placeholder for what is known only when the line runs: "Sets `workdir` to the output of `$(mktemp -d)`", "Sets `x` to ‹home directory›`/bin`".
-- A list and a pipeline: "Tests the condition in `[ … ]`; if that succeeds, runs `echo` …", "Pipes `foo` into `bar`; its status is that of `bar`" (with pipefail: "the last command that fails, or 0"), and under `set -e`, that a failure before the last command of a list does not stop the script. A pipeline into a loop or a group says where that stage runs: "Pipes `cat` into a `while` loop (lines 1–3); the `while` loop runs in a subshell: repeats line 2 while `read` succeeds" (with `shopt -s lastpipe`: "in the shell itself"). A statement started with `&` is said in the background as a whole.
+- A list and a pipeline: "Runs `[` …; if that succeeds, runs `echo` …", "Pipes `foo` into `bar`; its status is that of `bar`" (with pipefail: "the last command that fails, or 0"), and under `set -e`, that a failure before the last command of a list does not stop the script. A pipeline into a loop or a group says where that stage runs: "Pipes `cat` into a `while` loop (lines 1–3); the `while` loop runs in a subshell: repeats line 2 while `read` succeeds" (with `shopt -s lastpipe`: "in the shell itself"). A statement started with `&` is said in the background as a whole.
 - A block: its first line says what it does ("Repeats lines 75–79 while `getopts` … succeeds", "Runs line 26 with `$f` set to each file name matching `*.sh`, one at a time"), and the word that ends it says what it ends ("`done` ends the `while` loop of line 28: …"), and what it pipes into (`done | sort`). A `for` loop whose words give none (`for x in $empty`) says its body does not run.
 - Shapes with a sentence of their own: strict mode, an EXIT trap, a quiet check that a command is installed, `while read … done < file` ("Reads `input.txt` one line at a time…"), an endless loop, `sort | uniq -c | sort -rn | head -n 3` ("Counts how often each line … occurs and lists the lines from the most frequent, with their counts (the first 3)"), and `echo … >&2` ("prints a message on stderr").
 
@@ -335,6 +335,14 @@ The note on zsh syntax a line cannot be read with starts with ⓘ, as informatio
 ### The JSON field `spoken` of a command name
 
 In `--format json`, the `said` of a command name (`items[].name.said`, also in `children`) has `kind`, `title`, `by`, `also` and `short`. Before, it had `spoken` too: the kind and `by` joined with a comma (`program, run by sudo`), with the backticks left out, for a screen reader. Nothing in the panel or the page read it. To get it, join `kind` and `by` (when there is one) and remove the backticks.
+
+### `[` is shown as the command it is
+
+`[ -a file ]` has the shape of `test -a file`: one row for the command, labelled `[`, with its badge and the line on the program of that name, and its arguments one level below, `]` last. Before, a row of the whole test held a row for `[` beside `-a file` and `]`, drawn like the keyword `[[`.
+
+- The rows say what they said, once: "Command `[` (an alias of `test`): …" on the command's row. They still cite 4.1 and 6.4 for the builtin; a program `[` (`/usr/bin/[`, after `enable -n [`) no longer cites 6.4, which is about bash's builtin.
+- "In short" says it as for any command: "Runs `[` (evaluate a conditional expression…)", "If `[` succeeds, …". Before: "Tests the condition in `[ … ]`", "If the test `[ … ]` succeeds, …". `[[ … ]]` keeps "Tests the condition in `[[ … ]]`": it is syntax, with no program and no words received.
+- The summary of a line and `--format json`: the top part of the command has `kind` `builtin` (`command` for a program) and `label` `[`, and `summary` reads `[: Evaluate a conditional expression…`. Before: `kind` `test`, `label` `[ -a file ]`, a part for `[` under it, and `summary` `test [ -a file ]`.
 
 ## Fixed
 

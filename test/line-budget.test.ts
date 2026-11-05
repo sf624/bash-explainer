@@ -616,8 +616,7 @@ describe('one line must not stop the whole tool', () => {
         '   Condition: `$b` is an existing directory',
         '    Expands to the value of `b`',
         '  Condition: `c` is an empty string']);
-      assert.deepStrictEqual(short('[ -f a -a -d b -o -z c ]').slice(0, 6), [
-        ' Command `[` (an alias of `test`)',
+      assert.deepStrictEqual(short('[ -f a -a -d b -o -z c ]').slice(0, 5), [
         ' either is true (OR, obsolescent)',
         '  both are true (AND, obsolescent)',
         '   Condition: `a` is an existing regular file',

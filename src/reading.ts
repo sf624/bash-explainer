@@ -137,7 +137,7 @@ const QUOTES = new Set(['string', 'translated_string', 'raw_string', 'ansi_c_str
 const WORDS = new Set(['word', 'number', 'concatenation', 'extglob_pattern', 'regex', 'array', ...PARTS]);
 const REDIRECTS = new Set(['file_redirect', 'heredoc_redirect', 'herestring_redirect']);
 /** The kinds of token that explain a command: the root of what it reads. */
-const READERS = new Set(['command', 'builtin', 'function', 'alias', 'test']);
+const READERS = new Set(['command', 'builtin', 'function', 'alias']);
 /** The kinds of token of a command another one runs (`sudo ls`, `builtin cd`): it reads the words after its name itself. */
 const RUNS = new Set(['command', 'builtin']);
 
@@ -504,7 +504,6 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   const commandName = (w: SyntaxNode, layer: Layer, t: Token | undefined): { node: ReadingNode; runs?: Reader; res?: AliasResolution } => {
     const name = staticWordValue(w, false, cx.shell);
     const span = spanOf(w);
-    // (`[`: the token of its name, inside that of the test.)
     const own = tokenAt(span, READERS) ?? t;
     const process = layer === 'child' ? { process: 'subshell' as const } : {};
     if (name === undefined) {

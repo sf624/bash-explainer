@@ -155,7 +155,7 @@ interface Build {
   options: RowOptions;
   lang: Lang;
   roles: ReadonlyMap<string, RoleOfRange>;
-  /** A simple command's name by its own range, where that is not the command's: the role of a row of that word alone (`[` of `[ -f f ]`). */
+  /** A simple command's name by its own range, where that is not the command's: the role of a row of that word alone (`"ls"` of `"ls" x`). */
   names: ReadonlyMap<string, RowRole>;
   lines: ReadonlyMap<string, ArgvLine>;
   /** The shell's name in what the rows say (`shellSaid`). */

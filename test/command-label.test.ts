@@ -104,7 +104,9 @@ describe('the label of a command', () => {
   });
 
   it('leaves the labels of constructs to their skeletons (see skeleton-label.test.ts)', () => {
-    for (const [src, label] of [['[ -f x ]', '[ -f x ]'], ['x=1', 'x=1'], ['time ls -a', 'time ls'], ['a && b', 'a && b']]) {
+    // (`[ -f x ]` has no skeleton: its token is the command's, labelled with its name. Around it, its words stay: `[ -f x ] && a`.)
+    assert.strictEqual(explain('[ -f x ]').items[0].label, '[');
+    for (const [src, label] of [['x=1', 'x=1'], ['time ls -a', 'time ls'], ['a && b', 'a && b']]) {
       assert.strictEqual(explain(src).items[0].label, label, src);
     }
   });

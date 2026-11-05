@@ -79,17 +79,18 @@ describe('redirections of a simple command', () => {
 
   it('after `]` are not part of the label of the test', () => {
     const t = (src: string) => allTokens(explain(src).items).find((x) => x.kind === 'test')!;
-    assert.equal(t('[ a = b ] >/dev/null').label, '[ a = b ]');
-    assert.equal(explain('[ a = b ] >/dev/null').summary, 'test [ a = b ]');
+    assert.equal(t('[ a = b ] >/dev/null').label, 'a = b');
+    assert.equal(explain('[ a = b ] >/dev/null').items[0].label, '[ a = b ] >/dev/null');
+    assert.match(explain('[ a = b ] >/dev/null').summary, /^\[: Evaluate a conditional expression/);
     assert.equal(explain('[ a = b ] >o && echo y').items[0].label, '[ a = b ] && echo');
     assert.equal(explain('x | [ a ] >o').items[0].label, 'x | [ a ]');
     assert.equal(explain('! [ a ] >o').items[0].label, '! [ a ]');
     // The redirection token around it shows them.
     assert.equal(explain('[ a = b ] >o').items[0].label, '[ a = b ] >o');
     // (Among the words they stay: they are inside the brackets.)
-    assert.equal(t('[ -f x 2>/dev/null ]').label, '[ -f x 2>/dev/null ]');
+    assert.equal(explain('[ -f x 2>/dev/null ] && y').items[0].label, '[ -f x 2>/dev/null ] && y');
     // A long test is cut to its brackets, without them too.
-    assert.equal(t('[ "$some_long_variable_name" = "another long value here" ] >o').label, '[ ‹expression› ]');
+    assert.equal(explain('[ "$some_long_variable_name" = "another long value here" ] >o').items[0].label, '[ ‹expression› ] >o');
   });
 
   it('written before the name count for the idioms and the pitfalls', () => {
