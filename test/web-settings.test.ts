@@ -697,8 +697,9 @@ describe('the web page: theme and settings', function () {
       })()`;
       const was = await panel().evaluate(mark) as { top: number; y: number };
       assert.ok(was.y > 300, JSON.stringify(was));
-      const top = () => panel().evaluate('window.kept.getBoundingClientRect().top') as Promise<number>;
-      const near = (at: number, what: string) => assert.ok(Math.abs(at - was.top) <= 3, `${what}, focused ${focused}: ${at} after ${JSON.stringify(was)}`);
+      // (Where the sticky rows have wrapped over the place it was, it lies right under them: still in view.)
+      const top = () => panel().evaluate("({ top: window.kept.getBoundingClientRect().top, under: document.getElementById('top').getBoundingClientRect().bottom })") as Promise<{ top: number; under: number }>;
+      const near = (at: { top: number; under: number }, what: string) => assert.ok(Math.abs(at.top - Math.max(was.top, at.under)) <= 3, `${what}, focused ${focused}: ${JSON.stringify(at)} after ${JSON.stringify(was)}`);
       await opened(page);
       await page.waitForTimeout(200);
       near(await top(), 'opened');
