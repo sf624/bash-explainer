@@ -206,6 +206,17 @@ describe('`[` is a command with arguments, as `test` is', () => {
       assert.deepStrictEqual(named(closes(bracket)), named(rowsOf('test -a file', depth)), `depth ${depth}`);
     }
   });
+
+  it('has no more text on its top row at depth 2 than `test` has: the reading of the word `[` repeats the row\'s own text', () => {
+    for (const lang of ['en', 'ja'] as const) {
+      for (const src of ['[ -f c ]', '/usr/bin/[ -f c ]', 'enable -n [\n[ -f c ]']) {
+        const rows = rowModel(explain(src, lang, src.split('\n').length - 1), { depth: 2, receives: false }, lang).rows;
+        const row = rows[0];
+        assert.ok(row.label.endsWith('['), `${lang} ${src}`);
+        assert.deepStrictEqual(row.more, [], `${lang} ${src}`);
+      }
+    }
+  });
 });
 
 describe('`[ X ]` and `test X` over the corpus', () => {

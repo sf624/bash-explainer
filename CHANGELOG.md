@@ -41,7 +41,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The notes on idioms, here-documents, a continued statement, yq and host files start with ℹ, as the other notes do. Before, they had no mark.
 - Folding a row moves its examples with its parts, and a tall box takes longer to fold (up to 0.4 s, not 0.22 s) so that it does not rush. Before, an example under a row vanished at once while the parts moved.
 - `--format json`: the `said` of a command name (`items[].name.said`) no longer has `spoken`. Read `kind` and `by`: `spoken` was the two joined, without backticks (`program, run by sudo`).
-- `[ -f a ]` reads as the command it is, like `test -f a`: one row for `[`, in the colour of a builtin, with its arguments and `]` below it; `[[ ]]` stays syntax. **Compatibility:** in `--format json`, its top part now has kind `builtin` (or `command`) and label `[`, not kind `test` and the whole test; the arguments and `]` are its `children`.
+- `[ -f a ]` shows as the command it is, like `test -f a`: one row for `[` with its arguments and `]` below it. `[[ ]]` stays syntax. **Compatibility:** in `--format json` the top part has kind `builtin` (`command` for a program) and as `label` the word as written (`[`, `/usr/bin/[`, `"["`), where it had kind `test` and the whole test; the arguments and `]` are its `children`. The text and Markdown formats change the same way.
 
 ### Fixed
 
