@@ -37,7 +37,7 @@ import { assignment } from './assignments';
 import type { Explainer } from './context';
 import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
-import { nested, skeletal, sortTokens } from './nodes';
+import { nested, skeletal, sortTokens, sourcePos } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
 import { elementsOf } from '../semantics/elements';
 import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
@@ -341,9 +341,7 @@ function part(a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-
 function span(a: SyntaxNode, from: number, to: number, kind: Kind, explanation: string, label: string): Token {
   const lit = literalContent(a);
   const at = (i: number, isEnd: boolean): number => (lit ? sourceIndex(lit, isEnd ? i + 1 : i, isEnd) : isEnd ? prefixCharAt(a.text, i) + 1 : prefixCharAt(a.text, i));
-  const col = a.startPosition.column;
-  const row = a.startPosition.row;
-  return { kind, label, explanation, children: [], span: { start: { line: row, character: col + at(from, false) }, end: { line: row, character: to < 0 ? col + a.text.length : col + at(to - 1, true) } } };
+  return { kind, label, explanation, children: [], span: { start: sourcePos(a, at(from, false)), end: sourcePos(a, to < 0 ? a.text.length : at(to - 1, true)) } };
 }
 
 /** The tokens of one letter of a cluster: the option, and the value written after it (`-n5`, `-i.bak`, `-F'|'`). */

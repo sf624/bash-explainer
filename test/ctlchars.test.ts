@@ -398,7 +398,7 @@ describe('echo -e and $\'…\' in the tree', () => {
     }
     assert.ok(texts("echo -E -e '\\e[1m'").some((x) => x.startsWith('\\e|')));
     // (`"\\e"` gives echo the two characters `\e`, which `-e` reads: the token covers the two backslashes bash read.)
-    assert.ok(texts('echo -e "\\\\e"').some((x) => x.startsWith('\\\\e|')));
+    assert.deepStrictEqual(texts('echo -e "\\\\e"').filter((x) => x.startsWith('\\\\e|')), ['\\\\e|`\\e`: ESC, the escape character (used for colours)']);
   });
 });
 

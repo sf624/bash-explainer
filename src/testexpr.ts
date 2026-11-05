@@ -309,9 +309,6 @@ function fieldText(x: SyntaxNode): string | null {
 
 /** A word of `test` after quote removal (`\(` is `(`), or null when it depends on an expansion. */
 function wordText(x: SyntaxNode): string | null {
-  if (x.type === 'number') return x.text;
-  // (`\(`, `\<`: a backslash quotes the character after it.)
-  if (x.type === 'word' && x.text.includes('\\') && /^(?:\\[^\n]|[^\\'"$`])*$/.test(x.text)) return x.text.replace(/\\(.)/g, '$1');
   return literalContent(x)?.text ?? null;
 }
 

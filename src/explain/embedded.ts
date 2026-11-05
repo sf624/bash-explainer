@@ -30,9 +30,9 @@ import { hostString } from './hoststrings';
 import { valueNote } from './words';
 
 /**
- * Explain the contents of a quoted or plain word written in another language (a regex, a sed
- * script…). Only literal text is handled: with expansions or escapes inside, the shell changes
- * the text before the command sees it, so offsets would not line up.
+ * Explain the contents of a quoted or plain word written in another language (a regex, a sed script…), as the command
+ * is given it: the text after quote removal (`literalContent`), whose tokens are placed over the source, escapes
+ * included. A word with an expansion in it has no known text, and is not read.
  */
 export function embedded(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): { tokens: Token[]; note?: string } | undefined {
   const lit = literalContent(a);
@@ -71,7 +71,7 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
   if (!r) return undefined;
   guardedEmbeddedExample(cx, lang, lit.text, a);
   // (Where bash took a backslash away before the command read the text, `"a\\.b"`, it says what the command is given.)
-  const taken = removedBackslashes(lit, a.text);
+  const taken = removedBackslashes(lit);
   const bash = taken.length ? cx.text('embedded-backslash-removed', { taken }) : undefined;
   const note = bash && r.note ? r.note + cx.s('。', '; ') + bash : bash ?? r.note;
   return { tokens: r.tokens.map((t) => ({ ...fromEmbedded(t, a, lit, 'embedded'), language: lang })), note };

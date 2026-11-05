@@ -92,7 +92,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Docker's exec form (`CMD ["echo", "$HOME"]`) and a Python list of arguments are explained as a program run with no shell: `echo` is the program, `cd` and `if` are not found, and `"$HOME"` is a JSON string passed as it is. Before, they were explained as bash's builtins and single-quoted strings.
 - The commands of a `bash -c '…'` string in a Dockerfile, a Makefile, a workflow or another host file, or after blank lines at the top of a script, are placed on their own text. Before, they pointed at line 1 and took their names from there.
 - The Reading view no longer fails on a line whose statement uses an alias on a later line, such as a `case` branch that calls it.
-- A script or pattern in double quotes with a backslash is read as the program gets it: `sed -E "s#^//([^:]*):#\1/#"`, `grep "a\.b"`, `awk "{print \$1}"` and `awk -F "\t"` show their parts and the example, as the single-quoted form does. Where bash takes a backslash away (`\$`, `\\`), the explanation says what the program receives. Before, such a word showed only the string.
+- A script or pattern with a backslash in double quotes, or unquoted, is read as the program gets it: `sed -E "s#^//([^:]*):#\1/#"`, `grep "a\.b"`, `awk "{print \$1}"` and `awk -F "\t"` show their parts and the example, as the single-quoted form does; where bash removes a backslash (`\$`, `\\`), the explanation says so.
 
 [All changes](https://github.com/sf624/bash-explainer/compare/v0.9.1...main)
 

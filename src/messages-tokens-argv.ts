@@ -1,4 +1,5 @@
 import type { Text } from './i18n';
+import { codeSpan } from './label';
 import { tokenText } from './messages-levels';
 
 // What the tokens of the words of a command, as src/explain/argv.ts and its modules read them say.
@@ -82,12 +83,12 @@ export const ARGV_TEXTS = {
   'option-name-filter-hint': tokenText(() => [
     '（フィルタでは `$` を付けて使う）',
     ' (use it as `$name` in the filter)']),
-  /** `sed "s/\\./x/"`: bash took the backslash of each escape in `taken` (`\$`) away before the command read its text. */
+  /** `sed "s/\\./x/"`: bash took the backslash of each escape in `taken` (`\$`) away before the text was read. */
   'embedded-backslash-removed': tokenText<{ taken: readonly string[] }>(({ taken }) => {
-    const list = taken.map((e) => `\`${e}\` → \`${e[1]}\``).join(', ');
+    const list = taken.map((e) => `${codeSpan(e)} → ${codeSpan([...e][1])}`).join(', ');
     return [
-      `シェルが先にバックスラッシュを取り除くので、コマンドに渡る文字は ${list} になる`,
-      `bash removes the backslash before the command gets the text: ${list}`];
+      `先にシェルがバックスラッシュを取り除いている: ${list}`,
+      `bash has already removed the backslash: ${list}`];
   }),
   /** `sort -t"|"`: the value is written with quotes (`val`: what it is without them). */
   'option-value-unquoted': tokenText<{ val: string }>(({ val }) => [
