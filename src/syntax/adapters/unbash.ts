@@ -98,12 +98,14 @@ class Converter {
   }
 
   /** Adds the tokens and comments in the text of `owner` that its children do not cover, up to `end`. */
-  fill(owner: Mut, end = owner.lineEnd ?? owner.endIndex): void {
+  fill(owner: Mut, to?: number): void {
     const kids = [...owner.children].sort((a, b) => a.startIndex - b.startIndex);
     // A node covers its children, whatever range its parser gave it.
     for (const k of kids) owner.endIndex = Math.max(owner.endIndex, k.endIndex);
     // A node whose last line ends before a heredoc body that one of its parts holds.
     if (kids.some((k) => k.lineEnd !== undefined)) owner.lineEnd = mostOf(kids.map((k) => k.lineEnd ?? k.endIndex));
+    // (Read after the line's end of the parts is known: a list of a part with a body, `a && cat <<E || b`, ends its line at `b`, not after the body.)
+    const end = to ?? owner.lineEnd ?? owner.endIndex;
     let at = owner.startIndex;
     const gaps: [number, number][] = [];
     for (const k of kids) {
