@@ -261,7 +261,13 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   const reading = () => readArgs(cx, head.spec, args, head.unnamed ? '' : head.runs ?? head.name, head.fn);
   // (Nor do the words give examples of the command when one is read as fields that are options or values, which the
   // examples would read as written: `x='-n 3'; head $x f`. A glob's or a brace expansion's stay.)
+  // (`test` and `[` read their words again below as an expression and drop this reading's tokens: what its holes said stays unsaid.)
+  const holesBefore = head.test ? new Map(cx.holesSaid) : undefined;
   const read = cx.examplesDropped(reading, (r, e) => (other && !!head.spec) || (readsFields(r.parse) && e.kind !== 'glob' && e.kind !== 'expansion'));
+  if (holesBefore) {
+    cx.holesSaid.clear();
+    for (const [k, v] of holesBefore) cx.holesSaid.set(k, v);
+  }
   // A restricted shell refuses some calls of builtins, and command names with a `/` (6.10).
   // (A name with a `/` only inside an expansion may have none: `"${tool##*/}"`.)
   const refused = head.kind === 'builtin' ? restrictedCall(cx, n, head.spec!, read.parse, args)
