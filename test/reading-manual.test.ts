@@ -791,7 +791,7 @@ describe('the reading tree as the Bash manual reads aliases and arrays (chapter 
     const src = "shopt -s expand_aliases\nalias s='sudo ' ll='ls -l' n='s ' t='echo T'\ns ll x\ns n ll\ns x ll\nt ll\ns >/dev/null ll\nalias a/b=x\nalias s='sudo '";
     assert.deepStrictEqual(kids(node(src, 's ll x', 'command', 2)), ['aliasWord s', 'aliasWord ll', 'argument x']);
     const ll = node(src, 'll', 'aliasWord', 2);
-    assert.deepStrictEqual([ll.refs, ll.replacement, kids(ll), ll.text], [['6.6'], 'ls -l', ['argument ls', 'argument -l'],
+    assert.deepStrictEqual([ll.refs, kids(ll), ll.text], [['6.6'], ['argument ls', 'argument -l'],
       'The alias `ll` defined on line 2: replaced by `ls -l`. The text of the alias before it ends with a blank, so bash checks this word for an alias too']);
     assert.deepStrictEqual(kids(node(src, 's n ll', 'command', 3)), ['aliasWord s', 'aliasWord n', 'aliasWord ll']);
     // Not after a word that is no alias, an alias whose text ends otherwise, or a redirection.

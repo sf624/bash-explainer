@@ -2,7 +2,7 @@
 
 The plan that turns prototype B into real PRs, then the usability test. Agreed with the maintainer on 2026-10-27; revised after an independent review of the plan (PR #418).
 
-Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#543), started early (decided by the maintainer 2026-10-31), beside the three note levels. P3 done (#560), after the levels. P4 done (#563): what each program receives, as data. P5 done (#566): "In short" on every line. P6 done (#568): examples of the whole line and of globs. SB3 comes before P7a: SB3a done (#570: facts and roles on tokens, no string notes); SB3d done (#569: the `ui` texts); SB3c done (the row record, src/ui/tokenRow.ts). P7a done (the row model, src/ui/panelRows.ts, drawn by nothing yet). P7b done (the problems box, in today's Meaning; token errors are problems). P7c done (the Meaning tab draws the row model: the grid and the boxes). P8 done (depth 2 in one view; the tabs and the eight steps are gone). P9 done (the switch "What the program receives", the marks "handled by bash" and "not portable to sh", the Key).
+Status: P1 done (#538), with SB2 of [sources.md](sources.md). P2 done (#543), started early (decided by the maintainer 2026-10-31), beside the three note levels. P3 done (#560), after the levels. P4 done (#563): what each program receives, as data. P5 done (#566): "In short" on every line. P6 done (#568): examples of the whole line and of globs. SB3 comes before P7a: SB3a done (#570: facts and roles on tokens, no string notes); SB3d done (#569: the `ui` texts); SB3c done (the row record, src/ui/tokenRow.ts). P7a done (the row model, src/ui/panelRows.ts, drawn by nothing yet). P7b done (the problems box, in today's Meaning; token errors are problems). P7c done (the Meaning tab draws the row model: the grid and the boxes). P8 done (depth 2 in one view; the tabs and the eight steps are gone). P9 done (the switch "What the program receives", the marks "handled by bash" and "not portable to sh", the Key). P10 done (#PRNUM: what P8 and P9 left unread removed, the speed measured on the whole series, "What P10 came to"); **the README images are not re-recorded here**: the chrome's C9 lands second and re-records them once for both series. The length budget (section 6, P8 and P9) was accepted by the maintainer on 2026-11-05 after a check on a real device, and is to be judged again with the usability test.
 
 ## 1. Goal
 
@@ -436,11 +436,29 @@ What P9 came to, for P10 and the usability test:
 
 ### P10. Clean-up and the last measure
 
-What: the reading tree's fields and helpers that P8 left unread, if any. The speed measure again on the whole series, before (main at P6) and after. docs/design/tree-view/README.md gets status "Replaced by panel-redesign.md". README images re-recorded.
+What: the reading tree's fields and helpers that P8 left unread, if any. The speed measure again on the whole series, before (main at P6) and after. docs/design/tree-view/README.md gets status "Replaced by panel-redesign.md". README images re-recorded: **not in P10's PR**. The chrome's C9 lands second and re-records them once, for both series.
 
 Users: no CHANGELOG line, unless the measure shows a change users see.
 
 Tests: test/file-length.test.ts; the coverage gate.
+
+#### What P10 came to
+
+- **The length budget, accepted.** On 2026-11-05, after a real-device check, the maintainer accepted the page's length: at most **1,420 px at 1280 and 1,980 at 390 with the switch on, 1,280 and 1,820 with it off** (test/web-depth.test.ts). Said plainly: **the plan's first figures, 750 and 1,500, did not hold.** They were half the prototype's, proposed before the role lines and the line under each command were in; P8 reached 1,300 and 1,850 and P9's switch added the rest. The budget is to be judged again with the usability test (section 7), where readers' scores say whether a page of this length costs them.
+- **What was removed**, each after a search for every reader (a class built from a string, a text read through a key, a field read through a duck type: `partBasis` reads `ReadingNode.basis` and `tryIt`, so those stay). `ReadingNode.replacement` (the alias's text; nothing read it since the tree's own view went); `NameSaid.spoken` and `nameSpoken`, `spokenMarks` in media/panel.js (the aria-label of the tree's rows, which P8 removed); `idiomText` of src/messages-lines.ts (the idioms' label has lived in src/messages-idioms.ts since SB3a); an unused import in test/render.test.ts. The texts of src/ui/texts.ts (all 256 read by the panel's host over the corpus, depth 1 and 2, switch on and off), the CSS (every class, id, custom property and attribute selector of media/panel.css has a builder) and the functions of media/panel.js (two had no caller, the two above) are otherwise used. test/snapshot.ts and a hash of `panelUpdate` for every line of the corpus at both depths and both switch states, in both languages (25,208 messages), are the same before and after, except the one field `spoken` which no one read.
+- **Left, and why.** `TINT_ROLES` (src/ui/themePalette.ts): no view draws the tints, but they still bound the colours text may take in a themed palette, so taking them out can shift a colour in a theme, which a clean-up must not do (roadmap, Deferred). Exports used only by tests, or only inside their file (`featuresOnLine`, `wordFacts`, the types of the panel's modules): older than P8, and used.
+- **Speed, the whole series.** One `Analyzer` moving through the file (250 evenly spread moves and the first line of the longest statements), the line explained with the options of the hosts, `panelUpdate` made and written out; in ms (p50 / p95 / worst). **P6** is main at the merge of #568 (518419e4; the panel then had two tabs and no switch: depth 1 stands for Meaning, depth 2 for Reading with the reading tree built). It has no `scripts/panel-speed.ts`; the same loop was run from a throwaway script in its own worktree, without the file's problems filter (`issueFilter`) and the state of today's message, so the two columns are the same work to within that. **Now** is this PR's code (`npx tsx scripts/panel-speed.ts --depth D --receives on|off`, which gained `--receives` here). A second run of P6 gave p95 within 1.3 ms and the same worst.
+
+  | Script (lines) | Depth | P6 | Now, switch on | Now, switch off |
+  | --- | --- | --- | --- | --- |
+  | nvm.sh (4,620) | 1 | 0.6 / 5.5 / 15.7 | 1.1 / 6.0 / 19.4 | 1.0 / 5.5 / 20.4 |
+  | nvm.sh | 2 | 0.9 / 6.7 / 261.5 | 1.5 / 7.9 / 267.1 | 1.4 / 6.5 / 272.1 |
+  | bash_completion (2,291) | 1 | 0.2 / 3.0 / 36.5 | 0.5 / 4.5 / 35.9 | 0.5 / 4.1 / 33.8 |
+  | bash_completion | 2 | 0.8 / 5.0 / 37.7 | 1.3 / 6.5 / 35.4 | 1.1 / 6.4 / 33.8 |
+  | install.sh (496) | 1 | 0.5 / 3.9 / 12.0 | 0.7 / 3.2 / 9.3 | 0.6 / 2.8 / 6.3 |
+  | install.sh | 2 | 0.6 / 4.7 / 23.7 | 0.9 / 4.3 / 23.9 | 0.8 / 4.1 / 22.4 |
+
+  The largest script is nvm.sh (4,620 lines, from `~/.nvm`). Every p95 is far under the budget of 50 ms; the whole series added 0.3 to 0.6 ms to the median and up to 1.5 ms to the 95th percentile (less on the small script), and nothing to the worst move. The switch costs 0.1 to 1.4 ms at the 95th percentile (nvm.sh, depth 2: 7.9 against 6.5). The worst move of depth 2 is line 11 of nvm.sh, the `{` that holds the whole script (about 265 ms before and after, nothing P7 to P9 added to it). P6 threw on one line of install.sh (in src/linesentence.ts, "In short"); none of the 251 moves throws now. Nothing here is a change users see, so there is no CHANGELOG line.
 
 ### 6.1 The view slot contract
 

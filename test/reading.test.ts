@@ -420,7 +420,7 @@ describe('the reading tree of a line', () => {
     ]);
     const r = explain(src, 2).reading!;
     const ll = find(r, 'll', 'bash', 'aliasWord');
-    assert.deepStrictEqual([ll.replacement, ll.refs, ll.resolves], ['ls -l', ['6.6'], undefined]);
+    assert.deepStrictEqual([ll.refs, ll.resolves], [['6.6'], undefined]);
     assert.match(ll.text!, /replaced by `ls -l`/);
     assert.strictEqual(find(r, 'ls', 'bash', 'commandName').resolves, 'file');
     assert.strictEqual(find(r, 'x', 'command').reader, 'ls');

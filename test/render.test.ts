@@ -5,7 +5,6 @@ import { Analyzer } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { examplesMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, toPlainMarkdown } from '../src/ui/render';
 import { partHover, plainPartHover, wholeLine } from '../src/ui/hoverView';
-import { readingNodes } from '../src/reading';
 import { lineMarks, panelUpdate } from '../src/ui/panelView';
 import { documentIssues, type DocumentIssue } from '../src/document';
 import type { NoteLevel } from '../src/messages';

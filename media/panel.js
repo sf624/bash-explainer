@@ -1083,9 +1083,6 @@
     return d;
   }
 
-  /** What the badge says, for a screen reader: "builtin, run by sudo" (`NameSaid.spoken`). */
-  const nameSpoken = (/** @type {any} */ name) => (name ? name.said.spoken : '');
-
   // ---------------------------------------------------------------- tree
 
   /** A text cut at its warnings (`TextPart`, src/tokenmarks.ts): each warning with its level's icon, named, and in its level's look. */
@@ -2027,11 +2024,6 @@
       m.textContent = name;
       return m;
     });
-  }
-
-  /** A text with each control picture as the words it stands for, for a screen reader. */
-  function spokenMarks(/** @type {string} */ text) {
-    return text.replace(/[\u2400-\u241f\u2421\u21e5]/gu, (p) => (controlMarks[p] ? ` ${controlMarks[p][1]} ` : p));
   }
 
   $('settings').addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
