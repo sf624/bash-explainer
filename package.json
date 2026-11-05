@@ -693,8 +693,8 @@
         "id": "bashExplainer.blockBar",
         "description": "%color.blockBar%",
         "defaults": {
-          "dark": "editorIndentGuide.activeBackground1",
-          "light": "editorIndentGuide.activeBackground1",
+          "dark": "focusBorder",
+          "light": "focusBorder",
           "highContrast": "contrastBorder",
           "highContrastLight": "contrastBorder"
         }
