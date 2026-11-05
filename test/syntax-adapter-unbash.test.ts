@@ -1344,8 +1344,9 @@ describe('unbash adapter: what the explanations make of its trees', () => {
       ['a && cat <<-E || b\n\tx\n\tE\n', ['a && cat || b']],
       ["a && cat <<'E' || b\nx\nE\n", ['a && cat || b']],
       ['a && cat > f <<E || b\nx\nE\n', ['a && cat || b']],
-      ['a && cat <<E || b # c\nx\nE\n', ['a && cat || b']],
-      ['a && cat <<E || b;\nx\nE\n', ['a && cat || b']],
+      ['a && cat <<E || b # c\nx\nE\n', ['a && cat || b', '# c']],
+      ['a && cat <<E || b;\nx\nE\n', ['a && cat || b', ';']],
+      ['a | cat <<E | b # c\nx\nE\n', ['a | cat | b', '# c']],
       ['a && cat <<E || b &\nx\nE\n', ['a && cat || b &']],
       ['a && cat <<E || b; d\nx\nE\n', ['a && cat || b; d']],
     ];
