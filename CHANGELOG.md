@@ -30,7 +30,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The explanation's line box wraps a long line between shell words, up to three rows (click to see it whole). It follows Wrap long lines on the web page and `editor.wordWrap` in VS Code. Before, a long line scrolled sideways.
 - The editor on the web page has its own header: Open, Save, the file name (click it to rename; ● marks unsaved changes) and ⋯. Copy a link says "Copied" on its own button.
 - Messages on the web page (Opened, Saved, Downloaded) show in one place above the Problems list, with an icon, and stay while the pointer is on them; a reason or more detail is behind **Why?** or **More**. Loading the sample over your script offers Undo instead of asking first (over an opened file with unsaved changes it asks, as Open does).
-- Settings on the web page come in sections, with a search and links to each section. On a wide window they are a third column at the right: the editor and the explanation stay in view and in use beside them, in the ratio you set. In VS Code too, the row you read stays in place when the panel's width changes.
+- Settings on the web page come in sections, with a search and links to each section. On a wide window they are a third column at the right: the editor and the explanation stay in view and in use beside them, in the ratio you set.
 - The explanation on the web page has its own header: the tabs Explanation and Reference, Depth, Collapse and Copy, each with a word. Before, the view switch, Collapse, Copy as Markdown and the quick reference were icons and words in the top bar (on a phone, the view and the copy were in the menu).
 - One button above the editor on the web page shows the file type and the shell ("Shell script · bash (auto)") and opens both lists. Before, they were two pickers: the type in the top bar, the shell there only from 1200 px wide, else in the menu.
 - Problems on the web page fold into a strip with their count per level. ‹ › and F8 / Shift+F8 go to the next and previous problem, and the strip shows where you are (Ln 20 · 1/11). The list opens on your first visit, and then stays as you left it.
@@ -43,6 +43,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- In VS Code, the text you read in the explanation panel stays in place when the panel's width changes. Before, the place moved.
 - The box that marks a space at an end of a value or a word now stands on the line of the text, and its name ("space") shows when the pointer rests on it.
 - The opening animation on the web page follows the Language setting. Before, a Japanese browser with the setting on English still showed it in Japanese (and the other way round).
 - In a script for sh, dash or busybox ash, a builtin that shell lacks (`declare`, `let`, `source`) is explained as a program, and `$"hi"` as `$hi`. In bash, so are `print` and `whence`, which it does not have.

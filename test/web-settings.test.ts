@@ -983,7 +983,8 @@ describe('the web page: theme and settings', function () {
           const shown = [...document.querySelectorAll('#problems-counts .count')].filter((c) => r(c).top < box.bottom - 1 && r(c).right <= box.right + 0.5);
           return {
             over: st.scrollWidth - st.clientWidth, pane: r(document.querySelector('main > .source')).right,
-            order: ['#problems-toggle', '#problem-pos', '#problem-prev', '#problem-next'].map((q) => [r(document.querySelector(q)).left, r(document.querySelector(q)).right]),
+            // (The place, where it did not fit, wraps to a line below the row, which is not shown.)
+            order: ['#problems-toggle', '#problem-pos', '#problem-prev', '#problem-next'].filter((q) => r(document.querySelector(q)).top < r(document.querySelector('.strip-main')).bottom - 1).map((q) => [r(document.querySelector(q)).left, r(document.querySelector(q)).right]),
             counts: box.right, shown: shown.length, said: document.getElementById('problems-said').textContent,
           };
         })()`) as { over: number; pane: number; order: [number, number][]; counts: number; shown: number; said: string };
