@@ -173,17 +173,6 @@ const READ: ReadRow[] = [
     ],
   },
   {
-    line: 'grep "$x"',
-    // (The whole word is one hole: what the reader says stands on the word, beside bash's `$x`.)
-    tokens: [],
-    note: /search pattern \(regex\) — `\.`, `\*`, `\[` in the value are special/,
-    says: /are special/,
-    tools: [
-      { x: 'a', input: 'a\nz\n', out: 'a\n' },
-      { x: 'a.', input: 'ab\nz\n', out: 'ab\n' },
-    ],
-  },
-  {
     line: 'awk "/$x/ {print}"',
     tokens: ['/$x/ {print} 5-17', '/$x/ 5-9', '$x 6-8', '{print} 10-17', 'print 11-16'],
     says: /read as a regex.*A `\/` in it ends the pattern early/,
@@ -401,6 +390,14 @@ describe('words with an expansion read with the expansion as a hole', function (
   it('a hole beside a backslash is not read: it escapes the first character of the value', () => {
     assert.deepStrictEqual(shape('sed "s/\\\\$x/b/"'), []);
     assert.ok(shape('sed "s/\\\\\\\\$x/b/"').includes('$x 11-13'), 'an escaped backslash leaves the hole alone');
+  });
+
+  it('a regex that is only the value stays as it was: the word says it is a pattern, and the pitfall what its characters do', () => {
+    assert.deepStrictEqual(shape('grep "$x" f'), []);
+    const said = explained('grep "$x" f');
+    assert.match(said.notes.join(' | '), /reads the value of `\$x` as a regular expression.*`\.`, `\*`, `\[` and the like in the value have their special meaning/);
+    const got = runAll([{ line: 'grep "$x"', tool: { x: 'a.', input: 'ab\nz\n', out: 'ab\n' } }]);
+    assert.strictEqual(got[0].out, 'ab\n');
   });
 
   it('reads the escapes around a hole with `echo -e`', () => {
