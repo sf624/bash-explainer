@@ -798,6 +798,7 @@
  "cat <<E\n$(if a; then b; fi)\nE\n",
  "cat <<E\n$(while a; do b; done) `c && d` $(for i in 1 2; do e $i; done)\nE\n",
  "cat <<E\nx $(a || b | c) y\nE\n",
+ "cat <<E && a || b\nx\nE",
  "cat <<E && echo b\nx\nE\necho c",
  "cat <<E >o | x\nbody\nE",
  "cat <<E | grep x; echo d\nbody $v\nE\nwc -l <<-F\n\tt\n\tF",
