@@ -6,7 +6,7 @@ import type { Token } from '../analyzer-types';
 import { listOps } from '../dict/syntax';
 import { plainOf } from '../messages-levels';
 import { codeSpan, labelText, LABEL_LIMIT, skeleton } from '../label';
-import { field, listElements, listOperator, listOverLines, type SyntaxNode } from '../syntax/tree';
+import { andOrKind, andOrRole, field, listElements, listOperator, listOverLines, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { isBlockLike, skeletal, summaryOf } from './nodes';
 import { pushAll } from '../lists';
@@ -20,17 +20,6 @@ function shown(p: SyntaxNode): string {
   return text.length <= LABEL_LIMIT && !text.includes('\n') ? text : labelText(skeleton(p));
 }
 const code = (p: SyntaxNode): string => codeSpan(shown(p));
-
-/** The operators of an AND/OR list, from the left (`a && b || c`: `&&`, `||`). */
-function andOrOperators(n: SyntaxNode): string[] {
-  return n.children.flatMap((c) => (c.type === 'list' ? andOrOperators(c) : !c.named && (c.type === '&&' || c.type === '||') ? [c.type] : []));
-}
-
-/** What an AND/OR list is, by its operators: an AND list, an OR list, or both (the manual's "AND and OR lists"). */
-function andOrKind(n: SyntaxNode): 'and' | 'or' | 'both' {
-  const ops = new Set(andOrOperators(n));
-  return ops.size > 1 ? 'both' : ops.has('&&') ? 'and' : 'or';
-}
 
 /**
  * A part named in the text of a `;` or `&` after it: `b`; the whole pipeline or AND/OR list, which the operator
@@ -179,8 +168,8 @@ export function andOrList(cx: Explainer, n: SyntaxNode, other: (c: SyntaxNode) =
         `AND and OR lists, read from the left${grouped ? ` as \`${grouped}\`` : ''}: after \`&&\` the next command runs only if the status so far is 0, after \`||\` only if it is not`);
   const t = cx.tok(n, 'operator', text, children);
   t.refs = ['3.2.4'];
-  // (Its own operator: `a && b || c` is an OR list, whose first part is an AND list.)
-  t.grammar = n.children.some((c) => c.type === '||') ? 'orList' : 'andList';
+  // (All its operators: the label reads the whole list, `a && b || c`, whose first part `a && b` has its own row in the reading.)
+  t.grammar = andOrRole(n);
   t.summary = summary(children);
   return skeletal(t, n);
 }

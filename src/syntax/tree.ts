@@ -582,6 +582,27 @@ export function listOperator(op: SyntaxNode): { part: SyntaxNode; next?: SyntaxN
   return next ? { part, next } : { part };
 }
 
+/** The operators of an AND/OR list, from the left (`a && b || c`: `&&`, `||`), through the lists nested on its left. */
+function andOrOperators(n: SyntaxNode): string[] {
+  return n.children.flatMap((c) => (c.type === 'list' ? andOrOperators(c) : !c.named && (c.type === '&&' || c.type === '||') ? [c.type] : []));
+}
+
+/**
+ * What an AND/OR list (3.2.4: the model's `list`) is, by all its operators, those of the lists nested on its left too:
+ * an AND list (`&&` alone), an OR list (`||` alone), or both (`a && b || c`, the manual's "AND and OR lists"). The one
+ * source of the kind: the text and the grammar role of its token, and the kind of its node in the reading, read it.
+ */
+export function andOrKind(n: SyntaxNode): 'and' | 'or' | 'both' {
+  const ops = new Set(andOrOperators(n));
+  return ops.size > 1 ? 'both' : ops.has('||') ? 'or' : 'and';
+}
+
+/** The role of an AND/OR list (`Token.grammar`, the kind of its node in the reading), by `andOrKind`. */
+export function andOrRole(n: SyntaxNode): 'andList' | 'orList' | 'andOrList' {
+  const kind = andOrKind(n);
+  return kind === 'and' ? 'andList' : kind === 'or' ? 'orList' : 'andOrList';
+}
+
 /** Whether the statement `n` is run in the background: a `&` follows it in its list. */
 export function inBackground(n: SyntaxNode): boolean {
   const at = n.parent && isListPart(n) ? listsOf(n.parent).at.get(n) : undefined;

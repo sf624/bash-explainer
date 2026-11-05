@@ -119,7 +119,7 @@ export const ui = {
           promptLanguage: 'bash 自身が、プロンプトを表示するたびに読む',
         },
         kinds: {
-          line: 'bash がこの行を読む', script: '中のスクリプト', list: 'リスト', andList: 'AND リスト', orList: 'OR リスト', pipeline: 'パイプライン', command: '単純コマンド', compound: '複合コマンド',
+          line: 'bash がこの行を読む', script: '中のスクリプト', list: 'リスト', andList: 'AND リスト', orList: 'OR リスト', andOrList: 'AND・OR リスト', pipeline: 'パイプライン', command: '単純コマンド', compound: '複合コマンド',
           clause: '節', coprocess: 'コプロセス', function: '関数定義', commandName: 'コマンド名', aliasWord: 'エイリアス（読むときに置き換わる）', expandedName: '最初の単語', option: 'オプション', argument: '引数',
           assignmentArgument: '代入の引数', value: '値', word: '単語', name: '名前', assignment: '代入', redirect: 'リダイレクト', heredoc: 'ヒアドキュメント', quote: 'クォート',
           expansion: '展開', substitution: '置換', arithmetic: '算術式展開', brace: 'ブレース展開', operator: '演算子', keyword: '予約語',
@@ -140,6 +140,7 @@ export const ui = {
           list: 'リスト: `;`・`&`・改行で区切ったパイプラインの並び。`&&` と `||` のほうが強く結び付くので、区切られた1つ1つはパイプラインか AND・OR リスト。`;` はその前の部分の終了を待ち、`&` はその前の部分だけをバックグラウンドで実行する。',
           andList: 'AND リスト: `a && b` は `a` が成功（終了ステータス 0）したときだけ `b` を実行する。`&&` と `||` が続くときは左から読む。',
           orList: 'OR リスト: `a || b` は `a` が失敗（終了ステータス 0 以外）したときだけ `b` を実行する。`&&` と `||` が続くときは左から読む。',
+          andOrList: 'AND・OR リスト: `&&` と `||` が混ざったリスト。`&&` と `||` は優先順位が同じなので左から読み、`&&` の次はそこまでの終了ステータスが 0 のときだけ、`||` の次は 0 以外のときだけ実行する。例えば `a && b || c` は `(a && b) || c`。',
           command: '単純コマンド: 代入・単語・リダイレクトからなる。bash が単語を展開し、最初のフィールドをコマンド名、残りを引数とする。',
           commandName: 'コマンド名: bash が探し（関数、ビルトイン、PATH の中のファイルの順）、引数を渡して実行する。',
           aliasWord: 'エイリアス: bash は行を読むときに、最初の単語をエイリアスの中身に置き換える。単語の展開より前なので、探すコマンド名は中身の最初の単語で、残りは引数になる。',
@@ -270,7 +271,7 @@ export const ui = {
           promptLanguage: 'bash reads it itself, each time it prints the prompt',
         },
         kinds: {
-          line: 'bash reads the line', script: 'script inside', list: 'list', andList: 'AND list', orList: 'OR list', pipeline: 'pipeline', command: 'simple command', compound: 'compound command',
+          line: 'bash reads the line', script: 'script inside', list: 'list', andList: 'AND list', orList: 'OR list', andOrList: 'AND and OR list', pipeline: 'pipeline', command: 'simple command', compound: 'compound command',
           clause: 'clause', coprocess: 'coprocess', function: 'function definition', commandName: 'command name', aliasWord: 'alias, replaced when the line is read', expandedName: 'first word', option: 'option', argument: 'argument',
           assignmentArgument: 'assignment argument', value: 'value', word: 'word', name: 'name', assignment: 'assignment', redirect: 'redirection', heredoc: 'here-document', quote: 'quotes',
           expansion: 'expansion', substitution: 'substitution', arithmetic: 'arithmetic expansion', brace: 'brace expansion', operator: 'operator', keyword: 'reserved word',
@@ -291,6 +292,7 @@ export const ui = {
           list: 'A list: pipelines separated by `;`, `&` or newlines. `&&` and `||` bind tighter, so each part is a pipeline or an AND or OR list. `;` waits for the part before it to end; `&` runs that part alone in the background.',
           andList: 'An AND list: `a && b` runs `b` only if `a` succeeds (status 0). A chain of `&&` and `||` is read from the left.',
           orList: 'An OR list: `a || b` runs `b` only if `a` fails (non-zero status). A chain of `&&` and `||` is read from the left.',
+          andOrList: 'An AND and OR list: `&&` and `||` mixed. They have equal precedence, so the list is read from the left; after `&&` the next command runs only if the status so far is 0, after `||` only if it is not. `a && b || c` is `(a && b) || c`.',
           command: 'A simple command: assignments, words and redirections. bash expands the words; the first field is the command name, and the others are its arguments.',
           commandName: 'The command name: bash looks it up (a function, a builtin, then a file in PATH) and runs it with the arguments.',
           aliasWord: 'An alias: bash replaces the first word with the text of the alias when it reads the line. That comes before the words are expanded, so the name it looks up is the first word of the text, and the rest are arguments.',

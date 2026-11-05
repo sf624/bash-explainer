@@ -638,7 +638,7 @@ describe('the panel\'s row model', () => {
       ['a 2>&1', '2', 'file descriptor', 'ファイルディスクリプタ'],
       ['a; b &', 'a; b &', 'list', 'リスト'],
       ['a | b', 'a | b', 'pipeline', 'パイプライン'],
-      ['a && b || c', 'a && b || c', 'OR list', 'OR リスト'],
+      ['a && b || c', 'a && b || c', 'AND and OR list', 'AND・OR リスト'],
       ['if a; then b; fi', 'then', 'reserved word', '予約語'],
       ['(a; b)', 'a; b', 'list', 'リスト'],
       ['echo $(a)', '$(a)', 'argument | substitution | operand: each word it splits into', '引数 | 置換 | オペランド: 分割された語ごと', 'echo reads it'],
