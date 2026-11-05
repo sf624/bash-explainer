@@ -18,6 +18,12 @@ export const narrow = {
  * What the phone's sheet covers of the editor's box, in px, at the height it is at or going to (web/sheet.ts, `apply`):
  * the box goes on under the sheet, so what is shown of the editor ends this far above its bottom. 0 without the sheet.
  */
+/**
+ * A touch screen: what shows the Read | Edit switch (`.touch-only`, web/page.css), and what the page's words and start go
+ * by. (The sheet's layout, in web/theme-init.js, also asks for no hover: a screen with a mouse keeps its panes side by side.)
+ */
+export const touchScreen = (): boolean => window.matchMedia('(pointer: coarse)').matches;
+
 export const sheetCover = (): number => parseFloat(document.documentElement.style.getPropertyValue('--sheet-cover')) || 0;
 
 /**

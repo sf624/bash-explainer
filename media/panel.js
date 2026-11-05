@@ -206,10 +206,19 @@
   });
   vscode.postMessage({ type: 'ready' });
 
+  /** Whether the current line has a box (`lineShown` of the update; a blank line has none). */
+  let lineShown = false;
+  /** The one writer of the line box's `hidden`: it shows when the current line has one and the quick reference is closed. */
+  function showLine(/** @type {boolean} */ shown) {
+    lineShown = shown;
+    $('line').hidden = !shown || !$('reference').hidden;
+  }
+
   function showEmpty(/** @type {string} */ message) {
     $('where').textContent = '';
     $('context').textContent = '';
     $('line').replaceChildren();
+    showLine(false);
     $('notes').replaceChildren();
     $('problems').replaceChildren();
     $('problems').hidden = true;
@@ -292,7 +301,7 @@
     if (kept) focusAgain(kept);
 
     renderLine(msg.lineText, msg.lineRuns, msg.marks ?? [], msg.lineParts, msg.wrap === true);
-    $('line').hidden = !msg.lineShown;
+    showLine(msg.lineShown === true);
     drawViewRow(msg);
 
     drawProblems(msg.problems ?? [], msg.around ?? []);
@@ -2041,7 +2050,7 @@
     const open = $('reference').hidden;
     $('reference').hidden = !open;
     $('main').hidden = open;
-    $('line').hidden = open;
+    showLine(lineShown);
     dropSpacer();
     nameRef();
     if (open) {

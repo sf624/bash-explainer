@@ -48,7 +48,10 @@ export function wrapsLikeEditor(wordWrap: unknown): boolean {
   return typeof wordWrap === 'string' && wordWrap !== 'off';
 }
 
-/** Whether the line box is drawn: a blank line has nothing in it, and the panel says "Nothing to explain on this line." under an empty grey box. */
+/**
+ * Whether the line box is drawn: a line of only spaces and tabs (bash's blanks) has nothing to see in it, and an empty grey
+ * box would stand over "Nothing to explain on this line.". Any other character shows, a no-break or an ideographic space too.
+ */
 export function showsLineBox(text: string): boolean {
-  return text.trim() !== '';
+  return /[^ \t]/.test(text);
 }

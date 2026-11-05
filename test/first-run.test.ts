@@ -1,10 +1,10 @@
-// What a touch screen's first visit shows (src/ui/firstRun.ts; docs/design/chrome-redesign.md, C8): the mode it starts in,
-// and the tip of the Read | Edit switch. test/web-phone.test.ts runs them in the browser.
+// What a touch screen's first visit shows (src/ui/firstRun.ts; docs/design/chrome-redesign.md, C8c): the mode it starts in,
+// how it follows the script, and the tip of the Read | Edit switch. test/web-first-run.test.ts runs them in the browser.
 import * as assert from 'assert';
-import { startInRead, tipDue } from '../src/ui/firstRun';
+import { modeChosen, readAsTextChanges, startInRead, tipDue } from '../src/ui/firstRun';
 
 describe('the first visit on a touch screen', () => {
-  it('starts in Read on the untouched sample, and in Edit for a script from a link or with a mouse', () => {
+  it('starts in Read on the untouched sample, and in Edit for another script or where the switch does not show', () => {
     assert.strictEqual(startInRead(null, true, true), true);
     // (No storage at all: the same as no choice.)
     assert.strictEqual(startInRead(undefined, true, true), true);
@@ -14,14 +14,28 @@ describe('the first visit on a touch screen', () => {
   });
 
   it('keeps the mode the user chose, whatever the page shows', () => {
-    for (const touch of [true, false]) {
-      for (const sample of [true, false]) {
-        assert.strictEqual(startInRead('1', touch, sample), true);
-        assert.strictEqual(startInRead('0', touch, sample), false);
-      }
+    for (const sample of [true, false]) {
+      assert.strictEqual(startInRead('1', true, sample), true);
+      assert.strictEqual(startInRead('0', true, sample), false);
     }
     // (A stored value that is neither is no choice.)
     assert.strictEqual(startInRead('x', true, true), true);
+    assert.deepStrictEqual(['1', '0', 'x', null, undefined].map(modeChosen), [true, true, false, false, false]);
+  });
+
+  it('is never in Read where the switch does not show: no keyboard could open there, whatever is stored', () => {
+    for (const stored of ['1', '0', null]) {
+      for (const sample of [true, false]) assert.strictEqual(startInRead(stored, false, sample), false);
+    }
+  });
+
+  it('follows the script while no mode is chosen: Edit on an empty editor, Read on the sample, the same for any other script', () => {
+    assert.strictEqual(readAsTextChanges(true, 'empty'), false);
+    assert.strictEqual(readAsTextChanges(false, 'empty'), false);
+    assert.strictEqual(readAsTextChanges(false, 'sample'), true);
+    assert.strictEqual(readAsTextChanges(true, 'sample'), true);
+    assert.strictEqual(readAsTextChanges(true, 'script'), true);
+    assert.strictEqual(readAsTextChanges(false, 'script'), false);
   });
 
   it('shows the tip only on a touch screen in Edit mode, until it was seen', () => {

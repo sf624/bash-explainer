@@ -94,5 +94,16 @@ describe('the line box: where a long line may wrap in the panel', () => {
     assert.strictEqual(update('# note\n', 0).lineShown, true);
     assert.strictEqual(showsLineBox(''), false);
     assert.strictEqual(showsLineBox(' x '), true);
+    // Only bash's blanks count as nothing: a no-break or an ideographic space is a character to see.
+    assert.strictEqual(showsLineBox(' \t '), false);
+    assert.strictEqual(showsLineBox('\u3000'), true);
+    assert.strictEqual(showsLineBox('\u00a0'), true);
+    // A line of blanks has rows of its own in a heredoc, a quoted string, an array and a pipeline: only the box goes.
+    for (const [text, line] of [['cat <<EOF\n  \nEOF\n', 1], ['echo "a\n  \nb"\n', 1], ['a=(\n  \n1)\n', 1], ['a |\n  \n b\n', 1]] as const) {
+      const doc = docOf(text);
+      const up = panelUpdate({ lang: 'en', explanation: new Analyzer('en').explainLine(doc.tree, line, 'bash'), file: 'a', line, lineText: doc.lines[line], doc, choice: {}, placement: 'first', animations: true });
+      assert.strictEqual(up.lineShown, false, text);
+      assert.ok(up.rows.length > 0, text);
+    }
   });
 });
