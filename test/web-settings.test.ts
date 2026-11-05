@@ -4,7 +4,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { classicScrollbars, openSite, choose, currentShell, openSettingsSection, setShell, problemList, problemsShown, settingControl, stable, until } from './support/site';
+import { classicScrollbars, cursorToLine, FRAMES, MARK_READING, openSite, choose, currentShell, openSettingsSection, READ_MARK, ReadingPlace, readingMoved, setShell, problemList, problemsShown, settingControl, stable, until } from './support/site';
 
 describe('the web page: theme and settings', function () {
   this.timeout(120000);
@@ -678,45 +678,348 @@ describe('the web page: theme and settings', function () {
       return b.top >= box.top - 1 && b.top < box.bottom;
     })()`) as Promise<boolean>;
     assert.strictEqual(await cursorInView(), true);
-    // Two ways to read: a row with the focus, far down; a row at the top of the pane, with the focus elsewhere.
-    for (const focused of [true, false]) {
-      await panel().evaluate(`(() => {
-        const row = document.querySelectorAll('#tree .row')[45];
-        row.tabIndex = -1;
-        window.scrollTo(0, 0);
-        window.scrollTo(0, row.getBoundingClientRect().top - ${focused ? 300 : 120});
-        ${focused ? 'row.focus({ preventScroll: true })' : 'document.activeElement.blur()'};
-      })()`);
-      await page.waitForTimeout(100);
-      // (The row under the sticky rows, when no row has the focus: what the eye reads first.)
-      const mark = `(() => {
-        const under = document.getElementById('top').getBoundingClientRect().bottom;
-        const row = ${focused ? "document.activeElement" : "document.elementFromPoint(innerWidth / 2, under + 1)"};
-        window.kept = row;
-        return { top: row.getBoundingClientRect().top, y: scrollY, id: row.tagName };
-      })()`;
-      const was = await panel().evaluate(mark) as { top: number; y: number };
-      assert.ok(was.y > 300, JSON.stringify(was));
-      // (Where the sticky rows have wrapped over the place it was, it lies right under them: still in view.)
-      const top = () => panel().evaluate("({ top: window.kept.getBoundingClientRect().top, under: document.getElementById('top').getBoundingClientRect().bottom })") as Promise<{ top: number; under: number }>;
-      const near = (at: { top: number; under: number }, what: string) => assert.ok(Math.abs(at.top - Math.max(was.top, at.under)) <= 3, `${what}, focused ${focused}: ${JSON.stringify(at)} after ${JSON.stringify(was)}`);
-      await opened(page);
-      await page.waitForTimeout(200);
-      near(await top(), 'opened');
-      assert.strictEqual(await cursorInView(), true, 'the cursor\'s line, opened');
-      await page.locator('#settings-open').click();
-      await until('closed', () => isOpen(page), (v) => !v);
-      await page.waitForTimeout(300);
-      near(await top(), 'closed');
-      assert.strictEqual(await cursorInView(), true, 'the cursor\'s line, closed');
-    }
+    // A row with the focus, far down, stays where it is.
+    await panel().evaluate(`(async () => {
+      const row = document.querySelectorAll('#tree .row')[45];
+      row.tabIndex = -1;
+      window.scrollTo(0, 0);
+      window.scrollTo(0, row.getBoundingClientRect().top - 300);
+      row.focus({ preventScroll: true });
+      window.kept = row;
+      await ${FRAMES};
+    })()`);
+    const focusedAt = () => panel().evaluate("({ top: window.kept.getBoundingClientRect().top, under: document.getElementById('top').getBoundingClientRect().bottom })") as Promise<{ top: number; under: number }>;
+    const was = await focusedAt();
+    const near = (at: { top: number; under: number }, what: string) => assert.ok(Math.abs(at.top - was.top) <= 3, `${what}: ${JSON.stringify(at)} after ${JSON.stringify(was)}`);
+    await opened(page);
+    near(await stable('the row', focusedAt), 'opened');
+    assert.strictEqual(await stable('the cursor\'s line', cursorInView), true, 'the cursor\'s line, opened');
+    await page.locator('#settings-open').click();
+    await until('closed', () => isOpen(page), (v) => !v);
+    near(await stable('the row', focusedAt), 'closed');
+    assert.strictEqual(await stable('the cursor\'s line', cursorInView), true, 'the cursor\'s line, closed');
     // A cursor the viewer has scrolled away from stays away: the sheet does not bring it back.
     await page.evaluate("document.querySelector('.cm-scroller').scrollTop = 0");
-    await page.waitForTimeout(200);
-    assert.strictEqual(await cursorInView(), false);
+    await until('the cursor out of view', cursorInView, (v) => !v);
     await opened(page);
-    await page.waitForTimeout(200);
-    assert.strictEqual(await cursorInView(), false);
+    assert.strictEqual(await stable('the cursor\'s line', cursorInView), false);
+    await ctx.close();
+  });
+
+  const moved = (from: ReadingPlace, to: ReadingPlace, what: string) => assert.ok(readingMoved(from, to), `${what}: from ${JSON.stringify(from)} to ${JSON.stringify(to)}`);
+  const stages = ['grep -v "^#"', "sed -e 's/foo/bar/g'", "awk '{ print $1, $3 }'", 'sort -u', 'cut -d: -f1,2', 'tr a-z A-Z', 'uniq -c', 'head -n 20', 'tail -n +2', 'wc -l'];
+  const LONG_PIPELINE = `cat /var/log/app.log | ${Array.from({ length: 36 }, (_, i) => stages[i % stages.length]).join(' | ')}`;
+  /** With no motion, so that a width is there at once: the slide changes the frame's width once, as this does. */
+  const reading = async (script: string, line: number) => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText(script);
+    await cursorToLine(page, line);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the rows', async () => panel().locator('#tree .row').count(), (n) => n > 20);
+    await stable('the height', () => panel().evaluate('document.documentElement.scrollHeight'));
+    await panel().evaluate('document.activeElement.blur()');
+    const go = async (y: number | string) => {
+      await panel().evaluate(`(async () => { scrollTo({ top: ${y}, behavior: 'instant' }); await ${FRAMES}; })()`);
+      return await panel().evaluate(MARK_READING) as ReadingPlace;
+    };
+    const after = async (act: string) => {
+      await page.evaluate(`(async () => { ${act}; await ${FRAMES}; })()`);
+      await panel().evaluate(FRAMES);
+      return await panel().evaluate(READ_MARK) as ReadingPlace;
+    };
+    const step = (key: string) => `document.getElementById('splitter').dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', shiftKey: true, bubbles: true, cancelable: true }))`;
+    const gear = "document.getElementById('settings-open').click()";
+    return { ctx, page, panel, go, after, step, gear };
+  };
+
+  it('keeps the text at the reading line in place when the panel\'s width changes: in a row that starts above it, between two rows, in a tall example, and at the ends', async function () {
+    this.timeout(120000);
+    const { ctx, panel, go, after, step, gear } = await reading(`${LONG_PIPELINE}\n`, 1);
+    /** Each kind of place, as a scroll position that puts the reading line there. */
+    const positions = await panel().evaluate(`(() => {
+      const under = document.getElementById('top').getBoundingClientRect().bottom;
+      const page = (e) => e.getBoundingClientRect().top + scrollY;
+      const rows = [...document.querySelectorAll('#tree .row')].filter((r) => r.getClientRects().length);
+      const tallRow = rows.reduce((a, b) => (b.offsetHeight > a.offsetHeight ? b : a));
+      const gap = rows.findIndex((r, i) => i > 8 && rows[i + 1] && page(rows[i + 1]) - (page(r) + r.offsetHeight) > 4);
+      const tall = [...document.querySelectorAll('#tree li > .item > :not(.row)')].filter((e) => e.getClientRects().length).reduce((a, b) => (b.offsetHeight > a.offsetHeight ? b : a));
+      const at = (y) => y - under - 1;
+      return {
+        'a row that starts above the line': at(page(tallRow) + tallRow.offsetHeight * 0.6),
+        'between two rows': at(page(rows[gap]) + rows[gap].offsetHeight + 2),
+        'a tall example': at(page(tall) + tall.offsetHeight * 0.5),
+        'a tall height': tall.offsetHeight,
+        'the very bottom': document.documentElement.scrollHeight - innerHeight,
+      };
+    })()`) as Record<string, number>;
+    assert.ok(positions['a tall height'] > 150, JSON.stringify(positions));
+    const { 'a tall height': _, ...places } = positions;
+    for (const [what, y] of Object.entries(places)) {
+      const from = await go(y);
+      assert.ok(from.y > 300, `${what}: ${JSON.stringify(from)}`);
+      moved(from, await after(step('ArrowRight')), `${what}, a step narrower`);
+      moved(from, await after(step('ArrowLeft')), `${what}, and back`);
+      moved(from, await after(gear), `${what}, the settings opened`);
+      moved(from, await after(gear), `${what}, the settings closed`);
+    }
+    // At the very top the page stays at its top, whatever grows under the sticky rows.
+    await go(0);
+    await after(gear);
+    assert.strictEqual(await panel().evaluate('scrollY'), 0);
+    await after(gear);
+    assert.strictEqual(await panel().evaluate('scrollY'), 0);
+    // A scroll of the viewer's own takes a new place: what comes next keeps that one, not the last.
+    const first = await go(2000);
+    await after(step('ArrowRight'));
+    const second = await go(3000);
+    assert.notStrictEqual(first.text + first.top, second.text + second.top + 1);
+    moved(second, await after(step('ArrowLeft')), 'a place taken after the scroll');
+    await ctx.close();
+  });
+
+  it('keeps the text at the reading line in place at every scroll position, on a long pipeline and on a line of the sample', async function () {
+    this.timeout(180000);
+    const sample = fs.readFileSync('test/fixtures/sample.sh', 'utf8');
+    for (const [script, line, step] of [[`${LONG_PIPELINE}\n`, 1, 211], [sample, 8, 53]] as const) {
+      const { ctx, panel, go, after, step: nudge, gear } = await reading(script, line);
+      const end = await panel().evaluate('document.documentElement.scrollHeight - innerHeight') as number;
+      assert.ok(end > 800, `the range: ${end}`);
+      for (let y = 0; y < end + step; y += step) {
+        const at = Math.min(y, end);
+        const from = await go(at);
+        // (At the very top the page stays at its top: below.)
+        if (!from.y) continue;
+        moved(from, await after(nudge('ArrowRight')), `${at}, a step narrower`);
+        moved(from, await after(nudge('ArrowLeft')), `${at}, and back`);
+        moved(await go(at), await after(gear), `${at}, the settings opened`);
+        // (From where it started: the drift of a round trip.)
+        const back = await after(gear);
+        assert.ok(Math.abs(back.top - from.top) <= 2, `${at}, the settings closed: ${JSON.stringify(back)} after ${JSON.stringify(from)}`);
+      }
+      await ctx.close();
+    }
+  });
+
+  /** What holds still while the sheet moves is let go: nothing of a move is left on the sheet or the panes. */
+  const leftOfMove = (page: Page) => page.evaluate(`(() => ({
+    sheet: document.getElementById('settings-dialog').className,
+    frame: document.getElementById('panel').getAttribute('style'),
+    text: document.querySelector('.cm-editor').getAttribute('style'),
+  }))()`) as Promise<{ sheet: string; frame: string | null; text: string | null }>;
+  const atRest = { sheet: 'sheet', frame: null, text: null };
+
+  it('ends a move that never ran: asked to close and to open again before a frame is drawn, and the frame then fills its pane in any new width', async function () {
+    this.timeout(60000);
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 700 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    await opened(page);
+    assert.deepStrictEqual(await leftOfMove(page), atRest);
+    // (As two clicks that arrive together when the page has been busy: no style pass between them.)
+    await page.evaluate(`(async () => {
+      const gear = document.getElementById('settings-open');
+      gear.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      gear.click();
+    })()`);
+    await until('the end of the move', () => leftOfMove(page), (v) => v.sheet === 'sheet');
+    assert.deepStrictEqual(await leftOfMove(page), atRest);
+    assert.strictEqual(await isOpen(page), true);
+    await page.setViewportSize({ width: 800, height: 700 });
+    const b = await stable('the resized boxes', () => boxes(page).then((x) => JSON.stringify(x))).then((x) => JSON.parse(x) as Awaited<ReturnType<typeof boxes>>);
+    assert.ok(Math.abs(b.panel.width - b.side.width) < 1.5, JSON.stringify(b));
+    // A browser that runs no transition of it at all, though it was not asked for reduced motion: no event will come.
+    await page.locator('#settings-open').click();
+    await until('closed', () => isOpen(page), (v) => !v);
+    await page.addStyleTag({ content: 'main, #settings-dialog { transition: none !important; }' });
+    await page.locator('#settings-open').click();
+    await until('open', () => isOpen(page), (v) => v);
+    await until('the end of the move', () => leftOfMove(page), (v) => v.sheet === 'sheet');
+    assert.deepStrictEqual(await leftOfMove(page), atRest);
+    await ctx.close();
+  });
+
+  it('ends a move when reduced motion comes on in the middle of it, opening and closing', async function () {
+    this.timeout(60000);
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 700 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    const before = await boxes(page);
+    // (A slow move, so that it is still going when the switch comes.)
+    await page.addStyleTag({ content: 'html { --sheet-time: 20s; }' });
+    const going = () => page.locator('#settings-dialog').evaluate((d) => d.getAnimations().length > 0 && !d.classList.contains('holding'));
+    await page.locator('#settings-open').click();
+    await until('the sheet moving', going, (v) => v);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await until('the end of opening', () => leftOfMove(page), (v) => v.sheet === 'sheet', 3000);
+    assert.deepStrictEqual(await leftOfMove(page), atRest);
+    assert.strictEqual(await isOpen(page), true);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    // (Without the safety timer of closing: its own end, or nothing in the 20 s.)
+    await page.evaluate(`(() => {
+      const set = window.setTimeout;
+      window.setTimeout = (f, ms, ...rest) => (ms === 500 ? 0 : set(f, ms, ...rest));
+    })()`);
+    await page.locator('#settings-open').click();
+    await until('the sheet moving', going, (v) => v);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await until('the end of closing', () => isOpen(page), (v) => !v, 3000);
+    await until('the end of closing', () => leftOfMove(page), (v) => v.sheet === 'sheet', 3000);
+    assert.deepStrictEqual(await leftOfMove(page), atRest);
+    assert.deepStrictEqual(await boxes(page).then((b) => [b.pane, b.side]), [before.pane, before.side]);
+    await ctx.close();
+  });
+
+  it('lets go of a swipe when the window crosses to the narrow layout under the finger', async function () {
+    this.timeout(60000);
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 700 }, hasTouch: true });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    const before = await boxes(page);
+    await opened(page);
+    const cdp = await ctx.newCDPSession(page);
+    const touch = (type: string, x?: number) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x === undefined ? [] : [{ x, y: 300 }] } as never);
+    await touch('touchStart', 900);
+    for (let i = 1; i <= 4; i++) await touch('touchMove', 900 + i * 25);
+    const held = () => page.evaluate(`[document.querySelector('main').style.getPropertyValue('--sheet-in'), document.getElementById('settings-dialog').style.getPropertyValue('--sheet-in'), document.getElementById('settings-dialog').className].join()`) as Promise<string>;
+    await until('the hold', held, (v) => /dragging/.test(v));
+    await page.setViewportSize({ width: 700, height: 700 });
+    await until('the sheet modal', () => page.evaluate("document.getElementById('settings-dialog').matches(':modal')"), (v) => v === true);
+    await until('the hold let go', held, (v) => v === ',,sheet');
+    await touch('touchEnd').catch(() => undefined);
+    // Back in the wide layout and closed: the page has the whole window again.
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await until('the sheet beside the panes', () => page.evaluate("document.getElementById('settings-dialog').matches(':modal')"), (v) => v === false);
+    assert.strictEqual(await held(), ',,sheet');
+    await page.locator('#settings-open').click();
+    await until('closed', () => isOpen(page), (v) => !v);
+    await stable('at rest', () => boxes(page).then((b) => JSON.stringify(b)));
+    assert.deepStrictEqual(await boxes(page).then((b) => [b.pane, b.side]), [before.pane, before.side]);
+    await ctx.close();
+  });
+
+  it('keeps the share chosen when the divider did not move on the screen, and says what the divider shows while the sheet is open', async function () {
+    this.timeout(60000);
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 768, height: 700 } });
+    await ctx.addInitScript("try { if (!sessionStorage.getItem('stored')) { sessionStorage.setItem('stored', '1'); localStorage.setItem('bash-explainer-split', JSON.stringify({ wide: 15 })); } } catch {}");
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    const stored = () => page.evaluate("JSON.parse(localStorage.getItem('bash-explainer-split'))") as Promise<{ wide: number }>;
+    const aria = () => page.locator('#splitter').evaluate((h) => ['valuemin', 'valuenow', 'valuemax'].map((a) => Number(h.getAttribute(`aria-${a}`))));
+    assert.deepStrictEqual(await aria(), [15, 15, 85]);
+    const shut = await boxes(page);
+    assert.ok(Math.abs(shut.pane.width - 115.2) < 1, JSON.stringify(shut.pane));
+    await opened(page);
+    // Beside the sheet the editor holds its floor: 190 px of 512 is 37 %, and the divider goes as far as the panel's floor leaves it.
+    const at = await boxes(page);
+    assert.ok(Math.abs(at.pane.width - 190) < 1, JSON.stringify(at.pane));
+    const full = at.sheet.left;
+    const low = Math.round((190 / full) * 100);
+    const high = Math.round(((full - at.split.width - 200) / full) * 100);
+    assert.deepStrictEqual(await until('what it says', aria, (v) => v[1] === low), [low, low, high]);
+    // A key, a press and a release, and a small move: against the floor nothing changes on the screen, so nothing is kept.
+    await page.locator('#splitter').focus();
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Home');
+    const x = at.split.left + at.split.width / 2;
+    await page.mouse.move(x, 300);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.mouse.down();
+    await page.mouse.move(x - 1, 300);
+    await page.mouse.up();
+    assert.deepStrictEqual(await stored(), { wide: 15 });
+    await page.locator('#settings-open').click();
+    await until('closed', () => isOpen(page), (v) => !v);
+    await stable('at rest', () => boxes(page).then((b) => JSON.stringify(b)));
+    assert.ok(Math.abs((await boxes(page)).pane.width - 115.2) < 1, 'the share kept');
+    assert.deepStrictEqual(await until('what it says, closed', aria, (v) => v[1] === 15), [15, 15, 85]);
+    // A move that shows takes its value from where the divider is shown.
+    await opened(page);
+    await page.locator('#splitter').focus();
+    await page.keyboard.press('ArrowRight');
+    assert.ok(Math.abs((await stored()).wide - ((190 / full) * 100 + 5)) < 0.01, JSON.stringify(await stored()));
+    assert.strictEqual((await aria())[1], low + 5);
+    await ctx.close();
+  });
+
+  it('keeps the editor\'s ⋯ menu in the window, and the Problems strip in its pane, at every width of the editor beside the settings', async function () {
+    this.timeout(180000);
+    const sample = fs.readFileSync('test/fixtures/sample.sh', 'utf8');
+    for (const locale of ['en-US', 'ja-JP']) {
+      const ctx = await browser.newContext({ locale, viewport: { width: 1280, height: 700 } });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('.cm-line').first().waitFor();
+      await page.locator('.cm-content').click();
+      await page.keyboard.press('Control+A');
+      // Counts of two digits at each level, and a problem chosen, so that its place shows.
+      await page.keyboard.insertText(sample.repeat(11));
+      await until('the counts', () => page.locator('#problems-counts .count').allTextContents(), (c) => c.length === 3 && c.every((n) => /\d\d/.test(n)));
+      await page.keyboard.press('F8');
+      await until('the place', () => page.locator('#problem-pos-text').textContent(), (t) => !!t);
+      for (const [width, split, sheet] of [[768, 'Enter', true], [900, 'Enter', true], [768, 'Home', true], [1280, 'Enter', true], [1280, 'Home', false], [1000, 'Home', false], [768, 'Home', false]] as const) {
+        await page.setViewportSize({ width, height: 700 });
+        if ((await isOpen(page)) !== sheet) await page.evaluate("document.getElementById('settings-open').click()");
+        await until('the sheet', () => page.locator('#settings-dialog').evaluate((d) => (d as unknown as { open: boolean }).open && !d.classList.contains('moving')), (v) => v === sheet);
+        await page.locator('#splitter').focus();
+        await page.keyboard.press(split);
+        await stable('at rest', () => boxes(page).then((b) => JSON.stringify(b)));
+        const seen = `${locale} ${width} ${split} ${sheet}`;
+        const strip = await page.evaluate(`(() => {
+          const r = (e) => e.getBoundingClientRect();
+          const st = document.querySelector('.problems-strip');
+          const box = r(document.getElementById('problems-counts'));
+          const shown = [...document.querySelectorAll('#problems-counts .count')].filter((c) => r(c).top < box.bottom - 1 && r(c).right <= box.right + 0.5);
+          return {
+            over: st.scrollWidth - st.clientWidth, pane: r(document.querySelector('main > .source')).right,
+            order: ['#problems-toggle', '#problem-pos', '#problem-prev', '#problem-next'].map((q) => [r(document.querySelector(q)).left, r(document.querySelector(q)).right]),
+            counts: box.right, shown: shown.length, said: document.getElementById('problems-said').textContent,
+          };
+        })()`) as { over: number; pane: number; order: [number, number][]; counts: number; shown: number; said: string };
+        const said = `${seen}: ${JSON.stringify(strip)}`;
+        assert.ok(strip.over <= 0, said);
+        // In one row, none over the next, and what is dropped goes whole, down to the highest level: the pane's edge cuts nothing.
+        strip.order.forEach(([, right], i) => assert.ok(right <= (strip.order[i + 1]?.[0] ?? strip.pane) + 0.5, said));
+        assert.ok(strip.counts <= strip.order[1][0] + 0.5, said);
+        if (sheet) assert.ok(strip.shown >= 1, said);
+        // A screen reader has them all.
+        assert.ok(/11.*55.*77/.test(strip.said), said);
+        await page.locator('#ed-more').click();
+        const menu = await page.evaluate(`(() => {
+          const m = document.getElementById('ed-more-menu');
+          const b = m.getBoundingClientRect();
+          const on = (x, y) => m.contains(document.elementFromPoint(x, y));
+          return { left: b.left, right: b.right, on: [on(b.left + 12, b.top + 20), on(b.right - 12, b.top + 20), on(b.left + 12, b.bottom - 20), on(b.right - 12, b.bottom - 20)] };
+        })()`) as { left: number; right: number; on: boolean[] };
+        assert.ok(menu.left >= 0 && menu.right <= width, `${seen}: ${JSON.stringify(menu)}`);
+        assert.deepStrictEqual(menu.on, [true, true, true, true], seen);
+        await page.keyboard.press('Escape');
+      }
+      await ctx.close();
+    }
+    // With nothing to count, the words stay.
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 768, height: 700 } });
+    await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-split', ${JSON.stringify(JSON.stringify({ wide: 15 }))}); } catch {}`);
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('echo hello\n');
+    await until('no problems', () => page.locator('#problems').getAttribute('class'), (c) => !!c?.includes('empty'));
+    await opened(page);
+    assert.strictEqual(await page.locator('#problems-title').isVisible(), true);
     await ctx.close();
   });
 
@@ -818,8 +1121,7 @@ describe('the web page: theme and settings', function () {
       // A wheel over the sheet's head does not scroll the page behind it.
       await page.mouse.move(width / 2, 30);
       await page.mouse.wheel(0, 400);
-      await page.waitForTimeout(150);
-      assert.strictEqual(await page.evaluate('window.scrollY'), 0, seen);
+      assert.strictEqual(await stable('the page', () => page.evaluate('window.scrollY')), 0, seen);
       // × slides it out to the right, the edge it came from.
       const out = await page.evaluate(`(() => { document.getElementById('settings-close').click(); return document.getElementById('settings-dialog').style.transform; })()`);
       assert.strictEqual(out, 'translateX(100%)', seen);
@@ -837,7 +1139,7 @@ describe('the web page: theme and settings', function () {
     }
   });
 
-  it('holds the panes\' floors beside the sheet, each giving up width to the other only there, and opens as a modal dialog when the floors do not fit', async function () {
+  it('holds the panes\' floors beside the sheet, each giving up width to the other only there', async function () {
     this.timeout(120000);
     // The panes keep their ratio until one would go below its floor (page.css: 190 px, 200 px).
     for (const [width, share, editor, side] of [[768, 50, 256, 249], [768, 37, 190, 315], [768, 15, 190, 315], [768, 60, 305, 200], [768, 85, 305, 200], [1280, 15, 190, 656.33], [1280, 85, 646.33, 200]] as const) {
@@ -860,16 +1162,6 @@ describe('the web page: theme and settings', function () {
       assert.deepStrictEqual(await boxes(page), before, seen);
       await ctx.close();
     }
-    // When the panes' floors and the sheet do not fit (none of today's windows: at 768 px they leave 115 px), `shouldBeModal` opens it modal.
-    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1000, height: 700 } });
-    const page = await ctx.newPage();
-    await page.goto(base);
-    await page.locator('.cm-line').first().waitFor();
-    await page.addStyleTag({ content: 'html { --panel-floor: 500px; }' });
-    await page.locator('#settings-open').click();
-    await until('open', () => isOpen(page), (v) => v);
-    assert.strictEqual(await page.evaluate("document.getElementById('settings-dialog').matches(':modal')"), true);
-    await ctx.close();
   });
 
   it('keeps the divider live while the sheet is open: dragged or moved with the keys, the panes follow, up to their floors, and closing keeps the new share', async function () {
@@ -1321,8 +1613,8 @@ describe('the web page: theme and settings', function () {
     await until('the panel follows', () => panel().locator('#tree').innerText(), (t) => t.includes('zz'));
     // Esc in the editor keeps its own use there (Esc, then Tab, leaves the editor, as with the sheet shut): the sheet stays.
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(400);
-    assert.strictEqual(await isOpen(page), true);
+    await page.evaluate(FRAMES);
+    assert.deepStrictEqual(await page.locator('#settings-dialog').evaluate((d) => [(d as unknown as { open: boolean }).open, d.classList.contains('closing')]), [true, false]);
     await page.keyboard.press('Tab');
     assert.strictEqual(await page.evaluate("document.activeElement.classList.contains('cm-content')"), false);
     assert.strictEqual(await text(), `${script} zz`);
@@ -1349,7 +1641,6 @@ describe('the web page: theme and settings', function () {
     for (const [key, to] of [['F6', 'toast'], ['F6', 'editor'], ['F6', 'panel'], ['F6', 'sheet'], ['Shift+F6', 'panel'], ['Shift+F6', 'editor'], ['Shift+F6', 'toast'], ['Shift+F6', 'sheet'], ['Shift+F6', 'panel']] as const) {
       await page.keyboard.press(key);
       await until(`${key} to ${to}`, part, (w) => w === to);
-      await page.waitForTimeout(100);
     }
     // Ctrl+S from the panel too.
     const [again] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+S')]);

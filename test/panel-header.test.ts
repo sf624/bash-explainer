@@ -5,7 +5,7 @@
 import * as assert from 'assert';
 import type { Browser, Page } from 'playwright-core';
 import { PanelServer, PanelTheme, servePanel } from './support/panel-page';
-import { frames, until } from './support/site';
+import { FRAMES, frames, MARK_READING, READ_MARK, ReadingPlace, readingMoved, until } from './support/site';
 
 describe('the VS Code panel: its header', function () {
   this.timeout(60000);
@@ -43,6 +43,69 @@ describe('the VS Code panel: its header', function () {
   }
   const posted = (page: Page) => page.evaluate('window.POSTED.map((m) => m.type)') as Promise<string[]>;
   const icon = (page: Page, id: string) => page.evaluate(`(() => { const s = document.querySelector('#${id} svg'); return s.dataset.icon + ' ' + s.querySelectorAll('path').length; })()`) as Promise<string>;
+
+  it('keeps the text at the reading line in place when the panel\'s width changes, at every scroll position', async function () {
+    this.timeout(120000);
+    const stages = ['grep -v "^#"', "sed -e 's/foo/bar/g'", "awk '{ print $1, $3 }'", 'sort -u', 'cut -d: -f1,2', 'tr a-z A-Z', 'uniq -c', 'head -n 20'];
+    const long = await servePanel(`cat app.log | ${Array.from({ length: 24 }, (_, i) => stages[i % stages.length]).join(' | ')}`, 'long.sh');
+    try {
+      const page = await open('dark', 600, 'en', long);
+      const end = await page.evaluate('document.documentElement.scrollHeight - innerHeight') as number;
+      assert.ok(end > 1000, `the range: ${end}`);
+      const go = async (y: number) => {
+        await page.evaluate(`(async () => { scrollTo({ top: ${y}, behavior: 'instant' }); await ${FRAMES}; })()`);
+        return await page.evaluate(MARK_READING) as ReadingPlace;
+      };
+      const widen = async (width: number) => {
+        await page.setViewportSize({ width, height: 420 });
+        await until('the new width', () => page.evaluate('innerWidth'), (w) => w === width);
+        await page.evaluate(FRAMES);
+        return await page.evaluate(READ_MARK) as ReadingPlace;
+      };
+      const check = (from: ReadingPlace, to: ReadingPlace, what: string) => assert.ok(readingMoved(from, to), `${what}: ${JSON.stringify(from)} to ${JSON.stringify(to)}`);
+      for (let y = 97; y < end; y += 197) {
+        const from = await go(y);
+        check(from, await widen(594), `${y}, a little narrower`);
+        check(from, await widen(400), `${y}, much narrower`);
+        const back = await widen(600);
+        assert.ok(Math.abs(back.top - from.top) <= 2, `${y}, back: ${JSON.stringify(from)} to ${JSON.stringify(back)}`);
+      }
+      assert.deepStrictEqual(page.errors, []);
+      await page.close();
+    } finally {
+      await long.close();
+    }
+  });
+
+  it('finds the text at the reading line also in a browser with only `caretRangeFromPoint`', async () => {
+    const stages = ['grep -v "^#"', "sed -e 's/foo/bar/g'", "awk '{ print $1, $3 }'", 'sort -u'];
+    const long = await servePanel(`cat app.log | ${Array.from({ length: 24 }, (_, i) => stages[i % stages.length]).join(' | ')}`, 'long.sh');
+    try {
+      const page = await browser!.newPage({ viewport: { width: 600, height: 420 } });
+      await page.addInitScript('delete Document.prototype.caretPositionFromPoint');
+      await page.goto(long.url());
+      await until('the rows', () => page.locator('#tree .row').count(), (n) => n > 20);
+      // A row half way down, at the reading line, with the rows above it to rewrap.
+      const mark = `(async () => {
+        const rows = [...document.querySelectorAll('#tree .row')].filter((r) => r.getClientRects().length);
+        const row = rows[rows.length >> 1];
+        const under = document.getElementById('top').getBoundingClientRect().bottom;
+        scrollTo({ top: row.getBoundingClientRect().top + scrollY - under - 1, behavior: 'instant' });
+        await ${FRAMES};
+        window.kept = row;
+        return row.getBoundingClientRect().top;
+      })()`;
+      const top = await page.evaluate(mark) as number;
+      await page.setViewportSize({ width: 400, height: 420 });
+      await until('the new width', () => page.evaluate('innerWidth'), (w) => w === 400);
+      await page.evaluate(FRAMES);
+      const now = await page.evaluate("({ top: window.kept.getBoundingClientRect().top, under: document.getElementById('top').getBoundingClientRect().bottom })") as { top: number; under: number };
+      assert.ok(Math.abs(now.top - Math.max(top, now.under)) <= 30, JSON.stringify([top, now]));
+      await page.close();
+    } finally {
+      await long.close();
+    }
+  });
 
   it('names every icon button, as its tooltip and its accessible name, and draws its icon', async () => {
     const page = await open();
