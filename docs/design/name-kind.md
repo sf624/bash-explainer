@@ -14,7 +14,7 @@ What a command name can be (3.7.2, in bash's order), and the badge:
 | alias | alias / エイリアス | solid | `ll` after `shopt -s expand_aliases; alias ll='ls -l'` |
 | function | function / 関数 | solid | `f` after `f() { …; }` |
 | builtin | builtin / ビルトイン | solid | `cd`, `echo`, `[` |
-| program | program / プログラム | solid, the muted colour (dashed before the panel's chips were quietened: dashed now says only "received changed") | `ls`, `apt-get`, `echo` under `sudo` |
+| program | program / プログラム | solid, the muted colour (it was dashed before; dashed now marks a word received changed, a word not always one, and a construct not in POSIX sh, never a name) | `ls`, `apt-get`, `echo` under `sudo` |
 | nothing | nothing runs / 実行されない | dotted | `builtin nope` |
 
 Where the names are:
