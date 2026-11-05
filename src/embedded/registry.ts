@@ -39,6 +39,8 @@ export interface EmbeddedContext {
   given(...names: string[]): boolean;
   /** The bash release whose builtin reads the text; undefined when a program does (`env printf`). */
   bash(): BashVersion | undefined;
+  /** Whether the command is gawk (or `awk`, taken as gawk): mawk has none of its regex escapes (`\y`, `\<`…). */
+  gawk(): boolean;
   /** The shell the script is read as. */
   shell: Shell | undefined;
   /** How a constant the shell rejects is said where the text stands (`invalidHow`). */
@@ -59,7 +61,7 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   jq: (text, cx) => ({ tokens: explainJq(text, cx.lang) }),
   yq4: (text, cx) => ({ tokens: explainJq(text, cx.lang, 'yq') }),
   yq3path: (text, cx) => explainYq3Path(text, cx.lang),
-  awk: (text, cx) => ({ tokens: explainAwk(text, cx.lang) }),
+  awk: (text, cx) => ({ tokens: explainAwk(text, cx.lang, cx.gawk()) }),
   printf: (text, cx) => {
     const reader = cx.bash() ?? 'coreutils';
     // (How many values one use takes depends on the value of a hole in the format.)

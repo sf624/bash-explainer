@@ -147,9 +147,21 @@ describe('PCRE escapes and groups agree with grep -P', () => {
   });
 
   it('does not read a range where the end is a class, or an escape the class cannot hold', () => {
-    // (A class such as `\d` is a set of characters: it is no end of a range, and the "-" is not read as one.)
-    const [t] = explainRegex('[a\\d-z]', 'pcre', 'en');
-    assert.match(t.explanation, /one of "a", a digit, "-", "z"$/);
+    // (A class such as `\d` is a set of characters: it is no end of a range, and grep -P refuses a "-" next to one;
+    // Perl takes the "-" as a member, with a warning.)
+    for (const re of ['[a\\d-z]', '[\\w-.]', '[a-\\d]', '[\\d-z]', '[[:alpha:]-z]', '[^\\s-a]']) {
+      assert.strictEqual(run('grep', ['-P', '--', re], { input: 'a\n' }).status, 2, re);
+      const [t] = explainRegex(re, 'pcre', 'en');
+      assert.strictEqual(t.kind, 'error', re);
+      assert.match(t.explanation, /^Invalid range: a set such as `\\d` is at one end \(grep -P fails with "invalid range in character class"\)$/, re);
+      assert.match(explainRegex(re, 'pcre', 'ja')[0].explanation, /不正な範囲/, re);
+    }
+    for (const re of ['[-\\w.]', '[\\w-]', '[-[:alnum:]]', '[^-\\s]', '[\\w.-]', '[a-z-]']) {
+      assert.notStrictEqual(run('grep', ['-P', '--', re], { input: 'a\n' }).status, 2, re);
+      assert.notStrictEqual(explainRegex(re, 'pcre', 'en')[0].kind, 'error', re);
+    }
+    assert.match(allTokens(explainRegex('[a\\d-z]', 'pcre', 'en', { perl: true }))[0].explanation, /one of "a", a digit, "-", "z"$/);
+    assert.strictEqual(perl('print "-" =~ /[a\\d-z]/ ? "yes" : "no"'), 'yes');
     assert.match(explainRegex('[\\x41-]', 'pcre', 'en')[0].explanation, /one of the character with code 0x41 \("A"\), "-"$/);
     assert.match(explainRegex('[\\x41-\\x5a]', 'pcre', 'ja')[0].explanation, /文字コード 0x41 \("A"\)〜0x5A \("Z"\) の範囲の文字/);
     // The ends of a range that show no character, or are past Unicode, are told by their codes.
@@ -196,6 +208,16 @@ describe('Perl reads a regex before it is compiled, and the explanation says so'
     assert.match(explainRegex('\\l', 'pcre', 'ja', { perl: true })[0].explanation, /次の1文字を小文字に/);
     assert.match(explainRegex('\\u', 'pcre', 'ja', { perl: true })[0].explanation, /次の1文字を大文字に/);
     assert.match(perlTokens('\\Ux')[0].explanation, /the text "x" is upper-cased to "X"/);
+    // A variable is put in first: `\U$x\E` upper-cases its value, and "$x" is no text to change.
+    assert.strictEqual(perl('my $x = "ab"; print "AB" =~ /\\U$x\\E/ ? "yes" : "no"; print "ab" =~ /\\U$x\\E/ ? "yes" : "no"; print "Abc" =~ /^\\u$x$/ ? "yes" : "no"; print "Ab" =~ /^\\u$x$/ ? "yes" : "no"'), 'yesnonoyes');
+    assert.match(perlTokens('\\U$x\\E')[0].explanation, /^`\\U…\\E`: Perl first replaces the variables in "\$x" with their values, then the resulting text is upper-cased before the regex is read$/);
+    assert.match(perlTokens('\\L$x$y\\E')[0].explanation, /then the resulting text is lower-cased/);
+    assert.match(perlTokens('\\F$x\\E')[0].explanation, /then the resulting text is case-folded/);
+    assert.match(perlTokens('\\u$x')[0].explanation, /^`\\u\$x`: Perl first puts the value of `\$x` in, and upper-cases its first character before the regex is read$/);
+    assert.match(perlTokens('\\l${x}b')[0].explanation, /value of `\$\{x\}` in, and lower-cases its first character/);
+    assert.match(explainRegex('\\U$x\\E', 'pcre', 'ja', { perl: true })[0].explanation, /変数をまず値に置き換え、その結果の文字列を大文字に/);
+    assert.match(explainRegex('\\u$x', 'pcre', 'ja', { perl: true })[0].explanation, /値をまず入れ、その最初の1文字を大文字に/);
+    assert.match(perlTokens('\\U\\$x\\E')[0].explanation, /the text "\\\$x" is upper-cased to "\\\$X"/);
     assert.match(explainRegex('\\Ux\\E', 'pcre', 'ja', { perl: true })[0].explanation, /大文字「X」/);
     for (const c of 'ULFul') {
       const real = run('grep', ['-P', '--', `\\${c}`], { input: 'x\n' });

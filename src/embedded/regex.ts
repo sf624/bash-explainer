@@ -95,7 +95,12 @@ interface State {
   hole: { delimiter?: string; perl?: boolean };
   /** The program that reads the regex: what a backslash and a letter mean differs between them. */
   tool: RegexTool | 'perl';
+  /** mawk reads the awk regex (`\y` is the letter). */
+  mawk: boolean;
 }
+
+/** A variable Perl puts in before it reads the regex (`$x`, `${x}`, `$::x`, `$&`, `@a`). */
+const PERL_VARIABLE = /\$[\w{:&]|@[A-Za-z_{:]/;
 
 /** The program that reads a regex; `grep` stands for GNU grep, whose `-P` is the PCRE flavor. */
 export type RegexTool = 'grep' | 'sed' | 'awk' | 'bash';
@@ -109,13 +114,15 @@ export interface RegexOptions {
   perl?: boolean;
   /** The program that reads the regex (`grep` when not given, `sed` with `sedEscapes`, `perl` with `perl`). */
   tool?: RegexTool;
+  /** The awk is mawk, which has none of gawk's regex escapes (`\y`). */
+  mawk?: boolean;
 }
 
 /** Explain a regular expression as a flat sequence of tokens (groups nest their contents). */
 export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: RegexOptions = {}): EmbeddedToken[] {
   // (`\Q$x\E`: the value is plain text there, which this reader does not follow.)
   if (flavor === 'pcre' && src.includes('\\Q') && hasHole(src)) return [holeStop(0)];
-  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), names: new Map(), sedEscapes: !!opts.sedEscapes, tool: opts.perl ? 'perl' : opts.tool ?? (opts.sedEscapes ? 'sed' : 'grep'), hole: { delimiter: opts.delimiter, perl: opts.perl } };
+  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), names: new Map(), sedEscapes: !!opts.sedEscapes, tool: opts.perl ? 'perl' : opts.tool ?? (opts.sedEscapes ? 'sed' : 'grep'), hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk };
   return mergeLiterals(sequence(st, 0), st);
 }
 
@@ -369,6 +376,9 @@ function bracket(st: State): EmbeddedToken {
   if (src[i] === '^') { negated = true; i++; }
   const items: string[] = [];
   const holes: EmbeddedToken[] = [];
+  // (grep -P refuses a range that has a set at an end: `[\w-.]`, `[a-\d]`, `[[:alpha:]-z]`.)
+  let badRange = false;
+  const rangeAt = (k: number) => st.flavor === 'pcre' && st.tool === 'grep' && src[k] === '-' && k + 1 < src.length && src[k + 1] !== ']';
   let first = true;
   while (i < src.length && (src[i] !== ']' || first)) {
     first = false;
@@ -388,6 +398,7 @@ function bracket(st: State): EmbeddedToken {
       const d = CLASSES[cls[1]];
       items.push(d ? s(d[0], d[1]) : cls[0]);
       i += cls[0].length;
+      if (rangeAt(i)) badRange = true;
       continue;
     }
     const se = charEscape(st, i);
@@ -396,10 +407,17 @@ function bracket(st: State): EmbeddedToken {
       i += se.length;
       continue;
     }
+    if (st.tool === 'awk' && src[i] === '\\' && i + 1 < src.length) {
+      // (awk: a backslash in a class makes the next character itself, never a range or a set: `[\.]` is ".", `[\]]` is "]", `[\d]` is "d".)
+      items.push(s(`「${src[i + 1]}」`, `"${src[i + 1]}"`));
+      i += 2;
+      continue;
+    }
     if (st.flavor === 'pcre') {
       // (A character, or a range of two: `[\x00-\x7F]`. A class such as `\d` is a set, and ends no range.)
       const a = pcreClassAtom(src, i, s);
       i += a.length;
+      if (rangeAt(i) && (a.code === undefined || pcreClassAtom(src, i + 1, s).code === undefined)) badRange = true;
       if (a.code !== undefined && src[i] === '-' && i + 1 < src.length && src[i + 1] !== ']') {
         const b = pcreClassAtom(src, i + 1, s);
         if (b.code !== undefined) {
@@ -425,6 +443,7 @@ function bracket(st: State): EmbeddedToken {
     return { start, end: st.i, kind: 'error', explanation: s('`[` に対応する `]` がない', 'Unclosed `[`'), children: [] };
   }
   st.i = i + 1;
+  if (badRange) return { start, end: st.i, kind: 'error', explanation: s('範囲の端に `\\d` のような集合があり、不正な範囲（grep -P はエラーにする: invalid range in character class）', 'Invalid range: a set such as `\\d` is at one end (grep -P fails with "invalid range in character class")'), children: holes };
   const list = items.join(s('、', ', '));
   return {
     start, end: st.i, kind: 'pattern', children: holes,
@@ -494,7 +513,7 @@ function pcreEscape(st: State, start: number, c: string): EmbeddedToken | undefi
     st.i = end < 0 ? src.length : end + 2;
     const body = src.slice(start + 2, end < 0 ? src.length : end);
     // (Perl reads `$x` and `@x` in a regex before `\Q` quotes what they hold; grep -P has no variables, `$x` is the text.)
-    if (st.tool === 'perl' && /\$[\w{:&]|@[A-Za-z_{:]/.test(body.replace(/\\./g, ''))) {
+    if (st.tool === 'perl' && PERL_VARIABLE.test(body.replace(/\\./g, ''))) {
       return tok('string', s(`\`\\Q…\\E\`: 間の「${body}」の変数をまず値に置き換え、その結果の文字列をそのまま（記号も特別扱いしない）一致させる`,
         `\`\\Q…\\E\`: Perl first replaces the variables in "${body}" with their values, then takes the resulting text literally (no character in it is special)`));
     }
@@ -509,6 +528,13 @@ function pcreEscape(st: State, start: number, c: string): EmbeddedToken | undefi
     }
     const upper = c === 'U' || c === 'u';
     const change = (t: string) => (upper ? t.toUpperCase() : t.toLowerCase());
+    // (Perl puts the value of a variable in first, and changes the case of that: `\u$x` makes the first letter of the value a capital.)
+    const variable = c === 'u' || c === 'l' ? /^(?:\$\{\w+\}|\$\w+)/.exec(src.slice(start + 2))?.[0] : undefined;
+    if (variable) {
+      st.i = start + 2 + variable.length;
+      return tok('keyword', s(`\`\\${c}${variable}\`: \`${variable}\` の値をまず入れ、その最初の1文字を${upper ? '大文字' : '小文字'}にしてから正規表現として読む`,
+        `\`\\${c}${variable}\`: Perl first puts the value of \`${variable}\` in, and ${upper ? 'upper' : 'lower'}-cases its first character before the regex is read`));
+    }
     if (c === 'u' || c === 'l') {
       const next = start + 2 < src.length && src[start + 2] !== '\\' ? String.fromCodePoint(src.codePointAt(start + 2)!) : '';
       st.i = start + 2 + next.length;
@@ -518,6 +544,11 @@ function pcreEscape(st: State, start: number, c: string): EmbeddedToken | undefi
     const end = src.indexOf('\\E', start + 2);
     st.i = end < 0 ? src.length : end + 2;
     const body = src.slice(start + 2, end < 0 ? src.length : end);
+    if (PERL_VARIABLE.test(body.replace(/\\./g, ''))) {
+      const how = c === 'F' ? s('大文字小文字の区別をなくす形に', 'case-folded') : upper ? s('大文字に', 'upper-cased') : s('小文字に', 'lower-cased');
+      return tok('keyword', s(`\`\\${c}…\\E\`: 間の「${body}」の変数をまず値に置き換え、その結果の文字列を${how}してから正規表現として読む`,
+        `\`\\${c}…\\E\`: Perl first replaces the variables in "${body}" with their values, then the resulting text is ${how} before the regex is read`));
+    }
     const what = c === 'F' ? s('大文字小文字の区別をなくす形（フォールドケース）に', 'case-folded') : upper ? s(`大文字「${change(body)}」に`, `upper-cased to "${change(body)}"`) : s(`小文字「${change(body)}」に`, `lower-cased to "${change(body)}"`);
     return tok('keyword', s(`\`\\${c}…\\E\`: 間の「${body}」を${what}してから正規表現として読む`, `\`\\${c}…\\E\`: the text "${body}" is ${what} before the regex is read`));
   }
@@ -572,7 +603,7 @@ function escape(st: State): EmbeddedToken {
     st.i = start + octal[0].length;
     return { start, end: st.i, kind: 'pattern', explanation: `\`${octal[0]}\`: ${codeEscape('\\o{' + octal[0].slice(1) + '}', 0)!.text(s)}`, children: [] };
   }
-  if (st.tool === 'awk' && c === 'y') {
+  if (st.tool === 'awk' && !st.mawk && c === 'y') {
     return { start, end: st.i, kind: 'keyword', explanation: `\`\\y\`: ${s('単語の境界（gawk。文字は消費しない）', 'a word boundary (gawk; matches no character)')}`, children: [] };
   }
   // (gawk reads `\1` as the octal code 001, which awkEscapeAt has taken above; `\8` is the character 8.)

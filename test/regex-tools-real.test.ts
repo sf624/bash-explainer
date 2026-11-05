@@ -40,6 +40,18 @@ const rows: [Tool, string, string, boolean, RegExp, RegExp?][] = [
   ['awk', '\\d', 'd', true, /just "d"/, /-P/],
   ['awk', '\\w', 'a', true, /word character/],
   ['awk', '\\<a', 'a', true, /start of a word/],
+  // In an awk class a backslash makes the next character itself: `\` is no member of `[\.]`.
+  ['awk', '[\\.]', '.', true, /^Character class: one of "\."$/, /"\\"/],
+  ['awk', '[\\.]', '\\', false, /^Character class: one of "\."$/],
+  ['awk', '[\\/]', '/', true, /^Character class: one of "\/"$/, /"\\"/],
+  ['awk', '[\\/]', '\\', false, /one of "\/"$/],
+  ['awk', '[\\]]', ']', true, /^Character class: one of "\]"$/, /Literal/],
+  ['awk', '[\\]]', '\\', false, /one of "\]"$/],
+  ['awk', '[\\"]', '"', true, /^Character class: one of """$/, /"\\"/],
+  ['awk', '[\\d]', 'd', true, /^Character class: one of "d"$/, /digit/],
+  ['awk', '[\\d]', '5', false, /one of "d"$/],
+  ['awk', '[a\\-c]', 'b', false, /one of "a", "-", "c"$/, /a-c/],
+  ['awk', '[a\\-c]', '-', true, /one of "a", "-", "c"$/],
   // GNU sed.
   ['sed', '\\t', '\t', true, /^`\\t`: a tab/, /-P/],
   ['sed', '\\n', 'a\nb', true, /^`\\n`: a newline/, /-P/],
@@ -91,6 +103,18 @@ describe('the escapes of awk, sed and bash are explained as each tool reads them
     assert.match(explanations("grep -E '\\h' f", '\\h').at(-1)!, /only with `-P`/);
   });
 
+  it('mawk has none of the escapes of gawk, and the line says so', () => {
+    // (mawk reads `\y` as the letter, so `\yfoo\y` matches only "yfooy"; the example runs as gawk, so there is none.)
+    assert.strictEqual(run('mawk', ['/\\yfoo\\y/'], { input: 'foo\nyfooy\n' }).stdout.toString(), 'yfooy\n');
+    const examplesOf = (line: string) => new Analyzer('en').explainLine(parser.parse(line), 0).examples;
+    assert.deepStrictEqual(examplesOf("mawk '/\\yfoo\\y/' f"), []);
+    assert.deepStrictEqual(examplesOf("mawk '/\\<foo/' f"), []);
+    assert.ok(examplesOf("gawk '/\\yfoo\\y/' f").length > 0);
+    assert.ok(examplesOf("awk '/\\yfoo\\y/' f").length > 0);
+    assert.ok(examplesOf("mawk '/foo/' f").length > 0);
+    assert.deepStrictEqual(allTokens(explainRegex('\\y', 'ere', 'en', { tool: 'awk', mawk: true })).map((t) => t.explanation), ['Literal "y"']);
+  });
+
   it('shows the example of what the tool does, not of what JavaScript would', () => {
     // The example runner is told it is gawk: `\b` is a backspace, `\y` a boundary, `\1` an octal code, `\x41` a character.
     const ex = (p: string) => toJsRegex(p, 'ere', { sedEscapes: true, awk: true });
@@ -101,7 +125,11 @@ describe('the escapes of awk, sed and bash are explained as each tool reads them
     assert.strictEqual(ex('\\1')!.source, '\x01');
     assert.strictEqual(ex('\\052'), undefined);
     assert.strictEqual(ex('a\\'), undefined);
-    assert.strictEqual(ex('[\\]]'), undefined);
+    assert.strictEqual(ex('[\\]]')!.source, '[\\]]');
+    assert.strictEqual(ex('[\\.]')!.source, '[.]');
+    assert.strictEqual(ex('[\\d]')!.source, '[d]');
+    assert.strictEqual(ex('[a\\-c]')!.source, '[a\\-c]');
+    assert.strictEqual(ex('[\\'), undefined);
     assert.strictEqual(ex('[\\b]')!.source, '[\\x08]');
     assert.strictEqual(ex('[\\\\]')!.source, '[\\\\]');
     // GNU sed's `\b` is the word boundary.

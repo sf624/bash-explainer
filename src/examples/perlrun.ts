@@ -268,7 +268,8 @@ class Parser {
 
   private regex(pat: string, flags: string): JsRegex {
     if (/[^gimsxr]/.test(flags) || flags.includes('x')) throw new Unsupported('regex flags');
-    const re = toJsRegex(pat, 'pcre', { ignoreCase: flags.includes('i') });
+    // (`$` and `\Z` also match before the newline that ends the text, and `$_` keeps the newline of its line unless -l took it off.)
+    const re = toJsRegex(pat, 'pcre', { ignoreCase: flags.includes('i'), perlEnd: !flags.includes('m') && !/\(\?[a-z]*m/.test(pat) });
     if (!re || /\$\w|@\w/.test(pat.replace(/\\./g, '').replace(/\$$/, ''))) throw new Unsupported('regex');
     return { source: re.source, flags: re.flags + (flags.includes('m') ? 'm' : '') + (flags.includes('s') ? 's' : '') };
   }
