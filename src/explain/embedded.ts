@@ -3,13 +3,16 @@
 // in src/embedded/ (src/embedded/registry.ts); this module gives them the command whose words are explained
 // (`Explainer.command`: the regex flavour, tr's sets, the letters given), places their tokens in the source, and adds
 // the worked example of the text (src/explain/examples.ts, src/explain/examples-jq.ts).
-import type { ExampleKind, Token } from '../analyzer-types';
+import type { ExampleKind, Span, Token } from '../analyzer-types';
 import { givenOptions, values } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { YQ_SPECS } from '../dict/yq';
 import { explainEscapes } from '../embedded/format';
-import { EMBEDDED, type EmbeddedContext } from '../embedded/registry';
-import type { EmbeddedLang } from '../embedded/types';
+import { type Embedded, EMBEDDED, type EmbeddedContext } from '../embedded/registry';
+import { hasHole, HOLES, isHole, type EmbeddedLang, type EmbeddedToken, type HoleMark } from '../embedded/types';
+import { codeSpan } from '../label';
+import { countIn } from '../semantics/argwords';
+import { givesElements, joinsElements } from '../semantics/elements';
 import { awkExample } from '../examples/awk';
 import { dateExample, gitLogExample } from '../examples/commands';
 import { jqReadsInputs } from '../examples/jqsample';
@@ -18,25 +21,39 @@ import type { RerunSpec } from '../examples/rerun';
 import { sedExample, sedPattern } from '../examples/sed';
 import { NO_INPUT } from '../examples/source';
 import { featureWorks } from '../shellfeatures';
-import { type Literal, literalContent, literalOfMapped, removedBackslashes, staticWordText } from '../staticword';
+import { holedContent, type Literal, literalContent, literalOfMapped, removedBackslashes, sourceIndex, staticWordText } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import { type Explainer, memoKey } from './context';
 import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
-import { fromEmbedded, same } from './nodes';
+import { fromEmbedded, same, sourcePos } from './nodes';
 import { invalidHow } from '../arith';
 import { given, regexFlavor, trContext } from './reads';
 import { hostString } from './hoststrings';
 import { valueNote } from './words';
 
+/** What a reader made of a word: its tokens, a note on the whole, and the source of the holes it read (`holedWord`). */
+export interface EmbeddedReading { tokens: Token[]; note?: string; holes?: Span[] }
+
 /**
  * Explain the contents of a quoted or plain word written in another language (a regex, a sed script…), as the command
  * is given it: the text after quote removal (`literalContent`), whose tokens are placed over the source, escapes
- * included. A word with an expansion in it has no known text, and is not read.
+ * included. A word with an expansion in double quotes is read with the expansion as a hole (`holedWord`).
  */
-export function embedded(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): { tokens: Token[]; note?: string } | undefined {
-  const lit = literalContent(a);
+export function embedded(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): EmbeddedReading | undefined {
+  const lit = literalContent(a) ?? holedWord(cx, a);
   return lit && embeddedText(cx, lit, lang, a);
+}
+
+/**
+ * The text of a word that gives one field, with each expansion in its double quotes as a hole (`holedContent`). Not where
+ * no shell reads the words (Docker's exec form), where `$x` is text; nor for what may give several words (the fields model:
+ * `countIn`); nor for what a host pastes before the shell reads the line (`hostPasted`), which may close the quotes.
+ */
+function holedWord(cx: Explainer, a: SyntaxNode): Literal | undefined {
+  if (cx.state.noShell || countIn(a, cx.state)) return undefined;
+  const pasted = cx.opts.hostPasted;
+  return holedContent(a, (n) => !givesElements(n) && !joinsElements(n) && ![...n.text.matchAll(/\$\{?([A-Za-z_]\w*)/g)].some((m) => pasted?.includes(m[1])));
 }
 
 /**
@@ -49,13 +66,15 @@ export function embeddedValue(cx: Explainer, value: SyntaxNode, lang: EmbeddedLa
 }
 
 /** Explain `lit.text`, which sits inside `a` as `lit` describes (e.g. after `-k` in `-k3,3n`). */
-export function embeddedText(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNode): { tokens: Token[]; note?: string } | undefined {
+export function embeddedText(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNode): EmbeddedReading | undefined {
   return cx.examplesAt(a, () => embeddedTextInner(cx, lit, lang, a));
 }
 
-function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNode): { tokens: Token[]; note?: string } | undefined {
+function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNode): EmbeddedReading | undefined {
   // (A line the tool refuses runs no program: `grep -E -F PATTERN` reads the pattern in no flavour.)
   if (cx.command?.parse.refused) return undefined;
+  // (A text that holds what a hole is written as, with no hole: nothing says which it is.)
+  if (!lit.holes && hasHole(lit.text)) return undefined;
   const ecx: EmbeddedContext = {
     lang: cx.lang,
     flavor: () => regexFlavor(cx, cx.command!.nodes.findIndex((w) => same(w, a))),
@@ -67,14 +86,78 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
     shell: cx.shell,
     invalid: () => invalidHow(cx.evidenceAt(a)),
   };
-  const r = EMBEDDED[lang](lit.text, ecx);
+  const read = EMBEDDED[lang](lit.text, ecx);
+  const holes = lit.holes ? readHoles(cx, lit, lang, a, read) : undefined;
+  if (holes?.stopped) return holes.reading;
+  const r = holes ? holes.read : read;
   if (!r) return undefined;
-  guardedEmbeddedExample(cx, lang, lit.text, a);
+  // (A worked example would need a value made up for the hole.)
+  if (!lit.holes) guardedEmbeddedExample(cx, lang, lit.text, a);
   // (Where bash took a backslash away before the command read the text, `"a\\.b"`, it says what the command is given.)
   const taken = removedBackslashes(lit);
   const bash = taken.length ? cx.text('embedded-backslash-removed', { taken }) : undefined;
   const note = bash && r.note ? r.note + cx.s('。', '; ') + bash : bash ?? r.note;
-  return { tokens: r.tokens.map((t) => ({ ...fromEmbedded(t, a, lit, 'embedded'), language: lang })), note };
+  return { tokens: r.tokens.map((t) => ({ ...fromEmbedded(t, a, lit, 'embedded'), language: lang })), note, ...(holes ? { holes: holes.spans } : {}) };
+}
+
+/** The languages that are code: a hole that stops their reader says the script depends on it, and how a value is passed as data. */
+const SCRIPTS: Partial<Record<EmbeddedLang, { data?: string }>> = { sed: {}, awk: { data: '`-v name=value`' }, jq: { data: '`--arg name value`' }, yq4: {}, perl: {} };
+
+/** What is said of a hole at each place, from the catalog. */
+function holeText(cx: Explainer, value: string, mark: HoleMark): string {
+  const { place } = mark;
+  switch (place) {
+    case 'regex': return cx.text('hole-regex', { value, delimiter: mark.delimiter, perl: mark.perl, alone: mark.alone });
+    case 'repeat': return cx.text('hole-repeat', { value, written: mark.written! });
+    case 'replacement': return cx.text('hole-replacement', { value, delimiter: mark.delimiter });
+    case 'perl-replacement': return cx.text('hole-perl-replacement', { value, delimiter: mark.delimiter });
+    default: return cx.text(`hole-${place}`, { value });
+  }
+}
+
+/**
+ * A reading of a text with holes (`Literal.holes`). It stands only if the reader claimed every hole with a token of a hole
+ * (src/embedded/types.ts) and found no error, which may be the value's to mend; else the word stays unread, with a note
+ * where the text is code. The tokens have the texts of the catalog, and the source in place of each hole. `spans`: where
+ * the holes are in the source.
+ */
+function readHoles(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNode, read: ReturnType<typeof EMBEDDED[EmbeddedLang]>): { stopped: true; reading?: EmbeddedReading } | { stopped?: false; read: Embedded; spans: Span[] } {
+  const { parse, nodes } = cx.command!;
+  const source = (c: string): string => lit.holes![c];
+  const show = (text: string): string => text.replace(HOLES, source);
+  const claimed = new Set<number>();
+  let error = false;
+  const look = (t: EmbeddedToken): void => {
+    if (t.hole && isHole(lit.text[t.start])) claimed.add(t.start);
+    if (t.kind === 'error') error = true;
+    t.children.forEach(look);
+  };
+  read?.tokens.forEach(look);
+  const at: number[] = [];
+  for (let k = 0; k < lit.text.length; k++) if (isHole(lit.text[k])) at.push(k);
+  const open = at.filter((k) => !claimed.has(k));
+  if (!read || error || open.length) {
+    const script = SCRIPTS[lang];
+    const named = [...new Set((open.length ? open : at).map((k) => codeSpan(source(lit.text[k]))))];
+    return { stopped: true, ...(script ? { reading: { tokens: [], note: cx.text('hole-script', { values: named, command: parse.command, data: script.data }) } } : {}) };
+  }
+  const spans = at.map((k): Span => ({ start: sourcePos(a, sourceIndex(lit, k, false)), end: sourcePos(a, sourceIndex(lit, k + 1, true)) }));
+  const fill = (t: EmbeddedToken): EmbeddedToken => ({
+    ...t,
+    explanation: t.hole ? holeText(cx, codeSpan(source(t.hole.of ?? lit.text[t.start])), t.hole) : show(t.explanation),
+    ...(t.label ? { label: show(t.label) } : {}),
+    children: t.children.map(fill),
+  });
+  // (A value that starts with `-` is an option of the command, where the word is its first operand and the reader reads more of it. In code, the text of the hole says what the value may be.)
+  const first = parse.roles.find(({ role }) => role.role === 'operand' || role.role === 'end-of-options');
+  const dash = !SCRIPTS[lang] && lit.text.length > 1 && isHole(lit.text[0]) && first?.role.role === 'operand' && same(nodes[first.word], a)
+    ? cx.text('hole-leading-dash', { value: codeSpan(source(lit.text[0])), command: parse.command }) : undefined;
+  const tokens = read.tokens.map(fill);
+  // (The whole word is one hole: no parts for the reader to show, and what it says stands on the word, beside bash's `$x`.)
+  const whole = tokens.length === 1 && tokens[0].hole && lit.text.length === 1;
+  const said = whole ? (read.tokens[0].hole!.place === 'regex' ? cx.text('hole-regex-word') : tokens[0].explanation) : undefined;
+  const note = [...(read.note ? [show(read.note)] : []), ...(said ? [said] : []), ...(dash ? [dash] : [])].join(cx.sep());
+  return { spans: whole ? [] : spans, read: { tokens: whole ? [] : tokens, ...(note ? { note } : {}) } };
 }
 
 /** The kinds of the examples that run the embedded text on data, and may run a regex of it (a regex and a glob say so themselves). */

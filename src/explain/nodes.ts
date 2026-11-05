@@ -100,12 +100,30 @@ export const sameSpan = (a: Span, b: Span): boolean => a.start.line === b.start.
 
 /** The place of character `idx` of the text of `node` (the word may run over several lines: a backslash-newline in it). */
 export function sourcePos(node: SyntaxNode, idx: number): Pos {
-  const before = node.text.slice(0, idx);
-  const nl = before.lastIndexOf('\n');
-  const rows = before.split('\n').length - 1;
+  const lines = newlinesIn(node);
+  // (How many newlines stand before `idx`: a word of many tokens asks for many places.)
+  let [rows, high] = [0, lines.length];
+  while (rows < high) {
+    const mid = (rows + high) >> 1;
+    if (lines[mid] < idx) rows = mid + 1;
+    else high = mid;
+  }
   return rows === 0
     ? { line: node.startPosition.row, character: node.startPosition.column + idx }
-    : { line: node.startPosition.row + rows, character: idx - nl - 1 };
+    : { line: node.startPosition.row + rows, character: idx - lines[rows - 1] - 1 };
+}
+
+const NEWLINES = new WeakMap<SyntaxNode, number[]>();
+/** The places of the newlines in the text of `node`. */
+function newlinesIn(node: SyntaxNode): number[] {
+  let lines = NEWLINES.get(node);
+  if (!lines) {
+    const text = node.text;
+    lines = [];
+    for (let k = text.indexOf('\n'); k >= 0; k = text.indexOf('\n', k + 1)) lines.push(k);
+    NEWLINES.set(node, lines);
+  }
+  return lines;
 }
 
 /** A token of an embedded explainer, placed in the source; `origin`: who reads it (`shell`: bash's own globs and escapes). */
@@ -129,4 +147,33 @@ export function nested(tokens: Token[], parts: Token[]): Token[] {
     const at = out.find((t) => before(t.span.start, p.span.start) && before(p.span.end, t.span.end));
     return at ? out.map((t) => (t === at ? { ...t, children: nested(t.children, [p]) } : t)) : [...out, p];
   }, tokens));
+}
+
+/**
+ * Puts bash's tokens of the expansions at `spans`, which lie under `top`, under the tokens of `tokens` over them, the
+ * innermost at each (the tokens of the holes of an embedded text, src/explain/embedded.ts): the reader's token is over
+ * the expansion, as it is over the text of its word.
+ */
+export function graftExpansions(top: Token, tokens: readonly Token[], spans: readonly Span[]): void {
+  const key = ({ start, end }: Span): string => `${start.line}:${start.character}:${end.line}:${end.character}`;
+  const wanted = new Set(spans.map(key));
+  const parts = new Map<string, Token>();
+  const take = (t: Token): void => {
+    t.children = t.children.filter((c) => {
+      if (!wanted.has(key(c.span))) return true;
+      parts.set(key(c.span), c);
+      return false;
+    });
+    t.children.forEach(take);
+  };
+  take(top);
+  const place = (t: Token): void => {
+    t.children.forEach(place);
+    const part = parts.get(key(t.span));
+    if (part) {
+      t.children = [...t.children, part];
+      parts.delete(key(t.span));
+    }
+  };
+  tokens.forEach(place);
 }

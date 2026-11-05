@@ -548,4 +548,14 @@ In double quotes bash takes a backslash away only before `$`, a backtick, `"`, `
 - An unquoted backslash is the same: `grep a\.b f` hands grep `a.b` (any character), which the explanation reads and says; `find . -name \*.py` hands find `*.py`, and `awk \$1 f` hands awk `$1`.
 - Words with a quote in the middle (`sed 's/a/'"\1"'/'`, `date +"%F\n"`, `git log --pretty=format:"%h\t%s"`, `awk -v OFS="\t"`) are read too, and `--regexp="a\.b"` and `sed --expression="s/\./x/"`.
 - `echo -e "\\e"` hands echo `\e`, which `-e` turns into ESC: it is read now. Before, it was left alone.
-- Words with an expansion (`sed "s/$old/new/"`) are still not read.
+
+### A word with an expansion in double quotes
+
+`sed "s/$old/$new/g"`, `grep "$x\.log" f`, `find . -name "$p*.txt"`, `date +"%F $x"` are read as the command reads them, with each expansion as a piece whose value is not known. The expansion's own row stays what it was, under the row of what the command makes of it. No worked example: it would need a value made up.
+
+- In a regex (`grep`, sed's pattern and `/address/`, awk's `/…/`, perl's `s///` and `/…/`) the value is read as a regex: `.`, `*`, `[` have their meaning. A delimiter in the value ends the part early (`/` in `s/$old/…/`, `|` in `s|$k|…|`). The rest is read as if the value were a complete regex with no group of its own, as the row says. `$x*` repeats the last item of the value, not the whole value. `[$x]` adds the value's characters to the set.
+- In a replacement of sed, `&` and `\` of the value are special; in perl's, `$`, `@` and `\`. In the text of `a`, `i`, `c` a newline of the value ends the text. A value alone where sed takes an address (`sed -n "${n}p"`, `"$a,$b d"`) is said to be one, and that another value makes another command.
+- In find's patterns, `*`, `?` and `[` of the value are wildcards; in `date`'s and `printf`'s formats, `%` is a conversion; with `echo -e`, `\` is an escape; in `tr`'s sets, `a-z` and `[:upper:]` work. In an awk string, `"` ends the string.
+- A first operand that starts with the expansion and goes on (`grep "$x\.log" f`) says that a value starting with `-` is an option. A word that is only the expansion (`grep "$x" f`, `tr "$a" z`, `find . -name "$p"`) says it all on the word's row, beside bash's `$x`.
+- Where the value decides what the command is, the word stays unread, with one note: `sed "$x"`, `sed "s/a/b/$flags"`, `sed "y/$a/b/"`, `awk "$prog"`, `awk "{print \$$n}"`, `awk "BEGIN { x = $n }"`, `jq ".$key"`, `perl -e "$a; print"`: "What this script does depends on the value of `$x`", with `awk -v` and `jq --arg` as the way to pass a value as data.
+- Without a note, as before: a word that may be several (`"$@"`, `"${a[@]}"`, `"$*"`), an unquoted expansion (`sed s/$a/b/`), a backslash just before the expansion (`"\\$x"`), a hole in a count (`a{$n}`), a class (`[[:$c:]]`), `\Q$x\E`, or a conversion (`%$x`). Also not read: `--regexp="$x"`, `-e"s/$a/b/"`, and git's formats.

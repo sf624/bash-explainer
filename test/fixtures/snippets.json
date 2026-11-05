@@ -1577,6 +1577,7 @@
  "s/a/b",
  "screen -dmS web",
  "secrets.TOKEN",
+ "sed \"s/$a/b/\"",
  "sed '0,/foo/s//bar/' f",
  "sed 's/a/b/;p' f",
  "sed 's/a/b/g' f",

@@ -1,7 +1,8 @@
 import type { Lang } from '../i18n';
 import { explainPrintf } from './format';
 import { explainRegex } from './regex';
-import { EmbeddedToken, pick, shift } from './types';
+import { EmbeddedToken, hasHole, holeTokens, pick, shift } from './types';
+import { pushAll } from '../lists';
 import { wordTable } from '../wordtable';
 
 type S = (ja: string, en: string) => string;
@@ -251,7 +252,7 @@ class AwkExplainer {
 
   private regexToken(t: Lex, explanation: string): EmbeddedToken {
     const body = t.text.endsWith('/') && t.text.length > 1 ? t.text.slice(1, -1) : t.text.slice(1);
-    return this.tok(t.start, t.end, 'pattern', explanation, shift(explainRegex(body, 'ere', this.lang), t.start + 1));
+    return this.tok(t.start, t.end, 'pattern', explanation, shift(explainRegex(body, 'ere', this.lang, { delimiter: '/' }), t.start + 1));
   }
 
   private functionDef(): EmbeddedToken {
@@ -337,7 +338,8 @@ class AwkExplainer {
         // printf's format string is broken down like the shell's printf.
         const fmt = head === 'printf' && args[0]?.type === 'str' ? args[0] : undefined;
         const kids = this.atoms(toks);
-        if (fmt) kids.unshift(this.tok(fmt.start, fmt.end, 'string', s('書式文字列', 'Format string'), shift(explainPrintf(fmt.text.slice(1, -1), this.lang), fmt.start + 1)));
+        // (A format with a hole is a string with a hole, which `atoms` says.)
+        if (fmt && !hasHole(fmt.text)) kids.unshift(this.tok(fmt.start, fmt.end, 'string', s('書式文字列', 'Format string'), shift(explainPrintf(fmt.text.slice(1, -1), this.lang), fmt.start + 1)));
         return tok(expl, kids);
       }
       case 'next': return tok(s('この行の処理をここで終えて、次の行に進む', 'stop processing this line and move to the next'), []);
@@ -466,6 +468,8 @@ class AwkExplainer {
         out.push(this.tok(t.start, t.end, 'function', s('`getline`: 次の行を読み込む', '`getline`: read the next line')));
       } else if (t.type === 'regex') {
         out.push(this.regexToken(t, s(`正規表現 \`${t.text}\``, `Regex \`${t.text}\``)));
+      } else if (t.type === 'str') {
+        pushAll(out, holeTokens(this.src, t.start, t.end, 'awk-string'));
       } else if (t.type === 'op' || (t.type === 'kw' && t.text === 'in')) {
         const d: Record<string, [string, string]> = {
           '~': ['左が右の正規表現に一致する', 'the left side matches the regex'],

@@ -4,6 +4,13 @@ import { tokenText } from './messages-levels';
 
 // What the tokens of the words of a command, as src/explain/argv.ts and its modules read them say.
 
+/** What the characters of a variable's value do where a command reads it as a regex: said by a hole, and by `pattern-from-variable` (src/pitfalls.ts). */
+export const REGEX_VALUE_SPECIAL = {
+  ja: '値の中の `.`・`*`・`[` などは特別な意味を',
+  en: '`.`, `*`, `[` and the like in the value have their special meaning',
+};
+
+
 export const ARGV_TEXTS = {
   /** `$opts` as an option word: its expansion is read by the command as options. */
   'option-open': tokenText(() => [
@@ -83,6 +90,83 @@ export const ARGV_TEXTS = {
   'option-name-filter-hint': tokenText(() => [
     '（フィルタでは `$` を付けて使う）',
     ' (use it as `$name` in the filter)']),
+  /** `grep "$x\\.log" f`, `sed "s/$old/…/"`: a hole (`isHole`, src/embedded/types.ts) in a regex. */
+  'hole-regex': tokenText<{ value: string; delimiter?: string; perl?: boolean; alone?: boolean }>(({ value, delimiter, perl, alone }) => {
+    const close = delimiter && codeSpan(delimiter);
+    const ja = [`${value} の値は正規表現として読まれる`, `${REGEX_VALUE_SPECIAL.ja}持つ`];
+    const en = [`The value of ${value} is read as a regex: ${REGEX_VALUE_SPECIAL.en}`];
+    if (close) {
+      ja.push(`値の中の ${close} はパターンをそこで終わらせる`);
+      en.push(`A ${close} in it ends the pattern early`);
+    }
+    if (perl) {
+      ja.push('値の中の `$`・`@` は先に perl が展開する');
+      en.push('perl expands `$` and `@` in it first');
+    }
+    if (!alone) {
+      ja.push('前後は、値がグループを持たない完結した正規表現であるものとして読んでいる');
+      en.push('What stands around it is read as if the value were a complete regex with no group of its own');
+    }
+    return [ja.join('。'), en.join('. ')];
+  }),
+  /** `grep "$x" f`: the word is one hole, and says it is a regex: what the value does there. */
+  'hole-regex-word': tokenText(() => ['値の中の `.`・`*`・`[` は特別な意味を持つ', '`.`, `*`, `[` in the value are special']),
+  /** `[$x]`: a hole in a bracket expression. */
+  'hole-class': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値の文字がこの集合に加わる。値の中の \`]\`・\`-\`・\`^\` は特別な意味を持つ`,
+    `The characters of the value of ${value} join the set; \`]\`, \`-\` and \`^\` in it have their special meaning`]),
+  /** `$x*`: a quantifier after a hole applies to what the value ends with. */
+  'hole-repeat': tokenText<{ value: string; written: string }>(({ value, written }) => [
+    `${codeSpan(written)}: ${value} の値の最後の要素（1文字、文字の集合、グループ）を繰り返す。値全体ではない（値が空なら、${value} がないものとして読まれる）`,
+    `${codeSpan(written)}: repeats the last item of the value of ${value} (a character, a set or a group), not the whole value (with an empty value, it reads as if ${value} were not there)`]),
+  /** `s/a/$new/`: a hole in the replacement of sed's `s`. */
+  'hole-replacement': tokenText<{ value: string; delimiter?: string }>(({ value, delimiter }) => [
+    `${value} の値は置換後の文字列に入る。値の中の \`&\` は一致した部分全体、\`\\\` はエスケープとして読まれ、${codeSpan(delimiter!)} は置換後の文字列をそこで終わらせる`,
+    `The value of ${value} goes into the replacement: \`&\` in it stands for the whole match, \`\\\` starts an escape, and a ${codeSpan(delimiter!)} ends the replacement early`]),
+  /** `s/a/$new/` of perl: its replacement is a double-quoted string. */
+  'hole-perl-replacement': tokenText<{ value: string; delimiter?: string }>(({ value, delimiter }) => [
+    `${value} の値は置換後の文字列に入り、perl がダブルクォートの文字列として読む。値の中の \`$\`・\`@\`・\`\\\` は特別な意味を持つ${delimiter ? `。${codeSpan(delimiter)} は置換後の文字列をそこで終わらせる` : ''}`,
+    `The value of ${value} goes into the replacement, which perl reads as a double-quoted string: \`$\`, \`@\` and \`\\\` in it are special${delimiter ? `, and a ${codeSpan(delimiter)} ends the replacement early` : ''}`]),
+  /** `sed "1i $x"`: a hole in the text of `a`, `i` or `c`. */
+  'hole-sed-text': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値はこのテキストに入る。値の中の \`\\\` は sed が読み、改行はテキストをそこで終わらせる（続きは sed のコマンドとして読まれる）`,
+    `The value of ${value} goes into this text: sed reads a \`\\\` in it, and a newline ends the text (what follows is read as sed commands)`]),
+  /** `sed -n "${n}p"`: a hole standing alone where an address goes. */
+  'hole-address': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値はアドレスの位置にある（\`3\` は行 3、\`1,5\` は範囲、\`/x/\` は正規表現）。sed はこの値をスクリプトの一部として読むので、アドレスでない値なら別のコマンドになる`,
+    `The value of ${value} stands where an address goes (\`3\` is line 3, \`1,5\` a range, \`/x/\` a regex). sed reads it as part of the script, so a value that is no address makes another command`]),
+  /** `awk "{print \"$x\"}"`: a hole in a string of awk. */
+  'hole-awk-string': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値は awk の文字列に入る。値の中の \`"\` は文字列をそこで終わらせ、\`\\\` はエスケープとして読まれる`,
+    `The value of ${value} goes into an awk string: a \`"\` in it ends the string, and a \`\\\` starts an escape`]),
+  /** `find -name "$p*.txt"`: a hole in a pattern of find. */
+  'hole-glob': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値はパターンの一部として読まれる。値の中の \`*\`・\`?\`・\`[\` はワイルドカードになる`,
+    `The value of ${value} is read as part of the pattern: \`*\`, \`?\` and \`[\` in it are wildcards`]),
+  /** `date +"%F $x"`: a hole in date's format. */
+  'hole-date': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値は表示書式の一部になる。値の中の \`%\` は書式指定として読まれる`,
+    `The value of ${value} is part of the format: a \`%\` in it is read as a conversion`]),
+  /** `printf "%s $x\n" a`: a hole in a format of printf. */
+  'hole-printf': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値は書式の一部になる。値の中の \`%\` は引数を取る書式指定として、\`\\\` はエスケープとして読まれる。前後は、値に \`%\` がないものとして読んでいる`,
+    `The value of ${value} is part of the format: a \`%\` in it is a conversion that takes an argument, and a \`\\\` starts an escape. What stands around it is read as if the value held no \`%\``]),
+  /** `echo -e "a\t$x"`: a hole in a text whose escapes echo reads. */
+  'hole-echo': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値も出力される。値の中の \`\\\` もエスケープとして読まれる`,
+    `The value of ${value} is printed too, with a \`\\\` in it read as an escape`]),
+  /** `tr "$from" "$to"`: a hole in a set of tr. */
+  'hole-tr': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値は文字の集合の一部として読まれる。値の中の \`a-z\`・\`[:upper:]\`・\`\\\` も特別な意味を持つ`,
+    `The value of ${value} is read as part of the set: \`a-z\`, \`[:upper:]\` and \`\\\` work in it too`]),
+  /** `grep "$x" f`: the first operand starts with a hole, and no `--` stands before it. */
+  'hole-leading-dash': tokenText<{ value: string; command: string }>(({ value, command }) => [
+    `${value} の値が \`-\` で始まると、\`${command}\` はこの語をオプションとして読む`,
+    `If the value of ${value} starts with \`-\`, \`${command}\` reads this word as options`]),
+  /** `sed "$x"`, `awk "{print \$$n}"`: a hole stands where the value decides what the script is. */
+  'hole-script': tokenText<{ values: readonly string[]; command: string; data?: string }>(({ values, command, data }) => [
+    `スクリプトの内容は ${values.join('・')} の値で決まる: \`${command}\` はその値をコードとして読む${data ? `。値をデータとして渡すには ${data} を使う` : ''}`,
+    `What this script does depends on the value of ${values.join(', ')}: \`${command}\` reads it as code${data ? `. To pass a value as data, use ${data}` : ''}`]),
   /** `sed "s/\\./x/"`: bash took the backslash of each escape in `taken` (`\$`) away before the text was read. */
   'embedded-backslash-removed': tokenText<{ taken: readonly string[] }>(({ taken }) => {
     const list = taken.map((e) => `${codeSpan(e)} → ${codeSpan([...e][1])}`).join(', ');

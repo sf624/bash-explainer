@@ -1,6 +1,6 @@
 import { sedEscapeAt } from '../ctlchars';
 import type { Lang } from '../i18n';
-import { EmbeddedToken, pick } from './types';
+import { EmbeddedToken, escapeIntoHole, hasHole, holeStop, holeToken, isHole, pick } from './types';
 import { wordTable } from '../wordtable';
 
 /** POSIX basic (grep, sed), POSIX extended (grep -E, sed -E, [[ =~ ]]) or Perl-compatible (grep -P). */
@@ -43,17 +43,25 @@ interface State {
   literals: Set<EmbeddedToken>;
   /** GNU sed turns `\t`, `\n`… into characters before compiling the regex, even inside `[…]`. */
   sedEscapes: boolean;
+  /** Of a hole here (`RegexOptions`). */
+  hole: { delimiter?: string; perl?: boolean };
 }
 
 
 export interface RegexOptions {
   /** Interpret `\t`, `\n`… as GNU sed does. */
   sedEscapes?: boolean;
+  /** The character that ends this regex where a command delimits it (`s/…/`), for what a hole says. */
+  delimiter?: string;
+  /** Perl reads the text before the regex does. */
+  perl?: boolean;
 }
 
 /** Explain a regular expression as a flat sequence of tokens (groups nest their contents). */
 export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: RegexOptions = {}): EmbeddedToken[] {
-  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), sedEscapes: !!opts.sedEscapes };
+  // (`\Q$x\E`: the value is plain text there, which this reader does not follow.)
+  if (flavor === 'pcre' && src.includes('\\Q') && hasHole(src)) return [holeStop(0)];
+  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), sedEscapes: !!opts.sedEscapes, hole: { delimiter: opts.delimiter, perl: opts.perl } };
   return mergeLiterals(sequence(st, 0), st);
 }
 
@@ -101,6 +109,16 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
     const start = st.i;
     const c = st.src[start];
     if (depth > 0 && isGroupClose(st)) return out;
+    if (isHole(c)) {
+      st.i++;
+      out.push(holeToken(start, 'regex', { ...st.hole, alone: st.src.length === 1 }));
+      continue;
+    }
+    if (holeDecides(st, start, c)) {
+      st.i++;
+      out.push(holeStop(start));
+      continue;
+    }
     let n: number;
     if ((n = isAlternation(st))) {
       st.i += n;
@@ -151,6 +169,24 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
   return out;
 }
 
+/** Sticky: a `{` whose count a hole is part of (`a{$n}`, `a{1,$n}`), and a set with a class a hole is part of (`[[:$c:]]`). */
+const COUNT_WITH_HOLE = /\{[\d,]*[\ufdd2-\ufdef]/y;
+const CLASS_WITH_HOLE = /\[[:.=][^\]]*[\ufdd2-\ufdef]/y;
+const at = (re: RegExp, src: string, i: number): boolean => {
+  re.lastIndex = i;
+  return re.test(src);
+};
+
+/**
+ * Whether what a character at `i` is depends on the value of a hole next to it. A count (`a{$n}`, `\{$n\}` is an error
+ * token of its own). In a basic regex, `^` after a hole and `$` before one, which an empty value makes anchors.
+ */
+function holeDecides(st: State, i: number, c: string): boolean {
+  const { src, flavor } = st;
+  if (c === '{') return flavor !== 'bre' && at(COUNT_WITH_HOLE, src, i);
+  return flavor === 'bre' && ((c === '^' && isHole(src[i - 1])) || (c === '$' && isHole(src[i + 1])));
+}
+
 function literal(st: State, start: number, c: string): EmbeddedToken {
   const t: EmbeddedToken = { start, end: st.i, kind: 'string', explanation: st.s(`文字「${c}」`, `Literal "${c}"`), children: [] };
   st.literals.add(t);
@@ -178,6 +214,8 @@ function mergeLiterals(tokens: EmbeddedToken[], st: State): EmbeddedToken[] {
 function quantifier(st: State, start: number, target: EmbeddedToken | undefined): EmbeddedToken {
   const { s } = st;
   const raw = st.src.slice(start, st.i);
+  // (After a hole, it repeats what the value ends with, whatever the value is.)
+  if (target?.hole?.place === 'regex') return { start, end: st.i, kind: 'operator', explanation: '', children: [], hole: { place: 'repeat', of: st.src[target.start], written: raw } };
   const of = target ? `\`${st.src.slice(target.start, target.end)}\`` : s('直前の要素', 'the previous item');
   let q = raw.replace(/^\\/, '').replace(/\\\}$/, '}').replace(/^\\\{/, '{');
   let mode = '';
@@ -212,6 +250,8 @@ function group(st: State, openLen: number): EmbeddedToken {
   let group: number | undefined;
   const rest = st.src.slice(st.i);
   const ext = st.flavor === 'pcre' ? /^\?(:|=|!|<=|<!|P?<([A-Za-z_]\w*)>|[imsx-]+\))/.exec(rest) : null;
+  // (`(?$x)`: the value may be what follows the `?`.)
+  if (st.flavor === 'pcre' && !ext && rest[0] === '?' && hasHole(rest)) return holeStop(start);
   if (ext) {
     st.i += ext[0].length;
     const k = ext[1];
@@ -244,9 +284,21 @@ function bracket(st: State): EmbeddedToken {
   let negated = false;
   if (src[i] === '^') { negated = true; i++; }
   const items: string[] = [];
+  const holes: EmbeddedToken[] = [];
   let first = true;
   while (i < src.length && (src[i] !== ']' || first)) {
     first = false;
+    // (A range with a hole at one end, and a class with one in it, are what the value makes them.)
+    if (at(CLASS_WITH_HOLE, src, i) || (src[i + 1] === '-' && src[i + 2] !== ']' && (isHole(src[i]) || isHole(src[i + 2])))) {
+      st.i = start + 1;
+      return holeStop(start);
+    }
+    if (isHole(src[i])) {
+      holes.push(holeToken(i, 'class'));
+      items.push(s(`\`${src[i]}\` の値の文字`, `the characters of the value of \`${src[i]}\``));
+      i++;
+      continue;
+    }
     const cls = /^\[:(\w+):\]/.exec(src.slice(i));
     if (cls) {
       const d = CLASSES[cls[1]];
@@ -281,7 +333,7 @@ function bracket(st: State): EmbeddedToken {
   st.i = i + 1;
   const list = items.join(s('、', ', '));
   return {
-    start, end: st.i, kind: 'pattern', children: [],
+    start, end: st.i, kind: 'pattern', children: holes,
     explanation: negated
       ? s(`文字クラス: ${list} 以外の1文字`, `Character class: one character other than ${list}`)
       : s(`文字クラス: ${list} のどれか1文字`, `Character class: one of ${list}`),
@@ -292,6 +344,11 @@ function escape(st: State): EmbeddedToken {
   const { s, src } = st;
   const start = st.i;
   const se = st.sedEscapes ? sedEscapeAt(src, start) : undefined;
+  // (`\x$n`, `\c$x`, `\x4$n`: the escape takes characters of the value. In sed `\1` is one digit.)
+  if ((st.sedEscapes || st.flavor === 'pcre') && escapeIntoHole(src, start, st.flavor === 'pcre')) {
+    st.i += 2;
+    return holeStop(start);
+  }
   if (se) {
     st.i += se.length;
     return { start, end: st.i, kind: 'pattern', explanation: `\`${src.slice(start, st.i)}\`: ${se.text(s)}`, children: [] };

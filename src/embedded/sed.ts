@@ -1,7 +1,7 @@
 import { sedEscapeAt } from '../ctlchars';
 import { ordinal, type Lang } from '../i18n';
 import { explainRegex } from './regex';
-import { EmbeddedToken, pick, shift } from './types';
+import { EmbeddedToken, escapeIntoHole, holeStop, holeToken, holeTokens, isHole, pick, shift } from './types';
 import { pushAll } from '../lists';
 
 type S = (ja: string, en: string) => string;
@@ -84,8 +84,8 @@ class SedParser {
     return undefined;
   }
 
-  private regex(start: number, end: number): EmbeddedToken[] {
-    return shift(explainRegex(this.src.slice(start, end), this.flavor, this.lang, { sedEscapes: true }), start);
+  private regex(start: number, end: number, delimiter: string): EmbeddedToken[] {
+    return shift(explainRegex(this.src.slice(start, end), this.flavor, this.lang, { sedEscapes: true, delimiter }), start);
   }
 
   // ---------------------------------------------------------------- addresses
@@ -94,6 +94,11 @@ class SedParser {
     const { src, s } = this;
     const start = this.i;
     let m: RegExpExecArray | null;
+    // (A hole standing alone where an address goes: `${n}p`, `$a,$b d`.)
+    if (isHole(src[start])) {
+      this.i++;
+      return { token: holeToken(start, 'address'), text: s(`\`${src[start]}\` が選ぶ行`, `the lines \`${src[start]}\` selects`) };
+    }
     if ((m = /^(\d+)~(\d+)/.exec(src.slice(start)))) {
       this.i += m[0].length;
       return { token: this.tok(start, this.i, 'pattern', s(`\`${m[0]}\`: ${m[1]} 行目から ${m[2]} 行おきの行`, `\`${m[0]}\`: every ${ordinal(Number(m[2]))} line starting at line ${m[1]}`)), text: s(`${m[1]} 行目から ${m[2]} 行おき`, `every ${ordinal(Number(m[2]))} line from ${m[1]}`) };
@@ -122,7 +127,7 @@ class SedParser {
       const re = src.slice(body[0], body[1]);
       const ci = flags.includes('I') ? s('（大文字・小文字を区別しない）', ' (case-insensitive)') : '';
       return {
-        token: this.tok(start, this.i, 'pattern', s(`正規表現 \`${re}\` に一致する行${ci}`, `Lines matching the regex \`${re}\`${ci}`), this.regex(body[0], body[1])),
+        token: this.tok(start, this.i, 'pattern', s(`正規表現 \`${re}\` に一致する行${ci}`, `Lines matching the regex \`${re}\`${ci}`), this.regex(body[0], body[1], delim)),
         text: s(`\`${re}\` に一致する行`, `lines matching \`${re}\``),
       };
     }
@@ -156,10 +161,22 @@ class SedParser {
 
   // ---------------------------------------------------------------- commands
 
+  /** Whether only blanks stand between the end of a command, or the start of the script, and `at`. */
+  private commandStartsAt(at: number): boolean {
+    let k = at - 1;
+    while (k >= 0 && (this.src[k] === ' ' || this.src[k] === '\t')) k--;
+    return k < 0 || ';\n{}'.includes(this.src[k]);
+  }
+
   private command(): EmbeddedToken {
     const { src, s } = this;
     const start = this.i;
     const children: EmbeddedToken[] = [];
+    // (A hole is an address only where a command starts: after `s/a/b/` it is what the flags are, `s/a/b/$f`.)
+    if (isHole(src[start]) && !this.commandStartsAt(start)) {
+      this.i++;
+      return holeStop(start);
+    }
     const range = this.addressRange();
     let target = s('すべての行', 'every line');
     if (range) {
@@ -225,7 +242,7 @@ class SedParser {
         : c === 'i' ? s(`行の前に「${text}」という行を挿入する`, `insert the line "${text}" before it`)
           : s(`行を「${text}」に置き換える`, `replace the line with "${text}"`);
       return done(expl, [cmdTok(`\`${c}\`: ${c === 'a' ? s('後ろに追加', 'append') : c === 'i' ? s('前に挿入', 'insert') : s('置き換え', 'change')}`),
-        this.tok(textStart, this.i, 'string', s('追加するテキスト', 'the text'))]);
+        this.tok(textStart, this.i, 'string', s('追加するテキスト', 'the text'), holeTokens(src, textStart, this.i, 'sed-text'))]);
     }
     if (c === ':' || c === 'b' || c === 't' || c === 'T') {
       this.skipSpaces();
@@ -258,6 +275,7 @@ class SedParser {
     const sAt = this.i - 1;
     const delim = src[this.i];
     const parts: EmbeddedToken[] = [this.tok(sAt, sAt + 1, 'command', s('`s`: 置換コマンド（`s/パターン/置換後/フラグ`）', '`s`: substitute (`s/pattern/replacement/flags`)'))];
+    if (isHole(delim)) return holeStop(this.i);
     if (!delim || delim === '\n') return this.tok(start, this.i, 'error', s('`s` の後に区切り文字がない', '`s` without a delimiter'), [...children, ...parts]);
     this.i++;
     const pat = this.delimited(delim);
@@ -270,7 +288,7 @@ class SedParser {
     const patText = src.slice(pat[0], pat[1]);
     parts.push(this.tok(pat[0], pat[1], 'pattern', patText
       ? s(`検索パターン（正規表現）\`${patText}\``, `Pattern (regex) \`${patText}\``)
-      : s('空のパターン: 直前に使った正規表現を再利用する', 'Empty pattern: reuse the last regex'), this.regex(pat[0], pat[1])));
+      : s('空のパターン: 直前に使った正規表現を再利用する', 'Empty pattern: reuse the last regex'), this.regex(pat[0], pat[1], delim)));
     parts.push(sep(pat[1]));
     const rep = this.delimited(delim);
     if (!rep) {
@@ -340,7 +358,10 @@ class SedParser {
     };
     for (let i = start; i < end; i++) {
       const c = src[i];
-      if (c === '&') {
+      if (isHole(c)) {
+        flush(i);
+        out.push(holeToken(i, 'replacement', { delimiter: delim }));
+      } else if (c === '&') {
         flush(i);
         out.push(this.tok(i, i + 1, 'variable', s('`&`: 一致した部分全体', '`&`: the whole match')));
       } else if (c === '\\' && i + 1 < end) {
@@ -360,6 +381,11 @@ class SedParser {
         } else if (/[0-9]/.test(n)) {
           flush(i);
           out.push({ ...this.tok(i, i + 2, 'variable', n === '0' ? s('`\\0`: 一致した部分全体', '`\\0`: the whole match') : s(`\`\\${n}\`: グループ ${n} に一致した部分`, `\`\\${n}\`: what group ${n} matched`)), ...(n !== '0' ? { group: Number(n) } : {}) });
+          i++;
+        } else if (escapeIntoHole(src, i, false)) {
+          // (`\x$n`, `\c$x`: the escape takes characters of the value.)
+          flush(i);
+          out.push(holeStop(i));
           i++;
         } else if (sedEscapeAt(src, i)) {
           const se = sedEscapeAt(src, i)!;

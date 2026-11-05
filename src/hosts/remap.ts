@@ -182,11 +182,16 @@ export function hostProvided(extracted: Extracted, region: ShellRegion): string[
 }
 
 const providedByRegion = new WeakMap<ShellRegion, string[]>();
+const pastedByRegion = new WeakMap<ShellRegion, string[]>();
+
+/** The names of the placeholders of the host's insertions (`keep`: those to take). */
+function placeholderNames(extracted: Extracted, keep: (meaning: unknown) => boolean = () => true): string[] {
+  const rows = shellLines(extracted);
+  return extracted.inserted.flatMap((ranges, i) => ranges.filter(([, , meaning]) => keep(meaning)).flatMap(([from, to]) => [...rows[i].slice(from, to).matchAll(/\$\{?([A-Za-z_]\w*)/g)].map((m) => m[1])));
+}
 
 function providedIn(extracted: Extracted, region: ShellRegion): string[] {
-  const rows = shellLines(extracted);
-  const names = extracted.inserted.flatMap((ranges, i) => ranges.flatMap(([from, to]) => [...rows[i].slice(from, to).matchAll(/\$\{?([A-Za-z_]\w*)/g)].map((m) => m[1])));
-  return [...new Set([...(region.provided ?? []), ...names])];
+  return [...new Set([...(region.provided ?? []), ...placeholderNames(extracted)])];
 }
 
 /** Explain `line` of a host document whose shell parts were extracted and parsed into `tree`. */
@@ -198,6 +203,9 @@ export function explainHostedLine(
   if (!region) return undefined;
   tree = scriptTree(tree, extracted, region);
   const provided = hostProvided(extracted, region);
+  // (Those it pastes as text, before the shell reads the line: `${{ env.Y }}`, `$(DST)`.)
+  let pasted = pastedByRegion.get(region);
+  if (!pasted) pastedByRegion.set(region, (pasted = [...new Set(placeholderNames(extracted, Boolean))]));
   // (The catalog facts of the host go through `said`, like the analyzer's, so `notes.pitfalls` off leaves out their pitfalls.)
   const hostFacts: Fact[] = [];
   // (A warning the host says is the problem `code` of hostIssues.)
@@ -219,7 +227,7 @@ export function explainHostedLine(
   pushAll(notes, found.map((f) => noteData(f.fact)));
   pushAll(hostFacts, found.map((f) => f.fact));
   const ex = analyzer.explainLine(tree, line, regionShell(region, shell), {
-    ...opts, host: region.host, stopsFrom: shellStart(region, line), ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}), ...(provided.length ? { hostProvided: provided } : {}),
+    ...opts, host: region.host, stopsFrom: shellStart(region, line), ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}), ...(provided.length ? { hostProvided: provided } : {}), ...(pasted.length ? { hostPasted: pasted } : {}),
     ...(region.noShell ? { noShell: region.noShell } : {}),
     // (The sentence of the line says nothing a problem of the host says: src/linesentence.ts.)
     ...(opts.sentence ? { hostProblems: [...problemCodes({ noteInfo: notes, facts: hostFacts })] } : {}),

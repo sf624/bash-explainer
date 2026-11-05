@@ -1,6 +1,7 @@
 import { bracketEnd } from './bracket';
 import { visible } from './ctlchars';
 import type { EmbeddedLang } from './embedded/types';
+import { hasHole, HOLE_COUNT, holeChar, isHole } from './embedded/types';
 import { bracesMayWork, featureWorks, type Shell } from './shellfeatures';
 import type { SyntaxNode } from './syntax/tree';
 
@@ -329,6 +330,16 @@ export interface MappedText {
   removed?: string[];
 }
 
+/** While a word is read with its expansions as holes (`holedContent`): which it takes, and the character of each. */
+interface HoleReading {
+  accept(n: SyntaxNode): boolean;
+  /** The character of each expansion, by its text: the same text is the same character. */
+  chars: Map<string, string>;
+}
+
+/** The nodes in a double-quoted string that bash replaces by one text. */
+const HOLE_NODES = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion']);
+
 export function staticWordText(n: SyntaxNode, shell: Shell | undefined): MappedText | undefined {
   if (decodedText(n) !== n.text || tildeSpots(tildeParts([n]), 'start').length) return undefined;
   const out: MappedText = { text: '', starts: [], ends: [] };
@@ -339,7 +350,7 @@ export function staticWordText(n: SyntaxNode, shell: Shell | undefined): MappedT
  * `literal`: only what a command line gives a program as plain text (`literalContent`): words, quoted strings and their
  * concatenations; a brace expansion, an expansion, `$'…'` and a word with a glob and a backslash are not followed.
  */
-function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined, literal: boolean): boolean {
+function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined, literal: boolean, holes?: HoleReading): boolean {
   const src = n.text;
   const put = (text: string, start: number, end: number): void => {
     out.text += text;
@@ -364,7 +375,8 @@ function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined, l
   switch (n.type) {
     case 'word': case 'number':
       // (A literal word is refused by a quote or a `$` that is not escaped: `\\$1` is the text `$1`.)
-      if (literal ? /['"$`]/.test(src.replace(/\\[^]/g, '')) || (src.includes('\\') && globbed(n, src)) : globbed(n, src)) return false;
+      // (Beside a hole, a glob makes the word what the files give: `"$x"*`.)
+      if (literal ? /['"$`]/.test(src.replace(/\\[^]/g, '')) || ((holes || src.includes('\\')) && globbed(n, src)) : globbed(n, src)) return false;
       unescape(0, src.length, /[\s\S]/);
       return true;
     case 'brace_expression':
@@ -374,10 +386,21 @@ function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined, l
     case 'raw_string':
       for (let i = 1; i < src.length - 1; i++) put(src[i], i, i + 1);
       return true;
-    case 'string':
-      if (!n.namedChildren.every((c) => c.type === 'string_content')) return false;
-      unescape(1, src.length - 1, /[$`"\\]/);
+    case 'string': {
+      let from = 1;
+      for (const c of n.namedChildren) {
+        if (c.type === 'string_content') continue;
+        if (!holes || !HOLE_NODES.has(c.type) || !holes.accept(c)) return false;
+        const char = holes.chars.get(c.text) ?? holeChar(holes.chars.size);
+        if (holes.chars.size === HOLE_COUNT && !holes.chars.has(c.text)) return false;
+        holes.chars.set(c.text, char);
+        unescape(from, c.startIndex - n.startIndex, /[$`"\\]/);
+        put(char, c.startIndex - n.startIndex, c.endIndex - n.startIndex);
+        from = c.endIndex - n.startIndex;
+      }
+      unescape(from, src.length - 1, /[$`"\\]/);
       return true;
+    }
     case 'ansi_c_string': {
       if (literal) return false;
       // (Where the shell does not decode it: dash's `$` and single-quoted text, or nothing known.)
@@ -406,8 +429,8 @@ function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined, l
     }
     case 'command_substitution': return !literal && emptySubstitution(n);
     // `$"…"` is a double-quoted string (a translation, when the locale has one for it).
-    case 'translated_string': return literal && n.namedChildren.length === 1 && mappedValue(n.namedChildren[0], out, shell, literal);
-    case 'concatenation': return n.namedChildren.every((c) => mappedValue(c, out, shell, literal));
+    case 'translated_string': return literal && n.namedChildren.length === 1 && mappedValue(n.namedChildren[0], out, shell, literal, holes);
+    case 'concatenation': return n.namedChildren.every((c) => mappedValue(c, out, shell, literal, holes));
     default: return false;
   }
 }
@@ -515,6 +538,8 @@ export interface Literal {
   ends?: number[];
   /** The escapes bash took a backslash from (`MappedText.removed`). */
   removed?: string[];
+  /** The source of each hole of the text, by its character (`holedContent`). None for a text with no hole. */
+  holes?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -534,6 +559,29 @@ export function literalContent(a: SyntaxNode): Literal | undefined {
     return { text: m.text, base: m.text ? m.starts[0] - a.startIndex : 1 };
   }
   return literalOfMapped(m, a);
+}
+
+/**
+ * The text a word gives the command with each expansion in its double quotes as a hole: one character the script cannot
+ * hold (`isHole`, src/embedded/types.ts), over the expansion's source. `accept`: the expansions that give one text. For a
+ * word `literalContent` refuses for its expansions and no other reason, and read only by those that ask (`embedded`):
+ * every other consumer of a word's text keeps refusing it. Refused: an unquoted expansion or glob (`s/$a/b/`, `"$x"*`), a
+ * tilde, a word that holds such a character itself, and a backslash just before a hole (`"\\$x"`), which escapes the value's
+ * first character whatever the language.
+ */
+export function holedContent(a: SyntaxNode, accept: (n: SyntaxNode) => boolean): Literal | undefined {
+  if (hasHole(a.text) || decodedText(a) !== a.text || tildeSpots(tildeParts([a]), 'start').length) return undefined;
+  if (a.type === 'concatenation' && a.startPosition.row !== a.endPosition.row) return undefined;
+  const m: MappedText = { text: '', starts: [], ends: [] };
+  const holes: HoleReading = { accept, chars: new Map() };
+  if (!mappedValue(a, m, undefined, true, holes) || !holes.chars.size) return undefined;
+  for (let k = 1; k < m.text.length; k++) {
+    if (!isHole(m.text[k]) || m.text[k - 1] !== '\\') continue;
+    let n = 1;
+    while (m.text[k - n - 1] === '\\') n++;
+    if (n % 2) return undefined;
+  }
+  return { ...literalOfMapped(m, a), holes: Object.fromEntries([...holes.chars].map(([source, char]) => [char, source])) };
 }
 
 /** The part of a literal from character `k` on (the value of `--regexp=…`: the characters before it are left out). */

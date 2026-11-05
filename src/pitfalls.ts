@@ -20,6 +20,7 @@ import { hasUnquotedExpansion, quoteExpansions } from './fixes';
 import type { ConventionId } from './conventions';
 import { type Note, styleNote } from './messages';
 import { STYLE_LEVELS, type StyleCase, type StyleCode, styleLevel } from './messages-levels';
+import { REGEX_VALUE_SPECIAL } from './messages-tokens-argv';
 import { type Rewrite, replaceNode, replaceSpan, stopCommand, textBetween, type TextEdit } from './rewrite';
 import { mostOf } from './lists';
 
@@ -751,8 +752,8 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
             '`-F`, which would look for the value as it is, applies to every pattern: the others would be read as plain text too')
           : s(`値をそのまま探すには ${fixed}、意図に合わせて \`-w\`（単語全体）か \`-x\`（行全体）も付けます`,
             `To look for the value as it is, ${fixed}, with \`-w\` (whole words) or \`-x\` (whole lines) as meant`);
-        add('pattern-from-variable', w, `\`${r.name}\` は \`${v.text}\` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（\`bob\` は \`bobby\` にも一致）、値の中の \`.\`・\`*\`・\`[\` などは特別な意味を持ちます。${advice}`,
-          `\`${r.name}\` reads the value of \`${v.text}\` as a regular expression, not as plain text: it matches inside longer text too (\`bob\` matches \`bobby\`), and \`.\`, \`*\`, \`[\` and the like in the value have their special meaning. ${advice}`, fix ? [fix] : []);
+        add('pattern-from-variable', w, `\`${r.name}\` は \`${v.text}\` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（\`bob\` は \`bobby\` にも一致）、${REGEX_VALUE_SPECIAL.ja}持ちます。${advice}`,
+          `\`${r.name}\` reads the value of \`${v.text}\` as a regular expression, not as plain text: it matches inside longer text too (\`bob\` matches \`bobby\`), and ${REGEX_VALUE_SPECIAL.en}. ${advice}`, fix ? [fix] : []);
         return;
       }
     }

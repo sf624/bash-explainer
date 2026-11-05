@@ -840,7 +840,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     } else out.push({ layer: 'language', kind: 'language', label: t.language!, span: t.span, reader, children: [node] });
   };
   const langNode = (t: Token, reader: string): ReadingNode => ({
-    layer: 'language', kind: t.kind, label: t.label, span: t.span, ...saidBy(t), reader, children: t.children.map((c) => langNode(c, reader)),
+    layer: 'language', kind: t.kind, label: t.label, span: t.span, ...saidBy(t), reader, children: t.children.filter((c) => c.origin === 'embedded').map((c) => langNode(c, reader)),
   });
 
   const root: ReadingNode = { layer: 'bash', kind: 'line', label: '', span: range, children: collect(tree.root, 'bash') };

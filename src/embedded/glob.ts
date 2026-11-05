@@ -2,7 +2,7 @@ import type { Lang } from '../i18n';
 import { bracketEnd } from '../bracket';
 import { describeGlob } from '../expansion';
 import { alternatives, closingParen } from '../examples/shellwords';
-import { EmbeddedToken, pick } from './types';
+import { EmbeddedToken, hasHole, holeStop, holeToken, isHole, pick } from './types';
 
 /** What a glob is matched against: a string (`case`, `[[ ]]`, `${x#pat}`) or the names of files (an argument). */
 export type GlobTarget = 'value' | 'file';
@@ -57,7 +57,10 @@ function parse(at: Source, from: number, to: number, extglob: boolean): Embedded
   };
   for (let i = from; i < to; i++) {
     const c = src[i];
-    if (ifs.has(i)) {
+    if (isHole(c)) {
+      out.push(holeToken(i, 'glob'));
+      run = undefined;
+    } else if (ifs.has(i)) {
       add(i, i + 2, 'string', s(`\`${src[i + 1]}\`: \`IFS\` にある文字で、語にクォートしていない展開があるので、bash はこの文字そのものとして照合する（パターンの記号としては働かない）`, `\`${src[i + 1]}\`: \`IFS\` holds it and the word has an unquoted expansion, so bash matches the character itself, not a pattern symbol`));
       i++;
     } else if (c === '\\' && i + 1 < to) {
@@ -75,6 +78,13 @@ function parse(at: Source, from: number, to: number, extglob: boolean): Embedded
       i = end;
     } else if (extglob && '?*+@!'.includes(c) && src[i + 1] === '(' && closingParen(src, i + 1) > 0 && closingParen(src, i + 1) < to) {
       const end = closingParen(src, i + 1);
+      // (Its alternatives are the value's to say. A quoted part or a bracket expression with a hole has no token of a hole.)
+      if (hasHole(src.slice(i, end))) {
+        out.push(holeStop(i));
+        run = undefined;
+        i = end;
+        continue;
+      }
       const [ja, en] = EXT[c];
       const alts = alternatives(src, i + 2, end).filter(([a, b]) => b > a).map(([a, b]): EmbeddedToken => ({
         start: a, end: b, kind: 'pattern',
@@ -95,7 +105,7 @@ function parse(at: Source, from: number, to: number, extglob: boolean): Embedded
     } else literal(i);
   }
   for (const t of out) {
-    if (!t.explanation) {
+    if (!t.explanation && t.kind === 'string') {
       const text = shown(t.start, t.end);
       t.explanation = s(`文字列 \`${text}\` そのもの`, `The text \`${text}\` itself`);
     }

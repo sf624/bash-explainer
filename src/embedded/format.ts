@@ -1,7 +1,7 @@
 import type { BashVersion } from '../bashversion';
 import type { Lang } from '../i18n';
 import { controlSuffix } from '../ctlchars';
-import { EmbeddedToken, pick } from './types';
+import { EmbeddedToken, escapeIntoHole, holeStop, holeToken, type HolePlace, isHole, pick } from './types';
 
 type S = (ja: string, en: string) => string;
 
@@ -17,8 +17,18 @@ const QUOTE_ESCAPES: Record<string, [string, string]> = { '"': ['「"」', '"'],
 type Mode = 'printf' | 'echo' | 'ansic';
 
 /** Runs of plain text between specifiers become one token each. */
-function pushText(out: EmbeddedToken[], src: string, start: number, end: number, s: S): void {
-  if (end > start) out.push({ start, end, kind: 'string', explanation: s(`そのまま出力する文字列「${src.slice(start, end)}」`, `Literal text "${src.slice(start, end)}"`), children: [] });
+function pushText(out: EmbeddedToken[], src: string, start: number, end: number, s: S, place: HolePlace): void {
+  const plain = (from: number, to: number): void => {
+    if (to > from) out.push({ start: from, end: to, kind: 'string', explanation: s(`そのまま出力する文字列「${src.slice(from, to)}」`, `Literal text "${src.slice(from, to)}"`), children: [] });
+  };
+  let from = start;
+  for (let k = start; k < end; k++) {
+    if (!isHole(src[k])) continue;
+    plain(from, k);
+    out.push(holeToken(k, place));
+    from = k + 1;
+  }
+  plain(from, end);
 }
 
 /** Backslash escape at `i`; returns [token, length, code of the character it stands for] or undefined. */
@@ -63,9 +73,10 @@ export function explainEscapes(src: string, lang: Lang, mode: 'echo' | 'ansic'):
   let text = 0;
   let i = 0;
   while (i < src.length) {
+    if (escapeIntoHole(src, i, true)) return [holeStop(i)];
     const e = src[i] === '\\' ? escapeAt(src, i, s, mode) : undefined;
     if (!e) { i++; continue; }
-    pushText(out, src, text, i, s);
+    pushText(out, src, text, i, s, 'echo');
     const ansi = e[2] === 0x1b ? ansiSequence(src, i, i + e[1], [e[0]], s) : undefined;
     out.push(ansi ?? e[0]);
     i = ansi ? ansi.end : i + e[1];
@@ -77,7 +88,7 @@ export function explainEscapes(src: string, lang: Lang, mode: 'echo' | 'ansic'):
     }
   }
   if (!out.length) return out;
-  pushText(out, src, text, src.length, s);
+  pushText(out, src, text, src.length, s, 'echo');
   return out;
 }
 
@@ -163,10 +174,11 @@ export function explainPrintf(src: string, lang: Lang, reader?: PrintfReader): E
   let i = 0;
   let argNo = 0;
   while (i < src.length) {
+    if (escapeIntoHole(src, i, true)) return [holeStop(i)];
     if (src[i] === '\\') {
       const e = escapeAt(src, i, s);
       if (e) {
-        pushText(out, src, text, i, s);
+        pushText(out, src, text, i, s, 'printf');
         const ansi = e[2] === 0x1b ? ansiSequence(src, i, i + e[1], [e[0]], s) : undefined;
         out.push(ansi ?? e[0]);
         i = ansi ? ansi.end : i + e[1];
@@ -175,7 +187,7 @@ export function explainPrintf(src: string, lang: Lang, reader?: PrintfReader): E
       }
     }
     if (src[i] !== '%') { i++; continue; }
-    pushText(out, src, text, i, s);
+    pushText(out, src, text, i, s, 'printf');
     if (src[i + 1] === '%') {
       out.push({ start: i, end: i + 2, kind: 'operator', explanation: s('`%%`: 文字「%」そのもの', '`%%`: a literal "%"'), children: [] });
       i += 2;
@@ -193,7 +205,7 @@ export function explainPrintf(src: string, lang: Lang, reader?: PrintfReader): E
     i += m[0].length;
     text = i;
   }
-  pushText(out, src, text, src.length, s);
+  pushText(out, src, text, src.length, s, 'date');
   return out;
 }
 
@@ -332,8 +344,10 @@ export function explainDate(src: string, lang: Lang): EmbeddedToken[] {
   while (i < src.length) {
     if (src[i] !== '%') { i++; continue; }
     const m = /^%([-_0^#]?)(\d*)(:{0,3}z|[a-zA-Z%])/.exec(src.slice(i));
+    // (`%$x`, `%-$x`: the value says which conversion it is.)
+    if (!m && /^%[-_0^#]?\d*:{0,3}[\ufdd2-\ufdef]/.test(src.slice(i))) return [holeStop(i)];
     if (!m) { i++; continue; }
-    pushText(out, src, text, i, s);
+    pushText(out, src, text, i, s, 'date');
     const [whole, flag, width, conv] = m;
     const base = conv.endsWith('z') && conv.length > 1
       ? [s(`UTC からの時差（例: +09${':00'.repeat(conv.length - 1)}）`, `UTC offset with colons (+09${':00'.repeat(conv.length - 1)})`)]
@@ -364,7 +378,7 @@ export function explainDate(src: string, lang: Lang): EmbeddedToken[] {
     i += whole.length;
     text = i;
   }
-  pushText(out, src, text, src.length, s);
+  pushText(out, src, text, src.length, s, 'date');
   return out;
 }
 

@@ -37,7 +37,7 @@ import { assignment } from './assignments';
 import type { Explainer } from './context';
 import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
-import { nested, skeletal, sortTokens, sourcePos } from './nodes';
+import { nested, skeletal, sortTokens, sourcePos, graftExpansions } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
 import { elementsOf } from '../semantics/elements';
 import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
@@ -887,7 +887,10 @@ function positional(cx: Explainer, a: SyntaxNode, desc: string | undefined, lang
   }
   const inner = cx.sub(a);
   // The embedded tokens sit inside the quotes, so they become children of the string token.
-  if (emb && inner[0]) inner[0].children = sortTokens([...inner[0].children, ...emb.tokens]);
+  if (emb && inner[0]) {
+    if (emb.holes) graftExpansions(inner[0], emb.tokens, emb.holes);
+    inner[0].children = sortTokens([...inner[0].children, ...emb.tokens]);
+  }
   if (!desc) return inner[0];
   // Describe the role, then what the quoting/expansion does.
   return cx.tok(a, 'argument', desc, inner);
