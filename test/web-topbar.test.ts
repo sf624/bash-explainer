@@ -95,7 +95,6 @@ describe('the web page: the top bar', function () {
         return [document.querySelector('.cm-scroller').scrollLeft, r.getBoundingClientRect().left, document.querySelector('.cm-gutters').getBoundingClientRect().right, line.textContent.slice(0, 2)];
       })()`)) as [number, number, number, string];
       assert.ok(start[0] === 0 && start[1] >= start[2] - 0.5 && start[3] === '#!', `${width}px: ${start}`);
-      const wide = width >= 1200;
       // The explanation's controls are in the panel's header, above the frame: none in the top bar or the menu.
       for (const id of ['#tab-explain', '#tab-ref', '#view-slot', '#collapse', '#copy-md']) {
         assert.strictEqual(await page.locator(id).isVisible(), true, `${id} at ${width}px`);

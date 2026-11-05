@@ -12,7 +12,7 @@ import { hostKind } from '../src/hosts';
 import { detectKind } from '../src/hosts/detect';
 import { detectShell } from '../src/dialect';
 import type { FileFormat } from './file-state';
-import { Kind, KINDS } from './samples';
+import { Kind } from './samples';
 
 /**
  * The largest file the page opens: 1 MiB. Far beyond hand-written scripts, and the page explains the whole text again
@@ -78,11 +78,6 @@ export function kindFromName(name: string, text?: string): Kind | undefined {
   const host = hostKind('', name, text);
   if (host) return host;
   return /\.(sh|bash|zsh|ksh|mksh|dash|ash)$/i.test(name) || detectShell('', name) ? 'shell' : undefined;
-}
-
-/** The name a save suggests for a script that came from no file: the kind's sample's (`script.sh`, `Dockerfile`, `ci.yml`, `test.bats`…). */
-export function defaultName(kind: Kind): string {
-  return (KINDS.find((k) => k.kind === kind) ?? KINDS[0]).fileName.split('/').pop()!;
 }
 
 /** Whether the page runs on a Mac (or an iPad with a keyboard): the shortcuts are ⌘S and ⌘O there, Ctrl+S and Ctrl+O elsewhere. */
