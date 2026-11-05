@@ -229,7 +229,7 @@ describe('lists of commands in Reading', () => {
       '    bash/command b',
       '      bash/commandName b',
       '    bash/operator &',
-      '    bash/orList c && d || e',
+      '    bash/andOrList c && d || e',
       '      bash/andList c && d',
       '        bash/command c',
       '          bash/commandName c',
@@ -265,7 +265,7 @@ describe('lists of commands in Reading', () => {
     // (In a string a shell reads again, the same names: the string has its own reading.)
     const kinds = (src: string) => readingNodes(new Analyzer('en').explainLine(parser.parse(src), 0, 'bash', { reading: true }).reading!).filter((n) => n.layer === 'child').map((n) => `${n.kind} ${n.label}`);
     assert.deepStrictEqual(kinds("bash -c 'a && b || c; d | e &'").filter((k) => !k.startsWith('commandName') && !k.startsWith('operator')), [
-      'list a && b || c; d | e &', 'orList a && b || c', 'andList a && b', 'command a', 'command b', 'command c', 'pipeline d | e', 'command d', 'command e',
+      'list a && b || c; d | e &', 'andOrList a && b || c', 'andList a && b', 'command a', 'command b', 'command c', 'pipeline d | e', 'command d', 'command e',
     ]);
   });
 });

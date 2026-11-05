@@ -257,7 +257,7 @@ function placesOf(items: readonly Token[], rows: readonly ModelRow[], made: Read
 const NAME_KINDS = new Set(['commandName', 'aliasWord', 'expandedName']);
 
 /** The roles of what bash's grammar makes of the commands: a list or a pipeline (`Token.grammar`). */
-const GRAMMAR_ROLES: ReadonlySet<string> = new Set(['list', 'andList', 'orList', 'pipeline'].flatMap((k) => [`bash:${k}`, `child:${k}`]));
+const GRAMMAR_ROLES: ReadonlySet<string> = new Set(['list', 'andList', 'orList', 'andOrList', 'pipeline'].flatMap((k) => [`bash:${k}`, `child:${k}`]));
 
 /** The shell that is reading a part of the line. */
 type Shell = Pick<RowRole, 'layer' | 'process'>;

@@ -43,6 +43,21 @@ describe('the panel at depth 2: the names on a role line, the depth and the focu
   const rowOf = (page: Page, label: string) => page.locator('#tree li[data-key]').filter({ has: page.locator(`:scope > .item > .row > .code .label:text-is(${JSON.stringify(label)})`) }).first();
   const chipOf = (page: Page, label: string, name: string) => rowOf(page, label).locator(`> .item > .row .role-chip:text-is(${JSON.stringify(name)})`);
 
+  it('names a mixed AND/OR list by both on its row, and opens its long description', async () => {
+    const line = 'grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt && echo "done: $(date +%F)" || exit 1';
+    for (const [lang, name, start] of [['en', 'AND and OR list', 'An AND and OR list: `&&` and `||` mixed'], ['ja', 'AND・OR リスト', 'AND・OR リスト: `&&` と `||` が混ざった']] as const) {
+      const page = await open(line, { lang });
+      const label = 'grep | sort && echo || exit';
+      assert.strictEqual(await chipOf(page, label, name).count(), 1, `${lang}: the row of the list names both`);
+      assert.strictEqual(await rowOf(page, label).locator('> .item > .row .role-chip').count(), 1);
+      const chip = chipOf(page, label, name);
+      await chip.click();
+      const said = page.locator(`#${await chip.getAttribute('aria-controls')}`);
+      assert.ok((await said.textContent())!.replace(/`/g, '').startsWith(start.replace(/`/g, '')), `${lang}: ${await said.textContent()}`);
+      await page.context().close();
+    }
+  });
+
   it('opens a name with a click, with Enter and with a tap, under its line, and leaves the row as it is', async () => {
     const page = await open('grep -q x f', { width: 390, touch: true });
     const row = rowOf(page, '-q');

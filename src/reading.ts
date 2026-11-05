@@ -37,7 +37,7 @@ import { spanWithin } from './noteanchors';
 import { type WordStep, wordSteps } from './semantics/wordsteps';
 import { type ExpansionStep, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
 import { setsElement, splitElement, stackTilde, staticWordValue } from './staticword';
-import { field, fields, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
+import { andOrRole, field, fields, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
 import { mostOf, pushAll } from './lists';
 
 /** Who reads a part: bash, bash again (a substitution, or a string a command gives a shell), the command, a language. */
@@ -48,7 +48,7 @@ export type ShellKind =
   | 'line' // the line as bash reads it: the root
   | 'script' // the text of a substitution, as the subshell parses it
   | 'list' // a list of commands (3.2.4): pipelines and AND/OR lists joined by `;` and `&` (and newlines, in a body)
-  | 'andList' | 'orList' // an AND list (`a && b`) or an OR list (`a || b`); `a && b || c` is an OR list in which `a && b` is an AND list
+  | 'andList' | 'orList' | 'andOrList' // an AND list (`a && b`), an OR list (`a || b`), or both (`a && b || c`: its first part `a && b` is an AND list)
   | 'pipeline' | 'command' | 'compound' | 'clause' | 'coprocess' | 'function'
   | 'commandName' // the first word of a simple command, when it is the command name as written
   | 'aliasWord' // the first word, when it is an alias: bash replaces it with its text when it reads the line (6.6)
@@ -335,8 +335,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       case 'variable_name': case 'special_variable_name': return [shellNode(c, layer, 'name', [])];
       case 'subscript': return [subscript(c, layer)];
       case 'command_list': return [construct(c, layer, 'list')];
-      // (Nested from the left: `a && b || c` is an OR list whose first part is the AND list `a && b`.)
-      case 'list': return [construct(c, layer, c.children.some((x) => x.type === '||') ? 'orList' : 'andList')];
+      // (Nested from the left: `a && b || c` is an AND and OR list whose first part is the AND list `a && b`, which has its own node.)
+      case 'list': return [construct(c, layer, andOrRole(c))];
       case 'pipeline': return [construct(c, layer, 'pipeline')];
       case 'redirected_statement': return [redirected(c, layer)];
       case 'function_definition': return [construct(c, layer, 'function')];
@@ -403,7 +403,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const n = shellNode(c, layer, kind, children);
     // A skeleton names a compound command better than its first line (`if ‹condition› then … fi`).
     const t = tokenAt(n.span);
-    if (t && kind !== 'list' && kind !== 'andList' && kind !== 'orList' && kind !== 'pipeline') n.label = t.label;
+    if (t && kind !== 'list' && kind !== 'andList' && kind !== 'orList' && kind !== 'andOrList' && kind !== 'pipeline') n.label = t.label;
     // (A list over several lines, as the labels of the list view say it: `a …`.)
     else if (kind === 'list' && c.text.includes('\n')) n.label = `${n.label} …`;
     return n;

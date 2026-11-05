@@ -86,10 +86,10 @@ export interface Token {
   summary?: string;
   /**
    * What bash's grammar makes of the part, where its kind does not say it: a list of commands (3.2.4: `;`, `&`), an
-   * AND or OR list (`&&`, `||`; `a && b || c` is an OR list), or a pipeline, which have the kind `operator`. The reading
+   * AND list, OR list, or AND and OR list (`&&`, `||`, both, by all its operators), or a pipeline, which have the kind `operator`. The reading
    * tree names the nodes of a string read as a script with it (`eval 'a; b'`).
    */
-  grammar?: 'list' | 'andList' | 'orList' | 'pipeline';
+  grammar?: 'list' | 'andList' | 'orList' | 'andOrList' | 'pipeline';
   /**
    * What the part is to bash, where the panel draws a box around it: a simple command (3.2.2), or a compound command or a function's
    * definition (3.2.5, 3.3). From the node's type (`explain`, src/explain/dispatch.ts). What a command reads as a command (`sudo ls`)
