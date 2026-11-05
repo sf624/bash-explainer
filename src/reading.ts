@@ -253,9 +253,9 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   // bash's own tokens, by the text they are about.
   const shellAt = new Map<string, Token[]>();
   for (const t of all.filter((x) => x.origin === 'shell')) shellAt.set(keyOf(t.span), [...(shellAt.get(keyOf(t.span)) ?? []), t]);
-  // The tokens of the commands, by where they start, with their place among all: asked for each command of a line that may have many.
+  // The tokens of the commands, by where they start (one that starts where another does keeps its place), with their place among all: asked for each command of a line that may have many.
   const readers = all.map((token, order) => ({ token, order })).filter(({ token }) => token.origin === 'shell' && READERS.has(token.kind))
-    .sort((a, b) => (same(a.token.span, b.token.span) ? a.order - b.order : le(a.token.span.start, b.token.span.start) ? -1 : 1));
+    .sort((a, b) => a.token.span.start.line - b.token.span.start.line || a.token.span.start.character - b.token.span.start.character);
   /** The first of the tokens of the commands, among all, that lie in `span`, for which `keep` holds. */
   const readerWithin = (span: Span, keep: (t: Token) => boolean): Token | undefined => {
     let [low, high] = [0, readers.length];
