@@ -124,6 +124,7 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - perl `printf '%d'` of 2^70 prints the digits where real perl prints `-1` (found in the review of #581).
 - awk examples differ from gawk on `\y` and `\>` (`gsub(/\y/, "X")` on `a`), on a side-effect target (`gsub(/a/, "X", $(i++))` evaluates it twice), on a no-match `gsub` on a field past NF (`$5` should grow NF), and on `.` with a newline in a string (`s = "a\nb"; gsub(/./, "Y", s)`: gawk `YYY`, ours `Y\nY`); also `"\777"`, `"\xe9"`, `"\é"`, `length()` of an emoji, `FS="\\"`, and a trailing backslash of `-v 'x=a\'` (gawk drops it, we keep it) (found in the review of #588).
 - Three rare leftovers of the settings column (#608): a rebuild and a width change in the same frame leave the panel's noted place dead until the next scroll or content change (`notePlace`, media/panel.js); crossing to the narrow layout with the sheet open leaves `aria-valuemin` and `aria-valuenow` of the divider stale until the next resize (web/layout.ts); in `recheck` (modal to side by side) the queued `close` runs `settled()` after the new `show()`, so that slide has no freeze (web/settings-dialog.ts).
+- The panel acts on a `focus` message without checking that its frame still has the focus (`focusExplanation`, media/panel.js), so a late message can take the focus back from the editor after a fast `Shift+F6` under load. Rare and harmless; VS Code's webview takes the same path. test/web-settings.test.ts waits for it (found in the review of #611).
 
 ## Waiting on the maintainer
 
