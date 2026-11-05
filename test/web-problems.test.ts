@@ -425,4 +425,40 @@ describe('the web page: the Problems strip', function () {
     assert.strictEqual(got.parts.find((p) => p.name === 'word')!.state, 'whole', JSON.stringify(got.parts));
     await ctx.close();
   });
+
+  it('goes round with F8 and Shift+F8 beside the settings\' column, and not behind the modal sheet', async () => {
+    const script = 'read line\nsource lib.sh; read other\nread more\n';
+    const wide = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+    const page = await wide.newPage();
+    await open(page, script);
+    await until('the problems', () => page.locator('#problem-list .problem').count(), (n) => n > 2, 15000);
+    await cursorToLine(page, 2);
+    await until('where the cursor is', () => pos(page), (t) => !!t && t.startsWith('Ln 2'));
+    await page.keyboard.press('F8');
+    const at = await pos(page);
+    await page.locator('#settings-open').click();
+    await until('the column', () => page.evaluate("document.getElementById('settings-dialog').open && !document.getElementById('settings-dialog').matches(':modal')"), (v) => v === true);
+    await page.keyboard.press('F8');
+    await until('the next problem', () => pos(page), (t) => t !== at);
+    await page.keyboard.press('Shift+F8');
+    await until('back again', () => pos(page), (t) => t === at);
+    await wide.close();
+    // The sheet that takes the whole window shuts the page behind it.
+    const small = await browser.newContext({ viewport: { width: 700, height: 800 }, locale: 'en-US' });
+    const shut = await small.newPage();
+    await open(shut, script);
+    await until('the problems', () => shut.locator('#problem-list .problem').count(), (n) => n > 2, 15000);
+    await cursorToLine(shut, 2);
+    await until('where the cursor is', () => pos(shut), (t) => !!t && t.startsWith('Ln 2'));
+    await shut.keyboard.press('F8');
+    const here = await pos(shut);
+    await shut.locator('#settings-open').click();
+    await until('the modal sheet', () => shut.evaluate("document.getElementById('settings-dialog').matches(':modal')"), (v) => v === true);
+    await shut.keyboard.press('F8');
+    await shut.keyboard.press('Shift+F8');
+    await shut.evaluate(FRAMES);
+    assert.strictEqual(await pos(shut), here);
+    assert.strictEqual(await shut.evaluate("document.getElementById('settings-dialog').contains(document.activeElement)"), true);
+    await small.close();
+  });
 });
