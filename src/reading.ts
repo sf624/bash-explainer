@@ -516,12 +516,12 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const res = cx.resolve(name, w);
     if (res.kind === 'alias') return { ...aliasWord(w, res, own, process), res };
     // (`[`: its token is the command's, which has the word in it, so the word is said by itself, as it was when it had a token of its own.)
-    const nameSaid = (t: Token) => (t.nameWord ? { text: readSaid(t.nameWord.text).text } : saidBy(t));
-    const nameSections = (t: Token) => (t.nameWord ? t.nameWord.refs : t.refs);
+    const nameSaid = (t: Token) => (t.nameWord ? { text: t.nameWord.text } : saidBy(t));
+    const nameSections = (t: Token | undefined) => (t?.nameWord ? t.nameWord.refs : t?.refs);
     return {
       node: {
         layer, kind: 'commandName', label: short(w.text), span, ...(own ? nameSaid(own) : {}),
-        refs: union(['3.7.1', '3.7.2'], own && nameSections(own), expansionSections(cx.meaning(w))), resolves: res.kind, ...(own?.name ? { name: own.name } : {}), ...process, children: wordParts(w, layer),
+        refs: union(['3.7.1', '3.7.2'], nameSections(own), expansionSections(cx.meaning(w))), resolves: res.kind, ...(own?.name ? { name: own.name } : {}), ...process, children: wordParts(w, layer),
       },
       // (The name it spells: `"ls"` and `\if` are `ls` and `if`.)
       runs: { name: short(name), inShell: resolvesInShell(res) },

@@ -300,7 +300,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   if (head.refs?.length) t.refs = bracket ? [...head.refs, '6.4'] : head.refs;
   if (bracket) {
     // (The word `[` by itself, for the reading tree: the builtin's, as `test` is, so its section is 4.1.)
-    t.nameWord = { text: cx.text(head.kind === 'builtin' ? 'cmd-bracket-builtin-name' : 'cmd-bracket-program-name'), refs: head.refs };
+    t.nameWord = { text: plainOf(cx.text(head.kind === 'builtin' ? 'cmd-bracket-builtin-name' : 'cmd-bracket-program-name')), refs: head.refs };
     // (The test itself, as the connector between the stages of a pipeline names the command: `[ a = b ]` of `[ a = b ] | cat`.)
     const parts = bracketLabel(n);
     t.stage = parts.some((p) => p.placeholder) ? labelText(parts) : shorten(wordsText(n));
