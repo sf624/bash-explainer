@@ -402,11 +402,11 @@ describe('words with an expansion read with the expansion as a hole', function (
 
   it('a hole after blanks is an address only where a command starts', () => {
     assert.deepStrictEqual(shape('sed "s/a/b/\t $x p"'), []);
-    assert.ok(shape('sed "p;\t $x p"').includes('$x 10-12'));
+    assert.ok(shape('sed "p;\t $x p"').includes('$x 9-11'));
   });
 
   it('perl\'s `s{…}{…}` has no one delimiter that a value would end the part at', () => {
-    const says = allTokens('perl -pe "s{a}{$x}"').find((t) => t.label === '$x' && t.origin === 'embedded')!;
+    const says = allTokens('perl -pe "s{a}{$x}"').find((t) => t.origin === 'embedded' && t.explanation.startsWith('The value of'))!;
     assert.match(says.explanation, /`\$`, `@` and `\\` in it are special$/);
     assert.doesNotMatch(allTokens('perl -pe "s{$x}{b}"').map((t) => t.explanation).join('|'), /ends the pattern early/);
   });
