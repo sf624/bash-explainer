@@ -1625,7 +1625,10 @@ button.mk-posix {
   box-sizing: border-box;
   border: 1px solid var(--c-muted);
   border-top: 0;
-  vertical-align: -0.1em;
+  /* (An inline-block with a line of text in it stands on that line's baseline, which is a line above its bottom edge. With overflow
+     hidden its baseline is its bottom edge, so the mark stands on the baseline of the text beside it, as `_` does.) */
+  overflow: hidden;
+  vertical-align: baseline;
 }
 
 /* A control character in a shown text (media/panel.js `withMarks`): its name in a small box, since the glyphs for them (the

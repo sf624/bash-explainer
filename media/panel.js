@@ -967,14 +967,15 @@
   }
 
   /**
-   * A space at an end of a shown text: a real space in an element that CSS draws (`.ev-sp`), with a name for a screen
-   * reader (`label`): the glyph for it (`␠`) is a box where no font has it.
+   * A space at an end of a shown text: a real space in an element that CSS draws (`.ev-sp`), with a name (`label`) for a screen
+   * reader and, as `title`, for a pointer: the glyph for it (`␠`) is a box where no font has it.
    */
   function spaceMark(/** @type {string | undefined} */ label) {
     const m = document.createElement('span');
     m.className = 'ev-sp';
     m.setAttribute('role', 'img');
     m.setAttribute('aria-label', label || '');
+    if (label) m.title = label;
     m.textContent = ' ';
     return m;
   }

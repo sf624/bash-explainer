@@ -6,6 +6,7 @@ import { Analyzer } from '../src/analyzer';
 import type { LineExplanation } from '../src/analyzer-types';
 import { explainHostedLine, extractShell, type HostKind } from '../src/hosts';
 import type { Lang } from '../src/i18n';
+import { shownPiece, shownWord } from '../src/messages';
 import { keyOf } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { ReceivedChip } from '../src/ui/panelReceives';
@@ -49,6 +50,43 @@ describe('the panel: what the program receives', () => {
       ['echo ""', 'echo', ['runs inside bash, gets:', '∅']],
     ];
     for (const [src, label, want] of table) assert.deepStrictEqual(line(src, label), want, src);
+  });
+
+  it('marks a space only at the ends of the whole word: beside a placeholder it shows as it is', () => {
+    const chips = (src: string, lang: Lang = 'en') => rows(src, { lang }).filter((x) => x.label === 'echo' && x.receives).pop()!.receives!.chips.map((c) => c.parts);
+    const text = (text: string, lead = 0, trail = 0) => ({ text, ends: [lead, trail] });
+    assert.deepStrictEqual(chips('echo "ERROR $USER" "$USER " " $USER" "$a $b" "a  $USER" " " "  " "a "'), [
+      [text('ERROR '), { hole: 'current user name' }],
+      [{ hole: 'current user name' }, text('␣', 0, 1)],
+      [text('␣', 0, 1), { hole: 'current user name' }],
+      [{ hole: 'value of `$a`' }, text(' '), { hole: 'value of `$b`' }],
+      [text('a  '), { hole: 'current user name' }],
+      [text('␣', 0, 1)],
+      [text('␣␣', 0, 2)],
+      [text('a␣', 0, 1)],
+    ]);
+    // (Both ends of a text beside placeholders on one side only: the end by the placeholder is plain.)
+    assert.deepStrictEqual(chips('echo " a $USER" "$USER b "'), [
+      [text('␣a ', 1, 0), { hole: 'current user name' }],
+      [{ hole: 'current user name' }, text(' b␣', 0, 1)],
+    ]);
+    assert.deepStrictEqual(chips('echo "ERROR $USER" "$USER "', 'ja'), [
+      [text('ERROR '), { hole: '現在のユーザー名' }],
+      [{ hole: '現在のユーザー名' }, text('␣', 0, 1)],
+    ]);
+  });
+
+  it('shows a text as the whole word does by default, and a piece of a word by the ends it has', () => {
+    const both = { lead: true, trail: true };
+    assert.deepStrictEqual(shownWord('  a  '), { text: '␣␣a␣␣', ends: [2, 2] });
+    assert.deepStrictEqual(shownPiece('  a  ', both), shownWord('  a  '));
+    assert.deepStrictEqual(shownPiece('  a  ', { lead: true, trail: false }), { text: '␣␣a  ', ends: [2, 0] });
+    assert.deepStrictEqual(shownPiece('  a  ', { lead: false, trail: true }), { text: '  a␣␣', ends: [0, 2] });
+    assert.deepStrictEqual(shownPiece('  a  ', { lead: false, trail: false }), { text: '  a  ', ends: [0, 0] });
+    assert.deepStrictEqual(shownWord('  '), { text: '␣␣', ends: [0, 2] });
+    assert.deepStrictEqual(shownPiece('  ', { lead: true, trail: false }).text, '␣␣');
+    assert.deepStrictEqual(shownPiece('  ', { lead: false, trail: true }).text, '␣␣');
+    assert.deepStrictEqual(shownPiece('  ', { lead: false, trail: false }), { text: '  ', ends: [0, 0] });
   });
 
   it('says them in Japanese from the same words', () => {

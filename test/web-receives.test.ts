@@ -191,4 +191,73 @@ describe('the panel: what the program receives, drawn', function () {
     assert.ok(Math.abs(after - before) < 40, `${before} → ${after}`);
     await page.context().close();
   });
+
+  describe('the mark of a space at an end of a word', () => {
+    // A line with every kind: a space beside a placeholder (shown as it is) and at the ends of the word (marked), and a value with a space at an end.
+    const SPACES = `a=' a '; echo "ERROR $USER" "$USER " " $USER" "$a $b" "a  $USER" " " "  "`;
+
+    it('is drawn at the ends of a word only, with its name as a tooltip; a space beside a placeholder is a plain one, as wide as it is', async () => {
+      const { page, panel } = await open(SPACES.replace("a=' a '; ", ''));
+      await until('the chips', () => lines(panel), (l) => l.length === 1 && l[0].length > 4);
+      const chips = await panel.evaluate(`[...document.querySelectorAll('#tree .recv-word')].map((c) => ({
+        text: c.textContent, marks: [...c.querySelectorAll('.ev-sp')].map((m) => [m.title, m.getAttribute('aria-label'), [...c.children].indexOf(m)]),
+        white: getComputedStyle(c).whiteSpace }))`) as { text: string; marks: [string, string, number][]; white: string }[];
+      // (A mark holds a real space, which `textContent` reads; where it stands is told by `marks`.)
+      assert.deepStrictEqual(chips.map((c) => c.text), ['ERROR ‹current user name›', '‹current user name› ', ' ‹current user name›', '‹value of $a› ‹value of $b›', 'a  ‹current user name›', ' ', '  ']);
+      assert.deepStrictEqual(chips.map((c) => c.marks.length), [0, 1, 1, 0, 0, 1, 2]);
+      assert.deepStrictEqual(chips[1].marks[0], ['space', 'space', 1]);
+      assert.deepStrictEqual(chips[2].marks[0], ['space', 'space', 0]);
+      for (const c of chips) assert.ok(c.white === 'pre-wrap' || c.white === 'pre', c.white);
+      // A plain space keeps its width: `a  ` before the placeholder is as wide as two spaces.
+      const widths = await panel.evaluate(`(() => {
+        const t = [...document.querySelectorAll('#tree .recv-word')][4].firstChild;
+        const r = document.createRange();
+        r.setStart(t, 1); r.setEnd(t, 3);
+        const two = r.getBoundingClientRect().width;
+        r.setStart(t, 1); r.setEnd(t, 2);
+        return [two, r.getBoundingClientRect().width];
+      })()`) as number[];
+      assert.ok(widths[1] > 1 && Math.abs(widths[0] - 2 * widths[1]) < 1, `${widths}`);
+      await page.context().close();
+    });
+
+    for (const lang of ['en', 'ja'] as const) {
+      it(`names the mark (${lang}) in a tooltip`, async () => {
+        const { page, panel } = await open(SPACES.replace("a=' a '; ", ''), { lang });
+        await until('the chips', () => lines(panel), (l) => l.length === 1 && l[0].length > 4);
+        const titles = await panel.evaluate(`[...document.querySelectorAll('#tree .ev-sp')].map((m) => m.title + '|' + m.getAttribute('aria-label'))`) as string[];
+        const name = lang === 'ja' ? '空白' : 'space';
+        assert.ok(titles.length >= 5, String(titles.length));
+        for (const t of titles) assert.strictEqual(t, `${name}|${name}`);
+        await page.context().close();
+      });
+    }
+
+    // Where the mark appears: the chips of the receives line, the value line of an expansion (depth 2), and a note that shows it. Its bottom is on the baseline of the text beside it.
+    for (const [lang, theme, depth] of [['en', 'light', 1], ['ja', 'dark', 1], ['en', 'dark', 2], ['ja', 'light', 2]] as const) {
+      it(`sits on the baseline of the text (${lang}, ${theme}, depth ${depth})`, async () => {
+        const text = lang === 'ja' ? `a=' あ '; echo "日本語 $USER " "あ $a" "$a"` : SPACES;
+        const { page, panel } = await open(text, { lang, theme, kept: { depth } });
+        await until('the chips', () => lines(panel), (l) => l.length > 0 && l[0].length > 3);
+        const got = await panel.evaluate(`(() => [...document.querySelectorAll('#tree .ev-sp')].map((m) => {
+          // A probe of no size beside the mark, on the baseline: its bottom is where the text's letters stand.
+          const probe = document.createElement('span');
+          probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+          m.parentNode.insertBefore(probe, m);
+          const base = probe.getBoundingClientRect().bottom;
+          probe.remove();
+          const r = m.getBoundingClientRect();
+          return { bottom: r.bottom, base, h: r.height, where: m.closest('.receives') ? 'receives' : m.closest('.ev-value') ? 'value' : 'note' };
+        }))()`) as { bottom: number; base: number; h: number; where: string }[];
+        assert.ok(got.some((g) => g.where === 'receives'), JSON.stringify(got));
+        for (const g of got) {
+          assert.ok(g.h > 2, JSON.stringify(g));
+          assert.ok(Math.abs(g.bottom - g.base) <= 1, `${g.where}: the mark's bottom is ${g.bottom - g.base} px from the baseline`);
+        }
+        if (depth === 2) assert.ok(got.some((g) => g.where !== 'receives'), 'the mark in a value or a note too');
+        if (process.env.BASH_EXPLAINER_SHOT_DIR) await page.screenshot({ path: `${process.env.BASH_EXPLAINER_SHOT_DIR}/mark-${lang}-${theme}-${depth}.png` });
+        await page.context().close();
+      });
+    }
+  });
 });

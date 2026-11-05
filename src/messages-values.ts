@@ -49,6 +49,11 @@ const WORDS_SHOWN = 12;
  * empty word as `∅`, cut when long; `ends`: how many characters at each end are marks of a space.
  */
 export function shownWord(t: string): { text: string; ends: SpaceEnds } {
+  return shownPiece(t, { lead: true, trail: true });
+}
+
+/** `shownWord` of a piece of a word: `edges` say whether it starts (`lead`) and ends (`trail`) the whole word. (Not an optional parameter of `shownWord`: `.map(shownWord)` would pass an index.) */
+export function shownPiece(t: string, edges: { lead: boolean; trail: boolean }): { text: string; ends: SpaceEnds } {
   // (A newline is shown as `␊`, as in the notes on quote removal, so that it is not read as the two characters `\n`.
   // A space at either end is `␣`: Markdown takes one space at each end of a code span as padding, and a chip or a
   // hover would hide it. An empty word of a split value is `∅`. The cut is on characters, not on UTF-16 units.)
@@ -58,7 +63,9 @@ export function shownWord(t: string): { text: string; ends: SpaceEnds } {
   const units = cut ? [...chars.slice(0, VALUE_SHOWN - 1), '…'] : chars;
   const first = units.findIndex((c) => c !== ' ');
   const last = units.map((c) => c !== ' ').lastIndexOf(true);
-  const marked = units.map((c, i) => c === ' ' && (i < first || (!cut && i > last)));
+  // (`edges`: which ends of the text are an end of the whole word. A piece of a word beside a placeholder has an inner end, where a space shows as it is.
+  // A text of spaces only has both ends in one: it is marked if either is an end of the word.)
+  const marked = units.map((c, i) => c === ' ' && ((edges.lead && (first < 0 || i < first)) || (edges.trail && !cut && (first < 0 || i > last))));
   const firstText = marked.indexOf(false);
   const lead = firstText < 0 ? 0 : firstText;
   const trail = firstText < 0 ? marked.length : marked.length - 1 - marked.lastIndexOf(false);
