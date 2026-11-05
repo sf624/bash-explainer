@@ -337,7 +337,7 @@ In `--format json`, the `said` of a command name (`items[].name.said`, also in `
 
 ### AND and OR lists that mix `&&` and `||`
 
-`grep x | sort && echo || exit` showed the role "OR list" alone on its row, and `a || b && c` "AND list" alone, since the role came from the outermost operator. The role reads all the operators now, those of the lists nested on its left too: `a && b || c`, `a || b && c` and `a && b || c && d` are an "AND and OR list" (「AND・OR リスト」); `a && b`, `a && b && c`, `a || b` and `a || b || c` stay an AND list and an OR list. The Reading view still has a node for each nested list (the `a && b` of `a && b || c` is an AND list). In `--format json`, the `grammar` of such a part is `andOrList` (before: `orList`, or `andList`).
+`grep x | sort && echo || exit` showed the role "OR list" alone on its row, and `a || b && c` "AND list" alone, since the role came from the outermost operator. The role reads all the operators now, those of the lists nested on its left too: `a && b || c`, `a || b && c` and `a && b || c && d` are an "AND and OR list" (「AND・OR リスト」); `a && b`, `a && b && c`, `a || b` and `a || b || c` stay an AND list and an OR list. The text of the part says "AND and OR list, read from the left as …" (before: "lists"). In `--format json`, the `grammar` of such a part is `andOrList` (before: `orList`, or `andList`).
 
 ### A host file's own text in the explanation
 
