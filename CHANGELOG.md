@@ -39,6 +39,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `cmd 2>&1 >file` is a problem at the Information level, and says both things the order may mean: how to send both to the file, and how to send only stdout there. Where stdout is a pipe, `$( )` or a redirection around the command, which then get only the errors (`err=$(cmd 2>&1 >/dev/null)`), it is no problem. Before, it was a plain note.
 - The notes on idioms, here-documents, a continued statement, yq and host files start with ℹ, as the other notes do. Before, they had no mark.
 - Folding a row moves its examples with its parts, and a tall box takes longer to fold (up to 0.4 s, not 0.22 s) so that it does not rush. Before, an example under a row vanished at once while the parts moved.
+- `--format json`: the `said` of a command name (`items[].name.said`) no longer has `spoken`. Read `kind` and `by`: `spoken` was the two joined, without backticks (`program, run by sudo`).
 
 ### Fixed
 

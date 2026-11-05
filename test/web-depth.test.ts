@@ -23,6 +23,7 @@ const SCRIPTS = {
  * The longest a page may be at depth 2, in px, by the page's width. The plan proposed 750 and 1,500, half the prototype's; what each row must
  * hold leaves more: panel-redesign.md, "The length budget". These are what the folds and the closer rows reach, with room for a font's width: with
  * the switch "What the program receives" on (its row, and a line under each command: 1,380 and 1,921) and off (its row: 1,244 and 1,771).
+ * The maintainer accepted this budget on 2026-11-05, after a check on a real device; the usability test judges the length again.
  */
 const BUDGET = { on: { 1280: 1420, 390: 1980 }, off: { 1280: 1280, 390: 1820 } } as const;
 
