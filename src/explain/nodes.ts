@@ -11,12 +11,13 @@ import type { NodeType, SyntaxNode } from '../syntax/tree';
 
 /** A set of node types, checked against the model's: a name that is not a NodeType does not compile. */
 const types = (...names: NodeType[]): ReadonlySet<string> => new Set<string>(names);
-/** Constructs that own a body; when they span lines, each line explains only its own part. */
-const BLOCKS = types(
-  'for_statement', 'c_style_for_statement', 'while_statement', 'if_statement', 'elif_clause',
-  'else_clause', 'case_statement', 'case_item', 'function_definition', 'compound_statement',
-  'subshell', 'do_group', 'error', 'arithmetic_command', 'select_statement',
+/** The compound commands and functions: the statements that own a body (the editors mark them too, src/ui/blockAt.ts). */
+export const BODY_STATEMENTS = types(
+  'for_statement', 'select_statement', 'c_style_for_statement', 'while_statement', 'if_statement', 'case_statement',
+  'compound_statement', 'subshell', 'function_definition', 'arithmetic_command',
 );
+/** Constructs that own a body; when they span lines, each line explains only its own part. */
+const BLOCKS: ReadonlySet<string> = new Set([...BODY_STATEMENTS, 'elif_clause', 'else_clause', 'case_item', 'do_group', 'error']);
 /** Nodes that just combine statements; they count as blocks only when they contain one. */
 const WRAPPERS = types('command_list', 'list', 'pipeline', 'redirected_statement', 'negated_command', 'program', 'time_statement');
 
