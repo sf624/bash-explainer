@@ -353,33 +353,73 @@ describe('the web page: the place in the editor beside the settings', function (
     });
   });
 
+  // The cursor at `column` of the line, and a wheel of `wheel` px beside the open sheet: it stays in view at column 30 and 90 px,
+  // and the scroll hides it in the others (5 px only brings it to the gutter's edge), where the close must not reveal it again.
   for (const width of [1280, 768]) {
-    it(`keeps a sideways scroll made beside the open sheet, without wrapping, at ${width} px`, async () => {
-      await onPage(browser, base, width, async (page) => {
-        await page.evaluate(`localStorage.setItem(${JSON.stringify(SETTINGS_KEY)}, JSON.stringify({ 'bashExplainer.editor.wrap': false }))`);
-        await page.reload();
-        await page.locator('.cm-line').first().waitFor();
-        await page.evaluate(PROBE);
-        await typed(page, `${'# some line\n'.repeat(3)}echo ${'word '.repeat(80)}\n${'# some line\n'.repeat(3)}`, 4);
-        await page.keyboard.press('Home');
-        for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowRight');
-        await scrollStill(page);
-        const sideways = () => page.evaluate("document.querySelector('.cm-scroller').scrollLeft") as Promise<number>;
-        await page.locator('#settings-open').click();
-        await until('open', () => isOpen(page), (v) => v);
-        await stable('sideways', sideways);
-        const box = (await page.locator('.cm-scroller').boundingBox())!;
-        await page.mouse.move(box.x + 100, box.y + 40);
-        await page.mouse.wheel(90, 0);
-        const scrolled = await stable('sideways', sideways);
-        assert.ok(scrolled >= 80, `scrolled to ${scrolled}`);
-        await page.locator('#settings-open').click();
-        await until('closed', () => isOpen(page), (v) => !v);
-        const after = await stable('sideways', sideways);
-        assert.ok(Math.abs(after - scrolled) <= 1, `${scrolled}, then ${after}`);
+    for (const [column, wheel, hidden] of [[30, 90, 'shown'], [0, 300, 'hidden'], [0, 5, 'edge'], [30, 600, 'hidden']] as const) {
+      it(`keeps a sideways scroll made beside the open sheet, without wrapping, the cursor at column ${column}, a wheel of ${wheel} px, at ${width} px`, async () => {
+        await onPage(browser, base, width, async (page) => {
+          await page.evaluate(`localStorage.setItem(${JSON.stringify(SETTINGS_KEY)}, JSON.stringify({ 'bashExplainer.editor.wrap': false }))`);
+          await page.reload();
+          await page.locator('.cm-line').first().waitFor();
+          await page.evaluate(PROBE);
+          await typed(page, `${'# some line\n'.repeat(3)}echo ${'word '.repeat(80)}\n${'# some line\n'.repeat(3)}`, 4);
+          await page.keyboard.press('Home');
+          for (let i = 0; i < column; i++) await page.keyboard.press('ArrowRight');
+          await scrollStill(page);
+          await page.evaluate(`window.place.mark('cursor', ${column})`);
+          const sideways = () => page.evaluate("document.querySelector('.cm-scroller').scrollLeft") as Promise<number>;
+          const shown = () => page.evaluate(`(() => {
+            const s = document.querySelector('.cm-scroller').getBoundingClientRect();
+            const c = window.place.char();
+            // (The gutter stays over the text's left side.)
+            return c.left >= document.querySelector('.cm-gutters').getBoundingClientRect().right - 0.5 && c.right <= s.right;
+          })()`) as Promise<boolean>;
+          await page.locator('#settings-open').click();
+          await until('open', () => isOpen(page), (v) => v);
+          await stable('sideways', sideways);
+          const box = (await page.locator('.cm-scroller').boundingBox())!;
+          await page.mouse.move(box.x + 100, box.y + 40);
+          await page.mouse.wheel(wheel, 0);
+          const scrolled = await stable('sideways', sideways);
+          assert.ok(scrolled >= wheel - 10, `scrolled to ${scrolled}`);
+          if (hidden !== 'edge') assert.strictEqual(await shown(), hidden === 'shown', `the cursor at scroll ${scrolled}`);
+          await page.locator('#settings-open').click();
+          await until('closed', () => isOpen(page), (v) => !v);
+          const after = await stable('sideways', sideways);
+          assert.strictEqual(after, scrolled, `${scrolled}, then ${after}`);
+        });
       });
-    });
+    }
   }
+
+  it('puts the row back where it was with classic scrollbars, when the narrow editor has a sideways scrollbar that the wide one lacks', async function () {
+    const classic = await classicScrollbars(this);
+    await onPage(classic, base, 1280, async (page) => {
+      await page.evaluate(`localStorage.setItem(${JSON.stringify(SETTINGS_KEY)}, JSON.stringify({ 'bashExplainer.editor.wrap': false }))`);
+      await page.reload();
+      await page.locator('.cm-line').first().waitFor();
+      await page.evaluate(PROBE);
+      // Lines that fit the editor as it is (625 px wide) and not beside the sheet (412 px), the cursor on the bottom row, with lines under it (the close can give the row its 15 px back only if the text goes on).
+      await typed(page, `${'# some line\n'.repeat(80)}echo ${'word '.repeat(11)}\n${'# some line\n'.repeat(30)}`, 81);
+      await scrollStill(page);
+      const bar = () => page.evaluate("(() => { const s = document.querySelector('.cm-scroller'); return s.offsetHeight - s.clientHeight; })()") as Promise<number>;
+      assert.strictEqual(await bar(), 0, 'a sideways scrollbar in the wide editor');
+      const before = await page.evaluate("window.place.mark('cursor')") as Sample;
+      await page.locator('#settings-open').click();
+      await until('open', () => isOpen(page), (v) => v);
+      await scrollStill(page);
+      const opened = await page.evaluate('window.place.read()') as Sample;
+      assert.ok(await bar() > 0, 'no sideways scrollbar in the narrow editor');
+      // The scrollbar takes 15 px from the view's height, so the row has to rise to stay in it.
+      assert.ok(opened.y! + before.height! <= opened.bottom - 15 + 1 && opened.y! >= before.y! - 40, `the row at ${before.y}, then at ${opened.y}, the edge at ${opened.bottom}`);
+      await page.locator('#settings-open').click();
+      await until('closed', () => isOpen(page), (v) => !v);
+      await scrollStill(page);
+      const after = await page.evaluate('window.place.read()') as Sample;
+      assert.ok(Math.abs(after.y! - before.y!) <= ROWS, `the row at ${before.y}, then at ${after.y}`);
+    });
+  });
 
   /** Where the cursor's row lies under the view's bottom edge, in px, after `lower` makes the view lower beside the sheet and the sheet closes. */
   const outsideAfter = async (page: Page, lower: () => Promise<void>): Promise<number> => {
@@ -391,6 +431,9 @@ describe('the web page: the place in the editor beside the settings', function (
     await motion(page);
     await scrollStill(page);
     const at = await page.evaluate('window.place.read()') as Sample;
+    assert.notStrictEqual(at.y, null, 'the row is not drawn');
+    // (The row ends at the edge: the view's room is used, the row is not left far above it.)
+    assert.ok(at.y! + 20 - at.bottom >= -2, `the row at ${at.y}, the edge at ${at.bottom}`);
     return at.y! + 20 - at.bottom;
   };
 

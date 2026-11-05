@@ -461,4 +461,31 @@ describe('the web page: the Problems strip', function () {
     assert.strictEqual(await shut.evaluate("document.getElementById('settings-dialog').contains(document.activeElement)"), true);
     await small.close();
   });
+
+  it('leaves F8 alone while another dialog is open, with the settings beside the editor or not', async () => {
+    const wide = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+    const page = await wide.newPage();
+    await open(page, 'read line\nsource lib.sh; read other\nread more\n');
+    await until('the problems', () => page.locator('#problem-list .problem').count(), (n) => n > 2, 15000);
+    await cursorToLine(page, 2);
+    await until('where the cursor is', () => pos(page), (t) => !!t && t.startsWith('Ln 2'));
+    await page.keyboard.press('F8');
+    const at = await pos(page);
+    // (The menu's sheet stands for any dialog the page opens besides the settings.)
+    const other = "document.getElementById('drawer')";
+    for (const settings of [false, true]) {
+      if (settings) {
+        await page.locator('#settings-open').click();
+        await until('the column', () => page.evaluate("document.getElementById('settings-dialog').open && !document.getElementById('settings-dialog').matches(':modal')"), (v) => v === true);
+      }
+      await page.evaluate(`${other}.showModal()`);
+      await page.keyboard.press('F8');
+      await page.evaluate(FRAMES);
+      assert.strictEqual(await pos(page), at, `settings ${settings}`);
+      await page.evaluate(`${other}.close()`);
+    }
+    await page.keyboard.press('F8');
+    await until('the next problem', () => pos(page), (t) => t !== at);
+    await wide.close();
+  });
 });
