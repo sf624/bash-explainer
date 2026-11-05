@@ -16,7 +16,8 @@
 //   Levels inside levels (`bash -c 'echo $(pwd)'`, a `$( )` in a `$( )`) are all this layer: they are not counted.
 // - `command`: each command reads its arguments as its spec says: the tokens of the argument interpreter
 //   (`Token.origin` `argv`: options, operands, subcommands, a command it runs, the expression of `test`), under the
-//   argument word each is about (or after the words, when one reads several: `-n 5`, `[`'s expression).
+//   argument word each is about (or after the words, when one reads several: `-n 5`, `[`'s expression). A test of
+//   `[` or `test` has its operators and operands under it (`Token.testParts`), as an expression of `[[ ]]` has them.
 // - `language`: a language inside a word, read by its own rules: the tokens of an embedded explainer (`embedded`: a
 //   regex, a sed script, a jq filter, a printf format…), grouped by `Token.language`. The command reads it, except the
 //   regex of `[[ =~ ]]`, which bash matches itself (its regex library, POSIX ERE).
@@ -163,6 +164,8 @@ const ARITHMETIC = new Set(['arithmetic_command', 'arithmetic_expansion', 'c_sty
 const substring = (n: SyntaxNode): boolean => n.type === 'expansion' && n.children.some((c) => c.type === ':');
 
 const le = (a: Pos, b: Pos): boolean => a.line < b.line || (a.line === b.line && a.character <= b.character);
+/** In the order of the text. */
+const byStart = (a: { span: Span }, b: { span: Span }): number => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character;
 const ALIAS = new Set(['alias']);
 /** The last of `nodes`, which are in order and do not overlap, that starts at `at` or before it. */
 function lastAt<T extends { span: Span }>(nodes: readonly T[], at: Pos): T | undefined {
@@ -621,7 +624,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       }
     };
     look(items);
-    return [...parts, ...found].sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
+    return [...parts, ...found].sort(byStart);
   };
 
   /** A token of bash's reading in a word, with the tokens of bash's under it. */
@@ -828,8 +831,12 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     layer, kind: t.kind, label: t.label, span: t.span, ...readBy(reader), ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}), ...(t.expands ? { expands: t.expands } : {}),
     // (A word the command reads as a script, which the analyzer says only is a word: `eval ls`.)
     ...(t.explanation === said('word-plain', { text: t.label }) && t.children.some((c) => c.origin === 'script') ? { text: said('script-run-again') } : saidBy(t)),
-    children: readParts(t.children, false, RUNS.has(t.kind) ? { name: t.label, inShell: builtinHere(t) } : reader, t.kind !== 'assignment'),
+    children: testPartsIn(t, readParts(t.children, false, RUNS.has(t.kind) ? { name: t.label, inShell: builtinHere(t) } : reader, t.kind !== 'assignment'), layer, reader),
   });
+
+  /** What a token has under it, and if it is a test of `[` or `test`, its operator and its operands, the words bash passes it, as `[[ ]]` has them, in the order of the text. */
+  const testPartsIn = (t: Token, children: ReadingNode[], layer: Layer, reader: Reader): ReadingNode[] =>
+    (t.testParts ? [...children, ...t.testParts.map((p) => ({ layer, ...p, label: short(p.label), ...readBy(reader), children: [] }))].sort(byStart) : children);
 
   /** Adds a token of a language to `out`: under the node of its language, which it starts when it is the first. */
   const language = (out: ReadingNode[], t: Token, reader: string): void => {

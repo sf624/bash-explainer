@@ -47,6 +47,9 @@ export type ScriptProcess = 'same' | 'subshell' | 'shell' | 'remote' | 'containe
 export interface Pos { line: number; character: number }
 export interface Span { start: Pos; end: Pos }
 
+/** A word a test of `[` or `test` reads as its operator (`-a`, `=`, `!`, `\(`) or as an operand (the file `-a` tests). */
+export type TestPart = Pick<ReadingNode, 'label' | 'span' | 'text' | 'refs'> & { kind: 'operator' | 'argument' };
+
 export interface Token {
   kind: Kind;
   /**
@@ -138,6 +141,8 @@ export interface Token {
   process?: ScriptProcess;
   /** With `ExplainOptions.reading`, on the first token of a string read as a script: the string's own reading (src/explain/scripts.ts). */
   reading?: ReadingNode[];
+  /** With `ExplainOptions.reading`, on a test of `[` or `test`: the words that test reads itself, for the reading tree (src/explain/tests.ts). Its token's children are the tests in it. */
+  testParts?: TestPart[];
   /**
    * On the token of a command name (a simple command's, a command another runs, `[`, and the reserved words `time`
    * and `[[`): what the name is here, who looks it up, and what else the same name is (src/namefacts.ts).

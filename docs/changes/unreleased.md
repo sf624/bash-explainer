@@ -57,6 +57,19 @@ On a phone (and a tablet held upright), one row says what the cursor's line is: 
 
 ## Changed
 
+### The condition of `[` and `test` unfolds as that of `[[ ]]`
+
+At depth 2, the rows under the condition are the same for `[ … ]`, `test …` and `[[ … ]]`: `[ -a file ]` has `-a` ("exists…") and `file` ("The file `-a` tests"), `[ ! -f x ]` has `!` over `-f x`, `[ a = b -a c = d ]` has `-a` between its two conditions, and `[ \( a = b \) ]` has `\(` and `\)`. It holds for a test another command runs (`env [`, `sudo test`, `/usr/bin/[`) or a string a shell reads (`bash -c '[ -f a ]'`). Before, only `[[ ]]` had these rows; `[` and `test` stopped at the condition.
+
+What truly differs stays said:
+
+- The right of `=` in `[` is plain text, not a pattern: "The string on the right of `=`: plain text, not a pattern".
+- `-eq` and the others read decimal integers (`[ 010 -eq 10 ]` is true), not arithmetic.
+- `-a` and `-o` are operators by bash's rules for the number of words: `-a f` tests a file, `f -a g` is AND, and `[ -a ]` and `[ -f ]` test a word that is not empty, with no operator row. `[ a b ]` is an error, with no rows of a condition.
+- A word that may give no field or several (`$x`, `"$@"`, `a*`) says nothing of an operand: `[ -f $x ]` with `x` empty is `[ -f ]`.
+
+Depth 1, the sentence, the notes and `--format json` do not change.
+
 ### The errors of a part of a line are problems
 
 A part of a line can say that the command fails every time it runs, with ⓧ on its row. Those errors stopped at the row: the Problems strip said "no problems", VS Code showed no squiggle, and `--check` exited 0. Now they are notes of the line, and go where every note goes: the panel, the hover, Markdown, the Problems lists of VS Code, the Language Server and the web page, `--check` in every format (`text`, `github`, `json`, `sarif`), and the GitHub Action.
