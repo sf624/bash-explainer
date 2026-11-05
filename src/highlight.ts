@@ -98,6 +98,12 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
     paint.fill(CODE.get(kind)!, Math.max(a, from), Math.min(b, to));
   };
 
+  /** Only where nothing is painted yet. */
+  const underPaint = (a: number, b: number, kind: HighlightKind): void => {
+    const code = CODE.get(kind)!;
+    for (let i = Math.max(a, from); i < Math.min(b, to); i++) if (!paint[i]) paint[i] = code;
+  };
+
   const visit = (n: SyntaxNode, arith: boolean): void => {
     if (n.endIndex < from || n.startIndex > to) return;
     if (!n.named) return token(n, arith);
@@ -115,6 +121,8 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
     let kind: HighlightKind | null;
     if (SUBSTITUTIONS.has(p)) kind = 'substitution';
     else if (REDIRECTS.has(p)) kind = 'redirect';
+    else if (p === 'variable_assignment' && (t.type === '=' || t.type === '+=')) kind = 'assignment';
+    else if (p === 'function_definition' && (t.type === '(' || t.type === ')')) kind = 'functionName';
     else if (p === 'string' || p === 'translated_string' || p === 'expansion' || p === 'simple_expansion' || p === 'subscript' || p === 'variable_assignment' || p === 'brace_expression') kind = null;
     else if (arith || EXPRESSIONS.has(p)) kind = p === 'arithmetic_command' && KEYWORDS.has(t.type) ? 'keyword' : 'operator';
     else kind = KEYWORDS.has(t.type) ? 'keyword' : 'operator';
@@ -127,7 +135,8 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
   const mods = new Uint8Array(text.length);
   const model = shellState(tree, options.shell, { ...(options.host ? { host: options.host } : {}), ...(options.run ? { run: options.run } : {}), ...(options.read ? { read: options.read } : {}) });
   for (const f of semanticFacts(tree, model, options.shell, { from, to })) {
-    if (f.kind) set(f.from, f.to, f.kind);
+    if (f.kind && f.under) underPaint(f.from, f.to, f.kind);
+    else if (f.kind) set(f.from, f.to, f.kind);
     if (f.modifiers) mods.fill(f.modifiers.reduce((bits, m) => bits | (1 << MODIFIERS.indexOf(m)), 0), Math.max(f.from, from), Math.min(f.to, to));
   }
   // The CRs of Windows line ends, masked as spaces, are not part of any span.
@@ -176,7 +185,7 @@ function nodeKind(n: SyntaxNode, arith: boolean): HighlightKind | null | undefin
       const owner = n.parent!.type === 'subscript' ? n.parent!.parent! : n.parent!;
       return owner.type === 'simple_expansion' || owner.type === 'expansion' || arith ? 'variable' : 'assignment';
     }
-    case 'test_operator': return 'option';
+    case 'test_operator': return 'operator';
     case 'word':
       if (n.field === 'name' && n.parent!.type === 'function_definition') return 'functionName';
       if (arith && /^[A-Za-z_]\w*$/.test(n.text)) return 'variable';
@@ -192,7 +201,7 @@ function words(w: SyntaxNode, set: Painter): void {
   const p = w.parent!;
   // The last `]` of `[ … ]` goes with the `[`, a builtin by its spelling (what runs is for the explanation to say).
   if (writtenAsBracket(p) && bracketWords(p).close === w) {
-    set(w.startIndex, w.endIndex, 'builtin');
+    set(w.startIndex, w.endIndex, 'argument');
     return;
   }
   if (isOption(w)) {
@@ -212,6 +221,8 @@ function words(w: SyntaxNode, set: Painter): void {
   const q = at.parent!.type;
   const expanded = (q === 'command' && at.field === 'argument') || ((q === 'for_statement' || q === 'select_statement') && at.field === 'value')
     || q === 'case_item' || (p.type === 'file_redirect' && w.field === 'destination') || isPattern(at);
+  // The target of a redirection is coloured as the redirection is.
+  if (p.type === 'file_redirect' && w.field === 'destination') set(w.startIndex, w.endIndex, 'redirect');
   if (expanded) glob(w, set);
 }
 

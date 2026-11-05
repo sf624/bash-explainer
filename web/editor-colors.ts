@@ -47,6 +47,5 @@ export const CLASSIC_ROLE: Record<ColourRole, keyof typeof CLASSIC_COLOURS> = {
 
 /** The CSS colour of a kind in the editor (a word read as data stays in the foreground, as the other arguments do). */
 export function kindColour(kind: HighlightKind): string {
-  if (kind === 'argument') return 'var(--vscode-editor-foreground)';
   return kind === 'error' ? 'var(--vscode-errorForeground)' : CLASSIC_COLOURS[CLASSIC_ROLE[kind]];
 }

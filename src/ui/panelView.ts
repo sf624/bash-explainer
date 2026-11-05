@@ -14,6 +14,7 @@ import { ui } from './texts';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
 import { lineParts, lineRuns, showsLineBox } from './lineBox';
+import { heredocAt } from '../document';
 import { panelTools, viewControlForms } from './panelHead';
 import type { PanelBase } from './themePalette';
 
@@ -179,9 +180,18 @@ export function lineMarks(issues: readonly DocumentIssue[], line: number): LineM
   });
 }
 
+/**
+ * PoC: the body of a here-document, and the line that ends it, are drawn as a string, as the editor draws them: the
+ * redirection's token covers them, and is a redirect.
+ */
+function bodyKind(owner: Token, line: number, hereLine: boolean): Token['kind'] {
+  return hereLine && owner.kind === 'redirect' && owner.span.start.line < line ? 'string' : owner.kind;
+}
+
 /** The message that shows a line's explanation in the panel. */
 export function panelUpdate(p: PanelLine) {
   const { lang, explanation: ex } = p;
+  const hereLine = !!p.doc && !!heredocAt(p.doc, p.line);
   const t = ui[lang];
   const tp = t.panel;
   // (The example of the whole line is drawn apart, folded: above the rows where examples come first, else with those at the end.)
@@ -221,7 +231,7 @@ export function panelUpdate(p: PanelLine) {
     lineRole: model.line,
     wholeLine: whole,
     // (The line box: each run coloured by the kind of the deepest token, and the row a pointer on it goes to.)
-    lineRuns: lineOwners(p.lineText, ex.line, items).map(({ from, to, owner }) => ({ from, to, ...(owner ? { kind: owner.kind, row: model.places.get(owner) } : {}) })),
+    lineRuns: lineOwners(p.lineText, ex.line, items).map(({ from, to, owner }) => ({ from, to, ...(owner ? { kind: bodyKind(owner, ex.line, hereLine), row: model.places.get(owner) } : {}) })),
     // (The look of a warning on a row, from the level table.)
     levels: Object.fromEntries(Object.entries(LEVELS).map(([level, { className, codicon, name }]) => [level, { className, icon: codicon, name: name[lang] }])),
     depth,

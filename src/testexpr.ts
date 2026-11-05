@@ -61,6 +61,17 @@ export function binaryOperators(e: TestExpr): number[] {
   }
 }
 
+/** The words a test reads as operators of any kind: unary and binary tests, `!`, `-a`, `-o` and the parentheses. */
+export function operatorWords(e: TestExpr): number[] {
+  switch (e.type) {
+    case 'word': return [];
+    case 'unary': case 'binary': return [e.op];
+    case 'not': return [e.op, ...operatorWords(e.operand)];
+    case 'group': return [e.open, e.close, ...operatorWords(e.inner)];
+    default: return [e.op, ...operatorWords(e.left), ...operatorWords(e.right)];
+  }
+}
+
 /** The first and last word a test covers. */
 export function testRange(e: TestExpr): [number, number] {
   switch (e.type) {
