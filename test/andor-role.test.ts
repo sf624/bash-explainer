@@ -56,6 +56,16 @@ describe('the role of an AND/OR list', () => {
     });
   }
 
+  it('is on the row of the list alone, not on the first command, whose range the list starts with', () => {
+    // (`cat <<E && a || b`: the list and `cat <<E` start at the same place; `GRAMMAR_ROLES` of src/ui/panelRows.ts tells them apart.)
+    for (const lang of ['en', 'ja'] as const) {
+      const chips = Object.fromEntries(rows(rowModel(explain('cat <<E && a || b\nx\nE', lang), { depth: 2, receives: false }, lang).rows)
+        .map((r) => [r.label, (r.roleLine?.chips ?? []).map((c) => c.text).join(' | ')]));
+      assert.strictEqual(chips['cat && a || b'], lang === 'en' ? 'AND and OR list' : 'AND・OR リスト');
+      assert.strictEqual(chips.cat, lang === 'en' ? 'simple command | command name' : '単純コマンド | コマンド名');
+    }
+  });
+
   it('is the kind of its node in the Reading, which keeps the node of the AND list inside it', () => {
     const kinds = (src: string): string[] => readingNodes(explain(src, 'en').reading!).filter((n) => GRAMMARS.includes(n.kind)).map((n) => `${n.kind} ${n.label}`);
     assert.deepStrictEqual(kinds('a && b'), ['andList a && b']);
@@ -69,7 +79,7 @@ describe('the role of an AND/OR list', () => {
     const text = (src: string, lang: Lang): string => tokens(explain(src, lang).items).find((t) => t.grammar && GRAMMARS.includes(t.grammar))!.explanation;
     assert.match(text('a && b', 'en'), /^AND list:/);
     assert.match(text('a || b', 'en'), /^OR list:/);
-    assert.match(text('a && b || c', 'en'), /^AND and OR lists, read from the left as `\(a && b\) \|\| c`/);
+    assert.match(text('a && b || c', 'en'), /^AND and OR list, read from the left as `\(a && b\) \|\| c`/);
     assert.match(text('a || b && c', 'ja'), /^AND・OR リスト。左から `\(a \|\| b\) && c` と読む/);
   });
 });

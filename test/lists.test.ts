@@ -110,7 +110,7 @@ describe('lists of commands in Meaning', () => {
       '  operator ; — Separator: wait for `a` to end, then run the next',
       '  command b — Run the external command `b`',
       '  operator & — Run `b` in the background: the shell runs it asynchronously in a subshell and goes on to the next without waiting (the status is 0)',
-      '  operator c && d || e — AND and OR lists, read from the left as `(c && d) || e`: after `&&` the next command runs only if the status so far is 0, after `||` only if it is not',
+      '  operator c && d || e — AND and OR list, read from the left as `(c && d) || e`: after `&&` the next command runs only if the status so far is 0, after `||` only if it is not',
       '    command c — Run the external command `c`',
       '    operator && — Run the right side only if the left succeeds (exit 0)',
       '    command d — Run the external command `d`',

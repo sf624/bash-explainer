@@ -165,7 +165,7 @@ export function andOrList(cx: Explainer, n: SyntaxNode, other: (c: SyntaxNode) =
       ? cx.s('OR リスト: 前のコマンドが失敗（終了ステータス 0 以外）したときだけ次を実行する。終了ステータスは最後に実行したコマンドのもの', 'OR list: runs each command only if the one before it fails (non-zero exit); the status is that of the last one run')
       : cx.s(
         `AND・OR リスト${grouped ? `。左から \`${grouped}\` と読む` : '。左から順に読む'}: \`&&\` の次はそこまでの終了ステータスが 0 のときだけ、\`||\` の次は 0 以外のときだけ実行する`,
-        `AND and OR lists, read from the left${grouped ? ` as \`${grouped}\`` : ''}: after \`&&\` the next command runs only if the status so far is 0, after \`||\` only if it is not`);
+        `AND and OR list, read from the left${grouped ? ` as \`${grouped}\`` : ''}: after \`&&\` the next command runs only if the status so far is 0, after \`||\` only if it is not`);
   const t = cx.tok(n, 'operator', text, children);
   t.refs = ['3.2.4'];
   // (All its operators: the label reads the whole list, `a && b || c`, whose first part `a && b` has its own row in the reading.)
