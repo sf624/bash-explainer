@@ -45,7 +45,7 @@ import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
 import { closePopovers, setUpFocusRings } from './popover';
 import { ScopeControl } from './scope-chip';
-import { SettingsDialog, sheetRoom } from './settings-dialog';
+import { SettingsDialog } from './settings-dialog';
 import { takeLinkFromAddress, inflate, readHash, scriptParams } from './share';
 import { clearStoredData, readStored, removeStored, STORAGE_KEYS, writeStored } from './storage';
 import { TEXT } from './text';
@@ -318,13 +318,10 @@ if (mode.compare) {
 
 // ---- Toolbar --------------------------------------------------------------------------------
 
-/**
- * The page's toast (web/toast.ts): above the Problems strip, inside the editor's pane (none on the compare page or in panel
- * mode); while the settings are open side by side, over the sheet, never over the explanation beside it (`sheetRoom`).
- */
+/** The page's toast (web/toast.ts): above the Problems strip, inside the editor's pane (none on the compare page or in panel mode). */
 const toast = new Toast($('status'), {
   labels: () => ({ more: TEXT[lang].toastMore, why: TEXT[lang].toastWhy }),
-  room: () => sheetRoom() ?? (mode.compare || mode.panel ? undefined : roomAboveStrip()),
+  room: () => (mode.compare || mode.panel ? undefined : roomAboveStrip()),
   covers: (px) => editor.setBottomMargin(px),
   focusBack: () => focusHome(),
 });
@@ -445,15 +442,15 @@ function setChoice(key: 'shell' | 'yq', value: string): void {
 type Stop = 'editor' | 'settings' | 'grabber' | 'panel' | 'toast';
 
 /**
- * Where the editor's and the explanation's stops are, while what covers them makes them inert: side by side, the
- * settings sheet takes the editor's; on a phone, the sheet's grabber takes the editor's while the sheet is full, and
- * the explanation's while it is folded. The one source for `focusHome` and F6 (`paneKeys`). The keyboard's fold of the
- * sheet is no stop: a stop in the sheet ends it (`BottomSheet.leaving`). The one exception: a tap on the summary row
- * puts the focus on the grabber itself, at half, since a finger's tap must not put it in the frame (web/sheet.ts).
+ * Where the editor's and the explanation's stops are, while what covers them makes them inert: on a phone, the sheet's
+ * grabber takes the editor's while the sheet is full, and the explanation's while it is folded. The settings beside the
+ * panes cover nothing: they are a stop of their own, after the explanation, as on the screen. The one source for
+ * `focusHome` and F6 (`paneKeys`). The keyboard's fold of the sheet is no stop: a stop in the sheet ends it
+ * (`BottomSheet.leaving`). The one exception: a tap on the summary row puts the focus on the grabber itself, at half, since
+ * a finger's tap must not put it in the frame (web/sheet.ts).
  */
 function paneStops(): { home: Stop; panel: Stop } {
-  const home = settingsDialog?.sideBySide ? 'settings' : sheet?.covers ? 'grabber' : 'editor';
-  return { home, panel: sheet?.folded ? 'grabber' : 'panel' };
+  return { home: sheet?.covers ? 'grabber' : 'editor', panel: sheet?.folded ? 'grabber' : 'panel' };
 }
 
 /** Puts the focus on a stop (`touch`: the editor only with a mouse or a pen, so that no on-screen keyboard opens). */
@@ -486,9 +483,8 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   theme: () => theme,
   setTheme,
   pane: () => document.querySelector<HTMLElement>('main > .source'),
-  splitter: () => document.getElementById('splitter'),
-  beside: () => [...document.querySelectorAll<HTMLElement>('[data-beside]')],
-  moved: () => toast.place(),
+  cursorInView: () => editor.cursorInView(),
+  showCursor: () => editor.keepCursorInView('nearest'),
   shellReading: autoShell,
 });
 
@@ -808,8 +804,9 @@ function fileKeys(e: KeyboardEvent): void {
 }
 
 /**
- * F6 (or Shift+F6) moves between the editor, the explanation in the panel's frame and the toast when one with a button
- * shows, as F6 moves between the parts of VS Code: editor, explanation, toast, editor. Shift+F6 goes the other way.
+ * F6 (or Shift+F6) moves between the editor, the explanation in the panel's frame, the settings when they lie beside them
+ * and the toast when one with a button shows, as F6 moves between the parts of VS Code: editor, explanation, settings,
+ * toast, editor. Shift+F6 goes the other way.
  * `inFrame`: the key was pressed in the frame.
  */
 function paneKeys(e: KeyboardEvent, inFrame: boolean): void {
@@ -817,8 +814,8 @@ function paneKeys(e: KeyboardEvent, inFrame: boolean): void {
   e.preventDefault();
   // (What covers the editor or the explanation takes its stop in the round: `paneStops`.)
   const { home, panel: explanation } = paneStops();
-  const stops: Stop[] = [home, explanation, ...(toast.hasButton ? ['toast' as const] : [])];
-  const at = inFrame ? 'panel' : toast.focused ? 'toast' : explanation === 'grabber' && sheet?.focused ? explanation : home;
+  const stops: Stop[] = [home, explanation, ...(settingsDialog?.sideBySide ? ['settings' as const] : []), ...(toast.hasButton ? ['toast' as const] : [])];
+  const at = inFrame ? 'panel' : toast.focused ? 'toast' : settingsDialog?.focused ? 'settings' : explanation === 'grabber' && sheet?.focused ? explanation : home;
   focusStop(stops[(stops.indexOf(at) + (e.shiftKey ? stops.length - 1 : 1)) % stops.length]);
 }
 

@@ -1725,6 +1725,54 @@
     return box;
   }
 
+  // ---------------------------------------------------------------- keeping the place when the width changes
+
+  /*
+   * A new width (the divider, the settings opening beside the panes, the window) rewraps the text, and what lies above the
+   * place being read grows or shrinks. The panel scrolls so that this place stays where it was on the screen. The row with
+   * the focus is that place, when it is on the screen; else the first row or text under the sticky rows. It is noted while
+   * the width is what it was (the browser has already rewrapped when the panel hears of a new one), whenever the viewer
+   * scrolls or the content changes. Our own scrolling here does not note it again, so that a narrower panel and a wider one
+   * give the same place back. A row kept in place for a fold (`hold`, below) goes first.
+   */
+  /** @type {{ el: Element, top: number, y: number } | null} */
+  let place = null;
+  let placeFrame = 0;
+  let placeWidth = document.documentElement.clientWidth;
+
+  /** After a new width: scrolls the place back to where it was noted. Says whether the width was new. */
+  function keepPlace() {
+    const width = document.documentElement.clientWidth;
+    if (width === placeWidth) return false;
+    placeWidth = width;
+    if (place && !anchor && place.el.isConnected) {
+      window.scrollBy(0, place.el.getBoundingClientRect().top - Math.max(place.top, $('top').getBoundingClientRect().bottom));
+      place.y = window.scrollY;
+    }
+    return true;
+  }
+
+  function notePlace() {
+    placeFrame = 0;
+    // (Reading a place in the frame lays it out at the width it has now: one that has just changed is news first.)
+    if (keepPlace()) return;
+    const under = $('top').getBoundingClientRect().bottom;
+    const focused = document.activeElement?.closest('.row');
+    const seen = focused && focused.getBoundingClientRect().top >= under && focused.getBoundingClientRect().bottom <= window.innerHeight;
+    const el = seen ? focused : document.elementFromPoint(window.innerWidth / 2, under + 1);
+    place = el && el !== document.documentElement && el !== document.body ? { el, top: el.getBoundingClientRect().top, y: window.scrollY } : null;
+  }
+  const notePlaceSoon = () => {
+    placeFrame ||= requestAnimationFrame(notePlace);
+  };
+
+  window.addEventListener('scroll', () => {
+    if (window.scrollY !== place?.y) notePlaceSoon();
+  }, { passive: true });
+  new MutationObserver(notePlaceSoon).observe($('main'), { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden'] });
+  // (A ResizeObserver runs after the layout and before the paint: no frame shows the place moved.)
+  new ResizeObserver(keepPlace).observe(document.documentElement);
+
   // ---------------------------------------------------------------- keeping the row acted on in place
 
   /*
@@ -1844,6 +1892,7 @@
     keep();
     anchor = null;
     trimSpacer();
+    notePlaceSoon();
   }
 
   /** Finds the row of the item `key`, as drawn when it is called. */

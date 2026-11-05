@@ -934,9 +934,12 @@ button {
 .split {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, var(--split, 50%)) var(--gutter) minmax(0, 1fr);
+  /* (A pane keeps its share until it would go below its floor, and then the other gives up width. The floors grow with
+     the sheet, so that nothing jumps when it opens with the divider far to one side: 0 without the sheet.) */
+  grid-template-columns: minmax(calc(var(--editor-floor) * var(--sheet-in)), var(--split, 50%)) var(--gutter) minmax(calc(var(--panel-floor) * var(--sheet-in)), 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
+  margin-right: calc(var(--sheet-w) * var(--sheet-in));
 }
 
 /* The editor's pane is a container: the Problems list and the chip's popover follow its width. */
@@ -1819,9 +1822,59 @@ body.resizing .problems-resize {
 
 /* ---- The side sheets: the menu and the settings ------------------------------------------------ */
 
-/* How long a sheet takes to slide, and the explanation beside the settings with it (one value: they move together). */
+/* The settings beside the panes (below, "The settings sheet"), with what lies around them. One value each:
+   --sheet-time, how long a sheet takes to slide, and the panes beside the settings with it.
+   --sheet-w, the width of the settings' column: a third of the window, at most 640 px (a list of settings reads badly wider,
+   and the panes need the room on a large monitor), at least 240 px (below that the search's hint and the choices are
+   cut: measured at 1280 px, from 220 px in English and 230 px in Japanese, "ブラウザの言語に合わせる"). 0 where the page has no
+   such column. web/settings-dialog.ts reads it; it is registered so that it reads in px.
+   --sheet-in, how far the column is in, 0 to 1: on the page's main box and on the sheet, the same transition begun in one
+   style pass, so that both follow one value in one layout (not on the compositor, which would run ahead of the panes) and
+   no gap can open between them on any frame. It is not inherited: a value the whole page inherits restyles the page on
+   every frame. A swipe holds it (web/layout.ts).
+   --editor-floor and --panel-floor, the least widths of the panes beside the sheet, measured in both languages: from 185 px
+   the editor's bar shows the shell's name whole ("bash": it is cut below, and the chip below 150 px), from 200 px the
+   panel's head takes two rows (three below). --panes-floor, of all the panes with the dividers: below it the sheet is modal. */
+@property --sheet-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --sheet-in {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@property --panes-floor {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 html {
   --sheet-time: 0.22s;
+  --sheet-w: clamp(240px, 100vw / 3, 640px);
+  --editor-floor: 190px;
+  --panel-floor: 200px;
+  --panes-floor: calc(var(--editor-floor) + var(--gutter) + var(--panel-floor));
+}
+
+html.narrow {
+  --sheet-w: 0px;
+}
+
+main {
+  transition: --sheet-in var(--sheet-time) var(--ease);
+}
+
+body:has(> #settings-dialog[open]:not(:modal, .closing, .holding)) main {
+  --sheet-in: 1;
+}
+
+body:has(> #settings-dialog.dragging) main {
+  transition: none;
 }
 
 .sheet {
@@ -2865,8 +2918,14 @@ html.view-panel .split {
 .compare {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* (As .split: the third column of settings takes its width from this box, and the floors grow with it.) */
+  grid-template-columns: minmax(calc(var(--editor-floor) * var(--sheet-in)), 1fr) repeat(2, minmax(calc(var(--panel-floor) * var(--sheet-in)), 1fr));
   min-height: 0;
+  margin-right: calc(var(--sheet-w) * var(--sheet-in));
+}
+
+html:has(.compare) {
+  --panes-floor: calc(var(--editor-floor) + 2 * var(--panel-floor));
 }
 
 .compare > section {
@@ -2916,6 +2975,11 @@ html.view-panel .split {
   html:has(.compare) body {
     height: auto;
     overflow: auto;
+  }
+
+  /* (The script lies above its copies: the settings have no column here.) */
+  html:has(.compare) {
+    --sheet-w: 0px;
   }
 
   .compare {
@@ -2972,14 +3036,13 @@ html.view-panel .split {
 
 /* ---- The settings sheet ----------------------------------------------------------------------- */
 
-/* The settings come from the right edge at every width, as the gear that opens them is at the right. Side by side the
-   sheet lies along that edge over the editor's side of the page, as wide as the editor's pane and the divider at most
-   (--pane-w, held on the page by web/settings-dialog.ts) and below the top bar (--pane-top: the pane's own top, under the banner of a
-   preview too), and the explanation moves left by its width (below), so that nothing it shows is covered: what a setting
-   changes stays in view and live. The editor under the sheet is inert. The sheet is not a modal dialog there (no
-   backdrop): the panel scrolls and takes clicks, and the sheet stays open. It is not in the top layer, so it needs a
-   z-index above the page (and under the toasts, 20). In the narrow layout (a phone, a narrow window) the settings are a
-   modal dialog and take the whole screen. */
+/* Side by side the settings are a third column at the right of the page, not a modal dialog (no backdrop): the editor, the
+   divider and the explanation stay in view and in use, and a change shows at once. What is left of the window goes to the
+   panes, which share it in the ratio set with the divider: the page's main box gives up the sheet's width, and --split is a
+   share of that box (web/layout.ts). The sheet lies below the top bar (--pane-top: the pane's own top, under the banner of a
+   preview too), which stays whole. It is not in the top layer, so it needs a z-index above the page (and under the toasts,
+   20). Where there is no third column (--sheet-w is 0: the narrow layout, the compare page where the script lies above its
+   copies) it is a modal dialog on the whole window (web/settings-dialog.ts, `shouldBeModal`). */
 #settings-dialog {
   /* (Not 100vw: that counts the scrollbar of a page that scrolls, as the compare page does below 1000px, and the sheet,
      fixed at the right edge, would then reach out of the window at the left.) */
@@ -2994,59 +3057,46 @@ html:has(#settings-dialog:modal) {
 }
 
 #settings-dialog:not(:modal) {
-  inset: var(--pane-top, 0px) 0 0 auto;
+  inset: var(--pane-top, 0px) auto 0 auto;
+  /* (Its left edge is the panes' right edge on every frame: both come from --sheet-w and --sheet-in, in one layout.) */
+  --sheet-in: 1;
+  right: calc(var(--sheet-w) * (var(--sheet-in) - 1));
   height: auto;
-  /* As wide as the pane with the divider, so that the explanation fits exactly beside it; the text keeps a column of 40rem (--side: the room
-     each side of it), as the pane is 40rem at 1280 px and wider after. */
-  width: var(--pane-w, 36rem);
-  --side: max(0px, calc((100% - 40rem) / 2));
-  border-radius: 12px 0 0 12px;
+  width: var(--sheet-w);
+  box-shadow: none;
+  transition: --sheet-in var(--sheet-time) var(--ease);
   z-index: 15;
 }
 
-/* The explanation moves left by the sheet's width, with the sheet: the same transition (--ease, --sheet-time), started in the
-   same frame (`data-shift` of the page: open, drag while a swipe holds the sheet, closing; web/settings-dialog.ts).
-   It only moves: its width, so its text, and its scroll stay. The sheet is as wide as the editor's pane at most, so the
-   explanation, which has the rest of the page, never leaves it. It lies above the editor (and its hint) while it is
-   there, and the divider, which would show on top, is out of reach and hidden. A `transform` here is safe: nothing
-   inside the pane is placed `fixed` (the frame's own popups are in the frame), and the toast is outside it, over the
-   sheet while it is out (`sheetRoom`). What moves has `data-beside` (index.html: the explanation; compare.html: the two copies; web/main.ts
-   reads the same). On the compare page the copies move, the script's pane lying under them and
-   the sheet; below 1000 px, where the script lies above the copies, the sheet is a modal dialog on the whole window. */
-:where(html:not(.narrow))[data-shift] [data-beside] {
-  position: relative;
-  z-index: 12;
-  transition: transform var(--sheet-time) var(--ease);
+/* (`holding`: open, and not moving yet: web/settings-dialog.ts, `show`.) */
+#settings-dialog:is(.closing, .holding):not(:modal) {
+  --sheet-in: 0;
 }
 
-:where(html:not(.narrow))[data-shift="open"] [data-beside] {
-  transform: translateX(calc(-1 * var(--pane-w)));
-}
-
-:where(html:not(.narrow))[data-shift="drag"] [data-beside] {
-  transform: translateX(calc(var(--drag, 0px) - var(--pane-w)));
+#settings-dialog:is(.holding, .dragging):not(:modal) {
   transition: none;
 }
 
-/* A new width of the pane while the sheet is out (a resized window): the explanation moves with the sheet at once. */
-:where(html:not(.narrow))[data-shift][data-shift-now] [data-beside] {
-  transition: none;
+/* While it moves (`moving`: web/settings-dialog.ts, `freeze`), the sheet is a layer of its own (not at rest: its text keeps its
+   sharpest form), and what lies beside the frame and the editor's text, which hold their width, looks like them. */
+#settings-dialog.moving:not(:modal) {
+  will-change: transform;
 }
 
-:where(html:not(.narrow))[data-shift] .splitter {
-  visibility: hidden;
+body:has(> #settings-dialog.moving) :is(#editor, .panel-body, .copy) {
+  background: var(--vscode-editor-background);
 }
 
 :where(html:not(.narrow)) #settings-dialog :is(.settings-head, .settings-nav, .settings-body, .settings-foot) {
-  padding-inline: calc(var(--side, 0px) + 12px);
+  padding-inline: 12px;
 }
 
 :where(html:not(.narrow)) #settings-dialog .settings-head {
-  padding-inline: calc(var(--side, 0px) + 16px) calc(var(--side, 0px) + 8px);
+  padding-inline: 16px 8px;
 }
 
 :where(html:not(.narrow)) #settings-dialog .settings-body {
-  padding-inline: calc(var(--side, 0px) + 16px);
+  padding-inline: 16px;
 }
 
 /* "Jump to": links in a row, which wrap. */

@@ -104,6 +104,20 @@ export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange:
   const saved = savedSplit();
   const key = () => (narrow.matches ? 'narrow' : 'wide');
   const current = () => saved[key()] ?? byDefault();
+  /**
+   * How far the divider goes. Beside the settings, the panes hold their floors (page.css), and it stops there: past them it
+   * would not move, though the share it stands for would, and would show when the settings close.
+   */
+  const range = (): [number, number] => {
+    const css = getComputedStyle(split);
+    const floor = (name: string) => parseFloat(css.getPropertyValue(name)) * parseFloat(css.getPropertyValue('--sheet-in'));
+    const full = split.clientWidth;
+    return [Math.max(MIN, (floor('--editor-floor') / full) * 100), Math.min(MAX, ((full - parseFloat(css.getPropertyValue('--gutter')) - floor('--panel-floor')) / full) * 100)];
+  };
+  const within = (v: number) => {
+    const [low, high] = range();
+    return Math.min(high, Math.max(low, v));
+  };
   const apply = () => {
     const v = current();
     split.style.setProperty('--split', `${v}%`);
@@ -112,10 +126,10 @@ export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange:
     handle.setAttribute('aria-orientation', narrow.matches ? 'horizontal' : 'vertical');
   };
   attachDivider(handle, {
-    current,
+    current: () => within(current()),
     set(v) {
       if (v === undefined) delete saved[key()];
-      else saved[key()] = Math.min(MAX, Math.max(MIN, v));
+      else saved[key()] = within(v);
       apply();
       onChange();
       // When storage refuses, the sizes last until the page is closed.
@@ -125,8 +139,8 @@ export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange:
       const r = split.getBoundingClientRect();
       return narrow.matches ? ((e.clientY - r.top) / r.height) * 100 : ((e.clientX - r.left) / r.width) * 100;
     },
-    min: () => MIN,
-    max: () => MAX,
+    min: () => range()[0],
+    max: () => range()[1],
     step: 5,
   });
   narrow.addEventListener('change', apply);
@@ -217,6 +231,9 @@ export function setUpProblems(
 
 const closing = new WeakMap<HTMLDialogElement, () => void>();
 
+/** Reduced motion: a sheet is there or gone at once. */
+export const stillSheets = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 /**
  * The edge a side sheet lies along, as a sign: -1 for the left one (the menu), 1 for the right one (the settings, at
  * every width; a sheet as wide as the screen comes from the right). Read from where it is drawn, so that one rule of
@@ -233,7 +250,7 @@ function sheetSide(sheet: HTMLElement): -1 | 1 {
  */
 export function closeSheet(sheet: HTMLDialogElement): void {
   if (!sheet.open || closing.has(sheet)) return;
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  if (stillSheets()) {
     // (A swipe has left the sheet where the finger let go: it opens at its place next time.)
     sheet.classList.remove('dragging');
     sheet.style.transform = '';
@@ -241,6 +258,8 @@ export function closeSheet(sheet: HTMLDialogElement): void {
     return;
   }
   const side = sheetSide(sheet);
+  // (The settings beside the panes slide on `--sheet-in`, with the panes: page.css reads the class.)
+  const beside = !sheet.matches(':modal');
   let timer = 0;
   const reset = () => {
     sheet.removeEventListener('transitionend', onEnd);
@@ -255,7 +274,7 @@ export function closeSheet(sheet: HTMLDialogElement): void {
     sheet.close();
   };
   const onEnd = (e: TransitionEvent) => {
-    if (e.target === sheet && e.propertyName === 'transform') finish();
+    if (e.target === sheet && e.propertyName === (beside ? '--sheet-in' : 'transform')) finish();
   };
   // Opened again while sliding out: it slides back. Closed by other means meanwhile: nothing is left over.
   closing.set(sheet, reset);
@@ -264,7 +283,7 @@ export function closeSheet(sheet: HTMLDialogElement): void {
   // In case no transition runs (the sheet is already out of the screen), and as a safety net.
   timer = window.setTimeout(finish, 500);
   sheet.classList.add('closing');
-  sheet.style.transform = `translateX(${side * 100}%)`;
+  if (!beside) sheet.style.transform = `translateX(${side * 100}%)`;
 }
 
 /** Called when a sheet is asked to open: if it is sliding out, it comes back and this returns true. */
@@ -273,6 +292,21 @@ export function reopenSheet(sheet: HTMLDialogElement): boolean {
   if (!cancel) return false;
   cancel();
   return true;
+}
+
+/**
+ * Holds a sheet `dx` px from where it rests, towards its edge, under a finger (undefined: lets it go). The settings beside the
+ * panes move on `--sheet-in`, and the panes with them, so that no gap opens between them.
+ */
+function holdSheet(sheet: HTMLDialogElement, sign: number, dx?: number): void {
+  if (sheet.matches(':modal')) {
+    sheet.style.transform = dx === undefined ? '' : `translateX(${sign * dx}px)`;
+    return;
+  }
+  for (const part of [sheet, document.querySelector('main')]) {
+    if (dx === undefined) part?.style.removeProperty('--sheet-in');
+    else part?.style.setProperty('--sheet-in', String(Math.max(0, 1 - dx / sheet.offsetWidth)));
+  }
 }
 
 /**
@@ -303,19 +337,22 @@ export function setUpSheet(sheet: HTMLDialogElement): void {
     // Sideways more than down: the sheet follows the finger; a scroll of its content does not move it.
     if (dx > 10 && dx > Math.abs(e.clientY - start.y)) {
       sheet.classList.add('dragging');
-      sheet.style.transform = `translateX(${sign * dx}px)`;
+      holdSheet(sheet, sign, dx);
     }
   });
   const end = (e: PointerEvent) => {
     if (!start || e.pointerId !== start.id) return;
     const dx = sign * (e.clientX - start.x);
     start = undefined;
+    const out = e.type === 'pointerup' && dx > 80;
     sheet.classList.remove('dragging');
-    sheet.style.transform = '';
-    if (e.type === 'pointerup' && dx > 80) {
+    holdSheet(sheet, sign);
+    if (out) {
       // Slides out from where the finger let go.
-      sheet.style.transform = `translateX(${sign * dx}px)`;
-      void sheet.offsetWidth;
+      if (sheet.matches(':modal')) {
+        holdSheet(sheet, sign, dx);
+        void sheet.offsetWidth;
+      }
       closeSheet(sheet);
     }
   };

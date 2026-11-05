@@ -190,7 +190,9 @@ describe('the web page: the menu and the settings sheet', function () {
           assert.deepStrictEqual(events[i].keyframes, keyframes, `${name} ${how}: ${property}; ${seen}`);
           assert.ok(events[i].ms! > 0, `${name} ${how}: ${property} takes time; ${seen}`);
         };
-        ran('transform', ['none', `translateX(${sign * 100}%)`]);
+        // (The settings beside the panes move on one value with them: page.css, `--sheet-in`.)
+        if (name === 'settings' && screen === 'wide') ran('--sheet-in', ['1', '0']);
+        else ran('transform', ['none', `translateX(${sign * 100}%)`]);
         if (backdrop) ran('::backdropopacity', ['1', '0']);
         // The frames drawn meanwhile go towards that edge, never back, and never past where it leaves the screen.
         const xs = frames.filter((f) => f.open).map((f) => f.x);

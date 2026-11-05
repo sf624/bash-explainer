@@ -3,14 +3,13 @@
 // Common first, then Examples, Checks, Editor and Data, folded, each opened by its heading or its "Jump to" link; a
 // search finds a setting by its title or its key. A description shows two lines, with "More" after the last word shown;
 // on a touch screen it shows whole. The sheet comes from the right edge at every width, as the gear that opens it is at
-// the right. Side by side it lies over the editor's side of the page, never wider than the editor's pane, and the
-// explanation moves left by its width (`data-shift`, below), so that what the settings change stays in view and live: it
-// is not a modal dialog there (the panel can be scrolled and clicked, and a click on it leaves the sheet open; Esc, × and
-// Close shut it). The editor under it, and the divider, are inert (nothing in them can take the focus unseen), and the
-// top bar stays above the sheet, in use. Where there is no room beside the editor (the narrow layout, the compare page below
-// 1000 px, a divider dragged so far that the sheet would be too narrow) it is a modal dialog and takes the whole window (page.css).
+// the right. Side by side it is a third column (page.css, `--sheet-w`): the editor and the explanation stay in view and in
+// use and share what is left in the ratio they had, so that what the settings change is live. It is not a modal dialog
+// there (a click beside it leaves it open; Esc, × and Close shut it), and the top bar stays above it, in use. Where there
+// is no column for it (the narrow layout, the compare page up to 1000 px, or no room for the panes' floors) it is a modal
+// dialog and takes the whole window (page.css).
 // It comes back as it was left: the sections open, the search and the scroll (docs/design/chrome-redesign.md, C6).
-import { closeSheet, narrow, reopenSheet } from './layout';
+import { closeSheet, narrow, reopenSheet, stillSheets } from './layout';
 import type { AutoShell } from '../src/dialect';
 import { Lang } from '../src/i18n';
 import { autoShellText } from '../src/messages-shell';
@@ -38,14 +37,11 @@ export interface SettingsHost {
   /** The page's theme: the same choice as the menu's. */
   theme(): Theme;
   setTheme(t: Theme): void;
-  /** The editor's pane, which the sheet covers side by side and is never wider than. */
+  /** The editor's pane, whose top the sheet starts at side by side. */
   pane(): HTMLElement | null;
-  /** The divider between the editor and the explanation: out of reach while the sheet is open, since the explanation has moved. */
-  splitter(): HTMLElement | null;
-  /** What lies right of the editor's pane and moves left beside the sheet (the panel; on the compare page, its two copies): page.css moves the same. */
-  beside(): HTMLElement[];
-  /** The sheet came, went or changed its width side by side: whatever is placed by its room (the toast) is placed again. */
-  moved(): void;
+  /** Whether the editor's cursor line is on the screen, and bringing it back: its text rewraps when the panes change their width. */
+  cursorInView(): boolean;
+  showCursor(): void;
   /** The shell the script reads as, and where from: the Shell setting's "Auto (now: bash, from #!)". */
   shellReading(): AutoShell | undefined;
 }
@@ -64,25 +60,6 @@ const coarse = () => window.matchMedia('(pointer: coarse)').matches;
 const hovers = () => !window.matchMedia('(hover: none)').matches;
 /** "Show VS Code setting names": the keys under the titles, in the options and in the descriptions. */
 const keysShown = () => readStored(STORAGE_KEYS.settingNames) === '1';
-
-/**
- * The least width of the sheet beside the editor, and a modal dialog instead below it. Measured at 1280 px: from 220 px the
- * search's hint and the choices show whole in English, from 230 px in Japanese ("ブラウザの言語に合わせる"), and below, they
- * are cut ("Follow the bro…"); 240 px leaves a little room.
- */
-const SHEET_MIN = 240;
-
-/**
- * The room of the page's toast while the settings are open side by side: the sheet's box, where it lies at rest (its right
- * edge is the window's, its width `--pane-w`), since the explanation has moved beside it and the editor's pane under it is
- * covered. Undefined otherwise, and while the sheet slides out.
- */
-export function sheetRoom(): { left: number; width: number; bottom: number } | undefined {
-  const root = document.documentElement;
-  if (root.dataset.shift !== 'open' && root.dataset.shift !== 'drag') return undefined;
-  const width = parseFloat(root.style.getPropertyValue('--pane-w'));
-  return { left: root.clientWidth - width, width, bottom: window.innerHeight };
-}
 
 export class SettingsDialog {
   private dialog: HTMLDialogElement;
@@ -107,6 +84,11 @@ export class SettingsDialog {
   private fitFrame = 0;
   private reopening = 0;
   private scroll = 0;
+  /** The sheet's width that the descriptions were cut for. */
+  private fitted = 0;
+  /** What holds its width while the sheet moves (`freeze`), and whether the cursor's line is to be kept on the screen. */
+  private frozen: HTMLElement[] = [];
+  private cursorKept = false;
   /** Each description's own nodes, kept whole while `fitDescs` cuts what it shows. */
   private whole = new WeakMap<HTMLElement, Node[]>();
 
@@ -114,6 +96,7 @@ export class SettingsDialog {
     this.dialog = dialog;
     dialog.addEventListener('close', () => {
       // (Closed only to open again in the other kind: nothing is over.)
+      this.settled();
       if (this.reopening) {
         this.reopening--;
         return;
@@ -121,7 +104,6 @@ export class SettingsDialog {
       this.draft = undefined;
       this.status = undefined;
       this.paste = { open: false, text: '' };
-      this.syncInert();
       this.returnFocus();
     });
     // Side by side the sheet is not modal, so the browser does not close it on Esc: it does, when the focus is in the
@@ -130,12 +112,6 @@ export class SettingsDialog {
       const at = e.target as Node | null;
       if (at === document.body || (at && this.dialog.contains(at))) this.escape(e);
     });
-    // (Sliding out and coming back are class changes of the sheet, and a swipe moves its style: web/layout.ts. The
-    // explanation follows them.)
-    new MutationObserver(() => {
-      this.syncInert();
-      this.syncShift();
-    }).observe(dialog, { attributes: true, attributeFilter: ['class', 'style', 'open'] });
     // The window crossing between the layouts while the sheet is open: it opens again in the other kind.
     narrow.addEventListener('change', () => this.recheck());
     // A settings file dropped on the dialog is imported.
@@ -148,36 +124,35 @@ export class SettingsDialog {
       e.preventDefault();
       void file.text().then((text) => this.importText(text));
     });
-    // The width follows the editor's pane, and the cut of the descriptions the width.
-    const fit = () => {
-      if (!this.dialog.open) return;
+    // Sliding out, coming back and a swipe are the sheet's classes (web/layout.ts), and a move ends in its transition.
+    new MutationObserver(() => this.moving()).observe(dialog, { attributeFilter: ['class'] });
+    dialog.addEventListener('transitionend', (e) => {
+      if (e.target === dialog && e.propertyName === '--sheet-in' && dialog.open && !dialog.classList.contains('closing')) this.settled();
+    });
+    // A window resized can leave no room for the column. (The sheet's width is its own, and the panes' width is the page's.)
+    window.addEventListener('resize', () => {
       this.recheck();
-      if (!this.dialog.open) return;
-      this.fitWidth();
-      this.fitDescsSoon();
-    };
-    window.addEventListener('resize', fit);
-    const pane = host.pane();
-    if (pane && typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(pane);
+      this.placeTop();
+    });
+    if (typeof ResizeObserver === 'function') {
+      // The cut of the descriptions follows the sheet's width. Its top follows the pane's (a preview's banner shut).
+      new ResizeObserver(() => {
+        if (this.dialog.open && this.dialog.offsetWidth !== this.fitted) this.fitDescsSoon();
+      }).observe(dialog);
+      const pane = host.pane();
+      if (pane) new ResizeObserver(() => this.placeTop()).observe(pane);
+    }
   }
 
   /**
-   * Whether the sheet is a modal dialog: in the narrow layout; where the explanation does not lie right of the editor, so
-   * that there is nothing to move aside (the compare page below 1000 px, the script above its copies); and where the room
-   * beside the editor is too small for the settings (`SHEET_MIN`). Read from the boxes' places in the page, which a
-   * `transform` does not change (`offsetLeft`).
+   * Whether the sheet is a modal dialog: where the page has no column for it (page.css: `--sheet-w` is 0 in the narrow layout,
+   * and on the compare page where the script lies above its copies), and where the panes' floors would not fit beside it.
    */
   private shouldBeModal(): boolean {
-    if (narrow.matches) return true;
-    const pane = this.host.pane();
-    const side = this.host.beside()[0];
-    return !!pane && !!side && (side.offsetLeft < pane.offsetLeft + pane.offsetWidth - 2 || this.sheetWidth() < SHEET_MIN);
-  }
-
-  /** The width of the sheet side by side: the editor's pane and the divider beside it. */
-  private sheetWidth(): number {
-    const pane = this.host.pane();
-    return pane ? Math.floor(this.host.splitter()?.getBoundingClientRect().right ?? pane.getBoundingClientRect().right) : 0;
+    const root = document.documentElement;
+    const css = getComputedStyle(root);
+    const sheet = parseFloat(css.getPropertyValue('--sheet-w'));
+    return !sheet || sheet + parseFloat(css.getPropertyValue('--panes-floor')) > root.clientWidth;
   }
 
   /**
@@ -213,16 +188,25 @@ export class SettingsDialog {
     if (reopenSheet(this.dialog) || this.dialog.open) return;
     this.clearing = undefined;
     this.modal = this.shouldBeModal();
+    this.cursorKept = !this.modal && this.host.cursorInView();
     const active = document.activeElement;
     this.opener ??= active instanceof HTMLElement && active !== document.body ? active : document.getElementById('settings-open');
     this.render();
-    this.fitWidth();
-    // A modal sheet shuts the page behind it (the browser keeps the focus in it); side by side the panel
-    // stays in use, and the focus goes into the sheet and back by hand.
+    this.placeTop();
+    const slides = !this.modal && !stillSheets();
+    if (slides) {
+      this.freeze();
+      this.dialog.classList.add('holding');
+    }
+    // A modal sheet shuts the page behind it (the browser keeps the focus in it); side by side the panes
+    // stay in use, and the focus goes into the sheet and back by hand.
     if (this.modal) this.dialog.showModal();
     else this.dialog.show();
-    this.syncInert();
     this.fitDescs();
+    // The frame that rewraps the panes' text is the long one, with the sheet's first: the motion starts after it, so that it
+    // does not lose its first part to that frame. (Without motion, the panes are there at once.)
+    if (slides) requestAnimationFrame(() => requestAnimationFrame(() => this.dialog.classList.remove('holding')));
+    else this.settled();
     this.body().scrollTop = this.scroll;
   }
 
@@ -237,44 +221,66 @@ export class SettingsDialog {
     closeSheet(this.dialog);
   }
 
-  /** Whether the sheet is open over the editor with the panel still in use. */
+  /** Whether the sheet is open beside the panes, with them still in use. */
   get sideBySide(): boolean {
     return this.dialog.open && !this.modal;
   }
 
-  /** Puts the focus in the sheet (F6 from the explanation, when the editor under the sheet is out of reach). */
+  /** Whether the focus is in the sheet. */
+  get focused(): boolean {
+    return this.dialog.contains(document.activeElement);
+  }
+
+  /** Puts the focus in the sheet (F6's stop). */
   focus(): void {
     this.dialog.querySelector<HTMLElement>('#settings-search')?.focus();
   }
 
   /**
-   * The editor's pane is out of reach while the sheet lies over it: no focus, no click, no reader's cursor. Not while it
-   * slides out (the sheet is on its way, and the editor may be used at once), nor when the sheet is modal (the browser
-   * shuts the page itself).
+   * While the sheet moves, the panes' boxes follow it on every frame, and their two heavy parts (the explanation's frame, and
+   * the editor's text) do not: those hold the width they have beside the sheet, against the same background, so that their
+   * text rewraps once, before the sheet opens and after it has closed, not on each frame. At 4x CPU throttling, with a long
+   * script and a long line open, rewrapping on each frame takes 50 to 100 ms a frame, and this 17 to 33 ms
+   * (docs/design/chrome-redesign.md).
    */
-  private syncInert(): void {
-    const inert = this.dialog.open && !this.modal && !this.dialog.classList.contains('closing');
-    for (const part of [this.host.pane(), this.host.splitter()]) if (part) part.inert = inert;
+  private freeze(): void {
+    if (this.frozen.length) return;
+    const parts = [...document.querySelectorAll<HTMLElement>('main iframe, main .cm-editor')].filter((part) => part.offsetParent);
+    const main = document.querySelector('main')!;
+    // Read where the panes are beside the sheet, for a moment, with nothing painted: then back where they were, without a
+    // transition. (Sliding out, the next style pass starts the move from there: not yet.)
+    const held = main.style.getPropertyValue('--sheet-in');
+    main.style.setProperty('transition', 'none');
+    main.style.setProperty('--sheet-in', '1');
+    const widths = parts.map((part) => part.getBoundingClientRect().width);
+    main.style.setProperty('--sheet-in', held);
+    if (!this.dialog.classList.contains('closing')) void main.offsetWidth;
+    main.style.removeProperty('transition');
+    parts.forEach((part, i) => {
+      part.style.width = `${widths[i]}px`;
+    });
+    this.frozen = parts;
+    this.dialog.classList.add('moving');
+  }
+
+  /** A swipe has begun, or the sheet is sliding out: the panes are about to follow. */
+  private moving(): void {
+    const c = this.dialog.classList;
+    if (this.modal || stillSheets() || !(c.contains('dragging') || c.contains('closing'))) return;
+    this.cursorKept ||= this.host.cursorInView();
+    this.freeze();
   }
 
   /**
-   * Side by side the explanation moves left by the sheet's width (`--pane-w`), beside the sheet instead of under it:
-   * page.css reads `data-shift` of the page, which holds while the sheet is out and slides out, and `--drag`, how far a
-   * swipe has taken the sheet towards the edge (the panel goes with the finger). It moves as the sheet moves: the same
-   * transition, started in the same frame.
+   * The sheet has come to rest: the panes take their width from the page again. Their text has rewrapped, and the editor's
+   * cursor line, if it was on the screen, is still there. (The explanation keeps its own row: media/panel.js.)
    */
-  private syncShift(): void {
-    const root = document.documentElement;
-    const d = this.dialog;
-    const was = root.dataset.shift;
-    if (!d.open || this.modal) delete root.dataset.shift;
-    else {
-      const state = d.classList.contains('closing') ? 'closing' : d.classList.contains('dragging') ? 'drag' : 'open';
-      if (state === 'drag') root.style.setProperty('--drag', `${Math.max(0, d.getBoundingClientRect().right - root.clientWidth)}px`);
-      root.dataset.shift = state;
-    }
-    // (The toast lies over the sheet while it is out, and over the editor's pane otherwise.)
-    if (was !== root.dataset.shift) this.host.moved();
+  private settled(): void {
+    for (const part of this.frozen) part.style.removeProperty('width');
+    this.frozen = [];
+    this.dialog.classList.remove('moving');
+    if (this.cursorKept) this.host.showCursor();
+    this.cursorKept = false;
   }
 
   /** The gear again shuts the sheet (or, while it slides out, brings it back). */
@@ -302,31 +308,10 @@ export class SettingsDialog {
     return this.dialog.querySelector<HTMLElement>('.settings-body')!;
   }
 
-  /**
-   * Side by side, the sheet is as wide as the editor's pane and the divider beside it, never wider: that is how far the
-   * explanation moves left, to the page's edge, and the sheet takes the room it leaves, with no strip of the editor
-   * between them. And it lies below the top bar (page.css reads `--pane-w` and `--pane-top`). The page holds the width,
-   * since the explanation moves by it too. A new width while the sheet is out moves the explanation at once, with the
-   * sheet: no transition runs for it.
-   */
-  private fitWidth(): void {
+  /** Side by side the sheet lies below the top bar: page.css reads `--pane-top`. */
+  private placeTop(): void {
     const pane = this.host.pane();
-    if (!pane) return;
-    const r = pane.getBoundingClientRect();
-    const root = document.documentElement;
-    const width = `${this.sheetWidth()}px`;
-    if (root.style.getPropertyValue('--pane-w') !== width) {
-      // (While the explanation is still on its way, the move goes on to the new place: cutting it would make it jump.)
-      const moving = this.host.beside().some((e) => e.getAnimations().length);
-      if (!moving) root.dataset.shiftNow = '';
-      root.style.setProperty('--pane-w', width);
-      if (!moving) {
-        void document.documentElement.offsetWidth;
-        delete root.dataset.shiftNow;
-      }
-      this.host.moved();
-    }
-    this.dialog.style.setProperty('--pane-top', `${Math.floor(r.top)}px`);
+    if (pane) this.dialog.style.setProperty('--pane-top', `${Math.floor(pane.getBoundingClientRect().top)}px`);
   }
 
   private change(key: keyof Settings, value: unknown): void {
@@ -529,9 +514,10 @@ export class SettingsDialog {
       this.refresh();
     });
     const done = el('button', { type: 'button', id: 'settings-done', textContent: t.close });
+    // (Beside the panes it slides, for they follow it. Modal, it goes at once: a change shows in what it uncovers.)
     done.addEventListener('click', () => {
-      this.dialog.close();
-      this.syncInert();
+      if (this.modal) this.dialog.close();
+      else closeSheet(this.dialog);
     });
     const search = el('input', { type: 'search', id: 'settings-search', placeholder: t.searchHint, value: this.query, autocomplete: 'off', spellcheck: false });
     search.setAttribute('aria-label', t.search);
@@ -708,6 +694,7 @@ export class SettingsDialog {
   }
 
   fitDescs(): void {
+    this.fitted = this.dialog.offsetWidth;
     if (!this.dialog.open) return;
     const touch = coarse();
     for (const desc of this.dialog.querySelectorAll<HTMLElement>('.setting-desc.clamp')) {
