@@ -25,7 +25,8 @@ function pushText(out: EmbeddedToken[], src: string, start: number, end: number,
   for (let k = start; k < end; k++) {
     if (!isHole(src[k])) continue;
     plain(from, k);
-    out.push(holeToken(k, place));
+    // (A `%` that ends the value takes what follows the hole, `date +"$x%F"`, `printf "$x%s"`.)
+    out.push(holeToken(k, place, { around: k + 1 < src.length }));
     from = k + 1;
   }
   plain(from, end);
@@ -73,7 +74,7 @@ export function explainEscapes(src: string, lang: Lang, mode: 'echo' | 'ansic'):
   let text = 0;
   let i = 0;
   while (i < src.length) {
-    if (escapeIntoHole(src, i, true)) return [holeStop(i)];
+    if (escapeIntoHole(src, i, 'format')) return [holeStop(i)];
     const e = src[i] === '\\' ? escapeAt(src, i, s, mode) : undefined;
     if (!e) { i++; continue; }
     pushText(out, src, text, i, s, 'echo');
@@ -174,7 +175,7 @@ export function explainPrintf(src: string, lang: Lang, reader?: PrintfReader): E
   let i = 0;
   let argNo = 0;
   while (i < src.length) {
-    if (escapeIntoHole(src, i, true)) return [holeStop(i)];
+    if (escapeIntoHole(src, i, 'format')) return [holeStop(i)];
     if (src[i] === '\\') {
       const e = escapeAt(src, i, s);
       if (e) {
@@ -205,7 +206,7 @@ export function explainPrintf(src: string, lang: Lang, reader?: PrintfReader): E
     i += m[0].length;
     text = i;
   }
-  pushText(out, src, text, src.length, s, 'date');
+  pushText(out, src, text, src.length, s, 'printf');
   return out;
 }
 

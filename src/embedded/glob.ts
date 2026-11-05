@@ -2,7 +2,7 @@ import type { Lang } from '../i18n';
 import { bracketEnd } from '../bracket';
 import { describeGlob } from '../expansion';
 import { alternatives, closingParen } from '../examples/shellwords';
-import { EmbeddedToken, hasHole, holeStop, holeToken, isHole, pick } from './types';
+import { EmbeddedToken, holeToken, isHole, pick } from './types';
 
 /** What a glob is matched against: a string (`case`, `[[ ]]`, `${x#pat}`) or the names of files (an argument). */
 export type GlobTarget = 'value' | 'file';
@@ -78,13 +78,6 @@ function parse(at: Source, from: number, to: number, extglob: boolean): Embedded
       i = end;
     } else if (extglob && '?*+@!'.includes(c) && src[i + 1] === '(' && closingParen(src, i + 1) > 0 && closingParen(src, i + 1) < to) {
       const end = closingParen(src, i + 1);
-      // (Its alternatives are the value's to say. A quoted part or a bracket expression with a hole has no token of a hole.)
-      if (hasHole(src.slice(i, end))) {
-        out.push(holeStop(i));
-        run = undefined;
-        i = end;
-        continue;
-      }
       const [ja, en] = EXT[c];
       const alts = alternatives(src, i + 2, end).filter(([a, b]) => b > a).map(([a, b]): EmbeddedToken => ({
         start: a, end: b, kind: 'pattern',

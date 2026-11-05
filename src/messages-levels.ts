@@ -53,14 +53,14 @@ export const CLOSE_TEXT = '\uFDD1';
 export const CARRIED = /\uFDD0([\uE000-\uF8FF])|\uFDD1/g;
 
 /**
- * A script's text with its own OPEN_TEXT and CLOSE_TEXT masked by U+FFFD (the same length, so every position holds): the
- * tree's text and every token's label and explanation are made from it, and a raw one would forge a mark there (`echo
- * $((0<U+FDD1>9))` read "Word `09`"). bash reads either as a word character. Only the script's raw text is masked: a
+ * A script's text with the noncharacters of U+FDD0 to U+FDEF masked by U+FFFD (the same length, so every position holds): the
+ * tree's text and every token's label and explanation are made from it, where a raw OPEN_TEXT or CLOSE_TEXT would forge a mark (`echo
+ * $((0<U+FDD1>9))` read "Word `09`"), and any of the others a hole (src/embedded/types.ts). bash reads each as a word character. Only the script's raw text is masked: a
  * mark that a decoded `$'\uFDD0'` or the output of `printf` or `jq` would make is not in the text, and can still show. The
  * parser (src/syntax/adapters/unbash.ts) and the readers of a document's text (the host files, `openDocument`) mask the
  * text as they take it.
  */
-export const maskCarried = (text: string): string => text.replace(/[\uFDD0\uFDD1]/g, '\uFFFD');
+export const maskCarried = (text: string): string => text.replace(/[\uFDD0-\uFDEF]/g, '\uFFFD');
 
 /** A text without the ids it carries: for code that looks at its first or last character. */
 export const plainOf = (text: string): string => text.replace(CARRIED, '');

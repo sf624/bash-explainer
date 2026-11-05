@@ -137,6 +137,10 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - `read \$x` and `read '$x'` get an example of values stored, though bash refuses the name.
 - `[ $x = a\ b ]` says True when `x="a b"`, though unquoted `$x` can split (status 2 with that value). `[[ a\\b = $x ]]` and `[[ \[ab\] = $x ]]` say True for a value, though the right side is a pattern. main says the same for the quoted forms.
 - A value the model knows for certain could stand in a hole of a word a command reads: `s='s/a/b/'; sed "$s"` stays unread, with the note on the script.
+- `--regexp="$x"`, `--expression="…$x"` and `-e"s/$a/b/"` stay unread: `equalsToken` and the attached path read the word with `literalContent`, not with holes.
+- `grep "x${!w}" f` with `w='a[@]'`, and a nameref to `a[@]`, give 2 words in bash but are read as one hole.
+- `sed -e 's/a/b/' -e "s/$x/y/" f` shows a worked example of the first script alone.
+- A `$( )` of several rows in a hole puts a raw newline in a note's code span.
 
 ## Waiting on the maintainer
 

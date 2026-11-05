@@ -6,7 +6,8 @@ import { Analyzer, type Token } from '../src/analyzer';
 import { EMBEDDED, type EmbeddedContext } from '../src/embedded/registry';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { type EmbeddedLang, type EmbeddedToken, holeChar } from '../src/embedded/types';
-import { holedContent, literalContent } from '../src/staticword';
+import { maskCarried } from '../src/messages-levels';
+import { literalContent } from '../src/staticword';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { run } from './support/run';
 
@@ -60,29 +61,31 @@ const q = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 const READ: ReadRow[] = [
   {
     line: 'sed "s/$x/Z/"',
-    tokens: ['s/$x/Z/ 5-12', 's 5-6', '/ 6-7', '$x 7-9', '$x 7-9', '/ 9-10', 'Z 10-11', '/ 11-12'],
-    says: /read as a regex.*special meaning.*A `\/` in it ends the pattern early/,
+    tokens: ['s/$x/Z/ 5-12', 's 5-6', '/ 6-7', '$x 7-9', '/ 9-10', 'Z 10-11', '/ 11-12'],
+    says: /^Pattern \(regex\) `\$x`: .*special meaning\. A `\/` or a newline in it ends the pattern early$/,
     tools: [
       { x: 'b', input: 'abc\n', out: 'aZc\n' },
       { x: 'a.c', input: 'abc\n', out: 'Z\n' },
       { x: 'a/c', input: 'abc\n', fails: true },
+      { x: 'a\nc', input: 'abc\n', fails: true },
     ],
   },
   {
     line: 'sed "s/b/$x/"',
-    tokens: ['s/b/$x/ 5-12', 's 5-6', '/ 6-7', 'b 7-8', 'b 7-8', '/ 8-9', '$x 9-11', '$x 9-11', '/ 11-12'],
-    says: /goes into the replacement: `&` in it stands for the whole match, `\\` starts an escape, and a `\/` ends the replacement early/,
+    tokens: ['s/b/$x/ 5-12', 's 5-6', '/ 6-7', 'b 7-8', 'b 7-8', '/ 8-9', '$x 9-11', '/ 11-12'],
+    says: /^Replacement `\$x`: `&` in the value stands for the whole match, `\\` starts an escape, and a `\/` or a newline ends the replacement early$/,
     tools: [
       { x: 'Q', input: 'abc\n', out: 'aQc\n' },
       { x: '[&]', input: 'abc\n', out: 'a[b]c\n' },
       { x: 'p\\tq', input: 'abc\n', out: 'ap\tqc\n' },
       { x: 'p/q', input: 'abc\n', fails: true },
+      { x: 'p\nq', input: 'abc\n', fails: true },
     ],
   },
   {
     line: 'sed "s|^$x=.*|$x=1|"',
     tokens: ['s|^$x=.*|$x=1| 5-19', 's 5-6', '| 6-7', '^$x=.* 7-13', '^ 7-8', '$x 8-10', '= 10-11', '. 11-12', '* 12-13', '| 13-14', '$x=1 14-18', '$x 14-16', '=1 16-18', '| 18-19'],
-    says: /A `\|` in it ends the pattern early/,
+    says: /A `\|` or a newline in it ends the pattern early/,
     tools: [
       { x: 'a', input: 'a=0\nb=0\n', out: 'a=1\nb=0\n' },
       { x: '.', input: 'b=0\n', out: '.=1\n' },
@@ -92,7 +95,7 @@ const READ: ReadRow[] = [
   {
     line: 'sed -E "s/($x)(b)/\\2/"',
     tokens: ['s/($x)(b)/\\2/ 8-21', 's 8-9', '/ 9-10', '($x)(b) 10-17', '($x) 10-14', '$x 11-13', '(b) 14-17', 'b 15-16', '/ 17-18', '\\2 18-20', '\\2 18-20', '/ 20-21'],
-    says: /as if the value were a complete regex with no group of its own/,
+    says: /as if the value were a complete regex with no group, no alternation \(`\|`\) of its own/,
     tools: [
       { x: 'a', input: 'ab\n', out: 'b\n' },
       // (A group in the value: `\2` is not the `(b)` the reading names, which the note says it assumes.)
@@ -102,11 +105,12 @@ const READ: ReadRow[] = [
   {
     line: 'sed "/$x/d"',
     tokens: ['/$x/d 5-10', '/$x/ 5-9', '$x 6-8', 'd 9-10'],
-    says: /read as a regex.*A `\/` in it ends the pattern early/,
+    says: /read as a regex.*A `\/` or a newline in it ends the pattern early/,
     tools: [
       { x: 'b', input: 'a\nb\n', out: 'a\n' },
       { x: '.', input: 'a\nb\n', out: '' },
       { x: 'a/b', input: 'a\n', fails: true },
+      { x: 'a\nb', input: 'a\n', fails: true },
     ],
   },
   {
@@ -122,8 +126,8 @@ const READ: ReadRow[] = [
   },
   {
     line: 'sed "1i $x"',
-    tokens: ['1i $x 5-10', '1 5-6', 'i 6-7', '$x 8-10', '$x 8-10'],
-    says: /goes into this text: sed reads a `\\` in it, and a newline ends the text/,
+    tokens: ['1i $x 5-10', '1 5-6', 'i 6-7', '$x 8-10'],
+    says: /sed reads a `\\` in the value, and a newline ends the text/,
     tools: [
       { x: 'hello', input: 'a\n', out: 'hello\na\n' },
       { x: 'u\nd', input: 'a\n', out: 'u\n' },
@@ -133,7 +137,7 @@ const READ: ReadRow[] = [
     line: 'grep "$x\\.log"',
     tokens: ['$x 6-8', '\\. 8-10', 'log 10-13'],
     note: /basic regex \(BRE\).*If the value of `\$x` starts with `-`, `grep` reads this word as options/,
-    says: /read as a regex.*as if the value were a complete regex/,
+    says: /read as a regex.*as if the value were a complete regex with no group, no alternation \(`\|`\) and no newline of its own/,
     tools: [
       { x: 'a', input: 'a.log\naxlog\nb.log\n', out: 'a.log\n' },
       { x: '.', input: 'a.log\n', out: 'a.log\n' },
@@ -175,40 +179,44 @@ const READ: ReadRow[] = [
   {
     line: 'awk "/$x/ {print}"',
     tokens: ['/$x/ {print} 5-17', '/$x/ 5-9', '$x 6-8', '{print} 10-17', 'print 11-16'],
-    says: /read as a regex.*A `\/` in it ends the pattern early/,
+    says: /read as a regex.*A `\/` or a newline in it ends the pattern early/,
     tools: [
       { x: 'b', input: 'a\nb\n', out: 'b\n' },
       { x: '.', input: 'a\nb\n', out: 'a\nb\n' },
       { x: 'a/b', input: 'a\n', fails: true },
+      { x: 'a\nb', input: 'a\n', fails: true },
     ],
   },
   {
     line: 'awk "{print \\"$x\\"}"',
     tokens: ['{print \\"$x\\"} 5-19', 'print \\"$x\\" 6-18', '$x 14-16'],
-    says: /goes into an awk string: a `"` in it ends the string, and a `\\` starts an escape/,
+    says: /goes into an awk string: a `"` or a newline in it ends the string, and a `\\` starts an escape/,
     tools: [
       { x: 'Q', input: 'a\n', out: 'Q\n' },
       { x: 'p\\tq', input: 'a\n', out: 'p\tq\n' },
       // (The `"` ends the string early: `"a"b"` has one too few.)
       { x: 'a"b', input: 'a\n', fails: true },
+      { x: 'a\nb', input: 'a\n', fails: true },
     ],
   },
   {
     line: 'perl -pe "s/$x/Z/"',
-    tokens: ['s/$x/Z/ 10-17', '$x 12-14', '$x 12-14', 'Z 15-16'],
-    says: /read as a regex.*A `\/` in it ends the pattern early\. perl expands `\$` and `@` in it first/,
+    tokens: ['s/$x/Z/ 10-17', '$x 12-14', 'Z 15-16'],
+    says: /: `\.`.*special meaning\. A `\/` in it ends the pattern early\. perl expands `\$` and `@` in it first$/,
     tools: [
       { x: 'b', input: 'abc\n', out: 'aZc\n' },
       { x: 'a.c', input: 'abc\n', out: 'Z\n' },
       { x: 'a/c', input: 'abc\n', fails: true },
+      // (A newline is one character of the regex here: it ends nothing.)
+      { x: 'a\nb', input: 'abc\n', out: 'abc\n' },
       // (perl reads `$0` of the value first: the name of the program, `-e`.)
       { x: '$0', input: 'x-ey\n', out: 'xZy\n' },
     ],
   },
   {
     line: 'perl -pe "s/b/$x/"',
-    tokens: ['s/b/$x/ 10-17', 'b 12-13', 'b 12-13', '$x 14-16', '$x 14-16'],
-    says: /goes into the replacement, which perl reads as a double-quoted string: `\$`, `@` and `\\` in it are special, and a `\/` ends the replacement early/,
+    tokens: ['s/b/$x/ 10-17', 'b 12-13', 'b 12-13', '$x 14-16'],
+    says: /perl reads as a double-quoted string: `\$`, `@` and `\\` in the value are special, and a `\/` ends the replacement early/,
     tools: [
       { x: 'Q', input: 'abc\n', out: 'aQc\n' },
       { x: '$0', input: 'abc\n', out: 'a-ec\n' },
@@ -229,7 +237,7 @@ const READ: ReadRow[] = [
     line: 'tr "$x" Z',
     tokens: ['Z 8-9'],
     note: /characters to replace: the value of `\$x`/,
-    says: /read as part of the set: `a-z`, `\[:upper:\]` and `\\` work in it too/,
+    says: /characters to replace: the value of `\$x`\. `a-z`, `\[:upper:\]` and `\\` work in the value too/,
     tools: [
       { x: 'a', input: 'abc', out: 'Zbc' },
       { x: 'a-c', input: 'abcd', out: 'ZZZd' },
@@ -248,7 +256,7 @@ const READ: ReadRow[] = [
   {
     line: 'printf "%s $x\\n" a b',
     tokens: ['%s 8-10', ' 10-11', '$x 11-13', '\\n 13-15'],
-    says: /a `%` in it is a conversion that takes an argument, and a `\\` starts an escape\. What stands around it is read as if the value held no `%`/,
+    says: /a `%` in it is a conversion that takes an argument, and a `\\` starts an escape\. What follows is read as if the value held no `%`/,
     tools: [
       { x: 'Q', out: 'a Q\nb Q\n' },
       // (One `%s` more: the two arguments go in one use of the format.)
@@ -313,8 +321,8 @@ const STOP: StopRow[] = [
 
 /** Words that may be several, or are read by the shell in other ways, keep what they say today: no reading and no note of a script. */
 const KEPT: string[] = [
-  'sed s/$x/b/', 'sed "s/$@/b/"', 'sed "$@"', 'sed "$*"', 'sed "s/${a[@]}/b/"', 'sed "s/${a[*]}/b/"', 'grep "$x"* f', 'grep "$@" f', 'grep "${@:2}" f', 'grep "${!a*}" f', 'grep "${!a[*]}" f', 'grep "${*:2}" f', 
-  'grep ~/"$x" f', 'grep {a,b}"$x" f', 'grep -F "$x" f', 'find . -name "[$x]"', 'find . -name "\'$x\'"', 'find . -name "@($x|b)"',
+  'sed s/$x/b/', 'sed "s/$@/b/"', 'sed "$@"', 'sed "s/${a[@]}/b/"', 'grep "$x"* f', 'grep "$@" f', 'grep "${@:2}" f',
+  'grep ~/"$x" f', 'grep {a,b}"$x" f', 'grep -F "$x" f', 'find . -name "[$x]"', 'find . -name "\'$x\'"',
 ];
 
 /** Runs the cases of the table in one shell: `script` of each case, and the status. */
@@ -406,8 +414,8 @@ describe('words with an expansion read with the expansion as a hole', function (
   });
 
   it('perl\'s `s{…}{…}` has no one delimiter that a value would end the part at', () => {
-    const says = allTokens('perl -pe "s{a}{$x}"').find((t) => t.origin === 'embedded' && t.explanation.startsWith('The value of'))!;
-    assert.match(says.explanation, /`\$`, `@` and `\\` in it are special$/);
+    const says = allTokens('perl -pe "s{a}{$x}"').find((t) => t.origin === 'embedded' && t.explanation.startsWith('Replacement'))!;
+    assert.match(says.explanation, /`\$`, `@` and `\\` in the value are special$/);
     assert.doesNotMatch(allTokens('perl -pe "s{$x}{b}"').map((t) => t.explanation).join('|'), /ends the pattern early/);
   });
 
@@ -430,7 +438,7 @@ describe('words with an expansion read with the expansion as a hole', function (
     const tokens = allTokens(line);
     assert.ok(tokens.some((t) => t.label === 'date' && t.explanation.includes('Print or set the date')), 'the command in `$( )`');
     assert.ok(tokens.some((t) => t.label === '1+2' && t.explanation.includes('Arithmetic')), 'the arithmetic');
-    const hole = tokens.find((t) => t.origin === 'embedded' && t.label === '$(date +%F)' && t.explanation.startsWith('The value'))!;
+    const hole = tokens.find((t) => t.origin === 'embedded' && t.label === '$(date +%F)' && t.explanation.startsWith('Pattern'))!;
     assert.strictEqual(hole.children[0].kind, 'substitution');
     assert.strictEqual(hole.children[0].origin, 'shell');
   });
@@ -444,14 +452,14 @@ describe('words with an expansion read with the expansion as a hole', function (
     };
     visit(reading);
     assert.ok(nodes.some((n) => n.layer === 'bash' && n.label === '$a'));
-    // (The pattern and its hole: the reader's own two tokens, and no third, bash's.)
-    assert.strictEqual(nodes.filter((n) => n.layer === 'language' && n.label === '$a').length, 2);
+    // (The pattern, which says what its hole would: the reader's own token, and no second, bash's.)
+    assert.strictEqual(nodes.filter((n) => n.layer === 'language' && n.label === '$a').length, 1);
   });
 
   it('says it in Japanese', () => {
     const items = walk(explained('sed "s/$a/$b/"; find . -name "$c*"; date +"$d"; printf "$e"; echo -e "\\t$f"; tr "$g" x; grep "[$h]*$i*"; sed "1i $j"; sed -n "${k}p"; awk "{print \\"$l\\"}"; perl -pe "s/a/$m/"', ja).items);
     const said = items.map((t) => t.explanation).join('\n');
-    for (const text of ['正規表現として読まれる', '置換後の文字列に入る', 'パターンの一部として読まれる', '表示書式の一部になる', '書式の一部になる', 'エスケープとして読まれる', '文字の集合の一部として読まれる', 'この集合に加わる', '最後の要素', 'このテキストに入る', 'アドレスの位置にある', 'awk の文字列に入る', 'ダブルクォートの文字列として読む']) assert.ok(said.includes(text), text);
+    for (const text of ['特別な意味を持つ', '一致した部分全体', 'パターンの一部として読まれる', '表示書式の一部になる', '書式の一部になる', 'エスケープとして読まれる', '値の中の `a-z`', 'この集合に加わる', '最後の要素', 'テキストをそこで終わらせる', 'アドレスの位置にある', 'awk の文字列に入る', 'ダブルクォートの文字列として読む']) assert.ok(said.includes(text), text);
     assert.match(walk(explained('sed "$x"', ja).items).map((t) => t.explanation).join('\n'), /スクリプトの内容は `\$x` の値で決まる/);
   });
 
@@ -487,11 +495,31 @@ describe('words with an expansion read with the expansion as a hole', function (
       }
       assert.deepStrictEqual(Object.keys(claimed).filter((k) => claimed[k]).sort(), ['awk', 'date', 'echo', 'glob', 'perl', 'printf', 'regex', 'sed', 'trset']);
     });
-    it('a text that holds a character a hole is written as stays unread', () => {
-      assert.deepStrictEqual(shape(`sed 's/\ufdd2/b/'`), []);
-      assert.deepStrictEqual(shape(`sed "s/\ufdd2$x/b/"`), []);
-      assert.strictEqual(holedContent(parser.parse('f "' + holeChar(0) + '$x"').root.namedChildren[0].namedChildren[1], () => true), undefined);
-      assert.doesNotMatch(JSON.stringify(explained(`grep "\ufdd2$x" f`).items.map((t) => t.span)), /NaN/);
+    describe('a script that holds a noncharacter a hole is written as: the parser masks it (`maskCarried`), so no reader takes it for one', () => {
+      const words = (c: string): string[] => [
+        `case x in ${c}*) ;; esac`, `[[ x == ${c}* ]]`, `[[ x =~ ${c}* ]]`, `echo \${x#${c}}`, `ls ${c}*`, `echo $'\\n${c}'`,
+        `sed 's/${c}/b/'`, `sed "s/${c}$x/b/"`, `grep "${c}$x" f`, `find . -name '${c}*'`, `date +'${c}%F'`, `printf '${c}%s' a`,
+      ];
+      const look = (line: string): void => {
+        const all = allTokens(line);
+        assert.deepStrictEqual(all.filter((t) => !t.explanation).map((t) => t.label), [], `${line}: a row with nothing to say`);
+        assert.ok(!all.some((t) => /[\ufdd2-\ufdef]/.test(t.label)), `${line}: a raw one in a label`);
+      };
+      it('every word that a reader reads, over the whole range', () => {
+        for (let k = 0xfdd0; k <= 0xfdef; k++) words(String.fromCharCode(k)).forEach(look);
+      });
+      it('what is left of it is the text, as `\ufffd`', () => {
+        assert.strictEqual(maskCarried('a\ufdd2b\ufdefc'), 'a\ufffdb\ufffdc');
+        for (const line of ['case x in \ufdd2*) ;; esac', '[[ x == \ufdd2* ]]', 'ls \ufdd2*']) assert.ok(allTokens(line).some((t) => t.explanation === 'The text `\ufffd` itself'), line);
+      });
+      it('a value decoded by `$\'…\'` is no hole either', () => {
+        for (const line of ["ls $'\\uFDD2'*", "case x in $'\\uFDD2'*) ;; esac", "[[ x == $'\\uFDD2'* ]]", "[[ x =~ $'\\uFDD2'* ]]", "echo \${x#$'\\uFDD2'}", "PS1=$'\\uFDD2'", "sed $'s/\\uFDD2/b/'", "grep $'\\uFDD2' f"]) {
+          assert.deepStrictEqual(allTokens(line).filter((t) => !t.explanation).map((t) => t.label), [], line);
+        }
+      });
+      it('a word of a hole beside it keeps its places', () => {
+        assert.deepStrictEqual(shape('grep "\ufdd2$x" f'), ['\ufffd 6-7', '$x 7-9']);
+      });
     });
     it('a word with more different expansions than there are characters for holes stays unread', () => {
       const many = Array.from({ length: 33 }, (_, i) => `$v${i}`).join('');
@@ -509,7 +537,7 @@ describe('words with an expansion read with the expansion as a hole', function (
       assert.ok(!tokens.some((t) => /read as a regex/.test(t.explanation)));
     });
     it('a shell\'s `$a` in a Dockerfile\'s RUN is a hole', () => {
-      assert.ok(hosted('FROM a\nRUN sed "s/$a/b/" f\n', 'Dockerfile', 1).some((t) => t.label === '$a' && /read as a regex/.test(t.explanation)));
+      assert.ok(hosted('FROM a\nRUN sed "s/$a/b/" f\n', 'Dockerfile', 1).some((t) => t.label === '$a' && /^Pattern \(regex\) `\$a`: /.test(t.explanation)));
     });
     it('what a host pastes before the shell reads the line is no hole: it may close the quotes', () => {
       const none = (tokens: Token[]): void => {
@@ -521,7 +549,204 @@ describe('words with an expansion read with the expansion as a hole', function (
       none(hosted('all:\n\tsed "s/$(VAR)/b/" f\n', 'Makefile', 1));
     });
     it('…and a shell\'s `$$x` in a recipe is a hole', () => {
-      assert.ok(hosted('all:\n\tsed "s/$$x/b/" f\n', 'Makefile', 1).some((t) => /read as a regex/.test(t.explanation)));
+      assert.ok(hosted('all:\n\tsed "s/$$x/b/" f\n', 'Makefile', 1).some((t) => /^Pattern \(regex\) `\$x`: /.test(t.explanation)));
+    });
+  });
+
+  describe('what the review with the real tools found', () => {
+    /** The text a word's rows give, all of them. */
+    const said = (line: string): string => allTokens(line).map((t) => t.explanation).join(' | ');
+    /** Each row: what the line says or not, and what the real tool does, which decides it. */
+    interface Case { line: string; has?: RegExp; hasNot?: RegExp; tools: Tool[] }
+    const table = (name: string, rows: Case[]): void => {
+      describe(name, () => {
+        for (const row of rows) {
+          it(row.line, () => {
+            if (row.has) assert.match(said(row.line), row.has);
+            if (row.hasNot) assert.doesNotMatch(said(row.line), row.hasNot);
+          });
+        }
+        it('what the tools do', () => {
+          const cases = rows.flatMap((row) => row.tools.map((tool) => ({ line: row.line, tool })));
+          runAll(cases).forEach((got, i) => check(cases[i].line, got, cases[i].tool));
+        });
+      });
+    };
+    /** Runs `script` in a new folder that holds `files`; its output. */
+    const inFolder = (files: string[], script: string): string => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hole-words-'));
+      try {
+        for (const f of files) fs.writeFileSync(path.join(dir, f), '');
+        return run('bash', ['-c', `cd ${q(dir)}\n${script}`], { check: true }).stdout.toString();
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    };
+
+    describe('find has no extended globs', () => {
+      const FILES = ['ab', 'ax(b)', 'a', 'a!(x)', 'x(1).txt', 'x1.txt'];
+      for (const [line, x, out] of [
+        ['find . -name "$x?(b)"', 'a', './ax(b)\n'],
+        ['find . -name "$x!(x)"', 'a', './a!(x)\n'],
+        ['find . -name "$x*(1).txt"', 'x', './x(1).txt\n'],
+      ]) {
+        it(line, () => {
+          assert.doesNotMatch(said(line), /extended glob/);
+          assert.strictEqual(inFolder(FILES, `x=${x}; ${line}`), out);
+        });
+      }
+      it('nor one without a hole', () => {
+        assert.doesNotMatch(said(`find . -name 'a?(b)'`), /extended glob/);
+        assert.strictEqual(inFolder(FILES, `find . -name 'a?(b)'`), './ax(b)\n');
+      });
+    });
+
+    const DASH = /starts with `-`/;
+    table('a word is an option only as the command\'s parser says', [
+      { line: 'echo -e "$x\\n"', hasNot: DASH, tools: [{ x: '-n', out: '-n\n\n' }] },
+      { line: 'echo -e "$x\\tb"', hasNot: DASH, tools: [{ x: '-n', out: '-n\tb\n' }] },
+      { line: 'env printf "$x\\n"', hasNot: DASH, tools: [{ x: '-q', out: '-q\n' }] },
+      { line: 'printf "$x\\n"', has: /If the value of `\$x` starts with `-`, `printf` reads this word as options/, tools: [{ x: '-q', fails: true }] },
+      { line: 'grep "$x\\.log"', has: DASH, tools: [{ x: '-q', input: 'a.log\n', fails: true }] },
+    ]);
+
+    const FORMAT = /a `%` in it is a conversion that takes an argument, and a `\\` starts an escape/;
+    table('a format of printf is printf\'s', [
+      { line: 'printf "$x"', has: FORMAT, hasNot: /What follows/, tools: [{ x: 'a\\tb', out: 'a\tb' }, { x: '%d', out: '0' }] },
+      { line: 'printf "%s$x" a', has: FORMAT, hasNot: /What follows|is read as a conversion/, tools: [{ x: '\\t', out: 'a\t' }] },
+      { line: 'printf "%%$x"', has: FORMAT, hasNot: /What follows|is read as a conversion/, tools: [{ x: '\\t', out: '%\t' }] },
+      { line: `printf '%s'"$x" a`, has: FORMAT, hasNot: /What follows|is read as a conversion/, tools: [{ x: '\\t', out: 'a\t' }] },
+      { line: 'printf "$x%s" a', has: /What follows is read as if the value held no `%`/, tools: [{ x: '%', out: '%s' }] },
+    ]);
+
+    const ASSUMED = /no group, no alternation \(`\|`\) and no newline of its own/;
+    table('what stands around a value that is more than one alternative', [
+      { line: 'grep -E "^$x"', has: ASSUMED, tools: [{ x: 'a|c', input: 'ab\ncb\nb/c\nz\n', out: 'ab\ncb\nb/c\n' }] },
+      { line: 'grep "^$x"', has: ASSUMED, tools: [{ x: 'a\\|c', input: 'ab\ncb\nb/c\nz\n', out: 'ab\ncb\nb/c\n' }, { x: 'foo\nc', input: 'foo\nb/c\nz\n', out: 'foo\nb/c\n' }] },
+      { line: 'grep -E "$x$"', has: ASSUMED, tools: [{ x: 'a|c', input: 'ab\nc\nz\n', out: 'ab\nc\n' }] },
+      // (A delimiter says the newline: it fails.)
+      { line: 'sed "s/^$x/Z/"', has: /no group, no alternation \(`\|`\) of its own/, tools: [{ x: 'a\\|c', input: 'ab\nbc\n', out: 'Zb\nbZ\n' }, { x: 'a\nc', input: 'a\n', fails: true }] },
+    ]);
+
+    const RANGE = /`1,5`/;
+    table('an address that is a value', [
+      { line: 'sed "1,${x}d"', hasNot: RANGE, tools: [{ x: '1,2', input: 'a\nb\n', fails: true }, { x: '2', input: 'a\nb\nc\n', out: 'c\n' }, { x: '/b/', input: 'a\nb\nc\n', out: 'c\n' }] },
+      { line: 'sed "$x,2 d"', hasNot: RANGE, tools: [{ x: '1,2', input: 'a\nb\n', fails: true }, { x: '1', input: 'a\nb\nc\n', out: 'c\n' }] },
+      { line: 'sed "${x}d"', has: RANGE, tools: [{ x: '1,2', input: 'a\nb\nc\n', out: 'c\n' }] },
+    ]);
+
+    const FOLLOWS = /What follows is read as if the value held no `%`/;
+    table('what follows a value in a format of date', [
+      { line: 'date -u -d @0 +"$x%F"', has: FOLLOWS, tools: [{ x: '%', out: '%F\n' }, { x: 'Q', out: 'Q1970-01-01\n' }] },
+      { line: 'date -u -d @86400 +"${x}d"', has: FOLLOWS, tools: [{ x: '%-', out: '2\n' }, { x: 'Q', out: 'Qd\n' }] },
+      { line: 'date -u -d @0 +"%F $x"', hasNot: FOLLOWS, tools: [{ x: '%', out: '1970-01-01 %\n' }] },
+    ]);
+
+    it('a pattern of find names the backslash of a value', () => {
+      assert.match(said('find . -name "$x*"'), /and a `\\` makes the next character plain/);
+      assert.strictEqual(inFolder(['a*', 'ab'], `x='a\\'; find . -name "$x*"`), './a*\n');
+    });
+
+    describe('each kind\'s risk once on a line', () => {
+      const count = (line: string, re: RegExp): number => allTokens(line).filter((t) => re.test(t.explanation)).length;
+      const rows = (src: string, line = 0): number => walk(en.explainLine(parser.parse(src), line).items).length;
+      it('a part with only a value in it has one row, and bash\'s under it', () => {
+        assert.deepStrictEqual(allTokens('sed "s/$a/b/"').filter((t) => t.label === '$a').map((t) => t.origin), ['embedded', 'shell']);
+        assert.strictEqual(rows('sed "s/$old/$new/g"'), 13);
+      });
+      it('later holes of a kind say nothing again', () => {
+        const line = 'sed "s/$a/$b/;s/$c/$d/"';
+        assert.strictEqual(rows(line), 21);
+        assert.strictEqual(count(line, /special meaning/), 1);
+        assert.strictEqual(count(line, /ends the pattern early/), 1);
+        assert.strictEqual(count(line, /ends the replacement early/), 1);
+        const of = (label: string): string => allTokens(line).find((t) => t.origin === 'embedded' && t.label === label)!.explanation;
+        assert.strictEqual(of('$c'), 'Pattern (regex) `$c`');
+        assert.strictEqual(of('$d'), 'Replacement `$d`');
+      });
+      it('a later hole that is not a whole part names the first', () => {
+        const of = (line: string, label: string): string => allTokens(line).find((t) => t.origin === 'embedded' && t.label === label && t.kind === 'variable')!.explanation;
+        assert.strictEqual(of('sed "s/^$a=/b/;s/^$c=/d/"', '$c'), 'The value of `$c`, read like `$a`');
+        assert.strictEqual(of('find . -name "$p*" -o -name "$q*"', '$q'), 'The value of `$q`, read like `$p`');
+        assert.deepStrictEqual(allTokens('grep "^$x$x"').filter((t) => t.origin === 'embedded' && t.label === '$x').map((t) => t.explanation).slice(1), ['The value of `$x`, read the same way']);
+      });
+      it('what a later hole adds is said: another delimiter, or what stands around it', () => {
+        assert.match(said('sed "s/$a/b/;s|$c|d|"'), /Pattern \(regex\) `\$c`: A `\|` or a newline in it ends the pattern early/);
+        assert.match(said('sed "s/$a/b/;s/^$c=/d/"'), /The value of `\$c`, read like `\$a`\. What stands around it/);
+        assert.strictEqual(count('date +"%F $a"; date +"$b%F"', /a `%` in it is read as a conversion/), 2);
+        assert.strictEqual(count('date +"$a%F"; date +"%F $b"', /a `%` in it is read as a conversion/), 1);
+      });
+      it('a repeat keeps what it repeats, and says the rest once', () => {
+        assert.deepStrictEqual(allTokens('grep "$a*$b*"').filter((t) => t.label === '*').map((t) => t.explanation.includes('with an empty value')), [true, false]);
+      });
+      it('the option of a value and the way to pass one as data, once for a command', () => {
+        assert.match(said('grep "$a\\.x" f; grep "$b\\.x" g'), /value of `\$a` starts with `-`/);
+        assert.doesNotMatch(said('grep "$a\\.x" f; grep "$b\\.x" g'), /value of `\$b` starts with `-`/);
+        const notes = allTokens('awk "$a" f; awk "$b" g').map((t) => t.explanation).filter((t) => /depends on the value/.test(t));
+        assert.deepStrictEqual(notes.map((t) => t.includes('-v name=value')), [true, false]);
+      });
+    });
+
+    describe('where it is said', () => {
+      it('a value with nothing after it, and plain text before it: no sentence on what stands around it', () => {
+        const sample = fs.readFileSync(path.join(__dirname, 'fixtures/sample.sh'), 'utf8');
+        const line = sample.split('\n').findIndex((l) => l.startsWith('grep -rn "ERROR $USER"'));
+        const all = walk(en.explainLine(parser.parse(sample), line).items).map((t) => t.explanation).join(' | ');
+        assert.match(all, /The value of `\$USER` is read as a regex/);
+        assert.doesNotMatch(all, /What stands around/);
+      });
+      it('a group or an anchor before it: the sentence', () => {
+        for (const line of ['grep -E "(a)$x"', 'grep "^$x"', 'grep "$x\\.log"']) assert.match(allTokens(line).map((t) => t.explanation).join(' | '), /What stands around/, line);
+      });
+      it('the word of `tr` names the value once', () => {
+        const word = allTokens('tr "$a" x').find((t) => t.label === '"$a"' && t.kind === 'argument')!;
+        assert.strictEqual(word.explanation.split('`$a`').length - 1, 1, word.explanation);
+      });
+    });
+
+    describe('a word that bash gives as one is read, whatever joins it', () => {
+      const FORMS = ['"$*"', '"${a[*]}"', '"${!a*}"', '"${!a[*]}"', '"${*:2}"', '"${a[*]:-y}"', '"x${a[*]}y"'];
+      it('bash gives one word for each', () => {
+        const out = run('bash', ['-c', `count() { echo $#; }; set -- p q r; a=(x y); ab=1; ${FORMS.map((f) => `count ${f}`).join('; ')}; a=(); count "\${a[*]}"; a=(x); count "\${!a[*]:-y}"; set --; count "$*"`], { check: true }).stdout.toString();
+        assert.strictEqual(out, '1\n'.repeat(FORMS.length + 3));
+      });
+      for (const form of [...FORMS, '"${!a[*]:-y}"']) {
+        it(`${form} in a regex is a value`, () => {
+          assert.ok(allTokens(`grep "^${form.slice(1, -1)}\\.log" f`).some((t) => t.origin === 'embedded' && t.label === (form.includes('x$') ? form.slice(2, -2) : form.slice(1, -1)) && /read as a regex/.test(t.explanation)), form);
+        });
+      }
+      it('`sed "$*"` says its script depends on the value', () => {
+        assert.match(said('sed "$*"'), /depends on the value of `\$\*`/);
+      });
+      it('and what gives one word per element stays unread', () => {
+        for (const line of ['grep "^$@" f', 'grep "^${a[@]}" f', 'grep "^${a[@]:-y}" f', 'grep "^${!a@}" f']) assert.deepStrictEqual(shape(line), [], line);
+      });
+    });
+
+    table('the escapes of each reader, before a value', [
+      { line: 'sed "s/a/\\U$x/"', has: /`\\U`|uppercase what follows/, tools: [{ x: 'foo', input: 'a\n', out: 'FOO\n' }] },
+      { line: 'sed "s/a/\\u$x/"', has: /uppercase/, tools: [{ x: 'foo', input: 'a\n', out: 'Foo\n' }] },
+      { line: 'sed "s/a/\\L$x/"', has: /lowercase/, tools: [{ x: 'FOO', input: 'a\n', out: 'foo\n' }] },
+      { line: 'grep -P "\\d$x"', has: /a digit.*read as a regex/, tools: [{ x: 'a', input: '1a\nb\n', out: '1a\n' }] },
+    ]);
+    it('those read the value', () => {
+      assert.ok(shape('sed "s/a/\\U$x/"').includes('$x 11-13'));
+      assert.ok(shape('grep -P "\\d$x"').includes('$x 11-13'));
+    });
+    const STOPS: { line: string; shows: [Tool, Tool] }[] = [
+      { line: 'grep -P "(a)\\1$x"', shows: [{ x: '', input: 'aa\nb\n', out: 'aa\n' }, { x: '0', input: 'aa\n', out: '' }] },
+      { line: 'grep -P "\\U$x"', shows: [{ x: 'a', input: 'a\n', fails: true }, { x: 'b', input: 'b\n', fails: true }] },
+      { line: 'sed "s/a/\\o10$x/"', shows: [{ x: '1', input: 'a\n', out: 'A\n' }, { x: '2', input: 'a\n', out: 'B\n' }] },
+      { line: 'sed "s/a/\\d06$x/"', shows: [{ x: '5', input: 'a\n', out: 'A\n' }, { x: '6', input: 'a\n', out: 'B\n' }] },
+      { line: 'printf "\\u004$x"', shows: [{ x: '1', out: 'A' }, { x: '2', out: 'B' }] },
+      { line: 'printf "\\10$x"', shows: [{ x: '1', out: 'A' }, { x: '2', out: 'B' }] },
+    ];
+    describe('the escapes that do take the value stay unread', () => {
+      for (const { line } of STOPS) it(line, () => assert.deepStrictEqual(shape(line), []));
+      it('what the tools do', () => {
+        const cases = STOPS.flatMap(({ line, shows }) => shows.map((tool) => ({ line, tool })));
+        runAll(cases).forEach((got, i) => check(cases[i].line, got, cases[i].tool));
+      });
     });
   });
 

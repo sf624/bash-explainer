@@ -199,6 +199,8 @@ export interface Explainer {
   readonly slotEnvs: Map<SyntaxNode, ExecEnv>;
   /** A memo kept for this line only, by key. */
   memo<V>(key: MemoKey<V>): Map<SyntaxNode, V>;
+  /** What the holes of this line have said, by the kind of risk: the value that said it (`holeText`, src/explain/embedded.ts). */
+  readonly holesSaid: Map<string, string>;
 }
 
 /** What the line collected, which src/analyzer.ts assembles into the `LineExplanation`. */
@@ -265,6 +267,7 @@ export class LineExplainer implements Explainer, LineOutput {
   private current: number | null;
   private readonly memos = new Map<MemoKey<unknown>, Map<SyntaxNode, unknown>>();
   readonly wholes: Whole[] = [];
+  readonly holesSaid = new Map<string, string>();
   /** How many nodes the walk is explaining now: at none, it is making the items of the line. */
   private explaining = 0;
 

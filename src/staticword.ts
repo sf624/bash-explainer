@@ -1,7 +1,7 @@
 import { bracketEnd } from './bracket';
 import { visible } from './ctlchars';
 import type { EmbeddedLang } from './embedded/types';
-import { hasHole, HOLE_COUNT, holeChar, isHole } from './embedded/types';
+import { HOLE_COUNT, holeChar, isHole } from './embedded/types';
 import { bracesMayWork, featureWorks, type Shell } from './shellfeatures';
 import type { SyntaxNode } from './syntax/tree';
 
@@ -566,11 +566,11 @@ export function literalContent(a: SyntaxNode): Literal | undefined {
  * hold (`isHole`, src/embedded/types.ts), over the expansion's source. `accept`: the expansions that give one text. For a
  * word `literalContent` refuses for its expansions and no other reason, and read only by those that ask (`embedded`):
  * every other consumer of a word's text keeps refusing it. Refused: an unquoted expansion or glob (`s/$a/b/`, `"$x"*`), a
- * tilde, a word that holds such a character itself, and a backslash just before a hole (`"\\$x"`), which escapes the value's
+ * tilde, and a backslash just before a hole (`"\\$x"`), which escapes the value's
  * first character whatever the language.
  */
 export function holedContent(a: SyntaxNode, accept: (n: SyntaxNode) => boolean): Literal | undefined {
-  if (hasHole(a.text) || decodedText(a) !== a.text || tildeSpots(tildeParts([a]), 'start').length) return undefined;
+  if (decodedText(a) !== a.text || tildeSpots(tildeParts([a]), 'start').length) return undefined;
   if (a.type === 'concatenation' && a.startPosition.row !== a.endPosition.row) return undefined;
   const m: MappedText = { text: '', starts: [], ends: [] };
   const holes: HoleReading = { accept, chars: new Map() };

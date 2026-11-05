@@ -111,7 +111,8 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
     if (depth > 0 && isGroupClose(st)) return out;
     if (isHole(c)) {
       st.i++;
-      out.push(holeToken(start, 'regex', { ...st.hole, alone: st.src.length === 1 }));
+      // (Something after it, or before it other than plain text: their reading rests on what the value is.)
+      out.push(holeToken(start, 'regex', { ...st.hole, around: st.src.length > start + 1 || out.some((t) => !st.literals.has(t)) }));
       continue;
     }
     if (holeDecides(st, start, c)) {
@@ -344,8 +345,8 @@ function escape(st: State): EmbeddedToken {
   const { s, src } = st;
   const start = st.i;
   const se = st.sedEscapes ? sedEscapeAt(src, start) : undefined;
-  // (`\x$n`, `\c$x`, `\x4$n`: the escape takes characters of the value. In sed `\1` is one digit.)
-  if ((st.sedEscapes || st.flavor === 'pcre') && escapeIntoHole(src, start, st.flavor === 'pcre')) {
+  // (`\x$n`, `\c$x`, `\x4$n`: the escape takes characters of the value.)
+  if ((st.sedEscapes || st.flavor === 'pcre') && escapeIntoHole(src, start, st.sedEscapes ? 'sed' : 'pcre')) {
     st.i += 2;
     return holeStop(start);
   }
