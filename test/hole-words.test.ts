@@ -477,6 +477,9 @@ describe('words with an expansion read with the expansion as a hole', function (
         assert.ok(expected.some((e) => /regex|sed|正規表現|スクリプト|アドレス|address|line number|行番号/i.test(e) && !/read the same way|同じように読/.test(e)), alone);
       }
     }
+    // A risk a hole said before the test stays said: the later hole only names the first.
+    const later = walk(explained('grep "^$a" f; [ -z "$(grep "^$b" f)" ]').items).filter((t) => t.label === '$b').map((t) => t.explanation);
+    assert.deepStrictEqual(later, ['The value of `$b`, read like `$a`', 'Expands to the value of `b`']);
     assert.match(sentences('grep "^$a" f', 'grep', en).join('\n'), /The value of `\$a` is read as a regex: `\.`, `\*`, `\[` and the like in the value have their special meaning/);
     assert.match(sentences('grep "^$a" f', 'grep', ja).join('\n'), /特別な意味を持つ/);
   });
