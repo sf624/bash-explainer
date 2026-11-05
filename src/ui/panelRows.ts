@@ -418,7 +418,8 @@ function addNodeRows(rows: ModelRow[], root: ReadingNode, roles: ReadonlyMap<str
     const row = byRange.get(at);
     if (lines.has(n.span.start.line) || n.kind === 'heredoc') {
       if (row) {
-        if (n.kind !== 'quote' && n.text && !row.connector && !texts.has(n.text)) {
+        // (Not the name of a command, which lies on the command's own row, that says what the name says: the word `[` has a text of its own in the tree.)
+        if (n.kind !== 'quote' && n.text && !row.connector && !texts.has(n.text) && at === keyOf(n.span)) {
           row.more = [...row.more, [{ text: n.text }]];
           texts.add(n.text);
         }

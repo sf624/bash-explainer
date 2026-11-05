@@ -60,8 +60,11 @@ describe('the command-line tool', function () {
   });
 
   it('keeps what only the panel reads out of the JSON, at every depth', () => {
+    for (const src of ['for x in a; do if true; then echo $x; fi; done', '[ -f c ] | cat']) {
+      const json = JSON.stringify(JSON.parse(run(['--format', 'json', '-e', src]).out));
+      assert.doesNotMatch(json, /"(frame|plain|nameWord|stage)":/, src);
+    }
     const json = JSON.stringify(JSON.parse(run(['--format', 'json', '-e', 'for x in a; do if true; then echo $x; fi; done']).out));
-    assert.doesNotMatch(json, /"(frame|plain)":/);
     // (The tokens themselves stay, with those under them.)
     assert.match(json, /"children":\[\{/);
   });

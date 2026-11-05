@@ -343,7 +343,7 @@ In `--format json`, the `said` of a command name (`items[].name.said`, also in `
 - The one row says what the two rows said: "Command `[` (an alias of `test`): evaluates the condition in its arguments…", citing 4.1 and 6.4 as before. At depth 2 the reading of the word `[` keeps its own short text, "Command `[` (an alias of `test`)", and its sections.
 - The colour of the top row is that of a builtin (a command, for a program `[`: `/usr/bin/[`, after `enable -n [`), not that of a test. `[[ … ]]` is unchanged: it is syntax, with no program and no words received.
 - What is said around it is unchanged: "In short" ("Tests the condition in `[ … ]`; if that succeeds, runs …"), the summary of a line (`test [ -a file ]`), the label of a pipeline's connector ("stdout of `[ -f c ]` → stdin of `cat`") and of a list or a redirection.
-- `--format json`: the top part of the command has `kind` `builtin` (`command` for a program) and `label` `[`, with the arguments and `]` in `children`. Before: `kind` `test`, `label` the whole test (`[ -a file ]`), and a part for `[` under it.
+- `--format json`: the top part of the command has `kind` `builtin` (`command` for a program) and as `label` the word as written (`[`, `/usr/bin/[`, `"["`, `\[`), with the arguments and `]` in `children`. The text and Markdown formats show the same rows. Before: `kind` `test`, `label` the whole test (`[ -a file ]`), and a part for `[` under it.
 
 ## Fixed
 
