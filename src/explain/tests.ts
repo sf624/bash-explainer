@@ -234,7 +234,7 @@ export function regexNode(cx: Explainer, n: SyntaxNode): Token {
   // (A `regex` node is only the plain right side of `=~`, without quotes: expansions and quotes make other nodes.)
   const { text, offsets } = regexText(n);
   // (The regex is read by the regex library bash calls, by the rules of an ERE: an embedded language.)
-  const tokens = explainRegex(text, 'ere', cx.lang).map((t) => ({ ...fromEmbedded(t, n, { text, offsets }, 'embedded'), language: 'regex' }));
+  const tokens = explainRegex(text, 'ere', cx.lang, { tool: 'bash' }).map((t) => ({ ...fromEmbedded(t, n, { text, offsets }, 'embedded'), language: 'regex' }));
   const js = toJsRegex(text, 'ere');
   const escapes = droppedEscapes(n.text);
   if (escapes.length) {

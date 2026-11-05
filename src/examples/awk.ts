@@ -431,7 +431,7 @@ class Parser {
       case 'num': return { k: 'num', v: Number(t.text) };
       case 'str': return { k: 'str', v: unescapeAwk(t.text.slice(1, -1)) };
       case 'regex': {
-        const re = toJsRegex(t.text.slice(1, -1).replace(/\\\//g, '/'), 'ere', { sedEscapes: true });
+        const re = toJsRegex(t.text.slice(1, -1).replace(/\\\//g, '/'), 'ere', { sedEscapes: true, awk: true });
         if (!re) throw new Unsupported('regex');
         return { k: 're', re };
       }
@@ -511,7 +511,7 @@ function spansOf(s: string, fs: string | RegExp): [number, number][] {
     return [...out, [at, s.length]];
   }
   if (fs instanceof RegExp) return posixSpans({ source: fs.source, flags: fs.flags }, s);
-  const re = toJsRegex(fs, 'ere', { sedEscapes: true });
+  const re = toJsRegex(fs, 'ere', { sedEscapes: true, awk: true });
   if (!re) throw new Unsupported('FS');
   return posixSpans(re, s);
 }
@@ -774,7 +774,7 @@ class Interp {
 
   private regexOf(e: Expr): RegExp {
     if (e.k === 're') return scriptRegex(e.re.source, e.re.flags);
-    const re = toJsRegex(toStr(this.eval(e)), 'ere', { sedEscapes: true });
+    const re = toJsRegex(toStr(this.eval(e)), 'ere', { sedEscapes: true, awk: true });
     if (!re) throw new Unsupported('dynamic regex');
     return scriptRegex(re.source, re.flags);
   }

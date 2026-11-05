@@ -73,6 +73,20 @@ const rows: [string, string, string, string, RegExp][] = [
   ['[\\h]+', 'a  b\n', '  \n', '[\\h]', /horizontal whitespace/],
   ['[\\.\\]]+', 'a.]\n', '.]\n', '[\\.\\]]', /one of ".", "\]"/],
   ['[\\n\\x41]+', 'xAy\n', 'A\n', '[\\n\\x41]', /one of a newline, the character with code 0x41/],
+  // A range whose ends are escapes is a range (once read as its ends and a "-").
+  ['[^\\x00-\\x7F]', 'caf\u00e9-\n', '\u00e9\n', '[^\\x00-\\x7F]', /^Character class: one character other than the characters with codes 0x00 to 0x7F$/],
+  ['[\\x41-\\x5a]+', 'aBCd-\n', 'BC\n', '[\\x41-\\x5a]', /one of the characters with codes 0x41 \("A"\) to 0x5A \("Z"\)$/],
+  ['[\\t-\\r]+', 'a \t\r\nb\n', '\t\r\n', '[\\t-\\r]', /one of the characters with codes 0x09 to 0x0D$/],
+  ['[\\x{4e00}-\\x{9fff}]+', 'a\u6f22\u5b57b-\n', '\u6f22\u5b57\n', '[\\x{4e00}-\\x{9fff}]', /codes 0x4E00 \("\u4e00"\) to 0x9FFF/],
+  ['[a-\\x7f]+', 'A-abc\n', 'abc\n', '[a-\\x7f]', /codes 0x61 \("a"\) to 0x7F$/],
+  ['[a-c\\x41-\\x43-]+', 'xA-bz\n', 'A-b\n', '[a-c\\x41-\\x43-]', /one of a-c, the characters with codes 0x41 \("A"\) to 0x43 \("C"\), "-"$/],
+  // In a class `\1` is an octal code, not a back-reference.
+  ['[\\101]+', 'a1A\n', 'A\n', '[\\101]', /one of the character with code 0x41 \("A"\)$/],
+  ['[\\101-\\132]+', 'a1AB\n', 'AB\n', '[\\101-\\132]', /codes 0x41 \("A"\) to 0x5A \("Z"\)$/],
+  ['[\\1]', '\x01a\n', '\x01\n', '[\\1]', /code 0x01$/],
+  ['[\\8]', '8a\n', '8\n', '[\\8]', /one of "8"$/],
+  ['\\Qa$b\\E', 'a$b ab\n', 'a$b\n', '\\Qa$b\\E', /the text "a\$b" taken literally/],
+  ['\\Q$x\\E', '$x\n', '$x\n', '\\Q$x\\E', /the text "\$x" taken literally/],
 ];
 
 describe('PCRE escapes and groups agree with grep -P', () => {
@@ -126,6 +140,78 @@ describe('PCRE escapes and groups agree with grep -P', () => {
   it('keeps the other flavors as they were', () => {
     assert.match(explainRegex('\\<a', 'ere', 'en')[0].explanation, /start of a word/);
     assert.match(explainRegex('\\K', 'ere', 'en')[0].explanation, /Literal "K"/);
-    assert.match(explainRegex('\\h', 'ere', 'en')[0].explanation, /just "h" in POSIX regex/);
+    // grep -E: `\h` is the letter h (with a warning), and `-P` is what gives it the meaning of PCRE.
+    assert.match(explainRegex('\\h', 'ere', 'en')[0].explanation, /just "h" in POSIX regex; it means a horizontal whitespace character \(space, tab…\) only with `-P`/);
+    assert.strictEqual(run('grep', ['-oE', '--', '\\h'], { input: 'h \t\n' }).stdout.toString(), 'h\n');
+    assert.strictEqual(run('grep', ['-oP', '--', '\\h'], { input: 'h \t\n' }).stdout.toString(), ' \n\t\n');
+  });
+
+  it('does not read a range where the end is a class, or an escape the class cannot hold', () => {
+    // (A class such as `\d` is a set of characters: it is no end of a range, and the "-" is not read as one.)
+    const [t] = explainRegex('[a\\d-z]', 'pcre', 'en');
+    assert.match(t.explanation, /one of "a", a digit, "-", "z"$/);
+    assert.match(explainRegex('[\\x41-]', 'pcre', 'en')[0].explanation, /one of the character with code 0x41 \("A"\), "-"$/);
+    assert.match(explainRegex('[\\x41-\\x5a]', 'pcre', 'ja')[0].explanation, /文字コード 0x41 \("A"\)〜0x5A \("Z"\) の範囲の文字/);
+    // The ends of a range that show no character, or are past Unicode, are told by their codes.
+    assert.match(explainRegex('[\\x7f-\\x{9f}\\x{110000}-\\x{110001}]', 'pcre', 'en')[0].explanation, /codes 0x7F to 0x9F, the characters with codes 0x110000 to 0x110001\]?$/);
+    // A class that is not closed, with a backslash last.
+    assert.strictEqual(explainRegex('[a\\', 'pcre', 'en')[0].kind, 'error');
+  });
+});
+
+/** What `perl -e` prints for the code. */
+function perl(code: string): string {
+  return run('perl', ['-e', code], { ignoreStderr: true }).stdout.toString();
+}
+
+describe('Perl reads a regex before it is compiled, and the explanation says so', () => {
+  const perlTokens = (re: string) => allTokens(explainRegex(re, 'pcre', 'en', { perl: true }));
+  it('\\Q$x\\E quotes the value of $x; grep -P has no variables', () => {
+    // x = a.b: the dot of the value is a dot, not any character.
+    assert.strictEqual(perl('$x = "a.b"; print "axb" =~ /\\Q$x\\E/ ? "yes" : "no"; print "a.b" =~ /\\Q$x\\E/ ? "yes" : "no"'), 'noyes');
+    assert.strictEqual(perl('$x = "a.b"; print "axb" =~ /$x/ ? "yes" : "no"'), 'yes');
+    for (const re of ['\\Q$old\\E', '\\Q${old}\\E', '\\Q@list\\E', '\\Q$h{k}\\E']) {
+      const t = perlTokens(re)[0];
+      assert.match(t.explanation, /Perl first replaces the variables in .* with their values, then takes the resulting text literally/, re);
+      assert.doesNotMatch(t.explanation, /^`\\Q…\\E`: the text/, re);
+    }
+    // No variable in it: the text is literal, and a `$` at the end is the end of the text.
+    assert.match(perlTokens('\\Qa.b\\E')[0].explanation, /the text "a\.b" taken literally/);
+    assert.match(perlTokens('\\Qa$\\E')[0].explanation, /the text "a\$" taken literally/);
+    assert.strictEqual(perl('print "a\\$" =~ /\\Qa$\\E/ ? "yes" : "no"'), 'no');
+    // grep -P: `$x` is the text.
+    assert.match(explainRegex('\\Q$x\\E', 'pcre', 'en')[0].explanation, /the text "\$x" taken literally/);
+  });
+
+  it('\\U \\L \\u \\l \\F are Perl\'s, and PCRE2 stops at them', () => {
+    assert.strictEqual(perl('print "X" =~ /\\Ux\\E/ ? "yes" : "no"; print "x" =~ /\\Ux\\E/ ? "yes" : "no"; print "Xb" =~ /\\ux?b/ ? "yes" : "no"; print "xB" =~ /x\\LB\\E/ ? "yes" : "no"'), 'yesnoyesno');
+    assert.match(perlTokens('\\Ux\\E')[0].explanation, /^`\\U…\\E`: the text "x" is upper-cased to "X" before the regex is read$/);
+    assert.match(perlTokens('a\\LBC\\E')[1].explanation, /lower-cased to "bc"/);
+    assert.match(perlTokens('\\uab')[0].explanation, /^`\\ua`: "a" is upper-cased to "A" before the regex is read$/);
+    assert.match(perlTokens('\\lAb')[0].explanation, /"A" is lower-cased to "a"/);
+    assert.match(perlTokens('\\Fab\\E')[0].explanation, /case-folded/);
+    assert.match(perlTokens('\\u')[0].explanation, /upper-cases the next character/);
+    assert.match(perlTokens('\\u\\d')[0].explanation, /upper-cases the next character/);
+    assert.match(perlTokens('\\Ux')[0].explanation, /the text "x" is upper-cased to "X"/);
+    assert.match(explainRegex('\\Ux\\E', 'pcre', 'ja', { perl: true })[0].explanation, /大文字「X」/);
+    for (const c of 'ULFul') {
+      const real = run('grep', ['-P', '--', `\\${c}`], { input: 'x\n' });
+      assert.strictEqual(real.status, 2, c);
+      assert.match(real.stderr.toString(), /PCRE2 does not support \\F, \\L, \\l, \\N\{name\}, \\U, or \\u/);
+      const t = explainRegex(`\\${c}x`, 'pcre', 'en')[0];
+      assert.strictEqual(t.kind, 'error');
+      assert.match(t.explanation, /PCRE2 does not support \\F, \\L, \\l, \\N\{name\}, \\U, or \\u/);
+      assert.doesNotMatch(t.explanation, /Perl reads it as/);
+    }
+  });
+
+  it('a letter Perl does not know passes through with a warning; grep -P stops', () => {
+    const r = run('perl', ['-we', 'print "y" =~ /\\y/ ? "yes" : "no"'], { });
+    assert.strictEqual(r.stdout.toString(), 'yes');
+    assert.match(r.stderr.toString(), /Unrecognized escape \\y passed through/);
+    assert.match(perlTokens('\\y')[0].explanation, /Perl reads it as "y" \(with the warning "Unrecognized escape \\y passed through"\)/);
+    assert.doesNotMatch(perlTokens('\\y')[0].explanation, /grep/);
+    assert.strictEqual(perlTokens('\\y')[0].kind, 'string');
+    assert.match(explainRegex('\\y', 'pcre', 'ja', { perl: true })[0].explanation, /Perl では文字「y」扱い/);
   });
 });

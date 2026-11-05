@@ -100,7 +100,7 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
     ['sort', '-k1,9'], ['sort', '-s', '-k1,1'], ['sort', '-k1.2,1.3'], ['sort', '-t', ' ', '-k1.3,2'], ['sort', '-f'], ['sort', '-h', '-k2,2'], ['sort', '-t', ' ', '-k2,2n'],
     ['uniq', '-w', '1'], ['uniq', '-s', '2'], ['uniq', '-f', '1', '-c'], ['uniq', '-i', '-u'],
     ['cut', '-c', '2,4', '--output-delimiter=:'], ['cut', '-f', '2', '-d', ','],
-    ['tr', '[=a=]', 'b'], ['tr', '\\101\\154', 'xy'], ['tr', '\\q', 'x'], ['tr', '-t', 'abc', 'xy'], ['tr', 'a', '-d'], ['tr', 'l', '-s'], ['tr', 'abcl', 'xy'], ['tr', '-s', 'a'], ['tr', '-c', 'a-z\\n', '_'], ['tr', '-dc', 'a-z'], ['tr', '-cd', 'a-z\\n'], ['tr', '--complement', '--delete', 'a-z'], ['tr', '-cs', 'a-z'], ['tr', '-cs', 'A-Za-z', '[\\n*]'], ['tr', '-ds', 'a-z', 'l'], ['tr', '-cds', 'a-z', 'l'], ['tr', '-s', 'a-z'], ['tr', '-C', 'a-z', 'x'],
+    ['tr', '[=a=]', 'b'], ['tr', '\\101\\154', 'xy'], ['tr', '\\q', 'x'], ['tr', '-t', 'abc', 'xy'], ['tr', 'a', '-d'], ['tr', 'l', '-s'], ['tr', 'abcl', 'xy'], ['tr', '-s', 'a'], ['tr', '-c', 'a-z\\n', '_'], ['tr', '-dc', 'a-z'], ['tr', '-cd', 'a-z\\n'], ['tr', '--complement', '--delete', 'a-z'], ['tr', '-cs', 'a-z'], ['tr', '-cs', 'A-Za-z', '[\\n*]'], ['tr', '-ds', 'a-z', 'l'], ['tr', '-cds', 'a-z', 'l'], ['tr', '-s', 'a-z'], ['tr', '-C', 'a-z', 'x'], ['tr', '-cd', '\\000-\\177'], ['tr', '-d', '\\000-\\037'], ['tr', '-cd', '\\11\\12\\15\\40-\\176'], ['tr', '-d', '\\t-\\r'], ['tr', '-d', 'a-\\177'], ['tr', '-ct', 'a-z', 'xy'],
     ['head', '-c', '-3'], ['head', '-c', '6'], ['tail', '-c', '3'], ['tail', '-n', '2'], ['head', '--lines=2'], ['sort', '-h'], ['sort', '--reverse'], ['tr', '-d', 'a-z\\n'], ['tail', '+2'], ['tail'],
   ];
   for (const [cmd, ...args] of cases) {
@@ -202,6 +202,14 @@ describe('the explanation of a tr set under -c says what tr does, as GNU tr does
     ['tr -s a-z', 'aab\n', 'ab\n', [['a-z', /^character set whose repeats are squeezed.*characters whose repeats are squeezed: a-z$/, /連続したら1つにまとめる文字/]]],
     ['tr -cs A-Za-z \'[\\n*]\'', 'a, b\n', 'a\nb\n', [['A-Za-z', /characters to leave as they are/, /そのままにする文字/], ['\'[\\n*]\'', /newline repeated as needed \(the characters outside/, /改行を必要なだけ繰り返す/]]],
     ['tr -ds a-z 1', 'a11b\n', '1\n', [['a-z', /characters to delete: a-z$/, /削除する文字/], ['1', /characters whose repeats are squeezed: "1"$/, /連続したら1つにまとめる文字/]]],
+    // A range whose ends are octal codes or escapes is a range (it was read as the first end, a "-", and the second).
+    ['tr -cd \'\\000-\\177\'', 'caf\u00e9-\n', 'caf-\n', [['\'\\000-\\177\'', /characters to keep \(every other character is deleted\): the characters from octal 000 to octal 177$/, /残す文字.*8進数 000〜8進数 177 の範囲の文字$/]]],
+    ['tr -d \'\\000-\\037\'', 'a\x01b\x1fc\n', 'abc', [['\'\\000-\\037\'', /characters to delete: the characters from octal 000 to octal 037$/, /削除する文字/]]],
+    ['tr -cd \'\\11\\12\\15\\40-\\176\'', 'a\tb\x01\r\n\x7f', 'a\tb\r\n', [['\'\\11\\12\\15\\40-\\176\'', /octal code 11 \(HT, tab\), the character with octal code 12.*, the characters from octal 40 to octal 176$/, /8進数 40〜8進数 176/]]],
+    ['tr -d \'\\t-\\r\'', 'a\tb\nc\x0bd\r\f e', 'abcd e', [['\'\\t-\\r\'', /characters to delete: the characters from tab to carriage return$/, /タブ〜復帰文字\(CR\) の範囲の文字/]]],
+    ['tr -d \'a-\\177\'', 'aZb\x7f\n', 'Z\n', [['\'a-\\177\'', /characters to delete: the characters from "a" to octal 177$/, /削除する文字/]]],
+    // -t: only as many of the others as the second string has are replaced (here \0 and \1), not every other character.
+    ['tr -ct a-z xy', 'aXb\x01\x02\n', 'aXby\x02\n', [['a-z', /^character set to leave as is \(with -t, only some of the other characters are replaced\).*characters to leave as they are: a-z \(with -t, only as many of the others as the second set has characters are replaced, lowest character codes first; the rest stay\)$/, /-t があるので/], ['xy', /replacement characters: "x", "y" \(with -t, only as many characters outside the first set as there are replacement characters are replaced, lowest character codes first; the rest stay\)$/, /-t があるので/]]],
     // -c complements the first string only: b is squeezed, not everything but b.
     ['tr -cds a-b b', 'aabbb', 'aab', [['a-b', /characters to keep/, /残す文字/], ['b', /characters whose repeats are squeezed: "b"$/, /連続したら1つにまとめる文字/]]],
   ];

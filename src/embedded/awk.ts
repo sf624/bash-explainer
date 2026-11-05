@@ -252,7 +252,7 @@ class AwkExplainer {
 
   private regexToken(t: Lex, explanation: string): EmbeddedToken {
     const body = t.text.endsWith('/') && t.text.length > 1 ? t.text.slice(1, -1) : t.text.slice(1);
-    return this.tok(t.start, t.end, 'pattern', explanation, shift(explainRegex(body, 'ere', this.lang, { delimiter: '/' }), t.start + 1));
+    return this.tok(t.start, t.end, 'pattern', explanation, shift(explainRegex(body, 'ere', this.lang, { delimiter: '/', tool: 'awk' }), t.start + 1));
   }
 
   private functionDef(): EmbeddedToken {

@@ -93,8 +93,27 @@ function trCharName(c: string): [string, string] {
   return ch === ' ' ? ['スペース', 'space'] : [`「${ch}」`, `"${ch}"`];
 }
 
+/** The character a `tr` set writes at the start of `rest` (`a`, `\n`, `\101`, `\\`), as written: its length and its name; undefined for none. */
+function trCharAt(rest: string): { length: number; name: [string, string]; plain: string | undefined } | undefined {
+  if (!rest) return undefined;
+  if (rest[0] !== '\\' || rest.length === 1) return { length: 1, name: trCharName(rest[0]), plain: rest[0] };
+  const octal = /^\\[0-7]{1,3}/.exec(rest);
+  const length = octal ? octal[0].length : 2;
+  // (The end of a range is named briefly: `octal 177`, not "the character with octal code 177".)
+  const name: [string, string] = octal ? [`8進数 ${octal[0].slice(1)}`, `octal ${octal[0].slice(1)}`] : rest[1] === 'r' ? ['復帰文字(CR)', 'carriage return'] : trCharName(rest);
+  return { length, name, plain: undefined };
+}
+
+/** A range `x-y` at the start of `rest`: both ends as `trCharAt` reads them, and their names. */
+function trRange(rest: string): { length: number; from: [string, string]; to: [string, string]; plain?: [string, string] } | undefined {
+  const a = trCharAt(rest);
+  if (!a || rest[a.length] !== '-') return undefined;
+  const b = trCharAt(rest.slice(a.length + 1));
+  return b ? { length: a.length + 1 + b.length, from: a.name, to: b.name, ...(a.plain !== undefined && b.plain !== undefined ? { plain: [a.plain, b.plain] as [string, string] } : {}) } : undefined;
+}
+
 /** One `tr` character set. `role` says how tr uses it. */
-export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'squeeze', lang: Lang, complement = false): Explained | undefined {
+export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'squeeze', lang: Lang, complement = false, truncate = false): Explained | undefined {
   const s = pick(lang);
   const tokens: EmbeddedToken[] = [];
   const names: string[] = [];
@@ -104,6 +123,7 @@ export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'sque
   while (i < src.length) {
     const rest = src.slice(i);
     let m: RegExpExecArray | null;
+    let range: ReturnType<typeof trRange>;
     let len: number;
     let text: string;
     if (isHole(rest[0])) {
@@ -120,15 +140,16 @@ export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'sque
       len = m[0].length;
       const [ja, en] = trCharName(m[1]);
       text = m[2] ? s(`${ja}を ${m[2]} 個`, `${en} ${m[2]} times`) : s(`${ja}を必要なだけ繰り返す`, `${en} repeated as needed`);
+    } else if ((range = trRange(rest))) {
+      // (A range of two characters, each written plainly or as an escape: `a-z`, `\000-\177`, `\t-\r`.)
+      len = range.length;
+      text = range.plain ? s(`${range.plain[0]}〜${range.plain[1]}`, `${range.plain[0]}-${range.plain[1]}`) : s(`${range.from[0]}〜${range.to[0]} の範囲の文字`, `the characters from ${range.from[1]} to ${range.to[1]}`);
     } else if ((m = /^\\([0-7]{1,3})/.exec(rest))) {
       len = m[0].length;
       text = s(`8進数 ${m[1]} の文字${controlSuffix(parseInt(m[1], 8), s)}`, `the character with octal code ${m[1]}${controlSuffix(parseInt(m[1], 8), s)}`);
     } else if (rest[0] === '\\' && TR_ESCAPES[rest[1]]) {
       len = 2;
       text = s(TR_ESCAPES[rest[1]][0], TR_ESCAPES[rest[1]][1]);
-    } else if (rest.length >= 3 && rest[1] === '-') {
-      len = 3;
-      text = s(`${rest[0]}〜${rest[2]}`, `${rest[0]}-${rest[2]}`);
     } else {
       len = rest[0] === '\\' && rest.length > 1 ? 2 : 1;
       const c = rest[len - 1];
@@ -143,7 +164,9 @@ export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'sque
   // (`-c`: tr works on every character the set does not name.)
   const note = role === 'delete' ? (complement ? s(`残す文字（これ以外はすべて削除する）: ${list}`, `characters to keep (every other character is deleted): ${list}`) : s(`削除する文字: ${list}`, `characters to delete: ${list}`))
     : role === 'squeeze' ? (complement ? s(`そのままにする文字（これ以外の文字は連続したら1つにまとめる）: ${list}`, `characters to leave alone (repeats of every other character are squeezed): ${list}`) : s(`連続したら1つにまとめる文字: ${list}`, `characters whose repeats are squeezed: ${list}`))
-      : role === 'from' ? (complement ? s(`そのままにする文字（これ以外はすべて置き換える）: ${list}`, `characters to leave as they are (every other character is replaced): ${list}`) : s(`変換元の文字: ${list}`, `characters to replace: ${list}`))
+      : role === 'from' ? (complement && truncate ? s(`そのままにする文字: ${list}（-t があるので、これ以外のうち文字コードの小さいものから、変換先の文字数だけが置き換わる。残りはそのまま）`, `characters to leave as they are: ${list} (with -t, only as many of the others as the second set has characters are replaced, lowest character codes first; the rest stay)`)
+        : complement ? s(`そのままにする文字（これ以外はすべて置き換える）: ${list}`, `characters to leave as they are (every other character is replaced): ${list}`) : s(`変換元の文字: ${list}`, `characters to replace: ${list}`))
+        : complement && truncate ? s(`変換先の文字: ${list}（-t があるので、1つ目の集合に含まれない文字のうち文字コードの小さいものから、この文字数だけが置き換わる。残りはそのまま）`, `replacement characters: ${list} (with -t, only as many characters outside the first set as there are replacement characters are replaced, lowest character codes first; the rest stay)`)
         : complement ? s(`変換先の文字: ${list}（1つ目の集合に含まれない文字が、文字コード順にこの文字へ1つずつ置き換わる）`, `replacement characters: ${list} (the characters outside the first set are replaced by these one by one, in character-code order)`)
           : s(`変換先の文字: ${list}（1つ目の集合の各文字が、同じ位置のこの文字に置き換わる）`, `replacement characters: ${list} (each character of the first set becomes the one at the same position here)`);
   return { tokens, note };

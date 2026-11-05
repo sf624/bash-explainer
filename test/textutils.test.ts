@@ -41,6 +41,16 @@ describe('tr sets', () => {
     assert.match(explainTrSet('\\r', 'delete', 'en')!.note!, /^characters to delete/);
   });
 
+  it('reads a range whose ends are escapes as a range', () => {
+    assert.deepStrictEqual(explainTrSet('\\000-\\177[a-c]\\t-\\r a-\\177 -~ \\\\-a', 'delete', 'en')!.tokens.map((t) => t.explanation), [
+      '`\\000-\\177`: the characters from octal 000 to octal 177', '`[`: "["', '`a-c`: a-c', '`]`: "]"', '`\\t-\\r`: the characters from tab to carriage return', '` `: space',
+      '`a-\\177`: the characters from "a" to octal 177', '` -~`:  -~', '` `: space', '`\\\\-a`: the characters from backslash to "a"',
+    ]);
+    assert.deepStrictEqual(explainTrSet('\\000-\\177', 'delete', 'ja')!.tokens.map((t) => t.explanation), ['`\\000-\\177`: 8進数 000〜8進数 177 の範囲の文字']);
+    // A "-" at an end, or next to nothing, stays itself.
+    assert.deepStrictEqual(explainTrSet('a-', 'delete', 'en')!.tokens.map((t) => t.explanation), ['`a`: "a"', '`-`: "-"']);
+  });
+
   it('names the character a repeat is made of, escaped or not', () => {
     assert.deepStrictEqual(explainTrSet('[\\n*][\\101*2][\\q*][ *3]', 'to', 'en')!.tokens.map((t) => t.explanation), [
       '`[\\n*]`: newline repeated as needed', '`[\\101*2]`: the character with octal code 101 2 times', '`[\\q*]`: "q" repeated as needed', '`[ *3]`: space 3 times',

@@ -150,6 +150,27 @@ export function sedEscapeAt(src: string, i: number): SedEscape | undefined {
   return { length: m[0].length, code, text };
 }
 
+/**
+ * The gawk escape at `i` that stands for one character (`\a \b \f \n \r \t \v`, `\NNN` in octal, `\xH` or `\xHH`), or
+ * undefined. gawk reads these before it compiles the regex, in a bracket expression too (so `\b` is a backspace there,
+ * not the word boundary it is in GNU grep and sed).
+ */
+export function awkEscapeAt(src: string, i: number): SedEscape | undefined {
+  if (src[i] !== '\\') return undefined;
+  if (src[i + 1] === 'b') return { length: 2, code: 8, text: (s) => s('バックスペース（BS）', 'a backspace (BS)') };
+  const l = SED_LETTERS[src[i + 1]];
+  if (l) return sedEscapeAt(src, i);
+  const m = /^\\(?:([0-7]{1,3})|x([0-9a-fA-F]{1,2}))/.exec(src.slice(i));
+  if (!m) return undefined;
+  const code = (m[1] !== undefined ? parseInt(m[1], 8) : parseInt(m[2], 16)) & 0xff;
+  const suffix = (s: S) => codeSuffix(code, s);
+  return {
+    length: m[0].length, code,
+    text: (s) => m[1] !== undefined ? s(`8進数 ${m[1]} の文字${suffix(s)}`, `the character with octal code ${m[1]}${suffix(s)}`)
+      : s(`16進数 ${m[2]} の文字${suffix(s)}`, `the character with hex code ${m[2]}${suffix(s)}`),
+  };
+}
+
 /** Tabs as ⇥ and other control characters as their Unicode pictures (CR → ␍), so examples show them. */
 export function visible(line: string): string {
   return line.replace(/\t/g, '⇥').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (c) => (c === '\x7f' ? '␡' : String.fromCharCode(0x2400 + c.charCodeAt(0))));
