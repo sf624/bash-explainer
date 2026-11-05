@@ -1419,9 +1419,28 @@ body.resizing .problems-resize {
   background: var(--page-background);
 }
 
+/*
+ * Everything but the arrows is one row that shows what fits and drops the rest whole (a row that wraps, of which the first
+ * line is shown): the arrows stay; the place ("Ln 20 · 1/11") goes when it cannot stand beside the fold's mark and the
+ * highest level's count; and in the fold, the counts go from the last, but the word before any of them (below). A screen
+ * reader has the word and every count (`#problems-said`).
+ */
+.problems-strip .strip-main {
+  display: flex;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  gap: 0 2px;
+  min-width: 0;
+  height: 32px;
+  overflow: hidden;
+}
+
 #problems h2 {
   display: flex;
-  flex: 0 1 auto;
+  /* (Its smallest size, the mark and the widest count, is what the place has to leave: the word may wrap to a letter.) */
+  flex: 1 1 min-content;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -1491,11 +1510,38 @@ body.resizing .problems-resize {
   visibility: hidden;
 }
 
+/*
+ * The word and the counts of each level, in one row of which the first line is shown. The word comes first for the eye
+ * and goes first: the row is reversed, so that the word is the last to be placed, and wraps away whole when it does not
+ * fit after all the counts. The counts are a row of their own, where the last go whole, the highest level coming first.
+ */
+#problems .fit {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  /* (What wraps goes to a line far below, which the strip clips; a clip of its own here would draw the word a pixel off.) */
+  gap: 60px 8px;
+  min-width: 0;
+  height: 1lh;
+}
+
+/* (With nothing to count, the words are all there is.) */
+#problems.empty .fit {
+  flex-wrap: nowrap;
+}
+
+#problems:not(.empty) .fit > #problems-title {
+  /* (So that the row's smallest size does not hold the whole word.) */
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 /* The count of each level: its mark in its colour (the level table, below), then the number. */
 #problems .counts {
   display: inline-flex;
-  /* (Where a narrow editor has no room for all of them, the last go, whole, to a row that is not shown: a screen reader has them
-     all. The highest level comes first.) */
   flex-wrap: wrap;
   min-width: 0;
   height: 1lh;
@@ -1508,15 +1554,25 @@ body.resizing .problems-resize {
   font-variant-numeric: tabular-nums;
 }
 
+/* (An empty first item on the line, so that even the first count wraps away whole when it does not fit; the margin takes back its gap.) */
+#problems .counts:not(:empty)::before {
+  content: '';
+  margin-inline-end: -10px;
+}
+
 #problems .counts .count {
   display: inline-flex;
   align-items: baseline;
   gap: 4px;
 }
 
+/* (Until a problem is chosen it has nothing to say, and takes no room from the counts.) */
+#problem-pos:has(#problem-pos-text:empty) {
+  display: none;
+}
+
 #problem-pos {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: none;
   margin: 0 0 0 auto;
   padding-inline: 6px;
   overflow: hidden;
@@ -1613,11 +1669,25 @@ body.resizing .problems-resize {
   }
 }
 
-/* Beside the settings the editor can be this narrow: the counts and the arrows keep the strip's room, and the word goes
-   (a screen reader has it with the counts). With nothing to count, the words are all there is. */
-@container source (max-width: 239.98px) {
-  #problems:not(.empty) #problems-title {
-    display: none;
+/*
+ * With the divider far to the left the room around the mark gives way, so that the highest level's count still stands beside the
+ * mark and the arrows (the sheet closed: the divider stops at 15 % of 768 px, a pane of 115 px). There the strip has
+ * 115 - 4 (its padding) - 2 (its gap) - 58 (the arrows) = 51 px, and the mark (14 px) with a count of two digits (33.5 px) needs
+ * 47.5 of them, so the room around them must be 3.5 px at most. Compact, it is 3 before the mark, 2 after it, and the strip takes
+ * 2 px of padding and no gap (55 px for the toggle: 52.5 are needed). With the usual room (8 + 8 + 10 px) two digits need a pane of
+ * 138 px, so 144 px leaves a margin; three digits (41 px) need 146 px. The place does not fit even compact below 145 px (2 + 3 + 14 + 2
+ * for the mark, 25 for a count of one digit, 2 + 39 for the place, 58 for the arrows), so compacting never hides it.
+ * (A count that does not fit goes whole.)
+ */
+@container source (max-width: 143.98px) {
+  .problems-strip {
+    gap: 0;
+    padding-inline-end: 2px;
+  }
+
+  #problems-toggle {
+    gap: 2px;
+    padding: 0 0 0 3px;
   }
 }
 
@@ -2525,6 +2595,10 @@ body:has(> #settings-dialog.dragging) main {
 
 :where(html.narrow) :is(.problems-strip, #problems-toggle) {
   min-height: 44px;
+}
+
+:where(html.narrow) .problems-strip .strip-main {
+  height: 44px;
 }
 
 :where(html.narrow) :is(#problem-prev, #problem-next) {

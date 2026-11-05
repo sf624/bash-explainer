@@ -4,8 +4,9 @@
 // last problem to the first; the list folded or open as the user left it, and never opened by the page; each problem's
 // tooltip with its line from 1 and its rule; the strip on one row at every width, in both languages; "No problems".
 import * as assert from 'assert';
+import * as fs from 'fs';
 import type { Browser, Page } from 'playwright-core';
-import { cursorToLine, openSite, until } from './support/site';
+import { cursorToLine, FRAMES, openSite, until } from './support/site';
 
 // Line 1: a caveat; line 2: a warning, then a caveat; line 3: an error.
 const SCRIPT = 'read line\nsource lib.sh; read other\n[ -f a';
@@ -276,6 +277,152 @@ describe('the web page: the Problems strip', function () {
     for (let i = 0; i < 30 && (await page.locator('#source').boundingBox())!.width >= 520; i++) await page.keyboard.press('ArrowLeft');
     assert.ok((await page.locator('#source').boundingBox())!.width < 520);
     assert.deepStrictEqual((await until('the rule hidden', look, (r) => !r[0][1])).map((r) => r[1]), [false, false]);
+    await ctx.close();
+  });
+
+  // What each part of the strip shows at a pane's width, from where it lies and what clips it (never from the width of a
+  // text): "whole" inside every box that clips it, "hidden" outside them all (or not drawn), "cut" between the two. The
+  // natural widths are read from the parts that were dropped, which keep their size.
+  const LOOK = `(() => {
+    const r = (e) => e.getBoundingClientRect();
+    const state = (e) => {
+      if (!e) return 'none';
+      const b = r(e);
+      if (!(b.width > 0 && b.height > 0)) return 'hidden';
+      let clip = { l: -1e9, t: -1e9, r: 1e9, b: 1e9 };
+      for (let p = e.parentElement; p; p = p.parentElement) {
+        const cs = getComputedStyle(p);
+        if (cs.display === 'none') return 'hidden';
+        if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible') { const c = r(p); clip = { l: Math.max(clip.l, c.left), t: Math.max(clip.t, c.top), r: Math.min(clip.r, c.right), b: Math.min(clip.b, c.bottom) }; }
+      }
+      const w = Math.min(b.right, clip.r) - Math.max(b.left, clip.l), h = Math.min(b.bottom, clip.b) - Math.max(b.top, clip.t);
+      if (w <= 0.5 || h <= 0.5) return 'hidden';
+      return b.left >= clip.l - 0.5 && b.right <= clip.r + 0.5 && b.top >= clip.t - 0.5 && b.bottom <= clip.b + 0.5 ? 'whole' : 'cut';
+    };
+    const part = (name, e) => ({ name, state: state(e), left: e ? r(e).left : 0, right: e ? r(e).right : 0, width: e ? r(e).width : 0 });
+    const title = document.getElementById('problems-title');
+    // (The word's own width: the same text on one line.)
+    const probe = title.cloneNode(true);
+    probe.removeAttribute('id');
+    probe.style.cssText = 'position:fixed;left:0;top:0;visibility:hidden;white-space:nowrap;width:max-content;overflow:visible';
+    title.parentElement.append(probe);
+    const wordWidth = r(probe).width;
+    probe.remove();
+    const parts = [
+      part('chevron', document.querySelector('#problems-toggle .chev')),
+      part('word', title),
+      ...[...document.querySelectorAll('#problems-counts .count')].map((c, i) => part('count' + (i + 1), c)),
+      part('place', document.getElementById('problem-pos-text')),
+      part('prev', document.getElementById('problem-prev')),
+      part('next', document.getElementById('problem-next')),
+    ];
+    const strip = r(document.querySelector('.problems-strip'));
+    const box = document.querySelector('.strip-main') || document.querySelector('.problems-strip');
+    const fit = document.querySelector('#problems .fit') || title.parentElement;
+    return {
+      parts, wordWidth, pane: r(document.querySelector('main > .source')).width,
+      strip: { left: strip.left, right: strip.right, over: document.querySelector('.problems-strip').scrollWidth - document.querySelector('.problems-strip').clientWidth },
+      main: { left: r(box).left, right: r(box).right },
+      row: { left: r(fit).left, right: r(fit).right },
+      placeBox: r(document.getElementById('problem-pos')).width, padEnd: parseFloat(getComputedStyle(document.getElementById('problems-toggle')).paddingRight),
+      said: document.getElementById('problems-said').textContent,
+    };
+  })()`;
+  interface Part { name: string; state: 'whole' | 'hidden' | 'cut' | 'none'; left: number; right: number; width: number }
+  interface Look { parts: Part[]; wordWidth: number; pane: number; strip: { left: number; right: number; over: number }; main: { left: number; right: number }; row: { left: number; right: number }; placeBox: number; padEnd: number; said: string }
+
+  it('drops the word first, then the place, then the counts from the lowest level, each whole, at every width of the pane', async function () {
+    this.timeout(240000);
+    const sample = fs.readFileSync('test/fixtures/sample.sh', 'utf8');
+    const PANES = [115, 130, 190, 239, 240, 260, 283, 300, 640];
+    const GAP = 10;
+    for (const locale of ['en-US', 'ja-JP']) {
+      // One digit and two digits in the counts, and no problem chosen and one chosen (its place shows).
+      for (const [times, chosen] of [[1, false], [11, false], [1, true], [11, true]] as const) {
+        const ctx = await browser.newContext({ locale, viewport: { width: 1280, height: 700 } });
+        const page = await ctx.newPage();
+        await open(page, sample.repeat(times));
+        await until('the counts', () => page.locator('#problems-counts .count').count(), (n) => n === 3, 20000);
+        if (chosen) {
+          await until('the place', async () => {
+            await page.keyboard.press('F8');
+            return page.locator('#problem-pos-text').textContent();
+          }, (t) => !!t, 20000);
+        }
+        const look = async (pane: number): Promise<Look> => {
+          // The divider's share, set where it is kept; the pane is read back, so that the gutter does not count.
+          for (let i = 0; i < 4; i++) {
+            const width = (await page.evaluate("document.querySelector('main > .source').getBoundingClientRect().width")) as number;
+            if (Math.abs(width - pane) < 0.5) break;
+            await page.evaluate(`(() => { const m = document.getElementById('split'); const have = parseFloat(m.style.getPropertyValue('--split')) || 50; m.style.setProperty('--split', (have * ${pane} / ${width}) + '%'); })()`);
+            await page.evaluate(FRAMES);
+          }
+          const got = (await page.evaluate(LOOK)) as Look;
+          assert.ok(Math.abs(got.pane - pane) < 1, `pane ${pane}: ${got.pane}`);
+          return got;
+        };
+        const seen: Look[] = [];
+        const widths = [...PANES, ...Array.from({ length: 56 }, (_, i) => 115 + i * 4)].sort((a, b) => a - b);
+        for (const pane of widths) {
+          const l = await look(pane);
+          seen.push(l);
+          const said = `${locale} x${times} ${chosen ? 'chosen' : 'none chosen'} pane ${pane}: ${JSON.stringify(l.parts.map((p) => [p.name, p.state, Math.round(p.left), Math.round(p.right)]))} main ${JSON.stringify(l.main)} row ${JSON.stringify(l.row)} word ${l.wordWidth}`;
+          const part = (name: string) => l.parts.find((p) => p.name === name)!;
+          const shown = l.parts.filter((p) => p.state === 'whole');
+          // Whole or not drawn, never cut; in one row, in order, none over another, inside the pane; the arrows always there.
+          assert.deepStrictEqual(l.parts.filter((p) => p.state === 'cut').map((p) => p.name), [], said);
+          assert.ok(l.strip.over <= 0, said);
+          shown.forEach((p, i) => {
+            assert.ok(p.right <= (shown[i + 1]?.left ?? l.strip.right) + 0.5, said);
+            assert.ok(p.left >= l.strip.left - 0.5, said);
+          });
+          assert.deepStrictEqual([part('prev').state, part('next').state], ['whole', 'whole'], said);
+          assert.ok(/11.*55.*77|1.*5.*7/.test(l.said), said);
+          const counts = l.parts.filter((p) => /^count/.test(p.name));
+          const wholeCounts = counts.filter((p) => p.state === 'whole');
+          // The counts go from the last: the shown are the highest levels, from the first.
+          assert.deepStrictEqual(wholeCounts.map((p) => p.name), counts.slice(0, wholeCounts.length).map((p) => p.name), said);
+          // The word goes first: it shows only with every count, and where it is dropped, it did not fit after them.
+          const room = l.row.right - l.row.left;
+          const countsWidth = counts.reduce((sum, p) => sum + p.width, 0) + GAP * (counts.length - 1);
+          if (part('word').state === 'whole') assert.strictEqual(wholeCounts.length, counts.length, said);
+          else assert.ok(l.wordWidth + 8 + countsWidth > room - 0.5, said);
+          // The highest level's count shows wherever it fits beside the mark and the arrows, and a count is dropped only when it did not fit.
+          const first = counts[0];
+          if (first.width + (first.left - part('chevron').right) <= l.main.right - part('chevron').right - 0.5) assert.strictEqual(first.state, 'whole', said);
+          counts.forEach((p, i) => {
+            if (p.state !== 'hidden' || i === 0 || counts[i - 1].state !== 'whole') return;
+            assert.ok(counts[i - 1].right + GAP + p.width > l.row.right - 0.5, said);
+            // With no place to stand beside (none is chosen), the counts have the strip's whole room.
+            if (!chosen) assert.ok(counts[i - 1].right + GAP + p.width + l.padEnd > l.main.right - 0.5, said);
+          });
+          if (chosen) {
+            // The place stays whole (never cut to "1…") and beside the mark and the count of the highest level; it goes only when it cannot stand there.
+            const widest = Math.max(...counts.map((p) => p.width));
+            if (part('place').state === 'whole') assert.strictEqual(first.state, 'whole', said);
+            else assert.ok(first.left - l.main.left + widest + l.padEnd + l.placeBox + 2 > l.main.right - l.main.left - 0.5, said);
+          } else assert.strictEqual(part('place').state, 'hidden', said);
+        }
+        // No width where something drops and returns while the pane grows: the word, the highest count and the place only ever come in.
+        for (const name of ['word', 'count1', 'place']) {
+          const states = seen.map((l) => l.parts.find((p) => p.name === name)!.state === 'whole');
+          assert.deepStrictEqual(states, [...states].sort((a, b) => Number(a) - Number(b)), `${locale} x${times} ${chosen}: ${name} ${states.map(Number).join('')}`);
+        }
+        await ctx.close();
+      }
+    }
+  });
+
+  it('keeps the words "No problems" in a narrow pane, where there is nothing to count', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 700 } });
+    const page = await ctx.newPage();
+    await open(page, 'echo hello\n');
+    await until('no problems', () => page.locator('#problems-title').textContent(), (t) => t === 'No problems', 15000);
+    await page.evaluate("document.getElementById('split').style.setProperty('--split', '10%')");
+    await page.evaluate(FRAMES);
+    const got = (await page.evaluate(LOOK)) as Look;
+    assert.ok(got.pane < 140, String(got.pane));
+    assert.strictEqual(got.parts.find((p) => p.name === 'word')!.state, 'whole', JSON.stringify(got.parts));
     await ctx.close();
   });
 });
