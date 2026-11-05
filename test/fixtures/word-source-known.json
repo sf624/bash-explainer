@@ -683,7 +683,7 @@
       "file": "src/ui/blockAt.ts",
       "reason": "finds the statements over several lines in the syntax tree, to mark them in the editor: only its syntax",
       "uses": [
-        {"fn":"BLOCKS","kind":"node-type","count":2}
+        {"fn":"BLOCK_TYPES","kind":"node-type","count":2}
       ]
     },
     {

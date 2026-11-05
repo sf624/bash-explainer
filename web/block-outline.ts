@@ -9,7 +9,7 @@
 // timer, which parses and shades, sends `refreshOutline` for the block of the new text.
 //
 // There is one theme for both marks, in the page for good once a mode other than `off` is used (CodeMirror never
-// removes a style it mounted): the mode is a class of the line (`cm-bx-as-bar`, `cm-bx-as-tint`), so that a switch
+// removes a style it mounted): the mode is a class of the line (`cm-bx-blkbar`, `cm-bx-blktint`), so that a switch
 // changes the classes and leaves exactly one mark.
 import { type EditorState, StateEffect } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view';
@@ -21,9 +21,9 @@ import { blockAt, placeOf } from '../src/ui/blockAt';
 export const refreshOutline = StateEffect.define<null>();
 
 const MARKS = Object.fromEntries((['bar', 'tint'] as const).map((mode) => [mode, {
-  first: Decoration.line({ class: `cm-bx-blk cm-bx-as-${mode} cm-bx-blk-first` }),
-  mid: Decoration.line({ class: `cm-bx-blk cm-bx-as-${mode} cm-bx-blk-mid` }),
-  last: Decoration.line({ class: `cm-bx-blk cm-bx-as-${mode} cm-bx-blk-last` }),
+  first: Decoration.line({ class: `cm-bx-blk cm-bx-blk${mode} cm-bx-blk-first` }),
+  mid: Decoration.line({ class: `cm-bx-blk cm-bx-blk${mode} cm-bx-blk-mid` }),
+  last: Decoration.line({ class: `cm-bx-blk cm-bx-blk${mode} cm-bx-blk-last` }),
 }])) as Record<'bar' | 'tint', Record<'first' | 'mid' | 'last', Decoration>>;
 
 /** The block as the start of its first and of its last line in the text. */
@@ -77,17 +77,17 @@ const BAR = 'color-mix(in srgb, var(--vscode-editor-foreground) 55%, transparent
 // (Made once: a theme made on each call mounts its rules again, and they stay.)
 // (Each rule only draws: `position: relative` on a line and an absolute pseudo-element change no size.)
 const theme = {
-  '.cm-bx-blk.cm-bx-as-bar, .cm-bx-blk.cm-bx-as-tint': { position: 'relative' },
-  '.cm-bx-blk.cm-bx-as-bar::before, .cm-bx-blk.cm-bx-as-tint::before': { content: '""', position: 'absolute', top: 0, bottom: 0, left: '1px', width: '3px', pointerEvents: 'none' },
-  '.cm-bx-blk.cm-bx-as-bar::before': { background: BAR },
-  '.cm-bx-blk.cm-bx-as-bar.cm-bx-blk-first::before': { top: '2px', borderRadius: '2px 2px 0 0' },
-  '.cm-bx-blk.cm-bx-as-bar.cm-bx-blk-last::before': { bottom: '2px', borderRadius: '0 0 2px 2px' },
+  '.cm-bx-blk.cm-bx-blkbar, .cm-bx-blk.cm-bx-blktint': { position: 'relative' },
+  '.cm-bx-blk.cm-bx-blkbar::before, .cm-bx-blk.cm-bx-blktint::before': { content: '""', position: 'absolute', top: 0, bottom: 0, left: '1px', width: '3px', pointerEvents: 'none' },
+  '.cm-bx-blk.cm-bx-blkbar::before': { background: BAR },
+  '.cm-bx-blk.cm-bx-blkbar.cm-bx-blk-first::before': { top: '2px', borderRadius: '2px 2px 0 0' },
+  '.cm-bx-blk.cm-bx-blkbar.cm-bx-blk-last::before': { bottom: '2px', borderRadius: '0 0 2px 2px' },
   // The tint is a translucent shadow, so that a selection under it shows through, as through the active line's.
-  '.cm-bx-blk.cm-bx-as-tint': { boxShadow: 'inset 0 0 0 100vmax rgba(127, 127, 127, 0.09)' },
+  '.cm-bx-blk.cm-bx-blktint': { boxShadow: 'inset 0 0 0 100vmax rgba(127, 127, 127, 0.09)' },
   // (A system that forces colours draws no shadows: a bar takes the tint's place.)
   '@media (forced-colors: active)': {
-    '.cm-bx-blk.cm-bx-as-bar::before, .cm-bx-blk.cm-bx-as-tint::before': { background: 'CanvasText' },
-    '.cm-bx-blk.cm-bx-as-tint': { boxShadow: 'none' },
+    '.cm-bx-blk.cm-bx-blkbar::before, .cm-bx-blk.cm-bx-blktint::before': { background: 'CanvasText' },
+    '.cm-bx-blk.cm-bx-blktint': { boxShadow: 'none' },
   },
 };
 const outlineTheme = EditorView.baseTheme(theme);

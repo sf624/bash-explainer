@@ -133,6 +133,13 @@ describe('blockAt', () => {
       // Markdown: a reader runs each fence by itself; the prose and the next fence are not in the block.
       assert.deepStrictEqual(blocks('# t\n\n```bash\necho "a\nb\n```\n\ntext\n\n```bash\necho b\n```\n', 'markdown'), ['-', '-', '-', '4-5', '4-5', '-', '-', '-', '-', '-', '-', '-', '-']);
     });
+    it('a Markdown fence does not take a block from the fence before it', () => {
+      const text = '```bash\necho "a\n```\n\ntext\n\n```bash\necho b\n```\n';
+      const doc = open(text, 'markdown');
+      // (The cursor on `echo b`, in a fence of its own: the string of the first fence runs on to it in one tree, but not in the shell that reads this fence.)
+      assert.strictEqual(blockAt(doc, 7, 3), undefined);
+      assert.strictEqual(blockAt(doc, 7, 0), undefined);
+    });
     it('a line that is not shell code, in the middle of a recipe block of the file', () => {
       const doc = open('x := 1\nall:\n\tfor f in a; do \\\n\t  b; \\\n\tdone\n', 'makefile');
       assert.strictEqual(blockAt(doc, 0, 3), undefined);
