@@ -197,13 +197,31 @@ describe('the contrast of the colours of the roles', () => {
     const rule = (sel: string) => new RegExp(`(^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`).exec(panel)?.[2] ?? '';
     assert.match(rule('.nk-badge'), /color: var\(--vscode-foreground\);[^]*border: 1px solid var\(--c-command\);/);
     assert.match(rule('.nk-badge.nk-keyword'), /border-color: var\(--c-keyword\);/);
-    assert.match(rule('.nk-badge.nk-program'), /border-color: var\(--vscode-foreground\);/);
+    assert.match(rule('.nk-badge.nk-program'), /^\s*border-color: var\(--c-muted\);\s*$/);
     assert.match(rule('.nk-badge.nk-none'), /border-color: var\(--vscode-foreground\);/);
     for (const sel of ['.nk-by', '.nk-also']) assert.match(rule(sel), /color: var\(--c-muted\);/, sel);
     for (const [kind, vars] of [['web light', web.light], ['web dark', web.dark]] as const) {
-      const edges = { command: vars[CHARTS.command], keyword: vars[CHARTS.operator], foreground: vars['--vscode-foreground'] };
+      const edges = { command: vars[CHARTS.command], keyword: vars[CHARTS.operator], foreground: vars['--vscode-foreground'], program: vars['--vscode-descriptionForeground'] };
       check(`${kind}, a badge's edge`, edges, backgrounds(vars), 3);
       check(`${kind}, a badge's text`, { foreground: vars['--vscode-foreground'], muted: vars['--vscode-descriptionForeground'] }, backgrounds(vars), 4.5);
+    }
+  });
+
+  // The edge of the chips of "what the program receives" (media/panel.css `.recv-word`): lighter than the values' edge, since the chips are a list, not a table;
+  // the muted colour at a share, over the chip's own fill, at least 1.9:1 against the fill and 2:1 against what is around it (the words have their own 4.5:1 above);
+  // the high contrast themes keep the full edge.
+  it('keeps the edge of the chips of a row light but visible, and whole in high contrast', () => {
+    const rule = (sel: string) => new RegExp(`(^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`).exec(panel)?.[2] ?? '';
+    const share = Number(/border-color: color-mix\(in srgb, var\(--c-muted\) (\d+)%, transparent\);/.exec(rule('.text code.ev-word.recv-word'))?.[1]) / 100;
+    assert.ok(share > 0 && share < 0.6, `the share: ${share}`);
+    assert.match(rule('body.vscode-high-contrast .text code.ev-word.recv-word,\nbody.vscode-high-contrast-light .text code.ev-word.recv-word'), /border-color: var\(--c-muted\);/);
+    for (const [kind, vars] of [['web light', web.light], ['web dark', web.dark]] as const) {
+      const bgs = backgrounds(vars);
+      const muted = parse(vars['--vscode-descriptionForeground']);
+      const fill = bgs['textCodeBlock-background'];
+      const edge = muted.map((c, i) => share * c + (1 - share) * fill[i]) as RGB;
+      assert.ok(contrast(edge, fill) >= 1.9, `${kind}: the edge on the chip: ${contrast(edge, fill).toFixed(2)}`);
+      assert.ok(contrast(edge, bgs['editor-background']) >= 2, `${kind}: the edge on the editor: ${contrast(edge, bgs['editor-background']).toFixed(2)}`);
     }
   });
 

@@ -96,14 +96,48 @@ describe('the panel: what the program receives, drawn', function () {
               return {
                 over: document.documentElement.scrollWidth - side,
                 out: [...document.querySelectorAll('.recv-word, .mk, #receives, #key-open')].filter((e) => { const r = e.getBoundingClientRect(); return r.right > side + 1 || r.left < 0; }).map((e) => e.textContent),
-                // (A word wraps only when it is as wide as what holds it: then, and only then, it is taller than a line.)
-                split: [...document.querySelectorAll('.recv-word')].filter((e) => { const r = e.getBoundingClientRect(); const room = e.closest('.text').getBoundingClientRect().width; return r.height > line * 1.6 && r.width < room - 2; }).map((e) => e.textContent),
+                // (A word wraps only when it is as wide as what holds it, less the gap after it: then, and only then, it is taller than a line.)
+                split: [...document.querySelectorAll('.recv-word')].filter((e) => { const r = e.getBoundingClientRect(); const room = e.closest('.text').getBoundingClientRect().width; return r.height > line * 1.6 && r.width < room - parseFloat(getComputedStyle(e).marginRight) - 2; }).map((e) => e.textContent),
                 marks: [...document.querySelectorAll('.mk')].filter((e) => e.getBoundingClientRect().height > line * 1.3).map((e) => e.textContent),
               };
             })()`) as { over: number; out: string[]; split: string[]; marks: string[] };
             assert.deepStrictEqual(m, { over: 0, out: [], split: [], marks: [] }, `${width} ${lang} ${theme} ${text.slice(0, 12)}`);
             await page.context().close();
           }
+        }
+      }
+    }
+  });
+
+  // (The UX review of main: the chips of a long line read as a table row, with the darkest edges of the panel, nearly touching, and one alone on the last row.)
+  it('draws the chips as a list: a lighter edge, a gap of 3 to 4 px, and none alone on the last row of a wrapped row', async () => {
+    const LINE8 = 'grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt && echo "done: $(date +%F)" || exit 1';
+    for (const width of [390, 1280]) {
+      for (const lang of ['en', 'ja'] as const) {
+        for (const theme of ['light', 'dark'] as const) {
+          const { page, panel } = await open(LINE8, { width, lang, theme, kept: { depth: 2 } });
+          await until('the chips', () => panel.locator('#tree .recv-word').count(), (n) => n > 0);
+          const m = await panel.evaluate(`(() => {
+            const out = { gaps: [], alone: [], alpha: [] };
+            for (const box of document.querySelectorAll('#tree .receives-words')) {
+              const rows = [];
+              for (const c of box.children) {
+                const r = c.getBoundingClientRect();
+                const row = rows.find((x) => Math.abs(x[0].y - r.y) < 3);
+                if (row) row.push(r); else rows.push([r]);
+              }
+              for (const row of rows) row.slice(1).forEach((r, i) => out.gaps.push(r.x - row[i].right));
+              // (The lead is on the first row beside the first chips: a chip alone on the last row of several is what the rule avoids.)
+              if (rows.length > 1 && rows[rows.length - 1].length === 1 && rows.some((x) => x.length > 1)) out.alone.push(box.lastElementChild.textContent);
+              for (const c of box.children) { const s = getComputedStyle(c); out.alpha.push(/ \\/ ([\\d.]+)\\)$/.exec(s.borderTopColor)?.[1] ?? '1'); }
+            }
+            return out;
+          })()`) as { gaps: number[]; alone: string[]; alpha: string[] };
+          const at = `${width} ${lang} ${theme}`;
+          assert.ok(m.gaps.length > 0 && m.gaps.every((g) => g >= 3 && g <= 4.5), `${at}: gaps ${m.gaps.join(' ')}`);
+          assert.deepStrictEqual(m.alone, [], at);
+          assert.ok(m.alpha.every((a) => Number(a) < 0.6), `${at}: the edges are light: ${m.alpha.join(' ')}`);
+          await page.context().close();
         }
       }
     }
