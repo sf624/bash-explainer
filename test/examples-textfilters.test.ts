@@ -100,7 +100,7 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
     ['sort', '-k1,9'], ['sort', '-s', '-k1,1'], ['sort', '-k1.2,1.3'], ['sort', '-t', ' ', '-k1.3,2'], ['sort', '-f'], ['sort', '-h', '-k2,2'], ['sort', '-t', ' ', '-k2,2n'],
     ['uniq', '-w', '1'], ['uniq', '-s', '2'], ['uniq', '-f', '1', '-c'], ['uniq', '-i', '-u'],
     ['cut', '-c', '2,4', '--output-delimiter=:'], ['cut', '-f', '2', '-d', ','],
-    ['tr', '[=a=]', 'b'], ['tr', '\\101\\154', 'xy'], ['tr', '\\q', 'x'], ['tr', '-t', 'abc', 'xy'], ['tr', 'a', '-d'], ['tr', 'l', '-s'], ['tr', 'abcl', 'xy'], ['tr', '-s', 'a'], ['tr', '-c', 'a-z\\n', '_'],
+    ['tr', '[=a=]', 'b'], ['tr', '\\101\\154', 'xy'], ['tr', '\\q', 'x'], ['tr', '-t', 'abc', 'xy'], ['tr', 'a', '-d'], ['tr', 'l', '-s'], ['tr', 'abcl', 'xy'], ['tr', '-s', 'a'], ['tr', '-c', 'a-z\\n', '_'], ['tr', '-dc', 'a-z'], ['tr', '-cd', 'a-z\\n'], ['tr', '--complement', '--delete', 'a-z'], ['tr', '-cs', 'a-z'], ['tr', '-cs', 'A-Za-z', '[\\n*]'], ['tr', '-ds', 'a-z', 'l'], ['tr', '-cds', 'a-z', 'l'], ['tr', '-s', 'a-z'], ['tr', '-C', 'a-z', 'x'],
     ['head', '-c', '-3'], ['head', '-c', '6'], ['tail', '-c', '3'], ['tail', '-n', '2'], ['head', '--lines=2'], ['sort', '-h'], ['sort', '--reverse'], ['tr', '-d', 'a-z\\n'], ['tail', '+2'], ['tail'],
   ];
   for (const [cmd, ...args] of cases) {
@@ -184,6 +184,42 @@ describe('the explanation of a tr set follows the options as GNU tr reads them',
       assert.strictEqual(/characters to delete/.test(set.explanation), deleted, set.explanation);
     });
   }
+});
+
+describe('the explanation of a tr set under -c says what tr does, as GNU tr does it', () => {
+  const parser = createUnbashParser();
+  const tokenAt = (line: string, lang: 'en' | 'ja', label: string) => allTokens(new Analyzer(lang).explainLine(parser.parse(line), 0).items).find((t) => t.label === label && t.kind === 'argument')!;
+  // [line, input, what tr prints, [the set, what the English note says, what the Japanese note says]…]
+  const rows: [string, string, string, [string, RegExp, RegExp][]][] = [
+    ['tr -dc a-z', 'a1\n', 'a', [['a-z', /^character set to keep \(every other character is deleted\).*characters to keep \(every other character is deleted\): a-z$/, /残す文字/]]],
+    ['tr -cd a-z', 'a1\n', 'a', [['a-z', /characters to keep/, /残す文字/]]],
+    ['tr -Cd a-z', 'a1\n', 'a', [['a-z', /characters to keep/, /残す文字/]]],
+    ['tr --complement --delete a-z', 'a1\n', 'a', [['a-z', /characters to keep/, /残す文字/]]],
+    ['tr -cd \'a-z\\n\'', 'a1\n', 'a\n', [['\'a-z\\n\'', /characters to keep.*: a-z, newline$/, /残す文字/]]],
+    ['tr -c a-z x', 'a1\n', 'axx', [['a-z', /character set to leave as is.*characters to leave as they are \(every other character is replaced\): a-z/, /そのままにする文字/], ['x', /replacement characters: "x" \(the characters outside the first set are replaced/, /文字コード順/]]],
+    ['tr -C a-z x', 'a1\n', 'axx', [['a-z', /characters to leave as they are/, /そのままにする文字/]]],
+    ['tr -cs a-z', 'a11b\n', 'a1b\n', [['a-z', /character set to leave alone.*characters to leave alone \(repeats of every other character are squeezed\)/, /そのままにする文字/]]],
+    ['tr -s a-z', 'aab\n', 'ab\n', [['a-z', /^character set whose repeats are squeezed.*characters whose repeats are squeezed: a-z$/, /連続したら1つにまとめる文字/]]],
+    ['tr -cs A-Za-z \'[\\n*]\'', 'a, b\n', 'a\nb\n', [['A-Za-z', /characters to leave as they are/, /そのままにする文字/], ['\'[\\n*]\'', /newline repeated as needed \(the characters outside/, /改行を必要なだけ繰り返す/]]],
+    ['tr -ds a-z 1', 'a11b\n', '1\n', [['a-z', /characters to delete: a-z$/, /削除する文字/], ['1', /characters whose repeats are squeezed: "1"$/, /連続したら1つにまとめる文字/]]],
+    // -c complements the first string only: b is squeezed, not everything but b.
+    ['tr -cds a-b b', 'aabbb', 'aab', [['a-b', /characters to keep/, /残す文字/], ['b', /characters whose repeats are squeezed: "b"$/, /連続したら1つにまとめる文字/]]],
+  ];
+  for (const [line, input, out, sets] of rows) {
+    it(line, () => {
+      const words = line.split(' ').slice(1).map((w) => w.replace(/'/g, ''));
+      assert.strictEqual(run('tr', words, { input, env: { ...process.env, LC_ALL: 'C' } }).stdout.toString(), out);
+      for (const [label, en, ja] of sets) {
+        assert.match(tokenAt(line, 'en', label).explanation, en);
+        assert.match(tokenAt(line, 'ja', label).explanation, ja);
+      }
+    });
+  }
+  it('keeps the case summary for tr without -c only', () => {
+    assert.match(tokenAt('tr a-z A-Z', 'en', 'A-Z').explanation, /converts lowercase to uppercase/);
+    assert.doesNotMatch(tokenAt('tr -c a-z A-Z', 'en', 'A-Z').explanation, /converts/);
+    assert.strictEqual(run('tr', ['-c', 'a-z', 'A-Z'], { input: 'a1\n' }).stdout.toString(), 'aZK');
+  });
 });
 
 describe('a well-known system file read shows lines of its own format, and the tools agree on them', () => {

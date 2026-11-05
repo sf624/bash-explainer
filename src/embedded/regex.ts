@@ -31,7 +31,26 @@ const SHORTHANDS: Record<string, { ja: string; en: string; gnu: boolean }> = {
   t: { ja: 'タブ', en: 'a tab', gnu: false },
   n: { ja: '改行', en: 'a newline', gnu: false },
   r: { ja: '復帰文字(CR)', en: 'a carriage return', gnu: false },
+  f: { ja: '改ページ', en: 'a form feed', gnu: false },
+  e: { ja: 'ESC 文字', en: 'an escape character (ESC)', gnu: false },
+  a: { ja: 'ベル文字(BEL)', en: 'a bell character (BEL)', gnu: false },
+  h: { ja: '水平方向の空白（スペース、タブなど）1文字', en: 'a horizontal whitespace character (space, tab…)', gnu: false },
+  H: { ja: '水平方向の空白以外の1文字', en: 'a character that is not horizontal whitespace', gnu: false },
+  v: { ja: '垂直方向の空白（改行、改ページなど）1文字', en: 'a vertical whitespace character (newline, form feed…)', gnu: false },
+  V: { ja: '垂直方向の空白以外の1文字', en: 'a character that is not vertical whitespace', gnu: false },
 };
+
+/** PCRE escapes that no other flavor has, and that mean nothing inside `[…]`. */
+const PCRE_ONLY: Record<string, { ja: string; en: string; kind: 'keyword' | 'pattern' }> = {
+  K: { ja: 'ここまでに一致した部分を、報告する一致から外す（`grep -o` はこの後ろだけを表示する。文字は消費しない）', en: 'keep what has matched so far out of the reported match (`grep -o` prints only what follows; consumes nothing)', kind: 'keyword' },
+  G: { ja: '前の一致の終わりの位置（最初は先頭）', en: 'the position where the previous match ended (the start at first)', kind: 'keyword' },
+  R: { ja: '改行1つ（`\\r\\n`、`\\n`、`\\r` など）', en: 'one line break (`\\r\\n`, `\\n`, `\\r`…)', kind: 'pattern' },
+  N: { ja: '改行以外の1文字', en: 'any one character except a newline', kind: 'pattern' },
+  X: { ja: '見た目の1文字（結合文字を含む）', en: 'one extended grapheme cluster (a character with its combining marks)', kind: 'pattern' },
+};
+
+/** Letters PCRE2 accepts after a backslash; any other letter makes `grep -P` stop with an error. */
+const PCRE_ESCAPE_LETTERS = 'aAbBcCdDeEfgGhHkKnNopPQrRsStvVwWxXzZ';
 
 interface State {
   src: string;
@@ -41,6 +60,8 @@ interface State {
   s: (ja: string, en: string) => string;
   /** Plain single-character literals, which may be merged into runs. */
   literals: Set<EmbeddedToken>;
+  /** PCRE named groups, by name. */
+  names: Map<string, number>;
   /** GNU sed turns `\t`, `\n`… into characters before compiling the regex, even inside `[…]`. */
   sedEscapes: boolean;
   /** Of a hole here (`RegexOptions`). */
@@ -61,7 +82,7 @@ export interface RegexOptions {
 export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: RegexOptions = {}): EmbeddedToken[] {
   // (`\Q$x\E`: the value is plain text there, which this reader does not follow.)
   if (flavor === 'pcre' && src.includes('\\Q') && hasHole(src)) return [holeStop(0)];
-  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), sedEscapes: !!opts.sedEscapes, hole: { delimiter: opts.delimiter, perl: opts.perl } };
+  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), names: new Map(), sedEscapes: !!opts.sedEscapes, hole: { delimiter: opts.delimiter, perl: opts.perl } };
   return mergeLiterals(sequence(st, 0), st);
 }
 
@@ -250,20 +271,33 @@ function group(st: State, openLen: number): EmbeddedToken {
   let explanation: string;
   let group: number | undefined;
   const rest = st.src.slice(st.i);
-  const ext = st.flavor === 'pcre' ? /^\?(:|=|!|<=|<!|P?<([A-Za-z_]\w*)>|[imsx-]+\))/.exec(rest) : null;
   // (`(?$x)`: the value may be what follows the `?`.)
+  const ext = st.flavor === 'pcre' ? /^\?(:|=|!|<=|<!|>|#[^)]*\)?|P?<([A-Za-z_]\w*)>|'([A-Za-z_]\w*)'|([imsxnUJ-]+)([:)]))/.exec(rest) : null;
   if (st.flavor === 'pcre' && !ext && rest[0] === '?' && hasHole(rest)) return holeStop(start);
+  if (st.flavor === 'pcre' && !ext && /^[?*]/.test(rest)) {
+    // `(?|`, `(?1)`, `(?R)`, `(?P=n)`, `(?(…)…)`, `(*VERB)`: the whole group, unread.
+    st.i = groupEnd(st.src, start);
+    const text = st.src.slice(start, st.i);
+    return { start, end: st.i, kind: 'pattern', explanation: s(`\`${text}\`: この解説では読めない PCRE の構文`, `\`${text}\`: a PCRE construct this explainer does not read`), children: [] };
+  }
   if (ext) {
     st.i += ext[0].length;
     const k = ext[1];
+    const name = ext[2] ?? ext[3];
     if (k === ':') explanation = s('`(?:…)`: まとめるだけのグループ（番号は付かない）', '`(?:…)`: non-capturing group');
     else if (k === '=') explanation = s('`(?=…)`: 直後に … が続く位置（先読み。文字は消費しない）', '`(?=…)`: followed by … (lookahead, consumes nothing)');
     else if (k === '!') explanation = s('`(?!…)`: 直後に … が続かない位置（否定先読み）', '`(?!…)`: not followed by … (negative lookahead)');
     else if (k === '<=') explanation = s('`(?<=…)`: 直前が … である位置（後読み）', '`(?<=…)`: preceded by … (lookbehind)');
     else if (k === '<!') explanation = s('`(?<!…)`: 直前が … ではない位置（否定後読み）', '`(?<!…)`: not preceded by … (negative lookbehind)');
-    else if (ext[2]) {
+    else if (k === '>') explanation = s('`(?>…)`: 一度一致したらやり直さないグループ（アトミックグループ。番号は付かない）', '`(?>…)`: atomic group (once matched, never backtracked into; no number)');
+    else if (k[0] === '#') {
+      return { start, end: st.i, kind: 'comment', explanation: s('`(?#…)`: コメント（一致には関係しない）', '`(?#…)`: a comment (does not affect matching)'), children: [] };
+    } else if (name) {
       group = ++st.groups;
-      explanation = s(`名前付きグループ \`${ext[2]}\`（グループ ${group}）: 一致した部分を名前で参照できる`, `Named group \`${ext[2]}\` (group ${group})`);
+      st.names.set(name, group);
+      explanation = s(`名前付きグループ \`${name}\`（グループ ${group}）: 一致した部分を名前で参照できる`, `Named group \`${name}\` (group ${group})`);
+    } else if (ext[5] === ':') {
+      explanation = s(`\`(?${ext[4]}:…)\`: このグループの中だけマッチのオプションを切り替える（番号は付かない）`, `\`(?${ext[4]}:…)\`: set matching options inside this group only (no number)`);
     } else {
       return { start, end: st.i, kind: 'keyword', explanation: s(`\`(?${k}\`: 以降のマッチのオプションを切り替える（i: 大小文字を区別しない など）`, `\`(?${k}\`: set matching options from here (i: case-insensitive, …)`), children: [] };
     }
@@ -276,6 +310,17 @@ function group(st: State, openLen: number): EmbeddedToken {
   if (close) st.i += close;
   else explanation += s('（閉じ括弧がない）', ' (missing closing parenthesis)');
   return { start, end: st.i, kind: 'block', explanation, children, ...(group ? { group } : {}) };
+}
+
+/** The end of the group that opens at `open` (an unclosed one ends with the text). */
+function groupEnd(src: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '\\') i++;
+    else if (src[i] === '(') depth++;
+    else if (src[i] === ')' && --depth === 0) return i + 1;
+  }
+  return src.length;
 }
 
 function bracket(st: State): EmbeddedToken {
@@ -314,8 +359,17 @@ function bracket(st: State): EmbeddedToken {
       continue;
     }
     if (st.flavor === 'pcre' && src[i] === '\\' && i + 1 < src.length) {
-      const d = SHORTHANDS[src[i + 1]];
-      items.push(d ? s(d.ja, d.en) : `「${src[i + 1]}」`);
+      const c = src[i + 1];
+      const code = codeEscape(src, i);
+      const d = /[wWsSdDhHvVtnrfea]/.test(c) ? SHORTHANDS[c] : undefined;
+      if (code) {
+        items.push(code.text(s));
+        i += code.length;
+        continue;
+      }
+      // (`\b` is a backspace in a class; the other letters PCRE knows are errors there, and the rest stand for themselves.)
+      items.push(d ? s(d.ja, d.en) : c === 'b' ? s('バックスペース', 'a backspace')
+        : /[A-Za-z]/.test(c) ? `\`\\${c}\`${s('（クラスの中では使えない）', ' (not valid in a class)')}` : s(`「${c}」`, `"${c}"`));
       i += 2;
       continue;
     }
@@ -341,6 +395,65 @@ function bracket(st: State): EmbeddedToken {
   };
 }
 
+/** `\x41`, `\x{263a}`, `\012`, `\o{101}`, `\cA`, `\p{L}`: the PCRE escapes that name a character or a property. */
+function codeEscape(src: string, at: number): { length: number; text: (s: (ja: string, en: string) => string) => string } | undefined {
+  const rest = src.slice(at);
+  const charOf = (code: number, s: (ja: string, en: string) => string) => {
+    const hex = `0x${code.toString(16).toUpperCase().padStart(2, '0')}`;
+    return code < 32 || code === 127 || code > 0x10ffff ? s(`文字コード ${hex} の文字`, `the character with code ${hex}`)
+      : s(`文字コード ${hex} の文字「${String.fromCodePoint(code)}」`, `the character with code ${hex} ("${String.fromCodePoint(code)}")`);
+  };
+  let m: RegExpExecArray | null;
+  if ((m = /^\\x(?:\{([0-9A-Fa-f]+)\}|([0-9A-Fa-f]{0,2}))/.exec(rest))) return { length: m[0].length, text: (s) => charOf(parseInt(m![1] ?? (m![2] || '0'), 16), s) };
+  if ((m = /^\\(?:0([0-7]{0,2})|o\{([0-7]+)\})/.exec(rest))) return { length: m[0].length, text: (s) => charOf(parseInt(m![1] ?? m![2]!, 8) || 0, s) };
+  if ((m = /^\\c([\x20-\x7e])/.exec(rest))) return { length: m[0].length, text: (s) => s(`制御文字 Ctrl-${m![1].toUpperCase()}`, `the control character Ctrl-${m![1].toUpperCase()}`) };
+  if ((m = /^\\([pP])(?:\{(\^?)([\w &]+)\}|(\w))/.exec(rest))) {
+    const not = (m[1] === 'P') !== (m[2] === '^');
+    const prop = m[3] ?? m[4];
+    return { length: m[0].length, text: (s) => (not ? s(`Unicode の性質 \`${prop}\` を持たない1文字`, `a character without the Unicode property \`${prop}\``) : s(`Unicode の性質 \`${prop}\` を持つ1文字`, `a character with the Unicode property \`${prop}\``)) };
+  }
+  return undefined;
+}
+
+/** The PCRE escapes that no other flavor has; undefined for one read by the shared table. */
+function pcreEscape(st: State, start: number, c: string): EmbeddedToken | undefined {
+  const { s, src } = st;
+  const text = () => src.slice(start, st.i);
+  const tok = (kind: EmbeddedToken['kind'], explanation: string, extra: Partial<EmbeddedToken> = {}): EmbeddedToken => ({ start, end: st.i, kind, explanation, children: [], ...extra });
+  const only = PCRE_ONLY[c];
+  if (only) return tok(only.kind, `\`\\${c}\`: ${s(only.ja, only.en)}`);
+  if (c === 'Q') {
+    const end = src.indexOf('\\E', start + 2);
+    st.i = end < 0 ? src.length : end + 2;
+    const body = src.slice(start + 2, end < 0 ? src.length : end);
+    return tok('string', s(`\`\\Q…\\E\`: 間の文字列「${body}」をそのまま（記号も特別扱いしない）`, `\`\\Q…\\E\`: the text "${body}" taken literally (no character in it is special)`));
+  }
+  if (c === 'E') return tok('keyword', s('`\\E`: `\\Q` の終わり（それだけでは何にも一致しない）', '`\\E`: the end of a `\\Q` (matches nothing by itself)'));
+  const code = codeEscape(src, start);
+  if (code) {
+    st.i = start + code.length;
+    return tok('pattern', `\`${text()}\`: ${code.text(s)}`);
+  }
+  const ref = /^\\(?:g(?:\{(-?\d+)\}|(-?\d+)|\{(\w+)\})|k(?:<(\w+)>|\{(\w+)\}|'(\w+)'))/.exec(src.slice(start));
+  if (ref) {
+    st.i = start + ref[0].length;
+    const name = ref[3] ?? ref[4] ?? ref[5] ?? ref[6];
+    const rel = Number(ref[1] ?? ref[2]);
+    const group = name === undefined ? (rel < 0 ? st.groups + 1 + rel : rel) : st.names.get(name);
+    const missing = !(group && group >= 1 && group <= st.groups);
+    const what = name === undefined ? String(group) : `${name}${group ? ` (${group})` : ''}`;
+    return tok('variable', s(`後方参照 \`${text()}\`: グループ ${what} に一致したのと同じ文字列${missing ? '（ここまでにそのグループがない）' : ''}`,
+      `Backreference \`${text()}\`: the same text group ${what} matched${missing ? ' (no such group before this point)' : ''}`), missing || !group ? {} : { group });
+  }
+  if (c === '<' || c === '>') return tok('string', s(`文字「${c}」そのもの（PCRE の \`\\${c}\` は単語の境界ではない）`, `A literal "${c}" (in PCRE \`\\${c}\` is not a word boundary)`));
+  if (/[A-Za-z]/.test(c) && !SHORTHANDS[c]) {
+    // (A letter PCRE knows but this reader does not: `\C`, or `\g`, `\k`, `\p`… in a form it cannot take.)
+    if (PCRE_ESCAPE_LETTERS.includes(c)) return tok('pattern', s(`\`\\${c}\`: この解説では読めない PCRE のエスケープ`, `\`\\${c}\`: a PCRE escape this explainer does not read`));
+    return tok('error', s(`\`\\${c}\` は PCRE のエスケープにない。\`grep -P\` は "unrecognized character follows \\" で止まる（Perl は文字「${c}」として扱う）`, `\`\\${c}\` is no PCRE escape: \`grep -P\` stops with "unrecognized character follows \\" (Perl reads it as "${c}")`));
+  }
+  return undefined;
+}
+
 function escape(st: State): EmbeddedToken {
   const { s, src } = st;
   const start = st.i;
@@ -357,13 +470,26 @@ function escape(st: State): EmbeddedToken {
   const c = src[start + 1];
   st.i += c === undefined ? 1 : 2;
   if (c === undefined) return { start, end: st.i, kind: 'error', explanation: s('末尾の `\\` の後に文字がない', 'Trailing `\\`'), children: [] };
+  // (PCRE: `\12` is group 12 when there are that many groups, otherwise the octal code 012.)
+  const many = st.flavor === 'pcre' ? /^\\[1-9]\d+/.exec(src.slice(start))?.[0] : undefined;
+  if (many && /^\\[0-7]/.test(many) && Number(many.slice(1)) > Math.max(9, st.groups)) {
+    const octal = /^\\[0-7]{1,3}/.exec(src.slice(start))!;
+    st.i = start + octal[0].length;
+    return { start, end: st.i, kind: 'pattern', explanation: `\`${octal[0]}\`: ${codeEscape('\\o{' + octal[0].slice(1) + '}', 0)!.text(s)}`, children: [] };
+  }
   if (/[1-9]/.test(c)) {
-    const missing = Number(c) > st.groups;
+    if (many) st.i = start + many.length;
+    const num = many ? many.slice(1) : c;
+    const missing = Number(num) > st.groups;
     return {
-      start, end: st.i, kind: 'variable', children: [], group: Number(c),
-      explanation: s(`後方参照 \`\\${c}\`: グループ ${c} に一致したのと同じ文字列${missing ? '（ここまでにグループ ' + c + ' がない）' : ''}`,
-        `Backreference \`\\${c}\`: the same text group ${c} matched${missing ? ` (no group ${c} before this point)` : ''}`),
+      start, end: st.i, kind: 'variable', children: [], group: Number(num),
+      explanation: s(`後方参照 \`\\${num}\`: グループ ${num} に一致したのと同じ文字列${missing ? '（ここまでにグループ ' + num + ' がない）' : ''}`,
+        `Backreference \`\\${num}\`: the same text group ${num} matched${missing ? ` (no group ${num} before this point)` : ''}`),
     };
+  }
+  if (st.flavor === 'pcre') {
+    const t = pcreEscape(st, start, c);
+    if (t) return t;
   }
   const sh = SHORTHANDS[c];
   if (sh && (st.flavor === 'pcre' || sh.gnu)) {
