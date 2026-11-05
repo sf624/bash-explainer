@@ -545,7 +545,7 @@ In double quotes bash takes a backslash away only before `$`, a backtick, `"`, `
 
 - Before: `sed "s/\./x/"`, `sed -E "s/(a)/\1/g"`, `sed -E "s#^//([^:]*):#\1/#; s#^/##"`, `grep "a\.b" f`, `grep -E "\.txt$"`, `awk "{print \$1}" f`, `awk "/a\.b/ {print}" f`, `awk -F "\t"`, `perl -pe "s/\d/x/"`, `tr "\n" " "`, `echo -e "a\\nb"` showed the string and nothing in it. Now each reads like the single-quoted line with the same value, with the same worked example.
 - Where bash removes a backslash, the argument says so once, with each escape: `grep "a\\.b"` hands grep `a\.b` ("`\\` → `\`"). Where the backslash stays, nothing is added.
-- An unquoted backslash is the same: `grep a\.b f` hands grep `a.b` (any character), which the explanation reads and says; `find . -name \*.py` hands find `*.py`.
+- An unquoted backslash is the same: `grep a\.b f` hands grep `a.b` (any character), which the explanation reads and says; `find . -name \*.py` hands find `*.py`, and `awk \$1 f` hands awk `$1`.
 - Words with a quote in the middle (`sed 's/a/'"\1"'/'`, `date +"%F\n"`, `git log --pretty=format:"%h\t%s"`, `awk -v OFS="\t"`) are read too, and `--regexp="a\.b"` and `sed --expression="s/\./x/"`.
 - `echo -e "\\e"` hands echo `\e`, which `-e` turns into ESC: it is read now. Before, it was left alone.
 - Words with an expansion (`sed "s/$old/new/"`) are still not read.

@@ -98,18 +98,20 @@ export function posOf(starts: number[], i: number): Pos {
 
 export const sameSpan = (a: Span, b: Span): boolean => a.start.line === b.start.line && a.start.character === b.start.character && a.end.line === b.end.line && a.end.character === b.end.character;
 
+/** The place of character `idx` of the text of `node` (the word may run over several lines: a backslash-newline in it). */
+export function sourcePos(node: SyntaxNode, idx: number): Pos {
+  const before = node.text.slice(0, idx);
+  const nl = before.lastIndexOf('\n');
+  const rows = before.split('\n').length - 1;
+  return rows === 0
+    ? { line: node.startPosition.row, character: node.startPosition.column + idx }
+    : { line: node.startPosition.row + rows, character: idx - nl - 1 };
+}
+
 /** A token of an embedded explainer, placed in the source; `origin`: who reads it (`shell`: bash's own globs and escapes). */
 export function fromEmbedded(t: EmbeddedToken, node: SyntaxNode, lit: Literal, origin: TokenOrigin): Token {
   const text = node.text;
-  const at = (offset: number, isEnd = false): Pos => {
-    const idx = sourceIndex(lit, offset, isEnd);
-    const before = text.slice(0, idx);
-    const nl = before.lastIndexOf('\n');
-    const rows = before.split('\n').length - 1;
-    return rows === 0
-      ? { line: node.startPosition.row, character: node.startPosition.column + idx }
-      : { line: node.startPosition.row + rows, character: idx - nl - 1 };
-  };
+  const at = (offset: number, isEnd = false): Pos => sourcePos(node, sourceIndex(lit, offset, isEnd));
   const label = t.label ?? text.slice(sourceIndex(lit, t.start, false), sourceIndex(lit, t.end, true));
   return {
     kind: t.kind, label: shorten(label), explanation: t.explanation,

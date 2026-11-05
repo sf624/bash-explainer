@@ -9,7 +9,7 @@ import { field, fields, type SyntaxNode } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
 import { interactive } from './commands';
 import { missSections } from './rerun';
-import { type Operand, testCases } from './runtime';
+import { type Operand, showCommand, testCases } from './runtime';
 import { globExamples, globMatches, type GlobMode, type GlobOpts, hasGlobstar } from './shellwords';
 import { pushAll } from '../lists';
 
@@ -106,11 +106,13 @@ export function testExample(n: SyntaxNode, bracket: TestShape | undefined, asKin
     ? testCases(kind, op, operand(left), operand(right), right.type === 'string' || right.type === 'raw_string', value)
     : testCases(kind, op, undefined, operand(right), right.type === 'string', value);
   if (!cases) return undefined;
+  // (In double quotes bash still expands `$`, a backtick and `\`: a value with one is shown quoted so that bash reads the same text.)
+  const assigned = (v: string): string => (/["$`\\\x00-\x1f\x7f]/.test(v) ? showCommand([v]) : JSON.stringify(v));
   // `$#` and `$?` cannot be assigned: say it in words.
   const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (k === '#'
     ? s(`引数が ${v} 個`, `${v} argument${v === '1' ? '' : 's'}`)
     : k === '?' ? s(`直前のコマンドの終了ステータスが ${v}`, `the last command exits with ${v}`)
-      : /^\d+$/.test(k) ? `$${k}=${JSON.stringify(v)}` : `${k}=${JSON.stringify(v)}`)).join(' ');
+      : /^\d+$/.test(k) ? `$${k}=${assigned(v)}` : `${k}=${assigned(v)}`)).join(' ');
   return { kind: 'test',
     title: s('例', 'Example'),
     sections: [

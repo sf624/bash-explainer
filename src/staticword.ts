@@ -323,7 +323,11 @@ function literalValue(n: SyntaxNode, assignment: boolean, shell: Shell | undefin
  * characters of source for one of text). Undefined when the value is not known, or inside backquotes, where bash
  * removes another level of backslashes first.
  */
-export interface MappedText { text: string; starts: number[]; ends: number[] }
+export interface MappedText {
+  text: string; starts: number[]; ends: number[];
+  /** The escapes of the source from which bash took a backslash (`\$` in double quotes, `\.` in a plain word), in order (a backslash-newline is none). */
+  removed?: string[];
+}
 
 export function staticWordText(n: SyntaxNode, shell: Shell | undefined): MappedText | undefined {
   if (decodedText(n) !== n.text || tildeSpots(tildeParts([n]), 'start').length) return undefined;
@@ -348,13 +352,19 @@ function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined, l
   const unescape = (from: number, to: number, escapes: RegExp): void => {
     for (let i = from; i < to; i++) {
       if (src[i] === '\\' && src[i + 1] === '\n' && i + 1 < to) i++;
-      else if (src[i] === '\\' && i + 1 < to && escapes.test(src[i + 1])) put(src[++i], i - 1, i + 1);
-      else put(src[i], i, i + 1);
+      else if (src[i] === '\\' && i + 1 < to && escapes.test(String.fromCodePoint(src.codePointAt(i + 1)!))) {
+        // (A character outside the BMP is two units of the string: the escape takes both.)
+        const ch = String.fromCodePoint(src.codePointAt(i + 1)!);
+        put(ch, i, i + 1 + ch.length);
+        (out.removed ??= []).push(src.slice(i, i + 1 + ch.length));
+        i += ch.length;
+      } else put(src[i], i, i + 1);
     }
   };
   switch (n.type) {
     case 'word': case 'number':
-      if (literal ? /['"$`]/.test(src) || (src.includes('\\') && globbed(n, src)) : globbed(n, src)) return false;
+      // (A literal word is refused by a quote or a `$` that is not escaped: `\\$1` is the text `$1`.)
+      if (literal ? /['"$`]/.test(src.replace(/\\[^]/g, '')) || (src.includes('\\') && globbed(n, src)) : globbed(n, src)) return false;
       unescape(0, src.length, /[\s\S]/);
       return true;
     case 'brace_expression':
@@ -503,6 +513,8 @@ export interface Literal {
   offsets?: number[];
   /** Absent: each character is one of source (`offsets[i] + 1`). */
   ends?: number[];
+  /** The escapes bash took a backslash from (`MappedText.removed`). */
+  removed?: string[];
 }
 
 /**
@@ -527,31 +539,30 @@ export function literalContent(a: SyntaxNode): Literal | undefined {
 /** The part of a literal from character `k` on (the value of `--regexp=…`: the characters before it are left out). */
 export function literalFrom(lit: Literal, k: number): Literal {
   const text = lit.text.slice(k);
-  return lit.offsets ? { text, offsets: lit.offsets.slice(k), ends: lit.ends!.slice(k) } : { text, base: lit.base! + k };
+  return lit.offsets ? { ...lit, text, offsets: lit.offsets.slice(k), ends: lit.ends!.slice(k) } : { text, base: lit.base! + k };
 }
 
 /** The literal of a mapped text found in the word `a` (`staticWordText`). */
 export function literalOfMapped(m: MappedText, a: SyntaxNode): Literal {
-  return { text: m.text, offsets: m.starts.map((s) => s - a.startIndex), ends: m.ends.map((e) => e - a.startIndex) };
+  return { text: m.text, offsets: m.starts.map((s) => s - a.startIndex), ends: m.ends.map((e) => e - a.startIndex), ...(m.removed ? { removed: m.removed } : {}) };
 }
 
 /**
- * The escapes in the source `src` of a word from which bash took a backslash, as `\$` (one character of text from two of
- * source), each once, in order: what the command is given is not what is written there. A backslash-newline is not one:
- * it leaves no character to show.
+ * The escapes of the word from which bash took a backslash, as `\$` (one character of text from two of source), each once,
+ * in order: what the command is given is not what is written there. A backslash-newline is not one: it leaves no
+ * character to show; nor is a `\n` of `$'…'`, which is one escape that stands for a character.
  */
-export function removedBackslashes(lit: Literal, src: string): string[] {
-  const out = new Set<string>();
-  lit.offsets?.forEach((s, k) => {
-    if (lit.ends![k] - s === 2 && src[s] === '\\') out.add(src.slice(s, s + 2));
-  });
-  return [...out];
+export function removedBackslashes(lit: Literal): string[] {
+  return [...new Set(lit.removed)];
 }
 
-/** Position in the node's source of character `offset` of a literal (an end offset maps past the previous character). */
+/**
+ * Position in the node's source of character `offset` of a literal (an end offset maps past the previous character).
+ * An offset past the last character (a token of no width at the end, `sed "\$a\\"`) is where the text ends.
+ */
 export function sourceIndex(lit: Literal, offset: number, isEnd: boolean): number {
   // A literal has a base or offsets, one for each character (tokens lie within its text).
   if (!lit.offsets) return lit.base! + offset;
-  if (isEnd) return lit.ends ? lit.ends[offset - 1] : lit.offsets[offset - 1] + 1;
-  return lit.offsets[offset];
+  if (isEnd) return offset > 0 ? (lit.ends ? lit.ends[offset - 1] : lit.offsets[offset - 1] + 1) : lit.offsets[0];
+  return offset < lit.offsets.length ? lit.offsets[offset] : sourceIndex(lit, offset, true);
 }

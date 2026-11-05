@@ -4,6 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { run } from './support/run';
 import { Analyzer, type Token } from '../src/analyzer';
+import { explainHostedLine, extractShell } from '../src/hosts';
+import { sourceIndex } from '../src/staticword';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 // A word in double quotes (or with a backslash, unquoted) gives the command a text of its own: bash takes away the
@@ -54,6 +56,12 @@ const rows: Row[] = [
   { line: 'awk -v {} \'{print $1,$2}\' f', word: R`OFS="\t"`, mixed: true, other: true },
   { line: 'git log --pretty={}', word: R`format:"%h\t%s"`, mixed: true },
   { line: 'sed {} f', word: R`$"s/\./x/"`, real: 'output' },
+  { line: 'awk {} f', word: R`\$1`, real: 'output' },
+  { line: 'awk {} f', word: R`\{print\ \$2\}`, real: 'output' },
+  { line: 'grep {} f', word: R`a\😀b`, real: 'grep' },
+  { line: 'sed {} f', word: R`"\$a\\"` },
+  { line: 'sed -e {} -e new f', word: R`"1c\\"`, other: true },
+  { line: 'sed {} f', word: R`1c\\` },
   { line: 'perl -pe {} f', word: R`"s/\d/x/"`, real: 'output' },
   { line: 'tr -d {}', word: R`"\n"` },
   { line: 'printf {} a', word: R`"%s\n"` },
@@ -111,9 +119,11 @@ describe('a word with escapes is read as bash gives it to the command', () => {
       if (!row.mixed) for (const m of row.word.matchAll(row.word.startsWith('"') ? /\\[$`"\\\n]/g : /\\[^]/g)) cuts.add(word + m.index + 1);
       for (const { token } of a) {
         const { start, end } = token.span;
+        // (A token of no width at the end of the text, as the empty text of `sed '$a\\'`, stands there: no position is NaN or missing.)
+        for (const n of [start.line, start.character, end.line, end.character]) assert.ok(Number.isInteger(n), `${token.label}: ${JSON.stringify(token.span)}`);
         assert.strictEqual(start.line, 0);
         assert.strictEqual(end.line, 0);
-        assert.ok(word <= start.character && start.character < end.character && end.character <= (row.other ? dq.length : wordEnd), `${token.label} (${start.character}-${end.character}) is in the word`);
+        assert.ok(word <= start.character && start.character <= end.character && end.character <= (row.other ? dq.length : wordEnd), `${token.label} (${start.character}-${end.character}) is in the word`);
         assert.ok(!cuts.has(start.character) && !cuts.has(end.character), `${token.label} (${start.character}-${end.character}) keeps an escape whole`);
       }
     });
@@ -131,43 +141,119 @@ describe('a word with escapes is read as bash gives it to the command', () => {
   it('leaves out a backslash and a newline, which bash removes', () => {
     const line = 'sed "s/a/\\\nb/" f';
     assert.strictEqual(run('bash', ['-c', `printf %s ${line.slice(4, -2)}`], { check: true }).stdout.toString(), 's/a/b/');
-    const tokens = embeddedTokens(line).map(({ token }) => token);
-    assert.ok(tokens.length > 0);
-    for (const t of tokens) assert.ok(t.span.start.line <= t.span.end.line && (t.span.start.line < 1 || t.span.start.character >= 0));
+    const where = (t: Token): string => `${t.label}@${t.span.start.line}:${t.span.start.character}-${t.span.end.line}:${t.span.end.character}`;
+    assert.deepStrictEqual(embeddedTokens(line).map(({ token }) => where(token)), [
+      's/a/\\ …@0:5-1:2', 's@0:5-0:6', '/@0:6-0:7', 'a@0:7-0:8', 'a@0:7-0:8', '/@0:8-0:9', 'b@1:0-1:1', '/@1:1-1:2',
+    ]);
     assert.deepStrictEqual(examplesOf(line), examplesOf("sed 's/a/b/' f"));
+  });
+
+  it('puts a token of no width at the end of the text where the text ends, where the single-quoted word has it', () => {
+    const where = (line: string): string[] => embeddedTokens(line).filter(({ token }) => token.span.start.character === token.span.end.character).map(({ token }) => `${JSON.stringify(token.label)}@${token.span.start.character}`);
+    // (`$a\` is `\$a\\` in six characters of source: the end of the text is after the last of them.)
+    assert.deepStrictEqual(where(R`sed "\$a\\" f`), ['""@10']);
+    assert.deepStrictEqual(where(R`sed '$a\' f`), ['""@8']);
+    assert.deepStrictEqual(where(R`sed -e "1c\\" -e new f`), ['""@12']);
+    assert.deepStrictEqual(where(R`sed -e 1c\\ -e new f`), ['""@11']);
+  });
+
+  it('gives the same positions in a Dockerfile, in JSON and in the panel', () => {
+    const src = 'FROM x\nRUN sed "\\$a\\\\" f\n';
+    const extracted = extractShell('dockerfile', src)!;
+    const e = explainHostedLine(analyzer, parser.parse(extracted.text), extracted, src.split('\n'), 1, 'en')!;
+    const all: Token[] = [];
+    const walk = (t: Token): void => (all.push(t), t.children.forEach(walk));
+    e.items.forEach(walk);
+    assert.ok(all.some((t) => t.origin === 'embedded'));
+    for (const t of all) for (const n of [t.span.start.line, t.span.start.character, t.span.end.line, t.span.end.character]) assert.ok(Number.isInteger(n), `${t.label}: ${JSON.stringify(t.span)}`);
+    assert.ok(!JSON.stringify(e.items).includes('null'));
+  });
+});
+
+describe('sourceIndex', () => {
+  it('maps a character, and an end, over escapes', () => {
+    const lit = { text: 'a$', offsets: [1, 2], ends: [2, 4] };
+    assert.deepStrictEqual([sourceIndex(lit, 0, false), sourceIndex(lit, 1, false), sourceIndex(lit, 1, true), sourceIndex(lit, 2, true)], [1, 2, 2, 4]);
+  });
+  it('puts an offset past the text where the text ends, and an end at 0 where it starts', () => {
+    const lit = { text: 'a$', offsets: [1, 2], ends: [2, 4] };
+    assert.deepStrictEqual([sourceIndex(lit, 2, false), sourceIndex(lit, 0, true)], [4, 1]);
+  });
+  it('takes a character of one unit of source where there are no ends', () => {
+    const lit = { text: 'ab', offsets: [3, 5] };
+    assert.deepStrictEqual([sourceIndex(lit, 1, true), sourceIndex(lit, 2, true), sourceIndex(lit, 2, false)], [4, 6, 6]);
+    assert.strictEqual(sourceIndex({ text: 'ab', base: 2 }, 1, false), 3);
   });
 });
 
 describe('the explanation says what bash took away, once per word', () => {
-  const argument = (line: string): Token => {
+  const argument = (line: string, lang: 'en' | 'ja' = 'en'): Token => {
     const found: Token[] = [];
     const walk = (t: Token): void => (t.kind === 'argument' && t.origin !== 'embedded' ? found.push(t) : undefined, t.children.forEach(walk));
-    analyzer.explainLine(parser.parse(line), 0).items.forEach(walk);
+    new Analyzer(lang).explainLine(parser.parse(line), 0).items.forEach(walk);
     return found[0];
   };
-  const said = (t: Token): number => t.explanation.split('removes the backslash').length - 1;
+  const said = (t: Token): number => t.explanation.split('has already removed').length - 1;
 
-  it('names each escape of the word, and what the command gets', () => {
-    assert.match(argument(R`awk "{print \$1}" f`).explanation, /bash removes the backslash before the command gets the text: `\\\$` → `\$`$/);
-    assert.match(argument(R`grep "a\\.b" f`).explanation, /: `\\\\` → `\\`$/);
+  it('names each escape of the word, and what is left', () => {
+    assert.strictEqual(argument(R`awk "{print \$1}" f`).explanation, 'awk program (`pattern { action }`) — bash has already removed the backslash: `\\$` → `$`');
+    assert.strictEqual(argument(R`grep "a\\.b" f`).explanation, 'search pattern (regex) — basic regex (BRE); bash has already removed the backslash: `\\\\` → `\\`');
     // (Once for the word, with each escape in it.)
-    const both = argument(R`sed "s/a\\\$b\$/x/" f`);
-    assert.strictEqual(said(both), 1);
-    assert.match(both.explanation, /`\\\\` → `\\`, `\\\$` → `\$`/);
+    assert.strictEqual(argument(R`sed "s/a\\\$b\$/x/" f`).explanation, 'sed script (e.g. `s/foo/bar/g` replaces all foo with bar) — bash has already removed the backslash: `\\\\` → `\\`, `\\$` → `$`');
   });
 
   it('says it in Japanese too', () => {
-    const t = new Analyzer('ja').explainLine(parser.parse(R`awk "{print \$1}" f`), 0).items.flatMap(function all(x: Token): Token[] { return [x, ...x.children.flatMap(all)]; }).find((x) => x.explanation.includes('取り除く'));
-    assert.ok(t);
+    assert.strictEqual(argument(R`awk "{print \$1}" f`, 'ja').explanation, 'awk プログラム（`パターン { アクション }`） — 先にシェルがバックスラッシュを取り除いている: `\\$` → `$`');
+  });
+
+  it('closes a code span around a backtick, and keeps a character outside the BMP whole', () => {
+    assert.strictEqual(argument(R`sed "s/a/\`/" f`).explanation, 'sed script (e.g. `s/foo/bar/g` replaces all foo with bar) — bash has already removed the backslash: `` \\` `` → `` ` ``');
+    assert.strictEqual(argument(R`grep a\😀b f`).explanation, 'search pattern (regex) — basic regex (BRE); bash has already removed the backslash: `\\😀` → `😀`');
   });
 
   it('says nothing where the backslash stays', () => {
     for (const line of [R`sed -E "s/(a)/\1/" f`, R`grep "a\.b" f`, R`perl -pe "s/\d/x/" f`, "sed 's/a/b/' f"]) assert.strictEqual(said(argument(line)), 0, line);
   });
 
-  it('says what an unquoted backslash does', () => {
-    assert.match(argument(R`grep a\.b f`).explanation, /: `\\\.` → `\.`$/);
+  it('says nothing of the escapes of $\'…\', which are not a backslash taken away', () => {
+    // (`PS1=$'\n\$ '` is a newline and `\$ `: the `\$` keeps its backslash, for the prompt to read.)
+    for (const line of [R`PS1=$'\n\$ '`, R`PS1=$'\e[1m\u\e[0m\$ '`]) {
+      const all: Token[] = [];
+      const walk = (t: Token): void => (all.push(t), t.children.forEach(walk));
+      analyzer.explainLine(parser.parse(line), 0).items.forEach(walk);
+      assert.deepStrictEqual(all.filter((t) => t.explanation.includes('has already removed')), [], line);
+    }
   });
+
+  it('says it of an assignment too, in words that fit', () => {
+    const all: Token[] = [];
+    const walk = (t: Token): void => (all.push(t), t.children.forEach(walk));
+    analyzer.explainLine(parser.parse(R`PS1="\u\$ "`), 0).items.forEach(walk);
+    const said = all.filter((t) => t.explanation.includes('has already removed'));
+    assert.strictEqual(said.length, 1);
+    // (After what the prompt string says of its own: one sentence that fits an assignment as it fits a command.)
+    assert.ok(said[0].explanation.endsWith('; bash has already removed the backslash: `\\$` → `$`'), said[0].explanation);
+  });
+
+  it('says what an unquoted backslash does', () => {
+    assert.strictEqual(argument(R`grep a\.b f`).explanation, 'search pattern (regex) — basic regex (BRE); bash has already removed the backslash: `\\.` → `.`');
+    assert.strictEqual(argument(R`awk \$1 f`).explanation, 'awk program (`pattern { action }`) — bash has already removed the backslash: `\\$` → `$`');
+  });
+});
+
+describe('the example of a comparison shows values that make it true and false in bash', () => {
+  const lines = [R`[ "$x" = "\$y" ]`, R`[ "$x" = "a\`b" ]`, R`[ "$x" = '$y' ]`, R`[ "$x" = 'a"b' ]`, R`[[ "$x" == "a\\b" ]]`];
+  for (const line of lines) {
+    it(line, () => {
+      const ex = analyzer.explainLine(parser.parse(line), 0).examples.find((x) => x.kind === 'test')!;
+      assert.ok(ex, 'has an example');
+      for (const sec of ex.sections) {
+        const want = sec.label === 'True when' ? 0 : 1;
+        assert.ok(sec.lines.length > 0);
+        for (const assignment of sec.lines) assert.strictEqual(run('bash', ['-c', `${assignment}; ${line}`]).status, want, `${assignment}; ${line}`);
+      }
+    });
+  }
 });
 
 describe('the worked example of a word with escapes agrees with the real tool', () => {
