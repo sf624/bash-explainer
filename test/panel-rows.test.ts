@@ -464,7 +464,7 @@ describe('the panel\'s row model', () => {
       assert.deepStrictEqual(frames('FOO=1 ls'), ['command ls']);
       assert.deepStrictEqual(frames('local y=2'), ['command local']);
       assert.deepStrictEqual(frames('$cmd x'), ['command $cmd']);
-      assert.deepStrictEqual(frames('[ -f x ]'), ['command [ -f x ]']);
+      assert.deepStrictEqual(frames('[ -f x ]'), ['command [']);
       assert.deepStrictEqual(frames('[[ -f x && -f y ]]'), ['compound [[ -f x && -f y ]]']);
       assert.deepStrictEqual(frames('f() { a; }'), ['compound f() { ‹commands› }', 'compound { ‹commands› }', 'command a']);
       assert.deepStrictEqual(frames('f() { :; }; f'), ['group f() { ‹commands› }; f', 'compound f() { ‹commands› }', 'compound { ‹commands› }', 'command :', 'command f']);
@@ -479,7 +479,7 @@ describe('the panel\'s row model', () => {
       assert.deepStrictEqual(frames('! a'), ['command a']);
       assert.deepStrictEqual(frames('coproc a'), ['command a']);
       assert.deepStrictEqual(frames('[[ ( -f a ) ]]'), ['compound [[ ( -f a ) ]]']);
-      assert.deepStrictEqual(frames('x=1 [ -f f ]'), ['command x=1 [ -f f ]']);
+      assert.deepStrictEqual(frames('x=1 [ -f f ]'), ['command [']);
       // (A clause of `if` is no command either: on a line of its own, only what it runs is boxed.)
       assert.deepStrictEqual(all(model('if a; then b\nelif c; then d\nfi', D1, 'en', 1).rows).filter((r) => r.frame).map((r) => `${r.frame} ${r.label}`), ['command c', 'command d']);
     });
@@ -623,8 +623,7 @@ describe('the panel\'s row model', () => {
       ['echo *.txt', '*.txt', 'argument | operand: each matching file name', '引数 | オペランド: 一致したファイル名ごと', 'echo reads it'],
       ['echo {a,b}', '{a,b}', 'argument | brace expansion | operand: each word the braces give', '引数 | ブレース展開 | オペランド: ブレース展開の語ごと', 'echo reads it'],
       // A command name, and what another command runs: to bash an argument.
-      ['[ -f f ]', '[ -f f ]', 'simple command | command name', '単純コマンド | コマンド名'],
-      ['[ -f f ]', '[', 'command name', 'コマンド名'],
+      ['[ -f f ]', '[', 'simple command | command name', '単純コマンド | コマンド名'],
       ['sudo echo hi', 'echo', 'argument | command name', '引数 | コマンド名', 'sudo reads it'],
       ['nice -n 5 ls', 'ls', 'argument | command name', '引数 | コマンド名', 'nice reads it'],
       ['xargs rm -f', 'rm', 'argument | command name', '引数 | コマンド名', 'xargs reads it'],
@@ -889,6 +888,11 @@ describe('the panel\'s row model', () => {
         const lean = new Analyzer('en').explainLine(parser.parse(src), 0, 'bash', { reading: false, argv: true });
         assert.strictEqual(toPlainMarkdown(explain(src), line, 'a.sh:1', 'en'), toPlainMarkdown(lean, line, 'a.sh:1', 'en'), src);
       }
+    });
+
+    it('says the role of a row of the name alone, under the row of the command', () => {
+      const rows = all(rowModel(explain('"ls" x'), D2, 'en').rows).filter((x) => x.label === '"ls"');
+      assert.deepStrictEqual(rows.map((r) => r.roleLine?.chips.map((c) => c.text).join(' | ')), ['simple command | command name', 'command name']);
     });
 
     it('says who reads a row last, on the table of roles', () => {

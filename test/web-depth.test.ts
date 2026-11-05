@@ -272,6 +272,46 @@ describe('the panel: one view with a depth', function () {
     await ctx.close();
   });
 
+  it('draws `[` as `test`: one row for the command, with its badge and what it receives, and its arguments one level below, at both depths', async () => {
+    const ctx = await context(1280, 'en', { animations: false });
+    const page = await ctx.newPage();
+    /** The rows of the line: how deep each is, its code, and on a command its badge and the words it receives. */
+    const drawn = (panel: Frame) => panel.evaluate(`[...document.querySelectorAll('#tree li[data-key]')].map((li) => {
+      let level = 0;
+      for (let up = li.parentElement.closest('li[data-key]'); up; up = up.parentElement.closest('li[data-key]')) level++;
+      const row = li.querySelector(':scope > .item > .row');
+      return {
+        level, code: row.querySelector(':scope > .code .label').textContent,
+        receives: [...row.querySelectorAll(':scope .receives-words > *')].map((w) => w.textContent.trim()),
+        name: !!row.querySelector(':scope .name-line, :scope .name-badge'),
+      };
+    })`) as Promise<{ level: number; code: string; receives: string[]; name: boolean }[]>;
+    for (const depth of [1, 2] as const) {
+      const panel = await open(page, '[ -a file ]');
+      await chooseDepth(page, depth);
+      await depthDrawn(panel, depth);
+      const bracket = await drawn(panel);
+      const other = await open(page, 'test -a file');
+      await depthDrawn(other, depth);
+      const test = await drawn(other);
+      assert.strictEqual(bracket[0].code, '[', `depth ${depth}`);
+      assert.strictEqual(bracket[0].level, 0);
+      // (A builtin runs inside the shell: no name among its words, for `[` as for `test`.)
+      assert.deepStrictEqual(bracket[0].receives, ['-a', 'file', ']']);
+      assert.deepStrictEqual(test[0].receives, ['-a', 'file']);
+      assert.strictEqual(bracket[0].name, test[0].name);
+      assert.deepStrictEqual(bracket.filter((r) => r.code === ']').map((r) => r.level), [1], 'the row of `]` is under the command');
+      assert.deepStrictEqual(bracket.filter((r) => r.code === '[').length, 1, 'no second row of the name');
+      assert.deepStrictEqual(bracket.slice(1).filter((r) => r.code !== ']').map((r) => [r.level, r.code]), test.slice(1).map((r) => [r.level, r.code]), `depth ${depth}`);
+    }
+    // `[[` is syntax: no program, so no words received, with the condition below.
+    const syntax = await open(page, '[[ -a file ]]');
+    const keyword = await drawn(syntax);
+    assert.deepStrictEqual([keyword[0].level, keyword[0].code, keyword[0].receives], [0, '[[ -a file ]]', []]);
+    assert.ok(keyword.some((r) => r.level === 1 && r.code === '-a file'), JSON.stringify(keyword));
+    await ctx.close();
+  });
+
   for (const width of [1280, 390] as const) {
     for (const receives of ['on', 'off'] as const) it(`keeps the page at depth 2 within its budget for each line of the four test scripts, ${width} px, in both languages, with the switch ${receives}`, async () => {
       for (const lang of ['en', 'ja'] as const) {

@@ -41,7 +41,7 @@ describe('the panel: what the program receives', () => {
       ['echo "a  b" c', 'echo', ['runs inside bash, gets:', 'a  b', 'c']],
       ['pwd', 'pwd', ['runs inside bash, gets no arguments']],
       ['source f', 'source', ['runs inside bash, gets:', 'f']],
-      ['[ -f a ]', '[ -f a ]', ['runs inside bash, gets:', '-f', 'a', ']']],
+      ['[ -f a ]', '[', ['runs inside bash, gets:', '-f', 'a', ']']],
       ['f() { :; }; f a', 'f', ['a function of the shell, gets:', 'a']],
       ['f() { :; }; f', 'f', ['a function of the shell, gets no arguments']],
       ['$cmd a', '$cmd', ['receives:', '‹value of `$cmd`›', 'a']],
@@ -318,7 +318,7 @@ describe('the panel: the mark "not in POSIX sh"', () => {
     const table: [string, [string, string[]][]][] = [
       ['if [[ a ]]; then b; fi', [['[[ a ]]', ['`[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.']]]],
       ['[[ a =~ b ]]', [['[[ a =~ b ]]', ['`[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.', '`[[ =~ ]]` regex matching is not POSIX sh (it fails in dash; busybox ash matches it, but a `(` in it is a syntax error). Instead, use `expr` or `grep -E`.']]]],
-      ['[ a == b ]', [['[ a == b ]', ['`==` in `[ ]` or `test` is not POSIX sh (it fails in dash). Instead, use `=`.']]]],
+      ['[ a == b ]', [['[', ['`==` in `[ ]` or `test` is not POSIX sh (it fails in dash). Instead, use `=`.']]]],
       ['source f', [['source', ['`source` is not POSIX sh (it fails in dash). Instead, use `.`.']]]],
       ['f() { local x; }', [['local', ['`local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it).']]]],
       ['cat <<< x', [['<<< x', ['a here-string `<<<` is not POSIX sh (it fails in dash and busybox ash). Instead, use `printf \'%s\\n\' … |` or a here-document.']]]],
