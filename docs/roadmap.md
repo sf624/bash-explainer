@@ -141,6 +141,7 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - `grep "x${!w}" f` with `w='a[@]'`, and a nameref to `a[@]`, give 2 words in bash but are read as one hole.
 - `sed -e 's/a/b/' -e "s/$x/y/" f` shows a worked example of the first script alone.
 - A `$( )` of several rows in a hole puts a raw newline in a note's code span.
+- Reading words with expansions: known overstatements (#615), none fixed: `sed "s/$a/x/"` says `/` ends the pattern though `a\/b` and `[/]` do not; `perl -pe "s'$a'$b'"` says perl expands though `'` delimiters do not; `sed "${n}q"` shows a range `1,5` (sed takes one address); `sed "0,$n d"`; `sed "s/[\x4$n]/y/"` (`escapeIntoHole` does not cover classes); `tr "a$b" x` with `b=-z`; an example shown with a holed second script (`sed -e 's/a/b/' -e "s/$c/d/"`, also on main, see above); `sed "s/${x@Z}/b/"` has no Error note. Omissions: gawk `printf \"$a\"` with `%`, `sub(…,\"$a\")` with `&`, perl `s{$a}{$b}` with `}`, `s/[$x]/` with a newline (sed) or a `/` (perl).
 
 ## Waiting on the maintainer
 

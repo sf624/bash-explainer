@@ -48,11 +48,11 @@ export function embedded(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): Embe
 
 /**
  * The text of a word that gives one field, with each expansion in its double quotes as a hole (`holedContent`). Not where
- * no shell reads the words (Docker's exec form), where `$x` is text; nor for what may give several words (the fields model:
+ * no shell reads the words (Docker's exec form), where `$x` is text; nor in zsh, where `$a[1]` and `$a:t` are subscripts and modifiers the holes do not know; nor for what may give several words (the fields model:
  * `countIn`); nor for what a host pastes before the shell reads the line (`hostPasted`), which may close the quotes.
  */
 function holedWord(cx: Explainer, a: SyntaxNode): Literal | undefined {
-  if (cx.state.noShell || countIn(a, cx.state)) return undefined;
+  if (cx.state.noShell || cx.shell === 'zsh' || countIn(a, cx.state)) return undefined;
   const pasted = cx.opts.hostPasted;
   return holedContent(a, (n) => !givesElements(n) && ![...n.text.matchAll(/\$\{?([A-Za-z_]\w*)/g)].some((m) => pasted?.includes(m[1])));
 }

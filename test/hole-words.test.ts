@@ -456,6 +456,44 @@ describe('words with an expansion read with the expansion as a hole', function (
     assert.strictEqual(nodes.filter((n) => n.layer === 'language' && n.label === '$a').length, 1);
   });
 
+  it('a command inside `[ ]`, `test` or `$( )` says each risk of its holes once, as it does alone', () => {
+    // The sentences of the inner command's own tokens (its subtree, from the token that names it).
+    const sentences = (line: string, name: string, a: Analyzer): string[] => {
+      const all = walk(explained(line, a).items);
+      const at = all.filter((t) => t.kind === 'command' && t.label === name).pop()!;
+      return walk(at.children).map((t) => t.explanation);
+    };
+    const pairs: [string, string, string][] = [
+      ['grep "^$a" f', 'grep', '[ -z "$(grep "^$a" f)" ]'],
+      ['grep "^$a" f', 'grep', 'test -z "$(grep "^$a" f)"'],
+      ['sed -n "${n}p" f', 'sed', '[ "$(sed -n "${n}p" f)" = x ]'],
+      ['sed -n "${n}p" f', 'sed', 'test "$(sed -n "${n}p" f)" = x'],
+    ];
+    for (const a of [en, ja]) {
+      for (const [alone, name, inside] of pairs) {
+        const expected = sentences(alone, name, a);
+        assert.deepStrictEqual(sentences(inside, name, a), expected, inside);
+        // The first hole says its risk in full (and not "the same way").
+        assert.ok(expected.some((e) => /regex|sed|正規表現|スクリプト|アドレス|address|line number|行番号/i.test(e) && !/read the same way|同じように読/.test(e)), alone);
+      }
+    }
+    assert.match(sentences('grep "^$a" f', 'grep', en).join('\n'), /The value of `\$a` is read as a regex: `\.`, `\*`, `\[` and the like in the value have their special meaning/);
+    assert.match(sentences('grep "^$a" f', 'grep', ja).join('\n'), /特別な意味を持つ/);
+  });
+
+  it('in zsh a word with an expansion stays unread: `$a[1]` is a subscript and `$a:t` a modifier there', () => {
+    const src = '#!/bin/zsh\ngrep "$a[1].b"\ngrep "$a:t"\n';
+    for (const [i, word] of [[1, '"$a[1].b"'], [2, '"$a:t"']] as const) {
+      const items = walk(new Analyzer('en').explainLine(parser.parse(src), i, 'zsh').items);
+      assert.deepStrictEqual(items.map((t) => [t.label, t.explanation]), [
+        ['grep', 'Print lines matching a pattern (regex)'],
+        [word, 'search pattern (regex)'],
+        [word, 'Double-quoted string: `$vars` and `$(…)` expand, but no word splitting or globbing (stays one argument)'],
+        ['$a', 'Expands to the value of `a`'],
+      ]);
+    }
+  });
+
   it('says it in Japanese', () => {
     const items = walk(explained('sed "s/$a/$b/"; find . -name "$c*"; date +"$d"; printf "$e"; echo -e "\\t$f"; tr "$g" x; grep "[$h]*$i*"; sed "1i $j"; sed -n "${k}p"; awk "{print \\"$l\\"}"; perl -pe "s/a/$m/"', ja).items);
     const said = items.map((t) => t.explanation).join('\n');
