@@ -10,14 +10,19 @@ import type { CommandSpec, OptionSpec } from '../argv/spec';
  * (`egrep` is `grep -E`). Everything that treats `egrep` as grep (the spec lookup, the regex dialect, the
  * example runner) reads it through `aliasOf`, `canonicalName` and `impliedWords`.
  */
-export interface CommandAlias { as: string; implies?: string[] }
+export interface CommandAlias {
+  as: string;
+  implies?: string[];
+  /** For an awk: whether it has GNU awk's regex escapes (`\y`, `\<`, `\w`…); mawk and nawk (BWK awk) have none. */
+  gnu?: boolean;
+}
 
 export const commandAliases: Record<string, CommandAlias> = {
   egrep: { as: 'grep', implies: ['-E'] },
   fgrep: { as: 'grep', implies: ['-F'] },
-  gawk: { as: 'awk' },
-  mawk: { as: 'awk' },
-  nawk: { as: 'awk' },
+  gawk: { as: 'awk', gnu: true },
+  mawk: { as: 'awk', gnu: false },
+  nawk: { as: 'awk', gnu: false },
   python: { as: 'python3' },
 };
 
@@ -30,6 +35,11 @@ export function aliasOf(name: string): CommandAlias | undefined {
 /** The command whose spec `name` uses (`egrep` → `grep`); the name itself when it is no alias. */
 export function canonicalName(name: string): string {
   return aliasOf(name)?.as ?? name;
+}
+
+/** Whether the awk `name` has GNU awk's regex escapes: `awk` is whichever the system has, and its examples run as gawk. */
+export function awkHasGnuEscapes(name: string): boolean {
+  return aliasOf(name)?.gnu !== false;
 }
 
 /** The words an alias adds in front of its arguments (`egrep` → `-E`). */

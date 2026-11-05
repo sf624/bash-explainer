@@ -7,6 +7,7 @@ import type { ExampleKind, Span, Token } from '../analyzer-types';
 import { rulesOf } from '../argv/parsers';
 import { givenOptions, values } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
+import { awkHasGnuEscapes } from '../dict/aliases';
 import { YQ_SPECS } from '../dict/yq';
 import { explainEscapes } from '../embedded/format';
 import { type Embedded, EMBEDDED, type EmbeddedContext } from '../embedded/registry';
@@ -73,7 +74,7 @@ export function embeddedText(cx: Explainer, lit: Literal, lang: EmbeddedLang, a:
 
 /** Whether the awk command is gawk, or `awk`, whose examples run as gawk; mawk (and nawk) lack its regex escapes. */
 function isGawk(cx: Explainer): boolean {
-  return !['mawk', 'nawk'].includes(cx.command!.cmd.split(' ')[0].split('/').pop()!);
+  return awkHasGnuEscapes(cx.command!.cmd.split(' ')[0]);
 }
 
 function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNode): EmbeddedReading | undefined {
@@ -88,7 +89,7 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
     given: (...names) => given(cx, ...names),
     bash: () => (cx.command?.spec.builtin ? cx.opts.bashVersion ?? DEFAULT_BASH_VERSION : undefined),
     // (`awk` is whichever the system has: its examples run as gawk.)
-    gawk: () => isGawk(cx),
+    awkGnu: () => isGawk(cx),
     shell: cx.shell,
     invalid: () => invalidHow(cx.evidenceAt(a)),
   };
