@@ -20,12 +20,13 @@ function grepP(pattern: string): string[] | undefined {
 const refused = [
   '\\H+', '\\V', '\\N', '\\Nb', '\\e\\[0m', '\\a', '\\y', '\\C', '\\G', '\\g1', '(a)\\g1', '(a)\\g{-1}', '(?<n>a)\\g{n}', '(?<n>a)\\k<n>', '\\o{101}', 'o\\{\\}',
   '[\\h]', '[\\H]', '[\\V]', '[\\e]', '\\x{41}', '[\\x{41}]', '\\1', '(a)\\2', '[[:alpha:]]x', '[[:foo:]]', '(?1)', '(?|a|b)', '(*UTF)', '(?#c)a', "(?'n'a)", '(?x)a b', '\\Q.\\E',
-  '\\X', '\\R', '\\K', '\\pL', '[\\pL]', '\\U', '\\u', '\\E', '\\l', '\\10', '(a)\\10', '[a-\\d]', '[\\d-z]',
+  '\\X', '\\R', '\\K', '\\pL', '[\\pL]', '\\U', '\\u', '\\E', '\\l', '\\10', '(a)\\10', '[a-\\d]', '[\\d-z]', '[\\w-.]', '[\\w-\\d]', '[[:alpha:]-z]', '[^\\s-a]',
 ];
 const shown = [
   '\\d', '\\D+', '\\w+', 'a\\sb', '\\bab', '\\Bb', '\\Aab', 'ab\\z', 'ab\\Z', '\\h', '\\t', '\\x41', '\\x1b\\[', '[\\x41-\\x5a]', '[\\101]', '[\\101-\\132]', '[^\\x00-\\x7F]',
   '\\101', '\\e', '\\cA', '\\o{101}', '[\\d.]', '[\\w-]', '[\\.\\]]', '(a)\\1', '(?<n>a)b', '(?P<n>a)b', '(?:ab)+', 'a(?=b)', '(?<!a)b', '[[:digit:]]', '[^[:space:]]+', '[\\b]', '\\.',
   '\\x{41}', '[\\x07]', '\\a', '\\H', '\\N', '[\\h]', '[\\t-\\r]', '\\<a', 'a\\>', '[a[b]+',
+  '[-\\w.]', '[-\\d.]', '[-\\w]', '[^-\\s]', '[-[:alnum:]]', '[\\w-]', '[]-a]',
 ];
 
 describe('a PCRE example is made only when JavaScript reads every construct as PCRE does', () => {
@@ -47,6 +48,16 @@ describe('a PCRE example is made only when JavaScript reads every construct as P
   it('what is known to mean the same is shown, so the refusal is no way out', () => {
     for (const p of ['\\d', '\\D+', '\\w+', 'a\\sb', '\\bab', '\\Aab', '\\h', '\\t', '\\x41', '[\\x41-\\x5a]', '[\\101]', '[^\\x00-\\x7F]', '(a)\\1', '(?<n>a)b', '(?P<n>a)b', '[\\.\\]]', '[[:digit:]]', '\\H', '\\N', '[\\h]', '\\e', '\\x{41}']) {
       assert.ok(toJsRegex(p, 'pcre'), p);
+    }
+  });
+
+  it('a "-" that opens a class is a member, and the example stays: `[-\\w.]`', () => {
+    for (const p of ['[-\\w.]', '[-\\d.]', '[-\\w]', '[^-\\s]', '[-[:alnum:]]', '[\\w-]']) assert.ok(toJsRegex(p, 'pcre'), p);
+    for (const line of ["grep -oP '[-\\w.]+' f", "grep -oP '[-\\d.]+' f", "grep -oP '[^-\\s]+' f"]) assert.ok(examplesOf(line).length > 0, line);
+    // (One after an item is a range with a set at an end, which grep -P refuses.)
+    for (const p of ['[\\w-.]', '[a-\\d]', '[\\w-\\d]', '[[:alpha:]-z]', '[^\\s-a]']) {
+      assert.strictEqual(toJsRegex(p, 'pcre'), undefined, p);
+      assert.strictEqual(grepP(p), undefined, p);
     }
   });
 

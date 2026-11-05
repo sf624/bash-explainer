@@ -95,6 +95,9 @@ describe('the perl runner agrees with perl on the less common parts', () => {
   const more: string[][] = [
     ['-n', '-e', 'print'], ['-l', '-n', '-e', 'print'], ['-F,', '-lne', 'print $F[0]'], ['-F/,/', '-ane', 'print $F[-1]'],
     ['-wlne', 'print'],
+    // `$` and `\Z` also match before the newline that ends the line `$_` keeps (not with -l, `\z` or /m).
+    ['-ne', 'print "m" if /^$/'], ['-ne', 'print "m" if /z$/'], ['-ne', 'print "m" if /z\\z/'], ['-ne', 'print "m" if /z\\Z/'], ['-pe', 's/z$/Z/'],
+    ['-lne', 'print "m" if /^$/'], ['-ne', 'print "m" if /^\\w+ \\d+ \\w$/'], ['-ne', 'print "m" if /[$]/'], ['-ne', 'print "m" if /,$|^$/'],
   ];
   cases.push(...more);
   for (const words of cases) {

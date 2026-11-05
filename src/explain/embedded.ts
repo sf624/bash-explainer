@@ -71,6 +71,11 @@ export function embeddedText(cx: Explainer, lit: Literal, lang: EmbeddedLang, a:
   return cx.examplesAt(a, () => embeddedTextInner(cx, lit, lang, a));
 }
 
+/** Whether the awk command is gawk, or `awk`, whose examples run as gawk; mawk (and nawk) lack its regex escapes. */
+function isGawk(cx: Explainer): boolean {
+  return !['mawk', 'nawk'].includes(cx.command!.cmd.split(' ')[0].split('/').pop()!);
+}
+
 function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNode): EmbeddedReading | undefined {
   // (A line the tool refuses runs no program: `grep -E -F PATTERN` reads the pattern in no flavour.)
   if (cx.command?.parse.refused) return undefined;
@@ -82,6 +87,8 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
     letters: () => new Set(givenOptions(cx.command!.parse).map(({ role }) => role.flag.slice(1))),
     given: (...names) => given(cx, ...names),
     bash: () => (cx.command?.spec.builtin ? cx.opts.bashVersion ?? DEFAULT_BASH_VERSION : undefined),
+    // (`awk` is whichever the system has: its examples run as gawk.)
+    gawk: () => isGawk(cx),
     shell: cx.shell,
     invalid: () => invalidHow(cx.evidenceAt(a)),
   };
@@ -265,6 +272,8 @@ function embeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: Syn
       const opts = awkOptions(cx);
       const ex = opts && awkExample(text, opts);
       if (!ex) break;
+      // (The example reads the regex as gawk does; mawk has none of `\y`, `\<`, `\w`…, so it would show what mawk does not.)
+      if (!isGawk(cx) && /\\[yBwWsS<>]/.test(text)) break;
       // A program of `BEGIN` rules alone reads no input.
       const src = ex.readsInput ? inputSource(cx) : NO_INPUT;
       // The names of the files a glob gives are not known, so neither is what `FILENAME` holds.

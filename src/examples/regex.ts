@@ -40,9 +40,10 @@ function posixBracket(src: string, i: number, sedEscapes: boolean, awk: boolean)
       continue;
     }
     if (awk && c === '\\') {
-      // (gawk reads `\b` as a backspace here, and a backslash before anything else it knows not: `[\]]` is the class of `]`.)
-      if (src[j + 1] !== 'b' && src[j + 1] !== '\\') return undefined;
-      out += src[j + 1] === 'b' ? '\\x08' : '\\\\';
+      // (gawk reads `\b` as a backspace here, and a backslash before another character is that character: `[\]]` is the class of `]`, `[\.]` of ".", `[\d]` of "d".)
+      if (j + 1 >= src.length) return undefined;
+      const k = src[j + 1];
+      out += k === 'b' ? '\\x08' : /[\\\]\[^-]/.test(k) ? `\\${k}` : k;
       j += 2;
       continue;
     }
@@ -102,7 +103,7 @@ function sedCharacters(src: string): string | undefined {
  * only if the reader's tables say what JavaScript reads for it (`pcreJs`, `pcreCharCode` in src/embedded/regex.ts):
  * `\H`, `\N`, `\e`, `\g1`, `\y`, `[\h]` and the rest that JavaScript reads otherwise or not at all give no example.
  */
-function pcreToJs(src: string): string | undefined {
+function pcreToJs(src: string, perlEnd = false): string | undefined {
   let out = '';
   const total = groupCount(src);
   for (let i = 0; i < src.length;) {
@@ -129,6 +130,12 @@ function pcreToJs(src: string): string | undefined {
       if (!cls) return undefined;
       out += cls[0];
       i = cls[1];
+      continue;
+    }
+    // (Perl's `$` and `\Z` also match before the newline that ends the text, which `$_` keeps unless -l took it off.)
+    if (perlEnd && (c === '$' || src.startsWith('\\Z', i))) {
+      out += '(?=\\n?$)';
+      i += c === '$' ? 1 : 2;
       continue;
     }
     if (c === '\\') {
@@ -183,12 +190,15 @@ function pcreClassToJs(src: string, at: number): [string, number] | undefined {
   let out = '[';
   if (src[i] === '^') { out += '^'; i++; }
   // (`]` first is a member in PCRE, and would close an empty class in JavaScript.)
-  if (src[i] === ']') { out += '\\]'; i++; }
-  // (Whether the item before is a set such as `\d`: a "-" next to one is a range PCRE2 refuses.)
+  let before = false;
+  if (src[i] === ']') { out += '\\]'; i++; before = true; }
+  // (Whether the item before is a set such as `\d`: a "-" next to one is a range PCRE2 refuses, but not a "-" that opens the class: `[-\w.]`.)
   let set = false;
   while (i < src.length && src[i] !== ']') {
     const wasSet = set;
+    const hadItem = before;
     set = false;
+    before = true;
     const cls = /^\[:(\w+):\]/.exec(src.slice(i));
     if (cls) {
       if (!CLASS_TO_JS[cls[1]]) return undefined;
@@ -197,7 +207,7 @@ function pcreClassToJs(src: string, at: number): [string, number] | undefined {
       set = true;
       continue;
     }
-    if (src[i] === '-' && src[i + 1] !== ']' && (wasSet || /^\\[dDwWsShHvVpPNR]|^\[:/.test(src.slice(i + 1)))) return undefined;
+    if (src[i] === '-' && src[i + 1] !== ']' && (wasSet || (hadItem && /^\\[dDwWsShHvVpPNR]|^\[:/.test(src.slice(i + 1))))) return undefined;
     if (src[i] === '[' && /^\[[:.=]/.test(src.slice(i))) return undefined;
     if (src[i] === '\\') {
       const e = pcreEscapeToJs(src, i, 0, true);
@@ -217,7 +227,7 @@ function pcreClassToJs(src: string, at: number): [string, number] | undefined {
  * Translate a regex to JavaScript syntax. Returns undefined for constructs JavaScript cannot
  * express (possessive quantifiers, atomic groups, equivalence classes…), so no example is made.
  */
-export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: boolean; sedEscapes?: boolean; awk?: boolean } = {}): JsRegex | undefined {
+export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: boolean; sedEscapes?: boolean; awk?: boolean; perlEnd?: boolean } = {}): JsRegex | undefined {
   if (opts.sedEscapes) {
     const plain = opts.awk ? awkCharacters(src) : sedCharacters(src);
     if (plain === undefined) return undefined;
@@ -250,7 +260,7 @@ export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: bool
       i = inline[0].length;
     }
     if (/\(\?>|[*+?}][+]/.test(src.slice(i))) return undefined;
-    const js = pcreToJs(src.slice(i));
+    const js = pcreToJs(src.slice(i), opts.perlEnd);
     if (js === undefined) return undefined;
     out = js;
     i = src.length;
