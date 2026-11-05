@@ -17,7 +17,7 @@ import { fdName, keywords } from '../dict/syntax';
 import { yqSpecsOf } from '../dict/yq';
 import { judgeYq } from '../embedded/yq';
 import { lineLabel, lineListLabel, type Text, tx } from '../i18n';
-import { shorten } from '../label';
+import { bracket as bracketLabel, labelText, shorten } from '../label';
 import { plainOf } from '../messages-levels';
 import { fact } from '../messages';
 import { TURNS_ALIASES_ON } from '../messages-alias';
@@ -31,7 +31,7 @@ import { docLine, option, type ShellState } from '../semantics/state';
 import { wordMeaning } from '../semantics/words';
 import { isPlainWord, literalContent, staticWordValue, surelyHasSlash } from '../staticword';
 import { returnInSubstitution, scopeOf } from '../substitution-tokens';
-import { field, fields, redirectionsOf, type SyntaxNode, token } from '../syntax/tree';
+import { field, fields, redirectionsOf, type SyntaxNode, token, wordsText } from '../syntax/tree';
 import { commandTest } from '../testexpr';
 import { readByCommand } from '../tokenmarks';
 import { bashTest, readArgs, testArgs } from './argv';
@@ -53,8 +53,6 @@ interface CommandHead {
   unnamed?: true;
   /** The sections of the manual on what the name runs: a builtin's, a function's (3.3), an alias's (6.6). */
   refs?: readonly string[];
-  /** What the summary and the sentence of the line say, where the row says more than the spec's summary (`[`). */
-  brief?: string;
   /** The spec of `test` or `[`, when the name runs one of them (src/semantics/names.ts, `testSpecOf`). */
   test?: CommandSpec;
   /** The command whose spec reads the words, when it is not `name`: what an alias runs (`alias g=grep`). */
@@ -280,7 +278,8 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   // (After an alias whose text ends with a blank, bash reads the next word as an alias too: 6.6.)
   if (head.res?.kind === 'alias') argToks = aliasArguments(cx, n, head.res, argToks);
   // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.
-  if (head.test) argToks = readByCommand(testArgs(cx, n, commandTest(head.test, args, bashTest(cx, head.test)), head.test.closingOperand !== undefined, !!head.test.builtin));
+  const bracket = head.test?.closingOperand !== undefined;
+  if (head.test) argToks = readByCommand(testArgs(cx, n, commandTest(head.test, args, bashTest(cx, head.test)), bracket, !!head.test.builtin));
   if (!other) {
     unreadStdin(cx, n, read.parse, args, head.name);
     commandExampleFor(cx, n, head.spec, args, read.parse);
@@ -288,6 +287,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   for (const a of args) {
     cx.examplesAt(a, () => wordExample(cx, a, { name: head.name, node: n, args, ...(other ? {} : { spec: head.spec }) }));
   }
+  // `[` is a command and `]` its last argument: its token is the command's, with the condition's tokens and `]` under it.
   const t = cx.tok(n, head.kind, head.explanation, sortTokens([
     ...prefix, ...head.nameTokens, ...argToks, ...cx.subs(redirs),
   ]), shorten((word ?? nameNode).text));
@@ -296,8 +296,15 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   // (A program's token rests on its spec, and the tokens it reads on the token: `tokenBasisFor`. The analyzer drops it
   // with `notes.basis` off.)
   if (head.basis) t.basis = head.basis;
-  t.summary = `${head.name}: ${head.brief ?? head.explanation}${name?.runs === 'builtin' ? name.said.short : ''}`;
-  if (head.refs?.length) t.refs = head.refs;
+  t.summary = bracket ? cx.s(`条件判定 ${shorten(wordsText(n), 40)}`, `test ${shorten(wordsText(n), 40)}`) : `${head.name}: ${head.explanation}${name?.runs === 'builtin' ? name.said.short : ''}`;
+  if (head.refs?.length) t.refs = bracket ? [...head.refs, '6.4'] : head.refs;
+  if (bracket) {
+    // (The word `[` by itself, for the reading tree: the builtin's, as `test` is, so its section is 4.1.)
+    t.nameWord = { text: cx.text(head.kind === 'builtin' ? 'cmd-bracket-builtin-name' : 'cmd-bracket-program-name'), refs: head.refs };
+    // (The test itself, as the connector between the stages of a pipeline names the command: `[ a = b ]` of `[ a = b ] | cat`.)
+    const parts = bracketLabel(n);
+    t.stage = parts.some((p) => p.placeholder) ? labelText(parts) : shorten(wordsText(n));
+  }
   if (head.kind === 'builtin') t.explanation += shellEffectNote(cx, n, shellEffectOf(head.spec, read.parse.roles.map((r) => [args[r.word], r.role] as const)));
   // The deepest subcommand gives the summary (`git stash push`, `docker compose -f x run`). (The names are the
   // words' values: `yq 'e'` names `e`.)
@@ -308,9 +315,9 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
     summary = r.role.spec.summary;
   }
   // (The sentence of the line says the command with the same summary as its token, src/linesentence.ts.)
-  const said: CommandSaid = { names: [head.name, ...path], kind: head.kind, options: optionsSaid(argToks) };
+  const said: CommandSaid = { names: [head.name, ...path], kind: head.kind, options: optionsSaid(argToks), ...(bracket ? { test: true as const } : {}) };
   if (summary) said.what = plainOf(cx.t(summary));
-  else if (head.spec) said.what = plainOf(head.brief ?? head.explanation);
+  else if (head.spec) said.what = plainOf(head.explanation);
   cx.memo(COMMAND_SAID).set(n, said);
   if (summary) t.summary = `${said.names.join(' ')}: ${said.what}`;
   return t;
@@ -318,10 +325,10 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
 
 /**
  * What the sentence of the line (src/linesentence.ts) says of a simple command: its name and the subcommands it runs,
- * what it is (`Kind`), what it does (its spec's summary, as its token's), and the options
+ * what it is (`Kind`), what it does (its spec's summary, as its token's), whether it is `test` or `[`, and the options
  * given, each with what it does (the tokens' texts: a group of letters, `-rn`, gives its letters).
  */
-export interface CommandSaid { names: string[]; kind: Kind; what?: string; options: { name: string; what: string }[] }
+export interface CommandSaid { names: string[]; kind: Kind; what?: string; test?: true; options: { name: string; what: string }[] }
 export const COMMAND_SAID = memoKey<CommandSaid>('commandSaid');
 
 function optionsSaid(toks: readonly Token[]): CommandSaid['options'] {
@@ -614,14 +621,11 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
     // (A builtin's section, or that of a program the manual describes: `bash`, 6.1.)
     const own = builtin ? builtinSections(name, spec.builtin === 'special') : programSections(name);
     const basis = programBasis(cx, name, spec);
-    // (`[`, the builtin: its row says what kind of command it is, the point of writing `[` rather than `[[`, and so
-    // cites the conditional expressions, 6.4, whatever is known of its words. zsh splits and globs no unquoted variable,
-    // but drops one that is empty all the same.)
-    const closed = builtin && !!spec.closingOperand;
     return {
-      name, res: ran, spec, ...testOf(res), kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(own.length ? { refs: closed ? [...own, '6.4'] : own } : {}), ...(basis ? { basis } : {}),
-      explanation: closed ? cx.text('cmd-bracket-builtin', { zsh: cx.shell === 'zsh' }) : cx.t(spec.summary),
-      ...(closed ? { brief: cx.t(spec.summary) } : {}),
+      name, res: ran, spec, ...testOf(res), kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(own.length ? { refs: own } : {}), ...(basis ? { basis } : {}),
+      explanation: builtin && spec.closingOperand // (zsh splits and globs no unquoted variable, but drops one that is empty all the same.)
+        ? cx.text('cmd-bracket-builtin', { zsh: cx.shell === 'zsh' })
+        : cx.t(spec.summary),
     };
   }
   // (A quoted name is never an alias: bash looks up no alias for `"ll"` or `\ll`, so only a function of a system stays.)

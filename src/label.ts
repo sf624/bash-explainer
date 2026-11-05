@@ -200,7 +200,7 @@ function sequence(n: SyntaxNode): LabelPart[] {
 }
 
 /** A command written `[ … ]` (by its spelling, as the colours: src/testexpr.ts): whole when short, else its brackets. */
-const bracket = (n: SyntaxNode): LabelPart[] => {
+export const bracket = (n: SyntaxNode): LabelPart[] => {
   const text = wordsText(n);
   return flat(text).length <= LABEL_LIMIT && !text.includes('\n') ? [code(flat(text))] : [code('['), placeholder('expression'), code(']')];
 };

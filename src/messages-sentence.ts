@@ -88,6 +88,7 @@ export const S = {
   option: (lang: Lang, name: string, what: string): string => pick(lang, `${name}（${what}）`, `${name} (${what})`),
   calls: (lang: Lang, name: string, io: string): string => (lang === 'ja' ? `関数${name}を呼び出す${io ? `（${io}）` : ''}` : `calls the function ${name}${io ? `, with ${io}` : ''}`),
   /** `[ … ]` or `test`: the condition its words make. */
+  tests: (lang: Lang, written: string, io: string): string => (lang === 'ja' ? `${written}の条件を判定する${io ? `（${io}）` : ''}` : `tests the condition in ${written}${io ? `, with ${io}` : ''}`),
   /** A command with no name: the variables it sets (`assigned`), or none and only its redirections. */
   sets: (lang: Lang, assigned: string, io: string): string => (lang === 'ja' ? `${assigned}代入する${io ? `（${io}）` : ''}` : `sets ${assigned}${io ? `, with ${io}` : ''}`),
   /** One variable set, and its value. */

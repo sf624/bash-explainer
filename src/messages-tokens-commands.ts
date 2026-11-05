@@ -44,6 +44,14 @@ export const COMMAND_TEXTS = {
   'cmd-prefix-assignment-env': tokenText<{ what: string }>(({ what }) => [
     `このコマンドの実行中だけ設定される環境変数: ${what}`,
     `Environment variable set only for this command: ${what}`]),
+  /** `[ -n x ]` where `[` is the builtin: the name's token. */
+  'cmd-bracket-builtin-name': tokenText(() => [
+    'コマンド `[`（`test` の別名）',
+    'Command `[` (an alias of `test`)']),
+  /** `[ -n x ]` where `[` is a program (`command -p [ -n x ]`). */
+  'cmd-bracket-program-name': tokenText(() => [
+    'プログラム `[`（`test` と同じ）',
+    'The program `[` (the same as `test`)']),
   /** `{echo,hi}`: brace expansion gives the command (`word`: as written, `expanded`: the words it gives, `command`: the first, `off`: a caveat on the braces, `what`: the command's own explanation). */
   'cmd-brace-expansion-command': tokenText<{ word: string; expanded: string; command: string; off: string; what: string }>(({ word, expanded, command, off, what }) => [
     `ブレース展開で \`${word}\` は \`${expanded}\` になるので、コマンド \`${command}\` を実行する（\`{ }\` のグループではない）${off}。${what}`,

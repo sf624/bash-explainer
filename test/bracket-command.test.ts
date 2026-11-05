@@ -7,6 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import type { Token } from '../src/analyzer-types';
+import { readingNodes } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { problemCodes } from '../src/linesentence';
@@ -53,26 +54,49 @@ describe('`[` is a command with arguments, as `test` is', () => {
         ? 'Command `[` (an alias of `test`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so `[` and `]` need spaces around them, and the arguments inside undergo word splitting and globbing (`[[ ]]` does not)'
         : 'コマンド `[`（`test` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、`[` と `]` の前後に空白が要り、中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）');
       assert.deepStrictEqual(t.children.filter((c) => c.label === '['), [], 'no row of the name under the command');
-      const summary = explain('[ -a file ]', lang).summary;
-      assert.ok(summary.startsWith('[: '), summary);
-      assert.ok(!summary.includes('[ -a file ]') && !summary.includes(t.explanation), summary);
-      assert.strictEqual(explain('[ -a file ]', lang).summary.replace('[: ', 'test: ').replace(/（.*）|\(same as.*`\]`\)/, ''), explain('test -a file', lang).summary.replace(/（.*）|\(same as `\[ \]`\)/, ''));
+      // (The summary of the line, and so `--format json`'s `summary`, says the test as it did: `test` and the words.)
+      assert.strictEqual(explain('[ -a file ]', lang).summary, lang === 'en' ? 'test [ -a file ]' : '条件判定 [ -a file ]');
     });
   }
 
-  it('is said in "In short" as `test` is', () => {
-    for (const [a, b] of [
-      ['[ -a file ]', 'test -a file'],
-      ['[ -a f ] && [ -b g ] && [ -c h ] && [ -d i ]', 'test -a f && test -b g && test -c h && test -d i'],
-      ['[ -a f ] > o', 'test -a f > o'],
-      ['! [ -a f ]', '! test -a f'],
-    ]) {
-      assert.strictEqual(explain(a).sentence!.replace(/`\[`/g, '`test`').replace(/ \(evaluate.*`\]`\)\)/, ''), explain(b).sentence!.replace(/ \(evaluate.*`\[ \]`\)\)/, ''));
-    }
-    assert.strictEqual(explain('[ -a file ]').sentence, 'Runs `[` (evaluate a conditional expression; exit 0 if true (same as `test`, with a last argument `]`)).');
-    assert.strictEqual(explain('if [ -a f ]; then :; fi').sentence, 'If `[` succeeds, runs `:`.');
+  it('is said in "In short" as the test it is, not as a command that is run', () => {
+    const said = (src: string, lang: 'en' | 'ja' = 'en', line = 0) => explain(src, lang, line).sentence;
+    assert.strictEqual(said('[ -a file ]'), 'Tests the condition in `[ … ]`.');
+    assert.strictEqual(said('[ -a file ]', 'ja'), '`[ … ]` の条件を判定する。');
+    assert.strictEqual(said('[ -a file ] > o'), 'Tests the condition in `[ … ]`, with stdout (fd 1) to `o`.');
+    assert.strictEqual(said('[ -f x ] && echo y'), 'Tests the condition in `[ … ]`; if that succeeds, runs `echo` (print arguments to stdout, separated by spaces).');
+    assert.strictEqual(said('[ -f x ] && echo y', 'ja'), '`[ … ]` の条件を判定する。成功したら、`echo`（引数を空白区切りで標準出力に表示する）を実行する。');
+    assert.strictEqual(said('if [ -a f ]; then :; fi'), 'If the test `[ … ]` succeeds, runs `:` (no-op that always succeeds; used in `while :` or to evaluate expansions).');
     // (A line that closes the block has no record of the command, which the name says.)
-    assert.ok(explain('while [ -a f ]\ndo\n  :\ndone', 'en', 3).sentence!.includes('`[`'));
+    assert.strictEqual(said('while [ -a f ]\ndo\n  :\ndone', 'en', 3), '`done` ends the `while` loop of line 1: repeats line 3 while the test `[ … ]` succeeds.');
+    // (The other commands of the line keep what they were said with: `-p` of `mkdir`.)
+    assert.ok(said('[ -d "$d" ] || mkdir -p "$d"')!.includes('`-p`'), said('[ -d "$d" ] || mkdir -p "$d"'));
+  });
+
+  it('is the connector of a pipeline with its words, as `test` is with its name', () => {
+    const connector = (src: string, lang: 'en' | 'ja' = 'en') => {
+      const all = (rs: ModelRow[]): ModelRow[] => rs.flatMap((r) => [r, ...all(r.children)]);
+      return all(rowModel(explain(src, lang), { depth: 2, receives: false }, lang).rows).filter((r) => r.connector).map((r) => r.text);
+    };
+    assert.deepStrictEqual(connector('[ -f c ] | cat'), ['stdout of `[ -f c ]` → stdin of `cat`']);
+    assert.deepStrictEqual(connector('[ -f c ] | [ -r d ]'), ['stdout of `[ -f c ]` → stdin of `[ -r d ]`']);
+    assert.deepStrictEqual(connector('/usr/bin/[ a ] | cat'), ['stdout of `/usr/bin/[ a ]` → stdin of `cat`']);
+    assert.deepStrictEqual(connector('[ -f c ] |& cat'), ['stdout and stderr of `[ -f c ]` → stdin of `cat`']);
+    assert.deepStrictEqual(connector('[ -f c ] | cat', 'ja'), ['`[ -f c ]` の標準出力 → `cat` の標準入力']);
+    assert.deepStrictEqual(connector('[ "$some_long_variable_name" = "another long value here" ] | cat'), ['stdout of `[ ‹expression› ]` → stdin of `cat`']);
+    assert.deepStrictEqual(connector('test -f c | cat'), ['stdout of `test` → stdin of `cat`']);
+  });
+
+  it('says the word `[` by itself in the reading tree, as it did when the word had a token of its own', () => {
+    const name = (src: string, line = 0) => readingNodes(explain(src, 'en', line).reading!).find((n) => n.kind === 'commandName' && n.label === '[')!;
+    const builtin = name('[ -a file ]');
+    assert.strictEqual(builtin.text, 'Command `[` (an alias of `test`)');
+    assert.deepStrictEqual(builtin.refs, ['3.7.1', '3.7.2', '4.1']);
+    assert.strictEqual(builtin.basis, undefined);
+    assert.strictEqual(builtin.name?.runs, 'builtin');
+    const program = name('enable -n [\n[ -f x ]', 1);
+    assert.strictEqual(program.text, 'The program `[` (the same as `test`)');
+    assert.strictEqual(program.basis, undefined);
   });
 
   it('receives its words as `test` does: the name, the words, `]`; the name is no chip of a builtin, and is one of a program', () => {
@@ -97,14 +121,12 @@ describe('`[` is a command with arguments, as `test` is', () => {
     assert.deepStrictEqual(t.children.filter((c) => c.kind === 'test').map((c) => c.label), ['-a file']);
   });
 
-  it('cites the builtin and the conditional expressions; a program `[` the manual does not describe cites no 6.4', () => {
+  it('cites the builtin and the conditional expressions, and so does a program `[`', () => {
     assert.deepStrictEqual(top('[ -a file ]').refs, ['4.1', '6.4']);
-    assert.deepStrictEqual(top('[ -a file ]').children[0].refs, ['4.1', '6.4']);
     // (Words not known: no condition is explained, and the command still says it evaluates one.)
     assert.deepStrictEqual(top('[ "$@" ]').refs, ['4.1', '6.4']);
     const program = explain('enable -n [\n[ -f x ]', 'en', 1).items[0];
-    assert.deepStrictEqual([program.kind, program.label, program.refs], ['command', '[', ['3.7.2']]);
-    assert.strictEqual(program.children[0].refs, undefined);
+    assert.deepStrictEqual([program.kind, program.label, program.refs], ['command', '[', ['3.7.2', '6.4']]);
   });
 
   it('keeps the problems attached to `[`', () => {

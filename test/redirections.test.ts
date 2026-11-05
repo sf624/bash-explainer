@@ -81,7 +81,7 @@ describe('redirections of a simple command', () => {
     const t = (src: string) => allTokens(explain(src).items).find((x) => x.kind === 'test')!;
     assert.equal(t('[ a = b ] >/dev/null').label, 'a = b');
     assert.equal(explain('[ a = b ] >/dev/null').items[0].label, '[ a = b ] >/dev/null');
-    assert.match(explain('[ a = b ] >/dev/null').summary, /^\[: Evaluate a conditional expression/);
+    assert.equal(explain('[ a = b ] >/dev/null').summary, 'test [ a = b ]');
     assert.equal(explain('[ a = b ] >o && echo y').items[0].label, '[ a = b ] && echo');
     assert.equal(explain('x | [ a ] >o').items[0].label, 'x | [ a ]');
     assert.equal(explain('! [ a ] >o').items[0].label, '! [ a ]');

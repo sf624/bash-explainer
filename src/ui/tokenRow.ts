@@ -62,6 +62,8 @@ export interface TokenRow {
   refs?: readonly string[];
   /** The chip and the try-it of what it rests on, where that is bash's behaviour rather than the manual. */
   basis?: NoteBasis;
+  /** How a pipeline's connector names the command, where its label is not enough (`[ -f c ]` for the command `[`: `Token.stage`). */
+  stage?: string;
 }
 
 /** The strongest level among warnings. */
@@ -86,6 +88,7 @@ export function tokenRow(tok: Token, lang: Lang): TokenRow {
     value: tok.value,
     refs: tok.refs,
     basis: partBasis(tok, lang),
+    ...(tok.stage ? { stage: tok.stage } : {}),
   };
 }
 
