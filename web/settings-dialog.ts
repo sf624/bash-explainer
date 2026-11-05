@@ -9,7 +9,8 @@
 // is no column for it (the narrow layout, the compare page up to 1000 px) it is a modal dialog and takes the whole window
 // (page.css).
 // It comes back as it was left: the sections open, the search and the scroll (docs/design/chrome-redesign.md, C6).
-import { closeSheet, narrow, reopenSheet, sheetMoves, stillSheets } from './layout';
+import type { EditorPlace } from './editor-place';
+import { closeSheet, narrow, reopenSheet, SHEET_CLOSES_AT_ONCE, sheetMoves, stillSheets } from './layout';
 import type { AutoShell } from '../src/dialect';
 import { Lang } from '../src/i18n';
 import { autoShellText } from '../src/messages-shell';
@@ -39,9 +40,10 @@ export interface SettingsHost {
   setTheme(t: Theme): void;
   /** The editor's pane, whose top the sheet starts at side by side. */
   pane(): HTMLElement | null;
-  /** Whether the editor's cursor line is on the screen, and bringing it back: its text rewraps when the panes change their width. */
-  cursorInView(): boolean;
-  showCursor(): void;
+  /** The reader's place in the editor (web/editor-place.ts): its text rewraps when the panes change their width. */
+  notePlace(): EditorPlace | undefined;
+  closingPlace(opened: EditorPlace): EditorPlace;
+  keepPlace(place: EditorPlace): void;
   /** The shell the script reads as, and where from: the Shell setting's "Auto (now: bash, from #!)". */
   shellReading(): AutoShell | undefined;
 }
@@ -86,9 +88,9 @@ export class SettingsDialog {
   private scroll = 0;
   /** The sheet's width that the descriptions were cut for. */
   private fitted = 0;
-  /** What holds its width while the sheet moves (`freeze`), and whether the cursor's line is to be kept on the screen. */
+  /** What holds its width while the sheet moves (`freeze`), and the reader's place in the editor when it opened. */
   private frozen: HTMLElement[] = [];
-  private cursorKept = false;
+  private opened?: EditorPlace;
   /** Each description's own nodes, kept whole while `fitDescs` cuts what it shows. */
   private whole = new WeakMap<HTMLElement, Node[]>();
 
@@ -125,8 +127,13 @@ export class SettingsDialog {
       void file.text().then((text) => this.importText(text));
     });
     // Sliding out, coming back and a swipe are the sheet's classes (web/layout.ts), and a move ends in its transition: ended,
-    // or cancelled (another took its place, or reduced motion came on).
-    new MutationObserver(() => this.moving()).observe(dialog, { attributeFilter: ['class'] });
+    // or cancelled (another took its place, or reduced motion came on). Or in the dialog's closing: a microtask later, so that
+    // the panes take their width back before anything is drawn.
+    new MutationObserver(() => this.moving()).observe(dialog, { attributeFilter: ['class', 'open'] });
+    // (With reduced motion nothing moves before the close: the panes hold their width from here.)
+    dialog.addEventListener(SHEET_CLOSES_AT_ONCE, () => {
+      if (!this.modal) this.freeze();
+    });
     for (const end of ['transitionend', 'transitioncancel'] as const) {
       dialog.addEventListener(end, (e) => {
         if (e.target === dialog) this.restIfStill();
@@ -175,6 +182,7 @@ export class SettingsDialog {
     if (!this.dialog.open || this.dialog.classList.contains('closing') || this.modal === this.shouldBeModal()) return;
     this.keepFocus(() => {
       this.reopening++;
+      this.opened = undefined;
       this.dialog.close();
       this.show();
     });
@@ -188,21 +196,20 @@ export class SettingsDialog {
     if (reopenSheet(this.dialog) || this.dialog.open) return;
     this.clearing = undefined;
     this.modal = this.shouldBeModal();
-    this.cursorKept = !this.modal && this.host.cursorInView();
+    this.opened = this.modal ? undefined : this.host.notePlace();
     const active = document.activeElement;
     this.opener ??= active instanceof HTMLElement && active !== document.body ? active : document.getElementById('settings-open');
     this.render();
     this.placeTop();
     const slides = !this.modal && !stillSheets();
-    if (slides) {
-      this.freeze();
-      this.dialog.classList.add('holding');
-    }
+    if (!this.modal) this.freeze();
+    if (slides) this.dialog.classList.add('holding');
     // A modal sheet shuts the page behind it (the browser keeps the focus in it); side by side the panes
     // stay in use, and the focus goes into the sheet and back by hand.
     if (this.modal) this.dialog.showModal();
     else this.dialog.show();
     this.fitDescs();
+    if (this.opened) this.host.keepPlace(this.opened);
     // The frame that rewraps the panes' text is the long one, with the sheet's first: the motion starts after it, so that it
     // does not lose its first part to that frame. (Without motion, the panes are there at once.)
     if (slides) requestAnimationFrame(() => requestAnimationFrame(() => this.dialog.classList.remove('holding')));
@@ -266,10 +273,7 @@ export class SettingsDialog {
   /** A swipe has begun, or the sheet is sliding out: the panes are about to follow. */
   private moving(): void {
     const c = this.dialog.classList;
-    if (!this.modal && !stillSheets() && (c.contains('dragging') || c.contains('closing'))) {
-      this.cursorKept ||= this.host.cursorInView();
-      this.freeze();
-    }
+    if (!this.modal && (c.contains('dragging') || c.contains('closing'))) this.freeze();
     this.restIfStill();
   }
 
@@ -285,10 +289,12 @@ export class SettingsDialog {
   }
 
   /**
-   * The sheet has come to rest: the panes take their width from the page again. Their text has rewrapped, and the editor's
-   * cursor line, if it was on the screen, is still there. (The explanation keeps its own row: media/panel.js.)
+   * The sheet has come to rest: the panes take their width from the page again. Beside an open sheet that is the width they
+   * held, and nothing moves. A closed sheet gives them back their room: the editor's text rewraps, and the reader's place
+   * stays (read here, before the text rewraps). (The explanation keeps its own row: media/panel.js.)
    */
   private settled(): void {
+    const place = this.opened && !this.dialog.open ? this.host.closingPlace(this.opened) : undefined;
     for (const part of this.frozen) {
       part.style.removeProperty('width');
       // (No `style=""` left behind, on what had no style before.)
@@ -296,8 +302,10 @@ export class SettingsDialog {
     }
     this.frozen = [];
     this.dialog.classList.remove('moving');
-    if (this.cursorKept) this.host.showCursor();
-    this.cursorKept = false;
+    if (place) {
+      this.opened = undefined;
+      this.host.keepPlace(place);
+    }
   }
 
   /** The gear again shuts the sheet (or, while it slides out, brings it back). */

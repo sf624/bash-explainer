@@ -244,6 +244,9 @@ export function setUpProblems(
 
 const closing = new WeakMap<HTMLDialogElement, () => void>();
 
+/** Fired on a sheet about to close with no motion, while what lies beside it is still as it was. */
+export const SHEET_CLOSES_AT_ONCE = 'sheetclosesatonce';
+
 /** Reduced motion: a sheet is there or gone at once. */
 export const stillSheets = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -270,6 +273,7 @@ export function closeSheet(sheet: HTMLDialogElement): void {
     // (A swipe has left the sheet where the finger let go: it opens at its place next time.)
     sheet.classList.remove('dragging');
     sheet.style.transform = '';
+    sheet.dispatchEvent(new Event(SHEET_CLOSES_AT_ONCE));
     sheet.close();
     return;
   }
