@@ -98,14 +98,12 @@ class Converter {
   }
 
   /** Adds the tokens and comments in the text of `owner` that its children do not cover, up to `end`. */
-  fill(owner: Mut, to?: number): void {
+  fill(owner: Mut, end = owner.lineEnd ?? owner.endIndex): void {
     const kids = [...owner.children].sort((a, b) => a.startIndex - b.startIndex);
     // A node covers its children, whatever range its parser gave it.
     for (const k of kids) owner.endIndex = Math.max(owner.endIndex, k.endIndex);
     // A node whose last line ends before a heredoc body that one of its parts holds.
     if (kids.some((k) => k.lineEnd !== undefined)) owner.lineEnd = mostOf(kids.map((k) => k.lineEnd ?? k.endIndex));
-    // (Read after the line's end of the parts is known: a list of a part with a body, `a && cat <<E || b`, ends its line at `b`, not after the body.)
-    const end = to ?? owner.lineEnd ?? owner.endIndex;
     let at = owner.startIndex;
     const gaps: [number, number][] = [];
     for (const k of kids) {
@@ -347,7 +345,7 @@ class Converter {
       const list = this.node('list', left.startIndex, right.endIndex);
       this.add(list, left);
       this.add(list, right);
-      this.fill(list);
+      this.fill(list, right.lineEnd ?? right.endIndex); // (ends where its last part's line does: after a here-document's line comes what the parent reads, `|| b`)
       left = list;
     }
     return left;
@@ -360,7 +358,7 @@ class Converter {
     if (cmds.length > 1) {
       out = this.node('pipeline', cmds[0].startIndex, cmds[cmds.length - 1].endIndex);
       for (const c of cmds) this.add(out, c, null);
-      this.fill(out);
+      this.fill(out, cmds[cmds.length - 1].lineEnd ?? out.endIndex);
     } else out = cmds[0];
     // The prefixes act from the last to the first: `! time a | b` negates the timed pipeline, and `time ! a | b` times the negated one.
     for (const prefix of [...p.prefixes].reverse()) out = prefix.type === 'Time' ? this.time(prefix, out) : this.negate(prefix, out);
