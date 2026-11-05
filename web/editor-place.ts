@@ -60,8 +60,8 @@ export function notePlace(view: EditorView): EditorPlace | undefined {
 export function closingPlace(view: EditorView, opened: EditorPlace): EditorPlace {
   const now = notePlace(view);
   const place = now ? placeOnClose(opened, now, opened.doc === view.state.doc) : opened;
-  // (The Problems list opened, or the window made lower, while the sheet was open.)
-  return { ...place, y: yInView(place.y, view.defaultLineHeight, view.scrollDOM.clientHeight) };
+  // (A closing widens the editor, which never hides its cursor at the side: no reveal, which would undo a sideways scroll that hid it.)
+  return { ...place, cursor: false };
 }
 
 /** Brings the place back to its row, measuring first. Says whether that moved anything. */
@@ -73,7 +73,9 @@ function settle(view: EditorView, place: EditorPlace): boolean {
     view.requestMeasure();
     const row = rowAt(view, place.pos);
     // A row out of the drawn lines (those above it grew by more than CodeMirror draws around the view): near it first, by the heights CodeMirror knows.
-    const to = row ? dom.scrollTop + row.top - dom.getBoundingClientRect().top - place.y : view.lineBlockAt(place.pos).top - place.y;
+    // (A view that has become too low to show the row where it was, the Problems list opened or the window made lower, shows it at its bottom edge; the height read is the one at the width now, which a scrollbar can change.)
+    const y = yInView(place.y, view.defaultLineHeight, dom.clientHeight);
+    const to = row ? dom.scrollTop + row.top - dom.getBoundingClientRect().top - y : view.lineBlockAt(place.pos).top - y;
     if (Math.abs(to - dom.scrollTop) < 0.5) break;
     const was = dom.scrollTop;
     dom.scrollTop = to;
