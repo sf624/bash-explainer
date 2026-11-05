@@ -289,6 +289,9 @@ const STOP: StopRow[] = [
   { line: 'awk "$x"', note: /depends on the value of `\$x`: `awk` reads it as code\. To pass a value as data, use `-v name=value`/, shows: [{ x: '{print}', input: 'a\n', out: 'a\n' }, { x: 'BEGIN{print "z"}', out: 'z\n' }] },
   { line: 'awk "BEGIN { x = $x; print x }"', note: /`\$x`/, shows: [{ x: '1', out: '1\n' }, { x: '1; print "z"', out: 'z\n1\n' }] },
   { line: 'awk "{print \\$$x}"', note: /`\$x`/, shows: [{ x: '1', input: 'a b\n', out: 'a\n' }, { x: '2; print "z"', input: 'a b\n', out: 'b\nz\n' }] },
+  // (gawk's `\x4` and `\1` take the digits of the value, as sed's and PCRE's do.)
+  { line: 'awk "/\\x4$x/"', note: /`\$x`/, shows: [{ x: '1', input: 'A\n', out: 'A\n' }, { x: '2', input: 'A\nB\n', out: 'B\n' }] },
+  { line: 'awk "/\\10$x/"', note: /`\$x`/, shows: [{ x: '1', input: 'A\n', out: 'A\n' }, { x: '2', input: 'A\nB\n', out: 'B\n' }] },
   { line: 'jq "$x"', note: /depends on the value of `\$x`: `jq` reads it as code\. To pass a value as data, use `--arg name value`/, shows: [{ x: '.a', input: '{"a":1}', out: '1\n' }, { x: 'keys', input: '{"a":1}', out: '[\n  "a"\n]\n' }] },
   { line: 'jq ".$x"', note: /`\$x`/, shows: [{ x: 'a', input: '{"a":1}', out: '1\n' }, { x: 'a,.a', input: '{"a":1}', out: '1\n1\n' }] },
   { line: 'perl -e "$x; print 2"', note: /`\$x`: `perl` reads it as code/, shows: [{ x: 'print 1', out: '12' }, { x: 'exit', out: '' }] },
