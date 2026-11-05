@@ -66,11 +66,11 @@ export class PanelBridge {
     this.sendState();
   }
 
-  /** Keeps the panel's state (storage), draws the view control from it, and explains the line again when it needs other data. */
-  private keep(state: PanelState): void {
+  /** Keeps the panel's state (storage, unless `store` is false), draws the view control from it, and explains the line again when it needs other data. */
+  private keep(state: PanelState, store = true): void {
     const before = explainNeeds(this.state);
     this.state = state;
-    writeStored(STORAGE_KEYS.panel, JSON.stringify(this.state));
+    if (store) writeStored(STORAGE_KEYS.panel, JSON.stringify(this.state));
     this.head?.draw();
     // The rows of the depth just chosen, with the reading tree at depth 2.
     if (needsDiffer(explainNeeds(this.state), before)) this.host.update();
@@ -89,6 +89,12 @@ export class PanelBridge {
   /** What the viewer chose last time (VS Code keeps it in the webview's state, which the frame has not). */
   private sendState(): void {
     this.send({ type: 'panelState', state: this.state });
+  }
+
+  /** Back to the defaults (the settings' "Clear stored data", which has removed the storage): nothing is kept again, and the panel shows them at once. */
+  reset(): void {
+    this.keep(panelState({}), false);
+    this.sendState();
   }
 
   /** The depth and the switch the panel shows: what the explanation needs comes from them (`explainNeeds`). */

@@ -195,8 +195,13 @@
       if (msg.folded !== undefined && msg.folded !== header.folded) toggleAll();
     }
     if (msg.type === 'panelState') {
+      // The host's state is the whole of it: what it leaves out is back to its default (the web page's "Clear stored data").
+      depth = 1;
+      receivesChosen = undefined;
+      receivesShown = true;
       applyState(msg.state);
       drawViews();
+      drawSwitch();
     }
   });
   vscode.postMessage({ type: 'ready' });

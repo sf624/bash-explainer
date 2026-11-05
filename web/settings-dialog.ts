@@ -777,7 +777,7 @@ export class SettingsDialog {
     const keys = keysShown();
     const key = keys ? [el('p', { className: 'setting-key', textContent: `bashExplainer.${spec.key}` })] : [];
     const desc = el('p', { className: 'setting-desc', id: `${id}-desc` }, ...this.rich(text.description, lang));
-    const row = el('div', { className: `setting setting-${spec.type}`, id: `${id}-row` });
+    const row = el('div', { className: 'setting', id: `${id}-row` });
     row.dataset.key = spec.key;
     row.dataset.title = title;
     const value = s[spec.key];

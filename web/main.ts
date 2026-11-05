@@ -490,10 +490,11 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
 
 /**
  * Removes everything the page keeps in the browser and shows the defaults at once: the settings, the
- * theme, read mode, the size of the panes and the first-run tip (again, on a touch screen).
+ * theme, read mode, the size of the panes, the panel's depth and switch and the first-run tip (again, on a touch screen).
  */
 function clearEverything(): void {
   clearStoredData();
+  panel.reset();
   changeSettings(mergeSettings());
   setTheme(DEFAULT_THEME);
   readEdit.reset();

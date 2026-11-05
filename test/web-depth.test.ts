@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Browser, Frame, Page } from 'playwright-core';
 import { servePanel, type PanelServer } from './support/panel-page';
-import { chooseDepth, openSite, until } from './support/site';
+import { chooseDepth, openSettingsSection, openSite, until } from './support/site';
 
 /** The four test scripts of the panel redesign (panel-redesign.md, section 2), and the line each shows. */
 const SCRIPTS = {
@@ -119,6 +119,36 @@ describe('the panel: one view with a depth', function () {
       assert.strictEqual(await p.locator(`#slot-depth${depth}`).getAttribute('aria-pressed'), 'true');
       await old.close();
     }
+  });
+
+  it('"Clear stored data" puts the depth and the switch back at once, with nothing kept again (no reload)', async () => {
+    const ctx = await context(1280, 'en', { animations: false });
+    const page = await ctx.newPage();
+    const panel = await open(page, SCRIPTS.s2[0]);
+    const key = () => page.evaluate(`localStorage.getItem('bash-explainer-panel')`);
+    await chooseDepth(page, 2);
+    await depthDrawn(panel, 2);
+    await panel.locator('#receives').click();
+    await until('the switch off', () => panel.locator('#tree .receives').count(), (n) => n === 0);
+    assert.notStrictEqual(await key(), null);
+    // A setting of the dialog that is kept apart from the settings: the VS Code setting names.
+    await page.locator('#settings-open').click();
+    await page.locator('#settings-show-keys').check();
+    await openSettingsSection(page, 'data');
+    await page.locator('#settings-clear').click();
+    await page.locator('#settings-clear-yes').click();
+    assert.match(await page.locator('#settings-clear-status').innerText(), /Cleared/);
+    await depthDrawn(panel, 1);
+    assert.strictEqual(await page.locator('#slot-depth1').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(await panel.locator('#receives').getAttribute('aria-checked'), 'true');
+    await until('the lines received', () => panel.locator('#tree .receives').count(), (n) => n > 0);
+    assert.strictEqual(await panel.locator('.role-line').count(), 0);
+    assert.strictEqual(await page.locator('#settings-show-keys').isChecked(), false);
+    // Not written again by the reset, and still after the panel has had time to answer.
+    await page.waitForTimeout(1500);
+    assert.strictEqual(await key(), null);
+    assert.deepStrictEqual(await page.evaluate('Object.keys(localStorage).filter((k) => k !== "bash-explainer-settings" && k !== "bash-explainer-sheet-hint")'), []);
+    await ctx.close();
   });
 
   it('names the keys in the panel in the page\'s Help', async () => {
