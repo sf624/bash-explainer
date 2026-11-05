@@ -7,7 +7,8 @@
 // explanation moves left by its width (`data-shift`, below), so that what the settings change stays in view and live: it
 // is not a modal dialog there (the panel can be scrolled and clicked, and a click on it leaves the sheet open; Esc, × and
 // Close shut it). The editor under it, and the divider, are inert (nothing in them can take the focus unseen), and the
-// top bar stays above the sheet, in use. In the narrow layout it is a modal dialog and takes the whole screen (page.css).
+// top bar stays above the sheet, in use. Where there is no room beside the editor (the narrow layout, the compare page below
+// 1000 px, a divider dragged so far that the sheet would be too narrow) it is a modal dialog and takes the whole window (page.css).
 // It comes back as it was left: the sections open, the search and the scroll (docs/design/chrome-redesign.md, C6).
 import { closeSheet, narrow, reopenSheet } from './layout';
 import type { AutoShell } from '../src/dialect';
@@ -65,6 +66,13 @@ const hovers = () => !window.matchMedia('(hover: none)').matches;
 const keysShown = () => readStored(STORAGE_KEYS.settingNames) === '1';
 
 /**
+ * The least width of the sheet beside the editor, and a modal dialog instead below it. Measured at 1280 px: from 220 px the
+ * search's hint and the choices show whole in English, from 230 px in Japanese ("ブラウザの言語に合わせる"), and below, they
+ * are cut ("Follow the bro…"); 240 px leaves a little room.
+ */
+const SHEET_MIN = 240;
+
+/**
  * The room of the page's toast while the settings are open side by side: the sheet's box, where it lies at rest (its right
  * edge is the window's, its width `--pane-w`), since the explanation has moved beside it and the editor's pane under it is
  * covered. Undefined otherwise, and while the sheet slides out.
@@ -91,7 +99,7 @@ export class SettingsDialog {
   private unfolded = new Set<SettingsSection>();
   /** The descriptions shown whole ("Less" after them), by id: kept across a redraw. */
   private expanded = new Set<string>();
-  /** Whether the sheet was opened as a modal dialog (the narrow layout), and who had the focus before it opened. */
+  /** Whether the sheet was opened as a modal dialog (`shouldBeModal`), and who had the focus before it opened. */
   private modal = false;
   private opener: HTMLElement | null = null;
   /** A search being composed (an input method): not applied until it is done. */
@@ -154,23 +162,47 @@ export class SettingsDialog {
   }
 
   /**
-   * Whether the sheet is a modal dialog: in the narrow layout, and where the explanation does not lie right of the
-   * editor, so that there is nothing to move aside (the compare page below 1000 px, the script above its copies). Read
-   * from the boxes' places in the page, which a `transform` does not change (`offsetLeft`).
+   * Whether the sheet is a modal dialog: in the narrow layout; where the explanation does not lie right of the editor, so
+   * that there is nothing to move aside (the compare page below 1000 px, the script above its copies); and where the room
+   * beside the editor is too small for the settings (`SHEET_MIN`). Read from the boxes' places in the page, which a
+   * `transform` does not change (`offsetLeft`).
    */
   private shouldBeModal(): boolean {
     if (narrow.matches) return true;
     const pane = this.host.pane();
     const side = this.host.beside()[0];
-    return !!pane && !!side && side.offsetLeft < pane.offsetLeft + pane.offsetWidth - 2;
+    return !!pane && !!side && (side.offsetLeft < pane.offsetLeft + pane.offsetWidth - 2 || this.sheetWidth() < SHEET_MIN);
   }
 
-  /** The window crossing between the layouts while the sheet is open: it opens again in the other kind. */
+  /** The width of the sheet side by side: the editor's pane and the divider beside it. */
+  private sheetWidth(): number {
+    const pane = this.host.pane();
+    return pane ? Math.floor(this.host.splitter()?.getBoundingClientRect().right ?? pane.getBoundingClientRect().right) : 0;
+  }
+
+  /**
+   * Runs `redraw`, which draws the dialog again, and puts the focus back on what had it (by id: the nodes are new), the
+   * scroll with it.
+   */
+  private keepFocus(redraw: () => void): void {
+    const focused = document.activeElement?.id;
+    const scroll = this.scroll;
+    redraw();
+    this.body().scrollTop = scroll;
+    if (focused) document.getElementById(focused)?.focus();
+  }
+
+  /**
+   * The window crossing between the layouts while the sheet is open: it opens again in the other kind. Not while it
+   * slides out: it goes on as it is and closes as any close does, and the next opening is the new kind.
+   */
   private recheck(): void {
-    if (!this.dialog.open || this.modal === this.shouldBeModal()) return;
-    this.reopening++;
-    this.dialog.close();
-    this.show();
+    if (!this.dialog.open || this.dialog.classList.contains('closing') || this.modal === this.shouldBeModal()) return;
+    this.keepFocus(() => {
+      this.reopening++;
+      this.dialog.close();
+      this.show();
+    });
   }
 
   get open(): boolean {
@@ -185,7 +217,7 @@ export class SettingsDialog {
     this.opener ??= active instanceof HTMLElement && active !== document.body ? active : document.getElementById('settings-open');
     this.render();
     this.fitWidth();
-    // The narrow layout shuts the page behind the sheet (the browser keeps the focus in it); side by side the panel
+    // A modal sheet shuts the page behind it (the browser keeps the focus in it); side by side the panel
     // stays in use, and the focus goes into the sheet and back by hand.
     if (this.modal) this.dialog.showModal();
     else this.dialog.show();
@@ -263,11 +295,7 @@ export class SettingsDialog {
   /** Draws the dialog again, after a change made in it or elsewhere (keeping the focus and the scroll). */
   refresh(): void {
     if (!this.dialog.open) return;
-    const focused = document.activeElement?.id;
-    const scroll = this.scroll;
-    this.render();
-    this.body().scrollTop = scroll;
-    if (focused) document.getElementById(focused)?.focus();
+    this.keepFocus(() => this.render());
   }
 
   private body(): HTMLElement {
@@ -286,7 +314,7 @@ export class SettingsDialog {
     if (!pane) return;
     const r = pane.getBoundingClientRect();
     const root = document.documentElement;
-    const width = `${Math.floor(this.host.splitter()?.getBoundingClientRect().right ?? r.right)}px`;
+    const width = `${this.sheetWidth()}px`;
     if (root.style.getPropertyValue('--pane-w') !== width) {
       // (While the explanation is still on its way, the move goes on to the new place: cutting it would make it jump.)
       const moving = this.host.beside().some((e) => e.getAnimations().length);

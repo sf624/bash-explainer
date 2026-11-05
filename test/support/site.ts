@@ -37,24 +37,19 @@ interface Running extends Site {
   dir: string;
 }
 
-/** The site of the file being run: in a parallel run a worker runs several files one after another, so each file closes its own. */
-let running: Promise<Running | undefined> | undefined;
+/** Starts Chromium. Playwright hides scrollbars by default; `classicScrollbars` keeps them, as a user's browser draws them. */
+async function launch(classicScrollbars = false): Promise<Browser> {
+  const { chromium } = await import('playwright-core');
+  return chromium.launch(classicScrollbars ? { ignoreDefaultArgs: ['--hide-scrollbars'] } : {});
+}
 
-async function start(): Promise<Running | undefined> {
-  // Playwright exits the process on Node.js before 20 instead of throwing.
-  if (Number(process.versions.node.split('.')[0]) < 20) return undefined;
-  let browser: Browser;
-  try {
-    const { chromium } = await import('playwright-core');
-    browser = await chromium.launch();
-  } catch (e) {
-    if (process.env.BASH_EXPLAINER_BROWSER) throw e;
-    return undefined;
-  }
-  // The opening covers the page for about two seconds on the first load of a session: the tests load the page as on a
-  // later load, which has none (web/theme-init.js reads this key), except those that ask for `firstLoad`. And as on a
-  // later visit, where the first visit's hint over the editor was closed (web/storage.ts, `firstHint`), except those
-  // that ask for `firstLoad` or `firstVisit`.
+/**
+ * The opening covers the page for about two seconds on the first load of a session: the tests load the page as on a
+ * later load, which has none (web/theme-init.js reads this key), except those that ask for `firstLoad`. And as on a
+ * later visit, where the first visit's hint over the editor was closed (web/storage.ts, `firstHint`), except those
+ * that ask for `firstLoad` or `firstVisit`. Makes `browser.newContext` do so.
+ */
+function contexts(browser: Browser): Pick<Site, 'firstLoad' | 'firstVisit'> {
   const firstLoad = browser.newContext.bind(browser);
   const firstVisit: Browser['newContext'] = async (options) => {
     const ctx = await firstLoad(options);
@@ -66,6 +61,34 @@ async function start(): Promise<Running | undefined> {
     await ctx.addInitScript("try { if (localStorage.getItem('bash-explainer-first-hint') === null) localStorage.setItem('bash-explainer-first-hint', '1'); } catch {}");
     return ctx;
   };
+  return { firstLoad, firstVisit };
+}
+
+/**
+ * A second browser that draws classic scrollbars (15 px wide, taking room from the page), as most desktop browsers do:
+ * the default one hides them, and a layout that is wrong only when they take room goes unseen. Closed after the file's suite.
+ */
+export async function classicScrollbars(ctx: Mocha.Context): Promise<Browser> {
+  const browser = await launch(true);
+  contexts(browser);
+  ctx.test?.parent?.afterAll(() => browser.close());
+  return browser;
+}
+
+/** The site of the file being run: in a parallel run a worker runs several files one after another, so each file closes its own. */
+let running: Promise<Running | undefined> | undefined;
+
+async function start(): Promise<Running | undefined> {
+  // Playwright exits the process on Node.js before 20 instead of throwing.
+  if (Number(process.versions.node.split('.')[0]) < 20) return undefined;
+  let browser: Browser;
+  try {
+    browser = await launch();
+  } catch (e) {
+    if (process.env.BASH_EXPLAINER_BROWSER) throw e;
+    return undefined;
+  }
+  const { firstLoad, firstVisit } = contexts(browser);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-web-'));
   const build = (outdir: string, ...args: string[]) =>
     execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${outdir}`, ...args], { cwd: root, stdio: 'pipe' });

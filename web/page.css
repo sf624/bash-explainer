@@ -1819,6 +1819,11 @@ body.resizing .problems-resize {
 
 /* ---- The side sheets: the menu and the settings ------------------------------------------------ */
 
+/* How long a sheet takes to slide, and the explanation beside the settings with it (one value: they move together). */
+:root {
+  --sheet-time: 0.22s;
+}
+
 .sheet {
   position: fixed;
   inset: 0 0 0 auto;
@@ -1835,7 +1840,7 @@ body.resizing .problems-resize {
   color: var(--vscode-foreground);
   box-shadow: var(--shadow);
   overflow: hidden;
-  transition: transform 0.22s var(--ease);
+  transition: transform var(--sheet-time) var(--ease);
 }
 
 /* A swipe sideways moves the sheet (layout.ts); up and down scrolls it. The scrolling parts need it
@@ -1859,7 +1864,7 @@ body.resizing .problems-resize {
 
 .sheet::backdrop {
   background: rgba(0, 0, 0, 0.4);
-  transition: opacity 0.22s;
+  transition: opacity var(--sheet-time);
 }
 
 @starting-style {
@@ -2976,8 +2981,16 @@ html.view-panel .split {
    z-index above the page (and under the toasts, 20). In the narrow layout (a phone, a narrow window) the settings are a
    modal dialog and take the whole screen. */
 #settings-dialog {
-  width: 100vw;
+  /* (Not 100vw: that counts the scrollbar of a page that scrolls, as the compare page does below 1000px, and the sheet,
+     fixed at the right edge, would then reach out of the window at the left.) */
+  width: 100%;
   border-radius: 0;
+}
+
+/* A modal sheet shuts the page behind it: that page does not scroll under a wheel or a key, and its scrollbar (which takes room)
+   goes while the sheet covers the window. */
+html:has(#settings-dialog:modal) {
+  overflow: hidden;
 }
 
 #settings-dialog:not(:modal) {
@@ -2991,32 +3004,32 @@ html.view-panel .split {
   z-index: 15;
 }
 
-/* The explanation moves left by the sheet's width, with the sheet: the same transition (--ease, 0.22s), started in the
+/* The explanation moves left by the sheet's width, with the sheet: the same transition (--ease, --sheet-time), started in the
    same frame (`data-shift` of the page: open, drag while a swipe holds the sheet, closing; web/settings-dialog.ts).
    It only moves: its width, so its text, and its scroll stay. The sheet is as wide as the editor's pane at most, so the
    explanation, which has the rest of the page, never leaves it. It lies above the editor (and its hint) while it is
    there, and the divider, which would show on top, is out of reach and hidden. A `transform` here is safe: nothing
    inside the pane is placed `fixed` (the frame's own popups are in the frame), and the toast is outside it, over the
-   sheet while it is out (`sheetRoom`). On the compare page the two copies move, the script's pane lying under them and
+   sheet while it is out (`sheetRoom`). What moves has `data-beside` (index.html: the explanation; compare.html: the two copies; web/main.ts
+   reads the same). On the compare page the copies move, the script's pane lying under them and
    the sheet; below 1000 px, where the script lies above the copies, the sheet is a modal dialog on the whole window. */
-/* (And on the compare page, the two copies: `beside` in web/main.ts.) */
-:where(html:not(.narrow))[data-shift] :is(.panel-pane, .compare > .copy) {
+:where(html:not(.narrow))[data-shift] [data-beside] {
   position: relative;
   z-index: 12;
-  transition: transform 0.22s var(--ease);
+  transition: transform var(--sheet-time) var(--ease);
 }
 
-:where(html:not(.narrow))[data-shift="open"] :is(.panel-pane, .compare > .copy) {
+:where(html:not(.narrow))[data-shift="open"] [data-beside] {
   transform: translateX(calc(-1 * var(--pane-w)));
 }
 
-:where(html:not(.narrow))[data-shift="drag"] :is(.panel-pane, .compare > .copy) {
+:where(html:not(.narrow))[data-shift="drag"] [data-beside] {
   transform: translateX(calc(var(--drag, 0px) - var(--pane-w)));
   transition: none;
 }
 
 /* A new width of the pane while the sheet is out (a resized window): the explanation moves with the sheet at once. */
-:where(html:not(.narrow))[data-shift][data-shift-now] :is(.panel-pane, .compare > .copy) {
+:where(html:not(.narrow))[data-shift][data-shift-now] [data-beside] {
   transition: none;
 }
 

@@ -123,6 +123,7 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - A nested heredoc in `<<-`: `cat <<-EOF` with the body `\t$(cat <<X`, `\tq`, `\tX`, `\t)` and the end `\tEOF` reports `Missing "heredoc_end"`, though bash strips the tabs first and prints `q` (found in the review of #586).
 - perl `printf '%d'` of 2^70 prints the digits where real perl prints `-1` (found in the review of #581).
 - awk examples differ from gawk on `\y` and `\>` (`gsub(/\y/, "X")` on `a`), on a side-effect target (`gsub(/a/, "X", $(i++))` evaluates it twice), on a no-match `gsub` on a field past NF (`$5` should grow NF), and on `.` with a newline in a string (`s = "a\nb"; gsub(/./, "Y", s)`: gawk `YYY`, ours `Y\nY`); also `"\777"`, `"\xe9"`, `"\é"`, `length()` of an emoji, `FS="\\"`, and a trailing backslash of `-v 'x=a\'` (gawk drops it, we keep it) (found in the review of #588).
+- The settings sheet beside the editor, two rough edges (found in the review of #608): while the window is being resized with the sheet open, the explanation and the sheet are a few pixels apart for a frame or two before they settle; and at 768 px the toast lies over the sheet's Reset button for its 8 s (Close stays clickable).
 
 ## Waiting on the maintainer
 
