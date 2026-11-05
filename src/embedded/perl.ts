@@ -1,6 +1,6 @@
 import { ordinal, type Lang } from '../i18n';
 import { explainRegex } from './regex';
-import { EmbeddedToken, pick, shift } from './types';
+import { EmbeddedToken, hasHole, holeStop, holeTokens, pick, shift } from './types';
 import { wordTable } from '../wordtable';
 
 type S = (ja: string, en: string) => string;
@@ -239,7 +239,7 @@ class PerlExplainer {
       const flags = text.slice(text.lastIndexOf(close) + 1);
       const fl = flags.includes('i') ? s('（大文字・小文字を区別しない）', ' (case-insensitive)') : '';
       return this.tok(start, end, 'pattern', s(`現在の行（\`$_\`）が正規表現 \`${src.slice(bodyStart, bodyEnd)}\` に一致するか${fl}`, `whether the line (\`$_\`) matches \`${src.slice(bodyStart, bodyEnd)}\`${fl}`),
-        shift(explainRegex(src.slice(bodyStart, bodyEnd), 'pcre', this.lang), bodyStart));
+        shift(explainRegex(src.slice(bodyStart, bodyEnd), 'pcre', this.lang, { perl: true, ...(open === close ? { delimiter: close } : {}) }), bodyStart));
     }
     return this.tok(start, end, 'test', s(`条件 \`${text}\``, `condition \`${text}\``), this.atoms(start, end));
   }
@@ -276,8 +276,12 @@ class PerlExplainer {
     const pat = src.slice(patStart, patEnd);
     const rep = src.slice(repStart, repEnd);
     const kids: EmbeddedToken[] = [
-      this.tok(patStart, patEnd, 'pattern', s(`検索パターン（Perl の正規表現）\`${pat}\``, `Pattern (Perl regex) \`${pat}\``), shift(explainRegex(pat, 'pcre', this.lang), patStart)),
-      this.tok(repStart, repEnd, 'string', s(`置換後の文字列 \`${rep}\`（\`$1\` などはグループの内容）`, `Replacement \`${rep}\` (\`$1\`… are the groups)`), this.atoms(repStart, repEnd)),
+      this.tok(patStart, patEnd, 'pattern', s(`検索パターン（Perl の正規表現）\`${pat}\``, `Pattern (Perl regex) \`${pat}\``), shift(explainRegex(pat, 'pcre', this.lang, { perl: true, ...(open === close ? { delimiter: close } : {}) }), patStart)),
+      this.tok(repStart, repEnd, 'string', s(`置換後の文字列 \`${rep}\`（\`$1\` などはグループの内容）`, `Replacement \`${rep}\` (\`$1\`… are the groups)`), [
+        ...this.atoms(repStart, repEnd),
+        // (With `e`, the replacement is code.)
+        ...(flags.includes('e') ? [] : holeTokens(src, repStart, repEnd, 'perl-replacement', open === close ? { delimiter: close } : {})),
+      ].sort((a, b) => a.start - b.start)),
     ].filter((t) => t.end > t.start);
     const flagText: Record<string, [string, string]> = {
       g: ['すべて置換する（付けないと最初の1つだけ）', 'replace every match (otherwise only the first)'],
@@ -336,6 +340,8 @@ class PerlExplainer {
 
 /** Explain Perl code given with -e. */
 export function explainPerl(src: string, lang: Lang): EmbeddedToken[] {
+  // (`$$x`, `@$x`: the value is the name of a variable of perl's.)
+  if (hasHole(src) && /[$@%&][\ufdd2-\ufdef]/.test(src)) return [holeStop(0)];
   // (The explainer reads any text and throws nothing of its own: an error from it is a bug, which shows.)
   return new PerlExplainer(src, lang).statements(0, src.length);
 }

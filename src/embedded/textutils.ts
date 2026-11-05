@@ -1,6 +1,6 @@
 import type { Lang } from '../i18n';
 import { controlSuffix } from '../ctlchars';
-import { EmbeddedToken, pick } from './types';
+import { EmbeddedToken, hasHole, holeStop, holeToken, isHole, pick } from './types';
 import { wordTable } from '../wordtable';
 
 export interface Explained {
@@ -89,12 +89,21 @@ export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'sque
   const s = pick(lang);
   const tokens: EmbeddedToken[] = [];
   const names: string[] = [];
+  // (A hole in or beside a class, a repeat or an octal escape: the value says what they are.)
+  if (hasHole(src) && /\[|\\[0-7]{1,2}[\ufdd2-\ufdef]/.test(src)) return { tokens: [holeStop(0)], note: '' };
   let i = 0;
   while (i < src.length) {
     const rest = src.slice(i);
     let m: RegExpExecArray | null;
     let len: number;
     let text: string;
+    if (isHole(rest[0])) {
+      if (rest[1] === '-') return { tokens: [holeStop(i)], note: '' };
+      tokens.push(holeToken(i, 'tr'));
+      names.push(s(`\`${rest[0]}\` の値`, `the value of \`${rest[0]}\``));
+      i++;
+      continue;
+    }
     if ((m = /^\[:(\w+):\]/.exec(rest)) && TR_CLASSES[m[1]]) {
       len = m[0].length;
       text = s(TR_CLASSES[m[1]][0], TR_CLASSES[m[1]][1]);

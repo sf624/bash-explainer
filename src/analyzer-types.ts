@@ -193,6 +193,8 @@ export interface ExplainOptions {
   hostRun?: HostRun;
   /** Variables the host gives the script, and the names of its placeholders (src/hosts/remap.ts, `hostProvided`). */
   hostProvided?: readonly string[];
+  /** The names of the placeholders of what the host pastes as text before the shell reads the line: `${{ env.Y }}`, make's `$(DST)` (src/hosts/remap.ts). */
+  hostPasted?: readonly string[];
   /**
    * The file is surely a script (`Shells.script`), so that a syntax error can be said: never a host's code, for now.
    */

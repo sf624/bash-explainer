@@ -20,7 +20,7 @@ import { explainRegex, Flavor, flavorName } from './regex';
 import { explainSed } from './sed';
 import { explainCutList, explainSortKey, explainTrSet, trSummary } from './textutils';
 import { explainPrompt, promptNote } from './prompt';
-import { EmbeddedLang, EmbeddedToken, pick } from './types';
+import { EmbeddedLang, EmbeddedToken, hasHole, pick } from './types';
 import { explainYq3Path } from './yq';
 
 /** An embedded text explained: its tokens (offsets in the text), and a note on the whole. */
@@ -62,7 +62,8 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   awk: (text, cx) => ({ tokens: explainAwk(text, cx.lang) }),
   printf: (text, cx) => {
     const reader = cx.bash() ?? 'coreutils';
-    return { tokens: explainPrintf(text, cx.lang, reader), note: printfNote(text, cx.lang, reader) };
+    // (How many values one use takes depends on the value of a hole in the format.)
+    return { tokens: explainPrintf(text, cx.lang, reader), note: hasHole(text) ? undefined : printfNote(text, cx.lang, reader) };
   },
   echo: (text, cx) => ({ tokens: explainEscapes(text, cx.lang, 'echo') }),
   mode: (text, cx) => explainMode(text, cx.lang),
@@ -84,6 +85,8 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   gitformat: (text, cx) => explainGitFormat(text, cx.lang),
   gitdate: (text, cx) => explainGitDate(text, cx.lang),
   glob: (text, cx) => {
+    // (What a pattern with a hole matches depends on the value: only its parts.)
+    if (hasHole(text)) return { tokens: explainGlob(text, cx.lang) };
     // (find's patterns: unlike the shell's, `*` matches a leading dot too.)
     const note = describeFindPattern(text, cx.lang);
     return note ? { tokens: explainGlob(text, cx.lang), note } : undefined;
