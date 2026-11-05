@@ -176,7 +176,7 @@ const READ: ReadRow[] = [
     line: 'grep "$x"',
     // (The whole word is one hole: what the reader says stands on the word, beside bash's `$x`.)
     tokens: [],
-    note: /basic regex \(BRE\)\. `\.`, `\*`, `\[` in the value are special/,
+    note: /search pattern \(regex\) — `\.`, `\*`, `\[` in the value are special/,
     says: /are special/,
     tools: [
       { x: 'a', input: 'a\nz\n', out: 'a\n' },
