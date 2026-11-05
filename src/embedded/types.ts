@@ -50,10 +50,11 @@ export const HOLES = /[\ufdd2-\ufdef]/g;
 /**
  * Sticky: an escape that would take characters of the value of the hole after it, by who reads it. GNU sed: `\\x4$n`, `\\o1$n`,
  * `\\d06$n`, `\\c$x` (its `\\U` and `\\u` are case conversions, its `\\1` one digit). PCRE: `\\x$n`, `\\o$n`, `\\c$x`, `\\1$n`,
- * `\\p$n` and others (its `\\d` is a digit, and `\\U` and the like it refuses). The escapes of `printf` and `echo -e`: `\\x$n`, `\\u$n`, `\\0$n`.
+ * `\\p$n` and others (its `\\d` is a digit, and `\\U` and the like it refuses). gawk: `\\x4$n`, `\\1$n`. The escapes of `printf` and `echo -e`: `\\x$n`, `\\u$n`, `\\0$n`.
  */
 const ESCAPE_INTO_HOLE = {
   sed: /\\(?:x[0-9a-fA-F]?|o[0-7]{0,2}|d\d{0,2}|c)[\ufdd2-\ufdef]/y,
+  awk: /\\(?:x[0-9a-fA-F]?|[0-7]{1,2})[\ufdd2-\ufdef]/y,
   pcre: /\\(?:x[0-9a-fA-F]?|o|c|[0-9]{1,3}|[pPNgkuUlL])[\ufdd2-\ufdef]/y,
   format: /\\(?:x[0-9a-fA-F]?|u[0-9a-fA-F]{0,3}|U[0-9a-fA-F]{0,7}|c|[0-7]{1,3})[\ufdd2-\ufdef]/y,
 };

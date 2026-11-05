@@ -32,7 +32,7 @@ export interface EmbeddedContext {
   /** The regex flavor the command's options choose (grep -E, sed -E…). */
   flavor(): Flavor | 'fixed';
   /** What a `tr` set is for, and the sets of the command. */
-  trSet(): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[]; complement: boolean };
+  trSet(): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[]; complement: boolean; truncate: boolean };
   /** The letters of the options given (`-lane`: l, a, n, e). */
   letters(): Set<string>;
   /** Whether one of these options is given, in any of its spellings (`sed -n` is `--quiet` too). */
@@ -72,8 +72,8 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   cutfields: (text, cx) => explainCutList(text, 'field', cx.lang),
   cutchars: (text, cx) => explainCutList(text, 'char', cx.lang),
   trset: (text, cx) => {
-    const { role, sets, complement } = cx.trSet();
-    const r = explainTrSet(text, role, cx.lang, complement);
+    const { role, sets, complement, truncate } = cx.trSet();
+    const r = explainTrSet(text, role, cx.lang, complement, truncate);
     if (!r) return undefined;
     const summary = role === 'to' && !complement ? trSummary(sets[0], text, cx.lang) : undefined;
     return { tokens: r.tokens, note: summary ? `${r.note}${pick(cx.lang)('。つまり', '; that is, it ')}${summary}` : r.note };

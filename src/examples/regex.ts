@@ -1,5 +1,5 @@
-import { sedEscapeAt } from '../ctlchars';
-import type { Flavor } from '../embedded/regex';
+import { awkEscapeAt, sedEscapeAt } from '../ctlchars';
+import { type Flavor, pcreCharCode, pcreJs } from '../embedded/regex';
 import { wordTable } from '../wordtable';
 import { type Node, Parser } from './regexparse';
 import { longestExec, Refused, scriptRegex } from './regexguard';
@@ -18,7 +18,7 @@ const CLASS_TO_JS: Record<string, string> = wordTable({
 const SED_ESCAPES: Record<string, string> = { t: '\\t', n: '\\n', r: '\\r', f: '\\f', v: '\\v', a: '\\x07' };
 
 /** Copy a POSIX bracket expression starting at `i` as a JS character class; returns [class, end]. */
-function posixBracket(src: string, i: number, sedEscapes: boolean): [string, number] | undefined {
+function posixBracket(src: string, i: number, sedEscapes: boolean, awk: boolean): [string, number] | undefined {
   let j = i + 1;
   let out = '[';
   if (src[j] === '^') { out += '^'; j++; }
@@ -39,12 +39,40 @@ function posixBracket(src: string, i: number, sedEscapes: boolean): [string, num
       j += 2;
       continue;
     }
+    if (awk && c === '\\') {
+      // (gawk reads `\b` as a backspace here, and a backslash before anything else it knows not: `[\]]` is the class of `]`.)
+      if (src[j + 1] !== 'b' && src[j + 1] !== '\\') return undefined;
+      out += src[j + 1] === 'b' ? '\\x08' : '\\\\';
+      j += 2;
+      continue;
+    }
     // In POSIX brackets a backslash is literal.
     out += c === '\\' || c === ']' || c === '[' ? `\\${c}` : c;
     j++;
   }
   if (j >= src.length) return undefined;
   return [out + ']', j + 1];
+}
+
+/**
+ * gawk turns `\NNN` (octal) and `\xHH` into the character before it compiles the regex; one that is special in a regex
+ * (`\052` is `*`) is read as the operator in some releases and as a letter in others, so no example (undefined).
+ */
+function awkCharacters(src: string): string | undefined {
+  let out = '';
+  for (let i = 0; i < src.length;) {
+    const e = src[i] === '\\' && /[0-7x]/.test(src[i + 1] ?? '') ? awkEscapeAt(src, i) : undefined;
+    if (!e) {
+      out += src[i] === '\\' ? src.slice(i, i + 2) : src[i];
+      i += src[i] === '\\' ? 2 : 1;
+      continue;
+    }
+    const ch = String.fromCharCode(e.code);
+    if ('\\^$.*+?()[]{}|-/'.includes(ch)) return undefined;
+    out += ch;
+    i += e.length;
+  }
+  return out;
 }
 
 /**
@@ -70,12 +98,128 @@ function sedCharacters(src: string): string | undefined {
 }
 
 /**
+ * A PCRE pattern as JavaScript, when every construct in it means the same there; undefined otherwise. A construct is read
+ * only if the reader's tables say what JavaScript reads for it (`pcreJs`, `pcreCharCode` in src/embedded/regex.ts):
+ * `\H`, `\N`, `\e`, `\g1`, `\y`, `[\h]` and the rest that JavaScript reads otherwise or not at all give no example.
+ */
+function pcreToJs(src: string): string | undefined {
+  let out = '';
+  const total = groupCount(src);
+  for (let i = 0; i < src.length;) {
+    const c = src[i];
+    if (c === '(') {
+      const rest = src.slice(i + 1);
+      // Only the groups JavaScript has with the same meaning: capturing, `(?:`, lookaround, named.
+      const named = /^\?P?<([A-Za-z_]\w*)>/.exec(rest);
+      if (rest.startsWith('?')) {
+        if (named) { out += `(?<${named[1]}>`; i += 1 + named[0].length; continue; }
+        const look = /^\?(?::|=|!|<=|<!)/.exec(rest);
+        if (!look) return undefined;
+        out += `(${look[0]}`;
+        i += 1 + look[0].length;
+        continue;
+      }
+      if (rest.startsWith('*')) return undefined;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === '[') {
+      const cls = pcreClassToJs(src, i);
+      if (!cls) return undefined;
+      out += cls[0];
+      i = cls[1];
+      continue;
+    }
+    if (c === '\\') {
+      const e = pcreEscapeToJs(src, i, total, false);
+      if (!e) return undefined;
+      out += e[0];
+      i += e[1];
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+/** How many groups a PCRE pattern captures (named ones too). */
+function groupCount(src: string): number {
+  let n = 0;
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] === '\\') i++;
+    else if (src[i] === '[') {
+      const end = pcreClassToJs(src, i);
+      i = end ? end[1] - 1 : src.length;
+    } else if (src[i] === '(' && (src[i + 1] !== '?' || /^\(\?P?<[A-Za-z_]/.test(src.slice(i, i + 5))) && src[i + 1] !== '*') n++;
+  }
+  return n;
+}
+
+/** The JavaScript text of the PCRE escape at `i` and its length, or undefined. */
+function pcreEscapeToJs(src: string, i: number, groups: number, inClass: boolean): [string, number] | undefined {
+  const n = src[i + 1];
+  if (n === undefined) return undefined;
+  if (/[1-9]/.test(n) && !inClass) {
+    // A single digit that names a group; `\10` and more are a group or an octal code, by how many groups there are.
+    return !/\d/.test(src[i + 2] ?? '') && Number(n) <= groups ? [`\\${n}`, 2] : undefined;
+  }
+  if (/[A-Za-z0-9]/.test(n)) {
+    // (`\x{` must close: PCRE2 stops at `\x{41` or `\x{4g}`.)
+    if (src.startsWith('\\x{', i) && !/^\\x\{[0-9A-Fa-f]+\}/.test(src.slice(i))) return undefined;
+    const code = pcreCharCode(src, i, inClass);
+    if (code) return code.code <= 0xffff ? [`\\u${code.code.toString(16).padStart(4, '0')}`, code.length] : undefined;
+    const js = pcreJs(n, inClass);
+    return js === undefined ? undefined : [js, 2];
+  }
+  // Any other escaped character is that character; JavaScript reads the same.
+  return [`\\${n}`, 2];
+}
+
+/** A PCRE class as a JavaScript one, and where it ends, or undefined. */
+function pcreClassToJs(src: string, at: number): [string, number] | undefined {
+  let i = at + 1;
+  let out = '[';
+  if (src[i] === '^') { out += '^'; i++; }
+  // (`]` first is a member in PCRE, and would close an empty class in JavaScript.)
+  if (src[i] === ']') { out += '\\]'; i++; }
+  // (Whether the item before is a set such as `\d`: a "-" next to one is a range PCRE2 refuses.)
+  let set = false;
+  while (i < src.length && src[i] !== ']') {
+    const wasSet = set;
+    set = false;
+    const cls = /^\[:(\w+):\]/.exec(src.slice(i));
+    if (cls) {
+      if (!CLASS_TO_JS[cls[1]]) return undefined;
+      out += CLASS_TO_JS[cls[1]];
+      i += cls[0].length;
+      set = true;
+      continue;
+    }
+    if (src[i] === '-' && src[i + 1] !== ']' && (wasSet || /^\\[dDwWsShHvVpPNR]|^\[:/.test(src.slice(i + 1)))) return undefined;
+    if (src[i] === '[' && /^\[[:.=]/.test(src.slice(i))) return undefined;
+    if (src[i] === '\\') {
+      const e = pcreEscapeToJs(src, i, 0, true);
+      if (!e) return undefined;
+      out += e[0];
+      set = /^\\[dDwWsShHvVpPNR]/.test(src.slice(i));
+      i += e[1];
+      continue;
+    }
+    out += src[i] === '[' ? '\\[' : src[i];
+    i++;
+  }
+  return i < src.length ? [out + ']', i + 1] : undefined;
+}
+
+/**
  * Translate a regex to JavaScript syntax. Returns undefined for constructs JavaScript cannot
  * express (possessive quantifiers, atomic groups, equivalence classes…), so no example is made.
  */
-export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: boolean; sedEscapes?: boolean } = {}): JsRegex | undefined {
+export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: boolean; sedEscapes?: boolean; awk?: boolean } = {}): JsRegex | undefined {
   if (opts.sedEscapes) {
-    const plain = sedCharacters(src);
+    const plain = opts.awk ? awkCharacters(src) : sedCharacters(src);
     if (plain === undefined) return undefined;
     src = plain;
   }
@@ -100,32 +244,22 @@ export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: bool
   if (flavor === 'pcre') {
     const inline = /^\(\?([imsx]+)\)/.exec(src);
     if (inline) {
+      if (inline[1].includes('x')) return undefined;
       if (inline[1].includes('i')) flags += 'i';
       if (inline[1].includes('s')) flags += 's';
       i = inline[0].length;
     }
-    if (/\(\?>|[*+?}][+]|\\Q|\(\?[imsx-]+\)|\\[pPXRK]/.test(src.slice(i))) return undefined;
+    if (/\(\?>|[*+?}][+]/.test(src.slice(i))) return undefined;
+    const js = pcreToJs(src.slice(i));
+    if (js === undefined) return undefined;
+    out = js;
+    i = src.length;
   }
   while (i < src.length) {
     const c = src[i];
     const n = src[i + 1];
-    if (flavor === 'pcre') {
-      if (c === '\\' && n === 'A') { out += '^'; i += 2; continue; }
-      if (c === '\\' && (n === 'z' || n === 'Z')) { out += '$'; i += 2; continue; }
-      if (c === '\\' && n === 'h') { out += '[ \\t]'; i += 2; continue; }
-      if (src.startsWith('(?P<', i)) { out += '(?<'; i += 4; continue; }
-      // `]` first in a class is literal in Perl, but would close an empty class in JavaScript.
-      if (c === '[') {
-        const m = /^\[\^?\]/.exec(src.slice(i));
-        if (m) { out += m[0].slice(0, -1) + '\\]'; i += m[0].length; continue; }
-      }
-      if (c === '\\' && n !== undefined) { out += c + n; i += 2; continue; }
-      out += c;
-      i++;
-      continue;
-    }
     if (c === '[') {
-      const b = posixBracket(src, i, !!opts.sedEscapes);
+      const b = posixBracket(src, i, !!opts.sedEscapes, !!opts.awk);
       if (!b) return undefined;
       atom(b[0]);
       i = b[1];
@@ -134,7 +268,9 @@ export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: bool
     if (c === '\\') {
       if (n === undefined) return undefined;
       i += 2;
-      if (/[1-9]/.test(n)) { atom('\\' + n); continue; }
+      if (opts.awk && n === 'y') { atom('\\b'); continue; }
+      if (opts.awk && n === 'b') { atom('\\x08'); continue; }
+      if (/[1-9]/.test(n) && !opts.awk) { atom('\\' + n); continue; }
       if (n === '<' || n === '>') { atom('\\b'); continue; }
       if ('wWsSbB'.includes(n)) { atom('\\' + n); continue; }
       if (opts.sedEscapes && SED_ESCAPES[n]) { atom(SED_ESCAPES[n]); continue; }
