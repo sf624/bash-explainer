@@ -1494,7 +1494,16 @@ body.resizing .problems-resize {
 /* The count of each level: its mark in its colour (the level table, below), then the number. */
 #problems .counts {
   display: inline-flex;
-  gap: 10px;
+  /* (Where a narrow editor has no room for all of them, the last go, whole, to a row that is not shown: a screen reader has them
+     all. The highest level comes first.) */
+  flex-wrap: wrap;
+  min-width: 0;
+  height: 1lh;
+  /* (Room for what an icon's mark draws past its box.) */
+  margin-inline-start: -2px;
+  padding-inline-start: 2px;
+  overflow: hidden;
+  gap: 0 10px;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
@@ -1600,6 +1609,14 @@ body.resizing .problems-resize {
 
   /* The position without its line, "1/11": the strip keeps one row on a phone (the line is the cursor's, in the gutter). */
   #problem-pos .pos-ln {
+    display: none;
+  }
+}
+
+/* Beside the settings the editor can be this narrow: the counts and the arrows keep the strip's room, and the word goes
+   (a screen reader has it with the counts). With nothing to count, the words are all there is. */
+@container source (max-width: 239.98px) {
+  #problems:not(.empty) #problems-title {
     display: none;
   }
 }
@@ -1834,7 +1851,7 @@ body.resizing .problems-resize {
    every frame. A swipe holds it (web/layout.ts).
    --editor-floor and --panel-floor, the least widths of the panes beside the sheet, measured in both languages: from 185 px
    the editor's bar shows the shell's name whole ("bash": it is cut below, and the chip below 150 px), from 200 px the
-   panel's head takes two rows (three below). --panes-floor, of all the panes with the dividers: below it the sheet is modal. */
+   panel's head takes two rows (three below). */
 @property --sheet-w {
   syntax: "<length>";
   inherits: true;
@@ -1847,18 +1864,11 @@ body.resizing .problems-resize {
   initial-value: 0;
 }
 
-@property --panes-floor {
-  syntax: "<length>";
-  inherits: true;
-  initial-value: 0px;
-}
-
 html {
   --sheet-time: 0.22s;
   --sheet-w: clamp(240px, 100vw / 3, 640px);
   --editor-floor: 190px;
   --panel-floor: 200px;
-  --panes-floor: calc(var(--editor-floor) + var(--gutter) + var(--panel-floor));
 }
 
 html.narrow {
@@ -2922,10 +2932,6 @@ html.view-panel .split {
   grid-template-columns: minmax(calc(var(--editor-floor) * var(--sheet-in)), 1fr) repeat(2, minmax(calc(var(--panel-floor) * var(--sheet-in)), 1fr));
   min-height: 0;
   margin-right: calc(var(--sheet-w) * var(--sheet-in));
-}
-
-html:has(.compare) {
-  --panes-floor: calc(var(--editor-floor) + 2 * var(--panel-floor));
 }
 
 .compare > section {

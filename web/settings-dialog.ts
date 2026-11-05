@@ -6,10 +6,10 @@
 // the right. Side by side it is a third column (page.css, `--sheet-w`): the editor and the explanation stay in view and in
 // use and share what is left in the ratio they had, so that what the settings change is live. It is not a modal dialog
 // there (a click beside it leaves it open; Esc, × and Close shut it), and the top bar stays above it, in use. Where there
-// is no column for it (the narrow layout, the compare page up to 1000 px, or no room for the panes' floors) it is a modal
-// dialog and takes the whole window (page.css).
+// is no column for it (the narrow layout, the compare page up to 1000 px) it is a modal dialog and takes the whole window
+// (page.css).
 // It comes back as it was left: the sections open, the search and the scroll (docs/design/chrome-redesign.md, C6).
-import { closeSheet, narrow, reopenSheet, stillSheets } from './layout';
+import { closeSheet, narrow, reopenSheet, sheetMoves, stillSheets } from './layout';
 import type { AutoShell } from '../src/dialect';
 import { Lang } from '../src/i18n';
 import { autoShellText } from '../src/messages-shell';
@@ -124,11 +124,14 @@ export class SettingsDialog {
       e.preventDefault();
       void file.text().then((text) => this.importText(text));
     });
-    // Sliding out, coming back and a swipe are the sheet's classes (web/layout.ts), and a move ends in its transition.
+    // Sliding out, coming back and a swipe are the sheet's classes (web/layout.ts), and a move ends in its transition: ended,
+    // or cancelled (another took its place, or reduced motion came on).
     new MutationObserver(() => this.moving()).observe(dialog, { attributeFilter: ['class'] });
-    dialog.addEventListener('transitionend', (e) => {
-      if (e.target === dialog && e.propertyName === '--sheet-in' && dialog.open && !dialog.classList.contains('closing')) this.settled();
-    });
+    for (const end of ['transitionend', 'transitioncancel'] as const) {
+      dialog.addEventListener(end, (e) => {
+        if (e.target === dialog) this.restIfStill();
+      });
+    }
     // A window resized can leave no room for the column. (The sheet's width is its own, and the panes' width is the page's.)
     window.addEventListener('resize', () => {
       this.recheck();
@@ -146,13 +149,10 @@ export class SettingsDialog {
 
   /**
    * Whether the sheet is a modal dialog: where the page has no column for it (page.css: `--sheet-w` is 0 in the narrow layout,
-   * and on the compare page where the script lies above its copies), and where the panes' floors would not fit beside it.
+   * and on the compare page where the script lies above its copies). Where it has one, the panes' floors fit beside it.
    */
   private shouldBeModal(): boolean {
-    const root = document.documentElement;
-    const css = getComputedStyle(root);
-    const sheet = parseFloat(css.getPropertyValue('--sheet-w'));
-    return !sheet || sheet + parseFloat(css.getPropertyValue('--panes-floor')) > root.clientWidth;
+    return !parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sheet-w'));
   }
 
   /**
@@ -266,9 +266,22 @@ export class SettingsDialog {
   /** A swipe has begun, or the sheet is sliding out: the panes are about to follow. */
   private moving(): void {
     const c = this.dialog.classList;
-    if (this.modal || stillSheets() || !(c.contains('dragging') || c.contains('closing'))) return;
-    this.cursorKept ||= this.host.cursorInView();
-    this.freeze();
+    if (!this.modal && !stillSheets() && (c.contains('dragging') || c.contains('closing'))) {
+      this.cursorKept ||= this.host.cursorInView();
+      this.freeze();
+    }
+    this.restIfStill();
+  }
+
+  /**
+   * The one place that ends a move, when its classes change and when its transition stops: the sheet is at rest if it is not
+   * held or sliding out and no transition runs, which may never have begun (asked to close and to open again before a
+   * frame was drawn, or a swipe let go where it began, or reduced motion). Sliding out ends in the dialog's closing.
+   */
+  private restIfStill(): void {
+    const c = this.dialog.classList;
+    if (!this.frozen.length || c.contains('holding') || c.contains('dragging') || c.contains('closing')) return;
+    if (!sheetMoves(this.dialog, '--sheet-in')) this.settled();
   }
 
   /**
@@ -276,7 +289,11 @@ export class SettingsDialog {
    * cursor line, if it was on the screen, is still there. (The explanation keeps its own row: media/panel.js.)
    */
   private settled(): void {
-    for (const part of this.frozen) part.style.removeProperty('width');
+    for (const part of this.frozen) {
+      part.style.removeProperty('width');
+      // (No `style=""` left behind, on what had no style before.)
+      if (!part.style.length) part.removeAttribute('style');
+    }
     this.frozen = [];
     this.dialog.classList.remove('moving');
     if (this.cursorKept) this.host.showCursor();

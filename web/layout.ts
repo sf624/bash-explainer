@@ -110,7 +110,7 @@ export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange:
    */
   const range = (): [number, number] => {
     const css = getComputedStyle(split);
-    const floor = (name: string) => parseFloat(css.getPropertyValue(name)) * parseFloat(css.getPropertyValue('--sheet-in'));
+    const floor = (name: string) => parseFloat(css.getPropertyValue(name)) * (parseFloat(css.getPropertyValue('--sheet-in')) || 0);
     const full = split.clientWidth;
     return [Math.max(MIN, (floor('--editor-floor') / full) * 100), Math.min(MAX, ((full - parseFloat(css.getPropertyValue('--gutter')) - floor('--panel-floor')) / full) * 100)];
   };
@@ -118,18 +118,31 @@ export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange:
     const [low, high] = range();
     return Math.min(high, Math.max(low, v));
   };
+  /** What a screen reader hears: where the divider is shown and how far it goes, which beside the settings are not the share kept. */
+  const announce = () => {
+    const [low, high] = range();
+    handle.setAttribute('aria-valuemin', String(Math.round(low)));
+    handle.setAttribute('aria-valuemax', String(Math.round(high)));
+    handle.setAttribute('aria-valuenow', String(Math.round(within(current()))));
+  };
   const apply = () => {
-    const v = current();
-    split.style.setProperty('--split', `${v}%`);
-    handle.setAttribute('aria-valuenow', String(Math.round(v)));
+    split.style.setProperty('--split', `${current()}%`);
+    announce();
     // The divider of panes one above the other is horizontal.
     handle.setAttribute('aria-orientation', narrow.matches ? 'horizontal' : 'vertical');
   };
+  // (The settings come and go, and the window changes: the floors are a share of this box.)
+  new ResizeObserver(announce).observe(split);
   attachDivider(handle, {
     current: () => within(current()),
     set(v) {
       if (v === undefined) delete saved[key()];
-      else saved[key()] = within(v);
+      else {
+        // What does not change what is shown changes nothing: a share kept behind a floor stays as it was.
+        const next = within(v);
+        if (Math.abs(next - within(current())) < 1e-6) return;
+        saved[key()] = next;
+      }
       apply();
       onChange();
       // When storage refuses, the sizes last until the page is closed.
@@ -234,6 +247,9 @@ const closing = new WeakMap<HTMLDialogElement, () => void>();
 /** Reduced motion: a sheet is there or gone at once. */
 export const stillSheets = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/** Whether a transition of `property` is running on a sheet. (Asking brings the styles up to date: one about to begin has begun.) */
+export const sheetMoves = (sheet: HTMLElement, property: string): boolean => sheet.getAnimations().some((a) => (a as CSSTransition).transitionProperty === property);
+
 /**
  * The edge a side sheet lies along, as a sign: -1 for the left one (the menu), 1 for the right one (the settings, at
  * every width; a sheet as wide as the screen comes from the right). Read from where it is drawn, so that one rule of
@@ -263,6 +279,7 @@ export function closeSheet(sheet: HTMLDialogElement): void {
   let timer = 0;
   const reset = () => {
     sheet.removeEventListener('transitionend', onEnd);
+    sheet.removeEventListener('transitioncancel', onEnd);
     sheet.removeEventListener('close', reset);
     clearTimeout(timer);
     closing.delete(sheet);
@@ -273,13 +290,16 @@ export function closeSheet(sheet: HTMLDialogElement): void {
     reset();
     sheet.close();
   };
+  const property = beside ? '--sheet-in' : 'transform';
+  // (Cancelled for another in its place, it is not over.)
   const onEnd = (e: TransitionEvent) => {
-    if (e.target === sheet && e.propertyName === (beside ? '--sheet-in' : 'transform')) finish();
+    if (e.target === sheet && e.propertyName === property && !sheetMoves(sheet, property)) finish();
   };
   // Opened again while sliding out: it slides back. Closed by other means meanwhile: nothing is left over.
   closing.set(sheet, reset);
   sheet.addEventListener('close', reset);
   sheet.addEventListener('transitionend', onEnd);
+  sheet.addEventListener('transitioncancel', onEnd);
   // In case no transition runs (the sheet is already out of the screen), and as a safety net.
   timer = window.setTimeout(finish, 500);
   sheet.classList.add('closing');
@@ -339,6 +359,14 @@ export function setUpSheet(sheet: HTMLDialogElement): void {
       sheet.classList.add('dragging');
       holdSheet(sheet, sign, dx);
     }
+  });
+  // (The window crossing between the layouts under the finger closes the sheet and opens it again in the other kind, and the
+  // finger's end does not reach it: nothing of the hold is left over.)
+  sheet.addEventListener('close', () => {
+    start = undefined;
+    sheet.classList.remove('dragging');
+    for (const part of [sheet, document.querySelector('main')]) part?.style.removeProperty('--sheet-in');
+    sheet.style.removeProperty('transform');
   });
   const end = (e: PointerEvent) => {
     if (!start || e.pointerId !== start.id) return;

@@ -1730,37 +1730,93 @@
   /*
    * A new width (the divider, the settings opening beside the panes, the window) rewraps the text, and what lies above the
    * place being read grows or shrinks. The panel scrolls so that this place stays where it was on the screen. The row with
-   * the focus is that place, when it is on the screen; else the first row or text under the sticky rows. It is noted while
-   * the width is what it was (the browser has already rewrapped when the panel hears of a new one), whenever the viewer
-   * scrolls or the content changes. Our own scrolling here does not note it again, so that a narrower panel and a wider one
-   * give the same place back. A row kept in place for a fold (`hold`, below) goes first.
+   * the focus is that place, when it is on the screen; else the character at the reading line, just under the sticky rows.
+   * A character, not the box around it: the box at that point can be a whole list (between two rows), or a row taller than
+   * the screen, whose top says little of where the eye is; a character stays in its line of the text however the text
+   * rewraps. It is noted while the width is what it was (the browser has already rewrapped when the panel hears of a new
+   * one), whenever the viewer scrolls or the content changes, and only used when the width changes. Our own scrolling here does
+   * not note it again, so that a narrower panel and a wider one give the same place back. At the top of the page, the page
+   * stays at its top. A row kept in place for a fold (`hold`, below) goes first.
+   * CSS's own anchoring (`overflow-anchor`) cannot do this: measured in Chromium, it kept a 1 % step to the pixel, but
+   * lost the place on a larger one (1014 px on one 5 % step, 1404 px when the settings open, the scroll position untouched),
+   * WebKit has none, and it stays off for `hold`.
    */
-  /** @type {{ el: Element, top: number, y: number } | null} */
+  /** @type {{ at: Range | Element, top: number, under: number, y: number } | null} */
   let place = null;
   let placeFrame = 0;
   let placeWidth = document.documentElement.clientWidth;
+  /** Whether this frame's width is new. */
+  let placeFresh = false;
 
-  /** After a new width: scrolls the place back to where it was noted. Says whether the width was new. */
+  /** Where the sticky rows end on the screen. */
+  const underTop = () => $('top').getBoundingClientRect().bottom;
+
+  /**
+   * The first character at or below a point of the screen, as a range. (Between two rows, or beside the text, the browser finds
+   * the nearest line of text; on a box with no text, at the end of a text, or in a tall row whose text lies above the point,
+   * it is the next text after it.)
+   */
+  function charAt(/** @type {number} */ x, /** @type {number} */ y) {
+    const pos = document.caretPositionFromPoint?.(x, y);
+    const caret = pos ? null : document.caretRangeFromPoint?.(x, y);
+    const node = pos?.offsetNode ?? caret?.startContainer;
+    const offset = pos?.offset ?? caret?.startOffset ?? 0;
+    if (!node) return null;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    walker.currentNode = node.childNodes[offset] ?? node;
+    const range = document.createRange();
+    for (let text = walker.currentNode.nodeType === Node.TEXT_NODE ? walker.currentNode : walker.nextNode(); text; text = walker.nextNode()) {
+      // (Not a blank: one at the end of a line goes to the line before when the text rewraps, or is not drawn at all.)
+      const from = text === node ? offset : 0;
+      const k = from + /** @type {Text} */ (text).data.slice(from).search(/\S/);
+      if (k < from) continue;
+      range.setStart(text, k);
+      range.setEnd(text, k + 1);
+      const drawn = range.getClientRects()[0];
+      if (drawn && drawn.bottom > y) return range;
+    }
+    return null;
+  }
+
+  /**
+   * After a new width: scrolls the place back to where it was noted, and again if the sticky rows then fit themselves to that
+   * width, in the same frame. Says whether the width was new.
+   */
   function keepPlace() {
     const width = document.documentElement.clientWidth;
-    if (width === placeWidth) return false;
-    placeWidth = width;
-    if (place && !anchor && place.el.isConnected) {
-      window.scrollBy(0, place.el.getBoundingClientRect().top - Math.max(place.top, $('top').getBoundingClientRect().bottom));
+    const fresh = width !== placeWidth;
+    if (fresh) {
+      placeWidth = width;
+      placeFresh = true;
+      requestAnimationFrame(() => {
+        placeFresh = false;
+      });
+    }
+    // (Nothing to go by when it has gone: the content was drawn anew, which notes a new place.)
+    const now = placeFresh && !anchor && place?.at.getClientRects()[0];
+    if (place && now) {
+      // Where it was, unless the sticky rows have grown over it: then right under them.
+      const under = underTop();
+      scrollKeeping(window.scrollY + now.top - (under > place.under ? Math.max(place.top, under) : place.top));
       place.y = window.scrollY;
     }
-    return true;
+    return fresh;
   }
 
   function notePlace() {
     placeFrame = 0;
     // (Reading a place in the frame lays it out at the width it has now: one that has just changed is news first.)
     if (keepPlace()) return;
-    const under = $('top').getBoundingClientRect().bottom;
+    const y = window.scrollY;
+    if (!y) {
+      place = null;
+      return;
+    }
+    const under = underTop();
     const focused = document.activeElement?.closest('.row');
     const seen = focused && focused.getBoundingClientRect().top >= under && focused.getBoundingClientRect().bottom <= window.innerHeight;
-    const el = seen ? focused : document.elementFromPoint(window.innerWidth / 2, under + 1);
-    place = el && el !== document.documentElement && el !== document.body ? { el, top: el.getBoundingClientRect().top, y: window.scrollY } : null;
+    const at = seen ? focused : charAt(window.innerWidth / 2, under + 1);
+    place = at && { at, top: at.getBoundingClientRect().top, under, y };
   }
   const notePlaceSoon = () => {
     placeFrame ||= requestAnimationFrame(notePlace);
@@ -1771,7 +1827,9 @@
   }, { passive: true });
   new MutationObserver(notePlaceSoon).observe($('main'), { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden'] });
   // (A ResizeObserver runs after the layout and before the paint: no frame shows the place moved.)
-  new ResizeObserver(keepPlace).observe(document.documentElement);
+  const placeSizes = new ResizeObserver(keepPlace);
+  placeSizes.observe(document.documentElement);
+  placeSizes.observe($('top'));
 
   // ---------------------------------------------------------------- keeping the row acted on in place
 
@@ -1852,6 +1910,16 @@
     });
   }
 
+  /** Scrolls to `y`, with the spacer where the content no longer reaches that far, and takes away the part below the screen. */
+  function scrollKeeping(/** @type {number} */ y) {
+    const top = Math.max(0, y);
+    if (Math.abs(top - window.scrollY) > 0.25) {
+      setSpacer(Math.max(spacerEnd, top + window.innerHeight));
+      window.scrollTo({ top, behavior: 'instant' });
+    }
+    trimSpacer();
+  }
+
   /** Scrolls the row held back to its place, and takes away the spacer below the screen. */
   function keep() {
     const a = anchor;
@@ -1865,13 +1933,8 @@
       const [lo, hi] = a.range();
       y = Math.min(Math.max(y, lo), Math.max(lo, hi));
     }
-    y = Math.max(0, y);
-    if (Math.abs(y - window.scrollY) > 0.25) {
-      setSpacer(Math.max(spacerEnd, y + window.innerHeight));
-      window.scrollTo({ top: y, behavior: 'instant' });
-    }
+    scrollKeeping(y);
     a.y = window.scrollY;
-    trimSpacer();
   }
 
   /** At each frame while rows move; the row is let go once they stop. */
@@ -1882,6 +1945,7 @@
     else {
       anchor = null;
       trimSpacer();
+      notePlaceSoon();
     }
   }
 

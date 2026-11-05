@@ -37,6 +37,9 @@ export function setUpFocusRings(): void {
   }, true);
 }
 
+/** How far a menu stays from the window's left edge, in px. */
+const EDGE = 4;
+
 export interface Popover {
   readonly open: boolean;
   /** Closes it, and gives the focus back to its button. */
@@ -63,6 +66,10 @@ export function popover(button: HTMLElement, pop: HTMLElement): Popover {
   const open = () => {
     opening(closer);
     pop.hidden = false;
+    // It hangs from the button's right edge; a button near the window's left (a narrow editor) leaves it no room there.
+    pop.style.removeProperty('translate');
+    const short = EDGE - pop.getBoundingClientRect().left;
+    if (short > 0) pop.style.setProperty('translate', `${short}px`);
     button.setAttribute('aria-expanded', 'true');
     items()[0]?.focus();
   };

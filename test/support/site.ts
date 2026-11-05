@@ -132,6 +132,41 @@ export async function openSite(ctx: Mocha.Context): Promise<Site> {
   return site;
 }
 
+/** Waits, in the page it runs in, until two frames have been drawn. */
+export const FRAMES = 'new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done))))';
+
+/** The text at the panel's reading line, just under its sticky rows, and how far a change has moved it: see `MARK_READING`. */
+export interface ReadingPlace { top: number; under: number; y: number; text: string }
+
+/**
+ * Runs in the panel's page: finds the text at the reading line (a character, as the eye sees it, whatever the panel holds on to) and keeps it
+ * for `READ_MARK`, which says where it is now.
+ */
+export const MARK_READING = `(() => {
+  const under = document.getElementById('top').getBoundingClientRect().bottom;
+  const c = document.caretPositionFromPoint(innerWidth / 2, under + 1);
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  walker.currentNode = c.offsetNode.childNodes[c.offset] ?? c.offsetNode;
+  const r = document.createRange();
+  for (let n = walker.currentNode.nodeType === 3 ? walker.currentNode : walker.nextNode(); n; n = walker.nextNode()) {
+    const from = n === c.offsetNode ? c.offset : 0;
+    const k = from + n.data.slice(from).search(/\\S/);
+    if (k < from) continue;
+    r.setStart(n, k);
+    r.setEnd(n, k + 1);
+    if (r.getClientRects()[0]?.bottom > under + 1) break;
+  }
+  window.marked = r;
+  return { top: r.getBoundingClientRect().top, under, y: scrollY, text: r.startContainer.data.slice(0, 30) };
+})()`;
+export const READ_MARK = "({ top: window.marked.getBoundingClientRect().top, under: document.getElementById('top').getBoundingClientRect().bottom, y: scrollY, text: '' })";
+
+/** A change may move the text at the reading line as far as the sticky rows grew over it and a line more, and otherwise not at all. */
+export function readingMoved(from: ReadingPlace, to: ReadingPlace): boolean {
+  const grew = to.under - from.under;
+  return Math.abs(to.top - from.top) <= (grew > 0.5 ? grew + 26 : 2);
+}
+
 /** Polls `get` until `ok` accepts its value, and returns it; fails with `what` after `ms`. */
 export async function until<T>(what: string, get: () => Promise<T>, ok: (v: T) => boolean, ms = 10000): Promise<T> {
   const end = Date.now() + ms;
