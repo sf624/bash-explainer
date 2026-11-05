@@ -155,10 +155,9 @@ function readHoles(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNod
   const tokens = read.tokens.map(fill);
   // (The whole word is one hole: no parts for the reader to show, and what it says stands on the word, beside bash's `$x`.)
   const whole = tokens.length === 1 && tokens[0].hole && lit.text.length === 1;
-  // (A regex that is only the value: the word already says it is a pattern, with the option that chooses the flavour beside it.)
-  const regexWord = whole && read.tokens[0].hole!.place === 'regex';
-  const said = regexWord ? cx.text('hole-regex-word') : whole ? tokens[0].explanation : undefined;
-  const note = [...(read.note && !regexWord ? [show(read.note)] : []), ...(said ? [said] : []), ...(dash ? [dash] : [])].join(cx.sep());
+  // (A regex that is only the value: the word says it is a pattern, and `pattern-from-variable` (src/pitfalls.ts) what its characters do.)
+  if (whole && read.tokens[0].hole!.place === 'regex') return { spans: [], read: { tokens: [] } };
+  const note = [...(read.note ? [show(read.note)] : []), ...(whole ? [tokens[0].explanation] : []), ...(dash ? [dash] : [])].join(cx.sep());
   return { spans: whole ? [] : spans, read: { tokens: whole ? [] : tokens, ...(note ? { note } : {}) } };
 }
 

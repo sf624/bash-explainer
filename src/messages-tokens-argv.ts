@@ -109,8 +109,6 @@ export const ARGV_TEXTS = {
     }
     return [ja.join('。'), en.join('. ')];
   }),
-  /** `grep "$x" f`: the word is one hole, and says it is a regex: what the value does there. */
-  'hole-regex-word': tokenText(() => ['値の `.`・`*`・`[` は特別な意味を持つ', '`.`, `*`, `[` in the value are special']),
   /** `[$x]`: a hole in a bracket expression. */
   'hole-class': tokenText<{ value: string }>(({ value }) => [
     `${value} の値の文字がこの集合に加わる。値の中の \`]\`・\`-\`・\`^\` は特別な意味を持つ`,
