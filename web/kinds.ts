@@ -6,6 +6,7 @@ import type { ViewUpdate } from '@codemirror/view';
 import { detectKind } from '../src/hosts/detect';
 import type { Lang } from '../src/i18n';
 import type { Editor } from './editor';
+import type { Showing } from '../src/ui/firstRun';
 import type { FileState } from './file-state';
 import { askReplaceWithSample } from './kind-dialog';
 import { Picker } from './picker';
@@ -16,11 +17,14 @@ import type { ToastIcon, ToastSpec, ToastText } from './toast';
 /** A kind's name, file name, sample and the line its cursor starts on (a shell script for an unknown kind). */
 export const kindInfo = (k: Kind) => KINDS.find((x) => x.kind === k) ?? KINDS[0];
 
-/**
- * Whether the editor holds no text of the user's: nothing, or a sample exactly as the page loads it. Read from
- * the text itself rather than from a record of edits, so that it also holds after an undo back to a sample.
- */
-export const untouched = (text: string) => !text.trim() || KINDS.some((k) => k.sample === text);
+/** Whether a text is a sample exactly as the page loads it. Read from the text itself rather than from a record of edits, so that it also holds after an undo back to a sample. */
+export const isSample = (text: string): boolean => KINDS.some((k) => k.sample === text);
+
+/** Whether the editor holds no text of the user's: nothing, or a sample. */
+export const untouched = (text: string) => !text.trim() || isSample(text);
+
+/** What the editor holds, as the page's start reads it (src/ui/firstRun.ts). */
+export const showing = (text: string): Showing => (!text ? 'empty' : isSample(text) ? 'sample' : 'script');
 
 /** What the kind's choices read from the page, and ask of it. */
 export interface KindHost {

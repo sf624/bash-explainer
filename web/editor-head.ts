@@ -7,6 +7,7 @@ import type { Lang } from '../src/i18n';
 import type { Editor } from './editor';
 import { isMac } from './file-io';
 import { FileNameControl } from './file-name';
+import { touchScreen } from './layout';
 import { popover } from './popover';
 import { readStored, STORAGE_KEYS, writeStored } from './storage';
 import { TEXT } from './text';
@@ -25,15 +26,14 @@ export interface HeadHost {
   holdsSample(): boolean;
   /** Whether another first-run tip shows (the phone's read-mode switch): the hint waits for it. */
   tipShown(): boolean;
+  /** Whether Read mode is on: a tap on a line then reads it, and raises no keyboard (the hint's words say which). */
+  reading(): boolean;
   /** Says something in the page's toast. */
   status(text: string): void;
 }
 
 /** A shortcut's key: ⌘S on a Mac, Ctrl+S elsewhere. */
 export const shortcut = (key: string) => (isMac() ? `⌘${key}` : `Ctrl+${key}`);
-
-/** Whether the screen has no mouse: a phone or a tablet (its texts say "tap", and it has no keys to show). */
-const touchOnly = () => window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 
 export class EditorHead {
   private readonly hint = document.getElementById('first-hint');
@@ -82,11 +82,11 @@ export class EditorHead {
     put('more-copy-label', t.copyScript);
     put('more-sample-label', t.sample);
     put('more-clear-label', t.clear);
-    put('first-hint-text', touchOnly() ? t.hintTouch : t.hintDesk);
+    this.showHintWords();
     put('hint-own', t.useOwn);
     put('hint-open', t.openFile);
-    put('empty-paste-label', touchOnly() ? t.paste : t.pasteScript);
-    put('empty-paste-key', touchOnly() ? '' : shortcut('V'));
+    put('empty-paste-label', touchScreen() ? t.paste : t.pasteScript);
+    put('empty-paste-key', touchScreen() ? '' : shortcut('V'));
     put('empty-open-label', t.openFile);
     put('empty-sample-label', t.sample);
     put('empty-drop', t.orDrop);
@@ -103,6 +103,13 @@ export class EditorHead {
     this.host.names.show();
   }
 
+  /** The hint says what a tap does in the mode the page is in. */
+  showHintWords(): void {
+    const t = TEXT[this.host.lang()];
+    const words = document.getElementById('first-hint-text');
+    if (words) words.textContent = this.host.reading() ? t.hintRead : t.hintEdit;
+  }
+
   /** Follows the script: the name, Save's tooltip, the hint (while the editor holds the sample) and the empty block. */
   show(saveTitle: string): void {
     this.host.names.show();
@@ -117,10 +124,12 @@ export class EditorHead {
     if (!this.hint) return;
     const show = !this.hintClosed && readStored(STORAGE_KEYS.firstHint) !== '1' && this.host.holdsSample() && !this.host.tipShown();
     if (this.hint.hidden === !show) return;
+    // (It pushes the code down, or lets it up: a cursor's line in view stays in view, above a phone's sheet too. A reader
+    // who scrolled away from the cursor stays where they read.)
+    const kept = this.host.editor.cursorShows();
     this.hint.hidden = !show;
-    // (It pushes the code down, or lets it up: the cursor's line stays in view, above a phone's sheet too.)
     this.host.editor.view.requestMeasure();
-    this.host.editor.keepCursorInView('nearest');
+    if (kept) this.host.editor.keepLineInView();
   }
 
   private closeHint(): void {

@@ -1,7 +1,7 @@
 // The page's toasts (docs/design/chrome-redesign.md, C3, decision 8): one component, one look, one place. A toast has
 // an icon (↶ it can be undone, ✓ done, • a refusal or a note: not ⓘ, which is the Info level's mark), a short text, and at most a button (Undo) and a longer
-// text behind "More" or "Why?". It shows above the Problems list, inside the editor's pane: never over the explanation
-// or the panel's header. While it shows, the editor keeps the cursor's line above it (a bottom scroll margin). How long
+// text behind "More" or "Why?". It shows above the Problems list, inside the editor's pane, and goes over the pane's edge
+// only where the pane is too narrow to read it in (src/ui/toastBox.ts). While it shows, the editor keeps the cursor's line above it (a bottom scroll margin). How long
 // it stays is src/ui/toastTimer.ts: 4 s, 8 s with a button, held while the pointer or the keyboard's focus is on it.
 // Only the text is a live region (`role=status`): a screen reader says "Link copied", not "Link copied. More".
 import { TOAST_GAP as GAP, toastBox } from '../src/ui/toastBox';

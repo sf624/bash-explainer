@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import type { Browser, Page } from 'playwright-core';
-import { cursorToLine, FRAMES, openSite, until } from './support/site';
+import { cursorToLine, FRAMES, openSite, until, type Site } from './support/site';
 
 // Line 1: a caveat; line 2: a warning, then a caveat; line 3: an error.
 const SCRIPT = 'read line\nsource lib.sh; read other\n[ -f a';
@@ -14,10 +14,11 @@ const SCRIPT = 'read line\nsource lib.sh; read other\n[ -f a';
 describe('the web page: the Problems strip', function () {
   this.timeout(120000);
   let browser: Browser;
+  let firstVisit: Site['firstVisit'];
   let base = '';
 
   before(async function () {
-    ({ browser, base } = await openSite(this));
+    ({ browser, firstVisit, base } = await openSite(this));
   });
 
   async function open(page: Page, text = SCRIPT): Promise<void> {
@@ -87,7 +88,7 @@ describe('the web page: the Problems strip', function () {
   }
 
   it('opens the list on a first visit, then keeps the choice, and never opens it when a problem appears', async () => {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const ctx = await firstVisit({ viewport: { width: 1280, height: 800 } });
     const page = await ctx.newPage();
     await open(page);
     const toggle = page.locator('#problems-toggle');

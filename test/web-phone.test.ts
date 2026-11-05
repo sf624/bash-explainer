@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { isDeepStrictEqual } from 'util';
 import type { Browser, Page } from 'playwright-core';
-import { openSite, choose, currentShell, openSettingsSection, problemsShown, setShell, root, stable, until } from './support/site';
+import { openSite, choose, currentShell, openSettingsSection, problemsShown, setShell, root, stable, until, type Site } from './support/site';
 
 /** What a phone's sheet covers of the editor's box, which goes on under it (web/sheet.ts): what shows of the editor ends this far above the box's bottom. */
 const covered = (page: Page): Promise<number> => page.evaluate("parseFloat(document.documentElement.style.getPropertyValue('--sheet-cover')) || 0");
@@ -14,10 +14,11 @@ const covered = (page: Page): Promise<number> => page.evaluate("parseFloat(docum
 describe('the web page: touch screens, stored data and the window', function () {
   this.timeout(120000);
   let browser: Browser;
+  let firstVisit: Site['firstVisit'];
   let base = '';
 
   before(async function () {
-    ({ browser, base } = await openSite(this));
+    ({ browser, firstVisit, base } = await openSite(this));
   });
 
   it('does not move the focus to the quick reference\'s search field on a touch screen (no on-screen keyboard), and does with a mouse', async () => {
@@ -466,7 +467,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     await ctx.close();
 
     // A phone's first visit in the desktop-site mode records nothing.
-    const fresh = await browser.newContext(phone);
+    const fresh = await firstVisit(phone);
     const f = await fresh.newPage();
     const fcdp = await fresh.newCDPSession(f);
     await fcdp.send('Emulation.setUserAgentOverride', { userAgent: desktopUA, userAgentMetadata: meta(false) });

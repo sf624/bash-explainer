@@ -121,9 +121,9 @@ export const TEXT = {
     clear: 'Clear the editor',
     sampleCleared: 'Sample cleared',
     editorCleared: 'Editor cleared',
-    // The first visit's hint over the editor, and the empty editor's block.
-    hintDesk: 'This is a sample: put the cursor on any line.',
-    hintTouch: 'Tap a line to read it, or tap Edit to type.',
+    // The first visit's hint over the editor (the words of Read mode and of Edit, as a tap differs), and the empty editor's block.
+    hintEdit: 'This is a sample: put the cursor on any line.',
+    hintRead: 'Tap a line to read it, or tap Edit to type.',
     useOwn: 'Use my own script',
     openFile: 'Open a file…',
     pasteScript: 'Paste a script',
@@ -280,9 +280,10 @@ export const TEXT = {
     clear: 'エディタを空にする',
     sampleCleared: 'サンプルを消去しました',
     editorCleared: 'エディタを空にしました',
-    hintDesk: 'サンプルです。好きな行を選んでください。',
-    hintTouch: '行をタップで解説を読む。入力は「編集」を選ぶ。',
-    useOwn: '自分のスクリプトを使う',
+    hintEdit: 'サンプルです。好きな行を選んでください。',
+    hintRead: '行をタップで解説。入力は「編集」へ。',
+    // (A zero-width space where its two rows break, over a phone's sheet: web/page.css.)
+    useOwn: '自分の\u200bスクリプトを使う',
     openFile: 'ファイルを開く…',
     pasteScript: 'スクリプトを貼り付ける',
     paste: '貼り付け',

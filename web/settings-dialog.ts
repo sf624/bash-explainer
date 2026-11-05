@@ -10,7 +10,7 @@
 // (page.css).
 // It comes back as it was left: the sections open, the search and the scroll (docs/design/chrome-redesign.md, C6).
 import type { EditorPlace } from './editor-place';
-import { closeSheet, narrow, reopenSheet, SHEET_CLOSES_AT_ONCE, sheetMoves, stillSheets } from './layout';
+import { closeSheet, narrow, reopenSheet, SHEET_CLOSES_AT_ONCE, sheetMoves, stillSheets, touchScreen } from './layout';
 import type { AutoShell } from '../src/dialect';
 import { Lang } from '../src/i18n';
 import { autoShellText } from '../src/messages-shell';
@@ -56,8 +56,6 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string,
 }
 
 const pick = (lang: Lang, pair: [string, string]) => pair[lang === 'ja' ? 0 : 1];
-/** A touch screen: descriptions show whole, and a setting named in one is plain text (a link in a sentence is no 44 px target). */
-const coarse = () => window.matchMedia('(pointer: coarse)').matches;
 /** No pointer that hovers: the settings that need one are left out. */
 const hovers = () => !window.matchMedia('(hover: none)').matches;
 /** "Show VS Code setting names": the keys under the titles, in the options and in the descriptions. */
@@ -396,7 +394,7 @@ export class SettingsDialog {
     const setting = (key: string): Node => {
       const spec = settingsFor('web').find((x) => x.key === key);
       const name = !spec || keysShown() ? el('code', { textContent: `bashExplainer.${key}` }) : el('span', { textContent: pick(lang, spec.title) });
-      if (!spec || coarse()) return name;
+      if (!spec || touchScreen()) return name;
       const a = el('a', { href: `#${rowId(key)}`, className: 'setting-link' }, name);
       a.addEventListener('click', (e) => {
         e.preventDefault();
@@ -721,7 +719,7 @@ export class SettingsDialog {
   fitDescs(): void {
     this.fitted = this.dialog.offsetWidth;
     if (!this.dialog.open) return;
-    const touch = coarse();
+    const touch = touchScreen();
     for (const desc of this.dialog.querySelectorAll<HTMLElement>('.setting-desc.clamp')) {
       const more = this.dialog.querySelector<HTMLElement>(`#${desc.dataset.more}`)!;
       if (!this.whole.has(desc)) this.whole.set(desc, [...desc.childNodes]);

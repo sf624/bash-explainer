@@ -33,12 +33,13 @@ import { FileNameControl } from './file-name';
 import { linkWords, showMenuTexts } from './menu';
 import { showChannel } from './banner';
 import { ask } from './kind-dialog';
-import { KindControl, untouched } from './kinds';
+import { isSample, KindControl, showing, untouched } from './kinds';
 import { closingPlace, keepPlace, notePlace } from './editor-place';
 import { closeSheet, narrow, reopenSheet, setUpEdgeSwipe, setUpProblems, setUpSheet, setUpSplitter } from './layout';
 import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
 import { ProblemStrip, roomAboveStrip, watchStrip } from './problem-list';
+import type { Showing } from '../src/ui/firstRun';
 import { ReadEdit } from './read-edit';
 import { BottomSheet } from './sheet';
 import { CopyState, DEFAULT_THEME, Theme, THEMES } from './protocol';
@@ -148,12 +149,19 @@ function autoShell(): AutoShell | undefined {
 
 // ---- Editor ---------------------------------------------------------------------------------
 
+/** The editor page has its files, its header and the Read | Edit switch; the compare page and the copies in panel mode do not. */
+const withFiles = !mode.compare && !mode.panel;
+/** The script the page starts with: from its link, or a sample. */
+const firstText = shared.text ?? kinds.info().sample;
 const readEdit = new ReadEdit({
-  set: (read) => editor.setReadMode(read),
+  set(read) {
+    editor.setReadMode(read);
+    head?.showHintWords();
+  },
   tipGone: () => showFile(),
-  sample: (): boolean => KINDS.some((k) => k.sample === editor.text),
-  // (The page starts with its sample unless a link brings a script: Read mode on a touch screen, with no mode chosen.)
-}, shared.text === undefined && shared.deflated === undefined);
+  showing: (): Showing => showing(editor.text),
+  // (A deflated link's text comes later, and is the user's.)
+}, withFiles, !shared.deflated && isSample(firstText));
 /** The warning codes in the script, offered in the settings dialog. */
 let codesSeen: string[] = [];
 /** The problems the editor shows, for the panel's squiggles. */
@@ -196,6 +204,7 @@ const editor = new Editor({
     if (u.docChanged && toast.current?.action?.untilEdit && !kinds.puttingText) toast.hide();
     if (u.docChanged && !mode.panel) kinds.detectPasted(u);
     if (u.docChanged) showFileSoon();
+    if (u.docChanged) readEdit.textChanged();
     if (Editor.problemsMoved(u)) strip?.place();
     // In panel mode the page around sends every change as a message, which is handled at once.
     if (mode.panel || (!u.docChanged && !u.selectionSet)) return;
@@ -204,7 +213,7 @@ const editor = new Editor({
   },
   openSettings: () => settingsDialog?.show(),
   announce: (text) => announcer?.say(text),
-}, { parent: $('editor'), text: shared.text ?? kinds.info().sample, readMode: readEdit.read, problems: mode.hasChrome });
+}, { parent: $('editor'), text: firstText, readMode: readEdit.read, problems: mode.hasChrome });
 editor.shade();
 editor.placeCursor(shared.text ? 1 : kinds.info().cursorLine);
 {
@@ -567,7 +576,7 @@ const sheet = panePane && mode.hasChrome ? new BottomSheet(panePane, {
     editor.view.requestMeasure();
     // (A card open over the editor keeps clear of the sheet's new top: its space ends there, `tooltipSpace`.)
     repositionTooltips(editor.view);
-    if (follow) editor.keepCursorInView('nearest');
+    if (follow) editor.keepLineInView();
     toast.place();
     readEdit.placeTip();
   },
@@ -662,8 +671,6 @@ on('share', 'click', () => void copyLink('share'));
 
 // ---- Files: open one into the editor, save the editor's text to one (web/file-io.ts) ----------------
 
-/** The editor page has them; the compare page and the copies in panel mode do not. */
-const withFiles = !mode.compare && !mode.panel;
 /** The editor's header, the first visit's hint and the empty editor's block (web/editor-head.ts); the editor page's only. */
 const head = withFiles ? new EditorHead({
   lang: () => lang,
@@ -674,8 +681,9 @@ const head = withFiles ? new EditorHead({
   loadSample: (from) => void sampleAsked(from),
   clear: clearEditor,
   copyScript,
-  holdsSample: () => KINDS.some((k) => k.sample === editor.text),
+  holdsSample: () => isSample(editor.text),
   tipShown: () => readEdit.tipShown(),
+  reading: () => readEdit.read,
   status: (text) => status('note', text),
 }) : undefined;
 scope = withFiles ? new ScopeControl({ lang: () => lang, kind: () => kinds.kind, shells: () => ({ forced: forcedShell(settings), auto: autoShell() }), yq: () => yqLine, chooseKind: (k) => kinds.choose(k), choose: setChoice }) : undefined;
