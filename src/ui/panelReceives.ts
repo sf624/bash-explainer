@@ -3,7 +3,7 @@
 // `NotPosix`, src/dialect.ts). media/panel.js draws them and decides none of it.
 import type { ArgvLine, ArgvWord, NotPosix, Span } from '../analyzer-types';
 import type { Lang } from '../i18n';
-import { shownWord } from '../messages';
+import { shownPiece } from '../messages';
 import { spanWithin } from '../noteanchors';
 import { keyOf } from '../reading';
 import { ui } from './texts';
@@ -26,7 +26,9 @@ const CHIPS_SHOWN = 30;
 /** A word as a chip. */
 function chipOf(w: ArgvWord): ReceivedChip {
   // (An empty text beside a placeholder is no part: only a word that is all empty shows as empty.)
-  const parts = w.parts.filter((p) => w.parts.length === 1 || !('text' in p) || p.text).map((p): ChipPart => ('text' in p ? shownWord(p.text) : { hole: p.label }));
+  // (A space is marked only at an end of the whole word, where it would not be seen: beside a placeholder it shows as it is.)
+  const kept = w.parts.filter((p) => w.parts.length === 1 || !('text' in p) || p.text);
+  const parts = kept.map((p, i): ChipPart => ('text' in p ? shownPiece(p.text, { lead: i === 0, trail: i === kept.length - 1 }) : { hole: p.label }));
   return { parts, ...(w.asWritten ? { asWritten: true as const } : {}), ...(w.count ? { many: true as const } : {}) };
 }
 
