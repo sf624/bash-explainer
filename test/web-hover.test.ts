@@ -448,7 +448,7 @@ describe('the web page: hover cards in the editor', function () {
     const icons = (md: string) => (md.replace(/^(`{3,})text\n[\s\S]*?\n\1$/gm, '').replace(/(`+)(?:(?!\1)[\s\S])*?\1/g, '').match(/\$\([a-z-]+\)/g) ?? []).length;
     // A character hoverView writes as an entity is text (a label's `**/*.sh`, `$(date)`): it becomes a character of the
     // private use area, so that what is left of `*`, `` ` ``, `$(`… in the text is Markdown that was not read.
-    const literal = (md: string) => md.replace(/&#(35|36|42|62|91|92|93|95|96|124|126);|&gt;/g, (m, n?: string) => `&#${0xe000 + Number(n ?? 62)};`);
+    const literal = (md: string) => md.replace(/&#(35|36|42|62|91|92|93|95|96|124|126);|&gt;/g, (_m, n?: string) => `&#${0xe000 + Number(n ?? 62)};`);
     const list = [...cards].map((md) => ({ md: literal(md), icons: plain.has(md) ? icons(md) : -1 }));
     const manual = [...REFERENCE_URLS];
     // (The functions run in the page, given as text: this file is compiled without the DOM's types.)

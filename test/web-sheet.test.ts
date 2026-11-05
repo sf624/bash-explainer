@@ -409,8 +409,6 @@ describe('the web page: the phone\'s sheet', function () {
     await page.keyboard.press('Control+I');
     const card = page.locator('.cm-bx-hover-pinned');
     await until('the card', () => card.count(), (n) => n === 1);
-    // (Keys sent to the grabber without taking the focus from the editor: the card stays. Not to full: the editor is inert then, and the card goes.)
-    const key = (name: string) => page.evaluate(`document.getElementById('sheet-grab').dispatchEvent(new KeyboardEvent('keydown', { key: '${name}', bubbles: true }))`);
     const cdp = await page.context().newCDPSession(page);
     const drag = finger(cdp, page);
     for (const up of [true, false, true]) {

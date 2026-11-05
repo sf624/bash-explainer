@@ -387,7 +387,7 @@ export class SettingsDialog {
   private rich(text: string, lang: Lang): Node[] {
     const setting = (key: string): Node => {
       const spec = settingsFor('web').find((x) => x.key === key);
-      const name = !spec || keysShown() ? el('code', { textContent: `bashExplainer.${key}` }) : el('span', { className: 'setting-name', textContent: pick(lang, spec.title) });
+      const name = !spec || keysShown() ? el('code', { textContent: `bashExplainer.${key}` }) : el('span', { textContent: pick(lang, spec.title) });
       if (!spec || coarse()) return name;
       const a = el('a', { href: `#${rowId(key)}`, className: 'setting-link' }, name);
       a.addEventListener('click', (e) => {
@@ -471,7 +471,7 @@ export class SettingsDialog {
       }
     }
     const part = el('div', { className: 'settings-part settings-io' },
-      el('h4', { id: 'settings-io-title', textContent: t.io }),
+      el('h4', { textContent: t.io }),
       this.descLine(el('p', { className: 'setting-desc', id: 'settings-io-desc' }, ...this.rich(t.ioDesc, lang)), t.io, lang),
       el('div', { className: 'settings-io-buttons' },
         button('settings-export', t.exportFile, () => this.exportFile()),
@@ -507,7 +507,7 @@ export class SettingsDialog {
       }), button('settings-clear-no', t.clearNo, () => ask(undefined))]
       : [button('settings-clear', t.clear, () => ask('ask'))];
     if (this.clearing === 'done') status.append(el('p', { textContent: t.cleared }));
-    const part = el('div', { className: 'settings-part settings-clear' },
+    const part = el('div', { className: 'settings-part' },
       el('h4', { textContent: t.clear }),
       this.descLine(el('p', { className: 'setting-desc', id: 'settings-clear-desc', textContent: t.clearDesc }), t.clear, lang),
       el('div', { className: 'settings-io-buttons' }, ...buttons),
@@ -669,7 +669,7 @@ export class SettingsDialog {
   /** A description in two lines at most, with "More" after the last word shown when it is longer (`fitDescs`). */
   private descLine(desc: HTMLElement, title: string, lang: Lang): HTMLElement {
     const t = TEXT[lang];
-    const more = el('button', { type: 'button', id: `${desc.id}-more`, className: 'link-btn desc-more', textContent: t.more });
+    const more = el('button', { type: 'button', id: `${desc.id}-more`, className: 'desc-more', textContent: t.more });
     more.setAttribute('aria-expanded', 'false');
     more.setAttribute('aria-label', t.moreAbout(title));
     const shown = () => this.expanded.has(desc.id);
@@ -692,7 +692,7 @@ export class SettingsDialog {
     });
     desc.classList.add('clamp');
     desc.dataset.more = more.id;
-    return el('div', { className: 'desc-line' }, desc, more);
+    return el('div', {}, desc, more);
   }
 
   /**
@@ -765,7 +765,7 @@ export class SettingsDialog {
     const desc = el('p', { className: 'setting-desc', id: `${id}-desc`, textContent: t.themeDesc });
     select.setAttribute('aria-describedby', desc.id);
     // (Not a setting of VS Code: no key to show or to search for.)
-    const row = el('div', { className: 'setting setting-string', id: `${id}-row` }, el('div', { className: 'setting-head' }, el('label', { htmlFor: id, textContent: t.theme })), this.descLine(desc, t.theme, lang), select);
+    const row = el('div', { className: 'setting', id: `${id}-row` }, el('div', { className: 'setting-head' }, el('label', { htmlFor: id, textContent: t.theme })), this.descLine(desc, t.theme, lang), select);
     row.dataset.title = t.theme;
     return row;
   }

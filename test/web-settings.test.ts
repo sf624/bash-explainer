@@ -394,7 +394,6 @@ describe('the web page: theme and settings', function () {
     assert.deepStrictEqual(fit, { left: 0, right: 0, top: 0, bottom: 0, sideways: false, page: false, out: [] });
     // Without storage, a change still applies for as long as the page is open.
     await (await settingControl(page, 'shell')).selectOption('dash');
-    const panel = page.frames().find((f) => f.url().endsWith('/panel.html'))!;
     await until('the menu\'s shell', () => currentShell(page), (v) => v === 'dash');
     assert.deepStrictEqual(errors, []);
     await ctx.close();
@@ -1637,11 +1636,17 @@ describe('the web page: theme and settings', function () {
     const [saved] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+S')]);
     assert.ok(saved.suggestedFilename().endsWith('.sh'));
     await until('the toast', () => page.evaluate("!!document.querySelector('#status [id=status-action], #status button')") as Promise<boolean>, (v) => v);
+    // The pointer rests on the toast, which holds its time (src/ui/toastTimer.ts): a toast with a button lasts 8 s, and under load
+    // the walk below could take longer, so that the toast went before Shift+F6 came back to it. The keys do not care for the pointer.
+    await page.locator('#status button').first().hover();
     // F6 goes round the parts as they lie on the screen: editor, explanation, sheet, toast, editor (Shift+F6 the other way).
     const part = () => page.evaluate(`(() => { const a = document.activeElement; return a.id === 'panel' ? 'panel' : a.closest('#status') ? 'toast' : a.closest('#settings-dialog') ? 'sheet' : a.classList.contains('cm-content') ? 'editor' : a.tagName; })()`) as Promise<string>;
     for (const [key, to] of [['F6', 'toast'], ['F6', 'editor'], ['F6', 'panel'], ['F6', 'sheet'], ['Shift+F6', 'panel'], ['Shift+F6', 'editor'], ['Shift+F6', 'toast'], ['Shift+F6', 'sheet'], ['Shift+F6', 'panel']] as const) {
       await page.keyboard.press(key);
       await until(`${key} to ${to}`, part, (w) => w === to);
+      // The page focuses the frame at once and asks the panel to focus its content: that message can come after the next key
+      // (under load it did, and took the focus back from the editor). So the walk goes on when the panel has done it.
+      if (to === 'panel') await until('the explanation took the focus', () => panel().evaluate('document.activeElement && document.activeElement.id') as Promise<string>, (id) => id === 'main');
     }
     // Ctrl+S from the panel too.
     const [again] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+S')]);
