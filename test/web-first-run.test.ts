@@ -253,6 +253,64 @@ describe('the web page: the first ten seconds on a touch screen, and what is aro
     await ctx.close();
   });
 
+  describe('a link made by the page\'s own Share', () => {
+    const sample = fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8');
+    /** The link the page copies for a script: the script comes in by a `t=` link, and Share makes the link (a `z=` one where the browser can deflate). */
+    const shared = async (text: string): Promise<string> => {
+      const ctx = await browser.newContext(await phone(390, 664, 'en'));
+      await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
+      const page = await ctx.newPage();
+      await page.goto(`${base}${link(text)}`);
+      await page.locator('.cm-line').first().waitFor();
+      await page.evaluate('navigator.clipboard.writeText("")');
+      await page.locator('#menu-open').tap();
+      await page.locator('#menu-share').tap();
+      const url = await until('the link', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.includes('#'));
+      await ctx.close();
+      return url;
+    };
+
+    it('takes the sample in a deflated link (z=) for the sample, as in a plain one: Read, no keyboard, the hint, no tip', async () => {
+      const url = await shared(sample);
+      assert.match(url, /#lang=en&kind=shell&z=/);
+      const ctx = await firstVisit(await phone(390, 664, 'en'));
+      const page = await ctx.newPage();
+      await page.goto(url);
+      await ready(page);
+      await until('the hint', () => box(page, '#first-hint'), (b) => b !== null);
+      assert.deepStrictEqual([await read(page), await inputmode(page), await storedMode(page)], [true, 'none', null]);
+      assert.strictEqual(await page.locator('#first-hint-text').innerText(), HINT_READ.en);
+      assert.strictEqual(await box(page, '#readtip'), null);
+      await ctx.close();
+    });
+
+    it('starts in Edit, with the tip, for another script in a deflated link, and for the sample and a newline', async () => {
+      for (const text of ['echo hi\n', `${sample}\n`]) {
+        const url = await shared(text);
+        assert.match(url, /&z=/);
+        const ctx = await firstVisit(await phone(390, 664, 'en'));
+        const page = await ctx.newPage();
+        await page.goto(url);
+        await until('the tip', () => page.locator('#readtip').isVisible(), (v) => v);
+        assert.deepStrictEqual([await read(page), await inputmode(page), await storedMode(page)], [false, null, null]);
+        await ctx.close();
+      }
+    });
+
+    it('lets a mode the user chose win over the sample in a deflated link', async () => {
+      const url = await shared(sample);
+      for (const [stored, pressed, im] of [['1', true, 'none'], ['0', false, null]] as const) {
+        const ctx = await firstVisit(await phone(390, 664, 'en'));
+        await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-read-mode', '${stored}'); localStorage.setItem('bash-explainer-read-tip-seen', '1'); } catch {}`);
+        const page = await ctx.newPage();
+        await page.goto(url);
+        await ready(page);
+        assert.deepStrictEqual([await read(page), await inputmode(page), await storedMode(page)], [pressed, im, stored]);
+        await ctx.close();
+      }
+    });
+  });
+
   it('has the hint\'s words in as many rows as they need, and its height stays', async () => {
     // (Rows of text, not of the bar: two beside the button on a phone upright, one on a wider screen.)
     const want: [number, number, 'en' | 'ja', number][] = [
@@ -351,6 +409,63 @@ describe('the web page: the first ten seconds on a touch screen, and what is aro
       await until('the sample', () => box(page, '#empty-editor'), (b) => b === null);
       assert.deepStrictEqual([await inputmode(page), await read(page), await storedMode(page)], ['none', true, null]);
       await ctx.close();
+    });
+
+    describe('the sample comes back: to Read only while the editor does not have the focus', () => {
+      const sample = fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8');
+      const hasFocus = (page: Page) => page.evaluate("document.activeElement === document.querySelector('.cm-content')");
+      /** The sample's return, by each input. A test's `element.click()` moves no focus, so each case says where the focus is. */
+      const inputs: [string, boolean, (page: Page) => Promise<unknown>][] = [
+        ['the toast\'s Undo', true, (page) => page.evaluate("document.getElementById('status-action').click()")],
+        ['the block\'s Load the sample', true, (page) => page.evaluate("document.getElementById('empty-sample').click()")],
+        ['the undo key', false, (page) => page.keyboard.press('Control+z')],
+        ['a paste of the exact sample', true, (page) => page.evaluate(`(() => {
+          const data = new DataTransfer();
+          data.setData('text/plain', ${JSON.stringify(sample)});
+          document.querySelector('.cm-content').dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+        })()`)],
+      ];
+      const own = async (page: Page, focus: boolean) => {
+        await page.goto(base);
+        await ready(page);
+        await page.locator('#hint-own').tap();
+        await until('the empty editor', () => box(page, '#empty-editor'), (b) => b !== null);
+        await page.locator('.cm-line').first().tap();
+        await page.evaluate(focus ? "document.querySelector('.cm-content').focus()" : "document.activeElement.blur()");
+        assert.strictEqual(await hasFocus(page), focus);
+        assert.deepStrictEqual([await read(page), await inputmode(page)], [false, null]);
+      };
+      const sampleBack = (page: Page) => until('the sample', () => page.evaluate("document.querySelectorAll('.cm-line').length"), (n) => (n as number) > 20);
+
+      for (const [name, noFocusToo, put] of inputs) {
+        it(`${name} with the focus in the editor stays in Edit, and the next key types`, async () => {
+          const ctx = await firstVisit(await phone(390, 664, 'en'));
+          const page = await ctx.newPage();
+          await own(page, true);
+          await put(page);
+          await sampleBack(page);
+          assert.strictEqual(await hasFocus(page), true);
+          assert.deepStrictEqual([await read(page), await inputmode(page), await storedMode(page)], [false, null, null]);
+          await page.keyboard.insertText('QZQ');
+          await until('the key', () => page.locator('.cm-content').innerText(), (t) => t.includes('QZQ'));
+          assert.deepStrictEqual([await read(page), await inputmode(page)], [false, null]);
+          // (No flip later, on blur.)
+          await page.evaluate("document.activeElement.blur()");
+          assert.deepStrictEqual([await read(page), await inputmode(page)], [false, null]);
+          await ctx.close();
+        });
+        if (noFocusToo) {
+          it(`${name} without the focus goes to Read`, async () => {
+            const ctx = await firstVisit(await phone(390, 664, 'en'));
+            const page = await ctx.newPage();
+            await own(page, false);
+            await put(page);
+            await sampleBack(page);
+            assert.deepStrictEqual([await read(page), await inputmode(page), await storedMode(page)], [true, 'none', null]);
+            await ctx.close();
+          });
+        }
+      }
     });
 
     it('keeps Read when the user chose it, on an empty editor too; Edit stored stays Edit', async () => {

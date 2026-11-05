@@ -23,10 +23,13 @@ export function startInRead(stored: string | null | undefined, hasSwitch: boolea
 /**
  * The mode of a page that started in Read with no mode chosen, as its script changes. An empty editor has nothing to
  * read and everything to type: Edit, so that a tap raises the keyboard, and it stays up as the first words are typed. The
- * sample again (Undo, Load the sample): Read. A script pasted, typed or opened changes nothing. A chosen mode never
+ * sample again (Undo, Load the sample): Read. A script pasted, typed or opened changes nothing. While the editor has the
+ * focus (`focused`) nothing changes either: the keyboard may be open, and a switch that flips under it would disagree with
+ * it (nor does it flip later, on blur: the next load, or the next change without focus, decides again). A chosen mode never
  * comes here, and nothing here is stored.
  */
-export function readAsTextChanges(read: boolean, showing: Showing): boolean {
+export function readAsTextChanges(read: boolean, showing: Showing, focused: boolean): boolean {
+  if (focused) return read;
   return showing === 'script' ? read : showing === 'sample';
 }
 

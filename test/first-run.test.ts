@@ -30,12 +30,16 @@ describe('the first visit on a touch screen', () => {
   });
 
   it('follows the script while no mode is chosen: Edit on an empty editor, Read on the sample, the same for any other script', () => {
-    assert.strictEqual(readAsTextChanges(true, 'empty'), false);
-    assert.strictEqual(readAsTextChanges(false, 'empty'), false);
-    assert.strictEqual(readAsTextChanges(false, 'sample'), true);
-    assert.strictEqual(readAsTextChanges(true, 'sample'), true);
-    assert.strictEqual(readAsTextChanges(true, 'script'), true);
-    assert.strictEqual(readAsTextChanges(false, 'script'), false);
+    assert.strictEqual(readAsTextChanges(true, 'empty', false), false);
+    assert.strictEqual(readAsTextChanges(false, 'empty', false), false);
+    assert.strictEqual(readAsTextChanges(false, 'sample', false), true);
+    assert.strictEqual(readAsTextChanges(true, 'sample', false), true);
+    assert.strictEqual(readAsTextChanges(true, 'script', false), true);
+    assert.strictEqual(readAsTextChanges(false, 'script', false), false);
+  });
+
+  it('changes nothing while the editor has the focus: the switch does not flip under an open keyboard', () => {
+    for (const read of [true, false]) for (const showing of ['empty', 'sample', 'script'] as const) assert.strictEqual(readAsTextChanges(read, showing, true), read);
   });
 
   it('shows the tip only on a touch screen in Edit mode, until it was seen', () => {
