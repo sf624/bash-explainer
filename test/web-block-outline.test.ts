@@ -53,6 +53,9 @@ describe('the web page: the mark of the command at the cursor', function () {
     return { shadow: s.boxShadow, bar: b.content !== 'none' && b.content !== 'normal' && b.backgroundColor !== 'rgba(0, 0, 0, 0)', barLeft: parseFloat(b.left), barWidth: parseFloat(b.width), padding: parseFloat(s.paddingLeft), top: b.top, bottom: b.bottom };
   })()`) as Promise<{ shadow: string; bar: boolean; barLeft: number; barWidth: number; padding: number; top: string; bottom: string }>;
 
+  /** How many style rules the page has that mention the mark. */
+  const ruleCount = (page: Page) => page.evaluate("Array.from(document.styleSheets).flatMap((s) => Array.from(s.cssRules)).flatMap((r) => r.cssRules ? Array.from(r.cssRules) : [r]).filter((r) => r.cssText.includes('cm-bx-blk')).length") as Promise<number>;
+
   /** Everything the mark must not move: the rects of the lines, the first and last character of each, the gutters, the selection, the active line, the scrolling. */
   const layout = (page: Page): Promise<any> => stable('the layout', () => page.evaluate(`(() => {
     const r = (el) => { const b = el.getBoundingClientRect(); return [b.left, b.top, b.width, b.height].map((v) => Math.round(v * 100) / 100); };
@@ -165,7 +168,14 @@ describe('the web page: the mark of the command at the cursor', function () {
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     await page.keyboard.insertText('    echo more');
-    assert.deepStrictEqual(await until('the block of four rows', () => marks(page), (m) => m.length === 4), ['4 first', '5 mid', '6 mid', '7 last']);
+    // (At once, in the same frame: the bar has no hole while the page has not parsed the new text yet.)
+    assert.deepStrictEqual(await marks(page), ['4 first', '5 mid', '6 mid', '7 last']);
+    assert.deepStrictEqual(await until('the block of four rows, parsed', () => marks(page), (m) => m.length === 4), ['4 first', '5 mid', '6 mid', '7 last']);
+    // Undo takes the row away at once as well.
+    await page.keyboard.press('Control+z');
+    assert.deepStrictEqual(await marks(page), BLOCK_4_6);
+    await page.keyboard.press('Control+y');
+    assert.deepStrictEqual(await marks(page), ['4 first', '5 mid', '6 mid', '7 last']);
     // The block closed with a `fi` line removed: the if goes on to the end of the text; typing a new line after the for.
     await page.keyboard.press('Control+End');
     await page.keyboard.insertText('\nif x; then\n  y\nfi');
@@ -199,6 +209,56 @@ describe('the web page: the mark of the command at the cursor', function () {
     await (await settingControl(page, 'blockOutline')).selectOption('bar');
     // Back to the default: the setting is not stored any more.
     assert.strictEqual(JSON.parse(await page.evaluate('localStorage.getItem("bash-explainer-settings")') as string)['bashExplainer.blockOutline'], undefined);
+    await page.context().close();
+  });
+
+  it('draws exactly the mark of the mode after every switch of the setting: never both, and no style is added', async () => {
+    const page = await open();
+    await cursorToLine(page, 5);
+    await until('the block', () => marks(page), (m) => m.length === 3);
+    const control = await settingControl(page, 'blockOutline');
+    const TINT = 'rgba(127, 127, 127, 0.09) 0px 0px 0px 1280px inset';  // (100vmax of a 1280 by 800 viewport)
+    /** What line 5 draws: the exact shadow, and the bar's width, left and colour, or none. */
+    const mark = async () => {
+      return await page.evaluate(`(() => {
+        const el = document.querySelectorAll('.cm-content > .cm-line')[4];
+        const s = getComputedStyle(el), b = getComputedStyle(el, '::before');
+        return { shadow: s.boxShadow, content: b.content, width: b.width, left: b.left, background: b.backgroundColor };
+      })()`) as { shadow: string; content: string; width: string; left: string; background: string };
+    };
+    const BAR = (await mark());
+    assert.strictEqual(BAR.shadow, 'none');
+    assert.deepStrictEqual([BAR.content, BAR.width, BAR.left], ['""', '3px', '1px']);
+    assert.strictEqual(BAR.background, 'color(srgb 0.231373 0.231373 0.231373 / 0.55)');  // (the editor's text colour at 55%, on the light theme)
+    const bar = async (why: string) => { const m = await until(why, mark, (v) => v.shadow === 'none' && v.content === '""'); assert.deepStrictEqual(m, BAR, why); };
+    const tint = async (why: string) => {
+      const m = await until(why, mark, (v) => v.shadow !== 'none');
+      assert.strictEqual(m.shadow, TINT, why);
+      // (The pseudo-element is there, but draws nothing: no bar.)
+      assert.strictEqual(m.background, 'rgba(0, 0, 0, 0)', why);
+    };
+    const rules = await ruleCount(page);
+    await control.selectOption('tint');
+    await tint('tint after bar');
+    const both = await ruleCount(page);
+    await control.selectOption('bar');
+    await bar('bar after tint');
+    await control.selectOption('tint');
+    await tint('tint again');
+    await control.selectOption('bar');
+    await bar('bar again');
+    await control.selectOption('off');
+    await until('off', () => marks(page), (m) => m.length === 0);
+    await control.selectOption('bar');
+    await bar('bar after off');
+    await control.selectOption('tint');
+    await tint('tint before the reset');
+    await page.locator('#settings-reset').click();
+    await bar('bar after Reset to defaults');
+    assert.deepStrictEqual(await marks(page), BLOCK_4_6);
+    // The styles of both marks are in the page from the first switch on, and no switch adds one.
+    assert.ok(rules <= both, `${rules} rules before, ${both} with both modes`);
+    assert.strictEqual(await ruleCount(page), both);
     await page.context().close();
   });
 

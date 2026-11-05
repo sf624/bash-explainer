@@ -2,9 +2,13 @@
 // `vscode` module: the rows of the block at the cursor, one decoration type for the setting `bar` and another for
 // `tint` (theme colours, whole lines), nothing and no work for `off`, and a change of the setting at once.
 import * as assert from 'assert';
+import * as fs from 'fs';
 import Module from 'module';
+import * as path from 'path';
+import * as ts from 'typescript';
 import { openDocument } from '../src/document-setup';
 import type { BlockOutline } from '../src/settings';
+import { failuresThrow } from '../src/failures';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 type Handler = (e: any) => void;
@@ -39,12 +43,19 @@ function standIn() {
 }
 
 const parser = createUnbashParser();
+let documentCount = 0;
 /** An editor on a script, with the cursor at `line`, `character`; what it was handed is in `marks`. */
 function editorOn(text: string, line: number, character = 0, target = true) {
-  const document = { text, target, version: 1 };
+  const document = { text, target, version: 1, uri: `file:${++documentCount}` };
+
   const editor = {
     document, selection: { active: { line, character } }, marks: new Map<any, number[]>(),
-    setDecorations(type: any, ranges: any[]) { this.marks.set(type, ranges.map((r) => r.startLine)); },
+    // (The rows a range of whole lines covers, end included; `ranges` is what the editor was handed.)
+    ranges: [] as number[][],
+    setDecorations(type: any, ranges: any[]) {
+      this.ranges = ranges.map((r) => [r.startLine, r.endLine]);
+      this.marks.set(type, ranges.flatMap((r) => Array.from({ length: r.endLine - r.startLine + 1 }, (_, i) => r.startLine + i)));
+    },
   };
   return editor;
 }
@@ -56,10 +67,12 @@ describe('the block mark of VS Code', () => {
   const original = load._load;
   let mode: BlockOutline;
   const documents: string[] = [];
+  /** The versions of the documents that were parsed (the service's cache hits on a version it has seen). */
+  const parsed = new Set<string>();
   const service = {
     get settings() { return { blockOutline: mode } as any; },
     isTarget: (d: any) => d.target,
-    document: (d: any) => { documents.push(d.text); return openDocument(d.text, 'shell', (t) => parser.parse(t)); },
+    document: (d: any) => { documents.push(d.text); parsed.add(`${d.uri ?? ''}@${d.version}`); return openDocument(d.text, 'shell', (t) => parser.parse(t)); },
   } as any;
 
   before(() => {
@@ -79,6 +92,7 @@ describe('the block mark of VS Code', () => {
     fake.editors.length = 0;
     Object.keys(fake.handlers).forEach((k) => delete fake.handlers[k]);
     documents.length = 0;
+    parsed.clear();
     mode = 'bar';
   });
 
@@ -171,24 +185,139 @@ describe('the block mark of VS Code', () => {
     c.dispose();
   });
 
-  it('looks the block up again once the text has rested, in the editors of that document only', () => {
+  /** A keystroke as VS Code reports it: a new version of the text, the text event, and then the selection event. */
+  function type(e: any, text: string, active: { line: number; character: number }): void {
+    e.document.text = text;
+    e.document.version++;
+    e.selection.active = active;
+    fire('text', { document: e.document });
+    fire('selection', { textEditor: e });
+  }
+
+  const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  it('parses the text once it rests, not at each key: a key fires the selection event too, and the timer draws', async () => {
     const e = editorOn(SCRIPT, 3);
-    const other = editorOn(SCRIPT, 3);
-    fake.editors.push(e, other);
+    fake.editors.push(e);
     const c = new BlockOutlineController(service);
     const t = fake.types[0];
-    const lookups = c.lookups;
-    e.document.text = 'for f in a; do\n  x\ndone\n' + SCRIPT;
-    e.selection.active = { line: 4, character: 1 };
-    fire('text', { document: e.document });
-    fire('text', { document: e.document });
-    assert.strictEqual(c.lookups, lookups);
-    return new Promise<void>((resolve) => setTimeout(() => {
-      // (Once, whatever the number of changes: the timer starts again at each.)
-      assert.strictEqual(c.lookups, lookups + 1);
-      assert.deepStrictEqual(rowsOf(e, t), [4, 5, 6, 7, 8]);
+    assert.deepStrictEqual(rowsOf(e, t), [2, 3, 4]);
+    assert.deepStrictEqual([...parsed], [`${e.document.uri}@1`]);
+    // Six keys in a row: nothing is parsed, and the marks stay.
+    for (let i = 0; i < 6; i++) type(e, 'for f in a; do\n  x\ndone\n' + SCRIPT, { line: 4, character: 1 + i });
+    assert.deepStrictEqual([...parsed], [`${e.document.uri}@1`], 'no new version is parsed by a key');
+    assert.strictEqual(c.lookups, 1);
+    assert.deepStrictEqual(rowsOf(e, t), [2, 3, 4]);
+    await wait(300);
+    // Once, for the last version, whatever the number of keys.
+    assert.deepStrictEqual([...parsed], [`${e.document.uri}@1`, `${e.document.uri}@7`]);
+    assert.strictEqual(c.lookups, 2);
+    assert.deepStrictEqual(rowsOf(e, t), [4, 5, 6, 7, 8]);
+    // A move of the cursor on the version drawn is drawn at once, with no new parse.
+    e.selection.active = { line: 1, character: 0 };
+    fire('selection', { textEditor: e });
+    assert.deepStrictEqual(rowsOf(e, t), [0, 1, 2]);
+    assert.strictEqual(parsed.size, 2);
+    c.dispose();
+  });
+
+  it('draws again for every document changed within the delay, not only the last', async () => {
+    const a = editorOn(SCRIPT, 3);
+    const b = editorOn(SCRIPT, 3);
+    const c = new BlockOutlineController(service);
+    fake.editors.push(a, b);
+    const t = fake.types[0];
+    fire('visible', [a, b]);
+    type(a, 'x\n' + SCRIPT, { line: 4, character: 0 });
+    type(b, 'y\n' + SCRIPT, { line: 4, character: 0 });
+    await wait(300);
+    assert.deepStrictEqual(rowsOf(a, t), [3, 4, 5]);
+    assert.deepStrictEqual(rowsOf(b, t), [3, 4, 5]);
+    // (The timer does not draw an editor of a document that did not change.)
+    const c2 = editorOn(SCRIPT, 3);
+    fake.editors.push(c2);
+    const before = c.lookups;
+    type(a, 'z\n' + SCRIPT, { line: 4, character: 0 });
+    await wait(300);
+    assert.strictEqual(c.lookups, before + 1);
+    c.dispose();
+  });
+
+  it('hands the editor one range of whole lines for the block, and none outside any', () => {
+    const e = editorOn(SCRIPT, 3);
+    fake.editors.push(e);
+    const c = new BlockOutlineController(service);
+    assert.deepStrictEqual(e.ranges, [[2, 4]]);
+    e.selection.active = { line: 0, character: 0 };
+    fire('selection', { textEditor: e });
+    assert.deepStrictEqual(e.ranges, []);
+    c.dispose();
+  });
+
+  it('draws again, for the same setting, when the configuration changes: the languages decide which documents are marked', () => {
+    const e = editorOn(SCRIPT, 3, 0, false);
+    fake.editors.push(e);
+    const c = new BlockOutlineController(service);
+    assert.deepStrictEqual(rowsOf(e, fake.types[0]), []);
+    // The document is a target now (the `languages` setting), and the extension calls settingsChanged.
+    e.document.target = true;
+    c.settingsChanged();
+    assert.strictEqual(fake.types.length, 1);
+    assert.deepStrictEqual(rowsOf(e, fake.types[0]), [2, 3, 4]);
+    e.document.target = false;
+    c.settingsChanged();
+    assert.deepStrictEqual(rowsOf(e, fake.types[0]), []);
+    c.dispose();
+  });
+
+  it('leaves the marks and the extension alone when a lookup throws (a boundary of its own)', () => {
+    const e = editorOn(SCRIPT, 3);
+    fake.editors.push(e);
+    const wasThrowing = failuresThrow(false);
+    const told: string[] = [];
+    const log = console.error;
+    console.error = (...args: unknown[]) => { told.push(String(args[0])); };
+    try {
+      const broken = Object.assign(Object.create(service), { document: () => { throw new Error('boom'); } });
+      // (The constructor draws once: it must not throw, or the activation of the extension stops.)
+      const c = new BlockOutlineController(broken);
+      assert.strictEqual(told.length, 1);
+      assert.match(told[0], /the block mark/);
+      assert.strictEqual(e.marks.size, 0);
+      fire('selection', { textEditor: e });
       c.dispose();
-      resolve();
-    }, 300));
+    } finally {
+      console.error = log;
+      failuresThrow(wasThrowing);
+    }
+  });
+
+  it('uses the colours package.json declares, with a default for every kind of theme', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    const declared = new Map<string, Record<string, string>>(pkg.contributes.colors.map((c: any) => [c.id, c.defaults]));
+    for (const [m, key] of [['bar', 'borderColor'], ['tint', 'backgroundColor']] as const) {
+      mode = m;
+      fake.types.length = 0;
+      new BlockOutlineController(service).dispose();
+      const id = fake.types[0].options[key].id;
+      assert.ok(declared.has(id), `${id} is declared in contributes.colors`);
+      assert.deepStrictEqual(Object.keys(declared.get(id)!).sort(), ['dark', 'highContrast', 'highContrastLight', 'light']);
+    }
+  });
+
+  it('is told of a change of the configuration by the extension, after the service forgets its documents', () => {
+    const source = ts.createSourceFile('extension.ts', fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
+    let handler: ts.Node | undefined;
+    const find = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && n.expression.getText(source) === 'vscode.workspace.onDidChangeConfiguration') handler = n.arguments[0];
+      ts.forEachChild(n, find);
+    };
+    find(source);
+    assert.ok(handler, 'the extension listens for the configuration');
+    const text = handler!.getText(source);
+    const at = (needle: string) => { const i = text.indexOf(needle); assert.ok(i >= 0, needle); return i; };
+    assert.ok(at('outline.settingsChanged()') > at('service.settingsChanged()'));
+    assert.ok(at('outline.settingsChanged()') > at('service.forget(d)'));
+    assert.ok(at('outline.settingsChanged()') > at("e.affectsConfiguration('bashExplainer.languages')"));
   });
 });

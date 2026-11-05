@@ -7,7 +7,7 @@ import { openDocument } from '../src/document-setup';
 import type { FileKind } from '../src/document-setup';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, type SyntaxNode } from '../src/syntax/tree';
-import { blockAt, placeOf } from '../src/ui/blockAt';
+import { BLOCK_TYPES, blockAt, placeOf } from '../src/ui/blockAt';
 
 const parser = createUnbashParser();
 const open = (text: string, kind: FileKind = 'shell') => openDocument(text, kind, (t) => parser.parse(t));
@@ -53,6 +53,11 @@ describe('blockAt', () => {
     ['single-line statements', 'echo a\nfor f in a; do b; done\nif a; then b; fi\nf() { a; }', ['-', '-', '-', '-']],
     ['a comment line and a blank line inside a block', 'for f in a; do\n  # c\n\n  echo\ndone\n\necho', ['1-5', '1-5', '1-5', '1-5', '1-5', '-', '-']],
     ['blocks nested in blocks: the innermost', 'for f in a; do\n  if x; then\n    y\n  fi\ndone\necho', ['1-5', '2-4', '2-4', '2-4', '1-5', '-']],
+    ['an unclosed string in a loop: the loop is still the block', 'for x in y; do\n  echo "a\n', ['1-2', '1-2', '1-2']],
+    ['an unclosed here-document in an if', 'if x; then\n  cat <<EOF\n', ['1-2', '1-2', '1-2']],
+    ['an unclosed $( ) in a function', 'f() {\n  y=$(\n', ['1-2', '1-2', '1-2']],
+    ['a [[ ]] over lines', '[[ a &&\n b ]]\nz', ['1-2', '1-2', '-']],
+    ['a (( )) over lines', '((\n a\n))\nz', ['1-3', '1-3', '1-3', '-']],
     ['a string over lines', 'echo "a\nb"\nc', ['1-2', '1-2', '-']],
   ];
   for (const [what, text, expected] of table) {
@@ -68,6 +73,26 @@ describe('blockAt', () => {
         assert.strictEqual(b ? `${b.startLine + 1}-${b.endLine + 1}` : '-', expected, `${line}:${col}`);
       }
     }
+  });
+
+  it('gives the block from every column of its last row, also on a trailing comment, and not the outer block', () => {
+    for (const [text, line, expected] of [
+      ['for a in b; do\n  c\ndone # end of loop\nz', 2, '1-3'],
+      ['for a in b; do\n  if x; then\n    y\n  fi # end if\ndone\nz', 3, '2-4'],
+      ['f() {\n  a\n} # end f\nz', 2, '1-3'],
+      ['for a in b; do\n  if x; then\n    y\n  fi   \ndone # end\nz', 4, '1-5'],
+    ] as const) {
+      const doc = open(text);
+      for (let col = 0; col <= doc.lines[line].length + 3; col++) {
+        const b = blockAt(doc, line, col);
+        assert.strictEqual(b ? `${b.startLine + 1}-${b.endLine + 1}` : '-', expected, `${text.split('\n')[line]} at ${col}`);
+      }
+    }
+    // A command after the block on the same row is not in it.
+    const doc = open('if a; then\n  b\nfi # c\n');
+    assert.strictEqual(blockAt(doc, 2, 5)?.endLine, 2);
+    const two = open('if a; then\n  b\nfi; echo z # c\n');
+    assert.strictEqual(blockAt(two, 2, 10), undefined);
   });
 
   it('puts the cursor on a statement of one line after the block (`fi; c`) outside it', () => {
@@ -97,6 +122,17 @@ describe('blockAt', () => {
     it('a Dockerfile RUN with `\\`', () => {
       assert.deepStrictEqual(blocks('FROM a\nRUN a && \\\n  b && \\\n  c\nRUN for f in a; do \\\n    echo $f; \\\n  done\nCMD x\n', 'dockerfile'), ['-', '2-4', '2-4', '2-4', '5-7', '5-7', '5-7', '-', '-']);
     });
+    it('a block stays in the shell that runs it: an unclosed one does not run on into the next part', () => {
+      // A Makefile: each recipe line is a shell of its own, so `for` over lines is no command over lines.
+      assert.deepStrictEqual(blocks('all:\n\tfor a in b; do\n\t  c\n\tdone\n', 'makefile'), ['-', '-', '-', '-', '-']);
+      // A workflow: the unclosed `if` ends with its `run:` block, not at the next step.
+      assert.deepStrictEqual(blocks('jobs:\n  b:\n    steps:\n      - run: |\n          if a; then\n            b\n      - name: other\n        run: |\n          echo x\n', 'yaml'),
+        ['-', '-', '-', '-', '5-6', '5-6', '-', '-', '-', '-']);
+      // A Dockerfile: the unclosed `if` ends with its RUN, and CMD is not in it.
+      assert.deepStrictEqual(blocks('FROM x\nRUN if a; then \\\n  b\nRUN c\nCMD d\n', 'dockerfile'), ['-', '2-3', '2-3', '-', '-', '-']);
+      // Markdown: a reader runs each fence by itself; the prose and the next fence are not in the block.
+      assert.deepStrictEqual(blocks('# t\n\n```bash\necho "a\nb\n```\n\ntext\n\n```bash\necho b\n```\n', 'markdown'), ['-', '-', '-', '4-5', '4-5', '-', '-', '-', '-', '-', '-', '-', '-']);
+    });
     it('a line that is not shell code, in the middle of a recipe block of the file', () => {
       const doc = open('x := 1\nall:\n\tfor f in a; do \\\n\t  b; \\\n\tdone\n', 'makefile');
       assert.strictEqual(blockAt(doc, 0, 3), undefined);
@@ -107,7 +143,7 @@ describe('blockAt', () => {
   describe('against the tree, on every line of the curated sample', () => {
     const sample = fs.readFileSync(path.join(__dirname, 'fixtures', 'sample.sh'), 'utf8');
     const doc = open(sample);
-    const types = ['for_statement', 'select_statement', 'c_style_for_statement', 'while_statement', 'if_statement', 'case_statement', 'compound_statement', 'subshell', 'function_definition', 'command_substitution', 'process_substitution', 'pipeline', 'list', 'command', 'redirected_statement', 'negated_command', 'time_statement', 'coproc_statement'];
+    const types = [...BLOCK_TYPES];
     /** The rows of every such node over several lines. */
     const nodes = descendants(doc.tree.root, types).filter((n) => n.endPosition.row > n.startPosition.row);
     const rowsOf = (n: SyntaxNode) => `${n.startPosition.row}-${n.endPosition.column === 0 ? n.endPosition.row - 1 : n.endPosition.row}`;
