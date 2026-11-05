@@ -610,6 +610,12 @@ describe('words with an expansion read with the expansion as a hole', function (
       { line: 'grep "$x\\.log"', has: DASH, tools: [{ x: '-q', input: 'a.log\n', fails: true }] },
     ]);
 
+    table('a value beside other text in a part', [
+      { line: 'perl -pe "s/b/x$x/"', has: /The value of `\$x` goes into the replacement, which perl reads as a double-quoted string: `\$`, `@` and `\\` in it are special/, tools: [{ x: '$0', input: 'abc\n', out: 'ax-ec\n' }] },
+      { line: 'sed "1i $x foo"', has: /The value of `\$x` goes into this text: sed reads a `\\` in it, and a newline ends the text/, tools: [{ x: 'p\\tq', input: 'a\n', out: 'p\tq foo\na\n' }] },
+      { line: 'tr "a$x" Z', has: /The value of `\$x` is read as part of the set: `a-z`, `\[:upper:\]` and `\\` work in it too/, tools: [{ x: 'b', input: 'abc', out: 'ZZc' }, { x: 'b-d', input: 'abcde', out: 'ZZZZe' }] },
+    ]);
+
     const FORMAT = /a `%` in it is a conversion that takes an argument, and a `\\` starts an escape/;
     table('a format of printf is printf\'s', [
       { line: 'printf "$x"', has: FORMAT, hasNot: /What follows/, tools: [{ x: 'a\\tb', out: 'a\tb' }, { x: '%d', out: '0' }] },
