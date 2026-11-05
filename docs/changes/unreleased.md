@@ -329,6 +329,10 @@ The notes that were plain text now start with ℹ, as the notes on facts do, and
 
 The note on zsh syntax a line cannot be read with starts with ⓘ, as information: the level it always had in the Problems list.
 
+### The JSON field `spoken` of a command name
+
+In `--format json`, the `said` of a command name (`items[].name.said`, also in `children`) has `kind`, `title`, `by`, `also` and `short`. Before, it had `spoken` too: the kind and `by` joined with a comma (`program, run by sudo`), with the backticks left out, for a screen reader. Nothing in the panel or the page read it. To get it, join `kind` and `by` (when there is one) and remove the backticks.
+
 ## Fixed
 
 ### A host file's own text in the explanation

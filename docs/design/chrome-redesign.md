@@ -487,7 +487,7 @@ Risks: the biggest change on a phone, and the emulation is not the device. The m
 
 ### C9. Clean-up and the last measure
 
-What: what the steps left unread (old ids, CSS rules, stored keys). README "The web page" rewritten for the new layout, in both languages. The README images re-recorded once, with P10 of the panel plan (whichever lands second does it). The UX reviewer's protocol runs once more on main, as a check before the usability test, with the kit's scripts.
+What: what the steps left unread (old ids, CSS rules, stored keys). README "The web page" rewritten for the new layout, in both languages. The README images re-recorded once, with P10 of the panel plan (P10 landed first, so C9 does it). The UX reviewer's protocol runs once more on main, as a check before the usability test, with the kit's scripts.
 
 Users: no CHANGELOG line, unless the clean-up changes what users see.
 
@@ -520,7 +520,7 @@ The order. Both series start after the roadmap's three note levels (C2 reads the
 - C7 lands before P8: at P8 the slot shows the depths, through C7's component, in the page and with the same candidate list in VS Code's header.
 - C7 lands before C8a: the phone's depth pill is C7's component.
 - C8b's summary row: once P7b lands, the row shows a problem's headline instead of its cut text (P7b changes `summaryRow` and its tests in the same PR). P5 landed first, so C8b itself shows a line's "In short" sentence where it has no problem.
-- C9 lands with or after P10: one README re-recording for both.
+- C9 lands with or after P10 (P10 landed first): C9 does the one README re-recording for both.
 
 Files that both series, or several steps, edit. The second PR to land rebases on the first:
 
