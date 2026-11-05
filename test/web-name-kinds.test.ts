@@ -151,6 +151,23 @@ describe('the VS Code panel: what a command name is', function () {
     });
   }
 
+  // (Dashed says "the program receives this word changed", not "a program": the program's badge has a quiet solid edge in the muted colour.)
+  for (const theme of ['light', 'dark', 'hc'] as const) {
+    it(`draws the badge of a program with a solid edge, not a dashed one (${theme})`, async () => {
+      const page = await browser!.newPage({ viewport: { width: 600, height: 700 } });
+      await page.goto(server.url(theme, 'en', 1));
+      await until('the badges', () => page.locator('.nk-badge').count(), (n) => n === 3);
+      const [style, edge, muted, builtin] = await page.evaluate(`(() => {
+        const p = document.querySelector('.nk-program'); const s = getComputedStyle(p);
+        const probe = document.createElement('span'); probe.style.color = 'var(--c-muted)'; document.body.append(probe);
+        return [s.borderTopStyle, s.borderTopColor, getComputedStyle(probe).color, getComputedStyle(document.querySelector('.nk-builtin')).borderTopColor];
+      })()`) as string[];
+      assert.deepStrictEqual([style, edge], ['solid', muted]);
+      assert.notStrictEqual(edge, builtin, 'a builtin keeps its own edge');
+      await page.close();
+    });
+  }
+
   it('keeps the "run by" upright in Japanese', async () => {
     const page = await browser!.newPage({ viewport: { width: 700, height: 700 } });
     await page.goto(server.url('light', 'ja', 1));

@@ -1319,8 +1319,8 @@ body[data-depth="2"] .row.connector {
 /* What a command name is (media/panel.js `nameBadge`, src/namefacts.ts), in both views: a badge with the kind's
    word after the name, then who looks the name up when another command does, and a muted line on the other
    meanings of the same name. The word is in the foreground colour; the edge only repeats the role's colour: solid
-   for bash's own (a keyword, a builtin, a function, an alias), dashed for a program, a file started as another
-   process, and dotted where nothing runs. */
+   for bash's own (a keyword, a builtin, a function, an alias) in the role's colour, quiet (the muted colour) for a
+   program or a file started as another process, and dotted where nothing runs. Dashed says only "changed" (below). */
 .nk-badge {
   font-size: 0.78em;
   font-weight: 600;
@@ -1338,8 +1338,7 @@ body[data-depth="2"] .row.connector {
 }
 
 .nk-badge.nk-program {
-  border-style: dashed;
-  border-color: var(--vscode-foreground);
+  border-color: var(--c-muted);
 }
 
 .nk-badge.nk-none {
@@ -1546,20 +1545,31 @@ button.mk-posix {
   display: block;
   font-size: 0.9em;
   margin-top: 0.15rem;
+  /* (A row of chips that wraps shares its words over its lines, so that one chip is not left alone; it does not depend on the width of the text.) */
+  text-wrap: balance;
 }
 
 .receives-words {
   display: inline;
 }
 
-.text code.recv-word {
+/* (Written with `.ev-word` too, which comes later and would win: the chips of a row are a list, not a table, so their edge is lighter than the values' and the gap is wider.) */
+.text code.ev-word.recv-word {
   display: inline-block;
   max-width: 100%;
   box-sizing: border-box;
-  margin: 0 0.3em 0.1em 0;
+  margin: 0 0.3em 0.2em 0;
   overflow-wrap: anywhere;
-  border-color: color-mix(in srgb, var(--c-muted) 55%, transparent);
+  border-color: color-mix(in srgb, var(--c-muted) 45%, transparent);
   vertical-align: top;
+  /* (Not balanced inside: a word wider than the line fills it, as before.) */
+  text-wrap: wrap;
+}
+
+/* (The high contrast themes keep the full edge: they have no light ones.) */
+body.vscode-high-contrast .text code.ev-word.recv-word,
+body.vscode-high-contrast-light .text code.ev-word.recv-word {
+  border-color: var(--c-muted);
 }
 
 .recv-word .ph {
