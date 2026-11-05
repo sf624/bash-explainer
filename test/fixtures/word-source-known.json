@@ -680,6 +680,13 @@
       ]
     },
     {
+      "file": "src/ui/blockAt.ts",
+      "reason": "finds the statements over several lines in the syntax tree, to mark them in the editor: only its syntax",
+      "uses": [
+        {"fn":"BLOCKS","kind":"node-type","count":2}
+      ]
+    },
+    {
       "file": "src/ui/wrapRuns.ts",
       "reason": "source spans: where a long line may wrap on the page, not a fact of a word's value",
       "uses": [

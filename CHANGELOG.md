@@ -14,6 +14,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Quick fixes for the problems whose fix is mechanical, in VS Code, the Language Server and the web page's editor: a failure reported as success, `source` that searches `$PATH`, a `grep` pattern from a variable, a loop over a glob that matches nothing, `read` without `-r`, `[-f x]` and more. Each applies the code the note shows.
 - On a phone, a one-line summary of the cursor's line stays above the keyboard and in the folded sheet; a tap shows the explanation.
 - Words with an expansion in double quotes are read by the command's own reader: `sed "s/$old/$new/g"`, `grep "$x\.log" f`, `find . -name "$p*.txt"`, `date +"%F $x"`. The line says once what a value's characters do there, and where the value decides what the command is (`sed "$x"`, `awk "{print \$$n}"`, `jq ".$key"`), a note says so.
+- A command over several lines (a loop, an `if`, a `case`, a function, a pipeline, a here-document) is marked in the editor, in VS Code and on the web page, with a bar at the left of its lines wherever the cursor is in it. `bashExplainer.blockOutline` chooses `bar` (the default), `tint` (a faint background) or `off`.
 
 ### Changed
 

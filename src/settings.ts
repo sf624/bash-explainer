@@ -15,6 +15,10 @@ import type { ExamplePlacement } from './ui/render';
 export const PANEL_COLOURS = ['classic', 'theme', 'themeLike'] as const;
 export type PanelColours = (typeof PANEL_COLOURS)[number];
 
+/** The values of `blockOutline`: how the editor marks the multi-line command at the cursor (a bar at the left, a faint background, or nothing). */
+export const BLOCK_OUTLINES = ['bar', 'tint', 'off'] as const;
+export type BlockOutline = (typeof BLOCK_OUTLINES)[number];
+
 export const PREFIX = 'bashExplainer.';
 
 export interface Settings {
@@ -45,6 +49,7 @@ export interface Settings {
   'panel.animations': boolean;
   'panel.colors': PanelColours;
   'highlight.enabled': boolean;
+  blockOutline: BlockOutline;
   'editor.wrap': boolean;
   languages: string[];
   'embedded.files': string[];
@@ -180,6 +185,14 @@ export const SETTINGS: readonly SettingSpec[] = [
   {
     key: 'highlight.enabled', type: 'boolean', default: true, title: ['構文木による色分け', 'Colours from the syntax tree'], surfaces: ['vscode', 'lsp'],
     elsewhere: 'The web page always colours the script this way; the command-line tool shows no script.',
+  },
+  {
+    key: 'blockOutline', type: 'string', default: 'bar', enum: BLOCK_OUTLINES, section: 'editor', title: ['カーソルの複数行コマンドの目印', 'Mark the command at the cursor'], surfaces: ['vscode', 'web'],
+    description: [
+      'カーソル位置のコマンドが複数行にわたるとき（`for`・`if`・関数・複数行のパイプライン・ヒアドキュメントなど）、その行にエディタで付ける目印。場所は取らず、文字は動かない。',
+      'Marks the lines of the command at the cursor when it spans several lines (a loop, an `if`, a function, a pipeline over lines, a here-document). It takes no room: the text does not move.',
+    ],
+    elsewhere: 'The command-line tool and the Language Server show no editor.',
   },
   {
     key: 'editor.wrap', type: 'boolean', default: true, section: 'common', title: ['長い行の折り返し', 'Wrap long lines'], surfaces: ['web'],

@@ -386,6 +386,21 @@
           "scope": "language-overridable",
           "markdownDescription": "%config.highlight.enabled%"
         },
+        "bashExplainer.blockOutline": {
+          "type": "string",
+          "enum": [
+            "bar",
+            "tint",
+            "off"
+          ],
+          "enumDescriptions": [
+            "%config.blockOutline.bar%",
+            "%config.blockOutline.tint%",
+            "%config.blockOutline.off%"
+          ],
+          "default": "bar",
+          "markdownDescription": "%config.blockOutline%"
+        },
         "bashExplainer.languages": {
           "type": "array",
           "items": {
@@ -673,6 +688,28 @@
         }
       }
     },
+    "colors": [
+      {
+        "id": "bashExplainer.blockBar",
+        "description": "%color.blockBar%",
+        "defaults": {
+          "dark": "editorIndentGuide.activeBackground1",
+          "light": "editorIndentGuide.activeBackground1",
+          "highContrast": "contrastBorder",
+          "highContrastLight": "contrastBorder"
+        }
+      },
+      {
+        "id": "bashExplainer.blockTint",
+        "description": "%color.blockTint%",
+        "defaults": {
+          "dark": "#7F7F7F17",
+          "light": "#7F7F7F17",
+          "highContrast": "#FFFFFF26",
+          "highContrastLight": "#00000017"
+        }
+      }
+    ],
     "semanticTokenTypes": [
       {
         "id": "shebang",

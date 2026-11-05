@@ -4,6 +4,7 @@ import { TreeCache } from './syntax/cache';
 import { failuresGoTo, loggedOnce } from './failures';
 import { ExplainService } from './service';
 import { TOKEN_SETTINGS } from './settings';
+import { BlockOutlineController } from './ui/blockOutline';
 import { DiagnosticsController } from './ui/diagnostics';
 import { HoverController } from './ui/hover';
 import { InlayHintsController } from './ui/inlayHints';
@@ -26,6 +27,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const hints = new InlayHintsController(service);
   const diagnostics = new DiagnosticsController(service);
   const semantic = new SemanticTokensController(service);
+  const outline = new BlockOutlineController(service);
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   status.command = 'bashExplainer.selectDisplayMode';
 
@@ -44,7 +46,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   };
 
   ctx.subscriptions.push(
-    service, hover, panel, hints, diagnostics, semantic, status,
+    service, hover, panel, hints, diagnostics, semantic, outline, status,
     vscode.commands.registerCommand('bashExplainer.showAtCursor', () => hover.showAtCursor()),
     // The hover's link to the whole line.
     vscode.commands.registerCommand('bashExplainer.explainLine', (target?: { uri: string; line: number }) => hover.explainLine(target)),
@@ -77,6 +79,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       panel.refresh();
       hints.refresh();
       diagnostics.refresh();
+      outline.settingsChanged();
       updateStatus();
     }),
     vscode.window.onDidChangeActiveTextEditor(updateStatus),

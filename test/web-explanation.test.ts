@@ -304,7 +304,7 @@ describe('the web page: the explanation panel and the editor', function () {
       for (let n = texts.nextNode(); n; n = texts.nextNode()) {
         if (!n.textContent.trim()) continue;
         const el = n.parentElement.classList.contains('cm-bx-run') ? n.parentElement.parentElement : n.parentElement;
-        const cls = [...el.classList].find((c) => (c as string).startsWith('cm-bx-')) ?? '';
+        const cls = [...el.classList].find((c) => (c as string).startsWith('cm-bx-') && !(c as string).startsWith('cm-bx-blk')) ?? '';
         const style = `${cls}|${(globalThis as any).getComputedStyle(el).color}`;
         if (out.length && style === last) out[out.length - 1] = `${out[out.length - 1].split('|')[0]} ${n.textContent.trim()}|${style}`;
         else out.push(`${n.textContent.trim()}|${style}`);
