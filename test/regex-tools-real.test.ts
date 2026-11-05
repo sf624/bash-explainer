@@ -100,6 +100,7 @@ describe('the escapes of awk, sed and bash are explained as each tool reads them
     assert.strictEqual(ex('\\x41')!.source, 'A');
     assert.strictEqual(ex('\\1')!.source, '\x01');
     assert.strictEqual(ex('\\052'), undefined);
+    assert.strictEqual(ex('a\\'), undefined);
     assert.strictEqual(ex('[\\]]'), undefined);
     assert.strictEqual(ex('[\\b]')!.source, '[\\x08]');
     assert.strictEqual(ex('[\\\\]')!.source, '[\\\\]');
