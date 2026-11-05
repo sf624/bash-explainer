@@ -404,8 +404,8 @@ function sarif(problems: Problem[]) {
   };
 }
 
-/** A token and those under it, without what only the panel reads and may change with it: its frame, what it stands around and its depth hint. */
-const tokenForJson = ({ frame: _, around: _a, plain: _p, ...t }: Token): Omit<Token, 'frame' | 'around' | 'plain' | 'children'> & { children: unknown[] } => ({ ...t, children: t.children.map(tokenForJson) });
+/** A token and those under it, without what only the panel and the reading tree read and may change with it: its frame, what it stands around, its depth hint, the word `[` and the stage's name. */
+const tokenForJson = ({ frame: _, around: _a, plain: _p, nameWord: _n, stage: _s, ...t }: Token): Omit<Token, 'frame' | 'around' | 'plain' | 'nameWord' | 'stage' | 'children'> & { children: unknown[] } => ({ ...t, children: t.children.map(tokenForJson) });
 
 /** Without what only the editor's views use: the examples' reruns, the ranges of the notes (for the part hover). */
 // (The anchors and the notes' data are for the views: the JSON keeps what it had, the notes and the facts' ids, with

@@ -144,6 +144,17 @@ export interface Token {
    */
   name?: NameInfo;
   /**
+   * On the token of a command written `[ … ]`, whose token is the command's, with the word `[` in it: what that word is by
+   * itself (a text, and the sections of the manual it is about), which the reading tree says of the word's own node.
+   * Not in `--format json`.
+   */
+  nameWord?: { text: string; refs?: readonly string[] };
+  /**
+   * On the same token: the words of the test with its brackets (`[ -f c ]`; src/label.ts `bracket`), as a pipeline's connector
+   * names the command, where `label` is the name `[`. Not in `--format json`.
+   */
+  stage?: string;
+  /**
    * On the token of a parameter expansion (`$msg`, `${msg%.*}`): its value where it runs, when the semantic model knows
    * it for sure (docs/design/expansion-values.md), with what the outputs say of it.
    */

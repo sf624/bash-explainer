@@ -473,7 +473,7 @@ function connect(rows: readonly ModelRow[], lang: Lang): void {
   const t = ui[lang].panel.connector;
   rows.forEach((r, i) => {
     if (r.kind !== 'operator' || r.marks || !rows[i - 1] || !rows[i + 1]) return;
-    const text = (r.label === '|&' ? t.both : t.pipe).replace('{from}', () => `\`${rows[i - 1].label}\``).replace('{to}', () => `\`${rows[i + 1].label}\``);
+    const text = (r.label === '|&' ? t.both : t.pipe).replace('{from}', () => `\`${rows[i - 1].stage ?? rows[i - 1].label}\``).replace('{to}', () => `\`${rows[i + 1].stage ?? rows[i + 1].label}\``);
     Object.assign(r, { connector: true, text, parts: [{ text }] });
   });
 }

@@ -23,7 +23,7 @@ import { codeSpan, shorten } from './label';
 import { clausesOf, isProblemNote, type SentenceClause } from './messages';
 import { placeholderAlone, placeholderSaid } from './messages-argv';
 import { EMPTY, ioSaid, listSaid, S, sentenceEnd } from './messages-sentence';
-import { resolveRun } from './semantics/names';
+import { resolveRun, testSpecAt } from './semantics/names';
 import { ownSubshells, STATEMENTS } from './semantics/env';
 import { attribute, docLine } from './semantics/state';
 import { CHANGING } from './semantics/walk/temporaries';
@@ -64,6 +64,8 @@ export function problemCodes(ex: Pick<LineExplanation, 'noteInfo' | 'facts'>): S
 
 /** How long (without the backticks) a sentence may be with what each command does; a longer one names the commands only. */
 const FULL = { en: 180, ja: 110 };
+/** `[` and its words, as the sentence names a test (`CommandSaid.test`: the command `[`, closed by `]`). */
+const BRACKET = '`[ … ]`';
 /** How many items a list names; more are cut with `…`. */
 const ITEMS = 4;
 
@@ -464,7 +466,8 @@ class Composer implements IdiomSpeaker {
   private subject(cond: readonly SyntaxNode[]): string {
     const { lang } = this;
     const c = cond.length === 1 ? cond[0] : undefined;
-    if (c?.type === 'command') return this.noun(c);
+    // (A line that closes the block has no record of the command: `[ … ]` is told by its spelling there.)
+    if (c?.type === 'command') return this.isTest(c) ? S.testSubject(lang, BRACKET) : this.noun(c);
     if (c?.type === 'extended_test') return S.testSubject(lang, '`[[ … ]]`');
     if (c?.type === 'arithmetic_command') return S.testSubject(lang, '`(( … ))`');
     if (c?.type === 'negated_command') return S.notSubject(lang, this.subject(c.namedChildren));
@@ -487,7 +490,8 @@ class Composer implements IdiomSpeaker {
     }
     // (The assignments before the name are said with the redirections: what the command runs with.)
     const io = [...assignments.map((a) => S.prefixSet(lang, codeSpan(field(a, 'name')!.text), this.value(a))), ...(redirectionsOf(c).length ? [this.io(redirectionsOf(c))] : [])].join(lang === 'ja' ? '、' : ', ');
-    // (A command on another line of a statement over several lines has no record of the command, as a closing line's: the model tells a function.)
+    // (A command on another line of a statement over several lines has no record of the command, as a closing line's: the model tells `[` and a function.)
+    if (this.isTest(c)) return S.tests(lang, BRACKET, io);
     if (said?.kind === 'function') return S.calls(lang, codeSpan(said.names[0]), io);
     const called = said ? undefined : this.functionNamed(c);
     if (called) return S.calls(lang, codeSpan(called), io);
@@ -502,6 +506,16 @@ class Composer implements IdiomSpeaker {
     const how = this.declaring(c, said);
     const declared = how === 'none' ? '' : this.assigned(fields(c, 'argument').filter((x) => x.type === 'variable_assignment'), how);
     return declared ? S.declares(lang, clause, declared) : clause;
+  }
+
+  /**
+   * Whether a command is the test `[ … ]`: from its record, or where the line has none (a command on another line of a
+   * statement), from what its name runs there (a function named `[` is not the test).
+   */
+  private isTest(c: SyntaxNode): boolean {
+    const said = this.commands(c);
+    const { state } = this.input.status;
+    return said ? !!said.test : testSpecAt(state, c, state.shell)?.closingOperand !== undefined;
   }
 
   /** The function a command surely calls, from the model, where the line has no record of the command. */
