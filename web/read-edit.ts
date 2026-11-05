@@ -15,6 +15,8 @@ export interface ReadEditHost {
   tipGone(): void;
   /** What the editor holds now: the start's mode follows it while no mode is chosen (`readAsTextChanges`). */
   showing(): Showing;
+  /** The editor has the focus (a keyboard may be open): the mode does not flip under it (`readAsTextChanges`). */
+  focused(): boolean;
 }
 
 export class ReadEdit {
@@ -66,8 +68,19 @@ export class ReadEdit {
   /** The script changed. */
   textChanged(): void {
     if (!this.follows) return;
-    const read = readAsTextChanges(this.read, this.host.showing());
+    const read = readAsTextChanges(this.read, this.host.showing(), this.host.focused());
     if (read !== this.read) this.set(read);
+  }
+
+  /**
+   * A deflated link's text came in (`z=`), or could not: the page, which started in Read on the sample the link's kind
+   * has, is as a first visit with this script (`startInRead`). The tip comes if the script is not the sample.
+   */
+  linkLoaded(): void {
+    if (!this.follows || this.host.focused()) return;
+    const read = startInRead(null, this.hasSwitch(), this.host.showing() === 'sample');
+    if (read !== this.read) this.set(read);
+    this.showTip();
   }
 
   /** The words, the names and the tip's text in the page's language. */

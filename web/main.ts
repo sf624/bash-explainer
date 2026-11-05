@@ -160,8 +160,9 @@ const readEdit = new ReadEdit({
   },
   tipGone: () => showFile(),
   showing: (): Showing => showing(editor.text),
-  // (A deflated link's text comes later, and is the user's.)
-}, withFiles, !shared.deflated && isSample(firstText));
+  focused: (): boolean => editor.view.hasFocus,
+  // (A deflated link's text comes later: until then the page shows the kind's sample, and `linkLoaded` decides.)
+}, withFiles, !!shared.deflated || isSample(firstText));
 /** The warning codes in the script, offered in the settings dialog. */
 let codesSeen: string[] = [];
 /** The problems the editor shows, for the panel's squiggles. */
@@ -928,6 +929,7 @@ async function start(): Promise<void> {
   if (shared.deflated) {
     const text = await inflate(shared.deflated);
     if (text !== undefined) editor.setText(text, 1);
+    readEdit.linkLoaded();
   }
   fileState.sampleLoaded(editor.text);
   showFile();
