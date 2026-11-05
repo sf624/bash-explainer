@@ -492,6 +492,15 @@ Tests, C8b (done: see above): both keyboard emulations of the kit as web tests (
 
 Risks: the biggest change on a phone, and the emulation is not the device. The maintainer's checks of section 8 gate both PRs.
 
+**C8c. The first ten seconds (UX review of main, 2026-11-05, before the usability test).** No document had chosen Edit as the first mode: it was only the default of the stored key (`readMode`, absent = Edit). The review found two messages in a row (the tip under the switch, then the hint "This is a sample: tap any line", 94 px high, leaving 113 px of editor above the half sheet), the cursor's line under the sheet, and a first tap that opened the keyboard and folded the sheet, so the explanation it was meant to show went away. Done:
+
+- **One message, in Read.** `startInRead` (src/ui/firstRun.ts): a mode the user chose stands; with none, a touch screen starts in Read while the page shows the untouched sample (not a script from a link, not a desktop). Nothing in a script's text changes a mode afterwards: pasting, typing or opening never does; only the switch stores a choice. `tipDue`: the switch's tip shows only in Edit, so on the sample's first load only the hint shows. The hint on a touch screen reads "Tap a line to read it, or tap Edit to type." and, in the sheet layout, has no buttons (one row, 48 px; "Open a file…" is in the menu, "Use my own script" is ⋯ › Clear the editor, and the empty editor's block offers both). Edit is one tap away: the strip's switch, 44 px, named in the hint.
+- **The cursor's line above the sheet.** The hint's change (shown, closed) keeps the cursor in view, as a sheet move does, and `keepCursorInView('nearest')` brings all the rows of the cursor's line into view when the line fits (`viewTarget`, src/ui/cursorView.ts), not only its first row.
+- **Problems rows** on a phone's sheet (the list narrower than 520 px): the rule's code goes under the message, in its columns (page.css, a container query on `#problem-list`); the message keeps the row's width. A wider sheet keeps the code beside it.
+- **Toast and the empty editor's block.** On the sheet the block's three buttons stand in a row (64 px), end above the toast (`--toast-cover`) and above the sheet. The toast keeps to the pane while its room inside the gaps is 160 px or more; below that it is 240 px wide, over the pane's edge, and always inside the window (`toastBox`, src/ui/toastBox.ts); with the divider at 15% of 768 px it was 79 x 262 px. A blank line draws no line box in the panel (`showsLineBox`).
+- **Tests.** test/first-run.test.ts, test/toast-box.test.ts, test/cursor-view.test.ts, test/line-box.test.ts; test/web-first-run.test.ts (390 x 664, 390 x 844 and 320 x 568 in both languages, iPad Mini, a desktop at 640 px, the Problems rows at 320, 390 and sideways, the toast beside the empty block, the divider's far end). The test harness's contexts start in Edit (a visitor who chose it), as the earlier tests assume; `firstVisit` shows the first visit.
+- **Real-device checks** for this PR (section 8): 15, 16 and 17.
+
 ### C9. Clean-up and the last measure
 
 What: what the steps left unread (old ids, CSS rules, stored keys). README "The web page" rewritten for the new layout, in both languages. The README images re-recorded once, with P10 of the panel plan (P10 landed first, so C9 does it). The UX reviewer's protocol runs once more on main, as a check before the usability test, with the kit's scripts.
@@ -573,6 +582,10 @@ The emulations of the kit do not show a real keyboard, a finger's drag or the sy
 12. On iOS, a wrapped line: the caret, the selection handles, and moving the caret across rows. Also the native selection handles (the editor's box runs under the sheet, so a handle can lie under it) and the browser's find (a match may be centred under the sheet).
 13. Reduced motion on: the sheet and the app bar move without animation.
 14. A quick pass with VoiceOver and TalkBack: the sheet, the tabs (with the Problems tab's full counts) and the chip. The lines under the sheet are rendered now (the editor's box runs under it), so a screen reader may reach them: check that it does not read the code under an open sheet as if it were in view.
+
+15. The first load on a phone with nothing stored (a private window): one message only (the hint, no tip), Read selected, line 8 of the sample whole above the half sheet, and a tap on a line shows its explanation with no keyboard. Then tap Edit: the keyboard opens on the next tap, the sheet folds to the summary row as in check 1.
+16. After Clear the editor, with the toast "Sample cleared / Undo" showing: the three buttons (Paste, Open a file…, Load the sample) and Undo are all readable and tap cleanly, with Safari's bars expanded and collapsed.
+17. The Problems tab: each row's code is under its message, nothing cut at the edge, with larger text too (check 10).
 
 C1a (the wrap on a phone: check 12), C4 (rename on touch) and C5 (the chip's sheet) need checks 7 to 9 and 12 where they apply.
 

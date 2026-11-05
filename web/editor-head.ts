@@ -118,7 +118,9 @@ export class EditorHead {
     const show = !this.hintClosed && readStored(STORAGE_KEYS.firstHint) !== '1' && this.host.holdsSample() && !this.host.tipShown();
     if (this.hint.hidden === !show) return;
     this.hint.hidden = !show;
+    // (It pushes the code down, or lets it up: the cursor's line stays in view, above a phone's sheet too.)
     this.host.editor.view.requestMeasure();
+    this.host.editor.keepCursorInView('nearest');
   }
 
   private closeHint(): void {

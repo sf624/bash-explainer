@@ -8,7 +8,7 @@ import { json } from '@codemirror/legacy-modes/mode/javascript';
 import { python } from '@codemirror/legacy-modes/mode/python';
 import { yaml } from '@codemirror/legacy-modes/mode/yaml';
 import { Diagnostic, forEachDiagnostic, forceLinting, linter, lintGutter, setDiagnosticsEffect } from '@codemirror/lint';
-import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { Compartment, EditorSelection, EditorState, Prec, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import type { LineExplanation, Span } from '../src/analyzer';
@@ -23,6 +23,7 @@ import { nameHints, type NameHint } from '../src/ui/nameHints';
 import { CLASSIC_COLOURS, kindColour } from './editor-colors';
 import { drawIcon, iconMask } from './icons';
 import { webHover, WebHover } from './hover';
+import { viewTarget } from '../src/ui/cursorView';
 import { sheetCover } from './layout';
 import { nameHintsExtension, PlacedHint, setHints } from './name-hints';
 import { withCode } from './problem-list';
@@ -567,6 +568,13 @@ export class Editor {
 
   /** The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved). */
   keepCursorInView(y: 'center' | 'nearest' = 'center'): void {
-    this.view.dispatch({ effects: EditorView.scrollIntoView(this.view.state.selection.main.head, { y }) });
+    const { head } = this.view.state.selection.main;
+    // ('nearest': the whole of the line when it fits above what covers the editor, so that a wrapped line is not left half under a phone's sheet.)
+    const line = this.view.state.doc.lineAt(head);
+    const first = y === 'nearest' ? this.view.coordsAtPos(line.from, 1) : null;
+    const last = first && this.view.coordsAtPos(line.to, -1);
+    const room = this.view.scrollDOM.getBoundingClientRect().height - sheetCover() - this.bottomMargin;
+    const whole = first && last && viewTarget(last.bottom - first.top, room) === 'line';
+    this.view.dispatch({ effects: EditorView.scrollIntoView(whole ? EditorSelection.range(line.from, line.to) : head, { y }) });
   }
 }

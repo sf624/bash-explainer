@@ -2,6 +2,7 @@
 // a tap on the script places the cursor without the on-screen keyboard, to read the explanation of the line tapped.
 // The choice is kept in this browser. A first-run tip points at the switch until it is closed or the switch is used.
 import type { Lang } from '../src/i18n';
+import { startInRead, tipDue } from '../src/ui/firstRun';
 import { readStored, STORAGE_KEYS, writeStored } from './storage';
 import { TEXT } from './text';
 
@@ -10,15 +11,24 @@ export interface ReadEditHost {
   set(read: boolean): void;
   /** The tip went: the first visit's hint over the editor, which waits for it, may show (one at a time). */
   tipGone(): void;
+  /** Whether the editor holds the sample now (the start's mode is read for it again after the stored data was cleared). */
+  sample(): boolean;
 }
 
+/** A touch screen: the switch shows, and the page's first visit starts by what it is for. */
+const touch = () => window.matchMedia('(pointer: coarse)').matches;
+
 export class ReadEdit {
-  /** Read mode is on. */
-  read = readStored(STORAGE_KEYS.readMode) === '1';
+  /** Read mode is on: the user's choice, or with none, Read on a touch screen while the sample shows (`startInRead`). */
+  read: boolean;
+  /** The tip was closed in this page (storage may refuse to keep it). */
+  private tipClosed = false;
   private readonly group = document.getElementById('read-edit');
   private readonly tip = document.getElementById('readtip');
 
-  constructor(private readonly host: ReadEditHost) {
+  /** `sample`: the page starts with its sample (not a script from a link). */
+  constructor(private readonly host: ReadEditHost, sample: boolean) {
+    this.read = startInRead(readStored(STORAGE_KEYS.readMode), touch(), sample);
     for (const [id, read] of [['mode-read', true], ['mode-edit', false]] as const) {
       document.getElementById(id)?.addEventListener('click', () => {
         this.hideTip(true);
@@ -65,8 +75,9 @@ export class ReadEdit {
 
   /** Back to Edit, and the tip shows again (the stored data was cleared). */
   reset(): void {
-    this.read = false;
-    this.host.set(false);
+    this.tipClosed = false;
+    this.read = startInRead(null, touch(), this.host.sample());
+    this.host.set(this.read);
     this.show();
     this.showTip();
   }
@@ -85,15 +96,16 @@ export class ReadEdit {
   }
 
   private hideTip(remember: boolean): void {
+    this.tipClosed = true;
     if (this.tip) this.tip.hidden = true;
     if (remember) writeStored(STORAGE_KEYS.readTipSeen, '1');
     this.host.tipGone();
   }
 
-  /** Shows the tip, if the switch shows (a coarse pointer) and the tip was not seen. */
+  /** Shows the tip, if it is due (`tipDue`: the switch shows, Read is not on, and the tip was not seen). */
   private showTip(): void {
     const read = document.getElementById('mode-read');
-    if (!this.tip || !read || !window.matchMedia('(pointer: coarse)').matches || readStored(STORAGE_KEYS.readTipSeen) === '1') return;
+    if (!this.tip || !read || !tipDue(touch(), this.read, this.tipClosed || readStored(STORAGE_KEYS.readTipSeen) === '1')) return;
     this.tip.hidden = false;
     this.placeTip();
   }

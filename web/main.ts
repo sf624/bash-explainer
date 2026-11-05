@@ -148,7 +148,12 @@ function autoShell(): AutoShell | undefined {
 
 // ---- Editor ---------------------------------------------------------------------------------
 
-const readEdit = new ReadEdit({ set: (read) => editor.setReadMode(read), tipGone: () => showFile() });
+const readEdit = new ReadEdit({
+  set: (read) => editor.setReadMode(read),
+  tipGone: () => showFile(),
+  sample: (): boolean => KINDS.some((k) => k.sample === editor.text),
+  // (The page starts with its sample unless a link brings a script: Read mode on a touch screen, with no mode chosen.)
+}, shared.text === undefined && shared.deflated === undefined);
 /** The warning codes in the script, offered in the settings dialog. */
 let codesSeen: string[] = [];
 /** The problems the editor shows, for the panel's squiggles. */
@@ -323,7 +328,11 @@ if (mode.compare) {
 const toast = new Toast($('status'), {
   labels: () => ({ more: TEXT[lang].toastMore, why: TEXT[lang].toastWhy }),
   room: () => (mode.compare || mode.panel ? undefined : roomAboveStrip()),
-  covers: (px) => editor.setBottomMargin(px),
+  covers: (px) => {
+    editor.setBottomMargin(px);
+    // (The empty editor's block on a phone's sheet keeps above the toast too: web/page.css.)
+    document.documentElement.style.setProperty('--toast-cover', `${px}px`);
+  },
   focusBack: () => focusHome(),
 });
 watchStrip(() => toast.place());
