@@ -123,7 +123,7 @@ export const TEXT = {
     editorCleared: 'Editor cleared',
     // The first visit's hint over the editor, and the empty editor's block.
     hintDesk: 'This is a sample: put the cursor on any line.',
-    hintTouch: 'This is a sample: tap any line.',
+    hintTouch: 'Tap a line to read it, or tap Edit to type.',
     useOwn: 'Use my own script',
     openFile: 'Open a file…',
     pasteScript: 'Paste a script',
@@ -281,7 +281,7 @@ export const TEXT = {
     sampleCleared: 'サンプルを消去しました',
     editorCleared: 'エディタを空にしました',
     hintDesk: 'サンプルです。好きな行を選んでください。',
-    hintTouch: 'サンプルです。好きな行をタップしてください。',
+    hintTouch: '行をタップで解説を読む。入力は「編集」を選ぶ。',
     useOwn: '自分のスクリプトを使う',
     openFile: 'ファイルを開く…',
     pasteScript: 'スクリプトを貼り付ける',

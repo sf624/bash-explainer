@@ -4,10 +4,8 @@
 // or the panel's header. While it shows, the editor keeps the cursor's line above it (a bottom scroll margin). How long
 // it stays is src/ui/toastTimer.ts: 4 s, 8 s with a button, held while the pointer or the keyboard's focus is on it.
 // Only the text is a live region (`role=status`): a screen reader says "Link copied", not "Link copied. More".
+import { TOAST_GAP as GAP, toastBox } from '../src/ui/toastBox';
 import { holdToast, releaseToast, startToast, toastEnds, type ToastTimer } from '../src/ui/toastTimer';
-
-/** The space around the toast, in pixels: from the Problems list below it, from the pane's sides, and from the cursor's line above it. */
-export const GAP = 8;
 
 export type ToastIcon = 'undo' | 'done' | 'note';
 
@@ -163,10 +161,11 @@ export class Toast {
       this.host.covers(0);
       return;
     }
-    // (Inside the window too: the pane may be moving, as when the menu slides away on a phone.)
-    const left = Math.min(Math.max(GAP, room.left + GAP), window.innerWidth - GAP);
-    el.style.left = `${Math.round(left)}px`;
-    el.style.maxWidth = `${Math.max(0, Math.round(Math.min(room.width - 2 * GAP, window.innerWidth - GAP - left)))}px`;
+    // (Inside the window too: the pane may be moving, as when the menu slides away on a phone. And wide enough to read when
+    // the pane is very narrow: it then goes over the pane's edge.)
+    const box = toastBox(room, window.innerWidth);
+    el.style.left = `${Math.round(box.left)}px`;
+    el.style.maxWidth = `${Math.floor(box.maxWidth)}px`;
     // (And never above the window's top: on a phone's full sheet the room above it is only the strip over the editor.)
     el.style.bottom = `${Math.round(Math.min(window.innerHeight - room.bottom + GAP, window.innerHeight - GAP - el.getBoundingClientRect().height))}px`;
     // The editor keeps its cursor's line above the toast, with the same gap as the toast keeps from the list below.

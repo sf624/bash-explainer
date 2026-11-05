@@ -1327,8 +1327,11 @@ describe('the web page: theme and settings', function () {
       const fits = (t: Awaited<ReturnType<typeof toast>>) => {
         const seen = `${width} ${locale}: ${JSON.stringify(t)}`;
         assert.ok(t.shown && t.hitInToast, seen);
-        // Inside the pane, above the strip, and not over the explanation.
-        assert.ok(t.box[0] >= t.pane[0] - 0.5 && t.box[2] <= t.pane[2] + 0.5 && t.box[3] <= t.strip + 0.5 && t.box[2] <= t.panel[0] + 0.5, seen);
+        // Above the strip, inside the window; inside the pane and not over the explanation, unless the pane is too narrow to read in
+        // (the divider at 15% of 768 px: 115 px, where a toast wrapped in it had a letter on each row): then 240 px wide, over its edge.
+        assert.ok(t.box[3] <= t.strip + 0.5 && t.box[0] >= 0 && t.box[2] <= width, seen);
+        if (t.pane[2] - t.pane[0] - 16 >= 160) assert.ok(t.box[0] >= t.pane[0] - 0.5 && t.box[2] <= t.pane[2] + 0.5 && t.box[2] <= t.panel[0] + 0.5, seen);
+        else assert.ok(t.box[2] - t.box[0] >= 200, seen);
       };
       // It fits in the pane beside the sheet: not higher than a third of the window. (The pane has at least the editor's floor there.)
       const short = (t: Awaited<ReturnType<typeof toast>>) => assert.ok(t.box[3] - t.box[1] < 700 / 3, `${width} ${locale}: ${JSON.stringify(t)}`);

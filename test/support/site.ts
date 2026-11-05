@@ -47,7 +47,7 @@ async function launch(classicScrollbars = false): Promise<Browser> {
  * The opening covers the page for about two seconds on the first load of a session: the tests load the page as on a
  * later load, which has none (web/theme-init.js reads this key), except those that ask for `firstLoad`. And as on a
  * later visit, where the first visit's hint over the editor was closed (web/storage.ts, `firstHint`), except those
- * that ask for `firstLoad` or `firstVisit`. Makes `browser.newContext` do so.
+ * that ask for `firstLoad` or `firstVisit`; and in Edit mode, as a visitor who chose it. Makes `browser.newContext` do so.
  */
 function contexts(browser: Browser): Pick<Site, 'firstLoad' | 'firstVisit'> {
   const firstLoad = browser.newContext.bind(browser);
@@ -59,6 +59,9 @@ function contexts(browser: Browser): Pick<Site, 'firstLoad' | 'firstVisit'> {
   browser.newContext = async (options) => {
     const ctx = await firstVisit(options);
     await ctx.addInitScript("try { if (localStorage.getItem('bash-explainer-first-hint') === null) localStorage.setItem('bash-explainer-first-hint', '1'); } catch {}");
+    // (A visitor who chose Edit before: with no mode chosen a touch screen starts in Read on the sample, as `firstVisit` shows; the
+    // tests of the phone's keyboard and of the first-run tip of the switch are written for Edit.)
+    await ctx.addInitScript("try { if (localStorage.getItem('bash-explainer-read-mode') === null) localStorage.setItem('bash-explainer-read-mode', '0'); } catch {}");
     return ctx;
   };
   return { firstLoad, firstVisit };

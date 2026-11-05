@@ -5,7 +5,7 @@ import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
 import { openDocument, type FileKind } from '../src/document-setup';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { lineParts, lineRuns, wrapsLikeEditor } from '../src/ui/lineBox';
+import { lineParts, lineRuns, showsLineBox, wrapsLikeEditor } from '../src/ui/lineBox';
 import { panelUpdate } from '../src/ui/panelView';
 import { wrapRuns } from '../src/ui/wrapRuns';
 
@@ -85,5 +85,14 @@ describe('the line box: where a long line may wrap in the panel', () => {
     assert.strictEqual(update('ls -l\n', 0, 'shell', true).lineParts?.length, 3);
     for (const v of ['on', 'wordWrapColumn', 'bounded']) assert.strictEqual(wrapsLikeEditor(v), true, v);
     for (const v of ['off', undefined, null, true]) assert.strictEqual(wrapsLikeEditor(v), false, String(v));
+  });
+
+  it('draws no box for a blank line, which the panel answers with "Nothing to explain on this line."', () => {
+    assert.strictEqual(update('ls\n\n', 1).lineShown, false);
+    assert.strictEqual(update('ls\n  \t\n', 1).lineShown, false);
+    assert.strictEqual(update('ls\n', 0).lineShown, true);
+    assert.strictEqual(update('# note\n', 0).lineShown, true);
+    assert.strictEqual(showsLineBox(''), false);
+    assert.strictEqual(showsLineBox(' x '), true);
   });
 });

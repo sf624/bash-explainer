@@ -45,6 +45,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - A list that mixes `&&` and `||` (`a && b || c`) is an "AND and OR list" in the panel, with `grammar` `andOrList` in `--format json`. Before, it was named by its last operator alone ("OR list", or "AND list" for `a || b && c`).
+- The explanation panel no longer draws an empty grey box above "Nothing to explain on this line." for a blank line, in VS Code and on the web page.
 - On the web page, "Clear stored data" puts the explanation's depth and the "What the program receives" switch back to their defaults at once. Before, they changed back only after a reload.
 - In VS Code, the text you read in the explanation panel stays in place when the panel's width changes. Before, the place moved.
 - The box that marks a space at an end of a value or a word now stands on the line of the text, and its name ("space") shows when the pointer rests on it.

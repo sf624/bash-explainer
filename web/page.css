@@ -876,6 +876,13 @@ button {
   height: 28px;
 }
 
+/* On a phone the hint is its words and the ✕ (the sample's tour is for reading, and it starts in Read): "Open a file…" is
+   in the menu, "Use my own script" is ⋯ › Clear the editor, and the empty editor's block offers both. One row costs the editor
+   little of the room above the sheet. */
+:where(html.bottom-sheet) .hint-actions {
+  display: none;
+}
+
 /* The empty editor's block: Paste, Open, Load the sample, 30% down what shows of the editor (web/editor-head.ts puts it
    inside the editor's box, which goes on under a phone's sheet); the editor around it takes clicks. */
 .empty-editor {
@@ -927,6 +934,46 @@ button {
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
   text-align: center;
+}
+
+/*
+ * On a phone's sheet the three buttons stand in a row, so that a toast above the sheet ("Sample cleared", with Undo: 58 px)
+ * leaves them room in what shows of the editor (207 px at 390 x 664). The block ends above the toast (`--toast-cover`,
+ * web/main.ts) and above the sheet: the spacer is 30% of that room, or less when the block does not fit below it. A button
+ * is 64 px high at least, and takes the third of the row (its words wrap, so no width of a font decides the layout).
+ */
+html.bottom-sheet .empty-editor {
+  inset: 0 0 calc(var(--sheet-cover, 0px) + var(--toast-cover, 0px));
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+html.bottom-sheet .empty-editor::before {
+  content: "";
+  flex: 0 1 30%;
+  min-height: 0;
+}
+
+html.bottom-sheet .empty-box {
+  flex: none;
+  flex-direction: row;
+  width: min(28rem, calc(100% - 24px));
+}
+
+html.bottom-sheet .empty-btn {
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 6px;
+  text-align: center;
+}
+
+html.bottom-sheet :is(.empty-btn kbd, .empty-drop) {
+  display: none;
 }
 
 /* ---- The editor and the explanation ----------------------------------------------------------- */
@@ -1600,6 +1647,7 @@ body.resizing .problems-resize {
  * tooltip has it whole), and the rule from a pane of 520 px. Each row takes the list's columns (subgrid).
  */
 #problem-list {
+  container: problem-list / inline-size;
   display: grid;
   flex: 1;
   grid-template-columns: auto max-content minmax(0, 1fr) auto;
@@ -1656,6 +1704,27 @@ body.resizing .problems-resize {
 #problem-list .code {
   color: var(--vscode-descriptionForeground);
   white-space: nowrap;
+}
+
+/*
+ * On a phone's sheet (the list is as wide as the window) the code goes under the message, in the columns of the message,
+ * so that the message keeps the row's width: beside it, the code took 175 of the 390 px and left the message 110. The
+ * message stays at two lines (the sheet's other tab has the whole of it); the code wraps anywhere, so no font decides it.
+ * An upright tablet's sheet is wider than 520 px and keeps the code in its column.
+ */
+@container problem-list (max-width: 519.98px) {
+  html.bottom-sheet #problem-list .message {
+    grid-column: 3 / -1;
+  }
+
+  html.bottom-sheet #problem-list .code {
+    grid-column: 3 / -1;
+    grid-row: 2;
+    min-width: 0;
+    font-size: 12px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 @container source (max-width: 519.98px) {

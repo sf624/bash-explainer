@@ -292,6 +292,7 @@
     if (kept) focusAgain(kept);
 
     renderLine(msg.lineText, msg.lineRuns, msg.marks ?? [], msg.lineParts, msg.wrap === true);
+    $('line').hidden = !msg.lineShown;
     drawViewRow(msg);
 
     drawProblems(msg.problems ?? [], msg.around ?? []);

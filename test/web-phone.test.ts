@@ -80,11 +80,12 @@ describe('the web page: touch screens, stored data and the window', function () 
     assert.strictEqual(await currentShell(page), 'auto');
     assert.strictEqual(await page.locator('#theme').inputValue(), 'auto');
     assert.strictEqual(await page.evaluate('document.documentElement.getAttribute("data-theme")'), null);
-    assert.strictEqual(await page.locator('#mode-read').getAttribute('aria-pressed'), 'false');
-    assert.strictEqual(await page.locator('#mode-edit').getAttribute('aria-pressed'), 'true');
-    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), null);
+    // (No mode is chosen again: a phone starts in Read while the sample shows, with no tip to point at the switch.)
+    assert.strictEqual(await page.locator('#mode-read').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(await page.locator('#mode-edit').getAttribute('aria-pressed'), 'false');
+    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), 'none');
     await page.locator('#settings-done').tap();
-    await until('the tip again', () => page.locator('#readtip').isVisible(), (v) => v);
+    assert.strictEqual(await page.locator('#readtip').isVisible(), false);
     await ctx.close();
 
     // The Japanese words, and no storage at all: nothing throws, the page still goes back to its defaults.
@@ -236,7 +237,8 @@ describe('the web page: touch screens, stored data and the window', function () 
     const ctx3 = await browser.newContext({ ...phone, locale: 'ja-JP' });
     await ctx3.addInitScript('Object.defineProperty(window, "localStorage", { get() { throw new Error("no storage"); } })');
     const p3 = await ctx3.newPage();
-    await p3.goto(base);
+    // (A script from a link: Edit, so the tip points at the switch.)
+    await p3.goto(`${base}#t=${Buffer.from('echo hi\n').toString('base64url')}`);
     await p3.locator('.cm-line').first().waitFor();
     assert.strictEqual(await p3.locator('#readtip').isVisible(), true);
     assert.match(await p3.locator('#readtip').innerText(), /「閲覧」をタップ/);

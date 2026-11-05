@@ -14,7 +14,7 @@ export const STORAGE_KEYS = {
   theme: 'bash-explainer-theme',
   /** The shapes of the screens seen as a phone's, so that a page loaded zoomed out keeps the phone layout (theme-init.js repeats the name). */
   phoneScreens: 'bash-explainer-phone-screens',
-  /** Read mode on a touch screen. */
+  /** Read mode on a touch screen, once chosen with the switch ('1' Read, '0' Edit); with none, src/ui/firstRun.ts decides. */
   readMode: 'bash-explainer-read-mode',
   /** The first-run tip of the read-mode button was seen. */
   readTipSeen: 'bash-explainer-read-tip-seen',

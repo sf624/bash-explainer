@@ -47,3 +47,8 @@ export function lineParts(text: string, runs: readonly Run[]): LinePart[] {
 export function wrapsLikeEditor(wordWrap: unknown): boolean {
   return typeof wordWrap === 'string' && wordWrap !== 'off';
 }
+
+/** Whether the line box is drawn: a blank line has nothing in it, and the panel says "Nothing to explain on this line." under an empty grey box. */
+export function showsLineBox(text: string): boolean {
+  return text.trim() !== '';
+}
