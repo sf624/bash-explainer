@@ -24,6 +24,7 @@ const SCRIPTS = {
  * hold leaves more: panel-redesign.md, "The length budget". These are what the folds and the closer rows reach, with room for a font's width: with
  * the switch "What the program receives" on (its row, and a line under each command: 1,380 and 1,921) and off (its row: 1,244 and 1,771).
  * The maintainer accepted this budget on 2026-11-05, after a check on a real device; the usability test judges the length again.
+ * No script here holds a `[`: its condition has rows of its own at depth 2, folded as those of `[[` are (its pages are measured in the PR that gave them).
  */
 const BUDGET = { on: { 1280: 1420, 390: 1980 }, off: { 1280: 1280, 390: 1820 } } as const;
 
@@ -309,6 +310,36 @@ describe('the panel: one view with a depth', function () {
     const keyword = await drawn(syntax);
     assert.deepStrictEqual([keyword[0].level, keyword[0].code, keyword[0].receives], [0, '[[ -a file ]]', []]);
     assert.ok(keyword.some((r) => r.level === 1 && r.code === '-a file'), JSON.stringify(keyword));
+    await ctx.close();
+  });
+
+  it('unfolds the condition of `[`, `test` and `[[` at depth 2 to its operator and its operand, as one', async () => {
+    const ctx = await context(1280, 'en', { animations: false });
+    const page = await ctx.newPage();
+    /** The row of the condition: whether it starts folded, the rows under it once its twisty is pressed, and that they show. */
+    const unfolded = async (panel: Frame) => {
+      const li = panel.locator('#tree li[data-key]', { has: panel.locator(':scope > .item > .row > .code .label', { hasText: /^-a file$/ }) });
+      const under = () => li.locator(':scope > .item > .body > ul > li[data-key]');
+      const was = await li.evaluate((e) => e.classList.contains('collapsed'));
+      assert.strictEqual(await under().first().isVisible(), false, 'folded at first');
+      await li.locator(':scope > .item > .row > button.twisty').click();
+      await until('the parts shown', () => under().first().isVisible(), (v) => v);
+      const parts = await panel.evaluate(`[...document.querySelectorAll('#tree li[data-key]')].filter((li) => li.querySelector(':scope > .item > .row > .code .label').textContent === '-a file')
+        .flatMap((li) => [...li.querySelectorAll(':scope > .item > .body > ul > li[data-key]')].map((e) => {
+          const row = e.querySelector(':scope > .item > .row');
+          const text = row.querySelector(':scope > .text').cloneNode(true);
+          text.querySelectorAll('.role-line, .steps, .row-more, .refs, .problem-chip').forEach((x) => x.remove());
+          return [row.querySelector(':scope > .code .label').textContent, text.textContent.trim()];
+        }))`) as string[][];
+      return { was, parts };
+    };
+    const expected = { was: true, parts: [['-a', 'exists (same as -e, obsolescent)'], ['file', 'The file -a tests']] };
+    for (const src of ['[ -a file ]', 'test -a file', '[[ -a file ]]']) {
+      const panel = await open(page, src);
+      await chooseDepth(page, 2);
+      await depthDrawn(panel, 2);
+      assert.deepStrictEqual(await unfolded(panel), expected, src);
+    }
     await ctx.close();
   });
 

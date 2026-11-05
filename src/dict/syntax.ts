@@ -557,11 +557,12 @@ export const binaryTestOperands: Record<string, TestOperandKind> = {
 };
 
 /**
- * What a word of a conditional expression in `[[ ]]` is to its operator `{op}` (6.4, 3.2.5.2), by the kind of the
- * operand, or by its side of `=`, `==`, `!=` and `=~`: the string on the left, the pattern on the right (`plain`: one
- * with no wildcard, whose operator says that it is a plain comparison).
+ * What a word of a conditional expression in `[[ ]]`, or of `[` and `test`, is to its operator `{op}` (6.4, 3.2.5.2, 4.1), by the
+ * kind of the operand, or by its side of `=`, `==`, `!=` and `=~`: the string on the left, the pattern on the right (`plain`: one
+ * with no wildcard, whose operator says that it is a plain comparison). `[` and `test` read what `[[ ]]` does not: `right`, plain
+ * text on the right; `integer`, a decimal integer, no arithmetic.
  */
-export const testOperandTexts: Record<TestOperandKind | 'compared' | 'pattern' | 'plain', Text> = {
+export const testOperandTexts: Record<TestOperandKind | 'compared' | 'pattern' | 'plain' | 'right' | 'integer', Text> = {
   file: tx('`{op}` で調べるファイル', 'The file `{op}` tests'),
   string: tx('`{op}` で調べる文字列', 'The string `{op}` tests'),
   variable: tx('`{op}` で調べる変数名', 'The variable name `{op}` tests'),
@@ -573,6 +574,8 @@ export const testOperandTexts: Record<TestOperandKind | 'compared' | 'pattern' |
   compared: tx('`{op}` で比べる左辺の文字列', 'The string on the left of `{op}`'),
   pattern: tx('`{op}` の右辺のパターン: 左辺がこれにパターンとして一致するかを調べる（クォートした部分は書いたとおりに一致）', 'The pattern on the right of `{op}`: the left side is matched against it as a glob pattern (a quoted part matches as written)'),
   plain: tx('`{op}` の右辺のパターン', 'The pattern on the right of `{op}`'),
+  right: tx('`{op}` で比べる右辺の文字列（パターンではない）', 'The string on the right of `{op}`: plain text, not a pattern'),
+  integer: tx('`{op}` で比べる値: 10 進の整数として読む', 'A value `{op}` compares: read as a decimal integer'),
 };
 
 /**

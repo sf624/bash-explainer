@@ -5,6 +5,7 @@
 import { parseExpansion } from '../expansion';
 import { nameText, type SyntaxNode } from '../syntax/tree';
 import { givesElements } from './elements';
+import { severalFields } from './globwords';
 import { attribute, refTarget, type ShellState, type StateModel } from './state';
 import { braceWords, type Piece, wordMeaning } from './words';
 
@@ -76,3 +77,13 @@ export function mayGiveNoField(n: SyntaxNode, model: StateModel): boolean {
     return !words || words.words.every((x) => !!x.chars && (!x.holed || x.holed.length === 0));
   });
 }
+
+/**
+ * Whether the word of `n` (in a word) surely gives one field where it runs, whatever the values: no brace expansion, word splitting or
+ * pathname expansion may change it, and it never gives no field or several (`"$@"`, `"x${a[@]}"`, and a nameref that may name such an array).
+ */
+export function givesOneField(n: SyntaxNode, model: StateModel): boolean {
+  const w = wordMeaning(n, model)!;
+  return w.steps.every((s) => !ONE_FIELD_STEPS.has(s.kind) || s.applies === false) && !mayGiveNoField(n, model) && !severalFields(n, w.state);
+}
+const ONE_FIELD_STEPS: ReadonlySet<string> = new Set(['brace', 'split', 'glob']);

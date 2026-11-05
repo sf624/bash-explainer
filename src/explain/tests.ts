@@ -2,10 +2,10 @@
 // expressions in them and in arithmetic, the right side of `=~` (an ERE), and the expression of `[ ]` and `test`
 // as bash reads it (src/testexpr.ts; the words of the command itself are argv's, which calls `testTokens`). The
 // examples of a test (values that make it true, that match a pattern or a regex) come from src/explain/examples.ts.
-import type { Kind, Token } from '../analyzer-types';
+import type { Kind, TestPart, Token } from '../analyzer-types';
 import { arithLiteralIn, evalArith, invalidLiteral } from '../arith';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
-import { binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, unaryTestOps } from '../dict/syntax';
+import { binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, testOperandTexts, unaryTestOperands, unaryTestOps } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { explainRegex } from '../embedded/regex';
 import { toJsRegex } from '../examples/regex';
@@ -17,6 +17,7 @@ import { replaceNode, type Rewrite, statementBefore, unusedName } from '../rewri
 import { STATEMENTS } from '../semantics/env';
 import { option, type ShellState } from '../semantics/state';
 import { plainPatternText } from '../semantics/globwords';
+import { givesOneField } from '../semantics/nofield';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, nameText, type SyntaxNode } from '../syntax/tree';
 import { type BracketTest, collation, type TestExpr, testRange } from '../testexpr';
@@ -97,18 +98,24 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
   const words = b.words;
   const slice = (from: number, to: number) => n.text.slice(words[from].nodes[0].startIndex - n.startIndex, words[to].nodes[words[to].nodes.length - 1].endIndex - n.startIndex);
   const [first, last] = testRange(e);
-  const make = (kind: Kind, explanation: string, children: Token[]): Token => ({
+  const make = (kind: Kind, explanation: string, children: Token[], parts: () => TestPart[]): Token => ({
     kind, label: shorten(slice(first, last)), explanation, children, ...(refs ? { refs } : {}),
     span: { start: spanOf(words[first].nodes[0]).start, end: spanOf(words[last].nodes[words[last].nodes.length - 1]).end },
+    ...(cx.opts.reading ? { testParts: parts() } : {}),
   });
   // Operators and parentheses are not nodes to explain; they get no token of their own, but a word that is one does.
   const wordTokens = (i: number) => words[i].nodes.flatMap((x) => cx.sub(x));
   const operandTokens = (i: number, plain: (x: SyntaxNode) => boolean) => [...cx.subs(words[i].nodes.filter((x) => !plain(x))), ...tildeTokens(cx, words[i].nodes.filter(plain))];
+  // The reading tree's parts of a test, as `[[ ]]` has them: its operator (its text, in the tables of `[[ ]]`).
+  const operator = (i: number, text?: string): TestPart => ({ kind: 'operator', label: slice(i, i), span: spanOf(words[i].nodes[0]), ...(text ? { text } : {}), ...(refs ? { refs } : {}) });
+  // An operand, by its kind, with the operator `op`. Only of a word that surely gives one field: others may give no word or several, so `[` reads another test (`[ -f $x ]` with `x` empty is `[ -f ]`).
+  const operand = (i: number, op: string, kind: keyof typeof testOperandTexts): TestPart[] => (givesOneField(words[i].nodes[0], cx.state)
+    ? [{ kind: 'argument', label: slice(i, i), span: spanOf(words[i].nodes[0]), text: cx.t(testOperandTexts[kind]).replace('{op}', op) }] : []);
   switch (e.type) {
     case 'word': return wordTokens(e.at);
     case 'not': {
       const [from, to] = testRange(e.operand);
-      return [make('test', cx.s(`否定: \`${slice(from, to)}\` が偽なら真`, `Negation: true if \`${slice(from, to)}\` is false`), testTokens(cx, n, b, e.operand, refs))];
+      return [make('test', cx.s(`否定: \`${slice(from, to)}\` が偽なら真`, `Negation: true if \`${slice(from, to)}\` is false`), testTokens(cx, n, b, e.operand, refs), () => [operator(e.op)])];
     }
     case 'group': {
       // (bash 5.3 takes the truth of a group of one word from the first word of the test: `TestExpr`, `truth`.)
@@ -117,24 +124,32 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
         ? cx.s(`。ただし bash 5.3 はここで \`${slice(inner.at, inner.at)}\` ではなく、式の最初の語 \`${slice(inner.truth, inner.truth)}\` が空でないかを調べる（bash 5.3 の不具合）`,
           `. But bash 5.3 tests here whether the first word of the test, \`${slice(inner.truth, inner.truth)}\`, is not empty, not \`${slice(inner.at, inner.at)}\` (a bug of bash 5.3)`)
         : '';
-      return [make('operator', cx.text('arith-parenthesized') + odd, testTokens(cx, n, b, inner, refs))];
+      return [make('operator', cx.text('arith-parenthesized') + odd, testTokens(cx, n, b, inner, refs), () => [operator(e.open), operator(e.close)])];
     }
     case 'unary': {
-      const d = unaryTestOps[words[e.op].text!];
-      return [make('test', cx.s(`条件: \`${slice(e.arg, e.arg)}\` が${cx.t(d)}`, `Condition: \`${slice(e.arg, e.arg)}\` ${cx.t(d)}`), operandTokens(e.arg, isPlainWord))];
+      const op = words[e.op].text!;
+      const d = unaryTestOps[op];
+      return [make('test', cx.s(`条件: \`${slice(e.arg, e.arg)}\` が${cx.t(d)}`, `Condition: \`${slice(e.arg, e.arg)}\` ${cx.t(d)}`), operandTokens(e.arg, isPlainWord),
+        () => [operator(e.op, cx.t(d)), ...operand(e.arg, op, unaryTestOperands[op])])];
     }
     case 'binary': {
       const op = words[e.op].text!;
       const num = numericTestNote(cx, op, [slice(e.left, e.left), slice(e.right, e.right)], false);
       // (`refs`: bash's builtin, or another shell's.)
       const text = binaryText(cx, n, op, false, !!refs);
+      // (`=`, `==` and `!=` by their sides; `-eq` and the others read decimal integers here, no arithmetic.)
+      const side = (equal: 'compared' | 'right') => (extendedEqualOps[op] ? equal : binaryTestOperands[op] === 'number' ? 'integer' : binaryTestOperands[op]);
       return [make('test', cx.s(
         `条件: \`${slice(e.left, e.left)}\` と \`${slice(e.right, e.right)}\` を比較 — ${text}${num}`,
         `Condition: \`${slice(e.left, e.left)}\` vs \`${slice(e.right, e.right)}\` — ${text}${num}`,
-      ), [...operandTokens(e.left, isPlainWord), ...operandTokens(e.right, isPlainWord)])];
+      ), [...operandTokens(e.left, isPlainWord), ...operandTokens(e.right, isPlainWord)],
+      // (The operator's text, as in `[[ ]]`, from the table; the condition says how `<` and `>` compare. Another program's says that it has none.)
+      () => [...operand(e.left, op, side('compared')), operator(e.op, refs ? cx.t(binaryTestOps[op]) : text), ...operand(e.right, op, side('right'))])];
     }
-    default:
-      return [make('test', cx.t(binaryTestOps[e.type === 'and' ? '-a' : '-o']), [...testTokens(cx, n, b, e.left, refs), ...testTokens(cx, n, b, e.right, refs)])];
+    default: {
+      const said = cx.t(binaryTestOps[e.type === 'and' ? '-a' : '-o']);
+      return [make('test', said, [...testTokens(cx, n, b, e.left, refs), ...testTokens(cx, n, b, e.right, refs)], () => [operator(e.op, said)])];
+    }
   }
 }
 

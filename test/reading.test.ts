@@ -64,6 +64,9 @@ describe('the reading tree of a line', () => {
       '      bash/argument -gt',
       '      bash/argument 0',
       '      command/test "$x" -gt 0',
+      '        command/argument "$x"',
+      '        command/operator -gt',
+      '        command/argument 0',
       '      bash/argument ]',
       '        command/argument ]',
     ]);
@@ -382,6 +385,8 @@ describe('the reading tree of a line', () => {
       '    bash/argument -f',
       '    bash/argument x',
       '    command/test -f x',
+      '      command/operator -f',
+      '      command/argument x',
       '    bash/argument ]',
       '      command/argument ]',
     ]);
@@ -497,6 +502,8 @@ describe('the reading tree of a line', () => {
       '    bash/argument -f',
       '    bash/argument x',
       '    command/test -f x',
+      '      command/operator -f',
+      '      command/argument x',
       '    bash/argument ]',
       '      command/argument ]',
     ]);
