@@ -19,22 +19,27 @@ export function firstNonBlank(text: string, from: number): number {
   return at < 0 ? -1 : from + at;
 }
 
-/** What is compared at the close: where the cursor is, and the editor's scroll (once the place has been kept, the scroll it was left at). */
+/** What is compared at the close: where the cursor is, and the editor's scroll both ways (once the place has been kept, where it was left). */
 export interface PlaceMark {
   head: number;
   scroll: number;
+  sideways: number;
 }
 
 /** A scroll this close (in px) is the one the place was left at: the browser rounds what it is given. */
 const SAME_SCROLL = 1;
 
 /**
- * The place to keep when the settings close. The one from before they opened, if the reader has done nothing since, so that
- * the editor comes back as it was; if the text or the cursor changed, or the editor scrolled, the place they have now.
+ * The place to keep when the settings close. The one from before they opened, if nothing has moved since, so that the editor
+ * comes back as it was; if the text or the cursor changed, or the editor scrolled either way, the place the reader has now.
  */
 export function placeOnClose<P extends PlaceMark>(opened: P, now: P, sameText: boolean): P {
-  return sameText && now.head === opened.head && Math.abs(now.scroll - opened.scroll) <= SAME_SCROLL ? opened : now;
+  const same = sameText && now.head === opened.head && Math.abs(now.scroll - opened.scroll) <= SAME_SCROLL && Math.abs(now.sideways - opened.sideways) <= SAME_SCROLL;
+  return same ? opened : now;
 }
+
+/** Where a row noted at `y` is kept in a view of `height`: where it was, unless the view has since become too low to show it there. */
+export const yInView = (y: number, rowHeight: number, height: number): number => Math.min(y, height - rowHeight);
 
 /** Frames with nothing to correct after which a rewrap is over; and the most frames a place is held in any case. */
 const QUIET_FRAMES = 3;

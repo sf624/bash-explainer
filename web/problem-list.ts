@@ -133,10 +133,10 @@ export class ProblemStrip {
     this.place();
   }
 
-  /** F8 and Shift+F8, from anywhere on the page or in the panel's frame, unless a dialog is open. */
+  /** F8 and Shift+F8, from anywhere on the page or in the panel's frame, unless a dialog is open; the settings beside the editor leave it in use. */
   readonly keys = (e: KeyboardEvent): void => {
     // (Not while an input method composes: a Japanese one converts with F6 to F10.)
-    if (e.key !== 'F8' || e.isComposing || e.keyCode === 229 || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
+    if (e.key !== 'F8' || e.isComposing || e.keyCode === 229 || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]:not(#settings-dialog:not(:modal))')) return;
     if (this.step(e.shiftKey)) e.preventDefault();
   };
 }

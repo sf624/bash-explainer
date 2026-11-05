@@ -1,6 +1,6 @@
 // The decisions behind the reader's place in the page's editor (src/ui/editorPlace.ts); test/web-editor-place.test.ts measures it.
 import * as assert from 'assert';
-import { firstNonBlank, holdGoesOn, placeOnClose, rowToKeep } from '../src/ui/editorPlace';
+import { firstNonBlank, holdGoesOn, placeOnClose, rowToKeep, yInView } from '../src/ui/editorPlace';
 
 describe('the place in the editor', () => {
   const view = { top: 100, bottom: 500 };
@@ -29,16 +29,28 @@ describe('the place in the editor', () => {
   });
 
   it('comes back to the place from before the opening unless the reader has moved', () => {
-    const opened = { head: 10, scroll: 300, name: 'opened' };
-    const same = { head: 10, scroll: 300.5, name: 'now' };
+    const opened = { head: 10, scroll: 300, sideways: 40, name: 'opened' };
+    const same = { ...opened, scroll: 300.5, name: 'now' };
     assert.strictEqual(placeOnClose(opened, same, true).name, 'opened');
     assert.strictEqual(placeOnClose(opened, { ...same, scroll: 301 }, true).name, 'opened');
     assert.strictEqual(placeOnClose(opened, { ...same, scroll: 299 }, true).name, 'opened');
-    // Scrolled, the cursor moved, or the text changed: the place they have now.
+    assert.strictEqual(placeOnClose(opened, { ...same, sideways: 41 }, true).name, 'opened');
+    // Scrolled either way, the cursor moved or the text changed: the place they have now.
     assert.strictEqual(placeOnClose(opened, { ...same, scroll: 302 }, true).name, 'now');
     assert.strictEqual(placeOnClose(opened, { ...same, scroll: 200 }, true).name, 'now');
+    assert.strictEqual(placeOnClose(opened, { ...same, sideways: 42 }, true).name, 'now');
+    assert.strictEqual(placeOnClose(opened, { ...same, sideways: 38 }, true).name, 'now');
     assert.strictEqual(placeOnClose(opened, { ...same, head: 11 }, true).name, 'now');
     assert.strictEqual(placeOnClose(opened, same, false).name, 'now');
+  });
+
+  it('keeps a row where it was unless the view has become too low to show it there', () => {
+    assert.strictEqual(yInView(300, 20, 500), 300);
+    assert.strictEqual(yInView(480, 20, 500), 480);
+    assert.strictEqual(yInView(481, 20, 500), 480);
+    assert.strictEqual(yInView(480, 20, 360), 340);
+    // Above the view it was cut already, and stays.
+    assert.strictEqual(yInView(-4, 20, 360), -4);
   });
 
   it('holds the place until frames have had nothing to correct, and not for ever', () => {

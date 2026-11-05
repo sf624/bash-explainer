@@ -9,7 +9,7 @@
 // one), and so on the next frames, before they are drawn, while newly drawn lines settle.
 import type { Text } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { firstNonBlank, holdGoesOn, type PlaceRow, placeOnClose, rowToKeep } from '../src/ui/editorPlace';
+import { firstNonBlank, holdGoesOn, type PlaceRow, placeOnClose, rowToKeep, yInView } from '../src/ui/editorPlace';
 
 export interface EditorPlace {
   /** The row's position in the text, and how far its top lies from the top of the editor's view. */
@@ -19,8 +19,11 @@ export interface EditorPlace {
   cursor: boolean;
   head: number;
   doc: Text;
-  scroll: number;
+  /** The scroll sideways to give back; a row is not moved sideways by a rewrap. */
   left: number;
+  /** Where the editor's scroll was left, both ways. */
+  scroll: number;
+  sideways: number;
 }
 
 function rowAt(view: EditorView, pos: number): PlaceRow | null {
@@ -50,13 +53,15 @@ export function notePlace(view: EditorView): EditorPlace | undefined {
   const head = view.state.selection.main.head;
   const cursor = rowAt(view, head);
   const row = rowToKeep(cursor, firstRow(view, box.top), box);
-  return row ? { pos: row.pos, y: row.top - box.top, cursor: row === cursor, head, doc: view.state.doc, scroll: dom.scrollTop, left: dom.scrollLeft } : undefined;
+  return row ? { pos: row.pos, y: row.top - box.top, cursor: row === cursor, head, doc: view.state.doc, left: dom.scrollLeft, scroll: dom.scrollTop, sideways: dom.scrollLeft } : undefined;
 }
 
 /** The place the settings' close keeps: `opened`, the one from before they opened, unless the reader has moved since. */
 export function closingPlace(view: EditorView, opened: EditorPlace): EditorPlace {
   const now = notePlace(view);
-  return now ? placeOnClose(opened, now, opened.doc === view.state.doc) : opened;
+  const place = now ? placeOnClose(opened, now, opened.doc === view.state.doc) : opened;
+  // (The Problems list opened, or the window made lower, while the sheet was open.)
+  return { ...place, y: yInView(place.y, view.defaultLineHeight, view.scrollDOM.clientHeight) };
 }
 
 /** Brings the place back to its row, measuring first. Says whether that moved anything. */
@@ -77,6 +82,7 @@ function settle(view: EditorView, place: EditorPlace): boolean {
     moved = true;
   }
   place.scroll = dom.scrollTop;
+  place.sideways = dom.scrollLeft;
   return moved;
 }
 

@@ -353,6 +353,68 @@ describe('the web page: the place in the editor beside the settings', function (
     });
   });
 
+  for (const width of [1280, 768]) {
+    it(`keeps a sideways scroll made beside the open sheet, without wrapping, at ${width} px`, async () => {
+      await onPage(browser, base, width, async (page) => {
+        await page.evaluate(`localStorage.setItem(${JSON.stringify(SETTINGS_KEY)}, JSON.stringify({ 'bashExplainer.editor.wrap': false }))`);
+        await page.reload();
+        await page.locator('.cm-line').first().waitFor();
+        await page.evaluate(PROBE);
+        await typed(page, `${'# some line\n'.repeat(3)}echo ${'word '.repeat(80)}\n${'# some line\n'.repeat(3)}`, 4);
+        await page.keyboard.press('Home');
+        for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowRight');
+        await scrollStill(page);
+        const sideways = () => page.evaluate("document.querySelector('.cm-scroller').scrollLeft") as Promise<number>;
+        await page.locator('#settings-open').click();
+        await until('open', () => isOpen(page), (v) => v);
+        await stable('sideways', sideways);
+        const box = (await page.locator('.cm-scroller').boundingBox())!;
+        await page.mouse.move(box.x + 100, box.y + 40);
+        await page.mouse.wheel(90, 0);
+        const scrolled = await stable('sideways', sideways);
+        assert.ok(scrolled >= 80, `scrolled to ${scrolled}`);
+        await page.locator('#settings-open').click();
+        await until('closed', () => isOpen(page), (v) => !v);
+        const after = await stable('sideways', sideways);
+        assert.ok(Math.abs(after - scrolled) <= 1, `${scrolled}, then ${after}`);
+      });
+    });
+  }
+
+  /** Where the cursor's row lies under the view's bottom edge, in px, after `lower` makes the view lower beside the sheet and the sheet closes. */
+  const outsideAfter = async (page: Page, lower: () => Promise<void>): Promise<number> => {
+    await cursorAt(page, 95);
+    await page.evaluate("window.place.mark('cursor')");
+    await motion(page);
+    await lower();
+    await scrollStill(page);
+    await motion(page);
+    await scrollStill(page);
+    const at = await page.evaluate('window.place.read()') as Sample;
+    return at.y! + 20 - at.bottom;
+  };
+
+  it('does not put the cursor\'s row where the view has gone: the Problems list opened beside the sheet', async () => {
+    await onPage(browser, base, 1280, async (page) => {
+      const list = page.locator('#problems-toggle');
+      if (await list.getAttribute('aria-expanded') === 'true') await list.click();
+      const tall = (await page.locator('.cm-scroller').boundingBox())!.height;
+      const outside = await outsideAfter(page, async () => {
+        await list.click();
+        const low = (await page.locator('.cm-scroller').boundingBox())!.height;
+        assert.ok(low < tall - 100, `from ${tall} to ${low}`);
+      });
+      assert.ok(outside <= 1, `${outside} px under the edge`);
+    });
+  });
+
+  it('does not put the cursor\'s row where the view has gone: a lower window', async () => {
+    await onPage(browser, base, 1280, async (page) => {
+      const outside = await outsideAfter(page, () => page.setViewportSize({ width: 1280, height: 560 }));
+      assert.ok(outside <= 1, `${outside} px under the edge`);
+    });
+  });
+
   it('leaves F6 and the focus as they were', async () => {
     await onPage(browser, base, 1280, async (page) => {
       await cursorAt(page, 95);
