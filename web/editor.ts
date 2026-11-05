@@ -18,9 +18,10 @@ import type { HighlightModifier } from '../src/semanticFacts';
 import { Lang } from '../src/i18n';
 import { FADED, LEVELS, type ProblemSeverity, problemLevel, SEVERITIES } from '../src/levels';
 import type { ProblemSpan } from '../src/ui/problemNav';
-import { Settings } from '../src/settings';
+import { BlockOutline, Settings } from '../src/settings';
 import { nameHints, type NameHint } from '../src/ui/nameHints';
 import { CLASSIC_COLOURS, kindColour } from './editor-colors';
+import { blockOutline, refreshOutline } from './block-outline';
 import { drawIcon, iconMask } from './icons';
 import { webHover, WebHover } from './hover';
 import { scrollToShow, viewTarget } from '../src/ui/cursorView';
@@ -260,6 +261,9 @@ export class Editor {
   private readonly languageMode = new Compartment();
   /** Wrapping of long lines (the `editor.wrap` setting). */
   private readonly wrapMode = new Compartment();
+  /** The mark of the command at the cursor (the `blockOutline` setting; web/block-outline.ts). */
+  private readonly outlineMode = new Compartment();
+  private outline: BlockOutline = 'off';
   private readonly inputMode = new Compartment();
   /** The text box's name and description (`setLabels`), in the page's language. */
   private readonly labelMode = new Compartment();
@@ -321,7 +325,7 @@ export class Editor {
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.marginMode.of(roomUnderText(0)), EditorView.scrollMargins.of(() => ({ bottom: this.bottomMargin + sheetCover() })), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
-          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== SEVERITIES[FADED].codemirror) }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []),
+          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== SEVERITIES[FADED].codemirror) }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []), this.outlineMode.of(init.problems ? blockOutline((this.outline = host.settings().blockOutline), () => host.document()) : []),
           EditorView.updateListener.of((u) => {
             host.changed(u);
             if (u.docChanged) {
@@ -375,7 +379,7 @@ export class Editor {
   shade(): void {
     clearTimeout(this.shadingTimer);
     const wrap = this.host.settings()['editor.wrap'];
-    this.view.dispatch({ effects: [setShadings.of(this.spansOf()), ...(wrap ? [setWrapRuns.of(this.runsOf())] : [])] });
+    this.view.dispatch({ effects: [setShadings.of(this.spansOf()), refreshOutline.of(null), ...(wrap ? [setWrapRuns.of(this.runsOf())] : [])] });
   }
 
   /** Checks the script again now (forceLinting alone only hurries a check the text already asked for), and its name hints. */
@@ -441,6 +445,14 @@ export class Editor {
   setWrap(on: boolean): void {
     this.view.dispatch({ effects: this.wrapMode.reconfigure(wrapFor(on)) });
     if (on) this.view.dispatch({ effects: setWrapRuns.of(this.runsOf()) });
+  }
+
+  /** The `blockOutline` setting changed: the mark of the command at the cursor, drawn at once (none when off). */
+  setBlockOutline(mode: BlockOutline): void {
+    if (!this.withHints || mode === this.outline) return;
+    this.outline = mode;
+    this.view.dispatch({ effects: this.outlineMode.reconfigure(blockOutline(mode, () => this.host.document())) });
+    this.view.dispatch({ effects: refreshOutline.of(null) });
   }
 
   /** Names the text box for a screen reader (`aria-label`, `aria-describedby`: web/a11y.ts). */

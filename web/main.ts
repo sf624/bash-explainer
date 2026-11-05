@@ -430,6 +430,7 @@ function changeSettings(next: Settings): void {
   const languageChanged = next.language !== settings.language;
   settings = next;
   editor.setWrap(settings['editor.wrap']);
+  editor.setBlockOutline(settings.blockOutline);
   // When storage refuses, they last until the page is closed.
   const changed = changedSettings(settings, 'web');
   if (Object.keys(changed).length) writeStored(STORAGE_KEYS.settings, JSON.stringify(changed));

@@ -34,7 +34,7 @@ describe('the settings module', () => {
     }
     // A setting of VS Code has a description of its own only on the web page: where the one of package.json is about VS Code
     // alone (the hover), or takes more than the two lines of the page's Common section.
-    assert.deepStrictEqual(VSCODE.filter((s) => s.description).map((s) => s.key), ['notes.pitfalls', 'hover.enabled', 'panel.animations']);
+    assert.deepStrictEqual(VSCODE.filter((s) => s.description).map((s) => s.key), ['notes.pitfalls', 'hover.enabled', 'panel.animations', 'blockOutline']);
     for (const s of VSCODE.filter((x) => x.description)) {
       assert.ok(s.surfaces.includes('web') && s.description![0] && s.description![1], s.key);
       assert.doesNotMatch(s.description!.join(' '), /command:|#bashExplainer\.|Ctrl\+K Ctrl\+E/, s.key);

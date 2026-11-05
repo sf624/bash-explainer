@@ -30,6 +30,7 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 - A tap on the peek summary 300-700 ms after a drag can be lost (synthetic touches; confirm on a device).
 - A smooth scroll in flight when the settings' motion settles is cut short by the place's first correction, which comes before any foreign scroll can be seen (of 200 px, 185, 41 and 7 are lost at 40, 100 and 160 ms before it).
 - Wrap off, reader scrolled sideways with the cursor hidden at column 0: opening the settings moves the scroll back (150 to 1) and the close leaves it there (151 to 1, the close no longer reveals the cursor), because `rowToKeep` looks only at vertical position.
+- The mark of the command at the cursor (`blockOutline`, #619): on the web page with word wrap off, the bar scrolls out of view sideways with the text; only the innermost block is marked, not the blocks around it.
 - A divider drag beside the open settings can put the cursor's row below the editor's bottom edge (y=536, bottom 518; another run: a 120 px drag left a row 250 px under the edge). The numbers are examples.
 - Toggling wrap beside the open settings moves the row (136 px; another run: 273 px). The numbers are examples.
 - Whether the settings sheet leaves the page in use is decided in four places: `sideBySide`, the F8 selector (web/problem-list.ts), web/main.ts:804 and `paneKeys`. One fact, to read from one place.

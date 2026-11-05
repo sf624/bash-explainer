@@ -16,7 +16,7 @@ describe('the settings of the web page, as data', () => {
       common: ['language', 'notes.idioms', 'notes.pitfalls', 'examples.enabled', 'hover.enabled', 'panel.animations', 'editor.wrap'],
       examples: ['notes.basis', 'examples.disabled', 'examples.placement'],
       checks: ['shell', 'bashVersion', 'yq.flavor', 'diagnostics.enabled', 'diagnostics.ignore', 'diagnostics.embedded', 'diagnostics.pitfalls', 'customCommands'],
-      editor: ['hints.names', 'hints.deadCode'],
+      editor: ['hints.names', 'hints.deadCode', 'blockOutline'],
       data: [],
     });
     // On a touch screen the hover cards never show: their setting is left out.

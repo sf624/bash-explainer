@@ -55,6 +55,18 @@ On a phone (and a tablet held upright), one row says what the cursor's line is: 
 - `HEALTHCHECK CMD …` is explained as CMD is, in the shell form (with the shell SHELL sets) and in the exec form, after its options (`--interval`, `--timeout`, `--start-period`, `--start-interval`, `--retries`), also over lines continued with `\`. A note says what its exit status means: 0 healthy, 1 unhealthy. `HEALTHCHECK NONE` has no command. Before, a HEALTHCHECK was not explained.
 - An instruction after `ONBUILD` (`ONBUILD RUN npm ci`) is explained as the instruction is, with a note that it runs in the build of another image FROM this one. `ONBUILD SHELL` is left out: it sets the shell of that build, not of this one. Before, ONBUILD lines were not explained.
 
+### The command at the cursor is marked
+
+When the cursor is in a command that takes several lines, the editor marks the lines of that command: a bar at the left of them, in VS Code and on the web page. It is the innermost such command, wherever the cursor is in it, on any of its lines, on the blanks after its last word, or on the empty line after a block that is still open.
+
+- What is marked: `for`, `select`, `while`, `until`, `if`, `case`, functions, `{ }` and `( )` groups, `$( )` and `<( )` over lines, a pipeline or a chain of `&&` and `||` over lines (one block, whichever of its lines the cursor is on: `a && \<newline> b || \<newline> c`), a command whose words continue over lines (`tar \<newline> -c`), a here-document (the command and its body, up to the end word), and `! cmd` and `time cmd` over lines. In a function, the cursor in a here-document marks the here-document's command only. `done < file` is part of its loop: the cursor on `< file` marks the loop.
+- Not marked: a command of one line, whatever is around it; statements on several lines joined by `;` at the top of a script (`a; \<newline> b` is two commands); a line that is not shell code in a file that holds some (the Makefile's rules, the YAML around a `run:`). A block that is still open (an `if` without its `fi`) is marked to its last line, and the cursor on the empty line after it counts as inside.
+- Files with shell code: a Makefile recipe, a workflow `run:` block, a fenced block of Markdown and a Dockerfile `RUN` are marked on the rows of the file.
+- The setting `bashExplainer.blockOutline` (also in the web page's settings, section Editor) takes `bar` (the default), `tint` (a faint background on the lines) or `off`, and applies at once. With `off` nothing is added to the editor and no block is looked up.
+- The mark takes no room: the text, the line numbers, the selection, the current line's highlight, wrapped rows and the diagnostics stay where they are.
+- Colours: in VS Code, the theme colours `bashExplainer.blockBar` (by default `editorIndentGuide.activeBackground1`, `contrastBorder` in the high contrast themes) and `bashExplainer.blockTint` (a translucent grey; a translucent white or black in the high contrast themes), which `workbench.colorCustomizations` can change. On the web page the bar is the editor's text colour at a little over half; where the system forces colours the bar is in the system's text colour, also for `tint`.
+- The block is looked up in the syntax tree the page and VS Code already have for the script, once per move of the cursor; the text is not parsed again for it.
+
 ## Changed
 
 ### The condition of `[` and `test` unfolds as that of `[[ ]]`

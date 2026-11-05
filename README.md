@@ -224,6 +224,7 @@ The panel works like regex101:
 | `bashExplainer.highlight.enabled` | `true` | Colour shell code as the explanations read it (semantic tokens over the editor's colours): what each command name runs, options, readonly variables. Can be set per language (below); the web page always does it |
 | `bashExplainer.hints.names` | `true` | A hint after a command name that does not run what it suggests |
 | `bashExplainer.hints.deadCode` | `true` | Fade code that never runs (a branch whose condition the script has decided, the skipped side of `&&` or `||`, what follows `exit`, `return`, `break` or `continue`): a hint, not a warning |
+| `bashExplainer.blockOutline` | `"bar"` | How a command over several lines (a loop, an `if`, a function, a pipeline, a here-document) is marked in the editor while the cursor is in it: `bar` (a line at the left of its lines), `tint` (a faint background) or `off`. The colours are the theme colours `bashExplainer.blockBar` and `bashExplainer.blockTint`. Also on the web page |
 | `bashExplainer.inline.enabled`, `bashExplainer.inline.maxLength` | | Removed: no longer have an effect |
 | `bashExplainer.examples.enabled` | `true` | Show worked examples at all |
 | `bashExplainer.examples.disabled` | `[]` | Kinds of examples not to show: `regex`, `sed`, `awk`, `jq`, `yq`, `perl`, `textFilters`, `pipeline`, `expansion`, `printf`, `glob`, `test`, `xargs`, `read`, `getopt`, `gitLog`, `date` |
@@ -306,7 +307,7 @@ The same settings work on the web page, in the command-line tool and in the Lang
 | `language`, `notes.idioms`, `notes.pitfalls`, `notes.basis`, `shell`, `bashVersion`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled`, `customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | (`--check` asks for the warnings) | ✓ |
 | `hover.enabled`, `hints.names`, `hints.deadCode` | ✓ | | ✓ |
-| `examples.placement`, `panel.animations` | ✓ | | |
+| `examples.placement`, `panel.animations`, `blockOutline` | ✓ | | |
 | `editor.wrap` (the web page only: it is not in VS Code's settings, which has `editor.wordWrap`) | ✓ | | |
 | `examples.inHover`, `hover.maxDepth`, `highlight.enabled`, `languages`, `embedded.files` | | | ✓ |
 | `hover.followCursor`, `hover.followDelay`, `panel.autoOpen`, `panel.colors` | | | |
