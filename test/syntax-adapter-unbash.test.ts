@@ -1331,6 +1331,49 @@ describe('unbash adapter: what the explanations make of its trees', () => {
     const r = new Analyzer('en').explainLine(tree('cat <<EOF > out.txt\nhi\nEOF'), 0);
     assert.deepEqual(r.items[0].children.map((c) => c.label), ['cat', '<<EOF', '> out.txt']);
   });
+  it('reads a list with a here-document in a part that is not the first, followed by another operator, as bash does', () => {
+    // The line of a list ends at its last part, not after the body of a here-document: `|| b` is the list's, and once.
+    const cases: [string, string[]][] = [
+      ['a && cat <<E || b\nx\nE\n', ['a && cat || b']],
+      ['a || cat <<E && b\nx\nE\n', ['a || cat && b']],
+      ['a && b && cat <<E || c\nx\nE\n', ['a && b && cat || c']],
+      ['a && cat <<E && b || c\nx\nE\n', ['a && cat && b || c']],
+      ['a | cat <<E || b\nx\nE\n', ['a | cat || b']],
+      ['a && cat <<E | d || b\nx\nE\n', ['a && cat | d || b']],
+      ['a <<E && b <<F || c\nx\nE\ny\nF\n', ['a && b || c']],
+      ['a && cat <<-E || b\n\tx\n\tE\n', ['a && cat || b']],
+      ["a && cat <<'E' || b\nx\nE\n", ['a && cat || b']],
+      ['a && cat > f <<E || b\nx\nE\n', ['a && cat || b']],
+      ['a && cat <<E || b # c\nx\nE\n', ['a && cat || b']],
+      ['a && cat <<E || b;\nx\nE\n', ['a && cat || b']],
+      ['a && cat <<E || b &\nx\nE\n', ['a && cat || b &']],
+      ['a && cat <<E || b; d\nx\nE\n', ['a && cat || b; d']],
+    ];
+    const bin = findBashAst();
+    if (!bin && process.env.BASH_EXPLAINER_BASH_AST) assert.fail('BASH_EXPLAINER_BASH_AST is set, but bash-ast cannot be run (see $BASH_AST)');
+    for (const [text, labels] of cases) {
+      const t = tree(text);
+      assert.deepStrictEqual(t.errors, [], text);
+      assert.ok(!hasError(t.root), text);
+      const e = new Analyzer('en').explainLine(t, 0);
+      assert.deepStrictEqual(e.items.map((i) => i.label), labels, text);
+      assert.deepStrictEqual(e.notes, [], text);
+      assert.ok(!flat(e.items).some((x) => x.kind === 'error'), text);
+    }
+    // In a block, a function body, `$( )`, a subshell and a condition, and bash's own parser agrees on every shape.
+    const nested = ['{ a && cat <<E || b\nx\nE\n}\n', 'f() { a && cat <<E || b\nx\nE\n}\n', '(a && cat <<E || b\nx\nE\n)\n', 'if a; then b && cat <<E || c\nx\nE\nfi\n'];
+    for (const text of nested) {
+      const t = tree(text);
+      assert.deepStrictEqual(t.errors, [], text);
+      assert.ok(!hasError(t.root), text);
+      assert.strictEqual(descendants(t.root, ['||']).length, 1, text);
+    }
+    for (const text of bin ? [...cases.map((c) => c[0]), ...nested, '{ a && cat <<E || b\nx\nE\n} | c\n'] : []) {
+      const r = runBashAst(bin!, text);
+      assert.ok(r.ok, text);
+      assert.deepStrictEqual(diffShapes(shapeOfTree(tree(text).root), shapeOfAst(r.ast)), [], text);
+    }
+  });
   it('explains the redirections of a compound command with a here string', () => {
     const e = new Analyzer('en').explainLine(tree('{ cat; } <<< x > f'), 0);
     assert.match(e.items[0].explanation, /as a whole/);
