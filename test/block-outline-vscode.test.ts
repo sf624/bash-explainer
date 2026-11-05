@@ -8,7 +8,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import { openDocument } from '../src/document-setup';
 import type { BlockOutline } from '../src/settings';
-import { failuresThrow } from '../src/failures';
+import { failuresGoTo, failuresThrow } from '../src/failures';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 type Handler = (e: any) => void;
@@ -275,8 +275,7 @@ describe('the block mark of VS Code', () => {
     fake.editors.push(e);
     const wasThrowing = failuresThrow(false);
     const told: string[] = [];
-    const log = console.error;
-    console.error = (...args: unknown[]) => { told.push(String(args[0])); };
+    const before = failuresGoTo((f) => { told.push(f.where); });
     try {
       const broken = Object.assign(Object.create(service), { document: () => { throw new Error('boom'); } });
       // (The constructor draws once: it must not throw, or the activation of the extension stops.)
@@ -287,7 +286,7 @@ describe('the block mark of VS Code', () => {
       fire('selection', { textEditor: e });
       c.dispose();
     } finally {
-      console.error = log;
+      failuresGoTo(before);
       failuresThrow(wasThrowing);
     }
   });
