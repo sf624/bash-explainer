@@ -28,7 +28,7 @@ import { type Missed, testSpecOf } from '../semantics/names';
 import { attribute, docLine } from '../semantics/state';
 import { readDeclarationWords, unsetEndsSpecial } from '../semantics/vars';
 import { attachedWritten, prefixCharAt } from '../argv/words';
-import { isPlainWord, type Literal, literalContent, staticWordText, staticWordValue, surelyHasSlash } from '../staticword';
+import { isPlainWord, type Literal, literalContent, literalFrom, sourceIndex, staticWordText, staticWordValue, surelyHasSlash } from '../staticword';
 import { replaceNode } from '../rewrite';
 import { field, fields, inStrayHead, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { bracketShape, type CommandTest, commandTest, type TestRules } from '../testexpr';
@@ -323,9 +323,7 @@ function equalsToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const written = whole ? undefined : attachedWritten(a, value.attached!);
   const val = written ? written.text : whole!.text.slice(litEq + 1);
   const known = own(value.spec?.values, val);
-  const valueLit: Literal | undefined = whole && litEq >= 0
-    ? (whole.offsets ? { text: val, offsets: whole.offsets.slice(litEq + 1) } : { text: val, base: whole.base! + litEq + 1 })
-    : undefined;
+  const valueLit: Literal | undefined = whole && litEq >= 0 ? literalFrom(whole, litEq + 1) : undefined;
   const emb = value.spec?.lang && valueLit ? embeddedText(cx, valueLit, value.spec.lang, a) : undefined;
   const extra = emb?.note ? ` — ${emb.note}` : '';
   const text = role.role === 'option' ? cx.t(role.text) : unknownOption(cx, parse, spec, role.ambiguous);
@@ -342,10 +340,10 @@ function part(a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-
 /** A token over the characters `from` to `to` of the value of the word `a`. */
 function span(a: SyntaxNode, from: number, to: number, kind: Kind, explanation: string, label: string): Token {
   const lit = literalContent(a);
-  const at = (i: number): number => (lit?.offsets ? lit.offsets[i] : lit ? lit.base! + i : prefixCharAt(a.text, i));
+  const at = (i: number, isEnd: boolean): number => (lit ? sourceIndex(lit, isEnd ? i + 1 : i, isEnd) : isEnd ? prefixCharAt(a.text, i) + 1 : prefixCharAt(a.text, i));
   const col = a.startPosition.column;
   const row = a.startPosition.row;
-  return { kind, label, explanation, children: [], span: { start: { line: row, character: col + at(from) }, end: { line: row, character: to < 0 ? col + a.text.length : col + at(to - 1) + 1 } } };
+  return { kind, label, explanation, children: [], span: { start: { line: row, character: col + at(from, false) }, end: { line: row, character: to < 0 ? col + a.text.length : col + at(to - 1, true) } } };
 }
 
 /** The tokens of one letter of a cluster: the option, and the value written after it (`-n5`, `-i.bak`, `-F'|'`). */
@@ -383,7 +381,7 @@ function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec
   raw.explanation = (known ? `${val}: ${cx.t(known)}` : cx.text('option-value-for', { flag }) + (glued ? cx.text('option-value-unquoted', { val }) : '')) + splicedNote(cx, value);
   // `-k3,3nr`, `-f2-4`: the attached value can be broken down like a separate one.
   const lang = value.spec?.lang;
-  const emb = lang && lit ? embeddedText(cx, lit.offsets ? { text: val, offsets: lit.offsets.slice(value.attached) } : { text: val, base: lit.base! + value.attached! }, lang, a) : undefined;
+  const emb = lang && lit ? embeddedText(cx, literalFrom(lit, value.attached!), lang, a) : undefined;
   if (emb) {
     raw.children = emb.tokens;
     if (emb.note) raw.explanation += ` — ${emb.note}`;

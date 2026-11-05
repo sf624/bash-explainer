@@ -538,3 +538,14 @@ unbash 6.0.2 and 6.0.3 read more of bash's syntax as bash does, and the explanat
 - `${x#)}` in a `$( )` (`a=$(echo ${x#)})`, bash prints the value): the `)` is pattern text. Before, the line said "Syntax error: this part could not be parsed". The same for `<<` in the pattern of an expansion, and in a `$( )` or `<( )` over several lines (`$((1<<2))` there started a heredoc), and for `${x:-<<EOF}`.
 - `cat <$''` names the target `$''` (an empty file name; bash says "No such file or directory"). Before, the note said "Read file `` as stdin".
 - `<<$'E\0F'`: the heredoc ends at the line `E`, where the delimiter ends at the NUL, as bash reads it. Before, it ran to the end of the file. (The note still words the delimiter as written: roadmap, "Deferred".)
+
+### A backslash in a double-quoted word, or in a plain one
+
+In double quotes bash takes a backslash away only before `$`, a backtick, `"`, `\` and a newline (manual 3.1.2.3); `\1`, `\.`, `\d` and `\n` reach the program as they are. A word with a backslash had no known value for the readers of sed, grep, awk, perl, jq, `tr`, `printf`, `date` and the rest, so it got no breakdown and no example. Now it has the value bash passes, and its parts lie over the source text (the part for `$1` of `awk "{print \$1}"` covers `\$1`).
+
+- Before: `sed "s/\./x/"`, `sed -E "s/(a)/\1/g"`, `sed -E "s#^//([^:]*):#\1/#; s#^/##"`, `grep "a\.b" f`, `grep -E "\.txt$"`, `awk "{print \$1}" f`, `awk "/a\.b/ {print}" f`, `awk -F "\t"`, `perl -pe "s/\d/x/"`, `tr "\n" " "`, `echo -e "a\\nb"` showed the string and nothing in it. Now each reads like the single-quoted line with the same value, with the same worked example.
+- Where bash removes a backslash, the argument says so once, with each escape: `grep "a\\.b"` hands grep `a\.b` ("`\\` → `\`"). Where the backslash stays, nothing is added.
+- An unquoted backslash is the same: `grep a\.b f` hands grep `a.b` (any character), which the explanation reads and says; `find . -name \*.py` hands find `*.py`.
+- Words with a quote in the middle (`sed 's/a/'"\1"'/'`, `date +"%F\n"`, `git log --pretty=format:"%h\t%s"`, `awk -v OFS="\t"`) are read too, and `--regexp="a\.b"` and `sed --expression="s/\./x/"`.
+- `echo -e "\\e"` hands echo `\e`, which `-e` turns into ESC: it is read now. Before, it was left alone.
+- Words with an expansion (`sed "s/$old/new/"`) are still not read.

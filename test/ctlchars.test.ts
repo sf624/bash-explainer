@@ -392,11 +392,13 @@ describe('echo -e and $\'…\' in the tree', () => {
   });
 
   it('leaves echo alone when it does not read escapes', () => {
-    for (const src of ["echo '\\e[1m'", "echo -E '\\e[1m'", "echo -e -E '\\e[1m'", "echo -e hello", "echo -e 'hello'", 'echo -e "\\\\e"', 'echo -e "\\e$x"', "echo -x '\\e[1m'", "echo -e $'\\e'"]) {
+    for (const src of ["echo '\\e[1m'", "echo -E '\\e[1m'", "echo -e -E '\\e[1m'", "echo -e hello", "echo -e 'hello'", 'echo -e "\\e$x"', "echo -x '\\e[1m'", "echo -e $'\\e'"]) {
       const all = texts(src).filter((x) => x.startsWith('\\e|') || x.startsWith('\\\\e|'));
       assert.strictEqual(all.length, src.includes("$'") ? 1 : 0, src);
     }
     assert.ok(texts("echo -E -e '\\e[1m'").some((x) => x.startsWith('\\e|')));
+    // (`"\\e"` gives echo the two characters `\e`, which `-e` reads: the token covers the two backslashes bash read.)
+    assert.ok(texts('echo -e "\\\\e"').some((x) => x.startsWith('\\\\e|')));
   });
 });
 

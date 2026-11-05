@@ -18,7 +18,7 @@ import type { RerunSpec } from '../examples/rerun';
 import { sedExample, sedPattern } from '../examples/sed';
 import { NO_INPUT } from '../examples/source';
 import { featureWorks } from '../shellfeatures';
-import { type Literal, literalContent, staticWordText } from '../staticword';
+import { type Literal, literalContent, literalOfMapped, removedBackslashes, staticWordText } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import { type Explainer, memoKey } from './context';
 import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
@@ -35,7 +35,7 @@ import { valueNote } from './words';
  * the text before the command sees it, so offsets would not line up.
  */
 export function embedded(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): { tokens: Token[]; note?: string } | undefined {
-  const lit = literalContent(a, lang);
+  const lit = literalContent(a);
   return lit && embeddedText(cx, lit, lang, a);
 }
 
@@ -45,7 +45,7 @@ export function embedded(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): { to
  */
 export function embeddedValue(cx: Explainer, value: SyntaxNode, lang: EmbeddedLang): { tokens: Token[]; note?: string } | undefined {
   const m = staticWordText(value, cx.shell);
-  return m && embeddedText(cx, { text: m.text, offsets: m.starts.map((s) => s - value.startIndex) }, lang, value);
+  return m && embeddedText(cx, literalOfMapped(m, value), lang, value);
 }
 
 /** Explain `lit.text`, which sits inside `a` as `lit` describes (e.g. after `-k` in `-k3,3n`). */
@@ -70,7 +70,11 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
   const r = EMBEDDED[lang](lit.text, ecx);
   if (!r) return undefined;
   guardedEmbeddedExample(cx, lang, lit.text, a);
-  return { tokens: r.tokens.map((t) => ({ ...fromEmbedded(t, a, lit, 'embedded'), language: lang })), note: r.note };
+  // (Where bash took a backslash away before the command read the text, `"a\\.b"`, it says what the command is given.)
+  const taken = removedBackslashes(lit, a.text);
+  const bash = taken.length ? cx.text('embedded-backslash-removed', { taken }) : undefined;
+  const note = bash && r.note ? r.note + cx.s('。', '; ') + bash : bash ?? r.note;
+  return { tokens: r.tokens.map((t) => ({ ...fromEmbedded(t, a, lit, 'embedded'), language: lang })), note };
 }
 
 /** The kinds of the examples that run the embedded text on data, and may run a regex of it (a regex and a glob say so themselves). */

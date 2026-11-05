@@ -328,10 +328,14 @@ export interface MappedText { text: string; starts: number[]; ends: number[] }
 export function staticWordText(n: SyntaxNode, shell: Shell | undefined): MappedText | undefined {
   if (decodedText(n) !== n.text || tildeSpots(tildeParts([n]), 'start').length) return undefined;
   const out: MappedText = { text: '', starts: [], ends: [] };
-  return mappedValue(n, out, shell) ? out : undefined;
+  return mappedValue(n, out, shell, false) ? out : undefined;
 }
 
-function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined): boolean {
+/**
+ * `literal`: only what a command line gives a program as plain text (`literalContent`): words, quoted strings and their
+ * concatenations; a brace expansion, an expansion, `$'…'` and a word with a glob and a backslash are not followed.
+ */
+function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined, literal: boolean): boolean {
   const src = n.text;
   const put = (text: string, start: number, end: number): void => {
     out.text += text;
@@ -350,13 +354,13 @@ function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined): 
   };
   switch (n.type) {
     case 'word': case 'number':
-      if (globbed(n, src)) return false;
+      if (literal ? /['"$`]/.test(src) || (src.includes('\\') && globbed(n, src)) : globbed(n, src)) return false;
       unescape(0, src.length, /[\s\S]/);
       return true;
     case 'brace_expression':
       // (Braces the shell does not expand are text, with what is in them: `{x,EXIT}` in dash.)
-      if (bracesMayWork(n, shell)) return false;
-      return n.children.every((c) => (c.named ? mappedValue(c, out, shell) : (put(c.type, c.startIndex - n.startIndex, c.endIndex - n.startIndex), true)));
+      if (literal || bracesMayWork(n, shell)) return false;
+      return n.children.every((c) => (c.named ? mappedValue(c, out, shell, literal) : (put(c.type, c.startIndex - n.startIndex, c.endIndex - n.startIndex), true)));
     case 'raw_string':
       for (let i = 1; i < src.length - 1; i++) put(src[i], i, i + 1);
       return true;
@@ -365,6 +369,7 @@ function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined): 
       unescape(1, src.length - 1, /[$`"\\]/);
       return true;
     case 'ansi_c_string': {
+      if (literal) return false;
       // (Where the shell does not decode it: dash's `$` and single-quoted text, or nothing known.)
       if (!featureWorks('ansiC', shell)) {
         if (ansiCWordValue(src, shell) === undefined) return false;
@@ -389,8 +394,10 @@ function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined): 
       }
       return true;
     }
-    case 'command_substitution': return emptySubstitution(n);
-    case 'concatenation': return n.namedChildren.every((c) => mappedValue(c, out, shell));
+    case 'command_substitution': return !literal && emptySubstitution(n);
+    // `$"…"` is a double-quoted string (a translation, when the locale has one for it).
+    case 'translated_string': return literal && n.namedChildren.length === 1 && mappedValue(n.namedChildren[0], out, shell, literal);
+    case 'concatenation': return n.namedChildren.every((c) => mappedValue(c, out, shell, literal));
     default: return false;
   }
 }
@@ -485,52 +492,66 @@ export function bracketsAcross(nodes: readonly SyntaxNode[]): SyntaxNode[] {
 export const isPlainWord = (n: SyntaxNode): boolean => n.type === 'word' || n.type === 'number';
 
 /**
- * The text a command receives for a word, and where each of its characters sits in the word's
- * source: either a fixed `base` offset, or per-character `offsets` when quotes are interleaved
- * (`--pretty=format:'%h %s'`).
+ * The text a command receives for a word, and where each of its characters sits in the word's source: either a fixed
+ * `base` offset, or per-character `offsets` (where the character starts) and `ends` (where its source ends: two
+ * characters of source, `\$`, make one of text) when quotes or escapes are interleaved (`--pretty=format:'%h %s'`,
+ * `"a\\.b"`).
  */
 export interface Literal {
   text: string;
   base?: number;
   offsets?: number[];
+  /** Absent: each character is one of source (`offsets[i] + 1`). */
+  ends?: number[];
 }
 
-/** The literal text inside a raw string, plain double-quoted string, plain word, or a concatenation of those. */
-export function literalContent(a: SyntaxNode, lang?: EmbeddedLang): Literal | undefined {
+/**
+ * The plain text a word gives the command, as bash passes it (the reading of `staticWordText`, so one source for the
+ * value): a raw string, a plain double-quoted string, a plain word, or a concatenation of those, with the escapes bash
+ * removes (in double quotes only before `$`, a backtick, `"`, `\` and a newline: `"s/a/\1/"` is `s/a/\1/`, `"\$1"` is
+ * `$1`).
+ */
+export function literalContent(a: SyntaxNode): Literal | undefined {
   // (In backquotes, `'a\$b'` is `a$b`: bash removes the backslash first, and the characters no longer sit one to one.)
-  if (a.type === 'raw_string') return decodedText(a) === a.text ? { text: a.text.slice(1, -1), base: 1 } : undefined;
-  // `echo -e "\e[1m"`: the shell keeps a backslash before any character but `$`, a backtick, `"` and `\`.
-  if (lang === 'echo') {
-    return a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[$`]|\\[\\"\n]/.test(a.text) ? { text: a.text.slice(1, -1), base: 1 } : undefined;
+  if (decodedText(a) !== a.text) return undefined;
+  if (a.type === 'concatenation' && a.startPosition.row !== a.endPosition.row) return undefined;
+  const m: MappedText = { text: '', starts: [], ends: [] };
+  if (!mappedValue(a, m, undefined, true)) return undefined;
+  // One to one from a fixed place (a node of its own, as a quoted string or a word).
+  if (a.type !== 'concatenation' && m.starts.every((s, k) => s === m.starts[0] + k && m.ends[k] === s + 1)) {
+    return { text: m.text, base: m.text ? m.starts[0] - a.startIndex : 1 };
   }
-  if (a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[\\$`]/.test(a.text)) {
-    return { text: a.text.slice(1, -1), base: 1 };
-  }
-  if (isPlainWord(a) && !/[\\'"$`]/.test(a.text)) return { text: a.text, base: 0 };
-  // `$"…"` is a double-quoted string (a translation, when the locale has one for it).
-  if (a.type === 'translated_string' && a.namedChildren.length === 1) {
-    const inner = literalContent(a.namedChildren[0]);
-    return inner && !inner.offsets ? { text: inner.text, base: inner.base! + 1 } : undefined;
-  }
-  if (a.type === 'concatenation' && a.startPosition.row === a.endPosition.row) {
-    let text = '';
-    const offsets: number[] = [];
-    for (const c of a.namedChildren) {
-      const lit = literalContent(c);
-      if (!lit || lit.offsets) return undefined;
-      const at = c.startIndex - a.startIndex + lit.base!;
-      for (let k = 0; k < lit.text.length; k++) offsets.push(at + k);
-      text += lit.text;
-    }
-    return { text, offsets };
-  }
-  return undefined;
+  return literalOfMapped(m, a);
+}
+
+/** The part of a literal from character `k` on (the value of `--regexp=…`: the characters before it are left out). */
+export function literalFrom(lit: Literal, k: number): Literal {
+  const text = lit.text.slice(k);
+  return lit.offsets ? { text, offsets: lit.offsets.slice(k), ends: lit.ends!.slice(k) } : { text, base: lit.base! + k };
+}
+
+/** The literal of a mapped text found in the word `a` (`staticWordText`). */
+export function literalOfMapped(m: MappedText, a: SyntaxNode): Literal {
+  return { text: m.text, offsets: m.starts.map((s) => s - a.startIndex), ends: m.ends.map((e) => e - a.startIndex) };
+}
+
+/**
+ * The escapes in the source `src` of a word from which bash took a backslash, as `\$` (one character of text from two of
+ * source), each once, in order: what the command is given is not what is written there. A backslash-newline is not one:
+ * it leaves no character to show.
+ */
+export function removedBackslashes(lit: Literal, src: string): string[] {
+  const out = new Set<string>();
+  lit.offsets?.forEach((s, k) => {
+    if (lit.ends![k] - s === 2 && src[s] === '\\') out.add(src.slice(s, s + 2));
+  });
+  return [...out];
 }
 
 /** Position in the node's source of character `offset` of a literal (an end offset maps past the previous character). */
 export function sourceIndex(lit: Literal, offset: number, isEnd: boolean): number {
   // A literal has a base or offsets, one for each character (tokens lie within its text).
   if (!lit.offsets) return lit.base! + offset;
-  if (isEnd) return lit.offsets[offset - 1] + 1;
+  if (isEnd) return lit.ends ? lit.ends[offset - 1] : lit.offsets[offset - 1] + 1;
   return lit.offsets[offset];
 }
