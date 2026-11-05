@@ -1331,8 +1331,9 @@ describe('unbash adapter: what the explanations make of its trees', () => {
     const r = new Analyzer('en').explainLine(tree('cat <<EOF > out.txt\nhi\nEOF'), 0);
     assert.deepEqual(r.items[0].children.map((c) => c.label), ['cat', '<<EOF', '> out.txt']);
   });
-  it('reads a list with a here-document in a part that is not the first, followed by another operator, as bash does', () => {
-    // The line of a list ends at its last part, not after the body of a here-document: `|| b` is the list's, and once.
+  it('reads a list, a pipeline and a wrapper (`!`, `time`, `coproc`, a function) with a here-document, followed by another operator, as bash does', () => {
+    // The line of a node ends at its last part, not after the body of a here-document: `|| b` is the list's, and once.
+    // (The row's span runs to the end of the body.)
     const cases: [string, string[]][] = [
       ['a && cat <<E || b\nx\nE\n', ['a && cat || b']],
       ['a || cat <<E && b\nx\nE\n', ['a || cat && b']],
@@ -1349,6 +1350,17 @@ describe('unbash adapter: what the explanations make of its trees', () => {
       ['a | cat <<E | b # c\nx\nE\n', ['a | cat | b', '# c']],
       ['a && cat <<E || b &\nx\nE\n', ['a && cat || b &']],
       ['a && cat <<E || b; d\nx\nE\n', ['a && cat || b; d']],
+      ['! cat <<E || b\nx\nE\n', ['! cat || b']],
+      ['a && ! cat <<E || b\nx\nE\n', ['a && ! cat || b']],
+      ['! cat <<E; d\nx\nE\n', ['! cat; d']],
+      ['if ! grep -q a <<E; then c; fi\nx\nE\n', ['if ‹condition› then ‹commands› fi']],
+      ['time cat <<E; d\nx\nE\n', ['time cat; d']],
+      ['time cat <<E || b\nx\nE\n', ['time cat || b']],
+      ['coproc cat <<E || b\nx\nE\n', ['coproc cat || b']],
+      ['f() { :; } <<E; d\nx\nE\n', ['f() { ‹commands› } <<E; d']],
+      ['function f { :; } <<E || b\nx\nE\n', ['function f { ‹commands› } <<E || b']],
+      ['{ coproc cat <<E; }\nx\nE\n', ['{ ‹commands› }']],
+      ['if x; then y; elif a && cat <<E ||\nx\nE\nb; then c; fi\n', ['if ‹condition› then ‹commands› elif ‹condition› then ‹commands› fi']],
     ];
     const bin = findBashAst();
     if (!bin && process.env.BASH_EXPLAINER_BASH_AST) assert.fail('BASH_EXPLAINER_BASH_AST is set, but bash-ast cannot be run (see $BASH_AST)');
@@ -1359,15 +1371,18 @@ describe('unbash adapter: what the explanations make of its trees', () => {
       const e = new Analyzer('en').explainLine(t, 0);
       assert.deepStrictEqual(e.items.map((i) => i.label), labels, text);
       assert.deepStrictEqual(e.notes, [], text);
+      if (text === 'a && cat <<E || b\nx\nE\n') assert.deepStrictEqual([e.items[0].span.start, e.items[0].span.end], [{ line: 0, character: 0 }, { line: 2, character: 1 }]);
+      if (text === 'if x; then y; elif a && cat <<E ||\nx\nE\nb; then c; fi\n') assert.deepStrictEqual(e.items[0].span.end, { line: 3, character: 13 });
+      if (text === '! cat <<E; d\nx\nE\n') assert.deepStrictEqual(e.items[0].span.end, { line: 2, character: 1 });
       assert.ok(!flat(e.items).some((x) => x.kind === 'error'), text);
     }
     // In a block, a function body, `$( )`, a subshell and a condition, and bash's own parser agrees on every shape.
-    const nested = ['{ a && cat <<E || b\nx\nE\n}\n', 'f() { a && cat <<E || b\nx\nE\n}\n', '(a && cat <<E || b\nx\nE\n)\n', 'if a; then b && cat <<E || c\nx\nE\nfi\n'];
+    const nested = ['{ a && cat <<E || b\nx\nE\n}\n', 'f() { a && cat <<E || b\nx\nE\n}\n', '(a && cat <<E || b\nx\nE\n)\n', 'if a; then b && cat <<E || c\nx\nE\nfi\n', 'if cat <<E; then c; fi\nx\nE\n', 'if a && cat <<E || b; then c; fi\nx\nE\n', 'while cat <<E; do c; done\nx\nE\n'];
     for (const text of nested) {
       const t = tree(text);
       assert.deepStrictEqual(t.errors, [], text);
       assert.ok(!hasError(t.root), text);
-      assert.strictEqual(descendants(t.root, ['||']).length, 1, text);
+      assert.strictEqual(descendants(t.root, ['||']).length, text.includes('||') ? 1 : 0, text);
     }
     for (const text of bin ? [...cases.map((c) => c[0]), ...nested, '{ a && cat <<E || b\nx\nE\n} | c\n'] : []) {
       const r = runBashAst(bin!, text);

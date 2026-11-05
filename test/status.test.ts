@@ -175,6 +175,20 @@ describe('errexit contexts (src/semantics/status.ts)', () => {
     assert.strictEqual(ctx('set -e; f() { a; x=$(g); }; g() { b; }; f', 'b'), 'off');
   });
 
+  it('takes a condition that holds a here-document as the condition, when `then` or `do` is on its line', () => {
+    // (The body of the here-document lies below the line: the condition still ends before `then` and `do`.)
+    for (const [src, cmd] of [
+      ['set -e; while false <<E; do echo a; done\nx\nE\necho after', 'false <<E; do echo a; done\nx\nE'],
+      ['set -e; until true <<E; do echo a; done\nx\nE\necho after', 'true <<E; do echo a; done\nx\nE'],
+      ['set -e; if false <<E; then echo a; fi\nx\nE\necho after', 'false <<E; then echo a; fi\nx\nE'],
+      ['set -e; if true && false <<E; then echo a; fi\nx\nE\necho after', 'false <<E; then echo a; fi\nx\nE'],
+    ]) {
+      assert.strictEqual(ctx(src, cmd), 'off condition', src);
+      // bash: the failing condition does not stop the shell.
+      assert.match(runBash(src).stdout, /after/, src);
+    }
+  });
+
   it('says which statements are checked, and which shell stops', () => {
     const e = (src: string, text: string) => {
       const c = errexit(src, text);

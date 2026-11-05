@@ -98,20 +98,13 @@ class Converter {
   }
 
   /** Adds the tokens and comments in the text of `owner` that its children do not cover, up to `end`. */
-  fill(owner: Mut, end = owner.lineEnd ?? owner.endIndex): void {
+  fill(owner: Mut, stop?: number): void {
     const kids = [...owner.children].sort((a, b) => a.startIndex - b.startIndex);
     // A node covers its children, whatever range its parser gave it.
     for (const k of kids) owner.endIndex = Math.max(owner.endIndex, k.endIndex);
     // A node whose last line ends before a heredoc body that one of its parts holds.
     if (kids.some((k) => k.lineEnd !== undefined)) owner.lineEnd = mostOf(kids.map((k) => k.lineEnd ?? k.endIndex));
-    let at = owner.startIndex;
-    const gaps: [number, number][] = [];
-    for (const k of kids) {
-      if (k.startIndex > at) gaps.push([at, k.startIndex]);
-      at = Math.max(at, k.lineEnd ?? k.endIndex);
-    }
-    if (end > at) gaps.push([at, end]);
-    for (const [a, b] of gaps) {
+    const gap = (a: number, b: number): void => {
       for (const p of scanGap(this.text, a, b, this.skip, undefined, true)) {
         if (p.kind === 'word') {
           // Text between the parts of a node that no part holds: unbash dropped it.
@@ -122,7 +115,14 @@ class Converter {
         const m = this.node(p.kind === 'comment' ? 'comment' : p.text, p.start, p.end, null, owner);
         m.named = p.kind === 'comment';
       }
+    };
+    let at = owner.startIndex;
+    for (const k of kids) {
+      gap(at, k.startIndex);
+      at = Math.max(at, k.lineEnd ?? k.endIndex);
     }
+    // (Up to the end of the owner's line: a here-document's body, after it, holds what the parent reads next: `|| b`.)
+    gap(at, stop ?? owner.lineEnd ?? owner.endIndex);
   }
 
   // Positions of tokens that unbash does not give
@@ -150,7 +150,7 @@ class Converter {
     const script = this.parseScript();
     const root = this.node('program', 0, this.text.length);
     this.statements(root, script.commands, this.text.length);
-    this.fill(root);
+    this.fill(root, root.endIndex);
     this.unreadable(root, script);
     // The program starts at its first token: leading blanks are not part of it.
     root.startIndex = leastOf([...root.children.map((c) => c.startIndex), this.text.length]);
@@ -345,7 +345,7 @@ class Converter {
       const list = this.node('list', left.startIndex, right.endIndex);
       this.add(list, left);
       this.add(list, right);
-      this.fill(list, right.lineEnd ?? right.endIndex); // (ends where its last part's line does: after a here-document's line comes what the parent reads, `|| b`)
+      this.fill(list);
       left = list;
     }
     return left;
@@ -358,7 +358,7 @@ class Converter {
     if (cmds.length > 1) {
       out = this.node('pipeline', cmds[0].startIndex, cmds[cmds.length - 1].endIndex);
       for (const c of cmds) this.add(out, c, null);
-      this.fill(out, cmds[cmds.length - 1].lineEnd ?? out.endIndex);
+      this.fill(out);
     } else out = cmds[0];
     // The prefixes act from the last to the first: `! time a | b` negates the timed pipeline, and `time ! a | b` times the negated one.
     for (const prefix of [...p.prefixes].reverse()) out = prefix.type === 'Time' ? this.time(prefix, out) : this.negate(prefix, out);
@@ -851,7 +851,7 @@ class Converter {
     const sub = new Converter(decoded);
     const holder = sub.node('program', 0, decoded.length);
     sub.statements(holder, script.commands, decoded.length);
-    sub.fill(holder);
+    sub.fill(holder, holder.endIndex);
     sub.unreadable(holder, script);
     const moveStart = (i: number): number => origin[i];
     // A substitution inside this one starts at the backslash that escapes its backquote.
@@ -994,7 +994,7 @@ class Converter {
 
   /** Gives `field` to what lies between `from` and `to` in `n`, comments apart. */
   mark(n: Mut, from: number, to: number, field: FieldName): void {
-    for (const c of n.children) if (c.startIndex >= from && c.endIndex <= to && c.type !== 'comment' && c.type !== 'if' && c.type !== 'while' && c.type !== 'until') c.field = field;
+    for (const c of n.children) if (c.startIndex >= from && (c.lineEnd ?? c.endIndex) <= to && c.type !== 'comment' && c.type !== 'if' && c.type !== 'while' && c.type !== 'until') c.field = field;
   }
 
   list(owner: Mut, l: U.CompoundList, limit: number): void {

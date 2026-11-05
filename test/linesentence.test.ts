@@ -59,6 +59,9 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["(cd x; ls)", 0, "In a subshell, runs `cd` (change the current directory); then runs `ls` (list directory contents).", "サブシェルで: `cd`（カレントディレクトリを移動する）を実行する。続けて、`ls`（ディレクトリの中身（ファイル一覧）を表示する）を実行する。"],
     ["if a; then b; elif c; then d; else e; fi", 0, "If `a` succeeds, runs `b`; otherwise, if `c` succeeds, runs `d`; otherwise, runs `e`.", "`a` が成功したら、`b` を実行する。そうでなければ、`c` が成功したら、`d` を実行する。そうでなければ、`e` を実行する。"],
     ["if a; then b; fi", 0, "If `a` succeeds, runs `b`.", "`a` が成功したら、`b` を実行する。"],
+    // A here-document in the condition: its body is below the line, and the condition is still the condition.
+    ["if grep a <<E; then b; fi\nx\nE", 0, "If `grep` (print lines matching a pattern (regex)) succeeds, runs what follows `then`; then runs `b`.", "`grep`（パターン（正規表現）に一致する行を検索して表示する）が成功したら、`then` 以下を実行する。続けて、`b` を実行する。"],
+    ["while read l <<E; do echo a; done\nx\nE", 0, "Repeats its body (`echo`) while `read` (read a line from stdin into variables) succeeds; then runs `echo` (print arguments to stdout, separated by spaces).", "`read`（標準入力から1行読み、変数に代入する）が成功する間、本体（`echo`）をくり返す。続けて、`echo`（引数を空白区切りで標準出力に表示する）を実行する。"],
     ["case $x in a|b) c ;; *) ;; esac", 0, "Runs the first branch whose pattern matches the value of `$x`.", "`$x` の値に最初に一致したパターンの分岐を実行する。"],
     ["f() { a; }", 0, "Defines the function `f`, whose body runs each time it is called.", "関数 `f` を定義する。本体は呼び出されるたびに実行される。"],
     ["(( i++ ))", 0, "Evaluates the arithmetic in `(( … ))`.", "`(( … ))` の算術式を評価する。"],
