@@ -94,8 +94,6 @@ export interface ReadingNode {
   resolves?: NameResolution['kind'];
   /** On a word a command reads as the value of an option: the option (`-f`, `--file`). */
   valueFor?: string;
-  /** On an `aliasWord`: the alias's text, which bash reads in its place. */
-  replacement?: string;
   /** On a command name (and the reserved word `time`): what the name is, and what else (`Token.name`). */
   name?: NameInfo;
   /** On a word bash does something to: what it does, in its order (3.5; `wordSteps`), and the word's place. */
@@ -555,7 +553,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
         layer, kind: 'aliasWord', label: short(w.text), span, ...(aliasText ? saidBy(own!) : res.sure ? { text: said('alias-replaced', { name: w.text, value }) } : {}),
         // (Without its own token: bash replaces it only where it is expanded, `res.sure`; elsewhere the node says nothing, a script does not expand aliases unless the shell option is on.)
         // (The token of an alias as the command name has its name's facts: the analyzer resolves it.)
-        refs: ['6.6'], replacement: value, ...(own?.name ? { name: own.name } : {}), ...process, children,
+        refs: ['6.6'], ...(own?.name ? { name: own.name } : {}), ...process, children,
       },
       runs: { name: runs?.name ?? short(value), inShell: resolvesInShell(runs) },
     };

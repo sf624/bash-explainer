@@ -941,8 +941,6 @@ export interface NameSaid {
   also?: string;
   /** The kind (and who runs it) for an output with no badge: " (builtin)", "（プログラム。`sudo` が実行）". */
   short: string;
-  /** The badge and `by`, for a screen reader: "program, run by sudo". */
-  spoken: string;
 }
 
 /** The texts of the facts of a command name, in `lang`. */
@@ -986,7 +984,6 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
   return {
     kind: word, title, ...(by ? { by } : {}), ...(lines.length ? { also: lines.join(ja ? '。' : '. ') } : {}),
     short: ja ? `（${word}${by ? `。${by}` : ''}）` : ` (${word}${by ? `, ${by}` : ''})`,
-    spoken: [word, ...(by ? [by] : [])].join(ja ? '、' : ', ').replace(/`/g, ''),
   };
 }
 

@@ -219,7 +219,6 @@ describe('what a command name is, in the model and the texts', () => {
     assert.strictEqual(tokens('time :', 0, 'ja')[0].children[0].name!.said.also, '同じ名前で、ほかに: プログラム（ふつうは `/usr/bin/time`。`\\time`・`command time` で動く）');
     assert.strictEqual(tokens('function time { :; }\ntime :', 1, 'ja')[0].children[0].name!.said.also,
       '同じ名前で、ほかに: このスクリプトの関数（`\\time` で動く）・プログラム（ふつうは `/usr/bin/time`。`command time` で動く）');
-    assert.deepStrictEqual([ja.spoken, sudo.spoken], ['プログラム、sudo が実行', 'program, run by sudo']);
     const fn = tokens('echo() { :; }; echo hi').find((t) => t.kind === 'function' && t.name)!.name!.said;
     assert.strictEqual(fn.also, 'Same name, also: bash\'s builtin (run with `builtin echo` or `command echo`); a program, usually `/usr/bin/echo` (run with `env echo`)');
     const off = tokens('enable -n echo\necho x', 1, 'ja')[0].name!.said;
@@ -325,8 +324,8 @@ describe('what a command name is, in the outputs with no badge and in the readin
     assert.match(hover, /&nbsp;special&nbsp;builtin&nbsp;<\/span><\/span> — /);
     assert.match(hover, /&nbsp;builtin&nbsp;<\/span><\/span> — Change the current directory/);
     const said = (lang: 'en' | 'ja') => allTokens(ex(src, lang).items).find((t) => t.label === 'export')!.name!.said;
-    assert.deepStrictEqual([said('en').kind, said('en').short, said('en').spoken], ['special builtin', ' (special builtin)', 'special builtin']);
-    assert.deepStrictEqual([said('ja').kind, said('ja').short, said('ja').spoken], ['特殊ビルトイン', '（特殊ビルトイン）', '特殊ビルトイン']);
+    assert.deepStrictEqual([said('en').kind, said('en').short], ['special builtin', ' (special builtin)']);
+    assert.deepStrictEqual([said('ja').kind, said('ja').short], ['特殊ビルトイン', '（特殊ビルトイン）']);
     assert.match(said('en').title, /^a POSIX special builtin/);
     assert.match(toPlainMarkdown(ex(src, 'ja'), src, 'a.sh:1', 'ja'), /^ {2}- `export` — .*（特殊ビルトイン）/m);
     // (The facts say it is a builtin still; only the word differs.)

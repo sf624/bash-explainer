@@ -105,9 +105,6 @@ export const continuedText = ({ line }: { line: number }): Pair => [
   `この文は${lineLabel('ja', line)} から続いています（行末の \`\\\` による行継続など）。`,
   `This statement starts on ${lineLabel('en', line, 'inline')} (e.g. continued with a trailing \`\\\`).`];
 
-/** `idiom`: an idiom of src/idioms.ts (`IDIOMS`), its words from there. */
-export const idiomText = ({ idiom }: { idiom: Text }): Pair => [`定番の書き方: ${idiom.ja}`, `Idiom: ${idiom.en}`];
-
 /** `read-ifs-separators`: `read` with an IFS of separators that are not whitespace (`ifs`, `seps`: as bash reads them, `$'\x1b'`). */
 export const readSeparatorsText = ({ ifs, seps }: { ifs: string; seps: readonly string[] }): Pair => {
   const shown = (sep: string) => seps.map((c) => `\`${c}\``).join(sep);
