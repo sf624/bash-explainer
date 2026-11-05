@@ -1820,7 +1820,7 @@ body.resizing .problems-resize {
 /* ---- The side sheets: the menu and the settings ------------------------------------------------ */
 
 /* How long a sheet takes to slide, and the explanation beside the settings with it (one value: they move together). */
-:root {
+html {
   --sheet-time: 0.22s;
 }
 
