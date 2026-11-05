@@ -43,7 +43,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
-- The box that marks a space at an end of a value or a word now stands on the line of the text, and its name ("space") shows when the pointer rests on it. In "What the program receives", a space beside a `$USER` is a plain space; the box marks only the ends of the whole word.
+- The box that marks a space at an end of a value or a word now stands on the line of the text, and its name ("space") shows when the pointer rests on it.
 - The opening animation on the web page follows the Language setting. Before, a Japanese browser with the setting on English still showed it in Japanese (and the other way round).
 - In a script for sh, dash or busybox ash, a builtin that shell lacks (`declare`, `let`, `source`) is explained as a program, and `$"hi"` as `$hi`. In bash, so are `print` and `whence`, which it does not have.
 - Nothing is taken as known in a script that reads another file with `. file` or runs text with `eval` that the tool cannot read, that runs a function through a variable (`c=f; $c`), or that has CR LF line ends: no variable value, no decided condition, anywhere in it. Rules on `rm`, `mv` and `cp` with an unquoted variable then give a Pitfall, not a Caveat.
