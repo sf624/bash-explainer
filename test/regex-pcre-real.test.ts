@@ -192,6 +192,9 @@ describe('Perl reads a regex before it is compiled, and the explanation says so'
     assert.match(perlTokens('\\Fab\\E')[0].explanation, /case-folded/);
     assert.match(perlTokens('\\u')[0].explanation, /upper-cases the next character/);
     assert.match(perlTokens('\\u\\d')[0].explanation, /upper-cases the next character/);
+    assert.match(perlTokens('\\l')[0].explanation, /lower-cases the next character/);
+    assert.match(explainRegex('\\l', 'pcre', 'ja', { perl: true })[0].explanation, /次の1文字を小文字に/);
+    assert.match(explainRegex('\\u', 'pcre', 'ja', { perl: true })[0].explanation, /次の1文字を大文字に/);
     assert.match(perlTokens('\\Ux')[0].explanation, /the text "x" is upper-cased to "X"/);
     assert.match(explainRegex('\\Ux\\E', 'pcre', 'ja', { perl: true })[0].explanation, /大文字「X」/);
     for (const c of 'ULFul') {
