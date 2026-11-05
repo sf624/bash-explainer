@@ -8,8 +8,7 @@ import type { Kind } from '../src/analyzer';
 import type { HighlightKind } from '../src/highlight';
 
 /**
- * The colour roles: the highlight kinds. `argument` is a plain word after the command, which the panel colours; the
- * editor has the kind only for a word that looks like an option but is read as data (`grep -e -v`), and leaves it plain.
+ * The colour roles: the highlight kinds. `argument` is a word that is data (PoC: every one, as the panel colours it).
  */
 export type ColourRole = HighlightKind;
 

@@ -26,8 +26,8 @@ export interface FactSpan {
   readonly to: number;
   /** Paints over the kind the tree gives the span; undefined keeps it (a variable gets modifiers only). */
   readonly kind?: HighlightKind;
-  /** Paints only where the tree gave no kind (a word's glob characters keep theirs). */
-  readonly under?: true;
+  /** What an editor with a grammar of its own gets instead of `kind` (`HighlightSpan.grammar`). */
+  readonly grammar?: HighlightKind | null;
   readonly modifiers?: readonly HighlightModifier[];
 }
 
@@ -52,7 +52,6 @@ export function semanticFacts(tree: SyntaxTree, model: StateModel, shell?: Shell
   const visit = (n: SyntaxNode): void => {
     if (range && (n.endIndex < range.from || n.startIndex > range.to)) return;
     if (n.type === 'command') command(n, model, shell, out);
-    else if (n.type === 'for_statement' || n.type === 'select_statement') argumentWords(fields(n, 'value'), out);
     else if (n.type === 'variable_name') variable(n, model, out);
     for (const c of n.namedChildren) visit(c);
   };
@@ -66,8 +65,7 @@ function command(c: SyntaxNode, model: StateModel, shell: Shell | undefined, out
   const nameNode = field(c, 'name');
   const word = nameNode?.namedChildren.length === 1 ? nameNode.namedChildren[0] : undefined;
   const name = word && staticWordValue(word, false, shell);
-  // (Whatever the name is, the words after it are arguments.)
-  if (!word || name === undefined) return argumentWords(fields(c, 'argument'), out);
+  if (!word || name === undefined) return;
   const res = resolveName(model, name, nameNode!, { ...resolveOpts(shell), quoted: quotedName(word, name) });
   out.push({ from: word.startIndex, to: word.endIndex, kind: nameKind(res) });
   // A function's or an alias's words have no spec, and `test`'s are an expression (`-f`, `-eq` are its operators): the
@@ -76,38 +74,41 @@ function command(c: SyntaxNode, model: StateModel, shell: Shell | undefined, out
   const spec = res.kind === 'function' || res.kind === 'alias' || test ? undefined : lookupCommand(name);
   const args = fields(c, 'argument');
   if (test) return testWords(test, args, out);
-  // (Plain words the spec reads as another language (`tr a-z A-Z`) are not plain arguments.)
-  const data = new Set<SyntaxNode>();
-  if (!spec || !args.length) return argumentWords(args, out, data);
+  if (!spec || !args.length) return;
   const argWord = argWordFor(shell, bracesIn(model));
   const parse = interpret(spec, args.map(argWord), { name, lookup: lookupCommand });
   // (Where each command it runs runs, read only when it runs one: `sudo ls`.)
   let envs: ReturnType<typeof slotEnvs> | undefined;
-  roles(parse, spec, args, data, (w) => {
+  roles(parse, spec, args, (w) => {
     // (A plain word, so it has a value; slotEnvs keys the first word of each command a slot runs.)
     const env = (envs ??= slotEnvs(model.env(c), parse, spec, args, shell, lookupCommand)).get(w)!;
     return nameKind(resolveName(model, staticWordValue(w, false, shell)!, w, { ...resolveOpts(shell), env }));
   }, out, argWord);
-  argumentWords(args, out, data);
 }
 
-/** The plain words a command or a loop takes as arguments: the colour of an argument, where nothing else has painted. */
-function argumentWords(words: readonly SyntaxNode[], out: FactSpan[], except?: ReadonlySet<SyntaxNode>): void {
-  for (const w of words) if (w.type === 'word' && !/^(~|-.)/.test(w.text) && !except?.has(w)) out.push({ from: w.startIndex, to: w.endIndex, kind: 'argument', under: true });
-}
-
-/** `test` and `[`: the words their expression reads as operators, and the `]` that ends `[` (an argument, as it is to bash). */
+/**
+ * `test` and `[`: the words their expression reads as operators (`-f`, `=`, `!`, `-a`, `( )`). The editor's grammar
+ * colours `-f` as an option, and that stays there.
+ */
 function testWords(spec: CommandSpec, args: readonly SyntaxNode[], out: FactSpan[]): void {
   const t = commandTest(spec, [...args], false);
-  if (t.test) for (const i of operatorWords(t.test.expr)) for (const w of t.test.words[i].nodes) if (w.type === 'word') out.push({ from: w.startIndex, to: w.endIndex, kind: 'operator' });
-  if (t.close?.type === 'word') out.push({ from: t.close.startIndex, to: t.close.endIndex, kind: 'argument' });
+  if (!t.test) return;
+  const operators = new Set(operatorWords(t.test.expr));
+  t.test.words.forEach((tw, i) => {
+    for (const w of tw.nodes) {
+      if (w.type !== 'word') continue;
+      // (A word that only looks like an operator, `[ -a ]`, is data.)
+      if (operators.has(i)) out.push({ from: w.startIndex, to: w.endIndex, kind: 'operator', grammar: w.text.startsWith('-') ? 'option' : null });
+      else if (w.text.startsWith('-')) out.push({ from: w.startIndex, to: w.endIndex, kind: 'argument' });
+    }
+  });
 }
 
 /**
  * Option words as options, a word that only looks like one as a plain argument, and the names of commands run by this
  * one (`spec` read `args` into `parse`).
  */
-function roles(parse: ArgvParse, spec: CommandSpec | undefined, args: readonly SyntaxNode[], data: Set<SyntaxNode>, commandKind: (w: SyntaxNode) => HighlightKind, out: FactSpan[], argWord: (n: SyntaxNode) => ArgWord): void {
+function roles(parse: ArgvParse, spec: CommandSpec | undefined, args: readonly SyntaxNode[], commandKind: (w: SyntaxNode) => HighlightKind, out: FactSpan[], argWord: (n: SyntaxNode) => ArgWord): void {
   for (const { word, role } of parse.roles) {
     const w = args[word];
     switch (role.role) {
@@ -115,33 +116,30 @@ function roles(parse: ArgvParse, spec: CommandSpec | undefined, args: readonly S
         // The option's own text (`--file` of `--file=x`, `-n` of `-n5`), not its attached value.
         const attached = role.role === 'option' ? role.value?.attached : undefined;
         const eq = attached !== undefined ? attached - (w.text[attached - 1] === '=' ? 1 : 0) : w.text.startsWith('--') && w.text.indexOf('=') > 0 ? w.text.indexOf('=') : w.text.length;
-        if (w.type === 'word') out.push({ from: w.startIndex, to: w.startIndex + Math.max(1, eq), kind: 'option' });
+        // (A number is an option too, `xargs -0`; the option of `--x=$y` is the first part of the concatenation.)
+        const head = w.type === 'concatenation' && w.children[0].type === 'word' ? w.children[0] : w;
+        if (head.type === 'word' || head.type === 'number') out.push({ from: w.startIndex, to: w.startIndex + Math.min(head.text.length, Math.max(1, eq)), kind: 'option' });
         break;
       }
       case 'operand': case 'value':
-        if (role.spec?.lang) data.add(w);
         if (w.type === 'word' && /^-./.test(w.text) && !(role.role === 'value' && role.attached !== undefined)) out.push({ from: w.startIndex, to: w.endIndex, kind: 'argument' });
         break;
       case 'command':
         // The name of a command another one runs (`sudo ls`, `xargs rm`): to bash an argument, to the reader a command.
         if (role.name !== undefined && w.type === 'word') out.push({ from: w.startIndex, to: w.endIndex, kind: commandKind(w) });
-        if (role.parse) roles(role.parse, role.spec, args, data, commandKind, out, argWord);
-        break;
-      case 'terminator':
-        // (`;` or `+` of `find -exec`, `\;` of `-exec`: the panel draws it as an operator.)
-        data.add(w);
+        if (role.parse) roles(role.parse, role.spec, args, commandKind, out, argWord);
         break;
       case 'subcommand':
         // `git log`: to bash an argument, to the reader a command.
         if (w.type === 'word') out.push({ from: w.startIndex, to: w.endIndex, kind: 'command' });
-        if (role.parse) roles(role.parse, role.spec, args, data, commandKind, out, argWord);
+        if (role.parse) roles(role.parse, role.spec, args, commandKind, out, argWord);
         break;
       case 'expression': {
         // find's expression, read by its own spec from its first word: its tests' values (`-name -x`) and the commands
         // of its actions (`-exec rm -f {} +`).
         if (word !== parse.expression || !spec?.expressionSpec) break;
         const rest = args.slice(word, parse.end);
-        roles(interpret(spec.expressionSpec, rest.map(argWord), { name: parse.command, lookup: lookupCommand }), spec.expressionSpec, rest, data, commandKind, out, argWord);
+        roles(interpret(spec.expressionSpec, rest.map(argWord), { name: parse.command, lookup: lookupCommand }), spec.expressionSpec, rest, commandKind, out, argWord);
         break;
       }
       default:

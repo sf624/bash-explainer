@@ -64,7 +64,8 @@ export function encodeTokens(spans: readonly LineSpan[], known?: readonly string
   let line = 0;
   let start = 0;
   for (const s of spans) {
-    const token = TOKEN_OF[s.kind];
+    // (What the editor's grammar colours already is left to it: `grammar` null.)
+    const token = s.grammar === null ? null : TOKEN_OF[s.grammar ?? s.kind];
     if (!token) continue;
     const [own, ...modifiers] = token;
     const type = known && !known.includes(own) ? SUPER_TYPES[own] ?? own : own;

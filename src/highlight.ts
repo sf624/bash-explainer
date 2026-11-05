@@ -31,7 +31,7 @@ export type HighlightKind =
   | 'alias' // a name an alias replaces
   | 'functionName' // the name in a function definition
   | 'option' // -x, --long
-  | 'argument' // a word that looks like an option but that the command reads as data (`grep -e -v`)
+  | 'argument' // a word that is data: an argument, an assigned value, a list's word (`grep -e -v`, `exit 1`, `tr a-z`)
   | 'string' // '…', "…", $'…', $"…"
   | 'heredoc' // the body of a heredoc
   | 'heredocDelimiter' // EOF in <<EOF and on the line that ends the body
@@ -51,6 +51,12 @@ export interface HighlightSpan {
   readonly kind: HighlightKind;
   /** What the state says of a variable there (absent when nothing). */
   readonly modifiers?: readonly HighlightModifier[];
+  /**
+   * What an editor that has a grammar of its own gets instead of `kind`: null, nothing (the grammar's colour of the text
+   * stays: a word the grammar already colours as data); a kind, that kind's token (a test's `-z`, which the grammar
+   * colours as an option). Absent: `kind`. The web page's editor has no grammar and reads `kind` only.
+   */
+  readonly grammar?: HighlightKind | null;
 }
 
 /** The kinds in a fixed order: index 0 is "nothing". */
@@ -60,6 +66,8 @@ const MODIFIERS: readonly HighlightModifier[] = ['readonly', 'exported'];
 /** Every kind. */
 export const HIGHLIGHT_KINDS = KINDS.slice(1) as HighlightKind[];
 const CODE = new Map(KINDS.map((k, i) => [k, i]));
+/** In `HighlightSpan.grammar` as a code: 0 is `kind` itself, NO_TOKEN is null, the others a kind's code. */
+const NO_TOKEN = 255;
 
 /** The builtins whose operands name variables (or functions, `OperandSpec.acts`): `declare x`, `unset x`. */
 const NAMES_VARIABLES: ReadonlySet<string> = new Set(Object.keys(builtins).filter((name) => actsOnNames(builtins[name])));
@@ -94,21 +102,22 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
   const from = Math.max(0, options.range?.from ?? 0);
   const to = Math.min(text.length, options.range?.to ?? text.length);
   const paint = new Uint8Array(text.length);
-  const set = (a: number, b: number, kind: HighlightKind | null): void => {
+  /** What an editor with a grammar gets where it differs from `paint` (`HighlightSpan.grammar`). */
+  const alt = new Uint8Array(text.length);
+  const set = (a: number, b: number, kind: HighlightKind | null, grammar = 0): void => {
     paint.fill(CODE.get(kind)!, Math.max(a, from), Math.min(b, to));
+    alt.fill(grammar, Math.max(a, from), Math.min(b, to));
   };
-
-  /** Only where nothing is painted yet. */
-  const underPaint = (a: number, b: number, kind: HighlightKind): void => {
-    const code = CODE.get(kind)!;
-    for (let i = Math.max(a, from); i < Math.min(b, to); i++) if (!paint[i]) paint[i] = code;
-  };
+  /** The words that are data and the like (`operandKind`), painted last and only where nothing else paints. */
+  const operands: [number, number, HighlightKind][] = [];
 
   const visit = (n: SyntaxNode, arith: boolean): void => {
     if (n.endIndex < from || n.startIndex > to) return;
     if (!n.named) return token(n, arith);
     const kind = nodeKind(n, arith);
-    if (kind !== undefined) set(n.startIndex, n.endIndex, kind);
+    if (kind !== undefined) set(n.startIndex, n.endIndex, kind, n.type === 'test_operator' ? CODE.get('option') : 0);
+    const operand = operandKind(n, arith);
+    if (operand) literalParts(n, (a, b) => operands.push([a, b, operand]));
     if (n.type === 'comment' || n.type === 'raw_string' || n.type === 'ansi_c_string' || n.type === 'error') return;
     if (n.type === 'word') return words(n, set);
     if (n.type === 'extglob_pattern') return glob(n, set);
@@ -123,11 +132,13 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
     else if (REDIRECTS.has(p)) kind = 'redirect';
     else if (p === 'variable_assignment' && (t.type === '=' || t.type === '+=')) kind = 'assignment';
     else if (p === 'function_definition' && (t.type === '(' || t.type === ')')) kind = 'functionName';
+    // A pattern of `case` is one colour with its `|` and `)`: the editor's grammar colours them as it does.
+    else if (p === 'case_item' && (t.type === '|' || t.type === '(' || t.type === ')')) kind = 'glob';
     else if (p === 'string' || p === 'translated_string' || p === 'expansion' || p === 'simple_expansion' || p === 'subscript' || p === 'variable_assignment' || p === 'brace_expression') kind = null;
     else if (arith || EXPRESSIONS.has(p)) kind = p === 'arithmetic_command' && KEYWORDS.has(t.type) ? 'keyword' : 'operator';
     else kind = KEYWORDS.has(t.type) ? 'keyword' : 'operator';
     // The `$` and quotes of a string are painted with the string already.
-    if (kind !== null) set(t.startIndex, t.endIndex, kind);
+    if (kind !== null) set(t.startIndex, t.endIndex, kind, p === 'case_item' ? NO_TOKEN : 0);
   };
 
   visit(tree.root, false);
@@ -135,9 +146,13 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
   const mods = new Uint8Array(text.length);
   const model = shellState(tree, options.shell, { ...(options.host ? { host: options.host } : {}), ...(options.run ? { run: options.run } : {}), ...(options.read ? { read: options.read } : {}) });
   for (const f of semanticFacts(tree, model, options.shell, { from, to })) {
-    if (f.kind && f.under) underPaint(f.from, f.to, f.kind);
-    else if (f.kind) set(f.from, f.to, f.kind);
+    if (f.kind) set(f.from, f.to, f.kind, f.grammar === undefined ? 0 : f.grammar === null ? NO_TOKEN : CODE.get(f.grammar));
     if (f.modifiers) mods.fill(f.modifiers.reduce((bits, m) => bits | (1 << MODIFIERS.indexOf(m)), 0), Math.max(f.from, from), Math.min(f.to, to));
+  }
+  // Every word that is data has the data colour, under what has a colour of its own (a string, a variable, an option, a glob).
+  for (const [a, b, kind] of operands) {
+    const code = CODE.get(kind)!;
+    for (let i = Math.max(a, from); i < Math.min(b, to); i++) if (!paint[i]) { paint[i] = code; alt[i] = NO_TOKEN; }
   }
   // The CRs of Windows line ends, masked as spaces, are not part of any span.
   for (const i of tree.carriageReturns ?? []) if (i < paint.length) paint[i] = 0;
@@ -146,9 +161,10 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
   for (let i = from; i < to;) {
     const k = paint[i];
     const m = mods[i];
+    const g = alt[i];
     let j = i + 1;
-    while (j < to && paint[j] === k && mods[j] === m) j++;
-    if (k) out.push({ from: i, to: j, kind: KINDS[k]!, ...(m ? { modifiers: MODIFIERS.filter((_, b) => m & (1 << b)) } : {}) });
+    while (j < to && paint[j] === k && mods[j] === m && alt[j] === g) j++;
+    if (k) out.push({ from: i, to: j, kind: KINDS[k]!, ...(m ? { modifiers: MODIFIERS.filter((_, b) => m & (1 << b)) } : {}), ...(g ? { grammar: g === NO_TOKEN ? null : KINDS[g]! } : {}) });
     i = j;
   }
   return out;
@@ -194,14 +210,48 @@ function nodeKind(n: SyntaxNode, arith: boolean): HighlightKind | null | undefin
   }
 }
 
-type Painter = (from: number, to: number, kind: HighlightKind | null) => void;
+type Painter = (from: number, to: number, kind: HighlightKind | null, grammar?: number) => void;
+
+/**
+ * What a word is where it stands, when nothing says more: the one place that decides which words are data. An argument
+ * of a command (a spec's language words, numbers and terminators too), a value of an assignment, an element of an array,
+ * a word of a `for` list, an operand of `[[ ]]`: an `argument`. The target of a redirection: a `redirect`, and so is the word of a here-string. A pattern
+ * of `case`: a `glob`. Command names, which have a colour of their own, are not here. Strings, variables, options, globs
+ * and the like paint over it.
+ */
+function operandKind(n: SyntaxNode, arith: boolean): HighlightKind | undefined {
+  switch (n.type) {
+    case 'word': case 'number': case 'concatenation': case 'brace_expression': case 'extglob_pattern': case 'regex': break;
+    default: return undefined;
+  }
+  const p = n.parent!;
+  switch (p.type) {
+    case 'command': return n.field === 'argument' ? 'argument' : undefined;
+    case 'variable_assignment': return n.field === 'value' ? 'argument' : undefined;
+    case 'for_statement': case 'select_statement': case 'case_statement': return n.field === 'value' ? 'argument' : undefined;
+    case 'array': return 'argument';
+    case 'herestring_redirect': return 'redirect';
+    case 'case_item': return n.field === 'value' ? 'glob' : undefined;
+    case 'file_redirect': return n.field === 'destination' ? 'redirect' : undefined;
+    case 'binary_expression': case 'unary_expression': case 'parenthesized_expression': return arith ? undefined : 'argument';
+    default: return undefined;
+  }
+}
+
+/** The text of a word the shell takes literally: the words and numbers of a concatenation or a brace expression, and the `{ , .. }` of the braces. */
+function literalParts(n: SyntaxNode, add: (from: number, to: number) => void): void {
+  if (n.type !== 'concatenation' && n.type !== 'brace_expression') return add(n.startIndex, n.endIndex);
+  for (const c of n.children) {
+    if (!c.named ? n.type === 'brace_expression' : c.type === 'word' || c.type === 'number' || c.type === 'brace_expression' || c.type === 'concatenation') literalParts(c, add);
+  }
+}
 
 /** A plain word: an option where a command takes one, or glob characters where the shell expands it. */
 function words(w: SyntaxNode, set: Painter): void {
   const p = w.parent!;
   // The last `]` of `[ … ]` goes with the `[`, a builtin by its spelling (what runs is for the explanation to say).
   if (writtenAsBracket(p) && bracketWords(p).close === w) {
-    set(w.startIndex, w.endIndex, 'argument');
+    set(w.startIndex, w.endIndex, 'builtin');
     return;
   }
   if (isOption(w)) {
@@ -221,8 +271,6 @@ function words(w: SyntaxNode, set: Painter): void {
   const q = at.parent!.type;
   const expanded = (q === 'command' && at.field === 'argument') || ((q === 'for_statement' || q === 'select_statement') && at.field === 'value')
     || q === 'case_item' || (p.type === 'file_redirect' && w.field === 'destination') || isPattern(at);
-  // The target of a redirection is coloured as the redirection is.
-  if (p.type === 'file_redirect' && w.field === 'destination') set(w.startIndex, w.endIndex, 'redirect');
   if (expanded) glob(w, set);
 }
 
@@ -241,9 +289,12 @@ function isPattern(w: SyntaxNode): boolean {
  */
 function isOption(w: SyntaxNode): boolean {
   if (!/^(--?[^-=\s]|--$)/.test(w.text) || w.text === '-') return false;
-  const p = w.parent!;
-  if (p.type !== 'command' || w.field !== 'argument') return false;
-  return !p.children.slice(0, p.children.indexOf(w)).some((a) => a.field === 'argument' && a.text === '--');
+  // (The first part of a concatenation is the option's own text: `--x=` of `--x=$y`.)
+  const at = w.parent!.type === 'concatenation' && w.parent!.children[0] === w ? w.parent! : w;
+  const p = at.parent!;
+  if (p.type === 'time_statement') return at.field === 'option';
+  if (p.type !== 'command' || at.field !== 'argument') return false;
+  return !p.children.slice(0, p.children.indexOf(at)).some((a) => a.field === 'argument' && a.text === '--');
 }
 
 /** The glob characters of a word: `*`, `?`, `[…]`, and the brackets and bars of `@( | )` and its kin. */
@@ -281,6 +332,7 @@ export interface LineSpan {
   readonly to: number;
   readonly kind: HighlightKind;
   readonly modifiers?: readonly HighlightModifier[];
+  readonly grammar?: HighlightKind | null;
 }
 
 /** The offsets at which the lines of `text` start. */
@@ -298,7 +350,7 @@ export function lineSpans(spans: readonly HighlightSpan[], text: string, starts 
     while (line + 1 < starts.length && starts[line + 1] <= s.from) line++;
     for (let l = line, a = s.from; ; a = starts[++l]) {
       const end = Math.min(s.to, l + 1 < starts.length ? starts[l + 1] - 1 : text.length);
-      if (end > a) out.push({ line: l, from: a - starts[l], to: end - starts[l], kind: s.kind, ...(s.modifiers ? { modifiers: s.modifiers } : {}) });
+      if (end > a) out.push({ line: l, from: a - starts[l], to: end - starts[l], kind: s.kind, ...(s.modifiers ? { modifiers: s.modifiers } : {}), ...(s.grammar !== undefined ? { grammar: s.grammar } : {}) });
       if (end >= s.to) break;
     }
   }
