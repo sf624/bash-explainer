@@ -565,14 +565,6 @@ export class Editor {
     this.view.dispatch({ effects: setHighlight.of(span ? this.spanRange(span) : null) });
   }
 
-  /** Whether the cursor's line is on the screen now. */
-  cursorInView(): boolean {
-    const at = this.view.coordsAtPos(this.view.state.selection.main.head);
-    if (!at) return false;
-    const box = this.view.scrollDOM.getBoundingClientRect();
-    return at.bottom > box.top && at.top < box.bottom;
-  }
-
   /** The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved). */
   keepCursorInView(y: 'center' | 'nearest' = 'center'): void {
     this.view.dispatch({ effects: EditorView.scrollIntoView(this.view.state.selection.main.head, { y }) });

@@ -34,6 +34,7 @@ import { linkWords, showMenuTexts } from './menu';
 import { showChannel } from './banner';
 import { ask } from './kind-dialog';
 import { KindControl, untouched } from './kinds';
+import { closingPlace, keepPlace, notePlace } from './editor-place';
 import { closeSheet, narrow, reopenSheet, setUpEdgeSwipe, setUpProblems, setUpSheet, setUpSplitter } from './layout';
 import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
@@ -483,8 +484,9 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   theme: () => theme,
   setTheme,
   pane: () => document.querySelector<HTMLElement>('main > .source'),
-  cursorInView: () => editor.cursorInView(),
-  showCursor: () => editor.keepCursorInView('nearest'),
+  notePlace: () => notePlace(editor.view),
+  closingPlace: (opened) => closingPlace(editor.view, opened),
+  keepPlace: (place) => keepPlace(editor.view, place),
   shellReading: autoShell,
 });
 

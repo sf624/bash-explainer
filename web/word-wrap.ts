@@ -60,7 +60,9 @@ const wordMarks = ViewPlugin.fromClass(class {
 
   constructor(view: EditorView) {
     this.measure = {
-      read: (v) => ({ width: v.contentDOM.clientWidth, font: getComputedStyle(v.contentDOM).font }),
+      // (The room beside the gutter, not the content's own width: the runs kept whole for a wider editor hold that open until
+      // they are marked anew, so it would narrow in several steps, each a rewrap.)
+      read: (v) => ({ width: v.scrollDOM.clientWidth - v.contentDOM.offsetLeft, font: getComputedStyle(v.contentDOM).font }),
       write: ({ width, font }, v) => {
         if (Math.abs(width - this.width) <= 1 && font === this.font) return;
         if (font !== this.font) this.widths.clear();
