@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544), C5 (#562), C6 (#546), C7 (#561), C8a (#567) and C8b (#571); the phone checks of C5, C8a and C8b wait on the maintainer (section 8). C9 is half done (#PRNUM: the clean-up and the README's text); the README images and the UX reviewer's protocol are left. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544), C5 (#562), C6 (#546), C7 (#561), C8a (#567) and C8b (#571); the phone checks of C5, C8a and C8b wait on the maintainer (section 8). C9 is half done (#611: the clean-up and the README's text); the README images and the UX reviewer's protocol are left. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -496,7 +496,7 @@ Risks: the biggest change on a phone, and the emulation is not the device. The m
 
 What: what the steps left unread (old ids, CSS rules, stored keys). README "The web page" rewritten for the new layout, in both languages. The README images re-recorded once, with P10 of the panel plan (P10 landed first, so C9 does it). The UX reviewer's protocol runs once more on main, as a check before the usability test, with the kit's scripts.
 
-Done (#PRNUM): the clean-up (classes, ids and helpers left unread; no stored key, custom property, text entry or `data-` attribute was) and README "The web page" in both languages (a section of its own, `## The web page`). Left: the README images, re-recorded once with P10, and the UX reviewer's protocol on main.
+Done (#611): the clean-up (classes, ids and helpers left unread; no stored key, custom property, text entry or `data-` attribute was) and README "The web page" in both languages (a section of its own, `## The web page`). Left: the README images, re-recorded once with P10, and the UX reviewer's protocol on main.
 
 Users: no CHANGELOG line, unless the clean-up changes what users see.
 
