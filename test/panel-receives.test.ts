@@ -319,14 +319,14 @@ describe('the panel: the mark "not in POSIX sh"', () => {
 
   it('is on the construct only, with the sentence of the problems of a sh script, in a bash script too and with the switch off', () => {
     const table: [string, [string, string[]][]][] = [
-      ['if [[ a ]]; then b; fi', [['[[ a ]]', ['`[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.']]]],
-      ['[[ a =~ b ]]', [['[[ a =~ b ]]', ['`[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.', '`[[ =~ ]]` regex matching is not POSIX sh (it fails in dash; busybox ash matches it, but a `(` in it is a syntax error). Instead, use `expr` or `grep -E`.']]]],
-      ['[ a == b ]', [['[', ['`==` in `[ ]` or `test` is not POSIX sh (it fails in dash). Instead, use `=`.']]]],
-      ['source f', [['source', ['`source` is not POSIX sh (it fails in dash). Instead, use `.`.']]]],
+      ['if [[ a ]]; then b; fi', [['[[ a ]]', ['`[[ ]]` is not POSIX sh (in dash `[[` is run as a command, is not found and gives status 127, so a condition with it is false). Instead, use `[ ]`.']]]],
+      ['[[ a =~ b ]]', [['[[ a =~ b ]]', ['`[[ ]]` is not POSIX sh (in dash `[[` is run as a command, is not found and gives status 127, so a condition with it is false). Instead, use `[ ]`.', "`[[ =~ ]]` regex matching is not POSIX sh (in dash `[[` is run as a command, is not found and gives status 127, so a condition with it is false; busybox ash matches it, but a `(` in it is a syntax error). Instead, use `case` (a glob pattern only: `^[0-9]+$` has none, but its negation is `''|*[!0-9]*`), `expr` (a basic regex, matched from the start of the string: `expr \"$1\" : '[0-9][0-9]*$'`) or `grep -E`."]]]],
+      ['[ a == b ]', [['[', ['`==` in `[ ]` or `test` is not POSIX sh (in dash `[` reports `unexpected operator` and gives status 2, so the test is false). Instead, use `=`.']]]],
+      ['source f', [['source', ['`source` is not POSIX sh (in dash the command is not found, with status 127). Instead, use `.`.']]]],
       ['f() { local x; }', [['local', ['`local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it).']]]],
-      ['cat <<< x', [['<<< x', ['a here-string `<<<` is not POSIX sh (it fails in dash and busybox ash). Instead, use `printf \'%s\\n\' … |` or a here-document.']]]],
+      ['cat <<< x', [['<<< x', ['a here-string `<<<` is not POSIX sh (in dash and busybox ash it is a syntax error with status 2: the shell stops as it reads the line, even if the line would never run). Instead, use `printf \'%s\\n\' … |` or a here-document.']]]],
       ['echo {a,b}', [['{a,b}', ['brace expansion `{a,b}` is not POSIX sh (in dash and busybox ash the braces stay, as one word).']]]],
-      ['for ((;;)); do\n  a\ndone', [['for (( ; ; )) do ‹commands› done', ['C-style `for (( ; ; ))` is not POSIX sh (it fails in dash and busybox ash). Instead, use `while` with `$(( ))`.']]]],
+      ['for ((;;)); do\n  a\ndone', [['for (( ; ; )) do ‹commands› done', ['C-style `for (( ; ; ))` is not POSIX sh (in dash and busybox ash it is a syntax error with status 2: the shell stops as it reads the line, even if the line would never run). Instead, use `while` with `$(( ))`.']]]],
       ['[ a = b ] && . f; echo "${x:-d}" $((1+2)); a | b; c > d', []],
     ];
     for (const [src, want] of table) {
@@ -341,7 +341,7 @@ describe('the panel: the mark "not in POSIX sh"', () => {
   });
 
   it('says it in Japanese, and is in the Legend only where it is drawn', () => {
-    assert.deepStrictEqual(marks('[[ a ]]', { lang: 'ja' }), [['[[ a ]]', ['`[[ ]]` は POSIX sh にない書き方です（dash では動きません）。代わりに `[ ]` を使う。']]]);
+    assert.deepStrictEqual(marks('[[ a ]]', { lang: 'ja' }), [['[[ a ]]', ['`[[ ]]` は POSIX sh にない書き方です（dash では `[[` がコマンドとして実行され、見つからずに終了ステータス 127 になります。条件に使うと偽になります）。代わりに `[ ]` を使う。']]]);
     const key = (src: string, lang: Lang = 'en') => rowModel(explain(src, 0, lang), { depth: 1, receives: true }, lang).key.filter((k) => k.id.startsWith('mark:')).map((k) => [k.id, k.sample]);
     assert.deepStrictEqual(key('ls'), []);
     assert.deepStrictEqual(key('[[ a ]]'), [['mark:handled', 'handled by bash'], ['mark:notPosix', 'not portable to sh']]);

@@ -7,6 +7,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Changed
 
 - On the web page, the card over the script no longer opens where you clicked, and it closes on a click, a paste, typing and Escape. The Legend is a popover over the explanation that Escape closes, and it has no button on a line with nothing to explain. Before, the Legend pushed the explanation down and stayed open on the next line.
+- In a `sh`, `dash` or `ash` script, the note on a bash-only form says how it fails there: the status and the message, and whether the shell stops (`[[ ]]` is "not found" with status 127, so the condition is false; `a=(1)` is a syntax error; `${x^^}` is "bad substitution"). Before, it said only "it fails in dash". For `=~`, it names `case` and `expr` and their limits.
 
 ## 0.10.0
 

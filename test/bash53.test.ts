@@ -287,7 +287,7 @@ describe('bash 5.3 command substitutions', () => {
     assert.match(explain('x=${ echo a; }').notes.join('\n'), /bash 5\.3 syntax/);
     assert.ok(!explain('x=${ echo a; }', 0, 'en', { bashVersion: '5.3' }).notes.some((n) => n.includes('5.3 syntax')));
     // Another shell: the dialect check of that shell.
-    assert.match(dialectNotes(tree, 0, 'sh', 'en')[0], /is not POSIX sh \(it fails in dash and busybox ash\)/);
+    assert.match(dialectNotes(tree, 0, 'sh', 'en')[0], /is not POSIX sh \(in dash and busybox ash it fails with `bad substitution` and status 2; the shell stops there\)/);
     assert.deepStrictEqual(dialectNotes(parser.parse('x=${ echo a; }'), 0, 'ksh', 'en'), []);
   });
 });

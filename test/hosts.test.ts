@@ -987,7 +987,7 @@ describe('one mapping from a program name to a shell (hosts)', () => {
       return ex.notes;
     };
     assert.deepStrictEqual(notes('SHELL=/bin/ksh\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), []);
-    assert.deepStrictEqual(notes('SHELL=/bin/dash\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), ['ⓧ Error: `[[ ]]` is not available in dash. Instead, use `[ ]`.']);
+    assert.deepStrictEqual(notes('SHELL=/bin/dash\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), ['ⓧ Error: `[[ ]]` is not available in dash (`[[` is run as a command, is not found and gives status 127, so a condition with it is false). Instead, use `[ ]`.']);
     // posh is a POSIX sh: the note is the POSIX one.
     assert.match(notes('SHELL=/bin/posh\nall:\n\t[[ -n x ]]\n', 'Makefile', 2).join('\n'), /not POSIX sh/);
     const dash = spawnSync('dash', ['-c', '[[ -n x ]]']);

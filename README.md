@@ -81,7 +81,7 @@ Explanations follow bash. When a script is written for another shell, Bash Expla
 ```sh
 #!/bin/sh
 [[ -n $name ]] && echo -e "hi\t$name"
-# ⓧ Error: `[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.
+# ⓧ Error: `[[ ]]` is not POSIX sh (in dash `[[` is run as a command, is not found and gives status 127, so a condition with it is false). Instead, use `[ ]`.
 # ⚠ Portability: `echo -e` is not POSIX sh (dash's `echo` prints `-e` as text). Instead, use `printf` …
 # ⓘ Portability: dash's `echo` interprets `\t`, `\n` and the like in its arguments …
 ```
