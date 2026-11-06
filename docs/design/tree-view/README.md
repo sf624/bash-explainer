@@ -1,8 +1,8 @@
-# Tree view: prototypes
+# Tree view: the reading tree and the panel's look
 
-Status: replaced by [panel-redesign.md](../panel-redesign.md). The Reading view, its eight steps and its tabs are gone since P8 (one view with a depth); this page records the prototypes and the choices made. `readingTree` (src/reading.ts) is still the model of depth 2.
+Status: replaced by [panel-redesign.md](../panel-redesign.md). The Reading view, its eight steps and its tabs are gone since P8 (one view with a depth); this page records the choices made that still hold (the names, the look, the motion and the anchoring). `readingTree` (src/reading.ts) is still the model of depth 2.
 
-The panel's **Reading** view (internally the tree view: ids, classes and `panelState` use `tree`) shows who reads each part of a line, in four layers: bash parses the line into commands, and a simple command into its assignments, its command name, its arguments and its redirections (3.7.1); a shell parses a text again as a script (a subshell, the text of each `$( )`, `<( )` and backquotes; another shell, a string `bash -c` runs; this shell, a string `eval` or a trap reads; a remote shell, `ssh host cmd`); each command reads its arguments as its spec says (options, operands, subcommands); and some words hold a language of their own (a regex, a glob, a sed script, a jq filter, a printf format), which the command reads, or bash itself for `[[ =~ ]]`. The prototypes below were made before the layer of bash read simple commands as name and arguments, and before a string read again said which shell reads it. The model is `readingTree` in [src/reading.ts](../../../src/reading.ts); the layers come from the syntax tree, whose commands are bash's own ([syntax-tree.md](../syntax-tree.md), "Command nodes at bash's granularity"), and from `Token.origin` (src/analyzer-types.ts), which the analyzer sets where it makes each token.
+The panel's **Reading** view (internally the tree view: ids, classes and `panelState` use `tree`) shows who reads each part of a line, in four layers: bash parses the line into commands, and a simple command into its assignments, its command name, its arguments and its redirections (3.7.1); a shell parses a text again as a script (a subshell, the text of each `$( )`, `<( )` and backquotes; another shell, a string `bash -c` runs; this shell, a string `eval` or a trap reads; a remote shell, `ssh host cmd`); each command reads its arguments as its spec says (options, operands, subcommands); and some words hold a language of their own (a regex, a glob, a sed script, a jq filter, a printf format), which the command reads, or bash itself for `[[ =~ ]]`. The model is `readingTree` in [src/reading.ts](../../../src/reading.ts); the layers come from the syntax tree, whose commands are bash's own ([syntax-tree.md](../syntax-tree.md), "Command nodes at bash's granularity"), and from `Token.origin` (src/analyzer-types.ts), which the analyzer sets where it makes each token.
 
 ## The names of the two views
 
@@ -13,39 +13,9 @@ The panel has two views, named **Meaning** (ja 「意味」) and **Reading** (ja
 
 Only the labels changed (`ui[lang].panel.listView` / `treeView` in src/ui/render.ts). Identifiers (`panelState` values `'list'` and `'tree'`, CSS ids and classes, storage keys) are unchanged, so a stored choice keeps working.
 
-Three prototypes came before it. The panel follows the folding tree (C). The other two are kept here to be tried again later. They are design documents, not part of the extension or the web page: no bundle includes them (test/offline.test.ts checks what the bundles hold).
+Three prototypes (A, brackets under the code; B, line unfolding; C, a folding tree) came before the panel, which follows the folding tree (C). Their files, data and screenshots were removed; they are kept in the repository history ([the folder at its last commit](https://github.com/sf624/bash-explainer/tree/ba115e963cd42c13f352d743f3f2aeba951ba81e/docs/design/tree-view)).
 
 The panel's rows were then tried in three looks (draft PR #286: the list's rows; an outline; two columns). The panel follows the outline; see [The panel's look](#the-panels-look) below.
-
-| File | Prototype | What it shows |
-| --- | --- | --- |
-| [proto-a.html](proto-a.html) | A. Brackets under the code | The line as written, with a row of brackets under it per layer. A dashed line marks where bash's part ends and the commands' reading begins. Hover or tab to a bracket to see who reads that part. |
-| [proto-b.html](proto-b.html) | B. Line unfolding | Six steps, played or stepped through: the plain line, its words and operators, its commands, the subshell of `$( )`, each command's options and arguments, the languages inside them. With reduced motion, it shows the last step at once. |
-| [proto-c.html](proto-c.html) | C. Folding tree | An indented tree that folds and unfolds, with nested bands for the layers and a toggle that adds them one at a time (bash, + scripts inside, + commands, + languages). It follows the ARIA tree pattern for the keyboard and screen readers. |
-
-Each one is a single HTML file with no library, about 8–9 KB gzipped, and works offline, light and dark, down to phone width. Open it in a browser; `?ex=1` shows the second line, and `proto-b.html?step=5` the last step.
-
-## Their data
-
-The prototypes show two lines: `x=$(grep -c foo f) && [ "$x" -gt 0 ]` and `find . -name '*.sh' | xargs grep -n 'set -e'`. Their data, [viz-data.json](viz-data.json), is the reading tree of each line from the model, in the shape the prototypes were written for (layers `bash`, `child`, `cmd`, `lang`; offsets `s`, `e`; a `note` per node). [vizdata.ts](vizdata.ts) makes it, and [build.mjs](build.mjs) inlines it, with the shared [src/common.css](src/common.css) and [src/common.js](src/common.js), into each prototype from its source in [src/](src/). From the root of the repository:
-
-```sh
-npx tsx docs/design/tree-view/vizdata.ts > docs/design/tree-view/viz-data.json
-node docs/design/tree-view/build.mjs
-```
-
-(The first versions were made from a converter that guessed the layers from the tokens' labels. The model replaced it.)
-
-## Screenshots
-
-[screenshots/](screenshots/) has one picture of each prototype, taken in headless Chromium from the files above, on the first line, with the four layers shown:
-
-- `proto-a-1280-light.png`: A, 1280 pixels wide, light theme. The purple brackets are bash's reading (the top rows), the blue ones the subshell's, the green ones the commands' (under the dashed line), the orange ones the regex.
-- `proto-b-1280-light.png`: B at its last step, 1280 pixels, light. Each box is a node; a box with a dashed border is what a command reads.
-- `proto-c-1280-light.png`: C, 1280 pixels, light: every node unfolded, with a band per layer (purple bash, blue the shell of a script inside, green a command, orange a language) and the band's name at its right.
-- `proto-c-360-dark.png`: C, 360 pixels, dark theme: on a phone, the notes after the nodes are left out and the indent is smaller.
-
-The colours are those of the panel's roles: bash is the keyword colour, the shell of a script inside the command colour, a command's reading the argument colour and a language the option colour (media/panel.css).
 
 ## The panel's look
 
@@ -70,22 +40,6 @@ Contrast, on the web page's Light Modern and Dark Modern colours: the texts meas
 Three edges were tried on the 6% tint (screenshots in the PR): a 1-pixel outline all round, a 3-pixel rule on the left alone, and the rule with hairlines at the top and the bottom. The outline drew a box for every band, and nested boxes shared their right edge, which made it heavy. The rule alone did not show where a band ends, and two bands of the same colour next to each other looked like one. The rule with the hairlines shows both ends and stays light; it is the one kept.
 
 Before, the bands were laid over each other at 7% each: a language inside a command's band inside a subshell's had a darker tint at every level, and the kind `literal` measured 3.56 in light and 3.65 in dark; the code was on a code block's grey (4.61 for the command colour).
-
-## Steps
-
-The Reading view unfolds in eight steps (`STEPS` in media/panel.js). Steps 1 to 5 are bash's own reading, by the kind of each node: 1 the line, 2 its lists and pipelines (a list of commands joined by `;` and `&`, `list`, and the AND and OR lists inside it, `andList` and `orList`, as the manual names them, 3.2.4), 3 its commands (simple and compound, clauses, the body of a loop, function definitions), 4 their words (the command name, arguments, assignments, redirections with their descriptors, operators, words and here-document delimiters, operators and reserved words, and the expressions of `[[ ]]` and `(( ))`), 5 inside the words (quotes, expansions, and what bash reads in a substitution). Steps 6 to 8 add the other readers: the scripts inside (a subshell or a new shell), each command's reading of its arguments, and the languages. A node appears at its own step or its parent's, whichever is later, so each step shows the one before it and more. The panel keeps the step as the viewer's choice (`PanelState.step`; `level`, which it kept before, is read as the last step of that layer).
-
-A step that adds nothing to the line is kept (the buttons do not change from line to line) but dimmed, with "adds nothing on this line" in its name; the arrow keys and the step back and forward buttons (◁ ▷) pass it over. The text a kind has in general ("A simple command: …") goes on the first node of that kind to appear, by step and then in order, so it stays on the same row from step to step instead of moving down as earlier rows appear.
-
-### The control
-
-The control is a segmented row: a numbered button per step, in its reader's colour, the steps before the current one lightly tinted, so the row reads as how far the tree is unfolded. Step back and forward flank it. It is one Tab stop (the current step, `aria-current="step"`); the left and right arrows step and the focus follows, Home and End go to either end. A polite live region says each step ("Step 2 of 8: lists and pipelines").
-
-Eight buttons do not fit in a 300 px VS Code panel or on a 390 px phone. Where they do not fit, the label "Show" goes first (`.tight`), then the steps' numbers and the step back and forward buttons (`.tighter`), and last the buttons fold into a stepper `◁ 4/8 Words ▾ ▷`, one line high, whose middle opens the steps as a menu (`.compact`, with `aria-expanded`; the arrows up and down move in it, Escape closes it). `fitControls` measures the row, so it follows the language and the panel's width. Every control is at least 24 px (VS Code), and 40 px on a touch screen and on the web page at phone widths.
-
-Two other layouts were built and compared before this one, at 1280, 600 and 300 px as VS Code's panel and at 390 px as the web page on a phone: a slider (a range with the steps' numbers under its stops), and the four readers' buttons with a `− 4/5 +` depth stepper in bash's. The segmented row won: on a wide panel it shows every step at once (a click jumps anywhere); on a narrow one it stays one line high, which matters because the control row is sticky; and the steps are one list, in one order, with one set of keys. The slider had no names for its stops where it was narrow, and the readers' layout split one sequence into two controls and grew to three or four lines. A Play button, which showed the steps in turn, was tried too and left out: choosing a step shows the same motion, at the reader's pace.
-
-The control row sticks under the line at the top (`#layers`, `top: var(--line-h)`); `--controls-h` keeps a row reached with the keys below both.
 
 ## Motion
 

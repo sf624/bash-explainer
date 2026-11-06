@@ -2,7 +2,7 @@
 // A spec says which words are options, which take values, what the operands mean, and where
 // another command starts. src/argv/interpret.ts reads a command's words with it.
 //
-// Some fields serve one entry. Each was reviewed (docs/design/refactor.md, D8) and is kept because it states a
+// Some fields serve one entry. Each was reviewed (the refactoring of October 2026) and is kept because it states a
 // fact of that tool that no general field can, as its comment says; a second tool with the same fact uses it too.
 import type { BashVersion } from '../bashversion';
 import type { EmbeddedLang } from '../embedded/types';

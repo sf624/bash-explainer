@@ -1,6 +1,6 @@
 # A thin analyzer
 
-src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 200 members. The facts are no longer decided there: [semantics.md](semantics.md) and [refactor.md](refactor.md) moved them into the specs (src/argv/), the semantic model (src/semantics/) and the example sources (src/examples/source.ts). What is left is mostly the assembly of an explanation: tokens, notes, pitfalls and examples.
+src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 200 members. The facts are no longer decided there: [semantics.md](semantics.md) and [the refactoring of October 2026](https://github.com/sf624/bash-explainer/blob/5efa326aa187cce038224f4e984e146c467786ee/docs/design/refactor.md) moved them into the specs (src/argv/), the semantic model (src/semantics/) and the example sources (src/examples/source.ts). What is left is mostly the assembly of an explanation: tokens, notes, pitfalls and examples.
 
 An outside review noted the size, and the pace (683 commits in 9 days). For one maintainer over the long term, a thin core matters more than a wider scope. The maintainer agreed: the next big work is to thin analyzer.ts, not to add features. This page plans it. Each step is a PR. The [traceability table](#traceability) records the findings and the steps.
 
@@ -285,7 +285,7 @@ A field name decides nothing: an open `why: string` compared with `'builtin'` is
 
 ## 4. Steps
 
-Each step is a PR. Each keeps every test passing and coverage at 100% (Node.js 24, `npm run coverage`, `npm run coverage:check`). Sizes are in changed lines with tests, as in refactor.md: S under 300, M 300–1,000, L over 1,000. A move counts twice (removed and added).
+Each step is a PR. Each keeps every test passing and coverage at 100% (Node.js 24, `npm run coverage`, `npm run coverage:check`). Sizes are in changed lines with tests, as in [the refactoring plan](https://github.com/sf624/bash-explainer/blob/5efa326aa187cce038224f4e984e146c467786ee/docs/design/refactor.md): S under 300, M 300–1,000, L over 1,000. A move counts twice (removed and added).
 
 **How a move is done.** A move is mechanical: `private f(a)` becomes `export function f(cx: Explainer, a)`, `this.cx.x` becomes `cx.x`, `this.g(…)` becomes `g(cx, …)`. It is done by a script (with the TypeScript compiler API), kept with the PR. After a conflict, the move is redone on the new main by running the script again, instead of merging by hand. While a step is in progress, the class keeps one-line delegates for moved functions that unmoved code still calls; the step that moves the last caller removes them.
 

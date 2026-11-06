@@ -1,6 +1,6 @@
 // The panel's role colours from the editor's colour theme (`bashExplainer.panel.colors`), from the theme's colours of
 // the roles (src/ui/themeTokens.ts) and what the panel is drawn on (its backgrounds, its foreground, and its own
-// palette, "classic", as the webview computes them). Pure. docs/design/tree-view/README.md ("Colours from the theme").
+// palette, "classic", as the webview computes them). Pure. docs/design/theme-colours.md.
 import { contrast, deltaE2000, deltaEOK, fromOklch, luminance, mix, parseColour, RGB, toHex, toOklch, type LCH } from './colour';
 import { ROLES, type Role } from './themeTokens';
 import type { PanelColours } from '../settings';
