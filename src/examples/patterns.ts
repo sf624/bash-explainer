@@ -69,10 +69,11 @@ export function patternExample(texts: (string | undefined)[], opts: GlobOpts, la
 
 /**
  * Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false, or fail. `known`: the value the script gives
- * the operand node where the test runs, when it is known (it takes the place of the sample with the same result).
+ * the variable (`name`) of the expansion `part` where the test runs, when it is known (it takes the place of the
+ * sample with the same result).
  * `judge`: what bash gives for values of the test's variables (src/semantics/testcases.ts), where it is known.
  */
-export function testExample(n: SyntaxNode, bracket: TestShape | undefined, asKind: '[' | undefined, lang: Lang, known: (x: SyntaxNode) => string | undefined,
+export function testExample(n: SyntaxNode, bracket: TestShape | undefined, asKind: '[' | undefined, lang: Lang, known: (part: SyntaxNode, name: string) => string | undefined,
   judge?: (kind: '[' | '[[', shape: TestShape, vars: Record<string, string>) => TestOutcome | undefined): Example | undefined {
   const s = pick(lang);
   const kind = asKind ?? n.children[0].type as '[' | '[[' | '((';
@@ -104,7 +105,9 @@ export function testExample(n: SyntaxNode, bracket: TestShape | undefined, asKin
   const { left, op, right } = shape;
   // (The side that is a variable: the other is text.)
   const side = left && operand(left) && 'var' in operand(left)! ? left : right;
-  const value = known(side);
+  // (The expansion of the variable, in its double quotes or not.)
+  const variable = operand(side);
+  const value = variable && 'var' in variable ? known(side.type === 'string' ? side.namedChildren[0] : side, variable.var) : undefined;
   const judged = judge && kind !== '((' ? (vars: Record<string, string>) => judge(kind, shape!, vars) : undefined;
   const cases = left
     ? testCases(kind, op, operand(left), operand(right), right.type === 'string' || right.type === 'raw_string', value, judged)

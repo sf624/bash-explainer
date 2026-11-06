@@ -47,7 +47,7 @@ import { has, operands, readsFields, regexWords, values } from '../argv/query';
 import { impliedOptions } from '../dict/aliases';
 import { wordFields } from '../semantics/words';
 import { receivedFields, writtenPlain } from '../semantics/fieldshape';
-import { wordValue } from './values';
+import { shownValue, wordValue } from './values';
 import { braceExpansion, bracesHere } from './words';
 import { pushAll } from '../lists';
 
@@ -162,7 +162,8 @@ export function testExample(cx: Explainer, n: SyntaxNode, bracket: TestShape | u
   // (`nocasematch` changes `[[ == ]]`, which the cases do not follow.)
   const nocase = n.children[0].type === '[[' ? shoptAt(cx, n).nocasematch : 'off';
   const plain = nocase === 'off' || nocase === 'default';
-  const known = (x: SyntaxNode) => (plain ? wordValue(cx, x) : undefined);
+  // (The variable's value, split or empty too: the cases read the words with it.)
+  const known = (part: SyntaxNode, name: string) => (plain ? shownValue(cx, part, name) : undefined);
   // (Each case as bash reads the test's words with its value: `[ $x = "a b" ]` fails for `x="a b"`.)
   const judge = plain ? (kind: '[' | '[[', shape: TestShape, vars: Record<string, string>) => testOutcome(kind, shape, cx.state, vars) : undefined;
   guardedExample(cx, 'test', () => pushExample(cx, patterns.testExample(n, bracket, asKind, cx.lang, known, judge)));

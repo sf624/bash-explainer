@@ -703,6 +703,20 @@ Each entry names its kind by the label an issue of that kind gets. For `bug`, `c
 - **Reason:** Rare: an expansion as a value in the list of an associative array.
 - **Input and what is missing:** `declare -A m=([k]=$v)`: `$v` shows no bash's steps at either depth. A value of an indexed array (`a=($v)`) shows them.
 
+## From the review of the test examples (#695)
+
+### `[[ $x -gt 08 ]]` says "True when x=9"
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `bug`.
+- **Reason:** Rare: an integer of `[[ ]]` with a leading zero and a digit 8 or 9. The model decides only decimal integers without a leading zero (`extendedTestInteger`); the samples keep their own result there.
+- **Input and what is wrong:** `[[ $x -gt 08 ]]`: the example says "True when x=9", but bash fails, "value too great for base", since `08` is octal in arithmetic.
+
+### The script's value of a test is not placed where the model does not show it
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `missing-explanation`.
+- **Reason:** Rare, and a value missed, not a wrong one: the samples stay.
+- **Input and what is missing:** `n=' 3 '; [ "$n" -eq 3 ]` (a value with spaces at its ends, which an example line cannot show as it is) and `x=7; [[ $x -eq 3 ]]` (a value read by arithmetic, which the value line does not show either): the example keeps its samples and does not show the script's value in its section.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

@@ -111,15 +111,22 @@ describe('the cases of a test, as bash reads its words with each value', () => {
   const STATUS: Record<string, number> = { 'True when': 0, 'False when': 1, 'Error (status 2) when': 2 };
   // [script, its sections]: unquoted in `[ ]`, a value with a space is two words; on the right of `[[ == ]]`, a value is a pattern.
   const table: [string, [string, string[]][]][] = [
-    ['[ $x = "a b" ]', [['False when', ['x="abc"']], ['Error (status 2) when', ['x="a b"', 'x="a bx"']]]],
-    ['x="a b"\n[ $x = a\\ b ]', [['False when', ['x="abc"']], ['Error (status 2) when', ['x="a b"', 'x="a bx"']]]],
-    ['[ $x != "a b" ]', [['True when', ['x="abc"']], ['Error (status 2) when', ['x="a bx"', 'x="a b"']]]],
+    ['[ $x = "a b" ]', [['False when', ['x="abc"']], ['Error (status 2) when', ['x="a b"']]]],
+    ['x="a b"\n[ $x = a\\ b ]', [['False when', ['x="abc"']], ['Error (status 2) when', ['x="a b"']]]],
+    ['[ $x != "a b" ]', [['True when', ['x="abc"']], ['Error (status 2) when', ['x="a bx"']]]],
+    // An empty value is no word: `[ = y ]`, "unary operator expected". The script's own value too, split or empty.
+    ['[ $x = y ]', [['True when', ['x="y"']], ['False when', ['x="yx"']], ['Error (status 2) when', ['x=""']]]],
+    ['[ $x = "" ]', [['False when', ['x="abc"']], ['Error (status 2) when', ['x=""']]]],
+    ['x="a b"\n[ $x = y ]', [['True when', ['x="y"']], ['False when', ['x="yx"']], ['Error (status 2) when', ['x="a b"']]]],
+    ['x=\n[ $x = y ]', [['True when', ['x="y"']], ['False when', ['x="yx"']], ['Error (status 2) when', ['x=""']]]],
+    ['[ $x -eq 3 ]', [['True when', ['x="3"']], ['False when', ['x="4"']], ['Error (status 2) when', ['x=""']]]],
     ['[[ a\\\\b = $x ]]', [['True when', ["x='a\\\\b'"]], ['False when', ["x='a\\b'", "x='a\\bx'"]]]],
     ['[[ "a\\b" = $x ]]', [['True when', ["x='a\\\\b'"]], ['False when', ["x='a\\b'", "x='a\\bx'"]]]],
     ['[[ \\[ab\\] = $x ]]', [['True when', ["x='\\[ab\\]'"]], ['False when', ['x="[ab]"', 'x="[ab]x"']]]],
     ['[[ "[ab]" == $x ]]', [['True when', ["x='\\[ab\\]'"]], ['False when', ['x="[ab]"', 'x="[ab]x"']]]],
     // The script's value where it fails: `test` reads no integer in `abc`.
     ['x=abc\n[ "$x" -eq 3 ]', [['True when', ['x="3"']], ['False when', ['x="4"']], ['Error (status 2) when', ['x="abc"']]]],
+    ['[ -n $x ]', [['True when', ['x="abc"', 'x=""']], ['Error (status 2) when', ['x="a b"']]]],
     // (Quoted, the words are the value; as before.)
     ['[ "$x" = "a b" ]', [['True when', ['x="a b"']], ['False when', ['x="a bx"']]]],
     ['[[ "[ab]" == "$x" ]]', [['True when', ['x="[ab]"']], ['False when', ['x="[ab]x"']]]],
@@ -180,11 +187,11 @@ describe('worked examples of tests and patterns with the value of the script', (
     ['y=zzz\n[ "$y" = abc ]', ['True when → y="abc"', 'False when → y="zzz"'], 'y="zzz"'],
     ['y=zzz\n[[ $y != abc ]]', ['True when → y="zzz"', 'False when → y="abc"'], 'y="zzz"'],
     ['y=zzz\ntest abc = "$y"', ['True when → y="abc"', 'False when → y="zzz"'], 'y="zzz"'],
-    ['n=5\n[ "$n" -lt 2 ]', ['True when → n="1"', 'False when → n="5"'], 'n="5"'],
-    ['n=5\n[ 2 -lt "$n" ]', ['True when → n="5"', 'False when → n="2"'], 'n="5"'],
+    ['n=5\n[ "$n" -lt 2 ]', ['True when → n="1"', 'False when → n="5"', 'Error (status 2) when → n=""'], 'n="5"'],
+    ['n=5\n[ 2 -lt "$n" ]', ['True when → n="5"', 'False when → n="2"', 'Error (status 2) when → n=""'], 'n="5"'],
     ['x=abc\n[ -z "$x" ]', ['True when → x=""', 'False when → x="abc"'], 'x="abc"'],
     ['x=\n[ -n "$x" ]', ['True when → x="abc"', 'False when → x=""'], 'x=""'],
-    ['x=q\n[ -n $x ]', ['True when → x="q" x=""'], 'x="q"'],
+    ['x=q\n[ -n $x ]', ['True when → x="q" x=""', 'Error (status 2) when → x="a b"'], 'x="q"'],
   ];
   for (const [src, want, line] of tests) {
     it(src.replace(/\n/g, '; '), () => {
@@ -195,17 +202,16 @@ describe('worked examples of tests and patterns with the value of the script', (
   }
 
   it('keeps the samples where bash would not read the value as the cases do', () => {
-    // `010` is 8 in arithmetic, read by `(( ))`; nocasematch makes `[[ == ]]` ignore case; a value split into words.
+    // `010` is 8 in arithmetic, read by `(( ))`; nocasematch makes `[[ == ]]` ignore case.
     // (The model has no value of `n` read by arithmetic, as the value line has none.)
     assert.deepStrictEqual(examples('n=5\n(( $n > 2 ))'), ['True when → n="3"', 'False when → n="2"']);
     assert.deepStrictEqual(examples('shopt -s nocasematch\nx=ABC\n[[ $x == abc ]]'), ['True when → x="abc"', 'False when → x="abcx"']);
-    assert.deepStrictEqual(examples('x="a b"\n[ $x = abc ]'), ['True when → x="abc"', 'False when → x="abcx"']);
   });
 
   it('reads the value as bash does, where the model reads the words of the test with it (checked with bash)', () => {
     // `010` is 10 for `-gt`; a quoted right side of `[[ == ]]` is text; unquoted, the value is a pattern.
     const read: [string, string[], boolean][] = [
-      ['n=010\n[ "$n" -gt 2 ]', ['True when → n="010"', 'False when → n="2"'], true],
+      ['n=010\n[ "$n" -gt 2 ]', ['True when → n="010"', 'False when → n="2"', 'Error (status 2) when → n=""'], true],
       ['x=abc\n[[ $x == "a*" ]]', ['True when → x="a*"', 'False when → x="abc"'], false],
       ["x='a*'\n[[ abc == $x ]]", ['True when → x="a*"', 'False when → x="abcx"'], true],
       ["x='a*'\n[[ abc != $x ]]", ['True when → x="abcx"', 'False when → x="a*"'], false],
