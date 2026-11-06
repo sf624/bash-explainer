@@ -150,7 +150,7 @@ export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | u
     }
   }
   // (The model has no values in arithmetic: none for `(( ))`.)
-  const truth = known !== undefined && kind !== '((' ? outcome(known) ?? knownTruth(kind, op, left, right, known, quotedRight) : undefined;
+  const truth = known !== undefined && kind !== '((' ? outcome(known) : undefined;
   if (truth === undefined) return cases;
   const i = cases.findIndex((c) => c.result === truth);
   if (i < 0) return [...cases, { vars: { [name]: known! }, result: truth }];
@@ -165,25 +165,6 @@ const NUMERIC: Record<string, (a: number, b: number) => boolean> = {
   '-eq': (a, b) => a === b, '-ne': (a, b) => a !== b, '-lt': (a, b) => a < b, '-le': (a, b) => a <= b, '-gt': (a, b) => a > b, '-ge': (a, b) => a >= b,
 };
 const ARITH_TESTS: Record<string, string> = { '==': '-eq', '!=': '-ne', '<': '-lt', '<=': '-le', '>': '-gt', '>=': '-ge' };
-
-/**
- * Whether the test `sampleTests` has cases for is true with `known` for its variable; undefined when that is not
- * sure here: an integer test of a number that is not a plain decimal integer (`010` is 8 in arithmetic, 10 for `-eq`).
- */
-function knownTruth(kind: '[' | '[[', op: string, left: Operand | undefined, right: Operand | undefined, known: string, quotedRight: boolean): boolean | undefined {
-  if (left === undefined) return op === '-z' ? known === '' : known !== '';
-  const lit = ('lit' in left ? left : right as { lit: string }).lit;
-  const f = NUMERIC[op];
-  if (f) {
-    const plain = (t: string) => /^(0|-?[1-9]\d{0,14})$/.test(t);
-    if (!plain(known) || !plain(lit)) return undefined;
-    return 'var' in left ? f(Number(known), Number(lit)) : f(Number(lit), Number(known));
-  }
-  // (In `[[ ]]` the right side is a pattern: one with a glob character is not compared as text, nor is a tilde, which
-  // expands; nor the variable's value when it is that side, unquoted: `x='a*'; [[ abc == $x ]]` is true.)
-  if (kind === '[[' && (/[*?[]/.test(lit) || lit.startsWith('~') || ('var' in right! && !quotedRight && /[*?[\\]/.test(known)))) return undefined;
-  return (known === lit) !== (op === '!=');
-}
 
 function sampleTests(kind: '[' | '[[' | '((', op: string, left: Operand | undefined, right: Operand | undefined, quotedRight: boolean): TestCase[] | undefined {
   // Unary string tests.

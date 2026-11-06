@@ -37,7 +37,17 @@ export function compareIntegers(op: string, a: bigint, b: bigint): boolean {
   }
 }
 
-const INTEGER_OPS = new Set(['-eq', '-ne', '-lt', '-le', '-gt', '-ge']);
+/** The integer comparisons of `test` and `[[ ]]`. */
+export const INTEGER_OPS: ReadonlySet<string> = new Set(['-eq', '-ne', '-lt', '-le', '-gt', '-ge']);
+
+/**
+ * An integer as `[[ -eq ]]` surely reads one, where it reads the text as arithmetic: decimal digits, a sign, and
+ * spaces, tabs and newlines around (`010` is octal there, `x` a variable: not decided).
+ */
+export function extendedTestInteger(t: string | undefined): bigint | undefined {
+  const m = t === undefined ? null : /^[ \t\n]*([+-]?(?:0|[1-9]\d{0,17}))[ \t\n]*$/.exec(t);
+  return m ? BigInt(m[1]) : undefined;
+}
 
 /** A unary test (`-n`, `-z`, `-o`) of `test` or `[[ ]]`; undefined for the others (files, a terminal, variables) or an option not known. */
 export function unaryTest(op: string, arg: string, env: TestEnv): boolean | undefined {
