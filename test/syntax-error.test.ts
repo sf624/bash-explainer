@@ -957,7 +957,7 @@ describe('says none in the shell code of another file', () => {
   };
   const step = (run: string) => `on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n${run}`;
   // (Each host a broken line, then what the review of #597 found would have failed on working code, had hosts spoken:
-  // docs/roadmap.md, "Syntax problems in hosts". These inputs are the table for that work.)
+  // docs/backlog-archive.md, "Syntax problems in host files". These inputs are the table for that work.)
   const rows: [string, string, string][] = [
     ['a broken recipe', 'Makefile', 'a:\n\techo ok )\n'],
     ['a broken RUN', 'Dockerfile', 'FROM a\nRUN echo ok )\n'],

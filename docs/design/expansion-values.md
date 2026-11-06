@@ -2,7 +2,7 @@
 
 `msg="hello world"; echo $msg`: the token of `$msg` says what bash puts there, `hello world`, and that unquoted it becomes two words, `hello` and `world`. This page says which expansions get a value, when the value may be said, how it is shown, and how it is tested.
 
-Status: built (#356), with the maintainer's decisions of section 6. What is left is deferred ([../roadmap.md](../roadmap.md): trust per position, constants in functions, whole words, arrays, per-call values).
+Status: built (#356), with the maintainer's decisions of section 6. What was left (trust per position, constants in functions, whole words, arrays, per-call values) was dropped ([backlog-archive.md](../backlog-archive.md)).
 
 ## 1. What a value is
 
@@ -102,7 +102,7 @@ The questions of the first set, as the maintainer decided them (2026-10-26):
 - The look (a muted lead, the value and its words as chips with an edge): kept.
 - Shells other than bash: the POSIX forms in sh and dash (section 2), tested against real dash; not zsh or ksh.
 - Worked examples: the script's value where the model has one (section 4).
-- A whole word (`"$dir/$f"`), arrays (`"${a[@]}"`), per-call values in functions ("`1` at line 3, `2` at line 5"): later, after trust per position and constants in functions (roadmap).
+- A whole word (`"$dir/$f"`), arrays (`"${a[@]}"`), per-call values in functions ("`1` at line 3, `2` at line 5"): dropped with trust per position ([backlog-archive.md](../backlog-archive.md)).
 
 Still open:
 

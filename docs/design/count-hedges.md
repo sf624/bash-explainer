@@ -1,6 +1,6 @@
 # Hedges by word counts, read for every count at once
 
-Status: deferred until after 0.10.0 (2026-10-31), steps 1–5 done; planned 2026-10-30, revised after review. The maintainer agreed to "a design document first, then steps that keep every test passing". Steps 1 (#499), 2 (#500), 3 (#502), 4 (#505) and 5 (#516) done; steps 6–7 not started. The roadmap item is under "Deferred" (2026-10-31) in [../roadmap.md](../roadmap.md).
+Status: done: steps 1 (#499), 2 (#500), 3 (#502), 4 (#505) and 5 (#516). Steps 6–7 were dropped on 2026-11-06 (YAGNI; [backlog-archive.md](../backlog-archive.md), "Count hedges, steps 6 and 7"). Planned 2026-10-30, revised after review; the maintainer agreed to "a design document first, then steps that keep every test passing".
 
 An unquoted `$a` may give no word, one word or several. The role of a word on the line can then depend on how many words `$a` gives: with `$a` empty, `tar -cf $a b` is `tar -cf b`, and `b` is the archive. The explanation says such roles under a condition ("value for `-f` when `$a` expands to nothing"); this page calls them hedges. Since #492, a hedge must hold for every count that meets its condition (oracles.md 2.8). The hedges read one word's count at a time, and read the options once. Several lines break that rule. This page shows the cases, proposes one design that reads every count of every such word together, and gives the steps.
 
@@ -105,7 +105,7 @@ The interpreter reads each argv right. The hedges go wrong because they read the
 - A word that becomes an option is not said (`grep -e $p -- -v f`).
 - A value and an operand are hedged by two modules, which do not see each other's words (`cp -t $d $a b`).
 
-Each fix so far (#482, #484, #487, #490, #492) added a reading for one more kind of word. The roadmap's open item lists more of the same: the words a command run reads after it (`sudo -u $u tar -cf x y`), and two words of one variable read as independent (`cp $a $a d` says "when `$a`, `$a` expand to a single word"). The fixes keep adding special cases, so this page proposes one reading for all of them.
+Each fix so far (#482, #484, #487, #490, #492) added a reading for one more kind of word. The open items listed more of the same: the words a command run reads after it (`sudo -u $u tar -cf x y`), and two words of one variable read as independent (`cp $a $a d` says "when `$a`, `$a` expand to a single word"). The fixes keep adding special cases, so this page proposes one reading for all of them.
 
 ## 2. The design
 
@@ -289,7 +289,7 @@ Step 1 can land at once. Steps 2 and 3 change no explanation, but step 2 already
 - **Counts tied in other ways** than the same lone expansion (section 2.2): `$a` and `$a/x`, `$a` and `"$a"`, `$@` and `$1`. The counts of `$a` and `$a/x` are not the same either (review of #505): with `a='p '`, `$a` gives one word and `$a/x` two (`p`, `/x`); with `a='*'` in a directory of the file `f1` and the directory `d` holding `x`, `$a` gives two and `$a/x` one (`d/x`). So the clause of `cp $a $a/x` "When `$a` expands to several words: destination directory when `$a/x` expands to a single word" can hold, and stays.
 - **An integer default gives one word.** Done in review of #505: `${n:=w}` of an integer that holds a number, or no value (`declare -i n`), is a number once expanded, so it never gives no word (`mayGiveNoField`), and gives one where the IFS holds no digit and no `-` (`givesOneNumber` in src/semantics/nofield.ts; with `IFS=-5`, `-5` gives two). Not where the value was given before the attribute (`n=' '; declare -i n; ${n:=5}` gives no word). In #516, the same for every number (`$#`, `$?`, `$$`, `${#x}`, `$((…))`), in the count of the word model (`countIn`).
 - **The model's own readers** of a command's words (`set $x`, `declare $x`, the environments of src/semantics/env.ts): the other open item after #485.
-- **Elements of arrays and positional parameters** as fields the model knows: roadmap, "Values of a whole word".
+- **Elements of arrays and positional parameters** as fields the model knows: [backlog-archive.md](../backlog-archive.md), "Values of a whole word, arrays, per-call values".
 - **Whole-line alternative readings in the panel** (alternative D).
 
 ## 6. For the maintainer

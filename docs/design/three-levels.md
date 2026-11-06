@@ -414,7 +414,7 @@ The maintainer decided every question on 2026-10-27, as the review proposed.
 
    Three of the 9 Errors the first round called true were false (`.nvm/test/installation_node/install on bash with ERR trap and set -E`, lines 29, 34, 44): `if [ -z "${BASH-}" ]; then …; exit; fi` before them ends the script in dash, which only the rule above reads, as a stop that may come first.
 
-   Left, in docs/roadmap.md: the other shells (`yash`, `ksh`, `mksh`, `zsh`) keep the Error for what they lack where it is reached, as they have not been run.
+   Dropped 2026-11-06 ([backlog-archive.md](../backlog-archive.md), "Dialect issues in yash, ksh, mksh, zsh"): the other shells (`yash`, `ksh`, `mksh`, `zsh`) keep the Error for what they lack where it is reached, as they have not been run.
 3. **A stop halfway is a Warning.** `function-last-test-stops-script`, the postfix notes under `set -e`, and `nounset-unbound` with `environment` stop the script only under some values. The plan counts a stop halfway as damage that cannot be undone. Or Info?
    Decided 2026-10-27: Warning. It is the rule's own wording (question 2), and half-done work is the damage. Where the stop is certain, Error (a postfix on a value known to be 0, section 3).
 4. **Two rows move down to Info** in one case each: `pipeline-subshell-variable` with `partial`, `redirect-by-your-shell` without a known root path. Or keep them Warning?

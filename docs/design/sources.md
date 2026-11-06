@@ -1,6 +1,6 @@
 # Facts and their sources
 
-Status: agreed by the maintainer on 2026-10-31. Stage SA (the guards) is done; stage SB goes into the UX steps (SB1, SB2, SB4 and SB3 done; SB3's catalog of token texts is done only where src/explain/ writes a text directly at the token: row 14 says what is left); stage SC waits until after 0.10.0. The order is in [../roadmap.md](../roadmap.md).
+Status: tracked in #674, #675, #676, #677, #678, #679 (stage SC). Agreed by the maintainer on 2026-10-31; done: stage SA (the guards) and stage SB (SB1 to SB4; row 14 says what SB3's catalog of token texts left).
 
 The stages are named SA, SB and SC ("S" for sources), and their steps SA1, SB1, SC1 and so on, so that they do not clash with the plan A, B, C of [semantics.md](semantics.md), the panel's steps P1–P10 or the chrome's C0–C9.
 
@@ -106,11 +106,11 @@ So that the UX work adds no new copies, each goes into the step named, as part o
 
 ### Stage SC: the migrations (after 0.10.0, Deferred)
 
-In the roadmap's "Deferred", to be judged again after 0.10.0. Each step lists its explanation changes (section 2) and takes the machinery of section 2.1 with it.
+Each step is an issue on the board (see the status line above); the step SC11 was dropped (docs/backlog-archive.md). Each step lists its explanation changes (section 2) and takes the machinery of section 2.1 with it.
 
 | Step | What | Rows | Size |
 | --- | --- | --- | --- |
-| SC1 | Words: first, the values of W-L2 (`literalContent`) read from the word model, common usage (the roadmap lists the consumers); then [word-source.md](word-source.md) steps 2–8; M1's simpler hedge texts (before any decision on count-hedges steps 6–7); M2's drops by category | 1 | large |
+| SC1 | Words: first, the values of W-L2 (`literalContent`) read from the word model, common usage (#674 lists the consumers); then [word-source.md](word-source.md) steps 2–8; M1's simpler hedge texts (before any decision on count-hedges steps 6–7); M2's drops by category | 1 | large |
 | SC2 | `commandRead(n)` on the model: the resolved name, the full spec, the parse with `argWordIn(model)`, `command` and `builtin` unwrapped; spec fields `closesInputEarly` and `neverFails` instead of the hand lists; idioms ask `resolveName`; the pipeline examples' stage facts (M6) | 2, 3, 4, 5 | large |
 | SC3 | A descriptor model in src/semantics (M3) | 6 | medium to large |
 | SC4 | The declaration builtins' outcomes from the walk (M4) | 7 | medium |

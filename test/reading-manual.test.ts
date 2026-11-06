@@ -1,4 +1,4 @@
-// The reading tree (src/reading.ts) against the Bash Reference Manual, chapter 3 (docs/roadmap.md): each construct
+// The reading tree (src/reading.ts) against the Bash Reference Manual, chapter 3: each construct
 // is named and grouped as the manual does and cites its section, every reserved word and operator bash reads in a
 // statement, a parameter or brace expansion and a redirection is a node of its own, and the grouping is bash's own
 // where bash-ast shows it.

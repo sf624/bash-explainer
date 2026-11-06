@@ -37,7 +37,7 @@ export const GROUP: Record<Role, string> = {
  */
 export const ROLE_ORDER: readonly Role[] = ['command', 'operator', 'string', 'argument', 'variable', 'builtin', 'keyword', 'option', 'pattern', 'redirect', 'assignment', 'number', 'comment', 'shebang'];
 
-/** The roles and the share of the tints of Reading's bands. No view draws them since the tabs went (panel-redesign.md, P8), but they still bound the colours text may take; left in P10, since taking them out can change the colours of a theme (roadmap, Deferred). */
+/** The roles and the share of the tints of Reading's bands. No view draws them since the tabs went (panel-redesign.md, P8), but they still bound the colours text may take; left in P10, since taking them out can change the colours of a theme (docs/backlog-archive.md, "Remove the unused `TINT_ROLES`"). */
 const TINT_ROLES: readonly Role[] = ['keyword', 'command', 'argument', 'option'];
 const TINT = 0.06;
 

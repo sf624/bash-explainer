@@ -1,6 +1,6 @@
 # One source for what bash makes of a word
 
-Status: agreed by the maintainer on 2026-10-31 (section 7): step 1 (the guard) now, beside the UX work; steps 2 to 8 after 0.10.0, in the roadmap's "Deferred". This page is the detailed plan of the words row of [sources.md](sources.md) (row 1, steps SA1 and SC1).
+Status: tracked in #674. Agreed by the maintainer on 2026-10-31 (section 7); step 1 (the guard) done. This page is the detailed plan of the words row of [sources.md](sources.md) (row 1, steps SA1 and SC1).
 
 What bash makes of a word is one set of facts: its fields and how many, which characters are quoted, whether it globs, its literal start and end, its tildes and braces. The model has a source for them: `wordMeaning`, `wordFields`, `braceWords` and `holedWords` in src/semantics/words.ts, with `ownChars`, `patternOfChars`, `ifsEscaped` and `globbedByBash` in src/semantics/chars.ts. test/word-probes.test.ts checks them against bash.
 

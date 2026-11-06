@@ -333,4 +333,4 @@ Each step keeps every test passing.
 
 - The first draft of the allow-list cost no value, decision or dead mark on either set, on top of #387. The rules its review added (redirections that may fail, arithmetic values known at the point) are walk changes whose cost step 3 measures. Together they close the twelve holes of section 1 and the four findings of the #382 review that #387 leaves open, and they make the next such hole fail toward "no value".
 - #387's rule for IFS loses 76 values in two real scripts that save and restore IFS. Following copies of IFS, with #387's check kept, should keep them (section 4). That can be done in #387 or in step 3 here.
-- POSIX mode is `all` until the POSIX-mode rows of the roadmap's bash 5.3 item are done. Scripts that turn it on are rare; sh scripts, which start in it, keep their model.
+- POSIX mode is `all` (the POSIX-mode rows left were dropped: [backlog-archive.md](../backlog-archive.md), "POSIX-mode `time --` forms"). Scripts that turn it on are rare; sh scripts, which start in it, keep their model.
