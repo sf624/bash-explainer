@@ -5,7 +5,7 @@
 import type { Kind, TestPart, Token } from '../analyzer-types';
 import { arithLiteralIn, evalArith, invalidLiteral } from '../arith';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
-import { binaryTestOp, binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, testOperandTexts, unaryTestOperands, unaryTestOps } from '../dict/syntax';
+import { binaryTestOp, binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, rematchClause, testOperandTexts, unaryTestOperands, unaryTestOps } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { explainRegex } from '../embedded/regex';
 import { toJsRegex } from '../examples/regex';
@@ -397,7 +397,7 @@ function quotedPatternNote(cx: Explainer, n: SyntaxNode, op: string, rights: Syn
         'true if the left side contains the right side as it is (the right side is quoted, so it is literal text, not a regex: `.` and `*` are plain characters)')
       : cx.s('左辺が右辺の正規表現(ERE)に一致すれば真（右辺のうちクォートされた部分は文字列そのまま、残りは正規表現）',
         'true if the left side matches the regex (ERE) on the right (the quoted parts of the right side are literal text, the rest is regex)'))
-      + pitfall + (cx.shell && cx.shell !== 'bash' ? '' : cx.s('。一致結果は `BASH_REMATCH` に入る', '; captures go to `BASH_REMATCH`'));
+      + pitfall + cx.t(rematchClause(cx.shell));
   }
   const equal = op !== '!=';
   return kinds.every((q) => q)

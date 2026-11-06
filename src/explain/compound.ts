@@ -2,7 +2,7 @@
 // and its branches, function definitions, `coproc`, groups and subshells, pipelines and lists, with the keywords and
 // operators between their parts; a keyword missing for want of a `;` before it (`if a then`); and comments, with the
 // shebang and the directives. Their parts are explained through the walk (`cx.sub`), on the line explained only.
-import type { ExampleKind, Kind, Token } from '../analyzer-types';
+import type { ExampleKind, ExplainOptions, Kind, Token } from '../analyzer-types';
 import { interpret } from '../argv/interpret';
 import { keywords, listOps } from '../dict/syntax';
 import { DIRECTIVE } from '../directives';
@@ -11,7 +11,7 @@ import { spanOf } from '../noteanchors';
 import { anonSections, programSections } from '../refs';
 import { definitionFails } from '../semantics/names';
 import { coprocName, field, fields, isShebang, nameText, strayKeyword, type SyntaxNode, withLists } from '../syntax/tree';
-import { detectShell, readShell, SHELL_NAMES } from '../dialect';
+import { detectShell, SHELL_NAMES } from '../dialect';
 import { shebangOptionTokens } from './argv';
 import type { Explainer } from './context';
 import { caseExample, pipelineExample } from './examples';
@@ -112,6 +112,12 @@ const sentence = <K extends TokenTextId>(cx: Explainer, id: K, ...params: TokenT
 /** A warning of the catalog, as a sentence of the shebang's text. */
 const warning = <K extends TokenTextId>(cx: Explainer, id: K, ...params: TokenTextArgs<K>): EnvSaid => ({ text: sentence(cx, id, ...params), warns: true });
 
+/** Why the shell a line is explained as is not the one its shebang names. */
+const WHY_SHELL: Record<NonNullable<ExplainOptions['shellFrom']> | 'chosen', Text> = {
+  directive: { ja: 'ShellCheck の指示コメントで選ばれている', en: 'a ShellCheck directive chooses it' },
+  chosen: { ja: 'ファイルの外で選ばれている: 設定、ページの一覧、`--shell`', en: 'chosen outside the file: a setting, the page\'s list or `--shell`' },
+};
+
 /**
  * The shebang (3.8; execve(2), "Interpreter scripts"): the kernel reads it when the file is run as a program, and starts
  * the interpreter with the rest of the line (one argument on Linux, blanks and all) and the script's path; bash does
@@ -137,11 +143,8 @@ function shebang(cx: Explainer, n: SyntaxNode): Token {
   const relative = interp.includes('/') ? '' : sentence(cx, 'shebang-relative-interpreter', { interp });
   const said = detectShell(n.text);
   const used = cx.shell ?? 'bash';
-  // (Why another shell: a ShellCheck directive of the file, else the shell chosen outside it, in the settings, the page's picker or the command line.)
-  const directive = readShell(cx.source.slice(0, 2000));
-  const why: Text = directive.source === 'directive' && directive.shell === used
-    ? { ja: 'ShellCheck の指示コメントで選ばれている', en: 'a ShellCheck directive chooses it' }
-    : { ja: '設定、ページの選択、コマンドラインのいずれかで選ばれている', en: 'it is chosen in the settings, the page\'s picker or the command line' };
+  // (Why another shell: a ShellCheck directive of the file, else a choice outside the file; `ExplainOptions.shellFrom`.)
+  const why = WHY_SHELL[cx.opts.shellFrom ?? 'chosen'];
   const dialect: Text = !said ? { ja: '', en: '' }
     : said === used ? { ja: `。Bash Explainer はこの行から、スクリプトを ${SHELL_NAMES[said]} のものとして解説する`, en: `. Bash Explainer explains the script as ${SHELL_NAMES[said]}, from this line` }
       : { ja: `。Bash Explainer はここではスクリプトを ${SHELL_NAMES[said]} ではなく ${SHELL_NAMES[used]} のものとして解説する（${why.ja}）`,

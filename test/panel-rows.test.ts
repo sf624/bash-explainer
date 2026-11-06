@@ -1337,6 +1337,17 @@ describe('the panel\'s row model', () => {
       assert.match(asShell('bash').line!.chips[0].said, /^bash splits the line .* \(bash parses it\)$/);
     });
 
+    it('spaces the shell\'s name by the language: Japanese puts a space around "bash", not around シェル', () => {
+      const about = (shell: Shell | undefined) => panelTexts('ja', shell).tree.about.expression;
+      assert.ok(about(undefined).includes('算術式として bash 自身が読む'), about(undefined));
+      assert.ok(about('sh').includes('算術式としてシェル自身が読む'), about('sh'));
+      assert.ok(panelTexts('ja', 'bash').tree.about.value.includes('代入の値: bash がチルダ展開'));
+      assert.ok(panelTexts('ja', 'sh').tree.about.value.includes('代入の値: シェルがチルダ展開'));
+      // (What a row of `[[ $x =~ ^a ]]` says in Japanese, in bash.)
+      const ex = new Analyzer('ja').explainLine(parser.parse('[[ $x =~ ^a ]]'), 0, 'bash', { reading: true, argv: true, script: 'said' });
+      assert.match(said(all(rowModel(ex, D2, 'ja').rows)), /算術式として bash 自身が読む/);
+    });
+
     it('labels the depth and the Legend with the shell too', () => {
       for (const [lang, sh, bash] of [['en', 'How the shell reads it', 'How bash reads it'], ['ja', 'シェルがどう読むか', 'bash がどう読むか']] as const) {
         assert.strictEqual(viewControl({}, lang, 'sh').options[1].full, sh);
@@ -1362,6 +1373,11 @@ describe('the panel\'s row model', () => {
         for (const sh of ['sh', 'dash', 'zsh'] as const) assert.doesNotMatch(text(sh, lang), /BASH_REMATCH/);
       }
       assert.match(text('sh'), /left side matches the regex \(ERE\) on the right/);
+      // (The note of a quoted pattern, `quotedPatternNote`, is the same clause from the same place.)
+      const quoted = (shell: Shell) => new Analyzer('en').explainLine(parser.parse('[[ $x =~ "a.b" ]]'), 0, shell).items.flatMap((t) => [t, ...tokens(t.children)]).map((t) => t.explanation).join('\n');
+      assert.match(quoted('bash'), /captures go to `BASH_REMATCH`/);
+      assert.match(quoted('sh'), /literal text/);
+      assert.doesNotMatch(quoted('sh'), /BASH_REMATCH/);
     });
   });
 

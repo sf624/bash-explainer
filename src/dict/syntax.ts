@@ -592,14 +592,17 @@ export const collationTexts: Record<string, Text> = {
   'unknown compat': tx('ロケールの照合順序で比べる。compat レベルを 4.0 以下にする経路では、バイトの値で比べる', 'compared in the locale\'s collation order; where the compatibility level is 4.0 or lower (on some paths), by byte values'),
 };
 
-/** What `=~` does in any shell that has it: the part of its text that is not bash's (`BASH_REMATCH` is). */
+/** Where the matches of `=~` go, after what it says: `BASH_REMATCH` is bash's, so another shell says nothing of it (it keeps its matches elsewhere, or has no `[[`). */
+export const rematchClause = (shell: string | undefined): Text => (shell && shell !== 'bash' ? tx('', '') : tx('。一致結果は `BASH_REMATCH` に入る', '; captures go to `BASH_REMATCH`'));
+
+/** What `=~` does in any shell that has it. */
 const regexMatch = tx('左辺が右辺の正規表現(ERE)に一致する', 'left side matches the regex (ERE) on the right');
 
 export const binaryTestOps: Record<string, Text> = {
   '=': tx('文字列が等しい（右辺もただの文字列で、パターンではない）', 'strings are equal (the right side is plain text, not a pattern)'),
   '==': tx('文字列が等しい（右辺もただの文字列で、パターンではない）', 'strings are equal (the right side is plain text, not a pattern)'),
   '!=': tx('文字列が等しくない', 'strings differ'),
-  '=~': tx(`${regexMatch.ja}。一致結果は \`BASH_REMATCH\` に入る`, `${regexMatch.en}; captures go to \`BASH_REMATCH\``),
+  '=~': tx(regexMatch.ja + rematchClause('bash').ja, regexMatch.en + rematchClause('bash').en),
   '<': tx('辞書順で左が小さい', 'sorts before (lexicographically)'),
   '>': tx('辞書順で左が大きい', 'sorts after (lexicographically)'),
   '-eq': tx('数値が等しい', 'numbers are equal'),
@@ -617,8 +620,8 @@ export const binaryTestOps: Record<string, Text> = {
   '-o': tx('どちらかの条件が真（OR、非推奨）', 'either is true (OR, obsolescent)'),
 };
 
-/** The text of the binary test operator `op` in `shell`: `=~` names `BASH_REMATCH` only in bash (another shell keeps its matches elsewhere, or has no `[[`). */
-export const binaryTestOp = (op: string, shell: string | undefined): Text => (op === '=~' && shell && shell !== 'bash' ? regexMatch : binaryTestOps[op]);
+/** The text of the binary test operator `op` in `shell`: `=~` names `BASH_REMATCH` only in bash (`rematchClause`). */
+export const binaryTestOp = (op: string, shell: string | undefined): Text => (op === '=~' ? tx(regexMatch.ja + rematchClause(shell).ja, regexMatch.en + rematchClause(shell).en) : binaryTestOps[op]);
 
 export const listOps: Record<string, Text> = {
   '&&': tx('左のコマンドが成功（終了ステータス 0）した場合のみ右を実行', 'Run the right side only if the left succeeds (exit 0)'),

@@ -154,7 +154,7 @@ export const ui = {
           delimiter: 'ヒアドキュメントの終わりの区切り: この単語だけの行で本文が終わる。{shell}は展開しない。一部でもクォートすると、本文も展開しない。',
           keyword: '予約語: 引用符で囲まずにコマンドの最初の単語（`for x` の後の `in` のように、構文がそれを待つ位置も）に書いたとき、{shell}が構文の一部として読む単語（`if`、`do`、`{`、`!` など）。',
           subscript: '添字 `@`・`*`: 配列の 1 つの要素ではなく、すべての要素。式ではない。',
-          expression: '式: `[[ ]]` は条件式として、`(( ))`・`$(( ))`・`${x:i:n}` の位置と長さ・インデックス配列の添字は算術式として{shell}自身が読む。単語のように展開して渡すのではない。',
+          expression: '式: `[[ ]]` は条件式として、`(( ))`・`$(( ))`・`${x:i:n}` の位置と長さ・インデックス配列の添字は算術式として {shell}自身が読む。単語のように展開して渡すのではない。',
           language: '単語の中にある独自の言語: {shell}ではなく、コマンドが独自の規則で読む。',
           bashLanguage: '`=~` の右辺の正規表現: {shell}自身が、POSIX の拡張正規表現(ERE)の規則で左辺と照合する。',
           promptLanguage: 'プロンプト文字列（`PS1`・`PS4` などの値）: {shell}自身が、プロンプトを表示するたびにバックスラッシュのエスケープを置き換え、その結果を展開する。',
@@ -335,12 +335,15 @@ type Panel = (typeof ui)[Lang]['panel'];
 /** The name of the shell that reads the script, as the panel's texts say it: bash unless the script is explained as another shell's, then "the shell". */
 export function shellWord(lang: Lang, shell: string | undefined): string {
   const t = ui[lang].panel.receives;
-  return !shell || shell === 'bash' ? t.bash : t.theShell;
+  return inBash(shell) ? t.bash : t.theShell;
 }
+
+/** Whether a script explained as `shell` is bash's (`LineExplanation.shell` is absent for bash). */
+const inBash = (shell: string | undefined): boolean => !shell || shell === 'bash';
 
 // (The panel's texts are strings in objects, nothing else: the test of `panelTexts` checks that the shapes stay the same.)
 const put = (value: unknown, word: string, sentence: string): unknown => (typeof value === 'string'
-  ? (value === '{shell}' ? word.trim() : value.replace(/\{shell\}/g, word).replace(/\{Shell\}/g, sentence))
+  ? (value === '{shell}' ? word.trim() : value.replace(/([぀-ヿ一-鿿]) \{shell\}/g, (_, kana: string) => kana + (word.endsWith(' ') ? ' ' : '') + word).replace(/\{shell\}/g, word).replace(/\{Shell\}/g, sentence))
   : Object.fromEntries(Object.entries(value as object).map(([k, v]) => [k, put(v, word, sentence)])));
 const shelled = new Map<string, Panel>();
 
@@ -349,7 +352,7 @@ const shelled = new Map<string, Panel>();
  * explained as sh is not read by "bash", and a fact about bash alone (a text that does not say `{shell}`) stays as it is.
  */
 export function panelTexts(lang: Lang, shell: string | undefined): Panel {
-  const bash = !shell || shell === 'bash';
+  const bash = inBash(shell);
   const key = lang + (bash ? '' : '*');
   let made = shelled.get(key);
   if (!made) {

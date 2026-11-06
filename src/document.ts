@@ -81,7 +81,9 @@ export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line
     return contained(`line ${line + 1}`, () => withinLine(doc.tree.root, () => explainHostedLine(analyzer, doc.tree, extracted, doc.lines, line, lang, shells.forced, opts)), (e) => analyzer.notExplained(doc.tree, line, undefined, e))
       ?? { line, summary: '', items: [], context: [], notes: [], noteInfo: [], examples: [] };
   }
-  return analyzer.explainLine(doc.tree, line, shellOf(shells), shells.script ? { ...opts, script: shells.script } : opts);
+  // (Where the shell comes from: chosen outside the file, else the file's own directive.)
+  const from = !shells.forced && shells.detected?.source === 'directive' ? { shellFrom: 'directive' as const } : {};
+  return analyzer.explainLine(doc.tree, line, shellOf(shells), shells.script ? { ...opts, ...from, script: shells.script } : { ...opts, ...from });
 }
 
 /** A here-document operator (`<<EOF`): its line, and its place among the here-documents that start on that line. */

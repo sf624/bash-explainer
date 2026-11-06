@@ -4,7 +4,7 @@ import { descendants } from '../src/syntax/tree';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import { readShell } from '../src/dialect';
-import { documentIssues, explainDocumentLine, fixTitle, noteIssues, ShellDocument } from '../src/document';
+import { documentIssues, explainDocumentLine, fixTitle, noteIssues, ShellDocument, type Shells } from '../src/document';
 import { rewriteFix } from '../src/fixes';
 import { extractShell } from '../src/hosts';
 import { isProblem, MESSAGES } from '../src/messages';
@@ -32,6 +32,18 @@ describe('documents without VS Code', () => {
     const ex = explainDocumentLine(en, script('#!/bin/bash\ngrep -rn TODO src'), 1, 'en', {}, {});
     assert.deepStrictEqual(ex.items.map((i) => i.label), ['grep']);
     assert.deepStrictEqual(ex.items[0].span, { start: { line: 1, character: 0 }, end: { line: 1, character: 17 } });
+  });
+
+  it('says where the shell came from in the shebang\'s note: a directive, or a choice outside the file', () => {
+    const text = '#!/bin/bash\n# shellcheck shell=sh\necho hi';
+    const note = (doc: ShellDocument, shells: Shells, line = 0) => explainDocumentLine(en, doc, line, 'en', shells, {}).items.find((i) => i.kind === 'shebang')!.explanation;
+    const detected = readShell(text);
+    assert.match(note(script(text), { detected }), /as POSIX sh here, not as bash \(a ShellCheck directive chooses it\)$/);
+    assert.match(note(script(text), { detected, forced: 'dash' }), /as dash here, not as bash \(chosen outside the file: a setting, the page's list or `--shell`\)$/);
+    // (A host's text has no shebang: in a fence, a RUN or a step, `#!` is a comment on a line after the first, so no host note claims a source.)
+    for (const doc of [hosted('markdown', '```sh\n#!/bin/bash\necho hi\n```\n'), dockerfile('FROM a\nRUN #!/bin/bash\\\n echo hi')]) {
+      assert.deepStrictEqual([0, 1, 2].flatMap((l) => explainDocumentLine(en, doc, l, 'en', {}, {}).items.map((i) => i.kind)).includes('shebang'), false);
+    }
   });
 
   it('explains a line of a host file at its own columns', () => {
