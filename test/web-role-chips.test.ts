@@ -200,13 +200,13 @@ describe('the panel at depth 2: the names on a role line, the depth and the focu
     assert.strictEqual(await said.textContent(), '', 'nothing on the first drawing');
     await page.locator('#main').evaluate((e) => { (e as unknown as { tabIndex: number }).tabIndex = -1; (e as unknown as { focus(): void }).focus(); });
     await page.keyboard.press('2');
-    await until('depth 2 said', () => said.textContent(), (t) => t === 'Depth 2: How bash reads it');
+    await until('depth 2 said', () => said.textContent(), (t) => t === 'Depth: Word by word (How bash reads it, word by word)');
     await page.locator('#view-depth1').click();
-    await until('depth 1 said', () => said.textContent(), (t) => t === 'Depth 1: What it does');
+    await until('depth 1 said', () => said.textContent(), (t) => t === 'Depth: Overview (What it does)');
     await page.context().close();
     const ja = await open('ls -l', { depth: 2, lang: 'ja' });
     await ja.locator('#view-depth1').click();
-    await until('depth 1 said', () => ja.locator('#said').textContent(), (t) => t === '深さ 1: 何をするか');
+    await until('depth 1 said', () => ja.locator('#said').textContent(), (t) => t === '深さ: 概要（何をするか）');
     await ja.context().close();
   });
 

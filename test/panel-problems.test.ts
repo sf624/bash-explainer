@@ -6,7 +6,7 @@ import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import { diagnosticsFor, documentIssues, issueFilter, type ShellDocument } from '../src/document';
 import { defaultSettings, type Settings } from '../src/settings';
-import { failsCheck } from '../src/levels';
+import { failsCheck, LEVELS, levelWord, namesLevel } from '../src/levels';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { boxProblems, problemsAround } from '../src/ui/panelProblems';
 import { rowModel } from '../src/ui/panelRows';
@@ -136,6 +136,52 @@ describe('the box "Problems on this line"', () => {
     assert.match(p.text, /^ⓘ Caveat: without `-r`/);
     assert.deepStrictEqual(p.fixes, [{ text: 'read -r line', changed: [{ from: 0, to: 7 }] }]);
     assert.strictEqual(box('read line', 0, 'ja')[0].word, '注意');
+  });
+
+  // (docs/design/usability-9.md, 2.6: the headline is named as the Problems strip names the problem, by the note's label.)
+  it('starts the headline with the word the Problems strip starts the problem with: its heading where it has one', () => {
+    const shBox = (text: string, line: number, lang: 'en' | 'ja') => {
+      const tree = parser.parse(text);
+      const ex = placeExamples(new Analyzer(lang).explainLine(tree, line, 'sh', { script: 'said' }));
+      return boxProblems(ex, rowModel(ex, DEPTH1, lang).places, lang, () => true, tree);
+    };
+    // (`echo -e` in sh is a warning, whose level's word is "Pitfall": the box said so, the strip "Portability".)
+    const script = '#!/bin/sh\necho -e "a\\tb"\n';
+    for (const [lang, word] of [['en', 'Portability'], ['ja', '移植性']] as const) {
+      const [p] = shBox(script, 1, lang);
+      assert.deepStrictEqual([p.level, p.word], ['warning', word], lang);
+      const strip = documentIssues(doc(script), lang, { forced: 'sh', script: 'said' }).find((i) => i.message === p.text);
+      assert.ok(strip?.message.startsWith(`${LEVELS[p.level].mark} ${word}:`), `${lang}: ${strip?.message}`);
+    }
+    // (A pitfall, a caveat and an error keep their level's word; a note that says no word gets it too.)
+    assert.deepStrictEqual(['rm -rf $DIR/', 'read line', 'echo $((09))'].map((t) => box(t)[0].word), ['Pitfall', 'Caveat', 'Error']);
+    const [plain] = box('[[ $x =~ ^\\d+$ ]]');
+    assert.deepStrictEqual([plain.label, plain.word], ['', levelWord(plain.level, 'en')]);
+  });
+
+  it('names the headline by the strip\'s word for every problem of the corpus, read as bash and as sh', function () {
+    this.timeout(240000);
+    const snippets = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'snippets.json'), 'utf8')) as string[];
+    const seen = new Map<string, number>();
+    for (const lang of ['en', 'ja'] as const) {
+      const analyzer = new Analyzer(lang);
+      for (const shell of [undefined, 'sh'] as const) {
+        for (const text of snippets.filter((_, i) => i % (lang === 'en' ? 2 : 10) === 0)) {
+          const tree = parser.parse(text);
+          for (let line = 0; line < tree.text.split('\n').length; line++) {
+            const ex = analyzer.explainLine(tree, line, shell, { script: 'said' });
+            for (const p of boxProblems(ex, rowModel(ex, DEPTH1, lang).places, lang, () => true)) {
+              // The strip's text (`problemText`) starts with the label, unless the mark says the level alone ("Error:").
+              const said = p.label && !namesLevel(p.level, p.label, lang);
+              if (said) assert.ok(p.text.startsWith(`${LEVELS[p.level].mark} ${p.word}:`), `${p.word} / ${p.text}`);
+              else assert.strictEqual(p.word, p.label ? p.label.replace(/:$/, '') : levelWord(p.level, lang), p.text);
+              seen.set(p.word, (seen.get(p.word) ?? 0) + 1);
+            }
+          }
+        }
+      }
+    }
+    for (const word of ['Portability', '移植性', 'Pitfall', 'Caveat', 'Error']) assert.ok(seen.get(word), `${word}: ${JSON.stringify([...seen])}`);
   });
 
   // (docs/design/usability-9.md, 2.2: the fix is the whole line, its changed part marked; `fixedLines`, src/rewrite.ts.)

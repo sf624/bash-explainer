@@ -121,12 +121,14 @@ describe('the VS Code panel: its header', function () {
     // The shell's dropdown: named by its label (for screen readers only) and its tooltip; its arrow is an icon.
     assert.strictEqual(await page.getByRole('combobox', { name: 'Shell' }).getAttribute('title'), 'Shell');
     assert.strictEqual(await page.locator('#shell-box .ico path').count(), 1);
-    // The view control: the depths, with their digits, the depth shown pressed, with its name.
-    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#view-options button')].map((b) => b.querySelector('.vc-digit').textContent + ' ' + b.getAttribute('aria-label') + ' ' + b.getAttribute('aria-pressed'))`), ['1 What it does true', '2 How bash reads it false']);
+    // The view control: the depths by their names, the depth shown pressed, the full name and the key in the tooltip; no digit drawn.
+    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#view-options button')].map((b) => b.innerText + ' | ' + b.title + ' | ' + b.getAttribute('aria-pressed'))`),
+      ['Overview | What it does (key 1 in the panel) | true', 'Word by word | How bash reads it, word by word (key 2 in the panel) | false']);
+    assert.strictEqual(await page.locator('#views .vc-digit').count(), 0);
     assert.strictEqual(await page.locator('#view-options').getAttribute('aria-label'), 'Depth');
     assert.strictEqual(await page.locator('header #views').count(), 1, 'the view switch is in the header');
     const ja = await open('dark', 600, 'ja');
-    assert.deepStrictEqual(await ja.evaluate(`[...document.querySelectorAll('header .tb, #view-options button')].map((b) => b.title || b.textContent)`), ['何をするか', 'bash がどう読むか', 'すべて折りたたむ', 'Markdown でコピー', '早見表', '設定']);
+    assert.deepStrictEqual(await ja.evaluate(`[...document.querySelectorAll('header .tb, #view-options button')].map((b) => b.title || b.textContent)`), ['何をするか（パネルの中ではキー 1）', 'bash が単語ごとにどう読むか（パネルの中ではキー 2）', 'すべて折りたたむ', 'Markdown でコピー', '早見表', '設定']);
     assert.deepStrictEqual([...page.errors, ...ja.errors], []);
     await page.close();
     await ja.close();
@@ -298,7 +300,7 @@ describe('the VS Code panel: its header', function () {
       assert.strictEqual(await fits(), true, `${lang} ${width}px`);
       assert.strictEqual(await page.locator('#view-options').isHidden(), true);
       const open_ = page.locator('#view-open');
-      assert.strictEqual(await open_.getAttribute('aria-label'), lang === 'en' ? 'Depth: 1 What it does' : '深さ: 1 何をするか');
+      assert.strictEqual(await open_.getAttribute('aria-label'), lang === 'en' ? 'Depth: Overview (What it does)' : '深さ: 概要（何をするか）');
       assert.strictEqual(await open_.getAttribute('aria-expanded'), 'false');
       // Opened with the keyboard: the option shown takes the focus; Escape closes it, the focus back on its button.
       await open_.focus();
@@ -317,7 +319,7 @@ describe('the VS Code panel: its header', function () {
       await until('the rows of depth 2', () => page.evaluate('document.body.dataset.depth'), (d) => d === '2');
       assert.strictEqual(await page.locator('#view-options').isHidden(), true);
       assert.strictEqual(await page.evaluate('document.activeElement.id'), 'view-open');
-      assert.strictEqual(await open_.getAttribute('aria-label'), lang === 'en' ? 'Depth: 2 How bash reads it' : '深さ: 2 bash がどう読むか');
+      assert.strictEqual(await open_.getAttribute('aria-label'), lang === 'en' ? 'Depth: Word by word (How bash reads it, word by word)' : '深さ: 単語ごと（bash が単語ごとにどう読むか）');
       assert.deepStrictEqual(await page.evaluate('window.POSTED.filter((m) => m.type === "panelState").map((m) => m.state.depth)'), [2]);
       // The button keeps its width whichever option it says (each name drawn over the other, unseen).
       const w = await open_.evaluate((b) => b.getBoundingClientRect().width);

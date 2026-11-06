@@ -1437,7 +1437,7 @@ describe('the panel\'s row model', () => {
     });
 
     it('labels the depth and the Legend with the shell too', () => {
-      for (const [lang, sh, bash] of [['en', 'How the shell reads it', 'How bash reads it'], ['ja', 'シェルがどう読むか', 'bash がどう読むか']] as const) {
+      for (const [lang, sh, bash] of [['en', 'How the shell reads it, word by word', 'How bash reads it, word by word'], ['ja', 'シェルが単語ごとにどう読むか', 'bash が単語ごとにどう読むか']] as const) {
         assert.strictEqual(viewControl({}, lang, 'sh').options[1].full, sh);
         assert.strictEqual(viewControl({}, lang, 'bash').options[1].full, bash);
         assert.strictEqual(viewControl({}, lang).options[1].full, bash);

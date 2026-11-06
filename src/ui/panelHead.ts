@@ -12,25 +12,18 @@ import { ui } from './texts';
 export interface ViewForm {
   /** A button per option side by side, or one button that opens the options as a menu. */
   kind: 'segments' | 'menu';
-  /** The label drawn before the segments, where the options need it ("Depth [1 Does] [2]": a digit alone says nothing). */
-  label?: string;
-  /** The menu's button for each option shown, in the order of the options: its text ("Depth 1", else the short name) and its accessible name. */
+  /** The menu's button for each option shown, in the order of the options: its text (the short name) and its accessible name. */
   button?: { text: string; name: string }[];
 }
 
 /**
- * The forms of the view control, widest first: the segments, then a menu. An option with a digit shows its digit, and
- * its name only when it is the one shown (`Depth [1 Does] [2]`); then the label is drawn before the segments, and the
- * menu's button says the label and the digit ("Depth 1 ⌄"). An option without a digit shows its name. The accessible
- * name of the menu's button says the label and the full name of the option shown.
+ * The forms of the view control, widest first: the segments, each option with its name, then a menu whose button says
+ * the name of the option shown ("Overview ⌄"). The accessible name of the menu's button says the control's label, and
+ * the short and full names of the option shown (`said`).
  */
 export function viewControlForms(control: ViewControl): ViewForm[] {
-  const digits = control.options.some((o) => o.digit !== undefined);
-  const button = control.options.map((o) => ({
-    text: o.digit !== undefined ? `${control.label} ${o.digit}` : o.short,
-    name: `${control.label}: ${o.digit !== undefined ? `${o.digit} ` : ''}${o.full}`,
-  }));
-  return [{ kind: 'segments', ...(digits ? { label: control.label } : {}) }, { kind: 'menu', button }];
+  const button = control.options.map((o) => ({ text: o.short, name: o.said }));
+  return [{ kind: 'segments' }, { kind: 'menu', button }];
 }
 
 /**

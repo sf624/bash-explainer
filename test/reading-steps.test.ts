@@ -159,12 +159,14 @@ describe('the view slot\'s contract (src/ui/panelView.ts)', () => {
   it('describes the view control as data: the depths, their names, the one pressed, what a press sets', () => {
     const en = viewControl({}, 'en');
     assert.strictEqual(en.label, 'Depth');
-    assert.deepStrictEqual(en.options.map((o) => [o.id, o.digit, o.short, o.full, o.pressed, JSON.stringify(o.sets)]), [
-      ['depth1', '1', 'Does', 'What it does', true, '{"depth":1}'],
-      ['depth2', '2', 'Reads', 'How bash reads it', false, '{"depth":2}'],
+    assert.deepStrictEqual(en.options.map((o) => [o.id, o.short, o.full, o.tip, o.said, o.pressed, JSON.stringify(o.sets)]), [
+      ['depth1', 'Overview', 'What it does', 'What it does (key 1 in the panel)', 'Depth: Overview (What it does)', true, '{"depth":1}'],
+      ['depth2', 'Word by word', 'How bash reads it, word by word', 'How bash reads it, word by word (key 2 in the panel)', 'Depth: Word by word (How bash reads it, word by word)', false, '{"depth":2}'],
     ]);
     const ja = viewControl({ depth: 2 }, 'ja');
-    assert.deepStrictEqual(ja.options.map((o) => `${o.digit} ${o.short} ${o.full} ${o.pressed}`), ['1 何をする 何をするか false', '2 読まれ方 bash がどう読むか true']);
+    assert.deepStrictEqual(ja.options.map((o) => `${o.short} ${o.full} ${o.tip} ${o.pressed}`), ['概要 何をするか 何をするか（パネルの中ではキー 1） false', '単語ごと bash が単語ごとにどう読むか bash が単語ごとにどう読むか（パネルの中ではキー 2） true']);
+    // (A script read as another shell: not "bash" in the full name.)
+    assert.strictEqual(viewControl({}, 'en', 'sh').options[1].full, 'How the shell reads it, word by word');
     assert.strictEqual(ja.label, '深さ');
     // (No option is drawn as an icon alone: none has an icon yet.)
     assert.ok(en.options.every((o) => o.icon === undefined && o.short));

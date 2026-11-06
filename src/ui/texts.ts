@@ -47,8 +47,10 @@ export const ui = {
       tryIt: '端末で試す', tryItHint: '端末に貼り付けて実行するコマンド。ここでは実行しない', prints: '出力', copyCode: 'コピー', copiedCode: 'コピーしました',
       // (The fold button of a row with parts, named by the row's label; the links' note on where they open: `linkNote`, src/ui/panelView.ts.)
       partsOf: '{name} の内訳', opensTab: '（新しいタブで開く）', opensBrowser: '（ブラウザで開く）',
-      // (The depths of the panel, in its view slot: the names on the control, and the full ones, its tooltip and accessible name.)
-      views: '深さ', depths: { 1: { short: '何をする', full: '何をするか' }, 2: { short: '読まれ方', full: '{shell}がどう読むか' } },
+      // (The depths of the panel, in its view slot (docs/design/usability-9.md, Q1): the names on the control; the full ones, their
+      // tooltip with the key that chooses each in the panel; what a screen reader hears of the one chosen, and the menu's button.)
+      views: '深さ', depths: { 1: { short: '概要', full: '何をするか' }, 2: { short: '単語ごと', full: '{shell}が単語ごとにどう読むか' } },
+      depthKey: '{full}（パネルの中ではキー {n}）', depthSaid: '{views}: {short}（{full}）',
       // (The short words of the panel's tools, each contained in the tool's name: src/ui/panelHead.ts.)
       words: { collapse: '折りたたむ', expand: '展開する', copy: 'Markdown でコピー', copyShort: 'Markdown', reference: '早見表', referenceShort: '早見表' },
       // (The sentence of the line at the top of the view, `LineExplanation.sentence`.)
@@ -209,7 +211,8 @@ export const ui = {
       editHint: 'Editable; the result updates as you type', noMatch: 'Nothing found',
       tryIt: 'Try it in your terminal', tryItHint: 'A command to paste into your terminal; it is not run here', prints: 'Output', copyCode: 'Copy', copiedCode: 'Copied',
       partsOf: 'Parts of {name}', opensTab: '(opens in a new tab)', opensBrowser: '(opens in the browser)',
-      views: 'Depth', depths: { 1: { short: 'Does', full: 'What it does' }, 2: { short: 'Reads', full: 'How {shell} reads it' } },
+      views: 'Depth', depths: { 1: { short: 'Overview', full: 'What it does' }, 2: { short: 'Word by word', full: 'How {shell} reads it, word by word' } },
+      depthKey: '{full} (key {n} in the panel)', depthSaid: '{views}: {short} ({full})',
       words: { collapse: 'Collapse', expand: 'Expand', copy: 'Copy as Markdown', copyShort: 'Markdown', reference: 'Reference', referenceShort: 'Ref' },
       inShort: 'In short',
       // (The box of the line's problems: src/ui/panelProblems.ts.)

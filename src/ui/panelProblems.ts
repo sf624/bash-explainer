@@ -4,7 +4,7 @@
 import type { LineExplanation, NoteAnchor, Token } from '../analyzer-types';
 import { type DocumentIssue, type IssueFilter, noteAnchors, pitfallOf } from '../document';
 import type { Lang } from '../i18n';
-import { LEVELS, type NoteLevel, levelWord, NOT_READ_WORD, problemLevel, SEVERITIES, type ProblemSeverity } from '../levels';
+import { LEVELS, type NoteLevel, levelWord, noteWord, NOT_READ_WORD, problemLevel, SEVERITIES, type ProblemSeverity } from '../levels';
 import { isProblemNote, type Note, problemText } from '../messages';
 import type { ProblemNote } from '../messages-levels';
 import { isNotRead } from '../messages-unread';
@@ -20,7 +20,7 @@ import { ui } from './texts';
 export interface BoxProblem {
   /** Its level's look, from the level table (src/levels.ts). */
   level: NoteLevel; className: string; icon: string;
-  /** The level's word, the one a note's own label has ("Error", "Pitfall", "Caveat"), without its colon. */
+  /** The note's own label without its colon: its heading where it has one ("Portability"), else its level's word ("Error", "Pitfall", "Caveat"). */
   word: string;
   /** One sentence with what happens (`Note.head`). */
   head: string;
@@ -96,7 +96,7 @@ export function boxProblems(ex: LineExplanation, places: ReadonlyMap<Token, stri
     const rows = anchors.map((a) => tokenAtSpan(tokens, a.span)).filter((t) => t !== undefined).map((t) => places.get(t)!);
     const basis = noteBasis(ex, n.text, lang);
     return {
-      level: n.level, className, icon: codicon, word: isNotRead(n.code) ? NOT_READ_WORD[lang] : levelWord(n.level, lang),
+      level: n.level, className, icon: codicon, word: isNotRead(n.code) ? NOT_READ_WORD[lang] : noteWord(n, lang),
       // (Every note that can be a problem has its headline: the catalog's type, and test/problem-heads.test.ts on the corpus.)
       head: n.head,
       label: n.label, body: n.body, refs: noteRefs(ex, n.text) ?? [], ...(basis ? { basis } : {}), text: problemText(n, lang),

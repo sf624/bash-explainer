@@ -94,7 +94,7 @@
   let shownReceives = true;
   applyState(vscode.getState());
   /** The view control (src/ui/panelView.ts `viewControl`), from the host with each line: the header's depth. */
-  let control = /** @type {{ label: string, options: { id: string, digit?: string, short: string, full: string, pressed: boolean, sets: any }[] }} */ ({ label: '', options: [] });
+  let control = /** @type {{ label: string, options: { id: string, short: string, full: string, tip: string, pressed: boolean, sets: any }[] }} */ ({ label: '', options: [] });
   /** The forms the view control may take, widest first (src/ui/panelHead.ts `viewControlForms`): the first that fits is drawn. */
   let viewForms = /** @type {{ kind: 'segments' | 'menu', label?: string, button?: { text: string, name: string }[] }[]} */ ([{ kind: 'segments' }]);
   /** The line shown (its number in the document). */

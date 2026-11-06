@@ -76,6 +76,23 @@ In the panel, in VS Code and on the web page:
 
 The web page's panel header says **Copy as Markdown** / 「Markdown でコピー」 beside its icon, and **Markdown** under it where the header is narrow. Before, it said **Copy**, like the fix's button. **Copy a link** does not change.
 
+### The depths' names, and the headline's word
+
+In the panel, in VS Code and on the web page (docs/design/usability-9.md, Q1 and 2.6):
+
+- The depth control shows **Overview** and **Word by word** (「概要」「単語ごと」), both names at once; where the header is narrow, a menu whose button says the depth shown ("Overview ⌄"). Before, it showed "Depth [1 Does] [2]" at depth 1 and "Depth [1] [2 Reads]" at depth 2, and its menu "Depth 1 ⌄".
+- Each name's tooltip says the full name and the key: "What it does (key 1 in the panel)", "How bash reads it, word by word (key 2 in the panel)" (「何をするか（パネルの中ではキー 1）」, 「bash が単語ごとにどう読むか（パネルの中ではキー 2）」). The keys 1 and 2 still work only with the focus in the panel; in the editor they type the digits, as before. A screen reader hears each option by the name it shows, and the depth chosen as "Depth: Overview (What it does)".
+- A problem's headline starts with the note's own label, as the Problems list starts its text: "Portability" for `echo -e` in a sh script, a warning. Before, the headline said "Pitfall" there, the word of the warning level. A note whose text names no word ("In `[[ =~ ]]`, an unquoted `\d` loses its backslash") keeps its level's word, "Error".
+
+### A new script on the web page
+
+Clear, a whole script pasted into an empty editor or over the sample, and Open start a new script (docs/design/usability-9.md, Q8). The depth stays.
+
+- **Clear** empties the editor and makes the script an untitled shell script, with the shell back to Auto: "Sample cleared. File type set to Shell script. Shell set back to Auto." Undo brings back the text, the file it was (its name, where Save writes), its file type and the shell. Before, a file opened stayed the file, with its type: test.bats cleared, then a script pasted, was still "test.bats ●", a bats file.
+- **A paste** into an empty editor or over the sample takes its file type from the text, a shell script when nothing in it says another, names the script untitled, and puts the shell back to Auto: "Detected: Dockerfile. Shell set back to Auto.", or "File type set to Shell script." after the bats sample. Undo puts back the file type, the file and the shell; the text stays as pasted. A paste into your own script changes the file type only when it is most of the text and says another type, as before, and resets nothing else.
+- **Open** takes the file's name and type, as before, and puts the shell back to Auto: "Opened test.bats. Shell set back to Auto." Undo chooses the shell again.
+- A toast says nothing of what did not change: with the shell at Auto, Clear says "Editor cleared", and an empty untitled shell script at Auto stays as it is.
+
 ## Fixed
 
 ### The cases of a test's example

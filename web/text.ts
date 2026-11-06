@@ -50,6 +50,13 @@ export const TEXT = {
     sampleLoaded: 'Sample loaded',
     undo: 'Undo',
     detected: (kind: string) => `Detected: ${kind}`,
+    /**
+     * What a new script set back (Clear, a whole script pasted into an untouched editor, Open; docs/design/usability-9.md, Q8): the file
+     * type when it changed and no other words name it, the shell when one was chosen. Empty when neither.
+     */
+    newScript: (kind: string | undefined, shell: boolean) => [kind ? `File type set to ${kind}.` : '', shell ? 'Shell set back to Auto.' : ''].filter(Boolean).join(' '),
+    /** A toast's words, then the sentences of `newScript`. */
+    andThen: (first: string, more: string) => (!more ? first : !first ? more : `${first.endsWith('.') ? first : `${first}.`} ${more}`),
     askTitle: (kind: string) => `Load the ${kind} sample?`,
     askMessage: (kind: string) => `The file kind is now ${kind}. Replace your script with its sample? You can undo it.`,
     askReplace: 'Replace with the sample',
@@ -160,7 +167,7 @@ export const TEXT = {
       [`${mod}S`, 'Save'],
       ['F6', 'Go to the explanation and back'],
       ['F8, Shift+F8', 'Go to the next or previous problem'],
-      ['1, 2', 'Choose the depth, in the panel'],
+      ['1, 2', 'Choose the depth (Overview, Word by word), in the panel'],
       ['W', 'Show or hide what each program receives, in the panel'],
       [`${mod}K ${mod}I`, 'Show the card of the part at the cursor'],
       ['Escape, then Tab', 'Leave the editor'],
@@ -217,6 +224,8 @@ export const TEXT = {
     sampleLoaded: 'サンプルを読み込みました',
     undo: '元に戻す',
     detected: (kind: string) => `ファイルの種類を ${kind} と判定しました`,
+    newScript: (kind: string | undefined, shell: boolean) => (kind ? `ファイルの種類を ${kind} にしました。` : '') + (shell ? 'シェルを自動に戻しました。' : ''),
+    andThen: (first: string, more: string) => (!more ? first : !first ? more : `${first.endsWith('。') ? first : `${first}。`}${more}`),
     askTitle: (kind: string) => `${kind} のサンプルを読み込みますか？`,
     askMessage: (kind: string) => `ファイルの種類を ${kind} に変えました。入力中のスクリプトをこの種類のサンプルに置き換えますか？ 置き換えても元に戻せます。`,
     askReplace: 'サンプルに置き換える',
@@ -313,7 +322,7 @@ export const TEXT = {
       [`${mod}S`, '保存'],
       ['F6', '解説とエディタを行き来する'],
       ['F8、Shift+F8', '次の問題、前の問題へ移る'],
-      ['1、2', '深さを選ぶ（パネルの中で）'],
+      ['1、2', '深さ（概要・単語ごと）を選ぶ（パネルの中で）'],
       ['W', 'プログラムが受け取るものの表示を切り替える（パネルの中で）'],
       [`${mod}K ${mod}I`, 'カーソル位置の部分のカードを表示'],
       ['Esc、Tab の順', 'エディタから出る'],

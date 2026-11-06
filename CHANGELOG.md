@@ -17,6 +17,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The README is shorter: a quick start, then links to the user guide in `docs/guide/`, in English and Japanese, which holds the rest (VS Code, settings, other shells, warnings, the web page, limitations, privacy).
 - The README's logo is readable in dark themes in VS Code.
 - `which` now says that it looks only in PATH, and that `type` or `command -v` tells what bash runs (a builtin, function or alias too).
+- The panel's depths are named **Overview** and **Word by word** (「概要」「単語ごと」), with the key that chooses each in the tooltip, and a problem's headline starts with the word the Problems list uses ("Portability"). Before, the depths read "1 Does" and "2 Reads", and the headline said "Pitfall" for a portability note.
+- On the web page, Clear, a script pasted into an empty editor or over the sample, and Open start a new script: its file type from the text, untitled, the shell back to Auto, with a toast and Undo. Before, test.bats and a shell chosen in the chip stayed for every script pasted after it.
 
 ### Fixed
 

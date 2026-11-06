@@ -1142,6 +1142,12 @@ html.bottom-sheet :is(.empty-btn kbd, .empty-drop) {
   white-space: nowrap;
 }
 
+/* (The narrowest form keeps its groups closer: the depth's menu says "Word by word", docs/design/usability-9.md, Q1, and the
+   row still fits a panel of 393 px, beside the editor in a window of 800 px.) */
+.panel-head[data-tabs="short"] {
+  gap: 4px;
+}
+
 .panel-head.wrap {
   flex-wrap: wrap;
   row-gap: 0;
@@ -1256,8 +1262,7 @@ html.bottom-sheet :is(.empty-btn kbd, .empty-drop) {
   visibility: hidden;
 }
 
-/* The view control (media/view-control.js): segments, the option shown pressed; or a menu under its button. An option
-   with a digit shows its name only while it is the one shown. */
+/* The view control (media/view-control.js): segments, the option shown pressed; or a menu under its button. */
 .vc {
   position: relative;
   display: inline-flex;
@@ -1265,25 +1270,17 @@ html.bottom-sheet :is(.empty-btn kbd, .empty-drop) {
   gap: 6px;
 }
 
-.vc-label {
-  color: var(--vscode-descriptionForeground);
-  font-size: 12.5px;
-}
-
-.vc[data-form="segments"] button[aria-pressed="false"] .vc-digit + .vc-name,
 .vc[data-form="segments"] .vc-open,
 .vc[data-form="menu"]:not([data-open="true"]) .vc-options {
   display: none;
 }
 
-.vc-digit + .vc-name {
-  margin-left: 0.35em;
-}
-
+/* (Each option is named in words, "Overview" and "Word by word": the segments keep to 5 px a side, 1 px around them
+   and no gap, so that at 1280 px they still fit beside the tools' words, docs/design/usability-9.md, Q1.) */
 .vc-options {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  gap: 0;
+  padding: 1px;
   border: 1px solid var(--vscode-dropdown-border);
   border-radius: var(--radius-sm);
   background: var(--vscode-dropdown-background);
@@ -1294,7 +1291,7 @@ html.bottom-sheet :is(.empty-btn kbd, .empty-drop) {
   align-items: center;
   min-height: 0;
   height: 24px;
-  padding: 0 10px;
+  padding: 0 5px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
@@ -1333,10 +1330,10 @@ html.bottom-sheet :is(.empty-btn kbd, .empty-drop) {
 .vc-open {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-height: 0;
   height: 28px;
-  padding: 0 8px 0 10px;
+  padding: 0 6px 0 8px;
   border: 1px solid var(--vscode-dropdown-border);
   border-radius: var(--radius-sm);
   background: var(--vscode-dropdown-background);
@@ -2653,7 +2650,7 @@ body:has(> #settings-dialog.dragging) main {
 
 :where(html.narrow) .vc-open {
   height: 44px;
-  padding-inline: 14px 12px;
+  padding-inline: 12px 8px;
   border-radius: 22px;
 }
 

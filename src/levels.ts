@@ -169,12 +169,22 @@ export const SEVERITIES: Readonly<Record<Severity, SeverityMapping>> = {
   hint: { level: 'note', vscode: 3, lsp: 4, faded: true, sarif: 'note', github: 'notice', codemirror: 'hint', word: 'hint', count: 'hints', fails: 'never' },
 };
 
+/** A note's label (`Note.label`: "Pitfall:", "Portability:") as a word, without its colon. */
+const headingWord = (label: string): string => label.replace(/:\s*$/, '');
+
 /**
  * The word a problem of `level` starts with, as the panel's box and pointers name it: the word of the notes below ("Pitfall:",
  * "Caveat:", "Error:") without its colon, so that a problem and its "More" call the level one thing. `name` ("Warning",
  * "Information") stays the level's name for a screen reader, the Problems lists and the Legend. (A plain note has no word.)
  */
-export const levelWord = (level: NoteLevel, lang: Lang): string => LEVELS[level].word[lang].replace(/:\s*$/, '');
+export const levelWord = (level: NoteLevel, lang: Lang): string => headingWord(LEVELS[level].word[lang]);
+
+/**
+ * The word a problem's headline starts with in the panel's box: the note's own label, its heading where it has one
+ * ("Portability", as the Problems strip starts the text), else the level's word (a note at a level whose word it does
+ * not say: "Caveat"). One source, the note's `label` (docs/design/usability-9.md, 2.6).
+ */
+export const noteWord = (n: { level: NoteLevel; label: string }, lang: Lang): string => (n.label ? headingWord(n.label) : levelWord(n.level, lang));
 
 /** The word of a problem that says this tool could not read a line or a file (`isNotRead`): a limit of the tool, so neither a pitfall nor an error of the script. */
 export const NOT_READ_WORD: Text = { ja: '読めていない', en: 'Not read' };

@@ -41,7 +41,15 @@ export interface KindHost {
   /** Closes the menu's sheet and the popovers, so that the question and the toast after it are not under them. */
   closeSheets(): void;
   focusHome(): void;
+  /**
+   * What a new script resets besides its kind (docs/design/usability-9.md, Q8): the editor page forgets the file and puts the shell
+   * chosen back to Auto. Gives whether a shell was chosen, and how to put both back; nothing where the page keeps them (the compare page).
+   */
+  newScript(): { shell: boolean; back(): void } | undefined;
 }
+
+/** A new script started (`KindControl.startScript`): what the toast says of it after its first words, and how to put it all back. */
+export interface Started { words: string; back(): void }
 
 export class KindControl {
   /** While the page itself puts a text in (a sample, or nothing): the edit is not the user's, so the Undo toast stays. */
@@ -93,6 +101,27 @@ export class KindControl {
     editor.recheck();
   }
 
+  /**
+   * Starts a new script of the kind `k` (docs/design/usability-9.md, Q8): Clear, and a whole script pasted into an empty or untouched
+   * editor (`detectPasted`). The page forgets the file and the shell chosen (`KindHost.newScript`); the depth stays, as a view's
+   * preference. `named`: the toast's first words name the kind already ("Detected: Dockerfile").
+   */
+  startScript(k: Kind, named = false): Started {
+    const before = this.kind;
+    const page = this.host.newScript();
+    if (k !== before) this.set(k);
+    else this.host.showFile();
+    const t = TEXT[this.host.lang()];
+    return {
+      words: t.newScript(k !== before && !named ? (t.kinds[k] ?? kindInfo(k).name) : undefined, page?.shell ?? false),
+      back: () => {
+        page?.back();
+        if (this.kind !== before) this.set(before);
+        else this.host.showFile();
+      },
+    };
+  }
+
   /** Puts `text` in as the page's own edit, not the user's (`line`: where the cursor goes). */
   putText(text: string, line: number): void {
     this.puttingText = true;
@@ -102,23 +131,30 @@ export class KindControl {
   /**
    * A paste (or a drop) that brings a whole script decides the file kind from its content (src/hosts/detect.ts): when it
    * makes most of the text (80% or more), or the editor held only a sample or nothing. A few lines pasted into the user's
-   * own script never change it. The text stays as pasted; the toast says what was detected and can undo the change of kind.
+   * own script never change it. Into an empty or untouched editor it starts a new script (`startScript`): the kind is the
+   * plain shell script when nothing in the text says another. The text stays as pasted; the toast says what was detected
+   * and what was set back, and its Undo puts them back.
    */
   detectPasted(u: ViewUpdate): void {
     const pasted = u.transactions.filter((tr) => tr.isUserEvent('input.paste') || tr.isUserEvent('input.drop'));
     if (!pasted.length) return;
     let text = '';
     for (const tr of pasted) tr.changes.iterChanges((_fa, _ta, _fb, _tb, inserted) => { text += inserted.toString(); });
+    const fresh = untouched(u.startState.doc.toString());
     const whole = text.trim().length >= 0.8 * u.state.doc.toString().trim().length;
-    if (!whole && !untouched(u.startState.doc.toString())) return;
+    if (!whole && !fresh) return;
     const found = detectKind(text);
-    if (!found || found.kind === this.kind) return;
+    const detected = found && found.kind !== this.kind ? found.kind : undefined;
+    if (!fresh && !detected) return;
     const before = this.kind;
     // The editor is still in its update: change its mode after it.
     queueMicrotask(() => {
-      this.set(found.kind);
       const t = TEXT[this.host.lang()];
-      this.host.status('undo', t.detected(t.kinds[found.kind] ?? kindInfo(found.kind).name), { label: t.undo, run: () => this.set(before) });
+      const said = detected ? t.detected(t.kinds[detected] ?? kindInfo(detected).name) : '';
+      const started: Started = fresh ? this.startScript(found?.kind ?? 'shell', !!detected) : { words: '', back: () => this.set(before) };
+      if (!fresh) this.set(detected!);
+      const words = t.andThen(said, started.words);
+      if (words) this.host.status('undo', words, { label: t.undo, run: () => started.back() });
     });
   }
 
