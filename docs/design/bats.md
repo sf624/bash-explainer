@@ -1,5 +1,7 @@
 # bats test files
 
+Status: done: the host kind (#202), the bats functions as specs (#222), tag comments and marked tests (#384), the helpers of bats-support, bats-assert and bats-file (#374), the model per test and the hooks (#381).
+
 [bats-core](https://github.com/bats-core/bats-core) runs tests written in bash. A `.bats` file is a bash script with three additions:
 
 - **`@test "description" {`** starts a test. bats' preprocessor rewrites the line into a function definition, `test_description() {`, before bash reads the file. bats then runs each test in a process of its own, with `set -eET`, and the test fails when the function fails.

@@ -1,6 +1,6 @@
 # One colour source: the editor's colours from the explanation's tokens
 
-Status: proposed, planned for a release after 0.10.0 (decided by the maintainer 2026-11-06). Not built. A proof of concept for the web editor is kept for reference on the branch `one-colour-source` (PR #627, closed, not merged); VS Code and the Language Server are designed here only. This document is the result of the proof of concept and of an independent review of it; the work to do before the steps follow from that review.
+Status: tracked in #672. Planned for a release after 0.10.0 (decided by the maintainer 2026-11-06). A proof of concept for the web editor is kept for reference on the branch `one-colour-source` (PR #627, closed, not merged); VS Code and the Language Server are designed here only. This document is the result of the proof of concept and of an independent review of it; the work to do before the steps follow from that review.
 
 The maintainer agreed on the direction (2026-11-06): the editors (the web page's CodeMirror editor, VS Code, the Language Server's clients) take the colour of each part of the shell code from the tokens of its explanation, the same source as the panel's colours, instead of deciding it from the syntax tree themselves. The editor will then colour inside regular expressions and formats too, as the panel does.
 
@@ -10,7 +10,7 @@ The maintainer agreed on the direction (2026-11-06): the editors (the web page's
 - A line that cannot be explained (a bug, or too deep) gets no colour in the editor: the plain text colour, not an `error` token. (The panel is not changed by this; it keeps saying that the line could not be explained.)
 - The editor-only `readonly` bold and `exported` underline are dropped. A readonly or exported variable is coloured as any variable.
 - The body of a here-document gets a string token in the explanation, so the panel colours it too (it takes the redirect's token today).
-- Not in release 0.10.0: planned for a later release ("One colour source", roadmap "Deferred").
+- Not in release 0.10.0: planned for a later release (#672).
 
 The sections below are written with these decisions applied.
 

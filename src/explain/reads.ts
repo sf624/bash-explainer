@@ -194,7 +194,7 @@ function unseenDeclarations(cx: Explainer): boolean {
 /** Whether an expression is one of `[[ ]]`, not of arithmetic. */
 /**
  * Where the text may be a script of its own, so that a fault of its text can be said: in a file surely a script
- * (`ExplainOptions.script`). A host's code is none for now (docs/roadmap.md), and a string read as a script says none: its
+ * (`ExplainOptions.script`). A host's code is none for now (docs/backlog-archive.md, "Syntax problems in host files"), and a string read as a script says none: its
  * text may depend on what runs.
  */
 const inSurelyScript = (cx: Explainer): boolean => !!cx.opts.script && !cx.nested;

@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544), C5 (#562), C6 (#546), C7 (#561), C8a (#567) and C8b (#571); the phone checks of C5, C8a and C8b wait on the maintainer (section 8). C9 is done (#611, #613, the UX reviewer's protocol on main at 5219dc27). [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544), C5 (#562), C6 (#546), C7 (#561), C8a (#567) and C8b (#571); the maintainer checked C5, C8a and C8b on a phone (section 8; their comment on #571). C9 is done (#611, #613, the UX reviewer's protocol on main at 5219dc27). [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -570,7 +570,7 @@ A proposed sequence: C0 and P1; then C1a to C6 beside P2 to P6; C7 after P1; C8a
 
 ## 8. The phone checks on real devices
 
-The emulations of the kit do not show a real keyboard, a finger's drag or the system's menus. Before C8a and C8b merge, the maintainer checks on an iPhone (Safari) and an Android phone (Chrome), and notes the result in the PR:
+The emulations of the kit do not show a real keyboard, a finger's drag or the system's menus. Before C8a and C8b merge, the maintainer checks on an iPhone (Safari) and an Android phone (Chrome), and notes the result in the PR. Done: the maintainer's comment on #571 says the checks listed here are OK.
 
 1. The keyboard: its real height; the summary row sits right on top of it, with no gap and none of it under the keyboard; the cursor's line stays in view; iOS does not pan the page under a fixed bar. On iOS, tap a line in Edit mode (the editor's 13 px text may make Safari zoom the page) and look: the row runs from edge to edge with its ⌃ in view, its text at the size it has without the keyboard, and it stays right on the keyboard. Pinch to zoom with the keyboard open and look again. A row cut off, too big, or under the keyboard fails this check (C8b reads the visual viewport for it; only a stub has tested it).
 2. Closing the keyboard (the row's tap, the system's button, a swipe): the sheet comes back as it was.

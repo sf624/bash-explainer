@@ -10,7 +10,7 @@ The review proposed three checks:
 
 This page checks what exists, takes an inventory for each check, and plans the work in steps. Each step is a PR that keeps every test passing and 100% coverage of `src/`.
 
-Status: step 1 (the inventory of B) is done (#273), step 2 (argv capture over the fixtures, A1) is done (#432; section 2.6), and step 3 (the snippets and the fuzz inputs, A2) is done (#449; section 2.7). Step 4 (rewrite data) is done (#453, #454, #455, #456): `Fact.rewrite` exists (section 3.2), and all 17 mechanical ids carry it. Step 5 (the rewrites run over the states of each id, the corpus too) is done (#459; section 3.4), and step 6 (the style checks) is done (#465; section 3.5). Step 7 (the normal-forms table) is done (#468; section 4.3), and step 8 (the generator) is done (#470; section 4.4). Step 9 (the renderings and the roles) is done (#472; section 2.8): it found seven bugs of the explanation, listed for their own PRs, all fixed (#478 to #484, #485). Step 10 is not started (section 6). The panel redesign builds on step 2 (its P4a) and on steps 4–6 for four notes (its P3; [panel-redesign.md](panel-redesign.md)).
+Status: done: steps 1 (#273), 2 (#432; section 2.6), 3 (#449; section 2.7), 4 (#453, #454, #455, #456; section 3.2: all 17 mechanical ids carry `Fact.rewrite`), 5 (#459; section 3.4), 6 (#465; section 3.5), 7 (#468; section 4.3), 8 (#470; section 4.4) and 9 (#472; section 2.8: seven bugs found and fixed, #478 to #485). Step 10 was dropped on 2026-11-06 ([backlog-archive.md](../backlog-archive.md), "Run-based oracles, step 10"). The panel redesign builds on step 2 (its P4a) and on steps 4–6 for four notes (its P3; [panel-redesign.md](panel-redesign.md)).
 
 ## 1. What runs bash today
 

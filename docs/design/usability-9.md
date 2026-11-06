@@ -1,8 +1,8 @@
 # Usability toward 9/10
 
-The plan for the roadmap item "Usability toward 9/10". The usability test of 2026-11-06 rated the web page and its panel 7.6/10 after two runs, below the goal of 9 ([panel-redesign.md](panel-redesign.md), section 7, "Results (2026-11-06)"). This page takes its findings one by one: whether each is still there on main, where it comes from in the code, what it cost, and how to fix it. Then the steps as PRs, the maintainer's questions, and how the test runs again.
+The plan "Usability toward 9/10". The usability test of 2026-11-06 rated the web page and its panel 7.6/10 after two runs, below the goal of 9 ([panel-redesign.md](panel-redesign.md), section 7, "Results (2026-11-06)"). This page takes its findings one by one: whether each is still there on main, where it comes from in the code, what it cost, and how to fix it. Then the steps as PRs, the maintainer's questions, and how the test runs again.
 
-Status: planned (2026-11-06, #636), revised after an independent review the same day. The maintainer decided the eleven questions as recommended on 2026-11-06 (section 5). Nothing built; U1 is next.
+Status: tracked in the issues labelled `usability-9` (#647, #648, #649, #650, #659, #660). Planned 2026-11-06 (#636), revised after an independent review the same day; the maintainer decided the eleven questions as recommended on 2026-11-06 (section 5). Done: U1 (#639), U4 (#637), U6 (#638).
 
 ## 1. The evidence
 

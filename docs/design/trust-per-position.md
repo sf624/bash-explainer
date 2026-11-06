@@ -1,6 +1,6 @@
 # Trust per position instead of per script
 
-Status: deferred (2026-10-26); step 0 (the holes of section 2) done in #382. The roadmap's item "Trust per position" ([../roadmap.md](../roadmap.md)) is now in the deferred list, for its small gain. This page says what each cause of "nothing is trusted" can change in bash, and from where. It gives the rule that replaces "the whole script is blind", the change of the data model, the tests and the steps. It ends with the gain, measured again with a prototype. The gain is smaller than the roadmap expected (section 8), so the maintainer deferred steps 1–4 (section 10).
+Status: done: step 0 (the holes of section 2, #382). Steps 1–4 were deferred on 2026-10-26 for their small gain and dropped on 2026-11-06 ([backlog-archive.md](../backlog-archive.md), "Trust per position, steps 1 to 4"). This page says what each cause of "nothing is trusted" can change in bash, and from where. It gives the rule that replaces "the whole script is blind", the change of the data model, the tests and the steps. It ends with the gain, measured again with a prototype. The gain is smaller than expected (section 8), so the maintainer deferred steps 1–4 (section 10).
 
 ## 1. Today
 
@@ -196,7 +196,7 @@ Each step keeps every test passing. Steps 1 and 2 change nothing users see: ever
 3. Command causes at their positions: `source`, `.`, bats' `load`, `eval` and traps of text not known (and of strings the walk does not read), a command name not known, builtins given a name not known, callbacks not known, aliases of text not known, DEBUG and RETURN traps, foreign changes, PS4. The generator gets its taint statements (section 5). Measure the corpus. Users see values, decisions and dead code before a `source` (CHANGELOG "New" or "Changed"), and docs/design/expansion-values.md section 3 changes its first condition.
 4. Expansion causes at their positions: indirection, arithmetic pasting text not known, arithmetic reading a variable set to text not known or never set (by the owner statements the scan now keeps), an integer given text not known, namerefs with a target not known, `${ …; }`, the causes the walk finds (`walkAgain` goes). Measure again.
 5. Refinements, each measured on its own: a trap of text not known set for EXIT only taints nothing after it and counts only for T6; a PS4 whose only command is `$( )` (it runs in a subshell) counts only for T6.
-6. Update docs/design/expansion-values.md (sections 3 and 6), semantics.md 4.14, README's Limitations (what the model assumes of the start, section 2), the roadmap and this page's status.
+6. Update docs/design/expansion-values.md (sections 3 and 6), semantics.md 4.14, README's Limitations (what the model assumes of the start, section 2), and this page's status.
 
 ## 7. Risks
 
