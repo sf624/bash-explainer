@@ -1040,7 +1040,7 @@
   let openMarks = /** @type {Set<string>} */ (new Set());
 
   /**
-   * The marks of a row, beside its code: "handled by bash", quiet, with what it means in its tooltip and the Key; "not in POSIX sh", a button that opens
+   * The marks of a row, beside its code: "handled by bash", quiet, with what it means in its tooltip and the Legend; "not in POSIX sh", a button that opens
    * under the text what the row's construct lacks, so that a phone and a keyboard read it too. `said`: the place of that text.
    */
   function marksOf(/** @type {any} */ part, /** @type {any} */ said) {
@@ -1528,7 +1528,7 @@
 
   $('receives').addEventListener('click', () => press({ receives: !receivesShown }));
 
-  /** Whether the Key is open, and what it lists of the line drawn. */
+  /** Whether the Legend is open, and what it lists of the line drawn. */
   let keyOpen = false;
   let keyEntries = /** @type {{ id: string, sample?: string, text: string }[]} */ ([]);
   $('key-open').addEventListener('click', () => {
@@ -1536,14 +1536,14 @@
     drawKey();
   });
 
-  /** The Key as it is: what each mark drawn means, while it is open. */
+  /** The Legend as it is: what each mark drawn means, while it is open. */
   function drawKey() {
     $('key').hidden = !keyOpen;
     $('key-open').setAttribute('aria-expanded', String(keyOpen));
     $('key').replaceChildren(...(keyOpen ? keyEntries.map((e) => el('li', { 'data-key-id': e.id }, keySample(e), el('span', { class: 'key-text' }, ...inline(e.text)))) : []));
   }
 
-  /** A sample of a mark in the Key: as the rows draw it, from the Key's id. */
+  /** A sample of a mark in the Legend: as the rows draw it, from the Legend's id. */
   function keySample(/** @type {{ id: string, sample?: string }} */ entry) {
     const [kind, what] = entry.id.split(':');
     const text = entry.sample ?? '';
@@ -1561,7 +1561,7 @@
     }
   }
 
-  /** The row under the line box: the switch, and the Key of what is drawn (`RowModel.key`), inline in the panel. */
+  /** The row under the line box: the switch, and the Legend of what is drawn (`RowModel.key`), inline in the panel. */
   function drawViewRow(/** @type {any} */ msg) {
     if (receivesChosen === undefined) receivesShown = msg.receives;
     $('view-row').hidden = false;
