@@ -6,7 +6,7 @@ import { builtins } from './dict/builtins';
 import { parseExpansion } from './expansion';
 import { args, commandName, pathCommand, runCommands } from './pitfalls';
 import { replaceNode, replaceSpan, type Rewrite, stringShell } from './rewrite';
-import { type NameResolution, resolveName, resolveRun, testSpecAt } from './semantics/names';
+import { isFunction, type NameResolution, resolveName, resolveRun, testSpecAt } from './semantics/names';
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
 import { partMeaning, wordFields, wordMeaning, wordOf } from './semantics/words';
@@ -114,7 +114,7 @@ function throughShell(n: SyntaxNode, vars: readonly string[], v: string, model: 
     return parts.every((p) => p !== undefined) ? parts.join('') : undefined;
   };
   const r = resolveName(model, name.text, name, { shell, command: true });
-  if (r.kind === 'function' || r.kind === 'alias' || (r.kind === 'builtin' && !builtins[r.name].program)) return { rewrite: { code: `${v}=…; ${name.text} … "$${v}"`, edits: [] }, apart: true };
+  if (isFunction(r) || r.kind === 'alias' || (r.kind === 'builtin' && !builtins[r.name].program)) return { rewrite: { code: `${v}=…; ${name.text} … "$${v}"`, edits: [] }, apart: true };
   // (What is left runs a program, or a builtin that is one too: no keyword takes an assignment before it.)
   const program = stringShell(shell, name.text, words.map((w) => w.text));
   const among = redirectionsOf(n).some((d) => d.startIndex < last.endIndex && d.endIndex > name.startIndex);

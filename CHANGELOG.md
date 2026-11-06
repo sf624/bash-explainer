@@ -47,7 +47,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
-- In a bats file, `run`, `load`, `skip` and the other functions of bats are badged "function", as they are, and `run !` and `run -N` say what they expect: a non-zero status, or status N, else `run` fails and so does the test. Before, `run` was badged "program", and the text of `run !` was garbled.
+- In a bats file, `run`, `load`, `skip` and the other functions of bats are badged "function", not "program", in the panel, the hover and the editor's colours.
 - A list that mixes `&&` and `||` (`a && b || c`) is an "AND and OR list" in the panel, with `grammar` `andOrList` in `--format json`. Before, it was named by its last operator alone ("OR list", or "AND list" for `a || b && c`).
 - The explanation panel no longer draws an empty grey box above "Nothing to explain on this line." for a blank line, in VS Code and on the web page.
 - On the web page, "Clear stored data" puts the explanation's depth and the "What the program receives" switch back to their defaults at once. Before, they changed back only after a reload.

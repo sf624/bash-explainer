@@ -33,7 +33,7 @@ import { EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
 import { braceValues } from '../semantics/brace';
 import { quotedName } from '../semantics/effects';
 import { slotEnvironment } from '../semantics/env';
-import type { NameResolution } from '../semantics/names';
+import { isFunction, type NameResolution } from '../semantics/names';
 import { exportedValue } from '../semantics/state';
 import { changedByBash } from '../semantics/vars';
 import { literalContent, staticWordValue, substitutionNames } from '../staticword';
@@ -437,7 +437,7 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     if (!named) return undefined;
     const { node: name, res } = named;
     // A stage that runs a function or an alias of the script is not the program its name suggests (as in commandTail).
-    if (['function', 'alias'].includes(res.kind)) return undefined;
+    if (isFunction(res) || res.kind === 'alias') return undefined;
     const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect');
     // (The program of the path it runs: `hash -p /usr/bin/tac sort` makes `sort` run tac.)
     const program = named.path ?? named.value;

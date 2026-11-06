@@ -8,7 +8,8 @@ import { explainHostedLine, extractShell } from '../src/hosts';
 import { processOf } from '../src/semantics/env';
 import { shellState, type StateModel } from '../src/semantics/state';
 import { statusModel } from '../src/semantics/status';
-import { resolveName } from '../src/semantics/names';
+import { type NameResolution, resolveName } from '../src/semantics/names';
+import { argvOf } from '../src/argvline';
 import { readingNodes } from '../src/reading';
 import { rowModel, type ModelRow } from '../src/ui/panelRows';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -121,6 +122,44 @@ describe('the model of a bats file', () => {
       assert.strictEqual(kind('run true', ['@test "a" {', '  run true', '}']), 'host');
       assert.strictEqual(kind('run true', ['@test "a" {', '  run true', '}'], false), 'file');
       assert.strictEqual(kind('run true', ['run() { :; }', '@test "a" {', '  run true', '}']), 'function');
+    });
+
+    it('stops resolving to the host after an unset -f, and where the file defines its own function', () => {
+      const res = (text: string, src: string[], lookup?: 'no-functions'): NameResolution => {
+        const extracted = extractShell('bats', src.join('\n'));
+        const tree = parser.parse(extracted.text);
+        const state = shellState(tree, undefined, { host: extracted.regions[0].commands, run: extracted.regions[0].run });
+        return resolveName(state, text.split(' ')[0], descendants(tree.root, ['command']).find((x) => x.text === text)!, { command: true, ...(lookup ? { lookup } : {}) });
+      };
+      // (bats' function is gone: bash looks for a program. A function of the file's defined again after it is the file's own.)
+      assert.strictEqual(res('run true', ['@test "a" {', '  unset -f run', '  run true', '}']).kind, 'file');
+      assert.strictEqual(res('run true', ['@test "a" {', '  unset run', '  run true', '}']).kind, 'file');
+      assert.strictEqual(res('run true', ['@test "a" {', '  unset -f run', '  run() { :; }', '  run true', '}']).kind, 'function');
+      // (A definition that comes after the call, in the same body: bats' function runs.)
+      const later = res('run true', ['@test "a" {', '  run true', '  run() { :; }', '}']);
+      assert.deepStrictEqual([later.kind, (later as { missed?: { why: string } }).missed?.why], ['host', 'later']);
+      // (A definition on some paths: the file's function where it ran, bats' on the others.)
+      const some = res('run true', ['if [ -n "$X" ]; then run() { :; }; fi', '@test "a" {', '  run true', '}']);
+      assert.deepStrictEqual([some.kind, some.kind === 'function' && some.sure, some.kind === 'function' && some.otherwise?.kind], ['function', false, 'host']);
+      // (`command run` skips functions, bats' too: it looks for a program.)
+      assert.strictEqual(res('run true', ['@test "a" {', '  run true', '}'], 'no-functions').kind, 'file');
+    });
+
+    it('explains run as a program after an unset -f of it', () => {
+      const lines = ['@test "a" {', '  unset -f run', '  run true', '}'];
+      const extracted = extractShell('bats', lines.join('\n'));
+      const ex = explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, lines, 2, 'en')!;
+      assert.doesNotMatch(ex.summary ?? ex.items[0].explanation, /bats function/);
+      assert.strictEqual(ex.items[0].name?.said.kind, 'program');
+    });
+
+    it('agrees in "What the program receives": the words of run are those of a function', () => {
+      const lines = ['@test "a" {', '  run true', '  sort a', '}'];
+      const extracted = extractShell('bats', lines.join('\n'));
+      const tree = parser.parse(extracted.text);
+      const state = shellState(tree, undefined, { host: extracted.regions[0].commands, run: extracted.regions[0].run });
+      const inside = (text: string) => argvOf(descendants(tree.root, ['command']).find((x) => x.text === text)!, state, 'en')?.inside;
+      assert.deepStrictEqual([inside('run true'), inside('sort a')], ['function', undefined]);
     });
 
     it('gives the reading of the command name the kind of a function', () => {

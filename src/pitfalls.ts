@@ -9,7 +9,7 @@ import type { ReadKnown } from './semantics/scriptstops';
 import { argWordIn, bracesIn } from './semantics/argwords';
 import { type ExecEnv, readAs, runsString, slotEnvs } from './semantics/env';
 import { commandName as staticName, plainName } from './semantics/effects';
-import { resolveName, resolveRun } from './semantics/names';
+import { isFunction, resolveName, resolveRun } from './semantics/names';
 import { option, type StateModel } from './semantics/state';
 import { ancestor, braceAsArgument, childrenOnRows, descendants, field, fields, GLUED_BRACE, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
@@ -142,8 +142,8 @@ function commandsOf(n: SyntaxNode, model: StateModel, shell: Shell | undefined):
   const spec = name === undefined ? undefined : lookupCommand(name);
   // (A function or an alias of that name runs something else: its words have no spec.)
   if (!spec || !a.length) return out;
-  const kind = resolveRun(model, out[0], shell)!.kind;
-  if (kind === 'function' || kind === 'alias') return out;
+  const res = resolveRun(model, out[0], shell)!;
+  if (isFunction(res) || res.kind === 'alias') return out;
   // (The words as the command gets them, where the model knows them: `x=';'; find . -exec echo {} $x` ends at `$x`.)
   const parse = interpret(spec, a.map(argWordIn(model)), { name, lookup: lookupCommand });
   let envs: Map<SyntaxNode, ExecEnv> | undefined;

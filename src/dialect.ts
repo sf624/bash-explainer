@@ -15,7 +15,7 @@ import { networkPath, networkTarget } from './dict/syntax';
 import { VARIABLE_SECTIONS } from './manual';
 import { testStatus } from './semantics/conditions';
 import { processOf } from './semantics/env';
-import { resolveName } from './semantics/names';
+import { isFunction, resolveName } from './semantics/names';
 import { type Fault, keptQuiet, quietAt, readWith, readWithItsLine, type Stop, surelyRuns } from './semantics/scriptstops';
 import { shellState, type StateModel } from './semantics/state';
 import { optionOn } from './semantics/status';
@@ -740,7 +740,7 @@ function measuredReading(f: Found, tree: SyntaxTree, shell: Shell, failing: Read
   const model = shellState(tree, shell);
   // (`${UID:?}` counts as the script's setting it, past itself: it is the read that fails.)
   if (isVariableRow(row) && (failing.has(f.node) || (model.assigned.has(parameterRead(f.node).name) && !unsetAtOwnTest(f.node, model)))) return undefined;
-  if (f.node.type === 'command' && resolveName(model, field(f.node, 'name')!.text, f.node, { shell, command: true }).kind === 'function') return undefined;
+  if (f.node.type === 'command' && isFunction(resolveName(model, field(f.node, 'name')!.text, f.node, { shell, command: true }))) return undefined;
   const how: Doing = {};
   for (const sh of shells) {
     const does = works(row, sh) ? undefined : row[sh] === 'empty' ? unsetDoes(f.node, sh, tree, model) : doesOf(row, sh);

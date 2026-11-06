@@ -310,13 +310,15 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
 
   // Functions: not for `command` and `builtin`, nor in a program; in another shell, only those it gets.
   const fn = st.functions.get(name);
+  // (The host's function of that name: not for a command that skips functions, a program, or another shell, which get none of them.)
+  const hostRuns = !exec && !lookup && !shellString && Object.hasOwn(model.host, name);
   const defined = fn && fn.state !== 'off' ? fn : undefined;
   if (!defined) {
     const why = missedFunction(model, name, at, fn);
     // (After a `source`, a function defined later in the script may come from the file read.)
     if (why && !(why.why === 'later' && place.sourced)) missed ??= why;
-    // (The host's functions are defined before the file runs; only `unset -f` removes one. Not for a command that skips functions, a program, or another shell.)
-    if (!exec && !lookup && !shellString && why?.why !== 'unset' && Object.hasOwn(model.host, name)) return { kind: 'host', name, ...(missed ? { missed } : {}) };
+    // (The host's functions are defined before the file runs; only an `unset -f` removes one.)
+    if (hostRuns && why?.why !== 'unset') return { kind: 'host', name, ...(missed ? { missed } : {}) };
     return builtinOrFile(name, opts, place, missed);
   }
   const miss = (why: MissReason, by?: SlotLink, maybe?: Missed['maybe']): NameResolution => builtinOrFile(name, opts, place, { kind: 'function', def: defined.def, why, ...(by ? { slot: by } : {}), ...(maybe ? { maybe } : {}) });
@@ -350,7 +352,7 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
   // (An alias of that name that bash does not expand: the function runs, on the paths that define it.)
   if (missed?.kind === 'alias' && missed.why === 'expand_aliases' && !sure) missed = { ...missed, maybe: missed.maybe ?? 'function' };
   const sourced = 'maybe' in maybe && maybe.maybe === 'startup' && place.sourced ? { sourced: place.sourced } : {};
-  return { kind: 'function', name, fn: defined, sure, ...maybe, ...sourced, ...(shadows ? { shadows } : {}), ...(sure ? {} : { otherwise: builtin }), ...(missed ? { missed } : {}) };
+  return { kind: 'function', name, fn: defined, sure, ...maybe, ...sourced, ...(shadows ? { shadows } : {}), ...(sure ? {} : { otherwise: hostRuns ? { kind: 'host' as const, name } : builtin }), ...(missed ? { missed } : {}) };
 }
 
 /** The builtin or the file `name` runs, past aliases and functions. */
@@ -577,6 +579,13 @@ export function runsOwnName(model: StateModel, def: SyntaxNode): boolean {
   }
   return false;
 }
+
+/**
+ * Whether the name may run a function, the file's or the host's (bats' `run`); `runsFunction`, whether it surely does.
+ * The checks of "runs as a function" read these, not the kinds.
+ */
+export const isFunction = (res: NameResolution | undefined): boolean => res?.kind === 'host' || res?.kind === 'function';
+export const runsFunction = (res: NameResolution | undefined): boolean => res?.kind === 'host' || (res?.kind === 'function' && res.sure);
 
 /**
  * The kind of `res` that the panel's badge says: a function of the host (bats' `run`) is a function, as the file's own

@@ -32,7 +32,7 @@ import { binaryTestOperands, binaryTestOps, extendedEqualOps, plainPatternOps, t
 import type { Lang } from './i18n';
 import type { Shell } from './shellfeatures';
 import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } from './refs';
-import { aliasesAfter, type AliasResolution, badgeKind, type NameResolution } from './semantics/names';
+import { aliasesAfter, type AliasResolution, badgeKind, isFunction, type NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
 import { spanWithin } from './noteanchors';
 import { type WordStep, wordSteps } from './semantics/wordsteps';
@@ -147,7 +147,7 @@ interface Reader { name: string; inShell: boolean }
 /** The fields of a node that `reader` reads. */
 const readBy = ({ name, inShell }: Reader): Pick<ReadingNode, 'reader' | 'inShell'> => ({ reader: name, ...(inShell ? { inShell } : {}) });
 /** What a name resolves to reads in the shell that runs it: a builtin or a function. */
-const resolvesInShell = (res: NameResolution | undefined): boolean => res?.kind === 'builtin' || res?.kind === 'function' || res?.kind === 'host';
+const resolvesInShell = (res: NameResolution | undefined): boolean => res?.kind === 'builtin' || isFunction(res);
 /** A builtin that `builtin` or `command` finds runs in this shell, as bash runs a command name; one that another program names is that program's (`sudo cd`). */
 const builtinHere = (t: Pick<ReadingNode, 'kind' | 'name'>): boolean => t.kind === 'builtin' && !!t.name && t.name.by === undefined;
 /** The kinds of token about a word, or a part of one. */

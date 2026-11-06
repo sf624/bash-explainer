@@ -607,7 +607,8 @@ In double quotes bash takes a backslash away only before `$`, a backtick, `"`, `
 
 - `find . -name 'a?(b)'` said "extended glob". find has none: it looks for `a`, one character, `(b)`.
 - A script that holds a noncharacter of U+FDD2 to U+FDEF shows it as U+FFFD, as U+FDD0 and U+FDD1 already did.
-- In a bats file, the name of `run`, `load`, `skip`, `bats_pipe` and the helpers of the libraries (a function bats defines) has the badge "function" (the name resolves to the host's function, `NameResolution` `host`), in the panel, the hover and `--format json`. Before it was "program", which the Legend defines as a file found in PATH. The text of `run !` was "fail, and so fail the test, unless the command fails"; it is now "expect the command to end with a non-zero exit status: if it succeeds (status 0), `run` fails, and so does the test" (bats-core 1.13), and `run -N` reads likewise.
+- In a bats file, the name of `run`, `load`, `skip`, `bats_pipe` and the helpers of the libraries (functions bats defines) is badged "function", as a function of the file is (the name resolves to the host's function, `NameResolution` `host`): in the panel, the hover, "What the program receives" and `--format json`, and coloured as a function in the editor. It was "program", which the Legend defines as a file found in PATH. After `unset -f run`, or `unset run` with no variable of that name, `run` is a program, as bash looks it up; a function of the file with the same name replaces bats' where it ran. Not followed: an `unset -f` on some paths only (read as on all).
+- The options of `run` read plainly: `run !` expects a non-zero status ("if the command succeeds (status 0), `run` fails, and so does the test"), `run -N` expects status N (bats-core 1.13).
 
 ### PCRE escapes and `tr -c`
 

@@ -615,7 +615,8 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
   }
   // (No shell reads the words, Docker's exec form: a builtin's name runs the program of its name.)
   if (res.kind === 'file' && res.noShell?.skips) return noShellHead(cx, name, ran, res.noShell.skips);
-  const spec = hostCommand(cx, name) ?? lookupCommand(name);
+  // (The host's function only where the name runs it: not after an `unset -f`, nor as a program `sudo` runs.)
+  const spec = (res.kind === 'host' ? hostCommand(cx, name) : undefined) ?? lookupCommand(name);
   if (spec) {
     const builtin = !!spec.builtin;
     // (A builtin's section, or that of a program the manual describes: `bash`, 6.1.)

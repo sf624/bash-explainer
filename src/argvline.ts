@@ -15,7 +15,7 @@ import { leastOf, mostOf } from './lists';
 import { isProgram } from './namefacts';
 import { spanOf } from './noteanchors';
 import { receivedFields } from './semantics/fieldshape';
-import { aliasesAfter, assignmentsOf, type NameResolution, resolveName } from './semantics/names';
+import { aliasesAfter, assignmentsOf, runsFunction, type NameResolution, resolveName } from './semantics/names';
 import type { StateModel } from './semantics/state';
 import { option } from './semantics/shellstate';
 import { descendants, field, fields, prefixAssignments, redirectionsOf, rootOf, type SyntaxNode, wordBraces } from './syntax/tree';
@@ -93,7 +93,7 @@ function runsInside(res: NameResolution | 'dynamic'): ArgvLine['inside'] {
   if (res === 'dynamic') return undefined;
   if (res.kind === 'builtin') return res.disabled ? undefined : 'builtin';
   if (res.kind === 'file' && res.sourced) return 'sourced';
-  return res.kind === 'function' && res.sure ? 'function' : undefined;
+  return runsFunction(res) ? 'function' : undefined;
 }
 
 /** A word in the form of an assignment, as bash reads one before quote removal (`a=b`, `a[1]+=b`; not `"a=b"`). */
