@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { LEVELS } from '../src/levels';
 import { KIND_ROLES, ROLES } from '../src/roles';
 import { TOKEN_OF } from '../src/semanticTokens';
 import { ROLE_COLOURS, ROLE_STYLES } from '../web/editor-colors';
@@ -8,7 +9,7 @@ import { ROLE_COLOURS, ROLE_STYLES } from '../web/editor-colors';
 describe('the colours of the editor', () => {
   it('has a colour and a rule for every role of a token', () => {
     for (const r of [...ROLES, 'error' as const]) {
-      assert.match(ROLE_COLOURS[r], /^var\(--vscode-[\w-]+(, (#[0-9a-f]{3,6}|var\(--vscode-[\w-]+, #[0-9a-f]{3,6}\)))?\)$/, r);
+      if (r !== 'error') assert.match(ROLE_COLOURS[r], /^var\(--vscode-[\w-]+(, #[0-9a-f]{3,6})?\)$/, r);
       assert.equal(ROLE_STYLES[`.cm-bx-${r}`].color, ROLE_COLOURS[r], r);
     }
     assert.equal(ROLE_STYLES['.cm-bx-comment'].fontStyle, 'italic');
@@ -57,7 +58,10 @@ describe('the colours of the editor', () => {
     // test/contrast.test.ts).
     assert.equal(resolve(`var(${kindVar.get('error')})`), 'var(--vscode-editorError-foreground, var(--vscode-charts-red, #f14c4c))');
     // Every kind takes the editor's colour of its role: one mapping, kind to role (src/roles.ts) and role to colour.
-    for (const [kind, v] of kindVar) assert.equal(resolve(`var(${v})`), ROLE_COLOURS[KIND_ROLES[kind as keyof typeof KIND_ROLES]], kind);
+    // (An error's is the error level's, named by the level table in the panel and on the page alike.)
+    for (const [kind, v] of kindVar) if (kind !== 'error') assert.equal(resolve(`var(${v})`), ROLE_COLOURS[KIND_ROLES[kind as keyof typeof KIND_ROLES]], kind);
+    assert.equal(ROLE_COLOURS.error, `var(${LEVELS.error.colour!.name})`);
+    assert.equal(resolve(`var(${kindVar.get('error')})`), resolve(ROLE_COLOURS.error));
     // Nothing else redefines them: no other palette on the web page, and in VS Code only the theme kinds'
     // own colours (`body.vscode-*`, compared with src/ui/palette.ts in test/contrast.test.ts).
     const page = fs.readFileSync(path.join(root, 'web', 'panel-page.css'), 'utf8');

@@ -329,11 +329,13 @@ describe('the web page: the explanation panel and the editor', function () {
     await pickKind(page, 'dockerfile');
     await page.locator('#kind-replace').click(); // replace the typed script with the sample
     await page.mouse.move(0, 0); // (A pointer left on a row of the panel highlights that part in the editor, and cuts it in pieces.)
-    const run = await until('the RUN line coloured', () => pieces('RUN apt-get update'), (p) => p.some((x) => x.startsWith('apt-get|cm-bx-command')));
-    assert.deepEqual(run.map((x) => x.split('|')[1]), ['', 'cm-bx-command', '']);
-    assert.notStrictEqual(run[0].split('|')[2], run[2].split('|')[2], 'RUN is coloured by the Dockerfile mode');
+    // (`apt-get update`: the command and its subcommand; the line continuation, an operator of the shell.)
+    const run = await until('the RUN line coloured', () => pieces('RUN apt-get update'), (p) => p.some((x) => x.startsWith('apt-get update|cm-bx-command')));
+    assert.deepEqual(run.map((x) => x.split('|')[1]), ['', 'cm-bx-command', 'cm-bx-operator']);
+    assert.notStrictEqual(run[0].split('|')[2], run[1].split('|')[2], 'RUN is coloured by the Dockerfile mode');
     const entry = await pieces('ENTRYPOINT');
-    assert.ok(entry.some((x) => x.startsWith('${PORT:-8080}|cm-bx-variable')), entry.join('\n'));
+    // (The expansion's operator and its word as the panel shows them: `:-` an operator, `8080` the word used instead.)
+    assert.deepEqual(entry.filter((x) => /PORT|:-|8080|^\}/.test(x)).map((x) => x.split('|').slice(0, 2).join('|')), ['${PORT|cm-bx-variable', ':-|cm-bx-operator', '8080|cm-bx-argument', '}|cm-bx-variable']);
     await ctx.close();
   });
 });

@@ -2,6 +2,7 @@
 // (src/roles.ts), so that a part has the same colour in the editor and in the explanation
 // (docs/design/one-colour-source.md). The editor's shell code is coloured from the explanation's tokens
 // (web/token-colours.ts); the host files' own modes (Dockerfile, YAML…) take the role that means the same.
+import { LEVELS } from '../src/levels';
 import { ROLES, type TokenRole } from '../src/roles';
 
 /** VS Code's chart colours, as media/panel.css gives them to the roles (the values of its `--c-*` on body). */
@@ -28,7 +29,8 @@ export const ROLE_COLOURS: Readonly<Record<TokenRole, string>> = {
   redirect: CHART.yellow, pattern: CHART.yellow,
   variable: CHART.red, assignment: CHART.red,
   comment: CHART.muted,
-  error: 'var(--vscode-editorError-foreground, var(--vscode-charts-red, #f14c4c))',
+  // (A part that cannot be read: the error level's colour, as its squiggles; web/page.css defines it from the level table.)
+  error: `var(${LEVELS.error.colour!.name})`,
 };
 
 /** The roles in italics, as VS Code's themes draw comments. */

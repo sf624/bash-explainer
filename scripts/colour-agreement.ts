@@ -17,7 +17,9 @@ import { ROLE_COLOURS } from '../web/editor-colors';
 const root = path.join(__dirname, '..');
 const css = fs.readFileSync(path.join(root, 'web/theme.css'), 'utf8');
 const vars = (block: string) => Object.fromEntries([...block.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
-const light = vars(/:root\s*{([^}]*)}/.exec(css)![1]);
+// (The page's own variables, `--c-error-level`, then the theme's.)
+const page = vars(/:root\s*{([^}]*)}/.exec(fs.readFileSync(path.join(root, 'web/page.css'), 'utf8'))![1]);
+const light = { ...page, ...vars(/:root\s*{([^}]*)}/.exec(css)![1]) };
 const dark = { ...light, ...vars(/@media \(prefers-color-scheme: dark\)\s*{\s*:root:not\(\[data-theme="light"\]\)\s*{([^}]*)}/.exec(css)![1]) };
 const resolve = (v: string, theme: Record<string, string>): string => {
   const m = /^var\((--[\w-]+)(?:,\s*(.*))?\)$/.exec(v.trim());
