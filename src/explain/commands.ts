@@ -317,7 +317,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   // (The sentence of the line says the command with the same summary as its token, src/linesentence.ts.)
   const said: CommandSaid = { names: [head.name, ...path], kind: head.kind, options: optionsSaid(argToks), ...(bracket ? { test: true as const } : {}) };
   if (summary) said.what = plainOf(cx.t(summary));
-  else if (head.spec) said.what = plainOf(head.explanation);
+  else if (head.spec) said.what = plainOf(head.spec.gloss ? cx.t(head.spec.gloss) : head.explanation);
   cx.memo(COMMAND_SAID).set(n, said);
   if (summary) t.summary = `${said.names.join(' ')}: ${said.what}`;
   return t;

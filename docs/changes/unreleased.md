@@ -91,6 +91,22 @@ In the panel, in VS Code and on the web page:
 - The example of a glob's names ("Example for … (glob /var/log/*.log)") starts open when it is the line's only example, or when the cursor is on its command (`grep … /var/log/*.log | sort`: open with the cursor on `grep …`, closed on `sort`; in `if ls *.txt; then ls *.md; fi`, the one of the `ls` the cursor is on). An example you open or close stays so on that line. Before, it always started closed.
 - Names typed in the example stay, with their result, when the depth changes and when the cursor moves on the same line. Before, a redraw put back the example's own names.
 
+### "In short", without parentheses in parentheses
+
+In the panel's **In short**, in VS Code, on the web page and in the command-line tool:
+
+- A command's or an option's summary that has parentheses of its own is left out; the name stays, and the rows say what it does. `while getopts ":hv:o:" opt; do` says "Repeats the body on lines 3–8 while `getopts` succeeds." Before: "Repeats lines 3–8 while `getopts` (parse script options one at a time (used as `while getopts …; do case … esac; done`; $OPTIND tracks the position)) succeeds." The same holds for `grep`, `sed`, `head`, `curl`, `printf`, `true`, `false`, `exit`… A sentence that gets shorter so may keep the summaries of its other commands: `grep -rn … | sort -u > errors.txt && echo … || exit 1` now glosses `sort`, `echo` and `exit`.
+- A block's body is named by its lines, which are not the block's own: "the body on lines 3–8" (「行 3〜8 の本体」), and `case` "the first of the branches on lines 4–7 whose pattern matches …" (「行 4〜7 の分岐のうち、…」). Before: "repeats lines 3–8", "the first branch (lines 4–7)", next to a `while` row that says lines 2–9.
+- In Japanese, the redirections in parentheses name a standard stream without its number (「標準出力は `out` へ」; before 「標準出力(fd 1)は `out` へ」), and a here-string is 「標準入力はヒアストリング `x` から」 (before 「標準入力(fd 0)は `x` から（ヒアストリング）」). In English, "stdin (fd 0) from the here-string `x`" (before "from `x` (a here-string)"). A redirection whose text has parentheses of its own (`{fd}>x`) follows the clause as 「入出力: …」.
+- The functions of bats and of its libraries have a short summary for the sentence: `run ! cat f` says "Runs `run` (runs a command in a subshell and keeps its exit status and output in `$status`, `$output` and `$lines`) using `!`." Before: "Runs `run`." Also `load`, `bats_load_library`, `skip`, `bats_require_minimum_version`, `bats_pipe`, `fail`, `batslib_is_caller`, `batslib_decorate`, `temp_make`, `temp_del`, and the checks of bats-assert and bats-file (`assert_success` "checks that `$status` is 0", `assert_output` "checks that `$output` matches the text given"). The panel's rows still say the whole summary.
+
+### Depth 2: a pipeline's other stages, and the shebang
+
+In the panel, in VS Code and on the web page:
+
+- At depth 2, in a pipeline the cursor is on, the stages other than the cursor's start folded: each keeps its own row (what the command does, its role, what its program receives), and a click opens its parts. `grep -h "$USER" /var/log/*.log | sort | uniq -c | sort -rn | head -5` with the cursor on `grep` shows `-c`, `-rn` and `-5` folded. A stage with no parts, or with an example that starts open, does not fold, and nothing folds with the cursor on a `|`. The stages stay as they started while the cursor moves on the line (a click on a row moves it there); the line drawn anew, or at the other depth, starts again. Before, every stage showed all its parts.
+- The shebang's text says what runs, in one line: "Shebang: run as a program (`./script.sh`), the file runs as `/usr/bin/env bash ./script.sh args…`, and `env` finds `bash` on PATH and runs it." What bash and the kernel make of the line is the text of its `#!`, a part shown at depth 2: "To bash, `#` starts a comment: `bash script.sh`, … ignore this line. When the file is run as a program …, the kernel reads `#!`." The hover lists `#!` among the parts, and the command-line tool prints it under the shebang. Before, the shebang's row was one paragraph at both depths.
+
 ### The Copy buttons say what they copy
 
 The web page's panel header says **Copy as Markdown** / 「Markdown でコピー」 beside its icon, and **Markdown** under it where the header is narrow. Before, it said **Copy**, like the fix's button. **Copy a link** does not change.

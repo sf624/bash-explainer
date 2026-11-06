@@ -31,15 +31,19 @@ const SCRIPTS = {
  * row of its word no longer folds: 1,474 to 1,895 and 2,039 to 2,536 on, 1,313 to 1,734 and 1,878 to 2,376 off. On s4, `$DEBUG` has a row at
  * depth 1 for bash's steps, so the condition of `[[` no longer folds at depth 2: 1,279 to 1,482 and 1,812 to 2,092 on, 1,255 to 1,457 and
  * 1,758 to 2,038 off. The others do not change.
+ * U7 (usability-9.md, 2.7) measured them again, with CI's fonts: at depth 2 the stages of s2 the cursor is not on fold to their own row, and
+ * "In short" drops the summaries with parentheses of their own. s2: 1,706 and 2,250 on, 1,545 and 2,089 off (the larger of en and ja); s4:
+ * 1,462 and 2,053 on, 1,438 and 1,999 off; s3 1,365 and 1,794 on. The budgets of s2 and s4 come down by as much, with the same room over
+ * them; s2 stays above the 1,420 px of 2026-11-05 by about the glob example U5 opens on grep's stage.
  * No script here holds a `[`: its condition has rows of its own at depth 2 (its pages are measured in the PR that gave them).
  */
 const BUDGET: Record<keyof typeof SCRIPTS, Record<'on' | 'off', Record<1280 | 390, number>>> = {
   s1: { on: { 1280: 840, 390: 1070 }, off: { 1280: 840, 390: 1060 } },
   's1-body': { on: { 1280: 450, 390: 530 }, off: { 1280: 430, 390: 510 } },
-  s2: { on: { 1280: 1950, 390: 2600 }, off: { 1280: 1790, 390: 2440 } },
+  s2: { on: { 1280: 1760, 390: 2310 }, off: { 1280: 1600, 390: 2150 } },
   's3-assign': { on: { 1280: 1010, 390: 1270 }, off: { 1280: 990, 390: 1250 } },
   s3: { on: { 1280: 1420, 390: 1850 }, off: { 1280: 1350, 390: 1780 } },
-  s4: { on: { 1280: 1540, 390: 2150 }, off: { 1280: 1520, 390: 2100 } },
+  s4: { on: { 1280: 1520, 390: 2110 }, off: { 1280: 1500, 390: 2060 } },
 };
 
 describe('the panel: one view with a depth', function () {
@@ -211,6 +215,17 @@ describe('the panel: one view with a depth', function () {
       await page.locator('.cm-content').focus();
       await page.keyboard.press('Control+End');
       await until('the glob example closed', () => panel.evaluate(`[...document.querySelectorAll('#tree details.example')].map((d) => d.open).join()`), (o) => o === 'false');
+      // (The rows stay as they started while the cursor moves on the line, with the cursor on grep's stage: usability-9.md, 2.7; the
+      // glob's closed example keeps its title. A click
+      // on a row moves the cursor too, and nothing above it may fold then. The other depth and back starts them again.)
+      const folded = () => panel.evaluate(`[...document.querySelectorAll('#tree li.collapsed > .item > .row .label')].map((l) => l.textContent)`);
+      assert.deepStrictEqual(await folded(), ['uniq', 'sort', 'head']);
+      assert.strictEqual(await panel.locator('#tree details.example > summary').first().isVisible(), true);
+      await chooseDepth(page, 1);
+      await depthDrawn(panel, 1);
+      await chooseDepth(page, 2);
+      await depthDrawn(panel, 2);
+      await until('the rows started again', folded, (f) => JSON.stringify(f) === JSON.stringify(['grep', '/var/log/*.log', 'uniq', 'sort']));
       const got = await panel.evaluate(`(() => {
         const rows = [...document.querySelectorAll('#tree .row')].filter((r) => r.getClientRects().length);
         const lines = rows.map((r) => [...r.querySelectorAll(':scope > .text > .role-line')]);
@@ -235,9 +250,8 @@ describe('the panel: one view with a depth', function () {
       assert.match(got.pipes[0], lang === 'en' ? /stdout of grep → stdin of sort/ : /grep の標準出力 → sort の標準入力/);
       // (Its sign and its text on one line; its role beside them, or a line more on a phone.)
       for (const h of got.pipeHeights) assert.ok(h <= 2 * got.line + 4, `the pipe: ${h} px, a line ${got.line} px`);
-      // (A row whose parts all come at depth 2 starts folded; a glob's folded example keeps its title.)
-      assert.deepStrictEqual(got.folded, ['/var/log/*.log']);
-      assert.strictEqual(await panel.locator('#tree details.example > summary').first().isVisible(), true);
+      // (A row whose parts all come at depth 2 starts folded, and the stages the cursor is not on.)
+      assert.deepStrictEqual(got.folded, ['grep', '/var/log/*.log', 'uniq', 'sort']);
       const dir = process.env.BASH_EXPLAINER_SHOTS;
       if (dir) await page.screenshot({ path: path.join(dir, `depth2-${width}-${lang}-${theme}.png`), fullPage: true });
       await ctx.close();
@@ -373,6 +387,8 @@ describe('the panel: one view with a depth', function () {
           await depthDrawn(panel, 2);
           await page.waitForTimeout(100);
           const h = await panel.evaluate(`Math.ceil(document.getElementById('main').getBoundingClientRect().bottom + scrollY)`) as number;
+          // (PRINT_HEIGHTS=1 prints what each page measures, to set the budgets from.)
+          if (process.env.PRINT_HEIGHTS) console.log(`height ${name} ${width} ${receives} ${lang}: ${h}`);
           assert.ok(h <= BUDGET[name as keyof typeof SCRIPTS][receives][width], `${name}, ${lang}: ${h} px`);
         }
         await ctx.close();

@@ -149,7 +149,16 @@ function shebang(cx: Explainer, n: SyntaxNode): Token {
     : said === used ? { ja: `。Bash Explainer はこの行から、スクリプトを ${SHELL_NAMES[said]} のものとして解説する`, en: `. Bash Explainer explains the script as ${SHELL_NAMES[said]}, from this line` }
       : { ja: `。Bash Explainer はここではスクリプトを ${SHELL_NAMES[said]} ではなく ${SHELL_NAMES[used]} のものとして解説する（${why.ja}）`,
         en: `. Bash Explainer explains the script as ${SHELL_NAMES[used]} here, not as ${SHELL_NAMES[said]} (${why.en})` };
-  return cx.tok(n, 'shebang', cx.text('shebang-line', { shown, oneArg, arg, relative, env, notes, dialect }), shebangParts(cx, n, interp, arg));
+  return cx.tok(n, 'shebang', cx.text('shebang-line', { shown, oneArg, arg, relative, env, notes, dialect }), [shebangMagic(cx, n), ...shebangParts(cx, n, interp, arg)]);
+}
+
+/** The `#!`: to bash the start of a comment, to the kernel the mark of a script. At depth 2 of the panel (`plain`): the line's own row says what runs. */
+function shebangMagic(cx: Explainer, n: SyntaxNode): Token {
+  const { row, column } = n.startPosition;
+  return {
+    kind: 'comment', label: '#!', explanation: cx.text('shebang-magic'), span: { start: { line: row, character: column }, end: { line: row, character: column + 2 } },
+    children: [], refs: ['3.1.3', 'execve(2)'], plain: true,
+  };
 }
 
 /**

@@ -65,6 +65,8 @@
   let lastAround = '[]';
   /** What the viewer folded and unfolded of the line shown, by row (`key`: the same at both depths); kept when the same line is drawn again. */
   let foldChoices = /** @type {Map<string, boolean>} */ (new Map());
+  /** How each row of the line shown started folded or not at the depth drawn (`ModelRow.folded`); kept when the same line is drawn again at that depth. */
+  let foldStarts = /** @type {Map<string, boolean>} */ (new Map());
   /** The file and line `foldChoices` belongs to, and the depth drawn. */
   let shownLine = '';
   let shownDepth = 1;
@@ -270,6 +272,7 @@
       // A new line is drawn anew: what was folded, and the room kept below the old one, go.
       dropSpacer();
       foldChoices = new Map();
+      foldStarts = new Map();
       exampleChoices = new Map();
       typed = new Map();
       openSteps = new Set();
@@ -290,6 +293,8 @@
       if (msg.depth !== shownDepth) $('said').textContent = msg.control.options.find((/** @type {{ sets: any }} */ o) => o.sets.depth === msg.depth).said;
       else $('said').textContent = msg.receives ? labels.receives.on : labels.receives.off;
     }
+    // (Another depth starts its rows as the model has them there.)
+    if (msg.depth !== shownDepth) foldStarts = new Map();
     shownLine = where;
     shownDepth = msg.depth;
     shownReceives = msg.receives;
@@ -1243,7 +1248,10 @@
     row.append(twisty, code, text, ...tryIt);
     box.append(row);
     li.append(box);
-    if (part.children.length && (foldChoices.get(part.key) ?? part.folded === true)) setCollapsed(li, true);
+    // (How a row starts is the model's, kept while the line is drawn again at this depth: a pipeline's stage the cursor moves to, at
+    // depth 2, does not open under the pointer that clicked a row of it, nor fold the stage above; the viewer's choice is kept at every depth.)
+    if (part.children.length && !foldStarts.has(part.key)) foldStarts.set(part.key, part.folded === true);
+    if (part.children.length && (foldChoices.get(part.key) ?? foldStarts.get(part.key))) setCollapsed(li, true, foldChoices.has(part.key));
     // Examples placed under this token go before (first) or after (last) its parts.
     const examples = (part.examples ?? []).map((/** @type {any} */ e, /** @type {number} */ i) => (e.folded ? foldedExample(e, `${part.key}/${i}`) : example(e, true, `${part.key}/${i}`)));
     // What lies under the row (its examples and parts), in one box: the indent guide is drawn beside it.
@@ -1335,10 +1343,13 @@
     focusByKeys = false;
   });
 
-  /** Folds or unfolds an item of the list; the change returned says how what lies under it moves (see `fold`). */
-  function setCollapsed(/** @type {HTMLElement} */ li, /** @type {boolean} */ want) {
+  /**
+   * Folds or unfolds an item of the list, as the viewer's choice for the line (`foldChoices`) unless `chosen` is false; the change
+   * returned says how what lies under it moves (see `fold`).
+   */
+  function setCollapsed(/** @type {HTMLElement} */ li, /** @type {boolean} */ want, chosen = true) {
     li.classList.toggle('collapsed', want);
-    foldChoices.set(String(li.dataset.key), want);
+    if (chosen) foldChoices.set(String(li.dataset.key), want);
     const tw = li.querySelector(':scope > .item > .row > button.twisty');
     if (tw) {
       tw.setAttribute('aria-expanded', String(!want));

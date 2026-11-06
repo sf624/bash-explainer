@@ -473,18 +473,23 @@ describe('robustness', () => {
     const env = shebang('#!/usr/bin/env bash');
     assert.strictEqual(env.kind, 'shebang');
     assert.deepStrictEqual(env.refs, ['3.8', '3.1.3', 'execve(2)']);
-    assert.strictEqual(env.explanation, 'Shebang: when the file is run as a program (`./script.sh`, or a command found on PATH), the kernel (or bash, on a system whose kernel does not) '
-      + 'runs `/usr/bin/env bash ./script.sh args…`, and `env` finds `bash` on PATH and runs it. To bash this line is a comment: `bash script.sh`, `sh script.sh`, '
-      + '`source script.sh` and `. script.sh` ignore it. Bash Explainer explains the script as bash, from this line');
-    assert.strictEqual(shebang('#!/usr/bin/env bash', 'ja').explanation, 'シバン（shebang）: ファイルをプログラムとして実行すると（`./script.sh`、または PATH から見つかるコマンドとして）、'
-      + 'カーネル（それをしないシステムでは bash）が `/usr/bin/env bash ./script.sh 引数…` を実行する。`env` は PATH から `bash` を探して実行する。'
-      + 'bash にとってこの行はコメントで、`bash script.sh`・`sh script.sh`・`source script.sh`・`. script.sh` では無視される。Bash Explainer はこの行から、スクリプトを bash のものとして解説する');
-    assert.match(shebang('#!/bin/sh').explanation, /runs `\/bin\/sh \.\/script\.sh args…`\. To bash this line is a comment: .* ignore it\. Bash Explainer explains the script as POSIX sh, from this line$/);
-    assert.match(shebang('#!/bin/sh', 'ja').explanation, /が `\/bin\/sh \.\/script\.sh 引数…` を実行する。bash にとってこの行はコメントで、.*。Bash Explainer はこの行から、スクリプトを POSIX sh のものとして解説する$/);
+    // (Its row says what runs; its `#!` says how bash and the kernel read it, which the panel shows at depth 2: usability-9.md, 2.7.)
+    assert.strictEqual(env.explanation, 'Shebang: run as a program (`./script.sh`), the file runs as `/usr/bin/env bash ./script.sh args…`, and `env` finds `bash` on PATH and runs it. '
+      + 'Bash Explainer explains the script as bash, from this line');
+    assert.strictEqual(shebang('#!/usr/bin/env bash', 'ja').explanation, 'シバン（shebang）: プログラムとして実行すると（`./script.sh`）、ファイルは `/usr/bin/env bash ./script.sh 引数…` として実行される。'
+      + '`env` は PATH から `bash` を探して実行する。Bash Explainer はこの行から、スクリプトを bash のものとして解説する');
+    const magic = env.children[0];
+    assert.deepStrictEqual([magic.kind, magic.label, magic.span, magic.plain, magic.refs], ['comment', '#!', { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } }, true, ['3.1.3', 'execve(2)']]);
+    assert.strictEqual(magic.explanation, 'To bash, `#` starts a comment: `bash script.sh`, `sh script.sh`, `source script.sh` and `. script.sh` ignore this line. '
+      + 'When the file is run as a program (`./script.sh`, or a command found on PATH), the kernel reads `#!` (or bash, on a system whose kernel does not)');
+    assert.strictEqual(shebang('#!/usr/bin/env bash', 'ja').children[0].explanation, 'bash にとって `#` はコメントの始まりで、`bash script.sh`・`sh script.sh`・`source script.sh`・`. script.sh` ではこの行は無視される。'
+      + 'ファイルをプログラムとして実行すると（`./script.sh`、または PATH から見つかるコマンドとして）、カーネル（それをしないシステムでは bash）が `#!` を読む');
+    assert.match(shebang('#!/bin/sh').explanation, /runs as `\/bin\/sh \.\/script\.sh args…`\. Bash Explainer explains the script as POSIX sh, from this line$/);
+    assert.match(shebang('#!/bin/sh', 'ja').explanation, /ファイルは `\/bin\/sh \.\/script\.sh 引数…` として実行される。Bash Explainer はこの行から、スクリプトを POSIX sh のものとして解説する$/);
     // Linux passes the rest of the line as one argument, which `env -S` splits.
-    assert.match(shebang('#!/usr/bin/env -S bash -e').explanation, /runs `\/usr\/bin\/env '-S bash -e' \.\/script\.sh args…` \(on Linux the whole rest of the line, `-S bash -e`, is one argument\)\. `env -S` splits the rest into words and runs `bash` with `-e` and the script's path as arguments\. To bash/);
-    assert.match(shebang('#!/usr/bin/env -S bash -e', 'ja').explanation, /`\/usr\/bin\/env '-S bash -e' \.\/script\.sh 引数…` を実行する（Linux では行の残りの `-S bash -e` 全体が1つの引数になる）。`env -S` が残りを単語に分け/);
-    assert.match(shebang('#!/bin/bash -eu').explanation, /runs `\/bin\/bash -eu \.\/script\.sh args…`\. To bash/);
+    assert.match(shebang('#!/usr/bin/env -S bash -e').explanation, /runs as `\/usr\/bin\/env '-S bash -e' \.\/script\.sh args…` \(on Linux the whole rest of the line, `-S bash -e`, is one argument\)\. `env -S` splits the rest into words and runs `bash` with `-e` and the script's path as arguments\. Bash Explainer/);
+    assert.match(shebang('#!/usr/bin/env -S bash -e', 'ja').explanation, /`\/usr\/bin\/env '-S bash -e' \.\/script\.sh 引数…` として実行される（Linux では行の残りの `-S bash -e` 全体が1つの引数になる）。`env -S` が残りを単語に分け/);
+    assert.match(shebang('#!/bin/bash -eu').explanation, /runs as `\/bin\/bash -eu \.\/script\.sh args…`\. Bash Explainer/);
     // Another shell chosen (a directive, a setting); an interpreter that is no shell; no interpreter.
     assert.match(shebang('#!/bin/sh', 'en', 'bash').explanation, /Bash Explainer explains the script as bash here, not as POSIX sh \(chosen outside the file: a setting, the page's list or `--shell`\)$/);
     assert.match(shebang('#!/bin/sh', 'ja', 'bash').explanation, /ここではスクリプトを POSIX sh ではなく bash のものとして解説する（ファイルの外で選ばれている: 設定、ページの一覧、`--shell`）$/);
@@ -494,7 +499,7 @@ describe('robustness', () => {
     assert.match(chosenBy('ja', 'sh', { shellFrom: 'directive' }), /（ShellCheck の指示コメントで選ばれている）$/);
     assert.match(chosenBy('en', 'sh'), /as POSIX sh here, not as bash \(chosen outside the file: a setting, the page's list or `--shell`\)$/);
     assert.match(chosenBy('ja', 'sh'), /（ファイルの外で選ばれている: 設定、ページの一覧、`--shell`）$/);
-    assert.match(shebang('#!/usr/bin/python3').explanation, /runs `\/usr\/bin\/python3 \.\/script\.sh args…`\. To bash this line is a comment: .* ignore it$/);
+    assert.match(shebang('#!/usr/bin/python3').explanation, /runs as `\/usr\/bin\/python3 \.\/script\.sh args…`$/);
     assert.match(shebang('#!').explanation, /^Shebang with no interpreter: run as a program, the kernel cannot start the file/);
     assert.match(shebang('#!', 'ja').explanation, /^シバン（shebang）だがインタープリタがない/);
     // Only as the file's first two bytes: not after a blank, nor on a later line.
@@ -512,27 +517,27 @@ describe('robustness', () => {
 
   it('explains the shebangs that run env: Linux gives it the rest as one word, which only `-S` splits', () => {
     const shebang = (line: string, lang: 'ja' | 'en' = 'en') => markedText(explain(line, 0, lang).items[0]);
-    assert.match(shebang('#!/usr/bin/env -S bash -e'), /`env -S` splits the rest into words and runs `bash` with `-e` and the script's path as arguments\. To bash/);
-    assert.match(shebang('#!/usr/bin/env -S bash -e', 'ja'), /`env -S` が残りを単語に分け、`bash` を `-e` とスクリプトのパスを引数にして実行する。bash にとって/);
-    assert.match(shebang('#!/usr/bin/env -vS bash'), /runs `bash` with the script's path as arguments\. To bash/);
+    assert.match(shebang('#!/usr/bin/env -S bash -e'), /`env -S` splits the rest into words and runs `bash` with `-e` and the script's path as arguments\. Bash Explainer/);
+    assert.match(shebang('#!/usr/bin/env -S bash -e', 'ja'), /`env -S` が残りを単語に分け、`bash` を `-e` とスクリプトのパスを引数にして実行する。Bash Explainer/);
+    assert.match(shebang('#!/usr/bin/env -vS bash'), /runs `bash` with the script's path as arguments\. Bash Explainer/);
     assert.match(shebang('#!/usr/bin/env -S ${SHELL}'), /runs `…` with the script's path/);
     assert.match(shebang('#!/usr/bin/env bash -e'), /ⓧ On Linux the whole `bash -e` after the interpreter is one argument to env/);
-    assert.match(shebang('#!/usr/bin/env -S -i'), /names no command, so env runs the script's path as the command\. To bash/);
+    assert.match(shebang('#!/usr/bin/env -S -i'), /names no command, so env runs the script's path as the command$/);
     assert.match(shebang('#!/usr/bin/env -S"a'), /ⓧ env cannot split this string/);
     // (Compared with env in test/wrappers-real.test.ts.)
     assert.match(shebang('#!/usr/bin/env -i bash'), /⚠ On Linux the whole `-i bash` after the interpreter is one argument to env, which reads it as one run of options, so it does not run `bash`/);
     assert.match(shebang('#!/usr/bin/env -i bash', 'ja'), /`bash` をコマンドとして実行しない/);
     for (const line of ['#!/usr/bin/env bash', '#!/bin/bash -e']) assert.doesNotMatch(shebang(line), /⚠|ⓧ|env -S/, line);
     // env with no command runs the script's path, which starts env again (checked with Linux and GNU env: it never ends).
-    assert.match(shebang('#!/usr/bin/env'), /runs `\/usr\/bin\/env \.\/script\.sh args…`\. ⓧ env runs the script's path as the command\. To bash/);
+    assert.match(shebang('#!/usr/bin/env'), /runs as `\/usr\/bin\/env \.\/script\.sh args…`\. ⓧ env runs the script's path as the command$/);
     assert.match(shebang('#!/usr/bin/env FOO=1 bash'), /ⓧ env runs the script's path as the command \(it takes `FOO=1 bash` as a variable to set\)/);
     assert.match(shebang('#!/usr/bin/env FOO=1', 'ja'), /ⓧ env はスクリプトのパスをコマンドとして実行する（`FOO=1` は設定する変数として読む）/);
     // The kernel opens the interpreter as a path: `bash` alone is looked for in the current directory ("required file not found").
-    assert.match(shebang('#!bash'), /runs `bash \.\/script\.sh args…`\. ⚠ The kernel does not search PATH for the interpreter: it looks for `bash` from the current directory/);
+    assert.match(shebang('#!bash'), /runs as `bash \.\/script\.sh args…`\. ⚠ The kernel does not search PATH for the interpreter: it looks for `bash` from the current directory/);
     assert.doesNotMatch(shebang('#!env bash'), /finds `bash` on PATH/);
     assert.match(shebang('#!env bash', 'ja'), /カレントディレクトリからの相対パスとして `env` を探す/);
     // A quote in the rest of the line, quoted again as one word.
-    assert.match(shebang("#!/usr/bin/env -S bash -c 'echo hi'"), /runs `\/usr\/bin\/env '-S bash -c '\\''echo hi'\\''' \.\/script\.sh args…`/);
+    assert.match(shebang("#!/usr/bin/env -S bash -c 'echo hi'"), /runs as `\/usr\/bin\/env '-S bash -c '\\''echo hi'\\''' \.\/script\.sh args…`/);
   });
 
   it('says when bash refuses the options of its shebang (test/state.test.ts runs them)', () => {

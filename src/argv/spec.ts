@@ -16,6 +16,12 @@ export type Ends = 'loop' | 'pass' | 'function' | 'shell';
 export interface CommandSpec {
   summary: Text;
   /**
+   * What the command does in a few words, for the sentence of a line ("In short", src/linesentence.ts), where `summary`
+   * goes on to say more (the functions of bats, whose summaries say when they fail and what they set). Without it, the
+   * sentence glosses the command with its summary.
+   */
+  gloss?: Text;
+  /**
    * Where the program usually is (`/usr/bin/time`), said where the same name is also something else (a builtin, a
    * reserved word): absent, a program found in PATH.
    */

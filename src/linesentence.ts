@@ -365,7 +365,8 @@ class Composer implements IdiomSpeaker {
   /** The body of a block: the lines of its statements, or on the line of its first word their commands. */
   body(n: SyntaxNode): string {
     const st = bodyOf(n);
-    return this.bodyLines(n) ?? S.bodyOf(this.lang, st.length ? this.names(st) : '');
+    const lines = this.bodyLines(n);
+    return lines ? S.bodyOn(this.lang, lines) : S.bodyOf(this.lang, st.length ? this.names(st) : '');
   }
 
   /** The lines of a block's statements, when they go on below the line of its first word. */
