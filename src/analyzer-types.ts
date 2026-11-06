@@ -189,6 +189,12 @@ export interface ContextEntry { label: string; line: number }
 export interface ExplainOptions {
   /** What the shell code is part of (the kind of file, and the CI system of a YAML step). */
   host?: HostId;
+  /**
+   * Where the shell the line is explained as comes from, when it is a ShellCheck directive of the file (`Shells.detected`) and not a choice
+   * outside the file (a setting, the page's list, `--shell`), which is what an absent value means. The shebang's note says it. (A host's
+   * text has no shebang to say it: its first line is a comment, test/document.test.ts.)
+   */
+  shellFrom?: 'directive';
   /** The bash release the script is explained for (the `bashExplainer.bashVersion` setting; 5.2 when absent). */
   bashVersion?: BashVersion;
   /** The `bashExplainer.yq.flavor` setting. */

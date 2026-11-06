@@ -523,7 +523,7 @@ With a shell other than bash chosen (the picker of the web page, the setting, `-
 
 The `[[ =~ ]]` row said "captures go to `BASH_REMATCH`" in every shell; it now says so in bash only (`binaryTestOp`, src/dict/syntax.ts).
 
-The shebang's last sentence said "a ShellCheck directive or a setting chooses it" also when the page's picker had. It now says "a ShellCheck directive chooses it" when the file has the directive for that shell, and else "it is chosen in the settings, the page's picker or the command line".
+The shebang's last sentence said "a ShellCheck directive or a setting chooses it" also when the page's picker had. It now says "a ShellCheck directive chooses it" when the file has that directive for the shell (`ExplainOptions.shellFrom`, set from `Shells.detected`), and else "chosen outside the file: a setting, the page's list or `--shell`".
 
 ### Hover cards on the web page stay off the line
 
