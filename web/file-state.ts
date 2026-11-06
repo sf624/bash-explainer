@@ -25,6 +25,12 @@ export interface FileSnapshot<H> {
   pending: string | undefined;
 }
 
+/**
+ * The file of a new script (Clear, a whole script pasted over the untouched sample; docs/design/usability-9.md, Q8), to
+ * `restore`: no file's and no name given, so it is "untitled", a save asks where, and nothing of it is saved yet.
+ */
+export const newScriptFile = <H>(): FileSnapshot<H> => ({ file: undefined, format: PLAIN, clean: '', draft: undefined, pending: undefined });
+
 /** `H`: the type of a file handle (the page's: `FileSystemFileHandle`, which the unit tests, without the DOM, do not name). */
 export class FileState<H> {
   /** The file the script was opened from or last saved to; undefined while it never was. */
@@ -94,11 +100,6 @@ export class FileState<H> {
   /** A sample (or the text the page starts with) is the script: no file's, so a save asks where, and never writes it into the file opened before. */
   sampleLoaded(text: string): void {
     this.set(undefined, PLAIN, text);
-  }
-
-  /** A new script (Clear, a whole script pasted into an untouched editor): no file's and no name given, so it is "untitled" and a save asks where. */
-  started(): void {
-    this.set(undefined, PLAIN, '');
   }
 
   /** The write was refused: the same write would fail again, so the next save asks where. */

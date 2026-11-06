@@ -57,7 +57,7 @@ export const ui = {
       inShort: 'ひとことで',
       // (The box of the line's problems: src/ui/panelProblems.ts.)
       problems: {
-        title: 'この行の問題', more: '詳しく', fix: '修正案', copyFix: '修正をコピー', toRow: '解説の行へ移動', toProblem: 'この行の問題へ移動',
+        title: 'この行の問題', more: '詳しく', fix: '修正案', copyFix: '修正をコピー', toRow: '解説の行へ移動', toProblem: 'この行の問題へ移動', levelSaid: '{level}、{word}',
         // (Why a fix stops with `return 1 2>/dev/null || exit 1`: `Rewrite.sourcedOrRun`.)
         sourcedOrRun: '`source` で読まれたら `return`、実行されたら `exit`',
         onLine: '行 {n} の{word}', toLine: '行 {n} へ移動',
@@ -217,7 +217,7 @@ export const ui = {
       inShort: 'In short',
       // (The box of the line's problems: src/ui/panelProblems.ts.)
       problems: {
-        title: 'Problems on this line', more: 'More', fix: 'Fix', copyFix: 'Copy fix', toRow: 'Go to its row', toProblem: 'Go to the problem',
+        title: 'Problems on this line', more: 'More', fix: 'Fix', copyFix: 'Copy fix', toRow: 'Go to its row', toProblem: 'Go to the problem', levelSaid: '{level}, {word}',
         sourcedOrRun: '`return` if sourced, `exit` if run',
         onLine: '{word} on line {n}', toLine: 'Go to line {n}',
       },

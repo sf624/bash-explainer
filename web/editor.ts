@@ -29,6 +29,7 @@ import { sheetCover } from './layout';
 import { nameHintsExtension, PlacedHint, setHints } from './name-hints';
 import { withCode } from './problem-list';
 import { Kind } from './samples';
+import { scriptHistory } from './script-state';
 import { TEXT } from './text';
 import { setWrapRuns, wordWrap } from './word-wrap';
 import { wrapRuns } from '../src/ui/wrapRuns';
@@ -341,7 +342,7 @@ export class Editor {
         doc: init.text,
         selection: { anchor: 0 },
         extensions: [
-          lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), this.historyMode.of(history()),
+          lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), this.historyMode.of(history()), scriptHistory,
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.marginMode.of(roomUnderText(0)), EditorView.scrollMargins.of(() => ({ bottom: this.bottomMargin + sheetCover() })), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
@@ -518,9 +519,12 @@ export class Editor {
     this.view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true });
   }
 
-  setText(text: string, cursorLine: number): void {
-    // On its own in the history, so that one undo takes back the replacement and nothing typed just before it.
-    this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: text }, annotations: isolateHistory.of('full') });
+  /**
+   * Replaces the text, on its own in the history, so that one undo takes back the replacement and nothing typed just
+   * before it. `effects` go into the same step of the history (a new script's `scriptChange`, web/script-state.ts).
+   */
+  setText(text: string, cursorLine: number, effects: StateEffect<unknown>[] = []): void {
+    this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: text }, effects, annotations: isolateHistory.of('full') });
     this.placeCursor(cursorLine);
   }
 

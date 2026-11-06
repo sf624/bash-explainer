@@ -1,6 +1,6 @@
 // The file the web page's script is (web/file-state.ts): its transitions, and the facts it decides once.
 import * as assert from 'assert';
-import { FileState } from '../web/file-state';
+import { FileState, newScriptFile } from '../web/file-state';
 
 const never = () => false;
 const sample = (text: string) => !text.trim() || text === 'SAMPLE';
@@ -26,7 +26,7 @@ describe('the file state of the web page', () => {
     s.opened({ name: 'test.bats', handle }, { eol: '\r\n', bom: true }, 'run true\n');
     const before = s.snapshot();
     const version = s.version();
-    s.started();
+    s.restore(newScriptFile());
     assert.deepStrictEqual([s.name('test.bats'), s.file, s.format, s.named(), s.handle()], ['untitled.bats', undefined, { eol: '\n', bom: false }, false, undefined]);
     assert.ok(s.version() !== version);
     assert.deepStrictEqual([s.unsaved('', never), s.unsaved('echo pasted\n', never)], [false, true]);

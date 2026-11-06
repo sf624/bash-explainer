@@ -356,12 +356,20 @@
     requestAnimationFrame(syncLine);
   }
 
-  /** The icon of a level, in front of a word that names it (hidden from a screen reader, which says the word). */
-  function levelIcon(/** @type {string} */ icon) {
+  /**
+   * The icon of a level, in front of a word: hidden from a screen reader where the word says the level, else an image
+   * named by the level (`name`, from the level table).
+   */
+  function levelIcon(/** @type {string} */ icon, /** @type {string | undefined} */ name = undefined) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 16 16');
     svg.setAttribute('class', 'note-icon');
-    svg.setAttribute('aria-hidden', 'true');
+    if (name) {
+      svg.setAttribute('role', 'img');
+      svg.setAttribute('aria-label', name);
+    } else {
+      svg.setAttribute('aria-hidden', 'true');
+    }
     drawIcon(svg, icon);
     return svg;
   }
@@ -423,7 +431,8 @@
 
   /** One problem of the box: its level's icon and word and its headline (a button to its row, where it has one), then "more". */
   function problemItem(/** @type {any} */ p, /** @type {number} */ index) {
-    const head = el(p.rows.length ? 'button' : 'span', { class: 'problem-head' }, levelIcon(p.icon), el('strong', { class: 'note-label' }, p.word), ' ', el('span', { class: 'problem-head-text' }, ...inline(p.head)));
+    // (The icon names the level where the word does not: "Warning" before "Portability".)
+    const head = el(p.rows.length ? 'button' : 'span', { class: 'problem-head' }, levelIcon(p.icon, p.levelName), el('strong', { class: 'note-label' }, p.word), ' ', el('span', { class: 'problem-head-text' }, ...inline(p.head)));
     if (p.rows.length) {
       head.setAttribute('type', 'button');
       head.setAttribute('title', labels.problems.toRow);
@@ -448,7 +457,7 @@
       for (const path of p.rows) {
         const row = document.querySelector(`#tree li[data-path="${path}"] > .item > .row`);
         if (!row) continue;
-        const chip = el('button', { type: 'button', class: `problem-chip ${p.className}`, 'data-problem': String(index), title: labels.problems.toProblem, 'aria-label': `${labels.problems.toProblem}: ${p.word}` }, levelIcon(p.icon));
+        const chip = el('button', { type: 'button', class: `problem-chip ${p.className}`, 'data-problem': String(index), title: labels.problems.toProblem, 'aria-label': `${labels.problems.toProblem}: ${p.said}` }, levelIcon(p.icon));
         chip.addEventListener('click', (e) => {
           e.stopPropagation();
           toProblem(index);

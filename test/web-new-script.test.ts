@@ -9,6 +9,7 @@ import type { Browser, BrowserContext, Frame, Page } from 'playwright-core';
 import { contrast, parseColour, type RGB } from '../src/ui/colour';
 import { chooseDepth, currentShell, kindChosen, menuItem, openSite, pickKind, setShell, toastText, until } from './support/site';
 
+const DOCKERFILE = 'FROM alpine:3.20\nRUN apk add --no-cache curl\nCMD ["sh"]\n';
 const BATS = '#!/usr/bin/env bats\n@test "x" {\n  run true\n}\n';
 /** A script with no shebang, as the usability test's logins.sh: nothing in it says another kind. */
 const LOGINS = 'grep -c "$USER" /var/log/auth.log\nwho | wc -l\n';
@@ -72,7 +73,7 @@ describe('the web page: what a new script resets, and the depths\' names', funct
       assert.deepStrictEqual(await state(page), ['shell', 'untitled.sh', 'auto'], lang);
       assert.strictEqual(await toastText(page), lang === 'en'
         ? 'Sample cleared. File type set to Shell script. Shell set back to Auto.'
-        : 'サンプルを消去しました。ファイルの種類を シェルスクリプト にしました。シェルを自動に戻しました。');
+        : 'サンプルを消去しました。ファイルの種類をシェルスクリプトにしました。シェルを自動に戻しました。');
       // The depth is a view's preference: it stays.
       assert.strictEqual(await depthOf(page), '2');
       // Only the words are the live region; the Undo is a button beside it.
@@ -111,7 +112,7 @@ describe('the web page: what a new script resets, and the depths\' names', funct
     await ctx.close();
   });
 
-  it('a script pasted into an editor emptied by hand is a new script: the opened test.bats gives way to untitled.sh, and Undo brings it back', async () => {
+  it('a file open stays the file: Open resets the shell (Undo chooses it again), a paste into it emptied by hand keeps it, and Clear asks before it forgets its changes', async () => {
     const { ctx, page, errors } = await open();
     await setShell(page, 'sh');
     // Open puts the shell back to Auto too, and its Undo chooses it again (the file stays).
@@ -122,26 +123,78 @@ describe('the web page: what a new script resets, and the depths\' names', funct
     await page.locator('#status .status-action').click();
     await until('sh again', () => currentShell(page), (s) => s === 'sh');
     assert.deepStrictEqual(await state(page), ['bats', 'test.bats', 'sh']);
-    // Emptied by hand, then a script with no shebang pasted: before, it stayed test.bats, a bats file.
+    // Emptied by hand, then a script pasted: the file, its kind and the shell stay (only Clear starts a new script).
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Delete');
     await paste(page, LOGINS);
-    await until('a shell script', () => kindChosen(page), (k) => k === 'shell');
-    assert.deepStrictEqual(await state(page), ['shell', 'untitled.sh', 'auto']);
-    assert.strictEqual(await toastText(page), 'File type set to Shell script. Shell set back to Auto.');
-    assert.strictEqual((await text(page)).trim(), LOGINS.trim());
-    await page.locator('#status .status-action').click();
-    await until('the file back', () => shownName(page), (n) => n === 'test.bats');
-    assert.deepStrictEqual(await state(page), ['bats', 'test.bats', 'sh']);
-    // (The text stays as pasted.)
-    assert.strictEqual((await text(page)).trim(), LOGINS.trim());
-    // A few lines pasted into the user's own script reset nothing.
-    await page.keyboard.press('Control+End');
-    await paste(page, BATS);
+    await until('the paste', () => text(page), (t) => t.trim() === LOGINS.trim());
     await page.waitForTimeout(300);
     assert.deepStrictEqual(await state(page), ['bats', 'test.bats', 'sh']);
+    // Clear on the file changed since it was opened asks first, as Load the sample does; Cancel keeps all.
+    await menuItem(page, '#menu-clear');
+    await page.locator('#discard-cancel').click();
+    assert.strictEqual((await text(page)).trim(), LOGINS.trim());
+    assert.deepStrictEqual(await state(page), ['bats', 'test.bats', 'sh']);
+    await menuItem(page, '#menu-clear');
+    assert.strictEqual(await page.locator('#discard-open').innerText(), 'Discard and clear');
+    await page.locator('#discard-open').click();
+    await until('empty', () => text(page), (t) => !t.trim());
+    assert.deepStrictEqual(await state(page), ['shell', 'untitled.sh', 'auto']);
+    // Ctrl+Z takes it all back, as the toast's Undo does: the text, the file, its kind and the shell.
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+Z');
+    await until('the file back', () => shownName(page), (n) => n === 'test.bats');
+    await until('sh back', () => currentShell(page), (s) => s === 'sh');
+    assert.deepStrictEqual(await state(page), ['bats', 'test.bats', 'sh']);
+    assert.strictEqual((await text(page)).trim(), LOGINS.trim());
     assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('Ctrl+Z after Clear brings back the Dockerfile, its file and the shell chosen, and Ctrl+Shift+Z clears again', async () => {
+    const { ctx, page, errors } = await open();
+    await openFile(page, 'Dockerfile', DOCKERFILE);
+    await until('the file', () => shownName(page), (n) => n === 'Dockerfile');
+    await setShell(page, 'sh');
+    assert.deepStrictEqual(await state(page), ['dockerfile', 'Dockerfile', 'sh']);
+    await menuItem(page, '#menu-clear');
+    await until('empty', () => text(page), (t) => !t.trim());
+    assert.deepStrictEqual(await state(page), ['shell', 'untitled.sh', 'auto']);
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+Z');
+    await until('the Dockerfile', () => text(page), (t) => t.trim() === DOCKERFILE.trim());
+    await until('its kind', () => kindChosen(page), (k) => k === 'dockerfile');
+    assert.deepStrictEqual(await state(page), ['dockerfile', 'Dockerfile', 'sh']);
+    // The toast is gone with the edit; nothing of the new script is left.
+    assert.strictEqual(await toastText(page), '');
+    await page.keyboard.press('Control+Shift+Z');
+    await until('empty again', () => text(page), (t) => !t.trim());
+    await until('a shell script', () => kindChosen(page), (k) => k === 'shell');
+    assert.deepStrictEqual(await state(page), ['shell', 'untitled.sh', 'auto']);
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('starts no new script for a line added to the sample, nor for a paste into an editor that Clear emptied: the shell chosen since stays', async () => {
+    const { ctx, page } = await open();
+    await pickKind(page, 'dockerfile');
+    await until('the Dockerfile sample', () => text(page), (t) => t.startsWith('FROM') || t.includes('\nFROM'));
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+End');
+    await paste(page, '\nRUN apt-get update\n');
+    await until('the line', () => text(page), (t) => t.includes('RUN apt-get update'));
+    await page.waitForTimeout(300);
+    assert.deepStrictEqual(await state(page), ['dockerfile', 'Dockerfile', 'auto']);
+    // Clear, then zsh chosen, then one line pasted: zsh stays.
+    await menuItem(page, '#menu-clear');
+    await until('empty', () => text(page), (t) => !t.trim());
+    await setShell(page, 'zsh');
+    await page.locator('.cm-content').focus();
+    await paste(page, 'print -l *.txt\n');
+    await until('the paste', () => text(page), (t) => t.includes('print'));
+    await page.waitForTimeout(300);
+    assert.deepStrictEqual(await state(page), ['shell', 'untitled.sh', 'zsh']);
     await ctx.close();
   });
 
@@ -165,6 +218,25 @@ describe('the web page: what a new script resets, and the depths\' names', funct
     await until('a shell script', () => kindChosen(other.page), (k) => k === 'shell');
     assert.strictEqual(await toastText(other.page), 'File type set to Shell script.');
     await other.ctx.close();
+  });
+
+  // (docs/design/usability-9.md, 2.6: the headline's word is the note's label; the icon then says the level, from the level table.)
+  it('names the level of a problem by its icon where the headline\'s word does not, and on the row\'s chip', async () => {
+    const { ctx, page } = await open();
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('#!/bin/sh\necho -e "a\\tb"\n');
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('ArrowDown');
+    const panel = panelOf(page);
+    await until('the box', () => panel.locator('#problems .problem-head').count(), (n) => n > 0);
+    const box = await panel.locator('#problems').ariaSnapshot();
+    assert.match(box, /img "Warning"[\s\S]*Portability/, box);
+    // ("Error" says its level itself: its icon is not read twice.)
+    assert.doesNotMatch(box, /img "Error"/, box);
+    const chips = await panel.locator('.problem-chip').evaluateAll((cs) => cs.map((c) => c.getAttribute('aria-label')));
+    assert.ok(chips.includes('Go to the problem: Warning, Portability'), JSON.stringify(chips));
+    await ctx.close();
   });
 
   it('keys 1 and 2 typed in the editor change the text, not the depth; the control draws no digit', async () => {
