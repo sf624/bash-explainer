@@ -102,6 +102,13 @@ Check every change to the web page or the panel's UI against this list before it
   - An action repeated twice, then Undo.
 - **What a screen reader hears.** Check the accessibility tree (`ariaSnapshot()`), not only the screen. CSS generated content (`::before` text) is read aloud unless it has empty alt text (`content: "…" / ""`). A live region holds the message only, not buttons.
 - **Themes.** The control's edges and text in light and dark, with measured contrast. A 1.1:1 border does not separate a popup from the editor.
+- **Sizes from tokens.**
+  - A control's height, radius and gaps come from variables: those of web/theme.css (`--radius`, `--radius-sm`, and one height per row of controls) on the web page, VS Code's own in the panel. A new hard-coded `border-radius` or control height needs a reason.
+  - Controls side by side (a row of buttons, a chip and its neighbours) have the same drawn height and radius, and a pill's ends are half circles (radius = half the drawn height). Measure the boxes in the web test, not by eye.
+- **Contrast in numbers.** Text at least 4.5:1; control edges, focus rings and icons that carry meaning at least 3:1 against what is next to them. Check light and dark, and a high-contrast theme in the panel.
+- **Focus not hidden.** The control with keyboard focus is never under the sheet, the app bar, a toast or a hover card (WCAG 2.2, 2.4.11). Check its box against the overlay's at 390 and 1280 px.
+- **States do not move things.** Hover, pressed, selected and focus change colour, outline or shadow, never a box's size or place. Check that the neighbours' boxes stay where they were.
+- **A control's state follows its data.** Clear, Undo, Copy and the like are disabled when there is nothing to act on (native `disabled`, or `aria-disabled` when it must keep focus). Update their state after every change: Undo, a new script and Clear included. The `ariaSnapshot()` shows it.
 - **Test what failed.** A test of each item above must fail on the broken version: try it on the old code before pushing.
 
 ## Stacked PRs
