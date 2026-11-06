@@ -16,6 +16,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - At depth 1, the panel shows bash's steps on a word that a step changes (`"$USER"`, `~/docs`, `*.txt`), and a glob's example of names starts open when it is the line's only example or the cursor is on its command; names typed in it stay. Before, the steps were only at depth 2, and the example started closed.
 - The README is shorter: a quick start, then links to the user guide in `docs/guide/`, in English and Japanese, which holds the rest (VS Code, settings, other shells, warnings, the web page, limitations, privacy).
 - The README's logo is readable in dark themes in VS Code.
+- `which` is described as showing the path of a program found in PATH, with a pointer to `type` and `command -v` for what bash really runs (builtins, functions and aliases). Before, it said only "Show the full path of a command".
 
 ### Fixed
 
