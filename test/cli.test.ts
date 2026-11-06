@@ -1,6 +1,6 @@
 // The command-line tool, as published: built into a temporary directory and run with Node.js.
 import * as assert from 'assert';
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -963,5 +963,31 @@ describe('the command-line tool', function () {
       assert.match(run(['--check', '--format', 'github', '--', f]).out, /^::error file=[^ ]*##\[error\]z\.sh,/m);
       assert.ok((JSON.parse(run(['--format', 'json', '-e', script.trimEnd()]).out) as { text: string }[])[0].text.includes('##[error]a'));
     });
+  });
+
+  describe('when the reader of standard output closes first (`| head -1`)', () => {
+    // A real pipe: the reader takes the first chunk and closes its end. The outputs are far larger than the pipe's buffer (64 KiB), so the writer meets EPIPE.
+    const closedEarly = (args: string[]) => new Promise<{ code: number | null; first: number; err: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, [cli, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+      let first = 0;
+      let err = '';
+      child.stderr.setEncoding('utf8').on('data', (d: string) => { err += d; });
+      child.stdout.once('data', (d: Buffer) => { first = d.length; child.stdout.destroy(); });
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, first, err }));
+    });
+    const long = () => {
+      const f = path.join(dir, 'long.sh');
+      fs.writeFileSync(f, '#!/bin/sh\n' + 'if [[ -n $x ]]; then echo; fi\n'.repeat(1500));
+      return f;
+    };
+    for (const args of [['--no-color'], ['--format', 'markdown'], ['--format', 'json'], ['--check'], ['--check', '--format', 'json'], ['--check', '--format', 'sarif'], ['--check', '--format', 'github']]) {
+      it(`exits quietly with status 141: ${args.join(' ')}`, async () => {
+        const r = await closedEarly([...args, '--no-config', long()]);
+        assert.ok(r.first > 0, 'the reader got something');
+        assert.strictEqual(r.err, '');
+        assert.strictEqual(r.code, 141);
+      });
+    }
   });
 });
