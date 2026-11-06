@@ -84,10 +84,6 @@ In the panel, in VS Code and on the web page (docs/design/usability-9.md, Q1 and
 - Each name's tooltip says the full name and the key: "What it does (key 1 in the panel)", "How bash reads it, word by word (key 2 in the panel)" (「何をするか（パネルの中ではキー 1）」, 「bash が単語ごとにどう読むか（パネルの中ではキー 2）」). The keys 1 and 2 still work only with the focus in the panel; in the editor they type the digits, as before. A screen reader hears each option by the name it shows, and the depth chosen as "Depth: Overview (What it does)".
 - A problem's headline starts with the note's own label, as the Problems list starts its text: "Portability" for `echo -e` in a sh script, a warning. Before, the headline said "Pitfall" there, the word of the warning level. A note whose text names no word ("In `[[ =~ ]]`, an unquoted `\d` loses its backslash") keeps its level's word, "Error".
 
-### The phone's header row
-
-On a phone held upright (a sheet's row under 600 px), the explanation's header has the tabs and the depth's control only, in every language: whether Collapse and Markdown fit no longer depends on how wide the words are. Copy as Markdown is in the menu (☰), and Collapse is left out, as in English before. A row where the depth's control or a tool would lie over the grab bar takes the next, narrower form. The depth's menu button is drawn 32 px high, as the file type's chip, in a 44 px target. Before, in Japanese at 430 px and wider with an empty editor, the row took Collapse and Markdown, and the depth's menu (「単語ごと ▾」, 42 px high) lay over the grab bar.
-
 ### A new script on the web page
 
 Clear, a whole script pasted over the untouched sample, and Open start a new script (docs/design/usability-9.md, Q8). The depth stays.
@@ -98,6 +94,10 @@ Clear, a whole script pasted over the untouched sample, and Open start a new scr
 - A toast says nothing of what did not change: with the shell at Auto, Clear says "Editor cleared", and an empty untitled shell script at Auto stays as it is.
 
 ## Fixed
+
+### The phone's header row
+
+On a phone held upright (a sheet's row under 600 px), the explanation's header has the tabs and the depth's control only, in every language: whether Collapse and Markdown fit no longer depends on how wide the words are. Copy as Markdown is in the menu (☰), and Collapse is left out, as in English before. A row where the depth's control or a tool would lie over the grab bar takes the next, narrower form. The depth's menu button is drawn 32 px high, as the file type's chip, in a 44 px target. Before, in Japanese at 430 px and wider with an empty editor, the row took Collapse and Markdown, and the depth's menu (「単語ごと ▾」, 42 px high) lay over the grab bar.
 
 ### The cases of a test's example
 
