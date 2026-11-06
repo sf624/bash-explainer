@@ -55,16 +55,13 @@ export function shownValue(cx: Explainer, part: SyntaxNode, name: string): strin
 }
 
 /**
- * The text of the word `n` where it runs, when the model knows it for sure and bash keeps it as one word: an
- * expansion (not split into several words nor globbed), or a double-quoted string of plain text and such expansions
- * (`"$x y"`). For the examples whose subject is a word: `[[ $x == a* ]]`, `case $x in`, `[ "$x" = a ]`, a
- * here-string. Undefined otherwise, or when it cannot be shown as it is.
+ * The text of the word `n` where it runs, when the model knows it for sure: an expansion, or a double-quoted string of
+ * plain text and expansions (`"$x y"`), where bash neither splits nor globs the word. For the examples whose subject
+ * is such a word: `[[ $x == a* ]]`, `case $x in`, a here-string (a test's cases read the variable's value itself:
+ * `shownValue`). Undefined otherwise, or when it cannot be shown as it is.
  */
 export function wordValue(cx: Explainer, n: SyntaxNode): string | undefined {
-  const one = (x: SyntaxNode): string | undefined => {
-    const v = expansionValue(x, cx.state);
-    return v && !v.glob && (!v.words || (v.words.length === 1 && v.words[0] === v.text)) ? v.text : undefined;
-  };
+  const one = (x: SyntaxNode): string | undefined => expansionValue(x, cx.state)?.text;
   // (The examples compute what bash does: in sh and dash they keep their samples.)
   if (cx.state.shell !== undefined && cx.state.shell !== 'bash') return undefined;
   let text: string | undefined;
