@@ -11,7 +11,7 @@ import type { HighlightKind } from './highlight';
 import { isProgram } from './namefacts';
 import { bracesIn } from './semantics/argwords';
 import { slotEnvs } from './semantics/env';
-import { type NameResolution, resolveName, testSpecOf } from './semantics/names';
+import { isFunction, type NameResolution, resolveName, testSpecOf } from './semantics/names';
 import { quotedName } from './semantics/effects';
 import type { StateModel } from './semantics/state';
 import { staticWordValue } from './staticword';
@@ -30,9 +30,9 @@ export interface FactSpan {
 
 /** The kind of what a command name runs (never a reserved word: the parser has read it as a command name). */
 export function nameKind(res: NameResolution): HighlightKind {
+  if (isFunction(res)) return 'function';
   switch (res.kind) {
     case 'alias': return 'alias';
-    case 'function': return 'function';
     case 'builtin': return 'builtin';
     // (A program, or nothing: `builtin nosuch`, still a command name to the reader.)
     default: return 'command';
@@ -67,7 +67,7 @@ function command(c: SyntaxNode, model: StateModel, shell: Shell | undefined, out
   out.push({ from: word.startIndex, to: word.endIndex, kind: nameKind(res) });
   // A function's or an alias's words have no spec, and `test`'s are an expression (`-f`, `-eq` are its operators): the
   // tree's reading of them stays.
-  const spec = res.kind === 'function' || res.kind === 'alias' || testSpecOf(res) ? undefined : lookupCommand(name);
+  const spec = isFunction(res) || res.kind === 'alias' || testSpecOf(res) ? undefined : lookupCommand(name);
   const args = fields(c, 'argument');
   if (!spec || !args.length) return;
   const argWord = argWordFor(shell, bracesIn(model));

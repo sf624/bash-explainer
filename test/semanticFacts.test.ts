@@ -159,12 +159,12 @@ describe('the colours of host files, one shell per step', () => {
     assert.deepStrictEqual(kindOf(workflow, { forced: 'sh' }, 'yaml'), ['command']);
   });
 
-  it('reads a bats file with the commands bats defines', () => {
+  it('reads a bats file with the commands bats defines, as functions', () => {
     const text = '#!/usr/bin/env bats\n@test "a" {\n  run echo hi\n}\n';
     const extracted = extractShell('bats', text);
     const lines = text.split('\n');
     const got = documentHighlight({ lines, extracted, tree: parser.parse(extracted.text) }).map((s) => `${s.line}:${s.kind}:${lines[s.line].slice(s.from, s.to)}`);
-    assert.ok(got.includes('2:command:run'), got.join(' '));
+    assert.ok(got.includes('2:function:run'), got.join(' '));
   });
 
   it('gives only the lines asked for, read by the shell of each step', () => {

@@ -46,7 +46,8 @@ export class WalkBuiltins {
    * (bats' `run`), read by its spec (not behind `command` and `builtin`, which run no function).
    */
   builtin(name: string, args: SyntaxNode[], n: SyntaxNode, st: ShellState, host = false): ShellState {
-    const hosted = host && Object.hasOwn(this.w.host, name) ? this.w.host[name] : undefined;
+    // (Not after an `unset -f` of it: bash then finds no function of the name.)
+    const hosted = host && Object.hasOwn(this.w.host, name) && !st.functions.get(name)?.removed ? this.w.host[name] : undefined;
     if (hosted) return this.effects(hosted, builtinRead(name, args, this.w.shell, hosted), n, st, true);
     if (!builtins[name] || !this.bashBuiltin(name)) return st;
     // Where brace expansion may be on or off (`set +B` on some paths before), a word with braces gives other words
@@ -524,7 +525,8 @@ export class WalkBuiltins {
         continue;
       }
       for (const text of texts) {
-        const fn = st.functions.get(text);
+        // (A function of the host, bats' `run`, is defined before the file runs: `unset -f` removes it, as it does the file's.)
+        const fn = st.functions.get(text) ?? (Object.hasOwn(this.w.host, text) ? { state: 'on', def: n, exported: 'off', readonly: 'off' } as const : undefined);
         if (space === 'function') {
           if (fn) st = this.w.put(st, 'functions', text, { ...fn, state: 'off', removed: n });
           continue;

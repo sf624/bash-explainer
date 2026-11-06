@@ -5,7 +5,7 @@ import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
 import { ancestor, descendants, field, fields, nameText, type SyntaxNode } from '../syntax/tree';
 import { processOf, STATEMENTS } from './env';
-import { resolveName } from './names';
+import { isFunction, resolveName, runsFunction } from './names';
 import { attribute, option, type StateModel } from './state';
 import { type FromEnvironment, fromEnvironment } from './shellstate';
 import { changedUnseen, setAtStart } from './vars';
@@ -80,8 +80,8 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
   if (option(st, 'set', 'nounset') !== 'on' || st.opaque) return undefined;
   const statement = ancestor(n, (a) => STATEMENTS.has(a.type))!;
   if (model.dead(statement) || setBefore(statement, n, name) || unreliableNames(n).has(name) || testedFirst(n, name)) return undefined;
-  const isFunction = (a: SyntaxNode): boolean => a.type === 'function_definition';
-  for (let fn = ancestor(n, isFunction); fn; fn = ancestor(fn, isFunction)) {
+  const isDefinition = (a: SyntaxNode): boolean => a.type === 'function_definition';
+  for (let fn = ancestor(n, isDefinition); fn; fn = ancestor(fn, isDefinition)) {
     if (!model.closed(nameText(field(fn, 'name')!)) || !model.calls.get(fn)?.size) return undefined;
   }
   let program = false;
@@ -91,9 +91,9 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
   if (command) {
     const r = /^[\w./+-]+$/.test(command.text) ? resolveName(model, command.text, command, { command: true }) : undefined;
     // (`command f` runs no function: it looks `f` up as a builtin or a file.)
-    if (command !== field(redirect!.parent!, 'name') && r?.kind === 'function') return undefined;
+    if (command !== field(redirect!.parent!, 'name') && isFunction(r)) return undefined;
     program = bash && r?.kind === 'file' && !r.missed && !r.disabled && !r.sourced;
-    if (!program && !((r?.kind === 'builtin' && !r.missed && !r.disabled) || (r?.kind === 'function' && r.sure))) return undefined;
+    if (!program && !((r?.kind === 'builtin' && !r.missed && !r.disabled) || runsFunction(r))) return undefined;
   }
   const v = st.variables.get(name);
   // (Unset on every path. A nameref is left out: what it reads is its target's.)
