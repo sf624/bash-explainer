@@ -5,7 +5,7 @@
 import type { Kind, TestPart, Token } from '../analyzer-types';
 import { arithLiteralIn, evalArith, invalidLiteral } from '../arith';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
-import { binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, testOperandTexts, unaryTestOperands, unaryTestOps } from '../dict/syntax';
+import { binaryTestOp, binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, testOperandTexts, unaryTestOperands, unaryTestOps } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { explainRegex } from '../embedded/regex';
 import { toJsRegex } from '../examples/regex';
@@ -34,7 +34,7 @@ import { arithChildren, arithNumber, bracketPart, commaNote, globToken, tilde } 
  * coreutils' `test` is: it has no `<` nor `>`, checked with coreutils 9.4).
  */
 function binaryText(cx: Explainer, n: SyntaxNode, op: string, double: boolean, builtin: boolean): string {
-  if (op !== '<' && op !== '>') return cx.t(binaryTestOps[op]);
+  if (op !== '<' && op !== '>') return cx.t(binaryTestOp(op, cx.shell));
   if (!builtin) {
     return cx.s(`${cx.t(binaryTestOps[op])}。ただし GNU coreutils の \`test\` にこの演算子はなく、「binary operator expected」のエラーになる（終了ステータス 2）`,
       `${cx.t(binaryTestOps[op])}. But GNU coreutils' \`test\` has no such operator: it says "binary operator expected" (status 2)`);
@@ -144,7 +144,7 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
         `Condition: \`${slice(e.left, e.left)}\` vs \`${slice(e.right, e.right)}\` — ${text}${num}`,
       ), [...operandTokens(e.left, isPlainWord), ...operandTokens(e.right, isPlainWord)],
       // (The operator's text, as in `[[ ]]`, from the table; the condition says how `<` and `>` compare. Another program's says that it has none.)
-      () => [...operand(e.left, op, side('compared')), operator(e.op, refs ? cx.t(binaryTestOps[op]) : text), ...operand(e.right, op, side('right'))])];
+      () => [...operand(e.left, op, side('compared')), operator(e.op, refs ? cx.t(binaryTestOp(op, cx.shell)) : text), ...operand(e.right, op, side('right'))])];
     }
     default: {
       const said = cx.t(binaryTestOps[e.type === 'and' ? '-a' : '-o']);
@@ -397,7 +397,7 @@ function quotedPatternNote(cx: Explainer, n: SyntaxNode, op: string, rights: Syn
         'true if the left side contains the right side as it is (the right side is quoted, so it is literal text, not a regex: `.` and `*` are plain characters)')
       : cx.s('左辺が右辺の正規表現(ERE)に一致すれば真（右辺のうちクォートされた部分は文字列そのまま、残りは正規表現）',
         'true if the left side matches the regex (ERE) on the right (the quoted parts of the right side are literal text, the rest is regex)'))
-      + pitfall + cx.s('。一致結果は `BASH_REMATCH` に入る', '; captures go to `BASH_REMATCH`');
+      + pitfall + (cx.shell && cx.shell !== 'bash' ? '' : cx.s('。一致結果は `BASH_REMATCH` に入る', '; captures go to `BASH_REMATCH`'));
   }
   const equal = op !== '!=';
   return kinds.every((q) => q)

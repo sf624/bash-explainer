@@ -3,14 +3,14 @@
 // line folds, and opens on every step with why it does nothing.
 import type { Lang } from '../i18n';
 import { stepActs, stepsChange, type WordStep } from '../semantics/wordsteps';
-import { ui } from './texts';
+import { panelTexts } from './texts';
 
 /** One step, or several in a row that do nothing for one reason, in words that say it: `off`, it does nothing (drawn muted, which the words do not need); `why`, marked text. */
 export interface StepSaid { text: string; off: boolean; why?: string }
 
 /** What a row says of its word's steps. */
 export interface StepsLine {
-  /** "bash's steps:" */
+  /** "bash's steps:" (or "the shell's steps:", for a script explained as another shell's) */
   lead: string;
   /** Whether a step changes the word: the line is open. Else it folds under `summary`. */
   acts: boolean;
@@ -26,8 +26,8 @@ const WHY_OF_PLACE = (context: string): 'cond' | 'assign' | 'context' => (contex
  * place, `set -f`), and, on a word where no step acts, every one is: that line is the folded one, and it teaches the order. Steps in a row
  * that do nothing for one reason are one entry. `context`: the word's place (`WordMeaning.context`), which says what "not here" is.
  */
-export function stepsLine(steps: readonly WordStep[], context: string, lang: Lang): StepsLine {
-  const t = ui[lang].panel.steps;
+export function stepsLine(steps: readonly WordStep[], context: string, lang: Lang, shell?: string): StepsLine {
+  const t = panelTexts(lang, shell).steps;
   const acts = stepsChange(steps);
   const said: StepSaid[] = [];
   const off = new Map<StepSaid, string[]>();

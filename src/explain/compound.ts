@@ -11,7 +11,7 @@ import { spanOf } from '../noteanchors';
 import { anonSections, programSections } from '../refs';
 import { definitionFails } from '../semantics/names';
 import { coprocName, field, fields, isShebang, nameText, strayKeyword, type SyntaxNode, withLists } from '../syntax/tree';
-import { detectShell, SHELL_NAMES } from '../dialect';
+import { detectShell, readShell, SHELL_NAMES } from '../dialect';
 import { shebangOptionTokens } from './argv';
 import type { Explainer } from './context';
 import { caseExample, pipelineExample } from './examples';
@@ -117,7 +117,7 @@ const warning = <K extends TokenTextId>(cx: Explainer, id: K, ...params: TokenTe
  * the interpreter with the rest of the line (one argument on Linux, blanks and all) and the script's path; bash does
  * the same where the kernel does not. To bash, and to `bash script`, `source script`, it is a comment. Last, the shell
  * we explain the script as, when the line names one (`detectShell`: the file's dialect comes from this line, unless a
- * ShellCheck directive or a setting chooses another).
+ * ShellCheck directive, or a shell chosen in the settings, the page or the command line, takes over).
  */
 function shebang(cx: Explainer, n: SyntaxNode): Token {
   const [, interp, arg] = /^#![ \t]*(\S*)\s*([^]*?)\s*$/.exec(n.text)!;
@@ -137,10 +137,15 @@ function shebang(cx: Explainer, n: SyntaxNode): Token {
   const relative = interp.includes('/') ? '' : sentence(cx, 'shebang-relative-interpreter', { interp });
   const said = detectShell(n.text);
   const used = cx.shell ?? 'bash';
+  // (Why another shell: a ShellCheck directive of the file, else the shell chosen outside it, in the settings, the page's picker or the command line.)
+  const directive = readShell(cx.source.slice(0, 2000));
+  const why: Text = directive.source === 'directive' && directive.shell === used
+    ? { ja: 'ShellCheck の指示コメントで選ばれている', en: 'a ShellCheck directive chooses it' }
+    : { ja: '設定、ページの選択、コマンドラインのいずれかで選ばれている', en: 'it is chosen in the settings, the page\'s picker or the command line' };
   const dialect: Text = !said ? { ja: '', en: '' }
     : said === used ? { ja: `。Bash Explainer はこの行から、スクリプトを ${SHELL_NAMES[said]} のものとして解説する`, en: `. Bash Explainer explains the script as ${SHELL_NAMES[said]}, from this line` }
-      : { ja: `。Bash Explainer はここではスクリプトを ${SHELL_NAMES[said]} ではなく ${SHELL_NAMES[used]} のものとして解説する（ShellCheck の指示コメントか設定で選ばれている）`,
-        en: `. Bash Explainer explains the script as ${SHELL_NAMES[used]} here, not as ${SHELL_NAMES[said]} (a ShellCheck directive or a setting chooses it)` };
+      : { ja: `。Bash Explainer はここではスクリプトを ${SHELL_NAMES[said]} ではなく ${SHELL_NAMES[used]} のものとして解説する（${why.ja}）`,
+        en: `. Bash Explainer explains the script as ${SHELL_NAMES[used]} here, not as ${SHELL_NAMES[said]} (${why.en})` };
   return cx.tok(n, 'shebang', cx.text('shebang-line', { shown, oneArg, arg, relative, env, notes, dialect }), shebangParts(cx, n, interp, arg));
 }
 

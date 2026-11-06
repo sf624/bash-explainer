@@ -517,6 +517,14 @@ A line's problems arrive a moment after the line is explained, and they used to 
 
 The panel reads a code span as Markdown does: a run of backticks up to the next run of as many. Code that holds a backtick, written with two (`` `date` ``, ``x='a`b'``), is one piece of code. Before, the panel cut it at each backtick and showed the rest as text.
 
+### The shell that reads the script, named in the panel
+
+With a shell other than bash chosen (the picker of the web page, the setting, `--shell`, a ShellCheck directive), the texts of the panel that name the reader say "the shell" / 「シェル」: the label of depth 2 ("How the shell reads it"), "the shell's steps:" on word rows, the roles and their explanations ("the shell parses it"), the Legend. Facts about bash alone stay "bash" (the reference manual, a new `bash` started by a command, `[[` as "bash-only"). They come from one place, `panelTexts` (src/ui/texts.ts), which puts the name where a text says `{shell}`.
+
+The `[[ =~ ]]` row said "captures go to `BASH_REMATCH`" in every shell; it now says so in bash only (`binaryTestOp`, src/dict/syntax.ts).
+
+The shebang's last sentence said "a ShellCheck directive or a setting chooses it" also when the page's picker had. It now says "a ShellCheck directive chooses it" when the file has the directive for that shell, and else "it is chosen in the settings, the page's picker or the command line".
+
 ### Hover cards on the web page stay off the line
 
 A hover card on the web page now sits under the whole line it explains, or above it when there is no room under it, at the part's place; it never covers a row of the line, also when the line wraps. A line too tall for any room above or below it (a long one-liner in a low window) is the exception: its card goes by the row under the pointer, as before. A word with a problem gets the same place, with the problem above the card in the same box. Moving the pointer from a word to its card, across the line's later rows, keeps the card. The card of `Ctrl+K Ctrl+I` stays while the editor scrolls, and moves to the other side of the line when its side has no room left. A card is at most half the window high (and at most 420 px); a longer card scrolls inside, with the pointer, and with the keyboard after `Ctrl+K Ctrl+I` twice. Before, a card sat above the word and could cover the line's earlier rows.

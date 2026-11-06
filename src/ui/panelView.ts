@@ -10,7 +10,7 @@ import { LEVELS, problemLevel } from '../levels';
 import { ExamplePlacement, lineOwners, noteBasis, noteRefs, notesByLevel, placeExamples } from './render';
 import { boxProblems, isListed, problemsAround } from './panelProblems';
 import { type Depth, rowModel, wholeLineExamples } from './panelRows';
-import { ui } from './texts';
+import { panelTexts, ui } from './texts';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
 import { lineParts, lineRuns, showsLineBox } from './lineBox';
@@ -106,8 +106,8 @@ export function isPressed(state: PanelState, sets: PanelState): boolean {
 }
 
 /** The view control for a state: the depths, the one shown pressed. */
-export function viewControl(state: PanelState, lang: Lang): ViewControl {
-  const tp = ui[lang].panel;
+export function viewControl(state: PanelState, lang: Lang, shell?: string): ViewControl {
+  const tp = panelTexts(lang, shell);
   const option = (o: Omit<ViewOption, 'pressed'>): ViewOption => ({ ...o, pressed: isPressed(state, o.sets) });
   return {
     label: tp.views,
@@ -229,9 +229,9 @@ export function panelUpdate(p: PanelLine) {
     // (What the marks of the rows say, and the Legend of what is drawn: src/ui/panelRows.ts.)
     rowMarks: model.marks,
     key: model.key,
-    control: viewControl(p.state ?? {}, lang),
+    control: viewControl(p.state ?? {}, lang, ex.shell),
     // (The forms the panel's own header may draw the view control in, widest first, and the names and icons of its tools: src/ui/panelHead.ts.)
-    viewForms: viewControlForms(viewControl(p.state ?? {}, lang)),
+    viewForms: viewControlForms(viewControl(p.state ?? {}, lang, ex.shell)),
     tools: panelTools(lang),
     manual: manualLinks(lang, ex),
     // (Said after a link's name, for a screen reader: the links open outside the panel.)

@@ -485,8 +485,15 @@ describe('robustness', () => {
     assert.match(shebang('#!/usr/bin/env -S bash -e', 'ja').explanation, /`\/usr\/bin\/env '-S bash -e' \.\/script\.sh 引数…` を実行する（Linux では行の残りの `-S bash -e` 全体が1つの引数になる）。`env -S` が残りを単語に分け/);
     assert.match(shebang('#!/bin/bash -eu').explanation, /runs `\/bin\/bash -eu \.\/script\.sh args…`\. To bash/);
     // Another shell chosen (a directive, a setting); an interpreter that is no shell; no interpreter.
-    assert.match(shebang('#!/bin/sh', 'en', 'bash').explanation, /Bash Explainer explains the script as bash here, not as POSIX sh \(a ShellCheck directive or a setting chooses it\)$/);
-    assert.match(shebang('#!/bin/sh', 'ja', 'bash').explanation, /ここではスクリプトを POSIX sh ではなく bash のものとして解説する（ShellCheck の指示コメントか設定で選ばれている）$/);
+    assert.match(shebang('#!/bin/sh', 'en', 'bash').explanation, /Bash Explainer explains the script as bash here, not as POSIX sh \(it is chosen in the settings, the page's picker or the command line\)$/);
+    assert.match(shebang('#!/bin/sh', 'ja', 'bash').explanation, /ここではスクリプトを POSIX sh ではなく bash のものとして解説する（設定、ページの選択、コマンドラインのいずれかで選ばれている）$/);
+    // Where the choice came from: a directive of the file, else the settings, the page's picker or the command line.
+    const chosenBy = (src: string, lang: 'ja' | 'en', shell: Shell) => new Analyzer(lang).explainLine(parser.parse(src), 0, shell).items[0].explanation;
+    assert.match(chosenBy('#!/bin/bash\n# shellcheck shell=sh', 'en', 'sh'), /not as bash \(a ShellCheck directive chooses it\)$/);
+    assert.match(chosenBy('#!/bin/bash\n# shellcheck shell=sh', 'ja', 'sh'), /（ShellCheck の指示コメントで選ばれている）$/);
+    assert.match(chosenBy('#!/bin/bash\n# shellcheck shell=sh', 'en', 'dash'), /\(it is chosen in the settings, the page's picker or the command line\)$/);
+    assert.match(chosenBy('#!/bin/bash', 'en', 'sh'), /as POSIX sh here, not as bash \(it is chosen in the settings, the page's picker or the command line\)$/);
+    assert.match(chosenBy('#!/bin/bash', 'ja', 'sh'), /（設定、ページの選択、コマンドラインのいずれかで選ばれている）$/);
     assert.match(shebang('#!/usr/bin/python3').explanation, /runs `\/usr\/bin\/python3 \.\/script\.sh args…`\. To bash this line is a comment: .* ignore it$/);
     assert.match(shebang('#!').explanation, /^Shebang with no interpreter: run as a program, the kernel cannot start the file/);
     assert.match(shebang('#!', 'ja').explanation, /^シバン（shebang）だがインタープリタがない/);

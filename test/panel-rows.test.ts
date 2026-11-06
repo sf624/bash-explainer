@@ -12,12 +12,13 @@ import { TOKEN_TEXTS } from '../src/messages-tokens';
 import { markedText, textParts } from '../src/tokenmarks';
 import { sameSpan } from '../src/ui/hoverParts';
 import { type ModelRow, type RowOptions, rowModel, wholeLineExamples } from '../src/ui/panelRows';
-import { panelUpdate } from '../src/ui/panelView';
+import { panelUpdate, viewControl } from '../src/ui/panelView';
 import { roleOf } from '../src/ui/panelRoles';
 import { stepsLine } from '../src/ui/panelSteps';
 import { placeExamples, toPlainMarkdown } from '../src/ui/render';
-import { ui } from '../src/ui/texts';
+import { panelTexts, ui } from '../src/ui/texts';
 import { main } from '../cli/main';
+import type { Shell } from '../src/dialect';
 import { corpus } from './support/corpus';
 
 // The panel's row model (docs/design/panel-redesign.md, P7a): which rows a line has at each depth, a box around each command, the roles,
@@ -1310,6 +1311,57 @@ describe('the panel\'s row model', () => {
         for (const name of ['a', 'b', 'c']) fs.rmSync(path.join(dir, name), { force: true });
         fs.rmdirSync(dir);
       }
+    });
+  });
+
+  describe('the shell that reads the script', () => {
+    const src = '[[ $1 =~ ^[0-9]+$ ]]';
+    const asShell = (shell: Shell, lang: Lang = 'en') => {
+      const ex = new Analyzer(lang).explainLine(parser.parse(src), 0, shell, { reading: true, argv: true, script: 'said' });
+      return { ex, rows: all(rowModel(ex, D2, lang).rows), line: rowModel(ex, D2, lang).line };
+    };
+    const said = (rows: readonly ModelRow[]) => rows.flatMap((r) => [r.text, r.steps?.lead ?? '', ...r.roles.map((x) => `${x.chip} ${x.said}`)]).join('\n');
+
+    it('names the shell the script is explained as, not bash, where the text is about the reader', () => {
+      for (const lang of ['en', 'ja'] as const) {
+        const bash = said(asShell('bash', lang).rows);
+        const sh = said(asShell('sh', lang).rows);
+        assert.match(bash, lang === 'en' ? /bash's steps:/ : /bash の手順:/);
+        assert.match(sh, lang === 'en' ? /the shell's steps:/ : /シェルの手順:/);
+        // (`[[` is bash-only, which the token says.)
+        assert.doesNotMatch(sh.replace('bash-only', '').replace('bash 専用', ''), /bash/);
+        assert.strictEqual(asShell('sh', lang).line!.chips[0].text, lang === 'en' ? 'the shell reads the line' : 'シェルがこの行を読む');
+        assert.strictEqual(asShell('bash', lang).line!.chips[0].text, lang === 'en' ? 'bash reads the line' : 'bash がこの行を読む');
+      }
+      assert.match(asShell('dash').line!.chips[0].said, /^The shell splits the line .* \(the shell parses it\)$/);
+      assert.match(asShell('bash').line!.chips[0].said, /^bash splits the line .* \(bash parses it\)$/);
+    });
+
+    it('labels the depth and the Legend with the shell too', () => {
+      for (const [lang, sh, bash] of [['en', 'How the shell reads it', 'How bash reads it'], ['ja', 'シェルがどう読むか', 'bash がどう読むか']] as const) {
+        assert.strictEqual(viewControl({}, lang, 'sh').options[1].full, sh);
+        assert.strictEqual(viewControl({}, lang, 'bash').options[1].full, bash);
+        assert.strictEqual(viewControl({}, lang).options[1].full, bash);
+      }
+      assert.match(rowModel(asShell('sh').ex, D2, 'en').key.find((k) => k.id === 'roleLine')!.text, /its role to the shell,/);
+    });
+
+    it('keeps the shape of the panel texts, and leaves no placeholder', () => {
+      const keys = (v: unknown, at = ''): string[] => (typeof v === 'string' ? [`${at}=${/\{Shell\}|\{shell\}/.test(v)}`] : Object.entries(v as object).flatMap(([k, x]) => keys(x, `${at}.${k}`)));
+      for (const lang of ['en', 'ja'] as const) {
+        const own = keys(ui[lang].panel).map((k) => k.replace(/=.*/, ''));
+        for (const sh of [undefined, 'sh'] as const) assert.deepStrictEqual(keys(panelTexts(lang, sh)).filter((k) => !k.endsWith('=false')), []);
+        assert.deepStrictEqual(keys(panelTexts(lang, 'sh')).map((k) => k.replace(/=.*/, '')), own);
+      }
+    });
+
+    it('says BASH_REMATCH only in bash', () => {
+      const text = (shell: Shell, lang: Lang = 'en') => { const { ex, rows } = asShell(shell, lang); return JSON.stringify([ex.items, rows.map((r) => [r.text, r.more])]); };
+      for (const lang of ['en', 'ja'] as const) {
+        assert.match(text('bash', lang), /BASH_REMATCH/);
+        for (const sh of ['sh', 'dash', 'zsh'] as const) assert.doesNotMatch(text(sh, lang), /BASH_REMATCH/);
+      }
+      assert.match(text('sh'), /left side matches the regex \(ERE\) on the right/);
     });
   });
 
