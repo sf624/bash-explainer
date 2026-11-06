@@ -367,6 +367,42 @@ describe('the web page: hover cards in the editor', function () {
     await ctx.close();
   });
 
+  it('does the same for the problem box of the lint: none for a pointer that rests where it clicked, and a click, a paste or typing closes it', async () => {
+    const ctx = await context();
+    const page = await ctx.newPage();
+    await open(page);
+    await page.mouse.move(5, 5);
+    await until('no box', () => box(page).and(page.locator(':visible')).count(), (n) => n === 0);
+    const p = await pointAt(page, 1, '$(ls)');
+    // A click on `$(ls)` (a problem is about it), then the pointer rests: neither the card nor the problem.
+    await page.mouse.move(p.x, p.y);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.waitForTimeout(1200);
+    assert.strictEqual(await box(page).and(page.locator(':visible')).count(), 0, 'no box after a click: ' + await page.evaluate("document.querySelector('.cm-tooltip-hover')?.innerText"));
+    // Past the line's end, back on the part: it is shown again (the click is forgotten).
+    const end = await pointAt(page, 1, 'do');
+    await page.mouse.move(end.x + 300, end.y);
+    await page.mouse.move(p.x, p.y);
+    await until('the problem and the card', () => box(page).locator(':scope:visible > *').count(), (n) => n === 2);
+    // A click closes both.
+    await page.mouse.down();
+    await page.mouse.up();
+    await until('no box', () => box(page).and(page.locator(':visible')).count(), (n) => n === 0);
+    // So do a paste and typing.
+    for (const edit of ['paste', 'typing'] as const) {
+      await page.mouse.move(5, 5);
+      await page.mouse.move(p.x, p.y);
+      await until('the problem and the card', () => box(page).locator(':scope:visible > *').count(), (n) => n === 2);
+      await page.locator('.cm-content').focus();
+      if (edit === 'paste') await page.keyboard.insertText('# ');
+      else await page.keyboard.press('x');
+      await until(`no box after ${edit}`, () => box(page).and(page.locator(':visible')).count(), (n) => n === 0);
+      await page.keyboard.press('Control+Z');
+    }
+    await ctx.close();
+  });
+
   for (const how of ['a click', 'a paste', 'typing', 'Escape in the editor', 'Escape on the page', 'Escape in the panel'] as const) {
     it(`closes the card the pointer opened on ${how}`, async () => {
       const ctx = await context();

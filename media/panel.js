@@ -1552,6 +1552,13 @@
     keyOpen = false;
     drawKey();
   }, true);
+  // (A click in the box focuses it, so that the focus stays in the row; Tab moves on to the rows under the box and closes it.)
+  $('key').tabIndex = -1;
+  $('view-row').addEventListener('focusout', (e) => {
+    if (!keyOpen || (e.relatedTarget instanceof Node && $('view-row').contains(e.relatedTarget))) return;
+    keyOpen = false;
+    drawKey();
+  });
   window.addEventListener('blur', () => {
     if (!keyOpen) return;
     keyOpen = false;

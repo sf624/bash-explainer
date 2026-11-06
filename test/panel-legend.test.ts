@@ -125,6 +125,20 @@ describe('the VS Code panel: its Legend', function () {
     await page.close();
   });
 
+  it('closes when the focus moves on with Tab, and keeps while a click lands in its box', async () => {
+    const page = await open('dark', 600, 'en');
+    await page.locator('#key-open').focus();
+    await page.keyboard.press('Enter');
+    assert.strictEqual(await shown(page), true);
+    await page.locator('#key li').first().click();
+    assert.strictEqual(await shown(page), true);
+    await page.locator('#key-open').focus();
+    await page.keyboard.press('Tab');
+    assert.strictEqual(await shown(page), false);
+    assert.notStrictEqual(await page.evaluate('document.activeElement.id'), 'key-open');
+    await page.close();
+  });
+
   it('has no button when there is nothing to key, and no empty box', async () => {
     const page = await open('dark', 600, 'en');
     await page.locator('#key-open').click();

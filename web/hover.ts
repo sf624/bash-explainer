@@ -7,8 +7,8 @@
 // again puts the focus in the card; Escape closes it. Ctrl+K Ctrl+E and the links "Whole line" and "Open in panel" put
 // the cursor on the line, so that the panel explains it whole: there is no whole-line card on the web. A touch screen
 // gets no hover (the panel follows the tapped line). `hover.enabled` off frees the keys for the browser.
-import { forEachDiagnostic } from '@codemirror/lint';
-import { Compartment, Extension, Prec, StateEffect, StateField } from '@codemirror/state';
+import { Diagnostic, forEachDiagnostic } from '@codemirror/lint';
+import { Compartment, Extension, Prec, StateEffect, StateField, Transaction } from '@codemirror/state';
 import { closeHoverTooltips, EditorView, hoverTooltip, keymap, showTooltip, Tooltip, tooltips, ViewPlugin } from '@codemirror/view';
 import type { LineExplanation } from '../src/analyzer';
 import { heredocAt, ShellDocument } from '../src/document';
@@ -209,6 +209,10 @@ export interface WebHover {
   extension: Extension;
   /** Binds or frees the keys (`hover.enabled`), and closes a card opened by the keyboard; call it when the settings change. */
   enable(view: EditorView, on: boolean): void;
+  /** The lint's tooltip filter: no problem box for a pointer that rests where it clicked, as for the card (the lint's own hover is another one). */
+  tooltipFilter: (diagnostics: Diagnostic[]) => Diagnostic[];
+  /** The lint's `hideOn`: a click (a move of the cursor), a paste and typing close its box, as they close the card. */
+  hideOn: (tr: Transaction) => boolean | null;
 }
 
 export function webHover(host: HoverHost): WebHover {
@@ -216,7 +220,7 @@ export function webHover(host: HoverHost): WebHover {
   /** The card the pointer opened, while it shows. */
   let hovered: Card | undefined;
   /** Where the last click in the editor was: a pointer that rests there opens no card. */
-  let clicked: number | undefined;
+  let clicked: Card | undefined;
   // The pointer on its way from a part to its card crosses the line's other rows, whose words would take the hover
   // over. Only while it has left the part's row and comes closer to the card (src/ui/cardPlace.ts, `towardCard`), with
   // no button pressed, the editor does not see its moves; every other move is the editor's (another word's card, a
@@ -351,9 +355,16 @@ export function webHover(host: HoverHost): WebHover {
       close(view);
     };
     const down = (e: MouseEvent) => {
-      if (!view.dom.contains(e.target as Node)) closeAll();
+      // (A press anywhere but in a card closes it, also where it does not move the cursor: on the word the cursor is on.)
+      if (!(e.target as Element).closest?.('.cm-tooltip')) closeAll();
       // (Only the main button; a click on a word is where the pointer rests from then on.)
-      if (e.button === 0 && view.contentDOM.contains(e.target as Node)) clicked = view.posAtCoords({ x: e.clientX, y: e.clientY }, false);
+      if (e.button === 0 && view.contentDOM.contains(e.target as Node)) clicked = cardAt(host, view, view.posAtCoords({ x: e.clientX, y: e.clientY }, false), []) ?? undefined;
+    };
+    // The pointer that leaves the clicked part (onto another, past the line's end, or where no card is) is no longer resting there.
+    const move = (e: MouseEvent) => {
+      if (!clicked) return;
+      const at = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      if (at === null || at < clicked.from || at > clicked.to || view.state.doc.lineAt(at).number !== clicked.line + 1) clicked = undefined;
     };
     const leave = () => void (clicked = undefined);
     // The panel's frame is another document: its keys and its clicks do not reach this one.
@@ -370,6 +381,7 @@ export function webHover(host: HoverHost): WebHover {
     document.addEventListener('keydown', key);
     document.addEventListener('mousedown', down, true);
     view.dom.addEventListener('mouseleave', leave);
+    view.dom.addEventListener('mousemove', move);
     window.addEventListener('blur', closeAll);
     return {
       update(u) {
@@ -380,6 +392,7 @@ export function webHover(host: HoverHost): WebHover {
         document.removeEventListener('keydown', key);
         document.removeEventListener('mousedown', down, true);
         view.dom.removeEventListener('mouseleave', leave);
+        view.dom.removeEventListener('mousemove', move);
         window.removeEventListener('blur', closeAll);
       },
     };
@@ -410,9 +423,8 @@ export function webHover(host: HoverHost): WebHover {
       if (!c) return null;
       // A pointer that rests where it clicked opens no card (the click shows the line in the panel); one that moves on
       // to another part does, and the click is forgotten.
-      if (clicked !== undefined) {
-        const was = cardAt(host, view, clicked, []);
-        if (was && was.from === c.from && was.to === c.to) return null;
+      if (clicked) {
+        if (clicked.from === c.from && clicked.to === c.to && clicked.line === c.line) return null;
         clicked = undefined;
       }
       const placed = placeCard(view, c.from, pos, side < 0 ? -1 : 1, '--bx-hover-room');
@@ -433,6 +445,8 @@ export function webHover(host: HoverHost): WebHover {
         maxHeight: 'var(--bx-hover-room, 420px)', maxWidth: 'min(520px, var(--bx-hover-width, calc(100vw - 16px)))', overflow: 'auto',
       },
       '.cm-tooltip-hover > .cm-bx-hover': { overflow: 'visible' },
+      // The lint draws an empty box when its filter leaves no problem (`tooltipFilter`, for a pointer that rests where it clicked): none.
+      '.cm-tooltip-hover:has(> .cm-tooltip-lint:empty:only-child)': { display: 'none' },
       // A card opened by the keyboard scrolls itself, so that the focus in it scrolls it.
       '.cm-bx-hover-pinned': { maxHeight: 'min(420px, var(--bx-pinned-room, 420px))' },
       // The card: the page's own fonts and colours, VS Code's hover sizes (500 px wide at most, scrolled when long).
@@ -461,6 +475,8 @@ export function webHover(host: HoverHost): WebHover {
   ];
   return {
     extension,
+    tooltipFilter: (ds) => (clicked && ds.some((d) => d.from <= clicked!.to && d.to >= clicked!.from) ? [] : ds),
+    hideOn: (tr) => (tr.selection || tr.docChanged ? true : null),
     enable(view, on) {
       close(view);
       view.dispatch({ effects: compartment.reconfigure(on ? keys : []) });

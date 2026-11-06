@@ -312,6 +312,9 @@ export class Editor {
       }))];
     }, {
       delay: 300,
+      // The problem box closes and stays shut as the part's card does (web/hover.ts, docs/design/usability-9.md, Q6).
+      tooltipFilter: this.hover ? (ds: readonly Diagnostic[]) => this.hover!.tooltipFilter(ds as Diagnostic[]) : null,
+      hideOn: this.hover ? (tr) => this.hover!.hideOn(tr) : undefined,
       // The problems depend on the shell and the language too, not only on the text.
       needsRefresh: (u) => u.transactions.some((tr) => tr.effects.some((e) => e.is(relint))),
     });
