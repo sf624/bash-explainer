@@ -2,7 +2,7 @@
 
 The plan for the roadmap item "Usability toward 9/10". The usability test of 2026-11-06 rated the web page and its panel 7.6/10 after two runs, below the goal of 9 ([panel-redesign.md](panel-redesign.md), section 7, "Results (2026-11-06)"). This page takes its findings one by one: whether each is still there on main, where it comes from in the code, what it cost, and how to fix it. Then the steps as PRs, the maintainer's questions, and how the test runs again.
 
-Status: planned (2026-11-06, #636), revised after an independent review the same day. Nothing built. The steps wait on the maintainer's answers (section 5).
+Status: planned (2026-11-06, #636), revised after an independent review the same day. The maintainer decided the eleven questions as recommended on 2026-11-06 (section 5). Nothing built; U1 is next.
 
 ## 1. The evidence
 
@@ -42,9 +42,9 @@ Ranked by their expected effect: first the tasks they made "not easy", then how 
 
 **Cost.** Task 6 was not easy for 9 of 10 users, the largest single cost. u1, u3, u4, u5, u11, u13 and u14 put it in their top three.
 
-**Fix.** One count, from the source of the strip's own sh problems: `dialectIssues(tree, 'sh', …)`, through the same call the strip makes for a sh script (`documentIssues`, src/document.ts), with the shell set to sh. Not the quiet marks' `collectFeatures` and `notPosixOn` (src/dialect.ts:186, :198): the problems add the behaviours (`collectBehaviours`), drop the variable rows the script assigns and the names that are functions, skip rows with no message, and lower or drop issues through `stopAt`. So only this count agrees with what the strip then lists. Where the shell is bash and the count is not zero, the strip says so: "2 problems in POSIX sh" with a button "Check as POSIX sh". The button makes the same choice as the chip's popover (`setChoice('shell', 'sh')`, web/main.ts), and the chip then shows it, so the way back is where the user expects it. On a phone the Problems tab shows the same line. When and where the hint shows is the maintainer's choice (question Q2): it puts sh on the strip of a bash script, which goes further than the quiet mark of section 8, question 2. A bats file is left out: bats always runs bash.
+**Fix.** One count, from the source of the strip's own sh problems: `dialectIssues(tree, 'sh', …)`, through the same call the strip makes for a sh script (`documentIssues`, src/document.ts), with the shell set to sh. Not the quiet marks' `collectFeatures` and `notPosixOn` (src/dialect.ts:186, :198): the problems add the behaviours (`collectBehaviours`), drop the variable rows the script assigns and the names that are functions, skip rows with no message, and lower or drop issues through `stopAt`. So only this count agrees with what the strip then lists. Where the shell is bash and the count is not zero, the strip says so: "2 problems in POSIX sh" with a button "Check as POSIX sh". The button makes the same choice as the chip's popover (`setChoice('shell', 'sh')`, web/main.ts), and the chip then shows it, so the way back is where the user expects it. On a phone the Problems tab shows the same line. Decided (Q2): the hint shows only where the shell comes from `#!/usr/bin/env bash` or no shebang. It puts sh on the strip of a bash script, which goes further than the quiet mark of section 8, question 2. A bats file is left out: bats always runs bash.
 
-**Products.** The web page. VS Code: its panel already shows the quiet mark; whether VS Code also gets a hint is question Q3. The CLI has `--shell`.
+**Products.** The web page. VS Code: its panel already shows the quiet mark, and it gets no hint for now (Q3). The CLI has `--shell`.
 
 **Tests.** Unit: the hint's count for the sample and the kit's scripts. Web: the strip's line and its button, en and ja, at 1280 and 390; after the button, the chip says POSIX sh, and the strip lists as many problems as the hint said. The cost of the second pass on a bash script is measured (nvm.sh, as P10 did).
 
@@ -64,7 +64,7 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 - `BoxProblem.fixes` carries the fixed statement: the lines the edits touch, with the edits applied, and the span of what changed. The note's text keeps the fragment, as today ("write `… || { … }`").
 - The Fix box shows the whole fixed line with the changed part marked, and copies the whole line. A statement over several lines copies all its lines. A rewrite with no edits (it shows code only) keeps today's box.
 - The Fix and its Copy show under the headline when the problem has a fix, not inside "More". "More" keeps the note's whole text.
-- The button says "Copy fix" / 「修正をコピー」; the header's button says "Markdown" under its icon where it is narrow, "Copy as Markdown" where there is room (question Q5).
+- The button says "Copy fix" / 「修正をコピー」; the header's button says "Markdown" under its icon where it is narrow, "Copy as Markdown" where there is room (Q5).
 - The blanks of `shellWords` belong to a word's span, so a wrap never hides one.
 
 **Products.** The VS Code panel and the web panel (media/panel.js is shared). The quick fixes do not change; their title ("Rewrite as …", src/fixes.ts:21) may keep the fragment, since it names what the edit puts in place.
@@ -81,8 +81,8 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 
 **Fix.**
 
-- Depth 1 shows bash's steps on a word where a step changes it (an expansion, splitting, a glob, a tilde), in one line, from the same `StepsLine` (src/ui/panelSteps.ts) that depth 2 shows. Depth 2 keeps the tree of parts and the grammar. This needs `explainNeeds` to ask for the reading at depth 1 too; its cost is measured (P10's figures: p95 under 8 ms on nvm.sh). Which steps depth 1 shows is question Q4.
-- The glob example is open when it is the line's only example, or when it belongs to the stage the cursor is on (question Q4).
+- Depth 1 shows bash's steps on a word where a step changes it (an expansion, splitting, a glob, a tilde), in one line, from the same `StepsLine` (src/ui/panelSteps.ts) that depth 2 shows. Depth 2 keeps the tree of parts and the grammar. This needs `explainNeeds` to ask for the reading at depth 1 too; its cost is measured (P10's figures: p95 under 8 ms on nvm.sh). Which steps depth 1 shows is decided in Q4.
+- The glob example is open when it is the line's only example, or when it belongs to the stage the cursor is on (Q4).
 - The tester's text is kept per line, with the open state, across a depth switch and a redraw.
 
 **Products.** The VS Code panel and the web panel.
@@ -99,7 +99,7 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 
 **Fix.**
 
-- On the web page the hover card does not open from a resting pointer after a click on the same line: the click already shows the line in the panel. It closes on a click, a paste and typing (`hideOnChange`), and on Escape wherever the focus is. A pointer that moves on to another word opens it as today (question Q6).
+- On the web page the hover card does not open from a resting pointer after a click on the same line: the click already shows the line in the panel. It closes on a click, a paste and typing (`hideOnChange`), and on Escape wherever the focus is. A pointer that moves on to another word opens it as today (Q6).
 - The Legend becomes a popover over the panel: it never pushes the answer down, it is capped in height, and it closes on Escape, on a click outside it and on a new line. Its entries stay those of `keyEntries` (src/ui/panelRows.ts). With no entry, the button is not shown.
 
 **Products.** The web page (the card); the VS Code panel and the web panel (the Legend). VS Code's own hover does not change.
@@ -116,9 +116,9 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 
 **Fix.** Extend the sheet's own constants and its one heights function; add no second gesture model.
 
-- A grab area that a thumb finds: the bar drawn at 48 x 5 px, and a hit area of at least 44 px high around it that no control overlaps (question Q7).
+- A grab area that a thumb finds: the bar drawn at 48 x 5 px, and a hit area of at least 44 px high around it that no control overlaps (Q7).
 - A fling needs more speed and distance (`FLING` to about 1 px/ms, and a minimum travel), so a short flick does not jump a height.
-- Full stops 8 px below the editor's header strip, so a tap just above the sheet is not a rename; or the rename opens from the pencil only on a phone (question Q7).
+- Full stops 8 px below the editor's header strip, so a tap just above the sheet is not a rename; or the rename opens from the pencil only on a phone (Q7).
 - The app bar is never under the sheet during a drag: the drag's top is clamped at the bar's bottom until the snap settles.
 - The first height stays half; the peek is kept.
 
@@ -145,9 +145,9 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 
 **Fix.**
 
-- One name per depth, the short form a part of the long one (question Q1).
+- One name per depth, the short form a part of the long one (Q1).
 - The panel's headline takes the note's heading where it has one, as the strip does: one source, the note's `label`.
-- What Clear and a new script reset is question Q8 (the kind, the name and the shell chosen; see 2.9).
+- What Clear and a new script reset is decided in Q8 (the kind, the name and the shell chosen; see 2.9).
 - The Copy labels as in 2.2.
 
 **Products.** The web page and the VS Code panel (the headline, the depth names); the web page only (the file).
@@ -165,7 +165,7 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 **Fix.**
 
 - At depth 2, a pipeline opens the stage the cursor is on and folds the others to their headline and their receives line; a click opens one. This extends `foldDeep` with the cursor's stage (`RowModel.places` gives the row of a token). The Legend's popover (2.4) takes it out of the flow.
-- "In short" never nests parentheses: `noun` drops a gloss that has its own, or the gloss gets a short form (`CommandSaid.what`; question Q10). The range says what it counts ("its body, lines 3–8").
+- "In short" never nests parentheses: `noun` drops a gloss that has its own (Q10). The range says what it counts ("its body, lines 3–8").
 - "Runs run." gets the function's gloss from its spec (src/dict/bats.ts), as a program's does.
 - The shebang's row says one line at depth 1 and its paragraph at depth 2.
 - On a touch screen, the fold arrow's target is 44 px; a tap on a name does what a click does on a desktop (part of U8).
@@ -184,7 +184,7 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 
 **Cost.** Not in the roadmap's list, but five users raised it (u2 second, u12 third, u4 third; u14 and u15 for task 6): the run-time effect was their own knowledge in every answer to task 6.
 
-**Fix.** Where a row fails with a status, the text says how: the message and the status, and, where the form is a command in a condition, that the condition is false. The table's existing `Does` form carries it. A failure is not the same everywhere: dash says `[[: not found` with status 127, but `[ a == b ]` says "unexpected operator" with status 2. So every text is measured in dash and in busybox ash before it is written, by test/dialect-dash.test.ts, which already runs every row in both. A fix for `=~` in sh is question Q9.
+**Fix.** Where a row fails with a status, the text says how: the message and the status, and, where the form is a command in a condition, that the condition is false. The table's existing `Does` form carries it. A failure is not the same everywhere: dash says `[[: not found` with status 127, but `[ a == b ]` says "unexpected operator" with status 2. So every text is measured in dash and in busybox ash before it is written, by test/dialect-dash.test.ts, which already runs every row in both. A fix for `=~` in sh is decided in Q9.
 
 **Products.** Every output that shows the dialect issues: the web page, VS Code, the CLI, the Action.
 
@@ -198,7 +198,7 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 
 **Cost.** u4 put it first: after POSIX sh for task 6, logins.sh pasted again showed sh's reading, which "looked wrong and made me doubt the output"; depth 2 stayed from task 0. Run 1's remarks on the method list it too.
 
-**Fix.** The shell chosen for a script belongs to that script: a new script (Clear, a paste of a whole script, Open) goes back to Auto, with a toast that says so and an Undo. The depth stays, as a view's preference. This is part of question Q8.
+**Fix.** The shell chosen for a script belongs to that script: a new script (Clear, a paste of a whole script, Open) goes back to Auto, with a toast that says so and an Undo. The depth stays, as a view's preference. This is part of Q8.
 
 **Products.** The web page.
 
@@ -212,7 +212,7 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 
 **Cost.** One user, but as the first cost: the script changed without a sign.
 
-**Fix.** Question Q1 decides the label. Recommended: keep the keys in the panel, and draw no bare digit on the control; the tooltip says "1 or 2 in the panel". The page keeps binding no digit in the editor.
+**Fix.** Decided (Q1): keep the keys in the panel, and draw no bare digit on the control; the tooltip says "1 or 2 in the panel". The page keeps binding no digit in the editor.
 
 **Products.** The web page and the VS Code panel (the control is shared).
 
@@ -256,24 +256,24 @@ U1 to U4 are independent of each other and may go in any order, or in parallel w
 
 - The quick fixes in VS Code and in the web editor (they already apply the whole edit).
 - The CLI's output, Copy as Markdown and the hover's list of parts (panel-redesign.md, decision 7), except where a text they share changes (2.7, 2.8).
-- The problems still show only for the target shell, and the hint is not a problem: it does not count in `--check` or the Action. But the hint does put sh on the strip of a bash script, which goes further than the quiet mark of panel-redesign.md, section 8, question 2. Q2 decides whether, and how far.
+- The problems still show only for the target shell, and the hint is not a problem: it does not count in `--check` or the Action. But the hint does put sh on the strip of a bash script, which goes further than the quiet mark of panel-redesign.md, section 8, question 2. Q2 decided how far: only for `#!/usr/bin/env bash` or no shebang.
 - The three note levels and their words.
 
-## 5. Questions for the maintainer
+## 5. The maintainer's decisions
 
-Each has a recommendation. Nothing here is decided until the maintainer answers.
+The maintainer decided all eleven questions as recommended, on 2026-11-06. The other sections name the question (Qn) where a choice was asked; the decision is here.
 
-- **Q1. The depth names.** Today "1 Does" / "2 Reads", with "What it does" / "How bash reads it" in the menu (decision 6 of panel-redesign.md). Recommended: "Overview" / "Word by word", with the long forms "What it does" / "How bash reads it, word by word" (ja 「概要」/「単語ごと」, 「何をするか」/「bash が単語ごとにどう読むか」), the digit only in the tooltip. Alternatives: keep the names and drop only the digits; or "What it does" / "How bash reads it" at every width that has room.
-- **Q2. When the web page hints at POSIX sh.** (a) Always on a shell script read as bash with a sh problem; (b) only when the shell comes from `#!/usr/bin/env bash` or no shebang, where a reader may mean "any shell", not from `#!/bin/bash`; (c) once, as a tip the reader closes for good. Never on a bats file. Recommended: (b), as one line after the list (or in place of "No problems"), never as a problem.
-- **Q3. The hint in VS Code.** Recommended: not now. VS Code users choose a shell in settings, and its panel shows the quiet marks; the web page is where the test saw the cost. Alternative: an Info item in the panel's header ("2 problems in POSIX sh").
-- **Q4. What depth 1 shows.** Recommended: bash's steps in one line on a word a step changes (expansions, splitting, globbing, tildes); the glob example open when it is the line's only example or the cursor's stage has it. Alternative: a "Steps" toggle beside the depth.
-- **Q5. The Copy labels.** Recommended: "Copy fix" / 「修正をコピー」 on the fix; "Copy as Markdown" / 「Markdown でコピー」 on the panel's header, "Markdown" under the icon where it is narrow; "Copy a link" stays.
-- **Q6. The hover card on the web page.** Recommended: no card from a resting pointer after a click; closed by a click, a paste, typing and Escape; open as today when the pointer moves to a word. Alternative: no hover card at all while the panel is shown (`hover.enabled` off by default on the page).
-- **Q7. The phone's grab area and the full height.** Recommended: a grab strip of 44 px of its own above the tabs row (the sheet's edge, as on iOS and Android sheets), the full height 8 px below the editor's header, and the rename from the pencil only on a phone. Alternative: keep the row as it is and make only the bar's middle third a grab area.
-- **Q8. What a new script resets.** Recommended: Clear, a whole-script paste into an empty or untouched editor (`untouched`, web/kinds.ts:24) and Open start a new script: the kind from the text (the plain Shell script without a signal), the name untitled, the shell back to Auto, with a toast and Undo. The depth stays. Alternative: keep the file, its kind and its shell, and say them in the "Detected" toast.
-- **Q9. A fix for `=~` in sh.** Recommended: no rewrite, since no form fits every regex. `case` matches globs, so it serves only where the regex has a glob form: `^[0-9]+$` has none, though its negation has one (`''|*[!0-9]*`, as u4 wrote). `expr` reads a BRE anchored at the start: `expr "$1" : '[0-9][0-9]*$'` (measured in dash: prints the length, status 0 for `42`, 1 for `4a`). The text names both ways with that limit.
-- **Q10. "In short" for a gloss with parentheses.** Recommended: drop a gloss that has parentheses of its own (the name stays, the rest of the panel says it). Alternative: a short gloss for each such command in its spec.
-- **Q11. Does a file with no shebang count as one that is run?** The fix of `failure-reported-as-success` already ends with `exit 1` in a file read as a script (`stopCommand`, src/rewrite.ts:65). The idiom users found clever is the no-shebang case, where the file may be sourced. Counting such a file as run would reverse decision 8 of panel-redesign.md. Recommended: keep decision 8; the Fix box says in a few words why ("`return` if sourced, `exit` if run").
+- **Q1. The depth names.** "Overview" / "Word by word", with the long forms "What it does" / "How bash reads it, word by word" (ja 「概要」/「単語ごと」, 「何をするか」/「bash が単語ごとにどう読むか」). The digit is only in the tooltip. This changes the names of decision 6 of panel-redesign.md.
+- **Q2. When the web page hints at POSIX sh.** Only when the shell comes from `#!/usr/bin/env bash` or from no shebang, not from `#!/bin/bash`; never on a bats file. One line after the list (or in place of "No problems"), never a problem. Not chosen: always, or a one-time tip.
+- **Q3. The hint in VS Code.** Not now: VS Code's panel shows the quiet marks, and the web page is where the test saw the cost.
+- **Q4. What depth 1 shows.** Bash's steps in one line on a word a step changes (expansions, splitting, globbing, tildes). The glob example is open when it is the line's only example, or the cursor's stage has it. Not chosen: a "Steps" toggle beside the depth.
+- **Q5. The Copy labels.** "Copy fix" / 「修正をコピー」 on the fix. "Copy as Markdown" / 「Markdown でコピー」 on the panel's header, "Markdown" under the icon where it is narrow. "Copy a link" stays.
+- **Q6. The hover card on the web page.** No card from a resting pointer after a click. A click, a paste, typing and Escape close it; a pointer that moves to a word opens it as today. Not chosen: no hover card while the panel is shown.
+- **Q7. The phone's grab area and the full height.** A grab strip of 44 px of its own above the tabs row. The full height stops 8 px below the editor's header. On a phone the rename opens from the pencil only.
+- **Q8. What a new script resets.** Clear, a whole-script paste into an empty or untouched editor (`untouched`, web/kinds.ts:24) and Open start a new script: the kind from the text (the plain Shell script without a signal), the name untitled, the shell back to Auto, with a toast and Undo. The depth stays.
+- **Q9. A fix for `=~` in sh.** No rewrite: no form fits every regex. The text names `case` (only where the regex has a glob form; `^[0-9]+$` has none, though its negation has: `''|*[!0-9]*`) and `expr` (a BRE anchored at the start: `expr "$1" : '[0-9][0-9]*$'`, measured in dash), with those limits.
+- **Q10. "In short" for a gloss with parentheses.** A gloss that has parentheses of its own is dropped; the name stays, and the rest of the panel says it. Not chosen: a short gloss for each such command.
+- **Q11. A file with no shebang.** It still counts as one that may be sourced: decision 8 of panel-redesign.md stays, and so does the fix `return 1 2>/dev/null || exit 1` there (`stopCommand`, src/rewrite.ts:65, already writes `exit 1` in a file read as a script). The Fix box says in a few words why ("`return` if sourced, `exit` if run").
 
 ## 6. How success is measured
 
