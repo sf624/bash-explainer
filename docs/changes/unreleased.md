@@ -607,6 +607,7 @@ In double quotes bash takes a backslash away only before `$`, a backtick, `"`, `
 
 - `find . -name 'a?(b)'` said "extended glob". find has none: it looks for `a`, one character, `(b)`.
 - A script that holds a noncharacter of U+FDD2 to U+FDEF shows it as U+FFFD, as U+FDD0 and U+FDD1 already did.
+- In a bats file, the name of `run`, `load`, `skip`, `bats_pipe` and the helpers of the libraries (a function bats defines) has the badge "function" (the name resolves to the host's function, `NameResolution` `host`), in the panel, the hover and `--format json`. Before it was "program", which the Legend defines as a file found in PATH. The text of `run !` was "fail, and so fail the test, unless the command fails"; it is now "expect the command to end with a non-zero exit status: if it succeeds (status 0), `run` fails, and so does the test" (bats-core 1.13), and `run -N` reads likewise.
 
 ### PCRE escapes and `tr -c`
 

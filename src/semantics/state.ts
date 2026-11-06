@@ -107,6 +107,8 @@ export interface StateModel {
    * the command that runs it), and whether the function is surely defined there.
    */
   readonly calls: ReadonlyMap<SyntaxNode, ReadonlyMap<SyntaxNode, boolean>>;
+  /** The functions the host defines (bats' `run`, `load`…), whose specs the walk reads as builtins' (`shellState`'s `host`). */
+  readonly host: HostCommands;
   /** The function definitions the host calls once the script has run (bats' tests and hooks), and how (src/semantics/walk/host.ts). */
   readonly hostCalls: ReadonlyMap<SyntaxNode, HostCall>;
   /** The commands of the script that define each function and alias, in source order, wherever they run. */
@@ -648,6 +650,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     env: (n) => envs.at(n),
     calls: w.calls,
     hostCalls: w.hostCalls,
+    host,
     assigned: new Set([...w.lastChange.keys()].filter((k) => k.startsWith('variables ')).map((k) => k.slice('variables '.length))),
     definitions: { functions: w.functionDefs, aliases: w.aliases.defs },
     sources: w.sources,

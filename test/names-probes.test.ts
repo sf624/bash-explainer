@@ -37,6 +37,7 @@ function kindOf(r: NameResolution, path: string | undefined | null): Kind {
     case 'alias': return r.sure ? 'alias' : 'unknown';
     case 'function': return r.sure ? 'function' : 'unknown';
     case 'builtin': return r.disabled ? 'unknown' : 'builtin';
+    case 'host': return 'function';
     case 'none': return 'none';
     case 'file':
       // (A path `hash -p` gave it on some paths only, or where hashing may be off.)

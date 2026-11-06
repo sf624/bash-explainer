@@ -32,7 +32,7 @@ import { binaryTestOperands, binaryTestOps, extendedEqualOps, plainPatternOps, t
 import type { Lang } from './i18n';
 import type { Shell } from './shellfeatures';
 import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } from './refs';
-import { aliasesAfter, type AliasResolution, type NameResolution } from './semantics/names';
+import { aliasesAfter, type AliasResolution, badgeKind, type NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
 import { spanWithin } from './noteanchors';
 import { type WordStep, wordSteps } from './semantics/wordsteps';
@@ -92,7 +92,7 @@ export interface ReadingNode {
   /** On a word a command reads as an operand or a value: how bash changes it first, so the command gets other words (`Token.expands`). */
   expands?: 'glob' | 'split' | 'brace' | 'elements';
   /** On a `commandName`: what bash runs for it (3.7.2), from the name resolution of src/semantics/names.ts. */
-  resolves?: NameResolution['kind'];
+  resolves?: ReturnType<typeof badgeKind>;
   /** On a word a command reads as the value of an option: the option (`-f`, `--file`). */
   valueFor?: string;
   /** On a command name (and the reserved word `time`): what the name is, and what else (`Token.name`). */
@@ -147,7 +147,7 @@ interface Reader { name: string; inShell: boolean }
 /** The fields of a node that `reader` reads. */
 const readBy = ({ name, inShell }: Reader): Pick<ReadingNode, 'reader' | 'inShell'> => ({ reader: name, ...(inShell ? { inShell } : {}) });
 /** What a name resolves to reads in the shell that runs it: a builtin or a function. */
-const resolvesInShell = (res: NameResolution | undefined): boolean => res?.kind === 'builtin' || res?.kind === 'function';
+const resolvesInShell = (res: NameResolution | undefined): boolean => res?.kind === 'builtin' || res?.kind === 'function' || res?.kind === 'host';
 /** A builtin that `builtin` or `command` finds runs in this shell, as bash runs a command name; one that another program names is that program's (`sudo cd`). */
 const builtinHere = (t: Pick<ReadingNode, 'kind' | 'name'>): boolean => t.kind === 'builtin' && !!t.name && t.name.by === undefined;
 /** The kinds of token about a word, or a part of one. */
@@ -524,7 +524,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     return {
       node: {
         layer, kind: 'commandName', label: short(w.text), span, ...(own ? nameSaid(own) : {}),
-        refs: union(['3.7.1', '3.7.2'], nameSections(own), expansionSections(cx.meaning(w))), resolves: res.kind, ...(own?.name ? { name: own.name } : {}), ...process, children: wordParts(w, layer),
+        refs: union(['3.7.1', '3.7.2'], nameSections(own), expansionSections(cx.meaning(w))), resolves: badgeKind(res), ...(own?.name ? { name: own.name } : {}), ...process, children: wordParts(w, layer),
       },
       // (The name it spells: `"ls"` and `\if` are `ls` and `if`.)
       runs: { name: short(name), inShell: resolvesInShell(res) },
@@ -550,7 +550,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const children: ReadingNode[] = (words ?? []).map((x, i) => ({
       layer, kind: i || !first ? 'argument' : 'commandName', label: x, span, ...process,
       // (A first word of plain text is one the resolution follows: `target`.)
-      ...(i || !first ? { refs: ['3.7.1'] } : { refs: ['3.7.1', '3.7.2'], resolves: res.target!.kind, ...(aliasText || !own ? {} : saidBy(own)) }),
+      ...(i || !first ? { refs: ['3.7.1'] } : { refs: ['3.7.1', '3.7.2'], resolves: badgeKind(res.target!), ...(aliasText || !own ? {} : saidBy(own)) }),
       children: [],
     }));
     return {
