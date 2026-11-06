@@ -6,7 +6,7 @@ import { runBash } from './support/bash';
 import { run } from './support/run';
 import { Analyzer, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { commandExample, expandSet, FILTERS, parseOptions, runCut, runHead, runSeq, runSort, runTail, runTr, runUniq, sampleInput, Unsupported } from '../src/examples/textfilters';
+import { commandExample, expandSet, filterOf, parseOptions, runCut, runHead, runSeq, runSort, runTail, runTr, runUniq, sampleInput, Unsupported } from '../src/examples/textfilters';
 import { SYSTEM_FILES } from '../src/examples/systemfiles';
 import { allTokens } from './support/explain';
 
@@ -106,7 +106,7 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
   for (const [cmd, ...args] of cases) {
     it([cmd, ...args].join(' '), () => {
       const lines = input[[cmd, ...args].join(' ')] ?? input[cmd];
-      assert.deepStrictEqual(FILTERS[cmd](args, lines), real(cmd, args, lines));
+      assert.deepStrictEqual(filterOf(cmd)!(args, lines), real(cmd, args, lines));
     });
   }
   // tr -c takes every byte not in the set, in order, from NUL: with -t only the first as many as set2 has are translated

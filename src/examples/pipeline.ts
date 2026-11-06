@@ -8,7 +8,7 @@ import { grepWrap, JsRegex, literalRegex, posixMatches, regexExamples, toJsRegex
 import { guarded, scriptRegex } from './regexguard';
 import { runSed, sedExample, sedMarks } from './sed';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
-import { cutMarks, FILTERS, parseOptions, parseWords, runSeq, sampleInput, shortKeys, sortMarks, sortsUnique, Unsupported } from './textfilters';
+import { cutMarks, filterOf, parseOptions, parseWords, runSeq, sampleInput, shortKeys, sortMarks, sortsUnique, Unsupported } from './textfilters';
 import { runXargs, showCommand } from './runtime';
 import { canonicalName, impliedWords } from '../dict/aliases';
 import { selectedModes, values } from '../argv/query';
@@ -245,7 +245,7 @@ export function runner(stage: Stage): Runner | undefined {
     case 'wc': return (input) => runWc(w, input);
     case 'xargs': return (input) => runXargs(w, input.map((l) => l + '\n').join('')).map(showCommand);
   }
-  const f = FILTERS[stage.cmd];
+  const f = filterOf(stage.cmd);
   return f && ((input) => f(w, input));
 }
 
