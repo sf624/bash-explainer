@@ -22,6 +22,11 @@ export interface BoxProblem {
   level: NoteLevel; className: string; icon: string;
   /** The note's own label without its colon: its heading where it has one ("Portability"), else its level's word ("Error", "Pitfall", "Caveat"). */
   word: string;
+  /**
+   * The level's name for a screen reader, where `word` does not say it ("Warning" before "Portability" or "Pitfall"; none
+   * before "Error"): the level icon's accessible name (`LEVELS[level].name`). `said`: the level and the word, the chip's name.
+   */
+  levelName?: string; said: string;
   /** One sentence with what happens (`Note.head`). */
   head: string;
   /** "More": the note's own word ("Pitfall:", "Portability:"), its whole text, and what it cites and rests on. */
@@ -95,8 +100,11 @@ export function boxProblems(ex: LineExplanation, places: ReadonlyMap<Token, stri
     const anchors = noteAnchors(ex, n);
     const rows = anchors.map((a) => tokenAtSpan(tokens, a.span)).filter((t) => t !== undefined).map((t) => places.get(t)!);
     const basis = noteBasis(ex, n.text, lang);
+    const word = isNotRead(n.code) ? NOT_READ_WORD[lang] : noteWord(n, lang);
+    const name = LEVELS[n.level].name[lang];
     return {
-      level: n.level, className, icon: codicon, word: isNotRead(n.code) ? NOT_READ_WORD[lang] : noteWord(n, lang),
+      level: n.level, className, icon: codicon, word,
+      ...(word === name ? { said: word } : { levelName: name, said: t.levelSaid.replace('{level}', name).replace('{word}', word) }),
       // (Every note that can be a problem has its headline: the catalog's type, and test/problem-heads.test.ts on the corpus.)
       head: n.head,
       label: n.label, body: n.body, refs: noteRefs(ex, n.text) ?? [], ...(basis ? { basis } : {}), text: problemText(n, lang),

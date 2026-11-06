@@ -150,11 +150,14 @@ describe('the box "Problems on this line"', () => {
     for (const [lang, word] of [['en', 'Portability'], ['ja', '移植性']] as const) {
       const [p] = shBox(script, 1, lang);
       assert.deepStrictEqual([p.level, p.word], ['warning', word], lang);
+      // (The word no longer says the level: the icon does, by the level's name; the chip says both.)
+      assert.deepStrictEqual([p.levelName, p.said], lang === 'en' ? ['Warning', 'Warning, Portability'] : ['警告', '警告、移植性'], lang);
       const strip = documentIssues(doc(script), lang, { forced: 'sh', script: 'said' }).find((i) => i.message === p.text);
       assert.ok(strip?.message.startsWith(`${LEVELS[p.level].mark} ${word}:`), `${lang}: ${strip?.message}`);
     }
     // (A pitfall, a caveat and an error keep their level's word; a note that says no word gets it too.)
     assert.deepStrictEqual(['rm -rf $DIR/', 'read line', 'echo $((09))'].map((t) => box(t)[0].word), ['Pitfall', 'Caveat', 'Error']);
+    assert.deepStrictEqual(['rm -rf $DIR/', 'echo $((09))'].map((t) => [box(t)[0].levelName, box(t)[0].said]), [['Warning', 'Warning, Pitfall'], [undefined, 'Error']]);
     const [plain] = box('[[ $x =~ ^\\d+$ ]]');
     assert.deepStrictEqual([plain.label, plain.word], ['', levelWord(plain.level, 'en')]);
   });

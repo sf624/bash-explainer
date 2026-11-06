@@ -44,6 +44,7 @@ import { ReadEdit } from './read-edit';
 import { BottomSheet } from './sheet';
 import { CopyState, DEFAULT_THEME, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
+import { scriptChange, scriptStates } from './script-state';
 import { openingReady } from './opening';
 import { closePopovers, setUpFocusRings } from './popover';
 import { ScopeControl } from './scope-chip';
@@ -103,7 +104,7 @@ const kinds: KindControl = new KindControl({
     closePopovers();
   },
   focusHome: () => focusHome(),
-  newScript: () => (withFiles ? newScript() : undefined),
+  newScript: (k, said) => scripts.pasted(k, said),
 }, shared.kind ?? 'shell');
 /** The shell and yq of the settings, as the panel's header shows them (undefined: auto). */
 const choice = () => ({ shell: forcedShell(settings), yq: settings['yq.flavor'] === 'auto' ? undefined : settings['yq.flavor'] });
@@ -205,6 +206,8 @@ const editor: Editor = new Editor({
   // (Only where the page has the strip's line for it: the work is skipped otherwise.)
   ...(strip?.hasHint ? { shHint: (count: number | undefined) => strip.showHint(count) } : {}),
   changed(u: ViewUpdate) {
+    // A new script's state, made, taken back or made again with the text (web/script-state.ts): after the editor's update.
+    for (const tr of u.transactions) for (const e of tr.effects) if (e.is(scriptChange)) queueMicrotask(() => scripts.apply(e.value.to));
     // Undo would no longer undo the sample once the text changed again.
     if (u.docChanged && toast.current?.action?.untilEdit && !kinds.puttingText) toast.hide();
     if (u.docChanged && !mode.panel) kinds.detectPasted(u);
@@ -466,19 +469,11 @@ function resetShell(): (() => void) | undefined {
   return () => setChoice('shell', chosen);
 }
 
-/** What a new script resets besides its kind (`KindHost.newScript`): the file is forgotten ("untitled"), the shell back to Auto. */
-function newScript(): { shell: boolean; back(): void } {
-  const file = fileState.snapshot();
-  fileState.started();
-  const shell = resetShell();
-  return {
-    shell: shell !== undefined,
-    back() {
-      fileState.restore(file);
-      shell?.();
-    },
-  };
-}
+/** The script's state beside its text, and a new script's (web/script-state.ts). */
+const scripts = scriptStates({
+  kinds: () => kinds, files: () => fileState, shell: () => settings.shell, setShell: (v) => setChoice('shell', v), showFile: () => showFile(),
+  lang: () => lang, withFiles,
+});
 
 /** The shell or yq chosen in the panel's header ('auto' clears it). */
 function setChoice(key: 'shell' | 'yq', value: string): void {
@@ -648,25 +643,33 @@ async function sampleAsked(from: HTMLElement | null = document.activeElement as 
 on('sample', 'click', () => void sampleAsked());
 
 /**
- * Empties the editor, as one step of the history, and starts a new script (docs/design/usability-9.md, Q8): a shell
- * script, "untitled", the shell back to Auto (`KindControl.startScript`). The toast says what was set back ("Sample
- * cleared" when it held a sample) and offers to undo it all: the text, the file, its kind and the shell.
+ * Empties the editor and starts a new script (docs/design/usability-9.md, Q8): a shell script, "untitled", the shell
+ * back to Auto. Both are one step of the editor's history (`scriptChange`, web/script-state.ts): Ctrl+Z and the toast's
+ * Undo take back the text, the file, its kind and the shell; Ctrl+Shift+Z makes them again. The toast says what was set
+ * back ("Sample cleared" when it held a sample). A file opened and changed since is asked about first, as Load the
+ * sample asks: the file is forgotten, and only the history would bring it back.
  */
-function clearEditor(): void {
+async function clearEditor(from: HTMLElement | null = document.activeElement as HTMLElement | null): Promise<void> {
   const t = TEXT[lang];
+  if (fileState.file && unsaved()) {
+    const discard = await ask({
+      id: 'discard', title: t.discardTitle, message: t.discardClearMessage(window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu),
+      confirm: { id: 'discard-open', text: t.discardClear }, cancel: { id: 'discard-cancel', text: t.cancel },
+    }, from);
+    if (!discard) return;
+  }
   const had = editor.text;
+  const before = scripts.now();
+  const after = scripts.fresh('shell');
   // (An empty untitled shell script at Auto is new already.)
-  if (!had && kinds.kind === 'shell' && !fileState.named() && settings.shell === 'auto') return focusHome();
-  const wasSample = isSample(had);
+  if (!had && before.kind === after.kind && before.shell === after.shell && !fileState.named()) return focusHome();
   dropUndo();
-  if (had) kinds.putText('', 1);
-  const started = kinds.startScript('shell');
-  const back = () => {
-    if (had) undo(editor.view);
-    started.back();
+  kinds.putText('', 1, [scriptChange.of({ from: before, to: after })]);
+  const undoIt = () => {
+    undo(editor.view);
     focusHome();
   };
-  status('undo', t.andThen(had && wasSample ? t.sampleCleared : t.editorCleared, started.words), { label: t.undo, run: back, untilEdit: true });
+  status('undo', t.andThen(had && isSample(had) ? t.sampleCleared : t.editorCleared, scripts.words(before, after, false)), { label: t.undo, run: undoIt, untilEdit: true });
   focusHome();
 }
 
@@ -714,7 +717,7 @@ const head = withFiles ? new EditorHead({
   openFile: () => void openFile(),
   saveFile: () => void saveFile(),
   loadSample: (from) => void sampleAsked(from),
-  clear: clearEditor,
+  clear: () => void clearEditor(),
   copyScript,
   holdsSample: () => isSample(editor.text),
   tipShown: () => readEdit.tipShown(),

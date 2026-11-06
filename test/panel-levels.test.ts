@@ -64,11 +64,12 @@ describe('the VS Code panel: the levels of the notes', function () {
   it('draws each note with the icon and the word of its level, errors first', async () => {
     const page = await open();
     const n = await notes(page);
-    // (In the box, each icon has no name, and is hidden from a screen reader: the level's word says it. A plain note's icon has its name.)
+    // (In the box, an icon is named by its level where the word does not say the level's name, "Warning" before "Pitfall",
+    // and hidden from a screen reader where it does, "Error": docs/design/usability-9.md, 2.6. A plain note's icon has its name.)
     assert.deepStrictEqual(n.map((x) => [x.level, x.icon, x.name, x.label]), [
       ['note problem level-error', 'error', null, 'Error'],
-      ['note problem level-warning', 'warning', null, 'Pitfall'],
-      ['note problem level-info', 'info', null, 'Caveat'],
+      ['note problem level-warning', 'warning', 'Warning', 'Pitfall'],
+      ['note problem level-info', 'info', 'Information', 'Caveat'],
       ['note level-note', 'info', 'Note', ''],
     ]);
     assert.strictEqual(await page.locator('#problems .level-error svg.note-icon').first().getAttribute('aria-hidden'), 'true');
@@ -78,7 +79,7 @@ describe('the VS Code panel: the levels of the notes', function () {
     // The word is bold.
     assert.strictEqual(await page.locator('#problems .note-label').first().evaluate((e) => e.tagName), 'STRONG');
     const ja = await open('dark', 'ja');
-    assert.deepStrictEqual((await notes(ja)).map((x) => [x.name, x.label]), [[null, 'エラー'], [null, '落とし穴'], [null, '注意'], ['補足', '']]);
+    assert.deepStrictEqual((await notes(ja)).map((x) => [x.name, x.label]), [[null, 'エラー'], ['警告', '落とし穴'], ['情報', '注意'], ['補足', '']]);
     assert.deepStrictEqual([...page.errors, ...ja.errors], []);
     await page.close();
     await ja.close();

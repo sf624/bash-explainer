@@ -33,10 +33,10 @@ describe('the web page: the levels of the notes', function () {
         const icon = p.querySelector('svg.note-icon');
         return [p.className, icon.dataset.icon, label ? label.textContent : '', [icon.getAttribute('role'), icon.getAttribute('aria-label'), icon.getAttribute('aria-hidden')].join(), getComputedStyle(icon).fill, label ? getComputedStyle(label).color : ''];
       })`) as string[][];
-      // (In the box, the level's word says it, and the icon has no name; a plain note's icon has one.)
+      // (In the box, the icon is named by its level where the word does not say its name, and hidden where it does ("Error"); a plain note's icon has one.)
       assert.deepStrictEqual(notes.map((n) => n.slice(0, 4)), [
-        ['note problem level-error', 'error', 'Error', ',,true'], ['note problem level-warning', 'warning', 'Pitfall', ',,true'],
-        ['note problem level-info', 'info', 'Caveat', ',,true'], ['note level-note', 'info', '', 'img,Note,'],
+        ['note problem level-error', 'error', 'Error', ',,true'], ['note problem level-warning', 'warning', 'Pitfall', 'img,Warning,'],
+        ['note problem level-info', 'info', 'Caveat', 'img,Information,'], ['note level-note', 'info', '', 'img,Note,'],
       ]);
       assert.deepStrictEqual(notes.slice(0, 3).map((n) => n.slice(4)), [[rgb(error), rgb(error)], [rgb(warning), rgb(warning)], [rgb(info), rgb(info)]]);
       // The panel's copy of the line underlines the problems the editor shows, each in its level's colour.

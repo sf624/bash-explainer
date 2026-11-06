@@ -2,6 +2,9 @@
 import { lineLabel } from '../src/i18n';
 import { Kind } from './samples';
 
+/** A word inside Japanese text: a half-width space on a side where it starts or ends with a Latin letter or a digit, none beside kana or kanji (docs/japanese-style.md). */
+const jaWord = (w: string): string => `${/^[A-Za-z0-9]/.test(w) ? ' ' : ''}${w}${/[A-Za-z0-9]$/.test(w) ? ' ' : ''}`;
+
 export const TEXT = {
   en: {
     install: 'Install for VS Code',
@@ -102,10 +105,12 @@ export const TEXT = {
     discardTitle: 'Discard unsaved changes?',
     discardMessage: (name: string, how: string) => `Opening ${name} replaces the script in the editor, and its changes are not saved. To keep them, cancel and save first (${how}).`,
     discardSampleMessage: (how: string) => `Loading the sample replaces the script in the editor, and its changes are not saved. To keep them, cancel and save first (${how}).`,
+    discardClearMessage: (how: string) => `Clearing the editor starts a new script, and the changes of this file are not saved. To keep them, cancel and save first (${how}).`,
     /** How to save, where there is no keyboard for the shortcut. */
     saveInMenu: 'Menu, then Save',
     discard: 'Discard and open',
     discardLoad: 'Discard and load',
+    discardClear: 'Discard and clear',
     cancel: 'Cancel',
     /** After a file's name, for a screen reader and in the tooltip. */
     unsaved: ' (unsaved changes)',
@@ -223,8 +228,8 @@ export const TEXT = {
     pr: 'PR',
     sampleLoaded: 'サンプルを読み込みました',
     undo: '元に戻す',
-    detected: (kind: string) => `ファイルの種類を ${kind} と判定しました`,
-    newScript: (kind: string | undefined, shell: boolean) => (kind ? `ファイルの種類を ${kind} にしました。` : '') + (shell ? 'シェルを自動に戻しました。' : ''),
+    detected: (kind: string) => `ファイルの種類を${jaWord(kind)}と判定しました`,
+    newScript: (kind: string | undefined, shell: boolean) => (kind ? `ファイルの種類を${jaWord(kind)}にしました。` : '') + (shell ? 'シェルを自動に戻しました。' : ''),
     andThen: (first: string, more: string) => (!more ? first : !first ? more : `${first.endsWith('。') ? first : `${first}。`}${more}`),
     askTitle: (kind: string) => `${kind} のサンプルを読み込みますか？`,
     askMessage: (kind: string) => `ファイルの種類を ${kind} に変えました。入力中のスクリプトをこの種類のサンプルに置き換えますか？ 置き換えても元に戻せます。`,
@@ -270,9 +275,11 @@ export const TEXT = {
     discardTitle: '保存していない変更を破棄しますか？',
     discardMessage: (name: string, how: string) => `${name} を開くと、エディタのスクリプトが置き換わり、保存していない変更は失われます。残すなら、キャンセルして先に保存してください（${how}）。`,
     discardSampleMessage: (how: string) => `サンプルを読み込むと、エディタのスクリプトが置き換わり、保存していない変更は失われます。残すなら、キャンセルして先に保存してください（${how}）。`,
+    discardClearMessage: (how: string) => `エディタを空にすると新しいスクリプトになり、このファイルの保存していない変更は失われます。残すなら、キャンセルして先に保存してください（${how}）。`,
     saveInMenu: 'メニューの「保存」',
     discard: '破棄して開く',
     discardLoad: '破棄して読み込む',
+    discardClear: '破棄して空にする',
     cancel: 'キャンセル',
     unsaved: '（未保存の変更あり）',
     copyLink: 'リンクをコピー',
