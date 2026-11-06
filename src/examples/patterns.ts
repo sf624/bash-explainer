@@ -91,10 +91,11 @@ export function testExample(n: SyntaxNode, bracket: TestShape | undefined, asKin
     }
   }
   if (!shape) return undefined;
-  const operand = (x: SyntaxNode): Operand | undefined => {
+  // (A variable comes with the node of its expansion, `part`, where the script's value is read.)
+  const operand = (x: SyntaxNode): (Operand & { part?: SyntaxNode }) | undefined => {
     // (An unquoted `~` at the start expands to a home directory: not text the example may compare.)
     if (x.text.startsWith('~')) return undefined;
-    if (x.type === 'simple_expansion' || (x.type === 'expansion' && /^\$\{\w+\}$/.test(x.text))) return { var: x.text.replace(/^\$\{?|\}$/g, '') };
+    if (x.type === 'simple_expansion' || (x.type === 'expansion' && /^\$\{\w+\}$/.test(x.text))) return { var: x.text.replace(/^\$\{?|\}$/g, ''), part: x };
     if (x.type === 'variable_name') return { var: x.text };
     // The grammar reads the right side of `=`, `==` and `!=` as a pattern; `[ ]` compares it as text.
     if (x.type === 'extglob_pattern' && (kind === '[' || /^[\w.@%+:,/-]+$/.test(x.text))) return { lit: x.text };
@@ -105,9 +106,8 @@ export function testExample(n: SyntaxNode, bracket: TestShape | undefined, asKin
   const { left, op, right } = shape;
   // (The side that is a variable: the other is text.)
   const side = left && operand(left) && 'var' in operand(left)! ? left : right;
-  // (The expansion of the variable, in its double quotes or not.)
   const variable = operand(side);
-  const value = variable && 'var' in variable ? known(side.type === 'string' ? side.namedChildren[0] : side, variable.var) : undefined;
+  const value = variable && 'var' in variable && variable.part ? known(variable.part, variable.var) : undefined;
   const judged = judge && kind !== '((' ? (vars: Record<string, string>) => judge(kind, shape!, vars) : undefined;
   const cases = left
     ? testCases(kind, op, operand(left), operand(right), right.type === 'string' || right.type === 'raw_string', value, judged)
