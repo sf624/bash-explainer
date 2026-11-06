@@ -415,10 +415,11 @@ describe('the web page: the phone\'s keyboard and the summary row', function () 
       await page.locator('#sheet-grab').focus();
       await page.keyboard.press('Home');
       await until('the peek', () => page.locator('#sheet-summary').isVisible(), (v) => v);
-      // After the tabs row's controls (the grabber, the tab chosen, the view's pill).
+      // After the tabs row's controls (the grabber, the tab chosen, the view control: its menu's button, or each depth where both names fit, as 「概要」「単語ごと」 do).
       await page.keyboard.press('Tab');
       await page.keyboard.press('Tab');
-      await page.keyboard.press('Tab');
+      const stops = await page.locator('#view-slot button:visible').count();
+      for (let i = 0; i < stops; i++) await page.keyboard.press('Tab');
       assert.strictEqual((await state(page)).focus, 'sheet-summary', lang);
       const cdp = await page.context().newCDPSession(page);
       const { root } = await cdp.send('DOM.getDocument');

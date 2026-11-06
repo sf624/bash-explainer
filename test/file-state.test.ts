@@ -20,6 +20,20 @@ describe('the file state of the web page', () => {
     assert.deepStrictEqual([s.name('script.sh'), s.file, s.format, s.named()], ['untitled.sh', undefined, { eol: '\n', bom: false }, false]);
   });
 
+  // (docs/design/usability-9.md, Q8: Clear and a script pasted into an untouched editor start a new script.)
+  it('starts a new script with no file and no name, whose text pasted is not saved, and puts the file back from a snapshot', () => {
+    const s = new FileState<{ name: string }>();
+    s.opened({ name: 'test.bats', handle }, { eol: '\r\n', bom: true }, 'run true\n');
+    const before = s.snapshot();
+    const version = s.version();
+    s.started();
+    assert.deepStrictEqual([s.name('test.bats'), s.file, s.format, s.named(), s.handle()], ['untitled.bats', undefined, { eol: '\n', bom: false }, false, undefined]);
+    assert.ok(s.version() !== version);
+    assert.deepStrictEqual([s.unsaved('', never), s.unsaved('echo pasted\n', never)], [false, true]);
+    s.restore(before);
+    assert.deepStrictEqual([s.name('script.sh'), s.handle(), s.format], ['test.bats', handle, { eol: '\r\n', bom: true }]);
+  });
+
   it('has changes not saved while the text differs from the clean one and is the user\'s own', () => {
     const s = new FileState<{ name: string }>();
     s.sampleLoaded('SAMPLE');

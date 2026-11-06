@@ -6,19 +6,19 @@ import { panelHeaderForms, panelTools, ToolButton, viewControlForms } from '../s
 import { ViewControl, viewControl } from '../src/ui/panelView';
 
 describe('the panel header as data', () => {
-  it('draws the label before options with digits, and the menu says the label and the digit ("Depth 1")', () => {
+  // (docs/design/usability-9.md, Q1 and 2.10: a name per depth, no digit drawn; the digit is in the tooltip, as the key in the panel.)
+  it('draws each option by its name, and the menu says the name of the option shown, its accessible name the label and both names', () => {
     const depth = (lang: 'en' | 'ja'): ViewControl => viewControl({}, lang);
     assert.deepStrictEqual(viewControlForms(depth('en')), [
-      { kind: 'segments', label: 'Depth' },
-      { kind: 'menu', button: [{ text: 'Depth 1', name: 'Depth: 1 What it does' }, { text: 'Depth 2', name: 'Depth: 2 How bash reads it' }] },
+      { kind: 'segments' },
+      { kind: 'menu', button: [{ text: 'Overview', name: 'Depth: Overview (What it does)' }, { text: 'Word by word', name: 'Depth: Word by word (How bash reads it, word by word)' }] },
     ]);
     assert.deepStrictEqual(viewControlForms(depth('ja')), [
-      { kind: 'segments', label: '深さ' },
-      { kind: 'menu', button: [{ text: '深さ 1', name: '深さ: 1 何をするか' }, { text: '深さ 2', name: '深さ: 2 bash がどう読むか' }] },
+      { kind: 'segments' },
+      { kind: 'menu', button: [{ text: '概要', name: '深さ: 概要（何をするか）' }, { text: '単語ごと', name: '深さ: 単語ごと（bash が単語ごとにどう読むか）' }] },
     ]);
-    // (An option with no digit: its name, and no label drawn.)
-    const named: ViewControl = { label: 'View', options: [{ id: 'depth1', short: 'A', full: 'Full A', said: 'Full A', pressed: true, sets: {} }] };
-    assert.deepStrictEqual(viewControlForms(named), [{ kind: 'segments' }, { kind: 'menu', button: [{ text: 'A', name: 'View: Full A' }] }]);
+    // (WCAG 2.5.3, Label in Name: the menu's button's name holds the word it shows.)
+    for (const lang of ['en', 'ja'] as const) for (const b of viewControlForms(depth(lang))[1].button!) assert.ok(b.name.includes(b.text), `${lang}: "${b.name}" holds "${b.text}"`);
   });
 
   it('gives the web page\'s header forms widest first: the segments kept longest, the tools\' words under their icons before the menu, the tabs\' short words last', () => {

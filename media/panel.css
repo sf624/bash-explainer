@@ -949,15 +949,10 @@ header .actions {
   visibility: hidden;
 }
 
-/* An option with a digit shows its name only when it is the one shown. */
-.vc[data-form="segments"] button[aria-pressed="false"] .vc-digit + .vc-name,
+/* The segments, or the menu's button with the options open under it. */
 .vc[data-form="segments"] .vc-open,
 .vc[data-form="menu"]:not([data-open="true"]) .vc-options {
   display: none;
-}
-
-.vc-digit + .vc-name {
-  margin-left: 0.3em;
 }
 
 .vc-options {

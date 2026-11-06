@@ -96,6 +96,11 @@ export class FileState<H> {
     this.set(undefined, PLAIN, text);
   }
 
+  /** A new script (Clear, a whole script pasted into an untouched editor): no file's and no name given, so it is "untitled" and a save asks where. */
+  started(): void {
+    this.set(undefined, PLAIN, '');
+  }
+
   /** The write was refused: the same write would fail again, so the next save asks where. */
   refused(): void {
     if (this.file) this.file = { name: this.file.name };

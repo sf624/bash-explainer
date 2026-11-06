@@ -103,6 +103,7 @@ const kinds: KindControl = new KindControl({
     closePopovers();
   },
   focusHome: () => focusHome(),
+  newScript: () => (withFiles ? newScript() : undefined),
 }, shared.kind ?? 'shell');
 /** The shell and yq of the settings, as the panel's header shows them (undefined: auto). */
 const choice = () => ({ shell: forcedShell(settings), yq: settings['yq.flavor'] === 'auto' ? undefined : settings['yq.flavor'] });
@@ -454,6 +455,31 @@ function changeSettings(next: Settings): void {
   editor.recheck();
 }
 
+/**
+ * Puts the shell chosen back to Auto: the shell chosen belongs to the script, and a new one starts at Auto
+ * (docs/design/usability-9.md, Q8). Gives how to choose it again; nothing when none was chosen.
+ */
+function resetShell(): (() => void) | undefined {
+  const chosen = settings.shell;
+  if (chosen === 'auto') return undefined;
+  setChoice('shell', 'auto');
+  return () => setChoice('shell', chosen);
+}
+
+/** What a new script resets besides its kind (`KindHost.newScript`): the file is forgotten ("untitled"), the shell back to Auto. */
+function newScript(): { shell: boolean; back(): void } {
+  const file = fileState.snapshot();
+  fileState.started();
+  const shell = resetShell();
+  return {
+    shell: shell !== undefined,
+    back() {
+      fileState.restore(file);
+      shell?.();
+    },
+  };
+}
+
 /** The shell or yq chosen in the panel's header ('auto' clears it). */
 function setChoice(key: 'shell' | 'yq', value: string): void {
   const next = { ...settings, [key === 'shell' ? 'shell' : 'yq.flavor']: value };
@@ -622,22 +648,25 @@ async function sampleAsked(from: HTMLElement | null = document.activeElement as 
 on('sample', 'click', () => void sampleAsked());
 
 /**
- * Empties the editor, as one step of the history: the toast offers to undo it ("Sample cleared" when it held a sample).
- * A file opened stays the file (its text is now empty, not saved).
+ * Empties the editor, as one step of the history, and starts a new script (docs/design/usability-9.md, Q8): a shell
+ * script, "untitled", the shell back to Auto (`KindControl.startScript`). The toast says what was set back ("Sample
+ * cleared" when it held a sample) and offers to undo it all: the text, the file, its kind and the shell.
  */
 function clearEditor(): void {
   const t = TEXT[lang];
-  if (!editor.text) return focusHome();
-  const wasSample = untouched(editor.text);
+  const had = editor.text;
+  // (An empty untitled shell script at Auto is new already.)
+  if (!had && kinds.kind === 'shell' && !fileState.named() && settings.shell === 'auto') return focusHome();
+  const wasSample = isSample(had);
   dropUndo();
-  kinds.putText('', 1);
-  showFile();
+  if (had) kinds.putText('', 1);
+  const started = kinds.startScript('shell');
   const back = () => {
-    undo(editor.view);
-    showFile();
+    if (had) undo(editor.view);
+    started.back();
     focusHome();
   };
-  status('undo', wasSample ? t.sampleCleared : t.editorCleared, { label: t.undo, run: back, untilEdit: true });
+  status('undo', t.andThen(had && wasSample ? t.sampleCleared : t.editorCleared, started.words), { label: t.undo, run: back, untilEdit: true });
   focusHome();
 }
 
@@ -774,8 +803,11 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
   fileState.opened({ name: chosen.name, handle }, { eol: read.eol, bom: read.bom }, read.text);
   editor.openText(read.text);
   kinds.set(kindForFile(chosen.name, read.text));
-  if (read.mixed) status('note', t.mixedEol(chosen.name, read.eol === '\n' ? 'LF' : 'CRLF'));
-  else status('done', t.opened(chosen.name));
+  // A file opened is a new script: its kind and name are the file's, the shell back to Auto (docs/design/usability-9.md, Q8).
+  const shell = resetShell();
+  const said: ToastText = read.mixed ? t.mixedEol(chosen.name, read.eol === '\n' ? 'LF' : 'CRLF') : { text: t.opened(chosen.name) };
+  if (shell) status('undo', { ...said, text: t.andThen(said.text, t.newScript(undefined, true)) }, { label: t.undo, run: shell });
+  else status(read.mixed ? 'note' : 'done', said);
   focusHome();
 }
 

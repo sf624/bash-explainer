@@ -126,7 +126,8 @@ describe('the web page: the panel\'s header', function () {
     // Where the menu is drawn (narrow enough for it), from the keyboard.
     for (let width = 1240; width >= 320 && (await measure(page)).view === 'segments'; width -= 40) await resize(page, width);
     const button = page.locator('#slot-open');
-    assert.strictEqual(await button.getAttribute('aria-label'), 'Depth: 1 What it does');
+    assert.strictEqual(await button.getAttribute('aria-label'), 'Depth: Overview (What it does)');
+    assert.strictEqual((await button.innerText()).trim(), 'Overview');
     assert.strictEqual(await button.getAttribute('aria-controls'), 'slot-options');
     await button.focus();
     await page.keyboard.press('Enter');
@@ -140,7 +141,8 @@ describe('the web page: the panel\'s header', function () {
     await page.keyboard.press('Enter');
     await until('the rows of depth 2', () => panel().evaluate('document.body.dataset.depth'), (d) => d === '2');
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'slot-open');
-    assert.strictEqual(await button.getAttribute('aria-label'), 'Depth: 2 How bash reads it');
+    assert.strictEqual(await button.getAttribute('aria-label'), 'Depth: Word by word (How bash reads it, word by word)');
+    assert.strictEqual((await button.innerText()).trim(), 'Word by word');
     // Tab leaves the open menu and closes it.
     await page.keyboard.press('Enter');
     await page.keyboard.press('Tab');
@@ -164,8 +166,16 @@ describe('the web page: the panel\'s header', function () {
       assert.deepStrictEqual(names, lang === 'en'
         ? [['Explanation', 'tab'], ['Reference', 'tab'], ['Depth', 'group'], ['Collapse all', null], ['Copy as Markdown', null]]
         : [['解説', 'tab'], ['早見表', 'tab'], ['深さ', 'group'], ['すべて折りたたむ', null], ['Markdown でコピー', null]]);
-      assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#slot-options button')].map((b) => [b.querySelector('.vc-digit').textContent + ' ' + b.getAttribute('aria-label'), b.getAttribute('aria-pressed')])`),
-        lang === 'en' ? [['1 What it does', 'true'], ['2 How bash reads it', 'false']] : [['1 何をするか', 'true'], ['2 bash がどう読むか', 'false']]);
+      // (docs/design/usability-9.md, Q1 and 2.10: each depth by its name, which is its accessible name; no digit drawn, the key in the tooltip.)
+      assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#slot-options button')].map((b) => [b.innerText, b.getAttribute('aria-label'), b.title, b.getAttribute('aria-pressed')])`),
+        lang === 'en'
+          ? [['Overview', null, 'What it does (key 1 in the panel)', 'true'], ['Word by word', null, 'How bash reads it, word by word (key 2 in the panel)', 'false']]
+          : [['概要', null, '何をするか（パネルの中ではキー 1）', 'true'], ['単語ごと', null, 'bash が単語ごとにどう読むか（パネルの中ではキー 2）', 'false']]);
+      assert.strictEqual(await page.locator('#view-slot .vc-digit, #view-slot .vc-label').count(), 0);
+      // What a screen reader hears: the group by its label, each option by its name, the one shown pressed.
+      assert.strictEqual(await page.locator('#slot-options').ariaSnapshot(), lang === 'en'
+        ? '- group "Depth":\n  - button "Overview" [pressed]\n  - button "Word by word"'
+        : '- group "深さ":\n  - button "概要" [pressed]\n  - button "単語ごと"');
       // The tabs are one stop of Tab; the tabpanel holds the frame.
       assert.deepStrictEqual(await page.evaluate(`['#tab-explain', '#tab-ref'].map((s) => document.querySelector(s).tabIndex)`), [0, -1]);
       assert.strictEqual(await page.locator('#panel-body[role="tabpanel"] #panel').count(), 1);

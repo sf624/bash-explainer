@@ -77,13 +77,13 @@ export interface ViewOption {
   id: 'depth1' | 'depth2';
   /** An icon drawn before the short name (none yet: the depths are named in words). */
   icon?: string;
-  /** The option's digit, drawn before its name; the name only when the option is shown. */
-  digit?: string;
-  /** The name on the control. */
+  /** The name on the control, and its accessible name: no digit is drawn (the keys work only in the panel, docs/design/usability-9.md, 2.10). */
   short: string;
-  /** The tooltip and the accessible name, where it says more than `short`. */
+  /** What the option shows, in full. */
   full: string;
-  /** What a screen reader hears when it is chosen. */
+  /** Its tooltip and accessible description: `full`, and the key that chooses it in the panel. */
+  tip: string;
+  /** What a screen reader hears when it is chosen, and the name of the menu's button while it is the one shown: the control's label, `short` and `full`. */
   said: string;
   pressed: boolean;
   /** What a press changes in the state: a host applies it without knowing what the option means. */
@@ -115,7 +115,12 @@ export function viewControl(state: PanelState, lang: Lang, shell?: string): View
   const option = (o: Omit<ViewOption, 'pressed'>): ViewOption => ({ ...o, pressed: isPressed(state, o.sets) });
   return {
     label: tp.views,
-    options: ([1, 2] as const).map((depth) => option({ id: `depth${depth}`, digit: String(depth), short: tp.depths[depth].short, full: tp.depths[depth].full, said: `${tp.views} ${depth}: ${tp.depths[depth].full}`, sets: { depth } })),
+    options: ([1, 2] as const).map((depth) => {
+      const { short, full } = tp.depths[depth];
+      const tip = tp.depthKey.replace('{full}', full).replace('{n}', String(depth));
+      const said = tp.depthSaid.replace('{views}', tp.views).replace('{short}', short).replace('{full}', full);
+      return option({ id: `depth${depth}`, short, full, tip, said, sets: { depth } });
+    }),
   };
 }
 

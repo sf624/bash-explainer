@@ -11,9 +11,9 @@
 // keeps the width of the longest: a press moves nothing.
 (function () {
   /**
-   * @typedef {{ id: string, digit?: string, short: string, full: string, pressed: boolean, sets: Record<string, unknown> }} Option
+   * @typedef {{ id: string, short: string, full: string, tip: string, pressed: boolean, sets: Record<string, unknown> }} Option
    * @typedef {{ label: string, options: Option[] }} Control
-   * @typedef {{ kind: 'segments' | 'menu', label?: string, button?: { text: string, name: string }[] }} Form
+   * @typedef {{ kind: 'segments' | 'menu', button?: { text: string, name: string }[] }} Form
    */
 
   /**
@@ -53,10 +53,6 @@
   function create(root, prefix, press, focus = (el) => el.focus()) {
     const doc = root.ownerDocument;
     root.classList.add('vc');
-    const label = doc.createElement('span');
-    label.className = 'vc-label';
-    // (The group's accessible name says it.)
-    label.setAttribute('aria-hidden', 'true');
     const open = doc.createElement('button');
     open.type = 'button';
     open.id = `${prefix}-open`;
@@ -67,7 +63,7 @@
     group.id = `${prefix}-options`;
     group.className = 'vc-options';
     group.setAttribute('role', 'group');
-    root.append(label, open, group);
+    root.append(open, group);
 
     /** @type {Control} */
     let control = { label: '', options: [] };
@@ -129,34 +125,18 @@
     function draw() {
       const shown = control.options.findIndex((o) => o.pressed);
       root.dataset.form = form.kind;
-      label.textContent = form.label ?? '';
-      label.hidden = !form.label;
       group.setAttribute('aria-label', control.label);
-      const names = control.options.map((o) => o.short);
       const kept = new Map(buttons().map((b) => [b.dataset.option, b]));
       const list = control.options.map((o) => {
         const b = kept.get(o.id) ?? Object.assign(doc.createElement('button'), { type: 'button', id: `${prefix}-${o.id}` });
         b.dataset.option = o.id;
         b.setAttribute('aria-pressed', String(o.pressed));
-        const kids = [];
-        if (o.digit !== undefined) {
-          const d = doc.createElement('span');
-          d.className = 'vc-digit';
-          d.textContent = o.digit;
-          kids.push(d);
-        }
-        // (With a digit, the name is drawn only on the option shown, as wide as the longest name.)
-        const name = o.digit !== undefined ? stack(doc, o.short, names) : doc.createElement('span');
-        if (o.digit === undefined) name.textContent = o.short;
-        name.classList.add('vc-name');
-        kids.push(name);
-        b.replaceChildren(...kids);
-        // The full name where it says more than the button: the tooltip and the accessible name.
-        const said = o.digit !== undefined || o.full !== o.short;
-        for (const attr of ['title', 'aria-label']) {
-          if (said) b.setAttribute(attr, o.full);
-          else b.removeAttribute(attr);
-        }
+        // The name is the accessible name too (Label in Name); the tooltip, the accessible description, says the full name and the key.
+        const name = doc.createElement('span');
+        name.className = 'vc-name';
+        name.textContent = o.short;
+        b.replaceChildren(name);
+        b.title = o.tip;
         return b;
       });
       if (list.length !== group.children.length || list.some((b, i) => group.children[i] !== b)) group.replaceChildren(...list);
