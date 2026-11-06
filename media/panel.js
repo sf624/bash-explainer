@@ -229,7 +229,8 @@
     $('examples').replaceChildren();
     $('whole-line').replaceChildren();
     $('view-row').hidden = true;
-    $('key').hidden = true;
+    keyOpen = false;
+    drawKey();
     dropSpacer();
     $('empty').textContent = message;
     $('empty').hidden = false;
@@ -1528,19 +1529,53 @@
 
   $('receives').addEventListener('click', () => press({ receives: !receivesShown }));
 
-  /** Whether the Legend is open, and what it lists of the line drawn. */
+  /** Whether the Legend is open, which line it was opened on, and what it lists of the line drawn. */
   let keyOpen = false;
+  let keyLine = '';
   let keyEntries = /** @type {{ id: string, sample?: string, text: string }[]} */ ([]);
   $('key-open').addEventListener('click', () => {
     keyOpen = !keyOpen;
+    keyLine = shownLine;
     drawKey();
   });
+  // The Legend is a popover: Escape closes it and the focus goes back to its button; a click outside it, or the focus
+  // leaving the panel (a click in the editor, on the web page), closes it too (a new line: `drawViewRow`).
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !keyOpen || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    keyOpen = false;
+    drawKey();
+    $('key-open').focus();
+  });
+  document.addEventListener('mousedown', (e) => {
+    if (!keyOpen || (e.target instanceof Element && e.target.closest('#key, #key-open'))) return;
+    keyOpen = false;
+    drawKey();
+  }, true);
+  window.addEventListener('blur', () => {
+    if (!keyOpen) return;
+    keyOpen = false;
+    drawKey();
+  });
+  window.addEventListener('resize', () => keyOpen && sizeKey());
 
   /** The Legend as it is: what each mark drawn means, while it is open. */
   function drawKey() {
     $('key').hidden = !keyOpen;
     $('key-open').setAttribute('aria-expanded', String(keyOpen));
     $('key').replaceChildren(...(keyOpen ? keyEntries.map((e) => el('li', { 'data-key-id': e.id }, keySample(e), el('span', { class: 'key-text' }, ...inline(e.text)))) : []));
+    if (keyOpen) sizeKey();
+  }
+
+  /** The popover's height: the room between its top and the window's bottom. A button near the bottom is scrolled up first, to leave the Legend room. */
+  function sizeKey() {
+    const box = $('key');
+    const room = () => window.innerHeight - box.getBoundingClientRect().top - 8;
+    box.style.setProperty('--key-room', `${Math.max(96, room())}px`);
+    if (room() < 200) {
+      $('view-row').scrollIntoView({ block: 'start' });
+      box.style.setProperty('--key-room', `${Math.max(96, room())}px`);
+    }
   }
 
   /** A sample of a mark in the Legend: as the rows draw it, from the Legend's id. */
@@ -1569,6 +1604,9 @@
     drawSwitch();
     $('key-open').textContent = labels.receives.keyButton;
     keyEntries = msg.key;
+    // (With no entry there is nothing to open; a new line closes the Legend.)
+    $('key-open').hidden = keyEntries.length === 0;
+    if (keyEntries.length === 0 || keyLine !== shownLine) keyOpen = false;
     drawKey();
   }
 

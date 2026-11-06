@@ -215,6 +215,8 @@ export function webHover(host: HoverHost): WebHover {
   const field = pinnedField(host);
   /** The card the pointer opened, while it shows. */
   let hovered: Card | undefined;
+  /** Where the last click in the editor was: a pointer that rests there opens no card. */
+  let clicked: number | undefined;
   // The pointer on its way from a part to its card crosses the line's other rows, whose words would take the hover
   // over. Only while it has left the part's row and comes closer to the card (src/ui/cardPlace.ts, `towardCard`), with
   // no button pressed, the editor does not see its moves; every other move is the editor's (another word's card, a
@@ -333,9 +335,59 @@ export function webHover(host: HoverHost): WebHover {
       },
     };
   });
+  // The pointer's card is dismissed as VS Code's hover is: by Escape wherever the focus is (in the editor, on the page,
+  // in the panel's frame), by a click or the focus going outside the editor (a click inside it moves the cursor, which
+  // closes it: `hideOnChange`), and by a paste or typing (the same). It is not opened again by a pointer that rests
+  // where it clicked: the click shows the line in the panel already (`clicked`).
+  const dismiss = ViewPlugin.define((view) => {
+    const frame = document.getElementById('panel') as HTMLIFrameElement | null;
+    const shown = () => !!view.dom.querySelector('.cm-tooltip-hover');
+    const closeAll = () => {
+      if (shown()) view.dispatch({ effects: closeHoverTooltips });
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return;
+      if (shown()) view.dispatch({ effects: closeHoverTooltips });
+      close(view);
+    };
+    const down = (e: MouseEvent) => {
+      if (!view.dom.contains(e.target as Node)) closeAll();
+      // (Only the main button; a click on a word is where the pointer rests from then on.)
+      if (e.button === 0 && view.contentDOM.contains(e.target as Node)) clicked = view.posAtCoords({ x: e.clientX, y: e.clientY }, false);
+    };
+    const leave = () => void (clicked = undefined);
+    // The panel's frame is another document: its keys and its clicks do not reach this one.
+    const hookFrame = () => {
+      try {
+        frame?.contentDocument?.addEventListener('keydown', key);
+        frame?.contentWindow?.addEventListener('mousedown', closeAll, true);
+      } catch {
+        // Not the same origin: only this document's keys are seen.
+      }
+    };
+    hookFrame();
+    frame?.addEventListener('load', hookFrame);
+    document.addEventListener('keydown', key);
+    document.addEventListener('mousedown', down, true);
+    view.dom.addEventListener('mouseleave', leave);
+    window.addEventListener('blur', closeAll);
+    return {
+      update(u) {
+        if (u.docChanged) clicked = undefined;
+      },
+      destroy() {
+        frame?.removeEventListener('load', hookFrame);
+        document.removeEventListener('keydown', key);
+        document.removeEventListener('mousedown', down, true);
+        view.dom.removeEventListener('mouseleave', leave);
+        window.removeEventListener('blur', closeAll);
+      },
+    };
+  });
   const extension = [
     field,
     outside,
+    dismiss,
     // Every tooltip of the editor (cards, problems, name hints) stays inside its pane, 8 px from the window's edges:
     // a card near the top does not cover the page's top bar.
     tooltips({
@@ -356,6 +408,13 @@ export function webHover(host: HoverHost): WebHover {
       if (view.contentDOM.querySelector('.cm-bx-hint:hover')) return null;
       const c = cardAt(host, view, pos, problemsAt(view, pos, side));
       if (!c) return null;
+      // A pointer that rests where it clicked opens no card (the click shows the line in the panel); one that moves on
+      // to another part does, and the click is forgotten.
+      if (clicked !== undefined) {
+        const was = cardAt(host, view, clicked, []);
+        if (was && was.from === c.from && was.to === c.to) return null;
+        clicked = undefined;
+      }
       const placed = placeCard(view, c.from, pos, side < 0 ? -1 : 1, '--bx-hover-room');
       return {
         pos: c.from, end: c.to, above: placed.above,
@@ -364,7 +423,7 @@ export function webHover(host: HoverHost): WebHover {
           return { dom: cardDom(host, view, c, false), getCoords: anchorOf(view, placed), destroy: () => void (hovered === c && (hovered = undefined)) };
         },
       };
-    }, { hoverTime: 250 }),
+    }, { hoverTime: 250, hideOnChange: true }),
     grace,
     Prec.highest(compartment.of(host.settings()['hover.enabled'] ? keys : [])),
     EditorView.theme({

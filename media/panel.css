@@ -1369,6 +1369,7 @@ body[data-depth="2"] .row.connector {
 
 /* The row under the line box: the switch "What the program receives" and the Legend (media/panel.js `drawViewRow`). It wraps between the two only. */
 #view-row {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1468,14 +1469,31 @@ body[data-depth="2"] .row.connector {
   content: " \25b4";
 }
 
-/* The Legend: one entry a line, its sample first; a long text wraps beside its sample. */
+/* The Legend: a popover under its button, over the explanation (it never pushes it down), as wide as the panel and no
+   higher than the room below it (media/panel.js `sizeKey`); it scrolls inside, and goes under the sticky header
+   (z-index 2). One entry a line, its sample first; a long text wraps beside its sample. */
 #key {
+  position: absolute;
+  z-index: 1;
+  top: 100%;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  max-height: var(--key-room, 20rem);
+  overflow: hidden auto;
   list-style: none;
-  margin: 0 0 0.75rem;
+  margin: 0.15rem 0 0;
   padding: 0.4rem 0.6rem;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
   border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
   border-radius: 3px;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
   font-size: 0.92em;
+}
+
+#key[hidden],
+#key-open[hidden] {
+  display: none;
 }
 
 #key li {
