@@ -1,6 +1,6 @@
 import { sedEscapeAt } from '../ctlchars';
 import { ordinal, type Lang } from '../i18n';
-import { explainRegex } from './regex';
+import { explainRegex, MatchUnit } from './regex';
 import { EmbeddedToken, escapeIntoHole, holeStop, holeToken, holeTokens, isHole, pick, shift } from './types';
 import { pushAll } from '../lists';
 
@@ -29,7 +29,7 @@ class SedParser {
   private i = 0;
   private s: S;
 
-  constructor(private src: string, private flavor: 'bre' | 'ere', private lang: Lang, private quiet: boolean) {
+  constructor(private src: string, private flavor: 'bre' | 'ere', private lang: Lang, private quiet: boolean, private unit?: MatchUnit) {
     this.s = pick(lang);
   }
 
@@ -85,7 +85,7 @@ class SedParser {
   }
 
   private regex(start: number, end: number, delimiter: string): EmbeddedToken[] {
-    return shift(explainRegex(this.src.slice(start, end), this.flavor, this.lang, { sedEscapes: true, delimiter }), start);
+    return shift(explainRegex(this.src.slice(start, end), this.flavor, this.lang, { sedEscapes: true, delimiter, unit: this.unit }), start);
   }
 
   // ---------------------------------------------------------------- addresses
@@ -433,7 +433,7 @@ class SedParser {
 }
 
 /** Explain a sed script (one or more commands). */
-export function explainSed(src: string, flavor: 'bre' | 'ere', lang: Lang, quiet = false): EmbeddedToken[] {
+export function explainSed(src: string, flavor: 'bre' | 'ere', lang: Lang, quiet = false, unit?: MatchUnit): EmbeddedToken[] {
   // (A script whose first two characters are `#n` is run as with `-n`: POSIX, and GNU sed 4.9, also `#no`.)
-  return new SedParser(src, flavor, lang, quiet || src.startsWith('#n')).parse();
+  return new SedParser(src, flavor, lang, quiet || src.startsWith('#n'), unit).parse();
 }

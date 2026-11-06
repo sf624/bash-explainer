@@ -620,3 +620,11 @@ In double quotes bash takes a backslash away only before `$`, a backtick, `"`, `
 - A letter after `\` that PCRE does not know (`\y`) is an error, as `grep -P` says ("unrecognized character follows \"); one it knows but this explainer does not read (`\C`), and `(?|…)`, `(?1)`, `(?R)`, `(*UTF)`, `(?P=n)`, are said to be unread. Before, they were "Literal y" or a group with a stray `?`.
 - A `tr` range with octal codes or escapes at an end (`tr -cd '\000-\177'`, `'\t-\r'`, `'a-\177'`) is a range of characters; before, it was the first character, a "-" and the second. With `-ct a-z xy`, only as many of the other characters as the second string has (the lowest codes) are replaced; the note no longer says every other character is replaced.
 - `tr -c`: the first string is the characters left alone. `tr -dc 'a-z'` is "characters to keep (every other character is deleted)", `tr -c 'a-z' x` "characters to leave as they are (every other character is replaced)", `tr -cs 'a-z'` "characters to leave alone (repeats of every other character are squeezed)". With `-ds` the second string is not complemented (`tr -cds a-b b`). The case summary ("converts lowercase to uppercase") is no longer said for `tr -c a-z A-Z`. `[\n*]` (as in `tr -cs A-Za-z '[\n*]'`) is "newline repeated as needed"; before, it was read as the characters `[`, newline, `*`, `]`.
+
+### `^` and `$`: the start of a line or of a text
+
+- `^` and `$` are the ends of what the tool matches the regex against. grep and sed match each line (the pattern space), so they are "the start/end of the line". bash's `[[ $x =~ ^1 ]]`, awk (`~`, `match()`, a rule's `/re/`) and Perl match a whole string, which may hold newlines, and the anchors do not match inside it: with `x=$'a\n1'`, `^1` and `a$` both fail in bash. These say "the start/end of the text" (ja 文字列の先頭・末尾). Before, every tool said "line".
+- Perl's `$` also matches before a final newline (`"a\n" =~ /a$/`); it says so. With the flag `m` (`/^b/m`, `s/^/> /mg`), Perl's anchors are a line's again.
+- `grep -z` and `sed -z` read a record up to a NUL, so their anchors are the record's: "text" as well.
+- Left as it was: a sed script that joins lines (`N`, `G`, `H`) matches `^` and `$` against the whole pattern space, which still says "line" unless `-z` is given.
+

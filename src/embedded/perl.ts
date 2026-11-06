@@ -1,5 +1,5 @@
 import { ordinal, type Lang } from '../i18n';
-import { explainRegex } from './regex';
+import { explainRegex, RegexOptions } from './regex';
 import { EmbeddedToken, hasHole, holeStop, holeTokens, pick, shift } from './types';
 import { wordTable } from '../wordtable';
 
@@ -239,7 +239,7 @@ class PerlExplainer {
       const flags = text.slice(text.lastIndexOf(close) + 1);
       const fl = flags.includes('i') ? s('（大文字・小文字を区別しない）', ' (case-insensitive)') : '';
       return this.tok(start, end, 'pattern', s(`現在の行（\`$_\`）が正規表現 \`${src.slice(bodyStart, bodyEnd)}\` に一致するか${fl}`, `whether the line (\`$_\`) matches \`${src.slice(bodyStart, bodyEnd)}\`${fl}`),
-        shift(explainRegex(src.slice(bodyStart, bodyEnd), 'pcre', this.lang, { perl: true, ...(open === close ? { delimiter: close } : {}) }), bodyStart));
+        shift(explainRegex(src.slice(bodyStart, bodyEnd), 'pcre', this.lang, regexOptions(open, close, flags)), bodyStart));
     }
     return this.tok(start, end, 'test', s(`条件 \`${text}\``, `condition \`${text}\``), this.atoms(start, end));
   }
@@ -276,7 +276,7 @@ class PerlExplainer {
     const pat = src.slice(patStart, patEnd);
     const rep = src.slice(repStart, repEnd);
     const kids: EmbeddedToken[] = [
-      this.tok(patStart, patEnd, 'pattern', s(`検索パターン（Perl の正規表現）\`${pat}\``, `Pattern (Perl regex) \`${pat}\``), shift(explainRegex(pat, 'pcre', this.lang, { perl: true, ...(open === close ? { delimiter: close } : {}) }), patStart)),
+      this.tok(patStart, patEnd, 'pattern', s(`検索パターン（Perl の正規表現）\`${pat}\``, `Pattern (Perl regex) \`${pat}\``), shift(explainRegex(pat, 'pcre', this.lang, regexOptions(open, close, flags)), patStart)),
       this.tok(repStart, repEnd, 'string', s(`置換後の文字列 \`${rep}\`（\`$1\` などはグループの内容）`, `Replacement \`${rep}\` (\`$1\`… are the groups)`), [
         ...this.atoms(repStart, repEnd),
         // (With `e`, the replacement is code.)
@@ -347,6 +347,11 @@ export function explainPerl(src: string, lang: Lang): EmbeddedToken[] {
 }
 
 /** How -n, -p, -a, -l, -i and -0 wrap the code, as one sentence. */
+/** The options for the regex of `m//` and `s///`: its delimiter, and with the flag `m` `^` and `$` stand at every line. */
+function regexOptions(open: string, close: string, flags: string): RegexOptions {
+  return { perl: true, ...(open === close ? { delimiter: close } : {}), ...(flags.includes('m') ? { unit: 'line' as const } : {}) };
+}
+
 export function perlLoopNote(flags: Set<string>, lang: Lang): string | undefined {
   const s = pick(lang);
   const parts: string[] = [];
