@@ -157,7 +157,7 @@ class Scan {
       const why = opening && openingBlinds(opening);
       if (why) this.blindFor(why);
       if (opening?.set?.get('allexport') === 'on') this.exportAll = true;
-      this.visit(root, { fn: undefined, foreign: false, now: true });
+      try { this.visit(root, { fn: undefined, foreign: false, now: true }); } catch (e) { if (!(e instanceof StopScan) || !this.blind?.from) throw e; }
       this.top = undefined;
       this.aliases();
       this.readDeferred();
@@ -168,9 +168,11 @@ class Scan {
     }
   }
 
-  /** Nothing is trusted, for `why` (from where the scan is, or where it says): the scan stops there (`StopScan`), since nothing it finds after would count. */
+  /** Nothing is trusted, for `why`, from where the scan is or where it says (none: the start); the scan stops (`StopScan`). */
+  // (A reason in the text ends only its reading: the checks at the end still run, and the earliest place wins: `$action` before `source`.)
   private blindFor(why: string | { why: string; from?: SyntaxNode }): never {
-    this.blind = typeof why === 'string' ? { why, ...(this.top ? { from: this.top } : {}) } : why;
+    const b = typeof why === 'string' ? { why, ...(this.top ? { from: this.top } : {}) } : why;
+    if (!this.blind || !b.from || b.from.startIndex < this.blind.from!.startIndex) this.blind = b;
     throw new StopScan();
   }
 
@@ -928,11 +930,7 @@ class Scan {
       // (The walk checks that each copy of a value into IFS, and each variable a word of `test` splits, reads one the
       // script set there: see `Trust.copied`. `[ -n "$z" ] && x=a; [ $x … ]` may split `x` from the environment.)
       const copied = [...this.copies.filter((c) => chain.has(c.target) && c.source !== 'IFS').map((c) => ({ owner: c.owner, name: c.source })), ...this.testSplits];
-      for (const c of copied) {
-        const set = this.copied.get(c.owner) ?? new Set<string>();
-        set.add(c.name);
-        this.copied.set(c.owner, set);
-      }
+      for (const c of copied) this.copied.set(c.owner, (this.copied.get(c.owner) ?? new Set<string>()).add(c.name));
     }
     const why = arithReads(this.arith, this.writes, this.refUnknown) ?? compoundReads(this.unknownCompounds, writesOf, this.refTargets) ?? commandNames(this.commandVariables, this.writes, this.functions) ?? ps4Writes(writesOf('PS4'));
     if (why) this.blindFor(why);

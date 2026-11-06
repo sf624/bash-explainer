@@ -451,9 +451,20 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
       ['f() { echo $u; }; u=1; f; eval "$n"; f', '1\n2', '? (eval of text not known)'],
       ['u=1; for i in 1 2; do echo $u; eval "$n"; done', '1\n2', '? (eval of text not known)'],
       ['u=1; { echo $u; eval "$n"; }; echo $u', '1\n2', '?,? (eval of text not known)'],
+      // A reason the checks at the end find (`$1` is `u` here) counts from where it names, or from the start, though
+      // the text stops being read at a later one: a command named by a variable may run a function.
+      ['action=start; start() { u=2; }; u=1; $action; echo $u; . /dev/null', '2', '? (a command name not known)'],
+      ['cmd=f; f(){ u=2; }; u=1; $cmd; echo $u; source /dev/null', '2', '? (a command name not known)'],
+      ['c=f; f() { u=2; }; u=1; "$c"; echo $u; eval "$n"', '2', '? (a command name not known)'],
+      ['u=1; read -r n <<< u=2; (( n )); echo $u; source /dev/null', '2', '? (arithmetic reads `n`, which may be set to text not known)'],
+      ['u=1; declare -n r=$1; r=2; echo $u; source /dev/null', '2', '? (a nameref whose target is not known is assigned)'],
+      ['u=1; declare "$1=2"; echo $u; source /dev/null', '2', '? (a declaration names a variable not known)'],
+      ['u=1; printf -v "$1" 2; echo $u; source /dev/null', '2', '? (a builtin is given a variable name not known)'],
+      ['u=1; read -r "$1" <<< 2; echo $u; source /dev/null', '2', '? (a builtin is given a variable name not known)'],
+      ["u=1; PS4='$((u=2))'; set -x; :; echo $u; source /dev/null", '2', '? (PS4, which `set -x` expands before each command, may assign or run a command)'],
     ];
     for (const [src, out, want] of table) {
-      assert.strictEqual(spawnSync('bash', ['-c', src], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', n: 'u=2' }, encoding: 'utf8' }).stdout, `${out}\n`, src);
+      assert.strictEqual(spawnSync('bash', ['-c', src, '_', 'u'], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', n: 'u=2' }, encoding: 'utf8' }).stdout, `${out}\n`, src);
       assert.strictEqual(values(src), want, src);
     }
     // Where the text itself is not what bash reads (CR LF line ends), nothing holds.
