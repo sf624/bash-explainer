@@ -36,7 +36,7 @@ import { aliasesAfter, type AliasResolution, badgeKind, isFunction, type NameRes
 import type { NameInfo } from './namefacts';
 import { spanWithin } from './noteanchors';
 import { type WordStep, wordSteps } from './semantics/wordsteps';
-import { type ExpansionStep, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
+import { type ExpansionStep, pieceSteps, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
 import { setsElement, splitElement, stackTilde, staticWordValue } from './staticword';
 import { andOrRole, field, fields, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
 import { mostOf, pushAll } from './lists';
@@ -572,12 +572,12 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     PARTS.has(c.type) && (c.type !== 'brace_expression' || cx.meaning(c)!.steps.find((s) => s.kind === 'brace')!.applies !== false);
 
   /**
-   * What bash does to the word `w`, on its node (or on an assignment, of its value). Not on a piece of a word the parser gives in parts (the
-   * right of `[[ x == *":$d:"* ]]`): its steps are the whole word's, which has no node.
+   * What bash does to the word `w`, on its node (or on an assignment, of its value). On a piece of a word the parser gives in parts (the
+   * right of `[[ x == "$y"* ]]`), the steps that act on that piece (`pieceSteps`): `"$y"` has its expansion and quotes, `*` none.
    */
   const setSteps = (n: ReadingNode, w: SyntaxNode): void => {
     const m = cx.meaning(w);
-    const list = m && m.nodes.length === 1 && wordSteps(m);
+    const list = m && wordSteps(m.nodes.length === 1 ? m : { ...m, steps: pieceSteps(m, w) });
     if (list) n.steps = { list, context: m.context };
   };
 

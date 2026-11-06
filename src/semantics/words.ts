@@ -297,6 +297,19 @@ interface Shape {
 }
 
 const shapes = new WeakMap<SyntaxNode, Shape>();
+
+/** Whether the nodes have quotes for quote removal to take away: a quote, or a backslash. */
+const hasQuotes = (own: readonly SyntaxNode[]): boolean => own.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text));
+
+/**
+ * The steps of a word that act on one of its nodes, where the parser gives the word in parts (the right of `[[ x == "$y"* ]]`): a step acts
+ * there when one of the parts it acts on lies in that node, quote removal when the node has quotes. Another step does nothing there.
+ */
+export function pieceSteps(m: WordMeaning, piece: SyntaxNode): readonly ExpansionStep[] {
+  const inside = (p: SyntaxNode): boolean => p.startIndex >= piece.startIndex && p.endIndex <= piece.endIndex;
+  const acts = (s: ExpansionStep): boolean => (s.kind === 'quote-removal' ? hasQuotes([piece]) : s.parts.some(inside));
+  return m.steps.map((s) => (s.applies === false || acts(s) ? s : { kind: s.kind, applies: false, manual: s.manual, parts: [] }));
+}
 function shapeOf(nodes: readonly SyntaxNode[]): Shape {
   let shape = shapes.get(nodes[0]);
   if (shape) return shape;
@@ -308,7 +321,7 @@ function shapeOf(nodes: readonly SyntaxNode[]): Shape {
     someQuoted: expansions.some(nearestQuote),
     braced: bracedWords(plain),
     globWords: [...new Set([...plain.filter((w) => isGlob(joinedText(w)) || globbedByBash(joinedText(w), 'off')), ...(own.length ? bracketsAcross(own) : [])])].sort((a, b) => a.startIndex - b.startIndex),
-    quoted: own.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text)),
+    quoted: hasQuotes(own),
   };
   shapes.set(nodes[0], shape);
   return shape;

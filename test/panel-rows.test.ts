@@ -1096,8 +1096,13 @@ describe('the panel\'s row model', () => {
       const word1 = (src: string, label: string) => rows(src, D1).find((r) => r.label === label)?.steps?.acts;
       for (const [src, label] of [['[ -f "$f" ]', '"$f"'], ['[[ -n $x ]]', '$x'], ['case "$1" in a) ;; esac', '"$1"'], ['a > $out', '$out'], ['a >> "$log"', '"$log"'],
         ['cat < $f', '$f'], ['cat <<< "$name"', '"$name"'], ['arr=(*.txt)', '*.txt'], ['eval "$cmd"', '"$cmd"'], ['[ $name = "$1" ]', '"$1"']] as const) assert.strictEqual(word1(src, label), true, src);
-      // (Not on a piece of a word the parser gives in parts, whose steps are the whole word's: the right of `[[ = ]]`.)
-      assert.deepStrictEqual(rows('[[ ":$PATH:" = *":$d:"* ]]', D2).filter((r) => r.steps).map((r) => r.label), ['":$PATH:"']);
+      // (A piece of a word the parser gives in parts, the right of `[[ = ]]`, has the steps that act on it: none on a `*`.)
+      const pieces = (src: string, depth = D2) => rows(src, depth).filter((r) => r.steps).map((r) => [r.label, r.steps!.steps.map((x) => (x.off ? `${x.text}${x.why ?? ''}` : x.text)).join(' → ')]);
+      const quoted = 'parameter expansion → no word splitting or globbing (not in `[[ ]]`) → quote removal';
+      assert.deepStrictEqual(pieces('[[ ":$PATH:" = *":$d:"* ]]'), [['":$PATH:"', quoted], ['":$d:"', quoted]]);
+      assert.deepStrictEqual(pieces('[[ $x == "$y"* ]]'), [['$x', 'parameter expansion → no word splitting or globbing (not in `[[ ]]`)'], ['"$y"', quoted]]);
+      assert.deepStrictEqual(pieces('[[ $x == $p* ]]').map((r) => r[0]), ['$x', '$p']);
+      assert.deepStrictEqual(pieces('[[ $x == "$y"* ]]', D1).map((r) => r[0]), ['$x', '"$y"']);
       // A word no step changes: nothing new (depth 2 folds its line).
       assert.strictEqual(text('echo "a"', '"a"'), undefined);
       assert.strictEqual(text('echo a', 'a'), undefined);
