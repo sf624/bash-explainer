@@ -58,11 +58,9 @@ export class ProblemStrip {
   /**
    * Fills the strip and the list. With no problem the strip says so, and has nothing to open or go to. Each problem is
    * a button, in the Tab order: its level's mark, its line in a column of its own, its message on up to two lines and
-   * its rule (from a pane of 520 px); its tooltip has the whole message, its line and its rule. `sh`: how many problems
-   * POSIX sh would give a script the page reads as bash (`DiagnosticsFor.sh`), which the strip says in a line of its own
-   * after the list, with a button to read the script so; it is no problem, and the counts above do not include it.
+   * its rule (from a pane of 520 px); its tooltip has the whole message, its line and its rule.
    */
-  show(issues: readonly DocumentIssue[], sh?: number): void {
+  show(issues: readonly DocumentIssue[]): void {
     const lang = this.host.lang();
     const t = TEXT[lang];
     this.list = byPlace(issues);
@@ -89,11 +87,28 @@ export class ProblemStrip {
       b.title = `${name} (${key})`;
     }
     $('problem-list').replaceChildren(...this.list.map((i) => this.row(i, lang)));
-    this.hint(sh, lang);
     this.place();
   }
 
-  /** The hint toward POSIX sh: its line shown for a count, hidden for none. The focus stays on the strip when the button it was on goes (the choice was made). */
+  /** Whether the page has the line of the hint toward POSIX sh (the compare page has none). */
+  get hasHint(): boolean {
+    return !!document.getElementById('problems-sh');
+  }
+
+  /**
+   * The hint toward POSIX sh (`DiagnosticsFor.sh`): a line of its own after the list, with a button to read the script as
+   * sh; it is no problem, and the counts above do not include it. It comes after the check (the editor works it out when
+   * idle), so the list is drawn without it.
+   */
+  showHint(sh: number | undefined): void {
+    this.hint(sh, this.host.lang());
+  }
+
+  /**
+   * The hint toward POSIX sh: its line shown for a count, hidden for none. The focus stays in the strip when the button it
+   * was on goes (the choice was made): on the fold, or where the fold has no box (the phone's sheet shows the list alone) on
+   * the first problem, or on the sheet's Problems tab when there is none.
+   */
   private hint(sh: number | undefined, lang: Lang): void {
     const line = document.getElementById('problems-sh');
     const button = document.getElementById('sh-hint-button');
@@ -106,7 +121,9 @@ export class ProblemStrip {
       button.textContent = t.shHintButton;
     } else if (focused) {
       const toggle = document.getElementById('problems-toggle') as HTMLButtonElement | null;
-      if (toggle && !toggle.disabled) toggle.focus();
+      const there = (e: HTMLElement | null): e is HTMLElement => !!e && e.getClientRects().length > 0 && !(e as HTMLButtonElement).disabled;
+      const next = [toggle, document.querySelector<HTMLElement>('#problem-list .problem'), document.getElementById('tab-problems')].find(there);
+      next?.focus();
     }
   }
 

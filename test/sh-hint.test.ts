@@ -1,5 +1,5 @@
-// The web page's hint toward POSIX sh (docs/design/usability-9.md, 2.1; decisions Q2 and Q3): how many problems POSIX sh
-// would give a script the page reads as bash, only where its shell comes from `#!/usr/bin/env bash` or from no shebang.
+// The web page's hint toward POSIX sh (docs/design/usability-9.md, 2.1; decisions Q2 and Q3): how many constructs POSIX sh
+// lacks in a script the page reads as bash, only where its shell comes from `#!/usr/bin/env bash` or from no shebang.
 // `shProblemCount` is the one count, made from the dialect issues for sh (`dialectIssues`) through the call the strip makes
 // for a sh script; the hint is never a problem, so no list holds it.
 import * as assert from 'assert';
@@ -80,13 +80,13 @@ describe('the hint toward POSIX sh: when it is made', () => {
 describe('the hint toward POSIX sh: the count', () => {
   const sample = fs.readFileSync(path.join(__dirname, 'fixtures', 'sample.sh'), 'utf8');
 
-  it('is the number of dialect problems, which the strip lists once the script is read as sh', () => {
+  it('is the number of dialect issues for sh, all of which the list has once the script is read as sh', () => {
     for (const text of [`#!/usr/bin/env bash\n${BODY}`, BODY, sample]) {
       const doc = script(text);
       const hint = shProblemCount(doc, 'en', shellsFor(text), settings(), 'web');
       assert.ok(hint, text.slice(0, 30));
       const dialect = dialectIssues(doc.tree, 'sh', 'en');
-      // (Code that never runs lowers or drops an issue: the call of the strip is the count, the bare issues an upper bound.)
+      // (Code that never runs lowers or drops an issue: the call of the strip is the count, the bare issues an upper bound. The list as sh has more: the notes of sh's explanations.)
       assert.ok(hint <= dialect.length && (text === sample || hint === dialect.length), text.slice(0, 30));
       const codes = new Set(dialect.map((i) => i.id));
       const rows = documentIssues(doc, 'en', shellsFor(text, 'x', 'sh')).filter((i) => codes.has(i.code));

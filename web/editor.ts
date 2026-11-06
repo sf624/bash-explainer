@@ -233,8 +233,14 @@ export interface EditorHost {
   shells(): Shells;
   /** Explains the lines of the script as it is now (for the name hints); undefined while there is nothing to explain. */
   explainer(): ((line: number) => LineExplanation) | undefined;
-  /** The problems found in the script (the ones shown), the warning codes in it, and how many problems POSIX sh would give (the strip's hint, never one of them; undefined: no hint). */
-  problems(shown: DocumentIssue[], codes: string[], sh: number | undefined): void;
+  /** The problems found in the script (the ones shown), and the warning codes in it. */
+  problems(shown: DocumentIssue[], codes: string[]): void;
+  /**
+   * Where the page shows the hint toward POSIX sh (the strip's line, never a problem), when it has one: given how many
+   * constructs POSIX sh lacks (undefined: no hint). The count is worked out after the check, when the page is idle, and
+   * not at all for a text edited meanwhile: typing does not wait for it (it took up to half of a long script's check).
+   */
+  shHint?(count: number | undefined): void;
   /** The text or the selection changed. */
   changed(u: ViewUpdate): void;
   /** The hover card's link "Settings" (web/hover.ts). */
@@ -250,6 +256,16 @@ export interface EditorInit {
   readMode: boolean;
   /** Whether the page has its own lint marks, problems and name hints (not in panel mode). */
   problems: boolean;
+}
+
+/** Runs `run` when the page has nothing else to do (a timeout of 1.5 s at most; Safari without idle callbacks: after 200 ms). Returns what cancels it. */
+function whenIdle(run: () => void): () => void {
+  if (typeof requestIdleCallback === 'function') {
+    const id = requestIdleCallback(run, { timeout: 1500 });
+    return () => cancelIdleCallback(id);
+  }
+  const id = setTimeout(run, 200);
+  return () => clearTimeout(id);
 }
 
 /** The name hints worked out for one parse, by line, with what else they depend on. */
@@ -291,7 +307,8 @@ export class Editor {
       const lang = host.lang();
       const found = diagnosticsFor(() => doc, () => host.shells(), lang, host.settings(), 'web');
       const list = found.shown;
-      host.problems(list, [...new Set(found.all.map((i) => i.code))].sort(), found.sh);
+      host.problems(list, [...new Set(found.all.map((i) => i.code))].sort());
+      this.scheduleSh(() => found.sh);
       // Code that never runs: a hint, faded (as VS Code fades `DiagnosticTag.Unnecessary`); not in the Problems list.
       const faded: Diagnostic[] = found.faded.map((r) => ({
         from: pos(v.state, r.startLine, r.startCol), to: pos(v.state, r.endLine, r.endCol),
@@ -332,6 +349,7 @@ export class Editor {
           EditorView.updateListener.of((u) => {
             host.changed(u);
             if (u.docChanged) {
+              this.cancelSh();
               clearTimeout(this.shadingTimer);
               this.shadingTimer = setTimeout(() => this.shade(), 100);
             }
@@ -392,6 +410,17 @@ export class Editor {
     this.refreshHints();
     // (The hover's keys are bound only while the hover is on.)
     this.hover?.enable(this.view, this.host.settings()['hover.enabled']);
+  }
+
+  /** Cancels the hint toward POSIX sh that waits for the page to be idle. */
+  private cancelSh: () => void = () => undefined;
+
+  /** Works out the hint toward POSIX sh (`count`) when the page is idle, for the page that shows one; the next check or edit cancels it. */
+  private scheduleSh(count: () => number | undefined): void {
+    this.cancelSh();
+    const show = this.host.shHint?.bind(this.host);
+    if (!show) return;
+    this.cancelSh = whenIdle(() => show(count()));
   }
 
   private scheduleHints(ms: number): void {

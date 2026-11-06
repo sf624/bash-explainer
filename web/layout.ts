@@ -244,6 +244,8 @@ export function setUpProblems(
   new ResizeObserver(apply).observe(box);
   // (And when the problems come or go: the box's class. `apply` changes a class only when it differs, so no loop.)
   new MutationObserver(apply).observe(box, { attributeFilter: ['class'] });
+  // (The hint toward POSIX sh comes, goes, or wraps to another height: the least height and the stored height follow it, whatever the box does.)
+  if (hint) new ResizeObserver(apply).observe(hint);
   apply();
   return () => {
     saved = {};

@@ -669,6 +669,20 @@ Each entry names its kind by the label an issue of that kind gets. For `bug`, `c
 - **Note:** dropped, as no one has offered a language. It comes back when someone does.
 - **Old roadmap:** [Not decided, line 172](https://github.com/sf624/bash-explainer/blob/28e8a754255316700b99050a1c1f6a4bf9abd4ae/docs/roadmap.md#L172)
 
+## From the review of the POSIX sh hint (#688)
+
+### The hint's room in the Problems box is a fixed number (Japanese, a very narrow pane)
+
+- **Verdict:** dropped (YAGNI), 2026-11-06. Kind: `ui`.
+- **Reason:** Rare: the line must wrap to two lines, which needs a pane well under 300 px with the Japanese text.
+- **Input and what is wrong:** The web page in Japanese with a `#!/usr/bin/env bash` script that has `[[ ]]` and problems, and the divider dragged far left (or a large font). The hint line "POSIX sh にない書き方が N 件" and its button wrap to two lines (about 57 px), but `#problems` gets `max-height: calc(30% + 29px)` (web/page.css; 45 px when narrow), so the list is a little shorter than the 30% it would have. Nothing overflows; the list scrolls.
+
+### `env -u X bash` and `env -C dir bash` shebangs
+
+- **Verdict:** dropped (YAGNI), 2026-11-06. Kind: `bug`.
+- **Reason:** Rare: an `env` option that takes a value before the shell, in a shebang. Already on main before #688 (`readShell` read the first word that is not an option as the program), which the hint inherits.
+- **Input and what is wrong:** `#!/usr/bin/env -u X bash`: the program is read as `X` (and `-C dir` as `dir`), so the shell is none and the script is read as bash by default. The hint then shows for a script that says bash through `env`, which is correct by luck; for `#!/usr/bin/env -C dir sh` the shell is wrongly bash, and the hint shows for a sh script.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

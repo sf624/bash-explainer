@@ -173,7 +173,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let announcer: LineAnnouncer | undefined;
 
 /** The Problems strip and list under the editor; a click on a problem, ‹ › and F8 (on the page) select it in the editor. */
-const strip = mode.hasChrome ? new ProblemStrip({
+const strip: ProblemStrip | undefined = mode.hasChrome ? new ProblemStrip({
   lang: () => lang, cursor: () => editor.cursor(), spans: () => editor.problemSpans(),
   pick: (i) => {
     editor.select(i.startLine, i.startCol, i.endLine, i.endCol);
@@ -181,7 +181,7 @@ const strip = mode.hasChrome ? new ProblemStrip({
   },
   checkAsSh: () => setChoice('shell', 'sh'),
 }) : undefined;
-const editor = new Editor({
+const editor: Editor = new Editor({
   kind: () => kinds.kind,
   lang: () => lang,
   settings: () => settings,
@@ -194,13 +194,15 @@ const editor = new Editor({
     const opts = explainOptions(settings);
     return (line) => explainDocumentLine(analyzer(), doc, line, lang, s, opts);
   },
-  problems(list, codes, sh) {
+  problems(list, codes) {
     codesSeen = codes;
     problemsShown = list;
     updatePanel();
-    strip?.show(list, sh);
+    strip?.show(list);
     panel.problems(problemLevels(list.map((i) => i.severity)));
   },
+  // (Only where the page has the strip's line for it: the work is skipped otherwise.)
+  ...(strip?.hasHint ? { shHint: (count: number | undefined) => strip.showHint(count) } : {}),
   changed(u: ViewUpdate) {
     // Undo would no longer undo the sample once the text changed again.
     if (u.docChanged && toast.current?.action?.untilEdit && !kinds.puttingText) toast.hide();

@@ -6,7 +6,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
-- On the web page, a script whose shell comes from `#!/usr/bin/env bash` or from no shebang gets a line under the Problems strip: "2 problems in POSIX sh", with a button **Check as POSIX sh** that switches the shell. It is no problem: the counts, `--check` and the Action do not include it. A `#!/bin/bash` script, a bats file and VS Code have no such line.
+- On the web page, a script whose shell comes from `#!/usr/bin/env bash` or from no shebang gets a line under the Problems strip, "2 constructs not in POSIX sh", with a button **Check as POSIX sh**. It is not counted: the Problems counts, `--check` and the Action leave it out, and a `#!/bin/bash` script, a bats file and VS Code have no such line.
 
 ### Changed
 

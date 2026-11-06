@@ -273,7 +273,7 @@ export function issueFilter(doc: ShellDocument | undefined, settings: Settings, 
  * The problems of a document (`open` gives it, `shellsOf` its shells) under the settings: `shown` (none while `diagnostics.enabled` is off, where the
  * surface has it; none in the shell code of another file while `diagnostics.embedded` is off; without the
  * codes in `diagnostics.ignore`) and `all` (what the document has, whatever the settings say, found only when
- * asked for; the codes the file itself turns off are left out in both) and `sh` (how many problems POSIX sh would give, for a hint: `shProblemCount`). The warnings and caveats of the explanations
+ * asked for; the codes the file itself turns off are left out in both) and `sh` (how many constructs POSIX sh lacks, for a hint: `shProblemCount`). The warnings and caveats of the explanations
  * (`noteIssues`) are explained with the settings' options, and `explain` (the yq flavour a panel chose).
  */
 export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: (doc: ShellDocument) => Shells, lang: Lang, settings: Settings, surface: Surface, explain: ExplainOptions = {}): { readonly all: DocumentIssue[]; shown: DocumentIssue[]; readonly faded: DeadRange[]; readonly sh: number | undefined } {
@@ -369,11 +369,14 @@ function dialectProblems(doc: ShellDocument, lang: Lang, shell: Shell | undefine
 }
 
 /**
- * How many problems the strip would list if the script were read as POSIX sh (the web page's hint, docs/design/usability-9.md,
- * 2.1), by the dialect issues for sh that `issueFilter` leaves; the same issues the strip lists for a sh script, so that the
- * two counts agree. Undefined where there is no hint: a host file (bats too), a shell chosen (the user's choice stands), a
- * script whose shell is not bash from `#!/usr/bin/env bash` or from no shebang (`#!/bin/bash` says bash on purpose), a text
- * not surely a script, or no problem in sh. Never a problem itself: it is not in `diagnosticsFor`'s lists.
+ * How many constructs of the script POSIX sh lacks or runs differently, for the web page's hint toward POSIX sh
+ * (docs/design/usability-9.md, 2.1): the dialect issues for sh (`dialectIssues`), made as the strip makes them for a sh
+ * script (`dialectProblems`) and filtered as it filters (`issueFilter`: the settings, the ignored codes, the file's own
+ * comments). It is not what the strip would list as a whole once the script is read as sh: that also has the notes of sh's
+ * explanations (`globstar-unsupported`…), and the notes the strip already lists for bash. Undefined where there is no hint: a
+ * host file (bats too), a shell chosen (the user's choice stands), a script whose shell is not bash from `#!/usr/bin/env
+ * bash` or from no shebang (`#!/bin/bash` says bash on purpose), a text not surely a script, or none such. Never a problem
+ * itself: it is in none of `diagnosticsFor`'s lists.
  */
 export function shProblemCount(doc: ShellDocument, lang: Lang, shells: Shells, settings: Settings, surface: Surface): number | undefined {
   const { detected } = shells;
