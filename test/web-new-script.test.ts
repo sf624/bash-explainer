@@ -79,7 +79,8 @@ describe('the web page: what a new script resets, and the depths\' names', funct
       // Only the words are the live region; the Undo is a button beside it.
       assert.strictEqual(await page.locator('#status [role="status"] button').count(), 0);
       await page.locator('#status .status-action').click();
-      await until('the sample back', () => text(page), (t) => t === sample);
+      // (CodeMirror draws only the lines in view: its start says the sample is back.)
+      await until('the sample back', () => text(page), (t) => t.slice(0, 80) === sample.slice(0, 80));
       assert.deepStrictEqual(await state(page), ['bats', 'untitled.bats', 'sh'], lang);
       assert.strictEqual(await page.evaluate("document.activeElement?.classList.contains('cm-content')"), true, `${lang}: the focus in the editor`);
       assert.deepStrictEqual(errors, []);
@@ -172,6 +173,50 @@ describe('the web page: what a new script resets, and the depths\' names', funct
     await until('empty again', () => text(page), (t) => !t.trim());
     await until('a shell script', () => kindChosen(page), (k) => k === 'shell');
     assert.deepStrictEqual(await state(page), ['shell', 'untitled.sh', 'auto']);
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('Ctrl+Z of a Clear that changed no text takes the toast with it, so that its Undo cannot take back an earlier step', async () => {
+    const { ctx, page, errors } = await open();
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('echo mine\n');
+    await menuItem(page, '#menu-clear');
+    await until('empty', () => text(page), (t) => !t.trim());
+    await setShell(page, 'zsh');
+    // The second Clear changes only the shell: one step of the history, with its toast.
+    await menuItem(page, '#menu-clear');
+    await until('the toast', () => toastText(page), (t) => t === 'Editor cleared. Shell set back to Auto.');
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+Z');
+    await until('zsh back', () => currentShell(page), (s) => s === 'zsh');
+    assert.strictEqual(await toastText(page), '');
+    assert.strictEqual(await page.locator('#status .status-action').count(), 0);
+    // (Before, the toast stayed, and its Undo brought back the first Clear's text.)
+    assert.strictEqual((await text(page)).trim(), '');
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('a whole script pasted over the sample and its reset are one step of the history: Ctrl+Z gives the sample back, with its kind and the shell', async () => {
+    const { ctx, page, errors } = await open();
+    await setShell(page, 'sh');
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+A');
+    await paste(page, DOCKERFILE);
+    await until('a Dockerfile', () => kindChosen(page), (k) => k === 'dockerfile');
+    assert.deepStrictEqual(await state(page), ['dockerfile', 'Dockerfile', 'auto']);
+    await page.keyboard.press('Control+Z');
+    // (CodeMirror draws only the lines in view: the sample's first line says it is back.)
+    await until('the sample back', () => text(page), (t) => t.startsWith('#!/usr/bin/env bash\n') && !t.includes('FROM alpine'));
+    await until('its kind', () => kindChosen(page), (k) => k === 'shell');
+    assert.deepStrictEqual(await state(page), ['shell', 'untitled.sh', 'sh']);
+    assert.strictEqual(await toastText(page), '');
+    // And Ctrl+Shift+Z makes it again.
+    await page.keyboard.press('Control+Shift+Z');
+    await until('the Dockerfile again', () => kindChosen(page), (k) => k === 'dockerfile');
+    assert.deepStrictEqual(await state(page), ['dockerfile', 'Dockerfile', 'auto']);
     assert.deepStrictEqual(errors, []);
     await ctx.close();
   });

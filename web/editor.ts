@@ -8,7 +8,7 @@ import { json } from '@codemirror/legacy-modes/mode/javascript';
 import { python } from '@codemirror/legacy-modes/mode/python';
 import { yaml } from '@codemirror/legacy-modes/mode/yaml';
 import { Diagnostic, forEachDiagnostic, forceLinting, linter, lintGutter, setDiagnosticsEffect } from '@codemirror/lint';
-import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateField, type Transaction } from '@codemirror/state';
 import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import type { LineExplanation, Span } from '../src/analyzer';
@@ -244,6 +244,8 @@ export interface EditorHost {
   shHint?(count: number | undefined): void;
   /** The text or the selection changed. */
   changed(u: ViewUpdate): void;
+  /** Effects to add to a transaction before it is made (a paste that starts a new script: `KindControl.startedBy`), so that they are one step of the history with it. */
+  extend?(tr: Transaction): readonly StateEffect<unknown>[];
   /** The hover card's link "Settings" (web/hover.ts). */
   openSettings(): void;
   /** Says a short message in the page's live region (web/a11y.ts). */
@@ -347,6 +349,10 @@ export class Editor {
           this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.marginMode.of(roomUnderText(0)), EditorView.scrollMargins.of(() => ({ bottom: this.bottomMargin + sheetCover() })), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
           highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== SEVERITIES[FADED].codemirror) }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []), this.outlineMode.of(init.problems ? blockOutline((this.outline = host.settings().blockOutline), () => host.document()) : []),
+          EditorState.transactionExtender.of((tr) => {
+            const effects = host.extend?.(tr) ?? [];
+            return effects.length ? { effects } : null;
+          }),
           EditorView.updateListener.of((u) => {
             host.changed(u);
             if (u.docChanged) {

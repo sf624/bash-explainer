@@ -313,6 +313,8 @@ describe('the box "Problems on this line"', () => {
     const pointers = problemsAround(ex, all, [], 'en');
     assert.ok(pointers.length > 0);
     assert.deepStrictEqual(pointers.map((p) => [p.level, p.where, p.title, p.line]).slice(0, 1), [['info', 'Caveat on line 1', 'Go to line 1', 0]]);
+    // (Its icon says the level, which "Caveat" does not: as in the box.)
+    assert.strictEqual(pointers[0].levelName, 'Information');
     assert.match(pointers[0].head, /split on spaces/);
     assert.strictEqual(problemsAround(explain(text, 1, 'ja'), documentIssues(doc(text), 'ja', { script: 'said' }), [], 'ja')[0].where, '行 1 の注意');
     // (Its own line, and a problem it says itself, are in the box.)
