@@ -193,8 +193,11 @@ export function setUpProblems(
   const isCollapsed = () => saved.collapsed ?? narrow.matches;
   // The editor keeps its few lines under what lies above it in the pane (its header, the first visit's hint).
   const editor = pane.querySelector<HTMLElement>('#editor');
-  const max = () => Math.max(LIST_MIN, pane.clientHeight - EDITOR_MIN - (editor?.offsetTop ?? 0));
-  const clamp = (v: number) => Math.round(Math.min(max(), Math.max(LIST_MIN, v)));
+  // (The hint toward POSIX sh is a line after the list, which the list does not give up: the least height has it too.)
+  const hint = box.querySelector<HTMLElement>('.sh-hint');
+  const min = () => LIST_MIN + (hint && !hint.hidden ? hint.offsetHeight : 0);
+  const max = () => Math.max(min(), pane.clientHeight - EDITOR_MIN - (editor?.offsetTop ?? 0));
+  const clamp = (v: number) => Math.round(Math.min(max(), Math.max(min(), v)));
   const height = () => (saved.height === undefined ? box.getBoundingClientRect().height : clamp(saved.height));
   const controls = toggle.getAttribute('aria-controls') ?? '';
   const apply = () => {
@@ -211,7 +214,7 @@ export function setUpProblems(
     handle.hidden = collapsed;
     if (saved.height === undefined) box.style.removeProperty('--problems-height');
     else box.style.setProperty('--problems-height', `${clamp(saved.height)}px`);
-    handle.setAttribute('aria-valuemin', String(LIST_MIN));
+    handle.setAttribute('aria-valuemin', String(min()));
     handle.setAttribute('aria-valuemax', String(max()));
     if (!collapsed && !box.hidden) handle.setAttribute('aria-valuenow', String(Math.round(height())));
     onChange();
@@ -225,7 +228,7 @@ export function setUpProblems(
       store();
     },
     at: (e) => pane.getBoundingClientRect().bottom - e.clientY,
-    min: () => LIST_MIN,
+    min,
     max,
     step: 30,
     inverted: true,

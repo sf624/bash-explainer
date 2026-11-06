@@ -2,6 +2,14 @@
 
 The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
+## New
+
+### The hint toward POSIX sh
+
+- **When.** The web page shows it for a script whose shell is bash from `#!/usr/bin/env bash` or from no shebang. Not for `#!/bin/bash` (it says bash on purpose), a ShellCheck directive, a file name that says bash, a shell chosen in the chip, a bats file or another file with shell code in it, and not in VS Code (its panel shows the quiet "not portable to sh" marks).
+- **What.** One line after the list, or after "No problems": the number of problems the strip would list for the same script read as POSIX sh (the dialect issues for sh, with the codes and comments you turned off left out), and a button **Check as POSIX sh** that makes the choice the chip's popover makes. Choose Auto in the chip to go back. The line stays when the list is folded. On a phone it is the last line of the Problems tab.
+- **Not a problem.** The Problems counts, the list, the squiggles, `--check` and the Action do not include it.
+
 ## Changed
 
 ### The hover card and the Legend

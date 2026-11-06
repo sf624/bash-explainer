@@ -26,6 +26,8 @@ export interface StripHost {
   /** Where the problems are now, moved by every edit since the check (the editor's own diagnostics). */
   spans(): ProblemSpan[];
   pick(problem: ProblemSpan): void;
+  /** The hint's button: reads the script as POSIX sh (the choice the chip's popover makes). */
+  checkAsSh(): void;
 }
 
 /** The strip and the list, from the problems the editor shows. */
@@ -38,6 +40,8 @@ export class ProblemStrip {
   constructor(private readonly host: StripHost) {
     // (F8 in the panel's frame: the page adds `keys` there too, each time the frame loads.)
     window.addEventListener('keydown', this.keys, true);
+    // (The compare page has no hint.)
+    document.getElementById('sh-hint-button')?.addEventListener('click', () => this.host.checkAsSh());
     for (const [id, back] of [['problem-prev', true], ['problem-next', false]] as const) {
       $(id).addEventListener('click', () => this.step(back));
       $(id).addEventListener('keydown', (e) => this.enter(e, () => this.step(back)));
@@ -54,9 +58,11 @@ export class ProblemStrip {
   /**
    * Fills the strip and the list. With no problem the strip says so, and has nothing to open or go to. Each problem is
    * a button, in the Tab order: its level's mark, its line in a column of its own, its message on up to two lines and
-   * its rule (from a pane of 520 px); its tooltip has the whole message, its line and its rule.
+   * its rule (from a pane of 520 px); its tooltip has the whole message, its line and its rule. `sh`: how many problems
+   * POSIX sh would give a script the page reads as bash (`DiagnosticsFor.sh`), which the strip says in a line of its own
+   * after the list, with a button to read the script so; it is no problem, and the counts above do not include it.
    */
-  show(issues: readonly DocumentIssue[]): void {
+  show(issues: readonly DocumentIssue[], sh?: number): void {
     const lang = this.host.lang();
     const t = TEXT[lang];
     this.list = byPlace(issues);
@@ -83,7 +89,25 @@ export class ProblemStrip {
       b.title = `${name} (${key})`;
     }
     $('problem-list').replaceChildren(...this.list.map((i) => this.row(i, lang)));
+    this.hint(sh, lang);
     this.place();
+  }
+
+  /** The hint toward POSIX sh: its line shown for a count, hidden for none. The focus stays on the strip when the button it was on goes (the choice was made). */
+  private hint(sh: number | undefined, lang: Lang): void {
+    const line = document.getElementById('problems-sh');
+    const button = document.getElementById('sh-hint-button');
+    if (!line || !button) return;
+    const t = TEXT[lang];
+    const focused = document.activeElement === button;
+    line.hidden = !sh;
+    if (sh) {
+      $('sh-hint-text').textContent = t.shHint(sh);
+      button.textContent = t.shHintButton;
+    } else if (focused) {
+      const toggle = document.getElementById('problems-toggle') as HTMLButtonElement | null;
+      if (toggle && !toggle.disabled) toggle.focus();
+    }
   }
 
   private row(i: DocumentIssue, lang: Lang): HTMLLIElement {

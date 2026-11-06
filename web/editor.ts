@@ -233,8 +233,8 @@ export interface EditorHost {
   shells(): Shells;
   /** Explains the lines of the script as it is now (for the name hints); undefined while there is nothing to explain. */
   explainer(): ((line: number) => LineExplanation) | undefined;
-  /** The problems found in the script (the ones shown), and the warning codes in it. */
-  problems(shown: DocumentIssue[], codes: string[]): void;
+  /** The problems found in the script (the ones shown), the warning codes in it, and how many problems POSIX sh would give (the strip's hint, never one of them; undefined: no hint). */
+  problems(shown: DocumentIssue[], codes: string[], sh: number | undefined): void;
   /** The text or the selection changed. */
   changed(u: ViewUpdate): void;
   /** The hover card's link "Settings" (web/hover.ts). */
@@ -291,7 +291,7 @@ export class Editor {
       const lang = host.lang();
       const found = diagnosticsFor(() => doc, () => host.shells(), lang, host.settings(), 'web');
       const list = found.shown;
-      host.problems(list, [...new Set(found.all.map((i) => i.code))].sort());
+      host.problems(list, [...new Set(found.all.map((i) => i.code))].sort(), found.sh);
       // Code that never runs: a hint, faded (as VS Code fades `DiagnosticTag.Unnecessary`); not in the Problems list.
       const faded: Diagnostic[] = found.faded.map((r) => ({
         from: pos(v.state, r.startLine, r.startCol), to: pos(v.state, r.endLine, r.endCol),

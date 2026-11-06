@@ -179,6 +179,7 @@ const strip = mode.hasChrome ? new ProblemStrip({
     editor.select(i.startLine, i.startCol, i.endLine, i.endCol);
     sheet?.picked();
   },
+  checkAsSh: () => setChoice('shell', 'sh'),
 }) : undefined;
 const editor = new Editor({
   kind: () => kinds.kind,
@@ -193,11 +194,11 @@ const editor = new Editor({
     const opts = explainOptions(settings);
     return (line) => explainDocumentLine(analyzer(), doc, line, lang, s, opts);
   },
-  problems(list, codes) {
+  problems(list, codes, sh) {
     codesSeen = codes;
     problemsShown = list;
     updatePanel();
-    strip?.show(list);
+    strip?.show(list, sh);
     panel.problems(problemLevels(list.map((i) => i.severity)));
   },
   changed(u: ViewUpdate) {
