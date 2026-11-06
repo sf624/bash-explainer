@@ -10,7 +10,7 @@ Counts and line numbers are at a54d9435 (the release of 0.9.0). They come from t
 
 In every layer, a fact has a source: the word model, the argument interpreter, `resolveName`, the message catalog, the note levels. But nothing forces callers to use it. New code reads the tree or the text again, or keeps its own table, and each fix of the source leaves the copies behind.
 
-The refactoring of October 2026 ([refactor.md](refactor.md)) removed 55 such copies. It fixed instances, not the mechanism: no test stopped the next copy. The few facts that have a guard test stayed clean: the names guard of src/explain/, the syntax boundary, the web page's storage, the trust allow-list.
+The refactoring of October 2026 ([the plan](https://github.com/sf624/bash-explainer/blob/5efa326aa187cce038224f4e984e146c467786ee/docs/design/refactor.md)) removed 55 such copies. It fixed instances, not the mechanism: no test stopped the next copy. The few facts that have a guard test stayed clean: the names guard of src/explain/, the syntax boundary, the web page's storage, the trust allow-list.
 
 So each fact gets a source and a guard: a test that fails on a new reading outside the source. Today's offenders go into a known list that may only shrink, as [word-source.md](word-source.md), section 4, does for words.
 

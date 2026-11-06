@@ -1,8 +1,8 @@
 # The values of expansions in Meaning
 
-`msg="hello world"; echo $msg`: the token of `$msg` says what bash puts there, `hello world`, and that unquoted it becomes two words, `hello` and `world`. The roadmap's "Now" item ([../roadmap.md](../roadmap.md)). This page says which expansions get a value, when the value may be said, how it is shown, and how it is tested.
+`msg="hello world"; echo $msg`: the token of `$msg` says what bash puts there, `hello world`, and that unquoted it becomes two words, `hello` and `world`. This page says which expansions get a value, when the value may be said, how it is shown, and how it is tested.
 
-Status: built (#356), with the maintainer's decisions of section 6. What is left is in the roadmap ([../roadmap.md](../roadmap.md), "Next": trust per position, constants in functions, whole words, arrays, per-call values).
+Status: built (#356), with the maintainer's decisions of section 6. What is left is deferred ([../roadmap.md](../roadmap.md): trust per position, constants in functions, whole words, arrays, per-call values).
 
 ## 1. What a value is
 

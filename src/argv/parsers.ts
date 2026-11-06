@@ -1,5 +1,5 @@
 // The families of option parsers (`CommandSpec.parser`): each preset is the rules of one real parser, which
-// test/parsers-real.test.ts checks against a tool that uses it (docs/design/refactor.md, step 3.5).
+// test/parsers-real.test.ts checks against a tool that uses it.
 import type { CommandSpec } from './spec';
 
 /**
