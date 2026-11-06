@@ -369,7 +369,8 @@ describe('the web page: long lines wrap between shell words, and hover cards go 
   };
 
   it('puts the box of a word with a problem where the card goes, the problem above the card', async () => {
-    const page = await desk();
+    // (900 px: the pane needs about 480 px, and the hint toward POSIX sh under the sample's problems takes 29 of the 490 an 800 px window left it.)
+    const page = await desk(900);
     try {
       // `cat $file` (an unquoted variable: a problem), placed so that the room under it is a little over 200 px (the
       // card goes there) and the room above larger: a box of that height would fit above too, where the lint's problem
