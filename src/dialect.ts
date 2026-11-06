@@ -546,8 +546,37 @@ function zshSyntaxPlaces(tree: SyntaxTree, from: number, to: number): Place[] {
   places.forEach(add);
   for (const w of descendants(tree.root, ['word'], { from, to })) if (/(^|[^\\])[?*+@!]\(/.test(w.text)) add(w);
   // Parameter flags, `${(f)var}`: bash reads them as an expansion and reports "bad substitution" only when it runs.
-  for (const e of descendants(tree.root, ['expansion'], { from, to })) if (e.text.startsWith('${(')) add(e);
+  for (const e of descendants(tree.root, ['expansion'], { from, to })) if (ZSH_FORMS.flag.re.test(e.text)) add(e);
   return out;
+}
+
+/**
+ * The parameter forms zsh reads otherwise than bash, also in double quotes (zshexpn, "Parameter Expansion" and
+ * "Modifiers"), as patterns on the text of a word after an unescaped `$` (single-quoted text left out): a flag,
+ * `${(f)x}`; a prefix, with braces or not: `$=x` splits (in quotes too), `$~x` globs, `$^x` joins elements to the text
+ * around, `$+x` is 1 or 0, `$#x` a length (bash reads `$#`, then `x`); after a bare name, a subscript `$x[1]` or a
+ * modifier `$x:h`; `$10`, the tenth argument (bash: `${1}0`). Also `=ls` at the start of a word, the path of `ls`
+ * (EQUALS). The word model reads bash's syntax, so it knows nothing of a word with one of them in zsh. Each pattern
+ * starts at an unescaped `$`: after no backslash, or after pairs of them.
+ */
+export const ZSH_FORMS = {
+  flag: { form: '${(f)x}', re: /(?<!\\)(?:\\\\)*\$\{\(/ },
+  prefix: { form: '$=x', re: /(?<!\\)(?:\\\\)*\$\{?[=~^+]/ },
+  length: { form: '$#x', re: /(?<!\\)(?:\\\\)*\$#[\w{]/ },
+  subscript: { form: '$x[1]', re: /(?<!\\)(?:\\\\)*\$(?:[A-Za-z_]\w*|\d)[[:]/ },
+  tenth: { form: '$10', re: /(?<!\\)(?:\\\\)*\$\d\d/ },
+} as const satisfies Record<string, { form: string; re: RegExp }>;
+
+/**
+ * Whether the word of `nodes` is for zsh and has a form zsh reads otherwise than bash (`ZSH_FORMS`: `"$#x"`,
+ * `"$x[1]"`), or a `=` first (EQUALS: `=ls`), in its text out of single quotes. The word model reads bash's syntax,
+ * so it knows nothing of such a word there (src/semantics/words.ts).
+ */
+export function zshOtherwise(nodes: readonly SyntaxNode[], shell?: Shell): boolean {
+  if (shell !== 'zsh') return false;
+  const blank = (x: SyntaxNode): string => descendants(x, ['raw_string']).reduce((t, q) => t.slice(0, q.startIndex - x.startIndex) + ' '.repeat(q.endIndex - q.startIndex) + t.slice(q.endIndex - x.startIndex), x.text);
+  const text = nodes.map(blank).join('');
+  return text.startsWith('=') || Object.values(ZSH_FORMS).some(({ re }) => re.test(text));
 }
 
 /** The note on a line with zsh syntax that cannot be read (the issue `zshSyntax`). */

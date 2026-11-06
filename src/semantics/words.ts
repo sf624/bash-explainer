@@ -12,7 +12,7 @@ import { evalArith } from '../arith';
 import { guardedApart, modelLimit, modelValueLimit } from '../examples/regexguard';
 import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { patsubMiscounts } from '../bracket';
-import type { Shell } from '../dialect';
+import { type Shell, zshOtherwise } from '../dialect';
 import { featureWorks } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
@@ -863,7 +863,7 @@ function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, ex
   if (!w) return {};
   // (An assignment given to a declaration builtin: its head, then each field of its value.)
   const declared = declaredWord(w, w.steps[0].applies);
-  if (declared === 'unread') return {};
+  if (declared === 'unread' || zshOtherwise(w.nodes, w.shell)) return {};
   if (declared) {
     const value = declared.value ? fieldsAt(declared.value, model, env, expanding, trusted) : { fields: [''] };
     return value.fields ? { fields: value.fields.map((f) => declared.head + f) } : value;

@@ -188,8 +188,10 @@ describe('the field domain (fieldshape.ts)', () => {
       assert.deepStrictEqual(wordShapes(field(value, 'value')!, model)!.cases, [[{ fields: [{ start: '', end: '', head: { kind: 'text', quoted: false, empty: true }, tail: { kind: 'text', quoted: false, empty: true } }] }]]);
       assert.strictEqual(wordShapes(field(value, 'name')!, model), undefined);
     });
-    it('gives nothing for a shell other than bash, or brace words not known', () => {
+    it('gives nothing for a word another shell reads otherwise, or brace words not known', () => {
       assert.strictEqual(shapesOf('show $x', undefined, undefined, 'sh'), undefined);
+      // (Unless that shell reads the word as bash does: an expansion in double quotes.)
+      assert.deepStrictEqual(shapesOf('show "$x"', undefined, undefined, 'sh'), shapesOf('show "$x"'));
       assert.strictEqual(shapesOf('show $x{a,b}'), undefined);
     });
     it('says where bash may fail on the word', () => {

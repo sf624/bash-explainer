@@ -13,6 +13,7 @@ import type { ReceivedChip } from '../src/ui/panelReceives';
 import { type ModelRow, rowModel } from '../src/ui/panelRows';
 import { shellState } from '../src/semantics/state';
 import type { Shell } from '../src/shellfeatures';
+import { ZSH_FORMS } from '../src/dialect';
 import { argvHolds } from './support/argvline';
 import { corpus } from './support/corpus';
 import { run } from './support/run';
@@ -595,8 +596,12 @@ describe('the panel: what the program receives, in a shell that is not bash, aga
       assert.strictEqual(out.split('\0').length - 1, 16, sh);
     }
     // (Not where another shell may read the word otherwise: a construct a sh lacks, an expansion out of quotes; in zsh, `$x[1]`.)
-    assert.deepStrictEqual(line('printf a "${x/a/b}" "$RANDOM" $1 ~ "$x[1]"', 'printf', { shell: 'zsh' }).slice(2),
-      ['‹the words of `"${x/a/b}"`›', '‹the words of `"$RANDOM"`›', '‹the words of `$1`›', '‹the words of `~`›', '‹the words of `"$x[1]"`›']);
+    assert.deepStrictEqual(line('printf a "${x/a/b}" "$RANDOM" $1 ~', 'printf', { shell: 'zsh' }).slice(2),
+      ['‹the words of `"${x/a/b}"`›', '‹the words of `"$RANDOM"`›', '‹the words of `$1`›', '‹the words of `~`›']);
+    // (zsh's own forms, also in quotes: a prefix with or without braces, a subscript or a modifier, `$10`, a flag, `=ls`; also where the value is known.)
+    const zsh = ['"$=x"', '"$#x"', '"$+x"', '"$~x"', '"$^x"', '"${=x}"', '"$x[1]"', '"$x:h"', '"$10"', '"${(f)x}"', '=ls'];
+    assert.deepStrictEqual(line(`x=abc; printf a ${zsh.join(' ')}`, 'printf', { shell: 'zsh' }).slice(2), zsh.map((w) => `‹the words of \`${w}\`›`));
+    assert.deepStrictEqual(Object.values(ZSH_FORMS).map(({ form }) => line(`printf a "${form}"`, 'printf', { shell: 'zsh' })[2]), Object.values(ZSH_FORMS).map(({ form }) => `‹the words of \`"${form}"\`›`));
     assert.deepStrictEqual(line('printf a "$x[1]" "$x:h" "$10"', 'printf', { shell: 'dash' }).slice(2), ['‹value of `$x`›[1]', '‹value of `$x`›:h', '‹argument 1›0']);
   });
 
