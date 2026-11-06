@@ -219,7 +219,10 @@ describe('what the program receives (src/argvline.ts, panel P4)', () => {
 
   it('reads a word with holes only where the word model reads it as bash does', () => {
     assert.deepStrictEqual(received('echo $x'), [{ parts: [{ hole: { kind: 'parameter', name: 'x', code: '$x' }, splits: true, globs: true }], min: 0 }]);
-    // (Not: another shell; braces not known; a word misread, one that assigns IFS or has `$!`; bash fails on it; an
+    // (In another shell, only a word it reads as bash does: an expansion in double quotes, one field.)
+    assert.deepStrictEqual(received('echo "$x"', 'dash'), received('echo "$x"'));
+    assert.deepStrictEqual(received('echo "$x"', 'dash')!.map((f) => [f.min, f.max]), [[1, 1]]);
+    // (Not: another shell, out of quotes; braces not known; a word misread, one that assigns IFS or has `$!`; bash fails on it; an
     // IFS with a glob character; text split by an IFS not known.)
     assert.deepStrictEqual(['echo $x', 'if a; then set +B; fi; echo {a,b}$x', 'echo {,$x}a', 'echo ~\\\n/x', 'echo ${IFS=:}$x', 'echo $!', 'x=; echo ${x:?}', "IFS='*'; echo $x'*'", 'x=a; IFS=$v; echo $x$y']
       .map((s, i) => received(s, i === 0 ? 'sh' : 'bash')), Array(9).fill(undefined));
