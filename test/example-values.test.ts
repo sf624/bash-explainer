@@ -6,6 +6,9 @@ import { Analyzer } from '../src/analyzer';
 import type { BashVersion } from '../src/bashversion';
 import { exampleFor, parseExpansion } from '../src/expansion';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { shellState } from '../src/semantics/state';
+import { testOutcome } from '../src/semantics/testcases';
+import { descendants, field, fields } from '../src/syntax/tree';
 import { runBash } from './support/bash';
 
 const parser = createUnbashParser();
@@ -101,6 +104,70 @@ describe('worked examples of ${…} with the value of the script', () => {
   });
 });
 
+describe('the cases of a test, as bash reads its words with each value', () => {
+  /** The sections of the example of the last line of `src`: its label, and its lines (each an assignment, as bash reads it). */
+  const sections = (src: string): [string, string[]][] => new Analyzer('en').explainLine(parser.parse(src), src.split('\n').length - 1, undefined, {}).examples
+    .flatMap((e) => e.sections.map((sec): [string, string[]] => [sec.label, sec.lines]));
+  const STATUS: Record<string, number> = { 'True when': 0, 'False when': 1, 'Error (status 2) when': 2 };
+  // [script, its sections]: unquoted in `[ ]`, a value with a space is two words; on the right of `[[ == ]]`, a value is a pattern.
+  const table: [string, [string, string[]][]][] = [
+    ['[ $x = "a b" ]', [['False when', ['x="abc"']], ['Error (status 2) when', ['x="a b"', 'x="a bx"']]]],
+    ['x="a b"\n[ $x = a\\ b ]', [['False when', ['x="abc"']], ['Error (status 2) when', ['x="a b"', 'x="a bx"']]]],
+    ['[ $x != "a b" ]', [['True when', ['x="abc"']], ['Error (status 2) when', ['x="a bx"', 'x="a b"']]]],
+    ['[[ a\\\\b = $x ]]', [['True when', ["x='a\\\\b'"]], ['False when', ["x='a\\b'", "x='a\\bx'"]]]],
+    ['[[ "a\\b" = $x ]]', [['True when', ["x='a\\\\b'"]], ['False when', ["x='a\\b'", "x='a\\bx'"]]]],
+    ['[[ \\[ab\\] = $x ]]', [['True when', ["x='\\[ab\\]'"]], ['False when', ['x="[ab]"', 'x="[ab]x"']]]],
+    ['[[ "[ab]" == $x ]]', [['True when', ["x='\\[ab\\]'"]], ['False when', ['x="[ab]"', 'x="[ab]x"']]]],
+    // The script's value where it fails: `test` reads no integer in `abc`.
+    ['x=abc\n[ "$x" -eq 3 ]', [['True when', ['x="3"']], ['False when', ['x="4"']], ['Error (status 2) when', ['x="abc"']]]],
+    // (Quoted, the words are the value; as before.)
+    ['[ "$x" = "a b" ]', [['True when', ['x="a b"']], ['False when', ['x="a bx"']]]],
+    ['[[ "[ab]" == "$x" ]]', [['True when', ['x="[ab]"']], ['False when', ['x="[ab]x"']]]],
+  ];
+  for (const [src, want] of table) {
+    it(src.replace(/\n/g, '; '), () => {
+      const got = sections(src);
+      assert.deepStrictEqual(got, want);
+      // Each line, run before the test in bash, gives the status of its section.
+      const test = src.split('\n').pop()!;
+      const lines = got.flatMap(([label, ls]) => ls.map((l) => [STATUS[label], l] as const));
+      const run = runBash(lines.map(([, l]) => `(${l}; ${test}) 2>/dev/null; echo $?`).join('\n'));
+      assert.deepStrictEqual(run.stdout.trim().split('\n').map(Number), lines.map(([status]) => status), run.stderr);
+    });
+  }
+});
+
+describe('what a test gives for the values of its cases (src/semantics/testcases.ts)', () => {
+  /** What the simple test of `src` gives with `given`: `[` from the words of its command, `[[` from its expression. */
+  const outcome = (src: string, given: Record<string, string>) => {
+    const tree = parser.parse(src);
+    const model = shellState(tree);
+    const cmd = descendants(tree.root, ['command'])[0];
+    if (cmd) {
+      const [left, op, right] = fields(cmd, 'argument');
+      return testOutcome('[', right.text === ']' ? { op: left.text, right: op } : { left, op: op.text, right }, model, given);
+    }
+    const e = descendants(tree.root, ['binary_expression', 'unary_expression'])[0];
+    const right = field(e, 'right') ?? e.namedChildren[1];
+    return testOutcome('[[', { ...(field(e, 'left') ? { left: field(e, 'left')! } : {}), op: field(e, 'operator')!.text, right }, model, given);
+  };
+  it('says true, false or the error bash gives, as bash reads the words with the value (checked with bash)', () => {
+    const table: [string, Record<string, string>, boolean | 'error'][] = [
+      ['[ $x = "a b" ]', { x: 'a b' }, 'error'], ['[ $x = "a b" ]', { x: 'ab' }, false], ['[ -n $x ]', { x: '' }, true],
+      ['[[ a\\\\b = $x ]]', { x: 'a\\b' }, false], ['[[ a\\\\b = $x ]]', { x: 'a\\\\b' }, true], ['[[ ab != "$x" ]]', { x: 'a?' }, true],
+    ];
+    for (const [src, given, want] of table) {
+      assert.strictEqual(outcome(src, given), want, `${src} ${JSON.stringify(given)}`);
+      const status = runBash(`x='${given.x}'; ${src} 2>/dev/null; echo $?`).stdout.trim();
+      assert.strictEqual(status, want === 'error' ? '2' : want ? '0' : '1', src);
+    }
+  });
+  it('says nothing where it does not know the words or the test', () => {
+    // A file test; a glob of file names; another operator of `[[ ]]`, or none; another variable; text that is not ASCII.
+    for (const src of ['[ $x -nt f ]', '[ $x = a* ]', '[[ $x < b ]]', '[[ -n $x ]]', '[[ $x = $y ]]', '[[ $x = é ]]']) assert.strictEqual(outcome(src, { x: 'a' }), undefined, src);
+  });
+});
+
 describe('worked examples of tests and patterns with the value of the script', () => {
   /** Whether the test or pattern that is the last line of `src` succeeds in bash. */
   const succeeds = (src: string) => bash(src, `if ${src.split('\n').pop()}; then echo true; else echo false; fi`).trim() === 'true';
@@ -126,22 +193,29 @@ describe('worked examples of tests and patterns with the value of the script', (
   }
 
   it('keeps the samples where bash would not read the value as the cases do', () => {
-    // `010` is 8 in arithmetic and 10 for `-eq`; nocasematch makes `[[ == ]]` ignore case; a value split into words.
-    assert.deepStrictEqual(examples('n=010\n[ "$n" -gt 2 ]'), ['True when → n="3"', 'False when → n="2"']);
+    // `010` is 8 in arithmetic, read by `(( ))`; nocasematch makes `[[ == ]]` ignore case; a value split into words.
     // (The model has no value of `n` read by arithmetic, as the value line has none.)
     assert.deepStrictEqual(examples('n=5\n(( $n > 2 ))'), ['True when → n="3"', 'False when → n="2"']);
     assert.deepStrictEqual(examples('shopt -s nocasematch\nx=ABC\n[[ $x == abc ]]'), ['True when → x="abc"', 'False when → x="abcx"']);
     assert.deepStrictEqual(examples('x="a b"\n[ $x = abc ]'), ['True when → x="abc"', 'False when → x="abcx"']);
-    // (A right side of `[[ == ]]` with a glob character is not compared as text by the cases.)
-    assert.deepStrictEqual(examples('x=abc\n[[ $x == "a*" ]]'), ['True when → x="a*"', 'False when → x="a*x"']);
   });
 
-  it('keeps the samples where the value is the pattern, or the other side has a tilde (checked with bash)', () => {
-    // `x='a*'; [[ abc == $x ]]` is true: the unquoted value is a pattern. Quoted, it is text, and the case is the script's.
-    for (const src of ["x='a*'\n[[ abc == $x ]]", "x='a*'\n[[ abc != $x ]]", "y='[ab]c'\n[[ bc = $y ]]"]) {
-      assert.ok(!examples(src).some((e) => e.includes("a*") || e.includes('[ab]c')), src);
+  it('reads the value as bash does, where the model reads the words of the test with it (checked with bash)', () => {
+    // `010` is 10 for `-gt`; a quoted right side of `[[ == ]]` is text; unquoted, the value is a pattern.
+    const read: [string, string[], boolean][] = [
+      ['n=010\n[ "$n" -gt 2 ]', ['True when → n="010"', 'False when → n="2"'], true],
+      ['x=abc\n[[ $x == "a*" ]]', ['True when → x="a*"', 'False when → x="abc"'], false],
+      ["x='a*'\n[[ abc == $x ]]", ['True when → x="a*"', 'False when → x="abcx"'], true],
+      ["x='a*'\n[[ abc != $x ]]", ['True when → x="abcx"', 'False when → x="a*"'], false],
+      ["y='[ab]c'\n[[ bc = $y ]]", ['True when → y="[ab]c"', 'False when → y="bcx"'], true],
+    ];
+    for (const [src, want, truth] of read) {
+      assert.deepStrictEqual(examples(src), want, src);
+      assert.strictEqual(succeeds(src), truth, src);
     }
-    assert.strictEqual(succeeds("x='a*'\n[[ abc == $x ]]"), true);
+  });
+
+  it('takes a quoted value as text, and has no samples where the other side has a tilde (checked with bash)', () => {
     assert.deepStrictEqual(examples("x='a*'\n[[ abc == \"$x\" ]]"), ['True when → x="abc"', 'False when → x="a*"']);
     assert.strictEqual(succeeds("x='a*'\n[[ abc == \"$x\" ]]"), false);
     // A tilde expands to a home directory: `[[ $x == ~ ]]` with `x='~'` is false.

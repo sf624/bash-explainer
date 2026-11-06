@@ -36,6 +36,7 @@ import { slotEnvironment } from '../semantics/env';
 import { isFunction, type NameResolution } from '../semantics/names';
 import { exportedValue } from '../semantics/state';
 import { changedByBash } from '../semantics/vars';
+import { testOutcome } from '../semantics/testcases';
 import { literalContent, staticWordValue, substitutionNames } from '../staticword';
 import { assignmentsOnly, field, nameText, prefixAssignments, redirectionsOf, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
@@ -160,8 +161,11 @@ export function subjectValue(cx: Explainer, n: SyntaxNode): string | undefined {
 export function testExample(cx: Explainer, n: SyntaxNode, bracket: TestShape | undefined, asKind?: '['): void {
   // (`nocasematch` changes `[[ == ]]`, which the cases do not follow.)
   const nocase = n.children[0].type === '[[' ? shoptAt(cx, n).nocasematch : 'off';
-  const known = (x: SyntaxNode) => (nocase === 'off' || nocase === 'default' ? wordValue(cx, x) : undefined);
-  guardedExample(cx, 'test', () => pushExample(cx, patterns.testExample(n, bracket, asKind, cx.lang, known)));
+  const plain = nocase === 'off' || nocase === 'default';
+  const known = (x: SyntaxNode) => (plain ? wordValue(cx, x) : undefined);
+  // (Each case as bash reads the test's words with its value: `[ $x = "a b" ]` fails for `x="a b"`.)
+  const judge = plain ? (kind: '[' | '[[', shape: TestShape, vars: Record<string, string>) => testOutcome(kind, shape, cx.state, vars) : undefined;
+  guardedExample(cx, 'test', () => pushExample(cx, patterns.testExample(n, bracket, asKind, cx.lang, known, judge)));
 }
 
 /**
