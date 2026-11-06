@@ -346,12 +346,12 @@ export function explainPerl(src: string, lang: Lang): EmbeddedToken[] {
   return new PerlExplainer(src, lang).statements(0, src.length);
 }
 
-/** How -n, -p, -a, -l, -i and -0 wrap the code, as one sentence. */
 /** The options for the regex of `m//` and `s///`: its delimiter, and with the flag `m` `^` and `$` stand at every line. */
 function regexOptions(open: string, close: string, flags: string): RegexOptions {
   return { perl: true, ...(open === close ? { delimiter: close } : {}), ...(flags.includes('m') ? { unit: 'line' as const } : {}) };
 }
 
+/** How -n, -p, -a, -l, -i and -0 wrap the code, as one sentence. */
 export function perlLoopNote(flags: Set<string>, lang: Lang): string | undefined {
   const s = pick(lang);
   const parts: string[] = [];

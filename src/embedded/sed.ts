@@ -326,13 +326,17 @@ class SedParser {
       }
       this.i++;
       if (f === 'g') global = true;
+      // (`-z` ends a line at NUL, and sed 4.9 then matches `^` and `$` at no newline in the pattern space either.)
+      const multiline = (f: string): [string, string] => this.unit === 'text'
+        ? [`\`${f}\`: 複数行モード（\`-z\` では行の区切りが NUL なので、改行の前後には一致しない）`, `\`${f}\`: multi-line mode (with \`-z\` a line ends at NUL, so \`^\`/\`$\` match at no newline)`]
+        : [`\`${f}\`: 複数行モード（\`^\` \`$\` が各行の先頭・末尾に一致）`, `\`${f}\`: multi-line mode (\`^\`/\`$\` match at each line)`];
       const expl: Record<string, [string, string]> = {
         g: ['`g`: 行の中の一致をすべて置換する（付けないと各行の最初の1つだけ）', '`g`: replace every match on the line (without it, only the first)'],
         p: ['`p`: 置換が起きた行を出力する（`-n` と組み合わせて変更行だけを表示）', '`p`: print the line if a substitution happened (use with `-n`)'],
         i: ['`i`: 大文字・小文字を区別しない', '`i`: case-insensitive'],
         I: ['`I`: 大文字・小文字を区別しない', '`I`: case-insensitive'],
-        m: ['`m`: 複数行モード（`^` `$` が各行の先頭・末尾に一致）', '`m`: multi-line mode (`^`/`$` match at each line)'],
-        M: ['`M`: 複数行モード（`^` `$` が各行の先頭・末尾に一致）', '`M`: multi-line mode (`^`/`$` match at each line)'],
+        m: multiline('m'),
+        M: multiline('M'),
         e: ['`e`: 置換結果をコマンドとして実行し、その出力に置き換える', '`e`: run the result as a command and use its output'],
       };
       parts.push(this.tok(fs, this.i, 'option', s(expl[f][0], expl[f][1])));

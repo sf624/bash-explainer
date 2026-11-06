@@ -5,7 +5,7 @@
 // the worked example of the text (src/explain/examples.ts, src/explain/examples-jq.ts).
 import type { ExampleKind, Span, Token } from '../analyzer-types';
 import { rulesOf } from '../argv/parsers';
-import { givenOptions, values } from '../argv/query';
+import { givenOptions, inRecords, values } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { awkHasGnuEscapes } from '../dict/aliases';
 import { YQ_SPECS } from '../dict/yq';
@@ -87,6 +87,7 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
     // The letters given (`-lane`: l, a, n and e; `-pi.bak`: p and i).
     letters: () => new Set(givenOptions(cx.command!.parse).map(({ role }) => role.flag.slice(1))),
     given: (...names) => given(cx, ...names),
+    records: () => inRecords(cx.command!.parse),
     bash: () => (cx.command?.spec.builtin ? cx.opts.bashVersion ?? DEFAULT_BASH_VERSION : undefined),
     // (`awk` is whichever the system has: its examples run as gawk.)
     awkGnu: () => isGawk(cx),
@@ -237,7 +238,7 @@ function embeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: Syn
       const scripts = sedScripts(cx) ?? [text];
       const quiet = given(cx, '-n');
       // -z / --null-data: the "lines" are NUL-separated records, which the example runner does not model.
-      const ex = given(cx, '-z') ? undefined : sedExample(scripts.join('\n'), { quiet, extended: flavor === 'ere' });
+      const ex = inRecords(cx.command!.parse) ? undefined : sedExample(scripts.join('\n'), { quiet, extended: flavor === 'ere' });
       // (Each -e makes the same example, of the whole script: it belongs to the command, and is shown once.)
       if (ex) {
         cx.examplesAt(scripts.length > 1 ? cx.command!.args[0].parent! : a, () => {

@@ -238,7 +238,7 @@ class AwkExplainer {
     }
     if (toks.length === 1 && toks[0].type === 'regex') {
       const re = toks[0].text.slice(1, -1);
-      return { token: this.regexToken(toks[0], s(`正規表現 \`${re}\` に一致する行`, `Lines matching the regex \`${re}\``)), when: s(`\`${re}\` に一致する行`, `lines matching \`${re}\``) };
+      return { token: this.regexToken(toks[0], s(`正規表現 \`${re}\` に一致する行`, `Lines matching the regex \`${re}\``), true), when: s(`\`${re}\` に一致する行`, `lines matching \`${re}\``) };
     }
     if (toks.length === 1 && toks[0].type === 'num') {
       if (Number(text) === 0) return { token: this.tok(start, end, 'pattern', s(`\`${text}\`: 常に偽（0）`, `\`${text}\`: always false (zero)`)), when: s('どの行も', 'no lines') };
@@ -250,9 +250,9 @@ class AwkExplainer {
     };
   }
 
-  private regexToken(t: Lex, explanation: string): EmbeddedToken {
+  private regexToken(t: Lex, explanation: string, record = false): EmbeddedToken {
     const body = t.text.endsWith('/') && t.text.length > 1 ? t.text.slice(1, -1) : t.text.slice(1);
-    return this.tok(t.start, t.end, 'pattern', explanation, shift(explainRegex(body, 'ere', this.lang, { delimiter: '/', tool: 'awk', mawk: !this.gawk }), t.start + 1));
+    return this.tok(t.start, t.end, 'pattern', explanation, shift(explainRegex(body, 'ere', this.lang, { delimiter: '/', tool: 'awk', mawk: !this.gawk, ...(record ? { unit: 'record' as const } : {}) }), t.start + 1));
   }
 
   private functionDef(): EmbeddedToken {

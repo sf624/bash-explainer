@@ -323,6 +323,8 @@ export interface OptionSpec {
    * (`grep -x`), not a part of a longer one.
    */
   whole?: 'word' | 'line';
+  /** Given, the input is read in NUL-ended records, not lines (`grep -z`, `sed -z`): a regex's `^` and `$` stand at the ends of a record. */
+  records?: true;
 }
 
 export interface ValueSpec {

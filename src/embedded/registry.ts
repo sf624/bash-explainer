@@ -37,6 +37,8 @@ export interface EmbeddedContext {
   letters(): Set<string>;
   /** Whether one of these options is given, in any of its spellings (`sed -n` is `--quiet` too). */
   given(...names: string[]): boolean;
+  /** Whether the command reads records ended by NUL, not lines (`OptionSpec.records`). */
+  records(): boolean;
   /** The bash release whose builtin reads the text; undefined when a program does (`env printf`). */
   bash(): BashVersion | undefined;
   /** Whether the command is gawk (or `awk`, taken as gawk): mawk has none of its regex escapes (`\y`, `\<`…). */
@@ -49,18 +51,18 @@ export interface EmbeddedContext {
 
 type Explainer = (text: string, cx: EmbeddedContext) => Embedded | undefined;
 
-/** With `-z` (grep, sed) the text read is a NUL-ended record, which `^` and `$` bound whole, not each line in it. */
-const zeroTerminated = (cx: EmbeddedContext): { unit?: 'text' } => (cx.given('-z', '--null-data') ? { unit: 'text' } : {});
+/** In NUL-ended records (grep -z, sed -z) `^` and `$` bound the record, not each line in it. */
+const inRecords = (cx: EmbeddedContext): { unit?: 'text' } => (cx.records() ? { unit: 'text' } : {});
 
 const regex: Explainer = (text, cx) => {
   const flavor = cx.flavor();
-  return { tokens: flavor === 'fixed' ? [] : explainRegex(text, flavor, cx.lang, zeroTerminated(cx)), note: flavorName(flavor, cx.lang) };
+  return { tokens: flavor === 'fixed' ? [] : explainRegex(text, flavor, cx.lang, inRecords(cx)), note: flavorName(flavor, cx.lang) };
 };
 
 /** One explainer per embedded language; undefined when the text is not one of that language (`date` without `+`). */
 export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   regex,
-  sed: (text, cx) => ({ tokens: explainSed(text, cx.flavor() === 'ere' ? 'ere' : 'bre', cx.lang, cx.given('-n'), zeroTerminated(cx).unit) }),
+  sed: (text, cx) => ({ tokens: explainSed(text, cx.flavor() === 'ere' ? 'ere' : 'bre', cx.lang, cx.given('-n'), inRecords(cx).unit) }),
   jq: (text, cx) => ({ tokens: explainJq(text, cx.lang) }),
   yq4: (text, cx) => ({ tokens: explainJq(text, cx.lang, 'yq') }),
   yq3path: (text, cx) => explainYq3Path(text, cx.lang),
