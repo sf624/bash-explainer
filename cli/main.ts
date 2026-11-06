@@ -582,6 +582,11 @@ export async function main(argv: string[], streams: { stdout: (s: string) => voi
 }
 
 if (require.main === module) {
+  // The reader of stdout closed first (`| head -1`, quitting `less`): stop quietly with 128 + SIGPIPE, as a shell reports a program that SIGPIPE killed. One handler for every output path.
+  process.stdout.on('error', (e: NodeJS.ErrnoException) => {
+    if (e.code !== 'EPIPE') throw e;
+    process.exit(141);
+  });
   main(process.argv.slice(2), {
     stdout: (s) => process.stdout.write(s),
     stderr: (s) => process.stderr.write(s),

@@ -15,6 +15,10 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The box of a line's problems shows each fix under its headline, as the whole line fixed with the changed part marked, and **Copy fix** copies that line. Before, the fix was under **More**, and its Copy took only the part that changed. The web page's header button now says **Copy as Markdown**.
 - At depth 1, the panel shows bash's steps on a word that a step changes (`"$USER"`, `~/docs`, `*.txt`), and a glob's example of names starts open when it is the line's only example or the cursor is on its command; names typed in it stay. Before, the steps were only at depth 2, and the example started closed.
 
+### Fixed
+
+- The command-line tool exits quietly with status 141 (what a shell reports for a program killed by SIGPIPE) when its output is closed early, as in `bash-explainer script.sh | head -1`. Before, it printed an `EPIPE` stack trace and exited with status 1.
+
 ## 0.10.0
 
 The panel has one view with a depth. It starts with one sentence that says what the line does and a box of the line's problems, and a switch shows what each program receives. Problems have a third level, Error, and `--check` fails on errors. The web page has a new layout around the editor; on a phone, the explanation is a sheet over it.
