@@ -37,7 +37,7 @@ describe('awk explainer', () => {
     const src = '/^#/,/^$/';
     const [rule] = explainAwk(src, 'en');
     assert.match(rule.explanation, /lines from lines matching `\^#` through lines matching `\^\$`/);
-    assert.match(find(src, [rule], '^').explanation, /start of the line/);
+    assert.match(find(src, [rule], '^').explanation, /start of the text/);
   });
 
   it('explains statements: if/else, for-in, next, increments, redirections and calls', () => {

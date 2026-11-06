@@ -97,7 +97,15 @@ interface State {
   tool: RegexTool | 'perl';
   /** mawk reads the awk regex (`\y` is the letter). */
   mawk: boolean;
+  /** What `^` and `$` stand at the ends of (`RegexOptions.unit`). */
+  unit: MatchUnit;
 }
+
+/** What a regex is matched against: one line (grep, sed), or a whole string that may hold newlines (bash, awk, Perl). */
+export type MatchUnit = 'line' | 'text';
+
+/** The unit of each tool (bash's `[[ =~ ]]` and awk's `~` and `match` read the string whole; no tool but `grep`/`sed` splits it). */
+const UNITS: Record<RegexTool | 'perl', MatchUnit> = { grep: 'line', sed: 'line', awk: 'text', bash: 'text', perl: 'text' };
 
 /** A variable Perl puts in before it reads the regex (`$x`, `${x}`, `$::x`, `$&`, `@a`). */
 const PERL_VARIABLE = /\$[\w{:&]|@[A-Za-z_{:]/;
@@ -116,14 +124,25 @@ export interface RegexOptions {
   tool?: RegexTool;
   /** The awk is mawk, which has none of gawk's regex escapes (`\y`). */
   mawk?: boolean;
+  /** What `^` and `$` stand at the ends of, where the tool's usual unit is not it (`grep -z` reads a record, Perl's `/m` a line). */
+  unit?: MatchUnit;
 }
 
 /** Explain a regular expression as a flat sequence of tokens (groups nest their contents). */
 export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: RegexOptions = {}): EmbeddedToken[] {
   // (`\Q$x\E`: the value is plain text there, which this reader does not follow.)
   if (flavor === 'pcre' && src.includes('\\Q') && hasHole(src)) return [holeStop(0)];
-  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), names: new Map(), sedEscapes: !!opts.sedEscapes, tool: opts.perl ? 'perl' : opts.tool ?? (opts.sedEscapes ? 'sed' : 'grep'), hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk };
+  const tool = opts.perl ? 'perl' : opts.tool ?? (opts.sedEscapes ? 'sed' : 'grep');
+  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), names: new Map(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool] };
   return mergeLiterals(sequence(st, 0), st);
+}
+
+/** `^` and `$`: the start and the end of what the tool matches, a line or a text; Perl's `$` also stands before a final newline. */
+function anchor(st: State, c: '^' | '$'): string {
+  const { s } = st;
+  if (c === '^') return st.unit === 'line' ? s('`^`: 行の先頭', '`^`: start of the line') : s('`^`: 文字列の先頭', '`^`: start of the text');
+  if (st.unit === 'line') return s('`$`: 行の末尾', '`$`: end of the line');
+  return st.tool === 'perl' ? s('`$`: 文字列の末尾（末尾の改行の前も可）', '`$`: end of the text (or before a final newline)') : s('`$`: 文字列の末尾', '`$`: end of the text');
 }
 
 /** The escape of a character that the tool turns into it before it reads the regex (GNU sed's `\t`, gawk's `\101`), if one is at `i`. */
@@ -219,9 +238,9 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
     if (c === '.') {
       out.push({ start, end: st.i, kind: 'pattern', explanation: s('`.`: 任意の1文字', '`.`: any single character'), children: [] });
     } else if (c === '^' && (st.flavor !== 'bre' || atStart())) {
-      out.push({ start, end: st.i, kind: 'keyword', explanation: s('`^`: 行の先頭', '`^`: start of the line'), children: [] });
+      out.push({ start, end: st.i, kind: 'keyword', explanation: anchor(st, '^'), children: [] });
     } else if (c === '$' && (st.flavor !== 'bre' || st.i === st.src.length || isGroupClose(st) || isAlternation(st))) {
-      out.push({ start, end: st.i, kind: 'keyword', explanation: s('`$`: 行の末尾', '`$`: end of the line'), children: [] });
+      out.push({ start, end: st.i, kind: 'keyword', explanation: anchor(st, '$'), children: [] });
     } else if (st.flavor === 'bre' && '+?{}()|'.includes(c)) {
       out.push({
         start, end: st.i, kind: 'string', explanation: s(

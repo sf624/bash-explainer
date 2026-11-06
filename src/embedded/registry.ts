@@ -49,15 +49,18 @@ export interface EmbeddedContext {
 
 type Explainer = (text: string, cx: EmbeddedContext) => Embedded | undefined;
 
+/** With `-z` (grep, sed) the text read is a NUL-ended record, which `^` and `$` bound whole, not each line in it. */
+const zeroTerminated = (cx: EmbeddedContext): { unit?: 'text' } => (cx.given('-z', '--null-data') ? { unit: 'text' } : {});
+
 const regex: Explainer = (text, cx) => {
   const flavor = cx.flavor();
-  return { tokens: flavor === 'fixed' ? [] : explainRegex(text, flavor, cx.lang), note: flavorName(flavor, cx.lang) };
+  return { tokens: flavor === 'fixed' ? [] : explainRegex(text, flavor, cx.lang, zeroTerminated(cx)), note: flavorName(flavor, cx.lang) };
 };
 
 /** One explainer per embedded language; undefined when the text is not one of that language (`date` without `+`). */
 export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   regex,
-  sed: (text, cx) => ({ tokens: explainSed(text, cx.flavor() === 'ere' ? 'ere' : 'bre', cx.lang, cx.given('-n')) }),
+  sed: (text, cx) => ({ tokens: explainSed(text, cx.flavor() === 'ere' ? 'ere' : 'bre', cx.lang, cx.given('-n'), zeroTerminated(cx).unit) }),
   jq: (text, cx) => ({ tokens: explainJq(text, cx.lang) }),
   yq4: (text, cx) => ({ tokens: explainJq(text, cx.lang, 'yq') }),
   yq3path: (text, cx) => explainYq3Path(text, cx.lang),
