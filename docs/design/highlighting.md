@@ -1,6 +1,6 @@
 # Syntax colouring
 
-The shell code is coloured from the same reading the explanations use: our syntax tree, and the models over it. VS Code gets the colours as semantic tokens over its TextMate grammar; the Language Server sends the same tokens. [one-colour-source.md](one-colour-source.md) proposes, for a release after 0.10.0, that the editors (the web page, VS Code, the Language Server) take their colours from the explanation's tokens instead; this document describes what is built today. `bashExplainer.highlight.enabled` turns it on or off, per language (on by default since this design).
+The shell code is coloured from the same reading the explanations use: our syntax tree, and the models over it. VS Code gets the colours as semantic tokens over its TextMate grammar; the Language Server sends the same tokens; the web page draws the same spans as marks. [one-colour-source.md](one-colour-source.md) proposes, for a release after 0.10.0, that the editors (the web page, VS Code, the Language Server) take their colours from the explanation's tokens instead; this document describes what is built today. `bashExplainer.highlight.enabled` turns it on or off, per language (on by default since this design).
 
 ## What we colour
 
