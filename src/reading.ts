@@ -35,8 +35,8 @@ import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } 
 import { aliasesAfter, type AliasResolution, badgeKind, isFunction, type NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
 import { spanWithin } from './noteanchors';
-import { type WordStep, wordSteps } from './semantics/wordsteps';
-import { type ExpansionStep, pieceSteps, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
+import { pieceSteps, type WordStep, wordSteps } from './semantics/wordsteps';
+import { type ExpansionStep, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
 import { setsElement, splitElement, stackTilde, staticWordValue } from './staticword';
 import { andOrRole, field, fields, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
 import { mostOf, pushAll } from './lists';

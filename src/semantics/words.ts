@@ -44,7 +44,7 @@ export interface ExpansionStep {
   why?: StepWhy;
   /** The section of the Bash manual (6.11 when POSIX mode is why). */
   manual: string;
-  /** Where it acts in the word (for split and glob: the unquoted expansions, and the words with glob characters). */
+  /** Where it acts in the word (for split and glob: the unquoted expansions, and the words with glob characters; quote removal: its nodes with quotes). */
   parts: readonly SyntaxNode[];
 }
 
@@ -289,7 +289,7 @@ interface Shape {
   braced: SyntaxNode[];
   plain: SyntaxNode[];
   globWords: SyntaxNode[];
-  quoted: boolean;
+  quotes: SyntaxNode[];
   /** The tilde prefixes, by the context's rule and POSIX mode. */
   tildes: Map<string, TildePrefix[]>;
   /** The meanings the walk read (`wordIn`), by the options they were read with (`optionsOf`), with the state of the first. */
@@ -297,19 +297,6 @@ interface Shape {
 }
 
 const shapes = new WeakMap<SyntaxNode, Shape>();
-
-/** Whether the nodes have quotes for quote removal to take away: a quote, or a backslash. */
-const hasQuotes = (own: readonly SyntaxNode[]): boolean => own.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text));
-
-/**
- * The steps of a word that act on one of its nodes, where the parser gives the word in parts (the right of `[[ x == "$y"* ]]`): a step acts
- * there when one of the parts it acts on lies in that node, quote removal when the node has quotes. Another step does nothing there.
- */
-export function pieceSteps(m: WordMeaning, piece: SyntaxNode): readonly ExpansionStep[] {
-  const inside = (p: SyntaxNode): boolean => p.startIndex >= piece.startIndex && p.endIndex <= piece.endIndex;
-  const acts = (s: ExpansionStep): boolean => (s.kind === 'quote-removal' ? hasQuotes([piece]) : s.parts.some(inside));
-  return m.steps.map((s) => (s.applies === false || acts(s) ? s : { kind: s.kind, applies: false, manual: s.manual, parts: [] }));
-}
 function shapeOf(nodes: readonly SyntaxNode[]): Shape {
   let shape = shapes.get(nodes[0]);
   if (shape) return shape;
@@ -321,7 +308,7 @@ function shapeOf(nodes: readonly SyntaxNode[]): Shape {
     someQuoted: expansions.some(nearestQuote),
     braced: bracedWords(plain),
     globWords: [...new Set([...plain.filter((w) => isGlob(joinedText(w)) || globbedByBash(joinedText(w), 'off')), ...(own.length ? bracketsAcross(own) : [])])].sort((a, b) => a.startIndex - b.startIndex),
-    quoted: hasQuotes(own),
+    quotes: own.filter((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text)),
   };
   shapes.set(nodes[0], shape);
   return shape;
@@ -381,7 +368,7 @@ function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: S
   const meaning: WordMeaning = { nodes, context, rule, steps, tildes, ifs, glob, posix, state: st, ...(shell ? { shell } : {}), ...(version ? { version } : {}) };
   steps.push(mk(splitStep(meaning, unquoted, someQuoted)));
   steps.push(mk(globStep(meaning, [...globWords, ...unquoted].sort((a, b) => a.startIndex - b.startIndex), someQuoted)));
-  steps.push(mk({ kind: 'quote-removal', applies: shape.quoted, parts: [] }));
+  steps.push(mk({ kind: 'quote-removal', applies: shape.quotes.length > 0, parts: shape.quotes }));
   if (!whole) return meaning;
   const literal = !brace && !tildes.length && !expansions.length && !globWords.length;
   const values = literal ? nodes.map((x) => staticWordValue(x, false, shell)) : [];

@@ -683,6 +683,26 @@ Each entry names its kind by the label an issue of that kind gets. For `bug`, `c
 - **Reason:** Rare: an `env` option that takes a value before the shell, in a shebang. Already on main before #688 (`readShell` read the first word that is not an option as the program), which the hint inherits.
 - **Input and what is wrong:** `#!/usr/bin/env -u X bash`: the program is read as `X` (and `-C dir` as `dir`), so the shell is none and the script is read as bash by default. The hint then shows for a script that says bash through `env`, which is correct by luck; for `#!/usr/bin/env -C dir sh` the shell is wrongly bash, and the hint shows for a sh script.
 
+## From the review of bash's steps at depth 1 (#687)
+
+### No glob example for the words of `for` and `select`
+
+- **Verdict:** dropped (YAGNI), 2026-11-06. Kind: `missing-explanation`.
+- **Reason:** Rare: the row of the words already says what the glob does.
+- **Input and what is missing:** `for f in *.txt; do …; done`, `select f in *.a; do …; done`: the words after `in` get no glob example (the names the pattern matches), as an argument's glob does (`ls *.txt`).
+
+### No glob example for a redirection's target
+
+- **Verdict:** dropped (YAGNI), 2026-11-06. Kind: `missing-explanation`.
+- **Reason:** Rare: a glob as a redirection's target.
+- **Input and what is missing:** `done < *.f`: the target gets no glob example (the names the pattern matches), as an argument's glob does.
+
+### No steps for a value in an associative array's list
+
+- **Verdict:** dropped (YAGNI), 2026-11-06. Kind: `missing-explanation`.
+- **Reason:** Rare: an expansion as a value in the list of an associative array.
+- **Input and what is missing:** `declare -A m=([k]=$v)`: `$v` shows no bash's steps at either depth. A value of an indexed array (`a=($v)`) shows them.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

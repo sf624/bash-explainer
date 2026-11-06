@@ -1,5 +1,6 @@
 // What bash does to a word, in its order (3.5), as depth 2 of the panel says it (src/ui/panelSteps.ts): from the steps of the word model
 // (src/semantics/words.ts). test/word-steps.test.ts holds it to the word probes.
+import type { SyntaxNode } from '../syntax/tree';
 import type { ExpansionStep, StepKind, WordMeaning } from './words';
 
 /** A step of what bash does to a word. */
@@ -13,6 +14,15 @@ export const stepActs = (s: Pick<ExpansionStep, 'applies'>): boolean => s.applie
 
 /** Whether bash's steps change this word, more than taking its quotes away. */
 export const stepsChange = (steps: readonly WordStep[]): boolean => steps.some((s) => EXPANDING_STEPS.has(s.kind) && stepActs(s));
+
+/**
+ * The steps of a word that act on one of its nodes, where the parser gives the word in parts (the right of `[[ x == "$y"* ]]`): a step acts
+ * there when a part it acts on lies in that node (`ExpansionStep.parts`). Another step does nothing there.
+ */
+export function pieceSteps(m: WordMeaning, piece: SyntaxNode): readonly ExpansionStep[] {
+  const inside = (p: SyntaxNode): boolean => p.startIndex >= piece.startIndex && p.endIndex <= piece.endIndex;
+  return m.steps.map((s) => (s.applies === false || s.parts.some(inside) ? s : { kind: s.kind, applies: false, manual: s.manual, parts: [] }));
+}
 
 /**
  * What bash does to a word: every step, with why one does not act. Undefined for a word no step has anything to do with (`-h`, `a.txt`):
