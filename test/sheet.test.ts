@@ -2,7 +2,7 @@
 // where a drag, a tap or a key leaves it, its height while the keyboard is open, and the forms of its header row. The page measures and wires them
 // (test/web-sheet.test.ts).
 import * as assert from 'assert';
-import { cursorFollows, problemCounts, settle, sheetForms, sheetHeight, type Snap, snapHeights, tapped, keyed } from '../src/ui/sheet';
+import { cursorFollows, problemCounts, settle, SHEET_TOOLS_WIDTH, sheetForms, sheetHeight, type Snap, snapHeights, tapped, keyed } from '../src/ui/sheet';
 import { viewControlForms } from '../src/ui/panelHead';
 import { viewControl } from '../src/ui/panelView';
 
@@ -100,11 +100,13 @@ describe('the phone\'s sheet as data', () => {
     ]);
   });
 
-  it('gives the header row\'s forms in order: the tools, then "Ref", then the highest level only, then the line', () => {
+  it('gives the header row\'s forms in order: the tools (on a tablet\'s row only), then "Ref", then the highest level only, then the line', () => {
     for (const lang of ['en', 'ja'] as const) {
       const control = viewControl({}, lang);
       const [segments, menu] = viewControlForms(control);
-      assert.deepStrictEqual(sheetForms(control), [
+      // (A phone's row has no tools, in every language: their room does not depend on the words' widths.)
+      assert.deepStrictEqual(sheetForms(control, SHEET_TOOLS_WIDTH - 1), sheetForms(control, SHEET_TOOLS_WIDTH).filter((f) => f.tools === 'none'), lang);
+      assert.deepStrictEqual(sheetForms(control, SHEET_TOOLS_WIDTH), [
         { view: segments, tools: 'under', line: true, ref: 'full', counts: 'all' },
         { view: menu, tools: 'under', line: true, ref: 'full', counts: 'all' },
         { view: segments, tools: 'none', line: true, ref: 'full', counts: 'all' },

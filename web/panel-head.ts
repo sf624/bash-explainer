@@ -14,7 +14,7 @@ import { panelHeaderForms, panelTools, ViewForm } from '../src/ui/panelHead';
 import type { PanelState, ViewControl } from '../src/ui/panelView';
 import { NO_PROBLEMS, problemCounts, type SheetForm, sheetForms } from '../src/ui/sheet';
 import { drawIcon } from './icons';
-import { fitsRow, narrow } from './layout';
+import { clearOfGrabBar, fitsRow, narrow } from './layout';
 import { focusBack } from './popover';
 import { sheetLayout } from './sheet';
 import { TEXT } from './text';
@@ -80,6 +80,8 @@ export class PanelHead {
     new ResizeObserver(() => {
       if (head.clientWidth !== this.width) this.fit();
     }).observe(head);
+    // (The widths change once the page's fonts have loaded: a phone may draw the first fit with others.)
+    document.fonts?.addEventListener?.('loadingdone', () => this.refit());
     // Out of the sheet, the Problems tab goes (the list is under the editor again), and the row takes its forms again.
     narrow.addEventListener('change', () => {
       if (!sheetLayout()) this.problems = false;
@@ -209,7 +211,7 @@ export class PanelHead {
     this.head.classList.remove('wrap');
     delete this.head.dataset.squeeze;
     if (sheetLayout()) {
-      for (const form of sheetForms(control)) {
+      for (const form of sheetForms(control, this.head.clientWidth)) {
         this.view.draw(control, form.view);
         this.head.dataset.tools = form.tools;
         this.head.dataset.tabs = form.ref;
@@ -217,7 +219,7 @@ export class PanelHead {
         explain?.setAttribute('aria-label', form.line ? `${t.tabExplanation} ${t.line(this.line + 1)}` : t.tabExplanation);
         this.drawCounts(form.counts);
         this.sheetForm = form;
-        if (fitsRow(this.head)) return;
+        if (fitsRow(this.head) && clearOfGrabBar(this.head)) return;
       }
       this.head.dataset.squeeze = '';
       return;
