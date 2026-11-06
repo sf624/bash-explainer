@@ -4,10 +4,9 @@
 // bash does (manual 3.5.7, 3.5.8), with the holes kept abstract: a field is described by its known literal start and
 // end, and a word by the count of its fields. Nothing here asks where a value comes from (V) or what a builtin does
 // with the fields (E). test/fieldshape.test.ts checks it against bash on generated words.
-import { collectFeatures } from '../dialect';
+import { collectFeatures, zshOtherwise } from '../dialect';
 import { isGlob } from '../examples/shellwords';
 import { parseExpansion } from '../expansion';
-import type { Shell } from '../shellfeatures';
 import { decodedText } from '../staticword';
 import { descendants, nameText, type SyntaxNode } from '../syntax/tree';
 import { sameInEveryLocale, splitOn } from './chars';
@@ -16,7 +15,7 @@ import { attribute, option } from './shellstate';
 import type { StateModel } from './state';
 import { changedByBash } from './vars';
 import { integerParameter } from './wordsites';
-import { type Fields, holedWords, modelValues, patternOfChars, type Piece, type ValueSource, wordFields, wordMeaning, type WordMeaning } from './words';
+import { type Fields, holedWords, modelValues, patternOfChars, type Piece, type StepKind, type ValueSource, wordFields, wordMeaning, type WordMeaning } from './words';
 import { declaredWord } from './wordcontexts';
 
 /**
@@ -494,17 +493,33 @@ function misread(w: WordMeaning): boolean {
 /** Whether the word has a `$!` not in quotes, which before any `&` is empty and, last of its expansions, turns word splitting off for the word (F73). */
 const emptyBang = (nested: readonly SyntaxNode[]): boolean => nested.some((e) => e.text === '$!' && e.parent!.type !== 'string');
 
+/** The steps another shell may take otherwise than bash: brace and tilde expansion (dialects differ), word splitting and pathname expansion (zsh: neither of a parameter). */
+const DIALECT_STEPS: readonly StepKind[] = ['brace', 'tilde', 'split', 'glob'];
+
+/**
+ * Whether the shell of `w` reads it as bash does, so that what the word model reads of it holds there: bash; or
+ * another shell where none of zsh's own forms is in it (`zshOtherwise`), no step another shell may take otherwise
+ * applies (`DIALECT_STEPS`: each expansion is in double quotes, or in a context that neither splits nor globs), and no
+ * construct a sh may lack is in it (src/dialect.ts `collectFeatures`: `${x/a/b}`, `${a[1]}`, `$RANDOM`, `$'…'`). Then
+ * `"$1"` is one field in every POSIX shell and zsh, and `"$@"` one for each argument.
+ */
+export function readsAsBash(w: WordMeaning): boolean {
+  if (!w.shell || w.shell === 'bash') return true;
+  return !zshOtherwise(w.nodes, w.shell) && w.steps.every((s) => !DIALECT_STEPS.includes(s.kind) || s.applies === false)
+    && !w.nodes.some((x) => collectFeatures(x, x.startPosition.row, x.endPosition.row).length);
+}
+
 /**
  * The fields the word that holds `n` may give where it runs, as bash 5.2 expands it (trust-fields.md, 2.3): with the
  * values `values` lists (each tuple of them, up to TUPLES), and every other parameter a hole; with no `values`, every
  * part is a hole (shape first, 2.1). `glob: false`: before pathname expansion, each field with its `pattern`.
- * Undefined outside a word, for a shell other than bash, where the words of its brace expansion are not known (`{,$x}a`),
+ * Undefined outside a word, for a word another shell reads otherwise (`readsAsBash`), where the words of its brace expansion are not known (`{,$x}a`),
  * and for the words the word model reads otherwise than bash (`misread`; an IFS with a control character),
  * or that may assign IFS other than by arithmetic (`${IFS=:}$x`, F88).
  */
 export function wordShapes(n: SyntaxNode, model: StateModel, values?: Values, opts: { glob?: boolean } = {}): WordShapes | undefined {
-  const w = model.shell && model.shell !== 'bash' ? undefined : wordMeaning(n, model);
-  if (!w || misread(w)) return undefined;
+  const w = wordMeaning(n, model);
+  if (!w || !readsAsBash(w) || misread(w)) return undefined;
   // (A word that may assign IFS other than by arithmetic, `${IFS=:}$x`, is not known here: it splits by the new IFS, F88.)
   const self = selfAssigned(w);
   if (self.ifs === 'any') return undefined;
@@ -692,33 +707,12 @@ export function receivedFields(n: SyntaxNode, model: StateModel): Fields & { hol
   return holed ? { ...known, holed } : known;
 }
 
-/** The text of a word with no character that some shell other than bash reads otherwise: a glob, a brace, a tilde, a backslash; `=` first is zsh's (`=ls`). */
-const PLAIN = /^(?!=)[\w./:,%+@=-]*$/;
-
-/**
- * Whether a shell other than bash gives the word `w` the fields bash gives it, as `receivedWords` reads them: every
- * expansion is in double quotes, where no POSIX shell (nor zsh) splits or globs its value, so that `"$1"` is one field
- * and `"$@"` one for each argument; the text out of quotes is `PLAIN`; and the word has no construct a sh may lack
- * (`collectFeatures`: `${x/a/b}`, `${a[1]}`, `$RANDOM`, `$'…'`). Nor, for zsh, what zsh reads in quotes as bash does
- * not: a flag (`${(f)x}`, which `parseExpansion` does not read), `$x[1]`, `$x:h` or `$10`. The rest of the word model
- * stays bash's.
- */
-function readAlike(w: WordMeaning, shell: Shell): boolean {
-  const parts = w.nodes.flatMap((x) => (x.type === 'concatenation' ? x.namedChildren : [x]));
-  const quoted = parts.every((x) => (x.type === 'word' ? PLAIN.test(x.text) : x.type === 'raw_string' || x.type === 'string'));
-  if (!quoted || w.nodes.some((x) => collectFeatures(x, x.startPosition.row, x.endPosition.row).length)) return false;
-  // (In zsh, `$x[1]` is an element, `$x:h` a modifier and `$10` the 10th argument, also in quotes.)
-  const zshReads = (e: SyntaxNode, after: string): boolean => /^[[:]/.test(after) || (/^\$\d$/.test(e.text) && /^\d/.test(after));
-  return w.nodes.every((x) => descendants(x, ['simple_expansion', 'expansion']).every((e) => (e.type === 'expansion'
-    ? !!parseExpansion(decodedText(e)) : shell !== 'zsh' || !zshReads(e, x.text.slice(e.endIndex - x.startIndex)))));
-}
-
 /**
  * The fields the word that holds `n` gives the command where it runs (manual 3.5): with the values the model knows
  * (those of `wordFields`, with no environment), and a hole for each part it does not know, in order, the words of its
  * brace expansion one after another; an assignment given to a declaration builtin, the head as written and its
- * value's fields (`declaredWord`). Undefined where that is not known here: a shell other than bash, but for a word it
- * reads alike (`readAlike`), the words of a brace expansion not known (`{,$x}a`, `set +B` on some paths), a word the word model reads otherwise than bash
+ * value's fields (`declaredWord`). Undefined where that is not known here: a word another shell reads otherwise
+ * (`readsAsBash`), the words of a brace expansion not known (`{,$x}a`, `set +B` on some paths), a word the word model reads otherwise than bash
  * (`misread`), one that may assign IFS other than by arithmetic (`${IFS=:}$x`) or has an unquoted `$!` (F73), an IFS not known where an
  * expansion is split, the cases `wordShapes` leaves out, and a word bash fails on (`${x:?}`; `wordFields` says it).
  */
@@ -730,7 +724,7 @@ const unmatchedOf = ({ glob: { failglob, nullglob } }: WordMeaning): { unmatched
 
 export function receivedWords(n: SyntaxNode, model: StateModel): ReceivedField[] | undefined {
   const w = wordMeaning(n, model);
-  if (!w || (model.shell && model.shell !== 'bash' && !readAlike(w, model.shell))) return undefined;
+  if (!w || !readsAsBash(w)) return undefined;
   // (A declaration's word: the head, then the one field of its value.)
   const declared = declaredWord(w, w.steps[0].applies);
   if (declared === 'unread') return undefined;

@@ -213,7 +213,8 @@
         {"fn":"parameterRead","kind":"node-type","count":1},
         {"fn":"unsetDoes","kind":"node-type","count":3},
         {"fn":"zshSyntaxPlaces","kind":"glob-class","count":1},
-        {"fn":"zshSyntaxPlaces","kind":"node-type","count":2}
+        {"fn":"zshSyntaxPlaces","kind":"node-type","count":2},
+        {"fn":"zshOtherwise","kind":"node-type","count":1}
       ]
     },
     {
