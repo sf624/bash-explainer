@@ -1561,6 +1561,7 @@
  "read -z x",
  "read line",
  "read x",
+ "read x; read y",
  "read() { :; }\nread -r line <<< \"a b\"",
  "read-without-r",
  "readonly r",
