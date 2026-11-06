@@ -871,10 +871,10 @@ describe('bats', () => {
     const tokens = (line: number) => allTokens(explain('test.bats', line)!.items).map((t) => `${t.kind} ${t.label}: ${t.explanation.slice(0, 40)}`);
     assert.deepStrictEqual(tokens(16).slice(0, 3), [
       'command run: bats function: runs a command in a subsh',
-      'option !: fail, and so fail the test, unless the c',
+      'option !: expect the command to end with a non-zer',
       'command cat: runs `cat`: Concatenate files and print ',
     ]);
-    assert.match(tokens(17)[1], /^option -1: fail, and so fail the test, unless the /);
+    assert.match(tokens(17)[1], /^option -1: expect the command to end with exit stat/);
     assert.match(tokens(18)[1], /^option --separate-stderr: keep stderr out of `\$output`/);
     assert.match(tokens(5)[0], /^command load: bats function: reads the file/);
     assert.match(tokens(6)[0], /^command bats_require_minimum_version: bats function/);

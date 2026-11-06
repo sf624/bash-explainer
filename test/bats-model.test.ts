@@ -8,6 +8,9 @@ import { explainHostedLine, extractShell } from '../src/hosts';
 import { processOf } from '../src/semantics/env';
 import { shellState, type StateModel } from '../src/semantics/state';
 import { statusModel } from '../src/semantics/status';
+import { resolveName } from '../src/semantics/names';
+import { readingNodes } from '../src/reading';
+import { rowModel, type ModelRow } from '../src/ui/panelRows';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, type SyntaxNode } from '../src/syntax/tree';
 
@@ -86,5 +89,54 @@ describe('the model of a bats file', () => {
     const { state, command } = model(['g() { if [ "$d" = 1 ]; then d=2; g; return; fi; x=2; }', '@test "a" {', '  x=1; d=1; g', '  echo "$x"', '}']);
     assert.deepStrictEqual([...state.hostCalls.values()].map((c) => c.role), ['test']);
     assert.strictEqual(state.at(command('echo "$x"')).run.variables.get('x')?.set, 'unknown');
+  });
+
+  describe('the functions of bats are badged as functions', () => {
+    const lines = ['@test "a" {', '  run expr 1 + 2', '  load helper', '  skip', '  assert_success', '  cat /dev/null', '}'];
+    const rows = (line: number): ModelRow[] => {
+      const extracted = extractShell('bats', lines.join('\n'));
+      const ex = explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, lines, line, 'en', undefined, { reading: true, argv: true })!;
+      const all = (rs: readonly ModelRow[]): ModelRow[] => rs.flatMap((r) => [r, ...all(r.children)]);
+      return all(rowModel(ex, { depth: 1, receives: false }, 'en').rows);
+    };
+
+    it('badges run, load, skip and the helpers of the libraries "function", and the program run inside run "program"', () => {
+      const badge = (line: number, label: string): string | undefined => rows(line).find((r) => r.label === label)?.name?.said.kind;
+      assert.deepStrictEqual([badge(1, 'run'), badge(1, 'expr')], ['function', 'program']);
+      assert.strictEqual(badge(2, 'load'), 'function');
+      assert.strictEqual(badge(3, 'skip'), 'function');
+      // (`assert_success` is a function of a library: with a `load`, the file may have it.)
+      assert.strictEqual(badge(4, 'assert_success'), 'function');
+      assert.strictEqual(badge(5, 'cat'), 'program');
+    });
+
+    it('resolves the host\'s name to the host, a program outside a bats file, and the file\'s own function to its definition', () => {
+      const kind = (text: string, src: string[], host = true): string => {
+        const extracted = extractShell('bats', src.join('\n'));
+        const tree = parser.parse(extracted.text);
+        const state = shellState(tree, undefined, host ? { host: extracted.regions[0].commands } : {});
+        const c = descendants(tree.root, ['command']).find((x) => x.text === text)!;
+        return resolveName(state, text.split(' ')[0], c, { command: true }).kind;
+      };
+      assert.strictEqual(kind('run true', ['@test "a" {', '  run true', '}']), 'host');
+      assert.strictEqual(kind('run true', ['@test "a" {', '  run true', '}'], false), 'file');
+      assert.strictEqual(kind('run true', ['run() { :; }', '@test "a" {', '  run true', '}']), 'function');
+    });
+
+    it('gives the reading of the command name the kind of a function', () => {
+      const extracted = extractShell('bats', lines.join('\n'));
+      const ex = explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, lines, 1, 'en', undefined, { reading: true, argv: true })!;
+      const run = readingNodes(ex.reading!).find((n) => n.label === 'run')!;
+      assert.strictEqual(run.resolves, 'function');
+      assert.strictEqual(run.name?.said.kind, 'function');
+    });
+  });
+
+  it('says plainly what the options of run expect', () => {
+    const lines = ['@test "a" {', '  run ! false', '  run -3 false', '}'];
+    const extracted = extractShell('bats', lines.join('\n'));
+    const text = (line: number): string => explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, lines, line, 'en')!.items[0].children.map((c) => c.explanation).join('\n');
+    assert.match(text(1), /expect the command to end with a non-zero exit status: if it succeeds \(status 0\), `run` fails, and so does the test/);
+    assert.match(text(2), /expect the command to end with exit status 3: if it ends with another status, `run` fails, and so does the test/);
   });
 });

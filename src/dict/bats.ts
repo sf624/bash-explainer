@@ -12,14 +12,14 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = wordTable({
   // (`--` too) makes bats warn (BW02) unless `bats_require_minimum_version 1.5.0` comes first.
   run: cmd('bats の関数: コマンドをサブシェルで実行し、終了ステータスを `$status` に、出力（標準エラー出力も含む）を `$output` と配列 `$lines` に入れる。`run` 自身は 0 を返すので、コマンドが失敗してもテストは止まらない（`!` や `-N` を付けたときを除く）。オプション（`--` も）は bats 1.5.0 からで、先に `bats_require_minimum_version 1.5.0` がないと警告(BW02)が出る',
     'bats function: runs a command in a subshell and keeps its exit status in `$status` and its output (stderr included) in `$output` and the array `$lines`. `run` itself returns 0, so a failing command does not stop the test (unless `!` or `-N` is given). Its options (`--` too) are from bats 1.5.0, and bats warns (BW02) unless `bats_require_minimum_version 1.5.0` comes first', [
-    ['!', 'コマンドが失敗（0 以外）しなければ `run` が失敗し、テストが失敗する', 'fail, and so fail the test, unless the command fails (a non-zero status)'],
+    ['!', 'コマンドが 0 以外の終了ステータスで終わることを期待する: コマンドが成功（ステータス 0）すると `run` が失敗し、テストが失敗する', 'expect the command to end with a non-zero exit status: if it succeeds (status 0), `run` fails, and so does the test'],
     ['--separate-stderr', '標準エラー出力(fd 2)を `$output` に混ぜず、`$stderr` と配列 `$stderr_lines` に入れる', 'keep stderr out of `$output`, in `$stderr` and the array `$stderr_lines`'],
     ['--keep-empty-lines', '`$lines` に空行も残す（出力の末尾の改行も `$output` に残す）', 'keep empty lines in `$lines` (and trailing newlines in `$output`)'],
   ], {
     optionsFirst: true,
     patternOptions: [{
       pattern: /^-(\d+)$/,
-      text: ([, n]) => tx(`終了ステータスが ${n} でなければ \`run\` が失敗し、テストが失敗する`, `fail, and so fail the test, unless the exit status is ${n}`),
+      text: ([, n]) => tx(`終了ステータスが ${n} になることを期待する: ${n} 以外で終わると \`run\` が失敗し、テストが失敗する`, `expect the command to end with exit status ${n}: if it ends with another status, \`run\` fails, and so does the test`),
     }],
     unknownOption: tx('`run` が知らないオプション: bats は「unknown flag」のエラーにして、`run` は失敗する', 'an option `run` does not know: bats says "unknown flag", and `run` fails'),
     operands: [{ pattern: [runs({ run: 'subshell' })] }],

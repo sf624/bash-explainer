@@ -145,6 +145,8 @@ export type NameResolution =
      */
     noShell?: { skips?: 'keyword' | 'builtin' };
   }
+  /** A function the host defines (bats' `run`, `load`…: `StateModel.host`), which the file does not define itself. */
+  | { kind: 'host'; name: string; missed?: Missed }
   /** Nothing runs: `builtin x` where `x` is not a builtin; `disabled`: the builtin `x` turned off by `enable -n`. */
   | { kind: 'none'; name: string; why: 'not-a-builtin'; missed?: Missed; disabled?: CommandEntry };
 
@@ -313,6 +315,8 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
     const why = missedFunction(model, name, at, fn);
     // (After a `source`, a function defined later in the script may come from the file read.)
     if (why && !(why.why === 'later' && place.sourced)) missed ??= why;
+    // (The host's functions are defined before the file runs; only `unset -f` removes one. Not for a command that skips functions, a program, or another shell.)
+    if (!exec && !lookup && !shellString && why?.why !== 'unset' && Object.hasOwn(model.host, name)) return { kind: 'host', name, ...(missed ? { missed } : {}) };
     return builtinOrFile(name, opts, place, missed);
   }
   const miss = (why: MissReason, by?: SlotLink, maybe?: Missed['maybe']): NameResolution => builtinOrFile(name, opts, place, { kind: 'function', def: defined.def, why, ...(by ? { slot: by } : {}), ...(maybe ? { maybe } : {}) });
@@ -574,6 +578,12 @@ export function runsOwnName(model: StateModel, def: SyntaxNode): boolean {
   return false;
 }
 
+/**
+ * The kind of `res` that the panel's badge says: a function of the host (bats' `run`) is a function, as the file's own
+ * are (it is a shell function that bats defines).
+ */
+export const badgeKind = (res: NameResolution): Exclude<NameResolution['kind'], 'host'> => (res.kind === 'host' ? 'function' : res.kind);
+
 /** What a command name is, as the panel's badge says it (docs/design/name-kind.md): a `file` is a program. */
 export type NameKind = 'keyword' | 'alias' | 'function' | 'builtin' | 'program' | 'none';
 
@@ -650,7 +660,8 @@ export function nameFacts(res: NameResolution, opts: {
   const program = !!builtin?.program || !!opts.program?.(name);
   // (A reserved word looked up as a file: no program has its name, `command [[` is "command not found".)
   const notFound = res.kind === 'file' && res.path === 'search' && RESERVED.has(name) && !program;
-  const runs: NameKind = notFound ? 'none' : res.kind === 'file' ? 'program' : res.kind;
+  const kind = badgeKind(res);
+  const runs: NameKind = notFound ? 'none' : kind === 'file' ? 'program' : kind;
   const why = notFound ? { why: 'not-found' as const } : res.kind === 'none' ? { why: res.why } : {};
   const noProgram = runs === 'program' && builtin && !program && !name.includes('/') ? { noProgram: true } : {};
   if (name.includes('/')) return { name, runs, ...by, also: [] };
