@@ -47,7 +47,7 @@ export const COMMAND_TEXTS = {
   /** `[ -n x ]` where `[` is the builtin: the name's token. */
   'cmd-bracket-builtin-name': tokenText(() => [
     'コマンド `[`（`test` の別名）',
-    'Command `[` (an alias of `test`)']),
+    'Command `[` (another name for `test`)']),
   /** `[ -n x ]` where `[` is a program (`command -p [ -n x ]`). */
   'cmd-bracket-program-name': tokenText(() => [
     'プログラム `[`（`test` と同じ）',
@@ -114,8 +114,8 @@ export const COMMAND_TEXTS = {
     ' (from the customCommands setting)']),
   /** `[ -n x ]`: the builtin `[` (`zsh`: the shell is zsh, which splits and globs no unquoted variable). */
   'cmd-bracket-builtin': tokenText<{ zsh: boolean }>(({ zsh }) => [
-    `コマンド \`[\`（\`test\` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、\`[\` と \`]\` の前後に空白が要り、${zsh ? '中の引数はほかのコマンドの引数と同じく展開される（クォートしない変数は、空なら引数ごと消える。`[[ ]]` なら消えない）' : '中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）'}`,
-    `Command \`[\` (an alias of \`test\`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so \`[\` and \`]\` need spaces around them, and ${zsh ? 'the arguments inside are expanded as any command\'s are (an unquoted variable that is empty is dropped; `[[ ]]` keeps it)' : 'the arguments inside undergo word splitting and globbing (`[[ ]]` does not)'}`]),
+    `コマンド \`[\`（\`test\` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、\`]\` は最後の引数にすぎず（\`[\` が動くときに確かめる）、${zsh ? '中の引数はほかのコマンドの引数と同じく展開される（クォートしない変数は、空なら引数ごと消える。`[[ ]]` なら消えない）' : '中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）'}`,
+    `Command \`[\` (another name for \`test\`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax: \`]\` is only its last argument, checked when \`[\` runs, and ${zsh ? 'the arguments inside are expanded as any command\'s are (an unquoted variable that is empty is dropped; `[[ ]]` keeps it)' : 'the arguments inside undergo word splitting and globbing (`[[ ]]` does not)'}`]),
   /** `ll` in a README: a distribution's alias or function (`what`: `エイリアス` or `関数` in the line's language, `alias`: whether it is an alias, `meaning`: what it does, `defs`: the definitions). */
   'cmd-distro-alias': tokenText<{ what: string; alias: boolean; name: string; meaning: string; defs: string }>(({ what, alias, name, meaning, defs }) => [
     `${what} \`${name}\`: ${meaning}（${defs}）`,
