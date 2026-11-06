@@ -241,7 +241,7 @@ Each step is one PR and keeps every test passing. The order puts the largest eff
 | Step | What | Findings | Products | Phone |
 |---|---|---|---|---|
 | U1 | The fix as a whole line: `applyRewrite` (in place of `edited` and the tests' `applied`), the Fix box with the line and its changed part, out of "More", "Copy fix", the header's "Copy as Markdown", the blanks of `shellWords`. Done in #639 | 2.2, part of 2.6 | VS Code panel, web panel | No |
-| U2 | The hint toward POSIX sh, as Q2 decided: the count from `dialectIssues` for sh, the strip's line and its button | 2.1 | Web page (VS Code: Q3) | The tab's line only, no layout. Done in #688 |
+| U2 | The hint toward POSIX sh, as Q2 decided: the count from `dialectIssues` for sh, the strip's line and its button. Done in #688 | 2.1 | Web page (VS Code: Q3) | The tab's line only, no layout |
 | U3 | Names and state: the depth names and their digits, the panel's headline from the note's label, what Clear and a new script reset (the kind, the name, the shell) | 2.6, 2.9, 2.10 | Web page, VS Code panel | No |
 | U4 | The hover card after a click, and the Legend as a popover (with the empty one). Done in #637 | 2.4, 2.11 | Web page, VS Code panel | No |
 | U5 | Depth 1 shows bash's steps where a step acts; the glob example open by the rule; the tester's text kept | 2.3 | VS Code panel, web panel | No |
