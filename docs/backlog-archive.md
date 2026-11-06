@@ -717,6 +717,28 @@ Each entry names its kind by the label an issue of that kind gets. For `bug`, `c
 - **Reason:** Rare, and a value missed, not a wrong one: the samples stay.
 - **Input and what is missing:** `n=' 3 '; [ "$n" -eq 3 ]` (a value with spaces at its ends, which an example line cannot show as it is) and `x=7; [[ $x -eq 3 ]]` (a value read by arithmetic, which the value line does not show either): the example keeps its samples and does not show the script's value in its section.
 
+## From the review of the values before a `source` (#693)
+
+Each is a value the explainer does not take where bash has it, never a wrong one (`StateModel.blindAt` reads the first statement of the top level that holds what the model does not read).
+
+### A file sourced in a subshell blinds the script after it
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `missing-explanation`.
+- **Reason:** Rare: what a subshell reads cannot change the parent, but the scan does not tell where the construct runs.
+- **Input and what is missing:** `( . lib )` and `x=$(source lib)`: the lines after them take no value of the script, though the file runs in a subshell.
+
+### A function that sources a file blinds the script from its definition
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `missing-explanation`.
+- **Reason:** Rare: the body runs only at a call, but the scan places the reason at the definition.
+- **Input and what is missing:** `f() { . lib; }`: the lines after the definition and before the first call of `f` take no value of the script.
+
+### A heredoc whose first line holds `; source`
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `missing-explanation`.
+- **Reason:** Rare: the body comes after `source lib` in the text, so it is placed after it, though it belongs to `cat`, which runs first.
+- **Input and what is missing:** `cat <<EOF; source lib` with a body: the body's expansions take no value of the script, though bash expands them before `source` runs.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".
