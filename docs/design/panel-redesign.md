@@ -44,8 +44,10 @@ The answers to the plan's questions, from the maintainer, 2026-10-27:
 4. **Note levels.** Three levels will come, in a plan of their own (a revision of docs/design/note-levels.md): Error (red, "fails every time as written"), Warning (yellow: damage that cannot be undone, or the script's own exit status turned into success) and Info (blue). `failure-reported-as-success` and `source-searches-path` become Warning there. This plan depends on none of it: the panel reads each problem's level, mark and word from the catalog.
 5. **Order.** P1 to P10 start after the roadmap's three note levels are done (changed 2026-10-31, from "items 1 to 7"). Changed again 2026-10-31: P1 and P2 start early, beside the three note levels; P3 onwards waits for them. Studies that can run in parallel may (a measure, a sketch, a prototype that lands nothing).
 6. **Short names in the view slot.** "1 Does" / "2 Reads" (「1 何をする」/「2 読まれ方」). The full names ("What it does", "How bash reads it") are the tooltip and the accessible name.
+   - Changed on 2026-11-06 after the usability test: the names become "Overview" / "Word by word", the digit only in the tooltip ([usability-9.md](usability-9.md), Q1).
 7. **Copy as Markdown and the hover** stay as today's list of parts. No step changes them.
 8. **The no-shebang case** of `failure-reported-as-success` stays: the note keeps that case. A user who does not want it changes the script (a shebang, or a fix). Its fix must not end the caller's shell when the file is sourced (P3).
+   - Kept on 2026-11-06 after the usability test: a file with no shebang still counts as one that may be sourced ([usability-9.md](usability-9.md), Q11).
 
 The fixes, from the last persona round:
 
@@ -520,5 +522,5 @@ The kit and the data are not in the repository. Two runs on the web page, each w
 The maintainer answered the plan's three open questions on 2026-10-27:
 
 1. **The CLI.** Its output stays as today's list of parts, like Copy as Markdown and the hover (decision 7). It follows neither the depth nor the switch. No step changes it.
-2. **"Not in POSIX sh" on a bash script.** The mark shows on a bash script too, as a quiet mark. It is a fact of the construct: useful when moving a script to sh, and for learners. The dialect issues (the problems) still show only for the target shell (P9).
+2. **"Not in POSIX sh" on a bash script.** The mark shows on a bash script too, as a quiet mark. It is a fact of the construct: useful when moving a script to sh, and for learners. The dialect issues (the problems) still show only for the target shell (P9). Since 2026-11-06 the web page also hints at POSIX sh on a script whose shell comes from `#!/usr/bin/env bash` or no shebang, with the number of sh problems, as a line of the Problems strip, not as a problem ([usability-9.md](usability-9.md), Q2).
 3. **The basis chips before P7.** Yes. The basis chips and "Try it" land before P7, so P7's row model takes its chips as row data (P7a).
