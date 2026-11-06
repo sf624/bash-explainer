@@ -382,6 +382,9 @@ describe('the panel: what the program receives, where the model cannot read, aga
     // A file or a text the model does not read: a variable is a value known only when the line runs.
     { src: 'x=1; . ./s.sh; ls $x', files: IN_FILE, label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
     { src: 'x=1; source ./s.sh; ls $x', files: IN_FILE, label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
+    // Before it, the walk's values hold: bash runs the statements of the top level in turn.
+    { src: 'x=1; ls $x; . ./s.sh', files: IN_FILE, label: 'ls', out: 'ls [1]\nstatus=0', says: ['receives:', 'ls', '1'] },
+    { src: 'x="a b"\nls $x\neval "$(cmd)"', at: 1, label: 'ls', out: 'ls [a] [b]\nstatus=0', says: ['receives:', 'ls', 'a', 'b'] },
     { src: 'x=1; eval "$y"; ls $x', env: 'y=x=2', label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
     { src: 'x=1; eval "$(cmd)"; ls $x', label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },
     { src: 'x=1; eval $(cmd); ls $x', label: 'ls', out: 'ls [2]\nstatus=0', says: ['receives:', 'ls', '‹value of `$x`›'] },

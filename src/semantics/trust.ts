@@ -69,8 +69,6 @@ const NAME = /^[A-Za-z_]\w*$/;
  */
 interface Where { fn: string | undefined; foreign: boolean; now: boolean; rest?: { at: number; where: Where } }
 
-
-
 /** An alias an `alias` command defines: its name and text, the word that gives them, and where the command is. */
 interface AliasDef { name: string; value: string; word: SyntaxNode; where: Where }
 
@@ -111,7 +109,8 @@ class Scan {
   /** Where options, functions or aliases change: by function ('' : the top level), and in foreign text. */
   readonly changes = new Set<string>();
   foreignChanges = false;
-  blind: string | undefined;
+  blind: { why: string; from?: SyntaxNode } | undefined;
+  /** The statement of the script's top level the scan reads (none past the text): where a reason found there starts (`Trust.blindFrom`). */ private top: SyntaxNode | undefined;
   /** The names each nameref declaration refers to (`declare -n a=b`): a nameref that refers to one in `refUnknown` is in it too. */
   private readonly refEdges = new Map<string, Set<string>>();
   /**
@@ -123,8 +122,8 @@ class Scan {
   /** The assignments that copy a variable (`IFS=$save`), and the statements where those that IFS takes are checked. */
   private readonly copies: { owner: SyntaxNode; target: string; source: string }[] = [];
   readonly copied = new Map<SyntaxNode, Set<string>>();
-  /** The variables whose values are command names (`$debug`), and whether they are quoted (not split). */
-  private readonly commandVariables: { name: string; quoted: boolean }[] = [];
+  /** The variables whose values are command names (`$debug`), whether they are quoted (not split), and the statement of the top level they are in. */
+  private readonly commandVariables: { name: string; quoted: boolean; top: SyntaxNode | undefined }[] = [];
   /** The builtins given words whose values are not known where the scan reads them (`unknownWords`), read at the end. */
   private readonly deferred: Deferred<Where>[] = [];
   /** What the scan read of those words, by word (see `Trust.deferred`), and where each such builtin is. */
@@ -145,7 +144,7 @@ class Scan {
   /** The variables a declaration gives a value not known that it reads again where the variable is an array (`compoundValue`). */
   private readonly unknownCompounds: string[] = [];
 
-  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening: Opening | undefined, private readonly shell: Shell | undefined, private readonly version: BashVersion | undefined, private readonly posix: boolean) {
+  constructor(private readonly root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening: Opening | undefined, private readonly shell: Shell | undefined, private readonly version: BashVersion | undefined, private readonly posix: boolean) {
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(nameText(field(n, 'name')!));
       if (n.type === 'command' && ['alias', 'enable'].includes(commandName(n) ?? '')) this.renames = true;
@@ -159,6 +158,7 @@ class Scan {
       if (why) this.blindFor(why);
       if (opening?.set?.get('allexport') === 'on') this.exportAll = true;
       this.visit(root, { fn: undefined, foreign: false, now: true });
+      this.top = undefined;
       this.aliases();
       this.readDeferred();
       this.finish();
@@ -168,9 +168,9 @@ class Scan {
     }
   }
 
-  /** Nothing is trusted, for `why`: the scan stops there (`StopScan`), since nothing it finds after would count. */
-  private blindFor(why: string): never {
-    this.blind = why;
+  /** Nothing is trusted, for `why` (from where the scan is, or where it says): the scan stops there (`StopScan`), since nothing it finds after would count. */
+  private blindFor(why: string | { why: string; from?: SyntaxNode }): never {
+    this.blind = typeof why === 'string' ? { why, ...(this.top ? { from: this.top } : {}) } : why;
     throw new StopScan();
   }
 
@@ -286,6 +286,7 @@ class Scan {
   }
 
   private visit(n: SyntaxNode, w: Where): void {
+    if (n.parent === this.root) this.top = n;
     if (w.rest && n.startIndex >= w.rest.at) w = w.rest.where;
     // Each node by the row of its type: what changes nothing has no handler (its parts are read in turn).
     if (n.named && !this.apply(nodeRow(n))) {
@@ -634,7 +635,7 @@ class Scan {
     if (name === undefined) {
       // `$debug`, `"$run"`: a variable the script sets to command names (see `finish`).
       const m = /^("?)\$\{?([A-Za-z_]\w*)\}?\1$/.exec(field(c, 'name')!.namedChildren[0].text);
-      if (m) this.commandVariables.push({ name: m[2], quoted: !!m[1] });
+      if (m) this.commandVariables.push({ name: m[2], quoted: !!m[1], top: this.top });
       else this.blindFor('a command name not known');
       return;
     }
@@ -958,7 +959,6 @@ class Scan {
   }
 }
 
-
 /**
  * The trust of the decisions of a model over the script `root`, whose strings have the trees `strings` gives (once
  * per model: the trees are the model's). The scan stops at the first reason to trust nothing. `host`: the functions
@@ -969,7 +969,7 @@ export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HO
   // (Where the script nests too deep to scan, nothing is trusted, and the lines keep what they say without it.)
   const scan = unlessStackFull(() => new Scan(root, strings, host, opening, shell, version, posix));
   if (!scan) return { ...BLIND, blind: 'the script nests too deep to scan' };
-  if (scan.blind) return { ...BLIND, blind: scan.blind };
+  if (scan.blind) return { ...BLIND, blind: scan.blind.why, ...(scan.blind.from ? { blindFrom: scan.blind.from } : {}) };
   const unseen = new Set<string>();
   for (const [name, ws] of scan.writes) if (ws.some((w) => w.foreign || (w.fn !== undefined && scan.callbacks.has(w.fn)))) unseen.add(name);
   // (Asked once per use of a variable, as the colouring does: kept per name, as the writes of a name are many.)

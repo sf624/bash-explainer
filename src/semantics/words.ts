@@ -514,8 +514,8 @@ class ModelValues implements ValueSource {
   }
 
   variable(name: string, node: SyntaxNode): string | null | undefined {
-    // (Nothing the walk knows holds where the script runs what it does not read, `StateModel.blind`: only the values given do, `WordEnv`.)
-    if (!this.env && this.model.blind) return undefined;
+    // (Nothing the walk knows holds where the script may have run what it does not read, `StateModel.blindAt`: only the values given do, `WordEnv`.)
+    if (!this.env && this.model.blindAt(this.w.nodes[0])) return undefined;
     if (name === '_') return this.trusted ? undefined : underscoreValue(node, this.model);
     // (Bash changes some values itself: `RANDOM`, `SECONDS`, a readonly `UID`; src/semantics/vars.ts.)
     if (!/^[A-Za-z_]\w*$/.test(name) || (changedByBash(name) && !this.env?.unset?.(name)) || (this.trusted && !this.model.trusts(name))) return undefined;
@@ -541,7 +541,7 @@ class ModelValues implements ValueSource {
   }
 
   /** (Not for the values Meaning shows: `REPLY` is not one the decisions trust.) */
-  reply = (n: SyntaxNode): string | undefined => (this.trusted || this.model.blind ? undefined : this.model.reply(n));
+  reply = (n: SyntaxNode): string | undefined => (this.trusted || this.model.blindAt(this.w.nodes[0]) ? undefined : this.model.reply(n));
 
   builtinRuns(name: string, at: SyntaxNode): boolean {
     const r = resolveName(this.model, name, at.namedChildren[0]);
@@ -550,7 +550,7 @@ class ModelValues implements ValueSource {
 
   /** `~+` and `~-` not after a `cd` anywhere; `~0` and `~+0`, entry 0 of the directory stack, are `~+` (6.8). */
   tilde(user: string): string | undefined {
-    if (!this.env && this.model.blind) return undefined;
+    if (!this.env && this.model.blindAt(this.w.nodes[0])) return undefined;
     const name = user === '' ? 'HOME' : user === '+' || stackTilde(user)?.at === '+0' ? 'PWD' : user === '-' ? 'OLDPWD' : undefined;
     if (!name || (name !== 'HOME' && changesDirectory(this.w.nodes[0])) || (this.trusted && !this.model.trusts(name))) return undefined;
     if (name === 'PWD') return this.env?.pwd;

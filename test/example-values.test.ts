@@ -177,6 +177,20 @@ describe('what a test gives for the values of its cases (src/semantics/testcases
   });
 });
 
+describe('worked examples with the values of the script before it reads a file the model does not', () => {
+  /** The examples of line `at` of `src`, as "label → lines" strings. */
+  const at = (src: string, line: number): string[] => new Analyzer('en').explainLine(parser.parse(src), line, undefined, {}).examples
+    .flatMap((e) => e.sections.map((sec) => `${sec.label} → ${sec.lines.join(' ')}`));
+  it('runs a pipeline on the value bash gives it, before `source` (checked with bash)', () => {
+    const src = 'msg="hello world"\necho "$msg" | tr a-z A-Z\n. ./lib.sh\necho "$msg" | tr a-z A-Z';
+    assert.deepStrictEqual(at(src, 1), ['After `echo "$msg"` → hello world', 'Output (after `tr a-z A-Z`) → HELLO WORLD']);
+    const r = runBash(src.split('\n').slice(0, 3).join('\n'), { files: ['lib.sh'] });
+    assert.strictEqual(r.stdout, 'HELLO WORLD\n', r.stderr);
+    // (After it, the file may have changed the value: made-up lines.)
+    assert.ok(at(src, 3).some((e) => e.includes('made-up lines')), at(src, 3).join('; '));
+  });
+});
+
 describe('worked examples of tests and patterns with the value of the script', () => {
   /** Whether the test or pattern that is the last line of `src` succeeds in bash. */
   const succeeds = (src: string) => bash(src, `if ${src.split('\n').pop()}; then echo true; else echo false; fi`).trim() === 'true';
