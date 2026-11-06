@@ -26,7 +26,7 @@
 | ファイル | 解説する部分 |
 | --- | --- |
 | Dockerfile | `RUN`・`CMD`・`ENTRYPOINT`（シェル形式、`RUN <<EOF`、exec 形式、`["sh", "-c", "…"]`）と `SHELL [...]`。`pipefail` なしの `RUN` のパイプで失敗が見逃される場合は警告 |
-| Makefile | レシピ。make の `$(VAR)`・`$@`・`$$` も説明 |
+| Makefile | レシピ。make の `$(VAR)`・`$@`・`$$` も説明。make がシェルなしで実行する行（`;`・`"`・`$`・`|` などがない行）は、`/bin/sh` ではなくプログラムとして説明 |
 | CI の YAML | GitHub Actions の `run:`（ワークフローと `action.yml`。`shell:` や `defaults` に従う）、GitLab CI の `script:`、CircleCI の `run:`・`command:`、Azure Pipelines の `script:`・`bash:`（`$(変数)` のマクロも）。`${{ github.event.pull_request.title }}` のような外部からの入力をスクリプトに埋め込むと警告 |
 | `package.json` | `scripts` |
 | Markdown | `sh`・`bash`・`console` などのコードブロック（シェルはブロック内の shebang、なければ言語名のシェル。`sh` は bash として読む） |

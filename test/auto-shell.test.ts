@@ -101,7 +101,8 @@ describe('the automatic shell of a host file: what the chip, its popover and the
   const cases: [string, FileKind, string, string, string][] = [
     ['a Dockerfile', 'dockerfile', 'Dockerfile', 'Dockerfile', 'FROM alpine\nRUN apk add curl | tee log\n'],
     ['a Dockerfile with SHELL and an exec form', 'dockerfile', 'Dockerfile', 'Dockerfile', 'FROM alpine\nRUN echo hi | wc -c\nSHELL ["/bin/bash", "-c"]\nRUN echo $BASH_VERSION\nCMD ["npm", "start"]\n'],
-    ['a Makefile', 'makefile', 'Makefile', 'Makefile', 'build:\n\tmake -C src\n'],
+    ['a Makefile', 'makefile', 'Makefile', 'Makefile', 'build:\n\tmake -C src && make\n'],
+    ['a Makefile recipe line make runs with no shell', 'makefile', 'Makefile', 'Makefile', 'build:\n\tmake -C src\n'],
     ['a Makefile with SHELL', 'makefile', 'Makefile', 'Makefile', 'SHELL := /bin/bash\nbuild:\n\tmake -C src\n'],
     ['a GitHub Actions workflow with a step in sh', 'yaml', 'ci.yml', 'GitHub Actions / GitLab CI', 'on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n      - shell: sh\n        run: echo there\n'],
     ['a GitLab CI file', 'yaml', '.gitlab-ci.yml', 'GitHub Actions / GitLab CI', 'build:\n  script:\n    - make\n'],
@@ -140,8 +141,8 @@ describe('the automatic shell of a host file: what the chip, its popover and the
         }
         explained++;
         if (auto === 'none') {
-          // (Docker's exec form and a Python list run with no shell: their words are explained as a program's, test/hosts.test.ts.)
-          assert.ok(/\[/.test(text.split('\n')[line]), `line ${line}`);
+          // (Docker's exec form, a Python list and a Makefile line make runs itself run with no shell: their words are explained as a program's, test/hosts.test.ts.)
+          assert.ok(/\[/.test(text.split('\n')[line]) || kind === 'makefile', `line ${line}`);
           assert.deepStrictEqual(say('en'), { chip: `${name} · no shell`, popover: 'Auto: no shell (runs directly)', setting: 'Auto (now: no shell, runs directly)' }, `line ${line}`);
           assert.deepStrictEqual(say('ja'), { chip: `${name} · シェルなし`, popover: '自動: シェルなし（直接実行）', setting: '自動（今: シェルなし、直接実行）' }, `line ${line}`);
         } else {
@@ -169,7 +170,9 @@ describe('the automatic shell of a host file: what the chip, its popover and the
     assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM alpine\nRUN make\n', 1), sh);
     // (Every part agrees: the host's own lines say it too.)
     assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM alpine\nRUN make\n', 0), sh);
-    assert.deepStrictEqual(at('makefile', 'Makefile', 'a:\n\tmake\n', 1), sh);
+    assert.deepStrictEqual(at('makefile', 'Makefile', 'a:\n\tmake; true\n', 1), sh);
+    // (A line make runs itself, with no shell; the rest of the file runs in sh.)
+    assert.strictEqual(at('makefile', 'Makefile', 'a:\n\tmake\n', 1), 'none');
     assert.deepStrictEqual(at('npm', 'package.json', '{\n  "scripts": {\n    "a": "make"\n  }\n}\n', 0), sh);
     assert.deepStrictEqual(at('python', 'a.py', '#!/usr/bin/env zsh\nimport os\nos.system("make")\n', 2), sh);
     assert.deepStrictEqual(at('jenkinsfile', 'Jenkinsfile', "node {\n  sh 'make'\n}\n", 1), sh);

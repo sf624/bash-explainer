@@ -183,6 +183,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'dockerfile-onbuild': 'none',
   'dockerfile-healthcheck': 'none',
   'dockerfile-exec-form': 'none',
+  'makefile-no-shell': 'none',
+  'makefile-maybe-no-shell': 'none',
   'yaml-folded-block': 'none',
   'dockerfile-shell': 'none',
   'jenkinsfile-groovy-interpolation': 'prose',
@@ -361,7 +363,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 18, scenario: 25, prose: 21, none: 101 });
+      { mechanical: 18, scenario: 25, prose: 21, none: 103 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });
