@@ -26,12 +26,21 @@ const SCRIPTS = {
  * The maintainer accepted this budget on 2026-11-05, after a check on a real device; the usability test judges the length again.
  * The fix out of "More", as the whole line (docs/design/usability-9.md, U1), added up to 59 px on the lines with a fix (s2, s3):
  * in CI, 1,485 and 2,054 on, 1,324 and 1,898 off, with about the same room as before over them.
- * The glob example open on the cursor's stage (usability-9.md, U5, Q4) adds its names to try and its results, and the parts of its word, whose
- * row no longer folds, on s2 only (its cursor is on grep's stage): +421 px at 1280 and +497 px at 390, measured with CI's fonts (1,474 to 1,895
- * and 2,034 to 2,531 on; 1,313 to 1,734 and 1,859 to 2,356 off, en). The budget keeps the room it had over CI's figures.
- * No script here holds a `[`: its condition has rows of its own at depth 2, folded as those of `[[` are (its pages are measured in the PR that gave them).
+ * U5 (usability-9.md, Q4) gave each script its budget, the room over CI's figures as before (about 55 px over these, measured with CI's fonts,
+ * the larger of en and ja). On s2 the glob example opens on grep's stage, where its cursor is, with its names to try and its results, and the
+ * row of its word no longer folds: 1,474 to 1,895 and 2,039 to 2,536 on, 1,313 to 1,734 and 1,878 to 2,376 off. On s4, `$DEBUG` has a row at
+ * depth 1 for bash's steps, so the condition of `[[` no longer folds at depth 2: 1,279 to 1,482 and 1,812 to 2,092 on, 1,255 to 1,457 and
+ * 1,758 to 2,038 off. The others do not change.
+ * No script here holds a `[`: its condition has rows of its own at depth 2 (its pages are measured in the PR that gave them).
  */
-const BUDGET = { on: { 1280: 1940, 390: 2600 }, off: { 1280: 1780, 390: 2420 } } as const;
+const BUDGET: Record<keyof typeof SCRIPTS, Record<'on' | 'off', Record<1280 | 390, number>>> = {
+  s1: { on: { 1280: 840, 390: 1070 }, off: { 1280: 840, 390: 1060 } },
+  's1-body': { on: { 1280: 450, 390: 530 }, off: { 1280: 430, 390: 510 } },
+  s2: { on: { 1280: 1950, 390: 2600 }, off: { 1280: 1790, 390: 2440 } },
+  's3-assign': { on: { 1280: 1010, 390: 1270 }, off: { 1280: 990, 390: 1250 } },
+  s3: { on: { 1280: 1420, 390: 1850 }, off: { 1280: 1350, 390: 1780 } },
+  s4: { on: { 1280: 1540, 390: 2150 }, off: { 1280: 1520, 390: 2100 } },
+};
 
 describe('the panel: one view with a depth', function () {
   this.timeout(240000);
@@ -364,7 +373,7 @@ describe('the panel: one view with a depth', function () {
           await depthDrawn(panel, 2);
           await page.waitForTimeout(100);
           const h = await panel.evaluate(`Math.ceil(document.getElementById('main').getBoundingClientRect().bottom + scrollY)`) as number;
-          assert.ok(h <= BUDGET[receives][width], `${name}, ${lang}: ${h} px`);
+          assert.ok(h <= BUDGET[name as keyof typeof SCRIPTS][receives][width], `${name}, ${lang}: ${h} px`);
         }
         await ctx.close();
       }
