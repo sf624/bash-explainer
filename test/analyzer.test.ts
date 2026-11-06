@@ -1051,7 +1051,7 @@ describe('[ ] shows its syntax', () => {
   }
   it('explains it as the command `[`, in en and ja', () => {
     const en = explain('[ -f x ]').items[0];
-    assert.match(en.explanation, /^Command `\[` \(an alias of `test`\): .*ordinary command, not shell syntax.*word splitting and globbing \(`\[\[ \]\]` does not\)$/);
+    assert.match(en.explanation, /^Command `\[` \(another name for `test`\): .*ordinary command, not shell syntax: `\]` is only its last argument.*word splitting and globbing \(`\[\[ \]\]` does not\)$/);
     assert.match(en.children[1].explanation, /^The last argument passed to `\[`\./);
     const ja = explain('[ -f x ]', 0, 'ja').items[0];
     assert.match(ja.explanation, /^コマンド `\[`（`test` の別名）: .*単語分割とグロブ展開がかかる（`\[\[ \]\]` ならかからない）$/);

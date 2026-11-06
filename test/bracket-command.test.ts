@@ -51,8 +51,8 @@ describe('`[` is a command with arguments, as `test` is', () => {
     it(`says once what it is, with the summary of a command (${lang})`, () => {
       const t = top('[ -a file ]', lang);
       assert.strictEqual(t.explanation, lang === 'en'
-        ? 'Command `[` (an alias of `test`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so `[` and `]` need spaces around them, and the arguments inside undergo word splitting and globbing (`[[ ]]` does not)'
-        : 'コマンド `[`（`test` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、`[` と `]` の前後に空白が要り、中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）');
+        ? 'Command `[` (another name for `test`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax: `]` is only its last argument, checked when `[` runs, and the arguments inside undergo word splitting and globbing (`[[ ]]` does not)'
+        : 'コマンド `[`（`test` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、`]` は最後の引数にすぎず（`[` が動くときに確かめる）、中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）');
       assert.deepStrictEqual(t.children.filter((c) => c.label === '['), [], 'no row of the name under the command');
       // (The summary of the line, and so `--format json`'s `summary`, says the test as it did: `test` and the words.)
       assert.strictEqual(explain('[ -a file ]', lang).summary, lang === 'en' ? 'test [ -a file ]' : '条件判定 [ -a file ]');
@@ -90,7 +90,7 @@ describe('`[` is a command with arguments, as `test` is', () => {
   it('says the word `[` by itself in the reading tree, as it did when the word had a token of its own', () => {
     const name = (src: string, line = 0) => readingNodes(explain(src, 'en', line).reading!).find((n) => n.kind === 'commandName' && n.label === '[')!;
     const builtin = name('[ -a file ]');
-    assert.strictEqual(builtin.text, 'Command `[` (an alias of `test`)');
+    assert.strictEqual(builtin.text, 'Command `[` (another name for `test`)');
     assert.deepStrictEqual(builtin.refs, ['3.7.1', '3.7.2', '4.1']);
     assert.strictEqual(builtin.basis, undefined);
     assert.strictEqual(builtin.name?.runs, 'builtin');
