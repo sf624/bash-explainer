@@ -116,9 +116,9 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 
 **Fix.** Extend the sheet's own constants and its one heights function; add no second gesture model.
 
-- A grab area that a thumb finds: the bar drawn at 48 x 5 px, and a hit area of at least 44 px high around it that no control overlaps (Q7).
+- A grab area that a thumb finds: a grab strip of its own, 44 px high, above the tabs row, around the bar drawn at 48 x 5 px; no control overlaps it (Q7).
 - A fling needs more speed and distance (`FLING` to about 1 px/ms, and a minimum travel), so a short flick does not jump a height.
-- Full stops 8 px below the editor's header strip, so a tap just above the sheet is not a rename; or the rename opens from the pencil only on a phone (Q7).
+- Full stops 8 px below the editor's header strip, so a tap just above the sheet is not a rename, and on a phone the rename opens from the pencil only (Q7).
 - The app bar is never under the sheet during a drag: the drag's top is clamped at the bar's bottom until the snap settles.
 - The first height stays half; the peek is kept.
 
@@ -152,7 +152,7 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 
 **Products.** The web page and the VS Code panel (the headline, the depth names); the web page only (the file).
 
-**Tests.** Unit: the panel headline's word equals the strip's label for every dialect note and every fact with a heading (the corpus). Web: clear, paste logins.sh after test.bats: the kind and name Q8 decides; the depth control's names at every width (the existing tests of `viewControlForms`).
+**Tests.** Unit: the panel headline's word equals the strip's label for every dialect note and every fact with a heading (the corpus). Web: clear, paste logins.sh after test.bats: the kind and name of Q8; the depth control's names at every width (the existing tests of `viewControlForms`).
 
 ### 2.7 The length, "In short", and the phone's half height
 
@@ -241,7 +241,7 @@ Each step is one PR and keeps every test passing. The order puts the largest eff
 | Step | What | Findings | Products | Phone |
 |---|---|---|---|---|
 | U1 | The fix as a whole line: `applyRewrite` (in place of `edited` and the tests' `applied`), the Fix box with the line and its changed part, out of "More", "Copy fix", the header's "Copy as Markdown", the blanks of `shellWords` | 2.2, part of 2.6 | VS Code panel, web panel | No |
-| U2 | The hint toward POSIX sh, as Q2 decides: the count from `dialectIssues` for sh, the strip's line and its button | 2.1 | Web page (VS Code: Q3) | The tab's line only, no layout |
+| U2 | The hint toward POSIX sh, as Q2 decided: the count from `dialectIssues` for sh, the strip's line and its button | 2.1 | Web page (VS Code: Q3) | The tab's line only, no layout |
 | U3 | Names and state: the depth names and their digits, the panel's headline from the note's label, what Clear and a new script reset (the kind, the name, the shell) | 2.6, 2.9, 2.10 | Web page, VS Code panel | No |
 | U4 | The hover card after a click, and the Legend as a popover (with the empty one) | 2.4, 2.11 | Web page, VS Code panel | No |
 | U5 | Depth 1 shows bash's steps where a step acts; the glob example open by the rule; the tester's text kept | 2.3 | VS Code panel, web panel | No |
