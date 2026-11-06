@@ -28,7 +28,7 @@ import { readSaid, tokenSaid, type TokenTextArgs, type TokenTextId } from './mes
 import { markedText } from './tokenmarks';
 import type { Pos, ScriptProcess, Span, Token } from './analyzer-types';
 import type { Basis, TryIt } from './basis';
-import { binaryTestOperands, binaryTestOps, extendedEqualOps, plainPatternOps, testOperandTexts, unaryTestOperands, unaryTestOps } from './dict/syntax';
+import { binaryTestOp, binaryTestOperands, extendedEqualOps, plainPatternOps, testOperandTexts, unaryTestOperands, unaryTestOps } from './dict/syntax';
 import type { Lang } from './i18n';
 import type { Shell } from './shellfeatures';
 import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } from './refs';
@@ -387,7 +387,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const op = c.type === 'test_operator' ? c.text : c.type;
     // (A pattern with no wildcard: a plain comparison, said here once.)
     const plain = inDouble && cx.plainPattern(fields(c.parent!, 'right')[0]) !== undefined;
-    const text = c.parent!.type === 'unary_expression' && op !== '!' ? unaryTestOps[op] : plain ? plainPatternOps.operator[op] : inDouble ? extendedEqualOps[op] : binaryTestOps[op];
+    const text = c.parent!.type === 'unary_expression' && op !== '!' ? unaryTestOps[op] : plain ? plainPatternOps.operator[op] : inDouble ? extendedEqualOps[op] : binaryTestOp(op, cx.shell);
     return text?.[cx.lang];
   };
 

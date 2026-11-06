@@ -4,10 +4,11 @@ import type { Kind, ScriptProcess } from '../analyzer-types';
 import type { Lang } from '../i18n';
 import type { Layer, ReadingNode } from '../reading';
 import { READING_KINDS } from '../roles';
-import { ui } from './texts';
+import { panelTexts } from './texts';
 
-type TreeTexts = (typeof ui)[Lang]['panel']['tree'];
-const texts = (lang: Lang): TreeTexts => ui[lang].panel.tree;
+/** The shell that reads the script (`LineExplanation.shell`): none is bash. */
+export type ScriptShell = string | undefined;
+const texts = (lang: Lang, shell?: ScriptShell) => panelTexts(lang, shell).tree;
 const of = (table: object, key: string): string | undefined => (table as Record<string, string>)[key];
 /** The shell that parses a node of the layer `child` (a substitution's subshell where it is not said). */
 const processOf = (n: ReadingNode): ScriptProcess => n.process ?? 'subshell';
@@ -22,14 +23,14 @@ export function aboutKey(n: Pick<ReadingNode, 'layer' | 'kind' | 'reader' | 'lab
 }
 
 /** What a node's kind is in general, where the table says it. */
-export const aboutOf = (n: ReadingNode, lang: Lang): string | undefined => of(texts(lang).about, aboutKey(n));
+export const aboutOf = (n: ReadingNode, lang: Lang, shell?: ScriptShell): string | undefined => of(texts(lang, shell).about, aboutKey(n));
 
 /**
  * The name a node is shown with: where it stands in bash's reading or in its command's (a command name with what it runs), or the language. '' where
  * it stands nowhere that can be named: a token inside a language, whose row says what it is, and a piece of a word bash has no node for (`*` of `*.txt`).
  */
-export function chipOf(n: ReadingNode, lang: Lang): string {
-  const t = texts(lang);
+export function chipOf(n: ReadingNode, lang: Lang, shell?: ScriptShell): string {
+  const t = texts(lang, shell);
   if (n.kind === 'language') return of(t.languages, n.label) ?? n.label;
   // (A word the command reads that is not an option is an operand: bash's arguments are called arguments.)
   if (n.layer === 'command' && n.valueFor) {
@@ -47,8 +48,8 @@ export function chipOf(n: ReadingNode, lang: Lang): string {
 }
 
 /** Who reads a node, in full: bash, which shell parses it again, the command (a part of the shell, a program, a new bash), or the language and who reads it. */
-export function readerOf(n: ReadingNode, lang: Lang): string {
-  const r = texts(lang).readers;
+export function readerOf(n: ReadingNode, lang: Lang, shell?: ScriptShell): string {
+  const r = texts(lang, shell).readers;
   if (n.layer === 'child') return r.child[processOf(n)];
   // (bash reads two languages itself: the regex of `=~`, and a prompt string, the value of `PS1` or `PS4`.)
   if (n.layer === 'language' && n.reader === 'bash') return n.label === 'prompt' ? r.promptLanguage : r.bashLanguage;
@@ -65,11 +66,11 @@ export function startsBand(n: ReadingNode, parent: ReadingNode | undefined): boo
 }
 
 /** The name at the right of a band: where a new reader takes over. */
-export function bandOf(n: ReadingNode, lang: Lang): string {
-  const t = texts(lang);
+export function bandOf(n: ReadingNode, lang: Lang, shell?: ScriptShell): string {
+  const t = texts(lang, shell);
   // (A node of the layer `command` always has its reader: the command's name, src/reading.ts.)
   if (n.layer === 'command') return t.reads.replace('{name}', n.reader!);
-  if (n.layer === 'language') return chipOf(n, lang);
+  if (n.layer === 'language') return chipOf(n, lang, shell);
   if (n.layer === 'child') return t.bands.child[processOf(n)];
   return t.bands.bash;
 }
@@ -95,14 +96,14 @@ export interface RowRole {
 }
 
 /** The role of a node on a row: `up`, the node around it. None where it has no name (`chipOf`). */
-export function roleFor(n: ReadingNode, up: ReadingNode | undefined, lang: Lang): RowRole | undefined {
-  const chip = chipOf(n, lang);
+export function roleFor(n: ReadingNode, up: ReadingNode | undefined, lang: Lang, shell?: ScriptShell): RowRole | undefined {
+  const chip = chipOf(n, lang, shell);
   if (!chip) return undefined;
   const id = [n.layer, n.kind, ...(n.valueFor ? [`value:${n.valueFor}`] : []), ...(n.expands ? [n.expands] : [])].join(':');
-  const about = aboutOf(n, lang);
-  const reader = readerOf(n, lang);
-  const said = about ? about + ui[lang].panel.steps.because.replace('{why}', () => reader) : reader;
-  return { id, layer: n.layer, chip, ...(startsBand(n, up) ? { band: bandOf(n, lang) } : {}), ...(n.process ? { process: n.process } : {}), said };
+  const about = aboutOf(n, lang, shell);
+  const reader = readerOf(n, lang, shell);
+  const said = about ? about + panelTexts(lang, shell).steps.because.replace('{why}', () => reader) : reader;
+  return { id, layer: n.layer, chip, ...(startsBand(n, up) ? { band: bandOf(n, lang, shell) } : {}), ...(n.process ? { process: n.process } : {}), said };
 }
 
 /** A name on a row's role line: what comes from another reader starts with an arrow. `said`: what it opens to; `id`: the same in both languages. */
