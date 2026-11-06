@@ -2,6 +2,8 @@
 
 [User guide](README.md) · English · [日本語](ja/settings.md)
 
+Every setting is in VS Code's Settings editor under *Bash Explainer* (**Bash Explainer: Open Settings** in the hover and the panel opens it). The web page, the command-line tool and the Language Server take the same settings where they have a meaning ([Settings outside VS Code](#settings-outside-vs-code)).
+
 ## Settings in VS Code
 
 | Setting | Default | Description |

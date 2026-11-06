@@ -138,4 +138,20 @@ describe('the user documentation', () => {
       if (f !== 'README.md') assert.ok(en.includes('README.md') && ja.includes('README.md'), f);
     }
   });
+
+  /** The pages of a folder of the guide that its index (README.md) does not link to. */
+  const unlisted = (index: string, pages: string[]) => {
+    const linked = new Set(linkTargets(index).map((l) => l.url.replace(/#.*$/, '')));
+    return pages.filter((f) => f !== 'README.md' && !linked.has(f));
+  };
+
+  it('lists every page of the guide in its index, in both languages', () => {
+    for (const dir of ['docs/guide', 'docs/guide/ja']) {
+      const index = read(`${dir}/README.md`);
+      assert.deepStrictEqual(unlisted(index, guidePages(dir)), [], dir);
+      // (Without its row, a page is unlisted.)
+      const row = index.split('\n').find((l) => l.includes('](privacy.md)'))!;
+      assert.deepStrictEqual(unlisted(index.replace(row, ''), guidePages(dir)), ['privacy.md'], dir);
+    }
+  });
 });

@@ -2,6 +2,8 @@
 
 [User guide](README.md) · English · [日本語](ja/vscode.md)
 
+This page covers the extension in VS Code: the ways to install it, the three ways it shows explanations, the panel and the commands. To start at once, follow the [Quick start](../../README.md#quick-start) in the README.
+
 ## Installation
 
 - **Marketplace:** [shun-fujioka.bash-explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
