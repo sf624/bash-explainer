@@ -12,7 +12,7 @@ import { undo } from '@codemirror/commands';
 import { repositionTooltips, ViewUpdate } from '@codemirror/view';
 import { Analyzer, LineExplanation } from '../src/analyzer';
 import type { AutoShell } from '../src/dialect';
-import { autoShellAt, DocumentIssue, explainDocumentLine, issueFilter, ShellDocument, Shells } from '../src/document';
+import { autoShellAt, DocumentIssue, explainDocumentLine, issueFilter, leanExplanation, leanOptions, ShellDocument, Shells } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
 import { problemLevels } from '../src/levels';
@@ -126,6 +126,9 @@ let readingShown = '';
 const analyzer = () => analyzers.get(lang) ?? analyzers.set(lang, new Analyzer(lang)).get(lang)!;
 
 /** The script as the explainers see it, parsed once per change. */
+/** What the editor's colours were worked out for, by parse: one key for each language, shells and options. */
+const colourKeys = new WeakMap<ShellDocument, Map<string, object>>();
+
 function shellDocument(): ShellDocument | undefined {
   const text = withEol(editor.text, fileState.format.eol);
   const { kind } = kinds;
@@ -186,6 +189,18 @@ const editor = new Editor({
   settings: () => settings,
   document: shellDocument,
   shells,
+  colourSource() {
+    const doc = shellDocument();
+    if (!doc) return undefined;
+    const s = shells();
+    // (The options of the problems' own pass, `diagnosticsFor`, so that the two share the lean explanations.)
+    const opts = leanOptions({ ...explainOptions(settings), pitfalls: true });
+    const id = JSON.stringify([lang, s, opts]);
+    let keys = colourKeys.get(doc);
+    if (!keys) colourKeys.set(doc, (keys = new Map()));
+    const key = keys.get(id) ?? keys.set(id, {}).get(id)!;
+    return { key, explain: (line: number) => leanExplanation(doc, line, lang, s, opts) };
+  },
   explainer() {
     const doc = shellDocument();
     if (!doc) return undefined;
@@ -256,6 +271,7 @@ function updatePanel(): void {
   if (mode.panel && !stateReceived) return;
   const doc = shellDocument();
   if (!doc) return;
+  const start = performance.now();
   const line = editor.cursorLine();
   const s = shells();
   const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), ...explainNeeds(panel.panelState()), sentence: true });
@@ -269,6 +285,8 @@ function updatePanel(): void {
     animations: settings['panel.animations'], issues: problemsShown, shown: issueFilter(doc, settings, 'web'), web: true, state: panel.panelState(),
   });
   panel.show(update, line);
+  // (For the measurements of docs/design/one-colour-source.md.)
+  performance.measure('bx-panel', { start });
   yqLine = { options: update.dialect.yqs, value: update.dialect.yq };
   scope?.draw();
   // (The Shell setting says the shell the script reads as now: decision 12.)

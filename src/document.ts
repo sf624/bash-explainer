@@ -120,6 +120,33 @@ function unsuppressed(doc: ShellDocument, issues: DocumentIssue[], ignore: reado
 /** A note's code, and the code of another problem that says the same where both are (a Dockerfile `RUN` with `set -e` and a pipe). */
 const SAME_PROBLEM: Readonly<Record<string, string>> = { 'pipefail-missing': 'dockerPipefail' };
 
+/**
+ * The options of a lean explanation: without examples and idioms, which add no warning, and without the reading tree, the
+ * argv and the POSIX notes. Its tokens are those of the full explanation (their kinds and spans do not depend on these
+ * options, nor on the language: measured over the corpus, docs/design/one-colour-source.md), so the problems and the
+ * editor's colours read the same lean explanations.
+ */
+export const leanOptions = (opts: ExplainOptions): ExplainOptions => ({ ...withoutExamples(opts), idioms: false, reading: false, argv: false, notPosix: false });
+
+/** The lean explanations of a document's lines, by its tree, for the language, shells and options they were made with. */
+const leanLines = new WeakMap<SyntaxTree, Map<string, Map<number, LineExplanation>>>();
+const leanAnalyzers: Partial<Record<Lang, Analyzer>> = {};
+
+/**
+ * The lean explanation of a line (`opts` from `leanOptions`), worked out once per tree: the problems of the document
+ * (`noteIssues`) and the editor's colours share it, whichever asks first.
+ */
+export function leanExplanation(doc: ShellDocument, line: number, lang: Lang, shells: Shells, opts: ExplainOptions): LineExplanation {
+  const key = JSON.stringify([lang, shells.forced, saidShell(shells.detected), shells.script, opts]);
+  let byKey = leanLines.get(doc.tree);
+  if (!byKey) leanLines.set(doc.tree, (byKey = new Map()));
+  let lines = byKey.get(key);
+  if (!lines) byKey.set(key, (lines = new Map()));
+  let ex = lines.get(line);
+  if (!ex) lines.set(line, (ex = explainDocumentLine((leanAnalyzers[lang] ??= new Analyzer(lang)), doc, line, lang, shells, opts)));
+  return ex;
+}
+
 /** The note problems of a document, by its tree, for the language, shells and options they were found with. */
 const noteIssueCache = new WeakMap<SyntaxTree, Map<string, DocumentIssue[]>>();
 
@@ -141,14 +168,12 @@ export function noteAnchors(ex: Pick<LineExplanation, 'anchors'>, n: Note): read
  * other problems) says is not parsed, and none where one of them already says the same.
  */
 export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts: ExplainOptions, others: readonly DocumentIssue[] = []): DocumentIssue[] {
-  // (Examples and idioms add no warning: the line is explained without them, and without its reading tree.)
-  const lean: ExplainOptions = { ...withoutExamples(opts), idioms: false, reading: false, argv: false, notPosix: false };
+  const lean = leanOptions(opts);
   const key = JSON.stringify([lang, shells.forced, saidShell(shells.detected), shells.script, lean, others.map((i) => [i.code, i.startLine, i.startCol, i.endCol, i.message])]);
   let byKey = noteIssueCache.get(doc.tree);
   if (!byKey) noteIssueCache.set(doc.tree, (byKey = new Map()));
   const known = byKey.get(key);
   if (known) return known;
-  const analyzer = new Analyzer(lang);
   // (zsh syntax that bash cannot read: the tree there is not the script's.)
   const unparsed = others.filter((i) => i.code === 'zshSyntax');
   const out: DocumentIssue[] = [];
@@ -159,7 +184,7 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
   // (Each anchor once: a statement over several lines gives the same ones to each of its lines, `Whole`.)
   const read = new Set<NoteAnchor>();
   for (let line = 0; line < doc.lines.length; line++) {
-    const ex = explainDocumentLine(analyzer, doc, line, lang, shells, lean);
+    const ex = leanExplanation(doc, line, lang, shells, lean);
     const anchors = ex.anchors?.filter((a) => !read.has(a)) ?? [];
     if (!anchors.length) continue;
     const onNote = new Map<string, NoteAnchor[]>();

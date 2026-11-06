@@ -1,4 +1,4 @@
-// The script editor (CodeMirror): the shell's colours from our own syntax tree, the host files' modes, the
+// The script editor (CodeMirror): the shell's colours from the explanation's tokens, the host files' modes, the
 // problems found in the script, and the few things the page does to the text and the selection.
 import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from '@codemirror/commands';
 import { HighlightStyle, StreamLanguage, StreamParser, syntaxHighlighting } from '@codemirror/language';
@@ -8,20 +8,19 @@ import { json } from '@codemirror/legacy-modes/mode/javascript';
 import { python } from '@codemirror/legacy-modes/mode/python';
 import { yaml } from '@codemirror/legacy-modes/mode/yaml';
 import { Diagnostic, forEachDiagnostic, forceLinting, linter, lintGutter, setDiagnosticsEffect } from '@codemirror/lint';
-import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
-import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewPlugin, ViewUpdate } from '@codemirror/view';
+import { Compartment, EditorState, Prec, StateEffect, StateField } from '@codemirror/state';
+import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import type { LineExplanation, Span } from '../src/analyzer';
 import { DocumentIssue, diagnosticsFor, fixTitle, plain, ShellDocument, shellOf, Shells } from '../src/document';
-import { documentHighlight, HighlightKind, HIGHLIGHT_KINDS } from '../src/highlight';
-import type { HighlightModifier } from '../src/semanticFacts';
 import { Lang } from '../src/i18n';
 import { FADED, LEVELS, type ProblemSeverity, problemLevel, SEVERITIES } from '../src/levels';
 import type { ProblemSpan } from '../src/ui/problemNav';
 import { BlockOutline, Settings } from '../src/settings';
 import { nameHints, type NameHint } from '../src/ui/nameHints';
-import { CLASSIC_COLOURS, kindColour } from './editor-colors';
+import { ROLE_COLOURS, ROLE_STYLES } from './editor-colors';
 import { blockOutline, refreshOutline } from './block-outline';
+import { type ColourSource, tokenColourField, TokenColours } from './token-colours';
 import { drawIcon, iconMask } from './icons';
 import { webHover, WebHover } from './hover';
 import { scrollToShow, viewTarget } from '../src/ui/cursorView';
@@ -33,7 +32,7 @@ import { TEXT } from './text';
 import { setWrapRuns, wordWrap } from './word-wrap';
 import { wrapRuns } from '../src/ui/wrapRuns';
 
-// The shell code is coloured from our own syntax tree (src/highlight.ts); these modes colour the rest of a host file.
+// The shell code is coloured from the explanation's tokens (web/token-colours.ts); these modes colour the rest of a host file.
 const MODES: Partial<Record<Kind, StreamParser<unknown>>> = {
   dockerfile: dockerFile, yaml, npm: json, python, jenkinsfile: groovy,
 };
@@ -60,79 +59,21 @@ const highlightField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-// ---- Shell highlighting: from the tree the explanations are made from (src/highlight.ts) ----------
-
-/** A span to colour, in editor positions. */
-interface Shading { from: number; to: number; kind: HighlightKind; modifiers?: readonly HighlightModifier[] }
-
-const marks = new Map<string, Decoration>();
-/** The mark of a kind, with a class for each modifier (`cm-bx-variable cm-bx-readonly`), as the semantic tokens have them. */
-const mark = (s: Shading) => {
-  const cls = [`cm-bx-${s.kind}`, ...(s.modifiers ?? []).map((m) => `cm-bx-${m}`)].join(' ');
-  return marks.get(cls) ?? marks.set(cls, Decoration.mark({ class: cls })).get(cls)!;
-};
-/** New spans for the text the editor has now. */
-const setShadings = StateEffect.define<Shading[]>();
-
-/**
- * Marks the visible part of the script with the spans. While the text changes, the marks move with it
- * until the new spans come (debounced, as the panel is), so typing never waits for a parse.
- */
-const shading = ViewPlugin.fromClass(class {
-  decorations: DecorationSet;
-  spans: Shading[] = [];
-  /** Whether `spans` are positions in the current text. */
-  current = false;
-  constructor(view: EditorView) {
-    this.decorations = this.build(view);
-  }
-  update(u: ViewUpdate): void {
-    const fresh = u.transactions.flatMap((tr) => tr.effects.filter((e) => e.is(setShadings)));
-    if (fresh.length) {
-      // shade() sends them alone, made from the text of that moment.
-      this.spans = fresh[fresh.length - 1].value as Shading[];
-      this.current = true;
-    } else if (u.docChanged) {
-      this.current = false;
-    }
-    if (this.current && (fresh.length || u.viewportChanged)) this.decorations = this.build(u.view);
-    else if (u.docChanged) this.decorations = this.decorations.map(u.changes);
-  }
-  build(view: EditorView): DecorationSet {
-    const b = new RangeSetBuilder<Decoration>();
-    let i = 0;
-    for (const r of view.visibleRanges) {
-      // The first span that ends after the start of the range.
-      let lo = i, hi = this.spans.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (this.spans[mid].to <= r.from) lo = mid + 1;
-        else hi = mid;
-      }
-      for (i = lo; i < this.spans.length && this.spans[i].from < r.to; i++) b.add(this.spans[i].from, this.spans[i].to, mark(this.spans[i]));
-    }
-    return b.finish();
-  }
-}, { decorations: (p) => p.decorations });
-
-// The colours of the panel (editor-colors.ts): the shell's kinds, and the host files' modes (Dockerfile, YAML,
-// Makefile, …) by the kind that means the same.
+// The colours of the panel (editor-colors.ts): the host files' modes (Dockerfile, YAML,
+// Makefile, …) by the role that means the same.
 const highlightStyle = HighlightStyle.define([
-  { tag: [tags.keyword, tags.controlKeyword], color: kindColour('keyword') },
-  { tag: tags.operator, color: kindColour('operator') },
-  { tag: [tags.string, tags.special(tags.string)], color: kindColour('string') },
-  { tag: tags.comment, color: kindColour('comment'), fontStyle: 'italic' },
-  { tag: [tags.variableName, tags.special(tags.variableName), tags.definition(tags.variableName)], color: kindColour('variable') },
-  { tag: [tags.number, tags.bool, tags.atom], color: kindColour('number') },
-  { tag: [tags.function(tags.variableName), tags.standard(tags.variableName), tags.propertyName, tags.attributeName], color: kindColour('function') },
-  { tag: tags.meta, color: CLASSIC_COLOURS.muted },
+  { tag: [tags.keyword, tags.controlKeyword], color: ROLE_COLOURS.keyword },
+  { tag: tags.operator, color: ROLE_COLOURS.operator },
+  { tag: [tags.string, tags.special(tags.string)], color: ROLE_COLOURS.string },
+  { tag: tags.comment, color: ROLE_COLOURS.comment, fontStyle: 'italic' },
+  { tag: [tags.variableName, tags.special(tags.variableName), tags.definition(tags.variableName)], color: ROLE_COLOURS.variable },
+  { tag: [tags.number, tags.bool, tags.atom], color: ROLE_COLOURS.number },
+  { tag: [tags.function(tags.variableName), tags.standard(tags.variableName), tags.propertyName, tags.attributeName], color: ROLE_COLOURS.command },
+  { tag: tags.meta, color: ROLE_COLOURS.comment },
 ]);
 
 const shellColours = {
-  ...Object.fromEntries(HIGHLIGHT_KINDS.map((k) => [`.cm-bx-${k}`, { color: kindColour(k), ...(k === 'comment' || k === 'shebang' ? { fontStyle: 'italic' } : {}) }])),
-  // A readonly variable in bold, an exported one underlined (dotted): the palette keeps the variable's colour.
-  '.cm-bx-readonly': { fontWeight: 'bold' },
-  '.cm-bx-exported': { textDecoration: 'underline dotted' },
+  ...ROLE_STYLES,
 };
 
 /**
@@ -231,6 +172,8 @@ export interface EditorHost {
   /** The script as the explainers see it, parsed once per change. */
   document(): ShellDocument | undefined;
   shells(): Shells;
+  /** The lean explanations of the script as it is now, which its colours are made from (web/token-colours.ts). */
+  colourSource(): ColourSource | undefined;
   /** Explains the lines of the script as it is now (for the name hints); undefined while there is nothing to explain. */
   explainer(): ((line: number) => LineExplanation) | undefined;
   /** The problems found in the script (the ones shown), and the warning codes in it. */
@@ -272,10 +215,10 @@ export class Editor {
   /** The room a toast takes at the editor's bottom (web/toast.ts): the cursor's line is kept above it. */
   private readonly marginMode = new Compartment();
   private bottomMargin = 0;
-  private readonly shadings = new WeakMap<ShellDocument, { shell: string; spans: Shading[] }>();
   /** The runs where long lines must not break (src/ui/wrapRuns.ts), worked out once per parse. */
   private readonly runs = new WeakMap<ShellDocument, Array<readonly [number, number]>>();
-  private shadingTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The shell's colours, from the explanations of the lines in view. */
+  private readonly colours: TokenColours;
   private readonly hintCaches = new WeakMap<ShellDocument, HintCache>();
   private hintTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly withHints: boolean;
@@ -289,8 +232,11 @@ export class Editor {
       const doc = host.document();
       if (!doc) return [];
       const lang = host.lang();
+      const start = performance.now();
       const found = diagnosticsFor(() => doc, () => host.shells(), lang, host.settings(), 'web');
       const list = found.shown;
+      // (For the measurements of docs/design/one-colour-source.md.)
+      performance.measure('bx-problems', { start });
       host.problems(list, [...new Set(found.all.map((i) => i.code))].sort());
       // Code that never runs: a hint, faded (as VS Code fades `DiagnosticTag.Unnecessary`); not in the Problems list.
       const faded: Diagnostic[] = found.faded.map((r) => ({
@@ -325,40 +271,23 @@ export class Editor {
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.marginMode.of(roomUnderText(0)), EditorView.scrollMargins.of(() => ({ bottom: this.bottomMargin + sheetCover() })), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
-          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== SEVERITIES[FADED].codemirror) }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []), this.outlineMode.of(init.problems ? blockOutline((this.outline = host.settings().blockOutline), () => host.document()) : []),
+          highlightField, Prec.highest(tokenColourField), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== SEVERITIES[FADED].codemirror) }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []), this.outlineMode.of(init.problems ? blockOutline((this.outline = host.settings().blockOutline), () => host.document()) : []),
           EditorView.updateListener.of((u) => {
             host.changed(u);
-            if (u.docChanged) {
-              clearTimeout(this.shadingTimer);
-              this.shadingTimer = setTimeout(() => this.shade(), 100);
-            }
+            // The colours of the lines in view, after the text has rested a moment, or at once on a scroll.
+            if (u.docChanged) this.colours.changed(100);
+            else if (u.viewportChanged) this.colours.schedule(0);
             // The hints of the lines in view, after the text has rested (as the problems are checked) or at once on a scroll.
             if (u.docChanged || u.viewportChanged) this.scheduleHints(u.docChanged ? 300 : 50);
           }),
         ],
       }),
     });
+    this.colours = new TokenColours(this.view, () => host.colourSource());
   }
 
   get text(): string {
     return this.view.state.doc.toString();
-  }
-
-  /** The spans of the whole script, worked out once per parse. */
-  private spansOf(): Shading[] {
-    const doc = this.host.document()!;
-    // (What a command name runs depends on the shell too.)
-    const shells = this.host.shells();
-    const shell = `${shellOf(shells) ?? ''}`;
-    const known = this.shadings.get(doc);
-    if (known?.shell === shell) return known.spans;
-    const lines = this.view.state.doc;
-    const spans = documentHighlight(doc, { shells }).map((s) => {
-      const start = lines.line(s.line + 1).from;
-      return { from: start + s.from, to: start + s.to, kind: s.kind, ...(s.modifiers ? { modifiers: s.modifiers } : {}) };
-    });
-    this.shadings.set(doc, { shell, spans });
-    return spans;
   }
 
   /** The runs of the whole script, in editor positions, worked out once per parse. */
@@ -377,9 +306,11 @@ export class Editor {
 
   /** Colours the script as it is now (the parse is shared with the panel and the problems), and where its long lines may wrap. */
   shade(): void {
-    clearTimeout(this.shadingTimer);
     const wrap = this.host.settings()['editor.wrap'];
-    this.view.dispatch({ effects: [setShadings.of(this.spansOf()), refreshOutline.of(null), ...(wrap ? [setWrapRuns.of(this.runsOf())] : [])] });
+    this.view.dispatch({ effects: [refreshOutline.of(null), ...(wrap ? [setWrapRuns.of(this.runsOf())] : [])] });
+    // (What the colours depend on may have changed: the shell, the kind of file, a setting.)
+    this.colours.stale();
+    this.colours.run();
   }
 
   /** Checks the script again now (forceLinting alone only hurries a check the text already asked for), and its name hints. */

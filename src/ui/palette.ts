@@ -10,7 +10,7 @@ import { LEVELS, type NoteLevel } from '../levels';
  * web/theme.css hold the same values, and test/contrast.test.ts compares them and measures their contrast.
  */
 
-/** A colour role: the colours of web/editor-colors.ts (CLASSIC_COLOURS), but the muted one. */
+/** A colour role: the chart colours of web/editor-colors.ts (`ROLE_COLOURS`), but the muted one. */
 export type Role = 'command' | 'option' | 'argument' | 'operator' | 'redirect' | 'variable';
 
 /** The kind of the active colour theme, as VS Code's `ColorThemeKind` gives it. */

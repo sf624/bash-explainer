@@ -150,7 +150,7 @@ Decided by the maintainer on 2026-10-31: correctness work on rare corners waits 
 
 ## Waiting on the maintainer
 
-Nothing at the moment.
+- One colour source (direction agreed by the maintainer, 2026-11-06): the editors take the colour of each part from the explanation's tokens, the panel's source, instead of src/highlight.ts. The design and a proof of concept on the web page are in [design/one-colour-source.md](design/one-colour-source.md) (#PR); its open questions (plain arguments in the editor, a line not explained, `readonly` and `exported`, the body of a here-document) and the order of its steps wait on the maintainer.
 
 ## Not decided
 

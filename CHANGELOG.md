@@ -18,6 +18,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Changed
 
+- The web page's editor colours each part as the panel does, from the same reading: an option's value (`--date=short`), a regex's operators, sed's commands, a format's `%h`, plain arguments. Before, it coloured from the syntax alone, and a readonly variable was bold, an exported one underlined.
 - In a script for `sh`, `$'…'`, `;&`, `set -o pipefail` and `read -d` say they are POSIX only since 2024, with what fails in dash or busybox ash. Before, they said "not POSIX sh".
 - `--check` and the GitHub Action now fail on the errors marked on a part of a line, such as `echo $((09))` and `#!/usr/bin/env bash -e`, which the panel marked ⓧ while `--check` passed them and the Problems strip said there was no problem. **Compatibility:** such a line now gives exit 1 and counts in the Action's `errors`; `# bash-explainer disable=arith-invalid-number` (the code in the message) keeps one. The shebang errors rest on Linux, where the kernel gives `env` the rest of the line as one argument (macOS splits it), and fail only when the file is run as a program, not with `bash file`.
 - The panel has one view with a depth: 1 What it does, 2 How bash reads it (keys 1 and 2 in the panel). Depth 2 adds to the same rows one line on who reads each part, bash's steps on a word, and a row for each reserved word and operator. Before, it had two tabs, Meaning and Reading, with eight steps; a Reading kept from before opens at depth 2.

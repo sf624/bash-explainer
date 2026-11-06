@@ -1,15 +1,17 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { HIGHLIGHT_KINDS } from '../src/highlight';
+import { KIND_ROLES, ROLES } from '../src/roles';
 import { TOKEN_OF } from '../src/semanticTokens';
-import { CLASSIC_COLOURS, CLASSIC_ROLE, kindColour, PANEL_KIND_ROLE } from '../web/editor-colors';
+import { ROLE_COLOURS, ROLE_STYLES } from '../web/editor-colors';
 
 describe('the colours of the editor', () => {
-  it('has a colour for every highlight kind', () => {
-    for (const k of HIGHLIGHT_KINDS) assert.match(kindColour(k), /^var\(--vscode-[\w-]+(, #[0-9a-f]{3,6})?\)$/, k);
-    assert.equal(kindColour('option'), CLASSIC_COLOURS.option);
-    assert.equal(kindColour('error'), 'var(--vscode-errorForeground)');
+  it('has a colour and a rule for every role of a token', () => {
+    for (const r of [...ROLES, 'error' as const]) {
+      assert.match(ROLE_COLOURS[r], /^var\(--vscode-[\w-]+(, (#[0-9a-f]{3,6}|var\(--vscode-[\w-]+, #[0-9a-f]{3,6}\)))?\)$/, r);
+      assert.equal(ROLE_STYLES[`.cm-bx-${r}`].color, ROLE_COLOURS[r], r);
+    }
+    assert.equal(ROLE_STYLES['.cm-bx-comment'].fontStyle, 'italic');
   });
 
   it('maps every semantic token type we send to a scope of the shell grammar', () => {
@@ -50,15 +52,12 @@ describe('the colours of the editor', () => {
       assert.ok(!m[3] || !(m[2] in vars), m[2]);
       for (const k of m[1].split(', ')) kindVar.set(k.slice(6), m[3] ?? m[2]);
     }
-    assert.deepEqual([...kindVar.keys()].sort(), Object.keys(PANEL_KIND_ROLE).sort());
+    assert.deepEqual([...kindVar.keys()].sort(), Object.keys(KIND_ROLES).sort());
     // An error takes the error level's colour: the editor's, as its squiggles (ours in every theme kind, see
     // test/contrast.test.ts).
     assert.equal(resolve(`var(${kindVar.get('error')})`), 'var(--vscode-editorError-foreground, var(--vscode-charts-red, #f14c4c))');
-    for (const [kind, v] of kindVar) {
-      if (kind === 'error') continue;
-      const role = PANEL_KIND_ROLE[kind as keyof typeof PANEL_KIND_ROLE];
-      assert.equal(resolve(`var(${v})`), CLASSIC_COLOURS[CLASSIC_ROLE[role]], kind);
-    }
+    // Every kind takes the editor's colour of its role: one mapping, kind to role (src/roles.ts) and role to colour.
+    for (const [kind, v] of kindVar) assert.equal(resolve(`var(${v})`), ROLE_COLOURS[KIND_ROLES[kind as keyof typeof KIND_ROLES]], kind);
     // Nothing else redefines them: no other palette on the web page, and in VS Code only the theme kinds'
     // own colours (`body.vscode-*`, compared with src/ui/palette.ts in test/contrast.test.ts).
     const page = fs.readFileSync(path.join(root, 'web', 'panel-page.css'), 'utf8');
