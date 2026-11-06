@@ -5,9 +5,9 @@
 import { invertedEffects } from '@codemirror/commands';
 import { StateEffect } from '@codemirror/state';
 import { type FileSnapshot, type FileState, newScriptFile } from './file-state';
-import { kindInfo, type KindControl } from './kinds';
+import type { KindControl } from './kinds';
 import type { Lang } from '../src/i18n';
-import type { Kind } from './samples';
+import { type Kind, kindInfo } from './samples';
 import { TEXT } from './text';
 
 /** The state of the script beside its text. */
@@ -18,8 +18,11 @@ export interface ScriptState {
   shell: string;
 }
 
-/** The script's state changes from `from` to `to` (applied by web/main.ts wherever the effect comes from: the change itself, an undo, a redo). */
-export const scriptChange = StateEffect.define<{ from: ScriptState; to: ScriptState }>();
+/** A change of the script's state, from `from` to `to`. */
+export interface ScriptChange { from: ScriptState; to: ScriptState }
+
+/** The script's state changes (applied by web/main.ts wherever the effect comes from: the change itself, an undo, a redo, the paste's toast). */
+export const scriptChange = StateEffect.define<ScriptChange>();
 
 /** Keeps `scriptChange` in the undo history: an undo carries it back, from and to swapped, and a redo again. */
 export const scriptHistory = invertedEffects.of((tr) => tr.effects.filter((e) => e.is(scriptChange)).map((e) => scriptChange.of({ from: e.value.to, to: e.value.from })));
@@ -56,13 +59,7 @@ export function scriptStates(host: ScriptHost) {
   };
   return {
     now, apply, fresh, words,
-    /** A whole script pasted over the untouched sample starts a new script of the kind `k` (`KindHost.newScript`); the toast's Undo puts the state back, the text stays. */
-    pasted(k: Kind, said: string): { words: string; back(): void } | undefined {
-      if (!host.withFiles) return undefined;
-      const from = now();
-      const to = fresh(k);
-      apply(to);
-      return { words: TEXT[host.lang()].andThen(said, words(from, to, said !== '')), back: () => apply(from) };
-    },
+    /** The change of a whole script pasted over the untouched sample (`KindHost.newScript`): none on the compare page. */
+    pasted: (k: Kind): ScriptChange | undefined => (host.withFiles ? { from: now(), to: fresh(k) } : undefined),
   };
 }

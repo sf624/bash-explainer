@@ -477,7 +477,7 @@
     if (around.length) {
       box.append(el('ul', { class: 'problem-around' }, ...around.map((/** @type {any} */ a) => {
         const go = el('button', { type: 'button', class: `problem-pointer ${a.className}`, title: a.title },
-          el('span', { 'aria-hidden': 'true' }, '↑'), levelIcon(a.icon), el('strong', { class: 'note-label' }, a.where), ' ', el('span', { class: 'problem-head-text' }, ...inline(a.head)));
+          el('span', { 'aria-hidden': 'true' }, '↑'), levelIcon(a.icon, a.levelName), el('strong', { class: 'note-label' }, a.where), ' ', el('span', { class: 'problem-head-text' }, ...inline(a.head)));
         go.addEventListener('click', () => vscode.postMessage({ type: 'reveal', span: { start: { line: a.line, character: a.column }, end: { line: a.line, character: a.endColumn } }, preserveFocus: false }));
         return el('li', {}, go);
       })));

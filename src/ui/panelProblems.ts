@@ -51,6 +51,8 @@ export interface ProblemPointer {
   level: ProblemSeverity; className: string; icon: string;
   /** The level's word and the line: "Pitfall on line 3". */
   where: string;
+  /** The level's name, for its icon, where the word does not say it ("Warning" before "Pitfall"). */
+  levelName?: string;
   /** Its tooltip: "Go to line 3". */
   title: string;
   head: string;
@@ -101,10 +103,8 @@ export function boxProblems(ex: LineExplanation, places: ReadonlyMap<Token, stri
     const rows = anchors.map((a) => tokenAtSpan(tokens, a.span)).filter((t) => t !== undefined).map((t) => places.get(t)!);
     const basis = noteBasis(ex, n.text, lang);
     const word = isNotRead(n.code) ? NOT_READ_WORD[lang] : noteWord(n, lang);
-    const name = LEVELS[n.level].name[lang];
     return {
-      level: n.level, className, icon: codicon, word,
-      ...(word === name ? { said: word } : { levelName: name, said: t.levelSaid.replace('{level}', name).replace('{word}', word) }),
+      level: n.level, className, icon: codicon, word, ...levelNamed(n.level, word, lang),
       // (Every note that can be a problem has its headline: the catalog's type, and test/problem-heads.test.ts on the corpus.)
       head: n.head,
       label: n.label, body: n.body, refs: noteRefs(ex, n.text) ?? [], ...(basis ? { basis } : {}), text: problemText(n, lang),
@@ -112,6 +112,15 @@ export function boxProblems(ex: LineExplanation, places: ReadonlyMap<Token, stri
       rows: [...new Set(rows)],
     };
   });
+}
+
+/**
+ * The level's name beside a word that names a problem, where the word does not say it ("Warning" before "Portability"
+ * or "Pitfall"; none before "Error"), from the level table; and the two together, for a name that has only the icon.
+ */
+function levelNamed(level: NoteLevel, word: string, lang: Lang): { levelName?: string; said: string } {
+  const name = LEVELS[level].name[lang];
+  return word === name ? { said: word } : { levelName: name, said: ui[lang].panel.problems.levelSaid.replace('{level}', name).replace('{word}', word) };
 }
 
 /**
@@ -126,9 +135,12 @@ export function problemsAround(ex: Pick<LineExplanation, 'line' | 'context'>, is
   return issues.filter((i) => lines.has(i.startLine) && !said.has(i.message)).map((i) => {
     const { className, codicon } = problemLevel(i.severity);
     const n = String(i.startLine + 1);
+    const level = SEVERITIES[i.severity].level;
+    const word = isNotRead(i.code) ? NOT_READ_WORD[lang] : levelWord(level, lang);
+    const { levelName } = levelNamed(level, word, lang);
     return {
-      level: i.severity, className, icon: codicon,
-      where: t.onLine.replace('{word}', isNotRead(i.code) ? NOT_READ_WORD[lang] : levelWord(SEVERITIES[i.severity].level, lang)).replace('{n}', n), title: t.toLine.replace('{n}', n), head: i.head,
+      level: i.severity, className, icon: codicon, ...(levelName ? { levelName } : {}),
+      where: t.onLine.replace('{word}', word).replace('{n}', n), title: t.toLine.replace('{n}', n), head: i.head,
       line: i.startLine, column: i.startCol, endColumn: i.endCol,
     };
   });

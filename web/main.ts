@@ -8,7 +8,8 @@
 // web/share.ts (links), web/storage.ts (what the browser keeps), web/layout.ts (dividers and sheets),
 // web/file-io.ts (opening a file, saving to one), web/editor-head.ts (the editor's header, its hint and empty block),
 // web/kinds.ts (the file kind and its samples), web/scope-chip.ts (the chip of the file type and the shell).
-import { undo } from '@codemirror/commands';
+import { undo, undoDepth } from '@codemirror/commands';
+import { Transaction } from '@codemirror/state';
 import { repositionTooltips, ViewUpdate } from '@codemirror/view';
 import { Analyzer, LineExplanation } from '../src/analyzer';
 import type { AutoShell } from '../src/dialect';
@@ -104,7 +105,10 @@ const kinds: KindControl = new KindControl({
     closePopovers();
   },
   focusHome: () => focusHome(),
-  newScript: (k, said) => scripts.pasted(k, said),
+  newScript: (k) => scripts.pasted(k),
+  scriptWords: (c, kindSaid) => scripts.words(c.from, c.to, kindSaid),
+  // (Out of the history: the paste and its reset stay one step there, which Ctrl+Z still takes back.)
+  revertScript: (c) => editor.view.dispatch({ effects: scriptChange.of({ from: c.to, to: c.from }), annotations: Transaction.addToHistory.of(false) }),
 }, shared.kind ?? 'shell');
 /** The shell and yq of the settings, as the panel's header shows them (undefined: auto). */
 const choice = () => ({ shell: forcedShell(settings), yq: settings['yq.flavor'] === 'auto' ? undefined : settings['yq.flavor'] });
@@ -205,9 +209,14 @@ const editor: Editor = new Editor({
   },
   // (Only where the page has the strip's line for it: the work is skipped otherwise.)
   ...(strip?.hasHint ? { shHint: (count: number | undefined) => strip.showHint(count) } : {}),
+  extend: (tr) => (mode.panel ? [] : kinds.startedBy(tr)),
   changed(u: ViewUpdate) {
     // A new script's state, made, taken back or made again with the text (web/script-state.ts): after the editor's update.
-    for (const tr of u.transactions) for (const e of tr.effects) if (e.is(scriptChange)) queueMicrotask(() => scripts.apply(e.value.to));
+    // An undo or a redo of it takes the place of the toast's Undo, which would undo another step then.
+    for (const tr of u.transactions) {
+      for (const e of tr.effects) if (e.is(scriptChange)) queueMicrotask(() => scripts.apply(e.value.to));
+      if ((tr.isUserEvent('undo') || tr.isUserEvent('redo')) && tr.effects.some((e) => e.is(scriptChange)) && toast.current?.action) toast.hide();
+    }
     // Undo would no longer undo the sample once the text changed again.
     if (u.docChanged && toast.current?.action?.untilEdit && !kinds.puttingText) toast.hide();
     if (u.docChanged && !mode.panel) kinds.detectPasted(u);
@@ -665,8 +674,10 @@ async function clearEditor(from: HTMLElement | null = document.activeElement as 
   if (!had && before.kind === after.kind && before.shell === after.shell && !fileState.named()) return focusHome();
   dropUndo();
   kinds.putText('', 1, [scriptChange.of({ from: before, to: after })]);
+  // (Its Undo undoes its own step only: while it is the last of the history.)
+  const depth = undoDepth(editor.view.state);
   const undoIt = () => {
-    undo(editor.view);
+    if (undoDepth(editor.view.state) === depth) undo(editor.view);
     focusHome();
   };
   status('undo', t.andThen(had && isSample(had) ? t.sampleCleared : t.editorCleared, scripts.words(before, after, false)), { label: t.undo, run: undoIt, untilEdit: true });

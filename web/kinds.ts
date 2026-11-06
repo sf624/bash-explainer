@@ -2,7 +2,7 @@
 // a pasted script that brings its own kind, whether the user's text gives way to the new kind's sample, and loading
 // a sample with an Undo. web/main.ts holds the rest of the page's state and gives this module what it needs.
 import { undo } from '@codemirror/commands';
-import type { StateEffect } from '@codemirror/state';
+import type { StateEffect, Transaction } from '@codemirror/state';
 import type { ViewUpdate } from '@codemirror/view';
 import { detectKind } from '../src/hosts/detect';
 import type { Lang } from '../src/i18n';
@@ -11,12 +11,12 @@ import type { Showing } from '../src/ui/firstRun';
 import type { FileState } from './file-state';
 import { askReplaceWithSample } from './kind-dialog';
 import { Picker } from './picker';
-import { Kind, KINDS } from './samples';
+import { Kind, KINDS, kindInfo } from './samples';
+import { scriptChange, type ScriptChange } from './script-state';
 import { TEXT } from './text';
 import type { ToastIcon, ToastSpec, ToastText } from './toast';
 
-/** A kind's name, file name, sample and the line its cursor starts on (a shell script for an unknown kind). */
-export const kindInfo = (k: Kind) => KINDS.find((x) => x.kind === k) ?? KINDS[0];
+export { kindInfo };
 
 /** Whether a text is a sample exactly as the page loads it. Read from the text itself rather than from a record of edits, so that it also holds after an undo back to a sample. */
 export const isSample = (text: string): boolean => KINDS.some((k) => k.sample === text);
@@ -43,12 +43,25 @@ export interface KindHost {
   closeSheets(): void;
   focusHome(): void;
   /**
-   * Starts a new script of the kind `k` (docs/design/usability-9.md, Q8): the editor page forgets the file and puts the
-   * shell chosen back to Auto. Gives the toast's words after `said` (which may name the kind already) and how to put it
-   * all back; nothing where the page keeps them (the compare page).
+   * The change a new script of the kind `k` makes (docs/design/usability-9.md, Q8): the editor page forgets the file and
+   * puts the shell chosen back to Auto. Nothing where the page keeps them (the compare page).
    */
-  newScript(k: Kind, said: string): { words: string; back(): void } | undefined;
+  newScript(k: Kind): ScriptChange | undefined;
+  /** What the toast says that `c` set back, after `said` (`kindSaid`: those words name the kind). */
+  scriptWords(c: ScriptChange, kindSaid: boolean): string;
+  /** Puts the state of `c.from` back, the text as it is, and out of the history (the paste's toast: its Undo). */
+  revertScript(c: ScriptChange): void;
 }
+
+/** The text that transactions inserted. */
+const insertedBy = (trs: readonly Transaction[]): string => {
+  let text = '';
+  for (const tr of trs) tr.changes.iterChanges((_fa, _ta, _fb, _tb, inserted) => { text += inserted.toString(); });
+  return text;
+};
+
+/** Whether a pasted `text` makes most of the document (80% or more): a whole script, not a few lines into one. */
+const wholeOf = (text: string, doc: string): boolean => text.trim().length >= 0.8 * doc.trim().length;
 
 export class KindControl {
   /** While the page itself puts a text in (a sample, or nothing): the edit is not the user's, so the Undo toast stays. */
@@ -107,40 +120,52 @@ export class KindControl {
   }
 
   /**
+   * The new script a paste starts (docs/design/usability-9.md, Q8), as an effect of the paste's own transaction, so
+   * that the paste and its reset are one step of the history (`scriptChange`, web/script-state.ts): only a paste that
+   * replaces the whole of the untouched sample, with no file open. Its kind comes from the text (the plain shell script
+   * when nothing says another), the script is untitled, the shell back to Auto. Nothing else does: an empty editor was
+   * made new by Clear already (a shell chosen since stays), and a file open stays the file. (EditorState.transactionExtender.)
+   */
+  startedBy(tr: Transaction): StateEffect<ScriptChange>[] {
+    if (!tr.docChanged || !(tr.isUserEvent('input.paste') || tr.isUserEvent('input.drop'))) return [];
+    const start = tr.startState.doc.toString();
+    if (!isSample(start) || this.host.files().own(start, untouched)) return [];
+    const text = insertedBy([tr]);
+    if (!wholeOf(text, tr.newDoc.toString())) return [];
+    const change = this.host.newScript(detectKind(text)?.kind ?? 'shell');
+    return change ? [scriptChange.of(change)] : [];
+  }
+
+  /**
    * A paste (or a drop) that brings a whole script decides the file kind from its content (src/hosts/detect.ts): when it
    * makes most of the text (80% or more), or the editor held only a sample or nothing. A few lines pasted into the user's
    * own script never change it. The text stays as pasted; the toast says what was detected and can undo the change of kind.
-   *
-   * A paste that replaces the whole of the untouched sample, with no file open, starts a new script (`KindHost.newScript`,
-   * docs/design/usability-9.md, Q8): its kind from the text (the plain shell script when nothing says another), untitled,
-   * the shell back to Auto. Nothing else does: an empty editor was made new by Clear already (a shell chosen since stays),
-   * and a file open stays the file.
+   * A paste that started a new script (`startedBy`) says what it set back; its Undo puts that back, the text as pasted.
    */
   detectPasted(u: ViewUpdate): void {
     const pasted = u.transactions.filter((tr) => tr.isUserEvent('input.paste') || tr.isUserEvent('input.drop'));
     if (!pasted.length) return;
-    let text = '';
-    for (const tr of pasted) tr.changes.iterChanges((_fa, _ta, _fb, _tb, inserted) => { text += inserted.toString(); });
-    const start = u.startState.doc.toString();
-    const whole = text.trim().length >= 0.8 * u.state.doc.toString().trim().length;
-    if (!whole && !untouched(start)) return;
+    const text = insertedBy(pasted);
     const found = detectKind(text);
-    const detected = found && found.kind !== this.kind ? found.kind : undefined;
-    const fresh = whole && isSample(start) && !this.host.files().own(start, untouched);
-    if (!fresh && !detected) return;
+    const started = pasted.flatMap((tr) => tr.effects).find((e) => e.is(scriptChange))?.value;
+    if (started) {
+      const kindSaid = !!found && found.kind !== started.from.kind;
+      // (After the editor's update, and after the change is applied: web/main.ts applies it in a microtask too.)
+      queueMicrotask(() => {
+        const t = TEXT[this.host.lang()];
+        const words = t.andThen(kindSaid ? t.detected(t.kinds[found.kind] ?? kindInfo(found.kind).name) : '', this.host.scriptWords(started, kindSaid));
+        if (words) this.host.status('undo', words, { label: t.undo, run: () => this.host.revertScript(started) });
+      });
+      return;
+    }
+    if (!wholeOf(text, u.state.doc.toString()) && !untouched(u.startState.doc.toString())) return;
+    if (!found || found.kind === this.kind) return;
     const before = this.kind;
     // The editor is still in its update: change its mode after it.
     queueMicrotask(() => {
+      this.set(found.kind);
       const t = TEXT[this.host.lang()];
-      const said = detected ? t.detected(t.kinds[detected] ?? kindInfo(detected).name) : '';
-      const started = fresh ? this.host.newScript(found?.kind ?? 'shell', said) : undefined;
-      if (started) {
-        if (started.words) this.host.status('undo', started.words, { label: t.undo, run: () => started.back() });
-        return;
-      }
-      if (!detected) return;
-      this.set(detected);
-      this.host.status('undo', said, { label: t.undo, run: () => this.set(before) });
+      this.host.status('undo', t.detected(t.kinds[found.kind] ?? kindInfo(found.kind).name), { label: t.undo, run: () => this.set(before) });
     });
   }
 

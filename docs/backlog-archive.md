@@ -703,6 +703,20 @@ Each entry names its kind by the label an issue of that kind gets. For `bug`, `c
 - **Reason:** Rare: an expansion as a value in the list of an associative array.
 - **Input and what is missing:** `declare -A m=([k]=$v)`: `$v` shows no bash's steps at either depth. A value of an indexed array (`a=($v)`) shows them.
 
+## From the review of names and state (#694)
+
+### A kind chosen by hand is not in the undo history
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `ui`.
+- **Reason:** Main does the same; only Clear and a paste over the sample put their reset of the kind into the history.
+- **Input and what is wrong:** On the web page, a kind chosen in the chip is not a step of the editor's history. Across Ctrl+Z and Ctrl+Shift+Z the kind stays as chosen, so the kind and the text can get out of step.
+
+### Clear's toast covers "Load the sample" on a phone
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `ui`.
+- **Reason:** It lasts a few seconds, and the toast's place is a decision of the toasts (chrome-redesign.md, C3).
+- **Input and what is wrong:** At 390 px, Clear's toast lies over most of the empty editor's **Load the sample** button and the drop hint until it goes.
+
 ## From the review of the test examples (#695)
 
 ### `[[ $x -gt 08 ]]` says "True when x=9"

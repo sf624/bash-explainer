@@ -150,3 +150,6 @@ bats_require_minimum_version 1.5.0
 `,
   },
 ];
+
+/** A kind's name, file name, sample and the line its cursor starts on (a shell script for an unknown kind). */
+export const kindInfo = (k: Kind) => KINDS.find((x) => x.kind === k) ?? KINDS[0];
