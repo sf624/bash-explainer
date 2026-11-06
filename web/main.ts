@@ -270,6 +270,7 @@ function updatePanel(): void {
     lang, explanation, file: scriptName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
     choice: choice(), detected: auto, placement: settings['examples.placement'],
     animations: settings['panel.animations'], issues: problemsShown, shown: issueFilter(doc, settings, 'web'), web: true, state: panel.panelState(),
+    cursor: editor.cursor().col,
   });
   panel.show(update, line);
   yqLine = { options: update.dialect.yqs, value: update.dialect.yq };

@@ -63,6 +63,14 @@ In the panel, in VS Code and on the web page, a problem with a fix shows it unde
 
 The quick fixes in the editors do not change. The note's own text still names the part to write.
 
+### Bash's steps at depth 1, and the glob's example
+
+In the panel, in VS Code and on the web page:
+
+- At depth 1, a word that a step of bash changes shows the steps in one line, as depth 2 does: `"$USER"` says "bash's steps: parameter expansion → no word splitting or globbing (quoted) → quote removal", `~/docs` "tilde expansion", `$a` "parameter expansion → word splitting → globbing", `*.txt` "globbing". A word no step changes (`plain`, `"q"`) shows nothing more; at depth 2 its steps still fold to one line. Before, the steps were only at depth 2.
+- The example of a glob's names ("Example for … (glob /var/log/*.log)") starts open when it is the line's only example, or when the cursor is on its command (`grep … /var/log/*.log | sort`: open with the cursor on `grep …`, closed on `sort`). An example you open or close stays so on that line. Before, it always started closed.
+- Names typed in the example stay, with their result, when the depth changes and when the cursor moves on the same line. Before, a redraw put back the example's own names.
+
 ### The Copy buttons say what they copy
 
 The web page's panel header says **Copy as Markdown** / 「Markdown でコピー」 beside its icon, and **Markdown** under it where the header is narrow. Before, it said **Copy**, like the fix's button. **Copy a link** does not change.

@@ -4,7 +4,7 @@ import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
 import { type ReadingNode, readingNodes } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { explainNeeds, isPressed, needsDiffer, PANEL_DEFAULTS, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
+import { explainNeeds, isPressed, PANEL_DEFAULTS, PanelState, panelState, panelUpdate, shownDiffers, viewControl } from '../src/ui/panelView';
 import { panelTools, viewControlForms } from '../src/ui/panelHead';
 import { aboutKey, aboutOf, bandOf, chipOf, readerOf, roleFor, roleLine, roleOf, startsBand } from '../src/ui/panelRoles';
 
@@ -131,21 +131,22 @@ describe('the view slot\'s contract (src/ui/panelView.ts)', () => {
     }
   });
 
-  it('says what the explanation needs: the reading tree at depth 2, what each program receives with the switch on, the marks of POSIX sh either way', () => {
+  it('says what the explanation needs: the reading tree at both depths, what each program receives with the switch on, the marks of POSIX sh either way', () => {
     assert.deepStrictEqual(
       [{}, { depth: 1 as const }, { depth: 2 as const }, { receives: false }, { depth: 2 as const, receives: false }].map(explainNeeds),
       [
-        { reading: false, argv: true, notPosix: true },
-        { reading: false, argv: true, notPosix: true },
         { reading: true, argv: true, notPosix: true },
-        { reading: false, argv: false, notPosix: true },
+        { reading: true, argv: true, notPosix: true },
+        { reading: true, argv: true, notPosix: true },
+        { reading: true, argv: false, notPosix: true },
         { reading: true, argv: false, notPosix: true },
       ],
     );
-    const at = (state: PanelState) => explainNeeds(state);
-    assert.strictEqual(needsDiffer(at({}), at({ depth: 1, receives: true })), false, 'what was the default, chosen');
-    assert.strictEqual(needsDiffer(at({}), at({ depth: 2 })), true);
-    assert.strictEqual(needsDiffer(at({}), at({ receives: false })), true);
+    // (A host draws the line again for another depth or the switch turned, not for the default chosen.)
+    assert.strictEqual(shownDiffers({}, { depth: 1, receives: true }), false, 'what was the default, chosen');
+    assert.strictEqual(shownDiffers({}, { depth: 2 }), true);
+    assert.strictEqual(shownDiffers({}, { receives: false }), true);
+    assert.strictEqual(shownDiffers({ depth: 2 }, { depth: 2, receives: true }), false);
   });
 
   it('keeps the switch only once it was chosen, and a value that is no choice not at all', () => {

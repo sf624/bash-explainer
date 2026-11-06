@@ -26,9 +26,12 @@ const SCRIPTS = {
  * The maintainer accepted this budget on 2026-11-05, after a check on a real device; the usability test judges the length again.
  * The fix out of "More", as the whole line (docs/design/usability-9.md, U1), added up to 59 px on the lines with a fix (s2, s3):
  * in CI, 1,485 and 2,054 on, 1,324 and 1,898 off, with about the same room as before over them.
+ * The glob example open on the cursor's stage (usability-9.md, U5, Q4) adds its names to try and its results, and the parts of its word, whose
+ * row no longer folds, on s2 only (its cursor is on grep's stage): +421 px at 1280 and +497 px at 390, measured with CI's fonts (1,474 to 1,895
+ * and 2,034 to 2,531 on; 1,313 to 1,734 and 1,859 to 2,356 off, en). The budget keeps the room it had over CI's figures.
  * No script here holds a `[`: its condition has rows of its own at depth 2, folded as those of `[[` are (its pages are measured in the PR that gave them).
  */
-const BUDGET = { on: { 1280: 1520, 390: 2100 }, off: { 1280: 1360, 390: 1940 } } as const;
+const BUDGET = { on: { 1280: 1940, 390: 2600 }, off: { 1280: 1780, 390: 2420 } } as const;
 
 describe('the panel: one view with a depth', function () {
   this.timeout(240000);
@@ -194,6 +197,11 @@ describe('the panel: one view with a depth', function () {
       const page = await ctx.newPage();
       const panel = await open(page, SCRIPTS.s2[0]);
       await depthDrawn(panel, 2);
+      // (The cursor on the last stage: the glob example of grep's stage is closed, and its row folded. On grep's, it opens with the row,
+      // whose pieces of a word have no role line.)
+      await page.locator('.cm-content').focus();
+      await page.keyboard.press('Control+End');
+      await until('the glob example closed', () => panel.evaluate(`[...document.querySelectorAll('#tree details.example')].map((d) => d.open).join()`), (o) => o === 'false');
       const got = await panel.evaluate(`(() => {
         const rows = [...document.querySelectorAll('#tree .row')].filter((r) => r.getClientRects().length);
         const lines = rows.map((r) => [...r.querySelectorAll(':scope > .text > .role-line')]);
@@ -362,6 +370,78 @@ describe('the panel: one view with a depth', function () {
       }
     });
   }
+
+  for (const [width, lang] of [[1280, 'en'], [390, 'ja']] as const) {
+    it(`shows bash's steps at depth 1 in one line on a word a step changes, and nothing on one none changes, ${width} px, ${lang}`, async () => {
+      const ctx = await context(width, lang, { animations: false });
+      const page = await ctx.newPage();
+      const panel = await open(page, 'ls ~/docs "$USER" $a *.txt plain "q"');
+      await chooseDepth(page, 1);
+      await depthDrawn(panel, 1);
+      const got = await panel.evaluate(`[...document.querySelectorAll('#tree .row')].map((r) => {
+        const s = r.querySelector(':scope > .text > .steps');
+        return [r.querySelector(':scope > .code .label').textContent, s ? s.tagName + ' ' + s.textContent : ''];
+      })`) as [string, string][];
+      const steps = Object.fromEntries(got);
+      const t = lang === 'en'
+        ? { lead: "bash's steps: ", tilde: 'tilde expansion', param: 'parameter expansion → no word splitting or globbing (quoted) → quote removal', split: 'parameter expansion → word splitting → globbing', glob: 'globbing' }
+        : { lead: 'bash の手順: ', tilde: 'チルダ展開', param: 'パラメータ展開 → 単語分割・グロブはしない（クォート内） → クォート除去', split: 'パラメータ展開 → 単語分割 → グロブ', glob: 'グロブ' };
+      assert.strictEqual(steps['~/docs'], `SPAN ${t.lead}${t.tilde}`);
+      assert.strictEqual(steps['"$USER"'], `SPAN ${t.lead}${t.param}`);
+      assert.strictEqual(steps.$a, `SPAN ${t.lead}${t.split}`);
+      assert.strictEqual(steps['*.txt'], `SPAN ${t.lead}${t.glob}`);
+      // (A word no step changes, and the command: nothing new. The folded line of such a word is depth 2's.)
+      assert.strictEqual(steps.plain, '');
+      assert.strictEqual(steps['"q"'], '');
+      assert.strictEqual(await panel.locator('details.steps, .role-line').count(), 0);
+      // (Each line in its row's text column, wrapping there: nothing sticks out, and the page does not scroll sideways.)
+      assert.deepStrictEqual(await panel.evaluate(`[...document.querySelectorAll('#tree .row > .text > .steps')].filter((s) => {
+        const text = s.parentElement.getBoundingClientRect(), r = s.getBoundingClientRect();
+        return r.left < text.left - 0.5 || r.right > text.right + 0.5;
+      }).map((s) => s.textContent)`), []);
+      assert.strictEqual(await panel.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth'), 0);
+      const dir = process.env.BASH_EXPLAINER_SHOTS;
+      if (dir) await page.screenshot({ path: path.join(dir, `depth1-steps-${width}-${lang}.png`), fullPage: true });
+      await ctx.close();
+    });
+  }
+
+  it('opens the glob example where it is the line\'s only example or the cursor\'s stage has it, and keeps the names typed across a depth and a move', async () => {
+    const ctx = await context(1280, 'en', { animations: false });
+    const page = await ctx.newPage();
+    const examples = () => panel.evaluate(`[...document.querySelectorAll('#tree details.example')].map((d) => d.open)`) as Promise<boolean[]>;
+    let panel = await open(page, 'ls /var/log/*.log');
+    assert.deepStrictEqual(await examples(), [true], 'the only example');
+    panel = await open(page, 'ls *.txt; ls *.md');
+    assert.deepStrictEqual(await examples(), [true, false], 'the cursor on the first stage');
+    // Names typed in the first: kept at depth 2, and back at depth 1.
+    const box = panel.locator('#tree details.example').first().locator('textarea');
+    await box.fill('mine.txt\nother.md');
+    const result = () => panel.locator('#tree details.example').first().evaluate((d) => d.querySelector('textarea')!.value + '|' + [...d.querySelectorAll('pre:not(.layer)')].map((p) => p.textContent).join('/'));
+    // (Its matching names, then those it does not match.)
+    await until('the rerun', result, (r) => r === 'mine.txt\nother.md|mine.txt/other.md');
+    const typed = await result();
+    for (const depth of [2, 1] as const) {
+      await chooseDepth(page, depth);
+      await depthDrawn(panel, depth);
+      assert.strictEqual(await result(), typed, `depth ${depth}`);
+    }
+    // The cursor on the second stage: its example opens, the first closes; back, the names are still there.
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+End');
+    await until('the second open', examples, (o) => o.join() === 'false,true');
+    await page.keyboard.press('Control+Home');
+    await until('the first open', examples, (o) => o.join() === 'true,false');
+    assert.strictEqual(await result(), typed);
+    // A choice of the reader's stays as it was made: the first, closed, stays closed on its stage.
+    await panel.locator('#tree details.example > summary').first().click();
+    await until('closed', examples, (o) => o.join() === 'false,false');
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(300);
+    assert.deepStrictEqual(await examples(), [false, false]);
+    await ctx.close();
+  });
 
   it('in VS Code\'s panel: the depth control in the header, the key, what the host is told', async () => {
     const page = await browser.newPage({ viewport: { width: 600, height: 700 } });

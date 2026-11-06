@@ -338,7 +338,7 @@ describe('the panel\'s row model', () => {
     });
 
     it('keeps a folded warning\'s text at depth 1', () => {
-      const r = rowModel({ noteInfo: [], items: [token('option', '-x', 'first', [{ ...token('variable', '-x', 'bad'), marks: [{ id: 'splice-refused', level: 'warning', text: 'bad' }] }])] }, D1, 'en').rows[0];
+      const r = rowModel({ noteInfo: [], examples: [], items: [token('option', '-x', 'first', [{ ...token('variable', '-x', 'bad'), marks: [{ id: 'splice-refused', level: 'warning', text: 'bad' }] }])] }, D1, 'en').rows[0];
       assert.deepStrictEqual(r.more, [[{ text: 'bad', level: 'warning' }]]);
       assert.strictEqual(r.level, 'warning');
     });
@@ -1069,8 +1069,32 @@ describe('the panel\'s row model', () => {
       assert.strictEqual(line('echo a', 'a'), undefined);
       assert.strictEqual(line('x=a', 'x=a'), undefined);
       assert.strictEqual(line('tar -c', '-c'), undefined);
-      assert.strictEqual(rows('echo "$a"', D1)[1].steps, undefined);
       assert.strictEqual(line('echo "$a"', '"$a"')!.acts, true);
+    });
+
+    it('gives a word at depth 1 its steps where a step changes it, as depth 2 says them, and nothing more to a word no step changes (usability-9.md, Q4)', () => {
+      const at1 = (src: string, label: string, lang: Lang = 'en') => rows(src, D1, lang).find((r) => r.label === label)!;
+      const text = (src: string, label: string) => at1(src, label).steps?.steps.map((s) => (s.off ? `${s.text}${s.why}` : s.text));
+      // Tilde, parameter expansion, splitting, globbing.
+      assert.deepStrictEqual(text('ls ~/docs', '~/docs'), ['tilde expansion']);
+      assert.deepStrictEqual(text('grep -h "$USER" f', '"$USER"'), ['parameter expansion', 'no word splitting or globbing (quoted)', 'quote removal']);
+      assert.deepStrictEqual(text('echo $a', '$a'), ['parameter expansion', 'word splitting', 'globbing']);
+      assert.deepStrictEqual(text('ls *.txt', '*.txt'), ['globbing']);
+      for (const [src, label] of [['grep -h "$USER" f', '"$USER"'], ['ls ~/docs', '~/docs'], ['ls *.txt', '*.txt']]) {
+        assert.deepStrictEqual(at1(src, label).steps, row(src, label).steps, src);
+        assert.deepStrictEqual(at1(src, label, 'ja').steps, row(src, label, 'ja').steps, src);
+      }
+      // (In one line, open: no role line, which is depth 2's.)
+      assert.strictEqual(at1('echo $a', '$a').steps!.acts, true);
+      assert.strictEqual(at1('echo $a', '$a').roleLine, undefined);
+      assert.deepStrictEqual(at1('echo $a', '$a').roles, []);
+      // A word no step changes: nothing new (depth 2 folds its line).
+      assert.strictEqual(text('echo "a"', '"a"'), undefined);
+      assert.strictEqual(text('echo a', 'a'), undefined);
+      assert.strictEqual(text('set -f; echo *', '*'), undefined);
+      assert.strictEqual(row('set -f; echo *', '*').steps!.acts, false);
+      // (Without the reading tree, as in an explanation made for the hover, none.)
+      assert.strictEqual(all(rowModel(new Analyzer('en').explainLine(parser.parse('echo $a'), 0, 'bash', {}), D1, 'en').rows).find((r) => r.label === '$a')!.steps, undefined);
     });
 
     it('folds the steps of a word where none acts: the line says so, and opens on every step with why', () => {
@@ -1095,8 +1119,10 @@ describe('the panel\'s row model', () => {
     it('starts folded a row whose parts all come at depth 2, and never one that holds a row of depth 1', () => {
       assert.strictEqual(row('a 2>/dev/null', '2>/dev/null').folded, true);
       assert.strictEqual(row('ls *.txt', '*.txt').folded, true);
-      // (A glob's folded example keeps its title; an open one would be hidden, so its row stays open.)
-      assert.strictEqual(all(rowModel(placeExamples(explain('ls /var/log/*.log')), D2, 'en').rows).find((r) => r.label === '/var/log/*.log')!.folded, true);
+      // (A glob's folded example keeps its title; an open one would be hidden, so its row stays open: the line's only example starts open.)
+      const globRow = (src: string, label: string) => all(rowModel(placeExamples(explain(src)), D2, 'en').rows).find((r) => r.label === label)!;
+      assert.strictEqual(globRow('ls /var/log/*.log /tmp/*.txt', '/var/log/*.log').folded, true);
+      assert.strictEqual(globRow('ls /var/log/*.log', '/var/log/*.log').folded, undefined);
       const open = rowsWith('ls a*', (t) => { if (t.label === 'a*') t.examples = [{ kind: 'expansion', title: 'x', target: '', sections: [] }]; }).find((r) => r.label === 'a*')!;
       assert.strictEqual(open.folded, undefined);
       assert.strictEqual(row('a "$USER"', '"$USER"').folded, undefined);
@@ -1104,10 +1130,28 @@ describe('the panel\'s row model', () => {
       assert.strictEqual(row('if a; then b; fi', 'if ‹condition› then ‹commands› fi').folded, undefined);
     });
 
-    it('folds a glob\'s example under its title, at both depths; others stay open', () => {
-      const ex = (src: string, depth: 1 | 2) => all(rowModel(placeExamples(explain(src)), { depth, receives: false }, 'en').rows).flatMap((r) => r.examples ?? []);
-      for (const depth of [1, 2] as const) assert.deepStrictEqual(ex('ls /var/log/*.log', depth).map((e) => [e.kind, e.folded]), [['glob', true]]);
-      assert.ok(ex("sed 's/a/b/' f", 2).every((e) => e.kind !== 'glob' && !e.folded));
+    it('folds a glob\'s example under its title, at both depths, open where it is the line\'s only example or the cursor\'s stage has it; others stay open', () => {
+      const ex = (src: string, depth: 1 | 2, cursor?: number) => all(rowModel(placeExamples(explain(src)), { depth, receives: false, ...(cursor === undefined ? {} : { cursor: { line: 0, character: cursor } }) }, 'en').rows)
+        .flatMap((r) => (r.examples ?? []).map((e) => [r.label, e.kind, e.folded, e.open]));
+      for (const depth of [1, 2] as const) {
+        assert.deepStrictEqual(ex('ls /var/log/*.log', depth), [['/var/log/*.log', 'glob', true, true]]);
+        // (Two examples: closed, but the one of the stage the cursor is on, from its start to just after its end.)
+        assert.deepStrictEqual(ex('ls *.txt; ls *.md', depth), [['*.txt', 'glob', true, undefined], ['*.md', 'glob', true, undefined]]);
+        assert.deepStrictEqual(ex('ls *.txt; ls *.md', depth, 0).map((e) => e[3]), [true, undefined]);
+        assert.deepStrictEqual(ex('ls *.txt; ls *.md', depth, 8).map((e) => e[3]), [true, undefined]);
+        assert.deepStrictEqual(ex('ls *.txt; ls *.md', depth, 9).map((e) => e[3]), [undefined, undefined]);
+        assert.deepStrictEqual(ex('ls *.txt; ls *.md', depth, 12).map((e) => e[3]), [undefined, true]);
+        assert.deepStrictEqual(ex('ls *.txt *.md', depth, 3).map((e) => e[3]), [true, true]);
+      }
+      assert.ok(ex("sed 's/a/b/' f", 2).every((e) => e[1] !== 'glob' && !e[2]));
+      // The example of a whole pipeline counts: in the panel's message, the glob's opens on its stage only.
+      const src = 'grep -h "$USER" /var/log/*.log | sort';
+      const update = (cursor?: number) => panelUpdate({ lang: 'en', explanation: explain(src), file: 'x', line: 0, lineText: src, choice: {}, placement: 'first', animations: true, state: { depth: 1 }, ...(cursor === undefined ? {} : { cursor }) });
+      assert.deepStrictEqual(update().wholeLine.map((e) => e.kind), ['pipeline']);
+      const glob = (cursor?: number) => all(update(cursor).rows).flatMap((r) => r.examples ?? []).map((e) => [e.kind, e.open]);
+      assert.deepStrictEqual(glob(), [['glob', undefined]]);
+      assert.deepStrictEqual(glob(0), [['glob', true]]);
+      assert.deepStrictEqual(glob(src.indexOf('sort')), [['glob', undefined]]);
     });
 
     it('over the corpus: depth 2 only adds, holds every text of the line, has a row for each reserved word and operator on the line, roles from places only; nothing of depth 1 is folded away', function () {
@@ -1127,6 +1171,8 @@ describe('the panel\'s row model', () => {
           const keys = new Map(two.map((r) => [r.key, r]));
           assert.deepStrictEqual(one.map((r) => r.key), two.filter((r) => one.some((o) => o.key === r.key)).map((r) => r.key), at);
           for (const r of one) assert.strictEqual(keys.get(r.key)!.connector ? undefined : keys.get(r.key)!.text, r.text, at);
+          // Depth 1 has the steps of depth 2 where a step acts, and only those.
+          for (const r of one) assert.deepStrictEqual(r.steps, keys.get(r.key)!.steps?.acts ? keys.get(r.key)!.steps : undefined, at);
           // Every row of depth 1 is outside any row that starts folded.
           const inFold = (rs: readonly ModelRow[], folded: boolean): ModelRow[] => rs.flatMap((r) => [...(folded ? [r] : []), ...inFold(r.children, folded || !!r.folded)]);
           assert.deepStrictEqual(inFold(rowModel(ex, D2, 'en').rows, false).filter((r) => r.comesAt === 1).map((r) => r.label), [], at);

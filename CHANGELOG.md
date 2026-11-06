@@ -13,6 +13,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - On the web page, the card over the script no longer opens where you clicked, and it closes on a click, a paste, typing and Escape. The Legend is a popover over the explanation that Escape closes, and it has no button on a line with nothing to explain. Before, the Legend pushed the explanation down and stayed open on the next line.
 - In a `sh`, `dash` or `ash` script, the note on a bash-only form says how it fails there: the status and the message, and whether the shell stops (`[[ ]]` is "not found" with status 127, so the condition is false; `a=(1)` is a syntax error; `${x^^}` is "bad substitution"). Before, it said only "it fails in dash". For `=~`, it names `case` and `expr` and their limits.
 - The box of a line's problems shows each fix under its headline, as the whole line fixed with the changed part marked, and **Copy fix** copies that line. Before, the fix was under **More**, and its Copy took only the part that changed. The web page's header button now says **Copy as Markdown**.
+- At depth 1, the panel shows bash's steps on a word that a step changes (`"$USER"`, `~/docs`, `*.txt`), and a glob's example of names starts open when it is the line's only example or the cursor is on its command; names typed in it stay. Before, the steps were only at depth 2, and the example started closed.
 
 ## 0.10.0
 
