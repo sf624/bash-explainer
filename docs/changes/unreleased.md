@@ -75,3 +75,13 @@ In the panel, in VS Code and on the web page:
 ### The Copy buttons say what they copy
 
 The web page's panel header says **Copy as Markdown** / 「Markdown でコピー」 beside its icon, and **Markdown** under it where the header is narrow. Before, it said **Copy**, like the fix's button. **Copy a link** does not change.
+
+## Fixed
+
+### The cases of a test's example
+
+The example of a simple test ("True when", "False when") now reads the test's words with each value as bash does, from the word model, and evaluates the test as bash's `test` does, or matches the pattern as `[[ == ]]` does:
+
+- Unquoted in `[ ]` or `test`, a value is split and globbed: `[ $x = "a b" ]` and `[ $x = a\ b ]` are never true, and `x="a b"` gives `[: too many arguments` (status 2). A new section, "Error (status 2) when" (「エラーになる値（終了ステータス 2）」), lists such values; "False when" shows `x="abc"`. Before, the example said "True when `x="a b"`".
+- On the right of `[[ = ]]`, `==` or `!=`, an unquoted value is a pattern: `[[ a\\b = $x ]]` is true for `x='a\\b'` and false for `x='a\b'`, and `[[ "[ab]" == $x ]]` is true for `x='\[ab\]'`. Before, the example said "True when" the value was the text of the left side.
+- The script's own value is placed by what bash does with it: `x='a*'; [[ abc == $x ]]` shows `x="a*"` under "True when", `n=010; [ "$n" -gt 2 ]` shows `n="010"` (10 for `test`), and `x=abc; [ "$x" -eq 3 ]` shows `x="abc"` under "Error (status 2) when". Before, those kept the samples.

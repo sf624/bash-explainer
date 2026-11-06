@@ -1,6 +1,7 @@
 /** Simulations of xargs, simple test conditions and `read` word splitting, for worked examples. */
 import type { BashVersion } from '../bashversion';
 import { IFS_ERRATIC, IFS_WHITESPACE } from '../semantics/chars';
+import { literalPattern, type TestOutcome } from '../semantics/testcases';
 import { globExamples, globMatches } from './shellwords';
 import { parseOptions, Parsed, shortKeys, Unsupported } from './textfilters';
 import { pushAll } from '../lists';
@@ -123,23 +124,41 @@ export type Operand = { var: string } | { lit: string };
 export interface TestCase {
   /** Variable values to set (positional parameters as "1", "2"…). */
   vars: Record<string, string>;
-  result: boolean;
+  /** What the test gives: true, false, or bash's error (status 2). */
+  result: TestOutcome;
 }
 
 /**
- * Values that make a simple test true and false. `kind` is `[` (test), `[[` or `((`.
+ * Values that make a simple test true and false, or fail (status 2). `kind` is `[` (test), `[[` or `((`.
  * Undefined for tests whose result depends on the system (file tests) or on several conditions. `known`: the value
  * the script gives the variable there (as one word), which takes the place of the sample with the same result.
+ * `judge`: what bash gives with a value, where the model knows it (src/semantics/testcases.ts): it decides each
+ * case, and where no sample gives a result, one more value may (the text of the other side as a pattern, `abc`).
  */
-export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | undefined, right: Operand | undefined, quotedRight = false, known?: string): TestCase[] | undefined {
-  const cases = sampleTests(kind, op, left, right, quotedRight);
+export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | undefined, right: Operand | undefined, quotedRight = false, known?: string, judge?: (vars: Record<string, string>) => TestOutcome | undefined): TestCase[] | undefined {
+  const samples = sampleTests(kind, op, left, right, quotedRight);
+  if (!samples) return undefined;
+  const name = Object.keys(samples[0].vars)[0];
+  const outcome = (value: string): TestOutcome | undefined => judge?.({ [name]: value });
+  const cases = samples.map((c) => ({ vars: c.vars, result: outcome(c.vars[name]) ?? c.result }));
+  if (judge && STRING_TESTS.has(op)) {
+    const lit = ('lit' in left! ? left : right as { lit: string }).lit;
+    for (const want of [true, false]) {
+      if (cases.some((c) => c.result === want)) continue;
+      const value = [literalPattern(lit), 'abc'].find((v) => !cases.some((c) => c.vars[name] === v) && outcome(v) === want);
+      if (value !== undefined) cases.push({ vars: { [name]: value }, result: want });
+    }
+  }
   // (The model has no values in arithmetic: none for `(( ))`.)
-  const truth = cases && known !== undefined && kind !== '((' ? knownTruth(kind, op, left, right, known, quotedRight) : undefined;
+  const truth = known !== undefined && kind !== '((' ? outcome(known) ?? knownTruth(kind, op, left, right, known, quotedRight) : undefined;
   if (truth === undefined) return cases;
-  const name = Object.keys(cases![0].vars)[0];
-  const i = cases!.findIndex((c) => c.result === truth);
-  return cases!.map((c, j) => (j === i ? { vars: { [name]: known! }, result: truth } : c));
+  const i = cases.findIndex((c) => c.result === truth);
+  if (i < 0) return [...cases, { vars: { [name]: known! }, result: truth }];
+  return cases.map((c, j) => (j === i ? { vars: { [name]: known! }, result: truth } : c));
 }
+
+/** The string comparisons, which `testCases` may find one more value for. */
+const STRING_TESTS = new Set(['=', '==', '!=']);
 
 /** The integer tests, as functions; and the operators of `(( ))` that are the same tests. */
 const NUMERIC: Record<string, (a: number, b: number) => boolean> = {

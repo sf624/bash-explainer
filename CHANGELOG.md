@@ -20,6 +20,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - The command-line tool exits quietly with status 141 (what a shell reports for a program killed by SIGPIPE) when its output is closed early, as in `bash-explainer script.sh | head -1`. Before, it printed an `EPIPE` stack trace and exited with status 1.
+- The example of a test reads each value as bash does: `[ $x = "a b" ]` lists `x="a b"` under "Error (status 2) when", as the unquoted value splits into two words, and `[[ a\\b = $x ]]` is true for `x='a\\b'`, as the value is a pattern. Before, both were "True when" the value was the text of the other side.
 
 ## 0.10.0
 
