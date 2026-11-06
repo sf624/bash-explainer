@@ -316,10 +316,11 @@ describe('the web page: long lines wrap between shell words, and hover cards go 
       const start = { x: from.x - 4, y: from.y };
       await page.mouse.move(start.x, start.y);
       await page.mouse.down();
-      assert.strictEqual(await tip(page).count(), 1, 'the card is open as the drag starts');
+      // (The press puts the cursor there, which closes the card: a click closes it, docs/design/usability-9.md, Q6.)
+      await until('the card closed by the press', () => tip(page).count(), (n) => n === 0);
       await glide(page, start, { x: start.x, y: to.y }, 4);
       await glide(page, { x: start.x, y: to.y }, { x: to.x + 20, y: to.y }, 8);
-      assert.strictEqual(await tip(page).count(), 0, 'the card closed');
+      assert.strictEqual(await tip(page).count(), 0, 'no card while it drags');
       await page.mouse.up();
       const selected = await page.evaluate('getSelection().toString()') as string;
       assert.ok(selected.startsWith('grep') && /\|\| exi/.test(selected.replace(/\s+/g, ' ')), JSON.stringify(selected));
