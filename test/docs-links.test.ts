@@ -25,13 +25,24 @@ function headings(text: string): { level: number; text: string }[] {
   });
 }
 
+/** The text of a heading without its HTML tags: what lies between a `<` and the next `>` is left out. */
+function withoutTags(text: string): string {
+  let out = '';
+  let inTag = false;
+  for (const c of text) {
+    if (c === '<') inTag = true;
+    else if (c === '>') inTag = false;
+    else if (!inTag) out += c;
+  }
+  return out;
+}
+
 /**
  * The anchor GitHub gives a heading: its text as shown (no markup, HTML tags or link targets), in lower case, with
  * every character but letters, marks, digits, `_`, `-` and spaces left out, and each space a `-`.
  */
 function slug(heading: string): string {
-  // (A tag's name is left out; a `<` or `>` that is left is no letter, so the slug drops it too.)
-  const shown = heading.replace(/<[^>]*>/g, '').replace(/[<>]/g, '').replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[`*]/g, '');
+  const shown = withoutTags(heading).replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[`*]/g, '');
   return shown.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\p{Pc}\- ]/gu, '').replace(/ /g, '-');
 }
 
@@ -84,6 +95,7 @@ describe('the user documentation', () => {
     assert.strictEqual(slug('VS Code で使う'), 'vs-code-で使う');
     assert.strictEqual(slug('コマンドライン、他のエディタ、CI'), 'コマンドライン他のエディタci');
     assert.strictEqual(slug('The `yq` [flavours](x.md)'), 'the-yq-flavours');
+    assert.strictEqual(slug('<picture><img src="a.png" alt="x"></picture> Bash Explainer'), '-bash-explainer');
     assert.deepStrictEqual([...anchors('# A\n\n```\n# not a heading\n```\n\n## A\n### B ##\n')], ['a', 'a-1', 'b']);
   });
 
