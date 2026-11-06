@@ -35,7 +35,7 @@ describe('pitfalls', () => {
     // The glob stays out of the quotes in the rewrite; quoted as `"$DIR"/*`, an empty DIR still leaves `/*`.
     ['rm -rf $DIR/*', /becomes `rm -r \/\*`, deleting from the root. Write `"\$\{DIR:\?\}"\/\*` to stop/],
     ['rm -rf "$DIR"/*', /becomes `rm -r \/\*`, deleting from the root. Write `"\$\{DIR:\?\}"\/\*` to stop/],
-    ['[-f x]', /`\[` is an ordinary command, so a space must follow it \(`\[-f` reads as another command name\)/],
+    ['[-f x]', /A space must follow `\[` \(`\[-f` reads as another command name\)/],
     // (`[ -f x]`, with a last word of known text, is the analyzer's note: test/testexpr.test.ts.)
     ['[ -f $x]', /the `\]` in `\$x\]` is part of the word\. When `\$x` is empty, the word is `\]` alone and closes `\[`, and `\[ -f \]` is true/],
     ['[ "$a" < "$b" ]', /`<` inside `\[ \]` is read as a redirection, not a comparison/],

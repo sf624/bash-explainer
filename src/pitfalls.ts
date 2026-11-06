@@ -576,8 +576,8 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
           const fix = bracketSpaced(nameWord, a.at(-1)!, open);
           const how = fix ? `\`${fix.code}\`` : `\`${open} ${written.slice(open.length)} …\``;
           if (open === '[') {
-            add('bracket-no-space', nameWord, `\`[\` は普通のコマンドなので、あとに空白が要ります（\`${written}\` は別のコマンド名になる）。${how} のように書きます`,
-              `\`[\` is an ordinary command, so a space must follow it (\`${written}\` reads as another command name). Write ${how}`, fix ? [fix] : []);
+            add('bracket-no-space', nameWord, `\`[\` のあとには空白が要ります（\`${written}\` は別のコマンド名になる）。${how} のように書きます`,
+              `A space must follow \`[\` (\`${written}\` reads as another command name). Write ${how}`, fix ? [fix] : []);
           } else {
             add('bracket-no-space', nameWord, `\`[[\` は1つの単語として書いたときだけ予約語になるので、あとに空白が要ります（\`${written}\` はコマンド名になる）。${how} のように書きます`,
               `\`[[\` is a reserved word only as a word of its own, so a space must follow it (\`${written}\` reads as a command name). Write ${how}`, fix ? [fix] : []);
