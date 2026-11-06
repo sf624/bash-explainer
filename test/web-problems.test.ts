@@ -99,11 +99,12 @@ describe('the web page: the Problems strip', function () {
     assert.strictEqual(await listShown(), true);
     await toggle.click();
     assert.strictEqual(await expanded(), 'false');
-    // Folded, the list gives its room to the editor: the strip alone, 32 px, at the pane's bottom.
+    // Folded, the list gives its room to the editor: the strip alone, 32 px, at the pane's bottom (above the hint toward POSIX sh, which stays).
     const strip = (await page.locator('.problems-strip').boundingBox())!;
     const pane = (await page.locator('#source').boundingBox())!;
+    const hint = (await page.locator('#problems-sh').boundingBox())?.height ?? 0;
     assert.strictEqual(Math.round(strip.height), 32);
-    assert.ok(Math.abs(strip.y + strip.height - (pane.y + pane.height)) <= 1, JSON.stringify({ strip, pane }));
+    assert.ok(Math.abs(strip.y + strip.height + hint - (pane.y + pane.height)) <= 1, JSON.stringify({ strip, pane, hint }));
     await page.reload();
     await page.locator('.cm-line').first().waitFor();
     await until('the strip', () => page.locator('#problems-counts .count').count(), (n) => n > 0, 15000);

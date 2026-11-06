@@ -4,6 +4,10 @@
 
 Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
 
+### New
+
+- On the web page, a script whose shell comes from `#!/usr/bin/env bash` or from no shebang gets a line under the Problems strip: "2 problems in POSIX sh", with a button **Check as POSIX sh** that switches the shell. It is no problem: the counts, `--check` and the Action do not include it. A `#!/bin/bash` script, a bats file and VS Code have no such line.
+
 ### Changed
 
 - On the web page, the card over the script no longer opens where you clicked, and it closes on a click, a paste, typing and Escape. The Legend is a popover over the explanation that Escape closes, and it has no button on a line with nothing to explain. Before, the Legend pushed the explanation down and stayed open on the next line.

@@ -1,7 +1,7 @@
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation, NoteAnchor } from './analyzer-types';
 import type { BashVersion } from './bashversion';
-import { type AutoShell, dialectIssues, saidShell, type ScriptEvidence, Shell, type ShellReading } from './dialect';
+import { type AutoShell, dialectIssues, saidShell, type ScriptEvidence, Shell, type ShellReading, shebangThroughEnv } from './dialect';
 import { parseDirectives, suppressed } from './directives';
 import { withinLine } from './examples/regexguard';
 import { contained } from './failures';
@@ -273,10 +273,10 @@ export function issueFilter(doc: ShellDocument | undefined, settings: Settings, 
  * The problems of a document (`open` gives it, `shellsOf` its shells) under the settings: `shown` (none while `diagnostics.enabled` is off, where the
  * surface has it; none in the shell code of another file while `diagnostics.embedded` is off; without the
  * codes in `diagnostics.ignore`) and `all` (what the document has, whatever the settings say, found only when
- * asked for; the codes the file itself turns off are left out in both). The warnings and caveats of the explanations
+ * asked for; the codes the file itself turns off are left out in both) and `sh` (how many problems POSIX sh would give, for a hint: `shProblemCount`). The warnings and caveats of the explanations
  * (`noteIssues`) are explained with the settings' options, and `explain` (the yq flavour a panel chose).
  */
-export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: (doc: ShellDocument) => Shells, lang: Lang, settings: Settings, surface: Surface, explain: ExplainOptions = {}): { readonly all: DocumentIssue[]; shown: DocumentIssue[]; readonly faded: DeadRange[] } {
+export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: (doc: ShellDocument) => Shells, lang: Lang, settings: Settings, surface: Surface, explain: ExplainOptions = {}): { readonly all: DocumentIssue[]; shown: DocumentIssue[]; readonly faded: DeadRange[]; readonly sh: number | undefined } {
   let doc: ShellDocument | undefined;
   let raw: DocumentIssue[] | undefined;
   let base: DocumentIssue[] | undefined;
@@ -308,7 +308,9 @@ export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: 
   };
   // (The faded ranges are no problems: they come apart from `shown`, where the surface draws them, if `hints.deadCode` is on.)
   const faded = () => (settingSpec('hints.deadCode')!.surfaces.includes(surface) && settings['hints.deadCode'] && (doc ??= open()) ? deadCodeHints(doc, lang, shellsOf(doc), settings['diagnostics.ignore'], settings.bashVersion) : []);
-  return { get all() { return all(); }, shown: shown(), get faded() { return faded(); } };
+  // (The web page's hint toward POSIX sh: no problem, so in none of the lists; read only where it is shown.)
+  const sh = () => ((doc ??= open()) ? shProblemCount(doc, lang, shellsOf(doc), settings, surface) : undefined);
+  return { get all() { return all(); }, shown: shown(), get faded() { return faded(); }, get sh() { return sh(); } };
 }
 
 /**
@@ -349,7 +351,12 @@ function issuesOf(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bash
   const crlf = crlfIssue(doc.tree, lang);
   const shell = shellOf(shells);
   const nested = nestedIssues(doc, lang, shell, version);
-  return [...crlf, ...nested, ...dialectIssues(doc.tree, shell ?? 'bash', lang, undefined, undefined, version, (n) => stopAt(doc.tree, n.startIndex, undefined, shellState(doc.tree, shell, { version }))).map((i): DocumentIssue => {
+  return [...crlf, ...nested, ...dialectProblems(doc, lang, shell, version)];
+}
+
+/** The dialect issues of a script written for `shell` (undefined: bash), as problems: what the strip lists for it. */
+function dialectProblems(doc: ShellDocument, lang: Lang, shell: Shell | undefined, version?: BashVersion): DocumentIssue[] {
+  return dialectIssues(doc.tree, shell ?? 'bash', lang, undefined, undefined, version, (n) => stopAt(doc.tree, n.startIndex, undefined, shellState(doc.tree, shell, { version }))).map((i): DocumentIssue => {
     const n = i.place;
     const sameLine = n.startPosition.row === n.endPosition.row;
     const fix = fixFor(i);
@@ -358,7 +365,29 @@ function issuesOf(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bash
       startLine: n.startPosition.row, startCol: n.startPosition.column,
       endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : doc.lines[n.startPosition.row].length,
     };
-  })];
+  });
+}
+
+/**
+ * How many problems the strip would list if the script were read as POSIX sh (the web page's hint, docs/design/usability-9.md,
+ * 2.1), by the dialect issues for sh that `issueFilter` leaves; the same issues the strip lists for a sh script, so that the
+ * two counts agree. Undefined where there is no hint: a host file (bats too), a shell chosen (the user's choice stands), a
+ * script whose shell is not bash from `#!/usr/bin/env bash` or from no shebang (`#!/bin/bash` says bash on purpose), a text
+ * not surely a script, or no problem in sh. Never a problem itself: it is not in `diagnosticsFor`'s lists.
+ */
+export function shProblemCount(doc: ShellDocument, lang: Lang, shells: Shells, settings: Settings, surface: Surface): number | undefined {
+  const { detected } = shells;
+  if (doc.extracted || doc.tree.unread || shells.forced || !shells.script || !detected || detected.shell !== 'bash') return undefined;
+  if (!(detected.source === 'default' || (detected.source === 'shebang' && shebangThroughEnv(doc.lines[0])))) return undefined;
+  const keep = issueFilter(doc, settings, surface);
+  // (A bug in this second reading loses the hint, not the problems.)
+  const n = contained(
+    'the sh problems of a document',
+    () => dialectProblems(doc, lang, 'sh', settings.bashVersion).filter(keep).length,
+    /* c8 ignore next */
+    () => 0,
+  );
+  return n || undefined;
 }
 
 /**

@@ -46,17 +46,8 @@ export function readShell(text: string, fileName = ''): ShellReading {
   const found = (shell: Shell | undefined, source: ShellSource): ShellReading => (shell ? { shell, source } : { shell: 'bash', source: 'default' });
   const directive = /^#\s*shellcheck\s+shell=(\w+)/m.exec(head)?.[1];
   if (directive) return found(shellFromName(directive), 'directive');
-  const shebang = /^#!\s*(.*)/.exec(head);
-  if (shebang) {
-    const words = shebang[1].trim().split(/\s+/);
-    const prog = words[0].split('/').pop()!;
-    // `#!/bin/busybox sh`, `#!/usr/bin/env bash`, `#!/usr/bin/env -S ksh93 -e`.
-    if (prog === 'env') {
-      const arg = words.slice(1).find((w) => !w.startsWith('-') && !w.includes('='));
-      return found(arg ? shellFromName(arg.split('/').pop()!) : undefined, 'shebang');
-    }
-    return found(shellFromName(prog), 'shebang');
-  }
+  const shebang = shebangOf(head);
+  if (shebang) return found(shebang.name === undefined ? undefined : shellFromName(shebang.name), 'shebang');
   const base = baseName(fileName);
   if (/\.zsh(?:-theme)?$|^\.?z(shrc|profile|login|logout|shenv)$/.test(base)) return { shell: 'zsh', source: 'filename' };
   if (/\.ksh$|^\.?m?kshrc$/.test(base)) return { shell: base.includes('mksh') ? 'mksh' : 'ksh', source: 'filename' };
@@ -64,6 +55,23 @@ export function readShell(text: string, fileName = ''): ShellReading {
   if (/\.bash$|^\.?bash(rc|_profile|_login|_logout|_aliases)$/.test(base)) return { shell: 'bash', source: 'filename' };
   return { shell: 'bash', source: 'default' };
 }
+
+/**
+ * The program a first line `#!…` names, and whether it does so through `env` (`#!/usr/bin/env bash`, `#!/usr/bin/env -S ksh93 -e`:
+ * `name` is undefined when `env` is given none); undefined for a text with no shebang. The one reader of the line.
+ */
+function shebangOf(head: string): { name: string | undefined; env: boolean } | undefined {
+  const shebang = /^#!\s*(.*)/.exec(head);
+  if (!shebang) return undefined;
+  const words = shebang[1].trim().split(/\s+/);
+  const prog = words[0].split('/').pop()!;
+  if (prog !== 'env') return { name: prog, env: false };
+  const arg = words.slice(1).find((w) => !w.startsWith('-') && !w.includes('='));
+  return { name: arg?.split('/').pop(), env: true };
+}
+
+/** Whether the first line of a text names its shell through `env` (`#!/usr/bin/env bash`), not by a path (`#!/bin/bash`). */
+export const shebangThroughEnv = (text: string): boolean => shebangOf(text)?.env === true;
 
 const baseName = (fileName: string): string => fileName.split(/[\\/]/).pop()!;
 

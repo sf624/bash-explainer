@@ -1663,6 +1663,49 @@ body.resizing .problems-resize {
   height: 28px;
 }
 
+/*
+ * The hint toward POSIX sh (web/problem-list.ts): one line after the list (or after "No problems"), never a problem. It stays
+ * when the list is folded. The count and the button are two groups that wrap between them, so no font's width decides it.
+ */
+.sh-hint {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 12px;
+  border-top: 1px solid var(--vscode-panel-border);
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.sh-hint[hidden] {
+  display: none;
+}
+
+.sh-hint .hint-btn {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 0 4px;
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.sh-hint .hint-btn:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+:where(html.narrow) .sh-hint,
+:where(html.narrow) .sh-hint .hint-btn {
+  min-height: 44px;
+}
+
 #problem-prev[hidden],
 #problem-next[hidden] {
   display: none;
@@ -3056,8 +3099,15 @@ html.bottom-sheet #problems {
   background: transparent;
 }
 
+/* (With no problem the sheet's list has no rows and takes no room: the hint toward POSIX sh follows "No problems".) */
+html.bottom-sheet #problems.empty #problem-list {
+  display: none;
+}
+
 html.bottom-sheet #problems #problem-list {
   display: grid;
+  /* (As tall as its rows, and scrolling when they do not fit: the hint toward POSIX sh follows the last row.) */
+  flex: 0 1 auto;
   padding-top: 4px;
   overscroll-behavior: contain;
 }

@@ -258,8 +258,8 @@ describe('the web page: resizing the panes and the Problems list', function () {
     // The strip says the counts and is a touch target.
     assert.match((await p.locator('#problems-said').textContent())!, /^Problems: [1-9]\d* \w+/);
     assert.ok((await toggle.boundingBox())!.height >= 44);
-    // (The strip, 44 px, and its room clear of the divider's grab area under it.)
-    assert.ok((await p.locator('#problems').boundingBox())!.height <= 54);
+    // (The strip, 44 px, and its room clear of the divider's grab area under it; the hint toward POSIX sh stays under it.)
+    assert.ok((await p.locator('#problems').boundingBox())!.height <= 54 + ((await p.locator('#problems-sh').boundingBox())?.height ?? 0));
     // The editor keeps the height the list leaves it: folded, it has the most room.
     const editorHeight = async () => Math.round((await p.locator('.cm-editor').boundingBox())!.height);
     const folded = await editorHeight();
