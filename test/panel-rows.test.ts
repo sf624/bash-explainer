@@ -1240,6 +1240,12 @@ describe('the panel\'s row model', () => {
       assert.strictEqual(key('ls').find((k) => k.id === 'basis'), undefined);
     });
 
+    it('defines "function" for the script\'s own functions and the host\'s (bats\' `run`)', () => {
+      const text = (lang: Lang) => key('f() { :; }; f', D1, lang).find((k) => k.id === 'name:function')!.text;
+      assert.strictEqual(text('en'), 'a shell function: the script\'s own, or one its host defines (bats\' `run`)');
+      assert.match(text('ja'), /bats では `run` など/);
+    });
+
     it('lists what the switch draws', () => {
       const on: RowOptions = { depth: 1, receives: true };
       assert.deepStrictEqual(ids('sort -r', on).filter((k) => k.startsWith('received')), ['received:asWritten']);
