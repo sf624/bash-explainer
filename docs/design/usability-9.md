@@ -2,7 +2,7 @@
 
 The plan for the roadmap item "Usability toward 9/10". The usability test of 2026-11-06 rated the web page and its panel 7.6/10 after two runs, below the goal of 9 ([panel-redesign.md](panel-redesign.md), section 7, "Results (2026-11-06)"). This page takes its findings one by one: whether each is still there on main, where it comes from in the code, what it cost, and how to fix it. Then the steps as PRs, the maintainer's questions, and how the test runs again.
 
-Status: planned (2026-11-06). Nothing built. The steps wait on the maintainer's answers (section 5).
+Status: planned (2026-11-06, #636). Nothing built. The steps wait on the maintainer's answers (section 5).
 
 ## 1. The evidence
 

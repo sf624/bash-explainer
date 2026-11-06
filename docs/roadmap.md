@@ -16,7 +16,7 @@ Priority order decided by the maintainer on 2026-10-31: the remaining correctnes
 
 ## Next, in this order
 
-1. Usability toward 9/10: the panel and chrome fixes the usability test of 2026-11-06 asked for (section 7 of [design/panel-redesign.md](design/panel-redesign.md), "Results (2026-11-06)"). Planned in [design/usability-9.md](design/usability-9.md): each finding reproduced on main at the release, its cause in the code and its cost, ranked (first the hint toward POSIX sh, then the fix to copy as the whole line, the phone's sheet, the answers behind depth 2 or closed details, the hover card and the Legend, the names; also what sh does where a form fails, which the test raised too), steps U1 to U8 as PRs, then the test again with new agents (U9). Ten questions wait on the maintainer (its section 5); U8 changes the phone's layout and needs a check on a real device. Decided by the maintainer 2026-11-06.
+1. Usability toward 9/10: the panel and chrome fixes the usability test of 2026-11-06 asked for (section 7 of [design/panel-redesign.md](design/panel-redesign.md), "Results (2026-11-06)"). Planned in [design/usability-9.md](design/usability-9.md) (#636): each finding reproduced on main at the release, its cause in the code and its cost, ranked (first the hint toward POSIX sh, then the fix to copy as the whole line, the phone's sheet, the answers behind depth 2 or closed details, the hover card and the Legend, the names; also what sh does where a form fails, which the test raised too), steps U1 to U8 as PRs, then the test again with new agents (U9). Ten questions wait on the maintainer (its section 5); U8 changes the phone's layout and needs a check on a real device. Decided by the maintainer 2026-11-06.
 
 ## Deferred
 
