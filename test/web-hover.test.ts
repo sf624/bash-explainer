@@ -403,6 +403,34 @@ describe('the web page: hover cards in the editor', function () {
     await ctx.close();
   });
 
+  for (const [clickOn, thenTo] of [['ls', '$('], ['$(', 'ls']] as const) {
+    it(`gives a part nested in a problem's range its card and its problem after a click on another part (click ${clickOn}, then ${thenTo})`, async () => {
+      const ctx = await context();
+      const page = await ctx.newPage();
+      await open(page);
+      await page.mouse.move(5, 5);
+      await until('no box', () => box(page).count(), (n) => n === 0);
+      const from = await pointAt(page, 1, clickOn);
+      const to = await pointAt(page, 1, thenTo);
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.waitForTimeout(1000);
+      assert.strictEqual(await box(page).and(page.locator(':visible')).count(), 0, 'no box where it clicked');
+      // Moving on to the other part, inside the same problem's range: its card, and the problem too.
+      await page.mouse.move(to.x, to.y);
+      await until('the problem and the card', () => box(page).locator(':scope:visible > *').count(), (n) => n === 2);
+      assert.match(await box(page).locator('.cm-tooltip-lint').innerText(), /the output of/);
+      assert.ok((await card(page).innerText()).length > 0);
+      // And back on the clicked part, the click is forgotten: both show there too.
+      await page.mouse.move(5, 5);
+      await until('no box', () => box(page).count(), (n) => n === 0);
+      await page.mouse.move(from.x, from.y);
+      await until('the problem and the card again', () => box(page).locator(':scope:visible > *').count(), (n) => n === 2);
+      await ctx.close();
+    });
+  }
+
   for (const how of ['a click', 'a paste', 'typing', 'Escape in the editor', 'Escape on the page', 'Escape in the panel'] as const) {
     it(`closes the card the pointer opened on ${how}`, async () => {
       const ctx = await context();
