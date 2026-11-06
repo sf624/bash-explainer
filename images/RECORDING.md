@@ -9,6 +9,8 @@ These four files in `images/readme/` are recorded by the script below. README.md
 | `panel.gif` | Panel mode | about 17 s |
 | `name-hints.png` | Name hints (still image) | — |
 
+The logos are drawn from the SVGs in `images/logo/`, rasterized at 228×44 and three times that resolution (684×132 pixels). README.md and README.ja.md show `logo-dark.png` where the page follows a dark colour scheme (`<picture>`, on GitHub), and `logo.png` elsewhere: VS Code's extension page, Open VSX and the Marketplace website show only the `<img>`, in light and dark themes alike, so its wordmark is a mid grey (`#808080`: 3.95:1 against white, 3.88:1 against `#252526`). `logo-light.png` is what older READMEs show.
+
 `images/action-annotations.png`, used by cli/README.md, is a screenshot of a pull request on GitHub, taken by hand: the action's warnings on a script's lines under *Files changed*.
 
 `images/` is left out of the .vsix by `.vscodeignore`. The Marketplace, Open VSX and npm pages load the images from GitHub, through `repository` in `package.json` (github.com/sf624/bash-explainer). The packaged README is pinned to the release's tag (`https://github.com/sf624/bash-explainer/raw/v<version>/images/readme/…`, see [docs/publishing.md](../docs/publishing.md)), so a page shows the images of its own version, and the tag must be pushed before the page can show them.
