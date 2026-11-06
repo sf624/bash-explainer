@@ -536,7 +536,7 @@ export function snippetInputs({ share = 1, seed = 0 } = {}): ArgvInput[] {
 /**
  * `n` of the fuzz inputs (test/support/fuzz.ts) that parse and are not snippets, chosen by their hash with `seed`. Not
  * one cut after a backslash: unbash keeps a backslash at the end of the input, which bash drops (a known difference,
- * README Limitations), and the fuzz inputs change with every snippet, too often for entries of argv-known.json.
+ * docs/guide/limitations.md), and the fuzz inputs change with every snippet, too often for entries of argv-known.json.
  */
 export function fuzzArgvInputs(n: number, seed = 0): ArgvInput[] {
   const snippets = new Set(corpus().snippets.map((s) => s.text));

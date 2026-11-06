@@ -108,7 +108,7 @@ A first run over the snippets, by hand (the input of step 3: 1,588 snippets that
 2. A recursive function that changes a variable before it calls itself (`g() { if [ "$d" = 1 ]; then d=2; g; return; fi; }; d=1; g`): the model gave `$d` the value 1 in the body, which the second call sees as 2. Fixed in #433: a recursive call merges its state into the entry the body is walked again from.
 3. A glob in another directory (`$D/*` with `D=''`, `/var/log/*.log`): given the files of the current directory (`WordEnv.files`, which only the tests give), the model took it as matching nothing and kept it as written; it should be unknown. Fixed in #434: a pattern from the root is not known.
 4. A CR before a LF: the model reads the masked text (`crlf`); bash gives the word with its CR. An accepted difference.
-5. `a\` at the end of the input: unbash keeps the backslash (README Limitations; test/fixtures/bash-ast-known.json).
+5. `a\` at the end of the input: unbash keeps the backslash (docs/guide/limitations.md; test/fixtures/bash-ast-known.json).
 
 ### 2.7 As built (step 3)
 

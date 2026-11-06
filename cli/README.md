@@ -84,7 +84,7 @@ In the explanation, a note starts with the mark and the word of its level, in it
 
 ## Settings
 
-The tool takes the settings of the VS Code extension that have a meaning in a terminal: `language`, `notes.idioms`, `notes.pitfalls`, `notes.basis`, `shell`, `bashVersion`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled` and `customCommands` (see [Settings](https://github.com/sf624/bash-explainer#settings) for what each one does). They come from a JSON file with the keys of VS Code's `settings.json`, with or without `bashExplainer.`; comments and trailing commas are allowed, and nested objects too (`{ "notes": { "idioms": false } }`):
+The tool takes the settings of the VS Code extension that have a meaning in a terminal: `language`, `notes.idioms`, `notes.pitfalls`, `notes.basis`, `shell`, `bashVersion`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled` and `customCommands` (see [Settings](../docs/guide/settings.md) for what each one does). They come from a JSON file with the keys of VS Code's `settings.json`, with or without `bashExplainer.`; comments and trailing commas are allowed, and nested objects too (`{ "notes": { "idioms": false } }`):
 
 ```jsonc
 {
@@ -185,7 +185,7 @@ Settings: the keys of the VS Code extension's settings that have a meaning here,
 
 ## Privacy
 
-Everything runs in the Node.js process: the tool contains no code that opens a network connection or starts a process, which a test checks on every change. See [Privacy](https://github.com/sf624/bash-explainer#privacy).
+Everything runs in the Node.js process: the tool contains no code that opens a network connection or starts a process, which a test checks on every change. See [Privacy](../docs/guide/privacy.md).
 
 ## License
 

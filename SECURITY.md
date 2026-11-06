@@ -29,7 +29,7 @@ When a fix is released, I publish a GitHub security advisory and credit you, unl
 
 ## What counts as a vulnerability
 
-Bash Explainer reads scripts that may come from anyone, and is built to explain them [offline, without running them](https://github.com/sf624/bash-explainer/blob/main/README.md#privacy); only getting it uses the network. A vulnerability is a way to break that, for example:
+Bash Explainer reads scripts that may come from anyone, and is built to explain them [offline, without running them](docs/guide/privacy.md); only getting it uses the network. A vulnerability is a way to break that, for example:
 
 - explaining a script runs any of its code, or starts a process;
 - the extension, the web version or the command-line tool opens a network connection, by itself or because of a script;

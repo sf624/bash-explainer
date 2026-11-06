@@ -163,7 +163,7 @@ export const localeVariable = (name: string): boolean => writeEffect(name) === L
 
 /**
  * The values of a locale variable that change nothing a value or a decision reads: C (its synonyms), and empty, which
- * leaves the locale to the next variable or to the environment (README, Limitations).
+ * leaves the locale to the next variable or to the environment (docs/guide/limitations.md).
  */
 const C_LOCALES = new Set(['', 'C', 'POSIX', 'C.UTF-8', 'C.utf8']);
 export const cLocale = (value: string): boolean => C_LOCALES.has(value);

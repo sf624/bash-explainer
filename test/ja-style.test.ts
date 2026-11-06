@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
+import { maskCode } from '../scripts/readme-pins';
 import { Analyzer, type Token } from '../src/analyzer';
 import { dialectTexts, type Shell } from '../src/dialect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -41,12 +42,34 @@ function japaneseStrings(source: string, file: string): { where: string; text: s
   return out;
 }
 
-/** The strings of src/, cli/, web/ (.ts and .js) and media/ (.js) with Japanese in them, and the text of the pages (web/*.html), with where they are. */
+/**
+ * The strings of src/, cli/, web/ (.ts and .js) and media/ (.js) with Japanese in them, the text of the pages (web/*.html),
+ * and the lines of the Japanese documents (README.ja.md, docs/guide/ja/), with where they are.
+ */
 function japanese(): { where: string; text: string }[] {
   const out: { where: string; text: string }[] = [];
   const scripts = [...sources('src'), ...sources('cli'), ...sources('web'), ...sources('media')];
   for (const file of scripts) out.push(...japaneseStrings(fs.readFileSync(path.join(root, file), 'utf8'), file));
-  return [...out, ...pageJapanese()];
+  return [...out, ...pageJapanese(), ...documentJapanese()];
+}
+
+/** The Japanese documents: README.ja.md and the Japanese pages of the user guide. */
+function documents(): string[] {
+  const guide = fs.readdirSync(path.join(root, 'docs/guide/ja')).filter((f) => f.endsWith('.md')).map((f) => `docs/guide/ja/${f}`);
+  return ['README.ja.md', ...guide];
+}
+
+/**
+ * The lines of a Markdown document with Japanese in them, outside its code blocks (fenced or indented): a line that is
+ * code alone is left out, and a line of text keeps its code spans, which the checks read.
+ */
+function markdownJapanese(text: string, file: string): { where: string; text: string }[] {
+  const masked = maskCode(text).split('\n');
+  return text.split('\n').flatMap((line, i) => (kana.test(masked[i]) ? [{ where: `${file}:${i + 1}`, text: line }] : []));
+}
+
+function documentJapanese(): { where: string; text: string }[] {
+  return documents().flatMap((file) => markdownJapanese(fs.readFileSync(path.join(root, file), 'utf8'), file));
 }
 
 /** The text and the attribute values of the web pages (web/*.html). */
@@ -113,6 +136,13 @@ describe('Japanese wording', () => {
       .filter((f) => /^(src\/ui|cli|web)\//.test(f) && !catalogs.has(f));
     assert.deepStrictEqual(files, []);
     for (const file of catalogs.keys()) assert.ok(texts.some((t) => t.where.startsWith(`${file}:`)), file);
+  });
+
+  it('reads README.ja.md and every Japanese page of the user guide, outside their code blocks', () => {
+    for (const file of documents()) assert.ok(texts.some((t) => t.where.startsWith(`${file}:`)), file);
+    assert.ok(documents().includes('docs/guide/ja/README.md'));
+    // (A code block is not text; a code span in a line of text is, for the spaces around it.)
+    assert.deepStrictEqual(markdownJapanese('```sh\n# 消す\n```\n`a`は\n\n    # 消す\n', 'probe.md').map((t) => t.text), ['`a`は']);
   });
 
   it('finds the Japanese of the panel texts, the templates among them', () => {

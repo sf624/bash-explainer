@@ -19,7 +19,10 @@
 
 **設定不要で、[設計上オフラインで動きます](#プライバシー)。** 通信も AI もテレメトリも使いません。日本語と英語に対応しています。
 
-![Bash Explainer デモ](images/readme/demo.gif)
+
+**[クイックスタート](#クイックスタート)** · [ブラウザで試す](https://sf624.github.io/bash-explainer/) · [ユーザーガイド](docs/guide/ja/README.md) · [コマンドライン](cli/README.md)（英語） · [変更履歴](CHANGELOG.md)（英語） · [English](README.md)
+
+![Bash Explainer のデモ: パネルが行を部分ごとに解説し、具体例の入力を書き換え、ホバーで単語を解説する](images/readme/demo.gif)
 
 Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解説と警告をほかの形でも使えます。インストールせずに試せるブラウザ版、コマンドラインツール、他のエディタ向けの Language Server、PR でスクリプトを検査する GitHub Action です。
 
@@ -27,10 +30,10 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 
 | 場所 | 使い方 |
 | --- | --- |
-| **VS Code** | Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールし、シェルスクリプトを開いて単語にマウスを乗せます。詳しくは [VS Code で使う](#vs-code-で使う) を参照してください。 |
+| **VS Code** | Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールし、シェルスクリプトを開いて単語にマウスを乗せます。詳しくは [クイックスタート](#クイックスタート) と [VS Code で使う](docs/guide/ja/vscode.md) を参照してください。 |
 | VSCodium など Open VSX を使うエディタ | [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer) |
 | vscode.dev と github.dev | 同じ拡張が VS Code for the Web でも動きます（GitHub のリポジトリで `.` を押す）。 |
-| **ブラウザ**（インストールなし） | [ブラウザ版](https://sf624.github.io/bash-explainer/) にスクリプトを貼り付けるかファイルを開いて（`Ctrl+O`、またはエディタにドロップ）、カーソルを動かします。単語にマウスを乗せると、VS Code と同じカードを表示します。詳しくは [Web 版](#web-版) を参照してください。`main` からビルドした [開発版](https://sf624.github.io/bash-explainer/next/) もあります（リリース版と異なる場合があります）。 |
+| **ブラウザ**（インストールなし） | [ブラウザ版](https://sf624.github.io/bash-explainer/) にスクリプトを貼り付けるかファイルを開いて（`Ctrl+O`、またはエディタにドロップ）、カーソルを動かします。単語にマウスを乗せると、VS Code と同じカードを表示します。詳しくは [Web 版](docs/guide/ja/web.md) を参照してください。`main` からビルドした [開発版](https://sf624.github.io/bash-explainer/next/) もあります（リリース版と異なる場合があります）。 |
 | **ターミナル** | `npx bash-explainer deploy.sh:12`、または `npm install --global bash-explainer`。詳しくは [cli/README.md](cli/README.md#installation) を参照してください。 |
 | **Neovim、Helix、Emacs** など LSP に対応したエディタ | `bash-explainer --lsp` が Language Server として、同じホバー、警告、クイックフィックスを提供します。設定例は [In your editor](cli/README.md#in-your-editor-language-server) を参照してください。 |
 | **CI** | GitHub Actions で `uses: sf624/bash-explainer@v0` とすると、警告が PR の差分に表示されます。他の CI では `npx bash-explainer --check` を使います。詳しくは [In CI](cli/README.md#in-ci-github-actions) を参照してください。 |
@@ -57,86 +60,9 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | 制御構文 | `if`、`for`、`while`、`case`、関数。ブロック内の行では「for ループ › if 文」のように位置も表示 |
 | 定番の書き方と落とし穴 | `IFS= read -r`、スクリプトのディレクトリを得る書き方、strict mode、`trap … EXIT`、`command -v … >/dev/null 2>&1` など。`x = 1`、空の `DIR` での `rm -rf $DIR/…`、クォートしていない変数、`for f in $(ls)`、`-r` のない `read`、`local x=$(cmd)`、`sudo cmd > /etc/…` で何が起きるか |
 
-## 具体例
+具体例、他のファイル（Dockerfile・Makefile・CI の YAML・`package.json`・Markdown・Python・Jenkinsfile・bats のテスト）の中のシェル、`yq` という名前の3つのツールは、[ユーザーガイド](docs/guide/ja/explained.md) で説明しています。`sh`・`dash`・`zsh` などについては [bash 以外のシェル向けのスクリプト](docs/guide/ja/other-shells.md) を参照してください。
 
-多くの書き方に、入力例とその出力を表示します。計算は組み込みの実行器で行い、テストで実物（GNU sed・coreutils、gawk、jq、perl、bash、git、yq）と照合しています。
-
-| 対象 | 表示される内容 |
-| --- | --- |
-| `grep` のパターン、`[[ =~ ]]`、グロブ、`case` のパターン | 一致する文字列と一致しない文字列 |
-| `sed`・`awk`・`jq`・`yq`・`perl`・`sort`・`uniq`・`cut`・`tr`・`head`・`tail` | 入力例 → 出力 |
-| パイプライン全体 | 段ごとの途中経過 |
-| `${…}` の展開、`printf`、ブレース展開 | 展開・出力される値 |
-| `[ ]`・`[[ ]]`・`(( ))` | 真になる値と偽になる値 |
-| `xargs`・`read`・`getopt` | 実行されるコマンド、変数に入る値、引数の並び替え結果 |
-| `git log --pretty`・`--date` | 例のコミットでの表示 |
-| `date +書式` | 決まった2つの日時での出力（パネルで日時を書き換えられる） |
-
-具体例は、対応する部分の解説の真下に表示します（`bashExplainer.examples.placement` で変更可）。
-
-## bash 以外のシェル向けのスクリプト
-
-解説は bash に基づきますが、スクリプトが別のシェル向けのときは、そのシェルにない書き方や、意味が変わる書き方も指摘します。
-
-```sh
-#!/bin/sh
-[[ -n $name ]] && echo -e "hi\t$name"
-# ⓧ エラー: `[[ ]]` は POSIX sh にない書き方です（dash では `[[` がコマンドとして実行され、見つからずに終了ステータス 127 になります。条件に使うと偽になります）。代わりに `[ ]` を使う。
-# ⚠ 移植性: `echo -e` は POSIX sh にない書き方です（dash の `echo` は `-e` を文字として表示します）。代わりに `printf` を使う…
-# ⓘ 移植性: dash の `echo` は引数の `\t` や `\n` などを解釈します…
-```
-
-- **対応シェル:** POSIX `sh`（dash と busybox ash で動かないものを明記）、`dash`、`ash`、`yash`、`ksh`、`mksh`、`zsh`。どのシェルで何が動くかは、各シェルで実測しています。
-- **シェルの判定:** shebang（`#!/bin/sh`、`#!/usr/bin/env dash` など）、`# shellcheck shell=` の行、ファイル名から判定します。`bashExplainer.shell` で指定もできます。Markdown のコードブロックでは、ブロック内の shebang がフェンスの言語名より優先されます。shebang のない `sh` のブロックは bash として読みます（POSIX sh として調べるには `#!/bin/sh` を書く）。`bash`・`zsh`・`dash`・`ksh` はそのシェルのままです。
-
-## 他のファイルの中のシェル
-
-| ファイル | 解説する部分 |
-| --- | --- |
-| Dockerfile | `RUN`・`CMD`・`ENTRYPOINT`（シェル形式、`RUN <<EOF`、exec 形式、`["sh", "-c", "…"]`）と `SHELL [...]`。`pipefail` なしの `RUN` のパイプで失敗が見逃される場合は警告 |
-| Makefile | レシピ。make の `$(VAR)`・`$@`・`$$` も説明 |
-| CI の YAML | GitHub Actions の `run:`（ワークフローと `action.yml`。`shell:` や `defaults` に従う）、GitLab CI の `script:`、CircleCI の `run:`・`command:`、Azure Pipelines の `script:`・`bash:`（`$(変数)` のマクロも）。`${{ github.event.pull_request.title }}` のような外部からの入力をスクリプトに埋め込むと警告 |
-| `package.json` | `scripts` |
-| Markdown | `sh`・`bash`・`console` などのコードブロック（シェルはブロック内の shebang、なければ言語名のシェル。`sh` は bash として読む） |
-| Python | `subprocess.run(…)`・`os.system(…)` など。`shell=True` なしの文字列や、シェルに値を埋め込む書き方を指摘 |
-| Jenkinsfile | `sh '…'`・`sh "…"`・`sh '''…'''`・`sh(script: …)`。シェルより先に Groovy が埋め込む `$名前` や `${…}` を指摘 |
-| bats（`.bats` か `bats` の shebang） | ファイル全体を bash として。`@test "…" {` は bats が `set -e` で実行するテストとして、`run`（`!`・`-N`・`--separate-stderr` も）・`load`・`skip`・`bats_pipe` も説明。テストを失敗させられない `! cmd` や、パイプラインの中の `run` を指摘 |
-
-それぞれ、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。対象にするファイルの種類は `bashExplainer.embedded.files` で選べます。
-
-## yq
-
-`yq` という名前のツールは3種類あり、記法がそれぞれ違います。**mikefarah/yq v4**、**kislyuk/yq**（jq のラッパー）、古い **mikefarah/yq v3** です。Bash Explainer は、オプション・サブコマンド・関数や、同じファイル内のインストール方法からどれ向けかを判定し、その結果を行ごとに表示します。
-
-> yq: mikefarah/yq v4（v4.22.1 以降）として解説。根拠: `-o json` は mikefarah/yq v4 のオプション、`pick` は mikefarah/yq の関数（jq にはない）
-> 互換性: mikefarah/yq v4（v4.22.1 以降） ✓ ／ kislyuk/yq ✗（`-o json`・`pick` が使えない） ／ mikefarah/yq v3 ✗（jq 形式の式・`-o json` が使えない）
-
-各機能がどのリリースで入ったかは、4.x の全マイナーリリースで実際に動かして調べています。判定できないときは mikefarah/yq v4 として扱います。`bashExplainer.yq.flavor` で種類を固定することもできます。
-
-## 警告とクイックフィックス
-
-警告は VS Code の「問題」パネルにも表示されるので、マウスを乗せなくても気づけます。コマンドラインツール（`--check`）、Language Server、GitHub Action からも同じ警告が出ます。意味を変えずに書き換えられる場合は、クイックフィックスも出します。
-
-| 修正前 | 修正後 |
-| --- | --- |
-| `[[ -f $f && -n $x ]]` | `[ -f "$f" ] && [ -n "$x" ]` |
-| `[ "$a" == b ]` | `[ "$a" = b ]` |
-| `source ./lib.sh` | `. ./lib.sh` |
-| `function f {` | `f() {` |
-| `cmd &> log` | `cmd > log 2>&1` |
-| `cmd \|& tee log` | `cmd 2>&1 \| tee log` |
-| `cp a b \|\| echo failed` （スクリプトの最後） | `cp a b \|\| { echo failed >&2; exit 1; }` |
-| `source lib.sh` | `source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh` |
-| `grep "$user" f` | `grep -F "$user" f` |
-| `read line` | `read -r line` |
-
-スクリプトのシェルが対応していない書き方へのクイックフィックスは、意味が変わらない場合だけ出します。例えば `[[ $f == *.txt ]]` はパターン一致なので出しません。この書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。警告や注意が書くべきコードを示す場合は、そのコードもクイックフィックスとして出します（2つ示すときは両方を、勧めるほうを先に）。これらの書き換えは、bash 5.2 と 5.3 で実行してテストしています。警告を消すには、その前の行（または同じ行のコードの後ろ）に `# bash-explainer disable=<コード>`、ファイル全体なら `# bash-explainer disable-file=<コード>` を書くか、`bashExplainer.diagnostics.ignore` にコードを指定します（`all` ですべて）。「問題」パネルへの表示自体は `bashExplainer.diagnostics.enabled` でオフにできます。
-
-問題には、VS Code と同じく3つのレベルがあります。書いたとおりでは毎回失敗する行（`]` のない `[`、代入にならない `x = 1`、スクリプトのシェルにない書き方、前に `;` のない `then`、`$((09))`）は **ⓧ エラー**（赤）、値や条件によっては取り返しのつかない被害が出るもの（`DIR` が空のときの `rm -rf $DIR/*`、`rm $f`、`curl … | sh`）は **⚠ 警告**（黄）、値やシステムによってだけ問題になるものや失敗に気づけないもの（`for f in $(ls)`、`cat $f`、`-r` のない `read`、`local x=$(cmd)`）は **ⓘ 情報**（青）です。解説（パネル・ホバー・ターミナル・Web 版）では、レベルごとのアイコン・色・言葉（「エラー:」「落とし穴:」「注意:」）で示し、エラーを先に並べます。「問題」の一覧では、レベルをアイコンで示します。解説で指摘するエラー・警告・注意は、すべてコード付きで「問題」パネルにも出します。ただの補足は問題にしません。`bashExplainer.diagnostics.pitfalls` をオフにすると警告と注意は出しませんが、エラーは出します。`--check` と GitHub Action はエラーで失敗し、警告では `--strict` を付けたときだけ失敗し、情報では失敗しません。そのため既定では、スクリプトのシェルにない書き方で失敗するのは、確実に失敗する場合だけです。シェルがファイルを読むときに拒否するもの（`a=(1)`、`<<<`。呼ばれない関数の中でも）と、シェルが確実に実行するコマンドです。関数や分岐の中、止まるかもしれないコマンド（`. ./lib`、関数の中の `exit`）の後では、実行されないこともあるので警告になります。ここまで見つけるには `--strict` を使います。
-
-## VS Code で使う
-
-### クイックスタート
+## クイックスタート
 
 1. Visual Studio Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールします。
 2. シェルスクリプト（`.sh`、`.bash` など）を開きます。
@@ -144,257 +70,22 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 
 カーソルに追従するサイドペインで見たいときは、ホバーの下の **パネルで詳しく見る** をクリックします。
 
-### インストール
+ほかのインストール方法（拡張機能ビュー、`code --install-extension`、Open VSX、vscode.dev）、パネル、コマンド名のヒント、コマンドは [VS Code で使う](docs/guide/ja/vscode.md)、すべての設定は [設定](docs/guide/ja/settings.md) を参照してください。
 
-- **Marketplace:** [shun-fujioka.bash-explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
-- **VS Code の中から:** 拡張機能ビュー（`Ctrl+Shift+X` / `Cmd+Shift+X`）で *Bash Explainer* を検索します。またはクイックオープン（`Ctrl+P` / `Cmd+P`）で `ext install shun-fujioka.bash-explainer` を実行します。
-- **コマンドライン:** `code --install-extension shun-fujioka.bash-explainer`
-- **VSCodium など Open VSX を使うエディタ:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
-- **VS Code for the Web:** [vscode.dev](https://vscode.dev) や [github.dev](https://github.dev)（GitHub のリポジトリで `.` を押す）でも動きます。
+## 警告とクイックフィックス
 
-VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文解析は JavaScript だけで動きます）、VS Code が動く環境ならどこでも動きます。
-
-### 表示方法
-
-| | 使い方 | 既定 |
-| --- | --- | --- |
-| **パネル** | カーソルに追従するサイドペイン。regex101 のように色分けし、具体例の入力を書き換えて結果を確かめられる | エディタのタイトルバーやホバーから開く |
-| **ホバー** | 単語にマウスを乗せると、その部分の解説。カーソル行で `Ctrl+K Ctrl+E` を押すと行全体 | オン |
-| **コマンド名のヒント** | 名前どおりのものを実行しないコマンド名（関数になっている `cd`、`sudo cd`）の後ろにヒントを表示 | オン |
-
-ホバーとパネルは、ステータスバーの **Bash Explainer** をクリックするとオン/オフできます。コマンド名のヒントは `bashExplainer.hints.names` で切り替えます。
-
-#### パネル
-
-パネルはカーソル行に追従します。ツリーの項目を指すと、エディタ側の該当箇所がハイライトされます。
-
-![パネル](images/readme/panel.gif)
-
-#### ホバー
-
-単語・オプション・演算子にマウスを乗せると、それが何かをその場で解説します。意味、コマンド名の種類（予約語・ビルトイン・特殊ビルトイン・関数・エイリアス・プログラムのバッジ）と誰が実行するか、属するコマンドを表示します。隣の単語に移ると、その単語の解説に変わります。インデントの上では、行の構造を1行で表示します。
-
-行全体の解説は、`Ctrl+K Ctrl+E`、右クリックメニューの **カーソル行の bash を解説**、またはホバーの **行全体** で開きます。コマンドごとに、引数とあわせて表示します。
-
-Web 版のエディタでも同じカードを表示します（タッチ画面では表示しません）。Web 版では、`Ctrl+K Ctrl+E` と **行全体** で、行全体の解説をパネルに表示します。
-
-![ホバー](images/readme/hover.gif)
-
-#### コマンド名のヒント
-
-名前から想像するものを実行しないコマンド名の後ろに、薄い文字でヒントを表示します。ビルトインやプログラムを隠す関数やエイリアス、`enable -n` で無効にしたビルトイン、スクリプトの中で bash が展開しないエイリアス、`sudo cd`（`cd` というプログラムはない）、何も実行されない名前です。ヒントにマウスを乗せると、何が実行されるか、同じ名前でほかに何があるかを表示し、クリックするとその行をパネルで開きます。Web 版のエディタにも同じヒントが付きます。VS Code の `editor.inlayHints.enabled` で、インレイヒント全体をオン・オフ（または `Ctrl+Alt` を押している間だけ表示）できます。
-
-![コマンド名のヒント](images/readme/name-hints.png)
-
-カーソル行の行末に要約を表示するインライン表示は削除しました。`bashExplainer.inline.*` には効果がありません。
-
-### パネル
-
-パネルは regex101 と同じように使えます。
-
-- **具体例を書き換える:** grep や `[[ =~ ]]` のテスト文字列、sed・awk・jq・perl・`sort`・`cut`・`xargs`・パイプライン全体の入力を書き換えると、出力がその場で更新されます。
-- **一致した部分を見る:** 入力の中の一致部分を色付けし、キャプチャグループごとに、解説ツリーのグループと同じ色で示します。`\1`・`\2`… に入る文字列も一覧にします。
-- **コマンド名が何かを見る:** どちらの深さでも、名前のあとのバッジが予約語・ビルトイン・特殊ビルトイン・関数・エイリアス・プログラムのどれかと、誰が実行するかを示します（`sudo echo` なら `sudo` が実行するプログラム）。同じ名前がほかのものでもあるときは、それが何で、どう書けば動くかを1行で示します（`time` はプログラム `/usr/bin/time` でもあり、`command time` で動く）。
-- **どこまで読むかを選ぶ:** **深さ** か、パネルにフォーカスがあるときのキー **1**・**2** で選びます。選択はパネルが覚えています。**1 何をするか** は、行をひとことで言った文と行の問題（修正案をコピーできます）の下に、各コマンドが何をするかを示します。bash の手順で変わる単語には、その手順を1行で示します（`パラメータ展開 → 単語分割・グロブはしない（クォート内） → クォート除去`）。**2 bash がどう読むか** は、同じ行に同じ順序で、bash の予約語と演算子、単語とリダイレクトの部品を加えます。各行には、その部分が読み手ごとに何で、最後に誰が読むかを1行で示します（`引数 → -f の値 · tar が読む`）。その中の名前を押すかタップすると、その種類の説明とマニュアルの節が開きます。パイプは、何がどこへ渡るかを示します（`grep の標準出力 → sort の標準入力`）。展開される単語にはどれも bash の手順を順番どおりに示し、どの手順も働かない単語では1行に折りたたみます。`$( )` の中はサブシェルがもう一度解析し、`bash -c`・`eval`・trap に渡す文字列もスクリプトとしてもう一度読まれます。各コマンドは自分の引数を読み、単語の中の独自の言語（正規表現・sed スクリプトなど）も読みます。下に部品だけがある行は、折りたたんだ状態で始まります。
-- **シェルや yq を切り替える:** ヘッダーで、そのファイルの対象シェルや yq の種類を切り替えると、解説と警告がすぐ変わります。
-- **折りたたみ・コピー・早見表:** 解説ツリーを折りたたんだり、Markdown としてコピーしてレビューやドキュメントに貼ったりできます。展開・リダイレクト・条件式・変数・コマンドを検索できる早見表もあります。Web 版では、**折りたたむ**・**コピー**・タブの **早見表** が、解説の上の見出しで **深さ** と並びます。縦向きのスマートフォンでは、**コピー** はメニューにあり、**折りたたむ** は表示しません。タッチ画面では、早見表を開いても検索欄にフォーカスを移さないので、画面のキーボードは出ません。
-
-### コマンド
-
-| コマンド | ショートカット・呼び出し場所 |
-| --- | --- |
-| Bash Explainer: カーソル行の bash を解説 | `Ctrl+K Ctrl+E` / `Cmd+K Cmd+E` |
-| Bash Explainer: bash の解説パネルを開く | エディタのタイトルバー、ホバー |
-| Bash Explainer: ホバーとパネルの表示を切り替え | ステータスバー |
-| Bash Explainer: 設定を開く | ホバー、パネル |
-
-### 設定
-
-| 設定 | 既定値 | 説明 |
-| --- | --- | --- |
-| **表示** | | |
-| `bashExplainer.hover.enabled` | `true` | マウスを乗せた部分の解説をホバーで表示（行全体を解説する `Ctrl+K Ctrl+E` はオフでも使える） |
-| `bashExplainer.hover.followCursor` | `false` | カーソルが移動するたびにホバーを表示 |
-| `bashExplainer.hover.followDelay` | `400` | その表示までの遅延（ミリ秒） |
-| `bashExplainer.hover.maxDepth` | `0` | ホバーに表示する解説ツリーの階層数（`0` はすべて） |
-| `bashExplainer.panel.autoOpen` | `false` | シェルスクリプトを開いたらパネルを自動で開く |
-| `bashExplainer.panel.animations` | `true` | パネルの行、bash の手順、「詳しく」、例を、展開と折りたたみのときに伸び縮みさせる（オフでは即座に表示。動きを減らす設定でもオフ） |
-| `bashExplainer.panel.colors` | `"classic"` | パネルで行の各部分に付ける色。`classic`（独自の6色）、`theme`（エディターのテーマの色。読みにくい色は除く）、`themeLike`（テーマの色。テーマが2種類の部分に同じ色を付けるところは新しい色）。リモートのウィンドウでは、拡張機能がローカル側に入っていれば（VS Code はそこに入れる）どのカラーテーマも、リモート側で動くときは VS Code の既定のカラーテーマだけ。VS Code だけ |
-| `bashExplainer.highlight.enabled` | `true` | 解説と同じ読み方でシェルのコードを色分け（エディタの色分けに重ねるセマンティックトークン）。コマンド名が実行するもの・オプション・読み取り専用の変数に色が付く。言語ごとに設定できる（下記）。Web 版は常にこの色分け |
-| `bashExplainer.hints.names` | `true` | 名前どおりのものを実行しないコマンド名の後ろにヒントを表示 |
-| `bashExplainer.hints.deadCode` | `true` | 実行されないコード（スクリプトが結果を決めている条件の分岐、`&&` や `||` の実行されない側、`exit`・`return`・`break`・`continue` の後）を薄く表示。警告ではなくヒント |
-| `bashExplainer.blockOutline` | `"bar"` | 複数行にわたるコマンド（ループ・`if`・関数・パイプライン・ヒアドキュメントなど）にカーソルがあるとき、エディタでの目印。`bar`（行の左の縦線）・`tint`（薄い背景色）・`off`。色は `bashExplainer.blockBar` と `bashExplainer.blockTint` のテーマカラー。Web 版にもある |
-| `bashExplainer.inline.enabled`・`bashExplainer.inline.maxLength` | | 削除済み。効果はない |
-| `bashExplainer.examples.enabled` | `true` | 具体例を表示する |
-| `bashExplainer.examples.disabled` | `[]` | 表示しない具体例の種類: `regex`・`sed`・`awk`・`jq`・`yq`・`perl`・`textFilters`・`pipeline`・`expansion`・`printf`・`glob`・`test`・`xargs`・`read`・`getopt`・`gitLog`・`date` |
-| `bashExplainer.examples.inHover` | `true` | ホバーにも具体例を表示する（オフならパネルだけ） |
-| `bashExplainer.examples.placement` | `first` | 具体例を対応する部分の下の、各要素の解説より先（`first`）・後（`last`）、またはすべての解説の後（`bottom`）に表示 |
-| `bashExplainer.language` | `auto` | `auto`（VS Code の表示言語に合わせる）・`ja`・`en` |
-| `bashExplainer.notes.idioms` | `true` | 定番の書き方（strict mode、`IFS= read -r` など）の補足を表示する |
-| `bashExplainer.notes.pitfalls` | `true` | よくある間違いと避け方を注記する（クォートしていない変数、`for f in $(ls)`、`rm -rf $DIR/…` など）。エラー（`x = 1`）はオフでも注記する |
-| `bashExplainer.notes.basis` | `true` | マニュアルではなく bash の実際の動きに基づく注記や部分の説明に印（「マニュアルに記述なし・bash 5.2 で確認」）を付け、端末で試すコマンドを添える |
-| **確認** | | |
-| `bashExplainer.shell` | `auto` | スクリプトの対象シェル: `auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh` |
-| `bashExplainer.bashVersion` | `5.2` | 解説の対象にする bash のバージョン: `5.2`・`5.3`。bash 5.3 の書き方（`${ cmd; }` など）は 5.3 での動きを解説し、`5.2` ではエラーにする |
-| `bashExplainer.diagnostics.enabled` | `true` | エラーと警告を「問題」パネルにも表示（クイックフィックス付き） |
-| `bashExplainer.diagnostics.ignore` | `[]` | 出さない警告のコード（「問題」パネルに表示されるコード。`dbracket`・`echoE`・`dockerPipefail` など） |
-| `bashExplainer.diagnostics.embedded` | `true` | 他のファイルの中のシェルの警告も出す |
-| `bashExplainer.diagnostics.pitfalls` | `true` | 解説の警告と注意も「問題」パネルに出す（`rm -rf $DIR/*`・`rm $f` は警告、`cat $f`・`read line` は情報）。解説のエラー（`]` のない `[`、`x = 1`）は、この設定にかかわらず出す |
-| `bashExplainer.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
-| **ファイル** | | |
-| `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python`・`jenkinsfile`・`bats` |
-| `bashExplainer.languages` | `["shellscript"]` | シェルスクリプトとして解説する言語 ID |
-| **辞書** | | |
-| `bashExplainer.customCommands` | `{}` | 辞書にないコマンドの説明を追加する（下記） |
-
-#### ファイルの種類ごとの色分け
-
-色分けは、シェルスクリプトと、ほかのファイルの中のシェルのコードでオンです（Python ファイルと Dockerfile は、それぞれの言語サーバーが色分けするので対象外）。ファイルの種類ごとにオフにするには、`settings.json` でその言語に設定します。
-
-```json
-"[makefile]": { "bashExplainer.highlight.enabled": false },
-"[yaml]": { "bashExplainer.highlight.enabled": false }
-```
-
-言語は VS Code のステータスバーに出るものです: `shellscript`・`bats`・`makefile`・`yaml`（GitLab CI と、GitHub Actions 拡張機能がないときの GitHub のワークフロー）・`github-actions-workflow`・`json`（package.json）・`markdown`・`groovy`・`jenkinsfile`。言語を付けずに `"bashExplainer.highlight.enabled": false` とすると、すべてでオフになります。
-
-#### 自分のコマンドを追加する
-
-社内ツールなどは、説明を書くまで「外部コマンド」として表示されます:
-
-```json
-"bashExplainer.customCommands": {
-  "deploy": {
-    "summary": "サービスを本番にデプロイする",
-    "options": [
-      { "names": ["-n", "--dry-run"], "description": "実行せずに内容だけ表示" },
-      { "names": ["-e"], "description": "デプロイ先の環境", "takesValue": true }
-    ],
-    "operands": [{ "description": "サービス名", "repeat": "+" }],
-    "subcommands": {
-      "status": { "summary": "デプロイ済みのものを表示する", "operands": [{ "description": "サービス名", "repeat": "*" }] }
-    }
-  }
-}
-```
-
-- `options`: 各オプションの名前（`names`）・説明（`description`）と、値を取るなら `"takesValue": true`（`-e prod`・`-eprod`・`--env=prod`）。
-- `operands`: オプションでない語を順に書きます。`repeat` は `?`（省略できる）・`*`（いくつでも）・`+`（1つ以上）のどれかで、書かなければちょうど1つです。語の数が合わないときは、普通の語として表示します。
-- `style`: `gnu`（既定。オペランドの後にもオプションを書ける）・`posix`（最初のオペランドでオプションが終わる）・`single-dash`（長いオプションも `-` 1つ。`-name 値`）のどれか。
-- `subcommands`: サブコマンドごとに、同じ項目を書きます。
-
-0.7 より前の形（`options` をオブジェクト `"-n|--dry-run": "…"` で、オペランドを `arguments` の説明の並びで書く形。最後の説明は繰り返す）も読みます。この形は今後のリリースで読まなくなります。
-
-## Web 版
-
-[Web 版](https://sf624.github.io/bash-explainer/) は、サンプルのスクリプトを表示して始まります。スクリプトを入力または貼り付けるか、ファイルを開いて、好きな行にカーソルを置くと、その行の解説が表示されます。解説は、エディタの横、狭いウィンドウではエディタの下、スマートフォンや縦向きのタブレットではエディタに重なるシートに出ます。インストールも、アップロードも必要ありません（[プライバシー](#プライバシー)）。ページの上端には、メニュー（☰）と設定（⚙）のあるバー（上のバー）があります。
-
-- **ファイル:** **開く** と **保存**（`Ctrl+O`・`Ctrl+S`）は、エディタのヘッダーか、解説がシートのときはメニュー（☰）にあります。ファイルをエディタにドロップしても開けます。ヘッダーにファイル名を表示する余裕があるときは、クリックすると名前を変えられます。
-- **ファイルの種類とシェル:** エディタのヘッダーにある小さなボタン（チップ）が両方を表示します。場所が足りないときは短くなり、いちばん狭いウィンドウではシェルだけになります。クリックして選びます。自動のときは、シェルを `#!` 行から決めます。
-- **問題** はエディタの下に一覧で出ます（シートでは、シートのタブになります）。狭いウィンドウでは、一覧は折りたたんだ状態で始まり、見出しをクリックすると開きます。問題の行をクリックするとその行へ移ります。`F8` と `Shift+F8` で、次の問題・前の問題へ移ることもできます（一覧が折りたたまれていても使えます）。
-- **共有:** **リンクをコピー**（上のバーか、解説がエディタの横にないときはメニュー）は、スクリプトをリンクの `#` より後ろに入れます。ブラウザは、この部分をサーバーに送りません。
-- **設定**（⚙）は、解説がエディタの横にあるときは右側の列として開き、そうでないときは画面全体に開きます。変更はすぐに反映されます（[詳しくは](#vs-code-以外での設定)）。
-- **キー:** `F6` と `Shift+F6` で、エディタと解説の間にフォーカスを移します。`Esc`、`Tab` の順に押すと、エディタから出ます。メニューのヘルプには、ほかのキーの一覧があります。
-- **タッチ画面:** エディタの上の **閲覧** と **編集** で、行をタップしたときにキーボードを出すかどうかを選べます。
-
-## VS Code 以外での設定
-
-同じ設定を、意味のある範囲で、Web 版・コマンドラインツール・Language Server でも使えます。
-
-| 設定（`bashExplainer.`…） | Web 版 | コマンドライン | Language Server |
-| --- | --- | --- | --- |
-| `language`・`notes.idioms`・`notes.pitfalls`・`notes.basis`・`shell`・`bashVersion`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`diagnostics.pitfalls`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
-| `diagnostics.enabled` | ✓ | （警告は `--check` で出す） | ✓ |
-| `hover.enabled`・`hints.names`・`hints.deadCode` | ✓ | | ✓ |
-| `examples.placement`・`panel.animations`・`blockOutline` | ✓ | | |
-| `editor.wrap`（Web 版だけの設定です。VS Code の設定にはなく、VS Code には `editor.wordWrap` があります） | ✓ | | |
-| `examples.inHover`・`hover.maxDepth`・`highlight.enabled`・`languages`・`embedded.files` | | | ✓ |
-| `hover.followCursor`・`hover.followDelay`・`panel.autoOpen`・`panel.colors` | | | |
-
-空欄は、VS Code にしかないもの（ホバーの深さと具体例、カーソルに追従するホバー、開くパネル、対象ファイルの選択）についての設定です。Web 版とコマンドラインは、渡されたファイルを、選んだ種類として解説します。
-
-- **Web 版:** 上のバーの ⚙ で開きます。変更はすぐに反映され、ブラウザに保存されます（localStorage）。**既定値に戻す** で設定が戻り、**保存したデータを消去**（確認あり）で、ページがブラウザに保存しているものすべて、つまり設定と、そのほかに覚えている選択（テーマ、画面の大きさ、深さ、「プログラムが受け取るもの」のスイッチ、閲覧モード、閉じたヒント）を削除します。既定の状態はすぐに表示され、閉じたヒントは次に読み込んだときにまた表示されます。シェルと yq は、エディタのヘッダーにある、ファイルの種類とシェルを表示するチップか、メニューの **ファイルの種類とシェル…** でも選べます。yq の一覧は、カーソルの行が yq を実行するときだけ表示します。チップで選ぶシェルと yq はこのダイアログの **対象シェル** と **yq の種類**、メニューで選ぶ言語は **言語** の設定と同じです。**ファイルにエクスポート**（または **コピー**）で、変えた設定を下の形式の設定ファイルにでき、コマンドラインツールや VS Code の `settings.json` で使えます。**ファイルからインポート…**（ダイアログへのファイルのドロップや、JSON の貼り付けも可）で、ページの設定をそのファイルの内容に置き換えます。読み込まなかったキーは一覧で表示します。
-- **コマンドラインと Language Server:** VS Code の `settings.json` と同じキー（`bashExplainer.` は付けても付けなくてもよい）の JSON ファイルです（コメントも書けます）。`--config` で指定したファイル、なければ `$BASH_EXPLAINER_CONFIG`、なければ `$XDG_CONFIG_HOME/bash-explainer/settings.json`（既定では `~/.config/bash-explainer/settings.json`）を読みます。1つの設定は `--set キー=値` でも変えられます。詳しくはツールの README の [Settings](cli/README.md#settings) を参照してください（英語）。
-
-```json
-{
-  "bashExplainer.language": "ja",
-  "bashExplainer.shell": "sh",
-  "bashExplainer.diagnostics.ignore": ["crlf"],
-  "bashExplainer.examples.disabled": ["date"],
-  "bashExplainer.customCommands": {
-    "deploy": { "summary": "サービスを本番にデプロイする" }
-  }
-}
-```
-
-## コマンドライン、他のエディタ、CI
-
-コマンドラインツール、Language Server、GitHub Action は、1つの npm パッケージ [`bash-explainer`](https://www.npmjs.com/package/bash-explainer) にまとまっています（`npx bash-explainer` で実行、または `npm install --global bash-explainer` でインストール）。オプション、出力形式（テキスト、Markdown、JSON、SARIF、GitHub のアノテーション）、Neovim・Helix・Emacs の設定、Action の入力は、[パッケージの README](cli/README.md) を参照してください（英語）。
-
-## 制限事項
-
-- 解説はルールベースです。辞書に無いコマンドは「外部コマンド」として表示され、オプションの詳細は出ません。
-- bash と同じには読めない書き方があります。zsh 独自の書き方（`*(.)` や `${(f)var}`。シェルを zsh にすると、その行は「解析できない」と表示されます）、`echo (`（bash では構文エラーですが、エラーなしで受け付けます）、宣言ビルトインを表すエイリアス（`alias d=declare` の後、bash は `d a=(1 2)` を `declare` と同じに読み、`d a=$v` の `$v` を分割しません。ここでは前者を構文エラー、後者を分割される引数として解説します）、POSIX モード（`set -o posix` や sh）での `command` の後の宣言（bash と dash は `command declare a=$v` や `command export a=$v` の `$v` を分割せず、dash は `\export a=$v` も分割しません。ここでは bash の通常モードと同じく分割するものとして解説します）、算術式の中で他の項と並んだ 64 進数の桁 `@`（`$((64#@))` だけなら 62 と読めますが、`$((64#@ + 1))` では式全体が1つの語になります）、他の文字列の前か後ろに付いた、サブシェルを実行するプロセス置換(`<((…))`)です（bash は `a<((ls))`・`<((ls))b`・`x=<((ls))` をそれぞれ1つの語と読みますが、ここでは置換が独立した語になります）。`[ ]` では、構文解析の結果によらず、bash の `test` と同じ規則で引数をまとめます（`-o` は `-a` より、`-a` は `!` より弱く結びつく。オペランドを取る位置の `-a` と `-o` は単項演算子）。
-- 改行が Windows 形式（CRLF）のスクリプトは、LF のものとして解説します。ただし、値は読み取らず、プログラムが受け取る単語には CR を示します（`a␍`）。また、bash は各行の最後の語に CR を含めて読むので、そのことを問題（`crlf`。最初の該当行の最後の語に付きます）として伝えます。毎回失敗するとき（`#!` の行や、`then`・`fi` などのキーワードの後、コマンドが始まる位置にある CR。空の行や、`;`・`&&`・`|` の後など）はエラー、それ以外（`echo hi` が CR も出力する）は警告です。このままにしたいときは、独立した行に `# bash-explainer disable-file=crlf` と書きます（1行目はシェバンなので、その前に `disable=` は置けません）。そのようなスクリプトのヒアドキュメントには、bash と同じく終わりの行がありません。
-- コマンドがスクリプトとして実行する文字列（`bash -c '…'`・`eval`・trap の動作・`ssh host '…'`）をスクリプトとして解説するのは、中身がそのまま書かれているときだけです。展開を含む文字列（`eval "$cmd"`・`bash -c "cd $dir"`）の中身は実行するときに決まります。`bash file` や `source file` で実行するファイルは読みません。
-- 予約語と同じ名前のエイリアス（`alias {=echo`・`alias [[=echo`）は反映しません。エイリアスを展開する設定では、bash は `{` や `[[` をその中身に置き換えます（`{ x; }` は構文エラーになり、`[[ x ]]` は `echo` を実行します）。しかし解説では、その行をグループや `[[ ]]` として扱います。
-- POSIX モードでは、特殊ビルトインコマンドの前に置いた配列要素への代入（`set -o posix; n[0]=5 :`）で、bash は「not a valid identifier」と表示してスクリプトを終了します。解説ではその行が実行されたものとして続きます。
-- 展開の値・常に決まる条件・実行されないコードの解説は、スクリプトが既定の環境で始まるものとして出します。環境に bash の変数がなく、bash が既定のオプションで始まる前提です。スクリプト自身が bash の動作を変える場合（`set -k`・`shopt -s compat42`・`BASH_COMPAT=42`・`POSIXLY_CORRECT=1`・`FUNCNEST=1`・`BASH_ALIASES`・`C`・`POSIX`・`C.UTF-8` 以外のロケール）と、先頭行が bash の起動を変える場合（`#!/bin/bash -k`・`#!/usr/bin/env -S BASH_COMPAT=42 bash`・`bash -O compat31 -c '…'`）は読み取ります。そのような変更や知らない構文があると、そのスクリプトでは何も決めません。値も、決まる条件も、実行されないコードの印も出しません。ロケールを `C`・`POSIX`・`C.UTF-8`・空にするだけなら、解説は変わりません。
-- スクリプトの外のことは見えません。環境の変数（`BASH_COMPAT`・`POSIXLY_CORRECT`・`FUNCNEST`・`SHELLOPTS`・`BASHOPTS`・C 以外の `LANG` や `LC_ALL`・`bash -x` のときの `PS4`・`BASH_ENV`・コマンドと同じ名前のエクスポートされた関数）は値や判断を変えられますが、考慮しません。実行時に渡すオプションも見えません。`bash -k script` や `sh script` がそうです（シェルはシェバンか設定から決め、コマンドラインのオプションは分かりません）。そのように実行するスクリプトでは、値や決まる条件の解説を割り引いて読んでください。
-- ファイルを開くリダイレクトを、同じディスクリプタの後のリダイレクトが置き換えるとき（`echo hi >a >b`）、リンクはたどりません。異なる2つのパスは別のファイルとみなします。ただし、一方に `..` があるときや、一方が絶対パスで他方が相対パスのとき（`>a >b/../a`）は「同じファイルを指すなら」と書き添えます。同じファイルを指すシンボリックリンクやハードリンク（`ln -s a b; echo hi >a >b` は `a` に書き込みます）は見分けられません。
+警告は VS Code の「問題」パネルにも表示されるので、マウスを乗せなくても気づけます。コマンドラインツール（`--check`）、Language Server、GitHub Action からも同じ警告が出ます。意味を変えずに書き換えられる場合は、クイックフィックスも出します（`sh` のスクリプトの `[[ -f $f ]]` は `[ -f "$f" ]` に、`read line` は `read -r line` に）。問題には、VS Code と同じく **ⓧ エラー**・**⚠ 警告**・**ⓘ 情報** の3つのレベルがあります。各レベルの意味、警告を出さない方法、`--check` と GitHub Action が失敗する場合は [警告とクイックフィックス](docs/guide/ja/warnings.md) を参照してください。
 
 ## プライバシー
 
-Bash Explainer は、設計上すべてオフラインで動きます。
+Bash Explainer は、設計上すべてオフラインで動きます。通信も、AI も、テレメトリも、外部プロセスも使いません。スクリプトは組み込みのコードで解説するので、同じ行には毎回同じ解説が出ます。Web 版も、スクリプトをブラウザの中で解説し、どこにも送りません。変更のたびにテストで確かめています。詳しくは [プライバシー](docs/guide/ja/privacy.md) を参照してください。
 
-- **通信しません。** 拡張にはネットワーク接続を開くコードが含まれていません。パネルも Content Security Policy で外部へのリクエストを禁止しています。Bash のマニュアル（gnu.org）へのリンクは普通のリンクで、クリックしたときだけページを開きます。
-- **AI を使いません。** [unbash](https://github.com/webpro-nl/unbash)（拡張機能に組み込んだ JavaScript の構文解析器）で構文解析し、組み込みの辞書で解説します。同じ行には毎回同じ解説が出ます。
-- **テレメトリはありません。** 拡張は何も収集しません。
-- **外部プロセスを起動しません。** 具体例の結果は組み込みのコードで計算します。手元のツールを実行することはありません。
+## ドキュメント
 
-配布する拡張に通信やプロセス起動の API が入ると、[CI のチェック](test/offline.test.ts)でビルドが失敗します（[実行履歴](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)）。さらに[結合テスト](integration/extension.itest.ts)で、配布するのと同じ拡張を実際の VS Code で動かし、接続を開いたりプロセスを起動したりすれば失敗するようにしています。Linux ではネットワークのまったくない環境で動かしています。ご自身で確かめることもできます。`.vsix` は zip ファイルなので中身を確認でき、ネットワークを切った環境でもそのまま動きます。
-
-[ブラウザ版](https://sf624.github.io/bash-explainer/) も同じです。ページは GitHub Pages から配信されますが、スクリプトの構文解析と解説はブラウザの中で行い、どこにも送りません。ページの Content Security Policy は他のサイトへのリクエストを一切許可していません。スクリプトを共有するリンクでは、スクリプトを `#` より後ろに入れます。ブラウザはこの部分をサーバーに送りません。開いたファイルもブラウザの中で読み、保存はお使いのディスクに書き込みます。ページも同じ CI のチェックの対象です。さらに、ページを Chromium で開いて他のサイトへのリクエストをすべて遮断し、オフラインにしたまま使い続けるテストも行っています。
-
-VS Code for the Web では、拡張はお使いのブラウザの中で動きます。VS Code は拡張のファイル（構文解析器を含む）を Marketplace から読み込みますが、スクリプトの解説はブラウザの中で行い、どこにも送りません。
-
-[コマンドラインツール](cli/README.md)（Language Server を兼ねます）も同じです。ネットワーク接続を開いたりプロセスを起動したりするコードを含まず、同じ CI のチェックで確かめています。さらに、通信やプロセス起動のモジュールを塞いだ状態で動かすテストも行っています。ネットワークを使うのは入手するときだけです。`npx` と GitHub Action は npm からダウンロードしますが、インストール後はオフラインで動きます。
-
-ここで述べているのはこの拡張、ブラウザ版、コマンドラインツールの性質で、VS Code 本体、他の拡張、お使いのブラウザ、npm、GitHub Actions は含みません。本拡張は無保証で提供されます（[LICENSE](LICENSE) を参照）。機密性の高いデータに使う場合は、ご自身の要件に照らして評価してください。
-
-## リリースノート
-
-[CHANGELOG.md](CHANGELOG.md) を参照してください。
-
-## 開発
-
-不具合報告やプルリクエストは [github.com/sf624/bash-explainer](https://github.com/sf624/bash-explainer) へどうぞ。
-
-```sh
-npm install
-npm run build      # dist/ にバンドル
-npm test           # 型チェック + 単体テスト
-npm run coverage   # カバレッジ付きの単体テスト（レポートは coverage/index.html）
-npm run package    # .vsix を作成
-npx tsx scripts/extract-snippets.ts   # テスト内のスクリプトを変えたあとに test/fixtures/snippets.json（構文テストとファズの入力）を書き直す（CI は --check で確かめる）
-npm run test:integration   # 拡張を VS Code で動かしてテスト（VS Code は .vscode-test/ にダウンロード）
-npm run test:integration:web   # VS Code for the Web でも同様に（`npx playwright install chromium` が必要）
-```
-
-- VS Code でこのフォルダを開いて `F5` を押すと、`test/fixtures/playground.sh` を開いた拡張機能開発ホストが起動します。これは Git に入れない `sample.sh`（全機能ツアー）のコピーで、無ければ自動で作られます。自由に書き換えてください。右側には解説のパネルも開きます（`.vscode/playground.code-workspace` で `bashExplainer.panel.autoOpen` を有効にしています）。F5 は最初に `npm install` を実行するので、pull した後も `node_modules` が `package-lock.json` に合った状態になります。
-- `npm run build:web` でブラウザ版を `site/` にビルドします（`-- --channel=next` を付けると、`/next/` で公開する開発版を、バナー付きでビルドします）。`python3 -m http.server -d site` で <http://localhost:8000/> から確認できます。
-- `npx tsx test/dump.ts <file> [ja|en] [line]` で、ファイルの各行の解説をテキストで確認できます。
-- このリポジトリの中でコマンドラインツールを試すには、`npm run build:cli` のあと `node cli/dist/cli.js <file>`（または `npx --package=./cli bash-explainer <file>`）を使います。単に `npx bash-explainer` と打っても、ここでは動きません。拡張自身の `package.json` も名前が `bash-explainer` なので、npx がこのプロジェクトをパッケージだと解釈するためです。
-- 実物と照合するテストは、`PATH` または `$BASH_EXPLAINER_SHELLS` にあるシェルと、`$BASH_EXPLAINER_YQ` にある yq を使います。yq の例は mikefarah/yq を `$BASH_EXPLAINER_YQ4`（プログラムのパス）か `PATH` 上の mikefarah 版 `yq` から使います（CI は MIT ライセンスの v4.54.1 を SHA-256 で確かめて入れます）。無いものはスキップされます。ブラウザ版のテストには Chromium が必要です（`npx playwright-core install --with-deps chromium-headless-shell`）。
-- CI は単体テストを Node.js のバージョンごとに4つのシャードに分け、それぞれ別のランナーで実行します。[scripts/test-shards.cjs](scripts/test-shards.cjs) が `scripts/test-timings.json` に計測した時間でファイルを分け（新しいファイルは中央値として数えます）、`test/shards.test.ts` がどのファイルもちょうど1つのシャードに入ることを確かめます。`MOCHA_SHARD=2/4 npx mocha` で1つのシャードを実行できます。シャードのジョブの時間がばらついてきたら、CI で `node scripts/test-shards.cjs --measure` を使って時間を計測し直します（手順はこのファイルの先頭にあります）。ジョブ `Test (Node.js …)` は、型検査とそのバージョンのすべてのシャードが通り、そのバージョンでパッケージを作れたときに通ります。Node.js 24 ではシャードのカバレッジもまとめます。
-- CI では、ツールをすべて入れた状態で単体テストのカバレッジを計測します（Node.js 24 のジョブ）。実行結果のページにカバーされていない部分の多いファイルが並び、成果物 `coverage` に HTML のレポートが入ります。ローカルで計測すると、ツールがない分のテストが飛ばされるので低めに出ます。また、CI と同じ Node.js 24 を使ってください。古い版では、一度も実行されなかったメソッドが実行済みとして数えられます。時刻帯によって通る分岐が変わるので、`npm run coverage` は CI と同じく UTC で実行します。レポートでは、テストのために tsx がソースを変換するときに足すコード（補助関数や export の getter）を数えません。これらはどのテストでも実行できない位置に対応づけられるためです（[scripts/coverage-report.mjs](scripts/coverage-report.mjs)）。
-- `src/` のすべての行は単体テストで実行され、すべての分岐を通る必要があります。そうでなければ CI が失敗します（`npm run coverage:check`）。すべてのファイルが 100% なので、[coverage-floors.json](coverage-floors.json) は空です。ここに載ったファイルは、その時点の割合が下限になり、それを下回ってはいけません。テストを足したら `node scripts/coverage-check.mjs --update` で下限を引き上げ、100% に届いたファイルを一覧から外します。どのテストも通れない分岐は削除します。ほかの部分の不具合に備える分岐の場合は、理由をコメントに書いて `/* c8 ignore next */` を付けます。VS Code 側（`extension.ts`、`service.ts`、描画以外の `ui/`）は結合テストに任せます。先頭のカバレッジのバッジは固定の表示ですが、100% を下回ると CI が失敗するので、常に正しい状態が保たれます。
-- 依存パッケージを変えたら `npm run notices` を実行して、ビルドに実際に含まれるものから [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を作り直してください。古いままのときや、まだ確認していないライセンスのものが入ったときは、テストが失敗します。
-- 日本語の解説は [docs/japanese-style.md](docs/japanese-style.md) の決まりに合わせてください（テストで確かめます）。
-- コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。説明は自分の言葉で書いてください。man ページや `--help` の出力などの文書から写してはいけません。それらのライセンス（GPL や GFDL が多い）は、このプロジェクトのライセンスと異なるためです。
-- `CHANGELOG.md` は利用者向けです。GitHub Release の本文と Marketplace の Changelog タブにそのまま出ます。項目は `## Unreleased` の下の `### New`、`### Changed`、`### Fixed` に書きます。利用者に見える変更ごとに短い箇条を一つ書き、今どう見えるかを書きます（前との違いは一言で添えます）。同じ種類の小さな修正は一つの箇条にまとめ、各節は十数個までにします。テスト、CI、リファクタリング、内部の設計は書きません。各バージョンの末尾には、前のタグとこのタグの GitHub の比較ビュー（`compare/vPREV...vX.Y.Z`）への `[All changes]` のリンクを置きます。
-- リリースするには、`package.json` と `cli/package.json` の `version` を上げて `CHANGELOG.md` に節を追加し、`v<version>` のタグを push します。[Release ワークフロー](.github/workflows/release.yml) が、タグを付けた commit で Test ワークフローが成功したことを確かめてパッケージを作り、`release` 環境での承認を待ってから、VS Code Marketplace、Open VSX、npm に公開し、GitHub Release の作成、GitHub Action が使う `v0` タグの付け替え、ブラウザ版の更新を行います。手順と、最初に一度だけ必要な設定は [docs/publishing.md](docs/publishing.md) を参照してください。Release ワークフローを手動で実行すると（Actions、Release、Run workflow）、確認とパッケージ作成だけを行う予行演習になり、何も公開しません。
+- [ユーザーガイド](docs/guide/ja/README.md): [VS Code で使う](docs/guide/ja/vscode.md)、[設定](docs/guide/ja/settings.md)、[解説できるもの](docs/guide/ja/explained.md)、[bash 以外のシェル向けのスクリプト](docs/guide/ja/other-shells.md)、[警告とクイックフィックス](docs/guide/ja/warnings.md)、[Web 版](docs/guide/ja/web.md)、[制限事項](docs/guide/ja/limitations.md)、[プライバシー](docs/guide/ja/privacy.md)。
+- [コマンドラインツール、Language Server、GitHub Action](cli/README.md)（英語）。
+- リリースノート: [CHANGELOG.md](CHANGELOG.md)（英語）。
+- 開発: [CONTRIBUTING.md](CONTRIBUTING.md)（英語）。不具合報告やプルリクエストは [github.com/sf624/bash-explainer](https://github.com/sf624/bash-explainer) へどうぞ。
 
 ## ライセンス
 

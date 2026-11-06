@@ -39,7 +39,7 @@
     {
       "input": "a\\",
       "command": "a\\",
-      "reason": "A backslash at the very end of the input: unbash keeps it, bash drops it (README Limitations; test/fixtures/bash-ast-known.json; oracles.md 2.6, 5)."
+      "reason": "A backslash at the very end of the input: unbash keeps it, bash drops it (docs/guide/limitations.md; test/fixtures/bash-ast-known.json; oracles.md 2.6, 5)."
     }
   ]
 }

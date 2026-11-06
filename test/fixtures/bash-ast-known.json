@@ -12,7 +12,7 @@
   {
     "input": "a\\",
     "path": "$",
-    "reason": "unbash accepts a backslash at the end of the input; bash rejects it (like `echo (`, README Limitations)"
+    "reason": "unbash accepts a backslash at the end of the input; bash rejects it (like `echo (`, docs/guide/limitations.md)"
   },
   {
     "input": "x=${ echo a }",

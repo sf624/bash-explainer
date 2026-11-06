@@ -1,6 +1,6 @@
 // Bash Explainer is offline by design: no network access, no AI, no telemetry and no external
 // processes; its web page runs in the browser alone. These checks keep it that way; the Privacy
-// section of README.md links here.
+// page of the user guide (docs/guide/privacy.md) links here.
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';

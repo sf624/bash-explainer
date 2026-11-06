@@ -19,7 +19,7 @@
 //
 // It reads no path of this machine. The browser is Playwright's own (PLAYWRIGHT_BROWSERS_PATH and the rest of its
 // variables, `npx playwright-core install chromium`). To draw Japanese with the fonts of CI (IPAGothic, WenQuanYi),
-// point FONTCONFIG_FILE at a fontconfig file that lists them (README "Contributing"). A memory cap and the limit on
+// point FONTCONFIG_FILE at a fontconfig file that lists them (CONTRIBUTING.md, "Tests"). A memory cap and the limit on
 // parallel heavy runs are the caller's wrapper (`~/.claude/bin/heavy`, `systemd-run --scope -p MemoryMax=…`).
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';

@@ -1,6 +1,6 @@
 # Recording the README images
 
-README.md and README.ja.md use these four files from `images/readme/`, recorded by the script below:
+These four files in `images/readme/` are recorded by the script below. README.md and README.ja.md show `demo.gif`; the page "In VS Code" of the user guide (`docs/guide/vscode.md` and `docs/guide/ja/vscode.md`) shows the other three, from the same paths:
 
 | File | What it shows | Length |
 | --- | --- | --- |
