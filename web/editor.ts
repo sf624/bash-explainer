@@ -219,6 +219,7 @@ export class Editor {
   private readonly runs = new WeakMap<ShellDocument, Array<readonly [number, number]>>();
   /** The shell's colours, from the explanations of the lines in view. */
   private readonly colours: TokenColours;
+  private reshapeTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly hintCaches = new WeakMap<ShellDocument, HintCache>();
   private hintTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly withHints: boolean;
@@ -275,8 +276,12 @@ export class Editor {
           EditorView.updateListener.of((u) => {
             host.changed(u);
             // The colours of the lines in view, after the text has rested a moment, or at once on a scroll.
-            if (u.docChanged) this.colours.changed(100);
-            else if (u.viewportChanged) this.colours.schedule(0);
+            if (u.docChanged) {
+              this.colours.changed(100);
+              // (And where long lines may wrap, and the command at the cursor, from the new tree.)
+              clearTimeout(this.reshapeTimer);
+              this.reshapeTimer = setTimeout(() => this.reshape(), 100);
+            } else if (u.viewportChanged) this.colours.schedule(0);
             // The hints of the lines in view, after the text has rested (as the problems are checked) or at once on a scroll.
             if (u.docChanged || u.viewportChanged) this.scheduleHints(u.docChanged ? 300 : 50);
           }),
@@ -306,11 +311,17 @@ export class Editor {
 
   /** Colours the script as it is now (the parse is shared with the panel and the problems), and where its long lines may wrap. */
   shade(): void {
-    const wrap = this.host.settings()['editor.wrap'];
-    this.view.dispatch({ effects: [refreshOutline.of(null), ...(wrap ? [setWrapRuns.of(this.runsOf())] : [])] });
+    this.reshape();
     // (What the colours depend on may have changed: the shell, the kind of file, a setting.)
     this.colours.stale();
     this.colours.run();
+  }
+
+  /** Where the script's long lines may wrap, and the command at the cursor looked up again, from the parse of now. */
+  private reshape(): void {
+    clearTimeout(this.reshapeTimer);
+    const wrap = this.host.settings()['editor.wrap'];
+    this.view.dispatch({ effects: [refreshOutline.of(null), ...(wrap ? [setWrapRuns.of(this.runsOf())] : [])] });
   }
 
   /** Checks the script again now (forceLinting alone only hurries a check the text already asked for), and its name hints. */
