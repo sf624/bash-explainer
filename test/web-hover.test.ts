@@ -340,6 +340,56 @@ describe('the web page: hover cards in the editor', function () {
     await ctx.close();
   });
 
+  it('opens no card for a pointer that rests where it clicked, and one for a pointer that moves on to another part (Q6)', async () => {
+    const ctx = await context();
+    const page = await ctx.newPage();
+    await open(page);
+    await page.mouse.move(5, 5);
+    await until('no box', () => box(page).count(), (n) => n === 0);
+    const n = await pointAt(page, 2, '-n');
+    // A click at once (before the 250 ms of the hover have passed), then the pointer rests: no card, and the panel has the line.
+    await page.mouse.move(n.x, n.y);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.waitForTimeout(900);
+    assert.strictEqual(await card(page).count(), 0);
+    // A small move on the same part is still the resting pointer.
+    await page.mouse.move(n.x + 1, n.y);
+    await page.waitForTimeout(900);
+    assert.strictEqual(await card(page).count(), 0);
+    // Another part: its card, as before.
+    const todo = await pointAt(page, 2, 'TODO');
+    await page.mouse.move(todo.x, todo.y);
+    assert.match(await cardText(page), /\nTODO\n/);
+    // The first part again: a pointer that has been elsewhere gets its card back.
+    await page.mouse.move(n.x, n.y);
+    await until('the card of -n', () => card(page).allInnerTexts(), (t) => t.length === 1 && /\n-n\n/.test(t[0]));
+    await ctx.close();
+  });
+
+  for (const how of ['a click', 'a paste', 'typing', 'Escape in the editor', 'Escape on the page', 'Escape in the panel'] as const) {
+    it(`closes the card the pointer opened on ${how}`, async () => {
+      const ctx = await context();
+      const page = await ctx.newPage();
+      await open(page);
+      await page.locator('.cm-content').focus();
+      if (how === 'Escape on the page') await page.evaluate('document.activeElement.blur()');
+      if (how === 'Escape in the panel') await panel(page).locator('#main').focus();
+      await hoverAt(page, 2, '-n');
+      await cardText(page);
+      switch (how) {
+        case 'a click': await page.mouse.down(); await page.mouse.up(); break;
+        case 'a paste': await page.keyboard.insertText('# '); break;
+        case 'typing': await page.keyboard.press('x'); break;
+        default: await page.keyboard.press('Escape');
+      }
+      await until('no card', () => card(page).count(), (c) => c === 0);
+      // (Typing and a paste changed the text; the others left it.)
+      assert.strictEqual((await page.locator('.cm-content').innerText()).includes('x') || (await page.locator('.cm-content').innerText()).includes('# '), how === 'a paste' || how === 'typing', how);
+      await ctx.close();
+    });
+  }
+
   it('draws the mark of a space at the end of a value as a real space on a background, named by its tooltip', async () => {
     const ctx = await context();
     const page = await ctx.newPage();

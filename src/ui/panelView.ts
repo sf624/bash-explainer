@@ -288,8 +288,8 @@ export const PANEL_BODY = `<div id="top">
   <div id="view-row" hidden>
     <button id="receives" type="button" role="switch" aria-checked="true"><span class="switch-track" aria-hidden="true"></span><span id="receives-name"></span></button>
     <button id="key-open" type="button" aria-expanded="false" aria-controls="key"></button>
+    <ul id="key" hidden></ul>
   </div>
-  <ul id="key" hidden></ul>
   <p id="short" hidden></p>
   <section id="problems" hidden></section>
   <div id="notes"></div>

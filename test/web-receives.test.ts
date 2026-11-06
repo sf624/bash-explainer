@@ -193,10 +193,15 @@ describe('the panel: what the program receives, drawn', function () {
       await page.keyboard.press('Control+End');
       await panel.locator('#receives').click();
       await until('the switch off', () => panel.locator('#tree .receives').count(), (n) => n === 0);
+      // (A click outside the Legend closed it; Escape closes it and the focus goes back to its button.)
+      assert.strictEqual(await panel.locator('#key').isHidden(), true);
+      await panel.locator('#key-open').click();
       const off = await panel.evaluate(`[...document.querySelectorAll('#key li')].map((li) => li.dataset.keyId)`) as string[];
       assert.deepStrictEqual(off.filter((id) => id.startsWith('received') || id === 'mark:handled'), [], 'what the switch drew goes with it');
-      await panel.locator('#key-open').click();
+      await panel.locator('#receives').focus();
+      await page.keyboard.press('Escape');
       assert.strictEqual(await panel.locator('#key').isHidden(), true);
+      assert.strictEqual(await panel.evaluate('document.activeElement.id'), 'key-open');
       await page.context().close();
     }
   });

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+
+### Changed
+
+- On the web page, the card over the script no longer opens where you clicked, and it closes on a click, a paste, typing and Escape. The Legend is a popover over the explanation that Escape closes, and it has no button on a line with nothing to explain. Before, the Legend pushed the explanation down and stayed open on the next line.
+
 ## 0.10.0
 
 The panel has one view with a depth. It starts with one sentence that says what the line does and a box of the line's problems, and a switch shows what each program receives. Problems have a third level, Error, and `--check` fails on errors. The web page has a new layout around the editor; on a phone, the explanation is a sheet over it.
