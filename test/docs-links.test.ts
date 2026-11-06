@@ -30,7 +30,8 @@ function headings(text: string): { level: number; text: string }[] {
  * every character but letters, marks, digits, `_`, `-` and spaces left out, and each space a `-`.
  */
 function slug(heading: string): string {
-  const shown = heading.replace(/<[^>]*>/g, '').replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[`*]/g, '');
+  // (A tag's name is left out; a `<` or `>` that is left is no letter, so the slug drops it too.)
+  const shown = heading.replace(/<[^>]*>/g, '').replace(/[<>]/g, '').replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[`*]/g, '');
   return shown.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\p{Pc}\- ]/gu, '').replace(/ /g, '-');
 }
 
