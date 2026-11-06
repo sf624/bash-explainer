@@ -155,6 +155,10 @@ describe('the box "Problems on this line"', () => {
       { text: 'for f in *.log; do\n  [ -e "$f" ] || continue\n  wc -l "$f"', changed: [{ from: 21, to: 47 }] },
       { text: 'shopt -s nullglob\nfor f in *.log; do', changed: [{ from: 0, to: 18 }] },
     ]);
+    // (A place in a string another shell reads has no rewrite: the others' fixes stay, as the editors' quick fixes do.)
+    // (Each of the line's two notes of the id has it.)
+    assert.deepStrictEqual(box("read x; bash -c 'read y'").map((p) => p.fixes), Array(2).fill([{ text: "read -r x; bash -c 'read y'", changed: [{ from: 0, to: 7 }] }]));
+    assert.deepStrictEqual(box("cp $a b; bash -c 'cp $a c'").map((p) => p.fixes), Array(2).fill([{ text: 'cp "$a" b; bash -c \'cp $a c\'', changed: [{ from: 3, to: 7 }] }]));
     // (The carriage return of a CRLF line is not in it.)
     assert.deepStrictEqual(fixes('read line\r\necho'), [{ text: 'read -r line', changed: [{ from: 0, to: 7 }] }]);
     // (Without the document's text, and for a rewrite with no edits: its code alone.)

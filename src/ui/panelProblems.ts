@@ -76,9 +76,12 @@ export function boxProblems(ex: LineExplanation, places: ReadonlyMap<Token, stri
   const t = ui[lang].panel.problems;
   /**
    * The fixes of a note about `anchors`: each rewrite with its edits at every place, as a fact's (`withRewritesOf`: a
-   * note about two places, `cp $a b; cp $a c`, fixes both), over the lines of them all.
+   * note about two places, `cp $a b; cp $a c`, fixes both), over the lines of them all. Only the places that have
+   * rewrites: one in a string another shell reads has none (`read x; bash -c 'read y'`), and the editors' quick fixes
+   * still fix the others.
    */
-  const fixes = (anchors: readonly NoteAnchor[]): BoxFix[] => {
+  const fixes = (all: readonly NoteAnchor[]): BoxFix[] => {
+    const anchors = all.filter((a) => a.rewrite);
     if (!anchors.length) return [];
     const first = leastOf(anchors.map((a) => a.span.start.line));
     const last = mostOf(anchors.map((a) => a.span.end.line));
