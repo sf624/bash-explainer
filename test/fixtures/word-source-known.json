@@ -20,7 +20,6 @@
     {"file":"src/dict/syntax.ts","fn":"rep","kind":"helper","count":1,"row":"W-L3"},
     {"file":"src/examples/patterns.ts","fn":"testExample","kind":"helper","count":1,"row":"W-G3"},
     {"file":"src/examples/patterns.ts","fn":"testExample","kind":"node-type","count":7,"row":"W-G3"},
-    {"file":"src/examples/runtime.ts","fn":"knownTruth","kind":"glob-class","count":2,"row":"W-G3"},
     {"file":"src/expansion-tokens.ts","fn":"expansionPart","kind":"helper","count":2,"row":"W-G1"},
     {"file":"src/expansion-tokens.ts","fn":"expansionSummary","kind":"helper","count":1,"row":"W-P1"},
     {"file":"src/expansion.ts","fn":"sampleCases","kind":"helper","count":2,"row":"W-L3"},
