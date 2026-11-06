@@ -9,7 +9,7 @@ import { detectShell } from '../src/dialect';
 import { deadCodeHints, documentIssues, explainDocumentLine, type ShellDocument } from '../src/document';
 import { openDocument } from '../src/document-setup';
 import { runJq } from '../src/examples/jq';
-import { FILTERS } from '../src/examples/textfilters';
+import { filterOf } from '../src/examples/textfilters';
 import { rerun } from '../src/examples/rerun';
 import { charge, chargeSize, costOf, guarded, guardedApart, guardedResult, modelLimit, modelValueLimit, MODEL_LIMIT, Refused, runnerStep, scriptRegex, withinLine } from '../src/examples/regexguard';
 import { LineExplainer } from '../src/explain/context';
@@ -1128,9 +1128,9 @@ describe('one line must not stop the whole tool', () => {
         [['-f', '1000000000'], 'a x\nb y\n', 'uniq'],
         [['-s', '1000000000'], 'a\nb\n', 'uniq'],
         [['-w', '1000000000'], 'a\nb\n', 'uniq'],
-      ] as [string[], string, keyof typeof FILTERS][]) {
+      ] as [string[], string, string][]) {
         const real = run(tool, args, { input, env: { LC_ALL: 'C' } }).stdout.toString().split('\n').slice(0, -1);
-        assert.deepStrictEqual(FILTERS[tool](args, input.split('\n').slice(0, -1)), real, `${tool} ${args.join(' ')}`);
+        assert.deepStrictEqual(filterOf(tool)!(args, input.split('\n').slice(0, -1)), real, `${tool} ${args.join(' ')}`);
       }
       // (A made-up input is as wide as the command asks: the field it names is there.)
       assert.deepStrictEqual(output('cut -d, -f70 a.csv').slice(0, 3), ['f70', 'f70', 'f70']);

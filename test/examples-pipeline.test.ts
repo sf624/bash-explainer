@@ -9,6 +9,9 @@ import { Analyzer, lookupCommand } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
 import { interpret } from '../src/argv/interpret';
 import { pipedOutput, pipelineExample, Stage } from '../src/examples/pipeline';
+import { rerun } from '../src/examples/rerun';
+import { commandExample } from '../src/examples/textfilters';
+import { explain, tokensOf } from './support/explain';
 import { ENVIRONMENT } from '../src/examples/layouts';
 import { readsFiles } from '../src/examples/source';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -487,5 +490,28 @@ describe('a pipeline example runs with example values of variables the script le
       const real = run('bash', ['-c', src.replace(/^ps aux \| /, '')], { input: rows.join('\n') + '\n', env }).stdout.toString();
       assert.deepStrictEqual(ex.sections.at(-1)!.lines, real.replace(/\n$/, '').split('\n'), src);
     }
+  });
+});
+
+// A command name from the script is never a key that a table inherits from Object.prototype.
+describe('a command named like a property of every object', () => {
+  const names = ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf'];
+  it('is an unknown command in a pipeline, with no example and no crash', () => {
+    for (const name of names) {
+      assert.strictEqual(pipelineExample([{ cmd: 'seq', words: ['3'], text: 'seq 3' }, { cmd: name, words: [], text: name }], false), undefined, name);
+      assert.strictEqual(pipelineExample([{ cmd: name, words: [], text: name }, { cmd: 'sort', words: [], text: 'sort' }], false), undefined, name);
+      assert.strictEqual(commandExample(name, []), undefined, name);
+    }
+  });
+  it('is explained as a program that is not in the dictionary, in a line and in a pipeline', () => {
+    for (const name of names) {
+      for (const src of [`${name} a b`, `echo a | ${name}`, `seq 3 | ${name} | sort`]) {
+        assert.ok(tokensOf(src).some((t) => t.label === name && /not in the dictionary/.test(t.explanation)), src);
+        assert.ok(!explain(src).examples.some((e) => e.title.includes(name)), src);
+      }
+    }
+  });
+  it('is no filter to run again in the panel', () => {
+    for (const name of names) assert.deepStrictEqual(rerun({ kind: 'filter', cmd: name, words: [] }, [['b', 'a']], 'en').sections[0].lines, ['(cannot run on this input)'], name);
   });
 });

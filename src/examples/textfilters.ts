@@ -638,9 +638,12 @@ function runCat(words: (string | undefined)[], input: string[]): string[] {
   return input;
 }
 
-export const FILTERS: Record<string, (words: (string | undefined)[], input: string[]) => string[]> = wordTable({
+const FILTERS: Record<string, (words: (string | undefined)[], input: string[]) => string[]> = wordTable({
   cat: runCat, sort: runSort, uniq: runUniq, cut: runCut, tr: runTr, head: runHead, tail: runTail,
 });
+
+/** The filter that simulates the command `cmd`, a name from the script: only an own entry (not `constructor`, `__proto__`). */
+export const filterOf = (cmd: string): ((words: (string | undefined)[], input: string[]) => string[]) | undefined => (Object.hasOwn(FILTERS, cmd) ? FILTERS[cmd] : undefined);
 
 const WORDS = ['banana', 'apple', 'cherry', 'grape', 'melon', 'peach'];
 const COLUMNS = [WORDS, ['red', 'green', 'blue', 'yellow', 'pink', 'white'], ['tokyo', 'osaka', 'kyoto', 'nara', 'kobe', 'sendai']];
@@ -761,7 +764,7 @@ export function commandExample(cmd: string, words: (string | undefined)[]): Comm
     if (cmd === 'seq') return { output: runSeq(words) };
     if (cmd === 'basename') return { output: runBasename(words) };
     if (cmd === 'dirname') return { output: runDirname(words) };
-    const run = FILTERS[cmd];
+    const run = filterOf(cmd);
     if (!run) return undefined;
     // (cat's lines are any text; they are not a sample for the stages after it in a pipeline, as `sampleInput` gives.)
     const input = cmd === 'cat' ? ['line 1', 'line 2', 'line 3', 'line 4'] : sampleInput(cmd, words);

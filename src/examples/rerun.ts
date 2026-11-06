@@ -16,7 +16,7 @@ import { runXargs, showCommand } from './runtime';
 import { runSed } from './sed';
 import { codeSpan } from '../label';
 import { globMatches, globMiss, type GlobMiss, GlobMode, GlobOpts } from './shellwords';
-import { FILTERS, perFile } from './textfilters';
+import { filterOf, perFile } from './textfilters';
 import { pushAll } from '../lists';
 
 /**
@@ -196,7 +196,7 @@ export function runAgain(spec: RerunSpec, boxes: string[][], lang: Lang): RerunR
     case 'awk': return out(runAwk(spec.program, input, { ...spec, files: spec.files?.map((name, i) => ({ name, lines: inputs[i] })) }));
     case 'perl': return out(runPerl(spec.code, spec.opts, input));
     case 'filter': {
-      const run = FILTERS[spec.cmd];
+      const run = filterOf(spec.cmd);
       if (!run) return out(undefined);
       // (`files` is given to the tools that print a header for each file, head and tail: `EachFile`.)
       if (spec.files) return out(perFile(spec.cmd as 'head' | 'tail', spec.files.map((name, i) => ({ name, lines: inputs[i] })), words(spec.words)));
