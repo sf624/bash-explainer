@@ -68,7 +68,7 @@ export const ui = {
           command: '1 つのコマンド', compound: '1 つの複合コマンド（`if`・`for`・`[[ ]]` など）', group: 'パイプラインやリスト（`|`・`&&`・`||`・`;`）でつないだコマンド',
         },
         names: {
-          program: '{shell}が PATH から見つけて起動するプログラム', builtin: '{shell}に組み込まれたコマンド', function: 'スクリプトで定義した関数', alias: '{shell}が読むときに置き換えるエイリアス',
+          program: '{shell}が PATH から見つけて起動するプログラム', builtin: '{shell}に組み込まれたコマンド', function: 'シェルの関数（スクリプトで定義したもの。bats では `run` など、bats が用意したものも）', alias: '{shell}が読むときに置き換えるエイリアス',
           keyword: '{shell}の予約語', none: '実行できるものが見つからない名前', sourced: 'プログラムか、前に読み込んだファイルの関数',
         },
         roles: {
@@ -222,7 +222,7 @@ export const ui = {
           command: 'one command', compound: 'one compound command (`if`, `for`, `[[ ]]` and the like)', group: 'commands joined into a pipeline or a list (`|`, `&&`, `||`, `;`)',
         },
         names: {
-          program: 'a program {shell} finds in PATH and starts', builtin: 'a command built into {shell}', function: 'a function defined in the script', alias: 'an alias, replaced when {shell} reads the line',
+          program: 'a program {shell} finds in PATH and starts', builtin: 'a command built into {shell}', function: 'a shell function: the script\'s own, or one its host defines (bats\' `run`)', alias: 'an alias, replaced when {shell} reads the line',
           keyword: 'a reserved word of {shell}', none: 'a name with nothing to run', sourced: 'a program, or a function of a file read before here',
         },
         roles: {
