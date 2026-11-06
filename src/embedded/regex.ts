@@ -29,9 +29,9 @@ const SHORTHANDS: Record<string, { ja: string; en: string; gnu: boolean; js?: st
   B: { ja: '単語の境界ではない位置', en: 'a position that is not a word boundary', gnu: true, js: '=' },
   '<': { ja: '単語の先頭', en: 'the start of a word', gnu: true },
   '>': { ja: '単語の末尾', en: 'the end of a word', gnu: true },
-  A: { ja: '文字列の先頭', en: 'the start of the subject', gnu: false, js: '^' },
-  z: { ja: '文字列の末尾', en: 'the end of the subject', gnu: false, js: '$' },
-  Z: { ja: '文字列の末尾（末尾の改行の前も可）', en: 'the end of the subject (or before a final newline)', gnu: false, js: '$' },
+  A: { ja: '文字列の先頭', en: 'the start of the text', gnu: false, js: '^' },
+  z: { ja: '文字列の末尾', en: 'the end of the text', gnu: false, js: '$' },
+  Z: { ja: '文字列の末尾（末尾の改行の前も可）', en: 'the end of the text (or before a final newline)', gnu: false, js: '$' },
   t: { ja: 'タブ', en: 'a tab', gnu: false, js: '=' },
   n: { ja: '改行', en: 'a newline', gnu: false, js: '=' },
   r: { ja: '復帰文字(CR)', en: 'a carriage return', gnu: false, js: '=' },
@@ -97,12 +97,15 @@ interface State {
   tool: RegexTool | 'perl';
   /** mawk reads the awk regex (`\y` is the letter). */
   mawk: boolean;
-  /** What `^` and `$` stand at the ends of (`RegexOptions.unit`). */
+  /** What `^` and `$` stand at the ends of here (`RegexOptions.unit`; an inline `(?m)` changes it from where it stands). */
   unit: MatchUnit;
+  /** What they stand at the ends of before any `(?m)`. */
+  base: MatchUnit;
 }
 
 /** What a regex is matched against: one line (grep, sed), or a whole string that may hold newlines (bash, awk, Perl). */
-export type MatchUnit = 'line' | 'text';
+/** (`record`: the text is awk's record, `$0`, which a rule's `/re/` matches.) */
+export type MatchUnit = 'line' | 'text' | 'record';
 
 /** The unit of each tool (bash's `[[ =~ ]]` and awk's `~` and `match` read the string whole; no tool but `grep`/`sed` splits it). */
 const UNITS: Record<RegexTool | 'perl', MatchUnit> = { grep: 'line', sed: 'line', awk: 'text', bash: 'text', perl: 'text' };
@@ -133,13 +136,14 @@ export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: Rege
   // (`\Q$x\E`: the value is plain text there, which this reader does not follow.)
   if (flavor === 'pcre' && src.includes('\\Q') && hasHole(src)) return [holeStop(0)];
   const tool = opts.perl ? 'perl' : opts.tool ?? (opts.sedEscapes ? 'sed' : 'grep');
-  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), names: new Map(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool] };
+  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), names: new Map(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool], base: opts.unit ?? UNITS[tool] };
   return mergeLiterals(sequence(st, 0), st);
 }
 
 /** `^` and `$`: the start and the end of what the tool matches, a line or a text; Perl's `$` also stands before a final newline. */
 function anchor(st: State, c: '^' | '$'): string {
   const { s } = st;
+  if (st.unit === 'record') return c === '^' ? s('`^`: レコード（`$0`）の先頭', '`^`: start of the text (the record, `$0`)') : s('`$`: レコード（`$0`）の末尾', '`$`: end of the text (the record, `$0`)');
   if (c === '^') return st.unit === 'line' ? s('`^`: 行の先頭', '`^`: start of the line') : s('`^`: 文字列の先頭', '`^`: start of the text');
   if (st.unit === 'line') return s('`$`: 行の末尾', '`$`: end of the line');
   return st.tool === 'perl' ? s('`$`: 文字列の末尾（末尾の改行の前も可）', '`$`: end of the text (or before a final newline)') : s('`$`: 文字列の末尾', '`$`: end of the text');
@@ -332,6 +336,8 @@ function group(st: State, openLen: number): EmbeddedToken {
   const { s } = st;
   const start = st.i;
   st.i += openLen;
+  // (An inline `(?m)` lasts to the end of its group.)
+  const unit = st.unit;
   let explanation: string;
   let group: number | undefined;
   const rest = st.src.slice(st.i);
@@ -348,6 +354,7 @@ function group(st: State, openLen: number): EmbeddedToken {
     st.i += ext[0].length;
     const k = ext[1];
     const name = ext[2] ?? ext[3];
+    if (ext[4]) inlineFlags(st, ext[4]);
     if (k === ':') explanation = s('`(?:…)`: まとめるだけのグループ（番号は付かない）', '`(?:…)`: non-capturing group');
     else if (k === '=') explanation = s('`(?=…)`: 直後に … が続く位置（先読み。文字は消費しない）', '`(?=…)`: followed by … (lookahead, consumes nothing)');
     else if (k === '!') explanation = s('`(?!…)`: 直後に … が続かない位置（否定先読み）', '`(?!…)`: not followed by … (negative lookahead)');
@@ -373,7 +380,15 @@ function group(st: State, openLen: number): EmbeddedToken {
   const close = isGroupClose(st);
   if (close) st.i += close;
   else explanation += s('（閉じ括弧がない）', ' (missing closing parenthesis)');
+  st.unit = unit;
   return { start, end: st.i, kind: 'block', explanation, children, ...(group ? { group } : {}) };
+}
+
+/** `(?m)` and `(?-m)` (also `(?i-m:`): with `m` `^` and `$` stand at every line; without it, at the ends of the text (of the line, in grep). */
+function inlineFlags(st: State, flags: string): void {
+  const [on, off = ''] = flags.split('-');
+  if (on.includes('m')) st.unit = 'line';
+  else if (off.includes('m')) st.unit = st.tool === 'grep' ? st.base : 'text';
 }
 
 /** The end of the group that opens at `open` (an unclosed one ends with the text). */

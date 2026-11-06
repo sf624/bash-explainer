@@ -623,8 +623,7 @@ In double quotes bash takes a backslash away only before `$`, a backtick, `"`, `
 
 ### `^` and `$`: the start of a line or of a text
 
-- `^` and `$` are the ends of what the tool matches the regex against. grep and sed match each line (the pattern space), so they are "the start/end of the line". bash's `[[ $x =~ ^1 ]]`, awk (`~`, `match()`, a rule's `/re/`) and Perl match a whole string, which may hold newlines, and the anchors do not match inside it: with `x=$'a\n1'`, `^1` and `a$` both fail in bash. These say "the start/end of the text" (ja 文字列の先頭・末尾). Before, every tool said "line".
-- Perl's `$` also matches before a final newline (`"a\n" =~ /a$/`); it says so. With the flag `m` (`/^b/m`, `s/^/> /mg`), Perl's anchors are a line's again.
-- `grep -z` and `sed -z` read a record up to a NUL, so their anchors are the record's: "text" as well.
+- `^` and `$` are the ends of what the tool matches the regex against. grep and sed match each line (the pattern space), so they are "the start/end of the line". bash's `[[ $x =~ ^1 ]]`, awk (`~`, `match()`, a rule's `/re/`) and Perl match a whole string, which may hold newlines, and the anchors do not match inside it: with `x=$'a\n1'`, `^1` and `a$` both fail in bash. These say "the start/end of the text" (ja 文字列の先頭・末尾); in an awk rule's `/re/` the text is "the record, `$0`". Before, every tool said "line".
+- Perl's `$` also matches before a final newline (`"a\n" =~ /a$/`); it says so. With the flag `m` (`/^b/m`, `s/^/> /mg`) or an inline `(?m)` (from where it stands, to the end of its group; `(?-m)` undoes it, also in `grep -P`), the anchors are a line's again. PCRE's `\A`, `\z` and `\Z` say "the text" too.
+- `grep -z` and `sed -z` read a record up to a NUL, so their anchors are the record's: "text" as well. The flag `M` of `s` says that with `-z` it matches at no newline (sed 4.9).
 - Left as it was: a sed script that joins lines (`N`, `G`, `H`) matches `^` and `$` against the whole pattern space, which still says "line" unless `-z` is given.
-

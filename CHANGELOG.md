@@ -101,7 +101,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The Reading view no longer fails on a line whose statement uses an alias on a later line, such as a `case` branch that calls it.
 - A script or pattern with a backslash in double quotes, or unquoted, is read as the program gets it: `sed -E "s#^//([^:]*):#\1/#"`, `grep "a\.b"`, `awk "{print \$1}"` and `awk -F "\t"` show their parts and the example, as the single-quoted form does; where bash removes a backslash (`\$`, `\\`), the explanation says so.
 - `grep -oP 'a=\K\S+'` explains `\K` and the other PCRE escapes (`\R`, `\h`, `\Q…\E`, `\g1`, `(?>…)`, a range such as `[^\x00-\x7F]`); one it cannot read is said to be unread, not shown as a literal letter, and the example is made only for a pattern JavaScript reads as PCRE does. `awk '/\t/'` and `sed 's/\h/x/'` no longer say the escape needs `grep -P`: each tool's own escapes are read as it reads them. `tr -dc 'a-z'` says it keeps those characters and deletes the rest; `-c` is read in every `tr` call, and a range of octal codes (`tr -cd '\000-\177'`) is a range.
-- `^` and `$` in `[[ $x =~ … ]]`, awk and Perl are "start" and "end of the text" (a string may hold newlines, where they do not match inside it); in grep and sed they stay the line's. Before, all said "of the line".
+- `^` and `$` in `[[ =~ ]]`, awk and Perl now say the start or end of the text: they do not match at a newline inside it. grep and sed still say the line.
 
 [All changes](https://github.com/sf624/bash-explainer/compare/v0.9.1...main)
 

@@ -102,6 +102,11 @@ export function readBefore(parse: ArgvParse, word: number): GivenValue[] {
   return out;
 }
 
+/** Whether the command reads its input in NUL-ended records (`OptionSpec.records`: `grep -z`, `sed -z`). */
+export function inRecords(parse: ArgvParse): boolean {
+  return givenOptions(parse).some(({ role }) => role.role === 'option' && !!role.spec.records);
+}
+
 /** The option's flag with a dash, as its spec names it (`-x` for `+x`; old-style letters keep theirs). */
 const flagOf = (role: OptionRole | UnknownOptionRole): string => (role.flag.startsWith('+') ? '-' + role.flag.slice(1) : role.flag);
 

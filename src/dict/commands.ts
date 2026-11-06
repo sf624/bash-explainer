@@ -330,7 +330,7 @@ export const core: Record<string, CommandSpec> = {
     ...GNU_INFO,
   ], { example: 'cat', copies: true, parser: 'getopt_long', positional: [pos('出力するファイル（`-` または省略で標準入力）', 'file to print (`-` or none = stdin)')], positionalIo: ['input'] }),
   grep: cmd('パターン（正規表現）に一致する行を検索して表示する', 'Print lines matching a pattern (regex)', [
-    ['-z|--null-data', '行の区切りを改行でなく NUL にする', 'lines end with NUL, not newline'],
+    ['-z|--null-data', '行の区切りを改行でなく NUL にする', 'lines end with NUL, not newline', 'records'],
     ['-a|--text', 'バイナリファイルもテキストとして扱う', 'treat binary files as text'],
     ['-I', 'バイナリファイルを無視する', 'ignore binary files'],
     ['-b|--byte-offset', '各行のバイト位置も表示', 'print the byte offset of each line'],
@@ -396,7 +396,7 @@ export const core: Record<string, CommandSpec> = {
     ['-f|--file', 'スクリプトをファイルから読む', 'read the script from a file', 'arg fills io:read in-order'],
     { ...optionOf(['-E|-r|--regexp-extended', '拡張正規表現(ERE)を使う', 'use extended regex (ERE)']), selects: 'ere' },
     ['-s|--separate', '複数ファイルを別々に扱う', 'treat files separately', 'each:apart'],
-    ['-z|--null-data', '行区切りを NUL 文字にする', 'lines are separated by NUL'],
+    ['-z|--null-data', '行区切りを NUL 文字にする', 'lines are separated by NUL', 'records'],
     ...GNU_INFO,
   ], { parser: 'getopt_long', modes: [{ name: 'bre', default: true }, { name: 'ere' }], positional: [pos('sed スクリプト（例: `s/foo/bar/g` は foo を bar に全置換）', 'sed script (e.g. `s/foo/bar/g` replaces all foo with bar)'), files], positionalLang: ['sed'], positionalIo: [undefined, 'input'] }),
   awk: cmd('テキストを行・フィールド単位で処理するプログラミング言語（`$1` は1列目）', 'Pattern-scanning language that processes lines and fields (`$1` = first field)', [
