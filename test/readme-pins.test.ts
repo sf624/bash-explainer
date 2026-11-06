@@ -217,7 +217,7 @@ describe('the packages, as the Release workflow builds them', function () {
     assert.strictEqual(readZipEntry(zip, 'extension/none.md'), undefined);
     assert.deepStrictEqual(findUnpinned(readme, tag), []);
     assert.deepStrictEqual(pinnedImages(readme, tag).map((u) => u.replace(`${RAW}/${tag}/`, '')).sort(),
-      ['images/readme/demo.gif', 'images/readme/logo-dark.png', 'images/readme/logo-light.png']);
+      ['images/readme/demo.gif', 'images/readme/logo-dark.png', 'images/readme/logo.png']);
     assert.doesNotMatch(readme, /describes the development version on/);
     assert.deepStrictEqual(findUnpinned(withoutUnreleased(readZipEntry(zip, 'extension/CHANGELOG.md'))!, tag, true), []);
     // The program says the same, and fails for another tag.
