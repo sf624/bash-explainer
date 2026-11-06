@@ -167,6 +167,10 @@ describe('the box "Problems on this line"', () => {
     const quoted = placeExamples(explain('read line'));
     const noEdits = { ...quoted, anchors: quoted.anchors!.map((a) => ({ ...a, rewrite: a.rewrite!.map((r) => ({ ...r, edits: [] })) })) };
     assert.deepStrictEqual(boxProblems(noEdits, rowModel(noEdits, DEPTH1, 'en').places, 'en', () => true, parser.parse('read line'))[0].fixes, [{ text: 'read -r', changed: [] }]);
+    // (Two places whose rewrites have no code in common: no fix fixes both, so none, as for a fact, `withRewritesOf`.)
+    const two = placeExamples(explain('read x; read y'));
+    const apart = { ...two, anchors: two.anchors!.map((a, i) => ({ ...a, rewrite: a.rewrite!.map((r) => ({ ...r, code: `${r.code} ${i}` })) })) };
+    assert.deepStrictEqual(boxProblems(apart, rowModel(apart, DEPTH1, 'en').places, 'en', () => true, parser.parse('read x; read y')).map((p) => p.fixes), [[]]);
   });
 
   it('says in "more" what a problem cites and rests on', () => {
