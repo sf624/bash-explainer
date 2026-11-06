@@ -5,6 +5,7 @@ import { builtins } from '../dict/builtins';
 import { quietPrompt } from './allow';
 import { alwaysNumeric, changedUnseen } from './vars';
 import type { WrittenValue } from './written';
+import type { SyntaxNode } from '../syntax/tree';
 
 /**
  * What a write gives a variable: a number, nothing (unset), the value it had (`declare x` outside a function: maybe
@@ -121,10 +122,13 @@ export function compoundReads(names: readonly string[], writesOf: (name: string)
 /**
  * A command named by a variable (`variables`): each value the script gives it must be a command that changes
  * nothing; not a function of the script (`c=f; $c` runs `f` where the walk does not see it, and what it changes is not
- * known), and, unquoted, not empty (`cmd=; $cmd eval x=2` runs `eval`).
+ * known), and, unquoted, not empty (`cmd=; $cmd eval x=2` runs `eval`). The reason, and where it starts (`from`):
+ * such a command changes nothing before it runs, so at the statement of the top level that holds the first (`top`;
+ * none where one is not placed, in an alias's text, which runs where the alias is used).
  */
-export function commandNames(variables: readonly { name: string; quoted: boolean }[], writesOf: ReadonlyMap<string, readonly Write[]>, functions: ReadonlySet<string>): string | undefined {
-  const why = 'a command name not known';
+export function commandNames(variables: readonly { name: string; quoted: boolean; top?: SyntaxNode }[], writesOf: ReadonlyMap<string, readonly Write[]>, functions: ReadonlySet<string>): { why: string; from?: SyntaxNode } | undefined {
+  const first = variables[0]?.top;
+  const why = { why: 'a command name not known', ...(first && variables.every((v) => v.top) ? { from: first } : {}) };
   for (const { name, quoted } of variables) {
     const writes = writesOf.get(name) ?? [];
     if (!writes.length || (!quoted && writesOf.has('IFS'))) return why;

@@ -19,6 +19,11 @@ export const NO_NAMES: ReadonlySet<string> = new Set();
 export interface Trust {
   /** Why nothing is trusted (no decision at all), when so. */
   readonly blind: string | undefined;
+  /**
+   * Where `blind` starts, when the construct that makes it so is in the script's own text: the statement of its top
+   * level that holds it. What runs before that statement runs as the walk follows it (see `StateModel.blindAt`).
+   */
+  readonly blindFrom?: SyntaxNode;
   /** Whether a decision may read the variable `name`. */
   variable(name: string): boolean;
   /** Whether every call of the function `name` is one the walk sees (a plain call in the script). */

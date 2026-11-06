@@ -135,6 +135,14 @@ export interface StateModel {
   condition(n: SyntaxNode): Decision | undefined;
   /** Why no condition of the script is decided, if so (src/semantics/trust.ts): `source`, `$cmd`… */
   readonly blind: string | undefined;
+  /**
+   * Why the values the walk gives at `n` do not hold, if so: `blind`, unless `n` runs before anything that makes the
+   * model blind may run. That is, a node of the script's top level (not in a function body, which may run at any
+   * call), in a statement before the first one that holds such a construct (`Trust.blindFrom`): bash runs the
+   * statements of the top level in turn, so `x=1; echo $x; source f` prints 1. Not where the construct is not one of
+   * the text (CR LF line ends, the shebang, what the walk found on the way).
+   */
+  blindAt(n: SyntaxNode): string | undefined;
   /** Whether every call of the function `name` is one the walk sees (src/semantics/trust.ts), so its body's states are those of its calls. */
   closed(name: string): boolean;
   /**
@@ -646,6 +654,8 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     provides: file.provides,
     trusts: (name) => !found && trust.variable(name),
     blind: found ?? trust.blind,
+    blindAt: (n) => (found === undefined && trust.blindFrom && rootOf(n) === tree.root && n.endIndex <= trust.blindFrom.startIndex
+      && !ancestor(n, (a) => a.type === 'function_definition') ? undefined : found ?? trust.blind),
     closed,
     env: (n) => envs.at(n),
     calls: w.calls,

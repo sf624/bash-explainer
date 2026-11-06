@@ -5,6 +5,7 @@ import { execFileSync, spawnSync } from 'child_process';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
+import { wordFields } from '../src/semantics/words';
 import { assertGrowth } from './support/growth';
 
 const parser = createUnbashParser();
@@ -429,5 +430,33 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     for (const src of ['a=x; read a; declare -r a="$1"; f() { local a="$1"; }', 'declare -a a="x$1"', 'a=(); export a="$1"; readonly a="$1"', 'a=(); declare a[1]="$1"']) {
       assert.strictEqual(blind(src), undefined, src);
     }
+  });
+
+  it('takes the values of the walk where a model that trusts nothing runs before what makes it so (StateModel.blindAt)', () => {
+    /** The fields the model gives each `$u` of `src`, joined (`?`: not known), with the reason the model is blind. */
+    const values = (src: string): string => {
+      const tree = parser.parse(src);
+      const model = shellState(tree);
+      const said = descendants(tree.root, ['simple_expansion']).filter((e) => e.text === '$u').map((e) => wordFields(e, model).fields?.join(' ') ?? '?');
+      return `${said.join(',')} (${model.blind})`;
+    };
+    const table: [string, string, string][] = [
+      // Before the first statement that holds what the model does not read, the value bash prints; after it, none.
+      ['u=1; echo $u; eval "$n"; echo $u', '1\n2', '1,? (eval of text not known)'],
+      ['u=1\necho $u\n. /dev/null\necho $u', '1\n1', '1,? (a file is sourced)'],
+      ['c=f; f() { u=2; }; u=1; echo $u; $c; echo $u', '1\n2', '1,? (a command name not known)'],
+      // (One in an alias's text, which the scan reads after the script, runs where the alias is used: not placed.)
+      ["shopt -s expand_aliases\nalias r='$c'\nc=f; f() { u=2; }; u=1; echo $u; r; echo $u", '1\n2', '?,? (a command name not known)'],
+      // A function body runs at its calls, which may come after; a loop runs its body again after it.
+      ['f() { echo $u; }; u=1; f; eval "$n"; f', '1\n2', '? (eval of text not known)'],
+      ['u=1; for i in 1 2; do echo $u; eval "$n"; done', '1\n2', '? (eval of text not known)'],
+      ['u=1; { echo $u; eval "$n"; }; echo $u', '1\n2', '?,? (eval of text not known)'],
+    ];
+    for (const [src, out, want] of table) {
+      assert.strictEqual(spawnSync('bash', ['-c', src], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', n: 'u=2' }, encoding: 'utf8' }).stdout, `${out}\n`, src);
+      assert.strictEqual(values(src), want, src);
+    }
+    // Where the text itself is not what bash reads (CR LF line ends), nothing holds.
+    assert.strictEqual(values('u=1\r\necho $u\r\n'), '? (the script has CR LF line ends)');
   });
 });
