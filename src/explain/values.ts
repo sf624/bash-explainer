@@ -45,6 +45,16 @@ export function scriptValue(cx: Explainer, n: SyntaxNode, p: ParsedExpansion): S
 }
 
 /**
+ * The value the script gives the variable `name` where the expansion `part` runs, when the model knows it for sure
+ * and an example can show it as it is (`plainValue`, or empty), whatever bash makes of the word: for the cases of a
+ * test, which read the words with it (`x="a b"; [ $x = y ]` fails).
+ */
+export function shownValue(cx: Explainer, part: SyntaxNode, name: string): string | undefined {
+  const v = variableValue(part, name, cx.state);
+  return typeof v === 'string' && (v === '' || plainValue(v)) ? v : undefined;
+}
+
+/**
  * The text of the word `n` where it runs, when the model knows it for sure and bash keeps it as one word: an
  * expansion (not split into several words nor globbed), or a double-quoted string of plain text and such expansions
  * (`"$x y"`). For the examples whose subject is a word: `[[ $x == a* ]]`, `case $x in`, `[ "$x" = a ]`, a

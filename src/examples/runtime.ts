@@ -131,16 +131,21 @@ export interface TestCase {
 /**
  * Values that make a simple test true and false, or fail (status 2). `kind` is `[` (test), `[[` or `((`.
  * Undefined for tests whose result depends on the system (file tests) or on several conditions. `known`: the value
- * the script gives the variable there (as one word), which takes the place of the sample with the same result.
+ * the script gives the variable there, which takes the place of the sample with the same result.
  * `judge`: what bash gives with a value, where the model knows it (src/semantics/testcases.ts): it decides each
- * case, and where no sample gives a result, one more value may (the text of the other side as a pattern, `abc`).
+ * case (one per section once a sample fails), and where no sample gives a result, one more value may (the text of
+ * the other side as a pattern, `abc`); in `[ ]`, the first of an empty value and one with a space that fails (an
+ * unquoted variable: `[ $x = y ]` with `x=` is `[ = y ]`, "unary operator expected").
  */
 export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | undefined, right: Operand | undefined, quotedRight = false, known?: string, judge?: (vars: Record<string, string>) => TestOutcome | undefined): TestCase[] | undefined {
   const samples = sampleTests(kind, op, left, right, quotedRight);
   if (!samples) return undefined;
   const name = Object.keys(samples[0].vars)[0];
   const outcome = (value: string): TestOutcome | undefined => judge?.({ [name]: value });
-  const cases = samples.map((c) => ({ vars: c.vars, result: outcome(c.vars[name]) ?? c.result }));
+  const judged = samples.map((c) => ({ vars: c.vars, result: outcome(c.vars[name]) ?? c.result }));
+  // (A sample that fails stands for its section: the next one that fails too says nothing more.)
+  const cases = judged.some((c, i) => c.result === 'error' && samples[i].result !== 'error')
+    ? judged.filter((c, i) => judged.findIndex((d) => d.result === c.result) === i) : judged;
   if (judge && STRING_TESTS.has(op)) {
     const lit = ('lit' in left! ? left : right as { lit: string }).lit;
     for (const want of [true, false]) {
@@ -148,6 +153,10 @@ export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | u
       const value = [literalPattern(lit), 'abc'].find((v) => !cases.some((c) => c.vars[name] === v) && outcome(v) === want);
       if (value !== undefined) cases.push({ vars: { [name]: value }, result: want });
     }
+  }
+  if (judge && kind === '[' && !cases.some((c) => c.result === 'error')) {
+    const value = ['', 'a b'].find((v) => outcome(v) === 'error');
+    if (value !== undefined) cases.push({ vars: { [name]: value }, result: 'error' });
   }
   // (The model has no values in arithmetic: none for `(( ))`.)
   const truth = known !== undefined && kind !== '((' ? outcome(known) : undefined;

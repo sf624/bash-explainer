@@ -147,8 +147,10 @@ describe('[ ] and [[ ]] examples', () => {
     const tree = parser.parse('[ -n $x ]');
     const e = new Analyzer('en').explainLine(tree, 0);
     const ex = e.examples.find((x) => x.kind === 'test')!;
-    assert.deepStrictEqual(ex.sections.map((s) => s.label), ['True when']);
+    // (And a value with a space is two words: `[ -n a b ]` fails.)
+    assert.deepStrictEqual(ex.sections.map((s) => s.label), ['True when', 'Error (status 2) when']);
     assert.strictEqual(bash('x=""; [ -n $x ]; echo $?').stdout, '0\n');
+    assert.strictEqual(bash('x="a b"; [ -n $x ] 2>/dev/null; echo $?').stdout, '2\n');
   });
   it('[[ != pattern ]] says the right side is a pattern', () => {
     const t = new Analyzer('en').explainLine(parser.parse('[[ $s != a* ]]'), 0);
