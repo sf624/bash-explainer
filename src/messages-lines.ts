@@ -35,6 +35,12 @@ export const HOST_NOTES = {
   'dockerfile-exec-form': [
     'exec 形式（`[...]`）はシェルを通さずにコマンドを直接実行します。`$VAR` の展開・パイプ・リダイレクト・`&&` などは働かず、各要素がそのまま引数になります。',
     'The exec form (`[...]`) runs the command directly, without a shell: `$VAR`, pipes, redirections and `&&` do not work, and each element is passed as it is.'],
+  'makefile-no-shell': [
+    'make はこの行をシェルを通さずに、プログラムとして直接実行します（行にシェルの記号 `;` `"` `$` `|` `#` `*` などがなく、最初の単語が `cd` や `export` などシェルの組み込みコマンドではないため）。クォートとバックスラッシュは make が読み、`echo` などの名前は組み込みコマンドではなくプログラム（`/bin/echo` など）です。`;` や `"` を足すとこの行は `/bin/sh` を通り、動きが変わることがあります。',
+    'make runs this line directly as a program, with no shell: it holds none of the shell characters `;` `"` `$` `|` `#` `*`, and its first word is not a shell builtin such as `cd` or `export`. make reads the quotes and backslashes itself, and a name such as `echo` is the program (`/bin/echo`), not the builtin. Adding a `;` or a `"` sends the line through `/bin/sh`, which can change what it does.'],
+  'makefile-maybe-no-shell': [
+    'make は変数を展開してから行を調べます。展開した行にシェルの記号（`;` `"` `$` `|` `#` `*` など）がなければ、シェルを通さずにプログラムとして直接実行し、この名前は組み込みコマンドではなくプログラム（`/bin/echo` など）になります。記号があれば `/bin/sh` を通り、組み込みコマンドです。',
+    'make expands the variables first, then looks at the line. If the result has none of the shell characters (`;` `"` `$` `|` `#` `*`), make runs it directly as a program, with no shell, and this name is the program (`/bin/echo`, say), not the builtin. If it has one, the line goes through `/bin/sh` and the name is the builtin.'],
   'yaml-folded-block': [
     'YAML の折り畳みブロック（`>`）は、同じ字下げで隣り合う行をスペースでつなぎます。シェルはつながった 1 行を受け取ります。ここではつなぎ目を ` \\` と改行として読むので、単一引用符の中と `#` のコメントの後では YAML と読み方が違います（YAML はつないだ次の行も文字列やコメントに含めます）。',
     'A YAML folded block (`>`) joins lines next to each other at the same indentation with a space: the shell gets them as one line. Here each join is read as ` \\` and a line break, which differs from YAML inside single quotes and after a `#` comment (YAML takes the joined line into the string or the comment).'],

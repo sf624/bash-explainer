@@ -89,3 +89,15 @@ The example of a simple test ("True when", "False when") now reads the test's wo
 ### Values before a `source`
 
 A script that runs what the explainer does not read (`source lib.sh`, `eval "$(cmd)"`, a command named by a variable that may be a function) may change any variable from there on. Since 0.10.0 the explainer took no value of the script anywhere in such a script. Now the lines before the first statement that does it keep the values: bash runs the statements of the top level in turn, so `msg="hello world"` then `echo "$msg" | tr a-z A-Z` shows `HELLO WORLD` again, and `rm -rf $catdir` after `catdir=/tmp/cat` is a Caveat that says the value stays one argument, not a Pitfall. A function body (which may run at a later call), a loop or a group that holds that statement, and a script with CR LF line ends keep no value, as before.
+
+### Makefile recipe lines that make runs without a shell
+
+GNU make runs a recipe line directly as a program, with no shell, when the line (after make has expanded its variables) holds none of the characters `#;"*?[]&|<>(){}$`^~!` outside single quotes (a backslash escapes one) and its first word is not one of make's list of shell builtins (`cd`, `export`, `test`, `if`, `read`, `set`, `trap`…, but not `echo`, `printf`, `true`, `source`). The explanation follows make's rule, measured with GNU make 4.3 (`test/make-real.test.ts` runs it against the real make, as a separate program):
+
+- `@echo -e '\033[32mOK\033[0m'` is the program `/bin/echo` (from coreutils), which reads `-e`: the line is "no shell" in the chip, `echo` is "program" (not "builtin"), and the warning about dash's `echo -e` is gone. `echo -e x;` goes through `/bin/sh`: dash's builtin, and the warning stays. Before, both lines were dash's builtin.
+- `echo a\\tb` passes `a\tb` to `/bin/echo`, which prints it as it is; through dash it would print a tab.
+- The line says it in a note, with the way to the other reading: adding a `;`, a `"`, a `$` or a `|` sends the line through `/bin/sh`.
+- A line with a make variable (`echo $(NAME)`) is decided by the variable's value: the note says so where the first word is a builtin's name (`echo`, `printf`, `true`). The automatic variables (`$@`, `$<`, `$^`, `$?`, `$*`) are taken as file names with no shell characters.
+- Not on the line, whatever the other rules say: `SHELL` set to anything but `/bin/sh` (anywhere in the file, in a rule too), an `IFS` set in the makefile, and a rule of several lines under `.ONESHELL`. The lines are explained as before there. A rule of one line under `.ONESHELL` is run like any other.
+- A line continued with a backslash is read as make joins it: a single quote keeps the backslash and the newline, anywhere else they vanish.
+- An unquoted `$@` or `$<` in such a line is not advised to be quoted (the pitfall about splitting and globbing): no shell reads it, and `"$@"` would send the line through one.

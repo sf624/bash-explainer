@@ -136,7 +136,8 @@ export interface WordFinding { fact: Fact; node: SyntaxNode }
 export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, shell: Shell | undefined, from: number, to: number): WordFinding[] {
   /** An expansion that bash word-splits or globs here (not in quotes, not with `IFS=` and `set -f` both). */
   const bare = (n: SyntaxNode): boolean => {
-    if (!isExpansion(n)) return false;
+    // (Where no shell reads the words, an expansion in the text is one the host made before: make's `$@` is text by now.)
+    if (!isExpansion(n) || model.noShell) return false;
     const m = partMeaning(n, model);
     return !!m && (m.split.applies !== false || m.glob.applies !== false);
   };

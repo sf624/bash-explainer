@@ -59,8 +59,8 @@ export class Builder {
    * A region of words run with no shell (`ShellRegion.noShell`), written by `execWords`; its code is read as bash's
    * words. `word`: what each word is in the file (a JSON string).
    */
-  execRegion(start: number, end: number, label: [string, string], notes: RegionNote[], word: NoShell['word']): void {
-    if (end >= start) this.regions.push({ start, end, label, host: { kind: this.kind }, shell: 'bash', notes, noShell: { word } });
+  execRegion(start: number, end: number, label: [string, string], notes: RegionNote[], word?: NoShell['word']): void {
+    if (end >= start) this.regions.push({ start, end, label, host: { kind: this.kind }, shell: 'bash', notes, noShell: word ? { word } : {} });
   }
   build(): Extracted {
     const provided = [...new Set(this.provided)];

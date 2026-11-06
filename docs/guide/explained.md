@@ -26,7 +26,7 @@ Examples appear right under the part they illustrate (see `bashExplainer.example
 | File | What is explained |
 | --- | --- |
 | Dockerfile | `RUN` / `CMD` / `ENTRYPOINT` (shell form, `RUN <<EOF`, exec form, `["sh", "-c", "…"]`) and `SHELL [...]`; warns when a `RUN` pipe hides failures without `pipefail` |
-| Makefile | recipes, with make's `$(VAR)`, `$@` and `$$` explained |
+| Makefile | recipes, with make's `$(VAR)`, `$@` and `$$` explained; a line make runs with no shell (no `;`, `"`, `$`, `|`… in it) is explained as a program, not as `/bin/sh` |
 | CI YAML | GitHub Actions `run:` (workflows and `action.yml`, following `shell:` and `defaults`), GitLab CI `script:`, CircleCI `run:` / `command:`, and Azure Pipelines `script:` / `bash:` with its `$(variable)` macros; warns when untrusted input like `${{ github.event.pull_request.title }}` is pasted into a script |
 | `package.json` | `scripts` |
 | Markdown | code blocks marked `sh`, `bash`, `console`, …; the shell is the block's shebang, else the one the tag names (`sh` counts as bash) |

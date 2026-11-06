@@ -63,8 +63,8 @@ export interface ShellRegion {
 
 /** How the host writes the words it runs with no shell (`ShellRegion.noShell`). */
 export interface NoShell {
-  /** What a word is in the file: a JSON string (Docker), a Python string (ja, en). */
-  word: [ja: string, en: string];
+  /** What a word is in the file: a JSON string (Docker), a Python string (ja, en). None where the words are read as written (make reads the quotes of a recipe line itself). */
+  word?: [ja: string, en: string];
 }
 
 /** Something the host replaces before the shell sees it (`$(CC)` in make, `${{ … }}` in GitHub Actions). */

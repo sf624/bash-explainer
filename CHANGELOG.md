@@ -20,6 +20,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- A Makefile recipe line that make runs without a shell (no `;`, `"`, `$`, `|`, `#`, `*` or the like, and not starting with `cd`, `export`…) is explained as a program make runs: `@echo -e '\033[32mOK\033[0m'` is `/bin/echo`, with no warning about dash's `echo -e`, and the chip says "no shell". Before, it was dash's builtin and the warning was wrong. A line with a make variable says that its value decides.
 - The command-line tool exits quietly with status 141 (what a shell reports for a program killed by SIGPIPE) when its output is closed early, as in `bash-explainer script.sh | head -1`. Before, it printed an `EPIPE` stack trace and exited with status 1.
 - The example of a test reads each value as bash does: unquoted in `[ ]`, an empty value or one with a space makes bash fail, and a new section "Error (status 2) when" lists it, the script's own value too. Before, `[ $x = "" ]` said "True when `x=""`".
 - In a script that sources a file or runs text the explainer cannot read, the lines before that point use the values the script gives again: their worked examples run on the real data, and their notes read the value (`rm -rf $dir` with `dir=/tmp/cat` is a Caveat). In 0.10.0 they had made-up examples and stronger warnings.

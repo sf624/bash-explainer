@@ -9,11 +9,12 @@ import type { Explainer } from './context';
 
 /**
  * The token of the quoted word `n` where no shell reads it: the host's string (`ExplainOptions.noShell`, a JSON string),
- * with its value, the word's one field. Undefined where a shell reads it.
+ * with its value, the word's one field. Undefined where a shell reads it, and where the host's words are as written.
  */
 export function hostString(cx: Explainer, n: SyntaxNode): Token | undefined {
   const host = cx.state.noShell ? cx.opts.noShell : undefined;
-  if (!host) return undefined;
+  // (Make's recipe lines have no host string: make reads their quotes as a shell does, and the words are as written.)
+  if (!host?.word) return undefined;
   // (A newline is shown as `␊`, as `valueNote` shows it; each picture is told once.)
   const value = visible(wordFields(n, cx.state).fields![0]).replace(/\n/g, '␊');
   const pictures = pictureList([value], (ja, en) => cx.s(ja, en));
