@@ -1415,6 +1415,15 @@ body.resizing iframe {
   display: none;
 }
 
+/* The hint toward POSIX sh is a line of its own under the list (below): the list keeps the room it had. */
+#problems:where(:has(.sh-hint:not([hidden]))) {
+  max-height: calc(30% + 29px);
+}
+
+:where(html.narrow) #problems:where(:has(.sh-hint:not([hidden]))) {
+  max-height: calc(30% + 45px);
+}
+
 /* A height chosen with the handle (the editor keeps its three lines or so). */
 #problems:not(.collapsed) {
   height: var(--problems-height, auto);
