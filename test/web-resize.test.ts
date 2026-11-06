@@ -209,10 +209,11 @@ describe('the web page: resizing the panes and the Problems list', function () {
     const cdp = await phone.newCDPSession(p2);
     const px = hb.x + hb.width / 2, py = hb.y + hb.height / 2;
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: px, y: py }] });
-    for (let i = 1; i <= 5; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: px, y: py - 20 * i }] });
+    for (let i = 1; i <= 5; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: px, y: py - 12 * i }] });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     const after = (await p2.locator('#problems').boundingBox())!.height;
-    assert.ok(Math.abs(before + 100 - after) < 8, `${before} → ${after}`);
+    // (60 px: this pane has little room above the list, which starts with the hint toward POSIX sh under it.)
+    assert.ok(Math.abs(before + 60 - after) < 8, `${before} → ${after}`);
     assert.strictEqual(await flat(), true);
     // Right after a CDP touch sequence Chromium drops the click of the next tap, and nothing in the page shows
     // it (a fixed wait of 300 ms was not enough on a slow runner). So tap, wait for the list to go, and tap
