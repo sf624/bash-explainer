@@ -22,8 +22,8 @@ export const TEXT = {
     problems: 'Problems',
     // The Problems strip under the editor (web/problem-list.ts): its name with the counts said, and where the cursor is.
     noProblems: 'No problems',
-    // The strip's hint toward POSIX sh (web/problem-list.ts): how many problems sh would give, and the button that checks the script as sh.
-    shHint: (n: number) => `${n} ${n === 1 ? 'problem' : 'problems'} in POSIX sh`,
+    // The strip's hint toward POSIX sh (web/problem-list.ts): how many constructs the script has that POSIX sh lacks or runs differently (the dialect issues for sh), and the button that checks the script as sh.
+    shHint: (n: number) => `${n} ${n === 1 ? 'construct' : 'constructs'} not in POSIX sh`,
     shHintButton: 'Check as POSIX sh',
     problemsSaid: (counts: readonly string[]) => `Problems: ${counts.join(', ')}`,
     problemPosSaid: (line: number, i: number, n: number) => `Problem ${i} of ${n}, ${lineLabel('en', line, 'inline')}`,
@@ -192,8 +192,8 @@ export const TEXT = {
     copied: '解説を Markdown でコピーしました。',
     problems: '問題',
     noProblems: '問題なし',
-    shHint: (n: number) => `POSIX sh では ${n} 件の問題`,
-    shHintButton: 'POSIX sh 向けとして確認',
+    shHint: (n: number) => `POSIX sh にない書き方が ${n} 件`,
+    shHintButton: 'POSIX sh として確認',
     problemsSaid: (counts: readonly string[]) => `問題：${counts.join('、')}`,
     problemPosSaid: (line: number, i: number, n: number) => `${n} 件中 ${i} 件目の問題、${lineLabel('ja', line)}`,
     prevProblem: '前の問題',

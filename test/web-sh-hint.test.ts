@@ -33,11 +33,16 @@ describe('the web page: the hint toward POSIX sh', function () {
     await page.goto(base);
     await page.locator('.cm-line').first().waitFor();
     await until('the sample\'s problems', () => problemsShown(page), (v) => v, 20000);
+    // (The sample has a hint of its own, which the page works out when idle, after the check: the text's hint is waited for past it.)
+    // (By its attribute: on a phone the sheet shows another tab, and the line has no box.)
+    await page.locator('#problems-sh:not([hidden])').waitFor({ state: 'attached', timeout: 20000 });
+    const sampleSaid = await page.locator('#sh-hint-text').textContent();
     await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText(text);
     // (The page starts with the sample, which has many problems and a hint of its own: the text is checked once few are left.)
     await until('the text checked', () => problemRows(page).count(), (c) => c <= 10, 15000);
+    await until('the text\'s hint', async () => (await page.locator('#problems-sh:not([hidden])').count()) > 0 && (await page.locator('#sh-hint-text').textContent()) === sampleSaid, (stale) => !stale, 15000);
     return page;
   }
 
@@ -45,7 +50,7 @@ describe('the web page: the hint toward POSIX sh', function () {
   const hint = (page: Page) => page.locator('#problems-sh');
 
   it('shows for #!/usr/bin/env bash and for no shebang, with the count of the dialect issues for sh, and for no other shebang', async () => {
-    const want = (text: string) => `${shIssues(text)} problems in POSIX sh`;
+    const want = (text: string) => `${shIssues(text)} constructs not in POSIX sh`;
     const cases: [string, string, string | undefined][] = [
       ['env bash', `#!/usr/bin/env bash\n${BOTH}`, want(`#!/usr/bin/env bash\n${BOTH}`)],
       ['env -S bash', `#!/usr/bin/env -S bash -e\n${BOTH}`, want(`#!/usr/bin/env -S bash -e\n${BOTH}`)],
@@ -59,7 +64,6 @@ describe('the web page: the hint toward POSIX sh', function () {
       const page = await open(desktop(1280, 'en'), text);
       if (said === undefined) {
         // (The strip is checked: the hint would be there by now.)
-        await page.waitForTimeout(300);
         assert.strictEqual(await hint(page).isVisible(), false, name);
       } else {
         await hint(page).waitFor({ state: 'visible' });
@@ -74,8 +78,7 @@ describe('the web page: the hint toward POSIX sh', function () {
     const page = await open(desktop(1280, 'en'), `#!/usr/bin/env bats\n@test "a" {\n  [[ -f a ]]\n  arr=(a b)\n}\n`);
     await pickKind(page, 'bats');
     await until('the kind', () => page.locator('#scope-kinds [aria-checked="true"]').getAttribute('data-value'), (v) => v === 'bats');
-    await page.waitForTimeout(300);
-    assert.strictEqual(await hint(page).isVisible(), false);
+    await until('the bats file\'s hint gone', () => hint(page).isVisible(), (v) => !v);
     await page.context().close();
   });
 
@@ -84,7 +87,7 @@ describe('the web page: the hint toward POSIX sh', function () {
     assert.strictEqual(shIssues(one), 1);
     const page = await open(desktop(1280, 'en'), one);
     await hint(page).waitFor({ state: 'visible' });
-    assert.strictEqual(await page.locator('#sh-hint-text').textContent(), '1 problem in POSIX sh');
+    assert.strictEqual(await page.locator('#sh-hint-text').textContent(), '1 construct not in POSIX sh');
     await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('#!/usr/bin/env bash\necho hi\n');
@@ -104,8 +107,8 @@ describe('the web page: the hint toward POSIX sh', function () {
       assert.strictEqual(await page.locator('#problems-counts .count').count(), 0);
       assert.strictEqual(await problemRows(page).count(), 0);
       const n = shIssues(ONLY_SH);
-      assert.strictEqual(await page.locator('#sh-hint-text').textContent(), lang === 'en' ? `${n} problems in POSIX sh` : `POSIX sh では ${n} 件の問題`);
-      assert.strictEqual(await page.locator('#sh-hint-button').textContent(), lang === 'en' ? 'Check as POSIX sh' : 'POSIX sh 向けとして確認');
+      assert.strictEqual(await page.locator('#sh-hint-text').textContent(), lang === 'en' ? `${n} constructs not in POSIX sh` : `POSIX sh にない書き方が ${n} 件`);
+      assert.strictEqual(await page.locator('#sh-hint-button').textContent(), lang === 'en' ? 'Check as POSIX sh' : 'POSIX sh として確認');
       // The strip's row is as high as ever; the hint is below it, inside the box.
       const [strip, line, box] = await Promise.all(['.problems-strip', '#problems-sh', '#problems'].map((s) => page.locator(s).boundingBox()));
       assert.strictEqual(Math.round(strip!.height), 32);
@@ -117,7 +120,7 @@ describe('the web page: the hint toward POSIX sh', function () {
       await until('the problem', () => problemRows(page).count(), (c) => c === 1);
       assert.deepStrictEqual(await page.locator('#problems-counts .count').count(), 1);
       assert.strictEqual(await page.locator('#problems-said').textContent(), lang === 'en' ? 'Problems: 1 caveat' : '問題：注意 1 件');
-      assert.strictEqual(await page.locator('#sh-hint-text').textContent(), lang === 'en' ? `${shIssues(BOTH)} problems in POSIX sh` : `POSIX sh では ${shIssues(BOTH)} 件の問題`);
+      await until('the hint for the new text', () => page.locator('#sh-hint-text').textContent(), (t) => t === (lang === 'en' ? `${shIssues(BOTH)} constructs not in POSIX sh` : `POSIX sh にない書き方が ${shIssues(BOTH)} 件`));
       const [list, after] = await Promise.all(['#problem-list', '#problems-sh'].map((s) => page.locator(s).boundingBox()));
       assert.ok(after!.y >= list!.y + list!.height - 0.5, JSON.stringify([list, after]));
       // Folded, the list goes and the hint stays.
@@ -128,7 +131,7 @@ describe('the web page: the hint toward POSIX sh', function () {
     });
   }
 
-  it('has a button that reads the script as POSIX sh, as the chip does, and the strip then lists the problems the hint counted', async () => {
+  it('has a button that reads the script as POSIX sh, as the chip does, and the list then has the sh problems', async () => {
     const page = await open(desktop(1280, 'en'), BOTH);
     await hint(page).waitFor({ state: 'visible' });
     assert.strictEqual(await currentShell(page), 'auto');
@@ -137,15 +140,44 @@ describe('the web page: the hint toward POSIX sh', function () {
     await page.locator('#sh-hint-button').click();
     assert.strictEqual(await currentShell(page), 'sh');
     await until('the hint gone', () => hint(page).isVisible(), (v) => !v);
-    // The list holds the problems of bash that sh keeps, with the ones the hint counted.
+    // The list holds the problems of bash that sh keeps, and at least as many more as the hint counted (sh's explanations may add others: the count is of the dialect issues alone).
     const rows = problemRows(page);
-    await until('the sh problems', () => rows.count(), (c) => c === 1 + shIssues(BOTH));
+    await until('the sh problems', () => rows.count(), (c) => c >= 1 + shIssues(BOTH));
     // The focus stayed in the strip, on the fold, not on the page.
     await until('the focus', () => page.evaluate('document.activeElement && document.activeElement.id'), (id) => id === 'problems-toggle');
     // Back to Auto (the chip's popover): the hint is back.
     await page.locator('#scope-chip').click();
     await page.locator('#scope-shell-auto').click();
     await hint(page).waitFor({ state: 'visible' });
+    await page.context().close();
+  });
+
+  it('keeps the list its room when the hint comes under a list set to its least height: the least moves with it', async () => {
+    const page = await open(desktop(1280, 'en'), '#!/bin/bash\nlocal a=1\nlocal b=2\nlocal c=3\n');
+    await until('the three problems', () => problemRows(page).count(), (c) => c === 3);
+    assert.strictEqual(await hint(page).isVisible(), false);
+    await page.locator('#problems-resize').focus();
+    await page.keyboard.press('Home');
+    const listHeight = () => page.locator('#problem-list').evaluate((e) => Math.round(e.getBoundingClientRect().height));
+    const least = Number(await page.locator('#problems-resize').getAttribute('aria-valuemin'));
+    const room = await listHeight();
+    assert.ok(room >= 36, `${room}`);
+    // The first line says env bash: the hint comes, under the list.
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('Shift+End');
+    await page.keyboard.insertText('#!/usr/bin/env bash');
+    await hint(page).waitFor({ state: 'visible' });
+    const line = (await hint(page).boundingBox())!;
+    await until('the least height with the hint', () => page.locator('#problems-resize').getAttribute('aria-valuemin'), (v) => Number(v) === least + Math.round(line.height));
+    // The list has what it had; the hint took its room from nowhere else.
+    await until('the list keeps its room', listHeight, (h) => h >= room - 1);
+    // And back: the hint goes, the least goes back.
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('Shift+End');
+    await page.keyboard.insertText('#!/bin/bash');
+    await until('the hint gone', () => hint(page).isVisible(), (v) => !v);
+    await until('the least back', () => page.locator('#problems-resize').getAttribute('aria-valuemin'), (v) => Number(v) === least);
     await page.context().close();
   });
 
@@ -174,6 +206,24 @@ describe('the web page: the hint toward POSIX sh', function () {
       });
     }
   }
+
+  it('keeps the focus in the sheet after the phone\'s button: on the first problem, or on the Problems tab', async () => {
+    const options: BrowserContextOptions = { ...(await import('playwright-core')).devices['iPhone 13'], viewport: { width: 390, height: 740 }, locale: 'en-US' };
+    for (const text of [ONLY_SH, BOTH]) {
+      const page = await open(options, text);
+      if (await page.locator('#readtip').isVisible()) await page.locator('#readtip-close').tap();
+      await page.locator('#tab-problems').tap();
+      await hint(page).waitFor({ state: 'visible' });
+      await page.locator('#sh-hint-button').focus();
+      await page.locator('#sh-hint-button').press('Enter');
+      await until('the hint gone', () => hint(page).isVisible(), (v) => !v);
+      // (The list now holds the sh problems: the focus is on its first row, or on the tab, never on the page.)
+      const focused = () => page.evaluate("(() => { const a = document.activeElement; return a ? (a.id || a.className || a.tagName) : ''; })()");
+      await until('the focus kept', focused, (f) => f !== 'BODY' && f !== '' && f !== 'sh-hint-button');
+      assert.strictEqual(await page.evaluate("document.activeElement.closest('#problems, #panel-head') !== null"), true, String(await focused()));
+      await page.context().close();
+    }
+  });
 
   it('is the same line in the phone\'s Problems tab, in place of "No problems" and after the list', async () => {
     const options: BrowserContextOptions = { ...(await import('playwright-core')).devices['iPhone 13'], viewport: { width: 390, height: 740 }, locale: 'en-US' };
