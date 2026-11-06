@@ -12,6 +12,8 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { ReceivedChip } from '../src/ui/panelReceives';
 import { type ModelRow, rowModel } from '../src/ui/panelRows';
 import { shellState } from '../src/semantics/state';
+import type { Shell } from '../src/shellfeatures';
+import { argvHolds } from './support/argvline';
 import { corpus } from './support/corpus';
 import { run } from './support/run';
 
@@ -20,7 +22,7 @@ import { run } from './support/run';
 
 const parser = createUnbashParser();
 const OPTIONS = { reading: true, argv: true, notPosix: true, script: 'said' } as const;
-type Sh = 'bash' | 'sh' | 'dash' | 'ash' | 'zsh';
+type Sh = Shell;
 const explain = (src: string, line = 0, lang: Lang = 'en', shell: Sh = 'bash'): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line, shell, OPTIONS);
 const all = (rows: readonly ModelRow[]): ModelRow[] => rows.flatMap((r) => [r, ...all(r.children)]);
 const rows = (src: string, { line = 0, depth = 1 as 1 | 2, lang = 'en' as Lang, shell = 'bash' as Sh, receives = true } = {}): ModelRow[] => all(rowModel(explain(src, line, lang, shell), { depth, receives }, lang).rows);
@@ -177,7 +179,7 @@ describe('the panel: what the program receives', () => {
     };
     const make = hosted('makefile', 'all:\n\techo a > "$(OUT)"\n\tcp $< "$@" $(CC) \'$(OUT)\'\n', 1);
     assert.ok(make.rows.some((r) => r.text === 'Write stdout (fd 1) to file `"$(OUT)"` (overwrite)'), make.rows.map((r) => r.text).join('\n'));
-    assert.match(make.ex.sentence ?? '', /`"\$\(OUT\)"`/);
+    assert.match(make.ex.sentence ?? '', /to the value of `\$\(OUT\)`/);
     const cp = hosted('makefile', 'all:\n\tcp $< "$@" $(CC) \'$(OUT)\'\n', 1);
     assert.deepStrictEqual(cp.rows.find((r) => r.label === 'cp')!.receives!.chips.map(shown), ['cp', '‹the words of `$<`›', '‹the words of `"$@"`›', '‹the words of `$(CC)`›', '‹the words of `\'$(OUT)\'`›']);
     for (const r of [...make.rows, ...cp.rows]) assert.doesNotMatch([r.text, ...r.more.map((m) => m.map((p) => p.text).join(''))].join(' '), /make_target|make_first|\$\{OUT\}|\$\{CC\}/, r.label);
@@ -574,6 +576,28 @@ describe('the panel: what the program receives, in a shell that is not bash, aga
     assert.deepStrictEqual(line('printf "[%s]" $"hi"', 'printf'), ['runs inside bash, gets:', '[%s]', 'hi']);
     for (const sh of ['dash', 'ash'] as const) if (programs[sh]) assert.strictEqual(running(sh, 'printf "[%s]" $"hi"').out, '[$hi]');
     assert.strictEqual(run('bash', ['-c', 'printf "[%s]" $"hi"']).stdout.toString(), '[hi]');
+  });
+
+  it('gives a parameter in double quotes as one word, as bash does: `"$1"` is one, `"$@"` one for each argument', () => {
+    const words = `"$1" "\${1}" "$USER" "\${x:-a  b}" "\${1#a}" "\${#1}" "a$1"b --f="$1" 'q'"$1$3" "$(echo "a  b*")" "$((1 + 2))" "$*" "$@" "$2"`;
+    const src = `printf '<%s>' ${words}`;
+    const chips = (shell: Shell): string[] => line(src, 'printf', { shell }).slice(1);
+    const bash = chips('bash');
+    assert.deepStrictEqual(bash, ['<%s>', '‹argument 1›', '‹argument 1›', '‹current user name›', '‹what `${x:-a  b}` gives›', '‹what `${1#a}` gives›', '‹what `${#1}` gives›',
+      'a‹argument 1›b', '--f=‹argument 1›', 'q‹argument 1›‹argument 3›', '‹output of `$(echo "a  b*")`›', '3', '‹the arguments joined›', '‹each argument›', '‹argument 2›']);
+    for (const shell of ['sh', 'dash', 'ash', 'ksh', 'mksh', 'yash', 'zsh'] as const) assert.deepStrictEqual(chips(shell), bash, shell);
+    // (What dash and busybox ash give, with arguments and a value that bash would split and glob out of quotes.)
+    const received = explain(src, 0, 'en', 'sh').argv![0].words.slice(2);
+    for (const sh of ['dash', 'ash'] as const) {
+      if (!programs[sh]) continue;
+      const out = running(sh, `set -- 'a  b*' '' 'c d'; x=; USER='u  v*'; ${src.replace("'<%s>'", "'%s\\0'")}`).out;
+      assert.ok(argvHolds(received, out.split('\0').slice(0, -1)), `${sh}: ${JSON.stringify(out)}`);
+      assert.strictEqual(out.split('\0').length - 1, 16, sh);
+    }
+    // (Not where another shell may read the word otherwise: a construct a sh lacks, an expansion out of quotes; in zsh, `$x[1]`.)
+    assert.deepStrictEqual(line('printf a "${x/a/b}" "$RANDOM" $1 ~ "$x[1]"', 'printf', { shell: 'zsh' }).slice(2),
+      ['‹the words of `"${x/a/b}"`›', '‹the words of `"$RANDOM"`›', '‹the words of `$1`›', '‹the words of `~`›', '‹the words of `"$x[1]"`›']);
+    assert.deepStrictEqual(line('printf a "$x[1]" "$x:h" "$10"', 'printf', { shell: 'dash' }).slice(2), ['‹value of `$x`›[1]', '‹value of `$x`›:h', '‹argument 1›0']);
   });
 
   it('says the shell stops, not bash', () => {
