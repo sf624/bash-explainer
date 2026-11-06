@@ -2,6 +2,8 @@
 
 [ユーザーガイド](README.md) · [English](../settings.md) · 日本語
 
+設定はすべて、VS Code の設定エディタの *Bash Explainer* にあります（ホバーとパネルの **Bash Explainer: 設定を開く** からも開けます）。Web 版、コマンドラインツール、Language Server でも、意味のある範囲で同じ設定を使えます（[VS Code 以外での設定](#vs-code-以外での設定)）。
+
 ## VS Code の設定
 
 | 設定 | 既定値 | 説明 |

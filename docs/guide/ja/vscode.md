@@ -2,6 +2,8 @@
 
 [ユーザーガイド](README.md) · [English](../vscode.md) · 日本語
 
+このページでは、VS Code の拡張機能のインストール方法、解説の3つの表示方法、パネル、コマンドを説明します。すぐに始めるには、README の [クイックスタート](../../../README.ja.md#クイックスタート) を参照してください。
+
 ## インストール
 
 - **Marketplace:** [shun-fujioka.bash-explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
