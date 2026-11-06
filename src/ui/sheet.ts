@@ -128,17 +128,24 @@ export interface SheetForm {
 }
 
 /**
- * The forms of the sheet's header row, in order: the page takes the first that fits. The tools go first (on a tablet
- * the row has room for them; on a phone they leave it: the explanation's rows fold one by one), then "Reference" is
- * shortened, then the Problems tab keeps only its highest level (its name still has every count), and last the line
- * goes (decision 9, the maintainer's order of 2026-11-01).
+ * The narrowest sheet's row, in px, that offers the panel's tools (a tablet's): a phone held upright never has them, in
+ * every language, so that whether they show does not depend on how wide the words are (the maintainer, 2026-11-07: in
+ * Japanese they fitted at 430 px and the depth's menu then lay under the grab bar). Copy as Markdown is in the menu then.
  */
-export function sheetForms(control: ViewControl): SheetForm[] {
+export const SHEET_TOOLS_WIDTH = 600;
+
+/**
+ * The forms of the sheet's header row, in order: the page takes the first that fits. The tools go first where the row
+ * is a tablet's (`SHEET_TOOLS_WIDTH`; on a phone they leave it: the explanation's rows fold one by one), then
+ * "Reference" is shortened, then the Problems tab keeps only its highest level (its name still has every count), and
+ * last the line goes (decision 9, the maintainer's order of 2026-11-01).
+ */
+export function sheetForms(control: ViewControl, rowWidth: number): SheetForm[] {
   const views = viewControlForms(control);
   const menu = views[views.length - 1];
   const full = { line: true, ref: 'full' as const, counts: 'all' as const };
   return [
-    ...views.map((view) => ({ view, tools: 'under' as const, ...full })),
+    ...(rowWidth >= SHEET_TOOLS_WIDTH ? views.map((view) => ({ view, tools: 'under' as const, ...full })) : []),
     ...views.map((view) => ({ view, tools: 'none' as const, ...full })),
     { view: menu, tools: 'none', ...full, ref: 'short' },
     { view: menu, tools: 'none', ...full, ref: 'short', counts: 'top' },
