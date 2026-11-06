@@ -226,7 +226,7 @@ export function panelUpdate(p: PanelLine) {
     levels: Object.fromEntries(Object.entries(LEVELS).map(([level, { className, codicon, name }]) => [level, { className, icon: codicon, name: name[lang] }])),
     depth,
     receives,
-    // (What the marks of the rows say, and the Key of what is drawn: src/ui/panelRows.ts.)
+    // (What the marks of the rows say, and the Legend of what is drawn: src/ui/panelRows.ts.)
     rowMarks: model.marks,
     key: model.key,
     control: viewControl(p.state ?? {}, lang),

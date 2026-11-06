@@ -8,7 +8,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 - `--format json` gives each part of a line its colour role (`role`) and the ids of the facts said about it (`facts`). A part's `explanation` no longer holds the `⚠` before a warning: `marks` says where it is, with its `level`, and the line's `summary` keeps the mark.
 - The panel starts with one sentence that says what the line does.
-- A switch in the panel, on by default (key W), shows what each program receives: its words after bash's expansions, and the parts bash handles itself. A quiet mark shows what is not portable to sh, in a bash script too; the Key lists the marks on screen.
+- A switch in the panel, on by default (key W), shows what each program receives: its words after bash's expansions, and the parts bash handles itself. A quiet mark shows what is not portable to sh, in a bash script too; the Legend lists the marks on screen.
 - `--check --counts <file>` appends the numbers of problems of each level to a file, as `$GITHUB_OUTPUT` reads them. It does not write through a symbolic link at the last part of the path.
 - Dockerfile `HEALTHCHECK CMD …` is explained, in the shell and the exec form, and so is an instruction after `ONBUILD`.
 - Quick fixes for the problems whose fix is mechanical, in VS Code, the Language Server and the web page's editor: a failure reported as success, `source` that searches `$PATH`, a `grep` pattern from a variable, a loop over a glob that matches nothing, `read` without `-r`, `[-f x]` and more. Each applies the code the note shows.

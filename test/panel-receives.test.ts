@@ -337,7 +337,7 @@ describe('the panel: the mark "not in POSIX sh"', () => {
     assert.deepStrictEqual(rowModel({ ...explain('ls'), notPosix: [{ span: { start: { line: 9, character: 0 }, end: { line: 9, character: 1 } }, says: 'x' }] }, { depth: 1, receives: false }, 'en').rows[0].notPosix, undefined, 'nor a mark with no row');
   });
 
-  it('says it in Japanese, and is in the Key only where it is drawn', () => {
+  it('says it in Japanese, and is in the Legend only where it is drawn', () => {
     assert.deepStrictEqual(marks('[[ a ]]', { lang: 'ja' }), [['[[ a ]]', ['`[[ ]]` は POSIX sh にない書き方です（dash では動きません）。代わりに `[ ]` を使う。']]]);
     const key = (src: string, lang: Lang = 'en') => rowModel(explain(src, 0, lang), { depth: 1, receives: true }, lang).key.filter((k) => k.id.startsWith('mark:')).map((k) => [k.id, k.sample]);
     assert.deepStrictEqual(key('ls'), []);
