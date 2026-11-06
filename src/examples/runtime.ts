@@ -161,8 +161,8 @@ export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | u
   // (The model has no values in arithmetic: none for `(( ))`.)
   const truth = known !== undefined && kind !== '((' ? outcome(known) : undefined;
   if (truth === undefined) return cases;
+  // (Each result has a case by now: a sample, a value found for it, or bash's error, which `[ ]` always has once its value is.)
   const i = cases.findIndex((c) => c.result === truth);
-  if (i < 0) return [...cases, { vars: { [name]: known! }, result: truth }];
   return cases.map((c, j) => (j === i ? { vars: { [name]: known! }, result: truth } : c));
 }
 
