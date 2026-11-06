@@ -4,8 +4,9 @@
 // frames around commands, each row's roles, what the program receives, and the Legend of what is drawn.
 //
 // A deeper depth only adds: the rows of depth 1 are all at depth 2, in the same order, saying the same (test/panel-rows.test.ts).
-// At depth 2 the reading tree (src/reading.ts) adds what no token says: each row's role line, bash's steps on a word, and the rows of the
-// parts of bash's grammar that have no token (`[[`, `2>`'s parts). media/panel.js draws the rows and decides none of it.
+// The reading tree (src/reading.ts) adds what no token says: at depth 1, bash's steps on a word that a step changes
+// (docs/design/usability-9.md, Q4); at depth 2, each row's role line, bash's steps on each word (folded where none acts), and the rows
+// of the parts of bash's grammar that have no token (`[[`, `2>`'s parts). media/panel.js draws the rows and decides none of it.
 import type { ArgvLine, Example, LineExplanation, Span, Token } from '../analyzer-types';
 import type { Lang } from '../i18n';
 import type { TokenTextId } from '../messages-tokens';
@@ -23,8 +24,11 @@ import { partBasis, strongestLevel, type TokenRow, tokenRow } from './tokenRow';
 /** How deep the panel reads the line: 1, what it does; 2, how bash reads it. */
 export type Depth = 1 | 2;
 
-/** What the row model is asked for: the depth, and the switch "What the program receives". */
-export interface RowOptions { depth: Depth; receives: boolean }
+/**
+ * What the row model is asked for: the depth, the switch "What the program receives", and where the cursor is on the line, when it is
+ * there (which stage's glob example starts open).
+ */
+export interface RowOptions { depth: Depth; receives: boolean; cursor?: Span['start'] }
 
 /**
  * The frame around a row and its parts: `Token.frame` (a box around one simple command, or around a compound command), or `group`,
@@ -43,8 +47,8 @@ export interface ModelRow extends TokenRow {
   span: Span;
   /** The references it cites. */
   refs: readonly string[];
-  /** The examples placed under it. */
-  examples?: (Example & { folded?: true })[];
+  /** The examples placed under it: `folded` under its title, `open` at first (the glob example, by `opensGlob`). */
+  examples?: (Example & { folded?: true; open?: true })[];
   /** Which part of the line it is: the same in both languages, at both depths and with the switch either way. */
   key: string;
   /** The first depth that shows it. */
@@ -56,7 +60,7 @@ export interface ModelRow extends TokenRow {
   roles: readonly RowRole[];
   /** The one line that says them (`argument → value of -f · tar reads it`), and the sections of the manual they are about. */
   roleLine?: RoleLine & { refs: readonly string[] };
-  /** At depth 2, on a word bash does something to: its steps, in bash's order. */
+  /** On a word bash does something to: its steps, in bash's order. At depth 1 only where a step changes the word (`actingSteps`). */
   steps?: StepsLine;
   /** A row between two commands of a pipeline (`|`): it says what goes from one to the other, on one line. */
   connector?: true;
@@ -131,13 +135,18 @@ const sameRange = (t: Token): Token[] => (t.grammar ? [] : t.children.filter((c)
  */
 const aroundOf = (t: Token): Token | undefined => (t.around === 'redirections' ? t.children.find((c) => c.kind !== 'redirect') : undefined);
 
+/** The statements of a token: a list or a pipeline (`Token.grammar`, or `time` and `!` around one), then each of its parts, down to its stages. */
+const statements = (t: Token): Token[] => (t.grammar || t.around === 'pipeline' ? [t, ...t.children.flatMap(statements)] : [t]);
+
+/** The stages of the line: the commands of its lists and pipelines, each of which a cursor can be on. */
+const stagesOf = (items: readonly Token[]): Token[] => items.flatMap(statements).filter((t) => !t.grammar && t.around !== 'pipeline');
+
 /**
  * The examples that run a whole statement of the line (a pipeline's): the view draws them apart, folded, above the rows. A
  * pipeline inside a construct of the line keeps its place, under its row. A statement of a list (`a | b; c | d`) counts, and so does a
  * pipeline after its `time` or `!`, which are parts of it (3.2.3).
  */
 export function wholeLineExamples(ex: Pick<LineExplanation, 'items' | 'examples'>): Example[] {
-  const statements = (t: Token): Token[] => (t.grammar || t.around === 'pipeline' ? [t, ...t.children.flatMap(statements)] : [t]);
   const whole = ex.items.flatMap(statements);
   return ex.examples.filter((e) => e.kind === 'pipeline' && whole.some((t) => sameSpan(t.span, e.anchor!)));
 }
@@ -162,6 +171,8 @@ interface Build {
   made: Map<Token, ModelRow>;
   /** What each text in a row's `more` says, by the catalog of token texts, where it has ids there. */
   saying: Map<readonly TextPart[], readonly TokenTextId[]>;
+  /** Whether the glob example of a row's token starts open (`opensGlob`). */
+  opensGlob: (t: Token) => boolean;
 }
 
 /**
@@ -195,7 +206,7 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build, shell: Shell = { l
   const children = parts.flatMap((c) => rowsOf(c, own, b, inShell));
   if (t.grammar === 'pipeline') connect(children, b.lang);
   if (comesAt > depth) return children;
-  const range = b.roles.size ? roleOfRow(t, whole, b.names.get(at), inShell, b.lang, b.script) : undefined;
+  const range = depth === 2 && b.roles.size ? roleOfRow(t, whole, b.names.get(at), inShell, b.lang, b.script) : undefined;
   const frame = [t, ...chain].map(frameOf).find(Boolean);
   const argv = frame === 'command' ? b.lines.get(at) : undefined;
   // (A program's name is its first word; a builtin or a function has no such word.)
@@ -213,14 +224,14 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build, shell: Shell = { l
     ...(range && !range.roles.length ? { refs: unique([...all.flatMap((r) => r.refs ?? []), ...range.refs]) } : {}),
     basis: all.find((r) => r.basis)?.basis,
     span: t.span,
-    // (A glob's box of names is long for what it adds: under its title.)
-    examples: examples.length ? examples.map((e) => (e.kind === 'glob' ? { ...e, folded: true as const } : e)) : undefined,
+    // (A glob's box of names is long for what it adds: under its title, open by the rule of `opensGlob`.)
+    examples: examples.length ? examples.map((e) => (e.kind === 'glob' ? { ...e, folded: true as const, ...(b.opensGlob(t) ? { open: true as const } : {}) } : e)) : undefined,
     key: t.grammar ? `${at}:${t.grammar}` : at,
     comesAt,
     ...(frame ? { frame } : {}),
     more: folded.flatMap((x, i) => (depth === 2 || said[i].marks || (x !== t && saysAtDepth1(x, said[i])) ? [said[i].parts] : [])),
     roles: range?.roles ?? [],
-    ...(range ? roleFields(range, unique(all.flatMap((r) => r.refs ?? [])), b.lang, b.script) : {}),
+    ...(range ? roleFields(range, unique(all.flatMap((r) => r.refs ?? [])), b.lang, b.script) : depth === 1 && whole?.steps ? actingSteps(whole.steps, b.lang, b.script) : {}),
     ...(argv ? { receives: receivesLine(argv, b.lang, b.shell) } : {}),
     ...(received ? { received } : {}),
     ...([t, ...chain].some((x) => x.origin === 'script') ? { inScript: true as const } : {}),
@@ -304,6 +315,12 @@ function rolesOf(root: ReadingNode, lang: Lang, script: ScriptShell): { roles: M
   };
   root.children.forEach((c) => walk(c, root));
   return { roles, names };
+}
+
+/** At depth 1, a word's steps where a step changes it: the line of depth 2, open (usability-9.md, Q4). A word no step changes shows nothing more. */
+function actingSteps(steps: NonNullable<RoleOfRange['steps']>, lang: Lang, script: ScriptShell): Pick<ModelRow, 'steps'> {
+  const line = stepsLine(steps.list, steps.context, lang, script);
+  return line.acts ? { steps: line } : {};
 }
 
 /** What the reading tree adds to a row of a range: its role line and its steps. */
@@ -444,7 +461,7 @@ const onlyDeep = (r: ModelRow): boolean => r.comesAt === 2 && r.children.every(o
 function foldDeep(rows: readonly ModelRow[]): void {
   for (const r of rows) {
     foldDeep(r.children);
-    if (r.children.length && r.examples?.every((e) => e.folded) !== false && r.children.every(onlyDeep)) r.folded = true;
+    if (r.children.length && r.examples?.every((e) => e.folded && !e.open) !== false && r.children.every(onlyDeep)) r.folded = true;
   }
 }
 
@@ -516,11 +533,26 @@ function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[],
   ];
 }
 
+const before = (a: Span['start'], b: Span['start']): boolean => a.line < b.line || (a.line === b.line && a.character <= b.character);
+
+/**
+ * Whether a token's glob example starts open (usability-9.md, Q4): when it is the line's only example, or when the cursor is on the stage
+ * it belongs to (from its start to its end, both included: a cursor just after a command is on it). The line's examples are those placed on
+ * its tokens and those left in `examples` (the whole line's, which the view draws apart).
+ */
+function opensGlob(ex: Pick<LineExplanation, 'items' | 'examples'>, cursor: Span['start'] | undefined): (t: Token) => boolean {
+  const all = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
+  const count = new Set([...all(ex.items).flatMap((t) => t.examples ?? []), ...ex.examples]).size;
+  const stage = cursor && stagesOf(ex.items).find((s) => before(s.span.start, cursor) && before(cursor, s.span.end));
+  return (t) => count === 1 || (!!stage && within(stage.span, t.span));
+}
+
 /** The rows the panel shows of a line, at a depth and with the switch, and the Legend of what they draw. */
-export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' | 'noteInfo' | 'notPosix' | 'plainWords' | 'shell'>, options: RowOptions, lang: Lang): RowModel {
+export function rowModel(ex: Pick<LineExplanation, 'items' | 'examples' | 'reading' | 'argv' | 'noteInfo' | 'notPosix' | 'plainWords' | 'shell'>, options: RowOptions, lang: Lang): RowModel {
   const lines = options.receives ? ex.argv ?? [] : [];
   const shell = shellWord(lang, ex.shell);
-  const read = options.depth === 2 && ex.reading ? rolesOf(ex.reading, lang, ex.shell) : undefined;
+  // (Depth 1 reads only the steps of the ranges; the roles and the names are depth 2's.)
+  const read = ex.reading ? rolesOf(ex.reading, lang, ex.shell) : undefined;
   const build: Build = {
     options,
     lang,
@@ -532,6 +564,7 @@ export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' 
     words: receivedWords(lines),
     made: new Map(),
     saying: new Map(),
+    opensGlob: opensGlob(ex, options.cursor),
   };
   const rows = ex.items.flatMap((t) => rowsOf(t, undefined, build));
   if (options.depth === 2 && ex.reading) {
@@ -545,6 +578,6 @@ export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' 
   const tm = ui[lang].panel.receives;
   const marks: RowMarks = { handled: tm.handled.replace('{shell}', () => shell), handledSays: tm.handledSays.replace('{shell}', () => shell), notPosix: tm.notPosix };
   // (A line with nothing to explain has no role either.)
-  const whole = read && rows.length ? roleLine([roleFor(ex.reading!, undefined, lang, ex.shell)!]) : undefined;
+  const whole = options.depth === 2 && read && rows.length ? roleLine([roleFor(ex.reading!, undefined, lang, ex.shell)!]) : undefined;
   return { rows, marks, key: keyEntries(rows, ex.noteInfo.map((n) => n.level), marks, lang, ex.shell), places: placesOf(ex.items, rows, build.made), ...(whole ? { line: { ...whole, refs: [] } } : {}) };
 }

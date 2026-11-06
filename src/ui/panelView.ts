@@ -57,15 +57,19 @@ export function panelState(kept: unknown): PanelState {
 /** What the panel asks of an explanation: the options of a state, which both hosts pass (`ExplainOptions`). */
 export type ExplainNeeds = Required<Pick<ExplainOptions, 'reading' | 'argv' | 'notPosix'>>;
 
-/** What the explanation needs for the state: the reading tree at depth 2, what each program receives with the switch on, and the marks of what POSIX sh lacks, which show either way. */
+/**
+ * What the explanation needs for the state: the reading tree at both depths (depth 1 shows bash's steps on a word a step changes,
+ * docs/design/usability-9.md, Q4), what each program receives with the switch on, and the marks of what POSIX sh lacks, which show either way.
+ */
 export function explainNeeds(state: PanelState): ExplainNeeds {
   const shown = { ...PANEL_DEFAULTS, ...state };
-  return { reading: shown.depth === 2, argv: shown.receives, notPosix: true };
+  return { reading: true, argv: shown.receives, notPosix: true };
 }
 
-/** Whether another state needs another explanation. */
-export function needsDiffer(a: ExplainNeeds, b: ExplainNeeds): boolean {
-  return a.reading !== b.reading || a.argv !== b.argv;
+/** Whether another state shows the line otherwise, so that a host explains and draws it again: another depth, or the switch turned. */
+export function shownDiffers(a: PanelState, b: PanelState): boolean {
+  const [x, y] = [{ ...PANEL_DEFAULTS, ...a }, { ...PANEL_DEFAULTS, ...b }];
+  return x.depth !== y.depth || x.receives !== y.receives;
 }
 
 /** An option of the view control (docs/design/panel-redesign.md, 6.1). */
@@ -144,6 +148,8 @@ export interface PanelLine {
   web?: boolean;
   /** The depth chosen, for the rows and the view control (`viewControl`). */
   state?: PanelState;
+  /** The cursor's column, when it is on `line`: the glob example of its stage starts open (`RowOptions.cursor`). */
+  cursor?: number;
 }
 
 /**
@@ -192,7 +198,7 @@ export function panelUpdate(p: PanelLine) {
   const shown = p.shown ?? (() => true);
   // (The rows of the depth chosen, with the switch as it is.)
   const { depth, receives } = { ...PANEL_DEFAULTS, ...p.state };
-  const model = rowModel({ ...ex, items }, { depth, receives }, lang);
+  const model = rowModel({ ...ex, items }, { depth, receives, ...(p.cursor === undefined ? {} : { cursor: { line: p.line, character: p.cursor } }) }, lang);
   const box = boxProblems(ex, model.places, lang, shown, p.doc?.tree);
   return {
     type: 'update',

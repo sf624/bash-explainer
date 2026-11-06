@@ -12,7 +12,7 @@ import { Analyzer } from '../../src/analyzer';
 import { Lang } from '../../src/i18n';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
 import { documentIssues } from '../../src/document';
-import { PANEL_BODY, panelUpdate } from '../../src/ui/panelView';
+import { explainNeeds, PANEL_BODY, panelUpdate } from '../../src/ui/panelView';
 import { said } from './shells';
 
 const root = path.join(__dirname, '..', '..');
@@ -23,16 +23,17 @@ export type PanelTheme = 'dark' | 'light' | 'hc';
  * The update message for `text` (from the second line of the script `file`), as the extension sends it. `text` may
  * have several lines: its first is explained (a loop over several lines is explained whole from its first line).
  * `wrap`: the line box wraps, as with `editor.wordWrap` on (src/ui/lineBox.ts `wrapsLikeEditor`). `at`: the line explained, counted in `text` from 1.
+ * `cursor`: the cursor's column on that line, where the editor has it there.
  */
-export function message(lang: Lang, text: string, file: string, wrap = false, at = 1, depth: 1 | 2 = 1): unknown {
+export function message(lang: Lang, text: string, file: string, wrap = false, at = 1, depth: 1 | 2 = 1, cursor?: number): unknown {
   const src = `#!/bin/bash\n${text}\n`;
   const line = text.split('\n')[at - 1];
   const tree = createUnbashParser().parse(src);
-  const ex = new Analyzer(lang).explainLine(tree, at, 'bash', { reading: depth === 2, sentence: true });
+  const ex = new Analyzer(lang).explainLine(tree, at, 'bash', { reading: explainNeeds({ depth }).reading, sentence: true });
   // (The line's problems, as the editor underlines them.)
   const doc = { lines: src.split('\n'), tree };
   const issues = documentIssues(doc, lang, { detected: said('bash') });
-  return panelUpdate({ lang, explanation: ex, file, line: at, lineText: line, doc, wrap, choice: {}, detected: said('bash'), placement: 'first', animations: true, issues, state: { depth } });
+  return panelUpdate({ lang, explanation: ex, file, line: at, lineText: line, doc, wrap, choice: {}, detected: said('bash'), placement: 'first', animations: true, issues, state: { depth }, ...(cursor === undefined ? {} : { cursor }) });
 }
 
 const HOST = `(function () {
@@ -86,9 +87,10 @@ export interface PanelServer {
   close(): Promise<void>;
 }
 
-/** Serves the panel's page on 127.0.0.1, explaining `line` of the script `file` (its line box wrapped with `wrap`). */
-export async function servePanel(line = SAMPLE, file = 'cleanup.sh', wrap = false, at = 1): Promise<PanelServer> {
-  const msg = `window.MSGS = ${JSON.stringify({ en: message('en', line, file, wrap, at), ja: message('ja', line, file, wrap, at) })};\nwindow.DEEP = ${JSON.stringify({ en: message('en', line, file, wrap, at, 2), ja: message('ja', line, file, wrap, at, 2) })};\n`;
+/** Serves the panel's page on 127.0.0.1, explaining `line` of the script `file` (its line box wrapped with `wrap`), the cursor at `cursor` where given. */
+export async function servePanel(line = SAMPLE, file = 'cleanup.sh', wrap = false, at = 1, cursor?: number): Promise<PanelServer> {
+  const of = (lang: Lang, depth: 1 | 2) => message(lang, line, file, wrap, at, depth, cursor);
+  const msg = `window.MSGS = ${JSON.stringify({ en: of('en', 1), ja: of('ja', 1) })};\nwindow.DEEP = ${JSON.stringify({ en: of('en', 2), ja: of('ja', 2) })};\n`;
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://x');
     const send = (type: string, body: string | Buffer) => res.writeHead(200, { 'Content-Type': type }).end(body);

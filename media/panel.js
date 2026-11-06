@@ -76,8 +76,8 @@
   let manual = /** @type {Record<string, { text: string, label: string, title: string, url: string }>} */ ({});
   /** Said after a reference link's name: where it opens ("(opens in a new tab)"). */
   let linkNote = '';
-  /** Editable examples by id: where to show the result of a rerun. */
-  /** @type {Map<number, { spec: any, layer: HTMLElement, results: HTMLElement, empty: string }>} */
+  /** Editable examples by id: where to show the result of a rerun, and the place whose typed text it is (`typed`). */
+  /** @type {Map<number, { spec: any, boxes: { layer: HTMLElement, area: HTMLTextAreaElement }[], results: HTMLElement, empty: string, at?: string, sent?: string[] }>} */
   const editors = new Map();
   let nextId = 0;
   /** Quick reference entries, loaded on first use. */
@@ -183,6 +183,9 @@
     if (msg.type === 'rerunResult') {
       const ed = editors.get(msg.id);
       if (ed) showResult(ed, msg.result);
+      // (The result of what is typed now is kept with it, for the same example drawn again.)
+      const kept = ed?.at === undefined ? undefined : typed.get(ed.at);
+      if (kept && ed?.sent && kept.inputs.join('\0') === ed.sent.join('\0')) kept.result = msg.result;
     }
     if (msg.type === 'reference') {
       reference = msg.entries;
@@ -267,7 +270,8 @@
       // A new line is drawn anew: what was folded, and the room kept below the old one, go.
       dropSpacer();
       foldChoices = new Map();
-      openExamples = new Set();
+      exampleChoices = new Map();
+      typed = new Map();
       openSteps = new Set();
       openRoles = new Map();
       openMarks = new Set();
@@ -343,7 +347,7 @@
     // The example of the whole line, folded: above the rows where examples come first, else with those at the end.
     const whole = msg.wholeLine.map(foldedExample);
     $('whole-line').replaceChildren(...(examplesFirst ? whole : []));
-    $('examples').replaceChildren(...(examplesFirst ? [] : whole), ...(ex.examples ?? []).map((e) => example(e, false)));
+    $('examples').replaceChildren(...(examplesFirst ? [] : whole), ...(ex.examples ?? []).map((/** @type {any} */ e, /** @type {number} */ i) => example(e, false, `line/${i}`)));
     whole[keptFold]?.querySelector('summary')?.focus({ preventScroll: true });
     $('empty').textContent = msg.emptyMessage;
     $('empty').hidden = msg.rows.length > 0;
@@ -638,18 +642,18 @@
 
   // ---------------------------------------------------------------- examples
 
-  /** One worked example: a heading, then a labelled block per section with one line per row. */
-  function example(ex, nested) {
+  /** One worked example, at its place `at`: a heading, then a labelled block per section with one line per row. */
+  function example(ex, nested, /** @type {string} */ at) {
     const box = document.createElement('section');
     box.className = nested ? 'example nested' : 'example';
     const h = document.createElement('h3');
     h.append(...inline(ex.title));
-    box.append(h, ...exampleBody(ex));
+    box.append(h, ...exampleBody(ex, at));
     return box;
   }
 
-  /** What an example shows under its title: its note, then its sections, or the inputs to edit and the results. */
-  function exampleBody(/** @type {any} */ ex) {
+  /** What an example at `at` shows under its title: its note, then its sections, or the inputs to edit and the results. */
+  function exampleBody(/** @type {any} */ ex, /** @type {string} */ at) {
     const out = [];
     if (ex.note) {
       const note = document.createElement('p');
@@ -657,19 +661,23 @@
       note.append(...inline(ex.note));
       out.push(note);
     }
-    out.push(...(ex.interactive ? editable(ex.interactive) : sections(ex.sections)));
+    out.push(...(ex.interactive ? editable(ex.interactive, at) : sections(ex.sections)));
     return out;
   }
 
-  /** The folded examples the reader opened, by their place (two can have one title): the same line drawn again keeps them open, as `foldChoices` does. */
-  let openExamples = new Set();
+  /**
+   * The folded examples the reader opened or closed, by their place (two can have one title): the same line drawn again (another depth, the
+   * cursor moved) keeps them so, as `foldChoices` does. Only a choice against how the example starts (`open`) is kept.
+   */
+  let exampleChoices = /** @type {Map<string, boolean>} */ (new Map());
 
-  /** A folded example (of the whole line, or a row's: `ModelRow.examples`), at its place `at`: under its title. */
+  /** A folded example (of the whole line, or a row's: `ModelRow.examples`), at its place `at`: under its title, open where it starts open. */
   function foldedExample(/** @type {any} */ ex, /** @type {number | string} */ at) {
+    const place = String(at);
     const box = /** @type {HTMLDetailsElement} */ (el('details', { class: 'example whole-line' }, el('summary', {}, el('h3', {}, ...inline(ex.title)))));
-    box.open = openExamples.has(at);
-    box.addEventListener('toggle', () => (box.open ? openExamples.add(at) : openExamples.delete(at)));
-    const body = el('div', { class: 'fold-body' }, ...exampleBody(ex));
+    box.open = exampleChoices.get(place) ?? ex.open === true;
+    box.addEventListener('toggle', () => (box.open === (ex.open === true) ? exampleChoices.delete(place) : exampleChoices.set(place, box.open)));
+    const body = el('div', { class: 'fold-body' }, ...exampleBody(ex, place));
     box.append(body);
     return foldingDetails(box, body);
   }
@@ -877,15 +885,32 @@
   });
 
   /**
-   * The inputs as editors (regex101's test string), one per file the command reads: a transparent textarea over a
-   * layer that shows the same text with matches highlighted; then the results.
+   * What the reader typed in the examples of the line shown, by their place, with its result once it came: the same line drawn again (another
+   * depth, the cursor moved) shows it, and the result of the example's own text only where nothing was typed.
    */
-  function editable(it) {
+  let typed = /** @type {Map<string, { spec: string, inputs: string[], result?: any }>} */ (new Map());
+
+  /**
+   * The inputs as editors (regex101's test string), one per file the command reads: a transparent textarea over a
+   * layer that shows the same text with matches highlighted; then the results. `at`: the example's place, which keeps what is typed.
+   */
+  function editable(it, /** @type {string | undefined} */ at) {
     const id = nextId++;
     const out = [];
     /** @type {{ layer: HTMLElement, area: HTMLTextAreaElement }[]} */
     const boxes = [];
     let timer;
+    const spec = JSON.stringify(it.spec);
+    const was = at === undefined ? undefined : typed.get(at);
+    // (What was typed for another example at that place, or for other boxes, is not this example's.)
+    const kept = was && was.spec === spec && was.inputs.length === it.inputs.length ? was : undefined;
+    /** Asks the host to run the example again on the boxes' text. */
+    const rerun = () => {
+      const inputs = boxes.map((b) => b.area.value);
+      if (at !== undefined) typed.set(at, { spec, inputs });
+      ed.sent = inputs;
+      vscode.postMessage({ type: 'rerun', id, spec: it.spec, inputs });
+    };
     it.inputs.forEach((input, i) => {
       const label = document.createElement('div');
       label.className = 'example-label';
@@ -905,22 +930,28 @@
       // (Named by its label: "Input: `a.txt` (sample contents) — Editable…".)
       label.id = `example-input-${nextId++}`;
       area.setAttribute('aria-labelledby', label.id);
-      area.value = input.lines.join('\n');
+      area.value = kept ? kept.inputs[i] : input.lines.join('\n');
       wrap.append(layer, area);
       boxes.push({ layer, area });
       // The textarea covers the layer (inset: 0), so it grows with the text the layer shows.
       area.addEventListener('input', () => {
         drawLayer(layer, area.value, undefined);
+        // (Kept at once, for a redraw before the result comes.)
+        if (at !== undefined) typed.set(at, { spec, inputs: boxes.map((b) => b.area.value) });
         clearTimeout(timer);
-        timer = setTimeout(() => vscode.postMessage({ type: 'rerun', id, spec: it.spec, inputs: boxes.map((b) => b.area.value) }), 150);
+        timer = setTimeout(rerun, 150);
       });
       out.push(label, wrap);
     });
     const results = document.createElement('div');
-    const ed = { spec: it.spec, boxes, results, empty: '' };
+    /** @type {{ spec: any, boxes: typeof boxes, results: HTMLElement, empty: string, at?: string, sent?: string[] }} */
+    const ed = { spec: it.spec, boxes, results, empty: '', at };
     editors.set(id, ed);
-    drawMarks(ed, it.result.marks);
-    showResult(ed, it.result, false);
+    const result = kept ? kept.result : it.result;
+    // (Text typed whose result has not come yet: the text now, its marks and results when they come.)
+    drawMarks(ed, result?.marks);
+    if (result) showResult(ed, result, false);
+    else rerun();
     return [...out, results];
   }
 
@@ -1195,7 +1226,7 @@
     const [chip, ...tryIt] = basisParts(part.basis);
     if (chip) text.append(chip);
     text.append(...refLinks(part.refs));
-    // At depth 2: what the part is to each reader, and what bash does to a word.
+    // At depth 2, what the part is to each reader; what bash does to a word (at depth 1, only where a step changes it).
     if (part.roleLine) text.append(roleLineOf(part.roleLine, part.key));
     if (part.steps) text.append(stepsOf(part.steps, part.key));
     if (posixSaid) text.append(posixSaid);
@@ -1205,7 +1236,7 @@
     li.append(box);
     if (part.children.length && (foldChoices.get(part.key) ?? part.folded === true)) setCollapsed(li, true);
     // Examples placed under this token go before (first) or after (last) its parts.
-    const examples = (part.examples ?? []).map((/** @type {any} */ e, /** @type {number} */ i) => (e.folded ? foldedExample(e, `${part.key}/${i}`) : example(e, true)));
+    const examples = (part.examples ?? []).map((/** @type {any} */ e, /** @type {number} */ i) => (e.folded ? foldedExample(e, `${part.key}/${i}`) : example(e, true, `${part.key}/${i}`)));
     // What lies under the row (its examples and parts), in one box: the indent guide is drawn beside it.
     const body = document.createElement('div');
     body.className = 'body';

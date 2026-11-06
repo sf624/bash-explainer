@@ -7,7 +7,7 @@
 // state it has (`header`).
 import { Span } from '../src/analyzer';
 import { Lang } from '../src/i18n';
-import { explainNeeds, FromPanel, needsDiffer, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
+import { FromPanel, PanelState, panelState, panelUpdate, shownDiffers, viewControl } from '../src/ui/panelView';
 import { isPanelQuestion, panelReply } from '../src/ui/panelReply';
 import type { NoteLevel } from '../src/levels';
 import { PanelHead } from './panel-head';
@@ -68,12 +68,12 @@ export class PanelBridge {
 
   /** Keeps the panel's state (storage, unless `store` is false), draws the view control from it, and explains the line again when it needs other data. */
   private keep(state: PanelState, store = true): void {
-    const before = explainNeeds(this.state);
+    const before = this.state;
     this.state = state;
     if (store) writeStored(STORAGE_KEYS.panel, JSON.stringify(this.state));
     this.head?.draw();
-    // The rows of the depth just chosen, with the reading tree at depth 2.
-    if (needsDiffer(explainNeeds(this.state), before)) this.host.update();
+    // The rows of the depth or the switch just chosen.
+    if (shownDiffers(this.state, before)) this.host.update();
   }
 
   private loaded(): void {
