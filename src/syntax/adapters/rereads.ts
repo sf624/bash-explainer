@@ -45,7 +45,7 @@ export function scriptErrors<E extends AstError>(script: AstNode, children: Chil
  * `>(` in a word as it reads a `$(` (`a<(:)`, `<(:)b` and `<(:)<(:)` are each one word; `<(:)2>x` is the word
  * `<(:)2` and `>x`). unbash makes two words of them (and of `x=a<(:)` an assignment and a word), a plain word of
  * `2>(:)` and `{fd}<(:)`, and an unexpected token of the `<(:)` of `[[ a<(:) ]]`. The places are those of the `<`
- * or `>`; not of one before `((`, which would read as `$((` (`a<((:))` stays two words: README, Limitations).
+ * or `>`; not of one before `((`, which would read as `$((` (`a<((:))` stays two words: docs/guide/limitations.md).
  */
 export function attachedSubstitutions(script: AstNode, children: Children, text: string): number[] {
   const starts = new Set<number>();

@@ -7,7 +7,7 @@ import { SET_LETTERS } from './effects';
 import { cLocale, localeVariable, writeEffect } from './vars';
 import type { WrittenValue } from './written';
 
-/** Whether a write of a locale variable gives it C or empty (`cLocale`), or keeps the environment's (README, Limitations). */
+/** Whether a write of a locale variable gives it C or empty (`cLocale`), or keeps the environment's (docs/guide/limitations.md). */
 export function localeWritten(value: WrittenValue): boolean {
   if (value === 'none' || value === 'kept') return true;
   return typeof value === 'object' && !!value.fixed && !value.arith && !value.appended && (value.each ?? [value.text]).every(cLocale);

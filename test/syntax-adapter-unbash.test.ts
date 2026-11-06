@@ -30,7 +30,7 @@ const outline = (n: SyntaxNode): string => (n.named
 const types = (n: SyntaxNode, t: string): SyntaxNode[] => descendants(n, [t]);
 
 // Inputs that tree-sitter read wrongly (it failed to read the script, or read it in a way that is not bash's): the tree
-// the unbash adapter must give (README, Limitations).
+// the unbash adapter must give (docs/guide/limitations.md).
 interface Wrong { name: string; text: string; why: string; expected: string }
 const WRONG: Wrong[] = [
   {
@@ -439,7 +439,7 @@ describe('unbash adapter: process substitutions in a longer word', () => {
     }
   });
   it('leaves apart one whose command is a subshell, which would read as `$((`', () => {
-    // (README, Limitations: bash reads `a<((ls))` as one word.)
+    // (docs/guide/limitations.md: bash reads `a<((ls))` as one word.)
     assert.deepStrictEqual(fields(types(tree('echo a<((ls))').root, 'command')[0], 'argument').map((a) => a.text), ['a', '<((ls))']);
   });
 });

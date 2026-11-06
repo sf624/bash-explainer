@@ -547,8 +547,8 @@
  ],
  "onlyBash": {
   "echo $[1+\n": "the parser does not read `$[` to its end",
-  "f(\n": "the parser accepts a `(` after a word (README, Limitations)",
-  "echo (\n": "the parser accepts a `(` after a word (README, Limitations)",
+  "f(\n": "the parser accepts a `(` after a word (docs/guide/limitations.md)",
+  "echo (\n": "the parser accepts a `(` after a word (docs/guide/limitations.md)",
   "for x { :; }\n": "the parser accepts a group as the body of `for x` with no `in`",
   "echo @(a)\n": "an extended glob: `bash -n` runs no `shopt -s extglob`, so it rejects what a run accepts. The model's own caveat says this (extglob-*)",
   "shopt -s extglob; echo @(a)\n": "an extended glob: `bash -n` runs no `shopt -s extglob`, so it rejects what a run accepts. The model's own caveat says this (extglob-*)",

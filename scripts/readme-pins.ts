@@ -155,6 +155,14 @@ function scan(text: string): Target[] {
   return found.sort((a, b) => a.start - b.start);
 }
 
+/**
+ * The link and image targets of a Markdown text, outside its code, as written (not the URLs in running text): what
+ * test/docs-links.test.ts resolves in the READMEs and the user guide.
+ */
+export function linkTargets(text: string): { url: string; image: boolean }[] {
+  return scan(text).filter((t) => !t.bare).map(({ url, image }) => ({ url, image }));
+}
+
 /** The text with every target replaced by what `fix` makes of it. */
 function rewrite(text: string, fix: (target: Target) => string): string {
   let out = text;

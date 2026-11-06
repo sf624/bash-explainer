@@ -143,7 +143,7 @@ export function commandNames(variables: readonly { name: string; quoted: boolean
  * walk does not see it.
  */
 export function ps4Writes(ps4: readonly Write[]): string | undefined {
-  // (A value kept from the environment is assumed quiet: README, Limitations.)
+  // (A value kept from the environment is assumed quiet: docs/guide/limitations.md.)
   const loud = (w: Write): boolean => w.value !== 'none' && w.value !== 'kept' && w.value !== 'number' && (w.value === 'unknown' || !w.value.fixed || !quietPrompt(w.value.text));
   return ps4.some(loud) ? 'PS4, which `set -x` expands before each command, may assign or run a command' : undefined;
 }

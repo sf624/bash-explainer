@@ -173,11 +173,18 @@ describe('the READMEs in the repository', () => {
     }
   });
 
-  it('README.md and README.ja.md use the images in images/readme/', () => {
+  it('README.md and README.ja.md use the images in images/readme/, and so do the pages of the user guide', () => {
+    // (The images of a released README stay at their paths: docs/publishing.md. The guide reuses them from there.)
     for (const file of ['README.md', 'README.ja.md']) {
       const images = relative(read(file)).filter((u) => /\.(gif|png)$/.test(u));
-      assert.ok(images.length >= 4, file);
+      assert.ok(images.length >= 3, file);
       for (const image of images) assert.match(image, /^images\/readme\//, `${file}: ${image}`);
+    }
+    for (const [dir, up] of [['docs/guide', '../../'], ['docs/guide/ja', '../../../']]) {
+      const images = fs.readdirSync(path.join(root, dir)).filter((f) => f.endsWith('.md'))
+        .flatMap((f) => relative(read(`${dir}/${f}`)).filter((u) => /\.(gif|png)$/.test(u)));
+      assert.ok(images.length >= 3, dir);
+      for (const image of images) assert.ok(image.startsWith(`${up}images/readme/`), `${dir}: ${image}`);
     }
   });
 });
@@ -210,7 +217,7 @@ describe('the packages, as the Release workflow builds them', function () {
     assert.strictEqual(readZipEntry(zip, 'extension/none.md'), undefined);
     assert.deepStrictEqual(findUnpinned(readme, tag), []);
     assert.deepStrictEqual(pinnedImages(readme, tag).map((u) => u.replace(`${RAW}/${tag}/`, '')).sort(),
-      ['images/readme/demo.gif', 'images/readme/hover.gif', 'images/readme/logo-dark.png', 'images/readme/logo-light.png', 'images/readme/name-hints.png', 'images/readme/panel.gif']);
+      ['images/readme/demo.gif', 'images/readme/logo-dark.png', 'images/readme/logo-light.png']);
     assert.doesNotMatch(readme, /describes the development version on/);
     assert.deepStrictEqual(findUnpinned(withoutUnreleased(readZipEntry(zip, 'extension/CHANGELOG.md'))!, tag, true), []);
     // The program says the same, and fails for another tag.
@@ -231,7 +238,7 @@ describe('the packages, as the Release workflow builds them', function () {
     assert.match(out, new RegExp(`pinned to ${tag}`));
     const packed = execFileSync('tar', ['-xzOf', tgz, 'package/README.md'], { encoding: 'utf8' });
     assert.deepStrictEqual(pinnedImages(packed, tag), [`${RAW}/${tag}/images/action-annotations.png`]);
-    assert.ok(packed.includes(`](${BASE}/blob/${tag}/README.md#settings)`), 'the links to the repository page with an anchor name the README at the tag');
+    assert.ok(packed.includes(`](${BASE}/blob/${tag}/docs/guide/settings.md)`), 'the links to the user guide name its page at the tag');
     assert.throws(() => execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-cli.ts', `--tag=${tag}`], { cwd: root, stdio: 'pipe' }), /--tag needs another --outdir/);
   });
 });
