@@ -13,6 +13,7 @@ import type { TokenTextId } from '../messages-tokens';
 import { LEVELS, type NoteLevel } from '../levels';
 import { keyOf, type Layer, type ReadingNode, tokenLines } from '../reading';
 import { KIND_ROLES } from '../roles';
+import { stepsChange } from '../semantics/wordsteps';
 import type { TextPart } from '../tokenmarks';
 import { sameSpan, shown } from './hoverParts';
 import { aboutOf, nodeKind, roleFor, type RoleLine, roleLine, type RowRole, type ScriptShell } from './panelRoles';
@@ -138,8 +139,18 @@ const aroundOf = (t: Token): Token | undefined => (t.around === 'redirections' ?
 /** The statements of a token: a list or a pipeline (`Token.grammar`, or `time` and `!` around one), then each of its parts, down to its stages. */
 const statements = (t: Token): Token[] => (t.grammar || t.around === 'pipeline' ? [t, ...t.children.flatMap(statements)] : [t]);
 
-/** The stages of the line: the commands of its lists and pipelines, each of which a cursor can be on. */
-const stagesOf = (items: readonly Token[]): Token[] => items.flatMap(statements).filter((t) => !t.grammar && t.around !== 'pipeline');
+/**
+ * The stages of the line a cursor can be on: each command in a box of its own (`Token.frame`), a simple one or a compound one, down the
+ * lists, pipelines and bodies of compound commands. A compound command's own words (`*.txt` of `for f in *.txt`) are its stage. The
+ * commands of a substitution are part of the stage that holds it (`echo $(ls *.a)`).
+ */
+const stagesOf = (items: readonly Token[]): Token[] => items.flatMap((t) => [
+  ...(t.frame === 'command' || t.frame === 'compound' ? [t] : []),
+  ...(t.kind === 'substitution' ? [] : stagesOf(t.children)),
+]);
+
+/** The innermost stage around a range. */
+const stageAround = (stages: readonly Token[], span: Span): Token | undefined => stages.filter((s) => within(s.span, span)).pop();
 
 /**
  * The examples that run a whole statement of the line (a pipeline's): the view draws them apart, folded, above the rows. A
@@ -197,10 +208,12 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build, shell: Shell = { l
   const group = all.find((r) => r.group)?.group;
   const examples = (head === t ? chain : [t, ...chain]).flatMap((x) => x.examples ?? []);
   const name = all.find((r) => r.name)?.name;
-  const holds = !!(marks.length || facts.length || value || group || examples.length || name);
-  const comesAt: Depth = !up || holds ? 1 : ownDepth(head, own);
   const at = keyOf(t.span);
   const whole = b.roles.get(at);
+  // (A word a step of bash changes has its row at depth 1, which shows the steps: `"$f"` of `[ -f "$f" ]`, `$out` of `> $out`.)
+  const changed = !!whole?.steps && stepsChange(whole.steps.list);
+  const holds = !!(marks.length || facts.length || value || group || examples.length || name || changed);
+  const comesAt: Depth = !up || holds ? 1 : ownDepth(head, own);
   // (The first token of a string a shell reads says which shell; so does a role of that shell's.)
   const inShell: Shell = t.process ? { layer: 'child', process: t.process } : whole?.roles.find((r) => r.layer === 'child' || r.layer === 'bash') ?? shell;
   const children = parts.flatMap((c) => rowsOf(c, own, b, inShell));
@@ -533,18 +546,17 @@ function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[],
   ];
 }
 
-const before = (a: Span['start'], b: Span['start']): boolean => a.line < b.line || (a.line === b.line && a.character <= b.character);
-
 /**
  * Whether a token's glob example starts open (usability-9.md, Q4): when it is the line's only example, or when the cursor is on the stage
- * it belongs to (from its start to its end, both included: a cursor just after a command is on it). The line's examples are those placed on
- * its tokens and those left in `examples` (the whole line's, which the view draws apart).
+ * it belongs to, its innermost (`stagesOf`; from its start to its end, both included: a cursor just after a command is on it). The line's
+ * examples are those placed on its tokens and those left in `examples` (the whole line's, which the view draws apart).
  */
 function opensGlob(ex: Pick<LineExplanation, 'items' | 'examples'>, cursor: Span['start'] | undefined): (t: Token) => boolean {
   const all = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
   const count = new Set([...all(ex.items).flatMap((t) => t.examples ?? []), ...ex.examples]).size;
-  const stage = cursor && stagesOf(ex.items).find((s) => before(s.span.start, cursor) && before(cursor, s.span.end));
-  return (t) => count === 1 || (!!stage && within(stage.span, t.span));
+  const stages = stagesOf(ex.items);
+  const stage = cursor && stageAround(stages, { start: cursor, end: cursor });
+  return (t) => count === 1 || (!!stage && stageAround(stages, t.span) === stage);
 }
 
 /** The rows the panel shows of a line, at a depth and with the switch, and the Legend of what they draw. */

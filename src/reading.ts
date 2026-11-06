@@ -571,10 +571,13 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   const isPart = (c: SyntaxNode): boolean =>
     PARTS.has(c.type) && (c.type !== 'brace_expression' || cx.meaning(c)!.steps.find((s) => s.kind === 'brace')!.applies !== false);
 
-  /** What bash does to the word `w`, on its node (or on an assignment, of its value). */
+  /**
+   * What bash does to the word `w`, on its node (or on an assignment, of its value). Not on a piece of a word the parser gives in parts (the
+   * right of `[[ x == *":$d:"* ]]`): its steps are the whole word's, which has no node.
+   */
   const setSteps = (n: ReadingNode, w: SyntaxNode): void => {
     const m = cx.meaning(w);
-    const list = m && wordSteps(m);
+    const list = m && m.nodes.length === 1 && wordSteps(m);
     if (list) n.steps = { list, context: m.context };
   };
 

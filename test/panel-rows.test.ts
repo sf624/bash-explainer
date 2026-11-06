@@ -242,8 +242,11 @@ describe('the panel\'s row model', () => {
       const rows = all(model('f=out.txt; echo a > "$f"').rows);
       const echo = rows.find((r) => r.label === 'echo')!;
       assert.deepStrictEqual(echo.children.map((r) => r.label), ['a', '> "$f"']);
-      assert.deepStrictEqual(echo.children[1].children.map((r) => r.label), ['$f']);
-      assert.ok(echo.children[1].children[0].value);
+      // (The target's word, with bash's steps on it, then its value.)
+      assert.deepStrictEqual(echo.children[1].children.map((r) => r.label), ['"$f"']);
+      assert.strictEqual(echo.children[1].children[0].steps?.acts, true);
+      assert.deepStrictEqual(echo.children[1].children[0].children.map((r) => r.label), ['$f']);
+      assert.ok(echo.children[1].children[0].children[0].value);
     });
 
     it('says at depth 1 that the redirections of a command with no name apply to nothing, not even to its assignments', () => {
@@ -263,12 +266,13 @@ describe('the panel\'s row model', () => {
 
     it('takes a command\'s redirections for what stands around it, whatever their targets hold', () => {
       assert.deepStrictEqual(outline(model('tar c x 2>/dev/null').rows), [['[command] tar', ['c', 'x', '2>/dev/null']]]);
-      assert.deepStrictEqual(outline(model('>"$f" cat').rows), [['[command] cat', ['>"$f"']]]);
+      // (A target's word that bash changes has its row, for its steps.)
+      assert.deepStrictEqual(outline(model('>"$f" cat').rows), [['[command] cat', [['>"$f"', ['"$f"']]]]]);
       // (A redirection in a word's command is that command's.)
-      assert.deepStrictEqual(outline(model('cat <<< "$(a > "$f")"').rows), [['[command] cat', [['<<< "$(a > "$f")"', [['$(a > "$f")', [['[command] a', ['> "$f"']]]]]]]]]);
+      assert.deepStrictEqual(outline(model('cat <<< "$(a > "$f")"').rows), [['[command] cat', [['<<< "$(a > "$f")"', [['"$(a > "$f")"', [['$(a > "$f")', [['[command] a', [['> "$f"', ['"$f"']]]]]]]]]]]]]);
       // (No command, or more than one assignment, to stand around: the row of the redirections.)
-      assert.deepStrictEqual(outline(model('> "$f"').rows), ['[command] > "$f"']);
-      assert.deepStrictEqual(outline(model('x=1 y=2 > "$f"').rows)[0], ['[command] x=1 y=2 > "$f"', [['x=1 y=2', ['x=1', 'y=2']], '> "$f"']]);
+      assert.deepStrictEqual(outline(model('> "$f"').rows), [['[command] > "$f"', ['"$f"']]]);
+      assert.deepStrictEqual(outline(model('x=1 y=2 > "$f"').rows)[0], ['[command] x=1 y=2 > "$f"', [['x=1 y=2', ['x=1', 'y=2']], ['> "$f"', ['"$f"']]]]);
     });
 
     it('leaves what it stands around out of `--format json`', async () => {
@@ -1088,6 +1092,12 @@ describe('the panel\'s row model', () => {
       assert.strictEqual(at1('echo $a', '$a').steps!.acts, true);
       assert.strictEqual(at1('echo $a', '$a').roleLine, undefined);
       assert.deepStrictEqual(at1('echo $a', '$a').roles, []);
+      // A word whose row is depth 2's comes at depth 1 for its steps: an operand of `[`, `[[` or `case`, a redirection's target, an array's element.
+      const word1 = (src: string, label: string) => rows(src, D1).find((r) => r.label === label)?.steps?.acts;
+      for (const [src, label] of [['[ -f "$f" ]', '"$f"'], ['[[ -n $x ]]', '$x'], ['case "$1" in a) ;; esac', '"$1"'], ['a > $out', '$out'], ['a >> "$log"', '"$log"'],
+        ['cat < $f', '$f'], ['cat <<< "$name"', '"$name"'], ['arr=(*.txt)', '*.txt'], ['eval "$cmd"', '"$cmd"'], ['[ $name = "$1" ]', '"$1"']] as const) assert.strictEqual(word1(src, label), true, src);
+      // (Not on a piece of a word the parser gives in parts, whose steps are the whole word's: the right of `[[ = ]]`.)
+      assert.deepStrictEqual(rows('[[ ":$PATH:" = *":$d:"* ]]', D2).filter((r) => r.steps).map((r) => r.label), ['":$PATH:"']);
       // A word no step changes: nothing new (depth 2 folds its line).
       assert.strictEqual(text('echo "a"', '"a"'), undefined);
       assert.strictEqual(text('echo a', 'a'), undefined);
@@ -1142,6 +1152,21 @@ describe('the panel\'s row model', () => {
         assert.deepStrictEqual(ex('ls *.txt; ls *.md', depth, 9).map((e) => e[3]), [undefined, undefined]);
         assert.deepStrictEqual(ex('ls *.txt; ls *.md', depth, 12).map((e) => e[3]), [undefined, true]);
         assert.deepStrictEqual(ex('ls *.txt *.md', depth, 3).map((e) => e[3]), [true, true]);
+        // (Down the bodies of compound commands on one line; their own words are their stage; a substitution's commands are the stage that holds them.)
+        const opens = (src: string, cursor: number) => ex(src, depth, cursor).map((e) => e[3]);
+        const ifs = 'if ls *.txt; then ls *.md; fi';
+        assert.deepStrictEqual(opens(ifs, 0), [undefined, undefined]);
+        assert.deepStrictEqual(opens(ifs, ifs.indexOf('ls')), [true, undefined]);
+        assert.deepStrictEqual(opens(ifs, ifs.lastIndexOf('ls')), [undefined, true]);
+        const loop = 'for f in a; do ls *.txt; ls *.md; done';
+        assert.deepStrictEqual(opens(loop, 0), [undefined, undefined]);
+        assert.deepStrictEqual(opens(loop, loop.indexOf('ls')), [true, undefined]);
+        assert.deepStrictEqual(opens(loop, loop.lastIndexOf('ls')), [undefined, true]);
+        const own = 'case $x in *.txt) ls *.md;; esac';
+        assert.deepStrictEqual(opens(own, 0), [true, undefined]);
+        assert.deepStrictEqual(opens(own, own.indexOf('ls')), [undefined, true]);
+        assert.deepStrictEqual(opens('while ls *.a; do ls *.b; done', 6), [true, undefined]);
+        assert.deepStrictEqual(opens('echo $(ls *.a) *.b', 0), [true, true]);
       }
       assert.ok(ex("sed 's/a/b/' f", 2).every((e) => e[1] !== 'glob' && !e[2]));
       // The example of a whole pipeline counts: in the panel's message, the glob's opens on its stage only.
@@ -1171,8 +1196,10 @@ describe('the panel\'s row model', () => {
           const keys = new Map(two.map((r) => [r.key, r]));
           assert.deepStrictEqual(one.map((r) => r.key), two.filter((r) => one.some((o) => o.key === r.key)).map((r) => r.key), at);
           for (const r of one) assert.strictEqual(keys.get(r.key)!.connector ? undefined : keys.get(r.key)!.text, r.text, at);
-          // Depth 1 has the steps of depth 2 where a step acts, and only those.
+          // Depth 1 has the steps of depth 2 where a step acts, and only those: every row of depth 2 whose steps act is there.
           for (const r of one) assert.deepStrictEqual(r.steps, keys.get(r.key)!.steps?.acts ? keys.get(r.key)!.steps : undefined, at);
+          const ones = new Set(one.map((r) => r.key));
+          assert.deepStrictEqual(two.filter((r) => r.steps?.acts && !ones.has(r.key)).map((r) => r.label), [], at);
           // Every row of depth 1 is outside any row that starts folded.
           const inFold = (rs: readonly ModelRow[], folded: boolean): ModelRow[] => rs.flatMap((r) => [...(folded ? [r] : []), ...inFold(r.children, folded || !!r.folded)]);
           assert.deepStrictEqual(inFold(rowModel(ex, D2, 'en').rows, false).filter((r) => r.comesAt === 1).map((r) => r.label), [], at);
