@@ -4,7 +4,7 @@ Items of the old roadmap that were dropped or merged into another item when the 
 
 Search it before you fix a rare bug or propose a refactor: `grep -n -i "<a word of the input>" docs/backlog-archive.md` (a command name, an option, an expansion such as `${!`, a file such as `panelRows`). An entry is dropped (rare corner, YAGNI, or no effect users see) or merged into an issue, which then carries its text. Reviving one means an issue on the board, with the reason that changed.
 
-The old roadmap, with its "Done lately" list of finished work, is kept at its last commit: [docs/roadmap.md at 28e8a754](https://github.com/sf624/bash-explainer/blob/28e8a754255316700b99050a1c1f6a4bf9abd4ae/docs/roadmap.md). Each entry links its line there.
+The old roadmap, with its "Done lately" list of finished work, is kept at its last commit: [docs/roadmap.md at 28e8a754](https://github.com/sf624/bash-explainer/blob/28e8a754255316700b99050a1c1f6a4bf9abd4ae/docs/roadmap.md). Each entry links its line there. One entry, "Source guards, stage SA", links the version at 8d278ab6 instead: that item was finished and had left the list before 28e8a754.
 
 Each entry names its kind by the label an issue of that kind gets. For `bug`, `crash` and `missing-explanation`, the entry keeps the input and what was wrong.
 
@@ -173,7 +173,7 @@ Each entry names its kind by the label an issue of that kind gets. For `bug`, `c
 
 - **Verdict:** dropped, 2026-11-06. Kind: `bug`.
 - **Reason:** Vague, no failing case given. `then: 'runs'` is in the catalog's type.
-- **Note:** dropped as vague. Their authors may know a case.
+- **Note:** dropped as vague: no failing case was given. One with a case comes back as an issue.
 - **Input and contradiction (as the roadmap had it):** `assign-readonly` with `then: 'runs'` (from the review of step 1a of the three note levels): not handled yet.
 - **Old roadmap:** [Deferred, line 69](https://github.com/sf624/bash-explainer/blob/28e8a754255316700b99050a1c1f6a4bf9abd4ae/docs/roadmap.md#L69)
 
@@ -181,7 +181,7 @@ Each entry names its kind by the label an issue of that kind gets. For `bug`, `c
 
 - **Verdict:** dropped, 2026-11-06. Kind: `missing-explanation`.
 - **Reason:** Superseded: src/explain/reads.ts reads `rbash` and `#!/bin/bash -r`. No failing case given.
-- **Note:** dropped as vague. Their authors may know a case.
+- **Note:** dropped as vague: no failing case was given. One with a case comes back as an issue.
 - **Input and contradiction (as the roadmap had it):** `restricted-refused` from an rbash shebang (same review): not handled yet.
 - **Old roadmap:** [Deferred, line 70](https://github.com/sf624/bash-explainer/blob/28e8a754255316700b99050a1c1f6a4bf9abd4ae/docs/roadmap.md#L70)
 
@@ -189,7 +189,7 @@ Each entry names its kind by the label an issue of that kind gets. For `bug`, `c
 
 - **Verdict:** dropped, 2026-11-06. Kind: `refactor`.
 - **Reason:** Not measured, no complaint.
-- **Note:** dropped as vague. Their authors may know a case.
+- **Note:** dropped as vague: no failing case was given. One with a case comes back as an issue.
 - **Old roadmap:** [Deferred, line 71](https://github.com/sf624/bash-explainer/blob/28e8a754255316700b99050a1c1f6a4bf9abd4ae/docs/roadmap.md#L71)
 
 ### CRLF: heredoc being typed fails `invariants`
@@ -506,7 +506,7 @@ Each entry names its kind by the label an issue of that kind gets. For `bug`, `c
 
 - **Verdict:** dropped, 2026-11-06. Kind: `enhancement`.
 - **Reason:** Small measured gain (34 → 45 values), deferred by the maintainer 2026-10-26. #646 carries the part users see.
-- **Note:** now dropped, since #646 is its own Now item. Keep it if #646's fix turns out to need its steps.
+- **Note:** dropped, since #646 is its own Now item. These steps come back as an issue only if the fix of #646 needs them.
 - **Old roadmap:** [Deferred, line 131](https://github.com/sf624/bash-explainer/blob/28e8a754255316700b99050a1c1f6a4bf9abd4ae/docs/roadmap.md#L131)
 
 ### `arrayKind` reads the trust reason's text
@@ -666,7 +666,7 @@ Each entry names its kind by the label an issue of that kind gets. For `bug`, `c
 
 - **Verdict:** dropped, 2026-11-06. Kind: `refactor`.
 - **Reason:** Nobody has asked, and the user base is near zero. Revive when someone offers a language.
-- **Note:** dropped. Move it to "Waiting on maintainer" if you want the idea kept.
+- **Note:** dropped, as no one has offered a language. It comes back when someone does.
 - **Old roadmap:** [Not decided, line 172](https://github.com/sf624/bash-explainer/blob/28e8a754255316700b99050a1c1f6a4bf9abd4ae/docs/roadmap.md#L172)
 
 ## Decisions recorded on 2026-11-06

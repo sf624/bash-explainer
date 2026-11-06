@@ -104,7 +104,7 @@ So that the UX work adds no new copies, each goes into the step named, as part o
 - C2 waits for the level table (SB1), and C5 for `detectShell`'s source (SB4, done: #559).
 - C0, C1, C3, C4, C6 and P2 go ahead: no step of stage SB is theirs. P2's pattern fix reads the word model (word-source.md, W-P3).
 
-### Stage SC: the migrations (after 0.10.0, Deferred)
+### Stage SC: the migrations (after 0.10.0; #674 to #679)
 
 Each step is an issue on the board (see the status line above); the step SC11 was dropped (docs/backlog-archive.md). Each step lists its explanation changes (section 2) and takes the machinery of section 2.1 with it.
 
