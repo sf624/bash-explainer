@@ -110,3 +110,7 @@ GNU make runs a recipe line directly as a program, with no shell, when the line 
 - A later option wins and the earlier one is ignored, with a warning on stderr: `-n1 -I{}` and `-L1 -I{}` run once per line, replacing `{}` (xargs: "options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value"); `-I{} -L1` runs `echo {} a b` (the replacement is not done; before, the example showed it done); `-n1 -L1` takes `-L` and `-L1 -n1` takes `-n`, so the second runs `echo X a`, `echo X b`… (before, the example showed `echo X a b`).
 - `-I{} -n1` warns nothing and changes nothing (`-I` already runs one argument per command): no row is marked. Any other count after `-I` wins: `-I{} -n2` runs `echo X {} a b` (the replacement is dropped; xargs: "options --replace and --max-args/-n are mutually exclusive, ignoring previous --replace value"), and the row of `-I` says it is ignored. Before, the row of `-n2` was not marked and the example replaced `{}`.
 - `-I{} -n1 -L1` takes `-L`.
+
+### The `{}` of `find -exec` at depth 2
+
+At depth 2, the role line of the `{}` in `find . -exec rm {} \;` (and `-execdir`, `+`, and through `sudo` or `env`) says "placeholder for the path · find reads it, not bash" (「プレースホルダー（パスに置き換わる）」), as `find` replaces it before it runs `rm`. Before, it said "operand · rm reads it", as if `rm` got the word `{}`. The other words of the command that `find` runs (`-f`, `644`) stay read by that command. `{}` of `xargs -I{} rm {}` is not covered (the replace string can be any text).

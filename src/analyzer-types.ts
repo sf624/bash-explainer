@@ -135,6 +135,13 @@ export interface Token {
    * With `valueFor`, the first word that comes out is the value and the others are operands.
    */
   expands?: 'glob' | 'split' | 'brace' | 'elements';
+  /**
+   * On the token of a command another one runs with a placeholder (`rm` of `find -exec rm {} \;`): the option of the command around it that
+   * replaces the placeholder in the words of this one (`-exec`). The command reads the words as written, and this one gets what replaces them.
+   */
+  placeholderOf?: string;
+  /** On the token of such a placeholder (`{}`, under a token with `placeholderOf`): the command around reads it as written, and replaces it before the one it runs gets it. */
+  placeholder?: true;
   /** On the outermost tokens of an embedded language: which language (`regex`, `sed`, `jq`…; `EmbeddedLang`). */
   language?: string;
   /** On the tokens of a string read as a script (`origin` `script`): which shell reads it. */
