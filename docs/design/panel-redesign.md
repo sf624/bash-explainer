@@ -502,6 +502,7 @@ The kit and the data are not in the repository. Two runs on the web page, each w
 - **Run 1** (main e39afae0): scores 7, 8, 7, 7, 7, an average of 7.2; the baseline 7, 7, 7, 6, 7, an average of 6.8. Every user solved the 6 keyed tasks on both sites. Answered from the page alone: main 30/30, the baseline 25/30 (all five misses were task 5, the glob's reasons). Rated easy: main 19/30, the baseline 10/30.
 - **Explanation bugs** found by run 1, fixed before run 2: quoted parameters shown as several words in sh (#631), bats' `run` badged as a program (#630), "bash" named where another shell reads the script (#632), `^` and `$` called the line's start and end where the whole text is matched (#629); then the Legend's "function" (#633).
 - **Run 2** (main 71cac086, after the fixes): scores 8, 8, 8, 7, 7, an average of 7.6. No explanation bug was reported, and every task was solved from the page.
+- **By model:** run 1, Sonnet 7.0 (7, 7) and Opus 7.33 (8, 7, 7); run 2, Sonnet 8.0 (8, 8) and Opus 7.33 (8, 7, 7); the baseline, Sonnet 7.0 and Opus 6.67.
 - **Verdict:** below the goal of 9. The maintainer decided on 2026-11-06 to release 0.10.0 first, then work toward 9/10 ("Usability toward 9/10" in the roadmap).
 - **The remaining findings** are all about the UI:
   - the copied fix is only a fragment of the line (all users);
