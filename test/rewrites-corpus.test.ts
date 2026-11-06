@@ -6,6 +6,8 @@
 // `STATES`), where they apply: the meaning is kept, the hazard is gone. The counts are pinned, so that a change of the
 // corpus or of an oracle that runs fewer checks shows (update them when the corpus changes them).
 import * as assert from 'assert';
+import { rewriteFix } from '../src/fixes';
+import { applyRewrite, fixedLines } from '../src/rewrite';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { checkStates, corpusFacts, factsIn, type IdCounts, isStyle, leavesNoFact, MECHANICAL, parses, runJobs, singles, STATES, subjects, type SuggestionId, unsafe } from './support/rewrite-states';
 import { programs } from './support/rewrites';
@@ -169,6 +171,27 @@ describe('the rewrites of the corpus (docs/design/oracles.md, step 5)', function
 
   it('has states and an oracle for every mechanical id', () => {
     assert.deepStrictEqual(MECHANICAL.filter((id) => !STATES[id]), []);
+  });
+  // (`applyRewrite` is the one applier, src/rewrite.ts: what it gives is what the quick fix's edits give in an editor,
+  // at their lines and columns, `rewriteFix`; and the panel's fix, the lines it touches fixed, put in place of those lines, gives the same.)
+  it('apply as the editor does, and as the panel\'s fix put over its lines', () => {
+    const bad: string[] = [];
+    const edited = one.filter((x) => x.rewrite.edits.length);
+    assert.ok(edited.length > 300, String(edited.length));
+    for (const s of edited) {
+      const starts = [0, ...[...s.text.matchAll(/\n/g)].map((m) => m.index + 1)];
+      const place = (i: number) => { const line = starts.filter((x) => x <= i).length - 1; return { line, col: i - starts[line] }; };
+      const offset = (line: number, col: number) => starts[line] + col;
+      const editor = [...rewriteFix(s.rewrite, place).edits].sort((a, b) => offset(b.startLine, b.startCol) - offset(a.startLine, a.startCol))
+        .reduce((t, e) => t.slice(0, offset(e.startLine, e.startCol)) + e.text + t.slice(offset(e.endLine, e.endCol)), s.text);
+      const first = place(Math.min(...s.rewrite.edits.map((e) => e.start))).line;
+      const last = place(Math.max(...s.rewrite.edits.map((e) => e.end))).line;
+      const fixed = fixedLines(s.text, s.rewrite, first, last)!;
+      const lines = s.text.split('\n');
+      const pasted = [...lines.slice(0, first), fixed.text, ...lines.slice(last + 1)].join('\n');
+      if (applyRewrite(s.text, s.rewrite) !== editor || pasted !== editor) bad.push(`${s.id} in ${JSON.stringify(s.input)}`);
+    }
+    assert.deepStrictEqual(bad, []);
   });
   it('leave no fact of the same id where they were made', () => {
     assert.deepStrictEqual(one.flatMap((s) => { const bad = leavesNoFact(s); return bad ? [`${s.id} in ${JSON.stringify(s.input)}, ${JSON.stringify(s.codes)}: ${bad}`] : []; }), []);

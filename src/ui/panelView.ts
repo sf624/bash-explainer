@@ -193,7 +193,7 @@ export function panelUpdate(p: PanelLine) {
   // (The rows of the depth chosen, with the switch as it is.)
   const { depth, receives } = { ...PANEL_DEFAULTS, ...p.state };
   const model = rowModel({ ...ex, items }, { depth, receives }, lang);
-  const box = boxProblems(ex, model.places, lang, shown);
+  const box = boxProblems(ex, model.places, lang, shown, p.doc?.tree);
   return {
     type: 'update',
     // (The page's language: the web page's panel has none of its own, and the styles follow it, `:lang(ja)`.)

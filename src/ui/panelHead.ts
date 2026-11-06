@@ -70,7 +70,8 @@ export interface PanelTools {
    * panel draws icons only.
    */
   ref: { open: ToolButton & { short: string }; close: HeaderButton };
-  copy: ToolButton;
+  /** The web page's header says `word` beside the icon, `short` under it ("Copy as Markdown", "Markdown"). */
+  copy: ToolButton & { short: string };
 }
 
 export function panelTools(lang: Lang): PanelTools {
@@ -79,6 +80,6 @@ export function panelTools(lang: Lang): PanelTools {
   return {
     toggle: { fold: { name: tp.collapseAll, icon: 'collapse-all', word: w.collapse }, unfold: { name: tp.expandAll, icon: 'expand-all', word: w.expand } },
     ref: { open: { name: tp.reference, icon: 'book', word: w.reference, short: w.referenceShort }, close: { name: tp.back, icon: 'arrow-left' } },
-    copy: { name: tp.copy, icon: 'copy', word: w.copy },
+    copy: { name: tp.copy, icon: 'copy', word: w.copy, short: w.copyShort },
   };
 }

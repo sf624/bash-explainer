@@ -37,11 +37,11 @@ describe('the panel header as data', () => {
     assert.deepStrictEqual(panelTools('en'), {
       toggle: { fold: { name: 'Collapse all', icon: 'collapse-all', word: 'Collapse' }, unfold: { name: 'Expand all', icon: 'expand-all', word: 'Expand' } },
       ref: { open: { name: 'Quick reference', icon: 'book', word: 'Reference', short: 'Ref' }, close: { name: '← Back to the explanation', icon: 'arrow-left' } },
-      copy: { name: 'Copy as Markdown', icon: 'copy', word: 'Copy' },
+      copy: { name: 'Copy as Markdown', icon: 'copy', word: 'Copy as Markdown', short: 'Markdown' },
     });
     const ja = panelTools('ja');
     assert.deepStrictEqual([ja.toggle.fold.name, ja.toggle.unfold.name, ja.ref.open.name, ja.ref.close.name, ja.copy.name], ['すべて折りたたむ', 'すべて展開する', '早見表', '← 解説に戻る', 'Markdown でコピー']);
-    assert.deepStrictEqual([ja.toggle.fold.word, ja.toggle.unfold.word, ja.ref.open.word, ja.ref.open.short, ja.copy.word], ['折りたたむ', '展開する', '早見表', '早見表', 'コピー']);
+    assert.deepStrictEqual([ja.toggle.fold.word, ja.toggle.unfold.word, ja.ref.open.word, ja.ref.open.short, ja.copy.word, ja.copy.short], ['折りたたむ', '展開する', '早見表', '早見表', 'Markdown でコピー', 'Markdown']);
   });
 
   it('keeps each tool\'s visible word in its accessible name, in both languages (WCAG 2.5.3, Label in Name: voice control says the word it sees)', () => {
@@ -54,6 +54,8 @@ describe('the panel header as data', () => {
       }
       // (The tab's short word is a part of its word, so the name holds it too.)
       assert.ok(tools.ref.open.word.toLowerCase().includes(tools.ref.open.short.toLowerCase()), `${lang}: "Ref" is a part of "Reference"`);
+      // (So is Copy's short word, under its icon where the row is short: "Markdown".)
+      assert.ok(tools.copy.name.toLowerCase().includes(tools.copy.short.toLowerCase()), `${lang}: "${tools.copy.short}" is a part of "${tools.copy.name}"`);
     }
   });
 });

@@ -182,10 +182,10 @@ export class PanelHead {
       el.title = b.name;
       const svg = el.querySelector('svg');
       if (svg) drawIcon(svg, b.icon);
-      // The word, drawn over the other word the button may say (unseen): its box keeps the width of the longer.
-      const shown = Object.assign(document.createElement('span'), { textContent: b.word });
-      const size = Object.assign(document.createElement('span'), { className: 'vc-size', textContent: other });
-      document.getElementById(`${id}-word`)?.replaceChildren(shown, ...(other ? [size] : []));
+      // The word, drawn over the other word the button may say (unseen): its box keeps the width of the longer. A
+      // tool with a short word says it under the icon ("Markdown"), its word beside it ("Copy as Markdown").
+      const shown = 'short' in b ? [span('tool-full', b.word), span('tool-short', b.short)] : [span('', b.word)];
+      document.getElementById(`${id}-word`)?.replaceChildren(...shown, ...(other ? [span('vc-size', other)] : []));
     }
     this.fit();
   }

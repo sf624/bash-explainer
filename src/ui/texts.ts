@@ -50,12 +50,14 @@ export const ui = {
       // (The depths of the panel, in its view slot: the names on the control, and the full ones, its tooltip and accessible name.)
       views: '深さ', depths: { 1: { short: '何をする', full: '何をするか' }, 2: { short: '読まれ方', full: '{shell}がどう読むか' } },
       // (The short words of the panel's tools, each contained in the tool's name: src/ui/panelHead.ts.)
-      words: { collapse: '折りたたむ', expand: '展開する', copy: 'コピー', reference: '早見表', referenceShort: '早見表' },
+      words: { collapse: '折りたたむ', expand: '展開する', copy: 'Markdown でコピー', copyShort: 'Markdown', reference: '早見表', referenceShort: '早見表' },
       // (The sentence of the line at the top of the view, `LineExplanation.sentence`.)
       inShort: 'ひとことで',
       // (The box of the line's problems: src/ui/panelProblems.ts.)
       problems: {
-        title: 'この行の問題', more: '詳しく', fix: '修正案', toRow: '解説の行へ移動', toProblem: 'この行の問題へ移動',
+        title: 'この行の問題', more: '詳しく', fix: '修正案', copyFix: '修正をコピー', toRow: '解説の行へ移動', toProblem: 'この行の問題へ移動',
+        // (Why a fix stops with `return 1 2>/dev/null || exit 1`: `Rewrite.sourcedOrRun`.)
+        sourcedOrRun: '`source` で読まれたら `return`、実行されたら `exit`',
         onLine: '行 {n} の{word}', toLine: '行 {n} へ移動',
       },
       // (What a screen reader hears between the reading of a worked example's highlighted part and the part itself.)
@@ -207,11 +209,12 @@ export const ui = {
       tryIt: 'Try it in your terminal', tryItHint: 'A command to paste into your terminal; it is not run here', prints: 'Output', copyCode: 'Copy', copiedCode: 'Copied',
       partsOf: 'Parts of {name}', opensTab: '(opens in a new tab)', opensBrowser: '(opens in the browser)',
       views: 'Depth', depths: { 1: { short: 'Does', full: 'What it does' }, 2: { short: 'Reads', full: 'How {shell} reads it' } },
-      words: { collapse: 'Collapse', expand: 'Expand', copy: 'Copy', reference: 'Reference', referenceShort: 'Ref' },
+      words: { collapse: 'Collapse', expand: 'Expand', copy: 'Copy as Markdown', copyShort: 'Markdown', reference: 'Reference', referenceShort: 'Ref' },
       inShort: 'In short',
       // (The box of the line's problems: src/ui/panelProblems.ts.)
       problems: {
-        title: 'Problems on this line', more: 'More', fix: 'Fix', toRow: 'Go to its row', toProblem: 'Go to the problem',
+        title: 'Problems on this line', more: 'More', fix: 'Fix', copyFix: 'Copy fix', toRow: 'Go to its row', toProblem: 'Go to the problem',
+        sourcedOrRun: '`return` if sourced, `exit` if run',
         onLine: '{word} on line {n}', toLine: 'Go to line {n}',
       },
       saidSep: ': ',

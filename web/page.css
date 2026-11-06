@@ -1170,6 +1170,12 @@ html.bottom-sheet :is(.empty-btn kbd, .empty-drop) {
   display: none;
 }
 
+/* A tool's word beside its icon, its short word under it (Copy as Markdown: "Markdown"). */
+.panel-head[data-tools="under"] .tool-full,
+.panel-head:not([data-tools="under"]) .tool-short {
+  display: none;
+}
+
 .panel-tab[aria-selected="true"] {
   border-bottom-color: var(--page-accent);
   color: var(--vscode-foreground);

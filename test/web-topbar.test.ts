@@ -174,7 +174,7 @@ describe('the web page: the top bar', function () {
       await choose(page, '#lang', 'ja');
       await until('ja names', async () => (await page.locator('#copy-md').getAttribute('aria-label')) ?? '', (t) => t === 'Markdown でコピー');
       assert.strictEqual(await page.locator('#copy-md').getAttribute('title'), 'Markdown でコピー');
-      assert.deepStrictEqual(await page.evaluate(`['#collapse-word', '#copy-md-word', '#tab-ref'].map((s) => document.querySelector(s).firstChild.textContent)`), ['折りたたむ', 'コピー', '早見表']);
+      assert.deepStrictEqual(await page.evaluate(`['#collapse-word', '#copy-md-word', '#tab-ref'].map((s) => document.querySelector(s).firstChild.textContent)`), ['折りたたむ', 'Markdown でコピー', '早見表']);
       assert.strictEqual(await page.locator('#menu-scope-label').textContent(), 'ファイルの種類とシェル…');
       await ctx.close();
     }

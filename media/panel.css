@@ -282,9 +282,38 @@ button.problem-head:hover .problem-head-text, button.problem-pointer:hover .prob
 .problem-more { margin-top: 0.15rem; }
 .problem-more > summary { width: fit-content; cursor: pointer; color: var(--c-muted); font-size: 0.9em; }
 .problem-text { margin: 0.25rem 0; overflow-wrap: anywhere; }
-.problem-fix { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25em 0.5em; margin: 0.25rem 0; }
-.problem-fix-label { color: var(--c-muted); font-size: 0.9em; }
-.problem-fix-code { font-family: var(--vscode-editor-font-family, monospace); min-width: 0; overflow-wrap: anywhere; }
+/* A fix, under the headline: "Fix", then the whole line fixed and its Copy (below it where the row is short), and why it stops so. */
+.problem-fix { margin: 0.3rem 0 0.15rem; }
+.problem-fix-label, .problem-fix-why { display: block; color: var(--c-muted); font-size: 0.9em; }
+.problem-fix-label { margin-bottom: 0.15rem; }
+.problem-fix-why { margin-top: 0.15rem; }
+.problem-fix-line { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.25rem 0.5rem; }
+.problem-fix-code {
+  flex: 1 1 14em;
+  min-width: 0;
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+/* (What the fix changed: the diff editor's colour of inserted text, and a line under it, which needs no colour.) */
+.fix-changed {
+  color: inherit;
+  background: var(--vscode-diffEditor-insertedTextBackground, rgba(156, 204, 44, 0.25));
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  border-radius: 2px;
+}
+/* (The high contrast themes have no colour for it: the line under it says it, thicker, in the colour of their active border.) */
+body.vscode-high-contrast .fix-changed,
+body.vscode-high-contrast-light .fix-changed {
+  background: none;
+  text-decoration-color: var(--vscode-contrastActiveBorder, currentColor);
+  text-decoration-thickness: 2px;
+}
 .problem-chip {
   display: inline-flex;
   align-items: center;
@@ -585,6 +614,7 @@ details.tryit[open] > summary.tryit-head {
   .basis { border: 1px solid CanvasText; color: CanvasText; }
   summary.tryit-head, .tryit-prints { color: CanvasText; }
   .tryit-copy { border-color: ButtonText; color: ButtonText; }
+  .fix-changed { background: Mark; color: MarkText; }
 }
 
 .refs a {

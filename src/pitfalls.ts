@@ -21,7 +21,7 @@ import type { ConventionId } from './conventions';
 import { type Note, styleNote } from './messages';
 import { STYLE_LEVELS, type StyleCase, type StyleCode, styleLevel } from './messages-levels';
 import { REGEX_VALUE_SPECIAL } from './messages-tokens-argv';
-import { type Rewrite, replaceNode, replaceSpan, stopCommand, textBetween, type TextEdit } from './rewrite';
+import { applyRewrite, type Rewrite, replaceNode, replaceSpan, stopCommand, textBetween, type TextEdit } from './rewrite';
 import { mostOf } from './lists';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
@@ -263,14 +263,9 @@ export const STYLE_REWRITES: Record<StyleCode, boolean> = {
  */
 export interface StyleFinding extends Note { code: StyleCode; node: SyntaxNode; rewrite?: readonly Rewrite[] }
 
-/** The text from the start of `from` to the end of `to` (a later node of the same tree), with `edits` made within it. */
-function edited(from: SyntaxNode, to: SyntaxNode, edits: readonly TextEdit[]): string {
-  return [...edits].sort((x, y) => y.start - x.start).reduce((t, e) => t.slice(0, e.start - from.startIndex) + e.text + t.slice(e.end - from.startIndex), textBetween(from, to));
-}
-
 /** The rewrite that makes `edits` (insertions and replacements) in the text from `from` to `to`, shown as that whole text. */
 function editSpan(from: SyntaxNode, to: SyntaxNode, edits: readonly TextEdit[]): Rewrite {
-  return replaceSpan(from, to, edited(from, to, edits));
+  return replaceSpan(from, to, applyRewrite(textBetween(from, to), { edits }, from.startIndex));
 }
 
 /** Whether the text of a word ends with a `]` (or `}`) that a backslash escapes (`b\]`): an odd run of backslashes before it. */

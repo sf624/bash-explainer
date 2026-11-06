@@ -124,7 +124,7 @@ const DEPTH1 = { depth: 1, receives: false } as const;
 describe('the box "Problems on this line"', () => {
   const box = (text: string, line = 0, lang: 'en' | 'ja' = 'en') => {
     const ex = placeExamples(explain(text, line, lang));
-    return boxProblems(ex, rowModel(ex, DEPTH1, lang).places, lang, () => true);
+    return boxProblems(ex, rowModel(ex, DEPTH1, lang).places, lang, () => true, parser.parse(text));
   };
 
   it('gives each problem its level\'s word and look, its headline, and the whole text under "more"', () => {
@@ -134,8 +134,35 @@ describe('the box "Problems on this line"', () => {
     assert.strictEqual(p.label, 'Caveat:');
     assert.match(p.body, /^without `-r`/);
     assert.match(p.text, /^ⓘ Caveat: without `-r`/);
-    assert.deepStrictEqual(p.fixes, ['read -r']);
+    assert.deepStrictEqual(p.fixes, [{ text: 'read -r line', changed: [{ from: 0, to: 7 }] }]);
     assert.strictEqual(box('read line', 0, 'ja')[0].word, '注意');
+  });
+
+  // (docs/design/usability-9.md, 2.2: the fix is the whole line, its changed part marked; `fixedLines`, src/rewrite.ts.)
+  it('gives each fix as the whole line fixed, with what it changed', () => {
+    const fixes = (text: string, line = 0, lang: 'en' | 'ja' = 'en') => box(text, line, lang).flatMap((p) => p.fixes);
+    const backup = 'tar -czf "$backup" ~/docs 2>/dev/null || echo "failed" >&2';
+    // (A file with no shebang may be sourced: the fix says why it has both, `Rewrite.sourcedOrRun`.)
+    assert.deepStrictEqual(fixes(backup), [{ text: 'tar -czf "$backup" ~/docs 2>/dev/null || { echo "failed" >&2; return 1 2>/dev/null || exit 1; }', changed: [{ from: 41, to: 95 }], why: '`return` if sourced, `exit` if run' }]);
+    assert.strictEqual(fixes(backup, 0, 'ja')[0].why, '`source` で読まれたら `return`、実行されたら `exit`');
+    assert.deepStrictEqual(fixes(`#!/bin/bash\n${backup}`, 1), [{ text: 'tar -czf "$backup" ~/docs 2>/dev/null || { echo "failed" >&2; exit 1; }', changed: [{ from: 41, to: 71 }] }]);
+    // (A statement over two lines: both, though the edit is on the second.)
+    assert.deepStrictEqual(fixes('tar -czf a b \\\n  || echo failed'), [{ text: 'tar -czf a b \\\n  || { echo failed >&2; return 1 2>/dev/null || exit 1; }', changed: [{ from: 20, to: 72 }], why: '`return` if sourced, `exit` if run' }]);
+    // (A style check's; two places of one note, both fixed; the lines of a loop the edit is on; an alternative before the line.)
+    assert.deepStrictEqual(fixes('if [ -f a]; then :; fi'), [{ text: 'if [ -f a ]; then :; fi', changed: [{ from: 8, to: 11 }] }]);
+    assert.deepStrictEqual(fixes('cp $a b; cp $a c'), [{ text: 'cp "$a" b; cp "$a" c', changed: [{ from: 3, to: 7 }, { from: 14, to: 18 }] }]);
+    assert.deepStrictEqual(fixes('for f in *.log; do\n  wc -l "$f"\ndone'), [
+      { text: 'for f in *.log; do\n  [ -e "$f" ] || continue\n  wc -l "$f"', changed: [{ from: 21, to: 47 }] },
+      { text: 'shopt -s nullglob\nfor f in *.log; do', changed: [{ from: 0, to: 18 }] },
+    ]);
+    // (The carriage return of a CRLF line is not in it.)
+    assert.deepStrictEqual(fixes('read line\r\necho'), [{ text: 'read -r line', changed: [{ from: 0, to: 7 }] }]);
+    // (Without the document's text, and for a rewrite with no edits: its code alone.)
+    const ex = placeExamples(explain('read line'));
+    assert.deepStrictEqual(boxProblems(ex, rowModel(ex, DEPTH1, 'en').places, 'en', () => true)[0].fixes, [{ text: 'read -r', changed: [] }]);
+    const quoted = placeExamples(explain('read line'));
+    const noEdits = { ...quoted, anchors: quoted.anchors!.map((a) => ({ ...a, rewrite: a.rewrite!.map((r) => ({ ...r, edits: [] })) })) };
+    assert.deepStrictEqual(boxProblems(noEdits, rowModel(noEdits, DEPTH1, 'en').places, 'en', () => true, parser.parse('read line'))[0].fixes, [{ text: 'read -r', changed: [] }]);
   });
 
   it('says in "more" what a problem cites and rests on', () => {

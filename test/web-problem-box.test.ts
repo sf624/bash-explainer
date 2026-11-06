@@ -111,11 +111,14 @@ describe('the web page: the box of the line\'s problems', function () {
   it('gives a fix to copy, and points to the problem on the line of a construct around', async () => {
     const { ctx, page, panel } = await open('read line\nfor f in $(ls); do\n  echo hi\ndone', 1);
     await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
-    await panel().locator('details.problem-more > summary').first().click();
-    assert.strictEqual(await panel().locator('.problem-fix-code').first().textContent(), 'read -r');
+    // (Under the headline, out of "more": the whole line fixed, its changed part marked.)
+    assert.strictEqual(await panel().evaluate(MORE_OPEN), false);
+    assert.strictEqual(await panel().locator('.problem-fix-code').first().textContent(), 'read -r line');
+    assert.deepStrictEqual(await panel().locator('.problem-fix-code mark.fix-changed').allTextContents(), ['read', ' -r']);
+    assert.strictEqual(await panel().locator('.problem-fix .tryit-copy').first().textContent(), 'Copy fix');
     await panel().locator('.problem-fix .tryit-copy').first().click();
     await until('copied', () => panel().locator('.problem-fix .tryit-copy').first().textContent(), (t) => t === 'Copied');
-    assert.strictEqual(await page.evaluate('navigator.clipboard.readText()'), 'read -r');
+    assert.strictEqual(await page.evaluate('navigator.clipboard.readText()'), 'read -r line');
     await cursorToLine(page, 3);
     const pointer = panel().locator('.problem-pointer').first();
     await pointer.waitFor();
@@ -124,6 +127,37 @@ describe('the web page: the box of the line\'s problems', function () {
     await until('the cursor there', () => page.locator('.cm-lineNumbers .cm-activeLineGutter').first().textContent(), (t) => t === '2');
     await ctx.close();
   });
+
+  // (docs/design/usability-9.md, 2.2: the copied fix was the right side of `||` alone.)
+  for (const lang of ['en', 'ja'] as const) {
+    it(`copies the whole line fixed, which pasted over the line clears its problem, in ${lang}`, async () => {
+      const line = 'tar -czf "$backup" ~/docs 2>/dev/null || echo "failed" >&2';
+      const { ctx, page, panel, errors } = await open(`backup=/tmp/b.tgz\n${line}`, 2, 1280, lang);
+      await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+      const fix = panel().locator('#problems .problem-fix').first();
+      await fix.waitFor();
+      const fixed = 'tar -czf "$backup" ~/docs 2>/dev/null || { echo "failed" >&2; return 1 2>/dev/null || exit 1; }';
+      assert.strictEqual(await fix.locator('.problem-fix-code').textContent(), fixed);
+      assert.deepStrictEqual(await fix.locator('mark.fix-changed').allTextContents(), ['{', ' echo', ' "failed"', ' >&2;', ' return', ' 1', ' 2>/dev/null', ' ||', ' exit', ' 1;', ' }']);
+      // (Each word holds the blank before it: a wrap never hides one.)
+      assert.deepStrictEqual(await fix.locator('.problem-fix-code > .tryit-word').allTextContents(), fixed.match(/ *\S+/g));
+      // (No shebang: the file may be sourced or run, and the fix says why it has both.)
+      assert.strictEqual(await fix.locator('.problem-fix-why').textContent(), lang === 'en' ? 'return if sourced, exit if run' : 'source で読まれたら return、実行されたら exit');
+      await fix.locator('.tryit-copy').click();
+      await until('copied', () => fix.locator('.tryit-copy').textContent(), (t) => t === (lang === 'en' ? 'Copied' : 'コピーしました'));
+      const copied = await page.evaluate('navigator.clipboard.readText()') as string;
+      assert.strictEqual(copied, fixed);
+      // (Pasted over the line, it parses, and the problem is gone.)
+      await page.locator('.cm-content').click();
+      await page.keyboard.press('Control+A');
+      await page.keyboard.insertText(`backup=/tmp/b.tgz\n${copied}`);
+      await cursorToLine(page, 2);
+      await until('the problem gone', () => panel().locator('#problems').isHidden(), (h) => h);
+      assert.strictEqual(await panel().locator('#tree .row-mark.level-error').count(), 0);
+      assert.deepStrictEqual(errors, []);
+      await ctx.close();
+    });
+  }
 
   it('at both depths, a click on a headline goes to its row', async () => {
     const { ctx, page, panel } = await open('echo $((09))');
