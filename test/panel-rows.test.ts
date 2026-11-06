@@ -9,6 +9,7 @@ import type { Lang } from '../src/i18n';
 import { keyOf, readingNodes } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { TOKEN_TEXTS } from '../src/messages-tokens';
+import { nameSaid } from '../src/messages';
 import { markedText, textParts } from '../src/tokenmarks';
 import { sameSpan } from '../src/ui/hoverParts';
 import { type ModelRow, type RowOptions, rowModel, wholeLineExamples } from '../src/ui/panelRows';
@@ -1243,7 +1244,10 @@ describe('the panel\'s row model', () => {
     it('defines "function" for the script\'s own functions and the host\'s (bats\' `run`)', () => {
       const text = (lang: Lang) => key('f() { :; }; f', D1, lang).find((k) => k.id === 'name:function')!.text;
       assert.strictEqual(text('en'), 'a shell function: the script\'s own, or one its host defines (bats\' `run`)');
-      assert.match(text('ja'), /bats では `run` など/);
+      assert.strictEqual(text('ja'), 'シェルの関数（スクリプトで定義したもの、または bats の `run` のようにホストが用意したもの）');
+      // (The badge's tooltip says the same.)
+      assert.strictEqual(nameSaid('en', { name: 'f', runs: 'function', also: [] }).title, 'a shell function (the script\'s own, or one its host defines, such as bats\' run): it runs in this shell');
+      assert.strictEqual(nameSaid('ja', { name: 'f', runs: 'function', also: [] }).title, 'シェルの関数（スクリプトのもの、または bats の run のようにホストが用意したもの）: 今のシェルで動く');
     });
 
     it('lists what the switch draws', () => {

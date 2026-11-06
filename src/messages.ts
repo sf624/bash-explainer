@@ -901,7 +901,7 @@ const NAME_KINDS: Record<NameKind, { word: Text; title: Text; other: Text }> = {
   },
   function: {
     word: { ja: '関数', en: 'function' }, other: { ja: 'このスクリプトの関数', en: 'the function of this script' },
-    title: { ja: 'シェルの関数（スクリプトのもの。bats では run など、bats が用意したものも）: 今のシェルで動く', en: 'a shell function (the script\'s own, or one its host defines, as bats\' run): it runs in this shell' },
+    title: { ja: 'シェルの関数（スクリプトのもの、または bats の run のようにホストが用意したもの）: 今のシェルで動く', en: 'a shell function (the script\'s own, or one its host defines, such as bats\' run): it runs in this shell' },
   },
   builtin: {
     word: { ja: 'ビルトイン', en: 'builtin' }, other: { ja: 'bash のビルトイン', en: 'bash\'s builtin' },
