@@ -95,6 +95,8 @@ export interface ReadingNode {
   resolves?: ReturnType<typeof badgeKind>;
   /** On a word a command reads as the value of an option: the option (`-f`, `--file`). */
   valueFor?: string;
+  /** On a placeholder (`{}` of `find -exec`): the command around it replaces it, so that one reads the word and the command it runs reads what replaces it (`Token.placeholder`). */
+  placeholder?: true;
   /** On a command name (and the reserved word `time`): what the name is, and what else (`Token.name`). */
   name?: NameInfo;
   /** On a word bash does something to: what it does, in its order (3.5; `wordSteps`), and the word's place. */
@@ -142,8 +144,8 @@ const READERS = new Set(['command', 'builtin', 'function', 'alias', 'test']);
 /** The kinds of token of a command another one runs (`sudo ls`, `builtin cd`): it reads the words after its name itself. */
 const RUNS = new Set(['command', 'builtin']);
 
-/** The command that reads a word: its name, and whether it is a part of the shell that runs it (`ReadingNode.inShell`). */
-interface Reader { name: string; inShell: boolean }
+/** The command that reads a word: its name, and whether it is a part of the shell that runs it (`ReadingNode.inShell`); `replacer`: the command that replaces the placeholders in the words of the one it runs (`find -exec`). */
+interface Reader { name: string; inShell: boolean; replacer?: Reader }
 /** The fields of a node that `reader` reads. */
 const readBy = ({ name, inShell }: Reader): Pick<ReadingNode, 'reader' | 'inShell'> => ({ reader: name, ...(inShell ? { inShell } : {}) });
 /** What a name resolves to reads in the shell that runs it: a builtin or a function. */
@@ -829,12 +831,18 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     return out;
   };
 
+  /** The reader of the words after a command `t` that `reader` runs (`sudo rm`, `find -exec rm`): it keeps who replaces the placeholders in them. */
+  const runner = (t: Token, reader: Reader): Reader => {
+    const replacer = t.placeholderOf ? reader : reader.replacer;
+    return { name: t.label, inShell: builtinHere(t), ...(replacer ? { replacer } : {}) };
+  };
+
   /** A token the command reads, and the tokens under it by their own origins. (A command it runs reads what follows.) */
   const tokenNode = (t: Token, layer: Layer, reader: Reader): ReadingNode => ({
-    layer, kind: t.kind, label: t.label, span: t.span, ...readBy(reader), ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}), ...(t.expands ? { expands: t.expands } : {}),
+    layer, kind: t.kind, label: t.label, span: t.span, ...readBy(t.placeholder && reader.replacer ? reader.replacer : reader), ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}), ...(t.expands ? { expands: t.expands } : {}), ...(t.placeholder ? { placeholder: true as const } : {}),
     // (A word the command reads as a script, which the analyzer says only is a word: `eval ls`.)
     ...(t.explanation === said('word-plain', { text: t.label }) && t.children.some((c) => c.origin === 'script') ? { text: said('script-run-again') } : saidBy(t)),
-    children: testPartsIn(t, readParts(t.children, false, RUNS.has(t.kind) ? { name: t.label, inShell: builtinHere(t) } : reader, t.kind !== 'assignment'), layer, reader),
+    children: testPartsIn(t, readParts(t.children, false, RUNS.has(t.kind) ? runner(t, reader) : reader, t.kind !== 'assignment'), layer, reader),
   });
 
   /** What a token has under it, and if it is a test of `[` or `test`, its operator and its operands, the words bash passes it, as `[[ ]]` has them, in the order of the text. */

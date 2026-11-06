@@ -837,6 +837,7 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
     const mark = (ts: Token[]) => ts.forEach((t) => {
       if (t.label === '{}') {
         t.explanation = cx.text('find-exec-placeholder');
+        t.placeholder = true;
         t.children = [];
       } else mark(t.children);
     });
@@ -856,7 +857,7 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   // what it reads; not a builtin `builtin` does not find.)
   const basis = kind === 'command' && res?.kind !== 'none' ? programBasis(cx, value ?? name, role.spec) : undefined;
   return {
-    kind, ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}), ...(direct ? { refs: builtinSections(res.name, res.special) } : program.length ? { refs: program } : {}), ...(basis ? { basis } : {}),
+    kind, ...(role.of ? { placeholderOf: role.of } : {}), ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}), ...(direct ? { refs: builtinSections(res.name, res.special) } : program.length ? { refs: program } : {}), ...(basis ? { basis } : {}),
     label: shorten(name),
     explanation: (role.of ? cx.text('wrapped-command-to-run') : '') + (direct ? '' : cx.text('wrapped-runs', { name })) + explanation,
     span, children, summary: `${name}: ${explanation}`,

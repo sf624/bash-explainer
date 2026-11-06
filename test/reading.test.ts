@@ -124,6 +124,38 @@ describe('the reading tree of a line', () => {
     assert.strictEqual(find(r, '-n', 'command').reader, 'grep');
   });
 
+  it('reads the `{}` of `find -exec` as find\'s placeholder: find reads it, and the command it runs gets the path', () => {
+    for (const [src, runs] of [['find . -name x -exec rm {} \\;', 'rm'], ['find . -exec sudo rm {} +', 'sudo'], ['find . -execdir chmod 644 {} \\;', 'chmod']] as const) {
+      const r = explain(src).reading!;
+      const brace = find(r, '{}', 'command');
+      assert.strictEqual(brace.reader, 'find', src);
+      assert.strictEqual(brace.placeholder, true, src);
+      assert.strictEqual(chipOf(brace, 'en'), 'placeholder for the path', src);
+      assert.strictEqual(chipOf(brace, 'ja'), 'プレースホルダー（パスに置き換わる）', src);
+      assert.strictEqual(find(r, runs, 'command').reader, 'find', src);
+    }
+    // (The other words of the command it runs are its own.)
+    assert.strictEqual(find(explain('find . -exec chmod 644 {} \\;').reading!, '644', 'command').reader, 'chmod');
+    assert.strictEqual(find(explain('find . -exec sudo rm -f x {} +').reading!, '-f', 'command').reader, 'rm');
+    // Without `find`, the word is an operand of the command that reads it: `rm {}` removes a file of that name.
+    const plain = find(explain('rm {}').reading!, '{}', 'command');
+    assert.strictEqual(plain.placeholder, undefined);
+    assert.strictEqual(plain.reader, 'rm');
+    assert.strictEqual(chipOf(plain, 'en'), 'operand');
+  });
+
+  it('agrees with GNU find: find replaces `{}`, so the command it runs gets the path, and bash alone passes it as it is', () => {
+    const dir = mkdtempSync(path.join(process.env.TMPDIR ?? tmpdir(), 'find-placeholder-'));
+    try {
+      writeFileSync(path.join(dir, 'f'), '');
+      const run = (script: string) => spawnSync('bash', ['--norc', '--noprofile', '-c', script], { encoding: 'utf8', cwd: dir, timeout: 10000 }).stdout;
+      assert.strictEqual(run("find . -type f -exec printf '[%s]' {} \\;"), '[./f]');
+      assert.strictEqual(run("printf '[%s]' {}"), '[{}]');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('reads a here-document as a redirection with its body, on each line of it', () => {
     const src = 'cat <<EOF > out.txt\nhello $USER\nEOF\n';
     const expected = [
