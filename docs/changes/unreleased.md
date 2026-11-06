@@ -29,7 +29,7 @@ A switch under the panel's line box, "What the program receives" / 「プログ�
 - In a file with CR LF line ends, the last word of a line holds the CR, as bash reads it: `ls a` receives `a␍`, not tinted.
 - The mark "handled by bash" / 「bash が処理」 is on what no program receives, once per construct, on its first row, at both depths: one on `if … fi`, one on a pipeline, one on each redirection and prefix assignment, none on a word however bash expands it. In a script of another shell it says "handled by the shell". Before, nothing in the panel told what reaches the program from what bash keeps.
 - The mark "not portable to sh" / 「sh に移植できない」 is on the construct only (`[[ ]]`, `==` in `[ ]`, `source`, `local`, `<<<`, `{a,b}`), with the switch on or off, in a bash script too, as a fact of the construct: the problems still show only for the script's own shell. A press opens what the problems of a sh script say of it (which `/bin/sh` fails on it, and what to write instead). A string another shell reads has no marks yet.
-- The button **Key** beside the switch lists, inline in the panel, what each mark on screen means, the levels' marks included, and only those.
+- The button **Legend** beside the switch lists, inline in the panel, what each mark on screen means, the levels' marks included, and only those.
 
 ### Quick fixes from the notes
 

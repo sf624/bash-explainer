@@ -77,7 +77,7 @@ export interface Level {
   wordOnEvery?: true;
   /** Its name, for a screen reader and the Problems pane: 警告・情報・補足 / Warning, Information, Note. */
   name: Text;
-  /** What the level means, in the panel's Key (src/ui/panelRows.ts); from the rule of docs/design/three-levels.md, section 2. */
+  /** What the level means, in the panel's Legend (src/ui/panelRows.ts); from the rule of docs/design/three-levels.md, section 2. */
   means: Text;
   /** The Codicon that stands for the mark in the panel, the hover and the web page (media/icons.js draws it). */
   codicon: string;
@@ -172,7 +172,7 @@ export const SEVERITIES: Readonly<Record<Severity, SeverityMapping>> = {
 /**
  * The word a problem of `level` starts with, as the panel's box and pointers name it: the word of the notes below ("Pitfall:",
  * "Caveat:", "Error:") without its colon, so that a problem and its "More" call the level one thing. `name` ("Warning",
- * "Information") stays the level's name for a screen reader, the Problems lists and the Key. (A plain note has no word.)
+ * "Information") stays the level's name for a screen reader, the Problems lists and the Legend. (A plain note has no word.)
  */
 export const levelWord = (level: NoteLevel, lang: Lang): string => LEVELS[level].word[lang].replace(/:\s*$/, '');
 

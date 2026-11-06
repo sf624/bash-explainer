@@ -1,7 +1,7 @@
 // The panel's row model (docs/design/panel-redesign.md, P7a): which rows the panel shows of a line, a pure function of the
 // explanation, the depth and the switch "What the program receives". It starts from the record of each token (src/ui/tokenRow.ts),
 // which every output reads, and adds what only the panel needs: which depth a row comes in at, one row per range of the line, the
-// frames around commands, each row's roles, what the program receives, and the Key of what is drawn.
+// frames around commands, each row's roles, what the program receives, and the Legend of what is drawn.
 //
 // A deeper depth only adds: the rows of depth 1 are all at depth 2, in the same order, saying the same (test/panel-rows.test.ts).
 // At depth 2 the reading tree (src/reading.ts) adds what no token says: each row's role line, bash's steps on a word, and the rows of the
@@ -88,7 +88,7 @@ function shellSaid(shell: LineExplanation['shell'], lang: Lang): string {
 }
 
 /**
- * The rows of a line, the Key of what they draw, and where each token of the line is shown: the path of its row (`0.1`, the second
+ * The rows of a line, the Legend of what they draw, and where each token of the line is shown: the path of its row (`0.1`, the second
  * part of the first row), or of the nearest row around it where it has none at this depth. One map, read by whatever goes from a
  * token to its row (a problem's chip, the characters of the line box), so that none decides again which rows there are.
  */
@@ -487,7 +487,7 @@ function receivedWords(lines: readonly ArgvLine[]): Map<string, Received> {
 const LEVEL_ORDER = (Object.keys(LEVELS) as NoteLevel[]).sort((a, b) => LEVELS[a].rank - LEVELS[b].rank);
 
 /**
- * The Key: what each mark drawn means, and only those drawn. Each entry is found on the rows, or among the notes of the line
+ * The Legend: what each mark drawn means, and only those drawn. Each entry is found on the rows, or among the notes of the line
  * for a level (the problems box draws them, P7b).
  */
 function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[], marks: RowMarks, lang: Lang): KeyEntry[] {
@@ -519,7 +519,7 @@ function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[],
   ];
 }
 
-/** The rows the panel shows of a line, at a depth and with the switch, and the Key of what they draw. */
+/** The rows the panel shows of a line, at a depth and with the switch, and the Legend of what they draw. */
 export function rowModel(ex: Pick<LineExplanation, 'items' | 'reading' | 'argv' | 'noteInfo' | 'notPosix' | 'plainWords' | 'shell'>, options: RowOptions, lang: Lang): RowModel {
   const lines = options.receives ? ex.argv ?? [] : [];
   const shell = shellSaid(ex.shell, lang);

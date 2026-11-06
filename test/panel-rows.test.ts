@@ -21,7 +21,7 @@ import { main } from '../cli/main';
 import { corpus } from './support/corpus';
 
 // The panel's row model (docs/design/panel-redesign.md, P7a): which rows a line has at each depth, a box around each command, the roles,
-// what a program receives, and the Key. The model is a pure function of the explanation; media/panel.js draws it (P7c).
+// what a program receives, and the Legend. The model is a pure function of the explanation; media/panel.js draws it (P7c).
 
 const parser = createUnbashParser();
 const explain = (src: string, line = 0, lang: Lang = 'en'): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line, 'bash', { reading: true, argv: true, script: 'said' });
@@ -1211,7 +1211,7 @@ describe('the panel\'s row model', () => {
     });
   });
 
-  describe('the Key', () => {
+  describe('the Legend', () => {
     const key = (src: string, options: RowOptions = D1, lang: Lang = 'en') => model(src, options, lang).key;
     const ids = (src: string, options?: RowOptions) => key(src, options).map((k) => k.id);
 

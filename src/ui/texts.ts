@@ -62,7 +62,7 @@ export const ui = {
       saidSep: '：',
       // (The line box of a line over more than three rows: its tooltip, folded and opened.)
       lineOpen: 'クリックで行全体を表示', lineFold: 'クリックで 3 行までに折りたたむ',
-      // (The Key of the panel: what each mark drawn means, src/ui/panelRows.ts.)
+      // (The Legend of the panel: what each mark drawn means, src/ui/panelRows.ts.)
       key: {
         frame: {
           command: '1 つのコマンド', compound: '1 つの複合コマンド（`if`・`for`・`[[ ]]` など）', group: 'パイプラインやリスト（`|`・`&&`・`||`・`;`）でつないだコマンド',
@@ -216,7 +216,7 @@ export const ui = {
       },
       saidSep: ': ',
       lineOpen: 'Click to show the whole line', lineFold: 'Click to fold the line to three rows',
-      // (The Key of the panel: what each mark drawn means, src/ui/panelRows.ts.)
+      // (The Legend of the panel: what each mark drawn means, src/ui/panelRows.ts.)
       key: {
         frame: {
           command: 'one command', compound: 'one compound command (`if`, `for`, `[[ ]]` and the like)', group: 'commands joined into a pipeline or a list (`|`, `&&`, `||`, `;`)',
@@ -250,7 +250,7 @@ export const ui = {
           'parameter-null': 'a variable is empty or not set (`${x:?}`)', substring: 'the length in `${x:offset:length}` is negative',
         },
         many: 'not always one word', space: 'space',
-        handled: 'handled by {shell}', handledSays: '{shell} handles it; it is not among the program\'s words', bash: 'bash', theShell: 'the shell', more: 'and {n} more words', notPosix: 'not portable to sh', keyButton: 'Key',
+        handled: 'handled by {shell}', handledSays: '{shell} handles it; it is not among the program\'s words', bash: 'bash', theShell: 'the shell', more: 'and {n} more words', notPosix: 'not portable to sh', keyButton: 'Legend',
       },
       steps: {
         lead: "bash's steps:", summary: 'nothing expands', maybe: '{kind} (maybe)', off: 'no {kinds}', and: ', ', lastAnd: ' or ', because: ' ({why})',

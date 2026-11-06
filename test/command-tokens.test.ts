@@ -328,7 +328,7 @@ describe('command tokens: each token of an explanation lies in one command of ba
           if (sc.differs) continue;
           const theirs = sc.bashAt.get(sc.pathOf.get(own!)!) as Shape | undefined;
           if (theirs?.k !== sc.shapeOf.get(own!)!.k) report(name, `bash-ast has no ${sc.shapeOf.get(own!)!.k} command at ${sc.pathOf.get(own!)} of ${sc.name}`);
-          // A box says "one command" (the panel's Key): it is the whole of a simple command of bash, or of a compound one; a string read
+          // A box says "one command" (the panel's Legend): it is the whole of a simple command of bash, or of a compound one; a string read
           // as a script is parsed by its own shell, not here.
           if (t.frame && t.origin !== 'script') {
             counts.boxes++;

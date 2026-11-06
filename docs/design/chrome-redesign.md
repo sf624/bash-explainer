@@ -537,7 +537,7 @@ Who owns what:
 | Keys 1, 2 and W | The panel | The page binds none; Help names them "in the panel". |
 | The line box and its wrap | The panel | Wrapped by C1b's runs. It follows `editor.wrap` on the page and `editor.wordWrap` in VS Code. |
 | Reading's steps row (until P8) | The panel | Sticky in the panel's frame; never in the page's header. |
-| The switch "What the program receives", the Key | The panel | In the panel's own row (6.1). |
+| The switch "What the program receives", the Legend | The panel | In the panel's own row (6.1). |
 | The phone's tabs row and its depth pill | The chrome (C8a) | The pill is C7's component. |
 | The summary row's text | src/ui (C8b) | P5 and P7b improve it. |
 | Toasts, the strip, the app bar, the editor's header, settings, the sheet | The chrome | |

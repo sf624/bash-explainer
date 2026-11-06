@@ -1,5 +1,5 @@
 // The switch "What the program receives" and the marks of the rows (docs/design/panel-redesign.md, P9), in the web page with CI's fonts: on by default, kept once
-// chosen, key W when the focus is in the panel; the words under each command as chips that stay whole, at three widths, in both languages and both themes; the Key lists the marks
+// chosen, key W when the focus is in the panel; the words under each command as chips that stay whole, at three widths, in both languages and both themes; the Legend lists the marks
 // drawn, and only those; a mark "not portable to sh" opens what it says, for a phone and a keyboard.
 import * as assert from 'assert';
 import type { Browser, Frame, Page } from 'playwright-core';
@@ -168,8 +168,8 @@ describe('the panel: what the program receives, drawn', function () {
     await page.context().close();
   });
 
-  it('has the Key list the marks drawn, and only those', async () => {
-    /** Which of the Key's marks the rows draw, by the Key's id. */
+  it('has the Legend list the marks drawn, and only those', async () => {
+    /** Which of the Legend's marks the rows draw, by the Legend's id. */
     const FOUND = `(() => {
       const has = (s) => !!document.querySelector('#tree ' + s);
       const rows = [...document.querySelectorAll('#tree .row')];
@@ -183,11 +183,12 @@ describe('the panel: what the program receives, drawn', function () {
     for (const [text, depth] of [[PIPE, 1], [IF, 2], [TAR, 1]] as const) {
       const { page, panel } = await open(text, { kept: { depth } });
       await until('the rows', () => panel.locator('#tree li[data-key]').count(), (n) => n > 0);
+      assert.strictEqual(await panel.locator('#key-open').textContent(), 'Legend');
       await panel.locator('#key-open').click();
       assert.strictEqual(await panel.locator('#key-open').getAttribute('aria-expanded'), 'true');
       const ids = await panel.evaluate(`[...document.querySelectorAll('#key li')].map((li) => li.dataset.keyId)`) as string[];
       const found = await panel.evaluate(FOUND) as Record<string, boolean>;
-      for (const [id, on] of Object.entries(found)) assert.strictEqual(ids.includes(id), on, `${text.slice(0, 8)}: ${id}, the Key: ${ids.join(' ')}`);
+      for (const [id, on] of Object.entries(found)) assert.strictEqual(ids.includes(id), on, `${text.slice(0, 8)}: ${id}, the Legend: ${ids.join(' ')}`);
       assert.ok(ids.every((id) => id.includes(':') ? id in found || /^(level|role|name):/.test(id) : true), ids.join(' '));
       await page.keyboard.press('Control+End');
       await panel.locator('#receives').click();
