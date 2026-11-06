@@ -354,17 +354,31 @@ export function webHover(host: HoverHost): WebHover {
       if (shown()) view.dispatch({ effects: closeHoverTooltips });
       close(view);
     };
+    /** Where the pointer was at its last move while a click rests (so that the part under it is asked for only when it moves). */
+    let lastAt: number | undefined;
     const down = (e: MouseEvent) => {
+      lastAt = undefined;
       // (A press anywhere but in a card closes it, also where it does not move the cursor: on the word the cursor is on.)
       if (!(e.target as Element).closest?.('.cm-tooltip')) closeAll();
       // (Only the main button; a click on a word is where the pointer rests from then on.)
       if (e.button === 0 && view.contentDOM.contains(e.target as Node)) clicked = cardAt(host, view, view.posAtCoords({ x: e.clientX, y: e.clientY }, false), []) ?? undefined;
     };
-    // The pointer that leaves the clicked part (onto another, past the line's end, or where no card is) is no longer resting there.
+    // The pointer that leaves the clicked part (onto another, nested or not, past the line's end, or where no card is) is no longer resting there.
     const move = (e: MouseEvent) => {
       if (!clicked) return;
       const at = view.posAtCoords({ x: e.clientX, y: e.clientY });
-      if (at === null || at < clicked.from || at > clicked.to || view.state.doc.lineAt(at).number !== clicked.line + 1) clicked = undefined;
+      if (at === lastAt) return;
+      lastAt = at ?? undefined;
+      let rests = at !== null && at >= clicked.from && at <= clicked.to && view.state.doc.lineAt(at).number === clicked.line + 1;
+      if (rests) {
+        const here = cardAt(host, view, at!, []);
+        rests = !!here && here.from === clicked.from && here.to === clicked.to && here.line === clicked.line;
+      }
+      if (rests) return;
+      clicked = undefined;
+      // The lint's box was left empty by the filter, and the hover does not ask the lint again while the pointer is in its
+      // range (a part nested in the problem's range): close it, so that the next part gets its problem.
+      if (view.dom.querySelector('.cm-tooltip-lint:empty')) view.dispatch({ effects: closeHoverTooltips });
     };
     const leave = () => void (clicked = undefined);
     // The panel's frame is another document: its keys and its clicks do not reach this one.
