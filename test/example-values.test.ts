@@ -155,6 +155,7 @@ describe('what a test gives for the values of its cases (src/semantics/testcases
     const table: [string, Record<string, string>, boolean | 'error'][] = [
       ['[ $x = "a b" ]', { x: 'a b' }, 'error'], ['[ $x = "a b" ]', { x: 'ab' }, false], ['[ -n $x ]', { x: '' }, true],
       ['[[ a\\\\b = $x ]]', { x: 'a\\b' }, false], ['[[ a\\\\b = $x ]]', { x: 'a\\\\b' }, true], ['[[ ab != "$x" ]]', { x: 'a?' }, true],
+      ['[[ $x -gt 2 ]]', { x: ' 3' }, true], ['[[ 2 -ge $x ]]', { x: '3' }, false],
     ];
     for (const [src, given, want] of table) {
       assert.strictEqual(outcome(src, given), want, `${src} ${JSON.stringify(given)}`);
@@ -163,8 +164,9 @@ describe('what a test gives for the values of its cases (src/semantics/testcases
     }
   });
   it('says nothing where it does not know the words or the test', () => {
-    // A file test; a glob of file names; another operator of `[[ ]]`, or none; another variable; text that is not ASCII.
-    for (const src of ['[ $x -nt f ]', '[ $x = a* ]', '[[ $x < b ]]', '[[ -n $x ]]', '[[ $x = $y ]]', '[[ $x = é ]]']) assert.strictEqual(outcome(src, { x: 'a' }), undefined, src);
+    // A file test; a glob of file names; another operator of `[[ ]]`, or none; another variable; text that is not ASCII;
+    // arithmetic of a name (`a` is the value of `a` there).
+    for (const src of ['[ $x -nt f ]', '[ $x = a* ]', '[[ $x < b ]]', '[[ -n $x ]]', '[[ $x = $y ]]', '[[ $x = é ]]', '[[ $x -eq 0 ]]']) assert.strictEqual(outcome(src, { x: 'a' }), undefined, src);
   });
 });
 

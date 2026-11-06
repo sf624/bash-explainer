@@ -6,7 +6,7 @@ import { modelLimit } from '../../examples/regexguard';
 import { parseExpansion } from '../../expansion';
 import { staticWordValue, substitutionNames } from '../../staticword';
 import { assignmentsOnly, descendants, field, fields, prefixAssignments, rootOf, substitutionForm, type SyntaxNode } from '../../syntax/tree';
-import { compareIntegers, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
+import { compareIntegers, extendedTestInteger, INTEGER_OPS, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
 import { attribute, EMPTY, merge, option, type ShellState, type Tri, withStatus } from '../shellstate';
 import type { Decision } from '../state';
 import { actedNames, namespaceOf } from '../../argv/query';
@@ -22,7 +22,6 @@ import { ArithError, changesWords, NAME, SUBSTITUTIONS } from './shared';
 import type { Walker } from './walker';
 import { pushAll } from '../../lists';
 
-const INTEGER_TESTS = new Set(['-eq', '-ne', '-lt', '-le', '-gt', '-ge']);
 
 /** The parts of a word that expand to text not written in it. */
 const EXPANDING = ['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution'];
@@ -265,15 +264,10 @@ export class WalkConditions {
           if (!m) return undefined;
           return m.start && m.end ? value === m.text : m.start ? value.startsWith(m.text) : m.end ? value.endsWith(m.text) : value.includes(m.text);
         }
-        if (INTEGER_TESTS.has(op)) {
-          // Arithmetic: decimal integers only (`010` is octal there, `x` a variable), with spaces, tabs and newlines around.
-          const other = right && wordIn(right, st, this.values(st), 'value');
-          const int = (t: string | undefined): bigint | undefined => {
-            const m = t === undefined ? null : /^[ \t\n]*([+-]?(?:0|[1-9]\d{0,17}))[ \t\n]*$/.exec(t);
-            return m ? BigInt(m[1]) : undefined;
-          };
-          const a = int(value);
-          const b = int(other);
+        if (INTEGER_OPS.has(op)) {
+          // Arithmetic, decided for decimal integers only (`extendedTestInteger`).
+          const a = extendedTestInteger(value);
+          const b = extendedTestInteger(right && wordIn(right, st, this.values(st), 'value'));
           return a === undefined || b === undefined ? undefined : compareIntegers(op, a, b);
         }
         // `<` and `>` (the locale's order), the tests of files.

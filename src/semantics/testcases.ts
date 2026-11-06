@@ -5,7 +5,7 @@
 // on the right of `[[ == ]]`, a value is a pattern (`[[ a\\b = $x ]]` is true for `x='a\\b'`, not `x='a\b'`).
 import type { SyntaxNode } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
-import { patternMatches, testStatus } from './conditions';
+import { compareIntegers, extendedTestInteger, INTEGER_OPS, patternMatches, testStatus } from './conditions';
 import type { StateModel } from './state';
 import { patternOfChars, type WalkSource, wordIn } from './words';
 
@@ -14,8 +14,9 @@ export type TestOutcome = boolean | 'error';
 
 /**
  * What the simple test `shape` of `kind` gives where its variables have the values `given`, whatever the script sets
- * them to; undefined where that is not known here: another operator of `[[ ]]` than `=`, `==` and `!=`, a word that
- * reads anything else (another variable, a glob of file names, a tilde), a test of files.
+ * them to; undefined where that is not known here: another operator of `[[ ]]` than `=`, `==`, `!=` and the integer
+ * comparisons, an integer of `[[ ]]` other than decimal digits, a word that reads anything else (another variable, a
+ * glob of file names, a tilde), a test of files.
  */
 export function testOutcome(kind: '[' | '[[', shape: TestShape, model: StateModel, given: Readonly<Record<string, string>>): TestOutcome | undefined {
   // (Only the values given: no other variable, no home directory, no command run.)
@@ -31,9 +32,15 @@ export function testOutcome(kind: '[' | '[[', shape: TestShape, model: StateMode
     const status = testStatus([...left, shape.op, ...right], { option: () => undefined });
     return status === undefined ? undefined : status === 2 ? 'error' : status === 0;
   }
-  if (!shape.left || !['=', '==', '!='].includes(shape.op)) return undefined;
+  if (!shape.left) return undefined;
   // (No splitting in `[[ ]]`: the left side is its one field; the right side a pattern, its quoted characters escaped.)
   const value = wordIn(shape.left, st(shape.left), source, 'value');
+  if (INTEGER_OPS.has(shape.op)) {
+    const a = extendedTestInteger(value);
+    const b = extendedTestInteger(wordIn(shape.right, st(shape.right), source, 'value'));
+    return a === undefined || b === undefined ? undefined : compareIntegers(shape.op, a, b);
+  }
+  if (!['=', '==', '!='].includes(shape.op)) return undefined;
   const pattern = wordIn(shape.right, st(shape.right), source, 'pattern');
   const m = value === undefined || pattern === undefined ? undefined : patternMatches(value, pattern);
   return m === undefined ? undefined : m === (shape.op !== '!=');
