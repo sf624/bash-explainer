@@ -512,6 +512,7 @@ The kit and the data are not in the repository. Two runs on the web page, each w
   - names are not consistent: the depth labels, "Portability" against "Pitfall", the file name kept after a paste, three "Copy" buttons;
   - on a phone, the panel's drag bar and its full height;
   - the panel's length at depth 2, and run-on "In short" sentences.
+- **The plan** for these findings is [usability-9.md](usability-9.md): each reproduced on main at the release, its cause, its cost, and the steps.
 - **On the method:** the sessions ran 2 to 6 minutes, and the scripts were short (the corpus has few real scripts of 10 to 40 lines). 8 of the 10 scores of run 1 were 7: an agent's score moves little. Whether a user answered from the page, and whether a task was rated easy, told the sites apart better than the score.
 
 ## 8. The open questions, answered
