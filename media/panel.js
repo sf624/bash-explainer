@@ -396,20 +396,25 @@
     if (head instanceof HTMLElement) head.focus({ preventScroll: true });
   }
 
-  /** A fix of a problem: its code, and a button that copies it; where the page may not write to the clipboard, the code is selected. */
-  function fixLine(/** @type {string} */ fix) {
-    const code = el('code', { class: 'problem-fix-code' }, ...shellWords(fix));
-    const copy = el('button', { type: 'button', class: 'tryit-copy' }, labels.copyCode);
+  /**
+   * A fix of a problem (src/ui/panelProblems.ts `BoxFix`): the whole line fixed, its changed parts marked, a button that
+   * copies it ("Copy fix"), and why it stops so where that is not plain; where the page may not write to the clipboard,
+   * the line is selected.
+   */
+  function fixLine(/** @type {{ text: string, changed: { from: number, to: number }[], why?: string }} */ fix) {
+    const code = el('code', { class: 'problem-fix-code' }, ...shellWords(fix.text, fix.changed));
+    const copy = el('button', { type: 'button', class: 'tryit-copy' }, labels.problems.copyFix);
     copy.addEventListener('click', () => {
       const done = () => {
         copy.textContent = labels.copiedCode;
-        setTimeout(() => { copy.textContent = labels.copyCode; }, 1500);
+        setTimeout(() => { copy.textContent = labels.problems.copyFix; }, 1500);
       };
       const select = () => getSelection()?.selectAllChildren(code);
-      if (navigator.clipboard) navigator.clipboard.writeText(fix).then(done, select);
+      if (navigator.clipboard) navigator.clipboard.writeText(fix.text).then(done, select);
       else select();
     });
-    return el('span', { class: 'problem-fix' }, el('span', { class: 'problem-fix-label' }, labels.problems.fix), code, copy);
+    return el('div', { class: 'problem-fix' }, el('span', { class: 'problem-fix-label' }, labels.problems.fix), el('span', { class: 'problem-fix-line' }, code, copy),
+      ...(fix.why ? [el('span', { class: 'problem-fix-why' }, ...inline(fix.why))] : []));
   }
 
   /** One problem of the box: its level's icon and word and its headline (a button to its row, where it has one), then "more". */
@@ -426,10 +431,11 @@
     const whole = el('p', { class: 'problem-text' });
     if (p.label) whole.append(el('strong', { class: 'note-label' }, p.label), ' ');
     whole.append(...inline(p.body), ...refLinks(p.refs), ...basisParts(p.basis));
-    const moreBody = el('div', { class: 'fold-body' }, whole, ...p.fixes.map(fixLine));
+    const moreBody = el('div', { class: 'fold-body' }, whole);
     more.append(moreBody);
     foldingDetails(more, moreBody);
-    return el('li', { class: `note problem ${p.className}`, id: `problem-${index}` }, head, more);
+    // (The fixes under the headline, out of "more": what a reader most often wants from the box.)
+    return el('li', { class: `note problem ${p.className}`, id: `problem-${index}` }, head, ...p.fixes.map(fixLine), more);
   }
 
   /** A chip on each row a problem is about: its level's icon, a button back to the problem. */
@@ -490,17 +496,24 @@
   }
 
   /**
-   * Code split for wrapping: each run of non-blanks in a span that wraps only when it is wider than the box
-   * (media/panel.css `.tryit-word`), the blanks between them as text. A browser breaks a line after a hyphen, and
-   * `unset -` / `fv` would read as two words; here a line breaks only between words.
+   * Code split for wrapping: each run of non-blanks, with the blanks before it, in a span that wraps only when it is
+   * wider than the box (media/panel.css `.tryit-word`); the line ends and the blanks that end a line as text. A browser
+   * breaks a line after a hyphen, and `unset -` / `fv` would read as two words; here a line breaks only between words,
+   * and the blank before a word goes to the next row with it, so a wrap never hides one. `changed`: the ranges of
+   * `text` to mark (where a fix's edits put their text).
    */
-  function shellWords(/** @type {string} */ text) {
-    return text.split(/(\s+)/).filter((s) => s !== '').map((s) => {
-      if (/^\s+$/.test(s)) return document.createTextNode(s);
-      const w = document.createElement('span');
-      w.className = 'tryit-word';
-      w.textContent = s;
-      return w;
+  function shellWords(/** @type {string} */ text, /** @type {{ from: number, to: number }[]} */ changed = []) {
+    /** The text from `from` to `to`, its changed parts marked. */
+    const marked = (/** @type {number} */ from, /** @type {number} */ to) => {
+      const cuts = [...new Set([from, to, ...changed.flatMap((c) => [c.from, c.to]).filter((i) => i > from && i < to)])].sort((x, y) => x - y);
+      return cuts.slice(1).map((end, i) => {
+        const piece = text.slice(cuts[i], end);
+        return changed.some((c) => c.from <= cuts[i] && end <= c.to) ? el('mark', { class: 'fix-changed' }, piece) : document.createTextNode(piece);
+      });
+    };
+    return [...text.matchAll(/\n|[^\S\n]*\S+|[^\S\n]+/g)].flatMap((m) => {
+      const parts = marked(m.index, m.index + m[0].length);
+      return /\S/.test(m[0]) ? [el('span', { class: 'tryit-word' }, ...parts)] : parts;
     });
   }
 

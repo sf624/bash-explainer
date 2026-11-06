@@ -2,6 +2,7 @@
 // test applies them and runs both scripts in bash (test/rewrites.test.ts). Quick fixes can come from the same data.
 import type { Shell } from './dialect';
 import { builtins } from './dict/builtins';
+import { leastOf, mostOf } from './lists';
 import type { Fact } from './messages';
 import { readAs, STATEMENTS } from './semantics/env';
 import { documentRoot, type StateModel } from './semantics/state';
@@ -18,26 +19,92 @@ export interface TextEdit { start: number; end: number; text: string }
  * facts of a host file (a Dockerfile, a workflow, a Makefile) carry no rewrites: the edits are in the extracted text,
  * not the file (src/hosts/remap.ts).
  */
-export interface Rewrite { code: string; edits: readonly TextEdit[] }
+export interface Rewrite {
+  code: string; edits: readonly TextEdit[];
+  /**
+   * It stops with `return 1 2>/dev/null || exit 1` (`EITHER_STOP`, from `stopCommand`), in a file that may be sourced or
+   * run: the panel's fix says why both are there.
+   */
+  sourcedOrRun?: true;
+}
+
+/** Where an edit of a rewrite put its text in the text rewritten: offsets, `to` exclusive. */
+export interface Changed { from: number; to: number }
+
+/**
+ * `text` with the edits made (offsets in the document; `at`: the offset where `text` starts in it), and where each
+ * edit's text went. Edits at one offset go in the reverse of their order (the last given first). The one applier of
+ * edits: the rewrites built from a node's text (`changed`), the style checks' (src/pitfalls.ts), the panel's fix
+ * (`fixedLines`) and the tests read it.
+ */
+function splice(text: string, edits: readonly TextEdit[], at: number): { text: string; changed: Changed[] } {
+  const order = edits.map((e, i) => ({ e, i })).sort((x, y) => x.e.start - y.e.start || y.i - x.i);
+  let out = '';
+  let pos = 0;
+  const changed: Changed[] = [];
+  for (const { e } of order) {
+    out += text.slice(pos, e.start - at);
+    changed.push({ from: out.length, to: out.length + e.text.length });
+    out += e.text;
+    pos = e.end - at;
+  }
+  return { text: out + text.slice(pos), changed };
+}
+
+/** `text` with the edits of `r` made: offsets in the document, and `at` the one where `text` starts (the document's start by default). */
+export function applyRewrite(text: string, r: Pick<Rewrite, 'edits'>, at = 0): string {
+  return splice(text, r.edits, at).text;
+}
+
+/** A fix as the panel shows it: the whole lines it is about with its edits made, and where its edits put their text (`text` offsets). */
+export interface FixedLines { text: string; changed: readonly Changed[] }
+
+/**
+ * The lines of the document `text` that the edits of `r` touch, and the lines `first` to `last` (0-based: the
+ * statement the fix is for, which may begin before them, `a \⏎ || b`), with the edits made, and where each edit put
+ * its text (none where it only deletes). A carriage return a line ends with is left out where the tree masks it as a
+ * space (`masked`: offsets, `SyntaxTree.carriageReturns`). Undefined for a rewrite with no edits.
+ */
+export function fixedLines(text: string, r: Pick<Rewrite, 'edits'>, first: number, last: number, masked: readonly number[] = []): FixedLines | undefined {
+  if (!r.edits.length) return undefined;
+  let start = leastOf(r.edits.map((e) => e.start));
+  let end = mostOf(r.edits.map((e) => e.end));
+  // (The start of line `first` and the end of line `last`.)
+  for (let i = 0, from = 0; i <= last; i++) {
+    const to = text.indexOf('\n', from);
+    if (i === first) start = Math.min(start, from);
+    if (i === last) end = Math.max(end, to < 0 ? text.length : to);
+    if (to < 0) break;
+    from = to + 1;
+  }
+  start = text.lastIndexOf('\n', start - 1) + 1;
+  const next = text.indexOf('\n', end);
+  end = next < 0 ? text.length : next;
+  if (masked.includes(end - 1)) end--;
+  const { text: fixed, changed } = splice(text.slice(start, end), r.edits, start);
+  return { text: fixed, changed: changed.filter((c) => c.to > c.from) };
+}
 
 /**
  * `f` with the edits of the other facts of `all` that have its text added to its rewrites: a fact said twice on a line
  * is listed once (src/analyzer.ts), and is about two places, `cp $a b; cp $a c`, which its rewrites then both change.
  * A rewrite must change every place, or it leaves the note: where one place has none (in a string another shell
  * reads, `bash -c 'cp $a b'`), the fact has none; the alternatives are paired by their code, and the fact keeps only
- * those every place has (none, where they have none in common).
+ * those every place has (none, where they have none in common). The panel's box merges the places of a note so too
+ * (its anchors, src/ui/panelProblems.ts).
  */
-export function withRewritesOf(f: Fact, all: readonly Fact[]): Fact {
+export function withRewritesOf<T extends Pick<Fact, 'text' | 'rewrite'>>(f: T, all: readonly T[]): T {
   const same = all.filter((g) => g.text === f.text);
   if (!f.rewrite || same.length < 2) return f;
   const kept = same.some((g) => !g.rewrite) ? [] : f.rewrite.filter((r) => same.every((g) => g.rewrite!.some((o) => o.code === r.code))).map((r) => {
     // (The same edit once: a fact said twice for one place.)
     const edits = new Map(same.flatMap((g) => g.rewrite!.filter((o) => o.code === r.code).flatMap((o) => o.edits)).map((e) => [`${e.start} ${e.end} ${e.text}`, e]));
-    return { code: r.code, edits: [...edits.values()] };
+    return { ...r, edits: [...edits.values()] };
   });
   if (kept.length) return { ...f, rewrite: kept };
   const { rewrite: _, ...rest } = f;
-  return rest;
+  // (`T` without `rewrite`, which is optional in it.)
+  return rest as T;
 }
 
 /** The root of the tree `n` is in, and whether that tree is the document's (not a string read as a script). */
@@ -64,8 +131,11 @@ export function replaceNode(n: SyntaxNode, code: string): Rewrite {
  */
 export function stopCommand(n: SyntaxNode, model: StateModel, returns: boolean): string {
   if (readAs(model.env(n), model.read) === 'script') return returns ? 'return 1' : 'exit 1';
-  return ancestor(n, (x) => x.type === 'function_definition') ? 'return 1' : 'return 1 2>/dev/null || exit 1';
+  return ancestor(n, (x) => x.type === 'function_definition') ? 'return 1' : EITHER_STOP;
 }
+
+/** What `stopCommand` gives in a file that may be sourced or run, outside a function: `return` fails when the file is run, and then `exit` ends it. */
+export const EITHER_STOP = 'return 1 2>/dev/null || exit 1';
 
 /**
  * The rewrite that puts the statement `code` before the statement `n`: on a line of its own, indented as `n` is, when
@@ -129,7 +199,7 @@ function headEnd(n: SyntaxNode): number {
 
 /** The text of node `n` with `changes` made (edits within it, in offsets of the text explained). */
 export function changed(n: SyntaxNode, changes: readonly TextEdit[]): string {
-  return [...changes].sort((a, b) => b.start - a.start).reduce((t, c) => t.slice(0, c.start - n.startIndex) + c.text + t.slice(c.end - n.startIndex), n.text);
+  return applyRewrite(n.text, { edits: changes }, n.startIndex);
 }
 
 /**

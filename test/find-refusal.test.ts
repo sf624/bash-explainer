@@ -6,7 +6,8 @@ import { Analyzer, type Token } from '../src/analyzer';
 import type { Fact } from '../src/messages';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { runBash } from './support/bash';
-import { applied, factsOf } from './support/rewrites';
+import { applyRewrite } from '../src/rewrite';
+import { factsOf } from './support/rewrites';
 
 const ID = 'find-action-refused';
 const parser = createUnbashParser();
@@ -117,7 +118,7 @@ describe('the note on an action that find refuses', () => {
         ['find . -maxdepth 0 -exec echo ran {} \\; -execdir echo ran {} ;\necho after', 'find . -maxdepth 0 -exec echo ran {} \\; -execdir echo ran {} \\;\necho after'],
       ] as const) {
         const [f] = factsOf(src, ID);
-        assert.deepStrictEqual(f.rewrite!.map((r) => [r.code, applied(src, r)]), [['\\;', want]], src);
+        assert.deepStrictEqual(f.rewrite!.map((r) => [r.code, applyRewrite(src, r)]), [['\\;', want]], src);
         // (find refuses the original and runs the rewrite.)
         const before = real(src.split('\n')[0]);
         const after = real(want.split('\n')[0]);
@@ -133,7 +134,7 @@ describe('the note on an action that find refuses', () => {
         ['find . -maxdepth 0 -exec echo ran {};# c', '{} \\; #', 'find . -maxdepth 0 -exec echo ran {} \\; # c'],
       ] as const) {
         const [f] = factsOf(src, ID);
-        assert.deepStrictEqual(f.rewrite!.map((r) => [r.code, applied(src, r)]), [[code, want]], src);
+        assert.deepStrictEqual(f.rewrite!.map((r) => [r.code, applyRewrite(src, r)]), [[code, want]], src);
         const after = real(want);
         assert.deepStrictEqual([after.stdout, after.status], ['ran .\n', 0], JSON.stringify(after));
         assert.ok(f.text.endsWith(`Write \`${code}\`: \`\\;\` (or \`';'\`) must be a word of its own`), f.text);

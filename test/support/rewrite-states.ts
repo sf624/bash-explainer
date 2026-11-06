@@ -21,7 +21,7 @@ import { isExpressionStart } from '../../src/embedded/find';
 import { detectShell, type Shell } from '../../src/dialect';
 import { type FactId, MESSAGES } from '../../src/messages';
 import { pitfallFindings, STYLE_REWRITES, type StyleCode } from '../../src/pitfalls';
-import type { Rewrite, TextEdit } from '../../src/rewrite';
+import { applyRewrite, type Rewrite, type TextEdit } from '../../src/rewrite';
 import { resolveName } from '../../src/semantics/names';
 import { shellState } from '../../src/semantics/state';
 import { BASH_VARIABLES } from '../../src/semantics/vars';
@@ -30,7 +30,6 @@ import { createUnbashParser } from '../../src/syntax/adapters/unbash';
 import { ancestor, descendants, field, fields, redirectionsOf, type SyntaxNode, type SyntaxTree } from '../../src/syntax/tree';
 import { runContained, scoped } from './contained';
 import { corpus } from './corpus';
-import { applied } from './rewrites';
 
 const parser = createUnbashParser();
 
@@ -140,7 +139,7 @@ function subject(group: readonly CorpusFact[], rewrites: readonly Rewrite[], alt
   const [f] = group;
   const rewrite = { code: rewrites[0].code, edits: rewrites.flatMap((r) => r.edits) };
   const original = runText(f, rewrite.edits);
-  return { input: f.input, text: f.text, shell: f.shell, id: f.fact.id, facts: group.map((g) => g.fact), rewrite, codes: rewrites.map((r) => r.code), alt, original, script: applied(original, rewrite) };
+  return { input: f.input, text: f.text, shell: f.shell, id: f.fact.id, facts: group.map((g) => g.fact), rewrite, codes: rewrites.map((r) => r.code), alt, original, script: applyRewrite(original, rewrite) };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -657,7 +656,7 @@ Object.assign(STATES, {
       const epilogue = 'echo "@st=$?"';
       const meant = (v: string): Check => (plain ? {
         state: `${JSON.stringify(v)}, the result`,
-        runs: [{ script: applied(s.original, { code: '', edits: spots.map((w) => ({ start: w.startIndex, end: w.endIndex, text: quote(v) })) }), env: env(v), epilogue }, { script: s.script, env: env(v), epilogue }],
+        runs: [{ script: applyRewrite(s.original, { edits: spots.map((w) => ({ start: w.startIndex, end: w.endIndex, text: quote(v) })) }), env: env(v), epilogue }, { script: s.script, env: env(v), epilogue }],
         verify: ([o, r]) => quiet(r) ?? same(o, r),
       } : holds(JSON.stringify(v), s, { env: env(v) }, quiet));
       return [
@@ -792,7 +791,7 @@ Object.assign(STATES, {
       });
       // (The values of the passes that nullglob removes: those of the globs that match nothing.)
       const passes = (r: Ran): string[] => [...r.out.matchAll(/^@it=(.*)$/gm)].map((m) => m[1]);
-      const probed = (edits: readonly TextEdit[]): string => applied(s.original, { code: '', edits: [...edits, ...probes] });
+      const probed = (edits: readonly TextEdit[]): string => applyRewrite(s.original, { edits: [...edits, ...probes] });
       return [
         keeps('files that match', s, { env, files }, { env, files }),
         // (With none, the loop runs over what nullglob leaves: the words that are not globs.)
@@ -915,7 +914,7 @@ Object.assign(STATES, {
 /** The command of the original that holds the first edit. */
 const commandAt = (x: Context): SyntaxNode => ancestor(x.at, (a) => a.type === 'command') ?? x.at;
 /** The original with the text from `start` to `end` replaced (`text`), and other such edits: the reference. */
-const reference = (s: Subject, edits: readonly TextEdit[]): string => applied(s.original, { code: '', edits });
+const reference = (s: Subject, edits: readonly TextEdit[]): string => applyRewrite(s.original, { edits });
 /** The named variables `n` expands (not bash's own), in order. */
 const varsIn = (n: SyntaxNode): string[] => [...new Set(descendants(n, ['simple_expansion', 'expansion']).flatMap((e) => e.namedChildren.filter((c) => c.type === 'variable_name').map((c) => c.text)))].filter((v) => !(v in BASH_VARIABLES));
 /** The epilogue that prints the status the script leaves. */
@@ -1201,7 +1200,7 @@ function minus(a: readonly string[], b: readonly string[]): string[] {
 export function leavesNoFact(s: Subject): string | undefined {
   const fixed = s.facts.map((f) => f.text);
   const before = minus(factTexts(s.text, s.id, s.shell), fixed);
-  const after = factTexts(applied(s.text, s.rewrite), s.id, s.shell);
+  const after = factTexts(applyRewrite(s.text, s.rewrite), s.id, s.shell);
   // (As lists with repeats: the style checks say the same text at each place, `read x` on two lines.)
   const added = minus(after, before);
   const left = added.filter((t) => fixed.includes(t));

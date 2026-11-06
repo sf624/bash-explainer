@@ -6,8 +6,8 @@
 import * as assert from 'assert';
 import type { Shell } from '../src/dialect';
 import type { Fact, FactId } from '../src/messages';
-import { type Rewrite, type TextEdit, withRewritesOf } from '../src/rewrite';
-import { applied, factsOf, programs, type Ran, rewrites, run } from './support/rewrites';
+import { applyRewrite, type Rewrite, type TextEdit, withRewritesOf } from '../src/rewrite';
+import { factsOf, programs, type Ran, rewrites, run } from './support/rewrites';
 
 /** The rewritten scripts of the one fact of `id` in `src`. */
 const scripts = (src: string, id: FactId, shell?: Shell): string[] => rewrites(src, id, shell).map(([, s]) => s);
@@ -39,7 +39,7 @@ describe('the rewrites of `unquoted-variable-as-path`', () => {
     assert.deepStrictEqual(scripts('cp $a b; cp $a c', id), ['cp "$a" b; cp "$a" c']);
     // (A note for each unquoted word of the command, each with its rewrite: quoting one leaves the others. Before, only
     // the first, `$a` of `cp $a $b`.)
-    assert.deepStrictEqual(factsOf('cp $a $b', id).map((f) => f.rewrite!.map((r) => applied('cp $a $b', r))), [['cp "$a" $b'], ['cp $a "$b"']]);
+    assert.deepStrictEqual(factsOf('cp $a $b', id).map((f) => f.rewrite!.map((r) => applyRewrite('cp $a $b', r))), [['cp "$a" $b'], ['cp $a "$b"']]);
     assert.deepStrictEqual(factsOf('sudo rm -rf $d/x $e', id).map((f) => f.text.match(/`([^`]+)` is not quoted/)![1]), ['$d/x', '$e']);
     // (The same word twice in one command: one note, whose rewrite quotes both.)
     assert.deepStrictEqual(scripts('cp $a $a', id), ['cp "$a" "$a"']);
@@ -62,6 +62,17 @@ describe('the rewrites of `unquoted-variable-as-path`', () => {
     assert.deepStrictEqual(withRewritesOf(one, [one, one]).rewrite, one.rewrite);
     assert.ok(!('rewrite' in withRewritesOf(two, [two, f()])));
     assert.strictEqual(withRewritesOf(f(), [f(), two]).rewrite, undefined);
+  });
+  // (`applyRewrite`, src/rewrite.ts: the one applier of edits, as an editor applies them.)
+  it('are applied together, in offsets of the document, the last given first at one offset', () => {
+    const at = (start: number, end: number, text: string): TextEdit => ({ start, end, text });
+    assert.strictEqual(applyRewrite('cp $a $b', { edits: [at(6, 8, '"$b"'), at(3, 5, '"$a"')] }), 'cp "$a" "$b"');
+    // (Two at one offset: the second before the first; a replacement, and insertions at its end and at the text's end.)
+    assert.strictEqual(applyRewrite('ab', { edits: [at(1, 1, 'x'), at(1, 1, 'y')] }), 'ayxb');
+    assert.strictEqual(applyRewrite('abc', { edits: [at(0, 1, 'A'), at(1, 1, '-'), at(3, 3, '!')] }), 'A-bc!');
+    // (A deletion; a text that starts at offset 10 of the document.)
+    assert.strictEqual(applyRewrite('a b', { edits: [at(1, 2, '')] }), 'ab');
+    assert.strictEqual(applyRewrite('read x', { edits: [at(10, 14, 'read -r')] }, 10), 'read -r x');
   });
   it('are what the note says, and none where quotes would change the word, or in a string another shell reads', () => {
     assert.match(only('rm -rf $DIR/*', id).text, /\. Write `"\$DIR"\/\*`$/);
@@ -118,7 +129,7 @@ describe('the rewrites of `unquoted-variable-in-test`', () => {
     // (zsh drops an empty word all the same.)
     assert.deepStrictEqual(scripts('[ -n $x ]', id, 'zsh'), ['[ -n "$x" ]']);
     // (Each word of the test, with its own rewrite. Before, only the first: quoting it left the others.)
-    assert.deepStrictEqual(factsOf('[ $x = a -o $y = b ]', id).map((f) => f.rewrite!.map((r) => applied('[ $x = a -o $y = b ]', r))), [['[ "$x" = a -o $y = b ]'], ['[ $x = a -o "$y" = b ]']]);
+    assert.deepStrictEqual(factsOf('[ $x = a -o $y = b ]', id).map((f) => f.rewrite!.map((r) => applyRewrite('[ $x = a -o $y = b ]', r))), [['[ "$x" = a -o $y = b ]'], ['[ $x = a -o "$y" = b ]']]);
   });
   it('are what the note says, and none where quotes would change the value', () => {
     assert.match(only('[ $x = y ]', id).text, /\. Write `"\$x"`$/);

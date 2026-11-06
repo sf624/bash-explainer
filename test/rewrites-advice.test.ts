@@ -14,7 +14,8 @@ import { pitfallFindings, type StyleCode } from '../src/pitfalls';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { runContained } from './support/contained';
-import { applied, programs } from './support/rewrites';
+import { applyRewrite } from '../src/rewrite';
+import { programs } from './support/rewrites';
 
 const parser = createUnbashParser();
 
@@ -28,7 +29,7 @@ function findings(src: string, code: StyleCode, shell?: Shell) {
 function rewrites(src: string, code: StyleCode, shell?: Shell): [code: string, script: string][] {
   const found = findings(src, code, shell);
   assert.strictEqual(found.length, 1, `one finding of ${code} in ${JSON.stringify(src)}`);
-  return (found[0].rewrite ?? []).map((r) => [r.code, applied(src, r)]);
+  return (found[0].rewrite ?? []).map((r) => [r.code, applyRewrite(src, r)]);
 }
 
 /**

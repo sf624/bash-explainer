@@ -45,9 +45,10 @@ describe('the web page: the panel\'s header', function () {
       view: document.getElementById('view-slot').dataset.form, tools: head.dataset.tools, tabs: head.dataset.tabs, wrap: head.classList.contains('wrap'),
       over: head.scrollWidth - head.clientWidth, head: box('#panel-head'), frame: box('#panel'), slot: box('#view-slot'), collapse: box('#collapse'), copy: box('#copy-md'),
       tabsBox: box('#panel-tabs'), words: [word('collapse-word'), word('copy-md-word')],
+      copyWord: [...document.getElementById('copy-md-word').children].filter((c) => getComputedStyle(c).display !== 'none').map((c) => c.textContent).join('|'),
       end: Math.round((head.getBoundingClientRect().right - parseFloat(getComputedStyle(head).paddingRight) - document.getElementById('copy-md').getBoundingClientRect().right) * 10) / 10,
     };
-  })()`) as Promise<{ view: string; tools: string; tabs: string; wrap: boolean; over: number; end: number; head: number[]; frame: number[]; slot: number[]; collapse: number[]; copy: number[]; tabsBox: number[]; words: boolean[] }>;
+  })()`) as Promise<{ view: string; tools: string; tabs: string; wrap: boolean; over: number; end: number; head: number[]; frame: number[]; slot: number[]; collapse: number[]; copy: number[]; tabsBox: number[]; words: boolean[]; copyWord: string }>;
 
   it('takes the first form that fits: the segments with the tools\' words beside them at 1280px, one row from 640 to 1440px, words on Collapse and Copy at every width', async () => {
     for (const lang of ['en', 'ja'] as const) {
@@ -64,6 +65,8 @@ describe('the web page: the panel\'s header', function () {
         if (width >= 640) assert.strictEqual(m.wrap, false, at);
         // Collapse and Copy always show a word (decision 11): beside the icon, or under it.
         assert.deepStrictEqual(m.words, [true, true], at);
+        // (Copy says what it copies beside its icon, and "Markdown" under it: docs/design/usability-9.md, Q5.)
+        assert.strictEqual(m.copyWord, m.tools === 'beside' ? (lang === 'en' ? 'Copy as Markdown' : 'Markdown でコピー') : 'Markdown', at);
         if (width === 1280) assert.deepStrictEqual([m.view, m.tools, m.tabs], ['segments', 'beside', 'full'], at);
         // The forms only narrow as the window does (widest first: src/ui/panelHead.ts).
         const rank = ['segments beside full', 'segments under full', 'menu beside full', 'menu under full', 'menu under short'];

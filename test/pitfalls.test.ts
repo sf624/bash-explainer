@@ -12,7 +12,7 @@ import { Analyzer } from '../src/analyzer';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { MESSAGES, fact, said, type FactId } from '../src/messages';
 import { runBash } from './support/bash';
-import { applied } from './support/rewrites';
+import { applyRewrite } from '../src/rewrite';
 import type { Shell } from '../src/dialect';
 
 const root = path.join(__dirname, '..');
@@ -634,7 +634,7 @@ describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', ()
     it(`${code}: ${JSON.stringify(src)}`, () => {
       const [f, ...more] = found(src, code);
       assert.ok(f && !more.length, `one finding of ${code}`);
-      assert.deepStrictEqual((f.rewrite ?? []).map((r) => applied(src, r)), scripts);
+      assert.deepStrictEqual((f.rewrite ?? []).map((r) => applyRewrite(src, r)), scripts);
       // (The text shows the code of the first: one source.)
       if (f.rewrite) assert.ok(f.text.includes(`\`${f.rewrite[0].code}\``) || f.rewrite[0].code.includes('\n'), f.text);
       // (In Japanese the same.)

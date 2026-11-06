@@ -42,3 +42,18 @@ There is no rewrite that fits every regex, so the note names three ways and thei
 - `printf '%s\n' "$s" | grep -Eq '^[0-9]+$'` takes an extended regex.
 
 The test compares the three with `[[ =~ ]]` on the same strings, in dash and in busybox ash.
+
+### The fix in the box of a line's problems is the whole line
+
+In the panel, in VS Code and on the web page, a problem with a fix shows it under its headline, no longer under **More**: the line with the fix made, the part the fix changed marked, and a button **Copy fix** / 「修正をコピー」 that copies the whole line. A fix over several lines shows them all (a statement continued with `\`, a loop whose body gets a line).
+
+- `tar -czf "$backup" ~/docs 2>/dev/null || echo "failed" >&2` shows `tar -czf "$backup" ~/docs 2>/dev/null || { echo "failed" >&2; exit 1; }`, with `{ echo "failed" >&2; exit 1; }` marked. Before, the box showed and copied only `{ echo "failed" >&2; exit 1; }`, the right side of `||`.
+- In a file with no shebang, which may be run or sourced, the fix ends with `return 1 2>/dev/null || exit 1`, as before, and now says why: "`return` if sourced, `exit` if run".
+- `cp $a b; cp $a c` gives one fix for both places: `cp "$a" b; cp "$a" c`.
+- A long fix wraps between words, and the blank before a word moves to the next row with it. Before, a wrap could hide the blank (`2>/dev/null|| exit`).
+
+The quick fixes in the editors do not change. The note's own text still names the part to write.
+
+### The Copy buttons say what they copy
+
+The web page's panel header says **Copy as Markdown** / 「Markdown でコピー」 beside its icon, and **Markdown** under it where the header is narrow. Before, it said **Copy**, like the fix's button. **Copy a link** does not change.

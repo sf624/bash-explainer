@@ -8,7 +8,7 @@ import * as path from 'path';
 import { Analyzer } from '../../src/analyzer';
 import type { Shell } from '../../src/dialect';
 import type { Fact, FactId } from '../../src/messages';
-import type { Rewrite } from '../../src/rewrite';
+import { applyRewrite } from '../../src/rewrite';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
 import { runBash } from './bash';
 import { runContained } from './contained';
@@ -24,16 +24,11 @@ export function factsOf(src: string, id: FactId, shell?: Shell, lang: 'en' | 'ja
   return src.split('\n').flatMap((_, i) => new Analyzer(lang).explainLine(tree, i, shell, { script: 'said' }).facts ?? []).filter((f) => f.id === id);
 }
 
-/** `text` with the edits of `r` made. */
-export function applied(text: string, r: Rewrite): string {
-  return [...r.edits].sort((a, b) => b.start - a.start).reduce((t, e) => t.slice(0, e.start) + e.text + t.slice(e.end), text);
-}
-
 /** The rewritten scripts of the one fact of `id` in `src`, each with the code its note shows. */
 export function rewrites(src: string, id: FactId, shell?: Shell): [code: string, script: string][] {
   const facts = factsOf(src, id, shell);
   assert.strictEqual(facts.length, 1, `one fact of ${id} in ${JSON.stringify(src)}`);
-  return facts[0].rewrite!.map((r) => [r.code, applied(src, r)]);
+  return facts[0].rewrite!.map((r) => [r.code, applyRewrite(src, r)]);
 }
 
 /** The recorders: they say what they were given, and `cp` and `tar` fail when `RW_FAIL` is 1. */

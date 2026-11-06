@@ -325,8 +325,8 @@ describe('the panel at depth 2: the names on a role line, the depth and the focu
   });
 
   it('keeps the Tab order and the page within what it has reached, on long lines', async () => {
-    // (What the rows of a line need, in stops and in px of the panel's page, en: panel-redesign.md, "The length budget". A review measured 105 stops and 4,513 px at 390 before the sections went into the names and a general text was said once; the awk line had 98 stops and 5,718 px at 390 before a token inside a language lost its chip.)
-    for (const [line, stops, h1280, h390] of [[PIPE, 46, 1170, 1850], [LONG, 64, 1850, 3470], [AWK, 54, 3330, 5280]] as const) {
+    // (What the rows of a line need, in stops and in px of the panel's page, en: panel-redesign.md, "The length budget". A review measured 105 stops and 4,513 px at 390 before the sections went into the names and a general text was said once; the awk line had 98 stops and 5,718 px at 390 before a token inside a language lost its chip. The pipe's fix, out of "More" as the whole line, added about 30 px: usability-9.md, U1.)
+    for (const [line, stops, h1280, h390] of [[PIPE, 46, 1210, 1890], [LONG, 64, 1850, 3470], [AWK, 54, 3330, 5280]] as const) {
       for (const [width, budget] of [[1280, h1280], [390, h390]] as const) {
         const page = await open(line, { width });
         await page.waitForTimeout(100);

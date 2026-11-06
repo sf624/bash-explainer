@@ -1,13 +1,16 @@
 // The panel's box "Problems on this line" (docs/design/panel-redesign.md, P7b), as data: each problem of the line with its
-// level's mark and word, its headline, what "more" holds (the whole text and the fixes to copy), and the rows it links to;
+// level's mark and word, its headline, the fixes to copy (each the whole line fixed), what "more" holds (the whole text), and the rows it links to;
 // then a pointer to each problem on the line of a construct around this one. media/panel.js only draws it.
-import type { LineExplanation, Token } from '../analyzer-types';
+import type { LineExplanation, NoteAnchor, Token } from '../analyzer-types';
 import { type DocumentIssue, type IssueFilter, noteAnchors, pitfallOf } from '../document';
 import type { Lang } from '../i18n';
 import { LEVELS, type NoteLevel, levelWord, NOT_READ_WORD, problemLevel, SEVERITIES, type ProblemSeverity } from '../levels';
 import { isProblemNote, type Note, problemText } from '../messages';
 import type { ProblemNote } from '../messages-levels';
 import { isNotRead } from '../messages-unread';
+import { leastOf, mostOf } from '../lists';
+import { type Changed, fixedLines, withRewritesOf } from '../rewrite';
+import type { SyntaxTree } from '../syntax/tree';
 import { tokenAtSpan } from '../tokenmarks';
 import { type NoteBasis } from './tokenRow';
 import { noteBasis, noteRefs, notesByLevel } from './render';
@@ -25,11 +28,18 @@ export interface BoxProblem {
   label: string; body: string; refs: readonly string[]; basis?: NoteBasis;
   /** "More": the same text as the problem's in the Problems lists (`DocumentIssue.message`). */
   text: string;
-  /** "More": the code of each fix it suggests, the first the one it recommends (`NoteAnchor.rewrite`, P3). */
-  fixes: readonly string[];
+  /** Each fix it suggests, the first the one it recommends (`NoteAnchor.rewrite`, P3), under the headline. */
+  fixes: readonly BoxFix[];
   /** The rows of the line it is about, by their paths in the list (`RowModel.places`, src/ui/panelRows.ts). */
   rows: readonly string[];
 }
+
+/**
+ * A fix in the box: the whole lines it is about with its edits made, and where its edits put their text, to mark them
+ * (`fixedLines`, src/rewrite.ts); for a rewrite with no edits, its code alone, with nothing marked. `why`: a few words
+ * on how it stops, where that is not plain (`Rewrite.sourcedOrRun`; marked text). What its Copy copies is `text`.
+ */
+export interface BoxFix { text: string; changed: readonly Changed[]; why?: string }
 
 /** A problem on the line of a construct around this one (the `for` of a loop body), which a click goes to. */
 export interface ProblemPointer {
@@ -57,9 +67,26 @@ export function isListed(ex: Pick<LineExplanation, 'line' | 'anchors'>, n: Note,
   return (at.length ? at : [ex.line]).some((startLine) => shown({ code: n.code, startLine, ...pitfallOf(n) }));
 }
 
-/** The problems of the line, errors first; the notes that are no problems (or were silenced) stay notes. */
-export function boxProblems(ex: LineExplanation, places: ReadonlyMap<Token, string>, lang: Lang, shown: IssueFilter): BoxProblem[] {
+/**
+ * The problems of the line, errors first; the notes that are no problems (or were silenced) stay notes. `tree`: the
+ * document's text, where the rewrites' edits are (none in a test of the line alone: each fix is then its code).
+ */
+export function boxProblems(ex: LineExplanation, places: ReadonlyMap<Token, string>, lang: Lang, shown: IssueFilter, tree?: Pick<SyntaxTree, 'text' | 'carriageReturns'>): BoxProblem[] {
   const tokens = [...places.keys()];
+  const t = ui[lang].panel.problems;
+  /**
+   * The fixes of a note about `anchors`: each rewrite with its edits at every place, as a fact's (`withRewritesOf`: a
+   * note about two places, `cp $a b; cp $a c`, fixes both), over the lines of them all.
+   */
+  const fixes = (anchors: readonly NoteAnchor[]): BoxFix[] => {
+    if (!anchors.length) return [];
+    const first = leastOf(anchors.map((a) => a.span.start.line));
+    const last = mostOf(anchors.map((a) => a.span.end.line));
+    return (withRewritesOf(anchors[0], anchors).rewrite ?? []).map((r) => ({
+      ...(tree && fixedLines(tree.text, r, first, last, tree.carriageReturns)) || { text: r.code, changed: [] },
+      ...(r.sourcedOrRun ? { why: t.sourcedOrRun } : {}),
+    }));
+  };
   return notesByLevel(ex).filter((n) => isListed(ex, n, shown)).map((n) => {
     const { className, codicon } = LEVELS[n.level];
     const anchors = noteAnchors(ex, n);
@@ -70,7 +97,7 @@ export function boxProblems(ex: LineExplanation, places: ReadonlyMap<Token, stri
       // (Every note that can be a problem has its headline: the catalog's type, and test/problem-heads.test.ts on the corpus.)
       head: n.head,
       label: n.label, body: n.body, refs: noteRefs(ex, n.text) ?? [], ...(basis ? { basis } : {}), text: problemText(n, lang),
-      fixes: [...new Set(anchors.flatMap((a) => a.rewrite ?? []).map((r) => r.code))],
+      fixes: fixes(anchors),
       rows: [...new Set(rows)],
     };
   });

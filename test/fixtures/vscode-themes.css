@@ -57,6 +57,7 @@ html.t-dark {
   --vscode-textBlockQuote-background: #2b2b2b;
   --vscode-textBlockQuote-border: #616161;
   --vscode-textCodeBlock-background: #2b2b2b;
+  --vscode-diffEditor-insertedTextBackground: rgba(156, 204, 44, 0.2);
   --vscode-textLink-foreground: #4daafc;
   --vscode-textLink-activeForeground: #4daafc;
   --vscode-charts-blue: #3794ff;
@@ -115,6 +116,7 @@ html.t-light {
   --vscode-textBlockQuote-background: #f8f8f8;
   --vscode-textBlockQuote-border: #e5e5e5;
   --vscode-textCodeBlock-background: #f8f8f8;
+  --vscode-diffEditor-insertedTextBackground: rgba(156, 204, 44, 0.25);
   --vscode-textLink-foreground: #005fb8;
   --vscode-textLink-activeForeground: #005fb8;
   --vscode-charts-blue: #1a85ff;
