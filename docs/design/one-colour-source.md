@@ -1,6 +1,6 @@
 # One colour source: the editor's colours from the explanation's tokens
 
-Status: proposed. The web editor is coloured this way in a proof of concept (#PR, web only); VS Code and the Language Server are designed here, not built.
+Status: proposed. The web editor is coloured this way in a proof of concept (#627, web only); VS Code and the Language Server are designed here, not built.
 
 The maintainer agreed on the direction (2026-11-06): the editors (the web page's CodeMirror editor, VS Code, the Language Server's clients) take the colour of each part of the shell code from the tokens of its explanation, the same source as the panel's colours, instead of deciding it from the syntax tree themselves. The editor will then colour inside regular expressions and formats too, as the panel does.
 
