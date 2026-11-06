@@ -39,10 +39,17 @@ export const SHEBANG_TEXTS = {
    */
   'shebang-line': tokenText<{ shown: string; oneArg: boolean; arg: string; relative: string; env: boolean; notes: string; dialect: Text }>(
     ({ shown, oneArg, arg, relative, env, notes, dialect }) => [
-      `シバン（shebang）: ファイルをプログラムとして実行すると（\`./script.sh\`、または PATH から見つかるコマンドとして）、カーネル（それをしないシステムでは bash）が \`${shown} ./script.sh 引数…\` を実行する`
-        + `${oneArg ? `（Linux では行の残りの \`${arg}\` 全体が1つの引数になる）` : ''}${relative}${env ? `。\`env\` は PATH から \`${arg}\` を探して実行する` : ''}${notes}`
-        + `。bash にとってこの行はコメントで、\`bash script.sh\`・\`sh script.sh\`・\`source script.sh\`・\`. script.sh\` では無視される${dialect.ja}`,
-      `Shebang: when the file is run as a program (\`./script.sh\`, or a command found on PATH), the kernel (or bash, on a system whose kernel does not) runs \`${shown} ./script.sh args…\``
-        + `${oneArg ? ` (on Linux the whole rest of the line, \`${arg}\`, is one argument)` : ''}${relative}${env ? `, and \`env\` finds \`${arg}\` on PATH and runs it` : ''}${notes}`
-        + `. To bash this line is a comment: \`bash script.sh\`, \`sh script.sh\`, \`source script.sh\` and \`. script.sh\` ignore it${dialect.en}`]),
+      `シバン（shebang）: プログラムとして実行すると（\`./script.sh\`）、ファイルは \`${shown} ./script.sh 引数…\` として実行される`
+        + `${oneArg ? `（Linux では行の残りの \`${arg}\` 全体が1つの引数になる）` : ''}${relative}${env ? `。\`env\` は PATH から \`${arg}\` を探して実行する` : ''}${notes}${dialect.ja}`,
+      `Shebang: run as a program (\`./script.sh\`), the file runs as \`${shown} ./script.sh args…\``
+        + `${oneArg ? ` (on Linux the whole rest of the line, \`${arg}\`, is one argument)` : ''}${relative}${env ? `, and \`env\` finds \`${arg}\` on PATH and runs it` : ''}${notes}${dialect.en}`]),
+  /**
+   * The `#!` of a shebang, as bash reads it, which the panel shows at depth 2 (it says no more than how bash reads it, `Token.plain`): to
+   * bash the start of a comment; to the kernel, the mark of a script.
+   */
+  'shebang-magic': tokenText(() => [
+    'bash にとって `#` はコメントの始まりで、`bash script.sh`・`sh script.sh`・`source script.sh`・`. script.sh` ではこの行は無視される。'
+      + 'ファイルをプログラムとして実行すると（`./script.sh`、または PATH から見つかるコマンドとして）、カーネル（それをしないシステムでは bash）が `#!` を読む',
+    'To bash, `#` starts a comment: `bash script.sh`, `sh script.sh`, `source script.sh` and `. script.sh` ignore this line. '
+      + 'When the file is run as a program (`./script.sh`, or a command found on PATH), the kernel reads `#!` (or bash, on a system whose kernel does not)']),
 };

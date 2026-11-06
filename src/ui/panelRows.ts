@@ -478,6 +478,27 @@ function foldDeep(rows: readonly ModelRow[]): void {
   }
 }
 
+/** Whether a row, or a row under it, has an example that starts open (the glob example, `opensGlob`), which a fold would hide. */
+const holdsOpen = (r: ModelRow): boolean => !!r.examples?.some((e) => !e.folded || e.open) || r.children.some(holdsOpen);
+
+/**
+ * At depth 2, a pipeline the cursor is in opens the stage the cursor is on and folds the others to their own row (what the command
+ * does, its role, what its program receives), one press from their parts (usability-9.md, 2.7); where it is (`RowModel.places`) opens them
+ * too. A cursor on no stage (on a `|`) folds none, and neither does a stage with an open example under it. A pipeline's rows are its
+ * stages and the connectors between them (`connect`). (media/panel.js keeps how the rows started while the line is drawn again at the
+ * same depth: a click on a row moves the cursor, and the rows above it do not fold under the pointer.)
+ */
+function foldStages(rows: readonly ModelRow[], cursor: Span['start']): void {
+  const at = { start: cursor, end: cursor };
+  for (const r of rows) {
+    foldStages(r.children, cursor);
+    if (!r.children.some((c) => c.connector)) continue;
+    const stages = r.children.filter((c) => !c.connector);
+    if (!stages.some((c) => within(c.span, at))) continue;
+    for (const c of stages) if (c.children.length && !within(c.span, at) && !holdsOpen(c)) c.folded = true;
+  }
+}
+
 /**
  * A text folded into several rows of a line is said once, on the first: the same words (what double quotes do), or the same message of the catalog with
  * another name in it (`Redirection applied to \`x\``), which says what such a part is in general. A warning stays on each.
@@ -582,6 +603,7 @@ export function rowModel(ex: Pick<LineExplanation, 'items' | 'examples' | 'readi
   if (options.depth === 2 && ex.reading) {
     addNodeRows(rows, ex.reading, build.roles, tokenLines(ex.items), lang, ex.shell);
     foldDeep(rows);
+    if (options.cursor) foldStages(rows, options.cursor);
     sayOnce(rows, build.saying);
   }
   // (Without the data, as in an explanation made for the hover, no mark says what no program receives.)
