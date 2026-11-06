@@ -308,4 +308,4 @@ After it:
 3. **Where the view lives.** The view as a module next to words.ts (src/semantics/wordview.ts). Or fold it into words.ts, which is already 1,100 lines.
 4. **The roadmap.** A roadmap item for steps 2 to 8, placed after the panel redesign, the web page's chrome and the usability test, with step 6 before step 3 of "Trust of a builtin's words from what their fields may be".
 
-Decided 2026-10-31: 1 and 2 as proposed (step 1 alone before the UX work); 3 is left to step 2; 4: steps 2 to 8 are in the roadmap's "Deferred", as step SC1 of [sources.md](sources.md). A step may change the explanations where a clean model gives a simpler text ([sources.md](sources.md), section 2); the hedge texts of [count-hedges.md](count-hedges.md) are such a case (sources.md, M1, part of SC1).
+Decided 2026-10-31: 1 and 2 as proposed (step 1 alone before the UX work); 3 is left to step 2; 4: steps 2 to 8 are step SC1 of [sources.md](sources.md), tracked in #674. A step may change the explanations where a clean model gives a simpler text ([sources.md](sources.md), section 2); the hedge texts of [count-hedges.md](count-hedges.md) are such a case (sources.md, M1, part of SC1).

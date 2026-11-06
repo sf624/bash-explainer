@@ -40,7 +40,9 @@ The host kind came in #202; bats' functions became spec effects in #222 (refacto
 
 The facts cite the sections of the Bash manual that they rest on (functions, `set -e`, pipelines). The catalog cites only the bash manual, and every renderer links its sections; a second source (the bats-core documentation) would need its own links in each renderer, so it is left for later.
 
-## Not done yet
+## Not built (no plan)
+
+Left by YAGNI: none of these has an issue. One is opened when someone needs it.
 
 - bats' functions in the model: partly done (#222). The model reads them by their specs, as builtins ("What is done" above): `run` assigns `$status`, `$output`, `$lines`, `BATS_RUN_COMMAND`, and maybe `$stderr` and `$stderr_lines` (src/dict/bats.ts). What remains: the other `BATS_*` variables; the walk does not read `run eval 'S'` as a script run in `run`'s subshell, as it reads `eval 'S'` (src/semantics/nested.ts), so that string stays one word (test/hosts.test.ts), while `run bash -c 'S'` is read in the new shell, whose slot chain starts with `run`'s subshell; and src/bats.ts still asks `resolveName(…).kind === 'function'` for a file's own `run`.
 - What the code outside the tests sees of bats: bats sources the file from a function (`local` works there, `return` ends the file), with its ERR and DEBUG traps set, and with the `BATS_*` variables; the model reads the top level as a script's.

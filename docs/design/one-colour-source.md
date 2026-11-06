@@ -70,7 +70,7 @@ Measured in Node.js (tsx, the machine of the maintainer under WSL; medians of 5 
 - Explaining a line does not rebuild the models of the whole script. `shellState`, the status model, the trust scan and the argv of commands are kept per tree (`WeakMap`s on the tree or the model): only the first line explained on a tree pays for them, and they are shared with the problems, the panel and the hover. A line explained alone on a fresh 1,500-line tree took 196-224 ms; the next one 0.4-0.7 ms.
 - What dominates after an edit: on a long script, the model, which is linear in the script (0.09 ms a line: `shellState` is 137 of the 200 ms of the first line); on a short one, the lines in view (1-2.5 ms each, 40 on a screen).
 - The problems' pass explains every line on each change (1.4 s on 1,500 lines, in one task); the colours, sharing its explanations, add nothing to it. It is the main blocker of the page's main thread on long scripts, colours or not (see the measurements in the browser).
-- One line has no time bound. A slice explains at least one whole line, and the first slice also builds the models, so a long line is one task. The review measured a line of 1,000 pairs `"a0" $x0` (12.8k characters): 1,714 ms for the line (`documentHighlight` of today's colours: 63 ms); 3,000 pairs: 18.4 s. Main shows its colours before such a freeze; the proof of concept shows none until after it. Reading the explanation's tokens makes the per-line cost the explanation's, which grows with the words of the line, so the colours need a bound per line (relates to [line-budget.md](line-budget.md) and the roadmap's deferred item on a very long line): a line over its budget has no colour (the plain text colour, as for a line that cannot be explained), and the colours of the other lines come first.
+- One line has no time bound. A slice explains at least one whole line, and the first slice also builds the models, so a long line is one task. The review measured a line of 1,000 pairs `"a0" $x0` (12.8k characters): 1,714 ms for the line (`documentHighlight` of today's colours: 63 ms); 3,000 pairs: 18.4 s. Main shows its colours before such a freeze; the proof of concept shows none until after it. Reading the explanation's tokens makes the per-line cost the explanation's, which grows with the words of the line, so the colours need a bound per line (relates to [line-budget.md](line-budget.md) and #673, which bounds a very long line): a line over its budget has no colour (the plain text colour, as for a line that cannot be explained), and the colours of the other lines come first.
 
 ## Strategy
 
@@ -157,7 +157,7 @@ Then:
    - 3b. The full provider and the Language Server's `full`, from the lines the diagnostics have explained and the rest as measured.
 4. src/highlight.ts and src/semanticFacts.ts removed, with their tests (above).
 
-Outside the colours, measured here: the problems' pass explains every line of the script in one task after each change (1.4 s on 1,500 lines). Slicing it, or a worker, is a step of its own (roadmap, "A worker with a time and memory limit").
+Outside the colours, measured here: the problems' pass explains every line of the script in one task after each change (1.4 s on 1,500 lines). Slicing it, or a worker, is a step of its own (#673, "A worker with time and memory limits").
 
 ## Measurements in the browser
 

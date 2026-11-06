@@ -1,6 +1,6 @@
 # Trust of a builtin's words, from what their fields may be
 
-Status: done: step 0 (#504) and step 1, the field domain (src/semantics/fieldshape.ts; nothing reads it yet). The later steps were dropped on 2026-11-06 (YAGNI; [backlog-archive.md](../backlog-archive.md), "Trust of a builtin's words from their fields"). Agreed 2026-10-30: the maintainer approved a redesign, "a design document first, then steps that keep every test passing".
+Status: done: step 0 (#504) and step 1 (#506), the field domain (src/semantics/fieldshape.ts; nothing reads it yet). The later steps were dropped on 2026-11-06 (YAGNI; [backlog-archive.md](../backlog-archive.md), "Trust of a builtin's words from their fields"). Agreed 2026-10-30: the maintainer approved a redesign, "a design document first, then steps that keep every test passing".
 
 The condition and dead-code model (`shellState(…).condition(n)`, `.dead(n)`; [semantics.md](semantics.md), 4.14) may decide nothing that a builtin changes unseen. Some builtins read words that expand at run time, and those words can change what the builtin sets: `printf $x u 2` sets `u` when `$x` is `-v`. PRs #498 and #501 built the check for this from special cases. Each review round found a new hole. This page replaces the special cases with one rule about the fields of a word, and two kinds of stated facts: when the code runs, and which values a variable may have there.
 
