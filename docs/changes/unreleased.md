@@ -8,3 +8,37 @@ The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
 - **The card on the web page.** The pointer that rests where you clicked opens no card: the click already shows the line in the panel. A pointer that moves on to another part of the script opens its card as before, and so does one that comes back to the part later. The card closes on a click, a paste, typing, and Escape, wherever the focus is (the editor, the page, the panel). Before, a click on line 1 could leave a card of 500 px over the lines below, and a click on one of them failed.
 - **The Legend.** It opens under its button over the explanation, as wide as the panel and no higher than the room below it (it scrolls inside), and the explanation under it stays where it is. Escape closes it and the focus goes back to its button; so does a click outside it, the focus leaving the panel (a click in the editor), and a new line. Before, it opened in the flow of the panel, up to 400 px high, and stayed open on the next line. On a line with nothing to explain there is no Legend button; before, an open Legend drew an empty box.
+
+### How sh fails, in the note on a bash-only form
+
+In a `sh`, `dash` or `ash` script, a bash-only form that fails with a status, a syntax error or a stop of the shell says how. Each sentence was measured in dash 0.5.12 and busybox 1.36 ash, and a test (`test/dialect-dash.test.ts`) runs them in both. Where the two differ, the note names the shell. Before, it said "it fails in dash and busybox ash".
+
+| Form | In dash and busybox ash |
+|---|---|
+| `[[ -f x ]]` (dash only; busybox ash has it) | `[[` is run as a command: "not found", status 127. In an `if`, the condition is false. With an unquoted `(` or `)` in it (`[[ $1 =~ ^(yes\|y)$ ]]`, `[[ ( a = b ) ]]`, `[[ a == *(b) ]]`), a syntax error, status 2, as the shell reads the line. |
+| `a=(1 2)`, `cat <<< x`, `echo a \|& cat`, `for ((;;))`, `select`, `;&`, `@(a\|b)`; dash only: `<(cmd)` | A syntax error, status 2: the shell stops as it reads the line, even where the line would never run. The lines before it have run. |
+| dash only: `function f { …; }` | `function` is a command name: "not found", status 127, and the `}` or `()` after it is a syntax error, status 2. The shell stops at the syntax error, or sooner under `set -e`; at the top level the lines before it, even the body, may have run. |
+| `${x^^}`, `${!x}`, `${x@Q}`, `${a[-1]}`, `${ cmd; }`; dash only: `${x/a/b}`, `${x:1}` | "bad substitution", status 2, and the shell stops there. In `$( )`, `( )` or a stage of a pipeline, only that subshell stops, and the script goes on unless `set -e` stops it (`y=$(echo "${x^^}"); echo $?` prints 2; under `set -e` the script stops); the same for `export -f`, `set -o pipefail` and an unset variable that stops a subshell. |
+| `(( i++ ))`, `if (( x > 0 ))` | Two nested subshells, and the text inside runs as a command: "not found", status 127. A `>` in it redirects: `(( x > 0 ))` creates a file `0`. The condition is false. |
+| `declare`, `typeset`, `shopt`, `pushd`, `coproc`, `mapfile`, `print`, `whence`; `source` and `let` in dash | "not found", status 127. |
+| `a+=2` | `a+=2` is taken for a command name: "not found", status 127. |
+| `read -a`; dash: `read -n`, `-s`, `-t`, `-d`, `wait -n`, `printf -v` | The builtin rejects the option: "illegal option", status 2. |
+| `export -f`; dash: `set -o pipefail` | "illegal option", status 2, and the shell stops (a special builtin). |
+| `printf %q` | dash: status 2; busybox ash: status 1. |
+| `>/dev/tcp/host/port` | The redirection fails, as there is no `/dev/tcp` directory: dash status 2; busybox ash status 1. At a special builtin (`exec 3<>/dev/tcp/host/port`, `: </dev/tcp/host/port`) the shell stops there, and nothing after it runs. |
+| dash: `[ a == b ]` | `[` reports "unexpected operator", status 2: the test is false. |
+| dash: `type -t ls` | `-t` is taken for a name: `-t: not found`, status 127. |
+| dash: `trap … ERR` | "bad trap", status 1. |
+| dash: `$'a\'b'` | A syntax error, status 2, unless a later `'` in the script closes the string. |
+
+When a note names one shell (the script is for `dash` or `ash`), the sentence does not name the shell again.
+
+### `=~` in sh
+
+There is no rewrite that fits every regex, so the note names three ways and their limits:
+
+- `case` takes a glob pattern only. `^[0-9]+$` has no glob, but its negation is `''|*[!0-9]*`: `case $s in ''|*[!0-9]*) echo no;; *) echo yes;; esac`.
+- `expr "$s" : '[0-9][0-9]*$'` takes a basic regex and matches it from the start of the string, so `a12` does not match `[0-9]`, where `[[ a12 =~ [0-9] ]]` does.
+- `printf '%s\n' "$s" | grep -Eq '^[0-9]+$'` takes an extended regex.
+
+The test compares the three with `[[ =~ ]]` on the same strings, in dash and in busybox ash.

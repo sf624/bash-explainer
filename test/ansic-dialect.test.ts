@@ -117,8 +117,8 @@ describe('`$\'…\'` in the shell the script is for', () => {
       for (const word of ["$'it\\'s'", "$'\\''"]) {
         const t = token(`echo ${word}`, 'dash', word);
         assert.match(t.explanation, /but that quote ends at the `\\'`, and the `'` after it opens another quoted string$/, word);
-        assert.match(dialectNotes(parser.parse(`echo ${word}`), 0, 'dash', 'en').join('\n'), /`\$'…'` string with `\\'` in it is not available in dash\. Instead, use `printf` \(dash ends the quote at the `\\'`/, word);
-        assert.match(dialectNotes(parser.parse(`echo ${word}`), 0, 'sh', 'en').join('\n'), /with `\\'` in it is POSIX only since 2024 \(it fails in dash\)/, word);
+        assert.match(dialectNotes(parser.parse(`echo ${word}`), 0, 'dash', 'en').join('\n'), /`\$'…'` string with `\\'` in it is not available in dash \(it is a syntax error with status 2, and the shell stops, unless a later `'` in the script closes the string\)\. Instead, use `printf` \(dash ends the quote at the `\\'`/, word);
+        assert.match(dialectNotes(parser.parse(`echo ${word}`), 0, 'sh', 'en').join('\n'), /with `\\'` in it is POSIX only since 2024 \(in dash it is a syntax error with status 2/, word);
         if (have('dash')) assert.match(spawnSync('dash', ['-c', `echo ${word}`], { encoding: 'utf8' }).stderr, /Unterminated quoted string/, word);
       }
       // (Without a `\'`, the plain note.)

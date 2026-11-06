@@ -222,7 +222,7 @@ describe('the panel: what the program receives, drawn', function () {
     const rowCount = await panel.locator('#tree li[data-key]').count();
     await first.click();
     assert.strictEqual(await first.getAttribute('aria-expanded'), 'true');
-    assert.strictEqual(await panel.locator('.posix-said:visible').textContent(), '[[ ]] is not POSIX sh (it fails in dash). Instead, use [ ].');
+    assert.strictEqual(await panel.locator('.posix-said:visible').textContent(), '[[ ]] is not POSIX sh (in dash [[ is run as a command, is not found and gives status 127, so a condition with it is false). Instead, use [ ].');
     assert.strictEqual(await panel.locator('#tree li[data-key]').count(), rowCount, 'it does not fold the row');
     await first.press('Enter');
     assert.strictEqual(await panel.locator('.posix-said:visible').count(), 0);

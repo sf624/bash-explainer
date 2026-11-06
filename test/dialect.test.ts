@@ -190,13 +190,13 @@ describe('the mark "not portable to sh"', () => {
   it('says "POSIX only since 2024" of what POSIX.1-2024 has, with what fails in the shells of today', () => {
     const table: [string, string, string][] = [
       ["echo $'a\\tb'", "a `$'…'` string is POSIX only since 2024 (dash reads a `$` and then a quoted string). Instead, use `printf`.", "`$'…'` の文字列は POSIX では 2024 年版からの書き方です（dash では `$` と引用符の中の文字のままになります）。代わりに `printf` を使う。"],
-      ["echo $'" + "a\\'b'", "a `$'…'` string with `\\'` in it is POSIX only since 2024 (it fails in dash). Instead, use `printf` (dash ends the quote at the `\\'`, and the `'` after it opens another quoted string up to the next `'` of the script, or a syntax error if there is none).", "`\\'` を含む `$'…'` の文字列は POSIX では 2024 年版からの書き方です（dash では動きません）。代わりに `printf` を使う（dash では `\\'` で引用が終わり、その後の `'` からスクリプトの次の `'` までが別の引用になる。次の `'` が無ければ構文エラー）。"],
-      ['case a in a) :;& esac', '`;&` in `case` (fall through) is POSIX only since 2024 (it fails in dash and busybox ash).', '`case` の `;&`（次の分岐へ続ける）は POSIX では 2024 年版からの書き方です（dash・busybox ash では動きません）。'],
-      ['set -o pipefail', '`set -o pipefail` is POSIX only since 2024 (it fails in dash).', '`set -o pipefail` は POSIX では 2024 年版からの書き方です（dash では動きません）。'],
-      ['read -d : x', '`read -d` is POSIX only since 2024 (it fails in dash).', '`read -d` は POSIX では 2024 年版からの書き方です（dash では動きません）。'],
-      ['read -n 1 x', '`read -n` / `-s` / `-t` is not POSIX sh (it fails in dash).', '`read` の `-n` / `-s` / `-t` は POSIX sh にない書き方です（dash では動きません）。'],
-      ['cat <<< x', "a here-string `<<<` is not POSIX sh (it fails in dash and busybox ash). Instead, use `printf '%s\\n' … |` or a here-document.", "ヒアストリング `<<<` は POSIX sh にない書き方です（dash・busybox ash では動きません）。代わりに `printf '%s\\n' … |` やヒアドキュメントを使う。"],
-      ['a=(1)', 'an array is not POSIX sh (it fails in dash and busybox ash). Instead, use the positional parameters (`set -- …`).', '配列は POSIX sh にない書き方です（dash・busybox ash では動きません）。代わりに位置パラメータ（`set -- …`）を使う。'],
+      ["echo $'" + "a\\'b'", "a `$'…'` string with `\\'` in it is POSIX only since 2024 (in dash it is a syntax error with status 2, and the shell stops, unless a later `'` in the script closes the string). Instead, use `printf` (dash ends the quote at the `\\'`, and the `'` after it opens another quoted string up to the next `'` of the script, or a syntax error if there is none).", "`\\'` を含む `$'…'` の文字列は POSIX では 2024 年版からの書き方です（dash では、あとに閉じる `'` がスクリプトになければ終了ステータス 2 の構文エラーになり、シェルが止まります）。代わりに `printf` を使う（dash では `\\'` で引用が終わり、その後の `'` からスクリプトの次の `'` までが別の引用になる。次の `'` が無ければ構文エラー）。"],
+      ['case a in a) :;& esac', '`;&` in `case` (fall through) is POSIX only since 2024 (in dash and busybox ash it is a syntax error with status 2: the shell stops as it reads the line, even if the line would never run).', '`case` の `;&`（次の分岐へ続ける）は POSIX では 2024 年版からの書き方です（dash・busybox ash では終了ステータス 2 の構文エラーです。実行されない行でも、読んだ時点でシェルが止まります）。'],
+      ['set -o pipefail', '`set -o pipefail` is POSIX only since 2024 (in dash `set` rejects `-o pipefail` with `illegal option` and status 2; the shell stops there).', '`set -o pipefail` は POSIX では 2024 年版からの書き方です（dash では `set` が `-o pipefail` を受け付けず、`illegal option` で終了ステータス 2 になり、シェルがそこで止まります）。'],
+      ['read -d : x', '`read -d` is POSIX only since 2024 (in dash `read` rejects the option with `illegal option` and status 2).', '`read -d` は POSIX では 2024 年版からの書き方です（dash では `read` がそのオプションを受け付けず、`illegal option` で終了ステータス 2 になります）。'],
+      ['read -n 1 x', '`read -n` / `-s` / `-t` is not POSIX sh (in dash `read` rejects the option with `illegal option` and status 2).', '`read` の `-n` / `-s` / `-t` は POSIX sh にない書き方です（dash では `read` がそのオプションを受け付けず、`illegal option` で終了ステータス 2 になります）。'],
+      ['cat <<< x', "a here-string `<<<` is not POSIX sh (in dash and busybox ash it is a syntax error with status 2: the shell stops as it reads the line, even if the line would never run). Instead, use `printf '%s\\n' … |` or a here-document.", "ヒアストリング `<<<` は POSIX sh にない書き方です（dash・busybox ash では終了ステータス 2 の構文エラーです。実行されない行でも、読んだ時点でシェルが止まります）。代わりに `printf '%s\\n' … |` やヒアドキュメントを使う。"],
+      ['a=(1)', 'an array is not POSIX sh (in dash and busybox ash it is a syntax error with status 2: the shell stops as it reads the line, even if the line would never run). Instead, use the positional parameters (`set -- …`).', '配列は POSIX sh にない書き方です（dash・busybox ash では終了ステータス 2 の構文エラーです。実行されない行でも、読んだ時点でシェルが止まります）。代わりに位置パラメータ（`set -- …`）を使う。'],
       ['echo $"a"', 'a `$"…"` string is not POSIX sh (in dash and busybox ash the `$` stays, before the string). Instead, write `"…"`.', '`$"…"` の文字列は POSIX sh にない書き方です（dash・busybox ash では `$` がそのまま残ります）。代わりに `"…"` と書く。'],
     ];
     const ja = (code: string): string[] => {
@@ -293,7 +293,7 @@ describe('dialect notes', () => {
   });
   it('words the note for POSIX sh and for a specific shell', () => {
     const notes = (src: string, shell: Parameters<typeof dialectNotes>[2]) => dialectNotes(parser.parse(src), 0, shell, 'en');
-    assert.deepStrictEqual(notes('[[ -f x ]]', 'sh'), ['ⓧ Error: `[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.']);
+    assert.deepStrictEqual(notes('[[ -f x ]]', 'sh'), ['ⓧ Error: `[[ ]]` is not POSIX sh (in dash `[[` is run as a command, is not found and gives status 127, so a condition with it is false). Instead, use `[ ]`.']);
     // In sh, an error only where dash or busybox ash lacks it; what both run (`local`, `echo -n`, `read -p`, `set -E`) is
     // information, "Portability" (three-levels.md, section 10, item 2; the table of `works` is checked in each shell above).
     assert.deepStrictEqual(notes('f() { local v; }', 'sh'), ['ⓘ Portability: `local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it).']);

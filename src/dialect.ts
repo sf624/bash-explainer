@@ -9,6 +9,7 @@ import { Lang } from './i18n';
 import { leastOf, mostOf, pushAll } from './lists';
 import { failsCheck, severityOf } from './levels';
 import { type Note, problemNote } from './messages';
+import { SUBSHELL_STOPS } from './messages-shfail';
 import type { Head } from './messages-heads';
 import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
 import { networkPath, networkTarget } from './dict/syntax';
@@ -23,7 +24,7 @@ import { testWordShape } from './semantics/testwords';
 import { testedFirst } from './semantics/unbound';
 import { bracesInContext, wordFields, type WordEnv } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { builtinRow, COMMON_SH, type Feature, FEATURES, featureWorks, type InShell, LETTER, type Measured, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, works } from './shellfeatures';
+import { builtinRow, type Case, COMMON_SH, type Failure, type Feature, FEATURES, featureWorks, failureOf, type InShell, isFailure, LETTER, type Measured, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, works } from './shellfeatures';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { binaryOperators, parseTest, writtenTestWords } from './testexpr';
 
@@ -417,20 +418,20 @@ function featureHead(id: string, shell: Shell): Head {
  * (`set -u`, `${x:?}`, no operand in `$(( ))`), or only the `subshell` it is read in; `test`: `[` reports an error (status 2); `empty`,
  * `zero`: its value is nothing, or 0 in arithmetic, status 0. Or what the row of FEATURES says, status 0.
  */
-type Does = 'fails' | 'stops' | 'subshell' | 'test' | 'empty' | 'zero' | Exclude<InShell, 'empty' | 'refused' | 'stops'>;
+type Does = 'stops' | 'subshell' | 'test' | 'empty' | 'zero' | Exclude<InShell, 'empty' | 'refused' | 'stops'>;
 type Doing = Partial<Record<Measured, Does>>;
 
 /** What follows "does not set it, so". */
 const UNSET_THEN: Readonly<Record<'stops' | 'subshell' | 'test' | 'empty' | 'zero', readonly [string, string]>> = {
   stops: ['ここでシェルが止まります', 'the shell stops here'],
-  subshell: ['ここでそのサブシェルが止まります（スクリプトは続きます）', 'that subshell stops here, and the script goes on'],
+  subshell: SUBSHELL_STOPS,
   test: ['テストはエラー（終了ステータス 2）になり、偽として扱われます', 'the test reports an error (status 2), and counts as false'],
   empty: ['展開すると空になります', 'it expands to nothing'],
   zero: ['算術式では 0 になります', 'it counts as 0 in arithmetic'],
 };
 
-/** What each shell does, in brackets (`（…）`, ` (…)`). Shells that do the same are named together. */
-function doingText(how: Doing, lang: Lang): string {
+/** What each shell does, in brackets (`（…）`, ` (…)`). Shells that do the same are named together; `alone`: only one shell is meant, which is named around the text, so a failure does not name it again. */
+function doingText(how: Doing, lang: Lang, alone = false): string {
   const s = pick(lang);
   const same = new Map<Does, Measured[]>();
   for (const sh of MEASURED.sh!) {
@@ -440,16 +441,16 @@ function doingText(how: Doing, lang: Lang): string {
   return [...same].map(([does, shells]) => {
     const names = shells.map((sh) => SHELL_NAMES[sh]);
     const named = names.join(s('・', ' and '));
-    if (does === 'fails') return s(`${named} では動きません`, `it fails in ${named}`);
-    if (typeof does === 'object') return s(does.ja(named), does.en(named));
+    if (typeof does === 'object') return s(does.ja(alone && isFailure(does) ? '' : named), does.en(alone && isFailure(does) ? '' : named));
     return s(`${named} には設定されないので、${UNSET_THEN[does][0]}`, `${named} ${names.length > 1 ? 'do' : 'does'} not set it, so ${UNSET_THEN[does][1]}`);
   }).join(s('。', '; '));
 }
 
 /** What a row says a shell that lacks it does there, in the words of its text. */
-function doesOf(f: Feature, sh: Measured): Does {
+function doesOf(f: Feature, sh: Measured, cases: readonly Case[] = []): Does {
   const row = f[sh];
-  return row === undefined || row === 'refused' || row === 'stops' ? 'fails' : row;
+  // (A row that fails has how: `failureOf` finds it, and test/dialect-dash.test.ts checks that every one does.)
+  return row === 'empty' || (typeof row === 'object' && !isFailure(row)) ? row : failureOf(f, sh, cases)!;
 }
 
 /** What the shells of `shell` do with feature `f` when nothing around it says more. */
@@ -477,9 +478,9 @@ function featureMessage(id: string, shell: Shell, lang: Lang, how: Doing = usual
     );
   }
   if (shell === 'bash' || works(f, shell)) return undefined;
-  // (Where it simply fails, "is not available" says it.)
-  const more = how[shell as Measured] && how[shell as Measured] !== 'fails';
-  return s(`${jaJoin(label, 'は')} ${SHELL_NAMES[shell]} では使えません${more ? `（${doingText(how, lang)}）` : ''}。${alt}`, `${label} is not available in ${SHELL_NAMES[shell]}${more ? ` (${doingText(how, lang)})` : ''}.${alt}`);
+  // (A shell that fails says how, without naming itself again.)
+  const more = how[shell as Measured];
+  return s(`${jaJoin(label, 'は')} ${SHELL_NAMES[shell]} では使えません${more ? `（${doingText(how, lang, true)}）` : ''}。${alt}`, `${label} is not available in ${SHELL_NAMES[shell]}${more ? ` (${doingText(how, lang, true)})` : ''}.${alt}`);
 }
 
 /** What bash `version` does with feature `id`, which came in a later release (SINCE). */
@@ -710,6 +711,35 @@ function stopsWhere(n: SyntaxNode, model: StateModel): Does {
   return p.kind === 'subshell' && p.sure ? 'subshell' : 'stops';
 }
 
+/** Whether the tree has a `(` or `)` the shell reads as its own syntax in the `[[ ]]` `n`: a grouping, or in a regex or a pattern, as dash and busybox ash read it, not escaped or quoted. */
+function parenthesesIn(n: SyntaxNode): boolean {
+  const walk = (x: SyntaxNode): boolean => {
+    if (x.type === '(' || x.type === ')') return true;
+    // (A leaf is a run of unquoted text: a quoted part is a `string` of its own, and a substitution has its own syntax. A backslash escapes.)
+    if (x.type === 'regex' || x.type === 'extglob_pattern') return /(?<!\\)(?:\\\\)*[()]/.test(x.text);
+    return ['extended_test', 'binary_expression', 'unary_expression', 'parenthesized_expression', 'concatenation'].includes(x.type) && x.children.some(walk);
+  };
+  return walk(n);
+}
+
+/** The cases of its row (`Feature.cases`) that the node `n` of a feature is in, read from the tree and the names. */
+function casesAt(n: SyntaxNode, shell: Shell, model: StateModel): Case[] {
+  const cases: Case[] = [];
+  if (n.type === 'extended_test' && parenthesesIn(n)) cases.push('parenthesis');
+  const owner = n.type === 'file_redirect' && n.parent?.type === 'command' ? n.parent : undefined;
+  const name = owner && field(owner, 'name');
+  // (A redirection that fails at a special builtin ends the shell: POSIX 2.8.1.)
+  const run = owner && name ? resolveName(model, name.text, owner, { shell, command: true }) : undefined;
+  if (run?.kind === 'builtin' && run.special) cases.push('special');
+  return cases;
+}
+
+/** How `sh` fails at `n`: the row's, in the cases `n` is in; a failure that stops the shell stops only a subshell where `n` runs in one (`stopsWhere`). */
+function doesAt(row: Feature, sh: Measured, n: SyntaxNode, shell: Shell, model: StateModel): Does {
+  const does = doesOf(row, sh, casesAt(n, shell, model));
+  return isFailure(does as InShell) && (does as Failure).subshell && stopsWhere(n, model) === 'subshell' ? (does as Failure).subshell! : does;
+}
+
 /** Whether `[` or `test`, read as `sh` runs it with what it does not set unset, reports an error (status 2): `[ "$UID" -ne 0 ]`, `[ $UID = 0 ]`. */
 function testFails(n: SyntaxNode, sh: Measured, model: StateModel): boolean {
   const c = ancestor(n, (a) => a.type === 'command');
@@ -749,10 +779,9 @@ function unsetDoes(n: SyntaxNode, sh: Measured, tree: SyntaxTree, model: StateMo
   return testFails(n, sh, model) ? 'test' : 'empty';
 }
 
-/** How `sh` fails at the feature `row` found at `n`: `${a[0]}`, of a row whose `a=(…)` is refused, is read when it runs. */
-function faultOf(row: Feature, sh: Measured, n: SyntaxNode): Fault {
-  const said = row[sh];
-  return said === 'refused' && readWithItsLine(n) ? 'read' : said === 'refused' || said === 'stops' ? 'stop' : 'status';
+/** How a shell that fails as `failure` says does so at `n`: `${a[0]}`, of a row whose `a=(…)` is refused, is read when it runs. */
+function faultOf({ fault }: Failure, n: SyntaxNode): Fault {
+  return fault === 'read' && readWithItsLine(n) ? 'read' : fault === 'status' ? 'status' : 'stop';
 }
 
 const FAULTS: readonly Fault[] = ['read', 'stop', 'status'];
@@ -772,12 +801,12 @@ function measuredReading(f: Found, tree: SyntaxTree, shell: Shell, failing: Read
   if (f.node.type === 'command' && isFunction(resolveName(model, field(f.node, 'name')!.text, f.node, { shell, command: true }))) return undefined;
   const how: Doing = {};
   for (const sh of shells) {
-    const does = works(row, sh) ? undefined : row[sh] === 'empty' ? unsetDoes(f.node, sh, tree, model) : doesOf(row, sh);
+    const does = works(row, sh) ? undefined : row[sh] === 'empty' ? unsetDoes(f.node, sh, tree, model) : doesAt(row, sh, f.node, shell, model);
     if (does) how[sh] = does;
   }
   const done = Object.values(how);
   if (!done.length) return undefined;
-  const failed = (Object.keys(how) as Measured[]).filter((sh) => how[sh] === 'fails').map((sh) => faultOf(row, sh, f.node));
+  const failed = (Object.keys(how) as Measured[]).filter((sh) => isFailure(how[sh] as InShell)).map((sh) => faultOf(how[sh] as Failure, f.node));
   if (!failed.length) return { kind: 'differs', how };
   const fault = FAULTS.find((x) => failed.includes(x))!;
   return { kind: fault !== 'read' && keptQuiet(quietAt(f.node, model), fault) ? 'differs' : 'unsupported', how, fault };
