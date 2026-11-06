@@ -68,7 +68,7 @@ export const ui = {
           command: '1 つのコマンド', compound: '1 つの複合コマンド（`if`・`for`・`[[ ]]` など）', group: 'パイプラインやリスト（`|`・`&&`・`||`・`;`）でつないだコマンド',
         },
         names: {
-          program: '{shell}が PATH から見つけて起動するプログラム', builtin: '{shell}に組み込まれたコマンド', function: 'シェルの関数（スクリプトで定義したもの。bats では `run` など、bats が用意したものも）', alias: '{shell}が読むときに置き換えるエイリアス',
+          program: '{shell}が PATH から見つけて起動するプログラム', builtin: '{shell}に組み込まれたコマンド', function: 'シェルの関数（スクリプトで定義したもの、または bats の `run` のようにホストが用意したもの）', alias: '{shell}が読むときに置き換えるエイリアス',
           keyword: '{shell}の予約語', none: '実行できるものが見つからない名前', sourced: 'プログラムか、前に読み込んだファイルの関数',
         },
         roles: {
