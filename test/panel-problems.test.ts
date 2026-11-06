@@ -315,6 +315,10 @@ describe('the box "Problems on this line"', () => {
     assert.deepStrictEqual(pointers.map((p) => [p.level, p.where, p.title, p.line]).slice(0, 1), [['info', 'Caveat on line 1', 'Go to line 1', 0]]);
     // (Its icon says the level, which "Caveat" does not: as in the box.)
     assert.strictEqual(pointers[0].levelName, 'Information');
+    // ("Error" says its level itself: no name for its icon.)
+    const errorAround = 'for f in $((09)); do\n  echo hi\ndone';
+    const [error] = problemsAround(explain(errorAround, 1), documentIssues(doc(errorAround), 'en', { script: 'said' }), [], 'en');
+    assert.deepStrictEqual([error.level, error.where, error.levelName], ['error', 'Error on line 1', undefined]);
     assert.match(pointers[0].head, /split on spaces/);
     assert.strictEqual(problemsAround(explain(text, 1, 'ja'), documentIssues(doc(text), 'ja', { script: 'said' }), [], 'ja')[0].where, '行 1 の注意');
     // (Its own line, and a problem it says itself, are in the box.)
