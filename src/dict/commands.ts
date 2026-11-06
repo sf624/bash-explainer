@@ -1440,7 +1440,7 @@ export const core: Record<string, CommandSpec> = {
       { pattern: [runs({ run: 'shell-string', joinsWords: true, env: 'exported', shell: 'sh' })] },
     ],
   }),
-  which: cmd('PATH にあるプログラムのパスを表示する（ビルトイン・関数・エイリアスは調べない。bash が実際に何を実行するかは `type` か `command -v` で調べる）', 'Show the path of a program found in PATH (builtins, functions and aliases are not looked at; `type` or `command -v` tells what bash really runs)', [
+  which: cmd('PATH だけを探してパスを表示する（bash が実行するものは `type`・`command -v` で調べる）', 'Show the path found in PATH only (`type` or `command -v` tells what bash runs)', [
     ['-a|--all', '見つかったものをすべて表示', 'print all matches in PATH'],
   ]),
   jq: cmd('JSON を整形・抽出・変換する', 'Filter and transform JSON', [

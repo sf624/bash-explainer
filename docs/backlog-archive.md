@@ -739,6 +739,14 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - **Reason:** Rare: the body comes after `source lib` in the text, so it is placed after it, though it belongs to `cat`, which runs first.
 - **Input and what is missing:** `cat <<EOF; source lib` with a body: the body's expansions take no value of the script, though bash expands them before `source` runs.
 
+## From the review of the `which` description (#696)
+
+### `which` options differ between implementations
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `missing-explanation`.
+- **Reason:** Rare: the spec of `which` has only `-a|--all`, and the implementations disagree, so one spec cannot be right for all of them.
+- **Input and what is missing:** `which --all ls` (debianutils `which` rejects `--all` with status 2; GNU which has it) and `which -s ls` (debianutils, BSD and macOS `which` have `-s`; GNU which has no `-s`): the explanation does not say which implementation takes the option.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".
