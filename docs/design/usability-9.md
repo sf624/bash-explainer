@@ -244,7 +244,7 @@ Each step is one PR and keeps every test passing. The order puts the largest eff
 | U2 | The hint toward POSIX sh, as Q2 decided: the count from `dialectIssues` for sh, the strip's line and its button. Done in #688 | 2.1 | Web page (VS Code: Q3) | The tab's line only, no layout |
 | U3 | Names and state: the depth names and their digits, the panel's headline from the note's label, what Clear and a new script reset (the kind, the name, the shell) | 2.6, 2.9, 2.10 | Web page, VS Code panel | No |
 | U4 | The hover card after a click, and the Legend as a popover (with the empty one). Done in #637 | 2.4, 2.11 | Web page, VS Code panel | No |
-| U5 | Depth 1 shows bash's steps where a step acts; the glob example open by the rule; the tester's text kept | 2.3 | VS Code panel, web panel | No |
+| U5 | Depth 1 shows bash's steps where a step acts; the glob example open by the rule; the tester's text kept. Done in #687 | 2.3 | VS Code panel, web panel | No |
 | U6 | How sh fails where a form fails with a status, in the FEATURES table, each text measured in dash and busybox ash | 2.8 | Every output | No. Done in #638 |
 | U7 | "In short" without nesting, with its range named; the bats functions' gloss; the shebang's row; the pipeline's other stages folded at depth 2; the length measured again | 2.7 | VS Code panel, web panel, CLI | No |
 | U8 | The phone's sheet: the grab area, the fling, the full height below the file name, the app bar during a drag; the fold arrows' targets and a name's tap; the half height measured again | 2.5, part of 2.7 | Phone | Yes |
