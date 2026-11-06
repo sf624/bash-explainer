@@ -1367,7 +1367,7 @@ body[data-depth="2"] .row.connector {
   overflow-wrap: anywhere;
 }
 
-/* The row under the line box: the switch "What the program receives" and the Key (media/panel.js `drawViewRow`). It wraps between the two only. */
+/* The row under the line box: the switch "What the program receives" and the Legend (media/panel.js `drawViewRow`). It wraps between the two only. */
 #view-row {
   display: flex;
   flex-wrap: wrap;
@@ -1468,7 +1468,7 @@ body[data-depth="2"] .row.connector {
   content: " \25b4";
 }
 
-/* The Key: one entry a line, its sample first; a long text wraps beside its sample. */
+/* The Legend: one entry a line, its sample first; a long text wraps beside its sample. */
 #key {
   list-style: none;
   margin: 0 0 0.75rem;
@@ -1591,7 +1591,7 @@ body.vscode-high-contrast-light .text code.ev-word.recv-word {
   border-style: dashed;
 }
 
-/* (The Key's sample is not in a `.text`: it has its own edge, as the chip's.) */
+/* (The Legend's sample is not in a `.text`: it has its own edge, as the chip's.) */
 .key-word.recv-many {
   border: 1px dashed var(--c-muted);
   padding: 0 0.3em;
