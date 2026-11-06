@@ -476,7 +476,7 @@ The panel handles keys 1, 2 and W when the focus is in it. The page binds none o
 
 After P10 and the chrome series ([chrome-redesign.md](chrome-redesign.md), C9), as the roadmap's usability test. The users are simulated: agents, not people. So the test shows what an agent can find and do in the panel. It is not a measure of human usability. VS Code is not tested: the users drive the web page.
 
-- **Users:** five simulated users (fresh agents with no project context): a beginner, a certification learner (LPIC/LinuC), a sysadmin, a developer and a UX designer, the personas of the usability test of October 2026. At least two models among them; the report gives the spread by model.
+- **Users:** five simulated users (fresh agents with no project context): a beginner, a certification learner (LPIC/LinuC), a sysadmin, a developer and a UX designer, the personas of the persona rounds of 2026-10-27. At least two models among them; the report gives the spread by model.
 - **Briefing:** each agent gets its persona, the page and the tasks. It is not told the goal score, that the panel was redesigned, or what the earlier rounds found.
 - **Build:** the web page built from main (`npm run build:web -- --channel=next`), served locally. Each user drives the running page in a browser: moves the cursor, changes depth, flips the switch, opens examples, copies a fix. No screenshots handed to them. The browser sessions run through `~/.claude/bin/heavy`.
 - **Sessions:** at 1280 px and at 390 px; one user works in Japanese.
@@ -494,6 +494,24 @@ After P10 and the chrome series ([chrome-redesign.md](chrome-redesign.md), C9), 
 - **Goal:** every user passes the task gate, and the average score is 9/10 or more. Below it, the findings become explanation bugs or panel PRs, and the test runs again with new agents. After two runs below the goal, the maintainer decides.
 - **The panel's length:** the test judges the length of the panel too. The budget of 1,420 px at 1280 and 1,980 at 390 with the switch on (section 6, P10) was accepted on 2026-11-05 on a real device, on the promise that the usability test would say whether a page of this length costs readers.
 - **People:** a short session with real people, if the maintainer can arrange one, before the README claims anything about usability.
+
+### Results (2026-11-06)
+
+The kit and the data are not in the repository. Two runs on the web page, each with five simulated users: a beginner and an LPIC learner at 390 px (the LPIC learner in Japanese), a sysadmin, a developer and a UX designer at 1280 px; Sonnet for the beginner and the sysadmin, Opus for the others. The baseline is v0.9.1, with the same personas.
+
+- **Run 1** (main e39afae0): scores 7, 8, 7, 7, 7, an average of 7.2; the baseline 7, 7, 7, 6, 7, an average of 6.8. Every user solved the 6 keyed tasks on both sites. Answered from the page alone: main 30/30, the baseline 25/30 (all five misses were task 5, the glob's reasons). Rated easy: main 19/30, the baseline 10/30.
+- **Explanation bugs** found by run 1, fixed before run 2: quoted parameters shown as several words in sh (#631), bats' `run` badged as a program (#630), "bash" named where another shell reads the script (#632), `^` and `$` called the line's start and end where the whole text is matched (#629); then the Legend's "function" (#633).
+- **Run 2** (main 71cac086, after the fixes): scores 8, 8, 8, 7, 7, an average of 7.6. No explanation bug was reported, and every task was solved from the page.
+- **Verdict:** below the goal of 9. The maintainer decided on 2026-11-06 to release 0.10.0 first, then work toward 9/10 ("Usability toward 9/10" in the roadmap).
+- **The remaining findings** are all about the UI:
+  - the copied fix is only a fragment of the line (all users);
+  - portability needs a manual switch to POSIX sh, with no hint (all users);
+  - answers sit behind depth 2 or closed details;
+  - the editor's hover card covers the code on a click; the Legend stays open, and Escape does not close it;
+  - names are not consistent: the depth labels, "Portability" against "Pitfall", the file name kept after a paste, three "Copy" buttons;
+  - on a phone, the panel's drag bar and its full height;
+  - the panel's length at depth 2, and run-on "In short" sentences.
+- **On the method:** the sessions ran 2 to 6 minutes, and the scripts were short (the corpus has few real scripts of 10 to 40 lines). 8 of the 10 scores of run 1 were 7: an agent's score moves little. Whether a user answered from the page, and whether a task was rated easy, told the sites apart better than the score.
 
 ## 8. The open questions, answered
 
