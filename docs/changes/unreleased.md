@@ -111,6 +111,10 @@ GNU make runs a recipe line directly as a program, with no shell, when the line 
 - `-I{} -n1` warns nothing and changes nothing (`-I` already runs one argument per command): no row is marked. Any other count after `-I` wins: `-I{} -n2` runs `echo X {} a b` (the replacement is dropped; xargs: "options --replace and --max-args/-n are mutually exclusive, ignoring previous --replace value"), and the row of `-I` says it is ignored. Before, the row of `-n2` was not marked and the example replaced `{}`.
 - `-I{} -n1 -L1` takes `-L`.
 
-### The `{}` of `find -exec` at depth 2
+### The `{}` of `find -exec`
 
-At depth 2, the role line of the `{}` in `find . -exec rm {} \;` (and `-execdir`, `+`, and through `sudo` or `env`) says "placeholder for the path · find reads it, not bash" (「プレースホルダー（パスに置き換わる）」), as `find` replaces it before it runs `rm`. Before, it said "operand · rm reads it", as if `rm` got the word `{}`. The other words of the command that `find` runs (`-f`, `644`) stay read by that command. `{}` of `xargs -I{} rm {}` is not covered (the replace string can be any text).
+The placeholder of `find -exec`, `-execdir`, `-ok` and `-okdir` is the word whose value is `{}`: also quoted or escaped (`'{}'`, `"{}"`, `\{\}`), as `find`'s manual writes it. `find` replaces it with each path before it runs the command, so:
+
+- **Depth 2.** The role line reads "argument → placeholder for the path" (「プレースホルダー（パスに置き換わる）」), and the second name opens to "find reads it, not bash". Before, for `find . -exec rm {} \;` it read "argument → operand" and "rm reads it", as if `rm` got the word `{}`. This holds with `sudo` or `env` in between, and the other words of the command (`-f`, `644`) stay read by that command. Before, a quoted or escaped `{}` was an operand of `rm`, and `\{\}` had no note that `find` replaces it.
+- **`$1` of `sh -c`.** In `find . -exec sh -c 'echo "$1"' _ {} \;`, the row of `$1` says "`-exec` passes the path it found in place of `{}`" (and `$0`, when `{}` directly follows the string, that `-exec` replaces it). Before, it said "it starts as `{}`", which is false.
+- Not covered: `{}` inside a longer word (`{}.bak`, which GNU `find` also replaces), and the replace string of `xargs -I{} rm {}`, which can be any text.

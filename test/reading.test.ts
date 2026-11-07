@@ -124,36 +124,84 @@ describe('the reading tree of a line', () => {
     assert.strictEqual(find(r, '-n', 'command').reader, 'grep');
   });
 
-  it('reads the `{}` of `find -exec` as find\'s placeholder: find reads it, and the command it runs gets the path', () => {
-    for (const [src, runs] of [['find . -name x -exec rm {} \\;', 'rm'], ['find . -exec sudo rm {} +', 'sudo'], ['find . -execdir chmod 644 {} \\;', 'chmod']] as const) {
-      const r = explain(src).reading!;
-      const brace = find(r, '{}', 'command');
-      assert.strictEqual(brace.reader, 'find', src);
-      assert.strictEqual(brace.placeholder, true, src);
-      assert.strictEqual(chipOf(brace, 'en'), 'placeholder for the path', src);
-      assert.strictEqual(chipOf(brace, 'ja'), 'プレースホルダー（パスに置き換わる）', src);
-      assert.strictEqual(find(r, runs, 'command').reader, 'find', src);
-    }
-    // (The other words of the command it runs are its own.)
-    assert.strictEqual(find(explain('find . -exec chmod 644 {} \\;').reading!, '644', 'command').reader, 'chmod');
-    assert.strictEqual(find(explain('find . -exec sudo rm -f x {} +').reading!, '-f', 'command').reader, 'rm');
-    // Without `find`, the word is an operand of the command that reads it: `rm {}` removes a file of that name.
-    const plain = find(explain('rm {}').reading!, '{}', 'command');
-    assert.strictEqual(plain.placeholder, undefined);
-    assert.strictEqual(plain.reader, 'rm');
-    assert.strictEqual(chipOf(plain, 'en'), 'operand');
-  });
+  describe('the placeholder of `find -exec`', () => {
+    const jaAnalyzer = new Analyzer('ja');
+    /** The tokens of a line, depth first. */
+    const walk = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...walk(t.children)]);
+    const SAID = { en: 'replaced with the path that was found', ja: '見つかったファイルのパスに置き換わる' };
+    const FORMS: [string, string][] = [
+      ['find . -name x -exec rm {} \\;', 'rm'], ['find . -exec sudo rm {} +', 'sudo'], ['find . -execdir chmod 644 {} \\;', 'chmod'], ['find . -ok rm {} \\;', 'rm'], ['find . -okdir rm {} \\;', 'rm'],
+      // (Quoted: the tool gets the same word. Its own manual quotes the braces in its examples.)
+      ["find . -type f -exec file '{}' \\;", 'file'], ['find . -exec rm "{}" \\;', 'rm'], ['find . -exec rm \\{\\} +', 'rm'], ["find . -exec sudo rm '{}' \\;", 'sudo'],
+    ];
+    const tokens = (src: string, lang: 'en' | 'ja'): Token[] => walk((lang === 'en' ? analyzer : jaAnalyzer).explainLine(parser.parse(src), 0, 'bash').items);
 
-  it('agrees with GNU find: find replaces `{}`, so the command it runs gets the path, and bash alone passes it as it is', () => {
-    const dir = mkdtempSync(path.join(process.env.TMPDIR ?? tmpdir(), 'find-placeholder-'));
-    try {
-      writeFileSync(path.join(dir, 'f'), '');
-      const run = (script: string) => spawnSync('bash', ['--norc', '--noprofile', '-c', script], { encoding: 'utf8', cwd: dir, timeout: 10000 }).stdout;
-      assert.strictEqual(run("find . -type f -exec printf '[%s]' {} \\;"), '[./f]');
-      assert.strictEqual(run("printf '[%s]' {}"), '[{}]');
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    it('reads it as find\'s: find reads it, and the command it runs gets the path (unquoted, quoted and escaped)', () => {
+      for (const [src, runs] of FORMS) {
+        const r = explain(src).reading!;
+        const brace = readingNodes(r).filter((n) => n.layer === 'command' && n.placeholder);
+        assert.strictEqual(brace.length, 1, src);
+        assert.strictEqual(brace[0].reader, 'find', src);
+        assert.strictEqual(chipOf(brace[0], 'en'), 'placeholder for the path', src);
+        assert.strictEqual(chipOf(brace[0], 'ja'), 'プレースホルダー（パスに置き換わる）', src);
+        assert.strictEqual(find(r, runs, 'command').reader, 'find', src);
+      }
+      // (The other words of the command it runs are its own.)
+      assert.strictEqual(find(explain('find . -exec chmod 644 {} \\;').reading!, '644', 'command').reader, 'chmod');
+      assert.strictEqual(find(explain('find . -exec sudo rm -f x {} +').reading!, '-f', 'command').reader, 'rm');
+      // Without `find`, the word is an operand of the command that reads it: `rm {}` removes a file of that name.
+      for (const src of ['rm {}', "rm '{}'"]) {
+        const plain = readingNodes(explain(src).reading!).find((n) => n.layer === 'command' && n.kind === 'argument')!;
+        assert.strictEqual(plain.placeholder, undefined, src);
+        assert.strictEqual(plain.reader, 'rm', src);
+        assert.strictEqual(chipOf(plain, 'en'), 'operand', src);
+      }
+    });
+
+    it('says at depth 1 that find replaces it, in both languages, for each form', () => {
+      for (const [src] of FORMS) {
+        for (const lang of ['en', 'ja'] as const) {
+          const marked = tokens(src, lang).filter((t) => t.placeholder);
+          assert.strictEqual(marked.length, 1, `${lang} ${src}`);
+          assert.ok(marked[0].explanation.includes(SAID[lang]), `${lang} ${src}: ${marked[0].explanation}`);
+        }
+      }
+      // (Not a `{}` past the terminator, which no `-exec` runs.)
+      assert.strictEqual(tokens("find . -exec rm x \\; -name '{}'", 'en').filter((t) => t.placeholder).length, 0);
+    });
+
+    it('says of `$1` in `sh -c` that find passes the path, not that it starts as `{}`', () => {
+      const text = (src: string, lang: 'en' | 'ja', label: string): string => tokens(src, lang).find((t) => t.label === label)!.explanation;
+      for (const src of ['find . -exec sh -c \'echo "$1"\' _ {} \\;', 'find . -exec sh -c \'echo "$1"\' _ \'{}\' \\;']) {
+        assert.match(text(src, 'en', '$1'), /argument #1 of the `sh -c` string; `-exec` passes the path it found in place of `'?\{\}'?`/, src);
+        assert.match(text(src, 'ja', '$1'), /`-exec` が `'?\{\}'?` の代わりに、見つけたパスを渡す/, src);
+        assert.doesNotMatch(text(src, 'en', '$1'), /starts as/, src);
+      }
+      assert.match(text('find . -exec sh -c \'echo "$0"\' {} \\;', 'en', '$0'), /`-exec` replaces `\{\}` with the path it found first/);
+      // A word that is not a placeholder is still what it starts as.
+      assert.match(text('find . -exec sh -c \'echo "$1"\' _ x \\;', 'en', '$1'), /\(it starts as `x`\)/);
+      assert.match(text('sh -c \'echo "$1"\' _ {}', 'en', '$1'), /\(it starts as `\{\}`\)/);
+    });
+
+    it('agrees with GNU find: it replaces the word, so the command it runs gets the path, and bash alone passes `{}` as it is', () => {
+      const dir = mkdtempSync(path.join(process.env.TMPDIR ?? tmpdir(), 'find-placeholder-'));
+      try {
+        writeFileSync(path.join(dir, 'f'), '');
+        // (The program, not a function of the shell that may run another find.)
+        const run = (script: string) => spawnSync('bash', ['--norc', '--noprofile', '-c', `find() { /usr/bin/find "$@"; }; ${script}`], { encoding: 'utf8', cwd: dir, timeout: 10000 }).stdout;
+        assert.strictEqual(run("find . -type f -exec printf '[%s]' {} \\;"), '[./f]');
+        assert.strictEqual(run("find . -type f -exec printf '[%s]' '{}' \\;"), '[./f]');
+        assert.strictEqual(run('find . -type f -exec printf \'[%s]\' "{}" \\;'), '[./f]');
+        assert.strictEqual(run("find . -type f -exec printf '[%s]' \\{\\} +"), '[./f]');
+        assert.strictEqual(run("find . -type f -execdir printf '[%s]' {} \\;"), '[./f]');
+        // `$1` of the string find runs is the path; `$0` is the path when `{}` follows the string directly.
+        assert.strictEqual(run("find . -type f -exec sh -c 'printf \"[%s]\" \"$1\"' _ {} \\;"), '[./f]');
+        assert.strictEqual(run("find . -type f -exec sh -c 'printf \"[%s]\" \"$0\"' {} \\;"), '[./f]');
+        assert.strictEqual(run("printf '[%s]' {}"), '[{}]');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
   });
 
   it('reads a here-document as a redirection with its body, on each line of it', () => {

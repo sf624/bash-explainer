@@ -136,11 +136,11 @@ export interface Token {
    */
   expands?: 'glob' | 'split' | 'brace' | 'elements';
   /**
-   * On the token of a command another one runs with a placeholder (`rm` of `find -exec rm {} \;`): the option of the command around it that
-   * replaces the placeholder in the words of this one (`-exec`). The command reads the words as written, and this one gets what replaces them.
+   * On the token of a command another one runs, with words that one replaces first (`rm` of `find -exec rm {} \;`): the command around
+   * reads those words as written (`placeholder`), and this one gets what replaces them.
    */
-  placeholderOf?: string;
-  /** On the token of such a placeholder (`{}`, under a token with `placeholderOf`): the command around reads it as written, and replaces it before the one it runs gets it. */
+  placeholders?: true;
+  /** On the token of such a word (`{}`, `'{}'`, under a token with `placeholders`): the command around reads it as written, and replaces it before the one it runs gets it. */
   placeholder?: true;
   /** On the outermost tokens of an embedded language: which language (`regex`, `sed`, `jq`…; `EmbeddedLang`). */
   language?: string;
@@ -258,9 +258,10 @@ export interface ExplainOptions {
   hostProblems?: readonly string[];
   /**
    * Set by the analyzer for a string a shell runs (`sh -c '…' sh "$msg"`): the shell (`sh -c`) and the words its
-   * `$0`, `$1`… start as, in order; `more`: words after them whose number is known only when it runs (`"$@"`).
+   * `$0`, `$1`… start as, in order; `replacedBy`: for each word, the option that replaces it with a path
+   * before it runs the command (`-exec`, for find's `{}`), where one does; `more`: words after them whose number is known only when it runs (`"$@"`).
    */
-  positional?: { via: string; words: readonly string[]; more: boolean };
+  positional?: { via: string; words: readonly string[]; replacedBy: readonly (string | undefined)[]; more: boolean };
 }
 
 /**

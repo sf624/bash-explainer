@@ -38,6 +38,7 @@ import type { Explainer } from './context';
 import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
 import { nested, skeletal, sortTokens, sourcePos, graftExpansions } from './nodes';
+import { markPlaceholders, placeholderWords } from './placeholders';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
 import { elementsOf } from '../semantics/elements';
 import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
@@ -120,7 +121,8 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
     ordinals.set(o, { n: b.n + by, sure: b.sure && sure });
     return { n: b.n + 1, sure: b.sure };
   };
-  cx.withCommand({ cmd: parse.command, args: words, parse, nodes, spec }, () => {
+  // (The words an option of the command around replaces, find's `{}`, stay known to the commands it runs.)
+  cx.withCommand({ cmd: parse.command, args: words, parse, nodes, spec, ...(cx.command?.placeholders ? { placeholders: cx.command.placeholders } : {}) }, () => {
     for (const { word, role } of parse.roles) {
       const a = nodes[word];
       switch (role.role) {
@@ -765,7 +767,8 @@ function shellParams(cx: Explainer, role: CommandRole, parse: ArgvParse, nodes: 
   // (`countOf` gives nothing for a word that stays one word.)
   const known = after.findIndex((w) => { const c = countIn(w, cx.state); return c !== undefined && c.max !== 1; });
   const via = (cx.slotEnvs.get(nodes[word])!.links.at(-1) as SlotLink).via;
-  return { via, words: (known < 0 ? after : after.slice(0, known)).map((w) => w.text), more: known >= 0 };
+  const given = known < 0 ? after : after.slice(0, known);
+  return { via, words: given.map((w) => w.text), replacedBy: given.map((w) => cx.command?.placeholders?.get(w)), more: known >= 0 };
 }
 
 /**
@@ -830,19 +833,10 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   // (`enable -n echo; command echo --version`: `command` runs the program, and its words are the program's.)
   const offProgram = role.slot.run === 'current-shell' && res?.kind === 'file' && res.disabled ? role.spec?.program : undefined;
   const notReached = role.slot.run === 'exec' && isPlainWord(first) && !!role.spec?.builtin && !role.spec.program; // (`nohup let x=09`: no program has that name, so nothing reads its words: `builtin-or-function-as-program`.)
+  const placeholders = placeholderWords(cx, role, nodes);
   const children = test ? testArgs(cx, first.parent!, commandTest(test, words.slice(1), bashTest(cx, test)), test.closingOperand !== undefined, !!test.builtin)
     : ownWords(cx, vspec ?? offProgram ?? (notReached ? NO_SPEC : undefined), name, first, parse, role.spec, nodes, words.slice(1), refusal);
-  if (role.of) {
-    // `{}` is replaced by find (and `xargs -I{}`) with each path.
-    const mark = (ts: Token[]) => ts.forEach((t) => {
-      if (t.label === '{}') {
-        t.explanation = cx.text('find-exec-placeholder');
-        t.placeholder = true;
-        t.children = [];
-      } else mark(t.children);
-    });
-    mark(children);
-  }
+  markPlaceholders(cx, placeholders, children);
   const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
   // (`builtin cd`, `command echo`: the builtin runs in this shell, as if bash ran it: no other command runs it.)
   const direct = role.slot.run === 'current-shell' && res?.kind === 'builtin';
@@ -857,7 +851,7 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   // what it reads; not a builtin `builtin` does not find.)
   const basis = kind === 'command' && res?.kind !== 'none' ? programBasis(cx, value ?? name, role.spec) : undefined;
   return {
-    kind, ...(role.of ? { placeholderOf: role.of } : {}), ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}), ...(direct ? { refs: builtinSections(res.name, res.special) } : program.length ? { refs: program } : {}), ...(basis ? { basis } : {}),
+    kind, ...(placeholders.length ? { placeholders: true as const } : {}), ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}), ...(direct ? { refs: builtinSections(res.name, res.special) } : program.length ? { refs: program } : {}), ...(basis ? { basis } : {}),
     label: shorten(name),
     explanation: (role.of ? cx.text('wrapped-command-to-run') : '') + (direct ? '' : cx.text('wrapped-runs', { name })) + explanation,
     span, children, summary: `${name}: ${explanation}`,

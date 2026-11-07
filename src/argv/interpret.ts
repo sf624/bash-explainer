@@ -100,7 +100,7 @@ export type ArgRole =
    * an operand's: the role of each word it becomes, when they are known and the others are not the command's
    * (`trap {x,EXIT}`: the action, then a signal). `readings`, as an option's (`sudo -u $u ls`).
    */
-  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; each?: OperandSpec[]; readings?: Readings }
+  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; each?: OperandSpec[]; readings?: Readings; placeholders?: number[] }
   /** The word that ends an option's command (`;` of `find -exec … ;`), and its text (one of the option's `until.terminators`). */
   | { role: 'terminator'; text: string; of: string }
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
@@ -713,7 +713,9 @@ class Reader {
       const words = this.words.slice(0, st.end).map((w, i) => (i > last ? untilWord(w) : ''));
       const { at: j, refusal } = untilEnd(opt.until, words, last + 1, st.end);
       // (Not `appended`: `xargs find . -exec echo --version \;` adds its words after the `;`.)
-      if (j > last + 1) st.roles.set(last + 1, this.command(slot, last + 1, j, flag));
+      // (The words the tool replaces before it runs the command: by their value, so `'{}'` and `\{\}` are too.)
+      const placeholders = range(last + 1, j).filter((i) => opt.until!.placeholder !== undefined && words[i] === opt.until!.placeholder);
+      if (j > last + 1) st.roles.set(last + 1, { ...this.command(slot, last + 1, j, flag), ...(placeholders.length ? { placeholders } : {}) });
       // (The first one: find tells that one.)
       if (refusal) st.refusal ??= { ...refusal, option: flag, at: last };
       if (j < st.end) { st.roles.set(j, { role: 'terminator', text: words[j]!, of: flag }); return j; }
