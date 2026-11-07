@@ -93,11 +93,12 @@ describe('the web page: the panel\'s header', function () {
         await chooseDepth(page, 2);
         await until('the rows of depth 2', () => panel().evaluate('document.body.dataset.depth'), (d) => d === '2');
         await same('depth 2');
-        // (Two rows of this line start folded at depth 2, so the button says Expand all: one press opens everything, the next folds it. The state in the panel, and the
+        // (Three rows of this line start folded at depth 2 (a row whose parts all come at depth 2, and the pipeline's stages the cursor is not on,
+        // with their examples: usability-9.md, 2.7), so the button says Expand all: one press opens everything, the next folds it. The state in the panel, and the
         // name it sends the page a moment later: the name alone is that of the state before until the answer comes.)
         const toggle = lang === 'en' ? { fold: 'Collapse all', unfold: 'Expand all' } : { fold: 'すべて折りたたむ', unfold: 'すべて展開する' };
         const says = (what: string, name: string, folded: (rows: number) => boolean) => until(what, async () => [await page.locator('#collapse').getAttribute('aria-label'), await panel().evaluate(`document.querySelectorAll('#tree li.collapsed').length`)] as const, ([n, rows]) => n === name && folded(rows as number));
-        await says('some rows folded at first', toggle.unfold, (rows) => rows === 2);
+        await says('some rows folded at first', toggle.unfold, (rows) => rows === 3);
         await same('some rows folded');
         await page.locator('#collapse').click();
         await says('everything open', toggle.fold, (rows) => rows === 0);
