@@ -505,8 +505,12 @@ export function sedExample(script: string, opts: { quiet: boolean; extended: boo
     if (!lines.length) input.push(neutral(k++), neutral(k++));
     while (input.length < Math.max(maxLine + 1, hasAddress ? 3 : 1)) input.push(neutral(k++));
   }
-  if (distinct && lines.length === 1 && !numericOnly) {
-    const other = others.find((x) => !input.includes(x) && runSed(script, [x], opts)?.[0] !== x);
+  // (Room for it: more than 8 lines are not shown, and the example would be lost. It must also come out different from
+  // every line already there, or uniq and sort -u would still show one line.)
+  if (distinct && lines.length === 1 && !numericOnly && input.length < 8) {
+    const printed = (l: string) => runSed(script, [l], opts)?.join('\n');
+    const taken = input.map(printed);
+    const other = others.find((x) => !input.includes(x) && printed(x) !== x && !taken.includes(printed(x)));
     if (other) input.push(other);
   }
   if (input.length > 8) return undefined;

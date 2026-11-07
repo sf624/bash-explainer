@@ -769,6 +769,14 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - **Reason:** Rare, and each errs on the safe side: the line is explained as a shell line, as before, never wrongly as "no shell".
 - **Input and what is missing:** `'A=b' cmd` (make sees `=` in the quoted word and sends it to the shell; we read the first word's text, so it is the same); a whitespace-only `IFS` (make may run the line directly; any `IFS` in the makefile sends every line to the shell here); `SHELL ?= /bin/dash` (the default is already defined, so make ignores it and runs directly; any `SHELL` other than `/bin/sh` sends the file to the shell here); a `SHELL` reset to `/bin/sh` later in the file, or set for one target only (the whole file is read as shell); `$(CC) -c a.c` and other lines with a variable (the value decides; only a builtin's name gets the note); a file name with shell characters or spaces in `$@` (taken as plain); BSD make (not checked; only GNU make 4.3 is measured); a whitespace-only tab line under `.ONESHELL` (counted as a recipe line); the name-unquoted note (`'echo' x`, `p'ro'be`) is skipped on a line without a shell.
 
+## From the pipeline sample with distinct lines (#658)
+
+### Samples of a sed without `s` or with an odd second line
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `missing-explanation`.
+- **Reason:** Rare, and the sample is valid: it shows less than it could.
+- **Input and what is missing:** `sed -n '/e/p' | sort -u` keeps one line (the second line is made only for an `s` pattern); `y/abc/xyz/ | uniq` keeps four copies of one line; the second line of an `s` pattern can start with a space (`s/^user=//p` gives ` xyz`).
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".
