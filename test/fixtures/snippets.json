@@ -1489,6 +1489,7 @@
  "mkfs.ext4 -L data /dev/sdb1",
  "mksh",
  "modified after 2024-01-01",
+ "mytool x",
  "name",
  "needs.build.outputs.v",
  "needs.build.result",
