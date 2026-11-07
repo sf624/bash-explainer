@@ -189,7 +189,7 @@ describe('the automatic shell of a host file: what the chip, its popover and the
       // (Every part runs with none: the host's own lines say so too.)
       assert.strictEqual(at('dockerfile', 'Dockerfile', `FROM alpine\n${instr}\n`, 0), 'none', instr);
     }
-    assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM alpine\nCMD ["sh", "-c", "make"]\n', 1), sh);
+    assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM x\nCMD ["sh", "-c", "make"]\n', 1), sh);
     assert.strictEqual(at('dockerfile', 'Dockerfile', 'FROM alpine\nRUN make\nCMD ["npm", "start"]\n', 0), 'parts');
     assert.strictEqual(at('python', 'a.py', 'import subprocess\nsubprocess.run(["ls", "-l"])\n', 1), 'none');
     // (A script is the file's own reading.)

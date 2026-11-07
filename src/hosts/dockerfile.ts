@@ -135,7 +135,8 @@ function commandHead(b: Builder, i: number): { instr: string; onbuild: boolean; 
  * images (`alpine:3.20`, `docker.io/library/alpine`); any other image, or one named by a variable (`$BASE`), is any `sh`.
  */
 function imageShell(image: string): Shell {
-  const ref = /^(?:docker\.io\/)?(?:library\/)?([a-z0-9]+(?:[._-][a-z0-9]+)*)(?::([\w.-]+))?(?:@\S+)?$/.exec(image);
+  // (A tag may hold a build argument, `golang:${GO_VERSION}-alpine`: its written `-alpine` decides. The name may not.)
+  const ref = /^(?:docker\.io\/)?(?:library\/)?([a-z0-9]+(?:[._-][a-z0-9]+)*)(?::([\w.${}-]+))?(?:@\S+)?$/.exec(image);
   if (!ref) return 'sh';
   const [, repo, tag = ''] = ref;
   if (repo === 'alpine' || repo === 'busybox' || /(?:^|-)alpine/.test(tag)) return 'ash';
@@ -144,6 +145,8 @@ function imageShell(image: string): Shell {
 
 /** What a stage's shell-form instructions run with; a later stage FROM it starts with what it ended with. */
 interface StageShell {
+  /** The image's `/bin/sh` (`imageShell`), which a SHELL or an exec form that names `sh` runs too. */
+  image: Shell;
   shell: Shell;
   pipefail: boolean;
   /** Shell-form instructions run with PowerShell or cmd, not a POSIX shell: they are not explained. */
@@ -155,19 +158,24 @@ export function dockerfile(b: Builder): void {
   // Each stage (`FROM`) starts again with its image's: `/bin/sh -c`, which sh by the image (`imageShell`), or `cmd /S /C`
   // on Windows images. A stage FROM an earlier one (`FROM build`) starts with what that one ended with, its SHELL too:
   // the image keeps it.
+  let image: Shell = 'sh';
   let shell: Shell = 'sh';
   let pipefail = false;
   let notShell = false;
   /** The stages so far, by name (`FROM … AS build`; Docker reads the names in any case). */
   const stages = new Map<string, StageShell>();
   let stage: string | undefined;
+  /** The shell a program name runs in this stage: `sh` (`/bin/sh`) is the image's. */
+  const shellOf = (prog: string): Shell | undefined => (prog === 'sh' ? image : shellFromName(prog));
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];
     const from = /^\s*FROM\s+(?:--[\w-]+(?:=\S*)?\s+)*(\S+)(?:\s+AS\s+(\S+))?/i.exec(line);
     if (from) {
-      if (stage !== undefined) stages.set(stage, { shell, pipefail, notShell });
-      ({ shell, pipefail, notShell } = stages.get(from[1].toLowerCase()) ?? {
-        shell: imageShell(from[1]),
+      if (stage !== undefined) stages.set(stage, { image, shell, pipefail, notShell });
+      const sh = imageShell(from[1]);
+      ({ image, shell, pipefail, notShell } = stages.get(from[1].toLowerCase()) ?? {
+        image: sh,
+        shell: sh,
         pipefail: false,
         notShell: /mcr\.microsoft\.com\/(windows|powershell)|\b(windowsservercore|nanoserver|servercore|ltsc\d{4})\b/i.test(from[1]),
       });
@@ -199,7 +207,7 @@ export function dockerfile(b: Builder): void {
       if (instr === 'SHELL') {
         notShell = /^(powershell|pwsh|cmd)(\.exe)?$/i.test(prog);
         if (notShell) { i = last; continue; }
-        shell = shellFromName(prog) ?? 'sh';
+        shell = shellOf(prog) ?? 'sh';
         pipefail = words.some((w, n) => w.value === 'pipefail' && /^-\w*o$/.test(words[n - 1]?.value ?? ''));
         execWords(b, words);
         b.region(i, last, ['Dockerfile の SHELL', 'Dockerfile SHELL'], 'bash', [{ spec: { id: 'dockerfile-shell', params: {} } }]);
@@ -209,7 +217,7 @@ export function dockerfile(b: Builder): void {
       // `RUN ["sh", "-c", "script"]`: the string after `-c` is a shell script.
       const c = words.findIndex((w, n) => n > 0 && /^-\w*c$/.test(w.value));
       // (`busybox` runs a shell only as the applet `sh` or `ash`: `busybox -c` is "applet not found".)
-      const target = prog.replace(/\d+(\.\d+)*$/, '') === 'busybox' && !/^a?sh$/.test(words[1]?.value ?? '') ? undefined : shellFromName(prog);
+      const target = prog.replace(/\d+(\.\d+)*$/, '') === 'busybox' && !/^a?sh$/.test(words[1]?.value ?? '') ? undefined : shellOf(prog);
       if (target && c > 0 && words[c + 1]) {
         const script = words[c + 1];
         const o = (b.outs[script.line] ??= new LineOut());

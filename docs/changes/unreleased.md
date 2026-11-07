@@ -180,7 +180,9 @@ A shell-form `RUN`, `CMD` or `ENTRYPOINT` runs with `/bin/sh -c`, and which sh t
 
 - `alpine`, `busybox`, and the `-alpine` tags of the other official images (`node:20-alpine`, `python:3.12-alpine3.20`, built FROM alpine): busybox ash. `RUN [[ -n "$V" ]] && echo ok` has no note (busybox ash runs `[[ ]]`); `RUN a=(1 2)` is an Error that names busybox ash ("it is a syntax error with status 2"). Before, `[[ ]]` was an Error "in dash `[[` is run as a command, is not found and gives status 127", and `--check` failed on a Dockerfile that builds.
 - `debian` and `ubuntu`, with any tag: dash. `[[ ]]` stays an Error, now "`[[ ]]` is not available in dash"; what dash runs but POSIX does not have (`local`, `echo -n`) has no "Portability" note.
-- Any other image (`node:20`, `myorg/alpine`, `ghcr.io/…`, `${BASE}`): any POSIX sh, as before, with the Error where dash or busybox ash fails.
+- A build argument in the tag is read by what is written around it: `golang:${GO_VERSION}-alpine` and `node:$NODE_VERSION-alpine` are busybox ash, `debian:${CODENAME}-slim` dash.
+- Any other image (`node:20`, `myorg/alpine`, `ghcr.io/…`, `${BASE}`, `node:${TAG}`): any POSIX sh, as before, with the Error where dash or busybox ash fails.
+- `sh` named explicitly is the image's sh too: `SHELL ["/bin/sh", "-eo", "pipefail", "-c"]`, and the exec form `RUN ["/bin/sh", "-c", "…"]`. Another shell named (`SHELL ["/bin/bash", "-c"]`) is that shell, as before.
 - A stage FROM an earlier stage (`FROM build`) starts with the shell that stage ended with, its `SHELL` (and `pipefail`) too: the image keeps them. Before, every `FROM` started again with `/bin/sh`.
 - The shell chip says it: "busybox ash" or "dash" for such a line, instead of "POSIX sh".
 
