@@ -313,6 +313,8 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     { id: 'unquoted-variable-as-path', input: "trap 'rm -f $tmp' EXIT", why: 'string' },
     { id: 'nounset-unbound', input: "bash -c 'set -u; f() { echo \"$z\"; }; f'", why: 'string' },
     { id: 'regex-backslash-dropped', input: '[[ $x =~ ^[\\s]+$ ]]', why: 'none' },
+    // (find refuses `{}` inside a word before `+`: which of `\;` or `{}` alone is meant, no edit can say.)
+    { id: 'find-action-refused', input: "find . -exec sh -c 'echo {}' +", why: 'none' },
     // (The style checks: several words after `=`, which have no one meaning as a value, or a redirection among them;
     // a `{` with no `}` after it; an escaped `]` or `}`, or a `]` that is not the opener's; a redirection that stands
     // for a comparison only by its target, a number (`[ $a 2>5 ]`), or with `>>`, another redirection, no word after it
