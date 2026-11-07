@@ -405,8 +405,9 @@ describe('the panel: one view with a depth', function () {
 
   // At depth 2 every stage of a pipeline starts folded whenever the line is drawn anew: another line, a new text of it, another depth.
   // Typing and a paste open nothing, though they leave the cursor at the end. A stage opens when the reader moves the cursor into it with
-  // no edit (a click or a tap in the editor, a key), which also drops a fold the viewer chose there; a click on its row opens or folds it.
-  // Drawn again with the same line, text and depth, the panel folds or closes nothing (the maintainer's rule of 2026-11-07; usability-9.md, 2.7).
+  // no edit (a click or a tap in the editor, a key: not told apart), which also drops a fold the viewer chose there, even where the cursor
+  // was in it already; a click on its row opens or folds it. Drawn again with the same line, text and depth, the panel folds or closes
+  // nothing (the maintainer's rules of 2026-11-07 and 2026-11-08; usability-9.md, 2.7).
   /** The labels of the rows drawn folded, in order. */
   const foldedRows = (panel: Frame) => panel.evaluate(`[...document.querySelectorAll('#tree li.collapsed > .item > .row .label')].map((l) => l.textContent).join()`) as Promise<string>;
   /** The whole text `name`, as a regular expression. */
@@ -524,8 +525,8 @@ describe('the panel: one view with a depth', function () {
   });
 
   it('opens again at depth 2 a stage the viewer folded with ▸ when the reader taps it in the editor where the cursor is in it already (usability-9.md, 2.7)', async () => {
-    // (The maintainer's complaint: tap `grep`, ▸ on grep, tap `grep` again: it stayed folded, as the cursor had not left it. A pointer's
-    // move drops the fold of the stage it lands in; a key's, only of a stage it enters, as the test below keeps.)
+    // (The maintainer's complaint: tap `grep`, ▸ on grep, tap `grep` again: it stayed folded, as the cursor had not left it. Any move
+    // drops the fold of the stage it lands in, as a key's does in the test below.)
     const { page, panel, close } = await emptyAtDepth2('en');
     await page.keyboard.insertText(PIPELINE);
     await until('every stage folded', () => foldedRows(panel), (f) => f === 'grep,sort,uniq');
@@ -554,7 +555,7 @@ describe('the panel: one view with a depth', function () {
     await close();
   });
 
-  it('keeps folded at depth 2 a stage the viewer folded while a key moves the cursor inside it; a move out and back in opens it (usability-9.md, 2.7)', async () => {
+  it('opens again at depth 2 a stage the viewer folded with ▸ when a key moves the cursor inside it, and one folded where the cursor is not when the reader clicks into it (usability-9.md, 2.7)', async () => {
     const { page, panel, close } = await emptyAtDepth2('en');
     await page.keyboard.insertText(PIPELINE);
     await until('every stage folded', () => foldedRows(panel), (f) => f === 'grep,sort,uniq');
@@ -566,13 +567,11 @@ describe('the panel: one view with a depth', function () {
     await foldButton(panel, 'grep').click();
     await until('grep folded', () => foldedRows(panel), (f) => f === 'grep,sort');
     await page.locator('.cm-content').focus();
+    // (The maintainer's rule of 2026-11-08: a key is a move as a tap is, so it drops the fold of the stage the cursor is in.)
     await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(400);
-    assert.strictEqual(await foldedRows(panel), 'grep,sort', 'a key inside grep keeps the fold the viewer made');
-    await clickWord(page, 'uniq');
-    await page.waitForTimeout(300);
-    await clickWord(page, 'grep');
     await until('grep open again', () => foldedRows(panel), (f) => f === 'sort');
+    await page.waitForTimeout(300);
+    assert.strictEqual(await foldedRows(panel), 'sort', 'a key inside grep opens it again');
     // (▸ on a stage the cursor is not in, then a click into it: it opens again.)
     await foldButton(panel, 'uniq').click();
     await until('uniq folded', () => foldedRows(panel), (f) => f === 'sort,uniq');

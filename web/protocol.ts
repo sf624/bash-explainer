@@ -2,7 +2,6 @@
 import type { Span } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
 import type { Lang } from '../src/i18n';
-import type { Move } from '../src/ui/cursorMoves';
 import type { Kind } from './samples';
 
 export const THEMES = ['auto', 'light', 'dark'] as const;
@@ -17,8 +16,8 @@ export interface CopyState {
   text: string; kind: Kind; line: number; col: number; lang: Lang; theme: Theme; choice: { shell?: Shell; yq?: string };
   /** The settings that differ from the defaults (copies built before the settings dialog read `choice` only). */
   settings?: Record<string, unknown>;
-  /** The reader moved the cursor with no edit, by a pointer or a key (src/ui/cursorMoves.ts): the panel opens the stage it moved into. */
-  moved?: Move;
+  /** The reader moved the cursor with no edit (src/ui/cursorMoves.ts): the panel opens the stage it moved into. */
+  moved?: boolean;
 }
 /** From the compare page to a copy. */
 export type ToCopy = { type: 'bx-state' } & CopyState;

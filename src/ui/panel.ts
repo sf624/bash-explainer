@@ -10,38 +10,13 @@ import { unreadableThemeNotice } from './builtinThemes';
 import { THEME_SETTINGS, themeRoleColours } from './themeColours';
 import { panelPalette, paletteVars, type PanelBase } from './themePalette';
 import { contained } from '../failures';
-import { CursorMoves, type Move } from './cursorMoves';
+import { CursorMoves } from './cursorMoves';
+import { followMoves } from './followMoves';
 
 /** Where the panel's depth is kept between sessions (the webview's own state dies with the panel). */
 const STATE_KEY = 'bashExplainer.panelState';
 
 /** Side pane that follows the cursor and shows a regex101-style breakdown of the current line. */
-/**
- * Tells `moves` what VS Code says of the cursor in a document the panel explains (`isTarget`): a change of the selection by a key
- * (`Keyboard`) or a pointer (`Mouse`; typing and a paste are of the kind `Keyboard` too: the text they put tells them apart), the editor open now or another, an
- * edit (integration/extension.itest.ts checks them on typing, a paste, Delete, the keys, undo and selections set by an extension). A
- * change in another document, as a README, schedules no line, so it leaves the moves as they are.
- */
-export function followMoves(moves: CursorMoves, isTarget: (doc: vscode.TextDocument) => boolean): vscode.Disposable[] {
-  const { Keyboard, Mouse } = vscode.TextEditorSelectionChangeKind;
-  const ends = (doc: vscode.TextDocument, sels: readonly vscode.Selection[]) => sels.flatMap((s) => [doc.offsetAt(s.anchor), doc.offsetAt(s.active)]);
-  // (The editor open already: its first move is one.)
-  const active = vscode.window.activeTextEditor;
-  if (active && isTarget(active.document)) moves.selected(active.document, undefined, []);
-  return [
-    vscode.window.onDidChangeTextEditorSelection((e) => {
-      const doc = e.textEditor.document;
-      if (isTarget(doc)) moves.selected(doc, e.kind === Mouse ? 'pointer' : e.kind === Keyboard ? 'key' : undefined, ends(doc, e.selections));
-    }),
-    vscode.window.onDidChangeActiveTextEditor((e) => {
-      if (e && isTarget(e.document)) moves.selected(e.document, undefined, []);
-    }),
-    vscode.workspace.onDidChangeTextDocument((e) => {
-      if (e.contentChanges.length) moves.edited(e.document, e.contentChanges);
-    }),
-  ];
-}
-
 export class PanelController implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
   /** The user closed the panel; do not reopen it automatically until asked. */
@@ -181,7 +156,7 @@ export class PanelController implements vscode.Disposable {
   }
 
   /** Sends the line at the cursor; `moved`, after a move of the reader's that scheduled it (`schedule`). */
-  private post(moved?: Move): void {
+  private post(moved?: boolean): void {
     if (!this.panel) return;
     const lang = this.service.lang;
     const t = ui[lang];
