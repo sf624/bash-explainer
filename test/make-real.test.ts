@@ -10,6 +10,7 @@ import { Analyzer } from '../src/analyzer';
 import { explainHostedLine, extractShell } from '../src/hosts';
 import { recipeRun } from '../src/hosts/makerun';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 /** The first words make sends to the shell; each gets a probe program of its name, to see whether make or the shell ran it. */
 const SHELL_COMMANDS = ['alias', 'bg', 'break', 'case', 'cd', 'command', 'continue', 'eval', 'exec', 'exit', 'export', 'fc', 'fg', 'for', 'getopts', 'hash', 'if', 'jobs', 'login', 'logout', 'read', 'readonly', 'return', 'set', 'shift', 'test', 'times', 'trap', 'type', 'ulimit', 'umask', 'unalias', 'unset', 'wait', 'while'];
@@ -130,8 +131,9 @@ describe('Makefile recipe lines make runs with no shell, against GNU make', () =
       const seen = makeRun(makefile);
       for (const [tag, noShell] of Object.entries(expected)) {
         const ran = seen.find((s) => s.words[0] === tag);
-        assert.ok(ran, `${tag} ran: ${makefile}`);
-        assert.strictEqual(ran!.parent === 'make', noShell, `make: ${tag}: ${makefile}`);
+        // (A shell that fails on the flags, dash on `-o pipefail`, never runs the probe: it was not make that ran it.)
+        if (noShell) assert.ok(ran, `${tag} ran: ${makefile}`);
+        assert.strictEqual(ran?.parent === 'make', noShell, `make: ${tag}: ${makefile}`);
       }
     }
   });
@@ -174,6 +176,19 @@ const FILE_CASES: [string, Record<string, boolean>][] = [
   ['all:\n\tprobe t0 a \\\n\t; b\n', { t0: false }],
   ['all:\n\t# c\n\tprobe t0\n', { t0: true }],
   ['all:\n\tprobe t0 # c\n', { t0: false }],
+  // (.SHELLFLAGS: only the default `-c` and `-ec` keep the line out of the shell.)
+  ['.SHELLFLAGS := -c\nall:\n\tprobe t0\n', { t0: true }],
+  ['.SHELLFLAGS = -ec\nall:\n\tprobe t0\n', { t0: true }],
+  ['.SHELLFLAGS := -eu -c\nall:\n\tprobe t0\n', { t0: false }],
+  ['.SHELLFLAGS := -eu -o pipefail -c\nall:\n\tprobe t0\n', { t0: false }],
+  ['.SHELLFLAGS := -xc\nall:\n\tprobe t0\n', { t0: false }],
+  ['.SHELLFLAGS := -euc\nall:\n\tprobe t0\n', { t0: false }],
+  // (SHELL in its other spellings; a comment sets nothing.)
+  ['export SHELL = /bin/dash\nall:\n\tprobe t0\n', { t0: false }],
+  ['all: SHELL := /bin/dash\nall:\n\tprobe t0\n', { t0: false }],
+  ['SHELL ::= /bin/dash\nall:\n\tprobe t0\n', { t0: false }],
+  ['# SHELL = /bin/dash\nall:\n\tprobe t0\n', { t0: true }],
+  ['all:\n\tprobe t0\n\tSHELL = /bin/dash\n', { t0: true }],
 ];
 
 describe('Makefile recipe lines with no shell: the host\'s reading', () => {
@@ -233,5 +248,30 @@ describe('Makefile recipe lines with no shell: the host\'s reading', () => {
     // (`$@` is make's text by then. With a shell, the pitfall stands.)
     assert.ok(!explain('all:\n\trm -f $@\n', 1).notes.join('\n').includes('is not quoted'));
     assert.match(explain('all:\n\trm -f $@ ;\n', 1).notes.join('\n'), /is not quoted/);
+  });
+
+  it('does not say a shell runs `$@` where none does', () => {
+    const direct = explain('all:\n\trm -f $@\n', 1);
+    assert.ok(!/shell runs/.test(JSON.stringify(direct)), 'no shell in the note or the token');
+    assert.match(direct.notes.join('\n'), /expanded by make before the line runs/);
+    assert.match(JSON.stringify(explain('all:\n\trm -f $@ ;\n', 1)), /expanded by make before the shell runs/);
+  });
+
+  it('reads the first word of a line without a shell as a program, never as a keyword of bash', () => {
+    // (`time make` runs /usr/bin/time; `until false` runs a program `until`, which is not found.)
+    const types = (src: string, kind: 'makefile' | 'dockerfile' = 'makefile') => {
+      const extracted = extractShell(kind, src);
+      const ex = explainHostedLine(new Analyzer('en'), createUnbashParser().parse(extracted.text), extracted, src.split('\n'), 1, 'en')!;
+      return { text: JSON.stringify(ex), kinds: allTokens(ex.items).map((t) => t.kind) };
+    };
+    for (const [src, kind] of [['all:\n\ttime make\n', 'makefile'], ['all:\n\tuntil false\n', 'makefile'], ['FROM x\nCMD ["time", "make"]\n', 'dockerfile']] as const) {
+      const { text, kinds } = types(src, kind);
+      assert.ok(!kinds.includes('keyword'), src);
+      assert.match(text, /No shell reads these words, so this is the program, not the shell's reserved word|reserved word of the shell, not a command/, src);
+    }
+    // (With a shell, it is the keyword.)
+    assert.ok(types('all:\n\ttime make; true\n').kinds.includes('keyword'));
+    // (The program's own words keep their columns.)
+    assert.match(types('all:\n\ttime make\n').text, /Measure the run time and resource use of a command/);
   });
 });
