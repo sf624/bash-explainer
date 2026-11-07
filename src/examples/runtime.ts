@@ -12,13 +12,19 @@ import { pushAll } from '../lists';
 const XARGS = shortKeys('0rtxnLIdPil', { '-a': '_' });
 
 /**
- * xargs' options, read with its dictionary spec, and the command it runs (`echo` when none is given). `-i` and `-l`,
- * whose value is only attached (`-i@`, `-l2`), are `-I {}` and `-L 1` without one.
+ * xargs' options, read with its dictionary spec, and the command it runs (`echo` when none is given). `-l`, whose value is only
+ * attached (`-l2`), is `-L 1` without one. Whether `-I` or `-i` is in effect (`replacing`: the interpreter's `mode`, which `-n` and `-L` cancel), and
+ * the words of the command that hold its replace string (`replaced`: their indices in `words`, with the string, from the command role's `placeholder`),
+ * come from the interpreter too: the simulator does not read `-I` itself.
  */
-function xargsOptions(words: (string | undefined)[]): { p: Parsed; command: (string | undefined)[] } {
+function xargsOptions(words: (string | undefined)[]): { p: Parsed; command: (string | undefined)[]; replacing: boolean; replaced: Map<number, string> } {
   const p = parseOptions('xargs', words, XARGS);
-  p.opts = p.opts.map(([n, v]) => (n === 'i' ? ['I', v || '{}'] : n === 'l' ? ['L', v || '1'] : [n, v]));
-  return { p, command: p.command === undefined ? ['echo'] : words.slice(p.command) };
+  p.opts = p.opts.map(([n, v]) => (n === 'l' ? ['L', v || '1'] : [n, v]));
+  const role = p.parse.roles.find((r) => r.word === p.command)?.role;
+  const ph = role?.role === 'command' ? role.placeholder : undefined;
+  // (A word that is the string alone is the item; one that holds it has it replaced from the left.)
+  const replaced = new Map<number, string>([...(ph?.whole ?? []), ...(ph?.within ?? [])].map((i) => [i, ph!.text]));
+  return { p, command: p.command === undefined ? ['echo'] : words.slice(p.command), replacing: p.parse.mode === 'replace', replaced };
 }
 
 /** Split xargs input the default way: blanks and newlines separate, quotes and backslashes group. */
@@ -52,11 +58,12 @@ function xargsTokens(text: string): string[] {
 
 /** The command lines xargs runs for `input` (the text on its stdin). The replace string is replaced in the arguments of the command, not in its name. */
 export function runXargs(words: (string | undefined)[], input: string): string[][] {
-  const { p, command: cmd } = xargsOptions(words);
+  const { p, command: cmd, replacing, replaced } = xargsOptions(words);
   if (cmd.some((w) => w === undefined)) throw new Unsupported('non-literal command');
   const command = cmd as string[];
   const get = (c: string) => [...p.opts].reverse().find(([n]) => n === c)?.[1];
-  const replace = get('I');
+  const start = p.command ?? 0;
+  const withItem = (item: string) => command.map((w, i) => { const text = replaced.get(start + i); return text === undefined ? w : w.split(text).join(item); });
   const delim = p.opts.some(([n]) => n === '0') ? '\0' : get('d')?.replace(/^\\n$/, '\n').replace(/^\\t$/, '\t');
   let items: string[];
   if (delim !== undefined) {
@@ -64,11 +71,11 @@ export function runXargs(words: (string | undefined)[], input: string): string[]
     // (With -d , the newline that ends the input stays in the last item, as in GNU xargs.)
     if (items[items.length - 1] === '') items.pop();
     // With -I, each item is a run of its own (`-0 -I{}`), blanks and empty items kept.
-    if (replace !== undefined) return items.map((item) => command.map((w, i) => (i === 0 ? w : w.split(replace).join(item))));
-  } else if (replace !== undefined) {
+    if (replacing) return items.map(withItem);
+  } else if (replacing) {
     // Without a delimiter -I takes whole lines, with leading blanks removed and empty lines skipped.
     items = input.split('\n').map((l) => l.replace(/^[ \t]+/, '')).filter((l) => l !== '');
-    return items.map((item) => command.map((w, i) => (i === 0 ? w : w.split(replace).join(item))));
+    return items.map(withItem);
   } else if (get('L') !== undefined) {
     const per = Number(get('L'));
     const lines = input.split('\n').filter((l) => l.trim() !== '');
@@ -98,14 +105,14 @@ export function showCommand(words: string[]): string {
 /** Input that shows how xargs groups items, and the commands that result. */
 export function xargsExample(words: (string | undefined)[]): { input: string; commands: string[] } | undefined {
   try {
-    const { p } = xargsOptions(words);
+    const { p, replacing } = xargsOptions(words);
     const get = (c: string) => p.opts.find(([n]) => n === c)?.[1];
     const files = ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt'];
     let input: string;
     if (p.opts.some(([n]) => n === '0')) input = files.slice(0, 3).join('\0') + '\0';
     else if (get('d') !== undefined) input = files.slice(0, 3).join(get('d')!.replace(/^\\n$/, '\n')) + '\n';
     else if (get('L') !== undefined) input = 'a.txt b.txt\nc.txt\nd.txt e.txt\n';
-    else if (get('I') !== undefined) input = 'a.txt\nmy file.txt\nc.txt\n';
+    else if (replacing) input = 'a.txt\nmy file.txt\nc.txt\n';
     else input = files.join('\n') + '\n';
     const commands = runXargs(words, input).map(showCommand);
     return { input, commands };

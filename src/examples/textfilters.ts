@@ -26,6 +26,8 @@ export interface Parsed {
   operands: (string | undefined)[];
   /** The index of the word that starts the command this one runs (`xargs … CMD`), if any. */
   command?: number;
+  /** The argument interpreter's reading of the words, which the options above come from (its `mode`, and the `placeholder` of the command's role, are read from it). */
+  parse: ArgvParse;
 }
 
 /** The parse of a command's words with its dictionary spec, as the explanation reads them; a word that is not literal is undefined. */
@@ -41,7 +43,8 @@ export function parseWords(cmd: string, words: (string | undefined)[]): ArgvPars
  * spec recognises by its form (`head -5`: `-n 5`).
  */
 export function parseOptions(cmd: string, words: (string | undefined)[], supported: Supported, pattern?: (flag: string) => [string, string]): Parsed {
-  const out: Parsed = { opts: [], operands: [] };
+  const parse = parseWords(cmd, words);
+  const out: Parsed = { opts: [], operands: [], parse };
   const option = (r: ArgRole, word: number): void => {
     if (r.role === 'pattern-option' && pattern) { out.opts.push(pattern(r.flag)); return; }
     if (r.role !== 'option') throw new Unsupported(`${r.role} ${words[word]}`);
@@ -53,7 +56,6 @@ export function parseOptions(cmd: string, words: (string | undefined)[], support
     out.opts.push([key, r.value ? words[word]!.slice(r.value.attached) : '']);
   };
   const skipped = new Set<number>();
-  const parse = parseWords(cmd, words);
   // (A line the tool refuses, `grep -E -F`, runs nothing.)
   if (parse.refused) throw new Unsupported('refused');
   for (const { word, role } of parse.roles) {

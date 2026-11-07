@@ -25,6 +25,11 @@ describe('xargs agrees with GNU xargs', () => {
     [['-I{}', '-n01'], ['echo', 'X', '{}']], [['-I{}', '--max-args', '1'], ['echo', 'X', '{}']], [['-I{}', '-n2', '-n1'], ['echo', 'X', '{}']], [['-I{}', '-n1', '-n2'], ['echo', 'X', '{}']],
     [['-n2', '-I{}'], ['echo', 'X', '{}']], [['-I{}', '-n2', '-L1'], ['echo', 'X', '{}']], [['-n1', '-I{}', '-n2'], ['echo', 'X', '{}']],
     [['-n1', '-n2'], ['echo', 'X']], [['-L1', '-L2'], ['echo', 'X']], [['-I{}', '-I[]'], ['echo', '{}[]']],
+    // The replace string given apart (`-I %`), by `--replace=`, attached to `-i`; held by one word alone, within words, or not by any.
+    [['-I', '%'], ['echo', '%', '%.bak', 'x%y%']], [['--replace=%'], ['echo', 'a%b']], [['-i%'], ['echo', 'a%b', '%']], [['-I{}'], ['echo', '{}.bak', 'x{}y{}']], [['-I{}'], ['echo', 'x']],
+    // The option in effect after a cancel decides the string and whether the words are replaced at all.
+    [['-I{}', '-n2', '-I[]'], ['echo', '[]', '{}']], [['-I{}', '-L2', '-I[]'], ['echo', '{}[]']], [['-I[]', '-L2'], ['echo', '{}[]']], [['-i', '-L2'], ['echo', '{}']],
+    [['-I', '{}', '-I', '[]'], ['echo', '{}[]']], [['-n2', '-I', '[]'], ['echo', '[]']], [['-0', '-I%'], ['echo', 'a%']], [['-I{}'], []],
     [['--replace'], ['echo', '{}']], [['-i'], ['mv', '{}', '{}.bak']], [['-i@'], ['echo', '@']], [['--max-lines'], ['echo']], [['-l'], ['echo']], [['--max-l=2'], ['echo']],
   ];
   for (const [opts, cmd] of cases) {
@@ -62,8 +67,20 @@ describe('xargs agrees with GNU xargs', () => {
   });
   it('replaces the string in the arguments of the command, not in its name', () => {
     assert.deepStrictEqual(runXargs(['-I{}', '{}', 'x{}'], 'a\n'), [['{}', 'xa']]);
+    assert.deepStrictEqual(runXargs(['-i', '{}', 'x{}'], 'a\n'), [['{}', 'xa']]);
+    assert.deepStrictEqual(runXargs(['-I', '%', '%', '%.bak'], 'a\n'), [['%', 'a.bak']]);
     // (GNU xargs runs the program `{}` here, as written.)
     assert.match(run('xargs', ['-I%', '%', 'x'], { input: 'a\n' }).stderr.toString(), /xargs: %: No such file or directory/);
+  });
+  it('does not rescan an item that holds the replace string, and takes a string apart from -I or -i from the interpreter', () => {
+    const cases: [string[], string[], string][] = [
+      [['-I{}'], ['{}{}', 'x{}'], 'a{}b\n{}\n'], [['-I@'], ['@', '@@', '@.bak'], 'a@\nb\n'], [['-I', '@'], ['@.bak'], 'c\n'], [['-i'], ['{}.bak'], 'a b\n'], [['-I{}', '-n2', '-I[]'], ['{}', '[]'], 'a\nb\n'],
+    ];
+    for (const [opts, cmd, input] of cases) {
+      const real = run('xargs', [...opts, 'printf', '[%s]', ...cmd], { input }).stdout.toString();
+      const mine = runXargs([...opts, 'printf', '[%s]', ...cmd], input).map((c) => c.slice(2).map((x) => `[${x}]`).join('')).join('');
+      assert.strictEqual(mine, real, JSON.stringify([opts, cmd, input]));
+    }
   });
   it('treats quotes in the input as grouping', () => {
     assert.deepStrictEqual(runXargs(['-n', '1'], 'a "b c" d\\ e\n'), [['echo', 'a'], ['echo', 'b c'], ['echo', 'd e']]);
