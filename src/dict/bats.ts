@@ -16,6 +16,7 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = wordTable({
     ['--separate-stderr', '標準エラー出力(fd 2)を `$output` に混ぜず、`$stderr` と配列 `$stderr_lines` に入れる', 'keep stderr out of `$output`, in `$stderr` and the array `$stderr_lines`'],
     ['--keep-empty-lines', '`$lines` に空行も残す（出力の末尾の改行も `$output` に残す）', 'keep empty lines in `$lines` (and trailing newlines in `$output`)'],
   ], {
+    gloss: tx('コマンドをサブシェルで実行し、終了ステータスと出力を `$status`・`$output`・`$lines` に入れる', 'runs a command in a subshell and keeps its exit status and output in `$status`, `$output` and `$lines`'),
     optionsFirst: true,
     patternOptions: [{
       pattern: /^-(\d+)$/,
@@ -32,20 +33,24 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = wordTable({
   }),
   load: cmd('bats の関数: テストファイルのディレクトリ（または絶対パス）からファイル `NAME.bash`（なければ `NAME`）を読み込み、今のシェルで実行する（`source` と同じ）。見つからなければ、読み込んだシェルを `exit 1` で終える（ファイルの先頭ならテストファイル全体が止まり、`setup` やテストの中ならそのテストだけが失敗する）',
     'bats function: reads the file `NAME.bash` (or else `NAME`) from the directory of the test file (or an absolute path) and runs it in the current shell, as `source` does. If it is missing, it ends the shell that runs it with `exit 1`: at the top of the file this stops the whole test file; in `setup` or a test, only that test fails', [], {
+    gloss: tx('ファイルを読み込み、今のシェルで実行する', 'reads a file and runs it in the current shell, as `source` does'),
     operands: [{ pattern: [operand('NAME', '読み込むファイル（`.bash` は省ける）', 'file to read (`.bash` may be left out)', { type: 'file' })] }],
     shellEffect: { does: 'changes', runsUnread: 'file' },
   }),
   bats_load_library: cmd('bats の関数: ライブラリを `$BATS_LIB_PATH` のディレクトリ（とテストファイルのディレクトリ）から探して読み込む（ファイルか、ディレクトリの `load.bash`）。見つからなければ、読み込んだシェルを `exit 1` で終える（ファイルの先頭ならテストファイル全体が止まり、`setup` やテストの中ならそのテストだけが失敗する）',
     'bats function: finds a library in the directories of `$BATS_LIB_PATH` (and that of the test file) and reads it (a file, or the `load.bash` of a directory). If it is missing, it ends the shell that runs it with `exit 1`: at the top of the file this stops the whole test file; in `setup` or a test, only that test fails', [], {
+    gloss: tx('ライブラリを `$BATS_LIB_PATH` から探して読み込む', 'finds a library in `$BATS_LIB_PATH` and reads it'),
     operands: [{ pattern: [operand('NAME', 'ライブラリの名前（`bats-assert` など）', 'name of the library (`bats-assert`…)')] }],
     shellEffect: { does: 'changes', runsUnread: 'file' },
   }),
   skip: cmd('bats の関数: テストの残りを実行せず、テストを「スキップ」として報告する（setup の中ならそのテストを）',
     'bats function: skips the rest of the test and reports it as skipped (in setup, the test it runs before)', [], {
+    gloss: tx('テストの残りを実行せず、スキップとして報告する', 'skips the rest of the test and reports it as skipped'),
     operands: [{ pattern: [operand('REASON', 'スキップの理由（結果に表示される）', 'why it is skipped (shown in the results)', { repeat: '?' })] }],
   }),
   bats_require_minimum_version: cmd('bats の関数: bats がこの版より古ければエラーで止まる。この版までの機能（`run !` など）については警告を出さなくなる',
     'bats function: stops with an error if bats is older than this version, and stops the warnings about the features up to it (`run !`…)', [], {
+    gloss: tx('bats がこの版より古ければエラーで止まる', 'stops with an error if bats is older than this version'),
     operands: [{ pattern: [operand('VERSION', '必要な bats の版（`1.5.0` など）', 'the bats version needed (`1.5.0`…)')] }],
   }),
   // The commands are words with `\|` between them, which bats_pipe joins into a pipeline itself: they are not
@@ -54,6 +59,7 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = wordTable({
     'bats function: runs the commands separated by `\\|` joined by pipes. `run bats_pipe cmd \\| …` runs the whole pipeline under `run`. The exit status is that of the last command that failed (as with `set -o pipefail`). Since bats 1.10.0', [
     ['--returned-status', '終了ステータスを、この位置のコマンドのものにする（負の数は後ろから数える）', 'take the exit status of the command at this position (a negative number counts from the end)', 'arg'],
   ], {
+    gloss: tx('`\\|` で区切ったコマンドをパイプでつないで実行する', 'runs the commands separated by `\\|` joined by pipes'),
     optionsFirst: true,
     patternOptions: [{
       pattern: /^-(\d+)$/,
@@ -78,7 +84,7 @@ const FAILS_EN = 'if it does not hold, it prints a report to stderr and returns 
 
 /** A function of a library that checks something: what it does and reads (`ja`, `en`), then the failure, which is always the same. */
 const check = (lib: string, ja: string, en: string, opts: Opts = [], rest: Parameters<typeof cmd>[3] = {}) =>
-  cmd(`${lib} の関数: ${ja}。${FAILS_JA}`, `${lib} function: ${en}; ${FAILS_EN}`, opts, rest);
+  cmd(`${lib} の関数: ${ja}。${FAILS_JA}`, `${lib} function: ${en}; ${FAILS_EN}`, opts, { gloss: tx(ja, en), ...rest });
 
 const word = (name: string, ja: string, en: string, repeat?: '?' | '*' | '+') => operand(name, ja, en, repeat ? { repeat } : {});
 
@@ -87,16 +93,19 @@ const word = (name: string, ja: string, en: string, repeat?: '?' | '*' | '+') =>
 export const BATS_SUPPORT_COMMANDS: Record<string, CommandSpec> = wordTable({
   fail: cmd('bats-support の関数: メッセージ（引数、なければ標準入力）をそのまま標準エラー出力に出し、必ず失敗（1）を返すので、テストはそこで失敗する。自分で作る確認用の関数に使える',
     'bats-support function: prints the message (the arguments, or else stdin) as it is to stderr and always fails (returns 1), so the test fails there. For the checks you write yourself', [], {
+    gloss: tx('メッセージを標準エラー出力に出して失敗する', 'prints a message to stderr and fails'),
     operands: [{ pattern: [word('MESSAGE', '表示するメッセージ（省くと標準入力から読む）', 'the message to show (left out: read from stdin)', '*')] }],
   }),
   batslib_is_caller: cmd('bats-support の関数: 呼び出しの履歴を調べ、今の関数が、指定した関数から呼ばれたかを確かめる（`setup`・`teardown`・テストの中だけで使える関数を作るのに使う）。そうなら 0、そうでなければ 1 を返す',
     'bats-support function: looks at the call stack and checks whether the current function was called from the one named (to limit a helper to `setup`, `teardown` or a test). Returns 0 if so, 1 if not', [
     ['--indirect', '直接の呼び出し元だけでなく、呼び出しの途中のどこかにその関数があればよい', 'the function may be anywhere up the call chain, not only the direct caller'],
   ], {
+    gloss: tx('今の関数が、指定した関数から呼ばれたかを確かめる', 'checks whether the current function was called from the one named'),
     operands: [{ pattern: [word('FUNCTION', '呼び出し元として探す関数の名前（テスト自身なら `$BATS_TEST_NAME`）', 'the name of the function to look for (the test itself: `$BATS_TEST_NAME`)')] }],
   }),
   batslib_decorate: cmd('bats-support の関数: 標準入力のメッセージを、見出し（引数）を付けた枠 `-- 見出し --` … `--` で囲んで出力する。失敗の報告を目立たせるのに使う',
     'bats-support function: wraps the message on stdin in a frame, `-- HEADER --` … `--`, to make a failure report stand out', [], {
+    gloss: tx('メッセージを見出し付きの枠で囲んで出力する', 'prints the message on stdin in a frame with a header'),
     operands: [{ pattern: [word('HEADER', '枠の見出し', 'the header of the frame')] }],
   }),
 });
@@ -123,6 +132,7 @@ const outputCheck = (v: 'output' | 'stderr', negate: boolean) => check('bats-ass
     : `\`$stderr\`（\`run --separate-stderr\` が入れた標準エラー出力）が、与えた文字列と${negate ? '一致しない' : '一致する'}ことを確かめる。引数なしなら、${negate ? '空であること' : '空でないこと'}を確かめる。引数が \`-\` なら文字列を標準入力から読む。\`--separate-stderr\` なしの \`run\` では \`$stderr\` は空`,
   `checks that \`$${v}\` (${v === 'output' ? 'what `run` kept' : 'the stderr that `run --separate-stderr` kept; empty after a `run` without it'}) ${negate ? 'does not match' : 'matches'} the text given; with no argument, it checks that it is ${negate ? 'empty' : 'not empty'}; the argument \`-\` reads the text from stdin`,
   [...MODES, ...STDIN], {
+    gloss: tx(`\`$${v}\` が、与えた文字列と${negate ? '一致しない' : '一致する'}ことを確かめる`, `checks that \`$${v}\` ${negate ? 'does not match' : 'matches'} the text given`),
     operands: [{ pattern: [word('TEXT', negate ? `一致してはいけない文字列（\`-\` なら標準入力、省くと \`$${v}\` が空であることを確かめる）` : `期待する文字列（\`-\` なら標準入力、省くと \`$${v}\` が空でないことを確かめる）`,
       negate ? `the text that must not match (\`-\` reads it from stdin, if left out it checks that \`$${v}\` is empty)` : `the expected text (\`-\` reads it from stdin, if left out it checks that \`$${v}\` is not empty)`, '?')] }],
   });
@@ -132,20 +142,24 @@ const lineCheck = (v: 'lines' | 'stderr_lines', negate: boolean) => check('bats-
   `\`$${v}\`（\`run\` が出力を行に分けた配列。空行は入らないので、番号がずれる${v === 'lines' ? '' : '。`run --separate-stderr` が必要'}）に、与えた行と${negate ? '一致する行がない' : '一致する行がある'}ことを確かめる。\`--index\` を付けると、その番号の行だけを調べる`,
   `checks that ${negate ? 'no line of' : 'a line of'} \`$${v}\` (the output split into lines by \`run\`; empty lines are left out, which shifts the numbers${v === 'lines' ? '' : '; needs \`run --separate-stderr\`'}) matches the line given; with \`--index\`, it looks at that line only`,
   [...INDEX, ...MODES], {
+    gloss: tx(`\`$${v}\` に、与えた行と${negate ? '一致する行がない' : '一致する行がある'}ことを確かめる`, `checks that ${negate ? 'no line of' : 'a line of'} \`$${v}\` matches the line given`),
     operands: [{ pattern: [word('LINE', negate ? '一致してはいけない行' : '期待する行', negate ? 'the line that must not match' : 'the expected line')] }],
   });
 
 export const BATS_ASSERT_COMMANDS: Record<string, CommandSpec> = wordTable({
   assert: check('bats-assert', '式（コマンド）を実行し、偽（0 以外を返す）なら失敗とする。`[[ ]]` のような複合コマンドは、`bash -c` で包まないと書けない',
     'runs the expression (a command) and fails the test if it is false (returns non-zero); a compound command such as `[[ ]]` has to be wrapped in `bash -c`', [], {
+    gloss: tx('式を実行し、偽なら失敗とする', 'runs the expression and fails the test if it is false'),
     operands: [{ pattern: [word('EXPRESSION', '調べる式（単純なコマンド）', 'the expression to check (a simple command)', '+')] }],
   }),
   refute: check('bats-assert', '式（コマンド）を実行し、真（0 を返す）なら失敗とする。`assert` の逆',
     'runs the expression (a command) and fails the test if it is true (returns 0); the opposite of `assert`', [], {
+    gloss: tx('式を実行し、真なら失敗とする', 'runs the expression and fails the test if it is true'),
     operands: [{ pattern: [word('EXPRESSION', '調べる式（単純なコマンド）', 'the expression to check (a simple command)', '+')] }],
   }),
   assert_equal: check('bats-assert', '2 つの値が等しいことを確かめる（複数行の値は、行に分けて報告する）',
     'checks that the two values are equal (a multi-line value is reported line by line)', [], {
+    gloss: tx('2 つの値が等しいことを確かめる', 'checks that the two values are equal'),
     operands: [{ pattern: [word('ACTUAL', '実際の値', 'the actual value'), word('EXPECTED', '期待する値', 'the expected value')] }],
   }),
   assert_not_equal: check('bats-assert', '2 つの値が等しくないことを確かめる',
@@ -153,9 +167,12 @@ export const BATS_ASSERT_COMMANDS: Record<string, CommandSpec> = wordTable({
     operands: [{ pattern: [word('ACTUAL', '実際の値', 'the actual value'), word('UNEXPECTED', '等しくてはいけない値', 'the value it must not equal')] }],
   }),
   assert_success: check('bats-assert', '`$status`（`run` が入れた終了ステータス）が 0 であることを確かめる。失敗の報告には `$status` と `$output` が入る',
-    'checks that `$status` (the exit status `run` kept) is 0; the report shows `$status` and `$output`'),
+    'checks that `$status` (the exit status `run` kept) is 0; the report shows `$status` and `$output`', [], {
+    gloss: tx('`$status` が 0 であることを確かめる', 'checks that `$status` is 0'),
+  }),
   assert_failure: check('bats-assert', '`$status`（`run` が入れた終了ステータス）が 0 でないことを確かめる。ステータスを与えると、それと等しいことを確かめる。失敗の報告には `$status` と `$output` が入る',
     'checks that `$status` (the exit status `run` kept) is not 0; with a status given, that it equals it; the report shows `$status` and `$output`', [], {
+    gloss: tx('`$status` が 0 でないことを確かめる', 'checks that `$status` is not 0'),
     operands: [{ pattern: [word('STATUS', '期待する終了ステータス（省くと、0 以外ならよい）', 'the exit status expected (left out: any non-zero status)', '?')] }],
   }),
   assert_output: outputCheck('output', false),
@@ -168,11 +185,13 @@ export const BATS_ASSERT_COMMANDS: Record<string, CommandSpec> = wordTable({
   refute_stderr_line: lineCheck('stderr_lines', true),
   assert_regex: check('bats-assert', '値が正規表現に一致することを確かめる（`[[ 値 =~ 正規表現 ]]` と同じで、POSIX 拡張正規表現。`BASH_REMATCH` が設定される）',
     'checks that the value matches the regular expression (as `[[ VALUE =~ PATTERN ]]`: a POSIX extended regular expression; it sets `BASH_REMATCH`)', [], {
+    gloss: tx('値が正規表現に一致することを確かめる', 'checks that the value matches the regular expression'),
     operands: [{ pattern: [word('VALUE', '調べる値', 'the value to check'), word('PATTERN', '正規表現', 'the regular expression')] }],
     shellEffect: { does: 'changes', always: [{ name: 'BASH_REMATCH', sets: 'lines', maybe: true }] },
   }),
   refute_regex: check('bats-assert', '値が正規表現に一致しないことを確かめる（`assert_regex` の逆。一致したときは、一致した部分を報告する）',
     'checks that the value does not match the regular expression (the opposite of `assert_regex`; on a match, the report shows the matched text)', [], {
+    gloss: tx('値が正規表現に一致しないことを確かめる', 'checks that the value does not match the regular expression'),
     operands: [{ pattern: [word('VALUE', '調べる値', 'the value to check'), word('PATTERN', '正規表現', 'the regular expression')] }],
     shellEffect: { does: 'changes', always: [{ name: 'BASH_REMATCH', sets: 'lines', maybe: true }] },
   }),
@@ -230,11 +249,13 @@ export const BATS_FILE_COMMANDS: Record<string, CommandSpec> = wordTable({
   assert_file_not_empty: fileCheck('ファイルが空でないことを確かめる', 'checks that the file is not empty'),
   assert_file_contains: cmd(`bats-file の関数: ファイルの中身が正規表現に一致することを確かめる。${FAILS_JA}`,
     `bats-file function: checks that the content of the file matches the regular expression; ${FAILS_EN}`, [], {
+    gloss: tx('ファイルの中身が正規表現に一致することを確かめる', 'checks that the content of the file matches the regular expression'),
     operands: [{ pattern: [operand('PATH', '調べるファイル', 'the file to check', { type: 'file' }), word('REGEX', '探す正規表現', 'the regular expression to look for'),
       word('ENGINE', '使う grep（`grep`・`egrep`・`pcregrep` のどれかで、入っていること）', 'the grep to use (`grep`, `egrep` or `pcregrep`, which has to be installed)', '?')] }],
   }),
   assert_file_not_contains: cmd(`bats-file の関数: ファイルの中身が正規表現に一致しないことを確かめる（ファイルがなくても失敗する）。${FAILS_JA}`,
     `bats-file function: checks that the content of the file does not match the regular expression (it fails if the file does not exist either); ${FAILS_EN}`, [], {
+    gloss: tx('ファイルの中身が正規表現に一致しないことを確かめる', 'checks that the content of the file does not match the regular expression'),
     operands: [{ pattern: [operand('PATH', '調べるファイル', 'the file to check', { type: 'file' }), word('REGEX', '探してはいけない正規表現', 'the regular expression that must not match')] }],
   }),
   assert_symlink_to: fileCheck('リンクが、与えた先を指すシンボリックリンクであることを確かめる', 'checks that the link is a symbolic link pointing to the target',
@@ -246,9 +267,12 @@ export const BATS_FILE_COMMANDS: Record<string, CommandSpec> = wordTable({
   temp_make: cmd('bats-file の関数: 一時ディレクトリを `$BATS_TMPDIR` の中に作り、そのパスを標準出力に出す（`dir=$(temp_make)` で受ける）。名前は「接頭辞 + テストのファイル名 + テスト番号 + ランダムな文字」。`setup`・テスト・`teardown` の中でだけ使える。作れなければ、メッセージを標準エラー出力に出して失敗する',
     'bats-file function: makes a temporary directory in `$BATS_TMPDIR` and prints its path to stdout (take it with `dir=$(temp_make)`). Its name is the prefix, the test file name, the test number and random characters. Only in `setup`, a test or `teardown`. If it cannot, it prints an error to stderr and fails', [
     ['-p|--prefix', '名前の先頭に付ける文字列', 'a string put in front of the name', 'arg'],
-  ]),
+  ], {
+    gloss: tx('一時ディレクトリを作り、そのパスを出力する', 'makes a temporary directory and prints its path'),
+  }),
   temp_del: cmd('bats-file の関数: ファイルかディレクトリ（ふつうは `temp_make` で作ったもの）を削除する。`BATSLIB_TEMP_PRESERVE=1` なら何も削除せずに成功する。`BATSLIB_TEMP_PRESERVE_ON_FAILURE=1` なら、テストが失敗したとき削除しない（`teardown` の中だけ）。削除できなければ、メッセージを標準エラー出力に出して失敗する',
     'bats-file function: deletes a file or directory (usually one `temp_make` made). With `BATSLIB_TEMP_PRESERVE=1` it deletes nothing and succeeds; with `BATSLIB_TEMP_PRESERVE_ON_FAILURE=1` it keeps it when the test failed (in `teardown` only). If it cannot delete, it prints an error to stderr and fails', [], {
+    gloss: tx('ファイルかディレクトリを削除する', 'deletes a file or directory'),
     operands: [{ pattern: [operand('PATH', '削除するファイルかディレクトリ', 'the file or directory to delete', { type: 'file' })] }],
   }),
 });

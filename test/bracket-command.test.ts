@@ -68,7 +68,7 @@ describe('`[` is a command with arguments, as `test` is', () => {
     assert.strictEqual(said('[ -f x ] && echo y', 'ja'), '`[ … ]` の条件を判定する。成功したら、`echo`（引数を空白区切りで標準出力に表示する）を実行する。');
     assert.strictEqual(said('if [ -a f ]; then :; fi'), 'If the test `[ … ]` succeeds, runs `:` (no-op that always succeeds; used in `while :` or to evaluate expansions).');
     // (A line that closes the block has no record of the command, which the name says.)
-    assert.strictEqual(said('while [ -a f ]\ndo\n  :\ndone', 'en', 3), '`done` ends the `while` loop of line 1: repeats line 3 while the test `[ … ]` succeeds.');
+    assert.strictEqual(said('while [ -a f ]\ndo\n  :\ndone', 'en', 3), '`done` ends the `while` loop of line 1: repeats the body on line 3 while the test `[ … ]` succeeds.');
     // (The other commands of the line keep what they were said with: `-p` of `mkdir`.)
     assert.ok(said('[ -d "$d" ] || mkdir -p "$d"')!.includes('`-p`'), said('[ -d "$d" ] || mkdir -p "$d"'));
   });

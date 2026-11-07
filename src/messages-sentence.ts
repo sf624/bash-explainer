@@ -23,10 +23,11 @@ export type IoKind = RedirectKind | 'close' | 'move' | 'heredoc' | 'herestring';
 
 /**
  * A descriptor's name in a sentence (`fdName`; `dflt`, the operator's default), with a space after a number before the
- * Japanese that follows (docs/japanese-style.md: `ファイルディスクリプタ 3 を`).
+ * Japanese that follows (docs/japanese-style.md: `ファイルディスクリプタ 3 を`). In Japanese, a standard stream has no
+ * number: the redirections are said in parentheses there, which never hold parentheses (`ioPart`); the rows give it.
  */
 function fdSaid(lang: Lang, fd: string, dflt: string): string {
-  const name = fdName(fd, dflt)[lang];
+  const name = fdName(fd, dflt, lang === 'ja')[lang];
   return lang === 'ja' && /\d$/.test(name) ? `${name} ` : name;
 }
 
@@ -55,8 +56,57 @@ export function ioSaid(lang: Lang, kind: IoKind, fd: string, to: string): string
     case 'dup': return ja ? `${out}は${other}と同じ先へ` : `${out} to where ${other} goes`;
     case 'dupIn': return ja ? `${inp}は${other}と同じところから` : `${inp} from where ${other} reads`;
     case 'heredoc': return ja ? `${inp}はヒアドキュメントから` : `${inp} from the here-document`;
-    case 'herestring': return ja ? `${inp}は${to}から（ヒアストリング）` : `${inp} from ${to} (a here-string)`;
+    case 'herestring': return ja ? `${inp}はヒアストリング${to}から` : `${inp} from ${to}, as a here-string`;
   }
+}
+
+/** Whether a text has parentheses of its own, outside its code spans: in parentheses, they would nest. */
+const hasParens = (text: string): boolean => /[()（）]/.test(text.replace(/(`+)(.+?)\1/g, ''));
+
+/**
+ * A gloss without its own parenthetical parts (`( )` and `（ ）`, outside code spans, nested ones too), with the blanks and the
+ * punctuation they leave tidied: "Print lines matching a pattern (regex)" is "Print lines matching a pattern". Undefined where its
+ * parentheses do not pair.
+ */
+function withoutParens(text: string): string | undefined {
+  let out = '';
+  let depth = 0;
+  // (The code spans kept, apart while the blanks and the punctuation around the parts left out are tidied.)
+  const codes: string[] = [];
+  for (let i = 0; i < text.length;) {
+    let n = 0;
+    while (text[i + n] === '`') n++;
+    const close = n ? text.indexOf('`'.repeat(n), i + n) : -1;
+    // (A code span is one piece: `$(…)` holds no parenthesis of the text.)
+    const piece = close > 0 ? text.slice(i, close + n) : text[i];
+    i += piece.length;
+    if (piece === '(' || piece === '（') depth++;
+    else if (piece === ')' || piece === '）') {
+      if (!depth--) return undefined;
+    } else if (!depth) out += piece.length > 1 ? `\u0000${codes.push(piece) - 1}\u0000` : piece;
+  }
+  if (depth) return undefined;
+  const tidy = out.replace(/[ \t]+/g, ' ').replace(/ ([,.;:、。])/g, '$1').replace(/([,;:、]) ?(?=[,;:、。.]|$)/g, '').trim().replace(/[,;:、—–-]$/, '').trim();
+  return tidy.replace(/\u0000(\d+)\u0000/g, (_, k: string) => codes[Number(k)]);
+}
+
+/**
+ * A name and its gloss in parentheses, the gloss without parenthetical parts of its own, which would nest (usability-9.md, Q10, as
+ * revisited on 2026-11-07): `getopts` (parse script options one at a time). The name alone where nothing is left but the name.
+ */
+function glossed(lang: Lang, name: string, what: string | undefined): string {
+  const short = what === undefined ? undefined : withoutParens(what);
+  if (!short || short.replace(/`/g, '').toLowerCase() === name.replace(/`/g, '').toLowerCase()) return name;
+  return pick(lang, `${name}（${short}）`, `${name} (${short})`);
+}
+
+/**
+ * The redirections after a Japanese clause: in parentheses, or, where they have parentheses of their own (a named
+ * descriptor's text, `{fd}>x`), as a sentence of their own, which nothing nests in.
+ */
+function ioPart(io: string): string {
+  if (!io) return '';
+  return hasParens(io) ? `。入出力: ${io}` : `（${io}）`;
 }
 
 /** A value: the empty string. */
@@ -78,19 +128,19 @@ export const S = {
   },
   /** A command run: its name, what it does (its spec's summary), the options given and what they do, its redirections. */
   runs: (lang: Lang, noun: string, options: string, io: string, status?: number): string => (lang === 'ja'
-    ? `${noun}を${options ? `${options}を付けて` : ''}実行する${status === undefined ? '' : `（終了ステータス ${status}）`}${io ? `（${io}）` : ''}`
+    ? `${noun}を${options ? `${options}を付けて` : ''}実行する${status === undefined ? '' : `（終了ステータス ${status}）`}${ioPart(io)}`
     : `runs ${noun}${options ? ` using ${options}` : ''}${status === undefined ? '' : ` with status ${status}`}${io ? `, with ${io}` : ''}`),
   /** An assignment before a command's name: what the command runs with. */
   prefixSet: (lang: Lang, name: string, value: string): string => pick(lang, `${name}は${value}`, `${name} set to ${value}`),
-  /** A command as a noun: its name and what it does. */
-  noun: (lang: Lang, names: string, what: string | undefined): string => (what ? pick(lang, `${names}（${what}）`, `${names} (${lowerFirst(what)})`) : names),
-  /** An option given, and what it does. */
-  option: (lang: Lang, name: string, what: string): string => pick(lang, `${name}（${what}）`, `${name} (${what})`),
-  calls: (lang: Lang, name: string, io: string): string => (lang === 'ja' ? `関数${name}を呼び出す${io ? `（${io}）` : ''}` : `calls the function ${name}${io ? `, with ${io}` : ''}`),
+  /** A command as a noun: its name and what it does (`glossed`). */
+  noun: (lang: Lang, names: string, what: string | undefined): string => glossed(lang, names, what && lang === 'en' ? lowerFirst(what) : what),
+  /** An option given, and what it does (`glossed`). */
+  option: (lang: Lang, name: string, what: string): string => glossed(lang, name, what),
+  calls: (lang: Lang, name: string, io: string): string => (lang === 'ja' ? `関数${name}を呼び出す${ioPart(io)}` : `calls the function ${name}${io ? `, with ${io}` : ''}`),
   /** `[ … ]` or `test`: the condition its words make. */
-  tests: (lang: Lang, written: string, io: string): string => (lang === 'ja' ? `${written}の条件を判定する${io ? `（${io}）` : ''}` : `tests the condition in ${written}${io ? `, with ${io}` : ''}`),
+  tests: (lang: Lang, written: string, io: string): string => (lang === 'ja' ? `${written}の条件を判定する${ioPart(io)}` : `tests the condition in ${written}${io ? `, with ${io}` : ''}`),
   /** A command with no name: the variables it sets (`assigned`), or none and only its redirections. */
-  sets: (lang: Lang, assigned: string, io: string): string => (lang === 'ja' ? `${assigned}代入する${io ? `（${io}）` : ''}` : `sets ${assigned}${io ? `, with ${io}` : ''}`),
+  sets: (lang: Lang, assigned: string, io: string): string => (lang === 'ja' ? `${assigned}代入する${ioPart(io)}` : `sets ${assigned}${io ? `, with ${io}` : ''}`),
   /** One variable set, and its value. */
   setTo: (lang: Lang, name: string, value: string): string => pick(lang, `${name}に${value}を`, `${name} to ${value}`),
   /** `x+=v`. */
@@ -101,7 +151,7 @@ export const S = {
   array: (lang: Lang, items: string): string => (items ? pick(lang, `配列（${items}）`, `an array of ${items}`) : pick(lang, '空の配列', 'an empty array')),
   /** A compound command with redirections after it, which apply to the whole of it. */
   withIo: (lang: Lang, clause: string, io: string): string => pick(lang, `全体の入出力: ${io}。${clause}`, `with ${io}: ${clause}`),
-  onlyRedirects: (lang: Lang, io: string): string => pick(lang, `コマンドは実行せず、リダイレクトだけを行う（${io}）`, `runs no command, only its redirections: ${io}`),
+  onlyRedirects: (lang: Lang, io: string): string => (lang === 'ja' ? `コマンドは実行せず、リダイレクトだけを行う${ioPart(io)}` : `runs no command, only its redirections: ${io}`),
   /** A pipeline: each stage's stdout is the next one's stdin. */
   pipe: (lang: Lang, stages: readonly string[]): string => (lang === 'ja'
     ? `${stages[0]}の出力を${stages.slice(1).join('に渡し、その出力を')}に渡す`
@@ -162,6 +212,8 @@ export const S = {
 
   // A body: the lines of a block, or the commands of one on one line.
   bodyOf: (lang: Lang, names: string): string => (names ? pick(lang, `本体（${names}）`, `its body (${names})`) : pick(lang, '本体', 'its body')),
+  /** The body of a block that goes on below: the lines it is on, which are not the block's own (the block's row says those). */
+  bodyOn: (lang: Lang, lines: string): string => pick(lang, `${lines} の本体`, `the body on ${lines}`),
   runsBody: (lang: Lang, body: string): string => pick(lang, `${body}を実行する`, `runs ${body}`),
   nothing: (lang: Lang): string => pick(lang, '何もしない', 'does nothing'),
 
@@ -184,8 +236,9 @@ export const S = {
   cFor: (lang: Lang, body: string): string => pick(lang, `\`(( … ))\` の条件が真の間、${body}を実行する`, `runs ${body} while the test in \`(( … ))\` is true`),
   select: (lang: Lang, variable: string, values: string, body: string): string => pick(lang,
     `${values}のメニューを表示し、選ばれた値を${variable}に設定して${body}を実行する`, `shows a menu of ${values} and runs ${body} with ${variable} set to the choice`),
+  /** `case`: its branches, on the lines they are on when they go on below. */
   caseOf: (lang: Lang, value: string, lines: string | undefined): string => pick(lang,
-    `${value}に最初に一致したパターンの分岐${lines ? `（${lines}）` : ''}を実行する`, `runs the first branch${lines ? ` (${lines})` : ''} whose pattern matches ${value}`),
+    `${lines ? `${lines} の分岐のうち、` : ''}${value}に最初に一致したパターンの分岐を実行する`, `runs the first ${lines ? `of the branches on ${lines}` : 'branch'} whose pattern matches ${value}`),
   caseItem: (lang: Lang, patterns: string, clause: string): string => pick(lang, `値が${patterns}に一致したら、${clause}`, `if the value matches ${patterns}, ${clause}`),
   orPatterns: (lang: Lang, patterns: readonly string[]): string => patterns.join(pick(lang, 'か', ' or ')),
   defines: (lang: Lang, name: string, lines: string | undefined): string => pick(lang,

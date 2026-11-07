@@ -65,6 +65,27 @@
   let lastAround = '[]';
   /** What the viewer folded and unfolded of the line shown, by row (`key`: the same at both depths); kept when the same line is drawn again. */
   let foldChoices = /** @type {Map<string, boolean>} */ (new Map());
+  /**
+   * The rows (by `key`) and the folded examples (by place) drawn open since the line was last drawn anew: its start key (`startKey`: the
+   * line, its text and the depth) changed. A row starts as the model has it (`ModelRow.folded`: every stage of a pipeline folds at depth
+   * 2, `foldStages`); drawn again with the same key, it only opens where the model or the reader opens it (an example of the stage the
+   * cursor is on, a stage the reader moved the cursor into or in: `cursorMoved`), and nothing the viewer sees folds or closes, whatever comes
+   * first, a click or the redraw it brings. Only the viewer folds (`foldChoices`).
+   */
+  let drawnOpen = /** @type {Set<string>} */ (new Set());
+  /**
+   * Whether the line is drawn after the reader moved the cursor with no edit (`moved`: a tap, a click, an arrow key; src/ui/cursorMoves.ts):
+   * the stages of a pipeline the cursor is in (`atCursor`) open where the model folds them. A fold the viewer chose goes only on the stages
+   * the cursor entered (`entered`: it was not in them at the line last drawn, `cursorIn`), so a move inside a stage the viewer folded keeps
+   * it folded, and a move out and back in opens it. Typing or a paste opens nothing.
+   */
+  let cursorMoved = false;
+  /** The stages, by row key, the reader moved the cursor into (`cursorMoved`). */
+  let entered = /** @type {Set<string>} */ (new Set());
+  /** The stages the cursor was in at the line last drawn, with the same start key (`startKey`), moved or not. */
+  let cursorIn = /** @type {Set<string>} */ (new Set());
+  /** The line, its text and the depth the rows were drawn anew for (`drawnOpen`). */
+  let startKey = '';
   /** The file and line `foldChoices` belongs to, and the depth drawn. */
   let shownLine = '';
   let shownDepth = 1;
@@ -166,8 +187,10 @@
     if (msg.type === 'themeColours') setThemeVars(msg.vars);
     if (msg.type === 'update') {
       // (Without the line's problems: they come a moment after the line is explained, and change only its squiggles.)
-      const key = JSON.stringify({ ...msg, marks: undefined, around: undefined });
-      if (key === lastUpdate) {
+      const key = JSON.stringify({ ...msg, marks: undefined, around: undefined, moved: undefined });
+      // (A move of the cursor to the same place enters no stage: it is drawn again only where it opens one the model folds, as a tap
+      // on the stage after a paste.)
+      if (key === lastUpdate && !(msg.moved && opensAtCursor(msg.rows))) {
         // (The pointers are drawn again only when they changed: a focus on one stays, panel-redesign.md section 5.)
         if (JSON.stringify(msg.around ?? []) !== lastAround) drawAround(msg.around ?? []);
         return squiggleLine(msg.marks ?? []);
@@ -239,6 +262,11 @@
     $('empty').hidden = false;
   }
 
+  /** The keys of the stages the cursor is in (`atCursor`). */
+  const stagesAtCursor = (/** @type {any[]} */ rows) => rows.flatMap((r) => [...(r.atCursor ? [r.key] : []), ...stagesAtCursor(r.children)]);
+  /** Whether a stage the cursor is in is drawn folded by the model, not by the viewer: a move of the cursor inside it opens it. */
+  const opensAtCursor = (/** @type {any[]} */ rows) => rows.some((r) => (r.atCursor && !foldChoices.has(r.key) && $('tree').querySelector(`li[data-key="${CSS.escape(r.key)}"]`)?.classList.contains('collapsed')) || opensAtCursor(r.children));
+
   function render(msg) {
     const ex = msg.explanation;
     labels = msg.labels ?? labels;
@@ -290,6 +318,14 @@
       if (msg.depth !== shownDepth) $('said').textContent = msg.control.options.find((/** @type {{ sets: any }} */ o) => o.sets.depth === msg.depth).said;
       else $('said').textContent = msg.receives ? labels.receives.on : labels.receives.off;
     }
+    // (Another line, a new text of the line as it is typed, or another depth: the rows start as the model has them.)
+    const start = JSON.stringify([where, msg.lineText, msg.depth]);
+    if (start !== startKey) drawnOpen = new Set();
+    const was = start === startKey ? cursorIn : new Set();
+    startKey = start;
+    cursorIn = new Set(stagesAtCursor(msg.rows));
+    cursorMoved = msg.moved === true;
+    entered = new Set(cursorMoved ? [...cursorIn].filter((k) => !was.has(k)) : []);
     shownLine = where;
     shownDepth = msg.depth;
     shownReceives = msg.receives;
@@ -684,8 +720,11 @@
   function foldedExample(/** @type {any} */ ex, /** @type {number | string} */ at) {
     const place = String(at);
     const box = /** @type {HTMLDetailsElement} */ (el('details', { class: 'example whole-line' }, el('summary', {}, el('h3', {}, ...inline(ex.title)))));
-    box.open = exampleChoices.get(place) ?? ex.open === true;
-    box.addEventListener('toggle', () => (box.open === (ex.open === true) ? exampleChoices.delete(place) : exampleChoices.set(place, box.open)));
+    // (Open where the model opens it, or where it was drawn open since the line was drawn anew: `drawnOpen`.)
+    const opens = ex.open === true || drawnOpen.has(`example ${place}`);
+    if (opens) drawnOpen.add(`example ${place}`);
+    box.open = exampleChoices.get(place) ?? opens;
+    box.addEventListener('toggle', () => (box.open === opens ? exampleChoices.delete(place) : exampleChoices.set(place, box.open)));
     const body = el('div', { class: 'fold-body' }, ...exampleBody(ex, place));
     box.append(body);
     return foldingDetails(box, body);
@@ -1243,7 +1282,15 @@
     row.append(twisty, code, text, ...tryIt);
     box.append(row);
     li.append(box);
-    if (part.children.length && (foldChoices.get(part.key) ?? part.folded === true)) setCollapsed(li, true);
+    // (The model's fold, where the row was not drawn open since the line was drawn anew (`drawnOpen`). The viewer's choice wins at every
+    // depth, but a stage the reader moved the cursor into opens: `cursorMoved`, `entered`.)
+    if (part.children.length) {
+      if (cursorMoved && part.atCursor) drawnOpen.add(`row ${part.key}`);
+      if (entered.has(part.key)) foldChoices.delete(part.key);
+      const folded = part.folded === true && !drawnOpen.has(`row ${part.key}`);
+      if (!folded) drawnOpen.add(`row ${part.key}`);
+      if (foldChoices.get(part.key) ?? folded) setCollapsed(li, true, foldChoices.has(part.key));
+    }
     // Examples placed under this token go before (first) or after (last) its parts.
     const examples = (part.examples ?? []).map((/** @type {any} */ e, /** @type {number} */ i) => (e.folded ? foldedExample(e, `${part.key}/${i}`) : example(e, true, `${part.key}/${i}`)));
     // What lies under the row (its examples and parts), in one box: the indent guide is drawn beside it.
@@ -1293,7 +1340,10 @@
    * owns it: its fold button, or the row itself, so that the next Tab goes on from there and not from the top of the page.
    */
   function focusAgain(/** @type {{ keys: string[], link: number, role?: string, mark: boolean }} */ kept) {
-    const row = kept.keys.map((key) => document.querySelector(`#tree li[data-key="${key}"] > .item > .row`)).find(Boolean);
+    // (The nearest row that is drawn: one inside a fold is not, and the fold's own row takes the focus: a stage folded at depth 2. Where
+    // none is, the list itself is not drawn, and the nearest row there is.)
+    const rows = kept.keys.map((key) => document.querySelector(`#tree li[data-key="${key}"] > .item > .row`)).filter(Boolean);
+    const row = rows.find((r) => !!r?.getClientRects().length) ?? rows[0];
     if (!(row instanceof HTMLElement)) return;
     const same = row === document.querySelector(`#tree li[data-key="${kept.keys[0]}"] > .item > .row`);
     const target = same && (kept.mark ? row.querySelector('.mk-posix') : kept.role ? row.querySelector(`.role-chip[data-role="${kept.role}"]`) : kept.link >= 0 ? row.querySelectorAll('.refs a')[kept.link] : null);
@@ -1335,10 +1385,13 @@
     focusByKeys = false;
   });
 
-  /** Folds or unfolds an item of the list; the change returned says how what lies under it moves (see `fold`). */
-  function setCollapsed(/** @type {HTMLElement} */ li, /** @type {boolean} */ want) {
+  /**
+   * Folds or unfolds an item of the list, as the viewer's choice for the line (`foldChoices`) unless `chosen` is false; the change
+   * returned says how what lies under it moves (see `fold`).
+   */
+  function setCollapsed(/** @type {HTMLElement} */ li, /** @type {boolean} */ want, chosen = true) {
     li.classList.toggle('collapsed', want);
-    foldChoices.set(String(li.dataset.key), want);
+    if (chosen) foldChoices.set(String(li.dataset.key), want);
     const tw = li.querySelector(':scope > .item > .row > button.twisty');
     if (tw) {
       tw.setAttribute('aria-expanded', String(!want));
@@ -2098,9 +2151,11 @@
 
   /** Before the rows of another depth are drawn: the first row on the screen that they still have stays where it is. */
   function holdForDepth(/** @type {any[]} */ rows) {
+    // (Only the rows the new depth shows: not those under a row it draws folded, as a pipeline's stages start at depth 2.)
     const keys = new Set();
     const add = (/** @type {any} */ r) => {
       keys.add(r.key);
+      if (r.children.length && (foldChoices.get(r.key) ?? r.folded === true)) return;
       r.children.forEach(add);
     };
     rows.forEach(add);

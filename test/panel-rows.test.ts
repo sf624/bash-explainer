@@ -1184,6 +1184,58 @@ describe('the panel\'s row model', () => {
       assert.deepStrictEqual(glob(src.indexOf('sort')), [['glob', undefined]]);
     });
 
+    it('folds every stage of a pipeline at depth 2 to its own row, wherever the cursor is, and marks the stages the cursor is in; not at depth 1 (usability-9.md, 2.7)', () => {
+      const src = 'grep -h x f | sort | uniq -c | sort -rn | head -5';
+      const stages = (depth: 1 | 2, cursor?: number) => all(rowModel(explain(src), { depth, receives: true, ...(cursor === undefined ? {} : { cursor: { line: 0, character: cursor } }) }, 'en').rows)
+        .filter((r) => r.frame === 'command').map((r) => `${r.label}${r.folded ? ' (folded)' : ''}${r.atCursor ? ' (cursor)' : ''}`);
+      // (`sort` has no parts: nothing to fold. A cursor just after a stage is on it, as for the glob's example.)
+      const folded = ['grep (folded)', 'sort', 'uniq (folded)', 'sort (folded)', 'head (folded)'];
+      assert.deepStrictEqual(stages(2), folded);
+      assert.deepStrictEqual(stages(2, 0), ['grep (folded) (cursor)', ...folded.slice(1)]);
+      assert.deepStrictEqual(stages(2, src.indexOf('uniq') + 2), ['grep (folded)', 'sort', 'uniq (folded) (cursor)', 'sort (folded)', 'head (folded)']);
+      assert.deepStrictEqual(stages(2, src.length), [...folded.slice(0, 4), 'head (folded) (cursor)']);
+      // (On a `|`, between two stages, the cursor is on none; a stage without parts is none to open. Nothing folds at depth 1.)
+      assert.deepStrictEqual(stages(2, src.indexOf('| sort') + 1), folded);
+      assert.deepStrictEqual(stages(2, src.indexOf('sort')), folded);
+      assert.deepStrictEqual(stages(1, 0), ['grep', 'sort', 'uniq', 'sort', 'head']);
+      // (A folded stage keeps its own row: what it does, its role, what its program receives.)
+      const head = all(rowModel(explain(src), { depth: 2, receives: true, cursor: { line: 0, character: 0 } }, 'en').rows).find((r) => r.label === 'head')!;
+      assert.ok(head.folded && head.roleLine && head.receives && head.children.length, JSON.stringify(head));
+      // (A list's commands do not fold; every pipeline of the line does, the cursor in it or not.)
+      const list = (s: string, cursor: number) => all(rowModel(placeExamples(explain(s)), { depth: 2, receives: false, cursor: { line: 0, character: cursor } }, 'en').rows)
+        .filter((r) => r.frame === 'command').map((r) => `${r.label}${r.folded ? ' (folded)' : ''}${r.atCursor ? ' (cursor)' : ''}`);
+      assert.deepStrictEqual(list('ls -l && wc -l', 0), ['ls', 'wc']);
+      assert.deepStrictEqual(list('ls -l | wc -l; cat -n f', 16), ['ls (folded)', 'wc (folded)', 'cat']);
+      // (A stage holding the glob example that starts open as the line's only one stays open; a command's own example folds with its stage.)
+      assert.deepStrictEqual(list('ls *.txt | wc -l', 12), ['ls', 'wc (folded) (cursor)']);
+      const typed = 'grep -r pattern . | sort -r | uniq -c';
+      assert.ok(all([all(rowModel(placeExamples(explain(typed)), D2, 'en').rows).find((r) => r.label === 'grep')!]).some((r) => r.examples?.length));
+      assert.deepStrictEqual(list(typed, typed.length), ['grep (folded)', 'sort (folded)', 'uniq (folded) (cursor)']);
+      assert.deepStrictEqual(list(typed, typed.indexOf('sort')), ['grep (folded)', 'sort (folded) (cursor)', 'uniq (folded)']);
+      // (A glob example the cursor's stage opens folds with its stage: only the line's only example keeps one open.)
+      const globs = 'ls *.log | grep -v x | wc -l';
+      const glob = (cursor: number) => all(rowModel(placeExamples(explain(globs)), { depth: 2, receives: false, cursor: { line: 0, character: cursor } }, 'en').rows).find((r) => r.label === 'ls')!;
+      assert.ok(all([glob(0)]).some((r) => r.examples?.some((e) => e.kind === 'glob' && e.open)));
+      assert.strictEqual(glob(0).folded, true);
+      // (A stage inside a stage: both hold the cursor.)
+      const nested = 'a -x | { b -y | c -z; }';
+      assert.deepStrictEqual(all(rowModel(explain(nested), { depth: 2, receives: false, cursor: { line: 0, character: nested.indexOf('c -z') } }, 'en').rows)
+        .filter((r) => r.atCursor).map((r) => r.label), ['{ ‹commands› }', 'c']);
+      // (A pipeline inside `$( )` or `<( )` folds as the line's do, and the stage of it the cursor is in is marked: a move into it opens it.)
+      assert.deepStrictEqual(list('out=$(grep -r x . | sort -r)', 'out=$(grep -r x . | so'.length), ['out=$(grep -r x . | sort -r)', 'grep (folded)', 'sort (folded) (cursor)']);
+      assert.deepStrictEqual(list('out=$(grep -r x . | sort -r)', 'out=$(gr'.length), ['out=$(grep -r x . | sort -r)', 'grep (folded) (cursor)', 'sort (folded)']);
+      assert.deepStrictEqual(list('n=$(ls | wc -l)', 'n=$(ls | wc'.length), ['n=$(ls | wc -l)', 'ls', 'wc (folded) (cursor)']);
+      assert.deepStrictEqual(list('diff <(sort -u a | uniq -c) b', 'diff <(so'.length), ['diff', 'sort (folded) (cursor)', 'uniq (folded)']);
+      assert.deepStrictEqual(list('echo "$(ls -l | wc -l)"', 'echo "$(ls -l | wc'.length), ['echo', 'ls (folded)', 'wc (folded) (cursor)']);
+      // (The glob example of the cursor's stage is still that of the stage holding the substitution: `echo`'s, the cursor on `ls`.)
+      const sub = 'echo $(ls *.a) | grep -v x | wc -l';
+      const ls = all(rowModel(placeExamples(explain(sub)), { depth: 2, receives: false, cursor: { line: 0, character: sub.indexOf('ls') + 1 } }, 'en').rows).find((r) => r.label === 'ls')!;
+      assert.ok(all([ls]).some((r) => r.examples?.some((e) => e.kind === 'glob' && e.open)), JSON.stringify(ls));
+      // (The panel's message says when the reader moved the cursor there, and only then: media/panel.js opens the stages it entered.)
+      const moved = (m?: boolean) => panelUpdate({ lang: 'en', explanation: explain(src), file: 'x', line: 0, lineText: src, choice: {}, placement: 'first', animations: true, state: { depth: 2 }, cursor: 0, ...(m === undefined ? {} : { moved: m }) }).moved;
+      assert.deepStrictEqual([moved(true), moved(false), moved()], [true, undefined, undefined]);
+    });
+
     it('over the corpus: depth 2 only adds, holds every text of the line, has a row for each reserved word and operator on the line, roles from places only; nothing of depth 1 is folded away', function () {
       this.timeout(300000);
       const { files, snippets } = corpus();
@@ -1205,8 +1257,9 @@ describe('the panel\'s row model', () => {
           for (const r of one) assert.deepStrictEqual(r.steps, keys.get(r.key)!.steps?.acts ? keys.get(r.key)!.steps : undefined, at);
           const ones = new Set(one.map((r) => r.key));
           assert.deepStrictEqual(two.filter((r) => r.steps?.acts && !ones.has(r.key)).map((r) => r.label), [], at);
-          // Every row of depth 1 is outside any row that starts folded.
-          const inFold = (rs: readonly ModelRow[], folded: boolean): ModelRow[] => rs.flatMap((r) => [...(folded ? [r] : []), ...inFold(r.children, folded || !!r.folded)]);
+          // Every row of depth 1 is outside any row that starts folded, but a pipeline's stage, which folds whole with its own row (`foldStages`).
+          const stage = (rs: readonly ModelRow[], r: ModelRow) => !r.connector && rs.some((c) => c.connector);
+          const inFold = (rs: readonly ModelRow[], folded: boolean): ModelRow[] => rs.flatMap((r) => [...(folded ? [r] : []), ...inFold(r.children, folded || (!!r.folded && !stage(rs, r)))]);
           assert.deepStrictEqual(inFold(rowModel(ex, D2, 'en').rows, false).filter((r) => r.comesAt === 1).map((r) => r.label), [], at);
           // Every text of a token on the line is said (a pipe's says it in words of its own).
           const said = new Set(two.flatMap((r) => [r.text, ...r.more.map((m) => m.map((p) => p.text).join(''))]));

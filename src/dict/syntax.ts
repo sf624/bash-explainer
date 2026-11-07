@@ -97,11 +97,12 @@ function notFd(d: string, why: Text = tx('', '')): Text {
     `\`${d}\` is no file descriptor number, so bash reports "ambiguous redirect"${why.en}`);
 }
 
-export function fdName(fd: string, dflt: string): Text {
+/** A descriptor's name: a standard stream's with its number (`stdout (fd 1)`), or without it where `bare`. */
+export function fdName(fd: string, dflt: string, bare = false): Text {
   const n = fd || dflt;
-  if (n === '0') return tx('標準入力(fd 0)', 'stdin (fd 0)');
-  if (n === '1') return tx('標準出力(fd 1)', 'stdout (fd 1)');
-  if (n === '2') return tx('標準エラー出力(fd 2)', 'stderr (fd 2)');
+  if (n === '0') return bare ? tx('標準入力', 'stdin') : tx('標準入力(fd 0)', 'stdin (fd 0)');
+  if (n === '1') return bare ? tx('標準出力', 'stdout') : tx('標準出力(fd 1)', 'stdout (fd 1)');
+  if (n === '2') return bare ? tx('標準エラー出力', 'stderr') : tx('標準エラー出力(fd 2)', 'stderr (fd 2)');
   return tx(`ファイルディスクリプタ ${n}`, `file descriptor ${n}`);
 }
 
