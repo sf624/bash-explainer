@@ -33,7 +33,7 @@ export function chipOf(n: ReadingNode, lang: Lang, shell?: ScriptShell): string 
   const t = texts(lang, shell);
   if (n.kind === 'language') return of(t.languages, n.label) ?? n.label;
   // (`{}` of `find -exec`: the command that replaces it reads it as written, not the one it runs.)
-  if (n.layer === 'command' && n.placeholder) return t.placeholder;
+  if (n.layer === 'command' && n.placeholder) return t.placeholder[n.placeholder];
   // (A word the command reads that is not an option is an operand: bash's arguments are called arguments.)
   if (n.layer === 'command' && n.valueFor) {
     // (A word that bash expands first: the command reads each word that comes out, not the word as written. Its
@@ -101,7 +101,7 @@ export interface RowRole {
 export function roleFor(n: ReadingNode, up: ReadingNode | undefined, lang: Lang, shell?: ScriptShell): RowRole | undefined {
   const chip = chipOf(n, lang, shell);
   if (!chip) return undefined;
-  const id = [n.layer, n.kind, ...(n.valueFor ? [`value:${n.valueFor}`] : []), ...(n.expands ? [n.expands] : []), ...(n.placeholder ? ['placeholder'] : [])].join(':');
+  const id = [n.layer, n.kind, ...(n.valueFor ? [`value:${n.valueFor}`] : []), ...(n.expands ? [n.expands] : []), ...(n.placeholder ? [`placeholder:${n.placeholder}`] : [])].join(':');
   const about = aboutOf(n, lang, shell);
   const reader = readerOf(n, lang, shell);
   const said = about ? about + panelTexts(lang, shell).steps.because.replace('{why}', () => reader) : reader;

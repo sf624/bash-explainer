@@ -50,6 +50,12 @@ export interface Span { start: Pos; end: Pos }
 /** A word a test of `[` or `test` reads as its operator (`-a`, `=`, `!`, `\(`) or as an operand (the file `-a` tests). */
 export type TestPart = Pick<ReadingNode, 'label' | 'span' | 'text' | 'refs'> & { kind: 'operator' | 'argument' };
 
+/** What a command replaces a placeholder with before it runs another (`PlaceholderSpec.with`): a path (find), a line of the input (xargs). */
+export type PlaceholderWith = 'path' | 'line';
+
+/** A word the command around replaces (`Explainer.command`, `ExplainOptions.positional`): by which option, the text and what it is replaced with; `within`: the word holds the text among other text. */
+export interface Replaced { by: string; text: string; with: PlaceholderWith; within: boolean }
+
 export interface Token {
   kind: Kind;
   /**
@@ -140,8 +146,8 @@ export interface Token {
    * reads those words as written (`placeholder`), and this one gets what replaces them.
    */
   placeholders?: true;
-  /** On the token of such a word (`{}`, `'{}'`, under a token with `placeholders`): the command around reads it as written, and replaces it before the one it runs gets it. */
-  placeholder?: true;
+  /** On the token of such a word (`{}`, `'{}'`, under a token with `placeholders`): the command around reads it as written, and replaces it with a path or an input line before the one it runs gets it. */
+  placeholder?: PlaceholderWith;
   /** On the outermost tokens of an embedded language: which language (`regex`, `sed`, `jq`…; `EmbeddedLang`). */
   language?: string;
   /** On the tokens of a string read as a script (`origin` `script`): which shell reads it. */
@@ -258,10 +264,10 @@ export interface ExplainOptions {
   hostProblems?: readonly string[];
   /**
    * Set by the analyzer for a string a shell runs (`sh -c '…' sh "$msg"`): the shell (`sh -c`) and the words its
-   * `$0`, `$1`… start as, in order; `replacedBy`: for each word, the option that replaces it with a path
-   * before it runs the command (`-exec`, for find's `{}`), where one does; `more`: words after them whose number is known only when it runs (`"$@"`).
+   * `$0`, `$1`… start as, in order; `replacedBy`: for each word, what replaces it (an option: `-exec` for find's `{}`, `-I` for xargs's `-I%`) before it runs
+   * the command, where one does; `more`: words after them whose number is known only when it runs (`"$@"`).
    */
-  positional?: { via: string; words: readonly string[]; replacedBy: readonly (string | undefined)[]; more: boolean };
+  positional?: { via: string; words: readonly string[]; replacedBy: readonly (Replaced | undefined)[]; more: boolean };
 }
 
 /**

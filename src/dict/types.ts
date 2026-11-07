@@ -1,4 +1,4 @@
-import type { CommandSlot, CommandSpec, Condition, EachFile, IoUse, LayoutEnvironment, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec } from '../argv/spec';
+import type { CommandSlot, CommandSpec, Condition, EachFile, IoUse, LayoutEnvironment, OperandAlt, OperandSpec, OptionSpec, PatternOption, PlaceholderSpec, ValueSpec } from '../argv/spec';
 import type { BashVersion } from '../bashversion';
 import type { EmbeddedLang } from '../embedded/types';
 import { Text, tx } from '../i18n';
@@ -18,8 +18,9 @@ export { wordTable } from '../wordtable';
  */
 export type OptSpec = [string, string, string, string?] | [string, string, string, string, Record<string, Text>];
 
-/** The word of the command of find's `-exec`, `-execdir`, `-ok` and `-okdir` that find replaces with each path found. */
-const FIND_PLACEHOLDER = '{}';
+/** The text in the command of find's `-exec`, `-execdir`, `-ok` and `-okdir` that find replaces with each path found. */
+const FIND_BRACES = '{}';
+const FIND_PLACEHOLDER: PlaceholderSpec = { text: FIND_BRACES, with: 'path', anywhere: true };
 
 /** The option spec of a tuple (see `OptSpec`). */
 export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
@@ -33,7 +34,7 @@ export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSp
   const nextIf = /next:(\S+)/.exec(flags)?.[1];
   // (find's `-exec` and `-execdir` end at `;`, or at `+` after a `{}`; `-ok` and `-okdir` only at `;`.)
   if (flags.includes('until-each')) opt.until = { terminators: [';'], slot: { run: 'exec' }, placeholder: FIND_PLACEHOLDER };
-  else if (flags.includes('until')) opt.until = { terminators: [';', '+'], slot: { run: 'exec' }, endsAfter: { '+': FIND_PLACEHOLDER }, placeholder: FIND_PLACEHOLDER };
+  else if (flags.includes('until')) opt.until = { terminators: [';', '+'], slot: { run: 'exec' }, endsAfter: { '+': FIND_BRACES }, placeholder: FIND_PLACEHOLDER };
   else if (flags.includes('arg')) {
     const n = Number(/arg(\d)/.exec(flags)?.[1] ?? 1);
     opt.value = n > 1

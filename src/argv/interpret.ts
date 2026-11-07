@@ -9,10 +9,10 @@ import type { Text } from '../i18n';
 import { EnvSplitError, splitEnvString } from './envsplit';
 import { type ParserRules, rulesOf } from './parsers';
 import { type Depends, type WordReadings, wordReadings } from './profiles';
-import { ignoring, settleModes } from './modes';
+import { ignoring, type InEffect, settleModes } from './modes';
 import { flexible, readingsOf, type ReadingsTable } from './readings';
 import { type Group, optionFields, regroup, withParse } from './regroup';
-import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
+import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, PlaceholderSpec, SubcommandSpec, ValueSpec } from './spec';
 import { pushAll } from '../lists';
 
 /** A word of the command line, as the program will see it. */
@@ -59,6 +59,12 @@ export interface ArgWord {
   fields?: () => readonly string[] | undefined;
 }
 
+/**
+ * The words of a command that the tool running it replaces first (`PlaceholderSpec`): the text, the option that replaces it (`-exec`, `-I`), what with, and
+ * the words (their indices) that are that text alone (`whole`: `{}`, `'{}'`) and those that hold it with other text (`within`: `%.bak`).
+ */
+export interface PlaceholderRole { by: string; text: string; with: PlaceholderSpec['with']; whole: number[]; within: number[] }
+
 export type ArgRole =
   /**
    * An option, alone or as a letter of a cluster; `flag` is as written (`+x` for `set +x`, with `disables`).
@@ -100,7 +106,7 @@ export type ArgRole =
    * an operand's: the role of each word it becomes, when they are known and the others are not the command's
    * (`trap {x,EXIT}`: the action, then a signal). `readings`, as an option's (`sudo -u $u ls`).
    */
-  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; each?: OperandSpec[]; readings?: Readings; placeholders?: number[] }
+  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; each?: OperandSpec[]; readings?: Readings; placeholder?: PlaceholderRole }
   /** The word that ends an option's command (`;` of `find -exec … ;`), and its text (one of the option's `until.terminators`). */
   | { role: 'terminator'; text: string; of: string }
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
@@ -402,6 +408,7 @@ class Reader {
     }
     const settled = settleModes(spec, [...roles].sort((a, b) => a[0] - b[0]), this.words);
     parse.mode = settled ? settled.mode : chooseMode(spec, given);
+    st.inEffect = settled?.inEffect;
     if (spec.operands) {
       const words = operands.map((i) => this.words[i]);
       const alts = spec.operands.flatMap((alt, index) => (conditionHolds(alt.when, given, parse.mode, words) ? [{ alt, index }] : []));
@@ -479,7 +486,10 @@ class Reader {
         if (item.command.joinsWords && !item.command.escapesWords) {
           roles.set(i, { role: 'command', slot: item.command, item });
           for (let j = i + 1; j < end; j++) roles.set(j, { role: 'joined' });
-        } else roles.set(i, { ...this.command(item.command, i, end, undefined, st.appended || !!item.command.appends), item });
+        } else {
+          const placeholder = this.placeholderOf(item.command.placeholder, st, i + 1, end, !!item.command.placeholder?.anywhere);
+          roles.set(i, { ...this.command(item.command, i, end, undefined, st.appended || !!item.command.appends), item, ...(placeholder ? { placeholder } : {}) });
+        }
         return;
       }
       if (item.option) {
@@ -496,6 +506,34 @@ class Reader {
       const role: OperandRole = spec.extra?.knownOnly && words[k].value === undefined ? { role: 'operand', index: k } : { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(each ? { each } : {}) };
       roles.set(i, role);
     }
+  }
+
+  /**
+   * The words from `from` to `to` that the tool replaces before it runs the command (`PlaceholderSpec`), by their value after quote removal;
+   * `anywhere`: also those that hold the text among other text. `flag` is the option that sets the text where the spec does not name one.
+   */
+  private placeholderOf(p: PlaceholderSpec | undefined, st: OptionState, from: number, to: number, anywhere: boolean, flag?: string): PlaceholderRole | undefined {
+    if (!p) return undefined;
+    let text: string | undefined;
+    // (`flag`: the option that has the text, find's `-exec`, where the spec names it.)
+    let by = flag!;
+    if (typeof p.text === 'string') text = p.text;
+    else {
+      // (The option of the mode in effect: a later `-n2` turns `-I` off. Its value, or the spec's default where it takes none; unknown, none.)
+      const e = st.inEffect?.get(p.text.mode);
+      if (!e) return undefined;
+      text = e.present ? e.value : p.text.default;
+      by = e.flag;
+    }
+    if (!text) return undefined;
+    const whole: number[] = [];
+    const within: number[] = [];
+    for (let i = from; i < to; i++) {
+      const w = untilWord(this.words[i]);
+      if (w === text) whole.push(i);
+      else if (anywhere && w?.includes(text)) within.push(i);
+    }
+    return whole.length || within.length ? { by, text, with: p.with, whole, within } : undefined;
   }
 
   /** The role of the first word of a command run by this one, with the words up to `end` read by its spec. */
@@ -713,9 +751,9 @@ class Reader {
       const words = this.words.slice(0, st.end).map((w, i) => (i > last ? untilWord(w) : ''));
       const { at: j, refusal } = untilEnd(opt.until, words, last + 1, st.end);
       // (Not `appended`: `xargs find . -exec echo --version \;` adds its words after the `;`.)
-      // (The words the tool replaces before it runs the command: by their value, so `'{}'` and `\{\}` are too.)
-      const placeholders = range(last + 1, j).filter((i) => opt.until!.placeholder !== undefined && words[i] === opt.until!.placeholder);
-      if (j > last + 1) st.roles.set(last + 1, { ...this.command(slot, last + 1, j, flag), ...(placeholders.length ? { placeholders } : {}) });
+      // (The words the tool replaces before it runs the command: by their value, so `'{}'` and `\{\}` are too. With `+` it replaces only the one before it.)
+      const placeholder = this.placeholderOf(opt.until.placeholder, st, last + 1, j, !!opt.until.placeholder?.anywhere && !(j < st.end && opt.until.endsAfter?.[words[j]!]), flag);
+      if (j > last + 1) st.roles.set(last + 1, { ...this.command(slot, last + 1, j, flag), ...(placeholder ? { placeholder } : {}) });
       // (The first one: find tells that one.)
       if (refusal) st.refusal ??= { ...refusal, option: flag, at: last };
       if (j < st.end) { st.roles.set(j, { role: 'terminator', text: words[j]!, of: flag }); return j; }
@@ -818,6 +856,8 @@ interface OptionState {
   appended: boolean;
   /** With the rule `longFirst`: a word of short options was read, so the long ones are over. */
   shortSeen?: boolean;
+  /** The option in effect of each mode of options that cancel each other (`settleModes`), once the options are read. */
+  inEffect?: Map<string, InEffect>;
   /** The command of an option with `until` is wrong: `ArgvParse.refusal`. */
   refusal?: UntilRefusal & { option: string; at: number };
 }

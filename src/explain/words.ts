@@ -655,12 +655,17 @@ function stringParam(cx: Explainer, k: number, at: SyntaxNode): string | undefin
   if (!p || ancestor(at, (x) => x.type === 'function_definition')) return undefined;
   const w = p.words[k];
   const of = cx.s(`\`${p.via}\` の文字列`, `the \`${p.via}\` string`);
-  // (A word the option replaces with each path, find's `{}`: the string never sees the word, only the path.)
+  // (A word the command around replaces, find's `{}` or xargs's `-I%`: the string never sees the word, only what replaces it.)
   const by = p.replacedBy[k];
   if (by !== undefined) {
+    const withJa = by.with === 'path' ? '見つけたパス' : '入力の1行';
+    const withEn = by.with === 'path' ? 'the path it found' : 'the input line';
+    if (by.within) return k === 0
+      ? cx.s(`${of}の \`$0\`: そのあとに渡した名前。\`${by.by}\` が \`${w}\` の中の \`${by.text}\` を${withJa}に置き換えてから渡す（エラーメッセージに出る）`, `\`$0\` of ${of}: the name given after it; \`${by.by}\` replaces \`${by.text}\` in \`${w}\` with ${withEn} first (shown in error messages)`)
+      : cx.s(`位置パラメータ: ${of}への ${k} 番目の引数。\`${by.by}\` が \`${w}\` の中の \`${by.text}\` を${withJa}に置き換えてから渡す`, `Positional parameter: argument #${k} of ${of}; \`${by.by}\` replaces \`${by.text}\` in \`${w}\` with ${withEn} first`);
     return k === 0
-      ? cx.s(`${of}の \`$0\`: そのあとに渡した名前。\`${by}\` が \`${w}\` を見つけたパスに置き換えてから渡す（エラーメッセージに出る）`, `\`$0\` of ${of}: the name given after it; \`${by}\` replaces \`${w}\` with the path it found first (shown in error messages)`)
-      : cx.s(`位置パラメータ: ${of}への ${k} 番目の引数。\`${by}\` が \`${w}\` の代わりに、見つけたパスを渡す`, `Positional parameter: argument #${k} of ${of}; \`${by}\` passes the path it found in place of \`${w}\``);
+      ? cx.s(`${of}の \`$0\`: そのあとに渡した名前。\`${by.by}\` が \`${w}\` を${withJa}に置き換えてから渡す（エラーメッセージに出る）`, `\`$0\` of ${of}: the name given after it; \`${by.by}\` replaces \`${w}\` with ${withEn} first (shown in error messages)`)
+      : cx.s(`位置パラメータ: ${of}への ${k} 番目の引数。\`${by.by}\` が \`${w}\` の代わりに、${withJa}を渡す`, `Positional parameter: argument #${k} of ${of}; \`${by.by}\` passes ${withEn} in place of \`${w}\``);
   }
   if (k === 0) {
     return w === undefined ? undefined : cx.s(`${of}の \`$0\`: そのあとに渡した名前 \`${w}\`（エラーメッセージに出る）`, `\`$0\` of ${of}: the name given after it, \`${w}\` (shown in error messages)`);
