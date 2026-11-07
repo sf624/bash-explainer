@@ -246,6 +246,12 @@ describe('the panel: one view with a depth', function () {
       await chooseDepth(page, 2);
       await depthDrawn(panel, 2);
       await until('the rows started again', folded, (f) => JSON.stringify(f) === JSON.stringify(['grep', '/var/log/*.log', 'uniq', 'sort']));
+      // (Every stage opened by its fold button, so that the role line of each part is measured; the glob's row stays folded: its pieces
+      // of a word have no role line.)
+      for (const name of ['grep', 'uniq', 'sort']) {
+        await panel.locator('#tree li.collapsed', { has: panel.locator(':scope > .item > .row > .code .label', { hasText: new RegExp('^' + name + '$') }) }).locator(':scope > .item > .row > button.twisty').click();
+      }
+      await until('every stage open', folded, (f) => JSON.stringify(f) === JSON.stringify(['/var/log/*.log']));
       const got = await panel.evaluate(`(() => {
         const rows = [...document.querySelectorAll('#tree .row')].filter((r) => r.getClientRects().length);
         const lines = rows.map((r) => [...r.querySelectorAll(':scope > .text > .role-line')]);
@@ -270,8 +276,8 @@ describe('the panel: one view with a depth', function () {
       assert.match(got.pipes[0], lang === 'en' ? /stdout of grep → stdin of sort/ : /grep の標準出力 → sort の標準入力/);
       // (Its sign and its text on one line; its role beside them, or a line more on a phone.)
       for (const h of got.pipeHeights) assert.ok(h <= 2 * got.line + 4, `the pipe: ${h} px, a line ${got.line} px`);
-      // (A row whose parts all come at depth 2 starts folded, and the stages the cursor is not on.)
-      assert.deepStrictEqual(got.folded, ['grep', '/var/log/*.log', 'uniq', 'sort']);
+      // (A row whose parts all come at depth 2 starts folded: the glob's, still so once the stages are open.)
+      assert.deepStrictEqual(got.folded, ['/var/log/*.log']);
       const dir = process.env.BASH_EXPLAINER_SHOTS;
       if (dir) await page.screenshot({ path: path.join(dir, `depth2-${width}-${lang}-${theme}.png`), fullPage: true });
       await ctx.close();
