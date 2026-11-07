@@ -2,6 +2,7 @@ import { blankName } from './messages-values';
 import type { Text } from './i18n';
 import { codeSpan } from './label';
 import { tokenText } from './messages-levels';
+import type { PlaceholderWith } from './analyzer-types';
 
 // What the tokens of the words of a command, as src/explain/argv.ts and its modules read them say.
 
@@ -24,10 +25,18 @@ export const ARGV_TEXTS = {
   'find-exec-end-each': tokenText<{ of: string; escaped: boolean }>(({ of, escaped }) => [
     `\`${of}\` の終わり: 見つかったファイル1件ごとにコマンドを実行${escaped ? '（\`;\` はシェルに解釈されないようエスケープが必要）' : ''}`,
     `End of \`${of}\`: run once per match${escaped ? ' (\`;\` must be escaped from the shell)' : ''}`]),
-  /** `find . -exec cmd {} \;`: the `{}` that find replaces with each path. */
-  'find-exec-placeholder': tokenText(() => [
-    '`{}`: 見つかったファイルのパスに置き換わる',
-    '`{}`: replaced with the path that was found']),
+  /** `find . -exec cmd {} \;`, `xargs -I% cmd %`: the word that the command around replaces (`what`: with a path, or the input line) before it runs the other. */
+  'placeholder-replaced': tokenText<{ text: string; what: PlaceholderWith }>(({ text, what }) => what === 'path' ? [
+    `\`${text}\`: 見つかったファイルのパスに置き換わる`,
+    `\`${text}\`: replaced with the path that was found`] : [
+    `\`${text}\`: 入力から読んだ1行に置き換わる`,
+    `\`${text}\`: replaced with the input line`]),
+  /** `find . -exec mv {} {}.bak \;`, `xargs -I% mv % %.bak`: a word that holds the text, which the command around replaces in it; added to what the word says. */
+  'placeholder-within': tokenText<{ text: string; what: PlaceholderWith; by: string }>(({ text, what, by }) => what === 'path' ? [
+    `。\`${by}\` が語の中の \`${text}\` を見つけたファイルのパスに置き換えてから、コマンドを実行する`,
+    `. \`${by}\` replaces \`${text}\` in it with the path that was found before it runs the command`] : [
+    `。\`${by}\` が語の中の \`${text}\` を入力から読んだ1行に置き換えてから、コマンドを実行する`,
+    `. \`${by}\` replaces \`${text}\` in it with the input line before it runs the command`]),
   /** `find . \( -a -o -b \)`: the group as a whole. */
   'find-group': tokenText(() => [
     'グループ: 括弧の中を先にまとめて評価する',

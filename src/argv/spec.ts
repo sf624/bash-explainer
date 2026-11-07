@@ -304,11 +304,8 @@ export interface OptionSpec {
      * else it is a word of the command (`-exec echo a + \;`). The word must be that text alone, and no other word may hold it.
      */
     endsAfter?: Record<string, string>;
-    /**
-     * The text of a word of the command that the tool replaces before it runs it (find's `{}` with each path found): a word whose value
-     * is that text, after quote removal (`'{}'`, `\{\}`), is a placeholder (`CommandRole.placeholders`).
-     */
-    placeholder?: string;
+    /** The text the tool replaces in the words of the command before it runs it (find's `{}`). */
+    placeholder?: PlaceholderSpec;
   };
   /**
    * The operands after this option that the pattern gives to its last, repeating item are these instead
@@ -576,6 +573,22 @@ export interface OperandSpec {
  */
 export type Condition = { option: string[] } | { mode: string } | { operand: number; matches: RegExp } | { unsplit: string[] } | { not: Condition } | { all: Condition[] };
 
+/**
+ * The text a tool replaces in the words of the command it runs, before it runs it (find's `{}` with each path, xargs's `-I%` with each
+ * input line). The interpreter finds the words that hold it by their value after quote removal (`CommandRole.placeholder`), so `'{}'` and `\{\}` are found like `{}`.
+ */
+export interface PlaceholderSpec {
+  /**
+   * The text itself (`{}`); or the value of the option that sets it (`xargs -I%`), found by the mode it selects (`ModeSpec`: the last such option
+   * in effect), `default` where the option takes no value (`-i`). None in effect, none to replace.
+   */
+  text: string | { mode: string; default?: string };
+  /** What it is replaced with: a path (`find`), a line of the input (`xargs -I`). */
+  with: 'path' | 'line';
+  /** Replaced anywhere in a word (`xargs -I% mv % %.bak`), not only as a word of its own. (find: before `;`, not before `+`.) */
+  anywhere?: true;
+}
+
 /** How the words of a command slot are run. */
 export interface CommandSlot {
   /**
@@ -624,6 +637,8 @@ export interface CommandSlot {
    * (GNU xargs: "ignoring previous --replace value"; a later `-I` turns those off: xargs's modes, `ModeSpec.cancels`).
    */
   appends?: boolean;
+  /** The text the program replaces in the words of the command (`xargs -I%`), before the program runs it. */
+  placeholder?: PlaceholderSpec;
   /** `exec cmd`: nothing after it runs. */
   replacesShell?: boolean;
   /** With `shell-string`: the operands after the string are its `$0`, `$1`… (`sh -c '…' sh "$msg"`). */

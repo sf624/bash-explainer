@@ -202,6 +202,121 @@ describe('the reading tree of a line', () => {
         rmSync(dir, { recursive: true, force: true });
       }
     });
+
+    describe('the replace string of `xargs -I` and `-i`, and find\'s `{}` inside a larger word', () => {
+      const LINE = { en: 'replaced with the input line', ja: '入力から読んだ1行に置き換わる' };
+      /** Each line: the source, what real GNU xargs/find prints for it, the labels of the words that are the replace string alone, and of those that hold it. */
+      const XARGS: { src: string; input: string; out: string; whole: string[]; within: string[] }[] = [
+        { src: 'xargs -I{} echo {} dest/', input: 'a\nb c\n', out: 'a dest/\nb c dest/\n', whole: ['{}'], within: [] },
+        { src: 'xargs -I % echo % %.bak', input: 'a\nb c\n', out: 'a a.bak\nb c b c.bak\n', whole: ['%'], within: ['%.bak'] },
+        { src: 'xargs -i echo {} {}.bak', input: 'a\nb c\n', out: 'a a.bak\nb c b c.bak\n', whole: ['{}'], within: ['{}.bak'] },
+        { src: 'xargs --replace=@ echo @ x@y', input: 'a\n', out: 'a xay\n', whole: ['@'], within: ['x@y'] },
+        // (Quoted: xargs gets the same words.)
+        { src: "xargs -I% echo '%' \"%\" \\% '%.x'", input: 'a\n', out: 'a a a a.x\n', whole: ["'%'", '"%"', '\\%'], within: ["'%.x'"] },
+        // (The last one given is in effect; the other is only text.)
+        { src: 'xargs -I% -I@ echo %.x @.x', input: 'a\n', out: '%.x a.x\n', whole: [], within: ['@.x'] },
+        { src: 'xargs -I{} -n1 echo {} z', input: 'a\nb\n', out: 'a z\nb z\n', whole: ['{}'], within: [] },
+        // (Cancelled by a later option of another mode: nothing is replaced, and the words are the command's own.)
+        { src: 'xargs -I{} -n2 echo {} z', input: 'a\nb\nc\n', out: '{} z a b\n{} z c\n', whole: [], within: [] },
+        { src: 'xargs -I% -L2 echo %.x', input: 'a\nb\nc\n', out: '%.x a b\n%.x c\n', whole: [], within: [] },
+        { src: 'xargs -n2 -I% echo %', input: 'a\nb\nc\n', out: 'a\nb\nc\n', whole: ['%'], within: [] },
+        // (Without `-I`, nothing is replaced.)
+        { src: 'xargs echo {} x', input: 'a\n', out: '{} x a\n', whole: [], within: [] },
+      ];
+      const labelsOf = (src: string, pick: (t: Token) => boolean): string[] => tokens(src, 'en').filter(pick).map((t) => t.label);
+      const SENTENCE = /replaces `[^`]+` in it with the input line before it runs the command/;
+
+      it('marks the words xargs replaces, whole and inside a larger word, and none when the option is not in effect', () => {
+        for (const { src, whole, within } of XARGS) {
+          assert.deepStrictEqual(labelsOf(src, (t) => !!t.placeholder), whole, src);
+          assert.deepStrictEqual(labelsOf(src, (t) => t.kind === 'argument' && SENTENCE.test(t.explanation)), within, src);
+        }
+      });
+
+      it('says it in both languages at depth 1', () => {
+        for (const lang of ['en', 'ja'] as const) {
+          const [marked] = tokens('xargs -I{} cp {} dest/', lang).filter((t) => t.placeholder);
+          assert.ok(marked.explanation.includes(LINE[lang]), `${lang}: ${marked.explanation}`);
+          const word = tokens('xargs -I % mv % %.bak', lang).find((t) => t.label === '%.bak')!.explanation;
+          assert.match(word, lang === 'en' ? /`-I` replaces `%` in it with the input line/ : /`-I` が語の中の `%` を入力から読んだ1行に置き換えて/);
+        }
+        // The operand description stays beside it: `%.bak` is still the destination of `mv`.
+        assert.match(tokens('xargs -I % mv % %.bak', 'en').find((t) => t.label === '%.bak')!.explanation, /^destination/);
+      });
+
+      it('reads it at depth 2 as xargs\'s: xargs reads the replace string, the command it runs gets the input line', () => {
+        const r = explain('xargs -I % mv % %.bak').reading!;
+        const brace = readingNodes(r).filter((n) => n.layer === 'command' && n.placeholder);
+        assert.strictEqual(brace.length, 1);
+        assert.strictEqual(brace[0].reader, 'xargs');
+        assert.strictEqual(chipOf(brace[0], 'en'), 'placeholder for the input line');
+        assert.strictEqual(chipOf(brace[0], 'ja'), 'プレースホルダー（入力の1行に置き換わる）');
+        assert.strictEqual(find(r, 'mv', 'command').reader, 'xargs');
+        // A word that holds it is still an operand of the command that gets it.
+        const within = readingNodes(r).find((n) => n.layer === 'command' && n.label === '%.bak')!;
+        assert.strictEqual(within.placeholder, undefined);
+        assert.strictEqual(within.reader, 'mv');
+        // Cancelled: the word is an operand of the command that reads it.
+        const off = readingNodes(explain('xargs -I{} -n2 cp {} dest/').reading!).find((n) => n.layer === 'command' && n.label === '{}' && n.kind === 'argument' && !n.valueFor)!;
+        assert.strictEqual(off.placeholder, undefined);
+        assert.strictEqual(off.reader, 'cp');
+      });
+
+      it('says of `$1` in `sh -c` that xargs passes the input line', () => {
+        const text = (src: string, lang: 'en' | 'ja', label: string): string => tokens(src, lang).find((t) => t.label === label)!.explanation;
+        assert.match(text('xargs -I% sh -c \'echo "$1"\' _ %', 'en', '$1'), /argument #1 of the `sh -c` string; `-I` passes the input line in place of `%`/);
+        assert.match(text('xargs -I% sh -c \'echo "$1"\' _ %', 'ja', '$1'), /`-I` が `%` の代わりに、入力の1行を渡す/);
+        assert.match(text('xargs -I% sh -c \'echo "$1"\' _ %.x', 'en', '$1'), /`-I` replaces `%` in `%\.x` with the input line first/);
+        // Cancelled: it starts as what is written.
+        assert.match(text('xargs -I% -n2 sh -c \'echo "$1"\' _ %', 'en', '$1'), /\(it starts as `%`\)/);
+      });
+
+      it('marks nothing where the replace string or the word is not known', () => {
+        // (A replace string that is not known, or empty, replaces nothing we can tell; a word that is not known may hold it.)
+        for (const src of ['xargs -I"$x" echo {} z', "xargs -I '' echo {} z", 'xargs -I% echo "$x" "a$x"']) {
+          assert.deepStrictEqual(labelsOf(src, (t) => !!t.placeholder), [], src);
+          assert.deepStrictEqual(labelsOf(src, (t) => SENTENCE.test(t.explanation)), [], src);
+        }
+      });
+
+      it('says of `$0` in `sh -c` that xargs passes the input line, for the string alone and a word that holds it', () => {
+        const text = (src: string, label: string): string => tokens(src, 'en').find((t) => t.label === label)!.explanation;
+        assert.match(text('xargs -I% sh -c \'echo "$0"\' %', '$0'), /`-I` replaces `%` with the input line first/);
+        assert.match(text('xargs -I% sh -c \'echo "$0"\' %.x', '$0'), /`-I` replaces `%` in `%\.x` with the input line first/);
+      });
+
+      it('agrees with GNU xargs: it replaces the string in every word but the command\'s name, the last option in effect', () => {
+        const dir = mkdtempSync(path.join(process.env.TMPDIR ?? tmpdir(), 'xargs-replace-'));
+        try {
+          // (The program, not a function of the shell that may run another xargs. Input from a file, not a pipe.)
+          const inFile = path.join(dir, 'in');
+          for (const { src, input, out } of XARGS) {
+            writeFileSync(inFile, input);
+            const r = spawnSync('bash', ['--norc', '--noprofile', '-c', `xargs() { /usr/bin/xargs "$@"; }; ${src} < "$1"`, 'bash', inFile], { encoding: 'utf8', cwd: dir, timeout: 10000 });
+            assert.strictEqual(r.stdout, out, src);
+          }
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
+      it('marks find\'s `{}` inside a larger word before `;`, not before `+`', () => {
+        const SENT = /`-exec` replaces `\{\}` in it with the path that was found before it runs the command/;
+        const within = (src: string) => labelsOf(src, (t) => t.kind === 'argument' && SENT.test(t.explanation));
+        assert.deepStrictEqual(within('find . -exec mv {} {}.bak \\;'), ['{}.bak']);
+        assert.deepStrictEqual(within("find . -exec sh -c 'echo {}' \\;"), ["'echo {}'"]);
+        assert.deepStrictEqual(within('find . -exec mv {}.bak {} +'), []);
+        const dir = mkdtempSync(path.join(process.env.TMPDIR ?? tmpdir(), 'find-within-'));
+        try {
+          writeFileSync(path.join(dir, 'f'), '');
+          const run = (script: string) => spawnSync('bash', ['--norc', '--noprofile', '-c', `find() { /usr/bin/find "$@"; }; ${script}`], { encoding: 'utf8', cwd: dir, timeout: 10000 }).stdout;
+          assert.strictEqual(run('find . -type f -exec echo x{}y {} \\;'), 'x./fy ./f\n');
+          assert.strictEqual(run("find . -type f -exec sh -c 'echo {}' \\;"), './f\n');
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+    });
   });
 
   it('reads a here-document as a redirection with its body, on each line of it', () => {

@@ -26,7 +26,7 @@
 // the nodes are those of the tokens about the same text: bash's own (`shell`) for the nodes bash reads.
 import { readSaid, tokenSaid, type TokenTextArgs, type TokenTextId } from './messages-tokens';
 import { markedText } from './tokenmarks';
-import type { Pos, ScriptProcess, Span, Token } from './analyzer-types';
+import type { PlaceholderWith, Pos, ScriptProcess, Span, Token } from './analyzer-types';
 import type { Basis, TryIt } from './basis';
 import { binaryTestOp, binaryTestOperands, extendedEqualOps, plainPatternOps, testOperandTexts, unaryTestOperands, unaryTestOps } from './dict/syntax';
 import type { Lang } from './i18n';
@@ -95,8 +95,8 @@ export interface ReadingNode {
   resolves?: ReturnType<typeof badgeKind>;
   /** On a word a command reads as the value of an option: the option (`-f`, `--file`). */
   valueFor?: string;
-  /** On a placeholder (`{}` of `find -exec`): the command around it replaces it, so that one reads the word and the command it runs reads what replaces it (`Token.placeholder`). */
-  placeholder?: true;
+  /** On a placeholder (`{}` of `find -exec`, `%` of `xargs -I%`): the command around it replaces it, so that one reads the word and the command it runs reads what replaces it (`Token.placeholder`). */
+  placeholder?: PlaceholderWith;
   /** On a command name (and the reserved word `time`): what the name is, and what else (`Token.name`). */
   name?: NameInfo;
   /** On a word bash does something to: what it does, in its order (3.5; `wordSteps`), and the word's place. */
@@ -839,7 +839,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
 
   /** A token the command reads, and the tokens under it by their own origins. (A command it runs reads what follows.) */
   const tokenNode = (t: Token, layer: Layer, reader: Reader): ReadingNode => ({
-    layer, kind: t.kind, label: t.label, span: t.span, ...readBy(t.placeholder && reader.replacer ? reader.replacer : reader), ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}), ...(t.expands ? { expands: t.expands } : {}), ...(t.placeholder ? { placeholder: true as const } : {}),
+    layer, kind: t.kind, label: t.label, span: t.span, ...readBy(t.placeholder && reader.replacer ? reader.replacer : reader), ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}), ...(t.expands ? { expands: t.expands } : {}), ...(t.placeholder ? { placeholder: t.placeholder } : {}),
     // (A word the command reads as a script, which the analyzer says only is a word: `eval ls`.)
     ...(t.explanation === said('word-plain', { text: t.label }) && t.children.some((c) => c.origin === 'script') ? { text: said('script-run-again') } : saidBy(t)),
     children: testPartsIn(t, readParts(t.children, false, RUNS.has(t.kind) ? runner(t, reader) : reader, t.kind !== 'assignment'), layer, reader),

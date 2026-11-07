@@ -1,7 +1,7 @@
 // The context of the explanation of one line (docs/design/analyzer.md, 2.2): what the explanation of each part reads
 // (the language, the models of the script, the options), the walk over the line's nodes with its line filter, and the
 // one place where the line's notes, facts and examples are collected. src/analyzer.ts makes one per line.
-import type { ContextEntry, Example, ExplainOptions, Kind, LineExplanation, NoteAnchor, Span, Token } from '../analyzer-types';
+import type { ContextEntry, Example, ExplainOptions, Kind, LineExplanation, NoteAnchor, Replaced, Span, Token } from '../analyzer-types';
 import type { ArgvParse } from '../argv/interpret';
 import { type BashVersion, DEFAULT_BASH_VERSION } from '../bashversion';
 import type { CommandSpec } from '../argv/spec';
@@ -27,10 +27,9 @@ import { pushAll } from '../lists';
  * The command whose arguments are being explained (`Explainer.command`): its name, its words, and their parse
  * (`nodes` are the words the parse's indices count, of which `args` are this command's), which the explanations of
  * embedded languages read; and whether the shell reads the words again (`rereads`, `eval`: set by the rendering of
- * the words, while it reads them); and the words an option replaces with each path before it runs a command (`placeholders`, find's `{}`: to the
- * option that does it).
+ * the words, while it reads them); and the words an option replaces with each path or input line before it runs a command (`placeholders`, find's `{}`, xargs's `-I%`: how).
  */
-export interface CommandContext { cmd: string; args: SyntaxNode[]; parse: ArgvParse; nodes: SyntaxNode[]; spec: CommandSpec; rereads?: boolean; placeholders?: Map<SyntaxNode, string> }
+export interface CommandContext { cmd: string; args: SyntaxNode[]; parse: ArgvParse; nodes: SyntaxNode[]; spec: CommandSpec; rereads?: boolean; placeholders?: Map<SyntaxNode, Replaced> }
 
 /** A key of a memo kept for one line (`Explainer.memo`); the code that reads the memo makes its key. */
 export interface MemoKey<V> { readonly name: string; readonly value?: V }
