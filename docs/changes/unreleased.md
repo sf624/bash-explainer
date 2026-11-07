@@ -20,10 +20,13 @@ The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
 ### A pipeline sample with distinct lines
 
-- **What.** When a stage after the first is `uniq` or `sort -u`, the made-up input has the duplicates it needs. The sample of a `sed` that has one line to show now also gets a second, different line that its pattern matches and the script changes (`cde=za` beside `a=x`; for `s/a/b/`, `abc a xyz` beside `a a`). The copies that make duplicates are copies of both, and the copies of one line follow each other, so `uniq` alone collapses them too.
+- **What.** When a stage after the first is `uniq` or `sort -u`, the made-up input has the duplicates it needs.
+  - A `sed` that has one line to show also gets a second line that its pattern matches and whose output differs from the first line's (`cde=za` beside `a=x`; for `s/a/b/`, `abc a xyz` beside `a a`). If no such line exists (`s/.*/x/`, `s/[0-9]+/N/g`), or the sample already has 8 lines, the sample is as it was.
+  - The copies that make duplicates are copies of both, and the copies of a line follow each other, so `uniq` alone collapses them too. This holds for every source (grep, awk, cut, sed…).
 - **Before.** `sed -E 's/^([a-z]+)=(.*)$/\2=\1/' conf.txt | sort -u` read `a=x` four times and printed `x=a` four times. The sample of `sed 's/a/b/' f | uniq` was `a a` four times.
 - **After.** Input `a=x`, `cde=za`, `cde=za`, `a=x`, `a=x`; after the sed `x=a`, `za=cde`, `za=cde`, `x=a`, `x=a`; after `sort -u` `x=a`, `za=cde`.
-- **Not changed.** The sample of `sed` on its own (the README's `a=x` → `x=a`), and the samples of awk, perl and grep, which already have several lines.
+- **Other sources.** `awk '{print $1}' log | uniq -c` shows `2 grape`, `2 apple` where it showed `1 grape`, `1 apple`, `1 grape`, `1 apple` (the copies were apart, so `uniq` collapsed nothing).
+- **Not changed.** The sample of `sed` on its own (the README's `a=x` -> `x=a`), and the samples of awk, perl and grep, which already have several lines.
 
 ### How sh fails, in the note on a bash-only form
 

@@ -112,6 +112,13 @@ describe('pipeline examples agree with bash', () => {
     assert.deepStrictEqual(input('sed s/a/b/ | uniq'), ['a a', 'abc a xyz', 'abc a xyz', 'a a', 'a a']);
     // A script with no other line to offer keeps its copies of one line.
     assert.deepStrictEqual(new Set(input('sed s/a/a/ | uniq')).size, 1);
+    // A second line the script prints the same as the first would not show a second line further down: the copies stay.
+    assert.strictEqual(new Set(input('sed s/.*/x/ | uniq -c')).size, 1);
+    assert.strictEqual(new Set(input('sed s/^.*$/x/ | sort -u')).size, 1);
+    // A sample of 8 lines has no room for it, and the example is not lost (7q leaves the lines to the numbers).
+    const full = pipelineExample([{ cmd: 'sed', words: ['/a a/d;7q;s/a/b/'], text: 'sed' }, { cmd: 'sort', words: ['-u'], text: 'sort -u' }], false);
+    assert.ok(full);
+    assert.strictEqual(full.input!.length, 11); // (8 lines and 3 copies)
     // Without a duplicate-collapsing stage the sample is the sed's own.
     assert.deepStrictEqual(input('sed -E s/^([a-z]+)=(.*)$/\\2=\\1/ | sort'), ['a=x']);
   });
