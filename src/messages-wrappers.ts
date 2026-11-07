@@ -123,8 +123,10 @@ export const functionShadowedText = ({ via, name, where, wraps }: { via: string;
 export const placeholderInShellStringText = ({ by, text, what, via }: { by: string; text: string; what: PlaceholderWith; via?: string }): Texts => {
   const fix = via && `\`${via} '… "$1" …' _ ${text}\``;
   const [ja, en] = what === 'path' ? ['見つけたパス', 'the path it found'] : ['入力の1件', 'the input item'];
-  const [some, any] = what === 'path' ? ['ファイル名', 'a file name'] : ['値', 'an item'];
+  // (Every quoting has a name that runs: `;` unquoted, `$(…)` in double quotes, a quote of the same kind in either, also escaped
+  // for xargs, which takes quotes out of its input without `-0`. So no example: none is true for every quoting.)
+  const [some, any] = what === 'path' ? ['ファイル名', 'a file name'] : ['入力の1件', 'an item'];
   return [
-    `\`${by}\` が${ja}をコマンド文字列の中の \`${text}\` に埋め込んでから、シェルがその文字列を読みます。そのため \`;\` や \`$(…)\`、クォートを含む${some}（\`x;rm -rf ~\` など）は、コードとして実行されます${fix ? `。シェルの引数として渡せば、データのまま届きます: ${fix}` : ''}`,
-    `\`${by}\` pastes ${en} in place of \`${text}\` in the command string before the shell reads it, so ${any} with \`;\`, \`$(…)\` or a quote in it (such as \`x;rm -rf ~\`) runs as code${fix ? `. Pass it as an argument of the shell, which gets it as data: ${fix}` : ''}`];
+    `\`${by}\` が${ja}をコマンド文字列の中の \`${text}\` に埋め込んでから、シェルがその文字列を読みます。そのため特殊な文字（\`;\`・\`$(…)\`・クォート）を含む${some}は、\`${text}\` をどうクォートしても、コードとして実行されることがあります${fix ? `。シェルの引数として渡せば、データのまま届きます: ${fix}` : ''}`,
+    `\`${by}\` pastes ${en} in place of \`${text}\` in the command string before the shell reads it, so ${any} with special characters (\`;\`, \`$(…)\`, quotes) can run as code, however \`${text}\` is quoted${fix ? `. Pass it as an argument of the shell, which gets it as data: ${fix}` : ''}`];
 };

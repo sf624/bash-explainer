@@ -4,10 +4,10 @@ import type { OptionSpec } from './spec';
 /**
  * Why the tool refuses a command of an option with `until`: no terminator ends it (`missing`: find "missing argument to
  * `-exec'"), the terminator comes first (`empty`: "invalid argument `;' to `-exec'"), the word before a batching terminator
- * is not the marker alone (`alone`, with that `word`: "the {} must appear by itself"), or another word holds the marker
+ * is not the marker alone (`alone`, with that `word`, and its index `wordAt`: "the {} must appear by itself"), or another word holds the marker
  * (`once`: "Only one instance of {} is supported").
  */
-export interface UntilRefusal { why: 'missing' | 'empty' | 'alone' | 'once'; word?: string }
+export interface UntilRefusal { why: 'missing' | 'empty' | 'alone' | 'once'; word?: string; wordAt?: number }
 
 /**
  * What a word of the command line is to `untilEnd`: the one word it gives, where that is known (the fields of the semantic
@@ -46,5 +46,5 @@ export function untilEnd(until: NonNullable<OptionSpec['until']>, words: readonl
   if (at === from) return { at, refusal: { why: 'empty' } };
   if (marker === undefined) return { at };
   if (words.slice(from, at - 1).some((x) => x!.includes(marker!))) return { at, refusal: { why: 'once' } };
-  return words[at - 1] === marker ? { at } : { at, refusal: { why: 'alone', word: words[at - 1] } };
+  return words[at - 1] === marker ? { at } : { at, refusal: { why: 'alone', word: words[at - 1], wordAt: at - 1 } };
 }

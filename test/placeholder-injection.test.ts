@@ -1,5 +1,5 @@
 // find's `{}` and xargs's `-I` text inside a string a shell reads as code (`sh -c 'echo {}'`): the tool pastes the path or the item
-// into the code before the shell reads it, so a name with `;` runs as code (ShellCheck's SC2156). The note says so once for the
+// into the code before the shell reads it, so a name with special characters can run as code (ShellCheck's SC2156). The note says so once for the
 // string, with the shell's arguments as the fix, and the reading of the string says where the text goes. Checked with real
 // GNU find and xargs, and bash.
 import * as assert from 'assert';
@@ -56,15 +56,20 @@ describe('a placeholder pasted into a shell string (`sh -c \'echo {}\'`, SC2156)
       assert.strictEqual(more, undefined, src);
       assert.strictEqual(en.level, 'warning', src);
       assert.ok(en.text.startsWith('⚠ Shell injection risk: '), `${src}: ${en.text}`);
-      assert.match(en.text, /runs as code/, src);
+      assert.match(en.text, /with special characters \(`;`, `\$\(…\)`, quotes\) can run as code, however `[^`]+` is quoted/, src);
+      // (No example name: none runs for every quoting, see below.)
+      assert.doesNotMatch(en.text, /such as/, src);
       assert.ok(en.text.includes(`Pass it as an argument of the shell, which gets it as data: ${fix}`), `${src}: ${en.text}`);
       const [ja] = said(src, 'ja');
       assert.ok(ja.text.startsWith('⚠ シェルインジェクションの危険: '), `${src}: ${ja.text}`);
-      assert.ok(ja.text.includes(`コードとして実行されます。シェルの引数として渡せば、データのまま届きます: ${fix}`), `${src}: ${ja.text}`);
+      assert.ok(ja.text.includes(`をどうクォートしても、コードとして実行されることがあります。シェルの引数として渡せば、データのまま届きます: ${fix}`), `${src}: ${ja.text}`);
     }
     assert.match(said("find . -exec sh -c 'echo {}' \\;")[0].text, /`-exec` pastes the path it found in place of `\{\}` in the command string before the shell reads it, so a file name/);
     assert.match(said("xargs -I{} sh -c 'echo {}'")[0].text, /`-I` pastes the input item in place of `\{\}` in the command string before the shell reads it, so an item/);
     assert.strictEqual(said("xargs -I{} sh -c 'echo {}'")[0].head, '`-I` pastes each input item into the shell\'s code, so an item can run arbitrary commands.');
+    // (One name for the item in Japanese: 入力の1件, as the rows say.)
+    assert.match(said("xargs -I{} sh -c 'echo {}'", 'ja')[0].text, /特殊な文字（`;`・`\$\(…\)`・クォート）を含む入力の1件は/);
+    assert.match(said("find . -exec sh -c 'echo {}' \\;", 'ja')[0].head!, /ファイル名によっては任意のコマンドが実行される/);
   });
 
   it('gives no fix where the shell takes no arguments after the string (ssh\'s remote command)', () => {
@@ -81,7 +86,15 @@ describe('a placeholder pasted into a shell string (`sh -c \'echo {}\'`, SC2156)
 
   it('says nothing where the text is an argument of the shell, no shell reads it as code, or nothing runs', () => {
     for (const src of SILENT) assert.deepStrictEqual(said(src), [], src);
-    assert.ok(explain("find . -exec sh -c 'echo {}' +").facts?.some((f) => f.id === 'find-action-refused'));
+    // find's error on it gives the shell's arguments, not `\;`, which would paste each path into the code.
+    const refused = explain("find . -exec sh -c 'echo {}' +").facts!.find((f) => f.id === 'find-action-refused')!;
+    assert.match(refused.text, /the word before it is `echo \{\}`\. Pass the paths to the shell as arguments: `sh -c '… "\$@" …' _ \{\} \+`\. find refuses/);
+    assert.doesNotMatch(refused.text, /end it with/);
+    assert.match(explain("find . -exec sh -c 'echo {}' +", 'ja').facts!.find((f) => f.id === 'find-action-refused')!.text, /なので、パスはシェルの引数として渡す: `sh -c '… "\$@" …' _ \{\} \+`。find は/);
+    // (Not where the word is no shell's string, or a string of a shell that takes no arguments after it: su has no safe form to give.)
+    for (const src of ['find . -exec echo x{} +', "find . -exec su -c 'rm {}' +"]) {
+      assert.match(explain(src).facts!.find((f) => f.id === 'find-action-refused')!.text, /or end it with `\\;` to run it once per file/, src);
+    }
   });
 
   it('reads the text in the string as what the tool pastes, not as a word `{}`, at depth 1 and 2', () => {
@@ -138,6 +151,54 @@ describe('a placeholder pasted into a shell string (`sh -c \'echo {}\'`, SC2156)
         // (What we say agrees: a warning exactly where the name runs as code.)
         assert.strictEqual(said(c.line).length, c.runs ? 1 : 0, c.line);
       });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The note says a name with special characters "can run as code, however `{}` is quoted", and gives no example: which names run
+  // depends on the quotes around `{}` in the string, and xargs without `-0` takes quotes out of its input first (review of #712).
+  it('agrees with GNU find and xargs on which names run, for each quoting of `{}` in the string: some name always does', async function () {
+    this.timeout(60000);
+    const dir = mkdtempSync(path.join(process.env.TMPDIR ?? tmpdir(), 'placeholder-quoting-'));
+    try {
+      // (Each name makes a file `PWNED` if it runs as code; `x\';…;\'` is for xargs without `-0`, whose input takes `\'` as a quote.)
+      const NAMES = ['x;touch PWNED #', 'x$(touch PWNED)', 'x";touch PWNED;"', "x';touch PWNED;'", "x\\';touch PWNED;\\'"];
+      const STRINGS = ["'echo {}'", `'echo "{}"'`, `"echo '{}'"`];
+      const TOOLS = {
+        find: (s: string) => `/usr/bin/find . -type f -exec sh -c ${s} \\;`,
+        'xargs -0': (s: string) => `printf '%s\\0' "$name" | /usr/bin/xargs -0 -I{} sh -c ${s}`,
+        xargs: (s: string) => `printf '%s\\n' "$name" | /usr/bin/xargs -I{} sh -c ${s}`,
+        // (The safe forms: the shell gets the name as an argument.)
+        'find +': () => `/usr/bin/find . -type f -exec sh -c 'echo "$@"' _ {} +`,
+        'xargs "$1"': () => `printf '%s\\n' "$name" | /usr/bin/xargs -I{} sh -c 'echo "$1"' _ {}`,
+      };
+      // (What ran: each string, the names by their index, for each tool. Measured with findutils 4.9.0.)
+      const RAN: Record<string, Record<keyof typeof TOOLS, number[]>> = {
+        "'echo {}'": { find: [0, 1, 4], 'xargs -0': [0, 1, 4], xargs: [0, 1, 2, 3], 'find +': [], 'xargs "$1"': [] },
+        [`'echo "{}"'`]: { find: [1, 2], 'xargs -0': [1, 2], xargs: [1], 'find +': [], 'xargs "$1"': [] },
+        [`"echo '{}'"`]: { find: [3], 'xargs -0': [3], xargs: [4], 'find +': [], 'xargs "$1"': [] },
+      };
+      const cells = STRINGS.flatMap((str) => NAMES.flatMap((name, n) => (Object.keys(TOOLS) as (keyof typeof TOOLS)[]).map((tool) => ({ str, name, n, tool }))));
+      const quote = (x: string): string => `'${x.replace(/'/g, "'\\''")}'`;
+      const script = cells.map((c, i) => `mkdir c${i} && cd c${i} && name=${quote(c.name)} && ${c.tool.startsWith('find') ? ': > "$name" && ' : ''}`
+        + `{ ${TOOLS[c.tool](c.str)}; } >/dev/null 2>&1; [ -e PWNED ] && echo ran ${i}; cd ..`).join('\n');
+      const { stdout } = await runContained(['bash', '--norc', '--noprofile', '-c', script], dir, {}, 50000);
+      const ran = new Set(stdout.split('\n').filter(Boolean).map((l) => Number(l.slice('ran '.length))));
+      const got: typeof RAN = {};
+      cells.forEach((c, i) => {
+        ((got[c.str] ??= {} as Record<keyof typeof TOOLS, number[]>)[c.tool] ??= []);
+        if (ran.has(i)) got[c.str][c.tool].push(c.n);
+      });
+      assert.deepStrictEqual(got, RAN);
+      // (However `{}` is quoted, with each tool, some name runs: what the note says.)
+      for (const str of STRINGS) for (const tool of ['find', 'xargs -0', 'xargs'] as const) assert.ok(RAN[str][tool].length, `${str} ${tool}`);
+      // And each of these lines gets the warning; the safe forms get none.
+      for (const str of STRINGS) {
+        assert.strictEqual(said(`find . -type f -exec sh -c ${str} \\;`).length, 1, str);
+        assert.strictEqual(said(`xargs -0 -I{} sh -c ${str}`).length, 1, str);
+      }
+      assert.deepStrictEqual(said(`find . -type f -exec sh -c 'echo "$@"' _ {} +`), []);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
