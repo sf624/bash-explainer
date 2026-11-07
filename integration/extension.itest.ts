@@ -278,7 +278,7 @@ describe('Bash Explainer in VS Code', function () {
     const doc = await vscode.workspace.openTextDocument({ language: 'shellscript', content: 'grep -r pattern . | sort -r | uniq -c\n' });
     const editor = await open(doc);
     const moves = new CursorMoves();
-    const subs = followMoves(moves, () => editor.document);
+    const subs = followMoves(moves, (d) => d.languageId === 'shellscript');
     const after = async (what: () => Thenable<unknown>): Promise<boolean> => {
       await sleep(100);
       moves.take();
@@ -295,9 +295,21 @@ describe('Bash Explainer in VS Code', function () {
       assert.strictEqual(await after(() => vscode.commands.executeCommand('editor.action.clipboardPasteAction')), false, 'a paste');
       assert.strictEqual(editor.document.lineAt(0).text, 'grep -r pattern . | sort -r | uniq -cx | wc -l');
       assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorHome')), true, 'a key after a paste');
+      // (Delete leaves the cursor in place: VS Code says the edit and no change of the selection, so the next key is a move.)
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('deleteRight')), false, 'Delete');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), true, 'a key after Delete');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('deleteLeft')), false, 'Backspace');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), true, 'a key after Backspace');
       assert.strictEqual(await after(() => vscode.commands.executeCommand('undo')), false, 'undo');
       assert.strictEqual(await after(async () => { editor.selection = new vscode.Selection(0, 3, 0, 3); }), false, 'a selection set by an extension');
       assert.strictEqual(await after(() => vscode.window.showTextDocument(doc, { selection: new vscode.Range(0, 20, 0, 24) })), false, "the panel's reveal");
+      // (Keys in a document the panel does not explain, as a README, are no move of its: nothing would send it.)
+      const readme = await open(await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'a README\n' }));
+      readme.selection = new vscode.Selection(0, 0, 0, 0);
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), false, 'a key in a README');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), false, 'a second key in a README');
+      await open(doc);
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), true, 'a key back in the script');
     } finally {
       subs.forEach((s) => s.dispose());
     }

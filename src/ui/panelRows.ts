@@ -143,12 +143,13 @@ const statements = (t: Token): Token[] => (t.grammar || t.around === 'pipeline' 
 
 /**
  * The stages of the line a cursor can be on: each command in a box of its own (`Token.frame`), a simple one or a compound one, down the
- * lists, pipelines and bodies of compound commands. A compound command's own words (`*.txt` of `for f in *.txt`) are its stage. The
- * commands of a substitution are part of the stage that holds it (`echo $(ls *.a)`).
+ * lists, pipelines and bodies of compound commands. A compound command's own words (`*.txt` of `for f in *.txt`) are its stage. With
+ * `inside`, the commands of a substitution too (`$( )`, `<( )`): their pipelines fold as the line's do (`foldStages`), and a move of the
+ * cursor into one of their stages opens it; without, they are part of the stage that holds them (`echo $(ls *.a)`, for `opensGlob`).
  */
-const stagesOf = (items: readonly Token[]): Token[] => items.flatMap((t) => [
+const stagesOf = (items: readonly Token[], inside: boolean): Token[] => items.flatMap((t) => [
   ...(t.frame === 'command' || t.frame === 'compound' ? [t] : []),
-  ...(t.kind === 'substitution' ? [] : stagesOf(t.children)),
+  ...(t.kind === 'substitution' && !inside ? [] : stagesOf(t.children, inside)),
 ]);
 
 /** The stages around a range, outermost first. */
@@ -577,11 +578,11 @@ function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[],
 }
 
 /**
- * The stages of the line around the cursor, outermost first (`stagesOf`; from a stage's start to its end, both included: a cursor just
- * after a command is on it). The one reading of the stage the cursor is on: its glob example starts open (`opensGlob`), and a move of the
- * cursor opens it (`foldStages`).
+ * The stages of the line around the cursor, outermost first, those inside a substitution included (`stagesOf`; from a stage's start to
+ * its end, both included: a cursor just after a command is on it). The one reading of the stage the cursor is on: a move of the cursor
+ * opens each (`foldStages`), and the glob example of the innermost outside a substitution starts open (`opensGlob`).
  */
-const stagesAt = (items: readonly Token[], cursor: Span['start'] | undefined): Token[] => (cursor ? stagesAround(stagesOf(items), { start: cursor, end: cursor }) : []);
+const stagesAt = (items: readonly Token[], cursor: Span['start'] | undefined): Token[] => (cursor ? stagesAround(stagesOf(items, true), { start: cursor, end: cursor }) : []);
 
 /** The number of examples on a line: those placed on its tokens and those left in `examples` (the whole line's, which the view draws apart). */
 function exampleCount(ex: Pick<LineExplanation, 'items' | 'examples'>): number {
@@ -591,12 +592,13 @@ function exampleCount(ex: Pick<LineExplanation, 'items' | 'examples'>): number {
 
 /**
  * Whether a token's glob example starts open (usability-9.md, Q4): when it is the line's only example, or when the cursor is on the stage
- * it belongs to, its innermost (`stagesAt`).
+ * it belongs to, its innermost outside a substitution (`stagesAt`).
  */
 function opensGlob(ex: Pick<LineExplanation, 'items' | 'examples'>, cursor: Span['start'] | undefined): (t: Token) => boolean {
   const only = exampleCount(ex) === 1;
-  const stages = stagesOf(ex.items);
-  const stage = stagesAt(ex.items, cursor).pop();
+  const stages = stagesOf(ex.items, false);
+  const outer = new Set(stages);
+  const stage = stagesAt(ex.items, cursor).filter((s) => outer.has(s)).pop();
   return (t) => only || (!!stage && stageAround(stages, t.span) === stage);
 }
 
@@ -623,7 +625,8 @@ export function rowModel(ex: Pick<LineExplanation, 'items' | 'examples' | 'readi
   if (options.depth === 2 && ex.reading) {
     addNodeRows(rows, ex.reading, build.roles, tokenLines(ex.items), lang, ex.shell);
     foldDeep(rows);
-    foldStages(rows, exampleCount(ex) === 1, new Set(stagesAt(ex.items, options.cursor).flatMap((t) => build.made.get(t) ?? [])));
+    // (At depth 2 every token has a row, its own or the one it is folded into: none comes in deeper.)
+    foldStages(rows, exampleCount(ex) === 1, new Set(stagesAt(ex.items, options.cursor).map((t) => build.made.get(t)!)));
     sayOnce(rows, build.saying);
   }
   // (Without the data, as in an explanation made for the hover, no mark says what no program receives.)

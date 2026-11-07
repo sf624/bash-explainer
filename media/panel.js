@@ -69,15 +69,21 @@
    * The rows (by `key`) and the folded examples (by place) drawn open since the line was last drawn anew: its start key (`startKey`: the
    * line, its text and the depth) changed. A row starts as the model has it (`ModelRow.folded`: every stage of a pipeline folds at depth
    * 2, `foldStages`); drawn again with the same key, it only opens where the model or the reader opens it (an example of the stage the
-   * cursor is on, the stage the reader moved the cursor to: `cursorMoved`), and nothing the viewer sees folds or closes, whatever comes
+   * cursor is on, a stage the reader moved the cursor into or in: `cursorMoved`), and nothing the viewer sees folds or closes, whatever comes
    * first, a click or the redraw it brings. Only the viewer folds (`foldChoices`).
    */
   let drawnOpen = /** @type {Set<string>} */ (new Set());
   /**
    * Whether the line is drawn after the reader moved the cursor with no edit (`moved`: a tap, a click, an arrow key; src/ui/cursorMoves.ts):
-   * the stages of a pipeline the cursor is in open (`atCursor`), and a fold the viewer chose there goes. Typing or a paste opens nothing.
+   * the stages of a pipeline the cursor is in (`atCursor`) open where the model folds them. A fold the viewer chose goes only on the stages
+   * the cursor entered (`entered`: it was not in them at the line last drawn, `cursorIn`), so a move inside a stage the viewer folded keeps
+   * it folded, and a move out and back in opens it. Typing or a paste opens nothing.
    */
   let cursorMoved = false;
+  /** The stages, by row key, the reader moved the cursor into (`cursorMoved`). */
+  let entered = /** @type {Set<string>} */ (new Set());
+  /** The stages the cursor was in at the line last drawn, with the same start key (`startKey`), moved or not. */
+  let cursorIn = /** @type {Set<string>} */ (new Set());
   /** The line, its text and the depth the rows were drawn anew for (`drawnOpen`). */
   let startKey = '';
   /** The file and line `foldChoices` belongs to, and the depth drawn. */
@@ -182,7 +188,8 @@
     if (msg.type === 'update') {
       // (Without the line's problems: they come a moment after the line is explained, and change only its squiggles.)
       const key = JSON.stringify({ ...msg, marks: undefined, around: undefined, moved: undefined });
-      // (A move of the cursor to the same place is drawn again only where it opens a stage drawn folded: a tap on a stage the viewer folded.)
+      // (A move of the cursor to the same place enters no stage: it is drawn again only where it opens one the model folds, as a tap
+      // on the stage after a paste.)
       if (key === lastUpdate && !(msg.moved && opensAtCursor(msg.rows))) {
         // (The pointers are drawn again only when they changed: a focus on one stays, panel-redesign.md section 5.)
         if (JSON.stringify(msg.around ?? []) !== lastAround) drawAround(msg.around ?? []);
@@ -255,8 +262,10 @@
     $('empty').hidden = false;
   }
 
-  /** Whether a stage the cursor is in (`atCursor`) is drawn folded: a move of the cursor opens it. */
-  const opensAtCursor = (/** @type {any[]} */ rows) => rows.some((r) => (r.atCursor && $('tree').querySelector(`li[data-key="${CSS.escape(r.key)}"]`)?.classList.contains('collapsed')) || opensAtCursor(r.children));
+  /** The keys of the stages the cursor is in (`atCursor`). */
+  const stagesAtCursor = (/** @type {any[]} */ rows) => rows.flatMap((r) => [...(r.atCursor ? [r.key] : []), ...stagesAtCursor(r.children)]);
+  /** Whether a stage the cursor is in is drawn folded by the model, not by the viewer: a move of the cursor inside it opens it. */
+  const opensAtCursor = (/** @type {any[]} */ rows) => rows.some((r) => (r.atCursor && !foldChoices.has(r.key) && $('tree').querySelector(`li[data-key="${CSS.escape(r.key)}"]`)?.classList.contains('collapsed')) || opensAtCursor(r.children));
 
   function render(msg) {
     const ex = msg.explanation;
@@ -312,8 +321,11 @@
     // (Another line, a new text of the line as it is typed, or another depth: the rows start as the model has them.)
     const start = JSON.stringify([where, msg.lineText, msg.depth]);
     if (start !== startKey) drawnOpen = new Set();
+    const was = start === startKey ? cursorIn : new Set();
     startKey = start;
+    cursorIn = new Set(stagesAtCursor(msg.rows));
     cursorMoved = msg.moved === true;
+    entered = new Set(cursorMoved ? [...cursorIn].filter((k) => !was.has(k)) : []);
     shownLine = where;
     shownDepth = msg.depth;
     shownReceives = msg.receives;
@@ -1271,12 +1283,10 @@
     box.append(row);
     li.append(box);
     // (The model's fold, where the row was not drawn open since the line was drawn anew (`drawnOpen`). The viewer's choice wins at every
-    // depth, but a stage the reader moved the cursor into opens: `cursorMoved`.)
+    // depth, but a stage the reader moved the cursor into opens: `cursorMoved`, `entered`.)
     if (part.children.length) {
-      if (cursorMoved && part.atCursor) {
-        drawnOpen.add(`row ${part.key}`);
-        foldChoices.delete(part.key);
-      }
+      if (cursorMoved && part.atCursor) drawnOpen.add(`row ${part.key}`);
+      if (entered.has(part.key)) foldChoices.delete(part.key);
       const folded = part.folded === true && !drawnOpen.has(`row ${part.key}`);
       if (!folded) drawnOpen.add(`row ${part.key}`);
       if (foldChoices.get(part.key) ?? folded) setCollapsed(li, true, foldChoices.has(part.key));

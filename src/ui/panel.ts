@@ -17,22 +17,27 @@ const STATE_KEY = 'bashExplainer.panelState';
 
 /** Side pane that follows the cursor and shows a regex101-style breakdown of the current line. */
 /**
- * Tells `moves` what VS Code says of the cursor: a change of the selection by a key or a pointer (typing and a paste are of the kind
- * `Keyboard` too: the document's version tells them apart), the editor open now or another, an edit of the document `shown`
- * (integration/extension.itest.ts checks them on typing, a paste, the keys, undo and selections set by an extension).
+ * Tells `moves` what VS Code says of the cursor in a document the panel explains (`isTarget`): a change of the selection by a key or a
+ * pointer (typing and a paste are of the kind `Keyboard` too: the text they put tells them apart), the editor open now or another, an
+ * edit (integration/extension.itest.ts checks them on typing, a paste, Delete, the keys, undo and selections set by an extension). A
+ * change in another document, as a README, schedules no line, so it leaves the moves as they are.
  */
-export function followMoves(moves: CursorMoves, shown: () => vscode.TextDocument | undefined): vscode.Disposable[] {
+export function followMoves(moves: CursorMoves, isTarget: (doc: vscode.TextDocument) => boolean): vscode.Disposable[] {
   const { Keyboard, Mouse } = vscode.TextEditorSelectionChangeKind;
+  const ends = (doc: vscode.TextDocument, sels: readonly vscode.Selection[]) => sels.flatMap((s) => [doc.offsetAt(s.anchor), doc.offsetAt(s.active)]);
   // (The editor open already: its first move is one.)
   const active = vscode.window.activeTextEditor;
-  if (active) moves.selected(active.document, false);
+  if (active && isTarget(active.document)) moves.selected(active.document, false, []);
   return [
-    vscode.window.onDidChangeTextEditorSelection((e) => moves.selected(e.textEditor.document, e.kind === Keyboard || e.kind === Mouse)),
+    vscode.window.onDidChangeTextEditorSelection((e) => {
+      const doc = e.textEditor.document;
+      if (isTarget(doc)) moves.selected(doc, e.kind === Keyboard || e.kind === Mouse, ends(doc, e.selections));
+    }),
     vscode.window.onDidChangeActiveTextEditor((e) => {
-      if (e) moves.selected(e.document, false);
+      if (e && isTarget(e.document)) moves.selected(e.document, false, []);
     }),
     vscode.workspace.onDidChangeTextDocument((e) => {
-      if (e.contentChanges.length && e.document === shown()) moves.edited();
+      if (e.contentChanges.length) moves.edited(e.document, e.contentChanges);
     }),
   ];
 }
@@ -71,7 +76,7 @@ export class PanelController implements vscode.Disposable {
         // (The line box wraps as the editor does.)
         if (e.affectsConfiguration('editor.wordWrap')) this.post();
       }),
-      ...followMoves(this.moves, () => this.editor?.document),
+      ...followMoves(this.moves, (doc) => this.service.isTarget(doc)),
       vscode.window.onDidChangeTextEditorSelection((e) => this.schedule(e.textEditor, 80)),
       vscode.window.onDidChangeActiveTextEditor((e) => {
         if (e) this.schedule(e, 0);
@@ -131,9 +136,12 @@ export class PanelController implements vscode.Disposable {
     this.pinnedLine = undefined;
     clearTimeout(this.timer);
     // (A timer's exception reaches no provider's boundary: src/failures.ts.)
+    // (A move goes with the line its change of the selection scheduled, and only with it: a panel that opens draws the line anew, and
+    // a line not sent, the panel closed, sends no move later, with another depth or after `refresh`.)
     this.timer = setTimeout(() => contained('the panel', () => {
+      const moved = this.moves.take();
       if (!this.panel && this.service.enabled('panel') && !this.dismissed) this.open(editor);
-      else this.post();
+      else this.post(moved);
     }, () => undefined), delay);
   }
 
@@ -172,7 +180,8 @@ export class PanelController implements vscode.Disposable {
     void vscode.window.showInformationMessage(unreadableThemeNotice(this.service.lang, theme, this.ctx.extension.extensionKind === vscode.ExtensionKind.Workspace));
   }
 
-  private post(): void {
+  /** Sends the line at the cursor; `moved`, after a move of the reader's that scheduled it (`schedule`). */
+  private post(moved = false): void {
     if (!this.panel) return;
     const lang = this.service.lang;
     const t = ui[lang];
@@ -201,7 +210,7 @@ export class PanelController implements vscode.Disposable {
       shown: this.service.issueFilter(ed.document),
       state: this.state,
       ...(cursor.line === line ? { cursor: cursor.character } : {}),
-      moved: this.moves.take(),
+      moved,
     }));
   }
 

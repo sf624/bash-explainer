@@ -523,6 +523,49 @@ describe('the panel: one view with a depth', function () {
     await close();
   });
 
+  it('opens at depth 2 the stage of a pipeline in `$( )` the reader moves the cursor into (usability-9.md, 2.7)', async () => {
+    const { page, panel, close } = await emptyAtDepth2('en');
+    await page.keyboard.insertText('out=$(grep -r pattern . | sort -r)');
+    await until('both stages folded', () => foldedRows(panel), (f) => f === 'grep,sort');
+    await clickWord(page, 'sort');
+    await until('sort open', () => foldedRows(panel), (f) => f === 'grep');
+    await page.keyboard.press('Home');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(300);
+    assert.strictEqual(await foldedRows(panel), 'grep', 'the cursor on `out`: no stage');
+    for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
+    await until('grep open', () => foldedRows(panel), (f) => f === '');
+    await close();
+  });
+
+  it('keeps folded at depth 2 a stage the viewer folded while a key moves the cursor inside it; a move out and back in opens it (usability-9.md, 2.7)', async () => {
+    const { page, panel, close } = await emptyAtDepth2('en');
+    await page.keyboard.insertText(PIPELINE);
+    await until('every stage folded', () => foldedRows(panel), (f) => f === 'grep,sort,uniq');
+    // (A key inside the stage the paste left the cursor in opens it: the model folded it, not the viewer.)
+    await page.keyboard.press('ArrowLeft');
+    await until('uniq open', () => foldedRows(panel), (f) => f === 'grep,sort');
+    await clickWord(page, 'grep');
+    await until('grep open', () => foldedRows(panel), (f) => f === 'sort');
+    await foldButton(panel, 'grep').click();
+    await until('grep folded', () => foldedRows(panel), (f) => f === 'grep,sort');
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(400);
+    assert.strictEqual(await foldedRows(panel), 'grep,sort', 'a key inside grep keeps the fold the viewer made');
+    await clickWord(page, 'uniq');
+    await page.waitForTimeout(300);
+    await clickWord(page, 'grep');
+    await until('grep open again', () => foldedRows(panel), (f) => f === 'sort');
+    // (▸ on a stage the cursor is not in, then a click into it: it opens again.)
+    await foldButton(panel, 'uniq').click();
+    await until('uniq folded', () => foldedRows(panel), (f) => f === 'sort,uniq');
+    await clickWord(page, 'uniq');
+    await until('uniq open again', () => foldedRows(panel), (f) => f === 'sort');
+    await close();
+  });
+
   it('folds every stage again at depth 2 when the line is drawn anew: a character typed, or depth 1 and back (usability-9.md, 2.7)', async () => {
     const ctx = await context(1280, 'en', { animations: false });
     const page = await ctx.newPage();
