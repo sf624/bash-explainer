@@ -21,6 +21,7 @@ import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettin
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { explainNeeds, panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
+import { CursorMoves } from '../src/ui/cursorMoves';
 import { editorAttributes, editorHint, isPaneKey, LineAnnouncer } from './a11y';
 import { CHANNEL, COMMIT, PR, UP, VERSION } from './build-info';
 import { Compare, receiveState, toParent } from './compare';
@@ -175,6 +176,8 @@ let codesSeen: string[] = [];
 let problemsShown: DocumentIssue[] = [];
 /** Whether the sample button is replacing the text, so that the offer to undo it stays. */
 let timer: ReturnType<typeof setTimeout> | undefined;
+/** Whether the reader moved the cursor with no edit since the line was last sent (in panel mode: the page around says so). */
+const moves = new CursorMoves();
 /** The live region that says what the line the cursor moved to is about (the editor page only). */
 let announcer: LineAnnouncer | undefined;
 
@@ -223,6 +226,9 @@ const editor: Editor = new Editor({
     if (u.docChanged) showFileSoon();
     if (u.docChanged) readEdit.textChanged();
     if (Editor.problemsMoved(u)) strip?.place();
+    // (A move of the cursor the reader made, with no edit: a key, a click, a tap, `select…`. A selection the page sets, as the panel's
+    // reveal, is none; nor is typing or a paste, which leave the cursor at the end of what they put.)
+    if (u.docChanged || u.selectionSet) moves.cursor(!u.docChanged && u.transactions.some((tr) => tr.selection && tr.isUserEvent('select')));
     // In panel mode the page around sends every change as a message, which is handled at once.
     if (mode.panel || (!u.docChanged && !u.selectionSet)) return;
     clearTimeout(timer);
@@ -283,7 +289,7 @@ function updatePanel(): void {
     lang, explanation, file: scriptName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
     choice: choice(), detected: auto, placement: settings['examples.placement'],
     animations: settings['panel.animations'], issues: problemsShown, shown: issueFilter(doc, settings, 'web'), web: true, state: panel.panelState(),
-    cursor: editor.cursor().col,
+    cursor: editor.cursor().col, moved: moves.take(),
   });
   panel.show(update, line);
   yqLine = { options: update.dialect.yqs, value: update.dialect.yq };
@@ -325,6 +331,7 @@ function applyCopyState(m: CopyState): void {
   editor.setCursor(m.line, m.col);
   stateReceived = true;
   if (langChanged) return panel.reload(); // the panel's `loaded` sends the theme and explains the line
+  moves.cursor(m.moved === true);
   if (m.theme !== theme) {
     theme = m.theme;
     panel.send({ type: 'theme', theme });
@@ -341,7 +348,7 @@ if (mode.compare) {
     lang: () => lang,
     state() {
       const { line, col } = editor.cursor();
-      return { text: editor.text, kind: kinds.kind, line, col, lang, theme, choice: choice(), settings: changedSettings(settings, 'web') };
+      return { text: editor.text, kind: kinds.kind, line, col, lang, theme, choice: choice(), settings: changedSettings(settings, 'web'), ...(moves.take() ? { moved: true as const } : {}) };
     },
     reveal: (span, preserveFocus) => editor.selectSpan(span, preserveFocus),
     highlight: (span) => editor.highlight(span),

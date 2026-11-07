@@ -1184,31 +1184,43 @@ describe('the panel\'s row model', () => {
       assert.deepStrictEqual(glob(src.indexOf('sort')), [['glob', undefined]]);
     });
 
-    it('folds the stages of a pipeline at depth 2 but the one the cursor is on, to their own row; not at depth 1, nor without a cursor (usability-9.md, 2.7)', () => {
+    it('folds every stage of a pipeline at depth 2 to its own row, wherever the cursor is, and marks the stages the cursor is in; not at depth 1 (usability-9.md, 2.7)', () => {
       const src = 'grep -h x f | sort | uniq -c | sort -rn | head -5';
       const stages = (depth: 1 | 2, cursor?: number) => all(rowModel(explain(src), { depth, receives: true, ...(cursor === undefined ? {} : { cursor: { line: 0, character: cursor } }) }, 'en').rows)
-        .filter((r) => r.frame === 'command').map((r) => `${r.label}${r.folded ? ' (folded)' : ''}`);
+        .filter((r) => r.frame === 'command').map((r) => `${r.label}${r.folded ? ' (folded)' : ''}${r.atCursor ? ' (cursor)' : ''}`);
       // (`sort` has no parts: nothing to fold. A cursor just after a stage is on it, as for the glob's example.)
-      assert.deepStrictEqual(stages(2, 0), ['grep', 'sort', 'uniq (folded)', 'sort (folded)', 'head (folded)']);
-      assert.deepStrictEqual(stages(2, src.indexOf('uniq') + 2), ['grep (folded)', 'sort', 'uniq', 'sort (folded)', 'head (folded)']);
-      assert.deepStrictEqual(stages(2, src.length), ['grep (folded)', 'sort', 'uniq (folded)', 'sort (folded)', 'head']);
-      // (On a `|`, between two stages, the cursor is on none: nothing folds. Nor at depth 1, nor where the cursor is not on the line.)
-      assert.deepStrictEqual(stages(2, src.indexOf('| sort') + 1), ['grep', 'sort', 'uniq', 'sort', 'head']);
+      const folded = ['grep (folded)', 'sort', 'uniq (folded)', 'sort (folded)', 'head (folded)'];
+      assert.deepStrictEqual(stages(2), folded);
+      assert.deepStrictEqual(stages(2, 0), ['grep (folded) (cursor)', ...folded.slice(1)]);
+      assert.deepStrictEqual(stages(2, src.indexOf('uniq') + 2), ['grep (folded)', 'sort', 'uniq (folded) (cursor)', 'sort (folded)', 'head (folded)']);
+      assert.deepStrictEqual(stages(2, src.length), [...folded.slice(0, 4), 'head (folded) (cursor)']);
+      // (On a `|`, between two stages, the cursor is on none; a stage without parts is none to open. Nothing folds at depth 1.)
+      assert.deepStrictEqual(stages(2, src.indexOf('| sort') + 1), folded);
+      assert.deepStrictEqual(stages(2, src.indexOf('sort')), folded);
       assert.deepStrictEqual(stages(1, 0), ['grep', 'sort', 'uniq', 'sort', 'head']);
-      assert.deepStrictEqual(stages(2), ['grep', 'sort', 'uniq', 'sort', 'head']);
       // (A folded stage keeps its own row: what it does, its role, what its program receives.)
       const head = all(rowModel(explain(src), { depth: 2, receives: true, cursor: { line: 0, character: 0 } }, 'en').rows).find((r) => r.label === 'head')!;
       assert.ok(head.folded && head.roleLine && head.receives && head.children.length, JSON.stringify(head));
-      // (Only a pipeline the cursor is in: a list's commands do not fold, nor a pipeline of another statement; a stage with an open example stays open.)
+      // (A list's commands do not fold; every pipeline of the line does, the cursor in it or not.)
       const list = (s: string, cursor: number) => all(rowModel(placeExamples(explain(s)), { depth: 2, receives: false, cursor: { line: 0, character: cursor } }, 'en').rows)
-        .filter((r) => r.frame === 'command').map((r) => `${r.label}${r.folded ? ' (folded)' : ''}`);
+        .filter((r) => r.frame === 'command').map((r) => `${r.label}${r.folded ? ' (folded)' : ''}${r.atCursor ? ' (cursor)' : ''}`);
       assert.deepStrictEqual(list('ls -l && wc -l', 0), ['ls', 'wc']);
-      assert.deepStrictEqual(list('ls -l | wc -l; cat -n f', 16), ['ls', 'wc', 'cat']);
-      assert.deepStrictEqual(list('ls *.txt | wc -l', 12), ['ls', 'wc']);
-      // (A command's own example folds with its stage: only the glob example the line starts open keeps one open.)
-      const typed = 'grep -r pattern . | sort | uniq -c';
+      assert.deepStrictEqual(list('ls -l | wc -l; cat -n f', 16), ['ls (folded)', 'wc (folded)', 'cat']);
+      // (A stage holding the glob example that starts open as the line's only one stays open; a command's own example folds with its stage.)
+      assert.deepStrictEqual(list('ls *.txt | wc -l', 12), ['ls', 'wc (folded) (cursor)']);
+      const typed = 'grep -r pattern . | sort -r | uniq -c';
       assert.ok(all([all(rowModel(placeExamples(explain(typed)), D2, 'en').rows).find((r) => r.label === 'grep')!]).some((r) => r.examples?.length));
-      assert.deepStrictEqual(list(typed, typed.indexOf('sort')), ['grep (folded)', 'sort', 'uniq (folded)']);
+      assert.deepStrictEqual(list(typed, typed.length), ['grep (folded)', 'sort (folded)', 'uniq (folded) (cursor)']);
+      assert.deepStrictEqual(list(typed, typed.indexOf('sort')), ['grep (folded)', 'sort (folded) (cursor)', 'uniq (folded)']);
+      // (A glob example the cursor's stage opens folds with its stage: only the line's only example keeps one open.)
+      const globs = 'ls *.log | grep -v x | wc -l';
+      const glob = (cursor: number) => all(rowModel(placeExamples(explain(globs)), { depth: 2, receives: false, cursor: { line: 0, character: cursor } }, 'en').rows).find((r) => r.label === 'ls')!;
+      assert.ok(all([glob(0)]).some((r) => r.examples?.some((e) => e.kind === 'glob' && e.open)));
+      assert.strictEqual(glob(0).folded, true);
+      // (A stage inside a stage: both hold the cursor.)
+      const nested = 'a -x | { b -y | c -z; }';
+      assert.deepStrictEqual(all(rowModel(explain(nested), { depth: 2, receives: false, cursor: { line: 0, character: nested.indexOf('c -z') } }, 'en').rows)
+        .filter((r) => r.atCursor).map((r) => r.label), ['{ ‹commands› }', 'c']);
     });
 
     it('over the corpus: depth 2 only adds, holds every text of the line, has a row for each reserved word and operator on the line, roles from places only; nothing of depth 1 is folded away', function () {

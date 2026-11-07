@@ -231,8 +231,8 @@ describe('the panel: one view with a depth', function () {
       // whose pieces of a word have no role line.)
       await page.locator('.cm-content').focus();
       await page.keyboard.press('Control+End');
-      // (The rows start again at the other depth and back, the cursor on the last stage: that one is open and the others folded, grep's
-      // with its glob's row and example (usability-9.md, 2.7). The move alone closes nothing: the panel only opens what the model opens.)
+      // (The rows start again at the other depth and back, the cursor on the last stage: every stage folded, grep's with its glob's row
+      // and example (usability-9.md, 2.7). The move alone closes nothing: the panel only opens what the model or the reader opens.)
       await chooseDepth(page, 1);
       await depthDrawn(panel, 1);
       await chooseDepth(page, 2);
@@ -240,15 +240,16 @@ describe('the panel: one view with a depth', function () {
       await until('the glob example closed', () => panel.evaluate(`[...document.querySelectorAll('#tree details.example')].map((d) => d.open).join()`), (o) => o === 'false');
       // (The other depth and back once more draws the same.)
       const folded = () => panel.evaluate(`[...document.querySelectorAll('#tree li.collapsed > .item > .row .label')].map((l) => l.textContent)`);
-      await until('the last stage open', folded, (f) => JSON.stringify(f) === JSON.stringify(['grep', '/var/log/*.log', 'uniq', 'sort']));
+      const all = ['grep', '/var/log/*.log', 'uniq', 'sort', 'head'];
+      await until('every stage folded', folded, (f) => JSON.stringify(f) === JSON.stringify(all));
       await chooseDepth(page, 1);
       await depthDrawn(panel, 1);
       await chooseDepth(page, 2);
       await depthDrawn(panel, 2);
-      await until('the rows started again', folded, (f) => JSON.stringify(f) === JSON.stringify(['grep', '/var/log/*.log', 'uniq', 'sort']));
+      await until('the rows started again', folded, (f) => JSON.stringify(f) === JSON.stringify(all));
       // (Every stage opened by its fold button, so that the role line of each part is measured; the glob's row stays folded: its pieces
       // of a word have no role line.)
-      for (const name of ['grep', 'uniq', 'sort']) {
+      for (const name of ['grep', 'uniq', 'sort', 'head']) {
         await panel.locator('#tree li.collapsed', { has: panel.locator(':scope > .item > .row > .code .label', { hasText: new RegExp('^' + name + '$') }) }).locator(':scope > .item > .row > button.twisty').click();
       }
       await until('every stage open', folded, (f) => JSON.stringify(f) === JSON.stringify(['/var/log/*.log']));
@@ -402,9 +403,10 @@ describe('the panel: one view with a depth', function () {
     await ctx.close();
   });
 
-  // At depth 2 a pipeline's stages start as the model has them (the cursor's open, the others folded) whenever the line is drawn anew: another
-  // line, a new text of it, another depth. Drawn again with the same, the panel only opens what the model opens (the stage the cursor
-  // reaches) and folds or closes nothing: only the viewer folds (the maintainer's decision, 2026-11-07; usability-9.md, 2.7).
+  // At depth 2 every stage of a pipeline starts folded whenever the line is drawn anew: another line, a new text of it, another depth.
+  // Typing and a paste open nothing, though they leave the cursor at the end. A stage opens when the reader moves the cursor into it with
+  // no edit (a click or a tap in the editor, a key), which also drops a fold the viewer chose there; a click on its row opens or folds it.
+  // Drawn again with the same line, text and depth, the panel folds or closes nothing (the maintainer's rule of 2026-11-07; usability-9.md, 2.7).
   /** The labels of the rows drawn folded, in order. */
   const foldedRows = (panel: Frame) => panel.evaluate(`[...document.querySelectorAll('#tree li.collapsed > .item > .row .label')].map((l) => l.textContent).join()`) as Promise<string>;
   /** The whole text `name`, as a regular expression. */
@@ -445,10 +447,9 @@ describe('the panel: one view with a depth', function () {
     await redrawn(panel);
   }
 
-  it('starts at depth 2 with only the stage of a pipeline the cursor is on open, as the line is typed; a click in the editor opens another and folds nothing (usability-9.md, 2.7)', async () => {
-    // (The maintainer's check on a phone, 2026-11-07: typed, then the cursor on `sort`. Before, a stage with an example of its own never
-    // folded, and a stage drawn open while the line was typed stayed open.)
-    const ctx = await context(1280, 'ja', { animations: false });
+  /** A page at depth 2 with an empty editor, its cursor there. */
+  async function emptyAtDepth2(lang: 'en' | 'ja'): Promise<{ page: Page; panel: Frame; close: () => Promise<void> }> {
+    const ctx = await context(1280, lang, { animations: false });
     const page = await ctx.newPage();
     const panel = await open(page, 'echo');
     await chooseDepth(page, 2);
@@ -456,48 +457,98 @@ describe('the panel: one view with a depth', function () {
     await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Backspace');
+    return { page, panel, close: () => ctx.close() };
+  }
+  const PIPELINE = 'grep -r pattern . | sort -r | uniq -c';
+  /** The number of examples drawn in the stage `name`'s row (none where it is folded). */
+  const examplesShown = (panel: Frame, name: string) => panel.evaluate(`(() => {
+    const li = [...document.querySelectorAll('#tree li[data-key]')].find((l) => l.querySelector(':scope > .item > .row .label').textContent === ${JSON.stringify(name)});
+    return [...li.querySelectorAll('.example')].filter((e) => e.getClientRects().length).length;
+  })()`) as Promise<number>;
+
+  it('starts every stage of a pipeline folded at depth 2 when the line is pasted, or typed in parts: the cursor left at its end opens nothing (usability-9.md, 2.7)', async () => {
+    // (The maintainer's check on a phone, 2026-11-07: after a paste, uniq's stage was open, only because the paste leaves the cursor there.)
+    const { page, panel, close } = await emptyAtDepth2('ja');
+    await page.keyboard.insertText(PIPELINE);
+    await until('every stage folded', () => foldedRows(panel), (f) => f === 'grep,sort,uniq');
+    await page.waitForTimeout(400);
+    assert.deepStrictEqual([await foldedRows(panel), await examplesShown(panel, 'grep')], ['grep,sort,uniq', 0]);
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Backspace');
     for (const part of ['grep -r pattern .', ' | sort -r', ' | uniq -c']) {
       await page.keyboard.type(part, { delay: 20 });
       await page.waitForTimeout(400);
     }
-    // (Typed to its end: the cursor on `uniq`; grep's stage folded, its example with it, and sort's.)
-    await until('grep and sort folded', () => foldedRows(panel), (f) => f === 'grep,sort');
-    assert.strictEqual(await panel.evaluate(`(() => {
-      const li = [...document.querySelectorAll('#tree li[data-key]')].find((l) => l.querySelector(':scope > .item > .row .label').textContent === 'grep');
-      return [...li.querySelectorAll('.example')].filter((e) => e.getClientRects().length).length;
-    })()`), 0);
-    // (A click on `sort` in the editor: its stage opens, and uniq's, which the cursor left, stays open.)
-    await clickWord(page, 'sort');
-    await until('sort open', () => foldedRows(panel), (f) => f === 'grep');
+    await until('every stage folded', () => foldedRows(panel), (f) => f === 'grep,sort,uniq');
     await page.waitForTimeout(300);
-    assert.strictEqual(await foldedRows(panel), 'grep');
-    await ctx.close();
+    assert.strictEqual(await foldedRows(panel), 'grep,sort,uniq');
+    await close();
   });
 
-  it('starts the stages again as the model has them at the other depth, or with a new text of the line (usability-9.md, 2.7)', async () => {
+  it('opens a stage at depth 2 when the reader moves the cursor into it, by a click or a key, and folds nothing as the cursor moves on (usability-9.md, 2.7)', async () => {
+    const { page, panel, close } = await emptyAtDepth2('en');
+    await page.keyboard.insertText(PIPELINE);
+    await until('every stage folded', () => foldedRows(panel), (f) => f === 'grep,sort,uniq');
+    // (A click on `sort` in the editor: its stage opens, and nothing else.)
+    await clickWord(page, 'sort');
+    await until('sort open', () => foldedRows(panel), (f) => f === 'grep,uniq');
+    await page.waitForTimeout(300);
+    assert.strictEqual(await foldedRows(panel), 'grep,uniq');
+    // (A key moves the cursor into grep's stage: it opens, and sort's, which the cursor left, stays open.)
+    await page.keyboard.press('Home');
+    await until('grep open', () => foldedRows(panel), (f) => f === 'uniq');
+    await page.keyboard.press('End');
+    await until('uniq open', () => foldedRows(panel), (f) => f === '');
+    await page.keyboard.press('Home');
+    await page.waitForTimeout(300);
+    assert.strictEqual(await foldedRows(panel), '');
+    await close();
+  });
+
+  it('opens again at depth 2 a stage the viewer folded with ▸ when the reader clicks into it in the editor; ▸ and its redraw fold only that stage (usability-9.md, 2.7)', async () => {
+    const { page, panel, close } = await emptyAtDepth2('en');
+    await page.keyboard.insertText(PIPELINE);
+    await until('every stage folded', () => foldedRows(panel), (f) => f === 'grep,sort,uniq');
+    await clickWord(page, 'grep');
+    await until('grep open', () => foldedRows(panel), (f) => f === 'sort,uniq');
+    // (▸ folds grep, and selects its range in the editor: that is no move of the reader's, and grep stays folded.)
+    await foldButton(panel, 'grep').click();
+    await page.waitForTimeout(400);
+    assert.strictEqual(await foldedRows(panel), 'grep,sort,uniq');
+    // (A click on `sort` opens it, grep stays folded; a click on `grep` opens it again.)
+    await clickWord(page, 'sort');
+    await until('sort open', () => foldedRows(panel), (f) => f === 'grep,uniq');
+    await clickWord(page, 'grep');
+    await until('grep open again', () => foldedRows(panel), (f) => f === 'uniq');
+    await close();
+  });
+
+  it('folds every stage again at depth 2 when the line is drawn anew: a character typed, or depth 1 and back (usability-9.md, 2.7)', async () => {
     const ctx = await context(1280, 'en', { animations: false });
     const page = await ctx.newPage();
     const panel = await open(page, 'grep -h x f | uniq -c | head -5');
     await chooseDepth(page, 2);
     await depthDrawn(panel, 2);
-    await until('the stages the cursor is not on folded', () => foldedRows(panel), (f) => f === 'uniq,head');
-    // (The cursor moves to `head` by the keys: its stage opens, and grep's stays open.)
+    await until('every stage folded', () => foldedRows(panel), (f) => f === 'grep,uniq,head');
     await page.locator('.cm-content').focus();
     await page.keyboard.press('End');
-    await until('head open', () => foldedRows(panel), (f) => f === 'uniq');
-    // (Depth 1 and back: the rows start again, the cursor on head.)
+    await until('head open', () => foldedRows(panel), (f) => f === 'grep,uniq');
+    await page.keyboard.press('Home');
+    await until('grep open', () => foldedRows(panel), (f) => f === 'uniq');
+    // (Depth 1 and back: every stage folded again, the cursor on grep.)
     await chooseDepth(page, 1);
     await depthDrawn(panel, 1);
     await chooseDepth(page, 2);
     await depthDrawn(panel, 2);
-    await until('the start of depth 2', () => foldedRows(panel), (f) => f === 'grep,uniq');
+    await until('the start of depth 2', () => foldedRows(panel), (f) => f === 'grep,uniq,head');
     await page.locator('.cm-content').focus();
-    await page.keyboard.press('Home');
-    await until('grep open', () => foldedRows(panel), (f) => f === 'uniq');
-    // (A character typed at the end: a new text, and the rows start again, the cursor on head.)
     await page.keyboard.press('End');
+    await until('head open', () => foldedRows(panel), (f) => f === 'grep,uniq');
+    // (A character typed at the end: a new text, and every stage folds again.)
     await page.keyboard.type('0');
-    await until('the start of the new text', () => foldedRows(panel), (f) => f === 'grep,uniq');
+    await until('the start of the new text', () => foldedRows(panel), (f) => f === 'grep,uniq,head');
+    await page.waitForTimeout(300);
+    assert.strictEqual(await foldedRows(panel), 'grep,uniq,head');
     await ctx.close();
   });
 
@@ -509,7 +560,7 @@ describe('the panel: one view with a depth', function () {
     const panel = await open(page, 'grep -h x f | sort -r | uniq -c | head -5');
     await chooseDepth(page, 2);
     await depthDrawn(panel, 2);
-    await until('the stages the cursor is not on folded', () => foldedRows(panel), (f) => f === 'sort,uniq,head');
+    await until('every stage folded', () => foldedRows(panel), (f) => f === 'grep,sort,uniq,head');
     // (One click, its redraw 2.5 s late.)
     await rowNamed(panel, 'sort').scrollIntoViewIfNeeded();
     const sort = await topOf(panel, 'sort');
@@ -517,7 +568,7 @@ describe('the panel: one view with a depth', function () {
     await markRows(panel);
     await rowNamed(panel, 'sort').click();
     await redrawn(panel);
-    assert.deepStrictEqual([await foldedRows(panel), await topOf(panel, 'sort')], ['uniq,head', sort]);
+    assert.deepStrictEqual([await foldedRows(panel), await topOf(panel, 'sort')], ['grep,uniq,head', sort]);
     // (Two clicks, each with its own late redraw: the row clicked last stays where it is.)
     await rowNamed(panel, 'uniq').scrollIntoViewIfNeeded();
     await markRows(panel);
@@ -527,49 +578,48 @@ describe('the panel: one view with a depth', function () {
     const [uniq, head] = [await topOf(panel, 'uniq'), await topOf(panel, 'head')];
     await redrawn(panel);
     await page.waitForTimeout(800);
-    assert.deepStrictEqual([await foldedRows(panel), await topOf(panel, 'uniq'), await topOf(panel, 'head')], ['', uniq, head]);
+    assert.deepStrictEqual([await foldedRows(panel), await topOf(panel, 'uniq'), await topOf(panel, 'head')], ['grep', uniq, head]);
     // (A redraw that does not move the cursor: the switch of what each command receives. Nothing folds either.)
     await panel.evaluate('window.slowUpdates = 0');
     await flipReceives(panel);
-    assert.strictEqual(await foldedRows(panel), '');
+    assert.strictEqual(await foldedRows(panel), 'grep');
     await ctx.close();
   });
 
-  it('keeps at depth 2 a fold the viewer made, whatever the cursor does after, and a row clicked three times is as clicked once (usability-9.md, 2.7)', async () => {
+  it('keeps at depth 2 a fold the viewer made through redraws and moves of the cursor elsewhere, and a row clicked three times is as clicked once (usability-9.md, 2.7)', async () => {
     const ctx = await context(1280, 'en', { animations: false });
     const page = await ctx.newPage();
     const src = 'grep -h x f | uniq -c | head -5';
     let panel = await open(page, src);
     await chooseDepth(page, 2);
     await depthDrawn(panel, 2);
-    await until('the stages the cursor is not on folded', () => foldedRows(panel), (f) => f === 'uniq,head');
-    // (A click opens uniq's row and moves the cursor there; its fold button folds it again: it stays folded, through a redraw with the
-    // cursor still there and a move of the cursor in its stage.)
+    await until('every stage folded', () => foldedRows(panel), (f) => f === 'grep,uniq,head');
+    // (A click opens uniq's row and moves the cursor there; its fold button folds it again: it stays folded, through a redraw and a move
+    // of the cursor to another stage.)
     await markRows(panel);
     await rowNamed(panel, 'uniq').click();
     await redrawn(panel);
-    assert.strictEqual(await foldedRows(panel), 'head');
+    assert.strictEqual(await foldedRows(panel), 'grep,head');
     await foldButton(panel, 'uniq').click();
-    assert.strictEqual(await foldedRows(panel), 'uniq,head');
+    assert.strictEqual(await foldedRows(panel), 'grep,uniq,head');
     await flipReceives(panel);
-    await page.locator('.cm-content').focus();
-    // (The selection of the click collapses to uniq's start, then one character on: in uniq's stage.)
-    await page.keyboard.press('ArrowLeft');
-    await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(300);
+    await clickWord(page, 'head');
+    await until('head open', () => foldedRows(panel), (f) => f === 'grep,uniq');
     await flipReceives(panel);
-    assert.strictEqual(await foldedRows(panel), 'uniq,head');
-    // (A click on a part's row puts the cursor there, the keys move it on in its stage, and a redraw comes: nothing folds.)
+    assert.strictEqual(await foldedRows(panel), 'grep,uniq');
+    // (A click on grep's row and one on a part's row put the cursor there, the keys move it on in its stage, and a redraw comes: nothing folds.)
     await markRows(panel);
-    await rowNamed(panel, '-h').click();
+    await rowNamed(panel, 'grep').click();
     await redrawn(panel);
+    await rowNamed(panel, '-h').click();
+    await page.waitForTimeout(300);
     await page.locator('.cm-content').focus();
     await page.keyboard.press('ArrowLeft');
     await page.keyboard.press('ArrowLeft');
     await page.keyboard.press('ArrowLeft');
     await page.waitForTimeout(300);
     await flipReceives(panel);
-    assert.strictEqual(await foldedRows(panel), 'uniq,head');
+    assert.strictEqual(await foldedRows(panel), 'uniq');
     // (A row clicked once, or three times, each click's redraw drawn: the same rows, then as the cursor moves.)
     const after = async (clicks: number) => {
       panel = await open(page, src);
@@ -601,6 +651,11 @@ describe('the panel: one view with a depth', function () {
       const li = [...document.querySelectorAll('#tree li[data-key]')].find((l) => l.querySelector(':scope > .item > .row .label').textContent === 'grep');
       return [...li.querySelectorAll('details.example')].filter((e) => e.open && e.getClientRects().length).length;
     })()`);
+    // (Every stage starts folded; a key moves the cursor in grep's stage: it opens, with its glob example.)
+    await until('grep folded', async () => (await foldedRows(panel)).split(','), (f) => f.includes('grep'));
+    assert.strictEqual(await opened(), 0);
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('ArrowRight');
     await until('the glob example open', opened, (n) => n === 1);
     await rowNamed(panel, 'sort').scrollIntoViewIfNeeded();
     const before = await topOf(panel, 'sort');

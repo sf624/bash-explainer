@@ -10,11 +10,33 @@ import { unreadableThemeNotice } from './builtinThemes';
 import { THEME_SETTINGS, themeRoleColours } from './themeColours';
 import { panelPalette, paletteVars, type PanelBase } from './themePalette';
 import { contained } from '../failures';
+import { CursorMoves } from './cursorMoves';
 
 /** Where the panel's depth is kept between sessions (the webview's own state dies with the panel). */
 const STATE_KEY = 'bashExplainer.panelState';
 
 /** Side pane that follows the cursor and shows a regex101-style breakdown of the current line. */
+/**
+ * Tells `moves` what VS Code says of the cursor: a change of the selection by a key or a pointer (typing and a paste are of the kind
+ * `Keyboard` too: the document's version tells them apart), the editor open now or another, an edit of the document `shown`
+ * (integration/extension.itest.ts checks them on typing, a paste, the keys, undo and selections set by an extension).
+ */
+export function followMoves(moves: CursorMoves, shown: () => vscode.TextDocument | undefined): vscode.Disposable[] {
+  const { Keyboard, Mouse } = vscode.TextEditorSelectionChangeKind;
+  // (The editor open already: its first move is one.)
+  const active = vscode.window.activeTextEditor;
+  if (active) moves.selected(active.document, false);
+  return [
+    vscode.window.onDidChangeTextEditorSelection((e) => moves.selected(e.textEditor.document, e.kind === Keyboard || e.kind === Mouse)),
+    vscode.window.onDidChangeActiveTextEditor((e) => {
+      if (e) moves.selected(e.document, false);
+    }),
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      if (e.contentChanges.length && e.document === shown()) moves.edited();
+    }),
+  ];
+}
+
 export class PanelController implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
   /** The user closed the panel; do not reopen it automatically until asked. */
@@ -35,6 +57,8 @@ export class PanelController implements vscode.Disposable {
   private themeRequest = 0;
   /** The themes the panel said it cannot read the colours of. */
   private unreadableThemes = new Set<string>();
+  /** Whether the reader moved the cursor with no edit since the line was last sent: the panel opens the stage it moved into. */
+  private moves = new CursorMoves();
 
   constructor(private ctx: vscode.ExtensionContext, private service: ExplainService) {
     this.state = panelState(ctx.globalState.get<unknown>(STATE_KEY));
@@ -47,6 +71,7 @@ export class PanelController implements vscode.Disposable {
         // (The line box wraps as the editor does.)
         if (e.affectsConfiguration('editor.wordWrap')) this.post();
       }),
+      ...followMoves(this.moves, () => this.editor?.document),
       vscode.window.onDidChangeTextEditorSelection((e) => this.schedule(e.textEditor, 80)),
       vscode.window.onDidChangeActiveTextEditor((e) => {
         if (e) this.schedule(e, 0);
@@ -176,6 +201,7 @@ export class PanelController implements vscode.Disposable {
       shown: this.service.issueFilter(ed.document),
       state: this.state,
       ...(cursor.line === line ? { cursor: cursor.character } : {}),
+      moved: this.moves.take(),
     }));
   }
 
