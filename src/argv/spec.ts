@@ -573,18 +573,22 @@ export interface OperandSpec {
  */
 export type Condition = { option: string[] } | { mode: string } | { operand: number; matches: RegExp } | { unsplit: string[] } | { not: Condition } | { all: Condition[] };
 
+/** What a tool replaces a placeholder with: each path it found (`find`), each item of its input (`xargs`: a line, or what `-0` and `-d` end). */
+export type PlaceholderWith = 'path' | 'item';
+
 /**
  * The text a tool replaces in the words of the command it runs, before it runs it (find's `{}` with each path, xargs's `-I%` with each
- * input line). The interpreter finds the words that hold it by their value after quote removal (`CommandRole.placeholder`), so `'{}'` and `\{\}` are found like `{}`.
+ * input item). The interpreter finds the words that hold it by their value after quote removal (`CommandRole.placeholder`), so `'{}'` and `\{\}` are found like `{}`.
  */
 export interface PlaceholderSpec {
   /**
    * The text itself (`{}`); or the value of the option that sets it (`xargs -I%`), found by the mode it selects (`ModeSpec`: the last such option
-   * in effect), `default` where the option takes no value (`-i`). None in effect, none to replace.
+   * in effect), `default` where the option takes no value (`-i`). None in effect, none to replace. A mode's option needs the command's `modes`
+   * to have `cancels` (`settleModes` gives the option in effect), and a slot that uses it must be reached only in that mode (`OperandAlt.when`).
    */
   text: string | { mode: string; default?: string };
-  /** What it is replaced with: a path (`find`), a line of the input (`xargs -I`). */
-  with: 'path' | 'line';
+  /** What it is replaced with. */
+  with: PlaceholderWith;
   /** Replaced anywhere in a word (`xargs -I% mv % %.bak`), not only as a word of its own. (find: before `;`, not before `+`.) */
   anywhere?: true;
 }

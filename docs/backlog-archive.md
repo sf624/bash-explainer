@@ -785,6 +785,14 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - **Reason:** Rare, and the written form still shows the blank. The common cases (`${x//:/ }`, `${x:- }`, `cut -d' '`, `sed 's/,/ /g'`) are named.
 - **Input and what is missing:** `${x:? }` (the message is shown in quotes, `Error message " "`); `"${y:-\ }"` (the written form `\ `); `${x:-" "}`, which keeps its quotes where `${x//:/" "}` unquotes them; a note (not a token) that quotes a blank, such as the one on `IFS`; a regex literal child (`Literal " "`), which has its quotes.
 
+## From the placeholder of xargs -I (#703)
+
+### Placeholders in nested wrappers, the command's name, and an empty replace string
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `missing-explanation`.
+- **Reason:** Rare, and the tool's own error or the plain operand reading is not wrong, only without the note that the word is replaced.
+- **Input and what is missing:** `xargs -I{} find {} -exec echo {} \;` (the `{}` of `echo` is find's, the first is xargs's); `find . -exec xargs -I{} echo {} \;`; `find . -exec {} \;` (find replaces the command's name too); quotes in the input lines of the worked example with `-I`; `xargs -I ''` (an empty replace string: the explanation marks nothing).
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

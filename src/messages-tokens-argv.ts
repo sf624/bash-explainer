@@ -2,7 +2,7 @@ import { blankName } from './messages-values';
 import type { Text } from './i18n';
 import { codeSpan } from './label';
 import { tokenText } from './messages-levels';
-import type { PlaceholderWith } from './analyzer-types';
+import type { PlaceholderWith } from './argv/spec';
 
 // What the tokens of the words of a command, as src/explain/argv.ts and its modules read them say.
 
@@ -25,18 +25,33 @@ export const ARGV_TEXTS = {
   'find-exec-end-each': tokenText<{ of: string; escaped: boolean }>(({ of, escaped }) => [
     `\`${of}\` の終わり: 見つかったファイル1件ごとにコマンドを実行${escaped ? '（\`;\` はシェルに解釈されないようエスケープが必要）' : ''}`,
     `End of \`${of}\`: run once per match${escaped ? ' (\`;\` must be escaped from the shell)' : ''}`]),
-  /** `find . -exec cmd {} \;`, `xargs -I% cmd %`: the word that the command around replaces (`what`: with a path, or the input line) before it runs the other. */
-  'placeholder-replaced': tokenText<{ text: string; what: PlaceholderWith }>(({ text, what }) => what === 'path' ? [
-    `\`${text}\`: 見つかったファイルのパスに置き換わる`,
-    `\`${text}\`: replaced with the path that was found`] : [
-    `\`${text}\`: 入力から読んだ1行に置き換わる`,
-    `\`${text}\`: replaced with the input line`]),
-  /** `find . -exec mv {} {}.bak \;`, `xargs -I% mv % %.bak`: a word that holds the text, which the command around replaces in it; added to what the word says. */
-  'placeholder-within': tokenText<{ text: string; what: PlaceholderWith; by: string }>(({ text, what, by }) => what === 'path' ? [
-    `。\`${by}\` が語の中の \`${text}\` を見つけたファイルのパスに置き換えてから、コマンドを実行する`,
-    `. \`${by}\` replaces \`${text}\` in it with the path that was found before it runs the command`] : [
-    `。\`${by}\` が語の中の \`${text}\` を入力から読んだ1行に置き換えてから、コマンドを実行する`,
-    `. \`${by}\` replaces \`${text}\` in it with the input line before it runs the command`]),
+  /**
+   * `find . -exec cmd {} \;`, `xargs -I% mv % %.bak`: a word the command around replaces before it runs the other, added to what the word says (`within`:
+   * the word holds the text among other text; `what`: with a path, or an item of the input).
+   */
+  'placeholder-replaced': tokenText<{ text: string; what: PlaceholderWith; by: string; within: boolean }>(({ text, what, by, within }) => [
+    `。\`${by}\` が${within ? `語の中の \`${text}\` を` : 'これを'}${what === 'path' ? '見つけたファイルのパス' : '入力の1件'}に置き換えてから、コマンドを実行する`,
+    `. \`${by}\` replaces ${within ? `\`${text}\` in it` : 'it'} with ${what === 'path' ? 'the path that was found' : 'the input item'} before it runs the command`]),
+  /**
+   * `find . -exec sh -c '…' _ {} \;`, `xargs -I% sh -c '…' _ %`: `$0` (`k` is 0) or `$1`… of the string a shell runs, whose word the command around
+   * replaces first (`word`: as written; `within`: it holds the text `text` among other text).
+   */
+  'string-param-replaced': tokenText<{ via: string; k: number; by: string; text: string; word: string; what: PlaceholderWith; within: boolean }>(({ via, k, by, text, word, what, within }) => {
+    const ja = what === 'path' ? '見つけたパス' : '入力の1件';
+    const en = what === 'path' ? 'the path it found' : 'the input item';
+    const ofJa = `\`${via}\` の文字列`;
+    const ofEn = `the \`${via}\` string`;
+    if (within) return k === 0 ? [
+      `${ofJa}の \`$0\`: そのあとに渡した名前。\`${by}\` が \`${word}\` の中の \`${text}\` を${ja}に置き換えてから渡す（エラーメッセージに出る）`,
+      `\`$0\` of ${ofEn}: the name given after it; \`${by}\` replaces \`${text}\` in \`${word}\` with ${en} first (shown in error messages)`] : [
+      `位置パラメータ: ${ofJa}への ${k} 番目の引数。\`${by}\` が \`${word}\` の中の \`${text}\` を${ja}に置き換えてから渡す`,
+      `Positional parameter: argument #${k} of ${ofEn}; \`${by}\` replaces \`${text}\` in \`${word}\` with ${en} first`];
+    return k === 0 ? [
+      `${ofJa}の \`$0\`: そのあとに渡した名前。\`${by}\` が \`${word}\` を${ja}に置き換えてから渡す（エラーメッセージに出る）`,
+      `\`$0\` of ${ofEn}: the name given after it; \`${by}\` replaces \`${word}\` with ${en} first (shown in error messages)`] : [
+      `位置パラメータ: ${ofJa}への ${k} 番目の引数。\`${by}\` が \`${word}\` の代わりに、${ja}を渡す`,
+      `Positional parameter: argument #${k} of ${ofEn}; \`${by}\` passes ${en} in place of \`${word}\``];
+  }),
   /** `find . \( -a -o -b \)`: the group as a whole. */
   'find-group': tokenText(() => [
     'グループ: 括弧の中を先にまとめて評価する',

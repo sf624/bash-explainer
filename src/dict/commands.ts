@@ -469,12 +469,12 @@ export const core: Record<string, CommandSpec> = {
   xargs: cmd('標準入力から読んだ値を引数にしてコマンドを実行する', 'Build and run a command with arguments read from stdin', [
     ['-0|--null', '入力を NUL 区切りとして読む（`find -print0` と組み合わせる）', 'input is NUL-separated (pair with `find -print0`)'],
     { ...optionOf(['-n|--max-args', '1回のコマンド実行に渡す引数の最大数', 'max arguments per command', 'arg']), selects: 'args' },
-    { ...optionOf(['-I', '置換文字列（例: `-I{}` で `{}` を入力値に置き換えて1件ずつ実行）', 'replace string (e.g. `-I{}`): every occurrence of it in the command is replaced with the input line, and the command runs once per input line', 'arg']), selects: 'replace' },
+    { ...optionOf(['-I', '置換文字列（例: `-I{}`）。コマンドの引数の中の指定した文字列を入力の1件に置き換えて、1件ずつ実行する（区切りは既定で改行、`-0` や `-d` で変わる）', 'replace string (e.g. `-I{}`): every occurrence of it in the arguments of the command is replaced with the input item, and the command runs once per item (an item is a line, or what `-0` or `-d` ends)', 'arg']), selects: 'replace' },
     ['-P|--max-procs', '並列実行するプロセス数', 'run up to N processes in parallel', 'arg'],
     ['-r|--no-run-if-empty', '入力が空ならコマンドを実行しない', 'do not run if input is empty'],
     ['-t|--verbose', '実行するコマンドを表示', 'print commands before running'],
     ['-d|--delimiter', '入力の区切り文字（各項目は指定した文字で終わり、クォートやバックスラッシュは特別扱いしない。`\\n` 以外にすると、`echo` が出す末尾の改行は最後の項目に残る）', 'input delimiter: each item ends at the given character, and quotes and backslashes are not special (with one other than `\\n`, the newline `echo` ends with stays in the last item)', 'arg'],
-    { ...optionOf(['-i|--replace', '置換文字列（既定は `{}`。`-i` は直後にだけ文字列を付けられる）', 'replace string (default `{}`; attach any string directly): every occurrence of it in the command is replaced with the input line, and the command runs once per input line', 'attached']), selects: 'replace' },
+    { ...optionOf(['-i|--replace', '置換文字列（既定は `{}`。`-i` は直後にだけ文字列を付けられる）。コマンドの引数の中の指定した文字列を入力の1件に置き換えて、1件ずつ実行する', 'replace string (default `{}`; attach any string directly): every occurrence of it in the arguments of the command is replaced with the input item, and the command runs once per item', 'attached']), selects: 'replace' },
     { ...optionOf(['-L', '入力の指定した行数ごとに1回実行する', 'run once per the given number of input lines', 'arg']), selects: 'lines' },
     ['-E', '指定した文字列で入力を打ち切る', 'stop reading at the given string', 'arg'],
     ['-a|--arg-file', '標準入力でなくファイルから読む', 'read items from a file', 'arg io:input'],
@@ -488,7 +488,7 @@ export const core: Record<string, CommandSpec> = {
     ['--process-slot-var', '子プロセスごとに異なる番号を入れる環境変数の名前', 'name of a variable set to a different number in each child process', 'arg'],
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
-  ], { example: 'xargs', parser: 'getopt_long', optionsFirst: true, modes: [{ name: 'replace', cancels: ['lines', 'args'] }, { name: 'lines', cancels: ['replace', 'args'] }, { name: 'args', cancels: ['lines', 'replace'], agreesWith: { modes: ['replace'], value: 1 } }], operands: [{ when: { mode: 'replace' }, pattern: [runs({ run: 'exec', placeholder: { text: { mode: 'replace', default: '{}' }, with: 'line', anywhere: true } })] }, { pattern: [runs({ run: 'exec', appends: true })] }] }),
+  ], { example: 'xargs', parser: 'getopt_long', optionsFirst: true, modes: [{ name: 'replace', cancels: ['lines', 'args'] }, { name: 'lines', cancels: ['replace', 'args'] }, { name: 'args', cancels: ['lines', 'replace'], agreesWith: { modes: ['replace'], value: 1 } }], operands: [{ when: { mode: 'replace' }, pattern: [runs({ run: 'exec', placeholder: { text: { mode: 'replace', default: '{}' }, with: 'item', anywhere: true } })] }, { pattern: [runs({ run: 'exec', appends: true })] }] }),
   cut: cmd('各行から指定した列（フィールド）や文字位置を切り出す', 'Cut out selected fields or characters from each line', [
     ['-s|--only-delimited', '区切り文字のない行は出力しない', 'do not print lines without the delimiter'],
     ['--complement', '指定した以外を出力する', 'select everything except the given fields'],

@@ -381,6 +381,22 @@ describe('the specs of the dictionary', () => {
     assert.throws(() => cmd('x', 'x', [['-x', 'x', 'x', '', { a: tx('a', 'a') }]]), /-x: a language or values, but no value/);
   });
 
+  it('give a placeholder that an option sets (`xargs -I`) a mode that cancels the others, and only to the operands of that mode', () => {
+    const bad: string[] = [];
+    everySpec((path, spec) => {
+      for (const alt of spec.operands ?? []) {
+        for (const item of alt.pattern) {
+          const text = item.command?.placeholder?.text;
+          if (typeof text !== 'object') continue;
+          const mode = (spec.modes ?? []).find((m) => m.name === text.mode);
+          const only = JSON.stringify(alt.when) === JSON.stringify({ mode: text.mode });
+          if (!mode || !(spec.modes ?? []).some((m) => m.cancels) || !only) bad.push(path);
+        }
+      }
+    });
+    assert.deepStrictEqual(bad, []);
+  });
+
   it('have operand patterns that some words fit', () => {
     // For each alternative: the words its pattern takes (each item once, then each repeating item twice), after
     // the options its condition names. The alternative must be the one the interpreter chooses for one of them.

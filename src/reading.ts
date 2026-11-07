@@ -26,7 +26,8 @@
 // the nodes are those of the tokens about the same text: bash's own (`shell`) for the nodes bash reads.
 import { readSaid, tokenSaid, type TokenTextArgs, type TokenTextId } from './messages-tokens';
 import { markedText } from './tokenmarks';
-import type { PlaceholderWith, Pos, ScriptProcess, Span, Token } from './analyzer-types';
+import type { Pos, ScriptProcess, Span, Token } from './analyzer-types';
+import type { PlaceholderWith } from './argv/spec';
 import type { Basis, TryIt } from './basis';
 import { binaryTestOp, binaryTestOperands, extendedEqualOps, plainPatternOps, testOperandTexts, unaryTestOperands, unaryTestOps } from './dict/syntax';
 import type { Lang } from './i18n';

@@ -36,15 +36,17 @@ export function markPlaceholders(cx: Explainer, found: PlaceholderWords | undefi
   const { by, text, with: what } = found.role;
   const whole = found.whole.map(spanOf);
   const within = found.within.map(spanOf);
+  // (What the word says stays; this is added to it. A word that is the text alone is bash's own string where no operand describes it, and has nothing under it.)
   const mark = (ts: Token[]): void => ts.forEach((t) => {
-    if (whole.some((s) => sameSpan(s, t.span))) {
-      t.explanation = cx.text('placeholder-replaced', { text, what });
-      t.placeholder = what;
-      // (Where no operand of the command it runs describes the word, the token is bash's own, a string.)
-      t.origin = 'argv';
-      t.children = [];
-    } else if (within.some((s) => sameSpan(s, t.span))) t.explanation += cx.text('placeholder-within', { text, what, by });
-    else mark(t.children);
+    const isWhole = whole.some((s) => sameSpan(s, t.span));
+    if (isWhole || within.some((s) => sameSpan(s, t.span))) {
+      t.explanation += cx.text('placeholder-replaced', { text, what, by, within: !isWhole });
+      if (isWhole) {
+        t.placeholder = what;
+        t.origin = 'argv';
+        t.children = [];
+      }
+    } else mark(t.children);
   });
   mark(tokens);
 }

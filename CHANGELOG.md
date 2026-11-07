@@ -30,7 +30,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The example of a test reads each value as bash does: unquoted in `[ ]`, an empty value or one with a space makes bash fail, and a new section "Error (status 2) when" lists it, the script's own value too. Before, `[ $x = "" ]` said "True when `x=""`".
 - `xargs` options that cancel each other are explained as xargs reads them: in `-n1 -I{}`, `-I{} -L1`, `-L1 -n1` and `-I{} -n2` the earlier option is marked as ignored (xargs warns "ignoring previous … value" on stderr), and the example follows the one that wins. Before, both were listed as in effect, and the example of `-I{} -L1` and `-L1 -n1` was wrong.
 - In a script that sources a file or runs text the explainer cannot read, the lines before that point use the values the script gives again: their worked examples run on the real data, and their notes read the value (`rm -rf $dir` with `dir=/tmp/cat` is a Caveat). In 0.10.0 they had made-up examples and stronger warnings.
-- The `{}` of `find -exec rm {} \;`, quoted (`'{}'`) or not, and the replace string of `xargs -I{} cp {} dest/` (any text, also inside a longer word: `-I % mv % %.bak`) are placeholders that `find` or `xargs` replaces, not operands that the command reads; `$1` of `sh -c '…' _ {}` there is the path or the input line, not "`{}`". The English text of `-I` now says where the input goes.
+- The `{}` of `find -exec rm {} \;` and the replace string of `xargs -I{} cp {} dest/` are placeholders that `find` or `xargs` replaces, not operands that the command reads.
 
 ## 0.10.0
 

@@ -60,6 +60,11 @@ describe('xargs agrees with GNU xargs', () => {
       assert.strictEqual(mine, real, JSON.stringify([opts, input]));
     }
   });
+  it('replaces the string in the arguments of the command, not in its name', () => {
+    assert.deepStrictEqual(runXargs(['-I{}', '{}', 'x{}'], 'a\n'), [['{}', 'xa']]);
+    // (GNU xargs runs the program `{}` here, as written.)
+    assert.match(run('xargs', ['-I%', '%', 'x'], { input: 'a\n' }).stderr.toString(), /xargs: %: No such file or directory/);
+  });
   it('treats quotes in the input as grouping', () => {
     assert.deepStrictEqual(runXargs(['-n', '1'], 'a "b c" d\\ e\n'), [['echo', 'a'], ['echo', 'b c'], ['echo', 'd e']]);
   });
