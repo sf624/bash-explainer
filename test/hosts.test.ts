@@ -146,6 +146,9 @@ describe('Dockerfile', () => {
     // Docker Hub's official images, with a tag, a digest, a platform, a stage name or the registry written out.
     assert.deepStrictEqual(each(['alpine', 'alpine:3.20', 'alpine@sha256:abc', '--platform=linux/amd64 alpine AS build', 'docker.io/library/alpine:3.20', 'busybox:1.36', 'node:20-alpine', 'python:3.12-alpine3.20', 'golang:alpine']), Array(9).fill('ash'));
     assert.deepStrictEqual(each(['debian', 'debian:bookworm-slim', 'ubuntu:24.04', 'library/ubuntu']), Array(4).fill('dash'));
+    // A build argument in the tag: its written end decides (`-alpine`); one in the name decides nothing.
+    assert.deepStrictEqual(each(['golang:${GO_VERSION}-alpine AS build', 'node:$NODE_VERSION-alpine3.20', 'alpine:${ALPINE}', 'debian:${CODENAME}-slim']), ['ash', 'ash', 'ash', 'dash']);
+    assert.deepStrictEqual(each(['node:${TAG}', '${REGISTRY}/alpine', 'node${V}:20-alpine']), ['sh', 'sh', 'sh']);
     // Any other image, or one the build gives (`$BASE`), may have any sh: as before.
     assert.deepStrictEqual(each(['node:20', 'python:3.12-slim', 'myorg/alpine', 'ghcr.io/x/alpine', 'registry:5000/alpine', '${BASE}', 'scratch', 'alpinelinux', 'mydebian']), Array(9).fill('sh'));
     // Multi-stage: the last FROM above the line decides, and `FROM build` starts with what that stage ended with, its SHELL too.
@@ -153,6 +156,18 @@ describe('Dockerfile', () => {
       'FROM alpine AS Build', 'RUN a', 'FROM debian', 'RUN b', 'FROM build AS two', 'RUN c', 'SHELL ["/bin/bash", "-c"]', 'RUN d',
       'FROM two', 'RUN e', 'FROM build', 'RUN f', 'FROM ubuntu AS three', 'FROM three', 'RUN g',
     ].join('\n')), ['1:ash', '3:dash', '5:ash', '6:bash', '7:bash', '9:bash', '11:ash', '14:dash']);
+    // `sh` named in SHELL or in an exec form is the image's /bin/sh; another shell is that one, and `sh` after it the image's again.
+    assert.deepStrictEqual(shells([
+      'FROM alpine', 'SHELL ["/bin/sh", "-eo", "pipefail", "-c"]', 'RUN a', 'RUN ["/bin/sh", "-c", "b"]', 'RUN ["sh", "-c", "c"]', 'RUN ["dash", "-c", "d"]',
+      'SHELL ["/bin/bash", "-c"]', 'RUN e', 'SHELL ["sh", "-c"]', 'RUN f', 'FROM debian', 'RUN ["/bin/sh", "-c", "g"]', 'FROM x', 'RUN ["sh", "-c", "h"]',
+    ].join('\n')).filter((s) => !/^(1|6|8):/.test(s)), ['2:ash', '3:ash', '4:ash', '5:dash', '7:bash', '9:ash', '11:dash', '13:sh']);
+    const notes = (src: string, line: number) => {
+      const extracted = extractShell('dockerfile', src);
+      return explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, src.split('\n'), line, 'en')!.notes.join('\n');
+    };
+    assert.doesNotMatch(notes('FROM alpine\nSHELL ["/bin/sh", "-eo", "pipefail", "-c"]\nRUN [[ -f x ]] && echo ok\n', 2), /\[\[/);
+    assert.doesNotMatch(notes('FROM alpine\nRUN ["/bin/sh", "-c", "[[ -f x ]] && echo ok"]\n', 1), /\[\[/);
+    assert.match(notes('FROM debian\nRUN ["/bin/sh", "-c", "[[ -f x ]] && echo ok"]\n', 1), /`\[\[ \]\]` is not available in dash/);
     // (A stage's pipefail is kept with its SHELL: the pipe warning follows it.)
     const warned = (src: string, line: number) => {
       const extracted = extractShell('dockerfile', src);

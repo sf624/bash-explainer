@@ -531,7 +531,7 @@ describe('host files: branches no other test takes', () => {
       'RUN ["echo", \\',
     ].join('\n'));
     assert.deepStrictEqual(shells(e), ['1:ash', '3:bash', '5:ash', '6:bash', '7:zsh', '8:bash', '9:ash', '10:bash', '11:ash', '12:bash', '13:dash', '14:bash',
-      '16:bash', '17:zsh', '18:dash', '19:ash', '20:mksh', '21:ksh', '22:yash', '23:sh']);
+      '16:bash', '17:zsh', '18:dash', '19:ash', '20:mksh', '21:ksh', '22:yash', '23:ash']);
     assert.strictEqual(lines(e)[3], "$'a\\n\\tb' x");
     assert.strictEqual(lines(e).length, 25);
     assert.strictEqual(extractShell('dockerfile', 'RUN ["a\\nb\\\\\'c"]').text, "$'a\\nb\\\\\\'c'");

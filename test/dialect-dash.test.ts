@@ -486,10 +486,12 @@ for (const sh of REALS) {
     it(`a Dockerfile's RUN lines FROM ${sh === 'ash' ? 'alpine' : 'debian'}: an Error exactly where ${sh} fails or stops`, () => {
       const image = sh === 'ash' ? 'alpine:3.20' : 'debian:bookworm-slim';
       for (const code of ['[[ -n "$PATH" ]] && echo ok', '[[ a == a* ]] && echo ok', 'a=(1 2); echo "${a[1]}"', 'echo -n x', 'set -o pipefail', 'shopt -s nullglob', 'x=$(( 1 + 2 )); echo $x', 'source /dev/null']) {
-        const src = `FROM ${image}\nRUN ${code}\n`;
-        const extracted = extractShell('dockerfile', src);
-        const errors = hostIssues(parser.parse(extracted.text), extracted, src.split('\n'), 'en').filter((i) => i.severity === 'error').map((i) => i.code);
-        assert.strictEqual(errors.length > 0, does(sh, code) !== 'runs', `${code}: ${errors.join(', ')}`);
+        // (Also with `sh` named: in SHELL, and in the exec form. The code holds no `\`: with its `"` escaped, it is a JSON string.)
+        for (const src of [`FROM ${image}\nRUN ${code}\n`, `FROM ${image}\nSHELL ["/bin/sh", "-c"]\nRUN ${code}\n`, `FROM ${image}\nRUN ["/bin/sh", "-c", "${code.replace(/"/g, '\\"')}"]\n`]) {
+          const extracted = extractShell('dockerfile', src);
+          const errors = hostIssues(parser.parse(extracted.text), extracted, src.split('\n'), 'en').filter((i) => i.severity === 'error').map((i) => i.code);
+          assert.strictEqual(errors.length > 0, does(sh, code) !== 'runs', `${src}: ${errors.join(', ')}`);
+        }
       }
     });
 

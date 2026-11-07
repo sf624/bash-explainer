@@ -805,6 +805,13 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - An image of another registry or namespace (`myorg/alpine`, `ghcr.io/…/alpine`, `public.ecr.aws/docker/library/alpine`): read as `sh`.
   - The shell chip says "(from the file type)" for a shell that the `FROM` line chose.
   - The busybox measured is Ubuntu's busybox-static 1.36.1, not Alpine's own build (whose config could differ in a few applets or options).
+  - The chip says "(from the file type)" also where the FROM line chose the shell ("Auto: dash (from the file type)" on the web page's Dockerfile sample): a source of its own ("from the base image") needs a new `ShellSource`, a field on `ShellRegion` and `autoShellAt` to read it.
+  - Under `FROM debian`, `SHELL ["/bin/sh", "-o", "pipefail", "-c"]` makes every later RUN fail (dash 0.5.12: "Illegal option -o pipefail", status 2), and nothing says so: the dialect check reads `set -o pipefail`, not a shell's own options in SHELL.
+  - `FROM bash` (the official bash image is Alpine-based: its `/bin/sh` is busybox ash) is read as `sh`.
+  - A local image of one name (`myapp:1-alpine`) is taken for an official one: its `-alpine` tag makes it busybox ash.
+  - Two stages of the same name: the later one's shell is used for `FROM name` after it, whatever Docker does with the duplicate.
+  - `type -p` under dash (dash 0.5.12: "-p: not found", status 127) gets no note.
+  - An `ONBUILD` trigger runs in a build FROM this image, in that build's shell; it is read with this stage's shell.
 
 ## Decisions recorded on 2026-11-06
 
