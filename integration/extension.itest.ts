@@ -7,6 +7,8 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { CursorMoves } from '../src/ui/cursorMoves';
+import { followMoves } from '../src/ui/panel';
 import { themeRoleColours } from '../src/ui/themeColours';
 import copied from '../src/ui/vscodeThemes.json';
 import { state } from './watch';
@@ -266,6 +268,38 @@ describe('Bash Explainer in VS Code', function () {
       await until('no tokens', () => tokens(script.uri), (t) => (t?.data.length ?? 0) === 0);
     } finally {
       await config().update('highlight.enabled', undefined, vscode.ConfigurationTarget.Global);
+    }
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  });
+
+  it("tells a move of the cursor from typing and a paste by VS Code's events, as the panel opens a pipeline's stage only for a move", async () => {
+    // (src/ui/cursorMoves.ts: typing and a paste change the selection with the kind `Keyboard` too; a selection set by a command, as the
+    // panel's reveal, is of the kind `Command`.)
+    const doc = await vscode.workspace.openTextDocument({ language: 'shellscript', content: 'grep -r pattern . | sort -r | uniq -c\n' });
+    const editor = await open(doc);
+    const moves = new CursorMoves();
+    const subs = followMoves(moves, () => editor.document);
+    const after = async (what: () => Thenable<unknown>): Promise<boolean> => {
+      await sleep(100);
+      moves.take();
+      await what();
+      await sleep(150);
+      return moves.take();
+    };
+    try {
+      editor.selection = new vscode.Selection(0, 0, 0, 0);
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), true, 'a key');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorEnd')), true, 'a key');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('type', { text: 'x' })), false, 'typing');
+      await vscode.env.clipboard.writeText(' | wc -l');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('editor.action.clipboardPasteAction')), false, 'a paste');
+      assert.strictEqual(editor.document.lineAt(0).text, 'grep -r pattern . | sort -r | uniq -cx | wc -l');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorHome')), true, 'a key after a paste');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('undo')), false, 'undo');
+      assert.strictEqual(await after(async () => { editor.selection = new vscode.Selection(0, 3, 0, 3); }), false, 'a selection set by an extension');
+      assert.strictEqual(await after(() => vscode.window.showTextDocument(doc, { selection: new vscode.Range(0, 20, 0, 24) })), false, "the panel's reveal");
+    } finally {
+      subs.forEach((s) => s.dispose());
     }
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });

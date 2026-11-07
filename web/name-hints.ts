@@ -33,7 +33,8 @@ class HintWidget extends WidgetType {
     span.addEventListener('click', () => {
       // (Where the widget is now: the text may have changed since the hints were made.)
       const name = Math.max(0, view.posAtDOM(span) - hintOf.get(span)!.back);
-      view.dispatch({ selection: { anchor: name }, scrollIntoView: true });
+      // (The reader's click, as one in the text: the panel opens the stage it lands in, src/ui/cursorMoves.ts.)
+      view.dispatch({ selection: { anchor: name }, scrollIntoView: true, userEvent: 'select.pointer' });
       if (window.matchMedia('(pointer: fine)').matches) view.focus();
     });
     return span;

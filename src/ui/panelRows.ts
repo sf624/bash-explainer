@@ -27,7 +27,7 @@ export type Depth = 1 | 2;
 
 /**
  * What the row model is asked for: the depth, the switch "What the program receives", and where the cursor is on the line, when it is
- * there (which stage's glob example starts open).
+ * there (which stage's glob example starts open, and which stages a move of the cursor opens: `ModelRow.atCursor`).
  */
 export interface RowOptions { depth: Depth; receives: boolean; cursor?: Span['start'] }
 
@@ -65,8 +65,10 @@ export interface ModelRow extends TokenRow {
   steps?: StepsLine;
   /** A row between two commands of a pipeline (`|`): it says what goes from one to the other, on one line. */
   connector?: true;
-  /** It starts folded: all its parts come at depth 2 (`foldDeep`). */
+  /** It starts folded: all its parts come at depth 2 (`foldDeep`), or it is a stage of a pipeline at depth 2 (`foldStages`). */
   folded?: true;
+  /** A stage of a pipeline at depth 2 that holds the cursor: the panel opens it when the reader moved the cursor there (`foldStages`). */
+  atCursor?: true;
   /** With the switch on, on a simple command: what its program receives (src/argvline.ts). */
   receives?: ReceivesLine;
   /** With the switch on, on a word of a simple command. */
@@ -149,8 +151,11 @@ const stagesOf = (items: readonly Token[]): Token[] => items.flatMap((t) => [
   ...(t.kind === 'substitution' ? [] : stagesOf(t.children)),
 ]);
 
+/** The stages around a range, outermost first. */
+const stagesAround = (stages: readonly Token[], span: Span): Token[] => stages.filter((s) => within(s.span, span));
+
 /** The innermost stage around a range. */
-const stageAround = (stages: readonly Token[], span: Span): Token | undefined => stages.filter((s) => within(s.span, span)).pop();
+const stageAround = (stages: readonly Token[], span: Span): Token | undefined => stagesAround(stages, span).pop();
 
 /**
  * The examples that run a whole statement of the line (a pipeline's): the view draws them apart, folded, above the rows. A
@@ -478,28 +483,28 @@ function foldDeep(rows: readonly ModelRow[]): void {
   }
 }
 
-/**
- * Whether a row, or a row under it, has a glob example that starts open by the rule of `opensGlob` (the line's only example), which a fold
- * would hide. A command's own example is part of its stage, and folds with it.
- */
+/** Whether a row, or a row under it, has an example that starts open, which a fold would hide. */
 const holdsOpen = (r: ModelRow): boolean => !!r.examples?.some((e) => e.open) || r.children.some(holdsOpen);
 
 /**
- * At depth 2, a pipeline the cursor is in opens the stage the cursor is on and folds the others to their own row (what the command
- * does, its role, what its program receives), one press from their parts (usability-9.md, 2.7); where it is (`RowModel.places`) opens them
- * too, with the examples under them. A cursor on no stage (on a `|`) folds none, and neither does a stage holding the glob example that
- * starts open as the line's only one. A pipeline's rows are its stages and the connectors between them (`connect`). This decides the folds;
- * media/panel.js starts a line's rows so whenever it draws the line anew (another line, a new text of it, another depth), and drawing it
- * again otherwise only opens what this opens: nothing folds under the pointer (`drawnOpen`).
+ * At depth 2, the stages of every pipeline fold to their own row (what the command does, its role, what its program receives), one
+ * press from their parts (usability-9.md, 2.7), with the examples under them; where it is (`RowModel.places`) opens them, and so does
+ * a click on the row. Not a stage that holds the glob example that starts open as the line's only one (`only`: one that opens because
+ * the cursor is on its stage folds with it). A pipeline's rows are its stages and the connectors between them (`connect`). Where the
+ * cursor is does not change the folds: media/panel.js starts a line's rows so whenever it draws the line anew (another line, a new text
+ * of it, another depth), so typing or a paste, which leave the cursor at the end, opens nothing. The stages around the cursor
+ * (`stagesAt`) are `atCursor`: the panel opens them when the reader moved the cursor there with no edit (a tap, a click, an arrow key:
+ * `PanelLine.moved`), and drawing the line again otherwise folds or closes nothing (`drawnOpen`; the maintainer's rule of 2026-11-07).
  */
-function foldStages(rows: readonly ModelRow[], cursor: Span['start']): void {
-  const at = { start: cursor, end: cursor };
+function foldStages(rows: readonly ModelRow[], only: boolean, at: ReadonlySet<ModelRow>): void {
   for (const r of rows) {
-    foldStages(r.children, cursor);
+    foldStages(r.children, only, at);
     if (!r.children.some((c) => c.connector)) continue;
-    const stages = r.children.filter((c) => !c.connector);
-    if (!stages.some((c) => within(c.span, at))) continue;
-    for (const c of stages) if (c.children.length && !within(c.span, at) && !holdsOpen(c)) c.folded = true;
+    for (const c of r.children) {
+      if (c.connector || !c.children.length) continue;
+      if (at.has(c)) c.atCursor = true;
+      if (!(only && holdsOpen(c))) c.folded = true;
+    }
   }
 }
 
@@ -572,16 +577,27 @@ function keyEntries(rows: readonly ModelRow[], noteLevels: readonly NoteLevel[],
 }
 
 /**
+ * The stages of the line around the cursor, outermost first (`stagesOf`; from a stage's start to its end, both included: a cursor just
+ * after a command is on it). The one reading of the stage the cursor is on: its glob example starts open (`opensGlob`), and a move of the
+ * cursor opens it (`foldStages`).
+ */
+const stagesAt = (items: readonly Token[], cursor: Span['start'] | undefined): Token[] => (cursor ? stagesAround(stagesOf(items), { start: cursor, end: cursor }) : []);
+
+/** The number of examples on a line: those placed on its tokens and those left in `examples` (the whole line's, which the view draws apart). */
+function exampleCount(ex: Pick<LineExplanation, 'items' | 'examples'>): number {
+  const all = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
+  return new Set([...all(ex.items).flatMap((t) => t.examples ?? []), ...ex.examples]).size;
+}
+
+/**
  * Whether a token's glob example starts open (usability-9.md, Q4): when it is the line's only example, or when the cursor is on the stage
- * it belongs to, its innermost (`stagesOf`; from its start to its end, both included: a cursor just after a command is on it). The line's
- * examples are those placed on its tokens and those left in `examples` (the whole line's, which the view draws apart).
+ * it belongs to, its innermost (`stagesAt`).
  */
 function opensGlob(ex: Pick<LineExplanation, 'items' | 'examples'>, cursor: Span['start'] | undefined): (t: Token) => boolean {
-  const all = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-  const count = new Set([...all(ex.items).flatMap((t) => t.examples ?? []), ...ex.examples]).size;
+  const only = exampleCount(ex) === 1;
   const stages = stagesOf(ex.items);
-  const stage = cursor && stageAround(stages, { start: cursor, end: cursor });
-  return (t) => count === 1 || (!!stage && stageAround(stages, t.span) === stage);
+  const stage = stagesAt(ex.items, cursor).pop();
+  return (t) => only || (!!stage && stageAround(stages, t.span) === stage);
 }
 
 /** The rows the panel shows of a line, at a depth and with the switch, and the Legend of what they draw. */
@@ -607,7 +623,7 @@ export function rowModel(ex: Pick<LineExplanation, 'items' | 'examples' | 'readi
   if (options.depth === 2 && ex.reading) {
     addNodeRows(rows, ex.reading, build.roles, tokenLines(ex.items), lang, ex.shell);
     foldDeep(rows);
-    if (options.cursor) foldStages(rows, options.cursor);
+    foldStages(rows, exampleCount(ex) === 1, new Set(stagesAt(ex.items, options.cursor).flatMap((t) => build.made.get(t) ?? [])));
     sayOnce(rows, build.saying);
   }
   // (Without the data, as in an explanation made for the hover, no mark says what no program receives.)

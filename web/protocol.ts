@@ -16,6 +16,8 @@ export interface CopyState {
   text: string; kind: Kind; line: number; col: number; lang: Lang; theme: Theme; choice: { shell?: Shell; yq?: string };
   /** The settings that differ from the defaults (copies built before the settings dialog read `choice` only). */
   settings?: Record<string, unknown>;
+  /** The reader moved the cursor with no edit (src/ui/cursorMoves.ts): the panel opens the stage it moved into. */
+  moved?: true;
 }
 /** From the compare page to a copy. */
 export type ToCopy = { type: 'bx-state' } & CopyState;

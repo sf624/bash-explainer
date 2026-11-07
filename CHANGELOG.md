@@ -17,7 +17,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - At depth 1, the panel shows bash's steps on a word that a step changes (`"$USER"`, `~/docs`, `*.txt`), and a glob's example of names starts open when it is the line's only example or the cursor is on its command; names typed in it stay. Before, the steps were only at depth 2, and the example started closed.
 - **In short** gives each command a short summary, with the parenthetical parts left out, so that no parentheses nest: `grep` (print lines matching a pattern). A loop's body is named by its lines: "repeats the body on lines 3–8".
 - **In short** says what the functions of bats do (`run`, `load`, `assert_success`). Before, it named them alone.
-- At depth 2, when a line is shown, the stages of a pipeline other than the one the cursor is on are folded to their own row, examples included. A stage opens as the cursor reaches it, and a click on its row or on ▸ folds it again.
+- At depth 2, when a line is shown, every stage of a pipeline is folded to its own row, examples included; typing and pasting open none. A stage opens when you move the cursor into it (a tap, a click, an arrow key) or click its row; ▸ folds it again.
 - The shebang's row says what runs in one line. What bash and the kernel make of `#!` comes at depth 2.
 - The README is shorter: a quick start, then links to the user guide in `docs/guide/`, in English and Japanese, which holds the rest (VS Code, settings, other shells, warnings, the web page, limitations, privacy).
 - The README's logo is readable in dark themes in VS Code.
