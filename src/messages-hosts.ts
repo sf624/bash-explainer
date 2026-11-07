@@ -29,7 +29,7 @@ export const isMakeAutomatic = (c: string): c is MakeAutomatic => Object.hasOwn(
  * of. `what` is the meaning of a known name, from the dictionary of CI variables (src/dict/ciVariables.ts).
  */
 export type HostMeaning =
-  | { kind: 'make-automatic'; char: MakeAutomatic }
+  | { kind: 'make-automatic'; char: MakeAutomatic; /** The line runs with no shell (src/hosts/makerun.ts). */ direct?: true }
   | { kind: 'make-variable'; name: string }
   | { kind: 'make-function'; name: string }
   | { kind: 'azure-macro'; name: string; what?: Text }
@@ -48,7 +48,9 @@ export function hostMeaningText(m: HostMeaning): Text {
   switch (m.kind) {
     case 'make-automatic': {
       const what = MAKE_AUTOMATIC[m.char];
-      return tx(`make の自動変数（${what.ja}）で、シェルが実行される前に make が展開します`, `make's automatic variable (${what.en}), expanded by make before the shell runs`);
+      return m.direct
+        ? tx(`make の自動変数（${what.ja}）で、行が実行される前に make が展開します`, `make's automatic variable (${what.en}), expanded by make before the line runs`)
+        : tx(`make の自動変数（${what.ja}）で、シェルが実行される前に make が展開します`, `make's automatic variable (${what.en}), expanded by make before the shell runs`);
     }
     case 'make-variable':
       return tx(`make の変数 \`${m.name}\` で、シェルが実行される前に make が展開します`, `the make variable \`${m.name}\`, expanded by make before the shell runs`);
