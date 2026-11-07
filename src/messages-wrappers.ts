@@ -1,7 +1,8 @@
 // The texts of the catalog's facts about what a wrapper, a new shell, a remote shell or a container does not get
 // (src/messages.ts: `variable-not-*`, `function-not-*`, `builtin-or-function-as-program`, `function-shadowed-by-program`,
-// `ssh-local-expansion`; manual 3.7.3, 3.7.4, 3.3), apart, to keep src/messages.ts short.
+// `ssh-local-expansion`, `placeholder-in-shell-string`; manual 3.7.3, 3.7.4, 3.3, 3.1.1), apart, to keep src/messages.ts short.
 // (`unread`, here and below: code the model does not read, which runs before, may set it there: `unreadClause`.)
+import type { PlaceholderWith } from './argv/spec';
 import type { Text } from './i18n';
 import { DEFINES_IT, leavesSet, SETS_IT, unlessAny, unreadClause, unreadCode } from './messages-common';
 
@@ -112,4 +113,18 @@ export const functionShadowedText = ({ via, name, where, wraps }: { via: string;
       `${en}. The function runs that program too, so this may be what is meant. Write out its body where the function is meant`]
     : [`${ja}。関数自体はそのプログラムを実行しないので、関数とは別のプログラムが動き、関数の処理は行われません。関数を実行したいところには、その中身を直接書きます`,
       `${en}. The function does not run that program itself, so a different program runs, and none of the function's steps. Write out its body where the function is meant`];
+};
+
+/**
+ * `placeholder-in-shell-string`: `by` (find's `-exec`, xargs's `-I`) pastes the path or the input item (`what`) in place of `text` inside a string a shell
+ * reads as code, before it reads it (ShellCheck's SC2156). `via`: the shell's `-c` (`sh -c`), whose arguments after the string become `$0`, `$1`… (`CommandSlot.params`):
+ * then the fix passes it as one.
+ */
+export const placeholderInShellStringText = ({ by, text, what, via }: { by: string; text: string; what: PlaceholderWith; via?: string }): Texts => {
+  const fix = via && `\`${via} '… "$1" …' _ ${text}\``;
+  const [ja, en] = what === 'path' ? ['見つけたパス', 'the path it found'] : ['入力の1件', 'the input item'];
+  const [some, any] = what === 'path' ? ['ファイル名', 'a file name'] : ['値', 'an item'];
+  return [
+    `\`${by}\` が${ja}をコマンド文字列の中の \`${text}\` に埋め込んでから、シェルがその文字列を読みます。そのため \`;\` や \`$(…)\`、クォートを含む${some}（\`x;rm -rf ~\` など）は、コードとして実行されます${fix ? `。シェルの引数として渡せば、データのまま届きます: ${fix}` : ''}`,
+    `\`${by}\` pastes ${en} in place of \`${text}\` in the command string before the shell reads it, so ${any} with \`;\`, \`$(…)\` or a quote in it (such as \`x;rm -rf ~\`) runs as code${fix ? `. Pass it as an argument of the shell, which gets it as data: ${fix}` : ''}`];
 };

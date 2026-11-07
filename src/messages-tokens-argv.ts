@@ -33,6 +33,14 @@ export const ARGV_TEXTS = {
     `。\`${by}\` が${within ? `語の中の \`${text}\` を` : 'これを'}${what === 'path' ? '見つけたファイルのパス' : '入力の1件'}に置き換えてから、コマンドを実行する`,
     `. \`${by}\` replaces ${within ? `\`${text}\` in it` : 'it'} with ${what === 'path' ? 'the path that was found' : 'the input item'} before it runs the command`]),
   /**
+   * `find . -exec sh -c 'echo {}' \;`, `xargs -I% sh -c 'mv % %.bak'`: a part of the string a shell reads where the command around pastes the path or
+   * the item first (`whole`: the part is the text alone; else it holds `text`), added to what the part says; the risk is the note's
+   * (`placeholder-in-shell-string`), and this says what the reading of the part assumes.
+   */
+  'placeholder-pasted': tokenText<{ text: string; what: PlaceholderWith; by: string; whole: boolean }>(({ text, what, by, whole }) => [
+    `。シェルが文字列を読む前に、\`${by}\` が${whole ? 'ここ' : `この中の \`${text}\` `}を${what === 'path' ? '見つけたファイルのパス' : '入力の1件'}に置き換える（ここでは、空白や記号のない名前として解説）`,
+    `. \`${by}\` puts ${what === 'path' ? 'the path that was found' : 'the input item'} ${whole ? 'here' : `in place of \`${text}\` in it`} before the shell reads the string (explained here as a name with no blanks or special characters)`]),
+  /**
    * `find . -exec sh -c '…' _ {} \;`, `xargs -I% sh -c '…' _ %`: `$0` (`k` is 0) or `$1`… of the string a shell runs, whose word the command around
    * replaces first (`word`: as written; `within`: it holds the text `text` among other text).
    */

@@ -13,8 +13,8 @@ import { inTrap, LOCAL_SOURCED, noShebang, readByBashrc, SOURCED_NAME, unreadCla
 import { extglobText, globstarText, type LoopHow, type LoopPattern, unmatchedGlobText } from './messages-glob';
 import {
   builtinOrFunctionAsProgramText, functionNotImportedShText, functionNotImportedText, functionNotInContainerText, functionNotInNewShellBlockedText,
-  functionNotInNewShellExportText, functionNotInNewShellText, functionNotOnRemoteText, functionShadowedText, sshLocalExpansionText,
-  variableNotExportedText, variableNotInRemoteText, variableNotPassedText,
+  functionNotInNewShellExportText, functionNotInNewShellText, functionNotOnRemoteText, functionShadowedText, placeholderInShellStringText,
+  sshLocalExpansionText, variableNotExportedText, variableNotInRemoteText, variableNotPassedText,
 } from './messages-wrappers';
 import { syntaxErrorText, type SyntaxErrorWhat } from './messages-syntax';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
@@ -26,6 +26,7 @@ import { type GithubFileName, githubFileText, type HostMeaning, hostSubstitution
 import { noShellLines } from './messages-shell';
 import { yqCompatText, yqFlavourText } from './messages-yq';
 import type { TokenMark } from './analyzer-types';
+import type { PlaceholderWith } from './argv/spec';
 import type { YqVerdict } from './embedded/yq';
 import type { RedirectOrder } from './idioms';
 import type { Rewrite } from './rewrite';
@@ -447,6 +448,8 @@ export const MESSAGES = {
   'function-not-in-container': broken<{ via: string; name: string }>(['3.3', '3.7.3'], functionNotInContainerText),
   'builtin-or-function-as-program': broken<{ via: string; name: string; isFn: boolean; fix: Words }>(['3.7.3', '3.3'], builtinOrFunctionAsProgramText),
   'ssh-local-expansion': notProblem(caveat<{ risky: string }>(['3.7.1', '3.7.3'], sshLocalExpansionText)),
+  // (Code that nobody chose runs, with some names: a warning, docs/design/three-levels.md, question 2.)
+  'placeholder-in-shell-string': withConvention(pitfall<{ by: string; text: string; what: PlaceholderWith; via?: string }>(['3.1.1', '6.1'], placeholderInShellStringText, { ja: 'シェルインジェクションの危険: ', en: 'Shell injection risk: ' }), 'placeholder-as-argument'),
   'function-not-on-remote': broken<{ name: string }>(['3.3', '3.7.3'], functionNotOnRemoteText),
   'function-not-in-new-shell-blocked': broken<{ via: string; fn: string; blocker: string }>(['3.3', '3.7.3'], functionNotInNewShellBlockedText),
   'function-not-in-new-shell': broken<{ via: string; fn: string }>(['3.3', '3.7.3'], functionNotInNewShellText),
