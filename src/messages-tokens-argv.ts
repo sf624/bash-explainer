@@ -1,3 +1,4 @@
+import { blankName } from './messages-values';
 import type { Text } from './i18n';
 import { codeSpan } from './label';
 import { tokenText } from './messages-levels';
@@ -185,8 +186,8 @@ export const ARGV_TEXTS = {
   }),
   /** `sort -t"|"`: the value is written with quotes (`val`: what it is without them). */
   'option-value-unquoted': tokenText<{ val: string }>(({ val }) => [
-    `（クォートを外すと \`${val}\`）`,
-    ` (\`${val}\` after quote removal)`]),
+    `（クォートを外すと${blankName(val, true) ?? ` \`${val}\``}）`,
+    ` (${blankName(val, false) ?? `\`${val}\``} after quote removal)`]),
   /** `env FOO=1 cmd`: the assignment `FOO=1` is for the command's environment. */
   'operand-env-assignment': tokenText<{ name: string }>(({ name }) => [
     `環境変数 \`${name}\` の設定（実行するコマンドの環境にだけ入る）`,

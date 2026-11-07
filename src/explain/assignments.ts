@@ -5,6 +5,7 @@
 import type { Token } from '../analyzer-types';
 import { evalArith } from '../arith';
 import { visible } from '../ctlchars';
+import { blankWord } from '../messages-values';
 import { variableAssignments, variableEmptied, variableLanguages } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { lineLabel } from '../i18n';
@@ -53,7 +54,7 @@ function assignmentList(cx: Explainer, n: SyntaxNode, inner: SyntaxNode[]): Toke
   return { ...t, span: { start: spanOf(only).start, end: spanOf(last).end }, label: shorten(n.text.slice(only.startIndex - n.startIndex, last.endIndex - n.startIndex)) };
 }
 
-const IFS_NAMES: Record<string, [string, string]> = { ' ': ['空白', 'space'], '\t': ['タブ', 'tab'], '\n': ['改行', 'newline'] };
+const IFS_NAMES: Record<string, [string, string]> = { ' ': [blankWord(' ', true), blankWord(' ', false)], '\t': [blankWord('\t', true), blankWord('\t', false)], '\n': ['改行', 'newline'] };
 
 /**
  * The characters of an `IFS` value one by one, so that a newline and the text `\n` differ (`IFS=$'\n'` in dash is

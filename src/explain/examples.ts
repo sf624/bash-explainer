@@ -29,7 +29,7 @@ import { ENVIRONMENT, exportOrder, layoutOf, layoutSample, madeUpPath, type Run,
 import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines, withSystemFiles } from '../examples/source';
 import { type Text, tx } from '../i18n';
 import { codeSpan, shorten } from '../label';
-import { EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
+import { blankWord, EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
 import { braceValues } from '../semantics/brace';
 import { quotedName } from '../semantics/effects';
 import { slotEnvironment } from '../semantics/env';
@@ -905,7 +905,7 @@ function wordsSection(cx: Explainer, words: string[], cmd: string): ExampleSecti
     label: n ? cx.s(`展開後の単語（\`${cmd}\` が受け取る別々の引数 ${n} 個）`, `Resulting words (${n} separate ${n === 1 ? 'argument' : 'arguments'} of \`${cmd}\`)`) : cx.s('展開後の単語', 'Resulting words'),
     lines: shown.map((w) => w.text),
     ...(n ? {} : { empty: cx.s('（なし: 空の単語は取り除かれる）', '(none: empty words are dropped)') }),
-    words: { ends: shown.map((w) => w.ends), ...(spaced ? { spaceLabel: cx.s('空白', 'space') } : {}), ...(after ? { after } : {}) },
+    words: { ends: shown.map((w) => w.ends), ...(spaced ? { spaceLabel: blankWord(' ', cx.lang === 'ja') } : {}), ...(after ? { after } : {}) },
   };
 }
 

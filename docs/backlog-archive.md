@@ -777,6 +777,14 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - **Reason:** Rare, and the sample is valid: it shows less than it could.
 - **Input and what is missing:** `sed -n '/e/p' | sort -u` keeps one line (the second line is made only for an `s` pattern); `y/abc/xyz/ | uniq` keeps four copies of one line; the second line of an `s` pattern can start with a space (`s/^user=//p` gives ` xyz`).
 
+## From the blank shown visibly (#657)
+
+### A blank in a value: forms still shown as written
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `missing-explanation`.
+- **Reason:** Rare, and the written form still shows the blank. The common cases (`${x//:/ }`, `${x:- }`, `cut -d' '`, `sed 's/,/ /g'`) are named.
+- **Input and what is missing:** `${x:? }` (the message is shown in quotes, `Error message " "`); `"${y:-\ }"` (the written form `\ `); `${x:-" "}`, which keeps its quotes where `${x//:/" "}` unquotes them; a note (not a token) that quotes a blank, such as the one on `IFS`; a regex literal child (`Literal " "`), which has its quotes.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

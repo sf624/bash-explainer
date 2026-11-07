@@ -261,9 +261,14 @@ export function skeleton(n: SyntaxNode): LabelPart[] {
   }
 }
 
-/** Text as a Markdown code span: the fence is longer than any run of backticks inside, and a backtick at either end is set off by a space. */
+/**
+ * Text as a Markdown code span: the fence is longer than any run of backticks inside, and a backtick at either end is set off by a
+ * space. So is a text that starts and ends with a space and has other characters: CommonMark takes one space off each end of such a
+ * span, and `\` - \`` would show as `-`.
+ */
 export function codeSpan(text: string): string {
   const longest = mostOf([0, ...(text.match(/`+/g) ?? []).map((m) => m.length)]);
   const fence = '`'.repeat(longest + 1);
-  return text.startsWith('`') || text.endsWith('`') ? `${fence} ${text} ${fence}` : `${fence}${text}${fence}`;
+  const padded = text.startsWith('`') || text.endsWith('`') || (text.startsWith(' ') && text.endsWith(' ') && /[^ ]/.test(text));
+  return padded ? `${fence} ${text} ${fence}` : `${fence}${text}${fence}`;
 }

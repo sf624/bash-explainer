@@ -4,6 +4,7 @@
 // the line's context (src/explain/context.ts) and its readers (src/explain/reads.ts: the attributes in effect).
 import type { Example, Kind, Span, Token } from './analyzer-types';
 import { evalArith, intValue } from './arith';
+import { codeShown } from './messages-values';
 import { cannotAssign, expansionOps, wellKnownVariables } from './dict/syntax';
 import type { Explainer } from './explain/context';
 import { arrayKind, isAssoc, isInteger, runsAs, shoptAt } from './explain/reads';
@@ -240,10 +241,10 @@ function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, is
       return ['operator', `\`${t}\`: ` + opMeaning[t][h.lang === 'ja' ? 0 : 1]];
     case 'word': {
       const op = p.op!;
-      if (op === ':-' || op === '-') return ['argument', s(`既定値 \`${t}\`: \`${p.name}\` の代わりに使う値`, `Default \`${t}\`: used instead of \`${p.name}\``)];
+      if (op === ':-' || op === '-') return ['argument', s(`既定値 ${codeShown(t, true)}: \`${p.name}\` の代わりに使う値`, `Default ${codeShown(t, false)}: used instead of \`${p.name}\``)];
       if ((op === ':=' || op === '=') && !p.subscript && cannotAssign(`$${p.name}`)) return ['argument', s(`\`${t}\`: 代入されない（bash はエラーにする）`, `\`${t}\`: never assigned (bash reports an error)`)];
-      if (op === ':=' || op === '=') return ['argument', s(`既定値 \`${t}\`: \`${p.name}\` に代入されてから使われる`, `Default \`${t}\`: assigned to \`${p.name}\`, then used`)];
-      if (op === ':+' || op === '+') return ['argument', s(`代替値 \`${t}\`: \`${p.name}\` が設定されているときに代わりに使う値`, `Alternate value \`${t}\`: used when \`${p.name}\` is set`)];
+      if (op === ':=' || op === '=') return ['argument', s(`既定値 ${codeShown(t, true)}: \`${p.name}\` に代入されてから使われる`, `Default ${codeShown(t, false)}: assigned to \`${p.name}\`, then used`)];
+      if (op === ':+' || op === '+') return ['argument', s(`代替値 ${codeShown(t, true)}: \`${p.name}\` が設定されているときに代わりに使う値`, `Alternate value ${codeShown(t, false)}: used when \`${p.name}\` is set`)];
       return ['string', s(`エラーメッセージ「${messageText(t)}」`, `Error message "${messageText(t)}"`)];
     }
     case 'pattern': {
@@ -261,17 +262,17 @@ function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, is
           const ext = !hasExtglob(t) ? '' : plainExt
             ? s(`。extglob が${plainExt === 'off' ? '無効' : '有効になっていない'}ので拡張グロブにはならず、\`(\`、\`|\`、\`)\` は普通の文字として照合される`, `. With extglob ${plainExt === 'off' ? 'off' : 'not turned on'}, there is no extended glob: \`(\`, \`|\` and \`)\` are matched as plain characters`)
             : s('。拡張グロブは `shopt -s extglob` が必要で、これがないと文字どおりの文字列として扱われる', '. An extended glob needs `shopt -s extglob`, or it is taken as literal text');
-          return ['pattern', `${what} \`${t}\`: ${globIntro(h.lang, 'value')}` + ext + only];
+          return ['pattern', `${what} ${codeShown(t, h.lang === 'ja')}: ${globIntro(h.lang, 'value')}` + ext + only];
         }
         return ['pattern', s(`${what} \`${t}\`（変数などを含むため、内容は実行時に決まる）`, `${what} \`${t}\` (contains expansions, so it is decided at run time)`)];
       }
-      return ['pattern', hasGlob(t) ? `${what} \`${t}\`: ${globIntro(h.lang, 'value')}${only}` : s(`${what} \`${t}\`（ワイルドカードを含まないので、この文字列そのものに一致）${only}`, `${what} \`${t}\` (no wildcards, so it matches exactly this text)${only}`)];
+      return ['pattern', hasGlob(t) ? `${what} ${codeShown(t, h.lang === 'ja')}: ${globIntro(h.lang, 'value')}${only}` : s(`${what} ${codeShown(t, true, '', 'ワイルドカードを含まないので、この文字列そのものに一致')}${only}`, `${what} ${codeShown(t, false, '', 'no wildcards, so it matches exactly this text')}${only}`)];
     }
     case 'replacement': {
       // The quotes and backslashes are removed: `\}` is `}`.
       const shown = unquoteWord(t) ?? t;
       return ['string', t
-        ? s(`置換後の文字列 \`${shown}\``, `Replacement \`${shown}\``)
+        ? s(`置換後の文字列 ${codeShown(shown, true)}`, `Replacement ${codeShown(shown, false)}`)
         : s('置換後の文字列: 空（一致した部分を削除する）', 'Replacement: empty (the match is deleted)')];
     }
     case 'offset': {

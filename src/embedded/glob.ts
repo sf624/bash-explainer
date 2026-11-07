@@ -2,6 +2,7 @@ import type { Lang } from '../i18n';
 import { bracketEnd } from '../bracket';
 import { describeGlob } from '../expansion';
 import { alternatives, closingParen } from '../examples/shellwords';
+import { codeShown } from '../messages-values';
 import { EmbeddedToken, holeToken, isHole, pick } from './types';
 
 /** What a glob is matched against: a string (`case`, `[[ ]]`, `${x#pat}`) or the names of files (an argument). */
@@ -100,7 +101,7 @@ function parse(at: Source, from: number, to: number, extglob: boolean): Embedded
   for (const t of out) {
     if (!t.explanation && t.kind === 'string') {
       const text = shown(t.start, t.end);
-      t.explanation = s(`文字列 \`${text}\` そのもの`, `The text \`${text}\` itself`);
+      t.explanation = s(`文字列 ${codeShown(text, true, ' ')}そのもの`, `The text ${codeShown(text, false)} itself`);
     }
   }
   return out;
