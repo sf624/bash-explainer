@@ -16,6 +16,7 @@ import { readingNodes } from '../reading';
 import { lineParts, lineRuns, showsLineBox } from './lineBox';
 import { panelTools, viewControlForms } from './panelHead';
 import type { PanelBase } from './themePalette';
+import type { Move } from './cursorMoves';
 
 // The explanation panel (media/panel.js) as both the extension and the web page drive it.
 
@@ -155,8 +156,8 @@ export interface PanelLine {
   state?: PanelState;
   /** The cursor's column, when it is on `line`: the glob example of its stage starts open (`RowOptions.cursor`). */
   cursor?: number;
-  /** The reader moved the cursor, with no edit, since the line was last sent (a tap, a click, an arrow key: src/ui/cursorMoves.ts): the panel opens the stages it is in (`ModelRow.atCursor`). */
-  moved?: boolean;
+  /** The reader moved the cursor, with no edit, since the line was last sent, by a pointer (a tap, a click) or a key (src/ui/cursorMoves.ts): the panel opens the stages it is in (`ModelRow.atCursor`). */
+  moved?: Move;
 }
 
 /**
@@ -239,7 +240,7 @@ export function panelUpdate(p: PanelLine) {
     levels: Object.fromEntries(Object.entries(LEVELS).map(([level, { className, codicon, name }]) => [level, { className, icon: codicon, name: name[lang] }])),
     depth,
     receives,
-    ...(p.moved ? { moved: true } : {}),
+    ...(p.moved ? { moved: p.moved } : {}),
     // (What the marks of the rows say, and the Legend of what is drawn: src/ui/panelRows.ts.)
     rowMarks: model.marks,
     key: model.key,

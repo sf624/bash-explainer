@@ -523,6 +523,21 @@ describe('the panel: one view with a depth', function () {
     await close();
   });
 
+  it('opens again at depth 2 a stage the viewer folded with ▸ when the reader taps it in the editor where the cursor is in it already (usability-9.md, 2.7)', async () => {
+    // (The maintainer's complaint: tap `grep`, ▸ on grep, tap `grep` again: it stayed folded, as the cursor had not left it. A pointer's
+    // move drops the fold of the stage it lands in; a key's, only of a stage it enters, as the test below keeps.)
+    const { page, panel, close } = await emptyAtDepth2('en');
+    await page.keyboard.insertText(PIPELINE);
+    await until('every stage folded', () => foldedRows(panel), (f) => f === 'grep,sort,uniq');
+    await clickWord(page, 'grep');
+    await until('grep open', () => foldedRows(panel), (f) => f === 'sort,uniq');
+    await foldButton(panel, 'grep').click();
+    await until('grep folded', () => foldedRows(panel), (f) => f === 'grep,sort,uniq');
+    await clickWord(page, 'rep -r');
+    await until('grep open again', () => foldedRows(panel), (f) => f === 'sort,uniq');
+    await close();
+  });
+
   it('opens at depth 2 the stage of a pipeline in `$( )` the reader moves the cursor into (usability-9.md, 2.7)', async () => {
     const { page, panel, close } = await emptyAtDepth2('en');
     await page.keyboard.insertText('out=$(grep -r pattern . | sort -r)');
