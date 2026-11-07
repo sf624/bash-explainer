@@ -655,6 +655,13 @@ function stringParam(cx: Explainer, k: number, at: SyntaxNode): string | undefin
   if (!p || ancestor(at, (x) => x.type === 'function_definition')) return undefined;
   const w = p.words[k];
   const of = cx.s(`\`${p.via}\` の文字列`, `the \`${p.via}\` string`);
+  // (A word the option replaces with each path, find's `{}`: the string never sees the word, only the path.)
+  const by = p.replacedBy[k];
+  if (by !== undefined) {
+    return k === 0
+      ? cx.s(`${of}の \`$0\`: そのあとに渡した名前。\`${by}\` が \`${w}\` を見つけたパスに置き換えてから渡す（エラーメッセージに出る）`, `\`$0\` of ${of}: the name given after it; \`${by}\` replaces \`${w}\` with the path it found first (shown in error messages)`)
+      : cx.s(`位置パラメータ: ${of}への ${k} 番目の引数。\`${by}\` が \`${w}\` の代わりに、見つけたパスを渡す`, `Positional parameter: argument #${k} of ${of}; \`${by}\` passes the path it found in place of \`${w}\``);
+  }
   if (k === 0) {
     return w === undefined ? undefined : cx.s(`${of}の \`$0\`: そのあとに渡した名前 \`${w}\`（エラーメッセージに出る）`, `\`$0\` of ${of}: the name given after it, \`${w}\` (shown in error messages)`);
   }

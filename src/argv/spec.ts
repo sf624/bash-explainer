@@ -304,6 +304,11 @@ export interface OptionSpec {
      * else it is a word of the command (`-exec echo a + \;`). The word must be that text alone, and no other word may hold it.
      */
     endsAfter?: Record<string, string>;
+    /**
+     * The text of a word of the command that the tool replaces before it runs it (find's `{}` with each path found): a word whose value
+     * is that text, after quote removal (`'{}'`, `\{\}`), is a placeholder (`CommandRole.placeholders`).
+     */
+    placeholder?: string;
   };
   /**
    * The operands after this option that the pattern gives to its last, repeating item are these instead

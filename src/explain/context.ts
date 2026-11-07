@@ -27,9 +27,10 @@ import { pushAll } from '../lists';
  * The command whose arguments are being explained (`Explainer.command`): its name, its words, and their parse
  * (`nodes` are the words the parse's indices count, of which `args` are this command's), which the explanations of
  * embedded languages read; and whether the shell reads the words again (`rereads`, `eval`: set by the rendering of
- * the words, while it reads them).
+ * the words, while it reads them); and the words an option replaces with each path before it runs a command (`placeholders`, find's `{}`: to the
+ * option that does it).
  */
-export interface CommandContext { cmd: string; args: SyntaxNode[]; parse: ArgvParse; nodes: SyntaxNode[]; spec: CommandSpec; rereads?: boolean }
+export interface CommandContext { cmd: string; args: SyntaxNode[]; parse: ArgvParse; nodes: SyntaxNode[]; spec: CommandSpec; rereads?: boolean; placeholders?: Map<SyntaxNode, string> }
 
 /** A key of a memo kept for one line (`Explainer.memo`); the code that reads the memo makes its key. */
 export interface MemoKey<V> { readonly name: string; readonly value?: V }

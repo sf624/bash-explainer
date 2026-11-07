@@ -18,6 +18,9 @@ export { wordTable } from '../wordtable';
  */
 export type OptSpec = [string, string, string, string?] | [string, string, string, string, Record<string, Text>];
 
+/** The word of the command of find's `-exec`, `-execdir`, `-ok` and `-okdir` that find replaces with each path found. */
+const FIND_PLACEHOLDER = '{}';
+
 /** The option spec of a tuple (see `OptSpec`). */
 export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
   const each = /each:([\w-]+)/.exec(flags)?.[1] as EachFile | undefined;
@@ -29,8 +32,8 @@ export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSp
   const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(io ? { io } : {}), ...(values ? { values } : {}), ...(setsEnv ? { setsEnv } : {}), ...(flags.includes('unsetenv') ? { unsetsEnv: true } : {}), ...(flags.includes('in-order') ? { inOrder: true } : {}) };
   const nextIf = /next:(\S+)/.exec(flags)?.[1];
   // (find's `-exec` and `-execdir` end at `;`, or at `+` after a `{}`; `-ok` and `-okdir` only at `;`.)
-  if (flags.includes('until-each')) opt.until = { terminators: [';'], slot: { run: 'exec' } };
-  else if (flags.includes('until')) opt.until = { terminators: [';', '+'], slot: { run: 'exec' }, endsAfter: { '+': '{}' } };
+  if (flags.includes('until-each')) opt.until = { terminators: [';'], slot: { run: 'exec' }, placeholder: FIND_PLACEHOLDER };
+  else if (flags.includes('until')) opt.until = { terminators: [';', '+'], slot: { run: 'exec' }, endsAfter: { '+': FIND_PLACEHOLDER }, placeholder: FIND_PLACEHOLDER };
   else if (flags.includes('arg')) {
     const n = Number(/arg(\d)/.exec(flags)?.[1] ?? 1);
     opt.value = n > 1

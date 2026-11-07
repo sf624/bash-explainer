@@ -833,7 +833,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
 
   /** The reader of the words after a command `t` that `reader` runs (`sudo rm`, `find -exec rm`): it keeps who replaces the placeholders in them. */
   const runner = (t: Token, reader: Reader): Reader => {
-    const replacer = t.placeholderOf ? reader : reader.replacer;
+    const replacer = t.placeholders ? reader : reader.replacer;
     return { name: t.label, inShell: builtinHere(t), ...(replacer ? { replacer } : {}) };
   };
 
