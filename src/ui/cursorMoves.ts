@@ -7,6 +7,13 @@
 /** A document as VS Code gives it: the same object for the same document, and a version that every edit raises. */
 export interface Versioned { readonly version: number }
 
+/** An update of the web page's editor, as CodeMirror gives it (`ViewUpdate`). */
+export interface EditorUpdate {
+  docChanged: boolean;
+  selectionSet: boolean;
+  transactions: readonly { selection: unknown; isUserEvent(event: string): boolean }[];
+}
+
 /** The moves of the cursor not yet sent to the panel. */
 export class CursorMoves {
   private pending = false;
@@ -19,6 +26,14 @@ export class CursorMoves {
    */
   cursor(moved: boolean): void {
     this.pending = moved;
+  }
+
+  /**
+   * An update of the web page's editor: a move when it sets a selection the reader made (a `select…` event: a key, a click, a tap) and
+   * changes no text. A selection the page sets, as the panel's reveal, has no such event; typing and a paste change the text.
+   */
+  editorUpdate(u: EditorUpdate): void {
+    if (u.docChanged || u.selectionSet) this.cursor(!u.docChanged && u.transactions.some((tr) => tr.selection !== undefined && tr.isUserEvent('select')));
   }
 
   /** The text changed: what the cursor did with it is no move. */
