@@ -50,7 +50,7 @@ function xargsTokens(text: string): string[] {
   return out;
 }
 
-/** The command lines xargs runs for `input` (the text on its stdin). */
+/** The command lines xargs runs for `input` (the text on its stdin). The replace string is replaced in the arguments of the command, not in its name. */
 export function runXargs(words: (string | undefined)[], input: string): string[][] {
   const { p, command: cmd } = xargsOptions(words);
   if (cmd.some((w) => w === undefined)) throw new Unsupported('non-literal command');
@@ -64,11 +64,11 @@ export function runXargs(words: (string | undefined)[], input: string): string[]
     // (With -d , the newline that ends the input stays in the last item, as in GNU xargs.)
     if (items[items.length - 1] === '') items.pop();
     // With -I, each item is a run of its own (`-0 -I{}`), blanks and empty items kept.
-    if (replace !== undefined) return items.map((item) => command.map((w) => w.split(replace).join(item)));
+    if (replace !== undefined) return items.map((item) => command.map((w, i) => (i === 0 ? w : w.split(replace).join(item))));
   } else if (replace !== undefined) {
     // Without a delimiter -I takes whole lines, with leading blanks removed and empty lines skipped.
     items = input.split('\n').map((l) => l.replace(/^[ \t]+/, '')).filter((l) => l !== '');
-    return items.map((item) => command.map((w) => w.split(replace).join(item)));
+    return items.map((item) => command.map((w, i) => (i === 0 ? w : w.split(replace).join(item))));
   } else if (get('L') !== undefined) {
     const per = Number(get('L'));
     const lines = input.split('\n').filter((l) => l.trim() !== '');

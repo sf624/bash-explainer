@@ -481,7 +481,7 @@ class Reader {
         if (item.command.joinsWords && !item.command.escapesWords) {
           roles.set(i, { role: 'command', slot: item.command, item });
           for (let j = i + 1; j < end; j++) roles.set(j, { role: 'joined' });
-        } else roles.set(i, { ...this.command(item.command, i, end, undefined, st.appended || !!item.command.appends), item, ...placeholderIn(item.command.placeholder, this.words, st.inEffect, i + 1, end, !!item.command.placeholder?.anywhere) });
+        } else roles.set(i, { ...this.command(item.command, i, end, undefined, st.appended || !!item.command.appends), item, ...placeholderIn(item.command.placeholder, this.words, st.inEffect, i + 1, end) });
         return;
       }
       if (item.option) {
@@ -715,7 +715,7 @@ class Reader {
       const words = this.words.slice(0, st.end).map((w, i) => (i > last ? untilWord(w) : ''));
       const { at: j, refusal } = untilEnd(opt.until, words, last + 1, st.end);
       // (Not `appended`: `xargs find . -exec echo --version \;` adds its words after the `;`. With `+` find replaces only the `{}` before it.)
-      if (j > last + 1) st.roles.set(last + 1, { ...this.command(slot, last + 1, j, flag), ...placeholderIn(opt.until.placeholder, this.words, st.inEffect, last + 1, j, !!opt.until.placeholder?.anywhere && !(j < st.end && opt.until.endsAfter?.[words[j]!]), flag) });
+      if (j > last + 1) st.roles.set(last + 1, { ...this.command(slot, last + 1, j, flag), ...placeholderIn(opt.until.placeholder, this.words, st.inEffect, last + 1, j, flag, j < st.end && !!opt.until.endsAfter?.[words[j]!]) });
       // (The first one: find tells that one.)
       if (refusal) st.refusal ??= { ...refusal, option: flag, at: last };
       if (j < st.end) { st.roles.set(j, { role: 'terminator', text: words[j]!, of: flag }); return j; }

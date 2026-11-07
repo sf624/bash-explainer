@@ -128,7 +128,7 @@ describe('the reading tree of a line', () => {
     const jaAnalyzer = new Analyzer('ja');
     /** The tokens of a line, depth first. */
     const walk = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...walk(t.children)]);
-    const SAID = { en: 'replaced with the path that was found', ja: '見つかったファイルのパスに置き換わる' };
+    const SAID = { en: ' replaces it with the path that was found before it runs the command', ja: ' がこれを見つけたファイルのパスに置き換えてから、コマンドを実行する' };
     const FORMS: [string, string][] = [
       ['find . -name x -exec rm {} \\;', 'rm'], ['find . -exec sudo rm {} +', 'sudo'], ['find . -execdir chmod 644 {} \\;', 'chmod'], ['find . -ok rm {} \\;', 'rm'], ['find . -okdir rm {} \\;', 'rm'],
       // (Quoted: the tool gets the same word. Its own manual quotes the braces in its examples.)
@@ -204,7 +204,7 @@ describe('the reading tree of a line', () => {
     });
 
     describe('the replace string of `xargs -I` and `-i`, and find\'s `{}` inside a larger word', () => {
-      const LINE = { en: 'replaced with the input line', ja: '入力から読んだ1行に置き換わる' };
+      const ITEM = { en: '`-I` replaces it with the input item before it runs the command', ja: '`-I` がこれを入力の1件に置き換えてから、コマンドを実行する' };
       /** Each line: the source, what real GNU xargs/find prints for it, the labels of the words that are the replace string alone, and of those that hold it. */
       const XARGS: { src: string; input: string; out: string; whole: string[]; within: string[] }[] = [
         { src: 'xargs -I{} echo {} dest/', input: 'a\nb c\n', out: 'a dest/\nb c dest/\n', whole: ['{}'], within: [] },
@@ -220,11 +220,13 @@ describe('the reading tree of a line', () => {
         { src: 'xargs -I{} -n2 echo {} z', input: 'a\nb\nc\n', out: '{} z a b\n{} z c\n', whole: [], within: [] },
         { src: 'xargs -I% -L2 echo %.x', input: 'a\nb\nc\n', out: '%.x a b\n%.x c\n', whole: [], within: [] },
         { src: 'xargs -n2 -I% echo %', input: 'a\nb\nc\n', out: 'a\nb\nc\n', whole: ['%'], within: [] },
+        // (An item that ends at a NUL or another delimiter may hold a newline: it is replaced whole.)
+        { src: 'xargs -0 -I{} echo {}.x', input: 'a\nb\0', out: 'a\nb.x\n', whole: [], within: ['{}.x'] },
         // (Without `-I`, nothing is replaced.)
         { src: 'xargs echo {} x', input: 'a\n', out: '{} x a\n', whole: [], within: [] },
       ];
       const labelsOf = (src: string, pick: (t: Token) => boolean): string[] => tokens(src, 'en').filter(pick).map((t) => t.label);
-      const SENTENCE = /replaces `[^`]+` in it with the input line before it runs the command/;
+      const SENTENCE = /replaces `[^`]+` in it with the input item before it runs the command/;
 
       it('marks the words xargs replaces, whole and inside a larger word, and none when the option is not in effect', () => {
         for (const { src, whole, within } of XARGS) {
@@ -233,24 +235,32 @@ describe('the reading tree of a line', () => {
         }
       });
 
+      it('keeps what the word is to the command that gets it, and adds the replacement, whole or inside a larger word', () => {
+        const text = (src: string, label: string, whole = true): string => tokens(src, 'en').find((t) => t.label === label && (!whole || t.placeholder !== undefined))!.explanation;
+        assert.match(text('xargs -I{} cp {} dest/', '{}'), /^source\. `-I` replaces it with the input item before it runs the command$/);
+        assert.match(text('xargs -I % mv % %.bak', '%.bak', false), /^destination.*\. `-I` replaces `%` in it with the input item/);
+        assert.match(text("xargs -I% sh -c 'echo \"$1\"' _ %", '%'), /^.+\. `-I` replaces it with the input item before it runs the command$/);
+        assert.match(text('find . -exec rm {} \\;', '{}'), /^.+\. `-exec` replaces it with the path that was found before it runs the command$/);
+      });
+
       it('says it in both languages at depth 1', () => {
         for (const lang of ['en', 'ja'] as const) {
           const [marked] = tokens('xargs -I{} cp {} dest/', lang).filter((t) => t.placeholder);
-          assert.ok(marked.explanation.includes(LINE[lang]), `${lang}: ${marked.explanation}`);
+          assert.ok(marked.explanation.includes(ITEM[lang]), `${lang}: ${marked.explanation}`);
           const word = tokens('xargs -I % mv % %.bak', lang).find((t) => t.label === '%.bak')!.explanation;
-          assert.match(word, lang === 'en' ? /`-I` replaces `%` in it with the input line/ : /`-I` が語の中の `%` を入力から読んだ1行に置き換えて/);
+          assert.match(word, lang === 'en' ? /`-I` replaces `%` in it with the input item/ : /`-I` が語の中の `%` を入力の1件に置き換えて/);
         }
         // The operand description stays beside it: `%.bak` is still the destination of `mv`.
         assert.match(tokens('xargs -I % mv % %.bak', 'en').find((t) => t.label === '%.bak')!.explanation, /^destination/);
       });
 
-      it('reads it at depth 2 as xargs\'s: xargs reads the replace string, the command it runs gets the input line', () => {
+      it('reads it at depth 2 as xargs\'s: xargs reads the replace string, the command it runs gets the input item', () => {
         const r = explain('xargs -I % mv % %.bak').reading!;
         const brace = readingNodes(r).filter((n) => n.layer === 'command' && n.placeholder);
         assert.strictEqual(brace.length, 1);
         assert.strictEqual(brace[0].reader, 'xargs');
-        assert.strictEqual(chipOf(brace[0], 'en'), 'placeholder for the input line');
-        assert.strictEqual(chipOf(brace[0], 'ja'), 'プレースホルダー（入力の1行に置き換わる）');
+        assert.strictEqual(chipOf(brace[0], 'en'), 'placeholder for the input item');
+        assert.strictEqual(chipOf(brace[0], 'ja'), 'プレースホルダー（入力の1件に置き換わる）');
         assert.strictEqual(find(r, 'mv', 'command').reader, 'xargs');
         // A word that holds it is still an operand of the command that gets it.
         const within = readingNodes(r).find((n) => n.layer === 'command' && n.label === '%.bak')!;
@@ -262,11 +272,11 @@ describe('the reading tree of a line', () => {
         assert.strictEqual(off.reader, 'cp');
       });
 
-      it('says of `$1` in `sh -c` that xargs passes the input line', () => {
+      it('says of `$1` in `sh -c` that xargs passes the input item', () => {
         const text = (src: string, lang: 'en' | 'ja', label: string): string => tokens(src, lang).find((t) => t.label === label)!.explanation;
-        assert.match(text('xargs -I% sh -c \'echo "$1"\' _ %', 'en', '$1'), /argument #1 of the `sh -c` string; `-I` passes the input line in place of `%`/);
-        assert.match(text('xargs -I% sh -c \'echo "$1"\' _ %', 'ja', '$1'), /`-I` が `%` の代わりに、入力の1行を渡す/);
-        assert.match(text('xargs -I% sh -c \'echo "$1"\' _ %.x', 'en', '$1'), /`-I` replaces `%` in `%\.x` with the input line first/);
+        assert.match(text('xargs -I% sh -c \'echo "$1"\' _ %', 'en', '$1'), /argument #1 of the `sh -c` string; `-I` passes the input item in place of `%`/);
+        assert.match(text('xargs -I% sh -c \'echo "$1"\' _ %', 'ja', '$1'), /`-I` が `%` の代わりに、入力の1件を渡す/);
+        assert.match(text('xargs -I% sh -c \'echo "$1"\' _ %.x', 'en', '$1'), /`-I` replaces `%` in `%\.x` with the input item first/);
         // Cancelled: it starts as what is written.
         assert.match(text('xargs -I% -n2 sh -c \'echo "$1"\' _ %', 'en', '$1'), /\(it starts as `%`\)/);
       });
@@ -279,10 +289,10 @@ describe('the reading tree of a line', () => {
         }
       });
 
-      it('says of `$0` in `sh -c` that xargs passes the input line, for the string alone and a word that holds it', () => {
+      it('says of `$0` in `sh -c` that xargs passes the input item, for the string alone and a word that holds it', () => {
         const text = (src: string, label: string): string => tokens(src, 'en').find((t) => t.label === label)!.explanation;
-        assert.match(text('xargs -I% sh -c \'echo "$0"\' %', '$0'), /`-I` replaces `%` with the input line first/);
-        assert.match(text('xargs -I% sh -c \'echo "$0"\' %.x', '$0'), /`-I` replaces `%` in `%\.x` with the input line first/);
+        assert.match(text('xargs -I% sh -c \'echo "$0"\' %', '$0'), /`-I` replaces `%` with the input item first/);
+        assert.match(text('xargs -I% sh -c \'echo "$0"\' %.x', '$0'), /`-I` replaces `%` in `%\.x` with the input item first/);
       });
 
       it('agrees with GNU xargs: it replaces the string in every word but the command\'s name, the last option in effect', () => {

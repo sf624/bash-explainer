@@ -1,6 +1,6 @@
 // The public types of an explanation (src/analyzer.ts makes them; the products, the panel and the hosts read them).
 import type { Fields } from './semantics/words';
-import type { CommandSpec } from './argv/spec';
+import type { CommandSpec, PlaceholderWith } from './argv/spec';
 import type { Basis, TryIt } from './basis';
 import type { BashVersion } from './bashversion';
 import type { ScriptEvidence, Shell } from './dialect';
@@ -49,9 +49,6 @@ export interface Span { start: Pos; end: Pos }
 
 /** A word a test of `[` or `test` reads as its operator (`-a`, `=`, `!`, `\(`) or as an operand (the file `-a` tests). */
 export type TestPart = Pick<ReadingNode, 'label' | 'span' | 'text' | 'refs'> & { kind: 'operator' | 'argument' };
-
-/** What a command replaces a placeholder with before it runs another (`PlaceholderSpec.with`): a path (find), a line of the input (xargs). */
-export type PlaceholderWith = 'path' | 'line';
 
 /** A word the command around replaces (`Explainer.command`, `ExplainOptions.positional`): by which option, the text and what it is replaced with; `within`: the word holds the text among other text. */
 export interface Replaced { by: string; text: string; with: PlaceholderWith; within: boolean }

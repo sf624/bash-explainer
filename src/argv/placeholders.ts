@@ -13,11 +13,11 @@ export interface PlaceholderRole { by: string; text: string; with: PlaceholderSp
 
 /**
  * The words from `from` to `to` that the tool replaces before it runs the command, by their value after quote removal, as the field `placeholder`
- * of the command's role (none when no word is); `anywhere`: also those that hold the text among other text. `flag` is the option that has the text where
- * the spec does not name one (find's `-exec`); else the text is the value of the option in effect of the spec's mode (`inEffect`, `settleModes`: a
+ * of the command's role (none when no word is); with `anywhere`, also those that hold the text among other text, unless the command is run in batches
+ * (`batch`: find's `+` replaces only the one `{}` before it). `flag` is the option that has the text where the spec does not name one (find's `-exec`); else the text is the value of the option in effect of the spec's mode (`inEffect`, `settleModes`: a
  * later `-n2` turns `-I` off, and then the operands are not those of its mode), or the spec's default where it takes none; a value not known, or empty, is none.
  */
-export function placeholderIn(p: PlaceholderSpec | undefined, words: readonly ArgWord[], inEffect: Map<string, InEffect> | undefined, from: number, to: number, anywhere: boolean, flag?: string): { placeholder?: PlaceholderRole } {
+export function placeholderIn(p: PlaceholderSpec | undefined, words: readonly ArgWord[], inEffect: Map<string, InEffect> | undefined, from: number, to: number, flag?: string, batch = false): { placeholder?: PlaceholderRole } {
   if (!p) return {};
   let text: string | undefined;
   let by = flag!;
@@ -34,7 +34,7 @@ export function placeholderIn(p: PlaceholderSpec | undefined, words: readonly Ar
   for (let i = from; i < to; i++) {
     const w = untilWord(words[i]);
     if (w === text) whole.push(i);
-    else if (anywhere && w?.includes(text)) within.push(i);
+    else if (p.anywhere && !batch && w?.includes(text)) within.push(i);
   }
   return whole.length || within.length ? { placeholder: { by, text, with: p.with, whole, within } } : {};
 }
