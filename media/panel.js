@@ -65,12 +65,18 @@
   let lastAround = '[]';
   /** What the viewer folded and unfolded of the line shown, by row (`key`: the same at both depths); kept when the same line is drawn again. */
   let foldChoices = /** @type {Map<string, boolean>} */ (new Map());
+  /** How long after a `reveal` the redraw it brings counts as its, in ms: the host explains the line again on the cursor's move. */
+  const REVEAL_KEEPS = 1500;
   /**
-   * How each row of the line shown is folded or not by the model at the depth drawn (`ModelRow.folded`), as last drawn. The model decides (a
-   * pipeline's stages fold by where the cursor is, `foldStages`); drawn again at the same depth, the panel only refuses to fold a row that was
-   * open, so that nothing folds under the pointer (a click on a row moves the cursor there).
+   * How each row of the line shown was drawn, folded or not (`ModelRow.folded`), at the depth drawn. The model decides (a pipeline's stages
+   * fold by where the cursor is, `foldStages`), as the cursor moves in the editor, by the keys, a tap or typing. Only right after a click in
+   * the panel moved the cursor (`reveal`) does the panel keep open a row it drew open, so that nothing folds under the pointer.
    */
   let foldStarts = /** @type {Map<string, boolean>} */ (new Map());
+  /** When a row of the panel last moved the editor's cursor (`reveal`): the redraw that follows keeps the rows drawn open (`foldStarts`). */
+  let revealedAt = -Infinity;
+  /** Whether the rows drawn now keep open those drawn open before: the same line at the same depth, just after a `reveal`. */
+  let keepOpen = false;
   /** The file and line `foldChoices` belongs to, and the depth drawn. */
   let shownLine = '';
   let shownDepth = 1;
@@ -299,6 +305,7 @@
     }
     // (Another depth starts its rows as the model has them there.)
     if (msg.depth !== shownDepth) foldStarts = new Map();
+    keepOpen = where === shownLine && msg.depth === shownDepth && performance.now() - revealedAt < REVEAL_KEEPS;
     shownLine = where;
     shownDepth = msg.depth;
     shownReceives = msg.receives;
@@ -1252,10 +1259,9 @@
     row.append(twisty, code, text, ...tryIt);
     box.append(row);
     li.append(box);
-    // (The model's fold, but a row drawn open on this line at this depth stays open: the stage the cursor moved to opens, the one it left
-    // does not fold. The viewer's choice wins at every depth.)
+    // (The model's fold; just after a click in the panel moved the cursor, a row drawn open stays open. The viewer's choice wins at every depth.)
     if (part.children.length) {
-      const folded = part.folded === true && foldStarts.get(part.key) !== false;
+      const folded = part.folded === true && !(keepOpen && foldStarts.get(part.key) === false);
       foldStarts.set(part.key, folded);
       if (foldChoices.get(part.key) ?? folded) setCollapsed(li, true, foldChoices.has(part.key));
     }
@@ -2133,7 +2139,9 @@
       `case` under its `while`, one over several lines: an if, a loop, a function) would move the cursor there, and the panel
       would explain that line instead, when one only meant to fold the row; the hover already shows that range. */
   function reveal(token, /** @type {boolean} */ keepFocus = false) {
-    if (token.span.start.line === shownLineNo && token.span.end.line === shownLineNo) vscode.postMessage({ type: 'reveal', span: token.span, preserveFocus: keepFocus });
+    if (token.span.start.line !== shownLineNo || token.span.end.line !== shownLineNo) return;
+    revealedAt = performance.now();
+    vscode.postMessage({ type: 'reveal', span: token.span, preserveFocus: keepFocus });
   }
 
   /** Whether a row is the row `idx` or one of its parts; no row is, for -1. */
