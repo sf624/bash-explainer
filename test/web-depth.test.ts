@@ -32,9 +32,10 @@ const SCRIPTS = {
  * depth 1 for bash's steps, so the condition of `[[` no longer folds at depth 2: 1,279 to 1,482 and 1,812 to 2,092 on, 1,255 to 1,457 and
  * 1,758 to 2,038 off. The others do not change.
  * U7 (usability-9.md, 2.7) measured them again, with CI's fonts: at depth 2 the stages of s2 the cursor is not on fold to their own row, and
- * "In short" drops the summaries with parentheses of their own. s2: 1,706 and 2,250 on, 1,545 and 2,089 off (the larger of en and ja); s4:
- * 1,462 and 2,053 on, 1,438 and 1,999 off; s3 1,365 and 1,794 on. The budgets of s2 and s4 come down by as much, with the same room over
- * them; s2 stays above the 1,420 px of 2026-11-05 by about the glob example U5 opens on grep's stage.
+ * "In short" leaves out the parenthetical parts of the summaries. s2: 1,706 and 2,250 on, 1,545 and 2,089 off (the larger of en and ja); s4:
+ * 1,462 and 2,072 on, 1,438 and 2,019 off; s3 1,365 and 1,794 on. The budgets of s2 and s4 come down by as much, with the same room over
+ * them. s2 stays above the 1,420 px of 2026-11-05, by about the glob example U5 opens on grep's stage: the maintainer accepted it on
+ * 2026-11-07, to be judged in the usability re-test (U9).
  * No script here holds a `[`: its condition has rows of its own at depth 2 (its pages are measured in the PR that gave them).
  */
 const BUDGET: Record<keyof typeof SCRIPTS, Record<'on' | 'off', Record<1280 | 390, number>>> = {
@@ -43,7 +44,7 @@ const BUDGET: Record<keyof typeof SCRIPTS, Record<'on' | 'off', Record<1280 | 39
   s2: { on: { 1280: 1760, 390: 2310 }, off: { 1280: 1600, 390: 2150 } },
   's3-assign': { on: { 1280: 1010, 390: 1270 }, off: { 1280: 990, 390: 1250 } },
   s3: { on: { 1280: 1420, 390: 1850 }, off: { 1280: 1350, 390: 1780 } },
-  s4: { on: { 1280: 1520, 390: 2110 }, off: { 1280: 1500, 390: 2060 } },
+  s4: { on: { 1280: 1520, 390: 2130 }, off: { 1280: 1500, 390: 2075 } },
 };
 
 describe('the panel: one view with a depth', function () {

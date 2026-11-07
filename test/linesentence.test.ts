@@ -31,7 +31,7 @@ const said = (src: string, line: number, lang: 'en' | 'ja', shell?: Shell): stri
 const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["sort -u < in.txt > out.txt 2>> err.log", 0, "Runs `sort` (sort lines) using `-u` (output only unique lines), with stdin (fd 0) from `in.txt`, stdout (fd 1) to `out.txt`, stderr (fd 2) appended to `err.log`.", "`sort`（行を並べ替える）を `-u`（重複行を1つにまとめる）を付けて実行する（標準入力は `in.txt` から、標準出力は `out.txt` へ、標準エラー出力は `err.log` に追記）。"],
     ["make &> log; make &>> log", 0, "Runs `make` (build targets from a Makefile), with stdout and stderr to `log`; then runs `make` (build targets from a Makefile), with stdout and stderr appended to `log`.", "`make` を実行する（標準出力と標準エラー出力は `log` へ）。続けて、`make` を実行する（標準出力と標準エラー出力は `log` に追記）。"],
-    ["cat 3<&0 <&4 <<< \"$x\"", 0, "Runs `cat`, with file descriptor 3 from where stdin (fd 0) reads, stdin (fd 0) from where file descriptor 4 reads, stdin (fd 0) from the here-string the value of `$x`.", "`cat`（ファイルの内容を連結して標準出力に出す）を実行する（ファイルディスクリプタ 3 は標準入力と同じところから、標準入力はファイルディスクリプタ 4 と同じところから、標準入力はヒアストリング `$x` の値から）。"],
+    ["cat 3<&0 <&4 <<< \"$x\"", 0, "Runs `cat`, with file descriptor 3 from where stdin (fd 0) reads, stdin (fd 0) from where file descriptor 4 reads, stdin (fd 0) from the value of `$x`, as a here-string.", "`cat`（ファイルの内容を連結して標準出力に出す）を実行する（ファイルディスクリプタ 3 は標準入力と同じところから、標準入力はファイルディスクリプタ 4 と同じところから、標準入力はヒアストリング `$x` の値から）。"],
     ["cat <<EOF\nhi\nEOF", 1, "Runs `cat` (concatenate files and print to stdout), with stdin (fd 0) from the here-document.", "`cat`（ファイルの内容を連結して標準出力に出す）を実行する（標準入力はヒアドキュメントから）。"],
     ["exec 3>&-", 0, "Runs `exec` (replace the shell with the command; without a command, apply redirections to the shell itself), with file descriptor 3 closed.", "`exec`（現在のシェルを指定したコマンドで置き換える。引数なしならリダイレクトをシェル自体に適用）を実行する（ファイルディスクリプタ 3 を閉じて）。"],
     ["f() { :; }; f a > o", 0, "Defines the function `f`, whose body runs each time it is called; then calls the function `f`, with stdout (fd 1) to `o`.", "関数 `f` を定義する。本体は呼び出されるたびに実行される。続けて、関数 `f` を呼び出す（標準出力は `o` へ）。"],
@@ -43,24 +43,24 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["items=(a b c d e)", 0, "Sets `items` to an array of `a`, `b`, `c` and ….", "`items` に配列（`a`・`b`・`c`・…）を代入する。"],
     ["> f", 0, "Runs no command, only its redirections: stdout (fd 1) to `f`.", "コマンドは実行せず、リダイレクトだけを行う（標準出力は `f` へ）。"],
     ["x=1 > f", 0, "Sets `x` to `1`, with stdout (fd 1) to `f`.", "`x` に `1` を代入する（標準出力は `f` へ）。"],
-    ["IFS=: read -r a b <<< \"$e\"", 0, "Runs `read` (read a line from stdin into variables) using `-r`, with `IFS` set to `:`, stdin (fd 0) from the here-string the value of `$e`.", "`read`（標準入力から1行読み、変数に代入する）を `-r` を付けて実行する（`IFS` は `:`、標準入力はヒアストリング `$e` の値から）。"],
-    ["exit 1", 0, "Runs `exit` (exit the shell or script) with status 1.", "`exit` を実行する（終了ステータス 1）。"],
-    ["exit 256", 0, "Runs `exit` (exit the shell or script).", "`exit` を実行する。"],
+    ["IFS=: read -r a b <<< \"$e\"", 0, "Runs `read` (read a line from stdin into variables) using `-r` (do not treat backslashes as escapes), with `IFS` set to `:`, stdin (fd 0) from the value of `$e`, as a here-string.", "`read`（標準入力から1行読み、変数に代入する）を `-r`（バックスラッシュをエスケープ文字として扱わない）を付けて実行する（`IFS` は `:`、標準入力はヒアストリング `$e` の値から）。"],
+    ["exit 1", 0, "Runs `exit` (exit the shell or script) with status 1.", "`exit`（シェルを終了する）を実行する（終了ステータス 1）。"],
+    ["exit 256", 0, "Runs `exit` (exit the shell or script).", "`exit`（シェルを終了する）を実行する。"],
     ["git log --oneline -n 5", 0, "Runs `git` `log` (show commit logs) using `--oneline` (one line per commit) and `-n` (number of commits).", "`git` `log`（コミット履歴を表示する）を `--oneline`（1コミット1行で表示）・`-n`（表示する件数）を付けて実行する。"],
-    ["sed -e 's/a/b/' -e 's/c/d/' f", 0, "Runs `sed` using `-e` (add a script to run).", "`sed` を `-e` を付けて実行する。"],
+    ["sed -e 's/a/b/' -e 's/c/d/' f", 0, "Runs `sed` (stream editor: edit input line by line) using `-e` (add a script to run).", "`sed`（ストリームエディタ: 入力を1行ずつスクリプトで編集して出力する）を `-e`（実行するスクリプトを指定）を付けて実行する。"],
     ["/opt/app --config x", 0, "Runs `/opt/app`.", "`/opt/app` を実行する。"],
     ["cp -r -p -v a b", 0, "Runs `cp` (copy files and directories).", "`cp`（ファイルやディレクトリをコピーする）を実行する。"],
-    ["! false", 0, "Runs `false`, and negates its status.", "`false` を実行する（終了ステータスは反転）。"],
+    ["! false", 0, "Runs `false` (do nothing and fail), and negates its status.", "`false`（何もせず失敗を返す）を実行する（終了ステータスは反転）。"],
     ["! a | b", 0, "Pipes `a` into `b`, and negates its status; its status is that of `b`, negated.", "`a` の出力を `b` に渡す（終了ステータスは反転）。終了ステータスは `b` のものを反転したもの。"],
     ["time", 0, "Does nothing, and reports the time it takes.", "何もしない。かかった時間を表示する。"],
     ["time sleep 1", 0, "Runs `sleep` (pause for a duration), and reports the time it takes.", "`sleep`（指定した時間だけ待つ）を実行する。かかった時間を表示する。"],
     ["coproc cat", 0, "Runs `cat` (concatenate files and print to stdout) as a coprocess.", "`cat`（ファイルの内容を連結して標準出力に出す）をコプロセスとして実行する。"],
     ["{ a; b; } > f &", 0, "In the background, with stdout (fd 1) to `f`: as one group, runs `a`; then runs `b`.", "バックグラウンドで: 全体の入出力: 標準出力は `f` へ。1つのグループとして: `a` を実行する。続けて、`b` を実行する。"],
-    ["(cd x; ls)", 0, "In a subshell, runs `cd` (change the current directory); then runs `ls` (list directory contents).", "サブシェルで: `cd`（カレントディレクトリを移動する）を実行する。続けて、`ls` を実行する。"],
+    ["(cd x; ls)", 0, "In a subshell, runs `cd` (change the current directory); then runs `ls` (list directory contents).", "サブシェルで: `cd`（カレントディレクトリを移動する）を実行する。続けて、`ls`（ディレクトリの中身を表示する）を実行する。"],
     ["if a; then b; elif c; then d; else e; fi", 0, "If `a` succeeds, runs `b`; otherwise, if `c` succeeds, runs `d`; otherwise, runs `e`.", "`a` が成功したら、`b` を実行する。そうでなければ、`c` が成功したら、`d` を実行する。そうでなければ、`e` を実行する。"],
     ["if a; then b; fi", 0, "If `a` succeeds, runs `b`.", "`a` が成功したら、`b` を実行する。"],
     // A here-document in the condition: its body is below the line, and the condition is still the condition.
-    ["if grep a <<E; then b; fi\nx\nE", 0, "If `grep` succeeds, runs what follows `then`; then runs `b`.", "`grep` が成功したら、`then` 以下を実行する。続けて、`b` を実行する。"],
+    ["if grep a <<E; then b; fi\nx\nE", 0, "If `grep` (print lines matching a pattern) succeeds, runs what follows `then`; then runs `b`.", "`grep`（パターンに一致する行を検索して表示する）が成功したら、`then` 以下を実行する。続けて、`b` を実行する。"],
     ["while read l <<E; do echo a; done\nx\nE", 0, "Repeats its body (`echo`) while `read` (read a line from stdin into variables) succeeds; then runs `echo` (print arguments to stdout, separated by spaces).", "`read`（標準入力から1行読み、変数に代入する）が成功する間、本体（`echo`）をくり返す。続けて、`echo`（引数を空白区切りで標準出力に表示する）を実行する。"],
     ["case $x in a|b) c ;; *) ;; esac", 0, "Runs the first branch whose pattern matches the value of `$x`.", "`$x` の値に最初に一致したパターンの分岐を実行する。"],
     ["f() { a; }", 0, "Defines the function `f`, whose body runs each time it is called.", "関数 `f` を定義する。本体は呼び出されるたびに実行される。"],
@@ -73,7 +73,7 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["while a; b; do c; done", 0, "Repeats its body (`c`) while its condition (`a` and `b`) succeeds.", "条件（`a`・`b`）が成功する間、本体（`c`）をくり返す。"],
     ["while [[ -n $x ]]; do c; done", 0, "Repeats its body (`c`) while the test `[[ … ]]` succeeds.", "テスト `[[ … ]]` が成功する間、本体（`c`）をくり返す。"],
     ["while (( i < 3 )); do c; done", 0, "Repeats its body (`c`) while the test `(( … ))` succeeds.", "テスト `(( … ))` が成功する間、本体（`c`）をくり返す。"],
-    ["while test -n \"$x\"; do c; done", 0, "Repeats its body (`c`) while `test` succeeds.", "`test` が成功する間、本体（`c`）をくり返す。"],
+    ["while test -n \"$x\"; do c; done", 0, "Repeats its body (`c`) while `test` (evaluate a conditional expression; exit 0 if true) succeeds.", "`test`（条件式を評価し、真なら 0、偽なら 1 を返す）が成功する間、本体（`c`）をくり返す。"],
     ["if [ -f a ]; then b; fi", 0, "If the test `[ … ]` succeeds, runs `b`.", "テスト `[ … ]` が成功したら、`b` を実行する。"],
     ["for x; do a; done", 0, "Runs its body (`a`) with `$x` set to each argument, one at a time.", "`$x` を各引数に順に設定して、本体（`a`）を実行する。"],
     ["for x in a b c d e; do :; done", 0, "Runs its body (`:`) with `$x` set to `a`, `b`, `c` and …, one at a time.", "`$x` を `a`・`b`・`c`・…に順に設定して、本体（`:`）を実行する。"],
@@ -86,7 +86,7 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["echo hi 1>&2", 0, "Prints a message on stderr (`echo`).", "標準エラー出力にメッセージを出す（`echo`）。"],
     ["x=1 echo hi >&2", 0, "Runs `echo` (print arguments to stdout, separated by spaces), with `x` set to `1`, stdout (fd 1) to where stderr (fd 2) goes.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する（`x` は `1`、標準出力は標準エラー出力と同じ先へ）。"],
     ["echo hi >&2 2>/dev/null", 0, "Runs `echo` (print arguments to stdout, separated by spaces), with stdout (fd 1) to where stderr (fd 2) goes, stderr (fd 2) to `/dev/null`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する（標準出力は標準エラー出力と同じ先へ、標準エラー出力は `/dev/null` へ）。"],
-    ["echo hi <<< x", 0, "Runs `echo` (print arguments to stdout, separated by spaces), with stdin (fd 0) from the here-string `x`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する（標準入力はヒアストリング `x` から）。"],
+    ["echo hi <<< x", 0, "Runs `echo` (print arguments to stdout, separated by spaces), with stdin (fd 0) from `x`, as a here-string.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する（標準入力はヒアストリング `x` から）。"],
     ["printf 'a\\n' >&2", 0, "Prints a message on stderr (`printf`).", "標準エラー出力にメッセージを出す（`printf`）。"],
     ["command -v jq >/dev/null 2>&1", 0, "Checks, printing nothing, whether a command is installed.", "コマンドがインストールされているかを、何も表示せずに確かめる。"],
     ["while read -r l; do echo \"$l\"; done < f.txt", 0, "Reads `f.txt` one line at a time, running its body (`echo`) for each line.", "`f.txt` を1行ずつ読み、行ごとに本体（`echo`）を実行する。"],
@@ -95,25 +95,25 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["cat f | sort | uniq -c | sort -rn | head", 0, "Counts how often each line of the output of `cat` occurs and lists the lines from the most frequent, with their counts (the first 10); its status is that of `head`.", "`cat` の出力の各行の出現回数を数え、多い順に回数つきで並べる（上位 10 行）。終了ステータスは `head` のもの。"],
     ["sort f | uniq -c | sort -nr | head -n 3", 0, "Counts how often each line of its input occurs and lists the lines from the most frequent, with their counts (the first 3); its status is that of `head`.", "入力の各行の出現回数を数え、多い順に回数つきで並べる（上位 3 行）。終了ステータスは `head` のもの。"],
     ["sort f | uniq -c | sort -nr | head -5", 0, "Counts how often each line of its input occurs and lists the lines from the most frequent, with their counts (the first lines only); its status is that of `head`.", "入力の各行の出現回数を数え、多い順に回数つきで並べる（先頭の行だけ）。終了ステータスは `head` のもの。"],
-    ["sort f | uniq -c | sort -rn | tail", 0, "Pipes `sort` (sort lines) into `uniq` into `sort` (sort lines) into `tail`; its status is that of `tail`.", "`sort`（行を並べ替える）の出力を `uniq` に渡し、その出力を `sort`（行を並べ替える）に渡し、その出力を `tail` に渡す。終了ステータスは `tail` のもの。"],
-    ["sort f | uniq -c | sort -rn | head | cat", 0, "Pipes `sort` (sort lines) into `uniq` into `sort` (sort lines) into `head` into `cat` (concatenate files and print to stdout); its status is that of `cat`.", "`sort`（行を並べ替える）の出力を `uniq` に渡し、その出力を `sort`（行を並べ替える）に渡し、その出力を `head` に渡し、その出力を `cat`（ファイルの内容を連結して標準出力に出す）に渡す。終了ステータスは `cat` のもの。"],
-    ["sort f | uniq | sort -rn", 0, "Pipes `sort` (sort lines) into `uniq` into `sort` (sort lines); its status is that of `sort`.", "`sort`（行を並べ替える）の出力を `uniq` に渡し、その出力を `sort`（行を並べ替える）に渡す。終了ステータスは `sort` のもの。"],
-    ["sort -u f | uniq -c | sort -rn", 0, "Pipes `sort` (sort lines) into `uniq` into `sort` (sort lines); its status is that of `sort`.", "`sort`（行を並べ替える）の出力を `uniq` に渡し、その出力を `sort`（行を並べ替える）に渡す。終了ステータスは `sort` のもの。"],
-    ["sort f | uniq -c | sort -n", 0, "Pipes `sort` (sort lines) into `uniq` into `sort` (sort lines); its status is that of `sort`.", "`sort`（行を並べ替える）の出力を `uniq` に渡し、その出力を `sort`（行を並べ替える）に渡す。終了ステータスは `sort` のもの。"],
-    ["sort f | uniq -c | sort -r", 0, "Pipes `sort` (sort lines) into `uniq` into `sort` (sort lines); its status is that of `sort`.", "`sort`（行を並べ替える）の出力を `uniq` に渡し、その出力を `sort`（行を並べ替える）に渡す。終了ステータスは `sort` のもの。"],
+    ["sort f | uniq -c | sort -rn | tail", 0, "Pipes `sort` (sort lines) into `uniq` (collapse adjacent duplicate lines) into `sort` (sort lines) into `tail` (print the last part of files); its status is that of `tail`.", "`sort`（行を並べ替える）の出力を `uniq`（隣接する重複行をまとめる）に渡し、その出力を `sort`（行を並べ替える）に渡し、その出力を `tail`（ファイルの末尾部分を表示する）に渡す。終了ステータスは `tail` のもの。"],
+    ["sort f | uniq -c | sort -rn | head | cat", 0, "Pipes `sort` into `uniq` into `sort` into `head` into `cat`; its status is that of `cat`.", "`sort` の出力を `uniq` に渡し、その出力を `sort` に渡し、その出力を `head` に渡し、その出力を `cat` に渡す。終了ステータスは `cat` のもの。"],
+    ["sort f | uniq | sort -rn", 0, "Pipes `sort` (sort lines) into `uniq` (collapse adjacent duplicate lines) into `sort` (sort lines); its status is that of `sort`.", "`sort`（行を並べ替える）の出力を `uniq`（隣接する重複行をまとめる）に渡し、その出力を `sort`（行を並べ替える）に渡す。終了ステータスは `sort` のもの。"],
+    ["sort -u f | uniq -c | sort -rn", 0, "Pipes `sort` (sort lines) into `uniq` (collapse adjacent duplicate lines) into `sort` (sort lines); its status is that of `sort`.", "`sort`（行を並べ替える）の出力を `uniq`（隣接する重複行をまとめる）に渡し、その出力を `sort`（行を並べ替える）に渡す。終了ステータスは `sort` のもの。"],
+    ["sort f | uniq -c | sort -n", 0, "Pipes `sort` (sort lines) into `uniq` (collapse adjacent duplicate lines) into `sort` (sort lines); its status is that of `sort`.", "`sort`（行を並べ替える）の出力を `uniq`（隣接する重複行をまとめる）に渡し、その出力を `sort`（行を並べ替える）に渡す。終了ステータスは `sort` のもの。"],
+    ["sort f | uniq -c | sort -r", 0, "Pipes `sort` (sort lines) into `uniq` (collapse adjacent duplicate lines) into `sort` (sort lines); its status is that of `sort`.", "`sort`（行を並べ替える）の出力を `uniq`（隣接する重複行をまとめる）に渡し、その出力を `sort`（行を並べ替える）に渡す。終了ステータスは `sort` のもの。"],
     ["echo a & echo b", 0, "In the background, runs `echo` (print arguments to stdout, separated by spaces); then runs `echo` (print arguments to stdout, separated by spaces).", "バックグラウンドで: `echo`（引数を空白区切りで標準出力に表示する）を実行する。続けて、`echo`（引数を空白区切りで標準出力に表示する）を実行する。"],
     ["set -o pipefail\nfoo | bar", 1, "Pipes `foo` into `bar`; its status is that of the last command that fails, or 0.", "`foo` の出力を `bar` に渡す。終了ステータスは最後に失敗したコマンドのもの（なければ 0）。"],
     ["foo | bar", 0, "Pipes `foo` into `bar`; its status is that of `bar`.", "`foo` の出力を `bar` に渡す。終了ステータスは `bar` のもの。"],
     ["[[ $x ]] && set -o pipefail\nfoo | bar", 1, "Pipes `foo` into `bar`.", "`foo` の出力を `bar` に渡す。"],
     ["set -e\na && b || c", 1, "Runs `a`; if that succeeds, runs `b`; if that fails, runs `c`; under `set -e`, a command that fails before the last one does not stop the script.", "`a` を実行する。成功したら、`b` を実行する。失敗したら、`c` を実行する。`set -e` があっても、最後より前のコマンドが失敗したときはスクリプトは止まらない。"],
     ["set -e\nf() {\n  a && b\n}\nif f; then :; fi", 2, "Runs `a`; if that succeeds, runs `b`.", "`a` を実行する。成功したら、`b` を実行する。"],
-    ["set -e\n(\n  false\n)", 2, "Runs `false`; if it fails, `set -e` stops the subshell.", "`false` を実行する。失敗すると `set -e` でサブシェルが止まる。"],
-    ["set -e\n(\n  exit 1\n  x=1\n  true\n)", 2, "Runs `exit` (exit the shell or script) with status 1.", "`exit` を実行する（終了ステータス 1）。"],
+    ["set -e\n(\n  false\n)", 2, "Runs `false` (do nothing and fail); if it fails, `set -e` stops the subshell.", "`false`（何もせず失敗を返す）を実行する。失敗すると `set -e` でサブシェルが止まる。"],
+    ["set -e\n(\n  exit 1\n  x=1\n  true\n)", 2, "Runs `exit` (exit the shell or script) with status 1.", "`exit`（シェルを終了する）を実行する（終了ステータス 1）。"],
     ["set -e\n(\n  x=1\n)", 2, "Sets `x` to `1`.", "`x` に `1` を代入する。"],
-    ["set -e\n(\n  true\n)", 2, "Runs `true`.", "`true` を実行する。"],
-    ["set -e\nf() {\n  false\n}", 2, "Runs `false`; if it fails, `set -e` stops the shell it runs in (the script or a subshell).", "`false` を実行する。失敗すると `set -e` でシェル（スクリプトかサブシェル）が止まる。"],
+    ["set -e\n(\n  true\n)", 2, "Runs `true` (do nothing and succeed).", "`true`（何もせず成功を返す）を実行する。"],
+    ["set -e\nf() {\n  false\n}", 2, "Runs `false` (do nothing and fail); if it fails, `set -e` stops the shell it runs in (the script or a subshell).", "`false`（何もせず失敗を返す）を実行する。失敗すると `set -e` でシェル（スクリプトかサブシェル）が止まる。"],
     ["set -e\ntar czf a b || echo \"failed\" >&2", 1, "Runs `tar` (create or extract tar archives); if that fails, prints a message on stderr (`echo`).", "`tar`（tar アーカイブを作成・展開する）を実行する。失敗したら、標準エラー出力にメッセージを出す（`echo`）。"],
-    ["set -e\ncurl -s x | sh", 1, "Pipes `curl` into `sh` (run the POSIX shell).", "`curl` の出力を `sh`（POSIX シェルを起動する）に渡す。"],
+    ["set -e\ncurl -s x | sh", 1, "Pipes `curl` (transfer data to or from a URL) into `sh` (run the POSIX shell).", "`curl`（URL を指定してデータを送受信する）の出力を `sh`（POSIX シェルを起動する）に渡す。"],
     ["if a\nthen\n  b\nfi", 1, "`then` continues the `if` of line 1.", "`then` は行 1 からの `if` 文の続き。"],
     ["if a; then\n  b\nelif c; then\n  d\nfi", 2, "Otherwise, if `c` succeeds, runs what follows `then`.", "そうでなければ、`c` が成功したら、`then` 以下を実行する。"],
     ["if a; then\n  b\nelif c; then d\nfi", 2, "Otherwise, if `c` succeeds, runs `d`.", "そうでなければ、`c` が成功したら、`d` を実行する。"],
@@ -155,8 +155,8 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     [". ./lib\necho hi > $LG", 1, "Runs `echo` (print arguments to stdout, separated by spaces), with stdout (fd 1) to the value of `$LG`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する（標準出力は `$LG` の値へ）。"],
     ["name=${1,,}", 0, "Sets `name` to what `${1,,}` gives.", "`name` に `${1,,}` の結果を代入する。", "sh"],
     ["docker run --rm -it -v \"$PWD\":/app -p 8080:80 -e A=1 nginx", 0, "Runs `docker` `run` (run a new container).", "`docker` `run`（イメージから新しいコンテナを起動する）を実行する。"],
-    ["grep -rn \"ERROR $USER\" ./src 2>&1 | sort -u > errors.txt && echo \"done: $(date +%F)\" || exit 1", 0, "Pipes `grep` into `sort` (sort lines); if that succeeds, runs `echo` (print arguments to stdout, separated by spaces); if that fails, runs `exit` (exit the shell or script) with status 1.", "`grep` の出力を `sort`（行を並べ替える）に渡す。成功したら、`echo`（引数を空白区切りで標準出力に表示する）を実行する。失敗したら、`exit` を実行する（終了ステータス 1）。"],
-    ["IFS=: read -r user _ uid gid rest <<< \"$entry\"", 0, "Runs `read` (read a line from stdin into variables) using `-r`, with `IFS` set to `:`, stdin (fd 0) from the here-string the value of `$entry`.", "`read`（標準入力から1行読み、変数に代入する）を `-r` を付けて実行する（`IFS` は `:`、標準入力はヒアストリング `$entry` の値から）。"],
+    ["grep -rn \"ERROR $USER\" ./src 2>&1 | sort -u > errors.txt && echo \"done: $(date +%F)\" || exit 1", 0, "Pipes `grep` into `sort`; if that succeeds, runs `echo`; if that fails, runs `exit` with status 1.", "`grep` の出力を `sort` に渡す。成功したら、`echo` を実行する。失敗したら、`exit` を実行する（終了ステータス 1）。"],
+    ["IFS=: read -r user _ uid gid rest <<< \"$entry\"", 0, "Runs `read` (read a line from stdin into variables) using `-r` (do not treat backslashes as escapes), with `IFS` set to `:`, stdin (fd 0) from the value of `$entry`, as a here-string.", "`read`（標準入力から1行読み、変数に代入する）を `-r`（バックスラッシュをエスケープ文字として扱わない）を付けて実行する（`IFS` は `:`、標準入力はヒアストリング `$entry` の値から）。"],
     ["if a; then\n  b\nfi", 2, "`fi` ends the `if` of line 1: if `a` succeeds, runs what follows `then`.", "`fi` は行 1 からの `if` 文の終わり。`a` が成功したら、`then` 以下を実行する。"],
     ["if [ -f a ]; then\n  b\nfi", 2, "`fi` ends the `if` of line 1: if the test `[ … ]` succeeds, runs what follows `then`.", "`fi` は行 1 からの `if` 文の終わり。テスト `[ … ]` が成功したら、`then` 以下を実行する。"],
     ["x='a``b'", 0, "Sets `x` to ```a``b```.", "`x` に ```a``b``` を代入する。"],
@@ -171,7 +171,7 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["e=; cat < $e", 0, "Sets `e` to the empty string; then runs `cat` (concatenate files and print to stdout), with stdin (fd 0) from what `$e` gives.", "`e` に空文字列を代入する。続けて、`cat`（ファイルの内容を連結して標準出力に出す）を実行する（標準入力は `$e` の結果から）。"],
     ["local x={a,b}", 0, "Runs `local` (declare variables local to the current function) and sets `x` to the words of `x={a,b}`.", "`local`（関数内だけで有効なローカル変数を宣言）を実行する。`x` に `x={a,b}` から得られる単語を代入する。"],
     ["local x=", 0, "Runs `local` (declare variables local to the current function) and sets `x` to the empty string.", "`local`（関数内だけで有効なローカル変数を宣言）を実行する。`x` に空文字列を代入する。"],
-    ["declare -i n=1+1", 0, "Runs `declare` (declare variables and set attributes) using `-i` and sets `n` to what `1+1` gives.", "`declare`（変数を宣言し、属性を設定する）を `-i` を付けて実行する。`n` に `1+1` の結果を代入する。"],
+    ["declare -i n=1+1", 0, "Runs `declare` (declare variables and set attributes) using `-i` (treat as integer) and sets `n` to what `1+1` gives.", "`declare`（変数を宣言し、属性を設定する）を `-i`（整数として扱う）を付けて実行する。`n` に `1+1` の結果を代入する。"],
     ["declare -i n\nn=1+1", 1, "Sets `n` to what `1+1` gives.", "`n` に `1+1` の結果を代入する。"],
     ["a=(1 2)\na=(3)", 1, "Sets `a` to an array of `3`.", "`a` に配列（`3`）を代入する。"],
     ["declare -a a=(1 2)", 0, "Runs `declare` (declare variables and set attributes) using `-a` (declare an indexed array) and sets `a` to an array of `1` and `2`.", "`declare`（変数を宣言し、属性を設定する）を `-a`（インデックス配列として宣言）を付けて実行する。`a` に配列（`1`・`2`）を代入する。"],
@@ -217,7 +217,7 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["if x; then f() { :; }; fi\necho a \\\n && f || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`f` を実行する。"],
     // (Review of the first fix: the model tells `[`, a function and an alias in the shell it is read in, a computed word may be an option, `-f` and `-p` set nothing, a name with a line continuation.)
     ["[() { echo hi; }\necho a \\\n && [ -n \"$s\" ] || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, calls the function `[`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、関数 `[` を呼び出す。"],
-    ["[() { echo hi; }\nif [ a ]; then :; fi", 1, "If `[` succeeds, runs `:` (no-op that always succeeds; used in `while :` or to evaluate expansions).", "`[` が成功したら、`:` を実行する。"],
+    ["[() { echo hi; }\nif [ a ]; then :; fi", 1, "If `[` succeeds, runs `:` (no-op that always succeeds; used in `while :` or to evaluate expansions).", "`[` が成功したら、`:`（何もしないコマンド。無限ループ `while :` や引数の展開だけしたい時に使う）を実行する。"],
     ["f() { echo FN; }\nalias f='echo AL'\necho a \\\n && f || {\n y=2\n}", 2, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`f` を実行する。", "dash"],
     ["f() { echo FN; }\nalias f='echo AL'\necho a \\\n && f || {\n y=2\n}", 2, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, runs `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、`f` を実行する。", "zsh"],
     ["f() { echo FN; }\necho a \\\n && \"f\" || {\n y=2\n}", 1, "Runs `echo` (print arguments to stdout, separated by spaces); if that succeeds, calls the function `f`.", "`echo`（引数を空白区切りで標準出力に表示する）を実行する。成功したら、関数 `f` を呼び出す。"],
@@ -235,7 +235,7 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["declare $(echo -p) n=1", 0, "Runs `declare` (declare variables and set attributes).", "`declare`（変数を宣言し、属性を設定する）を実行する。"],
     ["declare +f n=1", 0, "Runs `declare` (declare variables and set attributes) using `+f` (Option) and sets `n` to what `1` gives.", "`declare`（変数を宣言し、属性を設定する）を `+f`（オプション）を付けて実行する。`n` に `1` の結果を代入する。"],
     ["declare +p n=1", 0, "Runs `declare` (declare variables and set attributes) using `+p` (Option).", "`declare`（変数を宣言し、属性を設定する）を `+p`（オプション）を付けて実行する。"],
-    ["o=-p; declare $o n=1", 0, "Sets `o` to `-p`; then runs `declare` (declare variables and set attributes) using `$o`.", "`o` に `-p` を代入する。続けて、`declare`（変数を宣言し、属性を設定する）を `$o` を付けて実行する。"],
+    ["o=-p; declare $o n=1", 0, "Sets `o` to `-p`; then runs `declare` (declare variables and set attributes) using `$o` (expands to `-p`).", "`o` に `-p` を代入する。続けて、`declare`（変数を宣言し、属性を設定する）を `$o`（`-p` に展開される）を付けて実行する。"],
 ];
 
 /** The files of the corpus: sample.sh and the other fixtures, the host files with their shell parts. */
@@ -337,7 +337,7 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
     assert.strictEqual(new Analyzer('en').explainLine(tree, 0).sentence, undefined);
     assert.strictEqual(new Analyzer('en').explainLine(tree, 0, undefined, { sentence: true }).sentence, 'Runs `sort` (sort lines).');
     // (The line of the string says the command that reads it.)
-    assert.strictEqual(new Analyzer('en').explainLine(tree, 2, undefined, { sentence: true }).sentence, 'Runs `bash` using `-c`.');
+    assert.strictEqual(new Analyzer('en').explainLine(tree, 2, undefined, { sentence: true }).sentence, 'Runs `bash` (run the bash shell) using `-c` (read the commands from the first argument after the options, not from a file or stdin; the arguments after it become `$0`, `$1`…).');
   });
 
   it('says of a syntax error what a problem of the line says: only if the shell gets there, and nothing after a sure stop', () => {
@@ -411,7 +411,7 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
     const tree = parser.parse(extracted.text);
     const ex = explainHostedLine(new Analyzer('en'), tree, extracted, text.split('\n'), 1, 'en', undefined, { sentence: true })!;
     assert.ok(ex.notes.some((n) => /pipefail/.test(n)), ex.notes.join('\n'));
-    assert.strictEqual(ex.sentence, 'Pipes `curl` into `tar` (create or extract tar archives).');
+    assert.strictEqual(ex.sentence, 'Pipes `curl` (transfer data to or from a URL) into `tar` (create or extract tar archives).');
     const bats = '@test "a" {\n  run true\n}\n@test "b" { true; }\n';
     const bx = extractShell(hostKind('', 't.bats', bats)!, bats);
     const bt = parser.parse(bx.text);
@@ -429,8 +429,8 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
     // and "Runs `run`.", the summary of `run` being too long for the sentence.)
     const getopts = 'while getopts ":hv:" opt; do\n  case "$opt" in\n    h) usage ;;\n    v) v=$OPTARG ;;\n  esac\ndone';
     assert.deepStrictEqual([said(getopts, 0, 'en'), said(getopts, 0, 'ja'), said(getopts, 1, 'en'), said(getopts, 1, 'ja')], [
-      'Repeats the body on lines 2–5 while `getopts` succeeds.',
-      '`getopts` が成功する間、行 2〜5 の本体をくり返す。',
+      'Repeats the body on lines 2–5 while `getopts` (parse script options one at a time) succeeds.',
+      '`getopts`（スクリプトのオプション引数を1つずつ解析する）が成功する間、行 2〜5 の本体をくり返す。',
       'Runs the first of the branches on lines 3–4 whose pattern matches the value of `$opt`.',
       '行 3〜4 の分岐のうち、`$opt` の値に最初に一致したパターンの分岐を実行する。',
     ]);
@@ -439,8 +439,8 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
     const bt = parser.parse(bx.text);
     const test = (line: number, lang: 'en' | 'ja') => explainHostedLine(new Analyzer(lang), bt, bx, bats.split('\n'), line, lang, undefined, { sentence: true })!.sentence;
     assert.deepStrictEqual([test(1, 'en'), test(1, 'ja'), test(3, 'en')], [
-      'Runs `run` (runs a command in a subshell and keeps its exit status and output in `$status`, `$output` and `$lines`) using `!`.',
-      '`run`（コマンドをサブシェルで実行し、終了ステータスと出力を `$status`・`$output`・`$lines` に入れる）を `!` を付けて実行する。',
+      'Runs `run` (runs a command in a subshell and keeps its exit status and output in `$status`, `$output` and `$lines`).',
+      '`run`（コマンドをサブシェルで実行し、終了ステータスと出力を `$status`・`$output`・`$lines` に入れる）を実行する。',
       'Runs `load` (reads a file and runs it in the current shell, as `source` does).',
     ]);
     // (Redirections whose text has parentheses of their own follow a Japanese clause, not in parentheses.)
@@ -458,8 +458,9 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
   });
 
   it('says every line of the snippets of the tests, and of lines cut while they are typed, without failing, and never nests parentheses', () => {
-    // (usability-9.md, Q10: a gloss with parentheses of its own is left out, the redirections of a Japanese clause go after it, and a
-    // stream is named without its number there. Before, `getopts` read "(parse script options one at a time (used as …))".)
+    // (usability-9.md, Q10, revisited on 2026-11-07: a gloss loses its own parenthetical parts, the redirections of a Japanese clause go
+    // after it where theirs have some, and a stream is named without its number there. Before, `getopts` read "(parse script options one
+    // at a time (used as …))".)
     const snippets = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'snippets.json'), 'utf8')) as string[];
     const sample = fs.readFileSync(path.join(__dirname, 'fixtures', 'sample.sh'), 'utf8').split('\n');
     const typed = ['!', 'a &&', 'a ||', 'a |', 'for', 'select', 'coproc', 'if a; then', 'case x in a)', 'x=$(', 'f() {', ...sample.flatMap((l) => [l.slice(0, l.length >> 1), l.slice(0, -1)])];
