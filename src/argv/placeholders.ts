@@ -15,7 +15,7 @@ export interface PlaceholderRole { by: string; text: string; with: PlaceholderSp
  * The words from `from` to `to` that the tool replaces before it runs the command, by their value after quote removal, as the field `placeholder`
  * of the command's role (none when no word is); `anywhere`: also those that hold the text among other text. `flag` is the option that has the text where
  * the spec does not name one (find's `-exec`); else the text is the value of the option in effect of the spec's mode (`inEffect`, `settleModes`: a
- * later `-n2` turns `-I` off), or the spec's default where it takes none; a value not known, or empty, is none.
+ * later `-n2` turns `-I` off, and then the operands are not those of its mode), or the spec's default where it takes none; a value not known, or empty, is none.
  */
 export function placeholderIn(p: PlaceholderSpec | undefined, words: readonly ArgWord[], inEffect: Map<string, InEffect> | undefined, from: number, to: number, anywhere: boolean, flag?: string): { placeholder?: PlaceholderRole } {
   if (!p) return {};
@@ -23,9 +23,8 @@ export function placeholderIn(p: PlaceholderSpec | undefined, words: readonly Ar
   let by = flag!;
   if (typeof p.text === 'string') text = p.text;
   else {
-    // (A text set by a mode is for a command whose modes cancel each other: `settleModes` gave them.)
-    const e = inEffect!.get(p.text.mode);
-    if (!e) return {};
+    // (The operands of that mode are read only while the mode is in effect, so its option is: `settleModes` gave it.)
+    const e = inEffect!.get(p.text.mode)!;
     text = e.present ? e.value : p.text.default;
     by = e.flag;
   }
