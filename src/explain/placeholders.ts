@@ -2,7 +2,8 @@
 // `-I%`): the interpreter finds them by their value (`CommandRole.placeholder`, from `PlaceholderSpec`), so `'{}'` and `\{\}` are too.
 import type { SyntaxNode } from '../syntax/tree';
 import type { Token } from '../analyzer-types';
-import type { CommandRole, PlaceholderRole } from '../argv/interpret';
+import type { CommandRole } from '../argv/interpret';
+import type { PlaceholderRole } from '../argv/placeholders';
 import { spanOf } from '../noteanchors';
 import type { Explainer } from './context';
 import { sameSpan } from './nodes';
