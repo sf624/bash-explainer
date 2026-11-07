@@ -489,7 +489,8 @@ const holdsOpen = (r: ModelRow): boolean => !!r.examples?.some((e) => e.open) ||
  * does, its role, what its program receives), one press from their parts (usability-9.md, 2.7); where it is (`RowModel.places`) opens them
  * too, with the examples under them. A cursor on no stage (on a `|`) folds none, and neither does a stage holding the glob example that
  * starts open as the line's only one. A pipeline's rows are its stages and the connectors between them (`connect`). This decides the folds;
- * media/panel.js only refuses to fold a row it drew open when a click in the panel moved the cursor, so that nothing folds under the pointer.
+ * media/panel.js starts a line's rows so whenever it draws the line anew (another line, a new text of it, another depth), and drawing it
+ * again otherwise only opens what this opens: nothing folds under the pointer (`drawnOpen`).
  */
 function foldStages(rows: readonly ModelRow[], cursor: Span['start']): void {
   const at = { start: cursor, end: cursor };
