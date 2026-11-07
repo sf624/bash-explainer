@@ -2,7 +2,7 @@
 
 The plan "Usability toward 9/10". The usability test of 2026-11-06 rated the web page and its panel 7.6/10 after two runs, below the goal of 9 ([panel-redesign.md](panel-redesign.md), section 7, "Results (2026-11-06)"). This page takes its findings one by one: whether each is still there on main, where it comes from in the code, what it cost, and how to fix it. Then the steps as PRs, the maintainer's questions, and how the test runs again.
 
-Status: tracked in the issues labelled `usability-9` (#647, #648, #649, #650, #659, #660). Planned 2026-11-06 (#636), revised after an independent review the same day; the maintainer decided the eleven questions as recommended on 2026-11-06 (section 5). Done: U1 (#639), U2 (#688), U3 (#694), U4 (#637), U5 (#687), U6 (#638).
+Status: tracked in the issues labelled `usability-9` (#647, #648, #649, #650, #659, #660). Planned 2026-11-06 (#636), revised after an independent review the same day; the maintainer decided the eleven questions as recommended on 2026-11-06 (section 5). Done: U1 (#639), U2 (#688), U3 (#694), U4 (#637), U5 (#687), U6 (#638), U7 (#704).
 
 ## 1. The evidence
 
@@ -246,7 +246,7 @@ Each step is one PR and keeps every test passing. The order puts the largest eff
 | U4 | The hover card after a click, and the Legend as a popover (with the empty one). Done in #637 | 2.4, 2.11 | Web page, VS Code panel | No |
 | U5 | Depth 1 shows bash's steps where a step acts; the glob example open by the rule; the tester's text kept. Done in #687 | 2.3 | VS Code panel, web panel | No |
 | U6 | How sh fails where a form fails with a status, in the FEATURES table, each text measured in dash and busybox ash | 2.8 | Every output | No. Done in #638 |
-| U7 | "In short" without nesting, with its range named; the bats functions' gloss; the shebang's row; the pipeline's other stages folded at depth 2; the length measured again | 2.7 | VS Code panel, web panel, CLI | No |
+| U7 | "In short" without nesting, with its range named; the bats functions' gloss; the shebang's row; the pipeline's other stages folded at depth 2; the length measured again. Done in #704: the stages stay as they started while the cursor moves on the line, so that a click on a row folds nothing above it; s2 measures 1,706 px at 1280 (the open glob example of grep's stage keeps it over 1,420) | 2.7 | VS Code panel, web panel, CLI | No |
 | U8 | The phone's sheet: the grab area, the fling, the full height below the file name, the app bar during a drag; the fold arrows' targets and a name's tap; the half height measured again | 2.5, part of 2.7 | Phone | Yes |
 | U9 | The test again, with new agents (section 6) | all | — | — |
 
