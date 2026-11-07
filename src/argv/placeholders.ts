@@ -23,7 +23,8 @@ export function placeholderIn(p: PlaceholderSpec | undefined, words: readonly Ar
   let by = flag!;
   if (typeof p.text === 'string') text = p.text;
   else {
-    const e = inEffect?.get(p.text.mode);
+    // (A text set by a mode is for a command whose modes cancel each other: `settleModes` gave them.)
+    const e = inEffect!.get(p.text.mode);
     if (!e) return {};
     text = e.present ? e.value : p.text.default;
     by = e.flag;
