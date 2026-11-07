@@ -125,7 +125,7 @@ function grepSample(words: (string | undefined)[], more = 0, inside = false): st
   const inverted = p.opts.some(([n]) => n === 'v');
   const ex = regexExamples(res[0], 3);
   if (!ex) return undefined;
-  const yes = ex.matching.filter((x) => !/^abc |\sxyz$/.test(x)).concat(ex.matching.filter((x) => /^abc |\sxyz$/.test(x)));
+  const yes = ex.inside === undefined ? ex.matching : [...ex.matching, ex.inside];
   const no = ex.nonMatching.length ? ex.nonMatching : ['other line'];
   const lines = [no[0], yes[0], yes[1] ?? yes[0], no[1] ?? no[0], yes[2] ?? yes[0]];
   // A line the plain pattern and the real one disagree about.

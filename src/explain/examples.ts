@@ -62,7 +62,7 @@ export function regexExample(cx: Explainer, js: JsRegex, mode: 'lines' | 'invert
 function regexExampleOf(cx: Explainer, js: JsRegex, mode: 'lines' | 'inverted' | 'values', subject?: SyntaxNode): void {
   const ex = regexExamples(js);
   if (!ex) return;
-  let yes = ex.matching;
+  let yes = ex.inside === undefined ? ex.matching : [...ex.matching, ex.inside];
   let no = ex.nonMatching;
   // (`nocasematch` makes `=~` ignore case, which `js` does not.)
   const nocase = subject && shoptAt(cx, subject).nocasematch;

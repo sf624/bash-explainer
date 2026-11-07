@@ -391,7 +391,10 @@ function gen(node: Node, v: number, caps: string[], left: { steps: number }): st
 }
 
 export interface RegexExamples {
+  /** Lines that match as a whole. */
   matching: string[];
+  /** One more line, where the match is only a part of a longer line (`abc … xyz`); none for a pattern anchored at both ends. */
+  inside?: string;
   nonMatching: string[];
 }
 
@@ -417,17 +420,19 @@ export function regexExamples(js: JsRegex, max = 3): RegexExamples | undefined {
   if (!matching.length) return undefined;
   const base = matching[0];
   // Unless the pattern is anchored, a match can be just part of a line; show that once.
+  let inside: string | undefined;
   const inLine = `${js.source.startsWith('^') ? '' : 'abc '}${base}${js.source.endsWith('$') && !js.source.endsWith('\\$') ? '' : ' xyz'}`;
-  if (inLine !== base && re.test(inLine)) {
+  if (inLine !== base && !matching.includes(inLine) && re.test(inLine)) {
+    // (It takes the place of the last whole match when the list is full.)
     if (matching.length >= max) matching.pop();
-    matching.push(inLine);
+    inside = inLine;
   }
   const mutations = [
     base.slice(0, -1), base.slice(1), base.replace(/\d/, 'x'), base.replace(/[A-Za-z]/, '1'),
     js.flags.includes('i') ? '' : swapCase(base), base.replace(/[^A-Za-z0-9]/, ''), base + base.slice(-1), 'x' + base,
   ];
   const nonMatching = [...new Set(mutations)].filter((m) => m !== '' && !re.test(m)).slice(0, 2);
-  return { matching, nonMatching };
+  return { matching, ...(inside !== undefined ? { inside } : {}), nonMatching };
 }
 
 /** A JavaScript regex for a fixed string (grep -F). */

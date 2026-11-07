@@ -472,14 +472,12 @@ export function sedExample(script: string, opts: { quiet: boolean; extended: boo
       !atStart && !atEnd ? `${m} ${second}` : atStart && !atEnd ? `${m}text` : !atStart ? `text${m}` : m;
     let line = m;
     if (p.kind === 's') {
-      const second = ex.matching.find((x) => x !== m && !/^abc |\sxyz$/.test(x)) ?? m;
+      const second = ex.matching.find((x) => x !== m) ?? m;
       line = lineOf(m, second);
       sLine ??= line;
       // (The latest are the fullest: `cde=za` rather than `b=`; a match inside a line (`abc a xyz`) comes last.)
-      const rest = ex.matching.slice(1);
-      const inside = (x: string) => /^abc |\sxyz$/.test(x);
-      for (const x of rest.filter((x) => !inside(x)).reverse()) others.push(lineOf(x, x));
-      for (const x of rest.filter(inside)) others.push(x);
+      for (const x of ex.matching.slice(1).reverse()) others.push(lineOf(x, x));
+      if (ex.inside !== undefined) others.push(ex.inside);
     }
     if (!lines.includes(line)) lines.push(line);
   }
