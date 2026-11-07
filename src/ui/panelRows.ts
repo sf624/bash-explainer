@@ -478,15 +478,18 @@ function foldDeep(rows: readonly ModelRow[]): void {
   }
 }
 
-/** Whether a row, or a row under it, has an example that starts open (the glob example, `opensGlob`), which a fold would hide. */
-const holdsOpen = (r: ModelRow): boolean => !!r.examples?.some((e) => !e.folded || e.open) || r.children.some(holdsOpen);
+/**
+ * Whether a row, or a row under it, has a glob example that starts open by the rule of `opensGlob` (the line's only example), which a fold
+ * would hide. A command's own example is part of its stage, and folds with it.
+ */
+const holdsOpen = (r: ModelRow): boolean => !!r.examples?.some((e) => e.open) || r.children.some(holdsOpen);
 
 /**
  * At depth 2, a pipeline the cursor is in opens the stage the cursor is on and folds the others to their own row (what the command
  * does, its role, what its program receives), one press from their parts (usability-9.md, 2.7); where it is (`RowModel.places`) opens them
- * too. A cursor on no stage (on a `|`) folds none, and neither does a stage with an open example under it. A pipeline's rows are its
- * stages and the connectors between them (`connect`). This decides the folds; media/panel.js only refuses to fold a row it drew open, when
- * the line is drawn again at the same depth: a click on a row moves the cursor, and no row above it may fold under the pointer.
+ * too, with the examples under them. A cursor on no stage (on a `|`) folds none, and neither does a stage holding the glob example that
+ * starts open as the line's only one. A pipeline's rows are its stages and the connectors between them (`connect`). This decides the folds;
+ * media/panel.js only refuses to fold a row it drew open when a click in the panel moved the cursor, so that nothing folds under the pointer.
  */
 function foldStages(rows: readonly ModelRow[], cursor: Span['start']): void {
   const at = { start: cursor, end: cursor };

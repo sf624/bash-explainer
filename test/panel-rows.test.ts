@@ -1205,6 +1205,10 @@ describe('the panel\'s row model', () => {
       assert.deepStrictEqual(list('ls -l && wc -l', 0), ['ls', 'wc']);
       assert.deepStrictEqual(list('ls -l | wc -l; cat -n f', 16), ['ls', 'wc', 'cat']);
       assert.deepStrictEqual(list('ls *.txt | wc -l', 12), ['ls', 'wc']);
+      // (A command's own example folds with its stage: only the glob example the line starts open keeps one open.)
+      const typed = 'grep -r pattern . | sort | uniq -c';
+      assert.ok(all([all(rowModel(placeExamples(explain(typed)), D2, 'en').rows).find((r) => r.label === 'grep')!]).some((r) => r.examples?.length));
+      assert.deepStrictEqual(list(typed, typed.indexOf('sort')), ['grep (folded)', 'sort', 'uniq (folded)']);
     });
 
     it('over the corpus: depth 2 only adds, holds every text of the line, has a row for each reserved word and operator on the line, roles from places only; nothing of depth 1 is folded away', function () {
