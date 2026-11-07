@@ -435,8 +435,12 @@ export interface SedExample {
   output: string[];
 }
 
-/** Make up input lines that exercise the script and show what sed prints for them. */
-export function sedExample(script: string, opts: { quiet: boolean; extended: boolean }): SedExample | undefined {
+/**
+ * Make up input lines that exercise the script and show what sed prints for them. With `distinct`, a script that has
+ * one line to show gets a second, different line the script also changes (`cde=za` beside `a=x`), for a pipeline that
+ * collapses duplicate lines further down.
+ */
+export function sedExample(script: string, opts: { quiet: boolean; extended: boolean }, distinct = false): SedExample | undefined {
   let parser: Parser;
   let cmds: Cmd[];
   try {
@@ -453,6 +457,8 @@ export function sedExample(script: string, opts: { quiet: boolean; extended: boo
   const plain = (s: string) => !res.some((p) => !p.rx.test('') && p.rx.test(s));
   const neutral = (k: number) => [`line ${k}`, `text ${k}`, `data ${k}`, `note ${k}`].find(plain) ?? `${k}`;
   const lines: string[] = [];
+  // Other lines a pattern matches, made as the first is.
+  const others: string[] = [];
   let sLine: string | undefined;
   for (const p of res) {
     const ex = regexExamples(p.re, 3);
@@ -461,12 +467,19 @@ export function sedExample(script: string, opts: { quiet: boolean; extended: boo
     const src = p.re.source;
     const atStart = src.startsWith('^');
     const atEnd = src.endsWith('$') && !src.endsWith('\\$');
+    // Two matches on one line show what g (or a number) changes; anchored patterns get text around them.
+    const lineOf = (m: string, second: string) =>
+      !atStart && !atEnd ? `${m} ${second}` : atStart && !atEnd ? `${m}text` : !atStart ? `text${m}` : m;
     let line = m;
     if (p.kind === 's') {
-      // Two matches on one line show what g (or a number) changes; anchored patterns get text around them.
       const second = ex.matching.find((x) => x !== m && !/^abc |\sxyz$/.test(x)) ?? m;
-      line = !atStart && !atEnd ? `${m} ${second}` : atStart && !atEnd ? `${m}text` : !atStart ? `text${m}` : m;
+      line = lineOf(m, second);
       sLine ??= line;
+      // (The latest are the fullest: `cde=za` rather than `b=`; a match inside a line (`abc a xyz`) comes last.)
+      const rest = ex.matching.slice(1);
+      const inside = (x: string) => /^abc |\sxyz$/.test(x);
+      for (const x of rest.filter((x) => !inside(x)).reverse()) others.push(lineOf(x, x));
+      for (const x of rest.filter(inside)) others.push(x);
     }
     if (!lines.includes(line)) lines.push(line);
   }
@@ -491,6 +504,10 @@ export function sedExample(script: string, opts: { quiet: boolean; extended: boo
     }
     if (!lines.length) input.push(neutral(k++), neutral(k++));
     while (input.length < Math.max(maxLine + 1, hasAddress ? 3 : 1)) input.push(neutral(k++));
+  }
+  if (distinct && lines.length === 1 && !numericOnly) {
+    const other = others.find((x) => !input.includes(x) && runSed(script, [x], opts)?.[0] !== x);
+    if (other) input.push(other);
   }
   if (input.length > 8) return undefined;
   const output = runSed(script, input, opts);

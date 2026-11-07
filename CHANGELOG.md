@@ -19,6 +19,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `which` now says that it looks only in PATH, and that `type` or `command -v` tells what bash runs (a builtin, function or alias too).
 - The panel's depths are named **Overview** and **Word by word** (「概要」「単語ごと」), with the key that chooses each in the tooltip, and a problem's headline starts with the word the Problems list uses ("Portability"). Before, the depths read "1 Does" and "2 Reads", and the headline said "Pitfall" for a portability note.
 - On the web page, Clear, a script pasted over the untouched sample, and Open start a new script: its file type from the text, untitled, the shell back to Auto; Undo, or Ctrl+Z after Clear, puts it all back. Before, test.bats and a shell chosen in the chip stayed for every script pasted after it.
+- The sample of a pipeline with `uniq` or `sort -u` after a `sed` has two different lines, not one line copied: `sed -E 's/^([a-z]+)=(.*)$/\2=\1/' conf.txt | sort -u` reads `a=x` and `cde=za`, so the substitution and the dedupe both show. Before, the input was `a=x` four times.
 
 ### Fixed
 

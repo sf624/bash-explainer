@@ -49,6 +49,9 @@ describe('pipeline examples agree with bash', () => {
     // Options read as the explanation reads them: long prefixes, a value that looks like an option, clusters.
     [['grep', '--inv', 'a'], ['cat']], [['grep', '-e', '-v', '-e', 'a'], ['cat']], [['sed', '--expr', 's/a/X/'], ['cat']], [['sed', '-ns', '/e/p'], ['cat']],
     [['sort', '--rev'], ['uniq']], [['seq', '3'], ['wc', '--li']], [['perl', '-lne', 'print if /e/'], ['cat']],
+    // A sed that has one line to show gets a second one for the duplicates further down.
+    [['sed', '-E', 's/^([a-z]+)=(.*)$/\\2=\\1/'], ['sort', '-u']], [['sed', 's/a/b/'], ['uniq']], [['sed', 's/a/a/'], ['uniq']], [['sed', '-n', '/e/p'], ['sort', '-u']],
+    [['sed', '2d'], ['uniq', '-c']],
   ];
   for (const words of cases) {
     const stages: Stage[] = words.map(([cmd, ...w]) => ({ cmd, words: w, text: [cmd, ...w].join(' ') }));
@@ -94,6 +97,23 @@ describe('pipeline examples agree with bash', () => {
     const file = pipelineExample([{ cmd: 'cat', words: ['f'], text: 'cat f' }, { cmd: 'head', words: ['-n', '2'], text: 'head -n 2' }], false)!;
     assert.deepStrictEqual(file.steps[0].output, file.input);
     assert.ok(file.input!.length > 2);
+  });
+  it('gives the duplicates of uniq and sort -u two different lines, the copies of one following each other', () => {
+    const input = (text: string) => {
+      const stages: Stage[] = text.split(' | ').map((t) => {
+        const [cmd, ...w] = t.split(' ');
+        return { cmd, words: w, text: t };
+      });
+      return pipelineExample(stages, false)!.input!;
+    };
+    // (`cde=za` is what the pattern's second example gives; both lines are changed by the script.)
+    assert.deepStrictEqual(input("sed -E s/^([a-z]+)=(.*)$/\\2=\\1/ | sort -u"), ['a=x', 'cde=za', 'cde=za', 'a=x', 'a=x']);
+    // A pattern with no anchor: the second line has the match inside a line.
+    assert.deepStrictEqual(input('sed s/a/b/ | uniq'), ['a a', 'abc a xyz', 'abc a xyz', 'a a', 'a a']);
+    // A script with no other line to offer keeps its copies of one line.
+    assert.deepStrictEqual(new Set(input('sed s/a/a/ | uniq')).size, 1);
+    // Without a duplicate-collapsing stage the sample is the sed's own.
+    assert.deepStrictEqual(input('sed -E s/^([a-z]+)=(.*)$/\\2=\\1/ | sort'), ['a=x']);
   });
   it('shows the commands xargs would run', () => {
     const ex = pipelineExample([{ cmd: 'grep', words: ['e'], text: 'grep e' }, { cmd: 'xargs', words: ['-n', '1', 'rm'], text: 'xargs -n 1 rm' }], false)!;
