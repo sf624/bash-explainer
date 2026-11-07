@@ -173,3 +173,15 @@ The placeholder of `find -exec`, `-execdir`, `-ok` and `-okdir` is the word whos
 - With `-I{} -n2`, `-I{} -L1` the replace string is not in effect (the option is marked as ignored), so `{}` is an ordinary operand again; `-I{} -n1` keeps it.
 - The texts of `-I` and `-i`, in English and Japanese, say where the input goes: "every occurrence of it in the arguments of the command is replaced with the input item" (before, only the Japanese text of `-I` did; the English one said "runs once per input"). The worked example no longer replaces the string in the command's name.
 - Not covered: a replace string inside a word with an expansion (`"$d/%"`).
+
+### The `/bin/sh` of a Dockerfile's base image
+
+A shell-form `RUN`, `CMD` or `ENTRYPOINT` runs with `/bin/sh -c`, and which sh that is depends on the image. The stage's `FROM` (the last one above the line) now says it, for Docker Hub's official images:
+
+- `alpine`, `busybox`, and the `-alpine` tags of the other official images (`node:20-alpine`, `python:3.12-alpine3.20`, built FROM alpine): busybox ash. `RUN [[ -n "$V" ]] && echo ok` has no note (busybox ash runs `[[ ]]`); `RUN a=(1 2)` is an Error that names busybox ash ("it is a syntax error with status 2"). Before, `[[ ]]` was an Error "in dash `[[` is run as a command, is not found and gives status 127", and `--check` failed on a Dockerfile that builds.
+- `debian` and `ubuntu`, with any tag: dash. `[[ ]]` stays an Error, now "`[[ ]]` is not available in dash"; what dash runs but POSIX does not have (`local`, `echo -n`) has no "Portability" note.
+- Any other image (`node:20`, `myorg/alpine`, `ghcr.io/…`, `${BASE}`): any POSIX sh, as before, with the Error where dash or busybox ash fails.
+- A stage FROM an earlier stage (`FROM build`) starts with the shell that stage ended with, its `SHELL` (and `pipefail`) too: the image keeps them. Before, every `FROM` started again with `/bin/sh`.
+- The shell chip says it: "busybox ash" or "dash" for such a line, instead of "POSIX sh".
+
+What dash 0.5.12 and busybox 1.36.1 do with each construct is measured in `test/dialect-dash.test.ts`, which now also runs `RUN` lines under `FROM alpine` and `FROM debian` in the real shell.

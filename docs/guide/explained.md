@@ -34,7 +34,7 @@ Examples appear right under the part they illustrate (see `bashExplainer.example
 | Jenkinsfile | `sh '…'`, `sh "…"`, `sh '''…'''`, `sh(script: …)`; points out the `$name` and `${…}` that Groovy fills in before the shell runs |
 | bats (`.bats`, or a `bats` shebang) | the whole file as bash: `@test "…" {` as the test bats runs with `set -e`, and `run` (with `!`, `-N`, `--separate-stderr`), `load`, `skip`, `bats_pipe`; warns about `! cmd` that cannot fail a test and `run` in a pipeline |
 
-Each snippet is checked for the shell that runs it (`/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise). Choose which kinds of files with `bashExplainer.embedded.files`.
+Each snippet is checked for the shell that runs it (`/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise; in a Dockerfile, the base image of the stage says which: busybox ash under `alpine`, `busybox` and the `-alpine` tags, dash under `debian` and `ubuntu`). Choose which kinds of files with `bashExplainer.embedded.files`.
 
 ## yq
 

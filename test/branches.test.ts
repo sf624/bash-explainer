@@ -530,7 +530,7 @@ describe('host files: branches no other test takes', () => {
       'RUN ["mksh", "-c", "echo 5"]', 'RUN ["ksh93", "-c", "echo 6"]', 'RUN ["yash", "-c", "echo 7"]', 'RUN ["sh", "-c", "echo 8"]',
       'RUN ["echo", \\',
     ].join('\n'));
-    assert.deepStrictEqual(shells(e), ['1:sh', '3:bash', '5:sh', '6:bash', '7:zsh', '8:bash', '9:ash', '10:bash', '11:ash', '12:bash', '13:dash', '14:bash',
+    assert.deepStrictEqual(shells(e), ['1:ash', '3:bash', '5:ash', '6:bash', '7:zsh', '8:bash', '9:ash', '10:bash', '11:ash', '12:bash', '13:dash', '14:bash',
       '16:bash', '17:zsh', '18:dash', '19:ash', '20:mksh', '21:ksh', '22:yash', '23:sh']);
     assert.strictEqual(lines(e)[3], "$'a\\n\\tb' x");
     assert.strictEqual(lines(e).length, 25);
@@ -667,7 +667,7 @@ describe('host files: branches no other test takes', () => {
       return hostIssues(tree, extracted, text.split('\n'), lang);
     };
     assert.deepStrictEqual(issues('markdown', '```bash\n[[ -f a ]]\n```'), []);
-    const sh = issues('dockerfile', 'FROM alpine\nRUN echo -e "a\\tb" && [[ -f a &&\\\n  -f b ]] | cat', 'ja');
+    const sh = issues('dockerfile', 'FROM x\nRUN echo -e "a\\tb" && [[ -f a &&\\\n  -f b ]] | cat', 'ja');
     assert.ok(sh.some((i) => i.severity === 'info'));
     assert.ok(sh.some((i) => i.code === 'dbracket' && i.endCol === 'RUN echo -e "a\\tb" && [[ -f a &&\\'.length));
     assert.ok(sh.some((i) => i.code === 'dockerPipefail' && /パイプ/.test(i.message)));

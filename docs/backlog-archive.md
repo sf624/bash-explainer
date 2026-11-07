@@ -793,6 +793,19 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - **Reason:** Rare, and the tool's own error or the plain operand reading is not wrong, only without the note that the word is replaced.
 - **Input and what is missing:** `xargs -I{} find {} -exec echo {} \;` (the `{}` of `echo` is find's, the first is xargs's); `find . -exec xargs -I{} echo {} \;`; `find . -exec {} \;` (find replaces the command's name too); quotes in the input lines of the worked example with `-I`; `xargs -I ''` (an empty replace string: the explanation marks nothing).
 
+## From the `/bin/sh` of a Dockerfile's base image (#654)
+
+### Base images whose sh is not read
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `bug`.
+- **Reason:** Each stays "any POSIX sh" (dash or busybox ash, the worse of the two), the reading before #654: no false Error where dash fails too, at most a level or a "Portability" note more than the image's own sh gives.
+- **Input and what is missing:**
+  - `ARG BASE=alpine:3.20` then `FROM ${BASE}`: the default of the ARG is not read, so the stage is `sh`.
+  - The Debian-based official images (`node:20`, `python:3.12-slim`, `golang:1.22-bookworm`): their sh is dash, read as `sh`.
+  - An image of another registry or namespace (`myorg/alpine`, `ghcr.io/…/alpine`, `public.ecr.aws/docker/library/alpine`): read as `sh`.
+  - The shell chip says "(from the file type)" for a shell that the `FROM` line chose.
+  - The busybox measured is Ubuntu's busybox-static 1.36.1, not Alpine's own build (whose config could differ in a few applets or options).
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

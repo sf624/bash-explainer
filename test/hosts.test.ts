@@ -128,9 +128,38 @@ describe('Dockerfile', () => {
     assert.ok(warns('FROM x\nRUN shopt -so pipefail; a | b', 1));
     assert.ok(!warns('FROM x\nRUN shopt -so pipefail; a | b', 1, 'bash'));
   });
-  it('checks for /bin/sh until SHELL switches to bash', () => {
-    assert.match(explain('Dockerfile', 6)!.notes.join(), /`\[\[ \]\]` is not POSIX sh/);
+  it('checks for the /bin/sh of the base image until SHELL switches to bash', () => {
+    // (The fixture is FROM alpine:3.20, whose sh is busybox ash: it runs `[[ ]]`, as the dialect test measures.)
+    assert.ok(!explain('Dockerfile', 6)!.notes.some((n) => /\[\[/.test(n)), explain('Dockerfile', 6)!.notes.join('\n'));
     assert.ok(!explain('Dockerfile', 13)!.notes.some((n) => /POSIX/.test(n)));
+    const notes = (src: string, line: number) => {
+      const extracted = extractShell('dockerfile', src);
+      return explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, src.split('\n'), line, 'en')!.notes.join('\n');
+    };
+    assert.match(notes('FROM debian:bookworm-slim\nRUN [[ -f x ]] && echo ok\n', 1), /`\[\[ \]\]` is not available in dash/);
+    assert.match(notes('FROM node:20\nRUN [[ -f x ]] && echo ok\n', 1), /`\[\[ \]\]` is not POSIX sh/);
+    assert.match(notes('FROM alpine\nRUN a=(1 2)\n', 1), /an array is not available in busybox ash/);
+  });
+  it('reads which sh runs from the image of the stage, and a stage FROM an earlier one keeps its shell', () => {
+    const shells = (src: string) => extractShell('dockerfile', src).regions.map((r) => `${r.start}:${r.shell}`);
+    const each = (images: string[]) => images.map((image) => shells(`FROM ${image}\nRUN a\n`)[0].slice(2));
+    // Docker Hub's official images, with a tag, a digest, a platform, a stage name or the registry written out.
+    assert.deepStrictEqual(each(['alpine', 'alpine:3.20', 'alpine@sha256:abc', '--platform=linux/amd64 alpine AS build', 'docker.io/library/alpine:3.20', 'busybox:1.36', 'node:20-alpine', 'python:3.12-alpine3.20', 'golang:alpine']), Array(9).fill('ash'));
+    assert.deepStrictEqual(each(['debian', 'debian:bookworm-slim', 'ubuntu:24.04', 'library/ubuntu']), Array(4).fill('dash'));
+    // Any other image, or one the build gives (`$BASE`), may have any sh: as before.
+    assert.deepStrictEqual(each(['node:20', 'python:3.12-slim', 'myorg/alpine', 'ghcr.io/x/alpine', 'registry:5000/alpine', '${BASE}', 'scratch', 'alpinelinux', 'mydebian']), Array(9).fill('sh'));
+    // Multi-stage: the last FROM above the line decides, and `FROM build` starts with what that stage ended with, its SHELL too.
+    assert.deepStrictEqual(shells([
+      'FROM alpine AS Build', 'RUN a', 'FROM debian', 'RUN b', 'FROM build AS two', 'RUN c', 'SHELL ["/bin/bash", "-c"]', 'RUN d',
+      'FROM two', 'RUN e', 'FROM build', 'RUN f', 'FROM ubuntu AS three', 'FROM three', 'RUN g',
+    ].join('\n')), ['1:ash', '3:dash', '5:ash', '6:bash', '7:bash', '9:bash', '11:ash', '14:dash']);
+    // (A stage's pipefail is kept with its SHELL: the pipe warning follows it.)
+    const warned = (src: string, line: number) => {
+      const extracted = extractShell('dockerfile', src);
+      return hostIssues(parser.parse(extracted.text), extracted, src.split('\n'), 'en').some((i) => i.code === 'dockerPipefail' && i.startLine === line);
+    };
+    assert.ok(!warned('FROM alpine AS a\nSHELL ["/bin/ash", "-o", "pipefail", "-c"]\nFROM a\nRUN x | y\n', 3));
+    assert.ok(warned('FROM alpine AS a\nSHELL ["/bin/ash", "-o", "pipefail", "-c"]\nFROM alpine\nRUN x | y\n', 3));
   });
 });
 
@@ -578,7 +607,11 @@ describe('issues for the Problems panel', () => {
     return out.map((i) => `${i.code}@${i.startLine + 1}:${i.startCol}-${i.endCol}`);
   };
   it('places Dockerfile issues at original columns', () => {
-    assert.deepStrictEqual(issues('Dockerfile'), ['dbracket@6:43-62', 'dockerPipefail@10:55-56']);
+    // (Line 6's `[[ ]]` runs in alpine's busybox ash: no issue there.)
+    assert.deepStrictEqual(issues('Dockerfile'), ['dockerPipefail@10:55-56']);
+    const src = 'FROM debian\nRUN --mount=type=cache,target=/root/.cache [[ -n "$VERSION" ]] && echo "v$VERSION"\n';
+    const extracted = extractShell('dockerfile', src);
+    assert.deepStrictEqual(hostIssues(parser.parse(extracted.text), extracted, src.split('\n'), 'en').map((i) => `${i.code}@${i.startLine + 1}:${i.startCol}-${i.endCol}`), ['dbracket@2:43-62']);
   });
   it('reports injection risks and shell checks in GitHub Actions', () => {
     assert.deepStrictEqual(issues('action.yml'), ['injection@17:23-61']);

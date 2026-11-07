@@ -129,20 +129,49 @@ function commandHead(b: Builder, i: number): { instr: string; onbuild: boolean; 
   }
 }
 
+/**
+ * The `/bin/sh` of a base image, where it is known: BusyBox ash in Alpine, in busybox and in the `-alpine` variants of
+ * the official images (built FROM alpine: `node:20-alpine`), dash in Debian and Ubuntu. Only Docker Hub's official
+ * images (`alpine:3.20`, `docker.io/library/alpine`); any other image, or one named by a variable (`$BASE`), is any `sh`.
+ */
+function imageShell(image: string): Shell {
+  const ref = /^(?:docker\.io\/)?(?:library\/)?([a-z0-9]+(?:[._-][a-z0-9]+)*)(?::([\w.-]+))?(?:@\S+)?$/.exec(image);
+  if (!ref) return 'sh';
+  const [, repo, tag = ''] = ref;
+  if (repo === 'alpine' || repo === 'busybox' || /(?:^|-)alpine/.test(tag)) return 'ash';
+  return repo === 'debian' || repo === 'ubuntu' ? 'dash' : 'sh';
+}
+
+/** What a stage's shell-form instructions run with; a later stage FROM it starts with what it ended with. */
+interface StageShell {
+  shell: Shell;
+  pipefail: boolean;
+  /** Shell-form instructions run with PowerShell or cmd, not a POSIX shell: they are not explained. */
+  notShell: boolean;
+}
+
 export function dockerfile(b: Builder): void {
   // `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` changes the shell of later shell-form instructions.
-  // Each stage (`FROM`) starts again with the default: `/bin/sh -c`, or `cmd /S /C` on Windows images.
+  // Each stage (`FROM`) starts again with its image's: `/bin/sh -c`, which sh by the image (`imageShell`), or `cmd /S /C`
+  // on Windows images. A stage FROM an earlier one (`FROM build`) starts with what that one ended with, its SHELL too:
+  // the image keeps it.
   let shell: Shell = 'sh';
   let pipefail = false;
-  /** Shell-form instructions run with PowerShell or cmd, not a POSIX shell: they are not explained. */
   let notShell = false;
+  /** The stages so far, by name (`FROM … AS build`; Docker reads the names in any case). */
+  const stages = new Map<string, StageShell>();
+  let stage: string | undefined;
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];
-    const from = /^\s*FROM\s+(?:--[\w-]+(?:=\S*)?\s+)*(\S+)/i.exec(line);
+    const from = /^\s*FROM\s+(?:--[\w-]+(?:=\S*)?\s+)*(\S+)(?:\s+AS\s+(\S+))?/i.exec(line);
     if (from) {
-      shell = 'sh';
-      pipefail = false;
-      notShell = /mcr\.microsoft\.com\/(windows|powershell)|\b(windowsservercore|nanoserver|servercore|ltsc\d{4})\b/i.test(from[1]);
+      if (stage !== undefined) stages.set(stage, { shell, pipefail, notShell });
+      ({ shell, pipefail, notShell } = stages.get(from[1].toLowerCase()) ?? {
+        shell: imageShell(from[1]),
+        pipefail: false,
+        notShell: /mcr\.microsoft\.com\/(windows|powershell)|\b(windowsservercore|nanoserver|servercore|ltsc\d{4})\b/i.test(from[1]),
+      });
+      stage = from[2]?.toLowerCase();
       continue;
     }
     // (`ARG V=1`, `ENV A=1 B=2`, `ENV A 1`: variables the instructions after it run with.)

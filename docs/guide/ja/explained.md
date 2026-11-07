@@ -34,7 +34,7 @@
 | Jenkinsfile | `sh '…'`・`sh "…"`・`sh '''…'''`・`sh(script: …)`。シェルより先に Groovy が埋め込む `$名前` や `${…}` を指摘 |
 | bats（`.bats` か `bats` の shebang） | ファイル全体を bash として。`@test "…" {` は bats が `set -e` で実行するテストとして、`run`（`!`・`-N`・`--separate-stderr` も）・`load`・`skip`・`bats_pipe` も説明。テストを失敗させられない `! cmd` や、パイプラインの中の `run` を指摘 |
 
-それぞれ、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。対象にするファイルの種類は `bashExplainer.embedded.files` で選べます。
+それぞれ、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`。Dockerfile ではそのステージのベースイメージで決まり、`alpine`・`busybox`・`-alpine` のタグは busybox ash、`debian`・`ubuntu` は dash）。対象にするファイルの種類は `bashExplainer.embedded.files` で選べます。
 
 ## yq
 
