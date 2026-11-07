@@ -302,7 +302,7 @@ describe('Bash Explainer in VS Code', function () {
       assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), true, 'a key after Backspace');
       assert.strictEqual(await after(() => vscode.commands.executeCommand('undo')), false, 'undo');
       assert.strictEqual(await after(async () => { editor.selection = new vscode.Selection(0, 3, 0, 3); }), false, 'a selection set by an extension');
-      assert.strictEqual(await after(() => vscode.window.showTextDocument(doc, { selection: new vscode.Range(0, 20, 0, 24) })), undefined, "the panel's reveal");
+      assert.strictEqual(await after(() => vscode.window.showTextDocument(doc, { selection: new vscode.Range(0, 20, 0, 24) })), false, "the panel's reveal");
       // (Keys in a document the panel does not explain, as a README, are no move of its: nothing would send it.)
       const readme = await open(await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'a README\n' }));
       readme.selection = new vscode.Selection(0, 0, 0, 0);
