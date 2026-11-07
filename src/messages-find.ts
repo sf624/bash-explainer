@@ -13,6 +13,8 @@ export interface FindRefusalParams {
   why: 'missing' | 'empty' | 'alone' | 'once';
   /** With `alone`: the word before the `+`. */
   word?: string;
+  /** With `alone`: the word before the `+` is a string this shell runs (`sh -c`), whose arguments after it become `$0`, `$1`… */
+  shell?: string;
   /** The option can be ended by a `+` after a `{}` (`-exec`, `-execdir`), not only by `\;`. */
   plus: boolean;
   /** The line ends with a bare `;` (the shell's list operator). */
@@ -27,7 +29,7 @@ export function findRefusalRefs({ why, bare }: FindRefusalParams): readonly stri
   return why === 'missing' ? [...(bare ? ['3.2.4'] : []), '3.1.2.1', '3.1.2.2'] : ['3.1.2.1'];
 }
 
-export function findRefusalText({ option, why, word, plus, bare, noCommand, rewrite: [fix] }: FindRefusalParams): readonly [string, string] {
+export function findRefusalText({ option, why, word, shell, plus, bare, noCommand, rewrite: [fix] }: FindRefusalParams): readonly [string, string] {
   const o = `\`${option}\``;
   const stops = (said: string) => [`find は与えられた引数をすべて受け付けず（${codeSpan(said)}）、何も実行しない。`, `find refuses all its arguments (${codeSpan(said)}) and runs nothing.`] as const;
   if (why === 'missing') {
@@ -48,8 +50,11 @@ export function findRefusalText({ option, why, word, plus, bare, noCommand, rewr
   }
   if (why === 'alone') {
     const [sj, se] = stops(`find: In '${option} ... {} +' the '{}' must appear by itself, but you specified '${word}'`);
-    return [`\`+\` が ${o} のコマンドを終わらせるのは、直前の語が \`{}\` だけのときに限る。ここでは \`${word}\` なので、\`{}\` だけの語にするか、\`\\;\` で1件ずつ実行する。${sj}`,
-      `A \`+\` ends the command of ${o} only after a \`{}\` that stands alone, and here the word before it is \`${word}\`. Put \`{}\` alone before the \`+\`, or end it with \`\\;\` to run it once per file. ${se}`];
+    // (Not `\;` for a shell's string: find would paste each path into its code, `placeholder-in-shell-string`.)
+    const [aj, ae] = shell ? [`パスはシェルの引数として渡す: \`${shell} '… "$@" …' _ {} +\``, `Pass the paths to the shell as arguments: \`${shell} '… "$@" …' _ {} +\``]
+      : ['`{}` だけの語にするか、`\\;` で1件ずつ実行する', 'Put `{}` alone before the `+`, or end it with `\\;` to run it once per file'];
+    return [`\`+\` が ${o} のコマンドを終わらせるのは、直前の語が \`{}\` だけのときに限る。ここでは \`${word}\` なので、${aj}。${sj}`,
+      `A \`+\` ends the command of ${o} only after a \`{}\` that stands alone, and here the word before it is \`${word}\`. ${ae}. ${se}`];
   }
   const [sj, se] = stops(`find: Only one instance of {} is supported with ${option} ... +`);
   return [`\`+\` で終わらせる ${o} のコマンドに書ける \`{}\` は1つだけ。2つ以上必要なら \`\\;\` で1件ずつ実行する。${sj}`,

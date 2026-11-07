@@ -820,6 +820,9 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `missing-explanation`.
 - **Reason:** Rare forms of the anti-pattern; the line is explained, only without the injection warning or the hole in the string's reading.
 - **Input and what is missing:** a placeholder alone among the words `ssh` joins for the remote shell (`find . -exec ssh host rm {} \;`: the remote shell reads the path as code too) and `xargs ssh host rm` without `-I`; a string whose value is not known here (`xargs -I{} sh -c "echo {} $x"` with `x` not set in the script: no placeholder is found, as since #707); a replace string that spans parts of the inner script (`-I'a b'`, `sh -c 'echo a b'`: the row of the whole command `echo a b` says where the item goes); the state model of the inner script still sees the text `{}` as a literal word (no decision was found that it gets wrong).
+- **The fix where `$1` is taken:** the note suggests `"$1"` and `_ {}` even when the string already uses `$1` or that slot is taken (`sh -c 'echo "$1" {}' sh {}`).
+- **No fix for `su -c`:** `find . -exec su -c 'rm {}' \;` gets the warning without a safe form, as su passes no arguments to the string.
+- **find's `once` refusal:** `find . -exec sh -c 'echo {}' {} +` is refused for two `{}`, and its error still says to use `\;`, the injectable form; only the `alone` case (`sh -c 'echo {}' +`) gives the safe form. A string of `su -c` or `ssh` before `+` keeps the `\;` advice too, as neither passes arguments to the string.
 
 ## Decisions recorded on 2026-11-06
 

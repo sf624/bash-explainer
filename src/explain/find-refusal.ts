@@ -2,6 +2,7 @@
 import type { ArgvParse } from '../argv/interpret';
 import type { CommandSpec } from '../argv/spec';
 import { fact } from '../messages';
+import type { SlotLink } from '../semantics/env';
 import { replaceRange, textAfter } from '../rewrite';
 import { hasError, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
@@ -10,7 +11,8 @@ import type { Explainer } from './context';
  * The note for an action that find refuses (`find . -exec rm {} ;`): why, and what find prints. Where the cause is the `;`
  * that ends the line (the shell's list operator, so find never gets it), the rewrite writes `\;` in its place, as a word of
  * its own (`{};` becomes `{} \;`, and a `#` right after it starts a comment again: `\; #`); none when the action has no
- * command. It is noted on the option. None where bash rejects the line (`find . -exec rm {} ;;`): find never runs.
+ * command. Where the word before a `+` is a string a shell runs (`sh -c 'echo {}' +`), the text passes the paths to it as arguments
+ * (`shell`), not with `\\;`, which would paste each path into its code. It is noted on the option. None where bash rejects the line (`find . -exec rm {} ;;`): find never runs.
  */
 export function findRefusal(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec, refusal: NonNullable<ArgvParse['refusal']>): void {
   const command = nodes[0].parent!;
@@ -25,8 +27,11 @@ export function findRefusal(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpe
   const hash = !!semicolon?.[3] && !semicolon[2];
   const from = glued ? last.startIndex : at;
   const code = `${glued ? `${last.text} ` : ''}\\;${hash ? ' #' : ''}`;
+  // (The word before the `+` is a string a shell runs with the arguments after it, `sh -c 'echo {}' +`: the safe form passes the paths to it.)
+  const link = refusal.wordAt === undefined ? undefined : cx.slotEnvs.get(nodes[refusal.wordAt])?.links.at(-1) as SlotLink | undefined;
+  const shell = link?.slot.run === 'shell-string' && link.slot.params ? link.via : undefined;
   cx.note(fact(cx.lang, 'find-action-refused', {
-    option: refusal.option, why: refusal.why, ...(refusal.word === undefined ? {} : { word: refusal.word }),
+    option: refusal.option, why: refusal.why, ...(refusal.word === undefined ? {} : { word: refusal.word }), ...(shell ? { shell } : {}),
     plus: !!spec.options!.find((o) => o.names.includes(refusal.option))?.until?.terminators.includes('+'),
     bare: !!semicolon, noCommand,
     rewrite: semicolon && !noCommand ? [replaceRange(command, from, at + (hash ? 2 : 1), code)] : [],
