@@ -1232,8 +1232,8 @@ describe('the panel\'s row model', () => {
       const ls = all(rowModel(placeExamples(explain(sub)), { depth: 2, receives: false, cursor: { line: 0, character: sub.indexOf('ls') + 1 } }, 'en').rows).find((r) => r.label === 'ls')!;
       assert.ok(all([ls]).some((r) => r.examples?.some((e) => e.kind === 'glob' && e.open)), JSON.stringify(ls));
       // (The panel's message says when the reader moved the cursor there, and only then: media/panel.js opens the stages it entered.)
-      const moved = (m?: boolean) => panelUpdate({ lang: 'en', explanation: explain(src), file: 'x', line: 0, lineText: src, choice: {}, placement: 'first', animations: true, state: { depth: 2 }, cursor: 0, ...(m === undefined ? {} : { moved: m }) }).moved;
-      assert.deepStrictEqual([moved(true), moved(false), moved()], [true, undefined, undefined]);
+      const moved = (m?: 'pointer' | 'key') => panelUpdate({ lang: 'en', explanation: explain(src), file: 'x', line: 0, lineText: src, choice: {}, placement: 'first', animations: true, state: { depth: 2 }, cursor: 0, ...(m === undefined ? {} : { moved: m }) }).moved;
+      assert.deepStrictEqual([moved('pointer'), moved('key'), moved()], ['pointer', 'key', undefined]);
     });
 
     it('over the corpus: depth 2 only adds, holds every text of the line, has a row for each reserved word and operator on the line, roles from places only; nothing of depth 1 is folded away', function () {

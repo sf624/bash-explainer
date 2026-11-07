@@ -21,7 +21,7 @@ import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettin
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { explainNeeds, panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
-import { CursorMoves } from '../src/ui/cursorMoves';
+import { CursorMoves, moveOf } from '../src/ui/cursorMoves';
 import { editorAttributes, editorHint, isPaneKey, LineAnnouncer } from './a11y';
 import { CHANNEL, COMMIT, PR, UP, VERSION } from './build-info';
 import { Compare, receiveState, toParent } from './compare';
@@ -327,7 +327,7 @@ function applyCopyState(m: CopyState): void {
   editor.setCursor(m.line, m.col);
   stateReceived = true;
   if (langChanged) return panel.reload(); // the panel's `loaded` sends the theme and explains the line
-  moves.cursor(m.moved === true);
+  moves.cursor(moveOf(m.moved));
   if (m.theme !== theme) {
     theme = m.theme;
     panel.send({ type: 'theme', theme });
@@ -344,7 +344,7 @@ if (mode.compare) {
     lang: () => lang,
     state() {
       const { line, col } = editor.cursor();
-      return { text: editor.text, kind: kinds.kind, line, col, lang, theme, choice: choice(), settings: changedSettings(settings, 'web'), ...(moves.take() ? { moved: true as const } : {}) };
+      return { text: editor.text, kind: kinds.kind, line, col, lang, theme, choice: choice(), settings: changedSettings(settings, 'web'), moved: moves.take() };
     },
     reveal: (span, preserveFocus) => editor.selectSpan(span, preserveFocus),
     highlight: (span) => editor.highlight(span),
