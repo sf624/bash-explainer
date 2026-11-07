@@ -51,11 +51,14 @@ describe('the web page: the file kind', function () {
       assert.strictEqual(await kindChosen(page), 'dockerfile');
       await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
       assert.strictEqual(await page.locator('#kind-dialog[open]').count(), 0);
-      // (A Dockerfile's RUN runs in sh: the chip says the shell the line is explained as, not the default bash.)
-      assert.strictEqual(await chip.getAttribute('aria-label'), 'File type and shell: Dockerfile · POSIX sh (auto)');
-      assert.strictEqual(await page.locator('#scope-shell-auto').innerText(), 'Auto: POSIX sh (from the file type)');
-      // (The chip shows all of it where the pane has the room: in a pane of 384px, the shell alone, with Open and Save as icons.)
-      assert.strictEqual(await chip.innerText(), width === 768 ? 'POSIX sh' : 'Dockerfile · POSIX sh (auto)');
+      // (A Dockerfile's RUN runs in the sh of its base image, dash in the sample's debian: the chip says the shell the line is explained as, not the default bash.)
+      assert.strictEqual(await chip.getAttribute('aria-label'), 'File type and shell: Dockerfile · dash (auto)');
+      assert.strictEqual(await page.locator('#scope-shell-auto').innerText(), 'Auto: dash (from the file type)');
+      // (The chip shows all of it where the pane has the room: in a pane of 384px, a shorter form, with Open and Save as icons;
+      // which one fits a short name such as `dash` depends on the font, so either.)
+      const shown = await chip.innerText();
+      if (width === 768) assert.ok(['Dockerfile · dash', 'dash'].includes(shown), shown);
+      else assert.strictEqual(shown, 'Dockerfile · dash (auto)');
       // A press outside closes it without a change.
       await page.mouse.click(width - 5, height - 5);
       assert.strictEqual(await pop.isVisible(), false);
@@ -405,7 +408,7 @@ describe('the web page: the file kind', function () {
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'scope-chip');
     // The menu's row says the type and the shell, and opens the same sheet.
     await page.locator('#menu-open').tap();
-    assert.strictEqual(await page.locator('#menu-scope').innerText(), 'File type and shell…\nDockerfile · POSIX sh (auto)');
+    assert.strictEqual(await page.locator('#menu-scope').innerText(), 'File type and shell…\nDockerfile · dash (auto)');
     await page.locator('#menu-scope').tap();
     assert.strictEqual(await pop.isVisible(), true);
     assert.strictEqual(await page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open), false);

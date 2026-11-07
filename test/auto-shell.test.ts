@@ -167,9 +167,12 @@ describe('the automatic shell of a host file: what the chip, its popover and the
   it('names the shell the host runs, not the default bash nor the file\'s #! line', () => {
     const at = (kind: FileKind, file: string, text: string, line: number) => usedShells(kind, file, text)[line].auto;
     const sh: AutoShell = { shell: 'sh', source: 'host' };
-    assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM alpine\nRUN make\n', 1), sh);
+    assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM x\nRUN make\n', 1), sh);
     // (Every part agrees: the host's own lines say it too.)
-    assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM alpine\nRUN make\n', 0), sh);
+    assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM x\nRUN make\n', 0), sh);
+    // (The sh of the base image: busybox ash in alpine, dash in debian.)
+    assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM alpine\nRUN make\n', 1), { shell: 'ash', source: 'host' });
+    assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM debian\nRUN make\n', 1), { shell: 'dash', source: 'host' });
     assert.deepStrictEqual(at('makefile', 'Makefile', 'a:\n\tmake; true\n', 1), sh);
     // (A line make runs itself, with no shell; the rest of the file runs in sh.)
     assert.strictEqual(at('makefile', 'Makefile', 'a:\n\tmake\n', 1), 'none');

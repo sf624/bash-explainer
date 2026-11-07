@@ -620,7 +620,7 @@ describe('the command-line tool', function () {
       assert.strictEqual(run(['--check', '--set', 'shell=sh', script]).code, 1);
       assert.strictEqual(run(['--check', '--set', 'shell=sh', '--set', 'diagnostics.ignore=["dbracket"]', script]).code, 0);
       // Warnings in a Dockerfile are left out with diagnostics.embedded off.
-      const docker = write(path.join(dir, 'Dockerfile'), 'FROM alpine\nRUN [[ -f x ]] && echo hi\n');
+      const docker = write(path.join(dir, 'Dockerfile'), 'FROM debian\nRUN [[ -f x ]] && echo hi\n');
       assert.strictEqual(run(['--check', '--no-config', docker]).code, 1);
       assert.strictEqual(run(['--check', '--set', 'diagnostics.embedded=false', docker]).code, 0);
       // Notes, examples and your own commands.

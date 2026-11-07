@@ -9,6 +9,7 @@ import * as path from 'path';
 import { dialectIssues, dialectNotes, dialectTexts, FEATURES, type Shell } from '../src/dialect';
 import { documentIssues } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
+import { extractShell, hostIssues } from '../src/hosts';
 import { Analyzer } from '../src/analyzer';
 import { type Case, failureOf, isFailure, works } from '../src/shellfeatures';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -481,6 +482,17 @@ for (const sh of REALS) {
         for (const level of levelOf(code, 'seconds', sh)) assert.strictEqual(level, 'warning');
       });
     }
+    // (#654: a RUN line runs in the sh of the base image, busybox ash in alpine and dash in debian; Error where that sh fails it.)
+    it(`a Dockerfile's RUN lines FROM ${sh === 'ash' ? 'alpine' : 'debian'}: an Error exactly where ${sh} fails or stops`, () => {
+      const image = sh === 'ash' ? 'alpine:3.20' : 'debian:bookworm-slim';
+      for (const code of ['[[ -n "$PATH" ]] && echo ok', '[[ a == a* ]] && echo ok', 'a=(1 2); echo "${a[1]}"', 'echo -n x', 'set -o pipefail', 'shopt -s nullglob', 'x=$(( 1 + 2 )); echo $x', 'source /dev/null']) {
+        const src = `FROM ${image}\nRUN ${code}\n`;
+        const extracted = extractShell('dockerfile', src);
+        const errors = hostIssues(parser.parse(extracted.text), extracted, src.split('\n'), 'en').filter((i) => i.severity === 'error').map((i) => i.code);
+        assert.strictEqual(errors.length > 0, does(sh, code) !== 'runs', `${code}: ${errors.join(', ')}`);
+      }
+    });
+
     it('`$(($x))` alone stops dash, and is 0 in busybox ash', () => {
       assert.strictEqual(does(sh, 'echo $(($SECONDS))'), sh === 'dash' ? 'stops' : 'runs');
       assert.deepStrictEqual(levelOf('echo $(($SECONDS))', 'seconds', sh), ['warning']);
