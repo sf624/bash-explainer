@@ -66,21 +66,14 @@
   /** What the viewer folded and unfolded of the line shown, by row (`key`: the same at both depths); kept when the same line is drawn again. */
   let foldChoices = /** @type {Map<string, boolean>} */ (new Map());
   /**
-   * How each row of the line shown was drawn, folded or not (`ModelRow.folded`), at the depth drawn. The model decides (a pipeline's stages
-   * fold by where the cursor is, `foldStages`), as the cursor moves in the editor, by the keys, a tap or typing. Only while the cursor is
-   * where a click in the panel put it (`reveal`) does the panel keep open a row it drew open, so that nothing folds under the pointer.
+   * The rows (by `key`) and the folded examples (by place) drawn open since the line was last drawn anew: its start key (`startKey`: the
+   * line, its text and the depth) changed. A row starts as the model has it (`ModelRow.folded`: a pipeline's stages fold by where the
+   * cursor is, `foldStages`); drawn again with the same key, it only opens where the model opens it (the stage the cursor moved to), and
+   * nothing the viewer sees folds or closes, whatever comes first, a click or the redraw it brings. Only the viewer folds (`foldChoices`).
    */
-  let foldStarts = /** @type {Map<string, boolean>} */ (new Map());
-  /** The same for the folded examples, by their place (`foldedExample`): one drawn open stays open while `keepOpen` holds. */
-  let exampleStarts = /** @type {Map<string, boolean>} */ (new Map());
-  /**
-   * The columns of the line shown that a row of the panel last selected in the editor (`reveal`), until a redraw comes with the cursor
-   * elsewhere (`msg.cursor`, the column the host explained the line at): a redraw with the cursor inside them is the click's, however late
-   * it comes, or one that did not move the cursor (a setting changed).
-   */
-  let revealed = /** @type {{ from: number, to: number, opened?: string } | null} */ (null);
-  /** Whether the rows drawn now keep open those drawn open before: the same line at the same depth, the cursor where a click put it. */
-  let keepOpen = false;
+  let drawnOpen = /** @type {Set<string>} */ (new Set());
+  /** The line, its text and the depth the rows were drawn anew for (`drawnOpen`). */
+  let startKey = '';
   /** The file and line `foldChoices` belongs to, and the depth drawn. */
   let shownLine = '';
   let shownDepth = 1;
@@ -182,8 +175,7 @@
     if (msg.type === 'themeColours') setThemeVars(msg.vars);
     if (msg.type === 'update') {
       // (Without the line's problems: they come a moment after the line is explained, and change only its squiggles.)
-      // (Nor the cursor's column: a move that changes no row draws nothing again.)
-      const key = JSON.stringify({ ...msg, marks: undefined, around: undefined, cursor: undefined });
+      const key = JSON.stringify({ ...msg, marks: undefined, around: undefined });
       if (key === lastUpdate) {
         // (The pointers are drawn again only when they changed: a focus on one stays, panel-redesign.md section 5.)
         if (JSON.stringify(msg.around ?? []) !== lastAround) drawAround(msg.around ?? []);
@@ -287,9 +279,6 @@
       // A new line is drawn anew: what was folded, and the room kept below the old one, go.
       dropSpacer();
       foldChoices = new Map();
-      foldStarts = new Map();
-      exampleStarts = new Map();
-      revealed = null;
       exampleChoices = new Map();
       typed = new Map();
       openSteps = new Set();
@@ -310,14 +299,11 @@
       if (msg.depth !== shownDepth) $('said').textContent = msg.control.options.find((/** @type {{ sets: any }} */ o) => o.sets.depth === msg.depth).said;
       else $('said').textContent = msg.receives ? labels.receives.on : labels.receives.off;
     }
-    // (Another depth starts its rows as the model has them there.)
-    if (msg.depth !== shownDepth) {
-      foldStarts = new Map();
-      exampleStarts = new Map();
-    }
-    // (The cursor left the row a click selected: the rows start as the model has them again.)
-    if (revealed && !(typeof msg.cursor === 'number' && msg.cursor >= revealed.from && msg.cursor <= revealed.to)) revealed = null;
-    keepOpen = where === shownLine && msg.depth === shownDepth && revealed !== null;    shownLine = where;
+    // (Another line, a new text of the line as it is typed, or another depth: the rows start as the model has them.)
+    const start = JSON.stringify([where, msg.lineText, msg.depth]);
+    if (start !== startKey) drawnOpen = new Set();
+    startKey = start;
+    shownLine = where;
     shownDepth = msg.depth;
     shownReceives = msg.receives;
     rowMarks = msg.rowMarks;
@@ -711,9 +697,9 @@
   function foldedExample(/** @type {any} */ ex, /** @type {number | string} */ at) {
     const place = String(at);
     const box = /** @type {HTMLDetailsElement} */ (el('details', { class: 'example whole-line' }, el('summary', {}, el('h3', {}, ...inline(ex.title)))));
-    // (Open where the model opens it, or where it was drawn open and the cursor is still where a click put it: `keepOpen`.)
-    const opens = ex.open === true || (keepOpen && exampleStarts.get(place) === true);
-    exampleStarts.set(place, opens);
+    // (Open where the model opens it, or where it was drawn open since the line was drawn anew: `drawnOpen`.)
+    const opens = ex.open === true || drawnOpen.has(`example ${place}`);
+    if (opens) drawnOpen.add(`example ${place}`);
     box.open = exampleChoices.get(place) ?? opens;
     box.addEventListener('toggle', () => (box.open === opens ? exampleChoices.delete(place) : exampleChoices.set(place, box.open)));
     const body = el('div', { class: 'fold-body' }, ...exampleBody(ex, place));
@@ -1273,13 +1259,10 @@
     row.append(twisty, code, text, ...tryIt);
     box.append(row);
     li.append(box);
-    // (The model's fold; while the cursor is where a click in the panel put it, a row drawn open stays open. The viewer's choice wins at every depth.)
+    // (The model's fold, where the row was not drawn open since the line was drawn anew (`drawnOpen`). The viewer's choice wins at every depth.)
     if (part.children.length) {
-      // (A row that a click on it opened, and that the model opens too with the cursor moved there, is open as the model has it: no choice
-      // of the viewer's, so it folds again when the cursor leaves. A press of its fold button stays a choice.)
-      if (keepOpen && revealed?.opened === part.key && part.folded !== true) foldChoices.delete(part.key);
-      const folded = part.folded === true && !(keepOpen && foldStarts.get(part.key) === false);
-      foldStarts.set(part.key, folded);
+      const folded = part.folded === true && !drawnOpen.has(`row ${part.key}`);
+      if (!folded) drawnOpen.add(`row ${part.key}`);
       if (foldChoices.get(part.key) ?? folded) setCollapsed(li, true, foldChoices.has(part.key));
     }
     // Examples placed under this token go before (first) or after (last) its parts.
@@ -1296,10 +1279,10 @@
     // As in VS Code's trees: a click on a row with parts folds or unfolds it, and still selects it.
     row.addEventListener('click', (e) => {
       if (selecting()) return;
-      const toggled = !(e.target instanceof Element && e.target.closest('a, button, input, textarea, select, .role-said')) && part.children.length > 0;
-      if (toggled) toggle(li);
-      // (A row the click opens and moves the cursor into: `opened`, for the redraw that follows.)
-      if (reveal(part) && toggled && !isCollapsed(li) && revealed) revealed.opened = String(part.key);
+      if (!(e.target instanceof Element && e.target.closest('a, button, input, textarea, select, .role-said'))) {
+        if (part.children.length) toggle(li);
+      }
+      reveal(part);
       revealInLine(index);
     });
     if (part.children.length) {
@@ -2154,12 +2137,9 @@
 
   /** Selects a token's range in the editor, only when it lies on the line explained. A range on another line (a clause of a
       `case` under its `while`, one over several lines: an if, a loop, a function) would move the cursor there, and the panel
-      would explain that line instead, when one only meant to fold the row; the hover already shows that range. Says whether it did. */
+      would explain that line instead, when one only meant to fold the row; the hover already shows that range. */
   function reveal(token, /** @type {boolean} */ keepFocus = false) {
-    if (token.span.start.line !== shownLineNo || token.span.end.line !== shownLineNo) return false;
-    revealed = { from: token.span.start.character, to: token.span.end.character };
-    vscode.postMessage({ type: 'reveal', span: token.span, preserveFocus: keepFocus });
-    return true;
+    if (token.span.start.line === shownLineNo && token.span.end.line === shownLineNo) vscode.postMessage({ type: 'reveal', span: token.span, preserveFocus: keepFocus });
   }
 
   /** Whether a row is the row `idx` or one of its parts; no row is, for -1. */

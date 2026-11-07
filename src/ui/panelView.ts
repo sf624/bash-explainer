@@ -153,10 +153,7 @@ export interface PanelLine {
   web?: boolean;
   /** The depth chosen, for the rows and the view control (`viewControl`). */
   state?: PanelState;
-  /**
-   * The cursor's column, when it is on `line`: the glob example of its stage starts open (`RowOptions.cursor`), and the panel keeps the
-   * rows it drew open while the cursor stays where a click on a row put it.
-   */
+  /** The cursor's column, when it is on `line`: the glob example of its stage starts open (`RowOptions.cursor`). */
   cursor?: number;
 }
 
@@ -240,9 +237,6 @@ export function panelUpdate(p: PanelLine) {
     levels: Object.fromEntries(Object.entries(LEVELS).map(([level, { className, codicon, name }]) => [level, { className, icon: codicon, name: name[lang] }])),
     depth,
     receives,
-    // (The column the line was explained at, when the cursor is on it: the panel keeps open what it drew open while the cursor stays
-    // in the row a click selected, media/panel.js `revealed`.)
-    cursor: p.cursor,
     // (What the marks of the rows say, and the Legend of what is drawn: src/ui/panelRows.ts.)
     rowMarks: model.marks,
     key: model.key,
