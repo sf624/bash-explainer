@@ -41,16 +41,16 @@ describe('the summary row of a line', () => {
   });
 
   it('shows the line\'s sentence where it has no problem, also next to a caveat the catalog keeps a note', () => {
-    assert.deepStrictEqual(row('ls -l', 0, 'en'), { mark: '', text: 'Runs ls (list directory contents) using -l.' });
+    assert.deepStrictEqual(row('ls -l', 0, 'en'), { mark: '', text: 'Runs ls (list directory contents) using -l (long format).' });
     assert.deepStrictEqual(row('cd /tmp; echo `date`', 0, 'ja'), { mark: '', text: 'cd（カレントディレクトリを移動する）を実行する。続けて、echo（引数を空白区切りで標準出力に表示する）を実行する。' });
     // (`ssh-local-expansion` is a caveat, but no problem in the editors.)
     const ssh = explain('ssh host "echo $HOME"', 0, 'en', { sentence: true });
     assert.deepStrictEqual(ssh.noteInfo.map((n) => n.level), ['info']);
-    assert.deepStrictEqual(summaryRow(ssh, shown('ssh host "echo $HOME"', 'en'), 0, 'en'), { mark: '', text: 'Runs ssh.' });
+    assert.deepStrictEqual(summaryRow(ssh, shown('ssh host "echo $HOME"', 'en'), 0, 'en'), { mark: '', text: 'Runs ssh (connect to a remote host over SSH).' });
   });
 
   it('shows only what the Problems list shows: a problem turned off is not in the row', () => {
-    const sentence = { mark: '', text: 'Runs rm using -r (remove directories and their contents) and -f (ignore nonexistent files, never prompt).' };
+    const sentence = { mark: '', text: 'Runs rm (remove files) using -r (remove directories and their contents) and -f (ignore nonexistent files, never prompt).' };
     const rm = 'rm -rf $DIR/*';
     const off = (change: Partial<ReturnType<typeof defaultSettings>>) => ({ ...defaultSettings(), ...change });
     // A comment in the script, for every level's problem of the line.

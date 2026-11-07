@@ -56,7 +56,7 @@ export function ioSaid(lang: Lang, kind: IoKind, fd: string, to: string): string
     case 'dup': return ja ? `${out}は${other}と同じ先へ` : `${out} to where ${other} goes`;
     case 'dupIn': return ja ? `${inp}は${other}と同じところから` : `${inp} from where ${other} reads`;
     case 'heredoc': return ja ? `${inp}はヒアドキュメントから` : `${inp} from the here-document`;
-    case 'herestring': return ja ? `${inp}はヒアストリング${to}から` : `${inp} from the here-string ${to}`;
+    case 'herestring': return ja ? `${inp}はヒアストリング${to}から` : `${inp} from ${to}, as a here-string`;
   }
 }
 
@@ -64,12 +64,40 @@ export function ioSaid(lang: Lang, kind: IoKind, fd: string, to: string): string
 const hasParens = (text: string): boolean => /[()（）]/.test(text.replace(/(`+)(.+?)\1/g, ''));
 
 /**
- * A name and its gloss in parentheses (usability-9.md, Q10): none where the gloss has parentheses of its own, which would
- * nest (`getopts`, `shift`): the name stays, and the rows of the line say what it does.
+ * A gloss without its own parenthetical parts (`( )` and `（ ）`, outside code spans, nested ones too), with the blanks and the
+ * punctuation they leave tidied: "Print lines matching a pattern (regex)" is "Print lines matching a pattern". Undefined where its
+ * parentheses do not pair.
+ */
+function withoutParens(text: string): string | undefined {
+  let out = '';
+  let depth = 0;
+  // (The code spans kept, apart while the blanks and the punctuation around the parts left out are tidied.)
+  const codes: string[] = [];
+  for (let i = 0; i < text.length;) {
+    let n = 0;
+    while (text[i + n] === '`') n++;
+    const close = n ? text.indexOf('`'.repeat(n), i + n) : -1;
+    // (A code span is one piece: `$(…)` holds no parenthesis of the text.)
+    const piece = close > 0 ? text.slice(i, close + n) : text[i];
+    i += piece.length;
+    if (piece === '(' || piece === '（') depth++;
+    else if (piece === ')' || piece === '）') {
+      if (!depth--) return undefined;
+    } else if (!depth) out += piece.length > 1 ? `\u0000${codes.push(piece) - 1}\u0000` : piece;
+  }
+  if (depth) return undefined;
+  const tidy = out.replace(/[ \t]+/g, ' ').replace(/ ([,.;:、。])/g, '$1').replace(/([,;:、]) ?(?=[,;:、。.]|$)/g, '').trim().replace(/[,;:、—–-]$/, '').trim();
+  return tidy.replace(/\u0000(\d+)\u0000/g, (_, k: string) => codes[Number(k)]);
+}
+
+/**
+ * A name and its gloss in parentheses, the gloss without parenthetical parts of its own, which would nest (usability-9.md, Q10, as
+ * revisited on 2026-11-07): `getopts` (parse script options one at a time). The name alone where nothing is left but the name.
  */
 function glossed(lang: Lang, name: string, what: string | undefined): string {
-  if (!what || hasParens(what)) return name;
-  return pick(lang, `${name}（${what}）`, `${name} (${what})`);
+  const short = what === undefined ? undefined : withoutParens(what);
+  if (!short || short.replace(/`/g, '').toLowerCase() === name.replace(/`/g, '').toLowerCase()) return name;
+  return pick(lang, `${name}（${short}）`, `${name} (${short})`);
 }
 
 /**
