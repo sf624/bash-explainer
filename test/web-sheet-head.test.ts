@@ -176,6 +176,39 @@ describe('the web page on a phone: the sheet\'s header row', function () {
     }
   });
 
+  /**
+   * Each segment of the phone's pills (the depth's segments, Read | Edit) as drawn: the gaps between its label's text (a
+   * Range over its text) and the drawn pill's edge or the divider, at its left and right. The pill is the button's ::before,
+   * whose left and right borders are the pill's edge and the divider.
+   */
+  const gaps = (page: Page) => page.evaluate(`['slot-depth1', 'slot-depth2', 'mode-read', 'mode-edit'].map((id) => document.getElementById(id)).filter((b) => b && b.getClientRects().length && getComputedStyle(b, '::before').content !== 'none').map((b) => {
+    const walker = document.createTreeWalker(b, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.textContent.trim() && !n.parentElement.closest('[aria-hidden="true"], .vc-size') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+    const text = walker.nextNode();
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const t = range.getBoundingClientRect();
+    const r = b.getBoundingClientRect();
+    const cs = getComputedStyle(b, '::before');
+    const left = r.left + parseFloat(cs.borderLeftWidth), right = r.right - parseFloat(cs.borderRightWidth);
+    return { id: b.id, text: text.textContent, left: t.left - left, right: right - t.right };
+  })`) as Promise<{ id: string; text: string; left: number; right: number }[]>;
+
+  for (const width of [390, 412, 430, 620]) {
+    it(`centres each segment's label between the pill's edge and the divider, en and ja, ${width} px`, async () => {
+      const seen = new Set<string>();
+      for (const lang of ['en', 'ja'] as const) {
+        const page = await open(width, lang, false);
+        await page.waitForTimeout(300);
+        for (const g of await gaps(page)) {
+          seen.add(g.id);
+          assert.ok(Math.abs(g.left - g.right) <= 1, `${lang} ${width} ${g.id} 「${g.text}」: left ${g.left.toFixed(2)}, right ${g.right.toFixed(2)}`);
+        }
+        await page.context().close();
+      }
+      assert.ok(seen.has('mode-read') && seen.has('mode-edit'), [...seen].join());
+    });
+  }
+
   it('says the row to a screen reader as before: the tabs, the depth, and Copy as Markdown in the menu', async () => {
     const page = await open(430, 'ja', true);
     await menuItem(page, '#menu-clear');
