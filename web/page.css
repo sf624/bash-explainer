@@ -2447,6 +2447,11 @@ body:has(> #settings-dialog.dragging) main {
   background: var(--vscode-dropdown-background);
 }
 
+/* (As the depth's segments: one more pixel on the first one's left, for its edge, centres its label.) */
+.read-edit button:first-child {
+  padding-left: 7px;
+}
+
 .read-edit button:first-child::before {
   border-right: 0;
   border-radius: 15px 0 0 15px;
@@ -2658,8 +2663,16 @@ body:has(> #settings-dialog.dragging) main {
 :where(html.narrow) .vc[data-form="segments"] .vc-options button {
   position: relative;
   z-index: 0;
+  justify-content: center;
   border: 0;
   background: transparent;
+}
+
+/* (Each label is centred between the pill's edge and the divider. The first segment's box has no border on its right,
+   where the next one's divider lies: one more pixel of padding on its left makes up for its own left edge. Before, a
+   short name was set at the left of its 44 px box: 「概要」 4 px from the edge and 13 px from the divider.) */
+:where(html.narrow) .vc[data-form="segments"] .vc-options button:first-child {
+  padding-left: 6px;
 }
 
 :where(html.narrow) .vc[data-form="segments"] .vc-options button::before {
