@@ -18,6 +18,26 @@ describe('the moves of the cursor the panel opens a stage for', () => {
     assert.strictEqual(m.take(), false);
   });
 
+  it("reads the web page's editor updates: a selection by a key, a click or a tap with no edit is a move", () => {
+    const m = new CursorMoves();
+    const tr = (event: string | undefined, selection = true) => ({ selection: selection ? {} : undefined, isUserEvent: (e: string) => !!event && (event === e || event.startsWith(e + '.')) });
+    const update = (docChanged: boolean, selectionSet: boolean, ...transactions: ReturnType<typeof tr>[]) => {
+      m.editorUpdate({ docChanged, selectionSet, transactions });
+      return m.take();
+    };
+    assert.strictEqual(update(false, true, tr('select.pointer')), true, 'a click');
+    assert.strictEqual(update(false, true, tr('select')), true, 'a key');
+    // (Typing and a paste set a selection too, with the text; the panel's reveal sets one with no event.)
+    assert.strictEqual(update(true, true, tr('input.type')), false, 'typing');
+    assert.strictEqual(update(true, true, tr('input.paste')), false, 'a paste');
+    assert.strictEqual(update(false, true, tr(undefined)), false, "the panel's reveal");
+    assert.strictEqual(update(false, true, tr(undefined), tr('select', false)), false, 'no selection of the reader');
+    // (An update that neither changes the text nor sets a selection leaves a move to send.)
+    m.cursor(true);
+    m.editorUpdate({ docChanged: false, selectionSet: false, transactions: [] });
+    assert.strictEqual(m.take(), true);
+  });
+
   it("tells VS Code's selection changes apart by the document's version: a key's or a pointer's with none since is a move", () => {
     const m = new CursorMoves();
     const doc = { version: 1 };

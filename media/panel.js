@@ -181,9 +181,9 @@
     if (msg.type === 'themeColours') setThemeVars(msg.vars);
     if (msg.type === 'update') {
       // (Without the line's problems: they come a moment after the line is explained, and change only its squiggles.)
-      const key = JSON.stringify({ ...msg, marks: undefined, around: undefined });
-      // (A move of the cursor is drawn even to the same place: a tap on a stage the viewer folded opens it again.)
-      if (key === lastUpdate && !msg.moved) {
+      const key = JSON.stringify({ ...msg, marks: undefined, around: undefined, moved: undefined });
+      // (A move of the cursor to the same place is drawn again only where it opens a stage drawn folded: a tap on a stage the viewer folded.)
+      if (key === lastUpdate && !(msg.moved && opensAtCursor(msg.rows))) {
         // (The pointers are drawn again only when they changed: a focus on one stays, panel-redesign.md section 5.)
         if (JSON.stringify(msg.around ?? []) !== lastAround) drawAround(msg.around ?? []);
         return squiggleLine(msg.marks ?? []);
@@ -254,6 +254,9 @@
     $('empty').textContent = message;
     $('empty').hidden = false;
   }
+
+  /** Whether a stage the cursor is in (`atCursor`) is drawn folded: a move of the cursor opens it. */
+  const opensAtCursor = (/** @type {any[]} */ rows) => rows.some((r) => (r.atCursor && $('tree').querySelector(`li[data-key="${CSS.escape(r.key)}"]`)?.classList.contains('collapsed')) || opensAtCursor(r.children));
 
   function render(msg) {
     const ex = msg.explanation;
@@ -2138,9 +2141,11 @@
 
   /** Before the rows of another depth are drawn: the first row on the screen that they still have stays where it is. */
   function holdForDepth(/** @type {any[]} */ rows) {
+    // (Only the rows the new depth shows: not those under a row it draws folded, as a pipeline's stages start at depth 2.)
     const keys = new Set();
     const add = (/** @type {any} */ r) => {
       keys.add(r.key);
+      if (r.children.length && (foldChoices.get(r.key) ?? r.folded === true)) return;
       r.children.forEach(add);
     };
     rows.forEach(add);

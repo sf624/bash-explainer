@@ -174,10 +174,8 @@ const readEdit = new ReadEdit({
 let codesSeen: string[] = [];
 /** The problems the editor shows, for the panel's squiggles. */
 let problemsShown: DocumentIssue[] = [];
-/** Whether the sample button is replacing the text, so that the offer to undo it stays. */
 let timer: ReturnType<typeof setTimeout> | undefined;
-/** Whether the reader moved the cursor with no edit since the line was last sent (in panel mode: the page around says so). */
-const moves = new CursorMoves();
+const moves = new CursorMoves(); // the reader's moves of the cursor not yet sent to the panel (in panel mode, from the page around)
 /** The live region that says what the line the cursor moved to is about (the editor page only). */
 let announcer: LineAnnouncer | undefined;
 
@@ -226,9 +224,7 @@ const editor: Editor = new Editor({
     if (u.docChanged) showFileSoon();
     if (u.docChanged) readEdit.textChanged();
     if (Editor.problemsMoved(u)) strip?.place();
-    // (A move of the cursor the reader made, with no edit: a key, a click, a tap, `select…`. A selection the page sets, as the panel's
-    // reveal, is none; nor is typing or a paste, which leave the cursor at the end of what they put.)
-    if (u.docChanged || u.selectionSet) moves.cursor(!u.docChanged && u.transactions.some((tr) => tr.selection && tr.isUserEvent('select')));
+    moves.editorUpdate(u);
     // In panel mode the page around sends every change as a message, which is handled at once.
     if (mode.panel || (!u.docChanged && !u.selectionSet)) return;
     clearTimeout(timer);

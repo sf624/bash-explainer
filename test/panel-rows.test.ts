@@ -1244,8 +1244,9 @@ describe('the panel\'s row model', () => {
           for (const r of one) assert.deepStrictEqual(r.steps, keys.get(r.key)!.steps?.acts ? keys.get(r.key)!.steps : undefined, at);
           const ones = new Set(one.map((r) => r.key));
           assert.deepStrictEqual(two.filter((r) => r.steps?.acts && !ones.has(r.key)).map((r) => r.label), [], at);
-          // Every row of depth 1 is outside any row that starts folded.
-          const inFold = (rs: readonly ModelRow[], folded: boolean): ModelRow[] => rs.flatMap((r) => [...(folded ? [r] : []), ...inFold(r.children, folded || !!r.folded)]);
+          // Every row of depth 1 is outside any row that starts folded, but a pipeline's stage, which folds whole with its own row (`foldStages`).
+          const stage = (rs: readonly ModelRow[], r: ModelRow) => !r.connector && rs.some((c) => c.connector);
+          const inFold = (rs: readonly ModelRow[], folded: boolean): ModelRow[] => rs.flatMap((r) => [...(folded ? [r] : []), ...inFold(r.children, folded || (!!r.folded && !stage(rs, r)))]);
           assert.deepStrictEqual(inFold(rowModel(ex, D2, 'en').rows, false).filter((r) => r.comesAt === 1).map((r) => r.label), [], at);
           // Every text of a token on the line is said (a pipe's says it in words of its own).
           const said = new Set(two.flatMap((r) => [r.text, ...r.more.map((m) => m.map((p) => p.text).join(''))]));

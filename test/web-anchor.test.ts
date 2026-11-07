@@ -263,7 +263,8 @@ describe('the panel keeps the row acted on in place', function () {
       for (const to of [2, 1, 2] as const) {
         await scrollTo(panel, Math.round(await panel.evaluate('(document.documentElement.scrollHeight - innerHeight) / 2') as number));
         const on = await onScreen(panel);
-        const top = (key: string) => panel.evaluate(`document.querySelector('#tree li[data-key="${key}"] > .item > .row')?.getBoundingClientRect().top ?? null`) as Promise<number | null>;
+        // (A row hidden in a fold is not shown: at depth 2 a pipeline's stages start folded.)
+        const top = (key: string) => panel.evaluate(`(() => { const r = document.querySelector('#tree li[data-key="${key}"] > .item > .row'); return r && r.getClientRects().length ? r.getBoundingClientRect().top : null; })()`) as Promise<number | null>;
         const before = await Promise.all(on.map(top));
         if (host === code) await panel.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: '${to}', bubbles: true }))`);
         else await chooseDepth(panel.page(), to);

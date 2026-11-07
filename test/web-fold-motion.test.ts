@@ -162,10 +162,11 @@ describe('the panel: boxes that fold and unfold move', function () {
   for (const [depth, path] of [[1, '0.0.1'], [2, '0.0.2'], [1, '0.1.0.0.0.0']] as const) {
     it(`a row that holds an example folds the example with its parts: the line of the report, the row ${path} at depth ${depth}`, async () => {
       const { page, panel, close } = await open(LINE, {}, depth);
-      // (At depth 2 the cursor goes off the pipeline, to `exit 1`: with it on `grep`, the stage of `sort` starts folded, usability-9.md, 2.7.)
+      // (At depth 2 the stage of `sort` starts folded, as every stage does: the keys move the cursor into it, which opens it, usability-9.md, 2.7.)
       if (depth === 2) {
         await page.locator('.cm-content').focus();
-        await page.keyboard.press('End');
+        await page.keyboard.press('Home');
+        for (let i = 0; i <= LINE.indexOf('sort -u'); i++) await page.keyboard.press('ArrowRight');
         await until('the stage of sort open', () => panel.evaluate(`!!document.querySelector('#tree li[data-path="${path}"]:not(.collapsed)')`), (open) => open === true);
       }
       const boxes = under(path);
