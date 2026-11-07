@@ -446,6 +446,12 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
     // (Redirections whose text has parentheses of their own follow a Japanese clause, not in parentheses.)
     assert.strictEqual(said('echo a {fd}>x', 0, 'ja'), '`echo`（引数を空白区切りで標準出力に表示する）を実行する。入出力: ファイル `x` を書き込み用（既存の内容は上書き）で開き、'
       + '空いているファイルディスクリプタ（10 以上）の番号を変数 `fd` に入れる。');
+    // (A gloss without its parenthetical parts, from one rule (`glossed`): a code span's parentheses stay; nothing left but the name, or
+    // parentheses that do not pair, and the name is alone. A summary of the settings goes the same way.)
+    const custom = (summary: string) => new Analyzer('en').explainLine(parser.parse('mytool x'), 0, 'bash', { sentence: true, customCommands: { mytool: { summary } } }).sentence;
+    assert.deepStrictEqual(['Deploy the app (to prod)', 'Run `a (b)` now, (later)', 'mytool (a tool)', '(only a note)', 'Deploy (beta', 'Deploy ) now'].map(custom), [
+      'Runs `mytool` (deploy the app).', 'Runs `mytool` (run `a (b)` now).', 'Runs `mytool`.', 'Runs `mytool`.', 'Runs `mytool`.', 'Runs `mytool`.',
+    ]);
     // (A function of bats-assert: what it checks, without when it fails, which its summary goes on to say.)
     assert.strictEqual(test(2, 'en'), 'Runs `assert_success` (checks that `$status` is 0).');
   });
