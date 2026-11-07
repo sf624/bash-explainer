@@ -102,3 +102,11 @@ GNU make runs a recipe line directly as a program, with no shell, when the line 
 - A line continued with a backslash is read as make joins it: a single quote keeps the backslash and the newline, anywhere else they vanish.
 - The first word of such a line is a program, never a keyword of bash: `time make` runs `/usr/bin/time`, and `until false` runs a program named `until` (make says it is not found). Docker's exec form reads its first word the same way.
 - An unquoted `$@` or `$<` in such a line is not advised to be quoted (the pitfall about splitting and globbing): no shell reads it, and `"$@"` would send the line through one. Its note says "expanded by make before the line runs", not "before the shell runs".
+
+### `xargs` options that cancel each other
+
+`-n`, `-L`/`-l` and `-I`/`-i` do not combine; GNU xargs (findutils 4.9) keeps one. The explainer reads them in order, as xargs does, marks the ignored option on its row ("Ignored: the later `-I` takes over"), and the worked example follows the one in effect:
+
+- A later option wins and the earlier one is ignored, with a warning on stderr: `-n1 -I{}` and `-L1 -I{}` run once per line, replacing `{}` (xargs: "options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value"); `-I{} -L1` runs `echo {} a b` (the replacement is not done; before, the example showed it done); `-n1 -L1` takes `-L` and `-L1 -n1` takes `-n`, so the second runs `echo X a`, `echo X b`… (before, the example showed `echo X a b`).
+- `-I{} -n1` warns nothing and changes nothing (`-I` already runs one argument per command): no row is marked. Any other count after `-I` wins: `-I{} -n2` runs `echo X {} a b` (the replacement is dropped; xargs: "options --replace and --max-args/-n are mutually exclusive, ignoring previous --replace value"), and the row of `-I` says it is ignored. Before, the row of `-n2` was not marked and the example replaced `{}`.
+- `-I{} -n1 -L1` takes `-L`.

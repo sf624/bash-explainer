@@ -9,6 +9,7 @@ import type { Text } from '../i18n';
 import { EnvSplitError, splitEnvString } from './envsplit';
 import { type ParserRules, rulesOf } from './parsers';
 import { type Depends, type WordReadings, wordReadings } from './profiles';
+import { ignoring, settleModes } from './modes';
 import { flexible, readingsOf, type ReadingsTable } from './readings';
 import { type Group, optionFields, regroup, withParse } from './regroup';
 import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
@@ -64,7 +65,7 @@ export type ArgRole =
    * `value` is a value written in the same word (`-n5`, `--file=x`); `missing`, a value it needs that no word gives.
    * `readings`, as an operand's (`grep -e $p -i f`: with `$p` empty, `-i` is the value of `-e`).
    */
-  | { role: 'option'; flag: string; spec: OptionSpec; text: Text; part?: Range; value?: ValueRole; disables?: boolean; missing?: boolean; readings?: Readings }
+  | { role: 'option'; flag: string; spec: OptionSpec; text: Text; part?: Range; value?: ValueRole; disables?: boolean; missing?: boolean; readings?: Readings; ignored?: { by: string } }
   /** A word of several short options (`-xvf`, `-rn5`): one role per letter, in order, with their parts; `readings` as an option's. */
   | { role: 'cluster'; letters: ArgRole[]; readings?: Readings }
   /** An option recognized by its form (`kill -TERM`, `head -5`); `open` for `-` and an expansion (`head -$n`). */
@@ -399,7 +400,8 @@ class Reader {
       if (rules.optionsFirst || this.startsCommand(st, [...operands, i]) || ends) endOpts = true;
       operands.push(i);
     }
-    parse.mode = chooseMode(spec, given);
+    const settled = settleModes(spec, [...roles].sort((a, b) => a[0] - b[0]), this.words);
+    parse.mode = settled ? settled.mode : chooseMode(spec, given);
     if (spec.operands) {
       const words = operands.map((i) => this.words[i]);
       const alts = spec.operands.flatMap((alt, index) => (conditionHolds(alt.when, given, parse.mode, words) ? [{ alt, index }] : []));
@@ -411,7 +413,7 @@ class Reader {
       this.placeOperands(parse, st, rest, [{ alt: { pattern: then }, index: -1 }], to, false);
     }
     const first: { mode?: string; refused?: boolean } = {};
-    for (const [word, role] of [...roles].sort((a, b) => a[0] - b[0])) parse.roles.push({ word, role: conflicting(spec, inMode(role, parse.mode), first) });
+    for (const [word, role] of [...roles].sort((a, b) => a[0] - b[0])) parse.roles.push({ word, role: conflicting(spec, inMode(settled ? ignoring(role, settled.ignored) : role, parse.mode), first) });
     if (first.refused) parse.refused = true;
     if (st.refusal) parse.refusal = st.refusal;
     const option = sole && spec.soleUnlessEnv ? parse.roles[0].role : undefined;

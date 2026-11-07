@@ -280,6 +280,41 @@ describe('argv interpreter: commands of the dictionary', () => {
     assert.deepStrictEqual(roles('xargs -r$x'), ['-r$x: open -r']);
   });
 
+  it('xargs: options that cancel each other (ModeSpec.cancels, agreesWith): the mode left, and the options ignored', () => {
+    const ignored = (line: string) => {
+      const p = parseOf(line);
+      return { mode: p.mode, ignored: p.roles.flatMap(({ role }) => (role.role === 'cluster' ? role.letters : [role])).flatMap((r) => (r.role === 'option' && r.ignored ? [`${r.flag}<${r.ignored.by}`] : [])) };
+    };
+    assert.deepStrictEqual(ignored('xargs -n1 -I{} echo'), { mode: 'replace', ignored: ['-n<-I'] });
+    // `-n1` after `-I` agrees with it (one argument per run): nothing is ignored. Another count drops the replacement.
+    assert.deepStrictEqual(ignored('xargs -I{} -n1 echo'), { mode: 'replace', ignored: [] });
+    assert.deepStrictEqual(ignored('xargs -I{} -n 1 echo'), { mode: 'replace', ignored: [] });
+    assert.deepStrictEqual(ignored('xargs -I{} -n01 echo'), { mode: 'replace', ignored: [] });
+    assert.deepStrictEqual(ignored('xargs -I{} -rn1 echo'), { mode: 'replace', ignored: [] });
+    assert.deepStrictEqual(ignored('xargs -I{} -rn 1 echo'), { mode: 'replace', ignored: [] });
+    assert.deepStrictEqual(ignored('xargs -I{} -n2 echo'), { mode: 'args', ignored: ['-I<-n'] });
+    assert.deepStrictEqual(ignored('xargs -I{} -n 2 echo'), { mode: 'args', ignored: ['-I<-n'] });
+    assert.deepStrictEqual(ignored('xargs -I{} -rn 2 echo'), { mode: 'args', ignored: ['-I<-n'] });
+    assert.deepStrictEqual(ignored('xargs -I{} -nx echo'), { mode: 'args', ignored: ['-I<-n'] });
+    // (A count that is missing is not known either.)
+    assert.deepStrictEqual(ignored('xargs -I{} -n'), { mode: 'replace', ignored: [] });
+    // A count not known may be 1: nothing is said to be ignored.
+    assert.deepStrictEqual(ignored('xargs -I{} -n$x echo'), { mode: 'replace', ignored: [] });
+    assert.deepStrictEqual(ignored('xargs -I{} -n2 -n1 echo'), { mode: 'args', ignored: ['-I<-n'] });
+    assert.deepStrictEqual(ignored('xargs -L1 -I{} -n2 echo'), { mode: 'args', ignored: ['-L<-I', '-I<-n'] });
+    assert.deepStrictEqual(ignored('xargs -I{} -L1 echo'), { mode: 'lines', ignored: ['-I<-L'] });
+    assert.deepStrictEqual(ignored('xargs -L1 -n1 echo'), { mode: 'args', ignored: ['-L<-n'] });
+    assert.deepStrictEqual(ignored('xargs -n1 -L1 echo'), { mode: 'lines', ignored: ['-n<-L'] });
+    // `-I{} -n1 -L1`: -n1 agrees with -I; then -L takes over from -I.
+    assert.deepStrictEqual(ignored('xargs -I{} -n1 -L1 echo'), { mode: 'lines', ignored: ['-I<-L'] });
+    // Same mode twice: both stay; a cluster's letters are read in order.
+    assert.deepStrictEqual(ignored('xargs -L1 -L2 echo'), { mode: 'lines', ignored: [] });
+    assert.deepStrictEqual(ignored('xargs -rtn1 -L1 echo'), { mode: 'lines', ignored: ['-n<-L'] });
+    assert.deepStrictEqual(ignored('xargs -L1 -r echo'), { mode: 'lines', ignored: [] });
+    assert.deepStrictEqual(ignored('xargs -r echo'), { mode: undefined, ignored: [] });
+    assert.ok(roles('xargs -n1 -I{} echo')[0].startsWith('-n1'));
+  });
+
   it('`--` ends the options, except for echo; a builtin reads options before its first operand', () => {
     assert.deepStrictEqual(roles('rm -- -f x'), ['--: end of options', '-f: ARG1', 'x: ARG1']);
     assert.deepStrictEqual(roles('rm -f -- -x').map((l) => l.split(':')[0]), ['-f', '--', '-x']);
