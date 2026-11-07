@@ -1,3 +1,4 @@
+import { codeShown } from '../messages-values';
 import { Text, tx } from '../i18n';
 import type { EmbeddedLang } from '../embedded/types';
 import { splitReplacement } from '../expansion';
@@ -186,30 +187,36 @@ export function cannotAssign(shown: string): boolean {
   return /^\$(?:[1-9]\d*|[@*])$/.test(shown);
 }
 
+/**
+ * A value in a Japanese sentence between kana, the space before it included: a code span (with a space on each side, and none where the
+ * name's parenthesis ends it), or the bare word for an empty value, which needs none.
+ */
+const inJa = (v: string): string => (v === '' ? codeShown(v, true) : ` ${codeShown(v, true, ' ')}`);
+
 /** `${var<op>arg}` operators. */
 export const expansionOps: Record<string, (v: string, a: string) => Text> = {
-  ':-': (v, a) => tx(`\`${v}\` が未設定または空なら \`${a}\` を使う（変数自体は変更しない）`, `Use \`${a}\` if \`${v}\` is unset or empty (does not assign)`),
-  '-': (v, a) => tx(`\`${v}\` が未設定なら \`${a}\` を使う（空文字はそのまま）`, `Use \`${a}\` if \`${v}\` is unset (empty is kept)`),
-  ':=': (v, a) => cannotAssign(v) ? tx(`\`${v}\` が未設定または空なら、bash は「cannot assign in this way」のエラーにする（位置パラメータには代入できない。\`${a}\` は使われない）`, `If \`${v}\` is unset or empty, bash fails with "cannot assign in this way" (the arguments cannot be assigned to; \`${a}\` is not used)`) : tx(`\`${v}\` が未設定または空なら \`${a}\` を代入してその値を使う`, `If \`${v}\` is unset or empty, assign \`${a}\` to it and use that`),
-  '=': (v, a) => cannotAssign(v) ? tx(`\`${v}\` が未設定なら、bash は「cannot assign in this way」のエラーにする（位置パラメータには代入できない。\`${a}\` は使われない）`, `If \`${v}\` is unset, bash fails with "cannot assign in this way" (the arguments cannot be assigned to; \`${a}\` is not used)`) : tx(`\`${v}\` が未設定なら \`${a}\` を代入してその値を使う`, `If \`${v}\` is unset, assign \`${a}\` to it`),
-  ':+': (v, a) => tx(`\`${v}\` が設定済みかつ空でなければ \`${a}\` を使い、そうでなければ空`, `Use \`${a}\` if \`${v}\` is set and non-empty, otherwise nothing`),
-  '+': (v, a) => tx(`\`${v}\` が設定済みなら \`${a}\` を使い、未設定なら空`, `Use \`${a}\` if \`${v}\` is set, otherwise nothing`),
+  ':-': (v, a) => tx(`\`${v}\` が未設定または空なら${inJa(a)}を使う（変数自体は変更しない）`, `Use ${codeShown(a, false)} if \`${v}\` is unset or empty (does not assign)`),
+  '-': (v, a) => tx(`\`${v}\` が未設定なら${inJa(a)}を使う（空文字はそのまま）`, `Use ${codeShown(a, false)} if \`${v}\` is unset (empty is kept)`),
+  ':=': (v, a) => cannotAssign(v) ? tx(`\`${v}\` が未設定または空なら、bash は「cannot assign in this way」のエラーにする（位置パラメータには代入できない。${codeShown(a, true, ' ')}は使われない）`, `If \`${v}\` is unset or empty, bash fails with "cannot assign in this way" (the arguments cannot be assigned to; ${codeShown(a, false)} is not used)`) : tx(`\`${v}\` が未設定または空なら${inJa(a)}を代入してその値を使う`, `If \`${v}\` is unset or empty, assign ${codeShown(a, false)} to it and use that`),
+  '=': (v, a) => cannotAssign(v) ? tx(`\`${v}\` が未設定なら、bash は「cannot assign in this way」のエラーにする（位置パラメータには代入できない。${codeShown(a, true, ' ')}は使われない）`, `If \`${v}\` is unset, bash fails with "cannot assign in this way" (the arguments cannot be assigned to; ${codeShown(a, false)} is not used)`) : tx(`\`${v}\` が未設定なら${inJa(a)}を代入してその値を使う`, `If \`${v}\` is unset, assign ${codeShown(a, false)} to it`),
+  ':+': (v, a) => tx(`\`${v}\` が設定済みかつ空でなければ${inJa(a)}を使い、そうでなければ空`, `Use ${codeShown(a, false)} if \`${v}\` is set and non-empty, otherwise nothing`),
+  '+': (v, a) => tx(`\`${v}\` が設定済みなら${inJa(a)}を使い、未設定なら空`, `Use ${codeShown(a, false)} if \`${v}\` is set, otherwise nothing`),
   ':?': (v, a) => tx(`\`${v}\` が未設定または空ならエラーメッセージ「${a ? messageText(a) : 'parameter null or not set'}」を出してスクリプトを終了`, `Exit with error "${a ? messageText(a) : 'parameter null or not set'}" if \`${v}\` is unset or empty`),
   '?': (v, a) => tx(`\`${v}\` が未設定ならエラーメッセージ「${a ? messageText(a) : 'parameter not set'}」を出して終了`, `Exit with error "${a ? messageText(a) : 'parameter not set'}" if \`${v}\` is unset`),
-  '#': (v, a) => tx(`\`${v}\` の先頭からパターン \`${a}\` に一致する最短部分を削除`, `Remove the shortest prefix of \`${v}\` matching \`${a}\``),
-  '##': (v, a) => tx(`\`${v}\` の先頭からパターン \`${a}\` に一致する最長部分を削除`, `Remove the longest prefix of \`${v}\` matching \`${a}\``),
-  '%': (v, a) => tx(`\`${v}\` の末尾からパターン \`${a}\` に一致する最短部分を削除（拡張子除去などに使う）`, `Remove the shortest suffix of \`${v}\` matching \`${a}\` (e.g. strip an extension)`),
-  '%%': (v, a) => tx(`\`${v}\` の末尾からパターン \`${a}\` に一致する最長部分を削除`, `Remove the longest suffix of \`${v}\` matching \`${a}\``),
-  '/': (v, a) => rep(a) === '' ? tx(`\`${v}\` 内で最初に \`${pat(a)}\` に一致した部分を削除`, `Delete the first match of \`${pat(a)}\` in \`${v}\``) : tx(`\`${v}\` 内で最初に \`${pat(a)}\` に一致した部分を \`${rep(a)}\` に置換`, `Replace the first match of \`${pat(a)}\` in \`${v}\` with \`${rep(a)}\``),
-  '//': (v, a) => rep(a, true) === '' ? tx(`\`${v}\` 内で \`${pat(a, true)}\` に一致する部分をすべて削除`, `Delete every match of \`${pat(a, true)}\` in \`${v}\``) : tx(`\`${v}\` 内で \`${pat(a, true)}\` に一致する部分をすべて \`${rep(a, true)}\` に置換`, `Replace every match of \`${pat(a, true)}\` in \`${v}\` with \`${rep(a, true)}\``),
-  '/#': (v, a) => rep(a) === '' ? tx(`\`${v}\` の先頭が \`${pat(a)}\` に一致すれば削除`, `Delete \`${pat(a)}\` at the start of \`${v}\``) : tx(`\`${v}\` の先頭が \`${pat(a)}\` に一致すれば \`${rep(a)}\` に置換`, `Replace \`${pat(a)}\` at the start of \`${v}\` with \`${rep(a)}\``),
-  '/%': (v, a) => rep(a) === '' ? tx(`\`${v}\` の末尾が \`${pat(a)}\` に一致すれば削除`, `Delete \`${pat(a)}\` at the end of \`${v}\``) : tx(`\`${v}\` の末尾が \`${pat(a)}\` に一致すれば \`${rep(a)}\` に置換`, `Replace \`${pat(a)}\` at the end of \`${v}\` with \`${rep(a)}\``),
-  '^': (v, a) => a ? tx(`\`${v}\` の先頭文字が \`${a}\` に一致すれば大文字にする`, `Uppercase the first character of \`${v}\` if it matches \`${a}\``) : tx(`\`${v}\` の先頭文字を大文字にする`, `Uppercase the first character of \`${v}\``),
-  '^^': (v, a) => a ? tx(`\`${v}\` の文字のうち \`${a}\` に一致するものだけを大文字にする`, `Uppercase the characters of \`${v}\` that match \`${a}\``) : tx(`\`${v}\` を全て大文字にする`, `Uppercase all of \`${v}\``),
-  ',': (v, a) => a ? tx(`\`${v}\` の先頭文字が \`${a}\` に一致すれば小文字にする`, `Lowercase the first character of \`${v}\` if it matches \`${a}\``) : tx(`\`${v}\` の先頭文字を小文字にする`, `Lowercase the first character of \`${v}\``),
-  ',,': (v, a) => a ? tx(`\`${v}\` の文字のうち \`${a}\` に一致するものだけを小文字にする`, `Lowercase the characters of \`${v}\` that match \`${a}\``) : tx(`\`${v}\` を全て小文字にする`, `Lowercase all of \`${v}\``),
-  '~': (v, a) => a ? tx(`\`${v}\` の先頭文字が \`${a}\` に一致すれば大文字と小文字を入れ替える`, `Swap the case of the first character of \`${v}\` if it matches \`${a}\``) : tx(`\`${v}\` の先頭文字の大文字と小文字を入れ替える`, `Swap the case of the first character of \`${v}\``),
-  '~~': (v, a) => a ? tx(`\`${v}\` の文字のうち \`${a}\` に一致するものだけ大文字と小文字を入れ替える`, `Swap the case of the characters of \`${v}\` that match \`${a}\``) : tx(`\`${v}\` の大文字と小文字をすべて入れ替える`, `Swap the case of every character of \`${v}\``),
+  '#': (v, a) => tx(`\`${v}\` の先頭からパターン${inJa(a)}に一致する最短部分を削除`, `Remove the shortest prefix of \`${v}\` matching ${codeShown(a, false)}`),
+  '##': (v, a) => tx(`\`${v}\` の先頭からパターン${inJa(a)}に一致する最長部分を削除`, `Remove the longest prefix of \`${v}\` matching ${codeShown(a, false)}`),
+  '%': (v, a) => tx(`\`${v}\` の末尾からパターン${inJa(a)}に一致する最短部分を削除（拡張子除去などに使う）`, `Remove the shortest suffix of \`${v}\` matching ${codeShown(a, false, '', 'e.g. strip an extension')}`),
+  '%%': (v, a) => tx(`\`${v}\` の末尾からパターン${inJa(a)}に一致する最長部分を削除`, `Remove the longest suffix of \`${v}\` matching ${codeShown(a, false)}`),
+  '/': (v, a) => rep(a) === '' ? tx(`\`${v}\` 内で最初に${inJa(pat(a))}に一致した部分を削除`, `Delete the first match of ${codeShown(pat(a), false)} in \`${v}\``) : tx(`\`${v}\` 内で最初に${inJa(pat(a))}に一致した部分を${inJa(rep(a))}に置換`, `Replace the first match of ${codeShown(pat(a), false)} in \`${v}\` with ${codeShown(rep(a), false)}`),
+  '//': (v, a) => rep(a, true) === '' ? tx(`\`${v}\` 内で${inJa(pat(a, true))}に一致する部分をすべて削除`, `Delete every match of ${codeShown(pat(a, true), false)} in \`${v}\``) : tx(`\`${v}\` 内で${inJa(pat(a, true))}に一致する部分をすべて${inJa(rep(a, true))}に置換`, `Replace every match of ${codeShown(pat(a, true), false)} in \`${v}\` with ${codeShown(rep(a, true), false)}`),
+  '/#': (v, a) => rep(a) === '' ? tx(`\`${v}\` の先頭が${inJa(pat(a))}に一致すれば削除`, `Delete ${codeShown(pat(a), false)} at the start of \`${v}\``) : tx(`\`${v}\` の先頭が${inJa(pat(a))}に一致すれば${inJa(rep(a))}に置換`, `Replace ${codeShown(pat(a), false)} at the start of \`${v}\` with ${codeShown(rep(a), false)}`),
+  '/%': (v, a) => rep(a) === '' ? tx(`\`${v}\` の末尾が${inJa(pat(a))}に一致すれば削除`, `Delete ${codeShown(pat(a), false)} at the end of \`${v}\``) : tx(`\`${v}\` の末尾が${inJa(pat(a))}に一致すれば${inJa(rep(a))}に置換`, `Replace ${codeShown(pat(a), false)} at the end of \`${v}\` with ${codeShown(rep(a), false)}`),
+  '^': (v, a) => a ? tx(`\`${v}\` の先頭文字が${inJa(a)}に一致すれば大文字にする`, `Uppercase the first character of \`${v}\` if it matches ${codeShown(a, false)}`) : tx(`\`${v}\` の先頭文字を大文字にする`, `Uppercase the first character of \`${v}\``),
+  '^^': (v, a) => a ? tx(`\`${v}\` の文字のうち${inJa(a)}に一致するものだけを大文字にする`, `Uppercase the characters of \`${v}\` that match ${codeShown(a, false)}`) : tx(`\`${v}\` を全て大文字にする`, `Uppercase all of \`${v}\``),
+  ',': (v, a) => a ? tx(`\`${v}\` の先頭文字が${inJa(a)}に一致すれば小文字にする`, `Lowercase the first character of \`${v}\` if it matches ${codeShown(a, false)}`) : tx(`\`${v}\` の先頭文字を小文字にする`, `Lowercase the first character of \`${v}\``),
+  ',,': (v, a) => a ? tx(`\`${v}\` の文字のうち${inJa(a)}に一致するものだけを小文字にする`, `Lowercase the characters of \`${v}\` that match ${codeShown(a, false)}`) : tx(`\`${v}\` を全て小文字にする`, `Lowercase all of \`${v}\``),
+  '~': (v, a) => a ? tx(`\`${v}\` の先頭文字が${inJa(a)}に一致すれば大文字と小文字を入れ替える`, `Swap the case of the first character of \`${v}\` if it matches ${codeShown(a, false)}`) : tx(`\`${v}\` の先頭文字の大文字と小文字を入れ替える`, `Swap the case of the first character of \`${v}\``),
+  '~~': (v, a) => a ? tx(`\`${v}\` の文字のうち${inJa(a)}に一致するものだけ大文字と小文字を入れ替える`, `Swap the case of the characters of \`${v}\` that match ${codeShown(a, false)}`) : tx(`\`${v}\` の大文字と小文字をすべて入れ替える`, `Swap the case of every character of \`${v}\``),
   ':': (v, a) => tx(`\`${v}\` の部分文字列（オフセット:長さ = \`${a}\`）を取り出す`, `Substring of \`${v}\` (offset:length = \`${a}\`)`),
   '@': (v, a) => tx(`\`${v}\` に変換 \`@${a}\` を適用（Q:クォート, E:エスケープ展開, U/L:大小文字, a:属性 など）`, `Apply transformation \`@${a}\` to \`${v}\` (Q quote, E escapes, U/L case, a attributes…)`),
 };

@@ -989,4 +989,4 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
   };
 }
 
-export { EMPTY_WORD, shownPiece, shownWord, SPACE_MARK, type SpaceEnds, valueSaid, type ValueSaid } from './messages-values';
+export { blankName, blankWord, codeShown, EMPTY_WORD, emptyName, shownPiece, shownWord, SPACE_MARK, type SpaceEnds, valueSaid, type ValueSaid } from './messages-values';

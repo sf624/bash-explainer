@@ -1,3 +1,4 @@
+import { codeShown } from '../messages-values';
 import { ordinal, type Lang } from '../i18n';
 import { explainRegex, RegexOptions } from './regex';
 import { EmbeddedToken, hasHole, holeStop, holeTokens, pick, shift } from './types';
@@ -276,8 +277,8 @@ class PerlExplainer {
     const pat = src.slice(patStart, patEnd);
     const rep = src.slice(repStart, repEnd);
     const kids: EmbeddedToken[] = [
-      this.tok(patStart, patEnd, 'pattern', s(`検索パターン（Perl の正規表現）\`${pat}\``, `Pattern (Perl regex) \`${pat}\``), shift(explainRegex(pat, 'pcre', this.lang, regexOptions(open, close, flags)), patStart)),
-      this.tok(repStart, repEnd, 'string', s(`置換後の文字列 \`${rep}\`（\`$1\` などはグループの内容）`, `Replacement \`${rep}\` (\`$1\`… are the groups)`), [
+      this.tok(patStart, patEnd, 'pattern', s(`検索パターン（Perl の正規表現）${codeShown(pat, true)}`, `Pattern (Perl regex) ${codeShown(pat, false)}`), shift(explainRegex(pat, 'pcre', this.lang, regexOptions(open, close, flags)), patStart)),
+      this.tok(repStart, repEnd, 'string', s(`置換後の文字列 ${codeShown(rep, true, '', '`$1` などはグループの内容')}`, `Replacement ${codeShown(rep, false, '', '`$1`… are the groups')}`), [
         ...this.atoms(repStart, repEnd),
         // (With `e`, the replacement is code.)
         ...(flags.includes('e') ? [] : holeTokens(src, repStart, repEnd, 'perl-replacement', open === close ? { delimiter: close } : {})),
@@ -297,8 +298,8 @@ class PerlExplainer {
     const on = target ? `\`${target}\`` : s('現在の行（`$_`）', 'the line (`$_`)');
     const which = flags.includes('g') ? s('すべて', 'every match') : s('最初の1つ', 'the first match');
     return this.tok(start, end, 'command', rep
-      ? s(`置換: ${on}の中で \`${pat}\` に一致した部分（${which}）を \`${rep}\` に置き換える`, `Substitute in ${on}: replace ${which} of \`${pat}\` with \`${rep}\``)
-      : s(`置換: ${on}の中で \`${pat}\` に一致した部分（${which}）を削除する`, `Substitute in ${on}: delete ${which} of \`${pat}\``), kids);
+      ? s(`置換: ${on}の中で ${codeShown(pat, true, ' ')}に一致した部分（${which}）を ${codeShown(rep, true, ' ')}に置き換える`, `Substitute in ${on}: replace ${which} of ${codeShown(pat, false)} with ${codeShown(rep, false)}`)
+      : s(`置換: ${on}の中で ${codeShown(pat, true, ' ')}に一致した部分（${which}）を削除する`, `Substitute in ${on}: delete ${which} of ${codeShown(pat, false)}`), kids);
   }
 
   private transliteration(start: number, end: number): EmbeddedToken {

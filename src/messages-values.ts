@@ -1,4 +1,4 @@
-import { invisibleList, pictureList, visibleChar } from './ctlchars';
+import { invisibleList, pictureList, visible, visibleChar } from './ctlchars';
 import type { Lang } from './i18n';
 import { codeSpan } from './label';
 import type { ExpansionValue } from './semantics/values';
@@ -41,6 +41,45 @@ const VALUE_SHOWN = 80;
  */
 export const SPACE_MARK = '␣';
 export const EMPTY_WORD = '∅';
+/** How a value made only of blanks, and an empty one, are named. */
+const BLANKS: Record<string, readonly [ja: string, en: string, enPlural: string]> = { ' ': ['空白', 'space', 'spaces'], '\t': ['タブ', 'tab', 'tabs'] };
+
+/** The bare name of a blank character (`' '`: 空白, space; `'\t'`: タブ, tab): the one table of these words (the IFS, the `tr` sets, the mark of a space). */
+export function blankWord(ch: ' ' | '\t', ja: boolean): string {
+  return BLANKS[ch][ja ? 0 : 1];
+}
+
+/** What an empty string is called in a sentence. */
+export const emptyName = (ja: boolean): string => (ja ? '空文字列' : 'an empty string');
+
+/**
+ * What a value made only of blanks (spaces and tabs) is called: "a space", "2 spaces", "a tab", "a space and a tab" (Japanese
+ * "空白", "空白2文字", "空白とタブ"); undefined for any other value, empty included. Such a value is invisible in a code span.
+ */
+export function blankName(v: string, ja: boolean): string | undefined {
+  if (!/^[ \t]+$/.test(v)) return undefined;
+  const runs = v.match(/ +|\t+/g)!.map((r) => {
+    const [j, e, ep] = BLANKS[r[0]];
+    return ja ? `${j}${r.length > 1 ? `${r.length}文字` : ''}` : r.length > 1 ? `${r.length} ${ep}` : `a ${e}`;
+  });
+  return runs.join(ja ? 'と' : ' and ');
+}
+
+/**
+ * A value of a script in a sentence, as inline Markdown: a code span (`codeSpan`), and for a value that code cannot show, its name:
+ * a value of blanks only gets it in parentheses after the span (`` ` ` (a space) ``, `` `⇥`（タブ） ``), an empty one is said
+ * as "an empty string" with no span. `note`: a remark that belongs in the parentheses after the value, merged with the name
+ * (`` ` ` (a space; no wildcards…) ``), so that two parentheses do not follow each other. `after`: in Japanese, the text that
+ * follows a plain span (a space between code and kana), left out where the name's parenthesis ends the text.
+ */
+export function codeShown(v: string, ja: boolean, after = '', note = ''): string {
+  const paren = (inner: string) => (ja ? `（${inner}）` : ` (${inner})`);
+  const name = v === '' ? emptyName(ja) : blankName(v, ja);
+  if (name === undefined) return codeSpan(v) + (note ? paren(note) : ja ? after : '');
+  const said = note ? `${name}${ja ? '。' : '; '}${note}` : name;
+  return v === '' ? name + (note ? paren(note) : '') : codeSpan(visible(v)) + paren(said);
+}
+
 /** How many words of a split value are shown. */
 const WORDS_SHOWN = 12;
 
@@ -109,13 +148,13 @@ export function valueSaid(lang: Lang, v: ExpansionValue, bash = true): ValueSaid
   ];
   if (marks.length) tails.push(ja ? `（${marks.join('、')}）` : ` (${marks.join(', ')})`);
   const tail = tails.length ? tails.join('') : undefined;
-  const empty = ja ? '空文字列' : 'an empty string';
+  const empty = emptyName(ja);
   const text = `${lead} ${value !== undefined ? codeSpan(value) : empty}${split ? split.said + split.words.map((w) => ` ${codeSpan(w)}`).join('') : ''}${tail ?? ''}`;
   return {
     lead,
     ...(value !== undefined ? { value, valueEnds: shownValue!.ends } : { empty }),
     ...(split ? { split } : {}),
-    ...(spaced ? { spaceLabel: ja ? '空白' : 'space' } : {}),
+    ...(spaced ? { spaceLabel: blankWord(' ', ja) } : {}),
     ...(tail ? { tail } : {}),
     text,
   };

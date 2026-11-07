@@ -1,4 +1,5 @@
 import { sedEscapeAt } from '../ctlchars';
+import { codeShown } from '../messages-values';
 import { ordinal, type Lang } from '../i18n';
 import { explainRegex, MatchUnit } from './regex';
 import { EmbeddedToken, escapeIntoHole, holeStop, holeToken, holeTokens, isHole, pick, shift } from './types';
@@ -288,7 +289,7 @@ class SedParser {
     parts.push(sep(sAt + 1));
     const patText = src.slice(pat[0], pat[1]);
     parts.push(this.tok(pat[0], pat[1], 'pattern', patText
-      ? s(`検索パターン（正規表現）\`${patText}\``, `Pattern (regex) \`${patText}\``)
+      ? s(`検索パターン（正規表現）${codeShown(patText, true)}`, `Pattern (regex) ${codeShown(patText, false)}`)
       : s('空のパターン: 直前に使った正規表現を再利用する', 'Empty pattern: reuse the last regex'), this.regex(pat[0], pat[1], delim)));
     parts.push(sep(pat[1]));
     const rep = this.delimited(delim);
@@ -298,7 +299,7 @@ class SedParser {
     }
     const repText = src.slice(rep[0], rep[1]);
     if (repText) {
-      parts.push(this.tok(rep[0], rep[1], 'string', s(`置換後の文字列 \`${repText}\``, `Replacement \`${repText}\``), this.replacement(rep[0], rep[1], delim)));
+      parts.push(this.tok(rep[0], rep[1], 'string', s(`置換後の文字列 ${codeShown(repText, true)}`, `Replacement ${codeShown(repText, false)}`), this.replacement(rep[0], rep[1], delim)));
       parts.push(sep(rep[1]));
     } else {
       parts.push(this.tok(rep[1], rep[1] + 1, 'operator', s(`\`${delim}\`: 区切り文字。置換後の文字列が空なので、一致した部分は削除される`, `\`${delim}\`: delimiter; the replacement is empty, so matches are deleted`)));
@@ -342,11 +343,12 @@ class SedParser {
       parts.push(this.tok(fs, this.i, 'option', s(expl[f][0], expl[f][1])));
     }
     const which = global && nth ? s(`${nth}番目以降のすべての一致`, `every match from the ${ordinal(Number(nth))} on`) : global ? s('すべて', 'every match') : nth ? s(`${nth}番目の一致`, `the ${ordinal(Number(nth))} match`) : s('最初の1つ', 'the first match');
-    const shown = repText ? `\`${repText}\`` : s('空文字', 'nothing');
-    const shownPat = patText ? `\`${patText}\`` : s('直前に使った正規表現', 'the last regex');
+    // (A blank is named after its code: `codeShown`. In Japanese the space after the code is part of it.)
+    const shown = (ja: boolean) => repText ? codeShown(repText, ja, ' ') : ja ? '空文字 ' : 'nothing';
+    const shownPat = (ja: boolean) => patText ? codeShown(patText, ja, ' ') : ja ? '直前に使った正規表現 ' : 'the last regex';
     const summary = s(
-      `置換: ${shownPat} に一致した部分（各行の${which}）を ${shown} に置き換える`,
-      `Substitute: replace ${which} of ${shownPat} on each line with ${shown}`,
+      `置換: ${shownPat(true)}に一致した部分（各行の${which}）を ${shown(true)}に置き換える`,
+      `Substitute: replace ${which} of ${shownPat(false)} on each line with ${shown(false)}`,
     );
     const forWhom = target ? s(`${target}に対して: `, `For ${target}: `) : '';
     return this.tok(start, this.i, 'command', forWhom + summary, [...children, ...parts]);

@@ -23,6 +23,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- A value made only of spaces or tabs (a replacement, default, pattern or delimiter) is now named: `${x//:/ }` says "with ` ` (a space)", `cut -d' '` "a space after quote removal". A value with a space at both ends (`${x//,/ - }`) keeps them in the code span, and an empty pattern is said as "an empty string". Before, such a code span looked empty or lost its spaces.
 - A Makefile recipe line that make runs without a shell (no `;`, `"`, `$`, `|`, `#`, `*` or the like, and not starting with `cd`, `export`…) is explained as a program make runs: `@echo -e '\033[32mOK\033[0m'` is `/bin/echo`, with no warning about dash's `echo -e`, and the chip says "no shell". Before, it was dash's builtin and the warning was wrong. A line with a make variable says that its value decides.
 - On a phone, the explanation's header shows the same controls in Japanese as in English, and the depth's menu no longer lies over the grab bar; its button and segments are drawn as high as the file type's chip, and every pill there has round ends. Before, in Japanese at 430 px and wider, Collapse and Markdown came into the row and pushed the depth's menu under the grab bar.
 - The command-line tool exits quietly with status 141 (what a shell reports for a program killed by SIGPIPE) when its output is closed early, as in `bash-explainer script.sh | head -1`. Before, it printed an `EPIPE` stack trace and exited with status 1.

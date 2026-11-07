@@ -105,6 +105,26 @@ Clear, a whole script pasted over the untouched sample, and Open start a new scr
 
 ## Fixed
 
+### A blank, or a value with a space at both ends, shown visibly
+
+A value made only of spaces and tabs looks empty in a code span, so the explanation names it. One function, `codeShown` in `src/messages-values.ts` (beside `shownWord`), writes the code with `codeSpan` and, for a blank, its name in parentheses after it: "a space", "2 spaces", "a tab" (Japanese "空白", "空白2文字", "タブ"); a tab in the code is `⇥`. The names come from one table (`blankWord`), which the `IFS` note, the `tr` sets and the label of the space mark read too; Japanese says 空白 everywhere (before, `tr` said スペース). The sites that quote a value call it: the sentences of `${…}`, its pattern, replacement and default tokens, the child token of a glob pattern, the subject of a regex quantifier, the option value after quote removal, and the `s` command of sed and perl. A new reader of a value should call it too; a few places still write the code by hand (see `docs/backlog-archive.md`, "A blank in a value").
+
+- **Both ends.** A value that starts and ends with a space (`${x//,/ - }`, `sed 's/,/ | /g'`) is written with one more space on each side inside the span, since CommonMark takes one off each end (`codeSpan`). Before, it showed as `-`.
+- **Empty.** An empty pattern is said in words: ``${a[@]/#/ }`` is "Replace an empty string at the start of `a[@]` with ` ` (a space)". Before, it was an empty span, two backticks. An empty replacement keeps its own text ("Delete every match of …").
+- **One parenthesis.** The name and a remark join: ``Pattern ` ` (a space; no wildcards, so it matches exactly this text)``, ``Replacement ` ` (a space; `$1`… are the groups)``.
+
+| Where | Before | After |
+|---|---|---|
+| `${x//:/ }`, its sentence and the replacement token | ``Replace every match of `:` in `x` with ` ` ``; ``Replacement ` ` `` | ``… with ` ` (a space)``; ``Replacement ` ` (a space)`` |
+| `${x//,/ - }` | ``Replacement ` - ` `` (shown as `-`) | ``Replacement `  -  ` `` (shown as ` - `) |
+| `${x:- }` (and `-`, `:=`, `:+`…) | ``Default ` `: used instead of `x` `` | ``Default ` ` (a space): …`` |
+| `${x// /_}`: the pattern, and its child token | ``Pattern ` ` (no wildcards, …)``; ``The text ` ` itself`` | ``Pattern ` ` (a space; no wildcards, …)``; ``The text ` ` (a space) itself`` |
+| `${a[@]/#/ }` | ``Replace `` at the start of …`` | ``Replace an empty string at the start of …`` |
+| `sed 's/  */ /g'`, `sed -E 's/ +/ /g'`, `grep -E '^ +'` | ``repeat ` ` zero or more times`` | ``repeat ` ` (a space) zero or more times`` |
+| `cut -d' '`, `awk -F' '`, `paste -d' '`, `sort -t' '` | ``Value for `-d` (` ` after quote removal)`` | ``Value for `-d` (a space after quote removal)`` |
+| `sed 's/,/ /g'`, `perl -pe 's/,/ /g'`: the sentence, the pattern and the replacement | ``… with ` ` `` | ``… with ` ` (a space)`` |
+| `tr ' ' _`, `[:blank:]` (Japanese) | スペース | 空白 |
+
 ### The phone's header row
 
 On a phone held upright (a sheet's row under 600 px), the explanation's header has the tabs and the depth's control only, in every language: whether Collapse and Markdown fit no longer depends on how wide the words are. Copy as Markdown is in the menu (☰), and Collapse is left out, as in English before. A row where the depth's control or a tool would lie over the grab bar takes the next, narrower form. The depth's menu button and its segments are drawn 32 px high, as the file type's chip, each in a 44 px target, and on hover too. The ends of those pills, and of the chip, are half circles, as Read | Edit's are; in forced colours each has a thin edge, and the option shown the system's selection colour. Each segment's label, the depth's and Read | Edit's, is centred between the pill's edge and the divider (「概要」 was 4 px from the edge and 13 px from the divider). Before, in Japanese at 430 px and wider with an empty editor, the row took Collapse and Markdown, and the depth's menu (「単語ごと ▾」, 42 px high) lay over the grab bar; the chip's ends were 22 px across and 16 px down, and a mouse over the menu drew it 44 px high with grey bands.

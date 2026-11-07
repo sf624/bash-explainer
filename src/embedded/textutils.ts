@@ -1,5 +1,6 @@
 import type { Lang } from '../i18n';
 import { controlSuffix } from '../ctlchars';
+import { blankWord } from '../messages-values';
 import { EmbeddedToken, hasHole, holeStop, holeToken, isHole, pick } from './types';
 import { wordTable } from '../wordtable';
 
@@ -74,7 +75,7 @@ export function explainCutList(src: string, unit: 'field' | 'char', lang: Lang):
 
 const TR_CLASSES: Record<string, [string, string]> = wordTable({
   upper: ['大文字', 'uppercase letters'], lower: ['小文字', 'lowercase letters'], alpha: ['英字', 'letters'], digit: ['数字', 'digits'],
-  alnum: ['英数字', 'letters and digits'], space: ['空白文字（改行・タブを含む）', 'whitespace (incl. newline and tab)'], blank: ['スペースとタブ', 'spaces and tabs'],
+  alnum: ['英数字', 'letters and digits'], space: ['空白文字（改行・タブを含む）', 'whitespace (incl. newline and tab)'], blank: ['空白とタブ', 'spaces and tabs'],
   punct: ['記号', 'punctuation'], cntrl: ['制御文字', 'control characters'], print: ['表示可能な文字', 'printable characters'],
   graph: ['空白以外の表示可能な文字', 'visible characters'], xdigit: ['16進数字', 'hex digits'],
 });
@@ -90,7 +91,7 @@ function trCharName(c: string): [string, string] {
   const named = c[0] === '\\' ? TR_ESCAPES[c[1]] : undefined;
   if (named) return named;
   const ch = c[c.length - 1];
-  return ch === ' ' ? ['スペース', 'space'] : [`「${ch}」`, `"${ch}"`];
+  return ch === ' ' ? [blankWord(' ', true), blankWord(' ', false)] : [`「${ch}」`, `"${ch}"`];
 }
 
 /** The character a `tr` set writes at the start of `rest` (`a`, `\n`, `\101`, `\\`), as written: its length and its name; undefined for none. */
@@ -153,7 +154,7 @@ export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'sque
     } else {
       len = rest[0] === '\\' && rest.length > 1 ? 2 : 1;
       const c = rest[len - 1];
-      text = c === ' ' ? s('スペース', 'space') : s(`「${c}」`, `"${c}"`);
+      text = c === ' ' ? s(blankWord(' ', true), blankWord(' ', false)) : s(`「${c}」`, `"${c}"`);
     }
     tokens.push({ start: i, end: i + len, kind: 'pattern', explanation: `\`${src.slice(i, i + len)}\`: ${text}`, children: [] });
     names.push(text);

@@ -1,5 +1,6 @@
 import { awkEscapeAt, sedEscapeAt } from '../ctlchars';
 import type { Lang } from '../i18n';
+import { codeShown } from '../messages-values';
 import { EmbeddedToken, escapeIntoHole, hasHole, holeStop, holeToken, isHole, pick } from './types';
 import { wordTable } from '../wordtable';
 
@@ -9,7 +10,7 @@ export type Flavor = 'bre' | 'ere' | 'pcre';
 const CLASSES: Record<string, [string, string]> = wordTable({
   alpha: ['英字', 'letters'], digit: ['数字', 'digits'], alnum: ['英数字', 'letters and digits'],
   upper: ['大文字', 'uppercase letters'], lower: ['小文字', 'lowercase letters'], space: ['空白文字', 'whitespace'],
-  blank: ['スペースとタブ', 'spaces and tabs'], punct: ['記号', 'punctuation'], xdigit: ['16進数字', 'hex digits'],
+  blank: ['空白とタブ', 'spaces and tabs'], punct: ['記号', 'punctuation'], xdigit: ['16進数字', 'hex digits'],
   cntrl: ['制御文字', 'control characters'], print: ['表示可能な文字', 'printable characters'], graph: ['空白以外の表示可能な文字', 'visible characters'],
 });
 
@@ -38,7 +39,7 @@ const SHORTHANDS: Record<string, { ja: string; en: string; gnu: boolean; js?: st
   f: { ja: '改ページ', en: 'a form feed', gnu: false, js: '=' },
   e: { ja: 'ESC 文字', en: 'an escape character (ESC)', gnu: false, js: '\\x1b' },
   a: { ja: 'ベル文字(BEL)', en: 'a bell character (BEL)', gnu: false, js: '\\x07' },
-  h: { ja: '水平方向の空白（スペース、タブなど）1文字', en: 'a horizontal whitespace character (space, tab…)', gnu: false, js: '[ \\t]' },
+  h: { ja: '水平方向の空白（タブなど）1文字', en: 'a horizontal whitespace character (space, tab…)', gnu: false, js: '[ \\t]' },
   H: { ja: '水平方向の空白以外の1文字', en: 'a character that is not horizontal whitespace', gnu: false, js: '[^ \\t]' },
   v: { ja: '垂直方向の空白（改行、改ページなど）1文字', en: 'a vertical whitespace character (newline, form feed…)', gnu: false },
   V: { ja: '垂直方向の空白以外の1文字', en: 'a character that is not vertical whitespace', gnu: false },
@@ -306,7 +307,7 @@ function quantifier(st: State, start: number, target: EmbeddedToken | undefined)
   const raw = st.src.slice(start, st.i);
   // (After a hole, it repeats what the value ends with, whatever the value is.)
   if (target?.hole?.place === 'regex') return { start, end: st.i, kind: 'operator', explanation: '', children: [], hole: { place: 'repeat', of: st.src[target.start], written: raw } };
-  const of = target ? `\`${st.src.slice(target.start, target.end)}\`` : s('直前の要素', 'the previous item');
+  const of = (ja: boolean): string => target ? codeShown(st.src.slice(target.start, target.end), ja, ' ') : ja ? '直前の要素 ' : 'the previous item';
   let q = raw.replace(/^\\/, '').replace(/\\\}$/, '}').replace(/^\\\{/, '{');
   let mode = '';
   // PCRE: a trailing `?` makes it lazy, a `+` possessive (`*?`, `{2,}+`).
@@ -329,7 +330,7 @@ function quantifier(st: State, start: number, target: EmbeddedToken | undefined)
   const greed = mode === '?' ? s('（できるだけ少なく）', ' (as few as possible)')
     : mode === '+' ? s('（バックトラックしない）', ' (possessive, no backtracking)')
       : '';
-  return { start, end: st.i, kind: 'operator', explanation: s(`\`${raw}\`: ${of} を${times}繰り返す${greed}`, `\`${raw}\`: repeat ${of} ${times}${greed}`), children: [] };
+  return { start, end: st.i, kind: 'operator', explanation: s(`\`${raw}\`: ${of(true)}を${times}繰り返す${greed}`, `\`${raw}\`: repeat ${of(false)} ${times}${greed}`), children: [] };
 }
 
 function group(st: State, openLen: number): EmbeddedToken {
