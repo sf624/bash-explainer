@@ -80,8 +80,6 @@ export class PanelHead {
     new ResizeObserver(() => {
       if (head.clientWidth !== this.width) this.fit();
     }).observe(head);
-    // (The widths change once the page's fonts have loaded: a phone may draw the first fit with others.)
-    document.fonts?.addEventListener?.('loadingdone', () => this.refit());
     // Out of the sheet, the Problems tab goes (the list is under the editor again), and the row takes its forms again.
     narrow.addEventListener('change', () => {
       if (!sheetLayout()) this.problems = false;
