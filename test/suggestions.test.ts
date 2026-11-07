@@ -111,6 +111,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'function-not-in-container': 'prose',
   'builtin-or-function-as-program': { kind: 'scenario', via: 'fix' },
   'ssh-local-expansion': 'scenario',
+  // `sh -c 'echo {}'` → `sh -c 'echo "$1"' _ {}`: checked with real find and xargs over names with `;` (test/placeholder-injection.test.ts).
+  'placeholder-in-shell-string': 'scenario',
   'function-not-on-remote': 'scenario',
   'function-not-in-new-shell-blocked': 'prose',
   'function-not-in-new-shell': 'prose',
@@ -363,7 +365,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 18, scenario: 25, prose: 21, none: 103 });
+      { mechanical: 18, scenario: 26, prose: 21, none: 103 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });

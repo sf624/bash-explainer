@@ -813,6 +813,14 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `type -p` under dash (dash 0.5.12: "-p: not found", status 127) gets no note.
   - An `ONBUILD` trigger runs in a build FROM this image, in that build's shell; it is read with this stage's shell.
 
+## From the placeholder pasted into a shell string (#709)
+
+### Placeholders in a shell's code: forms the warning leaves out
+
+- **Verdict:** dropped (YAGNI), 2026-11-07. Kind: `missing-explanation`.
+- **Reason:** Rare forms of the anti-pattern; the line is explained, only without the injection warning or the hole in the string's reading.
+- **Input and what is missing:** a placeholder alone among the words `ssh` joins for the remote shell (`find . -exec ssh host rm {} \;`: the remote shell reads the path as code too) and `xargs ssh host rm` without `-I`; a string whose value is not known here (`xargs -I{} sh -c "echo {} $x"` with `x` not set in the script: no placeholder is found, as since #707); a replace string that spans parts of the inner script (`-I'a b'`, `sh -c 'echo a b'`: the row of the whole command `echo a b` says where the item goes); the state model of the inner script still sees the text `{}` as a literal word (no decision was found that it gets wrong).
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

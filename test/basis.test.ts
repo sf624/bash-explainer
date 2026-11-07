@@ -506,9 +506,10 @@ describe('conventions: the habit a note recommends', () => {
       'dockerfile-pipefail-missing': 'pipefail',
       'python-shell-injection': 'quote-for-shell-in-python',
       'actions-script-injection': 'actions-expression-through-env',
+      'placeholder-in-shell-string': 'placeholder-as-argument',
     };
     const pitfalls = (Object.keys(MESSAGES) as FactId[]).filter((id) => MESSAGES[id].kind === 'pitfall');
-    assert.strictEqual(pitfalls.length, 65, 'a new pitfall: sort it in this test (fact, or the habit of its advice)');
+    assert.strictEqual(pitfalls.length, 66, 'a new pitfall: sort it in this test (fact, or the habit of its advice)');
     for (const id of Object.keys(MESSAGES) as FactId[]) assert.strictEqual(conventionOfEntry(id) ?? 'fact', both[id] ?? 'fact', id);
     assert.deepStrictEqual(STYLE_CONVENTIONS, {
       'bracket-no-space': null, 'assignment-with-spaces': null, 'brace-no-space': null, 'brace-close-no-separator': null,

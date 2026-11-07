@@ -50,8 +50,11 @@ export interface Span { start: Pos; end: Pos }
 /** A word a test of `[` or `test` reads as its operator (`-a`, `=`, `!`, `\(`) or as an operand (the file `-a` tests). */
 export type TestPart = Pick<ReadingNode, 'label' | 'span' | 'text' | 'refs'> & { kind: 'operator' | 'argument' };
 
-/** A word the command around replaces (`Explainer.command`, `ExplainOptions.positional`): by which option, the text and what it is replaced with; `within`: the word holds the text among other text. */
-export interface Replaced { by: string; text: string; with: PlaceholderWith; within: boolean }
+/**
+ * A word the command around replaces (`Explainer.command`, `ExplainOptions.positional`): by which option, the text and what it is replaced with; `within`:
+ * the word holds the text among other text, which starts at each of `at` in its value (`PlaceholderRole.at`).
+ */
+export interface Replaced { by: string; text: string; with: PlaceholderWith; within: boolean; at?: readonly number[] }
 
 export interface Token {
   kind: Kind;

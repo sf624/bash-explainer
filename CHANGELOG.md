@@ -6,6 +6,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
+- A new warning, "Shell injection risk", for `find . -exec sh -c 'echo {}' \;` and `xargs -I{} sh -c 'echo {}'`: find or xargs pastes the path or item into the shell's code, so a name such as `x;rm -rf ~` runs as code. It gives the safe form, `sh -c '… "$1" …' _ {}`, and inside the string `{}` is now marked as find's or xargs's placeholder.
 - On the web page, a script whose shell comes from `#!/usr/bin/env bash` or from no shebang gets a line under the Problems strip, "2 constructs not in POSIX sh", with a button **Check as POSIX sh**. It is not counted: the Problems counts, `--check` and the Action leave it out, and a `#!/bin/bash` script, a bats file and VS Code have no such line.
 
 ### Changed

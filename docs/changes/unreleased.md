@@ -4,6 +4,14 @@ The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
 ## New
 
+### A placeholder pasted into a shell string
+
+`find -exec` (and `-execdir`, `-ok`, `-okdir`) replaces `{}` inside a word, and `xargs -I` replaces its text anywhere in a word, before the command runs. When that word is a string a shell reads as code (`sh -c`, `bash -c`, the remote command of `ssh`), the path or the item becomes code: `printf 'a;echo pwn\n' | xargs -I{} sh -c 'echo {}'` prints `a`, then `pwn`. ShellCheck calls this SC2156.
+
+- **The warning.** "⚠ Shell injection risk: `-I` pastes the input item in place of `{}` in the command string before the shell reads it, so an item with `;`, `$(…)` or a quote in it (such as `x;rm -rf ~`) runs as code. Pass it as an argument of the shell, which gets it as data: `sh -c '… "$1" …' _ {}`" (「⚠ シェルインジェクションの危険: `-I` が入力の1件をコマンド文字列の中の `{}` に埋め込んでから、シェルがその文字列を読みます。…」). For `find` it says "the path it found" and "a file name". It is a warning: code that nobody chose runs, with some names (docs/design/three-levels.md, question 2). The fix names the shell of the line (`bash -c` for `bash -c`) and the text (`%` for `-I%`); `ssh host 'cat {}'` gets no fix, as ssh passes no arguments after the string. It is said once for the string, also where the string is not explained as a script (`x=1; xargs -I{} sh -c "echo {} $x"`). There is no **Copy fix**: rewriting the string needs its quotes and its other `$1`, `$2`… read again.
+- **Inside the string.** The part where the text stands keeps what it is to the command there, and adds that the tool puts the path or item there first: `{}` of `sh -c 'wc -l {}'` is "target file. `-exec` puts the path that was found here before the shell reads the string (explained here as a name with no blanks or special characters)". At depth 2 it reads "placeholder for the path" (or "for the input item"). A part that holds the text among other text (`{}.bak`) says "in place of `{}` in it". Before, `{}` was read as a plain word, "text to print", with nothing more.
+- **Silent.** `sh -c 'echo "$1"' _ {}` (the shell gets the path as `$1`), `find . -exec echo {} \;` and `xargs -I{} echo {}` (no shell reads it), `xargs -I{} sh -c {}` (the item is the whole string, run as a command on purpose), and `find . -exec sh -c 'echo {}' +`, which find refuses (the error already says so).
+
 ### The hint toward POSIX sh
 
 - **When.** The web page shows it for a script whose shell is bash from `#!/usr/bin/env bash` or from no shebang. Not for `#!/bin/bash` (it says bash on purpose), a ShellCheck directive, a file name that says bash, a shell chosen in the chip, a bats file or another file with shell code in it, and not in VS Code (its panel shows the quiet "not portable to sh" marks).

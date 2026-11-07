@@ -50,6 +50,8 @@ export const CONVENTIONS = table({
   'quote-for-shell-in-python': { habit: 'Quote values with shlex.quote(), or pass a list without shell=True', sources: ['Python documentation: subprocess, Security Considerations'] },
   // (GitHub's guide recommends an intermediate environment variable for an untrusted expression.)
   'actions-expression-through-env': { habit: 'Pass an expression to a script through env:, and use it as "$VAR"', sources: ['GitHub Docs: Security hardening for GitHub Actions'] },
+  // SC2156: "Injecting filenames is fragile and insecure. Use parameters."
+  'placeholder-as-argument': { habit: 'Pass find\'s {} or xargs -I\'s item to sh -c as an argument ("$1"), not inside the string', sources: ['ShellCheck SC2156'] },
 });
 
 /** A habit of the table, by its id. */

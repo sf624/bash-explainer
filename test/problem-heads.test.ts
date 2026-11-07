@@ -65,6 +65,7 @@ const CASES: { [K in ProblemFactId]: readonly unknown[] } = {
   'function-not-in-container': [{ name: 'f' }],
   'builtin-or-function-as-program': [{ via: 'sudo', name: 'f', isFn: true }, { via: 'sudo', name: 'cd', isFn: false }],
   'ssh-local-expansion': [{ risky: '$x' }],
+  'placeholder-in-shell-string': [{ by: '-exec', text: '{}', what: 'path' }, { by: '-I', text: '{}', what: 'item', via: 'sh -c' }],
   'function-not-on-remote': [{ name: 'f' }],
   'function-not-in-new-shell-blocked': [{ via: 'bash -c', fn: 'f' }],
   'function-not-in-new-shell': [{ via: 'bash -c', fn: 'f' }],

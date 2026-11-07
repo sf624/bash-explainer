@@ -7,9 +7,10 @@ import { untilWord } from './until';
 
 /**
  * The words of a command that the tool running it replaces first (`PlaceholderSpec`): the text, the option that replaces it (`-exec`, `-I`), what with, and
- * the words (their indices) that are that text alone (`whole`: `{}`, `'{}'`) and those that hold it with other text (`within`: `%.bak`).
+ * the words (their indices) that are that text alone (`whole`: `{}`, `'{}'`) and those that hold it with other text (`within`: `%.bak`), with where the
+ * text starts in each of these, by its value (`at`, as `within`: the tool replaces each from the left, `{}` of `mv {} {}.bak`, past what it replaced).
  */
-export interface PlaceholderRole { by: string; text: string; with: PlaceholderSpec['with']; whole: number[]; within: number[] }
+export interface PlaceholderRole { by: string; text: string; with: PlaceholderSpec['with']; whole: number[]; within: number[]; at: number[][] }
 
 /**
  * The words from `from` to `to` that the tool replaces before it runs the command, by their value after quote removal, as the field `placeholder`
@@ -31,10 +32,16 @@ export function placeholderIn(p: PlaceholderSpec | undefined, words: readonly Ar
   if (!text) return {};
   const whole: number[] = [];
   const within: number[] = [];
+  const at: number[][] = [];
   for (let i = from; i < to; i++) {
     const w = untilWord(words[i]);
     if (w === text) whole.push(i);
-    else if (p.anywhere && !batch && w?.includes(text)) within.push(i);
+    else if (p.anywhere && !batch && w?.includes(text)) {
+      within.push(i);
+      const starts: number[] = [];
+      for (let k = w.indexOf(text); k >= 0; k = w.indexOf(text, k + text.length)) starts.push(k);
+      at.push(starts);
+    }
   }
-  return whole.length || within.length ? { placeholder: { by, text, with: p.with, whole, within } } : {};
+  return whole.length || within.length ? { placeholder: { by, text, with: p.with, whole, within, at } } : {};
 }

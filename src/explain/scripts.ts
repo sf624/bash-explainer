@@ -24,6 +24,7 @@ import { replaceRange, stringShell, textBetween } from '../rewrite';
 import { readAsScript, scriptProcess } from '../tokenmarks';
 import type { Explainer } from './context';
 import { lineStarts, posOf, sameSpan, sortTokens } from './nodes';
+import { pastedIntoScript } from './placeholders';
 import { resolve, specFor } from './reads';
 
 /** The expansions that give a word a value of the shell that expands it (`$x`, `$(…)`, `*`, `~`): not braces or quotes. */
@@ -40,6 +41,7 @@ export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, p
   const script = cx.state.script(words, env);
   // (A string no shell runs, `sudo eval s`, has the pitfall of its slot.)
   if ('why' in script) {
+    if (script.why !== 'not-run') pastedIntoScript(cx, words, env, notes);
     return script.why === 'not-run' ? { tokens: [] } : { tokens: [], note: script.why === 'not-static'
       ? cx.s('。展開を含み、中身は実行するときに決まるので、スクリプトとしては解説しない', '. It holds an expansion, so its text is known only when it runs: it is not explained as a script')
       : cx.s('。文字列の中の文字列が深すぎるので、スクリプトとしては解説しない', '. Strings nested this deep are not explained as scripts') };
@@ -71,6 +73,7 @@ export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, p
   const note = script.known ? undefined
     : cx.s('。実行するシェルはここではわからない（ユーザーのログインシェル）ので、bash として解説する', ". The shell that runs it is not known here (the user's login shell): it is explained as bash");
   for (const t of tokens) readAsScript(t, process);
+  pastedIntoScript(cx, words, env, notes, script, tokens);
   return { tokens, ...(note ? { note } : {}) };
 }
 

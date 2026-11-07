@@ -110,6 +110,9 @@ export const FACT_HEADS: { [K in ProblemFactId]: (p: Params<K>) => Head } = {
     ? [`\`${via}\` は \`${name}\` を別のプログラムとして起動するので、シェルの関数は実行できない。`, `\`${via}\` starts \`${name}\` as a program, so it cannot run a shell function.`]
     : [`\`${via}\` は \`${name}\` を別のプログラムとして起動するので、シェルの組み込みコマンドは実行できない。`, `\`${via}\` starts \`${name}\` as a program, so it cannot run a shell builtin.`]),
   'ssh-local-expansion': ({ risky }) => [`\`ssh\` に渡す前に、手元のシェルが \`${risky}\` を展開する。`, `The local shell expands \`${risky}\` before \`ssh\` sends the command.`],
+  'placeholder-in-shell-string': ({ by, what }) => (what === 'path'
+    ? [`\`${by}\` が見つけたパスをシェルのコードに埋め込むので、ファイル名によって任意のコマンドが実行される。`, `\`${by}\` pastes each path it finds into the shell's code, so a file name can run arbitrary commands.`]
+    : [`\`${by}\` が入力の1件をシェルのコードに埋め込むので、値によって任意のコマンドが実行される。`, `\`${by}\` pastes each input item into the shell's code, so an item can run arbitrary commands.`]),
   'function-not-on-remote': ({ name }) => [`リモートのシェルには、このスクリプトの関数 \`${name}\` がない。`, `The remote shell does not have this script's function \`${name}\`.`],
   'function-not-in-new-shell-blocked': ({ via, fn }) => [`\`${via}\` の新しいシェルには、\`export -f\` をしても関数 \`${fn}\` がない。`, `The new shell of \`${via}\` does not have the function \`${fn}\`, even with \`export -f\`.`],
   'function-not-in-new-shell': ({ via, fn }) => [`\`${via}\` の新しいシェルには、このスクリプトの関数 \`${fn}\` がない。`, `The new shell of \`${via}\` does not have this script's function \`${fn}\`.`],
