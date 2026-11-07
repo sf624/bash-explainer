@@ -882,7 +882,7 @@ export function perlExample(code: string, opts: PerlOptions): { input: string[];
     input = ['3', '12', '7', '25'];
   } else if (splitRe >= 0 && !opts.autosplit) {
     const re = toJsRegex(toks[splitRe].pat!, 'pcre');
-    const sep = re && regexExamples(re, 3)?.matching.find((x) => !/^abc |\sxyz$/.test(x));
+    const sep = re && regexExamples(re, 3)?.matching[0];
     if (!sep) return undefined;
     input = [['apple', 'red', 'tokyo'], ['banana', 'yellow', 'osaka'], ['cherry', 'green', 'kyoto']].map((r) => r.join(sep));
   } else if (opts.autosplit || fieldUse.length) {
@@ -902,8 +902,8 @@ export function perlExample(code: string, opts: PerlOptions): { input: string[];
     for (const { re, subst } of regexes) {
       const ex = regexExamples(re, 3);
       if (!ex) continue;
-      const m = ex.matching.find((x) => !/^abc |\sxyz$/.test(x)) ?? ex.matching[0];
-      const second = ex.matching.find((x) => x !== m && !/^abc |\sxyz$/.test(x)) ?? m;
+      const m = ex.matching[0];
+      const second = ex.matching.find((x) => x !== m) ?? m;
       const atStart = re.source.startsWith('^');
       const atEnd = re.source.endsWith('$') && !re.source.endsWith('\\$');
       // Two matches show what /g changes; anchored patterns get text around them.

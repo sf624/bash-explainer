@@ -34,7 +34,10 @@ const programs: [string, string?][] = [
   ['BEGIN { FS = ", *" } { print $2 }', undefined],
   ['function f(x) { return 10 - x } { print f($2) }'], ['function f(x) { return int(x * 2) } { print f($2) }'], ['function f(x) { if (x > 1) return 1; return 0 } { print f($2) }'],
   ['10 < $2'], ['{ i = 1 } $i ~ /an/'], ['$2 > 0'], ['$2 > 2.5'], ['/z$/ { print $2 }'], ['$9 ~ /a/ { print $1 }'], ['$1 ~ /x|y/ { print $2 }'],
-  ['function f(x) { print x + 1 } { f($2) }'], ['{ print $2 }', '\\t'], ['{ print $2 }', '[,;]'], ['{ print $2 }', 'ab'], ['{ a[1]; a[2]; a[3]; for (k in a) { n++; if (n == 2) continue; if (n == 3) break } print n }'],
+  ['function f(x) { print x + 1 } { f($2) }'], ['{ print $2 }', '\\t'], ['{ print $2 }', '[,;]'], ['{ print $2 }', 'ab'],
+  // A whole match that looks like the padding of a match inside a line, and a start-anchored field regex with a separator.
+  ['/abc (x|y)/'], ['$1 ~ /abc (x|y)/', ':'], ['$2 ~ /^a/ { print $2 }', ','], ['/^a/ { print $2 }', '\\t'], ['/^#/ { print $1 }', ','], ['$2 ~ /a$/ { print $2 }', ','],
+  ['{ a[1]; a[2]; a[3]; for (k in a) { n++; if (n == 2) continue; if (n == 3) break } print n }'],
 ];
 
 describe('awk examples agree with gawk', () => {
@@ -46,6 +49,12 @@ describe('awk examples agree with gawk', () => {
       assert.deepStrictEqual(out, realAwk(prog, ex.input, fs).slice(0, out.length), `input ${JSON.stringify(ex.input)}`);
     });
   }
+
+  it('shows that a start-anchored regex also matches a longer field, with the example inside a line', () => {
+    const ex = awkExample('$2 ~ /^a/ { print $2 }', { fs: ',' })!;
+    assert.ok(ex.input.some((l) => l.split(',')[1] === 'a xyz'), JSON.stringify(ex.input));
+    assert.ok(ex.output.includes('a xyz'), JSON.stringify(ex.output));
+  });
 
   it('for-in loops produce the same lines (order is unspecified)', () => {
     const prog = '{ count[$1]++ } END { for (k in count) print k, count[k] }';

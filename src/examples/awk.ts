@@ -1350,7 +1350,7 @@ export function awkExample(src: string, opts: AwkRunOptions = {}): AwkExample | 
     const lines: string[] = [];
     for (const re of u.regexes.get(0) ?? []) {
       const ex = regexExamples(re, 2);
-      if (ex) for (const m of ex.matching.filter((x) => !x.startsWith('abc ')).slice(0, 1)) lines.push(m);
+      if (ex) lines.push(ex.matching[0]);
     }
     // Lines of different lengths also exercise conditions such as length($0) > 10.
     input = ['line one', ...lines, 'a somewhat longer line of text', 'line two'];
@@ -1366,7 +1366,7 @@ export function awkExample(src: string, opts: AwkRunOptions = {}): AwkExample | 
       }
       grid.push(row);
     }
-    // Put regex matches into rows 1 and 3 of the tested column (column 1 for whole-line regexes).
+    // Put regex matches into rows 1 and 3 of the tested column (column 1 for whole-line regexes); a match inside a longer line (`a xyz` for `^a`) only where the pattern anchors its start.
     for (const [f, res] of u.regexes) {
       // Whole-line regexes anchored at the end belong in the last column, others in the first.
       const anchoredEnd = /\$$/.test(res[0].source) && !/\\\$$/.test(res[0].source);
@@ -1374,7 +1374,7 @@ export function awkExample(src: string, opts: AwkRunOptions = {}): AwkExample | 
       if (col >= cols) continue;
       const ex = regexExamples(res[0], 3);
       if (!ex) continue;
-      const fits = ex.matching.filter((m) => !m.includes(sep) && !m.startsWith('abc '));
+      const fits = [...ex.matching, ...(ex.inside !== undefined && res[0].source.startsWith('^') ? [ex.inside] : [])].filter((m) => !m.includes(sep));
       if (fits[0]) grid[0][col] = fits[0];
       if (fits[1] ?? fits[0]) grid[2][col] = fits[1] ?? fits[0];
     }

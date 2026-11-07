@@ -28,6 +28,7 @@ const cases: string[][] = [
   ['-lne', 'print ucfirst($_), lcfirst("AB"), abs(-3), int(3.7), sqrt(16), chr(65), ord("a"), substr($_, 1, 2), substr($_, -2), index($_, "b")'],
   ['-ne', 'chomp; print "[$_]", defined($_) ? 1 : 0, "\\n"'], ['-lne', '$h{$_} = 1; delete $h{a}; print exists $h{$_} ? "y" : "n"'],
   ['-lne', 'push @a, $_; END { print scalar @a }'], ['-lne', '$h{$_}++; END { print scalar(keys %h), scalar(%h) }'], ['-lne', 'print scalar(split /,/, $_)'],
+  ['-ne', 'print join "|", split /abc (x|y)/'], ['-pe', 's/abc [0-9]/q/g'],
   ['-ne', 'print; /b/ and last'], ['-ne', 'next if /a/; last if /c/; print'], ['-le', 'for (1..5) { last if $_ > 2; print }'],
 ];
 

@@ -43,6 +43,40 @@ describe('regex examples agree with real engines', () => {
   }
 });
 
+describe('regex examples: the kind of each match', () => {
+  const ex = (source: string, max?: number) => regexExamples({ source, flags: '' }, max)!;
+
+  it('gives a match inside a longer line apart from the whole-line matches', () => {
+    const e = ex('b+');
+    assert.strictEqual(e.inside, 'abc b xyz');
+    assert.ok(e.matching.length > 0 && !e.matching.includes(e.inside!));
+    // Every example `matching` holds is a whole line: the pattern also matches it with nothing around.
+    for (const x of e.matching) assert.ok(/^b+$/.test(x), x);
+  });
+
+  it('pads only the side that is not anchored', () => {
+    assert.strictEqual(ex('^b').inside, 'b xyz');
+    assert.strictEqual(ex('b$').inside, 'abc b');
+    assert.strictEqual(ex('^b+$').inside, undefined);
+  });
+
+  it('has no inside example where the padding breaks the match', () => {
+    assert.strictEqual(ex('^b+$|^c$').inside, undefined);
+    assert.strictEqual(ex('^a.c$').inside, undefined);
+  });
+
+  it('keeps the whole-line examples at most `max`, the inside one taking the last place', () => {
+    const e = ex('[a-c]+', 3);
+    assert.strictEqual(e.matching.length + (e.inside === undefined ? 0 : 1), 3);
+  });
+
+  it('does not take a whole match that looks like the padding for an inside one', () => {
+    const e = ex('abc (x|y)');
+    assert.ok(e.matching.every((x) => x.startsWith('abc ')));
+    assert.ok(e.matching.length > 0);
+  });
+});
+
 describe('regex translation', () => {
   it('turns BRE syntax into JavaScript', () => {
     assert.strictEqual(toJsRegex('\\(a\\)\\{2,\\}b+?', 'bre')!.source, '(a){2,}b\\+\\?');

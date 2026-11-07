@@ -24,7 +24,7 @@ const cases: [string, boolean, boolean][] = [
   ['s/\\x1b\\[[0-9;]*m//g', false, false], ['s/\\x66oo/\\x26\\x26/', false, false], ['s/foo/[\\o101\\d066\\cA\\t\\x1b]/', false, false],
   ['s/[\\x66]oo/X/', false, false], ['/\\x66oo/d', false, false], ['s/f\\x6fo/\\a\\f\\v\\r/', false, false], ['y/f/\\x41/', false, false],
   ['s/\\d102oo/\\x5cn/', false, false], ['s/\\o146oo/\\x4a/', false, false], ['s/\\cF/X/', false, false],
-  ['1p;/x/q', true, false], ['/x/q', false, false], ['/x/q', true, false], ['#n\n1p;/x/q', false, false],
+  ['s/abc [0-9]/q/', false, false], ['s/abc (x|y)/q/g', false, true], ['1p;/x/q', true, false], ['/x/q', false, false], ['/x/q', true, false], ['#n\n1p;/x/q', false, false],
 ];
 
 describe('sed examples agree with GNU sed', () => {
@@ -35,6 +35,14 @@ describe('sed examples agree with GNU sed', () => {
       assert.deepStrictEqual(ex.output, realSed(script, ex.input, quiet, extended), `input ${JSON.stringify(ex.input)}`);
     });
   }
+});
+
+describe('the sed example of a match that looks like the padding of one inside a line', () => {
+  it('takes a second whole match for the second substitution, not the same one twice', () => {
+    const ex = sedExample('s/abc [0-9]/q/', { quiet: false, extended: false })!;
+    assert.ok(ex.input.includes('abc 0 abc 1'), JSON.stringify(ex.input));
+    assert.ok(ex.output.includes('q abc 1'), JSON.stringify(ex.output));
+  });
 });
 
 describe('the sed runner treats empty matches as GNU sed does', () => {
