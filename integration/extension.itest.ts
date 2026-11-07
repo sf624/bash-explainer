@@ -7,8 +7,8 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { CursorMoves, type Move } from '../src/ui/cursorMoves';
-import { followMoves } from '../src/ui/panel';
+import { CursorMoves } from '../src/ui/cursorMoves';
+import { followMoves } from '../src/ui/followMoves';
 import { themeRoleColours } from '../src/ui/themeColours';
 import copied from '../src/ui/vscodeThemes.json';
 import { state } from './watch';
@@ -279,7 +279,7 @@ describe('Bash Explainer in VS Code', function () {
     const editor = await open(doc);
     const moves = new CursorMoves();
     const subs = followMoves(moves, (d) => d.languageId === 'shellscript');
-    const after = async (what: () => Thenable<unknown>): Promise<Move | undefined> => {
+    const after = async (what: () => Thenable<unknown>): Promise<boolean> => {
       await sleep(100);
       moves.take();
       await what();
@@ -288,28 +288,28 @@ describe('Bash Explainer in VS Code', function () {
     };
     try {
       editor.selection = new vscode.Selection(0, 0, 0, 0);
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), 'key', 'a key');
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorEnd')), 'key', 'a key');
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('type', { text: 'x' })), undefined, 'typing');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), true, 'a key');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorEnd')), true, 'a key');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('type', { text: 'x' })), false, 'typing');
       await vscode.env.clipboard.writeText(' | wc -l');
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('editor.action.clipboardPasteAction')), undefined, 'a paste');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('editor.action.clipboardPasteAction')), false, 'a paste');
       assert.strictEqual(editor.document.lineAt(0).text, 'grep -r pattern . | sort -r | uniq -cx | wc -l');
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorHome')), 'key', 'a key after a paste');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorHome')), true, 'a key after a paste');
       // (Delete leaves the cursor in place: VS Code says the edit and no change of the selection, so the next key is a move.)
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('deleteRight')), undefined, 'Delete');
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), 'key', 'a key after Delete');
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('deleteLeft')), undefined, 'Backspace');
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), 'key', 'a key after Backspace');
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('undo')), undefined, 'undo');
-      assert.strictEqual(await after(async () => { editor.selection = new vscode.Selection(0, 3, 0, 3); }), undefined, 'a selection set by an extension');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('deleteRight')), false, 'Delete');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), true, 'a key after Delete');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('deleteLeft')), false, 'Backspace');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), true, 'a key after Backspace');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('undo')), false, 'undo');
+      assert.strictEqual(await after(async () => { editor.selection = new vscode.Selection(0, 3, 0, 3); }), false, 'a selection set by an extension');
       assert.strictEqual(await after(() => vscode.window.showTextDocument(doc, { selection: new vscode.Range(0, 20, 0, 24) })), undefined, "the panel's reveal");
       // (Keys in a document the panel does not explain, as a README, are no move of its: nothing would send it.)
       const readme = await open(await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'a README\n' }));
       readme.selection = new vscode.Selection(0, 0, 0, 0);
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), undefined, 'a key in a README');
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), undefined, 'a second key in a README');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), false, 'a key in a README');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), false, 'a second key in a README');
       const back = await open(doc);
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), 'key', 'a key back in the script');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorRight')), true, 'a key back in the script');
       // (Ctrl+C with no selection copies the whole line; Ctrl+V then puts it before the cursor's line, and the cursor stays on its own
       // text, one line down, out of what the paste put: VS Code tells the change of the selection, of the kind Keyboard, after the edit.
       // Where the line added changes the editor's scroll height, as `scrollBeyondLastLine` does, VS Code says that change with no kind.)
@@ -317,11 +317,18 @@ describe('Bash Explainer in VS Code', function () {
       await sleep(300);
       back.selection = new vscode.Selection(0, 0, 0, 0);
       await vscode.commands.executeCommand('editor.action.clipboardCopyAction');
-      assert.strictEqual(await after(async () => { for (let i = 0; i < 20; i++) await vscode.commands.executeCommand('cursorRight'); }), 'key', 'keys into the middle of the line');
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('editor.action.clipboardPasteAction')), undefined, 'a paste of a whole line');
+      assert.strictEqual(await after(async () => { for (let i = 0; i < 20; i++) await vscode.commands.executeCommand('cursorRight'); }), true, 'keys into the middle of the line');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('editor.action.clipboardPasteAction')), false, 'a paste of a whole line');
       const [first, second] = [0, 1].map((l) => back.document.lineAt(l).text);
       assert.deepStrictEqual([first, back.selection.active.line, back.selection.active.character], [second, 1, 20], 'the line pasted above, the cursor on its own line');
-      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorLeft')), 'key', 'a key after a paste of a whole line');
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('cursorLeft')), true, 'a key after a paste of a whole line');
+      // (The same paste right after a switch to another editor: the switch gives that editor's selection, which the paste carries.)
+      const other = await open(await vscode.workspace.openTextDocument({ language: 'shellscript', content: 'echo one two three\n' }));
+      assert.strictEqual(await after(async () => { for (let i = 0; i < 5; i++) await vscode.commands.executeCommand('cursorRight'); }), true, 'keys in another script');
+      await open(back.document);
+      const again = await open(other.document);
+      assert.strictEqual(await after(() => vscode.commands.executeCommand('editor.action.clipboardPasteAction')), false, 'a paste of a whole line after a switch');
+      assert.deepStrictEqual([again.document.lineAt(1).text, again.selection.active.line, again.selection.active.character], ['echo one two three', 1, 5], 'the line pasted above');
     } finally {
       subs.forEach((s) => s.dispose());
       await vscode.workspace.getConfiguration('editor').update('scrollBeyondLastLine', undefined, vscode.ConfigurationTarget.Global);
