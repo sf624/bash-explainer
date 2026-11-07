@@ -322,15 +322,15 @@ function sourceOutput(stage: Stage): string[] | undefined {
   return undefined;
 }
 
-/** Sample input for the first stage that reads input. */
-function sampleFor(stage: Stage, more = 0): string[] | undefined {
+/** Sample input for the first stage that reads input; `distinct` asks for different lines, not copies of one. */
+function sampleFor(stage: Stage, more = 0, distinct = false): string[] | undefined {
   const w = stage.words;
   switch (canonicalName(stage.cmd)) {
     case 'grep':
       return grepSample([...impliedWords(stage.cmd), ...w], more, stage.inside);
     case 'sed': {
       const a = sedArgs(w);
-      return sedExample(a.script, { quiet: a.quiet, extended: a.extended })?.input;
+      return sedExample(a.script, { quiet: a.quiet, extended: a.extended }, distinct)?.input;
     }
     case 'awk': {
       const a = awkArgs(w);
@@ -408,11 +408,12 @@ export function pipelineExample(stages: Stage[], readsFile: boolean, given?: str
       const wantsDuplicates = stages.some((s) => s.cmd === 'uniq' || (s.cmd === 'sort' && sortsUnique(s.words)));
       // (A sort the simulation cannot follow throws Unsupported there: it gives no example anyway.)
       const build = (more: number): string[] | undefined => {
-        let lines = given ?? sampleFor(consumer, more);
-        // Duplicates make uniq, sort -u and counting visible further down.
+        let lines = given ?? sampleFor(consumer, more, wantsDuplicates);
+        // Duplicates make uniq, sort -u and counting visible further down; the copies of one line follow each other,
+        // so that uniq alone collapses them too.
         if (lines && !given && wantsDuplicates) {
           const keep = consumer.cmd.endsWith('grep') ? runGrep(consumer.words, lines) : lines;
-          if (keep.length) lines = [...lines, keep[0], keep[keep.length - 1], keep[0]];
+          if (keep.length) lines = [...lines, keep[keep.length - 1], keep[0], keep[0]];
         }
         return lines;
       };

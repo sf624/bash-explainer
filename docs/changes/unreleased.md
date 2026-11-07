@@ -18,6 +18,13 @@ The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 - **The card on the web page.** The pointer that rests where you clicked opens no card: the click already shows the line in the panel. A pointer that moves on to another part of the script opens its card as before, and so does one that comes back to the part later. The card closes on a click, a paste, typing, and Escape, wherever the focus is (the editor, the page, the panel). Before, a click on line 1 could leave a card of 500 px over the lines below, and a click on one of them failed.
 - **The Legend.** It opens under its button over the explanation, as wide as the panel and no higher than the room below it (it scrolls inside), and the explanation under it stays where it is. Escape closes it and the focus goes back to its button; so does a click outside it, the focus leaving the panel (a click in the editor), and a new line. Before, it opened in the flow of the panel, up to 400 px high, and stayed open on the next line. On a line with nothing to explain there is no Legend button; before, an open Legend drew an empty box.
 
+### A pipeline sample with distinct lines
+
+- **What.** When a stage after the first is `uniq` or `sort -u`, the made-up input has the duplicates it needs. The sample of a `sed` that has one line to show now also gets a second, different line that its pattern matches and the script changes (`cde=za` beside `a=x`; for `s/a/b/`, `abc a xyz` beside `a a`). The copies that make duplicates are copies of both, and the copies of one line follow each other, so `uniq` alone collapses them too.
+- **Before.** `sed -E 's/^([a-z]+)=(.*)$/\2=\1/' conf.txt | sort -u` read `a=x` four times and printed `x=a` four times. The sample of `sed 's/a/b/' f | uniq` was `a a` four times.
+- **After.** Input `a=x`, `cde=za`, `cde=za`, `a=x`, `a=x`; after the sed `x=a`, `za=cde`, `za=cde`, `x=a`, `x=a`; after `sort -u` `x=a`, `za=cde`.
+- **Not changed.** The sample of `sed` on its own (the README's `a=x` → `x=a`), and the samples of awk, perl and grep, which already have several lines.
+
 ### How sh fails, in the note on a bash-only form
 
 In a `sh`, `dash` or `ash` script, a bash-only form that fails with a status, a syntax error or a stop of the shell says how. Each sentence was measured in dash 0.5.12 and busybox 1.36 ash, and a test (`test/dialect-dash.test.ts`) runs them in both. Where the two differ, the note names the shell. Before, it said "it fails in dash and busybox ash".
