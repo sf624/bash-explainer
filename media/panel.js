@@ -65,7 +65,11 @@
   let lastAround = '[]';
   /** What the viewer folded and unfolded of the line shown, by row (`key`: the same at both depths); kept when the same line is drawn again. */
   let foldChoices = /** @type {Map<string, boolean>} */ (new Map());
-  /** How each row of the line shown started folded or not at the depth drawn (`ModelRow.folded`); kept when the same line is drawn again at that depth. */
+  /**
+   * How each row of the line shown is folded or not by the model at the depth drawn (`ModelRow.folded`), as last drawn. The model decides (a
+   * pipeline's stages fold by where the cursor is, `foldStages`); drawn again at the same depth, the panel only refuses to fold a row that was
+   * open, so that nothing folds under the pointer (a click on a row moves the cursor there).
+   */
   let foldStarts = /** @type {Map<string, boolean>} */ (new Map());
   /** The file and line `foldChoices` belongs to, and the depth drawn. */
   let shownLine = '';
@@ -1248,10 +1252,13 @@
     row.append(twisty, code, text, ...tryIt);
     box.append(row);
     li.append(box);
-    // (How a row starts is the model's, kept while the line is drawn again at this depth: a pipeline's stage the cursor moves to, at
-    // depth 2, does not open under the pointer that clicked a row of it, nor fold the stage above; the viewer's choice is kept at every depth.)
-    if (part.children.length && !foldStarts.has(part.key)) foldStarts.set(part.key, part.folded === true);
-    if (part.children.length && (foldChoices.get(part.key) ?? foldStarts.get(part.key))) setCollapsed(li, true, foldChoices.has(part.key));
+    // (The model's fold, but a row drawn open on this line at this depth stays open: the stage the cursor moved to opens, the one it left
+    // does not fold. The viewer's choice wins at every depth.)
+    if (part.children.length) {
+      const folded = part.folded === true && foldStarts.get(part.key) !== false;
+      foldStarts.set(part.key, folded);
+      if (foldChoices.get(part.key) ?? folded) setCollapsed(li, true, foldChoices.has(part.key));
+    }
     // Examples placed under this token go before (first) or after (last) its parts.
     const examples = (part.examples ?? []).map((/** @type {any} */ e, /** @type {number} */ i) => (e.folded ? foldedExample(e, `${part.key}/${i}`) : example(e, true, `${part.key}/${i}`)));
     // What lies under the row (its examples and parts), in one box: the indent guide is drawn beside it.
@@ -1301,7 +1308,10 @@
    * owns it: its fold button, or the row itself, so that the next Tab goes on from there and not from the top of the page.
    */
   function focusAgain(/** @type {{ keys: string[], link: number, role?: string, mark: boolean }} */ kept) {
-    const row = kept.keys.map((key) => document.querySelector(`#tree li[data-key="${key}"] > .item > .row`)).find(Boolean);
+    // (The nearest row that is drawn: one inside a fold is not, and the fold's own row takes the focus: a stage folded at depth 2. Where
+    // none is, the list itself is not drawn, and the nearest row there is.)
+    const rows = kept.keys.map((key) => document.querySelector(`#tree li[data-key="${key}"] > .item > .row`)).filter(Boolean);
+    const row = rows.find((r) => !!r?.getClientRects().length) ?? rows[0];
     if (!(row instanceof HTMLElement)) return;
     const same = row === document.querySelector(`#tree li[data-key="${kept.keys[0]}"] > .item > .row`);
     const target = same && (kept.mark ? row.querySelector('.mk-posix') : kept.role ? row.querySelector(`.role-chip[data-role="${kept.role}"]`) : kept.link >= 0 ? row.querySelectorAll('.refs a')[kept.link] : null);
