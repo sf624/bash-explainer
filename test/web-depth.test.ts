@@ -401,12 +401,14 @@ describe('the panel: one view with a depth', function () {
   // reaches) and folds or closes nothing: only the viewer folds (the maintainer's decision, 2026-11-07; usability-9.md, 2.7).
   /** The labels of the rows drawn folded, in order. */
   const foldedRows = (panel: Frame) => panel.evaluate(`[...document.querySelectorAll('#tree li.collapsed > .item > .row .label')].map((l) => l.textContent).join()`) as Promise<string>;
+  /** The whole text `name`, as a regular expression. */
+  const exactly = (name: string) => new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&') + '$');
   /** The label of the row `name`. */
-  const rowNamed = (panel: Frame, name: string) => panel.locator('#tree li[data-key] > .item > .row > .code .label', { hasText: new RegExp(`^${name.replace(/[-.]/g, '\\$&')}$`) });
+  const rowNamed = (panel: Frame, name: string) => panel.locator('#tree li[data-key] > .item > .row > .code .label', { hasText: exactly(name) });
   /** The top of the row `name` on the screen, in whole pixels. */
   const topOf = (panel: Frame, name: string) => rowNamed(panel, name).evaluate((e) => Math.round(e.getBoundingClientRect().top));
   /** The fold button of the row `name`. */
-  const foldButton = (panel: Frame, name: string) => panel.locator('#tree li[data-key]', { has: panel.locator(':scope > .item > .row > .code .label', { hasText: new RegExp(`^${name}$`) }) }).locator(':scope > .item > .row > button.twisty');
+  const foldButton = (panel: Frame, name: string) => panel.locator('#tree li[data-key]', { has: panel.locator(':scope > .item > .row > .code .label', { hasText: exactly(name) }) }).locator(':scope > .item > .row > button.twisty');
   /** Clicks the editor on the first `word` of its first line, as a pointer does: the cursor goes there. */
   async function clickWord(page: Page, word: string): Promise<void> {
     const at = await page.evaluate(`(() => {
