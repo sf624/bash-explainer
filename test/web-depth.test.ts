@@ -215,11 +215,10 @@ describe('the panel: one view with a depth', function () {
       await page.locator('.cm-content').focus();
       await page.keyboard.press('Control+End');
       await until('the glob example closed', () => panel.evaluate(`[...document.querySelectorAll('#tree details.example')].map((d) => d.open).join()`), (o) => o === 'false');
-      // (The rows stay as they started while the cursor moves on the line, with the cursor on grep's stage: usability-9.md, 2.7; the
-      // glob's closed example keeps its title. A click
-      // on a row moves the cursor too, and nothing above it may fold then. The other depth and back starts them again.)
+      // (Drawn first with the cursor on grep's stage, the stage the cursor moves to opens and nothing folds: grep's stage and its glob's row
+      // stay open, the glob's closed example keeps its title (usability-9.md, 2.7). The other depth and back starts the rows again.)
       const folded = () => panel.evaluate(`[...document.querySelectorAll('#tree li.collapsed > .item > .row .label')].map((l) => l.textContent)`);
-      assert.deepStrictEqual(await folded(), ['uniq', 'sort', 'head']);
+      await until('the last stage open', folded, (f) => JSON.stringify(f) === JSON.stringify(['uniq', 'sort']));
       assert.strictEqual(await panel.locator('#tree details.example > summary').first().isVisible(), true);
       await chooseDepth(page, 1);
       await depthDrawn(panel, 1);
@@ -373,6 +372,51 @@ describe('the panel: one view with a depth', function () {
       await depthDrawn(panel, 2);
       assert.deepStrictEqual(await unfolded(panel), expected, src);
     }
+    await ctx.close();
+  });
+
+  it('opens at depth 2 the stage of a pipeline the cursor moves to, and folds none under it; a click on a row folds nothing (usability-9.md, 2.7)', async () => {
+    const ctx = await context(1280, 'en', { animations: false });
+    const page = await ctx.newPage();
+    const src = 'grep -h x f | uniq -c | head -5';
+    const panel = await open(page, src);
+    await chooseDepth(page, 2);
+    await depthDrawn(panel, 2);
+    const folded = () => panel.evaluate(`[...document.querySelectorAll('#tree li.collapsed > .item > .row .label')].map((l) => l.textContent).join()`);
+    await until('the stages the cursor is not on folded', folded, (f) => f === 'uniq,head');
+    // (The cursor moves to `uniq` by the keys: its stage opens, and grep's, which the cursor left, stays open.)
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Home');
+    for (let i = 0; i < src.indexOf('uniq') + 1; i++) await page.keyboard.press('ArrowRight');
+    await until('the stage of uniq open', folded, (f) => f === 'head');
+    // (A click on the row of `head` opens it, as a click does, and moves the cursor there: nothing else folds.)
+    await panel.locator('#tree li[data-key] > .item > .row > .code .label', { hasText: /^head$/ }).click();
+    await page.waitForTimeout(300);
+    assert.strictEqual(await folded(), '');
+    await ctx.close();
+  });
+
+  it('keeps the focus on a stage that folds at depth 2, where it was on a part of it at depth 1', async () => {
+    // (Before, the focus went to the part's row, which the fold hides, and fell to the page's body.)
+    const ctx = await context(1280, 'en', { animations: false });
+    const page = await ctx.newPage();
+    const panel = await open(page, 'grep -h x f | uniq -c | head -5');
+    await chooseDepth(page, 1);
+    await depthDrawn(panel, 1);
+    await panel.evaluate(`(() => {
+      const li = [...document.querySelectorAll('#tree li[data-key]')].find((l) => l.querySelector(':scope > .item > .row .label').textContent === '-c');
+      const row = li.querySelector(':scope > .item > .row');
+      row.tabIndex = -1;
+      row.focus();
+    })()`);
+    await page.keyboard.press('2');
+    await depthDrawn(panel, 2);
+    const at = await panel.evaluate(`(() => {
+      const a = document.activeElement;
+      const li = a && a.closest('li[data-key]');
+      return [a ? a.tagName : '', a && a.matches('button.twisty') ? 'twisty' : '', li ? li.querySelector(':scope > .item > .row .label').textContent : '', li ? li.classList.contains('collapsed') : false];
+    })()`);
+    assert.deepStrictEqual(at, ['BUTTON', 'twisty', 'uniq', true]);
     await ctx.close();
   });
 
