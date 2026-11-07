@@ -15,6 +15,16 @@ describe('xargs agrees with GNU xargs', () => {
     // With `-I` and a delimiter, each item is a run of its own.
     [['-0', '-n', '1', '-I{}'], ['rm', '-f', '{}']], [['-0', '-I{}'], ['mv', '{}', '{}.bak']], [['-d', ',', '-I{}'], ['echo', '{}']],
     // `-i`/`--replace` and `-l`/`--max-lines` take a value only attached: the next word is the command (`-I {}`, `-L 1`).
+    // Options that cancel each other: the later one wins (GNU xargs warns "ignoring previous … value"), except that `-n1` after `-I` changes nothing.
+    [['-n1', '-I{}'], ['echo', '[{}]']], [['-I{}', '-n1'], ['echo', '[{}]']], [['-L1', '-I{}'], ['echo', '[{}]']], [['-I{}', '-L1'], ['echo', '[{}]']],
+    [['-n1', '-L1'], ['echo', 'X']], [['-L1', '-n1'], ['echo', 'X']], [['-n2', '-L2'], ['echo', 'X']], [['-L2', '-n1'], ['echo', 'X']],
+    [['-n1', '-i'], ['echo', '[{}]']], [['-i', '-n1'], ['echo', '[{}]']], [['-l', '-n1'], ['echo', 'X']], [['-n1', '-l'], ['echo', 'X']],
+    [['-n1', '-L1', '-I{}'], ['echo', '{}']], [['-I{}', '-L1', '-n1'], ['echo', '{}']], [['-L1', '-I{}', '-n1'], ['echo', '{}']], [['-I{}', '-n1', '-L1'], ['echo', '{}']],
+    // `-n1` after `-I` agrees with it; another count drops the replacement.
+    [['-I{}', '-n2'], ['echo', 'X', '{}']], [['-i', '-n2'], ['echo', 'X', '{}']], [['-L1', '-I{}', '-n2'], ['echo', 'X', '{}']], [['-I{}', '-n', '1'], ['echo', 'X', '{}']],
+    [['-I{}', '-n01'], ['echo', 'X', '{}']], [['-I{}', '--max-args', '1'], ['echo', 'X', '{}']], [['-I{}', '-n2', '-n1'], ['echo', 'X', '{}']], [['-I{}', '-n1', '-n2'], ['echo', 'X', '{}']],
+    [['-n2', '-I{}'], ['echo', 'X', '{}']], [['-I{}', '-n2', '-L1'], ['echo', 'X', '{}']], [['-n1', '-I{}', '-n2'], ['echo', 'X', '{}']],
+    [['-n1', '-n2'], ['echo', 'X']], [['-L1', '-L2'], ['echo', 'X']], [['-I{}', '-I[]'], ['echo', '{}[]']],
     [['--replace'], ['echo', '{}']], [['-i'], ['mv', '{}', '{}.bak']], [['-i@'], ['echo', '@']], [['--max-lines'], ['echo']], [['-l'], ['echo']], [['--max-l=2'], ['echo']],
   ];
   for (const [opts, cmd] of cases) {

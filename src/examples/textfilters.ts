@@ -48,8 +48,11 @@ export function parseOptions(cmd: string, words: (string | undefined)[], support
     const key = r.spec.names.map((n) => supported[n]).find((k) => k !== undefined);
     if (key === undefined) throw new Unsupported(r.flag);
     if (r.missing) throw new Unsupported('missing value');
+    // (An option the tool ignores, `xargs -n1 -I{}`: read with its value, and left out.)
+    if (r.ignored) skipped.add(out.opts.length);
     out.opts.push([key, r.value ? words[word]!.slice(r.value.attached) : '']);
   };
+  const skipped = new Set<number>();
   const parse = parseWords(cmd, words);
   // (A line the tool refuses, `grep -E -F`, runs nothing.)
   if (parse.refused) throw new Unsupported('refused');
@@ -73,6 +76,7 @@ export function parseOptions(cmd: string, words: (string | undefined)[], support
       default: option(role, word);
     }
   }
+  out.opts = out.opts.filter((_, i) => !skipped.has(i));
   return out;
 }
 

@@ -435,7 +435,24 @@ export interface PatternOption {
   inMode?: Record<string, Text>;
 }
 
-export interface ModeSpec { name: string; default?: boolean }
+export interface ModeSpec {
+  name: string;
+  default?: boolean;
+  /**
+   * The options of these modes, given before an option of this one, are ignored: the later one takes over (GNU xargs:
+   * `-n1 -I{}` is "ignoring previous --max-args value"). With `cancels` anywhere in `modes`, the mode of
+   * the line is the one still in effect after the options are read in order, with none when no option selects one
+   * (`default` is not followed), not the last one given (`lastModeWins`).
+   */
+  cancels?: string[];
+  /**
+   * An option of this mode whose value is `value` changes nothing while one of `modes` is in effect: it is not in
+   * effect itself (it cancels nothing), and is not ignored either; any other value cancels as `cancels` says
+   * (GNU xargs: `-I{} -n1` runs one argument per command anyway, but `-I{} -n2` drops the replacement). A value that
+   * is not known may be that one.
+   */
+  agreesWith?: { modes: string[]; value: number };
+}
 
 export interface OldStyleSpec {
   /** The meaning of each letter. Default: the command's `-x` options. */
@@ -599,7 +616,7 @@ export interface CommandSlot {
    * The program adds words of its own after the command's arguments when it runs it (`xargs cmd`: the words it reads),
    * so no word of the command is its one argument (`xargs echo --version` prints `--version` and the input). Not so
    * with a replace string (`xargs -I{}`), which says where the input goes, unless a later `-L` or `-l` turns it off
-   * (GNU xargs: "ignoring previous --replace value"; a later `-I` turns those off: xargs's modes, `lastModeWins`).
+   * (GNU xargs: "ignoring previous --replace value"; a later `-I` turns those off: xargs's modes, `ModeSpec.cancels`).
    */
   appends?: boolean;
   /** `exec cmd`: nothing after it runs. */
