@@ -59,6 +59,6 @@ export const buildifier: Record<string, CommandSpec> = {
     parser: 'openssl',
     optionsFirst: true,
     helpCommand: 'buildifier -help',
-    positional: [tx('Starlark ファイル（`-r` ならディレクトリも。省略すると標準入力）', 'Starlark file (with `-r` also a directory; stdin if none)')],
+    positional: [tx('Starlark ファイル（`-r` ならディレクトリも、省略すると標準入力）', 'Starlark file or, with `-r`, directory (stdin if none)')],
   }),
 };
