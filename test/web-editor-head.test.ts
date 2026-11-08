@@ -307,7 +307,8 @@ describe('the web page: the app bar and the editor\'s header', function () {
           // Its name is its word either way.
           assert.strictEqual(await page.locator(id).evaluate((b) => b.textContent), locale === 'ja-JP' ? (id === '#open-btn' ? '開く' : '保存') : (id === '#open-btn' ? 'Open' : 'Save'));
         }
-        await page.locator('#file-name').click();
+        // (On a phone the name renames from its pencil only: docs/design/usability-9.md, Q7.)
+        await page.locator(width === 390 ? '#file-name .file-pencil' : '#file-name').click();
         await page.keyboard.press('Control+A');
         await page.keyboard.insertText(long);
         await page.keyboard.press('Enter');

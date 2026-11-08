@@ -1113,13 +1113,8 @@ button.twisty:focus-visible {
 }
 
 /* (On a touch screen the fold arrow takes a press 44 px wide and high, from the row's top edge, ending 2 px before the
-   row's name, which a tap reveals as a click does: docs/design/usability-9.md, 2.7. A row with parts is at least as tall,
-   so that the next row and its arrow do not take the bottom of that press.) */
+   row's name, which a tap reveals as a click does: docs/design/usability-9.md, 2.7. Nothing moves.) */
 @media (pointer: coarse) {
-  .row:has(> button.twisty) {
-    min-height: 44px;
-  }
-
   button.twisty {
     position: relative;
   }

@@ -90,6 +90,14 @@ describe('the panel keeps the row acted on in place', function () {
       await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes(text.slice(0, 12)));
       await chooseDepth(page, depth);
       await until('the rows', () => panel().evaluate('document.body.dataset.depth'), (d) => d === String(depth));
+      // (On a phone, the sheet at full height: at half, below its grab strip, the end of the page at depth 2 had no row
+      // with parts left to fold on the screen.)
+      if (width < 520) {
+        await page.locator('#sheet-grab').focus();
+        await page.keyboard.press('End');
+        await until('the full sheet', () => page.evaluate('document.documentElement.dataset.sheet'), (s) => s === 'full');
+        await page.waitForTimeout(400);
+      }
       await still(panel());
       return { ctx, panel: panel() };
     },
