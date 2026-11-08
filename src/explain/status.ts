@@ -76,10 +76,8 @@ export function substitutionStatus(cx: Explainer, n: SyntaxNode): string {
   if (ctx.active !== 'on' || ctx.checked !== true || ctx.stops !== 'script') return '';
   const rule = cx.status.status(stmt);
   if (rule.kind === 'last-substitution') {
-    // (`$(grep -c x f || true)`: the substitution does not fail, unless `true` is a function that does.)
-    const last = n.namedChildren.filter((c) => STATEMENTS.has(c.type)).pop();
-    const masked = last?.type === 'list' && last.children.some((c) => c.type === '||') && cx.status.succeeds(last.namedChildren[last.namedChildren.length - 1]);
-    if (masked && rule.at === n) return '';
+    // (`$(grep -c x f || true)`: the substitution does not fail, unless `true` is a function that does: `mayFail`.)
+    if (rule.at === n && !cx.status.mayFail(stmt)) return '';
     return rule.at === n
       // (The line's note `errexit-stops-here` says that `set -e` stops the script here.)
       ? cx.s('。名前のないコマンド（代入やリダイレクトだけのコマンド）は、最後のコマンド置換の終了ステータスになる', '. A command with no name, only assignments or redirections, takes the status of its last command substitution')
@@ -109,7 +107,9 @@ export function stopContext(state: StateModel, status: StatusModel, n: SyntaxNod
   if (e.active !== 'on' || e.checked !== true || !status.mayFail(n) || state.dead(n)) return undefined;
   const { within } = e;
   if (within?.kind === 'test') {
-    const down = hostRun && state.at(n).run.functions.get(hostRun.each.after)?.state === 'on' ? hostRun.each.after : undefined;
+    // (A test runs only in a host's run.)
+    const after = hostRun!.each.after;
+    const down = state.at(n).run.functions.get(after)?.state === 'on' ? after : undefined;
     return { stops: 'test', ...(down ? { teardown: down } : {}) };
   }
   if (within?.kind === 'host' || hostRun) return undefined;
@@ -133,6 +133,7 @@ export function stopContext(state: StateModel, status: StatusModel, n: SyntaxNod
   const err = trap('ERR');
   const exit = trap('EXIT');
   const set = e.stops === 'script' && !exit ? laterExitTrap(state, n) : undefined;
-  const later = set?.script ? { line: docLine(set.at) + 1, action: actionName(set.script) } : undefined;
+  // (`laterExitTrap` names a trap whose action it reads.)
+  const later = set ? { line: docLine(set.at) + 1, action: actionName(set.script!) } : undefined;
   return { stops: e.stops, ...(err ? { err } : {}), ...(exit ? { exit } : {}), ...(later ? { later } : {}) };
 }

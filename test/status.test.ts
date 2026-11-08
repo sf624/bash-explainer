@@ -299,8 +299,10 @@ function explanations(src: string, line: number, lang: 'en' | 'ja' = 'en'): stri
 describe('the notes on status and errexit', () => {
   it('says that `x=$(cmd)` stops the script under set -e, and `echo $(cmd)` does not', () => {
     // bash -ec 'x=$(false); echo after' prints nothing; 'echo $(false); echo after' prints after.
-    assert.ok(explanations('set -e\nx=$(false)', 1).some((e) => /Under `set -e` the script stops here if it fails/.test(e)));
-    assert.ok(explanations('set -e\nx=$(false)', 1, 'ja').some((e) => /スクリプトはここで止まる/.test(e)));
+    // (The line's note says the stop, the substitution's row why its status counts.)
+    assert.ok(notes('set -e\nx=$(false)', 1).some((e) => /^ℹ If `false` in `\$\( \)` fails, `set -e` stops the script here/.test(e)));
+    assert.ok(notes('set -e\nx=$(false)', 1, 'ja').some((e) => /スクリプトはここで終わり/.test(e)));
+    assert.ok(explanations('set -e\nx=$(false)', 1).some((e) => /takes the status of its last command substitution/.test(e)));
     assert.ok(explanations('set -e\nx=$(false)$(true)', 1).some((e) => /If it fails, `set -e` does not stop the script \(a command with no name/.test(e)));
     assert.ok(explanations('set -e\necho "$(false)"', 1).some((e) => /the status is that of `echo`/.test(e)));
     assert.ok(explanations('set -e\nlocal x=$(false)', 1).every((e) => !/set -e/.test(e)));
@@ -312,9 +314,9 @@ describe('the notes on status and errexit', () => {
     assert.ok(explanations('set -e\necho $(a $(false))', 1).some((e) => /the status is that of `echo`/.test(e)));
     assert.ok(explanations('set -e\ndiff <(echo $(false)) b', 1).every((e) => !/set -e/.test(e)));
     // bash -ec 'n=$(grep -c x /dev/null || true); echo after' prints after.
-    for (const ok of ['n=$(grep -c x f || true)', 'n=$(grep -c x f || :)']) assert.ok(explanations(`set -e\n${ok}`, 1).every((e) => !/set -e/.test(e)), ok);
-    assert.ok(explanations('set -e\nn=$(grep -c x f || echo 0)', 1).some((e) => /stops here/.test(e)));
-    assert.ok(explanations('set -e\nn=$(grep -c x f && true)', 1).some((e) => /stops here/.test(e)));
+    for (const ok of ['n=$(grep -c x f || true)', 'n=$(grep -c x f || :)']) assert.ok(explanations(`set -e\n${ok}`, 1).every((e) => !/set -e/.test(e)) && notes(`set -e\n${ok}`, 1).every((e) => !/stops the script here/.test(e)), ok);
+    assert.ok(notes('set -e\nn=$(grep -c x f || echo 0)', 1).some((e) => /`set -e` stops the script here/.test(e)));
+    assert.ok(notes('set -e\nn=$(grep -c x f && true)', 1).some((e) => /`set -e` stops the script here/.test(e)));
   });
 
   it('points out `local x=$(cmd)`, also quoted, not `export $(cmd)`', () => {
@@ -485,7 +487,8 @@ describe('the notes on status and errexit', () => {
 // below), so no line says anything about the status.
 describe('a list in a `$( )` of a heredoc body', () => {
   const lines = (src: string): string[][] => src.split('\n').map((_, i) => notes(src, i));
-  const say = (src: string) => lines(src).flat().filter((n) => /status|returns 0|goes on|set -e|終了ステータス/.test(n));
+  // (Not the note on where `set -e` stops the script, which is about `cat`.)
+  const say = (src: string) => lines(src).flat().filter((n) => /status|returns 0|goes on|set -e|終了ステータス/.test(n) && !/^ℹ If `cat` fails/.test(n));
   const bodies = ['cat <<EOF\n$(a && b)\nEOF', 'cat <<EOF\n$(a || b)\nEOF', 'cat <<-EOF\n\t$(a && b)\n\tEOF', "cat <<'EOF'\n$(a && b)\nEOF",
     'cat <<EOF\n$(echo $(a && b))\nEOF', 'cat <<EOF\n$(a; b)\nEOF', 'cat <<EOF\n$(a && b || c)\nEOF', 'cat <<EOF\n`a && b`\nEOF', 'cat <<< "$(a && b)"',
     'f() {\n  cat <<EOF\n$(a || echo none)\nEOF\n}\nf', 'for i in 1 2; do\n  cat <<EOF\n$(a && b)\nEOF\ndone', 'cat <<EOF | grep x\n$(a && b)\nEOF',
@@ -598,7 +601,7 @@ describe('what surely succeeds (`succeeds`), as bash runs it', () => {
       assert.strictEqual(!run.stdout.includes('after'), stops, 'bash');
       const src = ['set -e', ...lines].join('\n');
       for (const lang of ['en', 'ja'] as const) {
-        const said = explanations(src, lines.length, lang).some((e) => (lang === 'en' ? /Under `set -e` the script stops here if it fails/ : /スクリプトはここで止まる/).test(e));
+        const said = notes(src, lines.length, lang).some((e) => (lang === 'en' ? /`set -e` stops the script here/ : /スクリプトはここで終わり/).test(e));
         assert.strictEqual(said, stops, `${lang}: the note on $( )`);
         const idiom = notes(src, lines.length, lang).some((n) => (lang === 'en' ? /Idiom: `\|\| true`/ : /定番の書き方: `\|\| true`/).test(n));
         assert.strictEqual(idiom, !stops, `${lang}: the idiom`);

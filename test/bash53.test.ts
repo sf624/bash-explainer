@@ -67,8 +67,8 @@ const CASES: Case[] = [
   { script: 'x=${| echo out; REPLY=v; }; echo "[$x]"', out: 'out\n[v]\n', says: [/their stdout is not captured/], form: 'valsub' },
   { script: 'x=${| REPLY=$\'a\\n\'; }; printf \'[%s]\\n\' "$x"', out: '[a\n]\n', says: [/trailing newlines kept/], form: 'valsub' },
   // `set -e`: a command of assignments only takes the status of its substitution.
-  { script: 'set -e; x=${ false; }; echo reached', out: '', says: [/Under `set -e` the script stops here if it fails/], form: 'funsub' },
-  { script: 'set -e; x=${| false; }; echo reached', out: '', says: [/Under `set -e` the script stops here if it fails/], form: 'valsub' },
+  { script: 'set -e; x=${ false; }; echo reached', out: '', says: [/takes the status of its last command substitution/], form: 'funsub' },
+  { script: 'set -e; x=${| false; }; echo reached', out: '', says: [/takes the status of its last command substitution/], form: 'valsub' },
   // Inside, `set -e` is off, as in `$( )`.
   { script: 'set -e; x=${ false; echo after; }; echo "$x"', out: 'after\n', says: [], notes: /bash turns `set -e` off inside `\$\{ …; \}`/, form: 'funsub' },
   { script: 'set -e; x=${| false; REPLY=r; }; echo "$x"', out: 'r\n', says: [], notes: /bash turns `set -e` off inside `\$\{\| …; \}`/, form: 'valsub' },

@@ -253,7 +253,11 @@ describe('the note on where `set -e` stops the script, against bash (docs/design
     // (A function called in the script and in a subshell: the shell is not known; code not reached says nothing.)
     assert.match(notesOn('set -e\nf() {\n  false\n}\nf\n( f )', 2)[0], /stops the shell it runs in/);
     assert.deepStrictEqual(notesOn('set -e\nexit 1\nfalse', 2), []);
+    // (An action the model does not read: the trap may run, and change the status.)
+    assert.match(notesOn('set -e\ntrap "$cmd" EXIT\nfalse', 2)[0], /, with `false`'s status; an EXIT trap may run first and change the status$/);
     assert.match(notesOn('set -e\nx=$(a; b)', 1)[0], /^ℹ If `\$\( \)` fails/);
+    assert.match(notesOn('set -e\nx=$(y=$(a))', 1)[0], /^ℹ If `\$\( \)` fails/);
+    assert.match(notesOn('set -e\nx=$(date)', 1)[0], /^ℹ If `date` in `\$\( \)` fails/);
     assert.match(notesOn('set -e\ntest -d x', 1)[0], /^ℹ If `test -d x` is false/);
     // (Builtins that fail only on a usage or write error, and a call of a function whose failures stop inside it.)
     assert.deepStrictEqual(notesOn("set -e\ntrap 'rm -f x' EXIT", 1), []);

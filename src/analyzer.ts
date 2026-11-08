@@ -9,7 +9,7 @@ import { wordFindings } from './wordfacts';
 import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 import { lookupCommand } from './dict/aliases';
 import { basisGate, type Fact, fact, pitfallSaid } from './messages';
-import { onceBy } from './lists';
+import { onceBy, pushAll } from './lists';
 import { withoutBases, withTokenBases } from './tokenbases';
 import { pictureNote } from './ctlchars';
 import { dialectFound, keywordsNotIn, notPosixOn, Shell } from './dialect';
@@ -134,7 +134,7 @@ export class Analyzer {
       ...statusNotes(cx, line, true),
     ];
     // (Where `set -e` stops the script, unless a problem said so: after the others.)
-    after.push(...errexitStopNotes(cx, line, [...before, ...walked, ...after]));
+    pushAll(after, errexitStopNotes(cx, line, [...before, ...walked, ...after]));
     const notes = [...before, ...walked, ...after];
     // (A fact said twice, or left out with the pitfalls, is listed once, or not. Said twice, it is about two places,
     // `cp $a b; cp $a c`: its rewrites make the edits of both, so that none of them is left.

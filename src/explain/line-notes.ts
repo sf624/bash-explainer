@@ -16,7 +16,7 @@ import { NAME } from '../semantics/walk/shared';
 import { wordPatterns } from '../semantics/globwords';
 import { lostVariable } from '../semantics/pipeline';
 import { docLine } from '../semantics/state';
-import type { StatusModel } from '../semantics/status';
+import type { StatusModel, StatusRule } from '../semantics/status';
 import { statusFacts, type StatusFact } from '../statusfacts';
 import { ancestor, assignmentsOnly, field, fields, nameText, type SyntaxNode } from '../syntax/tree';
 import type { Explainer, LineExplainer } from './context';
@@ -202,7 +202,9 @@ function stopWhat(status: StatusModel, n: SyntaxNode): StopWhat {
   const nameOf = (c: SyntaxNode): string => shorten(nameText(field(c, 'name')!), 20);
   const rule = status.status(n);
   if (assignmentsOnly(n)) {
-    const inner = rule.kind === 'last-substitution' && rule.at ? rule.at.namedChildren.filter((c) => STATEMENTS.has(c.type)) : [];
+    // (One that may fail has the status of its last substitution, `at`: src/semantics/status.ts.)
+    const { at } = rule as Extract<StatusRule, { kind: 'last-substitution' }>;
+    const inner = at!.namedChildren.filter((c) => STATEMENTS.has(c.type));
     return { kind: 'substitution', ...(inner.length === 1 && inner[0].type === 'command' && !assignmentsOnly(inner[0]) ? { name: nameOf(inner[0]) } : {}) };
   }
   // (A test that is well formed is false with 1, as written; a malformed one gives 2, the command's status.)

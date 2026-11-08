@@ -138,9 +138,8 @@ function stopText(lang: Lang, p: ErrexitStopParams): string {
   // (A trap that may run whose action is not known may change the status too.)
   const blind = maybe.some(([, t]) => !t.action);
   const runs = sure.map(([name, t]) => ja ? `${trapName(lang, name, t)}の ${codeSpan(t.action!)}` : `${trapName(lang, name, t)} runs ${codeSpan(t.action!)}`);
-  const mayRun = maybe.length === 2 && !p.err!.line && !p.exit!.line
-    ? (ja ? 'ERR トラップと EXIT トラップ' : 'an ERR trap and an EXIT trap')
-    : maybe.map(([name, t]) => trapName(lang, name, t)).join(ja ? 'と' : ' and ');
+  // (ja: a space between と and a name in Latin letters, `ERR トラップと EXIT トラップ`.)
+  const mayRun = maybe.map(([name, t]) => trapName(lang, name, t)).join(ja ? 'と' : ' and ').replace(/と(?=[A-Z])/g, 'と ');
   const later = p.later && (ja
     ? `EXIT トラップはまだ設定されていないので、${lineLabel('ja', p.later.line)} の ${codeSpan(p.later.action)} は実行されない`
     : `no EXIT trap is set yet, so ${codeSpan(p.later.action)} (${lineLabel('en', p.later.line, 'inline')}) does not run`);

@@ -268,6 +268,13 @@ class Statuses implements StatusModel {
       // (Not with a redirection that may fail: `echo x >> "$log"`, `f > out`.)
       if (!redirectionsOf(n).some((r) => redirectionMayFail(r, false))) return false;
     }
+    // (`x=$(grep -c x f || true)`: the substitution's status is that of its last command, a list that ends with one that
+    // surely succeeds, unless `true` is a function that fails; not with a redirection that may fail.)
+    if (rule.kind === 'last-substitution' && rule.at) {
+      const last = rule.at.namedChildren.filter((c) => STATEMENTS.has(c.type)).pop();
+      const masked = last?.type === 'list' && last.children.some((c) => c.type === '||') && this.succeeds(last.namedChildren[last.namedChildren.length - 1]);
+      if (masked && !redirectionsOf(n).some((r) => redirectionMayFail(r, false))) return false;
+    }
     return !(rule.kind === 'last-substitution' && !rule.at) && !this.succeeds(n);
   }
 
