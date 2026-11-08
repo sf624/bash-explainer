@@ -210,8 +210,8 @@ export const FEATURES: Record<string, Feature> = {
   setByBash: { works: 'b  ykmz', vars: ['OSTYPE', 'HOSTTYPE', 'MACHTYPE', 'SHELLOPTS', 'GROUPS', 'DIRSTACK', 'OPTERR', 'HISTCMD', 'SRANDOM'], ja: 'bash が設定する変数', en: 'a variable bash sets', dash: 'empty', ash: 'empty' },
   // (Set by `read` with no name, which busybox ash has and dash refuses: `readReply`. bash sets it at `select` too.)
   reply: { works: 'b a kmz', vars: ['REPLY'], ja: '`$REPLY`', en: '`$REPLY`', dash: 'empty' },
-  // (dash and busybox ash never set it from a command's last argument; measured: with `_` not in the environment it is empty, with one it keeps that. ksh, mksh and zsh set it as bash does; the shells not run say nothing is claimed.)
-  lastArg: { works: 'b  ykmz', vars: ['_'], ja: '`$_`（直前のコマンドの最後の引数）', en: '`$_` (the last argument of the previous command)', altJa: '`d=...; mkdir "$d" && cd "$d"` のように変数に入れる', altEn: 'keep it in a variable: `d=...; mkdir "$d" && cd "$d"`', dash: 'empty', ash: 'empty' },
+  // (dash and busybox ash never set it from a command's last argument; measured: with `_` not in the environment it is empty, with one it keeps that. zsh sets it as bash does; CI's yash, ksh93 and mksh did not set it with the probe of test/dialect.test.ts.)
+  lastArg: { works: 'b    z', vars: ['_'], ja: '`$_`（直前のコマンドの最後の引数）', en: '`$_` (the last argument of the previous command)', altJa: '`d=...; mkdir "$d" && cd "$d"` のように変数に入れる', altEn: 'keep it in a variable: `d=...; mkdir "$d" && cd "$d"`', dash: 'empty', ash: 'empty' },
   funcname: { works: 'b a', vars: ['FUNCNAME'], ja: '`$FUNCNAME`', en: '`$FUNCNAME`', dash: 'empty' },
   uid: { works: 'b     z', vars: ['UID', 'EUID'], ja: '`$UID` / `$EUID`', en: '`$UID` / `$EUID`', altJa: '`$(id -u)` を使う', altEn: 'use `$(id -u)`', dash: 'empty', ash: 'empty' },
   hostname: { works: 'b a', vars: ['HOSTNAME'], ja: '`$HOSTNAME`', en: '`$HOSTNAME`', altJa: '`$(hostname)` を使う', altEn: 'use `$(hostname)`', dash: 'empty' },
