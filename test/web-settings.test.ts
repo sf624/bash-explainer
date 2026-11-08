@@ -895,10 +895,21 @@ describe('the web page: theme and settings', function () {
     await until('the sheet modal', () => page.evaluate("document.getElementById('settings-dialog').matches(':modal')"), (v) => v === true);
     await until('the hold let go', held, (v) => v === ',,sheet');
     await touch('touchEnd').catch(() => undefined);
-    // Back in the wide layout and closed: the page has the whole window again.
+    // Back in the wide layout, the sheet opens beside the panes as any opening does: it holds the panes' width while it waits
+    // for the long frame and slides in (`holding`, within `moving`), and nothing of the swipe is left once it rests.
+    await page.evaluate(`(() => {
+      const d = document.getElementById('settings-dialog');
+      window.classesSeen = [];
+      new MutationObserver(() => window.classesSeen.push(d.className)).observe(d, { attributeFilter: ['class'] });
+    })()`);
     await page.setViewportSize({ width: 1280, height: 700 });
     await until('the sheet beside the panes', () => page.evaluate("document.getElementById('settings-dialog').matches(':modal')"), (v) => v === false);
+    await until('the sheet at rest', held, (v) => !/holding|moving/.test(v));
     assert.strictEqual(await held(), ',,sheet');
+    const seen = (await page.evaluate('window.classesSeen')) as string[];
+    assert.ok(seen.some((c) => /holding/.test(c)), JSON.stringify(seen));
+    assert.deepStrictEqual(seen.filter((c) => /holding/.test(c) && !/moving/.test(c)), [], 'the panes held until the sheet has slid in');
+    // Closed: the page has the whole window again.
     await page.locator('#settings-open').click();
     await until('closed', () => isOpen(page), (v) => !v);
     await stable('at rest', () => boxes(page).then((b) => JSON.stringify(b)));
