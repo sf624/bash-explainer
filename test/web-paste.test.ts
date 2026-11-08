@@ -92,7 +92,7 @@ describe('the web page: the file kind of a pasted script', function () {
     await ctx.close();
   });
 
-  it('works with the keyboard paste (Ctrl+V) and with a drop of text, and leaves the kind when nothing is clear', async () => {
+  it('works with the keyboard paste (Ctrl+V) and with a drop of text; a whole script that says nothing clear is a plain shell script', async () => {
     const { ctx, page } = await open();
     await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
     await page.evaluate(`navigator.clipboard.writeText(${JSON.stringify(MAKEFILE)})`);
@@ -107,11 +107,12 @@ describe('the web page: the file kind of a pasted script', function () {
     await page.keyboard.press('Delete');
     await drop(page, DOCKERFILE);
     await until('the kind', () => kindOf(page), (k) => k === 'dockerfile');
-    // A script that says nothing clear keeps the kind.
+    // A whole script that says nothing clear starts a new script, a plain shell script (docs/design/usability-9.md, Q8 and
+    // U10; before, it kept the Dockerfile's kind).
     await page.keyboard.press('Control+A');
     await paste(page, 'echo hello\nls -l\n');
     await until('the paste', () => text(page), (t) => t.trim() === 'echo hello\nls -l');
-    assert.strictEqual(await kindOf(page), 'dockerfile');
+    await until('a shell script', () => kindOf(page), (k) => k === 'shell');
     await ctx.close();
   });
 
