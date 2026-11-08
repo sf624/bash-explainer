@@ -14,20 +14,30 @@ export type SnapHeights = Record<Snap, number>;
 
 /** The half height's share of the window. */
 export const HALF_SHARE = 0.55;
-/** A release at least this fast (px per ms, 500 px a second) is a fling: the sheet goes on to the next height that way. */
-export const FLING = 0.5;
+/**
+ * A release at least this fast (px per ms, 1,000 px a second), after a drag of at least `FLING_TRAVEL`, is a fling: the
+ * sheet goes on to the next height that way (docs/design/usability-9.md, 2.5: at 0.5 px/ms a flick of 66 px jumped to full).
+ */
+export const FLING = 1;
 /** A slower release still carries the sheet as far as it would go in this many ms, then to the nearest height. */
 export const CARRY_MS = 150;
+/**
+ * A drag shorter than this (px, from where the finger took the sheet) is neither flung nor carried: the sheet goes to the
+ * height nearest to where it is let go, so that a short flick does not jump a height.
+ */
+export const FLING_TRAVEL = 80;
+/** The room a full sheet leaves under the editor's header strip (px): a tap just above the sheet is not on the strip's file name. */
+export const FULL_GAP = 8;
 
 /**
- * The heights in px, from the window's height (`view`), the top a full sheet reaches (the strip's bottom, once the app
- * bar has slid away), the height of the header row with the sheet's edge and the bottom's safe area (`row`), and the
- * summary row's (`summary`, step C8b): the peek is both rows (decision 5). A height is never under the peek nor over
- * the full one, so on a short window two of them may be the same.
+ * The heights in px, from the window's height (`view`), the strip's bottom once the app bar has slid away (`top`: a full
+ * sheet stops `FULL_GAP` under it), the height of the header (the grab strip and the tabs row) with the sheet's edge and
+ * the bottom's safe area (`row`), and the summary row's (`summary`, step C8b): the peek is both (decision 5). A height is
+ * never under the peek nor over the full one, so on a short window two of them may be the same.
  */
 export function snapHeights(view: number, top: number, row: number, summary: number): SnapHeights {
   const peek = row + summary;
-  const full = Math.max(peek, Math.round(view - top));
+  const full = Math.max(peek, Math.round(view - top - FULL_GAP));
   return { peek, half: Math.min(full, Math.max(peek, Math.round(view * HALF_SHARE))), full };
 }
 
@@ -76,20 +86,34 @@ export interface EditorRoom {
 }
 
 /**
- * Whether the cursor's line is brought back into view after the sheet moved: always, but while the keyboard's fold stays
- * on with no less room. There the moves are the visual viewport's pans (a reader scrolling with the keyboard open), which
- * hide nothing, and leave the editor where the reader scrolled it.
+ * Whether the cursor's line is brought back into view after the sheet moved: when it showed before the move (`shown`: in
+ * what the sheet left of the editor), but while the keyboard's fold stays on with no less room. A reader who scrolled
+ * away from the cursor stays where they read (a move pulled them back from 4,058 px to the top, #659). And with the
+ * keyboard open, the moves are the visual viewport's pans (a reader scrolling), which hide nothing, and leave the editor
+ * where the reader scrolled it.
  */
-export function cursorFollows(before: EditorRoom | undefined, now: EditorRoom): boolean {
-  return !before?.fold || !now.fold || before.width !== now.width || now.height < before.height;
+export function cursorFollows(before: EditorRoom | undefined, now: EditorRoom, shown: boolean): boolean {
+  return shown && (!before?.fold || !now.fold || before.width !== now.width || now.height < before.height);
 }
 
 /**
- * The height a drag settles on, from the sheet's height when the finger lets go (px) and its speed then (px per ms,
- * positive upwards). A fling goes to the next height in its direction (the highest or lowest when none is left);
- * otherwise the sheet goes to the height nearest to where its speed would carry it in `CARRY_MS`.
+ * The heights a finger can take the sheet to while it drags: from the peek up to the full height, but never over the app
+ * bar while it shows (`bar`, its bottom in px from the window's top; the bar slides away only once the sheet settles at
+ * full), so that a drag does not cover the menu's button (docs/design/usability-9.md, 2.5).
  */
-export function settle(heights: SnapHeights, height: number, velocity: number): Snap {
+export function dragRange(heights: SnapHeights, view: number, bar: number): { min: number; max: number } {
+  return { min: heights.peek, max: Math.max(heights.peek, Math.min(heights.full, Math.round(view - bar))) };
+}
+
+/**
+ * The height a drag settles on, from the sheet's height when the finger lets go (px), its speed then (px per ms,
+ * positive upwards), and how far it went from where the finger took the sheet (`travel`, px). After a drag shorter than
+ * `FLING_TRAVEL`, the sheet goes to the height nearest to where it is. Else a fling goes to the next height in its
+ * direction (the highest or lowest when none is left), and a slower release to the height nearest to where its speed
+ * would carry it in `CARRY_MS`.
+ */
+export function settle(heights: SnapHeights, height: number, velocity: number, travel: number): Snap {
+  if (Math.abs(travel) < FLING_TRAVEL) velocity = 0;
   if (Math.abs(velocity) >= FLING) {
     const way = velocity > 0 ? [...SNAPS] : [...SNAPS].reverse();
     return way.find((s) => (velocity > 0 ? heights[s] > height : heights[s] < height)) ?? way[way.length - 1];

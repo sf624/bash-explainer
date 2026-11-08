@@ -621,6 +621,7 @@ const sheet = panePane && mode.hasChrome ? new BottomSheet(panePane, {
   },
   textElement: () => editor.view.contentDOM,
   typing: () => !readEdit.read && editor.view.hasFocus,
+  cursorShows: () => editor.cursorShows(),
   reading: () => readEdit.read,
   explain: () => panel.explain(),
   announce: (text) => announcer?.say(text),

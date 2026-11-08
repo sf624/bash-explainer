@@ -1,9 +1,9 @@
 // The web page on a phone: the sheet's header row (src/ui/sheet.ts, `sheetForms`; web/panel-head.ts). Its controls never lie
-// over one another, and the drawn ones (the depth's control, the tools) keep off the grab bar; a phone's row has no tools in
+// over one another, and none lies in the grab strip above it (usability-9.md, 2.5); a phone's row has no tools in
 // any language, so that the form does not depend on the words' widths; the depth's menu button is drawn as high as the
 // file type's chip (32 px in a 44 px target), and every phone pill's ends are half circles, on hover and in forced colours
 // too. Seen on an Android phone in Japanese at about 410 px, with an empty editor: the depth's menu with Collapse and
-// Markdown beside it lay over the grab bar. With CI's CJK fonts (test/support/site.ts).
+// Markdown beside it lay over the grab bar, which was drawn in the row then. With CI's CJK fonts (test/support/site.ts).
 import * as assert from 'assert';
 import type { Browser, BrowserContextOptions, Page } from 'playwright-core';
 import { SHEET_TOOLS_WIDTH } from '../src/ui/sheet';
@@ -29,29 +29,24 @@ describe('the web page on a phone: the sheet\'s header row', function () {
     return page;
   }
 
-  /** The row's controls as drawn, the grab bar, and the form taken. */
+  /** The row's controls as drawn, the grab strip, and the form taken. */
   const measure = (page: Page) => page.evaluate(`(() => {
     const head = document.getElementById('panel-head');
     const box = (e) => { const r = e.getBoundingClientRect(); return { id: e.id || e.className, l: r.left, r: r.right, t: r.top, b: r.bottom }; };
     const shown = (e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
     const controls = [...head.querySelectorAll('#panel-tabs [role=tab], #slot-open, #view-slot .vc-options button, #collapse, #copy-md')].filter(shown).map(box);
     const drawn = [...head.querySelectorAll('#slot-open, #view-slot .vc-options, .panel-tools')].filter((e) => shown(e) && getComputedStyle(e).display !== 'none').map(box);
-    const grab = document.getElementById('sheet-grab');
-    const g = grab.getBoundingClientRect();
-    const before = getComputedStyle(grab, '::before');
-    const w = parseFloat(before.width);
-    const top = g.top + parseFloat(before.top);
-    const bar = { id: 'bar', l: g.left + g.width / 2 - w / 2, r: g.left + g.width / 2 + w / 2, t: top, b: top + parseFloat(before.height) };
+    const strip = box(document.getElementById('sheet-grab'));
     // (What draws a pill, its ::before, and the box of its target.)
     const drawnHeight = (e) => { const b = getComputedStyle(e, '::before'); return parseFloat(b.height) + (b.boxSizing === 'border-box' ? 0 : parseFloat(b.borderTopWidth) + parseFloat(b.borderBottomWidth)); };
     const tall = (s) => { const e = document.querySelector(s); return e && shown(e) ? [drawnHeight(e), e.offsetHeight] : null; };
-    return { controls, drawn, bar, tools: head.dataset.tools, form: document.getElementById('view-slot').dataset.form, squeeze: head.dataset.squeeze !== undefined, pill: tall('#slot-open'), chip: tall('#scope-chip') };
-  })()`) as Promise<{ controls: Box[]; drawn: Box[]; bar: Box; tools: string; form: string; squeeze: boolean; pill: number[] | null; chip: number[] | null }>;
+    return { controls, drawn, strip, tools: head.dataset.tools, form: document.getElementById('view-slot').dataset.form, squeeze: head.dataset.squeeze !== undefined, pill: tall('#slot-open'), chip: tall('#scope-chip') };
+  })()`) as Promise<{ controls: Box[]; drawn: Box[]; strip: Box; tools: string; form: string; squeeze: boolean; pill: number[] | null; chip: number[] | null }>;
   const meets = (a: Box, c: Box) => a.l < c.r - 0.5 && c.l < a.r - 0.5 && a.t < c.b - 0.5 && c.t < a.b - 0.5;
 
-  // (600 and 620: a tablet's row, with the tools, where the grab bar keeps the depth's control from the row's middle.)
+  // (600 and 620: a tablet's row, with the tools.)
   for (const width of [390, 412, 430, 600, 620]) {
-    it(`lays the controls side by side, off the grab bar, with no tools on a phone, empty and with the sample, en and ja, ${width} px`, async () => {
+    it(`lays the controls side by side, under the grab strip, with no tools on a phone, empty and with the sample, en and ja, ${width} px`, async () => {
       for (const lang of ['en', 'ja'] as const) {
         for (const empty of [true, false]) {
           const seen = `${lang} ${width} ${empty ? 'empty' : 'sample'}`;
@@ -66,8 +61,9 @@ describe('the web page on a phone: the sheet\'s header row', function () {
           if (width < SHEET_TOOLS_WIDTH) assert.strictEqual(m.tools, 'none', `${seen}: ${JSON.stringify(m)}`);
           assert.strictEqual(m.squeeze, false, seen);
           for (let i = 0; i < m.controls.length; i++) for (let j = i + 1; j < m.controls.length; j++) assert.ok(!meets(m.controls[i], m.controls[j]), `${seen}: ${m.controls[i].id} over ${m.controls[j].id}`);
-          // (The tabs pass under the bar, their words below it; what draws a fill or an edge keeps off it.)
-          for (const d of m.drawn) assert.ok(d.r <= m.bar.l + 0.5 || d.l >= m.bar.r - 0.5, `${seen}: ${d.id} [${d.l}, ${d.r}] over the bar [${m.bar.l}, ${m.bar.r}]`);
+          // (The grab strip is 44 px high across the row's top, and nothing a finger presses or that draws lies in it.)
+          assert.ok(Math.abs(m.strip.b - m.strip.t - 44) < 0.5, `${seen}: ${JSON.stringify(m.strip)}`);
+          for (const d of [...m.controls, ...m.drawn]) assert.ok(d.t >= m.strip.b - 0.5, `${seen}: ${d.id} [${d.t}, ${d.b}] in the grab strip [${m.strip.t}, ${m.strip.b}]`);
           // The depth's menu button is as high as the file type's chip: drawn 32 px high, in a target of 44.
           if (m.form === 'menu') assert.deepStrictEqual(m.pill, m.chip, `${seen}: the pill ${m.pill}, the chip ${m.chip}`);
           if (m.pill) assert.deepStrictEqual(m.pill, [32, 44], seen);

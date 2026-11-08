@@ -60,10 +60,15 @@ const SCRIPT = `(scope, cap) => {
     // (The settings' switches of a family, "…-disabled-sed", "…-disabled-awk", are one key: the smallest counts.)
     const key = el.id ? '#' + el.id.replace(/(-disabled-).+$/, '$1*') : el.tagName.toLowerCase() + (role ? '[' + role + ']' : '') + [...el.classList].slice(0, 2).map((c) => '.' + c).join('');
     // (A control inside its label is measured with the label in view: the label takes the press too, and a scroll that
-    // only reaches the control would leave part of the label under a scroll container's edge.)
-    (el.closest('label') || el).scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    // only reaches the control would leave part of the label under a scroll container's edge. In the middle of the
+    // scroller, so that its edge does not cut a hit area larger than the control's box: a fold arrow's, on a phone.)
+    (el.closest('label') || el).scrollIntoView({ block: 'center', inline: 'nearest' });
+    // (A control that takes a press on one part of it only, pointer-events: none on it and not on the part, is measured
+    // from that part: the phone's file name, which renames from its pencil only, docs/design/usability-9.md, Q7. One with
+    // no such part measures as nothing.)
+    const part = getComputedStyle(el).pointerEvents === 'none' ? [...el.querySelectorAll('*')].find((p) => p.getClientRects().length && getComputedStyle(p).pointerEvents !== 'none') : undefined;
     // (The first box: an inline link that wraps has a bounding box whose centre may be between its lines.)
-    const r = el.getClientRects()[0];
+    const r = (part || el).getClientRects()[0];
     const cx = Math.round(r.left + r.width / 2);
     const cy = Math.round(r.top + r.height / 2);
     let width = 0;
