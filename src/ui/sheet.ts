@@ -22,8 +22,8 @@ export const FLING = 1;
 /** A slower release still carries the sheet as far as it would go in this many ms, then to the nearest height. */
 export const CARRY_MS = 150;
 /**
- * A drag up shorter than this (px, from where the finger took the sheet) that a fling or its speed would take to full
- * stops at half: a short flick up from half does not open the sheet over the whole editor.
+ * A fling (a quick release) up shorter than this (px, from where the finger took the sheet) that would reach full stops
+ * at half: a short flick up from half does not open the sheet over the whole editor. A slow drag ends at the nearest height.
  */
 export const FLING_TRAVEL = 80;
 /** The room a full sheet leaves under the editor's header strip (px): a tap just above the sheet is not on the strip's file name. */
@@ -116,13 +116,19 @@ export function dragRange(heights: SnapHeights, view: number, bar: number): { mi
  * The height a drag settles on, from the sheet's height when the finger lets go (px), its speed then (px per ms,
  * positive upwards), and how far it went from where the finger took the sheet (`travel`, px). A fling goes to the next
  * height in its direction (the highest or lowest when none is left), and a slower release to the height nearest to
- * where its speed would carry it in `CARRY_MS`. But a drag up shorter than `FLING_TRAVEL` that would end at full stops
- * at half (the maintainer's decision of 2026-11-08, usability-9.md, 2.5): a short flick between the peek and half, or
- * down from full, goes by its speed alone.
+ * where its speed would carry it in `CARRY_MS`. But a fling (or the carry of a release) up shorter than `FLING_TRAVEL`
+ * that would reach full stops at half (the maintainer's decision of 2026-11-08, usability-9.md, 2.5); a slow drag ends
+ * at the nearest height, and a short flick between the peek and half, or down from full, goes by its speed alone.
  */
 export function settle(heights: SnapHeights, height: number, velocity: number, travel: number): Snap {
   const to = bySpeed(heights, height, velocity);
-  return to === 'full' && travel > 0 && travel < FLING_TRAVEL ? 'half' : to;
+  // A slow drag that lets go nearest to full stays there: only a fling, or a release that its speed carried to full, is held.
+  const held = Math.abs(velocity) >= FLING || nearest(heights, height) !== 'full';
+  return to === 'full' && held && travel > 0 && travel < FLING_TRAVEL ? 'half' : to;
+}
+
+function nearest(heights: SnapHeights, at: number): Snap {
+  return SNAPS.reduce((a, b) => (Math.abs(heights[b] - at) < Math.abs(heights[a] - at) ? b : a));
 }
 
 function bySpeed(heights: SnapHeights, height: number, velocity: number): Snap {
@@ -130,8 +136,7 @@ function bySpeed(heights: SnapHeights, height: number, velocity: number): Snap {
     const way = velocity > 0 ? [...SNAPS] : [...SNAPS].reverse();
     return way.find((s) => (velocity > 0 ? heights[s] > height : heights[s] < height)) ?? way[way.length - 1];
   }
-  const to = height + velocity * CARRY_MS;
-  return SNAPS.reduce((a, b) => (Math.abs(heights[b] - to) < Math.abs(heights[a] - to) ? b : a));
+  return nearest(heights, height + velocity * CARRY_MS);
 }
 
 /** A tap on the grabber: peek → half → full → peek. */
