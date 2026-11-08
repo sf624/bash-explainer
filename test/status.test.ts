@@ -42,7 +42,10 @@ describe('status rules (src/semantics/status.ts)', () => {
     assert.deepStrictEqual(status('exit 256', 'exit 256'), { kind: 'given', ends: 'shell', builtin: 'exit', value: 0 });
     assert.deepStrictEqual(status('return -1', 'return -1'), { kind: 'given', ends: 'function', builtin: 'return', value: 255 });
     assert.deepStrictEqual(status('return', 'return'), { kind: 'previous', ends: 'function' });
-    assert.deepStrictEqual(status('exit $code', 'exit $code'), { kind: 'command', functions: [] });
+    assert.deepStrictEqual(status('exit $code', 'exit $code'), { kind: 'command', functions: [], ends: 'shell' });
+    assert.deepStrictEqual(status('f() { return "$1"; }', 'return "$1"'), { kind: 'command', functions: [], ends: 'function' });
+    assert.deepStrictEqual(status('exec /bin/true x', 'exec /bin/true x'), { kind: 'command', functions: [], ends: 'shell' });
+    assert.deepStrictEqual(status('shopt -s execfail; exec /bin/true x', 'exec /bin/true x'), { kind: 'command', functions: [] });
     assert.deepStrictEqual(status('let i=0', 'let i=0'), { kind: 'arith' });
     assert.deepStrictEqual(status('(( i ))', '(( i ))'), { kind: 'arith' });
     assert.deepStrictEqual(status('[[ x ]]', '[[ x ]]'), { kind: 'test' });

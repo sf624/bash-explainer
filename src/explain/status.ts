@@ -81,7 +81,7 @@ export function substitutionStatus(cx: Explainer, n: SyntaxNode): string {
     return rule.at === n
       // (The line's note `errexit-stops-here` says that `set -e` stops the script here.)
       ? cx.s('。名前のないコマンド（代入やリダイレクトだけのコマンド）は、最後のコマンド置換の終了ステータスになる', '. A command with no name, only assignments or redirections, takes the status of its last command substitution')
-      : cx.s('。これが失敗しても `set -e` では止まらない（名前の無いコマンドの終了ステータスは、最後に実行されるコマンド置換のもの。リダイレクトの中のものは代入の中のものより後に実行される）', '. If it fails, `set -e` does not stop the script (a command with no name takes the status of the last command substitution it runs; those in its redirections run after those in its assignments)');
+      : cx.s('。これが失敗しても `set -e` では止まらない（名前のないコマンドの終了ステータスは、最後に実行されるコマンド置換のもの。リダイレクトの中のものは代入の中のものより後に実行される）', '. If it fails, `set -e` does not stop the script (a command with no name takes the status of the last command substitution it runs; those in its redirections run after those in its assignments)');
   }
   // (In the command's name, it is not an argument: `"$(cmd)" a`.)
   if ((rule.kind !== 'command' && rule.kind !== 'test') || stmt.type !== 'command' || !field(stmt, 'name') || ancestor(n, (x) => x === field(stmt, 'name'))) return '';
@@ -93,7 +93,7 @@ export function substitutionStatus(cx: Explainer, n: SyntaxNode): string {
 export type StopContext = Omit<ErrexitStopParams, 'what' | 'more'>;
 
 /** The name of a trap's action in a note: its text, short (a function's name, or the start of the string). */
-const actionName = (script: NestedScript): string => shorten(script.text.trim().replace(/\s*\n\s*/g, '; '), 24);
+const actionName = (script: NestedScript): string => shorten(script.text.trim().replace(/\s*\n\s*/g, '; '), 32);
 
 /**
  * Under `set -e`, what a failure of statement `n` ends, from the models only (docs/design/errexit-stop.md, section 3):
@@ -119,8 +119,10 @@ export function stopContext(state: StateModel, status: StatusModel, n: SyntaxNod
   const trap = (name: Trapped): StopTrap | undefined => {
     const t = trapAt(state, n, name);
     if (!t || t.state === 'off') return undefined;
-    // (Its `trap` command, unless code the model does not read may have set another.)
-    const known = state.trapSets.some((s) => s.at === t.at) && !(t.state === 'unknown' && run.opaque);
+    // (Its `trap` command, unless code the model does not read may have set another; one whose action the model does not
+    // read, `trap "rm -f $tmp" EXIT`, is known by its line, though that action makes the state opaque.)
+    const set = state.trapSets.find((s) => s.at === t.at);
+    const known = !!set && !(t.state === 'unknown' && run.opaque && set.state !== 'unknown');
     const out = known && t.script ? status.trapOutcome(t.script) : undefined;
     return {
       sure: t.state === 'on',
@@ -132,8 +134,8 @@ export function stopContext(state: StateModel, status: StatusModel, n: SyntaxNod
   };
   const err = trap('ERR');
   const exit = trap('EXIT');
-  const set = e.stops === 'script' && !exit ? laterExitTrap(state, n) : undefined;
+  const next = e.stops === 'script' && !exit ? laterExitTrap(state, n) : undefined;
   // (`laterExitTrap` names a trap whose action it reads.)
-  const later = set ? { line: docLine(set.at) + 1, action: actionName(set.script!) } : undefined;
+  const later = next ? { line: docLine(next.at) + 1, action: actionName(next.script!) } : undefined;
   return { stops: e.stops, ...(err ? { err } : {}), ...(exit ? { exit } : {}), ...(later ? { later } : {}) };
 }
