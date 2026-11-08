@@ -1,8 +1,10 @@
 // The option parser presets (src/argv/parsers.ts), each compared with a real parser of its family: GNU getopt_long
 // through util-linux getopt(1), bash's echo, gcc, OpenSSL, gh (cobra and pflag), iproute2, jq, git and dpkg. A tool
-// that is missing skips its rows.
+// that is missing skips its rows. bazel's readings are recorded (test/fixtures/oracles/bazel.json).
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Analyzer, lookupCommand, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { ArgRole, ArgvParse, ArgWord, interpret } from '../src/argv/interpret';
@@ -199,6 +201,49 @@ describe('option parser presets agree with a real parser of their family', () =>
         const { parse, words } = parseLine(line);
         assert.strictEqual(normalized(parse, words), reads, line);
       }
+    });
+  }
+
+  // bazel: a JVM program that fetches its rules from the network, so no live run here; scripts/record-bazel.ts records
+  // what bazel 9.3.2 reads (test/fixtures/oracles/bazel.json): the options after a command as `bazel canonicalize-flags`
+  // prints them, and the exit status of whole lines run in test/fixtures/bazel.
+  CHECKED.add('bazel');
+  {
+    const oracle = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'oracles', 'bazel.json'), 'utf8')) as {
+      flags: { command: string; words: string[]; canonical?: string[]; error?: string }[];
+      lines: { line: string; status: number }[];
+    };
+    // (`help --long` is an expansion: bazel prints the option it stands for.)
+    const EXPANDS: Record<string, string> = { '--long': '--help_verbosity=long', '--short': '--help_verbosity=short' };
+    const BOOLEAN: Record<string, string> = { true: '1', yes: '1', 1: '1', false: '0', no: '0', 0: '0' };
+    /** The options of a command's words as bazel prints them canonical (`--name=value`, a boolean `=1` or `=0`), or `error`. */
+    const canonical = (parse: ArgvParse, words: ArgWord[]): string => {
+      const sub = parse.roles.find((r) => r.role.role === 'subcommand')!.role as Extract<ArgRole, { role: 'subcommand' }>;
+      const out: string[] = [];
+      for (const { word, role } of sub.parse.roles) {
+        if (role.role === 'value') { out[out.length - 1] += words[word].value; continue; }
+        if (role.role !== 'option' || role.spec.refused || role.missing) return 'error';
+        const long = role.spec.names.find((n) => n.startsWith('--'))!;
+        const value = role.value ? words[word].value!.slice(role.value.attached) : undefined;
+        if (EXPANDS[long]) out.push(EXPANDS[long]);
+        else if (role.spec.value) out.push(`${long}=${value ?? ''}`);
+        else out.push(`${long}=${role.negated ? '0' : value === undefined ? '1' : BOOLEAN[value] ?? value}`);
+      }
+      return out.join(' ');
+    };
+    /** Whether the line is one bazel takes: no option it refuses or does not know, no value missing. */
+    const takes = (parse: ArgvParse): boolean => parse.roles.every(({ role }) => (role.role === 'subcommand' ? takes(role.parse)
+      : role.role !== 'unknown-option' && role.role !== 'pattern-option' && !(role.role === 'option' && (role.spec.refused || role.missing))));
+    it('bazel (recorded): the options after a command, as `bazel canonicalize-flags` prints them', () => {
+      for (const row of oracle.flags) {
+        const line = `bazel ${row.command} ${row.words.map((w) => `'${w}'`).join(' ')}`;
+        const { parse, words } = parseLine(line);
+        assert.strictEqual(canonical(parse, words), row.canonical?.join(' ') ?? 'error', line);
+      }
+      RAN.add('bazel');
+    });
+    it('bazel (recorded): whole lines, those bazel refuses and those it takes', () => {
+      for (const row of oracle.lines) assert.strictEqual(takes(parseLine(row.line).parse), row.status === 0, row.line);
     });
   }
 

@@ -771,6 +771,7 @@
  "bash <(curl -s https://x)",
  "bats-negation-ignored",
  "bats-run-in-pipeline",
+ "bazel --keep_going build //x",
  "block",
  "bob@example.com",
  "brace-close-no-separator",

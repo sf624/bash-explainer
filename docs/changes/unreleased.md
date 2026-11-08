@@ -4,6 +4,17 @@ The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
 ## New
 
+### bazel
+
+Checked with bazel 9.3.2 (`bazel help startup_options`, `bazel help COMMAND`, `bazel canonicalize-flags`, and lines run in a small workspace: test/fixtures/oracles/bazel.json).
+
+- **The line.** `bazel --output_base=/tmp/x build -c opt //app:main` reads the startup option, the command `build`, the option `-c` with its value `opt`, and the target pattern. The commands: build, test, coverage, run, query, cquery, aquery, info, clean, fetch, vendor, mod, shutdown, version and help. The keys of `bazel info` (`bazel-bin`, `output_base`…) and the queries of `bazel mod` (`graph`, `deps`, `tidy`…) say what each is. An option not listed is "not in the dictionary".
+- **How bazel reads its options.** `--name=value` or `--name value`; a short option is a word of its own with its value in the next word (`-c opt`, `-j 8`; `-copt`, `-c=opt`, `-j8` and `-ks` are refused). A boolean is turned off by `no` before its name or `-` after its letter: `--nostamp` reads "Turns `--stamp` off", and `-t-` turns `-t` off. `--nocompilation_mode` and `--no_keep_going` are no such forms (bazel refuses them). Options may follow the targets (`bazel build //app:data --keep_going`).
+- **`--` and the arguments of `bazel run`.** After `--`, every word is a target pattern, so `bazel test //app/... -- -//app/legacy/...` takes the legacy tests out. Before `--`, `-//app/legacy/...` warns that bazel reads it as an option ("Invalid options syntax"). `bazel run //tools:fmt -- --check` passes `--check` to the program; without `--`, the words after the target go to the program too, but one that starts with `-` is an option of bazel.
+- **Options in the wrong place.** `bazel --keep_going build //x`: a command's option before the command, which bazel stops at ("Unknown startup option", status 2). `bazel build --output_base=/tmp/x //x`: a startup option after the command ("Unrecognized option", status 2).
+- **`--config`.** `--config=ci` says that it stands for the options of lines like `build:ci` in the rc files (`.bazelrc` and others), which are not read, so the options it adds are not shown.
+- **Not yet read.** Target patterns are plain arguments (`//pkg:name`, `//pkg/...`, `:all`), and so are query expressions (`deps(//app:main)`).
+
 ### A placeholder pasted into a shell string
 
 `find -exec` (and `-execdir`, `-ok`, `-okdir`) replaces `{}` inside a word, and `xargs -I` replaces its text anywhere in a word, before the command runs. When that word is a string a shell reads as code (`sh -c`, `bash -c`, the remote command of `ssh`), the path or the item becomes code: `printf 'a;echo pwn\n' | xargs -I{} sh -c 'echo {}'` prints `a`, then `pwn`. ShellCheck calls this SC2156.

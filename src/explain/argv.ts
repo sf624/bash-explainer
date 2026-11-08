@@ -314,7 +314,8 @@ function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const alone = role.missing ? role.spec.noValue : undefined;
   return cx.tok(a, 'option', alone
     ? cx.t(role.disables ? alone.offText : alone.text)
-    : (role.disables ? turnedOff(cx, flag, cx.t(role.text), false, role.spec.offText) : cx.t(role.text)) + notForEarlier(cx, parse, word, role), wordParts(cx, a));
+    : (role.negated ? cx.text('option-negated', { name: role.negated, on: cx.t(role.text) })
+      : role.disables ? turnedOff(cx, flag, cx.t(role.text), false, role.spec.offText) : cx.t(role.text)) + notForEarlier(cx, parse, word, role), wordParts(cx, a));
 }
 
 /** `--name=value` (and `-name=value` for single-dash options): the option, with its value in the text. */

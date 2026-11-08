@@ -63,6 +63,25 @@ export const TOKEN_TEXTS = {
    * Before the subcommand terraform takes only `-chdir=DIR`, the version and help options, and `-install-autocomplete` and
    * `-uninstall-autocomplete`. A warning, not an error: terraform is not here to run, and another option with one of those may pass.
    */
+  /**
+   * bazel's client reads only startup options before the command, and stops at any other (`bazel --keep_going build`); its command
+   * reads only the command's options, and refuses a startup option (`bazel build --output_base=x`). `what`: what the option does.
+   * Warnings, as terraform's: the spec's text says it, and a stop before the line may keep bazel from it.
+   */
+  'bazel-command-option-before-command': tokenWarning<{ what: Text }>(({ what }) => [
+    `${what.ja}。ただし、コマンドのオプションなので、コマンドより前に書くと bazel は「Unknown startup option」で止まる（終了ステータス 2）。コマンドの後に書く`,
+    `${what.en}; but as an option of the command, before the command bazel stops with "Unknown startup option" (status 2). Write it after the command`]),
+  'bazel-startup-option-after-command': tokenWarning<{ what: Text }>(({ what }) => [
+    `${what.ja}。ただし、起動オプションなので、コマンドの後に書くと bazel は「Unrecognized option」で止まる（終了ステータス 2）。\`bazel\` とコマンドの間に書く`,
+    `${what.en}; but as a startup option, after the command bazel stops with "Unrecognized option" (status 2). Write it between \`bazel\` and the command`]),
+  /** `bazel build //... -//app/legacy/...`: a subtractive pattern before `--` is read as an option, which bazel refuses. */
+  'bazel-negative-pattern-before-dashdash': tokenWarning(() => [
+    '`-` で始まる、除くターゲットのパターン。`--` より前では bazel はオプションとして読み、「Invalid options syntax」で止まる（終了ステータス 2）。`--` の後に書く（`bazel build -- //... -//app/legacy/...`）',
+    'A subtractive target pattern: before `--`, bazel reads it as an option and stops with "Invalid options syntax" (status 2). Write it after `--` (`bazel build -- //... -//app/legacy/...`)']),
+  /** `--config=ci`: the options it stands for are in the rc files, which the explanation does not read. */
+  'bazel-config': tokenText(() => [
+    'rc ファイル（`.bazelrc` など）の設定の組を使う。`--config=ci` は、rc ファイルの `build:ci` のような行のオプションに置き換わる。rc ファイルは読まないので、どのオプションになるかは示せない。どの rc ファイルにもなければ、bazel は「Config value \'…\' is not defined in any .rc file」で止まる',
+    'Use a group of settings of the rc files (`.bazelrc` and others): `--config=ci` stands for the options of lines like `build:ci` in them. The rc files are not read, so those options are not shown. If no rc file defines it, bazel stops with "Config value \'…\' is not defined in any .rc file"']),
   'terraform-option-before-subcommand': tokenWarning(() => [
     'サブコマンドより前のオプション。terraform がここで受け付けるのは `-chdir=…`、`-version`、`-help`、`-install-autocomplete`、`-uninstall-autocomplete` だけで、ほかは多くの場合「Invalid flags before the subcommand」で止まる。サブコマンドの後に書く',
     'an option before the subcommand: terraform takes only `-chdir=…`, `-version`, `-help`, `-install-autocomplete` and `-uninstall-autocomplete` there, and mostly stops with "Invalid flags before the subcommand" on any other; write it after the subcommand']),
