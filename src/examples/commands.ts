@@ -234,9 +234,10 @@ function firstLine(text: string, raw: boolean): string {
 /**
  * How `read` splits a sample line into its variables, with the IFS given before it (`ifs`, undefined when it is not
  * known) and the line of a here-string (`here`), as bash `version` reads it; and, where a separator is not
- * whitespace, the params of the catalog's note on it (`read-ifs-separators`).
+ * whitespace, the params of the catalog's note on it (`read-ifs-separators`). `reply`: whether the shell sets `REPLY` when no
+ * word names a variable (dash does not); where it does not, no example.
  */
-export function readExample(words: (string | undefined)[], ifs: string | undefined, here: string | undefined, lang: Lang, version?: BashVersion, first = false): { example: Example; note?: { ifs: string; seps: string[] } } | undefined {
+export function readExample(words: (string | undefined)[], ifs: string | undefined, here: string | undefined, lang: Lang, version?: BashVersion, first = false, reply = true): { example: Example; note?: { ifs: string; seps: string[] } } | undefined {
   const s = pick(lang);
   if (ifs === undefined || words.some((w) => w === undefined)) return undefined;
   let p;
@@ -250,6 +251,7 @@ export function readExample(words: (string | undefined)[], ifs: string | undefin
   }
   const array = p.opts.find(([o]) => o === 'a')?.[1];
   const names = p.operands as string[];
+  if (!names.length && !array && !reply) return undefined;
   const raw = p.opts.some(([o]) => o === 'r');
   // The line the command reads, when a here-string gives it: `read -a p <<< "a,b,,c,"`.
   // (The text of the input is more than the line: `read` takes up to the first newline, or on past one a backslash escapes.)

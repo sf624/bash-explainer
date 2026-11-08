@@ -142,6 +142,24 @@ The usability test of 2026-11-06 found the sheet hard to hold (docs/design/usabi
 
 ## Fixed
 
+### More bash-only forms in a sh script
+
+These forms said nothing in a `sh`, `dash` or `ash` script. Each now gets the problem of the dialect table, at the level of the rule (an Error where the shell surely fails there, a Warning where it gives another result with status 0). Measured in dash 0.5.12 and busybox 1.36.1 ash; `test/dialect-dash.test.ts` runs each in both.
+
+| Form | dash | busybox ash | In a `#!/bin/sh` script |
+|---|---|---|---|
+| `a[0]=1` | `a[0]=1: not found`, status 127 | the same | Error |
+| `$((i++))`, `$((i--))` | `arithmetic expression: expecting primary`, status 2, and the shell stops (only the subshell in `$( )` or `( )`) | runs as bash | Error |
+| `$((2**3))` | the same | runs as bash | Error |
+| `$((++i))`, `$((--i))` | read as `+(+i)`: `i` does not change, status 0 | runs as bash | Warning |
+| `echo hi >& file` | `Syntax error: Bad fd number`, status 2, and the shell stops, even with `\|\| true` | runs as bash: stdout and stderr go to the file | Error |
+| `set +o pipefail` | `set: Illegal option -o pipefail`, status 2, and the shell stops, as for `set -o pipefail` | runs | Error |
+| `read`, `read -r` (no name) | `read: arg count`, status 2; `REPLY` stays empty | reads the line into `REPLY` | Error; no "Values stored: REPLY=…" example (none in `dash` either; `ash` keeps it) |
+
+- `exit 0; \` followed by `a=(1)` on the next line is an Error: the line continuation makes it one line, which the shell reads, and refuses, before it runs `exit`. Before, it said nothing, as for a statement on a line of its own after `exit`.
+- A redirection that fails, such as `cat </dev/tcp/host/1 2>/dev/null`, is no longer taken as kept quiet by a `2>/dev/null` after it: the shell makes the redirections in order, and shows the message. Only one before it hides the message.
+- The text of `set -o pipefail` in dash says "`set` rejects the option `pipefail`". Before, it said "rejects `-o pipefail`", which did not fit `set +o pipefail`.
+
 ### A blank, or a value with a space at both ends, shown visibly
 
 A value made only of spaces and tabs looks empty in a code span, so the explanation names it. One function, `codeShown` in `src/messages-values.ts` (beside `shownWord`), writes the code with `codeSpan` and, for a blank, its name in parentheses after it: "a space", "2 spaces", "a tab" (Japanese "空白", "空白2文字", "タブ"); a tab in the code is `⇥`. The names come from one table (`blankWord`), which the `IFS` note, the `tr` sets and the label of the space mark read too; Japanese says 空白 everywhere (before, `tr` said スペース). The sites that quote a value call it: the sentences of `${…}`, its pattern, replacement and default tokens, the child token of a glob pattern, the subject of a regex quantifier, the option value after quote removal, and the `s` command of sed and perl. A new reader of a value should call it too; a few places still write the code by hand (see `docs/backlog-archive.md`, "A blank in a value").

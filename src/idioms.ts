@@ -199,10 +199,10 @@ const scriptDirPath = (c: SyntaxNode): boolean => {
   return p.type === 'command_substitution' && p.namedChildren.length === 2 && p.namedChildren[0] === c && isPwd(p.namedChildren[1]);
 };
 
-/** Where stdout and stderr end up after a command's redirections, when the targets are plain words. */
-export const outputsOf = (n: SyntaxNode): { out?: string; err?: string } => {
+/** Where stdout and stderr end up after a command's redirections (those before `upTo` only, when given), when the targets are plain words. */
+export const outputsOf = (n: SyntaxNode, upTo?: SyntaxNode): { out?: string; err?: string } => {
   const to: { out?: string; err?: string } = {};
-  for (const r of redirectionsOf(n).filter((x) => x.type === 'file_redirect')) {
+  for (const r of redirectionsOf(n).filter((x) => x.type === 'file_redirect' && (!upTo || x.startIndex < upTo.startIndex))) {
     const fd = field(r, 'descriptor')?.text ?? '';
     const op = tokensOf(r)[0];
     // (A redirection being typed has no target yet.)

@@ -25,7 +25,7 @@ const CLASS = /\[:(?:alnum|alpha|blank|cntrl|digit|graph|lower|print|punct|space
 
 /**
  * Whether the script `root` has what dash (and, for sh, dash or bash) reads otherwise than the model: a bash feature
- * (src/dialect.ts) that the shell lacks (`$"…"` too), `$[…]`, arithmetic with `**` or a base (`16#ff`), `return` or
+ * (src/dialect.ts) that the shell lacks (`$"…"` too, and `**` in `$(( ))`), `$[…]`, arithmetic with a base (`16#ff`), `return` or
  * `local` outside a function (they end a dash script), or a declaration dash reads otherwise: `local -r` and
  * `export -n` (dash's take no option but `-p`), `x=1 local y` (dash keeps `x`), `\export x=$y` and
  * `command export x=$y` (dash does not split `$y`; bash splits the first, and bash without POSIX mode both).
@@ -34,7 +34,8 @@ function readOtherwise(root: SyntaxNode, shell: Shell): boolean {
   const works = (id: string): boolean => HARMLESS.has(id) || (shell === 'sh' ? featureWorks(id, 'dash') && featureWorks(id, 'bash') : featureWorks(id, shell));
   if (collectFeatures(root, root.startPosition.row, root.endPosition.row).some((f) => !works(f.id))) return true;
   return descendants(root, ['arithmetic_expansion', 'command']).some((n) => {
-    if (n.type === 'arithmetic_expansion') return n.text.startsWith('$[') || /\*\*|#/.test(n.text);
+    // (`**`, `++` and `--` are rows of the dialect table: `power`, `postIncrement`, `preIncrement`.)
+    if (n.type === 'arithmetic_expansion') return n.text.startsWith('$[') || n.text.includes('#');
     const word = field(n, 'name')?.namedChildren[0];
     const name = word && staticWordValue(word);
     if (!name) return false;

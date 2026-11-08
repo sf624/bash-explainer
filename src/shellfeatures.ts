@@ -1,8 +1,8 @@
 // The shells a script can be written for, and where each feature of bash works in them: a leaf module (but for the
 // syntax tree's helpers), so that src/staticword.ts (which src/dialect.ts imports) reads the same table as the dialect checks.
 import {
-  ANSIC_QUOTE, ARITH_COMMAND, BAD_SUBSTITUTION, EQEQ_TEST, EXPORT_F, FUNCTION_KEYWORD, NET_REDIRECT_ASH, NET_REDIRECT_ASH_SPECIAL, NET_REDIRECT_DASH, NET_REDIRECT_DASH_SPECIAL, NO_COMMAND, notFound, optionRefused, PLUS_ASSIGN,
-  PRINTF_Q_ASH, PRINTF_Q_DASH, SET_PIPEFAIL, SYNTAX_ERROR, TRAP_ERR, TYPE_T,
+  ANSIC_QUOTE, ARITH_COMMAND, ARITH_OPERATOR, BAD_SUBSTITUTION, DUP_FILE, ELEMENT_ASSIGN, EQEQ_TEST, EXPORT_F, FUNCTION_KEYWORD, NET_REDIRECT_ASH, NET_REDIRECT_ASH_SPECIAL, NET_REDIRECT_DASH, NET_REDIRECT_DASH_SPECIAL, NO_COMMAND, notFound, optionRefused, PLUS_ASSIGN,
+  PRINTF_Q_ASH, PRINTF_Q_DASH, READ_NO_NAME, SET_PIPEFAIL, SYNTAX_ERROR, TRAP_ERR, TYPE_T,
 } from './messages-shfail';
 import { braceKind, type SyntaxNode, wordBraces } from './syntax/tree';
 
@@ -113,6 +113,8 @@ export const FEATURES: Record<string, Feature> = {
   dbracket: { works: 'bayk mz', cases: { parenthesis: { dash: 'refused' } }, ja: '`[[ ]]`', en: '`[[ ]]`', altJa: '`[ ]` を使う', altEn: 'use `[ ]`', dash: NO_DBRACKET },
   regex: { works: 'b  yk z', cases: { parenthesis: { dash: 'refused' } }, dash: NO_DBRACKET, ash: { ja: (sh) => `${sh} は照合しますが、中の \`(\` は構文エラーになります`, en: (sh) => `${sh} matches it, but a \`(\` in it is a syntax error` }, ja: '`[[ =~ ]]` の正規表現マッチ', en: '`[[ =~ ]]` regex matching', altJa: '`case`（グロブパターンだけ。`^[0-9]+$` に当たるグロブはないが、その否定は `\'\'|*[!0-9]*`）、`expr`（基本正規表現を文字列の先頭から照合する。`expr "$1" : \'[0-9][0-9]*$\'`）、または `grep -E` を使う', altEn: 'use `case` (a glob pattern only: `^[0-9]+$` has none, but its negation is `\'\'|*[!0-9]*`), `expr` (a basic regex, matched from the start of the string: `expr "$1" : \'[0-9][0-9]*$\'`) or `grep -E`' },
   array: { works: 'b  ykmz', dash: 'refused', ash: 'refused', ja: '配列', en: 'an array', altJa: '位置パラメータ（`set -- …`）を使う', altEn: 'use the positional parameters (`set -- …`)' },
+  // (yash has `a=(…)` but no `a[0]=1`: a command not found there too. zsh's elements start at 1, `arrayBase`.)
+  arrayElement: { works: 'b   kmz', ja: '配列の要素への代入 `a[0]=1`', en: 'assigning an array element `a[0]=1`', altJa: '位置パラメータ（`set -- …`）か、要素ごとの変数を使う', altEn: 'use the positional parameters (`set -- …`) or a variable for each element', dash: ELEMENT_ASSIGN, ash: ELEMENT_ASSIGN },
   assoc: { works: 'b   kmz', ja: '連想配列', en: 'an associative array', dash: NO_DECLARE, ash: NO_DECLARE },
   plusAssign: { works: 'b   kmz', ja: '`+=` による追加', en: 'appending with `+=`', altJa: '`v="${v}…"` と書く', altEn: 'write `v="${v}…"`', dash: PLUS_ASSIGN, ash: PLUS_ASSIGN },
   replace: { works: 'b ayk mz', dash: 'stops', ja: '`${var/pattern/string}` の置換', en: '`${var/pattern/string}` replacement', altJa: '`sed` などを使う', altEn: 'use `sed` or similar' },
@@ -133,6 +135,8 @@ export const FEATURES: Record<string, Feature> = {
   translated: { works: 'b   km', dash: DOLLAR_THEN_QUOTE, ash: DOLLAR_THEN_QUOTE, ja: '`$"…"` の文字列', en: 'a `$"…"` string', altJa: '`"…"` と書く', altEn: 'write `"…"`' },
   procSub: { works: 'b ayk z', dash: 'refused', ja: 'プロセス置換 `<(…)` / `>(…)`', en: 'process substitution `<(…)` / `>(…)`', altJa: '一時ファイルや名前付きパイプを使う', altEn: 'use a temporary file or a named pipe' },
   ampRedirect: { works: 'b a kmz', ja: '`&>`（標準出力と標準エラー出力をまとめてリダイレクト）', en: '`&>` (redirect stdout and stderr together)', altJa: '`>file 2>&1` と書く', altEn: 'write `>file 2>&1`', dash: { ja: (sh) => `${sh} では \`cmd &\` と \`>file\` に分かれ、コマンドの出力はそのままで、ファイルは空になります`, en: (sh) => `${sh} reads \`cmd &\` and \`>file\`: the output is not redirected, and the file is emptied` } },
+  // (`>&word` with no descriptor; a number or `-` is POSIX. yash, ksh93 and mksh refuse a name too, with status 1.)
+  dupFile: { works: 'b a   z', ja: '`>& file`（標準出力と標準エラー出力をまとめてリダイレクト）', en: '`>& file` (redirect stdout and stderr together)', altJa: '`>file 2>&1` と書く', altEn: 'write `>file 2>&1`', dash: DUP_FILE },
   ampAppend: { works: 'b    mz', ash: 'refused', ja: '`&>>`', en: '`&>>`', altJa: '`>>file 2>&1` と書く', altEn: 'write `>>file 2>&1`', dash: { ja: (sh) => `${sh} では \`cmd &\` と \`>>file\` に分かれ、コマンドの出力はそのままで、ファイルには何も足されません`, en: (sh) => `${sh} reads \`cmd &\` and \`>>file\`: the output is not redirected, and nothing is added to the file` } },
   // (Measured by the probe in test/dialect.test.ts: bash and yash connect, dash does not (yash in CI, where it is
   // installed). The others are from their documentation: ksh93 connects for `/dev/tcp` and `/dev/udp`; busybox
@@ -141,6 +145,10 @@ export const FEATURES: Record<string, Feature> = {
   pipeAmp: { works: 'b     z', dash: 'refused', ash: 'refused', ja: '`|&`（標準エラー出力もパイプに流す）', en: '`|&` (pipe stderr too)', altJa: '`2>&1 |` と書く', altEn: 'write `2>&1 |`' },
   eqeqTest: { works: 'b ayk m', ja: '`[ a == b ]` や `test a == b` の `==`', en: '`==` in `[ ]` or `test`', altJa: '`=` を使う', altEn: 'use `=`', dash: EQEQ_TEST },
   arithCommand: { works: 'b   kmz', ja: '算術コマンド `(( ))`', en: 'the arithmetic command `(( ))`', altJa: '`[ "$((式))" -ne 0 ]` と書く', altEn: 'write `[ "$((expr))" -ne 0 ]`', dash: ARITH_COMMAND, ash: ARITH_COMMAND },
+  // (POSIX: "the prefix and postfix `++` and `--` operators are not required", nor `**`. dash reads `++i` as `+(+i)`.)
+  postIncrement: { works: 'b aykmz', ja: '`$(( ))` の後置の `i++` / `i--`', en: 'a postfix `i++` / `i--` in `$(( ))`', altJa: '`i=$((i + 1))` と書く', altEn: 'write `i=$((i + 1))`', dash: ARITH_OPERATOR },
+  preIncrement: { works: 'b aykmz', ja: '`$(( ))` の前置の `++i` / `--i`', en: 'a prefix `++i` / `--i` in `$(( ))`', altJa: '`i=$((i + 1))` と書く', altEn: 'write `i=$((i + 1))`', dash: { ja: (sh) => `${sh} は \`++i\` を \`+(+i)\` と読むので、\`i\` は変わらず、式の値は元の値のままです`, en: (sh) => `${sh} reads \`++i\` as \`+(+i)\`: \`i\` does not change, and the expression gives its old value` } },
+  power: { works: 'b a k z', ja: '`$(( ))` のべき乗 `**`', en: 'the power operator `**` in `$(( ))`', altJa: '掛け算を繰り返すか、`awk` を使う', altEn: 'multiply, or use `awk`', dash: ARITH_OPERATOR },
   cFor: { works: 'b   k z', dash: 'refused', ash: 'refused', ja: 'C 言語風の `for (( ; ; ))`', en: 'C-style `for (( ; ; ))`', altJa: '`while` と `$(( ))` で書く', altEn: 'use `while` with `$(( ))`' },
   braceRange: { works: 'b   k z', ja: 'ブレース展開 `{1..3}`', en: 'a brace range `{1..3}`', altJa: '`seq` を使う', altEn: 'use `seq`', dash: BRACES, ash: BRACES },
   braceList: { works: 'b   kmz', ja: 'ブレース展開 `{a,b}`', en: 'brace expansion `{a,b}`', dash: BRACES, ash: BRACES },
@@ -169,6 +177,8 @@ export const FEATURES: Record<string, Feature> = {
   readA: { works: 'b   k', ja: '`read -a`', en: '`read -a`', dash: READ_OPTION, ash: READ_OPTION },
   readP: { works: 'bday', ja: '`read -p`（プロンプト）', en: '`read -p` (prompt)', altJa: '`printf` でプロンプトを出してから `read` する（ksh/mksh/zsh の `-p` は別の意味）', altEn: 'print the prompt with `printf`, then `read` (`-p` means something else in ksh, mksh and zsh)' },
   readOpts: { works: 'b a kmz', ja: '`read` の `-n` / `-s` / `-t`', en: '`read -n` / `-s` / `-t`', dash: READ_OPTION },
+  // (yash refuses it too: `read` needs a name there, as in POSIX.)
+  readReply: { works: 'b a kmz', ja: '変数名のない `read`（`REPLY` に読む）', en: '`read` with no name (into `REPLY`)', altJa: '`read -r line` のように変数名を書く', altEn: 'name a variable: `read -r line`', dash: READ_NO_NAME },
   readD: { works: 'b a kmz', posixSince: 2024, ja: '`read -d`', en: '`read -d`', dash: READ_OPTION },
   pipefail: { works: 'b aykmz', posixSince: 2024, dash: SET_PIPEFAIL, ja: '`set -o pipefail`', en: '`set -o pipefail`' },
   trapErr: { works: 'b a kmz', ja: '`trap … ERR`', en: '`trap … ERR`', dash: TRAP_ERR },
@@ -206,6 +216,17 @@ export function failureOf(f: Feature, sh: Measured, cases: readonly Case[] = [])
 /** Whether feature `id` of FEATURES works in `shell` (bash when absent; `sh` may be any, so none is counted on there). */
 export function featureWorks(id: string, shell?: Shell): boolean {
   return !shell || (shell !== 'sh' && works(FEATURES[id], shell as RealShell));
+}
+
+/**
+ * Which of the shells of `shell` (bash when absent) have feature `id`: `some` in sh, where only some of the common
+ * `/bin/sh` implementations do (busybox ash reads `read` with no name into `REPLY`; dash refuses it).
+ */
+export function featureIn(id: string, shell: Shell = 'bash'): 'all' | 'some' | 'none' {
+  const f = FEATURES[id];
+  if (shell !== 'sh') return works(f, shell) ? 'all' : 'none';
+  const n = COMMON_SH.filter((sh) => works(f, sh)).length;
+  return n === COMMON_SH.length ? 'all' : n ? 'some' : 'none';
 }
 
 /** The row of FEATURES about the builtin `name`, by the rows' `builtins`: asked at each command. */

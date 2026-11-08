@@ -8,6 +8,7 @@ import { declaresNames } from '../argv/query';
 import { argWordFor } from '../argv/words';
 import type { Shell } from '../dialect';
 import { ALIAS_NAME, builtins } from '../dict/builtins';
+import { featureIn } from '../shellfeatures';
 import { staticWordValue } from '../staticword';
 import { field, fields, type SyntaxNode } from '../syntax/tree';
 
@@ -213,7 +214,7 @@ function readCommandWords(c: SyntaxNode, shell: Shell | undefined): CommandWords
  * A variable a builtin sets: the word that names it (none for one the builtin knows: `REPLY`), its name (undefined: not
  * known here), how it sets it; `maybe`: or not at all.
  */
-export interface VariableWrite { node: SyntaxNode | undefined; name: string | undefined; sets: VariableSet; maybe?: boolean }
+export interface VariableWrite { node: SyntaxNode | undefined; name: string | undefined; sets: VariableSet; maybe?: boolean; feature?: string }
 
 /** The name a word gives a builtin (from `at` in its value: `-vx`), or undefined when it is not known here. */
 export const wordName = (n: SyntaxNode, at = 0): string | undefined => staticWordValue(n)?.slice(at);
@@ -231,17 +232,30 @@ function givenValues(parse: ArgvParse): { word: number; at: number; spec: ValueS
 }
 
 /**
+ * Which shells of `shell` (bash when absent) set the variable the builtin `spec` sets when no word names one, by its
+ * row (`byDefault.feature`): `some` in sh, where dash's `read` with no name sets no `REPLY` and busybox ash's does.
+ */
+export function defaultSetIn(spec: CommandSpec, shell: Shell | undefined): 'all' | 'some' | 'none' {
+  const feature = spec.shellEffect?.byDefault?.feature;
+  return feature ? featureIn(feature, shell) : 'all';
+}
+
+/**
  * The variables the builtin `spec` sets with the words `read` gives it (`read -a NAME`, `printf -v NAME`,
  * `getopts OPTS NAME`, `mapfile NAME`, `wait -p NAME`), in order; its default (`REPLY`, `MAPFILE`) when no word names one,
- * and those it always sets (bats' `run`: `status`, `output`, `lines`).
+ * where `shell` (bash when absent) sets it (`defaultSetIn`: `maybe` where only some of its shells do), with the row that
+ * says so; and those it always sets (bats' `run`: `status`, `output`, `lines`).
  */
-export function variableWrites(spec: CommandSpec, read: BuiltinRead): VariableWrite[] {
+export function variableWrites(spec: CommandSpec, read: BuiltinRead, shell?: Shell): VariableWrite[] {
   const out: VariableWrite[] = [];
   const { parse } = read;
   for (const v of givenValues(parse)) if (v.spec?.sets) out.push({ node: read.node(v.word), name: read.text(v.word)?.slice(v.at), sets: v.spec.sets });
   for (const { word, role } of parse.roles) if (role.role === 'operand' && role.spec?.sets) out.push({ node: read.node(word), name: read.text(word), sets: role.spec.sets });
   const byDefault = spec.shellEffect?.byDefault;
-  if (!out.length && byDefault) out.push({ node: undefined, name: byDefault.name, sets: byDefault.sets });
+  const where = defaultSetIn(spec, shell);
+  if (!out.length && byDefault && where !== 'none') {
+    out.push({ node: undefined, name: byDefault.name, sets: byDefault.sets, ...(where === 'some' ? { maybe: true } : {}), ...(byDefault.feature ? { feature: byDefault.feature } : {}) });
+  }
   for (const v of spec.shellEffect?.always ?? []) out.push({ node: undefined, ...v });
   return out;
 }
@@ -264,7 +278,7 @@ export function effectKey(name: string, spec: CommandSpec, read: BuiltinRead, sh
   const { parse } = read;
   const flags = parse.roles.flatMap(({ role }) => (role.role === 'cluster' ? role.letters : [role])).flatMap((r) => (r.role === 'option' || r.role === 'unknown-option' ? [r.flag] : []));
   const operands = DECLARATIONS.has(name) ? parse.roles.filter((r) => r.role.role === 'operand').map((r) => read.text(r.word) ?? null) : [];
-  return JSON.stringify([flags, variableWrites(spec, read).map((v) => [v.name ?? null, v.sets]), callbacks(read).map((f) => f ?? null), name === 'set' ? setOptionWrites(read, shell) : [], operands]);
+  return JSON.stringify([flags, variableWrites(spec, read, shell).map((v) => [v.name ?? null, v.sets]), callbacks(read).map((f) => f ?? null), name === 'set' ? setOptionWrites(read, shell) : [], operands]);
 }
 
 /** The words that name a function the builtin runs later (`mapfile -C f`, `complete -F f`), with their names (undefined: not known here). */
