@@ -255,6 +255,17 @@ export type Measured = 'dash' | 'ash';
 export const COMMON_SH: readonly Measured[] = ['dash', 'ash'];
 
 /**
+ * Whether the word model follows how `shell` (bash when absent) expands a word, its tildes, word splitting and pathname
+ * expansion: bash; and the common sh (dash, busybox ash, and `sh` for either or bash in POSIX mode), read as bash in
+ * POSIX mode with none of its `shopt` options, no `GLOBIGNORE`, `.*` matching `.` and `..`, and no `~+`, `~-` or `~N`
+ * (src/semantics/words.ts; in `sh`, what bash does otherwise is not known). A construct the shell lacks is still not
+ * followed (src/dialect.ts). test/fieldshape.test.ts runs the field domain's words in dash and busybox ash.
+ */
+export function wordsFollowed(shell?: Shell): boolean {
+  return !shell || shell === 'bash' || shell === 'sh' || (COMMON_SH as readonly Shell[]).includes(shell);
+}
+
+/**
  * Whether `shell` (bash when absent) has a builtin of this name, as far as the table says: the row of the builtin, where it has one.
  * In `sh`, where the common shells differ, the one that lacks it decides: `source` fails in dash, so it is not counted on.
  */

@@ -608,6 +608,25 @@ describe('the panel: what the program receives, in a shell that is not bash, aga
     assert.deepStrictEqual(line('printf a "$x[1]" "$x:h" "$10"', 'printf', { shell: 'dash' }).slice(2), ['‹value of `$x`›[1]', '‹value of `$x`›:h', '‹argument 1›0']);
   });
 
+  it('gives a tilde, a glob and a parameter out of quotes as bash does: `~/dir` is one word, `*.log` the names it matches (usability-9)', () => {
+    const src = `backup "$1" ~/backups ~ ~/x* /var/log/*.log $x`;
+    const chips = (shell: Sh, lang: Lang): string[] => rows(src, { shell, lang }).filter((r) => r.label === 'backup' && r.receives).pop()!.receives!.chips.map((c) => shown(c) + (c.many ? ' …' : ''));
+    assert.deepStrictEqual(chips('sh', 'en'), ['backup', '‹argument 1›', '‹home directory›/backups', '‹home directory›', '‹each file name matching `~/x*`, else the pattern itself› …',
+      '‹each file name matching `/var/log/*.log`, else the pattern itself› …', '‹value of `$x`› …']);
+    assert.deepStrictEqual(chips('sh', 'ja'), ['backup', '‹1番目の引数›', '‹ホームディレクトリ›/backups', '‹ホームディレクトリ›', '‹`~/x*` に一致する各ファイル名、なければパターン自身› …',
+      '‹`/var/log/*.log` に一致する各ファイル名、なければパターン自身› …', '‹`$x` の値› …']);
+    for (const shell of ['dash', 'ash'] as const) for (const lang of ['en', 'ja'] as const) assert.deepStrictEqual(chips(shell, lang), chips('bash', lang), `${shell} ${lang}`);
+    // (dash and busybox ash: a home with a space or a glob character is one word, not globbed; `~/x*` globs `x*` only.)
+    const received = explain(src.replace('backup', "printf '%s\\0'"), 0, 'en', 'sh').argv![0].words.slice(2);
+    for (const sh of ['dash', 'ash'] as const) {
+      if (!programs[sh]) continue;
+      for (const home of ['/tmp/a  b', '/tmp/g*', '/']) {
+        const out = running(sh, `set -- 'a  b*'; x='c d'; HOME='${home}'; ${src.replace('backup', "printf '%s\\0'")}`).out.split('\0').slice(0, -1);
+        assert.ok(argvHolds(received, out), `${sh} ${home}: ${JSON.stringify(out)}`);
+        assert.deepStrictEqual(out.slice(0, 3), ['a  b*', `${home}/backups`, home], `${sh} ${home}`);
+      }
+    }
+  });
   it('says the shell stops, not bash', () => {
     const fails = (shell: Sh, lang: Lang) => rows('x=; printf a ${x:?}', { shell, lang }).find((r) => r.label === 'printf')!.receives!.fails;
     assert.strictEqual(fails('sh', 'en'), 'the shell stops here, so it does not run: a variable is empty or not set (`${x:?}`)');

@@ -5,6 +5,7 @@
 // end, and a word by the count of its fields. Nothing here asks where a value comes from (V) or what a builtin does
 // with the fields (E). test/fieldshape.test.ts checks it against bash on generated words.
 import { collectFeatures, zshOtherwise } from '../dialect';
+import { wordsFollowed } from '../shellfeatures';
 import { isGlob } from '../examples/shellwords';
 import { parseExpansion } from '../expansion';
 import { decodedText } from '../staticword';
@@ -15,7 +16,7 @@ import { attribute, option } from './shellstate';
 import type { StateModel } from './state';
 import { changedByBash } from './vars';
 import { integerParameter } from './wordsites';
-import { type Fields, holedWords, modelValues, patternOfChars, type Piece, type StepKind, type ValueSource, wordFields, wordMeaning, type WordMeaning } from './words';
+import { directoryTilde, type Fields, holedWords, modelValues, patternOfChars, type Piece, type StepKind, type ValueSource, wordFields, wordMeaning, type WordMeaning } from './words';
 import { declaredWord } from './wordcontexts';
 
 /**
@@ -498,14 +499,19 @@ const DIALECT_STEPS: readonly StepKind[] = ['brace', 'tilde', 'split', 'glob'];
 
 /**
  * Whether the shell of `w` reads it as bash does, so that what the word model reads of it holds there: bash; or
- * another shell where none of zsh's own forms is in it (`zshOtherwise`), no step another shell may take otherwise
- * applies (`DIALECT_STEPS`: each expansion is in double quotes, or in a context that neither splits nor globs), and no
- * construct a sh may lack is in it (src/dialect.ts `collectFeatures`: `${x/a/b}`, `${a[1]}`, `$RANDOM`, `$'…'`). Then
- * `"$1"` is one field in every POSIX shell and zsh, and `"$@"` one for each argument.
+ * another shell where none of zsh's own forms is in it (`zshOtherwise`) and no construct a sh may lack is in it
+ * (src/dialect.ts `collectFeatures`: `${x/a/b}`, `${a[1]}`, `$RANDOM`, `$'…'`), and either the word model follows its
+ * steps (`wordsFollowed`: the common sh, dash and busybox ash) or no step another shell may take otherwise applies
+ * (`DIALECT_STEPS`: each expansion is in double quotes, or in a context that neither splits nor globs). Then `"$1"` is
+ * one field in every POSIX shell and zsh, `"$@"` one for each argument, and in sh `~/x` one field and `*.log` the names it matches.
  */
 export function readsAsBash(w: WordMeaning): boolean {
   if (!w.shell || w.shell === 'bash') return true;
-  return !zshOtherwise(w.nodes, w.shell) && w.steps.every((s) => !DIALECT_STEPS.includes(s.kind) || s.applies === false)
+  // (Not `$[…]`, which only bash has: dash and busybox ash read a `$` and a pattern, and src/dialect.ts has no row for
+  // it. In `sh`, which may be bash, not `~+`, `~-` or `~N`, which dash and busybox ash leave as written.)
+  if (w.nodes.some((x) => descendants(x, ['arithmetic_expansion']).some((e) => e.text.startsWith('$[')))) return false;
+  if (w.shell === 'sh' && w.tildes.some((t) => directoryTilde(t.user))) return false;
+  return !zshOtherwise(w.nodes, w.shell) && (wordsFollowed(w.shell) || w.steps.every((s) => !DIALECT_STEPS.includes(s.kind) || s.applies === false))
     && !w.nodes.some((x) => collectFeatures(x, x.startPosition.row, x.endPosition.row).length);
 }
 

@@ -13,7 +13,7 @@ import { guardedApart, modelLimit, modelValueLimit } from '../examples/regexguar
 import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { patsubMiscounts } from '../bracket';
 import { type Shell, zshOtherwise } from '../dialect';
-import { featureWorks } from '../shellfeatures';
+import { COMMON_SH, featureWorks, wordsFollowed } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode, rootOf } from '../syntax/tree';
@@ -255,13 +255,21 @@ export function operandAssigned(e: SyntaxNode, model: StateModel): boolean {
   return option(model.at(e).run, 'set', 'posix') !== 'on' && assignedOperand(e);
 }
 
-/** The tilde prefixes of a word, as its context and the mode read them (3.5.2; `tildeSpots`); none in `"${x:-~}"`. */
-function tildesOf(nodes: readonly SyntaxNode[], rule: ContextRule, posix: Tri): TildePrefix[] {
+/** Whether a tilde prefix names a directory of the shell's own (`~+`, `~-`, `~N`: 3.5.2), which bash expands and dash and busybox ash leave as written. */
+export const directoryTilde = (user: string): boolean => user === '+' || user === '-' || !!stackTilde(user);
+
+/**
+ * The tilde prefixes of a word, as its context and the mode read them (3.5.2; `tildeSpots`); none in `"${x:-~}"`. `sh`:
+ * dash or busybox ash, which expand no `~+`, `~-` nor `~N` (they leave them as written; in `sh`, which may be bash, the
+ * field domain does not know such a word: `readsAsBash`).
+ */
+function tildesOf(nodes: readonly SyntaxNode[], rule: ContextRule, posix: Tri, sh = false): TildePrefix[] {
   if (rule.tilde === 'none' || (rule.tilde === 'element' && posix === 'on') || (rule === CONTEXTS['param-word'] && nodes[0].parent?.parent?.type === 'string')) return [];
   const parts = tildeParts(nodes);
   const mode = rule.tilde === 'declaration' ? 'argument' : rule.tilde === 'argument' ? (posix === 'on' ? 'start' : 'argument')
     : rule === CONTEXTS['param-word'] && posix !== 'on' && assignedOperand(nodes[0].parent!) ? 'assignment' : rule.tilde;
-  return tildeSpots(parts, mode).map((t) => ({ node: parts[t.part].node, start: t.start, end: t.end, user: t.user, after: t.after }));
+  return tildeSpots(parts, mode).filter((t) => !sh || !directoryTilde(t.user))
+    .map((t) => ({ node: parts[t.part].node, start: t.start, end: t.end, user: t.user, after: t.after }));
 }
 
 const cache = new WeakMap<StateModel, WeakMap<SyntaxNode, WordMeaning>>();
@@ -340,7 +348,21 @@ function optionsOf(st: ShellState, shell?: Shell): WordOptions {
   // (The shell is part of what a meaning is kept by: the models of one script for two shells share the states.)
   if (!shell || shell === 'bash') return o;
   const ofShell = (o.ofShell ??= new Map<Shell, WordOptions>());
-  return ofShell.get(shell) ?? ofShell.set(shell, { ...o, ofShell: undefined }).get(shell)!;
+  return ofShell.get(shell) ?? ofShell.set(shell, { ...o, ...(wordsFollowed(shell) ? { posix: 'on' as const, glob: globIn(o.glob, shell) } : {}), ofShell: undefined }).get(shell)!;
+}
+
+/**
+ * The glob options of the common sh (`wordsFollowed`), which has `set -f` and none of bash's `shopt` options
+ * (`shoptIn` says so to the explanations): each is off, `globskipdots` too (dash and busybox ash match `.` and `..` with `.*`), and GLOBIGNORE is
+ * an ordinary variable. In `sh`, which may also be bash in POSIX mode (macOS), `globskipdots` is not known, nor a
+ * GLOBIGNORE the script sets.
+ */
+function globIn(g: GlobState, shell: Shell): GlobState {
+  const sh = shell === 'sh';
+  return {
+    noglob: g.noglob, nullglob: 'off', failglob: 'off', dotglob: 'off', nocaseglob: 'off', extglob: 'off', globstar: 'off',
+    globskipdots: sh ? 'unknown' : 'off', globignore: sh && g.globignore !== 'unset' ? 'unknown' : 'unset',
+  };
 }
 
 /** The meaning of a word where it runs; `whole`: also its `value` and `failure` (the walk's conditions need neither). */
@@ -349,13 +371,14 @@ function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: S
   // is a value in the list of an associative array.) In POSIX mode, `command export x=$v` assigns as `export` does.
   const sub = found === 'subscript-indexed' ? nodes[0].parent! : undefined;
   const context: WordContext = sub && attribute(st, field(sub, 'name')!.text, 'A') === 'on' ? 'subscript-assoc' : found.startsWith('array-element') && attribute(st, field(nodes[0].parent!.parent!, 'name')!.text, 'A') === 'on' ? 'array-element-assoc' : found === 'argument' && option(st, 'set', 'posix') === 'on' && assignmentAfterCommand(nodes[0]) ? 'declaration-assignment' : found;
-  const { posix, glob, ifs, braceOpt } = optionsOf(st);
+  const { posix, glob, ifs, braceOpt } = optionsOf(st, shell);
   const rule = CONTEXTS[context];
   const shape = shapeOf(nodes);
   const { expansions, unquoted, someQuoted, globWords } = shape;
-  const key = `${rule.tilde} ${posix}`;
+  const sh = !!shell && (COMMON_SH as readonly Shell[]).includes(shell);
+  const key = `${rule.tilde} ${posix} ${sh}`;
   let tildes = shape.tildes.get(key);
-  if (!tildes) shape.tildes.set(key, (tildes = tildesOf(nodes, rule, posix)));
+  if (!tildes) shape.tildes.set(key, (tildes = tildesOf(nodes, rule, posix, sh)));
   const steps: ExpansionStep[] = [];
   const braces = context === found ? bracesInContext(nodes[0]) : rule.brace; // (an associative array's list or key: none)
   const brace = braces && shape.braced.length > 0;
@@ -1037,7 +1060,9 @@ function globField(w: WordMeaning, f: Char[], env: WordEnv | undefined): string[
   if (releasesDiffer(f)) return undefined;
   if (step.applies === 'unknown' || !env?.files || changesDirectory(w.nodes[0])) return undefined;
   if (hasExtglob(pattern) && g.extglob !== 'on') return undefined;
-  if ([g.nullglob, g.failglob, g.dotglob, g.nocaseglob, g.globstar, g.extglob, g.globskipdots].includes('unknown') || g.globignore === 'unknown') return undefined;
+  // (Whether `.` and `..` are matched counts only where a name of the pattern starts with `.` or a bracket: `.*`.)
+  if ([g.nullglob, g.failglob, g.dotglob, g.nocaseglob, g.globstar, g.extglob].includes('unknown') || g.globignore === 'unknown'
+    || (g.globskipdots === 'unknown' && /(?:^|\/)[.[]/.test(pattern))) return undefined;
   // `./*.log`: the names under the current directory, with `./` before them; neither `sub/../*` nor `/var/log/*` is followed.
   const prefix = /^(?:\.\/)*/.exec(pattern)![0];
   const rest = pattern.slice(prefix.length);

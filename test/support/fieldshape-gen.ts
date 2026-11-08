@@ -2,7 +2,9 @@
 // not, in states with the glob options, braces, POSIX mode and IFS each on, off or not known, with values for the
 // parameters (backslashes and glob characters among them) and files for the patterns to match. Each case is a script
 // the model reads (`text`) and a wrapper it does not see (`hidden`: the environment, the positional parameters, an
-// array, a background job), so that what the wrapper sets is a hole to the model.
+// array, a background job), so that what the wrapper sets is a hole to the model. With `sh`, the cases are for dash and
+// busybox ash: no `shopt`, `set -o posix`, `set +B`, `declare`, arrays in the wrapper, extglob groups nor process
+// substitutions, which neither shell has (the words may still hold what a sh lacks: the domain must not know them).
 import { random } from './fuzz';
 
 export interface FieldCase {
@@ -54,7 +56,7 @@ const NAMES = ['x', 'y', 'z'];
 const SPECIAL = ['RANDOM', 'LINENO', 'SECONDS', '_', 'FUNCNAME'];
 const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
-export function fieldCases(count: number, seed: number): FieldCase[] {
+export function fieldCases(count: number, seed: number, sh = false): FieldCase[] {
   const rnd = random(seed);
   const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rnd() * xs.length)];
   const chance = (p: number): boolean => rnd() < p;
@@ -76,10 +78,10 @@ export function fieldCases(count: number, seed: number): FieldCase[] {
         lines.push(`if [ "$${flag}" = 1 ]; then ${on}; fi`);
       }
     };
-    for (const o of ['nullglob', 'failglob', 'dotglob', 'nocaseglob', 'extglob', 'globstar']) option(`shopt -s ${o}`, `shopt -u ${o}`);
+    if (!sh) for (const o of ['nullglob', 'failglob', 'dotglob', 'nocaseglob', 'extglob', 'globstar']) option(`shopt -s ${o}`, `shopt -u ${o}`);
     option('set -f', 'set +f');
-    option('set +B', 'set -B');
-    option('set -o posix', 'set +o posix');
+    if (!sh) option('set +B', 'set -B');
+    if (!sh) option('set -o posix', 'set +o posix');
     if (chance(0.05)) lines.push('set -u');
     const ifs = pick(['', '', '', "IFS=' '", 'IFS=:', "IFS=' :'", 'IFS=', 'IFS=-v', 'IFS=1', 'unset IFS', 'IFS=u', "IFS='\\'", "IFS='*'", "IFS='?x'", "IFS=$'\\v'", "IFS='['",
       'IFS=0', "IFS='1 '", 'IFS=0123456789']);
@@ -104,23 +106,23 @@ export function fieldCases(count: number, seed: number): FieldCase[] {
     }
     // A read-only variable, a nameref and a variable bash sets itself, each with a value given to the domain that it must not take.
     if (chance(0.1)) lines.push(`readonly ${pick(NAMES)}`);
-    if (chance(0.05)) lines.push(`declare -i ${pick(NAMES)}`);
-    if (chance(0.15)) {
+    if (!sh && chance(0.05)) lines.push(`declare -i ${pick(NAMES)}`);
+    if (!sh && chance(0.15)) {
       const target = pick(['x', 'a[@]', 'a']);
       lines.push(`declare -n r=${quote(target)}`);
       values.set('r', [target]);
     }
-    if (chance(0.1)) {
+    if (!sh && chance(0.1)) {
       const special = pick(SPECIAL);
       // (Its value given is `-v`; it is set to a number, which `RANDOM` and `SECONDS` read as arithmetic.)
       lines.push(`${special}=7`);
       values.set(special, ['-v']);
     }
     hidden.push(`set -- ${Array.from({ length: Math.floor(rnd() * 4) }, () => quote(pick(VALUES))).join(' ')}`);
-    hidden.push(`a=(${Array.from({ length: Math.floor(rnd() * 3) }, () => quote(pick(VALUES))).join(' ')})`);
+    if (!sh) hidden.push(`a=(${Array.from({ length: Math.floor(rnd() * 3) }, () => quote(pick(VALUES))).join(' ')})`);
     if (chance(0.5)) hidden.push(': &', 'wait');
     hidden.push(chance(0.5) ? 'true' : 'false');
-    const word = wordOf(pick, chance);
+    const word = wordOf(pick, chance, sh);
     // (An extglob group parses only with extglob on: on at the start, the options above may turn it off as the case runs.)
     const extglob = GROUPS.some((g) => word.includes(g));
     if (extglob) lines.unshift('shopt -s extglob');
@@ -129,8 +131,8 @@ export function fieldCases(count: number, seed: number): FieldCase[] {
   return cases;
 }
 
-/** A word of one to four parts. */
-function wordOf(pick: <T>(xs: readonly T[]) => T, chance: (p: number) => boolean): string {
+/** A word of one to four parts; `sh`: none with an extglob group or a process substitution. */
+function wordOf(pick: <T>(xs: readonly T[]) => T, chance: (p: number) => boolean, sh: boolean): string {
   const name = (): string => pick(NAMES);
   const expansion = (quoted: boolean): string => {
     const x = name();
@@ -147,7 +149,7 @@ function wordOf(pick: <T>(xs: readonly T[]) => T, chance: (p: number) => boolean
       // (Operators the evaluator computes over known values.)
       pick([`\${${x}/a/-v}`, `\${${x}//[ab]/ }`, `\${${x}^^}`, `\${${x},}`, `\${${x}:1:1}`, `\${${x}: -1}`, `\${${x}/#-/+}`, `\${${x}/%u/ x}`, `\${${x}//\\*/a}`, `\${${x}/a/"$y"}`,
         `\${${x}~~}`, `\${${x}##*-}`, `\${${x}%%[a-z]*}`, '"${a[*]}"', '${*:-x}', '${@:2}', '"${@:1:2}"', '${#@}', '${#*}', `\${${x}@U}`, `\${${x}@a}`, '~+', '~-', '~+/*', `~${x}`]),
-      ...(quoted ? [] : [`$"${pick(IN_QUOTES)}"`, `$'${pick(['-v', 'a b', '\\t', '*'])}'`, '<(:)']),
+      ...(quoted ? [] : [`$"${pick(IN_QUOTES)}"`, `$'${pick(['-v', 'a b', '\\t', '*'])}'`, ...(sh ? [] : ['<(:)'])]),
     ]);
   };
   const part = (): string => {
@@ -161,7 +163,7 @@ function wordOf(pick: <T>(xs: readonly T[]) => T, chance: (p: number) => boolean
         // (Line continuations in braces, F98; numbers past what a double holds exactly, or past intmax_t, F99.)
         '{1..\\\n3}', '{a,\\\nb}', '{0..2..9223372036854775808}', '{1..2..18446744073709551617}', '{a..c..9223372036854775808}', '{9007199254740993..9007199254740991..2}',
         '{1..3..999999999999999}', '{9223372036854775807..9223372036854775806}']);
-      case 4: return chance(0.5) ? pick(GROUPS) : pick(['-v', '-', 'a', '*']);
+      case 4: return !sh && chance(0.5) ? pick(GROUPS) : pick(['-v', '-', 'a', '*']);
       // (A part made from an integer before elements in the same quotes, F97.)
       case 6: return `"${chance(0.3) ? pick(['a', '-', ' ']) : ''}${pick(INTEGERS)}${pick(['', '', 'a', ' ', '-', pick(INTEGERS)])}${pick(ELEMENTS)}${pick(['', '', '$#', 'x', pick(INTEGERS)])}"`;
       default: return expansion(false);

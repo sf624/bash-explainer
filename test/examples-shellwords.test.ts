@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { PrintfReader } from '../src/embedded/format';
 import { bashPrintf, globExamples, globMatches, globMiss, type GlobMiss, GlobOpts, liftMisses, literalEnds, ShellWordsUnsupported } from '../src/examples/shellwords';
+import { Analyzer } from '../src/analyzer';
 import { globExample } from '../src/examples/patterns';
 import { rerun } from '../src/examples/rerun';
 import { braceTexts } from '../src/semantics/brace';
@@ -128,6 +129,13 @@ done`;
     // (Every name it matches left out: no section of matching names.)
     assert.deepStrictEqual(globExample('*.log', 'file', {}, '*', 'Example', undefined, 'en')!.sections.map((x) => x.label), ['Not matching: it does not end in `.log`',
       'Not matching: a leading `.` (`dotglob` is off)', 'Not matching: a pattern of `GLOBIGNORE` matches it']);
+    // (A shell with no `shopt` options, dash: the reasons name none. The example of a line checked as POSIX sh says so.)
+    const plain = rerun({ kind: 'glob', pattern: '**/*.ts', mode: 'file', opts: { noShopt: true } }, [['.c/a.ts', 'src/lib/b.ts']], 'ja').sections.map((x) => x.label);
+    assert.deepStrictEqual(plain, ['一致する名前', '一致しない: 先頭が `.`（`*` や `?` は先頭の `.` に一致しない）', '一致しない: `**` は `*` と同じ']);
+    const line = (shell: 'sh' | 'bash', lang: 'en' | 'ja'): string[] => new Analyzer(lang).explainLine(createUnbashParser().parse('grep -h "$USER" /var/log/*.log'), 0, shell, { script: 'said' })
+      .examples.filter((x) => x.kind === 'glob').flatMap((x) => x.sections.map((s) => s.label)).filter((l) => l.includes('.`'));
+    assert.deepStrictEqual([line('sh', 'en'), line('sh', 'ja'), line('bash', 'en')],
+      [['Not matching: a leading `.` (`*` and `?` do not match it)'], ['一致しない: 先頭が `.`（`*` や `?` は先頭の `.` に一致しない）'], ['Not matching: a leading `.` (`dotglob` is off)']]);
     // (A name with no reason found.)
     assert.deepStrictEqual(rerun({ kind: 'glob', pattern: 'a?c', mode: 'value' }, [['abc', 'abbc']], 'en').sections.map((x) => `${x.label}: ${x.lines.join(' ')}`), ['Matching names: abc', 'Not matching: abbc']);
   });

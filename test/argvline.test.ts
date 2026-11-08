@@ -201,8 +201,8 @@ describe('what the program receives (src/argvline.ts, panel P4)', () => {
     const ex = explainDocumentLine(new Analyzer('en'), doc, 1, 'en', {}, { argv: true });
     const [l] = ex.argv!;
     assert.deepStrictEqual([argvShown(l.words), l.span.start, l.words[2].from.start, l.removed.map((r) => [r.span.start, r.word?.[0].from.start])],
-      // (A Dockerfile's RUN is run by sh: a word not known is one placeholder.)
-      ['ls -l ‹the words of `$HOME`›{0,}', { line: 1, character: 4 }, { line: 1, character: 13 }, [[{ line: 1, character: 4 }, undefined], [{ line: 1, character: 19 }, { line: 1, character: 20 }]]]);
+      // (A Dockerfile's RUN is run by sh, which splits `$HOME` out of quotes as bash does.)
+      ['ls -l ‹home directory›{0,}', { line: 1, character: 4 }, { line: 1, character: 13 }, [[{ line: 1, character: 4 }, undefined], [{ line: 1, character: 19 }, { line: 1, character: 20 }]]]);
     const failing = explainDocumentLine(new Analyzer('en'), openDocument('FROM x\nRUN x=; echo ${x:?}\n', 'dockerfile', (t) => parser.parse(t)), 1, 'en', {}, { argv: true });
     assert.deepStrictEqual(failing.argv![0].fails!.span.start, { line: 1, character: 13 });
   });
@@ -219,13 +219,14 @@ describe('what the program receives (src/argvline.ts, panel P4)', () => {
 
   it('reads a word with holes only where the word model reads it as bash does', () => {
     assert.deepStrictEqual(received('echo $x'), [{ parts: [{ hole: { kind: 'parameter', name: 'x', code: '$x' }, splits: true, globs: true }], min: 0 }]);
-    // (In another shell, only a word it reads as bash does: an expansion in double quotes, one field.)
-    assert.deepStrictEqual(received('echo "$x"', 'dash'), received('echo "$x"'));
+    // (In another shell, only a word it reads as bash does: an expansion in double quotes, one field; in dash or busybox ash, one out of quotes too.)
+    assert.deepStrictEqual(received('echo "$x"', 'zsh'), received('echo "$x"'));
+    assert.deepStrictEqual(received('echo $x', 'dash'), received('echo $x'));
     assert.deepStrictEqual(received('echo "$x"', 'dash')!.map((f) => [f.min, f.max]), [[1, 1]]);
     // (Not: another shell, out of quotes; braces not known; a word misread, one that assigns IFS or has `$!`; bash fails on it; an
     // IFS with a glob character; text split by an IFS not known.)
     assert.deepStrictEqual(['echo $x', 'if a; then set +B; fi; echo {a,b}$x', 'echo {,$x}a', 'echo ~\\\n/x', 'echo ${IFS=:}$x', 'echo $!', 'x=; echo ${x:?}', "IFS='*'; echo $x'*'", 'x=a; IFS=$v; echo $x$y']
-      .map((s, i) => received(s, i === 0 ? 'sh' : 'bash')), Array(9).fill(undefined));
+      .map((s, i) => received(s, i === 0 ? 'zsh' : 'bash')), Array(9).fill(undefined));
     // (Arithmetic may set IFS to digits: its value may split.)
     assert.deepStrictEqual(received('echo $((x))'), [{ parts: [{ hole: { kind: 'arithmetic', code: '$((x))' }, splits: true, globs: false }], min: 0 }]);
     // (Neither split nor globbed: a field that may be empty, at most one. An IFS of other than ASCII is not followed: the hole may split.)
