@@ -390,7 +390,7 @@ export class LineExplainer implements Explainer, LineOutput {
 
   evidenceAt(n: SyntaxNode): ReadKnown | undefined {
     if (this.opts.unread) return undefined;
-    const known = this.opts.host ? hostReadAs(this.tree, n.startIndex, this.opts.stopsFrom) : readAs(this.tree, n.startIndex, this.opts.script, this.state);
+    const known = this.opts.host ? hostReadAs(this.tree, n.startIndex, this.opts.stopsFrom, this.shell) : readAs(this.tree, n.startIndex, this.opts.script, this.state);
     return known && (this.opts.unsure || this.opts.sometimes) ? 'unsure' : known;
   }
 
@@ -400,7 +400,7 @@ export class LineExplainer implements Explainer, LineOutput {
 
   stopAt(n: SyntaxNode, fault?: Fault): Stop | undefined {
     if (this.opts.unreached) return 'sure';
-    return stopAt(this.tree, n.startIndex, this.opts.stopsFrom, this.opts.host ? undefined : this.state) ?? (this.opts.sometimes || keptQuiet(this.opts.quiet, fault) ? 'may' : undefined);
+    return stopAt(this.tree, n.startIndex, this.opts.stopsFrom, this.opts.host ? undefined : this.state, this.shell) ?? (this.opts.sometimes || keptQuiet(this.opts.quiet, fault) ? 'may' : undefined);
   }
 
   say(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): string[] {

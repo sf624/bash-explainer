@@ -1,4 +1,4 @@
-import type { ScriptEvidence } from '../shellfeatures';
+import { builtinIn, builtinShells, COMMON_SH, type ScriptEvidence, type Shell } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
 import { outputsOf } from '../idioms';
 import { staticWordValue } from '../staticword';
@@ -53,10 +53,10 @@ function execWord(words: Words): number | undefined {
 const execStop = (words: Words): Stop | undefined => (execWord(words) === undefined ? undefined : 'sure');
 
 /** A text `eval` runs, known to end the shell by this same table: `eval 'exec perl -x "$0"'`, the first lines of a Perl polyglot. Any other may do anything. */
-function evalStop(words: Words): Stop {
+function evalStop(words: Words, _: SyntaxNode, shell: Shell | undefined): Stop {
   if (!words.length || words.includes(undefined)) return 'may';
   const text = `${words.join(' ')}\n`;
-  return stopBefore(parser().parse(text), text.length) === 'sure' ? 'sure' : 'may';
+  return stopBefore(parser().parse(text), text.length, 0, shell) === 'sure' ? 'sure' : 'may';
 }
 
 /**
@@ -89,11 +89,11 @@ function wrapperWord(words: Words): number | undefined {
 }
 
 /** `command` and `builtin` run a command: what stops is what it would be by itself. A word read only when it runs may be its name. */
-function wrapperStop(words: Words, c: SyntaxNode): Stop | undefined {
+function wrapperStop(words: Words, c: SyntaxNode, shell: Shell | undefined): Stop | undefined {
   const i = wrapperWord(words);
   if (i === undefined) return undefined;
   const name = words[i];
-  return name === undefined ? 'may' : namedStop(name, words.slice(i + 1), c);
+  return name === undefined ? 'may' : namedStop(name, words.slice(i + 1), c, shell);
 }
 
 /** `mapfile -C "exit 0;"`: the callback runs in this shell. */
@@ -103,7 +103,7 @@ const callbackStop = (words: Words): Stop | undefined => (words.some((w) => w ==
 const mayStop = (): Stop => 'may';
 
 /** The commands that may keep a shell from a line. Any other name stops nothing, and a name read only when it runs may be any of these. */
-const STOPS: Readonly<Record<string, (words: Words, c: SyntaxNode) => Stop | undefined>> = {
+const STOPS: Readonly<Record<string, (words: Words, c: SyntaxNode, shell: Shell | undefined) => Stop | undefined>> = {
   exit: (_, c) => ends(c),
   logout: (_, c) => ends(c),
   return: (_, c) => (ancestor(c, (a) => a.type === 'function_definition') ? undefined : ends(c)),
@@ -122,7 +122,16 @@ const STOPS: Readonly<Record<string, (words: Words, c: SyntaxNode) => Stop | und
   kill: mayStop,
 };
 
-const namedStop = (name: string, words: Words, c: SyntaxNode): Stop | undefined => (Object.hasOwn(STOPS, name) ? STOPS[name](words, c) : undefined);
+/**
+ * What the command `name` stops in `shell` (bash when absent), by STOPS and the builtins each shell has (`builtinIn`): a builtin that no
+ * shell of it has stops nothing (`builtin exit 0` in sh: dash and busybox ash say `builtin: not found` and go on), and one that only some of
+ * them have may stop (`source` in sh, which busybox ash runs).
+ */
+function namedStop(name: string, words: Words, c: SyntaxNode, shell: Shell | undefined): Stop | undefined {
+  const stop = Object.hasOwn(STOPS, name) ? STOPS[name](words, c, shell) : undefined;
+  if (stop === undefined || builtinIn(name, shell)) return stop;
+  return shell === 'sh' && builtinShells(name, shell).lacks.length < COMMON_SH.length ? 'may' : undefined;
+}
 
 /** Whether a statement around `c` runs in a subshell: what stops there stops that subshell, and the script goes on. (A pipeline's last stage too, as it does but with `lastpipe`.) */
 const inSubshell = (c: SyntaxNode): boolean => !!ancestor(c, (a) => a.type === 'pipeline' || subshellReasons(a).length > 0) || subshellReasons(c).length > 0;
@@ -159,10 +168,10 @@ function handsOver(c: SyntaxNode, words: Words): boolean {
  * What the simple command `c` is of the table. In a subshell it is no `sure` stop: what follows it there may not run, and what follows the subshell does.
  * Nor is it, not at the top of the script, but where it hands the script over or where the parser cannot read what follows, another language's text: elsewhere the path that takes it is one of several.
  */
-function stopOf(c: SyntaxNode, lastError: number): Stop | undefined {
+function stopOf(c: SyntaxNode, lastError: number, shell: Shell | undefined): Stop | undefined {
   const name = commandName(c);
   const words = fields(c, 'argument').map((a) => staticWordValue(a));
-  const stop = name === undefined ? 'may' : namedStop(name, words, c);
+  const stop = name === undefined ? 'may' : namedStop(name, words, c, shell);
   if (stop !== 'sure') return stop;
   return !inSubshell(c) && (atTop(c) || c.endIndex <= lastError || handsOver(c, words)) ? 'sure' : 'may';
 }
@@ -181,15 +190,18 @@ function expansionStops(e: SyntaxNode, tree: SyntaxTree): boolean {
 /** Each kind of stop of a tree, in the order they end: where, and on which row. */
 type Marks = Readonly<Record<Stop, readonly { end: number; row: number }[]>>;
 
-const marks = new WeakMap<SyntaxTree, Marks>();
+const marks = new WeakMap<SyntaxTree, Map<Shell, Marks>>();
 
-function marksOf(tree: SyntaxTree): Marks {
-  let m = marks.get(tree);
+/** The stops of `tree` read as `shell` (bash when absent) runs it: the builtins it has decide some (`namedStop`). */
+function marksOf(tree: SyntaxTree, shell: Shell | undefined): Marks {
+  let byShell = marks.get(tree);
+  if (!byShell) marks.set(tree, (byShell = new Map()));
+  let m = byShell.get(shell ?? 'bash');
   if (!m) {
     const found: { sure: { end: number; row: number }[]; may: { end: number; row: number }[] } = { sure: [], may: [] };
     const lastError = tree.errors.reduce((last, e) => Math.max(last, e.startIndex), -1);
     for (const c of descendants(tree.root, ['command'])) {
-      const stop = field(c, 'name') ? stopOf(c, lastError) : undefined;
+      const stop = field(c, 'name') ? stopOf(c, lastError, shell) : undefined;
       if (stop) found[stop].push({ end: c.endIndex, row: c.startPosition.row });
     }
     for (const e of descendants(tree.root, ['expansion'])) {
@@ -197,7 +209,7 @@ function marksOf(tree: SyntaxTree): Marks {
     }
     found.sure.sort((a, b) => a.end - b.end);
     found.may.sort((a, b) => a.end - b.end);
-    marks.set(tree, (m = found));
+    byShell.set(shell ?? 'bash', (m = found));
   }
   return m;
 }
@@ -214,14 +226,14 @@ function endedBy(list: Marks[Stop], at: number, from: number): boolean {
   return lo < list.length && list[lo].end <= at;
 }
 
-/** The strongest stop before offset `at`, of the shell that started on row `from` (`ExplainOptions.stopsFrom`: a host's shells, one tree). */
-export function stopBefore(tree: SyntaxTree, at: number, from = 0): Stop | undefined {
-  const { sure, may } = marksOf(tree);
+/** The strongest stop before offset `at`, of the shell that started on row `from` (`ExplainOptions.stopsFrom`: a host's shells, one tree), read as `shell` (bash when absent). */
+export function stopBefore(tree: SyntaxTree, at: number, from = 0, shell?: Shell): Stop | undefined {
+  const { sure, may } = marksOf(tree, shell);
   return endedBy(sure, at, from) ? 'sure' : endedBy(may, at, from) ? 'may' : undefined;
 }
 
 /** What the model says of a script's statements (`shellState.dead`). */
-export type Deadness = Pick<StateModel, 'dead'>;
+export type Deadness = Pick<StateModel, 'dead' | 'shell'>;
 
 const deadSpans = new WeakMap<Deadness, readonly { start: number; end: number }[]>();
 
@@ -249,8 +261,11 @@ function inDead(tree: SyntaxTree, model: Deadness, at: number): boolean {
   return lo < spans.length && spans[lo].start <= at;
 }
 
-/** The strongest stop at offset `at`, with what the model of a script with no error in its tree says never runs (none in a host's code, whose tree holds several shells). */
-export const stopAt = (tree: SyntaxTree, at: number, from?: number, model?: Deadness): Stop | undefined => (model && !tree.errors.length && inDead(tree, model, at) ? 'sure' : stopBefore(tree, at, from));
+/**
+ * The strongest stop at offset `at`, with what the model of a script with no error in its tree says never runs (none in a host's code, whose tree holds several shells),
+ * read as the model's shell, or `shell` where there is no model.
+ */
+export const stopAt = (tree: SyntaxTree, at: number, from?: number, model?: Deadness, shell = model?.shell): Stop | undefined => (model && !tree.errors.length && inDead(tree, model, at) ? 'sure' : stopBefore(tree, at, from, shell));
 
 const inTest = (n: SyntaxNode): boolean => ancestor(n, (p) => p.type === 'extended_test' || p.type === 'arithmetic_expansion' || p.type === 'arithmetic_command')?.type === 'extended_test';
 
@@ -439,13 +454,13 @@ export function readAs(tree: SyntaxTree, at: number, script: ScriptEvidence | un
 }
 
 /** The same in a host's code, the shell's whole input: it is a script, and a template is the host's own. `from`: the row its shell started on. */
-export const hostReadAs = (tree: SyntaxTree, at: number, from: number | undefined): ReadKnown | undefined => knownOf(stopBefore(tree, at, from), 'said');
+export const hostReadAs = (tree: SyntaxTree, at: number, from: number | undefined, shell?: Shell): ReadKnown | undefined => knownOf(stopBefore(tree, at, from, shell), 'said');
 
 /**
  * Whether the shell gets to offset `at`, for an Error that is a fact of one command or of the shell's dialect (`[` without its `]`,
  * `print` in sh): not after a `sure` stop. A `may` stop does not change it, as the command fails whenever it runs: a mark on a token
  * is about its command (docs/design/three-levels.md).
  */
-export function reachedAt(tree: SyntaxTree, at: number, from?: number, model?: Deadness): boolean {
-  return stopAt(tree, at, from, model) !== 'sure';
+export function reachedAt(tree: SyntaxTree, at: number, from?: number, model?: Deadness, shell = model?.shell): boolean {
+  return stopAt(tree, at, from, model, shell) !== 'sure';
 }

@@ -116,6 +116,12 @@ const ROWS: Record<string, string[]> = {
   valsub: ['echo ${| REPLY=a; }'],
 };
 
+/**
+ * The PATH the shells run with: the system's directories only. The user's PATH can hold a directory of a builtin's name (`help` in
+ * `/mnt/c/WINDOWS` under WSL), which dash then reports as "Permission denied", not "not found".
+ */
+const SHELL_PATH = '/usr/bin:/bin';
+
 let parser: BashParser;
 let dir: string;
 before(() => {
@@ -134,7 +140,7 @@ const REALS = ['dash', 'ash'] as const;
 const runIn = (command: string[], text: string) => {
   const file = path.join(dir, 'script');
   fs.writeFileSync(file, text);
-  const r = spawnSync(command[0], [...command.slice(1), file], { cwd: dir, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', env: { PATH: process.env.PATH, FUNCNEST: '50' } });
+  const r = spawnSync(command[0], [...command.slice(1), file], { cwd: dir, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', env: { PATH: SHELL_PATH, FUNCNEST: '50' } });
   return { status: r.status, out: r.stdout, err: r.stderr };
 };
 
@@ -233,7 +239,7 @@ for (const sh of REALS) {
       assert.ok(cases.length > 25);
       const driver = path.join(dir, 'table');
       fs.writeFileSync(driver, 'i=0\nfor code do\n  i=$((i + 1))\n  echo "@@BEGIN $i"\n  ( eval "$code\necho \\"next=\\$?\\"" ) 2>&1\n  echo "@@END $i $?"\ndone\n');
-      const r = spawnSync(COMMANDS[sh]![0], [...COMMANDS[sh]!.slice(1), driver, ...cases.map((c) => c.code)], { cwd: dir, encoding: 'utf8', timeout: 20000, killSignal: 'SIGKILL', env: { PATH: process.env.PATH, FUNCNEST: '50' } });
+      const r = spawnSync(COMMANDS[sh]![0], [...COMMANDS[sh]!.slice(1), driver, ...cases.map((c) => c.code)], { cwd: dir, encoding: 'utf8', timeout: 20000, killSignal: 'SIGKILL', env: { PATH: SHELL_PATH, FUNCNEST: '50' } });
       const seen = [...r.stdout.matchAll(/^@@BEGIN (\d+)\n([\s\S]*?)^@@END \1 (\d+)$/gm)];
       assert.strictEqual(seen.length, cases.length);
       cases.forEach(({ id, code, fail, marker, setE }, i) => {
@@ -306,7 +312,7 @@ for (const sh of REALS) {
       const driver = path.join(dir, 'regex');
       const forms = 'case $s in \'\'|*[!0-9]*) c=no;; *) c=yes;; esac\nif expr "$s" : \'[0-9][0-9]*$\' >/dev/null; then e=yes; else e=no; fi\nif printf \'%s\\n\' "$s" | grep -Eq \'^[0-9]+$\'; then g=yes; else g=no; fi\n';
       fs.writeFileSync(driver, `for s do\n${forms}echo "$s|$c|$e|$g|$(expr "$s" : '[0-9]')"\ndone\n`);
-      const run = (command: string[]) => spawnSync(command[0], [...command.slice(1), driver, ...strings], { cwd: dir, encoding: 'utf8', timeout: 20000, killSignal: 'SIGKILL', env: { PATH: process.env.PATH, FUNCNEST: '50' } }).stdout;
+      const run = (command: string[]) => spawnSync(command[0], [...command.slice(1), driver, ...strings], { cwd: dir, encoding: 'utf8', timeout: 20000, killSignal: 'SIGKILL', env: { PATH: SHELL_PATH, FUNCNEST: '50' } }).stdout;
       const bashDriver = path.join(dir, 'regex-bash');
       fs.writeFileSync(bashDriver, 'for s do\n  if [[ $s =~ ^[0-9]+$ ]]; then r=yes; else r=no; fi\n  echo "$s|$r|$r|$r|$([[ $s =~ [0-9] ]] && echo 1 || echo 0)"\ndone\n');
       const bash = spawnSync('bash', ['--norc', '--noprofile', bashDriver, ...strings], { cwd: dir, encoding: 'utf8', timeout: 20000, killSignal: 'SIGKILL' }).stdout.split('\n');
@@ -570,7 +576,7 @@ for (const sh of REALS) {
       const file = path.join(dir, 'env-script');
       fs.writeFileSync(file, text);
       const [program, ...args] = COMMANDS[sh]!;
-      return spawnSync(program, [...args, file], { cwd: dir, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', env: { PATH: process.env.PATH, FUNCNEST: '50', ...env } });
+      return spawnSync(program, [...args, file], { cwd: dir, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', env: { PATH: SHELL_PATH, FUNCNEST: '50', ...env } });
     };
     for (const [env, code, id, out] of [
       [{ UID: '1000' }, 'if [ "$UID" -ne 0 ]; then echo notroot; fi', 'uid', 'notroot\n'],
@@ -983,7 +989,7 @@ describe('a string that may not run, and what is said by mistake as a fault', ()
       }
       const file = path.join(dir, 'string-script');
       fs.writeFileSync(file, `${code}\n`);
-      const r = spawnSync(path.join(bin, 'sh'), [file], { cwd: dir, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', env: { PATH: `${bin}:${process.env.PATH}`, FUNCNEST: '50' } });
+      const r = spawnSync(path.join(bin, 'sh'), [file], { cwd: dir, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', env: { PATH: `${bin}:${SHELL_PATH}`, FUNCNEST: '50' } });
       check({ status: r.status, out: r.stdout, err: r.stderr }, sh);
     }
   };
@@ -1045,6 +1051,17 @@ describe('a string that may not run, and what is said by mistake as a fault', ()
     says("builtin eval 'shopt -s x'", 'builtin', 'error');
     says("builtin eval 'shopt -s x'", 'shopt', undefined);
     inEach("builtin eval 'shopt -s x'", (r, sh) => assert.match(r.err, /builtin: not found/, sh));
+  });
+  // (A builtin that dash and busybox ash lack ends nothing: they say it is not found and go on, as the stops read it (`namedStop`).)
+  for (const code of ['builtin exit 0\nshopt -s x', 'logout\nshopt -s x', 'command builtin exit 0\nshopt -s x']) {
+    it(`an Error after a stop that dash and busybox ash lack: ${code.replace(/\n/g, '; ')}`, () => {
+      says(code, 'shopt', 'error');
+      inEach(code, (r, sh) => assert.match(r.err, /shopt: not found/, sh));
+    });
+  }
+  // (One that busybox ash has may stop: `source` of a file that ends the shell, in busybox ash only.)
+  it('a Warning after a stop that only busybox ash has: source', () => {
+    says('source ./x\nshopt -s x', 'shopt', 'warning');
   });
   const SOMETIMES = [
     `xargs ${STRING}`, `xargs -r ${STRING}`, `xargs -I{} ${STRING}`, `find . -exec ${STRING} \\;`, `find . -execdir ${STRING} \\;`, `find . -ok ${STRING} \\;`, `find . -exec ${STRING} _ {} +`, `watch ${STRING}`, 'watch \'shopt -s x\'', 'watch -x sh -c \'shopt -s x\'',

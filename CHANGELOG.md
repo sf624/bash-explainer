@@ -41,7 +41,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - In a script that sources a file or runs text the explainer cannot read, the lines before that point use the values the script gives again: their worked examples run on the real data, and their notes read the value (`rm -rf $dir` with `dir=/tmp/cat` is a Caveat). In 0.10.0 they had made-up examples and stronger warnings.
 - The `{}` of `find -exec rm {} \;` and the replace string of `xargs -I{} cp {} dest/` are placeholders that `find` or `xargs` replaces, not operands that the command reads.
 - A Dockerfile's `RUN` is checked for the `/bin/sh` of its stage's base image: busybox ash under `FROM alpine`, dash under `FROM debian` or `ubuntu`. Before, `RUN [[ -f x ]]` under `FROM alpine` was an Error, and failed `--check`.
-- In a `#!/bin/sh` script, `source`, `let` and other bash-only builtins (`enable`, `help`, `disown`, `caller`, `compgen`…) are no longer called builtins: the row says the name is looked up in PATH, since dash has no `source`, and what bash and busybox ash do with it. A problem says so where it fails. zsh's `setopt` in a bash script is no builtin either.
+- In a `#!/bin/sh` script, `source`, `let` and other builtins that dash lacks are no longer called builtins; the panel says in which shells they are not found.
 
 ## 0.10.0
 

@@ -14,7 +14,7 @@
 import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
 import { builtins } from '../dict/builtins';
-import { builtinIn } from '../shellfeatures';
+import { builtinIn, builtinShells, type RealShell } from '../shellfeatures';
 import { staticWordValue } from '../staticword';
 import type { ArgvParse } from '../argv/interpret';
 import { actedNames, actsOnNames } from '../argv/query';
@@ -144,6 +144,12 @@ export type NameResolution =
      * what a shell would have run of that name, which does not run here (a reserved word, a builtin).
      */
     noShell?: { skips?: 'keyword' | 'builtin' };
+    /**
+     * A builtin of other shells that the script's shell is not counted on to have (`builtinIn`, the rows of FEATURES: `source` in sh,
+     * `setopt` in bash), so the name is looked up in PATH: `lacks`, the shells of the script's shell that have no such builtin; `has`, those
+     * that have it (`builtinShells`).
+     */
+    notBuiltin?: { lacks: RealShell[]; has: RealShell[] };
   }
   /** A function the host defines (bats' `run`, `load`…: `StateModel.host`), which the file does not define itself. */
   | { kind: 'host'; name: string; missed?: Missed }
@@ -382,7 +388,9 @@ function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, shell
   const maybe = hashall === 'off' ? undefined : maybeHashed(entry, hashall === 'unknown', checked);
   // (A builtin turned off runs the program of its name, which the dictionary describes with it.)
   const known = !!opts.program?.(name) || !!spec?.program;
-  return { kind: 'file', name, path: 'search', known, ...(maybe ? { maybeHashed: maybe } : {}), ...off, ...m, ...(sourced && !known && !missed && !exec && !opts.env ? { sourced } : {}) };
+  // (A builtin of other shells that this one is not counted on to have, `source` in sh: the name is looked up in PATH.)
+  const notBuiltin = !exec && Object.hasOwn(builtins, name) && !builtinIn(name, shell) ? { notBuiltin: builtinShells(name, shell) } : {};
+  return { kind: 'file', name, path: 'search', known, ...(maybe ? { maybeHashed: maybe } : {}), ...off, ...m, ...notBuiltin, ...(sourced && !known && !missed && !exec && !opts.env ? { sourced } : {}) };
 }
 
 /**
@@ -633,6 +641,8 @@ export interface NameFacts {
   why?: 'not-a-builtin' | 'not-found';
   /** A program runs where bash has a builtin of the name, and the dictionary knows no program of it (`sudo cd`). */
   noProgram?: boolean;
+  /** The script's shell is not bash (`#!/bin/sh`): a builtin of the name is the shell's, not bash's (the texts of `noProgram` and `by`). */
+  notBash?: true;
   /**
    * No shell reads the name (Docker's exec form): it is looked up in PATH, and `skips` is what a shell would have run
    * of it instead (a builtin, a reserved word). The shell's meanings are not reached from there: `also` is empty.
@@ -662,8 +672,6 @@ export function nameFacts(res: NameResolution, opts: {
 } = {}): NameFacts {
   const last = opts.env?.links[opts.env.links.length - 1];
   const slot = last?.kind === 'slot' && (last.slot.run === 'exec' || last.slot.lookup) ? last : undefined;
-  // (`builtin cd`, `command echo`: the builtin runs in this shell, as bash would run it: no other command runs it.)
-  const by = slot && !(slot.slot.run === 'current-shell' && res.kind === 'builtin') ? { by: slot.via } : {};
   const { name } = res;
   // (A builtin of other shells that this one is not counted on to have, `source` in sh, is looked up in PATH: usually there is no such program either.)
   const entry = Object.hasOwn(builtins, name) ? builtins[name] : undefined;
@@ -674,7 +682,13 @@ export function nameFacts(res: NameResolution, opts: {
   const kind = badgeKind(res);
   const runs: NameKind = notFound ? 'none' : kind === 'file' ? 'program' : kind;
   const why = notFound ? { why: 'not-found' as const } : res.kind === 'none' ? { why: res.why } : {};
-  const noProgram = runs === 'program' && entry && !program && !name.includes('/') ? { noProgram: true } : {};
+  const none = runs === 'program' && !!entry && !program && !name.includes('/');
+  const noProgram = none ? { noProgram: true } : {};
+  // (`builtin cd`, `command echo`: the builtin runs in this shell, as bash would run it: no other command runs it. Nor where they find
+  // neither a builtin nor a program: `command source` in sh, where the shell has no such builtin, finds what `source` alone finds.)
+  const by = slot && !(slot.slot.run === 'current-shell' && (res.kind === 'builtin' || none)) ? { by: slot.via } : {};
+  // (In another shell's script, the texts say "the shell's builtin", not bash's.)
+  const notBash = opts.shell && opts.shell !== 'bash' ? { notBash: true as const } : {};
   if (name.includes('/')) return { name, runs, ...by, also: [] };
   // (With no shell, nothing reaches the shell's other meanings of the name: only what a shell would have run.)
   if (res.kind === 'file' && res.noShell) return { name, runs, ...why, ...noProgram, noShell: res.noShell, also: [] };
@@ -705,5 +719,5 @@ export function nameFacts(res: NameResolution, opts: {
     const path = opts.path?.(name);
     add({ kind: 'program', reach: reach.length ? reach : [`env ${name}`], ...(path ? { path } : {}) });
   }
-  return { name, runs, ...by, ...why, ...noProgram, also, ...(res.kind === 'builtin' && res.special ? { special: true as const } : {}), ...(res.kind === 'file' && res.sourced ? { sourced: true as const } : {}) };
+  return { name, runs, ...by, ...why, ...noProgram, ...notBash, also, ...(res.kind === 'builtin' && res.special ? { special: true as const } : {}), ...(res.kind === 'file' && res.sourced ? { sourced: true as const } : {}) };
 }

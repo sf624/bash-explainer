@@ -31,7 +31,7 @@ import { type AliasResolution, aliasesAfter, assignmentsOf, type MaybeHashed, ty
 import { docLine, option, type ShellState } from '../semantics/state';
 import { wordMeaning } from '../semantics/words';
 import { isPlainWord, literalContent, staticWordValue, surelyHasSlash } from '../staticword';
-import { builtinIn, builtinShells } from '../shellfeatures';
+import type { RealShell } from '../shellfeatures';
 import { returnInSubstitution, scopeOf } from '../substitution-tokens';
 import { field, fields, redirectionsOf, type SyntaxNode, token, wordsText } from '../syntax/tree';
 import { commandTest } from '../testexpr';
@@ -618,7 +618,7 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
   // (No shell reads the words, Docker's exec form: a builtin's name runs the program of its name.)
   if (res.kind === 'file' && res.noShell?.skips) return noShellHead(cx, name, ran, res.noShell.skips);
   // (A builtin the script's shell is not counted on to have, `source` in sh: the name is looked up in PATH.)
-  if (res.kind === 'file' && res.path === 'search' && !builtinIn(name, cx.shell)) return notBuiltinHead(cx, name, ran);
+  if (res.kind === 'file' && res.notBuiltin) return notBuiltinHead(cx, name, ran, res.notBuiltin);
   // (The host's function only where the name runs it: not after an `unset -f`, nor as a program `sudo` runs.)
   const spec = (res.kind === 'host' ? hostCommand(cx, name) : undefined) ?? lookupCommand(name);
   if (spec) {
@@ -681,17 +681,14 @@ function noShellHead(cx: Explainer, name: string, res: NameResolution, skips: 'b
 }
 
 /**
- * A builtin of other shells that the script's shell is not counted on to have (`builtinIn`, the rows of FEATURES): `source` in sh, `setopt` in
+ * A builtin of other shells that the script's shell is not counted on to have (`NameResolution.notBuiltin`): `source` in sh, `setopt` in
  * bash. It is looked up in PATH. The words are read as the shells that have it read them, which the text names.
  */
-function notBuiltinHead(cx: Explainer, name: string, res: NameResolution): CommandHead {
+function notBuiltinHead(cx: Explainer, name: string, res: NameResolution, { lacks, has }: { lacks: readonly RealShell[]; has: readonly RealShell[] }): CommandHead {
   const spec = lookupCommand(name)!;
-  const { lacks, has } = builtinShells(name, cx.shell);
   return {
     name, res, spec, kind: 'command', nameTokens: [], refs: builtinSections(name, spec.builtin === 'special'),
-    explanation: cx.text('cmd-builtin-not-in-shell', {
-      shell: SHELL_NAMES[cx.shell ?? 'bash'], ...(cx.shell === 'sh' ? { lacks: lacks.map((x) => SHELL_NAMES[x]) } : {}), has: has.map((x) => SHELL_NAMES[x]), summary: cx.t(spec.summary),
-    }),
+    explanation: cx.text('cmd-builtin-not-in-shell', { lacks: lacks.map((x) => SHELL_NAMES[x]), has: has.map((x) => SHELL_NAMES[x]), summary: cx.t(spec.summary) }),
   };
 }
 

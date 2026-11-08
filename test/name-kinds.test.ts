@@ -13,7 +13,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { Analyzer, type Token } from '../src/analyzer';
 import { nameSaid } from '../src/messages';
-import { nameFacts, type NameKind } from '../src/semantics/names';
+import { nameFacts, type NameKind, resolveName } from '../src/semantics/names';
+import { shellState } from '../src/semantics/state';
+import type { Shell } from '../src/shellfeatures';
+import { descendants } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { runBash } from './support/bash';
 import { allTokens } from './support/explain';
@@ -357,23 +360,52 @@ describe('a builtin the script\'s shell lacks: the badge, the kind and the text 
   it('`source` and `let` in sh: dash has none, bash and busybox ash have them', () => {
     const source = head('#!/bin/sh\nsource ./lib.sh', 'sh');
     assert.deepStrictEqual([source.kind, source.name!.said.kind, source.name!.said.also], ['command', 'program', 'There is usually no program of this name']);
-    assert.strictEqual(source.explanation, 'Not a builtin of POSIX sh (dash has none), so it is looked up in PATH, where there is usually no program of this name. As a builtin of bash and busybox ash: Run a file in the current shell (its variables and functions persist)');
+    assert.strictEqual(source.explanation, 'In dash it is not a builtin, so it is looked up in PATH, where there is usually no program of this name. As a builtin of bash and busybox ash: Run a file in the current shell (its variables and functions persist)');
     // (The words are read as the shells that have it read them.)
     assert.strictEqual(source.children[0].explanation, 'file to source');
     const let_ = head('#!/bin/sh\nlet i=1', 'sh', 'ja');
     assert.deepStrictEqual([let_.kind, let_.name!.said.kind], ['command', 'プログラム']);
-    assert.strictEqual(let_.explanation, 'POSIX sh のビルトインではない（dash にはない）ので、PATH から探すが、この名前のプログラムはふつうない。bash・busybox ash のビルトインとしては: 算術式を評価する（例: `let i++`）');
+    assert.strictEqual(let_.explanation, 'dash ではビルトインでないので、PATH から探すが、この名前のプログラムはふつうない。bash・busybox ash のビルトインとしては: 算術式を評価する（例: `let i++`）');
     // (In bash, and in a shell that has it, the builtin.)
     assert.deepStrictEqual([head('source ./lib.sh', 'bash').kind, head('source ./lib.sh', 'bash').name!.said.kind], ['builtin', 'special builtin']);
   });
 
   it('a builtin of bash alone, in sh and in dash; a builtin of zsh, in bash and in sh', () => {
-    assert.strictEqual(head('#!/bin/sh\ncaller', 'sh').explanation, 'Not a builtin of POSIX sh (dash and busybox ash have none), so it is looked up in PATH, where there is usually no program of this name. As a builtin of bash: Print the caller context (debugging)');
-    assert.strictEqual(head('#!/bin/dash\ndisown', 'dash').explanation, 'Not a builtin of dash, so it is looked up in PATH, where there is usually no program of this name. As a builtin of bash, yash, ksh93 and zsh: Remove jobs from the job table (they survive shell exit)');
+    assert.strictEqual(head('#!/bin/sh\ncaller', 'sh').explanation, 'In dash and busybox ash it is not a builtin, so it is looked up in PATH, where there is usually no program of this name. As a builtin of bash: Print the caller context (debugging)');
+    assert.strictEqual(head('#!/bin/dash\ndisown', 'dash').explanation, 'In dash it is not a builtin, so it is looked up in PATH, where there is usually no program of this name. As a builtin of bash, yash, ksh93 and zsh: Remove jobs from the job table (they survive shell exit)');
     const setopt = head('#!/bin/bash\nsetopt extended_glob', 'bash');
     assert.deepStrictEqual([setopt.kind, setopt.name!.said.kind], ['command', 'program']);
-    assert.strictEqual(setopt.explanation, 'Not a builtin of bash, so it is looked up in PATH, where there is usually no program of this name. As a builtin of zsh: Turn zsh options on');
+    assert.strictEqual(setopt.explanation, 'In bash it is not a builtin, so it is looked up in PATH, where there is usually no program of this name. As a builtin of zsh: Turn zsh options on');
     // (None of the shells a `/bin/sh` usually is has it: the shells that do are named.)
-    assert.match(head('#!/bin/sh\nunsetopt nomatch', 'sh').explanation, /\(dash and busybox ash have none\).* As a builtin of zsh: Turn zsh options off$/);
+    assert.match(head('#!/bin/sh\nunsetopt nomatch', 'sh').explanation, /^In dash and busybox ash it is not a builtin, .* As a builtin of zsh: Turn zsh options off$/);
+  });
+
+  // (`command` and `builtin` run builtins: `command source ./x` runs in busybox ash and bash, and fails in dash only for want of `source`.)
+  it('after `command`, the name is what it is alone; after a program that looks it up, the builtin is the shell\'s, not bash\'s', () => {
+    const inner = (src: string, lang: 'en' | 'ja' = 'en'): Token => head(src, 'sh', lang).children[0];
+    const command = inner('#!/bin/sh\ncommand source ./x');
+    assert.deepStrictEqual([command.name!.said.kind, command.name!.said.by, command.name!.said.also], ['program', undefined, 'There is usually no program of this name']);
+    for (const wrapper of ['env', 'sudo', 'xargs']) {
+      assert.strictEqual(inner(`#!/bin/sh\n${wrapper} let i=1`).name!.said.also, `\`${wrapper}\` looks the name up, so the shell's builtin does not run, and there is usually no program of this name`, wrapper);
+    }
+    assert.strictEqual(inner('#!/bin/sh\nenv cd /', 'ja').name!.said.also, '`env` が名前を探すので、シェルのビルトインは動かない。この名前のプログラムはふつうない');
+    // (In bash, bash's.)
+    assert.strictEqual(head('env cd /', 'bash').children[0].name!.said.also, '`env` looks the name up, so bash\'s builtin does not run, and there is usually no program of this name');
+  });
+
+  // (`resolveName` says what the name runs, and why it is no builtin: the token's text reads it.)
+  it('name resolution carries the shells that lack the builtin and those that have it', () => {
+    const at = (src: string, shell: Shell) => {
+      const tree = parser.parse(src);
+      const cmd = descendants(tree.root, ['command']).pop()!;
+      const res = resolveName(shellState(tree, shell), src.split(' ')[0], cmd, { shell });
+      return res.kind === 'file' ? res.notBuiltin : res.kind;
+    };
+    assert.deepStrictEqual(at('source ./x', 'sh'), { lacks: ['dash'], has: ['bash', 'ash'] });
+    assert.deepStrictEqual(at('caller', 'sh'), { lacks: ['dash', 'ash'], has: ['bash'] });
+    assert.deepStrictEqual(at('setopt x', 'bash'), { lacks: ['bash'], has: ['zsh'] });
+    assert.strictEqual(at('source ./x', 'bash'), 'builtin');
+    // (A program the dictionary knows is no builtin of another shell.)
+    assert.strictEqual(at('ls', 'sh'), undefined);
   });
 });
