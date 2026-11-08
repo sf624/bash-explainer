@@ -89,11 +89,29 @@ describe('the web page: the phone\'s sheet', function () {
     return { last: last.id || last.className, right: r.right, gap: head.getBoundingClientRect().right - r.right, inside: !!hit && last.contains(hit), hit: hit && (hit.id || hit.className) };
   })()`) as Promise<{ last: string; right: number; gap: number; inside: boolean; hit: string | null }>;
 
+  /**
+   * The grab strip as drawn: its left, width and height; its bar's width, height and middle (from the strip's top); and
+   * whether every point of the strip (every 2 px) is free to grab: a finger there finds the header or the grabber. (Between
+   * the edges' swipe strips, which also keep the sheet's round corners out.)
+   */
+  const grabStrip = (page: Page) => page.evaluate(`(() => {
+    const head = document.getElementById('panel-head').getBoundingClientRect();
+    const grab = document.getElementById('sheet-grab');
+    const g = grab.getBoundingClientRect();
+    const bar = getComputedStyle(grab, '::before');
+    let free = true;
+    for (let y = g.top + 1; y < g.bottom; y += 2) for (let x = g.left + ${EDGE}; x < g.right - ${EDGE}; x += 2) {
+      const e = document.elementFromPoint(x, y);
+      if (!e || !(e.id === 'panel-head' || e.id === 'sheet-grab')) free = false;
+    }
+    return { strip: [Math.round(g.left - head.left), Math.round(g.width), Math.round(g.height)], bar: [parseFloat(bar.width), parseFloat(bar.height), Math.round(parseFloat(bar.top) + parseFloat(bar.marginTop) + parseFloat(bar.height) / 2)], free };
+  })()`) as Promise<{ strip: number[]; bar: number[]; free: boolean }>;
+
   /** The header row's controls (the tabs, the view control's pill) and the strip's above the editor. */
   const ROW = ['#tab-explain', '#tab-problems', '#tab-ref', '#view-slot'];
   const STRIP = ['#mode-read', '#mode-edit', '#scope-chip', '#ed-more'];
 
-  it('has one 48 px row at every height and tab, with the same boxes, 44 px controls and no horizontal scroll: 320 to 430 px, en and ja, and 130% text', async () => {
+  it('has a grab strip of 44 px free of controls over one 48 px row at every height and tab, with the same boxes, 44 px controls and no horizontal scroll: 320 to 430 px, en and ja, and 130% text', async () => {
     const cases: [number, 'en' | 'ja', number][] = [];
     for (const width of [320, 360, 390, 430]) for (const lang of ['en', 'ja'] as const) cases.push([width, lang, 1]);
     cases.push([300, 'en', 1.3], [300, 'ja', 1.3]);
@@ -111,8 +129,12 @@ describe('the web page: the phone\'s sheet', function () {
         }
         const at = `${where}, ${snap}, ${tab}`;
         const head = await box(page, '#panel-head');
-        assert.ok(Math.abs(head.height - 48) < 0.5, `${at}: the row is ${head.height} px`);
+        assert.ok(Math.abs(head.height - 92) < 0.5, `${at}: the header is ${head.height} px`);
         const boxes = await row();
+        // The grab strip (usability-9.md, 2.5): 44 px high across the header's top, its bar drawn 48 x 5 px in its middle,
+        // and every point of it free to grab: a finger there finds the header (or the grabber), never a control.
+        assert.deepStrictEqual(await grabStrip(page), { strip: [0, width, 44], bar: [48, 5, 22], free: true }, at);
+        for (const [i, b] of boxes.entries()) assert.ok(b.y >= head.y + 44 - 0.5, `${at}: ${ROW[i]} lies in the grab strip: ${JSON.stringify([head, b])}`);
         // The same place in the row at every height and tab (its top moves with the sheet).
         const shape = boxes.map((b) => ({ x: b.x, width: b.width, height: b.height, dy: Math.round((b.y - head.y) * 10) / 10 }));
         first ??= shape as unknown as Box[];
@@ -132,15 +154,16 @@ describe('the web page: the phone\'s sheet', function () {
         const inert = await page.evaluate("document.querySelector('header.top').inert");
         const strip = await box(page, '#ed-head');
         if (snap === 'full') {
-          assert.ok(bar.y + bar.height <= 0.5 && inert && Math.abs(pane.y - (strip.y + strip.height)) < 1.5, `${at}: ${JSON.stringify([bar, strip, pane])}`);
+          // (It stops 8 px under the strip: a tap just above the sheet is not on the file's name.)
+          assert.ok(bar.y + bar.height <= 0.5 && inert && Math.abs(pane.y - (strip.y + strip.height) - 8) < 1.5, `${at}: ${JSON.stringify([bar, strip, pane])}`);
         } else {
           assert.ok(bar.y >= 0 && !inert && pane.y > strip.y + strip.height, `${at}: ${JSON.stringify([bar, pane])}`);
         }
-        // The peek is the row and the summary row under it (step C8b, about 96 px), at the window's bottom; the summary
+        // The peek is the header and the summary row under it (step C8b, about 141 px), at the window's bottom; the summary
         // row's parts keep clear of the edges' swipe strips, and its text is cut at its end, never wrapped.
         const summary = await box(page, '#sheet-summary');
         if (snap === 'peek') {
-          assert.ok(Math.abs(pane.height - 97) < 1 && Math.round(pane.y + pane.height) === 740, `${at}: ${JSON.stringify(pane)}`);
+          assert.ok(Math.abs(pane.height - 141) < 1 && Math.round(pane.y + pane.height) === 740, `${at}: ${JSON.stringify(pane)}`);
           assert.ok(Math.abs(summary.y - (head.y + head.height)) < 0.5 && Math.abs(summary.height - 48) < 0.5 && summary.x === 0 && summary.width === width, `${at}: ${JSON.stringify([head, summary])}`);
           const parts = await page.locator('#sheet-summary > :not(:empty)').evaluateAll((els) => els.filter((e) => e.checkVisibility()).map((e) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; }));
           for (const r of parts) assert.ok(r.left >= EDGE - 0.5 && r.right <= width - EDGE + 0.5 && r.top >= summary.y && r.bottom <= summary.y + summary.height, `${at}: ${JSON.stringify([summary, parts])}`);
@@ -477,13 +500,17 @@ describe('the web page: the phone\'s sheet', function () {
 
   it('cycles its heights on a tap of the header or of the tab chosen, and opens to show another tab', async () => {
     const page = await open(await phone(390, 'ja'));
-    const tapAt = async (x: number) => {
+    // (At `dy` px under the header's top: in the grab strip, or in the tabs row's middle.)
+    const tapAt = async (x: number, dy = 44 + 24) => {
       const head = await box(page, '#panel-head');
-      await page.touchscreen.tap(x, head.y + 30);
+      await page.touchscreen.tap(x, head.y + dy);
       return (await settled(page)).snap;
     };
-    // The header around the tabs (its edge), and the tab already chosen.
+    // The grab strip, the header around the tabs (its edge), and the tab already chosen.
     assert.strictEqual((await settled(page)).snap, 'half');
+    assert.strictEqual(await tapAt(195, 22), 'full');
+    assert.strictEqual(await tapAt(5, 22), 'peek');
+    assert.strictEqual(await tapAt(5), 'half');
     assert.strictEqual(await tapAt(5), 'full');
     assert.strictEqual(await tapAt(5), 'peek');
     const explain = await box(page, '#tab-explain');
@@ -619,6 +646,8 @@ describe('the web page: the phone\'s sheet', function () {
     await page.locator('#mode-read').tap();
     // A line low in the editor, tapped at half: the line stays in view at every height below full.
     await page.locator('.cm-line').nth(12).tap();
+    // (Once the editor has scrolled the line into view, as a reader sees it: a move leaves a line out of view where it is.)
+    await stable('the line tapped', () => box(page, '.cm-activeLine'), 4);
     for (const snap of ['peek', 'half', 'peek', 'half'] as Snap[]) {
       const pane = await snapTo(page, snap);
       const active = await box(page, '.cm-activeLine');
@@ -771,5 +800,177 @@ describe('the web page: the phone\'s sheet', function () {
       }
       await page.context().close();
     }
+  });
+
+  // ---- Step U8 of docs/design/usability-9.md (2.5 and part of 2.7, #659): the grab strip, the fling, the full height,
+  // the app bar during a drag, the file's rename, the taps after a drag, the scroll kept, and the fold arrows' targets.
+
+  /** The phone's sizes of U8: an iPhone 13 (390 x 844) and a small Android phone (360 x 780). */
+  const PHONES = [[390, 844], [360, 780]] as const;
+
+  /** A tap of a finger at a point, through the browser's input (no touch adjustment is asked for: a press lands where it is). */
+  const tapPoint = async (cdp: CDPSession, x: number, y: number) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+
+  it('takes a short flick for no move, keeps a drag under the app bar, stops a full sheet 8 px under the strip, and renames the file from its pencil only: 390 and 360 px, en and ja', async () => {
+    for (const [width, height] of PHONES) {
+      for (const lang of ['en', 'ja'] as const) {
+        const at = `${width}x${height} ${lang}`;
+        const page = await open(await phone(width, lang, { viewport: { width, height } }));
+        const cdp = await page.context().newCDPSession(page);
+        const drag = finger(cdp, page);
+        // A quick flick of 66 px, up or down, leaves the sheet at half (at 0.5 px/ms and no least travel, it went to full).
+        for (const dy of [-66, 66]) {
+          const pane = (await settled(page)).pane;
+          await drag(width / 2, pane.y + 22, pane.y + 22 + dy, 50, 3);
+          assert.strictEqual((await settled(page)).snap, 'half', `${at}: a flick of ${dy} px`);
+        }
+        // A slow drag as high as the finger goes: the sheet never covers the app bar while the bar shows (u2 tapped ☰ and
+        // missed); let go, it settles at full, the bar slides away, and the sheet stops 8 px under the strip.
+        const pane = (await settled(page)).pane;
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: width / 2, y: pane.y + 22 }] });
+        for (let i = 1; i <= 10; i++) {
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: width / 2, y: pane.y + 22 - ((pane.y + 12) * i) / 10 }] });
+          await frames(page, 1);
+          const now = await box(page, '#panel-pane');
+          const bar = await box(page, 'header.top');
+          assert.ok(now.y >= bar.y + bar.height - 0.5, `${at}: step ${i}, the sheet at ${now.y} over the app bar to ${bar.y + bar.height}`);
+        }
+        await page.waitForTimeout(300);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const full = await settled(page);
+        // (Once the app bar has slid away.)
+        const strip = await stable('the strip', () => box(page, '#ed-head'), 4);
+        assert.strictEqual(full.snap, 'full', at);
+        assert.ok(Math.abs(full.pane.y - (strip.y + strip.height) - 8) < 1, `${at}: ${JSON.stringify([strip, full.pane])}`);
+        // A finger just above the sheet finds no file name.
+        const name = await box(page, '#file-name');
+        assert.strictEqual(await page.evaluate(`!!document.elementFromPoint(${name.x + name.width / 2}, ${full.pane.y - 4})?.closest('#file-name')`), false, at);
+        // At half: a tap on the name renames nothing; its pencil, drawn, takes a press 44 px wide and high, and renames.
+        await snapTo(page, 'half');
+        const stem = await box(page, '#file-name-stem');
+        await tapPoint(cdp, stem.x + stem.width / 2, stem.y + stem.height / 2);
+        await page.waitForTimeout(200);
+        assert.strictEqual(await page.locator('#file-name-input').isVisible(), false, `${at}: a tap on the name`);
+        const pencil = await page.evaluate(`(() => {
+          const p = document.querySelector('#file-name .file-pencil');
+          const r = p.getBoundingClientRect();
+          const inside = [[1, 1], [r.width - 1, 1], [1, r.height - 1], [r.width - 1, r.height - 1], [r.width / 2, r.height / 2]]
+            .every(([dx, dy]) => p.contains(document.elementFromPoint(r.left + dx, r.top + dy)));
+          return { width: Math.round(r.width), height: Math.round(r.height), inside, opacity: getComputedStyle(p).opacity, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        })()`) as { width: number; height: number; inside: boolean; opacity: string; x: number; y: number };
+        assert.ok(pencil.width >= 44 && pencil.height >= 44 && pencil.inside && pencil.opacity === '1', `${at}: ${JSON.stringify(pencil)}`);
+        await tapPoint(cdp, pencil.x, pencil.y);
+        await until(`${at}: the rename`, () => page.locator('#file-name-input').isVisible(), (v) => v);
+        await page.keyboard.press('Escape');
+        await page.context().close();
+      }
+    }
+  });
+
+  it('takes a tap on the peek\'s summary row right after a flick down, and a tap on its header right after a drag', async () => {
+    const page = await open(await phone(390, 'en', { viewport: { width: 390, height: 664 } }));
+    const cdp = await page.context().newCDPSession(page);
+    const drag = finger(cdp, page);
+    // (Chromium took the quick moves for a fling the page did not stop, and the next tap only stopped that fling.)
+    for (const wait of [150, 450]) {
+      await snapTo(page, 'half');
+      const pane = (await settled(page)).pane;
+      await drag(195, pane.y + 22, pane.y + 222, 40, 3);
+      assert.strictEqual((await settled(page)).snap, 'peek', `${wait} ms`);
+      await page.waitForTimeout(wait);
+      const row = await box(page, '#sheet-summary');
+      await tapPoint(cdp, row.x + row.width / 2, row.y + row.height / 2);
+      assert.strictEqual((await settled(page)).snap, 'half', `a tap ${wait} ms after the flick`);
+    }
+    // A slow drag down to the peek, and at once a tap on the grab strip: the tap is a tap (only the click of the press
+    // that dragged goes nowhere), and the sheet opens to half.
+    const pane = (await settled(page)).pane;
+    await drag(195, pane.y + 22, pane.y + 322, 600);
+    await tapPoint(cdp, 195, 664 - (await box(page, '#panel-pane')).height + 22);
+    assert.strictEqual((await settled(page)).snap, 'half', 'a tap right after a drag');
+    await page.context().close();
+  });
+
+  it('leaves a reader who scrolled away from the cursor where they read when it moves', async () => {
+    const page = await openLong('en');
+    const cdp = await page.context().newCDPSession(page);
+    const drag = finger(cdp, page);
+    await snapTo(page, 'peek');
+    // The cursor on line 1; the reader scrolls far down (#659: 4,058 px, back to 1 on each move).
+    await scrollTo(page, 4058);
+    const top = () => page.evaluate("document.querySelector('.cm-scroller').scrollTop") as Promise<number>;
+    const kept = await top();
+    assert.ok(kept > 4000, String(kept));
+    await snapTo(page, 'half');
+    assert.strictEqual(await top(), kept, 'a key on the grabber');
+    const pane = (await settled(page)).pane;
+    await drag(195, pane.y + 22, pane.y + 322, 600);
+    assert.strictEqual((await settled(page)).snap, 'peek');
+    assert.strictEqual(await top(), kept, 'a drag');
+    await tapPoint(cdp, 195, (await box(page, '#panel-pane')).y + 22);
+    assert.strictEqual((await settled(page)).snap, 'half');
+    assert.strictEqual(await top(), kept, 'a tap');
+    await page.context().close();
+  });
+
+  it('gives each fold arrow of the explanation a target of 44 px on a touch screen, and folds a part on a tap of its name as a click does on a desktop', async () => {
+    const LINE = 'grep -c "$USER" /var/log/auth.log | sort -u > out.txt\n';
+    /** The first rows with parts in the panel: each one's fold arrow's target (its ::after, as drawn), what a press there finds, and its name's left edge. */
+    const arrows = (frame: import('playwright-core').Frame) => frame.evaluate(`(() => [...document.querySelectorAll('#tree button.twisty')].filter((t) => t.getClientRects().length).slice(0, 3).map((t) => {
+      t.scrollIntoView({ block: 'center' });
+      const b = t.getBoundingClientRect();
+      const after = getComputedStyle(t, '::after');
+      const label = t.parentElement.querySelector('.label').getBoundingClientRect();
+      if (after.content === 'none') return { key: t.closest('li').dataset.key, width: 0, height: 0, all: false, clear: true };
+      const box = { left: b.right - parseFloat(after.right) - parseFloat(after.width), top: b.top + parseFloat(after.top), width: parseFloat(after.width), height: parseFloat(after.height) };
+      let all = true;
+      for (let y = box.top + 1; y < box.top + box.height; y += 4) for (let x = Math.max(box.left, 0) + 1; x < box.left + box.width; x += 4) if (!t.contains(document.elementFromPoint(x, y))) all = false;
+      return { key: t.closest('li').dataset.key, width: box.width, height: box.height, all, clear: box.left + box.width <= label.left };
+    }))()`) as Promise<{ key: string; width: number; height: number; all: boolean; clear: boolean }[]>;
+    /** Taps (or clicks) the name of the first row with parts twice, and gives its fold state after each. */
+    const nameTwice = async (page: Page, touch: boolean) => {
+      const frame = page.frame({ url: /panel\.html/ })!;
+      const label = frame.locator('#tree li:has(> .item > .row > button.twisty) > .item > .row .label').first();
+      const states: (string | null)[] = [];
+      for (let i = 0; i < 2; i++) {
+        await (touch ? label.tap() : label.click());
+        await frames(page);
+        states.push(await frame.locator('#tree button.twisty').first().getAttribute('aria-expanded'));
+      }
+      return states;
+    };
+    const setLine = async (page: Page) => {
+      await page.locator('.cm-content').click({ position: { x: 100, y: 10 } });
+      await page.keyboard.press('Control+A');
+      await page.keyboard.insertText(LINE);
+      await page.keyboard.press('Control+Home');
+      await until('the line\'s rows', () => page.frame({ url: /panel\.html/ })!.locator('#tree button.twisty').count(), (n) => n >= 2);
+    };
+    for (const [width, height] of PHONES) {
+      for (const lang of ['en', 'ja'] as const) {
+        const at = `${width}x${height} ${lang}`;
+        const page = await open(await phone(width, lang, { viewport: { width, height } }));
+        await setLine(page);
+        await snapTo(page, 'full');
+        const found = await arrows(page.frame({ url: /panel\.html/ })!);
+        assert.ok(found.length >= 2, `${at}: ${JSON.stringify(found)}`);
+        for (const a of found) assert.ok(a.width === 44 && a.height === 44 && a.all && a.clear, `${at}: ${JSON.stringify(a)}`);
+        assert.deepStrictEqual(await nameTwice(page, true), ['false', 'true'], at);
+        await page.context().close();
+      }
+    }
+    // On a desktop (a mouse) the arrow keeps its own box, and a click on a name folds the part the same way.
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').nth(5).waitFor();
+    await setLine(page);
+    const found = await arrows(page.frame({ url: /panel\.html/ })!);
+    assert.ok(found.length >= 2 && found.every((a) => a.width === 0), JSON.stringify(found));
+    assert.deepStrictEqual(await nameTwice(page, false), ['false', 'true']);
+    await ctx.close();
   });
 });

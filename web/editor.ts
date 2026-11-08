@@ -622,11 +622,15 @@ export class Editor {
     this.view.dispatch({ effects: EditorView.scrollIntoView(this.view.state.selection.main.head, { y: 'center' }) });
   }
 
-  /** Whether the cursor is in what shows of the editor now: in its box, and not under the phone's sheet. */
+  /**
+   * Whether the cursor's line is in what shows of the editor now, a row of it at least: in its box, and not under the
+   * phone's sheet. A reader who scrolled away from it is reading elsewhere (`keepLineInView` is then left alone).
+   */
   cursorShows(): boolean {
-    const at = this.view.coordsAtPos(this.view.state.selection.main.head);
+    const line = this.view.state.doc.lineAt(this.view.state.selection.main.head);
+    const [first, last] = [this.view.coordsAtPos(line.from, 1), this.view.coordsAtPos(line.to, -1)];
     const box = this.view.scrollDOM.getBoundingClientRect();
-    return !!at && at.bottom > box.top && at.top < box.bottom - sheetCover();
+    return !!first && !!last && last.bottom > box.top && first.top < box.bottom - sheetCover();
   }
 
   /**

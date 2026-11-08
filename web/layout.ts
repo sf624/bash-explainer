@@ -425,21 +425,3 @@ export function setUpEdgeSwipe(edge: HTMLElement, open: () => void, side: 'left'
   edge.addEventListener('pointerup', end);
   edge.addEventListener('pointercancel', end);
 }
-
-/**
- * Whether the drawn controls of the sheet's row (the view control, the tools) keep clear of the bar drawn at the top of
- * its grabber (`.sheet-grab::before`, read as drawn, in the row's middle). The tabs pass under the bar:
- * they draw only their words, below it. A row without a grabber is clear.
- */
-export function clearOfGrabBar(row: HTMLElement): boolean {
-  const grab = row.querySelector<HTMLElement>('.sheet-grab');
-  if (!grab?.getClientRects().length) return true;
-  const g = grab.getBoundingClientRect();
-  const half = (parseFloat(getComputedStyle(grab, '::before').width) || 0) / 2;
-  const [left, right] = [g.left + g.width / 2 - half, g.left + g.width / 2 + half];
-  const drawn = [...row.querySelectorAll<HTMLElement>('.view-slot .vc-open, .view-slot .vc-options, .panel-tools')].filter((e) => e.getClientRects().length && getComputedStyle(e).display !== 'none');
-  return drawn.every((e) => {
-    const r = e.getBoundingClientRect();
-    return r.right <= left + 0.5 || r.left >= right - 0.5;
-  });
-}

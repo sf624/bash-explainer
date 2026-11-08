@@ -128,6 +128,18 @@ Clear, a whole script pasted over the untouched sample, and Open start a new scr
 - **Open** takes the file's name and type, as before, and puts the shell back to Auto: "Opened test.bats. Shell set back to Auto." Undo chooses the shell again.
 - A toast says nothing of what did not change: with the shell at Auto, Clear says "Editor cleared", and an empty untitled shell script at Auto stays as it is.
 
+### The phone's sheet
+
+The usability test of 2026-11-06 found the sheet hard to hold (docs/design/usability-9.md, 2.5 and 2.7): a swipe in the panel made it full and hid the editor, a tap near its top opened the rename box, and the ☰ button was covered after a drag.
+
+- **The grab strip.** The sheet's header has a strip 44 px high above its tabs, with the bar drawn 48 x 5 px in its middle; nothing else lies in it. A drag still starts anywhere on the header but the depth's control, and a tap on the strip (or around the tabs) still cycles the heights. Before, the bar was 36 x 4 px, drawn over the tabs row, and about a tenth of that 48 px row was free to grab. The folded sheet is 44 px taller (141 px with the summary row).
+- **The fling.** A release counts as a fling at 1,000 px a second and after a drag of at least 80 px; a shorter or slower drag goes to the nearest height. Before, 500 px a second was enough, and a flick of 66 px up from half went to full.
+- **The full height.** A full sheet stops 8 px below the editor's header strip, so a tap just above it lands on nothing. Before, it met the strip, and the file name sat right above its edge.
+- **The app bar.** While a finger drags the sheet, its top stays below the app bar; the bar slides away once the sheet settles at full.
+- **The rename.** On a phone the file name opens the rename box from its pencil only, which is now drawn at all times and takes a tap 44 px wide and high; a tap on the name does nothing. ⋯ › Rename… and the menu's file row rename as before, and a keyboard or a screen reader still presses the whole name.
+- **The fold arrows.** On a touch screen, a part's ▾ in the explanation takes a tap 44 px wide and high, from the row's top edge to 2 px before its name (before: 11 x 20 px); a row with parts is at least 44 px high there, so that the next row does not take the bottom of that tap. A tap on a name does what a click does on a desktop: it folds or unfolds the part, and selects it in the script. With a mouse, and in VS Code, the arrow and the rows are as before.
+- **The half height** stays at 55% of the window. With the stages of a pipeline folded at depth 2, a line's **In short** fits in it with the grab strip: its last row ends 210 px or less down the panel, which shows 272 px at 390 x 664 (an iPhone 13's Safari), 336 px at 360 x 780 and 371 px at 390 x 844 (`who | wc -l`, `grep -c "$USER" /var/log/auth.log`, and a line of five commands).
+
 ## Fixed
 
 ### A blank, or a value with a space at both ends, shown visibly
@@ -152,7 +164,13 @@ A value made only of spaces and tabs looks empty in a code span, so the explanat
 
 ### The phone's header row
 
-On a phone held upright (a sheet's row under 600 px), the explanation's header has the tabs and the depth's control only, in every language: whether Collapse and Markdown fit no longer depends on how wide the words are. Copy as Markdown is in the menu (☰), and Collapse is left out, as in English before. A row where the depth's control or a tool would lie over the grab bar takes the next, narrower form. The depth's menu button and its segments are drawn 32 px high, as the file type's chip, each in a 44 px target, and on hover too. The ends of those pills, and of the chip, are half circles, as Read | Edit's are; in forced colours each has a thin edge, and the option shown the system's selection colour. Each segment's label, the depth's and Read | Edit's, is centred between the pill's edge and the divider (「概要」 was 4 px from the edge and 13 px from the divider). Before, in Japanese at 430 px and wider with an empty editor, the row took Collapse and Markdown, and the depth's menu (「単語ごと ▾」, 42 px high) lay over the grab bar; the chip's ends were 22 px across and 16 px down, and a mouse over the menu drew it 44 px high with grey bands.
+On a phone held upright (a sheet's row under 600 px), the explanation's header has the tabs and the depth's control only, in every language: whether Collapse and Markdown fit no longer depends on how wide the words are. Copy as Markdown is in the menu (☰), and Collapse is left out, as in English before. The grab bar is in a strip of its own above the row (see "The phone's sheet"), so no control lies over it. The depth's menu button and its segments are drawn 32 px high, as the file type's chip, each in a 44 px target, and on hover too. The ends of those pills, and of the chip, are half circles, as Read | Edit's are; in forced colours each has a thin edge, and the option shown the system's selection colour. Each segment's label, the depth's and Read | Edit's, is centred between the pill's edge and the divider (「概要」 was 4 px from the edge and 13 px from the divider). Before, in Japanese at 430 px and wider with an empty editor, the row took Collapse and Markdown, and the depth's menu (「単語ごと ▾」, 42 px high) lay over the grab bar; the chip's ends were 22 px across and 16 px down, and a mouse over the menu drew it 44 px high with grey bands.
+
+### Taps after a drag of the phone's sheet, and the editor's scroll
+
+- **The summary row after a quick swipe.** A quick swipe down left Chromium (Chrome on Android) with a fling that nothing took, and the next tap only stopped it: a tap on the folded sheet's summary row was lost, 150 ms as well as 700 ms after the swipe. The page now takes the moves of a drag itself.
+- **The header after a drag.** For 400 ms after a drag, every click on the header was dropped, so that the click that ends a mouse drag goes nowhere. Now only that click is dropped: a tap right after a drag (on a tab, the depth's control, the grab strip) works.
+- **The scroll.** A move of the sheet (a drag, a tap, a key) brings the cursor's line back into view only when some of it showed before the move. Before, a reader who had scrolled away from the cursor was pulled back: at 390 x 664, from 4,058 px down to the top.
 
 ### The cases of a test's example
 

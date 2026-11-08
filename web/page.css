@@ -2898,8 +2898,14 @@ body:has(> #settings-dialog.dragging) main {
    pane is a sheet over the editor, at the height in --sheet-h. The editor's box ends at the lowest the sheet goes
    (--sheet-box) and goes on under it, so that the lines a move uncovers are there; --sheet-past is the room under its
    text, and web/editor.ts keeps the cursor's line above what the sheet covers. A move goes by `transform` alone
-   (web/sheet.ts, `glide`: the pane is as tall as the move needs until it ends). Its header is one 48 px row at every
-   height, and all of it is the grabber. At full height the app bar slides away (data-sheet="full"). */
+   (web/sheet.ts, `glide`: the pane is as tall as the move needs until it ends). Its header is the same at every height:
+   a grab strip of 44 px that nothing else lies in (--sheet-grab), over one 48 px row of tabs, and all of it takes a drag
+   (docs/design/usability-9.md, 2.5). At full height the app bar slides away (data-sheet="full"). */
+:where(html.bottom-sheet) {
+  --sheet-grab: 44px;
+  --sheet-head: calc(var(--sheet-grab) + 48px);
+}
+
 .sheet-grab,
 #tab-problems,
 .tab-line,
@@ -2924,6 +2930,21 @@ body:has(> #settings-dialog.dragging) main {
   display: none;
 }
 
+/* The file's name opens its rename from its pencil only, drawn at all times, in a target of 44 px: a finger that lands on
+   the name (just above a full sheet, say) renames nothing (docs/design/usability-9.md, Q7). The keys and a screen reader
+   still press the whole button. */
+:where(html.bottom-sheet) .file-name {
+  pointer-events: none;
+}
+
+:where(html.bottom-sheet) .file-name .file-pencil {
+  box-sizing: content-box;
+  margin: -15px -15px -15px -9px;
+  padding: 15px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
 :where(html.bottom-sheet) .panel-pane {
   position: fixed;
   right: 0;
@@ -2945,20 +2966,23 @@ body:has(> #settings-dialog.dragging) main {
 :where(html.bottom-sheet) .panel-head {
   position: relative;
   gap: 4px;
-  height: 48px;
-  min-height: 48px;
-  padding: 0 12px;
+  height: var(--sheet-head);
+  min-height: var(--sheet-head);
+  padding: var(--sheet-grab) 12px 0;
   border-radius: 12px 12px 0 0;
   touch-action: none;
 }
 
-/* The grabber: a slider as big as the header, under its tabs and its pill, for the keyboard (the arrows, Home, End and
-   Enter) and a screen reader; a press lets it through to the header, which takes the taps and the drags. The bar drawn at its
-   top says the sheet moves. */
+/* The grabber: a slider as wide as the header, the strip above its tabs, for the keyboard (the arrows, Home, End and
+   Enter) and a screen reader; a press lets it through to the header, which takes the taps and the drags. The bar drawn in
+   its middle says the sheet moves. Out of the row's flow, so that the row's forms do not count it (web/layout.ts, `fitsRow`). */
 :where(html.bottom-sheet) .sheet-grab {
   display: block;
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--sheet-grab);
   z-index: 0;
   pointer-events: none;
   min-height: 0;
@@ -2971,12 +2995,12 @@ body:has(> #settings-dialog.dragging) main {
 :where(html.bottom-sheet) .sheet-grab::before {
   content: "";
   position: absolute;
-  top: 5px;
+  top: 50%;
   left: 50%;
-  width: 36px;
-  height: 4px;
-  margin-left: -18px;
-  border-radius: 2px;
+  width: 48px;
+  height: 5px;
+  margin: -2.5px 0 0 -24px;
+  border-radius: 2.5px;
   background: var(--vscode-descriptionForeground);
   opacity: 0.6;
 }
@@ -3221,7 +3245,7 @@ html.bottom-sheet #problems #problem-list {
    edge to edge in every browser (Chromium alone gives a press on the strip to a control nearby, and not always). */
 :where(html.bottom-sheet) .edge {
   --row-top: calc(100% - var(--sheet-h, 55dvh));
-  --row-end: calc(var(--row-top) + 49px);
+  --row-end: calc(var(--row-top) + var(--sheet-head) + 1px);
 
   z-index: 13;
   clip-path: polygon(0 0, 100% 0, 100% var(--row-top), 0 var(--row-top), 0 var(--row-end), 100% var(--row-end), 100% 100%, 0 100%);

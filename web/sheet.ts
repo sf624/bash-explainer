@@ -1,9 +1,9 @@
 // The phone's bottom sheet (docs/design/chrome-redesign.md, step C8a): on a phone, and on a touch screen held upright up
 // to 1024 px (theme-init.js sets `bottom-sheet` on the page), the explanation's pane is a sheet over the editor, at three
-// heights. The whole header is its grabber: a tap on it cycles the heights, a drag moves the sheet and lets it settle,
-// and the arrow keys step it. At full height the app bar slides away (page.css follows `.top[inert]`, which this sets). The
-// heights and where a drag, a tap or a key leaves the sheet are decided in src/ui/sheet.ts; here they are measured,
-// drawn and wired. The Problems list is the sheet's Problems tab: it moves into the sheet while the layout is on.
+// heights. The whole header is its grabber, with a strip of 44 px of its own above the tabs (usability-9.md, 2.5): a tap
+// on it cycles the heights, a drag moves the sheet and lets it settle, and the arrow keys step it. At full height the app
+// bar slides away (page.css follows `.top[inert]`, which this sets). The heights and where a drag, a tap or a key leaves
+// the sheet are decided in src/ui/sheet.ts; here they are measured, drawn and wired. The Problems list is the sheet's Problems tab: it moves into the sheet while the layout is on.
 // Under the tabs row of the folded sheet, a summary row says what the cursor's line is (src/ui/summaryRow.ts); while the
 // keyboard is open over the editor (web/keyboard.ts), the sheet is that row alone, on the keyboard's top, and the app bar
 // hides (step C8b). A tap on the row shows the explanation, at half.
@@ -14,7 +14,7 @@ import type { DocumentIssue } from '../src/document';
 import type { Lang } from '../src/i18n';
 import { LEVELS } from '../src/levels';
 import type { Keyboard, RowPlace } from '../src/ui/keyboard';
-import { cursorFollows, type EditorRoom, keyed, settle, sheetHeight, type Snap, type SnapHeights, snapHeights, SNAPS, tapped } from '../src/ui/sheet';
+import { cursorFollows, dragRange, type EditorRoom, keyed, settle, sheetHeight, type Snap, type SnapHeights, snapHeights, SNAPS, tapped } from '../src/ui/sheet';
 import { summaryRow } from '../src/ui/summaryRow';
 import { watchKeyboard } from './keyboard';
 import { narrow } from './layout';
@@ -29,6 +29,8 @@ export interface SheetHost {
   textElement(): HTMLElement;
   /** Edit mode and the focus in the editor. */
   typing(): boolean;
+  /** Whether the cursor's line shows in the editor now (some of it): in its box, and not under the sheet. */
+  cursorShows(): boolean;
   /** Read mode is on (a tap on a line raises a folded sheet, to show its explanation). */
   reading(): boolean;
   /** Shows the Explanation tab (after a problem was chosen in the Problems tab). */
@@ -277,6 +279,8 @@ export class BottomSheet {
     const row = this.summary.offsetHeight + parseFloat(getComputedStyle(this.pane).borderTopWidth);
     const shown = sheetHeight(this.heights(), this.snap, { place: this.place }, row);
     const from = this.shownHeight();
+    // (Read before the new height is drawn: whether the cursor showed in what the sheet left of the editor.)
+    const showed = this.host.cursorShows();
     this.root.dataset.sheet = this.snap;
     this.root.style.setProperty('--sheet-h', `${shown.height}px`);
     this.root.style.setProperty('--sheet-box', `${shown.box}px`);
@@ -290,7 +294,7 @@ export class BottomSheet {
     this.inert(this.folded || !!this.place, this.covers);
     this.name();
     const room = { width: window.innerWidth, height: window.innerHeight - shown.rest, fold: !!this.place };
-    this.follow = cursorFollows(this.room, room);
+    this.follow = cursorFollows(this.room, room, showed);
     this.room = room;
     this.host.moved(this.follow);
   }
@@ -379,7 +383,7 @@ export class BottomSheet {
    * under it; the click that ends a drag does nothing.
    */
   private drags(): () => void {
-    let drag: { id: number; y: number; h: number; moved: boolean; moves: { t: number; h: number }[]; heights: SnapHeights } | undefined;
+    let drag: { id: number; y: number; h: number; moved: boolean; moves: { t: number; h: number }[]; heights: SnapHeights; range: { min: number; max: number } } | undefined;
     let quietUntil = 0;
     this.head.addEventListener('click', (e) => {
       if (performance.now() >= quietUntil) return;
@@ -387,11 +391,21 @@ export class BottomSheet {
       e.preventDefault();
     }, true);
     this.head.addEventListener('pointerdown', (e) => {
+      // (A new press is a tap of its own: only the click of the press that dragged goes nowhere.)
+      quietUntil = 0;
       // (A second finger leaves the first one's drag alone: it would end with no move, and `dragging` would stay.)
       if (drag || !this.on || e.button !== 0 || (e.target as Element).closest('.view-slot, .panel-tools')) return;
       const h = this.shownHeight();
-      drag = { id: e.pointerId, y: e.clientY, h, moved: false, moves: [{ t: e.timeStamp, h }], heights: this.heights() };
+      const heights = this.heights();
+      // (The app bar's bottom: above the window once it has slid away, at full.)
+      const bar = document.querySelector('header.top')?.getBoundingClientRect().bottom ?? 0;
+      drag = { id: e.pointerId, y: e.clientY, h, moved: false, moves: [{ t: e.timeStamp, h }], heights, range: dragRange(heights, window.innerHeight, bar) };
     });
+    // The moves of a drag are the page's: Chromium otherwise takes a quick one for a fling, and the next tap stops that
+    // fling instead of being a tap (a tap on the peek's summary row was lost after a flick down, #659).
+    this.head.addEventListener('touchmove', (e) => {
+      if (drag?.moved) e.preventDefault();
+    }, { passive: false });
     this.head.addEventListener('pointermove', (e) => {
       if (!drag || e.pointerId !== drag.id) return;
       const dy = drag.y - e.clientY;
@@ -404,7 +418,7 @@ export class BottomSheet {
         this.pane.style.height = `${drag.heights.full}px`;
         this.hideHint();
       }
-      const at = (y: number) => Math.min(drag!.heights.full, Math.max(drag!.heights.peek, drag!.h + drag!.y - y));
+      const at = (y: number) => Math.min(drag!.range.max, Math.max(drag!.range.min, drag!.h + drag!.y - y));
       // (Each move the browser merged into this event, with its own time: a phone sends them once a frame.)
       const merged = e.getCoalescedEvents?.() ?? [];
       const moves = (merged.length ? merged : [e]).map((m) => ({ t: m.timeStamp, h: at(m.clientY) }));
@@ -424,7 +438,7 @@ export class BottomSheet {
     };
     const end = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
-      const { moved, heights } = drag;
+      const { moved, heights, h: from } = drag;
       // (The moves of the last SPEED_MS before the finger left.)
       const moves = drag.moves.filter((m) => e.timeStamp - m.t <= SPEED_MS);
       if (!moves.length) moves.push(drag.moves[drag.moves.length - 1]);
@@ -437,7 +451,7 @@ export class BottomSheet {
       const first = moves[0];
       const speed = last.t > first.t ? (last.h - first.h) / (last.t - first.t) : 0;
       // (A cancelled drag goes back to the nearest height, with no fling.)
-      this.set(settle(heights, last.h, e.type === 'pointerup' ? speed : 0));
+      this.set(settle(heights, last.h, e.type === 'pointerup' ? speed : 0, last.h - from));
       // (The layout may have gone during the drag: `set` then draws nothing.)
       if (!this.on) this.rest();
     };
