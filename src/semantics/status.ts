@@ -266,8 +266,7 @@ class Statuses implements StatusModel {
     if (rule.kind === 'given' || rule.kind === 'definition' || rule.kind === 'background') return false;
     if (rule.kind === 'command' && (rule.fails || (rule.sure && rule.functions.every((d) => !this.returnsFailure(d).length)))) {
       // (Not with a redirection that may fail: `echo x >> "$log"`, `f > out`.)
-      const redirs = [n, ...(n.type === 'redirected_statement' ? [field(n, 'body')!] : [])].flatMap(redirectionsOf);
-      if (!redirs.some((r) => redirectionMayFail(r, false))) return false;
+      if (!redirectionsOf(n).some((r) => redirectionMayFail(r, false))) return false;
     }
     return !(rule.kind === 'last-substitution' && !rule.at) && !this.succeeds(n);
   }
