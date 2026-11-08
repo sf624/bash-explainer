@@ -70,12 +70,14 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
   };
   // (A program that looks the name up runs the program even where bash has a builtin of that name: `sudo echo`.)
   const program = f.by !== undefined && f.runs === 'program' && f.also.some((o) => o.kind === 'builtin' && !o.off);
+  // (Whose builtin it is: bash's, or in a script of another shell, that shell's.)
+  const its = f.notBash ? (ja ? 'シェルのビルトイン' : 'the shell\'s builtin') : (ja ? 'bash のビルトイン' : 'bash\'s builtin');
   const lines: string[] = f.noShell ? noShellLines(lang, f)
     : f.noProgram
     ? [f.by !== undefined
-      ? (ja ? `\`${f.by}\` が名前を探すので、bash のビルトインは動かない。この名前のプログラムはふつうない` : `\`${f.by}\` looks the name up, so bash's builtin does not run, and there is usually no program of this name`)
+      ? (ja ? `\`${f.by}\` が名前を探すので、${its}は動かない。この名前のプログラムはふつうない` : `\`${f.by}\` looks the name up, so ${its} does not run, and there is usually no program of this name`)
       : (ja ? 'この名前のプログラムはふつうない' : 'There is usually no program of this name')]
-    : program ? [ja ? `\`${f.by}\` が名前を探すので、これはプログラムで、bash のビルトインではない` : `\`${f.by}\` looks the name up, so this is the program, not bash's builtin`] : [];
+    : program ? [ja ? `\`${f.by}\` が名前を探すので、これはプログラムで、${its}ではない` : `\`${f.by}\` looks the name up, so this is the program, not ${its}`] : [];
   const others = f.also.filter((o) => !((program || (f.noProgram && f.by !== undefined)) && o.kind === 'builtin')).map((o) => {
     const detail = o.kind === 'keyword' ? (ja ? 'クォートせずにコマンドの先頭に書いたとき' : 'where it starts a command unquoted')
       : o.off ? (ja ? `\`enable -n\` で無効。\`enable ${f.name}\` で有効に戻る` : `turned off by \`enable -n\` (\`enable ${f.name}\` turns it on again)`)

@@ -7,6 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { hostReadAs, reachedAt, readAs, type Stop, stopBefore } from '../src/semantics/scriptstops';
 import { shellState } from '../src/semantics/state';
+import type { Shell } from '../src/shellfeatures';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const parser = createUnbashParser();
@@ -228,6 +229,15 @@ describe('what may keep a shell from a line', () => {
     const tree = parser.parse('echo a; exit $((09))\necho b\n');
     assert.strictEqual(stopBefore(tree, tree.text.indexOf('09')), undefined);
     assert.strictEqual(stopBefore(tree, tree.text.indexOf('echo b')), 'sure');
+  });
+
+  // (The builtins each shell has, `builtinIn`: dash and busybox ash say `builtin: not found` and go on, test/dialect-dash.test.ts.)
+  it('in a shell that lacks the builtin, nothing; in sh, where only busybox ash has it, a may', () => {
+    const at = (text: string, shell: Shell): Stop | undefined => stopBefore(parser.parse(`${text}\nx\n`), text.length + 1, 0, shell);
+    assert.deepStrictEqual(['bash', 'sh', 'zsh', 'ksh'].map((sh) => at('builtin exit 0', sh as Shell)), ['sure', undefined, 'sure', 'sure']);
+    assert.deepStrictEqual(['bash', 'sh', 'zsh', 'ksh'].map((sh) => at('logout', sh as Shell)), ['sure', undefined, 'sure', undefined]);
+    assert.deepStrictEqual(['bash', 'sh', 'zsh'].map((sh) => at('eval "builtin exit 0"', sh as Shell)), ['sure', 'may', 'sure']);
+    assert.deepStrictEqual(['bash', 'sh', 'yash'].map((sh) => at('source ./x', sh as Shell)), ['may', 'may', undefined]);
   });
 
   it('the strongest of those before it', () => {

@@ -266,7 +266,7 @@ export function syntaxFault(tree: SyntaxTree, shell: Shell, version: BashVersion
   if (!known) cache.set(tree, (known = new Map()));
   if (!known.has(key)) {
     const fault = findFault(tree, shell, version);
-    known.set(key, fault && reachedAt(tree, fault.node.startIndex) ? fault : undefined);
+    known.set(key, fault && reachedAt(tree, fault.node.startIndex, undefined, undefined, shell) ? fault : undefined);
   }
   return known.get(key);
 }

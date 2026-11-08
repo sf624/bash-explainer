@@ -824,6 +824,19 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - **No fix for `su -c`:** `find . -exec su -c 'rm {}' \;` gets the warning without a safe form, as su passes no arguments to the string.
 - **find's `once` refusal:** `find . -exec sh -c 'echo {}' {} +` is refused for two `{}`, and its error still says to use `\;`, the injectable form; only the `alone` case (`sh -c 'echo {}' +`) gives the safe form. A string of `su -c` or `ssh` before `+` keeps the `\;` advice too, as neither passes arguments to the string.
 
+## From the review of the builtins each shell has (#718)
+
+### Builtins a shell lacks: corners the review left
+
+- **Verdict:** dropped (YAGNI), 2026-11-08. Kind: `bug`.
+- **Reason:** Rare combinations; the usual lines (`source ./lib.sh`, `let i=1`, `caller` in a `#!/bin/sh` script) are said right since #718.
+- **Input and what is wrong:**
+  - An alias named like a builtin in a sh script (`alias let=…; let x`) gets a false portability warning: `measuredReading` (src/dialect.ts) skips functions of the name but not aliases. On main before #718 too, for `let`.
+  - `builtin eval 'x'` in sh: `eval` is still shown as a special builtin, though dash and busybox ash have no `builtin` and never run it.
+  - `local` in ksh: `scope.except` of `local` (src/dict/builtins.ts), the shells where it works outside a function, lists ksh, which has no `local` builtin at all (the row `local` of FEATURES leaves ksh out).
+  - `command source x` in sh gets no dialect problem, while `source x` gets one (dash: `source: not found`).
+  - `setopt` and `print` in a bash script get no problem, though bash fails on them with status 127 (`print` is a ksh, mksh and zsh builtin).
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

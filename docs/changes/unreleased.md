@@ -255,11 +255,15 @@ What a command name is in a script of another shell comes from one table: the ro
 
 | Line | Before | After |
 |---|---|---|
-| `#!/bin/sh`, `source ./lib.sh` | Badge "program", kind "builtin", text "Run a file in the current shell (its variables and functions persist)" | Badge "program: usually there is none", kind "command", text "Not a builtin of POSIX sh (dash has none), so it is looked up in PATH, where there is usually no program of this name. As a builtin of bash and busybox ash: Run a file in the current shell (…)" |
+| `#!/bin/sh`, `source ./lib.sh` | Badge "program", kind "builtin", text "Run a file in the current shell (its variables and functions persist)" | Badge "program: usually there is none", kind "command", text "In dash it is not a builtin, so it is looked up in PATH, where there is usually no program of this name. As a builtin of bash and busybox ash: Run a file in the current shell (…)" |
 | `#!/bin/sh`, `let i=1` | Badge "program", kind "builtin", text "Evaluate arithmetic expressions" | The same as `source`, with "As a builtin of bash and busybox ash: Evaluate arithmetic expressions (e.g. `let i++`)" |
-| `#!/bin/sh`, `caller` (and `enable`, `help`, `disown`, `compgen`…) | Badge "builtin", no problem | "Not a builtin of POSIX sh (dash and busybox ash have none) … As a builtin of bash: Print the caller context (debugging)", and an Error "`caller` is not POSIX sh (in dash and busybox ash the command is not found, with status 127)" |
+| `#!/bin/sh`, `caller` (and `enable`, `disown`, `compgen`…) | Badge "builtin", no problem | "In dash and busybox ash it is not a builtin … As a builtin of bash: Print the caller context (debugging)", and an Error "`caller` is not POSIX sh (in dash and busybox ash the command is not found, with status 127)" |
+| `#!/bin/sh`, `builtin exit 0` then `shopt -s x` | No problem on `shopt`: `builtin exit 0` was read as the end of the script | An Error on `shopt`: dash and busybox ash have no `builtin`, say `builtin: not found` and go on |
+| `#!/bin/sh`, `command source ./x` | "`command` looks the name up, so bash's builtin does not run" | "There is usually no program of this name", as for `source` alone: `command` runs builtins, and busybox ash and bash run this one |
+| `#!/bin/sh`, `env let i=1` (and `sudo source`, `xargs caller`) | "`env` looks the name up, so bash's builtin does not run …" | "… so the shell's builtin does not run …" |
 | `#!/bin/sh`, `builtin eval 'shopt -s x'` | An Error on `shopt` in the string | An Error on `builtin`: dash and busybox ash have none, so the string never runs |
-| `#!/bin/bash`, `setopt extended_glob` | Badge "builtin" | "Not a builtin of bash … As a builtin of zsh: Turn zsh options on" |
+| `#!/bin/bash`, `setopt extended_glob` | Badge "builtin" | "In bash it is not a builtin … As a builtin of zsh: Turn zsh options on" |
+| `#!/bin/zsh`, `help cd`; `#!/bin/ksh`, `caller` | Badge "builtin", no problem | "In zsh it is not a builtin …" (in ksh93), and an Error "`help` is not available in zsh" ("`caller` … in ksh93") |
 | `print` and `whence` in bash | "(a ksh, mksh and zsh builtin, not in bash; …)" in the command's own text | The same sentence as above, naming ksh93, mksh and zsh from the table |
 
 The words after the name are still read as the shells that have the builtin read them (`./lib.sh` is "file to source"), as the text says. Evidence: `dash -c 'source /dev/null'` prints `dash: 1: source: not found` (status 127); busybox ash runs it, and has `help` and `history` too.
