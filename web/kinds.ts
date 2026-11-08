@@ -2,7 +2,7 @@
 // a pasted script that brings its own kind, whether the user's text gives way to the new kind's sample, and loading
 // a sample with an Undo. web/main.ts holds the rest of the page's state and gives this module what it needs.
 import { undo } from '@codemirror/commands';
-import type { StateEffect, Transaction } from '@codemirror/state';
+import { Annotation, type StateEffect, Transaction } from '@codemirror/state';
 import type { ViewUpdate } from '@codemirror/view';
 import { detectKind } from '../src/hosts/detect';
 import type { Lang } from '../src/i18n';
@@ -51,6 +51,8 @@ export interface KindHost {
   scriptWords(c: ScriptChange, kindSaid: boolean): string;
   /** Puts the state of `c.from` back, the text as it is, and out of the history (the paste's toast: its Undo). */
   revertScript(c: ScriptChange): void;
+  /** Asks before a whole paste forgets the changes of the file open, as Clear asks (true: go on). */
+  askPaste(): Promise<boolean>;
 }
 
 /** The text that transactions inserted. */
@@ -62,6 +64,24 @@ const insertedBy = (trs: readonly Transaction[]): string => {
 
 /** Whether a pasted `text` makes most of the document (80% or more): a whole script, not a few lines into one. */
 const wholeOf = (text: string, doc: string): boolean => text.trim().length >= 0.8 * doc.trim().length;
+
+/** A paste asked about first (`KindControl.held`), dispatched again once the user said to go on. */
+const pasteAsked = Annotation.define<true>();
+
+/**
+ * Whether `tr` pastes (or drops) a whole script: text put in over the whole of the old one, or into an empty editor
+ * (docs/design/usability-9.md, Q8). A paste that leaves any of the old text is an ordinary edit.
+ */
+function wholePaste(tr: Transaction): boolean {
+  if (!tr.docChanged || !(tr.isUserEvent('input.paste') || tr.isUserEvent('input.drop'))) return false;
+  let whole = true;
+  let changes = 0;
+  tr.changes.iterChangedRanges((fromA, toA) => {
+    changes++;
+    whole &&= fromA === 0 && toA === tr.startState.doc.length;
+  });
+  return whole && changes === 1;
+}
 
 export class KindControl {
   /** While the page itself puts a text in (a sample, or nothing): the edit is not the user's, so the Undo toast stays. */
@@ -121,19 +141,33 @@ export class KindControl {
 
   /**
    * The new script a paste starts (docs/design/usability-9.md, Q8), as an effect of the paste's own transaction, so
-   * that the paste and its reset are one step of the history (`scriptChange`, web/script-state.ts): only a paste that
-   * replaces the whole of the untouched sample, with no file open. Its kind comes from the text (the plain shell script
-   * when nothing says another), the script is untitled, the shell back to Auto. Nothing else does: an empty editor was
-   * made new by Clear already (a shell chosen since stays), and a file open stays the file. (EditorState.transactionExtender.)
+   * that the paste and its reset are one step of the history (`scriptChange`, web/script-state.ts): a paste of a whole
+   * script (`wholePaste`: select all and paste, a paste into an empty editor, the page's Paste button). Its kind comes
+   * from the text (the plain shell script when nothing says another), the script is untitled, the shell back to Auto.
+   * The compare page has no file and keeps its shell. (EditorState.transactionExtender.)
    */
   startedBy(tr: Transaction): StateEffect<ScriptChange>[] {
-    if (!tr.docChanged || !(tr.isUserEvent('input.paste') || tr.isUserEvent('input.drop'))) return [];
-    const start = tr.startState.doc.toString();
-    if (!isSample(start) || this.host.files().own(start, untouched)) return [];
-    const text = insertedBy([tr]);
-    if (!wholeOf(text, tr.newDoc.toString())) return [];
-    const change = this.host.newScript(detectKind(text)?.kind ?? 'shell');
+    if (!wholePaste(tr)) return [];
+    const change = this.host.newScript(detectKind(insertedBy([tr]))?.kind ?? 'shell');
     return change ? [scriptChange.of(change)] : [];
+  }
+
+  /**
+   * Whether a whole paste waits for a question first: the file open has changes not saved, which the new script would
+   * forget, as Clear asks. The paste is held back (EditorState.transactionFilter), and made again, as it was, once the
+   * user said to go on, while the text is still the one it was pasted over.
+   */
+  held(tr: Transaction): boolean {
+    if (tr.annotation(pasteAsked) || !wholePaste(tr)) return false;
+    const files = this.host.files();
+    if (!files.file || !files.unsaved(tr.startState.doc.toString(), untouched)) return false;
+    queueMicrotask(() => void this.host.askPaste().then((go) => {
+      const view = this.host.editor().view;
+      if (!go || !view.state.doc.eq(tr.startState.doc)) return;
+      view.dispatch({ changes: tr.changes, selection: tr.selection, scrollIntoView: tr.scrollIntoView, userEvent: tr.annotation(Transaction.userEvent), annotations: pasteAsked.of(true) });
+      view.focus();
+    }));
+    return true;
   }
 
   /**
