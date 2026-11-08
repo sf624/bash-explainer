@@ -121,7 +121,7 @@ export class WalkBuiltins {
           return name === 'trap' ? trapCommand(this.w, out, parse, args, host, { word: args[at.word] }) : out;
         }
         if (name === 'eval') return this.w.evalScript(script, n, st);
-        const signals = trapSignals(parse, args, true).map((v) => v ?? '');
+        const signals = trapSignals(parse, args).map((v) => v ?? '');
         if (!this.w.silent) this.w.traps.push({ script, host, st, since: this.w.changeCount, proc: processIn(this.w.targets), exit: signals.some(exitSignal), exitOnly: signals.every(exitSignal), dead: this.w.mode.dead > 0 });
         // (What it changes, it may change after any later statement; an EXIT trap runs at the end only.)
         if (!signals.every(exitSignal)) {
