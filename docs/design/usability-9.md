@@ -308,7 +308,7 @@ The baseline is run 2 (main 71cac086). Below the goal, the maintainer decides wh
 
 ## 7. Run 3 (2026-11-08)
 
-Run 3 was U9: main e1174686 (after U1 to U8), the kit's protocol with the changes of section 6. Ten new agents, the five personas of runs 1 and 2, two per cell (u21 to u30). No session was void. Tasks 7 (paste logins.sh again, say what grep receives) and 8 (the 33-line nightly-backup.sh: (a) which directories the `find` deletes, (b) what happens when a `tar` in the loop fails under `set -euo pipefail` with `trap cleanup EXIT`) were added and are graded apart. The grades and the reports are in the kit (`RESULTS.md`, "Run 3").
+Run 3 was U9: main e1174686 (after U1 to U8), the kit's protocol with the changes of section 6. Ten new agents, the five personas of runs 1 and 2, two per cell (u21 to u30). No session was void. Tasks 7 (paste logins.sh again, say what grep receives) and 8 (the 34-line nightly-backup.sh: (a) which directories the `find` deletes, (b) what happens when a `tar` in the loop fails under `set -euo pipefail` with `trap cleanup EXIT`) were added and are graded apart. The grades and the reports are in the kit (`RESULTS.md`, "Run 3").
 
 ### 7.1 The measures
 
@@ -328,9 +328,9 @@ Tasks 1 to 6 got easier: easy 60% to 82% strict, 73% to 88% with a condition, an
 
 ### 7.2 The score fell, and why
 
-The average fell from 7.6 to 7.0. The fall is in the Sonnet cells (beginner -1.5, sysadmin -1); the Opus cells are level. The cause is plausibly tasks 7 and 8, not a regression on tasks 1 to 6, which improved:
+The average fell from 7.6 to 7.0. The fall is in the Sonnet cells (beginner -1.5, sysadmin -1); the Opus cells are nearly level (LPIC -0.5, the others 0). The cause is plausibly tasks 7 and 8, not a regression on tasks 1 to 6, which improved:
 
-- **Task 8 (b).** Nine of the ten score sentences name what a failing command does to the whole script as what keeps the score down: "weaker for 'what happens when it fails'", "whole-script behaviour (tar failure, exit status) not given". All ten answered it, nine from their own knowledge of `set -e`, putting lines 3 and 19 together; the page gave no sentence.
+- **Task 8 (b).** Nine of the ten score sentences name what a failing command does to the whole script as what keeps the score down: "weaker for 'what happens when it fails'", "whole-script behaviour (tar failure, exit status) not given". All ten answered it, nine from their own knowledge of `set -e`, putting lines 3 and 19 together; the page gave no sentence on the failing `tar`.
 - **The shell kept from task 6.** Five users' first cost: they pasted over everything after "Check as POSIX sh", and the next scripts stayed in POSIX sh. Only tasks 7 and 8 expose it.
 
 ### 7.3 The top costs, with the findings of section 2
@@ -339,7 +339,7 @@ The average fell from 7.6 to 7.0. The fall is in the Sonnet cells (beginner -1.5
 |---|---|---|
 | New: task 8 (b) | 9 of 10 | No line says that a failing `tar` stops the script under `set -e`, that the trap runs, and what the exit status is. Line 28's only `set -e` text is on `$(dirname …)`. Nothing ties lines 3, 19 and 28. The strip says "No problems". Step U11. |
 | 2.7 the length, "In short", the phone's half height | 7 | All ten said the length cost them something. The text repeated per word ("bash's steps", "Double-quoted string: …", one row per option value); the `find` line is about two screens, with about 20 rows before `-mtime`; 60 and more rows on a pipeline; the phone's half sheet shows about 10 editor lines. Step U13. |
-| 2.9 the shell and the name kept | 5 (all five desktop users who pasted) | Select all and paste kept POSIX sh: the receives line said "the words of /var/log/*.log", the whole-pipeline example went away, and a bash script showed two false errors until the pill was set to Auto. The name stayed "test.bats ●" (2.6). Users who used Clear or Open were reset, and saw the toast. Cause: Q8 resets only on Clear, Open and a paste over the untouched sample. Step U10. |
+| 2.9 the shell and the name kept | 5 (all five desktop users who pasted) | Select all and paste kept POSIX sh: the receives line said "the words of /var/log/*.log", the whole-pipeline example went away, and a bash script showed two false errors until the pill was set to Auto. The name stayed "test.bats ●" (2.6). Users who used Clear or Open were reset (three saw the toast). Cause: Q8 resets only on Clear, Open and a paste over the untouched sample. Step U10. |
 | 2.1 the POSIX sh hint | 4 | Found late: the phone's Problems tab is labelled "✓"; on the desktop "a small link in the status bar". Step U12 for the phone. |
 
 Not in any top 3: 2.2 (the fix: all ten copied the whole line), 2.3, 2.4, 2.8, 2.10. The phone's sheet (2.5) and the names (2.6) once each. Other findings of one or two users are in the kit: a phone has no Paste once the editor has text; a row's description drops under the token column (two users); the fix keeps `2>/dev/null`, which hides tar's own error (four users; Q11 stays); the sheet keeps its scroll position when another line is tapped (one phone user); "Clear the editor" seemed not to clear (one user, suspected: the confirmation for a changed file).
