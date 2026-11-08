@@ -1,6 +1,6 @@
 // The families of option parsers (`CommandSpec.parser`): each preset is the rules of one real parser, which
 // test/parsers-real.test.ts checks against a tool that uses it.
-import type { CommandSpec, OptionSpec } from './spec';
+import type { CommandSpec, OptionSpec, ValueSpec } from './spec';
 
 /**
  * - `gnu` (the default): getopt_long's rules without abbreviations. Short options cluster (`-xvf`) and take a
@@ -34,8 +34,9 @@ import type { CommandSpec, OptionSpec } from './spec';
  *   `-` is no option (`--: invalid option`). The first operand ends the options, and so does a lone `-`, as `--` does.
  * - `bazel`: bazel's options parser (its `OptionsParser`, and its client's for the startup options): the rules of `git`
  *   (no clusters, `-c opt` but not `-copt` or `-c=opt`; `--name=value` or `--name value`), and a boolean option is
- *   turned off by `no` before its name or a `-` after its letter (`--nostamp`, `-t-`: the rule `negation`). Options
- *   may follow the targets; `--` ends them, so that a target pattern may start with `-` (`-//app/legacy/...`).
+ *   turned off by `no` before its name, a `-` after its letter or the value `false` (`--nostamp`, `-t-`, `--stamp=false`:
+ *   the rule `negation`). Options may follow the targets; `--` ends them, so that a target pattern may start with `-`
+ *   (`-//app/legacy/...`).
  */
 export type OptionParser = 'gnu' | 'getopt_long' | 'single-dash' | 'openssl' | 'letters' | 'cobra' | 'iproute2' | 'jq' | 'git' | 'dpkg' | 'bash' | 'bazel';
 
@@ -66,7 +67,7 @@ export interface ParserRules {
   longFirst: boolean;
   /** A word `-` alone ends the options, as `--` does. */
   loneDashEnds: boolean;
-  /** `--noname` turns off the option `--name`, and `-x-` the option `-x`, when it takes no value (`negatedOption`). */
+  /** `--noname` turns off the option `--name`, and `-x-` the option `-x`, when it is a boolean (`writtenOption`); so does `--name=false` (`booleanOff`). */
   negation: boolean;
 }
 
@@ -91,15 +92,27 @@ export const PARSERS: Record<OptionParser, ParserRules> = {
 };
 
 /**
- * The option a word turns off with the rule `negation`, and the name it is written for: `--nostamp` turns off
- * `--stamp`, `-t-` turns off `-t`. Only an option that takes no value: bazel refuses `--nocompilation_mode` ("Illegal
- * use of 'no' prefix on non-boolean option"), which is then an option not known.
+ * The option a word gives: `found`, the one it names; else, with the rule `negation`, the boolean option it turns off and
+ * the name it is written for (`negated`): `--nostamp` turns off `--stamp`, `-t-` turns off `-t`. Only an option that
+ * takes no value, or one that is optional (bazel's tri-states, `--nocache_test_results`): bazel refuses
+ * `--nocompilation_mode` ("Illegal use of 'no' prefix on non-boolean option"), which is then an option not known.
  */
-export function negatedOption(options: readonly OptionSpec[], word: string): { option: OptionSpec; name: string } | undefined {
-  const m = /^--no(.+)$|^(-[^-])-$/.exec(word);
-  const name = m && (m[1] !== undefined ? `--${m[1]}` : m[2]);
-  const option = name ? options.find((o) => o.names.includes(name)) : undefined;
-  return option && option.value === undefined ? { option, name: name! } : undefined;
+export function writtenOption(rules: ParserRules, options: readonly OptionSpec[], word: string, found: OptionSpec | undefined): { option?: OptionSpec; negated?: string } {
+  const m = found || !rules.negation ? null : /^--no(.+)$|^(-[^-])-$/.exec(word);
+  if (!m) return { option: found };
+  const name = m[1] !== undefined ? `--${m[1]}` : m[2];
+  const option = options.find((o) => o.names.includes(name));
+  // (A list of values, `jq --arg NAME VALUE`, has no `optional`.)
+  return option && !(option.value && !(option.value as ValueSpec).optional) ? { option, negated: name } : {};
+}
+
+/**
+ * With the rule `negation`, a boolean option given the value `false`, `no` or `0` (`--keep_going=false`) is turned off,
+ * as `--nokeep_going` is: the fields of its role that say so. (`true`, `yes` and `1` leave it on. An option with values
+ * of its own, a tri-state such as `--cache_test_results=auto`, has them in its spec, and is not read so.)
+ */
+export function booleanOff(rules: ParserRules, option: OptionSpec, flag: string, value: string): { disables?: true; negated?: string } {
+  return rules.negation && option.value === undefined && /^(?:false|no|0)$/.test(value) ? { disables: true, negated: flag } : {};
 }
 
 /**

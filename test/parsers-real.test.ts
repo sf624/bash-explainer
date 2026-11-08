@@ -215,8 +215,10 @@ describe('option parser presets agree with a real parser of their family', () =>
     };
     // (`help --long` is an expansion: bazel prints the option it stands for.)
     const EXPANDS: Record<string, string> = { '--long': '--help_verbosity=long', '--short': '--help_verbosity=short' };
-    const BOOLEAN: Record<string, string> = { true: '1', yes: '1', 1: '1', false: '0', no: '0', 0: '0' };
-    /** The options of a command's words as bazel prints them canonical (`--name=value`, a boolean `=1` or `=0`), or `error`. */
+    /**
+     * The options of a command's words as bazel prints them canonical (`--name=value`), or `error`: a boolean (or one with an
+     * optional value, given none) is `=1`, or `=0` where the interpreter reads it turned off (`--nostamp`, `--stamp=false`).
+     */
     const canonical = (parse: ArgvParse, words: ArgWord[]): string => {
       const sub = parse.roles.find((r) => r.role.role === 'subcommand')!.role as Extract<ArgRole, { role: 'subcommand' }>;
       const out: string[] = [];
@@ -224,10 +226,9 @@ describe('option parser presets agree with a real parser of their family', () =>
         if (role.role === 'value') { out[out.length - 1] += words[word].value; continue; }
         if (role.role !== 'option' || role.spec.refused || role.missing) return 'error';
         const long = role.spec.names.find((n) => n.startsWith('--'))!;
-        const value = role.value ? words[word].value!.slice(role.value.attached) : undefined;
-        if (EXPANDS[long]) out.push(EXPANDS[long]);
-        else if (role.spec.value) out.push(`${long}=${value ?? ''}`);
-        else out.push(`${long}=${role.negated ? '0' : value === undefined ? '1' : BOOLEAN[value] ?? value}`);
+        const value = role.value && role.value.spec ? words[word].value!.slice(role.value.attached) : undefined;
+        const required = !!role.spec.value && !(role.spec.value as { optional?: boolean }).optional;
+        out.push(EXPANDS[long] ?? `${long}=${value ?? (required ? '' : role.negated ? '0' : '1')}`);
       }
       return out.join(' ');
     };

@@ -626,6 +626,51 @@
       "canonical": [
         "--help_verbosity=short"
       ]
+    },
+    {
+      "command": "test",
+      "words": [
+        "--cache_test_results=no"
+      ],
+      "canonical": [
+        "--cache_test_results=no"
+      ]
+    },
+    {
+      "command": "test",
+      "words": [
+        "--cache_test_results=auto"
+      ],
+      "canonical": [
+        "--cache_test_results=auto"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--keep_going=0"
+      ],
+      "canonical": [
+        "--keep_going=0"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--subcommands=false"
+      ],
+      "canonical": [
+        "--subcommands=false"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--nosubcommands"
+      ],
+      "canonical": [
+        "--subcommands=0"
+      ]
     }
   ],
   "lines": [
@@ -734,6 +779,19 @@
     },
     {
       "line": "bazel help build --short",
+      "status": 0
+    },
+    {
+      "line": "bazel --version",
+      "status": 0
+    },
+    {
+      "line": "bazel --version build //app:data",
+      "status": 2,
+      "says": "Unknown startup option: '--version'."
+    },
+    {
+      "line": "bazel --help",
       "status": 0
     },
     {

@@ -314,8 +314,12 @@ function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const alone = role.missing ? role.spec.noValue : undefined;
   return cx.tok(a, 'option', alone
     ? cx.t(role.disables ? alone.offText : alone.text)
-    : (role.negated ? cx.text('option-negated', { name: role.negated, on: cx.t(role.text) })
-      : role.disables ? turnedOff(cx, flag, cx.t(role.text), false, role.spec.offText) : cx.t(role.text)) + notForEarlier(cx, parse, word, role), wordParts(cx, a));
+    : (role.disables && !role.negated ? turnedOff(cx, flag, cx.t(role.text), false, role.spec.offText) : onOrOff(cx, role)) + notForEarlier(cx, parse, word, role), wordParts(cx, a));
+}
+
+/** What an option does, or with the parser rule `negation` what turning it off does (`--nostamp`, `--keep_going=false`). */
+function onOrOff(cx: Explainer, role: Extract<ArgRole, { role: 'option' }>): string {
+  return role.negated ? cx.text('option-negated', { name: role.negated, on: cx.t(role.text) }) : cx.t(role.text);
 }
 
 /** `--name=value` (and `-name=value` for single-dash options): the option, with its value in the text. */
@@ -329,7 +333,7 @@ function equalsToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const valueLit: Literal | undefined = whole && litEq >= 0 ? literalFrom(whole, litEq + 1) : undefined;
   const emb = value.spec?.lang && valueLit ? embeddedText(cx, valueLit, value.spec.lang, a) : undefined;
   const extra = emb?.note ? ` — ${emb.note}` : '';
-  const text = role.role === 'option' ? cx.t(role.text) : unknownOption(cx, parse, spec, role.ambiguous);
+  const text = role.role === 'option' ? onOrOff(cx, role) : unknownOption(cx, parse, spec, role.ambiguous);
   // (`--jobs=$(nproc)`: what bash expands in the value has its row, as in a separate value: a command runs there.)
   return cx.tok(a, 'option', text + cx.text('option-equals-value', { val, ...(known ? { known: cx.t(known) } : {}) }) + extra + splicedNote(cx, value), emb?.tokens ?? cx.subs(written?.nodes ?? []));
 }

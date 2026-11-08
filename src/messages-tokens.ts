@@ -60,10 +60,6 @@ export const TOKEN_TEXTS = {
     `不正な数 \`${text}\`: ${why}。シェルがここを読むと算術エラーを出し、このコマンドはそこで止まる`,
     `Invalid number \`${text}\`: ${why}. If the shell reads it, it reports an arithmetic error and this command stops there`]),
   /**
-   * Before the subcommand terraform takes only `-chdir=DIR`, the version and help options, and `-install-autocomplete` and
-   * `-uninstall-autocomplete`. A warning, not an error: terraform is not here to run, and another option with one of those may pass.
-   */
-  /**
    * bazel's client reads only startup options before the command, and stops at any other (`bazel --keep_going build`); its command
    * reads only the command's options, and refuses a startup option (`bazel build --output_base=x`). `what`: what the option does.
    * Warnings, as terraform's: the spec's text says it, and a stop before the line may keep bazel from it.
@@ -82,6 +78,10 @@ export const TOKEN_TEXTS = {
   'bazel-config': tokenText(() => [
     'rc ファイル（`.bazelrc` など）の設定の組を使う。`--config=ci` は、rc ファイルの `build:ci` のような行のオプションに置き換わる。rc ファイルは読まないので、どのオプションになるかは示せない。どの rc ファイルにもなければ、bazel は「Config value \'…\' is not defined in any .rc file」で止まる',
     'Use a group of settings of the rc files (`.bazelrc` and others): `--config=ci` stands for the options of lines like `build:ci` in them. The rc files are not read, so those options are not shown. If no rc file defines it, bazel stops with "Config value \'…\' is not defined in any .rc file"']),
+  /**
+   * Before the subcommand terraform takes only `-chdir=DIR`, the version and help options, and `-install-autocomplete` and
+   * `-uninstall-autocomplete`. A warning, not an error: terraform is not here to run, and another option with one of those may pass.
+   */
   'terraform-option-before-subcommand': tokenWarning(() => [
     'サブコマンドより前のオプション。terraform がここで受け付けるのは `-chdir=…`、`-version`、`-help`、`-install-autocomplete`、`-uninstall-autocomplete` だけで、ほかは多くの場合「Invalid flags before the subcommand」で止まる。サブコマンドの後に書く',
     'an option before the subcommand: terraform takes only `-chdir=…`, `-version`, `-help`, `-install-autocomplete` and `-uninstall-autocomplete` there, and mostly stops with "Invalid flags before the subcommand" on any other; write it after the subcommand']),

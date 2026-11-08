@@ -33,8 +33,9 @@ export function unknownOption(cx: Explainer, parse: Pick<ArgvParse, 'command' | 
   }
   // (`man` reads a name with a `/` as a file, and one with a blank is no manual's: the file's own name, if it has one.)
   const page = program.split('/').pop()!;
-  if (/\s/.test(page) || page === '') return cx.s('オプション（辞書に未登録）', 'Option (not in the dictionary)');
-  return cx.s(`オプション（辞書に未登録。\`man ${page}\` を参照）`, `Option (not in the dictionary; see \`man ${page}\`)`);
+  if (!spec.helpCommand && (/\s/.test(page) || page === '')) return cx.s('オプション（辞書に未登録）', 'Option (not in the dictionary)');
+  const see = spec.helpCommand ?? `man ${page}`;
+  return cx.s(`オプション（辞書に未登録。\`${see}\` を参照）`, `Option (not in the dictionary; see \`${see}\`)`);
 }
 
 /**

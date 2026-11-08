@@ -76,10 +76,15 @@ describe('bazel command lines', () => {
   it('a boolean turned off by `--no` and by `-x-`', () => {
     assert.deepStrictEqual(parts('bazel build --nostamp //x').slice(1, 2), ['--nostamp: Turns `--stamp` off (`--stamp` is "stamp binaries with the date, user and workspace information")']);
     assert.deepStrictEqual(parts('bazel build --nostamp //x', 'ja').slice(1, 2), ['--nostamp: `--stamp` を無効にする（`--stamp` は「バイナリーに日時・ユーザー・ワークスペースの情報を埋め込む」）']);
-    assert.match(parts('bazel test -t- //x')[1], /^-t-: Turns `-t` off \(`-t` is "use cached test results/);
+    assert.match(parts('bazel test -t- //x')[1], /^-t-: Turns `-t` off \(`-t` is "whether to use cached test results/);
+    // (`=false`, `=no`, `=0` turn a boolean off too; a tri-state's values say what each does.)
+    assert.deepStrictEqual(parts('bazel build --keep_going=false //x')[1], '--keep_going=false: Turns `--keep_going` off (`--keep_going` is "go on as far as possible after an error") (value: `false`)');
+    assert.deepStrictEqual(parts('bazel build --keep_going=1 //x')[1], '--keep_going=1: go on as far as possible after an error (value: `1`)');
+    assert.match(parts('bazel test --cache_test_results=no //x')[1], /^--cache_test_results=no: whether to use cached test results .*\(value: `no` — run the tests every time\)$/);
+    assert.match(parts('bazel test --cache_test_results=auto //x', 'ja')[1], /^--cache_test_results=auto: テストの結果をキャッシュから使うかどうか.*（値: `auto` — テストかその依存が変わったときなどだけ実行し直す（既定））$/);
     assert.match(parts('bazel --nohome_rc version')[0], /^--nohome_rc: Turns `--home_rc` off/);
     // (`no` before an option that takes a value is no negation: bazel refuses `--nocompilation_mode`.)
-    assert.match(parts('bazel build --nocompilation_mode //x')[1], /^--nocompilation_mode: Option \(not in the dictionary/);
+    assert.deepStrictEqual(parts('bazel build --nocompilation_mode //x')[1], '--nocompilation_mode: Option (not in the dictionary; see `bazel help build`)');
     assert.match(parts('bazel build --no_keep_going //x')[1], /^--no_keep_going: Option \(not in the dictionary/);
   });
 
@@ -90,6 +95,13 @@ describe('bazel command lines', () => {
     assert.match(parts('bazel build --output_base=/tmp/x //x')[1], /^--output_base=\/tmp\/x: where the outputs go .*; but as a startup option, after the command bazel stops with "Unrecognized option" \(status 2\)\. Write it between `bazel` and the command \(value: `\/tmp\/x`\)$/);
     assert.match(parts('bazel build //x -//y', 'ja')[2], /^-\/\/y: `-` で始まる、除くターゲットのパターン。`--` より前では bazel はオプションとして読み、「Invalid options syntax」で止まる/);
     assert.match(parts('bazel -c opt build //x', 'ja')[0], /^-c: コンパイルのモード.*。ただし、コマンドのオプションなので、コマンドより前に書くと bazel は「Unknown startup option」で止まる/);
+  });
+
+  it('`--version` and `--help` alone, and where to find the options not listed', () => {
+    assert.deepStrictEqual(parts('bazel --version'), ['--version: print the version']);
+    assert.deepStrictEqual(parts('bazel --help', 'ja'), ['--help: コマンドの一覧と使い方を表示する']);
+    assert.deepStrictEqual(parts('bazel --version build')[0], '--version: Option (not in the dictionary; see `bazel help startup_options`)');
+    assert.deepStrictEqual(parts('bazel query --frob x', 'ja')[1], '--frob: オプション（辞書に未登録。`bazel help query` を参照）');
   });
 
   it('the keys of `bazel info` and the queries of `bazel mod`', () => {
@@ -103,6 +115,7 @@ describe('the parser preset `bazel`', () => {
     summary: { ja: 'p', en: 'p' }, parser: 'bazel', options: [
       { names: ['-k', '--keep_going'], text: { ja: 'k', en: 'k' } },
       { names: ['-c', '--compilation_mode'], text: { ja: 'c', en: 'c' }, value: { name: 'MODE' } },
+      { names: ['-t', '--cache_test_results'], text: { ja: 't', en: 't' }, value: { name: 'V', how: 'attached-only', optional: true } },
     ],
   };
   const read = (line: string): string[] => {
@@ -112,6 +125,9 @@ describe('the parser preset `bazel`', () => {
   it('negates a boolean by `--no` before its long name or `-` after its letter, and nothing else', () => {
     assert.deepStrictEqual(read('p --nokeep_going -k- -k --keep_going'), ['--nokeep_going=off:--keep_going', '-k-=off:-k', '-k=on', '--keep_going=on']);
     assert.deepStrictEqual(read('p --nocompilation_mode -c- --no_keep_going'), ['--nocompilation_mode=unknown-option', '-c-=unknown-option', '--no_keep_going=unknown-option']);
+    // (`=false`, `=no` and `=0` turn a boolean off; an option with an optional value is negated by `no`, and its values are its own.)
+    assert.deepStrictEqual(read('p --keep_going=false --keep_going=no --keep_going=0 --keep_going=yes'), ['--keep_going=false=off:--keep_going', '--keep_going=no=off:--keep_going', '--keep_going=0=off:--keep_going', '--keep_going=yes=on']);
+    assert.deepStrictEqual(read('p --nocache_test_results -t- --cache_test_results=no -t'), ['--nocache_test_results=off:--cache_test_results', '-t-=off:-t', '--cache_test_results=no=on', '-t=on']);
   });
   it('reads no clusters and no attached short values, options after operands, and `--`', () => {
     assert.deepStrictEqual(read('p -copt -c=opt -kc opt'), ['-copt=unknown-option', '-c=opt=unknown-option', '-kc=unknown-option', 'opt=operand']);

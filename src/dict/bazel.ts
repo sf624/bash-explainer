@@ -36,6 +36,9 @@ const STARTUP: OptSpec[] = [
   ['--unlimit_coredumps', 'コアダンプの上限を引き上げる', 'raise the soft core dump limit to the hard limit'],
 ];
 
+/** The values of an option that is a boolean with more values (`--subcommands=pretty_print`, `--cache_test_results=auto`): bazel's words for on and off. */
+const tristate = (on: Text, off: Text): Record<string, Text> => ({ true: on, yes: on, 1: on, false: off, no: off, 0: off });
+
 /** Options every command takes (bazel's common options). */
 const COMMON: OptSpec[] = [
   ['--config', 'rc ファイルの設定の組を使う', 'use a group of settings of the rc files', 'arg'],
@@ -64,7 +67,7 @@ const BUILD: OptSpec[] = [
   ['-c|--compilation_mode', 'コンパイルのモード（`fastbuild`（既定）、`dbg`、`opt`）', 'compilation mode (`fastbuild`, the default; `dbg`; `opt`)', 'arg'],
   ['-k|--keep_going', 'エラーがあっても、できるところまでビルドを続ける', 'go on as far as possible after an error'],
   ['-j|--jobs', '同時に実行するジョブの数（`auto`、`HOST_CPUS*.5`…）', 'number of jobs to run at once (`auto`, `HOST_CPUS*.5`…)', 'arg'],
-  ['-s|--subcommands', '実行するコマンドを表示する（`--subcommands=pretty_print` で読みやすく）', 'print the commands it runs (`--subcommands=pretty_print`: readably)'],
+  ['-s|--subcommands', '実行するコマンドを表示するかどうか（`-s` で表示する）', 'whether to print the commands it runs (`-s`: print them)', 'attached', { ...tristate(tx('表示する', 'print them'), tx('表示しない（既定）', 'do not (the default)')), pretty_print: tx('読みやすく表示する', 'print them readably') }],
   ['--verbose_failures', '失敗したコマンドの行をすべて表示する', 'print the whole command line of a command that fails'],
   ['--define', 'ビルドの変数を設定（`名前=値`、`select` の `config_setting` が読む）', 'set a build variable (`NAME=value`, read by `config_setting` in `select`)', 'arg'],
   ['--copt', 'C と C++ のコンパイラーに渡すオプション', 'option passed to the C and C++ compiler', 'arg'],
@@ -92,7 +95,10 @@ const BUILD: OptSpec[] = [
   ['--test_size_filters', '指定した大きさのテストだけを実行する（`small`、`medium`…）', 'run only the tests of these sizes (`small`, `medium`…)', 'arg'],
   ['--runs_per_test', '各テストを実行する回数（`回数` か `正規表現@回数`）', 'how many times to run each test (`N` or `REGEX@N`)', 'arg'],
   ['--flaky_test_attempts', '失敗したテストを試し直す回数（`回数` か `正規表現@回数`）', 'how many times to retry a failed test (`N` or `REGEX@N`)', 'arg'],
-  ['-t|--cache_test_results', 'テストの結果をキャッシュから使う（`-t-`・`--nocache_test_results` で毎回実行する）', 'use cached test results (`-t-`, `--nocache_test_results`: run the tests again)'],
+  ['-t|--cache_test_results', 'テストの結果をキャッシュから使うかどうか（`-t` で使う、`-t-`・`--nocache_test_results` で毎回実行する）', 'whether to use cached test results (`-t`: use them; `-t-`, `--nocache_test_results`: run the tests every time)', 'attached', {
+    ...tristate(tx('キャッシュの結果を使う', 'use the cached results'), tx('毎回実行する', 'run the tests every time')),
+    auto: tx('テストかその依存が変わったときなどだけ実行し直す（既定）', 'run a test again only when it or its dependencies changed, and the like (the default)'),
+  }],
   ['--run_under', 'テストや実行するプログラムの前に付けるコマンド（`valgrind`…）', 'command put before the test or the program to run (`valgrind`…)', 'arg'],
   ['--instrumentation_filter', 'カバレッジを計る対象（正規表現の並び、`-` で除く）', 'what coverage is measured for (regular expressions; `-`: leave out)', 'arg'],
   ['--combined_report', 'まとめたカバレッジのレポートの形式（`lcov`、`none`）', 'format of the combined coverage report (`lcov`, `none`)', 'arg'],
@@ -145,6 +151,9 @@ const NEGATIVE = { pattern: /^-(?:\/\/|@|:)/, text: () => saidText('bazel-negati
 /** A command: its own options, the common ones, and the startup options it refuses. */
 const command = (ja: string, en: string, opts: OptSpec[], rest: CmdRest = {}): CommandSpec =>
   cmd(ja, en, [...withConfig([...COMMON, ...opts].map(optionOf)), ...AFTER], { parser: 'bazel', patternOptions: [NEGATIVE], ...rest });
+/** Each command, with `bazel help COMMAND` for its options not listed. */
+const withHelp = (commands: Record<string, CommandSpec>): Record<string, CommandSpec> =>
+  Object.fromEntries(Object.entries(commands).map(([name, spec]) => [name, { ...spec, helpCommand: `bazel help ${name}` }]));
 const targets = { operands: [{ pattern: [TARGETS] }] };
 const expression = { operands: [{ pattern: [EXPRESSION] }] };
 
@@ -186,7 +195,10 @@ const bazelSpec: CommandSpec = cmd('Bazel: ソースからビルドし、テス�
   ...misplaced([...COMMON, ...BUILD], 'bazel-command-option-before-command'),
 ], {
   parser: 'bazel',
-  subcommands: {
+  helpCommand: 'bazel help startup_options',
+  // (Alone only: `bazel --version build` is "Unknown startup option"; `bazel --help build` shows the help of `build`.)
+  soleOptions: [optionOf(['--version', '版を表示する', 'print the version']), optionOf(['-h|--help', 'コマンドの一覧と使い方を表示する', 'print the commands and how to use bazel'])],
+  subcommands: withHelp({
     build: command('ターゲットをビルドする', 'Build the targets', BUILD, targets),
     test: command('ターゲットをビルドし、テストを実行する', 'Build the targets and run the tests', BUILD, targets),
     coverage: command('テストを実行し、コードのカバレッジを集める', 'Run the tests and collect code coverage', BUILD, targets),
@@ -237,7 +249,7 @@ const bazelSpec: CommandSpec = cmd('Bazel: ソースからビルドし、テス�
       ['-l|--long', 'オプションの説明を全文表示する', 'show the whole description of each option'],
       ['--short', 'オプションの名前だけを表示する', 'show only the names of the options'],
     ], { operands: [{ pattern: [operand('TOPIC', 'コマンドの名前か項目', 'command name or topic', { repeat: '?', values: HELP_TOPICS })] }] }),
-  },
+  }),
 });
 
 export const bazel: Record<string, CommandSpec> = { bazel: bazelSpec };
