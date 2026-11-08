@@ -837,6 +837,128 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `command source x` in sh gets no dialect problem, while `source x` gets one (dash: `source: not found`).
   - `setopt` and `print` in a bash script get no problem, though bash fails on them with status 127 (`print` is a ksh, mksh and zsh builtin).
 
+## From the reviews of the find ages (#725)
+
+### `find -mtime` and `-mmin`: fractions, rounding, odd signs
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare spellings; the usual `-mtime +7` and `-mmin -30` are said right.
+- **Input and what is wrong:**
+  - `find . -mtime 1.5`: GNU find 4.9 accepts fractions and matched about [1.5, 2.5) days; the text is now the neutral "as `1.5` says" (before: "exactly 1.5 days ago"). `+1.5` says "more than 1.5 whole days".
+  - `find . -mmin 5` says "exactly 5 minutes ago"; GNU matches an age in (4, 5] minutes (rounded up; `-mmin 1` matched 10 s and 50 s, not 70 s). The manual says "exactly n minutes". Older than #725.
+  - `-mtime +-1` (GNU matches everything) and `-mtime " 7"` (GNU accepts it) are not explained further.
+  - `find . -mtime +\`echo 3\``: the parenthetical's code span breaks on the backtick inside the word.
+  - `find . -mtime '+'"$K"` shows as `+''"$K"`, and `\+"$K"` as `+\"$K"` (the display rewrite of the sign).
+  - `s=+; find . -mtime "$s$K"` gets the neutral form today (true); if the model learns the start of `$s`, the rewrite would count the sign twice (latent).
+  - `DAYS=30; find . -mtime +"$DAYS"` says "(`"$DAYS"` + 1)" instead of 31 (true, less helpful).
+  - The `-mmin +"$M"` text has no code span, while the `-mtime` variable texts do (pinned in test/find.test.ts).
+
+## From the reviews of the sh dialect (#718, #719, #728)
+
+### Arithmetic and redirections that dash reads differently
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare spellings; the usual portability notes are shown.
+- **Input and what is wrong:**
+  - `$((echo a); echo b)` is a syntax error in dash and busybox, and fine in bash, yash, ksh, mksh and zsh; it needs a row of its own.
+  - `echo $((i++ + 1))`, `$((i+++j))`: dash reads `i + + + 1` (2, status 0, `i` unchanged) and does not fail; we say it fails and stops (should be a Warning).
+  - `echo $((--1))`: bash and dash both give 1, yet it gets the preIncrement Warning.
+  - `( echo a 2>/dev/null >&f )`: dash expands all redirections first, so its message still shows; we call the line quiet (Warning).
+  - `>&/dev/tcp/…` under sh gets both dupFile and netRedirect; the netRedirect sentence is busybox-only there.
+  - `echo hi >&10`: dash fails ("Bad fd number") and stops; not flagged (POSIX allows only fds 0 to 9).
+
+### Declarations and options that dash refuses
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare options and forms.
+- **Input and what is wrong:**
+  - `set -o errtrace` / `+o errtrace` in dash 0.5.12 is refused, `set -E` is accepted; the errtrace row says dash runs both (Info).
+  - `local a[0]=1` / `export a[0]=1` in dash: "bad variable name" and the shell stops; the arrayElement row says "not found, status 127".
+
+### Words under sh: shapes that follow bash
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare in sh scripts; the chip and the example follow bash's reading, and a portability warning is shown where there is one.
+- **Input and what is wrong:**
+  - dash reads `[^a]` with `^` as a plain character; `wordFields` with a file list follows bash's matching (the shapes still hold).
+  - `~+` under `sh` is explained as "current directory" (bash's reading); the chip shows nothing.
+  - `#!/bin/dash` + `echo $[1+1]`: the chip shows `echo 2` and there is no dialect note; dash prints `$[1+1]`. A FEATURES row for `$[` in src/dialect.ts would give the note and replace `readsAsBash`'s text check.
+  - `#!/bin/sh` + `shopt -s nullglob dotglob; ls *.c`: the chip still says "else the pattern itself" and the example says `.app.c` does not match; bash --posix gives no word / matches it (the shopt line has an Error).
+  - `#!/bin/dash` + `ls .*`: the glob example omits `.` and `..`, which dash matches.
+  - `#!/bin/sh` + `echo a{b,c}`: the chip shows one literal word; bash --posix expands it (the portability warning is shown).
+  - Design note: which shells the model follows is decided by `wordsFollowed(shell)`, `COMMON_SH.includes(shell)` and `shell === 'sh'`; consistent, but easy to misread.
+
+### Builtins in sh: more corners after #718's re-review
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare combinations; see also "Builtins a shell lacks: corners the review left".
+- **Input and what is wrong:**
+  - `#!/bin/sh` + `set -e`, then `shopt -s nullglob` / `logout` / `builtin …`: dash and ash stop with 127 there; a later fault is now an Error (`STOPS` leaves out `-e` by rule).
+  - `command source x` in sh: the inner token is still kind `builtin` and "runs `source`…", while its badge says "program: usually no program of this name".
+  - `builtin exit 0` in sh still explains `exit` as a special builtin with its arguments.
+  - `logout` at the top of a bash script is a `sure` stop; real bash prints "not login shell" and goes on (older than #718).
+  - `. /nonexist` in sh: dash and ash both stop for sure; we say `may` (conservative).
+
+## From the build of the variables' token texts (#757)
+
+### Variables bash sets, in other shells
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare in sh scripts, or unmeasured (no mksh installed); the texts and src/semantics/vars.ts are bash's for every shell.
+- **Input and what is wrong:**
+  - `#!/bin/sh` `mkdir d && cd "$_"`: the token says "Last argument of the previous command", with no warning; dash and ash do not set `$_` (it holds the shell's path from bash's exported environment). It needs an InShell kind "from the environment". Arguably representative.
+  - `#!/bin/sh` `echo $SHLVL`: "Nesting level of bash"; dash does not set or increment it (inherited).
+  - `#!/bin/sh` `RANDOM=3`: "Assigning a number seeds the generator"; not in dash (ash does).
+  - `#!/bin/sh` `echo $LINENO`: bash's text; Ubuntu dash leaves it empty.
+  - `#!/bin/mksh` `$BASHPID` / `$EPOCHREALTIME`: the token says "mksh does not set it" (repeats the existing Error note); mksh likely sets both (unverified).
+  - `SRANDOM`, `OPTERR`, `HISTCMD` in `setByBash` carry 'ykmz' (yash, ksh, mksh and zsh set them): unmeasured, probably false for SRANDOM in ksh93; the same effect as before.
+  - A bash 5.3 variable (`bash53Variable`) in sh does not get the new token form.
+
+## From the reviews of the bazel preset (#755)
+
+### Bazel option values and spellings
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare spellings; the usual `--keep_going`, `--nokeep_going` and `--keep_going=false` are said right.
+- **Input and what is wrong** (bazel 9.3.2, checked with canonicalize-flags):
+  - `--keep_going=f`, `=n`, `=FALSE`: bazel reads off (BooleanConverter ignores case and takes t/y/f/n); we say on. The fix is `/^(?:false|no|0|f|n)$/i` in `booleanOff` (src/argv/parsers.ts) and the same words in `tristate()`, as one shared constant.
+  - `--cache_test_results=FALSE`: bazel reads off; we show the value with no meaning.
+  - `--keep_going=maybe`, `--keep_going=`, `--cache_test_results=maybe`: bazel errors "'…' is not a boolean"; we say on, or show the value, with no warning.
+  - `bazel --home_rc=false build`, `--batch=false`: startup booleans refuse `=value` in bazel; we accept it.
+  - `--nostamp=1` ("Unexpected value after boolean option") and `-t=no` ("Invalid options syntax"): we say "not in the dictionary" and not that bazel refuses them.
+  - `--nocompilation_mode`: we say "not in the dictionary"; bazel says "Illegal use of 'no' prefix".
+  - `bazel --help build`, `bazel -h build`: bazel prints the help of `build`; we call `--help` an unlisted startup option.
+
+## From the review of the Python `re` design (#754)
+
+### Python 3.12 `re` and f-string forms not planned
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `missing-explanation`.
+- **Reason:** Rare in the patterns people write; see [design/python-regex.md](design/python-regex.md).
+- **Input and what is missing** (Python 3.12.3): scoped inline flags `(?x:…)` and `(?-x:…)`; `re.DEBUG` and `re.U`; `match` under `re.M` anchors at the string start only; PEP 701 nested quotes in an f-string pattern and `{x!r:>10}`.
+
+## From the review of the scripts bats runs (#726)
+
+### Signals and `run` flags
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare (bash 5.2.21, bats 1.13.0).
+- **Input and what is wrong:**
+  - A script started with `&` from a non-interactive shell ignores SIGINT and SIGQUIT (an outside SIGINT did nothing; the trap ran at the normal end, status 0).
+  - A failed `exec nosuchcmd` runs the EXIT trap (127).
+  - `run` flags (`run -1`, `run !`) are not read as bats < 1.5 would.
+
+## From the review of the web page's file kinds (#727)
+
+### Kind change, select-all paste, `ask` while open
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `ui`.
+- **Reason:** Rare paths.
+- **Input and what is wrong:**
+  - "Name set back to untitled." is said even when the new kind's untitled name is its own (the bar reads "Dockerfile", muted).
+  - Ctrl+A, Ctrl+X, Ctrl+V over an open file is a paste into an empty editor: it asks "Discard and paste" and untitles the file.
+  - `ask` called while a question is open would resolve the first as cancel and call `showModal()` on an open dialog; unreachable today (the modal makes the page inert).
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".
