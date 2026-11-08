@@ -95,12 +95,13 @@ export class SettingsDialog {
   constructor(dialog: HTMLDialogElement, private host: SettingsHost) {
     this.dialog = dialog;
     dialog.addEventListener('close', () => {
-      // (Closed only to open again in the other kind: nothing is over.)
-      this.settled();
+      // Closed only to open again in the other kind: nothing is over. The event comes a task after the close, when the sheet
+      // is open again: its new opening has settled the panes or holds them for its own move (`show`), and keeps them.
       if (this.reopening) {
         this.reopening--;
         return;
       }
+      this.settled();
       this.draft = undefined;
       this.status = undefined;
       this.paste = { open: false, text: '' };
