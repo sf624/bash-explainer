@@ -1,6 +1,6 @@
 # Where `set -e` stops the script (usability-9, U11)
 
-Status: design, waiting on the maintainer's decisions (section 9). Issue #721. Step U11 of [usability-9.md](usability-9.md), after its run 3.
+Status: design, waiting on the maintainer's decisions (section 10) and on a prototype tested in run 4 (section 9). Issue #721. Step U11 of [usability-9.md](usability-9.md), after its run 3.
 
 The maintainer decided on 2026-11-08: on each line whose command can stop the script under `set -e`, one sentence says that if it fails, the script stops here, which trap runs then (and its line), and the status the script ends with. This page says which lines get it, what it says in each case, where it shows, what the models lack for it, how it is tested, and the steps.
 
@@ -182,12 +182,42 @@ At depth 2 the figures are the same within 1 px. On lines 21 and 27 they are the
 
 ## 8. Steps
 
+First, the prototype and run 4 (section 9). Then:
+
 1. **U11a, the model (no change users see).** G1 (the traps in the state, its probes, `runsAtExit` reading it, the sources.md row and its guard), G2 (the spec field, read by `mayFail`, `cannotFail` and `succeeds`), G3 (`returnsFailure`), G4 and G5. Its tests are probes and unit tests; the explanations do not change, except where `cannotFail` reads the spec field. That PR lists those changes, if any.
 2. **U11b, the note.** The catalog fact with its drafts; `errexitStopNote` in src/explain/status.ts; `S.errexit` dropped from "In short"; the token text of line 27 shortened; the probe table against bash, the corpus checks, the web test; a CHANGELOG bullet under "New" ("Under `set -e`, a line whose command can fail says that the script stops there, which trap runs, and its exit status"), with the examples in docs/changes/unreleased.md; [usability-9.md](usability-9.md) and this page's status updated.
 
 Two PRs, because U11a is a foundation and gets its own review before the text is built on it (CLAUDE.md, "Delegating"). They can go as one stack.
 
-## 9. Questions for the maintainer
+## 9. Prototype for run 4
+
+Since 2026-11-08, the maintainer prototypes the UI and wording changes that come from usability findings, and tests them in a new usability run before a polished PR. So U11 gets a prototype first. U11a and U11b (section 8) come after run 4, and they change with what run 4 finds.
+
+**The smallest change.** It lives on a branch of its own (`usability-9-u11-proto`), is never merged, and is built with `npm run build:web` into the kit's site for run 4.
+
+- The note of section 5, from one catalog fact with the drafts of section 4 (en and ja). It is made in src/explain/status.ts for each statement that the rule of section 3 lets through.
+- "In short" drops `S.errexit`, and the token text of line 27 drops its "stops here" part, as in section 5. The reader then sees the sentence once, as the build would show it.
+
+**What may be rough.** The prototype only has to be right on the scripts of run 4: nightly-backup.sh, and sample.sh for a look.
+
+- G1: the EXIT trap in effect is found by a scan for `trap … EXIT` with static words, at the top level, before the line. ERR is ignored.
+- G2: a short list of names in place of the spec field.
+- G3: calls of functions get no note.
+- G4: line 17 keeps today's text.
+- G5: the hedge "(or `cleanup`'s, if it fails)" is said whenever a trap is set.
+- No probe table, no coverage, no snippets regenerated. The guards may fail (explain-imports for the names, note-strings): the branch needs no green CI.
+- The checks: `test/dump.ts` of nightly-backup.sh and sample.sh in en and ja, read line by line against section 2; a look at line 28 and line 8 at 390 and 1280 px, with screenshots.
+
+**What run 4 measures.** Run 3's task 8 (b) cannot tell the page from the users' knowledge: every agent knows `set -e`, and nine of ten answered from their own. So run 4 keeps 8 (b) and adds a question whose answer depends on this script's lines:
+
+- 8 (c): "If `date` on line 8 fails, does `cleanup` run? And if `mkdir` on line 21 fails?" The answers are no (the trap is set on line 19, after line 8) and yes. Line 8's note names no trap; line 21's names the trap of line 19.
+- Bars, against run 3:
+  - At least 8 of 10 answer 8 (b) and 8 (c) right, and say they took it from the page (run 3: 1 of 10 for 8 (b)).
+  - The length is not named as a cost by more users at task 8 than in run 3 (7 of 10).
+  - No user puts the note among their top three costs as noise or repetition.
+- Optionally, for Q1: half of the users (one agent of each pair of a cell) get the sentence as a clause of "In short" instead of the note, from a second build of the branch. Each form is then judged on the bars above and on the length.
+
+## 10. Questions for the maintainer
 
 - **Q1. Where.** (a) A line note at the level `note`, under "In short", in every output: +57 to +95 px on lines with a trap, about +40 px without. (b) A clause of "In short", in the panels only: +19 to +59 px, and a longer "In short". *Recommended: (a)*. It reaches the CLI and the hover, it carries the manual's sections, and "In short" stays one idea.
 - **Q2. Builtins that fail only on a usage or write error** (`continue`, `trap …`, `set …`, `export`, `echo`…). *Recommended: no sentence*, through the spec field G2. `echo` to a closed stdout does stop the script (section 2), but saying so on every `echo` is noise.
@@ -198,7 +228,7 @@ Two PRs, because U11a is a foundation and gets its own review before the text is
 - **Q7. Line 17, in the EXIT trap** (G4). *Recommended: in U11b*, with "ends the EXIT trap here, and the script exits with `rm`'s status". It is the text u26 found, and it is not right today: it says "the script or a subshell".
 - **Q8. sample.sh**: 65 of its 108 lines with code get the note. Keep `set -euo pipefail` on its line 4? *Recommended: keep it.* It is the usual strict mode, and the tour shows the note on every kind of line; check the dump in U11b.
 
-## 10. Left out (rare corners)
+## 11. Left out (rare corners)
 
 For the roadmap's Deferred section if they come up:
 
