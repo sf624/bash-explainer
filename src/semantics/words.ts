@@ -13,7 +13,7 @@ import { guardedApart, modelLimit, modelValueLimit } from '../examples/regexguar
 import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { patsubMiscounts } from '../bracket';
 import { type Shell, zshOtherwise } from '../dialect';
-import { COMMON_SH, featureWorks, wordsFollowed } from '../shellfeatures';
+import { COMMON_SH, featureWorks } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode, rootOf } from '../syntax/tree';
@@ -21,7 +21,8 @@ import { caseConverted, type Char, GLOB_CHARS, globbedByBash, IFS_ERRATIC, IFS_W
 import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
-import { ARITH_ASSIGNED, attribute, defaultOn, modelVersion, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
+import { ARITH_ASSIGNED, attribute, modelVersion, option, type ShellState, type StateModel, type Tri } from './state';
+import { ifsOf, on, optionsOf, type WordOptions } from './wordoptions';
 import { changedByBash, EXPORTED_AT_START, setAtStart } from './vars';
 import { ARITH, changesDirectory, integerParameter, underscoreValue, unreliableAt, unreliableNames } from './wordsites';
 import { operandPattern, operandReplacement, operandWord, replacedMatches, withoutAffix } from './operands';
@@ -30,7 +31,7 @@ import type { Hole } from './fieldshape';
 import { pushAll } from '../lists';
 export { type Char, ifsEscaped, patternOfChars, quotedIfs } from './chars';
 
-export { underscoreValue, unreliableNames };
+export { ifsOf, underscoreValue, unreliableNames };
 export { CONTEXTS, type ContextRule, type WordContext } from './wordcontexts';
 
 export type Applies = boolean | 'unknown';
@@ -185,28 +186,7 @@ export function wordOf(n: SyntaxNode): { nodes: SyntaxNode[]; context: WordConte
   return { nodes: siblings.slice(i, j + 1), context };
 }
 
-// ---------------------------------------------------------------------------------------------------
-// The state where a word is expanded.
-
-const on = (s: OptionState, kind: 'set' | 'shopt', name: string, posix: boolean): Tri =>
-  s === 'default' ? (defaultOn(kind, name, posix) ? 'on' : 'off') : s;
-
-/** The IFS of a state. */
-export function ifsOf(st: ShellState): IfsState {
-  const v = st.variables.get('IFS');
-  if (!v || v.set === 'off') return { kind: 'default' };
-  return v.set === 'on' && v.value !== undefined ? { kind: 'value', value: v.value, at: v.at } : { kind: 'unknown', at: v.at };
-}
-
-function globOf(st: ShellState, posix: boolean): GlobState {
-  const opt = (kind: 'set' | 'shopt', name: string): Tri => on(option(st, kind, name), kind, name, posix);
-  const gi = st.variables.get('GLOBIGNORE');
-  return {
-    noglob: opt('set', 'noglob'), nullglob: opt('shopt', 'nullglob'), failglob: opt('shopt', 'failglob'), dotglob: opt('shopt', 'dotglob'),
-    nocaseglob: opt('shopt', 'nocaseglob'), extglob: opt('shopt', 'extglob'), globstar: opt('shopt', 'globstar'), globskipdots: opt('shopt', 'globskipdots'),
-    globignore: !gi || gi.set === 'off' || gi.value === '' ? 'unset' : gi.set === 'on' && gi.value !== undefined ? { value: gi.value } : 'unknown',
-  };
-}
+// (The state where a word is expanded: src/semantics/wordoptions.ts.)
 
 // ---------------------------------------------------------------------------------------------------
 // The parts of a word.
@@ -320,49 +300,6 @@ function shapeOf(nodes: readonly SyntaxNode[]): Shape {
   };
   shapes.set(nodes[0], shape);
   return shape;
-}
-
-/** What the meaning of a word reads of its state: POSIX mode, the glob options, the IFS, braceexpand. */
-interface WordOptions { posix: Tri; glob: GlobState; ifs: IfsState; braceOpt: Tri; ofShell?: Map<Shell, WordOptions> }
-const NONE = {};
-type OptionsCache = WeakMap<object, WeakMap<object, WeakMap<object, WeakMap<object, WordOptions>>>>;
-const stateOptions: OptionsCache = new WeakMap();
-/**
- * The options of `st` that words read: one object for the states that share them (the same `set` and `shopt` maps,
- * IFS and GLOBIGNORE), so that the meanings of a word can be kept by it (`Shape.walked`).
- */
-function optionsOf(st: ShellState, shell?: Shell): WordOptions {
-  const keys: object[] = [st.set, st.shopt, st.variables.get('IFS') ?? NONE, st.variables.get('GLOBIGNORE') ?? NONE];
-  let m = stateOptions as WeakMap<object, unknown>;
-  for (const k of keys.slice(0, -1)) {
-    let next = m.get(k) as WeakMap<object, unknown> | undefined;
-    if (!next) m.set(k, (next = new WeakMap()));
-    m = next;
-  }
-  let o = m.get(keys[3]) as WordOptions | undefined;
-  if (!o) {
-    const posix = on(option(st, 'set', 'posix'), 'set', 'posix', false);
-    o = { posix, glob: globOf(st, posix === 'on'), ifs: ifsOf(st), braceOpt: on(option(st, 'set', 'braceexpand'), 'set', 'braceexpand', false) };
-    m.set(keys[3], o);
-  }
-  // (The shell is part of what a meaning is kept by: the models of one script for two shells share the states.)
-  if (!shell || shell === 'bash') return o;
-  const ofShell = (o.ofShell ??= new Map<Shell, WordOptions>());
-  return ofShell.get(shell) ?? ofShell.set(shell, { ...o, ...(wordsFollowed(shell) ? { posix: 'on' as const, glob: globIn(o.glob, shell) } : {}), ofShell: undefined }).get(shell)!;
-}
-
-/**
- * The glob options of the common sh (`wordsFollowed`), which has `set -f` and none of bash's `shopt` options
- * (`shoptIn` says so to the explanations): each is off, `globskipdots` too (dash and busybox ash match `.` and `..` with `.*`), and GLOBIGNORE is
- * an ordinary variable. In `sh`, which may also be bash in POSIX mode (macOS), `globskipdots` is not known, nor a
- * GLOBIGNORE the script sets.
- */
-function globIn(g: GlobState, shell: Shell): GlobState {
-  const sh = shell === 'sh';
-  return {
-    noglob: g.noglob, nullglob: 'off', failglob: 'off', dotglob: 'off', nocaseglob: 'off', extglob: 'off', globstar: 'off',
-    globskipdots: sh ? 'unknown' : 'off', globignore: sh && g.globignore !== 'unset' ? 'unknown' : 'unset',
-  };
 }
 
 /** The meaning of a word where it runs; `whole`: also its `value` and `failure` (the walk's conditions need neither). */
@@ -1060,13 +997,12 @@ function globField(w: WordMeaning, f: Char[], env: WordEnv | undefined): string[
   if (releasesDiffer(f)) return undefined;
   if (step.applies === 'unknown' || !env?.files || changesDirectory(w.nodes[0])) return undefined;
   if (hasExtglob(pattern) && g.extglob !== 'on') return undefined;
-  // (Whether `.` and `..` are matched counts only where a name of the pattern starts with `.` or a bracket: `.*`.)
-  if ([g.nullglob, g.failglob, g.dotglob, g.nocaseglob, g.globstar, g.extglob].includes('unknown') || g.globignore === 'unknown'
-    || (g.globskipdots === 'unknown' && /(?:^|\/)[.[]/.test(pattern))) return undefined;
+  if ([g.nullglob, g.failglob, g.dotglob, g.nocaseglob, g.globstar, g.extglob].includes('unknown') || g.globignore === 'unknown') return undefined;
   // `./*.log`: the names under the current directory, with `./` before them; neither `sub/../*` nor `/var/log/*` is followed.
   const prefix = /^(?:\.\/)*/.exec(pattern)![0];
   const rest = pattern.slice(prefix.length);
-  if (rest.startsWith('/') || rest.split('/').some((seg) => seg === '.' || seg === '..') || (g.globskipdots === 'off' && rest.includes('/'))) return undefined;
+  // (Where globskipdots is not known, `.` and `..` count only where a name of the pattern starts with `.`, `d/.*`; or at the top, where `matchFiles` asks.)
+  if (rest.startsWith('/') || rest.split('/').some((seg) => seg === '.' || seg === '..') || (rest.includes('/') && (g.globskipdots === 'off' || (g.globskipdots === 'unknown' && /\/\./.test(rest))))) return undefined;
   const matched = guardedApart(modelLimit(rootOf(w.nodes[0])), () => matchFiles(w, rest, env.files!), () => undefined);
   if (!matched) return undefined;
   if (prefix && g.globstar === 'on' && rest === '**') matched.unshift('');
@@ -1075,7 +1011,7 @@ function globField(w: WordMeaning, f: Char[], env: WordEnv | undefined): string[
   return g.nullglob === 'on' ? [] : [text];
 }
 
-/** The names of `files` (with `.` and `..` when globskipdots is off) that `pattern` matches, without those GLOBIGNORE leaves out. */
+/** The names of `files` (with `.` and `..` when globskipdots is off; none when it is not known and they match) that `pattern` matches, without those GLOBIGNORE leaves out. */
 function matchFiles(w: WordMeaning, pattern: string, files: readonly string[]): string[] | undefined {
   const g = w.glob;
   const ignore = g.globignore === 'unset' ? [] : (g.globignore as { value: string }).value.split(':').filter(Boolean).map((p) => globToRegex(p, 'file', { dotglob: true }));
@@ -1085,6 +1021,7 @@ function matchFiles(w: WordMeaning, pattern: string, files: readonly string[]): 
   // A directory with its slash: for a pattern that ends with `/`, and for `dir/**` (`**` matches nothing after `dir/`).
   const slashed = pattern.endsWith('/') || (opts.globstar && /.\/\*\*$/.test(pattern));
   const names = files.flatMap((p) => (p.endsWith('/') ? [...(pattern.endsWith('/') ? [] : [p.slice(0, -1)]), ...(slashed ? [p] : [])] : [p]));
-  if (g.globskipdots === 'off') names.push('.', '..');
-  return names.filter((p) => re.test(p) && !ignore.some((r) => r?.test(p))).sort();
+  if (g.globskipdots !== 'on') names.push('.', '..');
+  const out = names.filter((p) => re.test(p) && !ignore.some((r) => r?.test(p))).sort();
+  return g.globskipdots === 'unknown' && out.some((p) => p === '.' || p === '..') ? undefined : out;
 }
