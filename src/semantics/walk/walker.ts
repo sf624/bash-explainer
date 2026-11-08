@@ -785,10 +785,11 @@ export class Walker {
    * `st` on a path that ran what the walk does not read (`ShellState.opaque`). It counts as a change (`OPAQUE`): what
    * may run after it, a body no call reached, a trap's action, a function walked again, may run on such a path too.
    */
-  opaque(st: ShellState): ShellState {
+  opaque(st: ShellState, traps = true): ShellState {
     this.lastChange.set(OPAQUE, ++this.changeCount);
     for (const c of this.collecting) c.add(OPAQUE);
-    return unreadTraps(st.opaque ? st : { ...st, opaque: true }, this.node);
+    const out: ShellState = st.opaque ? st : { ...st, opaque: true };
+    return traps ? unreadTraps(out, this.node) : out;
   }
 
   private pipeline(n: SyntaxNode, st: ShellState): ShellState {

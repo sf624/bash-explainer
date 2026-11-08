@@ -49,7 +49,10 @@ describe('the traps in effect (docs/design/errexit-stop.md, G1)', () => {
     assert.strictEqual(traps("trap 'echo T' \"$sig\"\necho a", 'echo a'), "EXIT:unknown@trap 'echo T' \"$sig\", ERR:unknown@trap 'echo T' \"$sig\"");
     assert.strictEqual(traps("trap 'echo T' EXIT \"$sig\"\necho a", 'echo a'), "EXIT:on@trap 'echo T' EXIT \"$sig\", ERR:unknown@trap 'echo T' EXIT \"$sig\"");
     // (An action the walk does not read: set, not known.)
-    assert.strictEqual(traps('trap "$cmd" EXIT\necho a', 'echo a'), 'EXIT:unknown@trap "$cmd" EXIT (no action), ERR:unknown@trap "$cmd" EXIT (no action)');
+    assert.strictEqual(traps('trap "$cmd" EXIT\necho a', 'echo a'), 'EXIT:unknown@trap "$cmd" EXIT (no action)');
+    // (An action of EXIT alone the walk does not read runs as the shell ends: it changes no trap before that.)
+    assert.strictEqual(traps("trap 'echo E' ERR\ntrap \"rm $t\" EXIT\nf() { echo d; }\nf", 'echo d'), 'EXIT:unknown@trap "rm $t" EXIT (no action), ERR:off@f() { echo d; } (no action)');
+    assert.strictEqual(traps('trap "$cmd" INT\necho a', 'echo a'), 'EXIT:unknown@trap "$cmd" INT (no action), ERR:unknown@trap "$cmd" INT (no action)');
   });
 
   it('merges the paths: set on some, set by different commands', () => {
@@ -99,6 +102,11 @@ describe('the traps in effect (docs/design/errexit-stop.md, G1)', () => {
     assert.strictEqual(traps("trap 'echo T' EXIT\nsource ./lib.sh\necho a", 'echo a'), "EXIT:unknown@trap 'echo T' EXIT, ERR:unknown@source ./lib.sh (no action)");
     assert.strictEqual(traps("trap '' EXIT\nsource ./lib.sh\nsource ./lib.sh\necho a", 'echo a'), "EXIT:unknown@trap '' EXIT (no action), ERR:unknown@source ./lib.sh (no action)");
     assert.strictEqual(traps('eval "$cmd"\necho a', 'echo a'), 'EXIT:unknown@eval "$cmd" (no action), ERR:unknown@eval "$cmd" (no action)');
+    // (It may turn errtrace on: the ERR trap may run in the functions and subshells after it.)
+    const src = "trap 'echo E' ERR\nsource ./lib.sh\nf() { echo d; }\nf\n( echo s )";
+    assert.strictEqual(traps(src, 'echo d'), "EXIT:unknown@source ./lib.sh (no action), ERR:unknown@trap 'echo E' ERR");
+    assert.strictEqual(traps(src, 'echo s'), "ERR:unknown@trap 'echo E' ERR");
+    assert.strictEqual(traps(`${src.replace('\nf()', '\nset +E\nf()')}`, 'echo d'), "EXIT:unknown@source ./lib.sh (no action), ERR:off@f() { echo d; } (no action)");
     // (A trap set after it is set.)
     assert.strictEqual(traps("source ./lib.sh\ntrap 'echo T' EXIT\necho a", 'echo a'), "EXIT:on@trap 'echo T' EXIT, ERR:unknown@source ./lib.sh (no action)");
     const { state, at } = model("set -e\nsource ./lib.sh\necho a\ntrap 'echo T' EXIT");

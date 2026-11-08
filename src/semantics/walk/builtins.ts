@@ -117,7 +117,8 @@ export class WalkBuiltins {
         const script = this.w.script(words, name === 'eval' ? 'current' : 'later', n, parse, args);
         if ('why' in script) {
           if (!this.w.mode.dead && !this.w.blind) this.w.walkAgain(`\`${name}\` of a string the walk does not read`);
-          const out = this.w.opaque(st);
+          // (An action of EXIT alone runs as the shell ends: it sets no trap any later statement sees.)
+          const out = this.w.opaque(st, name !== 'trap' || !trapSignals(parse, args).every((v) => v !== undefined && exitSignal(v)));
           return name === 'trap' ? trapCommand(this.w, out, parse, args, host, { word: args[at.word] }) : out;
         }
         if (name === 'eval') return this.w.evalScript(script, n, st);
