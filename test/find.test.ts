@@ -180,6 +180,18 @@ describe('find numeric tests behave as the explanations say', () => {
     assert.match(text('-mtime 0'), /within the last 24 hours/);
     assert.match(text('-mtime -7'), /less than 7 days \(168 hours\)/);
     assert.match(describeFind(parseFind(['-mtime', '+7'], () => 1)!, 'ja'), /8日以上前に更新/);
+    // A value find reads at run time (`+"$KEEP_DAYS"`, `"+$K"`) is counted in whole days too, never "more than N days ago".
+    for (const w of ['+"$K"']) assert.match(text(`-mtime ${w}`), /at least \(`"\$K"` \+ 1\) days ago \(find counts the age in whole days and drops the fraction\)/);
+    for (const w of ['-"$K"']) assert.match(text(`-mtime ${w}`), /less than `"\$K"` days ago/);
+    assert.match(text(`-mtime "$K"`), /as many days ago as `"\$K"` says, in whole days with the fraction dropped \(`\+N` N \+ 1 days or more, `-N` under N days, `N` from N to N \+ 1 days\)/);
+    const ja = (w: string) => describeFind(parseFind(['-mtime', w], () => 1)!, 'ja');
+    assert.match(ja('+"$K"'), /\(`"\$K"` \+ 1\) 日以上前に更新（日数は端数を切り捨てて数える）/);
+    assert.match(ja('-"$K"'), /`"\$K"` 日未満の間に更新/);
+    assert.match(ja('"$K"'), /`"\$K"` が示す日数だけ前に更新（24 時間単位で端数を切り捨てる。`\+N` は N\+1 日以上前、`-N` は N 日未満、`N` は N 日以上 N\+1 日未満）/);
+    // One is singular.
+    assert.match(text('-mtime -1'), /less than 1 day \(24 hours\) ago/);
+    assert.match(text('-mtime +0'), /at least 1 day ago/);
+    assert.match(text('-mtime 0'), /within the last 24 hours/);
   });
   it('-size rounds up to the unit: -1M is only empty files, a bare number counts 512-byte blocks', () => {
     assert.deepStrictEqual(find('-size', '-1k'), ['empty']);
@@ -264,5 +276,22 @@ describe('find numeric tests behave as the explanations say', () => {
     assert.doesNotMatch(t("find . -maxdepth 1 -mindepth 1"), /global option/);
     assert.match(t("find . -maxdepth 2 -type f"), /at most 2 levels deep/);
     assert.match(t("find . -maxdepth 1 -type f"), /at most 1 level deep/);
+    assert.match(t("find . -mindepth 1 -type f"), /at least 1 level deep/);
+    // The sign is read from what find gets, also inside double quotes.
+    for (const w of ['+"$K"', '"+$K"']) assert.match(t(`find . -mtime ${w}`), /at least \(`"\$K"` \+ 1\) days ago/);
+    for (const w of ['-"$K"', '"-$K"']) assert.match(t(`find . -mtime ${w}`), /less than `"\$K"` days ago/);
+    assert.match(t('find . -mtime "$K"'), /as many days ago as `"\$K"` says/);
+    // (No sign is known of a word that may give several fields, or none the model reads: `$K`, `${IFS=:}$K`.)
+    assert.match(t('find . -mtime $K'), /as many days ago as `\$K` says/);
+    assert.match(t('find . -mtime ${IFS=:}$K'), /as many days ago as/);
+    assert.match(t('find . -mmin -60', 'ja'), /60分未満の間に更新/);
+    assert.match(t('find . -mmin "$M"', 'ja'), /`"\$M"` が示す分数だけ前に更新（`\+N` は N 分より前、`-N` は N 分未満、`N` はちょうど N 分前）/);
+    assert.match(t('find . -mmin "$M"'), /as many minutes ago as `"\$M"` says \(`\+N` more than N minutes, `-N` less than N, `N` exactly N\)/);
+    assert.match(t('find . -name "a\\"b$x"'), /name matches "a\\"b\$x"/);
+    assert.match(t('find . -mtime "+$K"', 'ja'), /\(`"\$K"` \+ 1\) 日以上前に更新/);
+    assert.match(t('find . -mmin -1'), /less than 1 minute ago/);
+    assert.match(t('find . -mmin 1'), /exactly 1 minute ago/);
+    assert.match(t('find . -mmin +"$M"'), /more than "\$M" minutes ago/);
+    assert.match(t("find . -mindepth 2 -type f"), /at least 2 levels deep/);
   });
 });

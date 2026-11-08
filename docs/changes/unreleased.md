@@ -279,3 +279,9 @@ What a command name is in a script of another shell comes from one table: the ro
 | `print` and `whence` in bash | "(a ksh, mksh and zsh builtin, not in bash; …)" in the command's own text | The same sentence as above, naming ksh93, mksh and zsh from the table |
 
 The words after the name are still read as the shells that have the builtin read them (`./lib.sh` is "file to source"), as the text says. Evidence: `dash -c 'source /dev/null'` prints `dash: 1: source: not found` (status 127); busybox ash runs it, and has `help` and `history` too.
+
+### The age of `find -mtime`, `-atime`, `-ctime` when the number is a variable
+
+A literal `-mtime +7` reads "at least 8 days ago", as its row does. The variable form now reads the same: `-mtime +"$KEEP_DAYS"` and `-mtime "+$KEEP_DAYS"` say "at least (`"$KEEP_DAYS"` + 1) days ago (find counts the age in whole days and drops the fraction)", `-"$K"` "less than `"$K"` days ago", a value with no sign known (`"$K"`) says only what holds for any value, as the option's row does: "modified as many days ago as `"$K"` says, in whole days with the fraction dropped (`+N` N + 1 days or more, `-N` under N days, `N` from N to N + 1 days)", and for `-mmin` "… as many minutes ago as `"$M"` says (`+N` more than N minutes, `-N` less than N, `N` exactly N)" (「(`"$KEEP_DAYS"` + 1) 日以上前に更新」 and so on). Before, it said "more than "$KEEP_DAYS" days ago", which contradicts GNU find (a file 7.5 days old is not matched by `+7`), and with the sign inside the quotes it took the whole word for a plain number. One is singular: `-mindepth 1` "at least 1 level deep", `-mtime -1` "less than 1 day", `-mmin 1` "1 minute" (before, "1 levels", "1 days").
+
+A literal `-mmin -60` reads 「60分未満の間に更新」 in Japanese (before, 「60分以内」, which suggests 60 or less; find means under 60).

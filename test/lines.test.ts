@@ -328,7 +328,7 @@ describe('lines no other test reaches', () => {
       [`awk 'function f(a) { return a } { print | "sort"; if (x) continue; delete a[1]; getline; print $(NF-1), $(i+1) }'`,
         [/Defines the function `f`/, /return from the function/, /piped to the command "sort"/, /continue with the next iteration/, /delete the array element `a\[1\]`/, /read the next line/, /the second-to-last field/, /\$\(i\+1\)/]],
       [`find . -ctime -1 -cmin 5 -size +10k -size -1M -size 3 -group g -perm 644 -maxdepth 2 -mindepth 1 -readable -writable -executable -true -false -quit`,
-        [/changed less than 1 days \(24 hours\) ago/, /size over 10 KiB/, /empty files only/, /group g/, /permissions exactly 644/, /at most 2 levels deep/, /at least 1 levels deep/, /readable/, /writable/, /executable/, /always true/, /always false/, /quit/]],
+        [/changed less than 1 day \(24 hours\) ago/, /size over 10 KiB/, /empty files only/, /group g/, /permissions exactly 644/, /at most 2 levels deep/, /at least 1 level deep/, /readable/, /writable/, /executable/, /always true/, /always false/, /quit/]],
       [`jq '.a or .b, 5 % 2, .a.[0], .b?, @base64 "x\\(.)", -(.x), [], {(.k): 1}, (label $out | 1), (.a | def f: 1; f), (def g(x): x; g(1)), (foreach .[] as $x (0; . + $x; [$x]))' f`,
         [/true if either side is true/, /remainder/, /(^|\n)\?: ignore errors/, /applied to each `\\\(…\)` in the string/, /negation/, /An empty array/, /the computed key/, /Label `\$out`/]],
       [`yq '.[] as $x ireduce (0; . + $x)' f.yml`, [/Fold: start from `0`/]],
