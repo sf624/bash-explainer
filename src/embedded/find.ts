@@ -6,6 +6,8 @@ import { pick } from './types';
 import type { Shell } from '../shellfeatures';
 import { staticWordValue } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
+import type { StateModel } from '../semantics/state';
+import { wordShapes } from '../semantics/fieldshape';
 
 /** A find expression, with word indices relative to the first expression word. */
 export type FindNode =
@@ -128,7 +130,19 @@ class Parser {
 }
 
 /** The words of find's expression as `parseFind` is given them, in a script for `shell`: each word's value, or its text where the value is not known. */
-export const findWords = (nodes: readonly SyntaxNode[], shell?: Shell): string[] => nodes.map((a) => staticWordValue(a, false, shell) ?? a.text);
+export const findWords = (nodes: readonly SyntaxNode[], shell?: Shell, model?: StateModel): string[] => nodes.map((a) => staticWordValue(a, false, shell) ?? signFirst(a, model));
+
+/**
+ * The text of a word whose value is not known, with the sign the word model says its field starts with (`+`, `-`) moved to the front
+ * where the quotes hide it: `"+$K"` is `+"$K"` (`wordShapes`, src/semantics/fieldshape.ts: a single field with a known start).
+ */
+function signFirst(a: SyntaxNode, model?: StateModel): string {
+  if (!model) return a.text;
+  const cases = wordShapes(a, model, undefined, { glob: false })?.cases ?? [];
+  const starts = new Set(cases.map((c) => (c.length === 1 && 'fields' in c[0] && c[0].fields.length === 1 ? c[0].fields[0].start[0] : undefined)));
+  const [sign] = starts.size === 1 ? [...starts] : [];
+  return sign === '+' || sign === '-' ? sign + a.text.replace(sign, '') : a.text;
+}
 
 /**
  * Parse the expression words (already unquoted). Returns undefined if they do not form an expression. `values` are the
@@ -162,17 +176,31 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): string {
   const age = (unitJa: string, unitEn: string, what: [string, string], wholeDays = false) => {
     const n = a.replace(/^[+-]/, '');
     const k = Number(n);
+    const day = (d: number | string) => `${d} ${unitEn.replace(/s$/, d === 1 ? '' : 's')}`;
+    const num = /^\d+$/.test(n) ? k : n;
     if (wholeDays && /^\d+$/.test(n)) {
       // find counts the age in whole days (24 hours each), dropping the fraction.
-      if (a.startsWith('+')) return s(`${k + 1}日以上前に${what[0]}（日数は端数を切り捨てて数えるので \`+${k}\` は ${k + 1} 日以上前）`, `${what[1]} at least ${k + 1} days ago (age is counted in whole days, fraction dropped: \`+${k}\` means more than ${k} whole days)`);
-      if (a.startsWith('-')) return s(`${k}日（${k * 24}時間）未満の間に${what[0]}`, `${what[1]} less than ${k} days (${k * 24} hours) ago`);
+      if (a.startsWith('+')) return s(`${k + 1}日以上前に${what[0]}（日数は端数を切り捨てて数えるので \`+${k}\` は ${k + 1} 日以上前）`, `${what[1]} at least ${day(k + 1)} ago (age is counted in whole days, fraction dropped: \`+${k}\` means more than ${k} whole days)`);
+      if (a.startsWith('-')) return s(`${k}日（${k * 24}時間）未満の間に${what[0]}`, `${what[1]} less than ${day(k)} (${k * 24} hours) ago`);
       return k === 0
         ? s(`直近24時間以内に${what[0]}`, `${what[1]} within the last 24 hours`)
-        : s(`${k}日以上${k + 1}日未満前に${what[0]}`, `${what[1]} between ${k} and ${k + 1} days ago`);
+        : s(`${k}日以上${k + 1}日未満前に${what[0]}`, `${what[1]} between ${k} and ${day(k + 1)} ago`);
     }
-    if (a.startsWith('+')) return s(`${n}${unitJa}より前に${what[0]}`, `${what[1]} more than ${n} ${unitEn} ago`);
-    if (a.startsWith('-')) return s(`${n}${unitJa}以内に${what[0]}`, `${what[1]} less than ${n} ${unitEn} ago`);
-    return s(`ちょうど${n}${unitJa}前に${what[0]}`, `${what[1]} exactly ${n} ${unitEn} ago`);
+    if (!/^[+-]/.test(a) && !/^\d+$/.test(n)) {
+      // No sign is known of a value read at run time (`"$K"`): it may start with one, so only what holds for any value is said (as the option's row).
+      return wholeDays
+        ? s(`\`${n}\` が示す日数だけ前に${what[0]}（24 時間単位で端数を切り捨てる。\`+N\` は N+1 日以上前、\`-N\` は N 日未満、\`N\` は N 日以上 N+1 日未満）`, `${what[1]} as many days ago as \`${n}\` says, in whole days with the fraction dropped (\`+N\` N + 1 days or more, \`-N\` under N days, \`N\` from N to N + 1 days)`)
+        : s(`\`${n}\` が示す${unitJa}数だけ前に${what[0]}（\`+N\` は N ${unitJa}より前、\`-N\` は N ${unitJa}未満、\`N\` はちょうど N ${unitJa}前）`, `${what[1]} as many ${unitEn} ago as \`${n}\` says (\`+N\` more than N ${unitEn}, \`-N\` less than N, \`N\` exactly N)`);
+    }
+    if (wholeDays) {
+      // A value that is not a plain number (`+"$KEEP_DAYS"`): the same whole-day reading, with the word in place of the number.
+      if (a.startsWith('+')) return s(`(\`${n}\` + 1) 日以上前に${what[0]}（日数は端数を切り捨てて数える）`, `${what[1]} at least (\`${n}\` + 1) days ago (find counts the age in whole days and drops the fraction)`);
+      // (A sign is known here: no sign is the case above.)
+      return s(`\`${n}\` 日未満の間に${what[0]}`, `${what[1]} less than \`${n}\` days ago`);
+    }
+    if (a.startsWith('+')) return s(`${n}${unitJa}より前に${what[0]}`, `${what[1]} more than ${day(num)} ago`);
+    if (a.startsWith('-')) return s(`${n}${unitJa}未満の間に${what[0]}`, `${what[1]} less than ${day(num)} ago`);
+    return s(`ちょうど${n}${unitJa}前に${what[0]}`, `${what[1]} exactly ${day(num)} ago`);
   };
   const types: Record<string, [string, string]> = { f: ['通常ファイル', 'a regular file'], d: ['ディレクトリ', 'a directory'], l: ['シンボリックリンク', 'a symlink'], p: ['名前付きパイプ', 'a named pipe'], s: ['ソケット', 'a socket'], b: ['ブロックデバイス', 'a block device'], c: ['キャラクタデバイス', 'a character device'] };
   switch (p.name) {
@@ -229,7 +257,7 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): string {
     }
     case '-samefile': return s(`${a} と同じファイル（同じ inode）`, `the same file as ${a} (same inode)`);
     case '-maxdepth': return s(`深さ ${a} まで`, `at most ${a} level${a === '1' ? '' : 's'} deep`);
-    case '-mindepth': return s(`深さ ${a} 以上`, `at least ${a} levels deep`);
+    case '-mindepth': return s(`深さ ${a} 以上`, `at least ${a} level${a === '1' ? '' : 's'} deep`);
     case '-readable': return s('読み取り可能', 'readable');
     case '-writable': return s('書き込み可能', 'writable');
     case '-executable': return s('実行可能', 'executable');

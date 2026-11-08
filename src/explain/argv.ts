@@ -900,7 +900,7 @@ function findExpression(cx: Explainer, all: SyntaxNode[], spec: CommandSpec): To
   const none = all.filter((n) => fieldsIn(n, cx.state)?.length === 0);
   const nodes = all.filter((n) => !none.includes(n));
   const empty = none.map((n) => fieldsToken(cx, n, { role: 'fields', words: [], roles: [] }, 'find', false, all));
-  const words = findWords(nodes, cx.shell);
+  const words = findWords(nodes, cx.shell, cx.state);
   const lookup = (name: string) => specFor(cx, name);
   // find refuses all its arguments when one of its actions is wrong (`-exec f {} ;`): none of them runs. (Its words as find
   // gets them, where the model knows them: `x=';'; find . -exec echo {} $x` ends at `$x`.)
