@@ -1,4 +1,5 @@
 import type { Text } from './i18n';
+import { listSaid } from './messages-sentence';
 import { plainOf, tokenError, type TokenProblem, tokenProblemWarning, tokenText, tokenWarning } from './messages-levels';
 
 // What the tokens of words and expansions (src/explain/words.ts) say.
@@ -33,6 +34,14 @@ export const WORD_TEXTS = {
   'glob-bracket-opens': tokenText<{ opens: string }>(({ opens }) => [
     `\`[\` は \`${opens}\` の \`[…]\` の始まり: 間にある文字（展開した値の文字も含む）のどれか1文字に一致する`,
     `\`[\` opens the \`[…]\` of \`${opens}\`: it matches one character of those between, the characters the expansions give included`]),
+  /**
+   * `echo $UID` in dash: a variable bash sets that the script's shell does not (`variableShells`, src/shellfeatures.ts), as the dialect
+   * note says. `lacks`: the shells of the script's shell that leave it a plain variable (in `sh`, those of dash and busybox ash);
+   * `has`: the shells that set it; `what`: what it is there.
+   */
+  'variable-not-set-in-shell': tokenText<{ lacks: readonly string[]; has: readonly string[]; what: Text }>(({ lacks, has, what }) => [
+    `${listSaid('ja', lacks)} では設定されない普通の変数で、スクリプトか環境が設定しなければ空。${listSaid('ja', has)} が設定する値: ${what.ja}`,
+    `${listSaid('en', lacks)} ${lacks.length > 1 ? 'do' : 'does'} not set it: a plain variable there, empty unless the script or the environment sets it. As set by ${listSaid('en', has)}: ${what.en}`]),
   /** `echo hello`, `ls ~`: a word that stays as it is, or that is only a tilde expansion, as an operand. */
   'word-plain': tokenText<{ text: string }>(({ text }) => [
     `文字列 \`${text}\``,

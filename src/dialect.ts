@@ -13,7 +13,6 @@ import { SUBSHELL_STOPS } from './messages-shfail';
 import type { Head } from './messages-levels';
 import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
 import { dupTarget, networkPath, networkTarget } from './dict/syntax';
-import { VARIABLE_SECTIONS } from './manual';
 import { testStatus } from './semantics/conditions';
 import { processOf } from './semantics/env';
 import { isFunction, resolveName } from './semantics/names';
@@ -25,7 +24,7 @@ import { testWordShape } from './semantics/testwords';
 import { testedFirst } from './semantics/unbound';
 import { bracesInContext, wordFields, type WordEnv } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { builtinRow, type Case, COMMON_SH, type Failure, type Feature, FEATURES, featureWorks, failureOf, type InShell, isFailure, LETTER, type Measured, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, works } from './shellfeatures';
+import { builtinRow, type Case, COMMON_SH, type Failure, type Feature, FEATURES, featureWorks, failureOf, type InShell, isFailure, LETTER, type Measured, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, variableRow, works } from './shellfeatures';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { binaryOperators, parseTest, writtenTestWords } from './testexpr';
 
@@ -341,11 +340,10 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
   }
 }
 
-/** The rows of the variables of bash (a row's `vars`; the rest are the manual's names: `BASH_TSTOUT` is a script's own). */
+/** The row of a variable of bash's that some shells do not set (`variableRow`). */
 function variableFeature(name: string, add: (id: string) => void): void {
-  const row = Object.keys(FEATURES).find((id) => FEATURES[id].vars?.includes(name));
+  const row = variableRow(name);
   if (row) add(row);
-  else if (name.startsWith('BASH') && Object.hasOwn(VARIABLE_SECTIONS, name)) add('bashVar');
 }
 
 /** The features of a builtin's options and operands, read from the parse of its words with the builtin's spec. */
@@ -782,7 +780,7 @@ function testFails(n: SyntaxNode, sh: Measured, model: StateModel): boolean {
   const words = c && writtenTestWords(c);
   // (A word of the test: a redirection's is no operand, and a command in `$( )` has its own.)
   if (!words?.some((w) => w.startIndex <= n.startIndex && n.endIndex <= w.endIndex)) return false;
-  const env: WordEnv = { unset: (name) => { let row: string | undefined; variableFeature(name, (id) => { row = id; }); return !!row && FEATURES[row][sh] === 'empty'; } };
+  const env: WordEnv = { unset: (name) => { const row = variableRow(name); return !!row && FEATURES[row][sh] === 'empty'; } };
   const args: (string | null)[] = [];
   for (const w of words) {
     const known = wordFields(w, model, env).fields;

@@ -108,7 +108,7 @@ const ROWS: Record<string, string[]> = {
   pipestatus: ['echo "x$PIPESTATUS"'],
   bashVar: ['echo "x$BASH"', 'echo "x$BASH_VERSION"', 'echo "x${BASH_ENV}"', 'echo "x$BASHPID"', 'echo "x$BASHOPTS"'],
   epoch: ['echo "x$EPOCHSECONDS"', 'echo "x$EPOCHREALTIME"'],
-  setByBash: ['echo "x$OSTYPE"', 'echo "x$HOSTTYPE"', 'echo "x$MACHTYPE"', 'echo "x$REPLY"', 'echo "x$SHELLOPTS"', 'echo "x$GROUPS"', 'echo "x$DIRSTACK"'],
+  setByBash: ['echo "x$OSTYPE"', 'echo "x$HOSTTYPE"', 'echo "x$MACHTYPE"', 'echo "x$REPLY"', 'echo "x$SHELLOPTS"', 'echo "x$GROUPS"', 'echo "x$DIRSTACK"', 'echo "x$OPTERR"', 'echo "x$HISTCMD"', 'echo "x$SRANDOM"'],
   funcname: ['f() { echo "x$FUNCNAME"; }; f'],
   uid: ['echo "x$UID"', 'echo "x$EUID"'],
   hostname: ['echo "x$HOSTNAME"'],
