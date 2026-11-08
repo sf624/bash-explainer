@@ -114,7 +114,7 @@ const PROBES: Record<string, string> = {
   pipestatus: 'false | true; [ "${PIPESTATUS[0]}" = 1 ] && echo ok',
   funcname: 'f() { [ "$FUNCNAME" = f ] && echo ok; }; f',
   uid: '[ -n "$UID" ] && echo ok',
-  lastArg: ': abc; [ "$_" = abc ] && echo ok',
+  lastArg: 'echo abc >/dev/null; [ "$_" = abc ] && echo ok',
   hostname: '[ -n "$HOSTNAME" ] && echo ok',
   epoch: '[ -n "$EPOCHSECONDS" ] && echo ok',
   // (bash 5.2 lacks both, as FEATURES says; a bash 5.3 on PATH has them, as SINCE says. test/bash53.test.ts runs them.)
