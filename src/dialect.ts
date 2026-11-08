@@ -12,7 +12,7 @@ import { type Note, problemNote } from './messages';
 import { SUBSHELL_STOPS } from './messages-shfail';
 import type { Head } from './messages-levels';
 import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
-import { networkPath, networkTarget } from './dict/syntax';
+import { dupTarget, networkPath, networkTarget } from './dict/syntax';
 import { VARIABLE_SECTIONS } from './manual';
 import { testStatus } from './semantics/conditions';
 import { processOf } from './semantics/env';
@@ -242,12 +242,13 @@ function inArithmeticExpansion(n: SyntaxNode): boolean {
   return ancestor(n, (a) => a.type === 'arithmetic_expansion' || a.type === 'arithmetic_command' || a.type === 'c_style_for_statement')?.type === 'arithmetic_expansion';
 }
 
-/** Whether the redirection `n` is `>& file`: `>&` with no descriptor before it, to a word that is no descriptor number or `-` (bash then redirects stdout and stderr, as `&>`). */
+/** Whether the redirection `n` is `>& file` (or `1>& file`): a known target that is no descriptor (`dupTarget`), which bash takes as a file for stdout and stderr, as `&>`. */
 function dupsToFile(n: SyntaxNode, kids: string[]): boolean {
-  if (!kids.includes('>&') || field(n, 'descriptor')) return false;
+  const fd = field(n, 'descriptor')?.text;
+  if (!kids.includes('>&') || (fd !== undefined && fd !== '1')) return false;
   const dests = fields(n, 'destination');
   const target = dests.length === 1 ? staticWordValue(dests[0]) : undefined;
-  return target !== undefined && !/^(?:\d+|-)$/.test(target);
+  return target !== undefined && dupTarget(target).kind === 'word';
 }
 
 function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): void {

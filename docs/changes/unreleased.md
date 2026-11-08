@@ -151,8 +151,8 @@ These forms said nothing in a `sh`, `dash` or `ash` script. Each now gets the pr
 | `a[0]=1` | `a[0]=1: not found`, status 127 | the same | Error |
 | `$((i++))`, `$((i--))` | `arithmetic expression: expecting primary`, status 2, and the shell stops (only the subshell in `$( )` or `( )`) | runs as bash | Error |
 | `$((2**3))` | the same | runs as bash | Error |
-| `$((++i))`, `$((--i))` | read as `+(+i)`: `i` does not change, status 0 | runs as bash | Warning |
-| `echo hi >& file` | `Syntax error: Bad fd number`, status 2, and the shell stops, even with `\|\| true` | runs as bash: stdout and stderr go to the file | Error |
+| `$((++i))`, `$((--i))` | read as `+(+i)` (and `--i` as `-(-i)`): `i` does not change, status 0 | runs as bash | Warning |
+| `echo hi >& file`, `echo hi 1>& file` | `Syntax error: Bad fd number`, status 2, and the shell stops, even with `\|\| true` | runs as bash: stdout and stderr go to the file | Error |
 | `set +o pipefail` | `set: Illegal option -o pipefail`, status 2, and the shell stops, as for `set -o pipefail` | runs | Error |
 | `read`, `read -r` (no name) | `read: arg count`, status 2; `REPLY` stays empty | reads the line into `REPLY` | Error; no "Values stored: REPLY=…" example (none in `dash` either; `ash` keeps it) |
 

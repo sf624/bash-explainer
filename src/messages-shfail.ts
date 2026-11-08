@@ -121,7 +121,7 @@ export const ELEMENT_ASSIGN = failure('status', 127, 'not found',
 /** An operator of `$(( ))` the shell does not have (`i++`, `2**3` in dash): an error where the expansion runs. */
 export const ARITH_OPERATOR = stopping(2, 'arithmetic expression',
   (sh, end) => `${atJa(sh)}算術式を読めず、\`arithmetic expression: expecting primary\` で終了ステータス 2 になり、${end}`,
-  (sh, end) => `${at(sh)}the arithmetic expression fails with \`arithmetic expression: expecting primary\` and status 2; ${end}`);
+  (sh, end) => `${sh ? `${sh} cannot` : 'it cannot'} read the expression: \`arithmetic expression: expecting primary\`, status 2; ${end}`);
 
 /** `>& file` in dash: `>&` takes a descriptor there, and a name is an error where the redirection is made. */
 export const DUP_FILE = stopping(2, 'bad fd number',
