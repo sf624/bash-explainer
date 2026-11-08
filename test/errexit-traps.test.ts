@@ -54,6 +54,10 @@ const ROWS: Row[] = [
   { name: 'an ERR trap, in a function, with errtrace', script: `set -eE\ntrap 'echo E1' ERR\nf() { echo @@; ${FAIL}; }\nf` },
   { name: 'an ERR trap the function sets', script: `set -e\ntrap 'echo E1' ERR\nf() { trap 'echo E2' ERR; echo @@; ${FAIL}; }\nf` },
   { name: 'an ERR trap a function set before', script: `set -e\ntrap 'echo E1' ERR\nf() { trap 'echo E2' ERR; }\nf\necho @@\n${FAIL}` },
+  { name: 'an ERR trap a function takes back with -', script: `set -e\ntrap 'echo E1' ERR\nf() { trap - ERR; }\nf\necho @@\n${FAIL}` },
+  { name: 'an ERR trap a function sets to nothing', script: `set -e\ntrap 'echo E1' ERR\nf() { trap '' ERR; }\nf\necho @@\n${FAIL}` },
+  { name: 'an ERR trap a function sets and takes back', script: `set -e\ntrap 'echo E1' ERR\nf() { trap 'echo E2' ERR; trap - ERR; }\nf\necho @@\n${FAIL}` },
+  { name: 'exec of words that may be none', script: `set -e\ntrap 'echo T1' EXIT\nset --\nexec "$@"\necho @@\n${FAIL}`, maybe: true },
   { name: 'an ERR trap, in a subshell', script: `set -e\ntrap 'echo E1' ERR\n( echo @@; ${FAIL} )` },
   { name: 'an ERR trap, in a subshell, with errtrace', script: `set -eE\ntrap 'echo E1' ERR\n( echo @@; ${FAIL} )` },
   { name: 'an action that cannot fail', script: `set -e\nc() { echo C; }\ntrap c EXIT\necho @@\n${FAIL}` },
@@ -71,10 +75,20 @@ const ROWS: Row[] = [
  * each script, which bash runs with status 0.
  */
 const SUCCEEDS = [
-  'set -euo pipefail', "trap 'echo T1' EXIT", 'export X=1', 'echo hi', 'echo hi >&2', 'shopt -s extglob', 'alias a=b', 'unset x', 'readonly R=1',
-  'umask 022', 'declare -a A', 'typeset -i I=2', 'true', ':', 'continue', 'break',
-  'f() { local v=1; }\nf', 'log() { echo "$1"; }\nlog hi', 'g() { echo a; return 0; }\ng', 'h() { if [ -n "" ]; then echo x; fi; }\nh',
+  'set -euo pipefail', "trap 'echo T1' EXIT", 'echo hi', 'echo hi >&2', 'shopt -s extglob', 'shopt -u extglob', 'umask 022', 'true', ':', 'continue', 'break',
+  'log() { echo "$1"; }\nlog hi', 'g() { echo a; return 0; }\ng', 'h() { if [ -n "" ]; then echo x; fi; }\nh',
   'k() { for i in 1 2; do [ "$i" = 3 ] || continue; done; }\nk',
+];
+
+/**
+ * Statements that fail in normal use, which the model must not take for ones that cannot (`mayFail` true): the last
+ * line of each script, which bash runs with a status other than 0 (the review of #767).
+ */
+const MAY_FAIL = [
+  'declare -p nosuch', 'declare -F nosuch', 'typeset -f nosuch', 'export -f nosuch', 'readonly -f nosuch', 'shopt -q extglob', 'shopt extglob',
+  'shopt -p extglob', 'alias ll', 'local x=1', "set -- 'a b'\ndeclare -i n=\"$1\"", "f() { local -i n=\"$1\"; }\nset -- 'a b'\nf \"$1\"",
+  'readonly R=1\nreadonly R=2', 'readonly R=1\nexport R=2', 'readonly R=1\nunset R', 'declare -A m\ndeclare -a m',
+  'run() { declare -F "$1" >/dev/null && "$1"; }\nrun nosuch',
 ];
 
 /**
@@ -200,5 +214,20 @@ describe('a failure under set -e, the traps it runs and its status, against bash
       assert.strictEqual(status.mayFail(last), false, s);
       assert.match(runs[i].out, /^OK 0$/m, `${s}: ${runs[i].out}`);
     });
+  });
+
+  it('says the statements that fail in normal use may fail, and bash fails them', async () => {
+    const runs = await runAll('bash', MAY_FAIL.map((s) => `${s}\necho "OK $?"`));
+    MAY_FAIL.forEach((s, i) => {
+      const tree = parser.parse(s);
+      const status = statusModel(shellState(tree));
+      const last = tree.root.namedChildren.filter((c) => STATEMENTS.has(c.type)).at(-1)!;
+      assert.strictEqual(status.mayFail(last), true, s);
+      assert.match(runs[i].out, /^OK [1-9]\d*$/m, `${s}: ${runs[i].out}`);
+    });
+    // (Under set -e, the call stops the script: a call of it may fail, G3.)
+    const run = await runAll('bash', [`set -e\n${MAY_FAIL.at(-1)}\necho AFTER`]);
+    assert.strictEqual(run[0].status, 1);
+    assert.doesNotMatch(run[0].out, /AFTER/);
   });
 });

@@ -632,13 +632,14 @@ function cannotFail(stage: SyntaxNode): boolean {
 
 /**
  * When the builtin (or host's function) `name` with `spec` fails, where its spec narrows it (`CommandSpec.fails`):
- * `never`, `usage`, or undefined (it may fail in normal use: bats' `run !` and `run -N`).
+ * `never`, `usage`, or undefined (it may fail in normal use: bats' `run !` and `run -N`, `shopt extglob`).
  */
 function failsOnly(spec: CommandSpec, name: string, args: readonly SyntaxNode[], shell: Shell | undefined): 'never' | 'usage' | undefined {
   const f = spec.fails;
   if (typeof f !== 'object') return f;
   const parse = builtinParse(name, args, shell, spec);
-  return has(parse, ...f.unless.flags) || (f.unless.patterns && parse.roles.some((r) => r.role.role === 'pattern-option')) ? undefined : 'usage';
+  if (f.only && !has(parse, ...f.only)) return undefined;
+  return f.unless && (has(parse, ...f.unless.flags) || (f.unless.patterns && parse.roles.some((r) => r.role.role === 'pattern-option'))) ? undefined : 'usage';
 }
 
 /** A last stage that may stop reading before the end: `head`, `grep -q`, `grep -m N`, `sed …q`. */

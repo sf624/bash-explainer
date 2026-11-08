@@ -145,11 +145,18 @@ export interface CommandSpec {
   /**
    * When a builtin (or a host's function) fails, where that is narrower than "it may" (docs/design/errexit-stop.md,
    * G2): `never`, its status is 0 whatever its words (`true`, `:`); `usage`, only when its words are refused or its
-   * output cannot be written (`echo`, `set`, `export`, `trap`…), not in normal use. `unless`: the options that make it
-   * fail in normal use all the same (bats' `run !` and `run -N`, which check the status: `patterns`, any of
-   * `patternOptions`). The status model reads it (`mayFail`, `succeeds`, src/semantics/status.ts).
+   * output cannot be written (`echo`, `set`, `trap`…), not in normal use. As an object, `usage` only with one of the
+   * options `only` (`shopt -s`, `shopt -u`; `shopt extglob` reports and fails when it is off), and not with one of
+   * `unless.flags` or, with `unless.patterns`, any of `patternOptions` (bats' `run !` and `run -N`, which check the
+   * status; `shopt -q`). The status model reads it (`mayFail`, `succeeds`, src/semantics/status.ts). Not on the
+   * declaration builtins: they fail in normal use too (`declare -F f` of no function, a read-only name, a bad value of
+   * `-i`, `local` outside a function).
    */
-  fails?: 'never' | 'usage' | { readonly usage: true; readonly unless: { readonly flags: readonly string[]; readonly patterns: boolean } };
+  fails?: 'never' | 'usage' | {
+    readonly usage: true;
+    readonly only?: readonly string[];
+    readonly unless?: { readonly flags: readonly string[]; readonly patterns: boolean };
+  };
   /**
    * Where a builtin works, when not anywhere: only in a function (`local`). Outside one it fails and changes nothing
    * (bash: "local: can only be used in a function", status 1; dash: "not in a function"). `except`: the shells where

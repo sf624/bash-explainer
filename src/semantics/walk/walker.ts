@@ -29,7 +29,7 @@ import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
 import { changesWords, ExpansionError, type Frame, OPAQUE, processIn, type SetAt, type Statement, type Target, WalkAgain } from './shared';
 import { leastOf, pushAll } from '../../lists';
-import { functionEntry, functionExit, runTraps, subshellTraps, type TrapSet } from './traps';
+import { functionEntry, functionExit, runTraps, subshellTraps, type TrapSet, unreadTraps } from './traps';
 
 export type { ChildPass, Frame, Target } from './shared';
 
@@ -788,7 +788,7 @@ export class Walker {
   opaque(st: ShellState): ShellState {
     this.lastChange.set(OPAQUE, ++this.changeCount);
     for (const c of this.collecting) c.add(OPAQUE);
-    return st.opaque ? st : { ...st, opaque: true };
+    return unreadTraps(st.opaque ? st : { ...st, opaque: true }, this.node);
   }
 
   private pipeline(n: SyntaxNode, st: ShellState): ShellState {

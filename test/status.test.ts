@@ -52,7 +52,7 @@ describe('status rules (src/semantics/status.ts)', () => {
     assert.deepStrictEqual(status('f() { :; }', 'f() { :; }'), { kind: 'definition' });
     assert.deepStrictEqual(status('x=1', 'x=1'), { kind: 'last-substitution' });
     assert.deepStrictEqual(status('> f', '> f'), { kind: 'last-substitution' });
-    assert.deepStrictEqual(status('declare x=1', 'declare x=1'), { kind: 'command', functions: [], fails: 'usage' });
+    assert.deepStrictEqual(status('declare x=1', 'declare x=1'), { kind: 'command', functions: [] });
     assert.deepStrictEqual(status('if :; then :; fi', 'if :; then :; fi'), { kind: 'last-run' });
     assert.deepStrictEqual(status('time false', 'time false'), { kind: 'last-run' });
   });

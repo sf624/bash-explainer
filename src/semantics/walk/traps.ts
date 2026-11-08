@@ -53,7 +53,7 @@ export function trapCommand(w: Walker, st: ShellState, parse: ArgvParse, args: r
   const script = state !== 'off' ? action?.script : undefined;
   const names = TRAPPED.filter((t) => named.has(t) || anyName);
   for (const name of names) {
-    const entry: TrapState = { state: named.has(name) ? state : 'unknown', at, ...(script ? { script } : {}) };
+    const entry: TrapState = { state: named.has(name) ? state : 'unknown', at, ...(script ? { script } : {}), ...(!action && named.has(name) ? { reset: true as const } : {}) };
     st = w.put(st, 'traps', name, entry);
   }
   // (Once each: a body walked again, or the same `at` for each `trap` in a string `eval` or a trap's action runs.)
@@ -69,9 +69,30 @@ export function trapSignals(parse: ArgvParse, args: readonly SyntaxNode[]): (str
   return operands(parse, 'SIGNAL').map((o) => staticWordValue(args[o.word]));
 }
 
-/** The state after `exec` runs a command at `at`: the shell is replaced, and no trap of `EXIT` runs. */
-export function execTraps(w: Walker, st: ShellState, at: SyntaxNode): ShellState {
-  return st.traps.get('EXIT')?.state === 'off' ? st : w.put(st, 'traps', 'EXIT', { state: 'off', at });
+/**
+ * The state after `exec` runs a command at `at`: the shell is replaced, and no trap of `EXIT` runs (`sure`). Where
+ * the command may be no word (`exec "$@"`) or may not be run (execfail on), the shell may go on: the trap may run.
+ */
+export function execTraps(w: Walker, st: ShellState, at: SyntaxNode, sure: boolean): ShellState {
+  const t = st.traps.get('EXIT');
+  if (sure) return t?.state === 'off' ? st : w.put(st, 'traps', 'EXIT', { state: 'off', at });
+  return !t || t.state !== 'on' ? st : w.put(st, 'traps', 'EXIT', { ...t, state: 'unknown' });
+}
+
+/**
+ * `st` after code the walk does not read ran at `at` (`Walker.opaque`: a file `source` reads, a string of `eval` not
+ * known): it may set or take back either trap. One set before may still be set (its action is kept); none set before
+ * may be set there.
+ */
+export function unreadTraps(st: ShellState, at: SyntaxNode | undefined): ShellState {
+  let traps = st.traps;
+  for (const name of TRAPPED) {
+    const t = traps.get(name);
+    if (t?.state === 'unknown') continue;
+    if (t) traps = traps.with(name, { state: 'unknown', at: t.at, ...(t.state === 'on' && t.script ? { script: t.script } : {}) });
+    else if (at) traps = traps.with(name, { state: 'unknown', at });
+  }
+  return traps === st.traps ? st : { ...st, traps };
 }
 
 /**
@@ -106,10 +127,14 @@ export function functionEntry(st: ShellState, def: SyntaxNode): ShellState {
   return inner;
 }
 
-/** The state after the body of `def`, called from `entry`, ended at `end`: the caller's `ERR` trap again, unless the body set or took back one. */
+/**
+ * The state after the body of `def`, called from `entry`, ended at `end`: the caller's `ERR` trap again, unless the body
+ * set one (also one that runs nothing, `trap '' ERR`); bash gives it back after `trap - ERR` too (measured, 5.2 and 5.3).
+ */
 export function functionExit(entry: ShellState, def: SyntaxNode, end: ShellState): ShellState {
   const inner = functionEntry(entry, def);
-  if (inner === entry || end.traps.get('ERR') !== inner.traps.get('ERR')) return end;
+  const err = end.traps.get('ERR');
+  if (inner === entry || (err !== inner.traps.get('ERR') && !err?.reset)) return end;
   return { ...end, traps: end.traps.with('ERR', entry.traps.get('ERR')) };
 }
 
