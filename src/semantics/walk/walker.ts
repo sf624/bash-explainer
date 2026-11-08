@@ -29,6 +29,7 @@ import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
 import { changesWords, ExpansionError, type Frame, OPAQUE, processIn, type SetAt, type Statement, type Target, WalkAgain } from './shared';
 import { leastOf, pushAll } from '../../lists';
+import { functionEntry, functionExit, runTraps, subshellTraps, type TrapSet } from './traps';
 
 export type { ChildPass, Frame, Target } from './shared';
 
@@ -80,6 +81,10 @@ export class Walker {
   readonly sureLater = new Map<string, SyntaxNode>();
   /** The actions of `trap`, run after the top level (an EXIT trap with its state at the end). */
   readonly traps: { script: NestedScript; host: SyntaxNode; st: ShellState; since: number; proc: Target | undefined; exit: boolean; exitOnly: boolean; dead: boolean }[] = [];
+  /** The `trap` commands that set or take back `EXIT` or `ERR`, in the order met (./traps.ts). */
+  readonly trapSets: TrapSet[] = [];
+  /** The states the script ends with: at its end, and at each `exit` (or failure under `set -e`) that ends it. */
+  readonly ends: ShellState[] = [];
   /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   aliasHost: SyntaxNode | undefined;
   /** The walks of each function body: the state it was called with, and the state after it. */
@@ -259,9 +264,11 @@ export class Walker {
     this.targets.push(program);
     let end = this.units(root.namedChildren.filter((c) => STATEMENTS.has(c.type)), start).end;
     this.targets.pop();
-    // (The script also ends at an `exit`.)
+    // (The script also ends at an `exit`: each way it ends is kept, `ends`.)
+    this.ends.push(end);
+    pushAll(this.ends, program.exits);
     end = merge([end, ...program.exits], this.posix);
-    this.runTraps(end);
+    runTraps(this, end);
     // (Then what the host calls, bats' tests: ./host.ts.)
     hostRun(this, root, end);
     this.uncalled();
@@ -292,28 +299,6 @@ export class Walker {
         }
       }
     }
-  }
-
-  /**
-   * The actions of `trap`, for the calls they make: they run later, when a signal comes or (EXIT) when the script
-   * ends, so each runs from the state when it was set, with what the script changes after that taken as unknown;
-   * an EXIT trap set at the top level, from the state at the end.
-   */
-  private runTraps(end: ShellState): void {
-    // (An action may set a trap of its own: it is walked in the next round.)
-    for (let round = 0; round < NESTED_DEPTH && this.traps.length; round++) for (const t of this.traps.splice(0)) {
-      const after = new Set([...this.lastChange].filter(([, i]) => i > t.since).map(([k]) => k));
-      const st = t.exit && this.topLevel(t.host) ? end : widen(this, t.st, after, t);
-      this.trapAction(t.script, t.host, st, t.exitOnly, t.dead, t.proc);
-    }
-  }
-
-  /** Whether `n` is a statement of the top level, in the main shell. */
-  private topLevel(n: SyntaxNode): boolean {
-    for (let x = n; x.parent; x = x.parent) {
-      if (subshellReasons(x).length || (x.parent.parent && x.parent.type !== 'list' && x.parent.type !== 'redirected_statement')) return false;
-    }
-    return true;
   }
 
   /**
@@ -564,7 +549,9 @@ export class Walker {
       }
       return st;
     }
-    this.record(n, st);
+    const reasons = subshellReasons(n);
+    const inner = reasons.length ? subshellTraps(st) : st; // (No traps in a subshell; `( )` itself runs in the shell around it.)
+    this.record(n, reasons.length === 1 && reasons[0] === 'parentheses' ? st : inner);
     // (Arithmetic the walk does not run: a subscript, an offset, `[[ x -eq y ]]`; a key of an array that must be
     // associative here, else it is arithmetic too. One that may fail may discard the rest of the line: see `abort`.
     // The trust scan read the trees of the strings and of the aliases the walk runs too: `StringTrees`.)
@@ -579,10 +566,9 @@ export class Walker {
     const statement = this.statement;
     this.node = n;
     this.statement = { deferred: [] };
-    const reasons = subshellReasons(n);
     if (reasons.length) this.targets.push({ kind: 'subshell', at: n });
     try {
-      const ran = this.runStatement(n, st);
+      const ran = this.runStatement(n, inner);
       const after = withStatus(ran, this.conditions.statusOf(n, st, ran));
       // (A job and a coproc are started: 0.)
       let out = this.errexit(n, st, reasons.length ? withStatus(st, reasons.includes('background') || reasons.includes('coproc') ? 0 : after.status) : after);
@@ -814,7 +800,7 @@ export class Walker {
     if (here !== 'on') this.targets.push({ kind: here === 'off' ? 'subshell' : 'maybe' });
     let after: ShellState;
     try {
-      after = this.run(stages[stages.length - 1], st);
+      after = this.run(stages[stages.length - 1], here === 'off' ? subshellTraps(st) : st);
     } finally {
       if (here !== 'on') this.targets.pop();
     }
@@ -1116,11 +1102,11 @@ export class Walker {
     this.targets.push(target);
     let end: ShellState;
     try {
-      end = this.run(body, entry);
+      end = this.run(body, functionEntry(entry, def));
     } finally {
       this.targets.pop();
     }
-    end = merge([end, ...target.returns], this.posix);
+    end = functionExit(entry, def, merge([end, ...target.returns], this.posix));
     this.frames.pop();
     this.stack.pop();
     this.expand = outer;

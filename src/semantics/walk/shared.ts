@@ -8,8 +8,11 @@ import type { NameMap, OptionState, ShellState, VariableState } from '../shellst
 
 export const NAME = /^[A-Za-z_]\w*$/;
 
-/** A word of `trap` that names the end of the shell. */
-export const exitSignal = (x: string): boolean => /^(SIG)?EXIT$|^0$/i.test(x);
+/**
+ * A word of `trap` that names the end of the shell: `EXIT` in any case, or a number that is 0 (`0`, `00`, `+0`, ` 0`).
+ * bash refuses `SIGEXIT` (measured, 5.2).
+ */
+export const exitSignal = (x: string): boolean => x.toUpperCase() === 'EXIT' || (/^\s*[-+]?\d+\s*$/.test(x) && Number(x) === 0);
 
 export const SUBSTITUTIONS = ['command_substitution', 'process_substitution'];
 

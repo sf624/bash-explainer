@@ -153,13 +153,14 @@
     {"file":"src/semantics/walk/arith.ts","fn":"letText","kind":"glob-class","count":1,"row":"W-C6"},
     {"file":"src/semantics/walk/arith.ts","fn":"letText","kind":"helper","count":1,"row":"W-C6"},
     {"file":"src/semantics/walk/arith.ts","fn":"letText","kind":"node-type","count":4,"row":"W-C6"},
-    {"file":"src/semantics/walk/builtins.ts","fn":"builtinOn","kind":"helper","count":7,"row":"W-L1"},
+    {"file":"src/semantics/walk/builtins.ts","fn":"builtinOn","kind":"helper","count":6,"row":"W-L1"},
     {"file":"src/semantics/walk/builtins.ts","fn":"declare","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/walk/builtins.ts","fn":"readsUnwritten","kind":"helper","count":2,"row":"W-T1"},
     {"file":"src/semantics/walk/builtins.ts","fn":"readsUnwritten","kind":"node-type","count":4,"row":"W-T1"},
     {"file":"src/semantics/walk/builtins.ts","fn":"unset","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/walk/conditions.ts","fn":"staticText","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/walk/conditions.ts","fn":"unsetStatus","kind":"helper","count":1,"row":"W-L1"},
+    {"file":"src/semantics/walk/traps.ts","fn":"trapSignals","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/walk/walker.ts","fn":"command","kind":"node-type","count":6,"row":"W-P4"},
     {"file":"src/semantics/walk/walker.ts","fn":"forStatement","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/walk/walker.ts","fn":"program","kind":"helper","count":1,"row":"W-L1"},
@@ -542,7 +543,6 @@
         {"fn":"marksOf","kind":"node-type","count":1},
         {"fn":"readOnlySometimes","kind":"node-type","count":3},
         {"fn":"readWithItsLine","kind":"node-type","count":5},
-        {"fn":"runsAtExit","kind":"helper","count":2},
         {"fn":"stderrDiscarded","kind":"node-type","count":4},
         {"fn":"stopOf","kind":"helper","count":1}
       ]

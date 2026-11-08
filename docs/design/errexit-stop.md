@@ -216,6 +216,16 @@ So:
 1. **U11a, the model (no change users see).** G1 (the traps in the state, `later` included, its probes, `runsAtExit` reading it, the sources.md row and its guard), G2 (the spec field, read by `mayFail`, `cannotFail` and `succeeds`), G3 (`returnsFailure`), G4, G5 and G6 (`stops: 'test'` in bats, and `run`'s status rule). Its tests are probes and unit tests; the explanations do not change, except where `cannotFail` reads the spec field. That PR lists those changes, if any.
 2. **U11b, the note.** The catalog fact with its drafts, the cases of run 4's fixes 1 and 2 included; the `trap … EXIT` texts of fix 3; `errexitStopNote` in src/explain/status.ts; `S.errexit` dropped from "In short"; the token text of line 27 shortened; the probe table against bash, the corpus checks, the web test; CHANGELOG bullets: one under "New" ("Under `set -e`, a line whose command can fail says that the script stops there, which trap runs, and its exit status") and one under "Fixed" ("`trap … EXIT` no longer says it runs however the script exits: not on SIGKILL"), with the examples in docs/changes/unreleased.md; [usability-9.md](usability-9.md) and this page's status updated.
 
+Decided while building U11a:
+
+- G4 and G6 are a field of their own, `ErrexitContext.within` (`exit-trap`, `test`, `host`), not new values of `stops`. `stops` keeps saying the shell (the script, a subshell, or either), which ten readers take as it is; `within` says what a failure there ends besides it.
+- A function called from an `EXIT` trap is found by its calls: the walk makes them at the `trap` command (`StateModel.calls`), so the body's chain has a call link whose sites are that command, not a slot link.
+- The trap rows are checked by what runs, in test/errexit-traps.test.ts (each trap's action prints a word of its own, bash 5.2 and 5.3, one process in a cgroup), not by `trap -p` rows in state.json: in a subshell `trap -p` prints the main shell's trap, and in a function body without errtrace it prints the caller's `ERR` trap, which does not run there.
+- `later` is given only to a statement of the main shell outside any function: a function may also be called after the `trap`.
+- bash takes for `EXIT` the name in any case and a number that is 0 (`00`, `+0`), and refuses `SIGEXIT` (measured): `exitSignal` (src/semantics/walk/shared.ts) follows that, and the idiom `trap … EXIT` reads its words through the same reader.
+- `runsAtExit` reads the trap in effect at each end of the script (`StateModel.ends`: its end, each `exit` and failure under `set -e`) that got past the `trap`; `exec cmd` takes the `EXIT` trap back in the state.
+- The token texts and "In short" do not change in U11a: `mayFail` changes only where "In short" says a subshell stops, and no line of the corpus has such a statement that G2 or G3 leaves out.
+
 Two PRs, because U11a is a foundation and gets its own review before the text is built on it (CLAUDE.md, "Delegating"). They can go as one stack.
 
 ## 9. Prototype for run 4

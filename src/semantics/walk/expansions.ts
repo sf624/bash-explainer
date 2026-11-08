@@ -3,6 +3,7 @@
 // `${x?}`), with the redirections made after them (`{fd}>file`).
 import { descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../../syntax/tree';
 import { STATEMENTS } from '../env';
+import { subshellTraps } from './traps';
 import { attribute, merge, option, type ShellState, type Tri, type VariableState, withoutErrexitWhy } from '../shellstate';
 import { ArithError, ExpansionError, type Frame, inShell, numberOfLengths, SUBSTITUTIONS, type Target } from './shared';
 import type { Walker } from './walker';
@@ -77,7 +78,7 @@ export class WalkExpansions {
         }
         this.w.targets.push({ kind: 'subshell' });
         try {
-          this.w.sequence(c.children, this.substitutionState(c, st));
+          this.w.sequence(c.children, subshellTraps(this.substitutionState(c, st)));
         } finally {
           this.w.targets.pop();
         }

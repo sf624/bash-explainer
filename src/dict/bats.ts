@@ -18,6 +18,8 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = wordTable({
   ], {
     gloss: tx('コマンドをサブシェルで実行し、終了ステータスと出力を `$status`・`$output`・`$lines` に入れる', 'runs a command in a subshell and keeps its exit status and output in `$status`, `$output` and `$lines`'),
     optionsFirst: true,
+    // (bats-core 1.13: `run` returns 0 whatever the command's status, unless `!` or `-N` asks for one, or an option is refused.)
+    fails: { usage: true, unless: { flags: ['!'], patterns: true } },
     patternOptions: [{
       pattern: /^-(\d+)$/,
       text: ([, n]) => tx(`終了ステータスが ${n} になることを期待する: ${n} 以外で終わると \`run\` が失敗し、テストが失敗する`, `expect the command to end with exit status ${n}: if it ends with another status, \`run\` fails, and so does the test`),

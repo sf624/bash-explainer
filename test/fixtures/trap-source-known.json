@@ -1,0 +1,11 @@
+{
+  "//": "The places of src/ that read a `trap` command by its name, or a signal word as EXIT, outside the walk (test/trap-source.test.ts). None decides the trap in effect at a statement; each has its reason. The list may only shrink.",
+  "uses": [
+    {"file": "src/dialect.ts", "fn": "commandFeatures", "kind": "name", "count": 1, "reason": "the dialect check of `trap … ERR` (`trapErr`): whether the shell knows the ERR signal, a feature of the shell, not the trap in effect"},
+    {"file": "src/explain/commands.ts", "fn": "commandTail", "kind": "name", "count": 2, "reason": "`where === 'trap'` compares a value of `inFunction` (src/semantics/env.ts), where `local` runs, not a command name"},
+    {"file": "src/idioms.ts", "fn": "exitTrap", "kind": "name", "count": 1, "reason": "the idiom `trap … EXIT` (`idiom-exit-trap`) is found by the words as written, also on a line the walk did not run; its signal words through `trappedName`"},
+    {"file": "src/idioms.ts", "fn": "exitTrap", "kind": "signal", "count": 1, "reason": "the idiom reads the signal words through the walk's own reader, `trappedName`, so that it takes for EXIT what bash takes (`exit`, `00`)"},
+    {"file": "src/semantics/posixexits.ts", "fn": "builtinExit", "kind": "name", "count": 1, "reason": "the usage error of a lone `trap INT` in POSIX mode (a special builtin's error ends the shell), not the trap in effect"},
+    {"file": "src/semantics/trust.ts", "fn": "builtinWords", "kind": "name", "count": 1, "reason": "the trust scan reads the action of every `trap` before the walk runs, to find strings it cannot read (a DEBUG or RETURN trap makes nothing trusted)"}
+  ]
+}

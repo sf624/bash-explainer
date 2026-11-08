@@ -417,6 +417,29 @@ describe('bats files agree with the real bats', function () {
       ['1:file:before:false', '2:file:after:true', '3:test:before:false', '4:test:after:true', '5:test:test:false', '6:test:test:false']);
   });
 
+  it('fails a test where `run` may fail (`!`, `-N`) and a failing command ends the test, not the file (errexit-stop.md, G6)', async function () {
+    if (!usable) return this.skip();
+    const file = path.join(dir, 'g6.bats');
+    const tests = ['run false', 'run --separate-stderr false', 'run -1 true', 'run ! true', 'false'];
+    const text = ['bats_require_minimum_version 1.5.0', 'teardown() { echo "teardown $BATS_TEST_NUMBER" >&3; }',
+      ...tests.map((t, i) => `@test "t${i}" {\n  ${t}\n  echo "after ${i}" >&3\n}`)];
+    fs.writeFileSync(file, `${text.join('\n')}\n`);
+    const { tap, out } = await runBats(file);
+    // The model: `run` fails only with `!` or `-N` (`CommandSpec.fails`), and a failure in a test ends that test.
+    const extracted = extractShell('bats', text.join('\n'));
+    const tree = createUnbashParser().parse(extracted.text);
+    const status = statusModel(shellState(tree, undefined, { host: extracted.regions[0].commands, run: extracted.regions[0].run }));
+    tests.forEach((t, i) => {
+      const n = descendants(tree.root, ['command']).find((c) => c.text === t)!;
+      const fails = status.mayFail(n);
+      assert.strictEqual(tap[i].startsWith('not ok'), fails, `${t}: ${tap[i]}`);
+      assert.strictEqual(status.errexit(n).within?.kind, 'test', t);
+      // (A failure ends the test: its later lines do not run, its teardown does, and bats goes on.)
+      assert.strictEqual(out.includes(`after ${i}`), !fails, t);
+      assert.ok(out.includes(`teardown ${i + 1}`), t);
+    });
+  });
+
   it('warns (BW03) about a setup_suite in a test file, and does not call it', async function () {
     if (!usable) return this.skip();
     const file = path.join(dir, 'bw03.bats');

@@ -2,6 +2,7 @@
 // entries at a place, as persistent maps, and how the states of several paths merge.
 import type { SyntaxNode } from '../syntax/tree';
 import type { Shell } from '../dialect';
+import type { NestedScript } from './nested';
 import { usualEnvironment } from '../dict/syntax';
 import { usuallyInEnvironment } from './vars';
 
@@ -268,6 +269,15 @@ export class NameMap<V> implements ReadonlyMap<string, V> {
   }
 }
 
+/**
+ * The action set for `EXIT` or `ERR` (`ShellState.traps`), from the `trap` command `at`. `on`: an action is set, the
+ * string `script` when the walk reads it; `off`: none runs (`trap - EXIT`, `trap EXIT`, `trap '' EXIT`; in a subshell,
+ * which starts with none; `ERR` in a function body without errtrace, `at` the function); `unknown`: set on some paths
+ * only, or not known (signals or an action the walk does not read, two paths that set different ones). A name not in
+ * the map was never set: none runs.
+ */
+export interface TrapState { readonly state: Tri; readonly at: SyntaxNode; readonly script?: NestedScript }
+
 /** The state of the shell at a place. A name not in a map has not been changed by the script. */
 export interface ShellState {
   /** `set -o` options, by long name (`errexit`, `noglob`, `posix`…). */
@@ -281,6 +291,8 @@ export interface ShellState {
   readonly disabled: NameMap<CommandEntry>;
   /** The names `hash -p` gave a path (assigning PATH, `hash -r` and `hash -d` forget them). */
   readonly hashed: NameMap<CommandEntry>;
+  /** The actions of the traps of `EXIT` and `ERR` in effect, by those names (docs/design/errexit-stop.md, G1). */
+  readonly traps: NameMap<TrapState>;
   /** The exit status of the last command run (`$?`), when it is known (docs/design/semantics.md, 4.14). */
   readonly status?: number;
   /**
@@ -439,7 +451,7 @@ export type Kind = Exclude<keyof ShellState, 'status' | 'unreachable' | 'errexit
 export type Entry<K extends Kind> = ShellState[K] extends NameMap<infer V> ? V : never;
 
 export const EMPTY: ShellState = {
-  set: NameMap.empty(), shopt: NameMap.empty(), variables: NameMap.empty(), functions: NameMap.empty(), aliases: NameMap.empty(), disabled: NameMap.empty(), hashed: NameMap.empty(),
+  set: NameMap.empty(), shopt: NameMap.empty(), variables: NameMap.empty(), functions: NameMap.empty(), aliases: NameMap.empty(), disabled: NameMap.empty(), hashed: NameMap.empty(), traps: NameMap.empty(),
 };
 
 /** `st` with the status `status` (undefined: not known). */
@@ -516,6 +528,22 @@ function mergeHashed(a: CommandEntry | undefined, b: CommandEntry | undefined): 
   return hashEntry(newer, [...hashOutcomes(a), ...hashOutcomes(b)]);
 }
 
+/**
+ * A trap after two paths: the same; set on one path only, or set on both from different commands, it may be set
+ * (`unknown`, with the action only when both paths set the same).
+ */
+function mergeTrap(a: TrapState | undefined, b: TrapState | undefined): TrapState {
+  if (!a || !b) {
+    const x = (a ?? b)!;
+    return x.state === 'off' ? x : { ...x, state: 'unknown' };
+  }
+  if (a.at === b.at && a.script === b.script) return { ...a, state: tri(a.state, b.state) };
+  const newer = later(a.at, b.at) === a.at ? a : b;
+  if (a.state === 'off' && b.state === 'off') return newer;
+  const script = a.script === b.script || a.state === 'off' ? b.script : b.state === 'off' ? a.script : undefined;
+  return { state: 'unknown', at: newer.at, ...(script ? { script } : {}) };
+}
+
 /** The state after one of several paths, when any of them may have been taken. */
 export function merge(states: ShellState[], posix = false): ShellState {
   // (A path that never gets here adds nothing; when none does, the result never gets here either.)
@@ -529,6 +557,7 @@ export function merge(states: ShellState[], posix = false): ShellState {
     aliases: NameMap.merge(a.aliases, b.aliases, (_k, x, y) => mergeAlias(x, y)),
     disabled: NameMap.merge(a.disabled, b.disabled, (_k, x, y) => mergeAlias(x, y)),
     hashed: NameMap.merge(a.hashed, b.hashed, (_k, x, y) => mergeHashed(x, y)),
+    traps: NameMap.merge(a.traps, b.traps, (_k, x, y) => mergeTrap(x, y)),
     ...(a.status === b.status && a.status !== undefined ? { status: a.status } : {}),
     ...mergeErrexitWhy(a.errexitWhy, b.errexitWhy),
     ...(a.opaque || b.opaque ? { opaque: true as const } : {}),
@@ -573,5 +602,6 @@ export function sameState(a: ShellState, b: ShellState): boolean {
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
     && NameMap.same(a.disabled, b.disabled, (x, y) => x === y || x.state === y.state)
-    && NameMap.same(a.hashed, b.hashed, sameHashed));
+    && NameMap.same(a.hashed, b.hashed, sameHashed)
+    && NameMap.same(a.traps, b.traps, (x, y) => x === y || (x.state === y.state && x.script === y.script)));
 }
