@@ -126,6 +126,12 @@ describe('the phone\'s sheet as data', () => {
       [440, -2, -352, 'peek'],
     ];
     for (const [height, v, travel, want] of short) assert.strictEqual(settle(phone, height, v, travel), want, `${height} px at ${v} px/ms after ${travel} px`);
+    // Landscape (844 x 390): peek 141, half 215, full 338, so full - half is under 80 px. A slow drag ends at the nearest height; a fling is held.
+    const land = snapHeights(390, 44, 93, 48);
+    assert.deepStrictEqual(land, { peek: 141, half: 215, full: 338 });
+    assert.strictEqual(settle(land, 290, 0, 75), 'full');
+    assert.strictEqual(settle(land, 281, 1.5, 66), 'half');
+    assert.strictEqual(settle(land, 315, 1.5, 100), 'full');
     // Two heights the same (a short window): the lower one wins a tie, and a fling still finds its way.
     const low = snapHeights(120, 53, 49, 48);
     assert.strictEqual(settle(low, 97, 0, 0), 'peek');

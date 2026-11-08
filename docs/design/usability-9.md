@@ -117,7 +117,7 @@ A smaller one: u1 saw `2>/dev/null|| exit` without its space. media/panel.js `sh
 **Fix.** Extend the sheet's own constants and its one heights function; add no second gesture model.
 
 - A grab area that a thumb finds: a grab strip of its own, 44 px high, above the tabs row, around the bar drawn at 48 x 5 px; no control overlaps it (Q7).
-- A fling needs more speed (`FLING` to about 1 px/ms), and a fling to full a minimum travel too (80 px), so a short flick up from half does not jump to full. The maintainer's decision of 2026-11-08: the travel is needed only for a fling that would end at full; a short quick flick from the peek to half, from half to the peek, or down from full goes by its speed alone, and a fling up shorter than 80 px that would reach full stops at half.
+- A fling needs more speed (`FLING` to about 1 px/ms), and a fling to full a minimum travel too (80 px), so a short flick up from half does not jump to full. The maintainer's decision of 2026-11-08: the travel is needed only for a fling that would end at full; a short quick flick from the peek to half, from half to the peek, or down from full goes by its speed alone, and a fling (a quick release) up shorter than 80 px that would reach full stops at half; a slow drag ends at the nearest height.
 - Full stops 8 px below the editor's header strip, so a tap just above the sheet is not a rename, and on a phone the rename opens from the pencil only (Q7).
 - The app bar is never under the sheet during a drag: the drag's top is clamped at the bar's bottom until the snap settles.
 - The first height stays half; the peek is kept.
