@@ -1,6 +1,6 @@
 # Where `set -e` stops the script (usability-9, U11)
 
-Status: Tracked in #721. The prototype (#730) was tested in usability run 4 (section 9), and the questions are decided (section 10): the line note, with the three fixes run 4 found. Next: U11a, then U11b (section 8). Step U11 of [usability-9.md](usability-9.md).
+Status: Tracked in #721. The prototype (#730) was tested in usability run 4 (section 9), and the questions are decided (section 10): the line note, with the three fixes run 4 found. Step U11 of [usability-9.md](usability-9.md).
 
 The maintainer decided on 2026-11-08: on each line whose command can stop the script under `set -e`, one sentence says that if it fails, the script stops here, which trap runs then (and its line), and the status the script ends with. This page says which lines get it, what it says in each case, where it shows, what the models lack for it, how it is tested, and the steps.
 
@@ -143,8 +143,9 @@ It is anchored on the statement (`cx.note(fact(…), n)`). It is made in src/exp
 | `kill -QUIT $$` | (bash ignores SIGQUIT and goes on) | |
 | `kill -KILL $$` | no | 137 |
 | `exec true` | no: the shell is replaced | 0 |
+| `exec 3>/dev/null` (redirections only) | yes: the shell goes on | 0 |
 
-Both texts become, in U11b: "runs when the script exits: at its end, on `exit`, on an error, or on a signal such as SIGTERM or SIGINT; not when it is killed with SIGKILL, nor after `exec`" (ja: 「スクリプトが終わるとき（最後まで実行したとき、`exit`、エラー、SIGTERM や SIGINT などのシグナル）に実行する。SIGKILL で殺されたときと `exec` のあとは実行されない」). The short form in "In short" keeps the first half only: "registers a command that runs when the script exits (not on SIGKILL)".
+Both texts become, in U11b: "runs when the script exits: at its end, on `exit`, on an error, or on a signal such as SIGTERM or SIGINT; not when it is killed with SIGKILL, nor when `exec` replaces the shell with a command (`exec cmd`)" (ja: 「スクリプトが終わるとき（最後まで実行したとき、`exit`、エラー、SIGTERM や SIGINT などのシグナル）に実行する。SIGKILL で殺されたときと、`exec cmd` でシェルがコマンドに置き換わったときは実行されない」). The short form in "In short" keeps the first half only: "registers a command that runs when the script exits (not on SIGKILL)".
 
 **The cost, measured** in the web page with CI's fonts (IPAGothic, WenQuanYi), on nightly-backup.sh at depth 1, with the drafts above drawn in `#notes` (the second row of the table in section 4, 170 characters in English and 105 in Japanese, by a measuring test that is not committed):
 
@@ -212,8 +213,6 @@ So:
 
 ## 8. Steps
 
-The prototype and run 4 are done (section 9). Then:
-
 1. **U11a, the model (no change users see).** G1 (the traps in the state, `later` included, its probes, `runsAtExit` reading it, the sources.md row and its guard), G2 (the spec field, read by `mayFail`, `cannotFail` and `succeeds`), G3 (`returnsFailure`), G4, G5 and G6 (`stops: 'test'` in bats, and `run`'s status rule). Its tests are probes and unit tests; the explanations do not change, except where `cannotFail` reads the spec field. That PR lists those changes, if any.
 2. **U11b, the note.** The catalog fact with its drafts, the cases of run 4's fixes 1 and 2 included; the `trap … EXIT` texts of fix 3; `errexitStopNote` in src/explain/status.ts; `S.errexit` dropped from "In short"; the token text of line 27 shortened; the probe table against bash, the corpus checks, the web test; CHANGELOG bullets: one under "New" ("Under `set -e`, a line whose command can fail says that the script stops there, which trap runs, and its exit status") and one under "Fixed" ("`trap … EXIT` no longer says it runs however the script exits: not on SIGKILL"), with the examples in docs/changes/unreleased.md; [usability-9.md](usability-9.md) and this page's status updated.
 
@@ -250,8 +249,8 @@ Since 2026-11-08, the maintainer prototypes the UI and wording changes that come
 **Run 4's results** (2026-11-08, eight users, four on each variant):
 
 - 8 (b) answered from the page: 8 of 8 (run 3: 1 of 8 in the same cells). 8 (c): 8 of 8 right.
-- The `set -e` question among the top three costs: 0 users (run 3: 7).
-- All eight users named the U11 sentence as what worked.
+- The `set -e` cost of task 8 is still in 6 of 8 top-three lists, but now on line 8 (partly because 8 (c) is new). Run 3's finding in substance, that no line says what a failing command does, went from 7 users to 1 (u36's first cost).
+- Seven users named the U11 sentence as what worked (u31, u32, u33, u35, u36, u37, u38; not u34).
 - The note against the clause of "In short" (four users each): no difference overall, in the answers or in the length. Nobody called either long or noise.
 - The one measured difference leans to the clause: line 8 was among the top three costs of 4 of 4 users with the note, and of 2 of 4 with the clause. That cost comes from the sentence's silence about the trap that is not set yet (fix 1 below), which the design fixes in both forms.
 - The maintainer decided the form on 2026-11-08: the line note (section 10).
