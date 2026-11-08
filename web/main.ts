@@ -109,6 +109,7 @@ const kinds: KindControl = new KindControl({
   scriptWords: (c, kindSaid) => scripts.words(c.from, c.to, kindSaid),
   // (Out of the history: the paste and its reset stay one step there, which Ctrl+Z still takes back.)
   revertScript: (c) => editor.view.dispatch({ effects: scriptChange.of({ from: c.to, to: c.from }), annotations: Transaction.addToHistory.of(false) }),
+  askPaste: () => askDiscard(TEXT[lang].discardPasteMessage, TEXT[lang].discardPaste, document.activeElement as HTMLElement | null, focusHome),
 }, shared.kind ?? 'shell');
 /** The shell and yq of the settings, as the panel's header shows them (undefined: auto). */
 const choice = () => ({ shell: forcedShell(settings), yq: settings['yq.flavor'] === 'auto' ? undefined : settings['yq.flavor'] });
@@ -210,6 +211,7 @@ const editor: Editor = new Editor({
   // (Only where the page has the strip's line for it: the work is skipped otherwise.)
   ...(strip?.hasHint ? { shHint: (count: number | undefined) => strip.showHint(count) } : {}),
   extend: (tr) => (mode.panel ? [] : kinds.startedBy(tr)),
+  hold: (tr) => !mode.panel && kinds.held(tr),
   changed(u: ViewUpdate) {
     // A new script's state, made, taken back or made again with the text (web/script-state.ts): after the editor's update.
     // An undo or a redo of it takes the place of the toast's Undo, which would undo another step then.
@@ -641,11 +643,7 @@ function dropUndo(): void {
 async function sampleAsked(from: HTMLElement | null = document.activeElement as HTMLElement | null): Promise<void> {
   const t = TEXT[lang];
   if (fileState.file && unsaved()) {
-    const discard = await ask({
-      id: 'discard', title: t.discardTitle, message: t.discardSampleMessage(window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu),
-      confirm: { id: 'discard-open', text: t.discardLoad }, cancel: { id: 'discard-cancel', text: t.cancel },
-    }, from);
-    if (!discard) return;
+    if (!(await askDiscard(t.discardSampleMessage, t.discardLoad, from))) return;
     // (The file is not the editor's any more: the focus goes to the text, as after Open.)
     kinds.loadSample(kinds.own());
     return focusHome();
@@ -663,13 +661,7 @@ on('sample', 'click', () => void sampleAsked());
  */
 async function clearEditor(from: HTMLElement | null = document.activeElement as HTMLElement | null): Promise<void> {
   const t = TEXT[lang];
-  if (fileState.file && unsaved()) {
-    const discard = await ask({
-      id: 'discard', title: t.discardTitle, message: t.discardClearMessage(window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu),
-      confirm: { id: 'discard-open', text: t.discardClear }, cancel: { id: 'discard-cancel', text: t.cancel },
-    }, from);
-    if (!discard) return;
-  }
+  if (fileState.file && unsaved() && !(await askDiscard(t.discardClearMessage, t.discardClear, from))) return;
   const had = editor.text;
   const before = scripts.now();
   const after = scripts.fresh('shell');
@@ -749,6 +741,12 @@ setUpFocusRings();
 
 /** Whether opening a file would lose text (web/file-state.ts): the editor's text differs from the one last opened, saved or loaded, and is the user's own. */
 const unsaved = () => fileState.unsaved(editor.text, untouched);
+/** Asks before changes not saved are lost: `message` says what loses them and how to save first; true to go on. */
+const askDiscard = (message: (how: string) => string, confirm: string, from: HTMLElement | null, home?: () => void): Promise<boolean> => {
+  const t = TEXT[lang];
+  const how = window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu;
+  return ask({ id: 'discard', title: t.discardTitle, message: message(how), confirm: { id: 'discard-open', text: confirm }, cancel: { id: 'discard-cancel', text: t.cancel } }, from, home);
+};
 
 let fileTimer: ReturnType<typeof setTimeout> | undefined;
 /** The script's name as the page shows it (src/ui/fileName.ts): muted until saved or opened, ● for changes not saved. */
@@ -810,13 +808,7 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
   const read = decodeText(new Uint8Array(bytes));
   if (read === 'binary') return status('note', t.notText(chosen.name));
   if (read === 'cr') return status('note', t.loneCr(chosen.name));
-  if (unsaved()) {
-    const discard = await ask({
-      id: 'discard', title: t.discardTitle, message: t.discardMessage(chosen.name, window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu),
-      confirm: { id: 'discard-open', text: t.discard }, cancel: { id: 'discard-cancel', text: t.cancel },
-    }, back, focusHome);
-    if (!discard) return;
-  }
+  if (unsaved() && !(await askDiscard((how) => t.discardMessage(chosen.name, how), t.discard, back, focusHome))) return;
   fileState.opened({ name: chosen.name, handle }, { eol: read.eol, bom: read.bom }, read.text);
   editor.openText(read.text);
   kinds.set(kindForFile(chosen.name, read.text));

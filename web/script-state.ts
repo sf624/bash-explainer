@@ -4,7 +4,7 @@
 // This module reads the state, applies it (`scriptStates`, for web/main.ts) and carries it through the history.
 import { invertedEffects } from '@codemirror/commands';
 import { StateEffect } from '@codemirror/state';
-import { type FileSnapshot, type FileState, newScriptFile } from './file-state';
+import { type FileSnapshot, type FileState, hasName, newScriptFile } from './file-state';
 import type { KindControl } from './kinds';
 import type { Lang } from '../src/i18n';
 import { type Kind, kindInfo } from './samples';
@@ -52,14 +52,14 @@ export function scriptStates(host: ScriptHost) {
   };
   /** A new script of the kind `k`: untitled, with the shell at Auto. The compare page has no file and keeps its shell: the kind alone. */
   const fresh = (k: Kind): ScriptState => (host.withFiles ? { kind: k, file: newScriptFile(), shell: 'auto' } : { ...now(), kind: k });
-  /** What a toast says that a new script set back: its kind, unless the toast's first words name it (`kindSaid`), and the shell. */
+  /** What a toast says that a new script set back: its kind, unless the toast's first words name it (`kindSaid`), the name of its own it had, and the shell. */
   const words = (from: ScriptState, to: ScriptState, kindSaid: boolean): string => {
     const t = TEXT[host.lang()];
-    return t.newScript(to.kind !== from.kind && !kindSaid ? (t.kinds[to.kind] ?? kindInfo(to.kind).name) : undefined, to.shell !== from.shell);
+    return t.newScript(to.kind !== from.kind && !kindSaid ? (t.kinds[to.kind] ?? kindInfo(to.kind).name) : undefined, to.shell !== from.shell, hasName(from.file) && !hasName(to.file));
   };
   return {
     now, apply, fresh, words,
-    /** The change of a whole script pasted over the untouched sample (`KindHost.newScript`): none on the compare page. */
+    /** The change of a whole script pasted (`KindHost.newScript`, `KindControl.startedBy`): none on the compare page. */
     pasted: (k: Kind): ScriptChange | undefined => (host.withFiles ? { from: now(), to: fresh(k) } : undefined),
   };
 }

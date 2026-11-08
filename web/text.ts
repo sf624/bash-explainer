@@ -54,10 +54,11 @@ export const TEXT = {
     undo: 'Undo',
     detected: (kind: string) => `Detected: ${kind}`,
     /**
-     * What a new script set back (Clear, a whole script pasted into an untouched editor, Open; docs/design/usability-9.md, Q8): the file
-     * type when it changed and no other words name it, the shell when one was chosen. Empty when neither.
+     * What a new script set back (Clear, a whole script pasted, Open; docs/design/usability-9.md, Q8): the file type when it
+     * changed and no other words name it, the name when the script had one of its own (`untitled`), the shell when one was
+     * chosen. Empty when none.
      */
-    newScript: (kind: string | undefined, shell: boolean) => [kind ? `File type set to ${kind}.` : '', shell ? 'Shell set back to Auto.' : ''].filter(Boolean).join(' '),
+    newScript: (kind: string | undefined, shell: boolean, untitled = false) => [kind ? `File type set to ${kind}.` : '', untitled ? 'Name set back to untitled.' : '', shell ? 'Shell set back to Auto.' : ''].filter(Boolean).join(' '),
     /** A toast's words, then the sentences of `newScript`. */
     andThen: (first: string, more: string) => (!more ? first : !first ? more : `${first.endsWith('.') ? first : `${first}.`} ${more}`),
     askTitle: (kind: string) => `Load the ${kind} sample?`,
@@ -111,6 +112,8 @@ export const TEXT = {
     discard: 'Discard and open',
     discardLoad: 'Discard and load',
     discardClear: 'Discard and clear',
+    discardPasteMessage: (how: string) => `Pasting over the whole script starts a new script, and the changes of this file are not saved. To keep them, cancel and save first (${how}).`,
+    discardPaste: 'Discard and paste',
     cancel: 'Cancel',
     /** After a file's name, for a screen reader and in the tooltip. */
     unsaved: ' (unsaved changes)',
@@ -229,7 +232,7 @@ export const TEXT = {
     sampleLoaded: 'サンプルを読み込みました',
     undo: '元に戻す',
     detected: (kind: string) => `ファイルの種類を${jaWord(kind)}と判定しました`,
-    newScript: (kind: string | undefined, shell: boolean) => (kind ? `ファイルの種類を${jaWord(kind)}にしました。` : '') + (shell ? 'シェルを自動に戻しました。' : ''),
+    newScript: (kind: string | undefined, shell: boolean, untitled = false) => (kind ? `ファイルの種類を${jaWord(kind)}にしました。` : '') + (untitled ? '名前を untitled に戻しました。' : '') + (shell ? 'シェルを自動に戻しました。' : ''),
     andThen: (first: string, more: string) => (!more ? first : !first ? more : `${first.endsWith('。') ? first : `${first}。`}${more}`),
     askTitle: (kind: string) => `${kind} のサンプルを読み込みますか？`,
     askMessage: (kind: string) => `ファイルの種類を ${kind} に変えました。入力中のスクリプトをこの種類のサンプルに置き換えますか？ 置き換えても元に戻せます。`,
@@ -280,6 +283,8 @@ export const TEXT = {
     discard: '破棄して開く',
     discardLoad: '破棄して読み込む',
     discardClear: '破棄して空にする',
+    discardPasteMessage: (how: string) => `スクリプト全体に貼り付けると新しいスクリプトになり、このファイルの保存していない変更は失われます。残すなら、キャンセルして先に保存してください（${how}）。`,
+    discardPaste: '破棄して貼り付ける',
     cancel: 'キャンセル',
     unsaved: '（未保存の変更あり）',
     copyLink: 'リンクをコピー',

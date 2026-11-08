@@ -246,6 +246,8 @@ export interface EditorHost {
   changed(u: ViewUpdate): void;
   /** Effects to add to a transaction before it is made (a paste that starts a new script: `KindControl.startedBy`), so that they are one step of the history with it. */
   extend?(tr: Transaction): readonly StateEffect<unknown>[];
+  /** Whether a transaction is held back, the page to ask first (a whole paste over a file's changes: `KindControl.held`). */
+  hold?(tr: Transaction): boolean;
   /** The hover card's link "Settings" (web/hover.ts). */
   openSettings(): void;
   /** Says a short message in the page's live region (web/a11y.ts). */
@@ -349,6 +351,7 @@ export class Editor {
           this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.marginMode.of(roomUnderText(0)), EditorView.scrollMargins.of(() => ({ bottom: this.bottomMargin + sheetCover() })), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
           highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== SEVERITIES[FADED].codemirror) }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []), this.outlineMode.of(init.problems ? blockOutline((this.outline = host.settings().blockOutline), () => host.document()) : []),
+          EditorState.transactionFilter.of((tr) => (host.hold?.(tr) ? [] : tr)),
           EditorState.transactionExtender.of((tr) => {
             const effects = host.extend?.(tr) ?? [];
             return effects.length ? { effects } : null;

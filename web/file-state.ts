@@ -26,11 +26,13 @@ export interface FileSnapshot<H> {
 }
 
 /**
- * The file of a new script (Clear, a whole script pasted over the untouched sample; docs/design/usability-9.md, Q8), to
+ * The file of a new script (Clear, a whole script pasted; docs/design/usability-9.md, Q8), to
  * `restore`: no file's and no name given, so it is "untitled", a save asks where, and nothing of it is saved yet.
  */
 export const newScriptFile = <H>(): FileSnapshot<H> => ({ file: undefined, format: PLAIN, clean: '', draft: undefined, pending: undefined });
 
+/** Whether a script has a name of its own: a file's, or one given (`FileState.named`; a new script's toast says it went back). */
+export const hasName = <H>(s: FileSnapshot<H>): boolean => s.file !== undefined || s.draft !== undefined;
 /** `H`: the type of a file handle (the page's: `FileSystemFileHandle`, which the unit tests, without the DOM, do not name). */
 export class FileState<H> {
   /** The file the script was opened from or last saved to; undefined while it never was. */
@@ -64,7 +66,7 @@ export class FileState<H> {
 
   /** Whether the script has a name of its own (a file's, or one given): the page's title then says it. */
   named(): boolean {
-    return this.file !== undefined || this.draft !== undefined;
+    return hasName(this.snapshot());
   }
 
   /** Whether the editor holds the user's own text: a file's (even an empty one), or text that is no sample (`untouched`). */
