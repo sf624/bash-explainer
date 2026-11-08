@@ -1,11 +1,13 @@
-// The generic reader of a command's words: which are options, option values, operands, subcommands and wrapped commands, according to the command's spec (src/argv/spec.ts).
+// The generic reader of a command's words: which are options, option values, operands, subcommands
+// and wrapped commands, according to the command's spec (src/argv/spec.ts).
 //
-// It works in four passes: split the words into options and operands, choose the mode, match the operands with the spec's patterns, and read the words of a command slot as a command of its own.
+// It works in four passes: split the words into options and operands, choose the mode, match the
+// operands with the spec's patterns, and read the words of a command slot as a command of its own.
 import { isExpressionStart } from '../embedded/find';
 import { untilEnd, type UntilRefusal, untilWord } from './until';
 import type { Text } from '../i18n';
 import { EnvSplitError, splitEnvString } from './envsplit';
-import { negatedOption, type ParserRules, rulesOf } from './parsers';
+import { booleanOff, type ParserRules, rulesOf, writtenOption } from './parsers';
 import { type Depends, type WordReadings, wordReadings } from './profiles';
 import { ignoring, type InEffect, settleModes } from './modes';
 import { placeholderIn, type PlaceholderRole } from './placeholders';
@@ -60,8 +62,7 @@ export interface ArgWord {
 
 export type ArgRole =
   /**
-   * An option, alone or as a letter of a cluster; `flag` is as written (`+x` for `set +x`, with `disables`; `--nostamp`
-   * with `disables` and `negated`, the name of the option it turns off, `--stamp`: the parser rule `negation`).
+   * An option, alone or as a letter of a cluster; `flag` is as written (`+x` for `set +x`, with `disables`; `--nostamp`, with `negated`: `writtenOption`).
    * `value` is a value written in the same word (`-n5`, `--file=x`); `missing`, a value it needs that no word gives.
    * `readings`, as an operand's (`grep -e $p -i f`: with `$p` empty, `-i` is the value of `-e`).
    */
@@ -387,7 +388,8 @@ class Reader {
           continue;
         }
       }
-      // An operand. The first one may name a subcommand, whose spec reads the rest (or the one cobra finds, when its search did not stop at a word not known).
+      // An operand. The first one may name a subcommand, whose spec reads the rest (or the one cobra finds,
+      // when its search did not stop at a word not known).
       const sub = (found ? i === found.at : !operands.length) && value !== undefined ? subcommand(spec, value) : undefined;
       if (sub) {
         const inherit = [...inherited, ...(spec.options ?? []).filter((o) => o.persistent)];
@@ -593,7 +595,8 @@ class Reader {
     const shift = written.length - text.length;
     const blocked = (o: { unlessMarked?: string }): boolean => !!o.unlessMarked && given.marks.has(o.unlessMarked);
     const mark = (o: { marks?: string }): void => { if (o.marks) given.marks.add(o.marks); };
-    // (`longFirst`, bash: `-login` is `--login` while the long options are read; a long option after a short one is read as letters, and refused.)
+    // (`longFirst`, bash: `-login` is `--login` while the long options are read; a long option after a short one is
+    // read as letters, and refused.)
     const longName = rules.longFirst && !st.shortSeen && !open && !disables && /^-[^-]/.test(text) && findOption(options, '-' + text, false) ? '-' + text : undefined;
     if (rules.longFirst && !longName) {
       if (!/^--./.test(text) || disables) st.shortSeen = true;
@@ -604,13 +607,10 @@ class Reader {
       }
     }
     if (!open) {
-      const found = findOption(options, longName ?? text, rules.longPrefixes);
-      // (bazel's `--nostamp` and `-t-` turn a boolean option off: the rule `negation`.)
-      const off = found || !rules.negation ? undefined : negatedOption(options, text);
-      const exact = found ?? off?.option;
+      const { option: exact, negated } = writtenOption(rules, options, text, findOption(options, longName ?? text, rules.longPrefixes));
       if (exact) {
         if (blocked(exact)) return -1;
-        const role: ArgRole = { role: 'option', flag: written, spec: exact, text: exact.text, ...(disables && !exact.signless ? { disables } : off ? { disables: true, negated: off.name } : {}) };
+        const role: ArgRole = { role: 'option', flag: written, spec: exact, text: exact.text, ...(disables && !exact.signless ? { disables } : negated ? { disables: true, negated } : {}) };
         roles.set(i, role);
         given.specs.push(exact);
         given.flags.push(text);
@@ -643,7 +643,7 @@ class Reader {
       const value: ValueRole = { role: 'value', of: flag, ...(opt ? { option: opt, spec: valuesOf(opt)[0] } : {}), index: 0, attached: eq + 1 + shift };
       given.flags.push(flag);
       if (!opt) { roles.set(i, { role: 'unknown-option', flag, value, ...(spec.unknownOption ? { refused: spec.unknownOption } : {}), ...ambiguous(lookupOption(options, flag, rules.longPrefixes)) }); return i; }
-      roles.set(i, { role: 'option', flag, spec: opt, text: opt.text, value });
+      roles.set(i, { role: 'option', flag, spec: opt, text: opt.text, value, ...booleanOff(rules, opt, flag, text.slice(eq + 1)) });
       given.specs.push(opt);
       mark(opt);
       return this.separateValues(st, opt, flag, i, 1);

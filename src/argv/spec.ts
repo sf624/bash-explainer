@@ -109,6 +109,11 @@ export interface CommandSpec {
   /** With `operandParser`: the spec the words of the expression are read with (find's tests and actions, `-name x`, `-exec … ;`). */
   expressionSpec?: CommandSpec;
   /**
+   * The command that lists the program's options, where it has no manual page (`bazel help build`): an option the spec
+   * does not list points there, not to `man`.
+   */
+  helpCommand?: string;
+  /**
    * What an option the spec does not list does, when the command refuses every other option (bats `run`: an error;
    * bash when it starts: `invalid option`, status 2). (bats' `run` and bash only: other entries do not list every
    * option, so an unknown one is only "not in the dictionary".)
