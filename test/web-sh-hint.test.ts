@@ -232,9 +232,9 @@ describe('the web page: the hint toward POSIX sh', function () {
       if (await page.locator('#readtip').isVisible()) await page.locator('#readtip-close').tap();
       await page.locator('#tab-problems').tap();
       await hint(page).waitFor({ state: 'visible' });
-      // The tab counts the problems of bash alone (nothing, or one caveat), as before.
+      // The tab counts the problems of bash alone (one caveat), or says there are none with the hint's count, which is no problem.
       const said = await page.locator('#tab-problems').getAttribute('aria-label');
-      assert.ok(text === ONLY_SH ? !/\d/.test(said ?? '') : /1/.test(said ?? ''), said ?? '');
+      assert.strictEqual(said, text === ONLY_SH ? `No problems; ${shIssues(text)} constructs not in POSIX sh` : 'Problems: 1 caveat');
       const [pane, line, button] = await Promise.all(['#panel-pane', '#problems-sh', '#sh-hint-button'].map((s) => page.locator(s).boundingBox()));
       assert.ok(line!.x >= pane!.x - 0.5 && line!.x + line!.width <= pane!.x + pane!.width + 0.5, JSON.stringify([pane, line]));
       assert.ok(line!.y + line!.height <= pane!.y + pane!.height + 0.5 && button!.height >= 44 - 0.5, JSON.stringify([pane, line, button]));
@@ -242,4 +242,113 @@ describe('the web page: the hint toward POSIX sh', function () {
       await page.context().close();
     }
   });
+
+  // The phone's Problems tab (usability-9.md, U12; the maintainer's decision of 2026-11-08, after run 4): with no problem,
+  // ✓ and the hint's count, "✓ · sh 2", so that a reader finds the hint behind the tab; in its name too. With problems,
+  // their counts alone, as before; nothing where POSIX sh lacks nothing.
+  const phone = async (width: number, lang: 'en' | 'ja'): Promise<BrowserContextOptions> => ({ ...(await import('playwright-core')).devices['iPhone 13'], viewport: { width, height: 740 }, locale: lang === 'ja' ? 'ja-JP' : 'en-US' });
+  const tab = (page: Page) => page.locator('#tab-problems');
+  const shSaid = (lang: 'en' | 'ja', n: number) => (lang === 'en' ? `${n} constructs not in POSIX sh` : `POSIX sh にない書き方が ${n} 件`);
+  /** The sheet's row as drawn: whether it was squeezed, how far its tabs and the view control reach past the row (px, 0 when inside), and the page's own overflow. */
+  const row = (page: Page) => page.evaluate(`(() => {
+    const head = document.getElementById('panel-head');
+    const shown = (e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
+    const parts = [...head.querySelectorAll('#panel-tabs [role=tab], #view-slot')].filter(shown).map((e) => e.getBoundingClientRect());
+    const hr = head.getBoundingClientRect();
+    const tab = document.getElementById('tab-problems');
+    return {
+      squeeze: head.dataset.squeeze !== undefined,
+      past: Math.max(0, head.scrollWidth - head.clientWidth, ...parts.map((r) => r.right - hr.right), ...parts.map((r) => hr.left - r.left), tab.scrollWidth - tab.clientWidth),
+      overlap: parts.some((a, i) => parts.some((b, j) => j > i && a.left < b.right - 0.5 && b.left < a.right - 0.5)),
+      page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  })()`) as Promise<{ squeeze: boolean; past: number; overlap: boolean; page: number }>;
+  /** How the row lays out the tab: the form's parts, and where the count lies against the ✓ (beside it, past the dot, or under it). */
+  const form = (page: Page) => page.evaluate(`(() => {
+    const head = document.getElementById('panel-head');
+    const tab = document.getElementById('tab-problems');
+    const mark = tab.querySelector('.tab-counts').getBoundingClientRect();
+    const sh = tab.querySelector('.sh-count')?.getBoundingClientRect();
+    const dot = tab.querySelector('.tab-sep')?.getBoundingClientRect();
+    return {
+      parts: { view: document.getElementById('view-slot').dataset.form, tabs: head.dataset.tabs, line: head.dataset.line },
+      sh: head.dataset.sh,
+      beside: !!sh && !!dot && mark.right <= dot.left + 0.5 && dot.right <= sh.left + 0.5 && Math.abs((sh.top + sh.bottom) / 2 - (mark.top + mark.bottom) / 2) < 3,
+      under: !!sh && !dot && sh.top >= mark.bottom - 0.5,
+    };
+  })()`) as Promise<{ parts: object; sh: string; beside: boolean; under: boolean }>;
+  async function retype(page: Page, text: string): Promise<void> {
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText(text);
+  }
+
+  for (const width of [390, 360]) {
+    for (const lang of ['en', 'ja'] as const) {
+      it(`shows the count of the constructs not in POSIX sh on the phone's Problems tab with no problem, and says it: ${width} px, ${lang}`, async () => {
+        const page = await open(await phone(width, lang), ONLY_SH);
+        const n = shIssues(ONLY_SH);
+        await until('the tab\'s count', () => tab(page).textContent(), (t) => t === `✓·sh ${n}` || t === `✓sh ${n}`);
+        const none = lang === 'en' ? 'No problems; ' : '問題なし。';
+        assert.strictEqual(await tab(page).getAttribute('aria-label'), none + shSaid(lang, n));
+        assert.match(await tab(page).ariaSnapshot(), new RegExp(`^- tab "${none}${shSaid(lang, n)}": ✓( · | ?)sh ${n}$`));
+        const f = await form(page);
+        assert.ok(f.sh === 'dot' ? f.beside : f.under, JSON.stringify(f));
+        assert.deepStrictEqual(await row(page), { squeeze: false, past: 0, overlap: false, page: 0 });
+        // With a problem of bash's own: its count alone, as before (the hint is the line in the tab).
+        await retype(page, BOTH);
+        await until('the tab\'s count', () => tab(page).textContent(), (t) => t === 'ⓘ1');
+        assert.strictEqual(await tab(page).getAttribute('aria-label'), lang === 'en' ? 'Problems: 1 caveat' : '問題：注意 1 件');
+        // A script POSIX sh reads as bash does: ✓ alone, and "No problems".
+        await retype(page, 'echo hi\n');
+        await until('the ✓ alone', () => tab(page).textContent(), (t) => t === '✓');
+        assert.strictEqual(await tab(page).getAttribute('aria-label'), lang === 'en' ? 'No problems' : '問題なし');
+        await page.context().close();
+      });
+    }
+  }
+
+  // The count costs the row nothing it shows with ✓ alone (as main lays it out: the depth's segments 「概要」「単語ごと」 and
+  // 「早見表」 in Japanese, the line "Ln 3" in English); beside the ✓ at 390 px, the iPhone 13's width, and under it where
+  // the row has no room for it there.
+  for (const [width, lang, parts, sh] of [
+    [390, 'en', { view: 'menu', tabs: 'short', line: 'true' }, 'dot'],
+    [430, 'en', { view: 'menu', tabs: 'full', line: 'true' }, undefined],
+    [360, 'en', { view: 'menu', tabs: 'short', line: 'false' }, undefined],
+    [390, 'ja', { view: 'segments', tabs: 'full', line: 'true' }, 'dot'],
+    [360, 'ja', { view: 'segments', tabs: 'full', line: 'true' }, undefined],
+    [320, 'ja', { view: 'segments', tabs: 'full', line: 'true' }, undefined],
+  ] as const) {
+    it(`keeps the row's other parts beside the sh count: ${width} px, ${lang}`, async () => {
+      const page = await open(await phone(width, lang), ONLY_SH);
+      await until('the tab\'s count', () => tab(page).locator('.sh-count').count(), (c) => c === 1);
+      await page.waitForTimeout(300);
+      const f = await form(page);
+      assert.deepStrictEqual(f.parts, parts, JSON.stringify(f));
+      if (sh) assert.strictEqual(f.sh, sh, JSON.stringify(f));
+      assert.ok(f.sh === 'dot' ? f.beside : f.under, JSON.stringify(f));
+      assert.deepStrictEqual(await row(page), { squeeze: false, past: 0, overlap: false, page: 0 });
+      await page.context().close();
+    });
+  }
+
+  // A long count with no problem ("sh 12"): inside the row at every phone width.
+  const MANY = `${'[[ -f a ]] && echo y\n'.repeat(11)}arr=(a b)\n`;
+  for (const width of [320, 360, 390]) {
+    for (const lang of ['en', 'ja'] as const) {
+      it(`keeps the sheet's row inside its width with a two-digit sh count: ${width} px, ${lang}`, async () => {
+        const page = await open(await phone(width, lang), ONLY_SH);
+        await retype(page, MANY);
+        const sh = shIssues(MANY);
+        assert.ok(sh >= 10, String(sh));
+        await until('the long count', () => tab(page).locator('.sh-count').textContent(), (t) => t === `sh ${sh}`);
+        await page.waitForTimeout(300);
+        const m = await row(page);
+        assert.deepStrictEqual({ past: m.past, overlap: m.overlap, page: m.page }, { past: 0, overlap: false, page: 0 }, JSON.stringify(m));
+        // (In English at 320 px the Explanation tab's word is cut with ✓ alone too: never the row.)
+        if (lang === 'ja' || width > 320) assert.strictEqual(m.squeeze, false, JSON.stringify(m));
+        await page.context().close();
+      });
+    }
+  }
 });

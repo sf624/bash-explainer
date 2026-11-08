@@ -158,7 +158,10 @@ export function keyed(snap: Snap, key: string): Snap | undefined {
 /**
  * A form of the sheet's header row (decision 9): the view control's form; the panel's tools with their words under
  * their icons, or not in the row; the Explanation tab with its quiet line ("Ln 8") or without; the Reference tab's word
- * in full or short ("Ref"); the Problems tab with the count of each level that has problems, or of the highest only.
+ * in full or short ("Ref"); the Problems tab with the count of each level that has problems, or of the highest only,
+ * and, with no problem, the count of the constructs POSIX sh lacks after the ✓, past a dot ("✓ · sh 2"), or under it,
+ * smaller, where the row has no room for it beside it (`stack`: the tab is then hardly wider than with ✓ alone, so the
+ * count takes nothing from the rest of the row).
  */
 export interface SheetForm {
   view: ViewForm;
@@ -166,6 +169,7 @@ export interface SheetForm {
   line: boolean;
   ref: 'full' | 'short';
   counts: 'all' | 'top';
+  sh: 'dot' | 'stack';
 }
 
 /**
@@ -179,23 +183,34 @@ export const SHEET_TOOLS_WIDTH = 600;
  * The forms of the sheet's header row, in order: the page takes the first that fits. The tools go first where the row
  * is a tablet's (`SHEET_TOOLS_WIDTH`; on a phone they leave it: the explanation's rows fold one by one), then
  * "Reference" is shortened, then the Problems tab keeps only its highest level (its name still has every count), and
- * last the line goes (decision 9, the maintainer's order of 2026-11-01).
+ * last the line goes (decision 9, the maintainer's order of 2026-11-01). Each form comes first with the sh count beside
+ * the ✓, then with it under it (usability-9.md, U12): the count never costs the row anything else it would show.
  */
 export function sheetForms(control: ViewControl, rowWidth: number): SheetForm[] {
   const views = viewControlForms(control);
   const menu = views[views.length - 1];
   const full = { line: true, ref: 'full' as const, counts: 'all' as const };
-  return [
+  const forms: Omit<SheetForm, 'sh'>[] = [
     ...(rowWidth >= SHEET_TOOLS_WIDTH ? views.map((view) => ({ view, tools: 'under' as const, ...full })) : []),
     ...views.map((view) => ({ view, tools: 'none' as const, ...full })),
     { view: menu, tools: 'none', ...full, ref: 'short' },
     { view: menu, tools: 'none', ...full, ref: 'short', counts: 'top' },
     { view: menu, tools: 'none', ...full, ref: 'short', counts: 'top', line: false },
   ];
+  return forms.flatMap((form) => [{ ...form, sh: 'dot' as const }, { ...form, sh: 'stack' as const }]);
 }
 
 /** What the Problems tab shows while there is no problem (its name says "No problems"). */
 export const NO_PROBLEMS = '✓';
+
+/**
+ * What the Problems tab shows after its ✓ (no problem) where the script has constructs POSIX sh lacks: their count
+ * ("sh 2", beside the counts or under them: `SheetForm.sh`), the one of the strip's hint toward sh (`DiagnosticsFor.sh`, docs/design/usability-9.md, U12), which is no
+ * problem; nothing for none. In every language, as the marks are.
+ */
+export function shTally(sh: number | undefined): string | undefined {
+  return sh ? `sh ${sh}` : undefined;
+}
 
 /** The counts the Problems tab shows, from the level of each problem: every level that has problems, highest first, or the highest only. */
 export function problemCounts(levels: readonly NoteLevel[], counts: SheetForm['counts']): { level: NoteLevel; n: number }[] {

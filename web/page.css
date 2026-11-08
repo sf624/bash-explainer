@@ -3033,6 +3033,8 @@ body:has(> #settings-dialog.dragging) main {
 
 :where(html.bottom-sheet) #tab-problems {
   display: inline-flex;
+  /* (Its counts are never cut: where nothing fits, the Explanation tab's word is.) */
+  flex: none;
 }
 
 /* The Explanation tab's line, quiet ("Ln 8"); the Problems tab's counts, each level's mark in its colour. */
@@ -3053,6 +3055,37 @@ body:has(> #settings-dialog.dragging) main {
 
 #tab-problems .count + .count {
   margin-left: 6px;
+}
+
+/* After the counts (or ✓), the count of the constructs POSIX sh lacks ("✓ · sh 2"), which is no problem: quiet, as the line. */
+#tab-problems .tab-sep {
+  margin: 0 3px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* (The tab with the count: its sides a little thinner, so that "✓ · sh 2" fits where ✓ alone did, at 390 px.) */
+:where(html.bottom-sheet) #tab-problems.with-sh {
+  padding: 0 6px;
+}
+
+#tab-problems .sh-count {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Where the row has no room for it beside the ✓, the count goes under it, smaller (src/ui/sheet.ts `sheetForms`): it
+   takes nothing from the rest of the row. */
+:where(html.bottom-sheet) .panel-head[data-sh="stack"] #tab-problems {
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1.15;
+}
+
+.panel-head[data-sh="stack"] #tab-problems .sh-count {
+  font-size: 11.5px;
 }
 
 /* Where the sheet's row has no room for the panel's tools, the menu has Copy as Markdown (in its Share group). */

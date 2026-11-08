@@ -126,6 +126,11 @@ export class PanelBridge {
     this.head?.counts(levels);
   }
 
+  /** The count of the hint toward POSIX sh: the header's Problems tab shows it after its counts (on a phone). */
+  shCount(sh: number | undefined): void {
+    this.head?.shCount(sh);
+  }
+
   /** Shows the Explanation tab (on a phone, after a problem was chosen in the Problems tab). */
   explain(): void {
     this.head?.explain();

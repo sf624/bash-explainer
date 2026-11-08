@@ -207,8 +207,8 @@ const editor: Editor = new Editor({
     strip?.show(list);
     panel.problems(problemLevels(list.map((i) => i.severity)));
   },
-  // (Only where the page has the strip's line for it: the work is skipped otherwise.)
-  ...(strip?.hasHint ? { shHint: (count: number | undefined) => strip.showHint(count) } : {}),
+  // (Only where the page has the strip's line for it, whose count the phone's Problems tab shows too, usability-9.md U12: the work is skipped otherwise.)
+  ...(strip?.hasHint ? { shHint: (count: number | undefined) => { strip.showHint(count); panel.shCount(count); } } : {}),
   extend: (tr) => (mode.panel ? [] : kinds.startedBy(tr)),
   changed(u: ViewUpdate) {
     // A new script's state, made, taken back or made again with the text (web/script-state.ts): after the editor's update.

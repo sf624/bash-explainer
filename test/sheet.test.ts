@@ -2,7 +2,7 @@
 // where a drag, a tap or a key leaves it, its height while the keyboard is open, and the forms of its header row. The page measures and wires them
 // (test/web-sheet.test.ts).
 import * as assert from 'assert';
-import { cursorFollows, dragRange, FLING, FLING_TRAVEL, FULL_GAP, problemCounts, settle, SHEET_TOOLS_WIDTH, sheetForms, sheetHeight, type Snap, snapHeights, tapped, keyed } from '../src/ui/sheet';
+import { cursorFollows, dragRange, FLING, FLING_TRAVEL, FULL_GAP, problemCounts, settle, shTally, SHEET_TOOLS_WIDTH, sheetForms, sheetHeight, type Snap, snapHeights, tapped, keyed } from '../src/ui/sheet';
 import { viewControlForms } from '../src/ui/panelHead';
 import { viewControl } from '../src/ui/panelView';
 
@@ -169,6 +169,7 @@ describe('the phone\'s sheet as data', () => {
       const [segments, menu] = viewControlForms(control);
       // (A phone's row has no tools, in every language: their room does not depend on the words' widths.)
       assert.deepStrictEqual(sheetForms(control, SHEET_TOOLS_WIDTH - 1), sheetForms(control, SHEET_TOOLS_WIDTH).filter((f) => f.tools === 'none'), lang);
+      // (Each form with the sh count beside the counts, then under them: usability-9.md, U12.)
       assert.deepStrictEqual(sheetForms(control, SHEET_TOOLS_WIDTH), [
         { view: segments, tools: 'under', line: true, ref: 'full', counts: 'all' },
         { view: menu, tools: 'under', line: true, ref: 'full', counts: 'all' },
@@ -177,7 +178,7 @@ describe('the phone\'s sheet as data', () => {
         { view: menu, tools: 'none', line: true, ref: 'short', counts: 'all' },
         { view: menu, tools: 'none', line: true, ref: 'short', counts: 'top' },
         { view: menu, tools: 'none', line: false, ref: 'short', counts: 'top' },
-      ], lang);
+      ].flatMap((f) => [{ ...f, sh: 'dot' }, { ...f, sh: 'stack' }]), lang);
     }
   });
 
@@ -189,5 +190,12 @@ describe('the phone\'s sheet as data', () => {
     assert.deepStrictEqual(problemCounts(['info'], 'top'), [{ level: 'info', n: 1 }]);
     assert.deepStrictEqual(problemCounts([], 'all'), []);
     assert.deepStrictEqual(problemCounts([], 'top'), []);
+  });
+
+  it('gives the Problems tab the count of the constructs not in POSIX sh, and nothing for none or before it is known', () => {
+    assert.strictEqual(shTally(2), 'sh 2');
+    assert.strictEqual(shTally(12), 'sh 12');
+    assert.strictEqual(shTally(0), undefined);
+    assert.strictEqual(shTally(undefined), undefined);
   });
 });

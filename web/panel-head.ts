@@ -5,7 +5,8 @@
 // that fits its row. Each press says the state it wants (web/panel-bridge.ts sends it to the panel); nothing here
 // presses the panel's own buttons.
 // On a phone the header is the bottom sheet's (web/sheet.ts; step C8a): a grab strip of 22 px (set to half of 44 px after the maintainer's check on a real device, 2026-11-08) over a 48 px row with the
-// tabs Explanation (with the cursor's line, "Ln 8"), Problems (its counts by level) and Reference, and the view control
+// tabs Explanation (with the cursor's line, "Ln 8"), Problems (its counts by level, or ✓ with the count of the hint
+// toward POSIX sh: "✓ · sh 2", usability-9.md, U12) and Reference, and the view control
 // as a pill (docs/design/usability-9.md, 2.5); its forms
 // come from src/ui/sheet.ts `sheetForms` (decision 9). The Problems tab shows the page's own list in the sheet.
 import '../media/view-control.js';
@@ -13,7 +14,7 @@ import type { Lang } from '../src/i18n';
 import { levelCounts, LEVELS, type NoteLevel } from '../src/levels';
 import { panelHeaderForms, panelTools, ViewForm } from '../src/ui/panelHead';
 import type { PanelState, ViewControl } from '../src/ui/panelView';
-import { NO_PROBLEMS, problemCounts, type SheetForm, sheetForms } from '../src/ui/sheet';
+import { NO_PROBLEMS, problemCounts, type SheetForm, sheetForms, shTally } from '../src/ui/sheet';
 import { drawIcon } from './icons';
 import { fitsRow, narrow } from './layout';
 import { focusBack } from './popover';
@@ -51,6 +52,8 @@ export class PanelHead {
   private problems = false;
   /** The level of each problem, for the Problems tab's counts. */
   private levels: NoteLevel[] = [];
+  /** The count of the strip's hint toward POSIX sh (no problem), which the Problems tab shows after its ✓. */
+  private sh: number | undefined;
   /** The cursor's line (from 0), for the Explanation tab's "Ln 8". */
   private line = 0;
   /** The form the sheet's row took last. */
@@ -97,20 +100,31 @@ export class PanelHead {
   }
 
   /**
+   * The count of the hint toward POSIX sh changed (web/problem-list.ts shows the hint itself): with no problem, the
+   * Problems tab shows it after its ✓, so that a reader of a phone finds the hint behind the tab (usability-9.md, U12).
+   */
+  shCount(sh: number | undefined): void {
+    if (sh === this.sh) return;
+    this.sh = sh;
+    this.nameProblems();
+    this.refit();
+  }
+
+  /**
    * The sheet's row takes its form again after a text in it changed (the counts, the line). Not while the view's menu
    * is open: trying a form closes it. The texts are then drawn in the form shown, and the form is taken at the next fit.
    */
   private refit(): void {
     if (!sheetLayout()) return;
-    if (this.head.querySelector('.view-slot[data-open="true"]') && this.sheetForm) this.drawCounts(this.sheetForm.counts);
+    if (this.head.querySelector('.view-slot[data-open="true"]') && this.sheetForm) this.drawCounts(this.sheetForm);
     else this.fit();
   }
 
-  /** The Problems tab's name and tooltip: every count in words ("Problems: 5 warnings, 6 caveats"). */
+  /** The Problems tab's name and tooltip: every count in words ("Problems: 5 warnings, 6 caveats"), or none, with the hint's ("No problems; 2 constructs not in POSIX sh"). */
   private nameProblems(): void {
     const t = TEXT[this.host.lang()];
     const problems = this.head.querySelector<HTMLElement>('#tab-problems');
-    const said = this.levels.length ? t.problemsSaid(levelCounts(this.levels, this.host.lang())) : t.noProblems;
+    const said = this.levels.length ? t.problemsSaid(levelCounts(this.levels, this.host.lang())) : this.sh ? t.noProblemsSh(t.shHint(this.sh)) : t.noProblems;
     problems?.setAttribute('aria-label', said);
     if (problems) problems.title = said;
   }
@@ -191,14 +205,25 @@ export class PanelHead {
     this.fit();
   }
 
-  /** The Problems tab's counts in a form of the sheet's row: each level's mark in its colour and its number ("⚠5 ⓘ6"). */
-  private drawCounts(counts: SheetForm['counts']): void {
+  /**
+   * The Problems tab's counts in a form of the sheet's row: each level's mark in its colour and its number ("⚠5 ⓘ6"), or
+   * ✓ with no problem, and then, where the script has constructs POSIX sh lacks, their count: after a dot ("✓ · sh 2"),
+   * or under the ✓ where the row has no room for it beside it (the form's `sh`, which the row's `data-sh` lays out). With
+   * problems the count is not shown: the hint is the line of the list (the maintainer, 2026-11-08, after run 4).
+   */
+  private drawCounts({ counts, sh: way }: SheetForm): void {
     const tally = problemCounts(this.levels, counts);
-    this.head.querySelector('#tab-problems')?.replaceChildren(...(tally.length ? tally.map(({ level, n }) => {
-      const count = Object.assign(document.createElement('span'), { className: 'count', textContent: String(n) });
-      count.prepend(Object.assign(document.createElement('span'), { className: `icon ${LEVELS[level].className}`, textContent: LEVELS[level].mark }));
+    const span = (className: string, textContent: string) => Object.assign(document.createElement('span'), { className, textContent });
+    const marks = span('tab-counts', tally.length ? '' : NO_PROBLEMS);
+    marks.append(...tally.map(({ level, n }) => {
+      const count = span('count', String(n));
+      count.prepend(span(`icon ${LEVELS[level].className}`, LEVELS[level].mark));
       return count;
-    }) : [NO_PROBLEMS]));
+    }));
+    const sh = tally.length ? undefined : shTally(this.sh);
+    const tab = this.head.querySelector('#tab-problems');
+    tab?.classList.toggle('with-sh', !!sh);
+    tab?.replaceChildren(marks, ...(sh ? [...(way === 'dot' ? [span('tab-sep', '·')] : []), span('sh-count', sh)] : []));
   }
 
   /** Takes the first form of the header that fits its row; when none does, its groups wrap (in the sheet: the Explanation tab's word is cut). */
@@ -215,8 +240,9 @@ export class PanelHead {
         this.head.dataset.tools = form.tools;
         this.head.dataset.tabs = form.ref;
         this.head.dataset.line = String(form.line);
+        this.head.dataset.sh = form.sh;
         explain?.setAttribute('aria-label', form.line ? `${t.tabExplanation} ${t.line(this.line + 1)}` : t.tabExplanation);
-        this.drawCounts(form.counts);
+        this.drawCounts(form);
         this.sheetForm = form;
         if (fitsRow(this.head)) return;
       }
@@ -224,6 +250,7 @@ export class PanelHead {
       return;
     }
     delete this.head.dataset.line;
+    delete this.head.dataset.sh;
     explain?.setAttribute('aria-label', t.tabExplanation);
     for (const form of panelHeaderForms(control)) {
       this.view.draw(control, form.view);

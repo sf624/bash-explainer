@@ -28,6 +28,8 @@ export const TEXT = {
     // The strip's hint toward POSIX sh (web/problem-list.ts): how many constructs the script has that POSIX sh lacks or runs differently (the dialect issues for sh), and the button that checks the script as sh.
     shHint: (n: number) => `${n} ${n === 1 ? 'construct' : 'constructs'} not in POSIX sh`,
     shHintButton: 'Check as POSIX sh',
+    // The phone's Problems tab (web/panel-head.ts) with no problem: its name, with the hint's text (`shHint`).
+    noProblemsSh: (sh: string) => `No problems; ${sh}`,
     problemsSaid: (counts: readonly string[]) => `Problems: ${counts.join(', ')}`,
     problemPosSaid: (line: number, i: number, n: number) => `Problem ${i} of ${n}, ${lineLabel('en', line, 'inline')}`,
     prevProblem: 'Previous problem',
@@ -206,6 +208,7 @@ export const TEXT = {
     noProblems: '問題なし',
     shHint: (n: number) => `POSIX sh にない書き方が ${n} 件`,
     shHintButton: 'POSIX sh として確認',
+    noProblemsSh: (sh: string) => `問題なし。${sh}`,
     problemsSaid: (counts: readonly string[]) => `問題：${counts.join('、')}`,
     problemPosSaid: (line: number, i: number, n: number) => `${n} 件中 ${i} 件目の問題、${lineLabel('ja', line)}`,
     prevProblem: '前の問題',
