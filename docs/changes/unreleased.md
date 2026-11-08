@@ -170,7 +170,7 @@ On a phone held upright (a sheet's row under 600 px), the explanation's header h
 
 - **The summary row after a quick swipe.** A quick swipe down left Chromium (Chrome on Android) with a fling that nothing took, and the next tap only stopped it: a tap on the folded sheet's summary row was lost, 150 ms as well as 700 ms after the swipe. The page now takes the moves of a drag itself.
 - **The header after a drag.** For 400 ms after a drag, every click on the header was dropped, so that the click that ends a mouse drag goes nowhere. Now only that click is dropped: a tap right after a drag (on a tab, the depth's control, the grab strip) works.
-- **The scroll.** A move of the sheet (a drag, a tap, a key) brings the cursor's line back into view only when some of it showed before the move. Before, a reader who had scrolled away from the cursor was pulled back: at 390 x 664, from 4,058 px down to the top.
+- **The scroll.** A move of the sheet (a drag, a tap, a key) brings the cursor's line back into view only when some of it showed before the move; the keyboard opening or closing still brings it back, as you type there. Before, a reader who had scrolled away from the cursor was pulled back: at 390 x 664, from 4,058 px down to the top.
 
 ### The cases of a test's example
 

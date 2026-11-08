@@ -53,9 +53,14 @@ describe('the phone\'s sheet as data', () => {
     assert.strictEqual(cursorFollows({ ...room, fold: false }, room, true), true);
     assert.strictEqual(cursorFollows(room, { ...room, fold: false }, true), true);
     assert.strictEqual(cursorFollows({ ...room, fold: false }, { ...room, fold: false, height: 340 }, true), true);
-    // A reader who scrolled away from the cursor stays where they read, whatever moved (#659: 4,058 px back to the top).
-    for (const [before, now] of [[undefined, room], [{ ...room, fold: false }, room], [room, { ...room, height: 260 }], [{ ...room, fold: false }, { ...room, fold: false, height: 340 }]] as const) {
-      assert.strictEqual(cursorFollows(before, now, false), false);
+    // A reader who scrolled away from the cursor stays where they read when the sheet moves (#659: 4,058 px back to the
+    // top), or the window changes under the fold; but the fold starting or ending brings the line back: they type there.
+    const off = { ...room, fold: false };
+    for (const [before, now] of [[undefined, off], [off, { ...off, height: 340 }], [off, { ...off, height: 260 }], [room, { ...room, height: 260 }], [room, { ...room, width: 844 }]] as const) {
+      assert.strictEqual(cursorFollows(before, now, false), false, JSON.stringify([before, now]));
+    }
+    for (const [before, now] of [[undefined, room], [off, room], [room, off]] as const) {
+      assert.strictEqual(cursorFollows(before, now, false), true, JSON.stringify([before, now]));
     }
   });
 

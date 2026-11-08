@@ -86,14 +86,15 @@ export interface EditorRoom {
 }
 
 /**
- * Whether the cursor's line is brought back into view after the sheet moved: when it showed before the move (`shown`: in
- * what the sheet left of the editor), but while the keyboard's fold stays on with no less room. A reader who scrolled
- * away from the cursor stays where they read (a move pulled them back from 4,058 px to the top, #659). And with the
- * keyboard open, the moves are the visual viewport's pans (a reader scrolling), which hide nothing, and leave the editor
- * where the reader scrolled it.
+ * Whether the cursor's line is brought back into view after the sheet moved. Always when the keyboard's fold starts or
+ * ends: the reader types at the cursor. Otherwise only when the line showed before the move (`shown`: in what the sheet
+ * left of the editor), since a reader who scrolled away from it stays where they read (a move pulled them back from
+ * 4,058 px to the top, #659); and not while the fold stays on with no less room, where the moves are the visual
+ * viewport's pans (a reader scrolling with the keyboard open), which hide nothing.
  */
 export function cursorFollows(before: EditorRoom | undefined, now: EditorRoom, shown: boolean): boolean {
-  return shown && (!before?.fold || !now.fold || before.width !== now.width || now.height < before.height);
+  if (!!before?.fold !== now.fold) return true;
+  return shown && (!now.fold || before!.width !== now.width || now.height < before!.height);
 }
 
 /**
