@@ -57,21 +57,18 @@ export function readShell(text: string, fileName = ''): ShellReading {
 }
 
 /**
- * The program a first line `#!…` names, and whether it does so through `env` (`#!/usr/bin/env bash`, `#!/usr/bin/env -S ksh93 -e`:
+ * The program a first line `#!…` names (through `env` too: `#!/usr/bin/env bash`, `#!/usr/bin/env -S ksh93 -e`;
  * `name` is undefined when `env` is given none); undefined for a text with no shebang. The one reader of the line.
  */
-function shebangOf(head: string): { name: string | undefined; env: boolean } | undefined {
+function shebangOf(head: string): { name: string | undefined } | undefined {
   const shebang = /^#!\s*(.*)/.exec(head);
   if (!shebang) return undefined;
   const words = shebang[1].trim().split(/\s+/);
   const prog = words[0].split('/').pop()!;
-  if (prog !== 'env') return { name: prog, env: false };
+  if (prog !== 'env') return { name: prog };
   const arg = words.slice(1).find((w) => !w.startsWith('-') && !w.includes('='));
-  return { name: arg?.split('/').pop(), env: true };
+  return { name: arg?.split('/').pop() };
 }
-
-/** Whether the first line of a text names its shell through `env` (`#!/usr/bin/env bash`), not by a path (`#!/bin/bash`). */
-export const shebangThroughEnv = (text: string): boolean => shebangOf(text)?.env === true;
 
 const baseName = (fileName: string): string => fileName.split(/[\\/]/).pop()!;
 
