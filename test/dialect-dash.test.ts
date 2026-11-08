@@ -11,7 +11,7 @@ import { documentIssues } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
 import { extractShell, hostIssues } from '../src/hosts';
 import { Analyzer } from '../src/analyzer';
-import { type Case, failureOf, isFailure, works } from '../src/shellfeatures';
+import { type Case, failureOf, featureIn, isFailure, works } from '../src/shellfeatures';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { surelyRuns } from '../src/semantics/scriptstops';
 import { descendants, type BashParser } from '../src/syntax/tree';
@@ -718,6 +718,10 @@ describe('`read` with no name', () => {
     assert.deepStrictEqual(stored('echo hi | read -r', 'dash'), []);
     // (A name is read the same everywhere.)
     assert.deepStrictEqual(stored('echo hi | read -r x', 'sh'), ['x="hi"']);
+  });
+  it('counts on a feature in sh where both common shells have it, and as maybe where one has it', () => {
+    assert.deepStrictEqual(['local', 'readReply', 'shopt'].map((id) => featureIn(id, 'sh')), ['all', 'some', 'none']);
+    assert.deepStrictEqual([featureIn('readReply'), featureIn('readReply', 'dash'), featureIn('readReply', 'ash')], ['all', 'none', 'all']);
   });
   it('leaves `$REPLY` unset in dash, set in busybox ash, and may be either in sh', () => {
     const code = 'read -r <file; echo "[$REPLY]"';
