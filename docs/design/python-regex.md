@@ -100,7 +100,7 @@ Step 2 moves these out of `Analyzer.explained` (src/analyzer.ts) into one functi
 
 Quick fixes: `noteIssues` places a rewrite's edits by offsets in `doc.tree.text` (`lineStarts(doc.tree.text)`), where a pattern's lines are blank. No pitfall of this plan offers a quick fix. One that does later ("add `r`") must place its edits by the document's own lines on a language line; `noteIssues` then takes the line starts of the part the anchor is in.
 
-The pattern errors of the shell flavors (`grep -P '\Q'`, an unclosed `[`) are error tokens with inline texts and no mark today, so they are not problems. The Python flavor's errors are catalog entries with marks from the start. Section 11 recommends doing the same for the shell flavors first.
+The pattern errors of the shell flavors (`grep -P '\Q'`, an unclosed `[`) are error tokens with inline texts and no mark today, so they are not problems. The Python flavor's errors are catalog entries with marks from the start. Step 0 (#763) does the same for the shell flavors first (section 11).
 
 ### 2.8 The chip
 

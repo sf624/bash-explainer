@@ -906,7 +906,6 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
 - **Reason:** Rare in sh scripts, or unmeasured (no mksh installed); the texts and src/semantics/vars.ts are bash's for every shell.
 - **Input and what is wrong:**
-  - `#!/bin/sh` `mkdir d && cd "$_"`: the token says "Last argument of the previous command", with no warning; dash and ash do not set `$_` (it holds the shell's path from bash's exported environment). It needs an InShell kind "from the environment". Arguably representative.
   - `#!/bin/sh` `echo $SHLVL`: "Nesting level of bash"; dash does not set or increment it (inherited).
   - `#!/bin/sh` `RANDOM=3`: "Assigning a number seeds the generator"; not in dash (ash does).
   - `#!/bin/sh` `echo $LINENO`: bash's text; Ubuntu dash leaves it empty.
