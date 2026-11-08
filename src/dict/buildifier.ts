@@ -41,7 +41,7 @@ const OPTIONS: OptSpec[] = [
     json: tx('JSON（ファイルごとの整形の要否と警告）', 'JSON (per file: formatted or not, and the warnings)'),
     sarif: tx('SARIF 2.1.0', 'SARIF 2.1.0'),
   }],
-  ['-path', 'ファイルがワークスペースからのこのパスにあるものとして扱う（標準入力や一時コピーの整形に使う）', 'treat the file as if it were at this path from the workspace (for stdin or a temporary copy)', 'arg'],
+  ['-path', 'ファイルが、指定したワークスペースからのパスにあるものとして扱う（標準入力や一時コピーの整形に使う）', 'treat the file as if it were at the given path from the workspace (for stdin or a temporary copy)', 'arg'],
   ['-config', '`.buildifier.json` の設定ファイル（`off` で設定ファイルを読まない、`example` で見本を表示）', 'path of a `.buildifier.json` configuration file (`off`: read none; `example`: print a sample)', 'arg'],
   ['-diff_command', '`diff` モードで差分を取るコマンド（既定は環境変数 `BUILDIFIER_DIFF` などから決まる）', 'command that makes the diff in `diff` mode (the default comes from `BUILDIFIER_DIFF` and the like)', 'arg'],
   ['-multi_diff', '`-diff_command` が tkdiff のように複数のファイルを一度に比べられる', 'the `-diff_command` can compare several files at once, as tkdiff does'],
