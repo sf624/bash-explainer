@@ -74,7 +74,7 @@
     {"file":"src/linesentence.ts","fn":"declaring","kind":"option-regex","count":2,"to":"commandRead","reason":"the options `-f`, `-F` and `-p` of a declaration builtin on a line with no record of the command (a command on another line of a statement), by their letters"}
   ],
   "other": [
-    {"file":"src/dialect.ts","uses":[{"fn":"commandFeatures","kind":"dash-prefix","count":1,"reason":"the sign of the option name that the interpreter reported (`-o` or `+o`), not of a word"}]},
+    {"file":"src/dialect.ts","uses":[{"fn":"classify","kind":"dash-prefix","count":1,"reason":"the operator `--` of a node of `$(( ))` (`i--`, `--i`), not a word"}]},
     {"file":"src/examples/getopt.ts","uses":[{"fn":"runGetopt","kind":"dash-prefix","count":4,"reason":"the getopt(1) simulator: it parses its own arguments by getopt's rules, as the command does"},{"fn":"runGetopt","kind":"option-regex","count":2,"reason":"the getopt(1) simulator: it parses its own arguments by getopt's rules, as the command does"}]},
     {"file":"src/examples/gitlog.ts","uses":[{"fn":"expand","kind":"option-regex","count":1,"reason":"trims dashes from a commit subject (git log `%f`), not an option"}]},
     {"file":"src/examples/shellwords.ts","uses":[{"fn":"numberArg","kind":"dash-prefix","count":2,"reason":"the sign of a number written as a word (`-0x1f`), not an option"}]},

@@ -375,7 +375,8 @@ describe('/dev/tcp and /dev/udp in a redirection', () => {
       const label = src.slice(7);
       assert.match(token(src, label).explanation, /^Connect to host `127\.0\.0\.1`, port `9`, over TCP, and send (stdout \(fd 1\)|both stdout and stderr) to it/, src);
       assert.match(token(src, label, 'ja').explanation, /^TCP でホスト `127\.0\.0\.1` のポート `9` に接続し、/, src);
-      assert.deepStrictEqual(featuresOnLine(parser.parse(src).root, 0), ['netRedirect'], src);
+      // (`>&word` with a name is also `dupFile`: dash refuses it as no descriptor number.)
+      assert.deepStrictEqual(featuresOnLine(parser.parse(src).root, 0), src.includes('>&') ? ['dupFile', 'netRedirect'] : ['netRedirect'], src);
       assert.match(runBash(src, { files: [] }).stderr, /connect: Connection refused/, src);
     }
     // (A quoted number is a descriptor as well: `>&"2"` is `>&2`.)
