@@ -58,6 +58,9 @@ describe('the traps in effect (docs/design/errexit-stop.md, G1)', () => {
     assert.strictEqual(traps("trap 'echo T' EXIT\nif [ \"$1\" ]; then trap - EXIT; fi\necho a", 'echo a'), "EXIT:unknown@trap - EXIT");
     assert.strictEqual(traps("if [ \"$1\" ]; then trap - EXIT; else trap EXIT; fi\necho a", 'echo a'), 'EXIT:off@trap EXIT (no action)');
     assert.strictEqual(traps("if [ \"$1\" ]; then trap - EXIT; fi\necho a", 'echo a'), 'EXIT:off@trap - EXIT (no action)');
+    // (One path sets it, the other takes it back: either order.)
+    assert.strictEqual(traps("if [ \"$1\" ]; then trap 'echo T' EXIT; else trap - EXIT; fi\necho a", 'echo a'), "EXIT:unknown@trap - EXIT");
+    assert.strictEqual(traps("if [ \"$1\" ]; then trap - EXIT; else trap 'echo T' EXIT; fi\necho a", 'echo a'), "EXIT:unknown@trap 'echo T' EXIT");
   });
 
   it('starts a subshell with none, but ERR under errtrace; a function body without the caller ERR, unless errtrace', () => {
@@ -208,6 +211,7 @@ describe('what a trap does to the status, and what a failure ends (docs/design/e
     assert.strictEqual(within("c() { rm x; }\ntrap c EXIT\ntrap 'c' INT", 'rm x'), undefined);
     assert.strictEqual(within("c() { ( rm x ); }\ntrap c EXIT", 'rm x'), undefined);
     assert.strictEqual(within('rm x', 'rm x'), undefined);
+    assert.strictEqual(within('c() { rm x; }\nc', 'rm x'), undefined);
     // (A statement of the action's own string.)
     const { state, status } = model("set -e\ntrap 'rm x; echo y' EXIT");
     const action = state.trapSets[0].script!.tree.root;
