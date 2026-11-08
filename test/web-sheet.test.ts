@@ -814,18 +814,21 @@ describe('the web page: the phone\'s sheet', function () {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   };
 
-  it('takes a short flick for no move, keeps a drag under the app bar, stops a full sheet 8 px under the strip, and renames the file from its pencil only: 390 and 360 px, en and ja', async () => {
+  it('takes a short flick by its speed but to full, keeps a drag under the app bar, stops a full sheet 8 px under the strip, and renames the file from its pencil only: 390 and 360 px, en and ja', async () => {
     for (const [width, height] of PHONES) {
       for (const lang of ['en', 'ja'] as const) {
         const at = `${width}x${height} ${lang}`;
         const page = await open(await phone(width, lang, { viewport: { width, height } }));
         const cdp = await page.context().newCDPSession(page);
         const drag = finger(cdp, page);
-        // A quick flick of 66 px, up or down, leaves the sheet at half (at 0.5 px/ms and no least travel, it went to full).
-        for (const dy of [-66, 66]) {
+        // A quick flick goes by its speed, but to full only after 80 px (the maintainer's decision of 2026-11-08): 66 px up
+        // from half stays at half (at 0.5 px/ms and no least travel, it went to full), 60 px down goes to the peek, and
+        // 60 px up from there back to half (with a least travel for every fling, both did nothing). (One step: a finger's
+        // step takes some 35 ms, so the flick is over 1 px/ms.)
+        for (const [dy, want] of [[-66, 'half'], [60, 'peek'], [-60, 'half']] as const) {
           const pane = (await settled(page)).pane;
-          await drag(width / 2, pane.y + 22, pane.y + 22 + dy, 50, 3);
-          assert.strictEqual((await settled(page)).snap, 'half', `${at}: a flick of ${dy} px`);
+          await drag(width / 2, pane.y + 22, pane.y + 22 + dy, 0, 1);
+          assert.strictEqual((await settled(page)).snap, want, `${at}: a flick of ${dy} px`);
         }
         // A slow drag as high as the finger goes: the sheet never covers the app bar while the bar shows (u2 tapped ☰ and
         // missed); let go, it settles at full, the bar slides away, and the sheet stops 8 px under the strip.
@@ -894,6 +897,25 @@ describe('the web page: the phone\'s sheet', function () {
     await page.context().close();
   });
 
+  it('keeps the cursor\'s line above the sheet when the phone turns, either way', async () => {
+    const page = await open(await phone(390, 'en', { viewport: { width: 390, height: 844 } }));
+    await page.locator('#mode-read').tap();
+    const half = await snapTo(page, 'half');
+    // The lowest line wholly above the sheet at half (on an iPhone 13, its top at 330 px, the sheet's at 380 px).
+    const nth = await page.evaluate(`[...document.querySelectorAll('.cm-line')].filter((l) => l.getBoundingClientRect().bottom <= ${half.y} - 8).length - 1`) as number;
+    await page.locator('.cm-line').nth(nth).tap();
+    await stable('the line tapped', () => box(page, '.cm-activeLine'), 4);
+    // (The line's old place, read against the sheet of the window before, is under the new one: it follows all the same.)
+    for (const [width, height] of [[844, 390], [390, 844]]) {
+      await page.setViewportSize({ width, height });
+      const pane = (await settled(page)).pane;
+      const active = await stable('the line', () => box(page, '.cm-activeLine'), 4);
+      const editor = await box(page, '#editor');
+      assert.ok(active.y >= editor.y - 0.5 && active.y + active.height <= pane.y + 0.5, `${width}x${height}: ${JSON.stringify([active, editor, pane])}`);
+    }
+    await page.context().close();
+  });
+
   it('leaves a reader who scrolled away from the cursor where they read when it moves', async () => {
     const page = await openLong('en');
     const cdp = await page.context().newCDPSession(page);
@@ -947,7 +969,12 @@ describe('the web page: the phone\'s sheet', function () {
       await page.keyboard.press('Control+A');
       await page.keyboard.insertText(LINE);
       await page.keyboard.press('Control+Home');
-      await until('the line\'s rows', () => page.frame({ url: /panel\.html/ })!.locator('#tree button.twisty').count(), (n) => n >= 2);
+      // (The new line's rows, drawn and still: the sample's first line has rows with parts too, and the panel drawing the
+      // new ones under a click detached its target, in CI.)
+      const frame = page.frame({ url: /panel\.html/ })!;
+      await until('the line explained', async () => (await frame.locator('#line').textContent()) ?? '', (t) => t.includes('grep -c'));
+      await until('the line\'s rows', () => frame.locator('#tree button.twisty').count(), (n) => n >= 2);
+      await stable('the rows', () => frame.locator('#tree').evaluate((t) => t.innerHTML.length + ':' + t.getBoundingClientRect().height), 4);
     };
     for (const [width, height] of PHONES) {
       for (const lang of ['en', 'ja'] as const) {

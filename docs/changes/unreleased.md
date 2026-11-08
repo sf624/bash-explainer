@@ -133,7 +133,7 @@ Clear, a whole script pasted over the untouched sample, and Open start a new scr
 The usability test of 2026-11-06 found the sheet hard to hold (docs/design/usability-9.md, 2.5 and 2.7): a swipe in the panel made it full and hid the editor, a tap near its top opened the rename box, and the ☰ button was covered after a drag.
 
 - **The grab strip.** The sheet's header has a strip 44 px high above its tabs, with the bar drawn 48 x 5 px in its middle; nothing else lies in it. A drag still starts anywhere on the header but the depth's control, and a tap on the strip (or around the tabs) still cycles the heights. Before, the bar was 36 x 4 px, drawn over the tabs row, and about a tenth of that 48 px row was free to grab. The folded sheet is 44 px taller (141 px with the summary row).
-- **The fling.** A release counts as a fling at 1,000 px a second and after a drag of at least 80 px; a shorter or slower drag goes to the nearest height. Before, 500 px a second was enough, and a flick of 66 px up from half went to full.
+- **The fling.** A release counts as a fling at 1,000 px a second, and moves the sheet one height that way; a slower one goes to the height nearest to where its speed carries it. A drag up of less than 80 px that would end at full stops at half; a short quick flick from the peek to half, from half to the peek, or down from full still moves the sheet. Before, 500 px a second was enough, and a flick of 66 px up from half went to full.
 - **The full height.** A full sheet stops 8 px below the editor's header strip, so a tap just above it lands on nothing. Before, it met the strip, and the file name sat right above its edge.
 - **The app bar.** While a finger drags the sheet, its top stays below the app bar; the bar slides away once the sheet settles at full.
 - **The rename.** On a phone the file name opens the rename box from its pencil only, which is now drawn at all times and takes a tap 44 px wide and high; a tap on the name does nothing. ⋯ › Rename… and the menu's file row rename as before, and a keyboard or a screen reader still presses the whole name.
@@ -170,7 +170,7 @@ On a phone held upright (a sheet's row under 600 px), the explanation's header h
 
 - **The summary row after a quick swipe.** A quick swipe down left Chromium (Chrome on Android) with a fling that nothing took, and the next tap only stopped it: a tap on the folded sheet's summary row was lost, 150 ms as well as 700 ms after the swipe. The page now takes the moves of a drag itself.
 - **The header after a drag.** For 400 ms after a drag, every click on the header was dropped, so that the click that ends a mouse drag goes nowhere. Now only that click is dropped: a tap right after a drag (on a tab, the depth's control, the grab strip) works.
-- **The scroll.** A move of the sheet (a drag, a tap, a key) brings the cursor's line back into view only when some of it showed before the move; the keyboard opening or closing still brings it back, as you type there. Before, a reader who had scrolled away from the cursor was pulled back: at 390 x 664, from 4,058 px down to the top.
+- **The scroll.** A move of the sheet (a drag, a tap, a key) brings the cursor's line back into view only when some of it showed before the move; the keyboard opening or closing still brings it back, as you type there, and so does turning the phone (or any change of the window). Before, a reader who had scrolled away from the cursor was pulled back: at 390 x 664, from 4,058 px down to the top.
 
 ### The cases of a test's example
 
