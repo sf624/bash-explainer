@@ -1,5 +1,5 @@
 // The catalog's notes on idioms (src/idioms.ts, `IDIOMS`): one entry per idiom, its words, and the sections of the
-// manual it is about; apart, to keep src/messages.ts short (which spreads them into `MESSAGES`).
+// manual it is about; apart from the catalog's other modules (src/messages.ts spreads them into `MESSAGES`).
 
 /** An idiom's entry: a note (always said), with the label "Idiom:" before its words. */
 const idiom = (refs: readonly string[], [ja, en]: readonly [string, string]) => ({ kind: 'note' as const, refs, text: (_p: Record<string, never>) => [`定番の書き方: ${ja}`, `Idiom: ${en}`] as const });

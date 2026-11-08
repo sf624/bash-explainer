@@ -1,5 +1,5 @@
-// The texts of the catalog's facts about extended globs, globstar and a loop over a glob (src/messages.ts: `extglob-*`,
-// `globstar-*`, `unmatched-glob-runs-once`), apart, to keep src/messages.ts short.
+// The texts of the catalog's facts about extended globs, globstar and a loop over a glob (`extglob-*`, `globstar-*`: src/messages-facts-shells.ts;
+// `unmatched-glob-runs-once`: src/messages-facts-words.ts), apart from the catalog's modules.
 import { readByBashrc } from './messages-common';
 import type { Rewrite } from './rewrite';
 

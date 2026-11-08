@@ -1,6 +1,6 @@
 // The texts of the catalog's facts about what a wrapper, a new shell, a remote shell or a container does not get
-// (src/messages.ts: `variable-not-*`, `function-not-*`, `builtin-or-function-as-program`, `function-shadowed-by-program`,
-// `ssh-local-expansion`, `placeholder-in-shell-string`; manual 3.7.3, 3.7.4, 3.3, 3.1.1), apart, to keep src/messages.ts short.
+// (src/messages-facts-shells.ts: `variable-not-*`, `function-not-*`, `builtin-or-function-as-program`, `function-shadowed-by-program`,
+// `ssh-local-expansion`, `placeholder-in-shell-string`; manual 3.7.3, 3.7.4, 3.3, 3.1.1), apart from the catalog's modules.
 // (`unread`, here and below: code the model does not read, which runs before, may set it there: `unreadClause`.)
 import type { PlaceholderWith } from './argv/spec';
 import type { Text } from './i18n';

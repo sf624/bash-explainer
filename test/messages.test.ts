@@ -3,6 +3,15 @@
 import * as assert from 'assert';
 import { fact, factOf, MESSAGES, problemNote, problemText, severityOf, styleNote, type FactId } from '../src/messages';
 import { SECTIONS } from '../src/manual';
+import { BATS_MESSAGES } from '../src/messages-facts-bats';
+import { COMMAND_MESSAGES } from '../src/messages-facts-commands';
+import { HOST_MESSAGES } from '../src/messages-facts-hosts';
+import { LINE_MESSAGES } from '../src/messages-facts-lines';
+import { SHELL_MESSAGES } from '../src/messages-facts-shells';
+import { STATUS_MESSAGES } from '../src/messages-facts-status';
+import { WORD_MESSAGES } from '../src/messages-facts-words';
+import { IDIOM_MESSAGES } from '../src/messages-idioms';
+import { TOOL_NOTES, UNREAD } from '../src/messages-unread';
 import { reference } from '../src/references';
 import { explain } from './support/explain';
 
@@ -10,6 +19,14 @@ import { explain } from './support/explain';
 const ABOUT_THE_TOOL: readonly string[] = ['size-not-computed', 'steps-not-computed', 'budget-not-computed', 'example-failed', 'line-not-explained', 'line-too-deep', 'file-not-read'];
 
 describe('the message catalog', () => {
+  it('has each id in one module only (a spread takes the later one without a word; src/messages.ts also checks it as types)', () => {
+    const modules = [STATUS_MESSAGES, COMMAND_MESSAGES, SHELL_MESSAGES, WORD_MESSAGES, BATS_MESSAGES, TOOL_NOTES, UNREAD, HOST_MESSAGES, LINE_MESSAGES, IDIOM_MESSAGES];
+    const ids = modules.flatMap((m) => Object.keys(m));
+    const repeated = ids.filter((id, i) => ids.indexOf(id) !== i);
+    assert.deepStrictEqual(repeated, [], `ids in more than one module: ${repeated.join(', ')}`);
+    assert.strictEqual(ids.length, Object.keys(MESSAGES).length);
+  });
+
   it('cites only known references (sections of the manual, manual pages), and at least one section', () => {
     for (const [id, e] of Object.entries(MESSAGES)) {
       if (ABOUT_THE_TOOL.includes(id)) { assert.deepStrictEqual(e.refs, [], id); continue; }

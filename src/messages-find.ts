@@ -1,5 +1,5 @@
-// The text of the catalog's fact about an action that find refuses (src/messages.ts: `find-action-refused`), apart, to keep
-// src/messages.ts short.
+// The text of the catalog's fact about an action that find refuses (`find-action-refused`, in src/messages-facts-words.ts), apart from the
+// catalog's modules.
 import { codeSpan } from './label';
 import type { Rewrite } from './rewrite';
 

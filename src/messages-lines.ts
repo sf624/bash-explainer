@@ -1,7 +1,7 @@
 // The texts of the catalog's facts that were plain notes before (docs/design/sources.md, row 14, SB3a): the order of a
 // command's redirections (`redirections-in-order`, `stderr-to-original-stdout`), where a line is (`heredoc-end-line`,
 // `heredoc-body-line`, `statement-continued`), and the facts whose words come from a table of their own (an idiom, a
-// host's notes), apart, to keep src/messages.ts short.
+// host's notes), apart from the catalog's modules (their entries: src/messages-facts-lines.ts, src/messages-idioms.ts).
 import { lineLabel, type Text } from './i18n';
 import type { FdTarget, RedirectOrder } from './idioms';
 import type { StdoutGoes } from './semantics/stdout';

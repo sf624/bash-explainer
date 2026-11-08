@@ -39,6 +39,29 @@ export type { Entry, FactKind, Head, SentenceClause };
 export type { NoteLevel };
 export { severityOf };
 
+/** The modules `MESSAGES` spreads, in one list so that the check below sees every one. */
+type Modules = [
+  typeof STATUS_MESSAGES,
+  typeof COMMAND_MESSAGES,
+  typeof SHELL_MESSAGES,
+  typeof WORD_MESSAGES,
+  typeof BATS_MESSAGES,
+  typeof TOOL_NOTES,
+  typeof UNREAD,
+  typeof HOST_MESSAGES,
+  typeof LINE_MESSAGES,
+  typeof IDIOM_MESSAGES,
+];
+type KeysOfEach<U> = U extends unknown ? keyof U : never;
+/** The ids that two of the modules both have (`never` when there are none). */
+type Repeated<Ms extends unknown[]> = Ms extends [infer Head, ...infer Rest]
+  ? (keyof Head & KeysOfEach<Rest[number]>) | Repeated<Rest>
+  : never;
+
+// A spread takes the later module's entry for an id both have, and TypeScript does not flag it (a repeat in one object
+// literal is error TS1117): this fails to compile, with the ids in its message, when two modules have the same id.
+export const NO_REPEATED_ID: [Repeated<Modules>] extends [never] ? true : { repeatedIds: Repeated<Modules> } = true;
+
 export const MESSAGES = {
   ...STATUS_MESSAGES,
   ...COMMAND_MESSAGES,
