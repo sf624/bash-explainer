@@ -7,6 +7,8 @@ import { fixFor } from '../src/fixes';
 import { BEHAVIOURS, behavioursOnLine, detectShell, dialectIssues, dialectNotes, featuresOnLine, FEATURES, featureWorks } from '../src/dialect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { SINCE } from '../src/bashversion';
+import { builtins } from '../src/dict/builtins';
+import { builtinIn, type Shell } from '../src/shellfeatures';
 import type { Stop } from '../src/semantics/scriptstops';
 import { Analyzer } from '../src/analyzer';
 import { type ModelRow, rowModel } from '../src/ui/panelRows';
@@ -16,6 +18,12 @@ let parser: Parser;
 before(async () => {
   parser = createUnbashParser();
 });
+
+/**
+ * Prints "ok" where the shell has a builtin `name`: `command -v` with no PATH finds only what the shell has itself (an alias of mksh's
+ * `suspend` too). The builtin is not run (`suspend`, `logout`): `false && name` is there for the detector.
+ */
+const builtinProbe = (name: string): string => `false && ${name}; p=$PATH; PATH=/nonexistent; command -v ${name} >/dev/null; s=$?; PATH=$p; [ $s = 0 ] && echo ok`;
 
 // A snippet per feature that prints "ok" only where the feature works.
 const PROBES: Record<string, string> = {
@@ -65,6 +73,20 @@ const PROBES: Record<string, string> = {
   let: 'let x=1+1; [ $x = 2 ] && echo ok',
   shopt: 'shopt -s nullglob && echo ok',
   pushd: 'pushd / >/dev/null && echo ok',
+  builtin: builtinProbe('builtin'),
+  enable: builtinProbe('enable'),
+  caller: builtinProbe('caller'),
+  disown: builtinProbe('disown'),
+  bind: builtinProbe('bind'),
+  complete: builtinProbe('complete'),
+  compgen: builtinProbe('compgen'),
+  compopt: builtinProbe('compopt'),
+  fc: builtinProbe('fc'),
+  logout: builtinProbe('logout'),
+  suspend: builtinProbe('suspend'),
+  help: builtinProbe('help'),
+  history: builtinProbe('history'),
+  setopt: builtinProbe('setopt'),
   exportF: 'f() { :; }; export -f f && echo ok',
   waitN: 'sleep 0 & wait -n && echo ok',
   coproc: 'coproc cat </dev/null && echo ok',
@@ -137,6 +159,31 @@ describe('the dialect table agrees with the installed shells', () => {
           assert.strictEqual(r.stdout.toString().trim() === 'ok', BEHAVIOURS[id].differs.includes(letter), `${id} in ${names[0]}`);
         });
       }
+    });
+  }
+});
+
+// What a name is in each shell (`builtinIn`, the rows' `builtins`; `resolveName` asks it): every builtin of the dictionary, against what each
+// installed shell runs as a builtin, found by `command -v` with no PATH. A name with no row is a builtin everywhere; a builtin a shell lacks needs a row.
+describe('every builtin of the dictionary is a builtin in each installed shell as the table says', () => {
+  const SHELL: Record<string, Shell> = { b: 'bash', d: 'dash', a: 'ash', y: 'yash', k: 'ksh', m: 'mksh', z: 'zsh' };
+  // The names a shell runs otherwise, with the reason: they work where they are used.
+  const KNOWN: Record<string, Record<string, string>> = {
+    // (yash runs a regular builtin only where PATH has a program of the name, as POSIX allows: with the usual PATH, it runs them.)
+    y: { echo: 'PATH', printf: 'PATH', test: 'PATH', '[': 'PATH' },
+    // (Debian's mksh is built without its `printf`: /usr/bin/printf runs.)
+    m: { printf: 'Debian build' },
+  };
+  const names = Object.keys(builtins).filter((n) => builtins[n].builtin);
+  const script = `p=$PATH; PATH=/nonexistent; out=; for n in ${names.map((n) => `'${n}'`).join(' ')}; do command -v "$n" >/dev/null 2>&1 || out="$out $n"; done; PATH=$p; echo "lacks:$out"`;
+  for (const [letter, bins, flag] of [['b', ['bash'], '--norc'], ['d', ['dash'], ''], ['a', ['busybox'], 'sh'], ['y', ['yash'], ''], ['k', ['ksh93', 'ksh'], ''], ['m', ['mksh'], ''], ['z', ['zsh'], '-f']] as const) {
+    const bin = locate([...bins]);
+    (bin ? it : it.skip)(bins[0], () => {
+      const r = spawnSync(bin!, [...(flag ? [flag] : []), '-c', script], { timeout: 5000, input: '' });
+      const all = /lacks:(.*)/.exec(r.stdout.toString())![1].split(' ').filter(Boolean);
+      // (A known name the shell has after all is stale.)
+      assert.deepStrictEqual(Object.keys(KNOWN[letter] ?? {}).filter((n) => !all.includes(n)), []);
+      assert.deepStrictEqual(all.filter((n) => !KNOWN[letter]?.[n]), names.filter((n) => !builtinIn(n, SHELL[letter])), `${bins[0]}: ${r.stderr.toString()}`);
     });
   }
 });

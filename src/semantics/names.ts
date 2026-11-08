@@ -665,14 +665,16 @@ export function nameFacts(res: NameResolution, opts: {
   // (`builtin cd`, `command echo`: the builtin runs in this shell, as bash would run it: no other command runs it.)
   const by = slot && !(slot.slot.run === 'current-shell' && res.kind === 'builtin') ? { by: slot.via } : {};
   const { name } = res;
-  const builtin = Object.hasOwn(builtins, name) && builtinIn(name, opts.shell) ? builtins[name] : undefined;
-  const program = !!builtin?.program || !!opts.program?.(name);
+  // (A builtin of other shells that this one is not counted on to have, `source` in sh, is looked up in PATH: usually there is no such program either.)
+  const entry = Object.hasOwn(builtins, name) ? builtins[name] : undefined;
+  const builtin = entry && builtinIn(name, opts.shell) ? entry : undefined;
+  const program = !!entry?.program || !!opts.program?.(name);
   // (A reserved word looked up as a file: no program has its name, `command [[` is "command not found".)
   const notFound = res.kind === 'file' && res.path === 'search' && RESERVED.has(name) && !program;
   const kind = badgeKind(res);
   const runs: NameKind = notFound ? 'none' : kind === 'file' ? 'program' : kind;
   const why = notFound ? { why: 'not-found' as const } : res.kind === 'none' ? { why: res.why } : {};
-  const noProgram = runs === 'program' && builtin && !program && !name.includes('/') ? { noProgram: true } : {};
+  const noProgram = runs === 'program' && entry && !program && !name.includes('/') ? { noProgram: true } : {};
   if (name.includes('/')) return { name, runs, ...by, also: [] };
   // (With no shell, nothing reaches the shell's other meanings of the name: only what a shell would have run.)
   if (res.kind === 'file' && res.noShell) return { name, runs, ...why, ...noProgram, noShell: res.noShell, also: [] };

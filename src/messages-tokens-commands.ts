@@ -1,5 +1,6 @@
 import { lineLabel, type Text } from './i18n';
 import { insideLastBracket, tokenText } from './messages-levels';
+import { listSaid } from './messages-sentence';
 
 // What the tokens of a command name, and what runs it (src/explain/commands.ts) say.
 
@@ -132,6 +133,13 @@ export const COMMAND_TEXTS = {
   'cmd-external-unknown': tokenText<{ name: string }>(({ name }) => [
     `外部コマンド \`${name}\` を実行する（辞書に未登録。\`man ${name}\` や \`${name} --help\` を参照）`,
     `Run the external command \`${name}\` (not in the dictionary; see \`man ${name}\`)`]),
+  /**
+   * `source` in a sh script, `setopt` in bash: a builtin the script's shell is not counted on to have (`builtinShells`), so it is looked up in PATH.
+   * `shell`: the script's shell; `lacks`, in `sh`, the common ones that have no such builtin; `has`, the shells that have it; `summary`: what the builtin does there.
+   */
+  'cmd-builtin-not-in-shell': tokenText<{ shell: string; lacks?: readonly string[]; has: readonly string[]; summary: string }>(({ shell, lacks, has, summary }) => [
+    `${shell} のビルトインではない${lacks ? `（${listSaid('ja', lacks)} にはない）` : ''}ので、PATH から探すが、この名前のプログラムはふつうない。${listSaid('ja', has)} のビルトインとしては: ${summary}`,
+    `Not a builtin of ${shell}${lacks ? ` (${listSaid('en', lacks)} ${lacks.length > 1 ? 'have' : 'has'} none)` : ''}, so it is looked up in PATH, where there is usually no program of this name. As a builtin of ${listSaid('en', has)}: ${summary}`]),
   /** Docker's exec form, `["cd", "/tmp"]`: a builtin's name is looked up in PATH (`summary`: what the builtin does). */
   'cmd-no-shell-builtin': tokenText<{ name: string; summary: string }>(({ name, summary }) => [
     `シェルのビルトイン \`${name}\`（${summary}）。この単語を読むシェルはないので、PATH からプログラムとして探すが、この名前のプログラムはふつうなく、コマンドが見つからずに失敗する`,

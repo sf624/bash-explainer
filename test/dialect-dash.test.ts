@@ -71,6 +71,20 @@ const ROWS: Record<string, string[]> = {
   let: ['let x=1'],
   shopt: ['shopt -s nullglob'],
   pushd: ['pushd /tmp'],
+  builtin: ['builtin echo a'],
+  enable: ['enable -n echo'],
+  caller: ['caller'],
+  disown: ['disown'],
+  bind: ["bind '\"\\C-x\": kill-line'"],
+  complete: ['complete -F _f f'],
+  compgen: ['compgen -c'],
+  compopt: ['compopt -o nospace'],
+  fc: ['fc -l'],
+  logout: ['logout'],
+  suspend: ['suspend'],
+  help: ['help cd'],
+  history: ['history'],
+  setopt: ['setopt extended_glob', 'unsetopt nomatch'],
   exportF: ['f() { :; }; export -f f'],
   waitN: ['sleep 0 & wait -n'],
   coproc: ['coproc cat'],
@@ -1023,9 +1037,15 @@ describe('a string that may not run, and what is said by mistake as a fault', ()
       if (run) fails(`${wrapper} ${STRING}`);
     });
   }
-  for (const code of ["eval 'shopt -s x'", "builtin eval 'shopt -s x'", "command eval 'shopt -s x'", STRING, `(${STRING})`, `: | ${STRING}`, `y=$(${STRING}) || exit 1`, 'dash -c \'shopt -s x\'', `env timeout 5 ${STRING}`, `sudo env ${STRING}`, `time ${STRING}`, `/usr/bin/time ${STRING}`]) {
+  for (const code of ["eval 'shopt -s x'", "command eval 'shopt -s x'", STRING, `(${STRING})`, `: | ${STRING}`, `y=$(${STRING}) || exit 1`, 'dash -c \'shopt -s x\'', `env timeout 5 ${STRING}`, `sudo env ${STRING}`, `time ${STRING}`, `/usr/bin/time ${STRING}`]) {
     it(`an Error: ${code}`, () => says(code, 'shopt', 'error'));
   }
+  // (dash and busybox ash have no `builtin`: the string never runs, and the Error is on `builtin`.)
+  it("an Error on `builtin`, which runs no string: builtin eval 'shopt -s x'", () => {
+    says("builtin eval 'shopt -s x'", 'builtin', 'error');
+    says("builtin eval 'shopt -s x'", 'shopt', undefined);
+    inEach("builtin eval 'shopt -s x'", (r, sh) => assert.match(r.err, /builtin: not found/, sh));
+  });
   const SOMETIMES = [
     `xargs ${STRING}`, `xargs -r ${STRING}`, `xargs -I{} ${STRING}`, `find . -exec ${STRING} \\;`, `find . -execdir ${STRING} \\;`, `find . -ok ${STRING} \\;`, `find . -exec ${STRING} _ {} +`, `watch ${STRING}`, 'watch \'shopt -s x\'', 'watch -x sh -c \'shopt -s x\'',
     `ssh h sh -c "'shopt -s x'"`, `su -c "${STRING}"`, `docker run i ${STRING}`, `docker exec c ${STRING}`, `docker compose run s ${STRING}`, `docker compose exec s ${STRING}`, `kubectl exec p -- ${STRING}`, `kubectl run p --image=i -- ${STRING}`, `kubectl debug p -- ${STRING}`,
