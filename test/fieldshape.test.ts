@@ -235,7 +235,7 @@ describe('the field domain (fieldshape.ts)', () => {
         assert.deepStrictEqual(got(shell), [['.', '..', '.h'], ['a']], shell);
       }
       assert.deepStrictEqual([['~+', '~-/x', '~1'].map((w) => shapesOf(`show ${w}`, undefined, undefined, 'sh')), got('sh'), got('bash')], [[undefined, undefined, undefined], [undefined, undefined], [['.*'], ['a']]]);
-      assert.deepStrictEqual(got('sh', 'show .* a* d/*'), [undefined, ['a'], ['d/*']]);
+      assert.deepStrictEqual(got('sh', 'show .* a* d/* d/.* [a.]'), [undefined, ['a'], ['d/*'], undefined, ['a']]);
     });
     it('says where bash may fail on the word', () => {
       assert.deepStrictEqual([shapesOf('show ${x:?}')!.mayFail, shapesOf('show $x')!.mayFail, shapesOf('set -u; show $x', new Map([['x', [null]]]))!.cases.length], [true, false, 0]);
