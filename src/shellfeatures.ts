@@ -164,6 +164,22 @@ export const FEATURES: Record<string, Feature> = {
   let: { works: 'b a kmz', builtins: ['let'], ja: '`let`', en: '`let`', altJa: '`$(( ))` を使う', altEn: 'use `$(( ))`' },
   shopt: { works: 'b', builtins: ['shopt'], ja: '`shopt`', en: '`shopt`' },
   pushd: { works: 'b  y  z', builtins: ['pushd', 'popd', 'dirs'], ja: '`pushd` / `popd`', en: '`pushd` / `popd`', altJa: '`cd` と変数で戻り先を覚える', altEn: 'remember the directory in a variable and `cd`' },
+  // (The other builtins of the dictionary that some shells lack, as `command -v` with an empty PATH finds them in each shell: test/dialect.test.ts
+  // holds every builtin of the dictionary against each installed shell. mksh's `bind` is its own, for its line editor.)
+  builtin: { works: 'b   kmz', builtins: ['builtin'], ja: '`builtin`', en: '`builtin`' },
+  enable: { works: 'b     z', builtins: ['enable'], ja: '`enable`', en: '`enable`' },
+  caller: { works: 'b', builtins: ['caller'], ja: '`caller`', en: '`caller`' },
+  disown: { works: 'b  yk z', builtins: ['disown'], ja: '`disown`', en: '`disown`' },
+  bind: { works: 'b    m', builtins: ['bind'], ja: '`bind`', en: '`bind`' },
+  complete: { works: 'b  y', builtins: ['complete'], ja: '`complete`', en: '`complete`' },
+  compgen: { works: 'b', builtins: ['compgen'], ja: '`compgen`', en: '`compgen`' },
+  compopt: { works: 'b', builtins: ['compopt'], ja: '`compopt`', en: '`compopt`' },
+  fc: { works: 'b  ykmz', builtins: ['fc'], ja: '`fc`', en: '`fc`' },
+  logout: { works: 'b     z', builtins: ['logout'], ja: '`logout`', en: '`logout`' },
+  suspend: { works: 'b  ykmz', builtins: ['suspend'], ja: '`suspend`', en: '`suspend`' },
+  help: { works: 'b ay', builtins: ['help'], ja: '`help`', en: '`help`' },
+  history: { works: 'b ay mz', builtins: ['history'], ja: '`history`', en: '`history`' },
+  setopt: { works: '      z', builtins: ['setopt', 'unsetopt'], ja: '`setopt` / `unsetopt`', en: '`setopt` / `unsetopt`' },
   exportF: { works: 'b', dash: EXPORT_F, ash: EXPORT_F, ja: '`export -f`', en: '`export -f`' },
   waitN: { works: 'b a', ja: '`wait -n`', en: '`wait -n`', dash: optionRefused('wait') },
   coproc: { works: 'b     z', ja: '`coproc`', en: '`coproc`', dash: NO_COPROC, ash: NO_COPROC },
@@ -245,6 +261,19 @@ export const COMMON_SH: readonly Measured[] = ['dash', 'ash'];
 export function builtinIn(name: string, shell?: Shell): boolean {
   const id = builtinRow(name);
   return !id || featureIn(id, shell) === 'all';
+}
+
+/**
+ * Where a builtin that `shell` (bash when absent) is not counted on to have is (`builtinIn` false): `lacks`, the shells of `shell` that run no
+ * builtin of the name (in `sh`, those of the common ones: `source`, dash); `has`, the shells that have it, in the order of `LETTER` (in `sh`, of
+ * the shells a `/bin/sh` usually is, bash and the common ones, when one of them has it).
+ */
+export function builtinShells(name: string, shell?: Shell): { lacks: RealShell[]; has: RealShell[] } {
+  const f = FEATURES[builtinRow(name)!];
+  const has = (Object.keys(LETTER) as RealShell[]).filter((sh) => works(f, sh));
+  if (shell !== 'sh') return { lacks: [shell ?? 'bash'], has };
+  const usual = has.filter((sh) => sh === 'bash' || (COMMON_SH as readonly RealShell[]).includes(sh));
+  return { lacks: COMMON_SH.filter((sh) => !works(f, sh)), has: usual.length ? usual : has };
 }
 
 /** The feature of a brace expression: a list (`{a,b}`) or a sequence (`{1..3}`). */

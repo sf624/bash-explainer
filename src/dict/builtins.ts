@@ -542,7 +542,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
       ...args(operand('OPTNAME', 'オプション名（例: nullglob, globstar, extglob）', 'option name (e.g. nullglob, globstar, extglob)', { type: 'shell-option', values: SHOPT_OPTION_NAMES })).operands!,
     ],
   }), (c) => has(c, '-s', '-u') && !has(c, '-p') && c.operands.length > 0, { alters: ['options'] }),
-  print: b('引数を表示する（ksh・mksh・zsh の組み込み。bash にはない。`echo` と違いオプションの扱いが決まっている）', 'Print the arguments (a ksh, mksh and zsh builtin, not in bash; unlike `echo` its options are well defined)', [
+  print: b('引数を表示する（`echo` と違いオプションの扱いが決まっている）', 'Print the arguments (unlike `echo`, its options are well defined)', [
     ['-n', '最後に改行を出さない', 'do not print a trailing newline'],
     ['-r', '`\\` によるエスケープを解釈しない', 'do not interpret `\\` escapes'],
     ['-R', '`-r` に加えて、以降の `-` で始まる引数もオプションとして扱わない', 'like `-r`, and treat later `-` arguments as text'],
@@ -551,7 +551,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-s', 'コマンド履歴に追加する', 'append to the command history'],
     ['-l', '引数を1行ずつ表示する（zsh）', 'print each argument on its own line (zsh)'],
   ]),
-  whence: b('コマンド名がどう解釈されるか（パスやエイリアスなど）を表示する（ksh・mksh・zsh の組み込み。bash の `type`・`command -v` に相当）', 'Show how a command name is interpreted (a ksh, mksh and zsh builtin; like bash\'s `type` / `command -v`)', [
+  whence: b('コマンド名がどう解釈されるか（パスやエイリアスなど）を表示する（bash の `type`・`command -v` に相当）', 'Show how a command name is interpreted (like bash\'s `type` / `command -v`)', [
     ['-v', '種類（組み込み・関数・エイリアスなど）も表示する', 'say what kind of command it is'],
     ['-p', '関数やエイリアスを無視して PATH から探す', 'search PATH only, ignoring functions and aliases'],
     ['-a', '見つかったものをすべて表示する', 'show every match'],

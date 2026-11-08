@@ -248,3 +248,18 @@ A shell-form `RUN`, `CMD` or `ENTRYPOINT` runs with `/bin/sh -c`, and which sh t
 - The shell chip says it: "busybox ash" or "dash" for such a line, instead of "POSIX sh".
 
 What dash 0.5.12 and busybox 1.36.1 do with each construct is measured in `test/dialect-dash.test.ts`, which now also runs `RUN` lines under `FROM alpine` and `FROM debian` in the real shell.
+
+### Builtins that the script's shell lacks
+
+What a command name is in a script of another shell comes from one table: the rows of `FEATURES` (src/shellfeatures.ts) that name builtins, read by `builtinIn` in name resolution. A sh script is read as dash or busybox ash may run it, so a builtin one of them lacks is not counted on. The table now has a row for each builtin of the dictionary that a shell lacks: `builtin`, `enable`, `caller`, `disown`, `bind`, `complete`, `compgen`, `compopt`, `fc`, `logout`, `suspend`, `help`, `history`, and zsh's `setopt` and `unsetopt`. `test/dialect.test.ts` holds every builtin of the dictionary against bash, dash, busybox ash, yash, ksh93, mksh and zsh (`command -v` with no PATH).
+
+| Line | Before | After |
+|---|---|---|
+| `#!/bin/sh`, `source ./lib.sh` | Badge "program", kind "builtin", text "Run a file in the current shell (its variables and functions persist)" | Badge "program: usually there is none", kind "command", text "Not a builtin of POSIX sh (dash has none), so it is looked up in PATH, where there is usually no program of this name. As a builtin of bash and busybox ash: Run a file in the current shell (…)" |
+| `#!/bin/sh`, `let i=1` | Badge "program", kind "builtin", text "Evaluate arithmetic expressions" | The same as `source`, with "As a builtin of bash and busybox ash: Evaluate arithmetic expressions (e.g. `let i++`)" |
+| `#!/bin/sh`, `caller` (and `enable`, `help`, `disown`, `compgen`…) | Badge "builtin", no problem | "Not a builtin of POSIX sh (dash and busybox ash have none) … As a builtin of bash: Print the caller context (debugging)", and an Error "`caller` is not POSIX sh (in dash and busybox ash the command is not found, with status 127)" |
+| `#!/bin/sh`, `builtin eval 'shopt -s x'` | An Error on `shopt` in the string | An Error on `builtin`: dash and busybox ash have none, so the string never runs |
+| `#!/bin/bash`, `setopt extended_glob` | Badge "builtin" | "Not a builtin of bash … As a builtin of zsh: Turn zsh options on" |
+| `print` and `whence` in bash | "(a ksh, mksh and zsh builtin, not in bash; …)" in the command's own text | The same sentence as above, naming ksh93, mksh and zsh from the table |
+
+The words after the name are still read as the shells that have the builtin read them (`./lib.sh` is "file to source"), as the text says. Evidence: `dash -c 'source /dev/null'` prints `dash: 1: source: not found` (status 127); busybox ash runs it, and has `help` and `history` too.
