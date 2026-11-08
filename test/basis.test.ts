@@ -12,7 +12,7 @@ import { documentIssues, explainDocumentLine } from '../src/document';
 import { openDocument } from '../src/document-setup';
 import { explainHostedLine, extractShell } from '../src/hosts';
 import { SECTIONS } from '../src/manual';
-import { STYLE_CONVENTIONS, STYLE_LEVELS, STYLE_REFS } from '../src/pitfalls';
+import { STYLE_CONVENTIONS, STYLE_CHECKS, STYLE_REFS } from '../src/pitfalls';
 import type { Shell } from '../src/shellfeatures';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { basisGate, basisSaid, fact, type FactId, MESSAGES } from '../src/messages';
@@ -517,7 +517,7 @@ describe('conventions: the habit a note recommends', () => {
       'bracket-close-in-word': null, 'and-or-in-bracket': null, 'download-run-by-shell': 'read-before-run', 'trap-goes-on': null,
       'source-searches-path': 'source-by-script-path', 'pattern-from-variable': 'grep-fixed-strings',
     });
-    assert.deepStrictEqual(Object.keys(STYLE_CONVENTIONS), Object.keys(STYLE_LEVELS));
+    assert.deepStrictEqual(Object.keys(STYLE_CONVENTIONS), Object.keys(STYLE_CHECKS));
   });
 
   it('names each habit once, used by some note, with its sources as plain strings', () => {
@@ -530,7 +530,7 @@ describe('conventions: the habit a note recommends', () => {
   });
 
   it('cites sections of the bash 5.2 manual for every style check but one about grep', () => {
-    assert.deepStrictEqual(Object.keys(STYLE_REFS), Object.keys(STYLE_LEVELS));
+    assert.deepStrictEqual(Object.keys(STYLE_REFS), Object.keys(STYLE_CHECKS));
     for (const [code, refs] of Object.entries(STYLE_REFS)) for (const r of refs) assert.ok(SECTIONS.has(r), `${code}: ${r}`);
     assert.deepStrictEqual(Object.entries(STYLE_REFS).filter(([, refs]) => !refs.length).map(([code]) => code), ['pattern-from-variable']);
   });

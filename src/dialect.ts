@@ -10,7 +10,7 @@ import { leastOf, mostOf, pushAll } from './lists';
 import { failsCheck, severityOf } from './levels';
 import { type Note, problemNote } from './messages';
 import { SUBSHELL_STOPS } from './messages-shfail';
-import type { Head } from './messages-heads';
+import type { Head } from './messages-levels';
 import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
 import { networkPath, networkTarget } from './dict/syntax';
 import { VARIABLE_SECTIONS } from './manual';
