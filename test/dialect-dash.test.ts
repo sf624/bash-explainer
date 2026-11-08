@@ -111,6 +111,7 @@ const ROWS: Record<string, string[]> = {
   epoch: ['echo "x$EPOCHSECONDS"', 'echo "x$EPOCHREALTIME"'],
   setByBash: ['echo "x$OSTYPE"', 'echo "x$HOSTTYPE"', 'echo "x$MACHTYPE"', 'echo "x$SHELLOPTS"', 'echo "x$GROUPS"', 'echo "x$DIRSTACK"', 'echo "x$OPTERR"', 'echo "x$HISTCMD"', 'echo "x$SRANDOM"'],
   reply: ['echo "x$REPLY"'],
+  lastArg: ['mkdir -p d && echo "x$_"', 'mkdir -p d; echo "x$_"'],
   funcname: ['f() { echo "x$FUNCNAME"; }; f'],
   uid: ['echo "x$UID"', 'echo "x$EUID"'],
   hostname: ['echo "x$HOSTNAME"'],
@@ -749,6 +750,13 @@ describe('`read` with no name', () => {
   it('counts on a feature in sh where both common shells have it, and as maybe where one has it', () => {
     assert.deepStrictEqual(['local', 'readReply', 'shopt'].map((id) => featureIn(id, 'sh')), ['all', 'some', 'none']);
     assert.deepStrictEqual([featureIn('readReply'), featureIn('readReply', 'dash'), featureIn('readReply', 'ash')], ['all', 'none', 'all']);
+  });
+  it('leaves `$_` unset in dash and busybox ash, whatever the commands run, and warns in sh', () => {
+    const code = 'mkdir -p d && echo "[$_]"; true; echo "[$_]"';
+    // (Run with `_` not in the environment: a shell started by another keeps the `_` it was given.)
+    for (const sh of ['dash', 'ash'] as const) if (COMMANDS[sh]) assert.strictEqual(runIn(COMMANDS[sh]!, code).out, '[]\n[]\n', sh);
+    for (const shell of ['dash', 'ash', 'sh'] as const) assert.deepStrictEqual(levelOf('mkdir -p d && cd "$_"', 'lastArg', shell), ['warning'], shell);
+    assert.deepStrictEqual(levelOf('mkdir -p d && cd "$_"', 'lastArg', 'bash'), []);
   });
   it('leaves `$REPLY` unset in dash, set in busybox ash, and may be either in sh', () => {
     const code = 'read -r <file; echo "[$REPLY]"';
