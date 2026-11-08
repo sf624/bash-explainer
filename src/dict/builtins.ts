@@ -436,12 +436,12 @@ const declares = (c: BuiltinCall): boolean => c.operands.length > 0 && !has(c, '
 const GLOB_AGAIN = tx('グロブ（ワイルドカード展開）を再び有効にする', 'enable globbing (wildcard expansion) again');
 
 export const builtins: Record<string, CommandSpec> = wordTable({
-  export: failing('usage', actsOnShell(declarationSpec('export', exportFlags, FUNCTION_NAMES, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p'))),
-  readonly: failing('usage', actsOnShell(declarationSpec('readonly', readonlyFlags, FUNCTION_NAMES, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p'))),
+  export: actsOnShell(declarationSpec('export', exportFlags, FUNCTION_NAMES, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
+  readonly: actsOnShell(declarationSpec('readonly', readonlyFlags, FUNCTION_NAMES, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
   // `declare +x`: a `+` turns the attribute off.
-  declare: failing('usage', actsOnShell(declarationSpec('declare', declarationFlags, DECLARE_NAMES, { plusOptions: true, locals: 'unless-g' }, declarationOffFlags), declares)),
-  typeset: failing('usage', actsOnShell(declarationSpec('typeset', declarationFlags, DECLARE_NAMES, { plusOptions: true, locals: 'unless-g' }, declarationOffFlags), declares)),
-  local: failing('usage', actsOnShell(declarationSpec('local', declarationFlags, DECLARE_NAMES, { plusOptions: true, scope: { only: 'function', except: ['zsh', 'mksh', 'yash', 'ksh'] }, locals: 'unless-g', localOptions: true }, declarationOffFlags), (c) => c.operands.length > 0)),
+  declare: actsOnShell(declarationSpec('declare', declarationFlags, DECLARE_NAMES, { plusOptions: true, locals: 'unless-g' }, declarationOffFlags), declares),
+  typeset: actsOnShell(declarationSpec('typeset', declarationFlags, DECLARE_NAMES, { plusOptions: true, locals: 'unless-g' }, declarationOffFlags), declares),
+  local: actsOnShell(declarationSpec('local', declarationFlags, DECLARE_NAMES, { plusOptions: true, scope: { only: 'function', except: ['zsh', 'mksh', 'yash', 'ksh'] }, locals: 'unless-g', localOptions: true }, declarationOffFlags), (c) => c.operands.length > 0),
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word, `--` too, is text to print.
   // The last of `-e` and `-E` decides whether backslash escapes are read.
   echo: failing('usage', b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING, inShell: ECHO_IN_SHELL })),
@@ -531,7 +531,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
       ...args(operand('ARG', '位置パラメータ `$N` になる', 'becomes the positional parameter `$N`')).operands!,
     ],
   }), (c) => c.operands.length > 0 || c.flags.some((f) => !c.bare.includes(f)), { alters: ['options'] })),
-  shopt: failing('usage', actsOnShell(b('bash 固有のシェルオプションを設定・表示する', 'Set or show bash-specific shell options', [
+  shopt: failing({ usage: true, only: ['-s', '-u'], unless: { flags: ['-p', '-q'], patterns: false } }, actsOnShell(b('bash 固有のシェルオプションを設定・表示する', 'Set or show bash-specific shell options', [
     ['-s', 'オプションを有効にする', 'enable the options'],
     ['-u', 'オプションを無効にする', 'disable the options'],
     ['-q', '何も表示せず、終了ステータスで状態を返す', 'quiet; report via exit status'],
@@ -641,7 +641,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   true: failing('never', b('何もせず成功（終了ステータス 0）を返す', 'Do nothing and succeed (exit 0)', [], { program: PROGRAMS.true, parser: 'letters' })),
   false: b('何もせず失敗（終了ステータス 1）を返す', 'Do nothing and fail (exit 1)', [], { program: PROGRAMS.false, parser: 'letters' }),
   ':': failing('never', special('何もしないコマンド（常に成功）。無限ループ `while :` や引数の展開だけしたい時に使う', 'No-op that always succeeds; used in `while :` or to evaluate expansions', [], { parser: 'letters' })),
-  alias: failing('usage', actsOnShell(b('コマンドの別名を定義する', 'Define a command alias', [
+  alias: actsOnShell(b('コマンドの別名を定義する', 'Define a command alias', [
     ['-p', '定義済みの別名を再入力できる形で表示する', 'print the aliases in a reusable form'],
   ], {
     // `alias NAME=VALUE` defines, `alias NAME` prints; a line of both says both. A name bash refuses, and a text that
@@ -663,7 +663,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
       { pattern: [operand('NAME', '定義を表示する別名（なければ失敗する）', 'alias whose definition to print (it fails when there is none)', { repeat: '+', matches: /^[^=]*$/ })] },
       ...args(operand('NAME', '`名前=値` なら別名の定義（`=` の前の名前が後ろの文字列を表す）、名前だけならその定義の表示', 'an alias definition with `=` (the name stands for the text after `=`), or a name alone, which prints its definition')).operands!,
     ],
-  }), (c) => c.operands.some((o) => o === undefined || o.includes('=')), { alters: ['aliases'] })),
+  }), (c) => c.operands.some((o) => o === undefined || o.includes('=')), { alters: ['aliases'] }),
   unalias: actsOnShell(b('別名を削除する', 'Remove an alias', [
     ['-a', 'すべての別名を削除する', 'remove all aliases'],
   ], args(operand('NAME', '削除する別名', 'alias to remove'))), undefined, { alters: ['aliases'] }),
@@ -777,13 +777,13 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   ], { unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）だけを表示する`, `Show only entry ${n}, counted from the ${side} (from 0)`))] }),
   break: failing('usage', special('ループを抜ける', 'Exit from a loop', [], { ...numeric(operand('N', '抜けるループの段数', 'number of loop levels')), ends: 'loop' })),
   continue: failing('usage', special('ループの次の繰り返しに進む', 'Skip to the next loop iteration', [], { ...numeric(operand('N', '対象のループの段数', 'number of loop levels')), ends: 'pass' })),
-  unset: failing('usage', actsOnShell(special('変数や関数を削除する', 'Unset variables or functions', [
+  unset: actsOnShell(special('変数や関数を削除する', 'Unset variables or functions', [
     ['-v', '変数を削除', 'unset variables'],
     ['-f', '関数を削除', 'unset functions'],
     ['-n', '名前参照（`declare -n`）そのものを削除する（参照先の変数は残る）', 'unset the name reference itself, not the variable it points to'],
   ], args(operand('NAME', '削除する名前', 'name to unset', {
     type: 'variable', acts: 'unsets', names: { options: [['-f', 'function'], ['-n', 'nameref'], ['-v', 'variable']], orFunction: true, exclusive: ['-f', '-v'] },
-  }))))),
+  })))),
   enable: actsOnShell(b('ビルトインを有効・無効にする', 'Enable or disable builtins', [
     ['-n', 'ビルトインを無効にする（同名の外部コマンドが使われる）', 'disable the builtin (an external command of that name runs)'],
     ['-a', 'すべてのビルトインを対象にする', 'act on all builtins'],

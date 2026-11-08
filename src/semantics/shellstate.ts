@@ -276,7 +276,13 @@ export class NameMap<V> implements ReadonlyMap<string, V> {
  * only, or not known (signals or an action the walk does not read, two paths that set different ones). A name not in
  * the map was never set: none runs.
  */
-export interface TrapState { readonly state: Tri; readonly at: SyntaxNode; readonly script?: NestedScript }
+export interface TrapState {
+  readonly state: Tri;
+  readonly at: SyntaxNode;
+  readonly script?: NestedScript;
+  /** Taken back to bash's default (`trap - ERR`, `trap ERR`), not set to run nothing (`trap '' ERR`): a function body without errtrace that does so gets its caller's `ERR` trap back when it returns. */
+  readonly reset?: true;
+}
 
 /** The state of the shell at a place. A name not in a map has not been changed by the script. */
 export interface ShellState {

@@ -136,7 +136,13 @@ export class WalkBuiltins {
         return trapCommand(this.w, st, parse, args, host, { word: args[at.word], script });
       }
       // (`exec cmd` replaces the shell: no `EXIT` trap runs. `exec 3>&1` goes on.)
-      case 'exec': return parse.roles.some((r) => r.role.role === 'command') ? execTraps(this.w, st, this.w.aliasHost ?? n) : st;
+      case 'exec': {
+        // (Surely replaced only when the command is a word, `exec "$@"` may be none, and execfail is off.)
+        const cmd = parse.roles.find((r) => r.role.role === 'command');
+        if (!cmd) return st;
+        const sure = !!this.w.conditions.fieldsOf(args[cmd.word], st)?.length && option(st, 'shopt', 'execfail') !== 'on' && option(st, 'shopt', 'execfail') !== 'unknown';
+        return execTraps(this.w, st, this.w.aliasHost ?? n, sure);
+      }
       case 'cd': case 'pushd': case 'popd': {
         // They set PWD and OLDPWD (when they succeed), to values not followed.
         const moved = this.setVariable(this.setVariable(st, 'PWD', n, undefined), 'OLDPWD', n, undefined);

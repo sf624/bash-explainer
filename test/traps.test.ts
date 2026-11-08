@@ -49,7 +49,7 @@ describe('the traps in effect (docs/design/errexit-stop.md, G1)', () => {
     assert.strictEqual(traps("trap 'echo T' \"$sig\"\necho a", 'echo a'), "EXIT:unknown@trap 'echo T' \"$sig\", ERR:unknown@trap 'echo T' \"$sig\"");
     assert.strictEqual(traps("trap 'echo T' EXIT \"$sig\"\necho a", 'echo a'), "EXIT:on@trap 'echo T' EXIT \"$sig\", ERR:unknown@trap 'echo T' EXIT \"$sig\"");
     // (An action the walk does not read: set, not known.)
-    assert.strictEqual(traps('trap "$cmd" EXIT\necho a', 'echo a'), 'EXIT:unknown@trap "$cmd" EXIT (no action)');
+    assert.strictEqual(traps('trap "$cmd" EXIT\necho a', 'echo a'), 'EXIT:unknown@trap "$cmd" EXIT (no action), ERR:unknown@trap "$cmd" EXIT (no action)');
   });
 
   it('merges the paths: set on some, set by different commands', () => {
@@ -87,6 +87,29 @@ describe('the traps in effect (docs/design/errexit-stop.md, G1)', () => {
     assert.strictEqual(traps("trap 'echo T' EXIT\nexec true\necho a", 'echo a'), 'EXIT:off@exec true (no action)');
     assert.strictEqual(traps('exec true\necho a', 'echo a'), 'EXIT:off@exec true (no action)');
     assert.strictEqual(traps('exec true\nexec true\necho a', 'echo a'), 'EXIT:off@exec true (no action)');
+    // (The command may be no word, or may not run with execfail: the shell may go on, and run the trap.)
+    assert.strictEqual(traps("trap 'echo T' EXIT\nexec \"$@\"\necho a", 'echo a'), "EXIT:unknown@trap 'echo T' EXIT");
+    assert.strictEqual(traps("trap 'echo T' EXIT\nshopt -s execfail\nexec /x/y\necho a", 'echo a'), "EXIT:unknown@trap 'echo T' EXIT");
+    assert.strictEqual(traps('exec "$@"\necho a', 'echo a'), '-');
+    assert.strictEqual(traps("trap '' EXIT\nexec \"$@\"\necho a", 'echo a'), "EXIT:off@trap '' EXIT (no action)");
+  });
+
+  it('takes a trap as not known after code the walk does not read (`source`, `eval` of a value)', () => {
+    assert.strictEqual(traps('source ./lib.sh\necho a', 'echo a'), 'EXIT:unknown@source ./lib.sh (no action), ERR:unknown@source ./lib.sh (no action)');
+    assert.strictEqual(traps("trap 'echo T' EXIT\nsource ./lib.sh\necho a", 'echo a'), "EXIT:unknown@trap 'echo T' EXIT, ERR:unknown@source ./lib.sh (no action)");
+    assert.strictEqual(traps("trap '' EXIT\nsource ./lib.sh\nsource ./lib.sh\necho a", 'echo a'), "EXIT:unknown@trap '' EXIT (no action), ERR:unknown@source ./lib.sh (no action)");
+    assert.strictEqual(traps('eval "$cmd"\necho a', 'echo a'), 'EXIT:unknown@eval "$cmd" (no action), ERR:unknown@eval "$cmd" (no action)');
+    // (A trap set after it is set.)
+    assert.strictEqual(traps("source ./lib.sh\ntrap 'echo T' EXIT\necho a", 'echo a'), "EXIT:on@trap 'echo T' EXIT, ERR:unknown@source ./lib.sh (no action)");
+    const { state, at } = model("set -e\nsource ./lib.sh\necho a\ntrap 'echo T' EXIT");
+    assert.strictEqual(laterExitTrap(state, at('echo a')), undefined);
+  });
+
+  it('gives a function the caller ERR trap back after `trap - ERR` without errtrace, not after `trap \'\' ERR`', () => {
+    assert.strictEqual(traps("trap 'echo E' ERR\nf() { trap - ERR; }\nf\necho a", 'echo a'), "ERR:on@trap 'echo E' ERR");
+    assert.strictEqual(traps("trap 'echo E' ERR\nf() { trap ERR; }\nf\necho a", 'echo a'), "ERR:on@trap 'echo E' ERR");
+    assert.strictEqual(traps("trap 'echo E' ERR\nf() { trap '' ERR; }\nf\necho a", 'echo a'), "ERR:off@trap '' ERR (no action)");
+    assert.strictEqual(traps("set -E\ntrap 'echo E' ERR\nf() { trap - ERR; }\nf\necho a", 'echo a'), 'ERR:off@trap - ERR (no action)');
   });
 
   it('takes a trap set by the action of another as not known after each statement', () => {
@@ -128,8 +151,8 @@ describe('what can fail (docs/design/errexit-stop.md, G2, G3)', () => {
   };
 
   it('reads when a builtin fails from its spec: usage errors only, never, or as an option asks', () => {
-    for (const c of ['echo hi', 'set -e', "trap 'x' EXIT", 'export X=1', 'local v=1', 'continue', 'true', ':', 'echo hi >&2', 'echo hi 2>/dev/null']) assert.strictEqual(mayFail(c, c), false, c);
-    for (const c of ['echo hi > f', 'printf %d x', 'cd /x', 'read x', 'grep x f', 'export X=$(cmd)', 'enable -n echo; echo hi']) assert.strictEqual(mayFail(c, c.split('; ').at(-1)!), true, c);
+    for (const c of ['echo hi', 'set -e', "trap 'x' EXIT", 'shopt -s extglob', 'shopt -u extglob', 'continue', 'true', ':', 'echo hi >&2', 'echo hi 2>/dev/null']) assert.strictEqual(mayFail(c, c), false, c);
+    for (const c of ['echo hi > f', 'printf %d x', 'cd /x', 'read x', 'grep x f', 'export X=1', 'local v=1', 'shopt extglob', 'shopt -qs extglob', 'shopt -ps extglob', 'enable -n echo; echo hi']) assert.strictEqual(mayFail(c, c.split('; ').at(-1)!), true, c);
     // (A redirected statement: its redirections count too.)
     assert.strictEqual(mayFail('{ echo hi; } > f', '{ echo hi; } > f'), true);
   });
@@ -137,6 +160,8 @@ describe('what can fail (docs/design/errexit-stop.md, G2, G3)', () => {
   it('says a call cannot fail where every failure in the body stops the shell inside it', () => {
     const fails = (body: string, extra = 'set -e\n'): boolean => mayFail(`${extra}f() ${body}\nf`, 'f');
     assert.strictEqual(fails('{ echo a; logger b; }'), false);
+    // (A test of a declaration, `declare -F "$1" && "$1"`: its failure is not checked, and is the call's.)
+    assert.strictEqual(fails('{ declare -F "$1" >/dev/null && "$1"; }'), true);
     assert.strictEqual(fails('{ [ -f x ] && echo a; }'), true);
     assert.strictEqual(fails('{ [ -f x ] || echo a; }'), false);
     assert.strictEqual(fails('{ ! grep x f; }'), true);
