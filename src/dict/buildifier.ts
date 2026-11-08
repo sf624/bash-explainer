@@ -7,7 +7,7 @@ import { cmd, OptSpec } from './types';
 // `-lint`, reports or fixes common mistakes. Go's `flag` package reads its words: `-name`, `--name`, `-name=value` and
 // `-name value`, no clusters, and the first operand ends the options (`buildifier BUILD -mode=check` opens a file named
 // `-mode=check`). That is the preset `openssl` with `optionsFirst`. The exit status is 0 on success, 1 for a syntax error
-// in an input, 2 for a usage error, 3 for a file or internal error, and 4 when `-mode=check` (or `-lint=warn`) finds
+// in an input (but not with `-mode=check -format=…`: status 0, `valid: false` in the report), 2 for a usage error, 3 for a file or internal error, and 4 when `-mode=check` (or `-lint=warn`) finds
 // something to do or report; given `-format` it prints the report on stdout and exits 0.
 
 const OPTIONS: OptSpec[] = [
@@ -15,7 +15,7 @@ const OPTIONS: OptSpec[] = [
     check: tx('整形が必要なファイル名を標準エラー出力に表示する（あれば終了ステータス 4。`-format` を付けると標準出力で、ステータスは 0）', 'print the names of the files that need formatting to stderr (status 4 if there are any; with `-format`, to stdout and the status is 0)'),
     diff: tx('整形したときの差分を表示する（`-d` と同じ）', 'show the diff that formatting would make (the same as `-d`)'),
     fix: tx('ファイルを整形して書き換える（既定。標準入力なら整形した結果を標準出力へ）', 'rewrite the files formatted (the default; for stdin, print the result)'),
-    print_if_changed: tx('変わるファイルだけ、整形した内容を表示する', 'print the formatted content of the files that would change'),
+    print_if_changed: tx('変わるなら、整形した内容を表示する（ファイルは1つだけ。2つ以上は終了ステータス 2）', 'print the formatted content if it would change (one file only; more is status 2)'),
   }],
   ['-d', '`-mode=diff` と同じ（整形の差分を表示する）', 'the same as `-mode=diff` (show the diff of the formatting)'],
   ['-lint', '検査の仕方（`off` は検査しない（既定）、`warn` は警告を表示、`fix` は自動で直せるものを直す）', 'lint mode (`off`: none, the default; `warn`: print warnings; `fix`: apply the automatic fixes)', 'arg', {
@@ -41,7 +41,7 @@ const OPTIONS: OptSpec[] = [
     json: tx('JSON（ファイルごとの整形の要否と警告）', 'JSON (per file: formatted or not, and the warnings)'),
     sarif: tx('SARIF 2.1.0', 'SARIF 2.1.0'),
   }],
-  ['-path', 'ファイルが、指定したワークスペースからのパスにあるものとして扱う（標準入力や一時コピーの整形に使う）', 'treat the file as if it were at the given path from the workspace (for stdin or a temporary copy)', 'arg'],
+  ['-path', 'ファイルが、指定したワークスペースからのパスにあるものとして扱う（標準入力や一時コピーの整形に使う。ファイルは1つだけ）', 'treat the file as if it were at the given path from the workspace (for stdin or a temporary copy; one file only)', 'arg'],
   ['-config', '`.buildifier.json` の設定ファイル（`off` で設定ファイルを読まない、`example` で見本を表示）', 'path of a `.buildifier.json` configuration file (`off`: read none; `example`: print a sample)', 'arg'],
   ['-diff_command', '`diff` モードで差分を取るコマンド（既定は環境変数 `BUILDIFIER_DIFF` などから決まる）', 'command that makes the diff in `diff` mode (the default comes from `BUILDIFIER_DIFF` and the like)', 'arg'],
   ['-multi_diff', '`-diff_command` が tkdiff のように複数のファイルを一度に比べられる', 'the `-diff_command` can compare several files at once, as tkdiff does'],
