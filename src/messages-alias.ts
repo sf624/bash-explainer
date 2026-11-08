@@ -1,4 +1,4 @@
-// The texts of the catalog's facts about aliases (src/messages.ts: `alias-*`), apart, to keep src/messages.ts short.
+// The texts of the catalog's facts about aliases (`alias-*`, in src/messages-facts-shells.ts), apart from the catalog's modules.
 import { lineLabel } from './i18n';
 import { noShebang, READ_INTERACTIVELY, unreadClause } from './messages-common';
 

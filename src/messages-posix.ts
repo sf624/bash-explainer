@@ -1,6 +1,6 @@
 // The texts of the catalog's facts about what ends the shell in POSIX mode and what `exit` does with words that give it
-// no status (src/messages.ts: `posix-special-builtin-error`, the function names, `exit-refused`), apart, to keep
-// src/messages.ts short.
+// no status (`posix-special-builtin-error` and its function names: src/messages-facts-commands.ts; `exit-refused`:
+// src/messages-facts-status.ts), apart from the catalog's modules.
 
 /** An error of a special builtin that ends the shell in POSIX mode (`PosixExit` of src/semantics/posixexits.ts). */
 export interface PosixExitParams { name: string; why: string; word: string; status: number; stops: Stops; since?: string; trap?: boolean }

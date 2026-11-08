@@ -44,7 +44,7 @@ const SPECIAL_TITLE: Text = {
 const SPECIAL_WORD: Text = { ja: '特殊ビルトイン', en: 'special builtin' };
 
 /** The word of a kind of command name, as the badge says it ("builtin", "ビルトイン"). */
-export const nameKindWord =(lang: Lang, kind: NameKind): string => NAME_KINDS[kind].word[lang];
+export const nameKindWord = (lang: Lang, kind: NameKind): string => NAME_KINDS[kind].word[lang];
 
 /** What the panel and the other outputs say of a command name, in one language (`nameSaid`). */
 export interface NameSaid {

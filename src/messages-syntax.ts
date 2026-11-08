@@ -1,5 +1,5 @@
-// The texts of the catalog's fact about a syntax error (src/messages.ts: `syntax-error`, from src/semantics/syntaxerror.ts),
-// apart, to keep src/messages.ts short. (3.1.1: the shell reads, parses, then executes each command; that it stops there
+// The texts of the catalog's fact about a syntax error (`syntax-error`, in src/messages-facts-commands.ts, from src/semantics/syntaxerror.ts),
+// apart from the catalog's modules. (3.1.1: the shell reads, parses, then executes each command; that it stops there
 // the manual only implies, as for `keyword-needs-separator`. No status: bash exits 2, or 1 for `x=(1 2`, and a file sourced
 // returns to the script that sources it. "The shell", no file: dash runs `#!/bin/sh`, and `-e` has no file. "If it
 // reaches this line": `set -e` or `set -u` may stop it first, with a failing status. Checked: its probe, and
