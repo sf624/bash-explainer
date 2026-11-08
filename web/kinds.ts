@@ -70,15 +70,17 @@ const pasteAsked = Annotation.define<true>();
 
 /**
  * Whether `tr` pastes (or drops) a whole script: text put in over the whole of the old one, or into an empty editor
- * (docs/design/usability-9.md, Q8). A paste that leaves any of the old text is an ordinary edit.
+ * (docs/design/usability-9.md, Q8). Blank space left around the paste counts as none (a selection that missed the last
+ * empty line); a paste that leaves any other old text is an ordinary edit.
  */
 function wholePaste(tr: Transaction): boolean {
   if (!tr.docChanged || !(tr.isUserEvent('input.paste') || tr.isUserEvent('input.drop'))) return false;
+  const old = tr.startState.doc;
   let whole = true;
   let changes = 0;
   tr.changes.iterChangedRanges((fromA, toA) => {
     changes++;
-    whole &&= fromA === 0 && toA === tr.startState.doc.length;
+    whole &&= !old.sliceString(0, fromA).trim() && !old.sliceString(toA).trim();
   });
   return whole && changes === 1;
 }

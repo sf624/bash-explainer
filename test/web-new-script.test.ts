@@ -291,6 +291,33 @@ describe('the web page: what a new script resets, and the depths\' names', funct
     }
   });
 
+  it('a paste over all but the last empty line is a whole paste too: blank space left around it counts as none', async () => {
+    const { ctx, page, errors } = await open();
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText(MINE);
+    await setShell(page, 'sh');
+    // Everything but the last line break (a phone's drag that misses the last empty line selects so).
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Shift+ArrowLeft');
+    await paste(page, LOGINS.trimEnd());
+    await until('Auto', () => currentShell(page), (v) => v === 'auto');
+    assert.strictEqual(await toastText(page), 'Shell set back to Auto.');
+    // Text left around the paste is no blank space: an ordinary edit, the shell stays.
+    await setShell(page, 'sh');
+    await page.locator('.cm-content').focus();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Shift+ArrowLeft');
+    await page.keyboard.press('Shift+ArrowLeft');
+    await paste(page, 'echo x');
+    await until('the paste', () => text(page), (t) => t.includes('echo x'));
+    await page.waitForTimeout(300);
+    assert.strictEqual(await currentShell(page), 'sh');
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
   it('a paste into an empty editor starts a new script, from the keyboard and from the Paste button: a shell chosen since goes back to Auto', async () => {
     const { ctx, page, errors } = await open();
     await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
