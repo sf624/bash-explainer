@@ -2,7 +2,7 @@
 
 The plan for explaining the patterns of Python's `re` module in `.py` files: `re.search(r'^\d+$', s)` gets the tokens of its pattern, as a `grep -P` pattern does in a shell line. It is the first part of a host file that is not shell code, so most of this page is about how such a part enters the products without a second source of any fact.
 
-Status: Tracked in #759, #748, #760, #749, #750, #751, #752, #753.
+Status: Tracked in #763, #759, #748, #760, #749, #750, #751, #752, #753.
 
 The maintainer decided on 2026-11-08:
 
@@ -108,7 +108,7 @@ The pattern errors of the shell flavors (`grep -P '\Q'`, an unclosed `[`) are er
 
 ### 2.9 The setting
 
-The value `python` of `bashExplainer.embedded.files` turns the whole Python host on and off, regexes included: one switch per kind of file. Its description ("Python's subprocess and os.system") gains "and re patterns", in both languages. The Python extractor no longer returns early when no `subprocess` or `os` call is imported: it returns early when neither those nor `re` are. Whether this should be a value of its own is open (section 11).
+The value `python` of `bashExplainer.embedded.files` turns the whole Python host on and off, regexes included: one switch per kind of file. Its description ("Python's subprocess and os.system") gains "and re patterns", in both languages. The Python extractor no longer returns early when no `subprocess` or `os` call is imported: it returns early when neither those nor `re` are. It stays one value, on by default (section 11).
 
 ### 2.10 New facts and their sources
 
@@ -193,7 +193,7 @@ A bytes pattern (`rb'…'`) has ASCII classes, and `\u`, `\U`, `\N` are errors i
 ### 5.3 Pitfalls of the call and of the string
 
 - **A flag in the count's slot:** `re.sub(p, r, s, re.I)` passes 2 as `count` and stays case-sensitive; the same for `split`'s `maxsplit` and `subn`. A Warning at the argument. The 3.13 deprecation of these positional arguments (`sub` and `split`; the documentation says nothing of `subn`) is said with it.
-- **Escapes of a non-raw literal:** `"\b"` is a backspace (a Warning: a pattern that cannot match where the author meant a word boundary). `"\d"` is an invalid escape of the string, kept as `\d` with a SyntaxWarning since 3.12: Python and the linters (Pylance, ruff's W605) already say it, so whether we say it too is open (section 11).
+- **Escapes of a non-raw literal:** `"\b"` is a backspace (a Warning: a pattern that cannot match where the author meant a word boundary). `"\d"` is an invalid escape of the string, kept as `\d` with a SyntaxWarning since 3.12: Python and the linters (Pylance, ruff's W605) already say it, so we do not (section 11); the token still says that the string keeps `\d`.
 
 ## 6. Examples
 
@@ -258,7 +258,7 @@ The tables of section 7 run on the reference only, so each row has one expected 
 
 Each step is one PR with its tests. Step 2 gets an independent review.
 
-0. **Shell flavors' error texts in the catalog** (if the maintainer agrees, section 11): the error tokens of the BRE, ERE and PCRE readers get catalog `tokenError` entries, so they are problems, and the Python flavor follows a rule that is already there.
+0. **Shell flavors' error texts in the catalog** (#763, decided in section 11): the error tokens of the BRE, ERE and PCRE readers get catalog `tokenError` entries, so they are problems, and the Python flavor follows a rule that is already there.
 1. **One lexer, one value, one import table** (#759), a refactor users do not see: the lexer tested against `tokenize`; `pyValue` with the full escape table, read by both extractors; the import table; calls read from the lexer's tokens, and `callRe` and its two entries in test/examples-regexguard.test.ts gone. The explanations of test/fixtures/hosts/deploy.py and the snapshot of the corpus stay identical; a string with an escape read now (`\a`, octal) is listed in the PR.
 2. **The seam** (#748): `Extracted.languages`, `hostPartAt`, the seam in `explainDocumentLine`, `finishLine` out of the analyzer, `explainLanguageLine` with `placeEmbedded`, the split of `tokenErrorNotes`, the budget's count, the reading root, the chip's `language`, `hasShell`; `re.*` calls and `re.compile` with a literal pattern (raw or not, concatenated) in `.py` files, also with no subprocess call; the minimal `python` flavor (the predicates of section 3, the texts of `\Z`, `$`, `(?P<>)`); the setting's description, docs/guide and CHANGELOG; the rows of sources.md.
 3. **Python's errors** (#760): the rejections of section 3 as error tokens, the validity differential, `(?P=)` and conditionals read for Python and `grep -P`.
@@ -268,7 +268,9 @@ Each step is one PR with its tests. Step 2 gets an independent review.
 7. **Templates and compiled patterns** (#752): `\1`, `\g<name>`, `\g<0>` in `repl`, with their examples; methods of a compiled pattern linked to its `re.compile` in the same file.
 8. **Detection on the web page** (#753): src/hosts/detect.ts recognises pasted Python by `import re` with an `re.` call, as it does for `subprocess`.
 
-## 11. Open questions
+## 11. Decisions
 
-- **Error tokens of the shell flavors.** Python's pattern errors are problems from step 3. The same errors in `grep -P`, `sed` or `[[ =~ ]]` patterns are tokens with inline texts and no mark, so not problems. Recommendation: step 0, a small PR before #748 that gives them catalog `tokenError` entries in every flavor. It adds Errors to shell files (a pattern grep or sed rejects fails every time), which is why it waits for the maintainer.
-- **Which Python files, and which pitfalls.** `python` is in the default `embedded.files`, so after #748 every `.py` file with `import re` gets the status bar item, the panel's button and our problems, where today only files that run commands do. And the `"\d"` pitfall says what Python (a SyntaxWarning) and the linters (Pylance, ruff's W605) already say. Recommendation: keep one value, `python`, on by default, so that the patterns are found without a setting; leave the `"\d"` pitfall out (the token still says that the string keeps `\d`), and keep `"\b"`, which no warning and no common linter reports. The other way: a value of its own, `pythonRegex`, off by default, which keeps Python files quiet unless asked.
+The maintainer decided on 2026-11-09:
+
+- **Error tokens of the shell flavors: yes.** Python's pattern errors are problems from step 3. The same errors in `grep -P`, `sed` or `[[ =~ ]]` patterns were tokens with inline texts and no mark, so not problems. Step 0 (#763, "Invalid regexes in shell scripts become Errors (catalog token errors for the regex reader)"), a small PR before #748, gives them catalog `tokenError` entries in every flavor. It adds Errors to shell files (a pattern grep or sed rejects fails every time).
+- **Which Python files, and which pitfalls: one value, `python`, on by default.** Every `.py` file with `import re` gets the features (the status bar item, the panel's button, our problems), where before only files that run commands did, so that the patterns are found without a setting. There is no value of its own (`pythonRegex`). The `"\d"` pitfall is left out: Python (a SyntaxWarning) and the linters (Pylance, ruff's W605) already say it, and the token still says that the string keeps `\d`. The `"\b"` pitfall stays: no warning and no common linter reports it.
