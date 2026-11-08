@@ -27,7 +27,7 @@ import { documentIssues } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
 import { hostKind } from '../src/hosts';
 import { MESSAGES } from '../src/messages';
-import { STYLE_LEVELS } from '../src/pitfalls';
+import { STYLE_CHECKS } from '../src/pitfalls';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { runContained } from './support/contained';
 
@@ -307,7 +307,7 @@ describe('the checks headed for Error, run in bash (three-levels.md, step 0)', f
 
   it('has a row for every id headed for Error, and each is one the catalog, the style checks or the problems have', () => {
     assert.deepStrictEqual([...new Set(ROWS.map((r) => r.id))].sort(), [...HEADED_FOR_ERROR].sort());
-    for (const id of HEADED_FOR_ERROR) assert.ok(id in MESSAGES || id in STYLE_LEVELS || ['unsupported', 'crlf'].includes(id), id);
+    for (const id of HEADED_FOR_ERROR) assert.ok(id in MESSAGES || id in STYLE_CHECKS || ['unsupported', 'crlf'].includes(id), id);
   });
 
   // A finding of this test, fixed: the note is a caveat where a run works.

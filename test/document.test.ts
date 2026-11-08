@@ -8,7 +8,7 @@ import { documentIssues, explainDocumentLine, fixTitle, noteIssues, ShellDocumen
 import { rewriteFix } from '../src/fixes';
 import { extractShell } from '../src/hosts';
 import { isProblem, MESSAGES } from '../src/messages';
-import { STYLE_LEVELS } from '../src/pitfalls';
+import { STYLE_CHECKS } from '../src/pitfalls';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
@@ -193,7 +193,7 @@ describe('the pitfalls of a script, as problems', () => {
   // (The problems of the explanations: their warnings and caveats are pitfalls, their errors, of the catalog or of the
   // style checks, are not.)
   const found = (text: string, shells: { forced?: 'bash' | 'sh' | 'zsh' } = {}) => documentIssues(script(text), 'en', { script: 'said', ...shells })
-    .filter((i) => i.pitfall || (i.severity === 'error' && (i.code in MESSAGES || i.code in STYLE_LEVELS))).map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endLine, i.endCol]);
+    .filter((i) => i.pitfall || (i.severity === 'error' && (i.code in MESSAGES || i.code in STYLE_CHECKS))).map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endLine, i.endCol]);
   // The script, and its pitfalls: code, severity, and range (line, column, line, column).
   const cases: [string, (string | number)[][]][] = [
     // src/pitfalls.ts

@@ -23,8 +23,10 @@ export const STYLE_EXTENSIONS: readonly string[] = ['.css'];
 export const ALLOWED: readonly string[] = [
   // The level table: the levels, their severity in each protocol, marks, words, icons, colours and names.
   'src/levels.ts',
-  // The catalog: every note's level (each entry's; beside it, the style checks' and the other problems').
+  // The catalog: every note's level (each entry's, by subject in its modules; beside it, the style checks' and the other problems').
   'src/messages.ts',
+  'src/messages-entry.ts',
+  ...['bats', 'commands', 'hosts', 'lines', 'shells', 'status', 'words'].map((n) => `src/messages-facts-${n}.ts`),
   'src/messages-levels.ts',
   'src/messages-unread.ts',
   // The words `error` and `info` there belong to the languages of the embedded programs (jq's `error`, awk's and sed's messages).

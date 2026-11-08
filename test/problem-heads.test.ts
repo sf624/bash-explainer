@@ -4,15 +4,16 @@ import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import { dialectTexts } from '../src/dialect';
 import { documentIssues, type ShellDocument } from '../src/document';
-import { isProblemNote, MESSAGES, problemText } from '../src/messages';
-import { FACT_HEADS, type ProblemFactId, STYLE_HEADS } from '../src/messages-heads';
-import type { StyleCase, StyleCode } from '../src/messages-levels';
+import { type Head, isProblemNote, MESSAGES, type ProblemFactId, problemText } from '../src/messages';
+import { STYLE_CHECKS, type StyleCase, type StyleCode } from '../src/messages-levels';
 import { TOKEN_TEXTS } from '../src/messages-tokens';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { boxProblems } from '../src/ui/panelProblems';
 import { rowModel } from '../src/ui/panelRows';
 
 // The headline of each problem (docs/design/panel-redesign.md, P7b): one sentence, in both languages, for each case of its params.
+// The catalog's type requires one on each entry that can be a problem (`Catalog`, src/messages-entry.ts), as the style checks'
+// table does on each check (`STYLE_CHECKS`).
 
 const parser = createUnbashParser();
 const doc = (text: string): ShellDocument => ({ lines: text.split('\n'), tree: parser.parse(text) });
@@ -127,15 +128,15 @@ describe('the headline of each problem', () => {
       const entry = e as { kind: string; level?: unknown };
       return entry.kind === 'pitfall' || entry.level !== undefined;
     }).map(([id]) => id).sort();
-    assert.deepStrictEqual(Object.keys(FACT_HEADS).sort(), problems);
+    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => 'head' in e).map(([id]) => id).sort(), problems);
   });
 
   it('is one sentence for each case of the params', () => {
     for (const [id, cases] of Object.entries(CASES)) {
-      for (const c of cases) assertHead((FACT_HEADS as unknown as Record<string, (p: unknown) => [string, string]>)[id](c), id);
+      for (const c of cases) assertHead((MESSAGES as unknown as Record<string, { head: (p: unknown) => Head }>)[id].head(c), id);
     }
     for (const [code, cases] of Object.entries(STYLE_CASES)) {
-      for (const c of cases) assertHead(STYLE_HEADS[code as StyleCode](c), code);
+      for (const c of cases) assertHead(STYLE_CHECKS[code as StyleCode].head(c), code);
     }
     // (The dialect checks' headlines are among their texts, in each language.)
     assert.ok(dialectTexts('en').includes('`local` is not POSIX sh.'));

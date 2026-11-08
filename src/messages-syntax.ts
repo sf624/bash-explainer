@@ -35,7 +35,7 @@ export function syntaxErrorText({ what }: { what: SyntaxErrorWhat }): readonly [
     `${capitalized(en)}: a syntax error. If the shell reaches this line, it stops reading here, having run the commands it read in full before; the command this is in, and the others on the line where it starts, do not run${hintEn}`];
 }
 
-/** The headline of the problem (src/messages-heads.ts). */
+/** The headline of the problem (`Entry.head` of `syntax-error`). */
 export function syntaxErrorHead({ what }: { what: SyntaxErrorWhat }): readonly [string, string] {
   const [ja, en] = syntaxErrorWhat(what);
   return [`${ja}ので、シェルはこの行まで来ると構文エラーで止まる。`, `${capitalized(en)}: the shell stops with a syntax error if it reaches this line.`];

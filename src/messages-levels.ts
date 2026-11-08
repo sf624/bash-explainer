@@ -1,9 +1,11 @@
 import type { Lang, Text } from './i18n';
 import { LEVELS, type NoteLevel } from './levels';
 import type { FactKind, Note } from './messages';
-import type { Head } from './messages-heads';
 
-/** A note that is a problem in the editors: it has its code and its headline (the catalog's types, src/messages-heads.ts, and test/problem-heads.test.ts on the corpus), so that no view reads either as missing. */
+/** A headline, in Japanese and English: one sentence with what happens (the catalog's entries, `Entry.head`; the style checks', `STYLE_CHECKS`). */
+export type Head = readonly [ja: string, en: string];
+
+/** A note that is a problem in the editors: it has its code and its headline (the catalog's types, `Catalog` and `STYLE_CHECKS`, and test/problem-heads.test.ts on the corpus), so that no view reads either as missing. */
 export type ProblemNote = Note & { code: string; head: string };
 
 // The levels of the notes that are no fact of the catalog (src/messages.ts has each fact's): the style checks' and the
@@ -19,7 +21,7 @@ export interface TokenEntry<P> {
 }
 
 /**
- * What the problem of a token's error says beyond its row: its headline (src/messages-heads.ts has those of the notes), and
+ * What the problem of a token's error says beyond its row: its headline (the catalog's entries have those of the notes), and
  * what follows from the row's text, which the row leaves to the problem so that a fact of the line is said once.
  */
 export interface TokenProblem { head: readonly [ja: string, en: string]; then: readonly [ja: string, en: string] }
@@ -91,11 +93,11 @@ export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-n
   | 'rm-empty-variable-root' | 'read-without-r' | 'redirect-in-bracket' | 'bracket-close-in-word' | 'and-or-in-bracket'
   | 'download-run-by-shell' | 'trap-goes-on' | 'source-searches-path' | 'pattern-from-variable';
 
-/** What a style check found that its level depends on (`STYLE_LEVELS`): `maybeEmpty`, the part before a `]` may be empty. */
+/** What a style check found that its level and its headline depend on (`STYLE_CHECKS`): `maybeEmpty`, the part before a `]` may be empty. */
 export interface StyleCase { maybeEmpty?: boolean; unsure?: boolean }
 
 /**
- * The level of each style check (src/pitfalls.ts), by the rule of docs/design/three-levels.md (section 2): `error`
+ * The level and the headline of each style check (src/pitfalls.ts), as a catalog entry has them. The level, by the rule of docs/design/three-levels.md (section 2): `error`
  * when the line fails every time as written (`[-f x]`, `x = 1`, `{echo`, `{ echo }`, `[ a > b ]`, `[ a && b ]`,
  * `[ -d "$d/"]`, whose word before `]` is never empty); `warning` when it can do damage that cannot be undone
  * (`rm -rf $DIR/`, a download run by a shell, a file of `$PATH` read by `source`); `info` when it goes wrong only with
@@ -103,14 +105,25 @@ export interface StyleCase { maybeEmpty?: boolean; unsure?: boolean }
  * in bash. As in the catalog, a level that depends on the case is a function of it: `"$x"]` when `$x` may be empty is
  * `]` alone then, which closes `[` and makes another test (`[ -n "$x"]` is `[ -n ]`, true), and fails only with a
  * value (`missing ']'`); not every time, but a test that is wrongly true can guard what cannot be undone
- * (`[ -n "$d"] && rm -rf "$d"/*`): a `warning` (three-levels.md, section 2, question 2).
+ * (`[ -n "$d"] && rm -rf "$d"/*`): a `warning` (three-levels.md, section 2, question 2). The headline, as an entry's
+ * (`Entry.head`): one sentence, by what the check found (`StyleCase`).
  */
-export const STYLE_LEVELS: Record<StyleCode, NoteLevel | ((c: StyleCase) => NoteLevel)> = {
-  'bracket-no-space': 'error', 'assignment-with-spaces': 'error', 'brace-no-space': 'error', 'brace-close-no-separator': 'error',
-  'rm-empty-variable-root': 'warning', 'read-without-r': 'info', 'redirect-in-bracket': 'error',
-  'bracket-close-in-word': ({ maybeEmpty }) => (maybeEmpty ? 'warning' : 'error'),
-  'and-or-in-bracket': 'error', 'download-run-by-shell': 'warning', 'trap-goes-on': 'info', 'source-searches-path': 'warning',
-  'pattern-from-variable': 'info',
+export const STYLE_CHECKS: Record<StyleCode, { level: NoteLevel | ((c: StyleCase) => NoteLevel); head: (c: StyleCase) => Head }> = {
+  'bracket-no-space': { level: 'error', head: () => ['かっこの後に空白がないので、別のコマンド名として読まれる。', 'With no space after the bracket, this reads as another command name.'] },
+  'assignment-with-spaces': { level: 'error', head: () => ['これは代入ではなく、コマンドの実行になる。', 'This runs a command; it is not an assignment.'] },
+  'brace-no-space': { level: 'error', head: () => ['`{` の後に空白がないので、グループの始まりではなくコマンド名になる。', 'With no space after `{`, this is a command name, not the start of a group.'] },
+  'brace-close-no-separator': { level: 'error', head: () => ['`}` の前に `;` か改行がないので、グループが閉じない。', '`}` has no `;` or newline before it, so the group is never closed.'] },
+  'rm-empty-variable-root': { level: 'warning', head: () => ['値が空だと、ルートから削除することになる。', 'If the value is empty, this deletes from the root.'] },
+  'read-without-r': { level: 'info', head: () => ['`-r` がないと、入力のバックスラッシュが失われる。', 'Without `-r`, backslashes in the input are lost.'] },
+  'redirect-in-bracket': { level: 'error', head: () => ['`[ ]` の中の `<` や `>` は比較ではなくリダイレクトになる。', 'A `<` or `>` inside `[ ]` is a redirection, not a comparison.'] },
+  'bracket-close-in-word': { level: ({ maybeEmpty }) => (maybeEmpty ? 'warning' : 'error'), head: ({ maybeEmpty }) => (maybeEmpty
+      ? ['`]` は単語の一部なので、変数が空だと別の条件になり、値があると `[` は失敗する。', 'The `]` is part of the word: an empty variable makes another test, and a value makes `[` fail.']
+      : ['`]` は単語の一部なので、`[` は閉じず、失敗する。', 'The `]` is part of the word, so `[` has no closing `]` and fails.']) },
+  'and-or-in-bracket': { level: 'error', head: () => ['`[ ]` の中の `&&` や `||` はコマンドをつなぐ演算子になり、`[` の `]` がなくなる。', 'A `&&` or `||` inside `[ ]` joins commands, so `[` loses its `]`.'] },
+  'download-run-by-shell': { level: 'warning', head: () => ['ダウンロードした内容を、確かめずにシェルが実行する。', 'A shell runs what is downloaded, unchecked.'] },
+  'trap-goes-on': { level: 'info', head: () => ['この処理のあと、スクリプトは止まらずに続く。', 'After this action, the script goes on from where it was.'] },
+  'source-searches-path': { level: 'warning', head: () => ['名前に `/` がないので、ファイルを `$PATH` からも探す。', 'With no `/` in its name, the file is also searched for in `$PATH`.'] },
+  'pattern-from-variable': { level: 'info', head: () => ['変数の値はただの文字列ではなく、正規表現として読まれる。', 'The value of the variable is read as a regular expression, not as plain text.'] },
 };
 
 /**
@@ -118,7 +131,7 @@ export const STYLE_LEVELS: Record<StyleCode, NoteLevel | ((c: StyleCase) => Note
  * (`readAs`, src/semantics/scriptstops.ts): an error is a warning then, with the same words (docs/design/three-levels.md).
  */
 export function styleLevel(code: StyleCode, c: StyleCase = {}): NoteLevel {
-  const entry = STYLE_LEVELS[code];
+  const entry = STYLE_CHECKS[code].level;
   const level = typeof entry === 'function' ? entry(c) : entry;
   return c.unsure && level === 'error' ? 'warning' : level;
 }

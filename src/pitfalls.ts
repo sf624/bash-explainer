@@ -19,7 +19,7 @@ import { parseExpansion } from './expansion';
 import { hasUnquotedExpansion, quoteExpansions } from './fixes';
 import type { ConventionId } from './conventions';
 import { type Note, styleNote } from './messages';
-import { STYLE_LEVELS, type StyleCase, type StyleCode, styleLevel } from './messages-levels';
+import { STYLE_CHECKS, type StyleCase, type StyleCode, styleLevel } from './messages-levels';
 import { REGEX_VALUE_SPECIAL } from './messages-tokens-argv';
 import { applyRewrite, type Rewrite, replaceNode, replaceSpan, stopCommand, textBetween, type TextEdit } from './rewrite';
 import { mostOf } from './lists';
@@ -171,8 +171,8 @@ function commandsOf(n: SyntaxNode, model: StateModel, shell: Shell | undefined):
   return out;
 }
 
-/** The codes of the style checks, and their levels (src/messages-levels.ts, beside the catalog's). */
-export { STYLE_LEVELS, type StyleCode };
+/** The codes of the style checks, and their levels and headlines (src/messages-levels.ts, beside the catalog's). */
+export { STYLE_CHECKS, type StyleCode };
 
 /**
  * The habit each style check's advice is, when it is one (docs/design/basis-spec-convention.md, 2.3: the checks sorted
@@ -539,7 +539,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
   const s = pick(lang);
   const found: StyleFinding[] = [];
   // (`rewrite`: the rewrites the text shows the code of; the finding carries those with edits, as a fact does. `c`:
-  // what the check found that its level depends on, `STYLE_LEVELS`.)
+  // what the check found that its level and its headline depend on, `STYLE_CHECKS`.)
   const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string, rewrite: readonly Rewrite[] = [], c: StyleCase = {}) => {
     if (read && styleLevel(code, c) === 'error') {
       const said = read(node);
