@@ -24,7 +24,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `which` now says that it looks only in PATH, and that `type` or `command -v` tells what bash runs (a builtin, function or alias too).
 - The panel's depths are named **Overview** and **Word by word** (「概要」「単語ごと」), with the key that chooses each in the tooltip, and a problem's headline starts with the word the Problems list uses ("Portability"). Before, the depths read "1 Does" and "2 Reads", and the headline said "Pitfall" for a portability note.
 - On the web page, Clear, a script pasted over the untouched sample, and Open start a new script: its file type from the text, untitled, the shell back to Auto; Undo, or Ctrl+Z after Clear, puts it all back. Before, test.bats and a shell chosen in the chip stayed for every script pasted after it.
-- On a phone, the explanation's sheet has a strip of its own above its tabs to grab, and a short flick no longer moves it a height. At full height it stops below the file name, and a drag no longer covers the ☰ button.
+- On a phone, the explanation's sheet has a strip of its own above its tabs to grab, and a short flick up from half no longer opens it to full height. At full height it stops below the file name, and a drag no longer covers the ☰ button.
 - On a phone, the file name opens the rename box from its pencil only, and a part's fold arrow in the explanation takes a tap 44 px wide and high.
 - A pipeline's sample for `uniq` or `sort -u` now shows lines that really collapse: after `sed`, two different lines instead of one line copied, and the copies of a line come one after the other, so a bare `uniq` collapses them too.
 

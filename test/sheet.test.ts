@@ -42,24 +42,27 @@ describe('the phone\'s sheet as data', () => {
     }
   });
 
-  it('brings the cursor\'s line back after a move where it showed, but when the fold stays on with no less room (a pan with the keyboard open)', () => {
-    const room = { width: 390, height: 300, fold: true };
+  it('brings the cursor\'s line back after a move where it showed, after a change of the window, but when the fold stays on with no less room (a pan with the keyboard open)', () => {
+    const room = { width: 390, view: 844, height: 300, fold: true };
     assert.strictEqual(cursorFollows(room, room, true), false);
     assert.strictEqual(cursorFollows(room, { ...room, height: 340 }, true), false);
     assert.strictEqual(cursorFollows(room, { ...room, height: 260 }, true), true);
-    assert.strictEqual(cursorFollows(room, { ...room, width: 844 }, true), true);
+    // (Under the fold, a window shorter or taller is the keyboard's: only the room counts.)
+    assert.strictEqual(cursorFollows(room, { ...room, view: 900, height: 340 }, true), false);
     // The fold starting or ending; the sheet's own moves, as ever.
-    assert.strictEqual(cursorFollows(undefined, room, true), true);
     assert.strictEqual(cursorFollows({ ...room, fold: false }, room, true), true);
     assert.strictEqual(cursorFollows(room, { ...room, fold: false }, true), true);
     assert.strictEqual(cursorFollows({ ...room, fold: false }, { ...room, fold: false, height: 340 }, true), true);
     // A reader who scrolled away from the cursor stays where they read when the sheet moves (#659: 4,058 px back to the
-    // top), or the window changes under the fold; but the fold starting or ending brings the line back: they type there.
+    // top), or the keyboard changes its room under the fold.
     const off = { ...room, fold: false };
-    for (const [before, now] of [[undefined, off], [off, { ...off, height: 340 }], [off, { ...off, height: 260 }], [room, { ...room, height: 260 }], [room, { ...room, width: 844 }]] as const) {
+    for (const [before, now] of [[off, { ...off, height: 340 }], [off, { ...off, height: 260 }], [room, { ...room, height: 260 }]] as const) {
       assert.strictEqual(cursorFollows(before, now, false), false, JSON.stringify([before, now]));
     }
-    for (const [before, now] of [[undefined, room], [off, room], [room, off]] as const) {
+    // But the layout coming, the fold starting or ending (they type there), and the window changing (a phone turned: the
+    // line's old place, read against the old sheet, says nothing of the new room) bring the line back.
+    const turned = { width: 844, view: 390, height: 210, fold: false };
+    for (const [before, now] of [[undefined, off], [undefined, room], [off, room], [room, off], [off, turned], [turned, off], [off, { ...off, view: 740, height: 200 }], [room, { ...room, width: 844 }]] as const) {
       assert.strictEqual(cursorFollows(before, now, false), true, JSON.stringify([before, now]));
     }
   });
@@ -101,18 +104,28 @@ describe('the phone\'s sheet as data', () => {
     // (Each drag 200 px long, in the way it goes.)
     for (const [height, v, want] of table) assert.strictEqual(settle(h, height, v, v < 0 ? -200 : 200), want, `${height} px at ${v} px/ms`);
     assert.deepStrictEqual([FLING, FLING_TRAVEL], [1, 80]);
-    // A short flick is neither flung nor carried: the nearest height to where it is let go (usability-9.md, 2.5: a flick
-    // of 66 px up from half went to full). [height when released, speed, the drag's length, the height it settles on]
+    // A short flick goes by its speed, as any fling, but up to full: a drag up shorter than 80 px that would end at full
+    // stops at half (the maintainer's decision of 2026-11-08, usability-9.md, 2.5; a flick of 66 px up from half went to
+    // full). An iPhone 13: peek 141, half 464, full 792. [height when released, speed, the drag's length, the height it
+    // settles on]
+    const phone = snapHeights(844, 44, 93, 48);
     const short: [number, number, number, Snap][] = [
-      [530, 2, 66, 'half'],
-      [398, -3, -66, 'half'],
-      [600, 0.9, 70, 'half'],
-      [600, 0.9, 80, 'full'],
-      [544, 1, 80, 'full'],
+      [186, 1.5, 45, 'half'],
+      [201, 1.5, 60, 'half'],
+      [404, -1.5, -60, 'peek'],
+      [732, -1.5, -60, 'half'],
+      [530, 1.5, 66, 'half'],
+      [564, 1.5, 100, 'full'],
       [544, 1, 79, 'half'],
-      [114, -1, -79, 'peek'],
+      [544, 1, 80, 'full'],
+      // (Carried there by a slower release, the same.)
+      [530, 0.9, 66, 'half'],
+      [544, 0.9, 80, 'full'],
+      // A drag of full down that the speed carries back to full stays there, and a fling down from full past half goes to the peek.
+      [760, -0.1, -32, 'full'],
+      [440, -2, -352, 'peek'],
     ];
-    for (const [height, v, travel, want] of short) assert.strictEqual(settle(h, height, v, travel), want, `${height} px at ${v} px/ms after ${travel} px`);
+    for (const [height, v, travel, want] of short) assert.strictEqual(settle(phone, height, v, travel), want, `${height} px at ${v} px/ms after ${travel} px`);
     // Two heights the same (a short window): the lower one wins a tie, and a fling still finds its way.
     const low = snapHeights(120, 53, 49, 48);
     assert.strictEqual(settle(low, 97, 0, 0), 'peek');

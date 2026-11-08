@@ -279,7 +279,8 @@ export class BottomSheet {
     const row = this.summary.offsetHeight + parseFloat(getComputedStyle(this.pane).borderTopWidth);
     const shown = sheetHeight(this.heights(), this.snap, { place: this.place }, row);
     const from = this.shownHeight();
-    // (Read before the new height is drawn: whether the cursor showed in what the sheet left of the editor.)
+    // (Read before the new height is drawn: whether the cursor showed in what the sheet left of the editor. After a
+    // change of the window it is read against the old cover, but then the line follows whatever it says: `cursorFollows`.)
     const showed = this.host.cursorShows();
     this.root.dataset.sheet = this.snap;
     this.root.style.setProperty('--sheet-h', `${shown.height}px`);
@@ -293,7 +294,7 @@ export class BottomSheet {
     }
     this.inert(this.folded || !!this.place, this.covers);
     this.name();
-    const room = { width: window.innerWidth, height: window.innerHeight - shown.rest, fold: !!this.place };
+    const room = { width: window.innerWidth, view: window.innerHeight, height: window.innerHeight - shown.rest, fold: !!this.place };
     this.follow = cursorFollows(this.room, room, showed);
     this.room = room;
     this.host.moved(this.follow);

@@ -18,6 +18,12 @@ const LOOP = `while getopts ":hv:o:" opt; do
 done`;
 const LINE = `find . -type f -name '*.log' -mtime +7 -print0 | xargs -0 grep -l "ERROR $(date +%Y)" | sort | uniq -c | awk '{print $2}' | sed 's/a/b/g' > out.txt 2>&1 && echo done || echo failed`;
 
+/**
+ * `LINE`, ending with a command of one short argument: at either depth the end of the page has a row to fold in a sheet
+ * at half on an iPhone 13 (its last rows were an example of `date`, or the parts of a word, taller than the room).
+ */
+const LINE_HALF = LINE.replace(/echo failed$/, 'exit 1');
+
 /** What a change did to rows (by selector), sampled in the page: before, right after it, then after each frame drawn, for 600 ms (null: not drawn). */
 interface Track {
   before: (number | null)[];
@@ -70,13 +76,16 @@ describe('the panel keeps the row acted on in place', function () {
     open(depth: 1 | 2, animations: boolean, reduced?: boolean): Promise<{ ctx: BrowserContext; panel: Frame }>;
   }
 
-  /** The web page, `width` wide (390: a phone), its panel showing `text` at `depth` (its first line, when it has several). */
-  const web = (width: number, text = LINE): Host => ({
-    name: width < 520 ? `the web page on a phone (${width}px)` : `the web page (${width}px)`,
+  /**
+   * The web page, `width` wide (390: a phone, its sheet at full height, or at `half`), its panel showing `text` at `depth`
+   * (its first line, when it has several).
+   */
+  const web = (width: number, text = LINE, half = false): Host => ({
+    name: width < 520 ? `the web page on a phone (${width}px${half ? ', the sheet at half' : ''})` : `the web page (${width}px)`,
     async open(depth, animations, reduced = false) {
       const { devices } = await import('playwright-core');
       const phone = width < 520 ? { ...devices['iPhone 13'] } : {};
-      const ctx = await browser.newContext({ ...phone, viewport: { width, height: 800 }, locale: 'en-US', reducedMotion: reduced ? 'reduce' : 'no-preference' });
+      const ctx = await browser.newContext({ ...phone, viewport: { width, height: half ? 844 : 800 }, locale: 'en-US', reducedMotion: reduced ? 'reduce' : 'no-preference' });
       if (!animations) await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.panel.animations': false })); } catch {}`);
       const page = await ctx.newPage();
       await page.goto(base);
@@ -90,12 +99,14 @@ describe('the panel keeps the row acted on in place', function () {
       await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes(text.slice(0, 12)));
       await chooseDepth(page, depth);
       await until('the rows', () => panel().evaluate('document.body.dataset.depth'), (d) => d === String(depth));
-      // (On a phone, the sheet at full height: at half, below its grab strip, the end of the page at depth 2 had no row
-      // with parts left to fold on the screen.)
+      // (On a phone, the sheet at full height, or at half, as a phone opens: there, below its grab strip, the end of `LINE`
+      // at depth 2 had no row with parts left to fold on the screen; `LINE_HALF` ends with one.)
       if (width < 520) {
-        await page.locator('#sheet-grab').focus();
-        await page.keyboard.press('End');
-        await until('the full sheet', () => page.evaluate('document.documentElement.dataset.sheet'), (s) => s === 'full');
+        if (!half) {
+          await page.locator('#sheet-grab').focus();
+          await page.keyboard.press('End');
+        }
+        await until('the sheet\'s height', () => page.evaluate('document.documentElement.dataset.sheet'), (s) => s === (half ? 'half' : 'full'));
         await page.waitForTimeout(400);
       }
       await still(panel());
@@ -189,9 +200,10 @@ describe('the panel keeps the row acted on in place', function () {
 
   const web1280 = web(1280);
   const phone = web(390);
+  const phoneHalf = web(390, LINE_HALF, true);
   // With motion everywhere; without: the setting (the web page), VS Code's reduced motion, the system's (a phone).
   const runs: [Host, boolean, string, boolean][] = [
-    [web1280, true, '', false], [phone, true, '', false], [code, true, '', false],
+    [web1280, true, '', false], [phone, true, '', false], [phoneHalf, true, '', false], [code, true, '', false],
     [web1280, false, ', the setting off', false], [code, false, ", VS Code's reduced motion", false], [phone, false, ", the system's reduced motion", true],
   ];
   for (const [host, animations, off, reduced] of runs) {
@@ -202,8 +214,9 @@ describe('the panel keeps the row acted on in place', function () {
         panel.page().on('pageerror', (e) => errors.push(e.message));
         const h = await height(panel);
         assert.ok(await scrollTo(panel, 'end') > 100, 'the page scrolls');
-        const rows = onScreenRows(await foldable(panel), h);
-        assert.ok(rows.length, 'a row to fold on the screen');
+        const all = await foldable(panel);
+        const rows = onScreenRows(all, h);
+        assert.ok(rows.length, `a row to fold on the screen: ${JSON.stringify({ h, rows: all.map((r) => [r.top, r.below]) })}`);
         const row = rows[rows.length - 1];
         const was = await where(panel, row.path);
         await click(panel, row.path, 'folded at the end', animations);
@@ -213,8 +226,8 @@ describe('the panel keeps the row acted on in place', function () {
         await scrollAway(panel, row.path);
         // A row in the middle of the page, in the middle of the screen.
         await scrollTo(panel, 0);
-        const all = await foldable(panel);
-        const m = all[Math.floor(all.length / 2)];
+        const middle = await foldable(panel);
+        const m = middle[Math.floor(middle.length / 2)];
         await scrollTo(panel, Math.max(0, Math.round(m.top - h / 2)));
         await click(panel, m.path, 'folded in the middle', animations);
         await click(panel, m.path, 'unfolded in the middle', animations);

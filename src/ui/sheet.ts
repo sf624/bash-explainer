@@ -15,15 +15,15 @@ export type SnapHeights = Record<Snap, number>;
 /** The half height's share of the window. */
 export const HALF_SHARE = 0.55;
 /**
- * A release at least this fast (px per ms, 1,000 px a second), after a drag of at least `FLING_TRAVEL`, is a fling: the
- * sheet goes on to the next height that way (docs/design/usability-9.md, 2.5: at 0.5 px/ms a flick of 66 px jumped to full).
+ * A release at least this fast (px per ms, 1,000 px a second) is a fling: the sheet goes on to the next height that way
+ * (docs/design/usability-9.md, 2.5: at 0.5 px/ms a flick of 66 px jumped to full), but to full only after `FLING_TRAVEL`.
  */
 export const FLING = 1;
 /** A slower release still carries the sheet as far as it would go in this many ms, then to the nearest height. */
 export const CARRY_MS = 150;
 /**
- * A drag shorter than this (px, from where the finger took the sheet) is neither flung nor carried: the sheet goes to the
- * height nearest to where it is let go, so that a short flick does not jump a height.
+ * A drag up shorter than this (px, from where the finger took the sheet) that a fling or its speed would take to full
+ * stops at half: a short flick up from half does not open the sheet over the whole editor.
  */
 export const FLING_TRAVEL = 80;
 /** The room a full sheet leaves under the editor's header strip (px): a tap just above the sheet is not on the strip's file name. */
@@ -78,23 +78,29 @@ export function sheetHeight(heights: SnapHeights, snap: Snap, keyboard: Pick<Key
   return { height: heights[snap], rest, box: heights.peek, cover: rest - heights.peek, past };
 }
 
-/** The editor's room: the window's width, what the sheet leaves of its height, and whether the keyboard's fold is on. */
+/**
+ * The editor's room: the window's width and height (`view`), what the sheet leaves of its height, and whether the
+ * keyboard's fold is on.
+ */
 export interface EditorRoom {
   width: number;
+  view: number;
   height: number;
   fold: boolean;
 }
 
 /**
- * Whether the cursor's line is brought back into view after the sheet moved. Always when the keyboard's fold starts or
- * ends: the reader types at the cursor. Otherwise only when the line showed before the move (`shown`: in what the sheet
- * left of the editor), since a reader who scrolled away from it stays where they read (a move pulled them back from
- * 4,058 px to the top, #659); and not while the fold stays on with no less room, where the moves are the visual
- * viewport's pans (a reader scrolling with the keyboard open), which hide nothing.
+ * Whether the cursor's line is brought back into view after the sheet moved or the window changed. Always when the
+ * layout comes, when the keyboard's fold starts or ends (the reader types at the cursor), and when the window changes
+ * (a phone turned): its old place says nothing of the new room. Under the fold only the width counts, since the keyboard
+ * itself may change the window's height. Otherwise, a move of the sheet's own, only when the line showed before it
+ * (`shown`: in what the sheet left of the editor), since a reader who scrolled away from it stays where they read (a
+ * move pulled them back from 4,058 px to the top, #659); and not while the fold stays on with no less room, where the
+ * moves are the visual viewport's pans (a reader scrolling with the keyboard open), which hide nothing.
  */
 export function cursorFollows(before: EditorRoom | undefined, now: EditorRoom, shown: boolean): boolean {
-  if (!!before?.fold !== now.fold) return true;
-  return shown && (!now.fold || before!.width !== now.width || now.height < before!.height);
+  if (!before || before.fold !== now.fold || before.width !== now.width || (!now.fold && before.view !== now.view)) return true;
+  return shown && (!now.fold || now.height < before.height);
 }
 
 /**
@@ -108,13 +114,18 @@ export function dragRange(heights: SnapHeights, view: number, bar: number): { mi
 
 /**
  * The height a drag settles on, from the sheet's height when the finger lets go (px), its speed then (px per ms,
- * positive upwards), and how far it went from where the finger took the sheet (`travel`, px). After a drag shorter than
- * `FLING_TRAVEL`, the sheet goes to the height nearest to where it is. Else a fling goes to the next height in its
- * direction (the highest or lowest when none is left), and a slower release to the height nearest to where its speed
- * would carry it in `CARRY_MS`.
+ * positive upwards), and how far it went from where the finger took the sheet (`travel`, px). A fling goes to the next
+ * height in its direction (the highest or lowest when none is left), and a slower release to the height nearest to
+ * where its speed would carry it in `CARRY_MS`. But a drag up shorter than `FLING_TRAVEL` that would end at full stops
+ * at half (the maintainer's decision of 2026-11-08, usability-9.md, 2.5): a short flick between the peek and half, or
+ * down from full, goes by its speed alone.
  */
 export function settle(heights: SnapHeights, height: number, velocity: number, travel: number): Snap {
-  if (Math.abs(travel) < FLING_TRAVEL) velocity = 0;
+  const to = bySpeed(heights, height, velocity);
+  return to === 'full' && travel > 0 && travel < FLING_TRAVEL ? 'half' : to;
+}
+
+function bySpeed(heights: SnapHeights, height: number, velocity: number): Snap {
   if (Math.abs(velocity) >= FLING) {
     const way = velocity > 0 ? [...SNAPS] : [...SNAPS].reverse();
     return way.find((s) => (velocity > 0 ? heights[s] > height : heights[s] < height)) ?? way[way.length - 1];
