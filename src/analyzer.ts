@@ -40,7 +40,7 @@ import { arrayKind, resolve, syntaxFaultOf } from './explain/reads';
 import { runsSeveral, titledExamples, wantsExample } from './explain/examples';
 import { commandsSaid, factsSaid, wholeOf } from './explain/whole';
 import { explain, flatten } from './explain/dispatch';
-import { continuationNotes, extglobPitfalls, pipeSubshellPitfalls, statusNotes, syntaxErrorNotes, tokenErrorNotes, unmatchedGlobPitfalls } from './explain/line-notes';
+import { continuationNotes, errexitStopNotes, extglobPitfalls, pipeSubshellPitfalls, statusNotes, syntaxErrorNotes, tokenErrorNotes, unmatchedGlobPitfalls } from './explain/line-notes';
 
 export { isBlockLike, summaryOf };
 
@@ -133,6 +133,8 @@ export class Analyzer {
       ...pipeSubshellPitfalls(cx, root, line),
       ...statusNotes(cx, line, true),
     ];
+    // (Where `set -e` stops the script, unless a problem said so: after the others.)
+    after.push(...errexitStopNotes(cx, line, [...before, ...walked, ...after]));
     const notes = [...before, ...walked, ...after];
     // (A fact said twice, or left out with the pitfalls, is listed once, or not. Said twice, it is about two places,
     // `cp $a b; cp $a c`: its rewrites make the edits of both, so that none of them is left.

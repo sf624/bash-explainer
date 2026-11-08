@@ -266,11 +266,10 @@ class Composer implements IdiomSpeaker {
       const last = rule.stages[rule.stages.length - 1];
       out.push(S.pipeStatus(this.lang, rule.pipefail === 'off' ? this.nameOf(last) : undefined, rule.negated));
     }
-    // (Under `set -e`: a list, whose commands but the last it ignores; a statement where a failure stops a shell other
-    // than the script. Where it stops the script, as everywhere under `set -e`, the sentence says nothing.)
+    // (Under `set -e`, a list, whose commands but the last it ignores. What a failure of a statement stops is the line's
+    // note `errexit-stops-here`, src/explain/status.ts.)
     const e = status.errexit(n);
     if (n.type === 'list' && e.errexit === 'on' && !e.ignored && this.allowed('errexit')) out.push(S.errexitList(this.lang, e.stops));
-    else if (e.active === 'on' && e.checked === true && e.stops !== 'script' && status.mayFail(n) && this.allowed('errexit')) out.push(S.errexit(this.lang, e.stops));
     this.factsLength += out.join('; ').length;
     return out;
   }

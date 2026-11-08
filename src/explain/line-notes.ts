@@ -6,7 +6,9 @@
 import type { Token } from '../analyzer-types';
 import { hasExtglob } from '../examples/shellwords';
 import { tx } from '../i18n';
-import { type Fact, fact, factOf, MESSAGES, tokenNote } from '../messages';
+import { clausesOf, type Fact, fact, factOf, isProblemNote, MESSAGES, tokenNote } from '../messages';
+import type { StopWhat } from '../messages-errexit-stop';
+import { shorten } from '../label';
 import { saysProblem } from '../messages-tokens';
 import { statementBefore } from '../rewrite';
 import { bashrcReader, STATEMENTS } from '../semantics/env';
@@ -16,10 +18,11 @@ import { lostVariable } from '../semantics/pipeline';
 import { docLine } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
 import { statusFacts, type StatusFact } from '../statusfacts';
-import { ancestor, field, fields, type SyntaxNode } from '../syntax/tree';
-import type { Explainer } from './context';
+import { ancestor, assignmentsOnly, field, fields, nameText, type SyntaxNode } from '../syntax/tree';
+import type { Explainer, LineExplainer } from './context';
 import { intersects, onLine } from './nodes';
 import { shoptAt, syntaxFaultOf } from './reads';
+import { type StopContext, stopContext } from './status';
 
 /**
  * The status facts of a script, by line, computed once per status model and tree (both languages): the strings `eval`
@@ -182,4 +185,58 @@ export function tokenErrorNotes(cx: Explainer, items: readonly Token[]): string[
   };
   items.forEach(walk);
   return [...new Set(found)];
+}
+
+/** The statements whose own failure `set -e` checks (`CHECKED` of src/semantics/status.ts, but `!`), where a stop note may go. */
+const STOPPING = ['command', 'extended_test', 'arithmetic_command', 'pipeline', 'subshell'];
+
+/** What fails in a stop note: the command's name, the one command of an assignment's `$( )`, a test, a pipeline, a subshell. */
+function stopWhat(status: StatusModel, n: SyntaxNode): StopWhat {
+  switch (n.type) {
+    case 'pipeline': return { kind: 'pipeline' };
+    case 'extended_test': return { kind: 'test', text: '[[ … ]]' };
+    case 'arithmetic_command': return { kind: 'test', text: '(( … ))' };
+    case 'subshell': return { kind: 'subshell' };
+  }
+  // (A command that is not only assignments has a name.)
+  const nameOf = (c: SyntaxNode): string => shorten(nameText(field(c, 'name')!), 20);
+  const rule = status.status(n);
+  if (assignmentsOnly(n)) {
+    const inner = rule.kind === 'last-substitution' && rule.at ? rule.at.namedChildren.filter((c) => STATEMENTS.has(c.type)) : [];
+    return { kind: 'substitution', ...(inner.length === 1 && inner[0].type === 'command' && !assignmentsOnly(inner[0]) ? { name: nameOf(inner[0]) } : {}) };
+  }
+  // (A test that is well formed is false with 1, as written; a malformed one gives 2, the command's status.)
+  if (rule.kind === 'test' && !rule.fails) return { kind: 'test', text: shorten(n.text, 24) };
+  const name = nameOf(n);
+  return { kind: 'command', name };
+}
+
+/** How many statements a stop note names; more are "another". */
+const NAMED = 3;
+
+/**
+ * The notes of line `line` on where `set -e` stops the script (`errexit-stops-here`; docs/design/errexit-stop.md): one
+ * for the statements that start on it and stop the same way (`stopContext`), anchored at the first; none in a string
+ * read as a script, nor where a problem of the line (in `said`, or one of the host's) says what `set -e` does there,
+ * nor for a statement in another that has one.
+ */
+export function errexitStopNotes(cx: LineExplainer, line: number, said: readonly string[]): string[] {
+  if (cx.nested) return [];
+  const problems = [...said.map((t) => cx.noteOf(t)).filter(isProblemNote).map((x) => x.code), ...cx.opts.hostProblems ?? []];
+  if (problems.some((code) => clausesOf(code).includes('errexit'))) return [];
+  const groups: { at: SyntaxNode; key: string; context: StopContext; what: StopWhat[]; more: boolean }[] = [];
+  const noted: SyntaxNode[] = [];
+  for (const n of onLine(cx.root, STOPPING, line)) {
+    if (n.startPosition.row !== line || noted.some((m) => ancestor(n, (a) => a === m)) || !cx.reachedAt(n)) continue;
+    const context = stopContext(cx.state, cx.status, n, cx.opts.hostRun);
+    if (!context) continue;
+    const what = stopWhat(cx.status, n);
+    noted.push(n);
+    const key = JSON.stringify(context);
+    const last = groups.at(-1);
+    if (last?.key !== key) groups.push({ at: n, key, context, what: [what], more: false });
+    else if (last.what.length < NAMED) last.what.push(what);
+    else last.more = true;
+  }
+  return groups.flatMap((g) => cx.say(fact(cx.lang, 'errexit-stops-here', { ...g.context, what: g.what, ...(g.more ? { more: true } : {}) }), g.at));
 }

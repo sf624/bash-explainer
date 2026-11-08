@@ -38,6 +38,7 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'errexit-set-in-ignored-group': 'none',
   'errexit-function-called-only-where-ignored': 'none',
   'errexit-group-where-ignored': 'none',
+  'errexit-stops-here': 'none',
   // `local x=$(…)` → `local x; x=$(…)`: the failure of `$(…)` is seen, and stops `set -e`.
   'declaration-masks-status': 'mechanical',
   // `set -o pipefail`: needs a pipeline whose first stage fails.
@@ -367,7 +368,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 18, scenario: 26, prose: 21, none: 103 });
+      { mechanical: 18, scenario: 26, prose: 21, none: 104 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });

@@ -32,6 +32,19 @@ Checked with bazel 9.3.2 (`bazel help startup_options`, `bazel help COMMAND`, `b
 - **Not a problem.** The Problems counts, the list, the squiggles, `--check` and the Action do not include it.
 - **A large script.** Past 2,000 commands the line says "POSIX sh: not checked in a script this large", with the same button: checking reads the whole script a second time, as sh, which took 6 to 7 s for nvm.sh (3,345 commands) and under 0.3 s for the completion scripts of bash and git (914 and 1,253 commands). The limit is a size, so every run decides the same.
 
+### Where `set -e` stops the script
+
+A line whose command can fail under `set -e` gets a note (ℹ, no problem) right under **In short**. It says what bash does when the command fails there: the script stops at this line, the traps that run, and the status it exits with. Each claim is checked against bash 5.2 and 5.3 (test/errexit-stop.test.ts) and bats-core 1.13 (test/bats-real.test.ts). Taken from the usability test (docs/design/errexit-stop.md): nine of ten users of run 3 answered from their own knowledge, all eight of run 4 from the note.
+
+- **With an EXIT trap.** `tar -czf …` after `trap cleanup EXIT` (line 19): "If `tar` fails, `set -e` stops the script here: the EXIT trap of line 19 runs `cleanup`, and the script exits with `tar`'s status (or that of `cleanup`, if it fails)" (「`tar` が失敗すると、`set -e` でスクリプトはここで終わり、行 19 の EXIT トラップの `cleanup` が実行され、`tar` の終了ステータスで終了する（`cleanup` が失敗したときはそのステータス）」). The hedge is there only when the action may fail; one that calls `exit` reads "(unless `cleanup` calls `exit`)". An ERR trap is named before it: "the ERR trap of line 4 runs `…`, then the EXIT trap of line 19 runs `cleanup`".
+- **Before the trap is set.** `stamp=$(date +%F)` on line 8: "If `date` in `$( )` fails, `set -e` stops the script here, with `date`'s status; no EXIT trap is set yet, so `cleanup` (line 19) does not run".
+- **When a trap may run.** A trap set on some paths only (`if …; then trap … EXIT; fi`): "the EXIT trap of line 2 may run first". After `source lib.sh` or `eval "$(ssh-agent -s)"`, which may set traps of their own: "an ERR trap and an EXIT trap may run first and change the status", with no line.
+- **What fails.** A command by its name; a pipeline; `[[ … ]]` and `(( … ))` "is false", with status 1, and `[ -f x ]` as written; a subshell `( … )`; the one command of an assignment's `$( )` ("`basename` in `$( )`"). Several commands of a line that stop the same way share one note: "If `cd`, `make` or another fails".
+- **Other shells.** A statement in `( … )` or a pipeline stage "ends the subshell here". In a function called both in the script and in a subshell: "stops the shell it runs in (the script or a subshell)". In the function an EXIT trap runs: "If `rm` fails, `set -e` ends the EXIT trap here, and the script exits with `rm`'s status".
+- **bats.** In a test or in `setup`: "If `cat` fails, the test fails here: its remaining lines do not run, `teardown` runs, and bats goes on with the next test" (`teardown` only when the file defines it). A plain `run cmd`, which returns 0, and `skip` get no note; `run !` and `run -N` do. The top of a bats file gets none.
+- **No note** where bash goes on (a condition, the left of `&&` or `||`, after `!`, `$( )` without `inherit_errexit`, a pipeline stage without `pipefail`), on builtins that fail only on a usage or write error (`echo`, `set`, `trap`, `continue`…), on a call of a function whose failures stop inside it (`log "…"`), and where a problem of the line already says what `set -e` does (`((i++))`, `local x=$(…)`, a pipeline without `pipefail`).
+- **What moved.** **In short** no longer ends with "if it fails, `set -e` stops the subshell" (or "the shell it runs in"): the note says it. The row of `$( )` in `x=$(cmd)` keeps why the status is the substitution's, and leaves "Under `set -e` the script stops here if it fails" to the note.
+
 ## Changed
 
 ### The hover card and the Legend
@@ -164,6 +177,10 @@ Finding the code that never runs no longer merges the states each statement ran 
 | Five keys | 56 s blocked; a key took up to 11 s to appear | 29 s blocked; a key takes up to 7 s to appear |
 
 The page still reads the whole script again after each pause in typing; running that work only once typing rests is planned (#770).
+
+### When an EXIT trap runs
+
+The idiom note on `trap … EXIT` said that it "runs clean-up when the script exits, however it exits", and **In short** "registers a command that runs when the script exits, however it exits". Measured in bash 5.2 (test/errexit-stop.test.ts): the trap runs at the end, on `exit`, on a failure under `set -e`, and on SIGTERM, SIGINT and SIGHUP; not on SIGKILL, and not after `exec true`, which replaces the shell (`exec 3>/dev/null` keeps it). The note now reads "runs clean-up when the script exits: at its end, on `exit`, on an error, or on a signal such as SIGTERM or SIGINT; not when it is killed with SIGKILL, nor when `exec` replaces the shell with a command (`exec cmd`)", and **In short** "registers a command that runs when the script exits (not on SIGKILL)".
 
 ### More bash-only forms in a sh script
 

@@ -1887,6 +1887,7 @@
  "trap 'exec echo replaced' INT",
  "trap 'for f in $(ls); do :; done' EXIT",
  "trap 'rm -f $tmp' EXIT",
+ "trap 'rm -f x' EXIT",
  "trap 'rm f' INT",
  "trap 'sort i' INT\nhash -p /usr/bin/tac sort",
  "trap 'trap - INT; kill -s INT $$' INT",

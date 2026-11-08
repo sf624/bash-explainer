@@ -9,6 +9,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - bazel command lines are explained: the startup options, the command, about 90 common options with their `--no` forms (`--nostamp`), the target patterns, and the program's arguments of `bazel run //x -- …`. An option on the wrong side of the command, which bazel refuses, is flagged.
 - New warning "Shell injection risk" on `find . -exec sh -c 'echo {}' \;` and `xargs -I{} sh -c 'echo {}'`: the path or item becomes shell code. It shows the safe form, `sh -c '… "$1" …' _ {}`.
 - On the web page, a script with no shebang gets a line under the Problems strip, "2 constructs not in POSIX sh", with a button **Check as POSIX sh**. It is not counted: the Problems counts, `--check` and the Action leave it out, and a script with a shebang (bash's too), a bats file and VS Code have no such line.
+- Under `set -e`, a line whose command can fail has a note: if it fails, the script stops there, which EXIT or ERR trap runs then (with its line), and the exit status. Before the `trap … EXIT` line, it says that the trap does not run yet. In a bats test, it says that the test fails there.
 
 ### Changed
 
@@ -31,6 +32,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- The note on `trap … EXIT` no longer says that it runs however the script exits: it does not run on SIGKILL, nor after `exec cmd`.
 - In a `sh` or `dash` script, more bash-only forms are now problems: `a[0]=1` (also in `ash`), `$((i++))`, `$((++i))`, `$((2**3))`, `>& file`, `set +o pipefail` and `read` with no name. There, `read` with no name no longer shows "Values stored: REPLY=…".
 - In a script checked as POSIX sh, `~/dir` and a glob now say which words the program receives, as in bash; before, they said "not always one word". A file a glob does not match for a leading `.` says that `*` and `?` do not match it, with no `dotglob` named.
 - `find -mtime +"$DAYS"` and `"+$DAYS"` (a value read at run time) are summarized like `-mtime +7`: "at least (`"$DAYS"` + 1) days ago", not "more than `"$DAYS"` days ago"; the sign inside the quotes is read too. `-mindepth 1`, `-mtime -1` and `-mmin 1` say "1 level", "1 day", "1 minute", not the plural.
