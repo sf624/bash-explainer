@@ -20,6 +20,7 @@ import { builtinExit, definitionExit, exitRefusal } from '../posixexits';
 import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
 import { ExpansionError, exitSignal, NAME, type Operand, processIn, type Target } from './shared';
 import { restrictedFromHere } from './child';
+import { execTraps, trapCommand, trapSignals } from './traps';
 import type { Walker } from './walker';
 
 /** The attributes the declaration builtins give with their options. */
@@ -109,28 +110,33 @@ export class WalkBuiltins {
         // (docs/design/semantics.md, 4.13). A string not known here may set any name, and call any function: nothing
         // is trusted then (src/semantics/trust.ts; also a string too deep, or one with a glob, which the walk does not read).
         const at = parse.roles.find((r) => r.role.role === 'command');
-        if (!at) return st;
+        const host = this.w.aliasHost ?? n;
+        // (`trap - EXIT`, `trap EXIT` take traps back: ./traps.ts.)
+        if (!at) return name === 'trap' ? trapCommand(this.w, st, parse, args, host) : st;
         const words = name === 'eval' ? args.slice(at.word) : [args[at.word]];
         const script = this.w.script(words, name === 'eval' ? 'current' : 'later', n, parse, args);
         if ('why' in script) {
           if (!this.w.mode.dead && !this.w.blind) this.w.walkAgain(`\`${name}\` of a string the walk does not read`);
-          return this.w.opaque(st);
+          const out = this.w.opaque(st);
+          return name === 'trap' ? trapCommand(this.w, out, parse, args, host, { word: args[at.word] }) : out;
         }
         if (name === 'eval') return this.w.evalScript(script, n, st);
-        const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]) ?? '');
-        if (!this.w.silent) this.w.traps.push({ script, host: this.w.aliasHost ?? n, st, since: this.w.changeCount, proc: processIn(this.w.targets), exit: signals.some(exitSignal), exitOnly: signals.every(exitSignal), dead: this.w.mode.dead > 0 });
+        const signals = trapSignals(parse, args, true).map((v) => v ?? '');
+        if (!this.w.silent) this.w.traps.push({ script, host, st, since: this.w.changeCount, proc: processIn(this.w.targets), exit: signals.some(exitSignal), exitOnly: signals.every(exitSignal), dead: this.w.mode.dead > 0 });
         // (What it changes, it may change after any later statement; an EXIT trap runs at the end only.)
         if (!signals.every(exitSignal)) {
           const keys = new Set<string>();
           this.w.collecting.push(keys);
           this.w.silent++;
-          this.w.trapAction(script, this.w.aliasHost ?? n, st, false);
+          this.w.trapAction(script, host, st, false);
           this.w.silent--;
           this.w.collecting.pop();
           for (const k of keys) this.w.trapKeys.add(k);
         }
-        return st;
+        return trapCommand(this.w, st, parse, args, host, { word: args[at.word], script });
       }
+      // (`exec cmd` replaces the shell: no `EXIT` trap runs. `exec 3>&1` goes on.)
+      case 'exec': return parse.roles.some((r) => r.role.role === 'command') ? execTraps(this.w, st, this.w.aliasHost ?? n) : st;
       case 'cd': case 'pushd': case 'popd': {
         // They set PWD and OLDPWD (when they succeed), to values not followed.
         const moved = this.setVariable(this.setVariable(st, 'PWD', n, undefined), 'OLDPWD', n, undefined);

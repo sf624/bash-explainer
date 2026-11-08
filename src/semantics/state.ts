@@ -36,6 +36,7 @@ import { parser, WalkAgain } from './walk/shared';
 import { type HostCall, type HostRun, hostRunKey } from './walk/host';
 import { Walker } from './walk/walker';
 import { childStart, restrictedStart } from './walk/child';
+import type { TrapSet } from './walk/traps';
 import { stackFull } from '../failures';
 
 export {
@@ -70,6 +71,8 @@ export interface StateModel {
   posixExit(n: SyntaxNode): Tri | undefined;
   /** The state at the end of the script. */
   readonly end: ShellState;
+  /** The states the script ends with, apart (`end` merges them): at its end, and at each `exit` or failure under `set -e` that ends it. */
+  readonly ends: readonly ShellState[];
   /** The shell the model is of (bash when absent). */
   readonly shell: Shell | undefined;
   /**
@@ -124,6 +127,11 @@ export interface StateModel {
   local(n: SyntaxNode, name: string): boolean;
   /** The `source` and `.` commands that run (their files are not read). */
   readonly sources: readonly SyntaxNode[];
+  /**
+   * The `trap` commands the walk ran that set or take back the `EXIT` or `ERR` trap, in the order it met them
+   * (src/semantics/walk/traps.ts); the trap in effect at a node is in its state (`ShellState.traps`).
+   */
+  readonly trapSets: readonly TrapSet[];
   /** The first statement of the unit bash reads at once that holds `n`: a line of top-level statements, or a compound command. */
   unit(n: SyntaxNode): SyntaxNode;
   /**
@@ -647,6 +655,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
       return scripts.read(words, 'child', () => env, slotShell(link));
     },
     end,
+    ends: w.ends,
     shell,
     read: file.read,
     interactiveStart: file.interactiveStart,
@@ -664,6 +673,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     assigned: new Set([...w.lastChange.keys()].filter((k) => k.startsWith('variables ')).map((k) => k.slice('variables '.length))),
     definitions: { functions: w.functionDefs, aliases: w.aliases.defs },
     sources: w.sources,
+    trapSets: w.trapSets,
     unit(n) {
       let top = n;
       while (top.parent?.parent) top = top.parent;

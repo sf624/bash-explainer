@@ -11,6 +11,7 @@ import { ancestor, descendants, field, fields, nameText, redirectionsOf } from '
 import type { SyntaxNode } from './syntax/tree';
 import { option } from './semantics/state';
 import type { StatusModel } from './semantics/status';
+import { trappedName } from './semantics/traps';
 import { bracketWords, writtenAsBracket } from './testexpr';
 import { codeSpan } from './label';
 import { type Fact, fact } from './messages';
@@ -275,9 +276,9 @@ const exitTrap = (c: SyntaxNode): boolean => {
   const words = wordsOf(c);
   const at = words[0] === '--' ? 1 : 0;
   const action = words[at];
-  // (bash takes `exit` in any case, and a number that is 0 (`00`, ` 0`, `+0`), for EXIT.)
+  // (bash takes `exit` in any case, and a number that is 0 (`00`, ` 0`, `+0`), for EXIT: `trappedName`.)
   return words.length > at + 1 && !(action !== undefined && (action === '' || action.startsWith('-')))
-    && words.slice(at + 1).some((w) => w !== undefined && (w.toUpperCase() === 'EXIT' || (/^\s*[-+]?\d+\s*$/.test(w) && Number(w) === 0)));
+    && words.slice(at + 1).some((w) => w !== undefined && trappedName(w) === 'EXIT');
 };
 /** `exec > >(tee -a log) 2>&1`: from here on, stdout goes through `tee` (or `logger`). `>>` and `&>>` do the same: a pipe has no end to append to. */
 const execTee = (c: SyntaxNode): boolean => {

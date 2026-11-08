@@ -24,7 +24,7 @@ export function attributesChange(a: VariableState | undefined, b: VariableState 
  * runs later was set, when known (the table of `hash -p` then gathers what each change after it in its process leaves).
  */
 export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>, from?: SetAt): ShellState {
-  const changes = { set: new Map(), shopt: new Map(), variables: new Map(), functions: new Map(), aliases: new Map(), disabled: new Map(), hashed: new Map() } as { [K in Kind]: Map<string, Entry<K>> };
+  const changes = { set: new Map(), shopt: new Map(), variables: new Map(), functions: new Map(), aliases: new Map(), disabled: new Map(), hashed: new Map(), traps: new Map() } as { [K in Kind]: Map<string, Entry<K>> };
   let opaque = st.opaque;
   for (const key of keys) {
     if (key === OPAQUE) {
@@ -68,6 +68,10 @@ export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>, from
       const puts = w.builtins.hashPuts.filter((p) => p.name === name && p.proc === proc && (!from || p.count > from.since)).map((p) => p.entry);
       const later = from ? puts : puts.slice(-1);
       if (later.length) changes.hashed.set(name, hashEntry(later.at(-1)!, [...hashOutcomes(e), ...later.flatMap(hashOutcomes)]));
+    } else if (kind === 'traps') {
+      // (What may set or take back a trap there: it may be set, the action not known.)
+      const t = st.traps.get(name);
+      if (t?.state !== 'unknown' || t.script) changes.traps.set(name, { state: 'unknown', at: t?.at ?? w.lastAt.get(key)! });
     } else if (kind === 'disabled') {
       const e = st.disabled.get(name);
       if (e?.state !== 'unknown') changes.disabled.set(name, { state: 'unknown', at: e?.at ?? w.lastAt.get(key)! });
@@ -82,7 +86,7 @@ export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>, from
     ...(opaque ? { opaque } : {}),
     set: st.set.withAll(changes.set), shopt: st.shopt.withAll(changes.shopt), variables: st.variables.withAll(changes.variables),
     functions: st.functions.withAll(changes.functions), aliases: st.aliases.withAll(changes.aliases),
-    disabled: st.disabled.withAll(changes.disabled), hashed: st.hashed.withAll(changes.hashed),
+    disabled: st.disabled.withAll(changes.disabled), hashed: st.hashed.withAll(changes.hashed), traps: st.traps.withAll(changes.traps),
   };
 }
 

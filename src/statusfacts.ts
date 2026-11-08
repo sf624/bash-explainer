@@ -155,8 +155,9 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
           add(n, { id: 'script-last-test-returns-status', params: { left: shorten(n.namedChildren[0].text), rewrite: [asIf(n), statementAfter(n, 'exit 0')] } });
           break;
         }
+        // (One of the ends of the body that return a failure without `set -e` stopping it, `returnsFailure`: its last statement itself.)
         const body = def && field(def, 'body');
-        if (!body || !lastStatements(body).includes(n) || !tests(n, state, status, shell)) break;
+        if (!body || !lastStatements(body).includes(n) || !status.returnsFailure(def).includes(n) || !tests(n, state, status, shell)) break;
         const call = [...state.calls.get(def)?.keys() ?? []].find((c) => status.errexit(c).active === 'on' && status.errexit(c).checked === true);
         if (!call) break;
         const name = nameText(field(def, 'name')!);

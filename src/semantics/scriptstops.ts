@@ -9,7 +9,7 @@ import { processOf, subshellReasons } from './env';
 import type { NestedScript } from './nested';
 import { shellState, type StateModel } from './state';
 import { conditionOf, statusModel } from './status';
-import { exitSignal, parser } from './walk/shared';
+import { parser } from './walk/shared';
 
 // What may keep a shell from getting to a line, or from reading it as it is written: the one table of the problems that say
 // a fault of a script (docs/design/three-levels.md, "Where a shell stops"). The table follows no path; where the tree has no error, what
@@ -32,7 +32,7 @@ type Words = readonly (string | undefined)[];
 const ends = (c: SyntaxNode): Stop => (atTop(c) ? 'sure' : 'may');
 
 /** Whether the shell gets to `c` once it gets to its statement in the script: a statement of the script, or the first command of a list there (`exec a || exit 1`). */
-function atTop(c: SyntaxNode): boolean {
+export function atTop(c: SyntaxNode): boolean {
   let x = c;
   while (x.parent?.type === 'list' && x.parent.namedChildren[0] === x) x = x.parent;
   return x.parent?.type === 'program';
@@ -300,18 +300,17 @@ export function surelyRuns(n: SyntaxNode): boolean {
 }
 
 /**
- * Whether the action of `trap` surely runs once the shell gets to the `trap`: only at the end of the shell (EXIT, 0), as a signal may never come, and unless something takes it
- * back: a later `trap` of EXIT, or of signals not known here, or an `exec`, which runs no trap.
+ * Whether the action of `trap`, the string `script`, surely runs once the shell gets to the `trap`: only at the end of the shell (EXIT, 0), as a signal may never come, and
+ * unless something takes it back on the way there: the trap in effect (`ShellState.traps`) at each end of the script that gets past the `trap` (`StateModel.ends`) is
+ * still this one, not one of a later `trap` of EXIT, or of signals not known here, nor none after an `exec` that replaces the shell. (An end that holds a trap set
+ * before this one, or none, did not get to it.)
  */
-function runsAtExit(action: SyntaxNode): boolean {
-  const trap = ancestor(action, (a) => a.type === 'command')!;
-  const words = fields(trap, 'argument');
-  if (!words.slice(words.indexOf(action) + 1).some((w) => exitSignal(staticWordValue(w) ?? ''))) return false;
-  return !descendants(ancestor(action, (a) => !a.parent)!, ['command']).some((c) => {
-    if (c.startIndex <= trap.startIndex) return false;
-    const later = fields(c, 'argument').map((a) => staticWordValue(a));
-    const name = commandName(c);
-    return name === 'trap' ? later.some((w) => w === undefined || exitSignal(w)) : name === 'exec' && execWord(later) !== undefined;
+function runsAtExit(script: Pick<NestedScript, 'words' | 'outer'>): boolean {
+  const set = script.outer.trapSets.find((t) => t.script === script);
+  if (!set || set.state !== 'on' || !set.names.includes('EXIT')) return false;
+  return script.outer.ends.every((st) => {
+    const t = st.traps.get('EXIT');
+    return !t || (t.at !== set.at && t.at.startIndex < set.at.startIndex) || (t.state === 'on' && t.script === script);
   });
 }
 
@@ -320,9 +319,9 @@ function runsAtExit(action: SyntaxNode): boolean {
  * slots that run it exactly when they run (`CommandSlot.once`), not with `sh -n`, which reads it and runs nothing; a trap's, as `runsAtExit`. (A string in a string asks for each
  * level: `later` here, for a trap around it, says nothing of this one.) What the dictionary does not say is not surely run.
  */
-export function stringSurelyRuns(script: Pick<NestedScript, 'kind' | 'words' | 'env'>): boolean {
+export function stringSurelyRuns(script: Pick<NestedScript, 'kind' | 'words' | 'env' | 'outer'>): boolean {
   if (!surelyRuns(script.words[0])) return false;
-  if (script.kind === 'later') return runsAtExit(script.words[0]);
+  if (script.kind === 'later') return runsAtExit(script);
   return script.env.links.every((l) => l.kind !== 'slot' || l.slot.later || (l.slot.once && !l.invocation?.some((o) => o.flag === '-n')));
 }
 

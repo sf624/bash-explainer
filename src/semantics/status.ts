@@ -10,11 +10,14 @@
 //   Lists and compound commands other than `( )` are not checked themselves: their commands are.
 import { canonicalName } from '../dict/aliases';
 import { builtins } from '../dict/builtins';
+import type { CommandSpec } from '../argv/spec';
 import type { Shell } from '../dialect';
-import { assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, rootOf, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import { actedNames, declaresNames, has } from '../argv/query';
 import { builtinParse, commandName, wrapped } from './effects';
-import { processOf, STATEMENTS } from './env';
+import { redirectionMayFail } from './redirects';
+import { type ExecEnv, processOf, STATEMENTS } from './env';
+import type { NestedScript } from './nested';
 import { resolveName, testSpecOf } from './names';
 import { commandTest } from '../testexpr';
 import { assignmentExit, builtinExit, definitionExit, exitRefusal, type PosixExit } from './posixexits';
@@ -29,8 +32,13 @@ export interface DeclaredOperand { readonly word: SyntaxNode; readonly name: str
 
 /** What the exit status of a statement is (manual 3.7.5). */
 export type StatusRule =
-  /** Its own: a builtin's or a program's (127 not found, 126 not executable, 128+n killed by signal n); a function's last command. `functions`: the definitions it calls. */
-  | { readonly kind: 'command'; readonly functions: readonly SyntaxNode[] }
+  /**
+   * Its own: a builtin's or a program's (127 not found, 126 not executable, 128+n killed by signal n); a function's last
+   * command. `functions`: the definitions it calls; `sure`, it surely runs the one of them (a function defined on every
+   * path). `fails`: a builtin (or a host's function) that fails only on a usage or write error, or never
+   * (`CommandSpec.fails`, as its words ask).
+   */
+  | { readonly kind: 'command'; readonly functions: readonly SyntaxNode[]; readonly sure?: true; readonly fails?: 'never' | 'usage' }
   /** Only assignments (`x=$(cmd)`): the status of the last command substitution, or 0 without one (`at`). */
   | { readonly kind: 'last-substitution'; readonly at?: SyntaxNode }
   /**
@@ -102,7 +110,23 @@ export interface ErrexitContext {
   readonly checked: true | { readonly why: 'compound' | 'pipeline-stage' | 'job' | 'part-of-command' };
   /** The shell it stops: the script, a subshell (`( )`, `$( )`, a pipeline stage, a job), or either. */
   readonly stops: 'script' | 'subshell' | 'unknown';
+  /**
+   * What a failure stopped there ends besides the shell, where that is not the script or a subshell
+   * (docs/design/errexit-stop.md): `exit-trap`, the action of an `EXIT` trap the main shell set (`trap`, the command),
+   * which runs in the main shell and ends with the failure, the script exiting with its status (G4; a function called
+   * also from elsewhere is not one); `test`, a test of bats or its `setup`, run by the host in a process of its own
+   * (`def`, the function): the test fails, and bats goes on with the next one (G6); `host`, another function the host
+   * calls (bats' `setup_file`).
+   */
+  readonly within?: { readonly kind: 'exit-trap'; readonly trap: SyntaxNode } | { readonly kind: 'test' | 'host'; readonly def: SyntaxNode };
 }
+
+/**
+ * What the action of a trap may do to the status the shell exits with (docs/design/errexit-stop.md, G5): `fails`, a
+ * command in it (or in a function it calls) may fail where `set -e` stops it, which ends the action with that status;
+ * `exits`, it runs `exit`, whose status is the shell's.
+ */
+export interface TrapOutcome { readonly fails: boolean; readonly exits: boolean }
 
 /** Statements whose own status `set -e` checks. */
 const CHECKED = new Set(['command',
@@ -174,6 +198,15 @@ export interface StatusModel {
    */
   mayFail(n: SyntaxNode): boolean;
   /**
+   * The statements of the body of function `def` that can make it return a status other than 0 without `set -e`
+   * stopping the shell (docs/design/errexit-stop.md, G3): a `return` whose status may not be 0, and an end of the body
+   * whose failure is not checked (`test && cmd`, `! cmd`, or a command where errexit may be off). None: a failure in it
+   * stops the shell inside, or it succeeds, so a call of it fails only where errexit is off (`mayFail`).
+   */
+  returnsFailure(def: SyntaxNode): readonly SyntaxNode[];
+  /** What the action `script` of a trap may do to the exit status (`TrapOutcome`), from its statements and the bodies of the functions it calls. */
+  trapOutcome(script: NestedScript): TrapOutcome;
+  /**
    * An error that ends the shell at statement `n` in POSIX mode, as the words written decide it (a function name bash
    * refuses, an error of a special builtin: src/semantics/posixexits.ts), and whether it ends the shell there: POSIX
    * mode on (`unknown` when on some paths only), and for a builtin's error, not where bash ignores `set -e`; the shell
@@ -194,6 +227,8 @@ export function statusModel(state: StateModel, shell?: Shell): StatusModel {
 class Statuses implements StatusModel {
   private readonly ignoreMemo = new Map<SyntaxNode, Ignored | null>();
   private readonly errexitMemo = new Map<SyntaxNode, ErrexitContext>();
+  private readonly failureMemo = new Map<SyntaxNode, readonly SyntaxNode[]>();
+  private readonly outcomes = new Map<NestedScript, TrapOutcome>();
   private callees: Map<SyntaxNode, SyntaxNode[]> | undefined;
 
   constructor(readonly state: StateModel, private readonly shell?: Shell) {}
@@ -222,14 +257,89 @@ class Statuses implements StatusModel {
     }
     if (args.length) return false;
     // (A builtin turned off on some paths may be missing there: `enable -n :`.)
-    if (res.kind === 'builtin') return !res.disabled && (res.name === 'true' || res.name === ':');
+    if (res.kind === 'builtin') return !res.disabled && builtins[res.name].fails === 'never';
     return res.kind === 'file' && /(^|\/)true$/.test(res.name);
   }
 
   mayFail(n: SyntaxNode): boolean {
     const rule = this.status(n);
     if (rule.kind === 'given' || rule.kind === 'definition' || rule.kind === 'background') return false;
+    if (rule.kind === 'command' && (rule.fails || (rule.sure && rule.functions.every((d) => !this.returnsFailure(d).length)))) {
+      // (Not with a redirection that may fail: `echo x >> "$log"`, `f > out`.)
+      const redirs = [n, ...(n.type === 'redirected_statement' ? [field(n, 'body')!] : [])].flatMap(redirectionsOf);
+      if (!redirs.some((r) => redirectionMayFail(r, false))) return false;
+    }
     return !(rule.kind === 'last-substitution' && !rule.at) && !this.succeeds(n);
+  }
+
+  returnsFailure(def: SyntaxNode): readonly SyntaxNode[] {
+    const hit = this.failureMemo.get(def);
+    if (hit) return hit;
+    // (A function that calls itself: while its body is read, a call of it may fail.)
+    this.failureMemo.set(def, [def]);
+    const body = field(def, 'body');
+    const out: SyntaxNode[] = [];
+    // (`f() ( … )`: `set -e` ends the subshell with the status, which is the call's.)
+    if (body?.type === 'subshell') out.push(body);
+    if (body) {
+      for (const r of descendants(body, ['command'])) {
+        if (enclosingBlock(r) !== body || !this.endsFunction(r)) continue;
+        const rule = this.status(r);
+        if (!(rule.kind === 'given' && rule.value === 0)) out.push(r);
+      }
+      this.failingEnds(body, out);
+    }
+    this.failureMemo.set(def, out);
+    return out;
+  }
+
+  /** Whether command `r` is `return` (the builtin; a function of that name runs instead). */
+  private endsFunction(r: SyntaxNode): boolean {
+    const name = commandName(r);
+    const res = name !== undefined ? resolveName(this.state, name, field(r, 'name')!, { shell: this.shell, command: true }) : undefined;
+    return res?.kind === 'builtin' && builtins[res.name].ends === 'function';
+  }
+
+  /** Adds to `out` the statements that end `n` with a status other than 0 when they fail, where `set -e` does not stop the shell (`returnsFailure`). */
+  private failingEnds(n: SyntaxNode, out: SyntaxNode[]): void {
+    const last = (xs: readonly SyntaxNode[]): void => {
+      const stmts = xs.filter((c) => STATEMENTS.has(c.type));
+      if (stmts.length) this.failingEnds(stmts[stmts.length - 1], out);
+    };
+    switch (n.type) {
+      case 'redirected_statement': return this.failingEnds(field(n, 'body')!, out);
+      case 'compound_statement': case 'do_group': case 'else_clause': return last(n.namedChildren);
+      // (A function's body may be a subshell, `f() ( … )`; another one's status is checked where it ends, as a command's.)
+      case 'subshell': if (n.parent?.type === 'function_definition') return last(n.namedChildren);
+        break;
+      case 'list': {
+        // (Left of `&&`, a failure is not checked, and is the list's status; that of the last command is checked.)
+        const [left, right] = n.namedChildren.filter((c) => STATEMENTS.has(c.type));
+        if (n.children.some((c) => c.type === '&&') && this.mayFail(left)) out.push(n);
+        if (right) this.failingEnds(right, out);
+        return;
+      }
+      case 'negated_command': return void out.push(n);
+      case 'if_statement': case 'elif_clause': {
+        const then = n.children.findIndex((c) => c.type === 'then');
+        const end = n.children.findIndex((c, i) => i > then && (c.type === 'elif_clause' || c.type === 'else_clause' || c.type === 'fi'));
+        last(n.children.slice(then + 1, end < 0 ? undefined : end));
+        for (const c of n.namedChildren) if (c.type === 'elif_clause' || c.type === 'else_clause') this.failingEnds(c, out);
+        return;
+      }
+      case 'case_statement':
+        for (const item of n.namedChildren) if (item.type === 'case_item') last(item.namedChildren.filter((c) => c.field !== 'value'));
+        return;
+      case 'for_statement': case 'c_style_for_statement': case 'while_statement': case 'select_statement': {
+        const body = field(n, 'body');
+        if (body) this.failingEnds(body, out);
+        return;
+      }
+      // (A definition gives 0.)
+      case 'function_definition': return;
+    }
+    // (A command, a pipeline, a test: checked, unless `set -e` may be off there.)
+    if (optionOn(this.state.at(n).run, 'set', 'errexit') !== 'on' && this.mayFail(n)) out.push(n);
   }
 
   status(n: SyntaxNode): StatusRule {
@@ -254,13 +364,17 @@ class Statuses implements StatusModel {
         const args = fields(n, 'argument');
         // (B3: a function of that name runs instead of the builtin.)
         const res = name ? resolveName(this.state, name, field(n, 'name')!, { shell: this.shell, command: true }) : undefined;
-        if (res?.kind === 'function') return { kind: 'command', functions: [res.fn.def] };
+        if (res?.kind === 'function') return { kind: 'command', functions: [res.fn.def], ...(res.sure ? { sure: true as const } : {}) };
         // (`test` and `[`, the builtins or the programs.)
         const test = res && testSpecOf(res);
         if (test) {
           // (The model does not take the release: what it says holds in bash 5.2 and in 5.3.)
           const read = commandTest(test, args, !!test.builtin && (!this.shell || this.shell === 'bash') && 'both');
           return read.unclosed || read.malformed ? { kind: 'test', fails: true } : { kind: 'test' };
+        }
+        if (res?.kind === 'host') {
+          const fails = failsOnly(this.state.host[res.name], res.name, args, this.shell);
+          return { kind: 'command', functions: [], ...(fails ? { fails } : {}) };
         }
         if (res?.kind !== 'builtin') return { kind: 'command', functions: this.calledBy(n) };
         const spec = builtins[res.name];
@@ -292,7 +406,8 @@ class Statuses implements StatusModel {
           const job = args.length === 1 && args[0].text === '$!' ? this.lastJob(n) : undefined;
           return { kind: 'wait', all, ...(job ? { job } : {}) };
         }
-        return { kind: 'command', functions: [] };
+        const fails = res.disabled ? undefined : failsOnly(spec, res.name, args, this.shell);
+        return { kind: 'command', functions: [], ...(fails ? { fails } : {}) };
       }
       case 'extended_test': return { kind: 'test' };
       case 'arithmetic_command': return { kind: 'arith' };
@@ -362,9 +477,64 @@ class Statuses implements StatusModel {
       // (An assignment is part of its command: `a=1`, `x=1 cmd`, `local x=1`.)
       : n.type === 'variable_assignment' && n.parent!.type === 'command' ? { why: 'part-of-command' }
       : CHECKED.has(n.type) ? true : { why: 'compound' };
-    const ctx: ErrexitContext = { errexit, errexitWhy, ...(ignored ? { ignored } : {}), active, checked, stops };
+    const within = this.within(n);
+    const ctx: ErrexitContext = { errexit, errexitWhy, ...(ignored ? { ignored } : {}), active, checked, stops, ...(within ? { within } : {}) };
     this.errexitMemo.set(n, ctx);
     return ctx;
+  }
+
+  /** `ErrexitContext.within` of `n`, from where it runs (src/semantics/env.ts) and the `trap` commands of the walk. */
+  private within(n: SyntaxNode): ErrexitContext['within'] {
+    const links = this.state.env(n).links;
+    const host = links.find((l) => l.kind === 'host');
+    if (host) return { kind: host.call.process === 'test' ? 'test' : 'host', def: host.def };
+    // (The `EXIT` traps the main shell sets: the statements of their actions, and the bodies of the functions only
+    // they call, whose calls are made at the `trap` command, `StateModel.calls`.)
+    const sets = this.state.trapSets.filter((t) => t.exitOnly && t.main && !t.dead && t.script);
+    const setOf = (x: SyntaxNode): SyntaxNode | undefined => sets.find((t) => t.at === x || t.script!.tree.root === rootOf(x))?.at;
+    const first = links[0];
+    const slot = first?.kind === 'slot' && first.slot.later ? sets.find((t) => t.script!.words[0] === first.at)?.at : undefined;
+    let trap = slot ?? sets.find((t) => t.script!.tree.root === rootOf(n))?.at;
+    for (const l of slot ? links.slice(1) : links) {
+      if (l.kind !== 'call' || !l.sites.length) return undefined;
+      const at = new Set(l.sites.map((c) => setOf(c.at)));
+      if (at.size !== 1 || at.has(undefined) || (trap && !at.has(trap))) return undefined;
+      trap = [...at][0];
+    }
+    return trap ? { kind: 'exit-trap', trap } : undefined;
+  }
+
+  trapOutcome(script: NestedScript): TrapOutcome {
+    const hit = this.outcomes.get(script);
+    if (hit) return hit;
+    let fails = false;
+    let exits = false;
+    const seen = new Set<SyntaxNode>();
+    const visit = (root: SyntaxNode): void => {
+      for (const s of descendants(root, [...STATEMENTS])) {
+        if (s.type === 'function_definition' || ancestor(s, (a) => a.type === 'function_definition') !== ancestor(root, (a) => a.type === 'function_definition')) continue;
+        const rule = this.status(s);
+        const e = this.errexit(s);
+        // (`exit` ends the shell where it runs, `set -e` aside: in a subshell, only that.)
+        if ((rule.kind === 'given' || rule.kind === 'previous') && rule.ends === 'shell') {
+          exits ||= e.stops !== 'subshell';
+          continue;
+        }
+        if (e.checked === true && e.active !== 'off' && this.mayFail(s)) fails = true;
+        if (rule.kind !== 'command') continue;
+        for (const def of rule.functions) {
+          const body = field(def, 'body');
+          if (body && !seen.has(def)) {
+            seen.add(def);
+            visit(body);
+          }
+        }
+      }
+    };
+    visit(script.tree.root);
+    const out = { fails, exits };
+    this.outcomes.set(script, out);
+    return out;
   }
 
   turnsErrexitOn(n: SyntaxNode): boolean {
@@ -455,9 +625,21 @@ function cannotFail(stage: SyntaxNode): boolean {
   if (stage.type !== 'command' || descendants(stage, ['command_substitution', 'process_substitution']).length) return false;
   const name = commandName(stage);
   const redirs = redirectionsOf(stage);
-  if (name === 'echo' || name === 'printf') return !redirs.length;
+  // (A builtin that fails only on a usage or write error, `CommandSpec.fails`; `printf` of plain words.)
+  if ((name !== undefined && Object.hasOwn(builtins, name) && builtins[name].fails) || name === 'printf') return !redirs.length;
   return name === 'cat' && !fields(stage, 'argument').length && redirs.length > 0
     && redirs.every((r) => r.type === 'heredoc_redirect' || r.type === 'herestring_redirect');
+}
+
+/**
+ * When the builtin (or host's function) `name` with `spec` fails, where its spec narrows it (`CommandSpec.fails`):
+ * `never`, `usage`, or undefined (it may fail in normal use: bats' `run !` and `run -N`).
+ */
+function failsOnly(spec: CommandSpec, name: string, args: readonly SyntaxNode[], shell: Shell | undefined): 'never' | 'usage' | undefined {
+  const f = spec.fails;
+  if (typeof f !== 'object') return f;
+  const parse = builtinParse(name, args, shell, spec);
+  return has(parse, ...f.unless.flags) || (f.unless.patterns && parse.roles.some((r) => r.role.role === 'pattern-option')) ? undefined : 'usage';
 }
 
 /** A last stage that may stop reading before the end: `head`, `grep -q`, `grep -m N`, `sed …q`. */
