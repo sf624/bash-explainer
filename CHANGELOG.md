@@ -7,6 +7,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### New
 
 - Each target pattern on a bazel command line says what it selects (`//app:main`, `//app/...`, `:all`, `-//app/legacy/...`), in `bazel query`, `cquery` and `aquery` too. A pattern bazel refuses (`//app/...:main`, `//app:`) is marked.
+- buildifier commands are explained: `buildifier -mode=check -lint=warn -r .` gets every option and its values, and a word after the first file is a file name, as buildifier reads it.
 
 ## 0.11.0
 

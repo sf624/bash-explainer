@@ -30,3 +30,23 @@ runs:
         chmod +x "$dir/yq"
         echo "BASH_EXPLAINER_YQ4=$dir/yq" >> "$GITHUB_ENV"
       shell: bash
+    # buildifier (Apache-2.0; a static Go program, run as a separate program) from bazel-contrib/buildtools for
+    # test/buildifier.test.ts: a pinned release, checked by its SHA-256 on every run (the release lists none: this is
+    # the digest GitHub shows for the asset, and `sha256sum` of the file downloaded), found through BUILDIFIER, cached.
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/buildifier
+        key: buildifier-${{ runner.os }}-v10.2.0-470844069d710d0b7740e55007071c63e4d00be89a833dce5d1a91790e84dc28
+    - env:
+        BUILDIFIER_VERSION: v10.2.0
+        BUILDIFIER_SHA256: 470844069d710d0b7740e55007071c63e4d00be89a833dce5d1a91790e84dc28
+      run: |
+        dir="$RUNNER_TEMP/buildifier"
+        mkdir -p "$dir"
+        if [ ! -x "$dir/buildifier" ]; then
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20 -o "$dir/buildifier" "https://github.com/bazel-contrib/buildtools/releases/download/$BUILDIFIER_VERSION/buildifier-linux-amd64"
+        fi
+        echo "$BUILDIFIER_SHA256  $dir/buildifier" | sha256sum --check
+        chmod +x "$dir/buildifier"
+        echo "BUILDIFIER=$dir/buildifier" >> "$GITHUB_ENV"
+      shell: bash
