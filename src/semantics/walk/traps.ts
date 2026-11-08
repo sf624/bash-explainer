@@ -2,7 +2,7 @@
 // and takes back, what a subshell and a function body start with, and `exec`, after which none runs. The state holds
 // them (`ShellState.traps`); the walk (./walker.ts, ./builtins.ts, ./expansions.ts) calls these where they change.
 import type { ArgvParse } from '../../argv/interpret';
-import { has } from '../../argv/query';
+import { has, operands } from '../../argv/query';
 import { staticWordValue } from '../../staticword';
 import type { SyntaxNode } from '../../syntax/tree';
 import { subshellReasons } from '../env';
@@ -46,7 +46,7 @@ export interface TrapSet {
  */
 export function trapCommand(w: Walker, st: ShellState, parse: ArgvParse, args: readonly SyntaxNode[], at: SyntaxNode, action?: { word: SyntaxNode; script?: NestedScript }): ShellState {
   if (has(parse, '-p', '-P', '-l')) return st;
-  const words = trapSignals(parse, args, !!action);
+  const words = trapSignals(parse, args);
   const named = new Set(words.map((v) => (v === undefined ? undefined : trappedName(v))).filter((t) => t !== undefined));
   const anyName = words.includes(undefined);
   const state: Tri = !action || action.script?.text === '' ? 'off' : action.script ? 'on' : 'unknown';
@@ -64,13 +64,9 @@ export function trapCommand(w: Walker, st: ShellState, parse: ArgvParse, args: r
   return st;
 }
 
-/**
- * The signal words of `trap` (`parse` of `args`), as their values (undefined: not known here); without an action
- * (`withAction` false), not the `-` before them that resets them (`trap - EXIT`).
- */
-export function trapSignals(parse: ArgvParse, args: readonly SyntaxNode[], withAction: boolean): (string | undefined)[] {
-  const words = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]));
-  return withAction || words[0] !== '-' ? words : words.slice(1);
+/** The signal words of `trap` (`parse` of `args`: its `SIGNAL` operands, not the `-` of `trap - EXIT`), as their values (undefined: not known here). */
+export function trapSignals(parse: ArgvParse, args: readonly SyntaxNode[]): (string | undefined)[] {
+  return operands(parse, 'SIGNAL').map((o) => staticWordValue(args[o.word]));
 }
 
 /** The state after `exec` runs a command at `at`: the shell is replaced, and no trap of `EXIT` runs. */
