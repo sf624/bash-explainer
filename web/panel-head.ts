@@ -4,7 +4,7 @@
 // (src/ui/panelView.ts `viewControl`). The header takes the first of its forms (src/ui/panelHead.ts `panelHeaderForms`)
 // that fits its row. Each press says the state it wants (web/panel-bridge.ts sends it to the panel); nothing here
 // presses the panel's own buttons.
-// On a phone the header is the bottom sheet's (web/sheet.ts; step C8a): a grab strip of 44 px over a 48 px row with the
+// On a phone the header is the bottom sheet's (web/sheet.ts; step C8a): a grab strip of 22 px (set to half of 44 px after the maintainer's check on a real device, 2026-11-08) over a 48 px row with the
 // tabs Explanation (with the cursor's line, "Ln 8"), Problems (its counts by level) and Reference, and the view control
 // as a pill (docs/design/usability-9.md, 2.5); its forms
 // come from src/ui/sheet.ts `sheetForms` (decision 9). The Problems tab shows the page's own list in the sheet.
