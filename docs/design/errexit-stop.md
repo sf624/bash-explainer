@@ -1,0 +1,208 @@
+# Where `set -e` stops the script (usability-9, U11)
+
+Status: design, waiting on the maintainer's decisions (section 9). Issue #721. Step U11 of [usability-9.md](usability-9.md), after its run 3.
+
+The maintainer decided on 2026-11-08: on each line whose command can stop the script under `set -e`, one sentence says that if it fails, the script stops here, which trap runs then (and its line), and the status the script ends with. This page says which lines get it, what it says in each case, where it shows, what the models lack for it, how it is tested, and the steps.
+
+## 1. Why
+
+Run 3 of the usability test (the kit's RESULTS.md, R3.1 and R3.4, finding 1) gave ten users `nightly-backup.sh`: `set -euo pipefail` on line 3, `trap cleanup EXIT` on line 19, and `tar` on line 28, in a `for` loop. Task 8 (b) asked what happens if `tar` fails. All ten answered right: the script stops at `tar`, `cleanup` runs, and the status is not 0. Nine said they answered from their own knowledge, and nine put it in their top three costs.
+
+What the page shows today, checked on main (e1174686) with `test/dump.ts` and the line's sentence:
+
+- Line 28's "In short" is "Runs `tar` (create or extract tar archives)." Its only `set -e` text is on `$(dirname …)`: "If it fails, `set -e` does not stop the script (the status is that of `tar`)". Four users quoted it.
+- Line 3's `-e` row says what `set -e` does in general; line 19's idiom note says the trap runs "when the script exits, however it exits".
+- Line 17 (`rm`, in `cleanup`) is the only line whose "In short" says `set -e` stops something: "if it fails, `set -e` stops the shell it runs in (the script or a subshell)".
+- No line says the exit status. Nothing ties line 28 to lines 3 and 19.
+
+"In short" says nothing where `set -e` stops the script, by design: panel-redesign.md, P5, found it noise when said on every line. The maintainer's decision reverses that. The cost is length, which all ten users of run 3 also paid ([usability-9.md](usability-9.md), 2.7). So the sentence has to be short, and must not repeat what the line already says.
+
+## 2. What bash does
+
+Each case below ran in bash 5.2.21 and in bash 5.3.0, in a cgroup (`systemd-run --user --scope -p MemoryMax=1G`, `FUNCNEST=50`). Both versions gave the same results. `sh -c 'exit N'` stands for a command that fails with status N. `T` is the output of an EXIT trap.
+
+| Case | Script (after `set -e`) | Status | Output |
+| --- | --- | --- | --- |
+| A command at the top | `trap "echo T" EXIT; sh -c "exit 3"; echo after` | 3 | T |
+| In a `for` loop | `for i in 1 2 3; do echo i$i; sh -c "exit $((i-1))"; done; echo after` | 1 | i1 i2 T |
+| In a function called at the top | `f() { sh -c "exit 4"; echo inf; }; f; echo after` | 4 | T |
+| A pipeline, with pipefail | `sh -c "exit 2" \| sh -c "exit 3" \| true` | 3 (the last stage that fails) | T |
+| A pipeline, without pipefail | `false \| true; echo after` | 0 | after T |
+| An assignment of `$( )` | `x=$(sh -c "exit 6"); echo after` | 6 | T |
+| `local x=$( )` | `f() { local x=$(sh -c "exit 6"); echo inf; }; f` | 0 | inf after |
+| `$( )` without inherit_errexit | `x=$(sh -c "exit 3"; echo y)` | 0 | after y |
+| `[[ ]]`, `(( ))` at the top | `[[ -d /nope ]]`; `i=0; ((i++))` | 1 | |
+| A command not found | `no_such_cmd` | 127 | the error, T |
+| `echo` to a closed stdout | `echo hi >&-` | 1 | write error, T |
+| In a condition, left of `&&`, after `!`, `\|\| true` | `if f; then …`, `false && x`, `! true`, `false \|\| true` | 0 | goes on |
+| A function called left of `\|\|`, then alone | `f \|\| echo or; f` | 3 | (the first call goes on) |
+| In `( )` | `( sh -c "exit 3"; echo insub ); echo after` | 3 | T, once: the subshell does not run the main shell's EXIT trap |
+| A trap set after the failure | `sh -c "exit 3"; trap "echo T" EXIT` | 3 | nothing |
+| A trap taken back, or set on some paths | `trap … EXIT; trap - EXIT` (also `trap EXIT`, `trap "" EXIT`); `if [ -n "$X" ]; then trap …; fi` | 3 | nothing |
+| In a pipeline stage, with pipefail | `true \| { sh -c "exit 3"; echo in; } \| cat` | 3 | T, once (the main shell's) |
+| A trap set in a function, or in `( )` | `g() { trap "echo T" EXIT; }; g; …` / `( trap "echo T" EXIT ); …` | 3 | T / T (the subshell's own, at its end) |
+| The trap's function defined after the `trap` | `trap cleanup EXIT; cleanup() { echo C; }; sh -c "exit 3"` | 3 | C |
+| The trap's function never defined | `trap cleanup EXIT; sh -c "exit 3"` | 127 | command not found |
+| The trap sees the status | `trap "echo st=\$?" EXIT; sh -c "exit 3"` | 3 | st=3 |
+| The trap fails (set -e is on in it) | `c() { sh -c "exit 7"; echo inc; }; trap c EXIT; sh -c "exit 3"` | 7 | (`inc` does not print) |
+| The trap fails, the script did not | same, then `true` | 7 | |
+| The trap fails, kept | `trap "false \|\| :" EXIT` / `trap "set +e; false" EXIT` | 3 | |
+| The trap calls `exit 5` | `trap "exit 5" EXIT; sh -c "exit 3"` | 5 | |
+| An ERR trap | `trap "echo ERR" ERR; trap "echo T" EXIT; sh -c "exit 3"` | 3 | ERR T |
+| An ERR trap and a function | `trap "echo ERR" ERR; f() { false; }; f` | 1 | nothing; with `set -E`: ERR |
+| An ERR trap and `( )` | `trap "echo ERR" ERR; ( false; echo in )` | 1 | ERR once, the main shell's for `( )`; with `set -E`, twice |
+| The ERR trap calls `exit 9` | `trap "exit 9" ERR; sh -c "exit 3"` | 9 | |
+| `set -u`, a variable not set (a script file) | `echo "$nope"`, with or without `-e` | 1 | the error, T |
+| A sourced file | `. ./s.sh` where s.sh fails | 3 | T |
+
+What follows for the sentence:
+
+- The script stops at the failing command. Nothing after it runs: not the rest of the loop, not the lines below.
+- A failure in a function's body stops the whole script, not only the function.
+- The EXIT trap that runs is the one set when the command fails: not one set later, taken back, or set in a subshell. A subshell does not run the main shell's EXIT trap. The ERR trap runs first, but not in a function unless `set -E` is on.
+- The status is the command's (a pipeline's, by pipefail; an assignment's last `$( )`'s). The EXIT trap can change it. `set -e` is still on in the trap, so a command that fails there ends the trap and gives its own status; an `exit N` there gives N. So "with `tar`'s status" holds only while the trap does not fail.
+
+## 3. Which lines
+
+**The rule.** Statement `n` gets the sentence where the status model says a failure of it stops a shell and that it can fail:
+
+- `statusModel(state).errexit(n)`: `active === 'on'`, `checked === true`. This already leaves out conditions, the left of `&&` and `||`, `!`, `$( )` without inherit_errexit, functions called from those places, a pipeline's stages (the pipeline is checked), jobs, and assignments that are part of a command.
+- `mayFail(n)`. This already leaves out `:`, `true`, `exit N`, `return N`, an assignment with no `$( )`, a function definition, and a job.
+- The line is reached: nothing when the shell surely stops before it (`Explainer.reachedAt`) or when the statement runs only in dead code (`.dead(n)`).
+- No problem of the line already says what `set -e` does there. Those are the catalog entries whose `says` holds `errexit`: `postfix-increment-status`, `pipefail-missing`, `failure-reported-as-success`, `function-last-test-stops-script`, `declaration-masks-status`… This is the check "In short" makes today (`clausesOf`).
+
+**What the model lacks.** Five things, each designed in section 6:
+
+1. **G1, the traps in effect at a point.** Nothing says which EXIT or ERR trap is set at `n`. The walk keeps the trap actions in order to run them later (`Walker.traps`, src/semantics/walk/walker.ts), and `runsAtExit` (src/semantics/scriptstops.ts) scans the script for later `trap` and `exec` commands, by name. Neither one gives the state at a point.
+2. **G2, builtins that fail only on a usage or write error.** `mayFail` is true for `continue`, `trap cleanup EXIT`, `set -euo pipefail`, `export X`, `echo …`. A sentence there is noise. `succeeds` and `cannotFail` (src/semantics/status.ts) decide nearby facts by comparing names (`true`, `:`, `echo`, `printf`, `cat`).
+3. **G3, a call of a function whose failures all stop inside it.** For `log "…"` (lines 24, 30 and 34), `mayFail` is true. But a failure of `logger` or `echo` in `log` stops the script on line 12 or 13, not at the call. The call itself fails only when the body returns non-zero without stopping (`return 1`, a last `test && cmd`).
+4. **G4, a command in a trap's action.** For line 17, `stops` is `unknown`, because the action runs through the trap's slot. bash runs it in the shell that set the trap. A failure there ends the trap, and the script exits with that status (section 2).
+5. **G5, what the trap's action does to the status.** Whether the action may fail, or calls `exit`. This is `mayFail` over the action's statements, plus an `exit` among them.
+
+**Counted** with today's model, the rule above and an estimate of G2 (a draft list of 15 builtins), by a probe script that is not committed:
+
+| Corpus | Lines with code | Get the sentence | Left out by G2 | Stop another shell |
+| --- | --- | --- | --- | --- |
+| test/fixtures/sample.sh (`set -euo pipefail` on line 4) | 108 | 65 | 20 | 4 |
+| nightly-backup.sh | 23 | 10; 7 with G3 (8, 12, 21, 27, 28, 29, 33) | 3 (13, 19, 25) | 1 (17) |
+| the kit's other scripts (backup, logins, args, getopts) | 17 | 0 | 0 | 0 |
+| test/fixtures/snippets.json (2,075 snippets) | 2,409 | 3 | 0 | 0 |
+
+The corpus has almost no `set -e`, so the step adds snippets (section 7). On sample.sh, more than half the lines get the sentence. That is the decision's cost: it is said on every such line.
+
+## 4. What it says
+
+One sentence, from one catalog fact, `errexit-stops-here` (src/messages-facts-status.ts). It cites 4.3.1 The Set Builtin, 4.1 Bourne Shell Builtins (`trap`) and 3.7.5 Exit Status, and 3.2.3 Pipelines for a pipeline. Its level is `note` (section 5). Its params come from the models only:
+
+- `what`: the command's name; `$( )` for an assignment's substitution; "the pipeline"; or the test (`[[ … ]]`, `(( … ))`). With several stopping statements on the line, their names (up to three).
+- `stops`: `script`, `subshell`, `trap` (G4) or `unknown`.
+- `err`, `exit`: the ERR and EXIT traps in effect (G1): none; set, with the line of the `trap` and its action's name (a function, or the start of the string); or maybe, with the line.
+- `status`: the command's, the pipeline's, or the substitution's. `changes`: the action may fail, or calls `exit` (G5).
+
+Drafts (`line 19` from `lineLabel`; the Japanese follows docs/japanese-style.md):
+
+| Case | English | Japanese |
+| --- | --- | --- |
+| No trap | If `mkdir` fails, `set -e` stops the script here, with `mkdir`'s exit status. | `mkdir` が失敗すると、`set -e` でスクリプトはここで終わり、`mkdir` の終了ステータスで終了する。 |
+| An EXIT trap (line 28) | If `tar` fails, `set -e` stops the script here: the EXIT trap of line 19 runs `cleanup`, and the script exits with `tar`'s status (or `cleanup`'s, if it fails). | `tar` が失敗すると、`set -e` でスクリプトはここで終わり、行 19 の EXIT トラップの `cleanup` が実行され、`tar` の終了ステータスで終了する（`cleanup` が失敗したときはそのステータス）。 |
+| The action cannot fail | … and the script exits with `tar`'s status. | …、`tar` の終了ステータスで終了する。 |
+| The action calls `exit` | … the EXIT trap of line 19 runs `cleanup`, which sets the exit status with `exit`. | … 行 19 の EXIT トラップの `cleanup` が実行され、その `exit` が終了ステータスを決める。 |
+| A trap set on some paths | If `tar` fails, `set -e` stops the script here, with `tar`'s status; the EXIT trap of line 19 runs first if it was set. | `tar` が失敗すると、`set -e` でスクリプトはここで終わり、`tar` の終了ステータスで終了する（行 19 の EXIT トラップが設定されていれば、先にそれが実行される）。 |
+| An ERR trap too | … here: the ERR trap of line 4 runs, then the EXIT trap of line 19 runs `cleanup`, … | … 行 4 の ERR トラップ、行 19 の EXIT トラップの `cleanup` の順に実行され、… |
+| A pipeline | If the pipeline fails, `set -e` stops the script here, with the pipeline's status. | パイプラインが失敗すると、… パイプラインの終了ステータスで終了する。 |
+| `$( )` in an assignment (line 27) | If `$( )` fails, `set -e` stops the script here, with its status. | `$( )` が失敗すると、… その終了ステータスで終了する。 |
+| A test | If `[[ … ]]` is false, `set -e` stops the script here, with status 1. | `[[ … ]]` が偽だと、… 終了ステータス 1 で終了する。 |
+| A subshell | If `x` fails, `set -e` ends the subshell here, with `x`'s status. | `x` が失敗すると、`set -e` でサブシェルはここで終わる（終了ステータスは `x` のもの）。 |
+| Not known which | If `x` fails, `set -e` stops the shell it runs in (the script or a subshell). | today's clause, unchanged |
+| In the EXIT trap (line 17, G4) | If `rm` fails, `set -e` ends the EXIT trap here, and the script exits with `rm`'s status. | `rm` が失敗すると、`set -e` で EXIT トラップはここで終わり、スクリプトは `rm` の終了ステータスで終了する。 |
+
+The sentence does not add "the rest of the loop does not run": "stops the script here" already says that nothing after it runs, and a loop clause costs about a line on a phone (Q3). In a function body, "here" is right: the script stops at that line, whichever call ran it (section 2).
+
+## 5. Where it shows
+
+**A line note, at the level `note`.** Not `info`: an `info` note is a problem (the Problems pane, a blue squiggle, `--check`, SARIF; [three-levels.md](three-levels.md), section 1). That would put a problem on 65 lines of sample.sh. A note at `note` level is "a fact of how the shell runs the line": it has the mark ℹ, no squiggle, and no entry in Problems.
+
+It is anchored on the statement (`cx.note(fact(…), n)`). It is made in src/explain/status.ts beside `substitutionStatus`, today's source of the `set -e` texts on tokens, so both read the same `errexit` context. The panel draws `#notes` right under "In short" and the problems box (src/ui/panelView.ts). On line 28, which has no problem, the note is the second thing the reader sees. It shows at depths 1 and 2.
+
+**What it replaces, so nothing is said twice:**
+
+- "In short" drops `S.errexit`, its clause for a statement that stops a subshell or a shell not known: the note now says that, as on line 17. It keeps `errexitList`: in an AND or OR list, only the last command stops the shell, which is about the list, not about a failure. The clause name `errexit` stays for the `says` check.
+- The token text of `$( )` in an assignment with no command (line 27) loses "Under `set -e` the script stops here if it fails". It keeps why the status is the substitution's: "a command with no name … takes the status of its last command substitution". Line 27's note says the stop.
+- The token text "If it fails, `set -e` does not stop the script (the status is that of `tar`)" (line 28's `$(dirname …)`) stays. It says a different fact, and line 28's note now says what `tar`'s status does.
+- Line 3's `-e` row and line 19's idiom note stay: they are general.
+
+**The cost, measured** in the web page with CI's fonts (IPAGothic, WenQuanYi), on nightly-backup.sh at depth 1, with the drafts above drawn in `#notes` (the second row of the table in section 4, 170 characters in English and 105 in Japanese, by a measuring test that is not committed):
+
+| Width | Line 28's page | + the note | + the same as a clause of "In short" |
+| --- | --- | --- | --- |
+| 390, en | 1,064 px | +76 px | +59 px |
+| 390, ja | 1,047 px | +95 px | +39 px |
+| 1280, en | 776 px | +57 px | +19 px |
+| 1280, ja | 737 px | +76 px | +20 px |
+
+At depth 2 the figures are the same within 1 px. On lines 21 and 27 they are the same as on line 28. Scripts without `set -e` gain nothing: s1 to s4 of test/web-depth.test.ts have none, so their budgets do not move (s2 included). On a phone, the sheet at half height shows 336 px of the panel, so the note costs about a quarter of the view. The case "no trap" is 70 characters: two lines at 390, about 40 px (estimated, not measured). As a clause of "In short", the sentence costs less but reaches only the panels (below), and it makes "In short" run on, which U7 just removed (2.7).
+
+## 6. Outputs, and what the models need
+
+**Outputs.** A line note is read by every output: the VS Code panel and the web panel (`#notes`), the hover's line card, Copy as Markdown, and the CLI's explanation and JSON (`facts`, with the id). "In short" reaches only the two panels and the phone's summary row. The note is no problem, so none of the following change: `--check`, SARIF, the GitHub annotations, the Problems pane and the web page's Problems list.
+
+**G1: traps in the state** (src/semantics/state.ts, the walk). `ShellState.traps` holds, for `EXIT` and `ERR`, one of: none; set, by a `trap` command (node, action); maybe (set on some paths: a join of states that differ); or unknown (a signal list or an action the walk cannot read).
+
+- The walk's `trap` builtin (src/semantics/walk/builtins.ts, where it already reads the signals) writes it. `trap - EXIT` and `trap EXIT` take it back. `trap '' EXIT` sets "nothing runs".
+- A subshell, `$( )` and a pipeline stage start with none: bash resets the traps there (section 2).
+- A function body reads the join of its calls' states. For ERR, a function body, a subshell and `$( )` start with none unless errtrace is on (`set -E`).
+- `runsAtExit` (src/semantics/scriptstops.ts) then reads the state at the end of the script instead of scanning for `trap` and `exec` by name. That is one source for both.
+- The probe table test/fixtures/probes/state.json gets rows for each case of section 2, compared with bash. The marker is `trap -p EXIT`, printed at a point. In a subshell, `trap -p` still prints the main shell's trap (measured), so the subshell rows check what the trap prints when the shell exits instead.
+- A row in docs/design/sources.md (the fact and its source), and a guard: the readers of `trap` by name outside the walk, as a known list that may only shrink.
+
+**G2: a spec field** in src/dict/types.ts for builtins: `fails: 'usage'`, "fails only when its words are refused or its output cannot be written". It goes on `continue`, `break`, `trap`, `set`, `shopt`, `export`, `readonly`, `alias`, `unset`, `echo` and `umask`. It also goes on `local`, `declare` and `typeset`, but only without `$( )`: their `$( )` has the `declaration-masks-status` pitfall. `mayFail` reads it (it is a spec field, not a name in src/semantics/), and `cannotFail` and `succeeds` read the same field instead of their name checks where they mean the same. `printf` (a bad number fails), `cd`, `read`, `shift` (with no arguments left), `source`, `wait`, `test` and `[` can fail in normal use and do not get it. This is a field of the spec, not a name check, as CLAUDE.md ("Design") asks.
+
+**G3: calls.** `mayFail` of a call of a function is whether its body can end with a non-zero status that `set -e` did not stop. That happens with a `return` whose status may not be 0, or a last statement where `set -e` is ignored there (`test && cmd`, `cmd || other`). statusfacts.ts's `function-last-test-*` already finds the second case for its pitfalls: one function, `returnsFailure(def)` in src/semantics/status.ts, serves both. On nightly-backup.sh, this takes the sentence off lines 24, 30 and 34.
+
+**G4: `stops: 'trap'`** for a statement that runs only in an EXIT trap's action, whose trap was set by the main shell: the env's slot link with `later` (as `posixExit` reads it today). A function called both from the trap and elsewhere stays `unknown`.
+
+**G5** is `mayFail` over the action's statements (a function's body, or the string's statements, which the walk already parses), plus an `exit` among them. It is memoized per trap.
+
+**The line budget.** Nothing new is walked: `errexit`, `mayFail` and the traps are memoized per node or per trap, and the note is made once per statement. No recursive call sits inside `s(ja, en)` ([line-budget.md](line-budget.md)).
+
+## 7. Tests
+
+- **Against bash: the note's claims.** A probe table, test/fixtures/probes/errexit-stop.json, with the cases of section 2 and the corpus's shapes (a loop, a function, a pipeline with and without pipefail, an assignment, a test, a subshell, traps set before, after, on some paths, in a function, in `( )`; an action that fails, that calls `exit`; ERR with and without `-E`). Each row is a script with one marked failing command (`sh -c 'exit N'`).
+  - The test reads the note's params on that line: whether there is a note, `stops`, the traps and their lines, the status.
+  - It runs the script in bash (`runContained`, test/support/contained.ts), with markers. A marker after the command must not print. Each trap's action prints its own marker, and only those named must print. The exit status must be N, or the action's where `changes` says so.
+  - It also checks the other way: on a line with no note, bash goes on after the failure.
+  - It runs with bash 5.2, and with 5.3 from `$BASH_EXPLAINER_BASH53`.
+- **The corpus.**
+  - Over sample.sh, the fixtures and the snippets: every note satisfies the rule of section 3, and no line has both the note and a problem whose `says` holds `errexit`.
+  - test/linesentence.test.ts loses its `set -e` cases of `S.errexit`; those cases move to the note's test.
+  - The probe rows become snippets, so `scripts/extract-snippets.ts` and the counts the snippets pin (argv-known.json, command-tokens-known.json) are regenerated.
+  - The `test/dump.ts` output of sample.sh is checked for the new notes.
+- **The guards.** note-strings (a catalog fact, no inline text), note-levels (the level from the table), explain-imports (no command name compared in src/explain/: G2 is a spec field), the Japanese style test, problem-heads (a `note` needs no headline), and test/state-probes.test.ts for G1.
+- **Web.** test/web-sentence.test.ts or a neighbour: line 28 of a `set -e` script with a trap shows the note in `#notes` right after `#short`, at 390 and 1280, in both languages, with each code span drawn as one `code` element. The accessibility tree reads the note as text with its ℹ named. The budgets of test/web-depth.test.ts do not change (no `set -e` in s1 to s4). nightly-backup.sh line 28 gets a budget of its own at depth 1, from CI's figures.
+
+## 8. Steps
+
+1. **U11a, the model (no change users see).** G1 (the traps in the state, its probes, `runsAtExit` reading it, the sources.md row and its guard), G2 (the spec field, read by `mayFail`, `cannotFail` and `succeeds`), G3 (`returnsFailure`), G4 and G5. Its tests are probes and unit tests; the explanations do not change, except where `cannotFail` reads the spec field. That PR lists those changes, if any.
+2. **U11b, the note.** The catalog fact with its drafts; `errexitStopNote` in src/explain/status.ts; `S.errexit` dropped from "In short"; the token text of line 27 shortened; the probe table against bash, the corpus checks, the web test; a CHANGELOG bullet under "New" ("Under `set -e`, a line whose command can fail says that the script stops there, which trap runs, and its exit status"), with the examples in docs/changes/unreleased.md; [usability-9.md](usability-9.md) and this page's status updated.
+
+Two PRs, because U11a is a foundation and gets its own review before the text is built on it (CLAUDE.md, "Delegating"). They can go as one stack.
+
+## 9. Questions for the maintainer
+
+- **Q1. Where.** (a) A line note at the level `note`, under "In short", in every output: +57 to +95 px on lines with a trap, about +40 px without. (b) A clause of "In short", in the panels only: +19 to +59 px, and a longer "In short". *Recommended: (a)*. It reaches the CLI and the hover, it carries the manual's sections, and "In short" stays one idea.
+- **Q2. Builtins that fail only on a usage or write error** (`continue`, `trap …`, `set …`, `export`, `echo`…). *Recommended: no sentence*, through the spec field G2. `echo` to a closed stdout does stop the script (section 2), but saying so on every `echo` is noise.
+- **Q3. Loops.** Add "the rest of the loop and the lines after it do not run"? *Recommended: no.* "stops the script here" says it, and it costs a line on a phone.
+- **Q4. A call of a function whose failures stop inside it** (`log "…"`). *Recommended: no sentence on the call* (G3); the lines of the body have theirs.
+- **Q5. The status when the trap may fail.** "(or `cleanup`'s, if it fails)", or no status at all? *Recommended: the hedge.* The status was what no line said, and without the hedge the sentence is false when `cleanup` fails (section 2).
+- **Q6. The ERR trap.** In U11a/U11b, or later? *Recommended: in*, as the same field of the state. Strict-mode templates often set `trap '…' ERR`, and an `exit` there changes the status.
+- **Q7. Line 17, in the EXIT trap** (G4). *Recommended: in U11b*, with "ends the EXIT trap here, and the script exits with `rm`'s status". It is the text u26 found, and it is not right today: it says "the script or a subshell".
+- **Q8. sample.sh**: 65 of its 108 lines with code get the note. Keep `set -euo pipefail` on its line 4? *Recommended: keep it.* It is the usual strict mode, and the tour shows the note on every kind of line; check the dump in U11b.
+
+## 10. Left out (rare corners)
+
+For the roadmap's Deferred section if they come up:
+
+- A script that turns `set -e` on only on some paths (`active: 'unknown'`) gets no note.
+- `bash -c` exits with 127, not 1, on a variable not set under `set -u` without `-e` (section 2: in a script file, 1). The `unbound` fact already says the script exits.
+- A file sourced by another script: "the script" is the shell that sources it.
+- `trap` with a signal list in a variable (G1 `unknown`): the sentence names no trap and gives the status with "after the traps set before, if any".
