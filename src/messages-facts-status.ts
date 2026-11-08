@@ -17,6 +17,33 @@ const POSTFIX_STOPS: Record<Stops, Head> = {
   unknown: ['実行しているシェルが止まる', 'the shell running it stops'],
 };
 
+/** What fails, in `errexit-stops-here`: a command, the `$( )` of an assignment, a pipeline, a test, a subshell. */
+export type StopWhat = { kind: 'command'; name: string } | { kind: 'substitution'; name?: string } | { kind: 'pipeline' } | { kind: 'test'; text: string } | { kind: 'subshell' };
+/** The params of `errexit-stops-here`: what fails, and the EXIT trap set before it (its line and action; `maybe`: on some paths only). */
+export interface ErrexitStopParams { what: StopWhat; trap?: { line: number; action: string; maybe: boolean } }
+
+function errexitStopEn({ what, trap }: ErrexitStopParams): string {
+  const subject = what.kind === 'command' ? codeSpan(what.name) : what.kind === 'substitution' ? (what.name ? `${codeSpan(what.name)} in \`$( )\`` : '`$( )`') : what.kind === 'pipeline' ? 'the pipeline' : what.kind === 'test' ? codeSpan(what.text) : '`( … )`';
+  const fails = what.kind === 'test' ? 'is false' : 'fails';
+  const status = what.kind === 'command' ? `${codeSpan(what.name)}'s status` : what.kind === 'pipeline' ? "the pipeline's status" : what.kind === 'test' ? 'status 1' : what.kind === 'substitution' ? (what.name ? `${codeSpan(what.name)}'s status` : 'the status of `$( )`') : 'its status';
+  const head = `If ${subject} ${fails}, \`set -e\` stops the script here`;
+  if (!trap) return `${head}, with ${status}`;
+  const at = lineLabel('en', trap.line, 'inline');
+  if (trap.maybe) return `${head}, with ${status}; the EXIT trap of ${at} runs first if it was set`;
+  return `${head}: the EXIT trap of ${at} runs ${codeSpan(trap.action)}, and the script exits with ${status} (or that of ${codeSpan(trap.action)}, if it fails)`;
+}
+
+function errexitStopJa({ what, trap }: ErrexitStopParams): string {
+  const subject = what.kind === 'command' ? `${codeSpan(what.name)} ` : what.kind === 'substitution' ? (what.name ? `\`$( )\` の中の ${codeSpan(what.name)} ` : '`$( )` ') : what.kind === 'pipeline' ? 'パイプライン' : what.kind === 'test' ? `${codeSpan(what.text)} ` : '`( … )` ';
+  const fails = what.kind === 'test' ? 'が偽だと' : 'が失敗すると';
+  const status = what.kind === 'command' ? `${codeSpan(what.name)} の終了ステータス` : what.kind === 'pipeline' ? 'パイプラインの終了ステータス' : what.kind === 'test' ? '終了ステータス 1 ' : what.kind === 'substitution' ? `${what.name ? codeSpan(what.name) : '`$( )`'} の終了ステータス` : 'その終了ステータス';
+  const head = `${subject}${fails}、\`set -e\` でスクリプトはここで終わり、`;
+  if (!trap) return `${head}${status}で終了する`;
+  const at = lineLabel('ja', trap.line);
+  if (trap.maybe) return `${head}${status}で終了する（${at} の EXIT トラップが設定されていれば、先にそれが実行される）`;
+  return `${head}${at} の EXIT トラップの ${codeSpan(trap.action)} が実行され、${status}で終了する（${codeSpan(trap.action)} が失敗したときはそのステータス）`;
+}
+
 /** The headline of `postfix-increment-status` and `postfix-decrement-status`. */
 function postfixHead(written: string, v: string, errexit: boolean | undefined, stops: Stops = 'script'): Head {
   const [ja, en] = POSTFIX_STOPS[stops];
@@ -73,6 +100,9 @@ export const STATUS_MESSAGES = {
   'errexit-group-where-ignored': note<{ what: string; where: Words }>(['4.3.1'], ({ what, where }) => [
     `${where.ja}で実行されるので、${what}の中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
     `\`set -e\` is ignored in this ${what}, since it runs ${where.en}: a command that fails in the middle does not stop it`]),
+  // (Prototype for usability run 4, docs/design/errexit-stop.md, section 9: where `set -e` stops the script, the EXIT
+  // trap set before (a rough scan: src/explain/status.ts), and the status it ends with.)
+  'errexit-stops-here': note<ErrexitStopParams>(['4.3.1', '4.1', '3.7.5'], (p) => [errexitStopJa(p), errexitStopEn(p)]),
   // (4.2 says that `local` and `declare` (`typeset`) return 0 unless an option, a name or a readonly variable is wrong,
   // 4.1 the same of `export` and `readonly`: a failed command substitution is not among the reasons. `rewrite`: src/statusfacts.ts.)
   'declaration-masks-status': saying(withConvention(suggests(caveat<{ kw: string; v: string; rewrite: readonly Rewrite[] }>(['4.2', '4.1', '4.3.1'], ({ kw, v, rewrite }) => [

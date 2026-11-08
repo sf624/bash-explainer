@@ -8,7 +8,7 @@ import { pitfallFindings } from './pitfalls';
 import { wordFindings } from './wordfacts';
 import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 import { lookupCommand } from './dict/aliases';
-import { basisGate, type Fact, fact, pitfallSaid } from './messages';
+import { basisGate, clausesOf, type Fact, fact, pitfallSaid } from './messages';
 import { onceBy } from './lists';
 import { withoutBases, withTokenBases } from './tokenbases';
 import { pictureNote } from './ctlchars';
@@ -182,12 +182,28 @@ export class Analyzer {
     }
     if (opts.notPosix) result.notPosix = notPosixOn(root, shown!, this.lang).map(({ node, says }) => ({ span: spanOf(node), says }));
     // (A string read as a script has none: the line's sentence says the command that reads it.)
+    // (Prototype for usability run 4: no stop note where a problem of the line says what `set -e` does there.)
+    const stops = (result.facts ?? []).filter((f) => f.id === 'errexit-stops-here');
+    const saidElsewhere = [...problemCodes(result)].some((code) => clausesOf(code).includes('errexit'));
+    const clause = opts.sentence && !this.nested && opts.errexitStop === 'clause';
+    if (stops.length && (saidElsewhere || clause)) {
+      const gone = new Set(stops.map((f) => f.text));
+      result.notes = result.notes.filter((t) => !gone.has(t));
+      result.noteInfo = result.noteInfo.filter((x) => !gone.has(x.text));
+      result.facts = result.facts!.filter((f) => !gone.has(f.text));
+      if (result.anchors) result.anchors = result.anchors.filter((a) => !gone.has(a.text));
+    }
     if (opts.sentence && !this.nested) {
       const fault = syntaxFaultOf(cx);
       // (A blank line or a comment of the command says nothing, as any.)
       const syntaxError = fault && fault.firstRow <= line && line <= fault.lastRow && /^\s*[^\s#]/.test(tree.text.split('\n')[line]) ? fault : undefined;
       const said = lineSentence({ root, line, lang: this.lang, status: cx.status, commands: commandsSaid(cx), problems: new Set([...problemCodes(result), ...opts.hostProblems ?? []]), kept: alone?.later.sentences, syntaxError, evidence: (n) => cx.evidenceAt(n) });
       if (said) result.sentence = said.text;
+      // (The variant `?u11=clause` of the web page: the stop sentence as a clause of "In short".)
+      if (said && clause && stops.length && !saidElsewhere) {
+        const body = stops[0].body;
+        result.sentence = this.lang === 'ja' ? `${said.text}${said.text.endsWith('。') ? '' : '。'}${body}。` : `${said.text.replace(/\.$/, '')}; ${body.charAt(0).toLowerCase()}${body.slice(1)}.`;
+      }
     }
     if (opts.reading) {
       const reading = () => readingTree(tree, result.items, { lang: this.lang, resolve: resolveAt, meaning: (w) => wordMeaning(w, cx.state), plainPattern: (w) => plainPatternText(w, cx.state), arrayKind: (name, at) => arrayKind(cx, name, at), ...(cx.shell ? { shell: cx.shell } : {}) });

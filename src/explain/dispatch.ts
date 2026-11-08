@@ -26,6 +26,7 @@ import { fileRedirect, heredoc, herestring, redirected, wholeRedirect } from './
 import { withValue } from './values';
 import { arithmeticCommand, binary, parenthesized, postfix, regexNode, ternary, test, unary } from './tests';
 import { pushAll } from '../lists';
+import { errexitStopNote, STOP_TYPES } from './status';
 import {
   arithmeticExpansion, arithNumber, array, braceWord, casePattern, concatenation, globToken, number, rawString, simpleExpansion, string,
   subscript, variable, word,
@@ -63,6 +64,8 @@ export function explain(cx: Explainer, n: SyntaxNode): Token {
 }
 
 function explained(cx: Explainer, n: SyntaxNode): Token {
+  // (Prototype for usability run 4, docs/design/errexit-stop.md, section 9.)
+  if (STOP_TYPES.has(n.type)) errexitStopNote(cx, n);
   const t = claim(explainNode(cx, n), 'shell');
   const frame = FRAMES[n.type];
   if (frame) t.frame = frame;

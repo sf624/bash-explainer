@@ -260,6 +260,8 @@ export interface ExplainOptions {
   argv?: boolean;
   /** Also give the sentence of the line, "In short" (`LineExplanation.sentence`, src/linesentence.ts). */
   sentence?: boolean;
+  /** (Prototype for usability run 4, docs/design/errexit-stop.md, section 9) `clause`: the note `errexit-stops-here` goes into "In short" instead. */
+  errexitStop?: 'note' | 'clause';
   /** The codes of the problems a host file adds to the line (src/hosts/remap.ts): the sentence says nothing they say (`problemCodes`). */
   hostProblems?: readonly string[];
   /**

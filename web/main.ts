@@ -56,6 +56,9 @@ import { clearStoredData, readStored, removeStored, STORAGE_KEYS, writeStored } 
 import { TEXT } from './text';
 import { Toast, type ToastIcon, type ToastSpec, type ToastText } from './toast';
 
+/** (Prototype for usability run 4, docs/design/errexit-stop.md, section 9) `?u11=clause`: the `set -e` stop sentence as a clause of "In short". */
+const U11_CLAUSE = (() => { try { return new URLSearchParams(location.search).get('u11') === 'clause'; } catch { return false; } })();
+
 // The icons the page shares with the VS Code panel (web/icons.ts).
 drawIcons();
 
@@ -275,7 +278,7 @@ function updatePanel(): void {
   if (!doc) return;
   const line = editor.cursorLine();
   const s = shells();
-  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), ...explainNeeds(panel.panelState()), sentence: true });
+  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), ...explainNeeds(panel.panelState()), sentence: true, ...(U11_CLAUSE ? { errexitStop: 'clause' as const } : {}) });
   const auto = autoShellAt(doc, s, line);
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);
