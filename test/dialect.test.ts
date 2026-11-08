@@ -114,6 +114,7 @@ const PROBES: Record<string, string> = {
   pipestatus: 'false | true; [ "${PIPESTATUS[0]}" = 1 ] && echo ok',
   funcname: 'f() { [ "$FUNCNAME" = f ] && echo ok; }; f',
   uid: '[ -n "$UID" ] && echo ok',
+  lastArg: ': abc; [ "$_" = abc ] && echo ok',
   hostname: '[ -n "$HOSTNAME" ] && echo ok',
   epoch: '[ -n "$EPOCHSECONDS" ] && echo ok',
   // (bash 5.2 lacks both, as FEATURES says; a bash 5.3 on PATH has them, as SINCE says. test/bash53.test.ts runs them.)
@@ -205,12 +206,10 @@ describe('every variable bash sets is set in each measured shell as the table sa
       LINENO: 'POSIX',
       // (bash exports it, so a dash started from bash has bash's value, from the environment.)
       SHLVL: 'environment',
-      // (bash puts the path of each command it runs in its environment's `_`: dash started from bash has `$_` set to its own path.)
-      _: 'environment',
       // (Set by `pushd`, which the shell lacks: a row of its own.)
       OLDPWD: 'pushd',
     },
-    ash: { _: 'environment', OLDPWD: 'pushd' },
+    ash: { OLDPWD: 'pushd' },
   };
   // (bash sets `SHELL` only when the environment has none, as a login's has; `COMP_WORDBREAKS` is for completion at a terminal.)
   const SKIP = ['SHELL', 'COMP_WORDBREAKS'];

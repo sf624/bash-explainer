@@ -308,6 +308,7 @@ The text of a variable of bash's comes from the same table as the warning of its
 | `#!/bin/sh`, `echo "$HOSTNAME"`, `"$BASHPID"`, `"$BASH_VERSION"` | bash's text | The same form, naming the shells that do not set it |
 | `#!/bin/sh`, `echo $SRANDOM`, `$OPTERR`, `$HISTCMD` | No problem | A Warning: "a variable bash sets is not POSIX sh (dash and busybox ash do not set it, so it expands to nothing)" |
 | `#!/bin/sh`, `read` then `echo "$REPLY"` | bash's text | "dash does not set it, so …; as set by bash and busybox ash: …": busybox ash's `read` with no name sets it, dash refuses that `read`. In `#!/bin/ash`, bash's text, with no problem |
+| `#!/bin/sh`, `mkdir d && cd "$_"` | bash's text ("last argument of the previous command"), no problem | "dash and busybox ash do not set it, so it is a plain variable there, …; as set by bash: last argument of the previous command", and a Warning. Both shells keep only a `_` the environment gave them, whatever the commands run (measured) |
 | `#!/bin/sh`, `echo $PPID`, `$LINENO`; `#!/bin/bash`, any of them | bash's text | Unchanged: POSIX sets `PPID` and `LINENO` |
 
 Evidence: `dash -c 'echo "[$RANDOM]"'` prints `[]`; busybox ash prints a number.
