@@ -87,7 +87,6 @@ function savedSettings(): Settings {
 /** In panel mode the page around sends the settings; a copy keeps none of its own. */
 let settings: Settings = savedSettings();
 
-
 // ---- State ----------------------------------------------------------------------------------
 
 const shared = readHash();
