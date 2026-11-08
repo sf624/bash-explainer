@@ -8,8 +8,9 @@ import { arithLiteralIn, describeArithLiteral, describeInvalidLiteral, evalArith
 import { type BashVersion, earlier } from '../bashversion';
 import { pictureList, visible } from '../ctlchars';
 import { ciVariables } from '../dict/ciVariables';
+import { SHELL_NAMES } from '../dialect';
 import { bash53Variables, specialVariables, wellKnownVariables } from '../dict/syntax';
-import { lineLabel } from '../i18n';
+import { lineLabel, type Text, tx } from '../i18n';
 import { explainGlob, globIntro, type GlobTarget, hasGlob, unbroken } from '../embedded/glob';
 import { extglobs, hasGlobstar, isGlob } from '../examples/shellwords';
 import { parseSequence } from '../braceseq';
@@ -24,6 +25,7 @@ import { replaceRange } from '../rewrite';
 import { readOnlySometimes } from '../semantics/scriptstops';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
+import { variableShells } from '../shellfeatures';
 import { givesElements } from '../semantics/elements';
 import { braceWords as fieldsOfBraceWords, CONTEXTS, ifsEscaped, partMeaning, patternOfChars, quotedIfs, type StepKind, type TildePrefix, trustedPart, underscoreValue, wordFields, wordOf } from '../semantics/words';
 import { type BracketSpan, bracketSpans, decodedText, isPlainWord, setsElement, splitElement, stackTilde, staticWordValue, unquoteWord } from '../staticword';
@@ -628,13 +630,19 @@ export function bash53Variable(cx: Explainer, name: string): string | undefined 
     : cx.s(`bash 5.3 では${what}`, `In bash 5.3, ${what}`);
 }
 
+/** What the variable `name` of bash's, which is `what` in bash, is in the script's shell: a plain variable where that shell does not set it (`$UID` in dash), as the dialect note says. */
+function setBy(cx: Explainer, name: string, what: Text): string {
+  const shells = variableShells(name, cx.shell);
+  return shells ? cx.text('variable-not-set-in-shell', { lacks: shells.lacks.map((x) => SHELL_NAMES[x]), has: shells.has.map((x) => SHELL_NAMES[x]), what }) : cx.t(what);
+}
+
 export function varDesc(cx: Explainer, name: string, at?: SyntaxNode): string | undefined {
   const own = /^\d+$/.test(name) && at ? stringParam(cx, Number(name), at) : undefined;
   if (own) return own;
-  if (specialVariables[name]) return cx.t(specialVariables[name]);
+  if (specialVariables[name]) return setBy(cx, name, specialVariables[name]);
   if (/^\d+$/.test(name)) return cx.s(`位置パラメータ: ${name} 番目の引数`, `Positional parameter: argument #${name}`);
   // (A variable bash makes read-only, `UID`: the script cannot assign it, src/semantics/vars.ts.)
-  if (wellKnownVariables[name]) return cx.t(wellKnownVariables[name]) + (readonlyAtStart(name) ? cx.s('（読み取り専用）', ' (read-only)') : '');
+  if (wellKnownVariables[name]) return setBy(cx, name, readonlyAtStart(name) ? tx(wellKnownVariables[name].ja + '（読み取り専用）', wellKnownVariables[name].en + ' (read-only)') : wellKnownVariables[name]);
   const later = bash53Variable(cx, name);
   if (later) return later;
   // Set by a CI system, unless the script sets it itself (`BRANCH_NAME=…`).

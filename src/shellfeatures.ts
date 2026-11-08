@@ -4,6 +4,7 @@ import {
   ANSIC_QUOTE, ARITH_COMMAND, ARITH_OPERATOR, BAD_SUBSTITUTION, DUP_FILE, ELEMENT_ASSIGN, EQEQ_TEST, EXPORT_F, FUNCTION_KEYWORD, NET_REDIRECT_ASH, NET_REDIRECT_ASH_SPECIAL, NET_REDIRECT_DASH, NET_REDIRECT_DASH_SPECIAL, NO_COMMAND, notFound, optionRefused, PLUS_ASSIGN,
   PRINTF_Q_ASH, PRINTF_Q_DASH, READ_NO_NAME, SET_PIPEFAIL, SYNTAX_ERROR, TRAP_ERR, TYPE_T,
 } from './messages-shfail';
+import { VARIABLE_SECTIONS } from './manual';
 import { braceKind, type SyntaxNode, wordBraces } from './syntax/tree';
 
 /** Shells a script can be written for. `sh` means "any POSIX sh" (dash, busybox ash, …). */
@@ -61,7 +62,7 @@ export interface Feature {
   ash?: InShell;
   /** How a shell fails in a case of the row, in place of its `dash` and `ash`. */
   cases?: Partial<Record<Case, { dash?: InShell; ash?: InShell }>>;
-  /** The variables the row is about (`variableFeature`). */
+  /** The variables the row is about (`variableRow`): a shell the row says lacks it does not set them, so they are plain variables there (`variableShells`). */
   vars?: readonly string[];
   /** The builtins the row is about: a shell the row says lacks it runs no builtin of that name (`builtinIn`). */
   builtins?: readonly string[];
@@ -206,7 +207,7 @@ export const FEATURES: Record<string, Feature> = {
   // (busybox ash sets them too; of the shells not run here, mksh has `$EPOCHREALTIME`, as the letters of `bashVar` said nothing of.)
   epoch: { works: 'b a', vars: ['EPOCHSECONDS', 'EPOCHREALTIME'], ja: '`$EPOCHSECONDS` / `$EPOCHREALTIME`', en: '`$EPOCHSECONDS` / `$EPOCHREALTIME`', dash: 'empty' },
   // (Other shells than dash and busybox ash are not run on these: their letters say nothing is claimed there.)
-  setByBash: { works: 'b  ykmz', vars: ['OSTYPE', 'HOSTTYPE', 'MACHTYPE', 'REPLY', 'SHELLOPTS', 'GROUPS', 'DIRSTACK'], ja: 'bash が設定する変数', en: 'a variable bash sets', dash: 'empty', ash: 'empty' },
+  setByBash: { works: 'b  ykmz', vars: ['OSTYPE', 'HOSTTYPE', 'MACHTYPE', 'REPLY', 'SHELLOPTS', 'GROUPS', 'DIRSTACK', 'OPTERR', 'HISTCMD', 'SRANDOM'], ja: 'bash が設定する変数', en: 'a variable bash sets', dash: 'empty', ash: 'empty' },
   funcname: { works: 'b a', vars: ['FUNCNAME'], ja: '`$FUNCNAME`', en: '`$FUNCNAME`', dash: 'empty' },
   uid: { works: 'b     z', vars: ['UID', 'EUID'], ja: '`$UID` / `$EUID`', en: '`$UID` / `$EUID`', altJa: '`$(id -u)` を使う', altEn: 'use `$(id -u)`', dash: 'empty', ash: 'empty' },
   hostname: { works: 'b a', vars: ['HOSTNAME'], ja: '`$HOSTNAME`', en: '`$HOSTNAME`', altJa: '`$(hostname)` を使う', altEn: 'use `$(hostname)`', dash: 'empty' },
@@ -280,7 +281,33 @@ export function builtinIn(name: string, shell?: Shell): boolean {
  * the shells a `/bin/sh` usually is, bash and the common ones, when one of them has it).
  */
 export function builtinShells(name: string, shell?: Shell): { lacks: RealShell[]; has: RealShell[] } {
-  const f = FEATURES[builtinRow(name)!];
+  return rowShells(FEATURES[builtinRow(name)!], shell);
+}
+
+/**
+ * The row of FEATURES about the variable `name`, which some shells do not set: the row whose `vars` has it, or for the other variables of
+ * bash's whose names start with `BASH` (`BASH_VERSION`, `BASHPID`), `bashVar`. None for the others: every shell is counted on to set them as
+ * bash does, or none does (`BASH_TSTOUT` is a script's own).
+ */
+export function variableRow(name: string): string | undefined {
+  return VARIABLE_ROWS.get(name) ?? (name.startsWith('BASH') && Object.hasOwn(VARIABLE_SECTIONS, name) ? 'bashVar' : undefined);
+}
+const VARIABLE_ROWS: ReadonlyMap<string, string> = new Map(Object.entries(FEATURES).flatMap(([id, f]) => (f.vars ?? []).map((name): [string, string] => [name, id])));
+
+/**
+ * Where a variable bash sets is not counted on to be set by `shell` (bash when absent): `lacks`, the shells of `shell` that leave it a plain
+ * variable (in `sh`, those of dash and busybox ash that do); `has`, bash, and in `sh` the common shells that set it (what each other shell
+ * sets is not measured: test/dialect.test.ts runs dash and busybox ash). None where `shell` sets it, or it is no variable of a row (`variableRow`).
+ */
+export function variableShells(name: string, shell?: Shell): { lacks: RealShell[]; has: RealShell[] } | undefined {
+  const id = variableRow(name);
+  if (!id || featureIn(id, shell) === 'all') return undefined;
+  const { lacks, has } = rowShells(FEATURES[id], shell);
+  return { lacks, has: shell === 'sh' ? has : ['bash'] };
+}
+
+/** The shells of `shell` that lack the feature `f`, and those that have it (`builtinShells`). */
+function rowShells(f: Feature, shell: Shell | undefined): { lacks: RealShell[]; has: RealShell[] } {
   const has = (Object.keys(LETTER) as RealShell[]).filter((sh) => works(f, sh));
   if (shell !== 'sh') return { lacks: [shell ?? 'bash'], has };
   const usual = has.filter((sh) => sh === 'bash' || (COMMON_SH as readonly RealShell[]).includes(sh));

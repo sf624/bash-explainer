@@ -44,6 +44,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The `{}` of `find -exec rm {} \;` and the replace string of `xargs -I{} cp {} dest/` are placeholders that `find` or `xargs` replaces, not operands that the command reads.
 - A Dockerfile's `RUN` is checked for the `/bin/sh` of its stage's base image: busybox ash under `FROM alpine`, dash under `FROM debian` or `ubuntu`. Before, `RUN [[ -f x ]]` under `FROM alpine` was an Error, and failed `--check`.
 - In a `#!/bin/sh` script, `source`, `let` and other builtins that dash lacks are no longer called builtins; the panel says in which shells they are not found.
+- In a `#!/bin/sh` script, `$RANDOM`, `$UID` and other variables that dash or busybox ash do not set are explained as plain variables there, as the line's warning says. `$SRANDOM`, `$OPTERR` and `$HISTCMD` now get that warning too.
 
 ## 0.10.0
 

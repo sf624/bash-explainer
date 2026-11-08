@@ -8,9 +8,12 @@ import { BEHAVIOURS, behavioursOnLine, detectShell, dialectIssues, dialectNotes,
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { SINCE } from '../src/bashversion';
 import { builtins } from '../src/dict/builtins';
-import { builtinIn, type Shell } from '../src/shellfeatures';
+import { builtinIn, type Shell, variableShells } from '../src/shellfeatures';
+import { VARIABLE_SECTIONS } from '../src/manual';
+import { wellKnownVariables } from '../src/dict/syntax';
 import type { Stop } from '../src/semantics/scriptstops';
 import { Analyzer } from '../src/analyzer';
+import type { Token } from '../src/analyzer-types';
 import { type ModelRow, rowModel } from '../src/ui/panelRows';
 
 const root = path.join(__dirname, '..');
@@ -186,6 +189,72 @@ describe('every builtin of the dictionary is a builtin in each installed shell a
       assert.deepStrictEqual(all.filter((n) => !KNOWN[letter]?.[n]), names.filter((n) => !builtinIn(n, SHELL[letter])), `${bins[0]}: ${r.stderr.toString()}`);
     });
   }
+});
+
+// What a variable is in each measured shell (`variableShells`, the rows' `vars`; the dialect note and the variable's token ask it): every
+// variable of bash's (the manual's chapter 5, and the dictionary's) that bash sets in a script started with an empty environment, against
+// what dash and busybox ash set there. A variable with no row is set everywhere; one a shell leaves unset needs a row.
+describe('every variable bash sets is set in each measured shell as the table says', () => {
+  const names = [...new Set([...Object.keys(VARIABLE_SECTIONS), ...Object.keys(wellKnownVariables)])].sort();
+  // The variables a shell leaves unset with an empty environment, but which the table counts on, with the reason.
+  const KNOWN: Record<string, Record<string, string>> = {
+    dash: {
+      // (POSIX sets it, as dash's manual says; Ubuntu's dash 0.5.12 leaves it unset: no shell is claimed to lack it.)
+      LINENO: 'POSIX',
+      // (bash exports it, so a dash started from bash has bash's value, from the environment.)
+      SHLVL: 'environment',
+      // (bash puts the path of each command it runs in its environment's `_`: dash started from bash has `$_` set to its own path.)
+      _: 'environment',
+    },
+    ash: { _: 'environment' },
+  };
+  // (bash sets `SHELL` only when the environment has none, as a login's has; `COMP_WORDBREAKS` is for completion at a terminal.)
+  const SKIP = ['SHELL', 'COMP_WORDBREAKS'];
+  const script = `for n in ${names.join(' ')}; do eval "[ \\"\\\${$n+set}\\" = set ]" && printf '%s ' "$n"; done; echo`;
+  const setIn = (bin: string, args: string[]): string[] => {
+    const r = spawnSync(bin, [...args, '-c', script], { timeout: 5000, input: '', env: { PATH: '/usr/bin:/bin' }, encoding: 'utf8' });
+    return r.stdout.trim().split(' ').filter(Boolean);
+  };
+  const bash = locate(['bash']);
+  for (const [sh, bins, flag] of [['dash', ['dash'], ''], ['ash', ['busybox'], 'sh']] as const) {
+    const bin = locate([...bins]);
+    (bin && bash ? it : it.skip)(sh, () => {
+      const bashSets = setIn(bash!, ['--norc', '--noprofile']).filter((n) => !SKIP.includes(n));
+      const sets = setIn(bin!, flag ? [flag] : []);
+      assert.ok(bashSets.includes('UID') && sets.includes('PPID'), `the probe ran: ${bashSets.join(' ')}`);
+      const known = KNOWN[sh] ?? {};
+      // (A known name the shell sets after all is stale.)
+      assert.deepStrictEqual(Object.keys(known).filter((n) => sets.includes(n)), []);
+      assert.deepStrictEqual(bashSets.filter((n) => !sets.includes(n) && !known[n]), bashSets.filter((n) => variableShells(n, sh)), sh);
+    });
+  }
+
+  // The token of the variable says what the note of the line says: a plain variable where the script's shell does not set it, bash's own text elsewhere.
+  const tokenOf = (code: string, shell: Shell, lang: 'en' | 'ja' = 'en'): { token: string; notes: string[] } => {
+    const ex = new Analyzer(lang).explainLine(parser.parse(code), 0, shell);
+    const walk = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...walk(t.children)]);
+    return { token: walk(ex.items).find((t) => t.kind === 'variable')!.explanation, notes: ex.notes };
+  };
+  it("says in the token of a variable what the script's shell does, as the line's note", () => {
+    const rowNames = Object.values(FEATURES).flatMap((f) => f.vars ?? []);
+    for (const name of [...rowNames, 'BASH_VERSION', 'BASHPID', 'PPID', 'LINENO', 'HOME']) {
+      for (const shell of ['sh', 'dash', 'ash', 'ksh', 'bash'] as Shell[]) {
+        const code = `echo "x$${name}"`;
+        const { token, notes } = tokenOf(code, shell);
+        const noted = notes.some((n) => /not set it, so it expands to nothing|is not available in/.test(n));
+        assert.strictEqual(/not set it: a plain variable there/.test(token), noted, `${shell}: ${code}: ${token} | ${notes.join(' | ')}`);
+        assert.strictEqual(!!variableShells(name, shell), noted, `${shell}: ${code}`);
+      }
+    }
+  });
+  it('names the shells that leave it a plain variable, and those that set it', () => {
+    assert.strictEqual(tokenOf('echo "$RANDOM"', 'sh').token, 'dash does not set it: a plain variable there, empty unless the script or the environment sets it. As set by bash and busybox ash: A random integer 0–32767 on each reference');
+    assert.strictEqual(tokenOf('echo $UID', 'sh').token, 'dash and busybox ash do not set it: a plain variable there, empty unless the script or the environment sets it. As set by bash: Real user ID (read-only)');
+    assert.strictEqual(tokenOf('echo $UID', 'dash', 'ja').token, 'dash では設定されない普通の変数で、スクリプトか環境が設定しなければ空。bash が設定する値: 実ユーザー ID（読み取り専用）');
+    assert.strictEqual(tokenOf('echo "$RANDOM"', 'ash').token, 'A random integer 0–32767 on each reference');
+    assert.strictEqual(tokenOf('echo $UID', 'bash').token, 'Real user ID (read-only)');
+    assert.strictEqual(tokenOf('echo $PPID', 'dash').token, "Process ID of the shell's parent process (read-only)");
+  });
 });
 
 describe("the dialect check reads a builtin's options from its parse, as dash does", () => {
