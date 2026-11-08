@@ -268,6 +268,8 @@ describe('the web page: what a new script resets, and the depths\' names', funct
       await until('Auto', () => currentShell(page), (v) => v === 'auto');
       assert.deepStrictEqual(await state(page), ['shell', 'untitled.sh', 'auto'], lang);
       assert.strictEqual(await toastText(page), lang === 'en' ? 'Shell set back to Auto.' : 'シェルを自動に戻しました。');
+      // Only the words are the live region; the Undo is a button beside it.
+      assert.strictEqual(await page.locator('#status [role="status"] button').count(), 0);
       // The toast's Undo puts back what it says, the text as pasted.
       await page.locator('#status .status-action').click();
       await until('sh again', () => currentShell(page), (v) => v === 'sh');
@@ -340,15 +342,27 @@ describe('the web page: what a new script resets, and the depths\' names', funct
       await paste(page, DOCKERFILE);
       await page.locator('#discard-cancel').waitFor();
       assert.strictEqual(await page.locator('#discard-open').innerText(), lang === 'en' ? 'Discard and paste' : '破棄して貼り付ける');
+      // What a screen reader hears: a dialog named by its question, which says what the paste does.
+      const asked = await page.locator('#discard-dialog').ariaSnapshot();
+      assert.match(asked, lang === 'en' ? /dialog "Discard unsaved changes\?"[\s\S]*Pasting over the whole script starts a new script/ : /dialog "保存していない変更を破棄しますか？"[\s\S]*スクリプト全体に貼り付けると新しいスクリプトになり/, asked);
       await page.locator('#discard-cancel').click();
-      // (The dialog's close event comes in a task after the click: the question is answered only then.)
-      await page.evaluate(FRAMES);
       await until('the focus back', () => page.evaluate("document.activeElement?.classList.contains('cm-content')"), (v) => v === true);
       assert.strictEqual((await text(page)).trim(), LOGINS.trim());
       assert.deepStrictEqual(await state(page), ['bats', 'test.bats', 'sh'], lang);
-      // Discard and paste: the paste as it was, and the new script.
+      // Cancel, and at once (in the same task, before the dialog's close event) a paste again: the second question is
+      // its own. (Before, the first one's late close event answered it "Cancel" and left the dialog open, deaf.)
       await page.keyboard.press('Control+A');
       await paste(page, DOCKERFILE);
+      await page.locator('#discard-cancel').waitFor();
+      await page.evaluate(`(() => {
+        document.getElementById('discard-cancel').click();
+        const data = new DataTransfer();
+        data.setData('text/plain', ${JSON.stringify(DOCKERFILE)});
+        document.querySelector('.cm-content').dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+      })()`);
+      await page.evaluate(FRAMES);
+      assert.strictEqual(await page.locator('#discard-dialog').evaluate((d) => (d as unknown as { open: boolean }).open), true, `${lang}: asked again`);
+      // Discard and paste: the paste as it was, and the new script.
       await page.locator('#discard-open').click();
       await until('the Dockerfile', () => text(page), (t) => t.trim() === DOCKERFILE.trim());
       await until('a Dockerfile', () => kindChosen(page), (k) => k === 'dockerfile');

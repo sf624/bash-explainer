@@ -64,9 +64,17 @@ export function focusTarget(from: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
+/**
+ * The question each dialog shows, until it is answered. A dialog's close event comes in a task after the close: a
+ * question put up in the same dialog before it came (a Cancel, then at once a paste that asks again) answers the one
+ * before from its own value first, and that late event, which finds the dialog open again, answers nothing.
+ */
+const unanswered = new WeakMap<HTMLDialogElement, () => void>();
+
 /** Asks the question; resolves true for `confirm`, false for `cancel` (and Esc). The choice that changes nothing has the focus first. `home`: where the focus goes when nothing of `returnFocus` is left. */
 export function ask(q: Question, returnFocus: HTMLElement | null, home?: () => void): Promise<boolean> {
   const d = dialogFor(q.id);
+  unanswered.get(d)?.();
   const title = document.createElement('h2');
   title.id = `${q.id}-dialog-title`;
   title.textContent = q.title;
@@ -90,14 +98,22 @@ export function ask(q: Question, returnFocus: HTMLElement | null, home?: () => v
   d.replaceChildren(title, message, actions);
   d.returnValue = '';
   return new Promise((resolve) => {
-    // Esc closes the dialog with no value: the text is kept.
-    d.addEventListener('close', () => {
+    const answer = () => {
+      unanswered.delete(d);
+      d.removeEventListener('close', closed);
+      // Esc closes the dialog with no value: the text is kept.
       resolve(d.returnValue === 'confirm');
       // (The control used, or the opener of its menu: `focusTarget`; else where the page keeps its focus: `home`.)
       const back = focusTarget(returnFocus);
       if (back) back.focus();
       else home?.();
-    }, { once: true });
+    };
+    // (A close event that finds the dialog open is the late one of the question before: `unanswered`.)
+    const closed = () => {
+      if (!d.open) answer();
+    };
+    unanswered.set(d, answer);
+    d.addEventListener('close', closed);
     d.showModal();
     cancel.focus();
   });
