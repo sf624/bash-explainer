@@ -28,6 +28,7 @@ const ROWS: Record<string, string[]> = {
   dbracket: ['[[ a = a ]]'],
   regex: ['[[ a =~ a ]] && echo y'],
   array: ['a=(1 2)', 'echo "${a[0]}"'],
+  arrayElement: ['a[0]=1', 'a[1]=x echo'],
   assoc: ['declare -A m'],
   plusAssign: ['a=1; a+=2'],
   replace: ['x=abc; echo "${x/a/b}"'],
@@ -46,11 +47,15 @@ const ROWS: Record<string, string[]> = {
   translated: ['echo $"a"'],
   procSub: ['cat <(echo a)'],
   ampRedirect: ['echo a &>out; wait; echo "[$(cat out)]"'],
+  dupFile: ['echo a >& out', 'echo a >&/dev/null'],
   ampAppend: ['echo a &>>out; wait; echo "[$(cat out)]"'],
   netRedirect: ['echo a >/dev/tcp/127.0.0.1/1'],
   pipeAmp: ['echo a |& cat'],
   eqeqTest: ['[ a == a ]'],
   arithCommand: ['((1+1))'],
+  postIncrement: ['i=0; echo $((i++))', 'i=1; echo "$((i--))"'],
+  preIncrement: ['i=0; echo $((++i))', 'i=1; echo "$((--i))"'],
+  power: ['echo $((2**3))', 'echo "$((2 * 3 ** 2))"'],
   cFor: ['for ((i=0;i<1;i++)); do echo a; done'],
   braceRange: ['echo {1..3}'],
   braceList: ['echo {a,b}'],
@@ -79,6 +84,7 @@ const ROWS: Record<string, string[]> = {
   readA: ['read -a x </dev/null'],
   readP: ['echo a | read -p x y'],
   readOpts: ['read -n 1 x <file', 'read -s x <file', 'read -t 1 x <file'],
+  readReply: ['read <file', 'read -r <file'],
   readD: ['read -d : x <file'],
   pipefail: ['set -o pipefail'],
   trapErr: ["trap 'echo e' ERR"],
@@ -171,6 +177,15 @@ for (const sh of REALS) {
         { id: 'exportF', code: 'f() { :; }; y=$(export -f f); echo after=$?', sub: true, marker: 'after=2' },
         { id: 'exportF', code: 'f() { :; }; export -f f; echo after', marker: 'after' },
         { id: 'pipefail', code: 'y=$(set -o pipefail); echo after=$?', sub: true, marker: 'after=2' },
+        // (`set +o pipefail` too: dash refuses the name either way.)
+        { id: 'pipefail', code: 'set +o pipefail; echo after', marker: 'after' },
+        { id: 'pipefail', code: 'set +euo pipefail; echo after', marker: 'after' },
+        { id: 'postIncrement', code: 'i=0; y=$(echo $((i++))); echo after=$?', sub: true, marker: 'after=2' },
+        { id: 'postIncrement', code: 'i=0; echo $((i++)) || echo failed; echo after', marker: 'after' },
+        { id: 'power', code: '( echo $((2**3)) ); echo after=$?', sub: true, marker: 'after=2' },
+        { id: 'dupFile', code: 'echo a >& out || echo failed; echo after', marker: 'after' },
+        { id: 'dupFile', code: '( echo a >& out ); echo after=$?', sub: true, marker: 'after=2' },
+        { id: 'readReply', code: 'read <file || echo failed=$?; echo after', marker: 'failed=' },
         // (Under `set -e` the script stops after the subshell's failure: the text says it goes on unless `set -e` stops it.)
         { id: 'caseMod', code: 'set -e\n( echo "${x^^}" )\necho after', sub: true, marker: 'after', setE: true },
         { id: 'caseMod', code: 'set -e\nv=$(echo "${x^^}")\necho after', sub: true, marker: 'after', setE: true },
@@ -247,6 +262,14 @@ for (const sh of REALS) {
       }
       // (At the top level over several lines, the shell has run the line of `function f {` and the body before it stops.)
       assert.match(runIn(COMMANDS[sh]!, rows[0][0]).err, /function: not found[\s\S]*Syntax error: "}" unexpected/);
+    });
+
+    // (The shell makes a command's redirections in order: one that fails is hidden only by a `2>/dev/null` before it.)
+    it('a redirection that fails is kept quiet only by the redirections made before it', () => {
+      assert.deepStrictEqual(levelOf('cat </dev/tcp/127.0.0.1/1 2>/dev/null', 'netRedirect', sh), ['error']);
+      assert.match(runIn(COMMANDS[sh]!, 'cat </dev/tcp/127.0.0.1/1 2>/dev/null\n').err, /open/);
+      assert.deepStrictEqual(levelOf('cat 2>/dev/null </dev/tcp/127.0.0.1/1', 'netRedirect', sh), ['warning']);
+      assert.strictEqual(runIn(COMMANDS[sh]!, 'cat 2>/dev/null </dev/tcp/127.0.0.1/1\n').err, '');
     });
 
     it('a redirection that fails at `exec` stops the shell, and it is an Error (not kept quiet by `|| true`: the shell has stopped)', () => {
@@ -684,6 +707,30 @@ describe('`sh`, dash or busybox ash', () => {
   });
 });
 
+// `read` with no name: dash refuses it (`arg count`, status 2) and sets no `REPLY`; busybox ash reads the line into `REPLY`, as bash does.
+describe('`read` with no name', () => {
+  const examples = (code: string, shell: Shell) => new Analyzer('en').explainLine(parser.parse(`#!/bin/${shell}\n${code}\n`), 1, shell, { script: 'said' }).examples ?? [];
+  const stored = (code: string, shell: Shell) => examples(code, shell).filter((e) => e.kind === 'read').flatMap((e) => e.sections.filter((x) => x.label === 'Values stored').flatMap((x) => x.lines));
+  it('shows what `REPLY` gets only where the shell surely sets it', () => {
+    assert.deepStrictEqual(stored('echo hi | read -r', 'bash'), ['REPLY="hi"']);
+    assert.deepStrictEqual(stored('echo hi | read -r', 'ash'), ['REPLY="hi"']);
+    assert.deepStrictEqual(stored('echo hi | read -r', 'sh'), []);
+    assert.deepStrictEqual(stored('echo hi | read -r', 'dash'), []);
+    // (A name is read the same everywhere.)
+    assert.deepStrictEqual(stored('echo hi | read -r x', 'sh'), ['x="hi"']);
+  });
+  it('leaves `$REPLY` unset in dash, set in busybox ash, and may be either in sh', () => {
+    const code = 'read -r <file; echo "[$REPLY]"';
+    if (COMMANDS.dash) assert.strictEqual(runIn(COMMANDS.dash, code).out, '[]\n');
+    if (COMMANDS.ash) assert.strictEqual(runIn(COMMANDS.ash, code).out, '[a:b]\n');
+    assert.deepStrictEqual(levelOf(code, 'setByBash', 'dash'), ['warning']);
+    assert.deepStrictEqual(levelOf(code, 'setByBash', 'ash'), []);
+    assert.deepStrictEqual(levelOf(code, 'setByBash', 'sh'), []);
+    assert.deepStrictEqual(levelOf(code, 'readReply', 'sh'), ['error']);
+    assert.deepStrictEqual(levelOf(code, 'readReply', 'ash'), []);
+  });
+});
+
 describe('an error of the dialect, where the shell surely gets to it', () => {
   const inDocument = (text: string) => {
     const doc = openDocument(text, 'shell', (x) => parser.parse(x));
@@ -1073,6 +1120,16 @@ describe('a string that may not run, and what is said by mistake as a fault', ()
   it('what the shell refuses on the same line comes first', () => {
     says(': "${x:?}"; a=(1)', 'array', 'error');
     inEach(': "${x:?}"; a=(1)', (r, sh) => assert.match(r.err, /[Ss]yntax error/, sh));
+  });
+  // (A line continuation joins the lines before the shell reads them; one in a comment does not.)
+  it('a line continuation keeps what the shell refuses on the line of what comes before', () => {
+    says('exit 0; \\\na=(1)', 'array', 'error');
+    inEach('exit 0; \\\na=(1)\necho next', (r, sh) => {
+      assert.match(r.err, /[Ss]yntax error/, sh);
+      assert.strictEqual(r.status, 2, sh);
+    });
+    says('exit 0 # \\\na=(1)', 'array', undefined);
+    inEach('exit 0 # \\\na=(1)', (r, sh) => assert.deepStrictEqual([r.status, r.err], [0, ''], sh));
   });
   it('an expansion read only sometimes, or in a function, may still stop it; one the shell has no reading of does not', () => {
     says(': "${y:-${x:?}}"\nshopt -s x', 'shopt', 'warning');

@@ -108,10 +108,30 @@ export const TRAP_ERR = failure('status', 1, 'bad trap',
   (sh) => `${atJa(sh)} \`trap\` が \`ERR\` を受け付けず、\`bad trap\` で終了ステータス 1 になります`,
   (sh) => `${at(sh)}\`trap\` rejects \`ERR\` with \`bad trap\` and status 1`);
 
-/** `set -o pipefail` in dash: `set` is a special builtin, so the shell stops. */
+/** `set -o pipefail` (and `set +o pipefail`) in dash: `set` is a special builtin, so the shell stops. */
 export const SET_PIPEFAIL = stopping(2, 'illegal option',
-  (sh, end) => `${atJa(sh)} \`set\` が \`-o pipefail\` を受け付けず、\`illegal option\` で終了ステータス 2 になり、${end}`,
-  (sh, end) => `${at(sh)}\`set\` rejects \`-o pipefail\` with \`illegal option\` and status 2; ${end}`);
+  (sh, end) => `${atJa(sh)} \`set\` がオプション \`pipefail\` を受け付けず、\`illegal option\` で終了ステータス 2 になり、${end}`,
+  (sh, end) => `${at(sh)}\`set\` rejects the option \`pipefail\` with \`illegal option\` and status 2; ${end}`);
+
+/** `a[0]=1`: the word is a command name (`name[index]=value`). */
+export const ELEMENT_ASSIGN = failure('status', 127, 'not found',
+  (sh) => `${atJa(sh)} \`変数名[添字]=値\` がコマンド名とみなされ、見つからずに終了ステータス 127 になります`,
+  (sh) => `${at(sh)}\`name[index]=value\` is taken for a command name, is not found and gives status 127`);
+
+/** An operator of `$(( ))` the shell does not have (`i++`, `2**3` in dash): an error where the expansion runs. */
+export const ARITH_OPERATOR = stopping(2, 'arithmetic expression',
+  (sh, end) => `${atJa(sh)}算術式を読めず、\`arithmetic expression: expecting primary\` で終了ステータス 2 になり、${end}`,
+  (sh, end) => `${at(sh)}the arithmetic expression fails with \`arithmetic expression: expecting primary\` and status 2; ${end}`);
+
+/** `>& file` in dash: `>&` takes a descriptor there, and a name is an error where the redirection is made. */
+export const DUP_FILE = stopping(2, 'bad fd number',
+  (sh, end) => `${atJa(sh)} \`>&\` の後ろにはファイルディスクリプタの番号しか書けず、\`Bad fd number\` で終了ステータス 2 になり、${end}`,
+  (sh, end) => `${at(sh)}\`>&\` takes only a descriptor number: it fails with \`Bad fd number\` and status 2; ${end}`);
+
+/** `read` with no name in dash: it reads nothing into `REPLY`. */
+export const READ_NO_NAME = failure('status', 2, 'arg count',
+  (sh) => `${atJa(sh)} \`read\` が変数名を求め、\`arg count\` で終了ステータス 2 になり、\`REPLY\` には何も入りません`,
+  (sh) => `${at(sh)}\`read\` needs a name: it fails with \`arg count\` and status 2, and \`REPLY\` is not set`);
 
 /** `$'a\'b'` in dash: the quote ends at the `\'`, and the rest of the script is read as another string. */
 export const ANSIC_QUOTE = failure('stop', 2, 'syntax error',

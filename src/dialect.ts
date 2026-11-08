@@ -19,6 +19,7 @@ import { processOf } from './semantics/env';
 import { isFunction, resolveName } from './semantics/names';
 import { type Fault, keptQuiet, quietAt, readWith, readWithItsLine, type Stop, surelyRuns } from './semantics/scriptstops';
 import { shellState, type StateModel } from './semantics/state';
+import { variableWrites } from './semantics/effects';
 import { optionOn } from './semantics/status';
 import { testWordShape } from './semantics/testwords';
 import { testedFirst } from './semantics/unbound';
@@ -236,6 +237,19 @@ function eqeqOperator(n: SyntaxNode): boolean {
   return !!test && binaryOperators(test).some((op) => texts[op] === '==');
 }
 
+/** Whether `n` is in a `$(( ))`, not in an `(( ))` or a `for (( ))` (features of their own) in it. */
+function inArithmeticExpansion(n: SyntaxNode): boolean {
+  return ancestor(n, (a) => a.type === 'arithmetic_expansion' || a.type === 'arithmetic_command' || a.type === 'c_style_for_statement')?.type === 'arithmetic_expansion';
+}
+
+/** Whether the redirection `n` is `>& file`: `>&` with no descriptor before it, to a word that is no descriptor number or `-` (bash then redirects stdout and stderr, as `&>`). */
+function dupsToFile(n: SyntaxNode, kids: string[]): boolean {
+  if (!kids.includes('>&') || field(n, 'descriptor')) return false;
+  const dests = fields(n, 'destination');
+  const target = dests.length === 1 ? staticWordValue(dests[0]) : undefined;
+  return target !== undefined && !/^(?:\d+|-)$/.test(target);
+}
+
 function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): void {
   switch (n.type) {
     case 'arithmetic_command': add('arithCommand'); return;
@@ -269,6 +283,7 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
     case 'process_substitution': add('procSub'); return;
     case 'file_redirect':
       if (kids.includes('&>')) add('ampRedirect');
+      if (dupsToFile(n, kids)) add('dupFile');
       if (kids.includes('&>>')) add('ampAppend');
       if (redirectsToNetwork(n)) add('netRedirect');
       return;
@@ -281,6 +296,7 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
     case 'variable_assignment': {
       const value = field(n, 'value');
       if (value?.type === 'array') add('array');
+      if (field(n, 'name')?.type === 'subscript') add('arrayElement');
       if (kids.includes('+=')) add('plusAssign');
       return;
     }
@@ -300,8 +316,15 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
     case 'simple_expansion': variableFeature(nameText(n).slice(1), add); return;
     // (A name in `$(( ))`, read as a number. `(( ))` is a feature of its own.)
     case 'variable_name':
-      if (/expression$|^arithmetic_expansion$/.test(n.parent!.type) && ancestor(n, (a) => a.type === 'arithmetic_expansion' || a.type === 'arithmetic_command')?.type === 'arithmetic_expansion') variableFeature(n.text, add);
+      if (/expression$|^arithmetic_expansion$/.test(n.parent!.type) && inArithmeticExpansion(n)) variableFeature(n.text, add);
       return;
+    // (`++` and `--`, and `**`, in `$(( ))`: `(( ))` and `for (( ))` are features of their own.)
+    case 'postfix_expression': case 'unary_expression': {
+      const op = field(n, 'operator')?.type;
+      if ((op === '++' || op === '--') && inArithmeticExpansion(n)) add(n.type === 'postfix_expression' ? 'postIncrement' : 'preIncrement');
+      return;
+    }
+    case 'binary_expression': if (field(n, 'operator')?.type === '**' && inArithmeticExpansion(n)) add('power'); return;
     case 'brace_expression': case 'word': case 'concatenation': {
       // (Only where bash expands braces: not in `x={1..3}`, a here-string or the word of `case`.)
       const braces = n.type !== 'word' && bracesInContext(n);
@@ -329,9 +352,12 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
   if (!Object.hasOwn(builtins, name)) return;
   const parse = interpret(builtins[name], nodes.map(argWord), { name });
   const on = (...names: string[]): boolean => has(parse, ...names);
-  // The values of `set -o NAME` (not `set +o NAME`), also bundled as in `set -euo pipefail`.
-  const setOption = (option: string): boolean => values(parse, '-o').some(({ word, role }) => role.of.startsWith('-') && argWord(nodes[word]).value === option);
+  // The values of `set -o NAME` and `set +o NAME` (dash refuses a name it lacks either way), also bundled as in `set -euo pipefail`.
+  const setOption = (option: string): boolean => values(parse, '-o').some(({ word }) => argWord(nodes[word]).value === option);
   const own = builtinRow(name);
+  // (A variable it sets when no word names one, which some shells do not: `read` with no name, `REPLY`.)
+  const unnamed = variableWrites(builtins[name], { parse, node: (i) => nodes[i], text: (i) => argWord(nodes[i]).value, field: () => false, size: nodes.length }).find((v) => !v.node && v.feature);
+  if (unnamed) add(unnamed.feature!);
   if (own) add(on('-A') && (name === 'declare' || name === 'typeset') ? 'assoc' : own);
   switch (name) {
     case 'export': if (on('-f')) add('exportF'); break;

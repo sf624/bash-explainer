@@ -466,7 +466,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
       { when: { option: ['-a'] }, pattern: [operand('NAME', '読み込んだ値を入れる変数名', 'variable to store the input', { repeat: '*' })] },
       ...args(operand('NAME', '読み込んだ値を入れる変数名', 'variable to store the input', { type: 'variable', sets: 'string' })).operands!,
     ],
-  }), undefined, { byDefault: { name: 'REPLY', sets: 'string' } }),
+  }), undefined, { byDefault: { name: 'REPLY', sets: 'string', feature: 'readReply' } }),
   cd: actsOnShell(b('カレントディレクトリを移動する', 'Change the current directory', [
     ['-P', 'シンボリックリンクを解決した物理パスに移動', 'use the physical path (resolve symlinks)'],
     ['-L', 'シンボリックリンクをたどる（既定）', 'follow symlinks (default)'],

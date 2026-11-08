@@ -677,7 +677,7 @@ class Scan {
     const read = builtinRead(name, args, this.shell, spec, fieldsOf);
     const { parse } = read;
     // The variables it sets, and the functions it runs later, as its spec says (src/semantics/effects.ts).
-    for (const v of variableWrites(spec, read)) {
+    for (const v of variableWrites(spec, read, this.shell)) {
       if (v.node) this.named(v.name, v.node, w, v.sets === 'job-id' ? 'number' : 'unknown', v.sets === 'string' || v.sets === 'job-id');
       else this.write(v.name!, w, false, 'unknown');
     }

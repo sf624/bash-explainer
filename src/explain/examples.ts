@@ -31,7 +31,7 @@ import { type Text, tx } from '../i18n';
 import { codeSpan, shorten } from '../label';
 import { blankWord, EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
 import { braceValues } from '../semantics/brace';
-import { quotedName } from '../semantics/effects';
+import { defaultSetIn, quotedName } from '../semantics/effects';
 import { slotEnvironment } from '../semantics/env';
 import { isFunction, type NameResolution } from '../semantics/names';
 import { exportedValue } from '../semantics/state';
@@ -479,7 +479,7 @@ export function commandExampleFor(cx: Explainer, n: SyntaxNode, spec: CommandSpe
   // (`x='-n 3'; head $x f`: the example would read `$x` as written.)
   if (!spec?.example || readsFields(parse)) return;
   if (spec.example === 'read') {
-    guardedRun(cx, 'textFilters', () => readExample(cx, n, args, parse));
+    guardedRun(cx, 'textFilters', () => readExample(cx, n, args, parse, spec));
     return;
   }
   if (!examplesWanted(cx)) return;
@@ -826,8 +826,8 @@ function readInput(cx: Explainer, n: SyntaxNode, fd: number): ReadInput {
   return fd === 0 ? 'sample' : 'unknown';
 }
 
-/** How `read` splits a sample line into its variables (with the IFS in effect, or the one given before it). */
-function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[], parse: ArgvParse): void {
+/** How `read` splits a sample line into its variables (with the IFS in effect, or the one given before it); with no name, only where the shell surely sets `REPLY` (`defaultSetIn`: not dash's). */
+function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[], parse: ArgvParse, spec: CommandSpec): void {
   let ifs = ifsAt(cx, n);
   // (`IFS+=:` adds to what IFS is where the command runs; bash empties an IFS that is unset first.)
   const unset = cx.state.at(n).run.variables.get('IFS')?.set === 'off';
@@ -846,7 +846,7 @@ function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[], parse: Ar
   if (given === undefined && has(parse, '-u')) return;
   const input = readInput(cx, n, given === undefined ? 0 : Number(given));
   if (input === 'unknown') return;
-  const r = commandExamples.readExample(words, ifs, input === 'sample' ? undefined : input.text, cx.lang, cx.opts.bashVersion ?? DEFAULT_BASH_VERSION, input !== 'sample' && input.first);
+  const r = commandExamples.readExample(words, ifs, input === 'sample' ? undefined : input.text, cx.lang, cx.opts.bashVersion ?? DEFAULT_BASH_VERSION, input !== 'sample' && input.first, defaultSetIn(spec, cx.shell) === 'all');
   if (!r) return;
   if (r.note) cx.note(fact(cx.lang, 'read-ifs-separators', r.note), n);
   cx.example(r.example);

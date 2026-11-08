@@ -218,7 +218,7 @@ export class WalkBuiltins {
    * nothing in the whole file then, so no condition of it is decided: src/semantics/trust.ts).
    */
   private effects(spec: CommandSpec, read: BuiltinRead, n: SyntaxNode, st: ShellState, hosted = false): ShellState {
-    for (const v of variableWrites(spec, read)) {
+    for (const v of variableWrites(spec, read, this.w.shell)) {
       // (`wait -p`: bash unsets the variable first, also an integer: `x=1; wait -p x` with no job leaves `x` unset.)
       if (v.sets === 'job-id' && v.name && NAME.test(v.name) && attribute(st, v.name, 'r') === 'off') st = this.w.put(st, 'variables', v.name, { declared: 'off', set: 'off', attrs: {}, at: n });
       const was = st;

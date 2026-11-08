@@ -159,8 +159,11 @@ export interface CommandSpec {
    */
   shellEffect?: {
     does: 'changes'; when?: (call: BuiltinCall) => boolean;
-    /** The variable it sets when no word names one (a value or an operand with `sets`): `read` sets REPLY, `mapfile` the array MAPFILE. */
-    byDefault?: { name: string; sets: VariableSet };
+    /**
+     * The variable it sets when no word names one (a value or an operand with `sets`): `read` sets REPLY, `mapfile` the array MAPFILE.
+     * `feature`: the row of FEATURES (src/shellfeatures.ts) that says which shells do so (`readReply`: dash's `read` needs a name).
+     */
+    byDefault?: { name: string; sets: VariableSet; feature?: string };
     /**
      * Variables it sets whatever its words (bats' `run`: `status`, `output`, `lines`); `maybe`: or leaves as they were, or
      * unsets (`run` sets `stderr` only with `--separate-stderr`).

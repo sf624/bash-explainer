@@ -319,14 +319,18 @@ export type Fault = 'read' | 'stop' | 'status';
 
 /**
  * The statement of the script that a shell reads `n` with: the first of those on the line. It reads a whole line, and a compound command up to its end, before it runs any of it:
- * a syntax error in `exit 0; a=(1)`, in `if a; then exit\na=(1)\nfi` or in a function's body comes first, and only what ran on the lines before can keep the shell from it.
+ * a syntax error in `exit 0; a=(1)` (or `exit 0; \<newline>a=(1)`), in `if a; then exit\na=(1)\nfi` or in a function's body comes first, and only what ran on the lines before can keep the shell from it.
  */
 export function readWith(n: SyntaxNode): SyntaxNode {
   let top = n;
   while (top.parent!.parent) top = top.parent!;
-  const statements = top.parent!.namedChildren;
+  const root = top.parent!;
+  const statements = root.namedChildren;
+  // (A line continuation between two statements keeps them on one line, `exit 0; \<newline>a=(1)`. A comment is a statement of its own: the newline after it is between.)
+  const between = (a: SyntaxNode, b: SyntaxNode): string => root.text.slice(a.endIndex - root.startIndex, b.startIndex - root.startIndex);
+  const oneLine = (a: SyntaxNode, b: SyntaxNode): boolean => a.endPosition.row === b.startPosition.row || !between(a, b).replace(/\\\n/g, '').includes('\n');
   let i = statements.indexOf(top);
-  while (i > 0 && statements[i - 1].endPosition.row === statements[i].startPosition.row) i--;
+  while (i > 0 && oneLine(statements[i - 1], statements[i])) i--;
   return statements[i];
 }
 
@@ -343,7 +347,8 @@ function stderrDiscarded(n: SyntaxNode): boolean {
     if (c.type === 'expansion' || c.type === 'simple_expansion' || c.type === 'arithmetic_expansion' || c.type === 'command_substitution') inWord = true;
     else if (c.type === 'command' && inWord && field(c, 'name')) inWord = false;
     else {
-      const { err } = outputsOf(c);
+      // (A redirection that fails hides its message only by those made before it: `>&f 2>/dev/null` in dash shows it.)
+      const { err } = outputsOf(c, c === n.parent && n.type === 'file_redirect' ? n : undefined);
       if (err !== undefined) return err === '/dev/null';
     }
   }
