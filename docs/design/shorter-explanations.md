@@ -1,8 +1,8 @@
 # Shorter explanations
 
-Step U13 of [usability-9.md](usability-9.md): the panel's explanations are long. This page measures where the length comes from on the scripts of usability run 3, says what the users said about it, and weighs three ways to cut it, with a variant of the second. It ends with the prototype to test in run 5 and the questions for the maintainer.
+Step U13 of [usability-9.md](usability-9.md): the panel's explanations are long. This page measures where the length comes from on the scripts of usability run 3, says what the users said about it, and weighs three ways to cut it, with a variant of the second. It ends with the prototype to test in run 5 and the maintainer's decisions.
 
-Status: Tracked in #723. A design to decide on (usability-9.md, Q15): nothing is built before the maintainer has chosen an option. By the maintainer's rule of 2026-11-08, the chosen option is prototyped first, tested in a usability run, and polished only if it helps.
+Status: Tracked in #723. The maintainer chose option 2b on 2026-11-08 (section 4); its prototype for run 5 is the draft PR #758, not to be merged. By the maintainer's rule of 2026-11-08, the chosen option is prototyped first, tested in a usability run, and polished only if it helps.
 
 ## 1. What is long
 
@@ -227,7 +227,7 @@ What it gains: the most. −36% at 390 alone, −34% with labels beside the text
 As run 4 does for U10 to U12, the prototype is a draft PR. Its branch is built into the kit's site for run 5 and is not merged.
 
 - **Where:** the web page's panel only (styles under `html.bx-web`, and the web page's rows in media/panel.js). The VS Code panel, the hover, Markdown and the CLI do not change.
-- **Which view:** Overview only. Word by word stays as it is, so that the whole explanation is one switch away (question 2).
+- **Which view:** Overview only. Word by word stays as it is, so that the whole explanation is one switch away (section 4, decision 2).
 - **One line per row:** each row's own words are cut to their first line in the view (`line-clamp: 1`), with "…". The row's second texts, § links and value line fold with the rest. A tap or click on the text, or Enter or Space on it, opens the row's details (`aria-expanded` on the text, which takes focus); a second one folds them.
 - **What stays visible:** the receives line, the steps line, and every part of a row with a warning (`ModelRow.level`).
 - **The row the cursor moves to opens:** the row of the token at the cursor, and the rows on its path (`RowModel.places`). They open on a move with no edit (`PanelLine.moved`), as U7's stages do. A line drawn anew, by typing or a paste, opens nothing.
@@ -276,10 +276,16 @@ What to measure:
 
 **It helped** if per-row verbosity is named by at most one user, and no task above loses its easy rating or its answer from the page. Then option 2b is built as sections 2.2 and 2.2b say (leads from the sources, with option 1's changes, in both panels). **If verbosity drops as a cost but a task loses,** the rule for what stays visible is revisited before any build. **If neither,** the prototype is dropped and the maintainer decides between option 1 alone and option 3.
 
-## 4. Questions for the maintainer
+## 4. The maintainer's decisions (2026-11-08)
 
-1. **Which option to prototype.** Recommended: option 2 with the phone's labels beside the text (section 2.4). The alternatives:
-   - option 1 alone: small and safe, −3%;
-   - option 3: the most cut, but it changes U7's cursor rule and hides every part.
-2. **Word by word in the prototype.** Recommended: unchanged, so that the full explanation stays one switch away. The other choice: the same one-line rows there too (its role lines, 12% of its height, would fold).
-3. **The prototype's form.** Recommended: a draft PR built into the kit's site for run 5, not merged, as for run 4. The other choice: merged on the web page behind a setting, so that real users could try it before run 5.
+The maintainer decided the three questions of the first version of this page as follows.
+
+1. **Which option to prototype:** option 2 in the form of 2b, with the phone's labels beside the text (section 2.2b).
+   - One line per row, with the rest on a tap.
+   - The receives lines, the steps lines and the rows with a warning stay visible.
+   - The cursor's row opens on a move only.
+   - On a phone, a short label sits beside its text.
+
+   Not chosen: option 1 alone (small and safe, −3%); option 3 (the most cut, but it changes U7's cursor rule and hides every part).
+2. **Word by word in the prototype:** unchanged, so that the full explanation stays one switch away. Not chosen: one-line rows there too.
+3. **The prototype's form:** a draft PR built only for run 5, not merged (#758). This follows the standing rule: UI changes from usability findings are prototyped first, tested again, and polished only if they helped. The maintainer sees the prototype before anything is merged. Not chosen: merged on the web page behind a setting.
