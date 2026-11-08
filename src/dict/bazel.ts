@@ -224,11 +224,11 @@ const bazelSpec: CommandSpec = cmd('Bazel: ソースからビルドし、テス�
       ['--all', 'すべての外部のリポジトリを取ってくる', 'fetch every external repository'],
       ['--configure', 'システムの構成のためのリポジトリだけを取ってくる', 'fetch only the repositories marked `configure`'],
       ['--force', '既にあるリポジトリも取り直す', 'fetch the repositories again, even those already there'],
-      ['--repo', '取ってくるリポジトリ（`@名前`、`@@正規の名前`）', 'repository to fetch (`@NAME`, `@@CANONICAL`)', 'arg'],
+      ['--repo', '取ってくるリポジトリ（`@名前`、`@@正規の名前`）', 'repository to get (`@NAME`, `@@CANONICAL`)', 'arg'],
     ], targets),
     vendor: command('外部のリポジトリを `--vendor_dir` のディレクトリに取ってくる', 'Fetch external repositories into the directory of `--vendor_dir`', [...BUILD,
       ['--vendor_dir', '取ってきたリポジトリを置くディレクトリ', 'directory to put the fetched repositories in', 'arg'],
-      ['--repo', '取ってくるリポジトリ（`@名前`、`@@正規の名前`）', 'repository to fetch (`@NAME`, `@@CANONICAL`)', 'arg'],
+      ['--repo', '取ってくるリポジトリ（`@名前`、`@@正規の名前`）', 'repository to get (`@NAME`, `@@CANONICAL`)', 'arg'],
     ], targets),
     mod: command('Bzlmod の外部の依存のグラフを調べる', 'Inspect the Bzlmod external dependency graph', [
       ['--depth', '表示するグラフの深さ', 'depth of the graph shown', 'arg'],
