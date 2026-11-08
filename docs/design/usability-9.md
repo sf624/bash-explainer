@@ -2,7 +2,7 @@
 
 The plan "Usability toward 9/10". The usability test of 2026-11-06 rated the web page and its panel 7.6/10 after two runs, below the goal of 9 ([panel-redesign.md](panel-redesign.md), section 7, "Results (2026-11-06)"). This page takes its findings one by one: whether each is still there on main, where it comes from in the code, what it cost, and how to fix it. Then the steps as PRs, the maintainer's questions, and how the test runs again.
 
-Status: tracked in the issues labelled `usability-9` (#647, #648, #649, #650, #659, #660). Planned 2026-11-06 (#636), revised after an independent review the same day; the maintainer decided the eleven questions as recommended on 2026-11-06 (section 5). Done: U1 (#639), U2 (#688), U3 (#694), U4 (#637), U5 (#687), U6 (#638), U7 (#704), U8 (#716; its check on a real phone waits on the maintainer).
+Status: tracked in the issues labelled `usability-9` (#647, #648, #649, #650, #659, #660, #720, #721, #722, #723). Planned 2026-11-06 (#636), revised after an independent review the same day; the maintainer decided the eleven questions as recommended on 2026-11-06 (section 5). Done: U1 (#639), U2 (#688), U3 (#694), U4 (#637), U5 (#687), U6 (#638), U7 (#704), U8 (#716; its check on a real phone waits on the maintainer), U9 (#660: run 3, section 7, did not meet the goal). Open: U10 (#720), U11 (#721), U12 (#722), U13 (#723), decided on 2026-11-08 (Q12 to Q15).
 
 ## 1. The evidence
 
@@ -248,9 +248,13 @@ Each step is one PR and keeps every test passing. The order puts the largest eff
 | U6 | How sh fails where a form fails with a status, in the FEATURES table, each text measured in dash and busybox ash | 2.8 | Every output | No. Done in #638 |
 | U7 | "In short" without nesting, with its range named; the bats functions' gloss; the shebang's row; the pipeline's stages folded at depth 2; the length measured again. Done in #704: every stage of a pipeline starts folded, with its own examples, when the line is drawn anew (another line, a new text of it, another depth), wherever the cursor is, so typing and a paste open nothing. A stage opens when the reader moves the cursor into it with no edit (a tap, a click, an arrow key: `PanelLine.moved`, src/ui/cursorMoves.ts), which also drops a ▸ fold the reader made there, even where the cursor was in it already (any move: a tap, a click and a key are not told apart, the maintainer's decision of 2026-11-08, since telling a tap from a key needed a timing guess on phones; so an arrow key inside a stage folded with ▸ opens it again), or with a click on its row; in VS Code an edit's own change of the selection is told by the text it put or by where it carried the cursor (a paste of a whole line); the pipelines in `$( )` and `<( )` fold and open the same way; the panel never folds or closes by itself. The maintainer decided this rule on 2026-11-07, after trying the preview on a phone (#650); before it, the stage the cursor was on started open, and a ▸ fold kept a stage folded under a tap. Its cost, accepted: the stages the cursor visits stay open; s2 stays above the 1,420 px accepted on 2026-11-05, because of the glob example U5 opens on grep's stage; the maintainer decided on 2026-11-07 to accept it for now and to judge it in the usability re-test (U9) | 2.7 | VS Code panel, web panel, CLI | No |
 | U8 | The phone's sheet: the grab area, the fling, the full height below the file name, the app bar during a drag; the fold arrows' targets and a name's tap; the half height measured again. Done in #716: a grab strip of 22 px above the tabs (the bar 48 x 5 px, no control in it); a fling from 1 px/ms, and to full only after a drag of 80 px (the maintainer's decision of 2026-11-08: a short flick from the peek to half, from half to the peek or down from full moves the sheet); a full sheet 8 px under the strip; a drag kept under the app bar; on a phone the rename from the pencil only (44 px); on a touch screen each fold arrow 44 x 44 px, with nothing moved; a name's tap already did what a click does (now tested). The half height stays at 55%: with the stages folded, In short ends 172 px down a panel of 272 px at 390 x 664. Also fixed: a tap lost after a quick swipe (Chromium's fling), a header click dropped for 400 ms after a drag, and a move that pulled back a reader who scrolled away (a turn of the phone still brings the cursor's line back). The check on a real phone waits on the maintainer | 2.5, part of 2.7 | Phone | Yes |
-| U9 | The test again, with new agents (section 6) | all | — | — |
+| U9 | The test again, with new agents (section 6). Done: run 3 on main e1174686, 2026-11-08 (section 7); the goal is not met (#660) | all | — | — |
+| U10 | A whole-script paste starts a new script, as Open does: the name untitled, the kind from the text, the shell back to Auto, a toast and Undo. A paste into an empty editor and a select-all paste count. Extends Q8 (#720) | 2.9, 2.6 | Web page | No (the paste on a phone is part of the device check) |
+| U11 | A sentence on each line where `set -e` can stop the script: it stops here, the EXIT trap runs (with its line), the script ends with this command's status. From `statusModel(state).errexit`, not from names. A design document first (#721) | new (7.3) | Every output | No |
+| U12 | The phone's Problems tab counts the constructs not in sh when there is no problem: "✓ · sh 2" in place of "✓", so that the hint of U2 is found (#722) | 2.1 | Phone | Yes |
+| U13 | A design document first: how to cut the repetition per word ("bash's steps", "Double-quoted string: …" on every quoted word, long option rows such as find's) and the length of dense lines, with the lengths measured before and after. The maintainer decides on it before any build (#723) | 2.7 | Every output | Not known until the design |
 
-U1 to U4 are independent of each other and may go in any order, or in parallel where their files do not meet (U1 and U3 both touch the Copy labels in src/ui/texts.ts: U1 first). U5 and U7 both touch src/ui/panelRows.ts: U5 first. U8 can start at any time, but its device check should be done before U9. CHANGELOG: each step adds its own bullets under "Unreleased" (what users see).
+U1 to U4 are independent of each other and may go in any order, or in parallel where their files do not meet (U1 and U3 both touch the Copy labels in src/ui/texts.ts: U1 first). U5 and U7 both touch src/ui/panelRows.ts: U5 first. U8 can start at any time, but its device check should be done before U9. U10 to U13 follow run 3: U10 and U11 are independent; U12 changes the phone's layout and waits on a device check; U13 is a design, and its build is a step of its own once the maintainer has decided. CHANGELOG: each step adds its own bullets under "Unreleased" (what users see).
 
 ## 4. What does not change, and what does
 
@@ -275,6 +279,13 @@ The maintainer decided all eleven questions as recommended, on 2026-11-06. The o
 - **Q10. "In short" for a gloss with parentheses.** The gloss keeps what is left once its own parenthetical parts are taken out (`( )` and `（ ）`, with the blanks and the punctuation they leave), in one place (`glossed`, src/messages-sentence.ts): `grep` (print lines matching a pattern). Where nothing but the name is left (`nginx`), the name alone. Not chosen: a short gloss for each such command. *Revisited by the maintainer on 2026-11-07, on #704:* first decided as "a gloss that has parentheses of its own is dropped; the name stays", which left `grep`, `sed`, `head`, `curl` named alone in most sentences. The functions of bats keep a gloss of their own (`CommandSpec.gloss`): their summaries are paragraphs.
 - **Q11. A file with no shebang.** It still counts as one that may be sourced: decision 8 of panel-redesign.md stays, and so does the fix `return 1 2>/dev/null || exit 1` there (`stopCommand`, src/rewrite.ts:65, already writes `exit 1` in a file read as a script). The Fix box says in a few words why ("`return` if sourced, `exit` if run").
 
+Run 3 added four questions. The maintainer decided them in session on 2026-11-08, as recommended (section 7).
+
+- **Q12. A whole-script paste.** A paste that replaces the whole script (select all and paste, or a paste into an empty editor) starts a new script, as Open does: the kind from the text, the name untitled, the shell back to Auto, with a toast and Undo. It extends Q8, which reset only on Clear, Open and a paste over the untouched sample (U10, #720).
+- **Q13. Where `set -e` stops the script.** One sentence on each line where `set -e` can stop the script, not only in loops or with a trap: if it fails, the script stops here, the EXIT trap runs, and the script ends with this command's status. A design document comes first (U11, #721).
+- **Q14. The phone's Problems tab.** It shows the count of constructs not in POSIX sh when there is no problem: "✓ · sh 2" (U12, #722).
+- **Q15. Shorter explanations.** A design document first, with measured lengths before and after; no build before the maintainer has decided on it (U13, #723).
+
 ## 6. How success is measured
 
 The test runs again after U1 to U8 (step U9), with the kit (`ut-kit-2xlT`): new agents with no project context, the same five personas, models, widths and languages, so that each session can be set against its pair in runs 1 and 2.
@@ -294,3 +305,56 @@ The measures, in the order they decide:
 5. **The score:** an average of 9 or more, the goal of panel-redesign.md, section 7. As before, agents anchor on 7, so a run that meets 2 to 4 and scores 8 goes to the maintainer with that evidence.
 
 The baseline is run 2 (main 71cac086). Below the goal, the maintainer decides what follows, as panel-redesign.md, section 7, says.
+
+## 7. Run 3 (2026-11-08)
+
+Run 3 was U9: main e1174686 (after U1 to U8), the kit's protocol with the changes of section 6. Ten new agents, the five personas of runs 1 and 2, two per cell (u21 to u30). No session was void. Tasks 7 (paste logins.sh again, say what grep receives) and 8 (the 33-line nightly-backup.sh: (a) which directories the `find` deletes, (b) what happens when a `tar` in the loop fails under `set -euo pipefail` with `trap cleanup EXIT`) were added and are graded apart. The grades and the reports are in the kit (`RESULTS.md`, "Run 3").
+
+### 7.1 The measures
+
+Runs 1 and 2 counted an answer "easy once found" as easy; run 3 counts only a plain "easy", and gives the other figure too.
+
+| # | Measure | Bar (section 6) | Run 3 | Run 2 | Run 1 | Met |
+|---|---|---|---|---|---|---|
+| 1 | Gate: each user solves at least 5 of tasks 1 to 6 | all users | 10/10 users (60/60 tasks) | 5/5 | 5/5 | Yes |
+| 2 | Rated easy, tasks 1 to 6 | at least 54/60; task 6 at least 8/10; task 2 10/10 | 49/60 (82%); 53/60 (88%) with "easy once …"; task 6 5/10 (7/10 with a condition); task 2 9/10 | 22/30 (73%; strict 18/30); task 6 1/5; task 2 3/5 | 19/30 (63%; strict 17/30); task 6 0/5; task 2 2/5 | No |
+| 3 | Answered from the page, tasks 1 to 6 | 60/60 | 60/60 (46 from the page, 14 with the user's own knowledge added); task 6's run-time effect from the page for 9 of 10 | 30/30 | 30/30 | Yes |
+| 4 | Top-3 costs: no finding named by two users or more | none | Three of section 2: 2.7 (7 users), 2.9 (5), 2.1 (4); and a new one, task 8 (b) (9) | — | — | No |
+| 5 | Score, average | 9 or more | 7.0 (one 6, eight 7, one 8) | 7.6 | 7.2 | No |
+
+The verdict: the goal is not met. Measures 1 and 3 are met; 2, 4 and 5 are not. The exception of section 6 (meets 2 to 4 and scores 8) does not apply. The maintainer decides what follows (panel-redesign.md, section 7), and decided the steps U10 to U13 (section 5, Q12 to Q15).
+
+Tasks 1 to 6 got easier: easy 60% to 82% strict, 73% to 88% with a condition, and task 6's effect now comes from the page (in run 1 it was the user's own knowledge). Task 6 is still not easy for the four phone users: two never saw the hint, two found it inside the Problems tab. The agents still anchor on 7: nine of the ten scores are 7 or 8, and a pair in one cell differed by 0 or 1.
+
+### 7.2 The score fell, and why
+
+The average fell from 7.6 to 7.0. The fall is in the Sonnet cells (beginner -1.5, sysadmin -1); the Opus cells are level. The cause is plausibly tasks 7 and 8, not a regression on tasks 1 to 6, which improved:
+
+- **Task 8 (b).** Nine of the ten score sentences name what a failing command does to the whole script as what keeps the score down: "weaker for 'what happens when it fails'", "whole-script behaviour (tar failure, exit status) not given". All ten answered it, nine from their own knowledge of `set -e`, putting lines 3 and 19 together; the page gave no sentence.
+- **The shell kept from task 6.** Five users' first cost: they pasted over everything after "Check as POSIX sh", and the next scripts stayed in POSIX sh. Only tasks 7 and 8 expose it.
+
+### 7.3 The top costs, with the findings of section 2
+
+| Finding | Users in a top 3 | What they said |
+|---|---|---|
+| New: task 8 (b) | 9 of 10 | No line says that a failing `tar` stops the script under `set -e`, that the trap runs, and what the exit status is. Line 28's only `set -e` text is on `$(dirname …)`. Nothing ties lines 3, 19 and 28. The strip says "No problems". Step U11. |
+| 2.7 the length, "In short", the phone's half height | 7 | All ten said the length cost them something. The text repeated per word ("bash's steps", "Double-quoted string: …", one row per option value); the `find` line is about two screens, with about 20 rows before `-mtime`; 60 and more rows on a pipeline; the phone's half sheet shows about 10 editor lines. Step U13. |
+| 2.9 the shell and the name kept | 5 (all five desktop users who pasted) | Select all and paste kept POSIX sh: the receives line said "the words of /var/log/*.log", the whole-pipeline example went away, and a bash script showed two false errors until the pill was set to Auto. The name stayed "test.bats ●" (2.6). Users who used Clear or Open were reset, and saw the toast. Cause: Q8 resets only on Clear, Open and a paste over the untouched sample. Step U10. |
+| 2.1 the POSIX sh hint | 4 | Found late: the phone's Problems tab is labelled "✓"; on the desktop "a small link in the status bar". Step U12 for the phone. |
+
+Not in any top 3: 2.2 (the fix: all ten copied the whole line), 2.3, 2.4, 2.8, 2.10. The phone's sheet (2.5) and the names (2.6) once each. Other findings of one or two users are in the kit: a phone has no Paste once the editor has text; a row's description drops under the token column (two users); the fix keeps `2>/dev/null`, which hides tar's own error (four users; Q11 stays); the sheet keeps its scroll position when another line is tapped (one phone user); "Clear the editor" seemed not to clear (one user, suspected: the confirmation for a changed file).
+
+### 7.4 The bugs found
+
+Three are explanation bugs, not UX, and are being fixed (not in this PR):
+
+- The summary of `find -mtime +7` reads "modified more than "$KEEP_DAYS" days ago" (with "1 levels"), looser than its row, "+7: 8 days or more". It keeps a directory of 7.5 days; the sentence must say what the row says.
+- Under POSIX sh, `~/dir` and a glob are shown as "not always one word". A tilde's result and a glob's names are not split in sh (or in bash).
+- Under POSIX sh, "dotglob is off" is said where sh has no such option.
+
+### 7.5 What the run teaches about the test
+
+- The gate and "answered from the page" no longer separate anything on main (60/60 both). Effort and the top-3 costs do.
+- Task 8 (b) measures the page only through the costs: every agent knows `set -e`, as with task 6 in runs 1 and 2.
+- The agents still anchor on 7. A score of 9 will only show as a run that meets measures 2 to 4.
+- The next run (after U10 to U13 and the device check of U8 and U12) keeps tasks 7 and 8 and the two agents per cell, so that it can be set against this one.
