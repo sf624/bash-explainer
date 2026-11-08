@@ -497,7 +497,7 @@ class Statuses implements StatusModel {
     for (const l of slot ? links.slice(1) : links) {
       if (l.kind !== 'call' || !l.sites.length) return undefined;
       const at = new Set(l.sites.map((c) => setOf(c.at)));
-      if (at.size !== 1 || at.has(undefined) || (trap && !at.has(trap))) return undefined;
+      if (at.size !== 1 || at.has(undefined)) return undefined;
       trap = [...at][0];
     }
     return trap ? { kind: 'exit-trap', trap } : undefined;
