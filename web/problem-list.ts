@@ -116,6 +116,8 @@ export class ProblemStrip {
     const t = TEXT[lang];
     const focused = document.activeElement === button;
     line.hidden = !sh;
+    // (Counts the times the hint was worked out, shown or not: a test waits on it for the hint's absence.)
+    line.dataset.worked = String(Number(line.dataset.worked ?? 0) + 1);
     if (sh) {
       $('sh-hint-text').textContent = t.shHint(sh);
       button.textContent = t.shHintButton;

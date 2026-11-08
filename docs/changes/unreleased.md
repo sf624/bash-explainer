@@ -28,7 +28,7 @@ Checked with bazel 9.3.2 (`bazel help startup_options`, `bazel help COMMAND`, `b
 
 - **When.** The web page shows it for a script with no shebang only: its shell is not known, and `sh x.sh` or cron may run it. Not for any shebang that names bash (`#!/bin/bash`, `#!/usr/bin/env bash`, `env -S bash …`: the author chose bash; decided 2026-11-09, #761), a ShellCheck directive, a file name that says bash, a shell chosen in the chip, a bats file or another file with shell code in it, and not in VS Code (its panel shows the quiet "not portable to sh" marks).
 - **What.** One line after the list, or after "No problems": how many constructs of the script POSIX sh lacks or runs differently ("2 constructs not in POSIX sh"; the dialect issues for sh, with the codes and comments you turned off left out), and a button **Check as POSIX sh** that makes the choice the chip's popover makes. Choose Auto in the chip to go back. The line stays when the list is folded. On a phone it is the last line of the Problems tab.
-- **What the number is not.** It is not the length of the list after the button. The list of a sh script also has the notes sh's explanations add (`globstar-unsupported`…), and the notes the list already has for bash. For the web page's sample, the list shows 13 problems as bash, the line says 36 constructs, and the list as sh has 50.
+- **What the number is not.** It is not the length of the list after the button. The list of a sh script also has the notes sh's explanations add (`globstar-unsupported`…), and the notes the list already has for bash.
 - **Not a problem.** The Problems counts, the list, the squiggles, `--check` and the Action do not include it.
 
 ## Changed

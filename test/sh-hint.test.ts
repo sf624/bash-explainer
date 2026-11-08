@@ -71,7 +71,7 @@ describe('the hint toward POSIX sh: the count', () => {
   const sample = fs.readFileSync(path.join(__dirname, 'fixtures', 'sample.sh'), 'utf8').replace(/^#!.*\n/, '');
 
   it('is the number of dialect issues for sh, all of which the list has once the script is read as sh', () => {
-    for (const text of [BODY, BODY, sample]) {
+    for (const text of [BODY, `${BODY}echo "$x"\n`, sample]) {
       const doc = script(text);
       const hint = shProblemCount(doc, 'en', shellsFor(text), settings(), 'web');
       assert.ok(hint, text.slice(0, 30));
@@ -102,7 +102,11 @@ describe('the hint toward POSIX sh: the count', () => {
     assert.strictEqual(shProblemCount(script(text), 'ja', shellsFor(text), settings(), 'web'), shProblemCount(script(text), 'en', shellsFor(text), settings(), 'web'));
   });
 
-  it('reads the same shebang as readShell', () => {
-    assert.deepStrictEqual(readShell('#!/usr/bin/env bash'), { shell: 'bash', source: 'shebang' });
+  it('has none exactly where readShell finds a source other than the default', () => {
+    for (const first of ['#!/usr/bin/env bash', '#!/bin/bash', '#!/usr/bin/env -S bash -e', '# shellcheck shell=bash']) {
+      assert.notStrictEqual(readShell(first).source, 'default', first);
+      assert.strictEqual(countOf(`${first}\n${BODY}`), undefined, first);
+    }
+    assert.strictEqual(readShell(BODY).source, 'default');
   });
 });

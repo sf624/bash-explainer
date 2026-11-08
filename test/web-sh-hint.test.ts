@@ -35,11 +35,12 @@ describe('the web page: the hint toward POSIX sh', function () {
     await until('the sample\'s problems', () => problemsShown(page), (v) => v, 20000);
     await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+A');
+    const worked = Number(await page.locator('#problems-sh').getAttribute('data-worked') ?? 0);
     await page.keyboard.insertText(text);
     // (The page starts with the sample, which has many problems: the text is checked once few are left. The sample has a shebang, so no hint is left from it.)
     await until('the text checked', () => problemRows(page).count(), (c) => c <= 10, 15000);
-    // (The hint is worked out when the page is idle: a test of no hint lets it have its time.)
-    await page.waitForTimeout(600);
+    // (The hint is worked out when the page is idle, shown or not: its count of runs says it was worked out for the text.)
+    await until('the hint worked out', async () => Number(await page.locator('#problems-sh').getAttribute('data-worked') ?? 0), (n) => n > worked, 15000);
     return page;
   }
 
