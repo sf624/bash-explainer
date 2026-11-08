@@ -40,7 +40,10 @@ describe('the message catalog', () => {
     // (Each case of the ids that choose: every combination of the params `refsOf` reads.)
     const find = ['missing', 'empty', 'alone', 'once'].flatMap((why) => [true, false].flatMap((bare) => [true, false].flatMap((plus) => [true, false]
       .map((noCommand) => ({ option: '-exec', why, plus, bare, noCommand, word: '{}x', rewrite: [] })))));
-    const cases: Record<string, readonly unknown[]> = { 'find-action-refused': find };
+    const trap = { sure: true, line: 3, action: 'c' };
+    const stops = (['script', 'subshell', 'exit-trap', 'test', 'unknown'] as const).flatMap((s) => [{}, { exit: trap }, { err: trap }, { later: { line: 4, action: 'c' } }]
+      .map((t) => ({ what: [{ kind: 'command', name: 'x' }], stops: s, ...t })));
+    const cases: Record<string, readonly unknown[]> = { 'find-action-refused': find, 'errexit-stops-here': stops };
     const choosing = Object.entries(MESSAGES).filter(([, e]) => 'refsOf' in e);
     assert.deepStrictEqual(choosing.map(([id]) => id).sort(), Object.keys(cases).sort());
     for (const [id, e] of choosing) {

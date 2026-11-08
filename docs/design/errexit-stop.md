@@ -227,6 +227,15 @@ Decided while building U11a:
 - `runsAtExit` reads the trap in effect at each end of the script (`StateModel.ends`: its end, each `exit` and failure under `set -e`) that got past the `trap`; `exec cmd` takes the `EXIT` trap back in the state.
 - The token texts and "In short" do not change in U11a: `mayFail` changes only where "In short" says a subshell stops, and no line of the corpus has such a statement that G2 or G3 leaves out.
 
+Decided while building U11b:
+
+- The note is a line note of src/explain/line-notes.ts (`errexitStopNotes`), made after the line's other notes so that it can leave the line to a problem whose `says` holds `errexit`; what it says comes from `stopContext` (src/explain/status.ts), its text from src/messages-errexit-stop.ts. It names a command as written (`nameText`), a test `[ … ]` or `test …` as written (shortened), and `[[ … ]]`, `(( … ))` by their brackets.
+- A trap the state gives as `unknown` "may run first", with its line only where the `trap` command is known and no unread code came after it (`opaque`). After `source` or `eval` of a value the note says "an ERR trap and an EXIT trap may run first and change the status", with no line (the coordinator's review, 2026-11-09).
+- The hedge on the status names each action that may change it, ERR's too: bash 5.2 ends an ERR action that fails with its status, as an EXIT action (measured: `trap 'sh -c "exit 7"' ERR` exits 7). One that may call `exit` reads "unless `cleanup` calls `exit`": `TrapOutcome.exits` does not say that it surely does.
+- The sections are 4.3.1, 4.1 (only where a trap is named) and 3.7.5. 3.2.3 for a pipeline is left out: a catalog entry cites three sections at most.
+- `skip` of bats gets `fails: 'never'`: it ends the test with `exit 0`, so a test's `skip` line has no note.
+- The probe rows are in test/errexit-stop.test.ts, not a JSON file, so that they become snippets as U11a's rows do.
+
 Two PRs, because U11a is a foundation and gets its own review before the text is built on it (CLAUDE.md, "Delegating"). They can go as one stack.
 
 ## 9. Prototype for run 4

@@ -5,6 +5,7 @@ import { type Catalog, caveat, failure, note, pitfall, saying, suggests, withBas
 import type { Head } from './messages-levels';
 import { type ExitRefusedParams, exitRefusedText, type Stops } from './messages-posix';
 import type { Rewrite } from './rewrite';
+import { type ErrexitStopParams, errexitStopRefs, errexitStopText } from './messages-errexit-stop';
 
 // The catalog's facts on exit statuses (src/statusfacts.ts, src/explain/status.ts): what `exit` and `return` give, where
 // `set -e` is off or ignored, what hides a failure, the status of `((i++))`, and what a condition always decides. Spread
@@ -73,6 +74,9 @@ export const STATUS_MESSAGES = {
   'errexit-group-where-ignored': note<{ what: string; where: Words }>(['4.3.1'], ({ what, where }) => [
     `${where.ja}で実行されるので、${what}の中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
     `\`set -e\` is ignored in this ${what}, since it runs ${where.en}: a command that fails in the middle does not stop it`]),
+  // (Where a failure under `set -e` stops the script, which traps run then, and the status it ends with:
+  // src/messages-errexit-stop.ts, from the models; docs/design/errexit-stop.md, section 4. 4.1 is `trap`.)
+  'errexit-stops-here': { ...note<ErrexitStopParams>(['4.3.1', '4.1', '3.7.5'], (p) => [errexitStopText('ja', p), errexitStopText('en', p)]), refsOf: errexitStopRefs },
   // (4.2 says that `local` and `declare` (`typeset`) return 0 unless an option, a name or a readonly variable is wrong,
   // 4.1 the same of `export` and `readonly`: a failed command substitution is not among the reasons. `rewrite`: src/statusfacts.ts.)
   'declaration-masks-status': saying(withConvention(suggests(caveat<{ kw: string; v: string; rewrite: readonly Rewrite[] }>(['4.2', '4.1', '4.3.1'], ({ kw, v, rewrite }) => [

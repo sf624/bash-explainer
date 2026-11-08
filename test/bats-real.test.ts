@@ -11,6 +11,7 @@ import { Analyzer } from '../src/analyzer';
 import { batsTestName, explainHostedLine, extractShell } from '../src/hosts';
 import { shellState } from '../src/semantics/state';
 import { statusModel } from '../src/semantics/status';
+import { stopContext } from '../src/explain/status';
 import { tagComment } from '../src/hosts/batstags';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
@@ -438,6 +439,37 @@ describe('bats files agree with the real bats', function () {
       assert.strictEqual(out.includes(`after ${i}`), !fails, t);
       assert.ok(out.includes(`teardown ${i + 1}`), t);
     });
+  });
+
+  it('says on a failing line of a test that the test fails there, that teardown runs, and bats goes on (errexit-stop.md, U11b)', async function () {
+    if (!usable) return this.skip();
+    const file = path.join(dir, 'u11b.bats');
+    const tests = ['run false', 'run -1 true', 'false', 'skip "later"'];
+    const text = ['teardown() { echo "teardown $BATS_TEST_NUMBER" >&3; }', ...tests.map((t, i) => `@test "t${i}" {\n  ${t}\n  echo "after ${i}" >&3\n}`)];
+    fs.writeFileSync(file, `${text.join('\n')}\n`);
+    const { tap, out } = await runBats(file);
+    const extracted = extractShell('bats', text.join('\n'));
+    const tree = createUnbashParser().parse(extracted.text);
+    const { commands: host, run } = extracted.regions[0];
+    const state = shellState(tree, undefined, { host, run });
+    const status = statusModel(state);
+    tests.forEach((t, i) => {
+      const n = descendants(tree.root, ['command']).find((c) => c.text === t)!;
+      const ctx = stopContext(state, status, n, run);
+      // (A note where the test fails: its later lines do not run, `teardown` does, and the next test runs.)
+      assert.strictEqual(tap[i].startsWith('not ok'), !!ctx, `${t}: ${tap[i]}`);
+      if (ctx) assert.deepStrictEqual(ctx, { stops: 'test', teardown: 'teardown' }, t);
+      assert.strictEqual(out.includes(`after ${i}`), !ctx && !t.startsWith('skip'), t);
+      assert.ok(out.includes(`teardown ${i + 1}`), t);
+    });
+    assert.strictEqual(tap.length, tests.length);
+    // (No teardown: the note does not name one; at the top of the file, no note.)
+    const bare = extractShell('bats', 'load helper\n@test "t" {\n  false\n}');
+    const tree2 = createUnbashParser().parse(bare.text);
+    const state2 = shellState(tree2, undefined, { host: bare.regions[0].commands, run: bare.regions[0].run });
+    const [load, fail] = ['load helper', 'false'].map((t) => descendants(tree2.root, ['command']).find((c) => c.text === t)!);
+    assert.deepStrictEqual(stopContext(state2, statusModel(state2), fail, bare.regions[0].run), { stops: 'test' });
+    assert.strictEqual(stopContext(state2, statusModel(state2), load, bare.regions[0].run), undefined);
   });
 
   it('warns (BW03) about a setup_suite in a test file, and does not call it', async function () {

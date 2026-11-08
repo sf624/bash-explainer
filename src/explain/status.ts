@@ -3,8 +3,14 @@
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { shorten } from '../label';
 import { fact } from '../messages';
+import type { ErrexitStopParams, StopTrap } from '../messages-errexit-stop';
 import { inPlaceOf, replaceNode } from '../rewrite';
 import { STATEMENTS } from '../semantics/env';
+import type { NestedScript } from '../semantics/nested';
+import { docLine, type StateModel } from '../semantics/state';
+import type { StatusModel } from '../semantics/status';
+import { laterExitTrap, trapAt, type Trapped } from '../semantics/traps';
+import type { HostRun } from '../semantics/walk/host';
 import { ancestor, field, fields, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 
@@ -75,11 +81,58 @@ export function substitutionStatus(cx: Explainer, n: SyntaxNode): string {
     const masked = last?.type === 'list' && last.children.some((c) => c.type === '||') && cx.status.succeeds(last.namedChildren[last.namedChildren.length - 1]);
     if (masked && rule.at === n) return '';
     return rule.at === n
-      ? cx.s('。`set -e` が有効なので、これが失敗するとスクリプトはここで止まる（名前の無いコマンド、つまり代入やリダイレクトだけのコマンドは、最後のコマンド置換の終了ステータスになる）', '. Under `set -e` the script stops here if it fails (a command with no name, only assignments or redirections, takes the status of its last command substitution)')
+      // (The line's note `errexit-stops-here` says that `set -e` stops the script here.)
+      ? cx.s('。名前のないコマンド（代入やリダイレクトだけのコマンド）は、最後のコマンド置換の終了ステータスになる', '. A command with no name, only assignments or redirections, takes the status of its last command substitution')
       : cx.s('。これが失敗しても `set -e` では止まらない（名前の無いコマンドの終了ステータスは、最後に実行されるコマンド置換のもの。リダイレクトの中のものは代入の中のものより後に実行される）', '. If it fails, `set -e` does not stop the script (a command with no name takes the status of the last command substitution it runs; those in its redirections run after those in its assignments)');
   }
   // (In the command's name, it is not an argument: `"$(cmd)" a`.)
   if ((rule.kind !== 'command' && rule.kind !== 'test') || stmt.type !== 'command' || !field(stmt, 'name') || ancestor(n, (x) => x === field(stmt, 'name'))) return '';
   const name = shorten(field(stmt, 'name')!.text, 20);
   return cx.s(`。これが失敗しても \`set -e\` では止まらない（終了ステータスは \`${name}\` のもの）`, `. If it fails, \`set -e\` does not stop the script (the status is that of \`${name}\`)`);
+}
+
+/** What a stop note says besides what fails (`ErrexitStopParams` without `what`). */
+export type StopContext = Omit<ErrexitStopParams, 'what' | 'more'>;
+
+/** The name of a trap's action in a note: its text, short (a function's name, or the start of the string). */
+const actionName = (script: NestedScript): string => shorten(script.text.trim().replace(/\s*\n\s*/g, '; '), 24);
+
+/**
+ * Under `set -e`, what a failure of statement `n` ends, from the models only (docs/design/errexit-stop.md, section 3):
+ * undefined where it does not stop a shell (`errexit`: errexit off or not known, the failure not checked), where it
+ * cannot fail (`mayFail`), in code that does not run, and in a host's file but in a test (`hostRun`: bats). The traps
+ * that run are those in effect at `n` (`ShellState.traps`); after code the model does not read (`opaque`), a trap may
+ * run, with no line named.
+ */
+export function stopContext(state: StateModel, status: StatusModel, n: SyntaxNode, hostRun?: HostRun): StopContext | undefined {
+  const e = status.errexit(n);
+  if (e.active !== 'on' || e.checked !== true || !status.mayFail(n) || state.dead(n)) return undefined;
+  const { within } = e;
+  if (within?.kind === 'test') {
+    const down = hostRun && state.at(n).run.functions.get(hostRun.each.after)?.state === 'on' ? hostRun.each.after : undefined;
+    return { stops: 'test', ...(down ? { teardown: down } : {}) };
+  }
+  if (within?.kind === 'host' || hostRun) return undefined;
+  if (within?.kind === 'exit-trap') return { stops: 'exit-trap' };
+  if (e.stops === 'unknown') return { stops: 'unknown' };
+  const run = state.at(n).run;
+  const trap = (name: Trapped): StopTrap | undefined => {
+    const t = trapAt(state, n, name);
+    if (!t || t.state === 'off') return undefined;
+    // (Its `trap` command, unless code the model does not read may have set another.)
+    const known = state.trapSets.some((s) => s.at === t.at) && !(t.state === 'unknown' && run.opaque);
+    const out = known && t.script ? status.trapOutcome(t.script) : undefined;
+    return {
+      sure: t.state === 'on',
+      ...(known ? { line: docLine(t.at) + 1 } : {}),
+      ...(known && t.script ? { action: actionName(t.script) } : {}),
+      ...(out?.fails ? { fails: true } : {}),
+      ...(out?.exits ? { exits: true } : {}),
+    };
+  };
+  const err = trap('ERR');
+  const exit = trap('EXIT');
+  const set = e.stops === 'script' && !exit ? laterExitTrap(state, n) : undefined;
+  const later = set?.script ? { line: docLine(set.at) + 1, action: actionName(set.script) } : undefined;
+  return { stops: e.stops, ...(err ? { err } : {}), ...(exit ? { exit } : {}), ...(later ? { later } : {}) };
 }

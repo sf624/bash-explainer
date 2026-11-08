@@ -49,6 +49,8 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = wordTable({
     'bats function: skips the rest of the test and reports it as skipped (in setup, the test it runs before)', [], {
     gloss: tx('テストの残りを実行せず、スキップとして報告する', 'skips the rest of the test and reports it as skipped'),
     operands: [{ pattern: [operand('REASON', 'スキップの理由（結果に表示される）', 'why it is skipped (shown in the results)', { repeat: '?' })] }],
+    // (It ends the test's shell with `exit 0`, whatever its words: no failure that `set -e` stops.)
+    fails: 'never',
   }),
   bats_require_minimum_version: cmd('bats の関数: bats がこの版より古ければエラーで止まる。この版までの機能（`run !` など）については警告を出さなくなる',
     'bats function: stops with an error if bats is older than this version, and stops the warnings about the features up to it (`run !`…)', [], {

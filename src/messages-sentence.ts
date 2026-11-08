@@ -179,11 +179,6 @@ export const S = {
     const of = last ? pick(lang, `${last}のもの`, `that of ${last}`) : pick(lang, '最後に失敗したコマンドのもの（なければ 0）', 'that of the last command that fails, or 0');
     return lang === 'ja' ? `終了ステータスは${of}${negated ? 'を反転したもの' : ''}` : `its status is ${of}${negated ? ', negated' : ''}`;
   },
-  /** `set -e` stops the shell when the statement fails: the script, a subshell, or one of them. */
-  errexit: (lang: Lang, stops: 'subshell' | 'unknown'): string => {
-    const shell = stops === 'subshell' ? pick(lang, 'サブシェル', 'the subshell') : pick(lang, 'シェル（スクリプトかサブシェル）', 'the shell it runs in (the script or a subshell)');
-    return pick(lang, `失敗すると \`set -e\` で${shell}が止まる`, `if it fails, \`set -e\` stops ${shell}`);
-  },
   /** An AND or OR list under `set -e` (manual 4.3.1): a failure of a command but the last does not stop the shell. */
   errexitList: (lang: Lang, stops: 'script' | 'subshell' | 'unknown'): string => {
     const shell = stops === 'script' ? pick(lang, 'スクリプト', 'the script') : pick(lang, 'シェル', 'the shell');
@@ -267,7 +262,7 @@ export const S = {
 
   // The idioms with a sentence of their own (src/idioms.ts, `idiomSaid`).
   strictMode: (lang: Lang): string => pick(lang, '`errexit`・`nounset`・`pipefail` を有効にする（定番の strict mode）', 'turns on `errexit`, `nounset` and `pipefail`, the usual strict mode'),
-  exitTrap: (lang: Lang): string => pick(lang, 'スクリプトがどう終わっても最後に実行するコマンドを登録する', 'registers a command that runs when the script exits, however it exits'),
+  exitTrap: (lang: Lang): string => pick(lang, 'スクリプトが終わるときに実行するコマンドを登録する（SIGKILL では実行されない）', 'registers a command that runs when the script exits (not on SIGKILL)'),
   quietCheck: (lang: Lang): string => pick(lang, 'コマンドがインストールされているかを、何も表示せずに確かめる', 'checks, printing nothing, whether a command is installed'),
   endless: (lang: Lang, body: string): string => pick(lang, `\`break\` か \`exit\` で抜けるまで、${body}をくり返す`, `repeats ${body} until \`break\` or \`exit\` leaves the loop`),
   readLines: (lang: Lang, file: string, body: string): string => pick(lang, `${file}を1行ずつ読み、行ごとに${body}を実行する`, `reads ${file} one line at a time, running ${body} for each line`),
