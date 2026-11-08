@@ -66,7 +66,7 @@ A language line has no `Explainer`: there is no tree node, shell state or comman
 
 - **Tokens.** The embedded reader (`explainRegex`, flavor `python`) reads `source.value`. Its tokens are placed by `placeEmbedded(t, at, label, origin)`, the half of `fromEmbedded` that takes a position function: `fromEmbedded` becomes `placeEmbedded` with `sourcePos` over `sourceIndex`, and a language line passes the literal's offset map (section 4). One function places embedded tokens. The top token spans the literal(s), with `origin: 'embedded'`, `language: 'regex'`, and its text from the catalog of token texts (src/messages-tokens.ts).
 - **Errors.** A token Python rejects carries a `tokenError` mark from the catalog (src/messages-levels.ts), as shell tokens do. `tokenErrorNotes` (src/explain/line-notes.ts) is split: its walk takes a sink (`sayAt`), the `Explainer`'s or the language line's. That sink is the `anchored` helper with an anchor list and a data map, the same functions `LineExplainer.say` and `sayAt` use.
-- **Facts.** The pitfalls of the call and of the string (section 5, issue 3) are catalog facts. They go through `said` (the `notes.pitfalls` gate) and `basisGate` (the `notes.basis` gate), and `markTokens` puts them on their tokens, as `explainHostedLine` does for bats.
+- **Facts.** The pitfalls of the call and of the string (section 5, #750) are catalog facts. They go through `said` (the `notes.pitfalls` gate) and `basisGate` (the `notes.basis` gate), and `markTokens` puts them on their tokens, as `explainHostedLine` does for bats.
 - **Context.** One entry, the region's label at its first line, as a host region has.
 - **Reading tree.** One root in the layer `language` (kind `language`, labelled "regex (Python)" with `flavorName`, reader the function, `re.search`), with the nodes src/reading.ts makes of embedded tokens today. There is no bash layer. src/reading.ts exports the function that makes a language's nodes from its tokens; `readingTree` and the language line both call it.
 - **Not made:** no sentence ("In short"), no `argv`, no `notPosix`: they are about bash's reading.
@@ -127,7 +127,7 @@ The extractor scans Python with ad hoc pieces today: `pyString` (prefixes and qu
 
 - **`pyValue(literal)`**: the value of a string literal, the source range of each character of the value (`offs`, as `pyUnescape` has), and its holes. Both extractors read it; the shell writer still writes a `\n` of the value as `;`, after the value is made.
 - **Escapes (step 1)**: all of Python's: `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v`, octal `\0` to `\377` (today `\0` alone, so `"\012"` reads as NUL and "12"), `\xhh`, and in str literals `\uXXXX`, `\UXXXXXXXX`, `\N{name}`; a backslash-newline joins the lines; an unknown escape keeps the backslash. Raw literals keep every backslash, and a raw literal cannot end in an odd number of backslashes. Without the full table, `"\bfoo\b"` would be read as word boundaries; Python makes them backspaces.
-- **The lexer (issue 3)**: strings, comments, brackets, names and f-string nesting by the 3.12 rules (PEP 701: quotes of the same kind inside a field), tested against Python's own `tokenize` (section 7). It replaces `pyString`, `pyClose` and `pySplit`.
+- **The lexer (#750)**: strings, comments, brackets, names and f-string nesting by the 3.12 rules (PEP 701: quotes of the same kind inside a field), tested against Python's own `tokenize` (section 7). It replaces `pyString`, `pyClose` and `pySplit`.
 - **Positions**: a pattern character's place in the document is the line and column of its first source offset; a token's end is the end of its last character's source range. `placeEmbedded` reads that map.
 
 ### 4.3 f-strings
@@ -150,7 +150,7 @@ A table in src/hosts/python.ts, beside the import table, gives each function's p
 | `split` | `pattern, string, maxsplit, flags` | nothing |
 | `sub`, `subn` | `pattern, repl, string, count, flags` | nothing |
 
-The top row of a `match` says the pattern must match at the start; of a `fullmatch`, the whole string. Methods of a compiled pattern (`PAT.sub(repl, s)`) take no pattern and no flags; issue 5 links them to `PAT = re.compile(…)`.
+The top row of a `match` says the pattern must match at the start; of a `fullmatch`, the whole string. Methods of a compiled pattern (`PAT.sub(repl, s)`) take no pattern and no flags; #752 links them to `PAT = re.compile(…)`.
 
 ### 5.2 The flags
 
@@ -178,7 +178,7 @@ The samples are ASCII without newlines, where Unicode `\d`, `\w`, `\s`, `\b` and
 Per function:
 
 - `search`, `match`, `fullmatch`, `compile`: a text that matches and one that does not, with the function's anchors.
-- `sub`, `subn`: an input and its output, for a literal template (`\1`, `\g<name>`, `\g<0>`, issue 5); none for a function as the replacement.
+- `sub`, `subn`: an input and its output, for a literal template (`\1`, `\g<name>`, `\g<0>`, #752); none for a function as the replacement.
 - `split`, `findall`: the list Python gives, with tuples when the pattern has groups.
 
 When the subject argument is a string literal, it is the input, labelled as that argument (`streamLabel`, src/examples/source.ts). Otherwise the text is made up, and its label says so.
@@ -209,7 +209,7 @@ The differential tests run the `python3` on PATH (3.12 on CI's Ubuntu 24.04). A 
 ## 9. Left out
 
 - The `regex` module (maintainer's decision).
-- Patterns built at run time: `+`, `%`, `.format`, a call, a name, except one `re.compile` assigned to a name in the same file (issue 5). Their place is said as "not known", not guessed.
+- Patterns built at run time: `+`, `%`, `.format`, a call, a name, except one `re.compile` assigned to a name in the same file (#752). Their place is said as "not known", not guessed.
 - `re.L`'s locale, Unicode case folding and Unicode classes in examples: examples are ASCII.
 - Checking the subject's type (str against bytes).
 - `re.Scanner`, `re.template`, `fnmatch.translate`, and regexes of other libraries.
