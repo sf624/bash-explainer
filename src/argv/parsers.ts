@@ -1,6 +1,6 @@
 // The families of option parsers (`CommandSpec.parser`): each preset is the rules of one real parser, which
 // test/parsers-real.test.ts checks against a tool that uses it.
-import type { CommandSpec } from './spec';
+import type { CommandSpec, OptionSpec } from './spec';
 
 /**
  * - `gnu` (the default): getopt_long's rules without abbreviations. Short options cluster (`-xvf`) and take a
@@ -32,8 +32,12 @@ import type { CommandSpec } from './spec';
  *   rules of `jq` (no `--name=value`: `--rcfile=f` is an invalid option), with the long options only before the
  *   others, where `-login` is `--login` too; after a word of short options, `--posix` is the letters `-`, `p`…, and
  *   `-` is no option (`--: invalid option`). The first operand ends the options, and so does a lone `-`, as `--` does.
+ * - `bazel`: bazel's options parser (its `OptionsParser`, and its client's for the startup options): the rules of `git`
+ *   (no clusters, `-c opt` but not `-copt` or `-c=opt`; `--name=value` or `--name value`), and a boolean option is
+ *   turned off by `no` before its name or a `-` after its letter (`--nostamp`, `-t-`: the rule `negation`). Options
+ *   may follow the targets; `--` ends them, so that a target pattern may start with `-` (`-//app/legacy/...`).
  */
-export type OptionParser = 'gnu' | 'getopt_long' | 'single-dash' | 'openssl' | 'letters' | 'cobra' | 'iproute2' | 'jq' | 'git' | 'dpkg' | 'bash';
+export type OptionParser = 'gnu' | 'getopt_long' | 'single-dash' | 'openssl' | 'letters' | 'cobra' | 'iproute2' | 'jq' | 'git' | 'dpkg' | 'bash' | 'bazel';
 
 /** What a preset does, as the interpreter (src/argv/interpret.ts) reads it. */
 export interface ParserRules {
@@ -62,11 +66,13 @@ export interface ParserRules {
   longFirst: boolean;
   /** A word `-` alone ends the options, as `--` does. */
   loneDashEnds: boolean;
+  /** `--noname` turns off the option `--name`, and `-x-` the option `-x`, when it takes no value (`negatedOption`). */
+  negation: boolean;
 }
 
 const GNU: ParserRules = {
   longPrefixes: false, longEquals: true, shortClusters: true, shortEquals: false, singleDash: false, doubleDash: false, letters: false, optionsFirst: false, cobra: false,
-  longFirst: false, loneDashEnds: false,
+  longFirst: false, loneDashEnds: false, negation: false,
 };
 
 export const PARSERS: Record<OptionParser, ParserRules> = {
@@ -81,7 +87,20 @@ export const PARSERS: Record<OptionParser, ParserRules> = {
   git: { ...GNU, shortClusters: false },
   dpkg: { ...GNU, shortEquals: true },
   bash: { ...GNU, longEquals: false, optionsFirst: true, longFirst: true, loneDashEnds: true },
+  bazel: { ...GNU, shortClusters: false, negation: true },
 };
+
+/**
+ * The option a word turns off with the rule `negation`, and the name it is written for: `--nostamp` turns off
+ * `--stamp`, `-t-` turns off `-t`. Only an option that takes no value: bazel refuses `--nocompilation_mode` ("Illegal
+ * use of 'no' prefix on non-boolean option"), which is then an option not known.
+ */
+export function negatedOption(options: readonly OptionSpec[], word: string): { option: OptionSpec; name: string } | undefined {
+  const m = /^--no(.+)$|^(-[^-])-$/.exec(word);
+  const name = m && (m[1] !== undefined ? `--${m[1]}` : m[2]);
+  const option = name ? options.find((o) => o.names.includes(name)) : undefined;
+  return option && option.value === undefined ? { option, name: name! } : undefined;
+}
 
 /**
  * The rules a spec is read with: its parser's, with `optionsFirst`. `cobra`: a parent finds its subcommands as

@@ -1,0 +1,2 @@
+# The workspace scripts/record-bazel.ts runs bazel in (a copy of it), for test/fixtures/oracles/bazel.json.
+module(name = "fixture")

@@ -13,6 +13,9 @@ export const REGEX_VALUE_SPECIAL = {
 };
 
 export const ARGV_TEXTS = {
+  /** bazel's `--nostamp` and `-t-` (the parser rule `negation`): the boolean option `name` turned off; `on`, what the option does when it is on. */
+  'option-negated': tokenText<{ name: string; on: string }>(({ name, on }) => [
+    `\`${name}\` を無効にする（\`${name}\` は「${on}」）`, `Turns \`${name}\` off (\`${name}\` is "${on}")`]),
   /** `$opts` as an option word: its expansion is read by the command as options. */
   'option-open': tokenText(() => [
     '実行時に決まるオプション（展開した結果を、コマンドがオプションとして読む）',

@@ -1,0 +1,744 @@
+{
+  "//": "What bazel reads of these words, recorded by scripts/record-bazel.ts (bazel of test/fixtures/bazel/.bazelversion): `flags`, the words after a command, as `bazel canonicalize-flags --for_command=COMMAND` prints them (or its error); `lines`, whole lines run in a copy of test/fixtures/bazel, with their exit status. test/parsers-real.test.ts compares the preset `bazel` and the bazel spec with them.",
+  "bazel": "9.3.2",
+  "flags": [
+    {
+      "command": "build",
+      "words": [
+        "-c",
+        "opt",
+        "-k"
+      ],
+      "canonical": [
+        "--compilation_mode=opt",
+        "--keep_going=1"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "-copt"
+      ],
+      "error": "Invalid options syntax: -copt"
+    },
+    {
+      "command": "build",
+      "words": [
+        "-c=opt"
+      ],
+      "error": "Invalid options syntax: -c=opt"
+    },
+    {
+      "command": "build",
+      "words": [
+        "--compilation_mode",
+        "opt"
+      ],
+      "canonical": [
+        "--compilation_mode=opt"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--compilation_mode=dbg"
+      ],
+      "canonical": [
+        "--compilation_mode=dbg"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--nokeep_going"
+      ],
+      "canonical": [
+        "--keep_going=0"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--keep_going=false"
+      ],
+      "canonical": [
+        "--keep_going=0"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--keep_going=yes"
+      ],
+      "canonical": [
+        "--keep_going=1"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--keep_going",
+        "false"
+      ],
+      "error": "Unrecognized arguments: false"
+    },
+    {
+      "command": "build",
+      "words": [
+        "--no_keep_going"
+      ],
+      "error": "Unrecognized option: --no_keep_going (did you mean '--nokeep_going'?)"
+    },
+    {
+      "command": "build",
+      "words": [
+        "--nostamp"
+      ],
+      "canonical": [
+        "--stamp=0"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--stamp"
+      ],
+      "canonical": [
+        "--stamp=1"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "-j",
+        "8"
+      ],
+      "canonical": [
+        "--jobs=8"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "-j8"
+      ],
+      "error": "Invalid options syntax: -j8"
+    },
+    {
+      "command": "build",
+      "words": [
+        "--jobs=auto"
+      ],
+      "canonical": [
+        "--jobs=auto"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "-s"
+      ],
+      "canonical": [
+        "--subcommands=1"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--subcommands=pretty_print"
+      ],
+      "canonical": [
+        "--subcommands=pretty_print"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "-ks"
+      ],
+      "error": "Invalid options syntax: -ks"
+    },
+    {
+      "command": "build",
+      "words": [
+        "--keep_goi"
+      ],
+      "error": "Unrecognized option: --keep_goi (did you mean '--keep_going'?)"
+    },
+    {
+      "command": "build",
+      "words": [
+        "--config=ci"
+      ],
+      "canonical": [
+        "--config=ci"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--define",
+        "a=b"
+      ],
+      "canonical": [
+        "--define=a=b"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--nocompilation_mode"
+      ],
+      "error": "Illegal use of 'no' prefix on non-boolean option: --nocompilation_mode"
+    },
+    {
+      "command": "build",
+      "words": [
+        "--nobuild"
+      ],
+      "canonical": [
+        "--build=0"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--copt=-O2"
+      ],
+      "canonical": [
+        "--copt=-O2"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--copt",
+        "-O2"
+      ],
+      "canonical": [
+        "--copt=-O2"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--action_env=PATH"
+      ],
+      "canonical": [
+        "--action_env=PATH"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--platforms=//p:x"
+      ],
+      "canonical": [
+        "--platforms=//p:x"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--noverbose_failures"
+      ],
+      "canonical": [
+        "--verbose_failures=0"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--remote_cache=grpcs://x"
+      ],
+      "canonical": [
+        "--remote_cache=grpcs://x"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "--disk_cache",
+        "/tmp/c"
+      ],
+      "canonical": [
+        "--disk_cache=/tmp/c"
+      ]
+    },
+    {
+      "command": "test",
+      "words": [
+        "-t"
+      ],
+      "canonical": [
+        "--cache_test_results=1"
+      ]
+    },
+    {
+      "command": "test",
+      "words": [
+        "-t-"
+      ],
+      "canonical": [
+        "--cache_test_results=0"
+      ]
+    },
+    {
+      "command": "test",
+      "words": [
+        "--nocache_test_results"
+      ],
+      "canonical": [
+        "--cache_test_results=0"
+      ]
+    },
+    {
+      "command": "test",
+      "words": [
+        "--test_output=errors"
+      ],
+      "canonical": [
+        "--test_output=errors"
+      ]
+    },
+    {
+      "command": "test",
+      "words": [
+        "--test_arg=--v"
+      ],
+      "canonical": [
+        "--test_arg=--v"
+      ]
+    },
+    {
+      "command": "test",
+      "words": [
+        "--test_filter=Foo.*"
+      ],
+      "canonical": [
+        "--test_filter=Foo.*"
+      ]
+    },
+    {
+      "command": "test",
+      "words": [
+        "--runs_per_test=3"
+      ],
+      "canonical": [
+        "--runs_per_test=3"
+      ]
+    },
+    {
+      "command": "run",
+      "words": [
+        "--script_path=x"
+      ],
+      "canonical": [
+        "--script_path=x"
+      ]
+    },
+    {
+      "command": "run",
+      "words": [
+        "--run_in_cwd"
+      ],
+      "canonical": [
+        "--run_in_cwd=1"
+      ]
+    },
+    {
+      "command": "run",
+      "words": [
+        "--norun_in_cwd"
+      ],
+      "canonical": [
+        "--run_in_cwd=0"
+      ]
+    },
+    {
+      "command": "run",
+      "words": [
+        "--run_env=A=1"
+      ],
+      "canonical": [
+        "--run_env=A=1"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "--output=label_kind"
+      ],
+      "canonical": [
+        "--output=label_kind"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "--noimplicit_deps"
+      ],
+      "canonical": [
+        "--implicit_deps=0"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "--notool_deps"
+      ],
+      "canonical": [
+        "--tool_deps=0"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "-k"
+      ],
+      "canonical": [
+        "--keep_going=1"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "--order_output=no"
+      ],
+      "canonical": [
+        "--order_output=no"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "--output",
+        "label"
+      ],
+      "canonical": [
+        "--output=label"
+      ]
+    },
+    {
+      "command": "cquery",
+      "words": [
+        "--output=label_kind"
+      ],
+      "canonical": [
+        "--output=label_kind"
+      ]
+    },
+    {
+      "command": "cquery",
+      "words": [
+        "--transitions=lite"
+      ],
+      "canonical": [
+        "--transitions=lite"
+      ]
+    },
+    {
+      "command": "cquery",
+      "words": [
+        "--starlark:expr=target.label"
+      ],
+      "canonical": [
+        "--starlark:expr=target.label"
+      ]
+    },
+    {
+      "command": "cquery",
+      "words": [
+        "-c",
+        "opt"
+      ],
+      "canonical": [
+        "--compilation_mode=opt"
+      ]
+    },
+    {
+      "command": "aquery",
+      "words": [
+        "--output=jsonproto"
+      ],
+      "canonical": [
+        "--output=jsonproto"
+      ]
+    },
+    {
+      "command": "aquery",
+      "words": [
+        "--noinclude_commandline"
+      ],
+      "canonical": [
+        "--include_commandline=0"
+      ]
+    },
+    {
+      "command": "aquery",
+      "words": [
+        "--include_artifacts"
+      ],
+      "canonical": [
+        "--include_artifacts=1"
+      ]
+    },
+    {
+      "command": "clean",
+      "words": [
+        "--expunge"
+      ],
+      "canonical": [
+        "--expunge=1"
+      ]
+    },
+    {
+      "command": "clean",
+      "words": [
+        "--async"
+      ],
+      "canonical": [
+        "--async=1"
+      ]
+    },
+    {
+      "command": "info",
+      "words": [
+        "--show_make_env"
+      ],
+      "canonical": [
+        "--show_make_env=1"
+      ]
+    },
+    {
+      "command": "fetch",
+      "words": [
+        "--all"
+      ],
+      "canonical": [
+        "--all=1"
+      ]
+    },
+    {
+      "command": "fetch",
+      "words": [
+        "--force"
+      ],
+      "canonical": [
+        "--force=1"
+      ]
+    },
+    {
+      "command": "fetch",
+      "words": [
+        "--repo=@x"
+      ],
+      "canonical": [
+        "--repo=@x"
+      ]
+    },
+    {
+      "command": "vendor",
+      "words": [
+        "--vendor_dir=v"
+      ],
+      "canonical": [
+        "--vendor_dir=v"
+      ]
+    },
+    {
+      "command": "mod",
+      "words": [
+        "--depth=2"
+      ],
+      "canonical": [
+        "--depth=2"
+      ]
+    },
+    {
+      "command": "mod",
+      "words": [
+        "--from=<root>"
+      ],
+      "canonical": [
+        "--from=<root>"
+      ]
+    },
+    {
+      "command": "mod",
+      "words": [
+        "--output=json"
+      ],
+      "canonical": [
+        "--output=json"
+      ]
+    },
+    {
+      "command": "mod",
+      "words": [
+        "--include_unused"
+      ],
+      "canonical": [
+        "--include_unused=1"
+      ]
+    },
+    {
+      "command": "shutdown",
+      "words": [
+        "--iff_heap_size_greater_than=100"
+      ],
+      "canonical": [
+        "--iff_heap_size_greater_than=100"
+      ]
+    },
+    {
+      "command": "version",
+      "words": [
+        "--gnu_format"
+      ],
+      "canonical": [
+        "--gnu_format=1"
+      ]
+    },
+    {
+      "command": "help",
+      "words": [
+        "--long"
+      ],
+      "canonical": [
+        "--help_verbosity=long"
+      ]
+    },
+    {
+      "command": "help",
+      "words": [
+        "-l"
+      ],
+      "canonical": [
+        "--help_verbosity=long"
+      ]
+    },
+    {
+      "command": "help",
+      "words": [
+        "--short"
+      ],
+      "canonical": [
+        "--help_verbosity=short"
+      ]
+    }
+  ],
+  "lines": [
+    {
+      "line": "bazel build //app:data",
+      "status": 0
+    },
+    {
+      "line": "bazel build //app:data --keep_going",
+      "status": 0
+    },
+    {
+      "line": "bazel --keep_going build //app:data",
+      "status": 2,
+      "says": "Unknown startup option: '--keep_going'."
+    },
+    {
+      "line": "bazel -c opt build //app:data",
+      "status": 2,
+      "says": "Unknown startup option: '-c'."
+    },
+    {
+      "line": "bazel build --output_base=/nonexistent/x //app:data",
+      "status": 2,
+      "says": "Unrecognized option: --output_base=/nonexistent/x"
+    },
+    {
+      "line": "bazel build //app:data -//app:main",
+      "status": 2,
+      "says": "Invalid options syntax: -//app:main"
+    },
+    {
+      "line": "bazel build //app:data -@foo//x",
+      "status": 2,
+      "says": "Invalid options syntax: -@foo//x"
+    },
+    {
+      "line": "bazel build -- //app/... -//app:main",
+      "status": 0
+    },
+    {
+      "line": "bazel build //app/... -- -//app/legacy/...",
+      "status": 0
+    },
+    {
+      "line": "bazel run //tools:fmt a b",
+      "status": 0
+    },
+    {
+      "line": "bazel run //tools:fmt a --check",
+      "status": 2,
+      "says": "Unrecognized option: --check"
+    },
+    {
+      "line": "bazel run //tools:fmt -- a --check",
+      "status": 0
+    },
+    {
+      "line": "bazel run //tools:fmt -k a",
+      "status": 0
+    },
+    {
+      "line": "bazel test -t- //app:main_test",
+      "status": 0
+    },
+    {
+      "line": "bazel --nohome_rc --nosystem_rc version",
+      "status": 0
+    },
+    {
+      "line": "bazel --noblock_for_lock version",
+      "status": 0
+    },
+    {
+      "line": "bazel --nosuch version",
+      "status": 2,
+      "says": "Unknown startup option: '--nosuch'."
+    },
+    {
+      "line": "bazel query 'deps(//app:main)'",
+      "status": 0
+    },
+    {
+      "line": "bazel query deps '(//app:main)'",
+      "status": 0
+    },
+    {
+      "line": "bazel build --nobuild //...",
+      "status": 0
+    },
+    {
+      "line": "bazel build -c opt --nostamp //app:data",
+      "status": 0
+    },
+    {
+      "line": "bazel cquery //app:main --output=label_kind",
+      "status": 0
+    },
+    {
+      "line": "bazel info workspace",
+      "status": 0
+    },
+    {
+      "line": "bazel version --gnu_format",
+      "status": 0
+    },
+    {
+      "line": "bazel help build --short",
+      "status": 0
+    },
+    {
+      "line": "bazel clean",
+      "status": 0
+    }
+  ]
+}
