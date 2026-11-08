@@ -8,7 +8,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 - bazel command lines are explained: the startup options, the command, about 90 common options with their `--no` forms (`--nostamp`), the target patterns, and the program's arguments of `bazel run //x -- …`. An option on the wrong side of the command, which bazel refuses, is flagged.
 - New warning "Shell injection risk" on `find . -exec sh -c 'echo {}' \;` and `xargs -I{} sh -c 'echo {}'`: the path or item becomes shell code. It shows the safe form, `sh -c '… "$1" …' _ {}`.
-- On the web page, a script whose shell comes from `#!/usr/bin/env bash` or from no shebang gets a line under the Problems strip, "2 constructs not in POSIX sh", with a button **Check as POSIX sh**. It is not counted: the Problems counts, `--check` and the Action leave it out, and a `#!/bin/bash` script, a bats file and VS Code have no such line.
+- On the web page, a script with no shebang gets a line under the Problems strip, "2 constructs not in POSIX sh", with a button **Check as POSIX sh**. It is not counted: the Problems counts, `--check` and the Action leave it out, and a script with a shebang (bash's too), a bats file and VS Code have no such line.
 
 ### Changed
 

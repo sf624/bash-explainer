@@ -1,7 +1,7 @@
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation, NoteAnchor } from './analyzer-types';
 import type { BashVersion } from './bashversion';
-import { type AutoShell, dialectIssues, saidShell, type ScriptEvidence, Shell, type ShellReading, shebangThroughEnv } from './dialect';
+import { type AutoShell, dialectIssues, saidShell, type ScriptEvidence, Shell, type ShellReading } from './dialect';
 import { parseDirectives, suppressed } from './directives';
 import { withinLine } from './examples/regexguard';
 import { contained } from './failures';
@@ -374,14 +374,12 @@ function dialectProblems(doc: ShellDocument, lang: Lang, shell: Shell | undefine
  * script (`dialectProblems`) and filtered as it filters (`issueFilter`: the settings, the ignored codes, the file's own
  * comments). It is not what the strip would list as a whole once the script is read as sh: that also has the notes of sh's
  * explanations (`globstar-unsupported`…), and the notes the strip already lists for bash. Undefined where there is no hint: a
- * host file (bats too), a shell chosen (the user's choice stands), a script whose shell is not bash from `#!/usr/bin/env
- * bash` or from no shebang (`#!/bin/bash` says bash on purpose), a text not surely a script, or none such. Never a problem
+ * host file (bats too), a shell chosen (the user's choice stands), a script whose shell is said by anything (a shebang in any form, a directive, a file name: the author chose; docs/design/usability-9.md, Q2), a text not surely a script, or none such. Never a problem
  * itself: it is in none of `diagnosticsFor`'s lists.
  */
 export function shProblemCount(doc: ShellDocument, lang: Lang, shells: Shells, settings: Settings, surface: Surface): number | undefined {
   const { detected } = shells;
-  if (doc.extracted || doc.tree.unread || shells.forced || !shells.script || !detected || detected.shell !== 'bash') return undefined;
-  if (!(detected.source === 'default' || (detected.source === 'shebang' && shebangThroughEnv(doc.lines[0])))) return undefined;
+  if (doc.extracted || doc.tree.unread || shells.forced || !shells.script || !detected || detected.shell !== 'bash' || detected.source !== 'default') return undefined;
   const keep = issueFilter(doc, settings, surface);
   // (A bug in this second reading loses the hint, not the problems.)
   const n = contained(

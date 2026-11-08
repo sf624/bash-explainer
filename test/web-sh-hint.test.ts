@@ -1,6 +1,6 @@
 // The web page's hint toward POSIX sh (docs/design/usability-9.md, 2.1; Q2, Q3), run for real in headless Chromium: a line
-// of the Problems strip, after the list or in place of "No problems", for a script whose shell comes from
-// `#!/usr/bin/env bash` or from no shebang; its count from `dialectIssues` for sh; its button reads the script as sh, as the
+// of the Problems strip, after the list or in place of "No problems", for a script with no shebang (any shebang, bash's
+// too, says the author chose: decision of 2026-11-09, #761); its count from `dialectIssues` for sh; its button reads the script as sh, as the
 // chip's popover does; it is never a problem (the counts, the list and the Problems tab do not hold it); laid out inside
 // the pane and the sheet at 390 and 1280 px, in both languages. Unit tests of the count: test/sh-hint.test.ts.
 import * as assert from 'assert';
@@ -33,28 +33,25 @@ describe('the web page: the hint toward POSIX sh', function () {
     await page.goto(base);
     await page.locator('.cm-line').first().waitFor();
     await until('the sample\'s problems', () => problemsShown(page), (v) => v, 20000);
-    // (The sample has a hint of its own, which the page works out when idle, after the check: the text's hint is waited for past it.)
-    // (By its attribute: on a phone the sheet shows another tab, and the line has no box.)
-    await page.locator('#problems-sh:not([hidden])').waitFor({ state: 'attached', timeout: 20000 });
-    const sampleSaid = await page.locator('#sh-hint-text').textContent();
     await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText(text);
-    // (The page starts with the sample, which has many problems and a hint of its own: the text is checked once few are left.)
+    // (The page starts with the sample, which has many problems: the text is checked once few are left. The sample has a shebang, so no hint is left from it.)
     await until('the text checked', () => problemRows(page).count(), (c) => c <= 10, 15000);
-    await until('the text\'s hint', async () => (await page.locator('#problems-sh:not([hidden])').count()) > 0 && (await page.locator('#sh-hint-text').textContent()) === sampleSaid, (stale) => !stale, 15000);
+    // (The hint is worked out when the page is idle: a test of no hint lets it have its time.)
+    await page.waitForTimeout(600);
     return page;
   }
 
   const desktop = (width: number, lang: 'en' | 'ja'): BrowserContextOptions => ({ viewport: { width, height: 800 }, locale: lang === 'ja' ? 'ja-JP' : 'en-US' });
   const hint = (page: Page) => page.locator('#problems-sh');
 
-  it('shows for #!/usr/bin/env bash and for no shebang, with the count of the dialect issues for sh, and for no other shebang', async () => {
+  it('shows for no shebang, with the count of the dialect issues for sh, and for none of the shebangs', async () => {
     const want = (text: string) => `${shIssues(text)} constructs not in POSIX sh`;
     const cases: [string, string, string | undefined][] = [
-      ['env bash', `#!/usr/bin/env bash\n${BOTH}`, want(`#!/usr/bin/env bash\n${BOTH}`)],
-      ['env -S bash', `#!/usr/bin/env -S bash -e\n${BOTH}`, want(`#!/usr/bin/env -S bash -e\n${BOTH}`)],
       ['no shebang', BOTH, want(BOTH)],
+      ['env bash', `#!/usr/bin/env bash\n${BOTH}`, undefined],
+      ['env -S bash', `#!/usr/bin/env -S bash -e\n${BOTH}`, undefined],
       ['/bin/bash', `#!/bin/bash\n${BOTH}`, undefined],
       ['/usr/bin/bash', `#!/usr/bin/bash\n${BOTH}`, undefined],
       ['sh', `#!/bin/sh\n${BOTH}`, undefined],
@@ -83,14 +80,14 @@ describe('the web page: the hint toward POSIX sh', function () {
   });
 
   it('says one problem in the singular, and nothing for a script POSIX sh reads without a problem', async () => {
-    const one = '#!/usr/bin/env bash\n[[ -f a ]]\n';
+    const one = '[[ -f a ]]\n';
     assert.strictEqual(shIssues(one), 1);
     const page = await open(desktop(1280, 'en'), one);
     await hint(page).waitFor({ state: 'visible' });
     assert.strictEqual(await page.locator('#sh-hint-text').textContent(), '1 construct not in POSIX sh');
     await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+A');
-    await page.keyboard.insertText('#!/usr/bin/env bash\necho hi\n');
+    await page.keyboard.insertText('echo hi\n');
     await until('the hint gone', () => hint(page).isVisible(), (v) => !v);
     await page.context().close();
   });
@@ -162,11 +159,11 @@ describe('the web page: the hint toward POSIX sh', function () {
     const least = Number(await page.locator('#problems-resize').getAttribute('aria-valuemin'));
     const room = await listHeight();
     assert.ok(room >= 36, `${room}`);
-    // The first line says env bash: the hint comes, under the list.
+    // The first line is a comment, not a shebang: the hint comes, under the list.
     await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+Home');
     await page.keyboard.press('Shift+End');
-    await page.keyboard.insertText('#!/usr/bin/env bash');
+    await page.keyboard.insertText('# no shebang');
     await hint(page).waitFor({ state: 'visible' });
     const line = (await hint(page).boundingBox())!;
     await until('the least height with the hint', () => page.locator('#problems-resize').getAttribute('aria-valuemin'), (v) => Number(v) === least + Math.round(line.height));
