@@ -251,7 +251,10 @@ Since 2026-11-08, the maintainer prototypes the UI and wording changes that come
 
 - 8 (b) answered from the page: 8 of 8 (run 3: 1 of 8 in the same cells). 8 (c): 8 of 8 right.
 - The `set -e` question among the top three costs: 0 users (run 3: 7).
-- The note against the clause of "In short": no difference in the answers. Nobody called either long or noise. So Q1 is decided by the reach of the outputs and the manual's links: the line note.
+- All eight users named the U11 sentence as what worked.
+- The note against the clause of "In short" (four users each): no difference overall, in the answers or in the length. Nobody called either long or noise.
+- The one measured difference leans to the clause: line 8 was among the top three costs of 4 of 4 users with the note, and of 2 of 4 with the clause. That cost comes from the sentence's silence about the trap that is not set yet (fix 1 below), which the design fixes in both forms.
+- The maintainer decided the form on 2026-11-08: the line note (section 10).
 
 Three problems found, each fixed in the design:
 
@@ -261,9 +264,9 @@ Three problems found, each fixed in the design:
 
 ## 10. Decisions
 
-Decided on 2026-11-08, after run 4. Q1 was decided by the run; Q2 to Q8 are the recommended answers, since nothing in run 4 spoke against them.
+Decided on 2026-11-08, after run 4. The maintainer decided Q1; Q2 to Q8 are the recommended answers, since nothing in run 4 spoke against them.
 
-- **Q1. Where: the line note** at the level `note`, under "In short", in every output. Run 4 found no difference between the note and the clause in the answers or in the length, and the note reaches the CLI and the hover and carries the manual's sections. The variant `?u11=clause` stays only on the prototype's branch.
+- **Q1. Where: the line note** at the level `note`, under "In short", in every output (the maintainer's decision). Run 4 found no difference overall between the note and the clause. Its one difference (line 8's cost: 4 of 4 with the note, 2 of 4 with the clause) leans to the clause, but it comes from the silence about the trap not yet set, which fix 1 removes in both forms. The note reaches the CLI and the hover, and carries the manual's sections. The variant `?u11=clause` stays only on the prototype's branch.
 - **Q2.** Builtins that fail only on a usage or write error (`continue`, `trap …`, `set …`, `export`, `echo`…) get no sentence, through the spec field G2.
 - **Q3.** No loop clause: "stops the script here" says it.
 - **Q4.** No sentence on a call of a function whose failures stop inside it (G3).
