@@ -160,6 +160,18 @@ These forms said nothing in a `sh`, `dash` or `ash` script. Each now gets the pr
 - A redirection that fails, such as `cat </dev/tcp/host/1 2>/dev/null`, is no longer taken as kept quiet by a `2>/dev/null` after it: the shell makes the redirections in order, and shows the message. Only one before it hides the message.
 - The text of `set -o pipefail` in dash says "`set` rejects the option `pipefail`". Before, it said "rejects `-o pipefail`", which did not fit `set +o pipefail`.
 
+### Words of a POSIX sh script, as dash and busybox ash expand them
+
+Under the shell POSIX sh, dash or ash, a word with a tilde, a glob or an unquoted parameter was read as "the words of …, not always one word", since the field domain took no word that a shell other than bash might expand otherwise. dash and busybox ash expand such a word as bash does in POSIX mode, with none of bash's `shopt` options: the field domain now reads it so (`wordsFollowed` in src/shellfeatures.ts), and test/fieldshape.test.ts runs its generated words in dash and busybox ash too.
+
+| Line (shell sh) | Before | After |
+|---|---|---|
+| `backup "$1" ~/backups` | `‹the words of ~/backups› (not always one word)` / 「`~/backups` から得られる単語」 | `‹home directory›/backups` / 「‹ホームディレクトリ›/backups」, one word |
+| `grep -h "$USER" /var/log/*.log` | `‹the words of /var/log/*.log› (not always one word)` | `‹each file name matching /var/log/*.log, else the pattern itself›` |
+| the glob's example, `.hidden.log` | "a leading `.` (`dotglob` is off)" / 「先頭が `.`（`dotglob` がオフ）」 | "a leading `.` (`*` and `?` do not match it)" / 「先頭が `.`（`*` や `?` は先頭の `.` に一致しない）」; `**` "is `*`", with no `globstar` named |
+
+What differs from bash stays out: in dash and busybox ash, `~+`, `~-` and `~1` stay as written, `.*` matches `.` and `..`, and `GLOBIGNORE` is an ordinary variable. A word with what a sh lacks is still not read (`{a,b}`, `${x/a/b}`, `$[1+1]`, which dash prints as written, and `${x~~}`, now a bash-only case conversion in the dialect note). Under `sh`, which may also be bash in POSIX mode, a word with `~+` and the names `.*` matches are not said.
+
 ### A blank, or a value with a space at both ends, shown visibly
 
 A value made only of spaces and tabs looks empty in a code span, so the explanation names it. One function, `codeShown` in `src/messages-values.ts` (beside `shownWord`), writes the code with `codeSpan` and, for a blank, its name in parentheses after it: "a space", "2 spaces", "a tab" (Japanese "空白", "空白2文字", "タブ"); a tab in the code is `⇥`. The names come from one table (`blankWord`), which the `IFS` note, the `tr` sets and the label of the space mark read too; Japanese says 空白 everywhere (before, `tr` said スペース). The sites that quote a value call it: the sentences of `${…}`, its pattern, replacement and default tokens, the child token of a glob pattern, the subject of a regex quantifier, the option value after quote removal, and the `s` command of sed and perl. A new reader of a value should call it too; a few places still write the code by hand (see `docs/backlog-archive.md`, "A blank in a value").

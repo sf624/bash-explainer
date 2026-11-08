@@ -308,7 +308,8 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       if (p.prefix === '!') add(p.op === '*' || p.op === '@' ? 'prefixNames' : p.subscript === '@' || p.subscript === '*' ? 'arrayKeys' : 'indirect');
       if (p.op === '/' || p.op === '//') add('replace');
       if (p.op === '/#' || p.op === '/%') add('replaceAnchor');
-      if (p.op && /^[\^,]{1,2}$/.test(p.op)) add('caseMod');
+      // (Also `${x~}` and `${x~~}`, which bash has without saying: they toggle the case.)
+      if (p.op && /^[\^,~]{1,2}$/.test(p.op)) add('caseMod');
       if (p.op === ':') add('substr');
       if (p.op === '@') add('transform');
       variableFeature(p.name, add);

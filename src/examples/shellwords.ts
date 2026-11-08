@@ -39,6 +39,8 @@ export interface GlobOpts {
   dotglob?: boolean;
   /** Case-insensitive: `nocaseglob` for file names, `nocasematch` for `case` and `[[ == ]]`. */
   nocase?: boolean;
+  /** The shell has none of bash's `shopt` options (dash, busybox ash): why a name does not match names no option. */
+  noShopt?: boolean;
 }
 
 /** Whether a word contains unquoted glob characters, extended globs (`!(…)`, `@(…)`…) included. */

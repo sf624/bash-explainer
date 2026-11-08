@@ -4,7 +4,8 @@
 // gives must lie in the shapes the domain gives, read with every part a hole (shape first) and with the values the case
 // assigns where the model sees them; where a field lies in a description, the questions that answer "no" must hold for
 // it. Bash failing on a word (failglob, `set -u`, `${x:?}`) must be a failure the domain allows. Precision is printed:
-// how often the shapes are exact, and how often, with the values, they are bash's fields themselves.
+// how often the shapes are exact, and how often, with the values, they are bash's fields themselves. The same words run in
+// dash and busybox ash (on PATH or in $BASH_EXPLAINER_SHELLS), which the model reads as the common sh (`wordsFollowed`).
 // FIELDSHAPE_CASES and FIELDSHAPE_SEED change the count (CI runs a modest one) and the seed.
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -12,6 +13,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { fieldHolds, mayBeAssignment, mayBeName, mayGiveNone, mayNameFunction, TUPLES, mayStartWith, shapesHold, wordShapes, type Field, type Shape, type Values, type WordShapes } from '../src/semantics/fieldshape';
 import { shellState } from '../src/semantics/state';
+import { wordFields } from '../src/semantics/words';
+import type { Shell } from '../src/shellfeatures';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
 import { runContained } from './support/contained';
@@ -20,7 +23,7 @@ import { fieldCases, type FieldCase } from './support/fieldshape-gen';
 const parser = createUnbashParser();
 
 /** The shapes of the argument of the last `show` of `text`. */
-function shapesOf(text: string, values?: Values, opts?: { glob?: boolean }, shell: 'bash' | 'sh' = 'bash'): WordShapes | undefined {
+function shapesOf(text: string, values?: Values, opts?: { glob?: boolean }, shell: Shell = 'bash'): WordShapes | undefined {
   const tree = parser.parse(text);
   const c = descendants(tree.root, ['command']).filter((x) => field(x, 'name')?.text === 'show').pop()!;
   return wordShapes(fields(c, 'argument')[0], shellState(tree, shell), values, opts);
@@ -92,6 +95,23 @@ function probeOf(c: FieldCase): { fields: Field[]; words: string[]; globs: ('alw
   const ws = words as NonNullable<typeof words[number]>[];
   return { fields: fs, words: ws.map((w, i) => (w.globs === 'never' ? quote(fs[i].text!) : w.word)), globs: ws.map((w) => w.globs) };
 }
+
+/** Where a program is, on $BASH_EXPLAINER_SHELLS or PATH. */
+function locate(program: string): string | undefined {
+  const dirs = [process.env.BASH_EXPLAINER_SHELLS, ...(process.env.PATH ?? '').split(':')].filter(Boolean) as string[];
+  return dirs.map((d) => path.join(d, program)).find((f) => fs.existsSync(f));
+}
+
+/**
+ * The shells the domain is held to, and the shells the model reads each case as: bash; and for the common sh
+ * (`wordsFollowed`), dash and busybox ash, with cases of what they have (`fieldCases`, `sh`) and no patterns probed
+ * (they have no nullglob).
+ */
+const REAL: { name: string; argv: string[] | undefined; models: Shell[]; sh: boolean }[] = [
+  { name: 'bash', argv: ['bash', '--norc'], models: ['bash'], sh: false },
+  { name: 'dash', argv: ((p) => (p ? [p] : undefined))(locate('dash')), models: ['sh', 'dash'], sh: true },
+  { name: 'busybox ash', argv: ((p) => (p ? [p, 'sh'] : undefined))(locate('busybox')), models: ['sh', 'ash'], sh: true },
+];
 
 describe('the field domain (fieldshape.ts)', () => {
   describe('shapes', () => {
@@ -189,10 +209,33 @@ describe('the field domain (fieldshape.ts)', () => {
       assert.strictEqual(wordShapes(field(value, 'name')!, model), undefined);
     });
     it('gives nothing for a word another shell reads otherwise, or brace words not known', () => {
-      assert.strictEqual(shapesOf('show $x', undefined, undefined, 'sh'), undefined);
+      for (const shell of ['zsh', 'ksh', 'mksh', 'yash'] as const) assert.strictEqual(shapesOf('show $x', undefined, undefined, shell), undefined, shell);
       // (Unless that shell reads the word as bash does: an expansion in double quotes.)
-      assert.deepStrictEqual(shapesOf('show "$x"', undefined, undefined, 'sh'), shapesOf('show "$x"'));
+      assert.deepStrictEqual(shapesOf('show "$x"', undefined, undefined, 'zsh'), shapesOf('show "$x"'));
       assert.strictEqual(shapesOf('show $x{a,b}'), undefined);
+    });
+    it('reads a word of the common sh as bash in POSIX mode does, with no shopt options and no `~+` (`wordsFollowed`)', () => {
+      // (dash and busybox ash: `HOME='/tmp/a b'; printf '[%s]' ~/b` is one field; `*.log` the names it matches; `$x` split.)
+      const got = (sh: Shell, text = 'GLOBIGNORE=.h; show .* a*'): (string[] | undefined)[] => {
+        const tree = parser.parse(text);
+        return fields(descendants(tree.root, ['command']).pop()!, 'argument').map((w) => wordFields(w, shellState(tree, sh), { files: ['.h', 'a'] }).fields);
+      };
+      for (const shell of ['sh', 'dash', 'ash'] as const) {
+        for (const w of ['$x', '~/b', '~', '*.log', '~/x*', '-v$x*', '"$x"']) assert.deepStrictEqual(shapesOf(`show ${w}`, undefined, undefined, shell), shapesOf(`show ${w}`), `${shell} ${w}`);
+        // (No `~` after `=` in an argument (POSIX mode); no nullglob; a construct a sh lacks, braces among them, is not
+        // known, nor `$[…]`, which dash and busybox ash read as `$` and a pattern, nor `${x~~}`, on which they fail.)
+        assert.deepStrictEqual(texts(shapesOf('show --a=~/b', undefined, undefined, shell)!), ['--a=~/b'], shell);
+        assert.strictEqual(shapesHold(shapesOf('shopt -s nullglob; show x*', undefined, undefined, shell)!, []), false, shell);
+        assert.deepStrictEqual(['${x/a/b}', '{a,b}', '$[1]', '"$[1]"', '${x~~}'].map((w) => shapesOf(`show ${w}`, undefined, undefined, shell)), Array(5).fill(undefined), shell);
+      }
+      // (`~+` stays as written in dash and busybox ash; `.*` matches `.` and `..`, and GLOBIGNORE is an ordinary variable:
+      // dash, with `.h` and `a` in the directory, gives `.`, `..`, `.h`. `sh` may be bash in POSIX mode: neither is known there.)
+      for (const shell of ['dash', 'ash'] as const) {
+        assert.deepStrictEqual(['~+', '~-/x', '~1'].map((w) => texts(shapesOf(`show ${w}`, undefined, undefined, shell)!)), [['~+'], ['~-/x'], ['~1']], shell);
+        assert.deepStrictEqual(got(shell), [['.', '..', '.h'], ['a']], shell);
+      }
+      assert.deepStrictEqual([['~+', '~-/x', '~1'].map((w) => shapesOf(`show ${w}`, undefined, undefined, 'sh')), got('sh'), got('bash')], [[undefined, undefined, undefined], [undefined, undefined], [['.*'], ['a']]]);
+      assert.deepStrictEqual(got('sh', 'show .* a* d/*'), [undefined, ['a'], ['d/*']]);
     });
     it('says where bash may fail on the word', () => {
       assert.deepStrictEqual([shapesOf('show ${x:?}')!.mayFail, shapesOf('show $x')!.mayFail, shapesOf('set -u; show $x', new Map([['x', [null]]]))!.cases.length], [true, false, 0]);
@@ -370,22 +413,27 @@ describe('the field domain (fieldshape.ts)', () => {
     });
   });
 
-  describe('against bash', function () {
+  for (const real of REAL) describe(`against ${real.name}`, function () {
     this.timeout(600000);
+    before(function () {
+      if (real.argv) return;
+      if (real.name === 'busybox ash' && process.env.BASH_EXPLAINER_BUSYBOX) throw new Error('BASH_EXPLAINER_BUSYBOX is set, but busybox is not on PATH or in $BASH_EXPLAINER_SHELLS');
+      this.skip();
+    });
     const count = Number(process.env.FIELDSHAPE_CASES ?? 400);
     const seed = Number(process.env.FIELDSHAPE_SEED ?? 20261030);
-    const cases = fieldCases(count, seed);
-    /** What bash gave each case: its fields, or none where it failed on the word. */
-    /** What bash gave each case: its fields, none where it failed on the word, null where it failed before the word. */
+    const cases = real.argv ? fieldCases(count, seed, real.sh) : [];
+    /** What the shell gave each case: its fields, none where it failed on the word, null where it failed before the word. */
     const ran: (string[] | undefined | null)[] = [];
     /** The same, with `set -f` just before `show` (a line the model does not read): the fields before pathname expansion. */
     const unglobbed: (string[] | undefined | null)[] = [];
     /** The patterns the domain gives before pathname expansion, where it knows each field (`probeOf`), and what bash matches with each. */
-    const probes = cases.map((c) => probeOf(c));
+    const probes = cases.map((c) => (real.sh ? undefined : probeOf(c)));
     const matched: (string[][] | undefined)[] = [];
     let dir = '';
     before(async () => {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fieldshape-'));
+      fs.mkdirSync(path.join(dir, 'scripts'));
       const BATCH = 50;
       for (let from = 0; from < cases.length; from += BATCH) {
         const batch = cases.slice(from, from + BATCH);
@@ -398,8 +446,15 @@ describe('the field domain (fieldshape.ts)', () => {
             fs.writeFileSync(path.join(d, f), '');
           }
           Object.assign(env, c.env);
-          // (A word with an extglob group parses only with extglob on: on before the case, which starts with it on, F91.)
-          const run = (text: string, extglob = c.extglob): string => `${extglob ? 'shopt -s extglob\n' : ''}printf '\\001C\\0'; ( cd ${JSON.stringify(d)} || exit\n${c.hidden}\n${text})${extglob ? '\nshopt -u extglob' : ''}`;
+          // (A word with an extglob group parses only with extglob on: on before the case, which starts with it on, F91. In
+          // a sh, each run is a file read by `.`, so that a syntax error in a word, which the shell finds as it reads, stops only that run.)
+          let runs = 0;
+          const run = (text: string, extglob = c.extglob): string => {
+            if (!real.sh) return `${extglob ? 'shopt -s extglob\n' : ''}printf '\\001C\\0'; ( cd ${JSON.stringify(d)} || exit\n${c.hidden}\n${text})${extglob ? '\nshopt -u extglob' : ''}`;
+            const file = path.join(dir, 'scripts', `c${from + k}-${runs++}.sh`);
+            fs.writeFileSync(file, `${c.hidden}\n${text}`);
+            return `printf '\\001C\\0'; ( cd ${JSON.stringify(d)} || exit\n. ${JSON.stringify(file)}\n)`;
+          };
           // (The text ends with `show WORD`.)
           const at = c.text.length - `show ${c.word}\n`.length;
           const ready = `${c.text.slice(0, at)}printf 'R\\0'\n`;
@@ -410,7 +465,7 @@ describe('the field domain (fieldshape.ts)', () => {
         })].join('\n');
         const file = path.join(dir, `batch${from}.sh`);
         fs.writeFileSync(file, script);
-        const r = await runContained(['bash', '--norc', file], dir, env, 60000);
+        const r = await runContained([...real.argv!, file], dir, env, 60000);
         const runs = r.stdout.split('\x01C\0').slice(1);
         assert.strictEqual(runs.length, 3 * batch.length, r.stderr);
         runs.forEach((out, k) => {
@@ -438,8 +493,8 @@ describe('the field domain (fieldshape.ts)', () => {
         // (A case whose setup failed, `set -u` with `RANDOM=…`, says nothing.)
         if (got === null) return;
         const where = `${JSON.stringify(c.hidden)}\n${JSON.stringify(c.text)} in ${JSON.stringify(c.files)}, env ${JSON.stringify(c.env)}`;
-        for (const values of [undefined, c.values]) {
-          const ws = shapesOf(c.text, values);
+        for (const model of real.models) for (const values of [undefined, c.values]) {
+          const ws = shapesOf(c.text, values, undefined, model);
           if (!ws) {
             if (!values) stats.unknown++;
             continue;
@@ -452,7 +507,7 @@ describe('the field domain (fieldshape.ts)', () => {
           // (A word that may give no field: `mayGiveNone`; before pathname expansion, the fields with `set -f`, and where no
           // field may be a pattern, the same fields as with globbing.)
           if (!got.length && !mayGiveNone(ws)) wrong.push(`no field, the domain says there is one: ${where}`);
-          const pre = shapesOf(c.text, values, { glob: false })!;
+          const pre = shapesOf(c.text, values, { glob: false }, model)!;
           const flat = unglobbed[i];
           if (flat && !shapesHold(pre, flat)) wrong.push(`${JSON.stringify(flat)} (set -f) not in ${JSON.stringify(pre.cases)}: ${where}`);
           const marked = pre.cases.flat().flatMap((s) => ('fields' in s ? s.fields : [s.first, s.middle, s.last])).some((f) => f.pattern !== undefined);
@@ -480,7 +535,7 @@ describe('the field domain (fieldshape.ts)', () => {
         }
       });
       // (Precision, for the record: shapes with an exact count, every part a hole; bash's fields themselves, with the values.)
-      console.log(`      fieldshape: ${JSON.stringify(stats)}`);
+      console.log(`      fieldshape (${real.name}): ${JSON.stringify(stats)}`);
       assert.deepStrictEqual(wrong.slice(0, 10), []);
     });
   });

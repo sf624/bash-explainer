@@ -96,7 +96,8 @@ export function globOpts(cx: Explainer, use: 'file' | 'pattern' | 'none', n: Syn
   const on = (name: ShoptName) => shopt[name] === 'on';
   if (use !== 'pattern' && use !== 'none') {
     // (`**` reaches any depth with globstar on; where it may be on, the example says so.)
-    const o: GlobOpts = { globstar: on('globstar') || shopt.globstar === 'unknown', dotglob: on('dotglob'), nocase: on('nocaseglob') };
+    // (A shell without bash's `shopt` options, dash: a reason a name does not match names none.)
+    const o: GlobOpts = { globstar: on('globstar') || shopt.globstar === 'unknown', dotglob: on('dotglob'), nocase: on('nocaseglob'), noShopt: shopt.dotglob === 'unsupported' };
     return Object.fromEntries(Object.entries(o).filter(([, v]) => v));
   }
   return use === 'pattern' && on('nocasematch') ? { nocase: true } : {};

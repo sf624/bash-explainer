@@ -113,12 +113,12 @@ export function jqStepSections(steps: JqStep[], last: string[], lang: Lang, show
   });
 }
 
-/** What a reason a name does not match a glob says (`GlobMiss`). */
-function missSaid(m: GlobMiss, lang: Lang): string {
+/** What a reason a name does not match a glob says (`GlobMiss`); with no option to name where the shell has none (`noShopt`). */
+function missSaid(m: GlobMiss, lang: Lang, opts: GlobOpts): string {
   const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
   switch (m.kind) {
-    case 'dot': return s('先頭が `.`（`dotglob` がオフ）', 'a leading `.` (`dotglob` is off)');
-    case 'globstar': return s('`**` は `*` と同じ（`globstar` がオフ）', '`**` is `*` (`globstar` is off)');
+    case 'dot': return opts.noShopt ? s('先頭が `.`（`*` や `?` は先頭の `.` に一致しない）', 'a leading `.` (`*` and `?` do not match it)') : s('先頭が `.`（`dotglob` がオフ）', 'a leading `.` (`dotglob` is off)');
+    case 'globstar': return opts.noShopt ? s('`**` は `*` と同じ', '`**` is `*`') : s('`**` は `*` と同じ（`globstar` がオフ）', '`**` is `*` (`globstar` is off)');
     case 'slash': return s('`*` と `?` は `/` に一致しない', '`*` and `?` do not match `/`');
     case 'end': return s(`${codeSpan(m.text)} で終わらない`, `it does not end in ${codeSpan(m.text)}`);
     case 'start': return s(`${codeSpan(m.text)} で始まらない`, `it does not start with ${codeSpan(m.text)}`);
@@ -136,7 +136,7 @@ export function missSections(pattern: string, names: readonly string[], mode: Gl
   const groups = new Map<string, string[]>();
   for (const name of [...new Set(names)]) {
     // (The names given do not match: `globMiss` gives their reasons.)
-    const why = ignored.includes(name) ? [s('`GLOBIGNORE` のパターンに一致する', 'a pattern of `GLOBIGNORE` matches it')] : globMiss(pattern, name, mode, opts)!.map((m) => missSaid(m, lang));
+    const why = ignored.includes(name) ? [s('`GLOBIGNORE` のパターンに一致する', 'a pattern of `GLOBIGNORE` matches it')] : globMiss(pattern, name, mode, opts)!.map((m) => missSaid(m, lang, opts));
     const key = why.length ? `${no}: ${why.join(s('、', '; '))}` : no;
     groups.set(key, [...groups.get(key) ?? [], name]);
   }
