@@ -147,7 +147,7 @@ export const FEATURES: Record<string, Feature> = {
   arithCommand: { works: 'b   kmz', ja: '算術コマンド `(( ))`', en: 'the arithmetic command `(( ))`', altJa: '`[ "$((式))" -ne 0 ]` と書く', altEn: 'write `[ "$((expr))" -ne 0 ]`', dash: ARITH_COMMAND, ash: ARITH_COMMAND },
   // (POSIX: "the prefix and postfix `++` and `--` operators are not required", nor `**`. dash reads `++i` as `+(+i)`.)
   postIncrement: { works: 'b aykmz', ja: '`$(( ))` の後置の `i++` / `i--`', en: 'a postfix `i++` / `i--` in `$(( ))`', altJa: '`i=$((i + 1))` と書く', altEn: 'write `i=$((i + 1))`', dash: ARITH_OPERATOR },
-  preIncrement: { works: 'b aykmz', ja: '`$(( ))` の前置の `++i` / `--i`', en: 'a prefix `++i` / `--i` in `$(( ))`', altJa: '`i=$((i + 1))` と書く', altEn: 'write `i=$((i + 1))`', dash: { ja: (sh) => `${sh} は \`++i\` を \`+(+i)\` と読むので、\`i\` は変わらず、式の値は元の値のままです`, en: (sh) => `${sh} reads \`++i\` as \`+(+i)\`: \`i\` does not change, and the expression gives its old value` } },
+  preIncrement: { works: 'b aykmz', ja: '`$(( ))` の前置の `++i` / `--i`', en: 'a prefix `++i` / `--i` in `$(( ))`', altJa: '`i=$((i + 1))` と書く', altEn: 'write `i=$((i + 1))`', dash: { ja: (sh) => `${sh} は \`++i\` を \`+(+i)\`（\`--i\` を \`-(-i)\`）と読むので、\`i\` は変わらず、式の値は元の値のままです`, en: (sh) => `${sh} reads \`++i\` as \`+(+i)\` (and \`--i\` as \`-(-i)\`): \`i\` does not change, and the expression gives its old value` } },
   power: { works: 'b a k z', ja: '`$(( ))` のべき乗 `**`', en: 'the power operator `**` in `$(( ))`', altJa: '掛け算を繰り返すか、`awk` を使う', altEn: 'multiply, or use `awk`', dash: ARITH_OPERATOR },
   cFor: { works: 'b   k z', dash: 'refused', ash: 'refused', ja: 'C 言語風の `for (( ; ; ))`', en: 'C-style `for (( ; ; ))`', altJa: '`while` と `$(( ))` で書く', altEn: 'use `while` with `$(( ))`' },
   braceRange: { works: 'b   k z', ja: 'ブレース展開 `{1..3}`', en: 'a brace range `{1..3}`', altJa: '`seq` を使う', altEn: 'use `seq`', dash: BRACES, ash: BRACES },
@@ -178,7 +178,7 @@ export const FEATURES: Record<string, Feature> = {
   readP: { works: 'bday', ja: '`read -p`（プロンプト）', en: '`read -p` (prompt)', altJa: '`printf` でプロンプトを出してから `read` する（ksh/mksh/zsh の `-p` は別の意味）', altEn: 'print the prompt with `printf`, then `read` (`-p` means something else in ksh, mksh and zsh)' },
   readOpts: { works: 'b a kmz', ja: '`read` の `-n` / `-s` / `-t`', en: '`read -n` / `-s` / `-t`', dash: READ_OPTION },
   // (yash refuses it too: `read` needs a name there, as in POSIX.)
-  readReply: { works: 'b a kmz', ja: '変数名のない `read`（`REPLY` に読む）', en: '`read` with no name (into `REPLY`)', altJa: '`read -r line` のように変数名を書く', altEn: 'name a variable: `read -r line`', dash: READ_NO_NAME },
+  readReply: { works: 'b a kmz', ja: '変数名のない `read`（`REPLY` に読み込む）', en: '`read` with no name (into `REPLY`)', altJa: '`read -r line` のように変数名を書く', altEn: 'name a variable: `read -r line`', dash: READ_NO_NAME },
   readD: { works: 'b a kmz', posixSince: 2024, ja: '`read -d`', en: '`read -d`', dash: READ_OPTION },
   pipefail: { works: 'b aykmz', posixSince: 2024, dash: SET_PIPEFAIL, ja: '`set -o pipefail`', en: '`set -o pipefail`' },
   trapErr: { works: 'b a kmz', ja: '`trap … ERR`', en: '`trap … ERR`', dash: TRAP_ERR },
@@ -244,8 +244,7 @@ export const COMMON_SH: readonly Measured[] = ['dash', 'ash'];
  */
 export function builtinIn(name: string, shell?: Shell): boolean {
   const id = builtinRow(name);
-  if (!id) return true;
-  return shell === 'sh' ? COMMON_SH.every((sh) => works(FEATURES[id], sh)) : works(FEATURES[id], shell ?? 'bash');
+  return !id || featureIn(id, shell) === 'all';
 }
 
 /** The feature of a brace expression: a list (`{a,b}`) or a sequence (`{1..3}`). */

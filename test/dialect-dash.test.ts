@@ -47,7 +47,7 @@ const ROWS: Record<string, string[]> = {
   translated: ['echo $"a"'],
   procSub: ['cat <(echo a)'],
   ampRedirect: ['echo a &>out; wait; echo "[$(cat out)]"'],
-  dupFile: ['echo a >& out', 'echo a >&/dev/null'],
+  dupFile: ['echo a >& out', 'echo a >&/dev/null', 'echo a 1>& out'],
   ampAppend: ['echo a &>>out; wait; echo "[$(cat out)]"'],
   netRedirect: ['echo a >/dev/tcp/127.0.0.1/1'],
   pipeAmp: ['echo a |& cat'],
@@ -718,6 +718,11 @@ describe('`read` with no name', () => {
     assert.deepStrictEqual(stored('echo hi | read -r', 'dash'), []);
     // (A name is read the same everywhere.)
     assert.deepStrictEqual(stored('echo hi | read -r x', 'sh'), ['x="hi"']);
+  });
+  it('takes `>&` to a file name (also `1>&`) as `dupFile`, not a descriptor, a move, a close or an unknown word', () => {
+    const at = (code: string) => issues(`exec 3>&1; f=x; ${code}`).filter((i) => i.id === 'dupFile').length;
+    assert.deepStrictEqual(['echo hi >& f', 'echo hi 1>& f'].map(at), [1, 1]);
+    assert.deepStrictEqual(['echo hi >&2', 'echo hi >&"$fd"', 'echo hi >&-', 'echo hi >&$f', 'echo hi >&3-', 'echo hi 2>& f'].map(at), [0, 0, 0, 0, 0, 0]);
   });
   it('counts on a feature in sh where both common shells have it, and as maybe where one has it', () => {
     assert.deepStrictEqual(['local', 'readReply', 'shopt'].map((id) => featureIn(id, 'sh')), ['all', 'some', 'none']);
