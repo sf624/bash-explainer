@@ -9,7 +9,7 @@ import type { DocumentIssue, IssueFilter, ShellDocument } from '../document';
 import { LEVELS, problemLevel } from '../levels';
 import { ExamplePlacement, lineOwners, noteBasis, noteRefs, notesByLevel, placeExamples } from './render';
 import { boxProblems, isListed, problemsAround } from './panelProblems';
-import { type Depth, rowModel, wholeLineExamples } from './panelRows';
+import { type Depth, type ModelRow, rowModel, wholeLineExamples } from './panelRows';
 import { panelTexts, ui } from './texts';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
@@ -192,6 +192,13 @@ export function lineMarks(issues: readonly DocumentIssue[], line: number): LineM
   });
 }
 
+/** PROTOTYPE (U13): the keys of the rows whose range holds a place of the line, outermost first. */
+function rowsAt(rows: readonly ModelRow[], line: number, character: number): string[] {
+  const holds = (r: ModelRow): boolean => (r.span.start.line < line || (r.span.start.line === line && r.span.start.character <= character))
+    && (r.span.end.line > line || (r.span.end.line === line && r.span.end.character >= character));
+  return rows.flatMap((r) => (holds(r) ? [r.key, ...rowsAt(r.children, line, character)] : []));
+}
+
 /** The message that shows a line's explanation in the panel. */
 export function panelUpdate(p: PanelLine) {
   const { lang, explanation: ex } = p;
@@ -240,6 +247,9 @@ export function panelUpdate(p: PanelLine) {
     depth,
     receives,
     ...(p.moved ? { moved: true } : {}),
+    // PROTOTYPE (U13, #723; docs/design/shorter-explanations.md, option 2b): the rows a move of the cursor is in, at depth 1, which the web
+    // page's panel opens whole.
+    ...(p.moved && p.cursor !== undefined && depth === 1 ? { openRows: rowsAt(model.rows, p.line, p.cursor) } : {}),
     // (What the marks of the rows say, and the Legend of what is drawn: src/ui/panelRows.ts.)
     rowMarks: model.marks,
     key: model.key,

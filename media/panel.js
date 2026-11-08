@@ -73,6 +73,9 @@
    * first, a click or the redraw it brings. Only the viewer folds (`foldChoices`).
    */
   let drawnOpen = /** @type {Set<string>} */ (new Set());
+  // PROTOTYPE (U13, #723; docs/design/shorter-explanations.md, option 2b): the rows whose details the reader opened, or the cursor's move
+  // opened, since the line was drawn anew; and the rows the last move of the cursor is in (`openRows`, src/ui/panelView.ts).
+  let leadOpen = /** @type {Set<string>} */ (new Set());
   /**
    * Whether the line is drawn after the reader moved the cursor with no edit (`moved`: a tap, a click, an arrow key, not told apart;
    * src/ui/cursorMoves.ts): the stages of a pipeline the cursor is in (`atCursor`) open, and a fold the viewer chose on them goes, even
@@ -313,7 +316,12 @@
     }
     // (Another line, a new text of the line as it is typed, or another depth: the rows start as the model has them.)
     const start = JSON.stringify([where, msg.lineText, msg.depth]);
-    if (start !== startKey) drawnOpen = new Set();
+    if (start !== startKey) {
+      drawnOpen = new Set();
+      leadOpen = new Set();
+    }
+    // PROTOTYPE (U13): a move of the cursor with no edit opens the rows it is in, as it opens a pipeline's stage (U7).
+    if (msg.moved === true) for (const key of msg.openRows ?? []) leadOpen.add(key);
     startKey = start;
     cursorMoved = msg.moved === true;
     shownLine = where;
@@ -1184,6 +1192,62 @@
 
   // ---------------------------------------------------------------- tree
 
+  /**
+   * PROTOTYPE (U13, #723; docs/design/shorter-explanations.md, option 2b), rough: the lead of a row's text on the web page's Overview, or
+   * undefined where the row shows whole. The lead ends before the first parenthesis or after the first sentence, outside code and with its
+   * parentheses closed, and only where what is cut does not narrow what the lead says (no "if", "only", "unless"…): when in doubt, the
+   * whole text. A row with a warning, a connector, and a row with nothing more to say show whole. (The build takes a lead from the text's
+   * source instead.)
+   */
+  /** PROTOTYPE (U13): whether a text that starts with a parenthesis has nothing but punctuation after the parenthesis closes. */
+  function closesAtEnd(/** @type {string} */ rest) {
+    let open = 0;
+    let inCode = false;
+    for (let i = 0; i < rest.length; i++) {
+      const c = rest[i];
+      if (c === '`') inCode = !inCode;
+      if (inCode) continue;
+      if (c === '(' || c === '（') open++;
+      if (c === ')' || c === '）') {
+        open--;
+        if (open === 0) return /^[\s.。、,;:]*$/.test(rest.slice(i + 1));
+      }
+    }
+    return false;
+  }
+
+  function leadOf(/** @type {any} */ part) {
+    if (!document.documentElement.classList.contains('bx-web') || shownDepth !== 1) return undefined;
+    if (part.level || part.connector || part.parts.length !== 1) return undefined;
+    const text = String(part.parts[0].text);
+    const hasDetails = part.more.length > 0 || !!part.value || !!part.basis || (part.refs ?? []).length > 0 || !!nameAlso(part.name);
+    const NARROWS = /^\s*[(（]?\s*(if|only|unless|when|except|without|but|however|until|while|as long as|not\b|no longer|never|before|after|ただし|場合|とき|時|だけ|のみ|以外|限り|なければ|ないと)/i;
+    const JA_NARROWS = /(場合|とき|だけ|のみ|以外|限り|ただし|なければ|ないと|でなければ)/;
+    let inCode = false;
+    let depthParen = 0;
+    let cutAt = -1;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (c === '`') inCode = !inCode;
+      if (inCode) continue;
+      const paren = (c === '(' && text[i - 1] === ' ') || c === '（';
+      const stop = (c === '.' && text[i + 1] === ' ' && !/(e\.g|i\.e|etc|vs|cf|approx|no)$/i.test(text.slice(Math.max(0, i - 6), i))) || c === '。';
+      if (depthParen === 0 && (paren || stop)) {
+        const end = paren ? (c === '（' ? i : i - 1) : i + 1;
+        const rest = text.slice(paren ? i : i + 1);
+        const lead = text.slice(0, end).trimEnd();
+        const ja = /[\u3040-\u30ff\u4e00-\u9fff]/.test(rest);
+        // (A parenthesis is cut only where it ends the text: what follows it may be what the text is for, `— accepts -h, -v VALUE`.)
+        if (lead.length >= 6 && !NARROWS.test(rest) && !(ja && JA_NARROWS.test(rest)) && (!paren || closesAtEnd(rest))) cutAt = end;
+        break;
+      }
+      if (c === '(' || c === '（') depthParen++;
+      if ((c === ')' || c === '）') && depthParen > 0) depthParen--;
+    }
+    if (cutAt < 0) return hasDetails ? text : undefined;
+    return text.slice(0, cutAt).trimEnd();
+  }
+
   /** A text cut at its warnings (`TextPart`, src/tokenmarks.ts): each warning with its level's icon, named, and in its level's look. */
   function textParts(/** @type {{ text: string, level?: string }[]} */ parts) {
     return parts.flatMap((p) => {
@@ -1253,22 +1317,49 @@
     code.append(label, ...nameBadge(part.name), ...marksOf(part, posixSaid));
     const text = document.createElement('span');
     text.className = 'text';
-    text.append(...textParts(part.parts));
-    for (const more of part.more) text.append(el('span', { class: 'row-more' }, ...textParts(more)));
-    const also = nameAlso(part.name);
-    if (also) text.append(also);
-    const value = valueLine(part.value);
-    if (value) text.append(value);
-    // Where the text rests on bash's behaviour rather than the manual: its chip after the text, as a note's, and its
-    // try-it under the row, as wide as the row (beside the label, the text's column is narrow on a phone).
     const [chip, ...tryIt] = basisParts(part.basis);
-    if (chip) text.append(chip);
-    text.append(...refLinks(part.refs));
-    // At depth 2, what the part is to each reader; what bash does to a word (at depth 1, only where a step changes it).
-    if (part.roleLine) text.append(roleLineOf(part.roleLine, part.key));
-    if (part.steps) text.append(stepsOf(part.steps, part.key));
-    if (posixSaid) text.append(posixSaid);
-    if (part.receives) text.append(receivesOf(part.receives));
+    // The details of the row: what the PROTOTYPE (U13) folds behind its button on the web page's Overview.
+    const details = () => {
+      const out = [];
+      for (const more of part.more) out.push(el('span', { class: 'row-more' }, ...textParts(more)));
+      const also = nameAlso(part.name);
+      if (also) out.push(also);
+      const value = valueLine(part.value);
+      if (value) out.push(value);
+      // Where the text rests on bash's behaviour rather than the manual: its chip after the text, as a note's, and its
+      // try-it under the row, as wide as the row (beside the label, the text's column is narrow on a phone).
+      if (chip) out.push(chip);
+      out.push(...refLinks(part.refs));
+      return out;
+    };
+    // What stays: at depth 2, what the part is to each reader; what bash does to a word (at depth 1, only where a step changes it).
+    const stays = () => [
+      ...(part.roleLine ? [roleLineOf(part.roleLine, part.key)] : []),
+      ...(part.steps ? [stepsOf(part.steps, part.key)] : []),
+      ...(posixSaid ? [posixSaid] : []),
+      ...(part.receives ? [receivesOf(part.receives)] : []),
+    ];
+    const cut = leadOf(part);
+    if (!cut) text.append(...textParts(part.parts), ...details(), ...stays());
+    else {
+      // PROTOTYPE (U13): the lead, and a button that shows the rest of the text and the details; the steps and the receives stay.
+      const more = /** @type {HTMLButtonElement} */ (el('button', { type: 'button', class: 'lead-more' }));
+      const fill = () => {
+        const open = leadOpen.has(part.key);
+        more.setAttribute('aria-expanded', String(open));
+        more.setAttribute('aria-label', (document.documentElement.lang === 'ja' ? (open ? '詳細を閉じる: ' : '詳細を表示: ') : (open ? 'Hide the details of ' : 'Show the details of ')) + part.label);
+        more.textContent = open ? '−' : '…';
+        text.replaceChildren(...(open ? [...textParts(part.parts), ' ', more, ...details()] : [...inline(cut), ' ', more]), ...stays());
+      };
+      more.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (leadOpen.has(part.key)) leadOpen.delete(part.key);
+        else leadOpen.add(part.key);
+        fill();
+        more.focus({ preventScroll: true });
+      });
+      fill();
+    }
     row.append(twisty, code, text, ...tryIt);
     box.append(row);
     li.append(box);

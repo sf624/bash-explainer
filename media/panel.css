@@ -1807,3 +1807,35 @@ body.vscode-high-contrast-light .text code.ev-word.recv-word {
     border-color: Highlight;
   }
 }
+
+/* ---------------------------------------------------------------- PROTOTYPE (U13, #723; docs/design/shorter-explanations.md, option 2b)
+   On the web page's Overview: the button after a row's lead that shows the rest of its text and its details (media/panel.js `leadOf`), and
+   on a phone a row's text beside its label when the label is short. Rough: not for merging. */
+.lead-more {
+  appearance: none;
+  font: inherit;
+  line-height: 1;
+  padding: 0.05em 0.4em;
+  margin: 0 0.1em;
+  color: var(--c-muted);
+  background: transparent;
+  border: 1px solid var(--c-muted);
+  border-radius: var(--radius-sm, 3px);
+  cursor: pointer;
+  vertical-align: baseline;
+}
+
+.lead-more:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.15));
+}
+
+.lead-more:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+@media (max-width: 520px) {
+  html.bx-web body[data-depth="1"] .row:not(.connector) > .text {
+    flex: 1 1 12em;
+  }
+}
