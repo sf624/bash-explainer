@@ -108,10 +108,13 @@ describe('an Error that says the shell reads the text wrongly follows the rule o
     }
   });
 
+  // (Builtins that dash and busybox ash lack stop nothing in a sh script: they say `logout: not found` and go on, as the stops read it.)
+  const lacksInSh = (f: Fault, stop: string): boolean => f.tool === 'dash' && /logout|shopt/.test(stop);
+
   it('says nothing after a sure stop', () => {
     for (const f of FAULTS) {
       for (const stop of ['exit 0', 'exec true', 'command exec x', '{ exec x "$0"; }', 'exec x || exit 1', 'logout', 'return 0', 'set -n', "eval 'exec x'", 'if a; then exec bash "$self"; else exec "$PYTHON" "$0"; fi']) {
-        assert.deepStrictEqual(problems(f, after(f, stop), 'a.sh'), [], `${f.code} after ${stop}`);
+        assert.deepStrictEqual(problems(f, after(f, stop), 'a.sh'), lacksInSh(f, stop) ? ['error'] : [], `${f.code} after ${stop}`);
       }
     }
   });
@@ -134,7 +137,7 @@ describe('an Error that says the shell reads the text wrongly follows the rule o
       for (const stop of stops) {
         // (`x` may be a function of the file sourced: `runsCommand`, src/pitfalls.ts.)
         const none = f.code === 'assignment-with-spaces' && /^(?:source|\.)/.test(stop);
-        assert.deepStrictEqual(problems(f, after(f, stop), 'a.sh'), none ? [] : [keepsError(f) ? 'error' : 'warning'], `${f.code} after ${stop}`);
+        assert.deepStrictEqual(problems(f, after(f, stop), 'a.sh'), none ? [] : [keepsError(f) || lacksInSh(f, stop) ? 'error' : 'warning'], `${f.code} after ${stop}`);
       }
     }
   });
