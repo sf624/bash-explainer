@@ -33,7 +33,7 @@ export const IDIOM_MESSAGES = {
     '`|| true`: 失敗しても終了ステータスを成功にする（`set -e` でスクリプトが止まらないようにする）',
     '`|| true`: turns a failure into success (so `set -e` does not stop the script)']),
   'idiom-exit-trap': idiom(['4.1'], [
-    '`trap … EXIT`: スクリプトが終わるとき（最後まで実行したとき、`exit`、エラー、SIGTERM や SIGINT などのシグナル）に後片付けを実行する。SIGKILL で殺されたときと、`exec cmd` でシェルがコマンドに置き換わったときは実行されない',
+    '`trap … EXIT`: スクリプトが終わるとき（最後まで実行したとき・`exit`・エラー・SIGTERM や SIGINT などのシグナル）に後片付けを実行する。SIGKILL で強制終了されたときと、`exec cmd` でシェルがコマンドに置き換わったときは実行されない',
     '`trap … EXIT`: runs clean-up when the script exits: at its end, on `exit`, on an error, or on a signal such as SIGTERM or SIGINT; not when it is killed with SIGKILL, nor when `exec` replaces the shell with a command (`exec cmd`)']),
   'idiom-exec-tee': idiom(['4.1', '3.5.6'], [
     '以降のすべての出力を画面に出しつつ、ログにも保存する',

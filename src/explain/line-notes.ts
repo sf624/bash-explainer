@@ -199,7 +199,7 @@ function stopWhat(status: StatusModel, n: SyntaxNode): StopWhat {
     case 'subshell': return { kind: 'subshell' };
   }
   // (A command that is not only assignments has a name.)
-  const nameOf = (c: SyntaxNode): string => shorten(nameText(field(c, 'name')!), 20);
+  const nameOf = (c: SyntaxNode): string => shorten(nameText(field(c, 'name')!), 32);
   const rule = status.status(n);
   if (assignmentsOnly(n)) {
     // (One that may fail has the status of its last substitution, `at`: src/semantics/status.ts.)
@@ -208,7 +208,7 @@ function stopWhat(status: StatusModel, n: SyntaxNode): StopWhat {
     return { kind: 'substitution', ...(inner.length === 1 && inner[0].type === 'command' && !assignmentsOnly(inner[0]) ? { name: nameOf(inner[0]) } : {}) };
   }
   // (A test that is well formed is false with 1, as written; a malformed one gives 2, the command's status.)
-  if (rule.kind === 'test' && !rule.fails) return { kind: 'test', text: shorten(n.text, 24) };
+  if (rule.kind === 'test' && !rule.fails) return { kind: 'test', text: shorten(n.text, 32) };
   const name = nameOf(n);
   return { kind: 'command', name };
 }

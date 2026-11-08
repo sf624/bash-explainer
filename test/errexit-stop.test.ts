@@ -79,6 +79,9 @@ const ROWS: Row[] = [
   { name: '$( ) without inherit_errexit', script: `set -e\necho @@\nx=$(${FAIL}; echo y)\necho AFTER` },
   { name: 'a function called left of ||', script: `set -e\nf() {\n  ${FAIL}\n  echo in\n}\necho @@\nf || echo or\necho AFTER` },
   { name: 'without set -e', script: `echo @@\n${FAIL}\necho AFTER` },
+  { name: 'wait with no operand', script: `set -e\nfalse &\necho @@\nwait\necho AFTER`, fail: 'wait' },
+  // (exec with redirections only goes on, and fails as a command.)
+  { name: 'exec of a redirection that fails', script: `set -e\ntrap 'echo E1' ERR\ntrap 'echo T1' EXIT\necho @@\nexec 3</nonexist/u11b\necho AFTER`, fail: 'exec 3</nonexist/u11b', code: 1 },
 ];
 
 /** The word each trap's action prints: `echo X` in it, or that of the function it calls (`c() { echo X; … }`). */
@@ -203,6 +206,27 @@ describe('the note on where `set -e` stops the script, against bash (docs/design
     assert.match(idiom, /at its end, on `exit`, on an error, or on a signal such as SIGTERM or SIGINT; not when it is killed with SIGKILL, nor when `exec` replaces the shell/);
   });
 
+  it('gives no note on `exit`, `return` and `exec cmd`, which end the shell or the function themselves (review of #774, F1, F2)', async () => {
+    // (Each script, the line with no note, and what bash does: its status, and the words it prints, no trap's among
+    // them where none runs.)
+    const cases: [string, number, number, string][] = [
+      ["set -e\ntrap 'echo E1' ERR\ntrap 'echo T1' EXIT\nrc=3\nexit \"$rc\"", 4, 3, 'T1'],
+      ["set -e\ntrap 'echo E1' ERR\nusage() { echo U; exit; }\nusage", 2, 0, 'U'],
+      ["set -e\ntrap 'echo E1' ERR\nf() {\n  sh -c 'exit 4' || return $?\n}\nf || echo OR $?", 3, 0, 'OR'],
+      ["set -e\ntrap 'echo E1' ERR\nf() {\n  return \"$1\"\n}\nf 0\necho AFTER", 3, 0, 'AFTER'],
+      ["set -e\ntrap 'echo E1' ERR\nsh -c 'exit 5' || exit $?", 2, 5, ''],
+      ["set -e\ntrap 'echo E1' ERR\ntrap 'echo T1' EXIT\nexec /nonexist/u11b \"$@\"", 3, 127, ''],
+    ];
+    const runs = await runAll('bash', cases.map(([s]) => s));
+    cases.forEach(([script, line, status, words], i) => {
+      assert.deepStrictEqual(notesOn(script, line), [], script);
+      const printed = runs[i].out.split('\n').filter((w) => /^[A-Z]\w*( \d+)?$/.test(w)).map((w) => w.split(' ')[0]);
+      assert.deepStrictEqual([runs[i].status, printed.join(' ')], [status, words], script);
+    });
+    // (A call of a function that returns a status not known may fail: the call has the note, and the ERR trap runs there.)
+    assert.match(notesOn("set -e\ntrap 'echo E1' ERR\nf() {\n  return \"$1\"\n}\nf 3", 5)[0], /^ℹ If `f` fails, `set -e` stops the script here: the ERR trap of line 2 runs `echo E1`/);
+  });
+
   it('says that a trap may run after code it does not read, and names no line there', () => {
     for (const row of ROWS.filter((r) => /source|eval/.test(r.name))) {
       const line = row.script.split('\n').indexOf(FAIL);
@@ -254,7 +278,11 @@ describe('the note on where `set -e` stops the script, against bash (docs/design
     assert.match(notesOn('set -e\nf() {\n  false\n}\nf\n( f )', 2)[0], /stops the shell it runs in/);
     assert.deepStrictEqual(notesOn('set -e\nexit 1\nfalse', 2), []);
     // (An action the model does not read: the trap may run, and change the status.)
-    assert.match(notesOn('set -e\ntrap "$cmd" EXIT\nfalse', 2)[0], /, with `false`'s status; an EXIT trap may run first and change the status$/);
+    assert.match(notesOn('set -e\ntrap "$cmd" EXIT\nfalse', 2)[0], /, with `false`'s status; the EXIT trap of line 2 may run first and change the status$/);
+    // (Its line stays known on the lines after it, the action being as written: review of #774, F3.)
+    assert.match(notesOn('set -e\ntmp=$(mktemp)\ntrap "rm -f $tmp" EXIT\ncp a "$tmp"\nmv "$tmp" b', 4)[0], /the EXIT trap of line 3 may run first and change the status$/);
+    // (Names are cut only past 32 characters.)
+    assert.match(notesOn('set -e\nbats_require_minimum_version 1.5.0', 1)[0], /^ℹ If `bats_require_minimum_version` fails/);
     assert.match(notesOn('set -e\nx=$(a; b)', 1)[0], /^ℹ If `\$\( \)` fails/);
     assert.match(notesOn('set -e\nx=$(y=$(a))', 1)[0], /^ℹ If `\$\( \)` fails/);
     assert.match(notesOn('set -e\nx=$(date)', 1)[0], /^ℹ If `date` in `\$\( \)` fails/);

@@ -235,6 +235,8 @@ Decided while building U11b:
 - The sections are 4.3.1, 4.1 (only where a trap is named) and 3.7.5. 3.2.3 for a pipeline is left out: a catalog entry cites three sections at most.
 - `skip` of bats gets `fails: 'never'`: it ends the test with `exit 0`, so a test's `skip` line has no note.
 - The probe rows are in test/errexit-stop.test.ts, not a JSON file, so that they become snippets as U11a's rows do.
+- `exit`, `return` and `exec cmd` get no note (review of #774): they end the shell or the function themselves. The status rule carries what they end where their status is not known (`ends` on the rule `command`: `exit "$rc"`, `return "$1"`, and `exec` with a command that is surely a word while execfail is surely off), and `mayFail` is false for it and for `previous` (`exit`, `return $?`). A failed `exec /nonexist` ends the shell with 127 and runs no trap (bash 5.2, measured). `returnsFailure` reads the rule, not `mayFail`, so a call of a function that may `return "$1"` keeps its note. `wait` with no operand gives 0 (`mayFail` reads the rule `wait`).
+- A trap whose action the model does not read (`trap "rm -f $tmp" EXIT`) is named by its line on the lines after it, "may run first and change the status": its own unread action makes the state `opaque`, but no other code may have set another (`TrapSet.state` is `unknown` for it).
 
 Two PRs, because U11a is a foundation and gets its own review before the text is built on it (CLAUDE.md, "Delegating"). They can go as one stack.
 
