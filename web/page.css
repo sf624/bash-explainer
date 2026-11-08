@@ -3039,11 +3039,17 @@ body:has(> #settings-dialog.dragging) main {
 
 /* The Explanation tab's line, quiet ("Ln 8"); the Problems tab's counts, each level's mark in its colour. */
 :where(html.bottom-sheet) .tab-line {
-  display: inline;
+  display: inline-grid;
+  justify-items: start;
   margin-left: 5px;
   color: var(--vscode-descriptionForeground);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
+}
+
+/* (The line over the room of the last line's label, unseen: a move of the cursor changes no width.) */
+.tab-line > * {
+  grid-area: 1 / 1;
 }
 
 #tab-problems .count {

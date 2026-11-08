@@ -205,8 +205,8 @@ export const NO_PROBLEMS = '✓';
 
 /**
  * What the Problems tab shows after its ✓ (no problem) where the script has constructs POSIX sh lacks: their count
- * ("sh 2", beside the counts or under them: `SheetForm.sh`), the one of the strip's hint toward sh (`DiagnosticsFor.sh`, docs/design/usability-9.md, U12), which is no
- * problem; nothing for none. In every language, as the marks are.
+ * ("sh 2", beside the ✓ or under it: `SheetForm.sh`), the one of the strip's hint toward sh (`DiagnosticsFor.sh`,
+ * docs/design/usability-9.md, U12), which is no problem; nothing for none. In every language, as the marks are.
  */
 export function shTally(sh: number | undefined): string | undefined {
   return sh ? `sh ${sh}` : undefined;

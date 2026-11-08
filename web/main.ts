@@ -286,7 +286,7 @@ function updatePanel(): void {
     animations: settings['panel.animations'], issues: problemsShown, shown: issueFilter(doc, settings, 'web'), web: true, state: panel.panelState(),
     cursor: editor.cursor().col, moved: moves.take(),
   });
-  panel.show(update, line);
+  panel.show(update, line, doc.lines.length);
   yqLine = { options: update.dialect.yqs, value: update.dialect.yq };
   scope?.draw();
   // (The Shell setting says the shell the script reads as now: decision 12.)

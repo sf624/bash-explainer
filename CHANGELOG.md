@@ -7,7 +7,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### New
 
 - New warning "Shell injection risk" on `find . -exec sh -c 'echo {}' \;` and `xargs -I{} sh -c 'echo {}'`: the path or item becomes shell code. It shows the safe form, `sh -c '… "$1" …' _ {}`.
-- On the web page, a script whose shell comes from `#!/usr/bin/env bash` or from no shebang gets a line under the Problems strip, "2 constructs not in POSIX sh", with a button **Check as POSIX sh**. It is not counted: the Problems counts, `--check` and the Action leave it out, and a `#!/bin/bash` script, a bats file and VS Code have no such line.
+- On the web page, a script whose shell comes from `#!/usr/bin/env bash` or from no shebang gets a line under the Problems strip, "2 constructs not in POSIX sh", with a button **Check as POSIX sh**. On a phone, the Problems tab shows the count after its ✓ when there is no problem: "✓ · sh 2". It is not counted: the Problems counts, `--check` and the Action leave it out, and a `#!/bin/bash` script, a bats file and VS Code have no such line.
 
 ### Changed
 
@@ -25,7 +25,6 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The panel's depths are named **Overview** and **Word by word** (「概要」「単語ごと」), with the key that chooses each in the tooltip, and a problem's headline starts with the word the Problems list uses ("Portability"). Before, the depths read "1 Does" and "2 Reads", and the headline said "Pitfall" for a portability note.
 - On the web page, Clear, a script pasted over the untouched sample, and Open start a new script: its file type from the text, untitled, the shell back to Auto; Undo, or Ctrl+Z after Clear, puts it all back. Before, test.bats and a shell chosen in the chip stayed for every script pasted after it.
 - On a phone, the explanation's sheet has a strip of its own above its tabs to grab, and a short flick up from half no longer opens it to full height. At full height it stops below the file name, and a drag no longer covers the ☰ button.
-- On a phone, the Problems tab of a script with no problem shows how many constructs POSIX sh lacks ("✓ · sh 2"), so that the hint inside it is found. Before, it showed ✓ alone.
 - On a phone, the file name opens the rename box from its pencil only, and a part's fold arrow in the explanation takes a tap 44 px wide and high.
 - A pipeline's sample for `uniq` or `sort -u` now shows lines that really collapse: after `sed`, two different lines instead of one line copied, and the copies of a line come one after the other, so a bare `uniq` collapses them too.
 

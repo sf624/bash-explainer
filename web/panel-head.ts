@@ -56,6 +56,8 @@ export class PanelHead {
   private sh: number | undefined;
   /** The cursor's line (from 0), for the Explanation tab's "Ln 8". */
   private line = 0;
+  /** The document's number of lines, whose label gives the line its room. */
+  private lines = 1;
   /** The form the sheet's row took last. */
   private sheetForm: SheetForm | undefined;
 
@@ -129,13 +131,29 @@ export class PanelHead {
     if (problems) problems.title = said;
   }
 
-  /** The cursor moved to another line: the Explanation tab says it (on a phone, where its width may change the row's form). */
-  cursor(line: number): void {
-    if (line === this.line) return;
+  /**
+   * The cursor moved to another line, or the text has another number of lines (`lines`): the Explanation tab says the
+   * line (on a phone). Its room is the label of the document's last line, drawn unseen under it (tabular digits), so a
+   * move of the cursor changes no width: the row takes its form again only when the number of lines has more or fewer
+   * digits (usability-9.md, U12: at 390 px the tab flipped between Ln 9 and Ln 10).
+   */
+  cursor(line: number, lines: number): void {
+    const room = Math.max(lines, line + 1);
+    if (line === this.line && room === this.lines) return;
+    const t = TEXT[this.host.lang()];
+    const wider = t.line(room).length !== t.line(this.lines).length;
     this.line = line;
-    const shown = this.head.querySelector('#tab-explain .tab-line');
-    if (shown) shown.textContent = TEXT[this.host.lang()].line(line + 1);
-    this.refit();
+    this.lines = room;
+    this.drawLine();
+    if (wider) this.refit();
+  }
+
+  /** The Explanation tab's line ("Ln 8") over the room of the last line's label, and its name with it where the row shows it. */
+  private drawLine(): void {
+    const t = TEXT[this.host.lang()];
+    const span = (className: string, textContent: string) => Object.assign(document.createElement('span'), { className, textContent });
+    this.head.querySelector('#tab-explain .tab-line')?.replaceChildren(span('tab-line-at', t.line(this.line + 1)), span('vc-size', t.line(this.lines)));
+    if (this.head.dataset.line === 'true') this.head.querySelector('#tab-explain')?.setAttribute('aria-label', `${t.tabExplanation} ${t.line(this.line + 1)}`);
   }
 
   /** Shows the Explanation tab (in the sheet, after a problem was chosen in the Problems tab). */
@@ -172,7 +190,8 @@ export class PanelHead {
     const span = (className: string, textContent: string) => Object.assign(document.createElement('span'), { className, textContent });
     const explain = this.head.querySelector<HTMLElement>('#tab-explain');
     // (The Explanation tab is named by its words, the line too where it shows: `fit`; Reference by its full word.)
-    explain?.replaceChildren(span('tab-full', t.tabExplanation), span('tab-short', t.tabExplanation), span('tab-line', t.line(this.line + 1)));
+    explain?.replaceChildren(span('tab-full', t.tabExplanation), span('tab-short', t.tabExplanation), span('tab-line', ''));
+    this.drawLine();
     const ref = this.head.querySelector<HTMLElement>('#tab-ref');
     ref?.setAttribute('aria-label', tools.ref.open.word);
     ref?.replaceChildren(span('tab-full', tools.ref.open.word), span('tab-short', tools.ref.open.short));

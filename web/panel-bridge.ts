@@ -115,10 +115,10 @@ export class PanelBridge {
     if (this.frame) this.frame.src = 'panel.html';
   }
 
-  /** Shows what the panel was sent for a line (`line`, from 0: the header's Explanation tab says it on a phone). */
-  show(message: ReturnType<typeof panelUpdate>, line: number): void {
+  /** Shows what the panel was sent for a line (`line`, from 0, of `lines`: the header's Explanation tab says it on a phone). */
+  show(message: ReturnType<typeof panelUpdate>, line: number, lines: number): void {
     this.send(message);
-    this.head?.cursor(line);
+    this.head?.cursor(line, lines);
   }
 
   /** The problems the editor shows: the header's Problems tab counts them by level (on a phone). */

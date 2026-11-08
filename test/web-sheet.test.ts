@@ -612,11 +612,12 @@ describe('the web page: the phone\'s sheet', function () {
     const page = await open(await phone(390, 'en'));
     const tab = page.locator('#tab-problems');
     // At 390 px in English the tab shows its highest level only, and keeps the line (decision 9: the counts go before
-    // the line); its name has every count. At 430 px it shows every level.
+    // the line); its name has every count. At 460 px it shows every level (the line keeps the room of the sample's
+    // last line, "Ln 128", wherever the cursor is: usability-9.md, U12).
     assert.match((await tab.getAttribute('aria-label'))!, /^Problems: \d+ errors?, \d+ warnings?, \d+ /);
     assert.match(await tab.innerText(), /^ⓧ\s*\d+$/);
     assert.match(await page.locator('#tab-explain').innerText(), /^Explanation\s*Ln \d+$/);
-    await page.setViewportSize({ width: 430, height: 740 });
+    await page.setViewportSize({ width: 460, height: 740 });
     await until('every level', () => tab.innerText(), (t) => /^ⓧ\s*\d+\s*⚠\s*\d+\s*ⓘ\s*\d+$/.test(t));
     await page.setViewportSize({ width: 390, height: 740 });
     await until('the highest level', () => tab.innerText(), (t) => /^ⓧ\s*\d+$/.test(t));

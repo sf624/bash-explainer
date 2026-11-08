@@ -351,4 +351,30 @@ describe('the web page: the hint toward POSIX sh', function () {
       });
     }
   }
+
+  // The Explanation tab's line has the room of the document's last line: a move of the cursor from Ln 9 to Ln 10, or
+  // from Ln 99 to Ln 100, moves no box of the row and keeps its form (it flipped the sh count's form at 390 px).
+  for (const [width, lang] of [[390, 'en'], [430, 'en'], [390, 'ja']] as const) {
+    it(`moves nothing in the sheet's row when the cursor goes from line 9 to 10, and 99 to 100: ${width} px, ${lang}`, async () => {
+      const page = await open(await phone(width, lang), ONLY_SH);
+      const boxes = () => page.evaluate(`(() => {
+        const head = document.getElementById('panel-head');
+        const at = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left, r.right, r.top, r.bottom].map((v) => Math.round(v * 10) / 10).join(' '); };
+        return { form: head.dataset.sh + ' ' + head.dataset.line + ' ' + head.dataset.tabs, explain: at('#tab-explain'), problems: at('#tab-problems'), ref: at('#tab-ref'), view: at('#view-slot'), line: document.querySelector('#tab-explain .tab-line-at').textContent };
+      })()`) as Promise<{ form: string; explain: string; problems: string; ref: string; view: string; line: string }>;
+      const label = (n: number) => (lang === 'en' ? `Ln ${n}` : `行 ${n}`);
+      for (const [lines, from] of [[12, 9], [120, 99]]) {
+        await retype(page, ONLY_SH + 'echo hi\n'.repeat(lines - 3));
+        await until('the sh count', () => tab(page).locator('.sh-count').count(), (c) => c === 1);
+        await page.keyboard.press('Control+Home');
+        for (let i = 1; i < from; i++) await page.keyboard.press('ArrowDown');
+        const before = await until('the line', boxes, (b) => b.line === label(from));
+        await page.keyboard.press('ArrowDown');
+        const after = await until('the next line', boxes, (b) => b.line === label(from + 1));
+        assert.deepStrictEqual({ ...after, line: '' }, { ...before, line: '' }, `${lines} lines: ${JSON.stringify([before, after])}`);
+        assert.deepStrictEqual(await row(page), { squeeze: false, past: 0, overlap: false, page: 0 });
+      }
+      await page.context().close();
+    });
+  }
 });
