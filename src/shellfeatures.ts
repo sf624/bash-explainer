@@ -207,7 +207,9 @@ export const FEATURES: Record<string, Feature> = {
   // (busybox ash sets them too; of the shells not run here, mksh has `$EPOCHREALTIME`, as the letters of `bashVar` said nothing of.)
   epoch: { works: 'b a', vars: ['EPOCHSECONDS', 'EPOCHREALTIME'], ja: '`$EPOCHSECONDS` / `$EPOCHREALTIME`', en: '`$EPOCHSECONDS` / `$EPOCHREALTIME`', dash: 'empty' },
   // (Other shells than dash and busybox ash are not run on these: their letters say nothing is claimed there.)
-  setByBash: { works: 'b  ykmz', vars: ['OSTYPE', 'HOSTTYPE', 'MACHTYPE', 'REPLY', 'SHELLOPTS', 'GROUPS', 'DIRSTACK', 'OPTERR', 'HISTCMD', 'SRANDOM'], ja: 'bash が設定する変数', en: 'a variable bash sets', dash: 'empty', ash: 'empty' },
+  setByBash: { works: 'b  ykmz', vars: ['OSTYPE', 'HOSTTYPE', 'MACHTYPE', 'SHELLOPTS', 'GROUPS', 'DIRSTACK', 'OPTERR', 'HISTCMD', 'SRANDOM'], ja: 'bash が設定する変数', en: 'a variable bash sets', dash: 'empty', ash: 'empty' },
+  // (Set by `read` with no name, which busybox ash has and dash refuses: `readReply`. bash sets it at `select` too.)
+  reply: { works: 'b a kmz', vars: ['REPLY'], ja: '`$REPLY`', en: '`$REPLY`', dash: 'empty' },
   funcname: { works: 'b a', vars: ['FUNCNAME'], ja: '`$FUNCNAME`', en: '`$FUNCNAME`', dash: 'empty' },
   uid: { works: 'b     z', vars: ['UID', 'EUID'], ja: '`$UID` / `$EUID`', en: '`$UID` / `$EUID`', altJa: '`$(id -u)` を使う', altEn: 'use `$(id -u)`', dash: 'empty', ash: 'empty' },
   hostname: { works: 'b a', vars: ['HOSTNAME'], ja: '`$HOSTNAME`', en: '`$HOSTNAME`', altJa: '`$(hostname)` を使う', altEn: 'use `$(hostname)`', dash: 'empty' },

@@ -1,5 +1,5 @@
 import type { Text } from './i18n';
-import { listSaid } from './messages-sentence';
+import { listSaid, lowerFirst } from './messages-sentence';
 import { plainOf, tokenError, type TokenProblem, tokenProblemWarning, tokenText, tokenWarning } from './messages-levels';
 
 // What the tokens of words and expansions (src/explain/words.ts) say.
@@ -41,7 +41,7 @@ export const WORD_TEXTS = {
    */
   'variable-not-set-in-shell': tokenText<{ lacks: readonly string[]; has: readonly string[]; what: Text }>(({ lacks, has, what }) => [
     `${listSaid('ja', lacks)} では設定されない普通の変数で、スクリプトか環境が設定しなければ空。${listSaid('ja', has)} が設定する値: ${what.ja}`,
-    `${listSaid('en', lacks)} ${lacks.length > 1 ? 'do' : 'does'} not set it: a plain variable there, empty unless the script or the environment sets it. As set by ${listSaid('en', has)}: ${what.en}`]),
+    `${listSaid('en', lacks)} ${lacks.length > 1 ? 'do' : 'does'} not set it, so it is a plain variable there, empty unless the script or the environment sets it; as set by ${listSaid('en', has)}: ${lowerFirst(what.en)}`]),
   /** `echo hello`, `ls ~`: a word that stays as it is, or that is only a tilde expansion, as an operand. */
   'word-plain': tokenText<{ text: string }>(({ text }) => [
     `文字列 \`${text}\``,

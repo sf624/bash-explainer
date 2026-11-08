@@ -11,6 +11,7 @@ import { documentIssues } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
 import { extractShell, hostIssues } from '../src/hosts';
 import { Analyzer } from '../src/analyzer';
+import type { Token } from '../src/analyzer-types';
 import { type Case, failureOf, featureIn, isFailure, works } from '../src/shellfeatures';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { surelyRuns } from '../src/semantics/scriptstops';
@@ -108,7 +109,8 @@ const ROWS: Record<string, string[]> = {
   pipestatus: ['echo "x$PIPESTATUS"'],
   bashVar: ['echo "x$BASH"', 'echo "x$BASH_VERSION"', 'echo "x${BASH_ENV}"', 'echo "x$BASHPID"', 'echo "x$BASHOPTS"'],
   epoch: ['echo "x$EPOCHSECONDS"', 'echo "x$EPOCHREALTIME"'],
-  setByBash: ['echo "x$OSTYPE"', 'echo "x$HOSTTYPE"', 'echo "x$MACHTYPE"', 'echo "x$REPLY"', 'echo "x$SHELLOPTS"', 'echo "x$GROUPS"', 'echo "x$DIRSTACK"', 'echo "x$OPTERR"', 'echo "x$HISTCMD"', 'echo "x$SRANDOM"'],
+  setByBash: ['echo "x$OSTYPE"', 'echo "x$HOSTTYPE"', 'echo "x$MACHTYPE"', 'echo "x$SHELLOPTS"', 'echo "x$GROUPS"', 'echo "x$DIRSTACK"', 'echo "x$OPTERR"', 'echo "x$HISTCMD"', 'echo "x$SRANDOM"'],
+  reply: ['echo "x$REPLY"'],
   funcname: ['f() { echo "x$FUNCNAME"; }; f'],
   uid: ['echo "x$UID"', 'echo "x$EUID"'],
   hostname: ['echo "x$HOSTNAME"'],
@@ -752,9 +754,17 @@ describe('`read` with no name', () => {
     const code = 'read -r <file; echo "[$REPLY]"';
     if (COMMANDS.dash) assert.strictEqual(runIn(COMMANDS.dash, code).out, '[]\n');
     if (COMMANDS.ash) assert.strictEqual(runIn(COMMANDS.ash, code).out, '[a:b]\n');
-    assert.deepStrictEqual(levelOf(code, 'setByBash', 'dash'), ['warning']);
-    assert.deepStrictEqual(levelOf(code, 'setByBash', 'ash'), []);
-    assert.deepStrictEqual(levelOf(code, 'setByBash', 'sh'), []);
+    assert.deepStrictEqual(levelOf(code, 'reply', 'dash'), ['warning']);
+    assert.deepStrictEqual(levelOf(code, 'reply', 'ash'), []);
+    assert.deepStrictEqual(levelOf(code, 'reply', 'sh'), []);
+    // (The token of `$REPLY` says the same: a plain variable in dash only.)
+    const token = (shell: Shell): string => {
+      const walk = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...walk(t.children)]);
+      return walk(new Analyzer('en').explainLine(parser.parse(code), 0, shell).items).find((t) => t.kind === 'variable')!.explanation;
+    };
+    assert.match(token('dash'), /^dash does not set it, so it is a plain variable there/);
+    assert.match(token('sh'), /^dash does not set it, .*; as set by bash and busybox ash: the line `read` reads/);
+    assert.match(token('ash'), /^The line `read` reads/);
     assert.deepStrictEqual(levelOf(code, 'readReply', 'sh'), ['error']);
     assert.deepStrictEqual(levelOf(code, 'readReply', 'ash'), []);
   });
