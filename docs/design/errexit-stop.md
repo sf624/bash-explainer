@@ -1,6 +1,6 @@
 # Where `set -e` stops the script (usability-9, U11)
 
-Status: Tracked in #721. The prototype (#730) was tested in usability run 4 (section 9), and the questions are decided (section 10): the line note, with the three fixes run 4 found. Step U11 of [usability-9.md](usability-9.md).
+Status: Tracked in #721. The prototype (#730) was tested in usability run 4 (section 9), and the questions are decided (section 10): the line note, with the three fixes run 4 found. The model, U11a, is in #767 (section 8). Step U11 of [usability-9.md](usability-9.md).
 
 The maintainer decided on 2026-11-08: on each line whose command can stop the script under `set -e`, one sentence says that if it fails, the script stops here, which trap runs then (and its line), and the status the script ends with. This page says which lines get it, what it says in each case, where it shows, what the models lack for it, how it is tested, and the steps.
 
