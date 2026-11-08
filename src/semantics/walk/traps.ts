@@ -81,10 +81,12 @@ export function execTraps(w: Walker, st: ShellState, at: SyntaxNode, sure: boole
 
 /**
  * `st` after code the walk does not read ran at `at` (`Walker.opaque`: a file `source` reads, a string of `eval` not
- * known): it may set or take back either trap. One set before may still be set (its action is kept); none set before
- * may be set there.
+ * known): it may set or take back either trap, and turn errtrace on or off (`set -E`), so that the `ERR` trap may run
+ * in the functions and subshells after it. One set before may still be set (its action is kept); none set before may
+ * be set there.
  */
 export function unreadTraps(st: ShellState, at: SyntaxNode | undefined): ShellState {
+  if (option(st, 'set', 'errtrace') !== 'unknown') st = { ...st, set: st.set.with('errtrace', 'unknown') };
   let traps = st.traps;
   for (const name of TRAPPED) {
     const t = traps.get(name);

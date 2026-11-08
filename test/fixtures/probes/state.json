@@ -2833,7 +2833,8 @@
       "end.variables.foo": "the file sourced is not read",
       "end.variables.b": "the file sourced is not read: a name the script has not set may be set there",
       "end.variables.baz": "the action of a trap may run after any later statement: what it sets is unknown after it",
-      "end.variables.d": "the action of a trap may run after any later statement: `baz` may be set, to a value not known"
+      "end.variables.d": "the action of a trap may run after any later statement: `baz` may be set, to a value not known",
+      "end.set.errtrace": "code the walk does not read (a file `source` reads, `eval` of a value) may run `set -E`, which lets the ERR trap reach functions and subshells: errtrace is taken as not known after it (errexit-stop.md, G1)"
     },
     "facts": {
       "end": {
@@ -4972,7 +4973,8 @@
     "snippet": "source /dev/null; for i in 1 2; do v=${ x=$i; break; }; done; v=${ : $(( 1 / 0 )); y=1; }; (( ${ z=1; echo 1; } ))",
     "note": "where nothing is trusted, a break or an error in ${ cmd; } may be made or not (bash 5.3)",
     "gaps": {
-      "end.variables.y": "nothing is trusted (`source`): the error in `$(( 1 / 0 ))` may not happen"
+      "end.variables.y": "nothing is trusted (`source`): the error in `$(( 1 / 0 ))` may not happen",
+      "end.set.errtrace": "code the walk does not read (a file `source` reads, `eval` of a value) may run `set -E`, which lets the ERR trap reach functions and subshells: errtrace is taken as not known after it (errexit-stop.md, G1)"
     },
     "facts": {
       "end": {
