@@ -170,7 +170,7 @@ Under the shell POSIX sh, dash or ash, a word with a tilde, a glob or an unquote
 | `grep -h "$USER" /var/log/*.log` | `‹the words of /var/log/*.log› (not always one word)` | `‹each file name matching /var/log/*.log, else the pattern itself›` |
 | the glob's example, `.hidden.log` | "a leading `.` (`dotglob` is off)" / 「先頭が `.`（`dotglob` がオフ）」 | "a leading `.` (`*` and `?` do not match it)" / 「先頭が `.`（`*` や `?` は先頭の `.` に一致しない）」; `**` "is `*`", with no `globstar` named |
 
-What differs from bash stays out: in dash and busybox ash, `~+`, `~-` and `~1` stay as written, `.*` matches `.` and `..`, and `GLOBIGNORE` is an ordinary variable. A word with what a sh lacks is still not read (`{a,b}`, `${x/a/b}`, `$[1+1]`, which dash prints as written, and `${x~~}`, now a bash-only case conversion in the dialect note). Under `sh`, which may also be bash in POSIX mode, a word with `~+` and the names `.*` matches are not said.
+What differs from bash stays out: in dash and busybox ash, `~+`, `~-` and `~1` stay as written, `.*` matches `.` and `..`, and `GLOBIGNORE` is an ordinary variable. Where a word's value is not known, its shape is still not said when the word has what a sh lacks (`{a,b}`, `${x/a/b}`, `$[1+1]`, which dash prints as written, and `${x~~}`, now a bash-only case conversion in the dialect note). A word whose value is known is still worked out as bash does: `x=abc; echo ${x/a/b}` shows `echo bbc`, and `echo $[1+1]` shows `echo 2`. Under `sh`, which may also be bash in POSIX mode, a word with `~+` and the names `.*` matches are not said.
 
 ### A blank, or a value with a space at both ends, shown visibly
 
