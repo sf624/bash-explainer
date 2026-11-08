@@ -11,14 +11,21 @@ runs:
         sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends gawk jq dash busybox mksh yash ksh93u+m zsh python3-yaml
       shell: bash
     # mikefarah/yq (MIT; a Go program, run as a separate program) for the yq examples, test/examples-outputs.test.ts:
-    # a pinned release, checked by its SHA-256, found through BASH_EXPLAINER_YQ4.
+    # a pinned release, checked by its SHA-256 on every run, found through BASH_EXPLAINER_YQ4. The binary is cached,
+    # since github.com release downloads fail now and then (504, connection died) and then fail the shard.
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/yq-mikefarah
+        key: yq-mikefarah-${{ runner.os }}-v4.54.1-8e34fc298390875de416e6a4afcb8cabeceb25d9aa8506c1a2f9353cf702ea5f
     - env:
         YQ_VERSION: v4.54.1
         YQ_SHA256: 8e34fc298390875de416e6a4afcb8cabeceb25d9aa8506c1a2f9353cf702ea5f
       run: |
         dir="$RUNNER_TEMP/yq-mikefarah"
         mkdir -p "$dir"
-        curl -fsSL --retry 3 -o "$dir/yq" "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_linux_amd64"
+        if [ ! -x "$dir/yq" ]; then
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20 -o "$dir/yq" "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_linux_amd64"
+        fi
         echo "$YQ_SHA256  $dir/yq" | sha256sum --check
         chmod +x "$dir/yq"
         echo "BASH_EXPLAINER_YQ4=$dir/yq" >> "$GITHUB_ENV"
