@@ -11,7 +11,8 @@ import type { SyntaxErrorWhat } from './syntax/tree';
 
 const pick = (lang: Lang, ja: string, en: string): string => (lang === 'ja' ? ja : en);
 /** An English summary inside a sentence, after a name: `Sort lines` is `sort lines` (a first word in capitals, `SQL`, is kept). */
-const lowerFirst = (s: string): string => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
+/** `s` with a lower-case first letter where it starts a sentence's word (`Real user ID` → `real user ID`, `A random…` → `a random…`; not `ID…`). */
+export const lowerFirst = (s: string): string => (/^(?:[A-Z][a-z]|A )/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
 /** Items of a list: `a`, `b` and `c`; `a`・`b`・`c`. */
 export function listSaid(lang: Lang, items: readonly string[]): string {
   if (lang === 'ja') return items.join('・');

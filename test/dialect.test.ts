@@ -104,6 +104,7 @@ const PROBES: Record<string, string> = {
   readP: "echo ok | { read -p '' v; echo $v; }",
   readOpts: 'echo ok | { read -s v; echo $v; }',
   readReply: 'echo ok | { read; echo $REPLY; }',
+  reply: 'echo ok | { read; echo "$REPLY"; }',
   readD: 'printf "ok:" | { read -d : v; echo $v; }',
   pipefail: 'set -o pipefail && echo ok',
   trapErr: "trap 'true' ERR 2>/dev/null && echo ok",
@@ -192,8 +193,9 @@ describe('every builtin of the dictionary is a builtin in each installed shell a
 });
 
 // What a variable is in each measured shell (`variableShells`, the rows' `vars`; the dialect note and the variable's token ask it): every
-// variable of bash's (the manual's chapter 5, and the dictionary's) that bash sets in a script started with an empty environment, against
-// what dash and busybox ash set there. A variable with no row is set everywhere; one a shell leaves unset needs a row.
+// variable of bash's (the manual's chapter 5, and the dictionary's) that bash sets in a script started with an empty environment, in a
+// function, after the builtins and forms that set some (`read` with no name, `[[ =~ ]]`, `pushd`, `getopts`, a pipeline), against what dash
+// and busybox ash set there. A variable with no row is set everywhere; one a shell leaves unset needs a row.
 describe('every variable bash sets is set in each measured shell as the table says', () => {
   const names = [...new Set([...Object.keys(VARIABLE_SECTIONS), ...Object.keys(wellKnownVariables)])].sort();
   // The variables a shell leaves unset with an empty environment, but which the table counts on, with the reason.
@@ -205,12 +207,16 @@ describe('every variable bash sets is set in each measured shell as the table sa
       SHLVL: 'environment',
       // (bash puts the path of each command it runs in its environment's `_`: dash started from bash has `$_` set to its own path.)
       _: 'environment',
+      // (Set by `pushd`, which the shell lacks: a row of its own.)
+      OLDPWD: 'pushd',
     },
-    ash: { _: 'environment' },
+    ash: { _: 'environment', OLDPWD: 'pushd' },
   };
   // (bash sets `SHELL` only when the environment has none, as a login's has; `COMP_WORDBREAKS` is for completion at a terminal.)
   const SKIP = ['SHELL', 'COMP_WORDBREAKS'];
-  const script = `for n in ${names.join(' ')}; do eval "[ \\"\\\${$n+set}\\" = set ]" && printf '%s ' "$n"; done; echo`;
+  const check = `for n in ${names.join(' ')}; do eval "[ \\"\\\${$n+set}\\" = set ]" && printf '%s ' "$n"; done; echo`;
+  // (Each in `eval`, so that a shell that refuses one goes on.)
+  const script = `f() { ${check}; }\neval read 2>/dev/null <<E\nx\nE\neval '[[ ab =~ a ]]' 2>/dev/null\neval 'pushd / >/dev/null' 2>/dev/null\neval 'getopts a o -a' 2>/dev/null\nfalse | true\nf`;
   const setIn = (bin: string, args: string[]): string[] => {
     const r = spawnSync(bin, [...args, '-c', script], { timeout: 5000, input: '', env: { PATH: '/usr/bin:/bin' }, encoding: 'utf8' });
     return r.stdout.trim().split(' ').filter(Boolean);
@@ -230,6 +236,10 @@ describe('every variable bash sets is set in each measured shell as the table sa
   }
 
   // The token of the variable says what the note of the line says: a plain variable where the script's shell does not set it, bash's own text elsewhere.
+  const walkOf = (code: string, shell: Shell): Token[] => {
+    const walk = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...walk(t.children)]);
+    return walk(new Analyzer('en').explainLine(parser.parse(code), 0, shell).items).filter((t) => t.kind === 'variable');
+  };
   const tokenOf = (code: string, shell: Shell, lang: 'en' | 'ja' = 'en'): { token: string; notes: string[] } => {
     const ex = new Analyzer(lang).explainLine(parser.parse(code), 0, shell);
     const walk = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...walk(t.children)]);
@@ -242,17 +252,19 @@ describe('every variable bash sets is set in each measured shell as the table sa
         const code = `echo "x$${name}"`;
         const { token, notes } = tokenOf(code, shell);
         const noted = notes.some((n) => /not set it, so it expands to nothing|is not available in/.test(n));
-        assert.strictEqual(/not set it: a plain variable there/.test(token), noted, `${shell}: ${code}: ${token} | ${notes.join(' | ')}`);
+        assert.strictEqual(/not set it, so it is a plain variable there/.test(token), noted, `${shell}: ${code}: ${token} | ${notes.join(' | ')}`);
         assert.strictEqual(!!variableShells(name, shell), noted, `${shell}: ${code}`);
       }
     }
   });
   it('names the shells that leave it a plain variable, and those that set it', () => {
-    assert.strictEqual(tokenOf('echo "$RANDOM"', 'sh').token, 'dash does not set it: a plain variable there, empty unless the script or the environment sets it. As set by bash and busybox ash: A random integer 0–32767 on each reference');
-    assert.strictEqual(tokenOf('echo $UID', 'sh').token, 'dash and busybox ash do not set it: a plain variable there, empty unless the script or the environment sets it. As set by bash: Real user ID (read-only)');
+    assert.strictEqual(tokenOf('echo "$RANDOM"', 'sh').token, 'dash does not set it, so it is a plain variable there, empty unless the script or the environment sets it; as set by bash and busybox ash: a random integer 0–32767 on each reference');
+    assert.strictEqual(tokenOf('echo $UID', 'sh').token, 'dash and busybox ash do not set it, so it is a plain variable there, empty unless the script or the environment sets it; as set by bash: real user ID (read-only)');
     assert.strictEqual(tokenOf('echo $UID', 'dash', 'ja').token, 'dash では設定されない普通の変数で、スクリプトか環境が設定しなければ空。bash が設定する値: 実ユーザー ID（読み取り専用）');
     assert.strictEqual(tokenOf('echo "$RANDOM"', 'ash').token, 'A random integer 0–32767 on each reference');
     assert.strictEqual(tokenOf('echo $UID', 'bash').token, 'Real user ID (read-only)');
+    // (Inside `${…}`, after the name.)
+    assert.strictEqual(walkOf('echo "${BASHPID}"', 'dash').map((t) => t.explanation).pop(), '`$BASHPID`: dash does not set it, so it is a plain variable there, empty unless the script or the environment sets it; as set by bash: process ID of the bash process running this code: unlike `$$`, a subshell\'s own');
     assert.strictEqual(tokenOf('echo $PPID', 'dash').token, "Process ID of the shell's parent process (read-only)");
   });
 });

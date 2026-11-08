@@ -288,14 +288,15 @@ A literal `-mmin -60` reads 「60分未満の間に更新」 in Japanese (before
 
 ### Variables that the script's shell does not set
 
-The text of a variable of bash's comes from the same table as the warning of its line: the rows of `FEATURES` (src/shellfeatures.ts) that name variables, read by `variableShells`. Where the script's shell does not set the variable, its text says that it is a plain variable there, and what bash makes of it. `test/dialect.test.ts` holds every variable bash sets in a script against dash 0.5.12 and busybox 1.36.1 ash, started with an empty environment.
+The text of a variable of bash's comes from the same table as the warning of its line: the rows of `FEATURES` (src/shellfeatures.ts) that name variables, read by `variableShells`. Where the script's shell does not set the variable, its text says that it is a plain variable there, and what bash makes of it. `test/dialect.test.ts` holds every variable bash sets in a script against dash 0.5.12 and busybox 1.36.1 ash, started with an empty environment, in a function and after the builtins that set some (`read` with no name, `[[ =~ ]]`, `pushd`, `getopts`).
 
 | Line | Before | After |
 |---|---|---|
-| `#!/bin/sh`, `echo "$RANDOM"` | "A random integer 0–32767 on each reference" | "dash does not set it: a plain variable there, empty unless the script or the environment sets it. As set by bash and busybox ash: A random integer 0–32767 on each reference" |
-| `#!/bin/sh`, `echo $UID` | "Real user ID (read-only)" | "dash and busybox ash do not set it: a plain variable there, … As set by bash: Real user ID (read-only)" |
+| `#!/bin/sh`, `echo "$RANDOM"` | "A random integer 0–32767 on each reference" | "dash does not set it, so it is a plain variable there, empty unless the script or the environment sets it; as set by bash and busybox ash: a random integer 0–32767 on each reference" |
+| `#!/bin/sh`, `echo $UID` | "Real user ID (read-only)" | "dash and busybox ash do not set it, so it is a plain variable there, …; as set by bash: real user ID (read-only)" |
 | `#!/bin/sh`, `echo "$HOSTNAME"`, `"$BASHPID"`, `"$BASH_VERSION"` | bash's text | The same form, naming the shells that do not set it |
 | `#!/bin/sh`, `echo $SRANDOM`, `$OPTERR`, `$HISTCMD` | No problem | A Warning: "a variable bash sets is not POSIX sh (dash and busybox ash do not set it, so it expands to nothing)" |
+| `#!/bin/sh`, `read` then `echo "$REPLY"` | bash's text | "dash does not set it, so …; as set by bash and busybox ash: …": busybox ash's `read` with no name sets it, dash refuses that `read`. In `#!/bin/ash`, bash's text, with no problem |
 | `#!/bin/sh`, `echo $PPID`, `$LINENO`; `#!/bin/bash`, any of them | bash's text | Unchanged: POSIX sets `PPID` and `LINENO` |
 
 Evidence: `dash -c 'echo "[$RANDOM]"'` prints `[]`; busybox ash prints a number.
