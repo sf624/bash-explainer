@@ -1,4 +1,4 @@
-import { builtinIn, builtinShells, COMMON_SH, type ScriptEvidence, type Shell } from '../shellfeatures';
+import { builtinIn, builtinRow, featureIn, type ScriptEvidence, type Shell } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
 import { outputsOf } from '../idioms';
 import { staticWordValue } from '../staticword';
@@ -123,14 +123,14 @@ const STOPS: Readonly<Record<string, (words: Words, c: SyntaxNode, shell: Shell 
 };
 
 /**
- * What the command `name` stops in `shell` (bash when absent), by STOPS and the builtins each shell has (`builtinIn`): a builtin that no
+ * What the command `name` stops in `shell` (bash when absent), by STOPS and the builtins each shell has (`builtinIn`, `featureIn`): a builtin that no
  * shell of it has stops nothing (`builtin exit 0` in sh: dash and busybox ash say `builtin: not found` and go on), and one that only some of
  * them have may stop (`source` in sh, which busybox ash runs).
  */
 function namedStop(name: string, words: Words, c: SyntaxNode, shell: Shell | undefined): Stop | undefined {
   const stop = Object.hasOwn(STOPS, name) ? STOPS[name](words, c, shell) : undefined;
   if (stop === undefined || builtinIn(name, shell)) return stop;
-  return shell === 'sh' && builtinShells(name, shell).lacks.length < COMMON_SH.length ? 'may' : undefined;
+  return featureIn(builtinRow(name)!, shell) === 'some' ? 'may' : undefined;
 }
 
 /** Whether a statement around `c` runs in a subshell: what stops there stops that subshell, and the script goes on. (A pipeline's last stage too, as it does but with `lastpipe`.) */
