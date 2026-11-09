@@ -1137,6 +1137,25 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `def re(x): …` after `import re`: `re.search('a', s)` is still read as the `re` module's.
   - No Python control flow: a pattern after `sys.exit()` or under `if False:` still gets its tokens and its Error (the design says so, section 9).
 
+## From the review of the Python regex flags (#749)
+
+### Python flags: corners the `python` flavor does not follow
+
+- **Verdict:** dropped (YAGNI), 2026-11-10. Kind: `bug` unless marked. Python 3.15.
+- **Reason:** Rare flags and patterns. None gives a false Error: each is a word "in either case" too many or too few, a refusal we do not say, or a note left out. Those marked "#760" are refusals that step 3 of docs/design/python-regex.md (#760) reads.
+- **Input and what is wrong:**
+  - `re.compile('é', re.I | re.A)`: with `re.ASCII`, only ASCII letters match in either case, so `é` matches only itself; we say "in either case". The same for a ligature with `re.I`, `ﬀ`, which matches only itself: we say "in either case".
+  - `[a-z]` with `re.I` also matches `ſ` (U+017F) and the Kelvin sign `K` (U+212A); we say only that its letters match in either case.
+  - An escape read as a literal under `re.I` (`\xe9`, `\x41`) does not say "in either case", where a letter written as it is does.
+  - `caseText` on a set strips only a backslash and one character, so `[\x2d]` ("-") wrongly says "in either case".
+  - A backreference under `re.I` (`(a)\1`) matches its group's text in either case; we do not say so.
+  - Flags Python refuses with a `ValueError` (#760): `re.L` with a str pattern ("cannot use LOCALE flag with a str pattern"), `re.U` with a bytes pattern, `re.A | re.U` ("ASCII and UNICODE flags are incompatible"); we say nothing.
+  - `re.TEMPLATE` (`re.T`) is read as a name not known, a term of no flag; since 3.13 it is an `AttributeError`.
+  - A duplicate argument, `re.search('a', s, string=t)` (`TypeError`: multiple values for `string`), still gives a region.
+  - `rb'é'`: Python refuses a non-ASCII character in a bytes literal (SyntaxError); we read it as a pattern.
+  - The 13 out-of-scope misses of the review's differential (#760): `(?é)`, `(?`, `(?x)(?P< n>a)`, `(?x)(? :a)`, `[a- z]` with `re.X`, `\N{EM  DASH}` (two spaces), `(?a)(?u)`, and `(?u)` with `re.A`, among others of the same kinds: their messages or refusals differ from Python's.
+  - The positional `count` or `maxsplit` without flags (`re.sub(p, r, s, 1)`) warns since 3.13 (DeprecationWarning); we say it only with the pitfall of a flag in that slot. (`missing-explanation`)
+
 ## From the shell-behaviour table (#756)
 
 ### `~N` in ksh93, mksh and yash: the word model reads it as bash does

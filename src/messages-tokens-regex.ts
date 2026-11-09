@@ -108,15 +108,22 @@ export const REGEX_TEXTS = {
     `Python の \`re\` はこのパターンを受け付けない（"${message}"${since ? `。Python ${since} からエラー` : ''}）`,
     `Python's \`re\` refuses this pattern ("${message}"${since ? `; an error since Python ${since}` : ''})`]),
   /**
-   * Inline flags of a Python pattern (`(?i)`, written as is; `(?i-m:…)`, `scoped`): the flags turned on, and off in a group, each with
-   * what it does (`FLAG_MEANINGS`).
+   * A refusal of Python's `re` (`regex-python-error`) where `re.VERBOSE` is not known and the pattern read with it gives no such refusal
+   * (src/embedded/regex.ts, `UNLESS_VERBOSE`): it may compile, so no Error.
+   */
+  'regex-python-error-unless-verbose': tokenText<{ message: string; since?: string }>(({ message, since }) => [
+    `\`re.VERBOSE\` がなければ、Python の \`re\` はこのパターンを受け付けない（"${message}"${since ? `。Python ${since} からエラー` : ''}。フラグが分からない）`,
+    `Without \`re.VERBOSE\`, Python's \`re\` refuses this pattern ("${message}"${since ? `; an error since Python ${since}` : ''}; the flags are not known)`]),
+  /**
+   * Inline flags of a Python pattern (`(?i)`, written as is; `(?i-m:…)`, `scoped`): the flags turned on, each with what it does
+   * (`FLAG_MEANINGS`), and those turned off in a group, each with what the group does without it (`FLAG_OFF`).
    */
   'python-regex-inline-flags': tokenText<{ written: string; on: readonly PythonFlag[]; off: readonly PythonFlag[]; scoped: boolean }>(({ written, on, off, scoped }) => {
     const list = (flags: readonly PythonFlag[], ja: boolean) => flags.map((f) => `\`re.${f}\`${ja ? `（${FLAG_MEANINGS[f][0]}）` : ` (${FLAG_MEANINGS[f][1]})`}`).join(ja ? '、' : ', ');
-    const offJa = off.length ? `${on.length ? '。' : ''}外す: ${list(off, true)}` : '';
-    const offEn = off.length ? `${on.length ? '; ' : ''}off: ${list(off, false)}` : '';
+    const offJa = off.map((f) => `\`re.${f}\` を外す（${FLAG_OFF[f]![0]}）`).join('、');
+    const offEn = off.map((f) => `without \`re.${f}\` (${FLAG_OFF[f]![1]})`).join(', ');
     return scoped
-      ? [`\`${written}\`: このグループの中だけ（番号は付かない）: ${list(on, true)}${offJa}`, `\`${written}\`: inside this group only (no number): ${list(on, false)}${offEn}`]
+      ? [`\`${written}\`: このグループの中だけ（番号は付かない）: ${[list(on, true), offJa].filter((t) => t).join('。')}`, `\`${written}\`: inside this group only (no number): ${[list(on, false), offEn].filter((t) => t).join('; ')}`]
       : [`\`${written}\`: パターン全体のフラグ: ${list(on, true)}`, `\`${written}\`: flags for the whole pattern: ${list(on, false)}`];
   }),
   /** Whitespace between two items of a VERBOSE pattern, which Python's `re` ignores. */
@@ -148,4 +155,12 @@ const FLAG_MEANINGS: Record<PythonFlag, readonly [ja: string, en: string]> = {
   UNICODE: ['Unicode で一致させる（str のパターンでは初めからそう）', 'Unicode matching, which a str pattern has already'],
   DEBUG: ['コンパイルしたパターンをデバッグ用に表示する', 'prints the compiled pattern, for debugging'],
   NOFLAG: ['フラグなし', 'no flags'],
+};
+
+/** What a group does without a flag that its inline flags turn off (`(?-i:…)`): the flags that may be turned off (not `a`, `u`, `L`). */
+const FLAG_OFF: Partial<Record<PythonFlag, readonly [ja: string, en: string]>> = {
+  IGNORECASE: ['大文字小文字を区別する', 'case-sensitive'],
+  MULTILINE: ['`^` と `$` は文字列の先頭と末尾だけに一致し、各行には一致しない', '`^` and `$` match at the start and end of the text only, not of each line'],
+  DOTALL: ['`.` は改行に一致しない', '`.` does not match a newline'],
+  VERBOSE: ['空白と `#` も文字として一致する', 'whitespace and `#` match as characters'],
 };

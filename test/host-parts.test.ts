@@ -67,7 +67,7 @@ describe('the parts of a host file, the places of embedded tokens and the finish
       };
       visit(parseSource(file, fs.readFileSync(f, 'utf8')));
     }
-    assert.deepStrictEqual(writers.sort(), ['src/explain/nodes.ts placeEmbedded', 'src/hosts/languages.ts explained']);
+    assert.deepStrictEqual(writers.sort(), ['src/explain/nodes.ts placeEmbedded', 'src/hosts/languages.ts patternToken']);
   });
 
   it('finishes a shell line and a language line with `finishLine`, and no line otherwise', () => {

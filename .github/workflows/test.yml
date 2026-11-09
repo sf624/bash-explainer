@@ -576,7 +576,7 @@ jobs:
     # The Python host's lexer and the values of its string literals against the reference Python's own tokenize and ast
     # (test/python-lexer.test.ts), and the patterns the regex reader's Python flavor refuses against its `re.compile`
     # (test/regex-python-real.test.ts; docs/design/python-regex.md, section 7). Python (PSF licence) is only run as a separate
-    # program. The version is PYTHON_REFERENCE in src/hosts/pylex.ts, which test/python-lexer.test.ts holds this to.
+    # program. The version is PYTHON_REFERENCE in src/python-reference.ts, which test/python-lexer.test.ts holds this to.
     name: Python
     runs-on: ubuntu-24.04
     timeout-minutes: 15

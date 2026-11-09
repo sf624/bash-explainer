@@ -37,7 +37,7 @@ export const PYTHON_FLAGS = [
 ] as const satisfies readonly { name: string; short?: string; letter?: string; value: number; option?: PythonOption }[];
 
 /**
- * The releases since which the reference (`PYTHON_REFERENCE`, src/hosts/pylex.ts) reads a construct of `re` as it does, where that
+ * The releases since which the reference (`PYTHON_REFERENCE`, src/python-reference.ts) reads a construct of `re` as it does, where that
  * changed in a release still supported (3.11 to 3.14 on 2026-11-08; docs/design/python-regex.md, section 8): the catalog's texts
  * say them, with the release as a parameter.
  */

@@ -2,6 +2,7 @@ import { type Shell, shellFromName } from '../dialect';
 import { featureWorks } from '../shellfeatures';
 import type { Pos } from '../analyzer-types';
 import type { CallArgument, CallFlags, LanguageRegion, LiteralSource, ReParam, RegionNote } from './index';
+import { flagsAsCount } from './scripts';
 import { type JsonWord, execWords } from './dockerfile';
 import { LineOut, Builder } from './builder';
 import type { HostMeaning } from '../messages-hosts';
@@ -163,8 +164,11 @@ export function python(b: Builder): void {
   claimLines(b, patterns.flatMap((p) => reCall(lx, imports, p, pos) ?? []));
 }
 
-/** A call of `re` read, before it has its lines: its region but for them, the lines of the call and those of its pattern's literals. */
-interface ReCandidate { region: Omit<LanguageRegion, 'lines'>; start: number; end: number; pattern: { start: number; end: number } }
+/**
+ * A call of `re` read, before it has its lines: its region but for them, the lines of the call, and those of its pattern's literals
+ * (none where the pattern is not literals: a region of the call's facts only).
+ */
+interface ReCandidate { region: Omit<LanguageRegion, 'lines'>; start: number; end: number; pattern?: { start: number; end: number } }
 
 /**
  * The lines of the calls of `re` (docs/design/python-regex.md, 2.2), each call in the order written. A line a shell region has stays
@@ -176,8 +180,10 @@ function claimLines(b: Builder, calls: readonly ReCandidate[]): void {
   const owner = new Map<number, ReCandidate>();
   const patternLines = new Set<number>();
   const kept = calls.filter((c) => {
-    for (let l = c.pattern.start; l <= c.pattern.end; l++) if (b.outs[l]?.text || patternLines.has(l)) return false;
-    for (let l = c.pattern.start; l <= c.pattern.end; l++) {
+    const { pattern } = c;
+    if (!pattern) return true;
+    for (let l = pattern.start; l <= pattern.end; l++) if (b.outs[l]?.text || patternLines.has(l)) return false;
+    for (let l = pattern.start; l <= pattern.end; l++) {
       patternLines.add(l);
       owner.set(l, c);
     }
@@ -187,7 +193,8 @@ function claimLines(b: Builder, calls: readonly ReCandidate[]): void {
   for (const c of kept) {
     const lines: number[] = [];
     for (let l = c.start; l <= c.end; l++) if (owner.get(l) === c) lines.push(l);
-    b.languages.push({ ...c.region, lines });
+    // (A call of facts only may have no line left: one inside a pattern's line.)
+    if (lines.length) b.languages.push({ ...c.region, lines });
   }
 }
 
@@ -195,8 +202,9 @@ function claimLines(b: Builder, calls: readonly ReCandidate[]): void {
  * The call of `re` whose name starts at the token `p.first` and whose `(` is at `p.at`, as a `LanguageRegion` whose lines are not
  * given yet (`claimLines`): its arguments, each with the parameter it binds (`RE_CALLS`: by its slot, or by keyword) and its value
  * when it is string literals. The arguments of `flags`, `count` and `maxsplit` get the flags they name (`reFlags`), and the region
- * the options of its flags. A region needs a pattern of string literals only (one, or several joined, over several lines too; an
- * f-string with a field and a `\N{…}` escape are not read yet).
+ * the options of its flags. A region reads a pattern of string literals only (one, or several joined, over several lines too; an
+ * f-string with a field and a `\N{…}` escape are not read yet). A call whose pattern is something else is a region only where it
+ * has a fact of the call (`flagsAsCount`), with no pattern and no options (docs/design/python-regex.md, 2.2).
  */
 function reCall(lx: PyFile, imports: PyImports, p: { name: string; full: string; first: number; at: number }, pos: PyPos): ReCandidate | undefined {
   const { src, tokens } = lx;
@@ -222,51 +230,76 @@ function reCall(lx: PyFile, imports: PyImports, p: { name: string; full: string;
     return { arg: { ...(role ? { role } : {}), keyword, span, ...(value ? { literal: literalSource(value, at) } : {}), ...(flags ? { flags } : {}) }, value };
   });
   const args = read.map((r) => r.arg);
-  const pattern = read.find((r) => r.arg.role === 'pattern')?.value;
-  if (!pattern || args.some((a) => !a.role)) return undefined;
-  // (No flags argument: none. One that names no flags of `re`: each option not known.)
+  if (args.some((a) => !a.role) || !args.some((a) => a.role === 'pattern')) return undefined;
+  const pattern = read.find((r) => r.arg.role === 'pattern')!.value;
+  if (!pattern && !args.some(flagsAsCount)) return undefined;
+  // (No flags argument: none. Names of `re` are on; the rest of an argument not read is not known.)
   const flagsArg = args.find((a) => a.role === 'flags');
   const set = new Set(flagsArg?.flags?.names.map((n) => PYTHON_FLAGS.find((f) => f.name === n.flag)!).flatMap((f) => ('option' in f ? [f.option] : [])));
-  const state = (o: PythonOption): FlagState => (flagsArg && !flagsArg.flags ? 'unknown' : set.has(o));
+  const known = !flagsArg || (flagsArg.flags && !flagsArg.flags.unknown.length);
+  const state = (o: PythonOption): FlagState => set.has(o) || (known ? false : 'unknown');
   const region: ReCandidate['region'] = {
     label: [`Python の正規表現（\`${p.name}\` の引数）`, `Python regex (argument of \`${p.name}\`)`],
     host: { kind: 'python' }, language: 'regex', flavor: 'python',
     call: { written: p.name, name: p.full, span: { start: at(tokens[p.first].start), end: at(tokens[close].end) } },
     args,
-    options: {
+    ...(pattern ? { options: {
       ascii: state('ascii'), ignorecase: state('ignorecase'), multiline: state('multiline'), dotall: state('dotall'), verbose: state('verbose'), locale: state('locale'),
       bytes: pattern.literals[0].token.lit!.bytes,
-    },
+    } } : {}),
   };
+  const lines = { start: pos(tokens[p.first].start).line, end: pos(tokens[close].start).line };
+  if (!pattern) return { region, ...lines };
   const literals = pattern.literals;
-  return {
-    region, start: pos(tokens[p.first].start).line, end: pos(tokens[close].start).line,
-    pattern: { start: pos(literals[0].token.start).line, end: pos(literals[literals.length - 1].token.end).line },
-  };
+  return { region, ...lines, pattern: { start: pos(literals[0].token.start).line, end: pos(literals[literals.length - 1].token.end).line } };
 }
 
+/** What binds less tightly than `|` in Python, where a join of flags ends: a comparison, `not`, `and`, `or`, `if`, `lambda`, `:=`. */
+const LOOSER_OPS: ReadonlySet<string> = new Set(['<', '>', '==', '!=', '<=', '>=', ':=', ':', ',']);
+const LOOSER_WORDS: ReadonlySet<string> = new Set(['in', 'not', 'is', 'and', 'or', 'if', 'else', 'lambda']);
+
 /**
- * The flags the argument of the token indexes `part` names (docs/design/python-regex.md, 5.2): `0` (as `NOFLAG`), or names of `re` joined by `|`,
- * short or long (`re.I`, `re.IGNORECASE`; `I` after `from re import I`), by the file's imports. Undefined for anything else.
+ * The flags the argument of the token indexes `part` names (docs/design/python-regex.md, 5.2): terms joined by `|`, each `0` (as
+ * `NOFLAG`) or a name of `re`, short or long (`re.I`, `re.IGNORECASE`; `I` after `from re import I`), by the file's imports. A term
+ * that is neither is not known (`unknown`, its place): the names are on whatever it adds. Undefined where no term is a name of `re`,
+ * or the argument is no such join (`re.I if x else 0`, `re.I |`).
  */
 function reFlags(lx: PyFile, imports: PyImports, part: number[], at: (off: number) => Pos): CallFlags | undefined {
   const { src, tokens } = lx;
-  if (part.length === 1 && tokens[part[0]].kind === 'number' && src.slice(tokens[part[0]].start, tokens[part[0]].end) === '0') return { names: [{ written: '0', flag: PYTHON_FLAGS.find((f) => f.value === 0)!.name, span: { start: at(tokens[part[0]].start), end: at(tokens[part[0]].end) } }], value: 0 };
-  const own = part.map((i) => tokens[i]);
-  const names: CallFlags['names'] = [];
-  let value = 0;
+  // (The terms: the tokens between `|` outside brackets.)
+  const terms: number[][] = [[]];
   for (let k = 0; k < part.length; k++) {
-    // (A name, then `|` before the next one.)
-    if (names.length && !isOp(src, tokens[part[k++]], '|')) return undefined;
-    const d = dottedAt(src, own, k);
-    const full = d && pyResolve(imports, d.name);
-    const flag = full?.startsWith('re.') ? PYTHON_FLAGS.find((f) => full === `re.${f.name}` || ('short' in f && full === `re.${f.short}`)) : undefined;
-    if (!flag) return undefined;
-    names.push({ written: d!.name, flag: flag.name, span: { start: at(own[k].start), end: at(own[d!.next - 1].end) } });
-    value |= flag.value;
-    k = d!.next - 1;
+    const t = tokens[part[k]];
+    const text = src.slice(t.start, t.end);
+    if (t.kind === 'op' && text === '|') terms.push([]);
+    else if ((t.kind === 'op' && LOOSER_OPS.has(text)) || (t.kind === 'name' && LOOSER_WORDS.has(text))) return undefined;
+    else {
+      const close = lx.pair[part[k]];
+      const end = close > part[k] ? part.indexOf(close, k) : k;
+      // (A bracketed group whole: its `|` and keywords are inside it.)
+      for (; k <= end; k++) terms[terms.length - 1].push(part[k]);
+      k = end;
+    }
   }
-  return { names, value };
+  const names: CallFlags['names'] = [];
+  const unknown: CallFlags['unknown'] = [];
+  let value = 0;
+  for (const term of terms) {
+    if (!term.length) return undefined;
+    const span = { start: at(tokens[term[0]].start), end: at(tokens[term[term.length - 1]].end) };
+    const own = term.map((i) => tokens[i]);
+    const d = dottedAt(src, own, 0);
+    const full = d?.next === own.length ? pyResolve(imports, d.name) : undefined;
+    const zero = own.length === 1 && own[0].kind === 'number' && src.slice(own[0].start, own[0].end) === '0';
+    const flag = zero ? PYTHON_FLAGS.find((f) => f.value === 0) : full?.startsWith('re.') ? PYTHON_FLAGS.find((f) => full === `re.${f.name}` || ('short' in f && full === `re.${f.short}`)) : undefined;
+    if (!flag) {
+      unknown.push(span);
+      continue;
+    }
+    names.push({ written: zero ? '0' : d!.name, flag: flag.name, span });
+    value |= flag.value;
+  }
+  return names.length ? { names, value, unknown } : undefined;
 }
 
 /** Where each character of the value of literals is in the file (`LiteralSource`). */
