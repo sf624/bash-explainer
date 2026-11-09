@@ -10,6 +10,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The expression of `bazel query`, `cquery` and `aquery` is read in bazel's query language: `deps(//app:main) except //lib:old` gets its functions, operators, `let … in` and target patterns. A function the command lacks or refuses (`config` in `query`, `siblings` in `cquery`), a syntax error, and a `+` inside an unquoted word are marked.
 - buildifier commands are explained: `buildifier -mode=check -lint=warn -r .` gets every option and its values, and a word after the first file is a file name, as buildifier reads it.
 - buildozer commands are explained: in `buildozer 'add deps //lib:x' //app:main`, the command, its arguments and each label say what they do. Under `set -e`, a warning says that buildozer's status 3 (no file changed) stops the script.
+- unused_deps commands are explained: in `unused_deps //app:main`, the target pattern says what it selects, and the summary says that it checks only Java rules and prints buildozer commands, changing nothing itself.
 
 ### Changed
 
