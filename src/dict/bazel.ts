@@ -112,6 +112,7 @@ const QUERY: OptSpec[] = [
   ['--implicit_deps', 'bazel が加える暗黙の依存も含める（既定。`--noimplicit_deps` で除く）', 'include the implicit dependencies bazel adds (the default; `--noimplicit_deps`: leave them out)'],
   ['--tool_deps', 'ビルドの道具（exec 構成）への依存も含める（既定。`--notool_deps` で除く）', 'include the dependencies on build tools (the exec configuration; the default; `--notool_deps`: leave them out)'],
   ['--universe_scope', '問い合わせの範囲にするターゲットのパターン（カンマ区切り）', 'target patterns whose closure the query works in (comma-separated)', 'arg'],
+  ['--infer_universe_scope', '`--universe_scope` がなければ、式のターゲットのパターンを範囲にする', 'with no `--universe_scope`, take the target patterns of the expression as the scope'],
   ['--query_file', 'クエリを指定したファイルから読む', 'read the query from the given file', 'arg'],
   ['--consistent_labels', 'ラベルをいつも同じ形（Starlark の `str(Label)`）で出力する', 'print labels always in one form (Starlark\'s `str(Label)`)'],
 ];
@@ -159,6 +160,8 @@ const targets = { operands: [{ pattern: [TARGETS] }] };
 const expression = { operands: [{ pattern: [EXPRESSION] }] };
 // (aquery's wildcards leave out the `manual` targets, as a build's do; query's and cquery's take them.)
 const aqueryExpression = { operands: [{ pattern: [{ ...EXPRESSION, lang: 'bazelaquery' as const }] }] };
+// (cquery's functions are query's with `config`, without those of the graph before analysis.)
+const cqueryExpression = { operands: [{ pattern: [{ ...EXPRESSION, lang: 'bazelcquery' as const }] }] };
 
 const INFO_KEYS: Record<string, Text> = {
   workspace: tx('ワークスペースの最上位のディレクトリ', 'the top directory of the workspace'),
@@ -215,7 +218,7 @@ const bazelSpec: CommandSpec = cmd('Bazel: ソースからビルドし、テス�
       operand('ARGS', 'プログラムに渡す引数（`-` で始まる語は `--` の後に書く）', 'argument passed to the program (write words that start with `-` after `--`)', { repeat: '*' }),
     ] }] }),
     query: command('ターゲットの依存のグラフを問い合わせる', 'Query the target dependency graph', QUERY, expression),
-    cquery: command('構成を適用したターゲットのグラフを問い合わせる', 'Query the configured target graph', [...BUILD, ...CQUERY], expression),
+    cquery: command('構成を適用したターゲットのグラフを問い合わせる', 'Query the configured target graph', [...BUILD, ...CQUERY], cqueryExpression),
     aquery: command('アクションのグラフを問い合わせる', 'Query the action graph', [...BUILD, ...AQUERY], aqueryExpression),
     info: command('サーバーとワークスペースの情報を表示する', 'Show information on the server and the workspace', [...BUILD,
       ['--show_make_env', '「Make」の変数も表示する', 'show the "Make" variables too'],

@@ -1,5 +1,5 @@
 {
-  "//": "What bazel reads of these words, recorded by scripts/record-bazel.ts (bazel of test/fixtures/bazel/.bazelversion): `flags`, the words after a command, as `bazel canonicalize-flags --for_command=COMMAND` prints them (or its error); `lines`, whole lines run in a copy of test/fixtures/bazel, with their exit status. test/parsers-real.test.ts compares the preset `bazel` and the bazel spec with them.",
+  "//": "What bazel reads of these words, recorded by scripts/record-bazel.ts (bazel of test/fixtures/bazel/.bazelversion): `flags`, the words after a command, as `bazel canonicalize-flags --for_command=COMMAND` prints them (or its error); `lines`, whole lines run in a copy of test/fixtures/bazel, with their exit status; `expressions`, the exit status of a query, a cquery or an aquery of each expression, and its error, which test/bazel-query.test.ts compares the query language with. test/parsers-real.test.ts compares the preset `bazel` and the bazel spec with them.",
   "bazel": "9.3.2",
   "flags": [
     {
@@ -1499,6 +1499,1200 @@
       "targets": [
         "//app:debug"
       ]
+    }
+  ],
+  "expressions": [
+    {
+      "command": "query",
+      "expression": "deps(//app:main)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "rdeps(//..., //app:data)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "somepath(//app:main, //app:main)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "allpaths(//app:main, //app:main)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "kind(rule, //...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "filter(main, //...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "attr(tags, manual, //...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "labels(srcs, //app:app)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "tests(//...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "executables(//...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "buildfiles(//app:main)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "loadfiles(//app:main)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "siblings(//app:main)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "some(//app/...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "same_pkg_direct_rdeps(//app:data)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "visible(//app:main, //...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "config(//app:main, target)",
+      "status": 2,
+      "error": "Error while parsing 'config(//app:main, target)': unknown function 'config' at 'config ( //app:main'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "query",
+      "expression": "inputs('.*', //app:main)",
+      "status": 2,
+      "error": "Error while parsing 'inputs('.*', //app:main)': unknown function 'inputs' at 'inputs ( .*'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "query",
+      "expression": "outputs('.*', //app:main)",
+      "status": 2,
+      "error": "Error while parsing 'outputs('.*', //app:main)': unknown function 'outputs' at 'outputs ( .*'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "query",
+      "expression": "mnemonic('.*', //app:main)",
+      "status": 2,
+      "error": "Error while parsing 'mnemonic('.*', //app:main)': unknown function 'mnemonic' at 'mnemonic ( .*'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "query",
+      "expression": "allrdeps(//app:data)",
+      "status": 2,
+      "error": "Error while parsing 'allrdeps(//app:data)': unknown function 'allrdeps' at 'allrdeps ( //app:data'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "query",
+      "expression": "rbuildfiles(app/BUILD)",
+      "status": 2,
+      "error": "Error while parsing 'rbuildfiles(app/BUILD)': unknown function 'rbuildfiles' at 'rbuildfiles ( app/BUILD'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "query",
+      "expression": "nosuch(//app:main)",
+      "status": 2,
+      "error": "Error while parsing 'nosuch(//app:main)': unknown function 'nosuch' at 'nosuch ( //app:main'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "query",
+      "options": [
+        "--universe_scope=//..."
+      ],
+      "expression": "allrdeps(//app:data)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "deps(//app:main)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "rdeps(//..., //app:data)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "somepath(//app:main, //app:main)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "allpaths(//app:main, //app:main)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "kind(rule, //...)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "filter(main, //...)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "attr(tags, manual, //...)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "labels(srcs, //app:app)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "tests(//...)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "executables(//...)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "buildfiles(//app:main)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: buildfiles() doesn't make sense for the configured target graph"
+    },
+    {
+      "command": "cquery",
+      "expression": "loadfiles(//app:main)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: buildfiles() doesn't make sense for the configured target graph"
+    },
+    {
+      "command": "cquery",
+      "expression": "siblings(//app:main)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: siblings() not supported for post analysis queries"
+    },
+    {
+      "command": "cquery",
+      "expression": "some(//app/...)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "same_pkg_direct_rdeps(//app:data)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: siblings() not supported for post analysis queries"
+    },
+    {
+      "command": "cquery",
+      "expression": "visible(//app:main, //...)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: visible() is not supported on configured targets"
+    },
+    {
+      "command": "cquery",
+      "expression": "config(//app:main, target)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "inputs('.*', //app:main)",
+      "status": 2,
+      "error": "Error while parsing 'inputs('.*', //app:main)': unknown function 'inputs' at 'inputs ( .*'; expected one of ['allpaths', 'attr', 'buildfiles', 'config', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "cquery",
+      "expression": "outputs('.*', //app:main)",
+      "status": 2,
+      "error": "Error while parsing 'outputs('.*', //app:main)': unknown function 'outputs' at 'outputs ( .*'; expected one of ['allpaths', 'attr', 'buildfiles', 'config', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "cquery",
+      "expression": "mnemonic('.*', //app:main)",
+      "status": 2,
+      "error": "Error while parsing 'mnemonic('.*', //app:main)': unknown function 'mnemonic' at 'mnemonic ( .*'; expected one of ['allpaths', 'attr', 'buildfiles', 'config', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "cquery",
+      "expression": "allrdeps(//app:data)",
+      "status": 2,
+      "error": "Error while parsing 'allrdeps(//app:data)': unknown function 'allrdeps' at 'allrdeps ( //app:data'; expected one of ['allpaths', 'attr', 'buildfiles', 'config', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "cquery",
+      "expression": "rbuildfiles(app/BUILD)",
+      "status": 2,
+      "error": "Error while parsing 'rbuildfiles(app/BUILD)': unknown function 'rbuildfiles' at 'rbuildfiles ( app/BUILD'; expected one of ['allpaths', 'attr', 'buildfiles', 'config', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "cquery",
+      "expression": "nosuch(//app:main)",
+      "status": 2,
+      "error": "Error while parsing 'nosuch(//app:main)': unknown function 'nosuch' at 'nosuch ( //app:main'; expected one of ['allpaths', 'attr', 'buildfiles', 'config', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "cquery",
+      "options": [
+        "--universe_scope=//..."
+      ],
+      "expression": "allrdeps(//app:data)",
+      "status": 2,
+      "error": "Error while parsing 'allrdeps(//app:data)': unknown function 'allrdeps' at 'allrdeps ( //app:data'; expected one of ['allpaths', 'attr', 'buildfiles', 'config', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "aquery",
+      "expression": "deps(//app:main)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "rdeps(//..., //app:data)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "somepath(//app:main, //app:main)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "allpaths(//app:main, //app:main)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "kind(rule, //...)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "filter(main, //...)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "attr(tags, manual, //...)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "labels(srcs, //app:app)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: labels() is not supported for aquery"
+    },
+    {
+      "command": "aquery",
+      "expression": "tests(//...)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "executables(//...)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "buildfiles(//app:main)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: buildfiles() doesn't make sense for the configured target graph"
+    },
+    {
+      "command": "aquery",
+      "expression": "loadfiles(//app:main)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: buildfiles() doesn't make sense for the configured target graph"
+    },
+    {
+      "command": "aquery",
+      "expression": "siblings(//app:main)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: siblings() not supported for post analysis queries"
+    },
+    {
+      "command": "aquery",
+      "expression": "some(//app/...)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "same_pkg_direct_rdeps(//app:data)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: siblings() not supported for post analysis queries"
+    },
+    {
+      "command": "aquery",
+      "expression": "visible(//app:main, //...)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: visible() is not supported on configured targets"
+    },
+    {
+      "command": "aquery",
+      "expression": "config(//app:main, target)",
+      "status": 2,
+      "error": "Error while parsing 'config(//app:main, target)': unknown function 'config' at 'config ( //app:main'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'inputs', 'kind', 'labels', 'loadfiles', 'mnemonic', 'outputs', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "aquery",
+      "expression": "inputs('.*', //app:main)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "outputs('.*', //app:main)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "mnemonic('.*', //app:main)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "allrdeps(//app:data)",
+      "status": 2,
+      "error": "Error while parsing 'allrdeps(//app:data)': unknown function 'allrdeps' at 'allrdeps ( //app:data'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'inputs', 'kind', 'labels', 'loadfiles', 'mnemonic', 'outputs', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "aquery",
+      "expression": "rbuildfiles(app/BUILD)",
+      "status": 2,
+      "error": "Error while parsing 'rbuildfiles(app/BUILD)': unknown function 'rbuildfiles' at 'rbuildfiles ( app/BUILD'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'inputs', 'kind', 'labels', 'loadfiles', 'mnemonic', 'outputs', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "aquery",
+      "expression": "nosuch(//app:main)",
+      "status": 2,
+      "error": "Error while parsing 'nosuch(//app:main)': unknown function 'nosuch' at 'nosuch ( //app:main'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'inputs', 'kind', 'labels', 'loadfiles', 'mnemonic', 'outputs', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "aquery",
+      "options": [
+        "--universe_scope=//..."
+      ],
+      "expression": "allrdeps(//app:data)",
+      "status": 2,
+      "error": "Error while parsing 'allrdeps(//app:data)': unknown function 'allrdeps' at 'allrdeps ( //app:data'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'inputs', 'kind', 'labels', 'loadfiles', 'mnemonic', 'outputs', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, 1)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "rdeps(//..., //app:data, 1)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "some(//app/..., 2)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "deps()",
+      "status": 2,
+      "error": "Error while parsing 'deps()': too few arguments to function 'deps' at ')'"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, 1, 2)",
+      "status": 2,
+      "error": "Error while parsing 'deps(//app:main, 1, 2)': too many arguments to function 'deps' at ', 2 )'"
+    },
+    {
+      "command": "query",
+      "expression": "rdeps(//app:main)",
+      "status": 2,
+      "error": "Error while parsing 'rdeps(//app:main)': too few arguments to function 'rdeps' at ')'"
+    },
+    {
+      "command": "query",
+      "expression": "visible(//app:main)",
+      "status": 2,
+      "error": "Error while parsing 'visible(//app:main)': too few arguments to function 'visible' at ')'"
+    },
+    {
+      "command": "query",
+      "expression": "labels(srcs)",
+      "status": 2,
+      "error": "Error while parsing 'labels(srcs)': too few arguments to function 'labels' at ')'"
+    },
+    {
+      "command": "query",
+      "expression": "executables(//app:main, 1)",
+      "status": 2,
+      "error": "Error while parsing 'executables(//app:main, 1)': too many arguments to function 'executables' at ', 1 )'"
+    },
+    {
+      "command": "query",
+      "expression": "allpaths(//app:main, //app:main, 1)",
+      "status": 2,
+      "error": "Error while parsing 'allpaths(//app:main, //app:main, 1)': too many arguments to function 'allpaths' at ', 1 )'"
+    },
+    {
+      "command": "query",
+      "options": [
+        "--infer_universe_scope"
+      ],
+      "expression": "allrdeps(//app:data, 1)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "options": [
+        "--universe_scope=//..."
+      ],
+      "expression": "rbuildfiles(app/BUILD, tools/defs.bzl)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "options": [
+        "--universe_scope=//..."
+      ],
+      "expression": "rbuildfiles()",
+      "status": 2,
+      "error": "Error while parsing 'rbuildfiles()': too few arguments to function 'rbuildfiles' at ')'"
+    },
+    {
+      "command": "query",
+      "options": [
+        "--universe_scope=//..."
+      ],
+      "expression": "allrdeps(//app:data, 1, 2)",
+      "status": 2,
+      "error": "Error while parsing 'allrdeps(//app:data, 1, 2)': too many arguments to function 'allrdeps' at ', 2 )'"
+    },
+    {
+      "command": "query",
+      "options": [
+        "--order_output=no"
+      ],
+      "expression": "allrdeps(//app:data)",
+      "status": 2,
+      "error": "Error while parsing 'allrdeps(//app:data)': unknown function 'allrdeps' at 'allrdeps ( //app:data'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "cquery",
+      "options": [
+        "--universe_scope=//..."
+      ],
+      "expression": "allrdeps(//app:data)",
+      "status": 2,
+      "error": "Error while parsing 'allrdeps(//app:data)': unknown function 'allrdeps' at 'allrdeps ( //app:data'; expected one of ['allpaths', 'attr', 'buildfiles', 'config', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "query",
+      "expression": "//app:main+//app:data",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "//app:main union //app:data",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "//app:main + //app:data",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "//app/... except //app:main intersect //app:main",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "//app/... - //app:main ^ //app:main",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "//app:main^//app:main",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "//app:main -//app:main",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "//app:main-//app:main",
+      "status": 7,
+      "error": "invalid target name 'main-//app:main': target names may not contain '//' path separators"
+    },
+    {
+      "command": "query",
+      "expression": "//... intersect //app/...",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "//app:main except //app:main union //app:data",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "let v = //app:main in $v",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "let v = //app:main in $v + //app:data",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "let v = //app:main in let w = $v in $w",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "let v = //app:main in \"$v\"",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "let v_2 = //app:main in $v_2",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "let _v = //app:main in $_v",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "//app:data + let v = //app:main in $v",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "(let v = //app:main in $v) + $v",
+      "status": 7,
+      "error": "Evaluation of subquery \"$v\" failed (did you want to use --keep_going?): undefined variable 'v'"
+    },
+    {
+      "command": "query",
+      "expression": "let v = //app:main in $V",
+      "status": 7,
+      "error": "Evaluation of subquery \"$V\" failed (did you want to use --keep_going?): undefined variable 'V'"
+    },
+    {
+      "command": "query",
+      "expression": "$v",
+      "status": 7,
+      "error": "Evaluation of query \"$v\" failed: undefined variable 'v'"
+    },
+    {
+      "command": "query",
+      "expression": "let 1a = //app:main in //app:data",
+      "status": 7,
+      "error": "Evaluation of query \"let 1a = //app:main in //app:data\" failed: invalid variable name '1a' in let expression"
+    },
+    {
+      "command": "query",
+      "expression": "let union = //app:main in //app:data",
+      "status": 2,
+      "error": "Error while parsing 'let union = //app:main in //app:data': syntax error at 'union = //app:main'"
+    },
+    {
+      "command": "query",
+      "expression": "let \"v\" = //app:main in $v",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "let v //app:main in $v",
+      "status": 2,
+      "error": "Error while parsing 'let v //app:main in $v': syntax error at '//app:main in $v'"
+    },
+    {
+      "command": "query",
+      "expression": "let v = //app:main $v",
+      "status": 2,
+      "error": "Error while parsing 'let v = //app:main $v': syntax error at '$v'"
+    },
+    {
+      "command": "query",
+      "expression": "let v = //app:main in",
+      "status": 2,
+      "error": "Error while parsing 'let v = //app:main in': premature end of input"
+    },
+    {
+      "command": "query",
+      "expression": "let",
+      "status": 2,
+      "error": "Error while parsing 'let': premature end of input"
+    },
+    {
+      "command": "query",
+      "expression": "//app:a=b",
+      "status": 2,
+      "error": "Error while parsing '//app:a=b': unexpected token '=' after query expression '//app:a'"
+    },
+    {
+      "command": "query",
+      "expression": "//app:main =//app:main",
+      "status": 2,
+      "error": "Error while parsing '//app:main =//app:main': unexpected token '=' after query expression '//app:main'"
+    },
+    {
+      "command": "query",
+      "expression": "-//app:main",
+      "status": 2,
+      "error": "Error while parsing '-//app:main': syntax error at '- //app:main'"
+    },
+    {
+      "command": "query",
+      "expression": "*",
+      "status": 2,
+      "error": "Error while parsing '*': target literal must not begin with (*): *"
+    },
+    {
+      "command": "query",
+      "expression": "\"*\"",
+      "status": 2,
+      "error": "Error while parsing '\"*\"': target literal must not begin with (*): *"
+    },
+    {
+      "command": "query",
+      "expression": ":*",
+      "status": 7,
+      "error": "no such package '': BUILD file not found in any of the following directories. Add a BUILD file to a directory to mark it as a package."
+    },
+    {
+      "command": "query",
+      "expression": "in",
+      "status": 2,
+      "error": "Error while parsing 'in': syntax error at 'in'"
+    },
+    {
+      "command": "query",
+      "expression": "except",
+      "status": 2,
+      "error": "Error while parsing 'except': syntax error at 'except'"
+    },
+    {
+      "command": "query",
+      "expression": "EXCEPT",
+      "status": 7,
+      "error": "couldn't determine target from filename 'EXCEPT'"
+    },
+    {
+      "command": "query",
+      "expression": "//app:main EXCEPT //app:main",
+      "status": 2,
+      "error": "Error while parsing '//app:main EXCEPT //app:main': unexpected token 'EXCEPT' after query expression '//app:main'"
+    },
+    {
+      "command": "query",
+      "expression": "set",
+      "status": 2,
+      "error": "Error while parsing 'set': premature end of input"
+    },
+    {
+      "command": "query",
+      "expression": "//app:main except",
+      "status": 2,
+      "error": "Error while parsing '//app:main except': premature end of input"
+    },
+    {
+      "command": "query",
+      "expression": "//app:main intersect",
+      "status": 2,
+      "error": "Error while parsing '//app:main intersect': premature end of input"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main) union",
+      "status": 2,
+      "error": "Error while parsing 'deps(//app:main) union': premature end of input"
+    },
+    {
+      "command": "query",
+      "expression": "//app:main union union //app:main",
+      "status": 2,
+      "error": "Error while parsing '//app:main union union //app:main': syntax error at 'union //app:main'"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, -1)",
+      "status": 2,
+      "error": "Error while parsing 'deps(//app:main, -1)': syntax error at '- 1 )'"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, x)",
+      "status": 2,
+      "error": "Error while parsing 'deps(//app:main, x)': expected an integer literal: 'x'"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, 1.5)",
+      "status": 2,
+      "error": "Error while parsing 'deps(//app:main, 1.5)': expected an integer literal: '1.5'"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, 01)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, 0)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, 2147483647)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, 2147483648)",
+      "status": 2,
+      "error": "Error while parsing 'deps(//app:main, 2147483648)': expected an integer literal: '2147483648'"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, \"1\")",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, 1 + 1)",
+      "status": 2,
+      "error": "Error while parsing 'deps(//app:main, 1 + 1)': syntax error at '+ 1 )'"
+    },
+    {
+      "command": "query",
+      "expression": "kind(rule //...)",
+      "status": 2,
+      "error": "Error while parsing 'kind(rule //...)': syntax error at '//... )'"
+    },
+    {
+      "command": "query",
+      "expression": "deps('//app:main')",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "deps(\"//app:main\")",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "(//app:main)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "((//app:main))",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "(//app:main",
+      "status": 2,
+      "error": "Error while parsing '(//app:main': premature end of input"
+    },
+    {
+      "command": "query",
+      "expression": "//app:main)",
+      "status": 2,
+      "error": "Error while parsing '//app:main)': unexpected token ')' after query expression '//app:main'"
+    },
+    {
+      "command": "query",
+      "expression": "deps (//app:main)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "deps ( //app:main , 1 )",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main",
+      "status": 2,
+      "error": "Error while parsing 'deps(//app:main': premature end of input"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main,)",
+      "status": 2,
+      "error": "Error while parsing 'deps(//app:main,)': syntax error at ')'"
+    },
+    {
+      "command": "query",
+      "expression": "deps(,//app:main)",
+      "status": 2,
+      "error": "Error while parsing 'deps(,//app:main)': syntax error at ', //app:main )'"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:main, 1)(x)",
+      "status": 2,
+      "error": "Error while parsing 'deps(//app:main, 1)(x)': unexpected token '(' after query expression 'deps(//app:main, 1)'"
+    },
+    {
+      "command": "query",
+      "expression": "kind(rule, //...))",
+      "status": 2,
+      "error": "Error while parsing 'kind(rule, //...))': unexpected token ')' after query expression 'kind('rule', //...)'"
+    },
+    {
+      "command": "query",
+      "expression": "\"deps\"(//app:main)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "'deps'(//app:main)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "DEPS(//app:main)",
+      "status": 2,
+      "error": "Error while parsing 'DEPS(//app:main)': unknown function 'DEPS' at 'DEPS ( //app:main'; expected one of ['allpaths', 'attr', 'buildfiles', 'deps', 'executables', 'filter', 'kind', 'labels', 'loadfiles', 'rdeps', 'same_pkg_direct_rdeps', 'siblings', 'some', 'somepath', 'tests', 'visible']"
+    },
+    {
+      "command": "query",
+      "expression": "somepath(//app:main //app:data)",
+      "status": 2,
+      "error": "Error while parsing 'somepath(//app:main //app:data)': syntax error at '//app:data )'"
+    },
+    {
+      "command": "query",
+      "expression": "//app:ma{in",
+      "status": 2,
+      "error": "Error while parsing '//app:ma{in': unexpected token '{in' after query expression '//app:ma'"
+    },
+    {
+      "command": "query",
+      "expression": "//app:ma,in",
+      "status": 2,
+      "error": "Error while parsing '//app:ma,in': unexpected token ',' after query expression '//app:ma'"
+    },
+    {
+      "command": "query",
+      "expression": "//app:ma#in",
+      "status": 2,
+      "error": "Error while parsing '//app:ma#in': unexpected token '#in' after query expression '//app:ma'"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//app:ma#in)",
+      "status": 2,
+      "error": "Error while parsing 'deps(//app:ma#in)': syntax error at '#in )'"
+    },
+    {
+      "command": "query",
+      "expression": "//app:ma'in'",
+      "status": 2,
+      "error": "Error while parsing '//app:ma'in'': unexpected token 'in' after query expression '//app:ma'"
+    },
+    {
+      "command": "query",
+      "expression": "\"a\\\"b\"",
+      "status": 2,
+      "error": "Error while parsing '\"a\\\"b\"': unclosed quotation"
+    },
+    {
+      "command": "query",
+      "expression": "\"//app:main",
+      "status": 2,
+      "error": "Error while parsing '\"//app:main': unclosed quotation"
+    },
+    {
+      "command": "query",
+      "expression": "//app:~x",
+      "status": 7,
+      "error": "no such target '//app:~x': target '~x' not declared in package 'app' defined by <workspace>/app/BUILD"
+    },
+    {
+      "command": "query",
+      "expression": "//app:[x]",
+      "status": 7,
+      "error": "no such target '//app:[x]': target '[x]' not declared in package 'app' defined by <workspace>/app/BUILD"
+    },
+    {
+      "command": "query",
+      "expression": "@foo+bar//x",
+      "status": 7,
+      "error": "invalid target name 'bar//x': target names may not contain '//' path separators"
+    },
+    {
+      "command": "query",
+      "expression": "@@foo+bar//x",
+      "status": 7,
+      "error": "no such package '@@foo+bar//x': The repository '@@foo+bar' could not be resolved: Repository '@@foo+bar' is not defined"
+    },
+    {
+      "command": "query",
+      "expression": "//app:main+",
+      "status": 2,
+      "error": "Error while parsing '//app:main+': premature end of input"
+    },
+    {
+      "command": "query",
+      "expression": "+//app:main",
+      "status": 2,
+      "error": "Error while parsing '+//app:main': syntax error at '+ //app:main'"
+    },
+    {
+      "command": "query",
+      "expression": "set()",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "set(  )",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "set(//app:main //app:data)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "set(//app:main \"//app:data\")",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "set(//app:main, //app:data)",
+      "status": 2,
+      "error": "Error while parsing 'set(//app:main, //app:data)': syntax error at ', //app:data )'"
+    },
+    {
+      "command": "query",
+      "expression": "set(deps(//app:main))",
+      "status": 2,
+      "error": "Error while parsing 'set(deps(//app:main))': syntax error at '( //app:main )'"
+    },
+    {
+      "command": "query",
+      "expression": "deps(set(//app:main))",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "set(//app:main //app:data) - //app:data",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "let v = //app:main in set($v)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "kind(\"script rule\", //...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "attr(\"tags\", \"manual\", //...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "labels(\"srcs\", //app:app)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "filter(\"^//app:ma\", //...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "filter(^//app:ma, //...)",
+      "status": 2,
+      "error": "Error while parsing 'filter(^//app:ma, //...)': syntax error at '^ //app:ma ,'"
+    },
+    {
+      "command": "query",
+      "expression": "filter(\"main$\", //...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "kind(\"^script\", //...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "kind(file, //app:*)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "attr(name, \"^ma\", //app/...)",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "kind(union, //...)",
+      "status": 2,
+      "error": "Error while parsing 'kind(union, //...)': syntax error at 'union , //...'"
+    },
+    {
+      "command": "query",
+      "expression": "filter(\"[\", //...)",
+      "status": 7,
+      "error": "Evaluation of query \"filter('[', //...)\" failed: illegal 'filter' pattern regexp '[': Unclosed character class near index 0"
+    },
+    {
+      "command": "query",
+      "expression": "kind(script, deps(//app:main))",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "@//app:main",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "app",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "",
+      "status": 2,
+      "error": "Error while parsing '': premature end of input"
+    },
+    {
+      "command": "cquery",
+      "expression": "config(//app:main, null)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation failed: No target (in) //app:main could be found in the 'null' configuration"
+    },
+    {
+      "command": "cquery",
+      "expression": "config(//app:data.txt, null)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "config(//app:main, \"target\")",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "config(//app:main)",
+      "status": 2,
+      "error": "Error while parsing 'config(//app:main)': too few arguments to function 'config' at ')'"
+    },
+    {
+      "command": "cquery",
+      "expression": "config(//app:main, target, 1)",
+      "status": 2,
+      "error": "Error while parsing 'config(//app:main, target, 1)': too many arguments to function 'config' at ', 1 )'"
+    },
+    {
+      "command": "cquery",
+      "expression": "deps(//app:main) except config(//app:main, target)",
+      "status": 0
+    },
+    {
+      "command": "cquery",
+      "expression": "tests(//...) + config(//app:main, target)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "inputs(//app:main)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation of query \"inputs('//app:main')\" failed: aquery filter functions (inputs, outputs, mnemonics) must have exactly 2 arguments,except when --skyframe_state is used."
+    },
+    {
+      "command": "aquery",
+      "expression": "mnemonic(FileWrite, //app:main)",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "outputs('.*sh', deps(//app:main))",
+      "status": 0
+    },
+    {
+      "command": "aquery",
+      "expression": "inputs('.*', //app:main) union //app:data",
+      "status": 0
+    },
+    {
+      "command": "query",
+      "expression": "deps(=//app:main)",
+      "status": 2,
+      "error": "Error while parsing 'deps(=//app:main)': syntax error at '= //app:main )'"
+    },
+    {
+      "command": "query",
+      "expression": "let v = //app:main let",
+      "status": 2,
+      "error": "Error while parsing 'let v = //app:main let': syntax error at 'let'"
+    },
+    {
+      "command": "query",
+      "expression": "deps(//)",
+      "status": 7,
+      "error": "invalid target name '': empty target name"
+    },
+    {
+      "command": "query",
+      "expression": "some(//app:main except //app:main)",
+      "status": 7,
+      "error": "Evaluation of query \"some((//app:main except //app:main))\" failed: argument set is empty"
+    },
+    {
+      "command": "query",
+      "expression": "deps(\"@a\")",
+      "status": 7,
+      "error": "no such package '@@[unknown repo 'a' requested from @@]//': The repository '@@[unknown repo 'a' requested from @@]' could not be resolved: No repository visible as '@a' from main repository"
+    },
+    {
+      "command": "query",
+      "expression": "kind(\"*\", //app:*)",
+      "status": 7,
+      "error": "Evaluation of query \"kind('*', //app:*)\" failed: illegal 'kind' pattern regexp '*': Dangling meta character '*' near index 0"
     }
   ]
 }

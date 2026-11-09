@@ -18,7 +18,7 @@ export interface EmbeddedToken {
 }
 
 /** Where a hole stands, in a position of data of its language; each has a text of the catalog (`hole-…`). */
-export type HolePlace = 'regex' | 'class' | 'target-package' | 'target-name' | 'buildozer' | 'repeat' | 'replacement' | 'perl-replacement' | 'sed-text' | 'address' | 'awk-string' | 'glob' | 'date' | 'printf' | 'echo' | 'tr';
+export type HolePlace = 'regex' | 'class' | 'target-package' | 'target-name' | 'query-word' | 'buildozer' | 'repeat' | 'replacement' | 'perl-replacement' | 'sed-text' | 'address' | 'awk-string' | 'glob' | 'date' | 'printf' | 'echo' | 'tr';
 
 export interface HoleMark {
   place: HolePlace;
@@ -28,6 +28,8 @@ export interface HoleMark {
   perl?: boolean;
   /** The reading of what stands around the hole rests on the value (a regex: its end, or a group, an anchor before it). */
   around?: boolean;
+  /** In an unquoted word of a bazel query expression, which a blank, `+` or `(` in the value would end. */
+  query?: boolean;
   /** The hole this token is about, where the token is not the hole (`repeat`), and what the token is written as. */
   of?: string;
   written?: string;
@@ -78,7 +80,7 @@ export function holeTokens(src: string, from: number, to: number, place: HolePla
 /** What a reader gives where a hole decides the reading: an error token, which leaves the word unread. */
 export const holeStop = (at: number): EmbeddedToken => ({ start: at, end: at + 1, kind: 'error', explanation: '', children: [] });
 
-export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'echo' | 'date' | 'glob' | 'mode' | 'umask' | 'sortkey' | 'cutfields' | 'cutchars' | 'trset' | 'getopts' | 'getoptshort' | 'getoptlong' | 'perl' | 'gitformat' | 'gitdate' | 'yq4' | 'yq3path' | 'arith' | 'prompt' | 'bazeltarget' | 'bazelquery' | 'bazelaquery' | 'buildozer';
+export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'echo' | 'date' | 'glob' | 'mode' | 'umask' | 'sortkey' | 'cutfields' | 'cutchars' | 'trset' | 'getopts' | 'getoptshort' | 'getoptlong' | 'perl' | 'gitformat' | 'gitdate' | 'yq4' | 'yq3path' | 'arith' | 'prompt' | 'bazeltarget' | 'bazelquery' | 'bazelcquery' | 'bazelaquery' | 'buildozer';
 
 /** Pick the string for the current language. */
 export function pick(lang: Lang) {

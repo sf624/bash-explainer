@@ -101,7 +101,7 @@ export type TargetFlavor = 'build' | 'query';
  * run, fetch, vendor), the words of a query and a cquery expression, which take the `manual` targets, and those of an aquery
  * expression, which leaves them out as a build does (each checked with bazel 9.3.2: test/bazel-patterns.test.ts).
  */
-export const TARGET_FLAVORS = { bazeltarget: 'build', bazelquery: 'query', bazelaquery: 'build' } as const satisfies Record<string, TargetFlavor>;
+export const TARGET_FLAVORS = { bazeltarget: 'build', bazelquery: 'query', bazelcquery: 'query', bazelaquery: 'build' } as const satisfies Record<string, TargetFlavor>;
 
 /** The pattern's label as bazel writes it (`@repo//app:main`), for one target. */
 function labelOf(p: TargetPattern): string {
@@ -109,8 +109,8 @@ function labelOf(p: TargetPattern): string {
   return `${repo}${p.absolute ? '//' : ''}${p.pkg}:${p.name}`;
 }
 
-/** Explain a target pattern: its parts, and what it selects. */
-export function explainTargetPattern(text: string, lang: Lang, flavor: TargetFlavor): { tokens: EmbeddedToken[]; note?: string } | undefined {
+/** Explain a target pattern: its parts, and what it selects. `query`: an unquoted word of a query expression, which a value can end (src/embedded/bazelquery.ts). */
+export function explainTargetPattern(text: string, lang: Lang, flavor: TargetFlavor, query = false): { tokens: EmbeddedToken[]; note?: string } | undefined {
   const p = parseTargetPattern(text);
   if (!p) return undefined;
   const s = pick(lang);
@@ -121,7 +121,7 @@ export function explainTargetPattern(text: string, lang: Lang, flavor: TargetFla
   if (holes && (isHole(text[at]) || (p.repo && hasHole(text.slice(...p.repo.at))))) return { tokens: [] };
   // (A hole in the package's path, or in the target's name after `:`, which bazel reads apart: `/` and `...` are the package's.)
   const push = ([start, end]: [number, number], kind: EmbeddedToken['kind'], explanation: string, place: 'target-package' | 'target-name' = 'target-package'): void => {
-    if (end > start) tokens.push({ start, end, kind, explanation, children: holeTokens(text, start, end, place) });
+    if (end > start) tokens.push({ start, end, kind, explanation, children: holeTokens(text, start, end, place, query ? { query } : {}) });
   };
   if (p.negative) push([0, 1], 'operator', s('除くパターン: このパターンのターゲットを、前のパターンで集めたターゲットから除く（順序に意味がある）', 'Subtractive: takes the targets of this pattern out of those the patterns before it gave (the order counts)'));
   if (p.repo) {
@@ -171,12 +171,13 @@ export function explainTargetPattern(text: string, lang: Lang, flavor: TargetFla
 }
 
 /**
- * A word of a query expression that is a target pattern (`bazel query //app/...`): one with `//`, `:`, `...` or `@` in it, and
- * nothing of the query language (`deps(//x)`, `a+b`). A bare name may be a function or an operator (`deps`, `except`), whose
- * reading depends on the words around it (bazel joins them into one expression): it is left to the query language.
+ * A word of a query expression given as several words, which bazel joins with spaces (`bazel query deps '(//x)'`), that is a
+ * target pattern: one with `//`, `:`, `...` or `@` in it, and nothing of the query language (`deps(//x)`, `a+b`). A bare name
+ * may be a function or an operator (`deps`, `except`), whose reading depends on the words around it: it is left unread, as
+ * the rest of the expression is (an expression of one word is read whole: src/embedded/bazelquery.ts).
  */
 export function explainQueryWord(text: string, lang: Lang, flavor: TargetFlavor): { tokens: EmbeddedToken[]; note?: string } | undefined {
-  return /\/\/|:|\.\.\.|^@/.test(text) && !/^-|[(),+^=]/.test(text) ? explainTargetPattern(text, lang, flavor) : undefined;
+  return /\/\/|:|\.\.\.|^@/.test(text) && !/^-|[(),+^=]/.test(text) ? explainTargetPattern(text, lang, flavor, true) : undefined;
 }
 
 /** Where no name is written (`//app`, `@repo`): whose name the target has. */

@@ -5,7 +5,7 @@
 // the worked example of the text (src/explain/examples.ts, src/explain/examples-jq.ts).
 import type { ExampleKind, Span, Token } from '../analyzer-types';
 import { rulesOf } from '../argv/parsers';
-import { givenOptions, inRecords, values } from '../argv/query';
+import { givenOptions, inRecords, operands, values } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { awkHasGnuEscapes } from '../dict/aliases';
 import { YQ_SPECS } from '../dict/yq';
@@ -72,6 +72,15 @@ export function embeddedText(cx: Explainer, lit: Literal, lang: EmbeddedLang, a:
   return cx.examplesAt(a, () => embeddedTextInner(cx, lit, lang, a));
 }
 
+/** Whether `a` is one of several operands of one item of the spec, which the command joins into one text. */
+function joinedWord(cx: Explainer, a: SyntaxNode): boolean {
+  const { nodes, parse } = cx.command!;
+  const all = operands(parse);
+  // (Only an operand's language asks.)
+  const mine = all.find(({ word }) => same(nodes[word], a))!;
+  return all.filter(({ role }) => role.spec === mine.role.spec).length > 1;
+}
+
 /** Whether the awk command is gawk, or `awk`, whose examples run as gawk; mawk (and nawk) lack its regex escapes. */
 function isGawk(cx: Explainer): boolean {
   return awkHasGnuEscapes(cx.command!.cmd.split(' ')[0]);
@@ -87,6 +96,7 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
     // The letters given (`-lane`: l, a, n and e; `-pi.bak`: p and i).
     letters: () => new Set(givenOptions(cx.command!.parse).map(({ role }) => role.flag.slice(1))),
     given: (...names) => given(cx, ...names),
+    joined: () => joinedWord(cx, a),
     records: () => inRecords(cx.command!.parse),
     bash: () => (cx.command?.spec.builtin ? cx.opts.bashVersion ?? DEFAULT_BASH_VERSION : undefined),
     // (`awk` is whichever the system has: its examples run as gawk.)
@@ -146,6 +156,9 @@ function holeText(cx: Explainer, value: string, mark: HoleMark, part: boolean): 
     case 'sed-text': return cx.text('hole-sed-text', { value, part });
     case 'tr': return cx.text('hole-tr', { value, part });
     case 'address': case 'date': case 'printf': return cx.text(`hole-${place}`, { value, around });
+    // (A value in a word of a query expression can end the word: said once on the line.)
+    case 'target-package': case 'target-name': return cx.text(`hole-${place}`, { value, query: mark.query && !said('query') });
+    case 'query-word': said('query'); return cx.text('hole-query-word', { value });
     default: return cx.text(`hole-${place}`, { value });
   }
 }

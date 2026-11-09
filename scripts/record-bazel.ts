@@ -5,14 +5,17 @@
 // of its error (`error`); each row of `lines` the exit status of the line, run in a copy of test/fixtures/bazel
 // (`status`), and the first line of its error (`says`); each row of `patterns` the targets bazel takes of its target patterns
 // (a query's or a cquery's labels, or those a build or an aquery configures: `bazel build --nobuild`, its build events), with the workspace's targets
-// (`universe`), which test/bazel-patterns.test.ts resolves the patterns over. The bazel is `$BAZEL` (bazel, or bazelisk, which runs the
+// (`universe`), which test/bazel-patterns.test.ts resolves the patterns over; each row of `expressions` the exit status of a
+// query, a cquery or an aquery of its expression (after its `options`) and the first line of its error, which
+// test/bazel-query.test.ts compares the query language's reader with. The bazel is `$BAZEL` (bazel, or bazelisk, which runs the
 // release of test/fixtures/bazel/.bazelversion), a separate program.
 //
 //   BAZEL=~/.cache/explain-bash-tools/bazelisk/bazelisk-linux-amd64 npx tsx scripts/record-bazel.ts           rewrite the facts
 //   BAZEL=… npx tsx scripts/record-bazel.ts --check   fail if a row's facts are not what bazel does
 //
 // To add a row, add `{ "command": "build", "words": [...] }` or `{ "line": "bazel …" }` (or, to `patterns`, `{ "command":
-// "query", "cquery", "aquery" or "build", "cwd": "app", "words": [...] }`) and run the script; then read the facts it wrote before committing them.
+// "query", "cquery", "aquery" or "build", "cwd": "app", "words": [...] }`, to `expressions`, `{ "command": "cquery",
+// "expression": "...", "options": [...] }`) and run the script; then read the facts it wrote before committing them.
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -27,7 +30,9 @@ interface LineRow { line: string; status?: number; says?: string }
 interface PatternRow { command: 'build' | 'query' | 'cquery' | 'aquery'; cwd?: string; words: string[]; targets?: string[]; error?: string }
 /** The workspace's targets (`//...:*`), its rules, and those tagged `manual`. */
 interface Universe { all: string[]; rules: string[]; manual: string[] }
-interface Oracle { '//': string; bazel?: string; flags: FlagsRow[]; lines: LineRow[]; universe?: Universe; patterns: PatternRow[] }
+/** A query expression: the exit status of the command, and the first line of its error. */
+interface ExpressionRow { command: 'query' | 'cquery' | 'aquery'; options?: string[]; expression: string; status?: number; error?: string }
+interface Oracle { '//': string; bazel?: string; flags: FlagsRow[]; lines: LineRow[]; universe?: Universe; patterns: PatternRow[]; expressions: ExpressionRow[] }
 
 const bazel = process.env.BAZEL;
 if (!bazel) {
@@ -81,10 +86,16 @@ try {
     return { ...head, targets: [...new Set(labels)].sort() };
   });
   fs.rmSync(bep, { force: true });
-  const next: Oracle = { '//': oracle['//'], bazel: version, flags, lines, universe, patterns };
+  const expressions = oracle.expressions.map((row): ExpressionRow => {
+    const { command, options, expression } = row;
+    const r = spawnSync(bazel, [command, '--noshow_progress', ...(options ?? []), '--', expression], { cwd: dir, env, encoding: 'utf8', timeout: 300000 });
+    const error = r.status === 0 ? undefined : firstError(r.stderr) ?? `status ${r.status}`;
+    return { command, ...(options ? { options } : {}), expression, status: r.status ?? -1, ...(error ? { error } : {}) };
+  });
+  const next: Oracle = { '//': oracle['//'], bazel: version, flags, lines, universe, patterns, expressions };
   if (check) {
-    const was = [...oracle.flags, ...oracle.lines, oracle.universe, ...oracle.patterns];
-    const stale = [...flags, ...lines, universe, ...patterns].filter((row, i) => JSON.stringify(row) !== JSON.stringify(was[i]));
+    const was = [...oracle.flags, ...oracle.lines, oracle.universe, ...oracle.patterns, ...oracle.expressions];
+    const stale = [...flags, ...lines, universe, ...patterns, ...expressions].filter((row, i) => JSON.stringify(row) !== JSON.stringify(was[i]));
     for (const row of stale) console.error(`not as recorded: ${JSON.stringify(row)}`);
     if (stale.length || oracle.bazel !== version) process.exitCode = 1;
   } else fs.writeFileSync(ORACLE, `${JSON.stringify(next, null, 2)}\n`);

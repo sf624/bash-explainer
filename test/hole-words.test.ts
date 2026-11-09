@@ -524,7 +524,7 @@ describe('words with an expansion read with the expansion as a hole', function (
     });
     it('only the readers that know a position of data claim a hole', () => {
       const cx: EmbeddedContext = {
-        lang: 'en', flavor: () => 'bre', trSet: () => ({ role: 'from', sets: [], complement: false, truncate: false }), letters: () => new Set(), given: () => false, records: () => false, bash: () => undefined, awkGnu: () => true, shell: undefined, invalid: () => 'plain' as never, reached: () => true,
+        lang: 'en', flavor: () => 'bre', trSet: () => ({ role: 'from', sets: [], complement: false, truncate: false }), letters: () => new Set(), given: () => false, joined: () => false, records: () => false, bash: () => undefined, awkGnu: () => true, shell: undefined, invalid: () => 'plain' as never, reached: () => true,
       };
       const claims = (ts: readonly EmbeddedToken[]): boolean => ts.some((t) => !!t.hole || claims(t.children));
       const hole = holeChar(0);
@@ -537,7 +537,7 @@ describe('words with an expansion read with the expansion as a hole', function (
           return !!r && claims(r.tokens);
         });
       }
-      assert.deepStrictEqual(Object.keys(claimed).filter((k) => claimed[k]).sort(), ['awk', 'bazeltarget', 'date', 'echo', 'glob', 'perl', 'printf', 'regex', 'sed', 'trset']);
+      assert.deepStrictEqual(Object.keys(claimed).filter((k) => claimed[k]).sort(), ['awk', 'bazelaquery', 'bazelcquery', 'bazelquery', 'bazeltarget', 'date', 'echo', 'glob', 'perl', 'printf', 'regex', 'sed', 'trset']);
     });
     describe('a script that holds a noncharacter a hole is written as: the parser masks it (`maskCarried`), so no reader takes it for one', () => {
       const words = (c: string): string[] => [
