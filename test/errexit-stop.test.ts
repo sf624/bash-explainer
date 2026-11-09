@@ -82,6 +82,11 @@ const ROWS: Row[] = [
   { name: 'wait with no operand', script: `set -e\nfalse &\necho @@\nwait\necho AFTER`, fail: 'wait' },
   // (exec with redirections only goes on, and fails as a command.)
   { name: 'exec of a redirection that fails', script: `set -e\ntrap 'echo E1' ERR\ntrap 'echo T1' EXIT\necho @@\nexec 3</nonexist/u11b\necho AFTER`, fail: 'exec 3</nonexist/u11b', code: 1 },
+  // (exec of a command whose redirection fails: the command does not run, and the failure is one set -e stops. Review of #774, B1.)
+  { name: 'exec of a command with a redirection that fails', script: `set -e\ntrap 'echo E1' ERR\ntrap 'echo T1' EXIT\necho @@\nexec /bin/true >>/nonexist/u11b/log 2>&1\necho AFTER`, fail: 'exec /bin/true >>/nonexist/u11b/log 2>&1', code: 1 },
+  // (exec of words that give no command goes on: B2.)
+  { name: 'exec of no words', script: `set -e\ntrap 'echo E1' ERR\necho @@\nexec "$@"\necho AFTER`, fail: 'exec "$@"' },
+  { name: 'exec of an empty substitution', script: `set -e\ntrap 'echo E1' ERR\necho @@\nexec $(false)\necho AFTER`, fail: 'exec $(false)' },
 ];
 
 /** The word each trap's action prints: `echo X` in it, or that of the function it calls (`c() { echo X; … }`). */
@@ -216,6 +221,9 @@ describe('the note on where `set -e` stops the script, against bash (docs/design
       ["set -e\ntrap 'echo E1' ERR\nf() {\n  return \"$1\"\n}\nf 0\necho AFTER", 3, 0, 'AFTER'],
       ["set -e\ntrap 'echo E1' ERR\nsh -c 'exit 5' || exit $?", 2, 5, ''],
       ["set -e\ntrap 'echo E1' ERR\ntrap 'echo T1' EXIT\nexec /nonexist/u11b \"$@\"", 3, 127, ''],
+      // (A command not found: the EXIT trap runs, not the ERR trap.)
+      ["set -e\ntrap 'echo E1' ERR\ntrap 'echo T1' EXIT\ncmd=\nexec \"$cmd\" x", 4, 127, 'T1'],
+      ["set -e\ntrap 'echo E1' ERR\ntrap 'echo T1' EXIT\nexec no_such_command_u11b", 3, 127, 'T1'],
     ];
     const runs = await runAll('bash', cases.map(([s]) => s));
     cases.forEach(([script, line, status, words], i) => {
@@ -281,6 +289,8 @@ describe('the note on where `set -e` stops the script, against bash (docs/design
     assert.match(notesOn('set -e\ntrap "$cmd" EXIT\nfalse', 2)[0], /, with `false`'s status; the EXIT trap of line 2 may run first and change the status$/);
     // (Its line stays known on the lines after it, the action being as written: review of #774, F3.)
     assert.match(notesOn('set -e\ntmp=$(mktemp)\ntrap "rm -f $tmp" EXIT\ncp a "$tmp"\nmv "$tmp" b', 4)[0], /the EXIT trap of line 3 may run first and change the status$/);
+    // (Not after code the walk does not read, which may have set another: review of #774, N2.)
+    assert.match(notesOn('set -e\ntmp=$(mktemp)\ntrap "rm -f $tmp" EXIT\nsource ./lib.sh\nmv "$tmp" b', 4)[0], /, with `mv`'s status; an ERR trap and an EXIT trap may run first and change the status$/);
     // (Names are cut only past 32 characters.)
     assert.match(notesOn('set -e\nbats_require_minimum_version 1.5.0', 1)[0], /^ℹ If `bats_require_minimum_version` fails/);
     assert.match(notesOn('set -e\nx=$(a; b)', 1)[0], /^ℹ If `\$\( \)` fails/);

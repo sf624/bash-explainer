@@ -90,9 +90,9 @@ export function unreadTraps(st: ShellState, at: SyntaxNode | undefined): ShellSt
   let traps = st.traps;
   for (const name of TRAPPED) {
     const t = traps.get(name);
-    if (t?.state === 'unknown') continue;
-    if (t) traps = traps.with(name, { state: 'unknown', at: t.at, ...(t.state === 'on' && t.script ? { script: t.script } : {}) });
-    else if (at) traps = traps.with(name, { state: 'unknown', at });
+    if (t?.state === 'unknown' && t.unread) continue;
+    if (t) traps = traps.with(name, { state: 'unknown', at: t.at, ...(t.state !== 'off' && t.script ? { script: t.script } : {}), unread: true });
+    else if (at) traps = traps.with(name, { state: 'unknown', at, unread: true });
   }
   return traps === st.traps ? st : { ...st, traps };
 }
