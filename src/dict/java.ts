@@ -2,16 +2,17 @@ import type { CommandSpec, PatternOption } from '../argv/spec';
 import { tx } from '../i18n';
 import { cmd, operand, OptSpec } from './types';
 
-// The tools of a Java development kit and its two build tools. Written from the tools' own usage texts (`java -help`,
-// `javac -help`, `keytool -help`, `mvn --help`, `gradle --help`); none of them is installed where the dictionary is made,
-// so test/java.test.ts reads the spec only and compares nothing with a real binary.
+// The tools of a Java development kit and its two build tools, checked against Temurin 21.0.13, Apache Maven 3.9.9 and Gradle
+// 8.14.3: their usage texts (recorded in test/fixtures/java/, compared in test/java-help.test.ts) and their behaviour
+// (test/java-real.test.ts, which runs them when $BASH_EXPLAINER_JDK, $MVN and $GRADLE name them).
 //
 // The launcher and the compiler read options of one dash and a word (`-classpath x`, `-cp x`, `-Xmx512m`, `-g:none`,
 // `-Dname=value`) and, for the long ones JDK 9 added, `--name value` and `--name=value`; options never cluster. The
 // forms with a colon or an attached value are `patternOptions`. `java` ends its options at the main class, and the
-// words after it are the program's. `keytool` takes its command as an option (`-genkeypair`). Maven reads its options
-// with Apache commons-cli, whose short names have several letters (`-pl`, `-am`, `-fae`), so it is read as single-dash
-// with `-D`, `-P` and `-T` attached as patterns; Gradle's short options are letters.
+// words after it are the program's. `keytool` takes its command as an option (`-genkeypair`). The JDK's tools take no `-name=value` (the parser `java`).
+// Maven reads its options with Apache commons-cli, whose short names have several letters (`-pl`, `-am`, `-fae`), so it is read
+// as single-dash, with `-D`, `-P` and `-T` attached as patterns (a bundle such as `-qB` is the option `-q` and the goal `B`: not read).
+// Gradle's short options are letters, and cluster.
 
 /** The value after the first `=` of `name=value`, or undefined. */
 const valueOf = (s: string): string | undefined => (s.includes('=') ? s.slice(s.indexOf('=') + 1) : undefined);
@@ -40,19 +41,28 @@ const JAVA: OptSpec[] = [
   ['-d|--describe-module', 'モジュールの説明を表示して終わる', 'describe a module and exit', 'arg'],
   ['--dry-run', 'VM を作るが、メインクラスは実行しない', 'create the VM, but do not run the main class'],
   ['-showversion|--show-version', '版を標準エラー出力に表示してから、続けて実行する', 'print the version to stderr, then go on and run'],
-  ['-X', '標準でない `-X` オプションの一覧を表示する', 'print the non-standard `-X` options'],
+  ['-X|--help-extra', '標準でない `-X` オプションの一覧を表示する（`-X` は標準エラー出力、`--help-extra` は標準出力へ）', 'print the non-standard `-X` options (`-X` to stderr, `--help-extra` to stdout)'],
   ['-ea|-enableassertions', '`assert` 文を有効にする（`-ea:パッケージ...`、`-ea:クラス` で範囲を絞る）', 'enable `assert` statements (`-ea:PACKAGE...` or `-ea:CLASS` to narrow them)'],
   ['-da|-disableassertions', '`assert` 文を無効にする（既定）', 'disable `assert` statements (the default)'],
   ['-esa|-enablesystemassertions', 'システムクラスの `assert` 文を有効にする', 'enable assertions in the system classes'],
   ['-dsa|-disablesystemassertions', 'システムクラスの `assert` 文を無効にする', 'disable assertions in the system classes'],
   ['-server', 'サーバー VM を使う（今の JDK では既定で、何も変わらない）', 'use the server VM (the default today; no change)'],
-  ['-source|--source', 'ソースファイルのモードで、ソースの言語の版を指定する（`java -source 21 Hello.java`）', 'in source-file mode, the language release of the source (`java -source 21 Hello.java`)', 'arg'],
+  ['--source', 'ソースファイルのモードで、ソースの言語の版を指定する（`java --source 21 Hello.java`）', 'in source-file mode, the language release of the source (`java --source 21 Hello.java`)', 'arg'],
+  ['--upgrade-module-path', 'ランタイムイメージの更新できるモジュールを置き換えるモジュールのパス', 'module path of modules that replace the upgradeable modules of the runtime image', 'arg'],
+  ['--enable-native-access', 'ネイティブの制限された操作を許すモジュール（カンマ区切り、`ALL-UNNAMED`）', 'modules allowed to do restricted native operations (comma-separated, or `ALL-UNNAMED`)', 'arg'],
+  ['--add-opens', 'モジュールのパッケージを、リフレクションで深く使えるよう他のモジュールに開く（`モジュール/パッケージ=対象`）', 'open a package of a module to deep reflection by others (`MODULE/PACKAGE=TARGET`)', 'arg'],
+  ['--patch-module', 'モジュールのクラスやリソースをファイルで差し替える（`モジュール=ファイル`）', 'override or augment a module with files (`MODULE=FILE`)', 'arg'],
+  ['--validate-modules', 'モジュールパスのモジュールをすべて検証して終わる', 'validate all modules and exit'],
+  ['--show-module-resolution', '起動時のモジュールの解決を表示する', 'show the module resolution during startup'],
+  ['--disable-@files', '引数ファイル（`@ファイル`）をこれ以降は展開しない', 'do not expand argument files (`@FILE`) from here on'],
 ];
 
 const colon = (pattern: RegExp, ja: (v: string) => string, en: (v: string) => string): PatternOption => ({ pattern, text: ([, v]) => tx(ja(v), en(v)) });
 
 const javaPatterns: PatternOption[] = [
   { pattern: /^-D(.+)$/, text: ([, d]) => tx(`システムプロパティ \`${nameOf(d)}\` を${valueOf(d) === undefined ? '空の文字列に' : ` \`${valueOf(d)}\` に`}する（\`System.getProperty\` で読める）`, `set the system property \`${nameOf(d)}\`${valueOf(d) === undefined ? ' to the empty string' : ` to \`${valueOf(d)}\``} (read with \`System.getProperty\`)`) },
+  { pattern: /^--finalization=(.+)$/, text: ([, f]) => tx(`ファイナライザーの扱い \`${f}\`（\`enabled\`、\`disabled\`）`, `whether finalizers run: \`${f}\` (\`enabled\`, \`disabled\`)`) },
+  { pattern: /^@(.+)$/, text: ([, f]) => tx(`引数ファイル \`${f}\`（オプションを 1 つ以上書いたファイル）から、オプションを読む`, `read options from the argument file \`${f}\``) },
   { pattern: /^-XX:(.+)$/, text: ([, f]) => tx(`VM の詳細なオプション \`${f}\`（\`+名前\` で有効、\`-名前\` で無効、\`名前=値\`。JDK の版によって変わる）`, `an advanced VM option \`${f}\` (\`+NAME\` turns it on, \`-NAME\` off, \`NAME=VALUE\` sets it; it varies by JDK release)`) },
   { pattern: /^-Xmx(.+)$/, text: ([, s]) => tx(`ヒープの最大サイズを \`${s}\` にする（\`k\`、\`m\`、\`g\` の単位）`, `maximum heap size \`${s}\` (units \`k\`, \`m\`, \`g\`)`) },
   { pattern: /^-Xms(.+)$/, text: ([, s]) => tx(`ヒープの初期サイズを \`${s}\` にする`, `initial heap size \`${s}\``) },
@@ -74,7 +84,7 @@ const javaSpec = cmd(
   'Run a Java program (a class, a JAR, a module, or one source file)',
   JAVA,
   {
-    parser: 'single-dash',
+    parser: 'java',
     optionsFirst: true,
     patternOptions: javaPatterns,
     helpCommand: 'java -help',
@@ -106,6 +116,22 @@ const JAVAC: OptSpec[] = [
   ['-processorpath|--processor-path', 'アノテーションプロセッサーを探すパス', 'path to look for annotation processors in', 'arg'],
   ['--processor-module-path', 'アノテーションプロセッサーのモジュールを探すパス', 'module path to look for annotation processors in', 'arg'],
   ['-h', 'ネイティブのヘッダーファイルを書き出すディレクトリ', 'directory to write the native header files to', 'arg'],
+  ['-X|--help-extra', '標準でないオプションの一覧を表示する', 'print the non-standard options'],
+  ['--help-lint', '`-Xlint` で使える警告の種類の一覧を表示する', 'print the keys `-Xlint` takes'],
+  ['-m|--module', '指定したモジュールをコンパイルする（カンマ区切り。`-d` が要る）', 'compile only the given modules (comma-separated; needs `-d`)', 'arg'],
+  ['--upgrade-module-path', 'ランタイムイメージの更新できるモジュールを置き換えるモジュールのパス', 'module path of modules that replace the upgradeable modules of the runtime image', 'arg'],
+  ['--system', 'システムのモジュールの場所（JDK のパスか `none`）', 'location of the system modules (a JDK path, or `none`)', 'arg'],
+  ['-profile', '使うコンパイルのプロファイル（古い）', 'the compact profile to check against (old)', 'arg'],
+  ['-bootclasspath|--boot-class-path', 'ブートストラップクラスの場所を差し替える', 'override the location of the bootstrap class files', 'arg'],
+  ['-endorseddirs', '承認された標準のパスを差し替える（古い）', 'override the endorsed standards path (old)', 'arg'],
+  ['-extdirs', '拡張のパスを差し替える（古い）', 'override the location of installed extensions (old)', 'arg'],
+  ['--default-module-for-created-files', '注釈処理が作るファイルの既定のモジュール', 'the module for files created by annotation processors when none is given', 'arg'],
+  ['--patch-module', 'モジュールのクラスやリソースをファイルで差し替える（`モジュール=ファイル`）', 'override or augment a module with files (`MODULE=FILE`)', 'arg'],
+  ['-Xstdout', '診断メッセージの出力先のファイル', 'file to redirect the compiler\'s messages to', 'arg'],
+  ['-Xprint', '指定した型を表示する（コンパイルはしない）', 'print a textual form of the given types (no compilation)'],
+  ['-XprintProcessorInfo', 'プロセッサーが処理を頼まれた注釈の情報を表示する', 'print which annotations a processor was asked to process'],
+  ['-XprintRounds', '注釈処理の各ラウンドの情報を表示する', 'print information about the rounds of annotation processing'],
+  ['-Xdoclint', '文書コメントの問題を調べる（`-Xdoclint:all/protected`、`-Xdoclint:none` で範囲を選ぶ）', 'check documentation comments (`-Xdoclint:all/protected`, `-Xdoclint:none` pick the scope)'],
   ['-Xlint', '有効にできる警告をすべて有効にする（`-Xlint:unchecked,-serial` のように種類を選べる）', 'enable all recommended warnings (`-Xlint:unchecked,-serial` picks kinds)'],
   ['-Xmaxerrs', '表示するエラーの最大数', 'maximum number of errors to print', 'arg'],
   ['-Xmaxwarns', '表示する警告の最大数', 'maximum number of warnings to print', 'arg'],
@@ -114,6 +140,12 @@ const JAVAC: OptSpec[] = [
 const javacPatterns: PatternOption[] = [
   { pattern: /^-A(.+)$/, text: ([, a]) => tx(`アノテーションプロセッサーに渡すオプション \`${nameOf(a)}\`${valueOf(a) === undefined ? '' : `（値は \`${valueOf(a)}\`）`}`, `an option \`${nameOf(a)}\` for the annotation processors${valueOf(a) === undefined ? '' : ` (value \`${valueOf(a)}\`)`}`) },
   { pattern: /^-J(.+)$/, text: ([, j]) => tx(`コンパイラを動かす JVM に渡すオプション \`${j}\``, `an option for the JVM that runs the compiler: \`${j}\``) },
+  { pattern: /^-Xbootclasspath(?:\/[ap])?:(.+)$/, text: ([, p]) => tx(`ブートストラップクラスのパス \`${p}\` を差し替える（\`/a\` は後ろに足し、\`/p\` は前に足す）`, `the bootstrap class path \`${p}\` (\`/a\`: appended, \`/p\`: prepended; plain: replaced)`) },
+  { pattern: /^-Xdoclint(?:\/package)?:(.+)$/, text: ([, d]) => tx(`文書コメントの検査の範囲 \`${d}\``, `scope of the documentation-comment checks: \`${d}\``) },
+  { pattern: /^-Xplugin:(.+)$/, text: ([, p]) => tx(`コンパイラのプラグイン（\`"名前 引数"\`）：\`${p}\``, `a compiler plugin (\`"name args"\`): \`${p}\``) },
+  { pattern: /^-Xprefer:(.+)$/, text: ([, p]) => tx(`同じ型のソースとクラスファイルがあるときの選び方 \`${p}\`（\`source\`、\`newer\`）`, `which to use when a type has a source and a class file: \`${p}\` (\`source\`, \`newer\`)`) },
+  { pattern: /^-Xpkginfo:(.+)$/, text: ([, p]) => tx(`package-info.java からクラスファイルを作る場合 \`${p}\`（\`always\`、\`legacy\`、\`nonempty\`）`, `when to make class files from package-info.java: \`${p}\` (\`always\`, \`legacy\`, \`nonempty\`)`) },
+  { pattern: /^-D(.+)$/, text: ([, d]) => tx(`古い設定のためのシステムプロパティ \`${d}\`（\`-Djava.endorsed.dirs\`、\`-Djava.ext.dirs\`）`, `a system property for the old directories: \`${d}\` (\`-Djava.endorsed.dirs\`, \`-Djava.ext.dirs\`)`) },
   { pattern: /^-XD(.+)$/, text: ([, x]) => tx(`コンパイラの内部のオプション \`${x}\`（文書化されていない）`, `an internal compiler option \`${x}\` (not documented)`) },
   colon(/^-g:(.*)$/, (v) => `デバッグ情報の種類 \`${v}\`（\`none\`、または \`lines\`、\`vars\`、\`source\`）`, (v) => `kinds of debugging information: \`${v}\` (\`none\`, or \`lines\`, \`vars\`, \`source\`)`),
   colon(/^-Xlint:(.*)$/, (v) => `有効にする警告の種類 \`${v}\`（\`all\`、\`none\`。\`-名前\` で除く）`, (v) => `kinds of warnings to enable: \`${v}\` (\`all\`, \`none\`; \`-NAME\` leaves one out)`),
@@ -127,7 +159,7 @@ const javacSpec = cmd(
   'Compile Java source files into class files',
   JAVAC,
   {
-    parser: 'single-dash',
+    parser: 'java',
     patternOptions: javacPatterns,
     helpCommand: 'javac -help',
     operands: [{ pattern: [operand('SOURCE', 'ソースファイル（`.java`）、または `@ファイル`（オプションとソースの名前を並べたファイル）', 'source file (`.java`), or `@FILE` (a file that lists options and source names)', { repeat: '*' })] }],
@@ -156,7 +188,14 @@ const KEYTOOL: OptSpec[] = [
   ['-keyclone', '項目を別名で複製する', 'clone an entry under another alias'],
   ['-identitydb', '古い identity データベースを取り込む', 'import entries from an old identity database'],
   ['-showinfo', 'セキュリティの情報を表示する（`-tls` で TLS の）', 'display the security information (`-tls`: that of TLS)'],
-  ['-help|-?', '使い方を表示する（`keytool -genkeypair -help` でコマンドごとの）', 'print the usage (`keytool -genkeypair -help`: that of a command)'],
+  ['-version|--version', 'keytool の版を表示する', 'print the keytool version'],
+  ['-help|-h|-?|--help', '使い方を表示する（`keytool -genkeypair -help` でコマンドごとの）', 'print the usage (`keytool -genkeypair -help`: that of a command)'],
+  ['-signer', '署名に使う項目の別名', 'alias of the entry that signs', 'arg'],
+  ['-signerkeypass', '署名に使う鍵のパスワード', 'password of the signer\'s key', 'arg'],
+  ['-srcprotected', '取り込み元のパスワードを保護された手段で入力する', 'the source password is entered by a protected means'],
+  ['-destprotected', '取り込み先のパスワードを保護された手段で入力する', 'the destination password is entered by a protected means'],
+  ['-srcprovidername', '取り込み元の暗号プロバイダーの名前', 'name of the source cryptographic provider', 'arg'],
+  ['-destprovidername', '取り込み先の暗号プロバイダーの名前', 'name of the destination cryptographic provider', 'arg'],
   ['-alias', '項目の別名（キーストアの中での名前）', 'alias of the entry (its name in the keystore)', 'arg'],
   ['-keystore', 'キーストアのファイル（既定は `~/.keystore`）', 'keystore file (default `~/.keystore`)', 'arg'],
   ['-cacerts', 'JDK の CA 証明書のキーストアを使う', 'use the JDK\'s keystore of CA certificates'],
@@ -196,8 +235,7 @@ const KEYTOOL: OptSpec[] = [
   ['-providerclass', '暗号プロバイダーのクラス', 'class of the cryptographic provider', 'arg'],
   ['-providerpath', '暗号プロバイダーを探すクラスパス', 'class path of the cryptographic provider', 'arg'],
   ['-addprovider', 'セキュリティプロバイダーを名前で追加する', 'add a security provider by name', 'arg'],
-  ['-provider', 'セキュリティプロバイダーをクラス名で追加する', 'add a security provider by class name', 'arg'],
-  ['-providerarg', '`-addprovider` や `-provider` に渡す引数', 'argument for `-addprovider` or `-provider`', 'arg'],
+  ['-providerarg', '`-addprovider` や `-providerclass` に渡す引数', 'argument for `-addprovider` or `-providerclass`', 'arg'],
   ['-conf', 'オプションを読む設定ファイル', 'file of options to read', 'arg'],
   ['-tls', '`-showinfo` と使い、TLS の情報を表示する', 'with `-showinfo`: show the TLS information'],
   ['-debug', 'デバッグの出力をする', 'print debugging output'],
@@ -209,7 +247,7 @@ const keytoolSpec = cmd(
   'Manage a keystore (keys and certificates). The command is written as an option (`-genkeypair`, `-list`…)',
   KEYTOOL,
   {
-    parser: 'single-dash',
+    parser: 'java',
     patternOptions: [{ pattern: /^-J(.+)$/, text: ([, j]) => tx(`keytool を動かす JVM に渡すオプション \`${j}\``, `an option for the JVM that runs keytool: \`${j}\``) }],
     helpCommand: 'keytool -help',
   },
@@ -234,7 +272,7 @@ const MAVEN: OptSpec[] = [
   ['-q|--quiet', 'エラーだけを表示する', 'quiet: show errors only'],
   ['-X|--debug', 'デバッグの出力をする', 'print debugging output'],
   ['-e|--errors', 'エラーのスタックトレースも表示する', 'also show the stack traces of errors'],
-  ['-V|--show-version', '版を表示してから続ける', 'show the version, then go on'],
+  ['-V|--show-version', '版を表示して、ビルドは止めずに続ける', 'show the version without stopping the build'],
   ['-v|--version', '版を表示して終わる', 'show the version and exit'],
   ['-h|--help', '使い方を表示する', 'show the usage'],
   ['-o|--offline', 'オフラインで動かす（ダウンロードしない）', 'work offline (download nothing)'],
@@ -247,11 +285,15 @@ const MAVEN: OptSpec[] = [
   ['-fn|--fail-never', '失敗しても、いつも成功で終わる', 'never fail, whatever happens'],
   ['-C|--strict-checksums', 'チェックサムが合わなければ失敗にする', 'fail the build if a checksum does not match'],
   ['-c|--lax-checksums', 'チェックサムが合わなくても警告だけにする', 'only warn if a checksum does not match'],
+  ['-cpu|--check-plugin-updates', '何もしない（昔との互換のためだけに残っている）', 'no effect (kept only for compatibility)'],
+  ['-up|--update-plugins', '何もしない（昔との互換のためだけに残っている）', 'no effect (kept only for compatibility)'],
+  ['-npu|--no-plugin-updates', '何もしない（昔との互換のためだけに残っている）', 'no effect (kept only for compatibility)'],
+  ['-npr|--no-plugin-registry', '何もしない（昔との互換のためだけに残っている）', 'no effect (kept only for compatibility)'],
+  ['-llr|--legacy-local-repository', '使えない（指定すると Maven は失敗する）', 'unsupported (Maven fails if it is given)'],
   ['-ep|--encrypt-password', 'パスワードを暗号化して表示する（`settings.xml` に書ける形に）', 'encrypt a password for `settings.xml` and print it', 'arg'],
   ['-emp|--encrypt-master-password', 'マスターパスワードを暗号化して表示する', 'encrypt the master password and print it', 'arg'],
   ['--color', '色の使い方（`always`、`never`、`auto`）', 'colour use (`always`, `never`, `auto`)', 'arg'],
-  ['--fail-on-severity', '指定した重大度以上のログがあれば失敗にする', 'fail the build if a log message of the given severity is logged', 'arg'],
-  ['--raw-streams', 'ログを通さず標準入出力をそのまま使う', 'use the raw standard streams, not logged'],
+  ['-itr|--ignore-transitive-repositories', '推移的な依存が持ち込むリモートリポジトリを無視する', 'ignore the remote repositories that transitive dependencies bring in'],
 ];
 
 const mavenSpec = cmd(
@@ -291,7 +333,6 @@ const GRADLE: OptSpec[] = [
   ['--continue', 'タスクが失敗しても、それに依存しないタスクは続けて実行する', 'go on with the tasks that do not depend on a failed one'],
   ['-m|--dry-run', 'タスクを実行せず、実行する順に表示する', 'run no task: list them in the order they would run'],
   ['--offline', 'オフラインで動かす（キャッシュだけを使う）', 'work offline (use the caches only)'],
-  ['--refresh-dependencies', '依存をすべてもう一度確かめる', 'check all dependencies again'],
   ['--rerun-tasks', 'すべてのタスクを、最新でも実行し直す', 'run all tasks again, even if up to date'],
   ['--parallel', 'プロジェクトを並列にビルドする', 'build projects in parallel'],
   ['--max-workers', '同時に動かすワーカーの最大数', 'maximum number of workers', 'arg'],
@@ -304,11 +345,34 @@ const GRADLE: OptSpec[] = [
   ['--stop', '動いているデーモンを止める', 'stop the running daemons'],
   ['--status', 'デーモンの状態を表示する', 'show the status of the daemons'],
   ['-t|--continuous', '入力が変わるたびにビルドをやり直す', 'build again whenever an input changes'],
+  ['--write-locks', '依存の解決をロックファイルに書き出す', 'persist the dependency resolution in lock files'],
+  ['--update-locks', '指定したモジュールだけロックを更新する（`group:name`）', 'update the locks of the given modules only (`group:name`)', 'arg'],
   ['--scan', 'ビルドスキャンを作って公開する', 'create and publish a build scan'],
   ['--no-scan', 'ビルドスキャンを作らない', 'do not create a build scan'],
   ['--tests', 'テストタスクの絞り込み（`com.example.FooTest.method`、`*Foo*`）。直前のタスクのオプション', 'filter of the test task (`com.example.FooTest.method`, `*Foo*`); an option of the task before it', 'arg'],
   ['-v|--version', '版を表示して終わる', 'print the version and exit'],
   ['-h|-?|--help', '使い方を表示する', 'print the usage'],
+  ['-V|--show-version', '版を表示して続ける', 'print the version and go on'],
+  ['-a|--no-rebuild', '依存するプロジェクトを再ビルドしない', 'do not rebuild the projects this one depends on'],
+  ['-U|--refresh-dependencies', '依存の状態をもう一度確かめる', 'refresh the state of the dependencies'],
+  ['--no-continue', 'タスクが失敗したら止める（既定）', 'stop after a task fails (the default)'],
+  ['--no-parallel', 'プロジェクトを並列にビルドしない', 'do not build projects in parallel'],
+  ['--configure-on-demand', '必要なプロジェクトだけを構成する', 'configure only the necessary projects'],
+  ['--no-configure-on-demand', '必要なプロジェクトだけの構成をやめる', 'do not configure on demand'],
+  ['--configuration-cache-problems', '設定のキャッシュが問題を見つけたときの扱い（`fail` か `warn`）', 'what the configuration cache does about problems (`fail` or `warn`)', 'arg'],
+  ['--foreground', 'デーモンを前面で動かす', 'run the daemon in the foreground'],
+  ['--include-build', '指定したビルドを複合ビルドに含める', 'include the given build in a composite build', 'arg'],
+  ['--priority', 'デーモンと子プロセスのスケジューリングの優先度（`normal`、`low`）', 'scheduling priority of the daemon and its processes (`normal`, `low`)', 'arg'],
+  ['--profile', 'ビルドの実行時間を計り、レポートを書く', 'profile the build time and write a report'],
+  ['--problems-report', '問題の HTML レポートを作る（実験的）', 'make the HTML problems report (experimental)'],
+  ['--no-problems-report', '問題の HTML レポートを作らない', 'do not make the HTML problems report'],
+  ['--property-upgrade-report', 'プロパティの更新のレポートを作る（実験的）', 'run with the property upgrade report (experimental)'],
+  ['--watch-fs', 'ファイルシステムの変更を監視する', 'watch the file system for changes'],
+  ['--no-watch-fs', 'ファイルシステムの変更を監視しない', 'do not watch the file system'],
+  ['-F|--dependency-verification', '依存の検証のモード（`strict`、`lenient`、`off`）', 'dependency verification mode (`strict`, `lenient`, `off`)', 'arg'],
+  ['-M|--write-verification-metadata', '依存のチェックサムなどの検証用メタデータを書く（カンマ区切り）', 'write the metadata for verifying dependencies (comma-separated)', 'arg'],
+  ['--export-keys', '依存の検証に使う公開鍵を書き出す', 'export the public keys used for dependency verification'],
+  ['--refresh-keys', '依存の検証に使う公開鍵を更新する', 'refresh the public keys used for dependency verification'],
 ];
 
 const gradleSpec = cmd(

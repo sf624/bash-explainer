@@ -637,7 +637,7 @@ class Reader {
     // `--name=value`, and `-name=value` for single-dash options.
     const eq = text.indexOf('=');
     const long = text.startsWith('--');
-    if (eq > 0 && ((long && rules.longEquals) || (rules.singleDash && findOption(options, text.slice(0, eq), false)))) {
+    if (eq > 0 && ((long && rules.longEquals) || (rules.singleDash && rules.dashEquals && findOption(options, text.slice(0, eq), false)))) {
       const flag = text.slice(0, eq);
       const opt = findOption(options, flag, rules.longPrefixes);
       const value: ValueRole = { role: 'value', of: flag, ...(opt ? { option: opt, spec: valuesOf(opt)[0] } : {}), index: 0, attached: eq + 1 + shift };

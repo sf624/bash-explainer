@@ -32,13 +32,15 @@ import type { CommandSpec, OptionSpec, ValueSpec } from './spec';
  *   rules of `jq` (no `--name=value`: `--rcfile=f` is an invalid option), with the long options only before the
  *   others, where `-login` is `--login` too; after a word of short options, `--posix` is the letters `-`, `p`…, and
  *   `-` is no option (`--: invalid option`). The first operand ends the options, and so does a lone `-`, as `--` does.
+ * - `java`: the JDK's launcher, compiler and keytool: the rules of `single-dash`, but a known option takes no `-name=value` (`javac -classpath=x`:
+ *   invalid flag; `keytool -keystore=x`: illegal option). `--name=value` of a long option works.
  * - `bazel`: bazel's options parser (its `OptionsParser`, and its client's for the startup options): the rules of `git`
  *   (no clusters, `-c opt` but not `-copt` or `-c=opt`; `--name=value` or `--name value`), and a boolean option is
  *   turned off by `no` before its name, a `-` after its letter or the value `false` (`--nostamp`, `-t-`, `--stamp=false`:
  *   the rule `negation`). Options may follow the targets; `--` ends them, so that a target pattern may start with `-`
  *   (`-//app/legacy/...`).
  */
-export type OptionParser = 'gnu' | 'getopt_long' | 'single-dash' | 'openssl' | 'letters' | 'cobra' | 'iproute2' | 'jq' | 'git' | 'dpkg' | 'bash' | 'bazel';
+export type OptionParser = 'gnu' | 'getopt_long' | 'single-dash' | 'openssl' | 'letters' | 'cobra' | 'iproute2' | 'jq' | 'git' | 'dpkg' | 'bash' | 'bazel' | 'java';
 
 /** What a preset does, as the interpreter (src/argv/interpret.ts) reads it. */
 export interface ParserRules {
@@ -52,6 +54,8 @@ export interface ParserRules {
   shortEquals: boolean;
   /** Every option is one word with one dash (`-name`), which may take `-name=value`. */
   singleDash: boolean;
+  /** With `singleDash`, a known option takes `-name=value` (the JDK's tools refuse it). */
+  dashEquals: boolean;
   /** `--name` is read as `-name` (with `singleDash`). */
   doubleDash: boolean;
   /** A word is an option only when each of its letters is one. */
@@ -72,7 +76,7 @@ export interface ParserRules {
 }
 
 const GNU: ParserRules = {
-  longPrefixes: false, longEquals: true, shortClusters: true, shortEquals: false, singleDash: false, doubleDash: false, letters: false, optionsFirst: false, cobra: false,
+  longPrefixes: false, longEquals: true, shortClusters: true, shortEquals: false, singleDash: false, dashEquals: true, doubleDash: false, letters: false, optionsFirst: false, cobra: false,
   longFirst: false, loneDashEnds: false, negation: false,
 };
 
@@ -89,6 +93,7 @@ export const PARSERS: Record<OptionParser, ParserRules> = {
   dpkg: { ...GNU, shortEquals: true },
   bash: { ...GNU, longEquals: false, optionsFirst: true, longFirst: true, loneDashEnds: true },
   bazel: { ...GNU, shortClusters: false, negation: true },
+  java: { ...GNU, singleDash: true, dashEquals: false },
 };
 
 /**

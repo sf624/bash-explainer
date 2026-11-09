@@ -1,5 +1,5 @@
-// java, javac, keytool, mvn and gradle (src/dict/java.ts): how their options and operands are read. The spec is written from the
-// tools' usage texts and compared with no real binary (none of them is installed where the suite runs).
+// java, javac, keytool, mvn and gradle (src/dict/java.ts): how their options and operands are explained. The options are compared
+// with the tools' usage texts in test/java-help.test.ts, and the rules with the real tools in test/java-real.test.ts.
 import * as assert from 'assert';
 import { Analyzer, lookupCommand, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';

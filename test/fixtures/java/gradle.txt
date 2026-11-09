@@ -1,0 +1,61 @@
+# The option lines of `gradle --help` (Gradle 8.14.3).
+-?, -h, --help
+-a, --no-rebuild
+-b, --build-file
+--build-cache
+--no-build-cache
+-c, --settings-file
+--configuration-cache
+--no-configuration-cache
+--configuration-cache-problems
+--configure-on-demand
+--no-configure-on-demand
+--console
+--continue
+--no-continue
+-D, --system-prop
+-d, --debug
+--daemon
+--no-daemon
+--export-keys
+-F, --dependency-verification
+--foreground
+-g, --gradle-user-home
+-I, --init-script
+-i, --info
+--include-build
+-M, --write-verification-metadata
+-m, --dry-run
+--max-workers
+--offline
+-P, --project-prop
+-p, --project-dir
+--parallel
+--no-parallel
+--priority
+--problems-report
+--no-problems-report
+--profile
+--project-cache-dir
+--property-upgrade-report
+-q, --quiet
+--refresh-keys
+--rerun-tasks
+-S, --full-stacktrace
+-s, --stacktrace
+--scan
+--no-scan
+--status
+--stop
+-t, --continuous
+-U, --refresh-dependencies
+--update-locks
+-V, --show-version
+-v, --version
+-w, --warn
+--warning-mode
+--watch-fs
+--no-watch-fs
+--write-locks
+-x, --exclude-task
+--
