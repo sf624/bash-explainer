@@ -1,13 +1,14 @@
 import { type Shell, shellFromName } from '../dialect';
 import { featureWorks } from '../shellfeatures';
 import type { Pos } from '../analyzer-types';
-import type { CallArgument, LanguageRegion, LiteralSource, ReParam, RegionNote } from './index';
+import type { CallArgument, CallFlags, LanguageRegion, LiteralSource, ReParam, RegionNote } from './index';
 import { type JsonWord, execWords } from './dockerfile';
 import { LineOut, Builder } from './builder';
 import type { HostMeaning } from '../messages-hosts';
 import { isName, isOp, type PyLexed, pyLex } from './pylex';
 import { argValue, type PyArg } from './pyvalue';
-import { dottedAt, pyImports, pyResolve } from './pyimports';
+import { dottedAt, type PyImports, pyImports, pyResolve } from './pyimports';
+import { type FlagState, PYTHON_FLAGS, type PythonOption } from '../embedded/regex-python';
 
 /** Python calls that run a command; `shell` says whether a string goes to /bin/sh. */
 interface PyCall { shell: 'always' | 'kwarg' | 'never'; args: 'first' | 'all' }
@@ -159,7 +160,7 @@ export function python(b: Builder): void {
     const what: [string, string] = usesShell ? [`シェル（${sh}）が実行する文字列`, `a string the shell (${sh}) runs`] : ['シェルを通さないコマンド文字列', 'a command string run without a shell'];
     b.region(script.first, script.last, label(what), usesShell ? target : 'bash', notes);
   }
-  claimLines(b, patterns.flatMap((p) => reCall(lx, p, pos) ?? []));
+  claimLines(b, patterns.flatMap((p) => reCall(lx, imports, p, pos) ?? []));
 }
 
 /** A call of `re` read, before it has its lines: its region but for them, the lines of the call and those of its pattern's literals. */
@@ -193,11 +194,11 @@ function claimLines(b: Builder, calls: readonly ReCandidate[]): void {
 /**
  * The call of `re` whose name starts at the token `p.first` and whose `(` is at `p.at`, as a `LanguageRegion` whose lines are not
  * given yet (`claimLines`): its arguments, each with the parameter it binds (`RE_CALLS`: by its slot, or by keyword) and its value
- * when it is string literals. A region needs a pattern of string literals only (one, or several joined, over several lines too), of
- * str (a bytes pattern, an f-string with a field and a `\N{…}` escape are not read yet), and no flags (which the reader does not
- * read yet).
+ * when it is string literals. The arguments of `flags`, `count` and `maxsplit` get the flags they name (`reFlags`), and the region
+ * the options of its flags. A region needs a pattern of string literals only (one, or several joined, over several lines too; an
+ * f-string with a field and a `\N{…}` escape are not read yet).
  */
-function reCall(lx: PyFile, p: { name: string; full: string; first: number; at: number }, pos: PyPos): ReCandidate | undefined {
+function reCall(lx: PyFile, imports: PyImports, p: { name: string; full: string; first: number; at: number }, pos: PyPos): ReCandidate | undefined {
   const { src, tokens } = lx;
   const close = lx.pair[p.at];
   if (close < 0) return undefined;
@@ -217,22 +218,55 @@ function reCall(lx: PyFile, p: { name: string; full: string; first: number; at: 
     const part = keyword ? a.slice(2) : a;
     const value = literalValue(lx, unwrap(lx, part));
     const span = { start: at(tokens[part[0]].start), end: at(tokens[part[part.length - 1]].end) };
-    return { arg: { ...(role ? { role } : {}), keyword, span, ...(value ? { literal: literalSource(value, at) } : {}) }, value };
+    const flags = role === 'flags' || role === 'count' || role === 'maxsplit' ? reFlags(lx, imports, unwrap(lx, part), at) : undefined;
+    return { arg: { ...(role ? { role } : {}), keyword, span, ...(value ? { literal: literalSource(value, at) } : {}), ...(flags ? { flags } : {}) }, value };
   });
   const args = read.map((r) => r.arg);
   const pattern = read.find((r) => r.arg.role === 'pattern')?.value;
-  if (!pattern || args.some((a) => a.role === 'flags' || !a.role) || pattern.literals.some((l) => l.token.lit!.bytes) || setsVerbose(pattern.value)) return undefined;
+  if (!pattern || args.some((a) => !a.role)) return undefined;
+  // (No flags argument: none. One that names no flags of `re`: each option not known.)
+  const flagsArg = args.find((a) => a.role === 'flags');
+  const set = new Set(flagsArg?.flags?.names.map((n) => PYTHON_FLAGS.find((f) => f.name === n.flag)!).flatMap((f) => ('option' in f ? [f.option] : [])));
+  const state = (o: PythonOption): FlagState => (flagsArg && !flagsArg.flags ? 'unknown' : set.has(o));
   const region: ReCandidate['region'] = {
     label: [`Python の正規表現（\`${p.name}\` の引数）`, `Python regex (argument of \`${p.name}\`)`],
     host: { kind: 'python' }, language: 'regex', flavor: 'python',
     call: { written: p.name, name: p.full, span: { start: at(tokens[p.first].start), end: at(tokens[close].end) } },
     args,
+    options: {
+      ascii: state('ascii'), ignorecase: state('ignorecase'), multiline: state('multiline'), dotall: state('dotall'), verbose: state('verbose'), locale: state('locale'),
+      bytes: pattern.literals[0].token.lit!.bytes,
+    },
   };
   const literals = pattern.literals;
   return {
     region, start: pos(tokens[p.first].start).line, end: pos(tokens[close].start).line,
     pattern: { start: pos(literals[0].token.start).line, end: pos(literals[literals.length - 1].token.end).line },
   };
+}
+
+/**
+ * The flags the argument of the token indexes `part` names (docs/design/python-regex.md, 5.2): `0` (as `NOFLAG`), or names of `re` joined by `|`,
+ * short or long (`re.I`, `re.IGNORECASE`; `I` after `from re import I`), by the file's imports. Undefined for anything else.
+ */
+function reFlags(lx: PyFile, imports: PyImports, part: number[], at: (off: number) => Pos): CallFlags | undefined {
+  const { src, tokens } = lx;
+  if (part.length === 1 && tokens[part[0]].kind === 'number' && src.slice(tokens[part[0]].start, tokens[part[0]].end) === '0') return { names: [{ written: '0', flag: PYTHON_FLAGS.find((f) => f.value === 0)!.name, span: { start: at(tokens[part[0]].start), end: at(tokens[part[0]].end) } }], value: 0 };
+  const own = part.map((i) => tokens[i]);
+  const names: CallFlags['names'] = [];
+  let value = 0;
+  for (let k = 0; k < part.length; k++) {
+    // (A name, then `|` before the next one.)
+    if (names.length && !isOp(src, tokens[part[k++]], '|')) return undefined;
+    const d = dottedAt(src, own, k);
+    const full = d && pyResolve(imports, d.name);
+    const flag = full?.startsWith('re.') ? PYTHON_FLAGS.find((f) => full === `re.${f.name}` || ('short' in f && full === `re.${f.short}`)) : undefined;
+    if (!flag) return undefined;
+    names.push({ written: d!.name, flag: flag.name, span: { start: at(own[k].start), end: at(own[d!.next - 1].end) } });
+    value |= flag.value;
+    k = d!.next - 1;
+  }
+  return { names, value };
 }
 
 /** Where each character of the value of literals is in the file (`LiteralSource`). */
@@ -244,17 +278,6 @@ function literalSource(value: PyArg, at: (off: number) => Pos): LiteralSource {
   return { value: value.value, at: [...value.offs.map(at), after], to: value.ends.map(at), span: { start: at(first.start), end: at(last.end) } };
 }
 
-/**
- * Whether a pattern turns `re.VERBOSE` on (`(?x)`, `(?ix:…)`), where its spaces and `#` comments are no characters: the reader does not
- * read that yet. Any `(?` with the letter, also one that would be escaped or in a set: what is left out is only not explained.
- */
-function setsVerbose(pattern: string): boolean {
-  for (let k = pattern.indexOf('(?'); k >= 0; k = pattern.indexOf('(?', k + 1)) {
-    let f = k + 2;
-    while (f < pattern.length && 'aiLmsux-'.includes(pattern[f])) if (pattern[f++] === 'x') return true;
-  }
-  return false;
-}
 
 /** The value of the argument of the token indexes `part` when it is string literals only, with none of their parts unknown. */
 function literalValue(lx: PyFile, part: number[]): PyArg | undefined {

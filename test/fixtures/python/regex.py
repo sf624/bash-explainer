@@ -20,3 +20,11 @@ BLOCK = re.compile(r'''^\s*
 [a-z]+$''')
 bad = re.compile(r'\e')
 re.match('x', s); os.system('ls')
+PHONE = re.compile(r"""
+    \(?(\d{3})\)?  # the area code
+    [ -]?(\d{4})    # the number
+""", re.VERBOSE)
+lines = re.findall(r'^\w+$', text, re.I | re.M)
+data = re.search(rb'\d+', blob)
+loose = re.match('(?i)yes', answer, flags=opts)
+once = re.sub(r'\s+', ' ', text, re.I)

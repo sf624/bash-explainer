@@ -16,6 +16,8 @@ import { reference } from '../src/references';
 import { explain } from './support/explain';
 
 /** The notes about the tool itself (what it did not compute, its own bugs): they cite no section of the manual. */
+// (Facts about Python code, not bash: they cite Python's documentation, src/references.ts.)
+const ABOUT_PYTHON: readonly string[] = ['python-regex-flag-as-count'];
 const ABOUT_THE_TOOL: readonly string[] = ['size-not-computed', 'steps-not-computed', 'budget-not-computed', 'example-failed', 'line-not-explained', 'line-too-deep', 'file-not-read'];
 
 describe('the message catalog', () => {
@@ -27,11 +29,11 @@ describe('the message catalog', () => {
     assert.strictEqual(ids.length, Object.keys(MESSAGES).length);
   });
 
-  it('cites only known references (sections of the manual, manual pages), and at least one section', () => {
+  it('cites only known references (sections of the manual, manual pages), and at least one section, or Python\'s documentation for Python code', () => {
     for (const [id, e] of Object.entries(MESSAGES)) {
       if (ABOUT_THE_TOOL.includes(id)) { assert.deepStrictEqual(e.refs, [], id); continue; }
       assert.ok(e.refs.length >= 1 && e.refs.length <= 3, id);
-      assert.ok(e.refs.some((r) => SECTIONS.has(r)), id);
+      assert.ok(ABOUT_PYTHON.includes(id) ? e.refs.every((r) => reference(r)?.kind === 'python') : e.refs.some((r) => SECTIONS.has(r)), id);
       for (const r of e.refs) assert.ok(reference(r), `${id}: ${r}`);
     }
   });

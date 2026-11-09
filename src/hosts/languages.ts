@@ -2,15 +2,16 @@
 // of Python's `re`. There is no shell tree, state or command around it, so no `Explainer`: the language's reader reads the text,
 // `placeEmbedded` places its tokens through the literal's map, and `finishLine` (src/linefinish.ts) finishes the line as it
 // finishes a shell line. `explainDocumentLine` (src/document.ts) calls it within the same boundary and budget as a shell line.
-import type { ExplainOptions, LineExplanation, NoteAnchor, Pos, Token } from '../analyzer-types';
+import type { ExplainOptions, LineExplanation, NoteAnchor, Pos, Span, Token } from '../analyzer-types';
 import { explainRegex, flavorName } from '../embedded/regex';
+import { PYTHON_SINCE } from '../embedded/regex-python';
 import { placeEmbedded } from '../explain/nodes';
 import type { Lang } from '../i18n';
 import { shorten } from '../label';
 import { finishLine, tokenErrors } from '../linefinish';
-import { basisGate, type Note } from '../messages';
+import { basisGate, type Fact, fact, type Note, said } from '../messages';
 import { tokenSaid } from '../messages-tokens';
-import { sayAt } from '../noteanchors';
+import { noteOfFact, sayAt } from '../noteanchors';
 import { languageReading } from '../reading';
 import type { LanguageRegion } from './index';
 import { reCallOf } from './python';
@@ -51,18 +52,47 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
   const gaps = [0];
   for (let k = 1; k < source.value.length; k++) gaps.push(gaps[k - 1] + (samePos(source.to[k - 1], source.at[k]) ? 0 : 1));
   const label = (a: number, b: number): string => (b - 1 > a && gaps[b - 1] > gaps[a] ? source.value.slice(a, b) : between(lines, at(a, false), at(b, true)));
-  const children = explainRegex(source.value, region.flavor, lang, { tool: 'python' }).map((t) => placeEmbedded(t, at, label, 'embedded'));
+  const children = explainRegex(source.value, region.flavor, lang, { tool: 'python', python: region.options }).map((t) => placeEmbedded(t, at, label, 'embedded'));
   const top: Token = {
     kind: 'string', label: shorten(between(lines, source.span.start, source.span.end)), span: source.span, children, origin: 'embedded', language: region.language,
     explanation: tokenSaid(lang, 'python-regex-pattern', { call: call.written, ...reCallOf(call.name) }),
   };
+  const { tokens, pitfalls } = argumentTokens(region, lines, lang);
+  // (In the order of the text: a keyword argument may come before the pattern.)
+  const items = [top, ...tokens].sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
   const anchors: NoteAnchor[] = [];
   const data = new Map<string, Note>();
-  const ex = finishLine({ line: region.lines[0], items: [top], own: [top], rested: [], context: [{ label: region.label[lang === 'ja' ? 0 : 1], line: region.lines[0] }], origin: 'embedded' }, opts, () => {
-    const notes = tokenErrors(lang, [top], (n, span) => sayAt(anchors, data, n, span));
-    return { notes, noteInfo: notes.map((n) => basisGate(data.get(n)!, opts.basis)), facts: [], anchors, marked: { facts: [], anchors }, examples: [] };
+  const ex = finishLine({ line: region.lines[0], items, own: items, rested: [], context: [{ label: region.label[lang === 'ja' ? 0 : 1], line: region.lines[0] }], origin: 'embedded' }, opts, () => {
+    const errors = tokenErrors(lang, items, (n, span) => sayAt(anchors, data, n, span));
+    // (The pitfalls of the call are catalog facts, through the gates of `notes.pitfalls` and `notes.basis`, as a shell line's.)
+    const facts = pitfalls.filter((p) => said([p.fact], opts.pitfalls).length);
+    const notes = [...errors, ...facts.map((p) => sayAt(anchors, data, noteOfFact(p.fact), p.span))];
+    const kept = facts.map((p) => basisGate(p.fact, opts.basis));
+    return { notes, noteInfo: notes.map((n) => basisGate(data.get(n)!, opts.basis)), facts: kept, anchors, marked: { facts: kept, anchors }, examples: [] };
   });
   ex.code = region.host.kind;
-  if (opts.reading) ex.reading = languageReading(ex.items[0], call.written, flavorName(region.flavor, lang));
+  if (opts.reading) ex.reading = languageReading(ex.items.find((t) => t.language)!, call.written, flavorName(region.flavor, lang));
   return ex;
+}
+
+/**
+ * The tokens of the call's arguments other than the pattern (docs/design/python-regex.md, 5.2 and 5.3): each flag a flags argument
+ * names, with what it does, or one token for flags not known; and flags in the slot of `count` or `maxsplit`, a token and the pitfall.
+ */
+function argumentTokens(region: LanguageRegion, lines: readonly string[], lang: Lang): { tokens: Token[]; pitfalls: { fact: Fact; span: Span }[] } {
+  const tokens: Token[] = [];
+  const pitfalls: { fact: Fact; span: Span }[] = [];
+  const token = (span: Span, kind: Token['kind'], explanation: string): Token => ({ kind, label: shorten(between(lines, span.start, span.end)), span, children: [], explanation });
+  for (const a of region.args) {
+    if (a.role === 'flags') {
+      if (!a.flags) tokens.push(token(a.span, 'option', tokenSaid(lang, 'python-regex-flags-unknown', { written: shorten(between(lines, a.span.start, a.span.end)) })));
+      else for (const n of a.flags.names) tokens.push(token(n.span, 'option', tokenSaid(lang, 'python-regex-flag', { written: n.written, flag: n.flag })));
+    } else if ((a.role === 'count' || a.role === 'maxsplit') && !a.keyword && a.flags?.value) {
+      // (`re.sub(p, r, s, re.I)`: the flag's value is the count, and the pattern gets no flag.)
+      const written = shorten(between(lines, a.span.start, a.span.end));
+      tokens.push(token(a.span, 'argument', tokenSaid(lang, 'python-regex-flags-as-count', { written, param: a.role, value: a.flags.value })));
+      pitfalls.push({ fact: fact(lang, 'python-regex-flag-as-count', { written, call: region.call.written, param: a.role, value: a.flags.value, since: PYTHON_SINCE.positionalCount }), span: a.span });
+    }
+  }
+  return { tokens, pitfalls };
 }

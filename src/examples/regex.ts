@@ -1,5 +1,6 @@
 import { awkEscapeAt, sedEscapeAt } from '../ctlchars';
-import { pcreCharCode, pcreJs, type ShellFlavor } from '../embedded/regex';
+import type { ShellFlavor } from '../embedded/regex';
+import { pcreCharCode, pcreJs } from '../embedded/regex-escapes';
 import { wordTable } from '../wordtable';
 import { type Node, Parser } from './regexparse';
 import { longestExec, Refused, scriptRegex } from './regexguard';

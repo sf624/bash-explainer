@@ -1,6 +1,7 @@
 import type { Pos, Span } from '../analyzer-types';
 import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
+import type { PythonFlag, PythonRegexOptions } from '../embedded/regex-python';
 import type { FactSpec } from '../messages';
 import type { HostMeaning } from '../messages-hosts';
 import type { HostRun } from '../semantics/walk/host';
@@ -94,7 +95,13 @@ export type ReParam = 'pattern' | 'string' | 'repl' | 'count' | 'maxsplit' | 'fl
  * An argument of a call, as written: the parameter it binds (`role`; none for one past the function's parameters or a keyword it
  * does not have), whether it is given by keyword, the place of its value, and that value when it is string literals only.
  */
-export interface CallArgument { role?: ReParam; keyword: boolean; span: Span; literal?: LiteralSource }
+export interface CallArgument { role?: ReParam; keyword: boolean; span: Span; literal?: LiteralSource; flags?: CallFlags }
+
+/**
+ * The flags an argument of `flags`, `count` or `maxsplit` names, when it is `0` or names of `re` joined by `|` (docs/design/python-regex.md,
+ * 5.2): each name as written, the flag (`PYTHON_FLAGS`) and its place; and their value.
+ */
+export interface CallFlags { names: { written: string; flag: PythonFlag; span: Span }[]; value: number }
 
 /**
  * A part of a host file in another language than the shell's (docs/design/python-regex.md, 2.2): a call of Python's `re` with a
@@ -119,6 +126,8 @@ export interface LanguageRegion {
   call: { written: string; name: string; span: Span };
   /** Its arguments in the order written (docs/design/python-regex.md, 5.1); the pattern's is string literals (`patternOf`). */
   args: CallArgument[];
+  /** The flags the pattern is compiled with: from the argument of `flags` (each not known where it names no flags), and the pattern's type. */
+  options: PythonRegexOptions;
 }
 
 /**

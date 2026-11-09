@@ -1,3 +1,4 @@
+import type { PythonFlag } from './embedded/regex-python';
 import { tokenError, type TokenEntry, type TokenProblem, tokenText } from './messages-levels';
 
 // What the regex reader (src/embedded/regex.ts) says of a pattern its program refuses: grep, sed, awk and Perl stop with an
@@ -99,7 +100,52 @@ export const REGEX_TEXTS = {
   'python-regex-pattern': tokenText<{ call: string; anchors?: 'start' | 'whole'; since?: string }>(({ call, anchors, since }) => [
     `\`${call}\` のパターン（Python の正規表現）${anchors === 'start' ? '。文字列の先頭から一致する' : anchors === 'whole' ? '。文字列全体に一致する' : ''}${since ? `（Python ${since} 以降）` : ''}`,
     `The pattern of \`${call}\` (Python regex)${anchors === 'start' ? ', matched at the start of the string' : anchors === 'whole' ? ', matched against the whole string' : ''}${since ? ` (Python ${since} or later)` : ''}`]),
-  /** Python's `re` refuses the pattern: `message` is Python's own (`bad escape \e at position 0`), held against the reference Python (test/regex-python-real.test.ts). */
-  'regex-python-error': tokenError<{ message: string }>(PYTHON_INVALID, ({ message }) => [
-    `Python の \`re\` はこのパターンを受け付けない（"${message}"）`, `Python's \`re\` refuses this pattern ("${message}")`]),
+  /**
+   * Python's `re` refuses the pattern: `message` is Python's own (`bad escape \e at position 0`), held against the reference Python
+   * (test/regex-python-real.test.ts); `since`, the release since which it is an error, where that changed in a release still supported.
+   */
+  'regex-python-error': tokenError<{ message: string; since?: string }>(PYTHON_INVALID, ({ message, since }) => [
+    `Python の \`re\` はこのパターンを受け付けない（"${message}"${since ? `。Python ${since} からエラー` : ''}）`,
+    `Python's \`re\` refuses this pattern ("${message}"${since ? `; an error since Python ${since}` : ''})`]),
+  /**
+   * Inline flags of a Python pattern (`(?i)`, written as is; `(?i-m:…)`, `scoped`): the flags turned on, and off in a group, each with
+   * what it does (`FLAG_MEANINGS`).
+   */
+  'python-regex-inline-flags': tokenText<{ written: string; on: readonly PythonFlag[]; off: readonly PythonFlag[]; scoped: boolean }>(({ written, on, off, scoped }) => {
+    const list = (flags: readonly PythonFlag[], ja: boolean) => flags.map((f) => `\`re.${f}\`${ja ? `（${FLAG_MEANINGS[f][0]}）` : ` (${FLAG_MEANINGS[f][1]})`}`).join(ja ? '、' : ', ');
+    const offJa = off.length ? `${on.length ? '。' : ''}外す: ${list(off, true)}` : '';
+    const offEn = off.length ? `${on.length ? '; ' : ''}off: ${list(off, false)}` : '';
+    return scoped
+      ? [`\`${written}\`: このグループの中だけ（番号は付かない）: ${list(on, true)}${offJa}`, `\`${written}\`: inside this group only (no number): ${list(on, false)}${offEn}`]
+      : [`\`${written}\`: パターン全体のフラグ: ${list(on, true)}`, `\`${written}\`: flags for the whole pattern: ${list(on, false)}`];
+  }),
+  /** Whitespace between two items of a VERBOSE pattern, which Python's `re` ignores. */
+  'python-regex-verbose-space': tokenText(() => ['空白: 無視される（`re.VERBOSE`）', 'Whitespace: ignored (`re.VERBOSE`)']),
+  /** A `#` comment of a VERBOSE pattern. */
+  'python-regex-verbose-comment': tokenText(() => ['行末までのコメント（`re.VERBOSE`）: 一致には関係しない', 'A comment to the end of the line (`re.VERBOSE`): ignored']),
+  /** A name of a flag in the flags argument of a call of `re` (`re.I`, `IGNORECASE` after `from re import IGNORECASE`; `0`, as `NOFLAG`). */
+  'python-regex-flag': tokenText<{ written: string; flag: PythonFlag }>(({ written, flag }) => {
+    const long = written === flag || written.endsWith(`.${flag}`) || written === '0' ? '' : ` (\`re.${flag}\`)`;
+    return [`\`${written}\`${long ? `（\`re.${flag}\`）` : ''}: ${FLAG_MEANINGS[flag][0]}`, `\`${written}\`${long}: ${FLAG_MEANINGS[flag][1]}`];
+  }),
+  /** A flags argument that is not names of `re` (`flags=opts`): what depends on the flags says so. */
+  'python-regex-flags-unknown': tokenText<{ written: string }>(({ written }) => [
+    `フラグ \`${written}\`: ここでは値が分からないので、フラグで意味が変わるパターンの要素はそのことを書く`,
+    `The flags \`${written}\`: not known here, so a part of the pattern whose meaning depends on them says so`]),
+  /** Flags in the slot of `count` or `maxsplit` (the fact `python-regex-flag-as-count` says the problem). */
+  'python-regex-flags-as-count': tokenText<{ written: string; param: 'count' | 'maxsplit'; value: number }>(({ written, param, value }) => [
+    `ここでの \`${written}\` はフラグではなく引数 \`${param}\`（値は ${value}）`, `\`${written}\` here is the argument \`${param}\` (the value ${value}), not a flag`]),
+};
+
+/** What each flag of Python's `re` does (`PYTHON_FLAGS`, src/embedded/regex-python.ts), for the texts of a flags argument and of inline flags. */
+const FLAG_MEANINGS: Record<PythonFlag, readonly [ja: string, en: string]> = {
+  ASCII: ['`\\w`・`\\d`・`\\s`・`\\b` が ASCII の文字だけに一致する', '`\\w`, `\\d`, `\\s` and `\\b` match ASCII characters only'],
+  IGNORECASE: ['大文字小文字を区別しない', 'letters match in either case'],
+  LOCALE: ['bytes のパターンで、`\\w`・`\\b` と大文字小文字の区別が実行時のロケールに従う', 'in a bytes pattern, `\\w`, `\\b` and case follow the current locale'],
+  MULTILINE: ['`^` と `$` が各行の先頭と末尾にも一致する', '`^` and `$` match at the start and end of each line too'],
+  DOTALL: ['`.` が改行にも一致する', '`.` matches a newline too'],
+  VERBOSE: ['パターン中の空白を無視し、`#` から行末までをコメントにする（文字クラスの中とバックスラッシュの後を除く）', 'whitespace in the pattern is ignored, and `#` starts a comment to the end of the line (not in a set or after a backslash)'],
+  UNICODE: ['Unicode で一致させる（str のパターンでは初めからそう）', 'Unicode matching, which a str pattern has already'],
+  DEBUG: ['コンパイルしたパターンをデバッグ用に表示する', 'prints the compiled pattern, for debugging'],
+  NOFLAG: ['フラグなし', 'no flags'],
 };
