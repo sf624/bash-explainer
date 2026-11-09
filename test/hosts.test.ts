@@ -1142,6 +1142,8 @@ describe('the words of host syntax (the catalog, src/messages-hosts.ts)', () => 
     'jenkins-parameter': [{ meaning: { kind: 'jenkins-parameter', expr: 'params.T', name: 'T' }, en: /expression `params.T`: the build parameter `T`;/, ja: /ビルドパラメータ `T` を表す Groovy/ }],
     'python-field': [{ meaning: { kind: 'python-field', expr: 'a' }, en: /Python expression `a`, pasted into the string/, ja: /Python の式 `a` の値（実行前/ }],
     'python-argument': [{ meaning: { kind: 'python-argument', expr: 'a' }, en: /Python expression `a`, passed as one argument/, ja: /1つの引数として渡る/ }],
+    'python-char': [{ meaning: { kind: 'python-char', name: 'BULLET' }, en: /character of Python's escape `\\N\{BULLET\}` \(the Unicode character named `BULLET`\)/, ja: /`\\N\{BULLET\}` が表す1文字/ }],
+    'python-newline': [{ meaning: { kind: 'python-newline' }, en: /^a newline character \(written `\\n` in Python\), which stays in the quoted word as one character$/, ja: /^改行文字（Python で `\\n` と書いたもの）/ }],
     'bats-test-function': [{ meaning: { kind: 'bats-test-function' }, en: /name bats gives the function of the test/, ja: /関数に付ける名前/ }],
     'bats-test-name': [{ meaning: { kind: 'bats-test-name', name: 'test_a' }, en: /function name `test_a`/, ja: /関数名 `test_a`/ }],
   };

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+
+### Fixed
+
+- In `.py` files, Python's string escapes are read as Python reads them (`"\a"`, octal `"\012"`), and in a command string an escaped newline is what sh reads there (a newline in quotes, a line continuation after `\`). Before, `"\012"` was read as a NUL followed by `12`, and every escaped newline as `;`.
+
 ## 0.12.0
 
 bazel command lines are read further: target patterns, the query language of `query`, `cquery` and `aquery`, and examples of their output, plus buildifier, buildozer and unused_deps. C++ compilers, Java tools, database clients, `rg`, `pv`, `socat` and `sshpass` are explained too. An unquoted variable used as a pattern gets a caveat, and an invalid regex in a script is now an Error.

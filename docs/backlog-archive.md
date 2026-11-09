@@ -1104,6 +1104,20 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - `RunnerKind` holds the source runners only; the first runner of a filter (M6) will need its own kind, or a split of the type.
 - `queryTree` runs the whole token reader of src/embedded/bazelquery.ts (with the texts of every token) to get the tree.
 
+## From the review of the Python lexer (#794)
+
+### Python files: corners the lexer and the shell writer do not follow
+
+- `bug`: a newline in a replacement field of an f-string in single quotes, in brackets or not. Python 3.12 and later accept `f"{\n x\n}"` and `f"{f(a,\n b)}"`; the lexer ends the field at the newline (so that a literal being typed reads no further than its line), so such a call is not explained, and the rest of its line is read as code: in `x = f"{a\n} os.system('fake')"` the `os.system('fake')` is explained.
+- `bug`: control characters from escapes reach the shell text as they are: `os.system("echo \0")` writes a NUL (Python raises ValueError: embedded null character), and `\r` and `\v` give a CR and a VT in the word.
+- `missing-explanation`: an import after `:` is not read (`if x: import subprocess`, `try: import subprocess`), so the calls it names are not found.
+- `missing-explanation`: an item of an argument list over several lines (`run(["a",\n "b"\n "c"])`, the literals of one item on two lines): the call is not explained.
+- `bug`: the lexer accepts what Python rejects in f-strings: a single `}` (`f"a}b"`) and an empty field (`f"{}"`).
+- `bug`: a rebinding of an imported name is not followed: `run = print; run("x")` is explained as `subprocess.run`.
+- `bug`: an escaped newline after `then`, `do`, `{`, `&&`, `||` or `|` is written as `;`: `os.system("if true; then\necho a\nfi")` becomes `if true; then;echo a;fi`, a syntax error, where sh reads a newline.
+- `bug`: a backslash-newline of the Python source inside the shell's single quotes is written as a shell continuation: in `os.system("echo 'a\<newline>b'")` Python's value is `echo 'ab'`, and our text has `'a\` at the end of the line, which sh keeps in the quotes.
+- `missing-explanation`: of two calls on one line (`os.system("cd x"); os.system("make all")`), only the first is explained: a line of shell text holds one call.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".
