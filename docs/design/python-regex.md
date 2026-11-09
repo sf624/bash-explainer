@@ -44,7 +44,7 @@ A part in another language is a `LanguageRegion` in a list of its own, `Extracte
 
 ```ts
 interface LanguageRegion {
-  start: number; end: number;            // the call's lines, from the function's name to its `)`
+  lines: readonly number[];              // the lines it has: the call's, from its name to its `)`, but those of another part (below)
   label: [ja: string, en: string];       // "Python regex (argument of `re.search`)"
   host: HostId;                          // { kind: 'python' }
   language: 'regex';                     // an EmbeddedLang
@@ -66,6 +66,14 @@ The region is the call, not the pattern: the flags argument, the subject (#751) 
 Rejected: a `ShellRegion` with a `language` field. Each of the readers above would need a test to skip it, and a new reader would get it wrong by default. Rejected too: writing the pattern into the shell text as a made-up command (`grep -P '…'`). The tree, bash-ast's test and the reading tree would then claim that bash reads it.
 
 A line holds at most one part. Where a shell region and a pattern share a line (`if re.match(p, x): os.system('ls')`), the shell region keeps the line and the pattern is not explained. That is rare; docs/guide/limitations.md says it.
+
+A call's lines are not all its own, since calls nest and a shell region may be an argument. The region holds the list of lines it has (`lines`), decided once by the extractor (`claimLines`, src/hosts/python.ts), each call in the order written:
+
+1. A line of a shell region stays the shell's (`re.sub(r'a', 'b',` above `subprocess.run('ls', shell=True))`: the second line is shell code, the first and the last the call's).
+2. A line of a pattern's literals is that call's. When two patterns share a line, the first written keeps it, and a call whose pattern has a line taken by rule 1 or 2 is no region.
+3. Every other line of a call goes to the innermost call kept that holds it: the one that starts last, as calls nest. So `x = re.sub(r'a', 'b',` above `re.sub(r'c', 'd', s))` shows `r'a'` on its first line and `r'c'` on its second, and a call of one statement keeps all its lines (`y = re.findall(r'\d+',` above `text)` shows the pattern on both).
+
+`hostPartAt` and the line count of the budget (`languageLines`) read `lines`; nothing else decides which call a line is.
 
 ### 2.3 One lookup per line
 

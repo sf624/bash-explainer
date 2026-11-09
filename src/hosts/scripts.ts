@@ -90,7 +90,7 @@ export function hostPartAt(extracted: Extracted, line: number): HostPart | undef
   let byLine = languagesByLine.get(extracted);
   if (!byLine) {
     byLine = new Map();
-    for (const r of extracted.languages) for (let l = r.start; l <= r.end; l++) byLine.set(l, r);
+    for (const r of extracted.languages) for (const l of r.lines) byLine.set(l, r);
     languagesByLine.set(extracted, byLine);
   }
   const language = byLine.get(line);
@@ -112,7 +112,7 @@ export function hasParts(extracted: Extracted): boolean {
 
 /** How many lines of a host document are parts in another language: lines of code, which the budget of a line counts (`withinLine`). */
 export function languageLines(extracted: Extracted): number {
-  return extracted.languages.reduce((n, r) => n + r.end - r.start + 1, 0);
+  return extracted.languages.reduce((n, r) => n + r.lines.length, 0);
 }
 
 /**
