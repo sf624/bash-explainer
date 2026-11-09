@@ -90,6 +90,8 @@ interface State {
   s: (ja: string, en: string) => string;
   /** Whether the shell gets to the command (`RegexOptions.reached`). */
   reached: boolean;
+  /** What may close a `[` or a group that this text leaves open (`RegexOptions.part`, or a variable Perl puts in): then it is no error. */
+  rest?: 'part' | 'variable';
   /** Plain single-character literals, which may be merged into runs. */
   literals: Set<EmbeddedToken>;
   /** PCRE named groups, by name. */
@@ -136,6 +138,8 @@ export interface RegexOptions {
   unit?: MatchUnit;
   /** Whether the shell gets to the command (`Explainer.reachedAt`, true when not given): where it does not, an error of the regex is no problem, only its row. */
   reached?: boolean;
+  /** The text is one part of the regex, with others after it (`[[ x =~ ^("a"|b)$ ]]`): a `[` or a group it leaves open is no error here. */
+  part?: boolean;
 }
 
 /** Explain a regular expression as a flat sequence of tokens (groups nest their contents). */
@@ -143,7 +147,7 @@ export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: Rege
   // (`\Q$x\E`: the value is plain text there, which this reader does not follow.)
   if (flavor === 'pcre' && src.includes('\\Q') && hasHole(src)) return [holeStop(0)];
   const tool = opts.perl ? 'perl' : opts.tool ?? (opts.sedEscapes ? 'sed' : 'grep');
-  const st: State = { src, i: 0, flavor, groups: 0, lang, s: pick(lang), reached: opts.reached ?? true, literals: new Set(), names: new Map(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool], base: opts.unit ?? UNITS[tool] };
+  const st: State = { src, i: 0, flavor, groups: 0, lang, s: pick(lang), reached: opts.reached ?? true, rest: opts.part ? 'part' : tool === 'perl' && PERL_VARIABLE.test(src.replace(/\\./g, '')) ? 'variable' : undefined, literals: new Set(), names: new Map(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool], base: opts.unit ?? UNITS[tool] };
   return mergeLiterals(sequence(st, 0), st);
 }
 
@@ -407,7 +411,10 @@ function group(st: State, openLen: number): EmbeddedToken {
   const close = isGroupClose(st);
   st.i += close;
   st.unit = unit;
-  if (!close) {
+  if (!close && st.rest) {
+    explanation += st.rest === 'part' ? s('。この部分には閉じる `)` がない（右辺はほかの部分と合わせて1つの正規表現）', '. No `)` closes it in this part (the right side is one regex with its other parts)')
+      : s('。閉じる `)` はないが、変数の値が閉じることがある', '. No `)` closes it here, but the value of a variable may');
+  } else if (!close) {
     const said = tokenSaid(st.lang, st.reached ? 'regex-group-unclosed' : 'regex-group-unclosed-if-reached', { tool: st.tool, close: st.flavor === 'bre' ? '\\)' : ')' });
     return { start, end: st.i, kind: 'error', explanation: explanation + s('。', '. ') + said, children, ...(group ? { group } : {}) };
   }
@@ -504,6 +511,10 @@ function bracket(st: State): EmbeddedToken {
   }
   if (i >= src.length) {
     st.i = start + 1;
+    if (st.rest) {
+      return { start, end: st.i, kind: 'pattern', children: [], explanation: st.rest === 'part' ? s('`[`: 文字クラスの始まり。この部分には閉じる `]` がない（右辺はほかの部分と合わせて1つの正規表現）', '`[`: the start of a set, which no `]` closes in this part (the right side is one regex with its other parts)')
+        : s('`[`: 文字クラスの始まり。閉じる `]` はないが、変数の値が閉じることがある', '`[`: the start of a set, which no `]` closes here, but the value of a variable may') };
+    }
     return { start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, st.reached ? 'regex-bracket-unclosed' : 'regex-bracket-unclosed-if-reached', { tool: st.tool }), children: [] };
   }
   st.i = i + 1;

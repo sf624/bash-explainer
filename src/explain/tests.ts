@@ -8,6 +8,7 @@ import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { binaryTestOp, binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, rematchClause, testOperandTexts, unaryTestOperands, unaryTestOps } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { explainRegex } from '../embedded/regex';
+import type { EmbeddedToken } from '../embedded/types';
 import { toJsRegex } from '../examples/regex';
 import { shorten } from '../label';
 import { fact } from '../messages';
@@ -19,7 +20,7 @@ import { option, type ShellState } from '../semantics/state';
 import { plainPatternText } from '../semantics/globwords';
 import { givesOneField } from '../semantics/nofield';
 import { isPlainWord, staticWordValue } from '../staticword';
-import { ancestor, descendants, field, fields, nameText, type SyntaxNode } from '../syntax/tree';
+import { ancestor, descendants, field, fields, hasError, nameText, type SyntaxNode } from '../syntax/tree';
 import { type BracketTest, collation, type TestExpr, testRange } from '../testexpr';
 import type { Explainer } from './context';
 import { matchExample, regexExample, testExample } from './examples';
@@ -249,7 +250,10 @@ export function regexNode(cx: Explainer, n: SyntaxNode): Token {
   // (A `regex` node is only the plain right side of `=~`, without quotes: expansions and quotes make other nodes.)
   const { text, offsets } = regexText(n);
   // (The regex is read by the regex library bash calls, by the rules of an ERE: an embedded language.)
-  const tokens = explainRegex(text, 'ere', cx.lang, { tool: 'bash', reached: cx.reachedAt(n) }).map((t) => ({ ...fromEmbedded(t, n, { text, offsets }, 'embedded'), language: 'regex' }));
+  // (A part of a right side with quotes or expansions says no error of the regex: `binary` reads the whole once. Nor does a test
+  // bash refuses to parse, `[[ x =~ (a ]]`: its syntax error is said.)
+  const part = n.parent?.type === 'concatenation';
+  const tokens = explainRegex(text, 'ere', cx.lang, { tool: 'bash', reached: regexReached(cx, n), part }).map((t) => ({ ...fromEmbedded(t, n, { text, offsets }, 'embedded'), language: 'regex' }));
   const js = toJsRegex(text, 'ere');
   const escapes = droppedEscapes(n.text);
   if (escapes.length) {
@@ -259,8 +263,24 @@ export function regexNode(cx: Explainer, n: SyntaxNode): Token {
     cx.note(fact(cx.lang, 'regex-backslash-dropped', { list, digits, others, rewrite: regexRewrite(n, escapes) }), n);
   }
   // (A part of a right side with quotes or expansions: the example is the whole regex's, made by `binary`.)
-  if (js && n.parent?.type !== 'concatenation') regexExample(cx, js, 'values', field(n.parent!, 'left')!);
+  if (js && !part) regexExample(cx, js, 'values', field(n.parent!, 'left')!);
   return cx.tok(n, 'pattern', cx.text('regex-ere'), tokens);
+}
+
+/** Whether an error of the regex at `n` is a problem: the shell gets there, and the `[[ ]]` around it parses. */
+function regexReached(cx: Explainer, n: SyntaxNode): boolean {
+  return cx.reachedAt(n) && !hasError(ancestor(n, (a) => a.type === 'extended_test')!);
+}
+
+/**
+ * The error of the whole regex of a right side of `=~` made of parts (`^("a"|b`), from the catalog: once, on the test. None
+ * where a part is an expansion (`^($a|b`), whose value may mend it.
+ */
+function wholeRegexError(cx: Explainer, right: SyntaxNode): string | undefined {
+  const re = wholeRegex(right.namedChildren);
+  if (re === undefined) return undefined;
+  const find = (ts: readonly EmbeddedToken[]): EmbeddedToken | undefined => ts.find((t) => t.kind === 'error') ?? ts.map((t) => find(t.children)).find(Boolean);
+  return find(explainRegex(re, 'ere', cx.lang, { tool: 'bash', reached: regexReached(cx, right) }))?.explanation;
 }
 
 /**
@@ -350,10 +370,12 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
     cx.examplesAt(n, () => matchExample(cx, n, rights[0]));
   }
   // `[[ $x =~ ^"a."c$ ]]`: the strings the whole regex matches, its quoted parts as literal text.
+  let fault: string | undefined;
   if (op === '=~' && rights.length === 1 && rights[0].type === 'concatenation') {
     const re = wholeRegex(rights[0].namedChildren);
     const js = re === undefined ? undefined : toJsRegex(re, 'ere');
     if (js) regexExample(cx, js, 'values', left!);
+    fault = wholeRegexError(cx, rights[0]);
   }
   if (!inArithmetic(n) && binaryTestOps[op]) {
     const num = numericTestNote(cx, op, [n.namedChildren[0].text, rightText], true);
@@ -361,7 +383,7 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
     // says at depth 2 of the panel; from the word model, as nocasematch and a quoted `*` decide it.)
     const plain = extendedEqualOps[op] && plainPatternText(rights[0], cx.state) !== undefined ? cx.t(plainPatternOps.condition[op]) : undefined;
     const text = quotedPatternNote(cx, n, op, rights) ?? plain ?? (extendedEqualOps[op] ? cx.t(extendedEqualOps[op]) : binaryText(cx, n, op, true, true));
-    return cx.tok(n, 'test', cx.text('test-binary', { left: left?.text, right: rightText, text, num }), operands);
+    return cx.tok(n, 'test', cx.text('test-binary', { left: left?.text, right: rightText, text, num }) + (fault ? cx.sep() + fault : ''), operands);
   }
   const assignOps = ['=', '+=', '-=', '*=', '/=', '%='];
   return cx.tok(n, 'operator', assignOps.includes(op)
