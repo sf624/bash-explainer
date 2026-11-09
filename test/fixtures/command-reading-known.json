@@ -81,7 +81,7 @@
     {"file":"src/examples/gitlog.ts","uses":[{"fn":"expand","kind":"option-regex","count":1,"reason":"trims dashes from a commit subject (git log `%f`), not an option"}]},
     {"file":"src/examples/shellwords.ts","uses":[{"fn":"numberArg","kind":"dash-prefix","count":2,"reason":"the sign of a number written as a word (`-0x1f`), not an option"}]},
     {"file":"src/examples/textfilters.ts","uses":[{"fn":"headText","kind":"dash-prefix","count":2,"reason":"the sign of the count that the interpreter read for `head -n -5`"},{"fn":"runSeq","kind":"dash-prefix","count":1,"reason":"the sign of a number that `seq` prints"}]},
-    {"file":"src/explain/argv.ts","uses":[{"fn":"valueToken","kind":"option-regex","count":1,"reason":"the flag is the spec's own name for the option (to word the value's label), not a word of the command"}]},
+    {"file":"src/explain/argv-options.ts","uses":[{"fn":"valueToken","kind":"option-regex","count":1,"reason":"the flag is the spec's own name for the option (to word the value's label), not a word of the command"}]},
     {"file":"src/explain/embedded.ts","uses":[{"fn":"embeddedExample","kind":"option-literal","count":1,"reason":"`find`'s primary `-name`, not an option (the embedded find reads it)"}]},
     {"file":"src/explain/operand-texts.ts","uses":[{"fn":"valueWords","kind":"option-regex","count":1,"reason":"the flag is the spec's own name for the option (to word the value's label), not a word of the command"}]},
     {"file":"src/explain/status.ts","uses":[{"fn":"postfixStatusNote","kind":"dash-prefix","count":1,"reason":"the arithmetic operator `--`, not an option"}]},
