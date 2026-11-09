@@ -93,8 +93,15 @@ export function parseTargetPattern(text: string): TargetPattern | undefined {
   return p;
 }
 
-/** How a pattern is read: by a command that builds (`manual` targets are left out of its wildcards), or in a query. */
+/** How a pattern is read: by a command whose wildcards leave out the `manual` targets (`build`), or by one that takes them (`query`). */
 export type TargetFlavor = 'build' | 'query';
+
+/**
+ * The languages of target patterns, and how each reads them: the patterns of a command that builds (build, test, coverage,
+ * run, fetch, vendor), the words of a query and a cquery expression, which take the `manual` targets, and those of an aquery
+ * expression, which leaves them out as a build does (each checked with bazel 9.3.2: test/bazel-patterns.test.ts).
+ */
+export const TARGET_FLAVORS = { bazeltarget: 'build', bazelquery: 'query', bazelaquery: 'build' } as const satisfies Record<string, TargetFlavor>;
 
 /** The pattern's label as bazel writes it (`@repo//app:main`), for one target. */
 function labelOf(p: TargetPattern): string {
@@ -112,8 +119,9 @@ export function explainTargetPattern(text: string, lang: Lang, flavor: TargetFla
   // (A hole where the reading starts would decide it: `"$p/..."` may be absolute or relative, `"@$r//x"` any repository.)
   const at = p.negative ? 1 : 0;
   if (holes && (isHole(text[at]) || (p.repo && hasHole(text.slice(...p.repo.at))))) return { tokens: [] };
-  const push = ([start, end]: [number, number], kind: EmbeddedToken['kind'], explanation: string): void => {
-    if (end > start) tokens.push({ start, end, kind, explanation, children: holeTokens(text, start, end, 'target') });
+  // (A hole in the package's path, or in the target's name after `:`, which bazel reads apart: `/` and `...` are the package's.)
+  const push = ([start, end]: [number, number], kind: EmbeddedToken['kind'], explanation: string, place: 'target-package' | 'target-name' = 'target-package'): void => {
+    if (end > start) tokens.push({ start, end, kind, explanation, children: holeTokens(text, start, end, place) });
   };
   if (p.negative) push([0, 1], 'operator', s('除くパターン: このパターンのターゲットを、前のパターンで集めたターゲットから除く（順序に意味がある）', 'Subtractive: takes the targets of this pattern out of those the patterns before it gave (the order counts)'));
   if (p.repo) {
@@ -153,7 +161,7 @@ export function explainTargetPattern(text: string, lang: Lang, flavor: TargetFla
       : why === 'dots-name' ? s('`...` の後には `:all`・`:*`・`:all-targets` だけを書ける。bazel は「\'...\' can only be used with wildcard targets」で止まる', 'After `...`, only `:all`, `:*` or `:all-targets` may stand: bazel stops with "\'...\' can only be used with wildcard targets"')
         : p.wildcard === 'rules' ? s(`${p.recursive ? '各' : ''}パッケージのすべてのルール（ファイルは含まない）`, `Every rule of ${p.recursive ? 'each' : 'the'} package (no files)`)
           : p.wildcard === 'targets' ? s(`${p.recursive ? '各' : ''}パッケージのすべてのターゲット（ルールとファイル）`, `Every target of ${p.recursive ? 'each' : 'the'} package: its rules and its files`)
-            : s(`ターゲット ${codeSpan(p.name!)}`, `The target ${codeSpan(p.name!)}`));
+            : s(`ターゲット ${codeSpan(p.name!)}`, `The target ${codeSpan(p.name!)}`), 'target-name');
   }
   // (With a hole, what the pattern selects depends on the value: only its parts are said.)
   if (holes || p.refused) return { tokens };
@@ -167,8 +175,8 @@ export function explainTargetPattern(text: string, lang: Lang, flavor: TargetFla
  * nothing of the query language (`deps(//x)`, `a+b`). A bare name may be a function or an operator (`deps`, `except`), whose
  * reading depends on the words around it (bazel joins them into one expression): it is left to the query language.
  */
-export function explainQueryWord(text: string, lang: Lang): { tokens: EmbeddedToken[]; note?: string } | undefined {
-  return /\/\/|:|\.\.\.|^@/.test(text) && !/^-|[(),+^=]/.test(text) ? explainTargetPattern(text, lang, 'query') : undefined;
+export function explainQueryWord(text: string, lang: Lang, flavor: TargetFlavor): { tokens: EmbeddedToken[]; note?: string } | undefined {
+  return /\/\/|:|\.\.\.|^@/.test(text) && !/^-|[(),+^=]/.test(text) ? explainTargetPattern(text, lang, flavor) : undefined;
 }
 
 /** Where no name is written (`//app`, `@repo`): whose name the target has. */
@@ -193,7 +201,9 @@ function noteOf(p: TargetPattern, lang: Lang, flavor: TargetFlavor, ambiguous: s
   // (The repository, where one is named: a label names it itself.)
   const name = p.repo?.name ? codeSpan(`${p.repo.canonical ? '@@' : '@'}${p.repo.name}`) : undefined;
   const of = name ? s(`リポジトリ ${name} の`, ` of the repository ${name}`) : '';
-  const where = p.absolute ? s(`${of}パッケージ ${pkg}`, `the package ${pkg}${of}`) : p.pkg ? s(`今のディレクトリの下のパッケージ ${pkg}`, `the package ${pkg} below the current directory`)
+  // (The top package has no name to show: `//:all`.)
+  const top = s(`リポジトリ${name ? ` ${name} ` : ''}の最上位のパッケージ`, `the top package of the repository${name ? ` ${name}` : ''}`);
+  const where = p.absolute ? (p.pkg ? s(`${of}パッケージ ${pkg}`, `the package ${pkg}${of}`) : top) : p.pkg ? s(`今のディレクトリの下のパッケージ ${pkg}`, `the package ${pkg} below the current directory`)
     : s('今のディレクトリのパッケージ', 'the package of the current directory');
   const below = p.pkg ? s(then(`${of}ディレクトリ ${pkg}${p.absolute ? '' : '（今のディレクトリから）'}`, 'とその下のパッケージ'), `the packages in the directory ${pkg}${of}${p.absolute ? '' : ' (from the current directory)'} and below`)
     : p.absolute ? s(`${name ? `リポジトリ ${name} ` : 'リポジトリ'}のすべてのパッケージ`, `every package of the repository${name ? ` ${name}` : ''}`) : s('今のディレクトリとその下のパッケージ', 'the packages in the current directory and below');
@@ -201,7 +211,8 @@ function noteOf(p: TargetPattern, lang: Lang, flavor: TargetFlavor, ambiguous: s
   const label = codeSpan(labelOf(p));
   const what = p.wildcard === 'rules' ? s(then(within, 'のすべてのルール'), `every rule of ${within}`)
     : p.wildcard === 'targets' ? s(then(within, 'のすべてのターゲット（ルールとファイル）'), `every target of ${within} (rules and files)`)
-      : p.absolute ? s(`1つのターゲット ${label}`, `one target, ${label}`) + implied(p, lang) : s(`今のディレクトリからの1つのターゲット ${label}`, `one target, ${label} from the current directory`);
+      : p.negative ? s(`ターゲット ${label}${p.absolute ? '' : '（今のディレクトリから）'}`, `the target ${label}${p.absolute ? '' : ' (from the current directory)'}`) + (p.absolute ? implied(p, lang) : '')
+        : p.absolute ? s(`1つのターゲット ${label}`, `one target, ${label}`) + implied(p, lang) : s(`今のディレクトリからの1つのターゲット ${label}`, `one target, ${label} from the current directory`);
   if (p.negative) return s(then(what, 'を、前のパターンのターゲットから除く'), `Takes ${what} out of the targets of the patterns before it`);
   // (`manual` targets: left out of the wildcards of a command that builds, `bazel build //app/...`; a query takes them.)
   const manual = p.wildcard && flavor === 'build' ? s('。', '; ') + tokenSaid(lang, 'bazel-manual-wildcard') : '';

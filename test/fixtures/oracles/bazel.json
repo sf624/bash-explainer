@@ -1413,6 +1413,92 @@
         "//app:main",
         "//app:main_test"
       ]
+    },
+    {
+      "command": "cquery",
+      "words": [
+        "//app/..."
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "cquery",
+      "words": [
+        "//app:*"
+      ],
+      "targets": [
+        "//app:BUILD",
+        "//app:app",
+        "//app:data",
+        "//app:data.txt",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "cquery",
+      "words": [
+        "//app:debug"
+      ],
+      "targets": [
+        "//app:debug"
+      ]
+    },
+    {
+      "command": "aquery",
+      "words": [
+        "//app/..."
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "aquery",
+      "words": [
+        "//app:all"
+      ],
+      "targets": [
+        "//app:app",
+        "//app:data",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "aquery",
+      "words": [
+        "//..."
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
+    },
+    {
+      "command": "aquery",
+      "words": [
+        "//app:debug"
+      ],
+      "targets": [
+        "//app:debug"
+      ]
     }
   ]
 }

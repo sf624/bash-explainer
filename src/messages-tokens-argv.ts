@@ -188,10 +188,14 @@ export const ARGV_TEXTS = {
   'hole-glob': tokenText<{ value: string }>(({ value }) => [
     `${value} の値はパターンの一部として読まれる。値の中の \`*\`・\`?\`・\`[\` はワイルドカードになり、\`\\\` は次の文字をただの文字にする`,
     `The value of ${value} is read as part of the pattern: \`*\`, \`?\` and \`[\` in it are wildcards, and a \`\\\` makes the next character plain`]),
-  /** `bazel build "//app:$t"`: a hole in a target pattern, after its start (`//`, `@repo//` or a relative directory). */
-  'hole-target': tokenText<{ value: string }>(({ value }) => [
-    `${value} の値はターゲットのパターンの一部として読まれる。値の中の \`/\` はディレクトリを区切り、\`:\` はターゲットの名前を始め、\`...\` はその下のすべてのパッケージ、名前の \`all\`・\`*\` はワイルドカードになる`,
-    `The value of ${value} is read as part of the target pattern: a \`/\` in it separates directories, a \`:\` starts the target's name, \`...\` stands for every package below, and \`all\` or \`*\` as the name are wildcards`]),
+  /** `bazel build "//$pkg/..."`: a hole in the package's path of a target pattern, after its start (`//`, `@repo//` or a relative directory). */
+  'hole-target-package': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値はパッケージのパスの一部として読まれる。値の中の \`/\` はディレクトリを区切り、\`:\` はパッケージを終えてターゲットの名前を始め、最後のディレクトリの \`...\` はその下のすべてのパッケージになる`,
+    `The value of ${value} is read as part of the package's path: a \`/\` in it separates directories, a \`:\` ends the package and starts the target's name, and \`...\` as the last directory stands for every package below`]),
+  /** `bazel build "//app:$t"`: a hole in the target's name, after `:` (bazel 9.3.2: `//app:a:b` is refused, `//app:...` and `//app:sub/x` are names). */
+  'hole-target-name': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値はターゲットの名前（またはその一部）として読まれる。名前全体が \`all\` ならすべてのルール、\`*\`・\`all-targets\` ならすべてのターゲットになる。値の中の \`/\` は名前の一部で、\`:\` は bazel が拒否する`,
+    `The value of ${value} is read as the target's name, or part of it: as the whole name, \`all\` is every rule and \`*\` or \`all-targets\` every target of the package; a \`/\` in it is part of the name, and bazel refuses a \`:\``]),
   /** `date +"%F $x"`: a hole in date's format. */
   'hole-date': tokenText<{ value: string; around?: boolean }>(({ value, around }) => [
     `${value} の値は表示書式の一部になる。値の中の \`%\` は書式指定として読まれる${around ? '。後ろは、値に `%` がないものとして読んでいる' : ''}`,

@@ -157,6 +157,8 @@ const withHelp = (commands: Record<string, CommandSpec>): Record<string, Command
   Object.fromEntries(Object.entries(commands).map(([name, spec]) => [name, { ...spec, helpCommand: `bazel help ${name}` }]));
 const targets = { operands: [{ pattern: [TARGETS] }] };
 const expression = { operands: [{ pattern: [EXPRESSION] }] };
+// (aquery's wildcards leave out the `manual` targets, as a build's do; query's and cquery's take them.)
+const aqueryExpression = { operands: [{ pattern: [{ ...EXPRESSION, lang: 'bazelaquery' as const }] }] };
 
 const INFO_KEYS: Record<string, Text> = {
   workspace: tx('ワークスペースの最上位のディレクトリ', 'the top directory of the workspace'),
@@ -214,7 +216,7 @@ const bazelSpec: CommandSpec = cmd('Bazel: ソースからビルドし、テス�
     ] }] }),
     query: command('ターゲットの依存のグラフを問い合わせる', 'Query the target dependency graph', QUERY, expression),
     cquery: command('構成を適用したターゲットのグラフを問い合わせる', 'Query the configured target graph', [...BUILD, ...CQUERY], expression),
-    aquery: command('アクションのグラフを問い合わせる', 'Query the action graph', [...BUILD, ...AQUERY], expression),
+    aquery: command('アクションのグラフを問い合わせる', 'Query the action graph', [...BUILD, ...AQUERY], aqueryExpression),
     info: command('サーバーとワークスペースの情報を表示する', 'Show information on the server and the workspace', [...BUILD,
       ['--show_make_env', '「Make」の変数も表示する', 'show the "Make" variables too'],
     ], { operands: [{ pattern: [operand('KEY', '表示する項目（ないときはすべて）', 'key to show (all when none is given)', { repeat: '*', values: INFO_KEYS })] }] }),

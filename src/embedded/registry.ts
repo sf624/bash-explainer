@@ -7,7 +7,7 @@ import type { Shell } from '../shellfeatures';
 import type { InvalidHow } from '../arith';
 import { explainArith } from './arith';
 import { explainAwk } from './awk';
-import { explainQueryWord, explainTargetPattern } from './bazel';
+import { explainQueryWord, explainTargetPattern, TARGET_FLAVORS } from './bazel';
 import { describeFindPattern } from './find';
 import { explainDate, explainEscapes, explainPrintf, printfNote } from './format';
 import { explainGetoptLong, explainGetoptShort } from './getopt';
@@ -106,7 +106,8 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   prompt: (text, cx) => ({ tokens: explainPrompt(text, cx.lang), note: promptNote(cx.lang) }),
   // Only `+FORMAT` is a format. (A word whose text is not known to start with `+`, as `x*` or `~`, may still reach here: the shell expands it first.)
   date: (text, cx) => (text.startsWith('+') ? { tokens: explainDate(text, cx.lang) } : undefined),
-  // (A target pattern of a command that builds, and a word of a query expression that is one.)
-  bazeltarget: (text, cx) => explainTargetPattern(text, cx.lang, 'build'),
-  bazelquery: (text, cx) => explainQueryWord(text, cx.lang),
+  // (A target pattern of a command that builds, and a word of a query or an aquery expression that is one.)
+  bazeltarget: (text, cx) => explainTargetPattern(text, cx.lang, TARGET_FLAVORS.bazeltarget),
+  bazelquery: (text, cx) => explainQueryWord(text, cx.lang, TARGET_FLAVORS.bazelquery),
+  bazelaquery: (text, cx) => explainQueryWord(text, cx.lang, TARGET_FLAVORS.bazelaquery),
 };
