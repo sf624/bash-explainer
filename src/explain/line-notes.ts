@@ -207,6 +207,8 @@ function stopWhat(status: StatusModel, n: SyntaxNode): StopWhat {
     const inner = at!.namedChildren.filter((c) => STATEMENTS.has(c.type));
     return { kind: 'substitution', ...(inner.length === 1 && inner[0].type === 'command' && !assignmentsOnly(inner[0]) ? { name: nameOf(inner[0]) } : {}) };
   }
+  // (A command that fails no other way, or ends the shell or the function itself, fails by a redirection: `exec cmd >> "$log"`.)
+  if (rule.kind === 'command' && (rule.ends || rule.fails === 'never')) return { kind: 'redirection', name: nameOf(n) };
   // (A test that is well formed is false with 1, as written; a malformed one gives 2, the command's status.)
   if (rule.kind === 'test' && !rule.fails) return { kind: 'test', text: shorten(n.text, 32) };
   const name = nameOf(n);

@@ -231,6 +231,9 @@ describe('the note on where `set -e` stops the script, against bash (docs/design
       const printed = runs[i].out.split('\n').filter((w) => /^[A-Z]\w*( \d+)?$/.test(w)).map((w) => w.split(' ')[0]);
       assert.deepStrictEqual([runs[i].status, printed.join(' ')], [status, words], script);
     });
+    // (`exec cmd` with a redirection fails only by it: review of #774; `exec` of redirections alone fails as a command.)
+    assert.match(notesOn('set -e\nexec /opt/app >> "$LOG" 2>&1', 1)[0], /^ℹ If a redirection of `exec` fails, `set -e` stops the script here, with status 1$/);
+    assert.match(notesOn('set -e\nexec > "$LOG" 2>&1', 1)[0], /^ℹ If `exec` fails, `set -e` stops the script here, with `exec`'s status$/);
     // (A call of a function that returns a status not known may fail: the call has the note, and the ERR trap runs there.)
     assert.match(notesOn("set -e\ntrap 'echo E1' ERR\nf() {\n  return \"$1\"\n}\nf 3", 5)[0], /^ℹ If `f` fails, `set -e` stops the script here: the ERR trap of line 2 runs `echo E1`/);
   });
@@ -268,6 +271,7 @@ describe('the note on where `set -e` stops the script, against bash (docs/design
       [{ what: tar, stops: 'script', err: { sure: true, line: 4, action: 'e', exits: true }, exit: cleanup }, "If `tar` fails, `set -e` stops the script here: the ERR trap of line 4 runs `e`, then the EXIT trap of line 19 runs `cleanup`, and the script exits with `tar`'s status (unless `e` or `cleanup` fails or calls `exit`)", '`tar` が失敗すると、`set -e` でスクリプトはここで終わり、行 4 の ERR トラップの `e`、行 19 の EXIT トラップの `cleanup` の順に実行され、`tar` の終了ステータスで終了する（`e`・`cleanup` のどれかが失敗したり `exit` を呼んだりしなければ）'],
       [{ what: tar, stops: 'script', err: { sure: false, line: 4, action: 'e' }, exit: { sure: false, line: 19, action: 'cleanup' } }, "If `tar` fails, `set -e` stops the script here, with `tar`'s status; the ERR trap of line 4 and the EXIT trap of line 19 may run first", '`tar` が失敗すると、`set -e` でスクリプトはここで終わり、`tar` の終了ステータスで終了する（先に行 4 の ERR トラップと行 19 の EXIT トラップが実行されることがある）'],
       [{ what: [{ kind: 'command', name: 'a' }, { kind: 'command', name: 'b' }], stops: 'subshell' }, 'If `a` or `b` fails, `set -e` ends the subshell here, with the status of the one that fails', '`a`・`b` のどれかが失敗すると、`set -e` でサブシェルはここで終わり、失敗したコマンドの終了ステータスで終了する'],
+      [{ what: [{ kind: 'redirection', name: 'exec' }], stops: 'script', err: { sure: true, line: 2, action: 'echo E' } }, "If a redirection of `exec` fails, `set -e` stops the script here: the ERR trap of line 2 runs `echo E`, and the script exits with status 1", '`exec` のリダイレクトが失敗すると、`set -e` でスクリプトはここで終わり、行 2 の ERR トラップの `echo E` が実行され、終了ステータス 1 で終了する'],
       [{ what: [{ kind: 'command', name: 'cat' }], stops: 'test' }, 'If `cat` fails, the test fails here: its remaining lines do not run, and bats goes on with the next test', '`cat` が失敗すると、テストはここで失敗する。残りの行は実行されず、bats は次のテストに進む'],
     ];
     for (const [p, en, ja] of cases) {
