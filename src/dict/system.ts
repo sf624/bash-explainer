@@ -462,14 +462,6 @@ export const system: Record<string, CommandSpec> = {
     ['-m', '入っている拡張を一覧表示する', 'list loaded extensions'], ['-i', '設定の情報（phpinfo）を表示する', 'show configuration (phpinfo)'],
     ['-d', 'php.ini の設定を1つ上書きする（`-d 名前=値`）', 'set one php.ini setting (`-d name=value`)', 'arg'],
   ], { positional: [pos('実行するスクリプト', 'script to run'), pos('スクリプトへの引数', 'argument to the script')] }),
-  gcc: cmd('C コンパイラ（GCC）', 'C compiler (GCC)', [
-    ['-o', '出力するファイル名', 'output file', 'arg'], ['-c', 'コンパイルだけしてリンクしない（.o を作る）', 'compile only, do not link (make .o files)'],
-    ['-g', 'デバッグ情報を入れる', 'include debug information'], ['-O0', '最適化しない', 'no optimisation'], ['-O2', '一般的な最適化', 'usual optimisation'],
-    ['-O3', 'より強い最適化', 'more optimisation'], ['-Os', 'サイズを小さくする最適化', 'optimise for size'], ['-Wall', '主な警告を有効にする', 'enable the common warnings'],
-    ['-Wextra', '追加の警告を有効にする', 'enable extra warnings'], ['-Werror', '警告をエラーにする', 'treat warnings as errors'],
-    ['-shared', '共有ライブラリを作る', 'build a shared library'], ['-fPIC', '位置独立コードを作る（共有ライブラリ向け）', 'position-independent code (for shared libraries)'],
-    ['-static', '静的にリンクする', 'link statically'], ['-dumpversion', 'コンパイラの版だけを表示する', 'print only the compiler version'], ['-dumpmachine', '対象のアーキテクチャを表示する', 'print the target triple'],
-  ], { positional: [pos('ソースファイル', 'source file')], parser: 'single-dash' }),
 
   // ---- GitHub ----
   // gh finds its subcommand as cobra does: `gh -R o/r pr list` gives `-R` to `pr`.
