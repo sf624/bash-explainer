@@ -1,0 +1,3 @@
+# sponge of moreutils 0.69: `sponge -h`, and the OPTIONS section of its manual page.
+sponge [-a] <file>: soak up all input from stdin and write it to <file>
+-a

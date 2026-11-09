@@ -5,8 +5,8 @@
       "values": { "words": 301, "unknown": 41, "claims": 365, "globExamples": 13, "roleCommands": 46, "roleFields": 151 }
     },
     "snippets": {
-      "probe": { "words": 355, "unknown": 45, "claims": 388, "globExamples": 10, "roleCommands": 13, "roleFields": 13 },
-      "values": { "words": 359, "unknown": 46, "claims": 393, "globExamples": 10, "roleCommands": 13, "roleFields": 33 }
+      "probe": { "words": 356, "unknown": 45, "claims": 389, "globExamples": 10, "roleCommands": 13, "roleFields": 13 },
+      "values": { "words": 360, "unknown": 46, "claims": 394, "globExamples": 10, "roleCommands": 13, "roleFields": 33 }
     }
   },
   "known": []

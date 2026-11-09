@@ -1,0 +1,40 @@
+# pv 1.8.5: the option lines of `pv --help`.
+-p, --progress
+-t, --timer
+-e, --eta
+-I, --fineta
+-r, --rate
+-a, --average-rate
+-m, --average-rate-window SEC
+-b, --bytes
+-8, --bits
+-T, --buffer-percent
+-A, --last-written NUM
+-F, --format FORMAT
+-n, --numeric
+-q, --quiet
+-W, --wait
+-D, --delay-start SEC
+-s, --size SIZE
+-l, --line-mode
+-0, --null
+-i, --interval SEC
+-w, --width WIDTH
+-H, --height HEIGHT
+-N, --name NAME
+-f, --force
+-c, --cursor
+-L, --rate-limit RATE
+-B, --buffer-size BYTES
+-C, --no-splice
+-E, --skip-errors
+-Z, --error-skip-block BYTES
+-S, --stop-at-size
+-Y, --sync
+-K, --direct-io
+-X, --discard
+-R, --remote PID
+-P, --pidfile FILE
+-d, --watchfd PID[:FD]
+-h, --help
+-V, --version

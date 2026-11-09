@@ -77,6 +77,17 @@ Checked with Temurin 21.0.13, Apache Maven 3.9.9 and Gradle 8.14.3: every option
 - **gradle, gradlew.** The options of `gradle --help`; operands are tasks.
 - **Not yet said.** Which phase or task does what; the commands of a goal.
 
+### Small tools
+
+Checked with ripgrep 14.1.0, pv 1.8.5, sponge of moreutils 0.69, expect 5.45.4, socat 1.8.0.0 and sshpass 1.09: their option lines are recorded in test/fixtures/small-tools/ (test/small-tools.test.ts), and test/small-tools-real.test.ts runs the tools.
+
+- **rg.** Every option of `rg -h` and the `--no-…` forms of `rg --help`. `-A3`, `-A=3`, `-A 3` and `--after-context=3` give the value (ripgrep's lexopt; the new parser `lexopt`); a prefix of a long name is not an option. The pattern is the first operand, or the value of `-e` or `-f`; the pattern is not read as a regex (it is the Rust `regex` crate's, and no reader here has that flavour), and no example is made for it yet.
+- **pv.** Every option of `pv --help`, read as getopt_long does (`--siz` is `--size`); the operands are the files.
+- **sponge.** `-a` and the file; the summary says that it reads all its input before writing (`sort f | sponge f`).
+- **expect.** `-c`, `-d`, `-D`, `-f`, `-b`, `-i`, `-n`, `-N`, `-v`, each a word of its own. The first operand is the script (Tcl, not read) unless `-f` or `-b` names it; the rest are its arguments.
+- **socat.** The general options (`-d`, `-dd`, `-d3`, `-t5`, `-t 5`, `-lf FILE`, `-b8192`…): none clusters, and all come before the two addresses. The addresses are operands and are not read.
+- **sshpass.** `-f`, `-d`, `-p`, `-e`, `-P`, `-v`; `-p PASSWORD` says that the password can be seen by other users. The command after its options is explained as a command.
+
 ## Changed
 
 ### Invalid regexes are Errors
