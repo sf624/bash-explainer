@@ -3,7 +3,7 @@
 import type { Shell } from '../shellfeatures';
 import type { BashParser, SyntaxTree } from '../syntax/tree';
 import { createUnbashParser } from '../syntax/adapters/unbash';
-import type { Extracted, LanguageRegion, ShellRegion } from './index';
+import type { Extracted, LanguageRegion, LiteralSource, ReParam, ShellRegion } from './index';
 
 let regionParser: BashParser | undefined;
 
@@ -98,6 +98,12 @@ export function hostPartAt(extracted: Extracted, line: number): HostPart | undef
 }
 
 const languagesByLine = new WeakMap<Extracted, Map<number, LanguageRegion>>();
+
+/** The literal of the argument of a region's call that binds `role`, if it is string literals only. */
+export const literalOf = (region: LanguageRegion, role: ReParam): LiteralSource | undefined => region.args.find((a) => a.role === role)?.literal;
+
+/** The pattern a region's reader reads: its call has one, as literals, or there is no region. */
+export const patternOf = (region: LanguageRegion): LiteralSource => literalOf(region, 'pattern')!;
 
 /** Whether a host document has anything to explain: shell code, or a part in another language. */
 export function hasParts(extracted: Extracted): boolean {
