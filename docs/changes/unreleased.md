@@ -54,12 +54,12 @@ Checked with unused_deps 10.2.0 (bazel-contrib/buildtools; `unused_deps -h`, and
 
 ### Java tools
 
-Written from the tools' usage texts (`java -help`, `javac -help`, `keytool -help`, `mvn --help`, `gradle --help`); none was installed where this was made, so nothing is compared with a real binary (test/java.test.ts reads the spec only).
+Checked with Temurin 21.0.13, Apache Maven 3.9.9 and Gradle 8.14.3: every option of their usage texts (`java --help`, `--help-extra`, `javac --help`, `--help-extra`, `keytool -COMMAND -help`, `mvn --help`, `gradle --help`; recorded in test/fixtures/java/) is in the spec, and the rules below were run (test/java-real.test.ts).
 
-- **java.** Options of one dash (`-cp`, `-classpath`, `--class-path`, `-jar`, `-m`), `-D<name>[=<value>]`, `-X…` (`-Xmx`, `-Xms`, `-Xss` with their sizes), `-XX:…` and the colon forms (`-ea:pkg...`, `-javaagent:`, `-verbose:gc`). The main class, or the file after `-jar` and the module after `-m`, ends the options: what follows is the program's arguments (`java -jar app.jar --port 80` no longer shows `--port` as an unknown option of java).
+- **java.** The JDK's tools take no `-name=value` (`javac -classpath=out` is an invalid flag; `--class-path=out` is fine), and `java -source 21` is not an option (`--source` is). Options of one dash (`-cp`, `-classpath`, `--class-path`, `-jar`, `-m`), `-D<name>[=<value>]`, `-X…` (`-Xmx`, `-Xms`, `-Xss` with their sizes), `-XX:…` and the colon forms (`-ea:pkg...`, `-javaagent:`, `-verbose:gc`). The main class, or the file after `-jar` and the module after `-m`, ends the options: what follows is the program's arguments (`java -jar app.jar --port 80` no longer shows `--port` as an unknown option of java).
 - **javac.** The same family of options, `-d`, `-sourcepath`, `-encoding`, `--release`, `-g:…`, `-Xlint:…`, `-proc:…`, `-A<key>=<value>`, `-J<opt>`; the operands are source files and `@argfiles`.
 - **keytool.** Its commands, written as options (`-genkeypair`, `-list`, `-importcert`…), and their options; `-storepass` says that the password on the command line can be seen by other users.
-- **mvn, mvnw.** The options of `mvn --help`, including the multi-letter short ones (`-pl`, `-am`, `-fae`), `-D…`, `-P…`, `-T…`; operands are lifecycle phases and plugin goals.
+- **mvn, mvnw.** The options of `mvn --help` (`--fail-on-severity` and `--raw-streams` are not options of 3.9.9), including the multi-letter short ones (`-pl`, `-am`, `-fae`), `-D…`, `-P…`, `-T…`; operands are lifecycle phases and plugin goals.
 - **gradle, gradlew.** The options of `gradle --help`; operands are tasks.
 - **Not yet said.** Which phase or task does what; the commands of a goal.
 

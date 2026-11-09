@@ -12,10 +12,12 @@ import { OptionParser, PARSERS } from '../src/argv/parsers';
 import type { CommandSpec, OptionSpec } from '../src/argv/spec';
 import { argWords } from './support/argwords';
 
-const ENV: NodeJS.ProcessEnv = { ...process.env, LC_ALL: 'C', GH_TOKEN: 'x', GH_HOST: 'github.com', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
+// (The JDK's tools, when $BASH_EXPLAINER_JDK names a JDK: tools/env.sh of the maintainer's machine.)
+const JDK_BIN = process.env.BASH_EXPLAINER_JDK ? `${process.env.BASH_EXPLAINER_JDK}/bin:` : '';
+const ENV: NodeJS.ProcessEnv = { ...process.env, PATH: JDK_BIN + (process.env.PATH ?? ''), LC_ALL: 'C', GH_TOKEN: 'x', GH_HOST: 'github.com', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
 delete ENV.POSIXLY_CORRECT;
 delete ENV.GETOPT_COMPATIBLE;
-const has = (tool: string): boolean => spawnSync('bash', ['--norc', '-c', `command -v ${tool}`]).status === 0;
+const has = (tool: string): boolean => spawnSync('bash', ['--norc', '-c', `command -v ${tool}`], { env: { ...process.env, PATH: JDK_BIN + (process.env.PATH ?? '') } }).status === 0;
 const run = (line: string): { out: string; err: string; status: number | null } => {
   const r = spawnSync('bash', ['--norc', '-c', line], { env: ENV, encoding: 'utf8', timeout: 30000 });
   return { out: r.stdout, err: r.stderr, status: r.status };
@@ -186,6 +188,12 @@ describe('option parser presets agree with a real parser of their family', () =>
       ["bash -ox posix -c 'shopt -qo posix && echo P'", /P\n/, '-o -x posix -c --'],
       ["bash -c - 'echo $0' zero", /^zero\n$/, '-c -- zero'],
       ["bash --nosuch -c 'echo hi'", 'fails', 'error'],
+    ] },
+    // The JDK's launcher: a known option takes no `-name=value`, a long one takes `--name=value`.
+    { parser: 'java', tool: 'java', rows: [
+      ['java --class-path=. -version', /openjdk version/, '--class-path . -version --'],
+      ['java -classpath=. -version', 'fails', 'error'],
+      ['java -cp . -version', /openjdk version/, '-cp . -version --'],
     ] },
     // dpkg's myopt: `-f=x` gives `x`.
     { parser: 'dpkg', tool: 'dpkg-query', rows: [

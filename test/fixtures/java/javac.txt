@@ -1,0 +1,67 @@
+# The option lines of `javac --help` and `javac --help-extra` (Temurin 21.0.13).
+@<filename>
+-Akey[=value]
+--add-modules <module>(,<module>)*
+--boot-class-path <path>, -bootclasspath <path>
+--class-path <path>, -classpath <path>, -cp <path>
+-d <directory>
+-deprecation
+--enable-preview
+-encoding <encoding>
+-endorseddirs <dirs>
+-extdirs <dirs>
+-g
+-g:{lines,vars,source}
+-g:none
+-h <directory>
+--help, -help, -?
+--help-extra, -X
+-implicit:{none,class}
+-J<flag>
+--limit-modules <module>(,<module>)*
+--module <module>(,<module>)*, -m <module>(,<module>)*
+--module-path <path>, -p <path>
+--module-source-path <module-source-path>
+--module-version <version>
+-nowarn
+-parameters
+-proc:{none,only,full}
+-processor <class1>[,<class2>,<class3>...]
+--processor-module-path <path>
+--processor-path <path>, -processorpath <path>
+-profile <profile>
+--release <release>
+-s <directory>
+--source <release>, -source <release>
+--source-path <path>, -sourcepath <path>
+--system <jdk>|none
+--target <release>, -target <release>
+--upgrade-module-path <path>
+-verbose
+--version, -version
+-Werror
+--add-exports <module>/<package>=<other-module>(,<other-module>)*
+--add-reads <module>=<other-module>(,<other-module>)*
+--default-module-for-created-files <module-name>
+-Djava.endorsed.dirs=<dirs>
+-Djava.ext.dirs=<dirs>
+--help-lint
+--patch-module <module>=<file>(:<file>)*
+-Xbootclasspath:<path>
+-Xbootclasspath/a:<path>
+-Xbootclasspath/p:<path>
+-Xdiags:{compact,verbose}
+-Xdoclint
+-Xdoclint:(all|none|[-]<group>)[/<access>]
+-Xdoclint/package:[-]<packages>(,[-]<package>)*
+-Xlint
+-Xlint:<key>(,<key>)*
+-Xmaxerrs <number>
+-Xmaxwarns <number>
+-Xpkginfo:{always,legacy,nonempty}
+-Xplugin:"name args"
+-Xprefer:{source,newer}
+-Xprint
+-XprintProcessorInfo
+-XprintRounds
+-Xstdout <filename>

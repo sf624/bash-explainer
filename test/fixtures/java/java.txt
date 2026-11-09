@@ -1,0 +1,80 @@
+# The option lines of `java --help` and `java --help-extra` (Temurin 21.0.13).
+-cp <class search path of directories and zip/jar files>
+-classpath <class search path of directories and zip/jar files>
+--class-path <class search path of directories and zip/jar files>
+-p <module path>
+--module-path <module path>...
+--upgrade-module-path <module path>...
+--add-modules <module name>[,<module name>...]
+--enable-native-access <module name>[,<module name>...]
+--list-modules
+-d <module name>
+--describe-module <module name>
+--dry-run     create VM and load main class but do not execute main method.
+--validate-modules
+-D<name>=<value>
+-verbose:[class|module|gc|jni]
+-version      print product version to the error stream and exit
+--version     print product version to the output stream and exit
+-showversion  print product version to the error stream and continue
+--show-version
+--show-module-resolution
+-? -h -help
+--help        print this help message to the output stream
+-X            print help on extra options to the error stream
+--help-extra  print help on extra options to the output stream
+-ea[:<packagename>...|:<classname>]
+-enableassertions[:<packagename>...|:<classname>]
+-da[:<packagename>...|:<classname>]
+-disableassertions[:<packagename>...|:<classname>]
+-esa | -enablesystemassertions
+-dsa | -disablesystemassertions
+-agentlib:<libname>[=<options>]
+-agentpath:<pathname>[=<options>]
+-javaagent:<jarpath>[=<options>]
+-splash:<imagepath>
+@argument files
+--disable-@files
+--enable-preview
+--<name> <value>.
+-Xbatch
+-Xbootclasspath/a:<directories and zip/jar files separated by :>
+-Xcheck:jni
+-Xcomp
+-Xdebug
+-Xdiag
+-Xfuture
+-Xint
+-Xinternalversion
+-version option
+-Xlog:<opts>
+-Xloggc:<file>
+-Xmixed
+-Xmn<size>
+-Xms<size>
+-Xmx<size>
+-Xnoclassgc
+-Xrs
+-Xshare:auto
+-Xshare:off
+-Xshare:on
+-XshowSettings
+-XshowSettings:all
+-XshowSettings:locale
+-XshowSettings:properties
+-XshowSettings:vm
+-XshowSettings:security
+-XshowSettings:security:all
+-XshowSettings:security:properties
+-XshowSettings:security:providers
+-XshowSettings:security:tls
+-XshowSettings:system
+-Xss<size>
+-Xverify
+--add-reads <module>=<target-module>(,<target-module>)*
+--add-exports <module>/<package>=<target-module>(,<target-module>)*
+--add-opens <module>/<package>=<target-module>(,<target-module>)*
+--limit-modules <module name>[,<module name>...]
+--patch-module <module>=<file>(:<file>)*
+--source <version>
+--finalization=<value>
