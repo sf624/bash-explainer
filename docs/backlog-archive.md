@@ -995,6 +995,31 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `-warnings=foo` (unknown name) exits 1 with a Go log line; we say status 2.
   - With `-format`, a missing file gives status 3 with `"success":true` and an empty file list.
 
+## From the review of buildozer (#781)
+
+### buildozer: words left unread, rare label forms
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare forms (buildozer 10.2.0); the usual `buildozer 'cmd args' //pkg:rule`, `//pkg:*`, `//pkg:%kind`, `//pkg/...:*` and `-:name` are said right.
+- **Input and what is wrong:**
+  - `buildozer 'add deps x' "//app:$t"`: a label with an expansion is left unread (no text for a hole in a label).
+  - `buildozer '' //a:b`: the empty word is not marked; buildozer stops with "empty command list" (status 1). A word of blanks only is marked.
+  - `buildozer 'print label' -//app:main`: says nothing; buildozer reads the package `-/app` and fails (status 2).
+  - `buildozer 'print label' -:`: not explained; buildozer reads it as no stdin package. `app:` (a relative package with no name) is not explained; buildozer reads it as the rule `app` of the current directory.
+  - `//BUILD`, `BUILD` alone: not explained (buildozer fails: "file not found").
+  - `buildozer -f cmds.txt`: the commands of the file are not read, and a file of print commands only still gets the warning on status 3.
+  - `buildozer -stdout=false …`: the option says what `-stdout` does, with "value: `false`".
+  - `buildozer 'print nosuch' //app:main`: the attribute's text does not say that `(missing)` is printed on stdout (and a warning on stderr).
+
+### Exit statuses that are no error: where the note does not name them
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** The note on where `set -e` stops says "fails" there, which is still true to bash.
+- **Input and what is wrong:**
+  - `set -e; x=$(grep a f)`: the note on the substitution does not name grep's status 1.
+  - `set -e; grep a f; diff b c`: a line with several stopping commands keeps the generic "If `grep` or `diff` fails".
+  - `grep $opts x f`: the statuses are read as if `$opts` were not `-v` ("no line matched").
+
 ## From the reviews of the traps and set -e (#767, #774)
 
 ### Traps: order of definitions, unknown values, `trap -`

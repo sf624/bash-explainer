@@ -266,8 +266,6 @@ export function parseBuildozerLabel(text: string): BuildozerLabel | undefined {
 function explainLabel(text: string, lang: Lang): { tokens: EmbeddedToken[]; note?: string } | undefined {
   // (The Japanese texts join code spans and words: `jaSpaced` puts the blanks between them.)
   const s = (ja: string, en: string): string => (lang === 'ja' ? jaSpaced(ja) : en);
-  // (A hole may decide whether the word is a command: its value may start with one's name, or be a label of any form.)
-  if (hasHole(text)) return { tokens: [] };
   const l = parseBuildozerLabel(text);
   if (!l) return undefined;
   const tokens: EmbeddedToken[] = [];
@@ -323,7 +321,7 @@ export function explainBuildozerWord(text: string, lang: Lang): { tokens: Embedd
   // (A label has no blanks: a word of several arguments meant a command, `ad deps x`.)
   if (args.length > 1) {
     const w = codeSpan(args[0].text);
-    return { tokens: [{ start: args[0].start, end: args[0].end, kind: 'error', children: [], explanation: s(`${w} は buildozer のコマンドではないので、buildozer はこの語全体をラベルとして読み、そのルールが見つからずに失敗する（終了ステータス 2）`, `${w} is no command of buildozer: it reads the whole word as a label, finds no such rule, and fails (status 2)`) }] };
+    return { tokens: [{ start: args[0].start, end: args[0].end, kind: 'error', children: [], explanation: s(`${w} は buildozer のコマンドではないので、buildozer はこの語全体をラベルとして読み、そのルールか BUILD ファイルが見つからずに失敗する（終了ステータス 2）`, `${w} is no command of buildozer: it reads the whole word as a label, finds no such rule or BUILD file, and fails (status 2)`) }] };
   }
   return explainLabel(text, lang);
 }

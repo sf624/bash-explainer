@@ -247,7 +247,8 @@ function givenValues(parse: ArgvParse): GivenValue[] {
  * names, with its value (the last one given), and the operands. `words`: the values of the words, when known.
  */
 export function exitMeanings(spec: CommandSpec, parse: ArgvParse, words: readonly (string | undefined)[]): readonly ExitMeaning[] {
-  const exits = spec.exits ?? [];
+  // (Asked only of a spec that has them: the status model, `programResults`.)
+  const exits = spec.exits!;
   if (!exits.some((e) => e.when)) return exits;
   const options = new Map<string, string | undefined>();
   const values = new Map(givenValues(parse).map((v) => [v.role, words[v.word]?.slice(v.at ?? 0)]));

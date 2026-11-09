@@ -1,0 +1,6 @@
+{
+  "uses": [
+    {"file":"src/statusfacts.ts","fn":"tests","kind":"name","count":1,"reason":"`grep -q` is taken for a test (its status 1 an answer, like `[ ]`'s) by its name and a scan of its words for `-q`"},
+    {"file":"src/semantics/status.ts","fn":"closesEarly","kind":"name","count":1,"reason":"`grep -q` and `grep -m` may stop reading before the end (a stage before them may then die of SIGPIPE), by its name and a scan of its words"}
+  ]
+}
