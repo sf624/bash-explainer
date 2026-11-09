@@ -195,14 +195,6 @@ describe('option parser presets agree with a real parser of their family', () =>
       ['java -classpath=. -version', 'fails', 'error'],
       ['java -cp . -version', /openjdk version/, '-cp . -version --'],
     ] },
-    // ripgrep's lexopt: `-A=1` and `-A1` give `1`; no prefix of a long name.
-    { parser: 'lexopt', tool: 'rg', rows: [
-      ["rg --no-config -A=1 '^# ---' test/fixtures/sample.sh", /^# ---/, "--no-config -A 1 -- ^# --- test/fixtures/sample.sh"],
-      ["rg --no-config -A1 '^# ---' test/fixtures/sample.sh", /^# ---/, "--no-config -A 1 -- ^# --- test/fixtures/sample.sh"],
-      ["rg --no-config --after-context=1 '^# ---' test/fixtures/sample.sh", /^# ---/, "--no-config --after-context 1 -- ^# --- test/fixtures/sample.sh"],
-      ["rg --no-config --after-cont=1 '^# ---' test/fixtures/sample.sh", 'fails', 'error'],
-      ["rg --no-config -ni '^# ---' test/fixtures/sample.sh", /^\d+:# ---/, "--no-config -n -i -- ^# --- test/fixtures/sample.sh"],
-    ] },
     // dpkg's myopt: `-f=x` gives `x`.
     { parser: 'dpkg', tool: 'dpkg-query', rows: [
       ['dpkg-query -f=\'${Package}\\n\' -W dpkg', /^dpkg\n$/, '-f ${Package}\\n -W -- dpkg'],
@@ -219,6 +211,30 @@ describe('option parser presets agree with a real parser of their family', () =>
       }
     });
   }
+
+  // ripgrep's lexopt (14.1.0): `-A=1` and `-A1` give `1`; no prefix of a long name. ripgrep is not on the CI runners, so the readings
+  // are recorded here (what rg printed when they were made); with rg installed ($RG, tools/env.sh) the rows run it as well.
+  CHECKED.add('lexopt');
+  it('lexopt: as rg reads its options (recorded; run when rg is installed)', () => {
+    const FILE = 'test/fixtures/sample.sh';
+    const rows: [string, RegExp | 'fails', string][] = [
+      [`rg --no-config -A=1 '^# ---' ${FILE}`, /^# ---/, `--no-config -A 1 -- ^# --- ${FILE}`],
+      [`rg --no-config -A1 '^# ---' ${FILE}`, /^# ---/, `--no-config -A 1 -- ^# --- ${FILE}`],
+      [`rg --no-config --after-context=1 '^# ---' ${FILE}`, /^# ---/, `--no-config --after-context 1 -- ^# --- ${FILE}`],
+      [`rg --no-config --after-cont=1 '^# ---' ${FILE}`, 'fails', 'error'],
+      [`rg --no-config -ni '^# ---' ${FILE}`, /^\d+:# ---/, `--no-config -n -i -- ^# --- ${FILE}`],
+    ];
+    for (const [line, does, reads] of rows) {
+      if (has('rg')) {
+        const r = run(line);
+        if (does === 'fails') assert.notStrictEqual(r.status, 0, line);
+        else assert.match(r.out + r.err, does, line);
+      }
+      const { parse, words } = parseLine(line);
+      assert.strictEqual(normalized(parse, words), reads, line);
+    }
+    if (has('rg')) RAN.add('lexopt');
+  });
 
   // bazel: a JVM program that fetches its rules from the network, so no live run here; scripts/record-bazel.ts records
   // what bazel 9.3.2 reads (test/fixtures/oracles/bazel.json): the options after a command as `bazel canonicalize-flags`
