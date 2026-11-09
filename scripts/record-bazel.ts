@@ -10,6 +10,14 @@
 // test/bazel-query.test.ts compares the query language's reader with, and what it gave (labels, or an aquery's mnemonics). The bazel is `$BAZEL` (bazel, or bazelisk, which runs the
 // release of test/fixtures/bazel/.bazelversion), a separate program.
 //
+// `examples` is a second workspace, test/fixtures/bazel-cc (about 8 targets in 4 packages, a test, a genrule with a tool, and
+// one external library, @abseil-cpp, with rules_cc, both from the Bazel Central Registry: the first record downloads them, once),
+// and the commands the examples of bazel query, cquery and aquery show: each row keeps the text bazel printed to stdout, one
+// string a line (`output`, normalised: the copy's directory is `<workspace>`, the output base `<output_base>`, an action's
+// key `<key>`). What is machine-specific stays and is an example: the configuration hashes of a cquery (`(a7a71fd)`), and
+// an aquery's compiler path and flags, which come from the C++ toolchain bazel finds. Nothing else is: test/bazel-examples.test.ts
+// reads the record. Add a row as `{ "command": "query", "options": ["--output=label_kind"], "expression": "//..." }`.
+//
 //   BAZEL=~/.cache/explain-bash-tools/bazelisk/bazelisk-linux-amd64 npx tsx scripts/record-bazel.ts           rewrite the facts
 //   BAZEL=… npx tsx scripts/record-bazel.ts --check   fail if a row's facts are not what bazel does
 //
@@ -23,6 +31,7 @@ import * as path from 'path';
 
 const ORACLE = path.join(__dirname, '..', 'test', 'fixtures', 'oracles', 'bazel.json');
 const WORKSPACE = path.join(__dirname, '..', 'test', 'fixtures', 'bazel');
+const EXAMPLES = path.join(__dirname, '..', 'test', 'fixtures', 'bazel-cc');
 
 interface FlagsRow { command: string; words: string[]; canonical?: string[]; error?: string }
 interface LineRow { line: string; status?: number; says?: string }
@@ -35,7 +44,11 @@ interface Universe { all: string[]; rules: string[]; manual: string[] }
  * a query or a cquery (sorted, a cquery's configuration left out), the mnemonics of an aquery's actions (sorted, each once).
  */
 interface ExpressionRow { command: 'query' | 'cquery' | 'aquery'; options?: string[]; expression: string; status?: number; error?: string; targets?: string[]; mnemonics?: string[] }
-interface Oracle { '//': string; bazel?: string; flags: FlagsRow[]; lines: LineRow[]; universe?: Universe; patterns: PatternRow[]; expressions: ExpressionRow[] }
+/** One command of the examples: what it printed (`output`, one string a line, after `normalise`), or the first line of its error. */
+interface ExampleRow { command: 'query' | 'cquery' | 'aquery'; options?: string[]; expression: string; status?: number; error?: string; output?: string[] }
+/** The examples' workspace: its targets (`//...:*` with `--output=label_kind`, the rule kind and the label of each) and its rows. */
+interface Examples { '//': string; targets: string[]; rows: ExampleRow[] }
+interface Oracle { '//': string; bazel?: string; flags: FlagsRow[]; lines: LineRow[]; universe?: Universe; patterns: PatternRow[]; expressions: ExpressionRow[]; examples?: Examples }
 
 const bazel = process.env.BAZEL;
 if (!bazel) {
@@ -54,6 +67,36 @@ const firstError = (text: string): string | undefined => {
   const line = text.split('\n').find((l) => /^(ERROR: |\[FATAL )/.test(l));
   return line?.replace(/^\[FATAL [^\]]*\] /, '').replace(/^ERROR: /, '').replace(/^\S+ :: /, '').split(dir).join('<workspace>');
 };
+
+/** Runs the rows of `examples` in a copy of test/fixtures/bazel-cc, and expunges its output base. */
+function recordExamples(): Examples {
+  const old = oracle.examples;
+  if (!old) throw new Error('add "examples": { "//": "…", "targets": [], "rows": [...] } to the oracle first');
+  const ws = fs.mkdtempSync(path.join(process.env.TMPDIR ?? os.tmpdir(), 'record-bazel-cc-'));
+  fs.cpSync(EXAMPLES, ws, { recursive: true });
+  try {
+    const run = (args: string[]) => spawnSync(bazel!, args, { cwd: ws, env, encoding: 'utf8', timeout: 900000, maxBuffer: 64 << 20 });
+    const base = run(['info', 'output_base']).stdout.trim();
+    /** Bazel's stdout with what is of this machine named: the copy, the output base, an action's key. */
+    const normalise = (text: string): string[] => text.split(ws).join('<workspace>').split(base).join('<output_base>')
+      .split('\n').map((l) => l.replace(/^(\s*ActionKey: ).*$/, '$1<key>'));
+    const rows = old.rows.map((row): ExampleRow => {
+      const { command, options, expression } = row;
+      const r = run([command, '--noshow_progress', ...(options ?? []), '--', expression]);
+      const error = r.status === 0 ? undefined : firstError(r.stderr) ?? `status ${r.status}`;
+      let out = normalise(r.stdout);
+      while (out.length && out[out.length - 1] === '') out.pop();
+      // (A graph's nodes and edges come in an order that changes from run to run: sorted, between its two lines.)
+      if (out[0] === 'digraph mygraph {') out = [out[0], out[1], ...out.slice(2, -1).sort(), out[out.length - 1]];
+      return { command, ...(options ? { options } : {}), expression, status: r.status ?? -1, ...(error ? { error } : { output: out }) };
+    });
+    const kinds = run(['query', '--noshow_progress', '--output=label_kind', '//...:*']);
+    return { '//': old['//'], targets: normalise(kinds.stdout).filter((l) => l !== '').sort(), rows };
+  } finally {
+    spawnSync(bazel!, ['clean', '--expunge'], { cwd: ws, env, timeout: 300000 });
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+}
 
 try {
   const flags = oracle.flags.map((row): FlagsRow => {
@@ -99,10 +142,11 @@ try {
       : { targets: lines.filter((l) => l !== '').map((l) => l.replace(/ \([^)]*\)$/, '')).sort() };
     return { command, ...(options ? { options } : {}), expression, status: r.status ?? -1, ...(error ? { error } : {}), ...gave };
   });
-  const next: Oracle = { '//': oracle['//'], bazel: version, flags, lines, universe, patterns, expressions };
+  const examples = recordExamples();
+  const next: Oracle = { '//': oracle['//'], bazel: version, flags, lines, universe, patterns, expressions, examples };
   if (check) {
-    const was = [...oracle.flags, ...oracle.lines, oracle.universe, ...oracle.patterns, ...oracle.expressions];
-    const stale = [...flags, ...lines, universe, ...patterns, ...expressions].filter((row, i) => JSON.stringify(row) !== JSON.stringify(was[i]));
+    const was = [...oracle.flags, ...oracle.lines, oracle.universe, ...oracle.patterns, ...oracle.expressions, ...(oracle.examples?.rows ?? []), oracle.examples?.targets];
+    const stale = [...flags, ...lines, universe, ...patterns, ...expressions, ...examples.rows, examples.targets].filter((row, i) => JSON.stringify(row) !== JSON.stringify(was[i]));
     for (const row of stale) console.error(`not as recorded: ${JSON.stringify(row)}`);
     if (stale.length || oracle.bazel !== version) process.exitCode = 1;
   } else fs.writeFileSync(ORACLE, `${JSON.stringify(next, null, 2)}\n`);
