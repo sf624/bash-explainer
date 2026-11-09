@@ -52,6 +52,17 @@ Checked with unused_deps 10.2.0 (bazel-contrib/buildtools; `unused_deps -h`, and
 - **Variants of gcc.** `cc`, `c++`, `g++`, `clang` and `clang++` take gcc's command line. `g++` and `clang++` say they read `.c` files as C++ (g++ links libstdc++); `cc` and `c++` say they are the system's choice (GCC on most Linux systems, Clang on macOS and FreeBSD). Clang's `-Weverything` and `-fcolor-diagnostics` and GCC's `-fanalyzer` and `-fdiagnostics-color` belong to their own compiler only, checked with the real compilers.
 - **More options.** `-std`, `-x`, `-E`, `-S`, `-I`, `-L`, `-l`, `-D`, `-U`, `-pedantic`, `-w`, `-v`, `-pthread`, `-fsanitize`, `-fopenmp`, `-march`, `-isystem`, `-include` and the dependency options `-MD`, `-MMD`, `-MP`, `-MF`, `-MT`, for gcc too. A value in the same word is read: `-lm`, `-Iinc`, `-DX=1` (the macro `X` as `1`), `-Wl,…`, `-Wa,…`, `-Wp,…`; `-std` takes its value only so (`-std=c11`), as gcc does. Before, `gcc -lm` was an unknown option.
 
+### Java tools
+
+Written from the tools' usage texts (`java -help`, `javac -help`, `keytool -help`, `mvn --help`, `gradle --help`); none was installed where this was made, so nothing is compared with a real binary (test/java.test.ts reads the spec only).
+
+- **java.** Options of one dash (`-cp`, `-classpath`, `--class-path`, `-jar`, `-m`), `-D<name>[=<value>]`, `-X…` (`-Xmx`, `-Xms`, `-Xss` with their sizes), `-XX:…` and the colon forms (`-ea:pkg...`, `-javaagent:`, `-verbose:gc`). The main class, or the file after `-jar` and the module after `-m`, ends the options: what follows is the program's arguments (`java -jar app.jar --port 80` no longer shows `--port` as an unknown option of java).
+- **javac.** The same family of options, `-d`, `-sourcepath`, `-encoding`, `--release`, `-g:…`, `-Xlint:…`, `-proc:…`, `-A<key>=<value>`, `-J<opt>`; the operands are source files and `@argfiles`.
+- **keytool.** Its commands, written as options (`-genkeypair`, `-list`, `-importcert`…), and their options; `-storepass` says that the password on the command line can be seen by other users.
+- **mvn, mvnw.** The options of `mvn --help`, including the multi-letter short ones (`-pl`, `-am`, `-fae`), `-D…`, `-P…`, `-T…`; operands are lifecycle phases and plugin goals.
+- **gradle, gradlew.** The options of `gradle --help`; operands are tasks.
+- **Not yet said.** Which phase or task does what; the commands of a goal.
+
 ## Changed
 
 ### Invalid regexes are Errors

@@ -236,7 +236,7 @@ function nameComparisons(checker: ts.TypeChecker, sf: ts.SourceFile, names: Read
  */
 const RECORDS = new Set([
   'builtins', 'commands', 'core', 'shells', 'basic', 'admin', 'storage', 'netadmin', 'ops', 'macos', 'distro', 'system', 'monitor', 'BATS_COMMANDS', 'BATS_SUPPORT_COMMANDS', 'BATS_ASSERT_COMMANDS', 'BATS_FILE_COMMANDS', 'YQ_SPECS',
-  'commandAliases', 'declarationCommands', 'distroAliases', 'bazel', 'buildifier', 'buildozer', 'unusedDeps', 'cCompilers',
+  'commandAliases', 'declarationCommands', 'distroAliases', 'bazel', 'buildifier', 'buildozer', 'unusedDeps', 'cCompilers', 'java',
 ]);
 const dictDir = path.join(base, 'src', 'dict') + path.sep;
 const inDict = (d: ts.Declaration): boolean => path.resolve(d.getSourceFile().fileName).startsWith(dictDir);
