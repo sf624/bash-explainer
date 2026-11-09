@@ -12,7 +12,7 @@ import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateFiel
 import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import type { LineExplanation, Span } from '../src/analyzer';
-import { DocumentIssue, diagnosticsFor, fixTitle, plain, ShellDocument, shellOf, Shells } from '../src/document';
+import { DocumentIssue, diagnosticsFor, fixTitle, plain, type ShCount, ShellDocument, shellOf, Shells } from '../src/document';
 import { documentHighlight, HighlightKind, HIGHLIGHT_KINDS } from '../src/highlight';
 import type { HighlightModifier } from '../src/semanticFacts';
 import { Lang } from '../src/i18n';
@@ -238,10 +238,10 @@ export interface EditorHost {
   problems(shown: DocumentIssue[], codes: string[]): void;
   /**
    * Where the page shows the hint toward POSIX sh (the strip's line, never a problem), when it has one: given how many
-   * constructs POSIX sh lacks (undefined: no hint). The count is worked out after the check, when the page is idle, and
+   * constructs POSIX sh lacks, or `too-large` for a script too large to check (undefined: no hint). The count is worked out after the check, when the page is idle, and
    * not at all for a text edited meanwhile: typing does not wait for it (it took up to half of a long script's check).
    */
-  shHint?(count: number | undefined): void;
+  shHint?(count: ShCount | undefined): void;
   /** The text or the selection changed. */
   changed(u: ViewUpdate): void;
   /** Effects to add to a transaction before it is made (a paste that starts a new script: `KindControl.startedBy`), so that they are one step of the history with it. */
@@ -426,7 +426,7 @@ export class Editor {
   private cancelSh: () => void = () => undefined;
 
   /** Works out the hint toward POSIX sh (`count`) when the page is idle, for the page that shows one; the next check or edit cancels it. */
-  private scheduleSh(count: () => number | undefined): void {
+  private scheduleSh(count: () => ShCount | undefined): void {
     this.cancelSh();
     const show = this.host.shHint?.bind(this.host);
     if (!show) return;

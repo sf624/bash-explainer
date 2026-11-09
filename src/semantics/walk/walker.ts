@@ -57,8 +57,8 @@ export class Walker {
   readonly aliases = new WalkAliases(this);
   readonly expansions = new WalkExpansions(this);
 
-  /** The states each node was run with (more than one in a loop or a function called more than once); merged when asked. */
-  private readonly runStates = new Map<SyntaxNode, ShellState[]>();
+  /** The states each node was run with (more than one in a loop or a function called more than once); merged by `runAt`, which costs much: `has` asks only whether the walk ran a node. */
+  readonly runStates = new Map<SyntaxNode, ShellState[]>();
   /** The `set` commands, with the options they turn on or off (on any walk). */
   readonly setWrites = new Map<SyntaxNode, Map<string, 'on' | 'off'>>();
   /** The variables each statement sets itself (on any walk), not those of the statements inside it: the shell's own, and the locals of a function being run (`local RANDOM=3`, or `RANDOM=3` after it), gone when it returns. */

@@ -2,7 +2,7 @@
 // the right where the cursor is ("Ln 20 · 1/11") with ‹ › (F8, Shift+F8). The order, the position and the next problem
 // are decided in src/ui/problemNav.ts; the levels' marks, colours and words come from the level table (src/levels.ts).
 // The list's height and folding are in layout.ts.
-import { DocumentIssue, plain } from '../src/document';
+import { DocumentIssue, plain, type ShCount } from '../src/document';
 import { Lang } from '../src/i18n';
 import { levelCounts, LEVELS, levelTally, problemLevel, problemLevels } from '../src/levels';
 import { type At, byPlace, problemAt, type ProblemSpan, stepProblem } from '../src/ui/problemNav';
@@ -100,16 +100,16 @@ export class ProblemStrip {
    * sh; it is no problem, and the counts above do not include it. It comes after the check (the editor works it out when
    * idle), so the list is drawn without it.
    */
-  showHint(sh: number | undefined): void {
+  showHint(sh: ShCount | undefined): void {
     this.hint(sh, this.host.lang());
   }
 
   /**
-   * The hint toward POSIX sh: its line shown for a count, hidden for none. The focus stays in the strip when the button it
+   * The hint toward POSIX sh: its line shown for a count (or without one, for a script too large to count), hidden for none. The focus stays in the strip when the button it
    * was on goes (the choice was made): on the fold, or where the fold has no box (the phone's sheet shows the list alone) on
    * the first problem, or on the sheet's Problems tab when there is none.
    */
-  private hint(sh: number | undefined, lang: Lang): void {
+  private hint(sh: ShCount | undefined, lang: Lang): void {
     const line = document.getElementById('problems-sh');
     const button = document.getElementById('sh-hint-button');
     if (!line || !button) return;
@@ -119,7 +119,7 @@ export class ProblemStrip {
     // (Counts the times the hint was worked out, shown or not: a test waits on it for the hint's absence.)
     line.dataset.worked = String(Number(line.dataset.worked ?? 0) + 1);
     if (sh) {
-      $('sh-hint-text').textContent = t.shHint(sh);
+      $('sh-hint-text').textContent = sh === 'too-large' ? t.shHintLarge : t.shHint(sh);
       button.textContent = t.shHintButton;
     } else if (focused) {
       const toggle = document.getElementById('problems-toggle') as HTMLButtonElement | null;

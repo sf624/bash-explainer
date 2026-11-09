@@ -691,7 +691,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     },
     condition: (n) => w.conditions.decision(n),
     posixExit: (n) => w.builtins.exits.get(n),
-    dead: (n) => w.runAt(n) !== undefined && !w.live.has(n) && w.everywhere(n),
+    dead: (n) => !w.live.has(n) && w.runStates.has(n) && w.everywhere(n),
     settled: (n) => w.everywhere(n),
     reply(n) {
       // (None for one the walk did not run.)

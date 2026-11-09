@@ -13,7 +13,7 @@ import { Transaction } from '@codemirror/state';
 import { repositionTooltips, ViewUpdate } from '@codemirror/view';
 import { Analyzer, LineExplanation } from '../src/analyzer';
 import type { AutoShell } from '../src/dialect';
-import { autoShellAt, DocumentIssue, explainDocumentLine, issueFilter, ShellDocument, Shells } from '../src/document';
+import { autoShellAt, DocumentIssue, explainDocumentLine, issueFilter, type ShCount, ShellDocument, Shells } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
 import { problemLevels } from '../src/levels';
@@ -209,7 +209,7 @@ const editor: Editor = new Editor({
     panel.problems(problemLevels(list.map((i) => i.severity)));
   },
   // (Only where the page has the strip's line for it: the work is skipped otherwise.)
-  ...(strip?.hasHint ? { shHint: (count: number | undefined) => strip.showHint(count) } : {}),
+  ...(strip?.hasHint ? { shHint: (count: ShCount | undefined) => strip.showHint(count) } : {}),
   extend: (tr) => (mode.panel ? [] : kinds.startedBy(tr)),
   hold: (tr) => !mode.panel && kinds.held(tr),
   changed(u: ViewUpdate) {
