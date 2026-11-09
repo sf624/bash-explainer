@@ -98,10 +98,11 @@ export type ReParam = 'pattern' | 'string' | 'repl' | 'count' | 'maxsplit' | 'fl
 export interface CallArgument { role?: ReParam; keyword: boolean; span: Span; literal?: LiteralSource; flags?: CallFlags }
 
 /**
- * The flags an argument of `flags`, `count` or `maxsplit` names, when it is `0` or names of `re` joined by `|` (docs/design/python-regex.md,
- * 5.2): each name as written, the flag (`PYTHON_FLAGS`) and its place; and their value.
+ * The flags an argument of `flags`, `count` or `maxsplit` names, when it is terms joined by `|` and some are `0` or names of `re`
+ * (docs/design/python-regex.md, 5.2): each name as written, the flag (`PYTHON_FLAGS`) and its place; their value; and the place of
+ * each other term (`re.X | extra`: `extra`), which adds flags not known.
  */
-export interface CallFlags { names: { written: string; flag: PythonFlag; span: Span }[]; value: number }
+export interface CallFlags { names: { written: string; flag: PythonFlag; span: Span }[]; value: number; unknown: Span[] }
 
 /**
  * A part of a host file in another language than the shell's (docs/design/python-regex.md, 2.2): a call of Python's `re` with a
@@ -124,10 +125,13 @@ export interface LanguageRegion {
    * call's place, from the name to the `)`.
    */
   call: { written: string; name: string; span: Span };
-  /** Its arguments in the order written (docs/design/python-regex.md, 5.1); the pattern's is string literals (`patternOf`). */
+  /** Its arguments in the order written (docs/design/python-regex.md, 5.1); the pattern's is read where it is string literals (`patternOf`). */
   args: CallArgument[];
-  /** The flags the pattern is compiled with: from the argument of `flags` (each not known where it names no flags), and the pattern's type. */
-  options: PythonRegexOptions;
+  /**
+   * The flags the pattern is compiled with: from the argument of `flags` (on where it names them, else not known where it has another
+   * term), and the pattern's type. None where the pattern is not string literals: the region has the call's facts only.
+   */
+  options?: PythonRegexOptions;
 }
 
 /**
@@ -193,4 +197,4 @@ export function extractShell(kind: HostKind, text: string): Extracted {
 
 export { batsTestName } from './bats';
 export { remapExplanation, substitutionNotes, explainHostedLine, hostIssues, type DocIssue } from './remap';
-export { hasParts, hostPartAt, type HostPart, languageLines, literalOf, patternOf, regionAt, regionShell } from './scripts';
+export { flagsAsCount, hasParts, hostPartAt, type HostPart, languageLines, literalOf, patternOf, regionAt, regionShell } from './scripts';

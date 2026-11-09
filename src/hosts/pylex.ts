@@ -5,12 +5,6 @@
 // no INDENT or DEDENT, and an unterminated string or field is one `error` token.
 import { escapeAt } from './pyvalue';
 
-/**
- * The Python release whose rules the host follows (docs/design/python-regex.md, section 8): the tests run that release
- * (`$BASH_EXPLAINER_PYTHON`), and CI installs it. A newer release changes this constant and the CI's `python-version`.
- */
-export const PYTHON_REFERENCE = '3.15';
-
 export type PyKind = 'name' | 'number' | 'string' | 'op' | 'comment' | 'newline' | 'error';
 
 /** A token: its kind and its source range [start, end); a string literal has `lit`. */

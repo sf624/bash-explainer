@@ -3,7 +3,7 @@
 import type { Shell } from '../shellfeatures';
 import type { BashParser, SyntaxTree } from '../syntax/tree';
 import { createUnbashParser } from '../syntax/adapters/unbash';
-import type { Extracted, LanguageRegion, LiteralSource, ReParam, ShellRegion } from './index';
+import type { CallArgument, Extracted, LanguageRegion, LiteralSource, ReParam, ShellRegion } from './index';
 
 let regionParser: BashParser | undefined;
 
@@ -102,8 +102,14 @@ const languagesByLine = new WeakMap<Extracted, Map<number, LanguageRegion>>();
 /** The literal of the argument of a region's call that binds `role`, if it is string literals only. */
 export const literalOf = (region: LanguageRegion, role: ReParam): LiteralSource | undefined => region.args.find((a) => a.role === role)?.literal;
 
-/** The pattern a region's reader reads: its call has one, as literals, or there is no region. */
-export const patternOf = (region: LanguageRegion): LiteralSource => literalOf(region, 'pattern')!;
+/** The pattern a region's reader reads, where it is string literals; none in a region of the call's facts only (`flagsAsCount`). */
+export const patternOf = (region: LanguageRegion): LiteralSource | undefined => literalOf(region, 'pattern');
+
+/**
+ * Whether an argument is flags in the slot of `count` or `maxsplit`, by position or by keyword (`re.sub(p, r, s, re.I)`, `count=re.I`):
+ * every term a name of `re`, and a value that is not 0. A fact of the call (`python-regex-flag-as-count`), whatever its pattern is.
+ */
+export const flagsAsCount = (a: CallArgument): boolean => (a.role === 'count' || a.role === 'maxsplit') && !!a.flags?.value && !a.flags.unknown.length;
 
 /** Whether a host document has anything to explain: shell code, or a part in another language. */
 export function hasParts(extracted: Extracted): boolean {

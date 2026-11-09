@@ -1,7 +1,7 @@
 import { awkEscapeAt, sedEscapeAt } from '../ctlchars';
 import type { Lang } from '../i18n';
 import { tokenSaid } from '../messages-tokens';
-import { codeShown } from '../messages-values';
+import { codeShown, shownWord } from '../messages-values';
 import { EmbeddedToken, escapeIntoHole, hasHole, holeStop, holeToken, isHole, pick } from './types';
 import { wordTable } from '../wordtable';
 import { charOfCode, codeEscape, hexOf, namedChar, PCRE_ESCAPE_LETTERS, PCRE_ONLY, PERL_CASE, SHORTHANDS } from './regex-escapes';
@@ -36,6 +36,12 @@ const CLASSES: Record<string, [string, string]> = wordTable({
  */
 const OWN_REFUSAL: Partial<Record<Flavor, { said: 'regex-python-error'; strict: true }>> = { python: { said: 'regex-python-error', strict: true } };
 
+/**
+ * Where `re.VERBOSE` is not known (a flags argument not read), a pattern is read without it, and each refusal is an Error only where the
+ * reading with it refuses the same (docs/design/python-regex.md, 5.2): a refusal of that reading alone says it depends on the flags.
+ */
+const UNLESS_VERBOSE = 'regex-python-error-unless-verbose';
+
 interface State {
   src: string;
   i: number;
@@ -69,6 +75,10 @@ interface State {
   py?: PythonRegexOptions;
   /** The tokens of Python's global flags (`(?i)`), which may only follow one another at the start (`atPatternStart`). */
   globals: Set<EmbeddedToken>;
+  /** The messages of the refusals said so far, in the program's own words (`ownSaid`). */
+  refused: Set<string>;
+  /** Where Python's `re.VERBOSE` is not known: the messages of the refusals of the reading with it (`UNLESS_VERBOSE`). */
+  verboseRefused?: ReadonlySet<string>;
 }
 
 /** What a regex is matched against: one line (grep, sed), or a whole string that may hold newlines (bash, awk, Perl). */
@@ -115,10 +125,21 @@ export interface RegexOptions {
 export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: RegexOptions = {}): EmbeddedToken[] {
   // (`\Q$x\E`: the value is plain text there, which this reader does not follow.)
   if (flavor === 'pcre' && src.includes('\\Q') && hasHole(src)) return [holeStop(0)];
-  const tool = opts.perl ? 'perl' : opts.tool ?? (opts.sedEscapes ? 'sed' : 'grep');
-  const st: State = { src, i: 0, flavor, groups: 0, lang, s: pick(lang), reached: opts.reached ?? true, rest: opts.part ? 'part' : tool === 'perl' && PERL_VARIABLE.test(src.replace(/\\./g, '')) ? 'variable' : undefined, literals: new Map(), names: new Map(), open: new Set(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool], base: opts.unit ?? UNITS[tool], globals: new Set(),
-    ...(flavor === 'python' ? { py: { ...(opts.python ?? NO_PYTHON_FLAGS) } } : {}) };
+  const st = stateOf(src, flavor, lang, opts);
+  if (st.py?.verbose === 'unknown') {
+    // (Read with `re.VERBOSE` too, for its refusals only: `UNLESS_VERBOSE`.)
+    const verbose = stateOf(src, flavor, lang, { ...opts, python: { ...st.py, verbose: true } });
+    sequence(verbose, 0);
+    st.verboseRefused = verbose.refused;
+  }
   return mergeLiterals(sequence(st, 0), st);
+}
+
+/** The reader's state at the start of a regex. */
+function stateOf(src: string, flavor: Flavor, lang: Lang, opts: RegexOptions): State {
+  const tool = opts.perl ? 'perl' : opts.tool ?? (opts.sedEscapes ? 'sed' : 'grep');
+  return { src, i: 0, flavor, groups: 0, lang, s: pick(lang), reached: opts.reached ?? true, rest: opts.part ? 'part' : tool === 'perl' && PERL_VARIABLE.test(src.replace(/\\./g, '')) ? 'variable' : undefined, literals: new Map(), names: new Map(), open: new Set(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool], base: opts.unit ?? UNITS[tool], globals: new Set(), refused: new Set(),
+    ...(flavor === 'python' ? { py: { ...(opts.python ?? NO_PYTHON_FLAGS) } } : {}) };
 }
 
 /**
@@ -354,7 +375,8 @@ function verboseSkip(st: State, start: number): EmbeddedToken | undefined {
   while (end < src.length && VERBOSE_SPACE.has(src[end])) end++;
   st.i = end;
   const between = start > 0 && end < src.length && src[end] !== '#' && !src.slice(start, end).includes('\n');
-  return between ? { start, end, kind: 'comment', explanation: tokenSaid(st.lang, 'python-regex-verbose-space'), children: [] } : undefined;
+  // (Labelled as the outputs show a blank, `␣` for a space, so that its row is not blank: `shownWord`.)
+  return between ? { start, end, kind: 'comment', label: shownWord(src.slice(start, end)).text, explanation: tokenSaid(st.lang, 'python-regex-verbose-space'), children: [] } : undefined;
 }
 
 /** Join adjacent plain characters into one literal, except a character that a quantifier binds to (past whitespace VERBOSE ignores). */
@@ -877,12 +899,14 @@ function refusal(st: State, message: string, shell: () => string): string {
  */
 function ownSaid(st: State, message: string, since?: string): string {
   const { src } = st;
+  st.refused.add(message);
+  const said = st.verboseRefused && !st.verboseRefused.has(message) ? UNLESS_VERBOSE : OWN_REFUSAL[st.flavor]!.said;
   if (src.includes('\n')) {
     const pos = Number(message.slice(message.lastIndexOf(' ') + 1));
     const before = src.slice(0, pos);
     message += ` (line ${before.split('\n').length}, column ${pos - before.lastIndexOf('\n')})`;
   }
-  return tokenSaid(st.lang, OWN_REFUSAL[st.flavor]!.said, { message, ...(since ? { since } : {}) });
+  return tokenSaid(st.lang, said, { message, ...(since ? { since } : {}) });
 }
 
 /**

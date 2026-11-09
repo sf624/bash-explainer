@@ -1,6 +1,6 @@
 import type { Lang } from './i18n';
 import { manualLabel, SECTIONS } from './manual';
-import { PYTHON_REFERENCE } from './hosts/pylex';
+import { PYTHON_REFERENCE } from './python-reference';
 
 // What an explanation or a note cites (`Token.refs`, the sections of a fact in src/messages.ts): a section of the bash
 // manual by its number ('3.8', src/manual.ts), or another document by an id of its own, from the table below: manual pages

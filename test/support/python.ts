@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
-import { PYTHON_REFERENCE } from '../../src/hosts/pylex';
+import { PYTHON_REFERENCE } from '../../src/python-reference';
 
 // The reference Python of the tests that compare with it (docs/design/python-regex.md, section 7): found at
 // $BASH_EXPLAINER_PYTHON, or as `python3` when that is the release. Without it the comparisons are skipped, and

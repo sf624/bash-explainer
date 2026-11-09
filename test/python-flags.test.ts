@@ -63,9 +63,21 @@ describe('Python regex: flags', () => {
     });
 
     it('makes every option not known for anything else: a name, an operator other than `|`, a number, a name `re` lacks', () => {
-      for (const flags of ['opts', 're.I + re.M', '2', 're.FOO', 're.I | opts', 'get()', 're.I |']) {
+      for (const flags of ['opts', 're.I + re.M', '2', 're.FOO', 'get()', 're.I |', 're.I | x if c else 0', 're.I or re.M', '(re.I | x) == 0']) {
         assert.deepStrictEqual(options(`import re\nre.search('a', s, flags=${flags})\n`), [unknown()], flags);
       }
+    });
+
+    it('keeps the names it can read as on where another term is not known, and the rest not known', () => {
+      const rest = (o: Partial<PythonRegexOptions>) => ({ ...unknown(), ...o });
+      assert.deepStrictEqual(options("import re\nre.compile('a', re.X | extra)\n"), [rest({ verbose: true })]);
+      assert.deepStrictEqual(options("import re\nre.compile('a', flags=extra | re.I | (re.M & mask))\n"), [rest({ ignorecase: true })]);
+      // (`0` and `re.NOFLAG` are names too: all known.)
+      assert.deepStrictEqual(options("import re\nre.compile('a', re.I | 0)\n"), [on({ ignorecase: true })]);
+      // (A token for each name, and one for each term not known.)
+      assert.deepStrictEqual(texts(explainPy("import re\nre.compile('a', re.X | get(1, 2))\n", 1).items.filter((t) => !t.language)), [
+        're.X: `re.X` (`re.VERBOSE`): whitespace in the pattern is ignored, and `#` starts a comment to the end of the line (not in a set or after a backslash)',
+        'get(1, 2): The flags `get(1, 2)`: not known here, so a part of the pattern whose meaning depends on them says so']);
     });
 
     it('takes `bytes` from the pattern\'s literal', () => {
@@ -116,7 +128,12 @@ describe('Python regex: flags', () => {
 
     it('sets and clears flags inside a group only', () => {
       assert.deepStrictEqual(said('(?i:a)b'), ['(?i:a): `(?i:…)`: inside this group only (no number): `re.IGNORECASE` (letters match in either case)', 'a: Literal "a", in either case', 'b: Literal "b"']);
-      assert.deepStrictEqual(said('(?-i:a)b', { ignorecase: true }).slice(1), ['a: Literal "a"', 'b: Literal "b", in either case']);
+      assert.deepStrictEqual(said('(?-i:a)b', { ignorecase: true }), ['(?-i:a): `(?-i:…)`: inside this group only (no number): without `re.IGNORECASE` (case-sensitive)', 'a: Literal "a"', 'b: Literal "b", in either case']);
+      // (Each flag turned off says what the group does without it; with flags turned on, after them.)
+      assert.deepStrictEqual(said('(?i-msx:a)', { multiline: true, dotall: true, verbose: true })[0], '(?i-msx:a): `(?i-msx:…)`: inside this group only (no number): `re.IGNORECASE` (letters match in either case); '
+        + 'without `re.MULTILINE` (`^` and `$` match at the start and end of the text only, not of each line), without `re.DOTALL` (`.` does not match a newline), without `re.VERBOSE` (whitespace and `#` match as characters)');
+      const ja = (p: string) => explainRegex(p, 'python', 'ja', { tool: 'python', python: { ...NO_PYTHON_FLAGS, ignorecase: true } }).map((t) => plain(t.explanation))[0];
+      assert.strictEqual(ja('(?-i:a)'), '`(?-i:…)`: このグループの中だけ（番号は付かない）: `re.IGNORECASE` を外す（大文字小文字を区別する）');
     });
 
     it('refuses global flags not at the start, as an error since Python 3.11', () => {
@@ -149,6 +166,26 @@ describe('Python regex: flags', () => {
       assert.deepStrictEqual(kinds('(?x) a b'), ['(?x):keyword', ' :comment', 'a:string', ' :comment', 'b:string']);
       assert.deepStrictEqual(kinds('(?-x:a b)c d', { verbose: true }).length, 4);
       assert.match(said('a b', unknown())[0], /ignored with `re\.VERBOSE`: the flags are not known/);
+    });
+
+    it('says no Error where VERBOSE is not known and only the reading without it refuses the pattern', () => {
+      const issues = (src: string) => documentIssues(open(src), 'en', {}, [], {}).map((i) => [i.code, i.severity]);
+      // (Python compiles it with `re.X`: the `(?i)` after whitespace and the `[` in a comment are no errors there.)
+      const src = "import re\nFLAGS = re.X | re.I\nP = re.compile(r'''\n  (?i) a  # see [1\n''', FLAGS)\n";
+      assert.deepStrictEqual(issues(src), []);
+      const all = texts(explainPy(src, 2).items);
+      assert.ok(all.some((t) => t.includes('Without `re.VERBOSE`, Python\'s `re` refuses this pattern ("global flags not at the start of the expression at position 3')), all.join('\n'));
+      // (A comment with an unbalanced `(`.)
+      assert.deepStrictEqual(issues("import re\nre.compile('a # (', flags)\n"), []);
+      // (Refused both ways alike: an Error still.)
+      assert.deepStrictEqual(issues("import re\nre.compile('[a # c', flags)\n").map(([, s]) => s), ['error']);
+      // (With `re.X` named beside a term not known, VERBOSE is on: nothing is refused.)
+      assert.deepStrictEqual(texts(explainPy("import re\nre.compile(r'(?i) a # (', re.X | extra)\n", 1).items).filter((t) => /refuses/.test(t)), []);
+    });
+
+    it('labels whitespace it ignores as the outputs show a blank: `␣`', () => {
+      const ex = explainPy("import re\nre.compile(r'a b  c\td', re.X)\n", 1);
+      assert.deepStrictEqual(ex.items[0].children.filter((t) => t.kind === 'comment').map((t) => t.label), ['␣', '␣␣', '⇥']);
     });
 
     it('explains each line of a VERBOSE pattern over several lines, the comments as comment rows', () => {
@@ -207,8 +244,30 @@ describe('Python regex: flags', () => {
       assert.ok(texts(explainPy(src, 1).items).includes('re.I: `re.I` here is the argument `count` (the value 2), not a flag'));
     });
 
+    it('is said whatever the pattern is: a call whose pattern is not literals gets the tokens of its arguments only', () => {
+      for (const call of ["re.sub(pat, '', s, re.I)", "re.sub(r'a' + x, '', s, re.I)", "re.split(SEP, s, re.M)"]) {
+        assert.deepStrictEqual(issues(`import re\n${call}\n`).map(([c]) => c), ['python-regex-flag-as-count'], call);
+      }
+      const ex = explainPy("import re\nre.sub(pat, '', s, re.I)\n", 1);
+      assert.deepStrictEqual(texts(ex.items), ['re.I: `re.I` here is the argument `count` (the value 2), not a flag']);
+      assert.strictEqual(explainPy("import re\nre.sub(pat, '', s, re.I)\n", 1, 'en', { reading: true }).reading, undefined);
+      // (No such fact, no region: the pattern is not read.)
+      assert.deepStrictEqual(extractShell('python', "import re\nre.sub(pat, '', s)\nre.sub(pat, '', s, re.I | x)\nre.search(pat, s, re.I)\n").languages, []);
+      // (On a line of another call's pattern, it has no line.)
+      assert.deepStrictEqual(extractShell('python', "import re\nre.sub(r'a', 'b', re.sub(pat, '', s, re.I))\n").languages.map((r) => r.lines), [[1]]);
+    });
+
+    it('is said for flags passed by keyword too, without the deprecation of the slot', () => {
+      for (const [call, param] of [["re.sub('a', 'b', s, count=re.I)", 'count'], ["re.split(',', s, maxsplit=re.M)", 'maxsplit']]) {
+        assert.deepStrictEqual(issues(`import re\n${call}\n`).map(([c]) => c), ['python-regex-flag-as-count'], call);
+        const note = explainPy(`import re\n${call}\n`, 1).noteInfo[0].text;
+        assert.match(note, new RegExp(`is passed as \`${param}\``));
+        assert.doesNotMatch(note, /DeprecationWarning/);
+      }
+    });
+
     it('is none for a count, flags in their slot or by keyword, or a flag that is 0', () => {
-      for (const call of ["re.sub('a', 'b', s, 1)", "re.sub('a', 'b', s, 0, re.I)", "re.sub('a', 'b', s, count=1, flags=re.I)", "re.sub('a', 'b', s, re.NOFLAG)", "re.subn('a', 'b', s, x)"]) {
+      for (const call of ["re.sub('a', 'b', s, 1)", "re.sub('a', 'b', s, 0, re.I)", "re.sub('a', 'b', s, count=1, flags=re.I)", "re.sub('a', 'b', s, re.NOFLAG)", "re.subn('a', 'b', s, x)", "re.sub('a', 'b', s, count=0)"]) {
         assert.deepStrictEqual(issues(`import re\n${call}\n`), [], call);
       }
     });

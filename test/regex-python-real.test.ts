@@ -6,7 +6,7 @@ import { spawnSync } from 'child_process';
 import { explainRegex } from '../src/embedded/regex';
 import { NO_PYTHON_FLAGS, PYTHON_FLAGS, type PythonRegexOptions } from '../src/embedded/regex-python';
 import type { EmbeddedToken } from '../src/embedded/types';
-import { PYTHON_REFERENCE } from '../src/hosts/pylex';
+import { PYTHON_REFERENCE } from '../src/python-reference';
 import { readSaid } from '../src/messages-tokens';
 import { needPython, pythonReference } from './support/python';
 
@@ -65,6 +65,16 @@ const FLAGGED_REFUSED: Flagged[] = [
 ];
 const FLAGGED = [...FLAGGED_VALID, ...FLAGGED_REFUSED];
 
+/**
+ * Patterns read where `re.VERBOSE` is not known (a flags argument not read): each is compiled by the reference with no flags and
+ * with `re.X`, and an Error is said only where both refuse it with the same message. A comment or whitespace of VERBOSE that holds
+ * what Python refuses without it (`(`, `[`, global flags after whitespace), what both refuse, and what only VERBOSE refuses.
+ */
+const VERBOSE_UNKNOWN = [
+  '\n  (?i) a  # see [1\n', '(?i) a # (', 'a # )', 'a #[', '(a #[\n)]', '# c\n(?i)a', '  (?i)a', 'a\\ #x',
+  'a\\', '[a', '(a', 'a (?i)', '\\1 # x', '*a # c', 'a* ?', 'a b', 'a{1, 3}',
+];
+
 /** The options of a row's flags (`re.compile(pattern, flags)`), and their value. */
 function flagsOf(flags: string, bytes: boolean): { python: PythonRegexOptions; value: number } {
   const set = flags ? flags.split('|').map((f) => PYTHON_FLAGS.find((x) => 'short' in x && x.short === f)!) : [];
@@ -73,12 +83,15 @@ function flagsOf(flags: string, bytes: boolean): { python: PythonRegexOptions; v
   return { python, value: set.reduce((v, f) => v | f.value, 0) };
 }
 
-/** The messages of Python's refusals that the reader says, in the order of its tokens. */
-function refusals(pattern: string, python?: PythonRegexOptions): string[] {
+/**
+ * The messages of Python's refusals that the reader says, in the order of its tokens: its Errors, or (`ids`) its refusals that say they
+ * depend on `re.VERBOSE`.
+ */
+function refusals(pattern: string, python?: PythonRegexOptions, ids: readonly string[] = ['regex-python-error']): string[] {
   const out: string[] = [];
   const walk = (t: EmbeddedToken) => {
     const said = readSaid(t.explanation);
-    if (t.kind === 'error' && said.said.some((s) => s.id === 'regex-python-error')) out.push(/\("(.*)"(?:; [^"]*)?\)$/s.exec(said.text)![1]);
+    if (t.kind === 'error' && said.said.some((s) => ids.includes(s.id))) out.push(/\("(.*)"(?:; [^"]*)?\)$/s.exec(said.text)![1]);
     t.children.forEach(walk);
   };
   explainRegex(pattern, 'python', 'en', { tool: 'python', ...(python ? { python } : {}) }).forEach(walk);
@@ -117,7 +130,7 @@ describe('the Python flavor of the regex reader against the reference Python', f
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-python-re-'));
     try {
       const request = path.join(dir, 'request.json');
-      const flagged = FLAGGED.map(([p, flags, bytes]) => [p, flagsOf(flags, bytes).value, bytes]);
+      const flagged = [...FLAGGED.map(([p, flags, bytes]) => [p, flagsOf(flags, bytes).value, bytes]), ...VERBOSE_UNKNOWN.flatMap((p) => [[p, 0, false], [p, 64, false]])];
       fs.writeFileSync(request, JSON.stringify({ patterns: [...VALID, ...REFUSED], flagged, searches: SEARCHES.map(([p, t]) => [p, t]) }));
       const r = spawnSync((ref as { python: string }).python, ['-I', path.join(__dirname, 'support', 'python-re.py'), request], { encoding: 'utf8', timeout: 60000 });
       assert.strictEqual(r.status, 0, r.stderr);
@@ -151,6 +164,23 @@ describe('the Python flavor of the regex reader against the reference Python', f
     assert.deepStrictEqual(wrong, []);
     // (Each row is where the table says: the valid ones compile.)
     assert.deepStrictEqual(FLAGGED.filter((r, i) => (got.flagged[i] === null) !== FLAGGED_VALID.includes(r)), []);
+  });
+
+  it('says an Error where `re.VERBOSE` is not known only where Python refuses the pattern both with it and without', () => {
+    const wrong = VERBOSE_UNKNOWN.flatMap((p, i) => {
+      const [off, on] = got.flagged.slice(FLAGGED.length + 2 * i, FLAGGED.length + 2 * i + 2);
+      const python = { ...NO_PYTHON_FLAGS, verbose: 'unknown' as const };
+      const errors = refusals(p, python);
+      const soft = refusals(p, python, ['regex-python-error-unless-verbose']);
+      // (The reading shown is the one without: its first refusal is Python's; an Error only where the reading with VERBOSE refuses the same.)
+      const first = refusals(p, python, ['regex-python-error', 'regex-python-error-unless-verbose'])[0] ?? null;
+      const ok = first === off && (off !== null && off === on ? errors[0] === off : !errors.length);
+      return ok ? [] : [`${JSON.stringify(p)}: Python ${JSON.stringify(off)} without re.X, ${JSON.stringify(on)} with it; ours ${JSON.stringify({ errors, soft })}`];
+    });
+    assert.deepStrictEqual(wrong, []);
+    // (The rows have each case: refused without VERBOSE only, by both alike, by VERBOSE only, and by neither.)
+    const rows = VERBOSE_UNKNOWN.map((p, i) => got.flagged.slice(FLAGGED.length + 2 * i, FLAGGED.length + 2 * i + 2));
+    assert.ok(rows.some(([off, on]) => off !== null && on === null) && rows.some(([off, on]) => off !== null && off === on) && rows.some(([off, on]) => off === null && on !== null) && rows.some(([off, on]) => off === null && on === null));
   });
 
   it('says what `.` and the classes match as Python does: not a newline, and letters, digits and spaces of any script', () => {
