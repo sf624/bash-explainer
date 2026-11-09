@@ -114,11 +114,33 @@ const ROWS: [Program, string, boolean, string?][] = [
   ['perl', '/[\\d-z]/', false],
   ['perl', '/\\q/', false],
   ['perl', '/\\Ua/', false],
+  // (Perl puts the value of a variable in before it reads the regex: `]` or `)` may come from it.)
+  ['perl', 'BEGIN { $x = "]"; exit("a" =~ /[a$x/ ? 0 : 1) }', false],
+  ['perl', 'BEGIN { $x = ")"; exit("a" =~ /(a$x/ ? 0 : 1) }', false],
+  ['perl', 'BEGIN { @x = ("]"); exit("a" =~ /[a@x/ ? 0 : 1) }', false],
   ['bash', 'a[', true, 'regex-bracket-unclosed'],
   ['bash', '[a', true, 'regex-bracket-unclosed'],
   ['bash', 'a\\(', false],
   ['bash', '^[a-z]+$', false],
+  // (A right side of parts is one regex: a quoted part, or the value of an expansion, may close what another opens. The run sets
+  // `a=jpg b=png chars=abc y=]`; the explanation knows none of them.)
+  ['bash', '^("jpg"|"png")$', false],
+  ['bash', '^($a|$b)$', false],
+  ['bash', '^(${a}|foo)$', false],
+  ['bash', '^[$chars]+$', false],
+  ['bash', '[a$y', false],
+  ['bash', '^[a-z" "]+$', false],
+  ['bash', "^[^' ']+$", false],
+  ['bash', '["a"]', false],
+  ['bash', '[a"b"]', false],
+  ['bash', '[" "]', false],
+  ['bash', '^("a"|b)[c', true, 'regex-bracket-unclosed'],
+  ['bash', '"a"[b', true, 'regex-bracket-unclosed'],
+  ['bash', '^("a"|[b)', true, 'regex-bracket-unclosed'],
 ];
+
+/** What the run of the table sets before its lines (`[[ x =~ ^($a|$b)$ ]]`). */
+const VALUES = "a=jpg b=png chars=abc y=']'";
 
 const HAS_MAWK = spawnSync('mawk', ['BEGIN {}']).status === 0;
 const rows = ROWS.filter(([program]) => program !== 'mawk' || HAS_MAWK);
@@ -134,7 +156,7 @@ describe('a regex its program refuses is an Error, as the program says', functio
 
   it('each row is refused, or taken, by the real program', () => {
     // (One process for the table: each line prints its status.)
-    const script = rows.map(([program, text]) => `${LINES[program](text)} </dev/null >/dev/null 2>&1; echo $?`).join('\n');
+    const script = [VALUES, ...rows.map(([program, text]) => `${LINES[program](text)} </dev/null >/dev/null 2>&1; echo $?`)].join('\n');
     const statuses = run('bash', ['-c', script], { env: { ...process.env, LC_ALL: 'C' } }).stdout.toString().trim().split('\n').map(Number);
     assert.strictEqual(statuses.length, rows.length);
     rows.forEach(([program, text, refused], i) => assert.strictEqual(REFUSES[program](statuses[i]), refused, `${program} '${text}': status ${statuses[i]}`));
@@ -169,6 +191,22 @@ describe('a regex its program refuses is an Error, as the program says', functio
     const [issue] = documentIssues(doc, 'en', shellsOf(doc.lines, 'a.sh', undefined)).filter((i) => i.code === 'regex-interval-incomplete');
     assert.match(issue.message, /`\\\{` must start a complete `\\\{n\\\}` or `\\\{n,m\\\}` \("Unmatched \\\{" or "Invalid content of \\\{\\\}"\): `grep` stops with an error \(status 2\)\. The command fails every time it runs, and does not do its work/);
     assert.strictEqual(issue.head, 'This regex is not valid: the command fails every time it runs.');
+  });
+
+  it('a right side of parts says its error once, on the test, and each part says what it leaves open', () => {
+    const src = '#!/bin/bash\n[[ x =~ ^("a"|b)[c ]]\n';
+    const tokens = tokensOf(src, 1);
+    assert.deepStrictEqual(tokens.filter((t) => (t.texts ?? []).includes('regex-bracket-unclosed')).map((t) => t.kind), ['test']);
+    assert.ok(tokensOf('#!/bin/bash\n[[ x =~ ^("a"|b)$ ]]\n', 1).some((t) => /^Group 1: .*\. No `\)` closes it in this part \(the right side is one regex with its other parts\)$/.test(t.explanation)));
+    assert.ok(tokensOf('#!/bin/bash\n[[ x =~ ^[a" "]+$ ]]\n', 1, 'ja').some((t) => t.explanation === '文字クラスの始まり。この部分には閉じる `]` がない（右辺はほかの部分と合わせて1つの正規表現）'));
+    // (A Perl variable may close it: no error, and the row says so.)
+    assert.ok(tokensOf("#!/bin/bash\nperl -ne 'print if /[a$x/' f\n", 1).some((t) => t.explanation === 'the start of a set, which no `]` closes here, but the value of a variable may'));
+    assert.ok(tokensOf("#!/bin/bash\nperl -ne 'print if /(a$x/' f\n", 1, 'ja').some((t) => t.explanation.endsWith('。閉じる `)` はないが、変数の値が閉じることがある')));
+    // (bash refuses `[[ x =~ (a ]]` when it parses it: the syntax error is said, not the regex's.)
+    const doc = openDocument('#!/bin/bash\n[[ x =~ (a ]]\n', 'shell', (t) => parser.parse(t));
+    const codes = documentIssues(doc, 'en', shellsOf(doc.lines, 'a.sh', undefined)).map((i) => i.code);
+    assert.ok(codes.length > 0 && !codes.some((c) => c.startsWith('regex-')), codes.join(', '));
+    assert.notStrictEqual(spawnSync('bash', ['-n', '-c', '[[ x =~ (a ]]']).status, 0);
   });
 
   it('a pattern with an expansion in it is not read where the value could mend it', () => {

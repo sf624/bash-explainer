@@ -1033,6 +1033,21 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `[[ x =~ $re ]]` with an invalid regex exits 2, but the note says "status 1".
   - A function named anywhere as an argument becomes "not closed" (src/semantics/env.ts:61/226: `echo build`, `ssh host deploy`), so its body's stop note says "the shell it runs in" and loses the trap. Fix: close only on arguments of commands that can run a shell function.
 
+## From the review of the regex errors (#779)
+
+### Regexes: errors not found, and readings that differ from the tool
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare patterns. None gives a false Error: each is a pattern the tool refuses that we say nothing of, an error with the wrong reason, or a rare reading.
+- **Input and what is wrong:**
+  - `grep '\`\{'`: we say `regex-interval-incomplete`, but GNU grep takes `` \` `` as an anchor and the `\{` after it as the character (status 1). sed refuses it too, with "Invalid preceding regular expression", not "Unmatched \{". `` \` `` and `\'` are no `keyword` tokens of the BRE reader, so `nothingBefore` does not see them.
+  - `awk '/a\/'`, `perl -ne 'print if /a\/'`: the right status, the wrong reason. The `\/` escapes the delimiter, so the regex is not terminated (gawk "unterminated regexp", Perl "Search pattern not terminated"); we say "Nothing follows the final `\`".
+  - Refused, and we say nothing: `grep -E 'a{}'` ("Invalid content of \{\}"), `sed -E 's/a{/x/'` ("Unmatched \{"; grep -E takes `a{`), `grep 'a\{2,1\}'` (a range that goes down), `grep -P 'a)'` (unmatched closing parenthesis), `grep -P '[\K]'` (an escape a class cannot hold: "not valid in a class", with no level), `grep -P '(?#x'` (a comment not closed).
+  - `sed 's/[a/x/'`: since sed reads a bracket expression whole, an unclosed `[` leaves the `s` command unterminated, which the sed reader says in its own text ("Unterminated `s` command"), with no level: the sed reader's errors are not in the catalog.
+  - `grep -E 'a{,}'`: grep reads `{,}` as `{0,}` (it matches `aaa`); we read the text `{,}`.
+  - `grep '[[.].]'`: the collating symbol `[.].]` is read as `[`, `.`, then a `]` that closes the class; GNU grep reads a class of `]`. (sed's end of the regex reads it whole.)
+  - `[[ a || x =~ [ ]]`: an Error, though bash reads the regex only when `a` is false, so the `[[` does not fail every time (no "sometimes read" form, as `arith-invalid-number-if-read` has).
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".
