@@ -7,14 +7,16 @@ import { jaSpaced } from './messages-sentence';
 
 /**
  * What fails: a command (its name), the `$( )` of an assignment (the name of its one command), a pipeline, a test
- * (`[[ … ]]`, `(( … ))`, `[ … ]`: false gives 1), a subshell `( … )`.
+ * (`[[ … ]]`, `(( … ))`, `[ … ]`: false gives 1), a subshell `( … )`, or a redirection of a command that fails no other
+ * way (`exec /opt/app >> "$LOG"`: status 1).
  */
 export type StopWhat =
   | { readonly kind: 'command'; readonly name: string }
   | { readonly kind: 'substitution'; readonly name?: string }
   | { readonly kind: 'pipeline' }
   | { readonly kind: 'test'; readonly text: string }
-  | { readonly kind: 'subshell' };
+  | { readonly kind: 'subshell' }
+  | { readonly kind: 'redirection'; readonly name: string };
 
 /**
  * A trap of `EXIT` or `ERR` that runs when the failure stops the shell (`sure`), or may (`sure: false`: set on some
@@ -60,6 +62,7 @@ function subject(lang: Lang, w: StopWhat): string {
     case 'pipeline': return lang === 'ja' ? 'パイプライン' : 'the pipeline';
     case 'test': return codeSpan(w.text);
     case 'subshell': return '`( … )`';
+    case 'redirection': return lang === 'ja' ? `${codeSpan(w.name)} のリダイレクト` : `a redirection of ${codeSpan(w.name)}`;
   }
 }
 
@@ -84,7 +87,7 @@ function statusOf(lang: Lang, p: ErrexitStopParams): string {
   if (p.what.length > 1 || p.more) return ja ? '失敗したコマンドの終了ステータス' : 'the status of the one that fails';
   const w = p.what[0];
   switch (w.kind) {
-    case 'test': return ja ? '終了ステータス 1 ' : 'status 1';
+    case 'test': case 'redirection': return ja ? '終了ステータス 1 ' : 'status 1';
     case 'pipeline': return ja ? 'パイプラインの終了ステータス' : "the pipeline's status";
     case 'command': return ja ? `${codeSpan(w.name)} の終了ステータス` : `${codeSpan(w.name)}'s status`;
     case 'substitution': return w.name ? (ja ? `${codeSpan(w.name)} の終了ステータス` : `${codeSpan(w.name)}'s status`) : (ja ? '`$( )` の終了ステータス' : 'the status of `$( )`');
