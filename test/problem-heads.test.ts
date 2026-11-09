@@ -80,6 +80,7 @@ const CASES: { [K in ProblemFactId]: readonly unknown[] } = {
   'unmatched-glob-runs-once': [{ glob: '*.txt', v: 'f', how: { menu: true } }, { glob: '*.txt', v: 'f', how: { menu: false } }],
   'prefix-assignment-expanded-first': [{ v: 'x', name: 'a', use: '$x' }],
   'unquoted-variable-as-path': [{ bare: '$x', destroys: true }, { bare: '$x' }],
+  'unquoted-value-as-data': [{ bare: '$p' }, { bare: '$p', words: 2 }],
   'for-over-ls-output': [{ cmd: 'ls' }],
   'for-over-unquoted-args': [{ value: '$@' }],
   'array-joined-in-assignment': [{ v: 'x', args: true }, { v: 'x', args: false }],

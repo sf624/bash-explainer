@@ -20,6 +20,8 @@ export interface BracePatterns {
   patterns: FieldPattern[];
   /** How many of its fields are no patterns; `unknown` where an expansion not known here may give some, or make one a pattern. */
   others: number | 'unknown';
+  /** Its one pattern holds an unquoted part not known here, which word splitting may split (`$d/*.c`): not followed for the count of `others`. */
+  maySplit?: true;
 }
 
 /** What stands for a part of a word not known here, and for one that may give several fields (`severalFields`). */
@@ -102,8 +104,22 @@ export function wordPatterns(n: SyntaxNode, model: StateModel): BracePatterns[] 
       return { written, patterns: pieces.some(sure) ? [{}] : [], others: 'unknown' };
     }
     const open = chars.some((c) => c.c === HOLE && !c.quoted);
-    return sure(chars) ? { written, patterns: [{}], others: 0 } : { written, patterns: [], others: open ? 'unknown' : 1 };
+    return sure(chars) ? { written, patterns: [{}], others: 0, ...(open ? { maySplit: true as const } : {}) } : { written, patterns: [], others: open ? 'unknown' : 1 };
   });
+}
+
+/**
+ * Whether the word `n` of a command gives one field before pathname expansion, which is a pattern where pathname
+ * expansion surely applies, whatever the parts not known here give (`p='^[A-Z]+$'; grep $p f`, `grep [a-z]+ f`,
+ * `"$d"/*.c`): how many words it gives then depends only on the files whose names match it (manual 3.5.8: its text
+ * where none does, nothing with nullglob, an error with failglob). Not where its brace expansion gives several words,
+ * where word splitting may give other fields (`$d/*.c` with `$d` not known), nor where glob is not known to apply.
+ */
+export function onlyGlobbed(n: SyntaxNode, model: StateModel): boolean {
+  const w = wordMeaning(n, model);
+  if (!w || w.steps.find((s) => s.kind === 'glob')!.applies !== true) return false;
+  const words = wordPatterns(n, model);
+  return words?.length === 1 && words[0].patterns.length === 1 && words[0].others === 0 && !words[0].maySplit;
 }
 
 /**

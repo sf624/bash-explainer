@@ -4,15 +4,17 @@ import { type Fact, fact, type Params } from './messages';
 import { featureWorks, type Shell } from './dialect';
 import { builtins } from './dict/builtins';
 import { parseExpansion } from './expansion';
-import { args, commandName, pathCommand, runCommands } from './pitfalls';
+import { args, commandName, pathCommand, runCommands, specRuns } from './pitfalls';
 import { replaceNode, replaceSpan, type Rewrite, stringShell } from './rewrite';
 import { isFunction, type NameResolution, resolveName, resolveRun, testSpecAt } from './semantics/names';
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
+import { expansionValue } from './semantics/values';
 import { partMeaning, wordFields, wordMeaning, wordOf } from './semantics/words';
 import { staticWordValue } from './staticword';
 import { childrenOnRows, field, fields, isShebang, nameText, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
+import type { ArgvParse } from './argv/interpret';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
 // command runs (`FOO=1 echo $FOO`, `sudo cmd > /etc/…`), and what word splitting and globbing do to an unquoted
@@ -123,6 +125,14 @@ function throughShell(n: SyntaxNode, vars: readonly string[], v: string, model: 
   return { rewrite: replaceSpan(name, last, `${program} -c '${[name.text, ...script].join(' ')}'`), apart: false };
 }
 
+/**
+ * The words of a parse (numbered in its words) that the command reads as data: an operand or a value written in another
+ * language (`OperandSpec.lang`, `ValueSpec.lang`: grep's pattern, sed's script), those of its subcommands too.
+ */
+function dataWords(p: ArgvParse): number[] {
+  return p.roles.flatMap(({ word, role }) => (role.role === 'subcommand' ? dataWords(role.parse) : (role.role === 'operand' || role.role === 'value') && role.spec?.lang ? [word] : []));
+}
+
 /** The facts (pitfalls) about words whose node starts on `line`. */
 export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: StateModel, shell?: Shell): Fact[] {
   // (Each text once.)
@@ -141,6 +151,8 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
     const m = partMeaning(n, model);
     return !!m && (m.split.applies !== false || m.glob.applies !== false);
   };
+  /** The expansions of a word that bash word-splits or globs (`bare`): the word itself, or parts of it (`$d/x`). */
+  const bareParts = (w: SyntaxNode): SyntaxNode[] => (bare(w) ? [w] : w.type === 'concatenation' ? w.namedChildren.filter(bare) : []);
   const facts: WordFinding[] = [];
   // (The node is the one being checked, unless a narrower one is given.)
   let at = root;
@@ -195,7 +207,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
           const ran = r && ranName(r);
           if (!ran || !PATH_COMMANDS.has(ran)) continue;
           // (Each of them: quoting one leaves the others, `cp $a $b`.)
-          const words = run.args.filter((w) => bare(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => bare(c))));
+          const words = run.args.filter((w) => bareParts(w).length);
           for (const word of words) {
             // A value the model knows that stays one word, with nothing to glob (`TS=2024; rm -rf /tmp/build-$TS`): no harm
             // here, so a caveat; a value it does not know (`read`, `$1`, `$(date)`) may be anything.
@@ -203,6 +215,22 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
             const quoted = quoteExpansions(word);
             add(fact(lang, 'unquoted-variable-as-path', {
               bare: word.text, rewrite: quoted ? [replaceNode(word, quoted)] : [], ...(DESTRUCTIVE_COMMANDS.has(ran) ? { destroys: true } : {}), ...(fields?.length === 1 ? { known: fields[0] } : {}),
+            }), word);
+          }
+        }
+        // Unquoted expansions whose value the model knows and bash globs or splits, in a word a command reads as data (an
+        // operand or a value in another language: a pattern, a regex, a program; `p='^[A-Z]+$'; grep -E $p f`), not as a
+        // file name (the note above): a file whose name matches takes the value's place. Not a value bash passes as it is.
+        for (const r of specRuns(n, model, shell)) {
+          for (const k of dataWords(r.parse)) {
+            const word = r.run.args[k];
+            // (The expansion is named, with its value: `$r` of `/$r/p`; the rewrite quotes the word's expansions.)
+            const found = bareParts(word).map((part) => ({ part, v: expansionValue(part, model) })).find(({ v: x }) => x && (x.glob || (x.words?.length ?? 0) > 1));
+            if (!found) continue;
+            const v = found.v!;
+            const quoted = quoteExpansions(word);
+            add(fact(lang, 'unquoted-value-as-data', {
+              bare: found.part.text, value: v.text, glob: v.glob, ...((v.words?.length ?? 0) > 1 ? { words: v.words!.length } : {}), rewrite: quoted ? [replaceNode(word, quoted)] : [],
             }), word);
           }
         }
