@@ -777,6 +777,8 @@
  "bats-run-in-pipeline",
  "bazel --keep_going build //x",
  "bazel build //app/...:main",
+ "bazel cquery //app:all | sort -r",
+ "bazel query //lib:all | sed 's/:/ /' | sort",
  "block",
  "bob@example.com",
  "brace-close-no-separator",

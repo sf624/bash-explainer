@@ -25,6 +25,7 @@ import { scriptRegex } from '../examples/regexguard';
 import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
 import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
+import { sourceRun, type SourceRun } from '../examples/runners';
 import { ENVIRONMENT, exportOrder, layoutOf, layoutSample, madeUpPath, type Run, START_NAMES, type Started, startValue } from '../examples/layouts';
 import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines, withSystemFiles } from '../examples/source';
 import { type Text, tx } from '../i18n';
@@ -179,8 +180,11 @@ type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: 
 /** A variable whose value an example made up (`madeUpValue`): its code in the script, and the value. */
 type MadeUpValue = { code: string; value: string };
 
-/** A layout the examples make up for what the first stage of a pipeline prints; env's, with the environment it prints. */
-type MadeUp = { kind: Layout; environment?: ReadonlyMap<string, string> };
+/**
+ * What the examples make up for what the first stage of a pipeline prints: lines of a layout (env's, with the environment it
+ * prints), or what the runner its spec chooses prints (`bazel query`: a query of a made-up workspace, with the note that says so).
+ */
+type MadeUp = { kind: Layout; environment?: ReadonlyMap<string, string> } | { run: SourceRun };
 
 /** The stages of pipelines read so far on the line (`pipelineStage`). */
 const PIPELINE_STAGES = memoKey<PipelineStage | undefined>('pipeline stages');
@@ -341,13 +345,13 @@ function wholeExample(cx: Explainer, n: SyntaxNode): Example | undefined {
  * The example with a note on the values it made up for variables (`madeUpValue`): "Here `$USER` is `alice`, an example
  * value: the real one is known only when the line runs". Each variable once.
  */
-function withValues(cx: Explainer, ex: Example, values: readonly MadeUpValue[]): Example {
+function withValues(cx: Explainer, ex: Example, values: readonly MadeUpValue[], made?: string): Example {
   const said = [...new Map(values.map((v) => [v.code, v])).values()];
-  if (!said.length) return ex;
   const list = said.map((v) => cx.s(`${codeSpan(v.code)} を ${codeSpan(v.value)}`, `${codeSpan(v.code)} is ${codeSpan(v.value)}`)).join(cx.s('、', ', '));
-  const note = cx.s(`ここでは ${list} とした（例の値。実際の値は実行するまで分からない）`, `Here ${list}: ${said.length > 1 ? 'example values' : 'an example value'} (the real ${said.length > 1 ? 'ones are' : 'one is'} known only when the line runs)`);
-  // (No example of a whole pipeline has a note of its own.)
-  return { ...ex, note };
+  const own = said.length ? cx.s(`ここでは ${list} とした（例の値。実際の値は実行するまで分からない）`, `Here ${list}: ${said.length > 1 ? 'example values' : 'an example value'} (the real ${said.length > 1 ? 'ones are' : 'one is'} known only when the line runs)`) : undefined;
+  // (No example of a whole pipeline has a note of its own; a runner's says what of its output is made up.)
+  const note = [made, own].filter((x) => x !== undefined).join(cx.s('。', '. '));
+  return note ? { ...ex, note } : ex;
 }
 
 /** The lines of a section of the whole-pipeline example: at most `MAX_SHOWN_LINES`, control characters made visible. */
@@ -364,7 +368,7 @@ function sampledPipeline(cx: Explainer, n: SyntaxNode, layout: MadeUp, stages: S
   const ex = pipelines.pipelineExample(rest, true, sample);
   if (!ex) return undefined;
   const label = cx.s(`\`${stages[0].text}\` の出力（例）`, `Output of \`${stages[0].text}\` (sample)`);
-  return withValues(cx, wholePipeline(cx, n, ex, [{ label, lines: sample }], rest, runs, false), values);
+  return withValues(cx, wholePipeline(cx, n, ex, [{ label, lines: sample }], rest, runs, false), values, 'run' in layout ? layout.run.note : undefined);
 }
 
 /** The example of the whole pipeline `n`: the input boxes, then what each stage leaves. */
@@ -466,9 +470,11 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
     const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));
-    // (The layout of a program: what it prints.)
-    const alt = i === 0 && res.kind === 'file' ? layoutOf(spec, parse) : undefined;
-    const layout = alt && madeUpLayout(cx, cmd, alt);
+    // (The layout of a program, or what the runner of its spec makes of its words (`bazel query`): what it prints.)
+    const first = i === 0 && res.kind === 'file';
+    const alt = first ? layoutOf(spec, parse) : undefined;
+    const run = first && spec && !alt && words.length === args.length && !readsFields(parse) ? sourceRun(spec, parse, words, cx.lang) : undefined;
+    const layout = alt ? madeUpLayout(cx, cmd, alt) : run && { run };
     return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs, ...(layout ? { layout } : {}), values };
   })();
   stages.set(cmd, read);
@@ -593,6 +599,7 @@ function argvOf(cx: Explainer, cmd: SyntaxNode): Run | undefined {
 
 /** Made-up lines of what the first stage of pipeline `n` prints in `layout`, with the stages run as ps sees them. */
 function madeUp(cx: Explainer, n: SyntaxNode, layout: MadeUp): string[] {
+  if ('run' in layout) return layout.run.lines;
   const procs = n.namedChildren.map((c) => argvOf(cx, c));
   // (env's words are all known: options.)
   if (layout.environment) procs[0] = { ...procs[0]!, environment: layout.environment };

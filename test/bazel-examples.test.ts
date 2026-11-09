@@ -1,6 +1,6 @@
 // The record of the examples' workspace (test/fixtures/bazel-cc; `examples` of test/fixtures/oracles/bazel.json, written by
 // scripts/record-bazel.ts): what bazel printed for the query, cquery and aquery commands the examples show. The examples'
-// evaluator comes later; this test holds the record's shape, which it reads, and that nothing of the machine that recorded
+// evaluator is compared with it in test/bazel-examples-run.test.ts; this test holds the record's shape, and that nothing of the machine that recorded
 // it is in it: a path is `<workspace>` or `<output_base>`, an action's key `<key>`. The configuration hashes of a cquery and an
 // aquery's compiler and flags stay, and are examples (the record says so).
 import * as assert from 'assert';
