@@ -1,6 +1,7 @@
 import { type Shell, shellFromName } from '../dialect';
 import { featureWorks } from '../shellfeatures';
-import type { RegionNote } from './index';
+import type { Pos } from '../analyzer-types';
+import type { CallArgument, LiteralSource, ReParam, RegionNote } from './index';
 import { type JsonWord, execWords } from './dockerfile';
 import { LineOut, Builder } from './builder';
 import type { HostMeaning } from '../messages-hosts';
@@ -24,7 +25,7 @@ const PY_CALLS: Record<string, PyCall> = {
  * (`flags`, where the flags argument is), and what each adds to the pattern: an anchor at the start (`match`), or at both ends
  * (`fullmatch`). `prefixmatch` is a second name of `match` since Python 3.15.
  */
-interface ReCall { params: readonly string[]; anchors?: 'start' | 'whole'; since?: string }
+interface ReCall { params: readonly ReParam[]; anchors?: 'start' | 'whole'; since?: string }
 const RE_CALLS: Record<string, ReCall> = {
   're.compile': { params: ['pattern', 'flags'] },
   're.search': { params: ['pattern', 'string', 'flags'] },
@@ -90,7 +91,7 @@ export function python(b: Builder): void {
   // Names the calls go by: `import subprocess as sp`, `from subprocess import run as r`.
   const imports = pyImports(src, tokens);
   // (The calls of `re`, read once every line a shell region takes is known: a shell region keeps a line it shares.)
-  const patterns: { name: string; full: string; at: number }[] = [];
+  const patterns: { name: string; full: string; first: number; at: number }[] = [];
   for (let i = 0; i < tokens.length; i++) {
     // A call `name(` or `a.b(`, not of an attribute (`x.run(`) nor a definition (`def run(`).
     const before = tokens[i - 1];
@@ -98,7 +99,7 @@ export function python(b: Builder): void {
     const called = dottedAt(src, tokens, i);
     if (!called || !isOp(src, tokens[called.next], '(')) continue;
     const full = pyResolve(imports, called.name);
-    if (full !== undefined && full in RE_CALLS) patterns.push({ name: called.name, full, at: called.next });
+    if (full !== undefined && full in RE_CALLS) patterns.push({ name: called.name, full, first: i, at: called.next });
     const spec = full === undefined ? undefined : PY_CALLS[full];
     if (!spec) continue;
     const open = called.next;
@@ -162,43 +163,56 @@ export function python(b: Builder): void {
 }
 
 /**
- * The pattern of the call of `re` whose `(` is at the token `p.at`, as a `LanguageRegion`: when it is string literals only (one, or
- * several joined, over several lines too), of str (a bytes pattern, an f-string with a field and a `\N{…}` escape are not read yet),
- * and the call gives no flags (which the reader does not read yet). Not on a line that a shell region or another pattern has.
+ * The call of `re` whose name starts at the token `p.first` and whose `(` is at `p.at`, as a `LanguageRegion` over the call's lines:
+ * its arguments, each with the parameter it binds (`RE_CALLS`: by its slot, or by keyword) and its value when it is string literals.
+ * A region needs a pattern of string literals only (one, or several joined, over several lines too), of str (a bytes pattern, an
+ * f-string with a field and a `\N{…}` escape are not read yet), and no flags (which the reader does not read yet). Not on a line
+ * that a shell region or another call has.
  */
-function rePattern(b: Builder, lx: PyFile, p: { name: string; full: string; at: number }, pos: PyPos): void {
+function rePattern(b: Builder, lx: PyFile, p: { name: string; full: string; first: number; at: number }, pos: PyPos): void {
   const { src, tokens } = lx;
   const close = lx.pair[p.at];
   if (close < 0) return;
   const { parts } = pyArgs(lx, p.at, close);
-  const keyword = (k: string) => parts.find((a) => isName(src, tokens[a[0]], k) && isOp(src, tokens[a[1]], '='))?.slice(2);
   // (A `*args` or `**kwargs` may hold the pattern or the flags.)
   if (parts.some((a) => isOp(src, tokens[a[0]], '*') || isOp(src, tokens[a[0]], '**'))) return;
-  const positional = parts.filter((a) => !(tokens[a[0]].kind === 'name' && isOp(src, tokens[a[1]], '=')));
   const { params } = RE_CALLS[p.full];
-  if (positional.length > params.indexOf('flags') || keyword('flags')) return;
-  const arg = positional[0] ?? keyword('pattern');
-  if (!arg) return;
-  const value = literalValue(lx, unwrap(lx, arg));
-  if (!value || value.literals.some((l) => l.token.lit!.bytes) || setsVerbose(value.value)) return;
-  const first = value.literals[0].token;
-  const last = value.literals[value.literals.length - 1].token;
-  const start = pos(first.start);
-  const end = pos(last.end);
-  for (let l = start.line; l <= end.line; l++) if (b.outs[l]?.text || b.languages.some((r) => r.start <= l && l <= r.end)) return;
-  const at = (off: number) => {
+  const at = (off: number): Pos => {
     const q = pos(off);
     return { line: q.line, character: q.col };
   };
-  // (The end of the text the reader reads: after the last character, or the start of the first literal's text when it is empty.)
-  const after = value.value.length ? at(value.ends[value.ends.length - 1]) : at(first.lit!.contentStart);
+  let slot = 0;
+  const read = parts.map((a): { arg: CallArgument; value?: PyArg } => {
+    const keyword = tokens[a[0]].kind === 'name' && isOp(src, tokens[a[1]], '=');
+    // (By keyword, the parameter of that name; else the next slot. One past them binds none: Python raises `TypeError`.)
+    const role = keyword ? params.find((n) => isName(src, tokens[a[0]], n)) : params[slot++];
+    const part = keyword ? a.slice(2) : a;
+    const value = literalValue(lx, unwrap(lx, part));
+    const span = { start: at(tokens[part[0]].start), end: at(tokens[part[part.length - 1]].end) };
+    return { arg: { ...(role ? { role } : {}), keyword, span, ...(value ? { literal: literalSource(value, at) } : {}) }, value };
+  });
+  const args = read.map((r) => r.arg);
+  const pattern = read.find((r) => r.arg.role === 'pattern')?.value;
+  if (!pattern || args.some((a) => a.role === 'flags' || !a.role) || pattern.literals.some((l) => l.token.lit!.bytes) || setsVerbose(pattern.value)) return;
+  const start = pos(tokens[p.first].start).line;
+  const end = pos(tokens[close].start).line;
+  for (let l = start; l <= end; l++) if (b.outs[l]?.text || b.languages.some((r) => r.start <= l && l <= r.end)) return;
   b.languages.push({
-    start: start.line, end: end.line,
+    start, end,
     label: [`Python の正規表現（\`${p.name}\` の引数）`, `Python regex (argument of \`${p.name}\`)`],
     host: { kind: b.kind }, language: 'regex', flavor: 'python',
-    source: { value: value.value, at: [...value.offs.map(at), after], to: value.ends.map(at), span: { start: at(first.start), end: at(last.end) } },
-    call: { written: p.name, name: p.full },
+    call: { written: p.name, name: p.full, span: { start: at(tokens[p.first].start), end: at(tokens[close].end) } },
+    args,
   });
+}
+
+/** Where each character of the value of literals is in the file (`LiteralSource`). */
+function literalSource(value: PyArg, at: (off: number) => Pos): LiteralSource {
+  const first = value.literals[0].token;
+  const last = value.literals[value.literals.length - 1].token;
+  // (The end of the text the reader reads: after the last character, or the start of the first literal's text when it is empty.)
+  const after = value.value.length ? at(value.ends[value.ends.length - 1]) : at(first.lit!.contentStart);
+  return { value: value.value, at: [...value.offs.map(at), after], to: value.ends.map(at), span: { start: at(first.start), end: at(last.end) } };
 }
 
 /**

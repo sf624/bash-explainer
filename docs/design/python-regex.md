@@ -44,16 +44,24 @@ A part in another language is a `LanguageRegion` in a list of its own, `Extracte
 
 ```ts
 interface LanguageRegion {
-  start: number; end: number;            // lines
+  start: number; end: number;            // the call's lines, from the function's name to its `)`
   label: [ja: string, en: string];       // "Python regex (argument of `re.search`)"
   host: HostId;                          // { kind: 'python' }
   language: 'regex';                     // an EmbeddedLang
   flavor: 'python';
-  source: PyLiteralValue;                // the pattern's value, the place of each character, its holes (section 4)
+  call: { written; name; span };         // the function, how the file names it, the call's place
+  args: CallArgument[];                  // its arguments as read, in the order written (section 5.1)
   options: PythonRegexOptions;           // from the flags argument, or "not known" (section 5)
-  call: PyCallSite;                      // the function, how the file names it, its arguments as read
+}
+interface CallArgument {
+  role?: ReParam;                        // the parameter it binds, by slot or keyword: 'pattern', 'string', 'repl', 'count', 'maxsplit', 'flags'
+  keyword: boolean;
+  span: Span;                            // its value's place: a token on it, or a note anchored there
+  literal?: LiteralSource;               // its value when it is string literals: the value, the place of each character (section 4)
 }
 ```
+
+The region is the call, not the pattern: the flags argument, the subject (#751) and the replacement (#752) are its arguments, each read where it is, and a token or a note on any of them is on a line of the region. The pattern is the argument of the role `pattern` (`patternOf`); a role is Python's parameter name, so the keyword and the slot are one fact (`RE_CALLS`). A method of a compiled pattern (`PAT.sub(repl, s)`, #752) is a region whose call has no pattern argument: its pattern comes from the `re.compile` it is linked to.
 
 Rejected: a `ShellRegion` with a `language` field. Each of the readers above would need a test to skip it, and a new reader would get it wrong by default. Rejected too: writing the pattern into the shell text as a made-up command (`grep -P '…'`). The tree, bash-ast's test and the reading tree would then claim that bash reads it.
 

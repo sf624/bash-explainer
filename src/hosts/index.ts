@@ -78,12 +78,31 @@ export interface HostSubstitution {
 }
 
 /**
- * A part of a host file in another language than the shell's (docs/design/python-regex.md, 2.2): the pattern of a call of
- * Python's `re`. It is never in `Extracted.regions`, whose readers all take a region as shell code; its lines stay empty in the
+ * The value of string literals of a host file, as a language's reader reads it, and where each of its characters is in the file:
+ * `at[i]`, the place of its first source character, and `to[i]`, the end of its source range. `at` has one more entry, the end of
+ * the literals' text. `span`: the literals, prefixes and quotes included.
+ */
+export interface LiteralSource { value: string; at: Pos[]; to: Pos[]; span: Span }
+
+/**
+ * A parameter of a function of Python's `re` (docs/design/python-regex.md, 5.1), by its name in Python, which is also its
+ * keyword: the role of an argument that binds it (`string` is the subject the pattern is matched against).
+ */
+export type ReParam = 'pattern' | 'string' | 'repl' | 'count' | 'maxsplit' | 'flags';
+
+/**
+ * An argument of a call, as written: the parameter it binds (`role`; none for one past the function's parameters or a keyword it
+ * does not have), whether it is given by keyword, the place of its value, and that value when it is string literals only.
+ */
+export interface CallArgument { role?: ReParam; keyword: boolean; span: Span; literal?: LiteralSource }
+
+/**
+ * A part of a host file in another language than the shell's (docs/design/python-regex.md, 2.2): a call of Python's `re` with a
+ * pattern to read. It is never in `Extracted.regions`, whose readers all take a region as shell code; its lines stay empty in the
  * shell text. Read through `hostPartAt` (src/hosts/scripts.ts).
  */
 export interface LanguageRegion {
-  /** Its lines, those of the literal(s). */
+  /** Its lines, those of the call: from the function's name to its `)`. */
   start: number;
   end: number;
   /** What it is, "Python regex (argument of `re.search`)" (ja, en). */
@@ -92,13 +111,12 @@ export interface LanguageRegion {
   language: 'regex';
   flavor: 'python';
   /**
-   * The text the language's reader reads (the value of the literals), and where each of its characters is in the file: `at[i]`,
-   * the place of its first source character, and `to[i]`, the end of its source range. `at` has one more entry, the end of the
-   * literals' text. `span`: the literals, prefixes and quotes included.
+   * The function called: as the file writes it (`re.search`, `sub` after `from re import sub`), its full name (`re.search`), and the
+   * call's place, from the name to the `)`.
    */
-  source: { value: string; at: Pos[]; to: Pos[]; span: Span };
-  /** The function called: as the file writes it (`re.search`, `sub` after `from re import sub`) and its full name (`re.search`). */
-  call: { written: string; name: string };
+  call: { written: string; name: string; span: Span };
+  /** Its arguments in the order written (docs/design/python-regex.md, 5.1); the pattern's is string literals (`patternOf`). */
+  args: CallArgument[];
 }
 
 /**
@@ -164,4 +182,4 @@ export function extractShell(kind: HostKind, text: string): Extracted {
 
 export { batsTestName } from './bats';
 export { remapExplanation, substitutionNotes, explainHostedLine, hostIssues, type DocIssue } from './remap';
-export { hasParts, hostPartAt, type HostPart, languageLines, regionAt, regionShell } from './scripts';
+export { hasParts, hostPartAt, type HostPart, languageLines, literalOf, patternOf, regionAt, regionShell } from './scripts';

@@ -6,7 +6,7 @@ import type { LineExplanation, Token } from '../src/analyzer-types';
 import { autoShellAt, documentIssues, explainDocumentLine, noteIssues, type ShellDocument } from '../src/document';
 import { openDocument } from '../src/document-setup';
 import { withinLine } from '../src/examples/regexguard';
-import { extractShell, hasParts, hostPartAt, languageLines, regionAt } from '../src/hosts';
+import { extractShell, hasParts, hostPartAt, languageLines, literalOf, patternOf, regionAt } from '../src/hosts';
 import { autoShellText } from '../src/messages-shell';
 import { readSaid } from '../src/messages-tokens';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -23,7 +23,7 @@ const open = (src: string): ShellDocument => openDocument(src, 'python', (t) => 
 const explainPy = (src: string, line: number, lang: 'ja' | 'en' = 'en', opts = {}): LineExplanation => explainDocumentLine(new Analyzer(lang), open(src), line, lang, {}, opts);
 const texts = (ts: readonly Token[]): string[] => ts.flatMap((t) => [`${t.label}: ${t.explanation}`, ...texts(t.children)]);
 /** Each region of a file's patterns: its lines, the function as written and its full name, and the text the reader reads. */
-const patterns = (src: string) => extractShell('python', src).languages.map((r) => ({ lines: [r.start, r.end], call: r.call.written, name: r.call.name, value: r.source.value }));
+const patterns = (src: string) => extractShell('python', src).languages.map((r) => ({ lines: [r.start, r.end], call: r.call.written, name: r.call.name, value: patternOf(r).value }));
 
 describe('Python regex: the patterns of `re` in a `.py` file', () => {
   describe('which calls give a pattern', () => {
@@ -39,11 +39,12 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
 
     it('reads the value of the literals: escapes undone unless raw, joined, over several lines', () => {
       assert.deepStrictEqual(patterns("import re\nre.match('\\\\d+\\\\.' r'\\w' \"\\t\", s)\n").map((p) => p.value), ['\\d+\\.\\w\t']);
-      assert.deepStrictEqual(patterns("import re\nP = re.compile(\n    r'a'\n    r'b'\n)\n").map((p) => [p.lines, p.value]), [[[2, 3], 'ab']]);
+      // (The region is the call's lines, from its name to its `)`.)
+      assert.deepStrictEqual(patterns("import re\nP = re.compile(\n    r'a'\n    r'b'\n)\n").map((p) => [p.lines, p.value]), [[[1, 4], 'ab']]);
       assert.deepStrictEqual(patterns("import re\nP = re.compile(r'''a\nb''')\n").map((p) => [p.lines, p.value]), [[[1, 2], 'a\nb']]);
       assert.deepStrictEqual(patterns("import re\nre.search((r'a'), s)\n").map((p) => p.value), ['a']);
       // (An empty pattern is one too: its end is where its text would start.)
-      const empty = extractShell('python', "import re\nre.compile('')\n").languages[0].source;
+      const empty = patternOf(extractShell('python', "import re\nre.compile('')\n").languages[0]);
       assert.deepStrictEqual([empty.value, empty.at, empty.to], ['', [{ line: 1, character: 12 }], []]);
       assert.deepStrictEqual(explainPy("import re\nre.compile('')\n", 1).items.map((t) => [t.label, t.children.length]), [["''", 0]]);
     });
@@ -55,13 +56,28 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
       }
       // (An f-string with no field is a str, and `(?i)` is no VERBOSE.)
       assert.strictEqual(patterns("import re\nre.search(f'a{{2}}', s)\nre.search('(?i)a b', s)\n").length, 2);
+      // (A call Python refuses: an argument past the function's parameters, or a keyword it does not have.)
+      for (const call of ["re.compile('a', 0, x)", "re.search('a', s, flag=1)"]) assert.deepStrictEqual(patterns(`import re\n${call}\n`), [], call);
+    });
+
+    it('reads the call: each argument with the parameter it binds, by its slot or by keyword, its place, and its value when it is literals', () => {
+      const args = (src: string) => extractShell('python', src).languages.map((r) => r.args.map((a) => [a.role, a.keyword, `${a.span.start.line}:${a.span.start.character}-${a.span.end.line}:${a.span.end.character}`, a.literal?.value]));
+      assert.deepStrictEqual(args("import re\nre.sub(r'(\\d+)', r'<\\1>', text, 2)\n"), [[
+        ['pattern', false, '1:7-1:15', '(\\d+)'], ['repl', false, '1:17-1:24', '<\\1>'], ['string', false, '1:26-1:30', undefined], ['count', false, '1:32-1:33', undefined]]]);
+      assert.deepStrictEqual(args("import re\nre.split(string='a,b', pattern=',', maxsplit=1)\n"), [[
+        ['string', true, '1:16-1:21', 'a,b'], ['pattern', true, '1:31-1:34', ','], ['maxsplit', true, '1:45-1:46', undefined]]]);
+      // (The call's place: from its name to its `)`.)
+      const region = extractShell('python', "import re\nm = re.match(\n  'a', s)\n").languages[0];
+      assert.deepStrictEqual([region.call.span, [region.call.written, region.call.name]], [{ start: { line: 1, character: 4 }, end: { line: 2, character: 9 } }, ['re.match', 're.match']]);
+      // (The literal of a role: none for one the call does not give, or gives as no literal.)
+      assert.deepStrictEqual([literalOf(region, 'pattern')?.value, literalOf(region, 'string'), literalOf(region, 'repl')], ['a', undefined, undefined]);
     });
 
     it('gives a line to one part: a shell region keeps a line it shares, and the first pattern a line has', () => {
       const src = "import re, os\nre.match('a', x); os.system('ls')\nre.match('b', x); re.match('c', x)\n";
       const ex = extractShell('python', src);
       assert.deepStrictEqual(ex.regions.map((r) => [r.start, r.end]), [[1, 1]]);
-      assert.deepStrictEqual(ex.languages.map((r) => [r.start, r.source.value]), [[2, 'b']]);
+      assert.deepStrictEqual(ex.languages.map((r) => [r.start, patternOf(r).value]), [[2, 'b']]);
       // (Its lines stay empty in the shell text.)
       assert.strictEqual(ex.text.split('\n')[2], '');
     });

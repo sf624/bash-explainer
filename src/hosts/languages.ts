@@ -14,6 +14,7 @@ import { sayAt } from '../noteanchors';
 import { languageReading } from '../reading';
 import type { LanguageRegion } from './index';
 import { reCallOf } from './python';
+import { patternOf } from './scripts';
 
 /** The explanations of each region, by the language and the options they were made with: each line of a region has the same. */
 const made = new WeakMap<LanguageRegion, Map<string, LineExplanation>>();
@@ -40,7 +41,8 @@ function between(lines: readonly string[], a: Pos, b: Pos): string {
 }
 
 function explained(region: LanguageRegion, lines: readonly string[], lang: Lang, opts: ExplainOptions): LineExplanation {
-  const { source, call } = region;
+  const { call } = region;
+  const source = patternOf(region);
   // (Where an offset of the value is: the place of its character, or after the last one for an end.)
   const at = (offset: number, isEnd: boolean): Pos => (isEnd && offset > 0 ? source.to[offset - 1] : source.at[offset]);
   // (`gaps[k]`: how many characters up to `k` do not follow the one before in the source: the first of a literal after another,
