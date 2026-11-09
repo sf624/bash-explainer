@@ -8,7 +8,7 @@ import type { CommandSpec, ShellVariant } from '../argv/spec';
 import type { Basis } from '../basis';
 import { impliedOptions, lookupCommand, specName } from '../dict/aliases';
 import { customCommandSpec } from '../dict/custom';
-import type { Flavor } from '../embedded/regex';
+import type { ShellFlavor } from '../embedded/regex';
 import { isProgram } from '../namefacts';
 import { programSections } from '../refs';
 import type { ExecEnv } from '../semantics/env';
@@ -243,7 +243,7 @@ export function optionValues(cx: Explainer, ...names: string[]): { text?: string
  * in word `word`: where the program reads it as soon as its option (`ValueSpec.inOrder`: `sed -e`), only the options
  * given before it count (`sed -e 's/a+/x/' -E` reads a BRE).
  */
-export function regexFlavor(cx: Explainer, word?: number): Flavor | 'fixed' {
+export function regexFlavor(cx: Explainer, word?: number): ShellFlavor | 'fixed' {
   const { cmd, parse, spec } = cx.command!;
   const implied = impliedOptions(cmd, spec).map((o) => o.selects);
   const selected = new Set<string | undefined>([...selectedModes(parse, word), ...implied]);

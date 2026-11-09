@@ -37,7 +37,7 @@ export interface ScopeChip {
  * left out. Where no one shell applies, the shell's place says "auto" (`parts`) or "no shell" (`none`).
  */
 export function scopeChip(lang: Lang, title: string, kind: ScopeKind, forced: Shell | undefined, reading?: AutoShell): ScopeChip {
-  const shell = forced ? SHELL_NAMES[forced] : typeof reading === 'string' ? autoShellText(lang, 'short', reading) : SHELL_NAMES[reading?.shell ?? 'bash'];
+  const shell = forced ? SHELL_NAMES[forced] : typeof reading === 'string' || (reading && 'language' in reading) ? autoShellText(lang, 'short', reading) : SHELL_NAMES[reading?.shell ?? 'bash'];
   const said = forced ? shell : autoShellText(lang, 'short', reading);
   const chips = [...new Set([`${kind.name} · ${said}`, `${kind.name} · ${shell}`, `${kind.short} · ${shell}`])];
   const forms: ScopeForm[] = [

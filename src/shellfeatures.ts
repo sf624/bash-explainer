@@ -30,10 +30,15 @@ export type ScriptEvidence = 'said' | 'name';
 
 /**
  * The automatic shell at a place of a document, as the page and the panel say it: a reading; `parts` in a host file
- * whose parts run in shells of their own, at a line in none of them; or `none` where the host runs the words with no
- * shell (Docker's exec form, a Python list of arguments; `ShellRegion.noShell`). `autoShellAt`, src/document.ts.
+ * whose parts run in shells of their own, at a line in none of them; `none` where the host runs the words with no
+ * shell (Docker's exec form, a Python list of arguments; `ShellRegion.noShell`), and at a line in no part of a host file
+ * that has no shell code; or a language, on a line of a part of a host file in another language (a Python pattern:
+ * `LanguageRegion`), which no shell reads. `autoShellAt`, src/document.ts.
  */
-export type AutoShell = ShellReading | 'parts' | 'none';
+export type AutoShell = ShellReading | 'parts' | 'none' | LanguageReading;
+
+/** The language of a part of a host file that no shell reads (`LanguageRegion`): its language and flavor. */
+export interface LanguageReading { language: 'regex'; flavor: 'python' }
 
 /** The shell a reading says: undefined for the default (and for no reading), the shell the explainers take when the file names none. */
 export function saidShell(reading: ShellReading | undefined): Shell | undefined {

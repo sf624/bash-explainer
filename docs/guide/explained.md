@@ -30,7 +30,7 @@ Examples appear right under the part they illustrate (see `bashExplainer.example
 | CI YAML | GitHub Actions `run:` (workflows and `action.yml`, following `shell:` and `defaults`), GitLab CI `script:`, CircleCI `run:` / `command:`, and Azure Pipelines `script:` / `bash:` with its `$(variable)` macros; warns when untrusted input like `${{ github.event.pull_request.title }}` is pasted into a script |
 | `package.json` | `scripts` |
 | Markdown | code blocks marked `sh`, `bash`, `console`, …; the shell is the block's shebang, else the one the tag names (`sh` counts as bash) |
-| Python | `subprocess.run(…)`, `os.system(…)`, …; flags strings passed without `shell=True` and values pasted into a shell command |
+| Python | `subprocess.run(…)`, `os.system(…)`, …; flags strings passed without `shell=True` and values pasted into a shell command. Also the patterns of `re.search(…)`, `re.compile(…)`, `re.sub(…)`, …, in a file that imports `re`: each part of the pattern, and an Error where Python refuses it (`bad escape \e at position 0`). The chip says "no shell (Python regex)" there |
 | Jenkinsfile | `sh '…'`, `sh "…"`, `sh '''…'''`, `sh(script: …)`; points out the `$name` and `${…}` that Groovy fills in before the shell runs |
 | bats (`.bats`, or a `bats` shebang) | the whole file as bash: `@test "…" {` as the test bats runs with `set -e`, and `run` (with `!`, `-N`, `--separate-stderr`), `load`, `skip`, `bats_pipe`; warns about `! cmd` that cannot fail a test and `run` in a pipeline |
 

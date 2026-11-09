@@ -6,7 +6,8 @@ import { parseDirectives, suppressed } from './directives';
 import { withinLine } from './examples/regexguard';
 import { contained } from './failures';
 import { Fix, fixFor, rewriteFix } from './fixes';
-import { DocIssue, explainHostedLine, Extracted, hostIssues, regionAt, regionShell, type ShellRegion } from './hosts';
+import { DocIssue, explainHostedLine, Extracted, hostIssues, hostPartAt, languageLines, regionShell, type ShellRegion } from './hosts';
+import { explainLanguageLine } from './hosts/languages';
 import { Lang } from './i18n';
 import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
 import { conventionOf, fact, isProblemNote, type Note, problemText, severityOf } from './messages';
@@ -58,14 +59,16 @@ export function shellOf(shells: Shells): Shell | undefined {
  * popover, the Shell setting and the panel's list say (src/messages-shell.ts). A script's is the file's (`readShell`);
  * a host file's comes from its type, part by part (`explainDocumentLine` reads it so: a Dockerfile's RUN runs in sh, a
  * workflow step in its `shell:`, a Markdown block in its fence's language; words run with no shell, Docker's exec form,
- * are `none`). At a line in no part, it is that of every part when they agree, else `parts`.
+ * are `none`; a part in another language, a Python pattern, is that language: no shell reads it). At a line in no part, it
+ * is that of every shell part when they agree, `none` when there is none, else `parts`.
  */
 export function autoShellAt(doc: ShellDocument, shells: Shells, line: number): AutoShell {
   if (!doc.extracted) return shells.detected ?? { shell: 'bash', source: 'default' };
+  const part = hostPartAt(doc.extracted, line);
+  if (part?.kind === 'language') return { language: part.region.language, flavor: part.region.flavor };
   const auto = (r: ShellRegion) => (r.noShell ? 'none' : regionShell(r) ?? 'bash');
-  const region = regionAt(doc.extracted, line);
   const all = new Set(doc.extracted.regions.map(auto));
-  const shell = region ? auto(region) : all.size === 1 ? [...all][0] : 'parts';
+  const shell = part ? auto(part.region) : all.size === 1 ? [...all][0] : all.size ? 'parts' : 'none';
   return shell === 'parts' || shell === 'none' ? shell : { shell, source: 'host' };
 }
 
@@ -78,7 +81,12 @@ export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line
     const { extracted } = doc;
     // (What a host file adds around the line's own explanation has the same boundary: src/failures.ts.)
     // (The budget of the line is by the whole document's size, not that of the part it is in, which has a tree of its own.)
-    return contained(`line ${line + 1}`, () => withinLine(doc.tree.root, () => explainHostedLine(analyzer, doc.tree, extracted, doc.lines, line, lang, shells.forced, opts)), (e) => analyzer.notExplained(doc.tree, line, undefined, e))
+    // (A part in another language has no shell tree: its own reader, in the same boundary and budget, src/hosts/languages.ts.)
+    const explained = () => {
+      const part = hostPartAt(extracted, line);
+      return part?.kind === 'language' ? explainLanguageLine(part.region, doc.lines, line, lang, opts) : explainHostedLine(analyzer, doc.tree, extracted, doc.lines, line, lang, shells.forced, opts);
+    };
+    return contained(`line ${line + 1}`, () => withinLine(doc.tree.root, explained, languageLines(extracted)), (e) => analyzer.notExplained(doc.tree, line, undefined, e))
       ?? { line, summary: '', items: [], context: [], notes: [], noteInfo: [], examples: [] };
   }
   // (Where the shell comes from: chosen outside the file, else the file's own directive.)

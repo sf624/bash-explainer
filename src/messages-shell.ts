@@ -1,4 +1,5 @@
 import { type AutoShell, SHELL_NAMES, type ShellSource } from './dialect';
+import { flavorName } from './embedded/regex';
 import type { Lang } from './i18n';
 import type { NameFacts } from './semantics/names';
 
@@ -16,7 +17,8 @@ import type { NameFacts } from './semantics/names';
  * - `setting`: the Shell setting, a preference for every script, "Auto (now: bash, from #!)".
  * A host file's shell comes from its type, part by part ("Auto: POSIX sh (from the file type)"); at a line in no part,
  * when the parts differ (`parts`), no shell is named: "auto", "Auto: set by each part (from the file type)". Words the
- * host runs with no shell (`none`: Docker's exec form) say so: "no shell", "Auto: no shell (runs directly)".
+ * host runs with no shell (`none`: Docker's exec form) say so: "no shell", "Auto: no shell (runs directly)". A line of a
+ * part in another language (a Python pattern) names it: "no shell (Python regex)", "Auto: no shell (Python regex)".
  */
 export type AutoShellForm = 'option' | 'short' | 'long' | 'setting';
 
@@ -41,6 +43,16 @@ const NAMELESS = {
 export function autoShellText(lang: Lang, form: AutoShellForm, reading?: AutoShell): string {
   const ja = lang === 'ja';
   const auto = AUTO[lang];
+  if (typeof reading === 'object' && 'language' in reading) {
+    const none = NAMELESS.none.what[lang];
+    const name = flavorName(reading.flavor, lang);
+    switch (form) {
+      case 'option': return ja ? `${auto}（${none}、${name}）` : `${auto} (${none}, ${name})`;
+      case 'short': return ja ? `${none}（${name}）` : `${none} (${name})`;
+      case 'long': return ja ? `${auto}: ${none}（${name}）` : `${auto}: ${none} (${name})`;
+      case 'setting': return ja ? `${auto}（今: ${none}、${name}）` : `${auto} (now: ${none}, ${name})`;
+    }
+  }
   if (typeof reading === 'string') {
     const what = NAMELESS[reading].what[lang];
     const from = NAMELESS[reading].from[lang];

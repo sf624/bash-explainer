@@ -40,3 +40,14 @@ export function anchored(found: readonly Found[], anchors: NoteAnchor[], data: M
   }
   return [...new Set(found.map((f) => f.text))];
 }
+
+/**
+ * The text of the note `n` said about the range `span`: its data recorded in `data`, and its anchor in `anchors` once (a token of
+ * a string read as a script has its place already). The sink of a line's token errors (`tokenErrors`, src/linefinish.ts), with the
+ * lists of the line's context (`LineExplainer.sayAt`) or of a language line's (src/hosts/languages.ts).
+ */
+export function sayAt(anchors: NoteAnchor[], data: Map<string, Note>, n: Note & { code: string }, span: Span): string {
+  data.set(n.text, n);
+  if (!anchors.some((a) => a.text === n.text && sameSpan(a.span, span))) anchors.push({ text: n.text, span, code: n.code });
+  return n.text;
+}

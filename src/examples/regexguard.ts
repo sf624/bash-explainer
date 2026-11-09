@@ -795,8 +795,8 @@ export function guardedApart<T>(limit: number, run: () => T, refused: (id: NotCo
 const share = (whole: number, places: number, most: number) => Math.min(most, Math.floor(whole / Math.max(1, places)));
 
 interface Shares {
-  /** What the examples of a line may cost, and again their results. */
-  line: number;
+  /** The lines of code of the text, among which the examples' limit is shared (`withinLine`). */
+  code: number;
   /** What one thing a model works out may cost. */
   model: number;
   /** The longest value of a variable the model keeps. */
@@ -814,7 +814,7 @@ function shareOf(root: { text: string }): Shares {
   if (!known) {
     const code = root.text.match(/^[ \t]*[^\s#]/gm)?.length ?? 0;
     const places = root.text.match(/\$\{|[=!]=|\)|\n/g)?.length ?? 0;
-    known = { line: share(DOCUMENT_LIMIT, code, LINE_LIMIT), model: Math.max(MODEL_LEAST, share(DOCUMENT_MODEL_LIMIT, places, MODEL_LIMIT)), value: Math.max(VALUE_LEAST, share(DOCUMENT_VALUE_LIMIT, places, VALUE_LIMIT)) };
+    known = { code, model: Math.max(MODEL_LEAST, share(DOCUMENT_MODEL_LIMIT, places, MODEL_LIMIT)), value: Math.max(VALUE_LEAST, share(DOCUMENT_VALUE_LIMIT, places, VALUE_LIMIT)) };
     shares.set(root, known);
   }
   return known;
@@ -832,11 +832,13 @@ export function modelLimit(root: { text: string }): number {
 
 /**
  * Explains a line of the document whose root is `root` within one budget: all the `guarded` in `run` draw from it, and a line of a
- * string read as a script (or any run in it) from the same one. Its size is a function of the document's text, never of what ran before.
+ * string read as a script (or any run in it) from the same one. Its size is a function of the document's text, never of what ran before:
+ * a share of the document's limit for each of its lines of code, those of `root` and `more` (the lines of a host file's parts in
+ * another language, which `root`'s text leaves blank: `languageLines`, src/hosts/scripts.ts).
  */
-export function withinLine<T>(root: { text: string }, run: () => T): T {
+export function withinLine<T>(root: { text: string }, run: () => T, more = 0): T {
   if (line) return run();
-  const limit = shareOf(root).line;
+  const limit = share(DOCUMENT_LIMIT, shareOf(root).code + more, LINE_LIMIT);
   line = { limit, examples: { left: limit }, results: { left: limit } };
   try {
     return run();

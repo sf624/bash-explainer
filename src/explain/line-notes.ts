@@ -6,10 +6,10 @@
 import type { Token } from '../analyzer-types';
 import { hasExtglob } from '../examples/shellwords';
 import { tx } from '../i18n';
-import { clausesOf, type Fact, fact, factOf, isProblemNote, MESSAGES, tokenNote } from '../messages';
+import { clausesOf, type Fact, fact, factOf, isProblemNote, MESSAGES } from '../messages';
 import type { StopWhat } from '../messages-errexit-stop';
 import { shorten } from '../label';
-import { saysProblem } from '../messages-tokens';
+import { tokenErrors } from '../linefinish';
 import { statementBefore } from '../rewrite';
 import { bashrcReader, STATEMENTS } from '../semantics/env';
 import { NAME } from '../semantics/walk/shared';
@@ -172,19 +172,9 @@ export function extglobPitfalls(cx: Explainer, root: SyntaxNode, line: number): 
   return cx.say(fact(cx.lang, id, { use: use.text }), use);
 }
 
-/**
- * The errors the tokens of a line say (`tokenError`, `Token.marks`), as notes about each token: a token warning stays on
- * its row, but "fails every time" is a problem of the line (docs/design/panel-redesign.md, P7b). From here it goes the way
- * of every note: the box, the hover, Markdown, the Problems strip, `--check`.
- */
+/** The errors the tokens of a line say, as notes about each token (`tokenErrors`), said in the line's context. */
 export function tokenErrorNotes(cx: Explainer, items: readonly Token[]): string[] {
-  const found: string[] = [];
-  const walk = (t: Token) => {
-    for (const m of t.marks ?? []) if (saysProblem(m)) found.push(cx.sayAt(tokenNote(cx.lang, m), t.span));
-    t.children.forEach(walk);
-  };
-  items.forEach(walk);
-  return [...new Set(found)];
+  return tokenErrors(cx.lang, items, (n, span) => cx.sayAt(n, span));
 }
 
 /** The statements whose own failure `set -e` checks (`CHECKED` of src/semantics/status.ts, but `!`), where a stop note may go. */

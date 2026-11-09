@@ -853,21 +853,31 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   /** Adds a token of a language to `out`: under the node of its language, which it starts when it is the first. */
   const language = (out: ReadingNode[], t: Token, reader: string): void => {
     const last = out[out.length - 1];
-    const node = langNode(t, reader);
+    const node = languageNode(t, reader);
     // (The outermost tokens of a language say which it is: `Token.language`.)
     if (last?.kind === 'language' && last.layer === 'language' && last.label === t.language) {
       last.children.push(node);
       last.span = { start: last.span.start, end: t.span.end };
     } else out.push({ layer: 'language', kind: 'language', label: t.language!, span: t.span, reader, children: [node] });
   };
-  const langNode = (t: Token, reader: string): ReadingNode => ({
-    layer: 'language', kind: t.kind, label: t.label, span: t.span, ...saidBy(t), reader, children: t.children.filter((c) => c.origin === 'embedded').map((c) => langNode(c, reader)),
-  });
 
   const root: ReadingNode = { layer: 'bash', kind: 'line', label: '', span: range, children: collect(tree.root, 'bash') };
   // (A node that cites no section has no `refs`.)
   for (const n of readingNodes(root)) if (n.refs && !n.refs.length) delete n.refs;
   return root;
+}
+
+/** The node of a token of a language read by `reader`, with the nodes of that language's tokens under it. */
+export function languageNode(t: Token, reader: string): ReadingNode {
+  return { layer: 'language', kind: t.kind, label: t.label, span: t.span, ...saidBy(t), reader, children: t.children.filter((c) => c.origin === 'embedded').map((c) => languageNode(c, reader)) };
+}
+
+/**
+ * The reading of a line of a part of a host file in another language (src/hosts/languages.ts): one root in the layer `language`,
+ * the language of `top` read by `reader` (the function, `re.search`), with the nodes of the tokens under `top`. No bash reads it.
+ */
+export function languageReading(top: Token, reader: string): ReadingNode {
+  return { layer: 'language', kind: 'language', label: top.language!, span: top.span, reader, children: top.children.filter((c) => c.origin === 'embedded').map((c) => languageNode(c, reader)) };
 }
 
 /**

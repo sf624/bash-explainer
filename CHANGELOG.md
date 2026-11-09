@@ -4,6 +4,10 @@
 
 Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
 
+### New
+
+- In a `.py` file that imports `re`, the pattern of `re.search`, `re.compile`, `re.sub` and the other `re` functions is explained in the panel and the hover, part by part. A pattern Python refuses (`re.compile(r'\e')`) is an Error with Python's message. Such a file is explained even with no `subprocess` call; the shell chip says "no shell (Python regex)" on a pattern's line.
+
 ### Fixed
 
 - In `.py` files, Python's string escapes are read as Python reads them (`"\a"`, octal `"\012"`), and in a command string an escaped newline is what sh reads there (a newline in quotes, a line continuation after `\`). Before, `"\012"` was read as a NUL followed by `12`, and every escaped newline as `;`.

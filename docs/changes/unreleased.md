@@ -2,6 +2,18 @@
 
 The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
+## New
+
+### Python regular expressions
+
+The patterns of Python's `re` module are explained in `.py` files (#748, docs/design/python-regex.md), with the reference Python 3.15.
+
+- **Which calls.** `re.compile`, `search`, `match`, `prefixmatch`, `fullmatch`, `findall`, `finditer`, `split`, `sub` and `subn`, by the names the file imports (`import re as regex`, `from re import sub`), when the first argument is string literals of a str: `r'^\d+$'`, `"\\d+"`, `r'\d+' r'\.'` joined, a triple-quoted one over several lines (explained whole on each of its lines). A call with a flags argument, a pattern with `(?x)`, a bytes pattern, an f-string with a field and a pattern built at run time are not read yet.
+- **What is said.** Each part of the pattern, at its place in the file: `\d`, `(?P<frac>…)` ("Named group `frac` (group 1)"), `[a-z]`, the quantifiers. Python's meanings where they differ from PCRE: `\Z` is the end of the text only, `$` also stands before a final newline, `\v` is a vertical tab, `(?i)` sets the flags for the whole pattern, and `[[:alpha:]]` is a set of its characters followed by `]`. `match` says the pattern is matched at the start, `fullmatch` against the whole string, `prefixmatch` that it needs Python 3.15.
+- **Errors.** A pattern Python refuses is an Error in Problems, `--check` and the panel, with Python's own message: `\e`, `\h`, `\G`, `\x{41}` ("bad escape \e at position 0"), `\x4` ("incomplete escape"), `\2` with one group ("invalid group reference 2"), `(a\1)` ("cannot refer to an open group"), `\777`, an unclosed `[` or `(`, and a final `\`.
+- **The chip and the panel.** On a pattern's line, the shell chip says "no shell (Python regex)", and the panel's top row is "Python regex (argument of `re.search`)". On a line with shell code too (`re.match(p, x); os.system('ls')`), the shell code is explained.
+- **`grep -P` and the other shell tools** read as before.
+
 ## Fixed
 
 ### Python strings and imports

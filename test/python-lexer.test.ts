@@ -7,6 +7,7 @@ import { isName, isOp, type PyField, type PyLiteral, type PyToken, pyLex, PYTHON
 import { escapeAt, pyValue } from '../src/hosts/pyvalue';
 import { pyImports, pyResolve } from '../src/hosts/pyimports';
 import { extractShell } from '../src/hosts';
+import { needPython, pythonReference } from './support/python';
 
 // The Python host's lexer (src/hosts/pylex.ts) and the value of its string literals (src/hosts/pyvalue.ts), against the
 // reference Python's own `tokenize` and `ast` (docs/design/python-regex.md, section 7) on the files of test/fixtures/python/.
@@ -109,22 +110,11 @@ const joined = (v: Value): Value => {
   return { f: out.filter((p) => p !== '') };
 };
 
-/** The reference Python, or why there is none. */
-function reference(): { python: string } | { skip: string } {
-  const python = process.env.BASH_EXPLAINER_PYTHON || 'python3';
-  const r = spawnSync(python, ['-I', '-c', 'import sys; print("%d.%d" % sys.version_info[:2])'], { encoding: 'utf8', timeout: 20000 });
-  const version = r.status === 0 ? r.stdout.trim() : undefined;
-  return version === PYTHON_REFERENCE ? { python } : { skip: `${python} is ${version ?? 'not found'}, not Python ${PYTHON_REFERENCE}` };
-}
-
 describe('the Python lexer and the values of literals, against the reference Python', function () {
   this.timeout(60000);
-  const ref = reference();
+  const ref = pythonReference();
   before(function () {
-    if ('skip' in ref) {
-      if (process.env.BASH_EXPLAINER_PYTHON_REQUIRED) assert.fail(`BASH_EXPLAINER_PYTHON_REQUIRED is set, but ${ref.skip}`);
-      this.skip();
-    }
+    needPython(this, ref);
   });
 
   it('gives the tokens of tokenize, and the value of every literal and of each character', () => {

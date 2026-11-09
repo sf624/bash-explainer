@@ -19,6 +19,31 @@ const PY_CALLS: Record<string, PyCall> = {
   'asyncio.create_subprocess_shell': { shell: 'always', args: 'first' }, 'asyncio.create_subprocess_exec': { shell: 'never', args: 'all' },
 };
 
+/**
+ * The functions of Python's `re` that take a pattern (docs/design/python-regex.md, 5.1), by full name: their positional parameters
+ * (`flags`, where the flags argument is), and what each adds to the pattern: an anchor at the start (`match`), or at both ends
+ * (`fullmatch`). `prefixmatch` is a second name of `match` since Python 3.15.
+ */
+interface ReCall { params: readonly string[]; anchors?: 'start' | 'whole'; since?: string }
+const RE_CALLS: Record<string, ReCall> = {
+  're.compile': { params: ['pattern', 'flags'] },
+  're.search': { params: ['pattern', 'string', 'flags'] },
+  're.match': { params: ['pattern', 'string', 'flags'], anchors: 'start' },
+  're.prefixmatch': { params: ['pattern', 'string', 'flags'], anchors: 'start', since: '3.15' },
+  're.fullmatch': { params: ['pattern', 'string', 'flags'], anchors: 'whole' },
+  're.findall': { params: ['pattern', 'string', 'flags'] },
+  're.finditer': { params: ['pattern', 'string', 'flags'] },
+  're.split': { params: ['pattern', 'string', 'maxsplit', 'flags'] },
+  're.sub': { params: ['pattern', 'repl', 'string', 'count', 'flags'] },
+  're.subn': { params: ['pattern', 'repl', 'string', 'count', 'flags'] },
+};
+
+/** What a function of `RE_CALLS` adds to its pattern, and the release it needs (the top row of the pattern says them). */
+export function reCallOf(name: string): Pick<ReCall, 'anchors' | 'since'> {
+  const { anchors, since } = RE_CALLS[name];
+  return { ...(anchors ? { anchors } : {}), ...(since ? { since } : {}) };
+}
+
 type PyPos = (off: number) => { line: number; col: number };
 
 /** The file's tokens, with its text: what the functions below read. */
@@ -51,14 +76,21 @@ export function python(b: Builder): void {
   const lineStarts: number[] = [];
   b.lines.reduce((at, l) => (lineStarts.push(at), at + l.length + 1), 0);
   const pos: PyPos = (off) => {
-    let line = lineStarts.length - 1;
-    while (lineStarts[line] > off) line--;
+    // (The last line that starts at or before `off`: asked for each character of a pattern.)
+    let [line, high] = [0, lineStarts.length - 1];
+    while (line < high) {
+      const mid = (line + high + 1) >> 1;
+      if (lineStarts[mid] <= off) line = mid;
+      else high = mid - 1;
+    }
     return { line, col: off - lineStarts[line] };
   };
   const lx: PyFile = { ...pyLex(src), src };
   const { tokens } = lx;
   // Names the calls go by: `import subprocess as sp`, `from subprocess import run as r`.
   const imports = pyImports(src, tokens);
+  // (The calls of `re`, read once every line a shell region takes is known: a shell region keeps a line it shares.)
+  const patterns: { name: string; full: string; at: number }[] = [];
   for (let i = 0; i < tokens.length; i++) {
     // A call `name(` or `a.b(`, not of an attribute (`x.run(`) nor a definition (`def run(`).
     const before = tokens[i - 1];
@@ -66,6 +98,7 @@ export function python(b: Builder): void {
     const called = dottedAt(src, tokens, i);
     if (!called || !isOp(src, tokens[called.next], '(')) continue;
     const full = pyResolve(imports, called.name);
+    if (full !== undefined && full in RE_CALLS) patterns.push({ name: called.name, full, at: called.next });
     const spec = full === undefined ? undefined : PY_CALLS[full];
     if (!spec) continue;
     const open = called.next;
@@ -125,6 +158,59 @@ export function python(b: Builder): void {
     const what: [string, string] = usesShell ? [`シェル（${sh}）が実行する文字列`, `a string the shell (${sh}) runs`] : ['シェルを通さないコマンド文字列', 'a command string run without a shell'];
     b.region(script.first, script.last, label(what), usesShell ? target : 'bash', notes);
   }
+  for (const p of patterns) rePattern(b, lx, p, pos);
+}
+
+/**
+ * The pattern of the call of `re` whose `(` is at the token `p.at`, as a `LanguageRegion`: when it is string literals only (one, or
+ * several joined, over several lines too), of str (a bytes pattern, an f-string with a field and a `\N{…}` escape are not read yet),
+ * and the call gives no flags (which the reader does not read yet). Not on a line that a shell region or another pattern has.
+ */
+function rePattern(b: Builder, lx: PyFile, p: { name: string; full: string; at: number }, pos: PyPos): void {
+  const { src, tokens } = lx;
+  const close = lx.pair[p.at];
+  if (close < 0) return;
+  const { parts } = pyArgs(lx, p.at, close);
+  const keyword = (k: string) => parts.find((a) => isName(src, tokens[a[0]], k) && isOp(src, tokens[a[1]], '='))?.slice(2);
+  // (A `*args` or `**kwargs` may hold the pattern or the flags.)
+  if (parts.some((a) => isOp(src, tokens[a[0]], '*') || isOp(src, tokens[a[0]], '**'))) return;
+  const positional = parts.filter((a) => !(tokens[a[0]].kind === 'name' && isOp(src, tokens[a[1]], '=')));
+  const { params } = RE_CALLS[p.full];
+  if (positional.length > params.indexOf('flags') || keyword('flags')) return;
+  const arg = positional[0] ?? keyword('pattern');
+  if (!arg) return;
+  const value = literalValue(lx, unwrap(lx, arg));
+  if (!value || value.literals.some((l) => l.token.lit!.bytes) || setsVerbose(value.value)) return;
+  const first = value.literals[0].token;
+  const last = value.literals[value.literals.length - 1].token;
+  const start = pos(first.start);
+  const end = pos(last.end);
+  for (let l = start.line; l <= end.line; l++) if (b.outs[l]?.text || b.languages.some((r) => r.start <= l && l <= r.end)) return;
+  const at = (off: number) => {
+    const q = pos(off);
+    return { line: q.line, character: q.col };
+  };
+  // (The end of the text the reader reads: after the last character, or the start of the first literal's text when it is empty.)
+  const after = value.value.length ? at(value.ends[value.ends.length - 1]) : at(first.lit!.contentStart);
+  b.languages.push({
+    start: start.line, end: end.line,
+    label: [`Python の正規表現（\`${p.name}\` の引数）`, `Python regex (argument of \`${p.name}\`)`],
+    host: { kind: b.kind }, language: 'regex', flavor: 'python',
+    source: { value: value.value, at: [...value.offs.map(at), after], to: value.ends.map(at), span: { start: at(first.start), end: at(last.end) } },
+    call: { written: p.name, name: p.full },
+  });
+}
+
+/**
+ * Whether a pattern turns `re.VERBOSE` on (`(?x)`, `(?ix:…)`), where its spaces and `#` comments are no characters: the reader does not
+ * read that yet. Any `(?` with the letter, also one that would be escaped or in a set: what is left out is only not explained.
+ */
+function setsVerbose(pattern: string): boolean {
+  for (let k = pattern.indexOf('(?'); k >= 0; k = pattern.indexOf('(?', k + 1)) {
+    let f = k + 2;
+    while (f < pattern.length && 'aiLmsux-'.includes(pattern[f])) if (pattern[f++] === 'x') return true;
+  }
+  return false;
 }
 
 /** The value of the argument of the token indexes `part` when it is string literals only, with none of their parts unknown. */

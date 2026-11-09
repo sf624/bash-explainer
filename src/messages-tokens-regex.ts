@@ -5,8 +5,11 @@ import { tokenError, type TokenEntry, type TokenProblem, tokenText } from './mes
 // program as a parameter. Where the shell does not get to the command, the same row is plain text (`…-if-reached`,
 // `Explainer.reachedAt`). test/regex-errors-real.test.ts holds each against the real programs.
 
-/** The program that reads the regex: GNU grep (`-G`, `-E`, `-P`), GNU sed, awk, Perl, bash's `[[ =~ ]]`, or bazel's query (`filter`, `kind`, `attr`; Java's `java.util.regex`). */
-export type RegexProgram = 'grep' | 'sed' | 'awk' | 'perl' | 'bash' | 'bazel';
+/**
+ * The program that reads the regex: GNU grep (`-G`, `-E`, `-P`), GNU sed, awk, Perl, bash's `[[ =~ ]]`, bazel's query (`filter`, `kind`,
+ * `attr`; Java's `java.util.regex`), or Python's `re`, whose refusals say its own message (`regex-python-error`).
+ */
+export type RegexProgram = 'grep' | 'sed' | 'awk' | 'perl' | 'bash' | 'bazel' | 'python';
 
 /** What the program does with a regex it refuses. */
 const FAILS: Record<RegexProgram, readonly [ja: string, en: string]> = {
@@ -17,6 +20,7 @@ const FAILS: Record<RegexProgram, readonly [ja: string, en: string]> = {
   bash: ['`[[ … ]]` はメッセージを出さずに終了ステータス 2 を返す', '`[[ … ]]` gives status 2, with no message'],
   // (bazel 9.3.2: "illegal 'filter' pattern regexp", and "Wrong query syntax" for aquery's own filters.)
   bazel: ['`bazel` はエラーで止まる（`bazel query` は終了ステータス 7、`cquery`・`aquery` は 1）', '`bazel` stops with an error (status 7; 1 for `cquery` and `aquery`)'],
+  python: ['Python は `re.error` を出す', 'Python raises `re.error`'],
 };
 
 const INVALID: TokenProblem = {
@@ -25,6 +29,12 @@ const INVALID: TokenProblem = {
 };
 
 type Row<P> = (p: P) => readonly [string, string];
+
+/** A pattern Python's `re` refuses: it raises `re.error` (named `re.PatternError` since 3.13) each time it compiles it. */
+const PYTHON_INVALID: TokenProblem = {
+  head: ['このパターンは不正なので、コンパイルするたびに `re.error` が出る。', 'This pattern is not valid: compiling it raises `re.error` every time.'],
+  then: ['このパターンをコンパイルするたびに `re.error`（`re.PatternError`）が出る', 'Compiling it raises `re.error` (`re.PatternError`) every time'],
+};
 
 /** An error of a regex, and the same row where the shell does not get to the command. */
 function invalid<P = Record<string, never>>(row: Row<P>): { error: TokenEntry<P>; unreached: TokenEntry<P> } {
@@ -82,4 +92,14 @@ export const REGEX_TEXTS = {
   'regex-pcre-unknown-escape-if-reached': UNKNOWN_ESCAPE.unreached,
   'regex-java-unknown-escape': JAVA_ESCAPE.error,
   'regex-java-unknown-escape-if-reached': JAVA_ESCAPE.unreached,
+  /**
+   * The pattern of a call of Python's `re` in a `.py` file (src/hosts/languages.ts): `call` as the file writes it, what the function adds to it
+   * (`anchors`: `match` at the start, `fullmatch` at both ends), and the release a function needs (`since`: `prefixmatch`, 3.15).
+   */
+  'python-regex-pattern': tokenText<{ call: string; anchors?: 'start' | 'whole'; since?: string }>(({ call, anchors, since }) => [
+    `\`${call}\` のパターン（Python の正規表現）${anchors === 'start' ? '。文字列の先頭から一致する' : anchors === 'whole' ? '。文字列全体に一致する' : ''}${since ? `（Python ${since} 以降）` : ''}`,
+    `The pattern of \`${call}\` (Python regex)${anchors === 'start' ? ', matched at the start of the string' : anchors === 'whole' ? ', matched against the whole string' : ''}${since ? ` (Python ${since} or later)` : ''}`]),
+  /** Python's `re` refuses the pattern: `message` is Python's own (`bad escape \e at position 0`), held against the reference Python (test/regex-python-real.test.ts). */
+  'regex-python-error': tokenError<{ message: string }>(PYTHON_INVALID, ({ message }) => [
+    `Python の \`re\` はこのパターンを受け付けない（"${message}"）`, `Python's \`re\` refuses this pattern ("${message}")`]),
 };

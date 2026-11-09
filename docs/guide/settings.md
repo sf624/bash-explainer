@@ -38,7 +38,7 @@ Every setting is in VS Code's Settings editor under *Bash Explainer* (**Bash Exp
 | `bashExplainer.diagnostics.pitfalls` | `true` | Also list the warnings and caveats of the explanations in the Problems panel (`rm -rf $DIR/*`, `rm $f`: warnings; `cat $f`, `read line`: information); their errors (`[` without `]`, `x = 1`) are listed either way |
 | `bashExplainer.yq.flavor` | `auto` | `auto`, `mikefarah4`, `kislyuk` or `mikefarah3` |
 | **Files** | | |
-| `bashExplainer.embedded.files` | all | Files whose shell code is explained: `dockerfile`, `makefile`, `yaml`, `packageJson`, `markdown`, `python`, `jenkinsfile`, `bats` |
+| `bashExplainer.embedded.files` | all | Files whose shell code is explained: `dockerfile`, `makefile`, `yaml`, `packageJson`, `markdown`, `python` (also the patterns of `re`), `jenkinsfile`, `bats` |
 | `bashExplainer.languages` | `["shellscript"]` | Language IDs explained as shell scripts |
 | **Dictionary** | | |
 | `bashExplainer.customCommands` | `{}` | Describe commands the dictionary does not know (see below) |

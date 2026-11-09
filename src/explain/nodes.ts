@@ -1,7 +1,6 @@
 // The helpers on syntax nodes, tokens and positions that the explanation of every part uses (docs/design/analyzer.md,
 // 2.3): which nodes a line explains, how a token is labelled and ordered, where an offset is, and where a token of an
 // embedded explainer is in the source.
-import { markedText } from '../tokenmarks';
 import type { Pos, Span, Token, TokenOrigin } from '../analyzer-types';
 import type { EmbeddedToken } from '../embedded/types';
 import { labelText, shorten, skeleton } from '../label';
@@ -64,9 +63,7 @@ export function skeletal(t: Token, n: SyntaxNode, onlyIfCut = false): Token {
   return t;
 }
 
-export function summaryOf(t: Token): string {
-  return t.summary ?? markedText(t);
-}
+export { summaryOf } from '../tokenmarks';
 
 export function sortTokens(ts: Token[]): Token[] {
   return ts.sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
@@ -130,12 +127,20 @@ function newlinesIn(node: SyntaxNode): number[] {
 /** A token of an embedded explainer, placed in the source; `origin`: who reads it (`shell`: bash's own globs and escapes). */
 export function fromEmbedded(t: EmbeddedToken, node: SyntaxNode, lit: Literal, origin: TokenOrigin): Token {
   const text = node.text;
-  const at = (offset: number, isEnd = false): Pos => sourcePos(node, sourceIndex(lit, offset, isEnd));
-  const label = t.label ?? text.slice(sourceIndex(lit, t.start, false), sourceIndex(lit, t.end, true));
+  return placeEmbedded(t, (offset, isEnd) => sourcePos(node, sourceIndex(lit, offset, isEnd)), (start, end) => text.slice(sourceIndex(lit, start, false), sourceIndex(lit, end, true)), origin);
+}
+
+/**
+ * A token of an embedded explainer, placed by `at`, the place in the document of an offset of the text the explainer read (its
+ * end, with `isEnd`), and labelled with the source between two offsets (`label`) when it has no label of its own. The one
+ * place that gives an embedded token its span: `fromEmbedded` for a word of the shell, a language line for a host's literal
+ * (src/hosts/languages.ts).
+ */
+export function placeEmbedded(t: EmbeddedToken, at: (offset: number, isEnd: boolean) => Pos, label: (start: number, end: number) => string, origin: TokenOrigin): Token {
   return {
-    kind: t.kind, label: shorten(label), explanation: t.explanation,
-    span: { start: at(t.start), end: at(t.end, true) },
-    children: t.children.map((c) => fromEmbedded(c, node, lit, origin)),
+    kind: t.kind, label: shorten(t.label ?? label(t.start, t.end)), explanation: t.explanation,
+    span: { start: at(t.start, false), end: at(t.end, true) },
+    children: t.children.map((c) => placeEmbedded(c, at, label, origin)),
     origin,
     ...(t.group ? { group: t.group } : {}),
   };
