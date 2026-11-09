@@ -11,7 +11,8 @@ import * as path from 'path';
 import { Analyzer } from '../../src/analyzer';
 import { Lang } from '../../src/i18n';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
-import { documentIssues } from '../../src/document';
+import { autoShellAt, documentIssues, explainDocumentLine, type Shells } from '../../src/document';
+import { type FileKind, openDocument } from '../../src/document-setup';
 import { explainNeeds, PANEL_BODY, panelUpdate } from '../../src/ui/panelView';
 import { said } from './shells';
 
@@ -89,7 +90,23 @@ export interface PanelServer {
 
 /** Serves the panel's page on 127.0.0.1, explaining `line` of the script `file` (its line box wrapped with `wrap`), the cursor at `cursor` where given. */
 export async function servePanel(line = SAMPLE, file = 'cleanup.sh', wrap = false, at = 1, cursor?: number): Promise<PanelServer> {
-  const of = (lang: Lang, depth: 1 | 2) => message(lang, line, file, wrap, at, depth, cursor);
+  return serveMessages((lang, depth) => message(lang, line, file, wrap, at, depth, cursor));
+}
+
+/**
+ * The update message for line `at` (from 0) of the host file `file` of the kind `kind`, as the extension sends it: what
+ * `explainDocumentLine` makes of it, with the document's problems and the automatic shell of the line.
+ */
+export function hostMessage(lang: Lang, kind: FileKind, src: string, file: string, at: number, depth: 1 | 2 = 1): unknown {
+  const doc = openDocument(src, kind, (t) => createUnbashParser().parse(t));
+  const shells: Shells = {};
+  const ex = explainDocumentLine(new Analyzer(lang), doc, at, lang, shells, { reading: explainNeeds({ depth }).reading, sentence: true });
+  const issues = documentIssues(doc, lang, shells);
+  return panelUpdate({ lang, explanation: ex, file, line: at, lineText: doc.lines[at], doc, wrap: false, choice: {}, detected: autoShellAt(doc, shells, at), placement: 'first', animations: true, issues, state: { depth } });
+}
+
+/** Serves the panel's page on 127.0.0.1, with the update message `of` gives for a language and a depth. */
+export async function serveMessages(of: (lang: Lang, depth: 1 | 2) => unknown): Promise<PanelServer> {
   const msg = `window.MSGS = ${JSON.stringify({ en: of('en', 1), ja: of('ja', 1) })};\nwindow.DEEP = ${JSON.stringify({ en: of('en', 2), ja: of('ja', 2) })};\n`;
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://x');

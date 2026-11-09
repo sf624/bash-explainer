@@ -1,5 +1,5 @@
 import { awkEscapeAt, sedEscapeAt } from '../ctlchars';
-import { type Flavor, pcreCharCode, pcreJs } from '../embedded/regex';
+import { pcreCharCode, pcreJs, type ShellFlavor } from '../embedded/regex';
 import { wordTable } from '../wordtable';
 import { type Node, Parser } from './regexparse';
 import { longestExec, Refused, scriptRegex } from './regexguard';
@@ -226,8 +226,9 @@ function pcreClassToJs(src: string, at: number): [string, number] | undefined {
 /**
  * Translate a regex to JavaScript syntax. Returns undefined for constructs JavaScript cannot
  * express (possessive quantifiers, atomic groups, equivalence classes…), so no example is made.
+ * Python's `re` has no examples yet (docs/design/python-regex.md, section 6: its `\Z`, `$` and `.` are written out in full).
  */
-export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: boolean; sedEscapes?: boolean; awk?: boolean; perlEnd?: boolean } = {}): JsRegex | undefined {
+export function toJsRegex(src: string, flavor: ShellFlavor, opts: { ignoreCase?: boolean; sedEscapes?: boolean; awk?: boolean; perlEnd?: boolean } = {}): JsRegex | undefined {
   if (opts.sedEscapes) {
     const plain = opts.awk ? awkCharacters(src) : sedCharacters(src);
     if (plain === undefined) return undefined;

@@ -203,13 +203,6 @@ function stageText(n: SyntaxNode): string {
   return shorten(end ? n.text.slice(0, kids[end - 1].endIndex - n.startIndex) : n.text, 40);
 }
 
-/** Whether the settings keep this example (examples.enabled / examples.disabled). */
-export function wantsExample(cx: Explainer, e: Example): boolean {
-  const o = cx.opts.examples;
-  if (!o) return true;
-  return o.enabled && !(e.kind && o.disabled.includes(e.kind));
-}
-
 /** Whether the line runs several commands: each example's title then names the one it is for (`titledExamples`). */
 export function runsSeveral(root: SyntaxNode, line: number): boolean {
   return onLine(root, ['command', 'extended_test', 'arithmetic_command'], line)

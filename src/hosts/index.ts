@@ -1,3 +1,4 @@
+import type { Pos, Span } from '../analyzer-types';
 import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
 import type { FactSpec } from '../messages';
@@ -77,6 +78,30 @@ export interface HostSubstitution {
 }
 
 /**
+ * A part of a host file in another language than the shell's (docs/design/python-regex.md, 2.2): the pattern of a call of
+ * Python's `re`. It is never in `Extracted.regions`, whose readers all take a region as shell code; its lines stay empty in the
+ * shell text. Read through `hostPartAt` (src/hosts/scripts.ts).
+ */
+export interface LanguageRegion {
+  /** Its lines, those of the literal(s). */
+  start: number;
+  end: number;
+  /** What it is, "Python regex (argument of `re.search`)" (ja, en). */
+  label: [string, string];
+  host: HostId;
+  language: 'regex';
+  flavor: 'python';
+  /**
+   * The text the language's reader reads (the value of the literals), and where each of its characters is in the file: `at[i]`,
+   * the place of its first source character, and `to[i]`, the end of its source range. `at` has one more entry, the end of the
+   * literals' text. `span`: the literals, prefixes and quotes included.
+   */
+  source: { value: string; at: Pos[]; to: Pos[]; span: Span };
+  /** The function called: as the file writes it (`re.search`, `sub` after `from re import sub`) and its full name (`re.search`). */
+  call: { written: string; name: string };
+}
+
+/**
  * The shell code of a document, line for line: lines outside the snippets are empty, and host
  * syntax is rewritten into plain shell. `maps[line][col]` gives the original column of each
  * character (with one extra entry for the end of the line).
@@ -87,6 +112,8 @@ export interface Extracted {
   /** Per line, the ranges of the shell text that replace host syntax (`${CC}` for `$(CC)`). */
   inserted: [number, number, HostMeaning?][][];
   regions: ShellRegion[];
+  /** The parts in another language (`LanguageRegion`), which `hostPartAt` reads with the regions. */
+  languages: LanguageRegion[];
   substitutions: HostSubstitution[];
 }
 
@@ -137,4 +164,4 @@ export function extractShell(kind: HostKind, text: string): Extracted {
 
 export { batsTestName } from './bats';
 export { remapExplanation, substitutionNotes, explainHostedLine, hostIssues, type DocIssue } from './remap';
-export { regionAt, regionShell } from './scripts';
+export { hasParts, hostPartAt, type HostPart, languageLines, regionAt, regionShell } from './scripts';

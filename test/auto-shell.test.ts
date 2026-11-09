@@ -136,7 +136,7 @@ describe('the automatic shell of a host file: what the chip, its popover and the
         };
         if (!used) {
           // (A line of the host's own text: the shell of every part when they agree, else none named.)
-          assert.ok(typeof auto === 'string' || auto.source === 'host', `line ${line}`);
+          assert.ok(typeof auto === 'string' || ('source' in auto && auto.source === 'host'), `line ${line}`);
           continue;
         }
         explained++;

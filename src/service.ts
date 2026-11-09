@@ -4,7 +4,7 @@ import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import { type AutoShell, readShell, Shell, type ShellReading, surelyScript } from './dialect';
 import { autoShellAt, DeadRange, DocumentIssue, diagnosticsFor, explainDocumentLine, issueFilter, type IssueFilter, ShellDocument, Shells, withoutExamples } from './document';
 import { HOST_LANGUAGES, HOST_PATTERNS, kindOfDocument, openDocument, semanticSelector } from './document-setup';
-import { Extracted, extractShell, HostKind } from './hosts';
+import { Extracted, extractShell, hasParts, HostKind } from './hosts';
 import { Lang, resolveLang } from './i18n';
 import { explainOptions, forcedShell, Settings, settingsFromEditor } from './settings';
 import type { TreeCache } from './syntax/cache';
@@ -116,10 +116,10 @@ export class ExplainService implements vscode.Disposable {
     return value;
   }
 
-  /** Whether the document has anything to explain (a host file may have no shell code). */
+  /** Whether the document has anything to explain: a host file may have no shell code, and no part in another language (`hasParts`). */
   hasShell(doc: vscode.TextDocument): boolean {
     const kind = this.hostOf(doc);
-    return !kind || this.extractedOf(doc, kind).regions.length > 0;
+    return !kind || hasParts(this.extractedOf(doc, kind));
   }
 
   /** The shell the file itself says and where that comes from (`default`: it says none). */

@@ -12,7 +12,7 @@ import { type Fact, type Note, said, warningOf } from '../messages';
 import { READ_FAULTS } from '../messages-levels';
 import { alwaysFails } from '../levels';
 import { tokenSaid, type TokenTextArgs, type TokenTextId } from '../messages-tokens';
-import { anchored, type Found, sameSpan, spanOf } from '../noteanchors';
+import { anchored, type Found, sayAt, spanOf } from '../noteanchors';
 import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
 import { type Fault, hostReadAs, keptQuiet, readAs, type ReadKnown, type Stop, stopAt } from '../semantics/scriptstops';
@@ -419,10 +419,8 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   sayAt(n: Note & { code: string }, span: Span): string {
-    this.data.set(n.text, n);
     // (A token of a string read as a script: `adopt` already has its place.)
-    if (!this.anchors.some((a) => a.text === n.text && sameSpan(a.span, span))) this.anchors.push({ text: n.text, span, code: n.code });
-    return n.text;
+    return sayAt(this.anchors, this.data, n, span);
   }
 
   anchored(found: readonly Found[]): string[] {

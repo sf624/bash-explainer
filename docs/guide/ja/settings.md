@@ -38,7 +38,7 @@
 | `bashExplainer.diagnostics.pitfalls` | `true` | 解説の警告と注意も「問題」パネルに出す（`rm -rf $DIR/*`・`rm $f` は警告、`cat $f`・`read line` は情報）。解説のエラー（`]` のない `[`、`x = 1`）は、この設定にかかわらず出す |
 | `bashExplainer.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
 | **ファイル** | | |
-| `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python`・`jenkinsfile`・`bats` |
+| `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python`（`re` のパターンも）・`jenkinsfile`・`bats` |
 | `bashExplainer.languages` | `["shellscript"]` | シェルスクリプトとして解説する言語 ID |
 | **辞書** | | |
 | `bashExplainer.customCommands` | `{}` | 辞書にないコマンドの説明を追加する（下記） |

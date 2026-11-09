@@ -1,20 +1,18 @@
 // A statement over several lines that is not a block (`\` continuations, a here-document, a string) is explained whole by each of its lines.
 // Its later lines read one explanation, kept for the document: a walk of the statement for each of them would make a script's cost the square of
 // its size (docs/design/line-budget.md). The walk has a context of its own and is finished here, so that the line that reads it only adds what
-// is its own: the notes of that line and, by copying the tokens they are about, their facts (`markTokens`).
-import type { Token } from '../analyzer-types';
+// is its own: the notes of that line and, by copying the tokens they are about, their facts (`markTokens`). It is finished as a line is (`finishLine`).
+import type { NoteAnchor, Token } from '../analyzer-types';
 import { withinOwnLine } from '../examples/regexguard';
 import { onceBy } from '../lists';
 import { basisGate, type Fact } from '../messages';
 import { withRewritesOf } from '../rewrite';
 import type { StateModel } from '../semantics/state';
 import type { SyntaxNode } from '../syntax/tree';
-import { withTokenBases, withoutBases } from '../tokenbases';
 import { keep } from '../tokenkept';
-import { claim, dropLabelEcho, markSaid, markTokens } from '../tokenmarks';
+import { finishLine } from '../linefinish';
 import { COMMAND_SAID, type CommandSaid } from './commands';
 import type { Explainer, LineExplainer, LineInit, Whole } from './context';
-import { summaryOf } from './nodes';
 
 type Kept = Whole | { thrown: unknown };
 
@@ -28,18 +26,18 @@ export function factsSaid(all: readonly Fact[], said: ReadonlySet<string>, basis
 
 function explainedOnce(cx: LineExplainer, explained: (cx: Explainer) => Token): Whole {
   const token = explained(cx);
-  // (As `Analyzer.explained` finishes the tokens of a line.)
-  if (cx.opts.basis === false) withoutBases([token]);
-  else withTokenBases([token], cx.rested);
-  markSaid([token]);
-  const saidNotes = [...new Set(cx.notes)];
-  const said = new Set(saidNotes);
-  const saidFacts = factsSaid(cx.facts, said, cx.opts.basis);
-  const saidAnchors = cx.anchors.filter((a) => said.has(a.text));
-  const summary = summaryOf(token);
-  cx.end();
-  dropLabelEcho(claim(token, 'shell'));
-  markTokens([token], { facts: saidFacts, anchors: saidAnchors });
+  // (As a line is finished, `finishLine`: the statement's notes, facts and anchors are those it said itself.)
+  let saidNotes: string[] = [];
+  let saidFacts: Fact[] = [];
+  let saidAnchors: NoteAnchor[] = [];
+  // (A statement explained once has no line of its own: only the summary of what is made is read.)
+  const { summary } = finishLine({ line: 0, items: [token], own: [token], rested: cx.rested, context: [], origin: 'shell' }, cx.opts, () => {
+    saidNotes = [...new Set(cx.notes)];
+    const said = new Set(saidNotes);
+    saidFacts = factsSaid(cx.facts, said, cx.opts.basis);
+    saidAnchors = cx.anchors.filter((a) => said.has(a.text));
+    return { notes: saidNotes, noteInfo: [], facts: [], anchors: [], examples: [], marked: { facts: saidFacts, anchors: saidAnchors } };
+  }, () => cx.end());
   keep(token);
   return {
     token, summary, notes: cx.notes, facts: cx.facts, anchors: cx.anchors, examples: cx.examples, rested: cx.rested, data: cx.data,

@@ -1,6 +1,6 @@
 import type { Shell } from '../dialect';
 import type { HostMeaning } from '../messages-hosts';
-import type { HostKind, NoShell, RegionNote, ShellRegion, HostSubstitution, Extracted } from './index';
+import type { HostKind, LanguageRegion, NoShell, RegionNote, ShellRegion, HostSubstitution, Extracted } from './index';
 
 /** Builds the shell text of one line from pieces of the original line and inserted text. */
 export class LineOut {
@@ -37,6 +37,7 @@ export class Builder {
   lines: string[];
   outs: (LineOut | undefined)[];
   regions: ShellRegion[] = [];
+  languages: LanguageRegion[] = [];
   substitutions: HostSubstitution[] = [];
   /** Azure Pipelines: variables whose `$(name)` macros the pipeline replaces before the script runs. */
   azure?: { vars: Set<string> };
@@ -66,7 +67,7 @@ export class Builder {
     const provided = [...new Set(this.provided)];
     if (provided.length) for (const r of this.regions) r.provided = provided;
     const maps = this.lines.map((l, i) => this.outs[i]?.finish(l.length) ?? [l.length]);
-    return { text: this.outs.map((o) => o?.text ?? '').join('\n'), maps, inserted: this.outs.map((o) => o?.inserted ?? []), regions: this.regions, substitutions: this.substitutions };
+    return { text: this.outs.map((o) => o?.text ?? '').join('\n'), maps, inserted: this.outs.map((o) => o?.inserted ?? []), regions: this.regions, languages: this.languages, substitutions: this.substitutions };
   }
 }
 

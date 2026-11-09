@@ -202,3 +202,8 @@ export function textParts(t: Pick<Token, 'explanation' | 'marks'>): TextPart[] {
 export function markedText(t: Pick<Token, 'explanation' | 'marks'>): string {
   return textParts(t).map((p) => (p.level ? `${LEVELS[p.level].mark} ${p.text}` : p.text)).join('');
 }
+
+/** What a token says in a line's summary: its own summary, else its text with the marks of its warnings. */
+export function summaryOf(t: Token): string {
+  return t.summary ?? markedText(t);
+}

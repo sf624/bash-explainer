@@ -130,7 +130,7 @@ describe('one line must not stop the whole tool', () => {
 
     it('a host file: what it adds around the line has the same boundary', () => {
       const tree = parser.parse('echo a\n');
-      const doc = { lines: ['echo a', ''], tree, extracted: { get regions(): never { throw new Error('planted'); }, maps: [], text: 'echo a\n' } } as unknown as ShellDocument;
+      const doc = { lines: ['echo a', ''], tree, extracted: { get regions(): never { throw new Error('planted'); }, languages: [], maps: [], text: 'echo a\n' } } as unknown as ShellDocument;
       withBoundaries(() => {
         const e = explainDocumentLine(new Analyzer('en'), doc, 0, 'en', {}, {});
         assert.deepStrictEqual(e.notes, [say('line-not-explained')]);

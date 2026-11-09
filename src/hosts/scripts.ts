@@ -3,7 +3,7 @@
 import type { Shell } from '../shellfeatures';
 import type { BashParser, SyntaxTree } from '../syntax/tree';
 import { createUnbashParser } from '../syntax/adapters/unbash';
-import type { Extracted, ShellRegion } from './index';
+import type { Extracted, LanguageRegion, ShellRegion } from './index';
 
 let regionParser: BashParser | undefined;
 
@@ -76,6 +76,38 @@ export function regionAt(extracted: Extracted, line: number): ShellRegion | unde
 }
 
 const regionsByLine = new WeakMap<Extracted, Map<number, ShellRegion>>();
+
+/** What a line of a host document is part of: shell code (a `ShellRegion`), or a part in another language (a `LanguageRegion`). */
+export type HostPart = { kind: 'shell'; region: ShellRegion } | { kind: 'language'; region: LanguageRegion };
+
+/**
+ * The part of a host document that `line` is in (none: the host's own text): its shell region, else its part in another language.
+ * The one reader of both lists (docs/design/python-regex.md, 2.3): a line holds one part, and a shell region keeps a line it shares.
+ */
+export function hostPartAt(extracted: Extracted, line: number): HostPart | undefined {
+  const region = regionAt(extracted, line);
+  if (region) return { kind: 'shell', region };
+  let byLine = languagesByLine.get(extracted);
+  if (!byLine) {
+    byLine = new Map();
+    for (const r of extracted.languages) for (let l = r.start; l <= r.end; l++) byLine.set(l, r);
+    languagesByLine.set(extracted, byLine);
+  }
+  const language = byLine.get(line);
+  return language && { kind: 'language', region: language };
+}
+
+const languagesByLine = new WeakMap<Extracted, Map<number, LanguageRegion>>();
+
+/** Whether a host document has anything to explain: shell code, or a part in another language. */
+export function hasParts(extracted: Extracted): boolean {
+  return extracted.regions.length > 0 || extracted.languages.length > 0;
+}
+
+/** How many lines of a host document are parts in another language: lines of code, which the budget of a line counts (`withinLine`). */
+export function languageLines(extracted: Extracted): number {
+  return extracted.languages.reduce((n, r) => n + r.end - r.start + 1, 0);
+}
 
 /**
  * The shell a region's code is explained and checked as: the one chosen (`forced`, the setting or the panel), else the

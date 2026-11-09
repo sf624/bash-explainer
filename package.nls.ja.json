@@ -80,7 +80,7 @@
   "config.embedded.files.yaml": "CI の YAML（GitHub Actions・GitLab CI・CircleCI・Azure Pipelines など）",
   "config.embedded.files.packageJson": "package.json の scripts",
   "config.embedded.files.markdown": "Markdown のコードブロック",
-  "config.embedded.files.python": "Python の subprocess・os.system",
+  "config.embedded.files.python": "Python の subprocess・os.system と re のパターン",
   "config.embedded.files.jenkinsfile": "Jenkinsfile の sh ステップ",
   "config.embedded.files.bats": "bats のテストファイル（.bats）"
 }

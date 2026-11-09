@@ -19,7 +19,7 @@ import { explainGlob } from './glob';
 import { explainJq } from './jq';
 import { explainMode, explainUmask } from './mode';
 import { explainPerl, perlLoopNote } from './perl';
-import { explainRegex, Flavor, flavorName } from './regex';
+import { explainRegex, flavorName, type ShellFlavor } from './regex';
 import { explainSed } from './sed';
 import { explainCutList, explainSortKey, explainTrSet, trSummary } from './textutils';
 import { explainPrompt, promptNote } from './prompt';
@@ -33,7 +33,7 @@ export interface Embedded { tokens: EmbeddedToken[]; note?: string }
 export interface EmbeddedContext {
   lang: Lang;
   /** The regex flavor the command's options choose (grep -E, sed -E…). */
-  flavor(): Flavor | 'fixed';
+  flavor(): ShellFlavor | 'fixed';
   /** What a `tr` set is for, and the sets of the command. */
   trSet(): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[]; complement: boolean; truncate: boolean };
   /** The letters of the options given (`-lane`: l, a, n, e). */
