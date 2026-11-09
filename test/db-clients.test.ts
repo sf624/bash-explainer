@@ -119,14 +119,21 @@ describe('database clients: how a call is read', () => {
     assert.match(parts('psql -d db -f setup.sql', 'ja')[2], /^-f: ファイルのコマンドを実行して終わる/);
   });
 
-  it('mysql: a password is attached to -p, and says other users can see it', () => {
+  it('mysql: a password attached to -p is on the command line, and other users can see it; -p alone asks on the terminal', () => {
     const p = parts('mysql -uroot -psecret -h db -D shop');
-    assert.match(p[0], /^-uroot: user to log in as/);
-    assert.match(p[2], /^-psecret: password: the value follows in the same word .*other users can see it/);
+    assert.match(p[2], /^-psecret: password \(written on the command line, other users can see it\)/);
     assert.match(p[3], /^secret: /);
-    assert.match(parts('mysql --password=secret')[0], /^--password=secret: password: .*other users can see it/);
+    assert.match(parts('mysql --password=secret')[0], /^--password=secret: password \(written on the command line, other users can see it\)/);
+    assert.match(parts('mysqldump --password2=x db')[0], /^--password2=x: password for the second authentication factor \(written on the command line/);
+    assert.match(parts('mysql -psecret', 'ja')[0], /^-psecret: パスワード（コマンド行に書くと他のユーザーに見える）/);
+    for (const line of ['mysql -p shop', 'mysqldump --single-transaction -u root -p mydb > dump.sql', 'mysql --password db']) {
+      const first = parts(line).find((t) => /^(-p|--password):/.test(t))!;
+      assert.match(first, /^(-p|--password): ask for the password on the terminal \(the next word is not the password: `-p secret` takes `secret` as the database\)$/);
+      assert.doesNotMatch(first, /other users/);
+    }
     assert.match(parts('mysql -p shop')[1], /^shop: database to use/);
-    assert.match(parts('mysql -p', 'ja')[0], /^-p: パスワード。.*他のユーザーに見える/);
+    assert.match(parts('mysql -p', 'ja')[0], /^-p: パスワードを端末で尋ねる（.*データベース名/);
+    assert.doesNotMatch(parts('mysql -p', 'ja')[0], /他のユーザー/);
   });
 
   it('mysql: -e takes its statement as a value, and options cluster', () => {
