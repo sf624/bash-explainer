@@ -181,6 +181,6 @@ describe('the edges of the query reader', () => {
     assert.deepStrictEqual(kinds(explain(hole)?.tokens), ['variable:query-word']);
     assert.deepStrictEqual(read(`deps(//app:${hole})`)[1].children.flatMap((t) => kinds(t.children)), ['variable:target-name+query']);
     assert.deepStrictEqual(read(`deps('//app:${hole}')`)[1].children.flatMap((t) => kinds(t.children)), ['variable:target-name']);
-    for (const src of [`$${hole}`, `deps("@a${hole}:b")`]) assert.deepStrictEqual(kinds(read(src)).at(-1), 'error', src);
+    for (const src of [`$${hole}`, `deps("@a${hole}:b")`, `deps(${hole}/...)`]) assert.deepStrictEqual(kinds(read(src)).at(-1), 'error', src);
   });
 });
