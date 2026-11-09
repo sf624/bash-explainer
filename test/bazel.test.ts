@@ -184,7 +184,21 @@ describe('bazel target patterns', () => {
     ]);
   });
 
+  it('the top package of a repository', () => {
+    assert.deepStrictEqual(notes('bazel build //:all \'//:*\' @repo//:all //:gazelle'), [
+      `Every rule of the top package of the repository; ${MANUAL}`, `Every target of the top package of the repository (rules and files); ${MANUAL}`,
+      `Every rule of the top package of the repository \`@repo\`; ${MANUAL}`, 'One target, `//:gazelle`',
+    ]);
+    assert.deepStrictEqual(notes('bazel build //:all @repo//:all', 'ja'), [`リポジトリの最上位のパッケージのすべてのルール。${MANUAL_JA}`, `リポジトリ \`@repo\` の最上位のパッケージのすべてのルール。${MANUAL_JA}`]);
+  });
+
   it('subtractive patterns, after `--`', () => {
+    assert.deepStrictEqual(notes('bazel build -- //app/... -//app:main -//app -:main'), [
+      `Every rule of the packages in the directory \`app\` and below; ${MANUAL}`, 'Takes the target `//app:main` out of the targets of the patterns before it',
+      'Takes the target `//app:app` (the target named like the package) out of the targets of the patterns before it',
+      'Takes the target `:main` (from the current directory) out of the targets of the patterns before it',
+    ]);
+    assert.deepStrictEqual(notes('bazel build -- //app/... -//app:main -:main', 'ja').slice(1), ['ターゲット `//app:main` を、前のパターンのターゲットから除く', 'ターゲット `:main`（今のディレクトリから）を、前のパターンのターゲットから除く']);
     assert.deepStrictEqual(notes('bazel build -- //app/... -main -:all -... -//app:*').slice(1), [
       'Takes one target out of the targets of the patterns before it. If `main` below the current directory is a package, its target `main` (`main:main`); else the target of the longest leading part that is a package, named by the rest (`:main` and so on)',
       'Takes every rule of the package of the current directory out of the targets of the patterns before it',
@@ -211,17 +225,26 @@ describe('bazel target patterns', () => {
 
   it('expansions in a pattern: the parts after its start are read', () => {
     assert.deepStrictEqual(pieces('bazel build "//app:$t"', '"//app:$t"'), ['//app: The package `app` (its directory from the top of the repository)', ':$t: The target\'s name (after `:`)']);
-    const hole = tokens('bazel build "//app:$t" "//$pkg/..."', 'en').filter((t) => t.kind === 'variable' && /target pattern/.test(t.explanation)).map((t) => `${t.label}: ${t.explanation}`);
-    assert.deepStrictEqual(hole, [
-      '$t: The value of `$t` is read as part of the target pattern: a `/` in it separates directories, a `:` starts the target\'s name, `...` stands for every package below, and `all` or `*` as the name are wildcards',
+    // (A hole in the package's path and one in the target's name are read apart: `/` and `...` are the package's, a `:` in a name is refused.)
+    const holes = (line: string, lang: 'en' | 'ja' = 'en'): string[] => tokens(line, lang).filter((t) => t.kind === 'variable' && /target|ターゲット/.test(t.explanation)).map((t) => `${t.label}: ${t.explanation}`);
+    assert.deepStrictEqual(holes('bazel build "//app:$t" "//$pkg/..."'), [
+      '$t: The value of `$t` is read as the target\'s name, or part of it: as the whole name, `all` is every rule and `*` or `all-targets` every target of the package; a `/` in it is part of the name, and bazel refuses a `:`',
+      '$pkg: The value of `$pkg` is read as part of the package\'s path: a `/` in it separates directories, a `:` ends the package and starts the target\'s name, and `...` as the last directory stands for every package below',
+    ]);
+    assert.deepStrictEqual(holes('bazel build "//app:$t" "//$pkg/..."', 'ja'), [
+      '$t: `$t` の値はターゲットの名前（またはその一部）として読まれる。名前全体が `all` ならすべてのルール、`*`・`all-targets` ならすべてのターゲットになる。値の中の `/` は名前の一部で、`:` は bazel が拒否する',
+      '$pkg: `$pkg` の値はパッケージのパスの一部として読まれる。値の中の `/` はディレクトリを区切り、`:` はパッケージを終えてターゲットの名前を始め、最後のディレクトリの `...` はその下のすべてのパッケージになる',
     ]);
     assert.deepStrictEqual(pieces('bazel build "//$pkg/..."', '"//$pkg/..."', 'ja')[0], '//$pkg: リポジトリの最上位からのディレクトリ `$pkg`');
     // (Where the value would decide the reading, the word is left unread: its start, a repository's name.)
     assert.deepStrictEqual(notes('bazel build "$t" "$d/..." "@$r//x" "//app/...:$t"'), ['', '', '', '']);
   });
 
-  it('a query takes the `manual` targets, and its words that are no pattern are left to the query', () => {
+  it('a query and a cquery take the `manual` targets, an aquery leaves them out, and the words that are no pattern are left to the query', () => {
     assert.deepStrictEqual(notes('bazel query //app/...'), ['Every rule of the packages in the directory `app` and below']);
+    assert.deepStrictEqual(notes('bazel cquery //app/...'), ['Every rule of the packages in the directory `app` and below']);
+    assert.deepStrictEqual(notes('bazel aquery //app/... //app:main'), [`Every rule of the packages in the directory \`app\` and below; ${MANUAL}`, 'One target, `//app:main`']);
+    assert.deepStrictEqual(notes('bazel aquery //app:all', 'ja'), [`パッケージ \`app\` のすべてのルール。${MANUAL_JA}`]);
     assert.deepStrictEqual(notes('bazel cquery @@//app:all', 'ja'), ['パッケージ `app` のすべてのルール']);
     assert.deepStrictEqual(notes('bazel query kind \'deps(//x)\' \'a+b\''), ['', '', '']);
   });

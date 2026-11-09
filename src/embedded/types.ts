@@ -18,7 +18,7 @@ export interface EmbeddedToken {
 }
 
 /** Where a hole stands, in a position of data of its language; each has a text of the catalog (`hole-…`). */
-export type HolePlace = 'regex' | 'class' | 'target' | 'repeat' | 'replacement' | 'perl-replacement' | 'sed-text' | 'address' | 'awk-string' | 'glob' | 'date' | 'printf' | 'echo' | 'tr';
+export type HolePlace = 'regex' | 'class' | 'target-package' | 'target-name' | 'repeat' | 'replacement' | 'perl-replacement' | 'sed-text' | 'address' | 'awk-string' | 'glob' | 'date' | 'printf' | 'echo' | 'tr';
 
 export interface HoleMark {
   place: HolePlace;
@@ -78,7 +78,7 @@ export function holeTokens(src: string, from: number, to: number, place: HolePla
 /** What a reader gives where a hole decides the reading: an error token, which leaves the word unread. */
 export const holeStop = (at: number): EmbeddedToken => ({ start: at, end: at + 1, kind: 'error', explanation: '', children: [] });
 
-export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'echo' | 'date' | 'glob' | 'mode' | 'umask' | 'sortkey' | 'cutfields' | 'cutchars' | 'trset' | 'getopts' | 'getoptshort' | 'getoptlong' | 'perl' | 'gitformat' | 'gitdate' | 'yq4' | 'yq3path' | 'arith' | 'prompt' | 'bazeltarget' | 'bazelquery';
+export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'echo' | 'date' | 'glob' | 'mode' | 'umask' | 'sortkey' | 'cutfields' | 'cutchars' | 'trset' | 'getopts' | 'getoptshort' | 'getoptlong' | 'perl' | 'gitformat' | 'gitdate' | 'yq4' | 'yq3path' | 'arith' | 'prompt' | 'bazeltarget' | 'bazelquery' | 'bazelaquery';
 
 /** Pick the string for the current language. */
 export function pick(lang: Lang) {

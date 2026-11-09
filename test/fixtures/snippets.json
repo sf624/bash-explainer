@@ -772,7 +772,6 @@
  "bats-negation-ignored",
  "bats-run-in-pipeline",
  "bazel --keep_going build //x",
- "bazel build \"//app:$t\" \"//$pkg/...\"",
  "bazel build //app/...:main",
  "block",
  "bob@example.com",

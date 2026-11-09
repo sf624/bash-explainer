@@ -1,16 +1,18 @@
 // bazel's target patterns (src/embedded/bazel.ts) against what bazel 9.3.2 takes of them: scripts/record-bazel.ts records,
-// in test/fixtures/oracles/bazel.json, the targets of test/fixtures/bazel (`universe`) and the targets a query or a build
-// takes of each row's patterns (`patterns`). Each pattern is read with `parseTargetPattern` and resolved here over the
-// recorded targets: the packages are the directories of the labels, a wildcard of a build leaves out the `manual` targets
-// (not a subtractive one), and a subtractive pattern takes targets out of those of the patterns before it. The reading
-// must give what bazel gave.
+// in test/fixtures/oracles/bazel.json, the targets of test/fixtures/bazel (`universe`) and the targets a query, a cquery,
+// an aquery or a build takes of each row's patterns (`patterns`). Each pattern is read with `parseTargetPattern` and
+// resolved here over the recorded targets: the packages are the directories of the labels; a wildcard leaves out the
+// `manual` targets where the language the spec gives the command's operands says so (`TARGET_FLAVORS`: build and aquery,
+// not query and cquery; never a subtractive one); and a subtractive pattern takes targets out of those of the patterns
+// before it. The reading must give what bazel gave.
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseTargetPattern, type TargetPattern } from '../src/embedded/bazel';
+import { bazel } from '../src/dict/bazel';
+import { parseTargetPattern, TARGET_FLAVORS, type TargetPattern } from '../src/embedded/bazel';
 
 interface Universe { all: string[]; rules: string[]; manual: string[] }
-interface PatternRow { command: 'build' | 'query'; cwd?: string; words: string[]; targets?: string[]; error?: string }
+interface PatternRow { command: 'build' | 'query' | 'cquery' | 'aquery'; cwd?: string; words: string[]; targets?: string[]; error?: string }
 const oracle = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'oracles', 'bazel.json'), 'utf8')) as { universe: Universe; patterns: PatternRow[] };
 // (The main repository's names: `@//`, `@@//` and the main module's own, of test/fixtures/bazel/MODULE.bazel.)
 const MODULE = /module\(name = "([^"]+)"\)/.exec(fs.readFileSync(path.join(__dirname, 'fixtures', 'bazel', 'MODULE.bazel'), 'utf8'))![1];
@@ -46,6 +48,12 @@ function resolve(p: TargetPattern, cwd: string, { all, rules, manual }: Universe
   return build && !p.negative ? picked.filter((l) => !manual.includes(l)) : picked;
 }
 
+/** Whether the command's wildcards leave out the `manual` targets: the flavour of the language its spec reads its operands in. */
+function leavesManual(command: string): boolean {
+  const lang = bazel.bazel.subcommands![command].operands![0].pattern[0].lang as keyof typeof TARGET_FLAVORS;
+  return TARGET_FLAVORS[lang] === 'build';
+}
+
 describe('bazel target patterns, as bazel 9.3.2 takes them (recorded)', () => {
   it('the workspace has rules, files and a `manual` target', () => {
     const { all, rules, manual } = oracle.universe;
@@ -58,7 +66,7 @@ describe('bazel target patterns, as bazel 9.3.2 takes them (recorded)', () => {
       for (const word of row.words) {
         const p = parseTargetPattern(word);
         assert.ok(p, word);
-        const got = resolve(p, row.cwd ?? '', oracle.universe, row.command === 'build');
+        const got = resolve(p, row.cwd ?? '', oracle.universe, leavesManual(row.command));
         if (got === 'error') { taken = 'error'; break; }
         taken = p.negative ? taken.filter((l) => !got.includes(l)) : [...new Set([...taken, ...got])];
       }

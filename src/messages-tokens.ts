@@ -76,7 +76,8 @@ export const TOKEN_TEXTS = {
     'A subtractive target pattern: before `--`, bazel reads it as an option and stops with "Invalid options syntax" (status 2). Write it after `--` (`bazel build -- //... -//app/legacy/...`)']),
   /**
    * `bazel build //app/...`: a wildcard (`...`, `:all`, `:*`) of a command that builds (build, test, coverage, run, fetch, vendor)
-   * leaves out the targets tagged `manual`; a pattern that names one takes it (`//app:debug`). query and cquery take them.
+   * or of aquery leaves out the targets tagged `manual`; a pattern that names one takes it (`//app:debug`). query and cquery take
+   * them (`TARGET_FLAVORS`, src/embedded/bazel.ts).
    */
   'bazel-manual-wildcard': tokenText(() => [
     '`tags = ["manual"]` のターゲットは含まない（名前で指定したときだけ対象になる）',
