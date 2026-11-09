@@ -16,7 +16,7 @@ const ON = (ja: string, en: string): [string, string] => [`${ja}（既定でオ�
 
 const OPTIONS: OptSpec[] = [
   ['-f', 'コマンドを読むファイル（`-` は標準入力）。1行に `コマンド|コマンド|ラベル` を `|` で区切って並べ、`#` の行は読まない。ラベルに `*` と書くと、コマンドラインのラベルに使う。繰り返せる', 'file to read commands from (`-`: stdin): each line is `command|command|label`, separated by `|`, and `#` starts a comment line; a label `*` stands for the labels of the command line. May be repeated', 'arg'],
-  ['-stdout', '変えた BUILD ファイルを書き換えず、標準出力に出力する（終了ステータスは 0。何も変わらなくても 3 にならない）', 'write the changed BUILD files to stdout instead of rewriting them (status 0, also when nothing changed)'],
+  ['-stdout', '変えた BUILD ファイルを書き換えず、標準出力に出力する（何も変わらなかったときも、終了ステータスは 3 でなく 0）', 'write the changed BUILD files to stdout instead of rewriting them (status 0 rather than 3 when nothing changed)'],
   ['-k', 'コマンドが失敗しても、残りのコマンドを適用する（終了ステータスは 2 のまま）', 'apply the other commands even when one fails (the status is still 2)'],
   ['-quiet', '情報のメッセージ（`fixed …`）を表示しない', 'do not print informational messages (`fixed …`)'],
   ['-types', '対象のルールを、指定した種類（`,` 区切り）だけにする（`cc_library,cc_test`）', 'work only on the rules of the given kinds, separated by `,` (`cc_library,cc_test`)', 'arg'],
@@ -47,7 +47,7 @@ export const buildozer: Record<string, CommandSpec> = {
     exits: [{
       status: 3,
       success: true,
-      text: tx('変える必要のあるファイルがなかった（buildozer にとっては成功）', 'no file needed a change (a success to buildozer)'),
+      text: tx('変える必要のあるファイルがなかった', 'no file needed a change'),
       // (Not with `-stdout`; nor when every command only prints. Commands read from a file are not known here.)
       when: ({ options, operands }) => (!options.has('-stdout') || options.get('-stdout') === 'false') && (options.has('-f') || operands.some(buildozerEdits)),
     }],

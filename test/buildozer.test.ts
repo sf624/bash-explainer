@@ -258,6 +258,9 @@ describe('the reader of buildozer words (src/embedded/buildozer.ts)', () => {
     ['use_repo_remove dev @x//:e.bzl e r', ['use_repo_remove keyword', 'dev string The uses of the extension', '@x//:e.bzl string The `.bzl` file that defines', 'e string The name of the extension', 'r string The repository']],
     ['use_repo_add dev r', ['use_repo_add keyword', 'dev string The variable', 'r string The repository']],
     ['set kind java_library', ['set keyword', 'kind variable Not an attribute', 'java_library string The kind of the rule']],
+    ['set srcs a.cc b.cc', ['set keyword', 'srcs variable The attribute', 'a.cc string The value', 'b.cc string The value']],
+    ['new cc_test t before x', ['new keyword', 'cc_test string', 't string', 'before string Put it before', 'x string']],
+    ['@//app:x', ['@ keyword The main repository', '//app string The BUILD file of `app`', ':x string The rule `x`']],
     ['a\\ b\nadd', ['a\\ b error `a\\ b` is no command']],
     ['  ', ['   error An empty command']],
     ['', ['none']],
@@ -372,7 +375,15 @@ describe('buildozer explanations', () => {
       return src.split('\n').flatMap((_, i) => a.explainLine(tree, i).notes ?? []);
     };
     const edit = notes("#!/bin/bash\nset -e\nbuildozer 'add deps //lib:x' //app:main\n");
-    assert.ok(edit.some((n) => n.includes('`buildozer` exits with status 3 when no file needed a change (a success to buildozer)') && n.includes('`… || [ $? -eq 3 ]`')), edit.join('\n'));
+    assert.ok(edit.some((n) => n.includes('`buildozer` exits with status 3 when no file needed a change, which it counts as a success') && n.includes('`… || [ $? -eq 3 ]`')), edit.join('\n'));
+    // (The line keeps its note on where `set -e` stops, which names the status, the trap that runs and the other commands.)
+    const trapped = notes("#!/bin/bash\nset -e\ntrap 'echo bye' EXIT\nbuildozer 'add deps //lib:x' //app:main; grep x f\n");
+    assert.ok(trapped.some((n) => n.includes('exits with status 3 when no file needed a change')), trapped.join('\n'));
+    assert.ok(trapped.some((n) => n.includes('If `buildozer` or `grep` fails, `set -e` stops the script here: the EXIT trap of line 3 runs `echo bye`')), trapped.join('\n'));
+    const one = notes("#!/bin/bash\nset -e\ntrap 'echo bye' EXIT\nbuildozer 'add deps //lib:x' //app:main\n");
+    assert.ok(one.some((n) => n.includes('If `buildozer` exits with a status other than 0 (3: no file needed a change), `set -e` stops the script here: the EXIT trap of line 3 runs `echo bye`')), one.join('\n'));
+    const ja = parser.parse("#!/bin/bash\nset -e\ngrep x f\n");
+    assert.ok((new Analyzer('ja').explainLine(ja, 2).notes ?? []).some((n) => n.includes('`grep` が 0 以外の終了ステータスで終わると（1 は一致する行がなかったとき）、')), 'ja');
     for (const line of ["buildozer 'print kind' //app:main", "buildozer -stdout 'add deps :x' //app:main", "buildozer 'add deps :x' //app:main || [ $? -eq 3 ]", "if buildozer 'add deps :x' //a:b; then :; fi"]) {
       const said = notes(`#!/bin/bash\nset -e\n${line}\n`);
       assert.ok(!said.some((n) => n.includes('errexit-stops-on-success') || n.includes('exits with status 3')), `${line}\n${said.join('\n')}`);

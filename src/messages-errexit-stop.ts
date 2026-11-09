@@ -78,17 +78,18 @@ function either(lang: Lang, items: readonly string[]): string {
 }
 
 /**
- * "If W fails" (en), "W が失敗すると" (ja); a test "is false"; a command with statuses that are no error "fails, or
- * exits with 1 (no line was selected)".
+ * "If W fails" (en), "W が失敗すると" (ja); a test "is false"; a command with statuses that are no error "exits with a
+ * status other than 0 (1: no line matched)".
  */
 function condition(lang: Lang, p: ErrexitStopParams): string {
   const names = p.what.map((w) => subject(lang, w));
   const all = either(lang, p.more ? [...names, lang === 'ja' ? 'ほかのコマンド' : 'another'] : names);
   const one = p.what.length === 1 && !p.more ? p.what[0] : undefined;
   const test = one?.kind === 'test';
-  const results = one?.kind === 'command' && one.results?.length ? either(lang, one.results.map((r) => (lang === 'ja' ? `${r.status}（${r.text.ja}）` : `${r.status} (${r.text.en})`))) : '';
-  if (lang === 'ja') return results ? `${all}が失敗するか、終了ステータス ${results}で終わると` : `${all}${test ? 'が偽だと' : 'が失敗すると'}`;
-  return results ? `If ${all} fails, or exits with ${results}` : `If ${all} ${test ? 'is false' : 'fails'}`;
+  // (To bash any status other than 0 is a failure, 3.7.5; the statuses the tool means otherwise are said beside it.)
+  const results = one?.kind === 'command' && one.results?.length ? one.results.map((r) => (lang === 'ja' ? `${r.status} は${r.text.ja}とき` : `${r.status}: ${r.text.en}`)).join(lang === 'ja' ? '、' : '; ') : '';
+  if (lang === 'ja') return results ? `${all}が 0 以外の終了ステータスで終わると（${results}）` : `${all}${test ? 'が偽だと' : 'が失敗すると'}`;
+  return results ? `If ${all} exits with a status other than 0 (${results})` : `If ${all} ${test ? 'is false' : 'fails'}`;
 }
 
 /** The status the shell ends with: the command's, the pipeline's, 1 for a test, or that of the one that fails. */

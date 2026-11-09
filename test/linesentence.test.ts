@@ -391,7 +391,8 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
   });
 
   it('sorts every problem that cites a pipeline\'s status or `set -e` (3.2.3, 4.3.1): it says a clause, or another fact', () => {
-    const other: FactId[] = ['pipeline-subshell-variable', 'nounset-unbound', 'bats-run-in-pipeline', 'bats-run-in-pipeline-stage', 'stdin-not-read', 'bash-subshell-not-counted'];
+    // (`errexit-stops-on-success` says what a tool's status means; the line keeps its clause and its note on where `set -e` stops.)
+    const other: FactId[] = ['pipeline-subshell-variable', 'nounset-unbound', 'bats-run-in-pipeline', 'bats-run-in-pipeline-stage', 'stdin-not-read', 'bash-subshell-not-counted', 'errexit-stops-on-success'];
     const cites = (Object.keys(MESSAGES) as FactId[]).filter((id) => MESSAGES[id].refs.some((r) => r === '3.2.3' || r === '4.3.1'))
       .filter((id) => (MESSAGES[id].kind === 'pitfall' || 'level' in MESSAGES[id]) && isProblem(id));
     assert.deepStrictEqual(cites.filter((id) => !clausesOf(id).length && !other.includes(id)), []);

@@ -12,7 +12,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Changed
 
-- Under `set -e`, the note on where the script stops also names the statuses that are no error: `grep` finding no line, `diff` finding a difference, `buildifier -mode=check` finding a file to format.
+- Under `set -e`, the note on where the script stops says what a status other than 0 means for `grep` (no line matched), `diff` (the files differ) and `buildifier -mode=check` (a file to format): bash stops on those too.
 - An invalid regex in a shell script is now an Error in Problems and `--check`: `grep -E '[a'`, `sed 's/\(a/x/'`, `grep -P '\q'`, `[[ $x =~ a[ ]]`. Before, only the regex's part of the explanation said so.
 
 ### Fixed

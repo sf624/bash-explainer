@@ -45,7 +45,7 @@ A pattern that grep, sed, awk or Perl refuses stops the program with an error ev
 
 ### Exit statuses that are no error
 
-- **Under `set -e`.** The note on where the script stops names the statuses that are no error, which stop it too: `grep` exits with 1 when no line matched (with `-v`, when every line matched), `diff` with 1 when the files differ, `buildifier` with 4 when a file needs formatting or the lint found a warning (with `-mode=check`, `-d` or `-lint=warn`, and not with `-format`). Before, it said only "If `grep` fails".
+- **Under `set -e`.** To bash, any status other than 0 is a failure. The note on where the script stops says so, with what the tool means by its status: "If `grep` exits with a status other than 0 (1: no line matched), `set -e` stops the script here". `grep` exits with 1 when no line matched (with `-v`, when every line matched), `diff` with 1 when the files differ, `buildifier` with 4 when a file needs formatting or the lint found a warning (with `-mode=check`, `-d` or `-lint=warn`, and not with `-format`). Before, it said only "If `grep` fails".
 
 ## Fixed
 
