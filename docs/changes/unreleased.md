@@ -4,6 +4,14 @@ The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
 ## New
 
+### Database clients
+
+Each option list was compared with the `--help` of the real program: PostgreSQL 16.15 (`psql`, `pg_dump`), MySQL 8.0.46 (`mysql`, `mysqldump`; MariaDB's clients differ in places) and SQLite 3.54.1, recorded in test/fixtures/db/. The SQL (`psql -c`, `mysql -e`, `sqlite3 DB 'SQL'`, a here-document) is not read.
+
+- **psql, pg_dump.** Read as getopt_long does (`psql --vers` is `--version`). `psql` takes `[DBNAME [USERNAME]]`; a connection string or a URI is allowed there and in `-d`, and a password in a URI is said to be visible to other users. Neither has an option for a password (`-W` asks; `PGPASSWORD` or `~/.pgpass` gives it).
+- **mysql, mysqldump.** No abbreviations of long options, short options cluster (`-Bse 'select 1'`), and `--skip-NAME` or `--disable-NAME` turn a boolean option off. The password is the optional value of `-p` and `--password`, in the same word only: `-psecret`, `--password=secret`; `-p secret` asks for a password and takes `secret` as the database. `mysqldump` takes a database and its tables, or only databases with `--databases`.
+- **sqlite3.** `-name` and `--name` are alike; the first word that is not an option is the database file (created if missing), the words after it run in order as SQL or dot-commands (`.tables`, `.mode json`), and options may come between them.
+
 ### bazel target patterns
 
 - **Target patterns.** Each pattern of build, test, coverage, run, fetch and vendor says what it selects, with its parts below it: `//app:main` is "One target, `//app:main`", `//app` the target named like the package (`//app:app`), `//app:all` every rule of the package, `//app:*` and `//app:all-targets` every target (rules and files), `//app/...` every rule of the packages in `app` and below, `//...` every rule of the repository. A wildcard of these commands leaves out the targets tagged `manual`; a pattern that names one takes it. Patterns without `//` are relative to the current directory (`:main`, `legacy:all`, `...`); one with no `:` (`app/main`) names the target of the longest leading part that is a package (`//app:main`). `@repo//…` and `@@canonical//…` name a repository (`@repo` alone is `@repo//:repo`), and `-//app/legacy/...` after `--` takes its targets out of those of the patterns before it. What bazel refuses is marked: `../x:y`, `//app/...:main`, `//app:`, `//app/`. In `"//$pkg/..."` and `"//app:$t"`, the value is said to be read as part of the package's path, or as the target's name (where `all` and `*` are wildcards, a `/` is part of the name, and a `:` is refused). `//:all` names the top package of the repository. Each form was checked with what `bazel query` and `bazel build` take of it in a small workspace.

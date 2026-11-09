@@ -7,6 +7,7 @@ import { buildifier } from './buildifier';
 import { buildozer } from './buildozer';
 import { java } from './java';
 import { unusedDeps } from './unused_deps';
+import { databases } from './databases';
 import { cCompilers } from './ccompilers';
 
 // Commands found in a second survey: operations and cloud scripts (Kubernetes, Terraform, AWS,
@@ -241,6 +242,7 @@ export const ops: Record<string, CommandSpec> = {
   ...buildifier,
   ...buildozer,
   ...unusedDeps,
+  ...databases,
   ...cCompilers,
   ...java,
   uv: cmd('Python のパッケージ・プロジェクト管理ツール（uv）', 'Python package and project manager (uv)', [], {
