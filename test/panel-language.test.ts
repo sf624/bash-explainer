@@ -46,7 +46,7 @@ describe('the VS Code panel on a line of a Python pattern', function () {
       assert.strictEqual(await page.locator('#shell option:checked').textContent(), 'Auto (no shell, Python regex)');
       const tree = await page.locator('main').ariaSnapshot();
       assert.match(tree, /code: r'\^\\d\+\$'\n\s+- text: The pattern of\n\s+- code: re\.compile/);
-      assert.match(tree, /code: \\d\n\s+- text: a digit/);
+      assert.match(tree, /code: \\d\n\s+- text: a decimal digit of any script/);
       assert.deepStrictEqual(page.errors, []);
     } finally {
       await page.close();
@@ -70,7 +70,13 @@ describe('the VS Code panel on a line of a Python pattern', function () {
     const page = await open(1, 'en', 2);
     try {
       await page.locator('#tree li').first().waitFor();
-      assert.match(await page.locator('main').ariaSnapshot(), /a digit/);
+      assert.match(await page.locator('main').ariaSnapshot(), /a decimal digit of any script/);
+      // (The root's name is the language's, and what it is says no shell reads the line: no word or command is around it.)
+      const chip = page.getByRole('button', { name: 'Python regex' }).first();
+      await chip.click();
+      const tree = await page.locator('main').ariaSnapshot();
+      assert.match(tree, /No shell reads this line/);
+      assert.doesNotMatch(tree, /inside the word/);
       assert.deepStrictEqual(page.errors, []);
     } finally {
       await page.close();

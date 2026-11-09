@@ -1118,6 +1118,25 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - `bug`: a backslash-newline of the Python source inside the shell's single quotes is written as a shell continuation: in `os.system("echo 'a\<newline>b'")` Python's value is `echo 'ab'`, and our text has `'a\` at the end of the line, which sh keeps in the quotes.
 - `missing-explanation`: of two calls on one line (`os.system("cd x"); os.system("make all")`), only the first is explained: a line of shell text holds one call.
 
+## From the review of the Python regex seam (#800)
+
+### Python patterns: corners the `python` flavor does not follow
+
+- **Verdict:** dropped (YAGNI), 2026-11-10. Kind: `bug` unless marked. Python 3.15.
+- **Reason:** Rare patterns and files. None gives a false Error: each is a refusal we do not say, a rare reading, or a note left out. Those marked "#760" are Python's refusals that step 3 of docs/design/python-regex.md (#760) reads, with its validity differential: they are listed here only so that they are not reported again.
+- **Input and what is wrong:**
+  - `a{,}`: Python reads `{,}` as 0 or more (`re.fullmatch('a{,}', 'aaa')` matches); we say `Literal "a{,}"`.
+  - `[z-a]` ("bad character range z-a"), and a class at an end of a range, `[\w-z]`, `[a-\w]` ("bad character range \w-z"; #760, as `[\d-z]`): we read a set and say nothing.
+  - Group forms Python rejects, which we call "a construct of Python's `re` this explainer does not read" with no level: `(?P<1>a)` and `(?P<a-b>a)` ("bad character in group name"), `(?P<n` ("missing >, unterminated name"), `(?P` ("unexpected end of pattern"), `(?)`, `(?P>n)`, `(?&n)`, `(?C)`, `(?^)` ("unknown extension"), `(?i` ("missing -, : or )"). `(?#abc` ("missing ), unterminated comment") is said to be a comment.
+  - A pattern over several lines: Python's message ends with the line and column (`unbalanced parenthesis at position 2 (line 2, column 1)`); ours has the position only.
+  - `[[:alpha:]]`: Python warns (FutureWarning, "Possible nested set at position 1"); we read the set right but say no warning. (`missing-explanation`)
+  - `\z` (since 3.14) and `(?>…)`, `a++` (since 3.11) have no note of the release they need (section 8 of the design). (`missing-explanation`)
+  - `r'\ '`: the token is right (`Literal " "`), but its label is `\` (`shorten` trims the space).
+  - `[\b]`: "Character class: one of a backspace" reads badly; a set of one character could say "a backspace".
+  - `from re import *` then `search('a', s)`: the call is not found. (`missing-explanation`)
+  - `def re(x): …` after `import re`: `re.search('a', s)` is still read as the `re` module's.
+  - No Python control flow: a pattern after `sys.exit()` or under `if False:` still gets its tokens and its Error (the design says so, section 9).
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

@@ -1,6 +1,6 @@
 import { readShell, type ScriptEvidence, Shell, surelyScript } from './dialect';
 import type { Shells, ShellDocument } from './document';
-import { Extracted, extractShell, HostKind, hostKind } from './hosts';
+import { Extracted, extractShell, HostKind, hostKind, languageLines } from './hosts';
 import { maskCarried } from './messages-levels';
 import type { Settings } from './settings';
 import { contained, stackFull } from './failures';
@@ -119,7 +119,7 @@ export function openDocument(text: string, kind: FileKind, parse: (shellText: st
   return contained('reading the document', () => {
     if (kind === 'shell') return { lines, tree: parse(text) };
     const hosted = extracted ?? extractShell(kind, text);
-    return { lines, extracted: hosted, tree: parse(hosted.text) };
+    return { lines, extracted: hosted, tree: parse(hosted.text), languageLines: languageLines(hosted) };
   }, (e) => ({ lines, tree: unreadTree(text, stackFull(e) ? 'too-deep' : 'failed') }));
 }
 

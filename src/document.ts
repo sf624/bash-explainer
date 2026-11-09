@@ -6,7 +6,7 @@ import { parseDirectives, suppressed } from './directives';
 import { withinLine } from './examples/regexguard';
 import { contained } from './failures';
 import { Fix, fixFor, rewriteFix } from './fixes';
-import { DocIssue, explainHostedLine, Extracted, hostIssues, hostPartAt, languageLines, regionShell, type ShellRegion } from './hosts';
+import { DocIssue, explainHostedLine, Extracted, hostIssues, hostPartAt, regionShell, type ShellRegion } from './hosts';
 import { explainLanguageLine } from './hosts/languages';
 import { Lang } from './i18n';
 import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
@@ -30,6 +30,11 @@ export interface ShellDocument {
   /** The shell parts of a host file (Dockerfile, Makefile…); `tree` is then the tree of their text. */
   extracted?: Extracted;
   tree: SyntaxTree;
+  /**
+   * Of a host file: how many lines are parts in another language (`languageLines`), lines of code that `tree`'s text leaves
+   * blank. The budget of every line counts them (`withinLine`), so each product gives the same share; made once, in `openDocument`.
+   */
+  languageLines?: number;
 }
 
 /**
@@ -86,7 +91,7 @@ export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line
       const part = hostPartAt(extracted, line);
       return part?.kind === 'language' ? explainLanguageLine(part.region, doc.lines, line, lang, opts) : explainHostedLine(analyzer, doc.tree, extracted, doc.lines, line, lang, shells.forced, opts);
     };
-    return contained(`line ${line + 1}`, () => withinLine(doc.tree.root, explained, languageLines(extracted)), (e) => analyzer.notExplained(doc.tree, line, undefined, e))
+    return contained(`line ${line + 1}`, () => withinLine(doc.tree.root, explained, doc.languageLines), (e) => analyzer.notExplained(doc.tree, line, undefined, e))
       ?? { line, summary: '', items: [], context: [], notes: [], noteInfo: [], examples: [] };
   }
   // (Where the shell comes from: chosen outside the file, else the file's own directive.)

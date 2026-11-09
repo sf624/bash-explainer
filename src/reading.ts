@@ -86,6 +86,11 @@ export interface ReadingNode {
   refs?: readonly string[];
   /** In the layers `command` and `language`: who reads it, the name of the command (or `bash`, the regex of `=~`). */
   reader?: string;
+  /**
+   * On the root of a line of a host file in another language (`languageReading`): the name of that language ("Python regex",
+   * `flavorName`). No word, command or shell is around such a root.
+   */
+  hostLanguage?: string;
   /** In the layer `command`: its reader is a builtin or a function, so the shell that runs it reads it, no program of its own (from the name resolution). */
   inShell?: true;
   /** In the layer `child`: which shell parses it (`ScriptProcess`). */
@@ -874,10 +879,11 @@ export function languageNode(t: Token, reader: string): ReadingNode {
 
 /**
  * The reading of a line of a part of a host file in another language (src/hosts/languages.ts): one root in the layer `language`,
- * the language of `top` read by `reader` (the function, `re.search`), with the nodes of the tokens under `top`. No bash reads it.
+ * the language of `top`, named `name` ("Python regex"), read by `reader` (the function, `re.search`), with the nodes of the tokens
+ * under `top`. No bash reads it.
  */
-export function languageReading(top: Token, reader: string): ReadingNode {
-  return { layer: 'language', kind: 'language', label: top.language!, span: top.span, reader, children: top.children.filter((c) => c.origin === 'embedded').map((c) => languageNode(c, reader)) };
+export function languageReading(top: Token, reader: string, name: string): ReadingNode {
+  return { layer: 'language', kind: 'language', label: top.language!, hostLanguage: name, span: top.span, reader, children: top.children.filter((c) => c.origin === 'embedded').map((c) => languageNode(c, reader)) };
 }
 
 /**

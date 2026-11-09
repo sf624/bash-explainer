@@ -304,6 +304,11 @@ export interface LineExplanation {
   examples: Example[];
   /** The shell the script is written for, when it is not bash (checked for unsupported features). */
   shell?: Shell;
+  /**
+   * The language the line's text is written in, where it is no shell code: a line of a part of a host file in another language (a
+   * pattern's line of a `.py` file is Python code, src/hosts/languages.ts). Markdown fences the line in it (`toPlainMarkdown`).
+   */
+  code?: HostId['kind'];
   /** Who reads each part of the line, layer by layer (src/reading.ts); only when `ExplainOptions.reading` asks for it. */
   reading?: ReadingNode;
   /** The constructs shown on the line that POSIX sh does not have; only when `ExplainOptions.notPosix` asks for it. */

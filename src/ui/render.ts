@@ -252,7 +252,8 @@ export function plainNotes(ex: LineExplanation, notes: readonly string[], lang: 
 
 /** The explanation as plain Markdown (no HTML), for pasting into reviews and docs. */
 export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: string, lang: Lang = 'en'): string {
-  const out: string[] = [`**${where}**`, '', '```bash', lineText.trim(), '```', ''];
+  // (A line of a part of a host file in another language is in that language: a pattern's line of a `.py` file is Python.)
+  const out: string[] = [`**${where}**`, '', '```' + (ex.code ?? 'bash'), lineText.trim(), '```', ''];
   const links = (refs: readonly string[] | undefined) => (refs?.length ? ` (${refsMarkdown(lang, refs)})` : '');
   pushAll(out, plainNotes(ex, ex.notes, lang));
   const walk = (tok: Token, depth: number) => {

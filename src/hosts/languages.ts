@@ -3,7 +3,7 @@
 // `placeEmbedded` places its tokens through the literal's map, and `finishLine` (src/linefinish.ts) finishes the line as it
 // finishes a shell line. `explainDocumentLine` (src/document.ts) calls it within the same boundary and budget as a shell line.
 import type { ExplainOptions, LineExplanation, NoteAnchor, Pos, Token } from '../analyzer-types';
-import { explainRegex } from '../embedded/regex';
+import { explainRegex, flavorName } from '../embedded/regex';
 import { placeEmbedded } from '../explain/nodes';
 import type { Lang } from '../i18n';
 import { shorten } from '../label';
@@ -31,6 +31,8 @@ export function explainLanguageLine(region: LanguageRegion, lines: readonly stri
   return ex.line === line ? ex : { ...ex, line };
 }
 
+const samePos = (a: Pos, b: Pos): boolean => a.line === b.line && a.character === b.character;
+
 /** The text of the document between two places. */
 function between(lines: readonly string[], a: Pos, b: Pos): string {
   if (a.line === b.line) return lines[a.line].slice(a.character, b.character);
@@ -41,8 +43,13 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
   const { source, call } = region;
   // (Where an offset of the value is: the place of its character, or after the last one for an end.)
   const at = (offset: number, isEnd: boolean): Pos => (isEnd && offset > 0 ? source.to[offset - 1] : source.at[offset]);
-  const children = explainRegex(source.value, region.flavor, lang, { tool: 'python' })
-    .map((t) => placeEmbedded(t, at, (a, b) => between(lines, at(a, false), at(b, true)), 'embedded'));
+  // (`gaps[k]`: how many characters up to `k` do not follow the one before in the source: the first of a literal after another,
+  // `r'a' r'b'`, or after a backslash-newline. A token whose characters a gap parts has quotes or a prefix between them in the
+  // source, so its label is its value.)
+  const gaps = [0];
+  for (let k = 1; k < source.value.length; k++) gaps.push(gaps[k - 1] + (samePos(source.to[k - 1], source.at[k]) ? 0 : 1));
+  const label = (a: number, b: number): string => (b - 1 > a && gaps[b - 1] > gaps[a] ? source.value.slice(a, b) : between(lines, at(a, false), at(b, true)));
+  const children = explainRegex(source.value, region.flavor, lang, { tool: 'python' }).map((t) => placeEmbedded(t, at, label, 'embedded'));
   const top: Token = {
     kind: 'string', label: shorten(between(lines, source.span.start, source.span.end)), span: source.span, children, origin: 'embedded', language: region.language,
     explanation: tokenSaid(lang, 'python-regex-pattern', { call: call.written, ...reCallOf(call.name) }),
@@ -53,6 +60,7 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
     const notes = tokenErrors(lang, [top], (n, span) => sayAt(anchors, data, n, span));
     return { notes, noteInfo: notes.map((n) => basisGate(data.get(n)!, opts.basis)), facts: [], anchors, marked: { facts: [], anchors }, examples: [] };
   });
-  if (opts.reading) ex.reading = languageReading(ex.items[0], call.written);
+  ex.code = region.host.kind;
+  if (opts.reading) ex.reading = languageReading(ex.items[0], call.written, flavorName(region.flavor, lang));
   return ex;
 }
