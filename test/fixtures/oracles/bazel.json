@@ -3748,7 +3748,7 @@
           "  deps = [\"//util:text\", \"@abseil-cpp//absl/strings:strings\"],",
           ")",
           "# Rule greet instantiated at (most recent call last):",
-          "#   <workspace>/lib/BUILD:3:11                                        in <toplevel>",
+          "#   <workspace>/lib/BUILD:3:11 in <toplevel>",
           "#   <output_base>/external/rules_cc+/cc/cc_library.bzl:19:16 in cc_library",
           "# Rule cc_library defined at (most recent call last):",
           "#   <output_base>/external/rules_cc+/cc/private/rules_impl/cc_library.bzl:574:18 in <toplevel>"
