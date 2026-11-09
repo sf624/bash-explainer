@@ -1040,18 +1040,6 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `[[ x =~ $re ]]` with an invalid regex exits 2, but the note says "status 1".
   - A function named anywhere as an argument becomes "not closed" (src/semantics/env.ts:61/226: `echo build`, `ssh host deploy`), so its body's stop note says "the shell it runs in" and loses the trap. Fix: close only on arguments of commands that can run a shell function.
 
-## From the review of the large-script speed (#773)
-
-### Web page: the pass that waits on a large script
-
-- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `ui`.
-- **Reason:** Only on very large scripts; the content is right, only late, and it corrects itself.
-- **Input and what is wrong:**
-  - An explicit `shade()` and `recheck()` while a pass is pending (kind, settings, rename) makes the next timer pass cost about 0 ms (cached), so the next edit's pass comes 300 ms after a key and freezes once.
-  - The keyboard card (Ctrl+K Ctrl+I, web/hover.ts ~196) uses `cardAt` directly and is not held back by `waiting` (its content is correct).
-  - `autoShell()` while waiting (web/main.ts:157) mixes the old document with the current `shells()` and cursor line.
-  - While a pass is pending on a large script, a cursor move leaves the panel on the earlier line (late, not wrong).
-
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".
