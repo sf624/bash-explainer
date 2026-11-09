@@ -12,6 +12,12 @@ export const REGEX_VALUE_SPECIAL = {
   en: '`.`, `*`, `[` and the like in the value have their special meaning',
 };
 
+/** What a value does in an unquoted word of a bazel query expression: a character no such word holds ends the word. */
+const QUERY_WORD_END = [
+  '。クエリ式の中なので、値の中の、引用符で囲まない語に書けない文字（空白・`+`・`(`・`,`・引用符など）は語をそこで終わらせ、その先はクエリの構文として読まれる',
+  '; in a query expression, a character no unquoted word holds (a blank, `+`, `(`, `,`, a quote…) ends the word there, and bazel reads what follows as the query\'s syntax',
+] as const;
+
 export const ARGV_TEXTS = {
   /** bazel's `--nostamp` and `-t-` (the parser rule `negation`): the boolean option `name` turned off; `on`, what the option does when it is on. */
   'option-negated': tokenText<{ name: string; on: string }>(({ name, on }) => [
@@ -188,14 +194,21 @@ export const ARGV_TEXTS = {
   'hole-glob': tokenText<{ value: string }>(({ value }) => [
     `${value} の値はパターンの一部として読まれる。値の中の \`*\`・\`?\`・\`[\` はワイルドカードになり、\`\\\` は次の文字をただの文字にする`,
     `The value of ${value} is read as part of the pattern: \`*\`, \`?\` and \`[\` in it are wildcards, and a \`\\\` makes the next character plain`]),
-  /** `bazel build "//$pkg/..."`: a hole in the package's path of a target pattern, after its start (`//`, `@repo//` or a relative directory). */
-  'hole-target-package': tokenText<{ value: string }>(({ value }) => [
-    `${value} の値はパッケージのパスの一部として読まれる。値の中の \`/\` はディレクトリを区切り、\`:\` はパッケージを終えてターゲットの名前を始め、最後のディレクトリの \`...\` はその下のすべてのパッケージになる`,
-    `The value of ${value} is read as part of the package's path: a \`/\` in it separates directories, a \`:\` ends the package and starts the target's name, and \`...\` as the last directory stands for every package below`]),
-  /** `bazel build "//app:$t"`: a hole in the target's name, after `:` (bazel 9.3.2: `//app:a:b` is refused, `//app:...` and `//app:sub/x` are names). */
-  'hole-target-name': tokenText<{ value: string }>(({ value }) => [
-    `${value} の値はターゲットの名前（またはその一部）として読まれる。名前全体が \`all\` ならすべてのルール、\`*\`・\`all-targets\` ならすべてのターゲットになる。値の中の \`/\` は名前の一部で、\`:\` は bazel が拒否する`,
-    `The value of ${value} is read as the target's name, or part of it: as the whole name, \`all\` is every rule and \`*\` or \`all-targets\` every target of the package; a \`/\` in it is part of the name, and bazel refuses a \`:\``]),
+  /**
+   * `bazel build "//$pkg/..."`: a hole in the package's path of a target pattern, after its start (`//`, `@repo//` or a relative
+   * directory). `query`: in an unquoted word of a query expression (`bazel query "deps(//$pkg/...)"`), where a value can end the word.
+   */
+  'hole-target-package': tokenText<{ value: string; query?: boolean }>(({ value, query }) => [
+    `${value} の値はパッケージのパスの一部として読まれる。値の中の \`/\` はディレクトリを区切り、\`:\` はパッケージを終えてターゲットの名前を始め、最後のディレクトリの \`...\` はその下のすべてのパッケージになる${query ? QUERY_WORD_END[0] : ''}`,
+    `The value of ${value} is read as part of the package's path: a \`/\` in it separates directories, a \`:\` ends the package and starts the target's name, and \`...\` as the last directory stands for every package below${query ? QUERY_WORD_END[1] : ''}`]),
+  /** `bazel build "//app:$t"`: a hole in the target's name, after `:` (bazel 9.3.2: `//app:a:b` is refused, `//app:...` and `//app:sub/x` are names). `query`: as above. */
+  'hole-target-name': tokenText<{ value: string; query?: boolean }>(({ value, query }) => [
+    `${value} の値はターゲットの名前（またはその一部）として読まれる。名前全体が \`all\` ならすべてのルール、\`*\`・\`all-targets\` ならすべてのターゲットになる。値の中の \`/\` は名前の一部で、\`:\` は bazel が拒否する${query ? QUERY_WORD_END[0] : ''}`,
+    `The value of ${value} is read as the target's name, or part of it: as the whole name, \`all\` is every rule and \`*\` or \`all-targets\` every target of the package; a \`/\` in it is part of the name, and bazel refuses a \`:\`${query ? QUERY_WORD_END[1] : ''}`]),
+  /** `bazel query "deps($t)"`: a hole that is a whole word of a query expression, whose value bazel reads as the query language. */
+  'hole-query-word': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値はクエリ式の一部として読まれる。値の中の語はターゲットのパターン（または関数やキーワード）になり、空白・\`+\`・\`(\`・\`,\`・引用符などはクエリの構文になる（\`//a + //b\` なら2つのパターンの和）`,
+    `The value of ${value} is read as part of the query expression: the words in it are target patterns (or functions, keywords), and a blank, \`+\`, \`(\`, \`,\` or a quote in it is the query's syntax (\`//a + //b\` is the union of two patterns)`]),
   /** `buildozer "add deps $dep" //app:main`: a hole in an argument of a command of buildozer, which splits the command at spaces itself. */
   'hole-buildozer': tokenText<{ value: string }>(({ value }) => [
     `${value} の値は buildozer のコマンドの一部になる。buildozer はコマンドを空白と改行で区切るので、値の中の空白で引数が分かれる（\`\\ \` は区切らない）`,

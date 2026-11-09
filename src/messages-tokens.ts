@@ -84,6 +84,13 @@ export const TOKEN_TEXTS = {
   'bazel-manual-wildcard': tokenText(() => [
     '`tags = ["manual"]` のターゲットは含まない（名前で指定したときだけ対象になる）',
     'without the targets tagged `manual` (`tags = ["manual"]`), which only a pattern that names them takes']),
+  /**
+   * `bazel query '//a:b+c'`: a `+` between two words with no blank is still the union (src/embedded/bazelquery.ts), so a name
+   * with `+` in it is two words (bazel 9.3.2; a word that starts with `@@` may hold `+`).
+   */
+  'bazel-query-plus-joined': tokenWarning(() => [
+    '`+`（和）: 空白がなくても演算子として読まれ、`a+b` は `a` と `b` のターゲットを合わせたものになる。名前に `+` を含むターゲットは、式の中で引用符で囲む（`bazel query \'"//pkg:a+b"\'`）',
+    '`+` (union), even with no blank around it: `a+b` is the targets of `a` and those of `b`. Quote a target whose name holds `+` inside the expression (`bazel query \'"//pkg:a+b"\'`)']),
   /** `--config=ci`: the options it stands for are in the rc files, which the explanation does not read. */
   'bazel-config': tokenText(() => [
     'rc ファイル（`.bazelrc` など）の設定の組を使う。`--config=ci` は、rc ファイルの `build:ci` のような行のオプションに置き換わる。rc ファイルは読まないので、どのオプションになるかは示せない。どの rc ファイルにもなければ、bazel は「Config value \'…\' is not defined in any .rc file」で止まる',

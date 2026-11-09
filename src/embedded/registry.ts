@@ -8,6 +8,7 @@ import type { InvalidHow } from '../arith';
 import { explainArith } from './arith';
 import { explainAwk } from './awk';
 import { explainQueryWord, explainTargetPattern, TARGET_FLAVORS } from './bazel';
+import { explainQuery, type QueryCommand } from './bazelquery';
 import { explainBuildozerWord } from './buildozer';
 import { describeFindPattern } from './find';
 import { explainDate, explainEscapes, explainPrintf, printfNote } from './format';
@@ -43,6 +44,8 @@ export interface EmbeddedContext {
   records(): boolean;
   /** The bash release whose builtin reads the text; undefined when a program does (`env printf`). */
   bash(): BashVersion | undefined;
+  /** Whether the text is one of several words the command joins with spaces into one text (bazel's query expression). */
+  joined(): boolean;
   /** Whether the command is gawk (or `awk`, taken as gawk): mawk has none of its regex escapes (`\y`, `\<`…). */
   awkGnu(): boolean;
   /** The shell the script is read as. */
@@ -62,6 +65,14 @@ const regex: Explainer = (text, cx) => {
   const flavor = cx.flavor();
   return { tokens: flavor === 'fixed' ? [] : explainRegex(text, flavor, cx.lang, { ...inRecords(cx), reached: cx.reached() }), note: flavorName(flavor, cx.lang) };
 };
+
+/**
+ * A query expression of `bazel query`, `cquery` or `aquery`: read whole where it is one word; where it is several, which
+ * bazel joins, only the words that are target patterns.
+ */
+const query = (command: QueryCommand, lang: 'bazelquery' | 'bazelcquery' | 'bazelaquery'): Explainer => (text, cx) => (cx.joined()
+  ? explainQueryWord(text, cx.lang, TARGET_FLAVORS[lang])
+  : explainQuery(text, command, { universe: cx.given('--universe_scope', '--infer_universe_scope') }, cx.lang, TARGET_FLAVORS[lang]));
 
 /** One explainer per embedded language; undefined when the text is not one of that language (`date` without `+`). */
 export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
@@ -109,10 +120,11 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   prompt: (text, cx) => ({ tokens: explainPrompt(text, cx.lang), note: promptNote(cx.lang) }),
   // Only `+FORMAT` is a format. (A word whose text is not known to start with `+`, as `x*` or `~`, may still reach here: the shell expands it first.)
   date: (text, cx) => (text.startsWith('+') ? { tokens: explainDate(text, cx.lang) } : undefined),
-  // (A target pattern of a command that builds, and a word of a query or an aquery expression that is one.)
+  // (A target pattern of a command that builds, and the expressions of the queries.)
   bazeltarget: (text, cx) => explainTargetPattern(text, cx.lang, TARGET_FLAVORS.bazeltarget),
-  bazelquery: (text, cx) => explainQueryWord(text, cx.lang, TARGET_FLAVORS.bazelquery),
-  bazelaquery: (text, cx) => explainQueryWord(text, cx.lang, TARGET_FLAVORS.bazelaquery),
+  bazelquery: query('query', 'bazelquery'),
+  bazelcquery: query('cquery', 'bazelcquery'),
+  bazelaquery: query('aquery', 'bazelaquery'),
   // (An operand of buildozer: a command, `add deps //x`, or a label of the rules it works on.)
   buildozer: (text, cx) => explainBuildozerWord(text, cx.lang),
 };
