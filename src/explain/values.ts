@@ -10,12 +10,13 @@ import { valueSaid } from '../messages';
 import { expansionValue, variableValue } from '../semantics/values';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
+import { isBash } from '../shellfeatures';
 
 /** `t`, the token of the expansion `n`, with its value where the model knows it for sure. */
 export function withValue(cx: Explainer, n: SyntaxNode, t: Token): Token {
   const v = expansionValue(n, cx.state);
   const shell = cx.state.shell;
-  if (v) t.value = { ...v, said: valueSaid(cx.lang, v, !shell || shell === 'bash') };
+  if (v) t.value = { ...v, said: valueSaid(cx.lang, v, isBash(shell) === 'yes') };
   return t;
 }
 
@@ -63,7 +64,7 @@ export function shownValue(cx: Explainer, part: SyntaxNode, name: string): strin
 export function wordValue(cx: Explainer, n: SyntaxNode): string | undefined {
   const one = (x: SyntaxNode): string | undefined => expansionValue(x, cx.state)?.text;
   // (The examples compute what bash does: in sh and dash they keep their samples.)
-  if (cx.state.shell !== undefined && cx.state.shell !== 'bash') return undefined;
+  if (isBash(cx.state.shell) !== 'yes') return undefined;
   let text: string | undefined;
   if (n.type === 'simple_expansion' || n.type === 'expansion') text = one(n);
   else if (n.type === 'string') {

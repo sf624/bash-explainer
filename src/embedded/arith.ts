@@ -1,6 +1,6 @@
 import type { Lang } from '../i18n';
 import { arithLiteralIn, describeArithLiteral, describeInvalidLiteral, evalArith, type InvalidHow } from '../arith';
-import type { Shell } from '../shellfeatures';
+import { isBash, type Shell } from '../shellfeatures';
 import { EmbeddedToken, pick } from './types';
 
 /**
@@ -159,7 +159,7 @@ export function explainArith(src: string, lang: Lang, shell?: Shell, invalid: In
       case 'num': {
         // (A constant bash rejects fails `let`, with status 1 (test/arith-shells.test.ts); of another shell's `let`, nothing is said.)
         const lit = arithLiteralIn(text(n), shell);
-        if (lit?.type === 'invalid') return shell && shell !== 'bash' ? undefined : { ...base, kind: 'number', children: [], explanation: describeInvalidLiteral(text(n), lit, lang, invalid) };
+        if (lit?.type === 'invalid') return isBash(shell) !== 'yes' ? undefined : { ...base, kind: 'number', children: [], explanation: describeInvalidLiteral(text(n), lit, lang, invalid) };
         return !lit || lit.style === 'decimal' ? undefined : { ...base, kind: 'number', children: [], explanation: describeArithLiteral(text(n), lit, lang) };
       }
       case 'var': {

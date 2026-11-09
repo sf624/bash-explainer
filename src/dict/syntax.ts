@@ -5,6 +5,7 @@ import { splitReplacement } from '../expansion';
 import { messageText, unquoteWord } from '../staticword';
 import { based } from '../tokenbases';
 import { wordTable } from '../wordtable';
+import { isBash, type Shell } from '../shellfeatures';
 
 /** The name of `{name}` in `{name}>file`: bash picks a free descriptor (10 or higher) and stores its number in that variable. */
 function namedFd(fd: string): string | undefined {
@@ -601,7 +602,7 @@ export const collationTexts: Record<string, Text> = {
 };
 
 /** Where the matches of `=~` go, after what it says: `BASH_REMATCH` is bash's, so another shell says nothing of it (it keeps its matches elsewhere, or has no `[[`). */
-export const rematchClause = (shell: string | undefined): Text => (shell && shell !== 'bash' ? tx('', '') : tx('。一致結果は `BASH_REMATCH` に入る', '; captures go to `BASH_REMATCH`'));
+export const rematchClause = (shell: Shell | undefined): Text => (isBash(shell) !== 'yes' ? tx('', '') : tx('。一致結果は `BASH_REMATCH` に入る', '; captures go to `BASH_REMATCH`'));
 
 /** What `=~` does in any shell that has it. */
 const regexMatch = tx('左辺が右辺の正規表現(ERE)に一致する', 'left side matches the regex (ERE) on the right');
@@ -629,7 +630,7 @@ export const binaryTestOps: Record<string, Text> = {
 };
 
 /** The text of the binary test operator `op` in `shell`: `=~` names `BASH_REMATCH` only in bash (`rematchClause`). */
-export const binaryTestOp = (op: string, shell: string | undefined): Text => (op === '=~' ? tx(regexMatch.ja + rematchClause(shell).ja, regexMatch.en + rematchClause(shell).en) : binaryTestOps[op]);
+export const binaryTestOp = (op: string, shell: Shell | undefined): Text => (op === '=~' ? tx(regexMatch.ja + rematchClause(shell).ja, regexMatch.en + rematchClause(shell).en) : binaryTestOps[op]);
 
 export const listOps: Record<string, Text> = {
   '&&': tx('左のコマンドが成功（終了ステータス 0）した場合のみ右を実行', 'Run the right side only if the left succeeds (exit 0)'),

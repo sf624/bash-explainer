@@ -23,6 +23,7 @@ import type { Explainer, LineExplainer } from './context';
 import { intersects, onLine } from './nodes';
 import { shoptAt, syntaxFaultOf } from './reads';
 import { type StopContext, stopContext } from './status';
+import { isBash } from '../shellfeatures';
 
 /**
  * The status facts of a script, by line, computed once per status model and tree (both languages): the strings `eval`
@@ -148,7 +149,7 @@ export function unmatchedGlobPitfalls(cx: Explainer, root: SyntaxNode, line: num
  * function or block before running it, so turning it on inside the same block is too late.
  */
 export function extglobPitfalls(cx: Explainer, root: SyntaxNode, line: number): string[] {
-  if (cx.shell && cx.shell !== 'bash') return [];
+  if (isBash(cx.shell) !== 'yes') return [];
   const uses = onLine(root, ['word', 'extglob_pattern'], line)
     .filter((n) => n.startPosition.row === line && hasExtglob(n.text) && !/^(extended_test|expansion)$/.test(ancestor(n, (a) => /^(extended_test|expansion|command_substitution|process_substitution)$/.test(a.type))?.type ?? '')); // (Not in `[[ ]]` nor in a `${x%…}`: bash reads them anyway.)
   if (!uses.length) return [];

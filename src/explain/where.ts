@@ -6,6 +6,7 @@ import { type EnvLink, groupSubshellLink, processOf, type SubshellLink } from '.
 import { stageUncounted } from '../semantics/vars';
 import { ancestor, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
+import { isBash } from '../shellfeatures';
 
 /**
  * Why a `{ }` group runs in a subshell (src/semantics/env.ts): it, or a statement that holds it in the same list,
@@ -81,7 +82,7 @@ export function shellEffectNote(cx: Explainer, n: SyntaxNode, effect: 'changes' 
  * word is not in the stage's own tree (`eval 'echo $BASH_SUBSHELL' | cat` prints 1).
  */
 export function stageCountNote(cx: Explainer, n: SyntaxNode, name: string): void {
-  if (!stageUncounted(name) || (cx.shell && cx.shell !== 'bash')) return;
+  if (!stageUncounted(name) || isBash(cx.shell) !== 'yes') return;
   const l = processOf(cx.state.env(n)).link;
   if (l?.kind !== 'subshell' || l.why !== 'pipeline-stage' || l.at.type !== 'command') return;
   if (ancestor(n, (a) => a === l.at)) cx.note(fact(cx.lang, 'bash-subshell-not-counted'), n);
@@ -91,7 +92,7 @@ export function stageCountNote(cx: Explainer, n: SyntaxNode, name: string): void
 export function pidNote(cx: Explainer, n: SyntaxNode): string {
   const sub = inSubshell(cx, n);
   if (!sub) return '';
-  const own = !cx.shell || cx.shell === 'bash' ? cx.s('（サブシェル自身の ID は `$BASHPID`）', ' (the subshell\'s own is `$BASHPID`)') : '';
+  const own = isBash(cx.shell) === 'yes' ? cx.s('（サブシェル自身の ID は `$BASHPID`）', ' (the subshell\'s own is `$BASHPID`)') : '';
   return sub.sure
     ? cx.s(`。ここはサブシェル（${sub.why}）の中だが、値はスクリプトのシェルのプロセス ID のまま${own}`, `. This is in a subshell (${sub.why}), but it is still the PID of the script's shell${own}`)
     : cx.s(`。サブシェル（${sub.why}）で実行されることがあるが、そのときも値はスクリプトのシェルのプロセス ID${own}`, `. This may run in a subshell (${sub.why}); it is still the PID of the script's shell there${own}`);

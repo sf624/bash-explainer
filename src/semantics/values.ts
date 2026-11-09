@@ -6,6 +6,7 @@ import { shellValueRefused, valueShell } from './shvalues';
 import { inAnotherShell, type StateModel } from './state';
 import { mayStopAround } from './stops';
 import { partMeaning, trustedPart, trustedVariable, wordMeaning, type WordMeaning } from './words';
+import { isBash } from '../shellfeatures';
 
 /** The value of an expansion: the text it gives, and the words that text makes where it is. */
 export interface ExpansionValue {
@@ -59,7 +60,7 @@ export function expansionValue(part: SyntaxNode, model: StateModel, around = tru
  * of `${…}` show it (src/explain/values.ts); they compute what bash gives, so only in bash.
  */
 export function variableValue(part: SyntaxNode, name: string, model: StateModel): string | null | undefined {
-  const w = model.shell === undefined || model.shell === 'bash' ? shownWord(part, model) : undefined;
+  const w = isBash(model.shell) === 'yes' ? shownWord(part, model) : undefined;
   return w && !stopsAround(part, model) ? trustedVariable(name, w, model) : undefined;
 }
 

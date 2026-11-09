@@ -14,7 +14,7 @@
 import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
 import { builtins } from '../dict/builtins';
-import { builtinIn, builtinShells, type RealShell } from '../shellfeatures';
+import { builtinIn, builtinShells, isBash, type RealShell } from '../shellfeatures';
 import { staticWordValue } from '../staticword';
 import type { ArgvParse } from '../argv/interpret';
 import { actedNames, actsOnNames } from '../argv/query';
@@ -298,7 +298,7 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
     const parse = model.at(at).expand;
     const alias = parse.aliases.get(name);
     const option_ = option(parse, 'shopt', 'expand_aliases');
-    const expands: Tri = !opts.shell || opts.shell === 'bash' ? (option_ === 'on' || option_ === 'unknown' ? option_ : 'off') : 'on';
+    const expands: Tri = isBash(opts.shell) === 'yes' ? (option_ === 'on' || option_ === 'unknown' ? option_ : 'off') : 'on';
     // (A quoted name is not an alias: `\ls` runs `ls` itself.)
     if (opts.quoted) {
       if (alias && alias.state !== 'off' && expands !== 'off') missed = { kind: 'alias', def: alias.at, why: 'quoted' };
@@ -688,7 +688,7 @@ export function nameFacts(res: NameResolution, opts: {
   // neither a builtin nor a program: `command source` in sh, where the shell has no such builtin, finds what `source` alone finds.)
   const by = slot && !(slot.slot.run === 'current-shell' && (res.kind === 'builtin' || none)) ? { by: slot.via } : {};
   // (In another shell's script, the texts say "the shell's builtin", not bash's.)
-  const notBash = opts.shell && opts.shell !== 'bash' ? { notBash: true as const } : {};
+  const notBash = isBash(opts.shell) !== 'yes' ? { notBash: true as const } : {};
   if (name.includes('/')) return { name, runs, ...by, also: [] };
   // (With no shell, nothing reaches the shell's other meanings of the name: only what a shell would have run.)
   if (res.kind === 'file' && res.noShell) return { name, runs, ...why, ...noProgram, noShell: res.noShell, also: [] };

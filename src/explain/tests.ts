@@ -28,6 +28,7 @@ import { fromEmbedded, same, skeletal, sortTokens } from './nodes';
 import { inArithmetic } from './reads';
 import { postfixStatusNote } from './status';
 import { arithChildren, arithNumber, bracketPart, commaNote, globToken, tilde } from './words';
+import { isBash } from '../shellfeatures';
 
 /**
  * The text of the binary operator `op` of a test at `n`: for `<` and `>` in bash, with how they compare there
@@ -40,7 +41,7 @@ function binaryText(cx: Explainer, n: SyntaxNode, op: string, double: boolean, b
     return cx.s(`${cx.t(binaryTestOps[op])}。ただし GNU coreutils の \`test\` にこの演算子はなく、「binary operator expected」のエラーになる（終了ステータス 2）`,
       `${cx.t(binaryTestOps[op])}. But GNU coreutils' \`test\` has no such operator: it says "binary operator expected" (status 2)`);
   }
-  if (cx.shell && cx.shell !== 'bash') return cx.t(binaryTestOps[op]);
+  if (isBash(cx.shell) !== 'yes') return cx.t(binaryTestOps[op]);
   const st = cx.state.at(n).run;
   const on = (kind: 'set' | 'shopt', name: string): 'on' | 'off' | 'unknown' => {
     const v = option(st, kind, name);

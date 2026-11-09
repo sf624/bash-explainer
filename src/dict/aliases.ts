@@ -1,4 +1,5 @@
 import { type Shell, shellFromName } from '../dialect';
+import { isBash } from '../shellfeatures';
 import { tx, type Text } from '../i18n';
 import { builtins } from './builtins';
 import { commands } from './commands';
@@ -68,7 +69,7 @@ export function specName(name: string): string {
   const base = name.slice(name.lastIndexOf('/') + 1);
   if (Object.prototype.hasOwnProperty.call(commands, base)) return base;
   const shell = shellFromName(base);
-  return aliasOf(base)?.as ?? (shell === 'bash' ? 'bash' : shell ? 'sh' : base);
+  return aliasOf(base)?.as ?? (shell && isBash(shell) === 'yes' ? 'bash' : shell ? 'sh' : base);
 }
 
 /**
@@ -84,7 +85,7 @@ export function lookupCommand(name: string): CommandSpec | undefined {
   const alias = aliasOf(base);
   if (alias) return commands[alias.as];
   const shell = base === 'busybox' ? undefined : shellFromName(base);
-  if (shell === 'bash') return commands.bash;
+  if (shell && isBash(shell) === 'yes') return commands.bash;
   if (shell) return shellSpec(shell);
   return undefined;
 }
