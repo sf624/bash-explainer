@@ -31,7 +31,7 @@ import { type AliasResolution, aliasesAfter, assignmentsOf, type MaybeHashed, ty
 import { docLine, option, type ShellState } from '../semantics/state';
 import { wordMeaning } from '../semantics/words';
 import { isPlainWord, literalContent, staticWordValue, surelyHasSlash } from '../staticword';
-import { isBash, type RealShell } from '../shellfeatures';
+import { asBash, isBash, type RealShell } from '../shellfeatures';
 import { returnInSubstitution, scopeOf } from '../substitution-tokens';
 import { field, fields, redirectionsOf, type SyntaxNode, token, wordsText } from '../syntax/tree';
 import { commandTest } from '../testexpr';
@@ -225,7 +225,7 @@ function commandParts(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode): { pre
  * the shell that runs it (`processOf`): the script, a subshell, or one not known to be either.
  */
 function localStops(cx: Explainer, n: SyntaxNode): false | 'script' | 'subshell' | 'shell' {
-  if (!cx.shell || cx.shell === 'bash') return false;
+  if (asBash('localOutsideStops', cx.shell) === 'yes') return false;
   const p = processOf(cx.state.env(n));
   return p.kind === 'main' ? 'script' : p.kind === 'subshell' && p.sure ? 'subshell' : 'shell';
 }

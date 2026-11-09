@@ -5,6 +5,7 @@ import type { Token } from '../analyzer-types';
 import { type ArgRole, type ArgvParse, type FieldsRole } from '../argv/interpret';
 import { namespaceOf } from '../argv/query';
 import { OPTION_ROLES } from '../argv/regroup';
+import { asBash } from '../shellfeatures';
 import { validName } from '../semantics/posixexits';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
 import { builtins } from '../dict/builtins';
@@ -245,7 +246,7 @@ function bracedUnset(cx: Explainer, a: SyntaxNode, step: ExpansionStep, space: R
 /** `unset` of a name no variable can have (`{a,b}` with no brace expansion, `1a`), in the namespace `space`. */
 function badName(cx: Explainer, name: string, space: ReturnType<typeof namespaceOf>): string {
   // (dash and POSIX sh: an error of a special builtin, which ends the shell.)
-  if (['sh', 'dash', 'ash'].includes(cx.shell ?? '')) {
+  if (asBash('badNameStops', cx.shell) !== 'yes') {
     return cx.s(`\`${name}\` は変数名にならないので、エラーになりシェルが終了する（dash では \`bad variable name\`）`, `\`${name}\` is not a valid variable name: an error, and the shell exits (dash: "bad variable name")`);
   }
   if (space === 'variable') return cx.s(`\`${name}\` は変数名にならないので、何も削除しない（エラー、終了ステータス 1）`, `\`${name}\` is not a valid variable name, so nothing is unset (an error, status 1)`);

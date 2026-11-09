@@ -20,6 +20,7 @@ import type { BuiltinCall, CommandSlot, CommandSpec } from '../argv/spec';
 import { argWordFor } from '../argv/words';
 import { restrictedByName, shellFromName } from '../dialect';
 import type { Shell } from '../dialect';
+import { asBash, isBash } from '../shellfeatures';
 import { field, isShebang, nameText, prefixAssignments, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { staticWordValue } from '../staticword';
 import type { HostId } from '../hosts';
@@ -129,8 +130,8 @@ export function stderrPiped(n: SyntaxNode): boolean {
  * and job control (`set -m`) off.
  */
 export function lastStageInShell(st: ShellState, shell?: Shell): Tri {
-  if (shell === 'zsh' || shell === 'ksh') return 'on';
-  if (shell && shell !== 'bash') return 'off';
+  if (asBash('lastStageShell', shell) === 'no') return 'on';
+  if (isBash(shell) !== 'yes') return 'off';
   const monitor = st.set.get('monitor') ?? 'default';
   const lastpipe = st.shopt.get('lastpipe') ?? 'default';
   if (monitor === 'on' || lastpipe === 'off' || lastpipe === 'default') return 'off';
