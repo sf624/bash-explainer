@@ -1,5 +1,6 @@
-import type { CommandSpec } from '../argv/spec';
-import { cmd, operand, OptSpec } from './types';
+import type { CommandSpec, OptionSpec } from '../argv/spec';
+import { tx } from '../i18n';
+import { cmd, operand, optionOf, OptSpec } from './types';
 
 // The command-line clients of databases: psql and pg_dump of PostgreSQL 16.15, mysql and mysqldump of MySQL 8.0.46 (not
 // MariaDB, whose options differ in places), sqlite3 3.54.1. Their options are those of each `--help` (test/db-clients.test.ts
@@ -20,18 +21,29 @@ import { cmd, operand, OptSpec } from './types';
 //    (a new one is created if it is missing), the words after it are SQL statements or dot-commands (`.tables`, `.read f`,
 //    `.mode json`) that run one after the other; options may come between them, and `--` ends the options.
 
-const PW_NOTE = '（コマンド行に書くと他のユーザーに見える）';
-const PW_NOTE_EN = '(written on the command line, other users can see it)';
+/**
+ * `-p`, `--password` and the passwords of the other factors: the value is only in the same word. With one the text warns that
+ * a password on the command line can be seen by other users; alone, the client asks on the terminal, and nothing is on the line.
+ */
+const PASSWORD_OPTIONS: OptionSpec[] = ([
+  ['-p|--password', '', ''],
+  ['--password1', '第1認証要素の', ' for the first authentication factor'],
+  ['--password2', '第2認証要素の', ' for the second authentication factor'],
+  ['--password3', '第3認証要素の', ' for the third authentication factor'],
+] as [string, string, string][]).map(([names, ja, en]) => ({
+  ...optionOf([names, `${ja}パスワード（コマンド行に書くと他のユーザーに見える）`, `password${en} (written on the command line, other users can see it)`, 'attached']),
+  noValue: {
+    text: tx(`${ja}パスワードを端末で尋ねる（\`-p\` の次の語はパスワードでなく、データベース名など別の語として読む）`, `ask for the password${en} on the terminal (the next word is not the password: \`-p secret\` takes \`secret\` as the database)`),
+    offText: tx('パスワードを端末で尋ねる', 'ask for the password on the terminal'),
+  },
+}));
 
 /** Connection options both MySQL clients share. */
-const MYSQL_CONNECT: OptSpec[] = [
+const MYSQL_CONNECT: (OptSpec | OptionSpec)[] = [
   ['-h|--host', '接続するホスト', 'host to connect to', 'arg'],
   ['-P|--port', '接続するポート番号（0 は既定: 設定ファイル、`$MYSQL_TCP_PORT`、`/etc/services`、3306 の順）', 'port number to connect to (0: the default, from the option files, `$MYSQL_TCP_PORT`, `/etc/services`, then 3306)', 'arg'],
   ['-u|--user', 'ログインするユーザー（省略すると今のユーザー）', 'user to log in as (default: the current user)', 'arg'],
-  ['-p|--password', `パスワード。\`-pパスワード\` のように値は同じ語に続けて書く。\`-p\` 単独だと端末で尋ね、\`-p 値\` は値をデータベース名として読む${PW_NOTE}`, `password: the value follows in the same word (\`-pSECRET\`; \`-p\` alone asks on the terminal, and \`-p SECRET\` takes SECRET as the database name) ${PW_NOTE_EN}`, 'attached'],
-  ['--password1', '第1認証要素のパスワード（`--password` と同じ書き方）', 'password for the first authentication factor (written as `--password`)', 'attached'],
-  ['--password2', '第2認証要素のパスワード（`--password` と同じ書き方）', 'password for the second authentication factor (written as `--password`)', 'attached'],
-  ['--password3', '第3認証要素のパスワード（`--password` と同じ書き方）', 'password for the third authentication factor (written as `--password`)', 'attached'],
+  ...PASSWORD_OPTIONS,
   ['-S|--socket', '接続する UNIX ドメインソケットのファイル', 'UNIX socket file to connect through', 'arg'],
   ['--protocol', '接続に使うプロトコル（`tcp`、`socket`、`pipe`、`memory`）', 'protocol for the connection (`tcp`, `socket`, `pipe`, `memory`)', 'arg'],
   ['--bind-address', 'クライアント側で結びつける IP アドレス', 'IP address to bind to on the client side', 'arg'],
@@ -68,7 +80,7 @@ const MYSQL_CONNECT: OptSpec[] = [
   ['--login-path', '（最初の語のときだけ）ログインファイル（`mysql_config_editor` で作る）の、指定した名前を読む', '(only as the first word) the given name to read from the login file (made by `mysql_config_editor`)', 'arg'],
 ];
 
-const MYSQL_OPTIONS: OptSpec[] = [
+const MYSQL_OPTIONS: (OptSpec | OptionSpec)[] = [
   ['-?|-I|--help', '使い方を表示する', 'print the usage'],
   ['-V|--version', '版を表示する', 'print the version'],
   ['-e|--execute', '文を実行して終わる（強制と履歴を無効にする）。`;` で区切って複数書ける', 'run the statements and quit (it turns off `--force` and the history file); several may be given, separated by `;`', 'arg'],
@@ -139,7 +151,7 @@ const MYSQL_OPTIONS: OptSpec[] = [
   ...MYSQL_CONNECT,
 ];
 
-const DUMP_OPTIONS: OptSpec[] = [
+const DUMP_OPTIONS: (OptSpec | OptionSpec)[] = [
   ['-?|--help', '使い方を表示する', 'print the usage'],
   ['-V|--version', '版を表示する', 'print the version'],
   ['-A|--all-databases', 'すべてのデータベースをダンプする（`--databases` に各データベースを並べるのと同じ）', 'dump all the databases (as `--databases` with every database)'],
