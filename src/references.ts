@@ -1,6 +1,6 @@
 import type { Lang } from './i18n';
 import { manualLabel, SECTIONS } from './manual';
-import { PYTHON_REFERENCE } from './python-reference';
+import { pythonDocs } from './python-reference';
 
 // What an explanation or a note cites (`Token.refs`, the sections of a fact in src/messages.ts): a section of the bash
 // manual by its number ('3.8', src/manual.ts), or another document by an id of its own, from the table below: manual pages
@@ -17,7 +17,7 @@ export interface ManPage { kind: 'man' | 'python'; page: string; section?: strin
 /** The other documents cited, by id: `page(section)` for a manual page, `python-…` for Python's documentation. */
 const MAN_PAGES: Readonly<Record<string, ManPage>> = {
   'execve(2)': { kind: 'man', page: 'execve', section: '2', anchor: 'Interpreter scripts', url: 'https://man7.org/linux/man-pages/man2/execve.2.html' },
-  'python-re-functions': { kind: 'python', page: 're', anchor: 'Functions', url: `https://docs.python.org/${PYTHON_REFERENCE}/library/re.html#functions` },
+  'python-re-functions': { kind: 'python', page: 're', anchor: 'Functions', url: pythonDocs('library/re.html#functions') },
 };
 
 /** A reference as every output names it: `text`, its link's text (§3.8, execve(2), re); `title`, what it is about; `url`, its page. */
