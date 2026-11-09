@@ -80,9 +80,9 @@ function recordExamples(): Examples {
   try {
     const run = (args: string[]) => spawnSync(bazel!, args, { cwd: ws, env, encoding: 'utf8', timeout: 900000, maxBuffer: 64 << 20 });
     const base = run(['info', 'output_base']).stdout.trim();
-    /** Bazel's stdout with what is of this machine named: the copy, the output base, an action's key. */
+    /** Bazel's stdout with what is of this machine named: the copy, the output base, an action's key, and (bazel pads a `#   file:line:col` frame to the longest, so by the path's length) the padding before `in`. */
     const normalise = (text: string): string[] => text.split(ws).join('<workspace>').split(base).join('<output_base>')
-      .split('\n').map((l) => l.replace(/^(\s*ActionKey: ).*$/, '$1<key>'));
+      .split('\n').map((l) => l.replace(/^(\s*ActionKey: ).*$/, '$1<key>').replace(/^(#   \S+) +in /, '$1 in '));
     const rows = old.rows.map((row): ExampleRow => {
       const { command, options, expression } = row;
       const r = run([command, '--noshow_progress', ...(options ?? []), '--', expression]);
