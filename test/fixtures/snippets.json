@@ -1142,6 +1142,7 @@
  "f()\n{ echo; }",
  "f() (echo)",
  "f() {\n  [ -n \"$D\" ] || return 1\n  rm -rf \"$D\"/*\n}",
+ "f() {\n  echo \"$1\"\n  x=$1\n  return\n  echo never\n}\na=1; f a\na=2; f b\nif false; then echo no; fi\necho \"$x\"\n",
  "f() {\n  local x=$(false)\n}",
  "f() {\n  local x=$(false) \\\n    y=1\n}",
  "f() {\n  shopt -s extglob\n  rm !(keep).log\n}",

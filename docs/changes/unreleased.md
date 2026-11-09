@@ -30,6 +30,7 @@ Checked with bazel 9.3.2 (`bazel help startup_options`, `bazel help COMMAND`, `b
 - **What.** One line after the list, or after "No problems": how many constructs of the script POSIX sh lacks or runs differently ("2 constructs not in POSIX sh"; the dialect issues for sh, with the codes and comments you turned off left out), and a button **Check as POSIX sh** that makes the choice the chip's popover makes. Choose Auto in the chip to go back. The line stays when the list is folded. On a phone it is the last line of the Problems tab.
 - **What the number is not.** It is not the length of the list after the button. The list of a sh script also has the notes sh's explanations add (`globstar-unsupported`…), and the notes the list already has for bash.
 - **Not a problem.** The Problems counts, the list, the squiggles, `--check` and the Action do not include it.
+- **A large script.** Past 2,000 commands the line says "POSIX sh: not checked in a script this large", with the same button: checking reads the whole script a second time, as sh, which took 6 to 7 s for nvm.sh (3,345 commands) and under 0.3 s for the completion scripts of bash and git (914 and 1,253 commands). The limit is a size, so every run decides the same.
 
 ## Changed
 
@@ -152,6 +153,17 @@ The usability test of 2026-11-06 found the sheet hard to hold (docs/design/usabi
 - **The half height** stays at 55% of the window. With the stages of a pipeline folded at depth 2, a line's **In short** fits in it with the grab strip: its last row ends 210 px or less down the panel, which shows 272 px at 390 x 664 (an iPhone 13's Safari), 336 px at 360 x 780 and 371 px at 390 x 844 (`who | wc -l`, `grep -c "$USER" /var/log/auth.log`, and a line of five commands).
 
 ## Fixed
+
+### Large scripts on the web page
+
+Finding the code that never runs no longer merges the states each statement ran with (most of what a long script cost), and the hint toward POSIX sh no longer reads a script of more than 2,000 commands a second time. Measured in headless Chromium, nvm.sh (4,620 lines, no shebang) pasted over the sample, then five keys 150 ms apart:
+
+| | Before | After |
+|---|---|---|
+| Paste, until the page is idle | 17.0 s blocked (the longest task 7.3 s) | 7.8 to 8.3 s (the longest 6.4 s) |
+| Five keys | 56 s blocked; a key took up to 11 s to appear | 29 s blocked; a key takes up to 7 s to appear |
+
+The page still reads the whole script again after each pause in typing; running that work only once typing rests is planned (#770).
 
 ### More bash-only forms in a sh script
 

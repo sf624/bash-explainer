@@ -276,7 +276,7 @@ export function issueFilter(doc: ShellDocument | undefined, settings: Settings, 
  * asked for; the codes the file itself turns off are left out in both) and `sh` (how many constructs POSIX sh lacks, for a hint: `shProblemCount`). The warnings and caveats of the explanations
  * (`noteIssues`) are explained with the settings' options, and `explain` (the yq flavour a panel chose).
  */
-export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: (doc: ShellDocument) => Shells, lang: Lang, settings: Settings, surface: Surface, explain: ExplainOptions = {}): { readonly all: DocumentIssue[]; shown: DocumentIssue[]; readonly faded: DeadRange[]; readonly sh: number | undefined } {
+export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: (doc: ShellDocument) => Shells, lang: Lang, settings: Settings, surface: Surface, explain: ExplainOptions = {}): { readonly all: DocumentIssue[]; shown: DocumentIssue[]; readonly faded: DeadRange[]; readonly sh: ShCount | undefined } {
   let doc: ShellDocument | undefined;
   let raw: DocumentIssue[] | undefined;
   let base: DocumentIssue[] | undefined;
@@ -369,17 +369,30 @@ function dialectProblems(doc: ShellDocument, lang: Lang, shell: Shell | undefine
 }
 
 /**
+ * The most commands (`command` nodes) a script may have for the hint toward POSIX sh to count its constructs. Counting
+ * builds a second model of the script, for sh, which can cost as much as the first: a quarter of a second for the large
+ * scripts of a system (bash-completion's own, 914 commands; the completion of git, 1,253), six seconds for nvm.sh (3,345
+ * commands, whose functions call one another from many places). A size, not a time, so that every run decides the same.
+ */
+export const SH_COUNT_COMMANDS = 2000;
+
+/** What the hint toward POSIX sh says: how many constructs POSIX sh lacks, or that a script this large is not counted (`SH_COUNT_COMMANDS`). */
+export type ShCount = number | 'too-large';
+
+/**
  * How many constructs of the script POSIX sh lacks or runs differently, for the web page's hint toward POSIX sh
  * (docs/design/usability-9.md, 2.1): the dialect issues for sh (`dialectIssues`), made as the strip makes them for a sh
  * script (`dialectProblems`) and filtered as it filters (`issueFilter`: the settings, the ignored codes, the file's own
  * comments). It is not what the strip would list as a whole once the script is read as sh: that also has the notes of sh's
  * explanations (`globstar-unsupported`…), and the notes the strip already lists for bash. Undefined where there is no hint: a
- * host file (bats too), a shell chosen (the user's choice stands), a script whose shell is said by anything (a shebang in any form, a directive, a file name: the author chose; docs/design/usability-9.md, Q2), a text not surely a script, or none such. Never a problem
- * itself: it is in none of `diagnosticsFor`'s lists.
+ * host file (bats too), a shell chosen (the user's choice stands), a script whose shell is said by anything (a shebang in any form, a directive, a file name: the author chose; docs/design/usability-9.md, Q2), a text not surely a script, or none such. `too-large` for a script of more
+ * than `SH_COUNT_COMMANDS` commands: the hint is shown without a count, and its button reads the script as sh, which
+ * lists them. Never a problem itself: it is in none of `diagnosticsFor`'s lists.
  */
-export function shProblemCount(doc: ShellDocument, lang: Lang, shells: Shells, settings: Settings, surface: Surface): number | undefined {
+export function shProblemCount(doc: ShellDocument, lang: Lang, shells: Shells, settings: Settings, surface: Surface): ShCount | undefined {
   const { detected } = shells;
   if (doc.extracted || doc.tree.unread || shells.forced || !shells.script || !detected || detected.shell !== 'bash' || detected.source !== 'default') return undefined;
+  if (descendants(doc.tree.root, ['command']).length > SH_COUNT_COMMANDS) return 'too-large';
   const keep = issueFilter(doc, settings, surface);
   // (A bug in this second reading loses the hint, not the problems.)
   const n = contained(

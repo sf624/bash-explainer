@@ -46,6 +46,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A Dockerfile's `RUN` is checked for the `/bin/sh` of its stage's base image: busybox ash under `FROM alpine`, dash under `FROM debian` or `ubuntu`. Before, `RUN [[ -f x ]]` under `FROM alpine` was an Error, and failed `--check`.
 - In a `#!/bin/sh` script, `source`, `let` and other builtins that dash lacks are no longer called builtins; the panel says in which shells they are not found.
 - In a `#!/bin/sh` script, `$RANDOM`, `$UID` and other variables that dash or busybox ash do not set are explained as plain variables there, as the line's warning says. `$SRANDOM`, `$OPTERR` and `$HISTCMD` now get that warning too.
+- On the web page, a large script freezes the page for about half as long: pasting nvm.sh (4,600 lines) blocks it for 8 s instead of 17 s. The POSIX sh hint does not check a script that large.
 
 ## 0.10.0
 

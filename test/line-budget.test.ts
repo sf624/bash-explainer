@@ -631,6 +631,31 @@ describe('one line must not stop the whole tool', () => {
       }
     });
 
+    it('the code that never runs: found without merging the states a statement ran with', () => {
+      // (A body called with other states ran with each: `runAt` merges them, which was most of the time a long script
+      // took (nvm.sh), though `dead` only needs to know whether the walk ran the node.)
+      const tree = parser.parse('f() {\n  echo "$1"\n  x=$1\n  return\n  echo never\n}\na=1; f a\na=2; f b\nif false; then echo no; fi\necho "$x"\n');
+      const model = shellState(tree, 'bash');
+      const proto = Walker.prototype as unknown as { runAt: (n: SyntaxNode) => unknown };
+      const real = proto.runAt;
+      let asked = 0;
+      proto.runAt = function (this: Walker, n: SyntaxNode) {
+        asked++;
+        return real.call(this, n);
+      };
+      try {
+        const dead = descendants(tree.root, ['command']).filter((c) => model.dead(c)).map((c) => c.text);
+        assert.deepStrictEqual(dead, ['echo never', 'echo no']);
+        assert.strictEqual(asked, 0);
+      } finally {
+        proto.runAt = real;
+      }
+      // (The body's first line did run with two states: `a` is 1 in one, 2 in the other, and not known once they are merged.)
+      const a = model.at(descendants(tree.root, ['command']).find((c) => c.text === 'echo "$1"')!).run.variables.get('a');
+      assert.strictEqual(a?.set, 'on');
+      assert.strictEqual(a?.value, undefined);
+    });
+
     it('aliases that double: a walk follows so many, and then trusts nothing', () => {
       const lines = Array.from({ length: 16 }, (_, i) => `alias a${i + 1}='a${i}; a${i}'`);
       const script = `shopt -s expand_aliases\n${lines.join('\n')}\na16\n`;

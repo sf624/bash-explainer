@@ -6,6 +6,7 @@
 import * as assert from 'assert';
 import type { Browser, BrowserContextOptions, Page } from 'playwright-core';
 import { dialectIssues } from '../src/dialect';
+import { SH_COUNT_COMMANDS } from '../src/document';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { currentShell, openSite, pickKind, problemRows, problemsShown, until } from './support/site';
 
@@ -13,6 +14,8 @@ import { currentShell, openSite, pickKind, problemRows, problemsShown, until } f
 const ONLY_SH = '[[ -f a ]] && echo y\narr=(a b)\n';
 // Bash has one problem here (`local` outside a function); POSIX sh three more (and the same one).
 const BOTH = `${ONLY_SH}local v=1\n`;
+// More commands than the hint counts (src/document.ts, `SH_COUNT_COMMANDS`): the line says it does not count them.
+const LARGE = `${BOTH}${'echo a\n'.repeat(SH_COUNT_COMMANDS)}`;
 
 const parser = createUnbashParser();
 /** The count the hint must say: the dialect issues of the text for sh. */
@@ -36,7 +39,15 @@ describe('the web page: the hint toward POSIX sh', function () {
     await page.locator('.cm-content').focus();
     await page.keyboard.press('Control+A');
     const worked = Number(await page.locator('#problems-sh').getAttribute('data-worked') ?? 0);
-    await page.keyboard.insertText(text);
+    // (A long text is pasted, as the context menu does: `insertText` of so much is slow.)
+    if (text.length < 1000) await page.keyboard.insertText(text);
+    else {
+      await page.evaluate(`(() => {
+        const data = new DataTransfer();
+        data.setData('text/plain', ${JSON.stringify(text)});
+        document.querySelector('.cm-content').dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+      })()`);
+    }
     // (The page starts with the sample, which has many problems: the text is checked once few are left. The sample has a shebang, so no hint is left from it.)
     await until('the text checked', () => problemRows(page).count(), (c) => c <= 10, 15000);
     // (The hint is worked out when the page is idle, shown or not: its count of runs says it was worked out for the text.)
@@ -179,30 +190,40 @@ describe('the web page: the hint toward POSIX sh', function () {
     await page.context().close();
   });
 
-  for (const width of [390, 1280]) {
+  it('says that a script this large is not counted, with the same button', async () => {
     for (const lang of ['en', 'ja'] as const) {
-      it(`lays out inside the pane without overflow or overlap: ${width} px, ${lang}`, async () => {
-        const page = await open(desktop(width, lang), BOTH);
-        await hint(page).waitFor({ state: 'visible' });
-        const boxes = await page.evaluate(`['#source', '#problems', '.problems-strip', '#problems-sh', '#sh-hint-text', '#sh-hint-button'].map((s) => {
-          const r = document.querySelector(s).getBoundingClientRect();
-          return { x: r.x, y: r.y, w: r.width, h: r.height };
-        })`) as { x: number; y: number; w: number; h: number }[];
-        const [pane, box, strip, line, text, button] = boxes;
-        const at = JSON.stringify(boxes);
-        for (const b of [line, text, button]) assert.ok(b.x >= pane.x - 0.5 && b.x + b.w <= pane.x + pane.w + 0.5, `inside the pane: ${at}`);
-        assert.ok(line.y + line.h <= box.y + box.h + 0.5 && line.y >= strip.y + strip.h - 0.5, `below the strip, inside the box: ${at}`);
-        // The text and the button do not overlap: side by side, or one above the other.
-        assert.ok(text.x + text.w <= button.x + 0.5 || text.y + text.h <= button.y + 0.5, `no overlap: ${at}`);
-        for (const b of [text, button]) assert.ok(b.y >= line.y - 0.5 && b.y + b.h <= line.y + line.h + 0.5, `inside the line: ${at}`);
-        // (A narrow page has the touch targets of 44 px.)
-        const narrow = await page.evaluate('document.documentElement.classList.contains("narrow")');
-        assert.ok(button.h >= (narrow ? 44 : 28) - 0.5, at);
-        assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, at);
-        assert.strictEqual(await page.locator('#sh-hint-text').evaluate((e) => e.scrollWidth <= e.clientWidth + 1), true, at);
-        await page.context().close();
-      });
+      const page = await open(desktop(1280, lang), LARGE);
+      await hint(page).waitFor({ state: 'visible' });
+      assert.strictEqual(await page.locator('#sh-hint-text').textContent(), lang === 'en' ? 'POSIX sh: not checked in a script this large' : 'POSIX sh：大きなスクリプトでは確認しない');
+      assert.strictEqual(await page.locator('#sh-hint-button').textContent(), lang === 'en' ? 'Check as POSIX sh' : 'POSIX sh として確認');
+      await page.locator('#sh-hint-button').click();
+      await until('the shell', () => currentShell(page), (s) => s === 'sh');
+      await page.context().close();
     }
+  });
+
+  for (const [width, lang, script] of [390, 1280].flatMap((w) => (['en', 'ja'] as const).flatMap((l) => [[w, l, BOTH], [w, l, LARGE]] as const))) {
+    it(`lays out inside the pane without overflow or overlap: ${width} px, ${lang}${script === LARGE ? ', a script too large to count' : ''}`, async () => {
+      const page = await open(desktop(width, lang), script);
+      await hint(page).waitFor({ state: 'visible' });
+      const boxes = await page.evaluate(`['#source', '#problems', '.problems-strip', '#problems-sh', '#sh-hint-text', '#sh-hint-button'].map((s) => {
+        const r = document.querySelector(s).getBoundingClientRect();
+        return { x: r.x, y: r.y, w: r.width, h: r.height };
+      })`) as { x: number; y: number; w: number; h: number }[];
+      const [pane, box, strip, line, text, button] = boxes;
+      const at = JSON.stringify(boxes);
+      for (const b of [line, text, button]) assert.ok(b.x >= pane.x - 0.5 && b.x + b.w <= pane.x + pane.w + 0.5, `inside the pane: ${at}`);
+      assert.ok(line.y + line.h <= box.y + box.h + 0.5 && line.y >= strip.y + strip.h - 0.5, `below the strip, inside the box: ${at}`);
+      // The text and the button do not overlap: side by side, or one above the other.
+      assert.ok(text.x + text.w <= button.x + 0.5 || text.y + text.h <= button.y + 0.5, `no overlap: ${at}`);
+      for (const b of [text, button]) assert.ok(b.y >= line.y - 0.5 && b.y + b.h <= line.y + line.h + 0.5, `inside the line: ${at}`);
+      // (A narrow page has the touch targets of 44 px.)
+      const narrow = await page.evaluate('document.documentElement.classList.contains("narrow")');
+      assert.ok(button.h >= (narrow ? 44 : 28) - 0.5, at);
+      assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, at);
+      assert.strictEqual(await page.locator('#sh-hint-text').evaluate((e) => e.scrollWidth <= e.clientWidth + 1), true, at);
+      await page.context().close();
+    });
   }
 
   it('keeps the focus in the sheet after the phone\'s button: on the first problem, or on the Problems tab', async () => {

@@ -27,6 +27,8 @@ export const TEXT = {
     noProblems: 'No problems',
     // The strip's hint toward POSIX sh (web/problem-list.ts): how many constructs the script has that POSIX sh lacks or runs differently (the dialect issues for sh), and the button that checks the script as sh.
     shHint: (n: number) => `${n} ${n === 1 ? 'construct' : 'constructs'} not in POSIX sh`,
+    // (A script too large to count them when idle: src/document.ts, `SH_COUNT_COMMANDS`; the button still reads it as sh.)
+    shHintLarge: 'POSIX sh: not checked in a script this large',
     shHintButton: 'Check as POSIX sh',
     problemsSaid: (counts: readonly string[]) => `Problems: ${counts.join(', ')}`,
     problemPosSaid: (line: number, i: number, n: number) => `Problem ${i} of ${n}, ${lineLabel('en', line, 'inline')}`,
@@ -208,6 +210,7 @@ export const TEXT = {
     problems: '問題',
     noProblems: '問題なし',
     shHint: (n: number) => `POSIX sh にない書き方が ${n} 件`,
+    shHintLarge: 'POSIX sh：大きなスクリプトでは確認しない',
     shHintButton: 'POSIX sh として確認',
     problemsSaid: (counts: readonly string[]) => `問題：${counts.join('、')}`,
     problemPosSaid: (line: number, i: number, n: number) => `${n} 件中 ${i} 件目の問題、${lineLabel('ja', line)}`,

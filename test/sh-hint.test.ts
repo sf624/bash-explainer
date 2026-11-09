@@ -6,12 +6,12 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { dialectIssues, readShell } from '../src/dialect';
-import { diagnosticsFor, documentIssues, shProblemCount, type ShellDocument, type Shells } from '../src/document';
+import { diagnosticsFor, documentIssues, SH_COUNT_COMMANDS, type ShCount, shProblemCount, type ShellDocument, type Shells } from '../src/document';
 import { shellsOf } from '../src/document-setup';
 import { extractShell } from '../src/hosts';
 import { defaultSettings, type Settings } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import type { BashParser } from '../src/syntax/tree';
+import { type BashParser, descendants } from '../src/syntax/tree';
 
 let parser: BashParser;
 before(() => {
@@ -21,7 +21,12 @@ before(() => {
 const script = (text: string): ShellDocument => ({ lines: text.split('\n'), tree: parser.parse(text) });
 const shellsFor = (text: string, fileName = 'x', forced?: Shells['forced']) => shellsOf(text.split('\n'), fileName, forced, 'said');
 const settings = (over: Partial<Settings> = {}): Settings => ({ ...defaultSettings(), ...over });
-const countOf = (text: string, fileName = 'x', over: Partial<Settings> = {}, forced?: Shells['forced']) => shProblemCount(script(text), 'en', shellsFor(text, fileName, forced), settings(over), 'web');
+/** A count the hint says: never `too-large` for the small scripts here. */
+const counted = (c: ShCount | undefined): number | undefined => {
+  assert.notStrictEqual(c, 'too-large');
+  return c as number | undefined;
+};
+const countOf = (text: string, fileName = 'x', over: Partial<Settings> = {}, forced?: Shells['forced']) => counted(shProblemCount(script(text), 'en', shellsFor(text, fileName, forced), settings(over), 'web'));
 
 // Two features POSIX sh lacks, one that dash runs but POSIX does not have, and a behaviour: all dialect issues for sh.
 const BODY = '[[ -f a ]] && echo y\nlocal v=1\narr=(a b)\n';
@@ -73,7 +78,7 @@ describe('the hint toward POSIX sh: the count', () => {
   it('is the number of dialect issues for sh, all of which the list has once the script is read as sh', () => {
     for (const text of [BODY, `${BODY}echo "$x"\n`, sample]) {
       const doc = script(text);
-      const hint = shProblemCount(doc, 'en', shellsFor(text), settings(), 'web');
+      const hint = counted(shProblemCount(doc, 'en', shellsFor(text), settings(), 'web'));
       assert.ok(hint, text.slice(0, 30));
       const dialect = dialectIssues(doc.tree, 'sh', 'en');
       // (Code that never runs lowers or drops an issue: the call of the strip is the count, the bare issues an upper bound. The list as sh has more: the notes of sh's explanations.)
@@ -91,7 +96,7 @@ describe('the hint toward POSIX sh: the count', () => {
     assert.strictEqual(found.sh, shProblemCount(doc, 'en', shellsFor(text), settings(), 'web'));
     // (The hint is no problem: neither the shown ones nor all of them hold a sh problem the bash reading does not have.)
     const sh = documentIssues(doc, 'en', shellsFor(text, 'x', 'sh')).map((i) => i.code);
-    assert.ok(found.sh! > 0 && sh.length > found.all.length);
+    assert.ok(counted(found.sh)! > 0 && sh.length > found.all.length);
     assert.deepStrictEqual(found.shown, found.all.filter((i) => !i.pitfall || settings()['diagnostics.pitfalls']));
     assert.strictEqual(diagnosticsFor(() => undefined, () => ({}), 'en', settings(), 'web').sh, undefined);
     assert.strictEqual(diagnosticsFor(() => script('#!/bin/bash\n' + BODY), () => shellsFor('#!/bin/bash\n' + BODY), 'en', settings(), 'web').sh, undefined);
@@ -108,5 +113,17 @@ describe('the hint toward POSIX sh: the count', () => {
       assert.strictEqual(countOf(`${first}\n${BODY}`), undefined, first);
     }
     assert.strictEqual(readShell(BODY).source, 'default');
+  });
+
+  it('is not counted past SH_COUNT_COMMANDS commands: the hint says so, without the second model', () => {
+    const of = (commands: number, first = '') => {
+      const text = `${first}${BODY}${'echo a\n'.repeat(commands - 3)}`;
+      assert.strictEqual(descendants(script(text).tree.root, ['command']).length, commands);
+      return shProblemCount(script(text), 'en', shellsFor(text), settings(), 'web');
+    };
+    assert.strictEqual(typeof of(SH_COUNT_COMMANDS), 'number');
+    assert.strictEqual(of(SH_COUNT_COMMANDS + 1), 'too-large');
+    // (Only where there is a hint at all.)
+    assert.strictEqual(of(SH_COUNT_COMMANDS + 1, '#!/bin/bash\n'), undefined);
   });
 });
