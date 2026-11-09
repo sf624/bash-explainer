@@ -24,6 +24,8 @@ export const commandAliases: Record<string, CommandAlias> = {
   mawk: { as: 'awk', gnu: false },
   nawk: { as: 'awk', gnu: false },
   python: { as: 'python3' },
+  mvnw: { as: 'mvn' },
+  gradlew: { as: 'gradle' },
 };
 
 /** The alias a program name is (`/usr/bin/egrep` too), or undefined. */

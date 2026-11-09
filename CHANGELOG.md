@@ -12,6 +12,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - buildozer commands are explained: in `buildozer 'add deps //lib:x' //app:main`, the command, its arguments and each label say what they do. Under `set -e`, a warning says that buildozer's status 3 (no file changed) stops the script.
 - unused_deps commands are explained: in `unused_deps //app:main`, the target pattern says what it selects, and the summary says that it checks only Java rules and prints buildozer commands, changing nothing itself.
 - `cc`, `c++`, `g++`, `clang` and `clang++` are explained as `gcc` is, with the difference of each. `g++ -std=c++17 -O2 -lm -Iinc -DX=1 main.cpp -o app` gets `-std`, `-l`, `-I` and `-D`, also with the value in the same word. Before, only `gcc` was known, and `-lm` and `-Iinc` were unknown options there too.
+- Java tools are explained: `javac -d out -cp 'lib/*' -Xlint:all A.java`, `java -Xmx512m -Dfoo=bar -jar app.jar --port 80` (the words after the JAR are the program's), `keytool -genkeypair …`, `mvn -DskipTests -pl :app -am clean package` and `./gradlew build --no-daemon` get their options and operands.
 
 ### Changed
 
