@@ -307,12 +307,11 @@ class Statuses implements StatusModel {
 
   /**
    * Whether the builtin `name` with the words `args` at `n` runs a command in place of the shell (`exec cmd`: it exits
-   * the shell, `shellEffectOf`, and is no builtin that always does, `exit`), while execfail is surely off: `sure` where
-   * the command is surely a word, then the shell does not go on after it; `maybe` where it may be none (`exec "$@"`),
-   * then it goes on with status 0. Either way, no failure of it is one that `set -e` stops.
+   * the shell, `shellEffectOf`; `exit`, which always does, has its rule before this is asked), while execfail is surely
+   * off: `sure` where the command is surely a word, then the shell does not go on after it; `maybe` where it may be none
+   * (`exec "$@"`), then it goes on with status 0. Either way, no failure of it is one that `set -e` stops.
    */
   private replacing(n: SyntaxNode, name: string, args: readonly SyntaxNode[], spec: CommandSpec): 'sure' | 'maybe' | undefined {
-    if (spec.ends === 'shell') return undefined;
     const { roles } = builtinParse(name, args, this.shell, spec);
     if (shellEffectOf(spec, roles.map((r) => [args[r.word], r.role] as const)) !== 'exits' || optionOn(this.state.at(n).run, 'shopt', 'execfail') !== 'off') return undefined;
     const cmd = roles.find((r) => r.role.role === 'command')!;
