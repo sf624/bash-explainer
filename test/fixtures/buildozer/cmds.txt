@@ -1,0 +1,3 @@
+# Commands for `buildozer -f cmds.txt` (test/buildozer.test.ts): commands and labels, `|`-separated.
+add deps //lib:x|//app:main
+print label|*

@@ -23,6 +23,7 @@ const CASES: { [K in ProblemFactId]: readonly unknown[] } = {
   'exit-refused': [{ why: 'too-many', word: 'a' }, { why: 'not-numeric', word: 'a', exits: true }, { why: 'not-numeric', word: 'a', exits: false }],
   'declaration-masks-status': [{ kw: 'local', v: 'x' }],
   'pipefail-missing': [{ last: 'wc' }],
+  'errexit-stops-on-success': [{ name: 'buildozer', status: 3 }],
   'function-last-test-returns-status': [{ name: 'f' }],
   'function-last-test-stops-script': [{ name: 'f' }],
   'script-last-test-returns-status': [{ left: 'a' }],

@@ -1,0 +1,2 @@
+# The workspace test/buildozer.test.ts runs buildozer in (a copy of it).
+module(name = "fixture")

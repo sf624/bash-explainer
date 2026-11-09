@@ -4,6 +4,7 @@ import { tx } from '../i18n';
 import { saidText } from '../messages-tokens';
 import { bazel } from './bazel';
 import { buildifier } from './buildifier';
+import { buildozer } from './buildozer';
 
 // Commands found in a second survey: operations and cloud scripts (Kubernetes, Terraform, AWS,
 // Google Cloud), node bootstrap and debugging scripts, dotfiles and container builds.
@@ -235,6 +236,7 @@ export const ops: Record<string, CommandSpec> = {
   kubectl,
   ...bazel,
   ...buildifier,
+  ...buildozer,
   uv: cmd('Python のパッケージ・プロジェクト管理ツール（uv）', 'Python package and project manager (uv)', [], {
     subcommands: { run: cmd('環境を整えてからコマンドやスクリプトを実行する', 'Run a command or script in the project environment', [['--with', '一時的に加えるパッケージ', 'an extra package to add temporarily', 'arg'], ['--no-sync', '実行前に環境を同期しない', 'do not sync the environment first']], { optionsFirst: true, operands: [{ pattern: [runs()] }] }) },
   }),

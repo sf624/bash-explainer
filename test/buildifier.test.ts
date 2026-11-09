@@ -8,6 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { Analyzer, lookupCommand, Token } from '../src/analyzer';
 import { ArgRole, interpret } from '../src/argv/interpret';
+import { exitMeanings } from '../src/argv/query';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { argWords } from './support/argwords';
 
@@ -90,6 +91,12 @@ describe('buildifier', () => {
     for (const [words, status, read] of ROWS) {
       assert.strictEqual(runReal(words.split(' ')).status, status, `status of: ${words}`);
       assert.strictEqual(reading(`buildifier ${words}`), read, `reading of: ${words}`);
+      // (The status 4 of `CommandSpec.exits`: never where the spec says it cannot come, and allowed wherever it does.)
+      const { words: w } = argWords(`buildifier ${words}`);
+      const spec = lookupCommand('buildifier')!;
+      const allowed = exitMeanings(spec, interpret(spec, w, { name: 'buildifier', lookup: lookupCommand }), w.map((x) => x.value)).some((e) => e.status === 4);
+      if (status === 4) assert.ok(allowed, `4 allowed: ${words}`);
+      if (!allowed) assert.notStrictEqual(status, 4, words);
     }
   });
 

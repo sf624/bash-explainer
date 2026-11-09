@@ -76,6 +76,7 @@
   "other": [
     {"file":"src/dialect.ts","uses":[{"fn":"classify","kind":"dash-prefix","count":1,"reason":"the operator `--` of a node of `$(( ))` (`i--`, `--i`), not a word"}]},
     {"file":"src/embedded/bazel.ts","uses":[{"fn":"parseTargetPattern","kind":"dash-prefix","count":1,"reason":"the `-` of bazel's subtractive target pattern (`-//app/legacy/...`), in an operand the interpreter read"},{"fn":"explainQueryWord","kind":"option-regex","count":1,"reason":"a word of a query expression cannot start with `-` (the query's `except` operator), so no target pattern does there"}]},
+    {"file":"src/embedded/buildozer.ts","uses":[{"fn":"parseBuildozerLabel","kind":"dash-prefix","count":1,"reason":"the package `-` of a buildozer label (`-:main`: the BUILD file on stdin), in an operand the interpreter read"}]},
     {"file":"src/examples/getopt.ts","uses":[{"fn":"runGetopt","kind":"dash-prefix","count":4,"reason":"the getopt(1) simulator: it parses its own arguments by getopt's rules, as the command does"},{"fn":"runGetopt","kind":"option-regex","count":2,"reason":"the getopt(1) simulator: it parses its own arguments by getopt's rules, as the command does"}]},
     {"file":"src/examples/gitlog.ts","uses":[{"fn":"expand","kind":"option-regex","count":1,"reason":"trims dashes from a commit subject (git log `%f`), not an option"}]},
     {"file":"src/examples/shellwords.ts","uses":[{"fn":"numberArg","kind":"dash-prefix","count":2,"reason":"the sign of a number written as a word (`-0x1f`), not an option"}]},

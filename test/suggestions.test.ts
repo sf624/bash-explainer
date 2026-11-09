@@ -39,6 +39,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'errexit-function-called-only-where-ignored': 'none',
   'errexit-group-where-ignored': 'none',
   'errexit-stops-here': 'none',
+  // `cmd || [ $? -eq 3 ]`, in the text: the status that means success goes on.
+  'errexit-stops-on-success': 'prose',
   // `local x=$(…)` → `local x; x=$(…)`: the failure of `$(…)` is seen, and stops `set -e`.
   'declaration-masks-status': 'mechanical',
   // `set -o pipefail`: needs a pipeline whose first stage fails.
@@ -275,6 +277,7 @@ const SAMPLE: Partial<Record<FactId, unknown>> = {
   'yq-compat': { verdict: judgeYq(['.a']) },
   'host-substitution': { text: 'X', meaning: { kind: 'make-variable', name: 'X' } },
   'github-file': { name: 'GITHUB_ENV' },
+  'errexit-stops-on-success': { name: 'buildozer', status: 3, text: { ja: 'X', en: 'X' }, stops: 'script' },
 };
 
 describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
@@ -368,7 +371,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 18, scenario: 26, prose: 21, none: 104 });
+      { mechanical: 18, scenario: 26, prose: 22, none: 104 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });

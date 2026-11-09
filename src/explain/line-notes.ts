@@ -212,7 +212,9 @@ function stopWhat(status: StatusModel, n: SyntaxNode): StopWhat {
   // (A test that is well formed is false with 1, as written; a malformed one gives 2, the command's status.)
   if (rule.kind === 'test' && !rule.fails) return { kind: 'test', text: shorten(n.text, 32) };
   const name = nameOf(n);
-  return { kind: 'command', name };
+  // (The statuses that are no error, which `set -e` stops on too: grep's 1.)
+  const results = rule.kind === 'command' ? rule.results?.map((r) => ({ status: r.status, text: { ja: r.text.ja, en: r.text.en } })) : undefined;
+  return { kind: 'command', name, ...(results ? { results } : {}) };
 }
 
 /** How many statements a stop note names; more are "another". */

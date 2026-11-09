@@ -85,6 +85,13 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         break;
       }
       case 'command': {
+        // A status the program counts as a success, where `set -e` stops on it (buildozer's 3: nothing changed).
+        const own = status.status(n);
+        const success = own.kind === 'command' ? own.results?.find((r) => r.success) : undefined;
+        if (success) {
+          const ctx = status.errexit(n);
+          if (ctx.active === 'on' && ctx.checked === true) add(n, { id: 'errexit-stops-on-success', params: { name: commandName(n)!, status: success.status, text: success.text, stops: ctx.stops } });
+        }
         // `local x=$(cmd)`: the declaration's status hides the substitution's.
         if (descendants(n, ['command_substitution']).length) {
           const rule = status.status(n);

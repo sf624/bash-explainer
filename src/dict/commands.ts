@@ -378,7 +378,7 @@ export const core: Record<string, CommandSpec> = {
     ['--no-group-separator', '前後の行のまとまりの間に区切りを置かない', 'no separator between groups of context lines'],
     ...GNU_INFO,
   ], {
-    parser: 'getopt_long',
+    parser: 'getopt_long', exits: [{ status: 1, text: tx('一致する行がなかった', 'no line matched'), when: ({ options }) => !options.has('-v') }, { status: 1, text: tx('すべての行が一致した', 'every line matched'), when: ({ options }) => options.has('-v') }],
     modes: [{ name: 'bre', default: true }, { name: 'ere' }, { name: 'fixed' }, { name: 'pcre' }],
     conflictingModes: tx('`-E`・`-F`・`-G`・`-P` のうち別のものと一緒に指定すると、grep は「conflicting matchers specified」と言って何もしない（終了ステータス 2）', 'With another of `-E`, `-F`, `-G`, `-P`, grep refuses the line: "conflicting matchers specified" (exit status 2)'),
     eachFile: 'apart', positional: [pos('検索パターン（正規表現）', 'search pattern (regex)'), pos('検索対象のファイル（省略時は標準入力）', 'file to search (default: stdin)')], positionalLang: ['regex'], positionalIo: [undefined, 'input'] }),
@@ -1199,7 +1199,7 @@ export const core: Record<string, CommandSpec> = {
     ['--color', '出力に色を付ける（`=never`、`=always`、`=auto`）', 'color the output (`=never`, `=always`, `=auto`)', 'attached'],
     ['--palette', '`--color` で使う色（terminfo の名前を `:` で区切る）', 'colors to use with `--color` (terminfo capabilities separated by `:`)', 'arg'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('比較元', 'first file'), pos('比較先', 'second file')], atMost: { count: 2, extra: DIFF_EXTRA_OPERAND, unless: '--from-file|--to-file' } }),
+  ], { parser: 'getopt_long', exits: [{ status: 1, text: tx('ファイルに違いがあった', 'the files differ') }], positional: [pos('比較元', 'first file'), pos('比較先', 'second file')], atMost: { count: 2, extra: DIFF_EXTRA_OPERAND, unless: '--from-file|--to-file' } }),
   ssh: cmd('リモートホストに SSH で接続する（コマンドを渡すとリモートで実行）', 'Connect to a remote host over SSH (optionally run a command)', [
     ['-i', '秘密鍵ファイル', 'identity (private key) file', 'arg'],
     ['-p', 'ポート番号', 'port', 'arg'],

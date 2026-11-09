@@ -50,3 +50,22 @@ runs:
         chmod +x "$dir/buildifier"
         echo "BUILDIFIER=$dir/buildifier" >> "$GITHUB_ENV"
       shell: bash
+    # buildozer, of the same release (Apache-2.0; a static Go program, run as a separate program), for
+    # test/buildozer.test.ts: checked by the digest GitHub shows for the asset, found through BUILDOZER, cached.
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/buildozer
+        key: buildozer-${{ runner.os }}-v10.2.0-0cfa2633184880ad5139bad3133fdf1a11ce3b7d37ba3eae9a85374a613c4779
+    - env:
+        BUILDOZER_VERSION: v10.2.0
+        BUILDOZER_SHA256: 0cfa2633184880ad5139bad3133fdf1a11ce3b7d37ba3eae9a85374a613c4779
+      run: |
+        dir="$RUNNER_TEMP/buildozer"
+        mkdir -p "$dir"
+        if [ ! -x "$dir/buildozer" ]; then
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20 -o "$dir/buildozer" "https://github.com/bazel-contrib/buildtools/releases/download/$BUILDOZER_VERSION/buildozer-linux-amd64"
+        fi
+        echo "$BUILDOZER_SHA256  $dir/buildozer" | sha256sum --check
+        chmod +x "$dir/buildozer"
+        echo "BUILDOZER=$dir/buildozer" >> "$GITHUB_ENV"
+      shell: bash

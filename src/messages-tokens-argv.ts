@@ -196,6 +196,10 @@ export const ARGV_TEXTS = {
   'hole-target-name': tokenText<{ value: string }>(({ value }) => [
     `${value} の値はターゲットの名前（またはその一部）として読まれる。名前全体が \`all\` ならすべてのルール、\`*\`・\`all-targets\` ならすべてのターゲットになる。値の中の \`/\` は名前の一部で、\`:\` は bazel が拒否する`,
     `The value of ${value} is read as the target's name, or part of it: as the whole name, \`all\` is every rule and \`*\` or \`all-targets\` every target of the package; a \`/\` in it is part of the name, and bazel refuses a \`:\``]),
+  /** `buildozer "add deps $dep" //app:main`: a hole in an argument of a command of buildozer, which splits the command at spaces itself. */
+  'hole-buildozer': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値は buildozer のコマンドの一部になる。buildozer はコマンドを空白と改行で区切るので、値の中の空白で引数が分かれる（\`\\ \` は区切らない）`,
+    `The value of ${value} becomes part of buildozer's command, which buildozer splits at spaces and newlines itself: a space in the value starts another argument (a \`\\ \` does not)`]),
   /** `date +"%F $x"`: a hole in date's format. */
   'hole-date': tokenText<{ value: string; around?: boolean }>(({ value, around }) => [
     `${value} の値は表示書式の一部になる。値の中の \`%\` は書式指定として読まれる${around ? '。後ろは、値に `%` がないものとして読んでいる' : ''}`,
