@@ -4,6 +4,8 @@ import { tokenSaid } from '../messages-tokens';
 import { codeShown } from '../messages-values';
 import { EmbeddedToken, escapeIntoHole, hasHole, holeStop, holeToken, isHole, pick } from './types';
 import { wordTable } from '../wordtable';
+import { charOfCode, codeEscape, hexOf, namedChar, PCRE_ESCAPE_LETTERS, PCRE_ONLY, PERL_CASE, SHORTHANDS } from './regex-escapes';
+import { FLAG_LETTERS, IF_FLAG, NO_PYTHON_FLAGS, PYTHON_DOT, PYTHON_SINCE, pythonCode, pythonFlags, pythonLetters, type PythonRegexOptions, pythonShorthand } from './regex-python';
 
 /**
  * POSIX basic (grep, sed), POSIX extended (grep -E, sed -E, [[ =~ ]]), Perl-compatible (grep -P), or Python's `re`
@@ -27,108 +29,12 @@ const CLASSES: Record<string, [string, string]> = wordTable({
 });
 
 /**
- * `\w`, `\d`… Whether each is available in each flavor (GNU tools support some in BRE/ERE), and what a JavaScript RegExp
- * reads for it in PCRE (`js`: `=` the same escape, else the JavaScript text; none, when JavaScript reads it otherwise).
- * The worked examples (src/examples/regex.ts) take their JavaScript from here and from PCRE_ONLY, never from a table of their own.
- */
-const SHORTHANDS: Record<string, { ja: string; en: string; gnu: boolean; js?: string }> = {
-  w: { ja: '英数字またはアンダースコア1文字', en: 'a word character (letter, digit or underscore)', gnu: true, js: '=' },
-  W: { ja: '英数字とアンダースコア以外の1文字', en: 'a non-word character', gnu: true, js: '=' },
-  s: { ja: '空白文字1文字', en: 'a whitespace character', gnu: true, js: '=' },
-  S: { ja: '空白以外の1文字', en: 'a non-whitespace character', gnu: true, js: '=' },
-  d: { ja: '数字1文字', en: 'a digit', gnu: false, js: '=' },
-  D: { ja: '数字以外の1文字', en: 'a non-digit', gnu: false, js: '=' },
-  b: { ja: '単語の境界（文字は消費しない）', en: 'a word boundary (matches no character)', gnu: true, js: '=' },
-  B: { ja: '単語の境界ではない位置', en: 'a position that is not a word boundary', gnu: true, js: '=' },
-  '<': { ja: '単語の先頭', en: 'the start of a word', gnu: true },
-  '>': { ja: '単語の末尾', en: 'the end of a word', gnu: true },
-  A: { ja: '文字列の先頭', en: 'the start of the text', gnu: false, js: '^' },
-  z: { ja: '文字列の末尾', en: 'the end of the text', gnu: false, js: '$' },
-  Z: { ja: '文字列の末尾（末尾の改行の前も可）', en: 'the end of the text (or before a final newline)', gnu: false, js: '$' },
-  t: { ja: 'タブ', en: 'a tab', gnu: false, js: '=' },
-  n: { ja: '改行', en: 'a newline', gnu: false, js: '=' },
-  r: { ja: '復帰文字(CR)', en: 'a carriage return', gnu: false, js: '=' },
-  f: { ja: '改ページ', en: 'a form feed', gnu: false, js: '=' },
-  e: { ja: 'ESC 文字', en: 'an escape character (ESC)', gnu: false, js: '\\x1b' },
-  a: { ja: 'ベル文字(BEL)', en: 'a bell character (BEL)', gnu: false, js: '\\x07' },
-  h: { ja: '水平方向の空白（タブなど）1文字', en: 'a horizontal whitespace character (space, tab…)', gnu: false, js: '[ \\t]' },
-  H: { ja: '水平方向の空白以外の1文字', en: 'a character that is not horizontal whitespace', gnu: false, js: '[^ \\t]' },
-  v: { ja: '垂直方向の空白（改行、改ページなど）1文字', en: 'a vertical whitespace character (newline, form feed…)', gnu: false },
-  V: { ja: '垂直方向の空白以外の1文字', en: 'a character that is not vertical whitespace', gnu: false },
-};
-
-/**
- * Python's escapes of one letter (its `re` module, 3.15): those it has (any other ASCII letter is "bad escape"), and the meaning of each
- * where it is not the one of `SHORTHANDS`. Outside a set, and inside one (`inClass`: `\b` is a backspace there).
- */
-const PYTHON_LETTERS = { out: 'abBdDfnrsStvwWAZzxuUN', inClass: 'abdDfnrsStvwWxuUN' };
-const PYTHON_SHORTHANDS: Record<string, { ja: string; en: string }> = {
-  // (A str pattern's classes are Unicode: `re.findall(r'\w+', '日本語 abc')` gives both words. `re.ASCII` (#749) makes them ASCII.)
-  w: { ja: '単語の文字1文字（どの文字体系の文字・数字、またはアンダースコア。`re.ASCII` では ASCII のみ）', en: 'a word character: a letter or digit of any script, or an underscore (only ASCII ones with `re.ASCII`)' },
-  W: { ja: '単語の文字以外の1文字（単語の文字は、どの文字体系の文字・数字とアンダースコア。`re.ASCII` では ASCII のみ）', en: 'a character that is not a word character (a letter or digit of any script, or an underscore; only ASCII ones with `re.ASCII`)' },
-  d: { ja: '10進数字1文字（どの文字体系のものも。全角の「０」なども。`re.ASCII` では 0〜9 のみ）', en: 'a decimal digit of any script (`０`, `١`… too; only 0-9 with `re.ASCII`)' },
-  D: { ja: '10進数字以外の1文字（どの文字体系の10進数字でもない。`re.ASCII` では 0〜9 以外）', en: 'a character that is not a decimal digit of any script (not 0-9 with `re.ASCII`)' },
-  s: { ja: '空白文字1文字（全角スペースなど Unicode の空白も。`re.ASCII` では ASCII の空白のみ）', en: 'a whitespace character, Unicode whitespace too (the ideographic space…; only ASCII whitespace with `re.ASCII`)' },
-  S: { ja: '空白文字以外の1文字（Unicode の空白でもない。`re.ASCII` では ASCII の空白以外）', en: 'a character that is not whitespace, Unicode whitespace included (not ASCII whitespace with `re.ASCII`)' },
-  b: { ja: '単語の境界（単語の文字は、どの文字体系の文字・数字とアンダースコア。`re.ASCII` では ASCII のみ。文字は消費しない）', en: 'a word boundary, where a word character (a letter or digit of any script, or an underscore) meets another character (only ASCII ones with `re.ASCII`; matches no character)' },
-  B: { ja: '単語の境界ではない位置（単語の文字は、どの文字体系の文字・数字とアンダースコア。`re.ASCII` では ASCII のみ）', en: 'a position that is not a word boundary (word characters of any script; only ASCII ones with `re.ASCII`)' },
-  Z: { ja: '文字列の末尾', en: 'the end of the text' },
-  v: { ja: '垂直タブ(VT)', en: 'a vertical tab (VT)' },
-};
-
-/** What `.` matches, where a flavor says it otherwise than "any single character": Python's `re` leaves out a newline (`re.DOTALL`, #749, takes it in). */
-const DOT: Partial<Record<Flavor, readonly [ja: string, en: string]>> = {
-  python: ['改行以外の任意の1文字（`re.DOTALL` では改行も）', 'any character except a newline (a newline too with `re.DOTALL`)'],
-};
-
-/**
  * How a flavor says a pattern its program refuses, where it is in the program's own words: Python's `re` says its message
  * (`regex-python-error`); the others say the shell's entry of each kind of error. `strict`: the program also refuses a quantifier with
  * nothing to repeat (`*.txt`, `^*`) or after another (`a**`), a count whose minimum is over its maximum (`x{2,1}`), and a `)` that
  * closes no group (PCRE does too, and GNU grep's `x{2,1}`: docs/design/python-regex.md, step 3).
  */
 const OWN_REFUSAL: Partial<Record<Flavor, { said: 'regex-python-error'; strict: true }>> = { python: { said: 'regex-python-error', strict: true } };
-
-/** The meanings of letters that a flavor reads otherwise than `SHORTHANDS` says. */
-const FLAVOR_SHORTHANDS: Partial<Record<Flavor, Record<string, { ja: string; en: string }>>> = { python: PYTHON_SHORTHANDS };
-
-/** What a backslash and a letter mean in `flavor`: the flavor's own where it has one, else the shared table. */
-const shorthandOf = (flavor: Flavor, c: string): { ja: string; en: string } | undefined => FLAVOR_SHORTHANDS[flavor]?.[c] ?? SHORTHANDS[c];
-
-/** PCRE escapes that no other flavor has, and that mean nothing inside `[…]`. */
-const PCRE_ONLY: Record<string, { ja: string; en: string; kind: 'keyword' | 'pattern'; js?: string }> = {
-  K: { ja: 'ここまでに一致した部分を、報告する一致から外す（`grep -o` はこの後ろだけを表示する。文字は消費しない）', en: 'keep what has matched so far out of the reported match (`grep -o` prints only what follows; consumes nothing)', kind: 'keyword' },
-  G: { ja: '前の一致の終わりの位置（最初は先頭）', en: 'the position where the previous match ended (the start at first)', kind: 'keyword' },
-  R: { ja: '改行1つ（`\\r\\n`、`\\n`、`\\r` など）', en: 'one line break (`\\r\\n`, `\\n`, `\\r`…)', kind: 'pattern' },
-  N: { ja: '改行以外の1文字', en: 'any one character except a newline', kind: 'pattern', js: '[^\\n]' },
-  X: { ja: '見た目の1文字（結合文字を含む）', en: 'one extended grapheme cluster (a character with its combining marks)', kind: 'pattern' },
-};
-
-/** Letters PCRE2 accepts after a backslash; any other letter makes `grep -P` stop with an error. */
-const PCRE_ESCAPE_LETTERS = 'aAbBcCdDeEfgGhHkKnNopPQrRsStvVwWxXzZ';
-
-/** Perl's case escapes (`\U…\E`), which it applies before the regex is compiled; PCRE2 has none (`grep -P` stops). */
-const PERL_CASE = 'ULFul';
-
-/**
- * What a JavaScript RegExp reads for the PCRE escape `\c` (not in a class: `inClass` false), when it means what PCRE means:
- * the JavaScript text. In a class only the escapes that are one set of characters (`\d`, `\h`…) qualify. Undefined when no
- * JavaScript text means the same, so no example is made. The one place that decides it for the reader's tables.
- */
-export function pcreJs(c: string, inClass: boolean): string | undefined {
-  const js = SHORTHANDS[c]?.js ?? PCRE_ONLY[c]?.js;
-  if (js === undefined) return undefined;
-  if (js === '=') return `\\${c}`;
-  if (!inClass) return js;
-  // (A class of one escape: `\h` is `[ \t]` outside a class and ` \t` inside; a negated one, or an anchor, cannot be inside.)
-  return js.startsWith('[') && !js.startsWith('[^') ? js.slice(1, -1) : undefined;
-}
-
-/** The character code `\x41`, `\x{263a}`, `\101`, `\o{101}` or `\cA` stands for at `at` in a PCRE source, and its length. */
-export function pcreCharCode(src: string, at: number, inClass: boolean): { length: number; code: number } | undefined {
-  const e = codeEscape(src, at, inClass);
-  return e?.code === undefined ? undefined : { length: e.length, code: e.code };
-}
 
 interface State {
   src: string;
@@ -141,8 +47,8 @@ interface State {
   reached: boolean;
   /** What may close a `[` or a group that this text leaves open (`RegexOptions.part`, or a variable Perl puts in): then it is no error. */
   rest?: 'part' | 'variable';
-  /** Plain single-character literals, which may be merged into runs. */
-  literals: Set<EmbeddedToken>;
+  /** Plain single-character literals, which may be merged into runs, with Python's flags where each stands (`py`: a run is in one sequence, whose flags change only in a group of its own) */
+  literals: Map<EmbeddedToken, PythonRegexOptions | undefined>;
   /** PCRE named groups, by name. */
   names: Map<string, number>;
   /** The groups open where the reader is (Python refuses a reference to one). */
@@ -159,6 +65,10 @@ interface State {
   unit: MatchUnit;
   /** What they stand at the ends of before any `(?m)`. */
   base: MatchUnit;
+  /** Python's flags where the reader is (`RegexOptions.python`, then the inline flags; a group's own last to its end). */
+  py?: PythonRegexOptions;
+  /** The tokens of Python's global flags (`(?i)`), which may only follow one another at the start (`atPatternStart`). */
+  globals: Set<EmbeddedToken>;
 }
 
 /** What a regex is matched against: one line (grep, sed), or a whole string that may hold newlines (bash, awk, Perl). */
@@ -197,6 +107,8 @@ export interface RegexOptions {
   reached?: boolean;
   /** The text is one part of the regex, with others after it (`[[ x =~ ^("a"|b)$ ]]`): a `[` or a group it leaves open is no error here. */
   part?: boolean;
+  /** Python's flags (the flavor `python`): from the call's flags argument, and whether the pattern is bytes. None: no flags, a str pattern. */
+  python?: PythonRegexOptions;
 }
 
 /** Explain a regular expression as a flat sequence of tokens (groups nest their contents). */
@@ -204,13 +116,25 @@ export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: Rege
   // (`\Q$x\E`: the value is plain text there, which this reader does not follow.)
   if (flavor === 'pcre' && src.includes('\\Q') && hasHole(src)) return [holeStop(0)];
   const tool = opts.perl ? 'perl' : opts.tool ?? (opts.sedEscapes ? 'sed' : 'grep');
-  const st: State = { src, i: 0, flavor, groups: 0, lang, s: pick(lang), reached: opts.reached ?? true, rest: opts.part ? 'part' : tool === 'perl' && PERL_VARIABLE.test(src.replace(/\\./g, '')) ? 'variable' : undefined, literals: new Set(), names: new Map(), open: new Set(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool], base: opts.unit ?? UNITS[tool] };
+  const st: State = { src, i: 0, flavor, groups: 0, lang, s: pick(lang), reached: opts.reached ?? true, rest: opts.part ? 'part' : tool === 'perl' && PERL_VARIABLE.test(src.replace(/\\./g, '')) ? 'variable' : undefined, literals: new Map(), names: new Map(), open: new Set(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool], base: opts.unit ?? UNITS[tool], globals: new Set(),
+    ...(flavor === 'python' ? { py: { ...(opts.python ?? NO_PYTHON_FLAGS) } } : {}) };
   return mergeLiterals(sequence(st, 0), st);
 }
 
-/** `^` and `$`: the start and the end of what the tool matches, a line or a text; Perl's `$` also stands before a final newline. */
+/**
+ * `^` and `$`: the start and the end of what the tool matches, a line or a text; Perl's `$` also stands before a final newline. In
+ * Python's `re`, by `MULTILINE`: at each line too, or not, or a word that says the flags are not known.
+ */
 function anchor(st: State, c: '^' | '$'): string {
   const { s } = st;
+  if (st.py) {
+    const m = st.py.multiline;
+    if (m === true) return c === '^' ? s('`^`: 文字列と各行の先頭（`re.MULTILINE`）', '`^`: start of the text and of each line (`re.MULTILINE`)') : s('`$`: 各行と文字列の末尾（`re.MULTILINE`）', '`$`: end of each line and of the text (`re.MULTILINE`)');
+    if (m === 'unknown') {
+      return c === '^' ? s('`^`: 文字列の先頭（フラグが分からない: `re.MULTILINE` では各行の先頭も）', '`^`: start of the text (and of each line with `re.MULTILINE`: the flags are not known)')
+        : s('`$`: 文字列の末尾（末尾の改行の前も可。フラグが分からない: `re.MULTILINE` では各行の末尾も）', '`$`: end of the text, or before a final newline (and the end of each line with `re.MULTILINE`: the flags are not known)');
+    }
+  }
   if (st.unit === 'record') return c === '^' ? s('`^`: レコード（`$0`）の先頭', '`^`: start of the text (the record, `$0`)') : s('`$`: レコード（`$0`）の末尾', '`$`: end of the text (the record, `$0`)');
   if (c === '^') return st.unit === 'line' ? s('`^`: 行の先頭', '`^`: start of the line') : s('`^`: 文字列の先頭', '`^`: start of the text');
   if (st.unit === 'line') return s('`$`: 行の末尾', '`$`: end of the line');
@@ -264,10 +188,20 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
   const out: EmbeddedToken[] = [];
   const strict = OWN_REFUSAL[st.flavor];
   const atStart = () => out.length === 0 || (out[out.length - 1].kind === 'operator' && out[out.length - 1].label === '|');
+  // (Python's global flags may only start the pattern: in its first alternative, after nothing but comments and other global flags.
+  // Each turn adds one token at most, so the last one says whether the start goes on.)
+  let first = depth === 0;
   while (st.i < st.src.length) {
     const start = st.i;
     const c = st.src[start];
     if (depth > 0 && isGroupClose(st)) return out;
+    const last = out[out.length - 1];
+    first &&= !last || last.kind === 'comment' || st.globals.has(last);
+    if (st.py?.verbose === true && (VERBOSE_SPACE.has(c) || c === '#')) {
+      const t = verboseSkip(st, start);
+      if (t) out.push(t);
+      continue;
+    }
     if (isHole(c)) {
       st.i++;
       // (Something after it, or before it other than plain text: their reading rests on what the value is.)
@@ -293,17 +227,17 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
     if ((n = quantifierLength(st, atStart()))) {
       st.i += n;
       const refused = strict ? refusedRepeat(st, start, out) : undefined;
-      out.push(strict && refused ? { start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, strict.said, { message: refused }), children: [] } : quantifier(st, start, out[out.length - 1]));
+      out.push(strict && refused ? { start, end: st.i, kind: 'error', explanation: ownSaid(st, refused), children: [] } : quantifier(st, start, lastItem(out)));
       continue;
     }
     if (c === ')' && strict) {
       // (A `)` that closes a group returned above: this one closes none.)
       st.i++;
-      out.push({ start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, strict.said, { message: `unbalanced parenthesis at position ${start}` }), children: [] });
+      out.push({ start, end: st.i, kind: 'error', explanation: ownSaid(st, `unbalanced parenthesis at position ${start}`), children: [] });
       continue;
     }
     if ((n = isGroupOpen(st))) {
-      out.push(group(st, n));
+      out.push(group(st, n, first));
       continue;
     }
     if (c === '[') {
@@ -322,7 +256,7 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
     }
     st.i++;
     if (c === '.') {
-      const [ja, en] = DOT[st.flavor] ?? ['任意の1文字', 'any single character'];
+      const [ja, en] = st.py ? PYTHON_DOT[String(st.py.dotall) as 'true'] : ['任意の1文字', 'any single character'];
       out.push({ start, end: st.i, kind: 'pattern', explanation: s(`\`.\`: ${ja}`, `\`.\`: ${en}`), children: [] });
     } else if (c === '^' && (st.flavor !== 'bre' || atStart())) {
       out.push({ start, end: st.i, kind: 'keyword', explanation: anchor(st, '^'), children: [] });
@@ -375,22 +309,70 @@ function holeDecides(st: State, i: number, c: string): boolean {
 }
 
 function literal(st: State, start: number, c: string): EmbeddedToken {
-  const t: EmbeddedToken = { start, end: st.i, kind: 'string', explanation: st.s(`文字「${c}」`, `Literal "${c}"`), children: [] };
-  st.literals.add(t);
+  const t: EmbeddedToken = { start, end: st.i, kind: 'string', explanation: literalText(st, c, st.py, false), children: [] };
+  st.literals.set(t, st.py);
   return t;
 }
 
-/** Join adjacent plain characters into one literal, except a character that a quantifier binds to. */
+/**
+ * The text of a literal (`merged`: a run of characters), with what Python's flags where it stands make of it (`py`): letters in either
+ * case with `IGNORECASE`, and a word where a flag it depends on is not known.
+ */
+function literalText(st: State, text: string, py: PythonRegexOptions | undefined, merged: boolean): string {
+  const said = merged ? st.s(`文字列「${text}」`, `Literal "${text}"`) : st.s(`文字「${text}」`, `Literal "${text}"`);
+  return said + caseText(st, text, py) + (py?.verbose === 'unknown' && /[\s#]/.test(text) ? st.s(...IF_FLAG.verbose) : '');
+}
+
+/** What `IGNORECASE` makes of a text with a letter that has a case, in Python's `re` (`py`): either case, or a word that the flags are not known. */
+function caseText(st: State, text: string, py: PythonRegexOptions | undefined): string {
+  if (!py?.ignorecase || text.toLowerCase() === text.toUpperCase()) return '';
+  return py.ignorecase === true ? st.s('（大文字小文字を区別しない）', ', in either case') : st.s(...IF_FLAG.ignorecase);
+}
+
+/** The last token of `out` that is an item: not a comment, nor whitespace that VERBOSE ignores. */
+function lastItem(out: readonly EmbeddedToken[]): EmbeddedToken | undefined {
+  let k = out.length - 1;
+  while (k >= 0 && out[k].kind === 'comment') k--;
+  return out[k];
+}
+
+/** The whitespace of Python's VERBOSE (`re._parser.WHITESPACE`). */
+const VERBOSE_SPACE: ReadonlySet<string> = new Set([' ', '\t', '\n', '\r', '\v', '\f']);
+
+/**
+ * What VERBOSE skips at `start` (`st.i` is moved past it): a `#` comment to the end of the line, a comment token; or a run of
+ * whitespace, a token only between two items of a line (none for a line's indentation, nor before a comment or the line's end).
+ */
+function verboseSkip(st: State, start: number): EmbeddedToken | undefined {
+  const { src } = st;
+  if (src[start] === '#') {
+    const nl = src.indexOf('\n', start);
+    st.i = nl < 0 ? src.length : nl;
+    return { start, end: st.i, kind: 'comment', explanation: tokenSaid(st.lang, 'python-regex-verbose-comment'), children: [] };
+  }
+  let end = start;
+  while (end < src.length && VERBOSE_SPACE.has(src[end])) end++;
+  st.i = end;
+  const between = start > 0 && end < src.length && src[end] !== '#' && !src.slice(start, end).includes('\n');
+  return between ? { start, end, kind: 'comment', explanation: tokenSaid(st.lang, 'python-regex-verbose-space'), children: [] } : undefined;
+}
+
+/** Join adjacent plain characters into one literal, except a character that a quantifier binds to (past whitespace VERBOSE ignores). */
 function mergeLiterals(tokens: EmbeddedToken[], st: State): EmbeddedToken[] {
   const out: EmbeddedToken[] = [];
   const isQuantifier = (x: EmbeddedToken | undefined) => x?.kind === 'operator' && x.label !== '|';
+  // (The next token of each that is not a comment, read once from the end.)
+  const next: (EmbeddedToken | undefined)[] = [];
+  for (let k = tokens.length - 1, after: EmbeddedToken | undefined; k >= 0; k--) {
+    next[k] = after;
+    if (tokens[k].kind !== 'comment') after = tokens[k];
+  }
   tokens.forEach((t, idx) => {
     t.children = mergeLiterals(t.children, st);
     const prev = out[out.length - 1];
-    if (prev && st.literals.has(prev) && st.literals.has(t) && prev.end === t.start && !isQuantifier(tokens[idx + 1])) {
+    if (prev && st.literals.has(prev) && st.literals.has(t) && prev.end === t.start && !isQuantifier(next[idx])) {
       prev.end = t.end;
-      const text = st.src.slice(prev.start, prev.end);
-      prev.explanation = st.s(`文字列「${text}」`, `Literal "${text}"`);
+      prev.explanation = literalText(st, st.src.slice(prev.start, prev.end), st.literals.get(prev), true);
       return;
     }
     out.push(t);
@@ -429,20 +411,23 @@ function quantifier(st: State, start: number, target: EmbeddedToken | undefined)
   return { start, end: st.i, kind: 'operator', explanation: s(`\`${raw}\`: ${of(true)}を${times}繰り返す${greed}`, `\`${raw}\`: repeat ${of(false)} ${times}${greed}`), children: [] };
 }
 
-function group(st: State, openLen: number): EmbeddedToken {
+function group(st: State, openLen: number, first: boolean): EmbeddedToken {
   const { s } = st;
   const start = st.i;
   st.i += openLen;
-  // (An inline `(?m)` lasts to the end of its group.)
+  // (An inline `(?m)` lasts to the end of its group, and so do Python's flags of `(?i:…)`.)
   const unit = st.unit;
+  const py = st.py;
   let explanation: string;
   let group: number | undefined;
   const rest = st.src.slice(st.i);
+  const flagged = py && rest[0] === '?' && (FLAG_LETTERS.has(rest[1]) || rest[1] === '-') ? pythonFlagGroup(st, start, first) : undefined;
+  if (flagged && !('scopedText' in flagged)) return flagged;
   // (`(?$x)`: the value may be what follows the `?`.)
-  const ext = GROUP_EXTENSIONS[st.flavor]?.exec(rest);
-  if (pcreLike(st) && !ext && rest[0] === '?' && hasHole(rest)) return holeStop(start);
+  const ext = flagged ? undefined : GROUP_EXTENSIONS[st.flavor]?.exec(rest);
+  if (pcreLike(st) && !ext && !flagged && rest[0] === '?' && hasHole(rest)) return holeStop(start);
   const unread = UNREAD_GROUP[st.flavor];
-  if (unread && !ext && unread.at.test(rest)) {
+  if (unread && !ext && !flagged && unread.at.test(rest)) {
     // `(?|`, `(?1)`, `(?R)`, `(?P=n)`, `(?(…)…)`, `(*VERB)`: the whole group, unread.
     st.i = groupEnd(st.src, start);
     const text = st.src.slice(start, st.i);
@@ -469,9 +454,10 @@ function group(st: State, openLen: number): EmbeddedToken {
     } else if (ext[5] === ':') {
       explanation = s(`\`(?${ext[4]}:…)\`: このグループの中だけマッチのオプションを切り替える（番号は付かない）`, `\`(?${ext[4]}:…)\`: set matching options inside this group only (no number)`);
     } else {
-      const [ja, en] = GLOBAL_FLAGS[st.flavor]!;
-      return { start, end: st.i, kind: 'keyword', explanation: s(`\`(?${k}\`: ${ja}`, `\`(?${k}\`: ${en}`), children: [] };
+      return { start, end: st.i, kind: 'keyword', explanation: s(`\`(?${k}\`: 以降のマッチのオプションを切り替える（i: 大小文字を区別しない など）`, `\`(?${k}\`: set matching options from here (i: case-insensitive, …)`), children: [] };
     }
+  } else if (flagged) {
+    explanation = flagged.scopedText;
   } else {
     group = ++st.groups;
     explanation = s(`グループ ${group}: 中身をひとまとめにする（\`\\${group}\` で一致した文字列を参照できる）`, `Group ${group}: treats its contents as one unit (\`\\${group}\` refers to what it matched)`);
@@ -482,6 +468,7 @@ function group(st: State, openLen: number): EmbeddedToken {
   const close = isGroupClose(st);
   st.i += close;
   st.unit = unit;
+  st.py = py;
   if (!close && st.rest) {
     explanation += st.rest === 'part' ? s('。この部分には閉じる `)` がない（右辺はほかの部分と合わせて1つの正規表現）', '. No `)` closes it in this part (the right side is one regex with its other parts)')
       : s('。閉じる `)` はないが、変数の値が閉じることがある', '. No `)` closes it here, but the value of a variable may');
@@ -494,12 +481,45 @@ function group(st: State, openLen: number): EmbeddedToken {
 
 /**
  * What `(?` starts in the flavors that have it (the groups of each: the kind, a name in `<…>` or in quotes, the flags, and what
- * follows them). Python names a group only as `(?P<name>…)`, and has its own flags (`aiLmsux`); the quoted form never matches there.
+ * follows them). Python names a group only as `(?P<name>…)` (the quoted form never matches there), and its flags are read by
+ * `pythonFlagGroup` (the flags never match there).
  */
 const GROUP_EXTENSIONS: Partial<Record<Flavor, RegExp>> = {
   pcre: /^\?(:|=|!|<=|<!|>|#[^)]*\)?|P?<([A-Za-z_]\w*)>|'([A-Za-z_]\w*)'|([imsxnUJ-]+)([:)]))/,
-  python: /^\?(:|=|!|<=|<!|>|#[^)]*\)?|P<([A-Za-z_]\w*)>|(?!)'(\w*)'|([aiLmsux-]+)([:)]))/,
+  python: /^\?(:|=|!|<=|<!|>|#[^)]*\)?|P<([A-Za-z_]\w*)>|(?!)'(\w*)')/,
 };
+
+/**
+ * A group of Python's inline flags that opens at `start` (`(?i)`, `(?i-m:`), read as `_parse_flags` of its `re._parser` reads it:
+ * a token for global flags (they must start the pattern: `first`), or for one it refuses, with its message; else, for flags of the
+ * group only, its text (the flags are in effect in `st.py` from here; the group restores them).
+ */
+function pythonFlagGroup(st: State, start: number, first: boolean): EmbeddedToken | { scopedText: string } {
+  const read = pythonFlags(st.src, start, st.py!.bytes);
+  const tok = (kind: EmbeddedToken['kind'], explanation: string): EmbeddedToken => ({ start, end: st.i, kind, explanation, children: [] });
+  if ('error' in read) {
+    st.i = groupEnd(st.src, start);
+    return tok('error', ownSaid(st, read.error));
+  }
+  st.i = read.end;
+  const names = (letters: string) => [...letters].map((l) => FLAG_LETTERS.get(l)!.name);
+  const py = { ...st.py! };
+  for (const [letters, on] of [[read.on, true], [read.off, false]] as const) {
+    for (const l of letters) {
+      const f = FLAG_LETTERS.get(l)!;
+      if ('option' in f) py[f.option] = on;
+    }
+  }
+  if (read.scoped) {
+    st.py = py;
+    return { scopedText: tokenSaid(st.lang, 'python-regex-inline-flags', { written: `${st.src.slice(start, st.i)}…)`, on: names(read.on), off: names(read.off), scoped: true }) };
+  }
+  if (!first) return tok('error', ownSaid(st, `global flags not at the start of the expression at position ${start}`, PYTHON_SINCE.globalFlagsAtStart));
+  st.py = py;
+  const t = tok('keyword', tokenSaid(st.lang, 'python-regex-inline-flags', { written: st.src.slice(start, st.i), on: names(read.on), off: [], scoped: false }));
+  st.globals.add(t);
+  return t;
+}
 
 /**
  * A group of the PCRE paths the reader does not read, by flavor: how it starts after `(` (`at`), and what it is said to be. Python has no
@@ -510,11 +530,6 @@ const UNREAD_GROUP: Partial<Record<Flavor, { at: RegExp; ja: string; en: string 
   python: { at: /^\?/, ja: 'この解説では読めない Python の `re` の構文', en: "a construct of Python's `re` this explainer does not read" },
 };
 
-/** Inline flags with no group (`(?i)`), by flavor: PCRE sets them from where they stand, Python for the whole pattern (they must start it). */
-const GLOBAL_FLAGS: Partial<Record<Flavor, readonly [ja: string, en: string]>> = {
-  pcre: ['以降のマッチのオプションを切り替える（i: 大小文字を区別しない など）', 'set matching options from here (i: case-insensitive, …)'],
-  python: ['パターン全体のマッチのオプションを切り替える（i: 大小文字を区別しない など）', 'set matching options for the whole pattern (i: case-insensitive, …)'],
-};
 
 /** `(?m)` and `(?-m)` (also `(?i-m:`): with `m` `^` and `$` stand at every line; without it, at the ends of the text (of the line, in grep). */
 function inlineFlags(st: State, flags: string): void {
@@ -584,13 +599,13 @@ function bracket(st: State): EmbeddedToken {
     if (pcreLike(st)) {
       // (A character, or a range of two: `[\x00-\x7F]`. A class such as `\d` is a set, and ends no range.)
       const atomAt = CLASS_ATOMS[st.flavor]!;
-      const a = atomAt(src, i, s);
+      const a = atomAt(st, i);
       i += a.length;
       // (Python stops at the first escape it refuses: the set is that error.)
       refused ??= a.error;
-      if (rangeAt(i) && (a.code === undefined || atomAt(src, i + 1, s).code === undefined)) badRange = true;
+      if (rangeAt(i) && (a.code === undefined || atomAt(st, i + 1).code === undefined)) badRange = true;
       if (a.code !== undefined && src[i] === '-' && i + 1 < src.length && src[i + 1] !== ']') {
-        const b = atomAt(src, i + 1, s);
+        const b = atomAt(st, i + 1);
         if (b.code !== undefined) {
           items.push(a.plain && b.plain ? s(`${a.plain}〜${b.plain}`, `${a.plain}-${b.plain}`)
             : s(`文字コード ${codeLabel(a.code)}〜${codeLabel(b.code)} の範囲の文字`, `the characters with codes ${codeLabel(a.code)} to ${codeLabel(b.code)}`));
@@ -611,7 +626,7 @@ function bracket(st: State): EmbeddedToken {
   }
   if (refused) {
     st.i = Math.min(i + 1, src.length);
-    return { start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, 'regex-python-error', { message: refused }), children: holes };
+    return { start, end: st.i, kind: 'error', explanation: ownSaid(st, refused), children: holes };
   }
   if (i >= src.length) {
     st.i = start + 1;
@@ -627,13 +642,13 @@ function bracket(st: State): EmbeddedToken {
   const list = items.join(s('、', ', '));
   return {
     start, end: st.i, kind: 'pattern', children: holes,
-    explanation: negated
+    explanation: (negated
       ? s(`文字クラス: ${list} 以外の1文字`, `Character class: one character other than ${list}`)
-      : s(`文字クラス: ${list} のどれか1文字`, `Character class: one of ${list}`),
+      : s(`文字クラス: ${list} のどれか1文字`, `Character class: one of ${list}`))
+      // (Letters written as themselves, not those of an escape: `[\d]` has none whose case matters.)
+      + caseText(st, src.slice(start, st.i).replace(/\\[\s\S]/g, ''), st.py),
   };
 }
-
-const hexOf = (code: number) => `0x${code.toString(16).toUpperCase().padStart(2, '0')}`;
 
 /** A code as a range end is told: `0x41` and, when the character shows, `("A")`. */
 function codeLabel(code: number): string {
@@ -650,28 +665,31 @@ interface ClassAtom { length: number; text: string; code?: number; plain?: strin
 const POSIX_CLASSES: ReadonlySet<Flavor> = new Set(['bre', 'ere', 'pcre']);
 
 /** What a set holds at `i` in each flavor of the PCRE paths. */
-const CLASS_ATOMS: Partial<Record<Flavor, (src: string, i: number, s: (ja: string, en: string) => string) => ClassAtom>> = { pcre: pcreClassAtom, python: pythonClassAtom };
+const CLASS_ATOMS: Partial<Record<Flavor, (st: State, i: number) => ClassAtom>> = { pcre: pcreClassAtom, python: pythonClassAtom };
 
 /** Python's controls of one letter in a set: `\b` is a backspace there. */
 const PYTHON_CONTROLS: Record<string, number> = { a: 7, b: 8, f: 12, n: 10, r: 13, t: 9, v: 11 };
 
 /** What a set of Python's `re` holds at `i`: a character (by an escape too: `\x41`, octal `\101`), a class of one letter (`\d`), or a refused escape. */
-function pythonClassAtom(src: string, i: number, s: (ja: string, en: string) => string): ClassAtom {
+function pythonClassAtom(st: State, i: number): ClassAtom {
+  const { src, s } = st;
+  const { bytes } = st.py!;
   if (src[i] === '\\' && i + 1 >= src.length) return { length: 1, text: '', error: `bad escape (end of pattern) at position ${i}` };
-  if (src[i] !== '\\') return pcreClassAtom(src, i, s);
+  if (src[i] !== '\\') return pcreClassAtom(st, i);
   const c = src[i + 1];
-  const code = pythonCode(src, i, true);
+  const code = pythonCode(src, i, true, bytes);
   if (code?.error) return { length: code.length, text: '', error: code.error };
   if (code) return { length: code.length, text: code.name === undefined ? charOfCode(code.code!, s) : namedChar(code.name, s), ...(code.code === undefined ? {} : { code: code.code }) };
-  if (/[A-Za-z0-9]/.test(c) && !PYTHON_LETTERS.inClass.includes(c)) return { length: 2, text: '', error: `bad escape \\${c} at position ${i}` };
-  const said = shorthandOf('python', c);
+  if (/[A-Za-z0-9]/.test(c) && !pythonLetters(bytes).inClass.includes(c)) return { length: 2, text: '', error: `bad escape \\${c} at position ${i}` };
+  const said = pythonShorthand(st.py!, c);
   if (c in PYTHON_CONTROLS) return { length: 2, code: PYTHON_CONTROLS[c], text: c === 'b' ? s('バックスペース', 'a backspace') : s(said!.ja, said!.en) };
   return said ? { length: 2, text: s(said.ja, said.en) } : { length: 2, code: c.codePointAt(0), text: s(`「${c}」`, `"${c}"`) };
 }
 
 const CLASS_CONTROLS: Record<string, number> = { t: 9, n: 10, r: 13, f: 12, e: 27, a: 7, b: 8 };
 
-function pcreClassAtom(src: string, i: number, s: (ja: string, en: string) => string): ClassAtom {
+function pcreClassAtom(st: State, i: number): ClassAtom {
+  const { src, s } = st;
   if (src[i] !== '\\' || i + 1 >= src.length) {
     const ch = String.fromCodePoint(src.codePointAt(i)!);
     return { length: ch.length, code: ch.codePointAt(0), plain: ch, text: s(`「${ch}」`, `"${ch}"`) };
@@ -685,26 +703,6 @@ function pcreClassAtom(src: string, i: number, s: (ja: string, en: string) => st
   if (c === 'b') return { length: 2, code: 8, text: s('バックスペース', 'a backspace') };
   if (/[A-Za-z]/.test(c)) return { length: 2, text: `\`\\${c}\`${s('（クラスの中では使えない）', ' (not valid in a class)')}` };
   return { length: 2, code: c.codePointAt(0), text: s(`「${c}」`, `"${c}"`) };
-}
-
-/** `\x41`, `\x{263a}`, `\012`, `\o{101}`, `\cA`, `\p{L}`: the PCRE escapes that name a character or a property. In a class `\101` is octal too. */
-function codeEscape(src: string, at: number, inClass = false): { length: number; code?: number; text: (s: (ja: string, en: string) => string) => string } | undefined {
-  const rest = src.slice(at);
-  const charOf = (code: number, s: (ja: string, en: string) => string) => {
-    const hex = hexOf(code);
-    return code < 32 || code === 127 || code > 0x10ffff ? s(`文字コード ${hex} の文字`, `the character with code ${hex}`)
-      : s(`文字コード ${hex} の文字「${String.fromCodePoint(code)}」`, `the character with code ${hex} ("${String.fromCodePoint(code)}")`);
-  };
-  let m: RegExpExecArray | null;
-  if ((m = /^\\x(?:\{([0-9A-Fa-f]+)\}|([0-9A-Fa-f]{0,2}))/.exec(rest))) { const code = parseInt(m[1] ?? (m[2] || '0'), 16); return { length: m[0].length, code, text: (s) => charOf(code, s) }; }
-  if ((m = (inClass ? /^\\(?:([0-7]{1,3})|o\{([0-7]+)\})/ : /^\\(?:0([0-7]{0,2})|o\{([0-7]+)\})/).exec(rest))) { const code = parseInt(m[1] ?? m[2]!, 8) || 0; return { length: m[0].length, code, text: (s) => charOf(code, s) }; }
-  if ((m = /^\\c([\x20-\x7e])/.exec(rest))) { const code = m[1].toUpperCase().charCodeAt(0) ^ 0x40; return { length: m[0].length, code, text: (s) => s(`制御文字 Ctrl-${m![1].toUpperCase()}`, `the control character Ctrl-${m![1].toUpperCase()}`) }; }
-  if ((m = /^\\([pP])(?:\{(\^?)([\w &]+)\}|(\w))/.exec(rest))) {
-    const not = (m[1] === 'P') !== (m[2] === '^');
-    const prop = m[3] ?? m[4];
-    return { length: m[0].length, text: (s) => (not ? s(`Unicode の性質 \`${prop}\` を持たない1文字`, `a character without the Unicode property \`${prop}\``) : s(`Unicode の性質 \`${prop}\` を持つ1文字`, `a character with the Unicode property \`${prop}\``)) };
-  }
-  return undefined;
 }
 
 /** The PCRE escapes that no other flavor has; undefined for one read by the shared table. */
@@ -855,7 +853,7 @@ function escapedLiteral(st: State, start: number, c: string): EmbeddedToken {
   if (st.flavor !== 'bre' && '(){}|+?'.includes(c) || /[.[\]*^$\\/]/.test(c)) {
     return { start, end: st.i, kind: 'string', explanation: s(`文字「${c}」そのもの（\`\\\` で特別な意味を無効にしている）`, `A literal "${c}" (escaped)`), children: [] };
   }
-  return { start, end: st.i, kind: 'string', explanation: s(`文字「${c}」`, `Literal "${c}"`), children: [] };
+  return { start, end: st.i, kind: 'string', explanation: s(`文字「${c}」`, `Literal "${c}"`) + caseText(st, c, st.py), children: [] };
 }
 
 /**
@@ -869,8 +867,22 @@ const FLAVOR_ESCAPES: Partial<Record<Flavor, (st: State, start: number, c: strin
  * its `message`), else the shell's entry of the kind of error (`shell`).
  */
 function refusal(st: State, message: string, shell: () => string): string {
-  const own = OWN_REFUSAL[st.flavor];
-  return own ? tokenSaid(st.lang, own.said, { message }) : shell();
+  return OWN_REFUSAL[st.flavor] ? ownSaid(st, message) : shell();
+}
+
+/**
+ * The text of a pattern the flavor's program refuses in its own words (`OWN_REFUSAL`): its `message`, which ends with the position,
+ * and the line and column of it where the pattern has a newline, as Python's `re.error` writes them; `since`, the release since which
+ * it is an error, where that changed in a release still supported (docs/design/python-regex.md, section 8).
+ */
+function ownSaid(st: State, message: string, since?: string): string {
+  const { src } = st;
+  if (src.includes('\n')) {
+    const pos = Number(message.slice(message.lastIndexOf(' ') + 1));
+    const before = src.slice(0, pos);
+    message += ` (line ${before.split('\n').length}, column ${pos - before.lastIndexOf('\n')})`;
+  }
+  return tokenSaid(st.lang, OWN_REFUSAL[st.flavor]!.said, { message, ...(since ? { since } : {}) });
 }
 
 /**
@@ -888,58 +900,12 @@ function refusedRepeat(st: State, start: number, out: readonly EmbeddedToken[]):
   return before.kind === 'operator' ? `multiple repeat at position ${start}` : undefined;
 }
 
-const isOctalDigit = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '7';
-
-/**
- * What a Python escape that names a character stands for at `at` (`\x41`, `\u00e9`, `\U0001F600`, `\N{EM DASH}`, octal `\101`),
- * as `_escape` and `_class_escape` of its `re._parser` read it: its length and its code (none for a name, which no table here
- * holds), or Python's message when it refuses it. Octal takes up to three digits; outside a set (`inClass` false) only after `\0`,
- * or as three digits (`\141`), where `\1` is a group.
- */
-function pythonCode(src: string, at: number, inClass: boolean): { length: number; code?: number; name?: string; error?: string } | undefined {
-  const c = src[at + 1];
-  const hex = { x: 2, u: 4, U: 8 }[c as 'x'];
-  if (hex) {
-    let k = at + 2;
-    while (k < at + 2 + hex && /[0-9a-fA-F]/.test(src[k] ?? '')) k++;
-    const digits = src.slice(at + 2, k);
-    const length = 2 + digits.length;
-    if (digits.length < hex) return { length, error: `incomplete escape \\${c}${digits} at position ${at}` };
-    const code = parseInt(digits, 16);
-    return code > 0x10ffff ? { length, error: `bad escape \\${c}${digits} at position ${at}` } : { length, code };
-  }
-  if (c === 'N') {
-    if (src[at + 2] !== '{') return { length: 2, error: `missing { at position ${at + 2}` };
-    const close = src.indexOf('}', at + 3);
-    if (close === at + 3 || (close < 0 && src.length === at + 3)) return { length: Math.min(4, src.length - at), error: `missing character name at position ${at + 3}` };
-    if (close < 0) return { length: src.length - at, error: `missing }, unterminated name at position ${at + 3}` };
-    return { length: close + 1 - at, name: src.slice(at + 3, close) };
-  }
-  const three = isOctalDigit(c) && isOctalDigit(src[at + 2]) && isOctalDigit(src[at + 3]);
-  if (!(c === '0' || (isOctalDigit(c) && (inClass || three)))) return undefined;
-  let k = at + 2;
-  while (k < at + 4 && isOctalDigit(src[k])) k++;
-  const code = parseInt(src.slice(at + 1, k), 8);
-  if (code > 0o377) return { length: k - at, error: `octal escape value \\${src.slice(at + 1, k)} outside of range 0-0o377 at position ${at}` };
-  return { length: k - at, code };
-}
-
-/** A character by its code, as the escapes that name one say it. */
-function charOfCode(code: number, s: (ja: string, en: string) => string): string {
-  const hex = hexOf(code);
-  return code < 32 || code === 127 || code > 0x10ffff ? s(`文字コード ${hex} の文字`, `the character with code ${hex}`)
-    : s(`文字コード ${hex} の文字「${String.fromCodePoint(code)}」`, `the character with code ${hex} ("${String.fromCodePoint(code)}")`);
-}
-
-/** `\N{name}`: the character of that name, if Unicode has one (there is no table of the names here, so it is not checked). */
-const namedChar = (name: string, s: (ja: string, en: string) => string): string => s(`名前が ${name} の文字（Unicode にその名前があれば）`, `the character named ${name}, if that is a Unicode name`);
-
 /** Python's escapes outside a set: a letter it has (else "bad escape"), a code, a group by its number, or a character made literal. */
 function pythonEscape(st: State, start: number, c: string): EmbeddedToken {
   const { s, src } = st;
   const tok = (kind: EmbeddedToken['kind'], explanation: string, extra: Partial<EmbeddedToken> = {}): EmbeddedToken => ({ start, end: st.i, kind, explanation, children: [], ...extra });
-  const refused = (message: string): EmbeddedToken => tok('error', tokenSaid(st.lang, 'regex-python-error', { message }));
-  const code = pythonCode(src, start, false);
+  const refused = (message: string): EmbeddedToken => tok('error', ownSaid(st, message));
+  const code = pythonCode(src, start, false, st.py!.bytes);
   if (code) st.i = start + code.length;
   if (code?.error) return refused(code.error);
   if (code) {
@@ -954,8 +920,8 @@ function pythonEscape(st: State, start: number, c: string): EmbeddedToken {
     return tok('variable', s(`後方参照 \`${src.slice(start, st.i)}\`: グループ ${group} に一致したのと同じ文字列`, `Backreference \`${src.slice(start, st.i)}\`: the same text group ${group} matched`), { group });
   }
   if (!/[A-Za-z0-9]/.test(c)) return escapedLiteral(st, start, c);
-  if (!PYTHON_LETTERS.out.includes(c)) return refused(`bad escape \\${c} at position ${start}`);
-  const sh = shorthandOf(st.flavor, c)!;
+  if (!pythonLetters(st.py!.bytes).out.includes(c)) return refused(`bad escape \\${c} at position ${start}`);
+  const sh = pythonShorthand(st.py!, c)!;
   return tok(/[bBAzZ]/.test(c) ? 'keyword' : 'pattern', `\`\\${c}\`: ${s(sh.ja, sh.en)}`);
 }
 

@@ -49,13 +49,12 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
       assert.deepStrictEqual(explainPy("import re\nre.compile('')\n", 1).items.map((t) => [t.label, t.children.length]), [["''", 0]]);
     });
 
-    it('leaves what it does not read yet: flags, VERBOSE, bytes, fields, `\\N{…}`, a value built at run time, `*args`', () => {
-      for (const call of ["re.search('a', s, re.I)", "re.search('a', s, flags=re.I)", "re.sub('a', 'b', s, 0, re.M)", "re.compile('a', re.X)", "re.compile(r'(?x) a b')", "re.compile(r'(?ix:a b)')",
-        "re.search(rb'a', s)", "re.search(f'{x}a', s)", "re.search('\\N{EM DASH}', s)", "re.search('a' + x, s)", "re.search(p, s)", "re.search('%s' % x, s)", "re.search(*args)", "re.search('a', **kw)", 're.search(', "re.search('a'", 're.search(string=s)']) {
+    it('leaves what it does not read yet: fields, `\\N{…}`, a value built at run time, `*args`', () => {
+      for (const call of ["re.search(f'{x}a', s)", "re.search('\\N{EM DASH}', s)", "re.search('a' + x, s)", "re.search(p, s)", "re.search('%s' % x, s)", "re.search(*args)", "re.search('a', **kw)", 're.search(', "re.search('a'", 're.search(string=s)']) {
         assert.deepStrictEqual(patterns(`import re\n${call}\n`), [], call);
       }
-      // (An f-string with no field is a str, and `(?i)` is no VERBOSE.)
-      assert.strictEqual(patterns("import re\nre.search(f'a{{2}}', s)\nre.search('(?i)a b', s)\n").length, 2);
+      // (An f-string with no field is a str; flags, VERBOSE and bytes patterns are read, test/python-flags.test.ts.)
+      assert.strictEqual(patterns("import re\nre.search(f'a{{2}}', s)\nre.search('a', s, re.I)\nre.compile(r'(?x) a b')\nre.search(rb'a', s)\n").length, 4);
       // (A call Python refuses: an argument past the function's parameters, or a keyword it does not have.)
       for (const call of ["re.compile('a', 0, x)", "re.search('a', s, flag=1)"]) assert.deepStrictEqual(patterns(`import re\n${call}\n`), [], call);
     });
@@ -132,7 +131,7 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
         { kind: 'string', origin: 'embedded', language: 'regex', label: "r'^\\d+(?P<frac>\\.\\d+)?$'", span: { start: { line: 1, character: 14 }, end: { line: 1, character: 38 } } });
       assert.strictEqual(top.explanation, 'The pattern of `re.search` (Python regex)');
       const d = top.children[1];
-      assert.deepStrictEqual([d.label, d.explanation, d.span, d.origin], ['\\d', 'a decimal digit of any script (`０`, `١`… too; only 0-9 with `re.ASCII`)', { start: { line: 1, character: 17 }, end: { line: 1, character: 19 } }, 'embedded']);
+      assert.deepStrictEqual([d.label, d.explanation, d.span, d.origin], ['\\d', 'a decimal digit of any script (`０`, `١`… too)', { start: { line: 1, character: 17 }, end: { line: 1, character: 19 } }, 'embedded']);
       assert.ok(texts(top.children).includes('(?P<frac>\\.\\d+): Named group `frac` (group 1)'));
       assert.ok(texts(top.children).includes('$: end of the text (or before a final newline)'));
       assert.deepStrictEqual(ex.context, [{ label: 'Python regex (argument of `re.search`)', line: 1 }]);

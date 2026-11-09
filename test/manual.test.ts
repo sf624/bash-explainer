@@ -33,15 +33,19 @@ function refsOf(src: string, label: string, line = 0): (readonly string[] | unde
 describe('the references', () => {
   const EXECVE = 'https://man7.org/linux/man-pages/man2/execve.2.html';
 
-  it('names a section of the manual and a manual page, and nothing else', () => {
+  it('names a section of the manual, a manual page and a part of Python\'s documentation, and nothing else', () => {
     assert.deepStrictEqual(reference('3.8'), { id: '3.8', kind: 'bash', text: '§3.8', title: 'Shell Scripts', url: manualUrl('3.8') });
     assert.deepStrictEqual(reference('execve(2)'), { id: 'execve(2)', kind: 'man', text: 'execve(2)', title: 'Interpreter scripts', url: EXECVE });
     assert.strictEqual(reference('rm(1)'), undefined);
     assert.strictEqual(referenceLabel('en', reference('execve(2)')!), 'Linux manual page execve(2)');
     assert.strictEqual(referenceLabel('ja', reference('3.8')!), 'Bash マニュアル 3.8');
     assert.ok(REFERENCE_URLS.has(EXECVE) && REFERENCE_URLS.has(manualUrl('3.8')));
-    // (The pages of the sections, some shared by several, and the one manual page.)
-    assert.strictEqual(REFERENCE_URLS.size, new Set([...SECTIONS.values()].map((s) => s.url)).size + 1);
+    const PY = 'https://docs.python.org/3.15/library/re.html#functions';
+    assert.deepStrictEqual(reference('python-re-functions'), { id: 'python-re-functions', kind: 'python', text: 're', title: 'Functions', url: PY });
+    assert.deepStrictEqual(['en', 'ja'].map((l) => referenceLabel(l as 'en', reference('python-re-functions')!)), ['Python documentation re', 'Python のドキュメント re']);
+    assert.strictEqual(refsText('en', ['3.8', 'python-re-functions']), ' (Bash manual 3.8; re)');
+    // (The pages of the sections, some shared by several, the one manual page and the one part of Python's documentation.)
+    assert.strictEqual(REFERENCE_URLS.size, new Set([...SECTIONS.values()].map((s) => s.url)).size + 2);
     // (The panel makes a link of an https address only: media/panel.js, test/web-panel-origin.test.ts.)
     for (const url of REFERENCE_URLS) assert.strictEqual(new URL(url).protocol, 'https:', url);
   });

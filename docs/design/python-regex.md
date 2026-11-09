@@ -198,17 +198,17 @@ The top row of a `match` says the pattern must match at the start; of a `fullmat
 
 ### 5.2 The flags
 
-A flags argument, given by keyword (`flags=re.X`) or in its slot, is read when it is `0`, `re.NOFLAG`, or names of `re` joined by `|`: short (`re.I`) or long (`re.IGNORECASE`), through the file's import names. Anything else makes every option "not known", and a text that depends on one says it depends on the flags.
+A flags argument, given by keyword (`flags=re.X`) or in its slot, is read when it is `0`, `re.NOFLAG`, or names of `re` joined by `|`: short (`re.I`) or long (`re.IGNORECASE`), through the file's import names (`from re import I`, `import re as regex`). Anything else makes every option "not known", and a text that depends on one says it depends on the flags. The flags are one table, `PYTHON_FLAGS` (src/embedded/regex-python.ts, the Python parts of the regex reader: each flag's long and short name, its inline letter, its value and the option it sets), which the extractor reads for the names and the reader for the letters. The extractor reads the flags of every argument (`CallArgument.flags`) and makes the region's `options` from the argument of the role `flags`; `bytes` is the pattern literal's prefix. Each name gets a token on the argument, with the flag's meaning (`python-regex-flag`); a flags argument not read gets one token that says so.
 
-Inline flags: `(?aiLmsux)` at the start sets them for the whole pattern; `(?i:…)` and `(?-i:…)` inside a group. A global flag elsewhere is an error.
+Inline flags: `(?aiLmsux)` at the start sets them for the whole pattern; `(?i:…)` and `(?-i:…)` inside a group. They are read as `_parse_flags` of Python's `re._parser` reads them, with its messages (an `L` in a str pattern, `a`, `u` and `L` together, turning off a type flag, a flag on and off, an unknown letter, a missing `:`). A global flag elsewhere is an error: global flags may only start the first alternative of the pattern, after nothing but comments, whitespace in VERBOSE, and other global flags (`(?i)(?#c)(?m)`). The error says it is one since Python 3.11 (a DeprecationWarning before).
 
-`re.VERBOSE` (`re.X`, `(?x)`) is read: whitespace is dropped except in a class or after a backslash (`\ ` is a space); `#` outside a class and not escaped starts a comment to the end of the line, a comment token. `a* ?` is an error ("multiple repeat"). In `a{1, 3}` the space is dropped too, and `{1,` with a space is no quantifier: the pattern is the literal text `a{1,3}`, which matches "a{1,3}", not "a{1, 3}". A newline in a non-raw literal (`"a\nb"`) is whitespace there. The PCRE `(?x)` stays unread (docs/backlog-archive.md, PCRE gaps).
+`re.VERBOSE` (`re.X`, `(?x)`) is read: whitespace is dropped except in a class or after a backslash (`\ ` is a space); `#` outside a class and not escaped starts a comment to the end of the line, a comment token. Whitespace between two items of a line is a token too ("ignored"); the indentation of a line and the whitespace before a comment or the end of a line get none, so that a pattern over many lines is not a row of blanks per line. Whitespace and comments are no items: a quantifier after them repeats the item before them (`a *` is `a*`). `a* ?` is an error ("multiple repeat"). In `a{1, 3}` the space is dropped too, and `{1,` with a space is no quantifier: the pattern is the literal text `a{1,3}`, which matches "a{1,3}", not "a{1, 3}". A newline in a non-raw literal (`"a\nb"`) is whitespace there. The PCRE `(?x)` stays unread (docs/backlog-archive.md, PCRE gaps).
 
 A bytes pattern (`rb'…'`) has ASCII classes, and `\u`, `\U`, `\N` are errors in it. `re.L` is said (bytes only, the locale decides), with no example.
 
 ### 5.3 Pitfalls of the call and of the string
 
-- **A flag in the count's slot:** `re.sub(p, r, s, re.I)` passes 2 as `count` and stays case-sensitive; the same for `split`'s `maxsplit` and `subn`. A Warning at the argument. The 3.13 deprecation of these positional arguments (`sub` and `split`; the documentation says nothing of `subn`) is said with it.
+- **A flag in the count's slot:** `re.sub(p, r, s, re.I)` passes 2 as `count` and stays case-sensitive; the same for `split`'s `maxsplit` and `subn`. A Warning at the argument (the fact `python-regex-flag-as-count`, a problem). The 3.13 deprecation of these positional arguments is said with it: the reference's `sub`, `subn` and `split` all warn (the documentation says nothing of `subn`, its code does). The fact cites the functions of Python's `re` (a reference of src/references.ts, kind `python`), not a section of the bash manual.
 - **Escapes of a non-raw literal:** `"\b"` is a backspace (a Warning: a pattern that cannot match where the author meant a word boundary). `"\d"` is an invalid escape of the string, kept as `\d` with a SyntaxWarning since 3.12: Python and the linters (Pylance, ruff's W605) already say it, so we do not (section 11); the token still says that the string keeps `\d`.
 
 ## 6. Examples
@@ -246,7 +246,7 @@ The tests run the reference Python (section 8) as a separate program (PSF licenc
 
 The reference is Python 3.15, the current stable release on 2026-11-08 (3.15.0 was released on 2026-10-09). It is one constant, `PYTHON_REFERENCE` (src/hosts/pylex.ts, since #759), which the tests read too: a newer release changes that constant, CI's setup-python version, and the notes.
 
-A text says what the reference does. Nothing valid in the reference is an Error. Where a construct's meaning or validity changed in a release still supported (3.11 to 3.14 on that date), a catalog note says so, with the release as a parameter:
+A text says what the reference does. Nothing valid in the reference is an Error. Where a construct's meaning or validity changed in a release still supported (3.11 to 3.14 on that date), a catalog note says so, with the release as a parameter, from one table of releases, `PYTHON_SINCE` (src/embedded/regex-python.ts):
 
 - `(?>…)` and possessive quantifiers: since 3.11 (an error before).
 - Global flags not at the start: an error since 3.11 (a DeprecationWarning before).

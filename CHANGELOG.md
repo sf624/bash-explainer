@@ -6,7 +6,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
-- In a `.py` file that imports `re`, the pattern of `re.search`, `re.compile`, `re.sub` and the other `re` functions is explained in the panel and the hover, part by part. A pattern Python refuses (`re.compile('*.txt')`) is an Error with Python's message.
+- In a `.py` file that imports `re`, the pattern of `re.search`, `re.compile`, `re.sub` and the other `re` functions is explained in the panel and the hover, part by part, with its flags (`re.I | re.M`, `(?i)`, VERBOSE comments). A pattern Python refuses (`re.compile('*.txt')`) is an Error with Python's message, and a flag passed as `count` (`re.sub(p, r, s, re.I)`) is a Warning.
 
 ### Fixed
 

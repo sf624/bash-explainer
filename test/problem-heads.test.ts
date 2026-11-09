@@ -101,6 +101,7 @@ const CASES: { [K in ProblemFactId]: readonly unknown[] } = {
   'dockerfile-pipefail-missing': [{}],
   'python-string-without-shell': [{}],
   'python-shell-injection': [{}],
+  'python-regex-flag-as-count': [{ written: 're.I', call: 're.sub', param: 'count', value: 2, since: '3.13' }, { written: 're.M', call: 're.split', param: 'maxsplit', value: 8, since: '3.13' }],
   'actions-script-injection': [{ expr: '${{ x }}' }],
   'stderr-to-original-stdout': [{ dup: '2>&1', file: '>f', discards: true }, { dup: '2>&1', file: '>f', discards: false }],
 };
