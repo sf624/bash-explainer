@@ -4,7 +4,7 @@
 // expansions (./expansions.ts), the state another shell starts with (./child.ts).
 import type { ArgvParse } from '../../argv/interpret';
 import type { Ends } from '../../argv/spec';
-import type { Shell } from '../../dialect';
+import { isBash, type Shell } from '../../shellfeatures';
 import { builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
 import { assignmentsOnly, coprocName, descendants, field, fields, nameText, prefixAssignments, redirectionsOf, type SyntaxNode, rootOf } from '../../syntax/tree';
@@ -169,7 +169,7 @@ export class Walker {
 
   constructor(readonly shell: Shell | undefined, readonly posix: boolean, readonly scripts: Scripts, readonly trust: Trust,
     readonly host: HostCommands = NO_HOST, readonly hosted?: HostRun, seed?: Walker, readonly version: import('../../bashversion').BashVersion = '5.2') {
-    this.bash = !shell || shell === 'bash';
+    this.bash = isBash(shell) === 'yes';
     this.blind = trust.blind !== undefined;
     // (With the nodes of those changes, for a call widened before the walk makes them.)
     for (const [def, keys] of seed?.changes ?? []) this.changes.set(def, new Set(keys));

@@ -264,15 +264,72 @@ export type Measured = 'dash' | 'ash';
 /** The common `/bin/sh` implementations: what they both run is counted on in a sh script (`local`, not POSIX, is there in both). */
 export const COMMON_SH: readonly Measured[] = ['dash', 'ash'];
 
+/** The answer to a question about the shell of a script: yes, no, or not known (in `sh`, where the shells it may be do not agree). */
+export type YesNo = 'yes' | 'no' | 'unknown';
+
+/** The shells a `sh` script may run in: bash (in POSIX mode, as `/bin/sh` is on macOS) and the common `/bin/sh` implementations. */
+export const SH_MAY_BE: readonly RealShell[] = ['bash', ...COMMON_SH];
+
+/** The shells a script for `shell` (bash when absent) may run in: `sh` may be any of `SH_MAY_BE`; every other shell is itself. */
+export function shellsOf(shell?: Shell): readonly RealShell[] {
+  return shell === 'sh' ? SH_MAY_BE : [shell ?? 'bash'];
+}
+
+/** Yes when `holds` is true of every shell of `shells`, no when of none, not known otherwise. */
+function ofAll(shells: readonly RealShell[], holds: (sh: RealShell) => boolean): YesNo {
+  const n = shells.filter(holds).length;
+  return n === shells.length ? 'yes' : n === 0 ? 'no' : 'unknown';
+}
+
+/** Whether the script's shell is bash: yes for bash (and for none said, the default), no for another shell, not known in `sh` (`shellsOf`). */
+export const isBash = (shell?: Shell): YesNo => ofAll(shellsOf(shell), (sh) => sh === 'bash');
+
+/** A behaviour of bash's (`SHELL_BEHAVIOURS`): the letters of the shells that do otherwise (`LETTER`). A shell that lacks the form is not among them. */
+export interface ShellBehaviour { differs: string }
+
+/**
+ * What bash does with a form that other shells have too, where some of them do otherwise: its behaviour, not its syntax (a form some shells lack is
+ * a row of FEATURES). One row per behaviour, measured with the shells of FEATURES; test/shell-behaviours.test.ts holds every row against each
+ * installed shell. `asBash` reads a row; the dialect notes of some (`BEHAVIOURS`, src/dialect.ts) say on the line that the shell differs.
+ */
+export const SHELL_BEHAVIOURS = {
+  // `echo 'a\tb'` prints the backslash (bash's `xpg_echo` is off).
+  echoEscape: { differs: 'dymz' },
+  // An unquoted parameter expansion is split into fields and globbed (zsh's SH_WORD_SPLIT and GLOB_SUBST are off; it splits a command substitution).
+  wordSplit: { differs: 'z' },
+  // `typeset` in a function written `f() { … }` makes a local variable (ksh93: only in one written `function f { … }`).
+  typesetScope: { differs: 'k' },
+  // An indexed array's first element is `${a[0]}` (yash and zsh count from 1).
+  arrayBase: { differs: 'yz' },
+  // The tildes of the shell's directories (3.5.2): `~+`, `~-` and `~N` (`~0`, `~+1`, `~-1`). The shells listed expand none of them. (yash, ksh93
+  // and mksh expand `~+` and `~-`; of `~N`, yash expands only `~+N` and `~-N`, and ksh93 and mksh none, but the word model reads a `~N` there as
+  // bash does.)
+  dirTilde: { differs: 'da' },
+  // `.*` matches neither `.` nor `..` (bash 5.2's `globskipdots`, on by default).
+  globSkipDots: { differs: 'day' },
+  // GLOBIGNORE removes the names it matches from what a pattern gives (3.5.8).
+  globIgnore: { differs: 'daykmz' },
+} as const satisfies Record<string, ShellBehaviour>;
+export type BehaviourId = keyof typeof SHELL_BEHAVIOURS;
+
+const differs = (id: BehaviourId, sh: RealShell): boolean => SHELL_BEHAVIOURS[id].differs.includes(LETTER[sh]);
+
+/** Whether `shell` (bash when absent) does as bash does in the behaviour `id`: in `sh`, not known where bash, dash and busybox ash disagree. */
+export const asBash = (id: BehaviourId, shell?: Shell): YesNo => ofAll(shellsOf(shell), (sh) => !differs(id, sh));
+
+/** The shells of `shell` (bash when absent; in `sh`, those of `SH_MAY_BE`) that do otherwise than bash in the behaviour `id`, in the order of `LETTER`. */
+export const differIn = (id: BehaviourId, shell?: Shell): RealShell[] => shellsOf(shell).filter((sh) => differs(id, sh));
+
 /**
  * Whether the word model follows how `shell` (bash when absent) expands a word, its tildes, word splitting and pathname
- * expansion: bash; and the common sh (dash, busybox ash, and `sh` for either or bash in POSIX mode), read as bash in
- * POSIX mode with none of its `shopt` options, no `GLOBIGNORE`, `.*` matching `.` and `..`, and no `~+`, `~-` or `~N`
- * (src/semantics/words.ts; in `sh`, what bash does otherwise is not known). A construct the shell lacks is still not
- * followed (src/dialect.ts). test/fieldshape.test.ts runs the field domain's words in dash and busybox ash.
+ * expansion: where every shell it may be (`shellsOf`) is one of `SH_MAY_BE`, bash and the common sh (dash, busybox ash).
+ * The common sh is read as bash in POSIX mode with none of its `shopt` options, and with what `SHELL_BEHAVIOURS` says it
+ * does otherwise (`dirTilde`, `globSkipDots`, `globIgnore`); in `sh`, which may be bash, what they disagree on is not known
+ * (src/semantics/words.ts, wordoptions.ts). A construct the shell lacks is still not followed (src/dialect.ts).
+ * test/fieldshape.test.ts runs the field domain's words in dash and busybox ash.
  */
 export function wordsFollowed(shell?: Shell): boolean {
-  return !shell || shell === 'bash' || shell === 'sh' || (COMMON_SH as readonly Shell[]).includes(shell);
+  return shellsOf(shell).every((sh) => SH_MAY_BE.includes(sh));
 }
 
 /**

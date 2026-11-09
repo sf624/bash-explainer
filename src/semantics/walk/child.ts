@@ -3,6 +3,7 @@
 import { SET_LETTERS } from '../effects';
 import { RESTRICTED_READONLY } from '../vars';
 import { type ExecEnv, reachOf, STARTUP_FLAGS } from '../env';
+import { isBash } from '../../shellfeatures';
 import type { FunctionState, OptionState, ShellState, Tri, VariableState } from '../shellstate';
 import type { SyntaxNode } from '../../syntax/tree';
 import { type ChildPass, NAME, passed, passedMemo } from './shared';
@@ -47,7 +48,7 @@ export function childStart(w: Walker, outer: ShellState, env: ExecEnv, pass: Chi
   const exported = (name: string): boolean => (outer.variables.get(name)?.attrs.x?.state ?? 'off') === 'on';
   const reach = reachOf(env, exported('SHELLOPTS'));
   // (`sh` may be bash, which reads exported functions, SHELLOPTS and BASHOPTS, or dash, which reads none.)
-  const bashLike: Tri = w.bash ? 'on' : w.shell === 'sh' ? 'unknown' : 'off';
+  const bashLike: Tri = ({ yes: 'on', no: 'off', unknown: 'unknown' } as const)[isBash(w.shell)];
   if (reach.variables !== 'none') {
     let vars = outer.variables.mapped(passed, passedMemo);
     for (const name of pass.removed) vars = vars.with(name, undefined);

@@ -1,7 +1,7 @@
 // The state where a word is expanded (src/semantics/words.ts): the options a word's meaning reads, POSIX mode, the
 // glob options, the IFS and braceexpand, kept per state; and how a shell other than bash changes them (`wordsFollowed`).
 import { type Shell } from '../dialect';
-import { wordsFollowed } from '../shellfeatures';
+import { asBash, isBash, wordsFollowed } from '../shellfeatures';
 import { defaultOn, option, type OptionState, type ShellState, type Tri } from './state';
 import type { GlobState, IfsState } from './words';
 
@@ -49,21 +49,21 @@ export function optionsOf(st: ShellState, shell?: Shell): WordOptions {
     m.set(keys[3], o);
   }
   // (The shell is part of what a meaning is kept by: the models of one script for two shells share the states.)
-  if (!shell || shell === 'bash') return o;
+  if (!shell || isBash(shell) === 'yes') return o;
   const ofShell = (o.ofShell ??= new Map<Shell, WordOptions>());
   return ofShell.get(shell) ?? ofShell.set(shell, { ...o, ...(wordsFollowed(shell) ? { posix: 'on' as const, glob: globIn(o.glob, shell) } : {}), ofShell: undefined }).get(shell)!;
 }
 
 /**
  * The glob options of the common sh (`wordsFollowed`), which has `set -f` and none of bash's `shopt` options
- * (`shoptIn` says so to the explanations): each is off, `globskipdots` too (dash and busybox ash match `.` and `..` with `.*`), and GLOBIGNORE is
- * an ordinary variable. In `sh`, which may also be bash in POSIX mode (macOS), `globskipdots` is not known, nor a
- * GLOBIGNORE the script sets.
+ * (`shoptIn` says so to the explanations): each is off. `globskipdots` and GLOBIGNORE are as `SHELL_BEHAVIOURS` says:
+ * dash and busybox ash match `.` and `..` with `.*` (`globSkipDots`), and GLOBIGNORE is an ordinary variable there
+ * (`globIgnore`). In `sh`, which may also be bash in POSIX mode (macOS), `globskipdots` is not known, nor a GLOBIGNORE the script sets.
  */
 function globIn(g: GlobState, shell: Shell): GlobState {
-  const sh = shell === 'sh';
   return {
     noglob: g.noglob, nullglob: 'off', failglob: 'off', dotglob: 'off', nocaseglob: 'off', extglob: 'off', globstar: 'off',
-    globskipdots: sh ? 'unknown' : 'off', globignore: sh && g.globignore !== 'unset' ? 'unknown' : 'unset',
+    globskipdots: ({ yes: g.globskipdots, no: 'off', unknown: 'unknown' } as const)[asBash('globSkipDots', shell)],
+    globignore: ({ yes: g.globignore, no: 'unset', unknown: g.globignore === 'unset' ? 'unset' : 'unknown' } as const)[asBash('globIgnore', shell)],
   };
 }

@@ -24,7 +24,7 @@ import { testWordShape } from './semantics/testwords';
 import { testedFirst } from './semantics/unbound';
 import { bracesInContext, wordFields, type WordEnv } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { builtinRow, type Case, COMMON_SH, type Failure, type Feature, FEATURES, featureWorks, failureOf, type InShell, isFailure, LETTER, type Measured, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, variableRow, works } from './shellfeatures';
+import { type BehaviourId, builtinRow, type Case, COMMON_SH, differIn, type Failure, type Feature, FEATURES, featureWorks, failureOf, type InShell, isFailure, type Measured, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, variableRow, works } from './shellfeatures';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { binaryOperators, parseTest, writtenTestWords } from './testexpr';
 
@@ -115,40 +115,37 @@ export function restrictedByName(name: string): boolean {
 }
 
 /**
- * Constructs that work everywhere but behave differently from bash in some shells (the letters
- * in `differs`, measured like FEATURES).
+ * The notes of the behaviours of `SHELL_BEHAVIOURS` (src/shellfeatures.ts, where the shells that differ are) that the dialect check says on the
+ * line where it finds the form (`collectBehaviours`).
  */
-interface Behaviour { differs: string; ja: (shell: string) => string; en: (shell: string) => string; head: (shell: string) => Head }
+interface Behaviour { ja: (shell: string) => string; en: (shell: string) => string; head: (shell: string) => Head }
 
-export const BEHAVIOURS: Record<string, Behaviour> = {
+export const BEHAVIOURS = {
   echoEscape: {
-    differs: 'dymz',
     ja: (sh) => `${sh} の \`echo\` は引数の \`\\t\` や \`\\n\` などを解釈します（bash は文字のまま表示）。どちらでも同じにするには \`printf\` を使います。`,
     en: (sh) => `${sh}'s \`echo\` interprets \`\\t\`, \`\\n\` and the like in its arguments (bash prints them as they are). Use \`printf\` to get the same result everywhere.`,
     head: (sh) => [`${sh} の \`echo\` は \`\\t\` や \`\\n\` などを解釈する。`, `${sh}'s \`echo\` interprets \`\\t\`, \`\\n\` and the like.`],
   },
   wordSplit: {
-    differs: 'z',
     ja: (sh) => `${sh} ではクォートしない \`$変数\` も単語分割・グロブ展開されません（bash では空白で分かれます）。`,
     en: (sh) => `In ${sh} an unquoted \`$var\` is not split into words or globbed (bash splits it on spaces).`,
     head: (sh) => [`${sh} ではクォートしない \`$変数\` も分かれない。`, `In ${sh} an unquoted \`$var\` is not split.`],
   },
   typesetScope: {
-    differs: 'k',
     ja: (sh) => `${sh} では \`name() { … }\` の形の関数の中の \`typeset\` はローカル変数になりません（グローバル変数を変更します）。ローカルにするには \`function name { … }\` の形で定義します。`,
     en: (sh) => `In ${sh}, \`typeset\` inside a function written \`name() { … }\` does not make a local variable (it changes the global one); define the function as \`function name { … }\` for local scope.`,
     head: (sh) => [`${sh} では、この形の関数の中の \`typeset\` はグローバル変数を変更する。`, `In ${sh}, \`typeset\` in a function of this form changes the global variable.`],
   },
   arrayBase: {
-    differs: 'yz',
     ja: (sh) => `${sh} の配列の添字は 1 から始まります（bash は 0 から）。この解説は bash の数え方です。`,
     en: (sh) => `Array subscripts start at 1 in ${sh} (bash starts at 0); this explanation counts the bash way.`,
     head: (sh) => [`${sh} の配列の添字は 1 から始まる。`, `Array subscripts start at 1 in ${sh}.`],
   },
-};
+} satisfies { [K in BehaviourId]?: Behaviour };
+type Noted = keyof typeof BEHAVIOURS;
 
 /** A construct found in the tree: what it is, and the node where it starts. */
-export interface Found { id: string; node: SyntaxNode }
+export interface Found<I extends string = string> { id: I; node: SyntaxNode }
 
 /** Calls `check` for every node starting on lines [from, to]. */
 function walk(root: SyntaxNode, from: number, to: number, check: (n: SyntaxNode) => void): void {
@@ -161,10 +158,10 @@ function walk(root: SyntaxNode, from: number, to: number, check: (n: SyntaxNode)
 }
 
 /** Behaviours used on lines [from, to] (see BEHAVIOURS). */
-export function collectBehaviours(root: SyntaxNode, from: number, to: number): Found[] {
-  const found: Found[] = [];
+export function collectBehaviours(root: SyntaxNode, from: number, to: number): Found<Noted>[] {
+  const found: Found<Noted>[] = [];
   walk(root, from, to, (n) => {
-    const add = (id: string) => found.push({ id, node: n });
+    const add = (id: Noted) => found.push({ id, node: n });
     if (n.type === 'command' && field(n, 'name')?.text === 'echo'
       && n.namedChildren.slice(1).some((a) => /\\[abcefnrtv\\0]/.test(a.type === 'raw_string' ? a.text : a.type === 'string' ? a.text.replace(/\\\\/g, '\\') : ''))) add('echoEscape');
     // An unquoted `$var` used as a word of a command.
@@ -534,27 +531,24 @@ export function dialectTexts(lang: Lang): string[] {
   const shells = Object.keys(SHELL_NAMES) as Shell[];
   return [
     ...Object.keys(FEATURES).flatMap((id) => shells.flatMap((sh) => [featureMessage(id, sh, lang), ...(isVariableRow(FEATURES[id]) ? UNSET_CASES.map((does) => featureMessage(id, sh, lang, { dash: does, ...(FEATURES[id].ash === 'empty' ? { ash: does } : {}) })) : []), featureHead(id, sh)[lang === 'ja' ? 0 : 1]])),
-    ...Object.keys(BEHAVIOURS).flatMap((id) => shells.flatMap((sh) => [behaviourMessage(id, sh, lang), behaviourHead(id, sh)[lang === 'ja' ? 0 : 1]])),
+    ...(Object.keys(BEHAVIOURS) as Noted[]).flatMap((id) => shells.flatMap((sh) => [behaviourMessage(id, sh, lang), behaviourHead(id, sh)[lang === 'ja' ? 0 : 1]])),
     ...Object.keys(SINCE).flatMap((id) => [...BASH_VERSIONS.filter((v) => earlier(v, SINCE[id].version)).map((v) => versionMessage(id, v, lang)), versionHead(id)[lang === 'ja' ? 0 : 1]]),
   ].filter((t): t is string => t !== undefined);
 }
 
-/** The names of the shells among `shell` (for POSIX sh, the common /bin/sh implementations) where a behaviour differs. */
-function behaviourIn(id: string, shell: Shell): string {
-  const b = BEHAVIOURS[id];
-  // For POSIX sh, name the common /bin/sh implementations that differ.
-  const differ = shell === 'sh' ? (['dash', 'ash'] as RealShell[]).filter((sh) => b.differs.includes(LETTER[sh])) : shell !== 'bash' && b.differs.includes(LETTER[shell]) ? [shell] : [];
-  return differ.map((x) => SHELL_NAMES[x]).join(' / ');
+/** The names of the shells among `shell` (for POSIX sh, the common /bin/sh implementations) where a behaviour differs (`differIn`). */
+function behaviourIn(id: Noted, shell: Shell): string {
+  return differIn(id, shell).map((x) => SHELL_NAMES[x]).join(' / ');
 }
 
-function behaviourMessage(id: string, shell: Shell, lang: Lang): string | undefined {
+function behaviourMessage(id: Noted, shell: Shell, lang: Lang): string | undefined {
   const s = pick(lang);
   const b = BEHAVIOURS[id];
   const shells = behaviourIn(id, shell).split(' / ');
   return shells[0] ? s(b.ja(shells.join('・')), b.en(shells.join(' and '))) : undefined;
 }
 
-const behaviourHead = (id: string, shell: Shell): Head => BEHAVIOURS[id].head(behaviourIn(id, shell).split(' / ').join(' and '));
+const behaviourHead = (id: Noted, shell: Shell): Head => BEHAVIOURS[id].head(behaviourIn(id, shell).split(' / ').join(' and '));
 
 /** The line and column of an offset in the text. */
 function pointAt(text: string, index: number): Point {
