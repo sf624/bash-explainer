@@ -12,7 +12,7 @@
     {"file":"src/dict/aliases.ts","fn":"shellSpec","kind":"compare","count":1,"to":"SHELL_BEHAVIOURS","reason":"dash's `set -o` takes the next word; the other shells keep the POSIX reading"},
     {"file":"src/dict/builtins.ts","fn":"builtins","kind":"list","count":1,"to":"SHELL_BEHAVIOURS","reason":"the shells where `local` outside a function is no error (the spec's `scope.except`)"},
     {"file":"src/expansion-tokens.ts","fn":"explainExpansion","kind":"compare","count":1,"to":"isBash","reason":"zsh's `${(f)x}` flags, and bash's text of an unknown `@op`"},
-    {"file":"src/explain/argv.ts","fn":"badName","kind":"list","count":1,"to":"SHELL_BEHAVIOURS","reason":"in dash and busybox ash (and `sh`), a special builtin's error ends the shell"},
+    {"file":"src/explain/argv-operands.ts","fn":"badName","kind":"list","count":1,"to":"SHELL_BEHAVIOURS","reason":"in dash and busybox ash (and `sh`), a special builtin's error ends the shell"},
     {"file":"src/explain/commands.ts","fn":"localStops","kind":"compare","count":1,"to":"SHELL_BEHAVIOURS","reason":"where `local` outside a function stops the shell"},
     {"file":"src/explain/commands.ts","fn":"headOf","kind":"compare","count":1,"to":"SHELL_BEHAVIOURS","reason":"zsh's `[` is a builtin of its own"},
     {"file":"src/explain/embedded.ts","fn":"holedWord","kind":"compare","count":1,"to":"SHELL_BEHAVIOURS","reason":"zsh neither splits nor globs an unquoted expansion (`wordSplit`)"},

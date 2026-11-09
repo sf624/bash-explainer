@@ -12,7 +12,7 @@ import { anonSections, programSections } from '../refs';
 import { definitionFails } from '../semantics/names';
 import { coprocName, field, fields, isShebang, nameText, strayKeyword, type SyntaxNode, withLists } from '../syntax/tree';
 import { detectShell, SHELL_NAMES } from '../dialect';
-import { shebangOptionTokens } from './argv';
+import { shebangOptionTokens } from './argv-options';
 import type { Explainer } from './context';
 import { caseExample, pipelineExample } from './examples';
 import { listOperatorToken } from './lists';
