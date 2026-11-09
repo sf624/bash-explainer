@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { fixFor } from '../src/fixes';
-import { BEHAVIOURS, behavioursOnLine, detectShell, dialectIssues, dialectNotes, featuresOnLine, FEATURES, featureWorks } from '../src/dialect';
+import { behavioursOnLine, detectShell, dialectIssues, dialectNotes, featuresOnLine, FEATURES, featureWorks } from '../src/dialect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { SINCE } from '../src/bashversion';
 import { builtins } from '../src/dict/builtins';
@@ -15,6 +15,7 @@ import type { Stop } from '../src/semantics/scriptstops';
 import { Analyzer } from '../src/analyzer';
 import type { Token } from '../src/analyzer-types';
 import { type ModelRow, rowModel } from '../src/ui/panelRows';
+import { locate } from './support/shells';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -122,22 +123,10 @@ const PROBES: Record<string, string> = {
   valsub: 'v=${| REPLY=ok; }; echo $v',
 };
 // A snippet per behaviour that prints "ok" only where it differs from bash.
-const BEHAVIOUR_PROBES: Record<string, string> = {
-  echoEscape: '[ "$(echo \'a\\tb\')" = "$(printf \'a\\tb\')" ] && echo ok',
-  wordSplit: 'v="a b"; set -- $v; [ $# = 1 ] && echo ok',
-  arrayBase: 'a=(x y); [ "${a[1]}" = x ] && echo ok',
-  typesetScope: 'f() { typeset v=in; }; v=out; f; [ "$v" = in ] && echo ok',
-};
 // Probes that cannot be checked with `sh -c` (bash needs `shopt -s extglob` before parsing).
 // (`setByBash`: its letters claim nothing of the other shells: test/dialect-dash.test.ts runs it in dash and busybox ash.)
 const UNPROBED = ['extglob', 'bashVar', 'setByBash'];
 
-/** Find a shell in $BASH_EXPLAINER_SHELLS (a directory) or on PATH. */
-function locate(names: string[]): string | undefined {
-  const dirs = [process.env.BASH_EXPLAINER_SHELLS, ...(process.env.PATH ?? '').split(':')].filter(Boolean) as string[];
-  for (const n of names) for (const d of dirs) if (fs.existsSync(path.join(d, n))) return path.join(d, n);
-  return undefined;
-}
 
 describe('the dialect table agrees with the installed shells', () => {
   const shells: [string, string[], string][] = [
@@ -156,12 +145,6 @@ describe('the dialect table agrees with the installed shells', () => {
         it(id, () => {
           const r = spawnSync(bin!, [...(flag ? [flag] : []), '-c', code], { timeout: 5000, input: '' });
           assert.strictEqual(r.stdout.toString().trim() === 'ok', works(id), `${id} in ${names[0]}`);
-        });
-      }
-      for (const [id, code] of Object.entries(BEHAVIOUR_PROBES)) {
-        it(`behaviour ${id}`, () => {
-          const r = spawnSync(bin!, [...(flag ? [flag] : []), '-c', code], { timeout: 5000, input: '' });
-          assert.strictEqual(r.stdout.toString().trim() === 'ok', BEHAVIOURS[id].differs.includes(letter), `${id} in ${names[0]}`);
         });
       }
     });

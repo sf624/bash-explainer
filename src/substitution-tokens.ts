@@ -6,9 +6,10 @@ import { unclosedBrace } from './bashversion';
 import type { Explainer } from './explain/context';
 import { statementTokens } from './explain/lists';
 import { substitutionStatus } from './explain/status';
+import { isBash } from './shellfeatures';
 import { ancestor, braceTakenAsWord, field, fileContentsOf, substitutionForm, type SyntaxNode, withLists } from './syntax/tree';
 
-const isBash = (h: Explainer) => h.shell === undefined || h.shell === 'bash';
+const inBash = (h: Explainer): boolean => isBash(h.shell) === 'yes';
 
 /**
  * What each form of command substitution does, [Japanese, English] (checked with bash 5.3: test/bash53.test.ts). In a
@@ -19,7 +20,7 @@ function meaning(h: Explainer, n: SyntaxNode): string {
   const form = substitutionForm(n);
   const own = form === '${' ? h.shell === 'ksh' || h.shell === 'mksh' : h.shell === 'mksh';
   // (`$(< f)`: bash reads the file itself.)
-  const file = isBash(h) ? fileContentsOf(n) : undefined;
+  const file = inBash(h) ? fileContentsOf(n) : undefined;
   if (file) {
     const f = field(file, 'destination')!.text;
     const shown = form === '`' ? '`` `< file` ``' : '`$(< file)`';
@@ -45,7 +46,7 @@ function meaning(h: Explainer, n: SyntaxNode): string {
 export function explainCommandSubstitution(h: Explainer, n: SyntaxNode): Token {
   // (A `}` that does not end it: a syntax error.)
   const brace = braceTakenAsWord(n);
-  if (brace) return h.tok(n, 'error', h.s(...unclosedBrace(brace, substitutionForm(n) === '${' ? '${ …; }' : '${| …; }', isBash(h))), h.subs(n.namedChildren));
+  if (brace) return h.tok(n, 'error', h.s(...unclosedBrace(brace, substitutionForm(n) === '${' ? '${ …; }' : '${| …; }', inBash(h))), h.subs(n.namedChildren));
   return h.tok(n, 'substitution', meaning(h, n) + substitutionStatus(h, n), statementTokens(h, withLists(n)));
 }
 
@@ -60,7 +61,7 @@ export function scopeOf(n: SyntaxNode): 'function' | 'substitution' | undefined 
 
 /** What `return` (at `n`) does in a `${ …; }` of a bash script: it ends the substitution (checked with bash 5.3). */
 export function returnInSubstitution(h: Explainer, n: SyntaxNode): string | undefined {
-  if (!isBash(h) || scopeOf(n) !== 'substitution') return undefined;
+  if (!inBash(h) || scopeOf(n) !== 'substitution') return undefined;
   return h.s('囲んでいる `${ …; }` のコマンドをここで終える（関数での `return` と同じ。終了ステータスは引数の値で、省略すると直前のコマンドのもの）',
     'End the commands of the `${ …; }` around it, as `return` ends a function (the status is the one given, or that of the last command)');
 }

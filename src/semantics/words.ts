@@ -13,7 +13,7 @@ import { guardedApart, modelLimit, modelValueLimit } from '../examples/regexguar
 import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { patsubMiscounts } from '../bracket';
 import { type Shell, zshOtherwise } from '../dialect';
-import { COMMON_SH, featureWorks } from '../shellfeatures';
+import { asBash, featureWorks } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode, rootOf } from '../syntax/tree';
@@ -239,16 +239,16 @@ export function operandAssigned(e: SyntaxNode, model: StateModel): boolean {
 export const directoryTilde = (user: string): boolean => user === '+' || user === '-' || !!stackTilde(user);
 
 /**
- * The tilde prefixes of a word, as its context and the mode read them (3.5.2; `tildeSpots`); none in `"${x:-~}"`. `sh`:
- * dash or busybox ash, which expand no `~+`, `~-` nor `~N` (they leave them as written; in `sh`, which may be bash, the
- * field domain does not know such a word: `readsAsBash`).
+ * The tilde prefixes of a word, as its context and the mode read them (3.5.2; `tildeSpots`); none in `"${x:-~}"`. `dirs`:
+ * whether the shell expands `~+`, `~-` and `~N` (`dirTilde` of SHELL_BEHAVIOURS: dash and busybox ash leave them as
+ * written; in `sh`, which may be bash, they are read as bash reads them, and the field domain does not know such a word: `readsAsBash`).
  */
-function tildesOf(nodes: readonly SyntaxNode[], rule: ContextRule, posix: Tri, sh = false): TildePrefix[] {
+function tildesOf(nodes: readonly SyntaxNode[], rule: ContextRule, posix: Tri, dirs: boolean): TildePrefix[] {
   if (rule.tilde === 'none' || (rule.tilde === 'element' && posix === 'on') || (rule === CONTEXTS['param-word'] && nodes[0].parent?.parent?.type === 'string')) return [];
   const parts = tildeParts(nodes);
   const mode = rule.tilde === 'declaration' ? 'argument' : rule.tilde === 'argument' ? (posix === 'on' ? 'start' : 'argument')
     : rule === CONTEXTS['param-word'] && posix !== 'on' && assignedOperand(nodes[0].parent!) ? 'assignment' : rule.tilde;
-  return tildeSpots(parts, mode).filter((t) => !sh || !directoryTilde(t.user))
+  return tildeSpots(parts, mode).filter((t) => dirs || !directoryTilde(t.user))
     .map((t) => ({ node: parts[t.part].node, start: t.start, end: t.end, user: t.user, after: t.after }));
 }
 
@@ -312,10 +312,10 @@ function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: S
   const rule = CONTEXTS[context];
   const shape = shapeOf(nodes);
   const { expansions, unquoted, someQuoted, globWords } = shape;
-  const sh = !!shell && (COMMON_SH as readonly Shell[]).includes(shell);
-  const key = `${rule.tilde} ${posix} ${sh}`;
+  const dirs = asBash('dirTilde', shell) !== 'no';
+  const key = `${rule.tilde} ${posix} ${dirs}`;
   let tildes = shape.tildes.get(key);
-  if (!tildes) shape.tildes.set(key, (tildes = tildesOf(nodes, rule, posix, sh)));
+  if (!tildes) shape.tildes.set(key, (tildes = tildesOf(nodes, rule, posix, dirs)));
   const steps: ExpansionStep[] = [];
   const braces = context === found ? bracesInContext(nodes[0]) : rule.brace; // (an associative array's list or key: none)
   const brace = braces && shape.braced.length > 0;
@@ -398,7 +398,7 @@ export function partMeaning(part: SyntaxNode, model: StateModel): PartMeaning | 
   const quoted = nearestQuote(part);
   const step = (kind: 'split' | 'glob'): ExpansionStep => {
     const s = word.steps.find((x) => x.kind === kind)!;
-    if (quoted || (model.shell === 'zsh' && (part.type === 'simple_expansion' || part.type === 'expansion'))) return mk({ kind, applies: false, why: quoted ? 'quoted' : 'zsh', parts: [] });
+    if (quoted || (asBash('wordSplit', model.shell) === 'no' && (part.type === 'simple_expansion' || part.type === 'expansion'))) return mk({ kind, applies: false, why: quoted ? 'quoted' : 'zsh', parts: [] });
     return s.parts.includes(part) || s.applies === false ? s : mk({ kind, applies: false, parts: [] });
   };
   return { word, quoted, split: step('split'), glob: step('glob') };

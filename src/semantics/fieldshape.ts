@@ -5,7 +5,7 @@
 // end, and a word by the count of its fields. Nothing here asks where a value comes from (V) or what a builtin does
 // with the fields (E). test/fieldshape.test.ts checks it against bash on generated words.
 import { collectFeatures, zshOtherwise } from '../dialect';
-import { wordsFollowed } from '../shellfeatures';
+import { asBash, isBash, wordsFollowed } from '../shellfeatures';
 import { isGlob } from '../examples/shellwords';
 import { parseExpansion } from '../expansion';
 import { decodedText } from '../staticword';
@@ -506,11 +506,11 @@ const DIALECT_STEPS: readonly StepKind[] = ['brace', 'tilde', 'split', 'glob'];
  * one field in every POSIX shell and zsh, `"$@"` one for each argument, and in sh `~/x` one field and `*.log` the names it matches.
  */
 export function readsAsBash(w: WordMeaning): boolean {
-  if (!w.shell || w.shell === 'bash') return true;
+  if (isBash(w.shell) === 'yes') return true;
   // (Not `$[…]`, which only bash has: dash and busybox ash read a `$` and a pattern, and src/dialect.ts has no row for
   // it. In `sh`, which may be bash, not `~+`, `~-` or `~N`, which dash and busybox ash leave as written.)
   if (w.nodes.some((x) => descendants(x, ['arithmetic_expansion']).some((e) => e.text.startsWith('$[')))) return false;
-  if (w.shell === 'sh' && w.tildes.some((t) => directoryTilde(t.user))) return false;
+  if (asBash('dirTilde', w.shell) === 'unknown' && w.tildes.some((t) => directoryTilde(t.user))) return false;
   return !zshOtherwise(w.nodes, w.shell) && (wordsFollowed(w.shell) || w.steps.every((s) => !DIALECT_STEPS.includes(s.kind) || s.applies === false))
     && !w.nodes.some((x) => collectFeatures(x, x.startPosition.row, x.endPosition.row).length);
 }
