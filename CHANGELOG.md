@@ -6,7 +6,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
-- In a `.py` file that imports `re`, the pattern of `re.search`, `re.compile`, `re.sub` and the other `re` functions is explained in the panel and the hover, part by part. A pattern Python refuses (`re.compile(r'\e')`) is an Error with Python's message. Such a file is explained even with no `subprocess` call; the shell chip says "no shell (Python regex)" on a pattern's line.
+- In a `.py` file that imports `re`, the pattern of `re.search`, `re.compile`, `re.sub` and the other `re` functions is explained in the panel and the hover, part by part. A pattern Python refuses (`re.compile('*.txt')`) is an Error with Python's message.
 
 ### Fixed
 

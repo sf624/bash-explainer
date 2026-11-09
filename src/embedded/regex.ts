@@ -63,9 +63,31 @@ const SHORTHANDS: Record<string, { ja: string; en: string; gnu: boolean; js?: st
  */
 const PYTHON_LETTERS = { out: 'abBdDfnrsStvwWAZzxuUN', inClass: 'abdDfnrsStvwWxuUN' };
 const PYTHON_SHORTHANDS: Record<string, { ja: string; en: string }> = {
+  // (A str pattern's classes are Unicode: `re.findall(r'\w+', '日本語 abc')` gives both words. `re.ASCII` (#749) makes them ASCII.)
+  w: { ja: '単語の文字1文字（どの文字体系の文字・数字、またはアンダースコア。`re.ASCII` では ASCII のみ）', en: 'a word character: a letter or digit of any script, or an underscore (only ASCII ones with `re.ASCII`)' },
+  W: { ja: '単語の文字以外の1文字（単語の文字は、どの文字体系の文字・数字とアンダースコア。`re.ASCII` では ASCII のみ）', en: 'a character that is not a word character (a letter or digit of any script, or an underscore; only ASCII ones with `re.ASCII`)' },
+  d: { ja: '10進数字1文字（どの文字体系のものも。全角の「０」なども。`re.ASCII` では 0〜9 のみ）', en: 'a decimal digit of any script (`０`, `١`… too; only 0-9 with `re.ASCII`)' },
+  D: { ja: '10進数字以外の1文字（どの文字体系の10進数字でもない。`re.ASCII` では 0〜9 以外）', en: 'a character that is not a decimal digit of any script (not 0-9 with `re.ASCII`)' },
+  s: { ja: '空白文字1文字（全角スペースなど Unicode の空白も。`re.ASCII` では ASCII の空白のみ）', en: 'a whitespace character, Unicode whitespace too (the ideographic space…; only ASCII whitespace with `re.ASCII`)' },
+  S: { ja: '空白文字以外の1文字（Unicode の空白でもない。`re.ASCII` では ASCII の空白以外）', en: 'a character that is not whitespace, Unicode whitespace included (not ASCII whitespace with `re.ASCII`)' },
+  b: { ja: '単語の境界（単語の文字は、どの文字体系の文字・数字とアンダースコア。`re.ASCII` では ASCII のみ。文字は消費しない）', en: 'a word boundary, where a word character (a letter or digit of any script, or an underscore) meets another character (only ASCII ones with `re.ASCII`; matches no character)' },
+  B: { ja: '単語の境界ではない位置（単語の文字は、どの文字体系の文字・数字とアンダースコア。`re.ASCII` では ASCII のみ）', en: 'a position that is not a word boundary (word characters of any script; only ASCII ones with `re.ASCII`)' },
   Z: { ja: '文字列の末尾', en: 'the end of the text' },
   v: { ja: '垂直タブ(VT)', en: 'a vertical tab (VT)' },
 };
+
+/** What `.` matches, where a flavor says it otherwise than "any single character": Python's `re` leaves out a newline (`re.DOTALL`, #749, takes it in). */
+const DOT: Partial<Record<Flavor, readonly [ja: string, en: string]>> = {
+  python: ['改行以外の任意の1文字（`re.DOTALL` では改行も）', 'any character except a newline (a newline too with `re.DOTALL`)'],
+};
+
+/**
+ * How a flavor says a pattern its program refuses, where it is in the program's own words: Python's `re` says its message
+ * (`regex-python-error`); the others say the shell's entry of each kind of error. `strict`: the program also refuses a quantifier with
+ * nothing to repeat (`*.txt`, `^*`) or after another (`a**`), a count whose minimum is over its maximum (`x{2,1}`), and a `)` that
+ * closes no group (PCRE does too, and GNU grep's `x{2,1}`: docs/design/python-regex.md, step 3).
+ */
+const OWN_REFUSAL: Partial<Record<Flavor, { said: 'regex-python-error'; strict: true }>> = { python: { said: 'regex-python-error', strict: true } };
 
 /** The meanings of letters that a flavor reads otherwise than `SHORTHANDS` says. */
 const FLAVOR_SHORTHANDS: Partial<Record<Flavor, Record<string, { ja: string; en: string }>>> = { python: PYTHON_SHORTHANDS };
@@ -240,6 +262,7 @@ function quantifierLength(st: State, atStart: boolean): number {
 function sequence(st: State, depth: number): EmbeddedToken[] {
   const { s } = st;
   const out: EmbeddedToken[] = [];
+  const strict = OWN_REFUSAL[st.flavor];
   const atStart = () => out.length === 0 || (out[out.length - 1].kind === 'operator' && out[out.length - 1].label === '|');
   while (st.i < st.src.length) {
     const start = st.i;
@@ -269,7 +292,14 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
     }
     if ((n = quantifierLength(st, atStart()))) {
       st.i += n;
-      out.push(quantifier(st, start, out[out.length - 1]));
+      const refused = strict ? refusedRepeat(st, start, out) : undefined;
+      out.push(strict && refused ? { start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, strict.said, { message: refused }), children: [] } : quantifier(st, start, out[out.length - 1]));
+      continue;
+    }
+    if (c === ')' && strict) {
+      // (A `)` that closes a group returned above: this one closes none.)
+      st.i++;
+      out.push({ start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, strict.said, { message: `unbalanced parenthesis at position ${start}` }), children: [] });
       continue;
     }
     if ((n = isGroupOpen(st))) {
@@ -292,7 +322,8 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
     }
     st.i++;
     if (c === '.') {
-      out.push({ start, end: st.i, kind: 'pattern', explanation: s('`.`: 任意の1文字', '`.`: any single character'), children: [] });
+      const [ja, en] = DOT[st.flavor] ?? ['任意の1文字', 'any single character'];
+      out.push({ start, end: st.i, kind: 'pattern', explanation: s(`\`.\`: ${ja}`, `\`.\`: ${en}`), children: [] });
     } else if (c === '^' && (st.flavor !== 'bre' || atStart())) {
       out.push({ start, end: st.i, kind: 'keyword', explanation: anchor(st, '^'), children: [] });
     } else if (c === '$' && (st.flavor !== 'bre' || st.i === st.src.length || isGroupClose(st) || isAlternation(st))) {
@@ -410,11 +441,12 @@ function group(st: State, openLen: number): EmbeddedToken {
   // (`(?$x)`: the value may be what follows the `?`.)
   const ext = GROUP_EXTENSIONS[st.flavor]?.exec(rest);
   if (pcreLike(st) && !ext && rest[0] === '?' && hasHole(rest)) return holeStop(start);
-  if (pcreLike(st) && !ext && /^[?*]/.test(rest)) {
+  const unread = UNREAD_GROUP[st.flavor];
+  if (unread && !ext && unread.at.test(rest)) {
     // `(?|`, `(?1)`, `(?R)`, `(?P=n)`, `(?(…)…)`, `(*VERB)`: the whole group, unread.
     st.i = groupEnd(st.src, start);
     const text = st.src.slice(start, st.i);
-    const [ja, en] = UNREAD_GROUP[st.flavor]!;
+    const { ja, en } = unread;
     return { start, end: st.i, kind: 'pattern', explanation: s(`\`${text}\`: ${ja}`, `\`${text}\`: ${en}`), children: [] };
   }
   if (ext) {
@@ -469,10 +501,13 @@ const GROUP_EXTENSIONS: Partial<Record<Flavor, RegExp>> = {
   python: /^\?(:|=|!|<=|<!|>|#[^)]*\)?|P<([A-Za-z_]\w*)>|(?!)'(\w*)'|([aiLmsux-]+)([:)]))/,
 };
 
-/** A group of the PCRE paths the reader does not read, by flavor. */
-const UNREAD_GROUP: Partial<Record<Flavor, readonly [ja: string, en: string]>> = {
-  pcre: ['この解説では読めない PCRE の構文', 'a PCRE construct this explainer does not read'],
-  python: ['この解説では読めない Python の `re` の構文', "a construct of Python's `re` this explainer does not read"],
+/**
+ * A group of the PCRE paths the reader does not read, by flavor: how it starts after `(` (`at`), and what it is said to be. Python has no
+ * `(*VERB)`: its `(*` is a group whose `*` has nothing to repeat.
+ */
+const UNREAD_GROUP: Partial<Record<Flavor, { at: RegExp; ja: string; en: string }>> = {
+  pcre: { at: /^[?*]/, ja: 'この解説では読めない PCRE の構文', en: 'a PCRE construct this explainer does not read' },
+  python: { at: /^\?/, ja: 'この解説では読めない Python の `re` の構文', en: "a construct of Python's `re` this explainer does not read" },
 };
 
 /** Inline flags with no group (`(?i)`), by flavor: PCRE sets them from where they stand, Python for the whole pattern (they must start it). */
@@ -830,11 +865,27 @@ function escapedLiteral(st: State, start: number, c: string): EmbeddedToken {
 const FLAVOR_ESCAPES: Partial<Record<Flavor, (st: State, start: number, c: string) => EmbeddedToken | undefined>> = { pcre: pcreEscape, python: pythonEscape };
 
 /**
- * The text of a pattern the program refuses: Python's `re` says its own `message` (`regex-python-error`); the other programs say
- * the entry of the kind of error (`shell`).
+ * The text of a pattern the program refuses: in the program's own words where the flavor says them (`OWN_REFUSAL`: Python's `re`,
+ * its `message`), else the shell's entry of the kind of error (`shell`).
  */
 function refusal(st: State, message: string, shell: () => string): string {
-  return st.tool === 'python' ? tokenSaid(st.lang, 'regex-python-error', { message }) : shell();
+  const own = OWN_REFUSAL[st.flavor];
+  return own ? tokenSaid(st.lang, own.said, { message }) : shell();
+}
+
+/**
+ * Why a strict flavor refuses the quantifier at `start` (`st.i` past it) after the tokens `out` (Python's message), if it does: a count
+ * whose minimum is over its maximum, nothing to repeat (the start, `|`, an anchor or inline flags; a comment `(?#…)` is no item), or a
+ * quantifier before it.
+ */
+function refusedRepeat(st: State, start: number, out: readonly EmbeddedToken[]): string | undefined {
+  const count = /^\{(\d+),(\d+)\}/.exec(st.src.slice(start, st.i));
+  if (count && Number(count[2]) < Number(count[1])) return `min repeat greater than max repeat at position ${start + 1}`;
+  let k = out.length - 1;
+  while (k >= 0 && out[k].kind === 'comment') k--;
+  const before = out[k];
+  if (!before || before.kind === 'keyword' || (before.kind === 'operator' && before.label === '|')) return `nothing to repeat at position ${start}`;
+  return before.kind === 'operator' ? `multiple repeat at position ${start}` : undefined;
 }
 
 const isOctalDigit = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '7';

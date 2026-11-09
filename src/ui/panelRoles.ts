@@ -17,8 +17,9 @@ const processOf = (n: ReadingNode): ScriptProcess => n.process ?? 'subshell';
  * The key of a node's general text in `about`: what a kind is to bash, so '' for what a command or a language reads (`-q` of `grep` is no
  * option of a reserved word; a language's `keyword` is not bash's reserved word).
  */
-export function aboutKey(n: Pick<ReadingNode, 'layer' | 'kind' | 'reader' | 'label'>): string {
-  if (n.kind === 'language') return n.reader !== 'bash' ? 'language' : n.label === 'prompt' ? 'promptLanguage' : 'bashLanguage';
+export function aboutKey(n: Pick<ReadingNode, 'layer' | 'kind' | 'reader' | 'label' | 'hostLanguage'>): string {
+  // (A line of a host file in another language: no word or command is around it, and no shell reads it.)
+  if (n.kind === 'language') return n.hostLanguage ? 'hostLanguage' : n.reader !== 'bash' ? 'language' : n.label === 'prompt' ? 'promptLanguage' : 'bashLanguage';
   return n.layer === 'bash' || n.layer === 'child' ? n.kind : '';
 }
 
@@ -31,7 +32,7 @@ export const aboutOf = (n: ReadingNode, lang: Lang, shell?: ScriptShell): string
  */
 export function chipOf(n: ReadingNode, lang: Lang, shell?: ScriptShell): string {
   const t = texts(lang, shell);
-  if (n.kind === 'language') return of(t.languages, n.label) ?? n.label;
+  if (n.kind === 'language') return n.hostLanguage ?? of(t.languages, n.label) ?? n.label;
   // (`{}` of `find -exec`: the command that replaces it reads it as written, not the one it runs.)
   if (n.layer === 'command' && n.placeholder) return t.placeholder[n.placeholder];
   // (A word the command reads that is not an option is an operand: bash's arguments are called arguments.)

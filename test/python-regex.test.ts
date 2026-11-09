@@ -10,6 +10,8 @@ import { extractShell, hasParts, hostPartAt, languageLines, regionAt } from '../
 import { autoShellText } from '../src/messages-shell';
 import { readSaid } from '../src/messages-tokens';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { roleFor } from '../src/ui/panelRoles';
+import { toPlainMarkdown } from '../src/ui/render';
 import { scopeChip, shellChoices } from '../src/ui/scope';
 
 // The patterns of Python's `re` in a `.py` file, as a part of the host file in another language (docs/design/python-regex.md,
@@ -89,7 +91,7 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
         { kind: 'string', origin: 'embedded', language: 'regex', label: "r'^\\d+(?P<frac>\\.\\d+)?$'", span: { start: { line: 1, character: 14 }, end: { line: 1, character: 38 } } });
       assert.strictEqual(top.explanation, 'The pattern of `re.search` (Python regex)');
       const d = top.children[1];
-      assert.deepStrictEqual([d.label, d.explanation, d.span, d.origin], ['\\d', 'a digit', { start: { line: 1, character: 17 }, end: { line: 1, character: 19 } }, 'embedded']);
+      assert.deepStrictEqual([d.label, d.explanation, d.span, d.origin], ['\\d', 'a decimal digit of any script (`０`, `١`… too; only 0-9 with `re.ASCII`)', { start: { line: 1, character: 17 }, end: { line: 1, character: 19 } }, 'embedded']);
       assert.ok(texts(top.children).includes('(?P<frac>\\.\\d+): Named group `frac` (group 1)'));
       assert.ok(texts(top.children).includes('$: end of the text (or before a final newline)'));
       assert.deepStrictEqual(ex.context, [{ label: 'Python regex (argument of `re.search`)', line: 1 }]);
@@ -97,6 +99,15 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
       // (No sentence, no argv: they are about bash's reading.)
       const full = explainPy(src, 1, 'en', { sentence: true, argv: true, notPosix: true });
       assert.deepStrictEqual([full.sentence, full.argv, full.notPosix, full.shell], [undefined, undefined, undefined, undefined]);
+    });
+
+    it('labels a token over two literals, or over lines, with its value: no quote or prefix in it', () => {
+      const group = (src: string, line: number) => explainPy(src, line).items[0].children[0];
+      assert.deepStrictEqual([group("import re\nP = re.compile(r'(a' r'b)')\n", 1)].map((t) => [t.label, t.children.map((c) => c.label)]), [['(ab)', ['ab']]]);
+      assert.strictEqual(group("import re\nP = re.compile(\n    r'(a'\n    r'b)'\n)\n", 2).label, '(ab)');
+      assert.strictEqual(group("import re\nP = re.compile(r'a' 'b')\n", 1).label, 'ab');
+      // (Within one literal, the label is as the file writes it.)
+      assert.strictEqual(group("import re\nP = re.compile('(\\\\d)' r'x')\n", 1).label, '(\\\\d)');
     });
 
     it('places a token of a literal that is not raw over its escape in the file', () => {
@@ -120,6 +131,18 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
       assert.deepStrictEqual([reading.layer, reading.kind, reading.label, reading.reader], ['language', 'language', 'regex', 're.search']);
       assert.deepStrictEqual(reading.children.map((n) => [n.layer, n.label, n.reader]).slice(0, 2), [['language', '^', 're.search'], ['language', '\\d', 're.search']]);
       assert.strictEqual(reading.children[3].children.length, 3);
+      // (Its name is the language's, and what it is says no shell reads the line: there is no word or command around it.)
+      assert.strictEqual(reading.hostLanguage, 'Python regex');
+      const role = roleFor(reading, undefined, 'en')!;
+      assert.deepStrictEqual([role.chip, role.band, role.said], ['Python regex', 'Python regex',
+        'A language of its own in the code of the file: the function it is passed to reads it by its own rules. No shell reads this line. (a language of its own, read by re.search)']);
+      assert.strictEqual(roleFor(explainPy(src, 1, 'ja', { reading: true }).reading!, undefined, 'ja')!.chip, 'Python の正規表現');
+    });
+
+    it('fences the line as Python in Markdown', () => {
+      const md = toPlainMarkdown(explainPy(src, 1), "m = re.search(r'^\\d+$', s)", 'a.py:2', 'en');
+      assert.ok(md.startsWith("**a.py:2**\n\n```python\nm = re.search("), md);
+      assert.ok(toPlainMarkdown(explainDocumentLine(new Analyzer('en'), open("import os\nos.system('ls')\n"), 1, 'en', {}, {}), "os.system('ls')", 'a.py:2').includes('```bash\n'));
     });
 
     it('is one explanation for every line of a pattern over several lines, so each problem is said once', () => {
@@ -134,7 +157,7 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
 
     it('is within the line\'s boundary and budget, which counts the lines of the parts', () => {
       const doc = open("import re, os\nos.system('ls')\nre.compile(r'''a\nb''')\n");
-      assert.strictEqual(languageLines(doc.extracted!), 2);
+      assert.strictEqual(doc.languageLines, 2);
       // (A line's budget is a share of the document's for each line of code: the shell's one and the pattern's two.)
       assert.ok(withinLine({ text: 'x\n' }, () => 1, 2) === 1);
     });
