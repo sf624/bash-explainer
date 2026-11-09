@@ -912,6 +912,8 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `#!/bin/mksh` `$BASHPID` / `$EPOCHREALTIME`: the token says "mksh does not set it" (repeats the existing Error note); mksh likely sets both (unverified).
   - `SRANDOM`, `OPTERR`, `HISTCMD` in `setByBash` carry 'ykmz' (yash, ksh, mksh and zsh set them): unmeasured, probably false for SRANDOM in ksh93; the same effect as before.
   - A bash 5.3 variable (`bash53Variable`) in sh does not get the new token form.
+  - (#769) `$_` in sh: interactive `dash -i` and `busybox ash -i` do set it to the last argument; the "not set" claim holds for script files.
+  - (#769) `sh script.sh` run from bash: `$_` is the shell's own path (bash exports `_`), so the shared note "expands to nothing" is imprecise (same template as SHLVL); the token text is accurate.
 
 ## From the reviews of the bazel preset (#755)
 
@@ -957,6 +959,98 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - "Name set back to untitled." is said even when the new kind's untitled name is its own (the bar reads "Dockerfile", muted).
   - Ctrl+A, Ctrl+X, Ctrl+V over an open file is a paste into an empty editor: it asks "Discard and paste" and untitles the file.
   - `ask` called while a question is open would resolve the first as cancel and call `showModal()` on an open dialog; unreachable today (the modal makes the page inert).
+
+## From the review of the POSIX sh hint (#762)
+
+### Shebang read for the sh hint
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare spellings; the usual shebang and `# shellcheck shell=` directives are read right.
+- **Input and what is wrong:**
+  - `#!/bin/bash` plus `# shellcheck shell=bogus`: `readShell` reads the unknown name as `default`, so the POSIX sh hint shows despite the bash shebang.
+  - A UTF-8 BOM before `#!/bin/bash` is not read as a shebang, so the hint shows (the kernel does not read it as one either: arguably right).
+
+## From the reviews of the bazel target patterns (#765)
+
+### Bazel target patterns: what the query-word reader does not say
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`. Two inputs are `missing-explanation`.
+- **Reason:** Rare spellings; the usual `//pkg:target`, `//pkg/...` and `:all` are read right (bazel 9.3.2).
+- **Input and what is wrong:**
+  - `manual` targets: the reader does not know the command, so it says nothing about them (aquery leaves them out of wildcards; query and cquery include them). Missing explanation.
+  - A wildcard next to a target literally named `all` or `all-targets`: bazel's precedence is not modelled. Missing explanation.
+  - `.bazelignore` directories and the symlink rule of `/...` are not said. Missing explanation.
+  - A hole whose value holds `:` or `...` inside a package path: the hole's text names the risk; the parts around it are read as written.
+  - `"//$PKG/..."`: the package part's token "The directory `$PKG`…" assumes the value holds no `:`.
+  - `bazel build app/` (tab completion's trailing `/`): we quote "invalid package name"; bazel says "invalid target name 'app/': target names may not end with '/'". The refusal is right, the quoted message is not.
+  - `bazel build ./app`: we say "invalid package name"; bazel says "target names may not contain '.' as a path segment".
+  - `bazel build //app:foo/...` is read as one target named `foo/...`; bazel's reading is not checked.
+
+## From the review of buildifier (#766)
+
+### buildifier: statuses and option lists
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare invocations (buildifier 10.2.0); the usual `buildifier file`, `-mode=check` and `-lint=warn` are said right.
+- **Input and what is wrong:**
+  - `-warnings=foo` (unknown name) exits 1 with a Go log line, not 2.
+  - With `-format`, a missing file gives status 3 with `"success":true` and an empty file list.
+  - `-mode=diff` with an unchanged file prints nothing and exits 0.
+  - `-tables=missing` gives status 2.
+  - `-allowsort`, `-buildifier_disable`: the comma-list semantics are not checked.
+
+## From the reviews of the traps and set -e (#767, #774)
+
+### Traps: order of definitions, unknown values, `trap -`
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare (a trap set inside a function that is defined before another trap of the same signal; data that is bad at run time).
+- **Input and what is wrong:**
+  - `f() { trap 'echo B' EXIT; }`, then `trap 'echo A' EXIT`, then `f`: `runsAtExit` uses text order, so the model says A runs; bash runs only B. The old name scan had the same bug. Fix: walk order of `trapSets`.
+  - `fails: 'usage'` on words whose value is not known (`umask "$m"`, `export "$name=1"`, `trap x "$sig"`): these fail on bad data, not only on script mistakes.
+  - `within: exit-trap` is still given after `trap - EXIT` takes the trap back (harmless).
+  - `f() { set +e; false; return; }; set -e; f`: the call's note stays, but bash runs ERR and goes on (errexit is off when `f` returns).
+
+### shopt, exec and `cannotFail`: statuses that stop `set -e`
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare options and typos; the notes err on the cautious side.
+- **Input and what is wrong:**
+  - `shopt -q extglob | grep x`: `cannotFail` (src/semantics/status.ts:628) checks whether `fails` is set, not `failsOnly`, so the stage counts as one that cannot fail (matters only without pipefail).
+  - `shopt -s array_expand_once` in 5.2 mode (a 5.3-only name): returns 1 and stops `set -e`; the error note says "status 1" but `mayFail` is false, so no stop sentence stands beside it.
+  - `shopt -s nosuchopt` (a typo) gets no error token; bash returns 1 and `set -e` stops.
+  - `exec "$cmd"`, `exec "${@:-bash}"` come out unknown (cautious, not wrong).
+  - `shopt -s execfail; exec /nonexistent || true` under `set -e`: bash exits 127 despite `|| true`.
+  - `exec "$@"` when `$1` starts with `-` (usage error): bash prints ERR and EXIT, exits 2 (`set -e` stops); the model says `fails: 'never'`, no note.
+  - `command exec "$@"` and `command exec /bin/app`: the note says "If `command` fails, `set -e` stops…"; bash never stops there (apart from a redirection).
+  - `exit 3 2>/nonexist/x`: bash runs ERR and EXIT and exits 1; the `given` rule returns before the redirection check, so no note (while `exit "$rc" 2>/nonexist/x` gets one).
+
+### `exit`, `return` and masks under `set -e`
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
+- **Reason:** Rare forms, or bash 5.3 only (the default reference is 5.2).
+- **Input and what is wrong:**
+  - `x=$(a || b && true)`: the `|| true` mask sees `||` and a last command that succeeds, so it says the line cannot fail; bash: status 1, the script stops. Fix: require the operator right before the last command to be `||`.
+  - bash 5.3 `exit x` (non-numeric) fails, runs ERR and goes on without `set -e` (status 0); 5.2 exits 2, no ERR.
+  - bash 5.3 `exit "$rc"` with a non-number goes on with status 2, so `set -e` stops and ERR runs; the model's `ends: 'shell'` holds only in 5.2 (5.3 mode gives no note).
+  - Several stop contexts on one line give one note each (`false; trap … EXIT; false`).
+  - A top-level `return` in a script that is run (not sourced) fails with 2: ERR and EXIT run, `set -e` stops; no note (as for `return 0`).
+  - `true | exit 3` has no note, but bash stops (ERR, EXIT, status 3).
+  - `command exec /opt/app` says "If `command` fails…".
+  - `[[ x =~ $re ]]` with an invalid regex exits 2, but the note says "status 1".
+  - A function named anywhere as an argument becomes "not closed" (src/semantics/env.ts:61/226: `echo build`, `ssh host deploy`), so its body's stop note says "the shell it runs in" and loses the trap. Fix: close only on arguments of commands that can run a shell function.
+
+## From the review of the large-script speed (#773)
+
+### Web page: the pass that waits on a large script
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `ui`.
+- **Reason:** Only on very large scripts; the content is right, only late, and it corrects itself.
+- **Input and what is wrong:**
+  - An explicit `shade()` and `recheck()` while a pass is pending (kind, settings, rename) makes the next timer pass cost about 0 ms (cached), so the next edit's pass comes 300 ms after a key and freezes once.
+  - The keyboard card (Ctrl+K Ctrl+I, web/hover.ts ~196) uses `cardAt` directly and is not held back by `waiting` (its content is correct).
+  - `autoShell()` while waiting (web/main.ts:157) mixes the old document with the current `shells()` and cursor line.
+  - While a pass is pending on a large script, a cursor move leaves the panel on the earlier line (late, not wrong).
 
 ## Decisions recorded on 2026-11-06
 
