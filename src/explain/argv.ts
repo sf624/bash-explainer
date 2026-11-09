@@ -312,8 +312,7 @@ function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const flag = dash(role.flag);
   // `set -o` with no name lists the settings; `set +o` prints commands that restore them.
   // (An optional value that is not in the word has it too: `mysql -p` asks for the password.)
-  const optionalValue = role.spec.value !== undefined && !Array.isArray(role.spec.value) && !!role.spec.value.optional;
-  const alone = role.missing || (optionalValue && !role.value) ? role.spec.noValue : undefined;
+  const alone = role.missing || (role.spec.value && (role.spec.value as { optional?: boolean }).optional && !role.value) ? role.spec.noValue : undefined;
   return cx.tok(a, 'option', alone
     ? cx.t(role.disables ? alone.offText : alone.text)
     : (role.disables && !role.negated ? turnedOff(cx, flag, cx.t(role.text), false, role.spec.offText) : onOrOff(cx, role)) + notForEarlier(cx, parse, word, role), wordParts(cx, a));
