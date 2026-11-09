@@ -255,7 +255,7 @@ describe('branches no other test takes', () => {
     assert.match(r('(+a)', 'ere'), /the previous item/);
     assert.match(r('(?:a)(?!b)(?<!c)', 'pcre'), /non-capturing.*not followed.*not preceded/s);
     assert.match(r('[[:foo:]\\q]', 'pcre'), /\[:foo:\]/);
-    assert.match(r('a\\', 'ere'), /Trailing/);
+    assert.match(r('a\\', 'ere'), /Nothing follows the final `\\`/);
     assert.match(r('\\A\\d', 'pcre'), /\\A/);
     assert.match(r('\\,', 'ere'), /Literal ","/);
   });

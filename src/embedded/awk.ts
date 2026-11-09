@@ -125,7 +125,7 @@ class AwkExplainer {
   private s: S;
   private p = 0;
 
-  constructor(private src: string, private toks: Lex[], private lang: Lang, private gawk: boolean) {
+  constructor(private src: string, private toks: Lex[], private lang: Lang, private gawk: boolean, private reached: boolean) {
     this.s = pick(lang);
   }
 
@@ -252,7 +252,7 @@ class AwkExplainer {
 
   private regexToken(t: Lex, explanation: string, record = false): EmbeddedToken {
     const body = t.text.endsWith('/') && t.text.length > 1 ? t.text.slice(1, -1) : t.text.slice(1);
-    return this.tok(t.start, t.end, 'pattern', explanation, shift(explainRegex(body, 'ere', this.lang, { delimiter: '/', tool: 'awk', mawk: !this.gawk, ...(record ? { unit: 'record' as const } : {}) }), t.start + 1));
+    return this.tok(t.start, t.end, 'pattern', explanation, shift(explainRegex(body, 'ere', this.lang, { delimiter: '/', tool: 'awk', mawk: !this.gawk, reached: this.reached, ...(record ? { unit: 'record' as const } : {}) }), t.start + 1));
   }
 
   private functionDef(): EmbeddedToken {
@@ -486,12 +486,12 @@ class AwkExplainer {
   }
 }
 
-/** Explain an awk program: its rules, patterns, actions and the notable parts of each statement. */
-export function explainAwk(src: string, lang: Lang, gawk = true): EmbeddedToken[] {
+/** Explain an awk program: its rules, patterns, actions and the notable parts of each statement. `reached`: as `RegexOptions.reached`. */
+export function explainAwk(src: string, lang: Lang, gawk = true, reached = true): EmbeddedToken[] {
   const toks = lex(src);
   if (!toks.length) return [];
   try {
-    return new AwkExplainer(src, toks, lang, gawk).program();
+    return new AwkExplainer(src, toks, lang, gawk, reached).program();
   } catch {
     const s = pick(lang);
     return [{ start: 0, end: src.length, kind: 'error', children: [], explanation: s('awk プログラムを解析できませんでした', 'Could not parse the awk program') }];

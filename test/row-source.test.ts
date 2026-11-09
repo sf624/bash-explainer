@@ -11,6 +11,7 @@ import { readSaid, saidText, TOKEN_TEXTS, tokenSaid } from '../src/messages-toke
 import { ARGV_TEXTS } from '../src/messages-tokens-argv';
 import { COMMAND_TEXTS } from '../src/messages-tokens-commands';
 import { COMPOUND_TEXTS } from '../src/messages-tokens-compound';
+import { REGEX_TEXTS } from '../src/messages-tokens-regex';
 import { SHEBANG_TEXTS } from '../src/messages-tokens-shebang';
 import { WORD_TEXTS } from '../src/messages-tokens-words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -182,7 +183,7 @@ describe('one record for what a token\'s row holds', function () {
   });
 
   it('keeps one catalog of token texts: each id in one part, none also a note\'s', () => {
-    const parts = [ARGV_TEXTS, COMMAND_TEXTS, COMPOUND_TEXTS, SHEBANG_TEXTS, WORD_TEXTS];
+    const parts = [ARGV_TEXTS, COMMAND_TEXTS, COMPOUND_TEXTS, REGEX_TEXTS, SHEBANG_TEXTS, WORD_TEXTS];
     const ids = parts.flatMap((p) => Object.keys(p));
     assert.deepStrictEqual(ids.filter((id, i) => ids.indexOf(id) !== i), []);
     assert.deepStrictEqual(ids.filter((id) => id in TOKEN_TEXTS === false), []);

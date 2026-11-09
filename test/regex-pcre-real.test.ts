@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import { explainRegex } from '../src/embedded/regex';
+import { plainOf } from '../src/messages-levels';
 import { run } from './support/run';
 import { allTokens } from './support/explain';
 
@@ -153,7 +154,7 @@ describe('PCRE escapes and groups agree with grep -P', () => {
       assert.strictEqual(run('grep', ['-P', '--', re], { input: 'a\n' }).status, 2, re);
       const [t] = explainRegex(re, 'pcre', 'en');
       assert.strictEqual(t.kind, 'error', re);
-      assert.match(t.explanation, /^Invalid range: a set such as `\\d` is at one end \(grep -P fails with "invalid range in character class"\)$/, re);
+      assert.match(plainOf(t.explanation), /^Invalid range: a set such as `\\d` is at one end. `grep -P` stops with an error \(status 2, "invalid range in character class"\)$/, re);
       assert.match(explainRegex(re, 'pcre', 'ja')[0].explanation, /不正な範囲/, re);
     }
     for (const re of ['[-\\w.]', '[\\w-]', '[-[:alnum:]]', '[^-\\s]', '[\\w.-]', '[a-z-]']) {

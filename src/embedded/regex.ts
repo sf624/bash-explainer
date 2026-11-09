@@ -1,5 +1,6 @@
 import { awkEscapeAt, sedEscapeAt } from '../ctlchars';
 import type { Lang } from '../i18n';
+import { tokenSaid } from '../messages-tokens';
 import { codeShown } from '../messages-values';
 import { EmbeddedToken, escapeIntoHole, hasHole, holeStop, holeToken, isHole, pick } from './types';
 import { wordTable } from '../wordtable';
@@ -85,7 +86,10 @@ interface State {
   i: number;
   flavor: Flavor;
   groups: number;
+  lang: Lang;
   s: (ja: string, en: string) => string;
+  /** Whether the shell gets to the command (`RegexOptions.reached`). */
+  reached: boolean;
   /** Plain single-character literals, which may be merged into runs. */
   literals: Set<EmbeddedToken>;
   /** PCRE named groups, by name. */
@@ -130,6 +134,8 @@ export interface RegexOptions {
   mawk?: boolean;
   /** What `^` and `$` stand at the ends of, where the tool's usual unit is not it (`grep -z` reads a record, Perl's `/m` a line). */
   unit?: MatchUnit;
+  /** Whether the shell gets to the command (`Explainer.reachedAt`, true when not given): where it does not, an error of the regex is no problem, only its row. */
+  reached?: boolean;
 }
 
 /** Explain a regular expression as a flat sequence of tokens (groups nest their contents). */
@@ -137,7 +143,7 @@ export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: Rege
   // (`\Q$x\E`: the value is plain text there, which this reader does not follow.)
   if (flavor === 'pcre' && src.includes('\\Q') && hasHole(src)) return [holeStop(0)];
   const tool = opts.perl ? 'perl' : opts.tool ?? (opts.sedEscapes ? 'sed' : 'grep');
-  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), names: new Map(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool], base: opts.unit ?? UNITS[tool] };
+  const st: State = { src, i: 0, flavor, groups: 0, lang, s: pick(lang), reached: opts.reached ?? true, literals: new Set(), names: new Map(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool], base: opts.unit ?? UNITS[tool] };
   return mergeLiterals(sequence(st, 0), st);
 }
 
@@ -185,7 +191,8 @@ function quantifierLength(st: State, atStart: boolean): number {
     if (m && (m[1] || m[3])) len = m[0].length;
   } else if (flavor === 'bre' && src.startsWith('\\{', i)) {
     const m = /^\\\{(\d*)(,?)(\d*)\\\}/.exec(src.slice(i));
-    if (m && (m[1] || m[3])) len = m[0].length;
+    // (GNU grep and sed take `\{,\}` as `*`.)
+    if (m && (m[1] || m[2] || m[3])) len = m[0].length;
   }
   if (len && flavor === 'pcre' && (src[i + len] === '?' || src[i + len] === '+')) len++;
   return len;
@@ -211,6 +218,11 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
       continue;
     }
     let n: number;
+    if (st.flavor === 'bre' && st.src.startsWith('\\{', start) && nothingBefore(out, atStart())) {
+      st.i += 2;
+      out.push(braceFirst(st, start));
+      continue;
+    }
     if ((n = isAlternation(st))) {
       st.i += n;
       out.push({ start, end: st.i, kind: 'operator', label: '|', explanation: s('`|`: 左右どちらかに一致すればよい（または）', '`|`: either the left or the right side (or)'), children: [] });
@@ -232,7 +244,7 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
     if (st.flavor === 'bre' && st.src.startsWith('\\{', start)) {
       // (A valid `\{n,m\}` was taken as a quantifier above.)
       st.i += 2;
-      out.push({ start, end: st.i, kind: 'error', explanation: s('`\\{` は `\\{n\\}` や `\\{n,m\\}` の形でないと使えない。grep と sed は "Unmatched \\{" などのエラーで止まる', '`\\{` must start a complete `\\{n\\}` or `\\{n,m\\}`; grep and sed stop with an error such as "Unmatched \\{"'), children: [] });
+      out.push({ start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, st.reached ? 'regex-interval-incomplete' : 'regex-interval-incomplete-if-reached', { tool: st.tool }), children: [] });
       continue;
     }
     if (c === '\\') {
@@ -258,6 +270,20 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
     }
   }
   return out;
+}
+
+/**
+ * Whether nothing stands before `\{` in a basic regex that it could repeat: the start of the regex, of a group or of an
+ * alternative, or an anchor (`^`, `\<`, `\b`: GNU grep and sed read `\<\{` as `\{` at the start).
+ */
+function nothingBefore(out: readonly EmbeddedToken[], atStart: boolean): boolean {
+  return atStart || out[out.length - 1].kind === 'keyword';
+}
+
+/** `\{` with nothing before it to repeat (`\{1\}`, `^\{`): GNU grep reads it as the character, and GNU sed refuses it. */
+function braceFirst(st: State, start: number): EmbeddedToken {
+  if (st.tool === 'sed') return { start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, st.reached ? 'regex-interval-nothing-before' : 'regex-interval-nothing-before-if-reached'), children: [] };
+  return { start, end: st.i, kind: 'string', explanation: st.s('文字「{」そのもの（`grep` は、前に繰り返すものがない `\\{` を文字として読む）', 'A literal "{" (`grep` reads a `\\{` with nothing before it to repeat as the character)'), children: [] };
 }
 
 /** Sticky: a `{` whose count a hole is part of (`a{$n}`, `a{1,$n}`), and a set with a class a hole is part of (`[[:$c:]]`). */
@@ -323,7 +349,7 @@ function quantifier(st: State, start: number, target: EmbeddedToken | undefined)
     // `{n}`, `{n,}`, `{,m}` or `{n,m}`: quantifierLength takes no other braces.
     const [, lo, comma, hi] = /^\{(\d*)(,?)(\d*)\}$/.exec(q)!;
     if (!comma) times = s(`ちょうど${lo}回`, `exactly ${lo} times`);
-    else if (!hi) times = s(`${lo}回以上`, `${lo} or more times`);
+    else if (!hi) times = s(`${lo || 0}回以上`, `${lo || 0} or more times`);
     else if (!lo) times = s(`${hi}回以下`, `at most ${hi} times`);
     else times = s(`${lo}〜${hi}回`, `${lo} to ${hi} times`);
   }
@@ -379,9 +405,12 @@ function group(st: State, openLen: number): EmbeddedToken {
   }
   const children = sequence(st, 1);
   const close = isGroupClose(st);
-  if (close) st.i += close;
-  else explanation += s('（閉じ括弧がない）', ' (missing closing parenthesis)');
+  st.i += close;
   st.unit = unit;
+  if (!close) {
+    const said = tokenSaid(st.lang, st.reached ? 'regex-group-unclosed' : 'regex-group-unclosed-if-reached', { tool: st.tool, close: st.flavor === 'bre' ? '\\)' : ')' });
+    return { start, end: st.i, kind: 'error', explanation: explanation + s('。', '. ') + said, children, ...(group ? { group } : {}) };
+  }
   return { start, end: st.i, kind: 'block', explanation, children, ...(group ? { group } : {}) };
 }
 
@@ -475,10 +504,10 @@ function bracket(st: State): EmbeddedToken {
   }
   if (i >= src.length) {
     st.i = start + 1;
-    return { start, end: st.i, kind: 'error', explanation: s('`[` に対応する `]` がない', 'Unclosed `[`'), children: [] };
+    return { start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, st.reached ? 'regex-bracket-unclosed' : 'regex-bracket-unclosed-if-reached', { tool: st.tool }), children: [] };
   }
   st.i = i + 1;
-  if (badRange) return { start, end: st.i, kind: 'error', explanation: s('範囲の端に `\\d` のような集合があり、不正な範囲（grep -P はエラーにする: invalid range in character class）', 'Invalid range: a set such as `\\d` is at one end (grep -P fails with "invalid range in character class")'), children: holes };
+  if (badRange) return { start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, st.reached ? 'regex-pcre-range-set' : 'regex-pcre-range-set-if-reached'), children: holes };
   const list = items.join(s('、', ', '));
   return {
     start, end: st.i, kind: 'pattern', children: holes,
@@ -558,8 +587,7 @@ function pcreEscape(st: State, start: number, c: string): EmbeddedToken | undefi
   if (PERL_CASE.includes(c)) {
     // (Perl's string escapes, applied before the regex is read: `/\Ux\E/` matches X. PCRE2 has none and `grep -P` stops.)
     if (st.tool !== 'perl') {
-      return tok('error', s(`\`\\${c}\` は PCRE2 のエスケープにない。\`grep -P\` は "PCRE2 does not support \\F, \\L, \\l, \\N{name}, \\U, or \\u" で止まる（Perl には大文字・小文字にする \`\\${c}\` がある）`,
-        `\`\\${c}\` is no PCRE2 escape: \`grep -P\` stops with "PCRE2 does not support \\F, \\L, \\l, \\N{name}, \\U, or \\u" (Perl has a \`\\${c}\` that changes case)`));
+      return tok('error', tokenSaid(st.lang, st.reached ? 'regex-pcre-case-escape' : 'regex-pcre-case-escape-if-reached', { c }));
     }
     const upper = c === 'U' || c === 'u';
     const change = (t: string) => (upper ? t.toUpperCase() : t.toLowerCase());
@@ -609,7 +637,7 @@ function pcreEscape(st: State, start: number, c: string): EmbeddedToken | undefi
     if (PCRE_ESCAPE_LETTERS.includes(c)) return tok('pattern', s(`\`\\${c}\`: この解説では読めない PCRE のエスケープ`, `\`\\${c}\`: a PCRE escape this explainer does not read`));
     // (Perl passes it through with a warning; PCRE2 refuses it.)
     if (st.tool === 'perl') return tok('string', s(`\`\\${c}\`: Perl では文字「${c}」扱い（警告 "Unrecognized escape \\${c} passed through" が出る）`, `\`\\${c}\`: Perl reads it as "${c}" (with the warning "Unrecognized escape \\${c} passed through")`));
-    return tok('error', s(`\`\\${c}\` は PCRE のエスケープにない。\`grep -P\` は "unrecognized character follows \\" で止まる（Perl は文字「${c}」として扱う）`, `\`\\${c}\` is no PCRE escape: \`grep -P\` stops with "unrecognized character follows \\" (Perl reads it as "${c}")`));
+    return tok('error', tokenSaid(st.lang, st.reached ? 'regex-pcre-unknown-escape' : 'regex-pcre-unknown-escape-if-reached', { c }));
   }
   return undefined;
 }
@@ -630,7 +658,7 @@ function escape(st: State): EmbeddedToken {
   }
   const c = src[start + 1];
   st.i += c === undefined ? 1 : 2;
-  if (c === undefined) return { start, end: st.i, kind: 'error', explanation: s('末尾の `\\` の後に文字がない', 'Trailing `\\`'), children: [] };
+  if (c === undefined) return { start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, st.reached ? 'regex-trailing-backslash' : 'regex-trailing-backslash-if-reached', { tool: st.tool }), children: [] };
   // (PCRE: `\12` is group 12 when there are that many groups, otherwise the octal code 012.)
   const many = st.flavor === 'pcre' ? /^\\[1-9]\d+/.exec(src.slice(start))?.[0] : undefined;
   if (many && /^\\[0-7]/.test(many) && Number(many.slice(1)) > Math.max(9, st.groups)) {

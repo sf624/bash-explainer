@@ -26,11 +26,27 @@ const SIMPLE: Record<string, [string, string]> = {
   F: ['入力ファイル名を出力する', 'print the input file name'],
 };
 
+/**
+ * Where the bracket expression that opens at `at` ends, as GNU sed finds the end of a regex: after its `]` (one first, or after
+ * `^`, is a member; `[:…:]`, `[.….]` and `[=…=]` are read whole), or at a newline or the end of the text when none closes it.
+ */
+function bracketEnd(src: string, at: number): number {
+  let j = at + 1;
+  if (src[j] === '^') j++;
+  if (src[j] === ']') j++;
+  while (j < src.length && src[j] !== '\n') {
+    if (src[j] === ']') return j + 1;
+    const inner = src[j] === '[' && '.:='.includes(src[j + 1]) ? src.indexOf(`${src[j + 1]}]`, j + 2) : -1;
+    j = inner < 0 ? j + 1 : inner + 2;
+  }
+  return j;
+}
+
 class SedParser {
   private i = 0;
   private s: S;
 
-  constructor(private src: string, private flavor: 'bre' | 'ere', private lang: Lang, private quiet: boolean, private unit?: MatchUnit) {
+  constructor(private src: string, private flavor: 'bre' | 'ere', private lang: Lang, private quiet: boolean, private unit: MatchUnit | undefined, private reached: boolean) {
     this.s = pick(lang);
   }
 
@@ -69,8 +85,11 @@ class SedParser {
     while (this.src[this.i] === ' ' || this.src[this.i] === '\t') this.i++;
   }
 
-  /** Read up to an unescaped delimiter; returns [start, end] of the text (the delimiter is consumed). */
-  private delimited(delim: string): [number, number] | undefined {
+  /**
+   * Read up to an unescaped delimiter; returns [start, end] of the text (the delimiter is consumed). In a regex (`regex`) GNU sed
+   * reads a bracket expression whole, so a delimiter in it ends nothing (`s/[/]/x/`), and one that is not closed runs to the end.
+   */
+  private delimited(delim: string, regex = false): [number, number] | undefined {
     const start = this.i;
     while (this.i < this.src.length) {
       const c = this.src[this.i];
@@ -80,13 +99,13 @@ class SedParser {
         return [start, this.i - 1];
       }
       if (c === '\n' && delim !== '\n') break;
-      this.i++;
+      this.i = regex && c === '[' ? bracketEnd(this.src, this.i) : this.i + 1;
     }
     return undefined;
   }
 
   private regex(start: number, end: number, delimiter: string): EmbeddedToken[] {
-    return shift(explainRegex(this.src.slice(start, end), this.flavor, this.lang, { sedEscapes: true, delimiter, unit: this.unit }), start);
+    return shift(explainRegex(this.src.slice(start, end), this.flavor, this.lang, { sedEscapes: true, delimiter, unit: this.unit, reached: this.reached }), start);
   }
 
   // ---------------------------------------------------------------- addresses
@@ -119,7 +138,7 @@ class SedParser {
     if (src[start] === '/' || (src[start] === '\\' && src[start + 1])) {
       const delim = src[start] === '/' ? '/' : src[start + 1];
       this.i += src[start] === '/' ? 1 : 2;
-      const body = this.delimited(delim);
+      const body = this.delimited(delim, true);
       if (!body) {
         this.i = src.length;
         return { token: this.tok(start, this.i, 'error', s('正規表現アドレスが閉じられていない', 'Unterminated regex address')), text: '' };
@@ -280,7 +299,7 @@ class SedParser {
     if (isHole(delim)) return holeStop(this.i);
     if (!delim || delim === '\n') return this.tok(start, this.i, 'error', s('`s` の後に区切り文字がない', '`s` without a delimiter'), [...children, ...parts]);
     this.i++;
-    const pat = this.delimited(delim);
+    const pat = this.delimited(delim, true);
     if (!pat) {
       this.i = this.lineEnd();
       return this.tok(start, this.i, 'error', s('`s` コマンドが閉じられていない', 'Unterminated `s` command'), [...children, ...parts]);
@@ -438,8 +457,8 @@ class SedParser {
   }
 }
 
-/** Explain a sed script (one or more commands). */
-export function explainSed(src: string, flavor: 'bre' | 'ere', lang: Lang, quiet = false, unit?: MatchUnit): EmbeddedToken[] {
+/** Explain a sed script (one or more commands). `reached`: whether the shell gets to the command (`RegexOptions.reached`). */
+export function explainSed(src: string, flavor: 'bre' | 'ere', lang: Lang, quiet = false, unit?: MatchUnit, reached = true): EmbeddedToken[] {
   // (A script whose first two characters are `#n` is run as with `-n`: POSIX, and GNU sed 4.9, also `#no`.)
-  return new SedParser(src, flavor, lang, quiet || src.startsWith('#n'), unit).parse();
+  return new SedParser(src, flavor, lang, quiet || src.startsWith('#n'), unit, reached).parse();
 }

@@ -9,6 +9,14 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Each target pattern on a bazel command line says what it selects (`//app:main`, `//app/...`, `:all`, `-//app/legacy/...`), in `bazel query`, `cquery` and `aquery` too. A pattern bazel refuses (`//app/...:main`, `//app:`) is marked.
 - buildifier commands are explained: `buildifier -mode=check -lint=warn -r .` gets every option and its values, and a word after the first file is a file name, as buildifier reads it.
 
+### Changed
+
+- An invalid regex in a shell script is now an Error in Problems and `--check`: `grep -E '[a'`, `sed 's/\(a/x/'`, `grep -P '\q'`, `[[ $x =~ a[ ]]`. Before, only the regex's part of the explanation said so.
+
+### Fixed
+
+- A `/` inside `[…]` no longer ends a sed regex (`sed 's/[/]/x/'` replaces a slash), and `grep '\{1\}'` reads `{1}` as text, as GNU sed and grep do.
+
 ## 0.11.0
 
 Under `set -e`, a line whose command can fail now says where the script stops and which trap runs. A new warning catches shell injection through `find -exec sh -c` and `xargs sh -c`, and bazel command lines are explained. The box of a line's problems shows each fix as the whole line, the depths are named Overview and Word by word, and `sh` scripts are read closer to how dash and busybox ash run them. On the web page, a large script freezes the page about half as long.
