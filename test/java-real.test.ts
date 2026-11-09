@@ -37,7 +37,9 @@ const jdk = (tool: string, args: string[], cwd: string): { out: string; status: 
   return { out: r.stdout + r.stderr, status: r.status };
 };
 
-describe('java tools against the real tools', () => {
+// Each case starts JVMs (a Gradle or Maven run is several seconds, more under a loaded machine), so none keeps mocha's 10 s default.
+describe('java tools against the real tools', function () {
+  this.timeout(60000);
   withJdk('the recorded usage lines of java, javac and keytool are what the JDK prints', () => {
     within((dir) => {
       const java = jdk('java', ['--help'], dir).out + jdk('java', ['--help-extra'], dir).out;

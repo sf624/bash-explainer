@@ -86,7 +86,10 @@ function through(text: string, kind: FileKind, lines: readonly number[]): Map<nu
 
 describe('a line is explained the same in any order', () => {
   for (const { name, text, kind } of DOCUMENTS) {
-    it(name, () => {
+    it(name, function () {
+      // sample.sh (127 lines) takes 6.5-8.5 s locally and hit mocha's 10 s on CI under load: the baseline reads the document anew for every line
+      // (127 parses and cold Analyzers), which is what the test checks, so it is not made cheaper; the limit leaves a margin of several times.
+      this.timeout(60000);
       const n = text.split('\n').length;
       // (A new Analyzer for each line, on a tree read for it: nothing kept from another line.)
       const fresh = new Map(Array.from({ length: n }, (_, l) => [l, through(text, kind, [l]).get(l)!] as const));
