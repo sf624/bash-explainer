@@ -24,7 +24,7 @@ import { testWordShape } from './semantics/testwords';
 import { testedFirst } from './semantics/unbound';
 import { bracesInContext, wordFields, type WordEnv } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { type BehaviourId, builtinRow, type Case, COMMON_SH, differIn, type Failure, type Feature, FEATURES, featureWorks, failureOf, type InShell, isFailure, type Measured, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, variableRow, works } from './shellfeatures';
+import { type BehaviourId, builtinRow, type Case, COMMON_SH, differIn, type Failure, type Feature, FEATURES, featureWorks, failureOf, type InShell, isBash, isFailure, type Measured, type RealShell, saidShell, type ScriptEvidence, type Shell, type ShellReading, type ShellSource, variableRow, works } from './shellfeatures';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { binaryOperators, parseTest, writtenTestWords } from './testexpr';
 
@@ -431,13 +431,14 @@ function shFails(f: Feature): RealShell[] {
  * script, information with the word "Portability", not an error (docs/design/three-levels.md, section 10, item 2).
  */
 function portableInSh(id: string, shell: Shell): boolean {
-  return shell === 'sh' && shFails(FEATURES[id]).length === 0;
+  return isBash(shell) === 'unknown' && shFails(FEATURES[id]).length === 0;
 }
 
 function featureHead(id: string, shell: Shell): Head {
   const { ja, en, posixSince } = FEATURES[id];
-  if (shell === 'sh' && posixSince) return [`${jaJoin(ja, `は POSIX では ${posixSince} 年版から`)}。`, `${en} is POSIX only since ${posixSince}.`];
-  return shell === 'sh' ? [`${jaJoin(ja, 'は POSIX sh にない')}。`, `${en} is not POSIX sh.`]
+  const inSh = isBash(shell) === 'unknown';
+  if (inSh && posixSince) return [`${jaJoin(ja, `は POSIX では ${posixSince} 年版から`)}。`, `${en} is POSIX only since ${posixSince}.`];
+  return inSh ? [`${jaJoin(ja, 'は POSIX sh にない')}。`, `${en} is not POSIX sh.`]
     : [`${jaJoin(ja, 'は')} ${SHELL_NAMES[shell]} では使えない。`, `${en} is not available in ${SHELL_NAMES[shell]}.`];
 }
 
@@ -670,7 +671,7 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
 }
 
 function issuesFound(tree: SyntaxTree, shell: Shell, lang: Lang, from: number, to: number, version: BashVersion): Issue[] {
-  if (shell === 'bash') {
+  if (isBash(shell) === 'yes') {
     const lacking = collectFeatures(tree.root, from, to).filter((f) => lacks(f.id, version))
       .map((f): Issue => ({ id: f.id, kind: 'unsupported', note: unsupported(lang, f.id, versionMessage(f.id, version, lang), versionHead(f.id)), node: f.node, place: f.node }));
     // (Where bash lacks `${ …; }`, the issue above says what it does.)

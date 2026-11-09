@@ -309,6 +309,15 @@ export const SHELL_BEHAVIOURS = {
   globSkipDots: { differs: 'day' },
   // GLOBIGNORE removes the names it matches from what a pattern gives (3.5.8).
   globIgnore: { differs: 'daykmz' },
+  // The error of a special builtin (`unset` of a name no variable has, `export 1a=x`) ends the shell, as POSIX says; bash ends it only in POSIX mode
+  // (its default is to go on). zsh stops the script at `unset 1a` as well.
+  badNameStops: { differs: 'daz' },
+  // `local` outside a function is an error that ends the shell (bash: status 1, and the script goes on). (The shells without a `local` of their own are not here.)
+  localOutsideStops: { differs: 'da' },
+  // `local x` starts with the value of the `x` it hides (bash's `localvar_inherit`, off by default). (ksh93's `local` makes no local variable: `typesetScope`.)
+  localInherit: { differs: 'd' },
+  // The last stage of a pipeline runs in the shell itself, so `echo x | read v` sets `v` (bash: in a subshell, unless `lastpipe` is on and job control off).
+  lastStageShell: { differs: 'kz' },
 } as const satisfies Record<string, ShellBehaviour>;
 export type BehaviourId = keyof typeof SHELL_BEHAVIOURS;
 

@@ -79,7 +79,7 @@ export function pipeSubshellPitfalls(cx: Explainer, root: SyntaxNode, line: numb
     const lost = lostVariable(cx.state, p);
     if (!lost) continue;
     const { name: used, last, link } = lost;
-    const bash = !cx.shell || cx.shell === 'bash';
+    const bash = isBash(cx.shell) === 'yes';
     const fix: [string, string] = last.type === 'command'
       ? (bash ? [`\`read ${used} < <(コマンド)\` のようにプロセス置換で渡すか、\`shopt -s lastpipe\` にします`, `Use process substitution, \`read ${used} < <(command)\`, or turn on \`shopt -s lastpipe\``]
         : [`\`${used}=$(コマンド)\` のようにコマンド置換で受け取ります`, `Take the output with command substitution: \`${used}=$(command)\``])
