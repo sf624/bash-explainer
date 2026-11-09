@@ -170,16 +170,6 @@ export function explainTargetPattern(text: string, lang: Lang, flavor: TargetFla
   return tokens.length === 1 && tokens[0].start === 0 && tokens[0].end === text.length ? { tokens: [], note } : { tokens, note };
 }
 
-/**
- * A word of a query expression given as several words, which bazel joins with spaces (`bazel query deps '(//x)'`), that is a
- * target pattern: one with `//`, `:`, `...` or `@` in it, and nothing of the query language (`deps(//x)`, `a+b`). A bare name
- * may be a function or an operator (`deps`, `except`), whose reading depends on the words around it: it is left unread, as
- * the rest of the expression is (an expression of one word is read whole: src/embedded/bazelquery.ts).
- */
-export function explainQueryWord(text: string, lang: Lang, flavor: TargetFlavor): { tokens: EmbeddedToken[]; note?: string } | undefined {
-  return /\/\/|:|\.\.\.|^@/.test(text) && !/^-|[(),+^=]/.test(text) ? explainTargetPattern(text, lang, flavor, true) : undefined;
-}
-
 /** Where no name is written (`//app`, `@repo`): whose name the target has. */
 function implied(p: TargetPattern, lang: Lang): string {
   const s = pick(lang);

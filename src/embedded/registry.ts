@@ -7,8 +7,8 @@ import type { Shell } from '../shellfeatures';
 import type { InvalidHow } from '../arith';
 import { explainArith } from './arith';
 import { explainAwk } from './awk';
-import { explainQueryWord, explainTargetPattern, TARGET_FLAVORS } from './bazel';
-import { explainQuery, type QueryCommand } from './bazelquery';
+import { explainTargetPattern, TARGET_FLAVORS } from './bazel';
+import { explainQuery, explainQueryWord, type QueryCommand } from './bazelquery';
 import { explainBuildozerWord } from './buildozer';
 import { describeFindPattern } from './find';
 import { explainDate, explainEscapes, explainPrintf, printfNote } from './format';
@@ -72,7 +72,7 @@ const regex: Explainer = (text, cx) => {
  */
 const query = (command: QueryCommand, lang: 'bazelquery' | 'bazelcquery' | 'bazelaquery'): Explainer => (text, cx) => (cx.joined()
   ? explainQueryWord(text, cx.lang, TARGET_FLAVORS[lang])
-  : explainQuery(text, command, { universe: cx.given('--universe_scope', '--infer_universe_scope') }, cx.lang, TARGET_FLAVORS[lang]));
+  : explainQuery(text, command, { universe: cx.given('--universe_scope', '--infer_universe_scope'), reached: cx.reached() }, cx.lang, TARGET_FLAVORS[lang]));
 
 /** One explainer per embedded language; undefined when the text is not one of that language (`date` without `+`). */
 export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {

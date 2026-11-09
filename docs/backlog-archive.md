@@ -1073,6 +1073,25 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `grep '[[.].]'`: the collating symbol `[.].]` is read as `[`, `.`, then a `]` that closes the class; GNU grep reads a class of `]`. (sed's end of the regex reads it whole.)
   - `[[ a || x =~ [ ]]`: an Error, though bash reads the regex only when `a` is false, so the `[[` does not fail every time (no "sometimes read" form, as `arith-invalid-number-if-read` has).
 
+## From the review of the bazel query language (#780)
+
+### bazel query expressions: corners the reader does not follow
+
+- **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`. Inputs marked "missing" are `missing-explanation`.
+- **Reason:** Rare spellings (bazel 9.3.2). The usual expressions (`deps(…)`, `rdeps(…)`, `kind(…)`, `filter(…)`, `attr(…)`, the operators, `let`) are read right, and none of these gives a false Error.
+- **Input and what is wrong:**
+  - `kind("*", //app:*)`: Java refuses the regex ("Dangling meta character '*'", status 7); the PCRE reader takes `*` at the start as a repetition and says nothing. Missing (test/bazel-query.test.ts, `REGEX_MISSED`).
+  - `filter("a{,3}", …)`: Java refuses it ("Illegal repetition", status 7); we read `{,3}`. Missing.
+  - Java and PCRE know different escapes (`\K`, `\C`, `\g`, `\o{…}` are PCRE's, not Java's): a pattern with one is read as PCRE reads it.
+  - `bazel aquery 'inputs(".*", //x)' --skyframe_state`: with `--skyframe_state` aquery's filters take one argument; we still mark one argument as a mistake (the option is not in the spec).
+  - `bazel query "kind($k, //x)"`: a value in an unquoted regex argument leaves the word unread, where a text could say that a blank, `,` or `)` in the value ends the argument. Missing.
+  - `bazel query "kind('$k', //x)"`: a `'` in the value would end the quoted word; the regex hole's text does not say so.
+  - `bazel query '//app:main-//app:main'`: `-` inside a word is a character of the word, so this is one word, `main-//app:main`, which bazel refuses ("invalid target name … may not contain '//'"); we read a target named `main-//app:main`. Missing.
+  - `bazel query 'deps(//)'`: bazel refuses `//` ("invalid target name '': empty target name"); we say "A target pattern". Missing.
+  - `bazel query "@@rules+//$pkg/..."`: the hole's text lists `+` among what ends the word, though a word that starts with `@@` keeps its `+`.
+  - `bazel query "deps('//$a:all') + //$b:all"`: the sentence on what ends a word is said once per line, keyed by the hole's place, so where the first hole of the line is in a quoted word of the expression (which says nothing of it), the later unquoted one does not say it either.
+  - `bazel query "deps($a) $b"`: an expression of several words with holes is left unread; only the words that are target patterns are read.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".
