@@ -7,7 +7,7 @@
 // (a query's or a cquery's labels, or those a build or an aquery configures: `bazel build --nobuild`, its build events), with the workspace's targets
 // (`universe`), which test/bazel-patterns.test.ts resolves the patterns over; each row of `expressions` the exit status of a
 // query, a cquery or an aquery of its expression (after its `options`) and the first line of its error, which
-// test/bazel-query.test.ts compares the query language's reader with. The bazel is `$BAZEL` (bazel, or bazelisk, which runs the
+// test/bazel-query.test.ts compares the query language's reader with, and what it gave (labels, or an aquery's mnemonics). The bazel is `$BAZEL` (bazel, or bazelisk, which runs the
 // release of test/fixtures/bazel/.bazelversion), a separate program.
 //
 //   BAZEL=~/.cache/explain-bash-tools/bazelisk/bazelisk-linux-amd64 npx tsx scripts/record-bazel.ts           rewrite the facts
@@ -30,8 +30,11 @@ interface LineRow { line: string; status?: number; says?: string }
 interface PatternRow { command: 'build' | 'query' | 'cquery' | 'aquery'; cwd?: string; words: string[]; targets?: string[]; error?: string }
 /** The workspace's targets (`//...:*`), its rules, and those tagged `manual`. */
 interface Universe { all: string[]; rules: string[]; manual: string[] }
-/** A query expression: the exit status of the command, and the first line of its error. */
-interface ExpressionRow { command: 'query' | 'cquery' | 'aquery'; options?: string[]; expression: string; status?: number; error?: string }
+/**
+ * A query expression: the exit status of the command, and the first line of its error; where it ran, what it gave: the labels of
+ * a query or a cquery (sorted, a cquery's configuration left out), the mnemonics of an aquery's actions (sorted, each once).
+ */
+interface ExpressionRow { command: 'query' | 'cquery' | 'aquery'; options?: string[]; expression: string; status?: number; error?: string; targets?: string[]; mnemonics?: string[] }
 interface Oracle { '//': string; bazel?: string; flags: FlagsRow[]; lines: LineRow[]; universe?: Universe; patterns: PatternRow[]; expressions: ExpressionRow[] }
 
 const bazel = process.env.BAZEL;
@@ -90,7 +93,11 @@ try {
     const { command, options, expression } = row;
     const r = spawnSync(bazel, [command, '--noshow_progress', ...(options ?? []), '--', expression], { cwd: dir, env, encoding: 'utf8', timeout: 300000 });
     const error = r.status === 0 ? undefined : firstError(r.stderr) ?? `status ${r.status}`;
-    return { command, ...(options ? { options } : {}), expression, status: r.status ?? -1, ...(error ? { error } : {}) };
+    const lines = r.stdout.split('\n');
+    const gave = r.status !== 0 ? {} : command === 'aquery'
+      ? { mnemonics: [...new Set(lines.flatMap((l) => /^ {2}Mnemonic: (\S+)/.exec(l)?.[1] ?? []))].sort() }
+      : { targets: lines.filter((l) => l !== '').map((l) => l.replace(/ \([^)]*\)$/, '')).sort() };
+    return { command, ...(options ? { options } : {}), expression, status: r.status ?? -1, ...(error ? { error } : {}), ...gave };
   });
   const next: Oracle = { '//': oracle['//'], bazel: version, flags, lines, universe, patterns, expressions };
   if (check) {

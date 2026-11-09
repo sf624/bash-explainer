@@ -1,23 +1,34 @@
 // The query language of `bazel query`, `cquery` and `aquery` (src/embedded/bazelquery.ts) against what bazel 9.3.2 does with
 // each expression of test/fixtures/oracles/bazel.json (`expressions`, recorded by scripts/record-bazel.ts in test/fixtures/bazel):
 // where bazel runs it, the reader finds no mistake; where bazel stops at the language (a parse error, a function the command
-// does not have or refuses, a variable no `let` binds), the reader finds that mistake, in bazel's words. An error of the
-// workspace (a target or a package that is not there) is not the language's: the reader says nothing of it.
+// does not have or refuses, a variable no `let` binds), the reader finds that mistake, in bazel's words; where bazel refuses
+// a regex of `filter`, `kind`, `attr` or an aquery filter (Java's), the regex reader marks it. An error of the workspace (a
+// target or a package that is not there) is not the language's: the reader says nothing of it. What a row gave (labels, or an
+// aquery's mnemonics) holds what the texts say of the patterns.
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
 import { TARGET_FLAVORS } from '../src/embedded/bazel';
-import { explainQuery, KNOWN, type QueryCommand, readQuery } from '../src/embedded/bazelquery';
+import { endsQueryWord, explainQuery, KNOWN, type QueryCommand, readQuery } from '../src/embedded/bazelquery';
+import { tokenSaid } from '../src/messages-tokens';
 import { type EmbeddedToken, holeChar } from '../src/embedded/types';
 import type { BashParser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
-interface ExpressionRow { command: QueryCommand; options?: string[]; expression: string; status: number; error?: string }
+interface ExpressionRow { command: QueryCommand; options?: string[]; expression: string; status: number; error?: string; targets?: string[]; mnemonics?: string[] }
 const oracle = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'oracles', 'bazel.json'), 'utf8')) as { expressions: ExpressionRow[] };
 const LANGS = { query: 'bazelquery', cquery: 'bazelcquery', aquery: 'bazelaquery' } as const;
-/** What bazel says of the workspace, not of the language: a target, a package or a configuration that is not there, no target to pick; and of a regex, which the regex reader reads. */
-const WORKSPACE = /no such (target|package)|couldn't determine target|invalid target name|argument set is empty|illegal '\w+' pattern regexp|Unknown configuration ID|could be found in the 'null' configuration|ambiguous|Skipping/;
+/** What bazel says of the workspace, not of the language: a target, a package or a configuration that is not there, no target to pick. */
+const WORKSPACE = /no such (target|package)|couldn't determine target|invalid target name|argument set is empty|Unknown configuration ID|could be found in the 'null' configuration|ambiguous|Skipping/;
+/** What bazel says of a regex Java refuses: of `filter`, `kind`, `attr`, and of aquery's filters. */
+const REGEX = /illegal '\w+' pattern regexp|Wrong query syntax/;
+/** Regexes Java refuses that the regex reader takes (docs/backlog-archive.md, "From the review of the bazel query language (#780)"). */
+const REGEX_MISSED = new Set(['kind("*", //app:*)']);
+
+/** The errors the regex reader marks in the patterns of the expression. */
+const regexErrors = (ts: readonly EmbeddedToken[], inPattern = false): EmbeddedToken[] =>
+  ts.flatMap((t) => [...(inPattern && t.kind === 'error' ? [t] : []), ...regexErrors(t.children, inPattern || t.kind === 'pattern')]);
 
 const read = ({ command, options, expression }: ExpressionRow) =>
   readQuery(expression, command, { universe: !!options?.some((o) => /^--(universe_scope|infer_universe_scope)\b/.test(o)) }, 'en', TARGET_FLAVORS[LANGS[command]]);
@@ -25,11 +36,39 @@ const read = ({ command, options, expression }: ExpressionRow) =>
 describe('bazel query expressions, as bazel 9.3.2 reads them', () => {
   for (const row of oracle.expressions) {
     it(`${row.command} ${row.options?.join(' ') ?? ''} '${row.expression}'`, () => {
-      const said = read(row).errors.map((e) => e.says);
-      if (row.status === 0 || WORKSPACE.test(row.error!)) assert.deepStrictEqual(said, [], `bazel: ${row.error ?? 'status 0'}`);
+      const r = read(row);
+      const said = r.errors.map((e) => e.says);
+      const regex = regexErrors(r.tokens).map((t) => t.explanation);
+      const refused = row.status !== 0 && REGEX.test(row.error!) && !REGEX_MISSED.has(row.expression);
+      assert.deepStrictEqual(regex.length > 0, refused, `bazel: ${row.error ?? 'status 0'}; the regex reader: ${JSON.stringify(regex)}`);
+      if (row.status === 0 || WORKSPACE.test(row.error!) || REGEX.test(row.error!)) assert.deepStrictEqual(said, [], `bazel: ${row.error ?? 'status 0'}`);
       else assert.ok(said.some((s) => row.error!.includes(s)), `bazel: ${row.error}; the reader: ${JSON.stringify(said)}`);
     });
   }
+
+  it('a regex bazel refuses is said with its status: 7 for a query, 1 for a cquery and an aquery', () => {
+    const rows = oracle.expressions.filter((r) => REGEX.test(r.error ?? ''));
+    assert.deepStrictEqual([...new Set(rows.map((r) => `${r.command} ${r.status}`))].sort(), ['aquery 1', 'cquery 1', 'query 7']);
+    assert.match(regexErrors(read(rows[0]).tokens)[0].explanation, /status 7; 1 for `cquery` and `aquery`/);
+  });
+
+  it('`filter`, `kind` and `attr` search anywhere (a list attribute as the text `[a, b]`); aquery\'s filters match the whole text', () => {
+    const gave = (command: QueryCommand, expression: string): string[] | undefined => {
+      const row = oracle.expressions.find((r) => r.command === command && r.expression === expression)!;
+      return row.targets ?? row.mnemonics;
+    };
+    assert.deepStrictEqual(gave('query', 'filter(mai, //...)'), ['//app:main', '//app:main_test']);
+    assert.deepStrictEqual(gave('query', 'kind(scrip, //...)'), ['//app:debug', '//app:main', '//app:main_test', '//tools:fmt']);
+    assert.deepStrictEqual(gave('query', 'attr(name, ai, //app/...)'), ['//app:main', '//app:main_test']);
+    assert.deepStrictEqual([gave('query', 'attr(tags, "^\\[manual\\]$", //...)'), gave('query', 'attr(tags, "^manual$", //...)')], [['//app:debug'], []]);
+    assert.deepStrictEqual([gave('aquery', 'mnemonic(Write, //app:main)'), gave('aquery', 'mnemonic(FileWrite, //app:main)')], [[], ['FileWrite']]);
+    assert.deepStrictEqual([gave('aquery', 'outputs(main, //app:main)'), gave('aquery', 'outputs(".*main.sh", //app:main)')], [[], ['FileWrite']]);
+    // (What the rows of the patterns say.)
+    const pattern = (command: QueryCommand, src: string): string => read({ command, expression: src, status: 0 }).tokens.find((t) => t.kind === 'pattern')!.explanation;
+    for (const f of ['filter', 'kind']) assert.match(pattern('query', `${f}(x, //...)`), /searched anywhere/);
+    assert.match(pattern('query', 'attr(tags, x, //...)'), /searched anywhere in the attribute's value \(a list as the text `\[a, b\]`\)/);
+    for (const f of ['inputs', 'outputs', 'mnemonic']) assert.match(pattern('aquery', `${f}(x, //...)`), /matched by the whole/);
+  });
 
   it('knows the functions each command\'s parser lists', () => {
     for (const command of ['query', 'cquery', 'aquery'] as const) {
@@ -155,7 +194,7 @@ describe('bazel query expressions with a value in them', () => {
   });
 
   it('a value that would decide the reading leaves the word unread', () => {
-    for (const src of ['bazel query "$f(//x)"', 'bazel query "kind($k, //x)"', 'bazel query "deps(//x, $n)"', 'bazel query "labels($a, //x)"', 'bazel query "let $v = //x in //y"']) {
+    for (const src of ['bazel query "$f(//x)"', 'bazel query "kind($k, //x)"', 'bazel query "deps(//x, 1$n)"', 'bazel query "labels(a$a, //x)"', 'bazel query "let $v = //x in //y"']) {
       assert.deepStrictEqual(pieces(src), [], src);
     }
     assert.match(pieces('bazel query "kind(\'$k\', //x)"').join('\n'), /The value of `\$k`/);
@@ -182,5 +221,45 @@ describe('the edges of the query reader', () => {
     assert.deepStrictEqual(read(`deps(//app:${hole})`)[1].children.flatMap((t) => kinds(t.children)), ['variable:target-name+query']);
     assert.deepStrictEqual(read(`deps('//app:${hole}')`)[1].children.flatMap((t) => kinds(t.children)), ['variable:target-name']);
     for (const src of [`$${hole}`, `deps("@a${hole}:b")`, `deps(${hole}/...)`]) assert.deepStrictEqual(kinds(read(src)).at(-1), 'error', src);
+  });
+});
+
+describe('where a word of a query expression ends', () => {
+  it('the texts list only characters that end a word, as the lexer reads it', () => {
+    const value = '`$x`';
+    const texts = [tokenSaid('en', 'hole-target-package', { value, query: true }), tokenSaid('en', 'hole-target-name', { value, query: true }), tokenSaid('en', 'hole-query-word', { value }),
+      tokenSaid('en', 'hole-query-number', { value }), tokenSaid('en', 'hole-query-argument', { value })];
+    for (const text of texts) {
+      // (The list: from "a blank" to what it does, "ends" or "is".)
+      const list = /a blank.*?(?= ends| is )/.exec(text)![0];
+      const listed = [...list.matchAll(/a blank|`([^`])`|a quote/g)].map((m) => (m[0] === 'a blank' ? ' ' : m[0] === 'a quote' ? '"' : m[1]));
+      assert.ok(listed.length > 2, text);
+      assert.deepStrictEqual(listed.filter((c) => !endsQueryWord(c)), [], text);
+    }
+  });
+
+  it('the `+` warning: only where the right side could go on with the left one\'s target name', () => {
+    const plus = (src: string): string[] => readQuery(src, 'query', {}, 'en', 'query').tokens.filter((t) => t.kind === 'operator').map((t) => (/even with no blank/.test(t.explanation) ? 'warning' : 'union'));
+    assert.deepStrictEqual(['//app:a+b', '//+b', '//app/...+//tools/...', '//app:all+//tools:all', '//app:main+:data', '//app:main+@//tools:fmt', '//app:a + b', '"//a:b"+c'].map((s) => plus(s)[0]),
+      ['warning', 'warning', 'union', 'union', 'union', 'union', 'union', 'union']);
+  });
+
+  it('a regex bazel refuses where the shell does not get to the command: its row only', () => {
+    const [error] = regexErrors(readQuery('filter("\\q", //x)', 'query', { reached: false }, 'en', 'query').tokens);
+    assert.deepStrictEqual(error.explanation.replace(/[﷐-﷯]/g, ''), tokenSaid('en', 'regex-java-unknown-escape-if-reached', { c: 'q' }).replace(/[﷐-﷯]/g, ''));
+    assert.notStrictEqual(error.explanation, tokenSaid('en', 'regex-java-unknown-escape', { c: 'q' }));
+  });
+
+  it('an expression that ends too soon: one row on its last lexeme', () => {
+    const rows = readQuery('deps(//x) union', 'query', {}, 'en', 'query').tokens.filter((t) => t.start === 10);
+    assert.deepStrictEqual(rows.map((t) => t.kind), ['error']);
+  });
+
+  it('a value as a whole number or a word argument is read as that argument', () => {
+    const hole = holeChar(0);
+    const arg = (src: string) => readQuery(src, 'query', {}, 'en', 'query').tokens.find((t) => t.start === src.indexOf(hole) || t.start === src.indexOf(hole) - 1)!;
+    assert.deepStrictEqual([arg(`deps(//app, ${hole})`), arg(`labels(${hole}, //app)`)].map((t) => [t.kind, t.children.map((c) => c.hole?.place)]), [['number', ['query-number']], ['string', ['query-argument']]]);
+    assert.deepStrictEqual(arg(`deps(//app, 1${hole})`).kind, 'error');
+    assert.match(pieces('bazel query "deps(//app, $DEPTH)"').at(-1)!, /^\$DEPTH: Depth: .*: The value of `\$DEPTH` is read as this whole number/);
   });
 });

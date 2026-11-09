@@ -18,7 +18,7 @@ export interface EmbeddedToken {
 }
 
 /** Where a hole stands, in a position of data of its language; each has a text of the catalog (`hole-…`). */
-export type HolePlace = 'regex' | 'class' | 'target-package' | 'target-name' | 'query-word' | 'buildozer' | 'repeat' | 'replacement' | 'perl-replacement' | 'sed-text' | 'address' | 'awk-string' | 'glob' | 'date' | 'printf' | 'echo' | 'tr';
+export type HolePlace = 'regex' | 'class' | 'target-package' | 'target-name' | 'query-word' | 'query-number' | 'query-argument' | 'buildozer' | 'repeat' | 'replacement' | 'perl-replacement' | 'sed-text' | 'address' | 'awk-string' | 'glob' | 'date' | 'printf' | 'echo' | 'tr';
 
 export interface HoleMark {
   place: HolePlace;

@@ -213,6 +213,14 @@ export const ARGV_TEXTS = {
   'hole-buildozer': tokenText<{ value: string }>(({ value }) => [
     `${value} の値は buildozer のコマンドの一部になる。buildozer はコマンドを空白と改行で区切るので、値の中の空白で引数が分かれる（\`\\ \` は区切らない）`,
     `The value of ${value} becomes part of buildozer's command, which buildozer splits at spaces and newlines itself: a space in the value starts another argument (a \`\\ \` does not)`]),
+  /** `bazel query "deps(//app, $DEPTH)"`: a hole that is a whole number argument of a query function (a depth, a count). */
+  'hole-query-number': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値は0以上の整数として読まれる。値の中の空白・\`,\`・\`)\` などはクエリの構文になり、整数でない値では bazel が止まる`,
+    `The value of ${value} is read as this whole number, 0 or more: a blank, \`,\` or \`)\` in it is the query's syntax, and bazel stops at a value that is no number`]),
+  /** `bazel query "labels($ATTR, //app)"`: a hole that is a whole word argument of a query function (an attribute's name, a configuration, a file). */
+  'hole-query-argument': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値はこの引数（1つの語）として読まれる。値の中の空白・\`,\`・\`)\`・引用符などは語を終わらせ、その先はクエリの構文として読まれる`,
+    `The value of ${value} is read as this argument, one word: a blank, \`,\`, \`)\` or a quote in it ends the word, and bazel reads what follows as the query's syntax`]),
   /** `date +"%F $x"`: a hole in date's format. */
   'hole-date': tokenText<{ value: string; around?: boolean }>(({ value, around }) => [
     `${value} の値は表示書式の一部になる。値の中の \`%\` は書式指定として読まれる${around ? '。後ろは、値に `%` がないものとして読んでいる' : ''}`,

@@ -1505,82 +1505,149 @@
     {
       "command": "query",
       "expression": "deps(//app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "rdeps(//..., //app:data)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data"
+      ]
     },
     {
       "command": "query",
       "expression": "somepath(//app:main, //app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "allpaths(//app:main, //app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "kind(rule, //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
     },
     {
       "command": "query",
       "expression": "filter(main, //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main",
+        "//app:main_test"
+      ]
     },
     {
       "command": "query",
       "expression": "attr(tags, manual, //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:debug"
+      ]
     },
     {
       "command": "query",
       "expression": "labels(srcs, //app:app)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data.txt"
+      ]
     },
     {
       "command": "query",
       "expression": "tests(//...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main_test"
+      ]
     },
     {
       "command": "query",
       "expression": "executables(//...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:debug",
+        "//app:main",
+        "//tools:fmt"
+      ]
     },
     {
       "command": "query",
       "expression": "buildfiles(//app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:BUILD",
+        "//tools:BUILD",
+        "//tools:defs.bzl"
+      ]
     },
     {
       "command": "query",
       "expression": "loadfiles(//app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//tools:defs.bzl"
+      ]
     },
     {
       "command": "query",
       "expression": "siblings(//app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:BUILD",
+        "//app:app",
+        "//app:data",
+        "//app:data.txt",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
     },
     {
       "command": "query",
       "expression": "some(//app/...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app/legacy:old"
+      ]
     },
     {
       "command": "query",
       "expression": "same_pkg_direct_rdeps(//app:data)",
-      "status": 0
+      "status": 0,
+      "targets": []
     },
     {
       "command": "query",
       "expression": "visible(//app:main, //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
     },
     {
       "command": "query",
@@ -1630,57 +1697,105 @@
         "--universe_scope=//..."
       ],
       "expression": "allrdeps(//app:data)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data"
+      ]
     },
     {
       "command": "cquery",
       "expression": "deps(//app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main",
+        "@@platforms//cpu:cpu",
+        "@@platforms//cpu:x86_64",
+        "@@platforms//host:host",
+        "@@platforms//os:linux",
+        "@@platforms//os:os",
+        "@bazel_tools//tools:host_platform"
+      ]
     },
     {
       "command": "cquery",
       "expression": "rdeps(//..., //app:data)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data"
+      ]
     },
     {
       "command": "cquery",
       "expression": "somepath(//app:main, //app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "cquery",
       "expression": "allpaths(//app:main, //app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "cquery",
       "expression": "kind(rule, //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
     },
     {
       "command": "cquery",
       "expression": "filter(main, //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main",
+        "//app:main_test"
+      ]
     },
     {
       "command": "cquery",
       "expression": "attr(tags, manual, //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:debug"
+      ]
     },
     {
       "command": "cquery",
       "expression": "labels(srcs, //app:app)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data.txt"
+      ]
     },
     {
       "command": "cquery",
       "expression": "tests(//...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main_test"
+      ]
     },
     {
       "command": "cquery",
       "expression": "executables(//...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:debug",
+        "//app:main",
+        "//tools:fmt"
+      ]
     },
     {
       "command": "cquery",
@@ -1703,7 +1818,10 @@
     {
       "command": "cquery",
       "expression": "some(//app/...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app/legacy:old"
+      ]
     },
     {
       "command": "cquery",
@@ -1720,7 +1838,10 @@
     {
       "command": "cquery",
       "expression": "config(//app:main, target)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "cquery",
@@ -1770,37 +1891,82 @@
     {
       "command": "aquery",
       "expression": "deps(//app:main)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite",
+        "RepoMappingManifest",
+        "RunfilesTree",
+        "SourceSymlinkManifest",
+        "SymlinkTree"
+      ]
     },
     {
       "command": "aquery",
       "expression": "rdeps(//..., //app:data)",
-      "status": 0
+      "status": 0,
+      "mnemonics": []
     },
     {
       "command": "aquery",
       "expression": "somepath(//app:main, //app:main)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite",
+        "RepoMappingManifest",
+        "RunfilesTree",
+        "SourceSymlinkManifest",
+        "SymlinkTree"
+      ]
     },
     {
       "command": "aquery",
       "expression": "allpaths(//app:main, //app:main)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite",
+        "RepoMappingManifest",
+        "RunfilesTree",
+        "SourceSymlinkManifest",
+        "SymlinkTree"
+      ]
     },
     {
       "command": "aquery",
       "expression": "kind(rule, //...)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite",
+        "RepoMappingManifest",
+        "RunfilesTree",
+        "SourceSymlinkManifest",
+        "SymlinkTree",
+        "TestRunner"
+      ]
     },
     {
       "command": "aquery",
       "expression": "filter(main, //...)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite",
+        "RepoMappingManifest",
+        "RunfilesTree",
+        "SourceSymlinkManifest",
+        "SymlinkTree",
+        "TestRunner"
+      ]
     },
     {
       "command": "aquery",
       "expression": "attr(tags, manual, //...)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite",
+        "RepoMappingManifest",
+        "RunfilesTree",
+        "SourceSymlinkManifest",
+        "SymlinkTree"
+      ]
     },
     {
       "command": "aquery",
@@ -1811,12 +1977,27 @@
     {
       "command": "aquery",
       "expression": "tests(//...)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite",
+        "RepoMappingManifest",
+        "RunfilesTree",
+        "SourceSymlinkManifest",
+        "SymlinkTree",
+        "TestRunner"
+      ]
     },
     {
       "command": "aquery",
       "expression": "executables(//...)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite",
+        "RepoMappingManifest",
+        "RunfilesTree",
+        "SourceSymlinkManifest",
+        "SymlinkTree"
+      ]
     },
     {
       "command": "aquery",
@@ -1839,7 +2020,8 @@
     {
       "command": "aquery",
       "expression": "some(//app/...)",
-      "status": 0
+      "status": 0,
+      "mnemonics": []
     },
     {
       "command": "aquery",
@@ -1862,17 +2044,35 @@
     {
       "command": "aquery",
       "expression": "inputs('.*', //app:main)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "RunfilesTree",
+        "SymlinkTree"
+      ]
     },
     {
       "command": "aquery",
       "expression": "outputs('.*', //app:main)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite",
+        "RepoMappingManifest",
+        "RunfilesTree",
+        "SourceSymlinkManifest",
+        "SymlinkTree"
+      ]
     },
     {
       "command": "aquery",
       "expression": "mnemonic('.*', //app:main)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite",
+        "RepoMappingManifest",
+        "RunfilesTree",
+        "SourceSymlinkManifest",
+        "SymlinkTree"
+      ]
     },
     {
       "command": "aquery",
@@ -1904,17 +2104,27 @@
     {
       "command": "query",
       "expression": "deps(//app:main, 1)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "rdeps(//..., //app:data, 1)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data"
+      ]
     },
     {
       "command": "query",
       "expression": "some(//app/..., 2)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app/legacy:old",
+        "//app:app"
+      ]
     },
     {
       "command": "query",
@@ -1964,7 +2174,10 @@
         "--infer_universe_scope"
       ],
       "expression": "allrdeps(//app:data, 1)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data"
+      ]
     },
     {
       "command": "query",
@@ -1972,7 +2185,11 @@
         "--universe_scope=//..."
       ],
       "expression": "rbuildfiles(app/BUILD, tools/defs.bzl)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:BUILD",
+        "//tools:BUILD"
+      ]
     },
     {
       "command": "query",
@@ -2013,37 +2230,55 @@
     {
       "command": "query",
       "expression": "//app:main+//app:data",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data",
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "//app:main union //app:data",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data",
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "//app:main + //app:data",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data",
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "//app/... except //app:main intersect //app:main",
-      "status": 0
+      "status": 0,
+      "targets": []
     },
     {
       "command": "query",
       "expression": "//app/... - //app:main ^ //app:main",
-      "status": 0
+      "status": 0,
+      "targets": []
     },
     {
       "command": "query",
       "expression": "//app:main^//app:main",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "//app:main -//app:main",
-      "status": 0
+      "status": 0,
+      "targets": []
     },
     {
       "command": "query",
@@ -2054,47 +2289,81 @@
     {
       "command": "query",
       "expression": "//... intersect //app/...",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
     },
     {
       "command": "query",
       "expression": "//app:main except //app:main union //app:data",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data"
+      ]
     },
     {
       "command": "query",
       "expression": "let v = //app:main in $v",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "let v = //app:main in $v + //app:data",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data",
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "let v = //app:main in let w = $v in $w",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "let v = //app:main in \"$v\"",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "let v_2 = //app:main in $v_2",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "let _v = //app:main in $_v",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "//app:data + let v = //app:main in $v",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data",
+        "//app:main"
+      ]
     },
     {
       "command": "query",
@@ -2129,7 +2398,10 @@
     {
       "command": "query",
       "expression": "let \"v\" = //app:main in $v",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
@@ -2266,17 +2538,26 @@
     {
       "command": "query",
       "expression": "deps(//app:main, 01)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "deps(//app:main, 0)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "deps(//app:main, 2147483647)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
@@ -2287,7 +2568,10 @@
     {
       "command": "query",
       "expression": "deps(//app:main, \"1\")",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
@@ -2304,22 +2588,34 @@
     {
       "command": "query",
       "expression": "deps('//app:main')",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "deps(\"//app:main\")",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "(//app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "((//app:main))",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
@@ -2336,12 +2632,18 @@
     {
       "command": "query",
       "expression": "deps (//app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "deps ( //app:main , 1 )",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
@@ -2376,12 +2678,18 @@
     {
       "command": "query",
       "expression": "\"deps\"(//app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "'deps'(//app:main)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
@@ -2476,22 +2784,32 @@
     {
       "command": "query",
       "expression": "set()",
-      "status": 0
+      "status": 0,
+      "targets": []
     },
     {
       "command": "query",
       "expression": "set(  )",
-      "status": 0
+      "status": 0,
+      "targets": []
     },
     {
       "command": "query",
       "expression": "set(//app:main //app:data)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data",
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "set(//app:main \"//app:data\")",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data",
+        "//app:main"
+      ]
     },
     {
       "command": "query",
@@ -2508,37 +2826,61 @@
     {
       "command": "query",
       "expression": "deps(set(//app:main))",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "set(//app:main //app:data) - //app:data",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "let v = //app:main in set($v)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "kind(\"script rule\", //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:debug",
+        "//app:main",
+        "//tools:fmt"
+      ]
     },
     {
       "command": "query",
       "expression": "attr(\"tags\", \"manual\", //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:debug"
+      ]
     },
     {
       "command": "query",
       "expression": "labels(\"srcs\", //app:app)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data.txt"
+      ]
     },
     {
       "command": "query",
       "expression": "filter(\"^//app:ma\", //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main",
+        "//app:main_test"
+      ]
     },
     {
       "command": "query",
@@ -2549,22 +2891,41 @@
     {
       "command": "query",
       "expression": "filter(\"main$\", //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "kind(\"^script\", //...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:debug",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
     },
     {
       "command": "query",
       "expression": "kind(file, //app:*)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:BUILD",
+        "//app:app",
+        "//app:data",
+        "//app:data.txt"
+      ]
     },
     {
       "command": "query",
       "expression": "attr(name, \"^ma\", //app/...)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main",
+        "//app:main_test"
+      ]
     },
     {
       "command": "query",
@@ -2581,17 +2942,26 @@
     {
       "command": "query",
       "expression": "kind(script, deps(//app:main))",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "@//app:main",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "query",
       "expression": "app",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:app"
+      ]
     },
     {
       "command": "query",
@@ -2608,12 +2978,18 @@
     {
       "command": "cquery",
       "expression": "config(//app:data.txt, null)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:data.txt"
+      ]
     },
     {
       "command": "cquery",
       "expression": "config(//app:main, \"target\")",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main"
+      ]
     },
     {
       "command": "cquery",
@@ -2630,12 +3006,24 @@
     {
       "command": "cquery",
       "expression": "deps(//app:main) except config(//app:main, target)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "@@platforms//cpu:cpu",
+        "@@platforms//cpu:x86_64",
+        "@@platforms//host:host",
+        "@@platforms//os:linux",
+        "@@platforms//os:os",
+        "@bazel_tools//tools:host_platform"
+      ]
     },
     {
       "command": "cquery",
       "expression": "tests(//...) + config(//app:main, target)",
-      "status": 0
+      "status": 0,
+      "targets": [
+        "//app:main",
+        "//app:main_test"
+      ]
     },
     {
       "command": "aquery",
@@ -2646,17 +3034,30 @@
     {
       "command": "aquery",
       "expression": "mnemonic(FileWrite, //app:main)",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite"
+      ]
     },
     {
       "command": "aquery",
       "expression": "outputs('.*sh', deps(//app:main))",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite"
+      ]
     },
     {
       "command": "aquery",
       "expression": "inputs('.*', //app:main) union //app:data",
-      "status": 0
+      "status": 0,
+      "mnemonics": [
+        "FileWrite",
+        "RepoMappingManifest",
+        "RunfilesTree",
+        "SourceSymlinkManifest",
+        "SymlinkTree"
+      ]
     },
     {
       "command": "query",
@@ -2693,6 +3094,207 @@
       "expression": "kind(\"*\", //app:*)",
       "status": 7,
       "error": "Evaluation of query \"kind('*', //app:*)\" failed: illegal 'kind' pattern regexp '*': Dangling meta character '*' near index 0"
+    },
+    {
+      "command": "query",
+      "expression": "filter(\"[\\w-.]\", //app:all)",
+      "status": 0,
+      "targets": [
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "expression": "filter(\"[\", //app:all)",
+      "status": 7,
+      "error": "Evaluation of query \"filter('[', //app:all)\" failed: illegal 'filter' pattern regexp '[': Unclosed character class near index 0"
+    },
+    {
+      "command": "query",
+      "expression": "filter(\"\\q\", //app:all)",
+      "status": 7,
+      "error": "Evaluation of query \"filter('\\q', //app:all)\" failed: illegal 'filter' pattern regexp '\\q': Illegal/unsupported escape sequence near index 1"
+    },
+    {
+      "command": "query",
+      "expression": "filter(\"\\U\", //app:all)",
+      "status": 7,
+      "error": "Evaluation of query \"filter('\\U', //app:all)\" failed: illegal 'filter' pattern regexp '\\U': Illegal/unsupported escape sequence near index 1"
+    },
+    {
+      "command": "query",
+      "expression": "filter(\"(\", //app:all)",
+      "status": 7,
+      "error": "Evaluation of query \"filter('(', //app:all)\" failed: illegal 'filter' pattern regexp '(': Unclosed group near index 1"
+    },
+    {
+      "command": "query",
+      "expression": "filter(\"a\\\", //app:all)",
+      "status": 7,
+      "error": "Evaluation of query \"filter('a\\', //app:all)\" failed: illegal 'filter' pattern regexp 'a\\': Unescaped trailing backslash near index 2"
+    },
+    {
+      "command": "query",
+      "expression": "filter(\"\\p{L}\", //app:all)",
+      "status": 0,
+      "targets": [
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "expression": "kind(\"(\", //app:all)",
+      "status": 7,
+      "error": "Evaluation of query \"kind('(', //app:all)\" failed: illegal 'kind' pattern regexp '(': Unclosed group near index 1"
+    },
+    {
+      "command": "query",
+      "expression": "attr(name, \"(\", //app:all)",
+      "status": 7,
+      "error": "Evaluation of query \"attr('name', '(', //app:all)\" failed: illegal 'attr' pattern regexp '(': Unclosed group near index 1"
+    },
+    {
+      "command": "query",
+      "expression": "filter(mai, //...)",
+      "status": 0,
+      "targets": [
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "expression": "kind(scrip, //...)",
+      "status": 0,
+      "targets": [
+        "//app:debug",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
+    },
+    {
+      "command": "query",
+      "expression": "attr(name, ai, //app/...)",
+      "status": 0,
+      "targets": [
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "expression": "attr(tags, \"^\\[manual\\]$\", //...)",
+      "status": 0,
+      "targets": [
+        "//app:debug"
+      ]
+    },
+    {
+      "command": "query",
+      "expression": "attr(tags, \"^manual$\", //...)",
+      "status": 0,
+      "targets": []
+    },
+    {
+      "command": "query",
+      "expression": "//app/...+//tools/...",
+      "status": 0,
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
+    },
+    {
+      "command": "query",
+      "expression": "//app:all+//tools:all",
+      "status": 0,
+      "targets": [
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
+    },
+    {
+      "command": "query",
+      "expression": "//app:main+:data",
+      "status": 7,
+      "error": "no such package '': BUILD file not found in any of the following directories. Add a BUILD file to a directory to mark it as a package."
+    },
+    {
+      "command": "query",
+      "expression": "//app:main+@//tools:fmt",
+      "status": 0,
+      "targets": [
+        "//app:main",
+        "//tools:fmt"
+      ]
+    },
+    {
+      "command": "query",
+      "expression": "deps(//x) union",
+      "status": 2,
+      "error": "Error while parsing 'deps(//x) union': premature end of input"
+    },
+    {
+      "command": "cquery",
+      "expression": "filter(\"[\", //app:all)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation of query \"filter('[', //app:all)\" failed: illegal 'filter' pattern regexp '[': Unclosed character class near index 0"
+    },
+    {
+      "command": "cquery",
+      "expression": "filter(\"\\q\", //app:all)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation of query \"filter('\\q', //app:all)\" failed: illegal 'filter' pattern regexp '\\q': Illegal/unsupported escape sequence near index 1"
+    },
+    {
+      "command": "aquery",
+      "expression": "filter(\"[\", //app:all)",
+      "status": 1,
+      "error": "Error doing post analysis query: Evaluation of query \"filter('[', //app:all)\" failed: illegal 'filter' pattern regexp '[': Unclosed character class near index 0"
+    },
+    {
+      "command": "aquery",
+      "expression": "mnemonic(\"[\", //app:main)",
+      "status": 1,
+      "error": "Wrong query syntax: Unclosed character class near index 0"
+    },
+    {
+      "command": "aquery",
+      "expression": "mnemonic(Write, //app:main)",
+      "status": 0,
+      "mnemonics": []
+    },
+    {
+      "command": "aquery",
+      "expression": "outputs(main, //app:main)",
+      "status": 0,
+      "mnemonics": []
+    },
+    {
+      "command": "aquery",
+      "expression": "outputs(\".*main.sh\", //app:main)",
+      "status": 0,
+      "mnemonics": [
+        "FileWrite"
+      ]
     }
   ]
 }

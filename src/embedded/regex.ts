@@ -115,13 +115,13 @@ interface State {
 export type MatchUnit = 'line' | 'text' | 'record';
 
 /** The unit of each tool (bash's `[[ =~ ]]` and awk's `~` and `match` read the string whole; no tool but `grep`/`sed` splits it). */
-const UNITS: Record<RegexTool | 'perl', MatchUnit> = { grep: 'line', sed: 'line', awk: 'text', bash: 'text', perl: 'text' };
+const UNITS: Record<RegexTool | 'perl', MatchUnit> = { grep: 'line', sed: 'line', awk: 'text', bash: 'text', perl: 'text', bazel: 'text' };
 
 /** A variable Perl puts in before it reads the regex (`$x`, `${x}`, `$::x`, `$&`, `@a`). */
 const PERL_VARIABLE = /\$[\w{:&]|@[A-Za-z_{:]/;
 
-/** The program that reads a regex; `grep` stands for GNU grep, whose `-P` is the PCRE flavor. */
-export type RegexTool = 'grep' | 'sed' | 'awk' | 'bash';
+/** The program that reads a regex; `grep` stands for GNU grep, whose `-P` is the PCRE flavor; `bazel`, bazel's query, whose Java regex the PCRE flavor reads. */
+export type RegexTool = 'grep' | 'sed' | 'awk' | 'bash' | 'bazel';
 
 export interface RegexOptions {
   /** Interpret `\t`, `\n`… as GNU sed does. */
@@ -597,6 +597,7 @@ function pcreEscape(st: State, start: number, c: string): EmbeddedToken | undefi
   if (c === 'E') return tok('keyword', s('`\\E`: `\\Q` の終わり（それだけでは何にも一致しない）', '`\\E`: the end of a `\\Q` (matches nothing by itself)'));
   if (PERL_CASE.includes(c)) {
     // (Perl's string escapes, applied before the regex is read: `/\Ux\E/` matches X. PCRE2 has none and `grep -P` stops.)
+    if (st.tool === 'bazel') return tok('error', javaEscape(st, c));
     if (st.tool !== 'perl') {
       return tok('error', tokenSaid(st.lang, st.reached ? 'regex-pcre-case-escape' : 'regex-pcre-case-escape-if-reached', { c }));
     }
@@ -648,10 +649,13 @@ function pcreEscape(st: State, start: number, c: string): EmbeddedToken | undefi
     if (PCRE_ESCAPE_LETTERS.includes(c)) return tok('pattern', s(`\`\\${c}\`: この解説では読めない PCRE のエスケープ`, `\`\\${c}\`: a PCRE escape this explainer does not read`));
     // (Perl passes it through with a warning; PCRE2 refuses it.)
     if (st.tool === 'perl') return tok('string', s(`\`\\${c}\`: Perl では文字「${c}」扱い（警告 "Unrecognized escape \\${c} passed through" が出る）`, `\`\\${c}\`: Perl reads it as "${c}" (with the warning "Unrecognized escape \\${c} passed through")`));
-    return tok('error', tokenSaid(st.lang, st.reached ? 'regex-pcre-unknown-escape' : 'regex-pcre-unknown-escape-if-reached', { c }));
+    return tok('error', st.tool === 'bazel' ? javaEscape(st, c) : tokenSaid(st.lang, st.reached ? 'regex-pcre-unknown-escape' : 'regex-pcre-unknown-escape-if-reached', { c }));
   }
   return undefined;
 }
+
+/** A letter Java's regex has no escape of (bazel 9.3.2: "Illegal/unsupported escape sequence"); Perl's case escapes are such letters there. */
+const javaEscape = (st: State, c: string): string => tokenSaid(st.lang, st.reached ? 'regex-java-unknown-escape' : 'regex-java-unknown-escape-if-reached', { c });
 
 function escape(st: State): EmbeddedToken {
   const { s, src } = st;
@@ -702,7 +706,7 @@ function escape(st: State): EmbeddedToken {
   }
   if (sh && !sh.gnu) {
     // (Only grep has `-P`; sed, awk and bash have no such escape: the letter stands for itself.)
-    const tool = { grep: '', sed: 'sed', awk: 'awk', perl: '', bash: 'bash' }[st.tool];
+    const tool = { grep: '', sed: 'sed', awk: 'awk', perl: '', bash: 'bash', bazel: '' }[st.tool];
     return {
       start, end: st.i, kind: 'string', children: [],
       explanation: tool ? s(`\`\\${c}\`: ${tool} の正規表現には \`\\${c}\` がなく、文字「${c}」扱い`, `\`\\${c}\`: just "${c}"; the ${tool} regex has no \`\\${c}\``)
