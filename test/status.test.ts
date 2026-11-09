@@ -46,6 +46,7 @@ describe('status rules (src/semantics/status.ts)', () => {
     assert.deepStrictEqual(status('f() { return "$1"; }', 'return "$1"'), { kind: 'command', functions: [], ends: 'function' });
     assert.deepStrictEqual(status('exec /bin/true x', 'exec /bin/true x'), { kind: 'command', functions: [], ends: 'shell' });
     assert.deepStrictEqual(status('shopt -s execfail; exec /bin/true x', 'exec /bin/true x'), { kind: 'command', functions: [] });
+    assert.deepStrictEqual(status('exec "$@"', 'exec "$@"'), { kind: 'command', functions: [], fails: 'never' });
     assert.deepStrictEqual(status('let i=0', 'let i=0'), { kind: 'arith' });
     assert.deepStrictEqual(status('(( i ))', '(( i ))'), { kind: 'arith' });
     assert.deepStrictEqual(status('[[ x ]]', '[[ x ]]'), { kind: 'test' });

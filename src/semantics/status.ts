@@ -16,7 +16,7 @@ import { ancestor, assignmentsOnly, descendants, field, rootOf, fields, prefixAs
 import { actedNames, declaresNames, has } from '../argv/query';
 import { builtinParse, commandName, wrapped } from './effects';
 import { redirectionMayFail } from './redirects';
-import { type ExecEnv, processOf, STATEMENTS } from './env';
+import { type ExecEnv, processOf, shellEffectOf, STATEMENTS } from './env';
 import type { NestedScript } from './nested';
 import { resolveName, testSpecOf } from './names';
 import { commandTest } from '../testexpr';
@@ -36,9 +36,10 @@ export type StatusRule =
    * Its own: a builtin's or a program's (127 not found, 126 not executable, 128+n killed by signal n); a function's last
    * command. `functions`: the definitions it calls; `sure`, it surely runs the one of them (a function defined on every
    * path). `fails`: a builtin (or a host's function) that fails only on a usage or write error, or never
-   * (`CommandSpec.fails`, as its words ask). `ends`: it ends the shell or the function itself, with a status not known
-   * here (`exit "$rc"`, `return "$1"`; `exec cmd`, which replaces the shell, or ends it with 126 or 127 and runs no trap
-   * when the command cannot run, unless execfail is on): no failure of it is one that `set -e` stops.
+   * (`CommandSpec.fails`, as its words ask; `exec` with a command, while execfail is off: `replacing`). `ends`: it ends
+   * the shell or the function itself, with a status not known here (`exit "$rc"`, `return "$1"`; `exec cmd`, which
+   * replaces the shell, or ends it with 126 or 127 when the command cannot run: no ERR trap runs, and the EXIT trap only
+   * when the command is not found): no failure of it is one that `set -e` stops, unless a redirection of it fails.
    */
   | { readonly kind: 'command'; readonly functions: readonly SyntaxNode[]; readonly sure?: true; readonly fails?: 'never' | 'usage'; readonly ends?: 'shell' | 'function' }
   /** Only assignments (`x=$(cmd)`): the status of the last command substitution, or 0 without one (`at`). */
@@ -266,8 +267,9 @@ class Statuses implements StatusModel {
   mayFail(n: SyntaxNode): boolean {
     const rule = this.status(n);
     if (rule.kind === 'given' || rule.kind === 'definition' || rule.kind === 'background') return false;
-    // (`exit`, `return`, `exec cmd` end the shell or the function themselves, `set -e` aside; `wait` alone gives 0.)
-    if (((rule.kind === 'previous' || rule.kind === 'command') && rule.ends) || (rule.kind === 'wait' && rule.all)) return false;
+    // (`wait` alone gives 0. `exit`, `return`, `exec cmd` end the shell or the function themselves, `set -e` aside.)
+    if (rule.kind === 'wait' && rule.all) return false;
+    if ((rule.kind === 'previous' || rule.kind === 'command') && rule.ends && !redirectionsOf(n).some((r) => redirectionMayFail(r, false))) return false;
     if (rule.kind === 'command' && (rule.fails || (rule.sure && rule.functions.every((d) => !this.returnsFailure(d).length)))) {
       // (Not with a redirection that may fail: `echo x >> "$log"`, `f > out`.)
       if (!redirectionsOf(n).some((r) => redirectionMayFail(r, false))) return false;
@@ -304,15 +306,17 @@ class Statuses implements StatusModel {
   }
 
   /**
-   * Whether the builtin `name` with the words `args` at `n` runs a command in place of the shell (`exec cmd`: a command
-   * slot that replaces it, `CommandSlot.replacesShell`), where the command is surely a word and execfail surely off: then
-   * the shell does not go on after it.
+   * Whether the builtin `name` with the words `args` at `n` runs a command in place of the shell (`exec cmd`: it exits
+   * the shell, `shellEffectOf`, and is no builtin that always does, `exit`), while execfail is surely off: `sure` where
+   * the command is surely a word, then the shell does not go on after it; `maybe` where it may be none (`exec "$@"`),
+   * then it goes on with status 0. Either way, no failure of it is one that `set -e` stops.
    */
-  private replaces(n: SyntaxNode, name: string, args: readonly SyntaxNode[], spec: CommandSpec): boolean {
-    if (!spec.operands?.some((alt) => alt.pattern.some((o) => o.command?.replacesShell))) return false;
-    const cmd = builtinParse(name, args, this.shell, spec).roles.find((r) => r.role.role === 'command');
-    const run = this.state.at(n).run;
-    return !!cmd && !!wordFields(args[cmd.word], this.state).fields?.length && optionOn(run, 'shopt', 'execfail') === 'off';
+  private replacing(n: SyntaxNode, name: string, args: readonly SyntaxNode[], spec: CommandSpec): 'sure' | 'maybe' | undefined {
+    if (spec.ends === 'shell') return undefined;
+    const { roles } = builtinParse(name, args, this.shell, spec);
+    if (shellEffectOf(spec, roles.map((r) => [args[r.word], r.role] as const)) !== 'exits' || optionOn(this.state.at(n).run, 'shopt', 'execfail') !== 'off') return undefined;
+    const cmd = roles.find((r) => r.role.role === 'command')!;
+    return wordFields(args[cmd.word], this.state).fields?.length ? 'sure' : 'maybe';
   }
 
   /** Whether command `r` is `return` (the builtin; a function of that name runs instead). */
@@ -428,7 +432,8 @@ class Statuses implements StatusModel {
           const job = args.length === 1 && args[0].text === '$!' ? this.lastJob(n) : undefined;
           return { kind: 'wait', all, ...(job ? { job } : {}) };
         }
-        if (!res.disabled && this.replaces(n, res.name, args, spec)) return { kind: 'command', functions: [], ends: 'shell' };
+        const replacing = res.disabled ? undefined : this.replacing(n, res.name, args, spec);
+        if (replacing) return { kind: 'command', functions: [], ...(replacing === 'sure' ? { ends: 'shell' as const } : { fails: 'never' as const }) };
         const fails = res.disabled ? undefined : failsOnly(spec, res.name, args, this.shell);
         return { kind: 'command', functions: [], ...(fails ? { fails } : {}) };
       }

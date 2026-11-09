@@ -282,6 +282,8 @@ export interface TrapState {
   readonly script?: NestedScript;
   /** Taken back to bash's default (`trap - ERR`, `trap ERR`), not set to run nothing (`trap '' ERR`): a function body without errtrace that does so gets its caller's `ERR` trap back when it returns. */
   readonly reset?: true;
+  /** Code the walk does not read ran after it was set (`source`, `eval` of a value): it may have set another (`unreadTraps`). */
+  readonly unread?: true;
 }
 
 /** The state of the shell at a place. A name not in a map has not been changed by the script. */
@@ -543,11 +545,12 @@ function mergeTrap(a: TrapState | undefined, b: TrapState | undefined): TrapStat
     const x = (a ?? b)!;
     return x.state === 'off' ? x : { ...x, state: 'unknown' };
   }
-  if (a.at === b.at && a.script === b.script) return { ...a, state: tri(a.state, b.state) };
+  const unread = a.unread || b.unread ? { unread: true as const } : {};
+  if (a.at === b.at && a.script === b.script) return { ...a, state: tri(a.state, b.state), ...unread };
   const newer = later(a.at, b.at) === a.at ? a : b;
   if (a.state === 'off' && b.state === 'off') return newer;
   const script = a.script === b.script || a.state === 'off' ? b.script : b.state === 'off' ? a.script : undefined;
-  return { state: 'unknown', at: newer.at, ...(script ? { script } : {}) };
+  return { state: 'unknown', at: newer.at, ...(script ? { script } : {}), ...unread };
 }
 
 /** The state after one of several paths, when any of them may have been taken. */
@@ -609,5 +612,5 @@ export function sameState(a: ShellState, b: ShellState): boolean {
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
     && NameMap.same(a.disabled, b.disabled, (x, y) => x === y || x.state === y.state)
     && NameMap.same(a.hashed, b.hashed, sameHashed)
-    && NameMap.same(a.traps, b.traps, (x, y) => x === y || (x.state === y.state && x.script === y.script)));
+    && NameMap.same(a.traps, b.traps, (x, y) => x === y || (x.state === y.state && x.script === y.script && x.unread === y.unread)));
 }

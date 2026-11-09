@@ -115,14 +115,11 @@ export function stopContext(state: StateModel, status: StatusModel, n: SyntaxNod
   if (within?.kind === 'host' || hostRun) return undefined;
   if (within?.kind === 'exit-trap') return { stops: 'exit-trap' };
   if (e.stops === 'unknown') return { stops: 'unknown' };
-  const run = state.at(n).run;
   const trap = (name: Trapped): StopTrap | undefined => {
     const t = trapAt(state, n, name);
     if (!t || t.state === 'off') return undefined;
-    // (Its `trap` command, unless code the model does not read may have set another; one whose action the model does not
-    // read, `trap "rm -f $tmp" EXIT`, is known by its line, though that action makes the state opaque.)
-    const set = state.trapSets.find((s) => s.at === t.at);
-    const known = !!set && !(t.state === 'unknown' && run.opaque && set.state !== 'unknown');
+    // (Its `trap` command, unless code the model does not read ran after it and may have set another, `TrapState.unread`.)
+    const known = state.trapSets.some((s) => s.at === t.at) && !t.unread;
     const out = known && t.script ? status.trapOutcome(t.script) : undefined;
     return {
       sure: t.state === 'on',
