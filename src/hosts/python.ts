@@ -1,8 +1,12 @@
 import { type Shell, shellFromName } from '../dialect';
+import { featureWorks } from '../shellfeatures';
 import type { RegionNote } from './index';
 import { type JsonWord, execWords } from './dockerfile';
 import { LineOut, Builder } from './builder';
 import type { HostMeaning } from '../messages-hosts';
+import { isName, isOp, type PyLexed, pyLex } from './pylex';
+import { argValue, type PyArg } from './pyvalue';
+import { dottedAt, pyImports, pyResolve } from './pyimports';
 
 /** Python calls that run a command; `shell` says whether a string goes to /bin/sh. */
 interface PyCall { shell: 'always' | 'kwarg' | 'never'; args: 'first' | 'all' }
@@ -15,66 +19,32 @@ const PY_CALLS: Record<string, PyCall> = {
   'asyncio.create_subprocess_shell': { shell: 'always', args: 'first' }, 'asyncio.create_subprocess_exec': { shell: 'never', args: 'all' },
 };
 
-/** A Python string literal: where its text is, and how to read it. */
-interface PyString { prefix: string; quote: string; start: number; contentStart: number; contentEnd: number; end: number }
-
-/** The string literal starting at `at`, if any. */
-function pyString(src: string, at: number): PyString | undefined {
-  const m = /^([rRbBuUfF]{0,2})('''|"""|'|")/.exec(src.slice(at, at + 5));
-  if (!m || (at > 0 && /\w/.test(src[at - 1]))) return undefined;
-  const quote = m[2];
-  const contentStart = at + m[0].length;
-  for (let k = contentStart; k < src.length; k++) {
-    if (src[k] === '\\') { k++; continue; }
-    if (quote.length === 1 && src[k] === '\n') return undefined;
-    if (src.startsWith(quote, k)) return { prefix: m[1].toLowerCase(), quote, start: at, contentStart, contentEnd: k, end: k + quote.length };
-  }
-  return undefined;
-}
-
-/** Index after the bracket matching the one at `open`, skipping strings and comments. */
-function pyClose(src: string, open: number): number {
-  let depth = 0;
-  for (let k = open; k < src.length; k++) {
-    const str = pyString(src, k);
-    if (str) { k = str.end - 1; continue; }
-    const c = src[k];
-    if (c === '#') { while (k < src.length && src[k] !== '\n') k++; continue; }
-    if ('([{'.includes(c)) depth++;
-    else if (')]}'.includes(c) && --depth === 0) return k + 1;
-  }
-  return -1;
-}
-
-/** The top-level comma-separated parts inside the brackets [open, close), trimmed. */
-function pySplit(src: string, open: number, close: number): [number, number][] {
-  const parts: [number, number][] = [];
-  let from = open + 1;
-  for (let k = open + 1; k < close - 1; k++) {
-    const str = pyString(src, k);
-    if (str) { k = str.end - 1; continue; }
-    if (src[k] === '#') { while (k < close && src[k] !== '\n') k++; continue; }
-    if ('([{'.includes(src[k])) { k = pyClose(src, k) - 1; continue; }
-    if (src[k] === ',') { parts.push([from, k]); from = k + 1; }
-  }
-  parts.push([from, close - 1]);
-  // Without the blanks and comments around each part; empty ones (after a last comma) dropped.
-  return parts.map(([a, z]) => {
-    for (;;) {
-      while (a < z && /\s/.test(src[a])) a++;
-      if (src[a] !== '#') break;
-      while (a < z && src[a] !== '\n') a++;
-    }
-    const trim = () => { while (z > a && /\s/.test(src[z - 1])) z--; };
-    trim();
-    const comment = /#[^'"\n]*$/.exec(src.slice(a, z));
-    if (comment) z = a + comment.index;
-    trim();
-    return [a, z] as [number, number];
-  }).filter(([a, z]) => z > a);
-}
-
 type PyPos = (off: number) => { line: number; col: number };
+
+/** The file's tokens, with its text: what the functions below read. */
+interface PyFile extends PyLexed { src: string }
+
+/** The arguments between the brackets at `open` and `close` of the file's tokens: the indexes of each one's tokens, comments left out. */
+function pyArgs(lx: PyFile, open: number, close: number): { parts: number[][]; comma: boolean } {
+  const parts: number[][] = [[]];
+  for (let i = open + 1; i < close; i++) {
+    const t = lx.tokens[i];
+    if (t.kind === 'comment') continue;
+    if (lx.pair[i] > i) {
+      for (let k = i; k <= lx.pair[i]; k++) if (lx.tokens[k].kind !== 'comment') parts[parts.length - 1].push(k);
+      i = lx.pair[i];
+    } else if (isOp(lx.src, t, ',')) parts.push([]);
+    else parts[parts.length - 1].push(i);
+  }
+  // (Without the empty one after a last comma.)
+  return { parts: parts.filter((p) => p.length), comma: parts.length > 1 };
+}
+
+/** The argument `part` without the parentheses around it: `("a" "b")` is the string, `("a",)` a tuple. */
+function unwrap(lx: PyFile, part: number[]): number[] {
+  while (part.length > 2 && isOp(lx.src, lx.tokens[part[0]], '(') && lx.pair[part[0]] === part[part.length - 1] && !pyArgs(lx, part[0], part[part.length - 1]).comma) part = part.slice(1, -1);
+  return part;
+}
 
 export function python(b: Builder): void {
   const src = b.lines.join('\n');
@@ -85,64 +55,63 @@ export function python(b: Builder): void {
     while (lineStarts[line] > off) line--;
     return { line, col: off - lineStarts[line] };
   };
+  const lx: PyFile = { ...pyLex(src), src };
+  const { tokens } = lx;
   // Names the calls go by: `import subprocess as sp`, `from subprocess import run as r`.
-  const names = new Map<string, string>();
-  for (const m of src.matchAll(/^[ \t]*import[ \t]+([\w.]+(?:[ \t]+as[ \t]+\w+)?(?:[ \t]*,[ \t]*[\w.]+(?:[ \t]+as[ \t]+\w+)?)*)/gm)) {
-    for (const part of m[1].split(',')) {
-      const [mod, alias] = part.trim().split(/\s+as\s+/);
-      for (const full of Object.keys(PY_CALLS)) if (full.startsWith(`${mod}.`)) names.set(`${alias ?? mod}.${full.slice(mod.length + 1)}`, full);
-    }
-  }
-  // `from subprocess import run, check_output` or `from subprocess import (\n run,\n check_output\n)`.
-  for (const m of src.matchAll(/^[ \t]*from[ \t]+([\w.]+)[ \t]+import[ \t]+(?:\(([^)]*)\)|([\w \t,]+))/gm)) {
-    for (const part of (m[2] ?? m[3]).split(',')) {
-      const [fn, alias] = part.trim().split(/\s+as\s+/);
-      // (What follows `as` between parentheses can be any text: a name goes into the regex below.)
-      if (PY_CALLS[`${m[1]}.${fn}`] && (alias === undefined || /^\w+$/.test(alias))) names.set(alias ?? fn, `${m[1]}.${fn}`);
-    }
-  }
-  if (!names.size) return;
-  const callRe = new RegExp(`(?<![\\w.])(${[...names.keys()].map((n) => n.replace(/\W/g, '\\$&')).join('|')})\\s*\\(`, 'g');
-  for (const m of src.matchAll(callRe)) {
-    const at = m.index!;
-    // Not inside a comment or a string on the same line.
-    const before = src.slice(lineStarts[pos(at).line], at);
-    if (before.includes('#') || (before.match(/["']/g) ?? []).length % 2) continue;
-    const full = names.get(m[1])!;
-    const spec = PY_CALLS[full];
-    const open = at + m[0].length - 1;
-    const close = pyClose(src, open);
+  const imports = pyImports(src, tokens);
+  for (let i = 0; i < tokens.length; i++) {
+    // A call `name(` or `a.b(`, not of an attribute (`x.run(`) nor a definition (`def run(`).
+    const before = tokens[i - 1];
+    if (isOp(src, before, '.') || isName(src, before, 'def') || isName(src, before, 'class')) continue;
+    const called = dottedAt(src, tokens, i);
+    if (!called || !isOp(src, tokens[called.next], '(')) continue;
+    const full = pyResolve(imports, called.name);
+    const spec = full === undefined ? undefined : PY_CALLS[full];
+    if (!spec) continue;
+    const open = called.next;
+    const close = lx.pair[open];
     if (close < 0) continue;
-    const parts = pySplit(src, open, close);
-    const keyword = (k: string) => parts.map(([a, z]) => new RegExp(`^${k}\\s*=\\s*([\\s\\S]*)$`).exec(src.slice(a, z))?.[1]).find((v) => v !== undefined);
-    const positional = parts.filter(([a, z]) => !/^\w+\s*=(?!=)/.test(src.slice(a, z)) && !src.slice(a, z).startsWith('**'));
+    // A line of shell text holds one call: a second call on a line (`os.system("a"); os.system("b")`) is left out.
+    let taken = false;
+    for (let l = pos(tokens[open].start).line; l <= pos(tokens[close].start).line; l++) taken ||= !!b.outs[l]?.text;
+    if (taken) continue;
+    const { parts } = pyArgs(lx, open, close);
+    /** The tokens of the value of the keyword argument `k`, if it is given. */
+    const keyword = (k: string) => parts.find((p) => isName(src, tokens[p[0]], k) && isOp(src, tokens[p[1]], '='))?.slice(2);
+    const shellValue = keyword('shell');
+    /** `shell=` as written when it is one name (`True`), '' for another expression. */
+    const shellArg = shellValue && (shellValue.length === 1 ? src.slice(tokens[shellValue[0]].start, tokens[shellValue[0]].end) : '');
+    const positional = parts.filter((p) => !(tokens[p[0]].kind === 'name' && isOp(src, tokens[p[1]], '=')) && !isOp(src, tokens[p[0]], '**'));
     if (!positional.length) continue;
-    const shellArg = keyword('shell');
     const usesShell = spec.shell === 'always' || (spec.shell === 'kwarg' && shellArg === 'True');
-    const exe = keyword('executable')?.replace(/^["']|["']$/g, '').split('/').pop();
+    const exeValue = keyword('executable');
+    const exe = exeValue && literalValue(lx, exeValue)?.value.split('/').pop();
     const target: Shell = (exe && shellFromName(exe)) || 'sh';
-    const label = (what: [string, string]): [string, string] => [`Python の \`${m[1]}\`（${what[0]}）`, `Python \`${m[1]}\` (${what[1]})`];
-    const [a0, z0] = positional[0];
-    const isList = /^[[(]/.test(src[a0]) && pyClose(src, a0) === z0;
+    const label = (what: [string, string]): [string, string] => [`Python の \`${called.name}\`（${what[0]}）`, `Python \`${called.name}\` (${what[1]})`];
+    const first = unwrap(lx, positional[0]);
+    const firstEnd = first[first.length - 1];
+    // A list, or a tuple: parentheses with a comma, or none between them.
+    const opens = isOp(src, tokens[first[0]], '[') || (isOp(src, tokens[first[0]], '(') && (first.length === 2 || pyArgs(lx, first[0], firstEnd).comma));
+    const isList = opens && lx.pair[first[0]] === firstEnd;
     if (spec.args === 'all' || isList) {
       // A list of arguments: run directly, like Docker's exec form.
-      const items = spec.args === 'all' ? positional.filter(([a, z]) => !src.slice(a, z).startsWith('*')) : pySplit(src, a0, z0);
+      const items = (spec.args === 'all' ? positional.filter((p) => !isOp(src, tokens[p[0]], '*')) : pyArgs(lx, first[0], firstEnd).parts).map((p) => unwrap(lx, p));
       if (!items.length) continue;
       if (usesShell && spec.shell === 'kwarg') {
         // shell=True with a list: the first item is the script, the rest become $0, $1…
-        const script = pyScript(b, src, items[0][0], items[0][1], pos);
+        const script = pyScript(b, lx, items[0], pos, target);
         if (!script) continue;
         b.region(script.first, script.last, label(['shell=True のリストの最初の要素をシェルが実行', 'shell=True: the shell runs the first item of the list']), target, [{ spec: { id: 'python-shell-list', params: {} } }]);
         continue;
       }
-      const words = items.map(([a, z]) => pyWord(src, a, z, pos));
+      const words = items.map((p) => pyWord(lx, p, pos));
       if (words.some((w) => !w)) continue;
       const ws = words as JsonWord[];
       execWords(b, ws);
       b.execRegion(ws[0].line, ws[ws.length - 1].line, label(['シェルを通さずに実行する引数のリスト', 'arguments run without a shell']), [{ spec: { id: 'python-exec-list', params: {} } }], ['Python の文字列', 'Python string']);
       continue;
     }
-    const script = pyScript(b, src, a0, z0, pos);
+    const script = pyScript(b, lx, first, pos, usesShell ? target : 'bash');
     if (!script) continue;
     const notes: RegionNote[] = [];
     if (!usesShell && /\s/.test(script.text.trim())) {
@@ -158,108 +127,149 @@ export function python(b: Builder): void {
   }
 }
 
+/** The value of the argument of the token indexes `part` when it is string literals only, with none of their parts unknown. */
+function literalValue(lx: PyFile, part: number[]): PyArg | undefined {
+  const arg = argValue(lx.src, part.map((i) => lx.tokens[i]));
+  return arg && !arg.rest.length && !arg.holes.length ? arg : undefined;
+}
+
 /** Shell variable name standing for a Python expression. */
 function pyName(expr: string): string {
   return `py_${expr.replace(/\W+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'expr'}`;
 }
 
-/** An item of an argument list: a string literal as a word, or a Python expression as a placeholder. */
-function pyWord(src: string, a: number, z: number, pos: PyPos): JsonWord | undefined {
+/** An item of an argument list: string literals as a word, or a Python expression as a placeholder. */
+function pyWord(lx: PyFile, part: number[], pos: PyPos): JsonWord | undefined {
+  const a = lx.tokens[part[0]].start;
+  const z = lx.tokens[part[part.length - 1]].end;
   const p = pos(a);
   if (pos(z - 1).line !== p.line) return undefined;
-  const str = pyString(src, a);
-  if (str && str.end === z && !str.prefix.includes('f') && str.quote.length === 1) {
-    const { value, offs } = pyUnescape(src, str);
-    return { line: p.line, start: p.col, end: pos(z - 1).col + 1, value, cols: offs.map((o) => pos(o).col) };
-  }
-  const expr = src.slice(a, z);
+  // (A field, or a `\N{…}` escape, a character we do not name: the word is an expression whose value we do not know.)
+  const str = literalValue(lx, part);
+  if (str) return { line: p.line, start: p.col, end: pos(z - 1).col + 1, value: str.value, cols: str.offs.map((o) => pos(o).col) };
+  const expr = lx.src.slice(a, z);
   return {
     line: p.line, start: p.col, end: pos(z - 1).col + 1, value: '', cols: [],
     placeholder: [`"\${${pyName(expr)}}"`, { kind: 'python-argument', expr }],
   };
 }
 
-/** Undo the escapes of a (non-f) string literal, keeping the offset of each character. */
-function pyUnescape(src: string, s: PyString): { value: string; offs: number[] } {
-  let value = '';
-  const offs: number[] = [];
-  const raw = s.prefix.includes('r');
-  const simple: Record<string, string> = { n: '\n', t: '\t', '\\': '\\', "'": "'", '"': '"', r: '\r', '0': '\0' };
-  for (let k = s.contentStart; k < s.contentEnd; k++) {
-    if (src[k] === '\\' && !raw) {
-      const e = src[k + 1];
-      if (e in simple) { value += simple[e]; offs.push(k); k++; continue; }
-      const hex = /^x([0-9a-fA-F]{2})|^u([0-9a-fA-F]{4})/.exec(src.slice(k + 1, k + 6));
-      if (hex) { value += String.fromCharCode(parseInt(hex[1] ?? hex[2], 16)); offs.push(k); k += hex[0].length; continue; }
-    }
-    value += src[k];
-    offs.push(k);
-  }
-  return { value, offs };
-}
-
 /**
- * Write the string literal(s) at [a, z) as shell code: adjacent literals are joined (as Python
- * does), escapes undone, and f-string fields replaced by placeholders. `partial` is set when
- * Python code follows the literals (`"…" + x`, `"…".format(…)`).
+ * Write the string literal(s) of the argument `part` as shell code for the shell `shell`: adjacent literals are joined
+ * (as Python does), escapes undone, and f-string fields and `\N{…}` escapes replaced by placeholders. A newline that an
+ * escape gives is what the shell reads there: the end of a command (`;`), a line continuation after a backslash, and in
+ * quotes a newline of the word (`'$'\n''` where the shell has `$'…'`, else a quoted placeholder of the one character). `partial`
+ * is set when Python code follows the literals (`"…" + x`, `"…".format(…)`). Undefined when it starts with no str or
+ * bytes literal or f-string. Nothing is written until the whole string is read.
  */
-function pyScript(b: Builder, src: string, a: number, z: number, pos: PyPos):
+function pyScript(b: Builder, lx: PyFile, part: number[], pos: PyPos, shell: Shell):
   { first: number; last: number; text: string; interpolated: boolean; partial: boolean } | undefined {
-  let k = a;
+  const { src, tokens } = lx;
+  const arg = argValue(src, part.map((i) => tokens[i]));
+  if (!arg) return undefined;
+  const ops: [number, string, number, number, HostMeaning?][] = [];
   let text = '';
   let interpolated = false;
   let first = -1;
   let last = -1;
   let prevEnd = -1;
-  const out = (line: number) => (b.outs[line] ??= new LineOut());
   const insert = (s: string, from: number, to: number, meaning?: HostMeaning) => {
     const p = pos(from);
     // Literals on different lines are joined with nothing between: continue the shell line with `\`.
-    if (prevEnd >= 0 && pos(prevEnd).line < p.line) out(pos(prevEnd).line).insert('\\', pos(prevEnd).col, pos(prevEnd).col);
+    if (prevEnd >= 0 && pos(prevEnd).line < p.line) ops.push([pos(prevEnd).line, '\\', pos(prevEnd).col, pos(prevEnd).col]);
     prevEnd = -1;
     if (first < 0) first = p.line;
     last = Math.max(last, p.line);
-    out(p.line).insert(s, p.col, pos(to - 1).col + 1, meaning);
+    ops.push([p.line, s, p.col, pos(to - 1).col + 1, meaning]);
     text += s;
   };
-  for (;;) {
-    while (k < z && /\s/.test(src[k])) k++;
-    const str = k < z ? pyString(src, k) : undefined;
-    if (!str || str.end > z) break;
-    const raw = str.prefix.includes('r');
-    const fmt = str.prefix.includes('f');
-    for (let c = str.contentStart; c < str.contentEnd; c++) {
-      const ch = src[c];
-      // A newline inside a triple-quoted string is a real one.
-      if (ch === '\n') { text += '\n'; continue; }
-      if (fmt && (ch === '{' || ch === '}') && src[c + 1] === ch) { insert(ch, c, c + 2); c++; continue; }
-      if (fmt && ch === '{') {
-        let depth = 0;
-        let e = c;
-        for (; e < str.contentEnd; e++) { if (src[e] === '{') depth++; else if (src[e] === '}' && --depth === 0) break; }
-        const expr = src.slice(c + 1, e).replace(/[!:][^}]*$/, '').trim();
-        insert(`\${${pyName(expr)}}`, c, e + 1, { kind: 'python-field', expr });
-        interpolated = true;
-        c = e;
-        continue;
-      }
-      if (ch === '\\' && !raw) {
-        const e = src[c + 1];
-        // A backslash-newline joins the lines, as `\` does in the shell.
-        if (e === '\n') { insert('\\', c, c + 1); continue; }
-        const simple: Record<string, string> = { n: ';', t: '\t', '\\': '\\', "'": "'", '"': '"' };
-        if (e in simple) { insert(simple[e], c, c + 2); c++; continue; }
-        const hex = /^x([0-9a-fA-F]{2})|^u([0-9a-fA-F]{4})/.exec(src.slice(c + 1, c + 6));
-        if (hex) { insert(String.fromCharCode(parseInt(hex[1] ?? hex[2], 16)), c, c + 1 + hex[0].length); c += hex[0].length; continue; }
-      }
-      insert(ch, c, c + 1);
+  // The backslash-newlines of the source before an offset join the lines, as `\` does in the shell.
+  let j = 0;
+  const joinsBefore = (at: number) => {
+    for (; j < arg.joins.length && arg.joins[j] < at; j++) {
+      insert('\\', arg.joins[j], arg.joins[j] + 1);
+      text += '\n';
     }
-    prevEnd = str.end;
-    k = str.end;
+  };
+  // The shell's quotes around the character written, and a backslash of the shell not written yet.
+  let quote = '';
+  let pending: [number, number] | undefined;
+  /** A placeholder of one character we do not write, quoted, so that the shell reads it as one, whatever it is. */
+  const oneChar = (name: string, from: number, to: number, meaning: HostMeaning) => {
+    // (The quotes around it are pieces of their own, so that the expansion is the text the meaning is on.)
+    const [open, close] = quote === '"' ? ['', ''] : quote === "'" ? ["'\"", "\"'"] : ['"', '"'];
+    if (open) insert(open, from, from);
+    insert(`\${${name}}`, from, to, meaning);
+    if (close) insert(close, to, to);
+  };
+  const flush = () => {
+    if (pending) insert('\\', pending[0], pending[1]);
+    pending = undefined;
+  };
+  let n = 0;
+  let h = 0;
+  for (let i = 0; i <= arg.value.length; i++) {
+    for (; n < arg.literals.length && arg.literals[n].at === i; n++) {
+      if (!n) continue;
+      const end = arg.literals[n - 1].token.end;
+      joinsBefore(end);
+      prevEnd = end;
+    }
+    for (; h < arg.holes.length && arg.holes[h].at === i; h++) {
+      const hole = arg.holes[h];
+      joinsBefore(hole.start);
+      flush();
+      if (hole.kind === 'field') {
+        const f = hole.field;
+        const expr = src.slice(f.start + 1, f.tokens.length ? f.tokens[f.tokens.length - 1].end : f.start + 1).trim();
+        insert(`\${${pyName(expr)}}`, hole.start, hole.end, { kind: 'python-field', expr });
+        interpolated = true;
+      } else {
+        oneChar(pyName(src.slice(hole.start, hole.end)), hole.start, hole.end, { kind: 'python-char', name: hole.name });
+      }
+    }
+    if (i === arg.value.length) break;
+    const c = arg.value[i];
+    const kind = arg.kinds[i];
+    // (The text of a self-documenting field stands at its `{`.)
+    const next = arg.holes[h];
+    const [o, e] = kind === 'debug' ? [next.start, next.start + 1] : [arg.offs[i], arg.ends[i]];
+    joinsBefore(o);
+    if (c === '\n' && kind === 'text') {
+      // A newline inside a triple-quoted string is a real one.
+      flush();
+      text += '\n';
+      continue;
+    }
+    if (pending) {
+      // After a backslash of the shell: an escaped newline is a line continuation, which the shell removes with it.
+      if (c === '\n') pending = undefined;
+      else {
+        flush();
+        insert(c, o, e);
+      }
+      continue;
+    }
+    if (c === '\n') {
+      if (!quote) insert(';', o, e);
+      else if (featureWorks('ansiC', shell)) insert(`${quote}$'\\n'${quote}`, o, e);
+      // (A shell with no `$'…'` cannot have it on one line: a placeholder of the one character.)
+      else oneChar('py_newline', o, e, { kind: 'python-newline' });
+      continue;
+    }
+    if (c === '\\' && quote !== "'") {
+      pending = [o, e];
+      continue;
+    }
+    if (!quote && (c === "'" || c === '"')) quote = c;
+    else if (c === quote) quote = '';
+    insert(c, o, e);
   }
+  flush();
+  joinsBefore(Infinity);
   if (first < 0) return undefined;
-  const rest = src.slice(k, z).trim();
-  if (/^\.format\s*\(|^%/.test(rest)) interpolated = true;
+  for (const [line, s, from, to, meaning] of ops) (b.outs[line] ??= new LineOut()).insert(s, from, to, meaning);
+  const rest = arg.rest;
+  if (isOp(src, rest[0], '%') || (isOp(src, rest[0], '.') && isName(src, rest[1], 'format') && isOp(src, rest[2], '('))) interpolated = true;
   return { first, last, text, interpolated, partial: rest.length > 0 };
 }
-

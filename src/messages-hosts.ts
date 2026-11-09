@@ -40,6 +40,8 @@ export type HostMeaning =
   | { kind: 'jenkins-parameter'; expr: string; name: string }
   | { kind: 'python-field'; expr: string }
   | { kind: 'python-argument'; expr: string }
+  | { kind: 'python-char'; name: string }
+  | { kind: 'python-newline' }
   | { kind: 'bats-test-function' }
   | { kind: 'bats-test-name'; name: string };
 
@@ -76,6 +78,10 @@ export function hostMeaningText(m: HostMeaning): Text {
       return tx(`Python の式 \`${m.expr}\` の値（実行前に文字列に埋め込まれる）`, `the value of the Python expression \`${m.expr}\`, pasted into the string before it runs`);
     case 'python-argument':
       return tx(`Python の式 \`${m.expr}\` の値（そのまま1つの引数として渡る）`, `the value of the Python expression \`${m.expr}\`, passed as one argument`);
+    case 'python-newline':
+      return tx('改行文字（Python で `\\n` と書いたもの）で、引用符の中の単語の1文字として残ります', 'a newline character (written `\\n` in Python), which stays in the quoted word as one character')
+    case 'python-char':
+      return tx(`Python のエスケープ \`\\N{${m.name}}\` が表す1文字（Unicode の名前が \`${m.name}\` の文字）`, `the one character of Python's escape \`\\N{${m.name}}\` (the Unicode character named \`${m.name}\`)`);
     case 'bats-test-function':
       return tx('bats がテストの関数に付ける名前（`# @test` のコメントがある関数の名前から作る）', 'the name bats gives the function of the test (made of the name of a function marked with `# @test`)');
     case 'bats-test-name':

@@ -1,0 +1,5 @@
+{
+  "uses": [
+    {"file":"src/hosts/detect.ts","fn":"detectKind","kind":"import","count":3,"reason":"pasted Python is recognised by its `import` lines and a call of `subprocess`, `os.system` or `os.popen`, by regexes over the text; #753 reads the tokens and the import table instead"}
+  ]
+}

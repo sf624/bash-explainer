@@ -651,6 +651,61 @@ describe('host files: branches no other test takes', () => {
     assert.deepStrictEqual(shells(extractShell('yaml', 'jobs:\n  a:\n    steps:\n      - run: echo a\n\n        shell: sh')), ['3:sh']);
   });
 
+  it('Python: the values of escapes, self-documenting fields, imports and calls read from the tokens', () => {
+    const py = [
+      'import sys; import os.path',
+      'from subprocess import run',
+      'run(["printf", "\\a", "a\\012b", "\\N{BULLET}", "a" "b", x + y, f"ls", ("-l")])',
+      'os.system("printf a\\012b\\x0a\\101")',
+      'os.system("echo \\N{BULLET} \'\\N{BULLET}\' \\"\\N{BULLET}\\"")',
+      'os.system(f"echo {x=} {y = !r:>3}")',
+      'os.system("echo {}".format(x))',
+      'run("ls -l", shell=a or b)',
+      'x = """os.system("in a string")"""',
+      'os . system("spaced")',
+      'def system(a="ls"): pass',
+      'os.system("echo a"  # c',
+      '          "b")',
+      'os.system(f"""echo {x',
+      '=}""")',
+      'os.system(("echo hi; ls"))',
+      'run(("echo a " "b"), shell=True)',
+      'run(("ls", "-l"))',
+      'os.system("cd x"); os.system("make all")',
+      'run("echo \'x\\ny\'", shell=True)',
+      'run("echo \'x\\ny\'", shell=True, executable="/bin/bash")',
+      'run("echo \\"x\\ny\\"", shell=True, executable="/bin/bash")',
+      'os.system("echo a \\\\\\nb")',
+      'os.system("")',
+    ].join('\n');
+    const e = extractShell('python', py);
+    const regions = e.regions.map((r) => `${r.start}-${r.end} ${r.label[1].replace(/^Python `[\w.]+` \(|\)$/g, '')}`);
+    assert.deepStrictEqual(regions, [
+      '2-2 arguments run without a shell', '3-3 a string the shell (/bin/sh) runs', '4-4 a string the shell (/bin/sh) runs', '5-5 a string the shell (/bin/sh) runs',
+      '6-6 a string the shell (/bin/sh) runs', '7-7 a command string run without a shell', '9-9 a string the shell (/bin/sh) runs', '11-12 a string the shell (/bin/sh) runs',
+      '13-13 a string the shell (/bin/sh) runs', '15-15 a string the shell (/bin/sh) runs', '16-16 a string the shell (/bin/sh) runs', '17-17 arguments run without a shell',
+      '18-18 a string the shell (/bin/sh) runs', '19-19 a string the shell (/bin/sh) runs', '20-20 a string the shell (bash) runs', '21-21 a string the shell (bash) runs', '22-22 a string the shell (/bin/sh) runs',
+    ]);
+    // (A word with an escape: quoted; literals joined, an f-string with no field and a word in parentheses: words; a `\N{…}`
+    // escape, a character we do not name, and an expression: placeholders.)
+    assert.strictEqual(lines(e)[2], 'printf \'\x07\' $\'a\\nb\' "${py_N_BULLET}" \'ab\' "${py_x_y}" \'ls\' -l');
+    assert.strictEqual(lines(e)[3], 'printf a;b;A');
+    // (The character of `\N{…}` quoted, in the quotes it is in.)
+    assert.strictEqual(lines(e)[4], 'echo "${py_N_BULLET}" \'\'"${py_N_BULLET}"\'\' "${py_N_BULLET}"');
+    assert.strictEqual(lines(e)[5], 'echo x=${py_x} y = ${py_y}');
+    assert.strictEqual(lines(e)[6], 'echo {}');
+    assert.ok(e.regions[4].notes!.some((n) => !Array.isArray(n) && n.spec.id === 'python-shell-injection'));
+    assert.ok(e.regions[5].notes!.some((n) => !Array.isArray(n) && n.spec.id === 'python-shell-expression'));
+    assert.deepStrictEqual([lines(e)[9], lines(e)[11], lines(e)[12]], ['spaced', 'echo a\\', 'b']);
+    // (The text of `{x\n=}` holds a newline, which ends the command.)
+    assert.strictEqual(lines(e)[13], 'echo x;=${py_x}');
+    // A string in parentheses is the string, not a list; a tuple is one. Of two calls on a line, the second is left out.
+    assert.deepStrictEqual([lines(e)[15], lines(e)[16], lines(e)[17], lines(e)[18]], ['echo hi; ls', 'echo a b', 'ls -l', 'cd x']);
+    assert.ok(!e.regions[10].notes?.length);
+    // A newline in the shell's quotes: in sh, which has no `$'…'`, a placeholder of the character; in bash, `$'\n'`. After a backslash, a line continuation.
+    assert.deepStrictEqual([lines(e)[19], lines(e)[20], lines(e)[21], lines(e)[22]], ['echo \'x\'"${py_newline}"\'y\'', 'echo \'x\'$\'\\n\'\'y\'', 'echo "x"$\'\\n\'"y"', 'echo a b']);
+  });
+
   it('explanations and problems of host files, in both languages', () => {
     const mk = explainHost('makefile', 'all:\n\techo $(CC)', 1, 'ja')!;
     const every = (ts: typeof mk.items): typeof mk.items => ts.flatMap((t) => [t, ...every(t.children)]);

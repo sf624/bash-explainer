@@ -648,10 +648,6 @@ describe('the guard of the regexes a script gives', () => {
         "new RegExp(`^(${k})\\\\s*:(\\\\s|$)`)": 'Keys of YAML, constants.',
         "new RegExp(`^\\\\s+(-\\\\s+)?(${k})\\\\s*:(\\\\s|$)`)": 'Keys of YAML, constants.',
       },
-      'src/hosts/python.ts': {
-        "new RegExp(`(?<![\\\\w.])(${[...names.keys()].map((n) => n.replace(/\\W/g, '\\\\$&')).join('|')})\\\\s*\\\\(`, 'g')": 'Names of the table PY_CALLS, or `\\w+` after `as`, which is tested (test/support/regexguard-table.ts).',
-        "new RegExp(`^${k}\\\\s*=\\\\s*([\\\\s\\\\S]*)$`)": 'Names of keywords, constants.',
-      },
       'src/hosts/yaml.ts': {
         "new RegExp(`\\\\$\\\\{?${name}\\\\b`)": 'The names of the table GITHUB_FILES.',
       },
@@ -689,7 +685,6 @@ describe('the guard of the regexes a script gives', () => {
     /** Those that are no string: a RegExp made here of constants, or by `scriptRegex`. */
     const IMPLICIT: Record<string, string[]> = {
       'src/examples/perlrun.ts': ['.matchAll(re)'],
-      'src/hosts/python.ts': ['.matchAll(callRe)'],
     };
 
     it('no regex comes of a string by itself', () => {
