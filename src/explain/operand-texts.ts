@@ -13,6 +13,7 @@ import type { OperandSpec } from '../argv/spec';
 import { splitsIn } from '../argv/words';
 import { braceAlternatives, braceTexts } from '../semantics/brace';
 import { countIn, fieldsIn } from '../semantics/argwords';
+import { onlyGlobbed } from '../semantics/globwords';
 import { field, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 
@@ -30,7 +31,7 @@ export function readingsParts(cx: Explainer, desc: string | undefined, readings:
   // of a `time_statement`, or the name and the arguments of its body.)
   const command = field(nodes[0].parent!, 'name')?.text ?? 'time';
   const first = readings.kind === 'read' ? firstRole(readings) : undefined;
-  const names = namesFor(nodes, command, first);
+  const names = namesFor(cx, nodes, command, first);
   // (Each a sentence of its own: ". When …", "。…なら…".)
   const sentences = (ts: readonly Text[]): string => ts.map((t) => cx.s(`。${t.ja}`, `. ${t.en.charAt(0).toUpperCase()}${t.en.slice(1)}`)).join('');
   if (readings.kind === 'depends') return { base: desc!, rest: sentences([dependsText(readings, names)]) };
@@ -39,7 +40,7 @@ export function readingsParts(cx: Explainer, desc: string | undefined, readings:
   const plain = desc !== undefined && (!p.groups.length || p.counts.length === 1 || (!!p.places && squeeze(p.places).length === 1));
   // (In its profile as written, its role as written is `desc`; not in a list of its words, "its words are X, then Y".)
   const list = !!p.places && p.counts[0] > 1;
-  return { base: plain ? desc : cx.t(baseText(p, k, namesFor(nodes, command, first, list ? undefined : desc))), rest: sentences(clausesText(readings, k, names)) };
+  return { base: plain ? desc : cx.t(baseText(p, k, namesFor(cx, nodes, command, first, list ? undefined : desc))), rest: sentences(clausesText(readings, k, names)) };
 }
 
 /**
@@ -63,10 +64,11 @@ function firstRole(r: WordReadings): Role | undefined {
  * given) for the role of its first word as written (`base`), and the command that reads it where another command reads
  * that one ("option `-n` (…) of `nice`").
  */
-function namesFor(nodes: readonly SyntaxNode[], command: string, base: Role | undefined, desc?: string): Names {
+function namesFor(cx: Explainer, nodes: readonly SyntaxNode[], command: string, base: Role | undefined, desc?: string): Names {
   const path = (r: Role): string => r.by.map((x) => x ?? '?').join(' ');
   return {
     word: (k) => codeSpan(nodes[k].text),
+    globbed: (k) => onlyGlobbed(nodes[k], cx.state),
     role: (r) => {
       if (desc !== undefined && r.key === base?.key) return { ja: desc, en: desc };
       const t = roleWords(r.role);

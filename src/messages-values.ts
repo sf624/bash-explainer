@@ -130,11 +130,11 @@ export function valueSaid(lang: Lang, v: ExpansionValue, bash = true): ValueSaid
   }
   const tails: string[] = [];
   if (v.glob && v.joined) {
-    tails.push(ja ? '。クォートしていないので、ワイルドカードを含む単語が前後の文字列とつながったままパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
-      : '. Unquoted, the word its wildcards end up in, with the text around it, is a pattern: bash matches it against file names when the line runs (not done here)');
+    tails.push(ja ? '。クォートしていないので、ワイルドカードを含む単語が前後の文字列とつながったままグロブのパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
+      : '. Unquoted, the word its wildcards end up in, with the text around it, is a glob pattern: bash matches it against file names when the line runs (not done here)');
   } else if (v.glob) {
-    tails.push(ja ? '。クォートしていないのでパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
-      : `. Unquoted, it is a pattern: ${bash ? 'bash' : 'the shell'} matches it against file names when the line runs (not done here)`);
+    tails.push(ja ? '。クォートしていないのでグロブのパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
+      : `. Unquoted, it is a glob pattern: ${bash ? 'bash' : 'the shell'} matches it against file names when the line runs (not done here)`);
   }
   const shownTexts = [value ?? '', ...(split?.words ?? [])];
   const pictures = pictureList(shownTexts, (j, e) => (ja ? j : e));

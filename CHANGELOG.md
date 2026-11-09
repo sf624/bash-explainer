@@ -20,6 +20,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Changed
 
 - Under `set -e`, the note on where the script stops says what a status other than 0 means for `grep` (no line matched), `diff` (the files differ) and `buildifier -mode=check` (a file to format): bash stops on those too.
+- An unquoted variable used as a pattern or a program, whose value bash would glob or split, gets a caveat that suggests quoting it: `grep -E $pattern ids.txt` with `pattern='^[A-Z]{3}-[0-9]+$'` suggests `"$pattern"`. Its argument says that a file name that matches would take its place.
 - An invalid regex in a shell script is now an Error in Problems and `--check`: `grep -E '[a'`, `sed 's/\(a/x/'`, `grep -P '\q'`, `[[ $x =~ a[ ]]`. Before, only the regex's part of the explanation said so.
 
 ### Fixed

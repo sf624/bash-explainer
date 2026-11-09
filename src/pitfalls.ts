@@ -325,10 +325,10 @@ function runsCommand(model: StateModel, name: string, at: SyntaxNode, shell: She
 }
 
 /** A command a command runs that is a builtin or a program (not a function or an alias of that name), with its spec and the parse of its words. */
-interface SpecRun { run: RunCommand; name: string; spec: CommandSpec; parse: ArgvParse; values: (string | undefined)[] }
+export interface SpecRun { run: RunCommand; name: string; spec: CommandSpec; parse: ArgvParse; values: (string | undefined)[] }
 
 /** The commands the simple command `n` runs (`runCommands`) that are builtins or programs the dictionary knows. */
-function specRuns(n: SyntaxNode, model: StateModel, shell: Shell | undefined): SpecRun[] {
+export function specRuns(n: SyntaxNode, model: StateModel, shell: Shell | undefined): SpecRun[] {
   const out: SpecRun[] = [];
   for (const run of runCommands(n, model, shell)) {
     const spec = run.name === undefined ? undefined : lookupCommand(run.name);

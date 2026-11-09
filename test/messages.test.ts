@@ -78,7 +78,7 @@ describe('the message catalog', () => {
   const CAVEATS = ['declaration-masks-status', 'pipefail-missing', 'function-last-test-returns-status', 'posix-special-function-name-maybe', 'posix-function-name-maybe', 'posix-special-builtin-error-maybe',
     'extglob-maybe-on', 'extglob-not-found', 'extglob-maybe-on-trap', 'globstar-maybe-on',
     'globstar-not-found', 'ssh-local-expansion', 'function-not-imported-sh', 'unmatched-glob-runs-once', 'for-over-ls-output', 'for-over-unquoted-args',
-    'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment', 'alias-maybe-not-expanded',
+    'unquoted-variable-in-test', 'unquoted-value-as-data', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment', 'alias-maybe-not-expanded',
     'stderr-to-original-stdout'];
   const PITFALL_ERRORS = ['posix-special-function-name', 'extglob-turned-off', 'function-not-in-container', 'builtin-or-function-as-program',
     'function-not-on-remote', 'function-not-in-new-shell-blocked', 'function-not-in-new-shell', 'function-not-imported', 'wrapper-assignment-expanded-first',

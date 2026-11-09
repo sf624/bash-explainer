@@ -199,8 +199,8 @@ describe('what the outputs say of a value (valueSaid)', () => {
   });
 
   it('says a glob, control characters, and cuts long values and many words', () => {
-    assert.strictEqual(valueSaid('en', { text: '*.txt', words: ['*.txt'], glob: true }).tail, '. Unquoted, it is a pattern: bash matches it against file names when the line runs (not done here)');
-    assert.match(valueSaid('ja', { text: '*', glob: true }).text, /。クォートしていないのでパターンとして働き、/);
+    assert.strictEqual(valueSaid('en', { text: '*.txt', words: ['*.txt'], glob: true }).tail, '. Unquoted, it is a glob pattern: bash matches it against file names when the line runs (not done here)');
+    assert.match(valueSaid('ja', { text: '*', glob: true }).text, /。クォートしていないのでグロブのパターンとして働き、/);
     const tab = valueSaid('en', { text: 'a\tb\nc', glob: false });
     assert.strictEqual(tab.value, 'a⇥b␊c');
     assert.match(tab.tail!, /^ \(control characters are shown as symbols: `⇥` is /);
@@ -221,9 +221,9 @@ describe('what the outputs say of a value (valueSaid)', () => {
     assert.strictEqual(valueSaid('en', { text: 'a b', glob: false, joined: true }).text, 'Value here, from the script: `a b`');
     assert.strictEqual(valueSaid('en', { text: '', glob: false, joined: true }).text, 'Value here, from the script: an empty string');
     assert.strictEqual(valueSaid('en', { text: '*', glob: true, joined: true }).tail,
-      '. Unquoted, the word its wildcards end up in, with the text around it, is a pattern: bash matches it against file names when the line runs (not done here)');
+      '. Unquoted, the word its wildcards end up in, with the text around it, is a glob pattern: bash matches it against file names when the line runs (not done here)');
     assert.strictEqual(valueSaid('ja', { text: '*', glob: true, joined: true }).tail,
-      '。クォートしていないので、ワイルドカードを含む単語が前後の文字列とつながったままパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）');
+      '。クォートしていないので、ワイルドカードを含む単語が前後の文字列とつながったままグロブのパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）');
   });
 });
 

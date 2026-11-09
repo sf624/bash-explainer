@@ -635,6 +635,19 @@ Object.assign(STATES, {
       }));
     },
   },
+  'unquoted-value-as-data': {
+    states: 'the value the script sets, read as it is (the original with `IFS=` and `set -f`, which neither split nor glob it); nullglob; failglob with files present',
+    checks: (s) => {
+      // (The meaning is the value as one word, which the original gives only where bash neither splits nor globs it.)
+      const asIs = 'IFS=; set -f';
+      const files = ['x1', 'x2'];
+      return [
+        keeps('the value as it is', s, { prelude: asIs }, {}),
+        keeps('nullglob', s, { prelude: asIs }, { prelude: 'shopt -s nullglob' }),
+        keeps('failglob, files present', s, { prelude: asIs, files }, { prelude: 'shopt -s failglob', files }),
+      ];
+    },
+  },
   'unquoted-variable-in-test': {
     states: 'empty, unset, a space, `-n`, `=`, for every unquoted variable of the test (the result: what the test gives with the value written in quotes); plain values for the meaning',
     checks: (s, x) => {

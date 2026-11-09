@@ -3,6 +3,7 @@ import {
 } from './messages-entry';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
 import { type LoopHow, type LoopPattern, unmatchedGlobText } from './messages-glob';
+import { codeSpan, shorten } from './label';
 import type { Rewrite } from './rewrite';
 import type { ShebangRefusal } from './semantics/state';
 
@@ -56,6 +57,24 @@ export const WORD_MESSAGES = {
       ? [`クォートしていない \`${bare}\` は値によって分かれたり展開されたりし、意図しないファイルを削除や上書きすることがある。`, `Unquoted \`${bare}\` can split or expand, and this command may then delete or overwrite files it should not.`]
       : [`クォートしていない \`${bare}\` は、値に空白や \`*\` があると分かれたり展開されたりする。`, `Unquoted \`${bare}\` is split or expanded when its value has spaces or \`*\`.`]),
   undefined, ({ destroys, known }) => (destroys && known === undefined ? 'warning' : 'info'))), 'quote-expansions'),
+  // (A word a command reads as data, not as a file name: an operand or a value in another language, a pattern, a regex, a
+  // program (`grep -E $p f`). `value`: the value the model knows; `glob`, bash matches it against file names (a file
+  // whose name matches takes its place; with nullglob the word is gone, with failglob the line fails); `words`, how
+  // many words word splitting makes of it, where several. Checked with bash 5.2: test/unquoted-data.test.ts.)
+  'unquoted-value-as-data': withConvention(suggests(caveat<{ bare: string; value: string; glob: boolean; words?: number; rewrite: readonly Rewrite[] }>(['3.5.7', '3.5.8'], ({ bare, value, glob, words, rewrite: [quoted] }) => {
+    const v = codeSpan(shorten(value, 40));
+    const ja = words && glob ? `単語分割されて ${words} 個の引数に分かれ、グロブのパターンとしても働く（一致するファイルがあるとその名前に置き換わる）`
+      : words ? `単語分割されて ${words} 個の引数に分かれる` : 'グロブのパターンとして働き、一致するファイルがあるとその名前に置き換わる';
+    const en = words && glob ? `is split into ${words} arguments, and is a glob pattern too (a file name that matches takes its place)`
+      : words ? `is split into ${words} arguments` : 'is a glob pattern, and a file name that matches it takes its place';
+    // (Split, it never reaches the command as it is; globbed only, it does where no file matches.)
+    return [
+      `\`${bare}\` をクォートしていないので、値 ${v} はそのままコマンドに渡${words ? 'らない' : 'るとは限らない'}。値は${ja}${quoted ? `。値をそのまま渡すには \`${quoted.code}\` と書く` : ''}`,
+      `\`${bare}\` is not quoted, so its value ${v} ${words ? 'does' : 'may'} not reach the command as it is: it ${en}${quoted ? `. To pass the value as it is, write \`${quoted.code}\`` : ''}`];
+  },
+  ({ bare, words }) => (words
+    ? [`クォートしていない \`${bare}\` の値は、そのままコマンドに渡らない。`, `Unquoted \`${bare}\` does not pass its value as it is.`]
+    : [`クォートしていない \`${bare}\` の値は、そのままコマンドに渡るとは限らない。`, `Unquoted \`${bare}\` may not pass its value as it is.`]))), 'quote-expansions'),
   'for-over-ls-output': withConvention(caveat<{ cmd: string }>(['3.5.7'], ({ cmd }) => [
     `\`$(${cmd} …)\` の結果は空白や改行で区切られるので、空白を含むファイル名が壊れます。${cmd === 'ls' ? '`for f in *.txt` のようにグロブを使います' : '`find … -print0 | while IFS= read -r -d \'\' f` や `find -exec` を使います'}`,
     `the output of \`$(${cmd} …)\` is split on spaces and newlines, so file names with spaces break. ${cmd === 'ls' ? 'Use a glob, as in `for f in *.txt`' : "Use `find … -print0 | while IFS= read -r -d '' f` or `find -exec`"}`],

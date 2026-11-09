@@ -134,6 +134,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'prefix-assignment-expanded-first': 'mechanical',
   // `$x` → `"$x"` (only the expansions: `"$d"/*`, PR #271).
   'unquoted-variable-as-path': 'mechanical',
+  // `grep -E $p f` → `grep -E "$p" f`: the value as it is.
+  'unquoted-value-as-data': 'mechanical',
   'for-over-ls-output': 'scenario',
   // `for a in $@` → `for a in "$@"`.
   'for-over-unquoted-args': 'mechanical',
@@ -371,7 +373,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 18, scenario: 26, prose: 22, none: 104 });
+      { mechanical: 19, scenario: 26, prose: 22, none: 104 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });
