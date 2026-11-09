@@ -42,9 +42,26 @@ interface Edge { to: string; attr?: string }
 /** The lines `run` prints over `ws`, or undefined where the evaluator does not follow it. Within `guarded` (src/examples/regexguard.ts). */
 export function runQuery(ws: Workspace, run: QueryRun): string[] | undefined {
   const tree = queryTree(run.expression, run.command);
-  if (!tree) return undefined;
+  return tree && followed(() => new Evaluation(ws, run).lines(tree));
+}
+
+/** A configured target: its label, and the short hash of its configuration (`a7a71fd`; `null` for a source file). */
+export interface ConfiguredTarget { readonly label: string; readonly config: string }
+
+/**
+ * cquery's configured targets of the target pattern `pattern`, sorted as it prints them, where it configures those of the
+ * pattern `universe` (by default `pattern` itself; `--universe_scope`) and what they depend on; undefined where the
+ * evaluator does not follow them. aquery's actions are those of such targets (src/examples/bazelaquery.ts). Within `guarded`.
+ */
+export function configuredTargets(ws: Workspace, pattern: string, universe = pattern): ConfiguredTarget[] | undefined {
+  const run: QueryRun = { command: 'cquery', expression: pattern, output: 'label', implicitDeps: true };
+  return followed(() => new Evaluation(ws, run).selected({ kind: 'word', text: pattern }, universe) as ConfiguredTarget[]);
+}
+
+/** What `run` gives, or undefined where the evaluator does not follow it. */
+function followed<T>(run: () => T): T | undefined {
   try {
-    return new Evaluation(ws, run).lines(tree);
+    return run();
   } catch (e) {
     if (e instanceof NotComputed) return undefined;
     // A bug in the evaluator: let it show.
@@ -80,6 +97,18 @@ export function javaReadsAsPcre(pattern: string): boolean {
   return true;
 }
 
+/**
+ * Whether the Java regex `pattern` matches a text: anywhere in it (`Matcher.find`, as `filter`, `kind` and `attr` search),
+ * or the whole of it (`Matcher.matches`, as aquery's `mnemonic`, `inputs` and `outputs` do); undefined where JavaScript has
+ * no regex of the same meaning. Within `guarded`.
+ */
+export function javaMatcher(pattern: string, whole: boolean): ((text: string) => boolean) | undefined {
+  const js = javaReadsAsPcre(pattern) ? toJsRegex(pattern, 'pcre') : undefined;
+  if (!js) return undefined;
+  const re = scriptRegex(whole ? `^(?:${js.source})$` : js.source, js.flags);
+  return (text) => re.test(text);
+}
+
 /** A list of labels as `attr` reads it (`[a, b]`). */
 const listText = (xs: readonly string[]): string => `[${xs.join(', ')}]`;
 
@@ -109,14 +138,8 @@ class Evaluation {
     const cquery = this.run.command === 'cquery';
     // (cquery prints what it evaluates in the order it comes to it, which a set operator or `let` leaves to bazel's hashes:
     // known only for one pattern, alone or under functions that keep or drop its targets, which it prints sorted.)
-    if (cquery) this.universe = this.configure(orderedPattern(tree) ?? this.unknown());
-    // (somepath gives a path, which bazel prints in its order; a query's anything else is sorted, `--order_output=auto`.)
+    const items = this.selected(tree, cquery ? orderedPattern(tree) ?? this.unknown() : undefined);
     const path = tree.kind === 'call' && tree.name === 'somepath';
-    let items = [...this.eval(tree, new Map(), true)].map((k) => this.items.get(k)!);
-    if (!path) {
-      chargeWalk(items.length * Math.ceil(Math.log2(items.length + 1)));
-      items = items.sort((a, b) => this.compare(a, b));
-    }
     if (this.run.output === 'package') {
       if (cquery || path) throw new NotComputed();
       const pkgs = [...new Set(items.map((i) => this.main(i.label).pkg))];
@@ -127,6 +150,19 @@ class Evaluation {
     const parts = items.map((i) => [this.run.output === 'label_kind' ? this.target(i.label).kind ?? this.unknown() : undefined, i.label, i.config] as const);
     chargeSize(parts.reduce((n, p) => n + p.reduce((m, x) => m + (x?.length ?? 0) + 3, 0), 0));
     return parts.map(([kind, label, config]) => `${kind === undefined ? '' : `${kind} `}${label}${config === undefined ? '' : ` (${config})`}`);
+  }
+
+  /**
+   * What `tree` selects, in the order bazel prints it; for cquery, among the configured targets of the pattern `universe`
+   * and what they depend on. (somepath gives a path, which bazel prints in its order; a query's anything else is sorted,
+   * `--order_output=auto`.)
+   */
+  selected(tree: QueryNode, universe?: string): Item[] {
+    if (universe !== undefined) this.universe = this.configure(universe);
+    const items = [...this.eval(tree, new Map(), true)].map((k) => this.items.get(k)!);
+    if (tree.kind === 'call' && tree.name === 'somepath') return items;
+    chargeWalk(items.length * Math.ceil(Math.log2(items.length + 1)));
+    return items.sort((a, b) => this.compare(a, b));
   }
 
   private unknown(): never {
@@ -297,9 +333,7 @@ class Evaluation {
 
   /** Whether the Java regex `pattern` matches anywhere in a text, as bazel searches (`Matcher.find`); not computed where JavaScript has no regex of the same meaning. */
   private matcher(pattern: string): (text: string) => boolean {
-    const js = (javaReadsAsPcre(pattern) ? toJsRegex(pattern, 'pcre') : undefined) ?? this.unknown();
-    const re = scriptRegex(js.source, js.flags);
-    return (text) => re.test(text);
+    return javaMatcher(pattern, false) ?? this.unknown();
   }
 
   /** Whether `found` matches every text a value may be shown as, or none of them; not computed where it depends on which. */
@@ -434,13 +468,30 @@ class Evaluation {
   }
 }
 
-/**
- * The options of query and cquery the examples follow: `--output` and `--implicit_deps`, and those that change nothing
- * printed on the standard output (the progress, colours, the options read from the rc files).
- */
-const FOLLOWED = new Set(['--output', '--implicit_deps', '--keep_going', '--show_progress', '--color', '--curses', '--show_timestamps', '--announce_rc', '--tool_tag']);
+/** The options of query, cquery and aquery that change nothing printed on the standard output (the progress, colours, the options read from the rc files). */
+export const SILENT_OPTIONS: readonly string[] = ['--keep_going', '--show_progress', '--color', '--curses', '--show_timestamps', '--announce_rc', '--tool_tag'];
+/** The options of query and cquery the examples follow: `--output` and `--implicit_deps`, and the silent ones. */
+const FOLLOWED = new Set(['--output', '--implicit_deps', ...SILENT_OPTIONS]);
 /** The outputs each command's examples print: cquery has no `package`. */
 const OUTPUTS: Readonly<Record<QueryRun['command'], readonly string[]>> = { query: ['label', 'label_kind', 'package'], cquery: ['label', 'label_kind'] };
+
+/**
+ * The expression the operands of `parse` make, joined with spaces, and the value of the last `--output` given; undefined for
+ * an option not in `followed`, or a word whose value is not known (`words`: the values of the words, when known).
+ */
+export function queryWords(parse: ArgvParse, words: readonly (string | undefined)[], followed: ReadonlySet<string>): { expression: string; output?: string } | undefined {
+  if (givenOptions(parse).some(({ role }) => role.role !== 'option' || role.missing || !followed.has(role.spec.names[0]))) return undefined;
+  const parts = operands(parse).map(({ word }) => words[word]);
+  const out = values(parse, '--output').at(-1);
+  const output = out && words[out.word]?.slice(out.at ?? 0);
+  if (!parts.length || parts.includes(undefined) || (out && output === undefined)) return undefined;
+  return { expression: parts.join(' '), ...(output === undefined ? {} : { output }) };
+}
+
+/** The note of an example over the made-up workspace: that it is one, what the real output lists (`what`: targets, actions), then `more`. */
+export function workspaceNote(lang: Lang, what: readonly [string, string], more: readonly [string, string] = ['', '']): string {
+  return pick(lang)(`架空の C++ のワークスペース（\`//app\`・\`//lib\`・\`//tools\`・\`//util\` と \`@abseil-cpp\`）での例。実際の出力は、実行するワークスペースの${what[0]}になる${more[0]}`, `An example over a made-up C++ workspace (\`//app\`, \`//lib\`, \`//tools\`, \`//util\` and \`@abseil-cpp\`): the real output lists the ${what[1]} of the workspace it runs in${more[1]}`);
+}
 
 /**
  * What `bazel query` (or `cquery`) prints of the words of `parse` over the made-up workspace (`BAZEL_CC`): the expression its
@@ -448,14 +499,11 @@ const OUTPUTS: Readonly<Record<QueryRun['command'], readonly string[]>> = { quer
  * option, a word not known, or what the evaluator does not follow. `words`: the values of the words, when known.
  */
 export function bazelQuerySource(command: QueryRun['command'], parse: ArgvParse, words: readonly (string | undefined)[], lang: Lang): SourceRun | undefined {
-  if (givenOptions(parse).some(({ role }) => role.role !== 'option' || role.missing || !FOLLOWED.has(role.spec.names[0]))) return undefined;
-  const parts = operands(parse).map(({ word }) => words[word]);
-  const out = values(parse, '--output').at(-1);
-  const output = out ? words[out.word]?.slice(out.at ?? 0) : 'label';
-  if (!parts.length || parts.includes(undefined) || !OUTPUTS[command].includes(output!)) return undefined;
-  const lines = runQuery(BAZEL_CC, { command, expression: parts.join(' '), output: output as QueryOutput, implicitDeps: switched(parse, '--implicit_deps') ?? true });
+  const read = queryWords(parse, words, FOLLOWED);
+  const output = read?.output ?? 'label';
+  if (!read || !OUTPUTS[command].includes(output)) return undefined;
+  const lines = runQuery(BAZEL_CC, { command, expression: read.expression, output: output as QueryOutput, implicitDeps: switched(parse, '--implicit_deps') ?? true });
   if (!lines) return undefined;
-  const s = pick(lang);
-  const configs = command === 'cquery' ? s('。かっこの中の構成（`(a7a71fd)`）は、ある環境のオプションのハッシュで、環境ごとに違う', '. The configurations in parentheses (`(a7a71fd)`) are hashes of one machine\'s options, and differ on another') : '';
-  return { lines, note: s(`架空の C++ のワークスペース（\`//app\`・\`//lib\`・\`//tools\`・\`//util\` と \`@abseil-cpp\`）での例。実際の出力は、実行するワークスペースのターゲットになる${configs}`, `An example over a made-up C++ workspace (\`//app\`, \`//lib\`, \`//tools\`, \`//util\` and \`@abseil-cpp\`): the real output lists the targets of the workspace it runs in${configs}`) };
+  const configs = ['。かっこの中の構成（`(a7a71fd)`）は、ある環境のオプションのハッシュで、環境ごとに違う', '. The configurations in parentheses (`(a7a71fd)`) are hashes of one machine\'s options, and differ on another'] as const;
+  return { lines, note: workspaceNote(lang, ['ターゲット', 'targets'], command === 'cquery' ? configs : undefined) };
 }

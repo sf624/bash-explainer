@@ -232,7 +232,7 @@ export interface CommandSpec {
   /**
    * The runner that works out what it prints from its words, for the examples of the commands after it in a pipeline
    * (src/examples/runners.ts; docs/design/sources.md, M6: a runner chosen by the spec, not by the command's name):
-   * `bazel-query` and `bazel-cquery`, an expression run over a made-up workspace. On the spec of the subcommand that has
+   * `bazel-query`, `bazel-cquery` and `bazel-aquery`, an expression run over a made-up workspace. On the spec of the subcommand that has
    * it (`bazel query`). (Made-up lines of a layout its options choose are `layouts`; what it prints made of its words, `prints`.)
    */
   runner?: RunnerKind;
@@ -287,7 +287,7 @@ export interface ExitCall { options: ReadonlyMap<string, string | undefined>; op
 export interface Restriction { options?: string[]; unless?: string[]; unlessWord?: RegExp; command?: true; slash?: 'operand' | string; namesOption?: true }
 
 /** The runners of src/examples/runners.ts (`CommandSpec.runner`). */
-export type RunnerKind = 'bazel-query' | 'bazel-cquery';
+export type RunnerKind = 'bazel-query' | 'bazel-cquery' | 'bazel-aquery';
 
 /** The layouts of output that src/examples/layouts.ts makes up. */
 export type Layout = 'ps' | 'ps-bsd-u' | 'ps-full' | 'ls' | 'ls-long' | 'ls-long-all' | 'ls-long-human' | 'df-human' | 'who' | 'env';
