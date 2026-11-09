@@ -1,0 +1,11 @@
+# expect 5.45.4: the synopsis of its manual page (there is no --help), and the flags the text names.
+expect [ -dDinN ] [ -c cmds ] [ [ -[f|b] ] cmdfile ] [ args ]
+-c cmds
+-d
+-D integer
+-f cmdfile
+-b cmdfile
+-i
+-n
+-N
+-v

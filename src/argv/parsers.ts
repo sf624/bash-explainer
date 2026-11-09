@@ -34,13 +34,15 @@ import type { CommandSpec, OptionSpec, ValueSpec } from './spec';
  *   `-` is no option (`--: invalid option`). The first operand ends the options, and so does a lone `-`, as `--` does.
  * - `java`: the JDK's launcher, compiler and keytool: the rules of `single-dash`, but a known option takes no `-name=value` (`javac -classpath=x`:
  *   invalid flag; `keytool -keystore=x`: illegal option). `--name=value` of a long option works.
+ * - `lexopt`: ripgrep's (Rust's lexopt): the rules of `gnu`, and `-A=3` gives `-A` the value `3` (`-A3`, `-A 3`, `--after-context=3`, `--after-context 3`);
+ *   no abbreviation of a long name.
  * - `bazel`: bazel's options parser (its `OptionsParser`, and its client's for the startup options): the rules of `git`
  *   (no clusters, `-c opt` but not `-copt` or `-c=opt`; `--name=value` or `--name value`), and a boolean option is
  *   turned off by `no` before its name, a `-` after its letter or the value `false` (`--nostamp`, `-t-`, `--stamp=false`:
  *   the rule `negation`). Options may follow the targets; `--` ends them, so that a target pattern may start with `-`
  *   (`-//app/legacy/...`).
  */
-export type OptionParser = 'gnu' | 'getopt_long' | 'single-dash' | 'openssl' | 'letters' | 'cobra' | 'iproute2' | 'jq' | 'git' | 'dpkg' | 'bash' | 'bazel' | 'java';
+export type OptionParser = 'gnu' | 'getopt_long' | 'single-dash' | 'openssl' | 'letters' | 'cobra' | 'iproute2' | 'jq' | 'git' | 'dpkg' | 'bash' | 'bazel' | 'java' | 'lexopt';
 
 /** What a preset does, as the interpreter (src/argv/interpret.ts) reads it. */
 export interface ParserRules {
@@ -94,6 +96,7 @@ export const PARSERS: Record<OptionParser, ParserRules> = {
   bash: { ...GNU, longEquals: false, optionsFirst: true, longFirst: true, loneDashEnds: true },
   bazel: { ...GNU, shortClusters: false, negation: true },
   java: { ...GNU, singleDash: true, dashEquals: false },
+  lexopt: { ...GNU, shortEquals: true },
 };
 
 /**

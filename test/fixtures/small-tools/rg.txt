@@ -1,0 +1,151 @@
+# ripgrep 14.1.0: the option lines of `rg -h` (the options of every section), and the flags that only `rg --help` shows with a negation.
+-e, --regexp=PATTERN
+-f, --file=PATTERNFILE
+--pre=COMMAND
+--pre-glob=GLOB
+-z, --search-zip
+-s, --case-sensitive
+--crlf
+--dfa-size-limit=NUM
+-E, --encoding=ENCODING
+--engine=ENGINE
+-F, --fixed-strings
+-i, --ignore-case
+-v, --invert-match
+-x, --line-regexp
+-m, --max-count=NUM
+--mmap
+-U, --multiline
+--multiline-dotall
+--no-unicode
+--null-data
+-P, --pcre2
+--regex-size-limit=NUM
+-S, --smart-case
+--stop-on-nonmatch
+-a, --text
+-j, --threads=NUM
+-w, --word-regexp
+--auto-hybrid-regex
+--no-pcre2-unicode
+--binary
+-L, --follow
+-g, --glob=GLOB
+--glob-case-insensitive
+-., --hidden
+--iglob=GLOB
+--ignore-file=PATH
+--ignore-file-case-insensitive
+-d, --max-depth=NUM
+--max-filesize=NUM
+--no-ignore
+--no-ignore-dot
+--no-ignore-exclude
+--no-ignore-files
+--no-ignore-global
+--no-ignore-parent
+--no-ignore-vcs
+--no-require-git
+--one-file-system
+-t, --type=TYPE
+-T, --type-not=TYPE
+--type-add=TYPESPEC
+--type-clear=TYPE
+-u, --unrestricted
+-A, --after-context=NUM
+-B, --before-context=NUM
+--block-buffered
+-b, --byte-offset
+--color=WHEN
+--colors=COLOR_SPEC
+--column
+-C, --context=NUM
+--context-separator=SEP
+--field-context-separator=SEP
+--field-match-separator=SEP
+--heading
+-h, --help
+--hostname-bin=COMMAND
+--hyperlink-format=FORMAT
+--include-zero
+--line-buffered
+-n, --line-number
+-N, --no-line-number
+-M, --max-columns=NUM
+--max-columns-preview
+-0, --null
+-o, --only-matching
+--path-separator=SEP
+--passthru
+-p, --pretty
+-q, --quiet
+-r, --replace=TEXT
+--sort=SORTBY
+--sortr=SORTBY
+--trim
+--vimgrep
+-H, --with-filename
+-I, --no-filename
+--sort-files
+-c, --count
+--count-matches
+-l, --files-with-matches
+--files-without-match
+--json
+--debug
+--no-ignore-messages
+--no-messages
+--stats
+--trace
+--files
+--generate=KIND
+--no-config
+--pcre2-version
+--type-list
+-V, --version
+# the negations (--no-NAME) named in the text of `rg --help`:
+--no-auto-hybrid-regex
+--no-binary
+--no-block-buffered
+--no-byte-offset
+--no-column
+--no-config
+--no-context-separator
+--no-crlf
+--no-encoding
+--no-filename
+--no-fixed-strings
+--no-follow
+--no-glob-case-insensitive
+--no-heading
+--no-hidden
+--no-ignore
+--no-ignore-dot
+--no-ignore-exclude
+--no-ignore-file-case-insensitive
+--no-ignore-files
+--no-ignore-global
+--no-ignore-messages
+--no-ignore-parent
+--no-ignore-vcs
+--no-include-zero
+--no-invert-match
+--no-json
+--no-line-buffered
+--no-line-number
+--no-max-columns-preview
+--no-messages
+--no-mmap
+--no-multiline
+--no-multiline-dotall
+--no-one-file-system
+--no-pcre2
+--no-pcre2-unicode
+--no-pre
+--no-require-git
+--no-search-zip
+--no-sort-files
+--no-stats
+--no-text
+--no-trim
+--no-unicode

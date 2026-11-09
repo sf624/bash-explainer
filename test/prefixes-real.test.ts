@@ -44,6 +44,8 @@ const ENTRIES = [
   'tar',
   // PostgreSQL's clients use glibc's getopt_long too, but are not GNU: skipped here, test/db-clients.test.ts reads them
   'psql', 'pg_dump',
+  // pv (not a GNU tool, so the rows below skip it; test/small-tools-real.test.ts runs it with a prefix)
+  'pv',
 ];
 
 /** The shortest prefix of `name` that no other name starts with, when it is shorter than the name. */

@@ -12,8 +12,8 @@ import { OptionParser, PARSERS } from '../src/argv/parsers';
 import type { CommandSpec, OptionSpec } from '../src/argv/spec';
 import { argWords } from './support/argwords';
 
-// (The JDK's tools, when $BASH_EXPLAINER_JDK names a JDK: tools/env.sh of the maintainer's machine.)
-const JDK_BIN = process.env.BASH_EXPLAINER_JDK ? `${process.env.BASH_EXPLAINER_JDK}/bin:` : '';
+// (The JDK's tools, when $BASH_EXPLAINER_JDK names a JDK, and ripgrep, when $RG names it: tools/env.sh of the maintainer's machine.)
+const JDK_BIN = (process.env.BASH_EXPLAINER_JDK ? `${process.env.BASH_EXPLAINER_JDK}/bin:` : '') + (process.env.RG ? `${path.dirname(process.env.RG)}:` : '');
 const ENV: NodeJS.ProcessEnv = { ...process.env, PATH: JDK_BIN + (process.env.PATH ?? ''), LC_ALL: 'C', GH_TOKEN: 'x', GH_HOST: 'github.com', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
 delete ENV.POSIXLY_CORRECT;
 delete ENV.GETOPT_COMPATIBLE;
@@ -194,6 +194,14 @@ describe('option parser presets agree with a real parser of their family', () =>
       ['java --class-path=. -version', /openjdk version/, '--class-path . -version --'],
       ['java -classpath=. -version', 'fails', 'error'],
       ['java -cp . -version', /openjdk version/, '-cp . -version --'],
+    ] },
+    // ripgrep's lexopt: `-A=1` and `-A1` give `1`; no prefix of a long name.
+    { parser: 'lexopt', tool: 'rg', rows: [
+      ["rg --no-config -A=1 '^# ---' test/fixtures/sample.sh", /^# ---/, "--no-config -A 1 -- ^# --- test/fixtures/sample.sh"],
+      ["rg --no-config -A1 '^# ---' test/fixtures/sample.sh", /^# ---/, "--no-config -A 1 -- ^# --- test/fixtures/sample.sh"],
+      ["rg --no-config --after-context=1 '^# ---' test/fixtures/sample.sh", /^# ---/, "--no-config --after-context 1 -- ^# --- test/fixtures/sample.sh"],
+      ["rg --no-config --after-cont=1 '^# ---' test/fixtures/sample.sh", 'fails', 'error'],
+      ["rg --no-config -ni '^# ---' test/fixtures/sample.sh", /^\d+:# ---/, "--no-config -n -i -- ^# --- test/fixtures/sample.sh"],
     ] },
     // dpkg's myopt: `-f=x` gives `x`.
     { parser: 'dpkg', tool: 'dpkg-query', rows: [
