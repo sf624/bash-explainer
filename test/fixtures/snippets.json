@@ -1272,6 +1272,7 @@
  "g() { if [ \"$d\" = 1 ]; then d=2; g; return; fi; x=2; }; x=1; d=1; g; if [ \"$x\" = 2 ]; then (( q )); fi; q=1",
  "g() { sort i; }\nhash -p /usr/bin/tac sort",
  "gawk '{ print $1 }' f",
+ "gcc -std c11 a.c",
  "getopt \"$o\"",
  "getopt --name=prog -o a --",
  "getopt --options=ab --longoptions=help,file: -- \"$@\"",

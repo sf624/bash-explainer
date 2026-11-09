@@ -2,6 +2,9 @@
 // are compared with the real compilers found on PATH (separate programs; a missing one is skipped).
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { Analyzer, type Token } from '../src/analyzer';
 import { commands } from '../src/dict/commands';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -9,7 +12,10 @@ import { allTokens } from './support/explain';
 
 const NAMES = ['gcc', 'cc', 'c++', 'g++', 'clang', 'clang++'];
 const present = (n: string): boolean => spawnSync(n, ['--version'], { stdio: 'ignore' }).status === 0;
-const accepts = (n: string, ...opts: string[]): boolean => spawnSync(n, ['-fsyntax-only', '-x', 'c', '/dev/null', ...opts], { stdio: 'ignore' }).status === 0;
+// (-MD writes a .d file next to the working directory: run in a directory of its own.)
+const work = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-'));
+after(() => fs.rmSync(work, { recursive: true, force: true }));
+const accepts = (n: string, ...opts: string[]): boolean => spawnSync(n, ['-fsyntax-only', '-x', 'c', '/dev/null', ...opts], { stdio: 'ignore', cwd: work }).status === 0;
 
 function tokens(src: string): Token[] {
   return allTokens(new Analyzer('en').explainLine(createUnbashParser().parse(src), 0).items);
@@ -40,11 +46,29 @@ describe('cc, c++, g++, clang and clang++ as variants of gcc', () => {
     assert.match(text(src, '-lm'), /library `libm`/);
     assert.match(text(src, '-Iinc'), /`inc`.*headers/);
     assert.match(text(src, '-L/opt/lib'), /`\/opt\/lib`.*libraries/);
-    assert.match(text(src, '-DX=1'), /macro `X=1`/);
+    assert.strictEqual(text(src, '-DX=1'), 'define the macro `X` as `1`');
+    assert.strictEqual(text('gcc -DDEBUG a.c', '-DDEBUG'), 'define the macro `DEBUG` (as `1`)');
+    assert.strictEqual(text('gcc -DV= a.c', '-DV='), 'define the macro `V` as ``');
     assert.match(text(src, '-UY'), /undefine the macro `Y`/);
     assert.match(text(src, '-Wl,-rpath,.'), /linker: `-rpath \.`/);
     assert.match(text(src, 'main.cpp'), /source file/);
     assert.match(text('gcc -I inc -l m a.c', 'inc'), /Value for `-I`/);
+  });
+
+  it('read the dependency, include and pass-through options', () => {
+    const src = 'gcc -MMD -MP -MF a.d -MT a.o -isystem /opt/inc -include cfg.h -Wa,--noexecstack -Wp,-MD,x.d -MD a.c';
+    for (const w of ['-MMD', '-MP', '-MD']) assert.ok(!/not in the dictionary/.test(text(src, w)), w);
+    assert.match(text(src, 'a.d'), /Value for `-MF`/);
+    assert.match(text(src, 'a.o'), /Value for `-MT`/);
+    assert.match(text(src, '/opt/inc'), /Value for `-isystem`/);
+    assert.match(text(src, 'cfg.h'), /Value for `-include`/);
+    assert.match(text(src, '-Wa,--noexecstack'), /assembler: `--noexecstack`/);
+    assert.match(text(src, '-Wp,-MD,x.d'), /preprocessor: `-MD x\.d`/);
+  });
+
+  it('take -std only with its value attached', () => {
+    assert.match(text('gcc -std=c11 a.c', '-std=c11'), /\(value: `c11`\)/);
+    assert.strictEqual(tokens('gcc -std c11 a.c').find((t) => t.label === 'c11')!.explanation, 'source file');
   });
 
   it('give each compiler its own warning options', () => {
@@ -58,7 +82,7 @@ describe('cc, c++, g++, clang and clang++ as variants of gcc', () => {
 
   describe('compared with the real compilers', () => {
     const shared = ['-g', '-O0', '-O2', '-O3', '-Os', '-Wall', '-Wextra', '-Werror', '-fPIC', '-pedantic', '-w', '-pthread', '-fopenmp', '-std=c11', '-fsanitize=address',
-      '-lm', '-Iinc', '-L.', '-DX=1', '-UX', '-Wl,-x'];
+      '-lm', '-Iinc', '-L.', '-DX=1', '-UX', '-Wl,-x', '-Wa,--noexecstack', '-Wp,-MD,/dev/null', '-MMD', '-MD'];
     const only: Record<string, { yes: string[]; no: string[] }> = {
       gcc: { yes: ['-fanalyzer', '-fdiagnostics-color=always'], no: ['-Weverything'] },
       'g++': { yes: ['-fanalyzer'], no: ['-Weverything'] },
@@ -72,6 +96,17 @@ describe('cc, c++, g++, clang and clang++ as variants of gcc', () => {
           assert.ok(accepts(n, o), `${n} accepts ${o}`);
           assert.ok(!/not in the dictionary/.test(text(`${n} ${o} a.c`, o)), `${n}: ${o} is in the spec`);
         }
+        for (const [o, v] of [['-isystem', '/usr/include'], ['-MF', '/dev/null'], ['-MT', 'x.o']]) {
+          assert.ok(accepts(n, ...(o.startsWith('-M') ? ['-MD'] : []), o, v), `${n} accepts ${o} ${v}`);
+          assert.match(text(`${n} ${o} ${v} a.c`, v), new RegExp('Value for `' + o + '`'));
+        }
+        assert.ok(accepts(n, '-include', '/dev/null'), `${n} accepts -include`);
+        assert.ok(accepts(n, '-MD', '-MP'), `${n} accepts -MP with -MD`);
+        assert.ok(!accepts(n, '-std', 'c11'), `${n} refuses -std c11`);
+        // (-D NAME=VALUE: the macro is NAME, with the value VALUE.)
+        const dm = spawnSync(n, ['-DDEBUG=7', '-dM', '-E', '-x', 'c', '/dev/null'], { encoding: 'utf8' }).stdout;
+        assert.match(dm, /^#define DEBUG 7$/m);
+        assert.match(spawnSync(n, ['-DDEBUG', '-dM', '-E', '-x', 'c', '/dev/null'], { encoding: 'utf8' }).stdout, /^#define DEBUG 1$/m);
         // (cc and c++ are whichever the system chose: only the others are known to differ.)
         const own = only[n];
         if (!own) return;

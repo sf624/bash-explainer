@@ -50,7 +50,7 @@ Checked with unused_deps 10.2.0 (bazel-contrib/buildtools; `unused_deps -h`, and
 ### C and C++ compilers
 
 - **Variants of gcc.** `cc`, `c++`, `g++`, `clang` and `clang++` take gcc's command line. `g++` and `clang++` say they read `.c` files as C++ (g++ links libstdc++); `cc` and `c++` say they are the system's choice (GCC on most Linux systems, Clang on macOS and FreeBSD). Clang's `-Weverything` and `-fcolor-diagnostics` and GCC's `-fanalyzer` and `-fdiagnostics-color` belong to their own compiler only, checked with the real compilers.
-- **More options.** `-std`, `-x`, `-E`, `-S`, `-I`, `-L`, `-l`, `-D`, `-U`, `-pedantic`, `-w`, `-v`, `-pthread`, `-fsanitize`, `-fopenmp` and `-march`, for gcc too. A value in the same word is read: `-lm`, `-Iinc`, `-DX=1`, `-Wl,-rpath,.`. Before, `gcc -lm` was an unknown option.
+- **More options.** `-std`, `-x`, `-E`, `-S`, `-I`, `-L`, `-l`, `-D`, `-U`, `-pedantic`, `-w`, `-v`, `-pthread`, `-fsanitize`, `-fopenmp`, `-march`, `-isystem`, `-include` and the dependency options `-MD`, `-MMD`, `-MP`, `-MF`, `-MT`, for gcc too. A value in the same word is read: `-lm`, `-Iinc`, `-DX=1` (the macro `X` as `1`), `-Wl,…`, `-Wa,…`, `-Wp,…`; `-std` takes its value only so (`-std=c11`), as gcc does. Before, `gcc -lm` was an unknown option.
 
 ## Changed
 

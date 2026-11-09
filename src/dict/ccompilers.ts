@@ -12,13 +12,18 @@ const C_COMPILER_OPTIONS: OptSpec[] = [
     ['-Wextra', '追加の警告を有効にする', 'enable extra warnings'], ['-Werror', '警告をエラーにする', 'treat warnings as errors'],
     ['-shared', '共有ライブラリを作る', 'build a shared library'], ['-fPIC', '位置独立コードを作る（共有ライブラリ向け）', 'position-independent code (for shared libraries)'],
     ['-static', '静的にリンクする', 'link statically'], ['-dumpversion', 'コンパイラの版だけを表示する', 'print only the compiler version'], ['-dumpmachine', '対象のアーキテクチャを表示する', 'print the target triple'],
-  ['-std', '言語の規格（`-std=c17`、`-std=c++17`…）', 'language standard (`-std=c17`, `-std=c++17`…)', 'arg'], ['-x', '以降の入力ファイルの言語（`c`、`c++`、`none`…）', 'language of the input files that follow (`c`, `c++`, `none`…)', 'arg'],
+  ['-std', '言語の規格（`-std=c17`、`-std=c++17`…）', 'language standard (`-std=c17`, `-std=c++17`…)', 'attached'], ['-x', '以降の入力ファイルの言語（`c`、`c++`、`none`…）', 'language of the input files that follow (`c`, `c++`, `none`…)', 'arg'],
   ['-E', 'プリプロセスだけして止まる', 'preprocess only'], ['-S', 'アセンブリ言語にして止まる（.s を作る）', 'stop after generating assembly (make .s files)'],
   ['-I', 'ヘッダーを探すディレクトリを追加する', 'add a directory to search for headers', 'arg'], ['-L', 'ライブラリを探すディレクトリを追加する', 'add a directory to search for libraries', 'arg'],
   ['-l', '指定したライブラリ（`libNAME`）をリンクする', 'link with the library `libNAME`', 'arg'], ['-D', 'マクロを定義する（`NAME` か `NAME=値`）', 'define a macro (`NAME` or `NAME=value`)', 'arg'],
   ['-U', 'マクロを未定義にする', 'undefine a macro', 'arg'], ['-pedantic', '規格に反する書き方に警告を出す', 'warn about code that is not standard'],
   ['-w', '警告をすべて出さない', 'suppress all warnings'], ['-v', '呼び出すプログラムと版を表示する', 'show the programs run and the version'],
   ['-pthread', 'スレッド（POSIX threads）を使う', 'support POSIX threads'], ['-fsanitize', '実行時の検査を入れる（`address`、`undefined`…）', 'add run-time checks (`address`, `undefined`…)', 'arg'],
+  ['-isystem', 'システムヘッダーとして探すディレクトリを追加する（警告が出ない）', 'add a directory searched for system headers (no warnings from them)', 'arg'],
+  ['-include', 'ソースの先頭で指定したファイルを読み込む', 'read the given file before the source', 'arg'],
+  ['-MD', '依存関係（Makefile の規則）を .d ファイルに書き出す', 'write the dependencies (a Makefile rule) to a .d file'], ['-MMD', '`-MD` と同じ。ただしシステムヘッダーは除く', 'like `-MD`, without the system headers'],
+  ['-MF', '依存関係を書き出すファイル', 'file to write the dependencies to', 'arg'], ['-MT', '依存関係の規則のターゲット名', 'target name of the dependency rule', 'arg'],
+  ['-MP', '各ヘッダーに空の規則を足す（ヘッダーを削除しても make が止まらない）', 'add an empty rule for each header (make goes on if a header is deleted)'],
   ['-fopenmp', 'OpenMP の指示を有効にする', 'enable OpenMP directives'], ['-march', '使う CPU の命令セット（`native`…）', 'target CPU (`native`…)', 'arg'],
 ];
 /** Only GCC has these. */
@@ -30,8 +35,12 @@ const C_COMPILER_ATTACHED: PatternOption[] = [
   { pattern: /^-I(.+)$/, text: ([, v]) => tx(`ヘッダーを探すディレクトリ \`${v}\` を追加する`, `add \`${v}\` to the directories searched for headers`) },
   { pattern: /^-L(.+)$/, text: ([, v]) => tx(`ライブラリを探すディレクトリ \`${v}\` を追加する`, `add \`${v}\` to the directories searched for libraries`) },
   { pattern: /^-l(.+)$/, text: ([, v]) => tx(`ライブラリ \`lib${v}\` をリンクする`, `link with the library \`lib${v}\``) },
-  { pattern: /^-D(.+)$/, text: ([, v]) => tx(`マクロ \`${v}\` を定義する（\`=\` がなければ 1）`, `define the macro \`${v}\` (as 1 without \`=\`)`) },
+  { pattern: /^-D([^=]+)(?:=(.*))?$/, text: ([, n, v]) => v === undefined
+    ? tx(`マクロ \`${n}\` を定義する（値は \`1\`）`, `define the macro \`${n}\` (as \`1\`)`)
+    : tx(`マクロ \`${n}\` を \`${v}\` として定義する`, `define the macro \`${n}\` as \`${v}\``) },
   { pattern: /^-U(.+)$/, text: ([, v]) => tx(`マクロ \`${v}\` を未定義にする`, `undefine the macro \`${v}\``) },
+  { pattern: /^-Wa,(.+)$/, text: ([, v]) => tx(`アセンブラーに渡す: \`${v.replace(/,/g, ' ')}\``, `pass to the assembler: \`${v.replace(/,/g, ' ')}\``) },
+  { pattern: /^-Wp,(.+)$/, text: ([, v]) => tx(`プリプロセッサーに渡す: \`${v.replace(/,/g, ' ')}\``, `pass to the preprocessor: \`${v.replace(/,/g, ' ')}\``) },
   { pattern: /^-Wl,(.+)$/, text: ([, v]) => tx(`リンカーに渡す: \`${v.replace(/,/g, ' ')}\``, `pass to the linker: \`${v.replace(/,/g, ' ')}\``) },
 ];
 const cCompiler = (ja: string, en: string, extra: OptSpec[] = []): CommandSpec => cmd(ja, en, [...C_COMPILER_OPTIONS, ...extra], { positional: [pos('ソースファイル', 'source file')], parser: 'single-dash', patternOptions: C_COMPILER_ATTACHED });
