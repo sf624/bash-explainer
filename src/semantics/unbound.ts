@@ -11,6 +11,7 @@ import { type FromEnvironment, fromEnvironment } from './shellstate';
 import { changedUnseen, setAtStart } from './vars';
 import { conditionOf, statusModel } from './status';
 import { unreliableNames } from './words';
+import { isBash } from '../shellfeatures';
 
 /** The nodes an arithmetic name may be in and still be read whenever the expression runs: not after `&&`, `||` or `?`. */
 const ARITH_EVERY = new Set(['binary_expression', 'unary_expression', 'postfix_expression', 'parenthesized_expression', 'ternary_expression']);
@@ -74,7 +75,7 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
     name = shown = n.text;
   }
   if (!/^[A-Za-z_]\w*$/.test(name) || setAtStart(name) || changedUnseen(name)) return undefined;
-  const bash = !shell || shell === 'bash';
+  const bash = isBash(shell) === 'yes';
   if (!bash && ancestor(n, (a) => a.type === 'heredoc_body')) return undefined;
   const st = model.at(n).run;
   if (option(st, 'set', 'nounset') !== 'on' || st.opaque) return undefined;

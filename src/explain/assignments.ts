@@ -26,6 +26,7 @@ import { redirectedWhole } from './redirections';
 import { inSubshell } from './where';
 import { arithNumber, bash53Variable, notGlobbedHere } from './words';
 import { pushAll } from '../lists';
+import { isBash } from '../shellfeatures';
 
 /**
  * A command with no name: its assignments (`a=1`, `a=1 b=2`), and any redirections between them; redirections
@@ -173,7 +174,7 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
   const readonly = n.parent?.type === 'command' && n.field !== 'argument' ? attribute(st, own, 'r') : 'off';
   if (readonly === 'on') {
     const posix = option(st, 'set', 'posix');
-    const known = (!cx.shell || cx.shell === 'bash') && (posix === 'off' || posix === 'default');
+    const known = isBash(cx.shell) === 'yes' && (posix === 'off' || posix === 'default');
     // (In POSIX mode, one alone or before a special builtin ends the shell: the status model.)
     const exit = cx.status.posixExit(n.parent!);
     const exits = exit?.exit.why === 'readonly-assignment' && exit.active === 'on' ? (exit.stops === 'script' ? 'exits' : exit.stops === 'subshell' ? 'subshell' : undefined) : undefined;

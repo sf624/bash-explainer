@@ -31,7 +31,7 @@ import { type AliasResolution, aliasesAfter, assignmentsOf, type MaybeHashed, ty
 import { docLine, option, type ShellState } from '../semantics/state';
 import { wordMeaning } from '../semantics/words';
 import { isPlainWord, literalContent, staticWordValue, surelyHasSlash } from '../staticword';
-import type { RealShell } from '../shellfeatures';
+import { isBash, type RealShell } from '../shellfeatures';
 import { returnInSubstitution, scopeOf } from '../substitution-tokens';
 import { field, fields, redirectionsOf, type SyntaxNode, token, wordsText } from '../syntax/tree';
 import { commandTest } from '../testexpr';
@@ -761,7 +761,7 @@ export function timeStatement(cx: Explainer, n: SyntaxNode): Token {
 function timed(cx: Explainer, n: SyntaxNode): Token {
   const lead = timeLead(cx, token(n, 'time')!, fields(n, 'option'));
   const cmd = field(n, 'body');
-  const bash = !cx.shell || cx.shell === 'bash';
+  const bash = isBash(cx.shell) === 'yes';
   // In POSIX mode, `time` before a word that starts with `-` is not the reserved word: bash reads `time -p cmd`, `time -- cmd`
   // and `time -x cmd` as the command `time`, the program (6.11; not at compatibility level 41 or below). The mode is the one
   // bash read the line in. (The `-` must follow `time`, its line continuations and blanks; one after a blank leaves the keyword.)

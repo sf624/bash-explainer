@@ -21,6 +21,7 @@ import { literalContent, staticWordValue, surelyHasSlash } from '../staticword';
 import { ancestor, fields, nameText, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { has, same } from './nodes';
+import { isBash } from '../shellfeatures';
 
 const SHOPT_NAMES = ['globstar', 'dotglob', 'nocaseglob', 'nocasematch', 'nullglob', 'failglob', 'extglob', 'lastpipe', 'expand_aliases'] as const;
 export type ShoptName = typeof SHOPT_NAMES[number];
@@ -58,7 +59,7 @@ export function programBasis(cx: Explainer, name: string, spec: CommandSpec | un
  * 6.11), or undefined. Only bash's: another shell's builtin is its own.
  */
 export function shellVariant(cx: Explainer, n: SyntaxNode, spec: CommandSpec): ShellVariant | undefined {
-  if (!spec.inShell || (cx.shell && cx.shell !== 'bash')) return undefined;
+  if (!spec.inShell || isBash(cx.shell) !== 'yes') return undefined;
   const st = cx.state.at(n).run;
   return spec.inShell.find((v) => (v.set ?? []).every((o) => option(st, 'set', o) === 'on') && (v.shopt ?? []).every((o) => option(st, 'shopt', o) === 'on'));
 }

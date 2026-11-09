@@ -51,6 +51,7 @@ import { testTokens } from './tests';
 import { inSubshell } from './where';
 import { braceWord, elementWord, globChildren, globNotes, plainText, tilde, tildeNote, valueNote, word } from './words';
 import { pushAll } from '../lists';
+import { isBash } from '../shellfeatures';
 
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
 function jobSpec(text: string): { ja: string; en: string } | undefined {
@@ -995,6 +996,4 @@ export function testArgs(cx: Explainer, n: SyntaxNode, test: CommandTest, bracke
  * The bash release whose builtin `test` (its spec, `testSpecOf`) reads its words by bash's rules (`commandTest`), or
  * false when it is not bash's builtin.
  */
-export function bashTest(cx: Explainer, test: CommandSpec): TestRules | false {
-  return !!test.builtin && (!cx.shell || cx.shell === 'bash') && (cx.opts.bashVersion ?? DEFAULT_BASH_VERSION);
-}
+export const bashTest = (cx: Explainer, test: CommandSpec): TestRules | false => !!test.builtin && isBash(cx.shell) === 'yes' && (cx.opts.bashVersion ?? DEFAULT_BASH_VERSION);

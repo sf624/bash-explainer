@@ -26,6 +26,7 @@ import { assignmentExit, builtinExit, definitionExit, exitRefusal, type PosixExi
 export type ExitRefusal = Exclude<ReturnType<typeof exitRefusal>, 'unknown' | undefined>;
 import { type ErrexitWhy, modelVersion, option, type ShellState, type StateModel, type Tri } from './state';
 import { type WordEnv, wordFields, type WordFailure, wordOf } from './words';
+import { isBash } from '../shellfeatures';
 
 /** A word of a declaration builtin that declares a name (`x`, `x=$(cmd)`), and the name (without a subscript). */
 export interface DeclaredOperand { readonly word: SyntaxNode; readonly name: string }
@@ -396,7 +397,7 @@ class Statuses implements StatusModel {
         const test = res && testSpecOf(res);
         if (test) {
           // (The model does not take the release: what it says holds in bash 5.2 and in 5.3.)
-          const read = commandTest(test, args, !!test.builtin && (!this.shell || this.shell === 'bash') && 'both');
+          const read = commandTest(test, args, !!test.builtin && isBash(this.shell) === 'yes' && 'both');
           return read.unclosed || read.malformed ? { kind: 'test', fails: true } : { kind: 'test' };
         }
         if (res?.kind === 'host') {
@@ -457,7 +458,7 @@ class Statuses implements StatusModel {
   }
 
   posixExit(n: SyntaxNode): { exit: PosixExit; active: Tri; stops: ErrexitContext['stops']; trap: boolean } | undefined {
-    if (this.shell && this.shell !== 'bash') return undefined;
+    if (isBash(this.shell) !== 'yes') return undefined;
     const posix = optionOn(this.state.at(n).run, 'set', 'posix');
     if (posix === 'off') return undefined;
     let exit: PosixExit | undefined;

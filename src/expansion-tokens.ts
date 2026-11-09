@@ -21,6 +21,7 @@ import { isPlainWord, messageText, unquoteWord } from './staticword';
 import { option } from './semantics/state';
 import { operandAssigned } from './semantics/words';
 import { field, nameText, type SyntaxNode } from './syntax/tree';
+import { isBash } from './shellfeatures';
 
 /** Nodes inside an expansion's argument that get their own explanation. */
 const NESTED = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution', 'string', 'raw_string']);
@@ -41,7 +42,7 @@ function inDoubleQuotes(n: SyntaxNode): boolean {
  * warning on its row; in another shell, only what bash does.
  */
 function badSubstitution(h: Explainer, n: SyntaxNode, why: 'length' | 'flags', [ja, en]: readonly [string, string]): string {
-  if (h.shell && h.shell !== 'bash') return h.s(ja, en);
+  if (isBash(h.shell) !== 'yes') return h.s(ja, en);
   const known = runsAs(h, n);
   if (!known) return h.text('bad-substitution-if-run', { why });
   return known === 'known' ? h.text('bad-substitution-always', { why }) : h.text('bad-substitution-if-bash', { why });
@@ -76,7 +77,7 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   if (tf) summary.explanation = h.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
   else if (parsed.op === '@' && parsed.parts.some((p) => p.role === 'transform')) {
     const op = parsed.parts.find((p) => p.role === 'transform')!.text;
-    summary.explanation = !h.shell || h.shell === 'bash' ? h.text('bad-transform', { op }) : h.s(`パラメータ展開: \`@${op}\` は bash にない変換`, `Parameter expansion: \`@${op}\` is no transform bash has`);
+    summary.explanation = isBash(h.shell) === 'yes' ? h.text('bad-transform', { op }) : h.s(`パラメータ展開: \`@${op}\` は bash にない変換`, `Parameter expansion: \`@${op}\` is no transform bash has`);
   }
   if (parsed.op === ':') summary.explanation = h.s('パラメータ展開: ', 'Parameter expansion: ') + substringSummary(h, parsed);
   // `t=${a[@]}`: where the word stays one string, the elements are joined into one.

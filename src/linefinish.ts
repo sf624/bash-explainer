@@ -10,7 +10,7 @@ import type { Lang } from './i18n';
 import { onceBy } from './lists';
 import { type Fact, type Note, tokenNote } from './messages';
 import { saysProblem } from './messages-tokens';
-import type { Shell } from './shellfeatures';
+import { isBash, type Shell } from './shellfeatures';
 import { type RestingText, withoutBases, withTokenBases } from './tokenbases';
 import { claim, dropLabelEcho, markSaid, markTokens, summaryOf } from './tokenmarks';
 
@@ -57,7 +57,7 @@ export function finishLine(made: LineMade, opts: ExplainOptions, said: () => Lin
   const s = said();
   const result: LineExplanation = {
     line,
-    ...(shell && shell !== 'bash' ? { shell } : {}),
+    ...(isBash(shell) !== 'yes' ? { shell } : {}),
     items,
     context: made.context,
     notes: s.notes,

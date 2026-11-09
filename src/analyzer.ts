@@ -39,6 +39,7 @@ import { runsSeveral, titledExamples } from './explain/examples';
 import { commandsSaid, factsSaid, wholeOf } from './explain/whole';
 import { explain, flatten } from './explain/dispatch';
 import { continuationNotes, errexitStopNotes, extglobPitfalls, pipeSubshellPitfalls, statusNotes, syntaxErrorNotes, tokenErrorNotes, unmatchedGlobPitfalls } from './explain/line-notes';
+import { isBash } from './shellfeatures';
 
 export { isBlockLike, summaryOf };
 
@@ -54,7 +55,7 @@ function lineNotExplained(said: Fact, tree: SyntaxTree, line: number, shell: She
   const token: Token = { kind: 'error', role: KIND_ROLES.error, label: shorten(code, 40), explanation: said.text, children: [], span: { start: at(start), end: at(start + code.length) } };
   return {
     line,
-    ...(shell && shell !== 'bash' ? { shell } : {}),
+    ...(isBash(shell) !== 'yes' ? { shell } : {}),
     items: code ? [token] : [],
     context: [],
     notes: [said.text],

@@ -38,6 +38,7 @@ import { Walker } from './walk/walker';
 import { childStart, restrictedStart } from './walk/child';
 import type { TrapSet } from './walk/traps';
 import { stackFull } from '../failures';
+import { isBash } from '../shellfeatures';
 
 export {
   attribute, type AliasState, type Attribute, refTarget, type CommandEntry, defaultOn, type ErrexitWhy, exportedValue, type FunctionState, hashOutcomes, type HashOutcome, merge, NameMap, option,
@@ -538,7 +539,7 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
   const names = Object.keys(host);
   const run = opts.run;
   const read = opts.read ?? fileRead(tree.root);
-  const posix = opts.posix ?? ((!shell || shell === 'bash') && !run && shebangPosix(tree.root));
+  const posix = opts.posix ?? (isBash(shell) === 'yes' && !run && shebangPosix(tree.root));
   const key = `${shell ?? 'bash'}${posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}${run ? hostRunKey(run) : ''}${opts.version === '5.3' ? ' 5.3' : ''} ${read}${opts.provided?.length ? ` given:${[...opts.provided].sort().join(' ')}` : ''}${opts.noShell ? ' no-shell' : ''}`;
   let byKey = models.get(tree);
   if (!byKey) models.set(tree, (byKey = new Map()));
@@ -546,12 +547,12 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
   if (hit) return hit;
   // (The `set` and `shopt` options of the shebang, `#!/bin/bash -eu`, when the script is bash's; what it starts bash
   // with goes through the allow-list of the trust, `Opening`.)
-  const shebang = run || (shell && shell !== 'bash') ? undefined : shebangStart(tree.root);
+  const shebang = run || isBash(shell) !== 'yes' ? undefined : shebangStart(tree.root);
   const set = run ? new Map(run.set.map((o) => [o, 'on' as const])) : shebang?.set;
   const shopt = shebang?.shopt;
   // (An interactive shell expands aliases: one that commands are typed into, and maybe one that reads a file with no
   // shebang, `.bashrc`. bash only: the other shells always expand them.)
-  const aliases = (!shell || shell === 'bash') && !posix && read !== 'script' ? new Map([['expand_aliases', read === 'terminal' ? 'on' as const : 'unknown' as const]]) : undefined;
+  const aliases = isBash(shell) === 'yes' && !posix && read !== 'script' ? new Map([['expand_aliases', read === 'terminal' ? 'on' as const : 'unknown' as const]]) : undefined;
   const start = (w: Walker): ShellState => {
     let st = w.initial(tree.root);
     if (aliases) st = { ...st, shopt: st.shopt.withAll(aliases) };

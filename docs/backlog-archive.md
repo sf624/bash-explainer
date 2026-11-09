@@ -1137,6 +1137,16 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `def re(x): …` after `import re`: `re.search('a', s)` is still read as the `re` module's.
   - No Python control flow: a pattern after `sys.exit()` or under `if False:` still gets its tokens and its Error (the design says so, section 9).
 
+## From the shell-behaviour table (#756)
+
+### `~N` in ksh93, mksh and yash: the word model reads it as bash does
+
+- **Verdict:** dropped (YAGNI), 2026-11-10. Kind: `bug`.
+- **Reason:** A rare input: `~N` (the directory stack) in a script for one of three rarely used shells, measured in the real shells by test/shell-behaviours.test.ts (`dirTilde`). `dirTilde` lists only the shells that expand none of `~+`, `~-` and `~N` (dash and busybox ash).
+- **Input and what is wrong:**
+  - `echo ~1`, `~+1`, `~-1` in a ksh93 or mksh script: neither shell expands `~N`, so each word stays as written; the word model reads the directory stack's entry as bash does.
+  - `echo ~1` in a yash script: yash expands only `~+N` and `~-N`, so `~1` stays as written; the model reads it as bash does (for `~+1` and `~-1` it agrees).
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

@@ -20,6 +20,7 @@ import { shellState } from './semantics/state';
 import { explainOptions, settingSpec } from './settings';
 import type { Settings, Surface } from './settings';
 import { descendants, isListHolder, type Point, type SyntaxNode, type SyntaxTree } from './syntax/tree';
+import { isBash } from './shellfeatures';
 
 // What the extension and the web page share: explaining a line and finding the problems of a
 // document, given its text and parse tree. Nothing here depends on VS Code.
@@ -404,7 +405,7 @@ export type ShCount = number | 'too-large';
  */
 export function shProblemCount(doc: ShellDocument, lang: Lang, shells: Shells, settings: Settings, surface: Surface): ShCount | undefined {
   const { detected } = shells;
-  if (doc.extracted || doc.tree.unread || shells.forced || !shells.script || !detected || detected.shell !== 'bash' || detected.source !== 'default') return undefined;
+  if (doc.extracted || doc.tree.unread || shells.forced || !shells.script || !detected || isBash(detected.shell) !== 'yes' || detected.source !== 'default') return undefined;
   if (descendants(doc.tree.root, ['command']).length > SH_COUNT_COMMANDS) return 'too-large';
   const keep = issueFilter(doc, settings, surface);
   // (A bug in this second reading loses the hint, not the problems.)
@@ -427,9 +428,9 @@ function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined, 
   const at = (i: number) => placeOf(starts, i);
   // (The strings in a string are read only when one may be read by a shell other than bash: another shell it starts,
   // or its own `eval` and traps when it is not bash. Reading them builds the string's model.)
-  const descend = (s: NestedScript) => /\b(?:sh|dash|zsh|ksh|watch)\b/.test(s.text) || (!!s.shell && s.shell !== 'bash' && /\b(?:eval|trap)\b/.test(s.text));
+  const descend = (s: NestedScript) => /\b(?:sh|dash|zsh|ksh|watch)\b/.test(s.text) || (isBash(s.shell) !== 'yes' && /\b(?:eval|trap)\b/.test(s.text));
   for (const { script, source, surely } of nestedScripts(doc.tree, shell, descend)) {
-    if (!script.shell || script.shell === 'bash') continue;
+    if (!script.shell || isBash(script.shell) === 'yes') continue;
     // (The issues give places as positions in the string's text.)
     const rows = lineStarts(script.tree.text);
     const index = (p: Point) => rows[p.row] + p.column;
