@@ -42,6 +42,8 @@ const ENTRIES = [
   'chcon', 'runcon', 'sync', 'zcat',
   // GNU tar
   'tar',
+  // PostgreSQL's clients use glibc's getopt_long too, but are not GNU: skipped here, test/db-clients.test.ts reads them
+  'psql', 'pg_dump',
 ];
 
 /** The shortest prefix of `name` that no other name starts with, when it is shorter than the name. */

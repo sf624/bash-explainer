@@ -1,0 +1,53 @@
+Usage: sqlite3 [OPTIONS] [FILENAME [SQL...]]
+FILENAME is the name of an SQLite database. A new database is created
+if the file does not previously exist. Defaults to :memory:.
+OPTIONS include:
+   --                   treat no subsequent arguments as options
+   -A ARGS...           run ".archive ARGS" and exit
+   -append              append the database to the end of the file
+   -ascii               set '.mode ascii'
+   -bail                stop after hitting an error
+   -batch               force batch I/O
+   -box                 set '.mode box'
+   -cmd COMMAND         run "COMMAND" before reading stdin
+   -cmdline-edit BOOL   enable or disable command-line editing
+   -column              set '.mode column'
+   -csv                 set '.mode csv -limits off'
+   -deserialize         open the database using sqlite3_deserialize()
+   -echo                print inputs before execution
+   -escape T            ctrl-char escape; T is one of: symbol, ascii, off
+   -init FILENAME       read/process named file
+   -[no]header          turn headers on or off
+   -help                show this message
+   -html                set '.mode html'
+   -ifexists            only open if database already exists
+   -interactive         force interactive I/O
+   -json                set '.mode json'
+   -line                set '.mode line'
+   -list                set '.mode list'
+   -lookaside SIZE N    use N entries of SZ bytes for lookaside memory
+   -markdown            set '.mode markdown'
+   -maxsize N           maximum size for a --deserialize database
+   -memtrace            trace all memory allocations and deallocations
+   -mmap N              default mmap size set to N
+   -newline SEP         set output row separator. Default: '\n'
+   -nofollow            refuse to open symbolic links to database files
+   -noinit              Do not read the ~/.sqliterc file at startup
+   -nonce STRING        set the safe-mode escape nonce
+   -no-rowid-in-view    Disable rowid-in-view using sqlite3_config()
+   -nullvalue TEXT      set text string for NULL values. Default ''
+   -pagecache SIZE N    use N slots of SZ bytes each for page cache memory
+   -pcachetrace         trace all page cache operations
+   -quote               set '.mode quote'
+   -readonly            open the database read-only
+   -safe                enable safe-mode
+   -screenwidth N       use N as the default screenwidth 
+   -separator SEP       set output column separator. Default: '|'
+   -stats               print memory stats before each finalize
+   -table               set '.mode table'
+   -tabs                set '.mode tabs'
+   -unsafe-testing      allow unsafe commands and modes for testing
+   -version             show SQLite version
+   -vfs NAME            use NAME as the default VFS
+   -vfstrace            enable tracing of all VFS calls
+   -zip                 open the file as a ZIP Archive
