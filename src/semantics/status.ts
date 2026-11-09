@@ -8,13 +8,13 @@
 //   unless bash ignores it there: in the condition of `if`, `while` and `until`, left of `&&` and `||` (every
 //   command but the last of the list), after `!`, and in all of a function called from such a place (B2's calls).
 //   Lists and compound commands other than `( )` are not checked themselves: their commands are.
-import { canonicalName } from '../dict/aliases';
+import { canonicalName, lookupCommand } from '../dict/aliases';
 import { builtins } from '../dict/builtins';
-import type { CommandSpec } from '../argv/spec';
+import type { CommandSpec, ExitMeaning } from '../argv/spec';
 import type { Shell } from '../dialect';
 import { ancestor, assignmentsOnly, descendants, field, rootOf, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../syntax/tree';
-import { actedNames, declaresNames, has } from '../argv/query';
-import { builtinParse, commandName, wrapped } from './effects';
+import { actedNames, declaresNames, exitMeanings, has } from '../argv/query';
+import { builtinParse, builtinRead, commandName, wrapped } from './effects';
 import { redirectionMayFail } from './redirects';
 import { type ExecEnv, processOf, shellEffectOf, STATEMENTS } from './env';
 import type { NestedScript } from './nested';
@@ -40,8 +40,10 @@ export type StatusRule =
    * the shell or the function itself, with a status not known here (`exit "$rc"`, `return "$1"`; `exec cmd`, which
    * replaces the shell, or ends it with 126 or 127 when the command cannot run: no ERR trap runs, and the EXIT trap only
    * when the command is not found): no failure of it is one that `set -e` stops, unless a redirection of it fails.
+   * `results`: the statuses other than 0 that are no error which a program may give here (`CommandSpec.exits`: grep's
+   * 1, buildozer's 3), as its words ask; `set -e` stops on them too.
    */
-  | { readonly kind: 'command'; readonly functions: readonly SyntaxNode[]; readonly sure?: true; readonly fails?: 'never' | 'usage'; readonly ends?: 'shell' | 'function' }
+  | { readonly kind: 'command'; readonly functions: readonly SyntaxNode[]; readonly sure?: true; readonly fails?: 'never' | 'usage'; readonly ends?: 'shell' | 'function'; readonly results?: readonly ExitMeaning[] }
   /** Only assignments (`x=$(cmd)`): the status of the last command substitution, or 0 without one (`at`). */
   | { readonly kind: 'last-substitution'; readonly at?: SyntaxNode }
   /**
@@ -401,6 +403,10 @@ class Statuses implements StatusModel {
           const fails = failsOnly(this.state.host[res.name], res.name, args, this.shell);
           return { kind: 'command', functions: [], ...(fails ? { fails } : {}) };
         }
+        if (res?.kind === 'file') {
+          const results = programResults(res.name, args, this.shell);
+          return { kind: 'command', functions: this.calledBy(n), ...(results.length ? { results } : {}) };
+        }
         if (res?.kind !== 'builtin') return { kind: 'command', functions: this.calledBy(n) };
         const spec = builtins[res.name];
         if (spec.ends === 'shell' || spec.ends === 'function') {
@@ -656,6 +662,17 @@ function cannotFail(stage: SyntaxNode): boolean {
   if ((name !== undefined && Object.hasOwn(builtins, name) && builtins[name].fails) || name === 'printf') return !redirs.length;
   return name === 'cat' && !fields(stage, 'argument').length && redirs.length > 0
     && redirs.every((r) => r.type === 'heredoc_redirect' || r.type === 'herestring_redirect');
+}
+
+/**
+ * The statuses other than 0 that are no error which the program `name` may give with the words `args`
+ * (`CommandSpec.exits`, as `exitMeanings` reads the call).
+ */
+function programResults(name: string, args: readonly SyntaxNode[], shell: Shell | undefined): readonly ExitMeaning[] {
+  const spec = lookupCommand(name);
+  if (!spec?.exits) return [];
+  const read = builtinRead(name, args, shell, spec);
+  return exitMeanings(spec, read.parse, Array.from({ length: read.size }, (_, i) => read.text(i)));
 }
 
 /**

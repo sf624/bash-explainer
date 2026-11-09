@@ -3,7 +3,7 @@
 // so that a value is never taken for an option (`grep -e -v`), nor an option's letter for another (`sed -ie`).
 import type { ArgRole, ArgvParse, ValueRole } from './interpret';
 import type { Shell } from '../dialect';
-import type { CommandSpec, NameSpace, OperandSpec, OptionSpec, VariableAct } from './spec';
+import type { CommandSpec, ExitCall, ExitMeaning, NameSpace, OperandSpec, OptionSpec, VariableAct } from './spec';
 
 type OptionRole = Extract<ArgRole, { role: 'option' }>;
 type UnknownOptionRole = Extract<ArgRole, { role: 'unknown-option' }>;
@@ -240,4 +240,25 @@ function givenValues(parse: ArgvParse): GivenValue[] {
     }
   }
   return out;
+}
+
+/**
+ * The statuses of `spec.exits` this call may give (`ExitMeaning.when`): each option given by the first of its spec's
+ * names, with its value (the last one given), and the operands. `words`: the values of the words, when known.
+ */
+export function exitMeanings(spec: CommandSpec, parse: ArgvParse, words: readonly (string | undefined)[]): readonly ExitMeaning[] {
+  const exits = spec.exits ?? [];
+  if (!exits.some((e) => e.when)) return exits;
+  const options = new Map<string, string | undefined>();
+  const values = new Map(givenValues(parse).map((v) => [v.role, words[v.word]?.slice(v.at ?? 0)]));
+  const given: (string | undefined)[] = [];
+  for (const { word, role } of parse.roles) {
+    if (role.role === 'value' && role.option) options.set(role.option.names[0], values.get(role));
+    else if (role.role === 'operand') given.push(words[word]);
+    for (const r of role.role === 'cluster' ? role.letters : [role]) {
+      if (r.role === 'option') options.set(r.spec.names[0], r.value ? values.get(r.value) : undefined);
+    }
+  }
+  const call: ExitCall = { options, operands: given };
+  return exits.filter((e) => !e.when || e.when(call));
 }

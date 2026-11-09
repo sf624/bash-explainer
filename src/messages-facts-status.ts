@@ -87,6 +87,17 @@ export const STATUS_MESSAGES = {
     `\`set -o pipefail\` が無いので、パイプラインの終了ステータスは最後のコマンド（\`${last}\`）のものだけになる。前のコマンドが失敗しても \`set -e\` では止まらない（このスクリプトのほかのパイプラインも同じ）`,
     `without \`set -o pipefail\`, the status of a pipeline is that of its last command (\`${last}\`) alone, so \`set -e\` does not stop the script when a command before it fails (the same holds for the other pipelines of the script)`],
     ({ last }) => [`\`set -o pipefail\` がないので、\`${last}\` より前の失敗では \`set -e\` で止まらない。`, `Without \`set -o pipefail\`, \`set -e\` does not stop on a failure before \`${last}\`.`]), 'pipefail'), 'pipeStatus', 'errexit'),
+  // A program that counts a status other than 0 as a success, where `set -e` stops on it (`CommandSpec.exits`, `success`:
+  // buildozer's 3, no file needed a change): a run that finds the work done stops there. `text`: when it gives it, from
+  // the spec; `stops`: the script, a subshell, or a shell not known. (4.3.1: `set -e` exits on a status other than 0;
+  // 3.7.5: what an exit status is.)
+  'errexit-stops-on-success': saying(pitfall<{ name: string; status: number; text: Words; stops: Stops }>(['4.3.1', '3.7.5'], ({ name, status, text, stops }) => {
+    const [ja, en] = POSTFIX_STOPS[stops];
+    return [
+      `\`${name}\` は${text.ja}とき終了ステータス ${status} で終わります。\`set -e\` が有効なので、そのとき${ja}。作業が済んだあとの実行（スクリプトの2回目の実行など）は、この行より先に進みません。続けるには \`… || [ $? -eq ${status} ]\` と書きます`,
+      `\`${name}\` exits with status ${status} when ${text.en}. With \`set -e\` on, ${en} here then: a run that finds the work done (a second run of the script) does not go past this line. To go on, write \`… || [ $? -eq ${status} ]\``];
+  },
+  ({ name, status }) => [`\`set -e\` が有効なので、\`${name}\` が成功の意味で終了ステータス ${status} を返すと、ここで止まる。`, `With \`set -e\` on, a status ${status} of \`${name}\`, which means success, stops here.`], undefined, 'warning'), 'errexit'),
   // (3.2.4: the status of a list is that of its last command run; 3.3: a function's is that of the last command of its
   // body; 6.1: a script's is that of its last command. `rewrite`: an `if`, then `return 0` or `exit 0`; src/statusfacts.ts.)
   'function-last-test-returns-status': suggests(caveat<{ name: string; line: number; rewrite: readonly Rewrite[] }>(['3.3', '3.2.4', '6.1'], ({ name, line, rewrite: r }) => [

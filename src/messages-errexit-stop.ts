@@ -11,12 +11,17 @@ import { jaSpaced } from './messages-sentence';
  * way (`exec /opt/app >> "$LOG"`: status 1).
  */
 export type StopWhat =
-  | { readonly kind: 'command'; readonly name: string }
+  | { readonly kind: 'command'; readonly name: string; readonly results?: readonly StopResult[] }
   | { readonly kind: 'substitution'; readonly name?: string }
   | { readonly kind: 'pipeline' }
   | { readonly kind: 'test'; readonly text: string }
   | { readonly kind: 'subshell' }
   | { readonly kind: 'redirection'; readonly name: string };
+
+/**
+ * A status other than 0 that is no error, which `set -e` stops on too (`CommandSpec.exits`): grep's 1, buildozer's 3.
+ */
+export interface StopResult { readonly status: number; readonly text: { readonly ja: string; readonly en: string } }
 
 /**
  * A trap of `EXIT` or `ERR` that runs when the failure stops the shell (`sure`), or may (`sure: false`: set on some
@@ -72,13 +77,18 @@ function either(lang: Lang, items: readonly string[]): string {
   return items.length < 3 ? items.join(' or ') : `${items.slice(0, -1).join(', ')} or ${items.at(-1)}`;
 }
 
-/** "If W fails" (en), "W が失敗すると" (ja); a test "is false". */
+/**
+ * "If W fails" (en), "W が失敗すると" (ja); a test "is false"; a command with statuses that are no error "fails, or
+ * exits with 1 (no line was selected)".
+ */
 function condition(lang: Lang, p: ErrexitStopParams): string {
   const names = p.what.map((w) => subject(lang, w));
   const all = either(lang, p.more ? [...names, lang === 'ja' ? 'ほかのコマンド' : 'another'] : names);
-  const test = p.what.length === 1 && !p.more && p.what[0].kind === 'test';
-  if (lang === 'ja') return `${all}${test ? 'が偽だと' : 'が失敗すると'}`;
-  return `If ${all} ${test ? 'is false' : 'fails'}`;
+  const one = p.what.length === 1 && !p.more ? p.what[0] : undefined;
+  const test = one?.kind === 'test';
+  const results = one?.kind === 'command' && one.results?.length ? either(lang, one.results.map((r) => (lang === 'ja' ? `${r.status}（${r.text.ja}）` : `${r.status} (${r.text.en})`))) : '';
+  if (lang === 'ja') return results ? `${all}が失敗するか、終了ステータス ${results}で終わると` : `${all}${test ? 'が偽だと' : 'が失敗すると'}`;
+  return results ? `If ${all} fails, or exits with ${results}` : `If ${all} ${test ? 'is false' : 'fails'}`;
 }
 
 /** The status the shell ends with: the command's, the pipeline's, 1 for a test, or that of the one that fails. */

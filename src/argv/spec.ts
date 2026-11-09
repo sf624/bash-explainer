@@ -241,7 +241,32 @@ export interface CommandSpec {
    * status 1 and does nothing (`Restriction`). Absent: nothing.
    */
   restricted?: Restriction;
+  /**
+   * The exit statuses of a program that are not 0 and not an error (`ExitMeaning`): grep's 1 (no line selected), diff's
+   * 1 (the files differ), buildifier's 4 (a check found something), buildozer's 3 (nothing changed). Any other status
+   * that is not 0 is a failure. The status model reads it (`StatusRule`, `results`), and `set -e` stops on these too.
+   */
+  exits?: readonly ExitMeaning[];
 }
+
+/**
+ * An exit status that is not 0 and not an error: `text`, what it says (`no line was selected`); `success`, the tool
+ * counts it as a success, the work being done already (buildozer's 3: no file needed a change), not as an answer of
+ * no (grep's 1). `when`: the calls that can give it, where not all (buildifier's 4 needs `-mode=check`, `-d` or
+ * `-lint=warn`); a word whose value is not known is undefined, and `when` says whether the call may give it then.
+ */
+export interface ExitMeaning {
+  readonly status: number;
+  readonly text: Text;
+  readonly success?: true;
+  readonly when?: (call: ExitCall) => boolean;
+}
+
+/**
+ * A call as `ExitMeaning.when` reads it: each option given, by the first of its spec's names (`-mode`, `--quiet`), with
+ * its value (undefined: none, or not known), and the operands' values (undefined when not known).
+ */
+export interface ExitCall { options: ReadonlyMap<string, string | undefined>; operands: readonly (string | undefined)[] }
 
 /**
  * The calls of a builtin a restricted shell refuses: every call (`{}`: `cd`), but with an option of `unless` (`pushd

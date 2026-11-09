@@ -8,6 +8,7 @@ import type { InvalidHow } from '../arith';
 import { explainArith } from './arith';
 import { explainAwk } from './awk';
 import { explainQueryWord, explainTargetPattern, TARGET_FLAVORS } from './bazel';
+import { explainBuildozerWord } from './buildozer';
 import { describeFindPattern } from './find';
 import { explainDate, explainEscapes, explainPrintf, printfNote } from './format';
 import { explainGetoptLong, explainGetoptShort } from './getopt';
@@ -112,4 +113,6 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   bazeltarget: (text, cx) => explainTargetPattern(text, cx.lang, TARGET_FLAVORS.bazeltarget),
   bazelquery: (text, cx) => explainQueryWord(text, cx.lang, TARGET_FLAVORS.bazelquery),
   bazelaquery: (text, cx) => explainQueryWord(text, cx.lang, TARGET_FLAVORS.bazelaquery),
+  // (An operand of buildozer: a command, `add deps //x`, or a label of the rules it works on.)
+  buildozer: (text, cx) => explainBuildozerWord(text, cx.lang),
 };

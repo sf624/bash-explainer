@@ -59,6 +59,16 @@ export const buildifier: Record<string, CommandSpec> = {
     parser: 'openssl',
     optionsFirst: true,
     helpCommand: 'buildifier -help',
+    exits: [{
+      status: 4,
+      text: tx('整形の必要なファイルか、検査の警告があった', 'a file needs formatting, or the lint found a warning'),
+      // (`-mode=check`, `diff` or `-d`, and `-lint=warn`; never with `-format`, which reports with status 0. A value not known may be one.)
+      when: ({ options }) => {
+        const mode = options.get('-mode');
+        const lint = options.get('-lint');
+        return !options.has('-format') && (options.has('-d') || (options.has('-mode') && (mode === undefined || mode === 'check' || mode === 'diff')) || (options.has('-lint') && (lint === undefined || lint === 'warn')));
+      },
+    }],
     positional: [tx('Starlark ファイル（`-r` ならディレクトリも、省略すると標準入力）', 'Starlark file or, with `-r`, directory (stdin if none)')],
   }),
 };

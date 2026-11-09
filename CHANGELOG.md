@@ -8,9 +8,11 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 - Each target pattern on a bazel command line says what it selects (`//app:main`, `//app/...`, `:all`, `-//app/legacy/...`), in `bazel query`, `cquery` and `aquery` too. A pattern bazel refuses (`//app/...:main`, `//app:`) is marked.
 - buildifier commands are explained: `buildifier -mode=check -lint=warn -r .` gets every option and its values, and a word after the first file is a file name, as buildifier reads it.
+- buildozer commands are explained: in `buildozer 'add deps //lib:x' //app:main`, the command, its arguments and each label say what they do. Under `set -e`, a warning says that buildozer's status 3 (no file changed) stops the script.
 
 ### Changed
 
+- Under `set -e`, the note on where the script stops also names the statuses that are no error: `grep` finding no line, `diff` finding a difference, `buildifier -mode=check` finding a file to format.
 - An invalid regex in a shell script is now an Error in Problems and `--check`: `grep -E '[a'`, `sed 's/\(a/x/'`, `grep -P '\q'`, `[[ $x =~ a[ ]]`. Before, only the regex's part of the explanation said so.
 
 ### Fixed
