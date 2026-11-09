@@ -294,8 +294,8 @@ function word(st: State, t: Lexeme, env: ReadonlySet<string>): void {
   if (value.startsWith('*')) fail(st, t.start, t.end, s('ターゲットのパターンは `*` で始められない（`:*` は書ける）', 'A target pattern cannot start with `*` (`:*` can)'), 'target literal must not begin with (*)');
   const r = explainTargetPattern(value, st.lang, st.flavor, !t.quoted);
   const at = t.quoted ? 1 : 0;
-  // (A value where the reading starts: the pattern depends on it.)
-  if (hasHole(value) && (!r || (!r.tokens.length && !r.note))) {
+  // (A value where the reading starts: the pattern depends on it, and its reader gives no parts. With a hole it gives no note.)
+  if (hasHole(value) && (!r || !r.tokens.length)) {
     st.out.push(holeStop(t.start));
     return;
   }
