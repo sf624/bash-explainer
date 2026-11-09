@@ -47,6 +47,11 @@ Checked with unused_deps 10.2.0 (bazel-contrib/buildtools; `unused_deps -h`, and
 - **Options.** The seven flags of `-h` (`-build_tool`, `-cquery`, `-extra_action_file`, `-extra_build_flags`, `-output_file`, `-disable_symlink_safety`, `-version`), read as Go's `flag` package does, as buildozer's. Each operand is a target pattern, read as for `bazel build`.
 - **Not yet said.** The exit status; the output is not shown as an example.
 
+### C and C++ compilers
+
+- **Variants of gcc.** `cc`, `c++`, `g++`, `clang` and `clang++` take gcc's command line. `g++` and `clang++` say they read `.c` files as C++ (g++ links libstdc++); `cc` and `c++` say they are the system's choice (GCC on most Linux systems, Clang on macOS and FreeBSD). Clang's `-Weverything` and `-fcolor-diagnostics` and GCC's `-fanalyzer` and `-fdiagnostics-color` belong to their own compiler only, checked with the real compilers.
+- **More options.** `-std`, `-x`, `-E`, `-S`, `-I`, `-L`, `-l`, `-D`, `-U`, `-pedantic`, `-w`, `-v`, `-pthread`, `-fsanitize`, `-fopenmp` and `-march`, for gcc too. A value in the same word is read: `-lm`, `-Iinc`, `-DX=1`, `-Wl,-rpath,.`. Before, `gcc -lm` was an unknown option.
+
 ## Changed
 
 ### Invalid regexes are Errors
