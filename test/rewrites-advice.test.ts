@@ -15,7 +15,7 @@ import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { runContained } from './support/contained';
 import { applyRewrite } from '../src/rewrite';
-import { programs } from './support/rewrites';
+import { factsOf, programs, rewrites as factRewrites } from './support/rewrites';
 
 const parser = createUnbashParser();
 
@@ -142,6 +142,10 @@ describe('the rewrite of `pattern-from-variable`', () => {
       ['grep --extended-regexp -e "$x" f', 'grep -F -e "$x" f'],
       ['grep "$x" -P f', 'grep "$x" -F f'],
       ['egrep -i "$x" f', 'grep -F -i "$x" f'],
+      // (An unquoted pattern is quoted too, as `unquoted-value-as-data` writes it: `-F` looks for the value as one word.)
+      ['grep $x f', 'grep -F "$x" f'],
+      ['grep -iE ${x} f', 'grep -iF "${x}" f'],
+      ['grep $x -P f', 'grep "$x" -F f'],
     ];
     assert.deepStrictEqual(cases.map(([src]) => rewrites(src, ID).map(([, s]) => s)), cases.map(([, want]) => [want]));
     // (Shown from the name to the pattern, or to the last word it changes.)
@@ -175,6 +179,19 @@ describe('the rewrite of `pattern-from-variable`', () => {
     assert.match(findings('grep -iE "$x" f', ID)[0].text, /To look for the value as it is, write `grep -iF "\$x"`, with `-w` \(whole words\) or `-x` \(whole lines\) as meant$/);
     const tree = parser.parse('grep "$x" f');
     assert.match(pitfallFindings(tree.root, 'ja', 0, 0, shellState(tree, 'bash'), 'bash')[0].text, /値をそのまま探すには `grep -F "\$x"` と書き、意図に合わせて/);
+  });
+  it('quotes the pattern as the note on an unquoted value does: the two rewrites, in either order, give one command (en, ja)', () => {
+    const src = "p='a b'\ngrep $p f\n";
+    const [[code, viaF]] = rewrites(src, ID);
+    assert.deepStrictEqual([code, viaF], ['grep -F "$p"', "p='a b'\ngrep -F \"$p\" f\n"]);
+    const [[quotedCode, viaQuotes]] = factRewrites(src, 'unquoted-value-as-data');
+    assert.deepStrictEqual([quotedCode, viaQuotes], ['"$p"', "p='a b'\ngrep \"$p\" f\n"]);
+    // (Quoted first, then `-F`: the same line; after `-F` with the quotes, the note on the unquoted value is gone.)
+    assert.deepStrictEqual(rewrites(viaQuotes, ID).map(([, s]) => s), [viaF]);
+    assert.deepStrictEqual(factsOf(viaF, 'unquoted-value-as-data'), []);
+    assert.match(findings(src, ID)[0].text, /To look for the value as it is, write `grep -F "\$p"`, with/);
+    const tree = parser.parse(src);
+    assert.match(pitfallFindings(tree.root, 'ja', 1, 1, shellState(tree, 'bash'), 'bash')[0].text, /値をそのまま探すには `grep -F "\$p"` と書き、意図に合わせて/);
   });
   it('leaves no finding of the check', () => {
     for (const src of ['grep "$x" f', 'grep -iE "$x" f', 'grep "$x" -P f', 'egrep -i "$x" f']) {
