@@ -901,7 +901,7 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 
 ## From the build of the variables' token texts (#757)
 
-### Variables bash sets, in other shells
+### Variables bash sets, in other shells (with `$_` in sh, #769)
 
 - **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
 - **Reason:** Rare in sh scripts, or unmeasured (no mksh installed); the texts and src/semantics/vars.ts are bash's for every shell.
@@ -968,7 +968,6 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - **Reason:** Rare spellings; the usual shebang and `# shellcheck shell=` directives are read right.
 - **Input and what is wrong:**
   - `#!/bin/bash` plus `# shellcheck shell=bogus`: `readShell` reads the unknown name as `default`, so the POSIX sh hint shows despite the bash shebang.
-  - A UTF-8 BOM before `#!/bin/bash` is not read as a shebang, so the hint shows (the kernel does not read it as one either: arguably right).
 
 ## From the reviews of the bazel target patterns (#765)
 
@@ -993,11 +992,8 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 - **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
 - **Reason:** Rare invocations (buildifier 10.2.0); the usual `buildifier file`, `-mode=check` and `-lint=warn` are said right.
 - **Input and what is wrong:**
-  - `-warnings=foo` (unknown name) exits 1 with a Go log line, not 2.
+  - `-warnings=foo` (unknown name) exits 1 with a Go log line; we say status 2.
   - With `-format`, a missing file gives status 3 with `"success":true` and an empty file list.
-  - `-mode=diff` with an unchanged file prints nothing and exits 0.
-  - `-tables=missing` gives status 2.
-  - `-allowsort`, `-buildifier_disable`: the comma-list semantics are not checked.
 
 ## From the reviews of the traps and set -e (#767, #774)
 
@@ -1014,12 +1010,11 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 ### shopt, exec and `cannotFail`: statuses that stop `set -e`
 
 - **Verdict:** dropped (YAGNI), 2026-11-09. Kind: `bug`.
-- **Reason:** Rare options and typos; the notes err on the cautious side.
+- **Reason:** Rare options, typos and forms; most err cautious, a few say too little where bash stops.
 - **Input and what is wrong:**
   - `shopt -q extglob | grep x`: `cannotFail` (src/semantics/status.ts:628) checks whether `fails` is set, not `failsOnly`, so the stage counts as one that cannot fail (matters only without pipefail).
   - `shopt -s array_expand_once` in 5.2 mode (a 5.3-only name): returns 1 and stops `set -e`; the error note says "status 1" but `mayFail` is false, so no stop sentence stands beside it.
   - `shopt -s nosuchopt` (a typo) gets no error token; bash returns 1 and `set -e` stops.
-  - `exec "$cmd"`, `exec "${@:-bash}"` come out unknown (cautious, not wrong).
   - `shopt -s execfail; exec /nonexistent || true` under `set -e`: bash exits 127 despite `|| true`.
   - `exec "$@"` when `$1` starts with `-` (usage error): bash prints ERR and EXIT, exits 2 (`set -e` stops); the model says `fails: 'never'`, no note.
   - `command exec "$@"` and `command exec /bin/app`: the note says "If `command` fails, `set -e` stops…"; bash never stops there (apart from a redirection).
@@ -1033,10 +1028,8 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `x=$(a || b && true)`: the `|| true` mask sees `||` and a last command that succeeds, so it says the line cannot fail; bash: status 1, the script stops. Fix: require the operator right before the last command to be `||`.
   - bash 5.3 `exit x` (non-numeric) fails, runs ERR and goes on without `set -e` (status 0); 5.2 exits 2, no ERR.
   - bash 5.3 `exit "$rc"` with a non-number goes on with status 2, so `set -e` stops and ERR runs; the model's `ends: 'shell'` holds only in 5.2 (5.3 mode gives no note).
-  - Several stop contexts on one line give one note each (`false; trap … EXIT; false`).
   - A top-level `return` in a script that is run (not sourced) fails with 2: ERR and EXIT run, `set -e` stops; no note (as for `return 0`).
   - `true | exit 3` has no note, but bash stops (ERR, EXIT, status 3).
-  - `command exec /opt/app` says "If `command` fails…".
   - `[[ x =~ $re ]]` with an invalid regex exits 2, but the note says "status 1".
   - A function named anywhere as an argument becomes "not closed" (src/semantics/env.ts:61/226: `echo build`, `ssh host deploy`), so its body's stop note says "the shell it runs in" and loses the trap. Fix: close only on arguments of commands that can run a shell function.
 
