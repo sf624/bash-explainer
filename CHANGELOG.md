@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.12.0
 
-Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+bazel command lines are read further: target patterns, the query language of `query`, `cquery` and `aquery`, and examples of their output, plus buildifier, buildozer and unused_deps. C++ compilers, Java tools, database clients, `rg`, `pv`, `socat` and `sshpass` are explained too. An unquoted variable used as a pattern gets a caveat, and an invalid regex in a script is now an Error.
+
+Details and examples: [docs/changes/0.12.0.md](https://github.com/sf624/bash-explainer/blob/v0.12.0/docs/changes/0.12.0.md).
 
 ### New
 
@@ -26,6 +28,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - A `/` inside `[…]` no longer ends a sed regex (`sed 's/[/]/x/'` replaces a slash), and `grep '\{1\}'` reads `{1}` as text, as GNU sed and grep do.
+
+[All changes](https://github.com/sf624/bash-explainer/compare/v0.11.0...v0.12.0)
 
 ## 0.11.0
 
