@@ -524,7 +524,7 @@ describe('words with an expansion read with the expansion as a hole', function (
     });
     it('only the readers that know a position of data claim a hole', () => {
       const cx: EmbeddedContext = {
-        lang: 'en', flavor: () => 'bre', trSet: () => ({ role: 'from', sets: [], complement: false, truncate: false }), letters: () => new Set(), given: () => false, records: () => false, bash: () => undefined, awkGnu: () => true, shell: undefined, invalid: () => 'plain' as never,
+        lang: 'en', flavor: () => 'bre', trSet: () => ({ role: 'from', sets: [], complement: false, truncate: false }), letters: () => new Set(), given: () => false, records: () => false, bash: () => undefined, awkGnu: () => true, shell: undefined, invalid: () => 'plain' as never, reached: () => true,
       };
       const claims = (ts: readonly EmbeddedToken[]): boolean => ts.some((t) => !!t.hole || claims(t.children));
       const hole = holeChar(0);

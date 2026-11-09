@@ -41,6 +41,7 @@ const FAULTS: Fault[] = [
   { code: 'bracket-close-glued', text: 'if [ -f /etc/passwd]; then echo ok; fi\n', tool: 'bash', fails: /missing .\]/ },
   { code: 'arith-invalid-number', text: 'echo $((09))\n', tool: 'bash', fails: /value too great for base/ },
   { code: 'bracket-missing-close', text: 'if [ -f /etc/passwd; then echo ok; fi\n', tool: 'bash', fails: /missing .\]/, fact: true },
+  { code: 'regex-bracket-unclosed', text: "grep -E '[a' /etc/passwd && echo ok\n", tool: 'bash', fails: /grep: Unmatched \[/, fact: true },
   { code: 'print', text: '#!/bin/sh\nprint ok\n', tool: 'dash', fails: /print: (command )?not found/, fact: true },
 ];
 

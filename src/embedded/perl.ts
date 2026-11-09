@@ -119,7 +119,7 @@ function splitTop(src: string, start: number, end: number, sep: RegExp): [number
 class PerlExplainer {
   private s: S;
 
-  constructor(private src: string, private lang: Lang) {
+  constructor(private src: string, private lang: Lang, private reached: boolean) {
     this.s = pick(lang);
   }
 
@@ -240,7 +240,7 @@ class PerlExplainer {
       const flags = text.slice(text.lastIndexOf(close) + 1);
       const fl = flags.includes('i') ? s('（大文字・小文字を区別しない）', ' (case-insensitive)') : '';
       return this.tok(start, end, 'pattern', s(`現在の行（\`$_\`）が正規表現 \`${src.slice(bodyStart, bodyEnd)}\` に一致するか${fl}`, `whether the line (\`$_\`) matches \`${src.slice(bodyStart, bodyEnd)}\`${fl}`),
-        shift(explainRegex(src.slice(bodyStart, bodyEnd), 'pcre', this.lang, regexOptions(open, close, flags)), bodyStart));
+        shift(explainRegex(src.slice(bodyStart, bodyEnd), 'pcre', this.lang, regexOptions(open, close, flags, this.reached)), bodyStart));
     }
     return this.tok(start, end, 'test', s(`条件 \`${text}\``, `condition \`${text}\``), this.atoms(start, end));
   }
@@ -277,7 +277,7 @@ class PerlExplainer {
     const pat = src.slice(patStart, patEnd);
     const rep = src.slice(repStart, repEnd);
     const kids: EmbeddedToken[] = [
-      this.tok(patStart, patEnd, 'pattern', s(`検索パターン（Perl の正規表現）${codeShown(pat, true)}`, `Pattern (Perl regex) ${codeShown(pat, false)}`), shift(explainRegex(pat, 'pcre', this.lang, regexOptions(open, close, flags)), patStart)),
+      this.tok(patStart, patEnd, 'pattern', s(`検索パターン（Perl の正規表現）${codeShown(pat, true)}`, `Pattern (Perl regex) ${codeShown(pat, false)}`), shift(explainRegex(pat, 'pcre', this.lang, regexOptions(open, close, flags, this.reached)), patStart)),
       this.tok(repStart, repEnd, 'string', s(`置換後の文字列 ${codeShown(rep, true, '', '`$1` などはグループの内容')}`, `Replacement ${codeShown(rep, false, '', '`$1`… are the groups')}`), [
         ...this.atoms(repStart, repEnd),
         // (With `e`, the replacement is code.)
@@ -339,17 +339,17 @@ class PerlExplainer {
   }
 }
 
-/** Explain Perl code given with -e. */
-export function explainPerl(src: string, lang: Lang): EmbeddedToken[] {
+/** Explain Perl code given with -e. `reached`: as `RegexOptions.reached`. */
+export function explainPerl(src: string, lang: Lang, reached = true): EmbeddedToken[] {
   // (`$$x`, `@$x`: the value is the name of a variable of perl's.)
   if (hasHole(src) && /[$@%&][\ufdd2-\ufdef]/.test(src)) return [holeStop(0)];
   // (The explainer reads any text and throws nothing of its own: an error from it is a bug, which shows.)
-  return new PerlExplainer(src, lang).statements(0, src.length);
+  return new PerlExplainer(src, lang, reached).statements(0, src.length);
 }
 
 /** The options for the regex of `m//` and `s///`: its delimiter, and with the flag `m` `^` and `$` stand at every line. */
-function regexOptions(open: string, close: string, flags: string): RegexOptions {
-  return { perl: true, ...(open === close ? { delimiter: close } : {}), ...(flags.includes('m') ? { unit: 'line' as const } : {}) };
+function regexOptions(open: string, close: string, flags: string, reached: boolean): RegexOptions {
+  return { perl: true, reached, ...(open === close ? { delimiter: close } : {}), ...(flags.includes('m') ? { unit: 'line' as const } : {}) };
 }
 
 /** How -n, -p, -a, -l, -i and -0 wrap the code, as one sentence. */

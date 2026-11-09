@@ -4,6 +4,7 @@ import { CARRIED, CLOSE_TEXT, OPEN_TEXT, type TokenEntry, tokenError, type Token
 import { ARGV_TEXTS } from './messages-tokens-argv';
 import { COMMAND_TEXTS } from './messages-tokens-commands';
 import { COMPOUND_TEXTS } from './messages-tokens-compound';
+import { REGEX_TEXTS } from './messages-tokens-regex';
 import { SHEBANG_TEXTS } from './messages-tokens-shebang';
 import { WORD_TEXTS } from './messages-tokens-words';
 
@@ -39,6 +40,7 @@ export const TOKEN_TEXTS = {
   ...ARGV_TEXTS,
   ...COMMAND_TEXTS,
   ...COMPOUND_TEXTS,
+  ...REGEX_TEXTS,
   ...SHEBANG_TEXTS,
   ...WORD_TEXTS,
   /** `env -S'"a' s`: the program refuses the string it would split (`why`: what is wrong with it). */

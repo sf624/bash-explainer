@@ -93,6 +93,7 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
     awkGnu: () => isGawk(cx),
     shell: cx.shell,
     invalid: () => invalidHow(cx.evidenceAt(a)),
+    reached: () => cx.reachedAt(a),
   };
   const read = EMBEDDED[lang](lit.text, ecx);
   const holes = lit.holes ? readHoles(cx, lit, lang, a, read) : undefined;

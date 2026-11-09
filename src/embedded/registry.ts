@@ -48,6 +48,8 @@ export interface EmbeddedContext {
   shell: Shell | undefined;
   /** How a constant the shell rejects is said where the text stands (`invalidHow`). */
   invalid(): InvalidHow;
+  /** Whether the shell gets to the command (`Explainer.reachedAt`): where it does not, a regex its program refuses is no problem. */
+  reached(): boolean;
 }
 
 type Explainer = (text: string, cx: EmbeddedContext) => Embedded | undefined;
@@ -57,17 +59,17 @@ const inRecords = (cx: EmbeddedContext): { unit?: 'text' } => (cx.records() ? { 
 
 const regex: Explainer = (text, cx) => {
   const flavor = cx.flavor();
-  return { tokens: flavor === 'fixed' ? [] : explainRegex(text, flavor, cx.lang, inRecords(cx)), note: flavorName(flavor, cx.lang) };
+  return { tokens: flavor === 'fixed' ? [] : explainRegex(text, flavor, cx.lang, { ...inRecords(cx), reached: cx.reached() }), note: flavorName(flavor, cx.lang) };
 };
 
 /** One explainer per embedded language; undefined when the text is not one of that language (`date` without `+`). */
 export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   regex,
-  sed: (text, cx) => ({ tokens: explainSed(text, cx.flavor() === 'ere' ? 'ere' : 'bre', cx.lang, cx.given('-n'), inRecords(cx).unit) }),
+  sed: (text, cx) => ({ tokens: explainSed(text, cx.flavor() === 'ere' ? 'ere' : 'bre', cx.lang, cx.given('-n'), inRecords(cx).unit, cx.reached()) }),
   jq: (text, cx) => ({ tokens: explainJq(text, cx.lang) }),
   yq4: (text, cx) => ({ tokens: explainJq(text, cx.lang, 'yq') }),
   yq3path: (text, cx) => explainYq3Path(text, cx.lang),
-  awk: (text, cx) => ({ tokens: explainAwk(text, cx.lang, cx.awkGnu()) }),
+  awk: (text, cx) => ({ tokens: explainAwk(text, cx.lang, cx.awkGnu(), cx.reached()) }),
   printf: (text, cx) => {
     const reader = cx.bash() ?? 'coreutils';
     // (How many values one use takes depends on the value of a hole in the format.)
@@ -89,7 +91,7 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   getoptshort: (text, cx) => explainGetoptShort(text, cx.lang),
   getoptlong: (text, cx) => explainGetoptLong(text, cx.lang),
   getopts: (text, cx) => explainGetopts(text, cx.lang),
-  perl: (text, cx) => ({ tokens: explainPerl(text, cx.lang), note: perlLoopNote(cx.letters(), cx.lang) }),
+  perl: (text, cx) => ({ tokens: explainPerl(text, cx.lang, cx.reached()), note: perlLoopNote(cx.letters(), cx.lang) }),
   gitformat: (text, cx) => explainGitFormat(text, cx.lang),
   gitdate: (text, cx) => explainGitDate(text, cx.lang),
   glob: (text, cx) => {

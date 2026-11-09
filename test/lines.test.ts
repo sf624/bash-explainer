@@ -323,7 +323,7 @@ describe('lines no other test reaches', () => {
       [`sed -e '1c\\' -e 'new' -e 't done' -e ':done'`, [/if an `s` succeeded, branch to "done"/]],
       [`jq '.. | numbers, $ENV.HOME, (foreach .[] as $x (0; . + $x)), (def f: 1; f), (.a / ","), env.PATH' f.json`,
         [/the input and all of its descendants/, /Foreach/, /division \(splits strings\)/]],
-      [`grep -P '(?i)foo(?<n>x)?a{2,}(b' f`, [/set matching options/, /2 or more times/, /missing closing parenthesis/]],
+      [`grep -P '(?i)foo(?<n>x)?a{2,}(b' f`, [/set matching options/, /2 or more times/, /No `\)` closes this group/]],
       [String.raw`sed 's/a\tb/x/' f`, [/(^|\n)\\t: /]],
       [`awk 'function f(a) { return a } { print | "sort"; if (x) continue; delete a[1]; getline; print $(NF-1), $(i+1) }'`,
         [/Defines the function `f`/, /return from the function/, /piped to the command "sort"/, /continue with the next iteration/, /delete the array element `a\[1\]`/, /read the next line/, /the second-to-last field/, /\$\(i\+1\)/]],
