@@ -122,6 +122,22 @@ export function has(parse: ArgvParse, ...names: string[]): boolean {
   return givenOptions(parse).some(({ role }) => named(role, names) && !(role.role === 'option' && role.disables));
 }
 
+/**
+ * Whether the last of the options that `names` name leaves it on or off (`--x`, `--nox`, `--x=false`: `disables`), as a
+ * program that reads its options in order does; undefined when none is given.
+ */
+export function switched(parse: ArgvParse, ...names: string[]): boolean | undefined {
+  let on: boolean | undefined;
+  for (const { role } of givenOptions(parse)) if (named(role, names)) on = !(role.role === 'option' && role.disables);
+  return on;
+}
+
+/** The innermost subcommand the words of `parse` run (`bazel query …`: `query`), with its spec and the parse of its words; the command itself when it has none. */
+export function innermost(spec: CommandSpec, parse: ArgvParse): { spec: CommandSpec; parse: ArgvParse } {
+  const sub = parse.roles.find(({ role }) => role.role === 'subcommand')?.role as Extract<ArgRole, { role: 'subcommand' }> | undefined;
+  return sub ? innermost(sub.spec, sub.parse) : { spec, parse };
+}
+
 /** The values given to the option that `names` name, in order: in the option's word (`-efoo`) or in the words after it. */
 export function values(parse: ArgvParse, ...names: string[]): GivenValue[] {
   const out: GivenValue[] = [];

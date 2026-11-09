@@ -152,6 +152,26 @@ export interface QueryError { start: number; end: number; says: string }
 /** The parse stopped at an error, as bazel's does. */
 class Stop extends Error {}
 
+/**
+ * The tree of an expression as bazel reads it, for the examples that evaluate it (src/examples/bazelquery.ts): a target
+ * pattern (`word`, its text without quotes), a variable, `let`, `set(…)`, an operator, a function and its arguments.
+ */
+export type QueryNode =
+  | { kind: 'word'; text: string }
+  | { kind: 'variable'; name: string }
+  | { kind: 'let'; name: string; value: QueryNode; body: QueryNode }
+  | { kind: 'set'; items: QueryNode[] }
+  | { kind: 'operator'; op: QueryOperator; left: QueryNode; right: QueryNode }
+  | { kind: 'call'; name: string; args: QueryArgument[] };
+/** What an operator does: `except` and `-`, `intersect` and `^`, `union` and `+`. */
+export type QueryOperator = 'except' | 'intersect' | 'union';
+/** An argument of a function: an expression, a whole number, or a word (a regex, an attribute's name, a configuration). */
+export type QueryArgument = QueryNode | { kind: 'number'; value: number } | { kind: 'text'; text: string };
+
+const OPERATOR_OF: Readonly<Record<string, QueryOperator>> = { except: 'except', '-': 'except', intersect: 'intersect', '^': 'intersect', union: 'union', '+': 'union' };
+/** What stands in the tree for a part where a value is (a hole): the tree is then not given (`State.holed`). */
+const HOLED: QueryNode = { kind: 'set', items: [] };
+
 interface State {
   src: string;
   toks: Lexeme[];
@@ -165,6 +185,8 @@ interface State {
   errors: QueryError[];
   /** The `(` that are open, for an end too soon. */
   open: Lexeme[];
+  /** A value stands somewhere in the expression (a hole): its tree is not known. */
+  holed?: boolean;
 }
 
 const stops = (st: State, says: string): string => st.s(`bazel は「${says}」で止まる`, `bazel stops with "${says}"`);
@@ -225,8 +247,8 @@ function glued(left: Lexeme, plus: Lexeme, right: Lexeme | undefined): boolean {
 }
 
 /** `expr`: operands joined by `except`, `intersect`, `union` and their signs, from the left. */
-function expression(st: State, env: ReadonlySet<string>): void {
-  primary(st, env);
+function expression(st: State, env: ReadonlySet<string>): QueryNode {
+  let tree = primary(st, env);
   let chain = 0;
   for (let t = peek(st); t && (t.kind === 'op' || (t.kind === 'keyword' && OPERATORS[t.value])); t = peek(st)) {
     st.k++;
@@ -235,72 +257,77 @@ function expression(st: State, env: ReadonlySet<string>): void {
     const joined = t.value === '+' && glued(st.toks[st.k - 2], t, st.toks[st.k]);
     const order = chain > 1 ? st.s('。`except`・`intersect`・`union` の結びつきは同じで、左から順に計算する（`a - b + c` は `(a - b) + c`）', '; `except`, `intersect` and `union` bind alike, from the left (`a - b + c` is `(a - b) + c`)') : '';
     st.out.push({ start: t.start, end: t.end, kind: 'operator', explanation: joined ? tokenSaid(st.lang, 'bazel-query-plus-joined') : st.s(ja, en) + order, children: [] });
-    primary(st, env);
+    tree = { kind: 'operator', op: OPERATOR_OF[t.value], left: tree, right: primary(st, env) };
   }
+  return tree;
 }
 
-function primary(st: State, env: ReadonlySet<string>): void {
+function primary(st: State, env: ReadonlySet<string>): QueryNode {
   const t = next(st);
   if (t.kind === 'keyword' && t.value === 'let') return letExpression(st, t, env);
   if (t.kind === 'keyword' && t.value === 'set') return setExpression(st, t, env);
   if (t.kind === '(') {
     st.open.push(t);
-    expression(st, env);
+    const inner = expression(st, env);
     expect(st, ')');
     st.open.pop();
-    return;
+    return inner;
   }
   if (t.kind !== 'word') unexpected(st, t);
   if (peek(st)?.kind === '(') return call(st, t, env);
-  word(st, t, env);
+  return word(st, t, env);
 }
 
 /** `let v = e in body`: `$v` is the targets of `e` in `body`, which runs as far as it can. */
-function letExpression(st: State, t: Lexeme, env: ReadonlySet<string>): void {
+function letExpression(st: State, t: Lexeme, env: ReadonlySet<string>): QueryNode {
   const s = st.s;
   const name = next(st);
   if (name.kind !== 'word') unexpected(st, name);
   st.out.push({ start: t.start, end: t.end, kind: 'keyword', explanation: s(`変数 \`${name.value}\` に \`=\` の後の式のターゲットを入れ、\`in\` の後の式で \`$${name.value}\` として使う`, `Binds the variable \`${name.value}\` to the targets of the expression after \`=\`, as \`$${name.value}\` in the expression after \`in\``), children: [] });
-  if (hasHole(name.value)) st.out.push(holeStop(name.start));
-  else if (!NAME.test(name.value)) flag(st, name.start, name.end, s('変数の名前は英字・数字・`_` で、数字では始まらない', 'A variable\'s name is letters, digits and `_`, not starting with a digit'), `invalid variable name '${name.value}'`);
+  if (hasHole(name.value)) {
+    st.out.push(holeStop(name.start));
+    st.holed = true;
+  } else if (!NAME.test(name.value)) flag(st, name.start, name.end, s('変数の名前は英字・数字・`_` で、数字では始まらない', 'A variable\'s name is letters, digits and `_`, not starting with a digit'), `invalid variable name '${name.value}'`);
   else st.out.push({ start: name.start, end: name.end, kind: 'variable', explanation: s(`変数 \`${name.value}\``, `The variable \`${name.value}\``), children: [] });
   expect(st, '=');
-  expression(st, env);
+  const value = expression(st, env);
   const inn = expect(st, 'keyword', 'in');
   st.out.push({ start: inn.start, end: inn.end, kind: 'keyword', explanation: s(`この後の式（式の終わりか、閉じる \`)\` まで）で \`$${name.value}\` を使える`, `\`$${name.value}\` stands in the expression after it (to the end, or to the closing \`)\`)`), children: [] });
-  expression(st, new Set([...env, name.value]));
+  return { kind: 'let', name: name.value, value, body: expression(st, new Set([...env, name.value])) };
 }
 
 /** `set(a b c)`: the targets of the words, separated by blanks. */
-function setExpression(st: State, t: Lexeme, env: ReadonlySet<string>): void {
+function setExpression(st: State, t: Lexeme, env: ReadonlySet<string>): QueryNode {
   st.out.push({ start: t.start, end: t.end, kind: 'keyword', explanation: st.s('かっこの中の語（空白で区切る。`,` ではない）のターゲットを合わせたもの', 'The targets of the words in its parentheses, separated by blanks (not commas)'), children: [] });
   const open = expect(st, '(');
   st.open.push(open);
+  const items: QueryNode[] = [];
   for (let w = next(st); w.kind !== ')'; w = next(st)) {
     if (w.kind !== 'word') unexpected(st, w);
-    word(st, w, env);
+    items.push(word(st, w, env));
   }
   st.open.pop();
+  return { kind: 'set', items };
 }
 
 /** A word where an expression goes: a variable bound by `let`, or a target pattern. */
-function word(st: State, t: Lexeme, env: ReadonlySet<string>): void {
+function word(st: State, t: Lexeme, env: ReadonlySet<string>): QueryNode {
   const s = st.s;
   const { value } = t;
   // (The whole word is a value: bazel reads the value as the query language.)
   if (!t.quoted && value.length === 1 && isHole(value)) {
     st.out.push(holeToken(t.start, 'query-word'));
-    return;
+    return holed(st);
   }
   if (value.startsWith('$') && hasHole(value)) {
     st.out.push(holeStop(t.start));
-    return;
+    return holed(st);
   }
   if (VARIABLE.test(value)) {
     const name = value.slice(1);
     if (env.has(name)) st.out.push({ start: t.start, end: t.end, kind: 'variable', explanation: s(`\`let\` で変数 \`${name}\` に入れたターゲット`, `The targets \`let\` bound to the variable \`${name}\``), children: [] });
     else flag(st, t.start, t.end, s(`変数 \`${name}\` を入れる \`let\` がこの外にない`, `No \`let\` around this binds \`${name}\``), `undefined variable '${name}'`);
-    return;
+    return { kind: 'variable', name };
   }
   // (Quoted too: bazel checks the word's text.)
   if (value.startsWith('*')) fail(st, t.start, t.end, s('ターゲットのパターンは `*` で始められない（`:*` は書ける）', 'A target pattern cannot start with `*` (`:*` can)'), 'target literal must not begin with (*)');
@@ -309,14 +336,21 @@ function word(st: State, t: Lexeme, env: ReadonlySet<string>): void {
   // (A value where the reading starts: the pattern depends on it, and its reader gives no parts. With a hole it gives no note.)
   if (hasHole(value) && (!r || !r.tokens.length)) {
     st.out.push(holeStop(t.start));
-    return;
+    return holed(st);
   }
   const parts = shift(r?.tokens ?? [], t.start + at);
   st.out.push({ start: t.start, end: t.end, kind: 'string', explanation: r?.note ?? s('ターゲットのパターン', 'A target pattern'), children: parts });
+  return hasHole(value) ? holed(st) : { kind: 'word', text: value };
+}
+
+/** A part of the expression where a value stands: the tree is not known. */
+function holed(st: State): QueryNode {
+  st.holed = true;
+  return HOLED;
 }
 
 /** A function and its arguments, as the function takes them. */
-function call(st: State, name: Lexeme, env: ReadonlySet<string>): void {
+function call(st: State, name: Lexeme, env: ReadonlySet<string>): QueryNode {
   const s = st.s;
   const f = name.value;
   if (hasHole(f)) {
@@ -338,6 +372,7 @@ function call(st: State, name: Lexeme, env: ReadonlySet<string>): void {
   const open = expect(st, '(');
   st.open.push(open);
   let seen = 0;
+  const args: QueryArgument[] = [];
   for (;;) {
     const t = peek(st);
     if (!t) prematureEnd(st);
@@ -351,7 +386,7 @@ function call(st: State, name: Lexeme, env: ReadonlySet<string>): void {
       if (seen >= fn.args.length && !fn.more) fail(st, t.start, t.end, s(`${codeSpan(f)} の引数が多すぎる`, `Too many arguments for ${codeSpan(f)}`), `too many arguments to function '${f}'`);
       st.k++;
     }
-    argument(st, fn.args[Math.min(seen, fn.args.length - 1)], env);
+    args.push(argument(st, fn.args[Math.min(seen, fn.args.length - 1)], env));
     seen++;
   }
   st.open.pop();
@@ -359,9 +394,10 @@ function call(st: State, name: Lexeme, env: ReadonlySet<string>): void {
   if (fn.evaluated && seen < fn.evaluated) {
     flag(st, name.start, name.end, s(`${codeSpan(f)} の引数は${fn.evaluated}つ`, `${codeSpan(f)} takes ${fn.evaluated} arguments`), `must have exactly ${fn.evaluated} arguments`);
   }
+  return { kind: 'call', name: f, args };
 }
 
-function argument(st: State, arg: Arg, env: ReadonlySet<string>): void {
+function argument(st: State, arg: Arg, env: ReadonlySet<string>): QueryArgument {
   if (arg.kind === 'expr') return expression(st, env);
   const t = next(st);
   if (t.kind !== 'word') unexpected(st, t);
@@ -369,43 +405,52 @@ function argument(st: State, arg: Arg, env: ReadonlySet<string>): void {
   const [ja, en] = arg.text!;
   // (The whole argument is a value, in an unquoted word: what the value is read as.)
   const value = !t.quoted && t.value.length === 1 && isHole(t.value);
+  if (hasHole(t.value)) st.holed = true;
   if (arg.kind === 'int') {
     if (value) st.out.push({ start: t.start, end: t.end, kind: 'number', explanation: s(ja, en), children: [holeToken(t.start, 'query-number')] });
     else if (hasHole(t.value)) st.out.push(holeStop(t.start));
     else if (!/^\d+$/.test(t.value) || Number(t.value) > INT_MAX) fail(st, t.start, t.end, s('ここには0以上の整数を書く', 'A whole number goes here, 0 or more'), 'expected an integer literal');
     else st.out.push({ start: t.start, end: t.end, kind: 'number', explanation: s(ja, en), children: [] });
-    return;
+    return { kind: 'number', value: Number(t.value) };
   }
   if (arg.kind === 'word') {
     if (value) st.out.push({ start: t.start, end: t.end, kind: 'string', explanation: s(ja, en), children: [holeToken(t.start, 'query-argument')] });
     else if (hasHole(t.value)) st.out.push(holeStop(t.start));
     else st.out.push({ start: t.start, end: t.end, kind: 'string', explanation: s(ja, en), children: [] });
-    return;
+    return { kind: 'text', text: t.value };
   }
   // (A regex: Java's, which the PCRE reader reads as bazel's; a value in an unquoted word could end the word, which it does not say.)
-  if (hasHole(t.value) && !t.quoted) {
-    st.out.push(holeStop(t.start));
-    return;
-  }
-  const children = shift(explainRegex(t.value, 'pcre', st.lang, { tool: 'bazel', unit: 'text', reached: st.line.reached ?? true }), t.start + (t.quoted ? 1 : 0));
-  st.out.push({ start: t.start, end: t.end, kind: 'pattern', explanation: s(ja, en), children });
+  if (hasHole(t.value) && !t.quoted) st.out.push(holeStop(t.start));
+  else st.out.push({ start: t.start, end: t.end, kind: 'pattern', explanation: s(ja, en), children: shift(explainRegex(t.value, 'pcre', st.lang, { tool: 'bazel', unit: 'text', reached: st.line.reached ?? true }), t.start + (t.quoted ? 1 : 0)) });
+  return { kind: 'text', text: t.value };
 }
 
 /** Read a query expression: its tokens, and the mistakes bazel stops at (each an error token too). */
-export function readQuery(src: string, command: QueryCommand, line: QueryLine, lang: Lang, flavor: TargetFlavor): { tokens: EmbeddedToken[]; errors: QueryError[] } {
+export function readQuery(src: string, command: QueryCommand, line: QueryLine, lang: Lang, flavor: TargetFlavor): { tokens: EmbeddedToken[]; errors: QueryError[]; tree?: QueryNode } {
   const st: State = { src, toks: lex(src), k: 0, command, line, lang, s: pick(lang), flavor, out: [], errors: [], open: [] };
+  let tree: QueryNode | undefined;
   try {
     // (bazel reads the whole text into tokens first: a quote left open is said before any other mistake.)
     const unclosed = st.toks.find((t) => t.unclosed);
     if (unclosed) unexpected(st, unclosed);
-    expression(st, new Set());
+    const read = expression(st, new Set());
     const rest = peek(st);
     if (rest) unexpected(st, rest, true);
+    // (Only an expression bazel takes whole, with no value in it, has a tree.)
+    if (!st.errors.length && !st.holed) tree = read;
   } catch (e) {
     /* c8 ignore next */
     if (!(e instanceof Stop)) throw e;
   }
-  return { tokens: st.out, errors: st.errors };
+  return { tokens: st.out, errors: st.errors, ...(tree ? { tree } : {}) };
+}
+
+/**
+ * The tree of a query expression of `command` as bazel reads it (`QueryNode`), for the examples that evaluate it; undefined
+ * where bazel stops at a mistake of it, or a value stands in it. The same reading as the explanation's (`readQuery`).
+ */
+export function queryTree(src: string, command: QueryCommand): QueryNode | undefined {
+  return readQuery(src, command, {}, 'en', 'query').tree;
 }
 
 /**

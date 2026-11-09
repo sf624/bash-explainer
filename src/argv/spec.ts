@@ -230,6 +230,13 @@ export interface CommandSpec {
    */
   layouts?: LayoutAlt[];
   /**
+   * The runner that works out what it prints from its words, for the examples of the commands after it in a pipeline
+   * (src/examples/runners.ts; docs/design/sources.md, M6: a runner chosen by the spec, not by the command's name):
+   * `bazel-query` and `bazel-cquery`, an expression run over a made-up workspace. On the spec of the subcommand that has
+   * it (`bazel query`). (Made-up lines of a layout its options choose are `layouts`; what it prints made of its words, `prints`.)
+   */
+  runner?: RunnerKind;
+  /**
    * It downloads what the URLs among its operands name, and writes it to its standard output (`stdout`: curl) or to a
    * file named after each URL (`file`: wget). An option value with `io: 'write'` writes it to the file the value
    * names instead, `-` being the standard output (`curl -o f`, `wget -O -`); an option of `elsewhere` writes it to a
@@ -278,6 +285,9 @@ export interface ExitCall { options: ReadonlyMap<string, string | undefined>; op
  * checked with bash 5.2 and 5.3.
  */
 export interface Restriction { options?: string[]; unless?: string[]; unlessWord?: RegExp; command?: true; slash?: 'operand' | string; namesOption?: true }
+
+/** The runners of src/examples/runners.ts (`CommandSpec.runner`). */
+export type RunnerKind = 'bazel-query' | 'bazel-cquery';
 
 /** The layouts of output that src/examples/layouts.ts makes up. */
 export type Layout = 'ps' | 'ps-bsd-u' | 'ps-full' | 'ls' | 'ls-long' | 'ls-long-all' | 'ls-long-human' | 'df-human' | 'who' | 'env';

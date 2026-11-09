@@ -104,7 +104,7 @@ export type TargetFlavor = 'build' | 'query';
 export const TARGET_FLAVORS = { bazeltarget: 'build', bazelquery: 'query', bazelcquery: 'query', bazelaquery: 'build' } as const satisfies Record<string, TargetFlavor>;
 
 /** The pattern's label as bazel writes it (`@repo//app:main`), for one target. */
-function labelOf(p: TargetPattern): string {
+export function labelOf(p: TargetPattern): string {
   const repo = p.repo ? `${p.repo.canonical ? '@@' : '@'}${p.repo.name}` : '';
   return `${repo}${p.absolute ? '//' : ''}${p.pkg}:${p.name}`;
 }
