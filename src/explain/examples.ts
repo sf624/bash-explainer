@@ -21,7 +21,7 @@ import * as pipelines from '../examples/pipeline';
 import { sectionMarks, type StageMarks } from '../examples/marks';
 import { MAX_SHOWN_LINES, pipedOutput, type Stage } from '../examples/pipeline';
 import { type JsRegex, regexExamples } from '../examples/regex';
-import { scriptRegex } from '../examples/regexguard';
+import { type NotComputedId, scriptRegex } from '../examples/regexguard';
 import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
 import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
@@ -184,7 +184,9 @@ type MadeUpValue = { code: string; value: string };
  * What the examples make up for what the first stage of a pipeline prints: lines of a layout (env's, with the environment it
  * prints), or what the runner its spec chooses prints (`bazel query`: a query of a made-up workspace, with the note that says so).
  */
-type MadeUp = { kind: Layout; environment?: ReadonlyMap<string, string> } | { run: SourceRun };
+type MadeUp = Shown | { refused: NotComputedId };
+/** Made-up lines that can be shown (`MadeUp` but a runner's run the guard refused). */
+type Shown = { kind: Layout; environment?: ReadonlyMap<string, string> } | { run: SourceRun };
 
 /** The stages of pipelines read so far on the line (`pipelineStage`). */
 const PIPELINE_STAGES = memoKey<PipelineStage | undefined>('pipeline stages');
@@ -327,7 +329,9 @@ function wholeExample(cx: Explainer, n: SyntaxNode): Example | undefined {
   const src = withSystemFiles(p.src);
   // A later stage that reads a file does not read what the stages before it write (`printf … | grep -e -v foo`).
   if (files.slice(1).some(Boolean)) return undefined;
-  // A first stage that prints a layout the examples make up (`ps aux`): its made-up lines go through the others.
+  // A first stage that prints a layout the examples make up (`ps aux`): its made-up lines go through the others. (A runner
+  // the guard refused says so, as an example it refuses does.)
+  if (p.layout && 'refused' in p.layout) return commandExamples.notComputed('pipeline', cx.s('例（パイプライン全体）', 'Example (the whole pipeline)'), cx.lang, p.layout.refused);
   if (p.layout) return sampledPipeline(cx, n, p.layout, stages, runs, p.values);
   // Several files read as one stream; a first stage that works on each apart (`EachFile`: head, grep) is not
   // followed, nor one that reads a file twice.
@@ -362,7 +366,7 @@ const cap = (lines: string[]) => (lines.length > MAX_SHOWN_LINES ? [...lines.sli
  * made-up lines, and what each stage after it makes of them. They are shown as they are, not in a box to edit: the
  * columns of a table stay lined up (a box wraps its long lines).
  */
-function sampledPipeline(cx: Explainer, n: SyntaxNode, layout: MadeUp, stages: Stage[], runs: ReadonlySet<Stage>, values: readonly MadeUpValue[]): Example | undefined {
+function sampledPipeline(cx: Explainer, n: SyntaxNode, layout: Shown, stages: Stage[], runs: ReadonlySet<Stage>, values: readonly MadeUpValue[]): Example | undefined {
   const sample = madeUp(cx, n, layout);
   const rest = stages.slice(1);
   const ex = pipelines.pipelineExample(rest, true, sample);
@@ -458,13 +462,17 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     const values: MadeUpValue[] = [];
     const regex = regexWords(parse, spec ? impliedOptions(program, spec) : []);
     let inside = false;
+    // (Whether each argument gave one word, as the parse reads it: `$e` empty gives none, `{a,b}` two.)
+    let aligned = true;
     const words = args.flatMap((a, k) => {
       const own = exampleWords(cx, [a], !!spec?.prints);
       const made = own.some((w) => w.value === undefined) && !bracesApply(cx, a) ? madeUpWords(cx, cmd, a) : undefined;
-      if (!made) return own.map((w) => w.value);
+      const got = made ? made.words : own.map((w) => w.value);
+      if (got.length !== 1) aligned = false;
+      if (!made) return got;
       pushAll(values, made.values);
       if (made.values.length && regex.includes(k)) inside = true;
-      return made.words;
+      return got;
     });
     const stage: Stage = { cmd: program.split('/').pop()!, words, text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}), ...(spec?.prints === 'words' && echoMayReadEscapes(cx, cmd) ? { escapes: true } : {}), ...(inside ? { inside } : {}) };
     const source = inputSource(cx, cmd, parse, args, spec);
@@ -473,8 +481,8 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     // (The layout of a program, or what the runner of its spec makes of its words (`bazel query`): what it prints.)
     const first = i === 0 && res.kind === 'file';
     const alt = first ? layoutOf(spec, parse) : undefined;
-    const run = first && spec && !alt && words.length === args.length && !readsFields(parse) ? sourceRun(spec, parse, words, cx.lang) : undefined;
-    const layout = alt ? madeUpLayout(cx, cmd, alt) : run && { run };
+    const run = first && spec && !alt && aligned && !readsFields(parse) ? sourceRun(spec, parse, words, cx.lang) : undefined;
+    const layout = alt ? madeUpLayout(cx, cmd, alt) : run && ('refused' in run ? run : { run });
     return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs, ...(layout ? { layout } : {}), values };
   })();
   stages.set(cmd, read);
@@ -538,6 +546,7 @@ function pipedLines(cx: Explainer, n: SyntaxNode, index: number): Piped {
   const p = pipelineStages(cx, n, index);
   if (!p) return { by };
   if (p.layout && !p.files.slice(1).some(Boolean)) {
+    if ('refused' in p.layout) return { by };
     const lines = pipedOutput(p.stages.slice(1), madeUp(cx, n, p.layout));
     return lines ? { by, lines, sample: true } : { by };
   }
@@ -598,7 +607,7 @@ function argvOf(cx: Explainer, cmd: SyntaxNode): Run | undefined {
 }
 
 /** Made-up lines of what the first stage of pipeline `n` prints in `layout`, with the stages run as ps sees them. */
-function madeUp(cx: Explainer, n: SyntaxNode, layout: MadeUp): string[] {
+function madeUp(cx: Explainer, n: SyntaxNode, layout: Shown): string[] {
   if ('run' in layout) return layout.run.lines;
   const procs = n.namedChildren.map((c) => argvOf(cx, c));
   // (env's words are all known: options.)

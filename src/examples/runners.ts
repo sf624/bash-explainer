@@ -6,7 +6,7 @@ import { innermost } from '../argv/query';
 import type { CommandSpec, RunnerKind } from '../argv/spec';
 import type { Lang } from '../i18n';
 import { bazelQuerySource } from './bazelquery';
-import { guarded } from './regexguard';
+import { guarded, type NotComputedId } from './regexguard';
 
 /** What a source runner prints, and the note that says what of it is made up (`ターゲットは架空の…`). */
 export interface SourceRun { lines: string[]; note: string }
@@ -22,11 +22,11 @@ const SOURCES: Readonly<Record<RunnerKind, SourceRunner>> = {
 /**
  * What the command of `spec` prints of its words, by the runner its spec, or that of the subcommand its words run, chooses
  * (`bazel query …`); undefined where it has none, or the runner does not follow the words. A run the guard refuses
- * (src/examples/regexguard.ts: a regex of the words, the steps of the evaluation) has no output either.
+ * (src/examples/regexguard.ts: a regex of the words, the steps of the evaluation) gives the note that says why (`refused`).
  */
-export function sourceRun(spec: CommandSpec, parse: ArgvParse, words: readonly (string | undefined)[], lang: Lang): SourceRun | undefined {
+export function sourceRun(spec: CommandSpec, parse: ArgvParse, words: readonly (string | undefined)[], lang: Lang): SourceRun | { refused: NotComputedId } | undefined {
   const leaf = innermost(spec, parse);
   const kind = leaf.spec.runner;
   if (!kind) return undefined;
-  return guarded(() => SOURCES[kind](leaf.parse, words, lang), () => undefined);
+  return guarded<SourceRun | { refused: NotComputedId } | undefined>(() => SOURCES[kind](leaf.parse, words, lang), (refused) => ({ refused }));
 }
