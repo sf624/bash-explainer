@@ -422,6 +422,10 @@ function fixedStrings(r: SpecRun, implied: boolean, w: SyntaxNode): Rewrite | un
     else edits.push({ start: node.startIndex, end: node.endIndex, text: `'${`${value!.slice(0, role.part![0])}F${value!.slice(role.part![1])}`.replace(/'/g, "'\\''")}'` });
   }
   if (!edits.length) edits.push({ start: name.endIndex, end: name.endIndex, text: ' -F' });
+  // (The pattern in double quotes, as the note on an unquoted value suggests (`unquoted-value-as-data`): `grep -F "$p"`
+  // looks for the value as one word, which `grep -F $p` would split or glob.)
+  const quoted = quoteExpansions(w);
+  if (quoted !== undefined && quoted !== w.text) edits.push({ start: w.startIndex, end: w.endIndex, text: quoted });
   return editSpan(name, last, edits);
 }
 
