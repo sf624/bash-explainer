@@ -4,3 +4,8 @@
  * its own, so that what links to Python's documentation (src/references.ts, which the views read) imports no reader of Python.
  */
 export const PYTHON_REFERENCE = '3.15';
+
+/** The URL of a page of Python's documentation of the reference release (`library/re.html#functions`). */
+export function pythonDocs(page: string): string {
+  return `https://docs.python.org/${PYTHON_REFERENCE}/${page}`;
+}
