@@ -1,5 +1,7 @@
 [
   {"file":"src/examples/bazelquery.ts","text":"case 'kind'","count":1,"kind":"not-a-name","reason":"the function `kind()` of the bazel query language, which the evaluator runs, not the command kind (Kubernetes in Docker)"},
+  {"file":"src/examples/bazelquery.ts","text":"KEEPS.has(n.name)","count":1,"kind":"not-a-name","reason":"the functions of the bazel query language whose order cquery keeps (`kind()` among them), not commands"},
+  {"file":"src/examples/bazelquery.ts","text":"c === '['","count":2,"kind":"not-a-name","reason":"the `[` that opens a class of a Java regex (`javaReadsAsPcre`), not the `[` builtin"},
   {"file":"src/examples/getopt.ts","text":"/num|count|level|port|size|limit|max|min|jobs|depth|timeout|retr|verbose/i.test(name)","count":1,"kind":"not-a-name","reason":"a regular expression of words that guesses an option's kind from its long name (`file`, `path`, `log`, `dir`… are commands by chance), not a command"},
   {"file":"src/examples/getopt.ts","text":"/out|file|path|log|config|conf|input|dir/i.test(name)","count":1,"kind":"not-a-name","reason":"a regular expression of words that guesses an option's kind from its long name (`file`, `path`, `log`, `dir`… are commands by chance), not a command"},
   {"file":"src/examples/getopt.ts","text":"body[k + 1] === ':'","count":2,"kind":"not-a-name","reason":"the `:` of a getopt option string (`ab:c::`), not the `:` builtin"},

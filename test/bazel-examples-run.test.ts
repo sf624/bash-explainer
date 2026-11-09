@@ -14,6 +14,7 @@ import { runQuery, type QueryOutput, type QueryRun } from '../src/examples/bazel
 import { BAZEL_CC, type Workspace } from '../src/examples/bazelworkspace';
 import { guarded } from '../src/examples/regexguard';
 import { sourceRun } from '../src/examples/runners';
+import { fact } from '../src/messages';
 import { explain } from './support/explain';
 
 interface Row { command: 'query' | 'cquery' | 'aquery'; options?: string[]; expression: string; status: number; output?: string[]; targets?: string[] }
@@ -44,6 +45,7 @@ const EXAMPLES_NOT_COMPUTED: Record<string, string> = {
   'query //nosuch:target': 'an error: no such package',
   'cquery --noimplicit_deps deps(//app:main, 1)': 'cquery prints the dependencies in an order of its own',
   'cquery deps(//tools:version, 1)': 'cquery: the toolchains and platforms',
+  'cquery //lib:greet.cc + //lib:greet.h': 'cquery prints the operands of a set operator in an order of its own (`//util:text + //app:main` prints `//util:text` first)',
   'cquery --output=files //lib:greet': 'the output `files`',
 };
 
@@ -94,6 +96,7 @@ const EXPRESSIONS_NOT_COMPUTED: [RegExp, string][] = [
   [/^c?query (?:executables|buildfiles|loadfiles|siblings|some|same_pkg_direct_rdeps|visible|allrdeps|rbuildfiles|config)\b/, 'a function the evaluator does not follow'],
   [/config\(/, 'cquery\'s `config`'],
   [/^cquery (?:deps|rdeps|somepath|allpaths|labels)\b/, 'cquery: a function that walks the configured graph'],
+  [/^cquery .*(?: \+ | union | except | intersect |\^|-)/, 'cquery: a set operator, whose operands cquery prints in an order of its own'],
   [/^query app$/, 'a pattern relative to the current directory'],
   [/^query filter\("(?:\[\\w-\.\]|\\p\{L\})"/, 'a Java regex the examples have no JavaScript one for'],
 ];
@@ -107,7 +110,9 @@ describe('the query expressions over test/fixtures/bazel, as bazel gave their ta
       const got = evaluate(SCRIPTS, row);
       const why = EXPRESSIONS_NOT_COMPUTED.find(([re]) => re.test(text));
       if (why || got === 'options') assert.ok(got === undefined || got === 'options', `${why?.[1]}, yet computed`);
-      // (The record's targets are sorted, a cquery's configuration left out.)
+      // (The record keeps the targets sorted as strings, a cquery's configuration left out (scripts/record-bazel.ts), not in
+      // bazel's order, which sorts by package first: `//app:app` before `//app/legacy:old`. The rows of `examples` above keep
+      // bazel's lines, in its order.)
       else assert.deepStrictEqual(got!.map((l) => l.replace(/ \([^)]*\)$/, '')).sort(), row.targets);
     });
   }
@@ -150,6 +155,10 @@ describe('what the evaluator leaves not computed', () => {
     assert.deepStrictEqual(run('attr(name, main, //...:*)'), ['//app:main', '//app:main_test']);
     assert.strictEqual(run('attr(name, x, @abseil-cpp//absl/strings)'), undefined);
     assert.strictEqual(run('filter("a++", //...)'), undefined);
+    // (Java's own syntax: a class inside a class, `[[:digit:]]` matching `[`, `:`, `d`…; an intersection; a `{` no digit
+    // follows, which Java refuses, `x{,2}`; a class that starts with `]`.)
+    for (const e of ['filter("[[:digit:]]", //...)', 'filter("x{,2}|lib", //...)', 'filter("[a-z&&[^l]]", //...)', 'filter("[]a]", //...)', 'filter("[^]a]", //...)', 'filter("lib{", //...)']) assert.strictEqual(run(e), undefined, e);
+    assert.deepStrictEqual(run('filter("[\\[&l]ib|t{2}", //...)'), ['//lib:greet']);
     assert.strictEqual(run('filter(x, @abseil-cpp//absl/strings)'), undefined);
     assert.strictEqual(run('kind(rule, deps(//app:main, 2))'), undefined);
     assert.strictEqual(run('labels(srcs, //app:main.cc)'), undefined);
@@ -161,10 +170,13 @@ describe('what the evaluator leaves not computed', () => {
   });
   it('cquery: the targets it cannot configure, the functions that walk the graph, the package output', () => {
     const cquery = (expression: string, more: Partial<QueryRun> = {}, ws = BAZEL_CC) => run(expression, { command: 'cquery', ...more }, ws);
-    assert.deepStrictEqual(cquery('//tools:fmt + //tools:version', { output: 'label_kind' }), ['cc_binary rule //tools:fmt (04bf134)', 'cc_binary rule //tools:fmt (a7a71fd)', 'genrule rule //tools:version (a7a71fd)']);
-    assert.deepStrictEqual(cquery('let t = tests(//app:all) in $t + set(//app:main.cc)'), ['//app:main.cc (null)', '//app:main_test (e722a21)']);
-    assert.deepStrictEqual(cquery('attr(name, "^te", //util:all) ^ //util:text'), ['//util:text (a7a71fd)']);
-    for (const e of ['//app:main.stripped', '@abseil-cpp//absl/strings', 'deps(//app:main)', 'labels(srcs, //app:main)', 'somepath(//app:main, //lib:greet)']) assert.strictEqual(cquery(e), undefined, e);
+    assert.deepStrictEqual(cquery('kind(rule, //tools:all)', { output: 'label_kind' }), ['cc_binary rule //tools:fmt (04bf134)', 'cc_binary rule //tools:fmt (a7a71fd)', 'genrule rule //tools:version (a7a71fd)']);
+    assert.deepStrictEqual(cquery('tests(//app:all)'), ['//app:main_test (e722a21)']);
+    assert.deepStrictEqual(cquery('//lib:greet.cc'), ['//lib:greet.cc (null)']);
+    assert.deepStrictEqual(cquery('attr(name, "^te", //util:all)'), ['//util:text (a7a71fd)']);
+    // (cquery prints the operands of a set operator, `let` and `set` in an order of its own: bazel 9.3.2 prints
+    // `//util:text + //app:main` with `//util:text` first, and `except` in the order of its hashes.)
+    for (const e of ['//util:text + //app:main', 'set(//util:text //app:main)', '//lib:all + //app:all', '//... except //tools:all', 'let t = tests(//app:all) in $t', 'kind(rule, //app:main + //lib:greet)', '//app:main.stripped', '@abseil-cpp//absl/strings', 'deps(//app:main)', 'labels(srcs, //app:main)', 'somepath(//app:main, //lib:greet)']) assert.strictEqual(cquery(e), undefined, e);
     assert.strictEqual(cquery('//app:main', { output: 'package' }), undefined);
     // (A rule of the workspace whose dependencies are not known, or one that depends on a generated file.)
     const odd: Workspace = { configs: BAZEL_CC.configs, targets: [{ label: '//a:x', kind: 'x rule' }, { label: '//a:y', kind: 'y rule', attrs: { srcs: ['//a:g'] } }, { label: '//a:g', kind: 'generated file', rule: '//a:x' }, { label: '//a:s', kind: 'test_suite rule', attrs: {} }, { label: '//a:z', kind: 'z rule', attrs: { deps: ['//a:missing'] } }] };
@@ -182,9 +194,14 @@ describe('what the evaluator leaves not computed', () => {
 
 describe('the runner of the spec of `bazel query`', () => {
   const words = (line: string) => line.split(' ');
-  const runOf = (line: string, lang: 'en' | 'ja' = 'en') => {
+  const ranOf = (line: string, lang: 'en' | 'ja' = 'en') => {
     const w = words(line);
     return sourceRun(bazel.bazel, interpret(bazel.bazel, w.map((text) => ({ text, value: text })), { name: 'bazel' }), w, lang);
+  };
+  /** The run, or undefined where it gives none or the guard refuses it. */
+  const runOf = (line: string, lang: 'en' | 'ja' = 'en') => {
+    const r = ranOf(line, lang);
+    return r && 'lines' in r ? r : undefined;
   };
   it('reads `--output`, `--implicit_deps` and the options that print nothing else; no other', () => {
     assert.deepStrictEqual(runOf('query --output label_kind --noshow_progress -- //app:main')?.lines, ['cc_binary rule //app:main']);
@@ -192,7 +209,7 @@ describe('the runner of the spec of `bazel query`', () => {
     assert.deepStrictEqual(runOf('query --implicit_deps=false deps(//app:data.txt+//lib:greet.h, 1) --output=package')?.lines, ['app', 'lib']);
     for (const line of ['query --order_output=no //...', 'query --nosuch //...', 'query //... --output', 'query --output=xml //...', 'query', 'query kind(', 'cquery --output=package //...', 'build //...', 'aquery //...']) assert.strictEqual(runOf(line), undefined, line);
     // (A run the guard refuses: the steps of the evaluation.)
-    assert.strictEqual(runOf(`query ${MANY}`), undefined);
+    assert.deepStrictEqual(ranOf(`query ${MANY}`), { refused: 'steps-not-computed' });
     // (The words of one expression, joined with spaces.)
     assert.deepStrictEqual(runOf('query kind(cc_test, //...)')?.lines, ['//app:main_test']);
   });
@@ -231,8 +248,15 @@ describe('a pipeline that starts with `bazel query`', () => {
     const sed = explain("bazel query //lib:all | sed 's/:/ /' | sort").examples.find((e) => e.kind === 'pipeline')!;
     assert.deepStrictEqual(sed.sections.at(-1)!.lines, ['//lib greet']);
   });
+  it('says that it is not computed where the guard stops the run, and gives a later stage no lines', () => {
+    const ex = whole(`bazel query '${MANY}' | wc -l`)!;
+    assert.deepStrictEqual(ex.sections, []);
+    assert.strictEqual(ex.note, fact('en', 'steps-not-computed').text);
+    const wc = explain(`bazel query '${MANY}' | sort | wc -l`).examples.find((e) => e.kind === 'textFilters' && e.sections.some((s) => s.label.includes('bazel')));
+    assert.strictEqual(wc, undefined);
+  });
   it('nothing for words it cannot read as written: a brace expansion, a value split into options, a query it does not follow', () => {
-    for (const line of ['bazel query //app:{main,data} | wc -l', 'o="--output label_kind"; bazel query $o //... | wc -l', 'bazel query "$1" | wc -l', 'bazel query --output "$1" //... | wc -l', 'bazel query deps(//app:main) | wc -l', 'bazel build //... | wc -l']) {
+    for (const line of ['bazel query //app:{main,data} | wc -l', "e=; bazel query $e '//app:'{main,data} | wc -l", 'o="--output label_kind"; bazel query $o //... | wc -l', 'bazel query "$1" | wc -l', 'bazel query --output "$1" //... | wc -l', 'bazel query deps(//app:main) | wc -l', 'bazel build //... | wc -l']) {
       assert.strictEqual(explain(line).examples.find((e) => e.kind === 'pipeline'), undefined, line);
     }
   });

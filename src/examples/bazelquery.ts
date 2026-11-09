@@ -4,8 +4,8 @@
 // what this evaluator does not follow is not computed (no example), never guessed: a pattern relative to the current
 // directory, a target the workspace does not have, a dependency it does not know, an order bazel does not fix. It follows
 // target patterns, `deps`, `rdeps`, `allpaths`, `somepath`, `kind`, `filter`, `attr` (`name`, `tags`, `visibility`),
-// `labels`, `tests`, `let`, `set` and the set operators; for cquery, the configurations of the patterns' targets and the
-// functions that do not walk the graph. test/bazel-examples-run.test.ts compares it with what bazel 9.3.2 printed.
+// `labels`, `tests`, `let`, `set` and the set operators; for cquery, the configurations of the targets of one pattern, alone
+// or under `kind`, `filter`, `attr` and `tests` (cquery prints the operands of a set operator in an order of its own). test/bazel-examples-run.test.ts compares it with what bazel 9.3.2 printed.
 import type { ArgvParse } from '../argv/interpret';
 import { givenOptions, operands, switched, values } from '../argv/query';
 import { labelOf, parseTargetPattern } from '../embedded/bazel';
@@ -53,6 +53,33 @@ export function runQuery(ws: Workspace, run: QueryRun): string[] | undefined {
   }
 }
 
+/** The functions over one pattern whose order cquery's output keeps: each keeps or drops targets of its last argument. */
+const KEEPS = new Set(['kind', 'filter', 'attr', 'tests']);
+/** The one target pattern of `n` when cquery prints its targets in an order known here: the pattern alone, or under `KEEPS`. */
+const orderedPattern = (n: QueryNode): string | undefined => (n.kind === 'word' ? n.text : n.kind === 'call' && KEEPS.has(n.name) ? orderedPattern(n.args.at(-1) as QueryNode) : undefined);
+
+/**
+ * Whether Java reads the regex `pattern` as PCRE does, so far as the examples' translation of PCRE goes: not where Java has
+ * a syntax of its own. A class inside a class (`[[:digit:]]` is no POSIX class in Java but a class of `[`, `:`, `d`…), an
+ * intersection (`[a-z&&[^l]]`), a class that starts with `]`, and a `{` that no digit follows (`x{,2}`, an error in Java).
+ */
+export function javaReadsAsPcre(pattern: string): boolean {
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\') i++;
+    else if (inClass) {
+      if (c === '[' || (c === '&' && pattern[i + 1] === '&')) return false;
+      if (c === ']') inClass = false;
+    } else if (c === '[') {
+      inClass = true;
+      if (pattern[i + 1] === '^') i++;
+      if (pattern[i + 1] === ']') return false;
+    } else if (c === '{' && !(pattern[i + 1] >= '0' && pattern[i + 1] <= '9')) return false;
+  }
+  return true;
+}
+
 /** A list of labels as `attr` reads it (`[a, b]`). */
 const listText = (xs: readonly string[]): string => `[${xs.join(', ')}]`;
 
@@ -80,8 +107,10 @@ class Evaluation {
 
   lines(tree: QueryNode): string[] {
     const cquery = this.run.command === 'cquery';
-    if (cquery) this.universe = this.configure(tree);
-    // (somepath gives a path, which bazel prints in its order; anything else is sorted.)
+    // (cquery prints what it evaluates in the order it comes to it, which a set operator or `let` leaves to bazel's hashes:
+    // known only for one pattern, alone or under functions that keep or drop its targets, which it prints sorted.)
+    if (cquery) this.universe = this.configure(orderedPattern(tree) ?? this.unknown());
+    // (somepath gives a path, which bazel prints in its order; a query's anything else is sorted, `--order_output=auto`.)
     const path = tree.kind === 'call' && tree.name === 'somepath';
     let items = [...this.eval(tree, new Map(), true)].map((k) => this.items.get(k)!);
     if (!path) {
@@ -175,18 +204,8 @@ class Evaluation {
     return (t.kind ?? this.unknown()).endsWith(' rule');
   }
 
-  /** cquery's configured targets: the targets of the expression's patterns in their configurations, and what they depend on. */
-  private configure(tree: QueryNode): string[] {
-    const words: string[] = [];
-    const visit = (n: QueryArgument): void => {
-      this.step();
-      if (n.kind === 'word') words.push(n.text);
-      else if (n.kind === 'let') [n.value, n.body].forEach(visit);
-      else if (n.kind === 'set') n.items.forEach(visit);
-      else if (n.kind === 'operator') [n.left, n.right].forEach(visit);
-      else if (n.kind === 'call') n.args.forEach(visit);
-    };
-    visit(tree);
+  /** cquery's configured targets: the targets of the expression's one pattern in their configurations, and what they depend on. */
+  private configure(pattern: string): string[] {
     const { target, test, exec } = this.ws.configs;
     const seen = new Set<string>();
     const queue: Item[] = [];
@@ -198,7 +217,7 @@ class Evaluation {
       }
     };
     const top = (t: WorkspaceTarget): string => (t.kind === 'source file' ? 'null' : t.rule || !this.inMain(t.label) ? this.unknown() : t.kind!.endsWith('_test rule') ? test : target);
-    for (const w of words) for (const label of this.pattern(w)) add(label, top(this.target(label)));
+    for (const label of this.pattern(pattern)) add(label, top(this.target(label)));
     for (let i = 0; i < queue.length; i++) {
       this.step();
       const { label, config } = queue[i];
@@ -244,7 +263,7 @@ class Evaluation {
     const expr = (i: number) => this.eval(args[i] as QueryNode, env);
     const text = (i: number) => (args[i] as { text: string }).text;
     const depth = (i: number) => (args[i] ? (args[i] as { value: number }).value : Infinity);
-    const graph = this.run.command === 'query';
+    // (A cquery comes here only with the functions of `KEEPS`: those that walk the graph are a query's.)
     switch (name) {
       case 'kind': {
         const found = this.matcher(text(0));
@@ -259,20 +278,12 @@ class Evaluation {
         return this.select(expr(2), (t) => this.isRule(t) && this.decided(found, this.attrTexts(t, text(0))));
       }
       case 'tests': return this.select(expr(0), (t) => (t.kind === 'test_suite rule' ? this.unknown() : this.isRule(t) && t.kind!.endsWith('_test rule')));
-      case 'labels':
-        if (graph) return this.labels(text(0), expr(1));
-        break;
-      case 'deps':
-        if (graph) return this.deps(expr(0), depth(1));
-        break;
-      case 'rdeps':
-        if (graph) return this.rdeps(expr(0), expr(1), depth(2));
-        break;
-      case 'allpaths':
-        if (graph) return this.allpaths(expr(0), expr(1));
-        break;
+      case 'labels': return this.labels(text(0), expr(1));
+      case 'deps': return this.deps(expr(0), depth(1));
+      case 'rdeps': return this.rdeps(expr(0), expr(1), depth(2));
+      case 'allpaths': return this.allpaths(expr(0), expr(1));
       case 'somepath':
-        if (graph && top) return this.somepath(expr(0), expr(1));
+        if (top) return this.somepath(expr(0), expr(1));
         break;
     }
     return this.unknown();
@@ -286,7 +297,7 @@ class Evaluation {
 
   /** Whether the Java regex `pattern` matches anywhere in a text, as bazel searches (`Matcher.find`); not computed where JavaScript has no regex of the same meaning. */
   private matcher(pattern: string): (text: string) => boolean {
-    const js = toJsRegex(pattern, 'pcre') ?? this.unknown();
+    const js = (javaReadsAsPcre(pattern) ? toJsRegex(pattern, 'pcre') : undefined) ?? this.unknown();
     const re = scriptRegex(js.source, js.flags);
     return (text) => re.test(text);
   }

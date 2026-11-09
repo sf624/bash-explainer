@@ -1092,6 +1092,18 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `bazel query "deps('//$a:all') + //$b:all"`: the sentence on what ends a word is said once per line, keyed by the hole's place, so where the first hole of the line is in a quoted word of the expression (which says nothing of it), the later unquoted one does not say it either.
   - `bazel query "deps($a) $b"`: an expression of several words with holes is left unread; only the words that are target patterns are read.
 
+## From the review of the bazel query runner (#786)
+
+### bazel query in a pipeline: corners the runner does not follow
+
+- `shopt -s nullglob; bazel query //app:* | wc -l`: bash expands the unquoted `//app:*` as a glob (to nothing under nullglob, an error under failglob, the word itself when nothing matches); the runner takes the literal word.
+- `bazel cquery //...` on a server where earlier commands built with other options: cquery also prints the configurations those left (more `(hash)` lines than the example shows). The note could say so.
+- Nested `let` copies the variables' map at each level (`new Map([...env, …])`): quadratic in the depth, and the copies are not charged to the guard.
+- Startup options before the command are not checked: `bazel --bazelrc=x.rc query //...` may read options (an `--output`) from the rc file; the example takes the defaults.
+- The note that the workspace is made up stays on the whole-pipeline example: the lines a later stage reads in its own example (`bazel query //... | while read t; do …; done`) do not carry it.
+- `RunnerKind` holds the source runners only; the first runner of a filter (M6) will need its own kind, or a split of the type.
+- `queryTree` runs the whole token reader of src/embedded/bazelquery.ts (with the texts of every token) to get the tree.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".
