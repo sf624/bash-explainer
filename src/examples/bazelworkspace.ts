@@ -1,4 +1,5 @@
-// The made-up C++ workspace the examples of `bazel query` and `bazel cquery` run over (src/examples/bazelquery.ts): the
+// The made-up C++ workspace the examples of `bazel query`, `cquery` and `aquery` run over (src/examples/bazelquery.ts; the
+// actions of aquery are in src/examples/bazelactions.ts): the
 // targets of test/fixtures/bazel-cc, as bazel 9.3.2 reads them (four packages, two libraries, two binaries, a test, a
 // genrule with a tool, a filegroup, and one external library, @abseil-cpp). Each fact comes from the record of that
 // workspace (test/fixtures/oracles/bazel.json, `examples`, written by scripts/record-bazel.ts), which

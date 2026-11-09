@@ -16,7 +16,10 @@
 // string a line (`output`, normalised: the copy's directory is `<workspace>`, the output base `<output_base>`, an action's
 // key `<key>`). What is machine-specific stays and is an example: the configuration hashes of a cquery (`(a7a71fd)`), and
 // an aquery's compiler path and flags, which come from the C++ toolchain bazel finds. Nothing else is: test/bazel-examples.test.ts
-// reads the record. Add a row as `{ "command": "query", "options": ["--output=label_kind"], "expression": "//..." }`.
+// reads the record. Add a row as `{ "command": "query", "options": ["--output=label_kind"], "expression": "//..." }`, at
+// the end: the rows run in one server, in order, and an aquery also prints the actions of the configurations that the rows
+// before it analysed (`mnemonic("CppCompile", //util:strutil)` comes after `cquery //...`, and so shows the actions of
+// `//util:strutil` built for a tool too; test/bazel-aquery.test.ts).
 //
 //   BAZEL=~/.cache/explain-bash-tools/bazelisk/bazelisk-linux-amd64 npx tsx scripts/record-bazel.ts           rewrite the facts
 //   BAZEL=… npx tsx scripts/record-bazel.ts --check   fail if a row's facts are not what bazel does

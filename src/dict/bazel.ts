@@ -219,7 +219,7 @@ const bazelSpec: CommandSpec = cmd('Bazel: ソースからビルドし、テス�
     ] }] }),
     query: command('ターゲットの依存のグラフを問い合わせる', 'Query the target dependency graph', QUERY, { ...expression, runner: 'bazel-query' }),
     cquery: command('構成を適用したターゲットのグラフを問い合わせる', 'Query the configured target graph', [...BUILD, ...CQUERY], { ...cqueryExpression, runner: 'bazel-cquery' }),
-    aquery: command('アクションのグラフを問い合わせる', 'Query the action graph', [...BUILD, ...AQUERY], aqueryExpression),
+    aquery: command('アクションのグラフを問い合わせる', 'Query the action graph', [...BUILD, ...AQUERY], { ...aqueryExpression, runner: 'bazel-aquery' }),
     info: command('サーバーとワークスペースの情報を表示する', 'Show information on the server and the workspace', [...BUILD,
       ['--show_make_env', '「Make」の変数も表示する', 'show the "Make" variables too'],
     ], { operands: [{ pattern: [operand('KEY', '表示する項目（ないときはすべて）', 'key to show (all when none is given)', { repeat: '*', values: INFO_KEYS })] }] }),

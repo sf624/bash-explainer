@@ -1,10 +1,11 @@
 // The runners a command's spec chooses (`CommandSpec.runner`; docs/design/sources.md, M6: a runner per spec, not a switch
 // on the command's name): each works out what the command prints from its words, for the examples of the commands after
-// it in a pipeline. The first is a source, which reads no input: `bazel query` and `bazel cquery` over a made-up workspace.
+// it in a pipeline. The first are sources, which read no input: `bazel query`, `cquery` and `aquery` over a made-up workspace.
 import type { ArgvParse } from '../argv/interpret';
 import { innermost } from '../argv/query';
 import type { CommandSpec, RunnerKind } from '../argv/spec';
 import type { Lang } from '../i18n';
+import { bazelAquerySource } from './bazelaquery';
 import { bazelQuerySource } from './bazelquery';
 import { guarded, type NotComputedId } from './regexguard';
 
@@ -17,6 +18,7 @@ type SourceRunner = (parse: ArgvParse, words: readonly (string | undefined)[], l
 const SOURCES: Readonly<Record<RunnerKind, SourceRunner>> = {
   'bazel-query': (parse, words, lang) => bazelQuerySource('query', parse, words, lang),
   'bazel-cquery': (parse, words, lang) => bazelQuerySource('cquery', parse, words, lang),
+  'bazel-aquery': bazelAquerySource,
 };
 
 /**
