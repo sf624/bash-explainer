@@ -188,6 +188,10 @@ export const ARGV_TEXTS = {
   'hole-glob': tokenText<{ value: string }>(({ value }) => [
     `${value} の値はパターンの一部として読まれる。値の中の \`*\`・\`?\`・\`[\` はワイルドカードになり、\`\\\` は次の文字をただの文字にする`,
     `The value of ${value} is read as part of the pattern: \`*\`, \`?\` and \`[\` in it are wildcards, and a \`\\\` makes the next character plain`]),
+  /** `bazel build "//app:$t"`: a hole in a target pattern, after its start (`//`, `@repo//` or a relative directory). */
+  'hole-target': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値はターゲットのパターンの一部として読まれる。値の中の \`/\` はディレクトリを区切り、\`:\` はターゲットの名前を始め、\`...\` はその下のすべてのパッケージ、名前の \`all\`・\`*\` はワイルドカードになる`,
+    `The value of ${value} is read as part of the target pattern: a \`/\` in it separates directories, a \`:\` starts the target's name, \`...\` stands for every package below, and \`all\` or \`*\` as the name are wildcards`]),
   /** `date +"%F $x"`: a hole in date's format. */
   'hole-date': tokenText<{ value: string; around?: boolean }>(({ value, around }) => [
     `${value} の値は表示書式の一部になる。値の中の \`%\` は書式指定として読まれる${around ? '。後ろは、値に `%` がないものとして読んでいる' : ''}`,

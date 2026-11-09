@@ -798,5 +798,621 @@
       "line": "bazel clean",
       "status": 0
     }
+  ],
+  "universe": {
+    "all": [
+      "//app/legacy:BUILD",
+      "//app/legacy:old",
+      "//app:BUILD",
+      "//app:app",
+      "//app:data",
+      "//app:data.txt",
+      "//app:debug",
+      "//app:main",
+      "//app:main_test",
+      "//tools:BUILD",
+      "//tools:fmt"
+    ],
+    "rules": [
+      "//app/legacy:old",
+      "//app:app",
+      "//app:data",
+      "//app:debug",
+      "//app:main",
+      "//app:main_test",
+      "//tools:fmt"
+    ],
+    "manual": [
+      "//app:debug"
+    ]
+  },
+  "patterns": [
+    {
+      "command": "query",
+      "words": [
+        "//app:main"
+      ],
+      "targets": [
+        "//app:main"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app"
+      ],
+      "targets": [
+        "//app:app"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app:all"
+      ],
+      "targets": [
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app:*"
+      ],
+      "targets": [
+        "//app:BUILD",
+        "//app:app",
+        "//app:data",
+        "//app:data.txt",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app:all-targets"
+      ],
+      "targets": [
+        "//app:BUILD",
+        "//app:app",
+        "//app:data",
+        "//app:data.txt",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app/..."
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app/...:all"
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app/...:*"
+      ],
+      "targets": [
+        "//app/legacy:BUILD",
+        "//app/legacy:old",
+        "//app:BUILD",
+        "//app:app",
+        "//app:data",
+        "//app:data.txt",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app/...:all-targets"
+      ],
+      "targets": [
+        "//app/legacy:BUILD",
+        "//app/legacy:old",
+        "//app:BUILD",
+        "//app:app",
+        "//app:data",
+        "//app:data.txt",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//..."
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app:BUILD"
+      ],
+      "targets": [
+        "//app:BUILD"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app:data.txt"
+      ],
+      "targets": [
+        "//app:data.txt"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app/legacy:all"
+      ],
+      "targets": [
+        "//app/legacy:old"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "@fixture//app:data"
+      ],
+      "targets": [
+        "//app:data"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "@@//app:data"
+      ],
+      "targets": [
+        "//app:data"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "@//app:data"
+      ],
+      "targets": [
+        "//app:data"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "@@//..."
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "app"
+      ],
+      "targets": [
+        "//app:app"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "app:all"
+      ],
+      "targets": [
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "app/main"
+      ],
+      "targets": [
+        "//app:main"
+      ]
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app/main"
+      ],
+      "error": "no such package 'app/main': BUILD file not found in any of the following directories. Add a BUILD file to a directory to mark it as a package."
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app/legacy"
+      ],
+      "error": "no such target '//app/legacy:legacy': target 'legacy' not declared in package 'app/legacy' defined by <workspace>/app/legacy/BUILD"
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app:nope"
+      ],
+      "error": "no such target '//app:nope': target 'nope' not declared in package 'app' defined by <workspace>/app/BUILD"
+    },
+    {
+      "command": "query",
+      "words": [
+        "//nope/..."
+      ],
+      "error": "no targets found beneath 'nope'"
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app/...:main"
+      ],
+      "error": "Invalid target pattern //app/...:main: '...' can only be used with wildcard targets"
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app:"
+      ],
+      "error": "invalid target name '': empty target name"
+    },
+    {
+      "command": "query",
+      "words": [
+        "//app/"
+      ],
+      "error": "invalid package name 'app/': package names may not end with '/' (perhaps you meant \":\"?)"
+    },
+    {
+      "command": "query",
+      "words": [
+        "///app:main"
+      ],
+      "error": "invalid package name '/app': package names may not start with '/'"
+    },
+    {
+      "command": "query",
+      "words": [
+        "./app:main"
+      ],
+      "error": "invalid package name './app': package name component contains only '.' characters"
+    },
+    {
+      "command": "query",
+      "words": [
+        "@@fixture//app:main"
+      ],
+      "error": "no such package '@@fixture//app': The repository '@@fixture' could not be resolved: Repository '@@fixture' is not defined"
+    },
+    {
+      "command": "query",
+      "words": [
+        ":all"
+      ],
+      "error": "no such package '': BUILD file not found in any of the following directories. Add a BUILD file to a directory to mark it as a package."
+    },
+    {
+      "command": "query",
+      "cwd": "app",
+      "words": [
+        ":main"
+      ],
+      "targets": [
+        "//app:main"
+      ]
+    },
+    {
+      "command": "query",
+      "cwd": "app",
+      "words": [
+        "main"
+      ],
+      "targets": [
+        "//app:main"
+      ]
+    },
+    {
+      "command": "query",
+      "cwd": "app",
+      "words": [
+        "data.txt"
+      ],
+      "targets": [
+        "//app:data.txt"
+      ]
+    },
+    {
+      "command": "query",
+      "cwd": "app",
+      "words": [
+        "legacy:all"
+      ],
+      "targets": [
+        "//app/legacy:old"
+      ]
+    },
+    {
+      "command": "query",
+      "cwd": "app",
+      "words": [
+        "..."
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "query",
+      "cwd": "app",
+      "words": [
+        "legacy/..."
+      ],
+      "targets": [
+        "//app/legacy:old"
+      ]
+    },
+    {
+      "command": "query",
+      "cwd": "app",
+      "words": [
+        "//app:main"
+      ],
+      "targets": [
+        "//app:main"
+      ]
+    },
+    {
+      "command": "query",
+      "cwd": "app",
+      "words": [
+        "//..."
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
+    },
+    {
+      "command": "query",
+      "cwd": "app",
+      "words": [
+        "legacy"
+      ],
+      "error": "no such target '//app/legacy:legacy': target 'legacy' not declared in package 'app/legacy' defined by <workspace>/app/legacy/BUILD"
+    },
+    {
+      "command": "query",
+      "cwd": "app",
+      "words": [
+        "../tools:all"
+      ],
+      "error": "invalid package name '../tools': package name component contains only '.' characters"
+    },
+    {
+      "command": "query",
+      "cwd": "app/legacy",
+      "words": [
+        ":all"
+      ],
+      "targets": [
+        "//app/legacy:old"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "//app/..."
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "//app:all"
+      ],
+      "targets": [
+        "//app:app",
+        "//app:data",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "//app:*"
+      ],
+      "targets": [
+        "//app:BUILD",
+        "//app:app",
+        "//app:data",
+        "//app:data.txt",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "//..."
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "//app:debug"
+      ],
+      "targets": [
+        "//app:debug"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "//app/...",
+        "//app:debug"
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:debug",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "//app/...",
+        "-//app:main"
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "-//app:main",
+        "//app/..."
+      ],
+      "targets": [
+        "//app/legacy:old",
+        "//app:app",
+        "//app:data",
+        "//app:main",
+        "//app:main_test"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "//app:debug",
+        "-//app/..."
+      ],
+      "targets": []
+    },
+    {
+      "command": "build",
+      "words": [
+        "//...",
+        "-//app/legacy/..."
+      ],
+      "targets": [
+        "//app:app",
+        "//app:data",
+        "//app:main",
+        "//app:main_test",
+        "//tools:fmt"
+      ]
+    },
+    {
+      "command": "build",
+      "words": [
+        "//app:all",
+        "-//app:*"
+      ],
+      "targets": []
+    },
+    {
+      "command": "build",
+      "words": [
+        "//nope/..."
+      ],
+      "error": "Skipping '//nope/...': no targets found beneath 'nope'"
+    },
+    {
+      "command": "build",
+      "cwd": "app",
+      "words": [
+        "...",
+        "-legacy/..."
+      ],
+      "targets": [
+        "//app:app",
+        "//app:data",
+        "//app:main",
+        "//app:main_test"
+      ]
+    }
   ]
 }

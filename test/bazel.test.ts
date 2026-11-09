@@ -6,6 +6,7 @@ import { Analyzer, Token } from '../src/analyzer';
 import { interpret } from '../src/argv/interpret';
 import { PARSERS } from '../src/argv/parsers';
 import type { CommandSpec } from '../src/argv/spec';
+import { parseTargetPattern } from '../src/embedded/bazel';
 import type { BashParser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { argWords } from './support/argwords';
@@ -22,16 +23,25 @@ function tokens(src: string, lang: 'en' | 'ja'): Token[] {
   return out;
 }
 /** The words after `bazel`, each with its text (the shell's note on a subcommand left out). */
-const parts = (src: string, lang: 'en' | 'ja' = 'en'): string[] => tokens(src, lang).slice(1).filter((t) => t.kind !== 'string')
+const parts = (src: string, lang: 'en' | 'ja' = 'en'): string[] => new Analyzer(lang).explainLine(parser.parse(src), 0).items[0].children.filter((t) => t.kind !== 'string')
   .map((t) => `${t.label}: ${t.explanation.replace(/ \(to the shell it is an argument.*$|（シェルから見れば.*$/, '')}`);
+/** The parts of the target pattern `word` (the tokens of its reader), each with its text. */
+const pieces = (src: string, word: string, lang: 'en' | 'ja' = 'en'): string[] => {
+  const t = tokens(src, lang).find((x) => x.label === word && x.kind === 'argument')!;
+  const inner = t.children[0]?.kind === 'string' && t.children[0].label === word && /^['"]/.test(word) ? t.children[0].children : t.children;
+  return inner.map((x) => `${x.label}: ${x.explanation}`);
+};
 
-const TARGET = 'target pattern (`//app:main`, `//app/...`, or after `--` one that takes targets out, `-//app/legacy/...`)';
-const TARGET_JA = 'ターゲットのパターン（`//app:main`、`//app/...`、`--` の後なら除くもの `-//app/legacy/...`）';
+const TARGET = 'target pattern';
+const TARGET_JA = 'ターゲットのパターン';
+const MANUAL = 'without the targets tagged `manual` (`tags = ["manual"]`), which only a pattern that names them takes';
+const MANUAL_JA = '`tags = ["manual"]` のターゲットは含まない（名前で指定したときだけ対象になる）';
 
 describe('bazel command lines', () => {
   it('a build of every target', () => {
-    assert.deepStrictEqual(parts('bazel build //...'), ['build: Subcommand `bazel build`: Build the targets', `//...: ${TARGET}`]);
-    assert.deepStrictEqual(parts('bazel build //...', 'ja'), ['build: サブコマンド `bazel build`: ターゲットをビルドする', `//...: ${TARGET_JA}`]);
+    assert.deepStrictEqual(parts('bazel build //...'), ['build: Subcommand `bazel build`: Build the targets', `//...: ${TARGET} — Every rule of every package of the repository; ${MANUAL}`]);
+    assert.deepStrictEqual(parts('bazel build //...', 'ja'), ['build: サブコマンド `bazel build`: ターゲットをビルドする', `//...: ${TARGET_JA} — リポジトリのすべてのパッケージのすべてのルール。${MANUAL_JA}`]);
+    assert.deepStrictEqual(pieces('bazel build //...', '//...'), ['//: The top of the repository', '...: Every package in this directory and below it']);
   });
 
   it('options after the command, `--config` from the rc files, and a subtractive pattern after `--`', () => {
@@ -39,18 +49,23 @@ describe('bazel command lines', () => {
     const en = parts(line);
     assert.match(en[1], /^--config=ci: Use a group of settings of the rc files .*so those options are not shown.*"Config value '…' is not defined in any \.rc file" \(value: `ci`\)$/);
     assert.deepStrictEqual([en[0], ...en.slice(2)], [
-      'test: Subcommand `bazel test`: Build the targets and run the tests', '-k: go on as far as possible after an error', `//app/...: ${TARGET}`,
-      '--: End of options: everything after is a plain argument', `-//app/legacy/...: ${TARGET}`,
+      'test: Subcommand `bazel test`: Build the targets and run the tests', '-k: go on as far as possible after an error',
+      `//app/...: ${TARGET} — Every rule of the packages in the directory \`app\` and below; ${MANUAL}`,
+      '--: End of options: everything after is a plain argument', `-//app/legacy/...: ${TARGET} — Takes every rule of the packages in the directory \`app/legacy\` and below out of the targets of the patterns before it`,
+    ]);
+    assert.deepStrictEqual(pieces(line, '-//app/legacy/...'), [
+      '-: Subtractive: takes the targets of this pattern out of those the patterns before it gave (the order counts)',
+      '//app/legacy: The directory `app/legacy`, from the top of the repository', '/...: Every package in this directory and below it',
     ]);
     const ja = parts(line, 'ja');
     assert.match(ja[1], /^--config=ci: rc ファイル（`\.bazelrc` など）の設定の組を使う。.*どのオプションになるかは示せない。/);
     assert.deepStrictEqual(ja[2], '-k: エラーがあっても、できるところまでビルドを続ける');
-    assert.deepStrictEqual(ja.at(-1), `-//app/legacy/...: ${TARGET_JA}`);
+    assert.deepStrictEqual(ja.at(-1), `-//app/legacy/...: ${TARGET_JA} — ディレクトリ \`app/legacy\` とその下のパッケージのすべてのルールを、前のパターンのターゲットから除く`);
   });
 
   it('the program\'s arguments of `bazel run`', () => {
     assert.deepStrictEqual(parts('bazel run //tools:fmt -- --check'), [
-      'run: Subcommand `bazel run`: Build the target and run it (the words after the target are its arguments)', '//tools:fmt: target to run (`//tools:fmt`)',
+      'run: Subcommand `bazel run`: Build the target and run it (the words after the target are its arguments)', '//tools:fmt: target to run (`//tools:fmt`, a pattern that gives only one target) — One target, `//tools:fmt`',
       '--: End of options: everything after is a plain argument', '--check: argument passed to the program (write words that start with `-` after `--`)',
     ]);
     // (Without `--`, a word after the target is an argument too, and one that starts with `-` an option of bazel.)
@@ -61,7 +76,7 @@ describe('bazel command lines', () => {
   it('a startup option before the command, and a short option with its value', () => {
     assert.deepStrictEqual(parts('bazel --output_base=/tmp/x build -c opt //app:main'), [
       '--output_base=/tmp/x: where the outputs go (the build outputs and the server\'s state; another value starts another server) (value: `/tmp/x`)',
-      'build: Subcommand `bazel build`: Build the targets', '-c: compilation mode (`fastbuild`, the default; `dbg`; `opt`)', 'opt: Value for `-c`', `//app:main: ${TARGET}`,
+      'build: Subcommand `bazel build`: Build the targets', '-c: compilation mode (`fastbuild`, the default; `dbg`; `opt`)', 'opt: Value for `-c`', `//app:main: ${TARGET} — One target, \`//app:main\``,
     ]);
     assert.deepStrictEqual(parts('bazel --output_base=/tmp/x build -c opt //app:main', 'ja').slice(2, 4), ['-c: コンパイルのモード（`fastbuild`（既定）、`dbg`、`opt`）', 'opt: `-c` オプションの値']);
   });
@@ -107,6 +122,114 @@ describe('bazel command lines', () => {
   it('the keys of `bazel info` and the queries of `bazel mod`', () => {
     assert.deepStrictEqual(parts('bazel info bazel-bin output_base').slice(1), ['bazel-bin: the directory of the binaries (per configuration)', 'output_base: the output base (`--output_base`)']);
     assert.deepStrictEqual(parts('bazel mod graph --depth 1').slice(1, 2), ['graph: show the whole graph of external dependencies']);
+  });
+});
+
+// What each target pattern selects (src/embedded/bazel.ts); test/bazel-patterns.test.ts checks the reading with what bazel
+// 9.3.2 takes of each form in the fixture workspace.
+describe('bazel target patterns', () => {
+  /** What the line says of each pattern, after the operand's text. */
+  const notes = (src: string, lang: 'en' | 'ja' = 'en'): string[] => new Analyzer(lang).explainLine(parser.parse(src), 0).items[0].children.filter((t) => t.kind === 'argument')
+    .map((t) => t.explanation.replace(/^(target pattern|ターゲットのパターン|query expression \(.*?one\)|クエリ式（.*?になる）)( — )?/, ''));
+
+  it('a target, a package\'s target, and the wildcards of a package', () => {
+    assert.deepStrictEqual(notes('bazel build //app:main //app //app:all \'//app:*\' //app:all-targets'), [
+      'One target, `//app:main`', 'One target, `//app:app` (the target named like the package)',
+      `Every rule of the package \`app\`; ${MANUAL}`, `Every target of the package \`app\` (rules and files); ${MANUAL}`, `Every target of the package \`app\` (rules and files); ${MANUAL}`,
+    ]);
+    assert.deepStrictEqual(notes('bazel build //app:main //app //app:all', 'ja'), [
+      '1つのターゲット `//app:main`', '1つのターゲット `//app:app`（パッケージと同じ名前のターゲット）', `パッケージ \`app\` のすべてのルール。${MANUAL_JA}`,
+    ]);
+    assert.deepStrictEqual(pieces('bazel build //app:main \'//app:*\'', '//app:main'), ['//app: The package `app` (its directory from the top of the repository)', ':main: The target `main`']);
+    assert.deepStrictEqual(pieces('bazel build //app:main \'//app:*\'', '\'//app:*\'').at(-1), ':*: Every target of the package: its rules and its files');
+    assert.deepStrictEqual(pieces('bazel build //app:all', '//app:all', 'ja'), ['//app: パッケージ `app`（リポジトリの最上位からのディレクトリ）', ':all: パッケージのすべてのルール（ファイルは含まない）']);
+  });
+
+  it('the packages below a directory, and the patterns relative to the current directory', () => {
+    assert.deepStrictEqual(notes('bazel build //app/... :main legacy:all ... legacy/... :all'), [
+      `Every rule of the packages in the directory \`app\` and below; ${MANUAL}`, 'One target, `:main` from the current directory',
+      `Every rule of the package \`legacy\` below the current directory; ${MANUAL}`, `Every rule of the packages in the current directory and below; ${MANUAL}`,
+      `Every rule of the packages in the directory \`legacy\` (from the current directory) and below; ${MANUAL}`, `Every rule of the package of the current directory; ${MANUAL}`,
+    ]);
+    assert.deepStrictEqual(notes('bazel build //app/... :main ... legacy/...', 'ja'), [
+      `ディレクトリ \`app\` とその下のパッケージのすべてのルール。${MANUAL_JA}`, '今のディレクトリからの1つのターゲット `:main`',
+      `今のディレクトリとその下のパッケージのすべてのルール。${MANUAL_JA}`, `ディレクトリ \`legacy\`（今のディレクトリから）とその下のパッケージのすべてのルール。${MANUAL_JA}`,
+    ]);
+    assert.deepStrictEqual(pieces('bazel build legacy/... legacy:all', 'legacy/...'), ['legacy: The directory `legacy` below the current directory', '/...: Every package in this directory and below it']);
+    assert.deepStrictEqual(pieces('bazel build legacy/... legacy:all', 'legacy:all')[0], 'legacy: The package `legacy` below the current directory');
+    assert.deepStrictEqual(pieces('bazel build //app/...:all', '//app/...:all').at(-1), ':all: Every rule of each package (no files)');
+    assert.deepStrictEqual(pieces('bazel build //app/...:all-targets', '//app/...:all-targets', 'ja').at(-1), ':all-targets: 各パッケージのすべてのターゲット（ルールとファイル）');
+    // (No `:`: the longest leading part that is a package names the target, `main` in `app` is `//app:main`.)
+    assert.deepStrictEqual(notes('bazel build app/main'), ['One target. If `app/main` below the current directory is a package, its target `main` (`app/main:main`); else the target of the longest leading part that is a package, named by the rest (`app:main` and so on)']);
+    assert.deepStrictEqual(notes('bazel build main', 'ja'), ['1つのターゲット。今のディレクトリの下のパッケージ `main` があれば、そのターゲット `main`（`main:main`）。なければ、パッケージである最も長い前の部分の、残りを名前とするターゲット（`:main` など）']);
+  });
+
+  it('repositories', () => {
+    assert.deepStrictEqual(notes('bazel build @repo//pkg:x @@canon//... @//app:data @bazel_tools @repo//pkg/...:all-targets @@//...'), [
+      'One target, `@repo//pkg:x`', `Every rule of every package of the repository \`@@canon\`; ${MANUAL}`, 'One target, `@//app:data`',
+      'One target, `@bazel_tools//:bazel_tools` (the target named like the repository, in its top package)',
+      `Every target of the packages in the directory \`pkg\` of the repository \`@repo\` and below (rules and files); ${MANUAL}`, `Every rule of every package of the repository; ${MANUAL}`,
+    ]);
+    assert.deepStrictEqual(notes('@bazel_tools @@canon//... @repo//pkg:all'.replace(/^/, 'bazel build '), 'ja'), [
+      '1つのターゲット `@bazel_tools//:bazel_tools`（最上位のパッケージの、リポジトリと同じ名前のターゲット）', `リポジトリ \`@@canon\` のすべてのパッケージのすべてのルール。${MANUAL_JA}`,
+      `リポジトリ \`@repo\` のパッケージ \`pkg\` のすべてのルール。${MANUAL_JA}`,
+    ]);
+    const repos = (line: string, lang: 'en' | 'ja' = 'en'): string[] => tokens(line, lang).filter((t) => t.kind === 'keyword').map((t) => `${t.label}: ${t.explanation}`);
+    assert.deepStrictEqual(repos('bazel build @repo//x @@canon//x @//x @@//x'), [
+      '@repo: The repository `repo` (the name the main module sees it by; the main module\'s own name is the main repository)',
+      '@@canon: The repository whose canonical name is `canon`', '@: The main repository', '@@: The main repository (its canonical name is empty)',
+    ]);
+    assert.deepStrictEqual(repos('bazel build @repo//x @@canon//x @@//x', 'ja'), [
+      '@repo: リポジトリ `repo`（メインのモジュールから見える名前。メインのモジュール自身の名前ならメインのリポジトリ）', '@@canon: 正規の名前が `canon` のリポジトリ', '@@: メインのリポジトリ（正規の名前が空のリポジトリ）',
+    ]);
+  });
+
+  it('subtractive patterns, after `--`', () => {
+    assert.deepStrictEqual(notes('bazel build -- //app/... -main -:all -... -//app:*').slice(1), [
+      'Takes one target out of the targets of the patterns before it. If `main` below the current directory is a package, its target `main` (`main:main`); else the target of the longest leading part that is a package, named by the rest (`:main` and so on)',
+      'Takes every rule of the package of the current directory out of the targets of the patterns before it',
+      'Takes every rule of the packages in the current directory and below out of the targets of the patterns before it',
+      'Takes every target of the package `app` (rules and files) out of the targets of the patterns before it',
+    ]);
+    assert.deepStrictEqual(notes('bazel build -- //app/... -main -//app:*', 'ja').slice(1), [
+      '1つのターゲットを、前のパターンのターゲットから除く。今のディレクトリの下のパッケージ `main` があれば、そのターゲット `main`（`main:main`）。なければ、パッケージである最も長い前の部分の、残りを名前とするターゲット（`:main` など）',
+      'パッケージ `app` のすべてのターゲット（ルールとファイル）を、前のパターンのターゲットから除く',
+    ]);
+    assert.deepStrictEqual(pieces('bazel build -- -//app:main', '-//app:main', 'ja')[0], '-: 除くパターン: このパターンのターゲットを、前のパターンで集めたターゲットから除く（順序に意味がある）');
+  });
+
+  it('what bazel refuses', () => {
+    assert.deepStrictEqual(notes('bazel build ../x:y //app/...:main //app: //app/'), ['', '', '', '']);
+    assert.deepStrictEqual(pieces('bazel build ../x:y', '../x:y'), ['../x: A package name cannot hold a `.` or `..` directory (nothing above the current directory can be named): bazel stops with "invalid package name"', ':y: The target `y`']);
+    assert.deepStrictEqual(pieces('bazel build //app/...:main', '//app/...:main').at(-1), ':main: After `...`, only `:all`, `:*` or `:all-targets` may stand: bazel stops with "\'...\' can only be used with wildcard targets"');
+    assert.deepStrictEqual(pieces('bazel build //app:', '//app:').at(-1), ':: No name after `:`: bazel stops with "empty target name"');
+    assert.deepStrictEqual(pieces('bazel build //app/', '//app/', 'ja'), ['//app/: パッケージの名前は `/` で始まったり終わったりできず、`//` も含められない。bazel は「invalid package name」で止まる']);
+    assert.deepStrictEqual(tokens('bazel build //app/...:main', 'en').filter((t) => t.kind === 'error').length, 1);
+    // (With no `:`, a refused package is said so, not read as a relative target.)
+    assert.deepStrictEqual(pieces('bazel build ./app', './app'), ['./app: A package name cannot hold a `.` or `..` directory (nothing above the current directory can be named): bazel stops with "invalid package name"']);
+  });
+
+  it('expansions in a pattern: the parts after its start are read', () => {
+    assert.deepStrictEqual(pieces('bazel build "//app:$t"', '"//app:$t"'), ['//app: The package `app` (its directory from the top of the repository)', ':$t: The target\'s name (after `:`)']);
+    const hole = tokens('bazel build "//app:$t" "//$pkg/..."', 'en').filter((t) => t.kind === 'variable' && /target pattern/.test(t.explanation)).map((t) => `${t.label}: ${t.explanation}`);
+    assert.deepStrictEqual(hole, [
+      '$t: The value of `$t` is read as part of the target pattern: a `/` in it separates directories, a `:` starts the target\'s name, `...` stands for every package below, and `all` or `*` as the name are wildcards',
+    ]);
+    assert.deepStrictEqual(pieces('bazel build "//$pkg/..."', '"//$pkg/..."', 'ja')[0], '//$pkg: リポジトリの最上位からのディレクトリ `$pkg`');
+    // (Where the value would decide the reading, the word is left unread: its start, a repository's name.)
+    assert.deepStrictEqual(notes('bazel build "$t" "$d/..." "@$r//x" "//app/...:$t"'), ['', '', '', '']);
+  });
+
+  it('a query takes the `manual` targets, and its words that are no pattern are left to the query', () => {
+    assert.deepStrictEqual(notes('bazel query //app/...'), ['Every rule of the packages in the directory `app` and below']);
+    assert.deepStrictEqual(notes('bazel cquery @@//app:all', 'ja'), ['パッケージ `app` のすべてのルール']);
+    assert.deepStrictEqual(notes('bazel query kind \'deps(//x)\' \'a+b\''), ['', '', '']);
+  });
+
+  it('words that are no target pattern', () => {
+    assert.deepStrictEqual(notes('bazel build @foo:bar // ""'), ['', '', '']);
+    assert.deepStrictEqual(['', 'a b', '-', '@', '@foo:bar', '//', '@repo//'].map((w) => parseTargetPattern(w)), Array(7).fill(undefined));
+    assert.deepStrictEqual(parseTargetPattern('-//app/...:*'), { negative: true, absolute: true, pkg: 'app', pkgAt: [1, 6], recursive: true, dotsAt: [6, 10], name: '*', nameAt: [10, 12], wildcard: 'targets' });
   });
 });
 

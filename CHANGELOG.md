@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+
+### New
+
+- Each target pattern on a bazel command line says what it selects (`//app:main`, `//app/...`, `:all`, `-//app/legacy/...`), in `bazel query`, `cquery` and `aquery` too. A pattern bazel refuses (`//app/...:main`, `//app:`) is marked.
+
 ## 0.11.0
 
 Under `set -e`, a line whose command can fail now says where the script stops and which trap runs. A new warning catches shell injection through `find -exec sh -c` and `xargs sh -c`, and bazel command lines are explained. The box of a line's problems shows each fix as the whole line, the depths are named Overview and Word by word, and `sh` scripts are read closer to how dash and busybox ash run them. On the web page, a large script freezes the page about half as long.

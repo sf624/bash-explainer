@@ -130,9 +130,10 @@ const AQUERY: OptSpec[] = [
   ['--include_artifacts', 'アクションの入力と出力の名前を含める（既定。`--noinclude_artifacts` で除く）', 'include the names of the actions\' inputs and outputs (the default; `--noinclude_artifacts`: leave them out)'],
 ];
 
-const TARGETS = operand('TARGET', 'ターゲットのパターン（`//app:main`、`//app/...`、`--` の後なら除くもの `-//app/legacy/...`）', 'target pattern (`//app:main`, `//app/...`, or after `--` one that takes targets out, `-//app/legacy/...`)', { repeat: '*' });
-/** query, cquery and aquery join their words with spaces into one expression (`bazel query deps '(//x)'`). */
-const EXPRESSION = operand('EXPRESSION', 'クエリ式（`deps(//app:main)`、語は空白でつないで1つの式になる）', 'query expression (`deps(//app:main)`, the words joined with spaces into one)', { repeat: '*' });
+// (Each pattern is read by the target patterns' reader, src/embedded/bazel.ts, which says what it selects.)
+const TARGETS = operand('TARGET', 'ターゲットのパターン', 'target pattern', { repeat: '*', lang: 'bazeltarget' });
+/** query, cquery and aquery join their words with spaces into one expression (`bazel query deps '(//x)'`); a word that is a target pattern is read so. */
+const EXPRESSION = operand('EXPRESSION', 'クエリ式（`deps(//app:main)`、語は空白でつないで1つの式になる）', 'query expression (`deps(//app:main)`, the words joined with spaces into one)', { repeat: '*', lang: 'bazelquery' });
 
 /**
  * Options given at the wrong place, which bazel refuses (`refused`): a command's before the command ("Unknown startup
@@ -207,7 +208,8 @@ const bazelSpec: CommandSpec = cmd('Bazel: ソースからビルドし、テス�
       ['--run_in_cwd', 'runfiles のディレクトリではなく、今のディレクトリで実行する', 'run in the current directory, not in the runfiles tree'],
       ['--run_env', '実行するプログラムに見せる環境変数（`名前=値`）', 'environment variable for the program run (`NAME=value`)', 'arg'],
     ], { operands: [{ pattern: [
-      operand('TARGET', '実行するターゲット（`//tools:fmt`）', 'target to run (`//tools:fmt`)', { repeat: '?' }),
+      // ("Only a single target can be run" where a wildcard gives several: `bazel run //app/...`, status 2.)
+      operand('TARGET', '実行するターゲット（`//tools:fmt`。1つのターゲットになるパターンだけ）', 'target to run (`//tools:fmt`, a pattern that gives only one target)', { repeat: '?', lang: 'bazeltarget' }),
       operand('ARGS', 'プログラムに渡す引数（`-` で始まる語は `--` の後に書く）', 'argument passed to the program (write words that start with `-` after `--`)', { repeat: '*' }),
     ] }] }),
     query: command('ターゲットの依存のグラフを問い合わせる', 'Query the target dependency graph', QUERY, expression),
