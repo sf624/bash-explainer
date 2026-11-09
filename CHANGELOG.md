@@ -1,54 +1,50 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 
-Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+Under `set -e`, a line whose command can fail now says where the script stops and which trap runs. A new warning catches shell injection through `find -exec sh -c` and `xargs sh -c`, and bazel command lines are explained. The box of a line's problems shows each fix as the whole line, the depths are named Overview and Word by word, and `sh` scripts are read closer to how dash and busybox ash run them. On the web page, a large script freezes the page about half as long.
+
+Details and examples: [docs/changes/0.11.0.md](https://github.com/sf624/bash-explainer/blob/v0.11.0/docs/changes/0.11.0.md).
 
 ### New
 
-- bazel command lines are explained: the startup options, the command, about 90 common options with their `--no` forms (`--nostamp`), the target patterns, and the program's arguments of `bazel run //x -- …`. An option on the wrong side of the command, which bazel refuses, is flagged.
+- Under `set -e`, a line whose command can fail has a note: if it fails, the script stops there, which EXIT or ERR trap runs then (with its line), and the exit status. In a bats test, it says that the test fails there.
 - New warning "Shell injection risk" on `find . -exec sh -c 'echo {}' \;` and `xargs -I{} sh -c 'echo {}'`: the path or item becomes shell code. It shows the safe form, `sh -c '… "$1" …' _ {}`.
-- On the web page, a script with no shebang gets a line under the Problems strip, "2 constructs not in POSIX sh", with a button **Check as POSIX sh**. It is not counted: the Problems counts, `--check` and the Action leave it out, and a script with a shebang (bash's too), a bats file and VS Code have no such line.
-- Under `set -e`, a line whose command can fail has a note: if it fails, the script stops there, which EXIT or ERR trap runs then (with its line), and the exit status. Before the `trap … EXIT` line, it says that the trap does not run yet. In a bats test, it says that the test fails there.
+- On the web page, a script with no shebang gets a line under the Problems strip, "2 constructs not in POSIX sh", with a button **Check as POSIX sh**. It is only a hint: the Problems counts, `--check` and the Action leave it out, and VS Code, bats files and scripts with a shebang (bash's too) do not show it.
+- bazel command lines are explained: the startup options, the command, about 90 common options with their `--no` forms (`--nostamp`), the target patterns, and the program's arguments of `bazel run //x -- …`. An option on the wrong side of the command, which bazel refuses, is flagged.
 
 ### Changed
 
-- On the web page, the card over the script no longer opens where you clicked, and it closes on a click, a paste, typing and Escape. The Legend is a popover over the explanation that Escape closes, and it has no button on a line with nothing to explain. Before, the Legend pushed the explanation down and stayed open on the next line.
-- In a `sh`, `dash` or `ash` script, the note on a bash-only form says how it fails there: the status and the message, and whether the shell stops (`[[ ]]` is "not found" with status 127, so the condition is false; `a=(1)` is a syntax error; `${x^^}` is "bad substitution"). Before, it said only "it fails in dash". For `=~`, it names `case` and `expr` and their limits.
-- The box of a line's problems shows each fix under its headline, as the whole line fixed with the changed part marked, and **Copy fix** copies that line. Before, the fix was under **More**, and its Copy took only the part that changed. The web page's header button now says **Copy as Markdown**.
-- At depth 1, the panel shows bash's steps on a word that a step changes (`"$USER"`, `~/docs`, `*.txt`), and a glob's example of names starts open when it is the line's only example or the cursor is on its command; names typed in it stay. Before, the steps were only at depth 2, and the example started closed.
-- **In short** gives each command a short summary, with the parenthetical parts left out, so that no parentheses nest: `grep` (print lines matching a pattern). A loop's body is named by its lines: "repeats the body on lines 3–8".
-- **In short** says what the functions of bats do (`run`, `load`, `assert_success`). Before, it named them alone.
-- At depth 2, when a line is shown, every stage of a pipeline is folded to its own row, examples included; typing and pasting open none. A stage opens when you move the cursor into it (a tap, a click, an arrow key) or click its row; ▸ folds it again.
-- The shebang's row says what runs in one line. What bash and the kernel make of `#!` comes at depth 2.
-- The README is shorter: a quick start, then links to the user guide in `docs/guide/`, in English and Japanese, which holds the rest (VS Code, settings, other shells, warnings, the web page, limitations, privacy).
-- The README's logo is readable in dark themes in VS Code.
-- `which` now says that it looks only in PATH, and that `type` or `command -v` tells what bash runs (a builtin, function or alias too).
+- The box of a line's problems shows each fix under its headline, as the whole line fixed with the changed part marked, and **Copy fix** copies that line; before, the fix was under **More**, and its Copy took only the part that changed. The web page's header button now says **Copy as Markdown**.
 - The panel's depths are named **Overview** and **Word by word** (「概要」「単語ごと」), with the key that chooses each in the tooltip, and a problem's headline starts with the word the Problems list uses ("Portability"). Before, the depths read "1 Does" and "2 Reads", and the headline said "Pitfall" for a portability note.
-- On the web page, Clear, a paste that replaces the whole script (select all and paste, or a paste into an empty editor), and Open start a new script: its file type from the text, untitled, the shell back to Auto, with a toast and Undo; Ctrl+Z after Clear or a paste takes the whole step back. Before, test.bats and a shell chosen in the chip or with "Check as POSIX sh" stayed for every script pasted after it.
-- On a phone, the explanation's sheet has a strip of its own above its tabs to grab, and a short flick up from half no longer opens it to full height. At full height it stops below the file name, and a drag no longer covers the ☰ button.
-- On a phone, the file name opens the rename box from its pencil only, and a part's fold arrow in the explanation takes a tap 44 px wide and high.
+- At depth 1, the panel shows bash's steps on a word that a step changes (`"$USER"`, `~/docs`, `*.txt`), and a glob's example of names starts open when it is the line's only example or the cursor is on its command; names typed in it stay. Before, the steps were only at depth 2, and the example started closed.
+- At depth 2, every stage of a pipeline starts folded to its own row, examples included, and opens when you move the cursor into it or click its row; ▸ folds it again. The shebang's row says in one line what runs, and what bash and the kernel make of `#!` comes at depth 2.
+- **In short** gives each command a short summary with no nested parentheses (`grep` (print lines matching a pattern)), names a loop's body by its lines ("repeats the body on lines 3–8"), and says what the functions of bats do (`run`, `load`, `assert_success`). Before, it named bats' functions alone.
+- In a `sh`, `dash` or `ash` script, the note on a bash-only form says how it fails there: the status, the message, and whether the shell stops (`[[ ]]` is "not found" with status 127, so the condition is false; `a=(1)` is a syntax error). Before, it said only "it fails in dash".
+- On the web page, the card over the script no longer opens where you clicked, and it closes on a click, a paste, typing and Escape. The Legend is a popover over the explanation that Escape closes, with no button on a line with nothing to explain; before, it pushed the explanation down and stayed open on the next line.
+- On the web page, Clear, Open and a paste that replaces the whole script start a new script: its file type from the text, untitled, the shell back to Auto, with a toast and Undo. Before, test.bats and a shell chosen in the chip or with "Check as POSIX sh" stayed for every script pasted after it.
+- On a phone, the explanation's sheet has a strip of its own above its tabs to grab, a short flick up from half no longer opens it to full height, and at full height it stops below the file name and leaves the ☰ button free. The file name opens the rename box from its pencil only, and a part's fold arrow takes a tap 44 px wide and high.
 - A pipeline's sample for `uniq` or `sort -u` now shows lines that really collapse: after `sed`, two different lines instead of one line copied, and the copies of a line come one after the other, so a bare `uniq` collapses them too.
+- `which` now says that it looks only in PATH, and that `type` or `command -v` tells what bash runs (a builtin, function or alias too).
+- The README is shorter: a quick start, then links to the new user guide in `docs/guide/` (English and Japanese), which holds the rest. Its logo is readable in dark themes in VS Code.
 
 ### Fixed
 
-- The note on `trap … EXIT` no longer says that it runs however the script exits: it does not run on SIGKILL, nor after `exec cmd`.
-- In a `sh` or `dash` script, more bash-only forms are now problems: `a[0]=1` (also in `ash`), `$((i++))`, `$((++i))`, `$((2**3))`, `>& file`, `set +o pipefail` and `read` with no name. There, `read` with no name no longer shows "Values stored: REPLY=…".
-- In a script checked as POSIX sh, `~/dir` and a glob now say which words the program receives, as in bash; before, they said "not always one word". A file a glob does not match for a leading `.` says that `*` and `?` do not match it, with no `dotglob` named.
-- `find -mtime +"$DAYS"` and `"+$DAYS"` (a value read at run time) are summarized like `-mtime +7`: "at least (`"$DAYS"` + 1) days ago", not "more than `"$DAYS"` days ago"; the sign inside the quotes is read too. `-mindepth 1`, `-mtime -1` and `-mmin 1` say "1 level", "1 day", "1 minute", not the plural.
-- A value made only of spaces or tabs (a replacement, default, pattern or delimiter) is now named: `${x//:/ }` says "with ` ` (a space)", `cut -d' '` "a space after quote removal". A value with a space at both ends (`${x//,/ - }`) keeps them in the code span, and an empty pattern is said as "an empty string". Before, such a code span looked empty or lost its spaces.
-- A Makefile recipe line that make runs without a shell (no `;`, `"`, `$`, `|`, `#`, `*` or the like, and not starting with `cd`, `export`…) is explained as a program make runs: `@echo -e '\033[32mOK\033[0m'` is `/bin/echo`, with no warning about dash's `echo -e`, and the chip says "no shell". Before, it was dash's builtin and the warning was wrong. A line with a make variable says that its value decides.
-- On a phone, the explanation's header shows the same controls in Japanese as in English, and the depth's menu no longer lies over the grab bar; its button and segments are drawn as high as the file type's chip, and every pill there has round ends. Before, in Japanese at 430 px and wider, Collapse and Markdown came into the row and pushed the depth's menu under the grab bar.
-- On a phone, a tap on the folded sheet's summary row right after a quick swipe, or on its header right after a drag, is no longer lost. Moving the sheet no longer scrolls the editor back to the cursor when you have scrolled away from it.
-- The command-line tool exits quietly with status 141 (what a shell reports for a program killed by SIGPIPE) when its output is closed early, as in `bash-explainer script.sh | head -1`. Before, it printed an `EPIPE` stack trace and exited with status 1.
-- The example of a test reads each value as bash does: unquoted in `[ ]`, an empty value or one with a space makes bash fail, and a new section "Error (status 2) when" lists it, the script's own value too. Before, `[ $x = "" ]` said "True when `x=""`".
-- `xargs` options that cancel each other are explained as xargs reads them: in `-n1 -I{}`, `-I{} -L1`, `-L1 -n1` and `-I{} -n2` the earlier option is marked as ignored (xargs warns "ignoring previous … value" on stderr), and the example follows the one that wins. Before, both were listed as in effect, and the example of `-I{} -L1` and `-L1 -n1` was wrong.
-- In a script that sources a file or runs text the explainer cannot read, the lines before that point use the values the script gives again: their worked examples run on the real data, and their notes read the value (`rm -rf $dir` with `dir=/tmp/cat` is a Caveat). In 0.10.0 they had made-up examples and stronger warnings.
-- The `{}` of `find -exec rm {} \;` and the replace string of `xargs -I{} cp {} dest/` are placeholders that `find` or `xargs` replaces, not operands that the command reads.
-- A Dockerfile's `RUN` is checked for the `/bin/sh` of its stage's base image: busybox ash under `FROM alpine`, dash under `FROM debian` or `ubuntu`. Before, `RUN [[ -f x ]]` under `FROM alpine` was an Error, and failed `--check`.
-- In a `#!/bin/sh` script, `source`, `let` and other builtins that dash lacks are no longer called builtins; the panel says in which shells they are not found.
-- In a `#!/bin/sh` script, `$RANDOM`, `$UID` and other variables that dash or busybox ash do not set are explained as plain variables there, as the line's warning says. `$SRANDOM`, `$OPTERR` and `$HISTCMD` now get that warning too.
 - On the web page, a large script freezes the page for about half as long: pasting nvm.sh (4,600 lines) blocks it for 8 s instead of 17 s. The POSIX sh hint does not check a script that large.
+- In a script that sources a file or runs text the explainer cannot read, the lines before that point use the values the script gives again: their worked examples run on the real data, and their notes read the value (`rm -rf $dir` with `dir=/tmp/cat` is a Caveat). In 0.10.0 they had made-up examples and stronger warnings.
+- A Dockerfile's `RUN` is checked for the `/bin/sh` of its stage's base image: busybox ash under `FROM alpine`, dash under `FROM debian` or `ubuntu`. Before, `RUN [[ -f x ]]` under `FROM alpine` was an Error, and failed `--check`.
+- In a `sh` or `dash` script, more bash-only forms are now problems: `a[0]=1` (also in `ash`), `$((i++))`, `$((2**3))`, `>& file`, `set +o pipefail` and `read` with no name. Builtins that dash lacks (`source`, `let`) are no longer called builtins, and variables that dash or busybox ash do not set (`$RANDOM`, `$UID`) are plain variables there, as the line's warning says.
+- In a script checked as POSIX sh, `~/dir` and a glob now say which words the program receives, as in bash; before, they said "not always one word".
+- The example of a test reads each value as bash does: unquoted in `[ ]`, an empty value or one with a space makes bash fail, and a new section "Error (status 2) when" lists it, the script's own value too. Before, `[ $x = "" ]` said "True when `x=""`".
+- `find` and `xargs` lines are read as the tools run them: the `{}` of `find -exec rm {} \;` and the replace string of `xargs -I{} cp {} dest/` are placeholders, not operands, and of two `xargs` options that cancel each other (`-n1 -I{}`, `-L1 -n1`) the earlier is marked as ignored, with the example following the one that wins. Before, both options were listed as in effect, and some of those examples were wrong.
+- `find -mtime +"$DAYS"` (a value read at run time) is summarized like `-mtime +7`: "at least (`"$DAYS"` + 1) days ago", not "more than `"$DAYS"` days ago". `-mtime -1` says "1 day", not the plural.
+- A Makefile recipe line that make runs without a shell (no `;`, `$`, `|` or the like) is explained as a program make runs: `@echo -e '\033[32mOK\033[0m'` is `/bin/echo`, and the chip says "no shell". Before, it was dash's builtin, with a wrong warning about dash's `echo -e`.
+- A value made only of spaces or tabs is now named (`${x//:/ }` says "with ` ` (a space)"), and a value with a space at both ends (`${x//,/ - }`) keeps them in its code span. Before, such a code span looked empty or lost its spaces.
+- The note on `trap … EXIT` no longer says that it runs however the script exits: it does not run on SIGKILL, nor after `exec cmd`.
+- On a phone, the explanation's header shows the same controls in Japanese as in English, its pills are drawn at one height with round ends, and the depth's menu no longer lies over the grab bar. A tap right after a swipe or a drag of the sheet is no longer lost, and moving the sheet no longer scrolls the editor back to the cursor when you have scrolled away from it.
+- The command-line tool exits quietly with status 141 (what a shell reports for a program killed by SIGPIPE) when its output is closed early, as in `bash-explainer script.sh | head -1`. Before, it printed an `EPIPE` stack trace and exited with status 1.
+
+[All changes](https://github.com/sf624/bash-explainer/compare/v0.10.0...v0.11.0)
 
 ## 0.10.0
 
