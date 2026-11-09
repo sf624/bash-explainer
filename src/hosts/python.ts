@@ -1,7 +1,7 @@
 import { type Shell, shellFromName } from '../dialect';
 import { featureWorks } from '../shellfeatures';
 import type { Pos } from '../analyzer-types';
-import type { CallArgument, LiteralSource, ReParam, RegionNote } from './index';
+import type { CallArgument, LanguageRegion, LiteralSource, ReParam, RegionNote } from './index';
 import { type JsonWord, execWords } from './dockerfile';
 import { LineOut, Builder } from './builder';
 import type { HostMeaning } from '../messages-hosts';
@@ -159,23 +159,51 @@ export function python(b: Builder): void {
     const what: [string, string] = usesShell ? [`シェル（${sh}）が実行する文字列`, `a string the shell (${sh}) runs`] : ['シェルを通さないコマンド文字列', 'a command string run without a shell'];
     b.region(script.first, script.last, label(what), usesShell ? target : 'bash', notes);
   }
-  for (const p of patterns) rePattern(b, lx, p, pos);
+  claimLines(b, patterns.flatMap((p) => reCall(lx, p, pos) ?? []));
+}
+
+/** A call of `re` read, before it has its lines: its region but for them, the lines of the call and those of its pattern's literals. */
+interface ReCandidate { region: Omit<LanguageRegion, 'lines'>; start: number; end: number; pattern: { start: number; end: number } }
+
+/**
+ * The lines of the calls of `re` (docs/design/python-regex.md, 2.2), each call in the order written. A line a shell region has stays
+ * the shell's. A line of a pattern's literals is that call's, the first written when two patterns share one, and a call whose pattern
+ * has a line taken so is left out. Every other line of a call is that of the innermost call kept that holds it: the one that starts
+ * last, as calls nest (`re.sub(r'a', 'b',` over `re.sub(r'c', 'd', s))`: each line shows its own pattern).
+ */
+function claimLines(b: Builder, calls: readonly ReCandidate[]): void {
+  const owner = new Map<number, ReCandidate>();
+  const patternLines = new Set<number>();
+  const kept = calls.filter((c) => {
+    for (let l = c.pattern.start; l <= c.pattern.end; l++) if (b.outs[l]?.text || patternLines.has(l)) return false;
+    for (let l = c.pattern.start; l <= c.pattern.end; l++) {
+      patternLines.add(l);
+      owner.set(l, c);
+    }
+    return true;
+  });
+  for (const c of kept) for (let l = c.start; l <= c.end; l++) if (!b.outs[l]?.text && !patternLines.has(l)) owner.set(l, c);
+  for (const c of kept) {
+    const lines: number[] = [];
+    for (let l = c.start; l <= c.end; l++) if (owner.get(l) === c) lines.push(l);
+    b.languages.push({ ...c.region, lines });
+  }
 }
 
 /**
- * The call of `re` whose name starts at the token `p.first` and whose `(` is at `p.at`, as a `LanguageRegion` over the call's lines:
- * its arguments, each with the parameter it binds (`RE_CALLS`: by its slot, or by keyword) and its value when it is string literals.
- * A region needs a pattern of string literals only (one, or several joined, over several lines too), of str (a bytes pattern, an
- * f-string with a field and a `\N{…}` escape are not read yet), and no flags (which the reader does not read yet). Not on a line
- * that a shell region or another call has.
+ * The call of `re` whose name starts at the token `p.first` and whose `(` is at `p.at`, as a `LanguageRegion` whose lines are not
+ * given yet (`claimLines`): its arguments, each with the parameter it binds (`RE_CALLS`: by its slot, or by keyword) and its value
+ * when it is string literals. A region needs a pattern of string literals only (one, or several joined, over several lines too), of
+ * str (a bytes pattern, an f-string with a field and a `\N{…}` escape are not read yet), and no flags (which the reader does not
+ * read yet).
  */
-function rePattern(b: Builder, lx: PyFile, p: { name: string; full: string; first: number; at: number }, pos: PyPos): void {
+function reCall(lx: PyFile, p: { name: string; full: string; first: number; at: number }, pos: PyPos): ReCandidate | undefined {
   const { src, tokens } = lx;
   const close = lx.pair[p.at];
-  if (close < 0) return;
+  if (close < 0) return undefined;
   const { parts } = pyArgs(lx, p.at, close);
   // (A `*args` or `**kwargs` may hold the pattern or the flags.)
-  if (parts.some((a) => isOp(src, tokens[a[0]], '*') || isOp(src, tokens[a[0]], '**'))) return;
+  if (parts.some((a) => isOp(src, tokens[a[0]], '*') || isOp(src, tokens[a[0]], '**'))) return undefined;
   const { params } = RE_CALLS[p.full];
   const at = (off: number): Pos => {
     const q = pos(off);
@@ -193,17 +221,18 @@ function rePattern(b: Builder, lx: PyFile, p: { name: string; full: string; firs
   });
   const args = read.map((r) => r.arg);
   const pattern = read.find((r) => r.arg.role === 'pattern')?.value;
-  if (!pattern || args.some((a) => a.role === 'flags' || !a.role) || pattern.literals.some((l) => l.token.lit!.bytes) || setsVerbose(pattern.value)) return;
-  const start = pos(tokens[p.first].start).line;
-  const end = pos(tokens[close].start).line;
-  for (let l = start; l <= end; l++) if (b.outs[l]?.text || b.languages.some((r) => r.start <= l && l <= r.end)) return;
-  b.languages.push({
-    start, end,
+  if (!pattern || args.some((a) => a.role === 'flags' || !a.role) || pattern.literals.some((l) => l.token.lit!.bytes) || setsVerbose(pattern.value)) return undefined;
+  const region: ReCandidate['region'] = {
     label: [`Python の正規表現（\`${p.name}\` の引数）`, `Python regex (argument of \`${p.name}\`)`],
-    host: { kind: b.kind }, language: 'regex', flavor: 'python',
+    host: { kind: 'python' }, language: 'regex', flavor: 'python',
     call: { written: p.name, name: p.full, span: { start: at(tokens[p.first].start), end: at(tokens[close].end) } },
     args,
-  });
+  };
+  const literals = pattern.literals;
+  return {
+    region, start: pos(tokens[p.first].start).line, end: pos(tokens[close].start).line,
+    pattern: { start: pos(literals[0].token.start).line, end: pos(literals[literals.length - 1].token.end).line },
+  };
 }
 
 /** Where each character of the value of literals is in the file (`LiteralSource`). */

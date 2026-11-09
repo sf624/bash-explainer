@@ -23,12 +23,12 @@ const open = (src: string): ShellDocument => openDocument(src, 'python', (t) => 
 const explainPy = (src: string, line: number, lang: 'ja' | 'en' = 'en', opts = {}): LineExplanation => explainDocumentLine(new Analyzer(lang), open(src), line, lang, {}, opts);
 const texts = (ts: readonly Token[]): string[] => ts.flatMap((t) => [`${t.label}: ${t.explanation}`, ...texts(t.children)]);
 /** Each region of a file's patterns: its lines, the function as written and its full name, and the text the reader reads. */
-const patterns = (src: string) => extractShell('python', src).languages.map((r) => ({ lines: [r.start, r.end], call: r.call.written, name: r.call.name, value: patternOf(r).value }));
+const patterns = (src: string) => extractShell('python', src).languages.map((r) => ({ lines: r.lines, call: r.call.written, name: r.call.name, value: patternOf(r).value }));
 
 describe('Python regex: the patterns of `re` in a `.py` file', () => {
   describe('which calls give a pattern', () => {
     it('finds the functions of `re` by the names the file imports, with a pattern of literals', () => {
-      assert.deepStrictEqual(patterns("import re\nm = re.search(r'^\\d+$', s)\n"), [{ lines: [1, 1], call: 're.search', name: 're.search', value: '^\\d+$' }]);
+      assert.deepStrictEqual(patterns("import re\nm = re.search(r'^\\d+$', s)\n"), [{ lines: [1], call: 're.search', name: 're.search', value: '^\\d+$' }]);
       assert.deepStrictEqual(patterns("import re as regex\nregex.sub('a+', 'b', s)\n").map((p) => [p.call, p.name]), [['regex.sub', 're.sub']]);
       assert.deepStrictEqual(patterns("from re import compile, fullmatch as fm\ncompile('x')\nfm(pattern='y', string=s)\n").map((p) => [p.call, p.name, p.value]), [['compile', 're.compile', 'x'], ['fm', 're.fullmatch', 'y']]);
       for (const f of ['compile', 'search', 'match', 'prefixmatch', 'fullmatch', 'findall', 'finditer', 'split', 'sub', 'subn']) assert.strictEqual(patterns(`import re\nre.${f}('a')\n`).length, 1, f);
@@ -40,7 +40,7 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
     it('reads the value of the literals: escapes undone unless raw, joined, over several lines', () => {
       assert.deepStrictEqual(patterns("import re\nre.match('\\\\d+\\\\.' r'\\w' \"\\t\", s)\n").map((p) => p.value), ['\\d+\\.\\w\t']);
       // (The region is the call's lines, from its name to its `)`.)
-      assert.deepStrictEqual(patterns("import re\nP = re.compile(\n    r'a'\n    r'b'\n)\n").map((p) => [p.lines, p.value]), [[[1, 4], 'ab']]);
+      assert.deepStrictEqual(patterns("import re\nP = re.compile(\n    r'a'\n    r'b'\n)\n").map((p) => [p.lines, p.value]), [[[1, 2, 3, 4], 'ab']]);
       assert.deepStrictEqual(patterns("import re\nP = re.compile(r'''a\nb''')\n").map((p) => [p.lines, p.value]), [[[1, 2], 'a\nb']]);
       assert.deepStrictEqual(patterns("import re\nre.search((r'a'), s)\n").map((p) => p.value), ['a']);
       // (An empty pattern is one too: its end is where its text would start.)
@@ -77,9 +77,34 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
       const src = "import re, os\nre.match('a', x); os.system('ls')\nre.match('b', x); re.match('c', x)\n";
       const ex = extractShell('python', src);
       assert.deepStrictEqual(ex.regions.map((r) => [r.start, r.end]), [[1, 1]]);
-      assert.deepStrictEqual(ex.languages.map((r) => [r.start, patternOf(r).value]), [[2, 'b']]);
+      assert.deepStrictEqual(ex.languages.map((r) => [r.lines, patternOf(r).value]), [[[2], 'b']]);
       // (Its lines stay empty in the shell text.)
       assert.strictEqual(ex.text.split('\n')[2], '');
+    });
+
+    it('gives a line of a call to the call whose pattern is on it, else to the innermost call that holds it', () => {
+      const lines = (src: string) => extractShell('python', src).languages.map((r) => [r.lines, patternOf(r).value]);
+      // (A call inside another, on the next line: each line shows its own pattern; it was the outer's on both before.)
+      const nested = "import re\nx = re.sub(r'a', 'b',\n           re.sub(r'c', 'd', s))\n";
+      assert.deepStrictEqual(lines(nested), [[[1], 'a'], [[2], 'c']]);
+      assert.deepStrictEqual([1, 2].map((l) => explainPy(nested, l).items[0].label), ["r'a'", "r'c'"]);
+      // (The inner call over three lines, and the outer's last argument on a line of its own.)
+      assert.deepStrictEqual(lines("import re\nx = re.sub(r'a',\n  'b', re.sub(\n    r'c', 'd',\n    s),\n  s)\n"), [[[1, 5], 'a'], [[2, 3, 4], 'c']]);
+      // (A line where two patterns are: the first written's, and the other call has no line.)
+      assert.deepStrictEqual(lines("import re\nx = re.sub(r'a', 'b',\n  re.sub(r'c', 'd', s)) or re.match(r'e',\n  t)\n"), [[[1], 'a'], [[2], 'c']]);
+      assert.deepStrictEqual(lines("import re\nx = re.sub(r'a', 'b', re.sub(r'c', 'd',\n  s))\n"), [[[1, 2], 'a']]);
+      // (A call of one statement keeps every line of it.)
+      assert.deepStrictEqual(lines("import re\ny = re.findall(r'\\d+',\n  text)\n"), [[[1, 2], '\\d+']]);
+    });
+
+    it('leaves a call the lines a shell region in it has, and keeps the rest', () => {
+      const src = "import re, subprocess\nx = re.sub(r'a', 'b',\n  subprocess.run('ls -l', shell=True).stdout,\n  count=1)\n";
+      const ex = extractShell('python', src);
+      assert.deepStrictEqual(ex.regions.map((r) => [r.start, r.end]), [[2, 2]]);
+      assert.deepStrictEqual(ex.languages.map((r) => [r.lines, patternOf(r).value]), [[[1, 3], 'a']]);
+      assert.deepStrictEqual([1, 2, 3].map((l) => hostPartAt(ex, l)?.kind), ['language', 'shell', 'language']);
+      // (A pattern on a line the shell region has is not explained.)
+      assert.deepStrictEqual(extractShell('python', "import re, subprocess\nx = re.sub(\n  r'a', subprocess.run('ls', shell=True),\n  s)\n").languages, []);
     });
   });
 
@@ -223,7 +248,7 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
     const doc = open(fs.readFileSync(file, 'utf8'));
     const said = doc.lines.map((_, l) => explainDocumentLine(new Analyzer('en'), doc, l, 'en', {}, {}));
     assert.ok(doc.extracted!.languages.length >= 5);
-    for (const r of doc.extracted!.languages) for (let l = r.start; l <= r.end; l++) assert.ok(said[l].items.length, `line ${l + 1}`);
+    for (const r of doc.extracted!.languages) for (const l of r.lines) assert.ok(said[l].items.length, `line ${l + 1}`);
     // (No text of a pattern keeps an id of the catalog: `markSaid` took them all.)
     assert.ok(said.every((ex) => texts(ex.items).every((t) => readSaid(t).said.length === 0)));
   });

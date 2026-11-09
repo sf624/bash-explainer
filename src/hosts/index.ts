@@ -102,9 +102,11 @@ export interface CallArgument { role?: ReParam; keyword: boolean; span: Span; li
  * shell text. Read through `hostPartAt` (src/hosts/scripts.ts).
  */
 export interface LanguageRegion {
-  /** Its lines, those of the call: from the function's name to its `)`. */
-  start: number;
-  end: number;
+  /**
+   * The lines it has, in order: those of the call, from the function's name to its `)`, but a line of a shell region, of another
+   * call's pattern, or of a call inside it that holds the line (`claimLines`, src/hosts/python.ts; docs/design/python-regex.md, 2.2).
+   */
+  lines: readonly number[];
   /** What it is, "Python regex (argument of `re.search`)" (ja, en). */
   label: [string, string];
   host: HostId;

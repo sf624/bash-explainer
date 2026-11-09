@@ -58,7 +58,7 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
   };
   const anchors: NoteAnchor[] = [];
   const data = new Map<string, Note>();
-  const ex = finishLine({ line: region.start, items: [top], own: [top], rested: [], context: [{ label: region.label[lang === 'ja' ? 0 : 1], line: region.start }], origin: 'embedded' }, opts, () => {
+  const ex = finishLine({ line: region.lines[0], items: [top], own: [top], rested: [], context: [{ label: region.label[lang === 'ja' ? 0 : 1], line: region.lines[0] }], origin: 'embedded' }, opts, () => {
     const notes = tokenErrors(lang, [top], (n, span) => sayAt(anchors, data, n, span));
     return { notes, noteInfo: notes.map((n) => basisGate(data.get(n)!, opts.basis)), facts: [], anchors, marked: { facts: [], anchors }, examples: [] };
   });
