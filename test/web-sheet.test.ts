@@ -111,7 +111,7 @@ describe('the web page: the phone\'s sheet', function () {
   const ROW = ['#tab-explain', '#tab-problems', '#tab-ref', '#view-slot'];
   const STRIP = ['#mode-read', '#mode-edit', '#scope-chip', '#ed-more'];
 
-  it('has a grab strip of 22 px free of controls over one 48 px row at every height and tab, with the same boxes, 44 px controls and no horizontal scroll: 320 to 430 px, en and ja, and 130% text', async () => {
+  it('has a grab strip of 10 px free of controls over one 48 px row at every height and tab, with the same boxes, 44 px controls and no horizontal scroll: 320 to 430 px, en and ja, and 130% text', async () => {
     const cases: [number, 'en' | 'ja', number][] = [];
     for (const width of [320, 360, 390, 430]) for (const lang of ['en', 'ja'] as const) cases.push([width, lang, 1]);
     cases.push([300, 'en', 1.3], [300, 'ja', 1.3]);
@@ -129,12 +129,12 @@ describe('the web page: the phone\'s sheet', function () {
         }
         const at = `${where}, ${snap}, ${tab}`;
         const head = await box(page, '#panel-head');
-        assert.ok(Math.abs(head.height - 70) < 0.5, `${at}: the header is ${head.height} px`);
+        assert.ok(Math.abs(head.height - 58) < 0.5, `${at}: the header is ${head.height} px`);
         const boxes = await row();
-        // The grab strip (usability-9.md, 2.5): 22 px high across the header's top, its bar drawn 48 x 5 px in its middle,
+        // The grab strip (usability-9.md, 2.5): 10 px high across the header's top, its bar drawn 48 x 5 px in its middle,
         // and every point of it free to grab: a finger there finds the header (or the grabber), never a control.
-        assert.deepStrictEqual(await grabStrip(page), { strip: [0, width, 22], bar: [48, 5, 11], free: true }, at);
-        for (const [i, b] of boxes.entries()) assert.ok(b.y >= head.y + 22 - 0.5, `${at}: ${ROW[i]} lies in the grab strip: ${JSON.stringify([head, b])}`);
+        assert.deepStrictEqual(await grabStrip(page), { strip: [0, width, 10], bar: [48, 5, 10], free: true }, at);
+        for (const [i, b] of boxes.entries()) assert.ok(b.y >= head.y + 10 - 0.5, `${at}: ${ROW[i]} lies in the grab strip: ${JSON.stringify([head, b])}`);
         // The same place in the row at every height and tab (its top moves with the sheet).
         const shape = boxes.map((b) => ({ x: b.x, width: b.width, height: b.height, dy: Math.round((b.y - head.y) * 10) / 10 }));
         first ??= shape as unknown as Box[];
@@ -159,11 +159,11 @@ describe('the web page: the phone\'s sheet', function () {
         } else {
           assert.ok(bar.y >= 0 && !inert && pane.y > strip.y + strip.height, `${at}: ${JSON.stringify([bar, pane])}`);
         }
-        // The peek is the header and the summary row under it (step C8b, about 119 px), at the window's bottom; the summary
+        // The peek is the header and the summary row under it (step C8b, about 107 px), at the window's bottom; the summary
         // row's parts keep clear of the edges' swipe strips, and its text is cut at its end, never wrapped.
         const summary = await box(page, '#sheet-summary');
         if (snap === 'peek') {
-          assert.ok(Math.abs(pane.height - 119) < 1 && Math.round(pane.y + pane.height) === 740, `${at}: ${JSON.stringify(pane)}`);
+          assert.ok(Math.abs(pane.height - 107) < 1 && Math.round(pane.y + pane.height) === 740, `${at}: ${JSON.stringify(pane)}`);
           assert.ok(Math.abs(summary.y - (head.y + head.height)) < 0.5 && Math.abs(summary.height - 48) < 0.5 && summary.x === 0 && summary.width === width, `${at}: ${JSON.stringify([head, summary])}`);
           const parts = await page.locator('#sheet-summary > :not(:empty)').evaluateAll((els) => els.filter((e) => e.checkVisibility()).map((e) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; }));
           for (const r of parts) assert.ok(r.left >= EDGE - 0.5 && r.right <= width - EDGE + 0.5 && r.top >= summary.y && r.bottom <= summary.y + summary.height, `${at}: ${JSON.stringify([summary, parts])}`);
@@ -501,15 +501,15 @@ describe('the web page: the phone\'s sheet', function () {
   it('cycles its heights on a tap of the header or of the tab chosen, and opens to show another tab', async () => {
     const page = await open(await phone(390, 'ja'));
     // (At `dy` px under the header's top: in the grab strip, or in the tabs row's middle.)
-    const tapAt = async (x: number, dy = 22 + 24) => {
+    const tapAt = async (x: number, dy = 10 + 24) => {
       const head = await box(page, '#panel-head');
       await page.touchscreen.tap(x, head.y + dy);
       return (await settled(page)).snap;
     };
     // The grab strip, the header around the tabs (its edge), and the tab already chosen.
     assert.strictEqual((await settled(page)).snap, 'half');
-    assert.strictEqual(await tapAt(195, 11), 'full');
-    assert.strictEqual(await tapAt(5, 11), 'peek');
+    assert.strictEqual(await tapAt(195, 5), 'full');
+    assert.strictEqual(await tapAt(5, 5), 'peek');
     assert.strictEqual(await tapAt(5), 'half');
     assert.strictEqual(await tapAt(5), 'full');
     assert.strictEqual(await tapAt(5), 'peek');

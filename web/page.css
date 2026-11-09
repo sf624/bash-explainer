@@ -2899,10 +2899,10 @@ body:has(> #settings-dialog.dragging) main {
    (--sheet-box) and goes on under it, so that the lines a move uncovers are there; --sheet-past is the room under its
    text, and web/editor.ts keeps the cursor's line above what the sheet covers. A move goes by `transform` alone
    (web/sheet.ts, `glide`: the pane is as tall as the move needs until it ends). Its header is the same at every height:
-   a grab strip of 22 px that nothing else lies in (--sheet-grab), over one 48 px row of tabs, and all of it takes a drag
+   a grab strip of 10 px that nothing else lies in (--sheet-grab), over one 48 px row of tabs, and all of it takes a drag
    (docs/design/usability-9.md, 2.5). At full height the app bar slides away (data-sheet="full"). */
 :where(html.bottom-sheet) {
-  --sheet-grab: 22px;
+  --sheet-grab: 10px;
   --sheet-head: calc(var(--sheet-grab) + 48px);
 }
 
@@ -2995,7 +2995,7 @@ body:has(> #settings-dialog.dragging) main {
 :where(html.bottom-sheet) .sheet-grab::before {
   content: "";
   position: absolute;
-  top: 50%;
+  top: 10px;
   left: 50%;
   width: 48px;
   height: 5px;

@@ -61,8 +61,8 @@ describe('the web page on a phone: the sheet\'s header row', function () {
           if (width < SHEET_TOOLS_WIDTH) assert.strictEqual(m.tools, 'none', `${seen}: ${JSON.stringify(m)}`);
           assert.strictEqual(m.squeeze, false, seen);
           for (let i = 0; i < m.controls.length; i++) for (let j = i + 1; j < m.controls.length; j++) assert.ok(!meets(m.controls[i], m.controls[j]), `${seen}: ${m.controls[i].id} over ${m.controls[j].id}`);
-          // (The grab strip is 22 px high across the row's top, and nothing a finger presses or that draws lies in it.)
-          assert.ok(Math.abs(m.strip.b - m.strip.t - 22) < 0.5, `${seen}: ${JSON.stringify(m.strip)}`);
+          // (The grab strip is 10 px high across the row's top, and nothing a finger presses or that draws lies in it.)
+          assert.ok(Math.abs(m.strip.b - m.strip.t - 10) < 0.5, `${seen}: ${JSON.stringify(m.strip)}`);
           for (const d of [...m.controls, ...m.drawn]) assert.ok(d.t >= m.strip.b - 0.5, `${seen}: ${d.id} [${d.t}, ${d.b}] in the grab strip [${m.strip.t}, ${m.strip.b}]`);
           // The depth's menu button is as high as the file type's chip: drawn 32 px high, in a target of 44.
           if (m.form === 'menu') assert.deepStrictEqual(m.pill, m.chip, `${seen}: the pill ${m.pill}, the chip ${m.chip}`);
