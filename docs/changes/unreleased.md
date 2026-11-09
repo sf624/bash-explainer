@@ -39,6 +39,14 @@ Checked with buildozer 10.2.0 (bazel-contrib/buildtools; `buildozer -help`, and 
 - **`set -e`.** buildozer exits with 3 when no file needed a change, which it counts as a success. Under `set -e`, a warning says that the script then stops there, so that a second run stops at that line, and suggests `… || [ $? -eq 3 ]`. Not with `-stdout`, nor when every command only prints.
 - **Not yet said.** A label with an expansion in it (`"//app:$t"`), and the commands of a `-f` file.
 
+### unused_deps
+
+Checked with unused_deps 10.2.0 (bazel-contrib/buildtools; `unused_deps -h`, and the query it runs with no bazel on PATH: test/unused-deps.test.ts).
+
+- **What it does.** It asks bazel for `kind('(kt|java|android)_*', PATTERNS)` (`//...` with no pattern), an unanchored regular expression: rules whose kind has `kt`, `java` or `android` in its name (`java_library`, `java_binary`, `kt_jvm_library`, `android_library`) are checked, the others are skipped. For each dependency the compiler did not use, it prints a buildozer command (`buildozer 'remove deps //lib:x' //app:main`); the summary says it changes nothing itself.
+- **Options.** The seven flags of `-h` (`-build_tool`, `-cquery`, `-extra_action_file`, `-extra_build_flags`, `-output_file`, `-disable_symlink_safety`, `-version`), read as Go's `flag` package does, as buildozer's. Each operand is a target pattern, read as for `bazel build`.
+- **Not yet said.** The exit status; the output is not shown as an example.
+
 ## Changed
 
 ### Invalid regexes are Errors
