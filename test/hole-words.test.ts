@@ -537,7 +537,7 @@ describe('words with an expansion read with the expansion as a hole', function (
           return !!r && claims(r.tokens);
         });
       }
-      assert.deepStrictEqual(Object.keys(claimed).filter((k) => claimed[k]).sort(), ['awk', 'date', 'echo', 'glob', 'perl', 'printf', 'regex', 'sed', 'trset']);
+      assert.deepStrictEqual(Object.keys(claimed).filter((k) => claimed[k]).sort(), ['awk', 'bazeltarget', 'date', 'echo', 'glob', 'perl', 'printf', 'regex', 'sed', 'trset']);
     });
     describe('a script that holds a noncharacter a hole is written as: the parser masks it (`maskCarried`), so no reader takes it for one', () => {
       const words = (c: string): string[] => [
