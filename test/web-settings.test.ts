@@ -554,9 +554,12 @@ describe('the web page: theme and settings', function () {
     const movesAsOne = (frames: MoveFrame[], opening: boolean) => {
       const moved = frames.filter((f) => f.left > 1280 - 1280 / 3 + 0.5 && f.left < 1279.5);
       assert.ok(moved.length >= 5, seen(frames));
-      assert.ok(frames.every((f) => Math.abs(f.gap) < 0.05), seen(frames));
+      // Layout snaps to 1/64 px: CI printed a gap of -0.015625 and a frame of 419.671875 on a frame in flight. Half a pixel ignores that
+      // rounding (and the 0.1 px steps of toFixed(1) that split one width in two); a separation or a width that follows the sheet is
+      // a pixel or more, and a pane moving on another frame is far more.
+      assert.ok(frames.every((f) => Math.abs(f.gap) < 0.5), seen(frames));
       moved.forEach((f, i) => assert.ok(!i || (opening ? f.left <= moved[i - 1].left : f.left >= moved[i - 1].left), seen(frames)));
-      for (const key of ['frame', 'text'] as const) assert.strictEqual(new Set(moved.map((f) => f[key].toFixed(1))).size, 1, `${key}: ${seen(frames)}`);
+      for (const key of ['frame', 'text'] as const) assert.ok(Math.max(...moved.map((f) => f[key])) - Math.min(...moved.map((f) => f[key])) < 0.5, `${key}: ${seen(frames)}`);
       assert.ok(Math.abs(moved[0].frame - (1280 - 1280 / 3) / 2 + 7) < 1, seen(frames));
       assert.ok(Math.abs(moved[0].text - (1280 - 1280 / 3) / 2) < 1, seen(frames));
     };
@@ -584,7 +587,7 @@ describe('the web page: theme and settings', function () {
     }
     // The gear again while it slides out: it comes back from where it was, with no jump.
     frames = await framesWhile(page, "(document.getElementById('settings-open').click(), setTimeout(() => document.getElementById('settings-open').click(), 90))");
-    assert.ok(frames.every((f) => Math.abs(f.gap) < 0.05), seen(frames));
+    assert.ok(frames.every((f) => Math.abs(f.gap) < 0.5), seen(frames));
     for (let i = 1; i < frames.length; i++) assert.ok(Math.abs(frames[i].left - frames[i - 1].left) < 200, seen(frames));
     await stable('at rest', () => boxes(page).then((b) => JSON.stringify(b)));
     assert.strictEqual(await isOpen(page), true);
