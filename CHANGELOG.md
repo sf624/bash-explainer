@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.13.0
 
-Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+Python scripts that import `re` get their regex patterns explained, with examples checked against Python and Errors for patterns Python refuses. `grep -P` reads named backreferences and conditionals, and `sed`, `grep` and `gawk` no longer show an example for a script that is not known.
+
+Details and examples: [docs/changes/0.13.0.md](https://github.com/sf624/bash-explainer/blob/v0.13.0/docs/changes/0.13.0.md).
 
 ### New
 
@@ -17,6 +19,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 - The example of `sed -e … -e "$x"` (or with `-f`), of `grep -e … -e "$x"` and of `gawk -e … -e …` no longer shows the output of one script or pattern alone; with a script or pattern that is not known, there is no example.
 - In `.py` files, Python's string escapes are read as Python reads them (`"\a"`, octal `"\012"`), and in a command string an escaped newline is what sh reads there (a newline in quotes, a line continuation after `\`). Before, `"\012"` was read as a NUL followed by `12`, and every escaped newline as `;`.
+
+[All changes](https://github.com/sf624/bash-explainer/compare/v0.12.0...v0.13.0)
 
 ## 0.12.0
 
