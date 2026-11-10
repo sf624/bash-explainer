@@ -262,10 +262,11 @@ describe('worked examples of tests and patterns with the value of the script', (
   }
 
   it('keeps the samples where the matchers could read the value otherwise than bash', () => {
-    // Not ASCII (the classes take more in other locales); nocasematch not known; an empty value.
+    // Not ASCII (the classes take more in other locales); an empty value.
     assert.deepStrictEqual(examples('x=é\n[[ $x == a* ]]'), ['Values that match → aapp adata aerror', 'Values that do not match → AAPP xaapp']);
-    assert.deepStrictEqual(examples('[ -f a ] && shopt -s nocasematch\nx=abc\n[[ $x =~ ^a ]]'), ['Matches → a a xyz', 'Does not match → 1 A']);
-    assert.deepStrictEqual(examples('[ -f a ] && shopt -s nocasematch\nx=abc\n[[ $x == a* ]]'), ['Values that match → aapp adata aerror', 'Values that do not match → AAPP xaapp']);
+    // (Where nocasematch may be on, no example: a case-sensitive one would contradict bash.)
+    assert.deepStrictEqual(examples('[ -f a ] && shopt -s nocasematch\nx=abc\n[[ $x =~ ^a ]]'), []);
+    assert.deepStrictEqual(examples('[ -f a ] && shopt -s nocasematch\nx=abc\n[[ $x == a* ]]'), []);
     assert.deepStrictEqual(examples('x=\n[[ $x == a* ]]'), ['Values that match → aapp adata aerror', 'Values that do not match → AAPP xaapp']);
   });
 

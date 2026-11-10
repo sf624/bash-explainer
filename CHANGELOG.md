@@ -12,6 +12,10 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 - The caveat on an unquoted value a command reads as data now says that bash (or the shell) reads it as a glob pattern before the command gets it, and the argument's row no longer repeats that. Before, the caveat, the row and the value's line each said "it is a glob pattern".
 
+### Fixed
+
+- With `shopt -s nocasematch`, the example of `[[ $x =~ re ]]` no longer lists `Y` as not matching `^(y|yes)$`, and where nocasematch may be on, `[[ ]]` and `case` patterns show no example.
+
 ## 0.13.0
 
 Python scripts that import `re` get their regex patterns explained, with examples checked against Python and Errors for patterns Python refuses. `grep -P` reads named backreferences and conditionals, and `sed`, `grep` and `gawk` no longer show an example for a script that is not known.
