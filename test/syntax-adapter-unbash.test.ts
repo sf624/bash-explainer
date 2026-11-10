@@ -622,6 +622,13 @@ describe('unbash adapter: heredocs', () => {
     const u = tree('cat <<E & echo b\nx\nE\n');
     assert.deepEqual(invariants(u), []);
     assert.deepEqual(toks(u.root), ['&@' + 'cat <<E '.length]);
+    // (A token of the list that is an error, on the rest of the line: the error is that token, not a second leaf in the redirection.
+    // Found by the fuzz test.)
+    for (const text of ['cat <<E& b)\nE\n', 'cat <<E; b)\nE\n']) {
+      const v = tree(text);
+      assert.deepEqual(invariants(v), [], text);
+      assert.deepEqual(types(v.root, 'error').map((e) => `${e.startIndex}:${e.parent!.type}`), ['10:program'], text);
+    }
   });
   it('has the arguments after the delimiter in the command', () => {
     const t = tree('cat <<EOF out.txt\nhi\nEOF');
