@@ -180,6 +180,8 @@ export function globToRegex(pattern: string, mode: GlobMode, opts: GlobOpts = {}
           let set = bracketRegex(pattern.slice(i + 1, end));
           // (One that bash reads by rules of its own or by the locale, `[[.space.]]`, `[[=a=]]`: no regex.)
           if (set === undefined) throw new Unmatchable();
+          // (`nocasematch` folds the ranges of `[a-z]` but not the classes `[:upper:]` and `[:lower:]` in a pattern, which the regex's `i` would.)
+          if (opts.nocase && !file && /\[:(upper|lower):\]/.test(pattern.slice(i, end))) throw new Unmatchable();
           // (`nocaseglob`: both cases of every letter in the set.)
           if (ci(i)) {
             const inner = set.slice(1, -1);

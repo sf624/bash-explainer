@@ -20,3 +20,10 @@ A variable whose value the script makes known is read in the language of the com
 ### The glob in an unquoted value a command reads
 
 - **Said once.** The caveat on an unquoted value a command reads as data (`re='^[A-Z][0-9]+$'; grep -E $re ids.txt`) says that bash also reads it as a glob pattern, with the parts that make it one (its `[A-Z]`, `[0-9]`), before `grep` gets it; in an sh or dash script, "the shell". The value's line says it the same way, whether the value is read in the command's language or not (`sudo grep -E $re f`, `find . -exec grep -E $re {} +`, `xargs grep -E $re`). The argument's row no longer says it a third time. Before, the three said "it is a glob pattern". Where no note is said (bats' `run grep -E $re f`), the row says it as before.
+
+## Fixed
+
+### Examples under nocasematch
+
+- **Regex.** With `shopt -s nocasematch` on, the example of `[[ $ans =~ ^(y|yes)$ ]]` ignores case as bash does: `Y` and `YES` are in "Matches", not in "Does not match". Where nocasematch may be on (`if …; then shopt -s nocasematch; fi`), there is no example. Before, it matched case-sensitively whatever the option.
+- **Patterns.** The same for `[[ $x == pat ]]` and `case`: no example where nocasematch may be on. With it on, `[[:upper:]]` and `[[:lower:]]` in a pattern get no example, since bash does not fold those classes in a pattern (it does in `=~`).

@@ -61,13 +61,15 @@ export function regexExample(cx: Explainer, js: JsRegex, mode: 'lines' | 'invert
 }
 
 function regexExampleOf(cx: Explainer, js: JsRegex, mode: 'lines' | 'inverted' | 'values', subject?: SyntaxNode): void {
+  // (`nocasematch` makes `=~` ignore case: surely on, the regex ignores it too; where it may be on, nothing is claimed.)
+  const nocase = subject && shoptAt(cx, subject).nocasematch;
+  if (nocase === 'unknown') return;
+  if (nocase === 'on') js = { ...js, flags: js.flags + 'i' };
   const ex = regexExamples(js);
   if (!ex) return;
   let yes = ex.inside === undefined ? ex.matching : [...ex.matching, ex.inside];
   let no = ex.nonMatching;
-  // (`nocasematch` makes `=~` ignore case, which `js` does not.)
-  const nocase = subject && shoptAt(cx, subject).nocasematch;
-  const known = subject && (nocase === 'off' || nocase === 'default') ? subjectValue(cx, subject) : undefined;
+  const known = subject ? subjectValue(cx, subject) : undefined;
   if (known !== undefined) {
     const first = (lines: string[]) => [known, ...lines.filter((l) => l !== known)].slice(0, Math.max(lines.length, 1));
     if (scriptRegex(js.source, js.flags).test(known)) yes = first(yes);
@@ -134,13 +136,15 @@ export function interactive(cx: Explainer, spec: RerunSpec, inputs: InputBox[]):
  */
 export function patternExample(cx: Explainer, pats: SyntaxNode[], labels: [string, string], known?: { value: string; matches: boolean }): void {
   const texts = pats.map((p) => unquotedWord(p) ?? (p.type === 'extglob_pattern' ? nameText(p) : undefined));
+  // (Where `nocasematch` may be on, the matcher would claim a case: no example.)
+  if (shoptAt(cx, pats[0]).nocasematch === 'unknown') return;
   guardedExample(cx, 'glob', () => pushExample(cx, patterns.patternExample(texts, globOpts(cx, 'pattern', pats[0]), labels, cx.lang, known)));
 }
 
 /** `[[ x == pat ]]`: the values that match the pattern `pat` and some that do not, with the value of `x` where the model knows it. */
 export function matchExample(cx: Explainer, n: SyntaxNode, pat: SyntaxNode): void {
   const left = field(n, 'left');
-  const value = left && shoptAt(cx, n).nocasematch !== 'unknown' ? subjectValue(cx, left) : undefined;
+  const value = left ? subjectValue(cx, left) : undefined;
   // (Without the line continuations, which bash removes first: `@\<newline>(x|y)` is `@(x|y)`.)
   const text = unquotedWord(pat) ?? nameText(pat);
   guardedExample(cx, 'glob', () => {
