@@ -29,16 +29,9 @@ export function withValue(cx: Explainer, n: SyntaxNode, t: Token): Token {
  */
 export function withReading(cx: Explainer, tokens: readonly Token[], part: SyntaxNode, reading: ValueReading, command: string): void {
   const at = spanOf(part);
-  const find = (ts: readonly Token[]): Token | undefined => {
-    for (const t of ts) {
-      if (t.value && sameSpan(t.span, at)) return t;
-      const inner = find(t.children);
-      if (inner) return inner;
-    }
-    return undefined;
-  };
+  const all = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
   // (The word's expansion has its token, with the value the reading read: `withValue` asks `expansionValue` as `knownCopy` does.)
-  const t = find(tokens)!;
+  const t = all(tokens).find((x) => x.value && sameSpan(x.span, at))!;
   const { said: _, ...v } = t.value!;
   t.value = { ...v, said: valueSaid(cx.lang, v, isBash(cx.state.shell) === 'yes', { command, globs: v.glob ? valueGlobs(v.text) : [] }), reading };
 }
