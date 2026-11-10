@@ -49,18 +49,13 @@ export function commandArgs(n: SyntaxNode, nameNode: SyntaxNode): SyntaxNode[] {
 }
 
 const kept = new WeakMap<StateModel, Map<string, WeakMap<SyntaxNode, CommandReading>>>();
-const ids = new WeakMap<object, number>();
-let lastId = 0;
-
-/** A key of the inputs of `lookup` (not the document's text, which is the model's): the settings' objects by identity. */
+/**
+ * A key of the inputs of `lookup`, by content, as src/explain/whole.ts keys the settings of a walk: a caller that makes
+ * them afresh for each call reads the same reading. The host's commands by their names, as `shellState` keys the model
+ * (the names stand for the specs of src/dict/bats.ts).
+ */
 function lookupKey(lookup: CommandLookup): string {
-  const id = (o: object | undefined): number => {
-    if (!o) return 0;
-    let k = ids.get(o);
-    if (k === undefined) ids.set(o, (k = ++lastId));
-    return k;
-  };
-  return JSON.stringify([id(lookup.customCommands), id(lookup.hostCommands), lookup.yq.host ?? null, lookup.yq.setting ?? null, lookup.bashVersion ?? null]);
+  return JSON.stringify([lookup.customCommands, Object.keys(lookup.hostCommands ?? {}).sort(), lookup.yq.host, lookup.yq.setting, lookup.bashVersion]);
 }
 
 /**

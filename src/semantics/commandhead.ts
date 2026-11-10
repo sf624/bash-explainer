@@ -19,7 +19,7 @@ import type { SyntaxNode } from '../syntax/tree';
 import { braceExpansion } from './brace';
 import { readAs } from './env';
 import { type AliasResolution, type MaybeHashed, type Missed, type NameResolution, resolveName, testSpecOf } from './names';
-import { docLine, option, type StateModel } from './state';
+import { docLine, option, type StateModel, treeTextOf } from './state';
 import { wordMeaning } from './words';
 
 /** The spec of a command with none: no options, no operands. */
@@ -27,14 +27,13 @@ export const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
 
 /**
  * What the lookup of a command's spec reads besides the model: the `customCommands` setting, the commands of the host
- * (bats' `run`), what tells the three yq apart (`judgeYq`: the document's text, its host, the `yqFlavor` setting), and
- * the bash release (the limits of a brace expansion's sequences). The text is the model's tree's, so it is not part of
- * a key (`lookupKey`).
+ * (bats' `run`), what tells the three yq apart besides the text (`judgeYq`: the document's host, the `yqFlavor` setting;
+ * the text is that of the command's tree, `treeTextOf`), and the bash release (the limits of a brace expansion's sequences).
  */
 export interface CommandLookup {
   readonly customCommands?: Readonly<Record<string, unknown>>;
   readonly hostCommands?: Readonly<Record<string, CommandSpec>>;
-  readonly yq: { readonly doc: string; readonly host?: HostId; readonly setting?: string };
+  readonly yq: { readonly host?: HostId; readonly setting?: string };
   readonly bashVersion?: BashVersion;
 }
 
@@ -210,7 +209,7 @@ export function headFacts(model: StateModel, lookup: CommandLookup, n: SyntaxNod
   const yq = yqSpecsOf(head.name);
   if (yq) {
     // Three tools are called yq; the arguments are read as the one this command is for.
-    const verdict = judgeYq(args.map((a) => literalContent(a)?.text), { doc: lookup.yq.doc, host: lookup.yq.host, setting: lookup.yq.setting });
+    const verdict = judgeYq(args.map((a) => literalContent(a)?.text), { doc: treeTextOf(n, model), host: lookup.yq.host, setting: lookup.yq.setting });
     head = { ...head, base: yq[verdict.flavor], spec: yq[verdict.flavor], yq: verdict };
   }
   // (A builtin that reads its words otherwise in the shell options on here: `kill` in POSIX mode, 6.11.)

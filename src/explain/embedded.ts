@@ -92,23 +92,22 @@ function isGawk(c: CommandRead): boolean {
 }
 
 /**
- * Where a word a reader reads stands, in the document (docs/design/known-values.md, 3.1): how a fault there is said
- * (`documentEvidenceAt`) and the strongest stop before it (`documentStopAt`), whichever line asks.
+ * Where a word a reader reads stands (docs/design/known-values.md, 3.1): how a fault there is said (`documentEvidenceAt`)
+ * and the strongest stop before it (`documentStopAt`), without the flags a line sets for itself. In step 1 the line that
+ * asks is the word's own, so its host region is the word's; a reading kept for another line (step 2) takes them from the
+ * word's own region (`stopsFrom`).
  */
 export interface DocumentPlace { evidence(): ReadKnown | undefined; stop(): Stop | undefined }
 
 /** What a line makes of a `DocumentPlace` for itself (`Explainer.lineEvidence`, `lineReached`): the flags it sets for its own reading. */
-export interface LinePart { lineEvidence(known: ReadKnown | undefined): ReadKnown | undefined; lineReached(reached: boolean): boolean }
-
-/** The line part of a reading no line asks for: the document's part as it is. */
-const AS_IS: LinePart = { lineEvidence: (known) => known, lineReached: (reached) => reached };
+export interface LinePart { lineEvidence(known: () => ReadKnown | undefined): ReadKnown | undefined; lineReached(reached: boolean): boolean }
 
 /**
  * What the reader of the language of the word `a` of the command `c` is told (`EmbeddedContext`): the regex flavour, tr's
  * sets, the options given, from the command's reading; the language of the texts, the shell and the bash release; and where
  * the word is (`at`), with what the asking line makes of it (`line`).
  */
-export function embeddedContext(c: CommandRead, a: SyntaxNode, texts: { lang: Lang; shell: Shell | undefined; bashVersion?: BashVersion }, at: DocumentPlace, line: LinePart = AS_IS): EmbeddedContext {
+export function embeddedContext(c: CommandRead, a: SyntaxNode, texts: { lang: Lang; shell: Shell | undefined; bashVersion?: BashVersion }, at: DocumentPlace, line: LinePart): EmbeddedContext {
   return {
     lang: texts.lang,
     flavor: () => regexFlavorOf(c, c.nodes.findIndex((w) => same(w, a))),
@@ -122,7 +121,7 @@ export function embeddedContext(c: CommandRead, a: SyntaxNode, texts: { lang: La
     // (`awk` is whichever the system has: its examples run as gawk.)
     awkGnu: () => isGawk(c),
     shell: texts.shell,
-    invalid: () => invalidHow(line.lineEvidence(at.evidence())),
+    invalid: () => invalidHow(line.lineEvidence(() => at.evidence())),
     reached: () => line.lineReached(at.stop() !== 'sure'),
   };
 }

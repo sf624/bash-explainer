@@ -113,6 +113,8 @@ export interface StateModel {
   readonly calls: ReadonlyMap<SyntaxNode, ReadonlyMap<SyntaxNode, boolean>>;
   /** The functions the host defines (bats' `run`, `load`…), whose specs the walk reads as builtins' (`shellState`'s `host`). */
   readonly host: HostCommands;
+  /** The text of the tree the model was built from (a string another shell runs has a model of its own; `treeTextOf`). */
+  readonly text: string;
   /** The function definitions the host calls once the script has run (bats' tests and hooks), and how (src/semantics/walk/host.ts). */
   readonly hostCalls: ReadonlyMap<SyntaxNode, HostCall>;
   /** The commands of the script that define each function and alias, in source order, wherever they run. */
@@ -193,6 +195,9 @@ export function docIndex(n: SyntaxNode, end = false): number {
 
 /** The word that a string read as a script comes from, for the root of its tree; none for the document's. */
 export const scriptWord = (root: SyntaxNode): SyntaxNode | undefined => rootOwners.get(root)?.words[0];
+
+/** The text of the tree that holds `n`: a string read as a script (`eval`'s too, whose model is its file's), or the file of `model`. */
+export const treeTextOf = (n: SyntaxNode, model: StateModel): string => rootOwners.get(rootOf(n))?.tree.text ?? model.text;
 
 const lineStarts = new WeakMap<SyntaxNode, number[]>();
 /** The root of the document `n` is in: of the script, also for a node of a string read as a script (4.13). */
@@ -671,6 +676,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     calls: w.calls,
     hostCalls: w.hostCalls,
     host,
+    text: tree.text,
     assigned: new Set([...w.lastChange.keys()].filter((k) => k.startsWith('variables ')).map((k) => k.slice('variables '.length))),
     definitions: { functions: w.functionDefs, aliases: w.aliases.defs },
     sources: w.sources,
