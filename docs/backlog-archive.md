@@ -1155,6 +1155,7 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `rb'é'`: Python refuses a non-ASCII character in a bytes literal (SyntaxError); we read it as a pattern.
   - The 13 out-of-scope misses of the review's differential (#760): `(?é)`, `(?`, `(?x)(?P< n>a)`, `(?x)(? :a)`, `[a- z]` with `re.X`, `\N{EM  DASH}` (two spaces), `(?a)(?u)`, and `(?u)` with `re.A`, among others of the same kinds: their messages or refusals differ from Python's.
   - The positional `count` or `maxsplit` without flags (`re.sub(p, r, s, 1)`) warns since 3.13 (DeprecationWarning); we say it only with the pitfall of a flag in that slot. (`missing-explanation`)
+  - Found by the review of the examples (#810; #760): patterns Python refuses that give an example, as the reader says no Error: `re.findall(r'(?P<n>a)(?P<n>b)', 'ab')` shows `[('a', 'b')]` ("redefinition of group name 'n' as group 2; was group 1"), `re.findall(r'(?P<n>a(?P=n))', 'aa')` shows `['a', 'a']` ("cannot refer to an open group"), `(?<=(?P<n>a)(?P=n))` gets one ("cannot refer to group defined in the same lookbehind subpattern"; the numbered `(?<=(a)\1)` is an Error), `re.findall(r'(?P<1a>x)', 'x')` shows `['x']` ("bad character in group name '1a'"), and `re.findall(r'(?a)(?u)a', 'a')` and `re.findall(r'a', 'a', re.A | re.U)` show `['a']` (ValueError: "ASCII and UNICODE flags are incompatible").
 
 ## From the review of the Python regex literal (#750)
 

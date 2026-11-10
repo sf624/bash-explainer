@@ -12,8 +12,9 @@ import { needPython, pythonReference } from './support/python';
 
 // The patterns the regex reader's flavor `python` refuses (docs/design/python-regex.md, section 3), against the reference
 // Python's `re.compile`, in one process (test/support/python-re.py): each row has Python's message, or none, and so does the
-// reader. The rows are those this flavor reads: the escapes, references to groups, and what is left open. Python's other
-// refusals (a lookbehind of variable width, a group name twice…) come with #760; `FLAGGED` has the rows of the flags (#749).
+// reader. The rows are those this flavor reads: the escapes, references to groups, what is left open, and lookbehinds of more
+// than one width (its compiler's refusal, which has no position). Python's other refusals (a group name twice…) come with #760;
+// `FLAGGED` has the rows of the flags (#749).
 
 const VALID = [
   '^\\d+(?P<frac>\\.\\d+)?$', '\\Z', '\\z', '\\A\\b\\B', '[\\b]', '\\v[\\v]', '\\0', '\\012', '\\141', '[\\101]', '[\\0]', '(a)\\1', '(a)(b)\\2', '\\x41',
@@ -21,12 +22,19 @@ const VALID = [
   '(?#c)a', '[[:alpha:]]', '\\\\', '(?P<n>a)', '[\\d\\s\\w]', '\\w+@\\w+\\.\\w+', '[^\\]]', '(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)\\10', '\\01a',
   '(?P<n>a)(?P=n)', '(a)?(?(1)b|c)', '.', '\\w\\W\\d\\D\\s\\S', 'a*?', 'a*+', 'a{2}?', '(?:)*', '(?=a)*', '(?<=a)+', 'a(?#c)*', '[a]*', '(a)+', 'a{3,3}',
   'a{2,}', 'a{,}', 'a{2,1', '\\*.txt', '[*].txt', 'a|b*', '(?i)a*',
+  // (Lookbehinds of one width: alternatives of the same, a reference to a group of one, what matches no character.)
+  '(?<=a|b)x', '(?<![ab]|\\d)x', '(a)(?<=\\1)b', '(?P<n>a)(?<=(?P=n))b', '(?<=(?:)*a)', '(?<=a{0})b', '(?<=\\b)a', '(?<=a(?=bc*))x', '(?<=(?i:ab|cd))x',
+  '(?<=a{2}(?<!b))x', '(?<=(a)(b))\\2', '(a)(?<=(?(1)b|c))x', '(?<=a{2}?)x', '(?<=(?#c)a)x',
 ];
 
 const REFUSED = [
   '\\e', '[\\e]', '\\h', '\\G', '\\K', '\\Q', '\\E', '\\L', '\\R', '\\X', '\\c', '\\p{L}', '\\o{1}', '\\g<1>', '\\k<n>', '[\\Z]', '[\\A]', '[\\B]',
   '\\x{41}', '\\x4', '\\u00e', '\\U0010FFF', '\\U00110000', '[\\x4]', '\\N', '\\N{', '\\N{}', '\\N{abc', '[\\N]', '\\777', '[\\777]', '[\\8]', '\\8',
   '\\2', '(a)\\3', '(a\\1)', '((a)\\1)', '(a)(b\\2)', '[a', '(a', 'a\\', '[a\\', 'a(b[c]', '(?P<n>a',
+  // (Lookbehinds whose contents may match more characters or fewer, also inside a group or another lookbehind, or by a reference;
+  // a reference in one to a group opened in it; another refusal first, as the parser's come before the compiler's.)
+  '(?<=^|\\s)\\w+', '(?<=\\$|USD)\\d+', '(?<=a|bc)x', '(?<!a|bc)', '(?<=a+)', '(?<=\\w*)', '(?<=a{1,2})', '(?<=a?)', '(?<=(a|bc))', '(?<=a{2,})',
+  '(a+)(?<=\\1)b', '(?P<n>a+)(?<=(?P=n))', '(?<=a(?<=b|cd))x', '(?<=x(?i:a|bc))', '(?<=(?:a|bc)(?=x))', '(?<=(a)\\1)', '(?<=(a)(?<=\\1))', '(?<=a|bc)\\e', '(?<=a|bc', '(?<=a|\\e)', '(?<=a{,2})', '(?<=a+?)',
   // (A glob taken for a regex, and other quantifiers with nothing to repeat or after another; a `)` that closes nothing.)
   '*.txt', '*', '+a', '?', 'a|*', '(*a)', '(|+)', '^*', '$*', '\\b*', '\\A+', '\\Z?', '(?i)*', '(?#c)*', 'a**', 'a*?*', 'a++*', 'a{2}*', 'a{1,2}{3}',
   '[a]**', '(a)??+', 'x{2,1}', 'ab{3,2}', 'x{3,2}+', '{2,1}', 'a)', '(a))b', 'a|)', ')',
@@ -49,6 +57,8 @@ const FLAGGED_VALID: Flagged[] = [
   ['(?u:x)', '', false], ['(?x:a b)', '', false], ['(?i-m:a)', 'M', false], ['(?imsx)a', '', false], ['(?s:.)', '', false],
   // `L` only in a bytes pattern; a bytes pattern's own escapes.
   ['(?L)a', '', true], ['(?L:a)', '', true], ['\\x41\\w+\\d', '', true], ['(?a)\\w', '', true], ['\\u0041', 'I', false],
+  // A lookbehind whose whitespace VERBOSE skips.
+  ['(?<=a | b)x', 'X', false], ['(?x)(?<= a|b )x', '', false],
 ];
 const FLAGGED_REFUSED: Flagged[] = [
   // VERBOSE: a lazy `?` after whitespace repeats again; whitespace and comments are no item to repeat.
@@ -62,6 +72,8 @@ const FLAGGED_REFUSED: Flagged[] = [
   ['(?L)a', '', false], ['(?aL)a', '', false], ['a(?L:b)', '', false], ['(?u)a', '', true], ['(?u:a)', '', true],
   // Bytes patterns: no `\u`, `\U` or `\N`.
   ['\\u0041', '', true], ['\\U00000041', '', true], ['\\N{EM DASH}', '', true], ['[\\u0041]', '', true], ['[\\N{EM DASH}]', '', true],
+  // A lookbehind of more than one width, in a pattern over lines (its message has no position, nor a line).
+  ['a\n(?<=a | bc)x', 'X', false],
 ];
 const FLAGGED = [...FLAGGED_VALID, ...FLAGGED_REFUSED];
 
@@ -73,6 +85,8 @@ const FLAGGED = [...FLAGGED_VALID, ...FLAGGED_REFUSED];
 const VERBOSE_UNKNOWN = [
   '\n  (?i) a  # see [1\n', '(?i) a # (', 'a # )', 'a #[', '(a #[\n)]', '# c\n(?i)a', '  (?i)a', 'a\\ #x',
   'a\\', '[a', '(a', 'a (?i)', '\\1 # x', '*a # c', 'a* ?', 'a b', 'a{1, 3}',
+  // (A lookbehind of one width only with VERBOSE, of one only without it, and of more than one either way.)
+  '(?<=a |b)x', '(?<=a |bc)x', '(?<=a|bc)x',
 ];
 
 /** The options of a row's flags (`re.compile(pattern, flags)`), and their value. */
@@ -213,6 +227,20 @@ describe('the Python flavor of the regex reader: its refusals', () => {
       'min repeat greater than max repeat at position 3', 'min repeat greater than max repeat at position 1', 'unbalanced parenthesis at position 1',
       'unbalanced parenthesis at position 3',
     ]);
+  });
+
+  it('refuses a lookbehind of more than one width at the lookbehind, with what its contents may match, and each such one', () => {
+    const errors = (p: string, lang: 'en' | 'ja' = 'en') => explainRegex(p, 'python', lang, { tool: 'python', python: NO_PYTHON_FLAGS }).flatMap(function all(t): string[] {
+      return [...(t.kind === 'error' ? [`${p.slice(t.start, t.end)}: ${readSaid(t.explanation).text}`] : []), ...t.children.flatMap(all)];
+    });
+    const said = (contents: string) => `. Its contents may match ${contents}. Python's \`re\` refuses this pattern ("look-behind requires fixed-width pattern")`;
+    assert.deepStrictEqual(errors('(?<=a|bc)x'), [`(?<=a|bc): \`(?<=…)\`: preceded by … (lookbehind)${said('1 to 2 characters')}`]);
+    assert.deepStrictEqual(errors('x(?<!a+)'), [`(?<!a+): \`(?<!…)\`: not preceded by … (negative lookbehind)${said('1 or more characters')}`]);
+    // (The outer one has one width: what the inner one matches is none.)
+    assert.deepStrictEqual(errors('(?<=a(?<=b|cd))(?<=\\w?)').map((e) => e.slice(0, e.indexOf(':'))), ['(?<=b|cd)', '(?<=\\w?)']);
+    assert.match(errors('(?<=a|bc)x', 'ja')[0], /。中身は1〜2文字に一致しうる。Python の `re` はこのパターンを受け付けない/);
+    // (Not so in PCRE, which takes alternatives of different widths: `grep -P '(?<=a|bc)x'`.)
+    assert.deepStrictEqual(explainRegex('(?<=a|bc)x', 'pcre', 'en').filter((t) => t.kind === 'error'), []);
   });
 
   it('does not check a name of `\\N{…}`: there is no table of Unicode names (the one listed exception)', () => {

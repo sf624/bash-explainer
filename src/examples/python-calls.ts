@@ -3,18 +3,18 @@
 // JavaScript (`toJsRegex`, src/examples/regex-python.ts) and runs on the guarded engine (`scriptRegex`), in the order Python finds
 // its matches: after an empty match, the next one must not be empty where it starts (`pythonMatches`). A subject or a replacement
 // written as a literal is used as it is, else the text is made up and its label says so. Only ASCII without control characters
-// but tab and newline is shown, where JavaScript and Python read the classes and the case alike.
+// but tab and newline is shown, where JavaScript and Python read the classes and the case alike (`PY_SHOWN`), and the panel's box
+// runs nothing else again. Each value is charged before it is made (`chargeSize`): past the line's budget, it is not computed.
 import type { Example, ExampleSection } from '../analyzer-types';
 import { pick } from '../embedded/types';
 import type { ReReturns } from '../hosts/python';
 import type { Lang } from '../i18n';
 import { interactive } from './commands';
 import { type JsRegex, regexExamples } from './regex';
-import { groupFacts, PY_END, PY_START } from './regex-python';
-import { scriptRegex } from './regexguard';
+import { groupFacts, PY_END, PY_SHOWN, PY_START } from './regex-python';
+import { advancingFrom, chargeSize, scriptRegex } from './regexguard';
 import { testStringsLabel } from './rerun';
 import { argumentLabel } from './source';
-import { pushAll } from '../lists';
 
 /** A text of a call, as a literal gives it: its value, and whether it is bytes (`b'…'`). */
 export interface PyText { value: string; bytes: boolean }
@@ -35,9 +35,7 @@ export interface PythonCall {
   count: number | 'unknown';
 }
 
-/** What an example may show: ASCII without a control character but a tab or a newline. */
-const SHOWN = /^[\t\n\x20-\x7e]*$/;
-const shownLine = (t: string): boolean => SHOWN.test(t) && !t.includes('\n');
+const shownLine = (t: string): boolean => PY_SHOWN.test(t) && !t.includes('\n');
 
 /** A str or bytes value as Python's `repr` writes it. */
 export function pyRepr(value: string | undefined, bytes: boolean): string {
@@ -62,7 +60,7 @@ const matchRepr = (m: RegExpExecArray, bytes: boolean): string => `<re.Match obj
 /**
  * The matches of `js` in `text` one after another, as `findall`, `split` and `sub` of Python find them (`limit`: at most that many,
  * 0 for all): from where the last one ended, and after an empty one, a match at that place must not be empty (`must_advance` of its
- * `sre`): one that is not is tried there first, then the search goes on one character further.
+ * `sre`): one that is not is tried there first (`advancingFrom`), then the search goes on one character further.
  */
 export function pythonMatches(js: JsRegex, text: string, limit = 0): RegExpExecArray[] {
   const all = scriptRegex(js.source, js.flags + 'g');
@@ -70,18 +68,9 @@ export function pythonMatches(js: JsRegex, text: string, limit = 0): RegExpExecA
   let at = 0;
   let empty = false;
   while (at <= text.length && (!limit || out.length < limit)) {
-    let m: RegExpExecArray | null = null;
-    if (empty) {
-      // (A match at `at` that does not end there.)
-      const here = scriptRegex(`(?:${js.source})(?<!^[\\s\\S]{${at}})`, js.flags + 'y');
-      here.lastIndex = at;
-      m = here.exec(text);
-      if (!m && at < text.length) {
-        all.lastIndex = at + 1;
-        m = all.exec(text);
-      }
-    } else {
-      all.lastIndex = at;
+    let m: RegExpExecArray | null = empty ? advancingFrom(all, text, at) : null;
+    if (!m && (!empty || at < text.length)) {
+      all.lastIndex = empty ? at + 1 : at;
       m = all.exec(text);
     }
     if (!m) break;
@@ -114,10 +103,16 @@ function madeUpText(js: JsRegex): string | undefined {
   }) ?? tries[0];
 }
 
-/** What a call gives back for the subject `text`, as Python prints it; none where JavaScript's groups would not say Python's. */
+/**
+ * What a call gives back for the subject `text`, as Python prints it; none where JavaScript's groups would not say Python's. Each
+ * value is charged before it is made: a `repr` of a shown text is at most twice as long, with its quotes and a separator.
+ */
 function result(call: PythonCall, text: string): string | undefined {
   const { bytes, regex } = call;
-  const repr = (v: string | undefined) => pyRepr(v, bytes);
+  const repr = (v: string | undefined) => {
+    chargeSize(2 * (v?.length ?? 0) + 5);
+    return pyRepr(v, bytes);
+  };
   const groups = groupFacts(regex.source);
   if (call.returns === 'match') {
     const m = scriptRegex(anchored(regex, call.anchors).source, regex.flags).exec(text);
@@ -137,7 +132,7 @@ function result(call: PythonCall, text: string): string | undefined {
     let last = 0;
     for (const m of pythonMatches(regex, text, count)) {
       items.push(repr(text.slice(last, m.index)));
-      pushAll(items, m.slice(1).map((g) => repr(g)));
+      for (let g = 1; g < m.length; g++) items.push(repr(m[g]));
       last = m.index + m[0].length;
     }
     items.push(repr(text.slice(last)));
@@ -148,6 +143,8 @@ function result(call: PythonCall, text: string): string | undefined {
   let out = '';
   let last = 0;
   for (const m of ms) {
+    // (A replacement many times as long as its match, many times over: `re.sub('a', 'R' * 10000, 'a' * 10000)`.)
+    chargeSize(m.index - last + repl.length);
     out += text.slice(last, m.index) + repl;
     last = m.index + m[0].length;
   }
@@ -164,7 +161,7 @@ function result(call: PythonCall, text: string): string | undefined {
  */
 export function pythonCallExample(call: PythonCall, lang: Lang): Example | undefined {
   if (call.returns === 'iterator' || call.count === 'unknown') return undefined;
-  const fits = (t: PyText) => t.bytes === call.bytes && SHOWN.test(t.value);
+  const fits = (t: PyText) => t.bytes === call.bytes && PY_SHOWN.test(t.value);
   if (call.returns === 'replaced' || call.returns === 'counted') {
     const { repl } = call;
     if (!repl || repl === 'unknown' || !fits(repl) || repl.value.includes('\\')) return undefined;
@@ -206,6 +203,8 @@ function matchesExample(call: PythonCall, lang: Lang): Example | undefined {
     { label: s('一致する文字列（例）', 'Strings that match (examples)'), lines: yes },
     { label: s('一致しない文字列（例）', 'Strings that do not match (examples)'), lines: no },
   ];
-  return { kind: 'regex', title, sections: sections.filter((x) => x.lines.length),
-    interactive: interactive({ kind: 'regex', regex: js, mode: 'values' }, [{ label: testStringsLabel(lang), lines: [...yes, ...no] }], lang) };
+  // (The panel's box runs the pattern again as JavaScript, on text `PY_SHOWN` allows (`python`), and shows the groups' texts: none
+  // where JavaScript's are not Python's.)
+  const box = groupFacts(call.regex.source).agree ? interactive({ kind: 'regex', regex: js, mode: 'values', python: true }, [{ label: testStringsLabel(lang), lines: [...yes, ...no] }], lang) : undefined;
+  return { kind: 'regex', title, sections: sections.filter((x) => x.lines.length), ...(box ? { interactive: box } : {}) };
 }

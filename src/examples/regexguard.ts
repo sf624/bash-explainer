@@ -16,7 +16,7 @@ import { inRanges, LINE_ENDS, type Node, Parser, type Ranges, WORD } from './reg
  * The note of the catalog (src/messages.ts) that an example says in place of its result: the reason, for what it is true of.
  * `budget-…`: a limit made smaller by what ran before it on the line, or by the size of the document.
  */
-export type NotComputedId = 'regex-not-computed' | 'digits-not-computed' | 'size-not-computed' | 'steps-not-computed' | 'budget-not-computed';
+export type NotComputedId = 'regex-not-computed' | 'digits-not-computed' | 'size-not-computed' | 'steps-not-computed' | 'budget-not-computed' | 'python-text-not-computed';
 
 /** Thrown instead of a result that would cost too much: not a match, nor no match, nor no output. `why` says what ran out. */
 export class Refused extends Error {
@@ -125,8 +125,15 @@ class CharSet {
   }
 }
 
+/**
+ * Which match a walk finds: the first one JavaScript's order comes to; of the matches at the first place that has one, the longest,
+ * and of those the one JavaScript's order comes to first, as a POSIX tool wants it; or the first that does not end where it starts
+ * (`Advance`: `must_advance` of Python's `sre`, after an empty match there).
+ */
+const enum Find { First, Longest, Advance }
+
 /** All that decides how a walk of a program goes, and what it had left. */
-interface LongRun { text: string; from: number; once: boolean; longest: boolean; left: number }
+interface LongRun { text: string; from: number; once: boolean; find: Find; left: number }
 
 /** The pattern as instructions for `walk`. Registers: 2 for each group (the first for the whole match), then those of the repeats and lookarounds. */
 class Program {
@@ -354,7 +361,7 @@ function refuse(why?: NotComputedId): never {
 }
 
 /** Past the limit in a walk. */
-function tooLong(p: Program, text: string, from: number, once: boolean, longest: boolean, had: number): never {
+function tooLong(p: Program, text: string, from: number, once: boolean, find: Find, had: number): never {
   // (A text this long is not kept, and past a total of them none is: a text of 16 million characters is made by a loop of 24 doublings.)
   if (text.length <= MAX_LONG_TEXT) {
     const before = longRuns.get(p);
@@ -363,7 +370,7 @@ function tooLong(p: Program, text: string, from: number, once: boolean, longest:
       longRuns.clear();
       longChars = text.length;
     }
-    longRuns.set(p, { text, from, once, longest, left: had });
+    longRuns.set(p, { text, from, once, find, left: had });
   }
   refuse();
 }
@@ -409,10 +416,9 @@ export function chargeWalk(items: number): void {
 
 /**
  * Walks `p` on `text` from `from`, as JavaScript does, and gives the registers of the match, or nothing. `once`: from `from`
- * only. `longest`: of the matches at the first place that has one, the longest, and of those the one JavaScript's order
- * comes to first, as a POSIX tool wants it. It costs one step for each instruction and each entry gone back past.
+ * only. `find`: which match (`Find`). It costs one step for each instruction and each entry gone back past.
  */
-function walk(p: Program, text: string, from: number, once: boolean, longest: boolean): Int32Array | undefined {
+function walk(p: Program, text: string, from: number, once: boolean, find: Find): Int32Array | undefined {
   if (!depth) fresh();
   const { code, charSets, fold, run: repeated } = p;
   const runCost = repeated?.op === Op.Set ? charSets[repeated.a].cost : 1;
@@ -422,7 +428,7 @@ function walk(p: Program, text: string, from: number, once: boolean, longest: bo
   // (Setting a register is far less than a step.)
   charge(RUN + (p.registers >> 3));
   const known = longRuns.get(p);
-  if (known && left <= known.left && known.from === from && known.once === once && known.longest === longest && known.text === text) refuse();
+  if (known && left <= known.left && known.from === from && known.once === once && known.find === find && known.text === text) refuse();
   if (registers.length < p.registers) registers = new Int32Array(p.registers);
   const r = registers;
   r.fill(-1, 0, p.registers);
@@ -437,7 +443,7 @@ function walk(p: Program, text: string, from: number, once: boolean, longest: bo
     let pc = 0;
     let pos = start;
     for (;;) {
-      if (++steps > limit) tooLong(p, text, from, once, longest, limit);
+      if (++steps > limit) tooLong(p, text, from, once, find, limit);
       if (sp + margin > paid) {
         paid *= 2;
         steps += paid >> 2;
@@ -576,9 +582,13 @@ function walk(p: Program, text: string, from: number, once: boolean, longest: bo
           break;
         }
         case Op.Accept:
+          if (find === Find.Advance && pos === start) {
+            ok = false;
+            break;
+          }
           r[0] = start;
           r[1] = pos;
-          if (!longest || pos === length) {
+          if (find !== Find.Longest || pos === length) {
             left -= steps;
             return r;
           }
@@ -607,7 +617,7 @@ function walk(p: Program, text: string, from: number, once: boolean, longest: bo
     while (repeated && start < length) {
       const unit = text.charCodeAt(start);
       steps += unit < 256 ? 1 : runCost;
-      if (steps > limit) tooLong(p, text, from, once, longest, limit);
+      if (steps > limit) tooLong(p, text, from, once, find, limit);
       const inRun = repeated.op === Op.Unit ? unit === repeated.a : repeated.op === Op.Fold ? fold![unit] === repeated.a : charSets[repeated.a].has(unit);
       if (!inRun) break;
       start++;
@@ -644,9 +654,9 @@ function resultOf(p: Program, text: string, r: Int32Array, withIndices: boolean)
 }
 
 /** A run of `p`: what it matched, or null. */
-function run(p: Program, text: string, from: number, once: boolean, withIndices: boolean, longest: boolean): RegExpExecArray | null {
+function run(p: Program, text: string, from: number, once: boolean, withIndices: boolean, find: Find): RegExpExecArray | null {
   try {
-    const r = walk(p, text, from, once, longest);
+    const r = walk(p, text, from, once, find);
     return r ? resultOf(p, text, r, withIndices) : null;
   } finally {
     if (stack.length > 1 << 20) stack = new Int32Array(1 << 12);
@@ -701,14 +711,19 @@ class GuardedRegExp extends RegExp {
   }
 
   override exec(text: string): RegExpExecArray | null {
-    const m = run(this.program, text, this.moves ? this.lastIndex : 0, this.sticky, this.withIndices, false);
+    const m = run(this.program, text, this.moves ? this.lastIndex : 0, this.sticky, this.withIndices, Find.First);
     if (this.moves) this.lastIndex = m ? m.index + m[0].length : 0;
     return m;
   }
 
   /** What a POSIX tool finds from `at` on (`walk`, `longest`). */
   longest(text: string, at: number): RegExpExecArray | null {
-    return run(this.program, text, at, this.sticky, this.withIndices, true);
+    return run(this.program, text, at, this.sticky, this.withIndices, Find.Longest);
+  }
+
+  /** The first match at `at` that does not end there (`Find.Advance`). */
+  advancing(text: string, at: number): RegExpExecArray | null {
+    return run(this.program, text, at, true, this.withIndices, Find.Advance);
   }
 }
 
@@ -728,6 +743,14 @@ export function longestExec(source: string, flags: string, text: string, at: num
 /** The same for a regex made by `scriptRegex`: its leftmost longest match from `at` on, with its groups. */
 export function longestFrom(re: RegExp, text: string, at: number): RegExpExecArray | null {
   return (re as GuardedRegExp).longest(text, at);
+}
+
+/**
+ * For a regex made by `scriptRegex`: the first match, in JavaScript's order, at `at` and that does not end there, as Python's `sre`
+ * looks for one after an empty match at `at` (`must_advance`); JavaScript's own order, but no empty match.
+ */
+export function advancingFrom(re: RegExp, text: string, at: number): RegExpExecArray | null {
+  return (re as GuardedRegExp).advancing(text, at);
 }
 
 /**
