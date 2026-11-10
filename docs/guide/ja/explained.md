@@ -30,7 +30,7 @@
 | CI の YAML | GitHub Actions の `run:`（ワークフローと `action.yml`。`shell:` や `defaults` に従う）、GitLab CI の `script:`、CircleCI の `run:`・`command:`、Azure Pipelines の `script:`・`bash:`（`$(変数)` のマクロも）。`${{ github.event.pull_request.title }}` のような外部からの入力をスクリプトに埋め込むと警告 |
 | `package.json` | `scripts` |
 | Markdown | `sh`・`bash`・`console` などのコードブロック（シェルはブロック内の shebang、なければ言語名のシェル。`sh` は bash として読む） |
-| Python | `subprocess.run(…)`・`os.system(…)` など。`shell=True` なしの文字列や、シェルに値を埋め込む書き方を指摘。`re` を import したファイルでは `re.search(…)`・`re.compile(…)`・`re.sub(…)` などのパターンも解説（フラグを踏まえたパターンの各部分、Python が受け付けないパターンのエラー `bad escape \e at position 0`、`count` の位置に渡したフラグの警告）。その行のチップは「シェルなし（Python の正規表現）」 |
+| Python | `subprocess.run(…)`・`os.system(…)` など。`shell=True` なしの文字列や、シェルに値を埋め込む書き方を指摘。`re` を import したファイルでは `re.search(…)`・`re.compile(…)`・`re.sub(…)` などのパターンも解説（フラグを踏まえたパターンの各部分、Python が受け付けないパターンのエラー `bad escape \e at position 0`、`count` の位置に渡したフラグの警告、`r` のない文字列がエスケープを文字に変える `"\bword\b"`・`"(a)\1"` の警告）。f-string のフィールド（`rf"^{prefix}\d+$"`）は、値の分からない部分として読む。その行のチップは「シェルなし（Python の正規表現）」 |
 | Jenkinsfile | `sh '…'`・`sh "…"`・`sh '''…'''`・`sh(script: …)`。シェルより先に Groovy が埋め込む `$名前` や `${…}` を指摘 |
 | bats（`.bats` か `bats` の shebang） | ファイル全体を bash として。`@test "…" {` は bats が `set -e` で実行するテストとして、`run`（`!`・`-N`・`--separate-stderr` も）・`load`・`skip`・`bats_pipe` も説明。テストを失敗させられない `! cmd` や、パイプラインの中の `run` を指摘 |
 

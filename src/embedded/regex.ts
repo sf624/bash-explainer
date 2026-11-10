@@ -226,7 +226,8 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
     if (isHole(c)) {
       st.i++;
       // (Something after it, or before it other than plain text: their reading rests on what the value is.)
-      out.push(holeToken(start, 'regex', { ...st.hole, around: st.src.length > start + 1 || out.some((t) => !st.literals.has(t)) }));
+      const verbose = st.py?.verbose;
+      out.push(holeToken(start, 'regex', { ...st.hole, around: st.src.length > start + 1 || out.some((t) => !st.literals.has(t)), ...(verbose ? { verbose } : {}) }));
       continue;
     }
     if (holeDecides(st, start, c)) {

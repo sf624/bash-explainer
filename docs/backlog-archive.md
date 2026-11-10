@@ -1156,6 +1156,21 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - The 13 out-of-scope misses of the review's differential (#760): `(?é)`, `(?`, `(?x)(?P< n>a)`, `(?x)(? :a)`, `[a- z]` with `re.X`, `\N{EM  DASH}` (two spaces), `(?a)(?u)`, and `(?u)` with `re.A`, among others of the same kinds: their messages or refusals differ from Python's.
   - The positional `count` or `maxsplit` without flags (`re.sub(p, r, s, 1)`) warns since 3.13 (DeprecationWarning); we say it only with the pitfall of a flag in that slot. (`missing-explanation`)
 
+## From the review of the Python regex literal (#750)
+
+### Python strings: corners of the escapes and fields of a pattern
+
+- **Verdict:** dropped (YAGNI), 2026-11-10. Kind: `bug` unless marked. Python 3.15.
+- **Reason:** Rare strings and patterns. None gives a false Error: each is a wording that is wrong for one rare input, a Warning said twice, or a note left out.
+- **Input and what is wrong:**
+  - `re.search("\56", s)`: the octal pitfall says the pattern "matches that character U+002E there, not what group 56 matched", but the regex reads the `.` as any character.
+  - VERBOSE with an octal or `\b` escape: `re.compile("a\12b", re.X)` says "matches that character", but the newline it gives is whitespace VERBOSE ignores; `re.compile("a # \b\1 here", re.X)` warns twice for escapes in a comment, which the regex never reads.
+  - `"\18"`: the octal pitfall says "not what group 1 matched", but `r"\18"` refers to group 18.
+  - `[{re.escape(x)}]` with an empty value gives `[]`, an unterminated set (a Python error); the text of the class does not say it. (`missing-explanation`)
+  - The repeat after `{re.escape(x)}` (`{re.escape(x)}+`) says "the last item of the value (a character, a set or a group)"; only a character is possible there.
+  - Control characters shown raw in the rows of literals: `re.search("\bword\b", s)` has the row `Literal "^Hword^H"` with backspaces in it (already on main before #750).
+  - With Perl's `/x`, the whitespace and `#` of an interpolated value are read as the pattern's too (`perl -ne 'print if /a$x b/x'`); the hole's text says so only for Python's `re.VERBOSE`. (`missing-explanation`)
+
 ## From the shell-behaviour table (#756)
 
 ### `~N` in ksh93, mksh and yash: the word model reads it as bash does

@@ -5,7 +5,7 @@
 import type { ExplainOptions, LineExplanation, NoteAnchor, Pos, Span, Token } from '../analyzer-types';
 import { explainRegex, flavorName } from '../embedded/regex';
 import { PYTHON_SINCE } from '../embedded/regex-python';
-import type { EmbeddedToken } from '../embedded/types';
+import { type EmbeddedToken, HOLES } from '../embedded/types';
 import { fillHoles, holeSink, holesRead } from '../explain/holes';
 import { placeEmbedded } from '../explain/nodes';
 import type { Lang } from '../i18n';
@@ -81,16 +81,16 @@ function patternToken(region: LanguageRegion, source: LiteralSource, lines: read
   const at = (offset: number, isEnd: boolean): Pos => (isEnd && offset > 0 ? source.to[offset - 1] : source.at[offset]);
   // (`gaps[k]`: how many characters up to `k` do not follow the one before in the source: the first of a literal after another,
   // `r'a' r'b'`, or after a backslash-newline. A token whose characters a gap parts has quotes or a prefix between them in the
-  // source, so its label is its value.)
+  // source, so its label is its value, with each field as written.)
+  const { holes } = source;
+  const written = (c: string): string => holes![c].written;
   const gaps = [0];
   for (let k = 1; k < source.value.length; k++) gaps.push(gaps[k - 1] + (samePos(source.to[k - 1], source.at[k]) ? 0 : 1));
-  const label = (a: number, b: number): string => (b - 1 > a && gaps[b - 1] > gaps[a] ? source.value.slice(a, b) : between(lines, at(a, false), at(b, true)));
+  const label = (a: number, b: number): string => (b - 1 > a && gaps[b - 1] > gaps[a] ? source.value.slice(a, b).replace(HOLES, written) : between(lines, at(a, false), at(b, true)));
   let read = explainRegex(source.value, region.flavor, lang, { tool: 'python', python: region.options! });
   let unread: string[] | undefined;
-  const { holes } = source;
   if (holes) {
     const { at: all, open, error } = holesRead(source.value, read);
-    const written = (c: string): string => holes[c].written;
     if (error || open.length) {
       unread = [...new Set((open.length ? open : all).map((k) => codeSpan(written(source.value[k]))))];
       read = [];
@@ -101,7 +101,11 @@ function patternToken(region: LanguageRegion, source: LiteralSource, lines: read
     }
   }
   const pitfalls = stringPitfalls(source, read, lines, lang);
-  const kept = [...new Set((source.escapes ?? []).filter((e) => e.risk === 'kept').map((e) => between(lines, source.at[e.at], source.to[e.at + 1])))];
+  // (A kept backslash is quoted with the character of the source after it, which may be a field's `{`: `"\{"` is what Python warns of.)
+  const kept = [...new Set((source.escapes ?? []).filter((e) => e.risk === 'kept').map((e) => {
+    const { line, character } = source.to[e.at];
+    return '\\' + [...lines[line].slice(character, character + 2)][0];
+  }))];
   const children = read.map((t) => placeEmbedded(t, at, label, 'embedded'));
   const explanation = tokenSaid(lang, 'python-regex-pattern', { call: call.written, ...reCallOf(call.name), ...(unread ? { unread } : {}) })
     + (kept.length ? (lang === 'ja' ? '。' : '. ') + tokenSaid(lang, 'python-regex-string-kept', { written: kept.map(codeSpan), since: PYTHON_SINCE.invalidEscape }) : '');
