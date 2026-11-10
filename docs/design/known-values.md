@@ -116,6 +116,12 @@ What step 2 found:
 - The kept reading is keyed by the `script`, `host` and `stopsFrom` of the line that asks. In step 2 only a line of the use's own statement reaches the use's word, so they are those of the use's region. Step 5, where the assignment's line asks, must pass the use's region's values (`shellStart` of the use's line), not its own.
 - A line that sets flags of its own reading (`unread`, `unsure`, `sometimes`, `unreached`: a string read as a script, a trap's action) reads the value afresh with them, as it reads a literal, and keeps nothing. The value is rarely known there (`expansionValue` refuses the strings of another shell).
 
+What step 3 found:
+
+- Nothing in section 5 was wrong. `knownCopy` serves the right side as it is: in `[[ ]]` the word model gives one field equal to the value, even for a value with a space or a glob character (`re='^a b$'`, `re='^[A-Z]*$'`), so the reading never carries `assumes` and the value line has no lead. The reading goes through the same cache (`keptValue` in src/explain/embedded.ts, now shared by `valueReading` and `regexValueReading`), with the language key `regex`.
+- The reader is `explainRegex` with `tool: 'bash'`, as for a literal. The level of an error is the literal's: `reached` is the document's stop at the right side and no syntax error in the `[[ ]]` (`regexReached`' document part), with the line's flags on top.
+- The worked example of the value is `regexExample` on the value, as for a literal right side.
+
 ### 3.1 What the reader reads
 
 `EmbeddedContext` (src/embedded/registry.ts) is built today from the asking line's `Explainer` (`embeddedTextInner`, src/explain/embedded.ts). Its inputs:
