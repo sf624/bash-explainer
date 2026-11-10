@@ -3,7 +3,7 @@
 // in src/embedded/ (src/embedded/registry.ts); this module gives them the command whose words are explained
 // (`Explainer.command`: the regex flavour, tr's sets, the letters given), places their tokens in the source, and adds
 // the worked example of the text (src/explain/examples.ts, src/explain/examples-jq.ts).
-import type { ExampleKind, Span, Token } from '../analyzer-types';
+import type { ExampleKind, Span, Token, ValueReading } from '../analyzer-types';
 import { rulesOf } from '../argv/parsers';
 import { givenOptions, inRecords, operands, values } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
@@ -25,31 +25,105 @@ import { NO_INPUT } from '../examples/source';
 import { featureWorks } from '../shellfeatures';
 import { holedContent, type Literal, literalContent, literalOfMapped, removedBackslashes, sourceIndex, staticWordText } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
+import { lookupKey } from '../semantics/commandread';
+import type { StateModel } from '../semantics/state';
+import { knownCopy } from '../semantics/values';
+import { finishedApart } from '../linefinish';
 import { type CommandRead, type Explainer, memoKey } from './context';
 import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, programsGiven, regexExample } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
 import { fillHoles, holeSink, type HoleSink, holesRead, holeText } from './holes';
-import { fromEmbedded, same, sourcePos } from './nodes';
+import { fromEmbedded, placeEmbedded, same, sourcePos } from './nodes';
 import { invalidHow } from '../arith';
 import type { BashVersion } from '../bashversion';
 import type { Shell } from '../dialect';
 import type { Lang } from '../i18n';
 import type { ReadKnown, Stop } from '../semantics/scriptstops';
-import { given, givenIn, optionValues, regexFlavor, regexFlavorOf, trContext } from './reads';
+import { given, givenIn, lookupOf, optionValues, regexFlavor, regexFlavorOf, trContext } from './reads';
 import { hostString } from './hoststrings';
 import { valueNote } from './words';
 
-/** What a reader made of a word: its tokens, a note on the whole, and the source of the holes it read (`holedWord`). */
-export interface EmbeddedReading { tokens: Token[]; note?: string; holes?: Span[] }
+/**
+ * What a reader made of a word: its tokens, a note on the whole, and the source of the holes it read (`holedWord`). `value`:
+ * the word is a known value read in the language (`valueReading`), whose tokens go on the value of the expansion `part`.
+ */
+export interface EmbeddedReading { tokens: Token[]; note?: string; holes?: Span[]; value?: { part: SyntaxNode; reading: ValueReading } }
 
 /**
  * Explain the contents of a quoted or plain word written in another language (a regex, a sed script…), as the command
  * is given it: the text after quote removal (`literalContent`), whose tokens are placed over the source, escapes
- * included. A word with an expansion in double quotes is read with the expansion as a hole (`holedWord`).
+ * included. A word that is a copy of a variable whose value the model knows is read under that value (`valueReading`);
+ * any other with an expansion in double quotes is read with the expansion as a hole (`holedWord`).
  */
 export function embedded(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): EmbeddedReading | undefined {
+  const known = knownValueRead(cx, a, lang);
+  if (known) return known;
   const lit = literalContent(a) ?? holedWord(cx, a);
   return lit && embeddedText(cx, lit, lang, a);
+}
+
+/** A known value read in a language (`valueReading`): the reader's tokens, finished and kept, its note, and what bash made of the word. */
+export interface ValueReadingMade { tokens: readonly Token[]; note?: string; part: SyntaxNode; assumes?: 'no-match'; text: string }
+
+/** The readings of known values, by the model of the script (which holds the commands' readings), by the other inputs they read, and by the word. */
+const keptValues = new WeakMap<StateModel, Map<string, WeakMap<SyntaxNode, ValueReadingMade | null>>>();
+
+/** A line that sets none of the flags of its own reading (`LinePart`): what the document says stands. */
+const DOCUMENT_ONLY: LinePart = { lineEvidence: (known) => known(), lineReached: (reached) => reached };
+
+/**
+ * The value of the word `a` read in the language `lang` its place names, by the reader a literal there has
+ * (docs/design/known-values.md, 4): where the word is a plain copy of a variable whose value the model knows and bash
+ * passes as it is (`knownCopy`, src/semantics/values.ts), of a command whose reading is the model's (`onModel`: not one a
+ * slot runs, nor find's expression). Undefined where the reader reads nothing of it.
+ *
+ * It is kept for the document, by every input it reads (3.1): the model, the word, the language of the texts, the shell,
+ * the bash release, the lookup's inputs, and the document's part of a fault's level (`script`, `host` and `stopsFrom` of
+ * the word's region, which in a host file is that of the word's own line: only that line reaches the word in this step).
+ * A line that sets flags of its own reading (`unread`, `unsure`, `sometimes`, `unreached`) reads it afresh with them, as it
+ * reads a literal. No example is made here: the readers charge nothing.
+ */
+export function valueReading(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): ValueReadingMade | undefined {
+  // (Asked only for a word of a command being read: `positional`.)
+  const c = cx.command!;
+  if (!c.onModel || c.parse.refused || cx.state.noShell) return undefined;
+  const { opts } = cx;
+  const own = !!(opts.unread || opts.unsure || opts.sometimes || opts.unreached);
+  // (A guard: such a line is a string another shell reads, or a trap's action, where `expansionValue` knows no value today.)
+  /* c8 ignore next */
+  if (own) return readValue(cx, c, a, lang, cx);
+  let byKey = keptValues.get(cx.state);
+  if (!byKey) keptValues.set(cx.state, (byKey = new Map()));
+  const key = JSON.stringify([cx.lang, cx.shell, opts.bashVersion, lookupKey(lookupOf(cx)), opts.script, opts.host, opts.stopsFrom, lang]);
+  let byWord = byKey.get(key);
+  if (!byWord) byKey.set(key, (byWord = new WeakMap()));
+  let read = byWord.get(a);
+  if (read === undefined) byWord.set(a, (read = readValue(cx, c, a, lang, DOCUMENT_ONLY) ?? null));
+  return read ?? undefined;
+}
+
+function readValue(cx: Explainer, c: CommandRead, a: SyntaxNode, lang: EmbeddedLang, line: LinePart): ValueReadingMade | undefined {
+  // (A placeholder of what a host pastes, `${{ env.Y }}`, has no value the script gives: `expansionValue` knows none.)
+  const known = knownCopy(a, cx.state);
+  if (!known) return undefined;
+  const { part, value, assumes } = known;
+  const ecx = embeddedContext(c, a, { lang: cx.lang, shell: cx.shell, bashVersion: cx.opts.bashVersion }, { evidence: () => cx.documentEvidenceAt(a), stop: () => cx.documentStopAt(a) }, line);
+  const read = EMBEDDED[lang](value.text, ecx);
+  // (A reading with no tokens may still say something of the whole: `grep -F`, a fixed string.)
+  if (!read) return undefined;
+  // (The value has no place of its own in the line: each token is labelled with its text in the value, over the expansion.)
+  const start = sourcePos(part, 0);
+  const end = sourcePos(part, part.text.length);
+  const tokens = read.tokens.map((t) => ({ ...placeEmbedded(t, (_, isEnd) => (isEnd ? end : start), (from, to) => value.text.slice(from, to), 'embedded'), language: lang }));
+  return { tokens: finishedApart(tokens), ...(read.note ? { note: read.note } : {}), part, ...(assumes ? { assumes } : {}), text: value.text };
+}
+
+/** `valueReading` as a reader's reading of the word, with the worked example of the value made on the asking line, as for a literal. */
+function knownValueRead(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): EmbeddedReading | undefined {
+  const read = valueReading(cx, a, lang);
+  if (!read) return undefined;
+  cx.examplesAt(a, () => guardedEmbeddedExample(cx, lang, read.text, a));
+  return { tokens: [], ...(read.note ? { note: read.note } : {}), ...(read.tokens.length ? { value: { part: read.part, reading: { tokens: read.tokens, ...(read.assumes ? { assumes: read.assumes } : {}) } } } : {}) };
 }
 
 /**

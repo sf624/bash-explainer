@@ -579,8 +579,9 @@
     },
     {
       "file": "src/semantics/values.ts",
-      "reason": "reads the model first, and the text only to find the node",
+      "reason": "reads the model first, and the text only to find the node; `plainCopy` checks the shape of the source (the word is one `$x`, docs/design/known-values.md, 2), and the model then says what bash gives",
       "uses": [
+        {"fn":"plainCopy","kind":"node-type","count":3},
         {"fn":"shownWord","kind":"node-type","count":2}
       ]
     },
@@ -706,10 +707,11 @@
       "file": "src/wordfacts.ts",
       "reason": "checks the shape of the source (\"the word is one `$x`\"), not what bash does with it",
       "uses": [
+        {"fn":"barePartsIn","kind":"node-type","count":1},
         {"fn":"isExpansion","kind":"node-type","count":2},
         {"fn":"joinedArray","kind":"node-type","count":3},
         {"fn":"throughShell","kind":"node-type","count":5},
-        {"fn":"wordFindings","kind":"node-type","count":6}
+        {"fn":"wordFindings","kind":"node-type","count":5}
       ]
     }
   ]

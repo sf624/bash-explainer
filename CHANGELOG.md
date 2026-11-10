@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+
+### New
+
+- A variable the script sets is read in the language of the command that uses it: in `re='^[A-Z][0-9]+$'; grep -E "$re" ids.txt`, the value of `$re` gets the parts of the regex under its value, and the example, as `grep -E '^[A-Z][0-9]+$'` does. An error in the value (`re='[a'`) is an Error of the line; before, the value was shown but not read.
+
 ## 0.13.0
 
 Python scripts that import `re` get their regex patterns explained, with examples checked against Python and Errors for patterns Python refuses. `grep -P` reads named backreferences and conditionals, and `sed`, `grep` and `gawk` no longer show an example for a script that is not known.

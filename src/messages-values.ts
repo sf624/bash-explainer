@@ -27,6 +27,23 @@ export interface ValueSaid {
   tail?: string;
   /** The whole line in inline Markdown, for the outputs with no chips (the hover, Markdown, the CLI). */
   text: string;
+  /**
+   * Above the rows of a reading of the value that assumes no file name matches it (`ValueReading.assumes`; inline Markdown):
+   * "Read below as `grep` gets it where no file name matches".
+   */
+  readingLead?: string;
+}
+
+/** Where the value is read in the language of its command (docs/design/known-values.md, 12): the command, and the parts of the value that make it a glob pattern. */
+export interface ValueRead { command: string; globs: readonly string[] }
+
+/** How many glob parts of a value are named (`its [A-Z], [0-9]`). */
+const GLOBS_NAMED = 3;
+
+/** The glob parts of a value named in a sentence: "`[A-Z]`, `[0-9]`" (Japanese "`[A-Z]`・`[0-9]`"), the first few. */
+export function globsNamed(globs: readonly string[], ja: boolean): string {
+  const named = globs.slice(0, GLOBS_NAMED).map(codeSpan).join(ja ? '・' : ', ');
+  return globs.length > GLOBS_NAMED ? named + (ja ? 'など' : ' …') : named;
 }
 
 /** The characters at the start and at the end of a shown text that are marks of a space. */
@@ -111,8 +128,12 @@ export function shownPiece(t: string, edges: { lead: boolean; trail: boolean }):
   return { text: units.map((c, i) => (marked[i] ? SPACE_MARK : c)).join(''), ends: [lead, trail] };
 }
 
-/** The texts of the value of an expansion, in `lang`; `bash`: false in a script of sh or dash (the shell runs it, not bash). */
-export function valueSaid(lang: Lang, v: ExpansionValue, bash = true): ValueSaid {
+/**
+ * The texts of the value of an expansion, in `lang`; `bash`: false in a script of sh or dash (the shell runs it, not bash).
+ * `read`: the command reads the value in a language of its own, so a glob in it is said as what bash does before the command
+ * gets it (docs/design/known-values.md, 12), with the lead of the reading's rows.
+ */
+export function valueSaid(lang: Lang, v: ExpansionValue, bash = true, read?: ValueRead): ValueSaid {
   const ja = lang === 'ja';
   const show = shownWord;
   const lead = ja ? 'スクリプトから分かるここでの値:' : 'Value here, from the script:';
@@ -132,6 +153,10 @@ export function valueSaid(lang: Lang, v: ExpansionValue, bash = true): ValueSaid
   if (v.glob && v.joined) {
     tails.push(ja ? '。クォートしていないので、ワイルドカードを含む単語が前後の文字列とつながったままグロブのパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
       : '. Unquoted, the word its wildcards end up in, with the text around it, is a glob pattern: bash matches it against file names when the line runs (not done here)');
+  } else if (v.glob && read) {
+    const named = globsNamed(read.globs, ja);
+    tails.push(ja ? `。クォートしていないので、${bash ? 'bash ' : 'シェル'}は \`${read.command}\` に渡す前に値をグロブのパターンとしても読み（${named}）、実行するときにファイル名と照合する（ここでは照合しない）`
+      : `. Unquoted, ${bash ? 'bash' : 'the shell'} also reads it as a glob pattern (its ${named}) before \`${read.command}\` gets it, and matches it against file names when the line runs (not done here)`);
   } else if (v.glob) {
     tails.push(ja ? '。クォートしていないのでグロブのパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
       : `. Unquoted, it is a glob pattern: ${bash ? 'bash' : 'the shell'} matches it against file names when the line runs (not done here)`);
@@ -157,5 +182,6 @@ export function valueSaid(lang: Lang, v: ExpansionValue, bash = true): ValueSaid
     ...(spaced ? { spaceLabel: blankWord(' ', ja) } : {}),
     ...(tail ? { tail } : {}),
     text,
+    ...(v.glob && read ? { readingLead: ja ? `以下は、一致するファイル名がないときに \`${read.command}\` が受け取る値の読み方` : `Read below as \`${read.command}\` gets it where no file name matches` } : {}),
   };
 }

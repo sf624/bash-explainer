@@ -15,7 +15,7 @@ import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../s
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { noteBasis, noteRefs, notesByLevel, refsText, toPlainMarkdown, wordsMarkdown } from '../src/ui/render';
-import { type NoteBasis, rowPlain, tokenRow } from '../src/ui/tokenRow';
+import { type NoteBasis, type ReadingRow, rowPlain, tokenRow, type TokenRow } from '../src/ui/tokenRow';
 import { ui } from '../src/ui/texts';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
@@ -327,8 +327,7 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
     out.push(`  ${shown}${refs(noteRefs(ex, n))}`);
     based(noteBasis(ex, n, lang), '    ');
   }
-  const walk = (t: Token, depth: number) => {
-    const r = tokenRow(t, lang);
+  const row = (r: TokenRow, depth: number) => {
     // Code parts in the colour of the kind; a placeholder in italics and dim (or ‹name› when there is no colour).
     const label = joinParts(r.labelParts, (p) => (p.placeholder
       ? (color ? `${sgr('2;3')}${p.text}${sgr('0')}` : `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}`)
@@ -337,6 +336,16 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
     // (The value of an expansion where it runs, on a line of its own: its backticks are kept, as they mark where each word starts and ends.)
     if (r.value) out.push(`${'  '.repeat(depth + 2)}${paint('90', '=')} ${pictureText(r.value.said.text)}`);
     based(r.basis, '  '.repeat(depth + 2));
+    // (Where the command reads the value in a language of its own: the rows of that reading, under the value's line.)
+    if (r.reading?.lead) out.push(`${'  '.repeat(depth + 3)}${paint('90', r.reading.lead.replace(/`/g, ''))}`);
+    const reading = (rr: ReadingRow, d: number) => {
+      row(rr, d);
+      for (const c of rr.children) reading(c, d + 1);
+    };
+    for (const rr of r.reading?.rows ?? []) reading(rr, depth + 2);
+  };
+  const walk = (t: Token, depth: number) => {
+    row(tokenRow(t, lang), depth);
     for (const c of t.children) walk(c, depth + 1);
   };
   for (const t of ex.items) walk(t, 0);

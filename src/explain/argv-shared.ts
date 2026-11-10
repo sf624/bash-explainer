@@ -17,6 +17,7 @@ import { type StepKind } from '../semantics/words';
 import { elementsOf } from '../semantics/elements';
 import { globOff, wordAt } from './reads';
 import { braceWord, globChildren, globNotes, tilde, tildeNote, valueNote, word } from './words';
+import { withReading } from './values';
 
 /** The entry of a table of a spec for a word of the script (`set -o constructor` finds none). */
 export const own = <T>(table: Readonly<Record<string, T>> | undefined, word: string): T | undefined => (table && Object.hasOwn(table, word) ? table[word] : undefined);
@@ -88,6 +89,8 @@ export function positional(cx: Explainer, a: SyntaxNode, desc: string | undefine
     return t;
   }
   const inner = cx.sub(a);
+  // (A known value read in the language: its rows go on the value of its expansion, which has no place of its own for them.)
+  if (emb?.value) withReading(cx, inner, emb.value.part, emb.value.reading, cx.command!.cmd);
   // The embedded tokens sit inside the quotes, so they become children of the string token.
   if (emb && inner[0]) {
     if (emb.holes) graftExpansions(inner[0], emb.tokens, emb.holes);

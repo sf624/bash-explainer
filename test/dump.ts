@@ -24,6 +24,9 @@ const root = path.join(__dirname, '..');
     if (t.name) console.log(`${'  '.repeat(d + 1)}« ${t.name.said.kind}${t.name.said.by ? `, ${t.name.said.by}` : ''} »${t.name.said.also ? ` ${t.name.said.also}` : ''}`);
     // (The value of an expansion where it runs: the model's, `Token.value`.)
     if (t.value) console.log(`${'  '.repeat(d + 1)}= ${t.value.said.text}`);
+    // (A known value read in its command's language: its rows under the value line.)
+    if (t.value?.said.readingLead) console.log(`${'  '.repeat(d + 2)}${t.value.said.readingLead}`);
+    t.value?.reading?.tokens.forEach((c) => print(c, d + 2));
     t.children.forEach((c) => print(c, d + 1));
   };
   lines.forEach((text, i) => {

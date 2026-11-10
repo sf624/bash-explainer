@@ -1259,6 +1259,8 @@
     if (also) text.append(also);
     const value = valueLine(part.value);
     if (value) text.append(value);
+    // (Where the command reads the value in a language of its own and it may be a glob: what the rows under it assume.)
+    if (part.reading && part.reading.lead) text.append(el('span', { class: 'ev-value ev-lead' }, ...inline(part.reading.lead)));
     // Where the text rests on bash's behaviour rather than the manual: its chip after the text, as a note's, and its
     // try-it under the row, as wide as the row (beside the label, the text's column is narrow on a phone).
     const [chip, ...tryIt] = basisParts(part.basis);

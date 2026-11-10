@@ -8,7 +8,7 @@ import { LEVELS } from '../levels';
 import type { Note } from '../messages';
 import { errorColour, Role, roleColour, ThemeKind } from './palette';
 import { ui } from './texts';
-import { type NoteBasis, partBasis, rowPlain, tokenRow } from './tokenRow';
+import { type NoteBasis, partBasis, type ReadingRow, rowPlain, tokenRow, type TokenRow } from './tokenRow';
 import { mostOf, pushAll } from '../lists';
 
 /** (Moved to src/label.ts, which the message catalog reads too.) */
@@ -256,9 +256,17 @@ export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: st
   const out: string[] = [`**${where}**`, '', '```' + (ex.code ?? 'bash'), lineText.trim(), '```', ''];
   const links = (refs: readonly string[] | undefined) => (refs?.length ? ` (${refsMarkdown(lang, refs)})` : '');
   pushAll(out, plainNotes(ex, ex.notes, lang));
+  const row = (r: TokenRow, depth: number) => {
+    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(r.labelParts)} — ${rowPlain(r)}${links(r.refs)}${valueMarkdown(r.value, '  '.repeat(depth + 1))}${basisMarkdown(r.basis, lang, '  '.repeat(depth + 1))}${r.reading?.lead ? `\\\n${'  '.repeat(depth + 1)}_${r.reading.lead}_` : ''}`);
+    // (Where the command reads the value in a language of its own: the rows of that reading, first among the row's parts.)
+    const reading = (rr: ReadingRow, d: number) => {
+      row(rr, d);
+      for (const c of rr.children) reading(c, d + 1);
+    };
+    for (const rr of r.reading?.rows ?? []) reading(rr, depth + 1);
+  };
   const walk = (tok: Token, depth: number) => {
-    const r = tokenRow(tok, lang);
-    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(r.labelParts)} — ${rowPlain(r)}${links(r.refs)}${valueMarkdown(r.value, '  '.repeat(depth + 1))}${basisMarkdown(r.basis, lang, '  '.repeat(depth + 1))}`);
+    row(tokenRow(tok, lang), depth);
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);

@@ -32,6 +32,15 @@ export function explainGlob(src: string, lang: Lang, extglob = true, ifs: Readon
   return parse({ src, s: pick(lang), lang, ifs, shown }, 0, src.length, extglob);
 }
 
+/**
+ * The parts of the value of an unquoted expansion that bash reads as wildcards (`*`, `?`, `[…]`; `^[A-Z][0-9]+$`: `[A-Z]` and
+ * `[0-9]`), as written, for the texts that name them. A value holds no expansion: its `$` and `` ` `` are text, so they are read as any other character.
+ */
+export function valueGlobs(value: string): string[] {
+  const masked = value.replace(/[$`]/g, '_');
+  return explainGlob(masked, 'en', false).filter((t) => t.kind === 'pattern').map((t) => value.slice(t.start, t.end));
+}
+
 /** What `parse` reads: the pattern, the language, and the backslashes put before characters of `IFS` (`explainGlob`). */
 interface Source { src: string; s: (ja: string, en: string) => string; lang: Lang; ifs: ReadonlySet<number>; shown: (from: number, to: number) => string }
 
