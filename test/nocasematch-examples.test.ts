@@ -25,13 +25,12 @@ const ERE = ['^(y|yes)$', '^[a-z]+$', '[[:upper:]]', '^[A-Z][0-9]+$'];
 const GLOB = ['[a-z]*', 'yes', '[[:upper:]]*', '[[:lower:]]*', '[A-Z][0-9]*'];
 const ON = 'shopt -s nocasematch';
 const OFF = 'shopt -u nocasematch';
-const literal = (re: string) => re.replace(/([|()])/g, '\\$1');
 
 interface Row { src: string; test: (s: string) => string; nocase: boolean }
 const rows: Row[] = [];
 for (const [state, nocase] of [[ON, true], [OFF, false]] as const) {
   for (const re of ERE) {
-    rows.push({ src: `${state}; [[ $ans =~ ${literal(re)} ]]`, test: (s) => `[[ $s =~ ${literal(re)} ]]`, nocase });
+    rows.push({ src: `${state}; [[ $ans =~ ${re} ]]`, test: (s) => `[[ $s =~ ${re} ]]`, nocase });
   }
   for (const g of GLOB) {
     rows.push({ src: `${state}; [[ $ans == ${g} ]]`, test: (s) => `[[ $s == ${g} ]]`, nocase });
