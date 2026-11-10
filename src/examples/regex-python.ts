@@ -3,15 +3,19 @@
 // U+2029 and Python's only `\n`. VERBOSE whitespace and comments are left out as Python's parser skips them (`{1, 3}` is no count),
 // and named groups become numbered ones. What JavaScript cannot say, or says otherwise on the made-up ASCII texts of an example,
 // is refused (undefined): atomic groups, possessive quantifiers, conditionals, `\N{…}`, a backreference to a group that may not take
-// part, `re.LOCALE`, a flag not known, case folding of a character past ASCII, and a group's own `(?i:…)`.
-import { FLAG_LETTERS, pythonCode, pythonFlags, type PythonRegexOptions } from '../embedded/regex-python';
+// part, a repeat of what can match an empty string, `re.LOCALE`, a flag not known, case folding of a character past ASCII, and a
+// group's own `(?i:…)`.
+import { FLAG_LETTERS, pythonCode, pythonFlags, pythonGlobalFlags, pythonLetters, type PythonRegexOptions, skipVerbose, VERBOSE_SPACE } from '../embedded/regex-python';
 import { type Node, Parser } from './regexparse';
 
 /** A pattern in JavaScript syntax (the `JsRegex` of src/examples/regex.ts). */
 interface Js { source: string; flags: string }
 
-/** The whitespace Python's VERBOSE skips (`WHITESPACE` of its `re._parser`). */
-const WHITESPACE = ' \t\n\r\v\f';
+/**
+ * What an example of a Python pattern may show, and what the panel's box runs again (`RerunSpec`): ASCII without a control
+ * character but a tab or a newline, where JavaScript and Python read the classes (`\d`, `\w`, `\s`) and the case alike.
+ */
+export const PY_SHOWN = /^[\t\n\x20-\x7e]*$/;
 
 /** The flags in effect at a place of the pattern: case, `^` and `$` at lines, `.` and newlines, VERBOSE. */
 interface Scope { i: boolean; m: boolean; s: boolean; x: boolean }
@@ -27,44 +31,19 @@ const LINE_START = '(?<![^\\n])';
 const END_OR_FINAL_NEWLINE = '(?![^\\n]|\\n[\\s\\S])';
 const LINE_END = '(?![^\\n])';
 
-/** The one-letter escapes outside a set, as JavaScript: the classes and anchors, and the characters. */
-const LETTERS: Record<string, string> = {
+/**
+ * The one-letter escapes outside a set as JavaScript, for each letter of `pythonLetters` but those of a character's code (`\x`, `\u`,
+ * `\U`, `\N`: `pythonCode`): the classes and anchors, and the characters.
+ */
+export const JS_LETTERS: Record<string, string> = {
   A: PY_START, Z: PY_END, z: PY_END, b: '\\b', B: '\\B', d: '\\d', D: '\\D', s: '\\s', S: '\\S', w: '\\w', W: '\\W',
   a: '\\x07', f: '\\f', n: '\\n', r: '\\r', t: '\\t', v: '\\v',
 };
 /** The same inside a set, where `\b` is a backspace: a class (`set`) or a character's code. */
-const CLASS_LETTERS: Record<string, string | number> = { d: '\\d', D: '\\D', s: '\\s', S: '\\S', w: '\\w', W: '\\W', a: 7, b: 8, f: 12, n: 10, r: 13, t: 9, v: 11 };
+export const JS_CLASS_LETTERS: Record<string, string | number> = { d: '\\d', D: '\\D', s: '\\s', S: '\\S', w: '\\w', W: '\\W', a: 7, b: 8, f: 12, n: 10, r: 13, t: 9, v: 11 };
 
 /** A character's code as a JavaScript escape. */
 const unit = (code: number): string => `\\u${code.toString(16).padStart(4, '0')}`;
-
-/** Skips VERBOSE whitespace and `#` comments from `i`. */
-function skipVerbose(src: string, i: number): number {
-  for (;;) {
-    if (WHITESPACE.includes(src[i] ?? 'x')) i++;
-    else if (src[i] === '#') {
-      while (i < src.length && src[i] !== '\n') i++;
-    } else return i;
-  }
-}
-
-/** The letters of the global flags that start the pattern (`(?i)(?#c)(?m)`), after VERBOSE whitespace and comments where it is on. */
-function globalLetters(src: string, verbose: boolean): string {
-  let letters = '';
-  for (let i = 0; ;) {
-    if (verbose) i = skipVerbose(src, i);
-    if (src.startsWith('(?#', i)) {
-      const close = src.indexOf(')', i);
-      if (close < 0) return letters;
-      i = close + 1;
-      continue;
-    }
-    const m = /^\(\?([aiLmsux]+)\)/.exec(src.slice(i));
-    if (!m) return letters;
-    letters += m[1];
-    i += m[0].length;
-  }
-}
 
 /** A member of a set: a character's code, or a class of one letter (`\d`). Undefined for one Python refuses or JavaScript cannot have. */
 function classMember(src: string, i: number, bytes: boolean): { code?: number; set?: string; length: number } | undefined {
@@ -73,9 +52,10 @@ function classMember(src: string, i: number, bytes: boolean): { code?: number; s
   if (code) return code.code === undefined || code.error ? undefined : { code: code.code, length: code.length };
   const c = src[i + 1];
   if (c === undefined) return undefined;
-  const letter = CLASS_LETTERS[c];
-  if (letter !== undefined) return typeof letter === 'number' ? { code: letter, length: 2 } : { set: letter, length: 2 };
-  return /[A-Za-z0-9]/.test(c) ? undefined : { code: c.charCodeAt(0), length: 2 };
+  if (!/[A-Za-z0-9]/.test(c)) return { code: c.charCodeAt(0), length: 2 };
+  if (!pythonLetters(bytes).inClass.includes(c)) return undefined;
+  const letter = JS_CLASS_LETTERS[c];
+  return typeof letter === 'number' ? { code: letter, length: 2 } : { set: letter, length: 2 };
 }
 
 /**
@@ -113,9 +93,7 @@ export function pythonToJs(src: string, py: PythonRegexOptions): Js | undefined 
   const flags = [py.ascii, py.ignorecase, py.multiline, py.dotall, py.verbose, py.locale];
   // (A flag not known changes what the pattern means; the locale is the machine's. A character past U+FFFF is two in JavaScript.)
   if (flags.includes('unknown') || py.locale || /[\ud800-\udfff]/.test(src)) return undefined;
-  let letters = globalLetters(src, py.verbose === true);
-  // (Python reads the whole pattern again with VERBOSE when `(?x)` turns it on, so whitespace before the flags is skipped too.)
-  if (!py.verbose && letters.includes('x')) letters = globalLetters(src, true);
+  const { letters } = pythonGlobalFlags(src, py.verbose === true, py.bytes);
   if (letters.includes('L')) return undefined;
   const on = (f: boolean | 'unknown', l: string) => f === true || letters.includes(l);
   const top: Scope = { i: on(py.ignorecase, 'i'), m: on(py.multiline, 'm'), s: on(py.dotall, 's'), x: on(py.verbose, 'x') };
@@ -137,7 +115,7 @@ export function pythonToJs(src: string, py: PythonRegexOptions): Js | undefined 
   for (let i = 0; i < src.length;) {
     const sc = scopes[scopes.length - 1];
     const c = src[i];
-    if (sc.x && (WHITESPACE.includes(c) || c === '#')) {
+    if (sc.x && (VERBOSE_SPACE.has(c) || c === '#')) {
       i = skipVerbose(src, i);
       continue;
     }
@@ -256,9 +234,9 @@ export function pythonToJs(src: string, py: PythonRegexOptions): Js | undefined 
         continue;
       }
       if (/[A-Za-z0-9]/.test(n)) {
-        if (!(n in LETTERS)) return undefined;
+        if (!pythonLetters(py.bytes).out.includes(n)) return undefined;
         repeatable = !'AZzbB'.includes(n);
-        out += LETTERS[n];
+        out += JS_LETTERS[n];
       } else {
         wide(n.charCodeAt(0));
         out += unit(n.charCodeAt(0));
@@ -274,51 +252,72 @@ export function pythonToJs(src: string, py: PythonRegexOptions): Js | undefined 
   if (scopes.length !== 1) return undefined;
   // (Python folds the case of a character past ASCII by Unicode's rules, which JavaScript's `i` does not follow: `K` and KELVIN SIGN.)
   if (top.i && pastAscii) return undefined;
-  return trustedGroups(out) ? { source: out, flags: top.i ? 'i' : '' } : undefined;
-}
-
-/** Whether a node can match an empty string. */
-function nullable(n: Node): boolean {
-  switch (n.t) {
-    case 'char': case 'set': return false;
-    case 'seq': return n.items.every(nullable);
-    case 'alt': return n.options.some(nullable);
-    case 'repeat': return n.min === 0 || nullable(n.node);
-    case 'group': return n.look !== undefined || nullable(n.node);
-    default: return true;
-  }
+  return trusted(out) ? { source: out, flags: top.i ? 'i' : '' } : undefined;
 }
 
 /**
- * Whether every backreference names a group sure to have taken part: JavaScript matches a reference to a group that did not as an
- * empty string, where Python fails. A group is sure where nothing on the way to it is a choice, an optional repeat or a lookaround.
+ * Whether JavaScript runs the pattern as Python does: every backreference names a group sure to have taken part (JavaScript matches
+ * a reference to a group that did not as an empty string, where Python fails), and no repeat may go past its least count with an
+ * iteration that matches nothing (JavaScript fails such an iteration, where Python takes it: `(\s*)?,` gives the group `''` in
+ * Python, none in JavaScript). A group is sure where nothing on the way to it is a choice, an optional repeat or a lookaround.
  */
-function trustedGroups(source: string): boolean {
+function trusted(source: string): boolean {
   const facts = groupFacts(source);
-  return facts.refs.every((n) => facts.sure.has(n));
+  return !facts.emptyRepeat && facts.refs.every((n) => facts.sure.has(n));
 }
 
 /**
  * What the capture groups of a JavaScript pattern are: those sure to take part in a match, those whose text is that of Python
- * (`agree`), the groups backreferences name, and how many groups there are. JavaScript clears a repeated group's captures at each
- * repetition, and fails a repetition that matches nothing, where Python keeps the last: a group under a repeat of more than once
- * agrees only where it is sure in each repetition, and the repetition cannot be empty.
+ * (`agree`), the groups backreferences name, and how many groups there are; and whether a repeat's iteration past its least count
+ * can match an empty string (`emptyRepeat`). JavaScript clears a repeated group's captures at each repetition, and fails a
+ * repetition that matches nothing, where Python keeps the last: a group under a repeat of more than once agrees only where it is
+ * sure in each repetition, and the repetition cannot be empty; in a repeated part, a repeat that may not run at all leaves it unsure.
  */
-export function groupFacts(source: string): { count: number; sure: Set<number>; agree: boolean; refs: number[] } {
+export function groupFacts(source: string): { count: number; sure: Set<number>; agree: boolean; refs: number[]; emptyRepeat: boolean } {
   const p = new Parser(source);
   const tree = p.alt();
   const sure = new Set<number>();
   const refs: number[] = [];
+  const groups = new Map<number, Node>();
+  const known = new Map<Node, boolean>();
   let agree = true;
   let count = 0;
+  let emptyRepeat = false;
+  // (Whether a node can match an empty string: a reference where its group can. Each node once; one in its own group is taken to.)
+  const nullable = (n: Node): boolean => {
+    const was = known.get(n);
+    if (was !== undefined) return was;
+    known.set(n, true);
+    let empty: boolean;
+    switch (n.t) {
+      case 'char': case 'set': empty = false; break;
+      case 'seq': empty = n.items.every(nullable); break;
+      case 'alt': empty = n.options.some(nullable); break;
+      case 'repeat': empty = n.min === 0 || nullable(n.node); break;
+      case 'group': empty = n.look !== undefined || nullable(n.node); break;
+      // (`pythonToJs` writes a reference only to a group before it.)
+      case 'backref': empty = nullable(groups.get(n.n)!); break;
+      case 'anchor': empty = true;
+    }
+    known.set(n, empty);
+    return empty;
+  };
+  const number = (n: Node) => {
+    if (n.t === 'group' && n.no) groups.set(n.no, n);
+    if (n.t === 'seq') n.items.forEach(number);
+    else if (n.t === 'alt') n.options.forEach(number);
+    else if (n.t === 'repeat' || n.t === 'group') number(n.node);
+  };
+  number(tree);
   const walk = (n: Node, certain: boolean, repeated: 'no' | 'sure' | 'unsure') => {
     switch (n.t) {
       case 'seq': n.items.forEach((x) => walk(x, certain, repeated)); return;
       case 'alt': n.options.forEach((x) => walk(x, false, repeated === 'no' ? 'no' : 'unsure')); return;
       case 'repeat': {
-        const many = n.max > 1;
-        // (Once unsure, a group stays so in a repeat inside: an outer repetition clears it too.)
-        const inner = many && repeated !== 'unsure' ? (nullable(n.node) ? 'unsure' : 'sure') : repeated === 'sure' && n.min === 0 ? 'unsure' : repeated;
+        emptyRepeat ||= n.max > n.min && nullable(n.node);
+        // (Once unsure, a group stays so in a repeat inside: an outer repetition clears it too, and so does one in which this repeat
+        // does not run.)
+        const inner = repeated === 'unsure' || (repeated === 'sure' && n.min === 0) ? 'unsure' : n.max > 1 ? (nullable(n.node) ? 'unsure' : 'sure') : repeated;
         walk(n.node, certain && n.min > 0, inner);
         return;
       }
@@ -335,5 +334,5 @@ export function groupFacts(source: string): { count: number; sure: Set<number>; 
     }
   };
   walk(tree, true, 'no');
-  return { count, sure, agree, refs };
+  return { count, sure, agree, refs, emptyRepeat };
 }

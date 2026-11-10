@@ -1,5 +1,15 @@
 // The escapes of the regex reader's flavors (src/embedded/regex.ts): the letters each flavor has and what they mean, PCRE's own,
-// what JavaScript reads for them in the examples (src/examples/regex.ts), and the escapes that name a character by its code.
+// what JavaScript reads for them in the examples (src/examples/regex.ts), the escapes that name a character by its code, and the
+// names of the POSIX classes of a bracket expression.
+import { wordTable } from '../wordtable';
+
+/** What each POSIX class of a bracket expression (`[[:alpha:]]`) matches, in words. */
+export const POSIX_CLASS_WORDS: Record<string, [string, string]> = wordTable({
+  alpha: ['英字', 'letters'], digit: ['数字', 'digits'], alnum: ['英数字', 'letters and digits'],
+  upper: ['大文字', 'uppercase letters'], lower: ['小文字', 'lowercase letters'], space: ['空白文字', 'whitespace'],
+  blank: ['空白とタブ', 'spaces and tabs'], punct: ['記号', 'punctuation'], xdigit: ['16進数字', 'hex digits'],
+  cntrl: ['制御文字', 'control characters'], print: ['表示可能な文字', 'printable characters'], graph: ['空白以外の表示可能な文字', 'visible characters'],
+});
 
 /**
  * `\w`, `\d`… Whether each is available in each flavor (GNU tools support some in BRE/ERE), and what a JavaScript RegExp

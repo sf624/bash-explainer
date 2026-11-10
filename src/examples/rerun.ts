@@ -11,7 +11,8 @@ import { sectionMarks, type SectionMarks, type StageMarks } from './marks';
 import { pipelineExample, Stage, stageMarks } from './pipeline';
 import { JsRegex } from './regex';
 import { contained } from '../failures';
-import { guarded, type NotComputedId, scriptRegex } from './regexguard';
+import { guarded, type NotComputedId, Refused, scriptRegex } from './regexguard';
+import { PY_SHOWN } from './regex-python';
 import { runXargs, showCommand } from './runtime';
 import { runSed } from './sed';
 import { codeSpan } from '../label';
@@ -27,7 +28,8 @@ import { pushAll } from '../lists';
 export type RerunSpec = RerunKind & { reads?: number[] };
 
 type RerunKind =
-  | { kind: 'regex'; regex: JsRegex; mode: 'lines' | 'inverted' | 'values' }
+  /** `python`: a pattern of Python's `re`, run again only on text that its examples may show (`PY_SHOWN`). */
+  | { kind: 'regex'; regex: JsRegex; mode: 'lines' | 'inverted' | 'values'; python?: boolean }
   | { kind: 'glob'; pattern: string; mode: GlobMode; opts?: GlobOpts }
   | { kind: 'sed'; script: string; quiet: boolean; extended: boolean; highlight?: JsRegex }
   /** `files`: the names of the files it reads, one per box (`FILENAME`). */
@@ -173,6 +175,7 @@ export function runAgain(spec: RerunSpec, boxes: string[][], lang: Lang): RerunR
   });
   switch (spec.kind) {
     case 'regex': {
+      if (spec.python && !input.every((l) => PY_SHOWN.test(l))) throw new Refused('python-text-not-computed');
       const marks = input.map((l) => matchMarks(spec.regex, l));
       const hit = input.filter((_, i) => marks[i].some((m) => m.group === 0));
       const miss = input.filter((_, i) => !marks[i].some((m) => m.group === 0));

@@ -166,6 +166,7 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'size-not-computed': 'none',
   'steps-not-computed': 'none',
   'budget-not-computed': 'none',
+  'python-text-not-computed': 'none',
   'example-failed': 'none',
   'line-not-explained': 'none',
   'line-too-deep': 'none',
@@ -376,7 +377,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 19, scenario: 26, prose: 25, none: 104 });
+      { mechanical: 19, scenario: 26, prose: 25, none: 105 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });

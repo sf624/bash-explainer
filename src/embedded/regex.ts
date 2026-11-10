@@ -3,9 +3,8 @@ import type { Lang } from '../i18n';
 import { tokenSaid } from '../messages-tokens';
 import { codeShown, shownWord } from '../messages-values';
 import { EmbeddedToken, escapeIntoHole, hasHole, holeStop, holeToken, isHole, pick } from './types';
-import { wordTable } from '../wordtable';
-import { charOfCode, codeEscape, hexOf, namedChar, PCRE_ESCAPE_LETTERS, PCRE_ONLY, PERL_CASE, SHORTHANDS } from './regex-escapes';
-import { FLAG_LETTERS, IF_FLAG, NO_PYTHON_FLAGS, PYTHON_DOT, PYTHON_SINCE, pythonCode, pythonFlags, pythonLetters, type PythonRegexOptions, pythonShorthand } from './regex-python';
+import { charOfCode, codeEscape, hexOf, namedChar, PCRE_ESCAPE_LETTERS, PCRE_ONLY, PERL_CASE, POSIX_CLASS_WORDS, SHORTHANDS } from './regex-escapes';
+import { FLAG_LETTERS, IF_FLAG, NO_PYTHON_FLAGS, PYTHON_DOT, PYTHON_SINCE, pythonCode, pythonFlags, pythonGlobalFlags, pythonLetters, type PythonRegexOptions, pythonShorthand, pythonWidth, VERBOSE_SPACE, type Width, widthSaid } from './regex-python';
 
 /**
  * POSIX basic (grep, sed), POSIX extended (grep -E, sed -E, [[ =~ ]]), Perl-compatible (grep -P), or Python's `re`
@@ -20,13 +19,6 @@ export type ShellFlavor = Exclude<Flavor, 'python'>;
 /** The flavors read by the PCRE paths of the reader: PCRE, and Python's `re`. */
 const PCRE_LIKE: ReadonlySet<Flavor> = new Set(['pcre', 'python']);
 export const pcreLike = (st: { flavor: Flavor }): boolean => PCRE_LIKE.has(st.flavor);
-
-const CLASSES: Record<string, [string, string]> = wordTable({
-  alpha: ['英字', 'letters'], digit: ['数字', 'digits'], alnum: ['英数字', 'letters and digits'],
-  upper: ['大文字', 'uppercase letters'], lower: ['小文字', 'lowercase letters'], space: ['空白文字', 'whitespace'],
-  blank: ['空白とタブ', 'spaces and tabs'], punct: ['記号', 'punctuation'], xdigit: ['16進数字', 'hex digits'],
-  cntrl: ['制御文字', 'control characters'], print: ['表示可能な文字', 'printable characters'], graph: ['空白以外の表示可能な文字', 'visible characters'],
-});
 
 /**
  * How a flavor says a pattern its program refuses, where it is in the program's own words: Python's `re` says its message
@@ -73,8 +65,16 @@ interface State {
   base: MatchUnit;
   /** Python's flags where the reader is (`RegexOptions.python`, then the inline flags; a group's own last to its end). */
   py?: PythonRegexOptions;
-  /** The tokens of Python's global flags (`(?i)`), which may only follow one another at the start (`atPatternStart`). */
-  globals: Set<EmbeddedToken>;
+  /** Where Python's global flags (`(?i)`) may stand: at the start of the pattern, one after another (`pythonGlobalFlags`). */
+  globalAt?: ReadonlySet<number>;
+  /**
+   * Of Python's lookbehinds, which must match one width (`pythonWidth`): the width of each group closed, by its number and its token;
+   * the groups opened before the outermost lookbehind the reader is in (a reference in it may not name one opened in it); and those
+   * of more than one width, refused where Python compiles the pattern (`lookbehindWidths`).
+   */
+  widths: Map<number | EmbeddedToken, Width | undefined>;
+  lookbehindFrom?: number;
+  lookbehinds: { token: EmbeddedToken; width: Width }[];
   /** The messages of the refusals said so far, in the program's own words (`ownSaid`). */
   refused: Set<string>;
   /** Where Python's `re.VERBOSE` is not known: the messages of the refusals of the reading with it (`UNLESS_VERBOSE`). */
@@ -130,16 +130,33 @@ export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: Rege
     // (Read with `re.VERBOSE` too, for its refusals only: `UNLESS_VERBOSE`.)
     const verbose = stateOf(src, flavor, lang, { ...opts, python: { ...st.py, verbose: true } });
     sequence(verbose, 0);
+    lookbehindWidths(verbose);
     st.verboseRefused = verbose.refused;
   }
-  return mergeLiterals(sequence(st, 0), st);
+  const tokens = sequence(st, 0);
+  lookbehindWidths(st);
+  return mergeLiterals(tokens, st);
 }
 
 /** The reader's state at the start of a regex. */
 function stateOf(src: string, flavor: Flavor, lang: Lang, opts: RegexOptions): State {
   const tool = opts.perl ? 'perl' : opts.tool ?? (opts.sedEscapes ? 'sed' : 'grep');
-  return { src, i: 0, flavor, groups: 0, lang, s: pick(lang), reached: opts.reached ?? true, rest: opts.part ? 'part' : tool === 'perl' && PERL_VARIABLE.test(src.replace(/\\./g, '')) ? 'variable' : undefined, literals: new Map(), names: new Map(), open: new Set(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool], base: opts.unit ?? UNITS[tool], globals: new Set(), refused: new Set(),
-    ...(flavor === 'python' ? { py: { ...(opts.python ?? NO_PYTHON_FLAGS) } } : {}) };
+  const py = flavor === 'python' ? { ...(opts.python ?? NO_PYTHON_FLAGS) } : undefined;
+  return { src, i: 0, flavor, groups: 0, lang, s: pick(lang), reached: opts.reached ?? true, rest: opts.part ? 'part' : tool === 'perl' && PERL_VARIABLE.test(src.replace(/\\./g, '')) ? 'variable' : undefined, literals: new Map(), names: new Map(), open: new Set(), sedEscapes: !!opts.sedEscapes, tool, hole: { delimiter: opts.delimiter, perl: opts.perl }, mawk: !!opts.mawk, unit: opts.unit ?? UNITS[tool], base: opts.unit ?? UNITS[tool], refused: new Set(),
+    widths: new Map(), lookbehinds: [], ...(py ? { py, globalAt: pythonGlobalFlags(src, py.verbose === true, py.bytes).at } : {}) };
+}
+
+/**
+ * Python compiles a pattern it has read, and refuses a lookbehind whose contents may match more characters or fewer (`a|bc`, `a+`):
+ * where no other refusal came first, as its parser's do, each such lookbehind is an error token (its contents are still read).
+ */
+function lookbehindWidths(st: State): void {
+  if (st.refused.size) return;
+  for (const { token, width } of st.lookbehinds) {
+    const [ja, en] = widthSaid(width);
+    token.kind = 'error';
+    token.explanation += st.s(`。中身は${ja}に一致しうる。`, `. Its contents may match ${en}. `) + ownSaid(st, 'look-behind requires fixed-width pattern');
+  }
 }
 
 /**
@@ -209,15 +226,10 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
   const out: EmbeddedToken[] = [];
   const strict = OWN_REFUSAL[st.flavor];
   const atStart = () => out.length === 0 || (out[out.length - 1].kind === 'operator' && out[out.length - 1].label === '|');
-  // (Python's global flags may only start the pattern: in its first alternative, after nothing but comments and other global flags.
-  // Each turn adds one token at most, so the last one says whether the start goes on.)
-  let first = depth === 0;
   while (st.i < st.src.length) {
     const start = st.i;
     const c = st.src[start];
     if (depth > 0 && isGroupClose(st)) return out;
-    const last = out[out.length - 1];
-    first &&= !last || last.kind === 'comment' || st.globals.has(last);
     if (st.py?.verbose === true && (VERBOSE_SPACE.has(c) || c === '#')) {
       const t = verboseSkip(st, start);
       if (t) out.push(t);
@@ -259,7 +271,7 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
       continue;
     }
     if ((n = isGroupOpen(st))) {
-      out.push(group(st, n, first));
+      out.push(group(st, n));
       continue;
     }
     if (c === '[') {
@@ -358,9 +370,6 @@ function lastItem(out: readonly EmbeddedToken[]): EmbeddedToken | undefined {
   return out[k];
 }
 
-/** The whitespace of Python's VERBOSE (`re._parser.WHITESPACE`). */
-const VERBOSE_SPACE: ReadonlySet<string> = new Set([' ', '\t', '\n', '\r', '\v', '\f']);
-
 /**
  * What VERBOSE skips at `start` (`st.i` is moved past it): a `#` comment to the end of the line, a comment token; or a run of
  * whitespace, a token only between two items of a line (none for a line's indentation, nor before a comment or the line's end).
@@ -434,7 +443,7 @@ function quantifier(st: State, start: number, target: EmbeddedToken | undefined)
   return { start, end: st.i, kind: 'operator', explanation: s(`\`${raw}\`: ${of(true)}を${times}繰り返す${greed}`, `\`${raw}\`: repeat ${of(false)} ${times}${greed}`), children: [] };
 }
 
-function group(st: State, openLen: number, first: boolean): EmbeddedToken {
+function group(st: State, openLen: number): EmbeddedToken {
   const { s } = st;
   const start = st.i;
   st.i += openLen;
@@ -444,7 +453,7 @@ function group(st: State, openLen: number, first: boolean): EmbeddedToken {
   let explanation: string;
   let group: number | undefined;
   const rest = st.src.slice(st.i);
-  const flagged = py && rest[0] === '?' && (FLAG_LETTERS.has(rest[1]) || rest[1] === '-') ? pythonFlagGroup(st, start, first) : undefined;
+  const flagged = py && rest[0] === '?' && (FLAG_LETTERS.has(rest[1]) || rest[1] === '-') ? pythonFlagGroup(st, start) : undefined;
   if (flagged && !('scopedText' in flagged)) return flagged;
   // (`(?$x)`: the value may be what follows the `?`.)
   const ext = flagged ? undefined : GROUP_EXTENSIONS[st.flavor]?.exec(rest);
@@ -485,9 +494,14 @@ function group(st: State, openLen: number, first: boolean): EmbeddedToken {
     group = ++st.groups;
     explanation = s(`グループ ${group}: 中身をひとまとめにする（\`\\${group}\` で一致した文字列を参照できる）`, `Group ${group}: treats its contents as one unit (\`\\${group}\` refers to what it matched)`);
   }
+  // (Python's lookbehind: references in it may not name a group opened in it, and its contents must have one width.)
+  const behind = !!py && (ext?.[1] === '<=' || ext?.[1] === '<!');
+  const from = st.lookbehindFrom;
+  if (behind && from === undefined) st.lookbehindFrom = st.groups;
   if (group) st.open.add(group);
   const children = sequence(st, 1);
   if (group) st.open.delete(group);
+  st.lookbehindFrom = from;
   const close = isGroupClose(st);
   st.i += close;
   st.unit = unit;
@@ -499,7 +513,24 @@ function group(st: State, openLen: number, first: boolean): EmbeddedToken {
     const said = refusal(st, `missing ), unterminated subpattern at position ${start}`, () => tokenSaid(st.lang, st.reached ? 'regex-group-unclosed' : 'regex-group-unclosed-if-reached', { tool: st.tool, close: st.flavor === 'bre' ? '\\)' : ')' }));
     return { start, end: st.i, kind: 'error', explanation: explanation + s('。', '. ') + said, children, ...(group ? { group } : {}) };
   }
-  return { start, end: st.i, kind: 'block', explanation, children, ...(group ? { group } : {}) };
+  const token: EmbeddedToken = { start, end: st.i, kind: 'block', explanation, children, ...(group ? { group } : {}) };
+  if (py) {
+    // (Each group's width once, from those of the groups in it.)
+    const width = pythonWidth(children, st.src, (t) => knownWidth(st, t));
+    st.widths.set(token, width);
+    if (group) st.widths.set(group, width);
+    if (behind && width && width[0] !== width[1]) st.lookbehinds.push({ token, width });
+  }
+  return token;
+}
+
+/**
+ * The width of a group of a Python pattern read so far, or of the group a reference names (`\1`, `(?P=n)`): none for an open one, nor
+ * for another construct the reader does not read (a conditional), which names no group (-1).
+ */
+function knownWidth(st: State, t: EmbeddedToken): Width | undefined {
+  const name = /^\(\?P=(\w+)\)$/.exec(st.src.slice(t.start, t.end));
+  return st.widths.get(t.kind === 'block' ? t : (name ? st.names.get(name[1]) : t.group) ?? -1);
 }
 
 /**
@@ -514,10 +545,10 @@ const GROUP_EXTENSIONS: Partial<Record<Flavor, RegExp>> = {
 
 /**
  * A group of Python's inline flags that opens at `start` (`(?i)`, `(?i-m:`), read as `_parse_flags` of its `re._parser` reads it:
- * a token for global flags (they must start the pattern: `first`), or for one it refuses, with its message; else, for flags of the
+ * a token for global flags (they must start the pattern: `State.globalAt`), or for one it refuses, with its message; else, for flags of the
  * group only, its text (the flags are in effect in `st.py` from here; the group restores them).
  */
-function pythonFlagGroup(st: State, start: number, first: boolean): EmbeddedToken | { scopedText: string } {
+function pythonFlagGroup(st: State, start: number): EmbeddedToken | { scopedText: string } {
   const read = pythonFlags(st.src, start, st.py!.bytes);
   const tok = (kind: EmbeddedToken['kind'], explanation: string): EmbeddedToken => ({ start, end: st.i, kind, explanation, children: [] });
   if ('error' in read) {
@@ -537,11 +568,9 @@ function pythonFlagGroup(st: State, start: number, first: boolean): EmbeddedToke
     st.py = py;
     return { scopedText: tokenSaid(st.lang, 'python-regex-inline-flags', { written: `${st.src.slice(start, st.i)}…)`, on: names(read.on), off: names(read.off), scoped: true }) };
   }
-  if (!first) return tok('error', ownSaid(st, `global flags not at the start of the expression at position ${start}`, PYTHON_SINCE.globalFlagsAtStart));
+  if (!st.globalAt!.has(start)) return tok('error', ownSaid(st, `global flags not at the start of the expression at position ${start}`, PYTHON_SINCE.globalFlagsAtStart));
   st.py = py;
-  const t = tok('keyword', tokenSaid(st.lang, 'python-regex-inline-flags', { written: st.src.slice(start, st.i), on: names(read.on), off: [], scoped: false }));
-  st.globals.add(t);
-  return t;
+  return tok('keyword', tokenSaid(st.lang, 'python-regex-inline-flags', { written: st.src.slice(start, st.i), on: names(read.on), off: [], scoped: false }));
 }
 
 /**
@@ -601,7 +630,7 @@ function bracket(st: State): EmbeddedToken {
     }
     const cls = POSIX_CLASSES.has(st.flavor) ? /^\[:(\w+):\]/.exec(src.slice(i)) : null;
     if (cls) {
-      const d = CLASSES[cls[1]];
+      const d = POSIX_CLASS_WORDS[cls[1]];
       items.push(d ? s(d[0], d[1]) : cls[0]);
       i += cls[0].length;
       if (rangeAt(i)) badRange = true;
@@ -894,16 +923,18 @@ function refusal(st: State, message: string, shell: () => string): string {
 }
 
 /**
- * The text of a pattern the flavor's program refuses in its own words (`OWN_REFUSAL`): its `message`, which ends with the position,
- * and the line and column of it where the pattern has a newline, as Python's `re.error` writes them; `since`, the release since which
- * it is an error, where that changed in a release still supported (docs/design/python-regex.md, section 8).
+ * The text of a pattern the flavor's program refuses in its own words (`OWN_REFUSAL`): its `message`, which ends with the position
+ * where its parser refuses it, and the line and column of it where the pattern has a newline, as Python's `re.error` writes them (its
+ * compiler's messages have no position); `since`, the release since which it is an error, where that changed in a release still
+ * supported (docs/design/python-regex.md, section 8).
  */
 function ownSaid(st: State, message: string, since?: string): string {
   const { src } = st;
   st.refused.add(message);
   const said = st.verboseRefused && !st.verboseRefused.has(message) ? UNLESS_VERBOSE : OWN_REFUSAL[st.flavor]!.said;
-  if (src.includes('\n')) {
-    const pos = Number(message.slice(message.lastIndexOf(' ') + 1));
+  const at = / at position (\d+)$/.exec(message);
+  if (at && src.includes('\n')) {
+    const pos = Number(at[1]);
     const before = src.slice(0, pos);
     message += ` (line ${before.split('\n').length}, column ${pos - before.lastIndexOf('\n')})`;
   }
@@ -937,11 +968,13 @@ function pythonEscape(st: State, start: number, c: string): EmbeddedToken {
     return tok('pattern', `\`${src.slice(start, st.i)}\`: ${code.name === undefined ? charOfCode(code.code!, s) : namedChar(code.name, s)}`);
   }
   if (/[1-9]/.test(c)) {
-    // (A group by its number, of one or two digits: one that is not there yet, or not closed, is refused.)
+    // (A group by its number, of one or two digits: one that is not there yet, or not closed, is refused, and in a lookbehind one
+    // opened in it.)
     if (/\d/.test(src[st.i] ?? '')) st.i++;
     const group = Number(src.slice(start + 1, st.i));
     if (group > st.groups) return refused(`invalid group reference ${group} at position ${start + 1}`);
     if (st.open.has(group)) return refused(`cannot refer to an open group at position ${start}`);
+    if (st.lookbehindFrom !== undefined && group > st.lookbehindFrom) return refused(`cannot refer to group defined in the same lookbehind subpattern at position ${st.i}`);
     return tok('variable', s(`後方参照 \`${src.slice(start, st.i)}\`: グループ ${group} に一致したのと同じ文字列`, `Backreference \`${src.slice(start, st.i)}\`: the same text group ${group} matched`), { group });
   }
   if (!/[A-Za-z0-9]/.test(c)) return escapedLiteral(st, start, c);

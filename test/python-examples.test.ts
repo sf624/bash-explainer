@@ -4,10 +4,14 @@ import { Analyzer } from '../src/analyzer';
 import type { Example, ExplainOptions } from '../src/analyzer-types';
 import { explainDocumentLine } from '../src/document';
 import { openDocument } from '../src/document-setup';
-import { NO_PYTHON_FLAGS, type PythonRegexOptions } from '../src/embedded/regex-python';
-import { pyRepr } from '../src/examples/python-calls';
+import { NO_PYTHON_FLAGS, pythonLetters, type PythonRegexOptions } from '../src/embedded/regex-python';
+import { pyRepr, pythonCallExample, pythonMatches } from '../src/examples/python-calls';
 import { toJsRegex } from '../src/examples/regex';
+import { JS_CLASS_LETTERS, JS_LETTERS } from '../src/examples/regex-python';
+import { advancingFrom, costOf, guarded, scriptRegex } from '../src/examples/regexguard';
+import { rerun } from '../src/examples/rerun';
 import { extractShell } from '../src/hosts';
+import type { ReReturns } from '../src/hosts/python';
 import { PYTHON_REFERENCE } from '../src/python-reference';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { needPython, pythonReference } from './support/python';
@@ -59,11 +63,15 @@ const EXAMPLES: Row[] = [
   String.raw`re.sub(r'\s+', ' ', 'a  b\tc')`, String.raw`re.sub('x*', '-', 'abxd')`, String.raw`re.sub('|a', '-', 'a')`, String.raw`re.sub(r'a', 'b', 'aaa', 2)`,
   String.raw`re.sub(r'a', 'b', 'aaa', count=1)`, String.raw`re.sub(r'a', 'b', 'aAa', re.I)`, String.raw`re.sub(r'(?i)a', 'b', 'aAa')`, String.raw`re.sub(r'\d', '#', s)`,
   String.raw`re.sub(r'$', '!', 'a\nb\n')`, String.raw`re.sub(r'^', '> ', 'a\nb', flags=re.M)`, String.raw`re.subn(r'o', '0', 'foo boo')`, String.raw`re.subn(rb'o', b'0', b'foo')`,
-  String.raw`re.sub(r'(?:a*)*b', 'X', 'aab')`, String.raw`re.sub(r'(a|)+', 'X', 'aab')`, String.raw`re.sub(r'(?x) a \  b', '_', 'a b')`, String.raw`re.sub(r'a', 'b', 'aaa', 0)`,
+  String.raw`re.sub(r'(?x) a \  b', '_', 'a b')`, String.raw`re.sub(r'a', 'b', 'aaa', 0)`,
   String.raw`re.sub(r'^\s+', '', s)`, String.raw`re.sub(r'\s+$', '', s)`, String.raw`re.subn(r'\d+', 'N', s)`,
   // Made-up texts where every text matches, or the words around the matches match too; a set with escapes.
   String.raw`re.search(r'[Z-a]', s, re.I)`, String.raw`re.findall(r'[^a-z]', 'aBc_1', re.I)`, String.raw`re.split(r'a', 'xAxaxaxax', re.I)`,
   String.raw`re.search(r'a*', s)`, String.raw`re.findall(r'x*', s)`, String.raw`re.findall(r'(?:\b(a))+', 'a aa')`, String.raw`re.search(r'[\]\-]x', s)`,
+  // Lookbehinds of one width; repeats whose iterations match something; a group repeated in each repetition; a long text of empty matches.
+  String.raw`re.findall(r'(?<=a|b)x', 'axbxcx')`, String.raw`re.search(r'(a)(?<=\1)b', s)`, String.raw`re.search(r'(?<=\ba)b', s)`, String.raw`re.sub(r'(?<!\b)x', '-', 'xax x')`,
+  String.raw`re.search(r'(\w)\1+', s)`, String.raw`re.findall(r'(?:x(a)+)+', 'xaxa')`, String.raw`re.findall(r'(?:(a)b)+', 'abab ab')`, String.raw`re.split(r'(a+){2}x', 'baaaxc')`,
+  `re.findall(r'x*', '${'a'.repeat(3000)}')`, `re.sub(r'|x', '-', '${'x'.repeat(2000)}')`,
 ];
 
 /** Calls that get no example, each for its reason. */
@@ -84,8 +92,21 @@ const REFUSED: [call: string, why: string][] = [
   [String.raw`re.search(r'(?i:a)b', s)`, 'a case flag of a group'], [String.raw`re.search(r'(?-i:a)b', s, re.I)`, 'the same, turned off'],
   [String.raw`re.search(r'(?i)é', s)`, 'case folding past ASCII'], ["re.search(r'[\\" + "u0100-\\" + "uffff]', s, re.I)", 'the same, in a range'],
   [String.raw`re.sub(r'a', 'b', 'aaa', n)`, 'a count not known'], [String.raw`re.sub(r'a', 'b', 'aaa', -1)`, 'a count not written as a number'],
-  [String.raw`re.findall(r'(?:(a)|b)+', 'ab')`, 'a group cleared by a repetition in JavaScript'], [String.raw`re.findall(r'(a*)*', 'b')`, 'a group in a repetition that may be empty'],
-  [String.raw`re.split(r'(?:x(a)?)+', 'xax')`, 'the same, an optional group'], [String.raw`re.findall(r'(?:(?=(a)))+', 'a')`, 'a group in a lookaround that repeats'],
+  [String.raw`re.findall(r'(?:(a)|b)+', 'ab')`, 'a group cleared by a repetition in JavaScript'], [String.raw`re.findall(r'(a*){2}', 'b')`, 'a group in a repetition that may be empty'],
+  [String.raw`re.split(r'(?:x(a)?)+', 'xax')`, 'the same, an optional group'], [String.raw`re.findall(r'(?:(?=(a))a)+', 'a')`, 'a group in a lookaround that repeats'],
+  [String.raw`re.findall(r'(?:x(a)*)+', 'xaxx')`, 'the same, a group repeated in a repetition, which may not run in one'], [String.raw`re.split(r'(?:x(a)*)+', 'bxaxxb')`, 'the same'],
+  [String.raw`re.findall(r'(?:x(a){0,3})+', 'xaxx')`, 'the same, a count from 0'],
+  // (A repetition past its least count that may match nothing: Python takes it, JavaScript fails it.)
+  [String.raw`re.split(r'(\s*)?,', 'a, b')`, 'an optional group that may be empty'], [String.raw`re.search(r'(?:|-)?', '-')`, 'the same, no group'],
+  [String.raw`re.match(r'(?:x*|y)+', 'y')`, 'the same, repeated'], [String.raw`re.sub('(?: ??){1,}', 'X', ' 1b')`, 'the same, lazy'],
+  [String.raw`re.sub(r'(?:a*)*b', 'X', 'aab')`, 'the same'], [String.raw`re.sub(r'(a|)+', 'X', 'aab')`, 'the same, with a group'],
+  [String.raw`re.search(r'(a?)(?:\1)+', s)`, 'the same, a reference to a group that may be empty'],
+  // (A lookbehind of more than one width, which Python refuses; a reference in one to a group opened in it.)
+  [String.raw`re.findall(r'(?<=^|\s)\w+', 'ab cd')`, 'a lookbehind of more than one width'], [String.raw`re.search(r'(?<=\$|USD)\d+', s)`, 'the same'],
+  [String.raw`re.search(r'(?<=a|bc)x', s)`, 'the same'], [String.raw`re.search(r'(?<!a|bc)x', s)`, 'the same, negative'], [String.raw`re.search(r'(?<=a+)x', s)`, 'the same, a repeat'],
+  [String.raw`re.search(r'(?<=\w*)x', s)`, 'the same'], [String.raw`re.search(r'(?<=a{1,2})x', s)`, 'the same'], [String.raw`re.search(r'(?<=a?)x', s)`, 'the same'],
+  [String.raw`re.search(r'(?<=(a|bc))x', s)`, 'the same, in a group'], [String.raw`re.search(r'(a+)(?<=\1)x', s)`, 'the same, a reference'],
+  [String.raw`re.search(r'(?<=(a)\1)x', s)`, 'a reference to a group opened in the lookbehind'],
   [String.raw`re.search(r'*a', s)`, 'a pattern Python refuses'], [String.raw`re.compile(r'a(?#unclosed')`, 'the same'],
   ["re.search(r'" + String.fromCodePoint(0x1f600) + "?x', s)", 'a character past U+FFFF'],
   [String.raw`re.search(rb'(?L:a)', s)`, 'the locale, in a group'], [String.raw`re.search(r'[\N{EM DASH}]', s)`, 'a character by its name, in a set'],
@@ -111,7 +132,7 @@ describe('Python regex: the examples of the calls of `re`', () => {
     assert.deepStrictEqual(examplesOf(String.raw`re.split(r',\s*', s)`, 'ja')[0].sections.map((s) => s.label), ['入力: 引数 `string`（仮の文字列）', '結果（`re.split` の戻り値）']);
     const [values] = examplesOf(String.raw`re.fullmatch(r'\d{3}-\d{4}', s)`, 'ja');
     assert.deepStrictEqual([values.title, values.sections.map((s) => s.label), values.interactive?.spec], ['例（`re.fullmatch` は文字列全体と照合する）', ['一致する文字列（例）', '一致しない文字列（例）'],
-      { kind: 'regex', mode: 'values', regex: { source: String.raw`(?<![\s\S])(?:\d{3}\-\d{4})(?![\s\S])`, flags: '' } }]);
+      { kind: 'regex', mode: 'values', python: true, regex: { source: String.raw`(?<![\s\S])(?:\d{3}\-\d{4})(?![\s\S])`, flags: '' } }]);
   });
 
   it('follows the settings: no example with examples off, or with the kind `regex` off', () => {
@@ -125,6 +146,52 @@ describe('Python regex: the examples of the calls of `re`', () => {
     const [ex] = examplesOf(`re.search(r'(a+)+$', '${'a'.repeat(40)}!')`);
     assert.deepStrictEqual(ex.sections, []);
     assert.match(ex.note!, /Not computed: this pattern may take too long on this text/);
+  });
+
+  it('charges what a call gives back before it is made: a long replacement many times over is not computed', () => {
+    const [ex] = examplesOf(`re.sub(r'a', '${'R'.repeat(10000)}', '${'a'.repeat(10000)}')`);
+    assert.deepStrictEqual(ex.sections, []);
+    assert.match(ex.note!, /Not computed: the values this makes may get too large/);
+    // (And so do the items of `findall` and the pieces of `split`: each costs what the call that only searches costs, and its `repr`.)
+    const text = { value: 'a'.repeat(10000), bytes: false };
+    const cost = (returns: ReReturns, source: string) => costOf(() => pythonCallExample({ written: 're.x', returns, regex: { source, flags: '' }, bytes: false, subject: text, count: 0 }, 'en'));
+    assert.ok(cost('list', 'a+') > cost('match', 'a+') + 2 * 10000);
+    assert.ok(cost('pieces', 'b') > cost('match', 'b') + 2 * 10000);
+  });
+
+  it('runs the box of the panel again only on the text its examples may show, and offers none where a group is not what Python says', () => {
+    const [ex] = examplesOf(String.raw`re.search(r'\d+', s)`);
+    const box = (lines: string[]) => rerun(ex.interactive!.spec, [lines], 'en').sections.map((s) => s.lines);
+    assert.deepStrictEqual(box(['tel 123']), [['tel 123']]);
+    const not = "Not computed: Python's `re` reads characters past ASCII, and control characters, by its own rules (`\\d` matches `１` too). This example tries ASCII text only";
+    assert.deepStrictEqual([box(['tel １２３']), box(['café']), box(['a\x1f1'])], [[[not]], [[not]], [[not]]]);
+    assert.strictEqual(examplesOf(String.raw`re.search(r'(?:(a)|b)+', s)`)[0].interactive, undefined);
+    assert.ok(examplesOf(String.raw`re.search(r'(a)b', s)`)[0].interactive);
+  });
+});
+
+describe('Python regex: the matches one after another, as `sre` finds them', () => {
+  it('finds a match at a place that does not end there in JavaScript\'s order, as the pattern with a lookbehind of the place does', () => {
+    const patterns = ['x*', 'a??', '|a', '(?:|ab|a)', 'a*?b?', '(?=a)|a', '\\b|a', '(a)|', '(?:a|)(?:b|)', '[ab]*?'];
+    const texts = ['', 'a', 'ab', 'xab', 'aab b'];
+    const wrong: string[] = [];
+    for (const p of patterns) {
+      for (const t of texts) {
+        for (let at = 0; at <= t.length; at++) {
+          const theirs = new RegExp(`(?:${p})(?<!^[\\s\\S]{${at}})`, 'y');
+          theirs.lastIndex = at;
+          const want = theirs.exec(t);
+          const got = guarded(() => advancingFrom(scriptRegex(p, 'g'), t, at), () => null);
+          if (JSON.stringify(got && [...got, got.index]) !== JSON.stringify(want && [...want, want.index])) wrong.push(`${p} on ${JSON.stringify(t)} at ${at}`);
+        }
+      }
+    }
+    assert.deepStrictEqual(wrong, []);
+  });
+
+  it('runs in steps that grow with the text, not its square: empty matches all along a text', () => {
+    const run = (n: number) => costOf(() => pythonMatches({ source: 'x*', flags: '' }, 'a'.repeat(n)));
+    assert.ok(run(4000) < 3 * run(2000), `${run(2000)} then ${run(4000)}`);
   });
 });
 
@@ -144,6 +211,16 @@ describe('Python regex: a pattern as JavaScript, and a value as Python prints it
     const refused = ['(?#c', '(?P=x)', '(?i-i:a)', 'a)', '(a', '[a', '[\\', '[\\x4]', '[\\e]', '[a-\\N{X}]', '[\\d-z]', '[z-a]', '[a-', '*a', '{2}', 'a**',
       'a\\', '\\2', '\\e', '\\x4', '(?<n>a)', '^*', '\\b+'];
     assert.deepStrictEqual(refused.filter((p) => js(p) !== undefined), []);
+  });
+
+  it("writes each of Python's escapes of one letter (`pythonLetters`) but those of a character's code, and no other", () => {
+    const of = (letters: string) => [...letters].filter((c) => !'xuUN'.includes(c)).sort().join('');
+    assert.deepStrictEqual([of(pythonLetters(false).out), of(pythonLetters(false).inClass)], [Object.keys(JS_LETTERS).sort().join(''), Object.keys(JS_CLASS_LETTERS).sort().join('')]);
+  });
+
+  it('refuses a repeat past its least count of what can match an empty string, and none of what cannot', () => {
+    assert.deepStrictEqual(['(\\s*)?,', '(?:|-)?', '(?:x*|y)+', '(?: ??){1,}', '(a|)+', '(?:a*)*b', '(a?)\\1+', '(?=a)*', '(?:\\b)?'].filter((p) => js(p) !== undefined), []);
+    assert.deepStrictEqual(['(\\s+)?,', '(?:a|-)?', '(a)\\1+', '(a*){2}', '(?:(?=a)a)+', 'x*', '(?:ab*)+'].filter((p) => js(p) === undefined), []);
   });
 
   it("writes a value as Python's `repr` does", () => {
@@ -171,7 +248,7 @@ describe('Python regex: the examples of the calls of `re` against the reference 
       const call = typeof r === 'string' ? r : r[0];
       const [ex] = examplesOf(call);
       const bytes = /^re\.\w+\(r?b/.test(call);
-      if (ex.interactive) {
+      if (ex.sections[0].label === 'Strings that match (examples)') {
         const [yes, no = { lines: [] }] = ex.sections;
         return { call, s: null, tests: [...yes.lines, ...no.lines], bytes, ours: [...yes.lines.map(() => true), ...no.lines.map(() => false)] };
       }

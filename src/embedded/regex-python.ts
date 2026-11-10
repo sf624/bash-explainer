@@ -1,4 +1,5 @@
 import { SHORTHANDS } from './regex-escapes';
+import type { EmbeddedToken } from './types';
 
 // What the regex reader (src/embedded/regex.ts) knows of Python's `re` beside the paths it shares with PCRE (docs/design/python-regex.md,
 // sections 3 and 5): its flags and the options they turn on, its escapes of one letter and what each means under the flags, how it
@@ -132,6 +133,111 @@ export function pythonShorthand(py: PythonRegexOptions, c: string): { ja: string
   }
   if (py.ascii === true) return said(PYTHON_CLASSES.ascii[c]);
   return py.ascii === 'unknown' ? said([unicode.ja, unicode.en], IF_FLAG.ascii) : unicode;
+}
+
+/** The whitespace of Python's VERBOSE (`re._parser.WHITESPACE`). */
+export const VERBOSE_SPACE: ReadonlySet<string> = new Set([' ', '\t', '\n', '\r', '\v', '\f']);
+
+/** Past what VERBOSE skips from `i`: whitespace, and `#` comments to the end of their line. */
+export function skipVerbose(src: string, i: number): number {
+  for (;;) {
+    if (VERBOSE_SPACE.has(src[i] ?? '')) i++;
+    else if (src[i] === '#') {
+      while (i < src.length && src[i] !== '\n') i++;
+    } else return i;
+  }
+}
+
+/**
+ * Python's global flags (`(?i)`): where each group of them stands, and the letters they turn on. They may only start the pattern,
+ * one after another, past comments `(?#…)` and, with VERBOSE (`verbose`), whitespace and `#` comments; `(?x)` among them turns
+ * VERBOSE on for the whole pattern, which Python then reads again with it. A group `_parse_flags` refuses ends them (the reader says
+ * its message), and so does a group's own flags (`(?i:…)`).
+ */
+export function pythonGlobalFlags(src: string, verbose: boolean, bytes: boolean): { letters: string; at: ReadonlySet<number> } {
+  const scan = (skip: boolean) => {
+    let letters = '';
+    const at = new Set<number>();
+    for (let i = 0; ;) {
+      if (skip) i = skipVerbose(src, i);
+      if (src.startsWith('(?#', i)) {
+        const close = src.indexOf(')', i);
+        if (close < 0) break;
+        i = close + 1;
+        continue;
+      }
+      if (!src.startsWith('(?', i) || !FLAG_LETTERS.has(src[i + 2])) break;
+      const read = pythonFlags(src, i, bytes);
+      if ('error' in read || read.scoped) break;
+      at.add(i);
+      letters += read.on;
+      i = read.end;
+    }
+    return { letters, at };
+  };
+  const first = scan(verbose);
+  return !verbose && first.letters.includes('x') ? scan(true) : first;
+}
+
+/** The least and the most characters a part of a pattern matches (`Infinity`: no most). */
+export type Width = readonly [min: number, max: number];
+
+/** What a part of more than one width may match, as the reader says it: "1 to 2 characters", "1 or more characters". */
+export function widthSaid([lo, hi]: Width): readonly [ja: string, en: string] {
+  return hi === Infinity ? [`${lo}文字以上`, `${lo} or more characters`] : [`${lo}〜${hi}文字`, `${lo} to ${hi} characters`];
+}
+
+/** A width repeated: an item of no width repeated without end is none (`0 * Infinity`). */
+const times = (a: number, b: number): number => (a === 0 || b === 0 ? 0 : a * b);
+
+/** The counts of a quantifier as written (`*?`, `{2,}`, `{,3}+`): the least and the most. */
+function repeatCount(written: string): Width {
+  const q = written.length > 1 && /[?+]$/.test(written) ? written.slice(0, -1) : written;
+  if (q === '*') return [0, Infinity];
+  if (q === '+') return [1, Infinity];
+  if (q === '?') return [0, 1];
+  // (`{n}`, `{n,}`, `{,m}` or `{n,m}`: the reader takes no other braces for a quantifier.)
+  const [, lo, comma, hi] = /^\{(\d*)(,?)(\d*)\}$/.exec(q)!;
+  const min = Number(lo || 0);
+  return [min, !comma ? min : hi ? Number(hi) : Infinity];
+}
+
+/**
+ * The width of the tokens of a sequence of a Python pattern `src`, as `getwidth` of its `re._parser` works it out (a lookbehind must
+ * have one width), from the reader's tokens before its literals are merged: one token a character. An anchor, a lookaround, a
+ * comment and flags match none, a repeat its counts times its item's, alternatives the least and the most of theirs; a group, and a
+ * reference, what the reader worked out for the group (`known`, once each: `(?P=n)` too). Undefined where the reader does not know
+ * it: an error, a hole, a construct it does not read.
+ */
+export function pythonWidth(tokens: readonly EmbeddedToken[], src: string, known: (t: EmbeddedToken) => Width | undefined): Width | undefined {
+  let lo = Infinity;
+  let hi = 0;
+  let items: Width[] = [];
+  const branch = () => {
+    lo = Math.min(lo, items.reduce((n, w) => n + w[0], 0));
+    hi = Math.max(hi, items.reduce((n, w) => n + w[1], 0));
+    items = [];
+  };
+  for (const t of tokens) {
+    if (t.hole || t.kind === 'error') return undefined;
+    if (t.kind === 'comment') continue;
+    let w: Width | undefined = [1, 1];
+    if (t.kind === 'operator' && t.label === '|') {
+      branch();
+      continue;
+    }
+    if (t.kind === 'operator') {
+      // (A quantifier with nothing to repeat is an error token.)
+      const item = items.pop()!;
+      const [min, max] = repeatCount(src.slice(t.start, t.end));
+      w = [times(item[0], min), times(item[1], max)];
+    } else if (t.kind === 'keyword' || (t.kind === 'block' && /^\(\?<?[=!]/.test(src.slice(t.start, t.start + 4)))) w = [0, 0];
+    else if (t.kind === 'block' || t.kind === 'variable' || src[t.start] === '(') w = known(t);
+    if (!w) return undefined;
+    items.push(w);
+  }
+  branch();
+  return [lo, hi];
 }
 
 /** Python's types of pattern flags (`TYPE_FLAGS`): at most one in a pattern, and none turned off. */
