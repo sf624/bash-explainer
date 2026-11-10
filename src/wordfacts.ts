@@ -10,10 +10,11 @@ import { isFunction, type NameResolution, resolveName, resolveRun, testSpecAt } 
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
 import { expansionValue, type ExpansionValue } from './semantics/values';
-import { valueGlobs } from './embedded/glob';
+import { globParts } from './semantics/chars';
+import { isBash } from './shellfeatures';
 import { partMeaning, wordFields, wordMeaning, wordOf } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { childrenOnRows, field, fields, isShebang, nameText, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
+import { ancestor, childrenOnRows, field, fields, isShebang, nameText, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import type { ArgRole, ArgvParse } from './argv/interpret';
 
@@ -146,19 +147,60 @@ function bare(n: SyntaxNode, model: StateModel): boolean {
 const barePartsIn = (w: SyntaxNode, model: StateModel): SyntaxNode[] => (bare(w, model) ? [w] : w.type === 'concatenation' ? w.namedChildren.filter((c) => bare(c, model)) : []);
 
 /** Whether a word of the role `role` is one a command reads as data: an operand or a value written in another language. */
-export const dataRole = (role: ArgRole): boolean => (role.role === 'operand' || role.role === 'value') && !!role.spec?.lang;
+const dataRole = (role: ArgRole): boolean => (role.role === 'operand' || role.role === 'value') && !!role.spec?.lang;
 
 /**
- * The unquoted expansion of the word `word` (of a role a command reads as data, `dataRole`) whose value the model knows and
- * bash globs or splits there, so that it may not reach the command as it is: the note `unquoted-value-as-data`, which the
- * word's row then leaves to it (src/explain/operand-texts.ts).
+ * A word a command reads as data (`dataRole`) with an unquoted expansion whose value the model knows and bash globs or splits
+ * there, so that it may not reach the command as it is: what the note `unquoted-value-as-data` is about. `command`: the command
+ * that reads it (`grep`); `globs`: the parts of the value that make it a pattern (`globParts`); `bash`: bash runs the script.
  */
-export function unquotedDataValue(word: SyntaxNode, model: StateModel): { part: SyntaxNode; value: ExpansionValue } | undefined {
-  for (const part of barePartsIn(word, model)) {
-    const value = expansionValue(part, model);
-    if (value && (value.glob || (value.words?.length ?? 0) > 1)) return { part, value };
+export interface DataValue { word: SyntaxNode; part: SyntaxNode; value: ExpansionValue; command: string; globs: readonly string[]; bash: boolean }
+
+const dataValuesKept = new WeakMap<StateModel, Map<string, WeakMap<SyntaxNode, DataValue[]>>>();
+
+/**
+ * The words of the simple command `n`, and of the commands it runs (`specRuns`), that the note `unquoted-value-as-data` is
+ * about (`DataValue`): the one source of what it says, which the word's row (src/explain/operand-texts.ts) and the value's
+ * line (src/explain/values.ts) read. Kept for the model.
+ */
+export function dataValues(n: SyntaxNode, model: StateModel, shell: Shell | undefined): DataValue[] {
+  let byShell = dataValuesKept.get(model);
+  if (!byShell) dataValuesKept.set(model, (byShell = new Map()));
+  let byNode = byShell.get(String(shell));
+  if (!byNode) byShell.set(String(shell), (byNode = new WeakMap()));
+  let found = byNode.get(n);
+  if (!found) byNode.set(n, (found = findDataValues(n, model, shell)));
+  return found;
+}
+
+function findDataValues(n: SyntaxNode, model: StateModel, shell: Shell | undefined): DataValue[] {
+  const out: DataValue[] = [];
+  for (const r of specRuns(n, model, shell)) {
+    for (const k of dataWords(r.parse)) {
+      const word = r.run.args[k];
+      // (The expansion is named, with its value: `$r` of `/$r/p`.)
+      for (const part of barePartsIn(word, model)) {
+        const value = expansionValue(part, model);
+        if (!value || !(value.glob || (value.words?.length ?? 0) > 1)) continue;
+        const extglob = value.glob ? wordMeaning(part, model)!.glob.extglob : 'off';
+        out.push({ word, part, value, command: r.parse.command, globs: value.glob ? globParts(value.text, extglob) : [], bash: isBash(model.shell) === 'yes' });
+        break;
+      }
+    }
   }
-  return undefined;
+  return out;
+}
+
+/** The `DataValue` of the word `word` of a simple command, if the note is about it. */
+export function dataValueOf(word: SyntaxNode, model: StateModel, shell: Shell | undefined): DataValue | undefined {
+  // (A word a spec reads is a word of a simple command.)
+  return dataValues(ancestor(word, (a) => a.type === 'command')!, model, shell).find((d) => d.word === word);
+}
+
+/** The `DataValue` whose expansion is `part`, if the note is about it. */
+export function dataValueAt(part: SyntaxNode, model: StateModel, shell: Shell | undefined): DataValue | undefined {
+  const cmd = ancestor(part, (a) => a.type === 'command');
+  return cmd ? dataValues(cmd, model, shell).find((d) => d.part === part) : undefined;
 }
 
 /** The facts (pitfalls) about words whose node starts on `line`. */
@@ -241,18 +283,12 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         // Unquoted expansions whose value the model knows and bash globs or splits, in a word a command reads as data (an
         // operand or a value in another language: a pattern, a regex, a program; `p='^[A-Z]+$'; grep -E $p f`), not as a
         // file name (the note above): a file whose name matches takes the value's place. Not a value bash passes as it is.
-        for (const r of specRuns(n, model, shell)) {
-          for (const k of dataWords(r.parse)) {
-            const word = r.run.args[k];
-            // (The expansion is named, with its value: `$r` of `/$r/p`; the rewrite quotes the word's expansions.)
-            const found = unquotedDataValue(word, model);
-            if (!found) continue;
-            const { part, value: v } = found;
-            const quoted = quoteExpansions(word);
-            add(fact(lang, 'unquoted-value-as-data', {
-              bare: part.text, value: v.text, glob: v.glob, ...((v.words?.length ?? 0) > 1 ? { words: v.words!.length } : {}), command: r.parse.command, globs: valueGlobs(v.text), rewrite: quoted ? [replaceNode(word, quoted)] : [],
-            }), word);
-          }
+        for (const { word, part, value: v, command, globs, bash } of dataValues(n, model, shell)) {
+          // (The rewrite quotes the word's expansions.)
+          const quoted = quoteExpansions(word);
+          add(fact(lang, 'unquoted-value-as-data', {
+            bare: part.text, value: v.text, glob: v.glob, ...((v.words?.length ?? 0) > 1 ? { words: v.words!.length } : {}), command, globs, bash, rewrite: quoted ? [replaceNode(word, quoted)] : [],
+          }), word);
         }
         // `[ $x = y ]`: an empty or spaced value breaks the test. (When the name runs `[`: src/semantics/names.ts.)
         // The words of the test itself, not variables inside a `$(…)` in it.

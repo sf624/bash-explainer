@@ -14,7 +14,7 @@ import { splitsIn } from '../argv/words';
 import { braceAlternatives, braceTexts } from '../semantics/brace';
 import { countIn, fieldsIn } from '../semantics/argwords';
 import { onlyGlobbed } from '../semantics/globwords';
-import { dataRole, unquotedDataValue } from '../wordfacts';
+import { dataValueOf } from '../wordfacts';
 import { field, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 
@@ -71,7 +71,8 @@ function namesFor(cx: Explainer, nodes: readonly SyntaxNode[], command: string, 
     word: (k) => codeSpan(nodes[k].text),
     globbed: (k) => onlyGlobbed(nodes[k], cx.state),
     // (The note on an unquoted value a command reads as data says the glob: the row leaves it to the note, docs/design/known-values.md, 12.)
-    noted: (k) => cx.opts.pitfalls !== false && !!base && dataRole(base.role) && !!unquotedDataValue(nodes[k], cx.state),
+    // (Where the note is said: about this word (`dataValueOf`, its one source), and with the notes on pitfalls on.)
+    noted: (k) => cx.opts.pitfalls !== false && !!dataValueOf(nodes[k], cx.state, cx.shell),
     role: (r) => {
       if (desc !== undefined && r.key === base?.key) return { ja: desc, en: desc };
       const t = roleWords(r.role);

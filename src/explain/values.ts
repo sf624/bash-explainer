@@ -4,7 +4,8 @@
 // (src/messages.ts, `valueSaid`), and gives the worked examples the values of the script where the model has them
 // (`${#msg}` of `msg="hello world"` is shown with that value, not with a sample).
 import type { Token, ValueReading } from '../analyzer-types';
-import { valueGlobs } from '../embedded/glob';
+import { readingLead } from '../messages-values';
+import { dataValueAt } from '../wordfacts';
 import { sameSpan, spanOf } from '../noteanchors';
 import { visibleChar } from '../ctlchars';
 import type { ParsedExpansion, ScriptValue } from '../expansion';
@@ -17,23 +18,25 @@ import { isBash } from '../shellfeatures';
 /** `t`, the token of the expansion `n`, with its value where the model knows it for sure. */
 export function withValue(cx: Explainer, n: SyntaxNode, t: Token): Token {
   const v = expansionValue(n, cx.state);
-  const shell = cx.state.shell;
-  if (v) t.value = { ...v, said: valueSaid(cx.lang, v, isBash(shell) === 'yes') };
+  if (!v) return t;
+  // (A command reads the value as data, and bash may glob it first: the value's line says so as the note does, from the same source.)
+  const data = dataValueAt(n, cx.state, cx.shell);
+  t.value = { ...v, said: valueSaid(cx.lang, v, isBash(cx.state.shell) === 'yes', data && { command: data.command, globs: data.globs }) };
   return t;
 }
 
 /**
  * The token of the expansion `part` among `tokens` (and those under them), given the reading of its known value in the language
- * of the command `command` (docs/design/known-values.md, 4.1), with the texts of its value that say so: a glob in the value is
- * what bash does before the command gets it, and the rows of the reading are as the command gets it where no file name matches.
+ * of the command `command` (docs/design/known-values.md, 4.1), with the text above its rows where they are as the command gets
+ * the value where no file name matches.
  */
 export function withReading(cx: Explainer, tokens: readonly Token[], part: SyntaxNode, reading: ValueReading, command: string): void {
   const at = spanOf(part);
   const all = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
   // (The word's expansion has its token, with the value the reading read: `withValue` asks `expansionValue` as `knownCopy` does.)
   const t = all(tokens).find((x) => x.value && sameSpan(x.span, at))!;
-  const { said: _, ...v } = t.value!;
-  t.value = { ...v, said: valueSaid(cx.lang, v, isBash(cx.state.shell) === 'yes', { command, globs: v.glob ? valueGlobs(v.text) : [] }), reading };
+  const v = t.value!;
+  t.value = { ...v, said: { ...v.said, ...(reading.assumes ? { readingLead: readingLead(cx.lang, command) } : {}) }, reading };
 }
 
 /** The longest value an example shows as it is (the value line cuts longer ones: src/messages.ts). */
