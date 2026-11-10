@@ -256,6 +256,10 @@ describe('a known value read in the language of its command (known-values.md, st
       const u = valueToken(unquoted)!;
       assert.match(plainPartHover(unquoted, [unquoted.items[0], u], 'en', 'whole'), /_Read below as `grep` gets it where no file name matches_/);
     });
+    it('Markdown: the parts of a row of the reading under it (a sed range)', () => {
+      const sed = explain("s='/^a/,/^b/p'\nsed -n \"$s\" f\n", 1);
+      assert.match(toPlainMarkdown(sed, 'sed -n "$s" f', 'x'), /\n {8}- `\/\^a\/,\/\^b\/p` — .*\n {10}- `\/\^a\/` — /);
+    });
     it('Markdown and the CLI', async () => {
       assert.match(toPlainMarkdown(e, 'grep -E "$re" f', 'x'), /Value here, from the script: `\^a\+\$`\n {8}- `\^` — start of the line/);
       let out = '';

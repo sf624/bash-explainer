@@ -1660,6 +1660,7 @@
  "rm-empty-variable-root",
  "run ! true",
  "s/a/b",
+ "s='/^a/,/^b/p'\nsed -n \"$s\" f\n",
  "s='s/a b/c/'\nsed $s f\n",
  "s='s/a/b/'\nsed -n \"$s\" f\n",
  "screen -dmS web",
