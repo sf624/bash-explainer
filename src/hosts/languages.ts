@@ -58,15 +58,21 @@ export function explainLanguageLine(regions: readonly LanguageRegion[], lines: r
 }
 
 /**
- * The explanation of a call, made once. Each call has a budget of its own, of the line's size (`withinOwnLine`): what it shows does
- * not depend on which of its lines asked first, nor on the calls beside it on that line (docs/design/line-budget.md).
+ * The explanation of a call, made once. Each call has a budget of its own (`withinOwnLine`), a share of the line's by the calls of its
+ * most crowded line (`LanguageRegion.crowd`): what it shows does not depend on which of its lines asked first, nor on the calls beside
+ * it on that line, and the calls of a line cost no more together than one line may (docs/design/line-budget.md).
  */
 function callMade(region: LanguageRegion, lines: readonly string[], key: string, lang: Lang, opts: ExplainOptions): CallMade {
   let byKey = made.get(region);
   if (!byKey) made.set(region, (byKey = new Map()));
   let m = byKey.get(key);
-  if (!m) byKey.set(key, (m = withinOwnLine(() => explained(region, lines, lang, opts))));
+  if (!m) byKey.set(key, (m = withinOwnLine(() => explained(region, lines, lang, opts), region.crowd)));
   return m;
+}
+
+/** A call as an example's title names it: its text, on one line, shortened. */
+function callText(region: LanguageRegion, lines: readonly string[]): string {
+  return shorten(between(lines, region.call.span.start, region.call.span.end).split('\n').map((l, i) => (i ? l.trim() : l.trimEnd())).join(' '), 40);
 }
 
 /**
@@ -98,7 +104,7 @@ function together(regions: readonly LanguageRegion[], each: readonly CallMade[],
   }
   const facts = onceBy(each.flatMap((m) => m.ex.facts ?? []), (f) => f.text);
   const anchors = each.flatMap((m) => m.ex.anchors ?? []);
-  const examples = each.flatMap((m, i) => titledExamples(lang, m.ex.examples.map((e) => ({ ...e, target: shorten(between(lines, regions[i].call.span.start, regions[i].call.span.end), 40) }))));
+  const examples = each.flatMap((m, i) => titledExamples(lang, m.ex.examples.map((e) => ({ ...e, target: callText(regions[i], lines) }))));
   const readings = each.flatMap((m) => (m.ex.reading ? [m.ex.reading] : []));
   const first = regions.reduce((l, r) => Math.min(l, r.lines[0]), line);
   return {

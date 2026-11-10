@@ -891,9 +891,12 @@ export function languageReading(top: Token, reader: string, name: string): Readi
  * the readings of each call (`languageReading`), whose readers are theirs, and each node of a call keeps its own.
  */
 export function languageReadings(roots: readonly ReadingNode[]): ReadingNode {
-  const [first] = roots;
-  const end = roots.reduce((e, r) => (r.span.end.line > e.line || (r.span.end.line === e.line && r.span.end.character > e.character) ? r.span.end : e), first.span.end);
-  return { ...first, span: { start: first.span.start, end }, reader: [...new Set(roots.map((r) => r.reader))].join(', '), children: roots.flatMap((r) => r.children) };
+  const before = (a: Pos, b: Pos): boolean => a.line < b.line || (a.line === b.line && a.character < b.character);
+  // (In the order of the text: a pattern given by keyword may come after a call in the arguments.)
+  const children = roots.flatMap((r) => r.children).sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
+  const start = roots.reduce((s, r) => (before(r.span.start, s) ? r.span.start : s), roots[0].span.start);
+  const end = roots.reduce((e, r) => (before(e, r.span.end) ? r.span.end : e), roots[0].span.end);
+  return { ...roots[0], span: { start, end }, reader: [...new Set(roots.map((r) => r.reader))].join(', '), children };
 }
 
 /**

@@ -216,14 +216,15 @@ interface ReAt { name: string; full: string; first: number; at: number }
  * A call of `re` read, before it has its lines: its region but for them, the lines of the call, and those of its pattern's literals
  * (none where the pattern is not literals: a region of the call's facts only, or a method of a compiled pattern).
  */
-interface ReCandidate { region: Omit<LanguageRegion, 'lines'>; start: number; end: number; pattern?: { start: number; end: number } }
+interface ReCandidate { region: Omit<LanguageRegion, 'lines' | 'crowd'>; start: number; end: number; pattern?: { start: number; end: number } }
 
 /**
  * The lines of the calls of `re` (docs/design/python-regex.md, 2.2), each call in the order written. A line a shell region has stays
- * the shell's, and a call whose pattern has such a line is left out. A line of a pattern's literals is that call's, and every call
- * whose pattern is on it has it. Every other line of a call is its own where no call inside it holds that line: the innermost calls
- * that hold a line have it, and calls side by side share it (`P.match(s) or Q.match(s)`). So `re.sub(r'a', 'b',` over
- * `re.sub(r'c', 'd', s))` shows each pattern on its own line, and `re.sub(r'a', 'b', re.sub(r'c', 'd', s))` both on one.
+ * the shell's, and a call whose pattern has such a line is left out. The line of a call's name, and a line of its pattern's literals,
+ * are that call's, whatever other calls have them. Every other line of a call is its own where no call inside it holds that line: the
+ * innermost calls that hold a line have it, and calls side by side share it (`P.match(s) or Q.match(s)`). So `re.sub(r'a', 'b',` over
+ * `re.sub(r'c', 'd', s))` shows each pattern on its own line, and `re.sub(r'a', 'b', re.sub(r'c', 'd', s))` or
+ * `P.sub(' ', re.sub(r'x', '', s))` both calls on one. Each region gets the number of calls of its most crowded line (`crowd`).
  */
 function claimLines(b: Builder, calls: readonly ReCandidate[]): void {
   const shell = (l: number): boolean => !!b.outs[l]?.text;
@@ -243,13 +244,18 @@ function claimLines(b: Builder, calls: readonly ReCandidate[]): void {
     }
   }
   const inside = (d: ReCandidate, c: ReCandidate): boolean => d !== c && spanWithin(c.region.call.span, d.region.call.span);
-  const has = (c: ReCandidate, l: number): boolean => (!!c.pattern && c.pattern.start <= l && l <= c.pattern.end) || !holding.get(l)!.some((d) => inside(d, c));
+  const has = (c: ReCandidate, l: number): boolean => l === c.start || (!!c.pattern && c.pattern.start <= l && l <= c.pattern.end) || !holding.get(l)!.some((d) => inside(d, c));
+  const claimed: { c: ReCandidate; lines: number[] }[] = [];
+  const count = new Map<number, number>();
   for (const c of kept) {
     const lines: number[] = [];
     for (let l = c.start; l <= c.end; l++) if (!shell(l) && has(c, l)) lines.push(l);
     // (A call of facts only has no line left where the shell has them all.)
-    if (lines.length) b.languages.push({ ...c.region, lines });
+    if (!lines.length) continue;
+    claimed.push({ c, lines });
+    for (const l of lines) count.set(l, (count.get(l) ?? 0) + 1);
   }
+  for (const { c, lines } of claimed) b.languages.push({ ...c.region, lines, crowd: lines.reduce((n, l) => Math.max(n, count.get(l)!), 1) });
 }
 
 /**

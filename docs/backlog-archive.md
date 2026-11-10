@@ -1189,6 +1189,9 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - Two Errors where Python stops at the first: `re.sub(r'(a))', r'\2', s)` says the pattern's and the template's; so does `P = re.compile(r'(a))')` then `P.sub(r'\2', s)`.
   - The line of a method says nothing where Python raises TypeError for an argument the method does not take: `P.search(s, flags=re.I)`, `P.sub('x', s, pos=1)`.
   - With `endpos`, the row of `fullmatch` still says "matched against the whole string" (`P.fullmatch(s, 0, 3)` matches `s[:3]`).
+  - An argument of an outer call on a line that a call inside it holds is shown nowhere: in `x = re.sub(r'a', 'b',` above `re.sub(r'c', 'd', s), flags=re.I)`, line 2 is the inner call's, and `flags=re.I` has no row there (#813).
+  - Two calls of a line whose texts start with the same 40 characters get the same example title ("Example for `re.sub(r'…`").
+  - A call of `re` inside a field of an f-string (`f"{re.sub(r'a', 'b', s)}"`) is not found.
 
 ## From the shell-behaviour table (#756)
 

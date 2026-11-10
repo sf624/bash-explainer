@@ -129,6 +129,11 @@ export interface LanguageRegion {
    * call's pattern, or of a call inside it that holds the line (`claimLines`, src/hosts/python.ts; docs/design/python-regex.md, 2.2).
    */
   lines: readonly number[];
+  /**
+   * How many calls its most crowded line has (`claimLines`): its examples have that share of a line's budget, so that the calls of a
+   * line cost no more together than one line may (`explainLanguageLine`; docs/design/line-budget.md). A function of the document only.
+   */
+  crowd: number;
   /** What it is, "Python regex (argument of `re.search`)" (ja, en). */
   label: [string, string];
   host: HostId;

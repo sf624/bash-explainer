@@ -5,6 +5,7 @@ import { documentIssues, explainDocumentLine, noteIssues, type ShellDocument } f
 import { openDocument } from '../src/document-setup';
 import { extractShell, hostPartAt, languageLines, patternOf } from '../src/hosts';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { lineCostOf } from '../src/examples/regexguard';
 import { partAt } from '../src/ui/hoverParts';
 import { toPlainMarkdown } from '../src/ui/render';
 
@@ -123,7 +124,21 @@ describe('Python regex: a line of several calls', () => {
     assert.strictEqual(one.reading!.reader, 're.match');
   });
 
-  it('explains each call with a budget of its own: a line shows the same whichever line asked first', () => {
+  it('explains each call with a budget of its own, a share of one line\'s: a line of many costly calls costs one line\'s at most', () => {
+    // (Each example would cost all a run may; together many times a line's budget.)
+    const slow = `re.search(r'(a+)+b0', '${'a'.repeat(25)}')`;
+    const src = `import re\nx = ${Array.from({ length: 30 }, () => slow).join(' or ')}\n`;
+    let ex: LineExplanation | undefined;
+    const { spent, lineLimit } = lineCostOf(() => {
+      ex = explain(open(src), 1);
+    });
+    assert.ok(spent > 0 && spent <= lineLimit, `${spent} of ${lineLimit}`);
+    assert.deepStrictEqual([ex!.examples.length, extractShell('python', src).languages.map((r) => r.crowd)[0]], [30, 30]);
+    // (A line of one call has the whole line's budget.)
+    assert.deepStrictEqual(extractShell('python', `import re\n${slow}\n${slow}\n`).languages.map((r) => r.crowd), [1, 1]);
+  });
+
+  it('gives a call the same whichever of its lines asked first', () => {
     // (Calls whose examples each cost all a run may, more than a line has for three: the first over two lines, two more and a cheap
     // one beside it on its last line. Asked first, that line would leave the cheap one nothing if the calls shared its budget.)
     const slow = `re.search(r'(a+)+b', '${'a'.repeat(30)}')`;
@@ -136,7 +151,27 @@ describe('Python regex: a line of several calls', () => {
     const [first, last] = shown([2, 1]);
     assert.deepStrictEqual(shown([1, 2]), [first, last]);
     assert.deepStrictEqual(last.map((e) => (e.sections.length ? e.sections[1].lines[0] : e.note)), [first[0].note, first[0].note, first[0].note, "['1', '2']"]);
-    // (The budget counts a shared line once for each call that has it.)
-    assert.strictEqual(languageLines(extractShell('python', src)), 5);
+    // (The document's share counts a shared line once: its calls share one line's budget.)
+    assert.strictEqual(languageLines(extractShell('python', src)), 2);
+  });
+
+  it('gives a call the line of its name, whatever call inside it has that line', () => {
+    const compiled = "P = re.compile(r'\\s+')\n";
+    assert.deepStrictEqual(callsOn(`${compiled}x = P.sub(' ', re.sub(r'[^\\w ]', '', s))`), [['re.compile \\s+'], ['P.sub -', 're.sub [^\\w ]']]);
+    assert.deepStrictEqual(callsOn(`${compiled}z = P.sub(' ', P.sub('', s))`), [['re.compile \\s+'], ['P.sub -', 'P.sub -']]);
+    // (A call of facts only: its flag in the slot of `maxsplit` is a Warning on the line.)
+    const src = "y = re.split(p, re.sub(r'a', 'b', s), re.I)";
+    assert.deepStrictEqual(callsOn(src), [['re.split -', 're.sub a']]);
+    assert.deepStrictEqual(documentIssues(open(`import re\n${src}\n`), 'en', {}).map((i) => [i.code, i.startCol]), [['python-regex-flag-as-count', 38]]);
+    const ex = explain(open(`import re\n${compiled}x = P.sub(' ', re.sub(r'[^\\w ]', '', s))\n`), 2);
+    assert.deepStrictEqual(ex.items.map((t) => [t.label, t.children.map((c) => c.label)]), [['P.sub', ['re.sub']]]);
+  });
+
+  it('reads the parts of calls in the order written, a pattern given by keyword after a call too', () => {
+    const { reading } = explain(open("import re\nre.sub(string=re.sub(r'b', 'c', s), pattern=r'a', repl='x')\n"), 1, 'en', { reading: true });
+    assert.deepStrictEqual([reading!.children.map((n) => [n.label, n.reader]), reading!.span.start.character], [[['b', 're.sub'], ['a', 're.sub']], 21]);
+    // (An example's title names a call over several lines on one line.)
+    const titles = explain(open("import re\nok = re.match(r'a',\n  s) or re.search(r'b',\n  t)\n"), 2).examples.map((e) => e.title);
+    assert.deepStrictEqual(titles, ["Example for `re.match(r'a', s)` (`re.match` matches at the start of the string)", "Example for `re.search(r'b', t)`"]);
   });
 });

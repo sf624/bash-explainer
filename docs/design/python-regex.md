@@ -45,6 +45,7 @@ A part in another language is a `LanguageRegion` in a list of its own, `Extracte
 ```ts
 interface LanguageRegion {
   lines: readonly number[];              // the lines it has: the call's, from its name to its `)`, but those of another part (below)
+  crowd: number;                         // the calls of its most crowded line: its share of a line's budget (below)
   label: [ja: string, en: string];       // "Python regex (argument of `re.search`)"
   host: HostId;                          // { kind: 'python' }
   language: 'regex';                     // an EmbeddedLang
@@ -70,14 +71,14 @@ A line holds one shell region, or the calls in another language on it. Where a s
 A call's lines are not all its own, since calls nest and a shell region may be an argument. The region holds the list of lines it has (`lines`), decided once by the extractor (`claimLines`, src/hosts/python.ts), each call in the order written:
 
 1. A line of a shell region stays the shell's (`re.sub(r'a', 'b',` above `subprocess.run('ls', shell=True))`: the second line is shell code, the first and the last the call's), and a call whose pattern has such a line is no region.
-2. A line of a pattern's literals is that call's. Every call whose pattern is on a line has it (`re.sub(r'a', 'b', re.sub(r'c', 'd', s))`: both, #813).
+2. The line of a call's name and a line of its pattern's literals are that call's, whatever other calls have them (`re.sub(r'a', 'b', re.sub(r'c', 'd', s))` and `P.sub(' ', re.sub(r'x', '', s))`: both, #813).
 3. Every other line of a call is its own where no call inside it holds that line: the innermost calls that hold it have it, and calls side by side share it (`P.match(s) or Q.match(s)`: both). So `x = re.sub(r'a', 'b',` above `re.sub(r'c', 'd', s))` shows `r'a'` on its first line and `r'c'` on its second, and a call of one statement keeps all its lines (`y = re.findall(r'\d+',` above `text)` shows the pattern on both).
 
 `hostPartAt` and the line count of the budget (`languageLines`) read `lines`; nothing else decides which calls a line has. `hostPartAt` gives every call that has the line, in the order written.
 
 A line of several calls is explained as a shell line of several commands (`explainLanguageLine`, src/hosts/languages.ts): each call has a token, from its name to its `)` (a method's is its own token, `PAT.sub`), with its pattern, template and arguments under it, and a call in its arguments too, in the order written. The line's context is the language ("Python regex"). Each example names its call in its title (`titledExamples`, src/linefinish.ts, as on a shell line of several commands). The notes, facts and anchors are each call's, the same objects as on its other lines, so `noteIssues` says each once. The reading tree has one root over the calls' readings. A line of one call has no such token: its context names the call.
 
-Each call is explained once, with a budget of its own of the line's size (`withinOwnLine`): what it shows depends neither on which of its lines asked first nor on the calls beside it. `languageLines` counts a line once for each call that has it, so the document's bound holds.
+Each call is explained once, with a budget of its own (`withinOwnLine`): a share of a line's, by the number of calls on its most crowded line (`LanguageRegion.crowd`, made by `claimLines`). What it shows depends neither on which of its lines asked first nor on the calls beside it, and the calls of a line cost no more together than one line may; `languageLines` counts each line once (docs/design/line-budget.md).
 
 A call whose pattern is not string literals is a region only where it has a fact of the call (section 5.3: flags in the slot of `count`): `patternOf` gives no pattern there, and the region has no `options`. It has no pattern lines, so it takes lines by rule 3 only. A method of a compiled pattern (#752) will be such a region too: its pattern is that of the `re.compile` it is linked to, not an argument.
 
