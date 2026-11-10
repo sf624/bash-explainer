@@ -48,7 +48,9 @@ export function holeText(sink: HoleSink, value: string, mark: HoleMark, part: bo
   if (place === 'regex') {
     const first = said('regex');
     const ends = delimiter && !said(`regex end ${delimiter} ${perl}`) ? delimiter : undefined;
-    const says = { special: !first, delimiter: ends, perl: perl && !said('regex perl'), around: around && !said('regex around') };
+    // (Python's `re.VERBOSE`, on or maybe on: said at the first hole where it is.)
+    const verbose = mark.verbose && !said('regex verbose') ? mark.verbose : undefined;
+    const says = { special: !first, delimiter: ends, perl: perl && !said('regex perl'), around: around && !said('regex around'), verbose };
     const rest = Object.values(says).some(Boolean) ? text('hole-regex', { value, part, newline: !perl, patterns: sink.patterns && !delimiter && !perl, ...says }) : '';
     return [...(first ? [like(first)] : []), rest].filter(Boolean).join(sep);
   }

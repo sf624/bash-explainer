@@ -136,12 +136,17 @@ export const ARGV_TEXTS = {
    * `special`: what its characters do; `part`: the row says it is a regex, as that of a part with nothing else in it does.
    * `newline`: one ends the pattern too; `patterns`: the command takes one as two patterns.
    */
-  'hole-regex': tokenText<{ value: string; special?: boolean; part?: boolean; delimiter?: string; newline?: boolean; perl?: boolean; around?: boolean; patterns?: boolean }>(({ value, special, part, delimiter, newline, perl, around, patterns }) => {
+  'hole-regex': tokenText<{ value: string; special?: boolean; part?: boolean; delimiter?: string; newline?: boolean; perl?: boolean; around?: boolean; patterns?: boolean; verbose?: true | 'unknown' }>(({ value, special, part, delimiter, newline, perl, around, patterns, verbose }) => {
     const ja: string[] = [];
     const en: string[] = [];
     if (special) {
       ja.push(`${part ? '' : `${value} の値は正規表現として読まれる。`}${REGEX_VALUE_SPECIAL.ja}持つ`);
       en.push(`${part ? '' : `The value of ${value} is read as a regex: `}${REGEX_VALUE_SPECIAL.en}`);
+    }
+    if (verbose) {
+      // (Python's `re.VERBOSE` reads the value as it reads the pattern.)
+      ja.push(`${verbose === true ? '`re.VERBOSE` なので' : '`re.VERBOSE` なら（フラグが分からない）'}、値の中の空白は無視され、値の中の \`#\` からその行の終わりまではコメントになる`);
+      en.push(`${verbose === true ? 'With `re.VERBOSE`' : 'If `re.VERBOSE` is on (the flags are not known)'}, whitespace in the value is ignored, and a \`#\` in it comments out the rest of its line`);
     }
     if (delimiter) {
       const close = codeSpan(delimiter);

@@ -347,16 +347,13 @@ function literalSource(lx: PyFile, imports: PyImports, value: PyArg, at: (off: n
 /**
  * How the strings write the character `i` of the value, where a regex reads its source otherwise (`StringEscapeRisk`): the escape
  * `\b`, a backspace; an octal escape of one or two digits, not from `0` (`\1`, `\12`), which a regex reads as a group's number;
- * a backslash a literal that is not raw keeps, as it starts no escape of Python's (`"\d"`: SyntaxWarning). Not one that an
- * incomplete `\x`, `\u`, `\U` or `\N` leaves, which Python refuses.
+ * a backslash a literal that is not raw keeps, as it starts no escape of Python's (`"\d"`: SyntaxWarning; `escapeAt`).
  */
 function stringRisk(src: string, value: PyArg, i: number): StringEscapeRisk | undefined {
-  const off = value.offs[i];
-  const written = src.slice(off, value.ends[i]);
-  if (value.kinds[i] === 'escape') return written === '\\b' ? 'backspace' : written.length < 4 && written[1] >= '1' && written[1] <= '7' ? 'octal' : undefined;
-  if (value.kinds[i] !== 'text' || written !== '\\') return undefined;
-  const lit = value.literals.find(({ token }) => token.start <= off && off < token.end)!.token.lit!;
-  return !lit.raw && !(lit.bytes ? 'x' : 'xuUN').includes(src[off + 1]) ? 'kept' : undefined;
+  if (value.kinds[i] === 'kept') return 'kept';
+  if (value.kinds[i] !== 'escape') return undefined;
+  const written = src.slice(value.offs[i], value.ends[i]);
+  return written === '\\b' ? 'backspace' : written.length < 4 && written[1] >= '1' && written[1] <= '7' ? 'octal' : undefined;
 }
 
 /**

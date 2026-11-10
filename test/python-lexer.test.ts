@@ -256,6 +256,12 @@ describe('the values of Python literals', () => {
     // (The name ends on its line: a `\N{` with no `}` there looks no further.)
     assert.deepStrictEqual(escapeAt('\\N{x\n'.repeat(3) + '}', 0, false), undefined);
     assert.deepStrictEqual(escapeAt('\\N{x', 0, false), undefined);
+    // (A backslash that starts no escape is kept, and Python warns; one that starts an incomplete escape, Python refuses.)
+    assert.deepStrictEqual(['\\d', '\\{', '\\8', '\\N'].map((s) => escapeAt(s, 0, s === '\\N')), Array(4).fill({ end: 1, kept: true }));
+    assert.deepStrictEqual(['\\x4', '\\u12', '\\U0011ffff', '\\N', '\\N{}'].map((s) => escapeAt(s, 0, false)), Array(5).fill(undefined));
+    assert.deepStrictEqual(escapeAt('\\u12', 0, true), { end: 1, kept: true });
+    const kinds = (src: string) => pyValue(src, pyLex(src).tokens[0].lit!).kinds;
+    assert.deepStrictEqual([kinds('"\\d\\x4\\n"'), kinds('r"\\d"'), kinds('f"\\{x}"')], [['kept', 'text', 'text', 'text', 'text', 'escape'], ['text', 'text'], ['kept']]);
   });
 
   it('reads the fields of an f-string as holes, with the text of a self-documenting one', () => {

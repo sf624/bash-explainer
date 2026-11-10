@@ -17,9 +17,10 @@ const isHex = (c: string | undefined) => c !== undefined && /^[0-9a-fA-F]$/.test
 /**
  * What the backslash at `k` of a literal that is not raw stands for: `end` is the offset after the escape, and `char` its
  * character; none for a backslash-newline, which joins the lines, and `name` for `\N{…}`, whose character we do not know
- * (no Unicode name table). Undefined when the backslash is not an escape: it stays in the value, as the next character does.
+ * (no Unicode name table); `kept` for a backslash that starts no escape of Python's (`"\d"`): it stays in the value, as the next
+ * character does, and Python warns (SyntaxWarning). Undefined for an escape Python refuses (`"\x4"`, `"\N{}"`: SyntaxError).
  */
-export function escapeAt(src: string, k: number, bytes: boolean): { end: number; char?: string; name?: true } | undefined {
+export function escapeAt(src: string, k: number, bytes: boolean): { end: number; char?: string; name?: true; kept?: true } | undefined {
   const e = src[k + 1];
   if (e === '\n') return { end: k + 2 };
   if (e in SIMPLE) return { char: SIMPLE[e], end: k + 2 };
@@ -43,17 +44,19 @@ export function escapeAt(src: string, k: number, bytes: boolean): { end: number;
     while (close < src.length && src[close] !== '}' && src[close] !== '\n') close++;
     if (src[close] === '}' && close > k + 3) return { end: close + 1, name: true };
   }
-  return undefined;
+  // (`\x`, and in a str `\u`, `\U` and `\N`, start an escape that is not complete here.)
+  return (bytes ? 'x' : 'xuUN').includes(e) ? undefined : { end: k + 1, kept: true };
 }
 
 /** A part of a literal's value that is not known from its text: a replacement field of an f-string, or a `\N{…}` escape (with its name). */
 export type PyHole = { /** The index in the value where it stands. */ at: number; start: number; end: number } & ({ kind: 'field'; field: PyField } | { kind: 'name'; name: string });
 
 /**
- * How a character of a value is written: as itself, by an escape (`\n`, `\x41`, `{{`), or as the text of a
- * self-documenting field (`{x=}` gives `x=` before the field's value, from the source inside the braces).
+ * How a character of a value is written: as itself, by an escape (`\n`, `\x41`, `{{`), as a backslash that starts no escape
+ * and stays (`kept`: `"\d"`, which Python warns of), or as the text of a self-documenting field (`{x=}` gives `x=` before the
+ * field's value, from the source inside the braces).
  */
-export type PyCharKind = 'text' | 'escape' | 'debug';
+export type PyCharKind = 'text' | 'escape' | 'kept' | 'debug';
 
 /**
  * The value of a string literal: each character with its source range [offs[i], ends[i]) and how it is written, the holes
@@ -99,7 +102,8 @@ export function pyValue(src: string, lit: PyLiteral): PyValue {
     }
     const esc = c === '\\' && !lit.raw ? escapeAt(src, k, lit.bytes) : undefined;
     if (esc) {
-      if (esc.name) out.holes.push({ at: out.value.length, start: k, end: esc.end, kind: 'name', name: src.slice(k + 3, esc.end - 1) });
+      if (esc.kept) push(c, k, k + 1, 'kept');
+      else if (esc.name) out.holes.push({ at: out.value.length, start: k, end: esc.end, kind: 'name', name: src.slice(k + 3, esc.end - 1) });
       else if (esc.char !== undefined) push(esc.char, k, esc.end, 'escape');
       else out.joins.push(k);
       k = esc.end;

@@ -24,6 +24,9 @@ const texts = (ts: readonly Token[]): string[] => ts.flatMap((t) => [`${t.label}
 /** The rows of the pattern of the call on the second line. */
 const rows = (call: string, lang: 'ja' | 'en' = 'en') => texts(explainPy(`import re\n${call}\n`, 1, lang).items);
 const issues = (src: string, opts = {}) => documentIssues(open(src), 'en', {}, [], opts).map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]);
+/** A hole character that an output of the line holds (its rows, labels, notes, reading, and the document's problems): none, as each field is shown as written. */
+const holeIn = (out: unknown): string | undefined => /.{0,40}[\ufdd2-\ufdef].{0,20}/.exec(JSON.stringify(out))?.[0];
+const holeShown = (doc: ShellDocument, line: number, lang: 'ja' | 'en'): string | undefined => holeIn([explainDocumentLine(new Analyzer(lang), doc, line, lang, {}, { reading: true }), documentIssues(doc, lang, {}, [], {})]);
 
 describe('Python regex: the literal of a pattern', () => {
   describe('the fields of an f-string', () => {
@@ -73,6 +76,27 @@ describe('Python regex: the literal of a pattern', () => {
       const p = patternOf(extractShell('python', 'import re\nre.search(f"a{x}b", s)\n').languages[0])!;
       assert.deepStrictEqual([p.value.length, Object.values(p.holes!), p.at[1], p.to[1]], [3, [{ written: '{x}', escaped: false }], { line: 1, character: 13 }, { line: 1, character: 16 }]);
       assert.deepStrictEqual(explainPy('import re\nre.search(f"a{x}b", s)\n', 1).items[0].children.map((t) => [t.label, t.span.start.character, t.span.end.character]), [['a', 12, 13], ['{x}', 13, 16], ['b', 16, 17]]);
+      // (A token over the join of two literals is labelled with its value, each field in it as written.)
+      assert.strictEqual(rows('re.search(f"[{x}" "]", s)')[1], '[{x}]: Character class: one of the characters of the value of `{x}`');
+      assert.strictEqual(rows('re.search(f"(a{x}" f"b)", s)')[1], '(a{x}b): Group 1: treats its contents as one unit (`\\1` refers to what it matched)');
+      for (const call of ['re.search(f"[{x}" "]", s)', 're.search(f"(a{x}" f"b)", s)', 're.search(f"(a{x}" f"b{y}\\1)", s)', 're.search(f"a{{{n}}}" "b", s)']) {
+        for (const lang of ['en', 'ja'] as const) assert.strictEqual(holeShown(open(`import re\n${call}\n`), 1, lang), undefined, call);
+      }
+    });
+
+    it('says where `re.VERBOSE` is on, or not known, that whitespace and a `#` in a value are read as the pattern\'s, once on the line', () => {
+      const verbose = 'With `re.VERBOSE`, whitespace in the value is ignored, and a `#` in it comments out the rest of its line';
+      assert.deepStrictEqual(rows('re.search(rf"(?x) a {x} b {y}", s)').filter((r) => r.startsWith('{')), [
+        `{x}: The value of \`{x}\` is read as a regex: \`.\`, \`*\`, \`[\` and the like in the value have their special meaning. ${verbose}. What stands around it is read as if the value were a complete regex with no group, no alternation (\`|\`) of its own`,
+        '{y}: The value of `{y}`, read like `{x}`']);
+      assert.ok(rows('re.compile(f"a{x}", re.X)').some((r) => r.includes(verbose)));
+      assert.ok(rows('re.compile(f"(?x:{x})", s)').some((r) => r.includes(verbose)));
+      assert.ok(rows('re.search(f"a{x}", s, flags)').some((r) => r.includes('If `re.VERBOSE` is on (the flags are not known), whitespace in the value is ignored')));
+      assert.ok(rows('re.search(f"a{x}", s, re.X)', 'ja').some((r) => r.includes('`re.VERBOSE` なので、値の中の空白は無視され、値の中の `#` からその行の終わりまではコメントになる')));
+      // (Not without it, nor in a set, where VERBOSE reads whitespace and `#` as themselves, nor for `re.escape`, which escapes both.)
+      for (const call of ['re.search(f"a{x}", s)', 're.search(f"(?x)[{x}]", s)', 're.search(f"(?x){re.escape(x)}", s)', 're.search(f"{re.escape(x)}", s, flags)']) {
+        assert.ok(!rows(call).some((r) => /VERBOSE`, whitespace in the value|VERBOSE` is on/.test(r)), call);
+      }
     });
 
     it('leaves a pattern unread where a field decides how it reads, as a shell word with such a value', () => {
@@ -139,6 +163,9 @@ describe('Python regex: the literal of a pattern', () => {
       }
       // (In bytes, `\u` starts no escape.)
       assert.match(plain(explainPy('import re\nre.match(b"\\u", s)\n', 1).items[0].explanation), /keeps `\\u`/);
+      // (Before a field, the string keeps the backslash, and Python warns of `"\{"`: the field is still replaced.)
+      assert.match(plain(explainPy('import re\nre.match(f"\\{x}", s)\n', 1).items[0].explanation), /The string keeps `\\\{` as written/);
+      assert.match(plain(explainPy('import re\nre.match("\\😀", s)\n', 1).items[0].explanation), /The string keeps `\\😀` as written/);
     });
   });
 });
@@ -178,10 +205,12 @@ describe('Python regex: the calls of the standard library', function () {
         if (p) patterns++;
         if (p?.holes) fields++;
         for (const lang of ['en', 'ja'] as const) {
-          const ex = explainDocumentLine(new Analyzer(lang), doc, region.lines[0], lang, {}, {});
+          const ex = explainDocumentLine(new Analyzer(lang), doc, region.lines[0], lang, {}, { reading: true });
           assert.ok(!ex.noteInfo.some((n) => n.code === 'line-not-explained' || n.code === 'example-failed'), `${file}:${region.lines[0] + 1}`);
+          if (p?.holes) assert.strictEqual(holeIn(ex), undefined, `${file}:${region.lines[0] + 1}`);
         }
       }
+      if (doc.extracted!.languages.some((r) => patternOf(r)?.holes)) assert.strictEqual(holeIn(documentIssues(doc, 'en', {}, [], {})), undefined, file);
     }
     // (Not pinned: the counts change with the release.)
     assert.ok(patterns > 100 && fields > 0, `${patterns} patterns, ${fields} with fields`);

@@ -35,6 +35,8 @@ export interface HoleMark {
   written?: string;
   /** The value is text the regex matches as it is, whatever it is: a field `{re.escape(x)}` of a Python f-string (src/hosts/languages.ts). */
   escaped?: boolean;
+  /** Python's `re.VERBOSE` is on where the hole stands (`true`), or may be (`unknown`): whitespace in the value is ignored, and a `#` in it starts a comment. */
+  verbose?: true | 'unknown';
 }
 
 /**
