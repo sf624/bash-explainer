@@ -92,10 +92,10 @@ const PROBE = `(() => {
 interface Sample { y: number | null; height: number | null; scroll: number; left: number; sheet: number; bottom: number }
 
 /** The scroll, at rest. */
-const scrollStill = (page: Page) => stable('the scroll', () => page.evaluate("document.querySelector('.cm-scroller').scrollTop") as Promise<number>);
+const scrollStill = (page: Page) => stable('the scroll', () => page.evaluate("document.querySelector('.cm-scroller').scrollTop") as Promise<number>, 4, 30000);
 
 /** Waits for text just typed to have its marks: the tree that brings them trails the typing, and they can change the rows. */
-const rowsStill = (page: Page) => stable('the rows', () => page.evaluate("document.querySelector('.cm-content').offsetHeight") as Promise<number>, 40);
+const rowsStill = (page: Page) => stable('the rows', () => page.evaluate("document.querySelector('.cm-content').offsetHeight") as Promise<number>, 40, 60000);
 
 /** Puts the cursor on `line` and waits for the editor to have scrolled to it. */
 async function cursorAt(page: Page, line: number): Promise<void> {
