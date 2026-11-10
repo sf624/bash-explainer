@@ -1,0 +1,12 @@
+{
+  "reads": [
+    { "file": "src/explain/reads.ts", "fn": "arrayKind", "kind": "value", "count": 1, "reason": "a nameref's target is a name, not a value: the array it names decides how its subscripts are read" },
+    { "file": "src/expansion-tokens.ts", "fn": "expansionSummary", "kind": "value", "count": 1, "reason": "`${!x@K}`: the value of `x` is a name (`a[@]`), which picks the text of the transform; no value is said" },
+    { "file": "src/explain/tests.ts", "fn": "compatVariable", "kind": "value", "count": 2, "reason": "`BASH_COMPAT` is read by bash itself, for the level of `<` in `[[ ]]`: no expansion copies it, and a value not known is `unknown`" },
+    { "file": "src/explain/examples.ts", "fn": "tzOf", "kind": "value", "count": 2, "reason": "the `TZ` that `date` gets in its environment for a worked example (exported, through the wrappers' slots): no expansion copies it" },
+    { "file": "src/explain/examples.ts", "fn": "exportedEnvironment", "kind": "value", "count": 1, "reason": "the `PATH` of the environment an example's `env` prints, on the made-up system: no expansion copies it" },
+    { "file": "src/explain/words.ts", "fn": "pastedValue", "kind": "value", "count": 1, "reason": "`$x` in arithmetic, pasted as text: `expansionValue` gives no value there (its word model reads no word in `$(( ))`); to move when it does" },
+    { "file": "src/pitfalls.ts", "fn": "neverEmpty", "kind": "value", "count": 2, "reason": "whether a variable is never empty (`DIR=/opt/app`), not its value: from the value or the static text of its word" },
+    { "file": "src/pitfalls.ts", "fn": "neverEmpty", "kind": "source", "count": 2, "reason": "whether the assignment word has static text where the value is not known (`B=\"$S/build\"`): no source gives that fact yet" }
+  ]
+}
