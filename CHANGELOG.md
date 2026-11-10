@@ -6,10 +6,12 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
-- In a `.py` file that imports `re`, the pattern of `re.search`, `re.compile`, `re.sub` and the other `re` functions is explained in the panel and the hover, part by part, with its flags (`re.I | re.M`, `(?i)`, VERBOSE comments). The fields of an f-string are read as holes (`rf"^{prefix}\d+$"`). A pattern Python refuses (`re.compile('*.txt')`) is an Error with Python's message, and a flag passed as `count` (`re.sub(p, r, s, re.I)`) or an escape that a string without `r` makes a character (`"\bword\b"`, a backspace; `"(a)\1"`, U+0001) is a Warning.
+- In a `.py` file that imports `re`, the pattern of `re.search`, `re.compile`, `re.sub` and the other `re` functions is explained in the panel and the hover, part by part, with its flags (`re.I | re.M`, `(?i)`, VERBOSE comments). The fields of an f-string are read as holes (`rf"^{prefix}\d+$"`). A pattern Python refuses (`re.compile('*.txt')`, `(?P<n>a)(?P<n>b)`) or flags it refuses (`re.compile('a', re.L)`) is an Error with Python's message, `[[:alpha:]]` is a Warning (Python reads a set and then `]`), and a flag passed as `count` (`re.sub(p, r, s, re.I)`) or an escape that a string without `r` makes a character (`"\bword\b"`, a backspace; `"(a)\1"`, U+0001) is a Warning.
 - On the web page, a pasted or opened Python script with `import re` and a call of `re.search(…)` or the like is taken as Python, so its patterns are explained. A shell script that only mentions `re.sub` stays a shell script.
 - The replacement of `re.sub` and `re.subn` is explained: `\1` and `\g<name>` say which group's text they put in, a group the pattern lacks is an Error (`invalid group reference`), and the example applies the replacement. A method of a compiled pattern (`EMAIL = re.compile(…)`, then `EMAIL.findall(s)`) says on which line its pattern was compiled, and gets that pattern's example.
 - A pattern of `re.search`, `re.fullmatch`, `re.sub`, `re.split`, `re.findall` and the other `re` functions gets an example, checked against Python: strings that match and do not, or what the call gives back for its subject, as Python prints it (`re.split(r'(,)|(;)', 'a,b;c')` gives `['a', ',', None, 'b', None, ';', 'c']`).
+
+- `grep -P` explains a backreference by name, `(?P=q)`, and conditionals, `(?(1)b|c)`; before, "a PCRE construct this explainer does not read". A conditional of three branches, or on a group the pattern lacks, is an Error.
 
 ### Fixed
 

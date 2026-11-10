@@ -1123,14 +1123,11 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 ### Python patterns: corners the `python` flavor does not follow
 
 - **Verdict:** dropped (YAGNI), 2026-11-10. Kind: `bug` unless marked. Python 3.15.
-- **Reason:** Rare patterns and files. None gives a false Error: each is a refusal we do not say, a rare reading, or a note left out. Those marked "#760" are Python's refusals that step 3 of docs/design/python-regex.md (#760) reads, with its validity differential: they are listed here only so that they are not reported again.
+- **Reason:** Rare patterns and files. None gives a false Error: each is a refusal we do not say, a rare reading, or a note left out. Python's refusals that step 3 of docs/design/python-regex.md (#760) reads were removed from this list when it read them.
 - **Input and what is wrong:**
   - `a{,}`: Python reads `{,}` as 0 or more (`re.fullmatch('a{,}', 'aaa')` matches); we say `Literal "a{,}"`.
-  - `[z-a]` ("bad character range z-a"), and a class at an end of a range, `[\w-z]`, `[a-\w]` ("bad character range \w-z"; #760, as `[\d-z]`): we read a set and say nothing.
-  - Group forms Python rejects, which we call "a construct of Python's `re` this explainer does not read" with no level: `(?P<1>a)` and `(?P<a-b>a)` ("bad character in group name"), `(?P<n` ("missing >, unterminated name"), `(?P` ("unexpected end of pattern"), `(?)`, `(?P>n)`, `(?&n)`, `(?C)`, `(?^)` ("unknown extension"), `(?i` ("missing -, : or )"). `(?#abc` ("missing ), unterminated comment") is said to be a comment.
   - A pattern over several lines: Python's message ends with the line and column (`unbalanced parenthesis at position 2 (line 2, column 1)`); ours has the position only.
-  - `[[:alpha:]]`: Python warns (FutureWarning, "Possible nested set at position 1"); we read the set right but say no warning. (`missing-explanation`)
-  - `\z` (since 3.14) and `(?>…)`, `a++` (since 3.11) have no note of the release they need (section 8 of the design). (`missing-explanation`)
+  - `(?>…)` and `a++` (since 3.11) have no note of the release they need: 3.11 is the oldest release still supported (`\z`, since 3.14, has one since #760). (`missing-explanation`)
   - `r'\ '`: the token is right (`Literal " "`), but its label is `\` (`shorten` trims the space).
   - `[\b]`: "Character class: one of a backspace" reads badly; a set of one character could say "a backspace".
   - `from re import *` then `search('a', s)`: the call is not found. (`missing-explanation`)
@@ -1142,20 +1139,31 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 ### Python flags: corners the `python` flavor does not follow
 
 - **Verdict:** dropped (YAGNI), 2026-11-10. Kind: `bug` unless marked. Python 3.15.
-- **Reason:** Rare flags and patterns. None gives a false Error: each is a word "in either case" too many or too few, a refusal we do not say, or a note left out. Those marked "#760" are refusals that step 3 of docs/design/python-regex.md (#760) reads.
+- **Reason:** Rare flags and patterns. None gives a false Error: each is a word "in either case" too many or too few, a refusal we do not say, or a note left out. The refusals that step 3 of docs/design/python-regex.md (#760) reads were removed from this list when it read them.
 - **Input and what is wrong:**
   - `re.compile('é', re.I | re.A)`: with `re.ASCII`, only ASCII letters match in either case, so `é` matches only itself; we say "in either case". The same for a ligature with `re.I`, `ﬀ`, which matches only itself: we say "in either case".
   - `[a-z]` with `re.I` also matches `ſ` (U+017F) and the Kelvin sign `K` (U+212A); we say only that its letters match in either case.
   - An escape read as a literal under `re.I` (`\xe9`, `\x41`) does not say "in either case", where a letter written as it is does.
   - `caseText` on a set strips only a backslash and one character, so `[\x2d]` ("-") wrongly says "in either case".
   - A backreference under `re.I` (`(a)\1`) matches its group's text in either case; we do not say so.
-  - Flags Python refuses with a `ValueError` (#760): `re.L` with a str pattern ("cannot use LOCALE flag with a str pattern"), `re.U` with a bytes pattern, `re.A | re.U` ("ASCII and UNICODE flags are incompatible"); we say nothing.
   - `re.TEMPLATE` (`re.T`) is read as a name not known, a term of no flag; since 3.13 it is an `AttributeError`.
   - A duplicate argument, `re.search('a', s, string=t)` (`TypeError`: multiple values for `string`), still gives a region.
   - `rb'é'`: Python refuses a non-ASCII character in a bytes literal (SyntaxError); we read it as a pattern.
-  - The 13 out-of-scope misses of the review's differential (#760): `(?é)`, `(?`, `(?x)(?P< n>a)`, `(?x)(? :a)`, `[a- z]` with `re.X`, `\N{EM  DASH}` (two spaces), `(?a)(?u)`, and `(?u)` with `re.A`, among others of the same kinds: their messages or refusals differ from Python's.
+  - Of the 13 out-of-scope misses of the review's differential, `\N{EM  DASH}` (two spaces) is left: Python refuses the name ("undefined character name"), which is not checked (no table of Unicode names). The others it named (`(?é)`, `(?`, `(?x)(?P< n>a)`, `(?x)(? :a)`, `[a- z]` with `re.X`, `(?a)(?u)`, `(?u)` with `re.A`) are refused as Python refuses them since #760, by its validity differential.
   - The positional `count` or `maxsplit` without flags (`re.sub(p, r, s, 1)`) warns since 3.13 (DeprecationWarning); we say it only with the pitfall of a flag in that slot. (`missing-explanation`)
-  - Found by the review of the examples (#810; #760): patterns Python refuses that give an example, as the reader says no Error: `re.findall(r'(?P<n>a)(?P<n>b)', 'ab')` shows `[('a', 'b')]` ("redefinition of group name 'n' as group 2; was group 1"), `re.findall(r'(?P<n>a(?P=n))', 'aa')` shows `['a', 'a']` ("cannot refer to an open group"), `(?<=(?P<n>a)(?P=n))` gets no Error ("cannot refer to group defined in the same lookbehind subpattern"; the numbered `(?<=(a)\1)` is an Error; no example comes out of it), `re.findall(r'(?P<1a>x)', 'x')` shows `['x']` ("bad character in group name '1a'"), and `re.findall(r'(?a)(?u)a', 'a')` and `re.findall(r'a', 'a', re.A | re.U)` show `['a']` (ValueError: "ASCII and UNICODE flags are incompatible").
+
+## From the Python regex errors (#760)
+
+### Python and PCRE patterns: corners the errors do not follow
+
+- **Verdict:** dropped (YAGNI), 2026-11-10. Kind: `bug` unless marked. Python 3.15, GNU grep 3.11 (PCRE2).
+- **Reason:** Rare patterns. None gives a false Error: each is a refusal we do not say, or a first message other than Python's where a pattern has two errors (both are said).
+- **Input and what is wrong:**
+  - A range with an end named by `\N{…}`: `[\N{EM DASH}-a]` ("bad character range \N-a") is no Error, as the name's code is not known.
+  - Flags that do not go together through the pattern's inline flags (`(?a)(?u)a`) are said only where no other refusal of the pattern comes first; Python says them before a `)` that closes no group, and so do we, but after a refusal that the parser stops at, we say only that one. The flags argument's (`re.L` with a str pattern) is said whatever the pattern holds.
+  - A final `\`: Python's tokenizer reads a token ahead, so it refuses the `\` before or after the token before it, by where that token's refusal is raised (`?\` is "bad escape (end of pattern)", `(?u)\` with bytes "bad inline flags"); we say both, in the order of the text.
+  - `grep -P`: a backreference to a group the pattern has not (`(a)\2`, `\k<n>`) and a lookbehind of more than one width (`(?<=a+)x`) are no Errors; grep -P refuses them ("reference to non-existent subpattern", "lookbehind assertion is not fixed length"). A conditional on such a group is one since #760.
+  - `grep -P`: a recursion test (`(?(R)…)`, `(?(R1)…)`), `(?(DEFINE)…)`, `(?(VERSION>=10)…)`, a relative number (`(?(+1)…)`) or an assertion (`(?(?=a)…)`) as a condition is "a PCRE construct this explainer does not read". (`missing-explanation`)
 
 ## From the review of the Python regex literal (#750)
 

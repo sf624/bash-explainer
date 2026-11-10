@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { explainRegex } from '../src/embedded/regex';
 import { plainOf } from '../src/messages-levels';
+import { readSaid } from '../src/messages-tokens';
 import { run } from './support/run';
 import { allTokens } from './support/explain';
 
@@ -88,6 +89,14 @@ const rows: [string, string, string, string, RegExp][] = [
   ['[\\8]', '8a\n', '8\n', '[\\8]', /one of "8"$/],
   ['\\Qa$b\\E', 'a$b ab\n', 'a$b\n', '\\Qa$b\\E', /the text "a\$b" taken literally/],
   ['\\Q$x\\E', '$x\n', '$x\n', '\\Q$x\\E', /the text "\$x" taken literally/],
+  // A reference by name as Python writes it, and conditionals on a group by its number or its name (#760).
+  ["(?P<q>['\"]).*?(?P=q)", "say 'hi' and \"yo'\n", "'hi'\n", '(?P=q)', /^Backreference `\(\?P=q\)`: the same text group q \(1\) matched$/],
+  ['(a)?(?(1)b|c)', 'ab c x\n', 'ab\nc\n', '(?(1)b|c)', /a conditional: if group 1 took part in the match, the part before `\|`; if not, the part after it/],
+  ['(a)?(?(1)b|c)', 'ab c x\n', 'ab\nc\n', '|', /the "else" of the conditional/],
+  ['(?<n>a)?(?(<n>)b|c)', 'ab c x\n', 'ab\nc\n', '(?(<n>)b|c)', /if group `n` took part in the match/],
+  ["(?<n>a)?(?('n')b|c)", 'ab c x\n', 'ab\nc\n', "(?('n')b|c)", /if group `n` took part in the match/],
+  ['(?<n>a)?(?(n)b|c)', 'ab c x\n', 'ab\nc\n', '(?(n)b|c)', /if group `n` took part in the match/],
+  ['(?(1)a)(a)', 'ab\n', 'a\n', '(?(1)a)', /if group 1 took part in the match, the part before `\|`; if not, the part after it \(nothing, without a `\|`/],
 ];
 
 describe('PCRE escapes and groups agree with grep -P', () => {
@@ -111,12 +120,38 @@ describe('PCRE escapes and groups agree with grep -P', () => {
     assert.match(bad.explanation, /unrecognized character follows/);
     assert.match(explainRegex('[\\K]', 'pcre', 'en')[0].explanation, /`\\K` \(not valid in a class\)/);
     // Valid for PCRE2, but not read here: never a literal.
-    for (const p of ['\\C', '(?1)', '(?R)', '(?|a|b)', '(*UTF)', '(?(1)a|b)', '(?P=n)', '\\g', '\\p']) {
+    for (const p of ['\\C', '(?1)', '(?R)', '(?|a|b)', '(*UTF)', '(?(R)a|b)', '(?(DEFINE)(?<x>a))', '(?(+1)a)', '(?(?=a)a|b)', '(?P>n)', '\\g', '\\p']) {
       const [t] = explainRegex(p, 'pcre', 'en');
       assert.match(t.explanation, /does not read/, p);
       assert.strictEqual(t.end, p.length, p);
     }
     assert.match(explainRegex('(?|a', 'pcre', 'ja')[0].explanation, /読めない/);
+  });
+
+  it('refuses a conditional of three branches, and one whose group the pattern has not, as grep -P does (#760)', () => {
+    const errors = (p: string) => allTokens(explainRegex(p, 'pcre', 'en')).filter((t) => t.kind === 'error').map((t) => `${p.slice(t.start, t.end)}: ${plainOf(t.explanation)}`);
+    for (const p of ['(a)(?(1)b|c|d)', '(?(2)a)(a)', "(?('n')a)", '(?(x)a)']) {
+      assert.strictEqual(grepP(p, 'a\n').status, 2, p);
+      assert.strictEqual(errors(p).length, 1, p);
+    }
+    assert.match(errors('(a)(?(1)b|c|d)')[0], /^\|: A conditional `\(\?\(…\)…\|…\)` has two branches at most: `grep` stops with an error \(status 2\): "conditional subpattern contains more than two branches"$/);
+    assert.match(errors('(?(2)a)(a)')[0], /^\(\?\(2\)a\): .*\. The pattern has no such group: `grep -P` stops with an error \(status 2, "reference to non-existent subpattern"\)$/);
+    // (A later group may be the one it tests; Perl takes a group that is not there, which does not take part.)
+    for (const p of ['(?(1)a)(a)', '(?(n)a)(?<n>b)']) {
+      assert.notStrictEqual(grepP(p, 'a\n').status, 2, p);
+      assert.deepStrictEqual(errors(p), [], p);
+    }
+    assert.deepStrictEqual(allTokens(explainRegex('(?(2)a)', 'pcre', 'en', { perl: true })).filter((t) => t.kind === 'error'), []);
+    // (Nor where a construct left unread may hold the group.)
+    assert.deepStrictEqual(allTokens(explainRegex('(?(2)a)(?|(a)(b)|c)', 'pcre', 'en')).filter((t) => t.kind === 'error'), []);
+    assert.match(plainOf(allTokens(explainRegex('(a)(?(1)b|c|d)', 'pcre', 'en', { perl: true })).find((t) => t.kind === 'error')!.explanation), /`perl` stops with an error \(status 255\): "Switch \(\?\(condition\)\.\.\. contains too many branches"$/);
+    // (Where the shell does not get to the command, the same rows, which are no problems.)
+    for (const p of ['(a)(?(1)b|c|d)', '(?(2)a)(a)']) {
+      const said = allTokens(explainRegex(p, 'pcre', 'en', { reached: false })).find((t) => t.kind === 'error')!;
+      assert.deepStrictEqual(readSaid(said.explanation).said.map((s) => s.level ?? ''), p === '(?(2)a)(a)' ? ['', ''] : [''], p);
+    }
+    // (bazel's query reads Java's regex, which has no conditionals and no `(?P=n)`: left unread.)
+    for (const p of ['(a)(?(1)b|c)', '(?<n>a)(?P=n)']) assert.match(explainRegex(p, 'pcre', 'en', { tool: 'bazel' }).at(-1)!.explanation, /does not read/, p);
   });
 
   it('reads a group that is not closed and a reference to a group that is missing', () => {

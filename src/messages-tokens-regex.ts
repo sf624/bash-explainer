@@ -1,5 +1,5 @@
 import type { PythonFlag } from './embedded/regex-python';
-import { tokenError, type TokenEntry, type TokenProblem, tokenText } from './messages-levels';
+import { tokenError, type TokenEntry, type TokenProblem, tokenText, tokenWarning } from './messages-levels';
 
 // What the regex reader (src/embedded/regex.ts) says of a pattern its program refuses: grep, sed, awk and Perl stop with an
 // error, bash's `[[ =~ ]]` gives status 2, and bazel's query (Java's regex) stops, every time. Each kind of error is one entry, shared by the flavors, with the
@@ -37,6 +37,12 @@ const PYTHON_INVALID: TokenProblem = {
   then: ['このパターンをコンパイルするたびに `re.error`（`re.PatternError`）が出る', 'Compiling it raises `re.error` (`re.PatternError`) every time'],
 };
 
+/** Flags Python's `re` refuses, from the call's argument or the pattern's inline flags: it raises `ValueError` each time it compiles the pattern. */
+const PYTHON_FLAGS_INVALID: TokenProblem = {
+  head: ['このフラグの組み合わせは不正なので、コンパイルするたびに `ValueError` が出る。', 'These flags do not go together: compiling the pattern raises `ValueError` every time.'],
+  then: ['このパターンをコンパイルするたびに `ValueError` が出る', 'Compiling it raises `ValueError` every time'],
+};
+
 /** An error of a regex, and the same row where the shell does not get to the command. */
 function invalid<P = Record<string, never>>(row: Row<P>): { error: TokenEntry<P>; unreached: TokenEntry<P> } {
   return { error: tokenError<P>(INVALID, row), unreached: tokenText<P>(row) };
@@ -69,6 +75,28 @@ const CASE_ESCAPE = invalid<{ c: string }>(({ c }) => [
 const JAVA_ESCAPE = invalid<{ c: string }>(({ c }) => [
   `\`\\${c}\` は Java の正規表現のエスケープにない。\`bazel\` はエラーで止まる（"Illegal/unsupported escape sequence"。\`bazel query\` は終了ステータス 7、\`cquery\`・\`aquery\` は 1）`,
   `\`\\${c}\` is no escape of Java's regex: \`bazel\` stops with an error ("Illegal/unsupported escape sequence"; status 7, 1 for \`cquery\` and \`aquery\`)`]);
+/** `(a)(?(1)b|c|d)`: a conditional of more than two branches (grep -P and Perl stop). */
+const BRANCHES = invalid<{ tool: RegexProgram }>(({ tool }) => {
+  const message = tool === 'perl' ? 'Switch (?(condition)... contains too many branches' : 'conditional subpattern contains more than two branches';
+  return [`条件分岐 \`(?(…)…|…)\` の \`|\` は1つまで。${FAILS[tool][0]}: "${message}"`, `A conditional \`(?(…)…|…)\` has two branches at most: ${FAILS[tool][1]}: "${message}"`];
+});
+/** `(?(2)a)` of grep -P with one group: no group 2 in the whole pattern (Perl takes it, as a group that did not take part). */
+const MISSING_GROUP = invalid(() => [
+  'パターンにこのグループがない。`grep -P` はエラーで止まる（終了ステータス 2、"reference to non-existent subpattern"）',
+  'The pattern has no such group: `grep -P` stops with an error (status 2, "reference to non-existent subpattern")']);
+/** `*.txt`, `a**`, `x{2,1}` of grep -P: a quantifier with nothing to repeat, after another, or a count that goes down. */
+const REPEAT = invalid<{ kind: 'nothing' | 'multiple' | 'count' }>(({ kind }) => {
+  const [ja, en, message] = {
+    nothing: ['この量指定子の前には繰り返すものがない', 'Nothing before this quantifier to repeat', 'quantifier does not follow a repeatable item'],
+    multiple: ['量指定子の直後にまた量指定子がある', 'A quantifier right after another', 'quantifier does not follow a repeatable item'],
+    count: ['回数の最小が最大より大きい', 'The least count is over the most', 'numbers out of order in {} quantifier'],
+  }[kind];
+  return [`${ja}。\`grep -P\` はエラーで止まる（終了ステータス 2、"${message}"）`, `${en}: \`grep -P\` stops with an error (status 2, "${message}")`];
+});
+/** `a)` of grep -P: a `)` that closes no group. */
+const UNMATCHED = invalid(() => [
+  'この `)` で閉じるグループがない。`grep -P` はエラーで止まる（終了ステータス 2、"unmatched closing parenthesis"）',
+  'No group is open for this `)` to close: `grep -P` stops with an error (status 2, "unmatched closing parenthesis")']);
 /** `\q` of grep -P: a letter PCRE2 has no escape of. */
 const UNKNOWN_ESCAPE = invalid<{ c: string }>(({ c }) => [
   `\`\\${c}\` は PCRE のエスケープにない。\`grep -P\` はエラーで止まる（終了ステータス 2、"unrecognized character follows \\"。Perl は文字「${c}」として扱う）`,
@@ -93,6 +121,26 @@ export const REGEX_TEXTS = {
   'regex-pcre-unknown-escape-if-reached': UNKNOWN_ESCAPE.unreached,
   'regex-java-unknown-escape': JAVA_ESCAPE.error,
   'regex-java-unknown-escape-if-reached': JAVA_ESCAPE.unreached,
+  'regex-pcre-conditional-branches': BRANCHES.error,
+  'regex-pcre-conditional-branches-if-reached': BRANCHES.unreached,
+  'regex-pcre-repeat': REPEAT.error,
+  'regex-pcre-repeat-if-reached': REPEAT.unreached,
+  'regex-pcre-unmatched-paren': UNMATCHED.error,
+  'regex-pcre-unmatched-paren-if-reached': UNMATCHED.unreached,
+  'regex-pcre-missing-group': MISSING_GROUP.error,
+  'regex-pcre-missing-group-if-reached': MISSING_GROUP.unreached,
+  /**
+   * A conditional of PCRE or Python's `re` (`(?(1)…|…)`, `(?(name)…)`): `written`, to its condition's `)`; the group it tests, by its
+   * number or its name. Its first `|` is `regex-conditional-else`.
+   */
+  'regex-conditional': tokenText<{ written: string; group?: number; name?: string }>(({ written, group, name }) => {
+    const which = name === undefined ? `グループ ${group}` : `グループ \`${name}\``;
+    const whichEn = name === undefined ? `group ${group}` : `group \`${name}\``;
+    return [`\`${written}…)\`: 条件分岐。${which}が一致に加わっていれば \`|\` の前を、加わっていなければ \`|\` の後ろ（\`|\` がなければ何もなし）を一致させる（番号は付かない）`,
+      `\`${written}…)\`: a conditional: if ${whichEn} took part in the match, the part before \`|\`; if not, the part after it (nothing, without a \`|\`; no number)`];
+  }),
+  /** The `|` of a conditional, between what it matches when its group took part and when it did not. */
+  'regex-conditional-else': tokenText(() => ['`|`: 条件分岐の「そうでなければ」（グループが一致に加わっていないときは、この後ろを一致させる）', '`|`: the "else" of the conditional (what follows is matched when the group did not take part)']),
   /**
    * The pattern of a call of Python's `re` in a `.py` file (src/hosts/languages.ts): `call` as the file writes it, what the function adds to it
    * (`anchors`: `match` at the start, `fullmatch` at both ends), and the release a function needs (`since`: `prefixmatch`, 3.15).
@@ -114,6 +162,27 @@ export const REGEX_TEXTS = {
   'regex-python-error': tokenError<{ message: string; since?: string }>(PYTHON_INVALID, ({ message, since }) => [
     `Python の \`re\` はこのパターンを受け付けない（"${message}"${since ? `。Python ${since} からエラー` : ''}）`,
     `Python's \`re\` refuses this pattern ("${message}"${since ? `; an error since Python ${since}` : ''})`]),
+  /**
+   * Flags Python's `re` refuses with `ValueError` once it has read the pattern (`fix_flags`): `message` is Python's own (`cannot use
+   * LOCALE flag with a str pattern`), on the call's flags argument or on the pattern's inline flags that make it.
+   */
+  'regex-python-flags-error': tokenError<{ message: string; since?: string }>(PYTHON_FLAGS_INVALID, ({ message }) => [
+    `Python の \`re\` はこのフラグを受け付けない（"${message}"。\`ValueError\`）`,
+    `Python's \`re\` refuses these flags ("${message}"; \`ValueError\`)`]),
+  /**
+   * The warnings (FutureWarning) Python's `re` gives for a set (`messages`, its own), which a later release may read otherwise; `posix`, a
+   * POSIX class as other flavors write it (`[[:alpha:]]`), which Python reads as a set of its characters and then a `]`.
+   */
+  'regex-python-set-warning': tokenWarning<{ messages: readonly string[]; posix?: string }>(({ messages, posix }) => {
+    const said = messages.map((m) => `"${m}"`).join(', ');
+    if (!posix) return [`Python はこの集合に警告を出す（${said}、FutureWarning）。将来のリリースでは読み方が変わりうる`, `Python warns of this set (${said}; FutureWarning): a later release may read it otherwise`];
+    const set = posix.slice(0, -1);
+    const letter = posix[3];
+    return [`Python の \`re\` には POSIX の文字クラスがない。\`${set}\` を文字の集合（\`[\`、\`:\` と名前の文字）と読み、続く \`]\` は文字「]」: \`${posix}\` は「${letter}]」のような2文字に一致し、「${letter}」1文字には一致しない（Python の警告: ${said}、FutureWarning）`,
+      `Python's \`re\` has no POSIX classes: it reads \`${set}\` as a set of its characters (\`[\`, \`:\` and the letters of the name), and the \`]\` after it as a literal "]": \`${posix}\` matches two characters such as \`${letter}]\`, not \`${letter}\` (Python warns: ${said}; FutureWarning)`];
+  }),
+  /** A construct of Python's `re` that the reference reads and an older release still supported refuses (`\z`, 3.14). */
+  'python-regex-since': tokenText<{ since: string }>(({ since }) => [`Python ${since} 以降。それより前はエラー`, `Python ${since} or later; an error before`]),
   /**
    * A refusal of Python's `re` (`regex-python-error`) where `re.VERBOSE` is not known and the pattern read with it gives no such refusal
    * (src/embedded/regex.ts, `UNLESS_VERBOSE`): it may compile, so no Error.

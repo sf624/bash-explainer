@@ -5,7 +5,7 @@
 import type { Example, ExplainOptions, LineExplanation, NoteAnchor, Pos, Span, Token } from '../analyzer-types';
 import { flavorName } from '../embedded/flavors';
 import { readRegex } from '../embedded/regex';
-import { PYTHON_SINCE } from '../embedded/regex-python';
+import { PYTHON_SINCE, pythonFlagsRefused } from '../embedded/regex-python';
 import { readTemplate, type Template, type TemplateGroups, templateTokens } from '../embedded/regex-template';
 import { type EmbeddedToken, hasHole, HOLES } from '../embedded/types';
 import { exampleRun, notComputed } from '../examples/commands';
@@ -144,8 +144,8 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
   const items = [...(top ? [top] : []), ...tokens].sort(byStart);
   // (The call's token, for a line it shares: a method's is its own top token, on the whole call.)
   const callToken: Token | undefined = region.compiled ? undefined : { kind: 'command', label: call.written, span: call.span, children: [], explanation: tokenSaid(lang, 'python-regex-call', { call: call.written, name: call.name }) };
-  // (No example of a pattern Python refuses, nor of one with a part not known.)
-  const examples = source && top && wantsKind(opts, 'regex') && !hasHole(source.value) && !read!.tokens.some(hasError) ? callExamples(region, source, top.span, template, lines, lang) : [];
+  // (No example of a pattern or flags Python refuses, nor of a pattern with a part not known.)
+  const examples = source && top && wantsKind(opts, 'regex') && !hasHole(source.value) && !read!.tokens.some(hasError) && !tokens.some(hasError) ? callExamples(region, source, top.span, template, lines, lang) : [];
   const anchors: NoteAnchor[] = [];
   const data = new Map<string, Note>();
   const ex = finishLine({ line: region.lines[0], items, own: callToken ? [callToken, ...items] : items, rested: [], context: [{ label: region.label[lang === 'ja' ? 0 : 1], line: region.lines[0] }], origin: 'embedded' }, opts, () => {
@@ -351,7 +351,13 @@ function argumentTokens(region: LanguageRegion, lines: readonly string[], lang: 
       const unknown = (span: Span) => tokens.push(token(span, 'option', tokenSaid(lang, 'python-regex-flags-unknown', { written: shorten(between(lines, span.start, span.end)) })));
       if (!a.flags) unknown(a.span);
       else {
-        for (const n of a.flags.names) tokens.push(token(n.span, 'option', tokenSaid(lang, 'python-regex-flag', { written: n.written, flag: n.flag })));
+        // (Flags Python refuses with `ValueError` (`re.L` with a str pattern): the error is on the last name of a flag it names.)
+        const refused = region.options && pythonFlagsRefused(region.options);
+        const at = refused ? a.flags.names.filter((n) => refused.flags.includes(n.flag)).pop() : undefined;
+        for (const n of a.flags.names) {
+          const said = tokenSaid(lang, 'python-regex-flag', { written: n.written, flag: n.flag });
+          tokens.push(n === at ? token(n.span, 'error', said + (lang === 'ja' ? '。' : '. ') + tokenSaid(lang, 'regex-python-flags-error', { message: refused!.message })) : token(n.span, 'option', said));
+        }
         a.flags.unknown.forEach(unknown);
       }
     } else if (flagsAsCount(a)) {
