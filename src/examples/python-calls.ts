@@ -85,7 +85,8 @@ function anchored(js: JsRegex, anchors: PythonCall['anchors']): JsRegex {
  * the words add no match; or one at the start or the end of a word. None where no ASCII text matches.
  */
 function madeUpText(js: JsRegex): string | undefined {
-  const ex = regexExamples(js, 3, shownLine);
+  // (With the groups' texts apart, a template that reorders them shows it: `\2 \1` of `(\w+) (\w+)` on `b cde`.)
+  const ex = regexExamples(js, 3, shownLine, true);
   if (!ex) return undefined;
   const [a, b = a] = ex.matching;
   const tries = [['abc', a, 'def', b, 'xyz'], [a, 'xyz'], ['abc', a]].flatMap((parts) => [parts.join(''), parts.join(' ')]);

@@ -279,7 +279,7 @@ function argumentTokens(region: LanguageRegion, lines: readonly string[], lang: 
       const param = a.role as 'count' | 'maxsplit';
       const { value } = a.flags!;
       tokens.push(token(a.span, 'argument', tokenSaid(lang, 'python-regex-flags-as-count', { written, param, value })));
-      pitfalls.push({ fact: fact(lang, 'python-regex-flag-as-count', { written, call: region.call.written, param, value, ...(a.keyword || region.compiled ? {} : { since: PYTHON_SINCE.positionalCount }) }), span: a.span });
+      pitfalls.push({ fact: fact(lang, 'python-regex-flag-as-count', { written, call: region.call.written, param, value, ...(a.keyword || region.compiled ? {} : { since: PYTHON_SINCE.positionalCount }), ...(region.compiled ? { compiled: { name: region.compiled.name, line: region.compiled.line + 1 } } : {}) }), span: a.span });
     }
   }
   return { tokens, pitfalls };

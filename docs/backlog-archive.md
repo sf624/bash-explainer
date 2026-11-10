@@ -1183,8 +1183,15 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - A pattern with a construct the reader does not read (`(?P<é>a)`, a group name past ASCII) has groups not known: its template gets no Error for a group it lacks (`re.sub(r'(?P<é>a)', r'\2', s)` raises "invalid group reference 2").
   - A capture of a `case` pattern (`case P:`) is not counted as a binding: `P = re.compile(…)` and a `match` that binds `P` again still link `P.sub(…)` to the compile.
   - A compile in a class body (`class C: P = re.compile(…)`) is never linked, even for a call in the class body itself, where Python sees `P`.
-  - Two calls on one line (`return P.sub(r, s), P.findall(s)`): the line holds one part, the call that starts last, as for the functions of `re` (`claimLines`).
   - A name bound once in a branch (`if x: P = re.compile(…)`) is not linked: the statement starts with `if`, not with the name.
+  - `re.sub(r'(a)', f'{x}\\1', s)`: the row of `\1` says "what group 1 matched", but a value of `x` that ends in an odd number of backslashes changes how it reads (`x = '\\'` gives the text `\1`).
+  - `re.sub(r'(a)', '<\12>', s)` warns that the string makes a character and says to write it raw, but raw `\12` is "invalid group reference 12" (one group); the same for `'\1'` with a pattern without groups. (`bug`)
+  - Two Errors where Python stops at the first: `re.sub(r'(a))', r'\2', s)` says the pattern's and the template's; so does `P = re.compile(r'(a))')` then `P.sub(r'\2', s)`.
+  - The line of a method says nothing where Python raises TypeError for an argument the method does not take: `P.search(s, flags=re.I)`, `P.sub('x', s, pos=1)`.
+  - Two compiles on one line (`A = re.compile(r'a'); B = re.compile(r'b')`): `B` is linked, but its method's line shows the pattern of `A` (the line's), and an Error in the pattern of `B` is shown nowhere. (`bug`)
+  - With `endpos`, the row of `fullmatch` still says "matched against the whole string" (`P.fullmatch(s, 0, 3)` matches `s[:3]`).
+
+Not a rare corner: two calls on one line, of which the line explains only one, are tracked in #813. A line of a pattern's literals goes to the call written first (`re.sub(r'a', 'b', re.sub(r'c', 'd', s))` explains the outer); a line with no pattern, such as one of methods, to the call that starts last (`P.match(s) or Q.match(s)` explains only `Q.match`; `claimLines`, src/hosts/python.ts).
 
 ## From the shell-behaviour table (#756)
 
