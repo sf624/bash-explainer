@@ -2,6 +2,8 @@ import * as assert from 'assert';
 import { guarded } from '../src/examples/regexguard';
 import { spawnSync } from 'child_process';
 import { run } from './support/run';
+import { Analyzer } from '../src/analyzer';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { awkExample, awkInvocation, runAwk, sprintf } from '../src/examples/awk';
 
 function realAwk(prog: string, input: string[], fs?: string, vars: Record<string, string> = {}): string[] {
@@ -137,6 +139,18 @@ describe('awk command lines (options and name=value operands) agree with gawk', 
   it('makes up input that uses the separator', () => {
     const ex = awkExample('{ print $2 }', { fs: '\\|' })!;
     assert.ok(ex.input.every((l) => l.includes('|')), JSON.stringify(ex.input));
+  });
+});
+
+describe('the awk example of a program given by -e or --source', () => {
+  // (gawk reads every -e/--source as part of one program, and then the operand is a file: no example of the first alone.)
+  const parser = createUnbashParser();
+  it('is not made', () => {
+    assert.strictEqual(run('gawk', ['-e', 'BEGIN{x=1}', '-e', '{print x}'], { input: 'q\n' }).stdout.toString(), '1\n');
+    for (const line of [`gawk -e 'BEGIN{x=1}' -e '{print x}' f`, `gawk -e '{print 1}' -e "$x" f`, `gawk --source '{print 1}' f`, `gawk -e '{print 1}' f`,
+      `gawk -v a=1 -e '{print 1}' f`, `echo a | gawk -e '{print 1}' -e "$x"`]) {
+      assert.deepStrictEqual(new Analyzer('en').explainLine(parser.parse(line), 0).examples.filter((x) => x.kind === 'awk' || x.kind === 'pipeline'), [], line);
+    }
   });
 });
 

@@ -26,12 +26,12 @@ import { featureWorks } from '../shellfeatures';
 import { holedContent, type Literal, literalContent, literalOfMapped, removedBackslashes, sourceIndex, staticWordText } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import { type Explainer, memoKey } from './context';
-import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
+import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, programsGiven, regexExample } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
 import { fillHoles, holeSink, type HoleSink, holesRead, holeText } from './holes';
 import { fromEmbedded, same, sourcePos } from './nodes';
 import { invalidHow } from '../arith';
-import { given, regexFlavor, trContext } from './reads';
+import { given, optionValues, regexFlavor, trContext } from './reads';
 import { hostString } from './hoststrings';
 import { valueNote } from './words';
 
@@ -178,6 +178,9 @@ function embeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: Syn
       const flavor = regexFlavor(cx);
       const ignoreCase = given(cx, '-i');
       const js = flavor === 'fixed' ? literalRegex(text, ignoreCase) : toJsRegex(text, flavor, { ignoreCase });
+      // (grep matches any of its patterns; the example of one of them is of the command only when it is the only one.)
+      const patterns = optionValues(cx, '-e');
+      if (patterns.length && (given(cx, '-f') || patterns.some((p) => p.text === undefined) || (patterns.length > 1 && given(cx, '-v')))) break;
       if (js) regexExample(cx, grepWrap(js, given(cx, '-x'), given(cx, '-w')), given(cx, '-v') ? 'inverted' : 'lines');
       break;
     }
@@ -192,7 +195,10 @@ function embeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: Syn
       if (flavors.size > 1) break;
       const flavor = [...flavors][0] ?? regexFlavor(cx);
       // With several -e options sed runs them as one script, so the example does too.
-      const scripts = sedScripts(cx) ?? [text];
+      // (An -e whose text is not known, or a -f file, leaves the script unknown: no example.)
+      const given_scripts = programsGiven(cx, '-e', '-f');
+      if (!given_scripts) break;
+      const scripts = given_scripts.length ? given_scripts : [text];
       const quiet = given(cx, '-n');
       // -z / --null-data: the "lines" are NUL-separated records, which the example runner does not model.
       const ex = inRecords(cx.command!.parse) ? undefined : sedExample(scripts.join('\n'), { quiet, extended: flavor === 'ere' });

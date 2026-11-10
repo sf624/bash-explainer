@@ -118,6 +118,27 @@ describe('regex translation', () => {
   });
 });
 
+describe('the grep example of several patterns', () => {
+  const parser = createUnbashParser();
+  const regexExamples = (line: string) => new Analyzer('en').explainLine(parser.parse(line), 0).examples.filter((x) => x.kind === 'regex');
+
+  it('is not made when another pattern (an -e that is not plain text, or a -f file) is not known', () => {
+    // (GNU grep: `-e a -e "$x"` prints the lines of either pattern, so an example of `a` alone shows the wrong lines.)
+    assert.strictEqual(run('grep', ['-e', 'a', '-e', 'b'], { input: 'a\nb\nc\n' }).stdout.toString(), 'a\nb\n');
+    for (const line of ['grep -e a -e "$x" f', 'grep -e "$x" -e a f', 'grep --regexp=a --regexp="$x" f', 'grep -e a -f pats f', 'grep --regexp=a --file=pats f', 'grep -f pats -e a f']) {
+      assert.deepStrictEqual(regexExamples(line), [], line);
+    }
+    assert.strictEqual(regexExamples('grep -e a f').length, 1);
+  });
+
+  it('is not made for an inverted match of several patterns', () => {
+    // (GNU grep: `-v -e a -e b` prints the lines of neither, not those without `a`.)
+    assert.strictEqual(run('grep', ['-v', '-e', 'a', '-e', 'b'], { input: 'a\nb\nc\n' }).stdout.toString(), 'c\n');
+    assert.deepStrictEqual(regexExamples('grep -v -e a -e b f'), []);
+    assert.strictEqual(regexExamples('grep -v -e a f').length, 1);
+  });
+});
+
 describe('the grep example of a line agrees with GNU grep', () => {
   // The line explained, and the same grep reading the example's lines from stdin (the file operands left out).
   const cases: [string, string[]][] = [

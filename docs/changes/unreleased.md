@@ -41,3 +41,9 @@ The Python host now reads a `.py` file with one lexer, one table of Python's esc
 - **Literals across a comment.** `os.system("echo a"  # why` with `"b")` on the next line joins the two literals, as Python does; before, the second was left out.
 - **Imports and calls.** `import os.path` binds `os`, and an import after `;` counts (`import sys; import os`); `os . system(…)` is a call too. Text inside a string or a docstring is never a call, even at the start of a line.
 - **`executable=`.** A bytes literal names the shell (`executable=b"/bin/bash"`); a variable no longer does by its name (`executable=bash` is read as `/bin/sh`).
+
+### Examples of several scripts and patterns
+
+- **`sed`.** `x='s/b/Z/'; sed -e 's/a/b/' -e "$x" f` showed `b a` (the first script alone); sed runs both and prints `Z a`. Now an `-e` whose text is not known, or a `-f` file, leaves no example; scripts that are all known are still run as one.
+- **`grep`.** `grep -e a -e "$x" f` and `grep -e a -f pats f` showed the lines of `a` alone; and `grep -v -e a -e b` the lines without `a`, where grep prints those with neither. They get no example now.
+- **`gawk`.** `gawk -e 'BEGIN{x=1}' -e '{print x}' f` ran the first `-e` as the whole program, with `f` as input; `-e`, `--source`, `-E` and `--exec` now leave no example.

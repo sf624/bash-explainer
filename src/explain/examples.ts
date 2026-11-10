@@ -221,10 +221,16 @@ export function titledExamples(cx: Explainer, examples: readonly Example[]): rea
   });
 }
 
-/** The scripts given to sed with -e/--expression, in order; undefined when there are none, or one is not plain text. */
-export function sedScripts(cx: Explainer): string[] | undefined {
-  const scripts = optionValues(cx, '-e').map((v) => v.text);
-  return scripts.length && scripts.every((t) => t !== undefined) ? scripts as string[] : undefined;
+/**
+ * The programs given to the current command through its option `expr` (sed `-e`, gawk `-e`/`--source`), in order, when
+ * every one of them is plain text and none comes from a file (the option `file`: `-f`). Undefined when one is not known,
+ * since the command runs all of them as one program: an example of the others alone would be wrong. An empty list: none
+ * is given by an option (the program is the operand).
+ */
+export function programsGiven(cx: Explainer, expr: string, file: string): string[] | undefined {
+  if (given(cx, file)) return undefined;
+  const texts = optionValues(cx, expr).map((v) => v.text);
+  return texts.every((t) => t !== undefined) ? texts as string[] : undefined;
 }
 
 /**
@@ -303,6 +309,8 @@ export function awkOptions(cx: Explainer): (AwkRunOptions & { vars: Record<strin
   const inv = awkInvocation(words);
   // Options awk has more of (`--posix`, `-W …`) do not change what the example shows.
   if (inv.unsupported && !inv.unsupported.startsWith('awk -')) return undefined;
+  // gawk's `-e`/`--source` (and `-E`/`--exec`) give the program: the operand is then a file, and several are one program.
+  if (inv.unsupported && /^awk (-[eE]|--(source|exec)\b)/.test(inv.unsupported)) return undefined;
   return { fs: inv.fs, vars: inv.vars, assigns: inv.assigns };
 }
 
