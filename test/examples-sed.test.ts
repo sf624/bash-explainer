@@ -239,6 +239,25 @@ describe('the sed stage of a pipeline example reads each -e script with the opti
   });
 });
 
+describe('the sed example of several scripts', () => {
+  const parser = createUnbashParser();
+  const examples = (line: string) => new Analyzer('en').explainLine(parser.parse(line), 0).examples.filter((x) => x.kind === 'sed' || x.kind === 'pipeline');
+
+  it('is not made when a script is not known: an -e that is not plain text, or a -f file', () => {
+    // (GNU sed: the scripts run as one, so the output is `Z a`, not the `b a` of the first script alone.)
+    assert.strictEqual(run('bash', ['-c', `x='s/b/Z/'; sed -e 's/a/b/' -e "$x"`], { input: 'a a\n' }).stdout.toString(), 'Z a\n');
+    for (const l of [`sed -e 's/a/b/' -e "$x" f`, `sed -e "$x" -e 's/a/b/' f`, `sed --expression='s/a/b/' --expression="$x" f`, `sed -e 's/a/b/' -f s.sed f`,
+      `sed -e 's/a/b/' --file=s.sed f`, `sed -f s.sed -e 's/a/b/' f`, `echo a a | sed -e 's/a/b/' -e "$x"`, `echo a a | sed -e 's/a/b/' -f s.sed`]) {
+      assert.deepStrictEqual(examples(l), [], l);
+    }
+  });
+
+  it('is made when every script is known', () => {
+    assert.strictEqual(examples(`sed -e 's/a/b/' -e 's/b/Z/' f`).length, 1);
+    assert.strictEqual(examples(`echo a a | sed -e 's/a/b/' -e 's/b/Z/'`).length, 1);
+  });
+});
+
 describe('an option that selects the regex flavour after an -e or -f script says it does not apply to it', () => {
   const parser = createUnbashParser();
   const option = (lang: 'en' | 'ja', line: string, label: string): string[] => {

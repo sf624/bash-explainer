@@ -13,6 +13,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- The example of `sed -e … -e "$x"` (or with `-f`), of `grep -e … -e "$x"` and of `gawk -e … -e …` no longer shows the output of one script or pattern alone; with a script or pattern that is not known, there is no example.
 - In `.py` files, Python's string escapes are read as Python reads them (`"\a"`, octal `"\012"`), and in a command string an escaped newline is what sh reads there (a newline in quotes, a line continuation after `\`). Before, `"\012"` was read as a NUL followed by `12`, and every escaped newline as `;`.
 
 ## 0.12.0
