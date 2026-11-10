@@ -31,7 +31,7 @@ const HAND: Row[] = [
   str('*'), str('a**'), str('(*FAIL)'), str('a|*'), str('a{2}{3}'),
   // Ranges of a set: a class at an end, an end below the start; the token of an escape in the message.
   str('[z-a]'), str('[\\w-z]'), str('[a-\\w]'), str('[a-\\d]'), str('[\\d-z]'), str('[\\x41-\\w]'), str('[\\x41-\\x40]'), str('[A-\\x20]'), str('[a-]'), str('[\\d-]'),
-  str('[a-'), str('[\\x41-'), str('[a-\\x7a]'), str('[\\x41&&b]'), str('[a\\'), str('[a-z]'), str('[\\x00-\\x7f]'), str('[--a]'), str('[a---]'),
+  str('[a-'), str('[\\x41-'), str('[a-\\x7a]'), str('[\\x41&&b]'), str('[a\\'), str('[a-z]'), str('[\\x00-\\x7f]'), str('[--a]'), str('[a---]'), str('[!--a]'),
   // Warnings of a set: a nested set (a POSIX class written as in grep), and the doubled operators of a set.
   str('(?x)(? :a)'), str('[[:alpha:]]'), str('[[:digit:]]+'), str('[^[:space:]]'), str('[[:alpha:]-z]'), str('[[a]'), str('[^[a]'), str('[[]'), str('[a&&b]'), str('[a||b]'), str('[a~~b]'),
   str('[a--b]'), str('[a&&]'), str('[&&a]'), str('[a&&&]'), str('[]a]'), str('[[]]'),
@@ -224,5 +224,8 @@ describe('the Python flavor of the regex reader: its refusals and warnings, with
       const [t] = readRegex(p, 'python', 'en', { tool: 'python', python: NO_PYTHON_FLAGS }).tokens;
       assert.deepStrictEqual([t.kind, t.explanation, t.start], ['error', '', 0], p);
     }
+    // (A lookbehind with a group whose contents have a hole: its width is not known, so it is not refused.)
+    const [behind] = readRegex(`(?<=(a${hole}))b`, 'python', 'en', { tool: 'python', python: NO_PYTHON_FLAGS }).tokens;
+    assert.strictEqual(behind.kind, 'block');
   });
 });

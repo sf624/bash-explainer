@@ -16,8 +16,8 @@ const MAX_GROUPS = 1073741823;
 /**
  * What a group of Python's `re` that opens at `start` is, as its parser reads what follows `(?` (`_parse`, with its tokenizer): a
  * token made already (a reference by name, `(?P=n)`; a comment; a refusal, the whole group; a hole of an f-string that decides it,
- * `stop`), a named group (`(?P<n>`) or a conditional (`(?(1)`, `(?(n)`) whose contents follow `end`; or undefined for what the
- * flavor's table reads (`(?:`, lookarounds, `(?>`, and the flags, read by `pythonFlagGroup`).
+ * `stop`), a named group (`(?P<n>`) or a conditional (`(?(1)`, `(?(n)`) whose contents follow `end`. What the flavor's table reads
+ * (`(?:`, lookarounds, `(?>`) and the flags (`pythonFlagGroup`) do not come here.
  */
 export type PythonHead =
   | { kind: 'token'; token: EmbeddedToken }
@@ -25,7 +25,7 @@ export type PythonHead =
   | { kind: 'named'; name: string; end: number }
   | { kind: 'conditional'; group?: number; name?: string; at: number; end: number };
 
-export function pythonGroupHead(st: State, start: number, reference: (group: number, name: string) => EmbeddedToken): PythonHead | undefined {
+export function pythonGroupHead(st: State, start: number, reference: (group: number, name: string) => EmbeddedToken): PythonHead {
   const { src } = st;
   const t = new Tokens(src);
   const refuse = (message: string): PythonHead => {
@@ -96,7 +96,6 @@ export function pythonGroupHead(st: State, start: number, reference: (group: num
     if (char === '<') {
       const next = t.get();
       if (next === undefined) throw t.error('unexpected end of pattern');
-      if (next === '=' || next === '!') return undefined;
       if ([...next].some(isHole)) return { kind: 'stop' };
       throw t.error(`unknown extension ?<${next}`, next.length + 2);
     }
@@ -118,7 +117,6 @@ export function pythonGroupHead(st: State, start: number, reference: (group: num
       lookbehind(group);
       return { kind: 'conditional', group, ...(/^[0-9]/.test(name) ? {} : { name }), at: t.tell() - name.length - 1, end: t.tell() };
     }
-    if (':=!>'.includes(char) || char === '-' || FLAG_LETTERS.has(char)) return undefined;
     throw t.error(`unknown extension ?${char}`, char.length + 1);
   } catch (e) {
     /* c8 ignore next */
@@ -227,10 +225,12 @@ export function pythonSetWarnings(src: string, start: number, bytes: boolean): s
       if (two[0] === '\\') escape(two);
       else if (two === '-') out.push(`Possible set difference at position ${t.tell() - 2}`);
     }
+    /* c8 ignore start */
   } catch (e) {
-    /* c8 ignore next */
+    // (The tokenizer refuses only a final `\`, and a set that holds one is refused before its warnings are read.)
     if (!(e instanceof Refusal)) throw e;
   }
+  /* c8 ignore stop */
   return out;
 }
 

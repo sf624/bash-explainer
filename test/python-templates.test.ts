@@ -115,6 +115,10 @@ describe('Python regex: the replacement on the line of `re.sub`', () => {
     assert.deepStrictEqual(texts(explainPy("import re\nre.sub(r'(?P<é>a)(?P<n>b)', r'\\g<n> \\1', s)\n", 1).items).slice(-3), [
       '\\g<n>: what the group `n` (group 2) matched (nothing where the group did not take part)', ': The text ` ` (a space), put in as it is',
       '\\1: what group 1 matched (nothing where the group did not take part)']);
+    // (Where a field of the pattern may add groups, a group by name is said by its name only.)
+    for (const [lang, said] of [['en', /^\\g<n>: what the group `n` matched/m], ['ja', /^\\g<n>: グループ `n`/m]] as const) {
+      assert.match(texts(explainPy("import re\nre.sub(rf'(?P<n>a){x}', r'\\g<n>', s)\n", 1, lang).items).join('\n'), said);
+    }
     // (A replacement with a field and no backslash is a template too, as the value may hold one.)
     assert.match(texts(explainPy("import re\nre.sub(r'a', f'{x}', s)\n", 1).items).join('\n'), /^f'\{x\}': The replacement of `re.sub`: it takes the place of each match\n\{x\}: The value of `\{x\}` goes into the replacement/m);
   });

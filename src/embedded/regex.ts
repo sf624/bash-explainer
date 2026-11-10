@@ -515,11 +515,11 @@ function branches(st: State, children: EmbeddedToken[]): number {
 }
 
 /**
- * The width of a group of a Python pattern read so far, or of the group a reference names (`\1`, `(?P=n)`): none for an open one, nor
- * for another construct (an error), which names no group (-1).
+ * The width of a group of a Python pattern read so far, or of the group a reference names (`\1`, `(?P=n)`, a token of the kind
+ * `variable`, which has its group): none for one whose contents have a hole.
  */
 function knownWidth(st: State, t: EmbeddedToken): Width | undefined {
-  return st.widths.get(t.kind === 'block' ? t : t.group ?? -1);
+  return st.widths.get(t.kind === 'block' ? t : t.group!);
 }
 
 /**

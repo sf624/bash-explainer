@@ -295,6 +295,7 @@ describe('Python regex: flags Python refuses with ValueError (#760)', () => {
     assert.deepStrictEqual(texts(ex.items).filter((t) => t.includes('ValueError')), [
       're.U: `re.U` (`re.UNICODE`): Unicode matching, which a str pattern has already. Python\'s `re` refuses these flags ("ASCII and UNICODE flags are incompatible"; `ValueError`)']);
     assert.deepStrictEqual(ex.examples, []);
+    assert.ok(texts(explainPy("import re\nre.compile('a', re.L)\n", 1, 'ja').items).some((t) => t.includes('。Python の `re` はこのフラグを受け付けない（"cannot use LOCALE flag with a str pattern"。`ValueError`）')));
     assert.deepStrictEqual(issues("import re\nre.compile('a', re.L)\n").map((i) => i.slice(1)), [['error', 1, 16, 20]]);
     assert.deepStrictEqual(issues("import re\nre.compile(rb'a', re.I | re.UNICODE)\n").map((i) => i.slice(1)), [['error', 1, 25, 35]]);
     // (Flags not known, or a str pattern with `re.A` alone, are none; `re.L` with bytes is one.)
