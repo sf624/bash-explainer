@@ -3,7 +3,7 @@ import { visible } from './ctlchars';
 import type { EmbeddedLang } from './embedded/types';
 import { HOLE_COUNT, holeChar, isHole } from './embedded/types';
 import { bracesMayWork, featureWorks, type Shell } from './shellfeatures';
-import type { SyntaxNode } from './syntax/tree';
+import { nameText, type SyntaxNode, wordBraces } from './syntax/tree';
 
 /** The characters `$'…'` turns a one-letter escape into. */
 const ANSI_ESCAPES: Record<string, string> = {
@@ -523,6 +523,19 @@ export function bracketsAcross(nodes: readonly SyntaxNode[]): SyntaxNode[] {
 
 /** A plain word or a number: no quotes, expansions or other parts. */
 export const isPlainWord = (n: SyntaxNode): boolean => n.type === 'word' || n.type === 'number';
+
+/** The text of an unquoted word (or concatenation of unquoted parts), where braces and globs take effect. */
+export function unquotedWord(a: SyntaxNode): string | undefined {
+  const plain = (x: SyntaxNode) => x.type === 'word' || x.type === 'number' || x.type === 'brace_expression';
+  // (Without the line continuations, which bash removes first: `a\<newline>b` is `ab`.)
+  if (plain(a) || (a.type === 'concatenation' && a.namedChildren.every(plain))) return nameText(a);
+  return undefined;
+}
+
+/** A word of plain text, braces included (`x{a,b}`): one read as its text where its braces do not expand (dash). */
+export function plainText(n: SyntaxNode): boolean {
+  return isPlainWord(n) || (unquotedWord(n) !== undefined && wordBraces(n).length > 0);
+}
 
 /**
  * The text a command receives for a word, and where each of its characters sits in the word's source: either a fixed

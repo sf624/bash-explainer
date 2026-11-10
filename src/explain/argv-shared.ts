@@ -8,7 +8,7 @@ import { OPTION_SECTIONS } from '../manual';
 import { globIntro, hasGlob } from '../embedded/glob';
 import type { EmbeddedLang } from '../embedded/types';
 import { prefixCharAt } from '../argv/words';
-import { isPlainWord, literalContent, sourceIndex } from '../staticword';
+import { isPlainWord, literalContent, plainText, sourceIndex } from '../staticword';
 import { type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { embedded } from './embedded';
@@ -16,7 +16,7 @@ import { sortTokens, sourcePos, graftExpansions } from './nodes';
 import { type StepKind } from '../semantics/words';
 import { elementsOf } from '../semantics/elements';
 import { globOff, wordAt } from './reads';
-import { braceWord, globChildren, globNotes, plainText, tilde, tildeNote, valueNote, word } from './words';
+import { braceWord, globChildren, globNotes, tilde, tildeNote, valueNote, word } from './words';
 
 /** The entry of a table of a spec for a word of the script (`set -o constructor` finds none). */
 export const own = <T>(table: Readonly<Record<string, T>> | undefined, word: string): T | undefined => (table && Object.hasOwn(table, word) ? table[word] : undefined);

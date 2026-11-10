@@ -1338,6 +1338,7 @@
  "grep --include=*.sh x",
  "grep --regexp=\"$p\" f",
  "grep --word-regexp \"$x\" f",
+ "grep -E \"a+\" f",
  "grep -E '^[A-Z]+$' \"$f\" | sort",
  "grep -E '^v([0-9]+)\\.([0-9]+)' tags.txt",
  "grep -E '^v[0-9]+' tags.txt",

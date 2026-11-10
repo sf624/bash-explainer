@@ -27,7 +27,7 @@ import { Analyzer, type Example, type Span, type Token } from '../../src/analyze
 import { type ArgRole, interpret } from '../../src/argv/interpret';
 import { lookupCommand } from '../../src/dict/aliases';
 import { isGlob } from '../../src/examples/shellwords';
-import { braceExpansion } from '../../src/explain/words';
+import { braceExpansion } from '../../src/semantics/brace';
 import { spanOf } from '../../src/noteanchors';
 import { resolveName } from '../../src/semantics/names';
 import { modelVersion, type StateModel } from '../../src/semantics/state';

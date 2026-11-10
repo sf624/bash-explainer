@@ -6,11 +6,11 @@ import { has as hasOption, operands, readBefore, restrictedRefusal, selectedMode
 import type { ArgRole, ArgvParse } from '../argv/interpret';
 import type { CommandSpec, ShellVariant } from '../argv/spec';
 import type { Basis } from '../basis';
-import { impliedOptions, lookupCommand, specName } from '../dict/aliases';
-import { customCommandSpec } from '../dict/custom';
+import { impliedOptions, specName } from '../dict/aliases';
 import type { ShellFlavor } from '../embedded/regex';
 import { isProgram } from '../namefacts';
 import { programSections } from '../refs';
+import { type CommandLookup, customSpecIn, hostSpecIn, NO_SPEC, shellVariantIn, specIn } from '../semantics/commandhead';
 import type { ExecEnv } from '../semantics/env';
 import { type NameResolution, resolveName } from '../semantics/names';
 import { attribute, option, type OptionState, refTarget, shoptIn } from '../semantics/state';
@@ -18,10 +18,9 @@ import { type ReadKnown, readAs, surelyRuns } from '../semantics/scriptstops';
 import { type SyntaxFault, syntaxFault } from '../semantics/syntaxerror';
 import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
 import { literalContent, staticWordValue, surelyHasSlash } from '../staticword';
-import { ancestor, fields, nameText, type SyntaxNode } from '../syntax/tree';
-import type { Explainer } from './context';
+import { ancestor, fields, type SyntaxNode } from '../syntax/tree';
+import type { CommandRead, Explainer } from './context';
 import { has, same } from './nodes';
-import { isBash } from '../shellfeatures';
 
 const SHOPT_NAMES = ['globstar', 'dotglob', 'nocaseglob', 'nocasematch', 'nullglob', 'failglob', 'extglob', 'lastpipe', 'expand_aliases'] as const;
 export type ShoptName = typeof SHOPT_NAMES[number];
@@ -34,9 +33,18 @@ export function resolve(cx: Explainer, name: string, at: SyntaxNode, opts: { quo
   return resolveName(cx.state, name, at, { shell: cx.shell, command: true, program: isProgram, ...opts });
 }
 
-/** The spec of a command a wrapper runs: from the customCommands setting, the host, or the dictionary. */
+/** The spec of a command a wrapper runs: from the customCommands setting, the host, or the dictionary (`specIn`). */
 export function specFor(cx: Explainer, name: string): CommandSpec | undefined {
-  return customCommandSpec(cx.opts.customCommands?.[name.split('/').pop()!]) ?? hostCommand(cx, name) ?? lookupCommand(name);
+  return specIn(lookupOf(cx), name);
+}
+
+/**
+ * What the lookup of a command's spec reads besides the model (src/semantics/commandhead.ts): the settings and the host
+ * of the document, its text, the bash release.
+ */
+export function lookupOf(cx: Explainer): CommandLookup {
+  const { customCommands, hostCommands, host, yqFlavor, bashVersion } = cx.opts;
+  return { customCommands, hostCommands, yq: { doc: cx.source, host, setting: yqFlavor }, bashVersion };
 }
 
 /**
@@ -48,20 +56,15 @@ export function specFor(cx: Explainer, name: string): CommandSpec | undefined {
  */
 export function programBasis(cx: Explainer, name: string, spec: CommandSpec | undefined): Basis | undefined {
   const base = name.slice(name.lastIndexOf('/') + 1);
-  if (!spec || spec.builtin || customCommandSpec(cx.opts.customCommands?.[base])) return undefined;
+  if (!spec || spec.builtin || customSpecIn(lookupOf(cx), base)) return undefined;
   if (hostCommand(cx, name) === spec) return { kind: 'spec', command: name };
   const command = specName(base);
   return programSections(command).length ? undefined : { kind: 'spec', command };
 }
 
-/**
- * The variant of the builtin spec `spec` for the shell options on at `n` (`CommandSpec.inShell`: `kill` in POSIX mode,
- * 6.11), or undefined. Only bash's: another shell's builtin is its own.
- */
+/** The variant of the builtin spec `spec` for the shell options on at `n` (`shellVariantIn`), or undefined. */
 export function shellVariant(cx: Explainer, n: SyntaxNode, spec: CommandSpec): ShellVariant | undefined {
-  if (!spec.inShell || isBash(cx.shell) !== 'yes') return undefined;
-  const st = cx.state.at(n).run;
-  return spec.inShell.find((v) => (v.set ?? []).every((o) => option(st, 'set', o) === 'on') && (v.shopt ?? []).every((o) => option(st, 'shopt', o) === 'on'));
+  return shellVariantIn(cx.state, n, spec);
 }
 
 /**
@@ -74,13 +77,11 @@ export function echoMayReadEscapes(cx: Explainer, n: SyntaxNode): boolean {
   return xpg !== 'default' && xpg !== 'off';
 }
 
-/** The spec of a command with none: no options, no operands. */
-export const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
+export { NO_SPEC };
 
 /** A command the host defines (a function of bats, which a path does not name). */
 export function hostCommand(cx: Explainer, name: string): CommandSpec | undefined {
-  const host = cx.opts.hostCommands;
-  return host && Object.hasOwn(host, name) ? host[name] : undefined;
+  return hostSpecIn(lookupOf(cx), name);
 }
 
 /**
@@ -138,14 +139,6 @@ export function ifsAt(cx: Explainer, n: SyntaxNode): string | undefined {
 /** Whether a glob step is off by `set -f`, may be (on some paths), or on. */
 export function globState(glob: ExpansionStep): 'off' | 'may' | 'on' {
   return glob.why === 'noglob' ? (glob.applies === false ? 'off' : 'may') : 'on';
-}
-
-/** The text of an unquoted word (or concatenation of unquoted parts), where braces and globs take effect. */
-export function unquotedWord(a: SyntaxNode): string | undefined {
-  const plain = (x: SyntaxNode) => x.type === 'word' || x.type === 'number' || x.type === 'brace_expression';
-  // (Without the line continuations, which bash removes first: `a\<newline>b` is `ab`.)
-  if (plain(a) || (a.type === 'concatenation' && a.namedChildren.every(plain))) return nameText(a);
-  return undefined;
 }
 
 /** Whether `name` surely has the integer attribute where `n` runs (a nameref is followed): bash does arithmetic on what it is given. */
@@ -226,7 +219,12 @@ export function inArithmetic(n: SyntaxNode): boolean {
 
 /** Whether the current command is given the option `names` name, written in any of its forms (src/argv/query.ts). */
 export function given(cx: Explainer, ...names: string[]): boolean {
-  return hasOption(cx.command!.parse, ...names);
+  return givenIn(cx.command!, ...names);
+}
+
+/** Whether the command `c` is given the option `names` name, written in any of its forms (src/argv/query.ts). */
+export function givenIn(c: CommandRead, ...names: string[]): boolean {
+  return hasOption(c.parse, ...names);
 }
 
 /**
@@ -245,7 +243,12 @@ export function optionValues(cx: Explainer, ...names: string[]): { text?: string
  * given before it count (`sed -e 's/a+/x/' -E` reads a BRE).
  */
 export function regexFlavor(cx: Explainer, word?: number): ShellFlavor | 'fixed' {
-  const { cmd, parse, spec } = cx.command!;
+  return regexFlavorOf(cx.command!, word);
+}
+
+/** The regex dialect of the command `c`, for the text in word `word` (see `regexFlavor`). */
+export function regexFlavorOf(c: CommandRead, word?: number): ShellFlavor | 'fixed' {
+  const { cmd, parse, spec } = c;
   const implied = impliedOptions(cmd, spec).map((o) => o.selects);
   const selected = new Set<string | undefined>([...selectedModes(parse, word), ...implied]);
   return selected.has('pcre') ? 'pcre' : selected.has('fixed') ? 'fixed' : selected.has('ere') ? 'ere' : 'bre';
@@ -266,16 +269,17 @@ export function notForEarlier(cx: Explainer, parse: ArgvParse, word: number, rol
     ` (not for the value of ${flags} before it: \`${program}\` reads that value as soon as it reads its option, with only the options given before)`);
 }
 
-/** How tr uses the set in `a`: its position among the sets (the operands) and the -d/-s options. */
-export function trContext(cx: Explainer, a: SyntaxNode): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[]; complement: boolean; truncate: boolean } {
-  const { nodes, parse } = cx.command!;
+/** How tr (the command `c`) uses the set in `a`: its position among the sets (the operands) and the -d/-s options. */
+export function trContext(c: CommandRead, a: SyntaxNode): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[]; complement: boolean; truncate: boolean } {
+  const { nodes, parse } = c;
+  const given = (...names: string[]): boolean => givenIn(c, ...names);
   const sets = operands(parse).map(({ word }) => nodes[word]);
   const idx = sets.findIndex((w) => same(w, a));
   const lits = sets.map((w) => literalContent(w)?.text ?? w.text);
   // (`-c` complements the first string only: with `-ds`, the string to squeeze is read as it is.)
-  const complement = given(cx, '-c');
-  const truncate = given(cx, '-t');
-  if (given(cx, '-d')) return { role: idx === 0 ? 'delete' : 'squeeze', sets: lits, complement: complement && idx === 0, truncate };
-  if (given(cx, '-s') && sets.length === 1) return { role: 'squeeze', sets: lits, complement, truncate };
+  const complement = given('-c');
+  const truncate = given('-t');
+  if (given('-d')) return { role: idx === 0 ? 'delete' : 'squeeze', sets: lits, complement: complement && idx === 0, truncate };
+  if (given('-s') && sets.length === 1) return { role: 'squeeze', sets: lits, complement, truncate };
   return { role: idx === 0 ? 'from' : 'to', sets: lits, complement, truncate };
 }

@@ -12,7 +12,6 @@
     {"file":"src/examples/pipeline.ts","fn":"sourceOutput","kind":"option-literal","count":2,"to":"commandRead","reason":"the options of `echo` and `printf` (`-n`), by text (also M6 of sources.md)"},
     {"file":"src/examples/textfilters.ts","fn":"parseWords","kind":"interpret-call","count":1,"to":"commandRead","reason":"the shared interpret call of the text-filter simulators"},
     {"file":"src/examples/textfilters.ts","fn":"perFile","kind":"option-literal","count":4,"to":"commandRead","reason":"`grep`'s `-q` and `-v`, by text"},
-    {"file":"src/explain/argv.ts","fn":"readArgs","kind":"interpret-call","count":1,"to":"commandRead","reason":"the main reading of a command's words for its explanation (through reads.ts)"},
     {"file":"src/explain/argv.ts","fn":"ownWords","kind":"interpret-call","count":1,"to":"commandRead","reason":"a second reading of the words of a command that runs another"},
     {"file":"src/explain/argv.ts","fn":"findExpression","kind":"interpret-call","count":2,"to":"commandRead","reason":"a re-reading of the words of a `find` expression"},
     {"file":"src/explain/argv.ts","fn":"findExpression","kind":"option-regex","count":1,"to":"commandRead","reason":"a re-reading of the words of a `find` expression"},

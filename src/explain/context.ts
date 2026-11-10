@@ -29,7 +29,14 @@ import { pushAll } from '../lists';
  * embedded languages read; and whether the shell reads the words again (`rereads`, `eval`: set by the rendering of
  * the words, while it reads them); and the words an option replaces with each path or input line before it runs a command (`placeholders`, find's `{}`, xargs's `-I%`: how).
  */
-export interface CommandContext { cmd: string; args: SyntaxNode[]; parse: ArgvParse; nodes: SyntaxNode[]; spec: CommandSpec; rereads?: boolean; placeholders?: Map<SyntaxNode, Replaced> }
+/**
+ * A command whose words are read, as the readers of the languages of its words see it (src/explain/embedded.ts): its name
+ * as the interpreter read it (`cmd`), the parse of its words `nodes`, and the spec.
+ */
+export interface CommandRead { cmd: string; parse: ArgvParse; nodes: SyntaxNode[]; spec: CommandSpec }
+
+/** The command whose words are explained (`Explainer.command`): its reading, and the words of this command (`args`). */
+export interface CommandContext extends CommandRead { args: SyntaxNode[]; rereads?: boolean; placeholders?: Map<SyntaxNode, Replaced> }
 
 /** A key of a memo kept for one line (`Explainer.memo`); the code that reads the memo makes its key. */
 export interface MemoKey<V> { readonly name: string; readonly value?: V }
@@ -162,6 +169,15 @@ export interface Explainer {
   evidenceAt(n: SyntaxNode): ReadKnown | undefined;
   /** Whether the shell gets to the text at `n` (`reachedAt`): not after a sure stop, nor in a string run by a command it does not get to. */
   reachedAt(n: SyntaxNode): boolean;
+  /**
+   * The document's part of `evidenceAt` and `reachedAt` (docs/design/known-values.md, 3.1): `readAs` (or `hostReadAs`) and
+   * `stopAt` at `n`, with the document's `script`, `host` and `stopsFrom`, whichever line asks.
+   */
+  documentEvidenceAt(n: SyntaxNode): ReadKnown | undefined;
+  documentStopAt(n: SyntaxNode): Stop | undefined;
+  /** The line's part: what the flags this line sets for itself (`unread`, `unsure`, `sometimes`; `unreached`) make of the document's. */
+  lineEvidence(known: ReadKnown | undefined): ReadKnown | undefined;
+  lineReached(reached: boolean): boolean;
   /** The strongest stop before the text at `n` (`stopAt`), and of the command that runs its string: a string run where a shell may not get to, or that discards a failure of this `fault`, counts as after a `may` stop. */
   stopAt(n: SyntaxNode, fault?: Fault): Stop | undefined;
   /** A note about a range of the line (a token's): its text, recorded with its data and its place. */
@@ -389,8 +405,15 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   evidenceAt(n: SyntaxNode): ReadKnown | undefined {
+    return this.opts.unread ? undefined : this.lineEvidence(this.documentEvidenceAt(n));
+  }
+
+  documentEvidenceAt(n: SyntaxNode): ReadKnown | undefined {
+    return this.opts.host ? hostReadAs(this.tree, n.startIndex, this.opts.stopsFrom, this.shell) : readAs(this.tree, n.startIndex, this.opts.script, this.state);
+  }
+
+  lineEvidence(known: ReadKnown | undefined): ReadKnown | undefined {
     if (this.opts.unread) return undefined;
-    const known = this.opts.host ? hostReadAs(this.tree, n.startIndex, this.opts.stopsFrom, this.shell) : readAs(this.tree, n.startIndex, this.opts.script, this.state);
     return known && (this.opts.unsure || this.opts.sometimes) ? 'unsure' : known;
   }
 
@@ -398,9 +421,17 @@ export class LineExplainer implements Explainer, LineOutput {
     return this.stopAt(n) !== 'sure';
   }
 
+  documentStopAt(n: SyntaxNode): Stop | undefined {
+    return stopAt(this.tree, n.startIndex, this.opts.stopsFrom, this.opts.host ? undefined : this.state, this.shell);
+  }
+
+  lineReached(reached: boolean): boolean {
+    return !this.opts.unreached && reached;
+  }
+
   stopAt(n: SyntaxNode, fault?: Fault): Stop | undefined {
     if (this.opts.unreached) return 'sure';
-    return stopAt(this.tree, n.startIndex, this.opts.stopsFrom, this.opts.host ? undefined : this.state, this.shell) ?? (this.opts.sometimes || keptQuiet(this.opts.quiet, fault) ? 'may' : undefined);
+    return this.documentStopAt(n) ?? (this.opts.sometimes || keptQuiet(this.opts.quiet, fault) ? 'may' : undefined);
   }
 
   say(f: Fact, at?: SyntaxNode | readonly SyntaxNode[]): string[] {

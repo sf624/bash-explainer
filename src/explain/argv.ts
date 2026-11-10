@@ -31,10 +31,10 @@ import { testExample } from './examples';
 import { nested, sortTokens } from './nodes';
 import { markPlaceholders, placeholderWords } from './placeholders';
 import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
+import { type ArgsReading, soleRead } from '../semantics/commandread';
 import { NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, specFor } from './reads';
 import { findRefusal } from './find-refusal';
 import { eachText, withReadings } from './operand-texts';
-import { soleRead } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
 import { word } from './words';
@@ -45,21 +45,12 @@ import { declarationOption, endOfOptions, optionToken, valueToken } from './argv
 import { fieldsToken, operandToken } from './argv-operands';
 
 /**
- * Explain the argument words of a command: the argument interpreter (src/argv/interpret.ts) reads them
- * with the command's spec, and each word's role becomes a token.
+ * Explain the argument words of a command, as the model reads them (`read`: src/semantics/commandread.ts, where the
+ * argument interpreter, src/argv/interpret.ts, gives each word a role): each word's role becomes a token.
  */
-export function readArgs(cx: Explainer, known: CommandSpec | undefined, args: SyntaxNode[], cmdName: string, isFn: boolean | 'maybe' = false): { tokens: Token[]; parse: ArgvParse } {
-  // (A function's words are read with no spec: its options are unknown, and its operands are `$1`, `$2`….)
-  const spec = known && !isFn ? known : NO_SPEC;
-  const lookup = (name: string): CommandSpec | undefined => specFor(cx, name);
-  let parse = interpret(spec, args.map(argWordIn(cx.state)), { name: cmdName, lookup });
-  if (args.length) {
-    const envs = new Map<ArgvParse, ExecEnv>();
-    for (const [w, env] of slotEnvs(cx.state.env(args[0].parent!), parse, spec, args, cx.state.shell, lookup, undefined, envs)) cx.slotEnvs.set(w, env);
-    // (`POSIXLY_CORRECT=1 /bin/echo --version`: a word the program reads as an option only alone is text.)
-    parse = soleRead(cx, parse, envs, args[0].parent!);
-  }
-  return { tokens: render(cx, parse, spec, args, args, isFn), parse };
+export function readArgs(cx: Explainer, read: ArgsReading, args: SyntaxNode[], isFn: boolean | 'maybe' = false): { tokens: Token[]; parse: ArgvParse } {
+  for (const [w, env] of read.envs) cx.slotEnvs.set(w, env);
+  return { tokens: render(cx, read.parse, read.spec, args, args, isFn), parse: read.parse };
 }
 
 /**
@@ -220,7 +211,7 @@ function ownWords(cx: Explainer, respec: CommandSpec | undefined, name: string, 
     : { parse: refusal ? { ...parse, refusal } : parse, spec: spec ?? NO_SPEC, nodes };
   const envs = new Map<ArgvParse, ExecEnv>();
   slotEnvs(cx.slotEnvs.get(first)!, read.parse, read.spec, read.nodes, cx.state.shell, lookup, undefined, envs);
-  return render(cx, soleRead(cx, read.parse, envs, first.parent!), read.spec, read.nodes, args);
+  return render(cx, soleRead(cx.state, read.parse, envs, first.parent!), read.spec, read.nodes, args);
 }
 
 /** Words forming a command run by another command (sudo, xargs, find -exec…): the command, with its words read by its spec. */

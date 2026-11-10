@@ -15,7 +15,7 @@ import { fact } from '../messages';
 import { nodeSections } from '../refs';
 import { attribute } from '../semantics/state';
 import { readDeclarationWords, unsetEndsSpecial } from '../semantics/vars';
-import { isPlainWord, staticWordValue } from '../staticword';
+import { isPlainWord, plainText, staticWordValue } from '../staticword';
 import { field, fields, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { assignment } from './assignments';
 import type { Explainer } from './context';
@@ -25,7 +25,7 @@ import { fieldsIn } from '../semantics/argwords';
 import { arrayKind, shoptAt, wordAt } from './reads';
 import { eachText, fieldsText, functionArgs, listed, numbered, readingsParts, SHIFTS } from './operand-texts';
 import { inSubshell } from './where';
-import { elementWord, plainText, word } from './words';
+import { elementWord, word } from './words';
 import { dash, expanded, optionRefs, own, positional, wordParts } from './argv-shared';
 
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
