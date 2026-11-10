@@ -352,6 +352,9 @@
   {
     "manual": "3.7.1",
     "snippet": "x=1; x=2 y=$x; @PROBE:a@ \"$y\"; x=3 @PROBE:b@ \"$x\"",
+    "origins": {
+      "b": "x=2"
+    },
     "facts": {
       "a": [
         [
@@ -370,6 +373,12 @@
     "id": "declare-export-readonly",
     "manual": "4.2",
     "snippet": "a=1; declare a=5 b=$a; @PROBE:a@ \"$b\"; @PROBE:b@ \"$a\"; export c=7; readonly d=8; @PROBE:c@ \"$c\"; @PROBE:d@ \"$d\"",
+    "origins": {
+      "a": null,
+      "b": "a=5",
+      "c": "c=7",
+      "d": "d=8"
+    },
     "facts": {
       "a": [
         [
@@ -451,6 +460,10 @@
     "id": "local-shadow",
     "manual": "3.3",
     "snippet": "x=1; f() { local x=2; @PROBE:a@ \"$x\"; }; f; @PROBE:b@ \"$x\"",
+    "origins": {
+      "a": "x=2",
+      "b": "x=1"
+    },
     "facts": {
       "a": [
         [
@@ -468,6 +481,10 @@
   {
     "manual": "3.3",
     "snippet": "f() { @PROBE:a@ \"$x\"; }; x=1; x=2 f; @PROBE:b@ \"$x\"",
+    "origins": {
+      "a": "x=2",
+      "b": "x=1"
+    },
     "facts": {
       "a": [
         [
@@ -529,6 +546,10 @@
     "none": {
       "a": "`x` changes in the loop"
     },
+    "origins": {
+      "a": null,
+      "b": "x=2"
+    },
     "facts": {
       "a": [
         [
@@ -541,6 +562,53 @@
       "b": [
         [
           "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "value-origins",
+    "manual": "3.4",
+    "snippet": "if [ -n \"$HOME\" ]; then p=a; else p=a; fi; @PROBE:a@ \"$p\"; q=b; q+=c; @PROBE:b@ \"$q\"; readonly R=d; @PROBE:c@ \"$R\"; declare -r s=e; @PROBE:d@ \"$s\"; t=f; export t; @PROBE:e@ \"$t\"; g() { @PROBE:f@ \"$u\"; }; u=h; g",
+    "note": "the origin of a value is one assignment word on every path: two words of the same text are none, and so is `+=`",
+    "origins": {
+      "a": null,
+      "b": null,
+      "c": "R=d",
+      "d": "s=e",
+      "e": "t=f",
+      "f": "u=h"
+    },
+    "facts": {
+      "a": [
+        [
+          "a"
+        ]
+      ],
+      "b": [
+        [
+          "bc"
+        ]
+      ],
+      "c": [
+        [
+          "d"
+        ]
+      ],
+      "d": [
+        [
+          "e"
+        ]
+      ],
+      "e": [
+        [
+          "f"
+        ]
+      ],
+      "f": [
+        [
+          "h"
         ]
       ],
       "status": 0
@@ -607,6 +675,12 @@
   {
     "manual": "3.2.4.3",
     "snippet": "x=1; (x=2; @PROBE:a@ \"$x\"); @PROBE:b@ \"$x\"; echo | @PROBE:c@ \"$x\"; y=$(@PROBE:d@ \"$x\")",
+    "origins": {
+      "a": "x=2",
+      "b": "x=1",
+      "c": "x=1",
+      "d": "x=1"
+    },
     "facts": {
       "a": [
         [
@@ -1169,6 +1243,13 @@
   {
     "manual": "4.1",
     "snippet": "a=1; a=2 export a; @PROBE:a@ \"$a\"; b=1; c=1; b=2 c=3 export b; @PROBE:b@ \"$b\"; @PROBE:c@ \"$c\"; d=1; d=2 e=$d export e; @PROBE:d@ \"$d\"; @PROBE:e@ \"$e\"",
+    "origins": {
+      "a": "a=2",
+      "b": "b=2",
+      "c": "c=1",
+      "d": "d=1",
+      "e": null
+    },
     "facts": {
       "a": [
         [

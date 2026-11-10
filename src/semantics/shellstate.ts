@@ -34,8 +34,10 @@ export interface VariableState {
   /** Its value, when it is a scalar whose text is known here (for a nameref, the name it refers to). */
   readonly value?: string;
   /**
-   * When the value is not static text, the value word of the plain assignment (`x=$y`, `declare x=$y`) that gave it, on
-   * every path to here: src/semantics/words.ts expands it where it ran.
+   * The value word of the plain assignment (`x=a`, `x=$y`, `declare x=$y`, `readonly X=a`) that gave it, on every path to
+   * here (a merge keeps it only when both paths have the same word). Where the value is not static text,
+   * src/semantics/words.ts expands it where it ran; the word model and src/semantics/shvalues.ts read `value` first.
+   * `valueOrigin` (src/semantics/values.ts) names it as the text an expansion copies.
    */
   readonly source?: SyntaxNode;
   /**
@@ -618,7 +620,7 @@ export function sameState(a: ShellState, b: ShellState): boolean {
     return k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state && x.attrs[l].environment === y.attrs[l]?.environment);
   };
   return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && !a.opaque === !b.opaque && a.errexitWhy === b.errexitWhy && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
-    && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && attrs(x, y)))
+    && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && x.source === y.source && !x.kept === !y.kept && attrs(x, y)))
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
     && NameMap.same(a.disabled, b.disabled, (x, y) => x === y || x.state === y.state)

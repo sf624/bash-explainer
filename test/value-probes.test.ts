@@ -6,8 +6,10 @@
 // the word probes check). A value given where bash did not run the marker is wrong too. Where the model gives none,
 // the row lists the marker in `none`, with the reason; an entry the model gives a value for fails, so that the list
 // stays true. A row with a `shell` is about a script of dash or sh: the model is of that shell, and its runs are
-// dash's, or for sh both dash's and `bash --posix`'s (src/semantics/shvalues.ts). The test reads the table only: it
-// needs no bash.
+// dash's, or for sh both dash's and `bash --posix`'s (src/semantics/shvalues.ts). A row's `origins` pins the assignment
+// whose text each of its markers copies (`valueOrigin`: `p=a`, or null for none); its text is the value, which bash's
+// runs are compared with as above (test/value-origin.test.ts checks that it comes from that assignment). The test reads
+// the table only: it needs no bash.
 import * as assert from 'assert';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
@@ -16,11 +18,11 @@ import { argWord } from '../src/argv/words';
 import { lookupCommand } from '../src/dict/aliases';
 import { slotEnvs } from '../src/semantics/env';
 import { shellState, type StateModel } from '../src/semantics/state';
-import { expansionValue } from '../src/semantics/values';
+import { expansionValue, valueOrigin } from '../src/semantics/values';
 import { wordFields } from '../src/semantics/words';
 import { BOX, FILES, instrument, PROBE_ENV, readProbeTable } from './support/probe';
 
-interface ValueRow { manual: string; snippet: string; shell?: 'dash' | 'sh'; requires?: string; none?: Record<string, string>; glob?: string[]; facts: Record<string, unknown> }
+interface ValueRow { manual: string; snippet: string; shell?: 'dash' | 'sh'; requires?: string; none?: Record<string, string>; glob?: string[]; origins?: Record<string, string | null>; facts: Record<string, unknown> }
 
 /** The runs of a marker in each shell of the row: bash's, dash's, or for sh dash's and `bash --posix`'s. */
 function runsOf(row: ValueRow, id: string): { shell: string; runs: string[][] }[] {
@@ -78,9 +80,11 @@ describe('the values of expansions against bash (probes/values.json)', () => {
       const state = shellState(tree, row.shell ?? 'bash', { read: 'script' });
       const found = new Map<string, string>();
       const globbed: string[] = [];
+      const origins: Record<string, string | null> = {};
       for (const c of markers(tree.root, state)) {
         const [id, ...args] = fields(c, 'argument');
         assert.strictEqual(args.length, 1, `${id.text} has one word`);
+        if (row.origins && id.text in row.origins) origins[id.text] = valueOrigin(expansionIn(args[0]), state)?.parent!.text ?? null;
         const v = expansionValue(expansionIn(args[0]), state);
         if (!v) {
           found.set(id.text, 'none');
@@ -99,7 +103,7 @@ describe('the values of expansions against bash (probes/values.json)', () => {
       const none = row.none ?? {};
       const wrong = [...found].filter(([k, v]) => v !== 'none' || !(k in none)).map(([k, v]) => `${k}: ${v}`);
       const stale = Object.keys(none).filter((k) => found.get(k) !== 'none');
-      assert.deepStrictEqual({ wrong, stale, glob: globbed }, { wrong: [], stale: [], glob: row.glob ?? [] });
+      assert.deepStrictEqual({ wrong, stale, glob: globbed, origins }, { wrong: [], stale: [], glob: row.glob ?? [], origins: row.origins ?? {} });
     });
   }
 });

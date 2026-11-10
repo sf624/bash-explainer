@@ -1,7 +1,8 @@
 // The value of a parameter expansion where it runs, as Meaning shows it (docs/design/expansion-values.md): what the
 // script's own assignments give there, only where the model is sure of it. The words are evaluated by the word model
 // (src/semantics/words.ts, `trustedPart`), with the values of the variables the decisions trust (src/semantics/trust.ts).
-import { ancestor, assignmentsOnly, field, fields, type SyntaxNode } from '../syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
+import { staticWordText } from '../staticword';
 import { shellValueRefused, valueShell } from './shvalues';
 import { inAnotherShell, type StateModel } from './state';
 import { mayStopAround } from './stops';
@@ -55,12 +56,64 @@ export function expansionValue(part: SyntaxNode, model: StateModel, around = tru
 }
 
 /**
- * The expansion the word `word` is made of alone, where it is a plain copy of a variable: `$x`, `${x}`, `"$x"` or `"${x}"`
- * (docs/design/known-values.md, 2). Not another form (`${x%.*}`, `${x:-d}`, `$1`), nor one inside a larger word.
+ * The name of the variable the expansion `part` copies as it is: `$x` or `${x}` (docs/design/known-values.md, 2). Not
+ * another form (`${x%.*}`, `${x:-d}`), a positional or special parameter (`$1`, `$@`), nor a name split by a line
+ * continuation.
  */
-function plainCopy(word: SyntaxNode): SyntaxNode | undefined {
+export function copiedName(part: SyntaxNode): string | undefined {
+  if (part.type === 'simple_expansion' && /^\$[A-Za-z_]\w*$/.test(part.text)) return part.text.slice(1);
+  return part.type === 'expansion' && /^\$\{[A-Za-z_]\w*\}$/.test(part.text) ? part.text.slice(2, -1) : undefined;
+}
+
+/**
+ * The expansion the word `word` is made of alone, where it is a plain copy of a variable: `$x`, `${x}`, `"$x"` or `"${x}"`
+ * (`copiedName`). Not one inside a larger word.
+ */
+export function plainCopy(word: SyntaxNode): SyntaxNode | undefined {
   const inner = word.type === 'string' && word.namedChildren.length === 1 && word.text === `"${word.namedChildren[0].text}"` ? word.namedChildren[0] : word;
-  return (inner.type === 'simple_expansion' && /^\$[A-Za-z_]\w*$/.test(inner.text)) || (inner.type === 'expansion' && /^\$\{[A-Za-z_]\w*\}$/.test(inner.text)) ? inner : undefined;
+  return copiedName(inner) !== undefined ? inner : undefined;
+}
+
+/**
+ * The assignment word whose text the expansion `part` copies (docs/design/known-values.md, 6.1): the value word of the
+ * one plain assignment that gave the variable its value on every path to `part` (`VariableState.source`: `x='^a'`,
+ * `local x=…`, `declare -r x=…`, `readonly X=…`, `export x=…`), where `part` is a plain copy (`copiedName`),
+ * `expansionValue` gives its value, and the word's static text is that value. None after two paths with two words
+ * (`if c; then p=a; else p=a; fi`), after `p+=b`, or where the value is made of other words (`p=$q`). Which assignment
+ * reaches `part` is the walk's, not the text's order: `f() { grep -E "$re" file; }; re='^a'; f` copies `'^a'`.
+ */
+export function valueOrigin(part: SyntaxNode, model: StateModel): SyntaxNode | undefined {
+  const name = copiedName(part);
+  const value = name === undefined ? undefined : expansionValue(part, model);
+  if (!value) return undefined;
+  // (The state the word model read the variable in, as `expansionValue` did: `part` is in a word, and the variable is
+  // in the state, since one the script never set has no value there.)
+  const source = wordMeaning(part, model)!.state.variables.get(name!)!.source;
+  const text = source && staticWordText(source, model.shell)?.text;
+  return text === value.text ? source : undefined;
+}
+
+const usesKept = new WeakMap<StateModel, ReadonlyMap<SyntaxNode, readonly SyntaxNode[]>>();
+
+/**
+ * The uses of each assignment word (docs/design/known-values.md, 6.2 and 7): the expansions of the model's tree whose
+ * `valueOrigin` it is, in the order of the text. One pass over the tree, kept by the model. Not those of a string
+ * another shell, or `eval`, runs: they are in a tree of their own.
+ */
+export function valueUses(model: StateModel): ReadonlyMap<SyntaxNode, readonly SyntaxNode[]> {
+  let uses = usesKept.get(model);
+  if (!uses) {
+    const index = new Map<SyntaxNode, SyntaxNode[]>();
+    for (const part of descendants(model.root, ['simple_expansion', 'expansion'])) {
+      const origin = valueOrigin(part, model);
+      if (!origin) continue;
+      const list = index.get(origin);
+      if (list) list.push(part);
+      else index.set(origin, [part]);
+    }
+    usesKept.set(model, (uses = index));
+  }
+  return uses;
 }
 
 /**

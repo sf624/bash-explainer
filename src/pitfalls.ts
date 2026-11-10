@@ -11,6 +11,7 @@ import { type ExecEnv, readAs, runsString, slotEnvs } from './semantics/env';
 import { commandName as staticName, plainName } from './semantics/effects';
 import { isFunction, resolveName, resolveRun } from './semantics/names';
 import { option, type StateModel } from './semantics/state';
+import { copiedName, expansionValue, plainCopy } from './semantics/values';
 import { ancestor, braceAsArgument, childrenOnRows, descendants, field, fields, GLUED_BRACE, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, operatorFits, testFails, writtenAsBracket } from './testexpr';
@@ -382,20 +383,6 @@ function signalName(v: string | undefined): keyof typeof STOPS | undefined {
 }
 
 /**
- * The variable a word is, when it is all the word holds (`$x`, `"$x"`, `${x}`, `"${x}"`): a named variable, not a
- * positional or special parameter, an element, or an expansion with an operator.
- */
-function wholeVariable(w: SyntaxNode): { name: string; text: string } | undefined {
-  const e = w.type === 'string' && w.namedChildren.length === 1 && w.text === `"${w.namedChildren[0].text}"` ? w.namedChildren[0] : w;
-  if (e.type === 'simple_expansion') {
-    const v = e.namedChildren[0];
-    return v?.type === 'variable_name' && /^[A-Za-z_]\w*$/.test(v.text) ? { name: v.text, text: e.text } : undefined;
-  }
-  const p = e.type === 'expansion' ? parseExpansion(e.text) : undefined;
-  return p && !p.op && !p.prefix && p.subscript === undefined && /^[A-Za-z_]\w*$/.test(p.name) ? { name: p.name, text: e.text } : undefined;
-}
-
-/**
  * The rewrite that has grep read its patterns as fixed strings (`grep "$x" f` → `grep -F "$x" f`), shown as the text
  * from the command's name to the pattern `w` or the last word it changes: `-F` after the name; in place of each option
  * given that selects another mode, which `-F` would conflict with ("conflicting matchers specified"): `-E` → `-F`,
@@ -734,9 +721,11 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
       const given = givenOptions(r.parse).map(({ role }) => role);
       for (const word of regexWords(r.parse, implied)) {
         const w = r.run.args[word];
-        const v = wholeVariable(w);
-        const known = v && model.trusts(v.name) ? model.at(w).run.variables.get(v.name)?.value : undefined;
-        if (!v || PATTERN_NAME.test(v.name) || (known !== undefined && REGEX_SPECIAL.test(known))) continue;
+        const part = plainCopy(w);
+        const name = part && copiedName(part)!;
+        // (The value Meaning shows, where the model is sure of it: src/semantics/values.ts.)
+        const known = part && expansionValue(part, model)?.text;
+        if (!part || PATTERN_NAME.test(name!) || (known !== undefined && REGEX_SPECIAL.test(known))) continue;
         const others = otherPatterns(r, word);
         // (Where a word whose text is not known may be an option, the note says what to do, with no code: `-F` conflicts
         // with an option that selects another mode, and goes in its place.)
@@ -751,8 +740,8 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
             '`-F`, which would look for the value as it is, applies to every pattern: the others would be read as plain text too')
           : s(`値をそのまま探すには ${fixed}、意図に合わせて \`-w\`（単語全体）か \`-x\`（行全体）も付けます`,
             `To look for the value as it is, ${fixed}, with \`-w\` (whole words) or \`-x\` (whole lines) as meant`);
-        add('pattern-from-variable', w, `\`${r.name}\` は \`${v.text}\` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（\`bob\` は \`bobby\` にも一致）、${REGEX_VALUE_SPECIAL.ja}持ちます。${advice}`,
-          `\`${r.name}\` reads the value of \`${v.text}\` as a regular expression, not as plain text: it matches inside longer text too (\`bob\` matches \`bobby\`), and ${REGEX_VALUE_SPECIAL.en}. ${advice}`, fix ? [fix] : []);
+        add('pattern-from-variable', w, `\`${r.name}\` は \`${part.text}\` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（\`bob\` は \`bobby\` にも一致）、${REGEX_VALUE_SPECIAL.ja}持ちます。${advice}`,
+          `\`${r.name}\` reads the value of \`${part.text}\` as a regular expression, not as plain text: it matches inside longer text too (\`bob\` matches \`bobby\`), and ${REGEX_VALUE_SPECIAL.en}. ${advice}`, fix ? [fix] : []);
         return;
       }
     }

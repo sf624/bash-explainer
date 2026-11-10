@@ -497,7 +497,8 @@ export class WalkBuiltins {
     // (A name the script has not set may come from the environment: by custom, those are in capitals.)
     const set: Tri = prev ? prev.set : environmentHas(name) !== 'unlikely' ? 'unknown' : 'off';
     // (One the script has not set keeps a value from the environment: `export n`, `declare n` outside a function.)
-    st = this.w.put(st, 'variables', name, { declared: 'on', set, attrs, value: prev?.value, at: n, ...(!prev || prev.kept ? { kept: true as const } : {}) });
+    // (Its value, and the word that gave it, stay: `x=a; export x` still copies `a`, `valueOrigin`.)
+    st = this.w.put(st, 'variables', name, { declared: 'on', set, attrs, value: prev?.value, ...(prev?.source ? { source: prev.source } : {}), at: n, ...(!prev || prev.kept ? { kept: true as const } : {}) });
     // (A variable readonly before the declaration keeps its value; `readonly r=1` sets it.)
     if (!o.assign || prev?.attrs.r?.state === 'on') return st;
     // (The state of an assignment in a declaration has the attributes the declaration gives, and the values from before
@@ -723,8 +724,9 @@ export class WalkBuiltins {
     if (text !== undefined && is('u')) text = text.toUpperCase();
     // An empty nameref (`declare -n r; r=x`) takes the name as its value; bash refuses one that is no name.
     if (is('n') && !nameref && (text === undefined || !NAME.test(text))) return st;
-    // (An integer or a case attribute changes the value: then the word alone does not give it.)
-    const source = text === undefined && !how.append && !['i', 'l', 'u'].some(is) ? how.source : undefined;
+    // (The value word of a plain assignment, static text too: `valueOrigin` (src/semantics/values.ts) names it. Not with
+    // `+=`, nor an integer or a case attribute, which change the value: then the word alone does not give it.)
+    const source = !how.append && !['i', 'l', 'u'].some(is) ? how.source : undefined;
     // (Text made of a value the script may not have written, or added to one: `kept`.)
     const kept = !!how.kept || (how.append && (!prev || !!prev.kept));
     st = this.setVariable(st, target, at, text, false, is('a') || is('A'), source, kept);

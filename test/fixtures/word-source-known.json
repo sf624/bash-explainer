@@ -396,7 +396,6 @@
       "uses": [
         {"fn":"mayBeEmpty","kind":"node-type","count":5},
         {"fn":"substitutedCommand","kind":"node-type","count":1},
-        {"fn":"wholeVariable","kind":"node-type","count":3},
         {"fn":"REGEX_SPECIAL","kind":"glob-class","count":1,"reason":"regex special characters in the text of a pitfall"},
         {"fn":"braceSpaced","kind":"node-type","count":2},
         {"fn":"comparisonAt","kind":"helper","count":1},
@@ -579,9 +578,11 @@
     },
     {
       "file": "src/semantics/values.ts",
-      "reason": "reads the model first, and the text only to find the node; `plainCopy` checks the shape of the source (the word is one `$x`, docs/design/known-values.md, 2), and the model then says what bash gives",
+      "reason": "reads the model first, and the text only to find the node; `copiedName` and `plainCopy` check the shape of the source (the word is one `$x`, docs/design/known-values.md, 2), and the model then says what bash gives; `valueUses` finds the expansions of the tree by their node types, and asks the model of each",
       "uses": [
-        {"fn":"plainCopy","kind":"node-type","count":3},
+        {"fn":"copiedName","kind":"node-type","count":2},
+        {"fn":"plainCopy","kind":"node-type","count":1},
+        {"fn":"valueUses","kind":"node-type","count":2},
         {"fn":"shownWord","kind":"node-type","count":2}
       ]
     },
