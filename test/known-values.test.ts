@@ -410,4 +410,104 @@ describe('a known value read in the language of its command (known-values.md, st
       assert.deepStrictEqual(globbed, ['A1', 'C34', 'status 0', 'status 1']);
     });
   });
+
+  describe('`[[ $x =~ $re ]]` (step 3)', () => {
+    /** EREs written without a character the shell reads in a `[[ ]]` right side, with the strings to try. */
+    const EREs: [string, string[]][] = [
+      ['^[0-9]+$', ['', '0', '12a', 'a12', '007']],
+      ['^(a|b)c{2,3}$', ['acc', 'bccc', 'acccc', 'c']],
+      ['[[:alpha:]]+[0-9]', ['ab1', '1ab', 'AB9']],
+      ['a.b', ['axb', 'ab', 'a.b']],
+      ['^\\.x', ['.x', 'ax']],
+      ['(a)(b)?c', ['ac', 'abc', 'bc']],
+      ['x*y?', ['', 'xx', 'z']],
+    ];
+    /** The tokens under the regex of the literal right side, as shapes. */
+    const literalRows = (e: LineExplanation): Shape[] => allTokens(e.items).find((t) => t.kind === 'pattern' && t.children.length > 0)!.children.map(shape);
+
+    for (const [re] of EREs) {
+      it(`${re}: the rows of the value are those of the literal`, () => {
+        for (const lang of ['en', 'ja'] as const) {
+          for (const w of ['$re', '${re}']) {
+            const v = explain(`re='${re}'\n[[ $1 =~ ${w} ]]\n`, 1, lang);
+            const l = explain(`[[ $1 =~ ${re} ]]\n`, 0, lang);
+            const t = valueToken(v)!;
+            assert.deepStrictEqual(t.value!.reading!.tokens.map(shape), literalRows(l), re);
+            assert.strictEqual(t.value!.reading!.assumes, undefined);
+            // (Its example: the one of the literal.)
+            assert.deepStrictEqual(v.examples.map((x) => x.sections), l.examples.map((x) => x.sections), re);
+          }
+        }
+      });
+    }
+
+    it('a quoted `"$re"` is read as text: no rows, and the text says so', () => {
+      for (const w of ['"$re"', '"${re}"']) {
+        const e = explain(`re='^a.c$'\n[[ $1 =~ ${w} ]]\n`, 1);
+        assert.strictEqual(valueToken(e), undefined, w);
+        assert.match(JSON.stringify(e), /the right side is quoted, so it is literal text, not a regex/);
+        assert.ok(allTokens(e.items).some((t) => t.value), w);
+      }
+    });
+
+    it('is read whatever the value holds: `[[ ]]` neither splits nor globs it', () => {
+      for (const re of ['^a b$', '^[A-Z]*$']) {
+        const t = valueToken(explain(`re='${re}'\n[[ $1 =~ $re ]]\n`, 1))!;
+        assert.ok(t.value!.reading!.tokens.length > 0, re);
+        assert.strictEqual(t.value!.reading!.assumes, undefined);
+        assert.strictEqual(t.value!.said.readingLead, undefined);
+      }
+    });
+
+    it('is not read where the value is not known', () => {
+      for (const src of ['[[ $1 =~ $re ]]\n', 'read -r re\n[[ $1 =~ $re ]]\n', 're=$(cat p)\n[[ $1 =~ $re ]]\n', 'for re in a b; do\n  [[ $1 =~ $re ]]\ndone\n']) {
+        assert.strictEqual(valueToken(explain(src, src.split('\n').length - 2)), undefined, src);
+      }
+    });
+
+    it('an error in the value has the level of the literal, whichever line is explained first', () => {
+      const v = explain("re='[a'\n[[ $1 =~ $re ]]\n", 1);
+      const l = explain('[[ $1 =~ [a ]]\n', 0);
+      assert.deepStrictEqual(valueToken(v)!.value!.reading!.tokens.map(shape), literalRows(l));
+      assert.deepStrictEqual(v.notes, l.notes);
+      assert.match(v.notes[0], /^ⓧ Error: No `\]` closes this `\[`/);
+      // (Where the use may not be reached, both are at a lower level.)
+      const src = 'if [ "$1" ]; then exit 1; fi\nre=\'[a\'\n[[ $2 =~ $re ]]\n';
+      const tree = parser.parse(src);
+      const levels = (first: number[]): string[] => {
+        const a = new Analyzer('en');
+        for (const n of first) a.explainLine(tree, n, 'bash');
+        const e = a.explainLine(tree, 2, 'bash');
+        return [...valueToken(e)!.value!.reading!.tokens.flatMap((t) => (t.marks ?? []).map((m) => m.level)), ...e.notes];
+      };
+      const literal = explain('if [ "$1" ]; then exit 1; fi\n[[ $2 =~ [a ]]\n', 1);
+      const regex = allTokens(literal.items).find((t) => t.kind === 'pattern' && t.children.length > 0)!;
+      const inRows = allTokens(regex.children).flatMap((t) => (t.marks ?? []).map((m) => m.level));
+      assert.deepStrictEqual(levels([]), [...inRows, ...literal.notes]);
+      assert.deepStrictEqual(levels([0, 1]), levels([]));
+    });
+
+    it('against bash: the variable form and the literal form match the same strings; the quoted form is a string', async () => {
+      const lines: string[] = [];
+      const cases: { re: string; s: string }[] = [];
+      for (const [re, strings] of EREs) {
+        for (const s of strings) {
+          cases.push({ re, s });
+          lines.push(`s='${s}'; re='${re}'; [[ $s =~ $re ]]; a=$?; [[ $s =~ ${re} ]]; b=$?; [[ $s =~ "$re" ]]; c=$?; echo "$a $b $c"`);
+        }
+      }
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'known-values-re-'));
+      try {
+        const r = await runContained(['bash', '--norc', '--noprofile', '-c', lines.join('\n')], dir);
+        const got = r.stdout.replace(/\n$/, '').split('\n').map((l) => l.split(' '));
+        assert.strictEqual(got.length, cases.length);
+        for (const [i, [a, b]] of got.entries()) assert.strictEqual(a, b, `${cases[i].re} on ${cases[i].s}`);
+        // (Quoted, bash matches the text itself: `a.b` is not found in `axb`.)
+        const k = cases.findIndex((c) => c.re === 'a.b' && c.s === 'axb');
+        assert.deepStrictEqual(got[k], ['0', '0', '1']);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
 });

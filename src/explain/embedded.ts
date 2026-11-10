@@ -24,7 +24,7 @@ import { sedExample, sedPattern } from '../examples/sed';
 import { NO_INPUT } from '../examples/source';
 import { featureWorks } from '../shellfeatures';
 import { holedContent, type Literal, literalContent, literalOfMapped, removedBackslashes, sourceIndex, staticWordText } from '../staticword';
-import type { SyntaxNode } from '../syntax/tree';
+import { ancestor, hasError, type SyntaxNode } from '../syntax/tree';
 import { lookupKey } from '../semantics/commandread';
 import type { StateModel } from '../semantics/state';
 import { knownCopy } from '../semantics/values';
@@ -33,6 +33,7 @@ import { type CommandRead, type Explainer, memoKey } from './context';
 import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, programsGiven, regexExample } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
 import { fillHoles, holeSink, type HoleSink, holesRead, holeText } from './holes';
+import { explainRegex } from '../embedded/regex';
 import { fromEmbedded, placeEmbedded, same, sourcePos } from './nodes';
 import { invalidHow } from '../arith';
 import type { BashVersion } from '../bashversion';
@@ -87,19 +88,51 @@ export function valueReading(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): 
   // (Asked only for a word of a command being read: `positional`.)
   const c = cx.command!;
   if (!c.onModel || c.parse.refused || cx.state.noShell) return undefined;
+  return keptValue(cx, a, lang, (line) => readValue(cx, c, a, lang, line));
+}
+
+/**
+ * The value of the unquoted `$re` on the right of `=~` read as the ERE bash reads (docs/design/known-values.md, 5): by the
+ * reader of a literal right side, with no command and no spec. `[[ ]]` neither splits nor globs, so the field is the value
+ * (`knownCopy`: the word model). A quoted `"$re"` is no copy of this kind: bash matches it as text. Kept like `valueReading`.
+ */
+export function regexValueReading(cx: Explainer, right: SyntaxNode): ValueReadingMade | undefined {
+  if (cx.state.noShell) return undefined;
+  const test = ancestor(right, (x) => x.type === 'extended_test')!;
+  return keptValue(cx, right, 'regex', (line) => {
+    const known = knownCopy(right, cx.state);
+    // (A quoted copy, `"$re"`, has the expansion inside the word: bash matches that as text, not as a regex.)
+    if (!known || known.part !== right) return undefined;
+    const { part, value } = known;
+    // (A syntax error of the test is said by its own token: `regexReached` of src/explain/tests.ts, from the document.)
+    const reached = line.lineReached(cx.documentStopAt(right) !== 'sure' && !hasError(test));
+    const tokens = explainRegex(value.text, 'ere', cx.lang, { tool: 'bash', reached });
+    return { tokens: finishedApart(placeValue(tokens, part, value.text, 'regex')), part, text: value.text };
+  });
+}
+
+/** The reading of `a` for the document, by every input it reads, made by `make` with the part of the line that asks (`DOCUMENT_ONLY` for the kept one). */
+function keptValue(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang, make: (line: LinePart) => ValueReadingMade | undefined): ValueReadingMade | undefined {
   const { opts } = cx;
   const own = !!(opts.unread || opts.unsure || opts.sometimes || opts.unreached);
   // (A guard: such a line is a string another shell reads, or a trap's action, where `expansionValue` knows no value today.)
   /* c8 ignore next */
-  if (own) return readValue(cx, c, a, lang, cx);
+  if (own) return make(cx);
   let byKey = keptValues.get(cx.state);
   if (!byKey) keptValues.set(cx.state, (byKey = new Map()));
   const key = JSON.stringify([cx.lang, cx.shell, opts.bashVersion, lookupKey(lookupOf(cx)), opts.script, opts.host, opts.stopsFrom, lang]);
   let byWord = byKey.get(key);
   if (!byWord) byKey.set(key, (byWord = new WeakMap()));
   let read = byWord.get(a);
-  if (read === undefined) byWord.set(a, (read = readValue(cx, c, a, lang, DOCUMENT_ONLY) ?? null));
+  if (read === undefined) byWord.set(a, (read = make(DOCUMENT_ONLY) ?? null));
   return read ?? undefined;
+}
+
+/** The reader's tokens placed on the expansion `part`: each labelled with its text in the value, which has no place of its own in the line. */
+function placeValue(read: readonly EmbeddedToken[], part: SyntaxNode, text: string, lang: EmbeddedLang): Token[] {
+  const start = sourcePos(part, 0);
+  const end = sourcePos(part, part.text.length);
+  return read.map((t) => ({ ...placeEmbedded(t, (_, isEnd) => (isEnd ? end : start), (from, to) => text.slice(from, to), 'embedded'), language: lang }));
 }
 
 function readValue(cx: Explainer, c: CommandRead, a: SyntaxNode, lang: EmbeddedLang, line: LinePart): ValueReadingMade | undefined {
@@ -111,11 +144,7 @@ function readValue(cx: Explainer, c: CommandRead, a: SyntaxNode, lang: EmbeddedL
   const read = EMBEDDED[lang](value.text, ecx);
   // (A reading with no tokens may still say something of the whole: `grep -F`, a fixed string.)
   if (!read) return undefined;
-  // (The value has no place of its own in the line: each token is labelled with its text in the value, over the expansion.)
-  const start = sourcePos(part, 0);
-  const end = sourcePos(part, part.text.length);
-  const tokens = read.tokens.map((t) => ({ ...placeEmbedded(t, (_, isEnd) => (isEnd ? end : start), (from, to) => value.text.slice(from, to), 'embedded'), language: lang }));
-  return { tokens: finishedApart(tokens), ...(read.note ? { note: read.note } : {}), part, ...(assumes ? { assumes } : {}), text: value.text };
+  return { tokens: finishedApart(placeValue(read.tokens, part, value.text, lang)), ...(read.note ? { note: read.note } : {}), part, ...(assumes ? { assumes } : {}), text: value.text };
 }
 
 /** `valueReading` as a reader's reading of the word, with the worked example of the value made on the asking line, as for a literal. */

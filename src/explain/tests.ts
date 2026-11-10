@@ -24,8 +24,10 @@ import { ancestor, descendants, field, fields, hasError, nameText, type SyntaxNo
 import { type BracketTest, collation, type TestExpr, testRange } from '../testexpr';
 import type { Explainer } from './context';
 import { matchExample, regexExample, testExample } from './examples';
+import { regexValueReading } from './embedded';
 import { fromEmbedded, same, skeletal, sortTokens } from './nodes';
 import { inArithmetic } from './reads';
+import { withReading } from './values';
 import { postfixStatusNote } from './status';
 import { arithChildren, arithNumber, bracketPart, commaNote, globToken, tilde } from './words';
 import { isBash } from '../shellfeatures';
@@ -377,6 +379,15 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
     const js = re === undefined ? undefined : toJsRegex(re, 'ere');
     if (js) regexExample(cx, js, 'values', left!);
     fault = wholeRegexError(cx, rights[0]);
+  }
+  // `[[ $x =~ $re ]]`: the value of `$re`, where known, read as the ERE bash reads (its rows go under the value line).
+  if (op === '=~' && rights.length === 1 && !inArithmetic(n) && ancestor(n, (a) => a.type === 'extended_test')) {
+    const known = regexValueReading(cx, rights[0]);
+    if (known) {
+      withReading(cx, operands, known.part, { tokens: known.tokens }, '');
+      const js = toJsRegex(known.text, 'ere');
+      if (js) regexExample(cx, js, 'values', left!);
+    }
   }
   if (!inArithmetic(n) && binaryTestOps[op]) {
     const num = numericTestNote(cx, op, [n.namedChildren[0].text, rightText], true);
