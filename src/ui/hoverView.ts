@@ -14,7 +14,7 @@ import { LEVELS } from '../levels';
 import { levelColour, ThemeKind } from './palette';
 import { basisLine, basisMarkdown, colored, esc, ExamplePlacement, examplesMarkdown, labelMarkdown, lineSegments, noteBasis, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, valueMarkdown } from './render';
 import { ui } from './texts';
-import { partRow, rowPlain, type TokenRow } from './tokenRow';
+import { partRow, type ReadingRow, rowPlain, type TokenRow } from './tokenRow';
 import { pushAll } from '../lists';
 
 /** What every view of the hover needs. */
@@ -214,6 +214,24 @@ function rows(items: Token[], depth: number, stop: (t: Token) => boolean): { row
   return { rows: out, hidden };
 }
 
+/**
+ * The rows of the reading of a known value (`TokenRow.reading`), as a table of parts under the value's line: the text above them
+ * where the reading assumes no file name matches, then each row, indented as the parts of a part are.
+ */
+function readingTable(r: TokenRow, x: HoverInput): string[] {
+  if (!r.reading) return [];
+  const list: { r: ReadingRow; level: number }[] = [];
+  const walk = (rows: readonly ReadingRow[], level: number) => {
+    for (const rr of rows) {
+      list.push({ r: rr, level });
+      walk(rr.children, level + 1);
+    }
+  };
+  walk(r.reading.rows, 0);
+  const lead = r.reading.lead ? [`<small>${muted(md(r.reading.lead))}</small>`, ''] : [];
+  return [...lead, '<table>', ...list.map(({ r: rr, level }) => `<tr><td>${'&nbsp;'.repeat(4 * level)}${label(rr, x.theme, 22, true)}</td><td>${about(rr, x.lang)}</td></tr>`), '</table>', ''];
+}
+
 function table(list: { tok: Token; level: number }[], x: HoverInput): string[] {
   if (!list.length) return [];
   const row = ({ tok, level }: { tok: Token; level: number }) => {
@@ -315,6 +333,7 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   out.push(`<b>${label(r, x.theme, 48)}</b>${badge(r)}`, '');
   out.push(`${md(r.text)}${r.refs?.length ? ` <small>${refsMarkdown(x.lang, r.refs)}</small>` : ''}${also(r)}${rests(r, x.lang)}`, '');
   if (r.value) out.push(valueHtml(r.value.said), '');
+  pushAll(out, readingTable(r, x));
   const own = rows(shown(part), 1, () => false);
   pushAll(out, table(own.rows, x));
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
@@ -426,6 +445,13 @@ export function plainPartHover(ex: LineExplanation, chain: Token[], lang: Lang, 
   if (r.basis) out.push(`_${basisLine(lang, r.basis, codeSpan)}_`, '');
   if (s?.also) out.push(`_${s.also}_`, '');
   if (r.value) out.push(pictureText(r.value.said.text), '');
+  // (Where the command reads the value in a language of its own: the rows of that reading.)
+  if (r.reading) {
+    if (r.reading.lead) out.push(`_${r.reading.lead}_`, '');
+    const list = (rows: readonly ReadingRow[], d: number): string[] => rows.flatMap((k) => [`${'  '.repeat(d)}- ${flat(k)} — ${rowPlain(k)}`, ...list(k.children, d + 1)]);
+    pushAll(out, list(r.reading.rows, 0));
+    out.push('');
+  }
   const kids = shown(part).map(rowOf);
   if (kids.length) {
     pushAll(out, kids.map((k) => `- ${flat(k)} — ${rowPlain(k)}${valueMarkdown(k.value, '  ')}${basisMarkdown(k.basis, lang, '  ')}`));

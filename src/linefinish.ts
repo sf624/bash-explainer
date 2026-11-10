@@ -12,6 +12,8 @@ import { type Fact, type Note, tokenNote } from './messages';
 import { saysProblem } from './messages-tokens';
 import { isBash, type Shell } from './shellfeatures';
 import { type RestingText, withoutBases, withTokenBases } from './tokenbases';
+import { KIND_ROLES } from './roles';
+import { eachOwn, keep } from './tokenkept';
 import { claim, dropLabelEcho, markSaid, markTokens, summaryOf } from './tokenmarks';
 
 /** What a line's walk, or a reader, has made of the line. */
@@ -74,6 +76,23 @@ export function finishLine(made: LineMade, opts: ExplainOptions, said: () => Lin
   return result;
 }
 
+/**
+ * Tokens that are no part of a line's tree, finished when they are made, as a line finishes its own (`finishLine`): the ids of
+ * their texts (`markSaid`), their labels' echoes dropped (`dropLabelEcho`) and their roles; then kept (src/tokenkept.ts), so that
+ * every line that shows them reads them as they are. The reading of a known value (`ValueReading`, docs/design/known-values.md, 4.1).
+ */
+export function finishedApart(tokens: Token[]): readonly Token[] {
+  markSaid(tokens);
+  for (const t of tokens) {
+    dropLabelEcho(t);
+    eachOwn(t, (x) => {
+      x.role = KIND_ROLES[x.kind];
+    });
+    keep(t);
+  }
+  return Object.freeze(tokens);
+}
+
 /** Whether the settings show an example of a kind: examples are on, and the kind is not turned off. */
 export function wantsKind(opts: ExplainOptions, kind: ExampleKind | undefined): boolean {
   const o = opts.examples;
@@ -118,6 +137,8 @@ export function tokenErrors(lang: Lang, items: readonly Token[], sayAt: (n: Note
   const walk = (t: Token) => {
     for (const m of t.marks ?? []) if (saysProblem(m)) found.push(sayAt(tokenNote(lang, m), t.span));
     t.children.forEach(walk);
+    // (A known value read in its command's language has its tokens apart from the tree: an error in the value is the line's, as a literal's.)
+    t.value?.reading?.tokens.forEach(walk);
   };
   items.forEach(walk);
   return [...new Set(found)];

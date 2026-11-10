@@ -41,7 +41,7 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'source-searches-path': { subjects: 8, ran: 0, checks: 0, skipped: { '`.`': 4, '`source`': 2, 'bash does not parse it': 2 } },
   'unbraced-element': { subjects: 1, ran: 1, checks: 1, skipped: {} },
   'unmatched-glob-runs-once': { subjects: 9, ran: 9, checks: 27, skipped: {} },
-  'unquoted-value-as-data': { subjects: 1, ran: 1, checks: 3, skipped: {} },
+  'unquoted-value-as-data': { subjects: 4, ran: 4, checks: 12, skipped: {} },
   'unquoted-variable-as-path': { subjects: 66, ran: 44, checks: 232, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `DIR`': 5, 'the script sets `D`': 9, 'the script sets `p`': 1 } },
   'unquoted-variable-in-test': { subjects: 24, ran: 20, checks: 128, skipped: { 'a redirection to a word that is not plain text': 4 } },
   'wrapper-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },

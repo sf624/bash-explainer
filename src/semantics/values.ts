@@ -5,7 +5,7 @@ import { ancestor, assignmentsOnly, field, fields, type SyntaxNode } from '../sy
 import { shellValueRefused, valueShell } from './shvalues';
 import { inAnotherShell, type StateModel } from './state';
 import { mayStopAround } from './stops';
-import { partMeaning, trustedPart, trustedVariable, wordMeaning, type WordMeaning } from './words';
+import { partMeaning, trustedPart, trustedVariable, wordFields, wordMeaning, type WordMeaning } from './words';
 import { isBash } from '../shellfeatures';
 
 /** The value of an expansion: the text it gives, and the words that text makes where it is. */
@@ -52,6 +52,33 @@ export function expansionValue(part: SyntaxNode, model: StateModel, around = tru
   // (Unquoted, and not the whole word: `$x/c`, `a$e`, `"$a"$b`.)
   const joined = !meaning.quoted && !(w.nodes.length === 1 && w.nodes[0] === part);
   return { text: got.text, ...(split && !joined ? { words: got.fields.map((f) => f.text) } : {}), glob, ...(joined ? { joined: true as const } : {}) };
+}
+
+/**
+ * The expansion the word `word` is made of alone, where it is a plain copy of a variable: `$x`, `${x}`, `"$x"` or `"${x}"`
+ * (docs/design/known-values.md, 2). Not another form (`${x%.*}`, `${x:-d}`, `$1`), nor one inside a larger word.
+ */
+function plainCopy(word: SyntaxNode): SyntaxNode | undefined {
+  const inner = word.type === 'string' && word.namedChildren.length === 1 && word.text === `"${word.namedChildren[0].text}"` ? word.namedChildren[0] : word;
+  return (inner.type === 'simple_expansion' && /^\$[A-Za-z_]\w*$/.test(inner.text)) || (inner.type === 'expansion' && /^\$\{[A-Za-z_]\w*\}$/.test(inner.text)) ? inner : undefined;
+}
+
+/**
+ * The value the word `word` passes to its command as it is, where the model knows it (docs/design/known-values.md, 2): the
+ * word is a plain copy of a variable (`plainCopy`), `expansionValue` gives its value, and bash makes one field of the word
+ * that is that value, where no file name matches it (`wordFields` with no files). `assumes`: the value is a glob pattern, so
+ * it is the value only where no file name matches (nullglob and failglob off: the word model says so). Not where the word
+ * model decides nothing with no files (an absolute pattern, a `.` segment, a script that changes its directory), nor for a
+ * value it splits into several fields.
+ */
+export function knownCopy(word: SyntaxNode, model: StateModel): { part: SyntaxNode; value: ExpansionValue; assumes?: 'no-match' } | undefined {
+  const part = plainCopy(word);
+  const value = part && expansionValue(part, model);
+  // (The whole word: never joined to other text.)
+  if (!value || (value.words && value.words.length !== 1)) return undefined;
+  const { fields } = wordFields(word, model, { files: [] });
+  if (fields?.length !== 1 || fields[0] !== value.text) return undefined;
+  return { part: part!, value, ...(value.glob ? { assumes: 'no-match' as const } : {}) };
 }
 
 /**

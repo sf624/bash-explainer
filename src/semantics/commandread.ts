@@ -54,7 +54,7 @@ const kept = new WeakMap<StateModel, Map<string, WeakMap<SyntaxNode, CommandRead
  * them afresh for each call reads the same reading. The host's commands by their names, as `shellState` keys the model
  * (the names stand for the specs of src/dict/bats.ts).
  */
-function lookupKey(lookup: CommandLookup): string {
+export function lookupKey(lookup: CommandLookup): string {
   return JSON.stringify([lookup.customCommands, Object.keys(lookup.hostCommands ?? {}).sort(), lookup.yq.host, lookup.yq.setting, lookup.bashVersion]);
 }
 

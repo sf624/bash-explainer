@@ -9,12 +9,13 @@ import { replaceNode, replaceSpan, type Rewrite, stringShell } from './rewrite';
 import { isFunction, type NameResolution, resolveName, resolveRun, testSpecAt } from './semantics/names';
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
-import { expansionValue } from './semantics/values';
+import { expansionValue, type ExpansionValue } from './semantics/values';
+import { valueGlobs } from './embedded/glob';
 import { partMeaning, wordFields, wordMeaning, wordOf } from './semantics/words';
 import { staticWordValue } from './staticword';
 import { childrenOnRows, field, fields, isShebang, nameText, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
-import type { ArgvParse } from './argv/interpret';
+import type { ArgRole, ArgvParse } from './argv/interpret';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
 // command runs (`FOO=1 echo $FOO`, `sudo cmd > /etc/…`), and what word splitting and globbing do to an unquoted
@@ -130,7 +131,34 @@ function throughShell(n: SyntaxNode, vars: readonly string[], v: string, model: 
  * language (`OperandSpec.lang`, `ValueSpec.lang`: grep's pattern, sed's script), those of its subcommands too.
  */
 function dataWords(p: ArgvParse): number[] {
-  return p.roles.flatMap(({ word, role }) => (role.role === 'subcommand' ? dataWords(role.parse) : (role.role === 'operand' || role.role === 'value') && role.spec?.lang ? [word] : []));
+  return p.roles.flatMap(({ word, role }) => (role.role === 'subcommand' ? dataWords(role.parse) : dataRole(role) ? [word] : []));
+}
+
+/** An expansion that bash word-splits or globs here (not in quotes, not with `IFS=` and `set -f` both). */
+function bare(n: SyntaxNode, model: StateModel): boolean {
+  // (Where no shell reads the words, an expansion in the text is one the host made before: make's `$@` is text by now.)
+  if (!isExpansion(n) || model.noShell) return false;
+  const m = partMeaning(n, model);
+  return !!m && (m.split.applies !== false || m.glob.applies !== false);
+}
+
+/** The expansions of a word that bash word-splits or globs (`bare`): the word itself, or parts of it (`$d/x`). */
+const barePartsIn = (w: SyntaxNode, model: StateModel): SyntaxNode[] => (bare(w, model) ? [w] : w.type === 'concatenation' ? w.namedChildren.filter((c) => bare(c, model)) : []);
+
+/** Whether a word of the role `role` is one a command reads as data: an operand or a value written in another language. */
+export const dataRole = (role: ArgRole): boolean => (role.role === 'operand' || role.role === 'value') && !!role.spec?.lang;
+
+/**
+ * The unquoted expansion of the word `word` (of a role a command reads as data, `dataRole`) whose value the model knows and
+ * bash globs or splits there, so that it may not reach the command as it is: the note `unquoted-value-as-data`, which the
+ * word's row then leaves to it (src/explain/operand-texts.ts).
+ */
+export function unquotedDataValue(word: SyntaxNode, model: StateModel): { part: SyntaxNode; value: ExpansionValue } | undefined {
+  for (const part of barePartsIn(word, model)) {
+    const value = expansionValue(part, model);
+    if (value && (value.glob || (value.words?.length ?? 0) > 1)) return { part, value };
+  }
+  return undefined;
 }
 
 /** The facts (pitfalls) about words whose node starts on `line`. */
@@ -144,15 +172,7 @@ export interface WordFinding { fact: Fact; node: SyntaxNode }
 
 /** The word facts whose node starts on a line from `from` to `to`, in one walk of the tree. */
 export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, shell: Shell | undefined, from: number, to: number): WordFinding[] {
-  /** An expansion that bash word-splits or globs here (not in quotes, not with `IFS=` and `set -f` both). */
-  const bare = (n: SyntaxNode): boolean => {
-    // (Where no shell reads the words, an expansion in the text is one the host made before: make's `$@` is text by now.)
-    if (!isExpansion(n) || model.noShell) return false;
-    const m = partMeaning(n, model);
-    return !!m && (m.split.applies !== false || m.glob.applies !== false);
-  };
-  /** The expansions of a word that bash word-splits or globs (`bare`): the word itself, or parts of it (`$d/x`). */
-  const bareParts = (w: SyntaxNode): SyntaxNode[] => (bare(w) ? [w] : w.type === 'concatenation' ? w.namedChildren.filter(bare) : []);
+  const bareParts = (w: SyntaxNode): SyntaxNode[] => barePartsIn(w, model);
   const facts: WordFinding[] = [];
   // (The node is the one being checked, unless a narrower one is given.)
   let at = root;
@@ -225,12 +245,12 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
           for (const k of dataWords(r.parse)) {
             const word = r.run.args[k];
             // (The expansion is named, with its value: `$r` of `/$r/p`; the rewrite quotes the word's expansions.)
-            const found = bareParts(word).map((part) => ({ part, v: expansionValue(part, model) })).find(({ v: x }) => x && (x.glob || (x.words?.length ?? 0) > 1));
+            const found = unquotedDataValue(word, model);
             if (!found) continue;
-            const v = found.v!;
+            const { part, value: v } = found;
             const quoted = quoteExpansions(word);
             add(fact(lang, 'unquoted-value-as-data', {
-              bare: found.part.text, value: v.text, glob: v.glob, ...((v.words?.length ?? 0) > 1 ? { words: v.words!.length } : {}), rewrite: quoted ? [replaceNode(word, quoted)] : [],
+              bare: part.text, value: v.text, glob: v.glob, ...((v.words?.length ?? 0) > 1 ? { words: v.words!.length } : {}), command: r.parse.command, globs: valueGlobs(v.text), rewrite: quoted ? [replaceNode(word, quoted)] : [],
             }), word);
           }
         }

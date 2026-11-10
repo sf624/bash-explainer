@@ -1,6 +1,6 @@
 // An unquoted expansion whose value the model knows and bash globs or splits, in a word a command reads as data (grep's
 // pattern, sed's script): its role says that a file name that matches takes its place (`onlyGlobbed`,
-// src/semantics/globwords.ts; src/argv/profiletexts.ts), its value row says it is a glob pattern, and a caveat suggests
+// src/semantics/globwords.ts; src/argv/profiletexts.ts), the note and the value row say that bash also reads it as a glob pattern before the command gets it (where a note says so, the role does not again), and a caveat suggests
 // quoting it (`unquoted-value-as-data`, src/wordfacts.ts). Compared with bash: the words grep gets where no file
 // matches, where one does, and with nullglob, all in one bash process; the model's fields with those files must be
 // bash's.
@@ -15,7 +15,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, type SyntaxNode } from '../src/syntax/tree';
 import { runContained } from './support/contained';
 import { allTokens, explain } from './support/explain';
-import type { LineExplanation, Token } from '../src/analyzer';
+import { Analyzer, type LineExplanation, type Token } from '../src/analyzer';
 
 const parser = createUnbashParser();
 const VALUE = '^[A-Z]{3}-[0-9]+$';
@@ -77,31 +77,38 @@ describe('an unquoted known value that globs, read as data (`grep -E $pattern`)'
     });
   });
 
-  it('says why the field count is not known, and that the value is a glob pattern (en, ja)', () => {
+  // (The glob is said once, in the note and on the value line, as what bash does before grep gets the value: docs/design/known-values.md, 12.)
+  it('says that bash also reads the value as a glob pattern before grep gets it, once: the note and the value line (en, ja)', () => {
     for (const w of ['${pattern}', '$pattern']) {
       const src = `${SET}\ngrep -E ${w} ids.txt\n`;
       const en = explain(src, 1, 'en');
       const arg = argOf(en, w);
-      assert.strictEqual(arg.explanation, `search pattern (regex); unquoted, \`${w}\` is a glob pattern, so a file name that matches it takes its place; where several match, the first is this role, and each of the others is file to search (default: stdin)`);
-      assert.match(JSON.stringify(arg), /Unquoted, it is a glob pattern: bash matches it against file names/);
+      assert.strictEqual(arg.explanation, 'search pattern (regex) — extended regex (ERE)');
+      assert.match(JSON.stringify(arg), /Unquoted, bash also reads it as a glob pattern \(its `\[A-Z\]`, `\[0-9\]`\) before `grep` gets it, and matches it against file names/);
       assert.deepStrictEqual(en.notes.filter((n) => n.includes('unquoted-value-as-data') || n.includes('is not quoted')), [
-        `ⓘ Caveat: \`${w}\` is not quoted, so its value \`${VALUE}\` may not reach the command as it is: it is a glob pattern, and a file name that matches it takes its place. To pass the value as it is, write \`"${w}"\``,
+        `ⓘ Caveat: \`${w}\` is not quoted, so its value \`${VALUE}\` may not reach the command as it is: bash also reads it as a glob pattern (its \`[A-Z]\`, \`[0-9]\`) before \`grep\` gets it, and a file name that matches it takes its place. To pass the value as it is, write \`"${w}"\``,
       ]);
       const ja = explain(src, 1, 'ja');
       const argJa = argOf(ja, w);
-      assert.strictEqual(argJa.explanation, `検索パターン（正規表現）。クォートしていない \`${w}\` はグロブのパターンなので、一致するファイル名があるとその名前に置き換わる。2つ以上一致するときは、最初の名前がこの役割で、残りの各名前は検索対象のファイル（省略時は標準入力）`);
-      assert.match(JSON.stringify(argJa), /クォートしていないのでグロブのパターンとして働き/);
+      assert.strictEqual(argJa.explanation, '検索パターン（正規表現） — 拡張正規表現(ERE)');
+      assert.match(JSON.stringify(argJa), /bash は `grep` に渡す前に値をグロブのパターンとしても読み（`\[A-Z\]`・`\[0-9\]`）/);
       assert.deepStrictEqual(ja.notes.filter((n) => n.includes('クォートしていない')), [
-        `ⓘ 注意: \`${w}\` をクォートしていないので、値 \`${VALUE}\` はそのままコマンドに渡るとは限らない。値はグロブのパターンとして働き、一致するファイルがあるとその名前に置き換わる。値をそのまま渡すには \`"${w}"\` と書く`,
+        `ⓘ 注意: \`${w}\` をクォートしていないので、値 \`${VALUE}\` はそのままコマンドに渡るとは限らない。bash は \`grep\` に渡す前に値をグロブのパターンとしても読み（\`[A-Z]\`・\`[0-9]\`）、一致するファイルがあるとその名前に置き換わる。値をそのまま渡すには \`"${w}"\` と書く`,
       ]);
     }
   });
 
-  it('without a file operand: the others would be files to search', () => {
+  it('without a file operand: the note says the glob, and the row does not again', () => {
     const en = explain(`${SET}\ngrep -E $pattern\n`, 1, 'en');
     const arg = argOf(en, '$pattern');
-    assert.match(arg.explanation, /unquoted, `\$pattern` is a glob pattern, so a file name that matches it takes its place/);
+    assert.doesNotMatch(arg.explanation, /is a glob pattern/);
     assert.ok(en.notes.some((n) => n.includes('may not reach the command as it is')));
+  });
+
+  it('keeps the glob on the row where no note says it: the notes on pitfalls off', () => {
+    const tree = parser.parse(`${SET}\ngrep -E $pattern ids.txt\n`);
+    const e = new Analyzer('en').explainLine(tree, 1, 'bash', { pitfalls: false });
+    assert.match(argOf(e, '$pattern').explanation, /unquoted, `\$pattern` is a glob pattern, so a file name that matches it takes its place/);
   });
 
   it('says nothing more for "$pattern", nor for a value with no glob or split characters', () => {
@@ -109,7 +116,7 @@ describe('an unquoted known value that globs, read as data (`grep -E $pattern`)'
       for (const lang of ['en', 'ja'] as const) {
         const e = explain(src, 1, lang);
         const arg = argOf(e, w);
-        assert.strictEqual(arg.explanation, lang === 'en' ? 'search pattern (regex)' : '検索パターン（正規表現）', src);
+        assert.strictEqual(arg.explanation, lang === 'en' ? 'search pattern (regex) — extended regex (ERE)' : '検索パターン（正規表現） — 拡張正規表現(ERE)', src);
         assert.ok(!e.notes.some((n) => /is not quoted|クォートしていないので/.test(n)), src);
       }
     }
@@ -117,9 +124,9 @@ describe('an unquoted known value that globs, read as data (`grep -E $pattern`)'
 
   it('names the expansion in a word with other parts, reads a subcommand, and gives no rewrite where quotes would change the value', () => {
     const notes = (src: string): string[] => explain(src, 1, 'en').notes.filter((n) => n.includes('is not quoted'));
-    assert.deepStrictEqual(notes("r='^x*$'\nsed -n /$r/p f\n"), ['ⓘ Caveat: `$r` is not quoted, so its value `^x*$` may not reach the command as it is: it is a glob pattern, and a file name that matches it takes its place. To pass the value as it is, write `"/$r/p"`']);
-    assert.deepStrictEqual(notes("q='//app/...:*'\nbazel query $q\n"), ['ⓘ Caveat: `$q` is not quoted, so its value `//app/...:*` may not reach the command as it is: it is a glob pattern, and a file name that matches it takes its place. To pass the value as it is, write `"$q"`']);
-    assert.deepStrictEqual(notes("p='a*'\ngrep ${p:-'x y'} f\n"), ["ⓘ Caveat: `${p:-'x y'}` is not quoted, so its value `a*` may not reach the command as it is: it is a glob pattern, and a file name that matches it takes its place"]);
+    assert.deepStrictEqual(notes("r='^x*$'\nsed -n /$r/p f\n"), ['ⓘ Caveat: `$r` is not quoted, so its value `^x*$` may not reach the command as it is: bash also reads it as a glob pattern (its `*`) before `sed` gets it, and a file name that matches it takes its place. To pass the value as it is, write `"/$r/p"`']);
+    assert.deepStrictEqual(notes("q='//app/...:*'\nbazel query $q\n"), ['ⓘ Caveat: `$q` is not quoted, so its value `//app/...:*` may not reach the command as it is: bash also reads it as a glob pattern (its `*`) before `bazel` gets it, and a file name that matches it takes its place. To pass the value as it is, write `"$q"`']);
+    assert.deepStrictEqual(notes("p='a*'\ngrep ${p:-'x y'} f\n"), ["ⓘ Caveat: `${p:-'x y'}` is not quoted, so its value `a*` may not reach the command as it is: bash also reads it as a glob pattern (its `*`) before `grep` gets it, and a file name that matches it takes its place"]);
     assert.deepStrictEqual(notes("p='a* b'\ngrep $p f\n"), ['ⓘ Caveat: `$p` is not quoted, so its value `a* b` does not reach the command as it is: it is split into 2 arguments, and is a glob pattern too (a file name that matches takes its place). To pass the value as it is, write `"$p"`']);
     assert.deepStrictEqual(notes("p=abc\nsed -n /$p/p f\n"), []);
     // (A value the model does not know: a pattern meant, often.)

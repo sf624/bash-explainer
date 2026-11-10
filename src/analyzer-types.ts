@@ -194,6 +194,21 @@ export interface TokenMark { id: TokenTextId; level: NoteLevel; text: string }
 /** The value of an expansion (`Token.value`): the model's (src/semantics/values.ts, `expansionValue`), and its texts. */
 export interface ValueInfo extends ExpansionValue {
   said: ValueSaid;
+  /** Where the command reads the value in a language of its own (`grep -E "$re"`): that reading (docs/design/known-values.md, 4.1). */
+  reading?: ValueReading;
+}
+
+/**
+ * A known value read in the language its place names (docs/design/known-values.md, 4.1): the reader's tokens over the value's
+ * text, for display only. They are finished and kept when the reading is made (src/explain/embedded.ts, `valueReading`), each
+ * labelled with its text in the value; they have no place of their own in the line (their spans are the expansion's), so the
+ * walks of the line's tree, the hover's part and the editor's colours do not reach them. An error among them is a problem of
+ * the line through `tokenErrors` (src/linefinish.ts), as a literal's is.
+ */
+export interface ValueReading {
+  tokens: readonly Token[];
+  /** The value is a glob pattern: it is read as the command gets it where no file name matches (section 2.1). */
+  assumes?: 'no-match';
 }
 
 export interface ContextEntry { label: string; line: number }

@@ -108,6 +108,13 @@ What step 1 found:
 - A command a slot runs (`sudo grep -E "$re" f`, `find . -exec grep -E "$re" {} +`) is read inside its wrapper's parse (`role.parse`), but its words are read again on the line (`ownWords` and `findExpression`, src/explain/argv.ts, with the line's `slotEnvs`). Step 2 needs that reading on the model too for such a use, or leaves those uses unread. `ownWords` also decides again, for such a command, what `headFacts` decides for a command's own name: a builtin turned off with `enable -n` (its program's spec) and a builtin's variant for the shell options. `programBasis` (src/explain/reads.ts) asks the setting and the host's commands again, for the basis of a token; it serves the commands a slot runs too, which have no `HeadFacts`.
 - The document's part of `invalid` and `reached` (3.1) is the document's only for a node of the asking line's own region. In a host file `stopsFrom` is set per line (`shellStart(region, line)`, src/hosts/remap.ts; for bats, the line's own `@test`, src/hosts/scripts.ts), and `script` and `host` come with the line's options. Step 1 has no asker on another line, so it holds there. Step 2 must take `stopsFrom` (and the rest) from the use's region, not from the line that asks.
 
+What step 2 found:
+
+- The use is read only where the command's reading is the model's (`CommandContext.onModel`: `readArgs` and the subcommands of its parse). A command a slot runs (`sudo grep -E "$re" f`, `find . -exec grep …`, bats' `run grep …`) and find's own expression (`find -name "$p"`) are read again on the line (`ownWords`, `findExpression`), so their uses stay unread until that reading is on the model (SC2).
+- The `customCommands` setting has no `lang`: a custom spec can only take a language away (`grep` with a custom spec reads no regex), and the use then reads nothing, as the literal does.
+- The kept reading is keyed by the `script`, `host` and `stopsFrom` of the line that asks. In step 2 only a line of the use's own statement reaches the use's word, so they are those of the use's region. Step 5, where the assignment's line asks, must pass the use's region's values (`shellStart` of the use's line), not its own.
+- A line that sets flags of its own reading (`unread`, `unsure`, `sometimes`, `unreached`: a string read as a script, a trap's action) reads the value afresh with them, as it reads a literal, and keeps nothing. The value is rarely known there (`expansionValue` refuses the strings of another shell).
+
 ### 3.1 What the reader reads
 
 `EmbeddedContext` (src/embedded/registry.ts) is built today from the asking line's `Explainer` (`embeddedTextInner`, src/explain/embedded.ts). Its inputs:
@@ -147,7 +154,11 @@ So the reading belongs to the value, not to the source:
 - The editor's colours take nothing from them.
 - `tokenRow` (src/ui/tokenRow.ts) gives each output the field (test/row-source.test.ts).
 
-`reading` is for display only. No check, problem, decision or model reads it. An error in the value reaches Problems through the error token of the use's own reading, as for a literal (section 4.2), not through `reading`.
+`reading` is for display only. No check, decision or model reads it. An error in the value reaches Problems as a literal's does: `tokenErrors` (src/linefinish.ts), the one walk that makes problems of the tokens' errors, walks the reading's tokens too (section 4.2).
+
+The tokens are finished when the reading is made, as a line finishes its own (`finishedApart`, src/linefinish.ts: the ids of their texts, their labels' echoes, their roles), then kept. A line marks nothing on them, so it shows them as they are and needs no copy.
+
+In the panel the rows are the first parts of the row that holds the value. For an unquoted `$re` that row is the argument's (the variable's token has the argument's range), so the rows have the depth of a literal's reading. For `"$re"` the value is on the row of `$re`, a part of the argument's row, so the rows are one level deeper than the literal's (measured at 1280 px: 103 px against 86 px; at 390 px: 78 px against 68 px).
 
 The panel's look is a prototype first (a screenshot at 390 and 1280 px, light and dark), before the clean PR.
 
@@ -210,7 +221,7 @@ The walk and the models charge nothing, so each node is read once ([line-budget.
 
 - **The uses:** `valueUses(model)` is one pass over the script's expansions, kept by the model: an index from each origin word to its uses. Each expansion asks `expansionValue` once.
 - **A reading:** `valueReading(use)` reads the value once per use. It is kept by every input it reads (section 3.1), as src/explain/whole.ts keeps a statement's walk. The line that asks first makes it; the other reads it. It has no example, and the readers charge nothing (none calls `guarded`). A reader that needs a limit later uses `guardedApart`, whose refusal does not depend on the line that asked.
-- **Copies:** the kept reading is frozen (`keep`, src/tokenkept.ts). Each line takes a copy of its tokens before it marks them (`markSaid`, the bases, the origin), as whole.ts does with `markTokens`. A line never changes what another line reads.
+- **Copies:** the kept reading is finished and frozen when it is made (`finishedApart`, `keep`, src/tokenkept.ts). No line marks its tokens (they are no part of a line's tree), so none takes a copy, and none changes what another line reads.
 - **The assignment line:** it reads the kept readings of its uses and compares them. Over the document, each use is read once, and each assignment looks at its own uses only: linear in the number of uses.
 - **The example:** made on the use's line only, charged to its budget, as for a literal.
 
@@ -257,6 +268,7 @@ Each step is one PR that keeps every test passing. The use comes before the orig
 
 1. **One command reading and its context** (refactor). `commandReading` (section 3), read by `readArgs`; `EmbeddedContext` built from it and the use's node (`embeddedContext`, src/explain/embedded.ts), with `invalid` and `reached` split into their document and line parts (section 3.1); `regexFlavor`, `trContext`, `given` and the gawk check take the command reading. Explanations stay byte-identical (test/snapshot.ts). No CHANGELOG entry.
 2. **The use** (section 4). `valueReading`, kept for the document; `ValueInfo.reading` through `tokenRow` to every output; `hole-script` not said where the value is read; the panel's rows from a prototype first. The worked example on the value, as for a literal (`guardedEmbeddedExample`), with `sedScripts` taking known values from `expansionValue`; it may go in a step 2b if the PR is large. Tests: same as the literal, against the tools, nothing read, one command reading, the level of an error. A CHANGELOG bullet under `### New`.
+   - **2b. The examples that need other known words.** The example of a use is made as a literal's is, but some examples read other words of the command, which `literalContent` gives only for a literal: the `-e` scripts of sed (`sedScripts`, from `expansionValue`) and the `-e` patterns of grep (`optionValues`), awk's options (`awkOptions`), printf's arguments and tr's sets. Until then those uses get the rows and no example.
 3. **`[[ $x =~ $re ]]`** (section 5). Tests: the literal right side's rows, bash's own match against the literal form, the quoted form left out. Extends the bullet's entry in docs/changes/unreleased.md.
 4. **The origin and the uses** (model). `VariableState.source` for every plain assignment; `valueOrigin` and `valueUses` (src/semantics/values.ts); `pattern-from-variable` reads `expansionValue`. The guard test and its known list, the row in sources.md. The origin test against bash. `expansionValue` is stricter than the state's `value` (settled, not dead, nothing failing around it), so `pattern-from-variable` may now be said where a value it skipped is not sure: the PR lists those changes ([sources.md](sources.md), section 2). No CHANGELOG entry unless a user sees a change.
 5. **The assignment** (section 6). The rows on the string and the texts naming the uses, one reading or several, errors. Tests: the assignment cases, line order. The CHANGELOG bullet grows to say both lines. The entry "A known value in a hole" in docs/backlog-archive.md says what was built and what stays dropped (section 10). A line in the user guide (docs/guide/explained.md and its Japanese page).

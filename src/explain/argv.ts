@@ -50,14 +50,16 @@ import { fieldsToken, operandToken } from './argv-operands';
  */
 export function readArgs(cx: Explainer, read: ArgsReading, args: SyntaxNode[], isFn: boolean | 'maybe' = false): { tokens: Token[]; parse: ArgvParse } {
   for (const [w, env] of read.envs) cx.slotEnvs.set(w, env);
-  return { tokens: render(cx, read.parse, read.spec, args, args, isFn), parse: read.parse };
+  return { tokens: render(cx, read.parse, read.spec, args, args, true, isFn), parse: read.parse };
 }
 
 /**
  * The tokens of the words `nodes` (indexed as the interpreter's words) that `parse` reads with `spec`.
- * `words` are the words of this command, which the explanations of embedded languages look at.
+ * `words` are the words of this command, which the explanations of embedded languages look at. `onModel`: `parse` is the model's
+ * reading of the command (`commandReading`, or a subcommand of it), which a known value of its words is read with
+ * (docs/design/known-values.md, 3); not a command a slot runs, nor find's expression, which this line reads again.
  */
-function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: SyntaxNode[], words: SyntaxNode[], isFn: boolean | 'maybe' = false): Token[] {
+function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: SyntaxNode[], words: SyntaxNode[], onModel: boolean, isFn: boolean | 'maybe' = false): Token[] {
   const out: Token[] = [];
   // The names set by `NAME=value` words before the wrapped command (`env FOO=1 cmd`).
   const assigned: string[] = [];
@@ -78,7 +80,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
     return { n: b.n + 1, sure: b.sure };
   };
   // (The words an option of the command around replaces, find's `{}`, stay known to the commands it runs.)
-  cx.withCommand({ cmd: parse.command, args: words, parse, nodes, spec, ...(cx.command?.placeholders ? { placeholders: cx.command.placeholders } : {}) }, () => {
+  cx.withCommand({ cmd: parse.command, args: words, parse, nodes, spec, ...(cx.command?.placeholders ? { placeholders: cx.command.placeholders } : {}), ...(onModel ? { onModel } : {}) }, () => {
     for (const { word, role } of parse.roles) {
       const a = nodes[word];
       switch (role.role) {
@@ -138,7 +140,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             ? cx.text('subcommand-argument-no-shell', { command: parse.command })
             : cx.text('subcommand-argument-shell', { command: parse.command });
           out.push(withReadings(cx, cx.tok(a, 'subcommand', cx.text('subcommand-label', { command: role.parse.command }) + cx.t(role.spec.summary) + note), role.readings, word, nodes));
-          pushAll(out, render(cx, role.parse, role.spec, nodes, nodes.slice(word + 1, role.parse.end)));
+          pushAll(out, render(cx, role.parse, role.spec, nodes, nodes.slice(word + 1, role.parse.end), onModel));
           break;
         }
         case 'command':
@@ -211,7 +213,7 @@ function ownWords(cx: Explainer, respec: CommandSpec | undefined, name: string, 
     : { parse: refusal ? { ...parse, refusal } : parse, spec: spec ?? NO_SPEC, nodes };
   const envs = new Map<ArgvParse, ExecEnv>();
   slotEnvs(cx.slotEnvs.get(first)!, read.parse, read.spec, read.nodes, cx.state.shell, lookup, undefined, envs);
-  return render(cx, soleRead(cx.state, read.parse, envs, first.parent!), read.spec, read.nodes, args);
+  return render(cx, soleRead(cx.state, read.parse, envs, first.parent!), read.spec, read.nodes, args, false);
 }
 
 /** Words forming a command run by another command (sudo, xargs, find -exec…): the command, with its words read by its spec. */
@@ -304,7 +306,7 @@ function findExpression(cx: Explainer, all: SyntaxNode[], spec: CommandSpec): To
   if (refusal) findRefusal(cx, nodes, spec, refusal);
   const read = (from: number, to: number): Token[] => {
     const part = nodes.slice(from, to);
-    return render(cx, { ...interpret(spec, argWords.slice(from, to), { name: 'find', lookup }), refusal }, spec, part, cx.command!.args);
+    return render(cx, { ...interpret(spec, argWords.slice(from, to), { name: 'find', lookup }), refusal }, spec, part, cx.command!.args, false);
   };
   // (No option of find has an optional value.)
   const tree = parseFind(words, (w) => {

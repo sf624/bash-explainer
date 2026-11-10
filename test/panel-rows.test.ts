@@ -28,7 +28,8 @@ import { corpus } from './support/corpus';
 const parser = createUnbashParser();
 const explain = (src: string, line = 0, lang: Lang = 'en'): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line, 'bash', { reading: true, argv: true, script: 'said' });
 const all = (rows: readonly ModelRow[]): ModelRow[] => rows.flatMap((r) => [r, ...all(r.children)]);
-const tokens = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...tokens(t.children)]);
+// (With the tokens of the reading of a known value, which the panel shows under the value: docs/design/known-values.md, 4.1.)
+const tokens = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...tokens(t.children), ...tokens(t.value?.reading?.tokens ?? [])]);
 const within = (a: Token['span'], b: Token['span']): boolean => (a.start.line < b.start.line || (a.start.line === b.start.line && a.start.character <= b.start.character))
   && (a.end.line > b.end.line || (a.end.line === b.end.line && a.end.character >= b.end.character));
 /** The rows of `src` at depth 2, after `touch` changes its tokens. */

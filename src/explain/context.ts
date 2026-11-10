@@ -35,7 +35,13 @@ export interface CommandRead { cmd: string; parse: ArgvParse; nodes: SyntaxNode[
  * while it reads them); and the words an option replaces with each path or input line before it runs a command
  * (`placeholders`, find's `{}`, xargs's `-I%`: how).
  */
-export interface CommandContext extends CommandRead { args: SyntaxNode[]; rereads?: boolean; placeholders?: Map<SyntaxNode, Replaced> }
+export interface CommandContext extends CommandRead {
+  args: SyntaxNode[];
+  rereads?: boolean;
+  placeholders?: Map<SyntaxNode, Replaced>;
+  /** The reading is the model's (`commandReading`, src/semantics/commandread.ts): a known value of its words is read in their language (docs/design/known-values.md, 3). */
+  onModel?: true;
+}
 
 /** A key of a memo kept for one line (`Explainer.memo`); the code that reads the memo makes its key. */
 export interface MemoKey<V> { readonly name: string; readonly value?: V }

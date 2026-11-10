@@ -11,9 +11,10 @@ import { squeeze } from './profiles';
 /**
  * What the texts name: the command's words, as code, and each role. `globbed`: the word `k` gives one field before
  * pathname expansion, a pattern, so that only the file names that match it make it other than one word (`onlyGlobbed`,
- * src/semantics/globwords.ts).
+ * src/semantics/globwords.ts). `noted`: a note of the line says so for the word (`unquoted-value-as-data`, src/wordfacts.ts),
+ * so its row does not say it again (docs/design/known-values.md, 12).
  */
-export interface Names { word: (k: number) => string; role: (r: Role) => Text; globbed?: (k: number) => boolean }
+export interface Names { word: (k: number) => string; role: (r: Role) => Text; globbed?: (k: number) => boolean; noted?: (k: number) => boolean }
 
 /** (A space before code or a word in Latin letters after Japanese, as docs/japanese-style.md asks.) */
 const spaced = (text: string): string => (/^[`A-Za-z]/.test(text) ? ' ' : '') + text;
@@ -123,6 +124,7 @@ export function baseText(p: Profile, k: number, names: Names): Text {
   const l = listOf(others, names);
   // (A word that gives several words only by the file names its pattern matches says so: `grep -E $p f` with `p='^[A-Z]+$'`.)
   const globbed = !!names.globbed?.(k);
+  if (globbed && names.noted?.(k)) return x;
   const ja = globbed ? `${x.ja}。クォートしていない ${w} はグロブのパターンなので、一致するファイル名があるとその名前に置き換わる。2つ以上一致するときは、最初の名前がこの役割で、`
     : `${x.ja}。${w} が2語以上に展開されるときは、その最初の語がこの役割で、`;
   const en = globbed ? `${x.en}; unquoted, ${w} is a glob pattern, so a file name that matches it takes its place; where several match, the first is this role, and`

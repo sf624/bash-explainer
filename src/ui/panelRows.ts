@@ -20,7 +20,7 @@ import { aboutOf, nodeKind, roleFor, type RoleLine, roleLine, type RowRole, type
 import { markHandled, markNotPosix, receivesLine, type ReceivesLine } from './panelReceives';
 import { type StepsLine, stepsLine } from './panelSteps';
 import { panelTexts, shellWord, ui } from './texts';
-import { partBasis, strongestLevel, type TokenRow, tokenRow } from './tokenRow';
+import { partBasis, type ReadingRow, strongestLevel, type TokenRow, tokenRow } from './tokenRow';
 
 /** How deep the panel reads the line: 1, what it does; 2, how bash reads it. */
 export type Depth = 1 | 2;
@@ -79,6 +79,8 @@ export interface ModelRow extends TokenRow {
   handled?: true;
   /** The first row of a construct POSIX sh does not have (`markNotPosix`): what it says of each feature. */
   notPosix?: string[];
+  /** A row of the reading of a known value (`TokenRow.reading`), under the row of its expansion: it has no place of its own in the line. */
+  inValue?: true;
   children: ModelRow[];
 }
 
@@ -193,6 +195,18 @@ interface Build {
 }
 
 /**
+ * The rows of the reading of a known value (`TokenRow.reading`), at the depths of their tokens under the row of the expansion,
+ * keyed under its key. They have no place of their own in the line: each selects the expansion (`span`), and no token of the
+ * line is shown in one (`RowModel.places`), so the cursor never lands on one.
+ */
+function valueRows(rows: readonly ReadingRow[], span: Span, key: string): ModelRow[] {
+  return rows.map((r, i): ModelRow => {
+    const at = `${key}~${i}`;
+    return { ...r, refs: r.refs ?? [], span, key: at, comesAt: 1, more: [], roles: [], inValue: true, children: valueRows(r.children, span, at) };
+  });
+}
+
+/**
  * The rows of a token. A redirection around a command is the command's row, with its redirections among its parts: the box is
  * the command, what bash sets up for it included. A token that does not come in at this depth gives its place to its parts,
  * unless it holds what the panel must show (a warning, a fact, a value, an example, a capture group's colour, what a command name
@@ -211,6 +225,7 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build, shell: Shell = { l
   const marks = all.flatMap((r) => r.marks ?? []);
   const facts = unique(all.flatMap((r) => r.facts ?? []));
   const value = all.find((r) => r.value)?.value;
+  const reading = all.find((r) => r.reading)?.reading;
   const group = all.find((r) => r.group)?.group;
   const examples = (head === t ? chain : [t, ...chain]).flatMap((x) => x.examples ?? []);
   const name = all.find((r) => r.name)?.name;
@@ -222,7 +237,8 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build, shell: Shell = { l
   const comesAt: Depth = !up || holds ? 1 : ownDepth(head, own);
   // (The first token of a string a shell reads says which shell; so does a role of that shell's.)
   const inShell: Shell = t.process ? { layer: 'child', process: t.process } : whole?.roles.find((r) => r.layer === 'child' || r.layer === 'bash') ?? shell;
-  const children = parts.flatMap((c) => rowsOf(c, own, b, inShell));
+  // (The rows of the reading of its value come first among its parts, under its value's line.)
+  const children = [...(reading ? valueRows(reading.rows, t.span, keyOf(t.span)) : []), ...parts.flatMap((c) => rowsOf(c, own, b, inShell))];
   if (t.grammar === 'pipeline') connect(children, b.lang);
   if (comesAt > depth) return children;
   const range = depth === 2 && b.roles.size ? roleOfRow(t, whole, b.names.get(at), inShell, b.lang, b.script) : undefined;
@@ -238,6 +254,7 @@ function rowsOf(t: Token, up: TokenRow | undefined, b: Build, shell: Shell = { l
     texts: unique(all.flatMap((r) => r.texts ?? [])),
     name,
     value,
+    ...(reading ? { reading } : {}),
     group,
     refs: unique(all.flatMap((r) => r.refs ?? [])),
     ...(range && !range.roles.length ? { refs: unique([...all.flatMap((r) => r.refs ?? []), ...range.refs]) } : {}),
