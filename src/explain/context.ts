@@ -24,18 +24,17 @@ import { effEndRow, intersects, isBlockLike } from './nodes';
 import { pushAll } from '../lists';
 
 /**
- * The command whose arguments are being explained (`Explainer.command`): its name, its words, and their parse
- * (`nodes` are the words the parse's indices count, of which `args` are this command's), which the explanations of
- * embedded languages read; and whether the shell reads the words again (`rereads`, `eval`: set by the rendering of
- * the words, while it reads them); and the words an option replaces with each path or input line before it runs a command (`placeholders`, find's `{}`, xargs's `-I%`: how).
- */
-/**
  * A command whose words are read, as the readers of the languages of its words see it (src/explain/embedded.ts): its name
- * as the interpreter read it (`cmd`), the parse of its words `nodes`, and the spec.
+ * as the interpreter read it (`cmd`), the parse of its words (`nodes` are the words the parse's indices count), and the spec.
  */
 export interface CommandRead { cmd: string; parse: ArgvParse; nodes: SyntaxNode[]; spec: CommandSpec }
 
-/** The command whose words are explained (`Explainer.command`): its reading, and the words of this command (`args`). */
+/**
+ * The command whose arguments are being explained (`Explainer.command`): its reading, and the words of this command
+ * (`args`, among `nodes`); whether the shell reads the words again (`rereads`, `eval`: set by the rendering of the words,
+ * while it reads them); and the words an option replaces with each path or input line before it runs a command
+ * (`placeholders`, find's `{}`, xargs's `-I%`: how).
+ */
 export interface CommandContext extends CommandRead { args: SyntaxNode[]; rereads?: boolean; placeholders?: Map<SyntaxNode, Replaced> }
 
 /** A key of a memo kept for one line (`Explainer.memo`); the code that reads the memo makes its key. */
@@ -170,13 +169,15 @@ export interface Explainer {
   /** Whether the shell gets to the text at `n` (`reachedAt`): not after a sure stop, nor in a string run by a command it does not get to. */
   reachedAt(n: SyntaxNode): boolean;
   /**
-   * The document's part of `evidenceAt` and `reachedAt` (docs/design/known-values.md, 3.1): `readAs` (or `hostReadAs`) and
-   * `stopAt` at `n`, with the document's `script`, `host` and `stopsFrom`, whichever line asks.
+   * The part of `evidenceAt` and `reachedAt` that is not one of the flags a line sets for itself (docs/design/known-values.md, 3.1):
+   * `readAs` (or `hostReadAs`) and `stopAt` at `n`, with this line's `script`, `host` and `stopsFrom`. They are the document's for
+   * a node of the line's own region only: in a host file `stopsFrom` is the row the line's shell starts on (`shellStart`,
+   * src/hosts/remap.ts; a bats line's own `@test`), so a node on another line needs its own region's (step 2 of the plan).
    */
   documentEvidenceAt(n: SyntaxNode): ReadKnown | undefined;
   documentStopAt(n: SyntaxNode): Stop | undefined;
-  /** The line's part: what the flags this line sets for itself (`unread`, `unsure`, `sometimes`; `unreached`) make of the document's. */
-  lineEvidence(known: ReadKnown | undefined): ReadKnown | undefined;
+  /** The line's part: what the flags this line sets for itself (`unread`, `unsure`, `sometimes`; `unreached`) make of the other. */
+  lineEvidence(known: () => ReadKnown | undefined): ReadKnown | undefined;
   lineReached(reached: boolean): boolean;
   /** The strongest stop before the text at `n` (`stopAt`), and of the command that runs its string: a string run where a shell may not get to, or that discards a failure of this `fault`, counts as after a `may` stop. */
   stopAt(n: SyntaxNode, fault?: Fault): Stop | undefined;
@@ -405,15 +406,16 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   evidenceAt(n: SyntaxNode): ReadKnown | undefined {
-    return this.lineEvidence(this.documentEvidenceAt(n));
+    return this.lineEvidence(() => this.documentEvidenceAt(n));
   }
 
   documentEvidenceAt(n: SyntaxNode): ReadKnown | undefined {
     return this.opts.host ? hostReadAs(this.tree, n.startIndex, this.opts.stopsFrom, this.shell) : readAs(this.tree, n.startIndex, this.opts.script, this.state);
   }
 
-  lineEvidence(known: ReadKnown | undefined): ReadKnown | undefined {
+  lineEvidence(read: () => ReadKnown | undefined): ReadKnown | undefined {
     if (this.opts.unread) return undefined;
+    const known = read();
     return known && (this.opts.unsure || this.opts.sometimes) ? 'unsure' : known;
   }
 

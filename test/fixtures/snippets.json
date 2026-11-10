@@ -54,6 +54,7 @@
  "# bash-explainer disable-file=shopt",
  "# bash-explainer disable=dbracket,echoE",
  "# hi",
+ "# mikefarah/yq v3\nbash -c \"yq r f.yml a\"",
  "# shellcheck disable=SC2086",
  "# shellcheck shell=dash\necho\n",
  "#!/bin/ash\n",

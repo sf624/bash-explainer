@@ -40,11 +40,11 @@ export function specFor(cx: Explainer, name: string): CommandSpec | undefined {
 
 /**
  * What the lookup of a command's spec reads besides the model (src/semantics/commandhead.ts): the settings and the host
- * of the document, its text, the bash release.
+ * of the document, the bash release.
  */
 export function lookupOf(cx: Explainer): CommandLookup {
   const { customCommands, hostCommands, host, yqFlavor, bashVersion } = cx.opts;
-  return { customCommands, hostCommands, yq: { doc: cx.source, host, setting: yqFlavor }, bashVersion };
+  return { customCommands, hostCommands, yq: { host, setting: yqFlavor }, bashVersion };
 }
 
 /**
