@@ -348,6 +348,8 @@ let compiled = new Set<string>();
 interface Account { left: number }
 /** What the line being explained has left (`withinLine`). */
 let line: { limit: number; examples: Account; results: Account } | undefined;
+/** What the examples of lines have spent in the process, for the tests (`lineCostOf`). */
+let lineSpent = 0;
 
 /** A whole limit, for what runs next. */
 function fresh(): void {
@@ -793,7 +795,10 @@ export function guarded<T>(run: () => T, refused: (id: NotComputedId) => T): T {
     return caught(run, refused);
   } finally {
     depth--;
-    if (account) account.left -= granted - left;
+    if (account) {
+      account.left -= granted - left;
+      lineSpent += granted - left;
+    }
   }
 }
 
@@ -872,11 +877,14 @@ export function withinLine<T>(root: { text: string }, run: () => T, more = 0): T
 
 /**
  * Inside a line's budget, `run` with a budget of its own, of the same size: what is kept for the whole document (src/explain/whole.ts) must not
- * depend on what the line that asked first had spent already.
+ * depend on what the line that asked first had spent already. With `parts`, a share of that size: one of the `parts` things a line holds at
+ * most, each kept apart (the calls of a line of a host file's part in another language, src/hosts/languages.ts), so that the line's together
+ * cost no more than one line's budget.
  */
-export function withinOwnLine<T>(run: () => T): T {
+export function withinOwnLine<T>(run: () => T, parts = 1): T {
   const outer = line!;
-  line = { limit: outer.limit, examples: { left: outer.limit }, results: { left: outer.limit } };
+  const limit = Math.floor(outer.limit / parts);
+  line = { limit, examples: { left: limit }, results: { left: limit } };
   try {
     return run();
   } finally {
@@ -892,6 +900,16 @@ export function guardedResult<T>(run: () => T): T | undefined {
 /** The characters of the texts kept to be refused again, for the tests. */
 export function keptChars(): number {
   return longChars;
+}
+
+/**
+ * What the examples of the lines explained in `run` spent of their budgets, those kept apart (`withinOwnLine`) too, and what one line's
+ * budget is at most, for the tests.
+ */
+export function lineCostOf(run: () => void): { spent: number; lineLimit: number } {
+  const before = lineSpent;
+  run();
+  return { spent: lineSpent - before, lineLimit: LINE_LIMIT };
 }
 
 /** What the runs in `run` cost, for the tests and the figures of the limit. */

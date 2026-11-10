@@ -134,10 +134,10 @@ export function hasParts(extracted: Extracted): boolean {
 
 /**
  * How many lines of a host document are parts in another language: lines of code, which the budget of a line counts (`withinLine`).
- * A line two calls share counts twice, as each call is explained with a budget of its own (`explainLanguageLine`).
+ * A line several calls share counts once: together they cost no more than one line's budget (`LanguageRegion.crowd`).
  */
 export function languageLines(extracted: Extracted): number {
-  return extracted.languages.reduce((n, r) => n + r.lines.length, 0);
+  return new Set(extracted.languages.flatMap((r) => r.lines)).size;
 }
 
 /**
