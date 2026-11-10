@@ -1,6 +1,7 @@
 // Which kind of file a text is, from its content alone (the web page's paste has no file name). Only strong
 // signals count: a text that is not clearly one kind gives undefined, and the caller keeps the kind it has.
 import { detectShell } from '../dialect';
+import { callsRe } from './python';
 import { BATS_SHEBANG, extractShell, type HostKind } from './index';
 
 /** A kind of file: a shell script, or a host file with shell code in it. */
@@ -25,7 +26,7 @@ const MAKE_RULE = /^[^\s#=:][^#=:]*::?(?![=:/])([ \t]|$)/;
  * ShellCheck `shell=` directive, bats' `@test "…" {`, a Dockerfile that starts with `FROM`, a GitHub Actions workflow
  * (`on:` and `jobs:` with `runs-on:` or `steps:`), a GitLab CI file, a Makefile rule with a TAB recipe or `.PHONY:`,
  * Markdown with a shell code block (or headings and a code block), a Jenkinsfile with a `sh` step, a Python script that runs
- * commands, a package.json with `scripts`. Undefined when nothing is that clear (a shell script without a shebang among them).
+ * commands or calls `re`, a package.json with `scripts`. Undefined when nothing is that clear (a shell script without a shebang among them).
  */
 export function detectKind(text: string): DetectedKind | undefined {
   const lines = text.replace(/^﻿/, '').split(/\r?\n/);
@@ -74,6 +75,7 @@ export function detectKind(text: string): DetectedKind | undefined {
   if (imports.some((l) => /\b(subprocess|os)\b/.test(l)) && /\b(subprocess\.\w+|os\.system|os\.popen)\s*\(/.test(text)) {
     return { kind: 'python', why: 'a Python script that runs commands' };
   }
+  if (imports.some((l) => /\bre\b/.test(l)) && callsRe(text)) return { kind: 'python', why: 'a Python script that uses regular expressions' };
   return undefined;
 }
 

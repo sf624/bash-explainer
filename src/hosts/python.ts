@@ -42,6 +42,20 @@ const RE_CALLS: Record<string, ReCall> = {
   're.subn': { params: ['pattern', 'repl', 'string', 'count', 'flags'] },
 };
 
+/** Whether a Python text calls a function of `RE_CALLS` through its imports (`import re` and `re.sub(…)`, `from re import sub` and `sub(…)`): the web page's detection of pasted Python. */
+export function callsRe(src: string): boolean {
+  const { tokens } = pyLex(src);
+  const imports = pyImports(src, tokens);
+  for (let i = 0; i < tokens.length; i++) {
+    if (isOp(src, tokens[i - 1], '.') || isName(src, tokens[i - 1], 'def') || isName(src, tokens[i - 1], 'class')) continue;
+    const called = dottedAt(src, tokens, i);
+    if (!called || !isOp(src, tokens[called.next], '(')) continue;
+    const full = pyResolve(imports, called.name);
+    if (full !== undefined && full in RE_CALLS) return true;
+  }
+  return false;
+}
+
 /** What a function of `RE_CALLS` adds to its pattern, and the release it needs (the top row of the pattern says them). */
 export function reCallOf(name: string): Pick<ReCall, 'anchors' | 'since'> {
   const { anchors, since } = RE_CALLS[name];
