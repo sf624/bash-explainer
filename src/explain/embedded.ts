@@ -11,7 +11,7 @@ import { awkHasGnuEscapes } from '../dict/aliases';
 import { YQ_SPECS } from '../dict/yq';
 import { explainEscapes } from '../embedded/format';
 import { type Embedded, EMBEDDED, type EmbeddedContext } from '../embedded/registry';
-import { HOLES, isHole, type EmbeddedLang, type EmbeddedToken, type HoleMark } from '../embedded/types';
+import { HOLES, isHole, type EmbeddedLang, type EmbeddedToken } from '../embedded/types';
 import { codeSpan } from '../label';
 import { countIn } from '../semantics/argwords';
 import { givesElements } from '../semantics/elements';
@@ -28,6 +28,7 @@ import type { SyntaxNode } from '../syntax/tree';
 import { type Explainer, memoKey } from './context';
 import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
+import { fillHoles, holeSink, type HoleSink, holesRead, holeText } from './holes';
 import { fromEmbedded, same, sourcePos } from './nodes';
 import { invalidHow } from '../arith';
 import { given, regexFlavor, trContext } from './reads';
@@ -122,46 +123,8 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
 /** The languages that are code: a hole that stops their reader says the script depends on it, and how a value is passed as data. */
 const SCRIPTS: Partial<Record<EmbeddedLang, { data?: string }>> = { sed: {}, awk: { data: '`-v name=value`' }, jq: { data: '`--arg name value`' }, yq4: {}, perl: {} };
 
-/** The value that has said `key` on this line (`Explainer.holesSaid`), and none where this is the first time: then it is `value`. */
-function saidBefore(cx: Explainer, key: string, value: string): string | undefined {
-  const first = cx.holesSaid.get(key);
-  if (!first) cx.holesSaid.set(key, value);
-  return first;
-}
-
-/**
- * What is said of a hole, from the catalog: each risk once on the line, the first time a hole of its kind stands there; a
- * later hole of that kind names the first. `part`: the row of a part with nothing else in it says this too, so the text
- * leaves out what that row says, and may be empty.
- */
-function holeText(cx: Explainer, value: string, mark: HoleMark, part: boolean): string {
-  const said = (key: string): string | undefined => saidBefore(cx, key, value);
-  const { place, delimiter, perl, around, written } = mark;
-  const like = (first: string): string => (part ? '' : cx.text('hole-like', { value, like: first }));
-  if (place === 'regex') {
-    const first = said('regex');
-    const ends = delimiter && !said(`regex end ${delimiter} ${perl}`) ? delimiter : undefined;
-    const says = { special: !first, delimiter: ends, perl: perl && !said('regex perl'), around: around && !said('regex around') };
-    const rest = Object.values(says).some(Boolean) ? cx.text('hole-regex', { value, part, newline: !perl, patterns: !delimiter && !perl, ...says }) : '';
-    return [...(first ? [like(first)] : []), rest].filter(Boolean).join(cx.sep());
-  }
-  if (place === 'repeat') return cx.text('hole-repeat', { value, written: written!, like: said(place) });
-  const first = said(`${place} ${delimiter}`);
-  // (A sentence on what stands after the hole is new where the first hole of the kind had nothing after it.)
-  const newer = around && !said(`${place} around`);
-  if (first && !newer) return like(first);
-  switch (place) {
-    case 'replacement': return cx.text('hole-replacement', { value, delimiter, part });
-    case 'perl-replacement': return cx.text('hole-perl-replacement', { value, delimiter, part });
-    case 'sed-text': return cx.text('hole-sed-text', { value, part });
-    case 'tr': return cx.text('hole-tr', { value, part });
-    case 'address': case 'date': case 'printf': return cx.text(`hole-${place}`, { value, around });
-    // (A value in a word of a query expression can end the word: said once on the line.)
-    case 'target-package': case 'target-name': return cx.text(`hole-${place}`, { value, query: mark.query && !said('query') });
-    case 'query-word': said('query'); return cx.text('hole-query-word', { value });
-    default: return cx.text(`hole-${place}`, { value });
-  }
-}
+/** The holes of the shell line of `cx` (`Explainer.holesSaid`): a newline in a regex's value may make two patterns of the command. */
+const sinkOf = (cx: Explainer): HoleSink => holeSink(cx.lang, cx.holesSaid, true);
 
 /**
  * A reading of a text with holes (`Literal.holes`). It stands only if the reader claimed every hole with a token of a hole
@@ -173,37 +136,17 @@ function readHoles(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNod
   const { parse, nodes, spec } = cx.command!;
   const source = (c: string): string => lit.holes![c];
   const show = (text: string): string => text.replace(HOLES, source);
-  const claimed = new Set<number>();
-  let error = false;
-  const look = (t: EmbeddedToken): void => {
-    if (t.hole && isHole(lit.text[t.start])) claimed.add(t.start);
-    if (t.kind === 'error') error = true;
-    t.children.forEach(look);
-  };
-  read?.tokens.forEach(look);
-  const at: number[] = [];
-  for (let k = 0; k < lit.text.length; k++) if (isHole(lit.text[k])) at.push(k);
-  const open = at.filter((k) => !claimed.has(k));
+  const sink = sinkOf(cx);
+  const { at, open, error } = holesRead(lit.text, read?.tokens);
   if (!read || error || open.length) {
     const script = SCRIPTS[lang];
     const named = [...new Set((open.length ? open : at).map((k) => codeSpan(source(lit.text[k]))))];
     if (!script) return { stopped: true };
-    const data = saidBefore(cx, `script ${parse.command}`, named[0]) ? undefined : script.data;
+    const data = sink.saidBefore(`script ${parse.command}`, named[0]) ? undefined : script.data;
     return { stopped: true, reading: { tokens: [], note: cx.text('hole-script', { values: named, command: parse.command, data }) } };
   }
   const spans = at.map((k): Span => ({ start: sourcePos(a, sourceIndex(lit, k, false)), end: sourcePos(a, sourceIndex(lit, k + 1, true)) }));
-  const said = (t: EmbeddedToken, part: boolean): string => holeText(cx, codeSpan(source(t.hole!.of ?? lit.text[t.start])), t.hole!, part);
-  const fill = (t: EmbeddedToken): EmbeddedToken => {
-    const [only] = t.children;
-    // (A part with only a hole in it: the row of the part says what the hole's would, and bash's `$x` stands under it.)
-    const risk = t.children.length === 1 && only.hole && only.start === t.start && only.end === t.end ? said(only, true) : undefined;
-    return {
-      ...t,
-      explanation: t.hole ? said(t, false) : show(t.explanation) + (risk ? `: ${risk}` : ''),
-      ...(t.label ? { label: show(t.label) } : {}),
-      children: risk === undefined ? t.children.map(fill) : [],
-    };
-  };
+  const said = (t: EmbeddedToken, part: boolean): string => holeText(sink, codeSpan(source(t.hole!.of ?? lit.text[t.start])), t.hole!, part);
   // (The whole word is one hole: no parts for the reader to show, and what it says stands on the word, beside bash's `$x`.)
   const whole = read.tokens.length === 1 && read.tokens[0].hole && lit.text.length === 1 ? read.tokens[0] : undefined;
   // (A regex that is only the value: the word says it is a pattern, and `pattern-from-variable` (src/pitfalls.ts) what its characters do.)
@@ -211,9 +154,9 @@ function readHoles(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNod
   // (A value that starts with `-` is an option of the command, where the word is its first operand and the reader reads more of it. In code, the text of the hole says what the value may be.
   // To a parser of `letters`, a word is an option only if each letter is one: never `"$a\n"` of `echo -e`, which a reader reads for its escapes, nor one of `env printf`, which has no such option.)
   const first = parse.roles.find(({ role }) => role.role === 'operand' || role.role === 'end-of-options');
-  const dash = !SCRIPTS[lang] && lit.text.length > 1 && isHole(lit.text[0]) && first?.role.role === 'operand' && same(nodes[first.word], a) && !rulesOf(spec).letters && !saidBefore(cx, `dash ${parse.command}`, source(lit.text[0]))
+  const dash = !SCRIPTS[lang] && lit.text.length > 1 && isHole(lit.text[0]) && first?.role.role === 'operand' && same(nodes[first.word], a) && !rulesOf(spec).letters && !sink.saidBefore(`dash ${parse.command}`, source(lit.text[0]))
     ? cx.text('hole-leading-dash', { value: codeSpan(source(lit.text[0])), command: parse.command }) : undefined;
-  const tokens = whole ? [] : read.tokens.map(fill);
+  const tokens = whole ? [] : fillHoles(sink, read.tokens, lit.text, source);
   // (Where the reader's note names the value, as tr's does, this text does not again.)
   const note = [...(read.note ? [show(read.note)] : []), ...(whole ? [said(whole, !!read.note)] : []), ...(dash ? [dash] : [])].filter(Boolean).join(cx.sep());
   return { spans: whole ? [] : spans, read: { tokens, ...(note ? { note } : {}) } };

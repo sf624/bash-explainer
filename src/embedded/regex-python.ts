@@ -46,6 +46,8 @@ export const PYTHON_SINCE = {
   globalFlagsAtStart: '3.11',
   /** `count` of `sub` and `subn`, and `maxsplit` of `split`, passed by position warn (DeprecationWarning). */
   positionalCount: '3.13',
+  /** A backslash a string that is not raw keeps, as it starts no escape (`"\\d"`), warns (SyntaxWarning; a DeprecationWarning before). */
+  invalidEscape: '3.12',
 } as const;
 
 /** A flag of Python's `re`, by its long name. */

@@ -1,15 +1,16 @@
 import { type Shell, shellFromName } from '../dialect';
 import { featureWorks } from '../shellfeatures';
 import type { Pos } from '../analyzer-types';
-import type { CallArgument, CallFlags, LanguageRegion, LiteralSource, ReParam, RegionNote } from './index';
+import type { CallArgument, CallFlags, LanguageRegion, LiteralHole, LiteralSource, ReParam, RegionNote, StringEscapeRisk } from './index';
 import { flagsAsCount } from './scripts';
 import { type JsonWord, execWords } from './dockerfile';
 import { LineOut, Builder } from './builder';
 import type { HostMeaning } from '../messages-hosts';
-import { isName, isOp, type PyLexed, pyLex } from './pylex';
-import { argValue, type PyArg } from './pyvalue';
+import { isName, isOp, type PyField, type PyLexed, pyLex } from './pylex';
+import { argValue, type PyArg, type PyHole } from './pyvalue';
 import { dottedAt, type PyImports, pyImports, pyResolve } from './pyimports';
 import { type FlagState, PYTHON_FLAGS, type PythonOption } from '../embedded/regex-python';
+import { HOLE_COUNT, hasHole, holeChar } from '../embedded/types';
 
 /** Python calls that run a command; `shell` says whether a string goes to /bin/sh. */
 interface PyCall { shell: 'always' | 'kwarg' | 'never'; args: 'first' | 'all' }
@@ -203,7 +204,7 @@ function claimLines(b: Builder, calls: readonly ReCandidate[]): void {
  * given yet (`claimLines`): its arguments, each with the parameter it binds (`RE_CALLS`: by its slot, or by keyword) and its value
  * when it is string literals. The arguments of `flags`, `count` and `maxsplit` get the flags they name (`reFlags`), and the region
  * the options of its flags. A region reads a pattern of string literals only (one, or several joined, over several lines too; an
- * f-string with a field and a `\N{…}` escape are not read yet). A call whose pattern is something else is a region only where it
+ * f-string's fields as holes; a `\N{…}` escape is not read). A call whose pattern is something else is a region only where it
  * has a fact of the call (`flagsAsCount`), with no pattern and no options (docs/design/python-regex.md, 2.2).
  */
 function reCall(lx: PyFile, imports: PyImports, p: { name: string; full: string; first: number; at: number }, pos: PyPos): ReCandidate | undefined {
@@ -224,10 +225,13 @@ function reCall(lx: PyFile, imports: PyImports, p: { name: string; full: string;
     // (By keyword, the parameter of that name; else the next slot. One past them binds none: Python raises `TypeError`.)
     const role = keyword ? params.find((n) => isName(src, tokens[a[0]], n)) : params[slot++];
     const part = keyword ? a.slice(2) : a;
-    const value = literalValue(lx, unwrap(lx, part));
+    // (Only the pattern's value may have fields, read as holes: docs/design/python-regex.md, 4.3.)
+    const found = literalValue(lx, unwrap(lx, part), role === 'pattern');
+    const literal = found && literalSource(lx, imports, found, at);
+    const value = literal ? found : undefined;
     const span = { start: at(tokens[part[0]].start), end: at(tokens[part[part.length - 1]].end) };
     const flags = role === 'flags' || role === 'count' || role === 'maxsplit' ? reFlags(lx, imports, unwrap(lx, part), at) : undefined;
-    return { arg: { ...(role ? { role } : {}), keyword, span, ...(value ? { literal: literalSource(value, at) } : {}), ...(flags ? { flags } : {}) }, value };
+    return { arg: { ...(role ? { role } : {}), keyword, span, ...(literal ? { literal } : {}), ...(flags ? { flags } : {}) }, value };
   });
   const args = read.map((r) => r.arg);
   if (args.some((a) => !a.role) || !args.some((a) => a.role === 'pattern')) return undefined;
@@ -302,20 +306,85 @@ function reFlags(lx: PyFile, imports: PyImports, part: number[], at: (off: numbe
   return names.length ? { names, value, unknown } : undefined;
 }
 
-/** Where each character of the value of literals is in the file (`LiteralSource`). */
-function literalSource(value: PyArg, at: (off: number) => Pos): LiteralSource {
+/**
+ * Where each character of the value of literals is in the file (`LiteralSource`), with each field of an f-string as a hole character
+ * (`holeChar`, src/embedded/types.ts) over the field's source, and the escapes of the strings a regex reads otherwise (`stringRisk`).
+ * None where the value holds a hole character of its own, or has more fields than there are hole characters.
+ */
+function literalSource(lx: PyFile, imports: PyImports, value: PyArg, at: (off: number) => Pos): LiteralSource | undefined {
+  const { src } = lx;
+  if (hasHole(value.value) || value.holes.length > HOLE_COUNT) return undefined;
   const first = value.literals[0].token;
   const last = value.literals[value.literals.length - 1].token;
+  let text = '';
+  const from: Pos[] = [];
+  const to: Pos[] = [];
+  const holes: Record<string, LiteralHole> = {};
+  const escapes: { at: number; risk: StringEscapeRisk }[] = [];
+  let h = 0;
+  const hole = () => {
+    const { start, end, field } = value.holes[h] as Extract<PyHole, { kind: 'field' }>;
+    const c = holeChar(h++);
+    holes[c] = { written: src.slice(start, end), escaped: escapedField(src, imports, field) };
+    text += c;
+    from.push(at(start));
+    to.push(at(end));
+  };
+  for (let i = 0; i < value.value.length; i++) {
+    for (; h < value.holes.length && value.holes[h].at === i;) hole();
+    const risk = stringRisk(src, value, i);
+    if (risk) escapes.push({ at: text.length, risk });
+    text += value.value[i];
+    from.push(at(value.offs[i]));
+    to.push(at(value.ends[i]));
+  }
+  while (h < value.holes.length) hole();
   // (The end of the text the reader reads: after the last character, or the start of the first literal's text when it is empty.)
-  const after = value.value.length ? at(value.ends[value.ends.length - 1]) : at(first.lit!.contentStart);
-  return { value: value.value, at: [...value.offs.map(at), after], to: value.ends.map(at), span: { start: at(first.start), end: at(last.end) } };
+  const after = text.length ? to[to.length - 1] : at(first.lit!.contentStart);
+  return { value: text, at: [...from, after], to, span: { start: at(first.start), end: at(last.end) }, ...(h ? { holes } : {}), ...(escapes.length ? { escapes } : {}) };
 }
 
+/**
+ * How the strings write the character `i` of the value, where a regex reads its source otherwise (`StringEscapeRisk`): the escape
+ * `\b`, a backspace; an octal escape of one or two digits, not from `0` (`\1`, `\12`), which a regex reads as a group's number;
+ * a backslash a literal that is not raw keeps, as it starts no escape of Python's (`"\d"`: SyntaxWarning). Not one that an
+ * incomplete `\x`, `\u`, `\U` or `\N` leaves, which Python refuses.
+ */
+function stringRisk(src: string, value: PyArg, i: number): StringEscapeRisk | undefined {
+  const off = value.offs[i];
+  const written = src.slice(off, value.ends[i]);
+  if (value.kinds[i] === 'escape') return written === '\\b' ? 'backspace' : written.length < 4 && written[1] >= '1' && written[1] <= '7' ? 'octal' : undefined;
+  if (value.kinds[i] !== 'text' || written !== '\\') return undefined;
+  const lit = value.literals.find(({ token }) => token.start <= off && off < token.end)!.token.lit!;
+  return !lit.raw && !(lit.bytes ? 'x' : 'xuUN').includes(src[off + 1]) ? 'kept' : undefined;
+}
 
-/** The value of the argument of the token indexes `part` when it is string literals only, with none of their parts unknown. */
-function literalValue(lx: PyFile, part: number[]): PyArg | undefined {
+/**
+ * Whether a field of an f-string is a call of `re.escape` and nothing else (`{re.escape(x)}`, by the file's names: `{escape(x)}` after
+ * `from re import escape`), with no conversion, format spec or `=`: its value is the text, with every character special in a regex escaped.
+ */
+function escapedField(src: string, imports: PyImports, f: PyField): boolean {
+  if (f.debug !== undefined || f.bang !== undefined || f.colon !== undefined) return false;
+  const ts = f.tokens.filter((t) => t.kind !== 'comment');
+  const d = dottedAt(src, ts, 0);
+  if (!d || pyResolve(imports, d.name) !== 're.escape' || !isOp(src, ts[d.next], '(')) return false;
+  // (The `(` after the name closes at the last token: where the brackets from it first come back to none.)
+  let depth = 0;
+  const close = ts.findIndex((t, k) => {
+    const c = t.kind === 'op' ? src.slice(t.start, t.end) : '';
+    depth += c === '(' || c === '[' || c === '{' ? 1 : c === ')' || c === ']' || c === '}' ? -1 : 0;
+    return k >= d.next && depth === 0;
+  });
+  return close === ts.length - 1;
+}
+
+/**
+ * The value of the argument of the token indexes `part` when it is string literals only, with none of their parts unknown; with
+ * `fields`, the replacement fields of an f-string may be in it (a pattern's, read as holes), but no `\N{…}`, whose character is not known.
+ */
+function literalValue(lx: PyFile, part: number[], fields = false): PyArg | undefined {
   const arg = argValue(lx.src, part.map((i) => lx.tokens[i]));
-  return arg && !arg.rest.length && !arg.holes.length ? arg : undefined;
+  return arg && !arg.rest.length && arg.holes.every((h) => fields && h.kind === 'field') ? arg : undefined;
 }
 
 /** Shell variable name standing for a Python expression. */

@@ -166,6 +166,13 @@ export const ARGV_TEXTS = {
   'hole-class': tokenText<{ value: string }>(({ value }) => [
     `${value} の値の文字がこの集合に加わる。値の中の \`]\`・\`-\`・\`^\` は特別な意味を持つ`,
     `The characters of the value of ${value} join the set; \`]\`, \`-\` and \`^\` in it have their special meaning`]),
+  /** `rf"^{re.escape(x)}"`: a field of a Python pattern whose value `re.escape` made (`HoleMark.escaped`), in the pattern and in a set. */
+  'hole-regex-escaped': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値を文字どおりに照合する（\`re.escape\` が、正規表現で特別な意味を持つ文字それぞれの前に \`\\\` を付ける）`,
+    `The value of ${value}, matched as plain text (\`re.escape\` puts a \`\\\` before each character that is special in a regex)`]),
+  'hole-class-escaped': tokenText<{ value: string }>(({ value }) => [
+    `${value} の値の文字がこの集合に加わる（\`re.escape\` が \`]\`・\`-\`・\`^\`・\`\\\` の前に \`\\\` を付けるので、どれも文字そのもの）`,
+    `The characters of the value of ${value} join the set (\`re.escape\` puts a \`\\\` before \`]\`, \`-\`, \`^\` and \`\\\`, so each is itself)`]),
   /** `$x*`: a quantifier after a hole applies to what the value ends with. */
   'hole-repeat': tokenText<{ value: string; written: string; like?: string }>(({ value, written, like }) => [
     `${codeSpan(written)}: ${value} の値の最後の要素（1文字、文字の集合、グループ）を繰り返す。値全体ではない${like ? '' : `（値が空なら、${value} がないものとして読まれる）`}`,

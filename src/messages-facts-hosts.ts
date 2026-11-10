@@ -44,4 +44,13 @@ export const HOST_MESSAGES = {
     `\`${written}\` はフラグではなく \`${param}\`（${value}）として渡される。\`${call}\` は${param === 'count' ? `最大 ${value} 回だけ置き換え` : `最大 ${value} 回だけ分割し`}、パターンにはフラグが付かない。\`flags=${written}\` と書く。${since ? `Python ${since} 以降は、\`${param}\` を位置引数で渡すと DeprecationWarning も出る。` : ''}`,
     `\`${written}\` is passed as \`${param}\` (${value}), not as flags: \`${call}\` ${param === 'count' ? `replaces at most ${value} matches` : `splits at most ${value} times`}, and the pattern does not get the flag. Write \`flags=${written}\`.${since ? ` Python ${since} and later also warn (DeprecationWarning) when \`${param}\` is passed by position.` : ''}`],
   ({ written, param, value }) => [`\`${written}\` はフラグではなく \`${param}\`（${value}）になる。`, `\`${written}\` is taken as \`${param}\` (${value}), not as flags.`]),
+  // (Facts of a Python string that is a pattern of `re` and is not raw: they cite its escapes; docs/design/python-regex.md, 5.3.)
+  'python-regex-string-backspace': pitfall(['python-string-escapes'], () => [
+    '`r` の付かない文字列では、`\\b` はバックスペース（U+0008）になる。パターンはそこで単語の境界ではなく、バックスペースの文字に一致する。`r"…"` のように raw 文字列で書く（または `\\\\b`）。',
+    'In a string without `r`, `\\b` is a backspace (U+0008): the pattern matches a backspace character there, not a word boundary. Write it as a raw string, `r"…"` (or `\\\\b`).'],
+  () => ['`r` がないので、`\\b` は単語の境界ではなくバックスペースになる。', 'Without `r`, `\\b` is a backspace, not a word boundary.']),
+  'python-regex-string-octal': pitfall<{ written: string; code: string }>(['python-string-escapes'], ({ written, code }) => [
+    `\`r\` の付かない文字列では、\`${written}\` は文字 ${code} になる。パターンはそこでグループ ${written.slice(1)} に一致した文字列ではなく、その文字に一致する。\`r"…"\` のように raw 文字列で書く（または \`\\${written}\`）。`,
+    `In a string without \`r\`, \`${written}\` is the character ${code}: the pattern matches that character there, not what group ${written.slice(1)} matched. Write it as a raw string, \`r"…"\` (or \`\\${written}\`).`],
+  ({ written, code }) => [`\`r\` がないので、\`${written}\` はグループの参照ではなく文字 ${code} になる。`, `Without \`r\`, \`${written}\` is the character ${code}, not a reference to a group.`]),
 } satisfies Catalog;

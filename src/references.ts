@@ -18,6 +18,7 @@ export interface ManPage { kind: 'man' | 'python'; page: string; section?: strin
 const MAN_PAGES: Readonly<Record<string, ManPage>> = {
   'execve(2)': { kind: 'man', page: 'execve', section: '2', anchor: 'Interpreter scripts', url: 'https://man7.org/linux/man-pages/man2/execve.2.html' },
   'python-re-functions': { kind: 'python', page: 're', anchor: 'Functions', url: pythonDocs('library/re.html#functions') },
+  'python-string-escapes': { kind: 'python', page: 'Lexical analysis', anchor: 'Escape sequences', url: pythonDocs('reference/lexical_analysis.html#escape-sequences') },
 };
 
 /** A reference as every output names it: `text`, its link's text (§3.8, execve(2), re); `title`, what it is about; `url`, its page. */

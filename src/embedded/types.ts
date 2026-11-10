@@ -33,6 +33,8 @@ export interface HoleMark {
   /** The hole this token is about, where the token is not the hole (`repeat`), and what the token is written as. */
   of?: string;
   written?: string;
+  /** The value is text the regex matches as it is, whatever it is: a field `{re.escape(x)}` of a Python f-string (src/hosts/languages.ts). */
+  escaped?: boolean;
 }
 
 /**

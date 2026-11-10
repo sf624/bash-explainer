@@ -81,9 +81,22 @@ export interface HostSubstitution {
 /**
  * The value of string literals of a host file, as a language's reader reads it, and where each of its characters is in the file:
  * `at[i]`, the place of its first source character, and `to[i]`, the end of its source range. `at` has one more entry, the end of
- * the literals' text. `span`: the literals, prefixes and quotes included.
+ * the literals' text. `span`: the literals, prefixes and quotes included. A replacement field of an f-string stands in `value` as a
+ * hole character (`isHole`, src/embedded/types.ts) over the field's source, and `holes` has it by that character (a pattern's
+ * only: docs/design/python-regex.md, 4.3). `escapes`: the characters, by their index in `value`, that the strings write in a way
+ * a regex reads otherwise (`StringEscapeRisk`).
  */
-export interface LiteralSource { value: string; at: Pos[]; to: Pos[]; span: Span }
+export interface LiteralSource { value: string; at: Pos[]; to: Pos[]; span: Span; holes?: Readonly<Record<string, LiteralHole>>; escapes?: readonly { at: number; risk: StringEscapeRisk }[] }
+
+/** A field of an f-string: as written (`{prefix}`), and whether its value is text with every character special in a regex escaped (`{re.escape(x)}`). */
+export interface LiteralHole { written: string; escaped: boolean }
+
+/**
+ * How a string that is not raw writes a character whose source a regex would read otherwise (docs/design/python-regex.md, 5.3): the
+ * escape `\b`, a backspace, where a regex's `\b` is a word boundary; an octal escape of one or two digits (`\1`), a character,
+ * where a regex's is a group's number; a backslash the string keeps (`"\d"`), as it starts no escape of Python's strings.
+ */
+export type StringEscapeRisk = 'backspace' | 'octal' | 'kept';
 
 /**
  * A parameter of a function of Python's `re` (docs/design/python-regex.md, 5.1), by its name in Python, which is also its
