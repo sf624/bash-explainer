@@ -97,17 +97,23 @@ export function valueReading(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): 
  * (`knownCopy`: the word model). A quoted `"$re"` is no copy of this kind: bash matches it as text. Kept like `valueReading`.
  */
 export function regexValueReading(cx: Explainer, right: SyntaxNode): ValueReadingMade | undefined {
-  const test = ancestor(right, (x) => x.type === 'extended_test')!;
   return keptValue(cx, right, 'regex', (line) => {
     const known = knownCopy(right, cx.state);
     // (A quoted copy, `"$re"`, has the expansion inside the word: bash matches that as text, not as a regex.)
-    if (!known || known.part !== right) return undefined;
+    if (!known || known.quoted) return undefined;
     const { part, value } = known;
-    // (A syntax error of the test is said by its own token: `regexReached` of src/explain/tests.ts, from the document.)
-    const reached = line.lineReached(cx.documentStopAt(right) !== 'sure' && !hasError(test));
+    const reached = line.lineReached(regexReachedInDocument(cx, right));
     const tokens = explainRegex(value.text, 'ere', cx.lang, { tool: 'bash', reached });
     return { tokens: finishedApart(placeValue(tokens, part, value.text, 'regex')), part, text: value.text };
   });
+}
+
+/**
+ * The document's part of whether an error of the regex at `n`, the right side of `=~`, is a problem: the shell gets there
+ * (`documentStopAt`), and the `[[ ]]` around it parses. A line puts its own flags on top (`Explainer.reachedAt`, `lineReached`).
+ */
+export function regexReachedInDocument(cx: Explainer, n: SyntaxNode): boolean {
+  return cx.documentStopAt(n) !== 'sure' && !hasError(ancestor(n, (a) => a.type === 'extended_test')!);
 }
 
 /** The reading of `a` for the document, by every input it reads, made by `make` with the part of the line that asks (`DOCUMENT_ONLY` for the kept one). */

@@ -71,14 +71,15 @@ function plainCopy(word: SyntaxNode): SyntaxNode | undefined {
  * model decides nothing with no files (an absolute pattern, a `.` segment, a script that changes its directory), nor for a
  * value it splits into several fields.
  */
-export function knownCopy(word: SyntaxNode, model: StateModel): { part: SyntaxNode; value: ExpansionValue; assumes?: 'no-match' } | undefined {
+export function knownCopy(word: SyntaxNode, model: StateModel): { part: SyntaxNode; value: ExpansionValue; quoted: boolean; assumes?: 'no-match' } | undefined {
   const part = plainCopy(word);
   const value = part && expansionValue(part, model);
   // (The whole word: never joined to other text.)
   if (!value || (value.words && value.words.length !== 1)) return undefined;
   const { fields } = wordFields(word, model, { files: [] });
   if (fields?.length !== 1 || fields[0] !== value.text) return undefined;
-  return { part: part!, value, ...(value.glob ? { assumes: 'no-match' as const } : {}) };
+  // (Quoted: from the word model, which also decides what bash does to the part.)
+  return { part: part!, value, quoted: partMeaning(part!, model)!.quoted, ...(value.glob ? { assumes: 'no-match' as const } : {}) };
 }
 
 /**
