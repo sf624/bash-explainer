@@ -2,8 +2,9 @@
 #   python3 -I test/support/python-calls.py < REQUEST.json
 # REQUEST (on stdin): [{"call": CODE, "s": LITERAL or null, "tests": [TEXT…] or null, "bytes": BOOL}…]. CODE is a call of `re` as a
 # `.py` file writes it, evaluated with `re` and `s` bound: `s` is the value of LITERAL, a Python literal (the input an example shows,
-# as `repr` wrote it). With "tests", it says for each text whether the call finds a match when `s` is that text (bytes for a bytes
-# row; a compiled pattern: its `search`); else it gives the `repr` of what the call gives back, or the exception's type and message.
+# as `repr` wrote it). CODE may have statements on lines before the call (`P = re.compile(…)`, for a method of `P`), run first.
+# With "tests", it says for each text whether the call finds a match when `s` is that text (bytes for a bytes row; a compiled
+# pattern: its `search`); else it gives the `repr` of what the call gives back, or the exception's type and message.
 # It prints, as JSON, its version and the results, row by row.
 import ast
 import json
@@ -17,8 +18,11 @@ request = json.load(sys.stdin)
 
 
 def call(row, s):
-    got = eval(row['call'], {'re': re, 's': s})
-    return got
+    *before, last = row['call'].split('\n')
+    names = {'re': re, 's': s}
+    for statement in before:
+        exec(statement, names)
+    return eval(last, names)
 
 
 def run(row):

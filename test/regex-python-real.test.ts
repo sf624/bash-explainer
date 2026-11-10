@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
-import { explainRegex } from '../src/embedded/regex';
+import { explainRegex, readRegex } from '../src/embedded/regex';
+import { readTemplate } from '../src/embedded/regex-template';
 import { NO_PYTHON_FLAGS, PYTHON_FLAGS, type PythonRegexOptions } from '../src/embedded/regex-python';
 import type { EmbeddedToken } from '../src/embedded/types';
 import { PYTHON_REFERENCE } from '../src/python-reference';
@@ -78,6 +79,33 @@ const FLAGGED_REFUSED: Flagged[] = [
 const FLAGGED = [...FLAGGED_VALID, ...FLAGGED_REFUSED];
 
 /**
+ * Replacement templates of `re.sub` (#752): a pattern, a template, and whether both are bytes. Python reads the template when the call
+ * runs, whether or not anything matches (`re.sub(pattern, template, '')`), and refuses it with `re.error`, or `IndexError` for a name
+ * the pattern has no group of; the reader gives the same message at the same position (`readTemplate`), with the pattern's groups.
+ */
+type TemplateRow = [pattern: string, template: string, bytes: boolean];
+const TEMPLATES_VALID: TemplateRow[] = [
+  ['(a)', '\\1', false], ['(a)', '\\g<1>', false], ['(?P<n>a)', '\\g<n>', false], ['(?P<n>a)', '\\g<1>\\1', false], ['(a)', '\\g<0>', false], ['(a)', '\\g<01>', false],
+  ['(a)', '\\n\\t\\\\\\a\\b\\f\\r\\v', false], ['(a)', '\\0\\01\\012\\101\\377\\08', false], ['(a)', '\\-\\%\\é\\ \\<', false], ['(a)', 'plain', false],
+  ['(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)', '\\10\\g<10>', false], ['', '', false], ['(?P<é>a)', '\\g<é>', false], ['(a)', '\\g<0>', true],
+];
+const TEMPLATES_REFUSED: TemplateRow[] = [
+  ['a', '\\1', false], ['(a)', '\\2', false], ['(a)', '\\1\\2', false], ['(a)', '\\g<2>', false], ['(?P<n>a)', '\\g<m>', false], ['(a)', '\\g<1 >', false],
+  ['(a)', '\\g<-1>', false], ['(a)', '\\g<', false], ['(a)', '\\g<>', false], ['(a)', '\\g<a', false], ['(a)', '\\g1', false], ['(a)', '\\', false], ['(a)', 'ab\\', false],
+  ['(a)', '\\x41', false], ['(a)', '\\d', false], ['(a)', '\\400', false], ['(a)', '\\18', false], ['(a)', '\\10', false], ['(a)', '\\g<١>', false],
+  ['(a)', '\\g<a\\x>', false], ['(a)', '\\9\\', false], ['(a)', '\\g<100000000000000000000>', false], ['(a)', '\\g<007>\\g<002>', false], ['(a)', '\\g<\\>', false],
+  ['(a)', '\\1a\\19', false], ['(a)', '\\g<\xe9>', true], ['(a)', '\\u0041', false], ['(a)', 'x\\g', false],
+];
+const TEMPLATES = [...TEMPLATES_VALID, ...TEMPLATES_REFUSED];
+
+/** The message of the reader's refusal of a template, or null. */
+function templateRefusal([pattern, template, bytes]: TemplateRow): string | null {
+  const read = readRegex(pattern, 'python', 'en', { tool: 'python', python: { ...NO_PYTHON_FLAGS, bytes } });
+  const error = readTemplate(template, read.groups, bytes).items.find((i) => i.kind === 'error');
+  return error && 'message' in error ? error.message : null;
+}
+
+/**
  * Patterns read where `re.VERBOSE` is not known (a flags argument not read): each is compiled by the reference with no flags and
  * with `re.X`, and an Error is said only where both refuse it with the same message. A comment or whitespace of VERBOSE that holds
  * what Python refuses without it (`(`, `[`, global flags after whitespace), what both refuse, and what only VERBOSE refuses.
@@ -138,14 +166,14 @@ function texts(pattern: string): string[] {
 describe('the Python flavor of the regex reader against the reference Python', function () {
   this.timeout(60000);
   const ref = pythonReference();
-  let got: { version: string; errors: (string | null)[]; flagged: (string | null)[]; found: (string | null)[] };
+  let got: { version: string; errors: (string | null)[]; flagged: (string | null)[]; found: (string | null)[]; templates: (string | null)[] };
   before(function () {
     needPython(this, ref);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-python-re-'));
     try {
       const request = path.join(dir, 'request.json');
       const flagged = [...FLAGGED.map(([p, flags, bytes]) => [p, flagsOf(flags, bytes).value, bytes]), ...VERBOSE_UNKNOWN.flatMap((p) => [[p, 0, false], [p, 64, false]])];
-      fs.writeFileSync(request, JSON.stringify({ patterns: [...VALID, ...REFUSED], flagged, searches: SEARCHES.map(([p, t]) => [p, t]) }));
+      fs.writeFileSync(request, JSON.stringify({ patterns: [...VALID, ...REFUSED], flagged, searches: SEARCHES.map(([p, t]) => [p, t]), templates: TEMPLATES }));
       const r = spawnSync((ref as { python: string }).python, ['-I', path.join(__dirname, 'support', 'python-re.py'), request], { encoding: 'utf8', timeout: 60000 });
       assert.strictEqual(r.status, 0, r.stderr);
       got = JSON.parse(r.stdout) as typeof got;
@@ -166,6 +194,12 @@ describe('the Python flavor of the regex reader against the reference Python', f
     assert.deepStrictEqual(wrong, []);
     // (Each row is where the table says: the valid ones compile.)
     assert.deepStrictEqual(patterns.filter((p, i) => (got.errors[i] === null) !== VALID.includes(p)), []);
+  });
+
+  it('refuses a replacement template where Python does, with its message, and no other', () => {
+    const wrong = TEMPLATES.flatMap((row, i) => (templateRefusal(row) === got.templates[i] ? [] : [`${JSON.stringify(row)}: Python ${JSON.stringify(got.templates[i])}, ours ${JSON.stringify(templateRefusal(row))}`]));
+    assert.deepStrictEqual(wrong, []);
+    assert.deepStrictEqual(TEMPLATES.filter((r, i) => (got.templates[i] === null) !== TEMPLATES_VALID.includes(r)), []);
   });
 
   it('refuses a pattern with flags where Python does: VERBOSE, inline flags, bytes patterns', () => {

@@ -1,5 +1,7 @@
 {
   "uses": [
-    {"file":"src/hosts/detect.ts","fn":"detectKind","kind":"import","count":3,"reason":"pasted Python is recognised by its `import` lines and a call of `subprocess`, `os.system` or `os.popen`, by regexes over the text; #753 reads the tokens and the import table instead"}
+    {"file":"src/hosts/detect.ts","fn":"detectKind","kind":"import","count":3,"reason":"pasted Python is recognised by its `import` lines and a call of `subprocess`, `os.system` or `os.popen`, by regexes over the text; #753 reads the tokens and the import table instead"},
+    {"file":"src/hosts/python.ts","fn":"python","kind":"binding","count":2,"reason":"a keyword argument of a call of `subprocess` (`shell=True`, `executable=…`), not a binding: `k=v` inside the call's brackets"},
+    {"file":"src/hosts/python.ts","fn":"reCall","kind":"binding","count":1,"reason":"a keyword argument of a call of `re` (`flags=re.I`), not a binding: `k=v` inside the call's brackets"}
   ]
 }

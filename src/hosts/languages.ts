@@ -3,24 +3,27 @@
 // `placeEmbedded` places its tokens through the literal's map, and `finishLine` (src/linefinish.ts) finishes the line as it
 // finishes a shell line. `explainDocumentLine` (src/document.ts) calls it within the same boundary and budget as a shell line.
 import type { Example, ExplainOptions, LineExplanation, NoteAnchor, Pos, Span, Token } from '../analyzer-types';
-import { explainRegex, flavorName } from '../embedded/regex';
+import { flavorName } from '../embedded/flavors';
+import { readRegex } from '../embedded/regex';
 import { PYTHON_SINCE } from '../embedded/regex-python';
+import { readTemplate, type Template, type TemplateGroups, templateTokens } from '../embedded/regex-template';
 import { type EmbeddedToken, hasHole, HOLES } from '../embedded/types';
 import { exampleRun, notComputed } from '../examples/commands';
 import { pythonCallExample, type PyText } from '../examples/python-calls';
 import { toJsRegex } from '../examples/regex';
 import { fillHoles, holeSink, holesRead } from '../explain/holes';
 import { placeEmbedded } from '../explain/nodes';
-import type { Lang } from '../i18n';
+import { type Lang, lineLabel } from '../i18n';
 import { codeSpan, shorten } from '../label';
+import { pushAll } from '../lists';
 import { finishLine, keptExamples, tokenErrors, wantsKind } from '../linefinish';
 import { basisGate, type Fact, fact, type Note, said } from '../messages';
 import { tokenSaid } from '../messages-tokens';
 import { noteOfFact, sayAt } from '../noteanchors';
 import { languageReading } from '../reading';
-import type { LanguageRegion, LiteralSource, ReParam } from './index';
+import type { CallArgument, LanguageRegion, LiteralSource, ReParam } from './index';
 import { reCallOf, reReturns } from './python';
-import { flagsAsCount, patternOf } from './scripts';
+import { flagsAsCount, literalOf, patternOf } from './scripts';
 
 /** The explanations of each region, by the language and the options they were made with: each line of a region has the same. */
 const made = new WeakMap<LanguageRegion, Map<string, LineExplanation>>();
@@ -46,19 +49,26 @@ function between(lines: readonly string[], a: Pos, b: Pos): string {
   return [lines[a.line].slice(a.character), ...lines.slice(a.line + 1, b.line), lines[b.line].slice(0, b.character)].join('\n');
 }
 
+/** A pitfall of the call or of its strings, at its place. */
+type Pitfall = { fact: Fact; span: Span };
+
 function explained(region: LanguageRegion, lines: readonly string[], lang: Lang, opts: ExplainOptions): LineExplanation {
   const { call } = region;
-  const source = patternOf(region);
-  // (A call whose pattern is not literals has the tokens of its arguments only: `flagsAsCount`.)
-  const pattern = source && patternToken(region, source, lines, lang);
-  const top = pattern?.token;
-  const args = argumentTokens(region, lines, lang);
+  // (The pattern: the call's literal, or for a method that of its `re.compile`, whose tokens stay on that line: a top token at the
+  // method's name says where it comes from.)
+  const source = patternOf(region) ?? region.compiled?.pattern;
+  const read = source && readPattern(region, source, lang);
+  const pattern = read && !region.compiled ? patternToken(region, source!, read, lines, lang) : undefined;
+  const top = pattern?.token ?? (region.compiled && methodToken(region, lines, lang));
+  const repl = literalOf(region, 'repl');
+  const template = repl && readTemplate(repl.value, read?.groups, !!repl.bytes);
+  const args = argumentTokens(region, lines, lang, template);
   const tokens = args.tokens;
   const pitfalls = [...(pattern?.pitfalls ?? []), ...args.pitfalls];
   // (In the order of the text: a keyword argument may come before the pattern.)
   const items = [...(top ? [top] : []), ...tokens].sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
   // (No example of a pattern Python refuses, nor of one with a part not known.)
-  const examples = source && top && wantsKind(opts, 'regex') && !hasHole(source.value) && !top.children.some(hasError) ? callExamples(region, source, lines, lang) : [];
+  const examples = source && top && wantsKind(opts, 'regex') && !hasHole(source.value) && !read!.tokens.some(hasError) ? callExamples(region, source, top.span, template, lines, lang) : [];
   const anchors: NoteAnchor[] = [];
   const data = new Map<string, Note>();
   const ex = finishLine({ line: region.lines[0], items, own: items, rested: [], context: [{ label: region.label[lang === 'ja' ? 0 : 1], line: region.lines[0] }], origin: 'embedded' }, opts, () => {
@@ -70,80 +80,123 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
     return { notes, noteInfo: notes.map((n) => basisGate(data.get(n)!, opts.basis)), facts: kept, anchors, marked: { facts: kept, anchors }, examples: keptExamples(examples, opts, lang) };
   });
   ex.code = region.host.kind;
-  if (opts.reading && top) ex.reading = languageReading(ex.items.find((t) => t.language)!, call.written, flavorName(region.flavor, lang));
+  if (opts.reading && pattern) ex.reading = languageReading(ex.items.find((t) => t.language)!, call.written, flavorName(region.flavor, lang));
   return ex;
 }
 
-const hasError = (t: Token): boolean => t.kind === 'error' || t.children.some(hasError);
+const hasError = (t: { kind: string; children: readonly { kind: string; children: readonly unknown[] }[] }): boolean =>
+  t.kind === 'error' || t.children.some((c) => hasError(c as typeof t));
 
 /**
- * The example of the call (docs/design/python-regex.md, section 6), under its pattern: what it matches, or what it gives back for its
- * subject (src/examples/python-calls.ts), with the pattern as JavaScript (`toJsRegex`), within the line's budget; none where the
- * pattern or the call has what the example cannot say.
+ * The example of the call (docs/design/python-regex.md, section 6), at `anchor`: what its pattern matches, or what it gives back for
+ * its subject (src/examples/python-calls.ts), with the pattern as JavaScript (`toJsRegex`) and the template of its replacement as
+ * Python applies it, within the line's budget; none where the pattern or the call has what the example cannot say.
  */
-function callExamples(region: LanguageRegion, source: LiteralSource, lines: readonly string[], lang: Lang): Example[] {
+function callExamples(region: LanguageRegion, source: LiteralSource, anchor: Span, template: Template | undefined, lines: readonly string[], lang: Lang): Example[] {
   const title = lang === 'ja' ? '例' : 'Example';
   return exampleRun('regex', () => {
     const regex = toJsRegex(source.value, 'python', { python: region.options! });
     if (!regex) return [];
-    const text = (role: ReParam): PyText | 'unknown' | undefined => {
-      const a = region.args.find((r) => r.role === role);
-      return a && (a.literal ? { value: a.literal.value, bytes: !!a.literal.bytes } : 'unknown');
+    const arg = (role: ReParam): CallArgument | undefined => region.args.find((r) => r.role === role);
+    const subject = arg('string');
+    const text: PyText | 'unknown' | undefined = subject && (subject.literal ? { value: subject.literal.value, bytes: !!subject.literal.bytes } : 'unknown');
+    const repl = arg('repl');
+    // (A number written; flags in the slot of `count` or `maxsplit` are their value: `flagsAsCount`.)
+    const number = (a: CallArgument | undefined): number | 'unknown' | undefined => {
+      if (!a) return undefined;
+      if (a.flags && !a.flags.unknown.length) return a.flags.value;
+      const written = between(lines, a.span.start, a.span.end);
+      return /^(?:0|[1-9]\d*)$/.test(written) ? Number(written) : 'unknown';
     };
-    // (`count` or `maxsplit`: a number written, or flags in its slot, whose value it is: `flagsAsCount`.)
     const n = region.args.find((a) => a.role === 'count' || a.role === 'maxsplit');
-    const written = n && between(lines, n.span.start, n.span.end);
-    const count = !n ? 0 : n.flags && !n.flags.unknown.length ? n.flags.value : /^(?:0|[1-9]\d*)$/.test(written!) ? Number(written) : 'unknown';
     const { name, written: call } = region.call;
-    const ex = pythonCallExample({ written: call, returns: reReturns(name), anchors: reCallOf(name).anchors, regex, bytes: region.options!.bytes, subject: text('string'), repl: text('repl'), count }, lang);
-    return ex ? [{ ...ex, anchor: source.span }] : [];
-  }, (id) => [{ ...notComputed('regex', title, lang, id), anchor: source.span }]);
+    const ex = pythonCallExample({
+      written: call, returns: reReturns(name), anchors: reCallOf(name).anchors, regex, bytes: region.options!.bytes, subject: text,
+      repl: repl && (template?.parts ? { parts: template.parts, bytes: !!repl.literal!.bytes } : 'unknown'), count: number(n) ?? 0,
+      ...(arg('pos') ? { pos: number(arg('pos')) } : {}), ...(arg('endpos') ? { endpos: number(arg('endpos')) } : {}),
+    }, lang);
+    return ex ? [{ ...ex, anchor }] : [];
+  }, (id) => [{ ...notComputed('regex', title, lang, id), anchor }]);
+}
+
+/**
+ * Where each offset of a literal's value is in the file (the place of its character, or after the last one for an end), and the label
+ * of a token from `a` to `b`: its source text, or where quotes or a prefix part its characters in the source (`r'a' r'b'`, a
+ * backslash-newline), its value, with each field as written.
+ */
+function placesOf(source: LiteralSource, lines: readonly string[]): { at: (offset: number, isEnd: boolean) => Pos; label: (a: number, b: number) => string; written: (c: string) => string } {
+  const at = (offset: number, isEnd: boolean): Pos => (isEnd && offset > 0 ? source.to[offset - 1] : source.at[offset]);
+  // (`gaps[k]`: how many characters up to `k` do not follow the one before in the source.)
+  const written = (c: string): string => source.holes![c].written;
+  const gaps = [0];
+  for (let k = 1; k < source.value.length; k++) gaps.push(gaps[k - 1] + (samePos(source.to[k - 1], source.at[k]) ? 0 : 1));
+  const label = (a: number, b: number): string => (b - 1 > a && gaps[b - 1] > gaps[a] ? source.value.slice(a, b).replace(HOLES, written) : between(lines, at(a, false), at(b, true)));
+  return { at, label, written };
+}
+
+/**
+ * The tokens a reader made of a literal with fields of an f-string (docs/design/python-regex.md, 4.3), where its reading stands:
+ * where the reader claims each hole and finds no error (`holesRead`), with the catalog's texts on the holes (`fillHoles`), each risk
+ * once; else none, and the fields whose values decide the reading (`unread`), as a shell word whose reading a value decides.
+ */
+function withHoles(source: LiteralSource, read: EmbeddedToken[], lang: Lang, written: (c: string) => string): { tokens: EmbeddedToken[]; unread?: string[] } {
+  const { holes } = source;
+  if (!holes) return { tokens: read };
+  const { at: all, open, error } = holesRead(source.value, read);
+  if (error || open.length) return { tokens: [], unread: [...new Set((open.length ? open : all).map((k) => codeSpan(written(source.value[k]))))] };
+  // (A field `{re.escape(x)}` is text, whatever its value is.)
+  const escaped = (t: EmbeddedToken): EmbeddedToken => ({ ...t, ...(t.hole ? { hole: { ...t.hole, escaped: holes[t.hole.of ?? source.value[t.start]].escaped } } : {}), children: t.children.map(escaped) });
+  return { tokens: fillHoles(holeSink(lang, new Map(), false), read.map(escaped), source.value, written) };
+}
+
+/**
+ * The pattern as the reader reads it: its tokens (with the holes' texts, or none where they decide the reading: `unread`), and its
+ * groups where they are known (no field adds one: each is `{re.escape(x)}`; none where it is not read), for its template.
+ */
+function readPattern(region: LanguageRegion, source: LiteralSource, lang: Lang): { tokens: EmbeddedToken[]; unread?: string[]; groups?: TemplateGroups } {
+  const read = readRegex(source.value, region.flavor, lang, { tool: 'python', python: region.options! });
+  const { tokens, unread } = withHoles(source, read.tokens, lang, (c) => source.holes![c].written);
+  const sure = !unread && Object.values(source.holes ?? {}).every((h) => h.escaped);
+  return { tokens, ...(unread ? { unread } : {}), ...(sure && read.groups ? { groups: read.groups } : {}) };
 }
 
 /**
  * The token of the pattern's literals, with the tokens the language's reader makes of its value at their places in the file, and the
- * pitfalls of its strings (`stringPitfalls`). A field of an f-string is a hole (docs/design/python-regex.md, 4.3): the reading stands
- * where the reader claims each hole and finds no error (`holesRead`), and its holes get the catalog's texts (`fillHoles`), each risk
- * once; else the pattern is not read, as a shell word whose reading a value decides.
+ * pitfalls of its strings (`stringPitfalls`).
  */
-function patternToken(region: LanguageRegion, source: LiteralSource, lines: readonly string[], lang: Lang): { token: Token; pitfalls: { fact: Fact; span: Span }[] } {
+function patternToken(region: LanguageRegion, source: LiteralSource, read: { tokens: EmbeddedToken[]; unread?: string[] }, lines: readonly string[], lang: Lang): { token: Token; pitfalls: Pitfall[] } {
   const { call } = region;
-  // (Where an offset of the value is: the place of its character, or after the last one for an end.)
-  const at = (offset: number, isEnd: boolean): Pos => (isEnd && offset > 0 ? source.to[offset - 1] : source.at[offset]);
-  // (`gaps[k]`: how many characters up to `k` do not follow the one before in the source: the first of a literal after another,
-  // `r'a' r'b'`, or after a backslash-newline. A token whose characters a gap parts has quotes or a prefix between them in the
-  // source, so its label is its value, with each field as written.)
-  const { holes } = source;
-  const written = (c: string): string => holes![c].written;
-  const gaps = [0];
-  for (let k = 1; k < source.value.length; k++) gaps.push(gaps[k - 1] + (samePos(source.to[k - 1], source.at[k]) ? 0 : 1));
-  const label = (a: number, b: number): string => (b - 1 > a && gaps[b - 1] > gaps[a] ? source.value.slice(a, b).replace(HOLES, written) : between(lines, at(a, false), at(b, true)));
-  let read = explainRegex(source.value, region.flavor, lang, { tool: 'python', python: region.options! });
-  let unread: string[] | undefined;
-  if (holes) {
-    const { at: all, open, error } = holesRead(source.value, read);
-    if (error || open.length) {
-      unread = [...new Set((open.length ? open : all).map((k) => codeSpan(written(source.value[k]))))];
-      read = [];
-    } else {
-      // (A field `{re.escape(x)}` is text, whatever its value is.)
-      const escaped = (t: EmbeddedToken): EmbeddedToken => ({ ...t, ...(t.hole ? { hole: { ...t.hole, escaped: holes[t.hole.of ?? source.value[t.start]].escaped } } : {}), children: t.children.map(escaped) });
-      read = fillHoles(holeSink(lang, new Map(), false), read.map(escaped), source.value, written);
-    }
-  }
-  const pitfalls = stringPitfalls(source, read, lines, lang);
+  const pitfalls = stringPitfalls(source, read.tokens, lines, lang);
   // (A kept backslash is quoted with the character of the source after it, which may be a field's `{`: `"\{"` is what Python warns of.)
   const kept = [...new Set((source.escapes ?? []).filter((e) => e.risk === 'kept').map((e) => {
     const { line, character } = source.to[e.at];
     return '\\' + [...lines[line].slice(character, character + 2)][0];
   }))];
-  const children = read.map((t) => placeEmbedded(t, at, label, 'embedded'));
-  const explanation = tokenSaid(lang, 'python-regex-pattern', { call: call.written, ...reCallOf(call.name), ...(unread ? { unread } : {}) })
+  const explanation = tokenSaid(lang, 'python-regex-pattern', { call: call.written, ...reCallOf(call.name), ...(read.unread ? { unread: read.unread } : {}) })
     + (kept.length ? (lang === 'ja' ? '。' : '. ') + tokenSaid(lang, 'python-regex-string-kept', { written: kept.map(codeSpan), since: PYTHON_SINCE.invalidEscape }) : '');
-  return {
-    token: { kind: 'string', label: shorten(between(lines, source.span.start, source.span.end)), span: source.span, children, origin: 'embedded', language: region.language, explanation },
-    pitfalls,
-  };
+  return { token: literalToken(source, read.tokens, explanation, lines, region.language), pitfalls };
+}
+
+/**
+ * The token of literals (a pattern, a template), with the tokens a reader made of their value at their places in the file (`placesOf`);
+ * `language`, on the pattern's, which a reading's root is.
+ */
+function literalToken(source: LiteralSource, read: readonly EmbeddedToken[], explanation: string, lines: readonly string[], language?: string): Token {
+  const { at, label } = placesOf(source, lines);
+  const children = read.map((t) => placeEmbedded(t, at, label, 'embedded'));
+  return { kind: 'string', label: shorten(between(lines, source.span.start, source.span.end)), span: source.span, children, origin: 'embedded', ...(language ? { language } : {}), explanation };
+}
+
+/**
+ * The top token of a method of a compiled pattern (`PAT.sub`), on its name: the line of the `re.compile` it is linked to and its
+ * pattern, and what the function adds (docs/design/python-regex.md, 5.1). The pattern's own tokens are on that line.
+ */
+function methodToken(region: LanguageRegion, lines: readonly string[], lang: Lang): Token {
+  const { call } = region;
+  const { name, line, pattern } = region.compiled!;
+  const span = { start: call.span.start, end: { line: call.span.start.line, character: call.span.start.character + call.written.length } };
+  const explanation = tokenSaid(lang, 'python-regex-method', { call: call.written, method: call.name.slice(3), name, line: lineLabel(lang, line + 1, 'inline'), pattern: shorten(between(lines, pattern.span.start, pattern.span.end), 40), ...reCallOf(call.name) });
+  return { kind: 'command', label: call.written, span, children: [], explanation };
 }
 
 /**
@@ -151,8 +204,8 @@ function patternToken(region: LanguageRegion, source: LiteralSource, lines: read
  * the first octal escape it makes a character (`\1`), where a regex would read a word boundary or a group's number: outside a set,
  * a token of the reader that starts with its `[` (in a set, `[\b]` and `[\1]` are those characters to a regex too).
  */
-function stringPitfalls(source: LiteralSource, read: readonly EmbeddedToken[], lines: readonly string[], lang: Lang): { fact: Fact; span: Span }[] {
-  const out: { fact: Fact; span: Span }[] = [];
+function stringPitfalls(source: LiteralSource, read: readonly EmbeddedToken[], lines: readonly string[], lang: Lang): Pitfall[] {
+  const out: Pitfall[] = [];
   // (Where the sets are: each token is looked at once, and a set's own tokens are its holes.)
   const inSet: boolean[] = [];
   const sets = (ts: readonly EmbeddedToken[]): void => {
@@ -166,25 +219,55 @@ function stringPitfalls(source: LiteralSource, read: readonly EmbeddedToken[], l
   for (const risk of ['backspace', 'octal'] as const) {
     // (A pattern not read says nothing of them.)
     const e = read.length ? (source.escapes ?? []).find((x) => x.risk === risk && !inSet[x.at]) : undefined;
-    if (!e) continue;
-    const span = { start: source.at[e.at], end: source.to[e.at] };
-    const code = source.value.codePointAt(e.at)!;
-    out.push({ fact: risk === 'backspace' ? fact(lang, 'python-regex-string-backspace') : fact(lang, 'python-regex-string-octal', { written: between(lines, span.start, span.end), code: 'U+' + code.toString(16).toUpperCase().padStart(4, '0') }), span });
+    if (e) out.push(octalOrBackspace(source, e.at, risk === 'backspace' ? 'python-regex-string-backspace' : 'python-regex-string-octal', lines, lang));
   }
   return out;
 }
 
+/** The pitfall of the escape at `k` of a string: a backspace, or an octal escape (`\1`) that a pattern or a template reads otherwise. */
+function octalOrBackspace(source: LiteralSource, k: number, id: 'python-regex-string-backspace' | 'python-regex-string-octal' | 'python-template-string-octal', lines: readonly string[], lang: Lang): Pitfall {
+  const span = { start: source.at[k], end: source.to[k] };
+  if (id === 'python-regex-string-backspace') return { fact: fact(lang, id), span };
+  const code = 'U+' + source.value.codePointAt(k)!.toString(16).toUpperCase().padStart(4, '0');
+  return { fact: fact(lang, id, { written: between(lines, span.start, span.end), code }), span };
+}
+
 /**
- * The tokens of the call's arguments other than the pattern (docs/design/python-regex.md, 5.2 and 5.3): each flag a flags argument
- * names, with what it does, and one token for each part of it not known; and flags in the slot of `count` or `maxsplit` (`flagsAsCount`),
- * a token and the pitfall, which says the deprecation of the slot where the flags are in it, not by keyword.
+ * The token of a replacement written as literals that Python reads as a template (docs/design/python-regex.md, section 6): one with a
+ * backslash, or with a field of an f-string, whose value may hold one; its items, from the template reader (src/embedded/regex-template.ts),
+ * at their places in the file. Plain text gets none: Python puts it in as it is. And the pitfall of the first octal escape a string
+ * that is not raw makes a character (`'\1'`), where the template would read a group.
  */
-function argumentTokens(region: LanguageRegion, lines: readonly string[], lang: Lang): { tokens: Token[]; pitfalls: { fact: Fact; span: Span }[] } {
+function templateToken(region: LanguageRegion, a: CallArgument, template: Template, lines: readonly string[], lang: Lang): { token?: Token; pitfalls: Pitfall[] } {
+  const source = a.literal!;
+  const read = withHoles(source, templateTokens(source.value, template, lang), lang, placesOf(source, lines).written);
+  const explanation = tokenSaid(lang, 'python-template', { call: region.call.written, template: source.value.includes('\\'), ...(read.unread ? { unread: read.unread } : {}) });
+  const octal = read.unread ? undefined : (source.escapes ?? []).find((e) => e.risk === 'octal');
+  return {
+    ...(source.value.includes('\\') || source.holes ? { token: literalToken(source, read.tokens, explanation, lines) } : {}),
+    pitfalls: octal ? [octalOrBackspace(source, octal.at, 'python-template-string-octal', lines, lang)] : [],
+  };
+}
+
+/**
+ * The tokens of the call's arguments other than the pattern (docs/design/python-regex.md, 5.2, 5.3 and 6): the replacement, a
+ * template (`templateToken`); each flag a flags argument names, with what it does, and one token for each part of it not known;
+ * flags in the slot of `count` or `maxsplit` (`flagsAsCount`), a token and the pitfall, which says the deprecation of the slot of a
+ * function where the flags are in it, not by keyword (a method's slot is none); and a method's `pos` and `endpos`.
+ */
+function argumentTokens(region: LanguageRegion, lines: readonly string[], lang: Lang, template: Template | undefined): { tokens: Token[]; pitfalls: Pitfall[] } {
   const tokens: Token[] = [];
-  const pitfalls: { fact: Fact; span: Span }[] = [];
+  const pitfalls: Pitfall[] = [];
   const token = (span: Span, kind: Token['kind'], explanation: string): Token => ({ kind, label: shorten(between(lines, span.start, span.end)), span, children: [], explanation });
   for (const a of region.args) {
-    if (a.role === 'flags') {
+    const written = shorten(between(lines, a.span.start, a.span.end));
+    if (a.role === 'repl' && template) {
+      const t = templateToken(region, a, template, lines, lang);
+      if (t.token) tokens.push(t.token);
+      pushAll(pitfalls, t.pitfalls);
+    } else if (a.role === 'pos' || a.role === 'endpos') {
+      tokens.push(token(a.span, 'argument', tokenSaid(lang, a.role === 'pos' ? 'python-regex-pos' : 'python-regex-endpos', { written })));
+    } else if (a.role === 'flags') {
       const unknown = (span: Span) => tokens.push(token(span, 'option', tokenSaid(lang, 'python-regex-flags-unknown', { written: shorten(between(lines, span.start, span.end)) })));
       if (!a.flags) unknown(a.span);
       else {
@@ -195,9 +278,8 @@ function argumentTokens(region: LanguageRegion, lines: readonly string[], lang: 
       // (`re.sub(p, r, s, re.I)`: the flag's value is the count, and the pattern gets no flag.)
       const param = a.role as 'count' | 'maxsplit';
       const { value } = a.flags!;
-      const written = shorten(between(lines, a.span.start, a.span.end));
       tokens.push(token(a.span, 'argument', tokenSaid(lang, 'python-regex-flags-as-count', { written, param, value })));
-      pitfalls.push({ fact: fact(lang, 'python-regex-flag-as-count', { written, call: region.call.written, param, value, ...(a.keyword ? {} : { since: PYTHON_SINCE.positionalCount }) }), span: a.span });
+      pitfalls.push({ fact: fact(lang, 'python-regex-flag-as-count', { written, call: region.call.written, param, value, ...(a.keyword || region.compiled ? {} : { since: PYTHON_SINCE.positionalCount }) }), span: a.span });
     }
   }
   return { tokens, pitfalls };

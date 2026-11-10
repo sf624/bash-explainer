@@ -100,9 +100,10 @@ export type StringEscapeRisk = 'backspace' | 'octal' | 'kept';
 
 /**
  * A parameter of a function of Python's `re` (docs/design/python-regex.md, 5.1), by its name in Python, which is also its
- * keyword: the role of an argument that binds it (`string` is the subject the pattern is matched against).
+ * keyword: the role of an argument that binds it (`string` is the subject the pattern is matched against; `pos` and `endpos`, of a
+ * method of a compiled pattern, where in it the search starts and ends).
  */
-export type ReParam = 'pattern' | 'string' | 'repl' | 'count' | 'maxsplit' | 'flags';
+export type ReParam = 'pattern' | 'string' | 'repl' | 'count' | 'maxsplit' | 'flags' | 'pos' | 'endpos';
 
 /**
  * An argument of a call, as written: the parameter it binds (`role`; none for one past the function's parameters or a keyword it
@@ -134,17 +135,25 @@ export interface LanguageRegion {
   language: 'regex';
   flavor: 'python';
   /**
-   * The function called: as the file writes it (`re.search`, `sub` after `from re import sub`), its full name (`re.search`), and the
-   * call's place, from the name to the `)`.
+   * The function called: as the file writes it (`re.search`, `sub` after `from re import sub`, `PAT.sub` for a method of a compiled
+   * pattern), its full name (`re.search`; for a method, the function of `re` it does the work of), and the call's place, from the name
+   * to the `)`.
    */
   call: { written: string; name: string; span: Span };
   /** Its arguments in the order written (docs/design/python-regex.md, 5.1); the pattern's is read where it is string literals (`patternOf`). */
   args: CallArgument[];
   /**
    * The flags the pattern is compiled with: from the argument of `flags` (on where it names them, else not known where it has another
-   * term), and the pattern's type. None where the pattern is not string literals: the region has the call's facts only.
+   * term), and the pattern's type. None where the pattern is not string literals: the region has the call's facts only. A method's
+   * are those of its `re.compile`.
    */
   options?: PythonRegexOptions;
+  /**
+   * Of a method of a compiled pattern (`PAT.sub(…)`; docs/design/python-regex.md, 5.1): the name it is called on, the line of the one
+   * `NAME = re.compile(<literals>…)` of the file that binds that name (`compiledNames`, src/hosts/pycompiled.ts), and its pattern.
+   * Its arguments have no pattern: `patternOf` gives none, and the region's own lines hold no token of the pattern.
+   */
+  compiled?: { name: string; line: number; pattern: LiteralSource };
 }
 
 /**

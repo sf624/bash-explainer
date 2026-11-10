@@ -53,4 +53,9 @@ export const HOST_MESSAGES = {
     `\`r\` の付かない文字列では、\`${written}\` は文字 ${code} になる。パターンはそこでグループ ${written.slice(1)} に一致した文字列ではなく、その文字に一致する。\`r"…"\` のように raw 文字列で書く（または \`\\${written}\`）。`,
     `In a string without \`r\`, \`${written}\` is the character ${code}: the pattern matches that character there, not what group ${written.slice(1)} matched. Write it as a raw string, \`r"…"\` (or \`\\${written}\`).`],
   ({ written, code }) => [`\`r\` がないので、\`${written}\` はグループの参照ではなく文字 ${code} になる。`, `Without \`r\`, \`${written}\` is the character ${code}, not a reference to a group.`]),
+  // (The same of a replacement template of `re.sub`: the string makes the character before the template is read.)
+  'python-template-string-octal': pitfall<{ written: string; code: string }>(['python-string-escapes'], ({ written, code }) => [
+    `\`r\` の付かない文字列では、\`${written}\` は文字 ${code} になる。置換後の文字列にはグループ ${written.slice(1)} に一致した文字列ではなく、その文字が入る。\`r"…"\` のように raw 文字列で書く（または \`\\${written}\`）。`,
+    `In a string without \`r\`, \`${written}\` is the character ${code}: the replacement puts in that character, not what group ${written.slice(1)} matched. Write it as a raw string, \`r"…"\` (or \`\\${written}\`).`],
+  ({ written, code }) => [`\`r\` がないので、\`${written}\` はグループ ${written.slice(1)} ではなく文字 ${code} になる。`, `Without \`r\`, \`${written}\` is the character ${code}, not group ${written.slice(1)}.`]),
 } satisfies Catalog;

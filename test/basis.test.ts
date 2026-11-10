@@ -510,7 +510,7 @@ describe('conventions: the habit a note recommends', () => {
       'placeholder-in-shell-string': 'placeholder-as-argument',
     };
     const pitfalls = (Object.keys(MESSAGES) as FactId[]).filter((id) => MESSAGES[id].kind === 'pitfall');
-    assert.strictEqual(pitfalls.length, 71, 'a new pitfall: sort it in this test (fact, or the habit of its advice)');
+    assert.strictEqual(pitfalls.length, 72, 'a new pitfall: sort it in this test (fact, or the habit of its advice)');
     for (const id of Object.keys(MESSAGES) as FactId[]) assert.strictEqual(conventionOfEntry(id) ?? 'fact', both[id] ?? 'fact', id);
     assert.deepStrictEqual(STYLE_CONVENTIONS, {
       'bracket-no-space': null, 'assignment-with-spaces': null, 'brace-no-space': null, 'brace-close-no-separator': null,

@@ -1,5 +1,5 @@
 import { type AutoShell, SHELL_NAMES, type ShellSource } from './dialect';
-import { flavorName } from './embedded/regex';
+import { flavorName } from './embedded/flavors';
 import type { Lang } from './i18n';
 import type { NameFacts } from './semantics/names';
 

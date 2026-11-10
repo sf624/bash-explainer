@@ -9,6 +9,8 @@ import type { HostMeaning } from '../messages-hosts';
 import { isName, isOp, type PyField, type PyLexed, type PyToken, pyLex } from './pylex';
 import { argValue, type PyArg, type PyHole } from './pyvalue';
 import { dottedAt, type PyImports, pyImports, pyResolve } from './pyimports';
+import { compiledNames } from './pycompiled';
+import { lineLabel } from '../i18n';
 import { type FlagState, PYTHON_FLAGS, type PythonOption } from '../embedded/regex-python';
 import { HOLE_COUNT, hasHole, holeChar } from '../embedded/types';
 
@@ -33,20 +35,23 @@ export type ReReturns = 'match' | 'pattern' | 'list' | 'iterator' | 'pieces' | '
 /**
  * The functions of Python's `re` that take a pattern (docs/design/python-regex.md, 5.1), by full name: their positional parameters
  * (`flags`, where the flags argument is), what each adds to the pattern: an anchor at the start (`match`), or at both ends
- * (`fullmatch`), and what it gives back. `prefixmatch` is a second name of `match` since Python 3.15.
+ * (`fullmatch`), and what it gives back. `prefixmatch` is a second name of `match` since Python 3.15. `method`: the positional
+ * parameters of the method of a compiled pattern of the same name (`PAT.sub(repl, string, count)`), which takes no pattern and no
+ * flags, and where `match`, `fullmatch`, `search`, `findall` and `finditer` take where the search starts and ends (`pos`, `endpos`).
  */
-interface ReCall { params: readonly ReParam[]; anchors?: 'start' | 'whole'; since?: string; returns: ReReturns }
+interface ReCall { params: readonly ReParam[]; anchors?: 'start' | 'whole'; since?: string; returns: ReReturns; method?: readonly ReParam[] }
+const BOUNDED: readonly ReParam[] = ['string', 'pos', 'endpos'];
 const RE_CALLS: Record<string, ReCall> = {
   're.compile': { params: ['pattern', 'flags'], returns: 'pattern' },
-  're.search': { params: ['pattern', 'string', 'flags'], returns: 'match' },
-  're.match': { params: ['pattern', 'string', 'flags'], anchors: 'start', returns: 'match' },
-  're.prefixmatch': { params: ['pattern', 'string', 'flags'], anchors: 'start', since: '3.15', returns: 'match' },
-  're.fullmatch': { params: ['pattern', 'string', 'flags'], anchors: 'whole', returns: 'match' },
-  're.findall': { params: ['pattern', 'string', 'flags'], returns: 'list' },
-  're.finditer': { params: ['pattern', 'string', 'flags'], returns: 'iterator' },
-  're.split': { params: ['pattern', 'string', 'maxsplit', 'flags'], returns: 'pieces' },
-  're.sub': { params: ['pattern', 'repl', 'string', 'count', 'flags'], returns: 'replaced' },
-  're.subn': { params: ['pattern', 'repl', 'string', 'count', 'flags'], returns: 'counted' },
+  're.search': { params: ['pattern', 'string', 'flags'], returns: 'match', method: BOUNDED },
+  're.match': { params: ['pattern', 'string', 'flags'], anchors: 'start', returns: 'match', method: BOUNDED },
+  're.prefixmatch': { params: ['pattern', 'string', 'flags'], anchors: 'start', since: '3.15', returns: 'match', method: BOUNDED },
+  're.fullmatch': { params: ['pattern', 'string', 'flags'], anchors: 'whole', returns: 'match', method: BOUNDED },
+  're.findall': { params: ['pattern', 'string', 'flags'], returns: 'list', method: BOUNDED },
+  're.finditer': { params: ['pattern', 'string', 'flags'], returns: 'iterator', method: BOUNDED },
+  're.split': { params: ['pattern', 'string', 'maxsplit', 'flags'], returns: 'pieces', method: ['string', 'maxsplit'] },
+  're.sub': { params: ['pattern', 'repl', 'string', 'count', 'flags'], returns: 'replaced', method: ['repl', 'string', 'count'] },
+  're.subn': { params: ['pattern', 'repl', 'string', 'count', 'flags'], returns: 'counted', method: ['repl', 'string', 'count'] },
 };
 
 /**
@@ -125,9 +130,14 @@ export function python(b: Builder): void {
   // Names the calls go by: `import subprocess as sp`, `from subprocess import run as r`.
   const imports = pyImports(src, tokens);
   // (The calls of `re`, read once every line a shell region takes is known: a shell region keeps a line it shares.)
-  const patterns: { name: string; full: string; first: number; at: number }[] = [];
+  const patterns: ReAt[] = [];
+  // (And the calls `NAME.sub(` of a name no import binds, which may be methods of a pattern compiled in the file: `compiledNames`.)
+  const methods: (ReAt & { on: string })[] = [];
   for (const { i, called, full } of resolvedCalls(src, tokens, imports)) {
     if (full !== undefined && full in RE_CALLS) patterns.push({ name: called.name, full, first: i, at: called.next });
+    const dot = called.name.indexOf('.');
+    const method = `re.${called.name.slice(dot + 1)}`;
+    if (full === undefined && dot > 0 && called.name.indexOf('.', dot + 1) < 0 && RE_CALLS[method]?.method) methods.push({ name: called.name, full: method, first: i, at: called.next, on: called.name.slice(0, dot) });
     const spec = full === undefined ? undefined : PY_CALLS[full];
     if (!spec) continue;
     const open = called.next;
@@ -187,12 +197,24 @@ export function python(b: Builder): void {
     const what: [string, string] = usesShell ? [`シェル（${sh}）が実行する文字列`, `a string the shell (${sh}) runs`] : ['シェルを通さないコマンド文字列', 'a command string run without a shell'];
     b.region(script.first, script.last, label(what), usesShell ? target : 'bash', notes);
   }
-  claimLines(b, patterns.flatMap((p) => reCall(lx, imports, p, pos) ?? []));
+  const calls = patterns.map((p) => ({ first: p.first, read: reCall(lx, imports, p, pos) }));
+  // (A method is read where its name is bound once, to a call of `re.compile` whose pattern is read.)
+  const linked = compiledNames(src, lx, imports);
+  const compiles = new Map(calls.flatMap((c) => (c.read?.pattern && c.read.region.call.name === 're.compile' ? [[c.first, c.read]] : [])));
+  for (const m of methods) {
+    const site = linked(m.on, m.first);
+    const of = site === undefined ? undefined : compiles.get(site);
+    if (of) calls.push({ first: m.first, read: reCall(lx, imports, m, pos, { name: m.on, region: of.region }) });
+  }
+  claimLines(b, calls.sort((x, y) => x.first - y.first).flatMap((c) => c.read ?? []));
 }
+
+/** A call of `re` found: its name as written and in full, the token of its name, and its `(`. */
+interface ReAt { name: string; full: string; first: number; at: number }
 
 /**
  * A call of `re` read, before it has its lines: its region but for them, the lines of the call, and those of its pattern's literals
- * (none where the pattern is not literals: a region of the call's facts only).
+ * (none where the pattern is not literals: a region of the call's facts only, or a method of a compiled pattern).
  */
 interface ReCandidate { region: Omit<LanguageRegion, 'lines'>; start: number; end: number; pattern?: { start: number; end: number } }
 
@@ -230,16 +252,18 @@ function claimLines(b: Builder, calls: readonly ReCandidate[]): void {
  * when it is string literals. The arguments of `flags`, `count` and `maxsplit` get the flags they name (`reFlags`), and the region
  * the options of its flags. A region reads a pattern of string literals only (one, or several joined, over several lines too; an
  * f-string's fields as holes; a `\N{…}` escape is not read). A call whose pattern is something else is a region only where it
- * has a fact of the call (`flagsAsCount`), with no pattern and no options (docs/design/python-regex.md, 2.2).
+ * has a fact of the call (`flagsAsCount`), with no pattern and no options (docs/design/python-regex.md, 2.2). With `of`, the call
+ * is a method of the pattern that call compiled (`PAT.sub(…)`, `name` being `PAT`): its arguments are the method's (`RE_CALLS`,
+ * `method`), and its pattern and options those of `of`.
  */
-function reCall(lx: PyFile, imports: PyImports, p: { name: string; full: string; first: number; at: number }, pos: PyPos): ReCandidate | undefined {
+function reCall(lx: PyFile, imports: PyImports, p: ReAt, pos: PyPos, of?: { name: string; region: ReCandidate['region'] }): ReCandidate | undefined {
   const { src, tokens } = lx;
   const close = lx.pair[p.at];
   if (close < 0) return undefined;
   const { parts } = pyArgs(lx, p.at, close);
   // (A `*args` or `**kwargs` may hold the pattern or the flags.)
   if (parts.some((a) => isOp(src, tokens[a[0]], '*') || isOp(src, tokens[a[0]], '**'))) return undefined;
-  const { params } = RE_CALLS[p.full];
+  const params = of ? RE_CALLS[p.full].method! : RE_CALLS[p.full].params;
   const at = (off: number): Pos => {
     const q = pos(off);
     return { line: q.line, character: q.col };
@@ -250,8 +274,8 @@ function reCall(lx: PyFile, imports: PyImports, p: { name: string; full: string;
     // (By keyword, the parameter of that name; else the next slot. One past them binds none: Python raises `TypeError`.)
     const role = keyword ? params.find((n) => isName(src, tokens[a[0]], n)) : params[slot++];
     const part = keyword ? a.slice(2) : a;
-    // (Only the pattern's value may have fields, read as holes: docs/design/python-regex.md, 4.3.)
-    const found = literalValue(lx, unwrap(lx, part), role === 'pattern');
+    // (Only the pattern's value and the replacement's may have fields, read as holes: docs/design/python-regex.md, 4.3.)
+    const found = literalValue(lx, unwrap(lx, part), role === 'pattern' || role === 'repl');
     const literal = found && literalSource(lx, imports, found, at);
     const value = literal ? found : undefined;
     const span = { start: at(tokens[part[0]].start), end: at(tokens[part[part.length - 1]].end) };
@@ -259,7 +283,18 @@ function reCall(lx: PyFile, imports: PyImports, p: { name: string; full: string;
     return { arg: { ...(role ? { role } : {}), keyword, span, ...(literal ? { literal } : {}), ...(flags ? { flags } : {}) }, value };
   });
   const args = read.map((r) => r.arg);
-  if (args.some((a) => !a.role) || !args.some((a) => a.role === 'pattern')) return undefined;
+  if (args.some((a) => !a.role)) return undefined;
+  const lines = { start: pos(tokens[p.first].start).line, end: pos(tokens[close].start).line };
+  const span = { start: at(tokens[p.first].start), end: at(tokens[close].end) };
+  if (of) {
+    const line = of.region.call.span.start.line;
+    return { region: {
+      label: [`Python の正規表現（\`${p.name}\`、${lineLabel('ja', line + 1)} でコンパイルしたパターン）`, `Python regex (\`${p.name}\`, the pattern compiled on ${lineLabel('en', line + 1, 'inline')})`],
+      host: { kind: 'python' }, language: 'regex', flavor: 'python', call: { written: p.name, name: p.full, span }, args, options: of.region.options!,
+      compiled: { name: of.name, line, pattern: of.region.args.find((a) => a.role === 'pattern')!.literal! },
+    }, ...lines };
+  }
+  if (!args.some((a) => a.role === 'pattern')) return undefined;
   const pattern = read.find((r) => r.arg.role === 'pattern')!.value;
   if (!pattern && !args.some(flagsAsCount)) return undefined;
   // (No flags argument: none. Names of `re` are on; the rest of an argument not read is not known.)
@@ -270,14 +305,13 @@ function reCall(lx: PyFile, imports: PyImports, p: { name: string; full: string;
   const region: ReCandidate['region'] = {
     label: [`Python の正規表現（\`${p.name}\` の引数）`, `Python regex (argument of \`${p.name}\`)`],
     host: { kind: 'python' }, language: 'regex', flavor: 'python',
-    call: { written: p.name, name: p.full, span: { start: at(tokens[p.first].start), end: at(tokens[close].end) } },
+    call: { written: p.name, name: p.full, span },
     args,
     ...(pattern ? { options: {
       ascii: state('ascii'), ignorecase: state('ignorecase'), multiline: state('multiline'), dotall: state('dotall'), verbose: state('verbose'), locale: state('locale'),
       bytes: pattern.literals[0].token.lit!.bytes,
     } } : {}),
   };
-  const lines = { start: pos(tokens[p.first].start).line, end: pos(tokens[close].start).line };
   if (!pattern) return { region, ...lines };
   const literals = pattern.literals;
   return { region, ...lines, pattern: { start: pos(literals[0].token.start).line, end: pos(literals[literals.length - 1].token.end).line } };

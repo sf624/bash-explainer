@@ -111,9 +111,9 @@ describe('Python regex: the literal of a pattern', () => {
       assert.deepStrictEqual(issues('import re\nre.search(f"({x}", s)\n'), []);
     });
 
-    it('reads no field outside the pattern, nor a pattern with a `\\N{…}` escape, more fields than holes, or a hole character of its own', () => {
+    it('reads no field outside the pattern and the replacement, nor a pattern with a `\\N{…}` escape, more fields than holes, or a hole character of its own', () => {
       const ex = extractShell('python', 'import re\nre.sub(f"{a}", f"{b}", f"{c}")\n').languages[0];
-      assert.deepStrictEqual(ex.args.map((a) => [a.role, !!a.literal]), [['pattern', true], ['repl', false], ['string', false]]);
+      assert.deepStrictEqual(ex.args.map((a) => [a.role, !!a.literal]), [['pattern', true], ['repl', true], ['string', false]]);
       const fields = Array.from({ length: 31 }, (_, k) => `{x${k}}`).join('');
       for (const call of [`re.search(f"${fields}", s)`, 're.search(f"{x}\\N{BULLET}", s)', 're.search("a\\ufdd2", s)']) {
         assert.deepStrictEqual(extractShell('python', `import re\n${call}\n`).languages, [], call);

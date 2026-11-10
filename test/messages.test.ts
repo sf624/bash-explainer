@@ -17,7 +17,7 @@ import { explain } from './support/explain';
 
 /** The notes about the tool itself (what it did not compute, its own bugs): they cite no section of the manual. */
 // (Facts about Python code, not bash: they cite Python's documentation, src/references.ts.)
-const ABOUT_PYTHON: readonly string[] = ['python-regex-flag-as-count', 'python-regex-string-backspace', 'python-regex-string-octal'];
+const ABOUT_PYTHON: readonly string[] = ['python-regex-flag-as-count', 'python-regex-string-backspace', 'python-regex-string-octal', 'python-template-string-octal'];
 const ABOUT_THE_TOOL: readonly string[] = ['size-not-computed', 'steps-not-computed', 'budget-not-computed', 'python-text-not-computed', 'example-failed', 'line-not-explained', 'line-too-deep', 'file-not-read'];
 
 describe('the message catalog', () => {
