@@ -176,6 +176,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'python-string-without-shell': 'prose',
   'python-shell-injection': 'prose',
   'python-regex-flag-as-count': 'prose',
+  'python-regex-string-backspace': 'prose',
+  'python-regex-string-octal': 'prose',
   'actions-script-injection': 'prose',
   // (Two meanings, each to write out: which is meant, no run can say.)
   'stderr-to-original-stdout': 'prose',
@@ -374,7 +376,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 19, scenario: 26, prose: 23, none: 104 });
+      { mechanical: 19, scenario: 26, prose: 25, none: 104 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });

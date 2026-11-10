@@ -44,8 +44,9 @@ describe('the references', () => {
     assert.deepStrictEqual(reference('python-re-functions'), { id: 'python-re-functions', kind: 'python', text: 're', title: 'Functions', url: PY });
     assert.deepStrictEqual(['en', 'ja'].map((l) => referenceLabel(l as 'en', reference('python-re-functions')!)), ['Python documentation re', 'Python のドキュメント re']);
     assert.strictEqual(refsText('en', ['3.8', 'python-re-functions']), ' (Bash manual 3.8; re)');
-    // (The pages of the sections, some shared by several, the one manual page and the one part of Python's documentation.)
-    assert.strictEqual(REFERENCE_URLS.size, new Set([...SECTIONS.values()].map((s) => s.url)).size + 2);
+    assert.deepStrictEqual(reference('python-string-escapes'), { id: 'python-string-escapes', kind: 'python', text: 'Lexical analysis', title: 'Escape sequences', url: 'https://docs.python.org/3.15/reference/lexical_analysis.html#escape-sequences' });
+    // (The pages of the sections, some shared by several, the one manual page and the two parts of Python's documentation.)
+    assert.strictEqual(REFERENCE_URLS.size, new Set([...SECTIONS.values()].map((s) => s.url)).size + 3);
     // (The panel makes a link of an https address only: media/panel.js, test/web-panel-origin.test.ts.)
     for (const url of REFERENCE_URLS) assert.strictEqual(new URL(url).protocol, 'https:', url);
   });

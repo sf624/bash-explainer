@@ -5,9 +5,11 @@
 import type { ExplainOptions, LineExplanation, NoteAnchor, Pos, Span, Token } from '../analyzer-types';
 import { explainRegex, flavorName } from '../embedded/regex';
 import { PYTHON_SINCE } from '../embedded/regex-python';
+import type { EmbeddedToken } from '../embedded/types';
+import { fillHoles, holeSink, holesRead } from '../explain/holes';
 import { placeEmbedded } from '../explain/nodes';
 import type { Lang } from '../i18n';
-import { shorten } from '../label';
+import { codeSpan, shorten } from '../label';
 import { finishLine, tokenErrors } from '../linefinish';
 import { basisGate, type Fact, fact, type Note, said } from '../messages';
 import { tokenSaid } from '../messages-tokens';
@@ -45,8 +47,11 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
   const { call } = region;
   const source = patternOf(region);
   // (A call whose pattern is not literals has the tokens of its arguments only: `flagsAsCount`.)
-  const top = source && patternToken(region, source, lines, lang);
-  const { tokens, pitfalls } = argumentTokens(region, lines, lang);
+  const pattern = source && patternToken(region, source, lines, lang);
+  const top = pattern?.token;
+  const args = argumentTokens(region, lines, lang);
+  const tokens = args.tokens;
+  const pitfalls = [...(pattern?.pitfalls ?? []), ...args.pitfalls];
   // (In the order of the text: a keyword argument may come before the pattern.)
   const items = [...(top ? [top] : []), ...tokens].sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
   const anchors: NoteAnchor[] = [];
@@ -64,8 +69,13 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
   return ex;
 }
 
-/** The token of the pattern's literals, with the tokens the language's reader makes of its value at their places in the file. */
-function patternToken(region: LanguageRegion, source: LiteralSource, lines: readonly string[], lang: Lang): Token {
+/**
+ * The token of the pattern's literals, with the tokens the language's reader makes of its value at their places in the file, and the
+ * pitfalls of its strings (`stringPitfalls`). A field of an f-string is a hole (docs/design/python-regex.md, 4.3): the reading stands
+ * where the reader claims each hole and finds no error (`holesRead`), and its holes get the catalog's texts (`fillHoles`), each risk
+ * once; else the pattern is not read, as a shell word whose reading a value decides.
+ */
+function patternToken(region: LanguageRegion, source: LiteralSource, lines: readonly string[], lang: Lang): { token: Token; pitfalls: { fact: Fact; span: Span }[] } {
   const { call } = region;
   // (Where an offset of the value is: the place of its character, or after the last one for an end.)
   const at = (offset: number, isEnd: boolean): Pos => (isEnd && offset > 0 ? source.to[offset - 1] : source.at[offset]);
@@ -75,11 +85,58 @@ function patternToken(region: LanguageRegion, source: LiteralSource, lines: read
   const gaps = [0];
   for (let k = 1; k < source.value.length; k++) gaps.push(gaps[k - 1] + (samePos(source.to[k - 1], source.at[k]) ? 0 : 1));
   const label = (a: number, b: number): string => (b - 1 > a && gaps[b - 1] > gaps[a] ? source.value.slice(a, b) : between(lines, at(a, false), at(b, true)));
-  const children = explainRegex(source.value, region.flavor, lang, { tool: 'python', python: region.options! }).map((t) => placeEmbedded(t, at, label, 'embedded'));
+  let read = explainRegex(source.value, region.flavor, lang, { tool: 'python', python: region.options! });
+  let unread: string[] | undefined;
+  const { holes } = source;
+  if (holes) {
+    const { at: all, open, error } = holesRead(source.value, read);
+    const written = (c: string): string => holes[c].written;
+    if (error || open.length) {
+      unread = [...new Set((open.length ? open : all).map((k) => codeSpan(written(source.value[k]))))];
+      read = [];
+    } else {
+      // (A field `{re.escape(x)}` is text, whatever its value is.)
+      const escaped = (t: EmbeddedToken): EmbeddedToken => ({ ...t, ...(t.hole ? { hole: { ...t.hole, escaped: holes[t.hole.of ?? source.value[t.start]].escaped } } : {}), children: t.children.map(escaped) });
+      read = fillHoles(holeSink(lang, new Map(), false), read.map(escaped), source.value, written);
+    }
+  }
+  const pitfalls = stringPitfalls(source, read, lines, lang);
+  const kept = [...new Set((source.escapes ?? []).filter((e) => e.risk === 'kept').map((e) => between(lines, source.at[e.at], source.to[e.at + 1])))];
+  const children = read.map((t) => placeEmbedded(t, at, label, 'embedded'));
+  const explanation = tokenSaid(lang, 'python-regex-pattern', { call: call.written, ...reCallOf(call.name), ...(unread ? { unread } : {}) })
+    + (kept.length ? (lang === 'ja' ? '。' : '. ') + tokenSaid(lang, 'python-regex-string-kept', { written: kept.map(codeSpan), since: PYTHON_SINCE.invalidEscape }) : '');
   return {
-    kind: 'string', label: shorten(between(lines, source.span.start, source.span.end)), span: source.span, children, origin: 'embedded', language: region.language,
-    explanation: tokenSaid(lang, 'python-regex-pattern', { call: call.written, ...reCallOf(call.name) }),
+    token: { kind: 'string', label: shorten(between(lines, source.span.start, source.span.end)), span: source.span, children, origin: 'embedded', language: region.language, explanation },
+    pitfalls,
   };
+}
+
+/**
+ * The pitfalls of the strings of a pattern (docs/design/python-regex.md, 5.3): the first `\b` that a string makes a backspace, and
+ * the first octal escape it makes a character (`\1`), where a regex would read a word boundary or a group's number: outside a set,
+ * a token of the reader that starts with its `[` (in a set, `[\b]` and `[\1]` are those characters to a regex too).
+ */
+function stringPitfalls(source: LiteralSource, read: readonly EmbeddedToken[], lines: readonly string[], lang: Lang): { fact: Fact; span: Span }[] {
+  const out: { fact: Fact; span: Span }[] = [];
+  // (Where the sets are: each token is looked at once, and a set's own tokens are its holes.)
+  const inSet: boolean[] = [];
+  const sets = (ts: readonly EmbeddedToken[]): void => {
+    for (const t of ts) {
+      if (source.value[t.start] === '[') inSet.fill(true, t.start, t.end);
+      else sets(t.children);
+    }
+  };
+  inSet.length = source.value.length;
+  sets(read);
+  for (const risk of ['backspace', 'octal'] as const) {
+    // (A pattern not read says nothing of them.)
+    const e = read.length ? (source.escapes ?? []).find((x) => x.risk === risk && !inSet[x.at]) : undefined;
+    if (!e) continue;
+    const span = { start: source.at[e.at], end: source.to[e.at] };
+    const code = source.value.codePointAt(e.at)!;
+    out.push({ fact: risk === 'backspace' ? fact(lang, 'python-regex-string-backspace') : fact(lang, 'python-regex-string-octal', { written: between(lines, span.start, span.end), code: 'U+' + code.toString(16).toUpperCase().padStart(4, '0') }), span });
+  }
+  return out;
 }
 
 /**

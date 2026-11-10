@@ -97,9 +97,16 @@ export const REGEX_TEXTS = {
    * The pattern of a call of Python's `re` in a `.py` file (src/hosts/languages.ts): `call` as the file writes it, what the function adds to it
    * (`anchors`: `match` at the start, `fullmatch` at both ends), and the release a function needs (`since`: `prefixmatch`, 3.15).
    */
-  'python-regex-pattern': tokenText<{ call: string; anchors?: 'start' | 'whole'; since?: string }>(({ call, anchors, since }) => [
-    `\`${call}\` のパターン（Python の正規表現）${anchors === 'start' ? '。文字列の先頭から一致する' : anchors === 'whole' ? '。文字列全体に一致する' : ''}${since ? `（Python ${since} 以降）` : ''}`,
-    `The pattern of \`${call}\` (Python regex)${anchors === 'start' ? ', matched at the start of the string' : anchors === 'whole' ? ', matched against the whole string' : ''}${since ? ` (Python ${since} or later)` : ''}`]),
+  'python-regex-pattern': tokenText<{ call: string; anchors?: 'start' | 'whole'; since?: string; unread?: readonly string[] }>(({ call, anchors, since, unread }) => [
+    `\`${call}\` のパターン（Python の正規表現）${anchors === 'start' ? '。文字列の先頭から一致する' : anchors === 'whole' ? '。文字列全体に一致する' : ''}${since ? `（Python ${since} 以降）` : ''}${unread ? `。${unread.join('・')} の値によって読み方が変わるので、ここでは読まない` : ''}`,
+    `The pattern of \`${call}\` (Python regex)${anchors === 'start' ? ', matched at the start of the string' : anchors === 'whole' ? ', matched against the whole string' : ''}${since ? ` (Python ${since} or later)` : ''}${unread ? `; not read here, as how it reads depends on the value of ${unread.join(', ')}` : ''}`]),
+  /**
+   * Backslashes a string of a pattern keeps, not being raw, as they start no escape of Python's strings (`"\\d"`): `written`, each
+   * escape as the regex reads it. Python and the linters warn of it, so it is no pitfall here (docs/design/python-regex.md, 11).
+   */
+  'python-regex-string-kept': tokenText<{ written: readonly string[]; since: string }>(({ written, since }) => [
+    `文字列は ${written.join('・')} をそのまま残す（Python の文字列にこのエスケープはないので、Python ${since} 以降は SyntaxWarning が出る。\`r"…"\` の raw 文字列なら、警告なしにバックスラッシュがそのまま残る）`,
+    `The string keeps ${written.join(', ')} as written (Python's strings have no such escape, and Python ${since} and later warn: SyntaxWarning; a raw string, \`r"…"\`, keeps each backslash with no warning)`]),
   /**
    * Python's `re` refuses the pattern: `message` is Python's own (`bad escape \e at position 0`), held against the reference Python
    * (test/regex-python-real.test.ts); `since`, the release since which it is an error, where that changed in a release still supported.

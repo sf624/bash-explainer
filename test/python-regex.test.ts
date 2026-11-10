@@ -49,8 +49,8 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
       assert.deepStrictEqual(explainPy("import re\nre.compile('')\n", 1).items.map((t) => [t.label, t.children.length]), [["''", 0]]);
     });
 
-    it('leaves what it does not read yet: fields, `\\N{…}`, a value built at run time, `*args`', () => {
-      for (const call of ["re.search(f'{x}a', s)", "re.search('\\N{EM DASH}', s)", "re.search('a' + x, s)", "re.search(p, s)", "re.search('%s' % x, s)", "re.search(*args)", "re.search('a', **kw)", 're.search(', "re.search('a'", 're.search(string=s)']) {
+    it('leaves what it does not read: `\\N{…}`, a value built at run time, `*args` (fields are holes: test/python-literal.test.ts)', () => {
+      for (const call of ["re.search('\\N{EM DASH}', s)", "re.search(f'{x}\\N{EM DASH}', s)", "re.search('a' + x, s)", "re.search(p, s)", "re.search('%s' % x, s)", "re.search(*args)", "re.search('a', **kw)", 're.search(', "re.search('a'", 're.search(string=s)']) {
         assert.deepStrictEqual(patterns(`import re\n${call}\n`), [], call);
       }
       // (An f-string with no field is a str; flags, VERBOSE and bytes patterns are read, test/python-flags.test.ts.)
