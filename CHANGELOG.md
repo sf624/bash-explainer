@@ -7,7 +7,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### New
 
 - In a `.py` file that imports `re`, the pattern of `re.search`, `re.compile`, `re.sub` and the other `re` functions is explained in the panel and the hover, part by part, with its flags (`re.I | re.M`, `(?i)`, VERBOSE comments). The fields of an f-string are read as holes (`rf"^{prefix}\d+$"`). A pattern Python refuses (`re.compile('*.txt')`) is an Error with Python's message, and a flag passed as `count` (`re.sub(p, r, s, re.I)`) or an escape that a string without `r` makes a character (`"\bword\b"`, a backspace; `"(a)\1"`, U+0001) is a Warning.
-- On the web page, a pasted or opened Python script with `import re` and a call of `re.search(…)` or the like (no file name, no shebang) is taken as Python, so its patterns are explained. A shell script that only mentions `re.sub` stays a shell script.
+- On the web page, a pasted or opened Python script with `import re` and a call of `re.search(…)` or the like is taken as Python, so its patterns are explained. A shell script that only mentions `re.sub` stays a shell script.
 
 ### Fixed
 

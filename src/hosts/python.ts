@@ -6,7 +6,7 @@ import { flagsAsCount } from './scripts';
 import { type JsonWord, execWords } from './dockerfile';
 import { LineOut, Builder } from './builder';
 import type { HostMeaning } from '../messages-hosts';
-import { isName, isOp, type PyField, type PyLexed, pyLex } from './pylex';
+import { isName, isOp, type PyField, type PyLexed, type PyToken, pyLex } from './pylex';
 import { argValue, type PyArg, type PyHole } from './pyvalue';
 import { dottedAt, type PyImports, pyImports, pyResolve } from './pyimports';
 import { type FlagState, PYTHON_FLAGS, type PythonOption } from '../embedded/regex-python';
@@ -42,17 +42,24 @@ const RE_CALLS: Record<string, ReCall> = {
   're.subn': { params: ['pattern', 'repl', 'string', 'count', 'flags'] },
 };
 
+/**
+ * The calls `name(` or `a.b(` of a file's tokens (not of an attribute, `x.run(`, nor a definition, `def run(`), each with
+ * its full name through the imports (undefined when the name is bound by none).
+ */
+function* resolvedCalls(src: string, tokens: readonly PyToken[], imports: PyImports): Generator<{ i: number; called: { name: string; next: number }; full: string | undefined }> {
+  for (let i = 0; i < tokens.length; i++) {
+    const before = tokens[i - 1];
+    if (isOp(src, before, '.') || isName(src, before, 'def') || isName(src, before, 'class')) continue;
+    const called = dottedAt(src, tokens, i);
+    if (!called || !isOp(src, tokens[called.next], '(')) continue;
+    yield { i, called, full: pyResolve(imports, called.name) };
+  }
+}
+
 /** Whether a Python text calls a function of `RE_CALLS` through its imports (`import re` and `re.sub(…)`, `from re import sub` and `sub(…)`): the web page's detection of pasted Python. */
 export function callsRe(src: string): boolean {
   const { tokens } = pyLex(src);
-  const imports = pyImports(src, tokens);
-  for (let i = 0; i < tokens.length; i++) {
-    if (isOp(src, tokens[i - 1], '.') || isName(src, tokens[i - 1], 'def') || isName(src, tokens[i - 1], 'class')) continue;
-    const called = dottedAt(src, tokens, i);
-    if (!called || !isOp(src, tokens[called.next], '(')) continue;
-    const full = pyResolve(imports, called.name);
-    if (full !== undefined && full in RE_CALLS) return true;
-  }
+  for (const { full } of resolvedCalls(src, tokens, pyImports(src, tokens))) if (full !== undefined && full in RE_CALLS) return true;
   return false;
 }
 
@@ -109,13 +116,7 @@ export function python(b: Builder): void {
   const imports = pyImports(src, tokens);
   // (The calls of `re`, read once every line a shell region takes is known: a shell region keeps a line it shares.)
   const patterns: { name: string; full: string; first: number; at: number }[] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    // A call `name(` or `a.b(`, not of an attribute (`x.run(`) nor a definition (`def run(`).
-    const before = tokens[i - 1];
-    if (isOp(src, before, '.') || isName(src, before, 'def') || isName(src, before, 'class')) continue;
-    const called = dottedAt(src, tokens, i);
-    if (!called || !isOp(src, tokens[called.next], '(')) continue;
-    const full = pyResolve(imports, called.name);
+  for (const { i, called, full } of resolvedCalls(src, tokens, imports)) {
     if (full !== undefined && full in RE_CALLS) patterns.push({ name: called.name, full, first: i, at: called.next });
     const spec = full === undefined ? undefined : PY_CALLS[full];
     if (!spec) continue;
