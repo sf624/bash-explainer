@@ -2,7 +2,7 @@
 // (test/support/site.ts). Skipped when no browser can start, unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
-import { kindChosen, openSite, pickKind, toastText, until } from './support/site';
+import { cursorToLine, kindChosen, openSite, pickKind, toastText, until } from './support/site';
 
 const DOCKERFILE = 'FROM alpine:3.20\nRUN apk add --no-cache curl\nCMD ["sh"]\n';
 const MAKEFILE = 'all: build\n\nbuild:\n\tgo build ./...\n';
@@ -69,6 +69,32 @@ describe('the web page: the file kind of a pasted script', function () {
     assert.strictEqual((await text(page)).trim(), DOCKERFILE.trim());
     assert.strictEqual(await toast.innerText(), '');
     assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('takes a pasted Python script with only re calls as Python, and explains its pattern in the panel', async () => {
+    const { ctx, page, errors } = await open();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await paste(page, 'import re\n\nm = re.search(r"^\\d+$", line)\n');
+    await until('the kind', () => kindOf(page), (k) => k === 'python');
+    assert.strictEqual(await toastText(page), 'Detected: Python');
+    await cursorToLine(page, 3);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    const tree = () => panel().locator('main').ariaSnapshot();
+    await until('the pattern row', tree, (t) => /code: \\d/.test(t) && /re\.search/.test(t));
+    assert.match(await page.locator('#scope-chip').getAttribute('aria-label') ?? '', /Python/);
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('keeps a shell script that mentions re.sub as shell', async () => {
+    const { ctx, page } = await open();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await paste(page, "import re\ngrep 're.sub(' f\necho done\n");
+    await page.waitForTimeout(300);
+    assert.strictEqual(await kindOf(page), 'shell');
     await ctx.close();
   });
 

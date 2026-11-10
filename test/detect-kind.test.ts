@@ -90,6 +90,13 @@ describe('detectKind', () => {
     ['import os, sys\nos.system("ls")\n', 'python', 'os.system'],
     ['from subprocess import run\nimport os\nos.popen("ls")\n', 'python', 'os.popen'],
     ['import os\nprint(os.getcwd())\n', undefined, 'Python that runs nothing'],
+    ['import re\n\nm = re.search(r"\\d+", s)\n', 'python', 're only'],
+    ['from re import sub as s\nprint(s("a", "b", x))\n', 'python', 'from re import'],
+    ['import re, subprocess\nsubprocess.run(["ls"])\nre.sub("a", "b", x)\n', 'python', 'both'],
+    ['import re\nprint(re.IGNORECASE)\n', undefined, 'import re with no call'],
+    ['import re\nx.re.search(1)\n', undefined, 'an attribute named re'],
+    ["grep 're.sub(' f\necho re.search(x)\n", undefined, 'a shell script mentioning re.'],
+    ['# Notes\n\n```python\nimport re\nre.search("a", s)\n```\n', 'markdown', 'a Markdown file with a Python block'],
     ['subprocess.run("ls")\n', undefined, 'a call without imports'],
     // package.json.
     ['{"name": "a", "scripts": {"test": "mocha"}}', 'npm', 'scripts'],
