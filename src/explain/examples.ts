@@ -143,8 +143,7 @@ export function patternExample(cx: Explainer, pats: SyntaxNode[], labels: [strin
 
 /** `[[ x == pat ]]`: the values that match the pattern `pat` and some that do not, with the value of `x` where the model knows it. */
 export function matchExample(cx: Explainer, n: SyntaxNode, pat: SyntaxNode): void {
-  const left = field(n, 'left');
-  const value = left ? subjectValue(cx, left) : undefined;
+  const value = subjectValue(cx, field(n, 'left')!);
   // (Without the line continuations, which bash removes first: `@\<newline>(x|y)` is `@(x|y)`.)
   const text = unquotedWord(pat) ?? nameText(pat);
   guardedExample(cx, 'glob', () => {
