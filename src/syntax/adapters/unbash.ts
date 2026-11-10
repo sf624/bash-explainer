@@ -224,15 +224,10 @@ class Converter {
       }
       const len = m ? (m[1] === 'newline' ? 1 : m[1].length) : (/^\S*/.exec(this.text.slice(e.pos))![0].length);
       this.unreadableAt(e.message, e.pos, e.pos + len);
-      // (The scanner has read the token as an operator, or unbash as a word: that is the error. It is looked for at each level on the
-      // way down: a here-document's redirection spans the rest of its line, `cat <<E& b)`, where the `)` is a token of the list.)
+      // (The token read as an operator, or as a word, is the error: looked for on the way down, as `<<E` spans the line, `cat <<E& b)`.)
       const sameIn = (n: Mut) => n.children.find((c) => c.startIndex === e.pos && c.endIndex === e.pos + len && !c.children.length);
       let holder = root;
-      for (let down = true; down && !sameIn(holder);) {
-        const inner = holder.children.find((c) => c.named && c.startIndex <= e.pos && c.endIndex >= e.pos + len && c.children.length);
-        down = inner !== undefined;
-        if (inner) holder = inner;
-      }
+      for (let inner; !sameIn(holder) && (inner = holder.children.find((c) => c.named && c.startIndex <= e.pos && c.endIndex >= e.pos + len && c.children.length));) holder = inner;
       const same = sameIn(holder);
       if (same) {
         same.type = 'error';
