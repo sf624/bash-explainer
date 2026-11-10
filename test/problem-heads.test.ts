@@ -101,7 +101,7 @@ const CASES: { [K in ProblemFactId]: readonly unknown[] } = {
   'dockerfile-pipefail-missing': [{}],
   'python-string-without-shell': [{}],
   'python-shell-injection': [{}],
-  'python-regex-flag-as-count': [{ written: 're.I', call: 're.sub', param: 'count', value: 2, since: '3.13' }, { written: 're.M', call: 're.split', param: 'maxsplit', value: 8, since: '3.13' }],
+  'python-regex-flag-as-count': [{ written: 're.I', call: 're.sub', param: 'count', value: 2, since: '3.13' }, { written: 're.M', call: 're.split', param: 'maxsplit', value: 8, since: '3.13' }, { written: 're.I', call: 'WORD.sub', param: 'count', value: 2, compiled: { name: 'WORD', line: 2 } }],
   'python-regex-string-backspace': [{}],
   'python-regex-string-octal': [{ written: '\\1', code: 'U+0001' }, { written: '\\12', code: 'U+000A' }],
   'python-template-string-octal': [{ written: '\\1', code: 'U+0001' }],

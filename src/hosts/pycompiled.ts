@@ -36,6 +36,7 @@ export function compiledNames(src: string, lx: PyLexed, imports: PyImports): (na
     k = end + 1;
   }
   const blocks = blocksOf(src, tokens, code, lines);
+  const enclosing = enclosingOf(blocks, tokens.length);
   const count = new Map<string, number>();
   const bind = (i: number) => count.set(text(i), (count.get(text(i)) ?? 0) + 1);
   for (const name of imports.keys()) count.set(name, 1);
@@ -91,35 +92,59 @@ export function compiledNames(src: string, lx: PyLexed, imports: PyImports): (na
     if (tokens[code[a]].kind !== 'name' || lastEquals !== a + 1) return;
     const call = dottedAt(src, tokens, code[a + 2]);
     if (!call || pyResolve(imports, call.name) !== 're.compile' || !isOp(src, tokens[call.next], '(') || lx.pair[call.next] !== code[b]) return;
-    const block = innermost(blocks, code[a]);
-    sites.set(text(code[a]), { at: code[a], call: code[a + 2], ...(block ? { block } : {}) });
+    const block = enclosing.innermost[code[a]];
+    sites.set(text(code[a]), { at: code[a], call: code[a + 2], ...(block >= 0 ? { block: blocks[block] } : {}) });
   }
   return (name, at) => {
     const site = sites.get(name);
     if (!site || count.get(name) !== 1) return undefined;
     if (site.block) return site.block.kind === 'def' && at > site.block.from && at <= site.block.to ? site.call : undefined;
     // (At the top of the file, or in a class there, before the statement, the name is not bound yet.)
-    return blocks.some((bl) => bl.kind === 'def' && at > bl.from && at <= bl.to) || at > site.at ? site.call : undefined;
+    return enclosing.inDef[at] === 1 || at > site.at ? site.call : undefined;
   };
 }
 
-/** The `def` and `class` blocks: a line that starts with one (after `async`), and the lines after it indented more, or the rest of its own line. */
+/**
+ * The `def` and `class` blocks, in the order they start: a line that starts with one (after `async`), and the lines after it indented
+ * more, or the rest of its own line. One pass over the lines, with the blocks still open on a stack (a block ends before the first
+ * line indented as much as its own, or less).
+ */
 function blocksOf(src: string, tokens: readonly PyToken[], code: readonly number[], lines: readonly { from: number; to: number; indent: number }[]): Block[] {
   const out: Block[] = [];
+  const open: { block: Block; indent: number }[] = [];
   lines.forEach((line, n) => {
+    while (open.length > 0 && open[open.length - 1].indent >= line.indent) open.pop()!.block.to = code[lines[n - 1].to];
     const first = isName(src, tokens[code[line.from]], 'async') ? line.from + 1 : line.from;
     const t = tokens[code[first]];
     if (!isName(src, t, 'def') && !isName(src, t, 'class')) return;
-    let last = n;
-    while (last + 1 < lines.length && lines[last + 1].indent > line.indent) last++;
-    out.push({ kind: isName(src, t, 'def') ? 'def' : 'class', from: code[line.from], to: code[lines[last].to] });
+    const block: Block = { kind: isName(src, t, 'def') ? 'def' : 'class', from: code[line.from], to: code[line.to] };
+    out.push(block);
+    open.push({ block, indent: line.indent });
   });
+  for (const { block } of open) block.to = code[lines[lines.length - 1].to];
   return out;
 }
 
-/** The block that holds the token `i` most closely: the one that starts last. */
-function innermost(blocks: readonly Block[], i: number): Block | undefined {
-  let found: Block | undefined;
-  for (const b of blocks) if (i > b.from && i <= b.to && (!found || b.from > found.from)) found = b;
-  return found;
+/**
+ * For each token, the block that holds it most closely (an index of `blocks`, -1 for none) and whether a `def` holds it: one sweep
+ * over the tokens, with the blocks that hold the token on a stack (blocks nest, as their lines do: one in another ends with it or
+ * before). A block holds the tokens after its first up to its last.
+ */
+function enclosingOf(blocks: readonly Block[], count: number): { innermost: Int32Array; inDef: Uint8Array } {
+  const innermost = new Int32Array(count).fill(-1);
+  const inDef = new Uint8Array(count);
+  const stack: number[] = [];
+  let defs = 0;
+  let next = 0;
+  for (let i = 0; i < count; i++) {
+    while (next < blocks.length && blocks[next].from < i) {
+      stack.push(next);
+      if (blocks[next++].kind === 'def') defs++;
+    }
+    // (The blocks end in the reverse order they start, so the ones that end before the token are at the top.)
+    while (stack.length > 0 && blocks[stack[stack.length - 1]].to < i) if (blocks[stack.pop()!].kind === 'def') defs--;
+    if (stack.length > 0) innermost[i] = stack[stack.length - 1];
+    if (defs > 0) inDef[i] = 1;
+  }
+  return { innermost, inDef };
 }

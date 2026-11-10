@@ -133,6 +133,10 @@ describe('Python regex: the methods of a compiled pattern', () => {
     // (After a `;` too; on the line of the compile, the line is the compile's.)
     assert.deepStrictEqual(linked("x = 1; P = re.compile(r'a')\nP.search(s)\n"), [['P.search', 1]]);
     assert.deepStrictEqual(linked("P = re.compile(r'a'); P.search(s)\n"), []);
+    // (The blocks as their lines nest them: a function of one line, blocks that end together, one that ends with the file.)
+    assert.deepStrictEqual(linked("def f(s): P = re.compile(r'a'); return P.search(s)\nP.search(s)\n"), []);
+    assert.deepStrictEqual(linked("def f(s):\n    class C:\n        def m(self):\n            P = re.compile(r'a')\n            return P.search(s)\n    return P.search(s)\nP.search(s)\n"), [['P.search', 4]]);
+    assert.deepStrictEqual(linked("P.search(s)\nclass C:\n    def m(self):\n        return P.search(s)\n    x = P.search(s)\nP = re.compile(r'a')\nP.split(s)\ndef g():\n    if s:\n        return P.match(s)\n"), [['P.search', 6], ['P.split', 6], ['P.match', 6]]);
   });
 
   it('links no name assigned twice, shadowed in a function, or bound otherwise', () => {
@@ -174,5 +178,11 @@ describe('Python regex: the methods of a compiled pattern', () => {
     const ex = explainPy("import re\nP = re.compile(r'a')\nP.sub('b', s, re.I)\n", 2);
     assert.deepStrictEqual(ex.facts?.map((f) => f.id), ['python-regex-flag-as-count']);
     assert.doesNotMatch(ex.notes.join('\n'), /DeprecationWarning/);
+    // (A method takes no `flags`: `P.sub('b', s, flags=re.I)` raises TypeError, so the flag goes to the `re.compile`.)
+    assert.match(ex.notes.join('\n'), /Pass the flag to `re\.compile` on line 2 \(`P = re\.compile\(…, re\.I\)`\): the method has no parameter `flags`, and `flags=` raises TypeError\./);
+    assert.doesNotMatch(ex.notes.join('\n'), /Write `flags=/);
+    const split = explainPy("import re\nWORD = re.compile(r'\\w+')\nWORD.split(s, re.I)\n", 2, 'ja').notes.join('\n');
+    assert.match(split, /フラグは行 2 の `re\.compile` に渡す（`WORD = re\.compile\(…, re\.I\)`）。/);
+    assert.doesNotMatch(split, /`flags=re\.I` と書く/);
   });
 });

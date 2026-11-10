@@ -93,6 +93,9 @@ const EXAMPLES: Row[] = [
   compiled(String.raw`r'\w+'`, String.raw`P.fullmatch(s)`), compiled(String.raw`r'b'`, String.raw`P.match('ab', pos=1)`),
   compiled(String.raw`r'a'`, String.raw`P.findall('aaa', 2, 1)`), String.raw`re.sub(r'(?:(a)|b)+', 'x', 'ab')`,
   [compiled(String.raw`r'ab'`, String.raw`P.prefixmatch(s)`), '3.15'],
+  // A made-up subject whose groups match different texts, so that a template that reorders them shows it.
+  String.raw`re.sub(r'(\w+) (\w+)', r'\2 \1', s)`, String.raw`re.sub(r'(\d)-(\d)-(\d)', r'\3/\2/\1', s)`, String.raw`re.sub(r'(?P<y>\d{4})-(?P<m>\d\d)', r'\g<m>/\g<y>', s)`,
+  String.raw`re.findall(r'(a|b)(c|d)', s)`, String.raw`re.sub(r'(a)(\1)', r'\2\1', s)`, String.raw`re.findall(r'(?:a|b)(c)', s)`,
 ];
 
 /** Calls that get no example, each for its reason. */
@@ -160,6 +163,14 @@ describe('Python regex: the examples of the calls of `re`', () => {
     const [values] = examplesOf(String.raw`re.fullmatch(r'\d{3}-\d{4}', s)`, 'ja');
     assert.deepStrictEqual([values.title, values.sections.map((s) => s.label), values.interactive?.spec], ['例（`re.fullmatch` は文字列全体と照合する）', ['一致する文字列（例）', '一致しない文字列（例）'],
       { kind: 'regex', mode: 'values', python: true, regex: { source: String.raw`(?<![\s\S])(?:\d{3}\-\d{4})(?![\s\S])`, flags: '' } }]);
+  });
+
+  it('makes up a subject whose groups match different texts where the pattern allows it, so that a template that reorders them shows it', () => {
+    const shown = (call: string) => examplesOf(call)[0].sections.map((x) => x.lines[0]);
+    assert.deepStrictEqual(shown(String.raw`re.sub(r'(\w+) (\w+)', r'\2 \1', s)`), ["'b cde xyz'", "'cde b xyz'"]);
+    assert.deepStrictEqual(shown(String.raw`re.sub(r'(\d)-(\d)-(\d)', r'\3/\2/\1', s)`), ["'abc2-3-4def3-4-5xyz'", "'abc4/3/2def5/4/3xyz'"]);
+    // (A back-reference matches what its group did.)
+    assert.deepStrictEqual(shown(String.raw`re.sub(r'(a+)-\1', r'<\1>', s)`), ["'abca-adefaaa-aaaxyz'", "'abc<a>def<aaa>xyz'"]);
   });
 
   it('follows the settings: no example with examples off, or with the kind `regex` off', () => {

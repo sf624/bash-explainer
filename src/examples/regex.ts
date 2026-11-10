@@ -358,8 +358,12 @@ export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: bool
   return { source: out, flags };
 }
 
-/** Generate a string for `node`. `v` varies the choices so different variants give different strings. */
-function gen(node: Node, v: number, caps: string[], left: { steps: number }): string | undefined {
+/**
+ * Generate a string for `node`. `v` varies the choices so different variants give different strings; `apart`: each capturing group
+ * takes the choices of the variant after its number's (`(\w+) (\w+)` gives `b cde`, not `a a`), so that its text differs from the
+ * others' where the pattern allows it.
+ */
+function gen(node: Node, v: number, caps: string[], left: { steps: number }, apart: boolean): string | undefined {
   // (Like a run on a text, what it makes of `(){2000000000}` or `(ab{1000}){1000}` may take too long.)
   if (--left.steps < 0) throw new Refused();
   switch (node.t) {
@@ -367,11 +371,11 @@ function gen(node: Node, v: number, caps: string[], left: { steps: number }): st
     case 'char': return node.c;
     case 'set': return node.pick(v);
     case 'backref': return caps[node.n] ?? '';
-    case 'alt': return gen(node.options[v % node.options.length], Math.floor(v / node.options.length), caps, left);
+    case 'alt': return gen(node.options[v % node.options.length], Math.floor(v / node.options.length), caps, left, apart);
     case 'seq': {
       let out = '';
       for (let k = 0; k < node.items.length; k++) {
-        const part = gen(node.items[k], v, caps, left);
+        const part = gen(node.items[k], v, caps, left, apart);
         if (part === undefined) return undefined;
         out += part;
       }
@@ -380,7 +384,7 @@ function gen(node: Node, v: number, caps: string[], left: { steps: number }): st
     case 'group': {
       // Negative lookarounds add nothing; positive ones contribute their text to the line.
       if (node.look === '!' || node.look === '<!') return '';
-      const text = gen(node.node, v, caps, left);
+      const text = gen(node.node, apart && node.no ? v + node.no : v, caps, left, apart);
       if (text === undefined) return undefined;
       if (node.no) caps[node.no] = text;
       return text;
@@ -391,7 +395,7 @@ function gen(node: Node, v: number, caps: string[], left: { steps: number }): st
       const count = choices[v % choices.length];
       let out = '';
       for (let k = 0; k < count; k++) {
-        const part = gen(node.node, v + k, caps, left);
+        const part = gen(node.node, v + k, caps, left, apart);
         if (part === undefined) return undefined;
         out += part;
       }
@@ -410,9 +414,10 @@ export interface RegexExamples {
 
 /**
  * Example lines that match (and nearby ones that do not), verified against the pattern itself. `accept`: which texts an example
- * may show (Python's: ASCII without control characters, where JavaScript and Python read the classes alike).
+ * may show (Python's: ASCII without control characters, where JavaScript and Python read the classes alike). `apart`: the groups'
+ * texts differ where they can (`gen`), for an example that shows what each group matched.
  */
-export function regexExamples(js: JsRegex, max = 3, accept: (text: string) => boolean = () => true): RegexExamples | undefined {
+export function regexExamples(js: JsRegex, max = 3, accept: (text: string) => boolean = () => true, apart = false): RegexExamples | undefined {
   const re = scriptRegex(js.source, js.flags);
   // Parser reads every regex JavaScript accepts, to the end, and throws nothing of its own: an error from it is a
   // bug, which shows.
@@ -426,7 +431,7 @@ export function regexExamples(js: JsRegex, max = 3, accept: (text: string) => bo
   const matching: string[] = [];
   const left = { steps: 100000 };
   for (let v = 0; v < 12 && matching.length < max; v++) {
-    const text = gen(tree, v, [], left);
+    const text = gen(tree, v, [], left, apart);
     if (text === undefined || text === '' || /[\n\r]/.test(text) || matching.includes(text) || !accept(text)) continue;
     if (re.test(text)) matching.push(text);
   }

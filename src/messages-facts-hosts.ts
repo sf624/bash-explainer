@@ -1,4 +1,5 @@
 import { broken, type Catalog, caveat, NO_HEADING, note, pitfall, saying, withConvention } from './messages-entry';
+import { lineLabel } from './i18n';
 import { HOST_NOTES } from './messages-lines';
 import { type GithubFileName, githubFileText, type HostMeaning, hostSubstitutionText } from './messages-hosts';
 
@@ -39,10 +40,12 @@ export const HOST_MESSAGES = {
   'python-shell-expression': note<Record<string, never>>(['6.1'], () => HOST_NOTES['python-shell-expression']),
   'python-string-partial': note<Record<string, never>>(['3.1.1'], () => HOST_NOTES['python-string-partial']),
   // (A fact of Python's `re`, not of bash: it cites the functions of its documentation, src/references.ts; docs/design/python-regex.md, 5.3.)
-  // (`since`: where the flags are in the slot of the parameter, the release since which that warns; none for them by keyword.)
-  'python-regex-flag-as-count': pitfall<{ written: string; call: string; param: 'count' | 'maxsplit'; value: number; since?: string }>(['python-re-functions'], ({ written, call, param, value, since }) => [
-    `\`${written}\` はフラグではなく \`${param}\`（${value}）として渡される。\`${call}\` は${param === 'count' ? `最大 ${value} 回だけ置き換え` : `最大 ${value} 回だけ分割し`}、パターンにはフラグが付かない。\`flags=${written}\` と書く。${since ? `Python ${since} 以降は、\`${param}\` を位置引数で渡すと DeprecationWarning も出る。` : ''}`,
-    `\`${written}\` is passed as \`${param}\` (${value}), not as flags: \`${call}\` ${param === 'count' ? `replaces at most ${value} matches` : `splits at most ${value} times`}, and the pattern does not get the flag. Write \`flags=${written}\`.${since ? ` Python ${since} and later also warn (DeprecationWarning) when \`${param}\` is passed by position.` : ''}`],
+  // (`since`: where the flags are in the slot of the parameter, the release since which that warns; none for them by keyword.
+  // `compiled`: of a method of a compiled pattern, the name and the line (from 1) of its `re.compile`, which takes the flags: the
+  // method has no parameter `flags`, and `flags=` there raises TypeError.)
+  'python-regex-flag-as-count': pitfall<{ written: string; call: string; param: 'count' | 'maxsplit'; value: number; since?: string; compiled?: { name: string; line: number } }>(['python-re-functions'], ({ written, call, param, value, since, compiled }) => [
+    `\`${written}\` はフラグではなく \`${param}\`（${value}）として渡される。\`${call}\` は${param === 'count' ? `最大 ${value} 回だけ置き換え` : `最大 ${value} 回だけ分割し`}、パターンにはフラグが付かない。${compiled ? `フラグは${lineLabel('ja', compiled.line)} の \`re.compile\` に渡す（\`${compiled.name} = re.compile(…, ${written})\`）。メソッドには \`flags\` の引数がなく、\`flags=\` と書くと TypeError になる。` : `\`flags=${written}\` と書く。`}${since ? `Python ${since} 以降は、\`${param}\` を位置引数で渡すと DeprecationWarning も出る。` : ''}`,
+    `\`${written}\` is passed as \`${param}\` (${value}), not as flags: \`${call}\` ${param === 'count' ? `replaces at most ${value} matches` : `splits at most ${value} times`}, and the pattern does not get the flag. ${compiled ? `Pass the flag to \`re.compile\` on ${lineLabel('en', compiled.line, 'inline')} (\`${compiled.name} = re.compile(…, ${written})\`): the method has no parameter \`flags\`, and \`flags=\` raises TypeError.` : `Write \`flags=${written}\`.`}${since ? ` Python ${since} and later also warn (DeprecationWarning) when \`${param}\` is passed by position.` : ''}`],
   ({ written, param, value }) => [`\`${written}\` はフラグではなく \`${param}\`（${value}）になる。`, `\`${written}\` is taken as \`${param}\` (${value}), not as flags.`]),
   // (Facts of a Python string that is a pattern of `re` and is not raw: they cite its escapes; docs/design/python-regex.md, 5.3.)
   'python-regex-string-backspace': pitfall(['python-string-escapes'], () => [
