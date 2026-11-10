@@ -71,7 +71,7 @@ export function shellOf(shells: Shells): Shell | undefined {
 export function autoShellAt(doc: ShellDocument, shells: Shells, line: number): AutoShell {
   if (!doc.extracted) return shells.detected ?? { shell: 'bash', source: 'default' };
   const part = hostPartAt(doc.extracted, line);
-  if (part?.kind === 'language') return { language: part.region.language, flavor: part.region.flavor };
+  if (part?.kind === 'language') return { language: part.regions[0].language, flavor: part.regions[0].flavor };
   const auto = (r: ShellRegion) => (r.noShell ? 'none' : regionShell(r) ?? 'bash');
   const all = new Set(doc.extracted.regions.map(auto));
   const shell = part ? auto(part.region) : all.size === 1 ? [...all][0] : all.size ? 'parts' : 'none';
@@ -90,7 +90,7 @@ export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line
     // (A part in another language has no shell tree: its own reader, in the same boundary and budget, src/hosts/languages.ts.)
     const explained = () => {
       const part = hostPartAt(extracted, line);
-      return part?.kind === 'language' ? explainLanguageLine(part.region, doc.lines, line, lang, opts) : explainHostedLine(analyzer, doc.tree, extracted, doc.lines, line, lang, shells.forced, opts);
+      return part?.kind === 'language' ? explainLanguageLine(part.regions, doc.lines, line, lang, opts) : explainHostedLine(analyzer, doc.tree, extracted, doc.lines, line, lang, shells.forced, opts);
     };
     return contained(`line ${line + 1}`, () => withinLine(doc.tree.root, explained, doc.languageLines), (e) => analyzer.notExplained(doc.tree, line, undefined, e))
       ?? { line, summary: '', items: [], context: [], notes: [], noteInfo: [], examples: [] };

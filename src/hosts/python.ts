@@ -2,7 +2,7 @@ import { type Shell, shellFromName } from '../dialect';
 import { featureWorks } from '../shellfeatures';
 import type { Pos } from '../analyzer-types';
 import type { CallArgument, CallFlags, LanguageRegion, LiteralHole, LiteralSource, ReParam, RegionNote, StringEscapeRisk } from './index';
-import { flagsAsCount } from './scripts';
+import { flagsAsCount, spanWithin } from './scripts';
 import { type JsonWord, execWords } from './dockerfile';
 import { LineOut, Builder } from './builder';
 import type { HostMeaning } from '../messages-hosts';
@@ -220,28 +220,34 @@ interface ReCandidate { region: Omit<LanguageRegion, 'lines'>; start: number; en
 
 /**
  * The lines of the calls of `re` (docs/design/python-regex.md, 2.2), each call in the order written. A line a shell region has stays
- * the shell's. A line of a pattern's literals is that call's, the first written when two patterns share one, and a call whose pattern
- * has a line taken so is left out. Every other line of a call is that of the innermost call kept that holds it: the one that starts
- * last, as calls nest (`re.sub(r'a', 'b',` over `re.sub(r'c', 'd', s))`: each line shows its own pattern).
+ * the shell's, and a call whose pattern has such a line is left out. A line of a pattern's literals is that call's, and every call
+ * whose pattern is on it has it. Every other line of a call is its own where no call inside it holds that line: the innermost calls
+ * that hold a line have it, and calls side by side share it (`P.match(s) or Q.match(s)`). So `re.sub(r'a', 'b',` over
+ * `re.sub(r'c', 'd', s))` shows each pattern on its own line, and `re.sub(r'a', 'b', re.sub(r'c', 'd', s))` both on one.
  */
 function claimLines(b: Builder, calls: readonly ReCandidate[]): void {
-  const owner = new Map<number, ReCandidate>();
-  const patternLines = new Set<number>();
+  const shell = (l: number): boolean => !!b.outs[l]?.text;
   const kept = calls.filter((c) => {
-    const { pattern } = c;
-    if (!pattern) return true;
-    for (let l = pattern.start; l <= pattern.end; l++) if (b.outs[l]?.text || patternLines.has(l)) return false;
-    for (let l = pattern.start; l <= pattern.end; l++) {
-      patternLines.add(l);
-      owner.set(l, c);
-    }
+    if (!c.pattern) return true;
+    for (let l = c.pattern.start; l <= c.pattern.end; l++) if (shell(l)) return false;
     return true;
   });
-  for (const c of kept) for (let l = c.start; l <= c.end; l++) if (!b.outs[l]?.text && !patternLines.has(l)) owner.set(l, c);
+  // (The calls that hold each line, read once: a call is compared with the others on its lines only.)
+  const holding = new Map<number, ReCandidate[]>();
+  for (const c of kept) {
+    for (let l = c.start; l <= c.end; l++) {
+      if (shell(l)) continue;
+      const on = holding.get(l);
+      if (on) on.push(c);
+      else holding.set(l, [c]);
+    }
+  }
+  const inside = (d: ReCandidate, c: ReCandidate): boolean => d !== c && spanWithin(c.region.call.span, d.region.call.span);
+  const has = (c: ReCandidate, l: number): boolean => (!!c.pattern && c.pattern.start <= l && l <= c.pattern.end) || !holding.get(l)!.some((d) => inside(d, c));
   for (const c of kept) {
     const lines: number[] = [];
-    for (let l = c.start; l <= c.end; l++) if (owner.get(l) === c) lines.push(l);
-    // (A call of facts only may have no line left: one inside a pattern's line.)
+    for (let l = c.start; l <= c.end; l++) if (!shell(l) && has(c, l)) lines.push(l);
+    // (A call of facts only has no line left where the shell has them all.)
     if (lines.length) b.languages.push({ ...c.region, lines });
   }
 }

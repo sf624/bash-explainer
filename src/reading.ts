@@ -887,6 +887,16 @@ export function languageReading(top: Token, reader: string, name: string): Readi
 }
 
 /**
+ * The reading of a line of several calls of a part in another language (`P.match(s) or Q.match(s)`): one root of the language over
+ * the readings of each call (`languageReading`), whose readers are theirs, and each node of a call keeps its own.
+ */
+export function languageReadings(roots: readonly ReadingNode[]): ReadingNode {
+  const [first] = roots;
+  const end = roots.reduce((e, r) => (r.span.end.line > e.line || (r.span.end.line === e.line && r.span.end.character > e.character) ? r.span.end : e), first.span.end);
+  return { ...first, span: { start: first.span.start, end }, reader: [...new Set(roots.map((r) => r.reader))].join(', '), children: roots.flatMap((r) => r.children) };
+}
+
+/**
  * A node of the reading of a string a shell reads as a script, as the reading of the line around it has it: what the string's own shell parses
  * is the layer `child`, of `process`, at `span` in the source; what it holds keeps its own reader (a command, a language, a `$( )` of that shell).
  */

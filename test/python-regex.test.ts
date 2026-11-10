@@ -72,11 +72,13 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
       assert.deepStrictEqual([literalOf(region, 'pattern')?.value, literalOf(region, 'string'), literalOf(region, 'repl')], ['a', undefined, undefined]);
     });
 
-    it('gives a line to one part: a shell region keeps a line it shares, and the first pattern a line has', () => {
+    it('gives a line to its shell region, which keeps a line it shares, else to every call whose pattern is on it', () => {
       const src = "import re, os\nre.match('a', x); os.system('ls')\nre.match('b', x); re.match('c', x)\n";
       const ex = extractShell('python', src);
       assert.deepStrictEqual(ex.regions.map((r) => [r.start, r.end]), [[1, 1]]);
-      assert.deepStrictEqual(ex.languages.map((r) => [r.lines, patternOf(r)!.value]), [[[2], 'b']]);
+      assert.deepStrictEqual(ex.languages.map((r) => [r.lines, patternOf(r)!.value]), [[[2], 'b'], [[2], 'c']]);
+      const part = hostPartAt(ex, 2);
+      assert.deepStrictEqual(part?.kind === 'language' && part.regions.map((r) => patternOf(r)!.value), ['b', 'c']);
       // (Its lines stay empty in the shell text.)
       assert.strictEqual(ex.text.split('\n')[2], '');
     });
@@ -89,9 +91,11 @@ describe('Python regex: the patterns of `re` in a `.py` file', () => {
       assert.deepStrictEqual([1, 2].map((l) => explainPy(nested, l).items[0].label), ["r'a'", "r'c'"]);
       // (The inner call over three lines, and the outer's last argument on a line of its own.)
       assert.deepStrictEqual(lines("import re\nx = re.sub(r'a',\n  'b', re.sub(\n    r'c', 'd',\n    s),\n  s)\n"), [[[1, 5], 'a'], [[2, 3, 4], 'c']]);
-      // (A line where two patterns are: the first written's, and the other call has no line.)
-      assert.deepStrictEqual(lines("import re\nx = re.sub(r'a', 'b',\n  re.sub(r'c', 'd', s)) or re.match(r'e',\n  t)\n"), [[[1], 'a'], [[2], 'c']]);
-      assert.deepStrictEqual(lines("import re\nx = re.sub(r'a', 'b', re.sub(r'c', 'd',\n  s))\n"), [[[1, 2], 'a']]);
+      // (A line where two patterns are is each call's, #813; a line of the outer call that a call inside it holds is the inner's.)
+      assert.deepStrictEqual(lines("import re\nx = re.sub(r'a', 'b',\n  re.sub(r'c', 'd', s)) or re.match(r'e',\n  t)\n"), [[[1], 'a'], [[2], 'c'], [[2, 3], 'e']]);
+      assert.deepStrictEqual(lines("import re\nx = re.sub(r'a', 'b', re.sub(r'c', 'd',\n  s))\n"), [[[1], 'a'], [[1, 2], 'c']]);
+      // (Calls side by side share a line that holds no pattern; a line after both calls' patterns is each one's that holds it.)
+      assert.deepStrictEqual(lines("import re\nx = re.sub(r'a', 'b',\n  s) or re.match(r'e', t)\n"), [[[1, 2], 'a'], [[2], 'e']]);
       // (A call of one statement keeps every line of it.)
       assert.deepStrictEqual(lines("import re\ny = re.findall(r'\\d+',\n  text)\n"), [[[1, 2], '\\d+']]);
     });

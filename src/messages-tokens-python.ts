@@ -52,6 +52,13 @@ export const PYTHON_TEXTS = {
     `Python の \`re\` はこの置換後の文字列を受け付けない（"${message}"。\`${raises}\` が出る）`,
     `Python's \`re\` refuses this replacement ("${message}"; it raises \`${raises}\`)`]),
   /**
+   * A call of a function of `re` (`call` as written, `name` in full), on a line it shares with other calls (src/hosts/languages.ts):
+   * its pattern and arguments are under it.
+   */
+  'python-regex-call': tokenText<{ call: string; name: string }>(({ call, name }) => [
+    `\`${call}\`: Python の \`${name}\` の呼び出し`,
+    `\`${call}\`: a call of Python's \`${name}\``]),
+  /**
    * A method of a compiled pattern (`PAT.sub`, `call`), linked to the one `re.compile` of the file that binds `name` (`line`, as
    * `lineLabel` writes it; `pattern`, its literal shortened); what its function adds (`anchors`), and the release it needs (`since`).
    */
