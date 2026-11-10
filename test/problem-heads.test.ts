@@ -104,6 +104,7 @@ const CASES: { [K in ProblemFactId]: readonly unknown[] } = {
   'python-regex-flag-as-count': [{ written: 're.I', call: 're.sub', param: 'count', value: 2, since: '3.13' }, { written: 're.M', call: 're.split', param: 'maxsplit', value: 8, since: '3.13' }],
   'python-regex-string-backspace': [{}],
   'python-regex-string-octal': [{ written: '\\1', code: 'U+0001' }, { written: '\\12', code: 'U+000A' }],
+  'python-template-string-octal': [{ written: '\\1', code: 'U+0001' }],
   'actions-script-injection': [{ expr: '${{ x }}' }],
   'stderr-to-original-stdout': [{ dup: '2>&1', file: '>f', discards: true }, { dup: '2>&1', file: '>f', discards: false }],
 };

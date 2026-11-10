@@ -9,8 +9,8 @@ import { base, enclosing, parseSource, sourceFiles, typedProgram } from './suppo
 //             counts beside it, src/hosts/scripts.ts): no other function of src/, cli/ or web/ reads that list, so every
 //             reader of `Extracted.regions` keeps reading shell code only.
 //   embedded  Where an embedded token is in the document comes from `placeEmbedded` (src/explain/nodes.ts): `fromEmbedded` calls
-//             it, and no other function writes a token of the origin `embedded` with a span, but the one token of a host's
-//             pattern literal, which holds the tokens `placeEmbedded` placed (src/hosts/languages.ts).
+//             it, and no other function writes a token of the origin `embedded` with a span, but the token of a host's literals
+//             (a pattern, a template: `literalToken`), which holds the tokens `placeEmbedded` placed (src/hosts/languages.ts).
 //   finished  What a finished line is comes from `finishLine` (src/linefinish.ts): both `Analyzer.explained` and a language
 //             line's `explained` call it, and nothing else gives a line's tokens their roles and facts (`markTokens`) or takes
 //             the catalog's ids off them (`markSaid`), but the host that adds facts of its own (src/hosts/remap.ts, bats).
@@ -67,7 +67,7 @@ describe('the parts of a host file, the places of embedded tokens and the finish
       };
       visit(parseSource(file, fs.readFileSync(f, 'utf8')));
     }
-    assert.deepStrictEqual(writers.sort(), ['src/explain/nodes.ts placeEmbedded', 'src/hosts/languages.ts patternToken']);
+    assert.deepStrictEqual(writers.sort(), ['src/explain/nodes.ts placeEmbedded', 'src/hosts/languages.ts literalToken']);
   });
 
   it('finishes a shell line and a language line with `finishLine`, and no line otherwise', () => {

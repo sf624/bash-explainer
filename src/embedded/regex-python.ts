@@ -322,3 +322,20 @@ export function pythonCode(src: string, at: number, inClass: boolean, bytes: boo
   if (code > 0o377) return { length: k - at, error: `octal escape value \\${src.slice(at + 1, k)} outside of range 0-0o377 at position ${at}` };
   return { length: k - at, code };
 }
+
+/** A str or bytes value as Python's `repr` writes it: what an example shows, and a name in Python's messages. */
+export function pyRepr(value: string | undefined, bytes: boolean): string {
+  if (value === undefined) return 'None';
+  const q = value.includes("'") && !value.includes('"') ? '"' : "'";
+  let out = '';
+  for (const ch of value) {
+    const code = ch.charCodeAt(0);
+    if (ch === '\\' || ch === q) out += `\\${ch}`;
+    else if (ch === '\t') out += '\\t';
+    else if (ch === '\n') out += '\\n';
+    else if (ch === '\r') out += '\\r';
+    else if (code < 0x20 || code === 0x7f) out += `\\x${code.toString(16).padStart(2, '0')}`;
+    else out += ch;
+  }
+  return `${bytes ? 'b' : ''}${q}${out}${q}`;
+}

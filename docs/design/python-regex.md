@@ -196,7 +196,9 @@ A table in src/hosts/python.ts, beside the import table, gives each function's p
 | `split` | `pattern, string, maxsplit, flags` | nothing |
 | `sub`, `subn` | `pattern, repl, string, count, flags` | nothing |
 
-The top row of a `match` says the pattern must match at the start; of a `fullmatch`, the whole string. 3.15 adds `prefixmatch` as a second name of `match` and soft-deprecates `match` (no warning): the row of `prefixmatch` notes that it needs 3.15, and `match` gets no note. Methods of a compiled pattern (`PAT.sub(repl, s)`) take no pattern and no flags; #752 links them to `PAT = re.compile(…)`.
+The top row of a `match` says the pattern must match at the start; of a `fullmatch`, the whole string. 3.15 adds `prefixmatch` as a second name of `match` and soft-deprecates `match` (no warning): the row of `prefixmatch` notes that it needs 3.15, and `match` gets no note.
+
+Methods of a compiled pattern (`PAT.sub(repl, s)`) take no pattern and no flags; `match`, `fullmatch`, `prefixmatch`, `search`, `findall` and `finditer` take `pos` and `endpos` (the `method` parameters of `RE_CALLS`, and the rows of the arguments). #752 links a call `NAME.method(…)` to `NAME = re.compile(<literals>…)` (`compiledNames`, src/hosts/pycompiled.ts) where that statement is the one binding of the name in the file (an assignment, a parameter, a loop target, an import, `def`, `del`, `as`, `:=` and a lambda's parameter all count), at the top of the file or in a function, and Python sees the name at the call: anywhere for one at the top (but before it at the top), in that function and those inside it for one in a function; never for one in a class. The method's line has a top row on its name that says the line of the compile and its pattern; the pattern's rows and problems stay on the line of the compile, and the method's example uses its pattern and flags, `pos` and `endpos` followed when they are numbers (`pos` starts the search, and a lookbehind and `\b` see what is before it; `endpos` cuts the string).
 
 ### 5.2 The flags
 
@@ -235,7 +237,7 @@ Made-up samples are ASCII without newlines, where Unicode `\d`, `\w`, `\s`, `\b`
 Per function:
 
 - `search`, `match`, `prefixmatch`, `fullmatch`, `compile`: a text that matches and one that does not, with the function's anchors.
-- `sub`, `subn`: an input and its output, for a template without escapes in #751, with `\1`, `\g<name>`, `\g<0>` from #752; none for a function as the replacement.
+- `sub`, `subn`: an input and its output, with the replacement's template applied (#752): `readTemplate` (src/embedded/regex-template.ts) reads it as `parse_template` of Python's `re._parser`, with the pattern's groups (`readRegex`), into its parts (text and group numbers, which the example puts together for each match; a group that did not take part puts in nothing, as since Python 3.5) and its items (the rows: `\1`, `\g<name>`, `\g<0>`, the escapes, and Python's refusals at their place: "invalid group reference", "unknown group name" (an `IndexError`), "bad escape"). None for a function as the replacement, a template Python refuses, or one with a field of an f-string.
 - `findall`: the list Python gives: strings without groups or with one group (the group's text), tuples with two groups or more.
 - `split`: the pieces, with each group's text between them, and `None` for a group that did not take part: `re.split(r'(,)|(;)', 'a,b;c')` gives `['a', ',', None, 'b', None, ';', 'c']`.
 - `finditer`: none (an iterator).

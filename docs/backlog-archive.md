@@ -1155,7 +1155,7 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `rb'é'`: Python refuses a non-ASCII character in a bytes literal (SyntaxError); we read it as a pattern.
   - The 13 out-of-scope misses of the review's differential (#760): `(?é)`, `(?`, `(?x)(?P< n>a)`, `(?x)(? :a)`, `[a- z]` with `re.X`, `\N{EM  DASH}` (two spaces), `(?a)(?u)`, and `(?u)` with `re.A`, among others of the same kinds: their messages or refusals differ from Python's.
   - The positional `count` or `maxsplit` without flags (`re.sub(p, r, s, 1)`) warns since 3.13 (DeprecationWarning); we say it only with the pitfall of a flag in that slot. (`missing-explanation`)
-  - Found by the review of the examples (#810; #760): patterns Python refuses that give an example, as the reader says no Error: `re.findall(r'(?P<n>a)(?P<n>b)', 'ab')` shows `[('a', 'b')]` ("redefinition of group name 'n' as group 2; was group 1"), `re.findall(r'(?P<n>a(?P=n))', 'aa')` shows `['a', 'a']` ("cannot refer to an open group"), `(?<=(?P<n>a)(?P=n))` gets one ("cannot refer to group defined in the same lookbehind subpattern"; the numbered `(?<=(a)\1)` is an Error), `re.findall(r'(?P<1a>x)', 'x')` shows `['x']` ("bad character in group name '1a'"), and `re.findall(r'(?a)(?u)a', 'a')` and `re.findall(r'a', 'a', re.A | re.U)` show `['a']` (ValueError: "ASCII and UNICODE flags are incompatible").
+  - Found by the review of the examples (#810; #760): patterns Python refuses that give an example, as the reader says no Error: `re.findall(r'(?P<n>a)(?P<n>b)', 'ab')` shows `[('a', 'b')]` ("redefinition of group name 'n' as group 2; was group 1"), `re.findall(r'(?P<n>a(?P=n))', 'aa')` shows `['a', 'a']` ("cannot refer to an open group"), `(?<=(?P<n>a)(?P=n))` gets no Error ("cannot refer to group defined in the same lookbehind subpattern"; the numbered `(?<=(a)\1)` is an Error; no example comes out of it), `re.findall(r'(?P<1a>x)', 'x')` shows `['x']` ("bad character in group name '1a'"), and `re.findall(r'(?a)(?u)a', 'a')` and `re.findall(r'a', 'a', re.A | re.U)` show `['a']` (ValueError: "ASCII and UNICODE flags are incompatible").
 
 ## From the review of the Python regex literal (#750)
 
@@ -1171,6 +1171,20 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - The repeat after `{re.escape(x)}` (`{re.escape(x)}+`) says "the last item of the value (a character, a set or a group)"; only a character is possible there.
   - Control characters shown raw in the rows of literals: `re.search("\bword\b", s)` has the row `Literal "^Hword^H"` with backspaces in it (already on main before #750).
   - With Perl's `/x`, the whitespace and `#` of an interpolated value are read as the pattern's too (`perl -ne 'print if /a$x b/x'`); the hole's text says so only for Python's `re.VERBOSE`. (`missing-explanation`)
+  - The box of the panel (`matchMarks`, src/examples/rerun.ts) steps past an empty match as JavaScript does, not as `sre` does (`must_advance`): for `|a` on `a`, it marks `''` at 0 and at 1, where Python's `finditer` also finds `'a'` at 0. Only the highlights differ; the examples' own results follow `sre` (`pythonMatches`).
+
+## From the Python templates and compiled patterns (#752)
+
+### Python's `re`: corners of the templates and of the names linked to a compile
+
+- **Verdict:** dropped (YAGNI), 2026-11-10. Kind: `missing-explanation` unless marked. Python 3.15.
+- **Reason:** Rare files. None gives a false Error: each leaves a call unlinked or a template's groups unchecked where the rule cannot be sure.
+- **Input and what is wrong:**
+  - A pattern with a construct the reader does not read (`(?P<é>a)`, a group name past ASCII) has groups not known: its template gets no Error for a group it lacks (`re.sub(r'(?P<é>a)', r'\2', s)` raises "invalid group reference 2").
+  - A capture of a `case` pattern (`case P:`) is not counted as a binding: `P = re.compile(…)` and a `match` that binds `P` again still link `P.sub(…)` to the compile.
+  - A compile in a class body (`class C: P = re.compile(…)`) is never linked, even for a call in the class body itself, where Python sees `P`.
+  - Two calls on one line (`return P.sub(r, s), P.findall(s)`): the line holds one part, the call that starts last, as for the functions of `re` (`claimLines`).
+  - A name bound once in a branch (`if x: P = re.compile(…)`) is not linked: the statement starts with `if`, not with the name.
 
 ## From the shell-behaviour table (#756)
 

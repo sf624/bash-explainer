@@ -4,7 +4,7 @@
 // mistake here can mean a run without end: `tsx regexguard-differential.ts <seed> <rounds>` prints, as JSON, what it found.
 import * as fs from 'fs';
 import * as path from 'path';
-import { costOf, Refused, scriptRegex } from '../../src/examples/regexguard';
+import { advancingFrom, costOf, Refused, scriptRegex } from '../../src/examples/regexguard';
 import { Parser } from '../../src/examples/regexparse';
 
 export const TABLE = JSON.parse(fs.readFileSync(path.join(__dirname, '../fixtures/regexguard-patterns.json'), 'utf8')) as { engine: string[]; engineTexts: string[] };
@@ -84,6 +84,27 @@ export function compare(source: string, flags: string, text: string, found: Foun
       continue;
     }
     if (real !== ours) found.wrong.push(`${name} /${source}/${flags} on ${JSON.stringify(text)}: ${ours}, and JavaScript ${real}`);
+  }
+  // (`advancingFrom`, at each place: the first match there in JavaScript's order that does not end there. In JavaScript, the same
+  // pattern followed by a lookbehind that fails at that place: `(?<![\s\S])` stands at the very start, under `m` too, where `^` would not.)
+  for (let at = 0; at <= text.length; at++) {
+    found.runs++;
+    let ours = '';
+    const cost = costOf(() => { ours = gives(() => shape(advancingFrom(scriptRegex(source, flags), text, at)), () => scriptRegex(source, flags), text); });
+    if (ours === 'refused' || cost > AFFORDABLE) {
+      found.costly++;
+      continue;
+    }
+    const real = gives(() => {
+      const re = new RegExp(`(?:${source})(?<!(?<![\\s\\S])[\\s\\S]{${at}})`, flags.replace(/[gy]/g, '') + 'y');
+      re.lastIndex = at;
+      return shape(re.exec(text));
+    }, () => new RegExp(source, flags), text);
+    if (real === 'RangeError') {
+      found.costly++;
+      continue;
+    }
+    if (real !== ours) found.wrong.push(`advancingFrom /${source}/${flags} on ${JSON.stringify(text)} at ${at}: ${ours}, and JavaScript ${real}`);
   }
 }
 

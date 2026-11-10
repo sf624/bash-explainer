@@ -75,6 +75,8 @@ interface State {
   widths: Map<number | EmbeddedToken, Width | undefined>;
   lookbehindFrom?: number;
   lookbehinds: { token: EmbeddedToken; width: Width }[];
+  /** A construct the reader leaves unread (`UNREAD_GROUP`), which may hold groups: their count is not known. */
+  unread?: true;
   /** The messages of the refusals said so far, in the program's own words (`ownSaid`). */
   refused: Set<string>;
   /** Where Python's `re.VERBOSE` is not known: the messages of the refusals of the reading with it (`UNLESS_VERBOSE`). */
@@ -123,8 +125,16 @@ export interface RegexOptions {
 
 /** Explain a regular expression as a flat sequence of tokens (groups nest their contents). */
 export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: RegexOptions = {}): EmbeddedToken[] {
+  return readRegex(src, flavor, lang, opts).tokens;
+}
+
+/**
+ * The same, with the capture groups: how many, and the number of each named one (what a template of Python's `re.sub` may name);
+ * none where a construct the reader leaves unread may hold some.
+ */
+export function readRegex(src: string, flavor: Flavor, lang: Lang, opts: RegexOptions = {}): { tokens: EmbeddedToken[]; groups?: { count: number; names: ReadonlyMap<string, number> } } {
   // (`\Q$x\E`: the value is plain text there, which this reader does not follow.)
-  if (flavor === 'pcre' && src.includes('\\Q') && hasHole(src)) return [holeStop(0)];
+  if (flavor === 'pcre' && src.includes('\\Q') && hasHole(src)) return { tokens: [holeStop(0)] };
   const st = stateOf(src, flavor, lang, opts);
   if (st.py?.verbose === 'unknown') {
     // (Read with `re.VERBOSE` too, for its refusals only: `UNLESS_VERBOSE`.)
@@ -135,7 +145,7 @@ export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: Rege
   }
   const tokens = sequence(st, 0);
   lookbehindWidths(st);
-  return mergeLiterals(tokens, st);
+  return { tokens: mergeLiterals(tokens, st), ...(st.unread ? {} : { groups: { count: st.groups, names: st.names } }) };
 }
 
 /** The reader's state at the start of a regex. */
@@ -462,6 +472,7 @@ function group(st: State, openLen: number): EmbeddedToken {
   if (unread && !ext && !flagged && unread.at.test(rest)) {
     // `(?|`, `(?1)`, `(?R)`, `(?P=n)`, `(?(…)…)`, `(*VERB)`: the whole group, unread.
     st.i = groupEnd(st.src, start);
+    st.unread = true;
     const text = st.src.slice(start, st.i);
     const { ja, en } = unread;
     return { start, end: st.i, kind: 'pattern', explanation: s(`\`${text}\`: ${ja}`, `\`${text}\`: ${en}`), children: [] };
@@ -981,15 +992,4 @@ function pythonEscape(st: State, start: number, c: string): EmbeddedToken {
   if (!pythonLetters(st.py!.bytes).out.includes(c)) return refused(`bad escape \\${c} at position ${start}`);
   const sh = pythonShorthand(st.py!, c)!;
   return tok(/[bBAzZ]/.test(c) ? 'keyword' : 'pattern', `\`\\${c}\`: ${s(sh.ja, sh.en)}`);
-}
-
-export function flavorName(f: Flavor | 'fixed', lang: Lang): string {
-  const s = pick(lang);
-  switch (f) {
-    case 'bre': return s('基本正規表現(BRE)', 'basic regex (BRE)');
-    case 'ere': return s('拡張正規表現(ERE)', 'extended regex (ERE)');
-    case 'pcre': return s('Perl 互換正規表現(PCRE)', 'Perl-compatible regex (PCRE)');
-    case 'python': return s('Python の正規表現', 'Python regex');
-    case 'fixed': return s('固定文字列（正規表現として解釈しない）', 'fixed string (not a regex)');
-  }
 }

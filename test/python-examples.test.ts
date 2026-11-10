@@ -5,7 +5,8 @@ import type { Example, ExplainOptions } from '../src/analyzer-types';
 import { explainDocumentLine } from '../src/document';
 import { openDocument } from '../src/document-setup';
 import { NO_PYTHON_FLAGS, pythonLetters, type PythonRegexOptions } from '../src/embedded/regex-python';
-import { pyRepr, pythonCallExample, pythonMatches } from '../src/examples/python-calls';
+import { pyRepr } from '../src/embedded/regex-python';
+import { pythonCallExample, pythonMatches } from '../src/examples/python-calls';
 import { toJsRegex } from '../src/examples/regex';
 import { JS_CLASS_LETTERS, JS_LETTERS } from '../src/examples/regex-python';
 import { advancingFrom, costOf, guarded, scriptRegex } from '../src/examples/regexguard';
@@ -24,14 +25,18 @@ import { run } from './support/run';
 
 const parser = createUnbashParser();
 
-/** The examples of the line of `call` in a `.py` file that imports `re`. */
+/** The examples of the last line of `call` in a `.py` file that imports `re` (the lines before it: a compile its method is linked to). */
 function examplesOf(call: string, lang: 'en' | 'ja' = 'en', opts: ExplainOptions = {}): Example[] {
   const doc = openDocument(`import re\n${call}\n`, 'python', (t) => parser.parse(t));
-  return explainDocumentLine(new Analyzer(lang), doc, 1, lang, {}, opts).examples;
+  return explainDocumentLine(new Analyzer(lang), doc, call.split('\n').length, lang, {}, opts).examples;
 }
 
-/** A row: a call as a `.py` file writes it (`s` is the subject where it is not a literal), and the release it needs, if not all. */
+/**
+ * A row: a call as a `.py` file writes it (`s` is the subject where it is not a literal), and the release it needs, if not all. A
+ * method of a compiled pattern has the statement that compiles it on the line before (`compiled`).
+ */
 type Row = string | [call: string, since: string];
+const compiled = (pattern: string, call: string): string => `P = re.compile(${pattern})\n${call}`;
 
 const EXAMPLES: Row[] = [
   // Strings that match and do not, with each function's anchors and the flags.
@@ -72,6 +77,22 @@ const EXAMPLES: Row[] = [
   String.raw`re.findall(r'(?<=a|b)x', 'axbxcx')`, String.raw`re.search(r'(a)(?<=\1)b', s)`, String.raw`re.search(r'(?<=\ba)b', s)`, String.raw`re.sub(r'(?<!\b)x', '-', 'xax x')`,
   String.raw`re.search(r'(\w)\1+', s)`, String.raw`re.findall(r'(?:x(a)+)+', 'xaxa')`, String.raw`re.findall(r'(?:(a)b)+', 'abab ab')`, String.raw`re.split(r'(a+){2}x', 'baaaxc')`,
   `re.findall(r'x*', '${'a'.repeat(3000)}')`, `re.sub(r'|x', '-', '${'x'.repeat(2000)}')`,
+  // Templates: groups by number and by name, the whole match, a group that did not take part, escapes, octal, two digits.
+  String.raw`re.sub(r'(\w+)@(\w+)', r'\2 at \1', 'me@host, you@there')`, String.raw`re.sub(r'(?P<w>\w+)', r'<\g<w>>', 'ab cd')`,
+  String.raw`re.sub(r'a(b)?', r'[\1|\g<0>]', 'ab a')`, String.raw`re.sub(r'(a)', r'\n\t\\\101\-\%', 'xa')`, String.raw`re.subn(r'(\d)', r'\1\1', 'a1b2')`,
+  String.raw`re.sub(r'(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)', r'\10\g<10>\g<01>', 'abcdefghij')`, String.raw`re.sub(r'x', r'\g<0>\g<0>', s)`,
+  String.raw`re.sub(rb'(a)', rb'<\1>', b'xa')`, String.raw`re.sub('(a)', '\\1\\1', 'a')`, String.raw`re.sub(r'(?P<x>a)|b', r'(\g<x>)', 'ab', 1)`,
+  String.raw`re.sub(r'(a)', f'<\\1>', 'a')`,
+  // Methods of a compiled pattern: `pos` and `endpos`, by position and by keyword, past the string's end, the flags of the compile.
+  compiled(String.raw`r'\d+'`, String.raw`P.search(s)`), compiled(String.raw`r'\d+'`, String.raw`P.search('a1b22', 2)`), compiled(String.raw`r'\d+'`, String.raw`P.match('a1b22', 1)`),
+  compiled(String.raw`r'\d+'`, String.raw`P.match('a1b22')`), compiled(String.raw`r'\d+'`, String.raw`P.fullmatch('a1b22', 3, 5)`), compiled(String.raw`r'(\d+)'`, String.raw`P.findall('a1b22c333', 2, 7)`),
+  compiled(String.raw`r'^a'`, String.raw`P.search('ba', 1)`), compiled(String.raw`r'(?<=a)b'`, String.raw`P.search('ab', 1)`), compiled(String.raw`r'\bb'`, String.raw`P.search('ab', 1)`),
+  compiled(String.raw`r'a$'`, String.raw`P.search('ab', 0, 1)`), compiled(String.raw`r'x*'`, String.raw`P.findall('axxb', pos=1, endpos=3)`), compiled(String.raw`r'a'`, String.raw`P.search('ab', 5)`),
+  compiled(String.raw`r''`, String.raw`P.search('ab', 1, 0)`), compiled(String.raw`r'a'`, String.raw`P.findall('aaa', 9)`), compiled(String.raw`r'(\w)(\d)'`, String.raw`P.sub(r'\2\1', 'a1 b2')`),
+  compiled(String.raw`r'o', re.I`, String.raw`P.subn('0', 'fOo')`), compiled(String.raw`r','`, String.raw`P.split('a,b,c', 1)`), compiled(String.raw`r'(?P<d>\d)'`, String.raw`P.sub(r'<\g<d>>', s, 1)`),
+  compiled(String.raw`r'\w+'`, String.raw`P.fullmatch(s)`), compiled(String.raw`r'b'`, String.raw`P.match('ab', pos=1)`),
+  compiled(String.raw`r'a'`, String.raw`P.findall('aaa', 2, 1)`), String.raw`re.sub(r'(?:(a)|b)+', 'x', 'ab')`,
+  [compiled(String.raw`r'ab'`, String.raw`P.prefixmatch(s)`), '3.15'],
 ];
 
 /** Calls that get no example, each for its reason. */
@@ -82,7 +103,13 @@ const REFUSED: [call: string, why: string][] = [
   [String.raw`re.search(r'(?P<n>a)*(?P=n)', s)`, 'the same, by name'],
   [String.raw`re.search('a', s, flags)`, 'flags not known'], [String.raw`re.search('a', s, re.I | extra)`, 'flags partly not known'],
   [String.raw`re.search(rb'\w', s, re.L)`, 'the locale'], [String.raw`re.search(rb'(?L)\w', s)`, 'the locale, inline'],
-  [String.raw`re.finditer(r'a', 'a')`, 'an iterator'], [String.raw`re.sub(r'(a)', r'\1', 'a')`, 'a template (#752)'],
+  [String.raw`re.finditer(r'a', 'a')`, 'an iterator'], [String.raw`re.sub(r'(a)', r'\2', 'a')`, 'a template Python refuses'],
+  [String.raw`re.sub(r'(?P<n>a)', r'\g<m>', 'a')`, 'the same, a name the pattern lacks (IndexError)'], [String.raw`re.sub(r'(a)', r'\q', 'a')`, 'the same, a bad escape'],
+  [String.raw`re.sub(r'(a)', f'{x}\\1', 'a')`, 'a field in the template'], [String.raw`re.sub(r'(?:(a)|b)+', r'\1', 'ab')`, 'a group JavaScript clears in a repetition, in the template'],
+  [String.raw`re.sub(r'(a)', '\0', 'a')`, 'a control character from the template'],
+  [compiled(String.raw`r'\d+'`, String.raw`P.search(s, 1)`), 'a method with `pos` and a subject not known'], [compiled(String.raw`r'\d+'`, String.raw`P.search('a1', n)`), '`pos` not a number'],
+  [compiled(String.raw`r'\d+'`, String.raw`P.finditer('a1')`), 'an iterator, from a method'], [compiled(String.raw`r'\d+'`, String.raw`P.sub(lambda m: 'x', 'a1')`), 'a function as the replacement, of a method'],
+  [compiled(String.raw`r'\d+', flags`, String.raw`P.search(s)`), 'the compile\'s flags not known'],
   [String.raw`re.sub(r'a', lambda m: 'b', 'a')`, 'a function as the replacement'], [String.raw`re.sub(r'a', r, 'a')`, 'a replacement not known'],
   [String.raw`re.sub(r'a', 'b')`, 'no subject (TypeError)'], [String.raw`re.search(r'a')`, 'no subject (TypeError)'],
   [String.raw`re.search(r'a', 'é')`, 'a subject past ASCII'], [String.raw`re.search(r'a', 'a\r')`, 'a carriage return'],
@@ -118,7 +145,7 @@ describe('Python regex: the examples of the calls of `re`', () => {
   it('gives no example for what JavaScript cannot say as Python does', () => {
     assert.deepStrictEqual(REFUSED.filter(([call]) => examplesOf(call).length).map(([call, why]) => `${call} (${why})`), []);
     // (Each is a call the file reads: the example is what is left out, not the pattern.)
-    assert.deepStrictEqual(REFUSED.filter(([call]) => extractShell('python', `import re\n${call}\n`).languages.length !== 1).map(([call]) => call), []);
+    assert.deepStrictEqual(REFUSED.filter(([call]) => extractShell('python', `import re\n${call}\n`).languages.length !== call.split('\n').length).map(([call]) => call), []);
   });
 
   it('gives an example for each call of the rows that compare with Python', () => {
@@ -247,7 +274,7 @@ describe('Python regex: the examples of the calls of `re` against the reference 
     asked = EXAMPLES.filter((r) => typeof r === 'string' || atLeast(r[1])).map((r) => {
       const call = typeof r === 'string' ? r : r[0];
       const [ex] = examplesOf(call);
-      const bytes = /^re\.\w+\(r?b/.test(call);
+      const bytes = /re\.\w+\(r?b/.test(call);
       if (ex.sections[0].label === 'Strings that match (examples)') {
         const [yes, no = { lines: [] }] = ex.sections;
         return { call, s: null, tests: [...yes.lines, ...no.lines], bytes, ours: [...yes.lines.map(() => true), ...no.lines.map(() => false)] };

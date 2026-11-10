@@ -1,11 +1,13 @@
 // The worked examples of a call of Python's `re` (docs/design/python-regex.md, section 6): what `search`, `match`, `fullmatch`
 // and `compile` match, and what `sub`, `subn`, `split` and `findall` give back, as Python prints it (`repr`). The pattern comes as
 // JavaScript (`toJsRegex`, src/examples/regex-python.ts) and runs on the guarded engine (`scriptRegex`), in the order Python finds
-// its matches: after an empty match, the next one must not be empty where it starts (`pythonMatches`). A subject or a replacement
-// written as a literal is used as it is, else the text is made up and its label says so. Only ASCII without control characters
-// but tab and newline is shown, where JavaScript and Python read the classes and the case alike (`PY_SHOWN`), and the panel's box
+// its matches: after an empty match, the next one must not be empty where it starts (`pythonMatches`). A subject written as a literal
+// is used as it is, else the text is made up and its label says so; a replacement is its template's parts as Python applies them
+// (`readTemplate`), and a method's `pos` and `endpos` are followed. Only ASCII without control characters but tab and newline is shown, where JavaScript and Python read the classes and the case alike (`PY_SHOWN`), and the panel's box
 // runs nothing else again. Each value is charged before it is made (`chargeSize`): past the line's budget, it is not computed.
 import type { Example, ExampleSection } from '../analyzer-types';
+import { pyRepr } from '../embedded/regex-python';
+import type { TemplatePart } from '../embedded/regex-template';
 import { pick } from '../embedded/types';
 import type { ReReturns } from '../hosts/python';
 import type { Lang } from '../i18n';
@@ -28,44 +30,35 @@ export interface PythonCall {
   /** The pattern without those anchors, and whether it is bytes. */
   regex: JsRegex;
   bytes: boolean;
-  /** The argument `string` and `repl`: a literal's text, `unknown` for another value, none where the call has none. */
+  /** The argument `string`: a literal's text, `unknown` for another value, none where the call has none. */
   subject?: PyText | 'unknown';
-  repl?: PyText | 'unknown';
+  /**
+   * The argument `repl`: the parts of its template as Python applies them (`readTemplate`, src/embedded/regex-template.ts), and whether
+   * it is bytes; `unknown` for another value, or a template Python refuses or that has a field of an f-string; none where the call has none.
+   */
+  repl?: { parts: readonly TemplatePart[]; bytes: boolean } | 'unknown';
   /** `count` of `sub` and `subn`, or `maxsplit` of `split`: 0 where it is not given, `unknown` where it is not a number written. */
   count: number | 'unknown';
+  /** `pos` and `endpos` of a method of a compiled pattern: a number written, `unknown` for another value, none where not given. */
+  pos?: number | 'unknown';
+  endpos?: number | 'unknown';
 }
 
 const shownLine = (t: string): boolean => PY_SHOWN.test(t) && !t.includes('\n');
-
-/** A str or bytes value as Python's `repr` writes it. */
-export function pyRepr(value: string | undefined, bytes: boolean): string {
-  if (value === undefined) return 'None';
-  const q = value.includes("'") && !value.includes('"') ? '"' : "'";
-  let out = '';
-  for (const ch of value) {
-    const code = ch.charCodeAt(0);
-    if (ch === '\\' || ch === q) out += `\\${ch}`;
-    else if (ch === '\t') out += '\\t';
-    else if (ch === '\n') out += '\\n';
-    else if (ch === '\r') out += '\\r';
-    else if (code < 0x20 || code === 0x7f) out += `\\x${code.toString(16).padStart(2, '0')}`;
-    else out += ch;
-  }
-  return `${bytes ? 'b' : ''}${q}${out}${q}`;
-}
 
 /** A match as Python prints it: `<re.Match object; span=(4, 7), match='123'>`, the match's `repr` cut at 50 characters. */
 const matchRepr = (m: RegExpExecArray, bytes: boolean): string => `<re.Match object; span=(${m.index}, ${m.index + m[0].length}), match=${pyRepr(m[0], bytes).slice(0, 50)}>`;
 
 /**
  * The matches of `js` in `text` one after another, as `findall`, `split` and `sub` of Python find them (`limit`: at most that many,
- * 0 for all): from where the last one ended, and after an empty one, a match at that place must not be empty (`must_advance` of its
- * `sre`): one that is not is tried there first (`advancingFrom`), then the search goes on one character further.
+ * 0 for all; `from`, where the first may start, a method's `pos`): from where the last one ended, and after an empty one, a match at
+ * that place must not be empty (`must_advance` of its `sre`): one that is not is tried there first (`advancingFrom`), then the search
+ * goes on one character further.
  */
-export function pythonMatches(js: JsRegex, text: string, limit = 0): RegExpExecArray[] {
+export function pythonMatches(js: JsRegex, text: string, limit = 0, from = 0): RegExpExecArray[] {
   const all = scriptRegex(js.source, js.flags + 'g');
   const out: RegExpExecArray[] = [];
-  let at = 0;
+  let at = from;
   let empty = false;
   while (at <= text.length && (!limit || out.length < limit)) {
     let m: RegExpExecArray | null = empty ? advancingFrom(all, text, at) : null;
@@ -107,22 +100,29 @@ function madeUpText(js: JsRegex): string | undefined {
  * What a call gives back for the subject `text`, as Python prints it; none where JavaScript's groups would not say Python's. Each
  * value is charged before it is made: a `repr` of a shown text is at most twice as long, with its quotes and a separator.
  */
-function result(call: PythonCall, text: string): string | undefined {
+function result(call: PythonCall, subject: string): string | undefined {
   const { bytes, regex } = call;
   const repr = (v: string | undefined) => {
     chargeSize(2 * (v?.length ?? 0) + 5);
     return pyRepr(v, bytes);
   };
   const groups = groupFacts(regex.source);
+  // (A method's `endpos`: the string is read as if it ended there; `pos`: the search starts there, and what is before it is seen
+  // by a lookbehind and `\b`, while `^` and `\A` stand only at the real start. Both are cut to the string's length.)
+  const text = subject.slice(0, typeof call.endpos === 'number' ? call.endpos : subject.length);
+  const from = Math.min(typeof call.pos === 'number' ? call.pos : 0, subject.length);
   if (call.returns === 'match') {
-    const m = scriptRegex(anchored(regex, call.anchors).source, regex.flags).exec(text);
+    // (`match` at `pos`, `fullmatch` there and to the end; `search` from there on.)
+    const re = scriptRegex(call.anchors === 'whole' ? `(?:${regex.source})${PY_END}` : regex.source, regex.flags + (call.anchors ? 'y' : 'g'));
+    re.lastIndex = from;
+    const m = from > text.length ? null : re.exec(text);
     return m ? matchRepr(m, bytes) : 'None';
   }
   const count = call.count as number;
   if (call.returns === 'list') {
     if (groups.count && !groups.agree) return undefined;
     // (No group: the matches; one: its text; more: a tuple of them. A group that did not take part is an empty string.)
-    const items = pythonMatches(regex, text).map((m) => (groups.count === 0 ? repr(m[0]) : groups.count === 1 ? repr(m[1] ?? '') : `(${m.slice(1).map((g) => repr(g ?? '')).join(', ')})`));
+    const items = (from > text.length ? [] : pythonMatches(regex, text, 0, from)).map((m) => (groups.count === 0 ? repr(m[0]) : groups.count === 1 ? repr(m[1] ?? '') : `(${m.slice(1).map((g) => repr(g ?? '')).join(', ')})`));
     return `[${items.join(', ')}]`;
   }
   if (call.returns === 'pieces') {
@@ -138,14 +138,17 @@ function result(call: PythonCall, text: string): string | undefined {
     items.push(repr(text.slice(last)));
     return `[${items.join(', ')}]`;
   }
-  const repl = (call.repl as PyText).value;
+  // (The template's parts for each match: its text, and each group's, empty for one that did not take part, as since Python 3.5.)
+  const { parts } = call.repl as { parts: readonly TemplatePart[] };
+  if (groups.count && !groups.agree && parts.some((p) => typeof p === 'number' && p > 0)) return undefined;
   const ms = pythonMatches(regex, text, count);
   let out = '';
   let last = 0;
   for (const m of ms) {
+    const repl = parts.map((p) => (typeof p === 'number' ? m[p] ?? '' : p));
     // (A replacement many times as long as its match, many times over: `re.sub('a', 'R' * 10000, 'a' * 10000)`.)
-    chargeSize(m.index - last + repl.length);
-    out += text.slice(last, m.index) + repl;
+    chargeSize(m.index - last + repl.reduce((n, p) => n + p.length, 0));
+    out += text.slice(last, m.index) + repl.join('');
     last = m.index + m[0].length;
   }
   out += text.slice(last);
@@ -155,18 +158,21 @@ function result(call: PythonCall, text: string): string | undefined {
 /**
  * The example of a call of `re` (docs/design/python-regex.md, section 6), or none: for `search`, `match`, `fullmatch` and `compile`,
  * strings that match and do not (with the function's anchors), or where the subject is a literal, what the call gives back for it;
- * for `findall`, `split`, `sub` and `subn`, the subject and what the call gives back. None for `finditer`, a replacement with a
- * backslash (a template) or not a literal, a count not written as a number, a subject or a replacement whose type is not the
- * pattern's (Python raises `TypeError`) or that holds what an example does not show.
+ * for `findall`, `split`, `sub` and `subn`, the subject and what the call gives back, with the template of the replacement applied.
+ * None for `finditer`, a replacement that is not a literal or a template Python applies, a count, `pos` or `endpos` not written as a
+ * number, `pos` or `endpos` with a subject not known, a subject or a replacement whose type is not the pattern's (Python raises
+ * `TypeError`) or that holds what an example does not show.
  */
 export function pythonCallExample(call: PythonCall, lang: Lang): Example | undefined {
-  if (call.returns === 'iterator' || call.count === 'unknown') return undefined;
+  if (call.returns === 'iterator' || call.count === 'unknown' || call.pos === 'unknown' || call.endpos === 'unknown') return undefined;
   const fits = (t: PyText) => t.bytes === call.bytes && PY_SHOWN.test(t.value);
   if (call.returns === 'replaced' || call.returns === 'counted') {
     const { repl } = call;
-    if (!repl || repl === 'unknown' || !fits(repl) || repl.value.includes('\\')) return undefined;
+    if (!repl || repl === 'unknown' || repl.bytes !== call.bytes || !repl.parts.every((p) => typeof p === 'number' || PY_SHOWN.test(p))) return undefined;
   }
   const { subject } = call;
+  const bounded = call.pos !== undefined || call.endpos !== undefined;
+  if (bounded && subject === 'unknown') return undefined;
   if (call.returns === 'pattern' || (call.returns === 'match' && subject === 'unknown')) return matchesExample(call, lang);
   // (A call with no subject raises `TypeError`.)
   if (subject === undefined) return undefined;
