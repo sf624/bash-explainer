@@ -14,12 +14,13 @@ import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { stderrPiped } from '../semantics/env';
 import { stdoutAt } from '../semantics/stdout';
-import { isPlainWord, staticWordValue } from '../staticword';
+import { isPlainWord, staticWordValue, unquotedWord } from '../staticword';
 import { field, fields, fileContentsOf, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { isBlockLike, same, skeletal, sortTokens, summaryOf } from './nodes';
-import { globOff, restrictedAt, unquotedWord, wordAt } from './reads';
-import { braceExpansion, tilde } from './words';
+import { globOff, restrictedAt, wordAt } from './reads';
+import { tilde } from './words';
+import { braceExpansion } from '../semantics/brace';
 
 /** The operator and destination of a file redirection (`>&-` and `<&-`, which close a descriptor, are `>&` and `<&` to `-`). */
 export function redirectParts(n: SyntaxNode): { op: string; dest: string } {

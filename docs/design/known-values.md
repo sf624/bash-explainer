@@ -101,6 +101,12 @@ A command with a custom spec, or a bats `run …` line, would get a reading on o
 
 If that slice cannot be made in step 1, the fallback is a guard: the use's line shows the kept reading only where its own language and flavour equal the kept reading's, and a test fails on any case where they differ.
 
+What step 1 found:
+
+- `readArgs` did not decide the spec: the head of the command did (`headOf` in src/explain/commands.ts: the alias, a builtin turned off, `hash -p`, the setting, the host, a system's alias), then yq's flavour and a builtin's variant (`commandTail`), each beside its text. Step 1 moved those decisions to the model (`headFacts`, src/semantics/commandhead.ts); the explanation reads them and keeps only the texts and notes. `lookup` also holds what tells the three yq apart (the document's text, its host, the `yqFlavor` setting) and the bash release (a brace expansion's limits): `CommandLookup`.
+- `specRuns` keeps its own lookup. test/command-read.test.ts holds it to the same spec and parse on the commands of the tests; it differs on 14 of about 2300, each for a reason the test names (`/bin/kill` is read by the checks with the builtin's spec, for one).
+- A command a slot runs (`sudo grep -E "$re" f`, `find . -exec grep -E "$re" {} +`) is read inside its wrapper's parse (`role.parse`), but its words are read again on the line (`ownWords` and `findExpression`, src/explain/argv.ts, with the line's `slotEnvs`). Step 2 needs that reading on the model too for such a use, or leaves those uses unread.
+
 ### 3.1 What the reader reads
 
 `EmbeddedContext` (src/embedded/registry.ts) is built today from the asking line's `Explainer` (`embeddedTextInner`, src/explain/embedded.ts). Its inputs:

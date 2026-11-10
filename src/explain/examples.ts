@@ -31,25 +31,25 @@ import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut,
 import { type Text, tx } from '../i18n';
 import { codeSpan, shorten } from '../label';
 import { blankWord, EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
-import { braceValues } from '../semantics/brace';
+import { braceExpansion, braceValues } from '../semantics/brace';
 import { defaultSetIn, quotedName } from '../semantics/effects';
 import { slotEnvironment } from '../semantics/env';
 import { isFunction, type NameResolution } from '../semantics/names';
 import { exportedValue } from '../semantics/state';
 import { changedByBash } from '../semantics/vars';
 import { testOutcome } from '../semantics/testcases';
-import { literalContent, staticWordValue, substitutionNames } from '../staticword';
+import { literalContent, staticWordValue, substitutionNames, unquotedWord } from '../staticword';
 import { assignmentsOnly, field, nameText, prefixAssignments, redirectionsOf, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
-import { echoMayReadEscapes, given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
+import { echoMayReadEscapes, given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, wordAt } from './reads';
 import { has, operands, readsFields, regexWords, values } from '../argv/query';
 import { impliedOptions } from '../dict/aliases';
 import { wordFields } from '../semantics/words';
 import { receivedFields, writtenPlain } from '../semantics/fieldshape';
 import { shownValue, wordValue } from './values';
-import { braceExpansion, bracesHere } from './words';
+import { bracesHere } from './words';
 import { pushAll } from '../lists';
 
 /**

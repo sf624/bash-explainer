@@ -38,8 +38,6 @@
     {"file":"src/explain/assignments.ts","fn":"assignment","kind":"helper","count":3,"row":"W-L1"},
     {"file":"src/explain/commands.ts","fn":"commandHead","kind":"helper","count":3,"row":"W-L1"},
     {"file":"src/explain/commands.ts","fn":"commandParts","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/explain/commands.ts","fn":"commandTail","kind":"helper","count":1,"row":"W-L2"},
-    {"file":"src/explain/commands.ts","fn":"headOf","kind":"helper","count":3,"row":"W-P1"},
     {"file":"src/explain/embedded.ts","fn":"embedded","kind":"helper","count":1,"row":"W-L2"},
     {"file":"src/explain/embedded.ts","fn":"embeddedExample","kind":"helper","count":1,"row":"W-L2"},
     {"file":"src/explain/examples-jq.ts","fn":"jqFormat","kind":"helper","count":1,"row":"W-L2"},
@@ -58,7 +56,6 @@
     {"file":"src/explain/reads.ts","fn":"optionValues","kind":"helper","count":1,"row":"W-L2"},
     {"file":"src/explain/reads.ts","fn":"restrictedCall","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/explain/reads.ts","fn":"trContext","kind":"helper","count":1,"row":"W-L2"},
-    {"file":"src/explain/reads.ts","fn":"unquotedWord","kind":"node-type","count":4,"row":"W-P2"},
     {"file":"src/explain/redirections.ts","fn":"fileRedirect","kind":"glob-class","count":1,"row":"W-G4"},
     {"file":"src/explain/redirections.ts","fn":"fileRedirect","kind":"helper","count":3,"row":"W-G4"},
     {"file":"src/explain/redirections.ts","fn":"herestring","kind":"helper","count":1,"row":"W-G4"},
@@ -83,7 +80,6 @@
     {"file":"src/explain/words.ts","fn":"casePattern","kind":"node-type","count":2,"row":"W-P3"},
     {"file":"src/explain/words.ts","fn":"globToken","kind":"helper","count":1,"row":"W-G1"},
     {"file":"src/explain/words.ts","fn":"oneFieldEach","kind":"helper","count":1,"row":"W-C8"},
-    {"file":"src/explain/words.ts","fn":"plainText","kind":"helper","count":1,"row":"W-P1"},
     {"file":"src/explain/words.ts","fn":"tilde","kind":"helper","count":2,"row":"W-G1"},
     {"file":"src/explain/words.ts","fn":"valueNote","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/explain/words.ts","fn":"word","kind":"helper","count":5,"row":"W-G4"},
@@ -106,6 +102,8 @@
     {"file":"src/reading.ts","fn":"readingTree","kind":"helper","count":2,"row":"W-L1"},
     {"file":"src/semanticFacts.ts","fn":"command","kind":"helper","count":2,"row":"W-L1"},
     {"file":"src/semantics/argwords.ts","fn":"countIn","kind":"helper","count":1,"row":"W-C2"},
+    {"file":"src/semantics/commandhead.ts","fn":"headFacts","kind":"helper","count":1,"row":"W-L2"},
+    {"file":"src/semantics/commandhead.ts","fn":"headOf","kind":"helper","count":3,"row":"W-P1"},
     {"file":"src/semantics/deferred.ts","fn":"expands","kind":"helper","count":2,"row":"W-T1"},
     {"file":"src/semantics/deferred.ts","fn":"quotedIn","kind":"node-type","count":1,"row":"W-P4"},
     {"file":"src/semantics/deferred.ts","fn":"unknownWords","kind":"helper","count":1,"row":"W-L1"},
@@ -166,6 +164,8 @@
     {"file":"src/semantics/walk/walker.ts","fn":"program","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/written.ts","fn":"writtenValue","kind":"helper","count":3,"row":"W-T1"},
     {"file":"src/semantics/written.ts","fn":"writtenValue","kind":"node-type","count":9,"row":"W-T1"},
+    {"file":"src/staticword.ts","fn":"plainText","kind":"helper","count":1,"row":"W-P1"},
+    {"file":"src/staticword.ts","fn":"unquotedWord","kind":"node-type","count":4,"row":"W-P2"},
     {"file":"src/staticword.ts","fn":"bracketsAcross","kind":"node-type","count":1,"row":"W-G1"},
     {"file":"src/staticword.ts","fn":"bracketSpans","kind":"node-type","count":2,"row":"W-G1"},
     {"file":"src/staticword.ts","fn":"decodedSlice","kind":"node-type","count":4,"row":"W-L1"},
@@ -275,7 +275,13 @@
       "file": "src/explain/commands.ts",
       "reason": "checks the shape of the source (\"the word is one `$x`\"), not what bash does with it",
       "uses": [
-        {"fn":"commandParts","kind":"node-type","count":3},
+        {"fn":"commandParts","kind":"node-type","count":3}
+      ]
+    },
+    {
+      "file": "src/semantics/commandhead.ts",
+      "reason": "checks the shape of the source (\"the word is one `$x`\"), not what bash does with it",
+      "uses": [
         {"fn":"headOf","kind":"node-type","count":2}
       ]
     },
@@ -334,7 +340,6 @@
       "file": "src/explain/words.ts",
       "reason": "explains a word part by part, by node type (the dispatch of the word module)",
       "uses": [
-        {"fn":"braceExpansion","kind":"node-type","count":1},
         {"fn":"bracketsOf","kind":"node-type","count":2},
         {"fn":"elementWord","kind":"node-type","count":1},
         {"fn":"string","kind":"node-type","count":3},

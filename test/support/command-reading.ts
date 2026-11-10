@@ -14,6 +14,8 @@ export const ALLOWED: readonly string[] = [
   // The source: the interpreter, the specs it reads, and the readers of other languages' options (the embedded programs).
   'src/argv/',
   'src/dict/',
+  // The reading of a simple command's words on the model, the first slice of `commandRead` (docs/design/known-values.md, section 3).
+  'src/semantics/commandread.ts',
   // The embedded programs' own options and operators (src/embedded/): find's primaries (`-print0`), awk's and arith's `--`, getopt's option
   // strings, regex and glob syntax. `yq.ts` is not here: `judgeYq` hand-parses yq's own options, so it is listed as an offender.
   ...['arith', 'awk', 'find', 'format', 'getopt', 'getopts', 'gitformat', 'glob', 'jq', 'mode', 'perl', 'prompt', 'regex', 'registry', 'sed', 'textutils', 'types', 'yqfuncs'].map((n) => `src/embedded/${n}.ts`),

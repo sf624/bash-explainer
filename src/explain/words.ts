@@ -5,7 +5,7 @@
 // the descriptions and notes of variables from here.
 import type { Kind, Pos, Token } from '../analyzer-types';
 import { arithLiteralIn, describeArithLiteral, describeInvalidLiteral, evalArith, evalArithWrapping, invalidHow } from '../arith';
-import { type BashVersion, earlier } from '../bashversion';
+import { earlier } from '../bashversion';
 import { pictureList, visible } from '../ctlchars';
 import { ciVariables } from '../dict/ciVariables';
 import { SHELL_NAMES } from '../dialect';
@@ -19,7 +19,8 @@ import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { splitsIn } from '../argv/words';
-import { braceAlternatives, braceTexts, rereadFails } from '../semantics/brace';
+import { braceAlternatives, braceExpansion, rereadFails } from '../semantics/brace';
+import { bracesHereIn } from '../semantics/commandhead';
 import { mayGiveNoField } from '../semantics/nofield';
 import { replaceRange } from '../rewrite';
 import { readOnlySometimes } from '../semantics/scriptstops';
@@ -28,24 +29,15 @@ import { readonlyAtStart } from '../semantics/vars';
 import { isBash, variableShells } from '../shellfeatures';
 import { givesElements } from '../semantics/elements';
 import { braceWords as fieldsOfBraceWords, CONTEXTS, ifsEscaped, partMeaning, patternOfChars, quotedIfs, type StepKind, type TildePrefix, trustedPart, underscoreValue, wordFields, wordOf } from '../semantics/words';
-import { type BracketSpan, bracketSpans, decodedText, isPlainWord, setsElement, splitElement, stackTilde, staticWordValue, unquoteWord } from '../staticword';
+import { type BracketSpan, bracketSpans, decodedText, isPlainWord, setsElement, plainText, splitElement, stackTilde, staticWordValue, unquotedWord, unquoteWord } from '../staticword';
 import { ancestor, assignmentsOnly, braceKind, descendants, field, fields, joinedText, nameText, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
-import { arrayKind, globOff, globState, inArithmetic, isAssoc, shoptAt, unquotedWord, wordAt } from './reads';
+import { arrayKind, globOff, globState, inArithmetic, isAssoc, shoptAt, wordAt } from './reads';
 import { refusedNote, sequenceParts } from './sequences';
 import { hostString } from './hoststrings';
 import { pidNote, stageCountNote } from './where';
-
-/**
- * The words of the brace expansion of the word `n`: undefined when it has none, null when it gives too many words to
- * list. The braces of a part of a longer word (`'a'{,}`) keep their empty words, which the other parts join. `version`:
- * the bash whose limits of sequences apply.
- */
-export function braceExpansion(n: SyntaxNode, version: BashVersion): string[] | undefined | null {
-  return braceTexts([n], n.parent!.type === 'concatenation', version);
-}
 
 /**
  * The `[…]` that a plain part of a word opens or closes, where the parts between are in it (the `[` and `]` of `[$x]`,
@@ -285,8 +277,7 @@ export function shown(v: string): string {
  * here-string. Where `set +B` is on some paths only, it may (see `bracesMaybeOff`).
  */
 export function bracesHere(cx: Explainer, n: SyntaxNode): boolean {
-  const step = wordAt(cx, n)?.steps.find((s) => s.kind === 'brace');
-  return step?.why !== 'dialect' && step?.why !== 'context' && !(step?.why === 'braceexpand-off' && step.applies === false);
+  return bracesHereIn(cx.state, n);
 }
 
 /** What to add where brace expansion of `n` may be off (`set +B` on some paths before): a parenthesis; else nothing. */
@@ -295,16 +286,6 @@ export function bracesMaybeOff(cx: Explainer, n: SyntaxNode): string {
   return step?.why === 'braceexpand-off' && step.applies === 'unknown'
     ? cx.s('（ブレース展開が有効な場合。この前の一部の経路では `set +B` で無効になっていて、そのときは書いたままの1語）', ' (where brace expansion is on: `set +B` turns it off on some paths before, and there the word stays as it is)')
     : '';
-}
-
-/** The words a word gives by brace expansion; undefined when it gives none (or too many to list). */
-export function braceWords(cx: Explainer, n: SyntaxNode): string[] | undefined {
-  return bracesHere(cx, n) ? braceExpansion(n, cx.bashVersion) ?? undefined : undefined;
-}
-
-/** A word of plain text, braces included (`x{a,b}`): one read as its text where its braces do not expand (dash). */
-export function plainText(n: SyntaxNode): boolean {
-  return isPlainWord(n) || (unquotedWord(n) !== undefined && wordBraces(n).length > 0);
 }
 
 /** A word with braces (`{a,b\,c}`, `{,}`, `{a..e..2}`), explained as the brace expansion it is (manual 3.5.1). */

@@ -123,6 +123,15 @@ export function braceValues(nodes: readonly SyntaxNode[], part = false, version?
   return values.some((v) => v.includes(undefined)) ? undefined : values.map((v) => v.join(''));
 }
 
+/**
+ * The words of the brace expansion of the word `n`: undefined when it has none, null when it gives too many words to
+ * list. The braces of a part of a longer word (`'a'{,}`) keep their empty words, which the other parts join. `version`:
+ * the bash whose limits of sequences apply.
+ */
+export function braceExpansion(n: SyntaxNode, version: BashVersion): string[] | undefined | null {
+  return braceTexts([n], n.parent!.type === 'concatenation', version);
+}
+
 /** The words a brace expansion gives, as text: undefined and null as `braceAlternatives` says (`part` and `version` too). */
 export function braceTexts(nodes: readonly SyntaxNode[], part = false, version?: BashVersion): string[] | null | undefined {
   const words = braceAlternatives(nodes, part, version);
