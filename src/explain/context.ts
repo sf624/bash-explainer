@@ -405,7 +405,7 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   evidenceAt(n: SyntaxNode): ReadKnown | undefined {
-    return this.opts.unread ? undefined : this.lineEvidence(this.documentEvidenceAt(n));
+    return this.lineEvidence(this.documentEvidenceAt(n));
   }
 
   documentEvidenceAt(n: SyntaxNode): ReadKnown | undefined {

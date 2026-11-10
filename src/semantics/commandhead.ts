@@ -264,32 +264,30 @@ function headOf(model: StateModel, lookup: CommandLookup, nameNode: SyntaxNode, 
   // (The parser has read it as a command name: not a keyword.)
   const missed = (res as { missed?: Missed }).missed;
   const facts = { name, res: ran };
+  // (An alias of the name that bash does not expand here, said before what runs instead.)
+  let aliasMiss: AliasMiss | undefined;
   if (missed?.kind === 'alias' && !known) {
-    const first = missed.def.startPosition.row;
+    const first = missed.def.startPosition.row + 1;
     // (Not where a function of that name surely runs instead, `ll() { …; }`. Where one may, or code not read may turn
     // expand_aliases on, the model says the miss may not happen: `Missed.maybe`, a caveat.)
     if (missed.why === 'expand_aliases' && !(res.kind === 'function' && res.sure)) {
       const value = model.at(nameNode).expand.aliases.get(name)!.value;
       // (Turned off by the script, `shopt -u expand_aliases`: also in an interactive shell.)
       const off = option(model.at(nameNode).expand, 'shopt', 'expand_aliases') === 'off';
-      const aliasMiss: AliasMiss = { why: 'not-expanded', value, off, ...(missed.maybe ? { maybe: missed.maybe } : {}) };
+      aliasMiss = { why: 'not-expanded', value, off, ...(missed.maybe ? { maybe: missed.maybe } : {}) };
       // (A function that may run instead: its own text says where it is defined.)
-      if (res.kind !== 'function') return { ...facts, kind: 'alias', aliasMiss, how: { case: off ? 'alias-off' : 'alias-unexpanded', first: first + 1, value, unread: missed.maybe === 'unread' } };
-      return functionHead(facts, res, globs, aliasMiss);
-    }
-    if (missed.why === 'later' || missed.why === 'same-unit') {
-      const aliasMiss: AliasMiss = { why: missed.why, first: first + 1 };
-      if (res.kind === 'file') return { ...facts, kind: 'command', aliasMiss, how: { case: 'alias-later', first: first + 1 } };
-      if (res.kind === 'function') return functionHead(facts, res, globs, aliasMiss);
-      return { ...lateHead(model, lookup, nameNode, name, ran, res, sv, missed), aliasMiss };
+      if (res.kind !== 'function') return { ...facts, kind: 'alias', aliasMiss, how: { case: off ? 'alias-off' : 'alias-unexpanded', first, value, unread: missed.maybe === 'unread' } };
+    } else if (missed.why === 'later' || missed.why === 'same-unit') {
+      aliasMiss = { why: missed.why, first };
+      if (res.kind === 'file') return { ...facts, kind: 'command', aliasMiss, how: { case: 'alias-later', first } };
     }
   }
-  if (res.kind === 'function') return functionHead(facts, res, globs);
-  return lateHead(model, lookup, nameNode, name, ran, res, sv, missed);
+  const head = res.kind === 'function' ? functionHead(facts, res, globs) : lateHead(model, lookup, nameNode, name, ran, res, sv, missed);
+  return aliasMiss ? { ...head, aliasMiss } : head;
 }
 
-function functionHead(facts: { name: string; res: NameResolution }, res: Extract<NameResolution, { kind: 'function' }>, globs: boolean, aliasMiss?: AliasMiss): HeadFacts {
-  return { ...facts, kind: 'function', fn: res.sure || 'maybe', how: { case: 'function', res, globs }, ...(aliasMiss ? { aliasMiss } : {}) };
+function functionHead(facts: { name: string; res: NameResolution }, res: Extract<NameResolution, { kind: 'function' }>, globs: boolean): HeadFacts {
+  return { ...facts, kind: 'function', fn: res.sure || 'maybe', how: { case: 'function', res, globs } };
 }
 
 /** What a name runs that is no alias and no function (with the definition that does not apply, `missed`, which the explanation notes first). */
