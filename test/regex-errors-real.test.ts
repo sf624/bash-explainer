@@ -101,6 +101,13 @@ const ROWS: [Program, string, boolean, string?][] = [
   ['grep -P', '(?(1)a)(a)', false],
   ['grep -P', '(a)?(?(1)b|c)', false],
   ['grep -P', "(?P<q>[\"x]).*?(?P=q)", false],
+  // (A lone `\E` matches nothing and is no item: the quantifier repeats what is before it.)
+  ['grep -P', 'a\\E*', false],
+  ['grep -P', '\\d\\E++', false],
+  ['grep -P', '\\h\\E+?', false],
+  ['grep -P', '\\E*', true, 'regex-pcre-repeat'],
+  ['grep -P', '(?(0)a)', true, 'regex-pcre-missing-group'],
+  ['grep -P', '(?(00)a)', true, 'regex-pcre-missing-group'],
   ['sed', 's/[/]/x/', false],
   ['sed', '/[/]/p', false],
   ['sed', 's/[]/]/x/', false],
@@ -138,6 +145,8 @@ const ROWS: [Program, string, boolean, string?][] = [
   ['perl', '/^*a/', false],
   ['perl', '/*a/', true],
   ['perl', '/a**/', true],
+  // (Perl has no bare name as a condition: left unread.)
+  ['perl', '/(?<n>a)?(?(n)b|c)/', true],
   ['perl', '/\\Ua/', false],
   // (Perl puts the value of a variable in before it reads the regex: `]` or `)` may come from it.)
   ['perl', 'BEGIN { $x = "]"; exit("a" =~ /[a$x/ ? 0 : 1) }', false],

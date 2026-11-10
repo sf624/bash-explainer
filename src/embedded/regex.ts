@@ -6,7 +6,7 @@ import { EmbeddedToken, escapeIntoHole, hasHole, holeStop, holeToken, isHole, pi
 import { charOfCode, codeEscape, hexOf, namedChar, PCRE_ESCAPE_LETTERS, PCRE_ONLY, PERL_CASE, POSIX_CLASS_WORDS, SHORTHANDS } from './regex-escapes';
 import { FLAG_LETTERS, IF_FLAG, NO_PYTHON_FLAGS, PYTHON_DOT, pythonGlobalFlags, type PythonRegexOptions, pythonWidth, VERBOSE_SPACE, type Width } from './regex-python';
 import { pythonClassAtom, pythonEscape, pythonFinish, pythonFlagGroup, pythonGroupHead, type PythonHead, pythonRange, pythonSetWarnings, refusedRepeat } from './regex-python-read';
-import { caseText, type ClassAtom, escapedLiteral, type Flavor, groupEnd, type MatchUnit, ownSaid, pcreLike, refusal, type RegexTool, type State, strictRepeats } from './regex-state';
+import { caseText, type ClassAtom, escapedLiteral, type Flavor, groupEnd, type MatchUnit, ownSaid, pcreLike, refusal, type RegexTool, releaseBrace, type State, strictRepeats } from './regex-state';
 
 export { pcreLike } from './regex-state';
 export type { Flavor, MatchUnit, RegexTool, ShellFlavor } from './regex-state';
@@ -74,14 +74,14 @@ function stateOf(src: string, flavor: Flavor, lang: Lang, opts: RegexOptions): S
 
 /**
  * What the program refuses once the whole pattern is read: Python's own (`pythonFinish`), and in grep -P a conditional whose group the
- * pattern has not (`(?(2)…)` with one group: "reference to non-existent subpattern"; a later group may be it; Perl takes it, as a
- * group that did not take part).
+ * pattern has not (`(?(2)…)` with one group, and `(?(0)…)`: "reference to non-existent subpattern"; a later group may be it; Perl
+ * takes it, as a group that did not take part).
  */
 function finish(st: State, tokens: EmbeddedToken[]): EmbeddedToken[] {
   if (st.py) pythonFinish(st);
   else if (!st.unread && st.tool === 'grep') {
     for (const c of st.conditionals) {
-      if (c.group === undefined ? st.names.has(c.name!) : c.group <= st.groups) continue;
+      if (c.group === undefined ? st.names.has(c.name!) : c.group >= 1 && c.group <= st.groups) continue;
       c.token.kind = 'error';
       c.token.explanation += st.s('。', '. ') + tokenSaid(st.lang, st.reached ? 'regex-pcre-missing-group' : 'regex-pcre-missing-group-if-reached');
     }
@@ -147,7 +147,8 @@ function quantifierLength(st: State, atStart: boolean): number {
     // (GNU grep and sed take `\{,\}` as `*`.)
     if (m && (m[1] || m[2] || m[3])) len = m[0].length;
   }
-  if (len && pcreLike(st) && (src[i + len] === '?' || src[i + len] === '+')) len++;
+  // (Not after grep -P's `{,n}`, which earlier PCRE2 releases read as text: the `?` or `+` is a quantifier of its own there.)
+  if (len && pcreLike(st) && (src[i + len] === '?' || src[i + len] === '+') && !releaseBrace(st, i)) len++;
   return len;
 }
 
@@ -190,8 +191,9 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
     }
     if ((n = quantifierLength(st, atStart()))) {
       st.i += n;
-      const refused = strict ? refusedRepeat(st, start, out) : undefined;
-      out.push(refused ? { start, end: st.i, kind: 'error', explanation: refusal(st, refused.message, () => tokenSaid(st.lang, st.reached ? 'regex-pcre-repeat' : 'regex-pcre-repeat-if-reached', { kind: refused.kind })), children: [] } : quantifier(st, start, lastItem(out)));
+      const before = lastItem(out);
+      const refused = strict && !releaseBrace(st, start) && !(before?.kind === 'operator' && releaseBrace(st, before.start)) ? refusedRepeat(st, start, out) : undefined;
+      out.push(refused ? { start, end: st.i, kind: 'error', explanation: refusal(st, refused.message, () => tokenSaid(st.lang, st.reached ? 'regex-pcre-repeat' : 'regex-pcre-repeat-if-reached', { kind: refused.kind })), children: [] } : quantifier(st, start, before));
       continue;
     }
     if (c === ')' && strict) {
@@ -344,6 +346,14 @@ function quantifier(st: State, start: number, target: EmbeddedToken | undefined)
   const raw = st.src.slice(start, st.i);
   // (After a hole, it repeats what the value ends with, whatever the value is.)
   if (target?.hole?.place === 'regex') return { start, end: st.i, kind: 'operator', explanation: '', children: [], hole: { place: 'repeat', of: st.src[target.start], written: raw } };
+  if (target?.kind === 'operator' && releaseBrace(st, target.start)) {
+    return { start, end: st.i, kind: 'operator', explanation: tokenSaid(st.lang, 'regex-pcre-after-max-brace', { written: raw, brace: st.src.slice(target.start, target.end) }), children: [] };
+  }
+  if (releaseBrace(st, start)) {
+    const n = raw.slice(2, -1);
+    const of = target && target.kind !== 'keyword' && !(target.kind === 'operator' && target.label === '|') ? { of: st.src.slice(target.start, target.end) } : {};
+    return { start, end: st.i, kind: 'operator', explanation: tokenSaid(st.lang, 'regex-pcre-max-brace', { written: raw, n, ...of }), children: [] };
+  }
   const of = (ja: boolean): string => target ? codeShown(st.src.slice(target.start, target.end), ja, ' ') : ja ? '直前の要素 ' : 'the previous item';
   let q = raw.replace(/^\\/, '').replace(/\\\}$/, '}').replace(/^\\\{/, '{');
   let mode = '';
@@ -485,7 +495,8 @@ function groupHead(st: State, start: number, rest: string): PythonHead | undefin
     return { kind: 'token', token: reference(st.names.get(ref[1]), ref[1]) };
   }
   const cond = PCRE_CONDITION.exec(rest);
-  if (!cond) return undefined;
+  // (Perl has no bare name as a condition, `(?(n)…)`: "Unknown switch condition"; left unread.)
+  if (!cond || (cond[4] !== undefined && st.tool === 'perl')) return undefined;
   const name = cond[2] ?? cond[3] ?? cond[4];
   return { kind: 'conditional', ...(name === undefined ? { group: Number(cond[1]) } : { name }), at: start + 3, end: start + 1 + cond[0].length };
 }
@@ -639,9 +650,10 @@ function bracket(st: State): EmbeddedToken {
   st.i = i + 1;
   if (badRange) return { start, end: st.i, kind: 'error', explanation: tokenSaid(st.lang, st.reached ? 'regex-pcre-range-set' : 'regex-pcre-range-set-if-reached'), children: holes };
   const list = items.join(s('、', ', '));
-  // (Python warns of a set that a later release may read otherwise: `[[:alpha:]]` is the set `[[:alpha:]`, then a `]`.)
+  // (Python warns of a set that a later release may read otherwise: `[[:alpha:]]` is the set `[[:alpha:]`, then a `]`. Only a whole
+  // POSIX class, `]` right after it, is told so: `[[:alnum:]_]` is the set `[[:alnum:]` and then the literal "_]".)
   const warnings = st.py ? pythonSetWarnings(src, start, st.py.bytes) : [];
-  const posix = st.py && /^\[\[:\w+:\]/.exec(src.slice(start))?.[0];
+  const posix = st.py && /^\[\[:\w+:\]\]/.exec(src.slice(start))?.[0];
   return {
     start, end: st.i, kind: 'pattern', children: holes,
     explanation: (negated
@@ -649,7 +661,7 @@ function bracket(st: State): EmbeddedToken {
       : s(`文字クラス: ${list} のどれか1文字`, `Character class: one of ${list}`))
       // (Letters written as themselves, not those of an escape: `[\d]` has none whose case matters.)
       + caseText(st, src.slice(start, st.i).replace(/\\[\s\S]/g, ''), st.py)
-      + (warnings.length ? s('。', '. ') + tokenSaid(st.lang, 'regex-python-set-warning', { messages: warnings, ...(posix ? { posix: posix + ']' } : {}) }) : ''),
+      + (warnings.length ? s('。', '. ') + tokenSaid(st.lang, 'regex-python-set-warning', { messages: warnings, ...(posix ? { posix } : {}) }) : ''),
   };
 }
 
@@ -701,7 +713,7 @@ function pcreEscape(st: State, start: number, c: string): EmbeddedToken | undefi
     }
     return tok('string', s(`\`\\Q…\\E\`: 間の文字列「${body}」をそのまま（記号も特別扱いしない）`, `\`\\Q…\\E\`: the text "${body}" taken literally (no character in it is special)`));
   }
-  if (c === 'E') return tok('keyword', s('`\\E`: `\\Q` の終わり（それだけでは何にも一致しない）', '`\\E`: the end of a `\\Q` (matches nothing by itself)'));
+  if (c === 'E') return tok('comment', s('`\\E`: `\\Q` の終わり（それだけでは何にも一致しない）', '`\\E`: the end of a `\\Q` (matches nothing by itself)'));
   if (PERL_CASE.includes(c)) {
     // (Perl's string escapes, applied before the regex is read: `/\Ux\E/` matches X. PCRE2 has none and `grep -P` stops.)
     if (st.tool === 'bazel') return tok('error', javaEscape(st, c));

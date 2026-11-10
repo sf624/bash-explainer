@@ -378,7 +378,9 @@ export class Tokens {
       return;
     }
     if (src[this.index] === '\\' && this.index + 1 >= src.length) throw new Refusal(`bad escape (end of pattern) at position ${src.length - 1}`, 're.error', src.length - 1);
-    this.next = src.slice(this.index, this.index + (src[this.index] === '\\' ? 2 : 1));
+    // (A character, as Python's: one past U+FFFF is two units here.)
+    const at = src[this.index] === '\\' ? this.index + 1 : this.index;
+    this.next = src.slice(this.index, at + (src.codePointAt(at)! > 0xffff ? 2 : 1));
     this.index += this.next.length;
   }
   get(): string | undefined {

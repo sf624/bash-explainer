@@ -11,7 +11,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The replacement of `re.sub` and `re.subn` is explained: `\1` and `\g<name>` say which group's text they put in, a group the pattern lacks is an Error (`invalid group reference`), and the example applies the replacement. A method of a compiled pattern (`EMAIL = re.compile(…)`, then `EMAIL.findall(s)`) says on which line its pattern was compiled, and gets that pattern's example.
 - A pattern of `re.search`, `re.fullmatch`, `re.sub`, `re.split`, `re.findall` and the other `re` functions gets an example, checked against Python: strings that match and do not, or what the call gives back for its subject, as Python prints it (`re.split(r'(,)|(;)', 'a,b;c')` gives `['a', ',', None, 'b', None, ';', 'c']`).
 
-- `grep -P` explains a backreference by name, `(?P=q)`, and conditionals, `(?(1)b|c)`; before, "a PCRE construct this explainer does not read". A conditional of three branches, or on a group the pattern lacks, is an Error.
+- `grep -P` explains a backreference by name, `(?P=q)`, and conditionals, `(?(1)b|c)`; before, "a PCRE construct this explainer does not read". A conditional of three branches, or on a group the pattern lacks, is an Error, and so is a repeat or a `)` PCRE2 refuses (`grep -P '*.txt'`, `a**`, `a)`); before, these were explained as repeats or a literal `)`.
 
 ### Fixed
 

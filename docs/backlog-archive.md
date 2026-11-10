@@ -1157,13 +1157,18 @@ Each is a value the explainer does not take where bash has it, never a wrong one
 ### Python and PCRE patterns: corners the errors do not follow
 
 - **Verdict:** dropped (YAGNI), 2026-11-10. Kind: `bug` unless marked. Python 3.15, GNU grep 3.11 (PCRE2).
-- **Reason:** Rare patterns. None gives a false Error: each is a refusal we do not say, or a first message other than Python's where a pattern has two errors (both are said).
+- **Reason:** Rare patterns. Only one gives a false Error, a `)` in a comment of grep -P's extended mode (`(?x)`), which grep patterns rarely use; the others are a refusal we do not say, a message other than Python's where a pattern has two errors, or a reading of a rare form.
 - **Input and what is wrong:**
   - A range with an end named by `\N{…}`: `[\N{EM DASH}-a]` ("bad character range \N-a") is no Error, as the name's code is not known.
   - Flags that do not go together through the pattern's inline flags (`(?a)(?u)a`) are said only where no other refusal of the pattern comes first; Python says them before a `)` that closes no group, and so do we, but after a refusal that the parser stops at, we say only that one. The flags argument's (`re.L` with a str pattern) is said whatever the pattern holds.
   - A final `\`: Python's tokenizer reads a token ahead, so it refuses the `\` before or after the token before it, by where that token's refusal is raised (`?\` is "bad escape (end of pattern)", `(?u)\` with bytes "bad inline flags"); we say both, in the order of the text.
   - `grep -P`: a backreference to a group the pattern has not (`(a)\2`, `\k<n>`) and a lookbehind of more than one width (`(?<=a+)x`) are no Errors; grep -P refuses them ("reference to non-existent subpattern", "lookbehind assertion is not fixed length"). A conditional on such a group is one since #760.
   - `grep -P`: a recursion test (`(?(R)…)`, `(?(R1)…)`), `(?(DEFINE)…)`, `(?(VERSION>=10)…)`, a relative number (`(?(+1)…)`) or an assertion (`(?(?=a)…)`) as a condition is "a PCRE construct this explainer does not read". (`missing-explanation`)
+  - `grep -P '(?x) a # b)'`: PCRE2 compiles it (the `)` is in a comment of extended mode); we say "unmatched closing parenthesis". The reader does not follow `(?x)` in PCRE: `(?x)#(?<=` is an unclosed group to us, and compiles too.
+  - Perl `(?('n')a)` or `(?(<n>)a)` with no group `n`: Perl refuses it ("Reference to nonexistent named group"); we explain the conditional and say no Error.
+  - Python stops at the first `)` that closes no group (its parser raises there); we read on and say what follows too: `a)\e` adds "bad escape \e at position 2" after "unbalanced parenthesis at position 1", and `(?a){9)(?(1) ` with `re.U` adds the refusals after the `)`. The first Error is Python's.
+  - An escape of a character past U+FFFF (`a\😀`, every flavor) is read as two halves of the character ("Literal" of each surrogate); the regex reads one character.
+  - `grep -P 'x{,2}{,3}'`: before PCRE2 10.43 it is the text "x{,2}{,3}", and from 10.43 a repeat right after another (an error); we say that the second `{,3}` repeats the "}" of the text `{,2}` before 10.43.
 
 ## From the review of the Python regex literal (#750)
 

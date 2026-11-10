@@ -53,7 +53,7 @@ const HAND: Row[] = [
   // What a release still supported reads otherwise (`\z`, 3.14), and an escape of a symbol in a set.
   str('\\z'), str('a\\Z'), str('[\\<]'), str('[\\-]'),
   // Positions count characters, as Python's do: one past U+FFFF is one; and a pattern over lines gives the line and column.
-  str('😀\\e'), str('[😀-a]'), str('a\n😀(?P<n'), str('(a\n)\n)'), str('[a- z]', 'X'),
+  str('😀\\e'), str('[😀-a]'), str('(?😀'), str('a(?😀)'), str('(?P😀'), str('(?<😀'), str('a\n😀(?P<n'), str('(a\n)\n)'), str('[a- z]', 'X'),
 ];
 
 /** A generator of numbers in [0, 1), from a seed (mulberry32): the same rows on every run. */
@@ -107,18 +107,30 @@ function flagsOf(flags: string, bytes: boolean): { python: PythonRegexOptions; v
 
 interface Result { kind: 'PatternError' | 'ValueError' | null; message: string | null; warnings: string[] }
 
-/** What the reader says of a row: the messages of its Errors in the order of its tokens, the flags argument's, and its warnings. */
-function ours([pattern, flags, bytes]: Row): { errors: string[]; argument?: string; warnings: string[] } {
+/** An Error of the reader: the kind of exception its text says (by its id), and Python's message in it; `other`, an Error of another text. */
+interface Said { kind: 'PatternError' | 'ValueError' | 'other'; message: string }
+
+/** The kind of exception each text of an Error says. */
+const KINDS: Record<string, Said['kind']> = { 'regex-python-error': 'PatternError', 'regex-python-flags-error': 'ValueError' };
+
+/**
+ * What the reader says of a row: its Errors in the order of its tokens (every token of the kind `error`, whatever its text: one that
+ * says no exception of Python's is `other`, with its text), the flags argument's, and its warnings.
+ */
+function ours([pattern, flags, bytes]: Row): { errors: Said[]; argument?: string; warnings: string[] } {
   const { python } = flagsOf(flags, bytes);
-  const errors: string[] = [];
+  const errors: Said[] = [];
   const warnings: string[] = [];
   // (A token's own refusal after those of its contents: Python reads a group's contents before it finds no `)` closes it.)
   const walk = (t: EmbeddedToken) => {
     t.children.forEach(walk);
-    for (const s of readSaid(t.explanation).said) {
-      if (t.kind === 'error' && (s.id === 'regex-python-error' || s.id === 'regex-python-flags-error')) errors.push(/\("(.*)"(?:; [^"]*)?\)$/s.exec(s.text)![1]);
-      if (s.id === 'regex-python-set-warning') for (const m of s.text.matchAll(/"(Possible [^"]*)"/g)) warnings.push(m[1]);
+    const { text, said } = readSaid(t.explanation);
+    const refusals = said.filter((s) => KINDS[s.id]);
+    if (t.kind === 'error') {
+      for (const s of refusals) errors.push({ kind: KINDS[s.id], message: /\("(.*)"(?:; [^"]*)?\)$/s.exec(s.text)![1] });
+      if (!refusals.length) errors.push({ kind: 'other', message: text });
     }
+    for (const s of said) if (s.id === 'regex-python-set-warning') for (const m of s.text.matchAll(/"(Possible [^"]*)"/g)) warnings.push(m[1]);
   };
   readRegex(pattern, 'python', 'en', { tool: 'python', python }).tokens.forEach(walk);
   const argument = pythonFlagsRefused(python)?.message;
@@ -141,8 +153,9 @@ function agrees(row: Row, theirs: Result): boolean {
   const { errors, argument, warnings } = ours(row);
   if (theirs.kind === null) return !errors.length && !argument && JSON.stringify(warnings) === JSON.stringify(theirs.warnings);
   if (theirs.kind === 'ValueError' && argument === theirs.message) return true;
-  if (finalBackslash(row[0]) && errors.some((e) => e.startsWith('bad escape (end of pattern)'))) return errors.slice(0, 2).includes(theirs.message!);
-  return errors[0] === theirs.message;
+  const same = (e: Said | undefined) => e?.kind === theirs.kind && e.message === theirs.message;
+  if (finalBackslash(row[0]) && errors.some((e) => e.message.startsWith('bad escape (end of pattern)'))) return errors.slice(0, 2).some(same);
+  return same(errors[0]);
 }
 
 describe('the Python flavor of the regex reader: the validity differential against the reference Python', function () {
@@ -189,7 +202,7 @@ describe('the Python flavor of the regex reader: its refusals and warnings, with
   });
 
   it('says Python\'s message of each kind of refusal: the flags, ranges, group names and heads, references and conditionals', () => {
-    const first = (row: Row) => ours(row).argument ?? ours(row).errors[0];
+    const first = (row: Row) => ours(row).argument ?? ours(row).errors[0]?.message;
     const rows: [Row, string][] = [
       [str('a', 'L'), 'cannot use LOCALE flag with a str pattern'], [['a', 'U', true], 'cannot use UNICODE flag with a bytes pattern'],
       [str('a', 'A|U'), 'ASCII and UNICODE flags are incompatible'], [['a', 'A|L', true], 'ASCII and LOCALE flags are incompatible'],
@@ -204,6 +217,7 @@ describe('the Python flavor of the regex reader: its refusals and warnings, with
       [str('(?(0)a)'), 'bad group number at position 3'], [str('(a)(?<=(?(1)b|cd))'), 'look-behind requires fixed-width pattern'],
       [str('(?<=(a)(?(1)b|c))'), 'cannot refer to group defined in the same lookbehind subpattern at position 12'],
       [str('(a)(?(99999999999)b)'), 'invalid group reference 99999999999 at position 6'],
+      [str('a(?😀)'), 'unknown extension ?😀 at position 2'],
     ];
     assert.deepStrictEqual(rows.map(([row]) => first(row)), rows.map(([, message]) => message));
     for (const p of ["(?P<q>['\"]).*?(?P=q)", '(a)?(?(1)b|c)', '(?(1)a)(a)', '(?P<é>a)(?(é)b)', '\\z', '[\\<]']) assert.deepStrictEqual(ours(str(p)).errors, [], p);
@@ -216,6 +230,11 @@ describe('the Python flavor of the regex reader: its refusals and warnings, with
     assert.deepStrictEqual([set.end, close.start, readSaid(set.explanation).said.find((s) => s.id === 'regex-python-set-warning')?.level], [10, 10, 'warning']);
     assert.match(readSaid(set.explanation).text, /no POSIX classes: it reads `\[\[:alpha:\]` as a set of its characters .*: `\[\[:alpha:\]\]` matches two characters such as `a\]`, not `a`/);
     assert.match(readSaid(readRegex('[[:digit:]]', 'python', 'ja', { tool: 'python', python: NO_PYTHON_FLAGS }).tokens[0].explanation).text, /POSIX の文字クラスがない/);
+    // (Only a whole class, `]` right after it: `[[:alnum:]_]+` matches `a_]`, not `a]`; those get the warning of any nested set.)
+    for (const p of ['[[:alnum:]_]+', '[[:digit:][:alpha:]]', '[[:alpha:]-z]']) {
+      const text = readSaid(readRegex(p, 'python', 'en', { tool: 'python', python: NO_PYTHON_FLAGS }).tokens[0].explanation).text;
+      assert.match(text, /Python warns of this set \("Possible nested set at position 1"; FutureWarning\): a later release may read it otherwise$/, p);
+    }
   });
 
   it('leaves a group unread where a field of an f-string decides what its head is', () => {

@@ -44,6 +44,13 @@ export const OWN_REFUSAL: Partial<Record<Flavor, { said: 'regex-python-error' }>
 export const strictRepeats = (st: State): boolean => st.flavor === 'python' || (st.flavor === 'pcre' && st.tool === 'grep');
 
 /**
+ * Whether the quantifier at `i` is a `{,n}` of grep -P (a `{` the reader takes as a quantifier, with no minimum: `{,2}`), which PCRE2
+ * 10.43 and later read as a repeat and earlier releases as text: neither it nor a quantifier right after it is refused or said as one
+ * reading (`regex-pcre-max-brace`).
+ */
+export const releaseBrace = (st: State, i: number): boolean => st.flavor === 'pcre' && st.tool === 'grep' && st.src.startsWith('{,', i);
+
+/**
  * Where `re.VERBOSE` is not known (a flags argument not read), a pattern is read without it, and each refusal is an Error only where the
  * reading with it refuses the same (docs/design/python-regex.md, 5.2): a refusal of that reading alone says it depends on the flags.
  */
