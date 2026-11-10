@@ -309,8 +309,8 @@ export function awkOptions(cx: Explainer): (AwkRunOptions & { vars: Record<strin
   const inv = awkInvocation(words);
   // Options awk has more of (`--posix`, `-W …`) do not change what the example shows.
   if (inv.unsupported && !inv.unsupported.startsWith('awk -')) return undefined;
-  // gawk's `-e`/`--source` (and `-E`/`--exec`) give the program: the operand is then a file, and several are one program.
-  if (inv.unsupported && /^awk (-[eE]|--(source|exec)\b)/.test(inv.unsupported)) return undefined;
+  // gawk's `-e`/`--source` (and `-E`/`--exec`) give the program, and `-W` takes a value the spec lacks: the operands are not what they seem.
+  if (given(cx, '-e', '-E', '-W', '--source', '--exec')) return undefined;
   return { fs: inv.fs, vars: inv.vars, assigns: inv.assigns };
 }
 

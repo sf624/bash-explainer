@@ -148,7 +148,10 @@ describe('the awk example of a program given by -e or --source', () => {
   it('is not made', () => {
     assert.strictEqual(run('gawk', ['-e', 'BEGIN{x=1}', '-e', '{print x}'], { input: 'q\n' }).stdout.toString(), '1\n');
     for (const line of [`gawk -e 'BEGIN{x=1}' -e '{print x}' f`, `gawk -e '{print 1}' -e "$x" f`, `gawk --source '{print 1}' f`, `gawk -e '{print 1}' f`,
-      `gawk -v a=1 -e '{print 1}' f`, `echo a | gawk -e '{print 1}' -e "$x"`]) {
+      `gawk -v a=1 -e '{print 1}' f`, `echo a | gawk -e '{print 1}' -e "$x"`,
+      // (Another option gawk has more of comes first: only that one was looked at.)
+      `gawk --posix -e 'BEGIN{x=1}' -e '{print x}' f`, `gawk -b -e 'BEGIN{x=1}' -e '{print x}' f`, `gawk -be 'BEGIN{x=1}' f`,
+      `gawk -O -e 'BEGIN{x=1}' -e '{print x}' f`, `gawk -W posix -e 'BEGIN{x=1}' -e '{print x}' f`, `gawk --posix --source '{print 1}' f`]) {
       assert.deepStrictEqual(new Analyzer('en').explainLine(parser.parse(line), 0).examples.filter((x) => x.kind === 'awk' || x.kind === 'pipeline'), [], line);
     }
   });
