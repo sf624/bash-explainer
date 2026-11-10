@@ -256,12 +256,13 @@ Each step is one PR that keeps every test passing. The use comes before the orig
 
 An option: the assignment's rows need no new UI structure (they are children of the string, as for `PS1`), while the use's rows are a new kind of row. So steps 4 and 5 could ship before step 2, if the panel's prototype for step 2 takes long. Step 5 then needs the reading of a use without showing it on the use's line.
 
-## 12. For the maintainer
+## 12. Decisions
 
-These are proposals; the maintainer decides.
+The maintainer decided on 2026-11-10:
 
-- **The glob said three times** (section 1.2). Proposal, independent of the reading:
-  - Drop the glob clause from the argument's row wherever the `unquoted-value-as-data` note is said for that word.
-  - Reword the note and the value line from "it is a glob pattern" to "bash also reads it as a glob pattern (its `[A-Z]`, `[0-9]`) before grep gets it".
+- **The plan and its step order** (section 11): approved.
+- **The glob said once** (section 1.2), independent of the reading:
+  - The argument's row loses its glob clause wherever the `unquoted-value-as-data` note is said for that word.
+  - The note and the value line say "bash also reads it as a glob pattern (its `[A-Z]`, `[0-9]`) before grep gets it", in place of "it is a glob pattern".
   - Above the rows of a reading that assumes no match: "read below as grep gets it where no file name matches".
 - **Different readings of one value** (`grep` and `grep -E`): no rows on the assignment and no warning; the text names each use and its flavour (section 6.2).
