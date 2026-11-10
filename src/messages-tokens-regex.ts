@@ -1,5 +1,6 @@
 import type { PythonFlag } from './embedded/regex-python';
 import { tokenError, type TokenEntry, type TokenProblem, tokenText, tokenWarning } from './messages-levels';
+import { codeShown } from './messages-values';
 
 // What the regex reader (src/embedded/regex.ts) says of a pattern its program refuses: grep, sed, awk and Perl stop with an
 // error, bash's `[[ =~ ]]` gives status 2, and bazel's query (Java's regex) stops, every time. Each kind of error is one entry, shared by the flavors, with the
@@ -77,8 +78,9 @@ const JAVA_ESCAPE = invalid<{ c: string }>(({ c }) => [
   `\`\\${c}\` is no escape of Java's regex: \`bazel\` stops with an error ("Illegal/unsupported escape sequence"; status 7, 1 for \`cquery\` and \`aquery\`)`]);
 /** `(a)(?(1)b|c|d)`: a conditional of more than two branches (grep -P and Perl stop). */
 const BRANCHES = invalid<{ tool: RegexProgram }>(({ tool }) => {
-  const message = tool === 'perl' ? 'Switch (?(condition)... contains too many branches' : 'conditional subpattern contains more than two branches';
-  return [`条件分岐 \`(?(…)…|…)\` の \`|\` は1つまで。${FAILS[tool][0]}: "${message}"`, `A conditional \`(?(…)…|…)\` has two branches at most: ${FAILS[tool][1]}: "${message}"`];
+  const [ja, en, message] = tool === 'perl' ? ['`perl` はエラーで止まる（終了ステータス 255', '`perl` stops with an error (status 255', 'Switch (?(condition)... contains too many branches']
+    : ['`grep -P` はエラーで止まる（終了ステータス 2', '`grep -P` stops with an error (status 2', 'conditional subpattern contains more than two branches'];
+  return [`条件分岐 \`(?(…)…|…)\` の \`|\` は1つまで。${ja}、"${message}"）`, `A conditional \`(?(…)…|…)\` has two branches at most: ${en}, "${message}")`];
 });
 /** `(?(2)a)` of grep -P with one group: no group 2 in the whole pattern (Perl takes it, as a group that did not take part). */
 const MISSING_GROUP = invalid(() => [
@@ -129,6 +131,18 @@ export const REGEX_TEXTS = {
   'regex-pcre-unmatched-paren-if-reached': UNMATCHED.unreached,
   'regex-pcre-missing-group': MISSING_GROUP.error,
   'regex-pcre-missing-group-if-reached': MISSING_GROUP.unreached,
+  /**
+   * `{,n}` of grep -P (`written`; `of`, the text of what it follows, if anything): PCRE2 10.43 and later read it as a repeat of at most
+   * `n` times, as Perl 5.34 does, and earlier releases as the text itself (PCRE2's ChangeLog, 10.43). Which one `grep` links is not known
+   * here, so neither is said as a fact, nor refused.
+   */
+  'regex-pcre-max-brace': tokenText<{ written: string; n: string; of?: string }>(({ written, n, of }) => [
+    `\`${written}\`: PCRE2 のリリースで読み方が違う。10.43 以降は${of === undefined ? `${n}回以下の繰り返し（前に繰り返すものがない）` : ` ${codeShown(of, true, ' ')}を${n}回以下繰り返す`}。それより前は文字列「${written}」そのもの`,
+    `\`${written}\`: PCRE2 releases read it differently: from 10.43, ${of === undefined ? `a repeat of at most ${n} times, with nothing before it to repeat` : `repeat ${codeShown(of, false)} at most ${n} times`}; before 10.43, the literal text "${written}"`]),
+  /** A quantifier right after a `{,n}` of grep -P (`brace`): before PCRE2 10.43 it repeats the `}` of that text; from 10.43 it follows a repeat. */
+  'regex-pcre-after-max-brace': tokenText<{ written: string; brace: string }>(({ written, brace }) => [
+    `\`${written}\`: 前の \`${brace}\` と同じく PCRE2 のリリースで読み方が違う。10.43 より前は文字列「${brace}」の末尾の「}」を繰り返す。10.43 以降は繰り返しの直後の量指定子（\`?\` なら最短一致、\`+\` ならバックトラックしない、ほかはエラー）`,
+    `\`${written}\`: PCRE2 releases read it differently, as the \`${brace}\` before it: before 10.43, it repeats the "}" that ends the literal text "${brace}"; from 10.43, it follows a repeat (\`?\` makes that as few as possible, \`+\` possessive, and any other quantifier is an error)`]),
   /**
    * A conditional of PCRE or Python's `re` (`(?(1)…|…)`, `(?(name)…)`): `written`, to its condition's `)`; the group it tests, by its
    * number or its name. Its first `|` is `regex-conditional-else`.

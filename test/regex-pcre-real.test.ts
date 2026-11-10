@@ -134,7 +134,7 @@ describe('PCRE escapes and groups agree with grep -P', () => {
       assert.strictEqual(grepP(p, 'a\n').status, 2, p);
       assert.strictEqual(errors(p).length, 1, p);
     }
-    assert.match(errors('(a)(?(1)b|c|d)')[0], /^\|: A conditional `\(\?\(…\)…\|…\)` has two branches at most: `grep` stops with an error \(status 2\): "conditional subpattern contains more than two branches"$/);
+    assert.match(errors('(a)(?(1)b|c|d)')[0], /^\|: A conditional `\(\?\(…\)…\|…\)` has two branches at most: `grep -P` stops with an error \(status 2, "conditional subpattern contains more than two branches"\)$/);
     assert.match(errors('(?(2)a)(a)')[0], /^\(\?\(2\)a\): .*\. The pattern has no such group: `grep -P` stops with an error \(status 2, "reference to non-existent subpattern"\)$/);
     // (A later group may be the one it tests; Perl takes a group that is not there, which does not take part.)
     for (const p of ['(?(1)a)(a)', '(?(n)a)(?<n>b)']) {
@@ -142,9 +142,12 @@ describe('PCRE escapes and groups agree with grep -P', () => {
       assert.deepStrictEqual(errors(p), [], p);
     }
     assert.deepStrictEqual(allTokens(explainRegex('(?(2)a)', 'pcre', 'en', { perl: true })).filter((t) => t.kind === 'error'), []);
+    // (Perl has no bare name as a condition, "Unknown switch condition": left unread there. A group 0 is none, `(?(0)a)`.)
+    assert.match(explainRegex('(?<n>a)?(?(n)b|c)', 'pcre', 'en', { perl: true }).at(-1)!.explanation, /does not read/);
+    for (const p of ['(?(0)a)', '(?(00)a)']) assert.strictEqual(errors(p).length, 1, p);
     // (Nor where a construct left unread may hold the group.)
     assert.deepStrictEqual(allTokens(explainRegex('(?(2)a)(?|(a)(b)|c)', 'pcre', 'en')).filter((t) => t.kind === 'error'), []);
-    assert.match(plainOf(allTokens(explainRegex('(a)(?(1)b|c|d)', 'pcre', 'en', { perl: true })).find((t) => t.kind === 'error')!.explanation), /`perl` stops with an error \(status 255\): "Switch \(\?\(condition\)\.\.\. contains too many branches"$/);
+    assert.match(plainOf(allTokens(explainRegex('(a)(?(1)b|c|d)', 'pcre', 'en', { perl: true })).find((t) => t.kind === 'error')!.explanation), /`perl` stops with an error \(status 255, "Switch \(\?\(condition\)\.\.\. contains too many branches"\)$/);
     // (Where the shell does not get to the command, the same rows, which are no problems.)
     for (const p of ['(a)(?(1)b|c|d)', '(?(2)a)(a)']) {
       const said = allTokens(explainRegex(p, 'pcre', 'en', { reached: false })).find((t) => t.kind === 'error')!;
@@ -274,5 +277,25 @@ describe('Perl reads a regex before it is compiled, and the explanation says so'
     assert.doesNotMatch(perlTokens('\\y')[0].explanation, /grep/);
     assert.strictEqual(perlTokens('\\y')[0].kind, 'string');
     assert.match(explainRegex('\\y', 'pcre', 'ja', { perl: true })[0].explanation, /Perl では文字「y」扱い/);
+  });
+});
+
+describe("grep -P's `{,n}`, which PCRE2 releases read differently (not compared with the real grep)", () => {
+  // (PCRE2 10.43 and later read `{,2}` as a repeat of at most 2 times, earlier releases as the text "{,2}": CI's grep 3.11 links 10.42.
+  // So neither reading is said as a fact, and no repeat that involves one is refused.)
+  const tokens = (p: string, lang: 'en' | 'ja' = 'en') => allTokens(explainRegex(p, 'pcre', lang)).map((t) => `${p.slice(t.start, t.end)}: ${plainOf(t.explanation)}`);
+  it('says both readings, and refuses no repeat that involves it', () => {
+    for (const p of ['{,2}', '^{,2}', '\\b{,2}', '.{,2}*', 'x{,2}{3}', 'a{,2}+']) {
+      assert.deepStrictEqual(allTokens(explainRegex(p, 'pcre', 'en')).filter((t) => t.kind === 'error'), [], p);
+    }
+    assert.deepStrictEqual(tokens('a{,2}'), ['a: Literal "a"', '{,2}: `{,2}`: PCRE2 releases read it differently: from 10.43, repeat `a` at most 2 times; before 10.43, the literal text "{,2}"']);
+    assert.match(tokens('^{,2}')[1], /^\{,2\}: `\{,2\}`: PCRE2 releases read it differently: from 10.43, a repeat of at most 2 times, with nothing before it to repeat; before 10.43, the literal text "\{,2\}"$/);
+    assert.match(tokens('x{,2}{3}')[2], /^\{3\}: `\{3\}`: PCRE2 releases read it differently, as the `\{,2\}` before it: before 10.43, it repeats the "\}" that ends the literal text "\{,2\}"; from 10.43, it follows a repeat/);
+    // (A `+` or `?` after it is a quantifier of its own: before 10.43, of the "}".)
+    assert.deepStrictEqual(tokens('a{,2}+').map((t) => t.split(':')[0]), ['a', '{,2}', '+']);
+    assert.match(tokens('a{,2}', 'ja')[1], /PCRE2 のリリースで読み方が違う。10\.43 以降は `a` を2回以下繰り返す。それより前は文字列「\{,2\}」そのもの$/);
+    // (Perl and Python read it as a repeat, and grep -P a count with a minimum as one too.)
+    assert.match(explainRegex('a{,2}', 'pcre', 'en', { perl: true })[1].explanation, /^`\{,2\}`: repeat `a` at most 2 times$/);
+    assert.match(tokens('a{1,2}')[1], /^\{1,2\}: `\{1,2\}`: repeat `a` 1 to 2 times$/);
   });
 });
