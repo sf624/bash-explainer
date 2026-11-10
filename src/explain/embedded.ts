@@ -97,7 +97,6 @@ export function valueReading(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): 
  * (`knownCopy`: the word model). A quoted `"$re"` is no copy of this kind: bash matches it as text. Kept like `valueReading`.
  */
 export function regexValueReading(cx: Explainer, right: SyntaxNode): ValueReadingMade | undefined {
-  if (cx.state.noShell) return undefined;
   const test = ancestor(right, (x) => x.type === 'extended_test')!;
   return keptValue(cx, right, 'regex', (line) => {
     const known = knownCopy(right, cx.state);
