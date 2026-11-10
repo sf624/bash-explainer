@@ -1181,6 +1181,14 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `echo ~1`, `~+1`, `~-1` in a ksh93 or mksh script: neither shell expands `~N`, so each word stays as written; the word model reads the directory stack's entry as bash does.
   - `echo ~1` in a yash script: yash expands only `~+N` and `~-N`, so `~1` stays as written; the model reads it as bash does (for `~+1` and `~-1` it agrees).
 
+### Web page: Python detection by content, two rare corners (#753)
+
+- **Verdict:** dropped (YAGNI), 2026-11-10. Kind: `bug`.
+- **Reason:** Rare inputs; the `import` line rule is shared with the `subprocess`/`os` rule of `detectKind`.
+- **Input and what is wrong:**
+  - `try:\n    import re\nexcept: pass\nre.search('a', s)`: the import is indented, so the text is not detected as Python.
+  - A shell script with no shebang that holds a Python heredoc with `import re` and an `re.` call (`python3 - <<'EOF' … EOF`) is taken as Python.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".
