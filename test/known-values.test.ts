@@ -459,6 +459,13 @@ describe('a known value read in the language of its command (known-values.md, st
       }
     });
 
+    it('only an exact `$re` or `${re}` is read: a word with other parts is not', () => {
+      for (const w of ['$re"x"', '"$re"x', '$re$o', 'x$re', '"$re"', '"${re}"']) {
+        assert.strictEqual(valueToken(explain(`re='^a'\no=b\n[[ $1 =~ ${w} ]]\n`, 2)), undefined, w);
+      }
+      for (const w of ['$re', '${re}']) assert.ok(valueToken(explain(`re='^a'\n[[ $1 =~ ${w} ]]\n`, 1)), w);
+    });
+
     it('is not read where the value is not known', () => {
       for (const src of ['[[ $1 =~ $re ]]\n', 'read -r re\n[[ $1 =~ $re ]]\n', 're=$(cat p)\n[[ $1 =~ $re ]]\n', 'for re in a b; do\n  [[ $1 =~ $re ]]\ndone\n']) {
         assert.strictEqual(valueToken(explain(src, src.split('\n').length - 2)), undefined, src);

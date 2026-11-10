@@ -1240,6 +1240,25 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `re=' ^a'; grep -E $re f`: bash splits off the leading space and grep gets `^a`, but no value is shown and nothing is read.
   - `re=(x y); re='^a'; grep -E "$re" f`: `re` is an array whose element 0 is `^a`, which `"$re"` gives; no value is shown and nothing is read.
 
+## From known values, step 3 (#790)
+
+All three predate the PR; they are in the explanation of `[[ =~ ]]` for a literal right side too.
+
+### compat31 and a quoted right side of `=~`
+
+- **Verdict:** dropped (YAGNI), 2026-11-11. Kind: `contradiction` in a rare combination.
+- **Input and what is wrong:** With `shopt -s compat31` or `BASH_COMPAT=31`, `[[ abc =~ "$re" ]]` and `[[ abc =~ "a.c" ]]` are regex matches in bash (status 0), but `quotedPatternNote` (src/explain/tests.ts) says the quoted right side is literal text. `BASH_COMPAT=32` is not affected.
+
+### Regex errors of glibc the reader does not flag
+
+- **Verdict:** dropped (YAGNI), 2026-11-11. Kind: `contradiction` in a rare combination.
+- **Input and what is wrong:** bash gives status 2 for `a{`, `a{1`, `a{1,2`, `{1}`, `\1` with no group, `[[:alpha:]-z]`, `*a`, `^*a`, `a|*b`, `(*a)`, `a{2,1}`, `[z-a]` and `[[:foo:]]` (as a literal right side or a known value), but the ERE reader flags none of them as an error. Some of them also get an example that matches literally.
+
+### nocasematch and a range in a bracket
+
+- **Verdict:** dropped for now, 2026-11-11 (a PR of its own may fix the example). Kind: `contradiction` in a rare combination.
+- **Input and what is wrong:** With `shopt -s nocasematch`, `[[ x =~ ^[a\-z]$ ]]` gives status 2 under REG_ICASE in glibc, but we show an example.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

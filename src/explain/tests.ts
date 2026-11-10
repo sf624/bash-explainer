@@ -24,7 +24,7 @@ import { ancestor, descendants, field, fields, hasError, nameText, type SyntaxNo
 import { type BracketTest, collation, type TestExpr, testRange } from '../testexpr';
 import type { Explainer } from './context';
 import { matchExample, regexExample, testExample } from './examples';
-import { regexValueReading } from './embedded';
+import { regexReachedInDocument, regexValueReading } from './embedded';
 import { fromEmbedded, same, skeletal, sortTokens } from './nodes';
 import { inArithmetic } from './reads';
 import { withReading } from './values';
@@ -272,7 +272,7 @@ export function regexNode(cx: Explainer, n: SyntaxNode): Token {
 
 /** Whether an error of the regex at `n` is a problem: the shell gets there, and the `[[ ]]` around it parses. */
 function regexReached(cx: Explainer, n: SyntaxNode): boolean {
-  return cx.reachedAt(n) && !hasError(ancestor(n, (a) => a.type === 'extended_test')!);
+  return cx.lineReached(regexReachedInDocument(cx, n));
 }
 
 /**
