@@ -225,7 +225,7 @@ function repeatCount(written: string): Width {
  * have one width), from the reader's tokens before its literals are merged: one token a character. An anchor, a lookaround, a
  * comment and flags match none, a repeat its counts times its item's, alternatives the least and the most of theirs; a group, and a
  * reference, what the reader worked out for the group (`known`, once each: `(?P=n)` too). Undefined where the reader does not know
- * it: an error, a hole, a construct it does not read.
+ * it: an error, a hole, a group with a hole in it.
  */
 export function pythonWidth(tokens: readonly EmbeddedToken[], src: string, known: (t: EmbeddedToken) => Width | undefined): Width | undefined {
   let lo = Infinity;
@@ -250,7 +250,7 @@ export function pythonWidth(tokens: readonly EmbeddedToken[], src: string, known
       const [min, max] = repeatCount(src.slice(t.start, t.end));
       w = [times(item[0], min), times(item[1], max)];
     } else if (t.kind === 'keyword' || (t.kind === 'block' && /^\(\?<?[=!]/.test(src.slice(t.start, t.start + 4)))) w = [0, 0];
-    else if (t.kind === 'block' || t.kind === 'variable' || src[t.start] === '(') w = known(t);
+    else if (t.kind === 'block' || t.kind === 'variable') w = known(t);
     if (!w) return undefined;
     items.push(w);
   }
