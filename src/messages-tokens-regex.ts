@@ -137,8 +137,8 @@ export const REGEX_TEXTS = {
    * here, so neither is said as a fact, nor refused.
    */
   'regex-pcre-max-brace': tokenText<{ written: string; n: string; of?: string }>(({ written, n, of }) => [
-    `\`${written}\`: PCRE2 のリリースで読み方が違う。10.43 以降は${of === undefined ? `${n}回以下の繰り返し（前に繰り返すものがない）` : ` ${codeShown(of, true, ' ')}を${n}回以下繰り返す`}。それより前は文字列「${written}」そのもの`,
-    `\`${written}\`: PCRE2 releases read it differently: from 10.43, ${of === undefined ? `a repeat of at most ${n} times, with nothing before it to repeat` : `repeat ${codeShown(of, false)} at most ${n} times`}; before 10.43, the literal text "${written}"`]),
+    `\`${written}\`: PCRE2 のリリースで読み方が違う。10.43 以降は${of === undefined ? `${n}回以下の繰り返しだが、前に繰り返せるものがない` : ` ${codeShown(of, true, ' ')}を${n}回以下繰り返す`}。それより前は文字列「${written}」そのもの`,
+    `\`${written}\`: PCRE2 releases read it differently: from 10.43, ${of === undefined ? `a repeat of at most ${n} times that follows nothing it can repeat` : `repeat ${codeShown(of, false)} at most ${n} times`}; before 10.43, the literal text "${written}"`]),
   /** A quantifier right after a `{,n}` of grep -P (`brace`): before PCRE2 10.43 it repeats the `}` of that text; from 10.43 it follows a repeat. */
   'regex-pcre-after-max-brace': tokenText<{ written: string; brace: string }>(({ written, brace }) => [
     `\`${written}\`: 前の \`${brace}\` と同じく PCRE2 のリリースで読み方が違う。10.43 より前は文字列「${brace}」の末尾の「}」を繰り返す。10.43 以降は繰り返しの直後の量指定子（\`?\` なら最短一致、\`+\` ならバックトラックしない、ほかはエラー）`,

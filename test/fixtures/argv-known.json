@@ -5,8 +5,8 @@
       "values": { "commands": 401, "ran": 245, "words": 782, "unknown": 39, "failing": 1 }
     },
     "snippets": {
-      "probe": { "commands": 444, "ran": 398, "words": 995, "unknown": 54, "failing": 2 },
-      "values": { "commands": 444, "ran": 403, "words": 1020, "unknown": 41, "failing": 0 }
+      "probe": { "commands": 445, "ran": 399, "words": 996, "unknown": 54, "failing": 2 },
+      "values": { "commands": 445, "ran": 404, "words": 1021, "unknown": 41, "failing": 0 }
     }
   },
   "lines": {
@@ -15,8 +15,8 @@
       "values": { "ran": 245, "words": 778, "placeholders": 106 }
     },
     "snippets": {
-      "probe": { "ran": 398, "words": 926, "placeholders": 126 },
-      "values": { "ran": 403, "words": 938, "placeholders": 126 }
+      "probe": { "ran": 399, "words": 926, "placeholders": 128 },
+      "values": { "ran": 404, "words": 938, "placeholders": 128 }
     }
   },
   "known": [

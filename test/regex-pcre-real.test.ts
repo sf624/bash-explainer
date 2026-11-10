@@ -285,11 +285,13 @@ describe("grep -P's `{,n}`, which PCRE2 releases read differently (not compared 
   // So neither reading is said as a fact, and no repeat that involves one is refused.)
   const tokens = (p: string, lang: 'en' | 'ja' = 'en') => allTokens(explainRegex(p, 'pcre', lang)).map((t) => `${p.slice(t.start, t.end)}: ${plainOf(t.explanation)}`);
   it('says both readings, and refuses no repeat that involves it', () => {
-    for (const p of ['{,2}', '^{,2}', '\\b{,2}', '.{,2}*', 'x{,2}{3}', 'a{,2}+']) {
+    for (const p of ['{,2}', '^{,2}', '\\b{,2}', '.{,2}*', 'x{,2}{3}', 'a{,2}+', 'a*{,2}']) {
       assert.deepStrictEqual(allTokens(explainRegex(p, 'pcre', 'en')).filter((t) => t.kind === 'error'), [], p);
     }
     assert.deepStrictEqual(tokens('a{,2}'), ['a: Literal "a"', '{,2}: `{,2}`: PCRE2 releases read it differently: from 10.43, repeat `a` at most 2 times; before 10.43, the literal text "{,2}"']);
-    assert.match(tokens('^{,2}')[1], /^\{,2\}: `\{,2\}`: PCRE2 releases read it differently: from 10.43, a repeat of at most 2 times, with nothing before it to repeat; before 10.43, the literal text "\{,2\}"$/);
+    assert.match(tokens('^{,2}')[1], /^\{,2\}: `\{,2\}`: PCRE2 releases read it differently: from 10.43, a repeat of at most 2 times that follows nothing it can repeat; before 10.43, the literal text "\{,2\}"$/);
+    // (After a quantifier too: 10.43 refuses `a*{,2}` as it refuses `a*{2}`.)
+    assert.match(tokens('a*{,2}')[2], /^\{,2\}: `\{,2\}`: .*from 10\.43, a repeat of at most 2 times that follows nothing it can repeat;/);
     assert.match(tokens('x{,2}{3}')[2], /^\{3\}: `\{3\}`: PCRE2 releases read it differently, as the `\{,2\}` before it: before 10.43, it repeats the "\}" that ends the literal text "\{,2\}"; from 10.43, it follows a repeat/);
     // (A `+` or `?` after it is a quantifier of its own: before 10.43, of the "}".)
     assert.deepStrictEqual(tokens('a{,2}+').map((t) => t.split(':')[0]), ['a', '{,2}', '+']);

@@ -351,7 +351,8 @@ function quantifier(st: State, start: number, target: EmbeddedToken | undefined)
   }
   if (releaseBrace(st, start)) {
     const n = raw.slice(2, -1);
-    const of = target && target.kind !== 'keyword' && !(target.kind === 'operator' && target.label === '|') ? { of: st.src.slice(target.start, target.end) } : {};
+    // (Nothing that can be repeated before it: the start, an anchor, `|`, or a quantifier, `a*{,2}`.)
+    const of = target && target.kind !== 'keyword' && target.kind !== 'operator' ? { of: st.src.slice(target.start, target.end) } : {};
     return { start, end: st.i, kind: 'operator', explanation: tokenSaid(st.lang, 'regex-pcre-max-brace', { written: raw, n, ...of }), children: [] };
   }
   const of = (ja: boolean): string => target ? codeShown(st.src.slice(target.start, target.end), ja, ' ') : ja ? '直前の要素 ' : 'the previous item';
